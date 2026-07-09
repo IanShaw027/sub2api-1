@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -312,6 +313,162 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesGroupFeatureConfig(t *testing.
 	require.Equal(t, apiKey.Group.AudioSTTPricePerHour, roundTrip.Group.AudioSTTPricePerHour)
 }
 
+func TestAPIKeyService_GenerateKey_NilConfigFallsBackToDefaultPrefix(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, nil)
+
+	var key string
+	require.NotPanics(t, func() {
+		var err error
+		key, err = svc.GenerateKey()
+		require.NoError(t, err)
+	})
+	require.True(t, strings.HasPrefix(key, "sk-"), "nil cfg should fall back to sk- prefix")
+	require.Len(t, key, 67, "expected sk- + 64 hex chars")
+}
+
+func TestAPIKeyService_List_NilRepoReturnsError(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
+
+	_, _, err := svc.List(context.Background(), 1, pagination.PaginationParams{}, APIKeyListFilters{})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "api key repository is unavailable")
+}
+
+func TestAPIKeyService_GetByKey_NilRepoReturnsError(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
+
+	_, err := svc.GetByKey(context.Background(), "sk-test")
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "api key repository is unavailable")
+}
+
+func TestAPIKeyService_SearchAPIKeys_NilRepoReturnsError(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
+
+	_, err := svc.SearchAPIKeys(context.Background(), 1, "", 10)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "api key repository is unavailable")
+}
+
+func TestAPIKeyService_Delete_NilRepoReturnsError(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
+
+	err := svc.Delete(context.Background(), 1, 1)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "api key repository is unavailable")
+}
+
+func TestAPIKeyService_TouchLastUsed_NilRepoReturnsError(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
+
+	err := svc.TouchLastUsed(context.Background(), 1)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "api key repository is unavailable")
+}
+
+func TestAPIKeyService_Update_NilRepoReturnsError(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
+
+	_, err := svc.Update(context.Background(), 1, 1, UpdateAPIKeyRequest{})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "api key repository is unavailable")
+}
+
+func TestAPIKeyService_UpdateQuotaUsed_NilRepoReturnsError(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
+
+	err := svc.UpdateQuotaUsed(context.Background(), 1, 0.5)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "api key repository is unavailable")
+}
+
+func TestAPIKeyService_GetRateLimitData_NilRepoReturnsError(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
+
+	_, err := svc.GetRateLimitData(context.Background(), 1)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "api key repository is unavailable")
+}
+
+func TestAPIKeyService_UpdateRateLimitUsage_NilRepoReturnsError(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
+
+	err := svc.UpdateRateLimitUsage(context.Background(), 1, 0.5)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "api key repository is unavailable")
+}
+
+func TestAPIKeyService_GetAvailableGroups_NilUserRepoReturnsError(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
+
+	_, err := svc.GetAvailableGroups(context.Background(), 1)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "user repository is unavailable")
+}
+
+func TestAPIKeyService_ValidateKey_NilUserRepoReturnsError(t *testing.T) {
+	repo := &authRepoStub{
+		getByKeyForAuth: func(ctx context.Context, key string) (*APIKey, error) {
+			return &APIKey{
+				ID:     1,
+				UserID: 7,
+				Key:    key,
+				Status: StatusActive,
+				User: &User{
+					ID:     7,
+					Status: StatusActive,
+				},
+			}, nil
+		},
+	}
+	svc := NewAPIKeyService(repo, nil, nil, nil, nil, nil, &config.Config{})
+
+	_, _, err := svc.ValidateKey(context.Background(), "sk-test")
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "user repository is unavailable")
+}
+
+func TestAPIKeyService_Create_NilUserRepoReturnsError(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
+
+	_, err := svc.Create(context.Background(), 1, CreateAPIKeyRequest{})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "user repository is unavailable")
+}
+
+func TestAPIKeyService_Create_CustomKeyNilRepoReturnsError(t *testing.T) {
+	customKey := "custom-key-123456"
+	svc := NewAPIKeyService(nil, &userRepoStub{user: &User{ID: 1, Status: StatusActive}}, nil, nil, nil, nil, &config.Config{})
+
+	_, err := svc.Create(context.Background(), 1, CreateAPIKeyRequest{
+		CustomKey: &customKey,
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "api key repository is unavailable")
+}
+
+func TestAPIKeyService_GetAvailableRouteGroups_NilGroupRepoReturnsError(t *testing.T) {
+	svc := NewAPIKeyService(&authRepoStub{}, nil, nil, nil, nil, nil, &config.Config{})
+
+	_, err := svc.GetAvailableRouteGroups(context.Background(), 1)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "group repository is unavailable")
+}
+
 func TestAPIKeyService_SnapshotRoundTrip_ClearsNonGrokVideoConfig(t *testing.T) {
 	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
 	groupID := int64(10)
@@ -589,6 +746,26 @@ func TestAPIKeyService_InvalidateAuthCacheByGroupID(t *testing.T) {
 
 	svc.InvalidateAuthCacheByGroupID(context.Background(), 9)
 	require.Len(t, cache.deleteAuthKeys, 2)
+}
+
+func TestAPIKeyService_InvalidateAuthCacheByUserID_NilRepoIsNoop(t *testing.T) {
+	cache := &authCacheStub{}
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, cache, &config.Config{})
+
+	require.NotPanics(t, func() {
+		svc.InvalidateAuthCacheByUserID(context.Background(), 7)
+	})
+	require.Empty(t, cache.deleteAuthKeys)
+}
+
+func TestAPIKeyService_InvalidateAuthCacheByGroupID_NilRepoIsNoop(t *testing.T) {
+	cache := &authCacheStub{}
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, cache, &config.Config{})
+
+	require.NotPanics(t, func() {
+		svc.InvalidateAuthCacheByGroupID(context.Background(), 9)
+	})
+	require.Empty(t, cache.deleteAuthKeys)
 }
 
 func TestAPIKeyService_InvalidateAuthCacheByKey(t *testing.T) {

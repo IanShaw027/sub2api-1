@@ -107,6 +107,25 @@ func TestRateLimitService_HandleUpstreamError_OAuth401SetsTempUnschedulable(t *t
 	})
 }
 
+func TestRateLimitService_HandleUpstreamError_OAuth401WithNilConfigUsesDefaultCooldown(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	service := NewRateLimitService(repo, nil, nil, nil, nil)
+	account := &Account{
+		ID:       104,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "refresh",
+		},
+	}
+
+	require.NotPanics(t, func() {
+		shouldDisable := service.HandleUpstreamError(context.Background(), account, 401, http.Header{}, []byte("unauthorized"))
+		require.True(t, shouldDisable)
+	})
+	require.Equal(t, 1, repo.tempCalls, "nil cfg should still set default temp-unschedulable cooldown")
+}
+
 // TestRateLimitService_HandleUpstreamError_SparkShadow401RedirectsToParent 外审第9轮:影子无独立凭据,
 // 401(母账号 token 问题)必须重定向到凭据 owner(母账号)——母账号 temp-unschedulable + token cache 失效,
 // 影子不得被永久禁用(否则母账号可恢复的 token 问题会把影子永久打死)。

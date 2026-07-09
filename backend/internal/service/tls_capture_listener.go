@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -85,6 +86,7 @@ func (l *TLSCaptureListener) Start() error {
 
 	server := &http.Server{
 		Handler:           http.HandlerFunc(l.handleCapture),
+		ReadTimeout:       tlsFingerprintNativeCaptureReadTimeout,
 		ReadHeaderTimeout: tlsFingerprintNativeCaptureHeaderTimeout,
 		IdleTimeout:       tlsFingerprintNativeCaptureIdleTimeout,
 	}
@@ -204,6 +206,7 @@ type tlsCaptureH2StreamState struct {
 	path                      string
 	authority                 string
 	protocol                  string
+	pseudoHeaderOrder         []string
 	header                    http.Header
 	body                      bytes.Buffer
 	websocketSessionID        string
@@ -213,6 +216,12 @@ type tlsCaptureH2StreamState struct {
 	websocketReadBuffer       []byte
 	websocketMessageBuffer    []byte
 	websocketFragmentOpcode   byte
+}
+
+type tlsCaptureH2ConnectionFingerprint struct {
+	settings          []http2.Setting
+	connWindowUpdates []uint32
+	priorities        []tlsfpHTTP2.PriorityFrame
 }
 
 func (l *TLSCaptureListener) handleCaptureH2(conn *tls.Conn) {
@@ -229,7 +238,11 @@ func (l *TLSCaptureListener) handleCaptureH2(conn *tls.Conn) {
 
 	fr := http2.NewFramer(conn, conn)
 	fr.ReadMetaHeaders = hpack.NewDecoder(4096, nil)
-	if err := fr.WriteSettings(http2.Setting{ID: http2.SettingEnableConnectProtocol, Val: 1}); err != nil {
+	if err := fr.WriteSettings(
+		http2.Setting{ID: http2.SettingEnableConnectProtocol, Val: 1},
+		http2.Setting{ID: http2.SettingMaxConcurrentStreams, Val: tlsFingerprintNativeCaptureMaxConcurrentStreams},
+		http2.Setting{ID: http2.SettingMaxFrameSize, Val: tlsFingerprintNativeCaptureMaxFrameSize},
+	); err != nil {
 		return
 	}
 
@@ -243,7 +256,8 @@ func (l *TLSCaptureListener) handleCaptureH2(conn *tls.Conn) {
 		return
 	}
 	streams := map[uint32]*tlsCaptureH2StreamState{}
-	http2Fingerprint := ""
+	rejectedStreams := map[uint32]struct{}{}
+	connFingerprint := tlsCaptureH2ConnectionFingerprint{}
 
 	for {
 		if err := conn.SetReadDeadline(time.Now().Add(tlsFingerprintNativeCaptureIdleTimeout)); err != nil {
@@ -258,18 +272,42 @@ func (l *TLSCaptureListener) handleCaptureH2(conn *tls.Conn) {
 			if f.IsAck() {
 				continue
 			}
-			settings := map[uint16]uint32{}
+			settings := make([]http2.Setting, 0, 8)
 			_ = f.ForeachSetting(func(s http2.Setting) error {
-				settings[uint16(s.ID)] = s.Val
+				settings = append(settings, s)
 				return nil
 			})
-			http2Fingerprint = tlsfpHTTP2.FingerprintFromSettings(settings)
+			connFingerprint.settings = append(connFingerprint.settings[:0], settings...)
 			if err := fr.WriteSettingsAck(); err != nil {
 				return
 			}
+		case *http2.WindowUpdateFrame:
+			if f.StreamID == 0 {
+				connFingerprint.connWindowUpdates = append(connFingerprint.connWindowUpdates, f.Increment)
+			}
+		case *http2.PriorityFrame:
+			connFingerprint.priorities = append(connFingerprint.priorities, tlsfpHTTP2.PriorityFrame{
+				StreamID:   f.StreamID,
+				Dependency: f.StreamDep,
+				Exclusive:  f.Exclusive,
+				Weight:     f.Weight,
+			})
 		case *http2.MetaHeadersFrame:
+			if _, rejected := rejectedStreams[f.StreamID]; rejected {
+				if f.StreamEnded() {
+					delete(rejectedStreams, f.StreamID)
+				}
+				continue
+			}
 			state := streams[f.StreamID]
 			if state == nil {
+				if len(streams) >= tlsFingerprintNativeCaptureMaxConcurrentStreams {
+					if err := writeTLSCaptureH2PlainError(fr, f.StreamID, http.StatusTooManyRequests, "too many concurrent streams"); err != nil {
+						return
+					}
+					rejectedStreams[f.StreamID] = struct{}{}
+					continue
+				}
 				state = &tlsCaptureH2StreamState{header: make(http.Header)}
 				streams[f.StreamID] = state
 			}
@@ -277,8 +315,23 @@ func (l *TLSCaptureListener) handleCaptureH2(conn *tls.Conn) {
 			state.path = f.PseudoValue("path")
 			state.authority = f.PseudoValue("authority")
 			state.protocol = f.PseudoValue("protocol")
+			state.pseudoHeaderOrder = state.pseudoHeaderOrder[:0]
+			for _, field := range f.Fields {
+				if !field.IsPseudo() {
+					break
+				}
+				state.pseudoHeaderOrder = append(state.pseudoHeaderOrder, field.Name)
+			}
 			for _, field := range f.RegularFields() {
 				state.header.Add(field.Name, field.Value)
+			}
+			if err := l.validateCaptureH2RequestToken(state); err != nil {
+				if writeErr := writeTLSCaptureH2PlainError(fr, f.StreamID, http.StatusBadRequest, err.Error()); writeErr != nil {
+					return
+				}
+				delete(streams, f.StreamID)
+				rejectedStreams[f.StreamID] = struct{}{}
+				continue
 			}
 			if isTLSCaptureH2WebSocketConnect(state) {
 				if err := l.initCaptureH2WebSocketStream(fr, f.StreamID, state); err != nil {
@@ -286,40 +339,57 @@ func (l *TLSCaptureListener) handleCaptureH2(conn *tls.Conn) {
 				}
 				if f.StreamEnded() {
 					delete(streams, f.StreamID)
+					delete(rejectedStreams, f.StreamID)
 				}
 				continue
 			}
 			if f.StreamEnded() {
-				if err := l.finishCaptureH2Stream(fr, f.StreamID, conn, raw, sessionID, http2Fingerprint, state); err != nil {
+				if err := l.finishCaptureH2Stream(fr, f.StreamID, conn, raw, sessionID, connFingerprint, state); err != nil {
 					return
 				}
 				delete(streams, f.StreamID)
+				delete(rejectedStreams, f.StreamID)
 			}
 		case *http2.DataFrame:
-			if err := writeTLSCaptureH2WindowUpdates(fr, f.StreamID, len(f.Data())); err != nil {
-				return
+			if _, rejected := rejectedStreams[f.StreamID]; rejected {
+				if f.StreamEnded() {
+					delete(rejectedStreams, f.StreamID)
+				}
+				continue
 			}
 			state := streams[f.StreamID]
 			if state == nil {
-				state = &tlsCaptureH2StreamState{header: make(http.Header)}
-				streams[f.StreamID] = state
+				continue
 			}
 			if isTLSCaptureH2WebSocketConnect(state) {
-				closeStream, err := l.handleCaptureH2WebSocketDataFrame(fr, f.StreamID, raw, http2Fingerprint, state, f.Data())
+				closeStream, err := l.handleCaptureH2WebSocketDataFrame(fr, f.StreamID, raw, connFingerprint, state, f.Data())
 				if err != nil {
 					return
 				}
 				if closeStream || f.StreamEnded() {
 					delete(streams, f.StreamID)
+					delete(rejectedStreams, f.StreamID)
 				}
 				continue
 			}
-			_, _ = state.body.Write(f.Data())
-			if f.StreamEnded() {
-				if err := l.finishCaptureH2Stream(fr, f.StreamID, conn, raw, sessionID, http2Fingerprint, state); err != nil {
+			if state.body.Len()+len(f.Data()) > tlsFingerprintNativeCaptureBodyLimit {
+				if err := writeTLSCaptureH2PlainError(fr, f.StreamID, http.StatusRequestEntityTooLarge, errTLSCaptureRequestBodyTooLarge.Error()); err != nil {
 					return
 				}
 				delete(streams, f.StreamID)
+				rejectedStreams[f.StreamID] = struct{}{}
+				continue
+			}
+			if err := writeTLSCaptureH2WindowUpdates(fr, f.StreamID, len(f.Data())); err != nil {
+				return
+			}
+			_, _ = state.body.Write(f.Data())
+			if f.StreamEnded() {
+				if err := l.finishCaptureH2Stream(fr, f.StreamID, conn, raw, sessionID, connFingerprint, state); err != nil {
+					return
+				}
+				delete(streams, f.StreamID)
+				delete(rejectedStreams, f.StreamID)
 			}
 		case *http2.PingFrame:
 			if !f.Flags.Has(http2.FlagPingAck) {
@@ -329,6 +399,7 @@ func (l *TLSCaptureListener) handleCaptureH2(conn *tls.Conn) {
 			}
 		case *http2.RSTStreamFrame:
 			delete(streams, f.StreamID)
+			delete(rejectedStreams, f.StreamID)
 		}
 	}
 }
@@ -339,7 +410,7 @@ func (l *TLSCaptureListener) finishCaptureH2Stream(
 	conn *tls.Conn,
 	raw []byte,
 	sessionID string,
-	http2Fingerprint string,
+	connFingerprint tlsCaptureH2ConnectionFingerprint,
 	state *tlsCaptureH2StreamState,
 ) error {
 	if l == nil || l.cfg.Service == nil || fr == nil || conn == nil || state == nil {
@@ -362,14 +433,14 @@ func (l *TLSCaptureListener) finishCaptureH2Stream(
 	if strings.TrimSpace(submitReq.SessionID) == "" {
 		submitReq.SessionID = sessionID
 	}
-	submitReq.HTTP2Fingerprint = http2Fingerprint
+	submitReq.HTTP2Fingerprint = tlsfpHTTP2.Fingerprint(connFingerprint.settings, connFingerprint.connWindowUpdates, connFingerprint.priorities, state.pseudoHeaderOrder)
 	submitReq.StreamID = fmt.Sprintf("%d", streamID)
 
 	result, err := l.cfg.Service.SubmitNativeCapture(context.Background(), submitReq)
 
 	rec := httptestNewRecorder()
 	if err != nil {
-		http.Error(rec, "capture submission failed", http.StatusBadRequest)
+		http.Error(rec, tlsCapturePublicErrorMessage(err, "capture submission failed"), http.StatusBadRequest)
 	} else if nativeCaptureShouldReturnStream(submitReq) {
 		writeNativeCaptureSSEResponse(rec)
 	} else {
@@ -440,6 +511,27 @@ func writeTLSCaptureH2Response(fr *http2.Framer, streamID uint32, statusCode int
 		return fr.WriteData(streamID, true, body)
 	}
 	return nil
+}
+
+func writeTLSCaptureH2PlainError(fr *http2.Framer, streamID uint32, statusCode int, message string) error {
+	header := make(http.Header)
+	header.Set("Content-Type", "text/plain; charset=utf-8")
+	return writeTLSCaptureH2Response(fr, streamID, statusCode, header, []byte(message))
+}
+
+func (l *TLSCaptureListener) validateCaptureH2RequestToken(state *tlsCaptureH2StreamState) error {
+	if l == nil || l.cfg.Service == nil || state == nil {
+		return nil
+	}
+	req := &http.Request{
+		Header: state.header.Clone(),
+		URL:    buildTLSCaptureRequestURL(state.authority, state.path),
+	}
+	_, err := l.cfg.Service.ValidateRunningTaskToken(context.Background(), nativeCaptureRequestToken(req))
+	if err == nil {
+		return nil
+	}
+	return errors.New(tlsCapturePublicErrorMessage(err, "capture submission failed"))
 }
 
 func writeTLSCaptureH2Headers(fr *http2.Framer, streamID uint32, statusCode int, header http.Header, endStream bool) error {

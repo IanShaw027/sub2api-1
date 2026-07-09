@@ -129,7 +129,7 @@ func TestTLSFingerprintProfileHandlerCreateAcceptsReplayFields(t *testing.T) {
 	router := gin.New()
 	router.POST("/api/v1/admin/tls-fingerprint-profiles", handler.Create)
 
-	body := `{"name":"captured","platform":"openai","extensions":[50,65037],"signature_algorithms_cert":[1027],"extension_payloads":{"65037":"AQID"}}`
+	body := `{"name":"captured","platform":"openai","transport":"h2","http2_fingerprint":"1:4096|ph::method,:scheme,:authority,:path","alpn_protocols":["h2","http/1.1"],"extensions":[50,65037],"signature_algorithms_cert":[1027],"extension_payloads":{"65037":"AQID"}}`
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/tls-fingerprint-profiles", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -138,8 +138,30 @@ func TestTLSFingerprintProfileHandlerCreateAcceptsReplayFields(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	require.Len(t, repo.profiles, 1)
+	require.Equal(t, "1:4096|ph::method,:scheme,:authority,:path", repo.profiles[0].HTTP2Fingerprint)
 	require.Equal(t, []uint16{1027}, repo.profiles[0].SignatureAlgorithmsCert)
 	require.Equal(t, []byte{1, 2, 3}, repo.profiles[0].ExtensionPayloads[65037])
+}
+
+func TestTLSFingerprintProfileHandlerCreateCanonicalizesHTTP2Fingerprint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &tlsFingerprintProfileHandlerRepoStub{}
+	svc := service.NewTLSFingerprintProfileService(repo, nil)
+	handler := NewTLSFingerprintProfileHandler(svc, nil)
+	router := gin.New()
+	router.POST("/api/v1/admin/tls-fingerprint-profiles", handler.Create)
+
+	body := `{"name":"captured","platform":"openai","transport":"h2","http2_fingerprint":" 1:4096 | ph::method,:scheme,:authority,:path ","alpn_protocols":["h2","http/1.1"],"extensions":[43,45,51],"supported_versions":[772],"key_share_groups":[29],"psk_modes":[1]}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/tls-fingerprint-profiles", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Len(t, repo.profiles, 1)
+	require.Equal(t, "1:4096|ph::method,:scheme,:authority,:path", repo.profiles[0].HTTP2Fingerprint)
 }
 
 func TestTLSFingerprintProfileHandlerUpdatePreservesDimensionAndReplayFields(t *testing.T) {
@@ -151,6 +173,8 @@ func TestTLSFingerprintProfileHandlerUpdatePreservesDimensionAndReplayFields(t *
 			Name:                    "captured",
 			Platform:                "openai",
 			Transport:               "h2",
+			HTTP2Fingerprint:        "1:4096|ph::method,:scheme,:authority,:path",
+			ALPNProtocols:           []string{"h2", "http/1.1"},
 			OS:                      "macos",
 			ClientType:              "codex-cli",
 			Extensions:              []uint16{50, 65037},
@@ -175,8 +199,42 @@ func TestTLSFingerprintProfileHandlerUpdatePreservesDimensionAndReplayFields(t *
 	require.Equal(t, "renamed", updated.Name)
 	require.Equal(t, "macos", updated.OS)
 	require.Equal(t, "codex-cli", updated.ClientType)
+	require.Equal(t, "1:4096|ph::method,:scheme,:authority,:path", updated.HTTP2Fingerprint)
 	require.Equal(t, []uint16{1027}, updated.SignatureAlgorithmsCert)
 	require.Equal(t, []byte{1, 2, 3}, updated.ExtensionPayloads[65037])
+}
+
+func TestTLSFingerprintProfileHandlerUpdateCanonicalizesHTTP2Fingerprint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &tlsFingerprintProfileHandlerRepoStub{profiles: []*model.TLSFingerprintProfile{
+		{
+			ID:                1,
+			Name:              "captured",
+			Platform:          "openai",
+			Transport:         "h2",
+			HTTP2Fingerprint:  "1:4096|ph::method,:scheme,:authority,:path",
+			ALPNProtocols:     []string{"h2", "http/1.1"},
+			Extensions:        []uint16{43, 45, 51},
+			SupportedVersions: []uint16{772},
+			KeyShareGroups:    []uint16{29},
+			PSKModes:          []uint16{1},
+		},
+	}}
+	svc := service.NewTLSFingerprintProfileService(repo, nil)
+	handler := NewTLSFingerprintProfileHandler(svc, nil)
+	router := gin.New()
+	router.PUT("/api/v1/admin/tls-fingerprint-profiles/:id", handler.Update)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/tls-fingerprint-profiles/1", strings.NewReader(`{"http2_fingerprint":" 1:4096 | ph::method,:scheme,:authority,:path "}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Len(t, repo.profiles, 1)
+	require.Equal(t, "1:4096|ph::method,:scheme,:authority,:path", repo.profiles[0].HTTP2Fingerprint)
 }
 
 func TestTLSFingerprintProfileHandlerCaptureTaskLifecycle(t *testing.T) {
@@ -319,6 +377,10 @@ func (r *tlsFingerprintCaptureHandlerRepoStub) GetRunningTaskByToken(_ context.C
 		}
 	}
 	return nil, nil
+}
+
+func (r *tlsFingerprintCaptureHandlerRepoStub) WithTaskSubmissionLock(ctx context.Context, _ int64, fn func(context.Context) error) error {
+	return fn(ctx)
 }
 
 func (r *tlsFingerprintCaptureHandlerRepoStub) UpdateTask(_ context.Context, task *service.TLSFingerprintCaptureTask) (*service.TLSFingerprintCaptureTask, error) {

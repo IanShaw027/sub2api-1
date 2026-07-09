@@ -79,6 +79,7 @@ IMPORTANT: You must NEVER generate or guess URLs for the user unless you are con
 	defaultUserGroupRateCacheTTL           = 30 * time.Second
 	defaultModelsListCacheTTL              = 15 * time.Second
 	postUsageBillingTimeout                = 15 * time.Second
+	postUsageLogWriteTimeout               = 3 * time.Second
 	claudeCodeNoopDeltaKeepaliveMinVersion = "2.1.193"
 	debugGatewayBodyEnv                    = "SUB2API_DEBUG_GATEWAY_BODY"
 	// 上游错误体只需要提取错误 JSON/日志摘要，默认 512KiB 避免错误风暴叠加大请求体。
@@ -528,6 +529,9 @@ type GatewayCache interface {
 	SetOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, payload []byte, ttl time.Duration) error
 	DeleteOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string) error
 }
+
+// ErrGatewayCacheMiss abstracts cache misses away from the underlying cache backend.
+var ErrGatewayCacheMiss = errors.New("gateway cache miss")
 
 // derefGroupID safely dereferences *int64 to int64, returning 0 if nil
 func derefGroupID(groupID *int64) int64 {
@@ -4353,6 +4357,9 @@ func (s *GatewayService) isModelSupportedByAccount(account *Account, requestedMo
 
 // GetAccessToken 获取账号凭证
 func (s *GatewayService) GetAccessToken(ctx context.Context, account *Account) (string, string, error) {
+	if account == nil {
+		return "", "", errors.New("account is required")
+	}
 	switch account.Type {
 	case AccountTypeOAuth, AccountTypeSetupToken:
 		// Both oauth and setup-token use OAuth token flow
@@ -4386,7 +4393,10 @@ func (s *GatewayService) DoGrokNativeResponsesJSON(ctx context.Context, c *gin.C
 	if s == nil || s.httpUpstream == nil {
 		return nil, errors.New("http upstream not configured")
 	}
-	if account == nil || !account.IsGrok() {
+	if account == nil {
+		return nil, errors.New("account is required")
+	}
+	if !account.IsGrok() {
 		return nil, errors.New("grok account required")
 	}
 	token, _, err := s.GetAccessToken(ctx, account)
@@ -5311,7 +5321,10 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	if parsed == nil {
 		return nil, fmt.Errorf("parse request: empty request")
 	}
-	if account != nil && account.Platform == PlatformKiro {
+	if account == nil {
+		return nil, errors.New("account is required")
+	}
+	if account.Platform == PlatformKiro {
 		if s == nil || s.kiroGatewayService == nil {
 			if c != nil {
 				c.JSON(http.StatusBadGateway, gin.H{
@@ -6655,7 +6668,7 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			if !clientDisconnected {
 				restored := reverseToolNamesIfPresent(c, []byte(line))
 				restored = reverseWorkDirIfPresent(c, restored)
-				if _, err := io.WriteString(w, string(restored)); err != nil {
+				if _, err := w.Write(restored); err != nil {
 					clientDisconnected = true
 					logger.LegacyPrintf("service.gateway", "[Anthropic passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
 				} else if _, err := io.WriteString(w, "\n"); err != nil {
@@ -8551,16 +8564,25 @@ func (s *GatewayService) maybeRetryAnthropicModelFallback(
 		return resp, requestBody, requestModel, mappedModel, false
 	}
 
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-	_ = resp.Body.Close()
-	resp.Body = io.NopCloser(bytes.NewReader(respBody))
-
+	// 只有 400/404 错误响应才可能触发 model fallback（见 isUpstreamModelUnavailableForFallback）。
+	// 成功/流式响应(2xx)必须在读取响应体之前提前返回：一旦预读 resp.Body，会把流式退化为
+	// "等上游整条完成再一次性下发"（TTFB=全量时延），并在 2<<20=2MB 处截断丢失尾部
+	// message_delta(最终 usage)/message_stop —— 既破坏 streaming，又导致 token 少计费。
 	currentModel := strings.TrimSpace(mappedModel)
 	if currentModel == "" {
 		currentModel = strings.TrimSpace(requestModel)
 	}
 	fallbackModel := resolveConfiguredFallbackModel(ctx, s.settingService, PlatformAnthropic, currentModel)
-	if fallbackModel == "" || !isUpstreamModelUnavailableForFallback(resp.StatusCode, respBody) {
+	if fallbackModel == "" || !isModelFallbackCandidateStatus(resp.StatusCode) {
+		return resp, requestBody, requestModel, mappedModel, false
+	}
+
+	// 到这里仅剩 400/404 错误响应，body 是有界错误体：读取并判定后决定是否重试。
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	_ = resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewReader(respBody))
+
+	if !isUpstreamModelUnavailableForFallback(resp.StatusCode, respBody) {
 		return resp, requestBody, requestModel, mappedModel, false
 	}
 
@@ -9863,10 +9885,11 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 	// Platform quota 累加（legacy 兜底路径）：仅对 standard（余额）模式生效；订阅模式豁免；仅对有 limit 的用户写
 	//   - HasUserPlatformQuotaLimit 守卫:与正常路径对齐，无 limit 公司跳过
 	//   - 新增 Redis 同步写:enforcement 走 Redis，legacy 路径也必须同步写，否则 preflight 看不到消费
-	//   - flusher_enabled=false（降级）:保留原有同步直写 DB
-	//   - flusher_enabled=true:跳过直写 DB，由 flusher 异步批量刷（markDirty 在 IncrementUserPlatformQuotaUsage 内部完成）
+	//   - dirty set 始终标记：legacy DB flush 前若进程崩溃，下次启动仍可从 Redis 绝对快照补回 DB
+	//   - flusher_enabled=false（降级）:保留同步直写 DB；dirty set 只承担 crash-recovery 兜底
+	//   - flusher_enabled=true:跳过直写 DB，由 flusher 周期性按绝对快照刷 DB
 	//   - 失败仅记 ALERT log + counter，不阻断主扣费流程
-	if !p.IsSubscriptionBill && p.Platform != "" && cost.ActualCost > 0 && p.User != nil && deps.userPlatformQuotaRepo != nil {
+	if deps.billingCacheService != nil && !p.IsSubscriptionBill && p.Platform != "" && cost.ActualCost > 0 && p.User != nil && deps.userPlatformQuotaRepo != nil {
 		if deps.billingCacheService.HasUserPlatformQuotaLimit(billingCtx, p.User.ID, p.Platform) {
 			deps.billingCacheService.IncrementUserPlatformQuotaUsage(p.User.ID, p.Platform, cost.ActualCost)
 			if deps.cfg == nil || !deps.cfg.Database.UserPlatformQuotaFlusherEnabled {
@@ -9993,7 +10016,9 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 	}
 
 	if result == nil || !result.Applied {
-		deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)
+		if deps.deferredService != nil && p.Account != nil {
+			deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)
+		}
 		return false, nil
 	}
 
@@ -10013,26 +10038,29 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 	}
 
 	if p.IsSubscriptionBill {
-		if p.Cost.ActualCost > 0 && p.User != nil && p.APIKey != nil && p.APIKey.GroupID != nil {
+		if deps.billingCacheService != nil && p.Cost.ActualCost > 0 && p.User != nil && p.APIKey != nil && p.APIKey.GroupID != nil {
 			deps.billingCacheService.QueueUpdateSubscriptionUsage(p.User.ID, *p.APIKey.GroupID, p.Cost.ActualCost)
 		}
 	} else if p.Cost.ActualCost > 0 && p.User != nil {
 		syncBalanceCacheAfterDeduction(ctx, p, deps, result)
 	}
 
-	if p.Cost.ActualCost > 0 && p.APIKey != nil && p.APIKey.HasRateLimits() {
+	if deps.billingCacheService != nil && p.Cost.ActualCost > 0 && p.APIKey != nil && p.APIKey.HasRateLimits() {
 		deps.billingCacheService.QueueUpdateAPIKeyRateLimitUsage(p.APIKey.ID, p.Cost.ActualCost)
 	}
 
-	deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)
+	if deps.deferredService != nil && p.Account != nil {
+		deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)
+	}
 
 	// Platform quota 累加：仅在 standard（余额）模式生效；订阅模式豁免
 	// Redis 同步写 + DB 持久化:
 	//   - Redis 同步:确保下次 preflight 立即看到最新 usage,把 TOCTOU 超支窗口
 	//     限制在并发 in-flight 请求数量内（旧实现的异步入队会让超支无限累积直到 worker 处理）
-	//   - flusher_enabled=true:Redis 增量会标记 dirty,由 flusher 按绝对快照写 DB,避免 delta+snapshot 双计
-	//   - flusher_enabled=false:DB 聚合按 repo+user+platform 合并短时间窗口内的 cost,作为降级持久化
-	if !p.IsSubscriptionBill && p.Platform != "" && p.Cost.ActualCost > 0 && p.User != nil && deps.userPlatformQuotaRepo != nil {
+	//   - dirty set 始终标记：legacy 聚合 flush 前若进程崩溃，下次启动仍可从 Redis 绝对快照补 DB
+	//   - flusher_enabled=true:周期 flusher 负责按绝对快照写 DB，避免 delta+snapshot 双计
+	//   - flusher_enabled=false:DB 聚合按 repo+user+platform 合并短时间窗口内的 cost；dirty set 仅作恢复兜底
+	if deps.billingCacheService != nil && !p.IsSubscriptionBill && p.Platform != "" && p.Cost.ActualCost > 0 && p.User != nil && deps.userPlatformQuotaRepo != nil {
 		if deps.billingCacheService.HasUserPlatformQuotaLimit(ctx, p.User.ID, p.Platform) {
 			deps.billingCacheService.IncrementUserPlatformQuotaUsage(p.User.ID, p.Platform, p.Cost.ActualCost)
 			if deps.cfg == nil || !deps.cfg.Database.UserPlatformQuotaFlusherEnabled {
@@ -10145,6 +10173,14 @@ func detachedBillingContext(ctx context.Context) (context.Context, context.Cance
 	return context.WithTimeout(base, postUsageBillingTimeout)
 }
 
+func detachedUsageLogContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	base := context.Background()
+	if ctx != nil {
+		base = context.WithoutCancel(ctx)
+	}
+	return context.WithTimeout(base, postUsageLogWriteTimeout)
+}
+
 func detachStreamUpstreamContext(ctx context.Context, stream bool) (context.Context, context.CancelFunc) {
 	if ctx == nil {
 		return context.Background(), func() {}
@@ -10191,7 +10227,7 @@ func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usage
 	if repo == nil || usageLog == nil {
 		return
 	}
-	usageCtx, cancel := detachedBillingContext(ctx)
+	usageCtx, cancel := detachedUsageLogContext(ctx)
 	defer cancel()
 
 	if writer, ok := repo.(usageLogBestEffortWriter); ok {
@@ -10202,9 +10238,9 @@ func writeUsageLogBestEffort(ctx context.Context, repo UsageLogRepository, usage
 			// 重复写入由 usage_logs 的 ON CONFLICT (request_id, api_key_id) DO NOTHING 防护。
 			fallbackCtx := usageCtx
 			if usageCtx.Err() != nil {
-				// usageCtx 已耗尽（best-effort 入队阻塞到期限）：换新的 detached 窗口，避免兜底必然失败。
+				// usageCtx 已耗尽（best-effort 入队阻塞到期限）：换新的短 detached 窗口，避免兜底必然失败。
 				var fallbackCancel context.CancelFunc
-				fallbackCtx, fallbackCancel = detachedBillingContext(context.Background())
+				fallbackCtx, fallbackCancel = detachedUsageLogContext(context.Background())
 				defer fallbackCancel()
 			}
 			if directWriter, ok := repo.(usageLogDirectWriter); ok {
@@ -10234,6 +10270,9 @@ type recordUsageOpts struct {
 
 // RecordUsage 记录使用量并扣费（或更新订阅用量）
 func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInput) error {
+	if input == nil || input.Result == nil || input.APIKey == nil || input.User == nil || input.Account == nil {
+		return errors.New("record usage input is required")
+	}
 	return s.recordUsageCore(ctx, &recordUsageCoreInput{
 		Result:             input.Result,
 		APIKey:             input.APIKey,
@@ -10275,6 +10314,9 @@ type RecordUsageLongContextInput struct {
 
 // RecordUsageWithLongContext 记录使用量并扣费，支持长上下文双倍计费（用于 Gemini）
 func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *RecordUsageLongContextInput) error {
+	if input == nil || input.Result == nil || input.APIKey == nil || input.User == nil || input.Account == nil {
+		return errors.New("record usage input is required")
+	}
 	return s.recordUsageCore(ctx, &recordUsageCoreInput{
 		Result:             input.Result,
 		APIKey:             input.APIKey,
@@ -10458,7 +10500,9 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
 		logger.LegacyPrintf("service.gateway", "[SIMPLE MODE] Usage recorded (not billed): user=%d, tokens=%d", usageLog.UserID, usageLog.TotalTokens())
-		s.deferredService.ScheduleLastUsedUpdate(account.ID)
+		if s.deferredService != nil {
+			s.deferredService.ScheduleLastUsedUpdate(account.ID)
+		}
 		return nil
 	}
 
@@ -10507,7 +10551,21 @@ func (s *GatewayService) calculateRecordUsageCost(
 		if apiKey != nil && apiKey.Group != nil {
 			groupPrice = apiKey.Group.GetSearchPricePer1k()
 		}
-		return s.billingService.CalculateSearchCost(result.SearchCount, groupPrice, multiplier)
+		searchCost := s.billingService.CalculateSearchCost(result.SearchCount, groupPrice, multiplier)
+		tokenUsage := UsageTokens{
+			InputTokens:           result.Usage.InputTokens,
+			OutputTokens:          result.Usage.OutputTokens,
+			CacheCreationTokens:   result.Usage.CacheCreationInputTokens,
+			CacheReadTokens:       result.Usage.CacheReadInputTokens,
+			CacheCreation5mTokens: result.Usage.CacheCreation5mTokens,
+			CacheCreation1hTokens: result.Usage.CacheCreation1hTokens,
+			ImageOutputTokens:     result.Usage.ImageOutputTokens,
+		}
+		if hasUsageTokens(tokenUsage) {
+			tokenCost := s.calculateTokenCost(ctx, result, apiKey, billingModel, multiplier, opts)
+			return mergeCostBreakdowns(string(BillingModeSearch), tokenCost, searchCost)
+		}
+		return searchCost
 	}
 
 	if result.AudioUsage != nil {
@@ -10519,7 +10577,21 @@ func (s *GatewayService) calculateRecordUsageCost(
 				STTPerHour:     apiKey.Group.AudioSTTPricePerHour,
 			}
 		}
-		return s.billingService.CalculateAudioCost(result.AudioUsage.Mode, result.AudioUsage.DurationOrUnits, groupConfig, 1)
+		audioCost := s.billingService.CalculateAudioCost(result.AudioUsage.Mode, result.AudioUsage.DurationOrUnits, groupConfig, 1)
+		tokenUsage := UsageTokens{
+			InputTokens:           result.Usage.InputTokens,
+			OutputTokens:          result.Usage.OutputTokens,
+			CacheCreationTokens:   result.Usage.CacheCreationInputTokens,
+			CacheReadTokens:       result.Usage.CacheReadInputTokens,
+			CacheCreation5mTokens: result.Usage.CacheCreation5mTokens,
+			CacheCreation1hTokens: result.Usage.CacheCreation1hTokens,
+			ImageOutputTokens:     result.Usage.ImageOutputTokens,
+		}
+		if hasUsageTokens(tokenUsage) {
+			tokenCost := s.calculateTokenCost(ctx, result, apiKey, billingModel, multiplier, opts)
+			return mergeCostBreakdowns(string(BillingModeAudio), tokenCost, audioCost)
+		}
+		return audioCost
 	}
 
 	// 图片生成：渠道定价为 token 计费时走 token 路径，否则走图片计费
@@ -10537,7 +10609,7 @@ func (s *GatewayService) calculateRecordUsageCost(
 // resolveChannelPricing 检查指定模型是否存在渠道级别定价。
 // 返回非 nil 的 ResolvedPricing 表示有渠道定价，nil 表示走默认定价路径。
 func (s *GatewayService) resolveChannelPricing(ctx context.Context, billingModel string, apiKey *APIKey) *ResolvedPricing {
-	if s.resolver == nil || apiKey.Group == nil {
+	if s.resolver == nil || apiKey == nil || apiKey.Group == nil {
 		return nil
 	}
 	gid := apiKey.Group.ID
@@ -10583,7 +10655,7 @@ func (s *GatewayService) calculateImageCost(
 	}
 
 	var groupConfig *ImagePriceConfig
-	if apiKey.Group != nil {
+	if apiKey != nil && apiKey.Group != nil {
 		groupConfig = &ImagePriceConfig{
 			Price1K: apiKey.Group.ImagePrice1K,
 			Price2K: apiKey.Group.ImagePrice2K,
@@ -10602,6 +10674,10 @@ func (s *GatewayService) calculateTokenCost(
 	multiplier float64,
 	opts *recordUsageOpts,
 ) *CostBreakdown {
+	if opts == nil {
+		opts = &recordUsageOpts{}
+	}
+
 	tokens := UsageTokens{
 		InputTokens:           result.Usage.InputTokens,
 		OutputTokens:          result.Usage.OutputTokens,
@@ -10882,7 +10958,10 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		s.countTokensError(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
 		return fmt.Errorf("parse request: empty request")
 	}
-	if account != nil && account.Platform == PlatformKiro {
+	if account == nil {
+		return errors.New("account is required")
+	}
+	if account.Platform == PlatformKiro {
 		if s == nil || s.kiroGatewayService == nil {
 			s.countTokensError(c, http.StatusBadGateway, "api_error", "Kiro gateway service is not configured")
 			return errors.New("kiro gateway service is not configured")

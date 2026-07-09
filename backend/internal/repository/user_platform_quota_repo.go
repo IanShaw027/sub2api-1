@@ -48,6 +48,15 @@ type UserPlatformQuotaSnapshot struct {
 	MonthlyWindowStart time.Time
 }
 
+// UserPlatformQuotaUsageDelta 表示在“当前窗口”上累加的一条增量。
+// 与 BatchSnapshotUsage 的绝对值覆盖不同，这里保留 IncrementUsageWithReset
+// 的 reset-or-accumulate 语义，只是把多条增量合并为单次多行 UPSERT。
+type UserPlatformQuotaUsageDelta struct {
+	UserID   int64
+	Platform string
+	Cost     float64
+}
+
 // UserPlatformQuotaRepository 定义用户平台配额的数据访问接口。
 type UserPlatformQuotaRepository interface {
 	// BulkInsertInitial 幂等批量插入初始配额记录（ON CONFLICT DO NOTHING）。
@@ -66,6 +75,10 @@ type UserPlatformQuotaRepository interface {
 	// usage/window_start 直接取 EXCLUDED(Redis 当前窗口快照),无 CASE。整批共用 now 作 created/updated_at。
 	// 要求 snapshots 内 (user,platform) 不重复。FK 违反返回 ErrUserPlatformQuotaFKViolation。
 	BatchSnapshotUsage(ctx context.Context, snapshots []UserPlatformQuotaSnapshot, now time.Time) error
+	// BatchIncrementUsageWithReset 用一条多行 UPSERT 把整批“当前窗口增量”追加到 DB。
+	// 语义需与逐条 IncrementUsageWithReset 保持一致：日/周按窗口起点 reset-or-add，
+	// 月窗按 30 天滚动 reset-or-add。要求 deltas 内 (user,platform) 不重复。
+	BatchIncrementUsageWithReset(ctx context.Context, deltas []UserPlatformQuotaUsageDelta, now time.Time) error
 }
 
 type userPlatformQuotaRepository struct {
@@ -465,7 +478,98 @@ func insertLimitsRow(ctx context.Context, client *dbent.Client, userID int64, re
 	return nil
 }
 
-// batchRows 是 BatchSnapshotUsage 每批最大行数（9 参/行 × 6000 ≈ 54000 参,低于 Postgres 65535 上限）。
+// BatchIncrementUsageWithReset 用一条多行 UPSERT 把整批“当前窗口增量”追加到 DB。
+// shared 参数:
+//   - $1 = now（同时也是月窗候选起点 / created_at / updated_at）
+//   - $2 = StartOfDay(now)
+//   - $3 = StartOfWeek(now)
+//
+// 每行仅追加 3 个 per-row 参数（user_id, platform, cost），然后借助 EXCLUDED + CASE 复现
+// IncrementUsageWithReset 的语义：
+//   - daily/weekly: window_start 改变则重置为本次 cost，否则累加
+//   - monthly: 30 天滚动窗口过期则重置为本次 cost 并把 start 推进到 now，否则累加并保留原 start
+//
+// deltas 应由上层先按 (user,platform) 聚合去重；本方法不再二次合并。
+// FK 违反（user_id 不存在）返回 ErrUserPlatformQuotaFKViolation。
+func (r *userPlatformQuotaRepository) BatchIncrementUsageWithReset(ctx context.Context, deltas []UserPlatformQuotaUsageDelta, now time.Time) error {
+	if len(deltas) == 0 {
+		return nil
+	}
+
+	client := clientFromContext(ctx, r.client)
+	dailyStart := timezone.StartOfDay(now)
+	weeklyStart := timezone.StartOfWeek(now)
+
+	for start := 0; start < len(deltas); start += batchRows {
+		end := start + batchRows
+		if end > len(deltas) {
+			end = len(deltas)
+		}
+		batch := deltas[start:end]
+
+		var sb strings.Builder
+		_, _ = sb.WriteString(
+			"INSERT INTO user_platform_quotas" +
+				" (user_id, platform, daily_usage_usd, weekly_usage_usd, monthly_usage_usd," +
+				" daily_window_start, weekly_window_start, monthly_window_start, created_at, updated_at)" +
+				" VALUES ")
+
+		// $1=now, $2=dailyStart, $3=weeklyStart；每行新增 3 个 per-row 参数。
+		args := []any{now, dailyStart, weeklyStart}
+		for i, d := range batch {
+			if i > 0 {
+				_, _ = sb.WriteString(",")
+			}
+			b := len(args)
+			fmt.Fprintf(&sb, "($%d,$%d,$%d,$%d,$%d,$2,$3,$1,$1,$1)",
+				b+1, b+2, b+3, b+3, b+3)
+			args = append(args, d.UserID, d.Platform, d.Cost)
+		}
+
+		_, _ = sb.WriteString(
+			" ON CONFLICT (user_id, platform) WHERE deleted_at IS NULL DO UPDATE SET" +
+				"  daily_usage_usd = CASE" +
+				"    WHEN user_platform_quotas.daily_window_start IS NULL" +
+				"      OR user_platform_quotas.daily_window_start <> EXCLUDED.daily_window_start" +
+				"    THEN EXCLUDED.daily_usage_usd" +
+				"    ELSE user_platform_quotas.daily_usage_usd + EXCLUDED.daily_usage_usd" +
+				"  END," +
+				"  weekly_usage_usd = CASE" +
+				"    WHEN user_platform_quotas.weekly_window_start IS NULL" +
+				"      OR user_platform_quotas.weekly_window_start <> EXCLUDED.weekly_window_start" +
+				"    THEN EXCLUDED.weekly_usage_usd" +
+				"    ELSE user_platform_quotas.weekly_usage_usd + EXCLUDED.weekly_usage_usd" +
+				"  END," +
+				"  monthly_usage_usd = CASE" +
+				"    WHEN user_platform_quotas.monthly_window_start IS NULL" +
+				"      OR user_platform_quotas.monthly_window_start <= EXCLUDED.monthly_window_start - INTERVAL '30 days'" +
+				"    THEN EXCLUDED.monthly_usage_usd" +
+				"    ELSE user_platform_quotas.monthly_usage_usd + EXCLUDED.monthly_usage_usd" +
+				"  END," +
+				"  daily_window_start = EXCLUDED.daily_window_start," +
+				"  weekly_window_start = EXCLUDED.weekly_window_start," +
+				"  monthly_window_start = CASE" +
+				"    WHEN user_platform_quotas.monthly_window_start IS NULL" +
+				"      OR user_platform_quotas.monthly_window_start <= EXCLUDED.monthly_window_start - INTERVAL '30 days'" +
+				"    THEN EXCLUDED.monthly_window_start" +
+				"    ELSE user_platform_quotas.monthly_window_start" +
+				"  END," +
+				"  updated_at = EXCLUDED.updated_at")
+
+		if _, err := client.ExecContext(ctx, sb.String(), args...); err != nil {
+			var pqErr *pq.Error
+			if errors.As(err, &pqErr) && pqErr.Code == "23503" {
+				return ErrUserPlatformQuotaFKViolation
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
+// batchRows 是批量 quota SQL 每批最大行数（deltas: 3 参/行；snapshots: 8 参/行）。
+// 统一沿用 6000，兼顾 Postgres 参数上限与单条 SQL 大小。
 const batchRows = 6000
 
 // BatchSnapshotUsage 用一条多行 UPSERT 把整批 usage 以绝对值覆盖写入（非累加）。

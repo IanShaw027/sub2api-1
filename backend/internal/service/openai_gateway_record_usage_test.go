@@ -59,6 +59,49 @@ func TestOpenAIGatewayServiceRecordUsage_RejectsNilInput(t *testing.T) {
 	require.Error(t, svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{}))
 }
 
+func TestOpenAIGatewayServiceRecordUsage_SimpleModeWithoutDeferredServiceDoesNotPanic(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	svc.cfg.RunMode = config.RunModeSimple
+	svc.deferredService = nil
+
+	require.NotPanics(t, func() {
+		err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+			Result: &OpenAIForwardResult{
+				RequestID: "openai_simple_nil_deferred",
+				Usage: OpenAIUsage{
+					InputTokens:  10,
+					OutputTokens: 6,
+				},
+				Model:    "gpt-5.1",
+				Duration: time.Second,
+			},
+			APIKey:  &APIKey{ID: 1},
+			User:    &User{ID: 2},
+			Account: &Account{ID: 3},
+		})
+		require.NoError(t, err)
+	})
+	require.Equal(t, 1, usageRepo.calls, "simple mode should still persist usage log")
+}
+
+func TestOpenAIGatewayServiceRecordUsage_RejectsMissingRequiredEntities(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	validResult := &OpenAIForwardResult{Model: "gpt-5.1"}
+
+	require.Error(t, svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{Result: validResult}))
+	require.Error(t, svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result:  validResult,
+		APIKey:  &APIKey{ID: 1},
+		Account: &Account{ID: 3},
+	}))
+	require.Error(t, svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: validResult,
+		APIKey: &APIKey{ID: 1},
+		User:   &User{ID: 2},
+	}))
+}
+
 func TestRecordCyberPolicyUsageLog_BillsRealUpstreamTokens(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	userRepo := &openAIRecordUsageUserRepoStub{}
@@ -2649,4 +2692,44 @@ func TestOpenAIGatewayServiceRecordUsage_VideoExplicitPriceDoesNotApplyTextRateM
 	require.InDelta(t, 0.2, usageRepo.lastLog.ActualCost, 1e-12)
 	require.InDelta(t, 0.2, userRepo.lastAmount, 1e-12)
 	require.InDelta(t, 1.0, usageRepo.lastLog.RateMultiplier, 1e-12)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_VideoCountZeroDoesNotBillRequestedVariants(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, userRepo, subRepo, nil)
+	price720p := 0.02
+	groupID := int64(79)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:     "resp_video_zero_delivery",
+			Model:         "grok-vid-1",
+			UpstreamModel: "grok-vid-1",
+			VideoSize:     VideoBillingTier720p,
+			VideoSeconds:  10,
+			VideoCount:    0,
+			Duration:      time.Second,
+		},
+		APIKey: &APIKey{ID: 1010, GroupID: &groupID, Group: &Group{
+			ID:                   groupID,
+			RateMultiplier:       1,
+			VideoPrice720pPerSec: &price720p,
+		}},
+		User:             &User{ID: 2010},
+		Account:          &Account{ID: 3010, Platform: PlatformGrok},
+		InboundEndpoint:  "/v1/videos/generations",
+		UpstreamEndpoint: "/v1/videos/generations",
+		RequestType:      RequestTypeVideo,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, RequestTypeVideo, usageRepo.lastLog.RequestType)
+	require.NotNil(t, usageRepo.lastLog.BillingMode)
+	require.Equal(t, string(BillingModeVideo), *usageRepo.lastLog.BillingMode)
+	require.Zero(t, usageRepo.lastLog.TotalCost)
+	require.Zero(t, usageRepo.lastLog.ActualCost)
+	require.Zero(t, userRepo.deductCalls)
 }

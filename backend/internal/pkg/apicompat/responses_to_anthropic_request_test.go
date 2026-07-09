@@ -465,6 +465,55 @@ func TestResponsesToAnthropicRequest_WebFetchFunctionCallWithoutResultStaysServe
 	assert.JSONEq(t, `{"url":"https://example.com"}`, string(assistantBlocks[0].Input))
 }
 
+func TestResponsesToAnthropicRequest_CustomFunctionNamedWebfetchStaysRegularToolUse(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "gpt-5.4",
+		Input: json.RawMessage(`[
+			{
+				"type":"function_call",
+				"call_id":"call_custom_webfetch_1",
+				"name":"webfetch",
+				"arguments":"{\"url\":\"https://example.com\",\"mode\":\"summary\"}"
+			},
+			{
+				"type":"function_call_output",
+				"call_id":"call_custom_webfetch_1",
+				"output":"fetched"
+			}
+		]`),
+		MaxOutputTokens: intPtr(256),
+		Tools: []ResponsesTool{
+			{
+				Type:       "function",
+				Name:       "webfetch",
+				Parameters: json.RawMessage(`{"type":"object","properties":{"url":{"type":"string"},"mode":{"type":"string"}}}`),
+			},
+		},
+	}
+
+	out, err := ResponsesToAnthropicRequest(req)
+	require.NoError(t, err)
+	assertAnthropicPairing(t, out.Messages)
+	require.Len(t, out.Messages, 2)
+	assert.Equal(t, "assistant", out.Messages[0].Role)
+
+	var assistantBlocks []AnthropicContentBlock
+	require.NoError(t, json.Unmarshal(out.Messages[0].Content, &assistantBlocks))
+	require.Len(t, assistantBlocks, 1)
+	assert.Equal(t, "tool_use", assistantBlocks[0].Type)
+	assert.Equal(t, "call_custom_webfetch_1", assistantBlocks[0].ID)
+	assert.Equal(t, "webfetch", assistantBlocks[0].Name)
+	assert.JSONEq(t, `{"url":"https://example.com","mode":"summary"}`, string(assistantBlocks[0].Input))
+
+	assert.Equal(t, "user", out.Messages[1].Role)
+	var userBlocks []AnthropicContentBlock
+	require.NoError(t, json.Unmarshal(out.Messages[1].Content, &userBlocks))
+	require.Len(t, userBlocks, 1)
+	assert.Equal(t, "tool_result", userBlocks[0].Type)
+	assert.Equal(t, "call_custom_webfetch_1", userBlocks[0].ToolUseID)
+	assert.JSONEq(t, `"fetched"`, string(userBlocks[0].Content))
+}
+
 func intPtr(v int) *int {
 	return &v
 }

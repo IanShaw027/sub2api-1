@@ -367,14 +367,14 @@ func TestCalculateAudioCost_NegativeRateMultiplierClampsActualCost(t *testing.T)
 	require.Equal(t, string(BillingModeAudio), bd.BillingMode)
 }
 
-func TestCalculateSearchCost_DoesNotApplyTextMultiplierToExplicitPrice(t *testing.T) {
+func TestCalculateSearchCost_AppliesRateMultiplierToExplicitPrice(t *testing.T) {
 	svc := newTestBillingService()
 	price := 5.0
 
 	bd := svc.CalculateSearchCost(2, &price, 1.25)
 
 	require.InDelta(t, 0.01, bd.TotalCost, 1e-12)
-	require.InDelta(t, 0.01, bd.ActualCost, 1e-12)
+	require.InDelta(t, 0.0125, bd.ActualCost, 1e-12)
 	require.Equal(t, string(BillingModeSearch), bd.BillingMode)
 }
 
@@ -1052,6 +1052,22 @@ func TestCalculateCostWithConfig_ZeroMultiplier(t *testing.T) {
 
 	// 倍率 <=0 时默认 1.0
 	expected, _ := svc.CalculateCost("claude-sonnet-4", tokens, 1.0)
+	require.InDelta(t, expected.ActualCost, cost.ActualCost, 1e-10)
+}
+
+func TestCalculateCostWithConfig_NilConfigFallsBackToOne(t *testing.T) {
+	svc := NewBillingService(nil, nil)
+
+	tokens := UsageTokens{InputTokens: 1000, OutputTokens: 500}
+	var cost *CostBreakdown
+	require.NotPanics(t, func() {
+		var err error
+		cost, err = svc.CalculateCostWithConfig("claude-sonnet-4", tokens)
+		require.NoError(t, err)
+	})
+
+	expected, _ := svc.CalculateCost("claude-sonnet-4", tokens, 1.0)
+	require.NotNil(t, cost)
 	require.InDelta(t, expected.ActualCost, cost.ActualCost, 1e-10)
 }
 

@@ -51,7 +51,7 @@ func (s *claudeUsageService) FetchUsage(ctx context.Context, accessToken, proxyU
 // FetchUsageWithOptions 完整版本，支持 TLS 指纹和自定义 User-Agent
 func (s *claudeUsageService) FetchUsageWithOptions(ctx context.Context, opts *service.ClaudeUsageFetchOptions) (*service.ClaudeUsageResponse, error) {
 	if opts == nil {
-		return nil, fmt.Errorf("options is nil")
+		return nil, fmt.Errorf("options are required")
 	}
 
 	// 创建请求

@@ -575,14 +575,18 @@ func (r *proxyRepository) sweepOneExpiredProxyOnExec(ctx context.Context, exec s
 		res sql.Result
 		err error
 	)
+	// 改投任何仍指向本过期代理的账号，不再限定 proxy_fallback_origin_id IS NULL——
+	// 否则已 A→B 切换过一次的账号（origin 非空）在备用 B 后续过期时不会被再次改投，
+	// 会持续经由过期/可能已被重分配的代理出网，反检测目的落空需人工 revert（多层备用必现）。
+	// 用 COALESCE 保留最初的 origin：首次切换记录 origin，后续切换不覆盖。
 	if target == nil {
 		res, err = exec.ExecContext(ctx, `
-			UPDATE accounts SET proxy_id=NULL, proxy_fallback_origin_id=$1, updated_at=NOW()
-			WHERE proxy_id=$1 AND proxy_fallback_origin_id IS NULL AND deleted_at IS NULL`, proxyID)
+			UPDATE accounts SET proxy_id=NULL, proxy_fallback_origin_id=COALESCE(proxy_fallback_origin_id, $1), updated_at=NOW()
+			WHERE proxy_id=$1 AND deleted_at IS NULL`, proxyID)
 	} else {
 		res, err = exec.ExecContext(ctx, `
-			UPDATE accounts SET proxy_id=$2, proxy_fallback_origin_id=$1, updated_at=NOW()
-			WHERE proxy_id=$1 AND proxy_fallback_origin_id IS NULL AND deleted_at IS NULL`, proxyID, *target)
+			UPDATE accounts SET proxy_id=$2, proxy_fallback_origin_id=COALESCE(proxy_fallback_origin_id, $1), updated_at=NOW()
+			WHERE proxy_id=$1 AND deleted_at IS NULL`, proxyID, *target)
 	}
 	if err != nil {
 		return 0, err

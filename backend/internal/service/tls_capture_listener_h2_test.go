@@ -67,12 +67,187 @@ func TestTLSCaptureHTTP2JSONSuccessCapturesFingerprint(t *testing.T) {
 	require.Len(t, repo.sessions, 1)
 	require.Len(t, repo.sessionEvents, 1)
 	require.Equal(t, string(tlsfpTransport.H2), repo.samples[0].Transport)
-	require.Equal(t, "1:4096,3:100,4:65535", repo.samples[0].HTTP2Fingerprint)
+	require.Equal(t, "1:4096,3:100,4:65535|ph::method,:scheme,:authority,:path", repo.samples[0].HTTP2Fingerprint)
 	require.Equal(t, "h2", repo.sessions[0].ALPNNegotiated)
 	require.Equal(t, string(tlsfpTransport.H2), repo.sessionEvents[0].Transport)
 	require.Equal(t, "1", repo.sessionEvents[0].StreamID)
 	require.Equal(t, "replayable_sample_recorded", repo.sessionEvents[0].EventType)
 	require.Equal(t, repo.sessions[0].SessionID, repo.sessionEvents[0].SessionID)
+}
+
+func TestTLSCaptureHTTP2FingerprintPreservesSettingsOrderAndConnectionSignals(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets: map[string]int{"openai": 1},
+	})
+	require.NoError(t, err)
+
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
+		Address: "127.0.0.1:0",
+		Service: svc,
+	})
+	require.NoError(t, listener.Start())
+	t.Cleanup(func() { stopNativeCaptureListener(t, listener) })
+
+	conn, fr := newTLSCaptureH2Client(t, listener.Addr().String())
+	t.Cleanup(func() { _ = conn.Close() })
+
+	settings := []http2.Setting{
+		{ID: http2.SettingInitialWindowSize, Val: 65535},
+		{ID: http2.SettingHeaderTableSize, Val: 4096},
+		{ID: http2.SettingMaxConcurrentStreams, Val: 100},
+	}
+	require.NoError(t, writeTLSCaptureH2PrefaceAndSettings(conn, fr, settings...))
+	require.NoError(t, fr.WriteWindowUpdate(0, 12345))
+	require.NoError(t, fr.WritePriority(1, http2.PriorityParam{
+		StreamDep: 0,
+		Exclusive: true,
+		Weight:    200,
+	}))
+	require.NoError(t, writeTLSCaptureH2Request(fr, 1, tlsCaptureH2Request{
+		Method:      http.MethodPost,
+		Path:        "/capture/openai/v1/responses",
+		Authority:   listener.Addr().String(),
+		Token:       task.Token,
+		UserAgent:   "codex_exec/0.140.0",
+		Originator:  "codex_exec",
+		ContentType: "application/json",
+		Body:        `{}`,
+	}))
+
+	resp := readTLSCaptureH2Response(t, fr, 1)
+	require.Equal(t, "200", resp.Status)
+	require.Len(t, repo.samples, 1)
+	require.Equal(t, "4:65535,1:4096,3:100|wu:12345|p:1:0:1:200|ph::method,:scheme,:authority,:path", repo.samples[0].HTTP2Fingerprint)
+}
+
+func TestTLSCaptureHTTP2FingerprintKeepsPseudoHeaderOrderPerStream(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets: map[string]int{"openai": 2},
+	})
+	require.NoError(t, err)
+
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
+		Address: "127.0.0.1:0",
+		Service: svc,
+	})
+	require.NoError(t, listener.Start())
+	t.Cleanup(func() { stopNativeCaptureListener(t, listener) })
+
+	conn, fr := newTLSCaptureH2Client(t, listener.Addr().String())
+	t.Cleanup(func() { _ = conn.Close() })
+
+	require.NoError(t, writeTLSCaptureH2PrefaceAndSettings(conn, fr,
+		http2.Setting{ID: http2.SettingHeaderTableSize, Val: 4096},
+	))
+	require.NoError(t, writeTLSCaptureH2Request(fr, 1, tlsCaptureH2Request{
+		Method:      http.MethodPost,
+		Path:        "/capture/openai/v1/responses",
+		Authority:   listener.Addr().String(),
+		PseudoOrder: []string{":scheme", ":method", ":path", ":authority"},
+		Token:       task.Token,
+		UserAgent:   "codex_exec/0.140.0",
+		Originator:  "codex_exec",
+		ContentType: "application/json",
+		Body:        `{}`,
+	}))
+	require.NoError(t, writeTLSCaptureH2Request(fr, 3, tlsCaptureH2Request{
+		Method:      http.MethodPost,
+		Path:        "/capture/openai/v1/responses",
+		Authority:   listener.Addr().String(),
+		PseudoOrder: []string{":method", ":scheme", ":authority", ":path"},
+		Token:       task.Token,
+		UserAgent:   "codex_exec/0.140.0",
+		Originator:  "codex_exec",
+		ContentType: "application/json",
+		Body:        `{}`,
+	}))
+
+	resp1 := readTLSCaptureH2Response(t, fr, 1)
+	resp3 := readTLSCaptureH2Response(t, fr, 3)
+	require.Equal(t, "200", resp1.Status)
+	require.Equal(t, "200", resp3.Status)
+	require.Len(t, repo.samples, 2)
+	require.Equal(t, "1:4096|ph::scheme,:method,:path,:authority", repo.samples[0].HTTP2Fingerprint)
+	require.Equal(t, "1:4096|ph::method,:scheme,:authority,:path", repo.samples[1].HTTP2Fingerprint)
+}
+
+func TestTLSCaptureHTTP2ServerAdvertisesMaxConcurrentStreams(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
+		Address: "127.0.0.1:0",
+		Service: svc,
+	})
+	require.NoError(t, listener.Start())
+	t.Cleanup(func() { stopNativeCaptureListener(t, listener) })
+
+	conn, fr := newTLSCaptureH2Client(t, listener.Addr().String())
+	t.Cleanup(func() { _ = conn.Close() })
+
+	require.NoError(t, writeTLSCaptureH2PrefaceAndSettings(conn, fr))
+
+	settings := readTLSCaptureServerSettings(t, fr)
+	require.Equal(t, uint32(1), settings[uint16(http2.SettingEnableConnectProtocol)])
+	require.Equal(t, uint32(tlsFingerprintNativeCaptureMaxConcurrentStreams), settings[uint16(http2.SettingMaxConcurrentStreams)])
+	require.Equal(t, uint32(tlsFingerprintNativeCaptureMaxFrameSize), settings[uint16(http2.SettingMaxFrameSize)])
+}
+
+func TestTLSCaptureHTTP2RejectsStreamsBeyondConcurrentLimit(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets: map[string]int{"openai": tlsFingerprintNativeCaptureMaxConcurrentStreams + 1},
+	})
+	require.NoError(t, err)
+
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
+		Address: "127.0.0.1:0",
+		Service: svc,
+	})
+	require.NoError(t, listener.Start())
+	t.Cleanup(func() { stopNativeCaptureListener(t, listener) })
+
+	conn, fr := newTLSCaptureH2Client(t, listener.Addr().String())
+	t.Cleanup(func() { _ = conn.Close() })
+
+	require.NoError(t, writeTLSCaptureH2PrefaceAndSettings(conn, fr))
+	for i := range tlsFingerprintNativeCaptureMaxConcurrentStreams {
+		streamID := uint32(i*2 + 1)
+		require.NoError(t, writeTLSCaptureH2HeadersOnly(fr, streamID, tlsCaptureH2Request{
+			Method:      http.MethodPost,
+			Path:        "/capture/openai/v1/responses",
+			Authority:   listener.Addr().String(),
+			Token:       task.Token,
+			UserAgent:   "codex_exec/0.140.0",
+			Originator:  "codex_exec",
+			ContentType: "application/json",
+		}))
+	}
+
+	overflowStreamID := uint32(tlsFingerprintNativeCaptureMaxConcurrentStreams*2 + 1)
+	require.NoError(t, writeTLSCaptureH2HeadersOnly(fr, overflowStreamID, tlsCaptureH2Request{
+		Method:      http.MethodPost,
+		Path:        "/capture/openai/v1/responses",
+		Authority:   listener.Addr().String(),
+		Token:       task.Token,
+		UserAgent:   "codex_exec/0.140.0",
+		Originator:  "codex_exec",
+		ContentType: "application/json",
+	}))
+
+	resp := readTLSCaptureH2Response(t, fr, overflowStreamID)
+	require.Equal(t, "429", resp.Status)
+	require.Contains(t, resp.Body, "too many concurrent streams")
+	require.Empty(t, repo.samples)
+	require.Empty(t, repo.sessionEvents)
 }
 
 func TestTLSCaptureHTTP2QueryParametersAreParsed(t *testing.T) {
@@ -205,6 +380,77 @@ func TestTLSCaptureHTTP2LargeBodySendsWindowUpdates(t *testing.T) {
 	require.True(t, sawStreamWindowUpdate)
 }
 
+func TestTLSCaptureHTTP2RejectsOversizedRequestBody(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets: map[string]int{"openai": 1},
+	})
+	require.NoError(t, err)
+
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
+		Address: "127.0.0.1:0",
+		Service: svc,
+	})
+	require.NoError(t, listener.Start())
+	t.Cleanup(func() { stopNativeCaptureListener(t, listener) })
+
+	conn, fr := newTLSCaptureH2Client(t, listener.Addr().String())
+	t.Cleanup(func() { _ = conn.Close() })
+
+	require.NoError(t, writeTLSCaptureH2PrefaceAndSettings(conn, fr))
+	require.NoError(t, writeTLSCaptureH2Request(fr, 1, tlsCaptureH2Request{
+		Method:      http.MethodPost,
+		Path:        "/capture/openai/v1/responses",
+		Authority:   listener.Addr().String(),
+		Token:       task.Token,
+		UserAgent:   "codex_exec/0.140.0",
+		Originator:  "codex_exec",
+		ContentType: "application/json",
+		Body:        `{"input":"` + strings.Repeat("a", tlsFingerprintNativeCaptureBodyLimit) + `"}`,
+	}))
+
+	resp := readTLSCaptureH2Response(t, fr, 1)
+	require.Equal(t, "413", resp.Status)
+	require.Contains(t, resp.Body, "capture request body too large")
+	require.Empty(t, repo.samples)
+	require.Empty(t, repo.sessionEvents)
+}
+
+func TestTLSCaptureHTTP2RejectsInvalidTokenBeforeReadingOversizedBody(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
+		Address: "127.0.0.1:0",
+		Service: svc,
+	})
+	require.NoError(t, listener.Start())
+	t.Cleanup(func() { stopNativeCaptureListener(t, listener) })
+
+	conn, fr := newTLSCaptureH2Client(t, listener.Addr().String())
+	t.Cleanup(func() { _ = conn.Close() })
+
+	require.NoError(t, writeTLSCaptureH2PrefaceAndSettings(conn, fr))
+	require.NoError(t, writeTLSCaptureH2Request(fr, 1, tlsCaptureH2Request{
+		Method:      http.MethodPost,
+		Path:        "/capture/openai/v1/responses",
+		Authority:   listener.Addr().String(),
+		Token:       "missing-task",
+		UserAgent:   "codex_exec/0.140.0",
+		Originator:  "codex_exec",
+		ContentType: "application/json",
+		Body:        `{"input":"` + strings.Repeat("a", tlsFingerprintNativeCaptureBodyLimit) + `"}`,
+	}))
+
+	resp := readTLSCaptureH2Response(t, fr, 1)
+	require.Equal(t, "400", resp.Status)
+	require.Contains(t, resp.Body, "running capture task not found")
+	require.Empty(t, repo.samples)
+	require.Empty(t, repo.sessionEvents)
+}
+
 func TestTLSCaptureH2SSEAdditionalStreamCreatesReplayableSamplePerStream(t *testing.T) {
 	repo := newTLSFingerprintCaptureRepoStub()
 	svc := NewTLSFingerprintCaptureService(repo, nil)
@@ -284,6 +530,7 @@ type tlsCaptureH2Request struct {
 	Method      string
 	Path        string
 	Authority   string
+	PseudoOrder []string
 	Token       string
 	UserAgent   string
 	Originator  string
@@ -329,14 +576,26 @@ func writeTLSCaptureH2PrefaceAndSettings(conn net.Conn, fr *http2.Framer, settin
 func writeTLSCaptureH2Request(fr *http2.Framer, streamID uint32, req tlsCaptureH2Request) error {
 	var headerBlock bytes.Buffer
 	encoder := hpack.NewEncoder(&headerBlock)
-	fields := []hpack.HeaderField{
-		{Name: ":method", Value: req.Method},
-		{Name: ":scheme", Value: "https"},
-		{Name: ":authority", Value: req.Authority},
-		{Name: ":path", Value: req.Path},
-		{Name: "user-agent", Value: req.UserAgent},
-		{Name: "originator", Value: req.Originator},
+	pseudoValues := map[string]string{
+		":method":    req.Method,
+		":scheme":    "https",
+		":authority": req.Authority,
+		":path":      req.Path,
 	}
+	pseudoOrder := req.PseudoOrder
+	if len(pseudoOrder) == 0 {
+		pseudoOrder = []string{":method", ":scheme", ":authority", ":path"}
+	}
+	fields := make([]hpack.HeaderField, 0, 8)
+	for _, name := range pseudoOrder {
+		if value, ok := pseudoValues[name]; ok {
+			fields = append(fields, hpack.HeaderField{Name: name, Value: value})
+		}
+	}
+	fields = append(fields,
+		hpack.HeaderField{Name: "user-agent", Value: req.UserAgent},
+		hpack.HeaderField{Name: "originator", Value: req.Originator},
+	)
 	if req.Token != "" {
 		fields = append(fields, hpack.HeaderField{Name: "authorization", Value: "Bearer " + req.Token})
 	}
@@ -369,6 +628,55 @@ func writeTLSCaptureH2Request(fr *http2.Framer, streamID uint32, req tlsCaptureH
 		return fr.WriteData(streamID, true, []byte(req.Body))
 	}
 	return nil
+}
+
+func writeTLSCaptureH2HeadersOnly(fr *http2.Framer, streamID uint32, req tlsCaptureH2Request) error {
+	req.Body = ""
+	var headerBlock bytes.Buffer
+	encoder := hpack.NewEncoder(&headerBlock)
+	pseudoValues := map[string]string{
+		":method":    req.Method,
+		":scheme":    "https",
+		":authority": req.Authority,
+		":path":      req.Path,
+	}
+	pseudoOrder := req.PseudoOrder
+	if len(pseudoOrder) == 0 {
+		pseudoOrder = []string{":method", ":scheme", ":authority", ":path"}
+	}
+	fields := make([]hpack.HeaderField, 0, 8)
+	for _, name := range pseudoOrder {
+		if value, ok := pseudoValues[name]; ok {
+			fields = append(fields, hpack.HeaderField{Name: name, Value: value})
+		}
+	}
+	fields = append(fields,
+		hpack.HeaderField{Name: "user-agent", Value: req.UserAgent},
+		hpack.HeaderField{Name: "originator", Value: req.Originator},
+	)
+	if req.Token != "" {
+		fields = append(fields, hpack.HeaderField{Name: "authorization", Value: "Bearer " + req.Token})
+	}
+	if req.SessionID != "" {
+		fields = append(fields, hpack.HeaderField{Name: "x-claude-code-session-id", Value: req.SessionID})
+	}
+	if req.Accept != "" {
+		fields = append(fields, hpack.HeaderField{Name: "accept", Value: req.Accept})
+	}
+	if req.ContentType != "" {
+		fields = append(fields, hpack.HeaderField{Name: "content-type", Value: req.ContentType})
+	}
+	for _, field := range fields {
+		if err := encoder.WriteField(field); err != nil {
+			return err
+		}
+	}
+	return fr.WriteHeaders(http2.HeadersFrameParam{
+		StreamID:      streamID,
+		EndHeaders:    true,
+		EndStream:     false,
+		BlockFragment: headerBlock.Bytes(),
+	})
 }
 
 func readTLSCaptureH2Response(t *testing.T, fr *http2.Framer, streamID uint32) tlsCaptureH2Response {
@@ -405,6 +713,28 @@ func readTLSCaptureH2Response(t *testing.T, fr *http2.Framer, streamID uint32) t
 				resp.Body = body.String()
 				return resp
 			}
+		}
+	}
+}
+
+func readTLSCaptureServerSettings(t *testing.T, fr *http2.Framer) map[uint16]uint32 {
+	t.Helper()
+
+	for {
+		frame, err := fr.ReadFrame()
+		require.NoError(t, err)
+		switch f := frame.(type) {
+		case *http2.SettingsFrame:
+			if f.IsAck() {
+				continue
+			}
+			settings := make(map[uint16]uint32)
+			require.NoError(t, f.ForeachSetting(func(s http2.Setting) error {
+				settings[uint16(s.ID)] = s.Val
+				return nil
+			}))
+			require.NoError(t, fr.WriteSettingsAck())
+			return settings
 		}
 	}
 }

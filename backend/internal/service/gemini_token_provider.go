@@ -8,11 +8,16 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 const (
 	geminiTokenRefreshSkew = 3 * time.Minute
 	geminiTokenCacheSkew   = 5 * time.Minute
+	// geminiProjectDetectTimeout 为共享 project 探测的整体超时上限：fetchProjectID 内部含 ~10s
+	// onboard 轮询，此上限防止上游卡死时 detached 探测无限挂起。
+	geminiProjectDetectTimeout = 30 * time.Second
 )
 
 // GeminiTokenProvider manages access_token for Gemini OAuth and Vertex service account accounts.
@@ -23,6 +28,9 @@ type GeminiTokenProvider struct {
 	refreshAPI         *OAuthRefreshAPI
 	executor           OAuthRefreshExecutor
 	refreshPolicy      ProviderRefreshPolicy
+	// projectDetectSF 合并同一账号的并发 project 探测：fetchProjectID 含 ~10s onboard，
+	// 无合并时 N 个并发取 token 请求各跑一轮，放大上游压力并钉住连接。
+	projectDetectSF singleflight.Group
 }
 
 const errGeminiCodeAssistProjectIDNotConfigured = "gemini project_id not configured for project-scoped oauth account"
@@ -53,7 +61,7 @@ func (p *GeminiTokenProvider) SetRefreshPolicy(policy ProviderRefreshPolicy) {
 
 func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Account) (string, error) {
 	if account == nil {
-		return "", errors.New("account is nil")
+		return "", errors.New("account is required")
 	}
 	if account.Platform != PlatformGemini || (account.Type != AccountTypeOAuth && account.Type != AccountTypeServiceAccount) {
 		return "", errors.New("not a gemini oauth or service account")
@@ -125,30 +133,12 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 		if p.geminiOAuthService == nil {
 			return "", errors.New(errGeminiCodeAssistProjectIDNotConfigured)
 		}
-
-		var proxyURL string
-		if account.ProxyID != nil && p.geminiOAuthService.proxyRepo != nil {
-			if proxy, err := p.geminiOAuthService.proxyRepo.GetByID(ctx, *account.ProxyID); err == nil && proxy != nil {
-				proxyURL = proxy.URL()
-			}
-		}
-
-		snapshot, err := p.geminiOAuthService.fetchProjectID(ctx, accessToken, proxyURL, "")
+		detected, err := p.detectGeminiProjectID(ctx, account, accessToken)
 		if err != nil {
 			log.Printf("[GeminiTokenProvider] Auto-detect project_id failed: %v", err)
 			return "", err
 		}
-		detected := strings.TrimSpace(snapshot.ProjectID)
-		tierID := strings.TrimSpace(snapshot.TierID)
 		if detected != "" {
-			if account.Credentials == nil {
-				account.Credentials = make(map[string]any)
-			}
-			account.Credentials["project_id"] = detected
-			if tierID != "" {
-				account.Credentials["tier_id"] = tierID
-			}
-			_ = persistAccountCredentials(ctx, p.accountRepo, account, account.Credentials)
 			projectID = detected
 		}
 	}
@@ -188,6 +178,48 @@ func (p *GeminiTokenProvider) GetAccessToken(ctx context.Context, account *Accou
 	}
 
 	return accessToken, nil
+}
+
+// detectGeminiProjectID 用 singleflight 合并同一账号的并发 project 探测，返回探测到的 project_id。
+// 探测（fetchProjectID 内含 ~10s onboard）同一账号同一时刻只跑一次，其余并发共享结果，消除
+// N 个并发请求各跑一轮的放大。成功后 project_id 会持久化到账号，后续请求走缓存/凭证分支不再探测。
+// 共享探测用脱离调用方取消的 context（加超时上限）执行，避免“胜出者”请求取消时把结果连累给所有等待者。
+func (p *GeminiTokenProvider) detectGeminiProjectID(ctx context.Context, account *Account, accessToken string) (string, error) {
+	var proxyURL string
+	if account.ProxyID != nil && p.geminiOAuthService.proxyRepo != nil {
+		if proxy, err := p.geminiOAuthService.proxyRepo.GetByID(ctx, *account.ProxyID); err == nil && proxy != nil {
+			proxyURL = proxy.URL()
+		}
+	}
+
+	key := strconv.FormatInt(account.ID, 10)
+	res, err, _ := p.projectDetectSF.Do(key, func() (any, error) {
+		detectCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), geminiProjectDetectTimeout)
+		defer cancel()
+
+		snapshot, err := p.geminiOAuthService.fetchProjectID(detectCtx, accessToken, proxyURL, "")
+		if err != nil {
+			return "", err
+		}
+		detected := strings.TrimSpace(snapshot.ProjectID)
+		tierID := strings.TrimSpace(snapshot.TierID)
+		if detected != "" {
+			if account.Credentials == nil {
+				account.Credentials = make(map[string]any)
+			}
+			account.Credentials["project_id"] = detected
+			if tierID != "" {
+				account.Credentials["tier_id"] = tierID
+			}
+			_ = persistAccountCredentials(detectCtx, p.accountRepo, account, account.Credentials)
+		}
+		return detected, nil
+	})
+	if err != nil {
+		return "", err
+	}
+	detected, _ := res.(string)
+	return detected, nil
 }
 
 func (p *GeminiTokenProvider) getServiceAccountAccessToken(ctx context.Context, account *Account) (string, error) {

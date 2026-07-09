@@ -18,6 +18,16 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// ProvideUserRepository 构造用户仓储，并按配置注入用量排序是否读预聚合表 usage_user_daily_cost 的开关。
+// 关闭时 useUsageRollup 保持 false，用量排序行为与现状一致（实时聚合 usage_logs）。
+func ProvideUserRepository(client *ent.Client, sqlDB *sql.DB, cfg *config.Config) service.UserRepository {
+	repo := newUserRepositoryWithSQL(client, sqlDB)
+	if cfg != nil {
+		repo.useUsageRollup = cfg.UsageUserDailyCost.Enabled
+	}
+	return repo
+}
+
 // ProvideConcurrencyCache 创建并发控制缓存，从配置读取 TTL 参数
 // 性能优化：TTL 可配置，支持长时间运行的 LLM 请求场景
 func ProvideConcurrencyCache(rdb *redis.Client, cfg *config.Config) service.ConcurrencyCache {
@@ -1267,7 +1277,7 @@ func nullInt64Ptr(value sql.NullInt64) *int64 {
 
 // ProviderSet is the Wire provider set for all repositories
 var ProviderSet = wire.NewSet(
-	NewUserRepository,
+	ProvideUserRepository,
 	NewAPIKeyRepository,
 	NewGroupRepository,
 	NewAccountRepository,
@@ -1291,6 +1301,8 @@ var ProviderSet = wire.NewSet(
 	NewUsageLogRepository,
 	NewUsageBillingRepository,
 	NewIdempotencyRepository,
+	NewUsageUserDailyCostRepository,
+	NewAuditRetentionRepository,
 	NewCodexInviteResetHistoryRepository,
 	NewUsageCleanupRepository,
 	NewDashboardAggregationRepository,

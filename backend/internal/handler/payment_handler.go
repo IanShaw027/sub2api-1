@@ -10,6 +10,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -891,7 +892,11 @@ func enrichOrdersWithInvoice(ctx context.Context, invoiceSvc *service.InvoiceSer
 		ids = append(ids, it.ID)
 	}
 	links, err := invoiceSvc.GetActiveLinksByOrderIDs(ctx, ids)
-	if err != nil || len(links) == 0 {
+	if err != nil {
+		logger.LegacyPrintf("handler.payment", "[Payment] enrich orders with invoice failed: orders=%d err=%v", len(ids), err)
+		return items
+	}
+	if len(links) == 0 {
 		return items
 	}
 	for i := range items {

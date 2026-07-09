@@ -85,6 +85,8 @@ func provideCleanup(
 	subscriptionExpiry *service.SubscriptionExpiryService,
 	usageCleanup *service.UsageCleanupService,
 	idempotencyCleanup *service.IdempotencyCleanupService,
+	auditRetention *service.AuditRetentionService,
+	usageUserDailyCostAggregator *service.UsageUserDailyCostAggregator,
 	pricing *service.PricingService,
 	emailQueue *service.EmailQueueService,
 	billingCache *service.BillingCacheService,
@@ -166,6 +168,18 @@ func provideCleanup(
 			{"IdempotencyCleanupService", func() error {
 				if idempotencyCleanup != nil {
 					idempotencyCleanup.Stop()
+				}
+				return nil
+			}},
+			{"AuditRetentionService", func() error {
+				if auditRetention != nil {
+					auditRetention.Stop()
+				}
+				return nil
+			}},
+			{"UsageUserDailyCostAggregator", func() error {
+				if usageUserDailyCostAggregator != nil {
+					usageUserDailyCostAggregator.Stop()
 				}
 				return nil
 			}},

@@ -117,6 +117,24 @@ func (a *userPlatformQuotaServiceAdapter) BatchSnapshotUsage(ctx context.Context
 	return err
 }
 
+// BatchIncrementUsageWithReset 将 []service.UserPlatformQuotaUsageDelta 转换后调用底层 repo。
+// 这是 legacy DB 兜底路径的可选批量能力；不属于 service 主接口，但 aggregator 会通过 type assertion 使用。
+func (a *userPlatformQuotaServiceAdapter) BatchIncrementUsageWithReset(ctx context.Context, deltas []service.UserPlatformQuotaUsageDelta, now time.Time) error {
+	repoDeltas := make([]UserPlatformQuotaUsageDelta, len(deltas))
+	for i, d := range deltas {
+		repoDeltas[i] = UserPlatformQuotaUsageDelta{
+			UserID:   d.UserID,
+			Platform: d.Platform,
+			Cost:     d.Cost,
+		}
+	}
+	err := a.inner.BatchIncrementUsageWithReset(ctx, repoDeltas, now)
+	if errors.Is(err, ErrUserPlatformQuotaFKViolation) {
+		return fmt.Errorf("%w: %v", service.ErrUserPlatformQuotaFKViolation, err)
+	}
+	return err
+}
+
 // genericUserPlatformQuotaAdapter 通过通用接口适配（用于测试 fake 或非标准实现）。
 type genericUserPlatformQuotaAdapter struct {
 	inner UserPlatformQuotaRepository
@@ -207,6 +225,23 @@ func (a *genericUserPlatformQuotaAdapter) BatchSnapshotUsage(ctx context.Context
 		}
 	}
 	err := a.inner.BatchSnapshotUsage(ctx, repoSnaps, now)
+	if errors.Is(err, ErrUserPlatformQuotaFKViolation) {
+		return fmt.Errorf("%w: %v", service.ErrUserPlatformQuotaFKViolation, err)
+	}
+	return err
+}
+
+// BatchIncrementUsageWithReset 转换 []service.UserPlatformQuotaUsageDelta → []UserPlatformQuotaUsageDelta（通用 adapter）。
+func (a *genericUserPlatformQuotaAdapter) BatchIncrementUsageWithReset(ctx context.Context, deltas []service.UserPlatformQuotaUsageDelta, now time.Time) error {
+	repoDeltas := make([]UserPlatformQuotaUsageDelta, len(deltas))
+	for i, d := range deltas {
+		repoDeltas[i] = UserPlatformQuotaUsageDelta{
+			UserID:   d.UserID,
+			Platform: d.Platform,
+			Cost:     d.Cost,
+		}
+	}
+	err := a.inner.BatchIncrementUsageWithReset(ctx, repoDeltas, now)
 	if errors.Is(err, ErrUserPlatformQuotaFKViolation) {
 		return fmt.Errorf("%w: %v", service.ErrUserPlatformQuotaFKViolation, err)
 	}

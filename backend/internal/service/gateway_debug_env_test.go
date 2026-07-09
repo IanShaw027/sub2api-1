@@ -46,7 +46,7 @@ func TestDebugLogGatewaySnapshot_RedactsAndTruncatesBody(t *testing.T) {
 	if f == nil {
 		t.Fatalf("expected debug file to be initialized")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	secretText := "USER-PII-CCH-MISMATCH-CONTENT"
 	body := []byte(`{"messages":[{"role":"user","content":"` + secretText + strings.Repeat("x", 8192) + `"}]}`)
@@ -85,7 +85,7 @@ func TestInitDebugGatewayBodyFile_CreatesPrivateFile(t *testing.T) {
 	if f == nil {
 		t.Fatalf("expected debug file to be initialized")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	info, err := os.Stat(path)
 	if err != nil {

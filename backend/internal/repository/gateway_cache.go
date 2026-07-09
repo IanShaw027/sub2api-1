@@ -32,7 +32,11 @@ func buildOpenAIResponsesSessionWindowKey(groupID int64, sessionHash string) str
 
 func (c *gatewayCache) GetSessionAccountID(ctx context.Context, groupID int64, sessionHash string) (int64, error) {
 	key := buildSessionKey(groupID, sessionHash)
-	return c.rdb.Get(ctx, key).Int64()
+	accountID, err := c.rdb.Get(ctx, key).Int64()
+	if err == redis.Nil {
+		return 0, service.ErrGatewayCacheMiss
+	}
+	return accountID, err
 }
 
 func (c *gatewayCache) SetSessionAccountID(ctx context.Context, groupID int64, sessionHash string, accountID int64, ttl time.Duration) error {
@@ -84,7 +88,11 @@ func (c *gatewayCache) IsCyberSessionBlocked(ctx context.Context, key string) (b
 
 func (c *gatewayCache) GetOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string) ([]byte, error) {
 	key := buildOpenAIResponsesSessionWindowKey(groupID, sessionHash)
-	return c.rdb.Get(ctx, key).Bytes()
+	payload, err := c.rdb.Get(ctx, key).Bytes()
+	if err == redis.Nil {
+		return nil, service.ErrGatewayCacheMiss
+	}
+	return payload, err
 }
 
 func (c *gatewayCache) SetOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, payload []byte, ttl time.Duration) error {

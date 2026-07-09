@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,4 +60,39 @@ func TestShouldFailoverOpenAIPassthroughResponse_CyberPolicyIsNonRetryable(t *te
 
 	require.False(t, shouldFailoverOpenAIPassthroughResponse(nil, http.StatusTooManyRequests, body))
 	require.False(t, shouldFailoverOpenAIPassthroughResponse(nil, http.StatusInternalServerError, body))
+}
+
+func TestMarkOpsCyberPolicy_SupplementalUpdateDoesNotMutateExistingPointer(t *testing.T) {
+	c, _ := gin.CreateTestContext(nil)
+
+	MarkOpsCyberPolicy(c, CyberPolicyMark{
+		Message: "blocked",
+		Body:    "raw-body",
+	})
+	first := GetOpsCyberPolicy(c)
+	require.NotNil(t, first)
+	require.Equal(t, 0, first.UpstreamStatus)
+	require.Equal(t, 0, first.UpstreamInTok)
+	require.Equal(t, 0, first.UpstreamOutTok)
+
+	MarkOpsCyberPolicy(c, CyberPolicyMark{
+		UpstreamStatus: http.StatusForbidden,
+		UpstreamInTok:  123,
+		UpstreamOutTok: 45,
+		Message:        "should not overwrite",
+		Body:           "should not overwrite",
+	})
+
+	updated := GetOpsCyberPolicy(c)
+	require.NotNil(t, updated)
+	require.NotSame(t, first, updated)
+	require.Equal(t, "blocked", updated.Message)
+	require.Equal(t, "raw-body", updated.Body)
+	require.Equal(t, http.StatusForbidden, updated.UpstreamStatus)
+	require.Equal(t, 123, updated.UpstreamInTok)
+	require.Equal(t, 45, updated.UpstreamOutTok)
+
+	require.Equal(t, 0, first.UpstreamStatus)
+	require.Equal(t, 0, first.UpstreamInTok)
+	require.Equal(t, 0, first.UpstreamOutTok)
 }

@@ -83,6 +83,9 @@ const (
 
 // GetWebSearchEmulationConfig returns the configuration with in-process cache + singleflight.
 func (s *SettingService) GetWebSearchEmulationConfig(ctx context.Context) (*WebSearchEmulationConfig, error) {
+	if s == nil || s.settingRepo == nil {
+		return &WebSearchEmulationConfig{}, nil
+	}
 	if cached := webSearchEmulationCache.Load(); cached != nil {
 		if c, ok := cached.(*cachedWebSearchEmulationConfig); ok && time.Now().UnixNano() < c.expiresAt {
 			return c.config, nil
@@ -101,6 +104,9 @@ func (s *SettingService) GetWebSearchEmulationConfig(ctx context.Context) (*WebS
 }
 
 func (s *SettingService) loadWebSearchConfigFromDB() (*WebSearchEmulationConfig, error) {
+	if s == nil || s.settingRepo == nil {
+		return &WebSearchEmulationConfig{}, nil
+	}
 	dbCtx, cancel := context.WithTimeout(context.Background(), webSearchEmulationDBTimeout)
 	defer cancel()
 
@@ -135,6 +141,9 @@ func parseWebSearchConfigJSON(raw string) *WebSearchEmulationConfig {
 // SaveWebSearchEmulationConfig validates and persists the configuration.
 // Empty API keys in the input are preserved from the existing config.
 func (s *SettingService) SaveWebSearchEmulationConfig(ctx context.Context, cfg *WebSearchEmulationConfig) error {
+	if s == nil || s.settingRepo == nil {
+		return fmt.Errorf("setting repository not initialized")
+	}
 	if err := validateWebSearchConfig(cfg); err != nil {
 		return infraerrors.BadRequest("INVALID_WEB_SEARCH_CONFIG", err.Error())
 	}
@@ -191,6 +200,9 @@ func (s *SettingService) mergeExistingAPIKeys(ctx context.Context, cfg *WebSearc
 }
 
 func (s *SettingService) getWebSearchEmulationConfigRaw(ctx context.Context) (*WebSearchEmulationConfig, error) {
+	if s == nil || s.settingRepo == nil {
+		return &WebSearchEmulationConfig{}, nil
+	}
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyWebSearchEmulationConfig)
 	if err != nil {
 		return nil, err

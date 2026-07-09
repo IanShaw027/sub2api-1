@@ -129,3 +129,12 @@ func TestGrokTokenProviderRefreshFailureUnschedulesWithRedactedReason(t *testing
 	require.NotContains(t, tempCache.lastState.ErrorMessage, "leaked-access")
 	require.NotContains(t, tempCache.lastState.ErrorMessage, "leaked-refresh")
 }
+
+func TestGrokTokenProviderRejectsNilAccount(t *testing.T) {
+	provider := NewGrokTokenProvider(nil, nil)
+
+	token, err := provider.GetAccessToken(context.Background(), nil)
+
+	require.Empty(t, token)
+	require.EqualError(t, err, "account is required")
+}

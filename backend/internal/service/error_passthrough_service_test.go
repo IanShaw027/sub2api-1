@@ -169,6 +169,48 @@ func newCachedRuleForTest(rule *model.ErrorPassthroughRule) *cachedPassthroughRu
 	return cr
 }
 
+func TestErrorPassthroughServiceCreateRejectsNilRule(t *testing.T) {
+	svc := NewErrorPassthroughService(&mockErrorPassthroughRepo{}, nil)
+
+	_, err := svc.Create(context.Background(), nil)
+
+	require.EqualError(t, err, "error passthrough rule is required")
+}
+
+func TestErrorPassthroughServiceUpdateRejectsNilRule(t *testing.T) {
+	svc := NewErrorPassthroughService(&mockErrorPassthroughRepo{}, nil)
+
+	_, err := svc.Update(context.Background(), nil)
+
+	require.EqualError(t, err, "error passthrough rule is required")
+}
+
+func TestNewErrorPassthroughService_NilRepoDoesNotPanic(t *testing.T) {
+	require.NotPanics(t, func() {
+		svc := NewErrorPassthroughService(nil, nil)
+		require.NotNil(t, svc)
+		require.Nil(t, svc.MatchRule("openai", 500, []byte("boom")))
+	})
+}
+
+func TestErrorPassthroughService_List_NilRepoReturnsError(t *testing.T) {
+	svc := NewErrorPassthroughService(nil, nil)
+
+	_, err := svc.List(context.Background())
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "error passthrough repository is unavailable")
+}
+
+func TestErrorPassthroughService_Create_NilRepoReturnsError(t *testing.T) {
+	svc := NewErrorPassthroughService(nil, nil)
+
+	_, err := svc.Create(context.Background(), newPassthroughRuleForWritePathTest(0, "temporary unavailable", "upstream failed"))
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "error passthrough repository is unavailable")
+}
+
 // =============================================================================
 // 测试 ruleMatchesOptimized 核心匹配逻辑
 // =============================================================================

@@ -69,6 +69,15 @@ func TestInspectArchiveRejectsPathTraversal(t *testing.T) {
 	}
 }
 
+func TestReviewGateApprovedRequiresArtifactDigest(t *testing.T) {
+	t.Parallel()
+
+	approved := ReviewGate{Status: ReviewStatusApproved}
+	if approved.Approved("bundle-digest") {
+		t.Fatal("expected approved gate without artifact digest to fail closed")
+	}
+}
+
 func TestPlanRequiresApprovedReview(t *testing.T) {
 	t.Parallel()
 
@@ -143,7 +152,7 @@ func TestPlanBuildsLockedDownDockerSpec(t *testing.T) {
 	}
 }
 
-func TestDispatchCleansUpCreatedTempDirs(t *testing.T) {
+func TestDispatchReturnsCreatedTempDirsUntilCleanup(t *testing.T) {
 	t.Parallel()
 
 	archive := zipSampleDir(t, "script_python_echo")
@@ -167,13 +176,24 @@ func TestDispatchCleansUpCreatedTempDirs(t *testing.T) {
 		t.Fatalf("Dispatch() error = %v", err)
 	}
 
-	// The temp skill/scratch dirs created by Dispatch must be cleaned up before
-	// it returns, so the extracted plaintext source code does not linger in /tmp.
+	// Dispatch must keep its created temp dirs alive until the caller finishes
+	// using the returned host paths and explicitly calls Cleanup.
+	if _, statErr := os.Stat(result.HostSkillDir); statErr != nil {
+		t.Fatalf("expected host skill dir to exist before cleanup, stat err = %v", statErr)
+	}
+	if _, statErr := os.Stat(result.HostScratchDir); statErr != nil {
+		t.Fatalf("expected host scratch dir to exist before cleanup, stat err = %v", statErr)
+	}
+
+	if err := result.Cleanup(); err != nil {
+		t.Fatalf("Cleanup() error = %v", err)
+	}
+
 	if _, statErr := os.Stat(result.HostSkillDir); !errors.Is(statErr, fs.ErrNotExist) {
-		t.Fatalf("expected host skill dir to be removed, stat err = %v", statErr)
+		t.Fatalf("expected host skill dir to be removed after cleanup, stat err = %v", statErr)
 	}
 	if _, statErr := os.Stat(result.HostScratchDir); !errors.Is(statErr, fs.ErrNotExist) {
-		t.Fatalf("expected host scratch dir to be removed, stat err = %v", statErr)
+		t.Fatalf("expected host scratch dir to be removed after cleanup, stat err = %v", statErr)
 	}
 }
 
@@ -190,7 +210,7 @@ func TestDispatchPreservesCallerSuppliedDirs(t *testing.T) {
 	}
 
 	dispatcher := NewLocalDispatcher(SandboxPolicy{}, nil)
-	_, err = dispatcher.Dispatch(context.Background(), DispatchRequest{
+	result, err := dispatcher.Dispatch(context.Background(), DispatchRequest{
 		Bundle: bundle,
 		Review: ReviewGate{
 			ArtifactDigest: bundle.Digest,
@@ -210,6 +230,75 @@ func TestDispatchPreservesCallerSuppliedDirs(t *testing.T) {
 	}
 	if _, statErr := os.Stat(scratchDir); statErr != nil {
 		t.Fatalf("caller scratch dir should be preserved, stat err = %v", statErr)
+	}
+	if err := result.Cleanup(); err != nil {
+		t.Fatalf("Cleanup() error = %v", err)
+	}
+	if _, statErr := os.Stat(skillDir); statErr != nil {
+		t.Fatalf("caller skill dir should remain after cleanup, stat err = %v", statErr)
+	}
+	if _, statErr := os.Stat(scratchDir); statErr != nil {
+		t.Fatalf("caller scratch dir should remain after cleanup, stat err = %v", statErr)
+	}
+}
+
+func TestExtractArchiveRejectsSymlinkEntries(t *testing.T) {
+	t.Parallel()
+
+	archive := zipEntries(t, []zipTestEntry{
+		{name: "skill.yaml", content: minimalManifest(RuntimePython311, "main.py"), mode: 0o644},
+		{name: "main.py", content: "print('hello')\n", mode: os.ModeSymlink | 0o777},
+	})
+
+	err := extractArchive(archive, t.TempDir())
+	if err == nil {
+		t.Fatal("expected symlink rejection")
+	}
+	if !strings.Contains(err.Error(), "symlinks are not allowed") {
+		t.Fatalf("expected symlink rejection error, got %v", err)
+	}
+}
+
+func TestExtractArchiveRejectsOversizedFile(t *testing.T) {
+	t.Parallel()
+
+	constraints := DefaultArchiveConstraints()
+	archive := zipEntries(t, []zipTestEntry{
+		{name: "skill.yaml", content: minimalManifest(RuntimePython311, "main.py"), mode: 0o644},
+		{name: "main.py", content: strings.Repeat("a", int(constraints.MaxFileBytes)+1), mode: 0o644},
+	})
+
+	err := extractArchive(archive, t.TempDir())
+	if err == nil {
+		t.Fatal("expected oversized file rejection")
+	}
+	if !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected oversized file error, got %v", err)
+	}
+}
+
+func TestExtractArchiveSanitizesPermissionBits(t *testing.T) {
+	t.Parallel()
+
+	archive := zipEntries(t, []zipTestEntry{
+		{name: "skill.yaml", content: minimalManifest(RuntimePython311, "main.py"), mode: 0o644},
+		{name: "main.py", content: "print('hello')\n", mode: os.FileMode(0o6777)},
+	})
+
+	targetDir := t.TempDir()
+	if err := extractArchive(archive, targetDir); err != nil {
+		t.Fatalf("extractArchive() error = %v", err)
+	}
+
+	info, err := os.Stat(filepath.Join(targetDir, "main.py"))
+	if err != nil {
+		t.Fatalf("stat extracted file: %v", err)
+	}
+	if info.Mode()&os.ModeSetuid != 0 || info.Mode()&os.ModeSetgid != 0 || info.Mode()&os.ModeSticky != 0 {
+		t.Fatalf("expected special permission bits to be stripped, got mode %v", info.Mode())
+	}
+	if got := info.Mode().Perm(); got != 0o755 {
+		t.Fatalf("expected sanitized permissions 0755, got %04o", got)
 	}
 }
 
@@ -274,16 +363,36 @@ func zipSampleDir(t *testing.T, name string) []byte {
 func zipMap(t *testing.T, files map[string]string) []byte {
 	t.Helper()
 
+	entries := make([]zipTestEntry, 0, len(files))
+	for name, content := range files {
+		entries = append(entries, zipTestEntry{name: name, content: content, mode: 0o644})
+	}
+	return zipEntries(t, entries)
+}
+
+type zipTestEntry struct {
+	name    string
+	content string
+	mode    os.FileMode
+}
+
+func zipEntries(t *testing.T, entries []zipTestEntry) []byte {
+	t.Helper()
+
 	var buf bytes.Buffer
 	writer := zip.NewWriter(&buf)
 
-	for name, content := range files {
-		entry, err := writer.Create(name)
-		if err != nil {
-			t.Fatalf("create zip entry %q: %v", name, err)
+	for _, item := range entries {
+		header := &zip.FileHeader{Name: item.name}
+		if item.mode != 0 {
+			header.SetMode(item.mode)
 		}
-		if _, err := entry.Write([]byte(content)); err != nil {
-			t.Fatalf("write zip entry %q: %v", name, err)
+		entry, err := writer.CreateHeader(header)
+		if err != nil {
+			t.Fatalf("create zip entry %q: %v", item.name, err)
+		}
+		if _, err := entry.Write([]byte(item.content)); err != nil {
+			t.Fatalf("write zip entry %q: %v", item.name, err)
 		}
 	}
 	if err := writer.Close(); err != nil {

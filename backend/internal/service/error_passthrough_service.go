@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strings"
 	"sync"
@@ -71,10 +72,12 @@ func NewErrorPassthroughService(
 
 	// 启动时加载规则到本地缓存
 	ctx := context.Background()
-	if err := svc.reloadRulesFromDB(ctx); err != nil {
-		logger.LegacyPrintf("service.error_passthrough", "[ErrorPassthroughService] Failed to load rules from DB on startup: %v", err)
-		if fallbackErr := svc.refreshLocalCache(ctx); fallbackErr != nil {
-			logger.LegacyPrintf("service.error_passthrough", "[ErrorPassthroughService] Failed to load rules from cache fallback on startup: %v", fallbackErr)
+	if repo != nil {
+		if err := svc.reloadRulesFromDB(ctx); err != nil {
+			logger.LegacyPrintf("service.error_passthrough", "[ErrorPassthroughService] Failed to load rules from DB on startup: %v", err)
+			if fallbackErr := svc.refreshLocalCache(ctx); fallbackErr != nil {
+				logger.LegacyPrintf("service.error_passthrough", "[ErrorPassthroughService] Failed to load rules from cache fallback on startup: %v", fallbackErr)
+			}
 		}
 	}
 
@@ -90,23 +93,45 @@ func NewErrorPassthroughService(
 	return svc
 }
 
+func (s *ErrorPassthroughService) requireRepo() (ErrorPassthroughRepository, error) {
+	if s == nil || s.repo == nil {
+		return nil, errors.New("error passthrough repository is unavailable")
+	}
+	return s.repo, nil
+}
+
 // List 获取所有规则
 func (s *ErrorPassthroughService) List(ctx context.Context) ([]*model.ErrorPassthroughRule, error) {
-	return s.repo.List(ctx)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	return repo.List(ctx)
 }
 
 // GetByID 根据 ID 获取规则
 func (s *ErrorPassthroughService) GetByID(ctx context.Context, id int64) (*model.ErrorPassthroughRule, error) {
-	return s.repo.GetByID(ctx, id)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	return repo.GetByID(ctx, id)
 }
 
 // Create 创建规则
 func (s *ErrorPassthroughService) Create(ctx context.Context, rule *model.ErrorPassthroughRule) (*model.ErrorPassthroughRule, error) {
+	if rule == nil {
+		return nil, errors.New("error passthrough rule is required")
+	}
 	if err := rule.Validate(); err != nil {
 		return nil, err
 	}
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
 
-	created, err := s.repo.Create(ctx, rule)
+	created, err := repo.Create(ctx, rule)
 	if err != nil {
 		return nil, err
 	}
@@ -121,11 +146,18 @@ func (s *ErrorPassthroughService) Create(ctx context.Context, rule *model.ErrorP
 
 // Update 更新规则
 func (s *ErrorPassthroughService) Update(ctx context.Context, rule *model.ErrorPassthroughRule) (*model.ErrorPassthroughRule, error) {
+	if rule == nil {
+		return nil, errors.New("error passthrough rule is required")
+	}
 	if err := rule.Validate(); err != nil {
 		return nil, err
 	}
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
 
-	updated, err := s.repo.Update(ctx, rule)
+	updated, err := repo.Update(ctx, rule)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +172,11 @@ func (s *ErrorPassthroughService) Update(ctx context.Context, rule *model.ErrorP
 
 // Delete 删除规则
 func (s *ErrorPassthroughService) Delete(ctx context.Context, id int64) error {
-	if err := s.repo.Delete(ctx, id); err != nil {
+	repo, err := s.requireRepo()
+	if err != nil {
+		return err
+	}
+	if err := repo.Delete(ctx, id); err != nil {
 		return err
 	}
 
@@ -217,7 +253,11 @@ func (s *ErrorPassthroughService) refreshLocalCache(ctx context.Context) error {
 // 从数据库加载（repo.List 已按 priority 排序）
 // 注意：该方法会绕过 cache.Get，确保拿到数据库最新值。
 func (s *ErrorPassthroughService) reloadRulesFromDB(ctx context.Context) error {
-	rules, err := s.repo.List(ctx)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return err
+	}
+	rules, err := repo.List(ctx)
 	if err != nil {
 		return err
 	}

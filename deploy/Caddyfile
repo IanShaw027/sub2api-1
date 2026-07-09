@@ -112,7 +112,7 @@ api.sub2api.com {
 	}
 }
 
-source.qazwc.com {
+media.example.com {
 	@media {
 		path /api/v1/media/public/*
 		path /api/v1/media/download/*

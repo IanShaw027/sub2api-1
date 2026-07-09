@@ -227,11 +227,11 @@ func parseListEnabled(raw string) *bool {
 	}
 }
 
-// featureEnabled returns the runtime feature switch. Nil settingService keeps
-// unit-test compatibility and treats the feature as enabled.
+// featureEnabled returns the runtime feature switch. Missing settingService is
+// treated as disabled so admin routes do not silently bypass feature gating.
 func (h *ChannelMonitorHandler) featureEnabled(c *gin.Context) bool {
 	if h.settingService == nil {
-		return true
+		return false
 	}
 	return h.settingService.GetChannelMonitorRuntime(c.Request.Context()).Enabled
 }

@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -39,6 +40,16 @@ func TestContentModerationHashCacheDeleteRemovesSetMemberAndPerHashKey(t *testin
 	require.False(t, mr.Exists(contentModerationFlaggedHashKeyPrefix+"hash-delete"))
 }
 
+func TestContentModerationHashCacheRecordDoesNotWriteLegacySet(t *testing.T) {
+	cache, mr := newContentModerationHashCacheTest(t)
+	ctx := context.Background()
+
+	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "no-legacy-set", service.ContentModerationHashMeta{}))
+
+	require.False(t, mr.Exists(contentModerationFlaggedHashSetKey))
+	require.True(t, mr.Exists(contentModerationFlaggedHashKeyPrefix+"no-legacy-set"))
+}
+
 func TestContentModerationHashCacheClearRemovesPerHashKeys(t *testing.T) {
 	cache, mr := newContentModerationHashCacheTest(t)
 	ctx := context.Background()
@@ -58,6 +69,38 @@ func TestContentModerationHashCacheClearRemovesPerHashKeys(t *testing.T) {
 		require.False(t, matched)
 		require.False(t, mr.Exists(contentModerationFlaggedHashKeyPrefix+inputHash))
 	}
+}
+
+func TestContentModerationHashCacheWorksWithoutLegacySetIndex(t *testing.T) {
+	cache, mr := newContentModerationHashCacheTest(t)
+	ctx := context.Background()
+
+	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "legacyless-a", service.ContentModerationHashMeta{}))
+	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "legacyless-b", service.ContentModerationHashMeta{}))
+	mr.Del(contentModerationFlaggedHashSetKey)
+
+	count, err := cache.CountFlaggedInputHashes(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, count)
+
+	items, page, err := cache.ListFlaggedInputHashes(ctx, service.ContentModerationHashListFilter{
+		Pagination: pagination.PaginationParams{Page: 1, PageSize: 20, SortBy: service.ContentModerationHashSortHits7D},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, page.Total)
+	require.Len(t, items, 2)
+
+	deleted, err := cache.DeleteFlaggedInputHash(ctx, "legacyless-a")
+	require.NoError(t, err)
+	require.True(t, deleted)
+
+	deletedCount, err := cache.ClearFlaggedInputHashes(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, deletedCount)
+
+	count, err = cache.CountFlaggedInputHashes(ctx)
+	require.NoError(t, err)
+	require.Zero(t, count)
 }
 
 func TestContentModerationHashCacheListTracksHitCountsAndSorts(t *testing.T) {
@@ -144,7 +187,9 @@ func TestContentModerationHashCacheHitMetricFailureDoesNotDowngradeMatch(t *test
 	ctx := context.Background()
 
 	require.NoError(t, cache.RecordFlaggedInputHash(ctx, "metric-fail", service.ContentModerationHashMeta{}))
-	mr.Set(contentModerationFlaggedHashHitsKeyPrefix+"metric-fail", "not-a-zset")
+	// 把命中计数 key 预置为 string，令 HINCRBY 触发 WRONGTYPE，模拟命中计数写入失败：
+	// 匹配结果不得因指标写入失败而降级。
+	mr.Set(contentModerationFlaggedHashHitCountKeyPrefix+"metric-fail", "not-a-hash")
 
 	matched, err := cache.HasFlaggedInputHash(ctx, "metric-fail")
 	require.NoError(t, err)
@@ -171,4 +216,77 @@ func TestContentModerationHashCacheBatchDeleteRemovesMetadataAndHits(t *testing.
 	require.NoError(t, err)
 	require.EqualValues(t, 0, page.Total)
 	require.Empty(t, items)
+}
+
+// TestContentModerationHashCacheBatchingSpansMultipleChunks 覆盖超过单次 pipeline 分片上限的场景：
+// list 批量取项与批量删除都需跨多个 pipeline 分片正确工作。
+func TestContentModerationHashCacheBatchingSpansMultipleChunks(t *testing.T) {
+	cache, _ := newContentModerationHashCacheTest(t)
+	ctx := context.Background()
+
+	total := flaggedHashPipelineChunkSize + 120 // 跨 2 个分片
+	all := make([]string, 0, total)
+	for i := 0; i < total; i++ {
+		h := "chunk-hash-" + strconv.Itoa(i)
+		all = append(all, h)
+		require.NoError(t, cache.RecordFlaggedInputHash(ctx, h, service.ContentModerationHashMeta{}))
+	}
+
+	// 用 hits 排序走全量扫描路径，覆盖 list 批量取项跨多个 pipeline 分片的场景
+	// （created_at 排序走 ZSet 游标，每页仅取 pageSize 条不跨分片）。
+	_, page, err := cache.ListFlaggedInputHashes(ctx, service.ContentModerationHashListFilter{
+		Pagination: pagination.PaginationParams{Page: 1, PageSize: 20, SortBy: service.ContentModerationHashSortHits7D},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, total, page.Total)
+
+	deleted, err := cache.DeleteFlaggedInputHashes(ctx, all)
+	require.NoError(t, err)
+	require.EqualValues(t, total, deleted)
+
+	count, err := cache.CountFlaggedInputHashes(ctx)
+	require.NoError(t, err)
+	require.Zero(t, count)
+}
+
+// TestContentModerationHashCacheCreatedAtCursorPagination 覆盖 created_at 排序的 ZSet 游标分页：
+// 按 created_at 逆序跨页取，且每页只拉当页详情、total 由 ZCard 得出。
+func TestContentModerationHashCacheCreatedAtCursorPagination(t *testing.T) {
+	cache, mr := newContentModerationHashCacheTest(t)
+	ctx := context.Background()
+	mr.SetTime(time.Unix(1_700_000_000, 0))
+
+	// 依次记录 5 条，每条相隔 1 天，使 created_at 严格递增（h0 最早、h4 最新）。
+	for i := 0; i < 5; i++ {
+		require.NoError(t, cache.RecordFlaggedInputHash(ctx, "cursor-h"+strconv.Itoa(i), service.ContentModerationHashMeta{}))
+		mr.FastForward(24 * time.Hour)
+	}
+
+	// 默认 created_at 逆序：第 1 页应为最新的 h4、h3。
+	items, page, err := cache.ListFlaggedInputHashes(ctx, service.ContentModerationHashListFilter{
+		Pagination: pagination.PaginationParams{Page: 1, PageSize: 2, SortOrder: pagination.SortOrderDesc},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 5, page.Total)
+	require.EqualValues(t, 3, page.Pages)
+	require.Len(t, items, 2)
+	require.Equal(t, "cursor-h4", items[0].InputHash)
+	require.Equal(t, "cursor-h3", items[1].InputHash)
+
+	// 第 3 页只剩最早的 h0。
+	items, _, err = cache.ListFlaggedInputHashes(ctx, service.ContentModerationHashListFilter{
+		Pagination: pagination.PaginationParams{Page: 3, PageSize: 2, SortOrder: pagination.SortOrderDesc},
+	})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.Equal(t, "cursor-h0", items[0].InputHash)
+
+	// 升序：第 1 页应为最早的 h0、h1。
+	items, _, err = cache.ListFlaggedInputHashes(ctx, service.ContentModerationHashListFilter{
+		Pagination: pagination.PaginationParams{Page: 1, PageSize: 2, SortOrder: pagination.SortOrderAsc},
+	})
+	require.NoError(t, err)
+	require.Len(t, items, 2)
+	require.Equal(t, "cursor-h0", items[0].InputHash)
+	require.Equal(t, "cursor-h1", items[1].InputHash)
 }

@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -96,6 +97,42 @@ func TestTLSCaptureWebSocketHTTP1MultiTurnCreatesReplayableSamplePerTurn(t *test
 	require.JSONEq(t, firstPayload, repo.sessionEvents[0].RawPayload)
 	require.JSONEq(t, secondPayload, repo.sessionEvents[1].RawPayload)
 	require.Contains(t, repo.sessionEvents[1].BodySummary, `"capture-2"`)
+}
+
+func TestTLSCaptureWebSocketHTTP1RejectsOversizedMessage(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets:          map[string]int{"openai": 1},
+		TransportTargets: map[string]int{string(tlsfpTransport.WebSocketH1): 1},
+	})
+	require.NoError(t, err)
+
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
+		Address: "127.0.0.1:0",
+		Service: svc,
+	})
+	require.NoError(t, listener.Start())
+	t.Cleanup(func() { stopNativeCaptureListener(t, listener) })
+
+	header := make(http.Header)
+	header.Set("Authorization", "Bearer "+task.Token)
+	header.Set("User-Agent", "codex_exec/0.140.0")
+	header.Set("Originator", "codex_exec")
+
+	conn, resp := newTLSCaptureWSHTTP1Client(t, listener.Addr().String(), "/capture/openai/v1/responses", header, []string{"openai-responses-v1"})
+	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	payload := strings.Repeat("a", tlsFingerprintNativeCaptureBodyLimit+1)
+	require.NoError(t, conn.WriteMessage(websocket.TextMessage, []byte(payload)))
+
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+	_, _, err = conn.ReadMessage()
+	require.Error(t, err)
+	require.Empty(t, repo.samples)
+	require.Empty(t, repo.sessionEvents)
 }
 
 func newTLSCaptureWSHTTP1Client(t *testing.T, addr, path string, header http.Header, subprotocols []string) (*websocket.Conn, *http.Response) {

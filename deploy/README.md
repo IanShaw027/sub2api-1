@@ -160,10 +160,10 @@ SELECT
 
 1. 先部署 MinIO，并创建私有桶 `media`。
 2. `media.endpoint` 填 MinIO 内网地址，例如 `http://minio:9000`。
-3. `media.public_base_url` 固定为 `https://source.qazwc.com`，前端和业务只返回这个域名。
+3. `media.public_base_url` 必须显式改成你自己的公开域名，例如 `https://media.example.com`。
 4. `media.force_path_style` 保持 `true`，不要给桶开匿名公共读。
-5. `source.qazwc.com` 由 `deploy/Caddyfile` 反代到后端，公开资源、缩略图和签名下载都走 `/api/v1/media/*`。
-6. 联调时先上传一张图，确认 `public_url` / `thumbnail_public_url` 都是 `source.qazwc.com`，私有资源只能通过签名下载。
+5. 示例里的 `media.example.com` 由 `deploy/Caddyfile` 反代到后端，公开资源、缩略图和签名下载都走 `/api/v1/media/*`；部署时改成你的真实域名。
+6. 联调时先上传一张图，确认 `public_url` / `thumbnail_public_url` 都使用你配置的媒体域名，私有资源只能通过签名下载。
 
 ### Commands
 

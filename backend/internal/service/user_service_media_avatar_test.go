@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/png"
@@ -79,6 +81,9 @@ func (r *userServiceMediaAvatarRepo) ListWithFilters(context.Context, pagination
 	return nil, nil, nil
 }
 func (r *userServiceMediaAvatarRepo) UpdateBalance(context.Context, int64, float64) error { return nil }
+func (r *userServiceMediaAvatarRepo) AddBalanceWithoutRecharge(context.Context, int64, float64) error {
+	return nil
+}
 func (r *userServiceMediaAvatarRepo) UpdateUserLastActiveAt(context.Context, int64, time.Time) error {
 	return nil
 }
@@ -235,6 +240,31 @@ func buildUserServiceMediaAvatarPNG(t *testing.T) []byte {
 	return buf.Bytes()
 }
 
+func buildUserServiceMediaAvatarOversizedPNGHeader() []byte {
+	// Minimal PNG structure with huge IHDR dimensions. DecodeConfig succeeds,
+	// but full decode should be rejected before any large allocation attempt.
+	var buf bytes.Buffer
+	_, _ = buf.Write([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'})
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr[0:4], 100000)
+	binary.BigEndian.PutUint32(ihdr[4:8], 100000)
+	ihdr[8] = 8
+	ihdr[9] = 2
+	writePNGChunk(&buf, "IHDR", ihdr)
+	writePNGChunk(&buf, "IEND", nil)
+	return buf.Bytes()
+}
+
+func writePNGChunk(buf *bytes.Buffer, chunkType string, data []byte) {
+	_ = binary.Write(buf, binary.BigEndian, uint32(len(data)))
+	_, _ = buf.WriteString(chunkType)
+	if len(data) > 0 {
+		_, _ = buf.Write(data)
+	}
+	crc := crc32.ChecksumIEEE(append([]byte(chunkType), data...))
+	_ = binary.Write(buf, binary.BigEndian, crc)
+}
+
 func TestSetAvatar_StoresDataURLInSharedMedia(t *testing.T) {
 	raw := buildUserServiceMediaAvatarPNG(t)
 	dataURL := "data:image/png;base64," + encodeBase64(raw)
@@ -254,6 +284,38 @@ func TestSetAvatar_StoresDataURLInSharedMedia(t *testing.T) {
 	require.Equal(t, len(raw), repo.upsertAvatarArg[0].ByteSize)
 	require.True(t, strings.HasPrefix(avatar.URL, "https://source.qazwc.com/"), "expected direct URL, got %s", avatar.URL)
 	require.Equal(t, avatar.URL, repo.upsertAvatarArg[0].URL)
+}
+
+func TestSetAvatar_SkipsGeneratedThumbnailForOversizedImageBomb(t *testing.T) {
+	raw := buildUserServiceMediaAvatarOversizedPNGHeader()
+	dataURL := "data:image/png;base64," + encodeBase64(raw)
+	repo := &userServiceMediaAvatarRepo{
+		getByIDUser: &User{ID: 7, Email: "avatar@example.com", Username: "avatar-user"},
+	}
+	mediaSvc, mediaRepo, store := newUserServiceMediaAvatarTestMediaService()
+	svc := NewUserService(repo, nil, nil, nil, mediaSvc)
+
+	avatar, err := svc.SetAvatar(context.Background(), 7, dataURL)
+	require.NoError(t, err)
+	require.NotNil(t, avatar)
+	require.Len(t, repo.upsertAvatarArg, 1)
+	require.Len(t, store.uploadedObjectKeys, 1, "oversized thumbnail source should not upload generated thumbnail")
+	require.Len(t, mediaRepo.assets, 1)
+	for _, asset := range mediaRepo.assets {
+		require.Empty(t, asset.ThumbnailObjectKey)
+		require.Empty(t, asset.ThumbnailMIMEType)
+	}
+}
+
+func TestValidateMediaThumbnailSourceRejectsOversizedPixelHeader(t *testing.T) {
+	err := validateMediaThumbnailSource(buildUserServiceMediaAvatarOversizedPNGHeader())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "thumbnail pixel limit")
+}
+
+func TestValidateMediaThumbnailSourceAcceptsNormalImage(t *testing.T) {
+	err := validateMediaThumbnailSource(buildUserServiceMediaAvatarPNG(t))
+	require.NoError(t, err)
 }
 
 func TestSetAvatar_StoresRemoteURLInSharedMedia(t *testing.T) {

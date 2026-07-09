@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ type ticketRepository struct {
 }
 
 const createSubmittedMaxTicketNoAttempts = 3
+const supportTicketReplyDedupWindow = 10 * time.Second
 
 func NewTicketRepository(db *sql.DB) service.SupportTicketRepository {
 	return &ticketRepository{db: db}
@@ -251,10 +253,17 @@ func (r *ticketRepository) AddReply(ctx context.Context, ticketID int64, message
 			locked.status == service.SupportTicketStatusWithdrawn {
 			return service.ErrTicketReplyLocked
 		}
+		duplicate, err := r.isRecentDuplicateReply(ctx, tx, ticketID, message)
+		if err != nil {
+			return err
+		}
+		if duplicate {
+			return nil
+		}
 		if err := insertTicketMessage(ctx, tx, ticketID, message); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, `
+		_, err = tx.ExecContext(ctx, `
 			UPDATE support_tickets
 			SET latest_message_at = $2, last_reply_role = $3, unread_by_user = $4, unread_by_admin = $5,
 				status = COALESCE(NULLIF($6, ''), status), updated_at = NOW()
@@ -262,6 +271,65 @@ func (r *ticketRepository) AddReply(ctx context.Context, ticketID int64, message
 		`, ticketID, message.CreatedAt, lastReplyRole, unreadByUser, unreadByAdmin, nextStatus)
 		return err
 	})
+}
+
+func (r *ticketRepository) isRecentDuplicateReply(ctx context.Context, tx *sql.Tx, ticketID int64, message *service.SupportTicketMessage) (bool, error) {
+	if tx == nil || message == nil {
+		return false, nil
+	}
+	var (
+		senderRole   string
+		senderUserID sql.NullInt64
+		messageType  string
+		content      string
+		attachments  []byte
+		createdAt    time.Time
+	)
+	err := tx.QueryRowContext(ctx, `
+		SELECT sender_role, sender_user_id, message_type, content, COALESCE(attachments, '[]'::jsonb), created_at
+		FROM support_ticket_messages
+		WHERE ticket_id = $1
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1
+	`, ticketID).Scan(&senderRole, &senderUserID, &messageType, &content, &attachments, &createdAt)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	delta := message.CreatedAt.Sub(createdAt)
+	if delta < 0 || delta > supportTicketReplyDedupWindow {
+		return false, nil
+	}
+	if senderRole != message.SenderRole || messageType != message.MessageType || content != message.Content {
+		return false, nil
+	}
+	if !equalNullableInt64(senderUserID, message.SenderUserID) {
+		return false, nil
+	}
+	return equalTicketMessageAttachmentsJSON(attachments, message.Attachments), nil
+}
+
+func equalNullableInt64(left sql.NullInt64, right *int64) bool {
+	if right == nil {
+		return !left.Valid
+	}
+	return left.Valid && left.Int64 == *right
+}
+
+func equalTicketMessageAttachmentsJSON(raw []byte, attachments []service.TicketMessageAttachment) bool {
+	if len(raw) == 0 {
+		raw = []byte("[]")
+	}
+	var existing []service.TicketMessageAttachment
+	if err := json.Unmarshal(raw, &existing); err != nil {
+		return false
+	}
+	if len(existing) == 0 && len(attachments) == 0 {
+		return true
+	}
+	return reflect.DeepEqual(existing, attachments)
 }
 
 func (r *ticketRepository) UpdateStatusByAdmin(ctx context.Context, ticketID int64, status string, closedAt *time.Time, systemMessage *service.SupportTicketMessage) error {

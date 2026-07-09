@@ -64,6 +64,15 @@ func TestOpenAIOAuthService_RefreshAccountToken_NoRefreshTokenUsesExistingAccess
 	require.Positive(t, atomic.LoadInt32(&privacyClientCalls), "existing access token should still run enrichment")
 }
 
+func TestOpenAIOAuthService_RefreshAccountToken_NilAccount(t *testing.T) {
+	svc := NewOpenAIOAuthService(nil, &openaiOAuthClientRefreshStub{})
+
+	_, err := svc.RefreshAccountToken(context.Background(), nil)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "account is not an OpenAI account")
+}
+
 func TestOpenAIOAuthService_BuildAccountCredentials_IncludesOrganizationRole(t *testing.T) {
 	svc := NewOpenAIOAuthService(nil, &openaiOAuthClientRefreshStub{})
 

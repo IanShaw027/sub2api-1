@@ -46,4 +46,15 @@ func TestSettingService_GetClaudeOAuthSystemPromptInjectionSettings(t *testing.T
 		require.Equal(t, customPrompt, prompt)
 		require.Equal(t, customBlocks, blocks)
 	})
+
+	t.Run("nil repo uses safe defaults", func(t *testing.T) {
+		resetGatewayForwardingSettingsCacheForTest(t)
+		svc := NewSettingService(nil, &config.Config{})
+
+		enabled, prompt, blocks := svc.GetClaudeOAuthSystemPromptInjectionSettings(context.Background())
+
+		require.True(t, enabled)
+		require.Empty(t, prompt)
+		require.Empty(t, blocks)
+	})
 }

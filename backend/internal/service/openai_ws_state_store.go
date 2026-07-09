@@ -20,8 +20,20 @@ const (
 	openAIWSStateStoreMaxEntriesPerMap = 65536
 	openAIWSStateStoreRedisTimeout     = 3 * time.Second
 	openAIWSConnEvictDiagnosticTTL     = time.Hour
-	openAIWSSessionContextCacheVersion = 1
+	// sessionInFlight 只是一层防并发兜底，不是持久状态：TTL 需要足够长，避免正常长流被误回收；
+	// 同时又要给“异常退出未 End”的 owner 一个最终回收上界，避免永久卡死同会话。
+	openAIWSSessionInFlightTTL = 2 * time.Hour
+	// v2: 引入 deltaFingerprintOmitted（会话过长时丢弃 delta 指纹封顶体积）。必须 bump——否则滚动发布期
+	// 旧二进制(v1)读到新封顶格式会忽略该标志、把空 materialized 前缀误判为匹配 → 全历史当 delta 重发并
+	// 锚定 previous_response_id → 上下文重复+input token 重复计费。bump 后跨版本读到版本不符即 cache miss、
+	// 安全全量 replay 并重新 bind 自愈。
+	openAIWSSessionContextCacheVersion = 2
 	openAIWSSessionContextCachePrefix  = "wsctx:"
+	// openAIWSSessionContextMaxMaterializedItems 限制单个会话上下文指纹里 materialized item 哈希/形状的数量上限。
+	// 长 Codex 会话会持续累积 input+output 项，materializedHashes 无界增长 → wsctx: 单 value 成 Redis 无界大 key
+	// + 每实例内存线性增长。超限时丢弃 delta 指纹、置 deltaFingerprintOmitted 标志，consume 端据此回退全量 replay
+	// （delta-shadow 本是优化，回退始终正确），同时保留 account 亲和(accountID/lastResponseID)不影响续链路由。
+	openAIWSSessionContextMaxMaterializedItems = 2048
 )
 
 type openAIWSAccountBinding struct {
@@ -58,6 +70,9 @@ type openAIWSSessionContextValue struct {
 	nonInputHash            [32]byte
 	nonInputFields          map[string]openAIWSNonInputFieldFingerprint // no raw values; top-level non-input field fingerprints for mismatch diagnostics
 	rawVsClientVisibleEqual bool
+	// deltaFingerprintOmitted 表示该会话 materialized item 数超过上限、delta 指纹已被丢弃以封顶体积；
+	// consume 端(delta builder)见此标志直接回退全量 replay，不做前缀差异匹配。
+	deltaFingerprintOmitted bool
 }
 
 type openAIWSSessionContextBinding struct {
@@ -77,6 +92,7 @@ type openAIWSSessionContextCacheValue struct {
 	NonInputHash            string                                            `json:"non_input_hash,omitempty"`
 	NonInputFields          map[string]openAIWSSessionContextCacheFingerprint `json:"non_input_fields,omitempty"`
 	RawVsClientVisibleEqual bool                                              `json:"raw_vs_client_visible_equal"`
+	DeltaFingerprintOmitted bool                                              `json:"delta_fingerprint_omitted,omitempty"`
 }
 
 type openAIWSSessionContextCacheFingerprint struct {
@@ -93,6 +109,10 @@ type openAIWSConnLastResponseBinding struct {
 type openAIWSConnEvictDiagnostic struct {
 	reason    string
 	evictedAt time.Time
+	expiresAt time.Time
+}
+
+type openAIWSSessionInFlightBinding struct {
 	expiresAt time.Time
 }
 
@@ -165,7 +185,7 @@ type defaultOpenAIWSStateStore struct {
 	connEvictMu        sync.RWMutex
 	connEvict          map[string]openAIWSConnEvictDiagnostic
 	sessionInFlightMu  sync.Mutex
-	sessionInFlight    map[string]struct{}
+	sessionInFlight    map[string]openAIWSSessionInFlightBinding
 
 	lastCleanupUnixNano atomic.Int64
 }
@@ -182,7 +202,7 @@ func NewOpenAIWSStateStore(cache GatewayCache) OpenAIWSStateStore {
 		sessionWindow:      make(map[string]openAIResponsesSessionWindowBinding, 256),
 		connLastResponse:   make(map[string]openAIWSConnLastResponseBinding, 256),
 		connEvict:          make(map[string]openAIWSConnEvictDiagnostic, 256),
-		sessionInFlight:    make(map[string]struct{}, 256),
+		sessionInFlight:    make(map[string]openAIWSSessionInFlightBinding, 256),
 	}
 	store.lastCleanupUnixNano.Store(time.Now().UnixNano())
 	return store
@@ -409,6 +429,22 @@ func (s *defaultOpenAIWSStateStore) DeleteSessionConn(groupID int64, apiKeyID in
 	s.sessionToConnMu.Unlock()
 }
 
+// boundOpenAIWSSessionContextValue 对超过 materialized 上限的会话上下文封顶：丢弃 delta 指纹数组、
+// 置 deltaFingerprintOmitted，避免 wsctx: 单 value 无界增长。保留 account 亲和(accountID/lastResponseID/
+// connID)与 non-input 指纹(有界)，仅牺牲 delta-shadow 优化——consume 端据标志回退全量 replay，语义正确。
+func boundOpenAIWSSessionContextValue(value openAIWSSessionContextValue) openAIWSSessionContextValue {
+	if len(value.materializedHashes) <= openAIWSSessionContextMaxMaterializedItems {
+		return value
+	}
+	value.materializedHashes = nil
+	value.materializedShapes = nil
+	value.materializedCount = 0
+	value.inputCount = 0
+	value.inputOnlyContext = false
+	value.deltaFingerprintOmitted = true
+	return value
+}
+
 func cloneOpenAIWSSessionContextValue(value openAIWSSessionContextValue) openAIWSSessionContextValue {
 	if len(value.materializedHashes) > 0 {
 		value.materializedHashes = append([][32]byte(nil), value.materializedHashes...)
@@ -438,6 +474,7 @@ func encodeOpenAIWSSessionContextForCache(value openAIWSSessionContextValue) ([]
 		InputOnlyContext:        value.inputOnlyContext,
 		NonInputHash:            openAIWSSHA256Hex(value.nonInputHash),
 		RawVsClientVisibleEqual: value.rawVsClientVisibleEqual,
+		DeltaFingerprintOmitted: value.deltaFingerprintOmitted,
 	}
 	for _, hash := range value.materializedHashes {
 		dto.MaterializedHashes = append(dto.MaterializedHashes, openAIWSSHA256Hex(hash))
@@ -480,6 +517,7 @@ func decodeOpenAIWSSessionContextFromCache(payload []byte) (openAIWSSessionConte
 		inputCount:              dto.InputCount,
 		inputOnlyContext:        dto.InputOnlyContext,
 		rawVsClientVisibleEqual: dto.RawVsClientVisibleEqual,
+		deltaFingerprintOmitted: dto.DeltaFingerprintOmitted,
 	}
 	for _, encodedHash := range dto.MaterializedHashes {
 		hash, ok := openAIWSDecodeSHA256Hex(encodedHash)
@@ -548,6 +586,8 @@ func (s *defaultOpenAIWSStateStore) BindSessionContext(groupID int64, apiKeyID i
 	ttl = normalizeOpenAIWSTTL(ttl)
 	s.maybeCleanup()
 
+	// 先封顶再落盘：超限会话丢弃 delta 指纹，保证内存 map 与 Redis wsctx: 单 value 都有界。
+	value = boundOpenAIWSSessionContextValue(value)
 	value = cloneOpenAIWSSessionContextValue(value)
 	s.sessionContextMu.Lock()
 	ensureBindingCapacity(s.sessionContext, key, openAIWSStateStoreMaxEntriesPerMap)
@@ -956,12 +996,21 @@ func (s *defaultOpenAIWSStateStore) TrySessionInFlight(groupID int64, apiKeyID i
 	if key == "" {
 		return false
 	}
+	s.maybeCleanup()
 	s.sessionInFlightMu.Lock()
 	defer s.sessionInFlightMu.Unlock()
-	if _, exists := s.sessionInFlight[key]; exists {
-		return false
+	now := time.Now()
+	if binding, exists := s.sessionInFlight[key]; exists {
+		if now.After(binding.expiresAt) {
+			delete(s.sessionInFlight, key)
+		} else {
+			return false
+		}
 	}
-	s.sessionInFlight[key] = struct{}{}
+	ensureBindingCapacity(s.sessionInFlight, key, openAIWSStateStoreMaxEntriesPerMap)
+	s.sessionInFlight[key] = openAIWSSessionInFlightBinding{
+		expiresAt: now.Add(openAIWSSessionInFlightTTL),
+	}
 	return true
 }
 
@@ -1020,6 +1069,10 @@ func (s *defaultOpenAIWSStateStore) maybeCleanup() {
 	s.connEvictMu.Lock()
 	cleanupExpiredConnEvictDiagnostics(s.connEvict, now, openAIWSStateStoreCleanupMaxPerMap)
 	s.connEvictMu.Unlock()
+
+	s.sessionInFlightMu.Lock()
+	cleanupExpiredSessionInFlightBindings(s.sessionInFlight, now, openAIWSStateStoreCleanupMaxPerMap)
+	s.sessionInFlightMu.Unlock()
 }
 
 func cleanupExpiredSessionWindowBindings(bindings map[string]openAIResponsesSessionWindowBinding, now time.Time, maxScan int) {
@@ -1071,6 +1124,22 @@ func cleanupExpiredConnLastResponseBindings(bindings map[string]openAIWSConnLast
 }
 
 func cleanupExpiredConnEvictDiagnostics(bindings map[string]openAIWSConnEvictDiagnostic, now time.Time, maxScan int) {
+	if len(bindings) == 0 || maxScan <= 0 {
+		return
+	}
+	scanned := 0
+	for key, binding := range bindings {
+		if now.After(binding.expiresAt) {
+			delete(bindings, key)
+		}
+		scanned++
+		if scanned >= maxScan {
+			break
+		}
+	}
+}
+
+func cleanupExpiredSessionInFlightBindings(bindings map[string]openAIWSSessionInFlightBinding, now time.Time, maxScan int) {
 	if len(bindings) == 0 || maxScan <= 0 {
 		return
 	}

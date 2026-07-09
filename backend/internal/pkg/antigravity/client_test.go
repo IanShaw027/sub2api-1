@@ -100,6 +100,14 @@ func TestNewAPIRequest_使用默认URL(t *testing.T) {
 	}
 }
 
+func TestCheckFetchAvailableModelsRedirect_RejectsNilRequest(t *testing.T) {
+	err := checkFetchAvailableModelsRedirect(nil, nil)
+
+	if err == nil || err.Error() != "redirect url is required" {
+		t.Fatalf("checkFetchAvailableModelsRedirect(nil) error = %v", err)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // TierInfo.UnmarshalJSON
 // ---------------------------------------------------------------------------

@@ -134,6 +134,18 @@ func TestAdminService_BulkUpdateAccounts_AllSuccessIDs(t *testing.T) {
 	require.Len(t, result.Results, 3)
 }
 
+func TestAdminService_BulkUpdateAccounts_RejectsNilInput(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), nil)
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "account input is required")
+	require.False(t, repo.bulkUpdateCalled)
+}
+
 // TestAdminService_BulkUpdateAccounts_PartialFailureIDs 验证部分失败时 success_ids/failed_ids 正确。
 func TestAdminService_BulkUpdateAccounts_PartialFailureIDs(t *testing.T) {
 	repo := &accountRepoStubForBulkUpdate{

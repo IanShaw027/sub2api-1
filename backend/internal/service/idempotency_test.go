@@ -560,6 +560,7 @@ func TestIdempotencyCoordinator_ExecuteNilExecutorAndNoKeyPassThrough(t *testing
 	}, nil)
 	require.Error(t, err)
 	require.Equal(t, "IDEMPOTENCY_EXECUTOR_NIL", infraerrors.Reason(err))
+	require.Equal(t, "idempotency executor is required", infraerrors.Message(err))
 
 	called := 0
 	result, err := coordinator.Execute(context.Background(), IdempotencyExecuteOptions{

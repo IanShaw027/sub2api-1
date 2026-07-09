@@ -102,9 +102,9 @@ func extractDocxText(data []byte) (text string, err error) {
 		case xml.StartElement:
 			switch t.Name.Local {
 			case "tab":
-				limiter.WriteByte('\t')
+				_ = limiter.WriteByte('\t')
 			case "br", "cr":
-				limiter.WriteByte('\n')
+				_ = limiter.WriteByte('\n')
 			case "t":
 				// <w:t> 文本节点:读取其字符数据
 				var content string
@@ -115,7 +115,7 @@ func extractDocxText(data []byte) (text string, err error) {
 		case xml.EndElement:
 			// 段落结束补换行
 			if t.Name.Local == "p" {
-				limiter.WriteByte('\n')
+				_ = limiter.WriteByte('\n')
 			}
 		}
 		if limiter.Truncated() {
@@ -156,7 +156,7 @@ func (si xlsxSI) text() string {
 	if len(si.R) > 0 {
 		var sb strings.Builder
 		for _, r := range si.R {
-			sb.WriteString(r.T)
+			_, _ = sb.WriteString(r.T)
 		}
 		return sb.String()
 	}
@@ -228,7 +228,7 @@ func extractXlsxText(data []byte) (text string, err error) {
 			limiter.WriteString(fmt.Sprintf("=== Sheet %d ===\n", idx+1))
 		}
 		limiter.WriteString(sheetText)
-		limiter.WriteByte('\n')
+		_ = limiter.WriteByte('\n')
 		if limiter.Truncated() {
 			break
 		}
@@ -308,7 +308,7 @@ func parseXlsxSheetLimited(raw []byte, shared []string, maxRunes int) string {
 			}
 		case xml.CharData:
 			if inValue || inline {
-				cellVal.Write(t)
+				_, _ = cellVal.Write(t)
 			}
 		case xml.EndElement:
 			switch t.Name.Local {
@@ -328,13 +328,13 @@ func parseXlsxSheetLimited(raw []byte, shared []string, maxRunes int) string {
 				}
 				if inRow {
 					if !firstCol {
-						limiter.WriteByte('\t')
+						_ = limiter.WriteByte('\t')
 					}
 					limiter.WriteString(val)
 					firstCol = false
 				}
 			case "row":
-				limiter.WriteByte('\n')
+				_ = limiter.WriteByte('\n')
 				inRow = false
 			}
 		}

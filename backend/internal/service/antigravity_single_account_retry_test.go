@@ -7,11 +7,13 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -68,6 +70,11 @@ func TestSingleAccountRetryConstants(t *testing.T) {
 // 核心场景：503 + retryDelay >= 7s + SingleAccountRetry 标记
 // → 不设模型限流、不切换账号，改为原地重试
 func TestHandleSmartRetry_503_LongDelay_SingleAccountRetry_RetryInPlace(t *testing.T) {
+	setGinTestMode()
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/antigravity/v1beta/models/gemini-3-pro-high:generateContent", nil)
+
 	// 原地重试成功
 	successResp := &http.Response{
 		StatusCode: http.StatusOK,
@@ -113,6 +120,7 @@ func TestHandleSmartRetry_503_LongDelay_SingleAccountRetry_RetryInPlace(t *testi
 		accessToken:  "token",
 		action:       "generateContent",
 		body:         []byte(`{"input":"test"}`),
+		c:            c,
 		httpUpstream: upstream,
 		accountRepo:  repo,
 		handleError: func(ctx context.Context, prefix string, account *Account, statusCode int, headers http.Header, body []byte, requestedModel string, groupID int64, sessionHash string, isStickySession bool) *handleModelRateLimitResult {
@@ -139,6 +147,8 @@ func TestHandleSmartRetry_503_LongDelay_SingleAccountRetry_RetryInPlace(t *testi
 
 	// 验证确实调用了 upstream（原地重试）
 	require.GreaterOrEqual(t, len(upstream.calls), 1, "should have made at least one retry call")
+	_, ok := c.Get(OpsUpstreamErrorsKey)
+	require.False(t, ok, "单账号原地重试成功后不应记录 retry 事件")
 }
 
 // TestHandleSmartRetry_503_LongDelay_NoSingleAccountRetry_StillSwitches
@@ -264,6 +274,11 @@ func TestHandleSmartRetry_429_LongDelay_SingleAccountRetry_StillSwitches(t *test
 // 503 + retryDelay < 7s + SingleAccountRetry → 智能重试耗尽后直接返回 503，不设限流
 // 使用 RATE_LIMIT_EXCEEDED（走 1 次智能重试），避免 MODEL_CAPACITY_EXHAUSTED 的 60 次重试导致测试超时
 func TestHandleSmartRetry_503_ShortDelay_SingleAccountRetry_NoRateLimit(t *testing.T) {
+	setGinTestMode()
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/antigravity/v1beta/models/gemini-3-flash:generateContent", nil)
+
 	// 智能重试也返回 503
 	failRespBody := `{
 		"error": {
@@ -318,6 +333,7 @@ func TestHandleSmartRetry_503_ShortDelay_SingleAccountRetry_NoRateLimit(t *testi
 		accessToken:  "token",
 		action:       "generateContent",
 		body:         []byte(`{"input":"test"}`),
+		c:            c,
 		httpUpstream: upstream,
 		accountRepo:  repo,
 		handleError: func(ctx context.Context, prefix string, account *Account, statusCode int, headers http.Header, body []byte, requestedModel string, groupID int64, sessionHash string, isStickySession bool) *handleModelRateLimitResult {
@@ -340,6 +356,13 @@ func TestHandleSmartRetry_503_ShortDelay_SingleAccountRetry_NoRateLimit(t *testi
 	// 关键断言：不设模型限流
 	require.Len(t, repo.modelRateLimitCalls, 0,
 		"should NOT set model rate limit for 503 in single account mode")
+	raw, ok := c.Get(OpsUpstreamErrorsKey)
+	require.True(t, ok)
+	events, ok := raw.([]*OpsUpstreamErrorEvent)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	require.Equal(t, "retry", events[0].Kind)
+	require.Equal(t, http.StatusServiceUnavailable, events[0].UpstreamStatusCode)
 }
 
 // TestHandleSmartRetry_503_ShortDelay_NoSingleAccountRetry_SetsRateLimit

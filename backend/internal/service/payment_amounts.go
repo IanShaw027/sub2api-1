@@ -43,14 +43,6 @@ func amountCentsGreaterThan(left, right float64) bool {
 	return amountToCents(left) > amountToCents(right)
 }
 
-func calculateGatewayPaymentAmount(orderAmount, multiplier float64, currency string) float64 {
-	fractionDigits := int32(payment.CurrencyMaxFractionDigits(currency))
-	return decimal.NewFromFloat(orderAmount).
-		Div(decimal.NewFromFloat(normalizeBalanceRechargeMultiplier(multiplier))).
-		Round(fractionDigits).
-		InexactFloat64()
-}
-
 func calculateGatewayRefundAmount(orderAmount, payAmount, refundAmount float64, currency string) float64 {
 	if orderAmount <= 0 || payAmount <= 0 || refundAmount <= 0 {
 		return 0
@@ -64,4 +56,25 @@ func calculateGatewayRefundAmount(orderAmount, payAmount, refundAmount float64, 
 		Div(decimal.NewFromFloat(orderAmount)).
 		Round(fractionDigits).
 		InexactFloat64()
+}
+
+func calculateSubscriptionRefundAmounts(remaining, usage, subscriptionRate, refundRate float64, currency string) (usedRefundValue, maxRefundAmount float64) {
+	if remaining <= 0 {
+		return 0, 0
+	}
+	subscriptionRate = normalizeBalanceRechargeMultiplier(subscriptionRate)
+	refundRate = normalizeRefundRateMultiplier(refundRate)
+	fractionDigits := int32(payment.CurrencyMaxFractionDigits(currency))
+
+	used := decimal.NewFromFloat(usage).
+		Div(decimal.NewFromFloat(subscriptionRate)).
+		Mul(decimal.NewFromFloat(refundRate)).
+		Round(fractionDigits)
+	maxRefund := decimal.NewFromFloat(remaining).
+		Sub(used)
+	if maxRefund.IsNegative() {
+		maxRefund = decimal.Zero
+	}
+	maxRefund = maxRefund.Round(fractionDigits)
+	return used.InexactFloat64(), maxRefund.InexactFloat64()
 }

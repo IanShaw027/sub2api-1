@@ -62,6 +62,9 @@ func NewGeminiOAuthService(
 	codeAssist GeminiCliCodeAssistClient,
 	cfg *config.Config,
 ) *GeminiOAuthService {
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
 	return &GeminiOAuthService{
 		sessionStore: geminicli.NewSessionStore(),
 		proxyRepo:    proxyRepo,
@@ -69,6 +72,30 @@ func NewGeminiOAuthService(
 		codeAssist:   codeAssist,
 		cfg:          cfg,
 	}
+}
+
+func (s *GeminiOAuthService) resolveProxyURL(ctx context.Context, proxyID *int64) (string, error) {
+	if proxyID == nil {
+		return "", nil
+	}
+	if s == nil || s.proxyRepo == nil {
+		return "", fmt.Errorf("proxy repository is unavailable")
+	}
+	proxy, err := s.proxyRepo.GetByID(ctx, *proxyID)
+	if err != nil {
+		return "", err
+	}
+	if proxy == nil {
+		return "", ErrProxyNotFound
+	}
+	return proxy.URL(), nil
+}
+
+func (s *GeminiOAuthService) requireOAuthClient() (GeminiOAuthClient, error) {
+	if s == nil || s.oauthClient == nil {
+		return nil, fmt.Errorf("oauth client is not configured")
+	}
+	return s.oauthClient, nil
 }
 
 func (s *GeminiOAuthService) GetOAuthConfig() *GeminiOAuthCapabilities {
@@ -104,19 +131,9 @@ func (s *GeminiOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64
 		return nil, fmt.Errorf("failed to generate session ID: %w", err)
 	}
 
-	var proxyURL string
-	if proxyID != nil {
-		if s.proxyRepo == nil {
-			return nil, fmt.Errorf("proxy repository is unavailable")
-		}
-		proxy, err := s.proxyRepo.GetByID(ctx, *proxyID)
-		if err != nil {
-			return nil, err
-		}
-		if proxy == nil {
-			return nil, ErrProxyNotFound
-		}
-		proxyURL = proxy.URL()
+	proxyURL, err := s.resolveProxyURL(ctx, proxyID)
+	if err != nil {
+		return nil, err
 	}
 
 	effectiveCfg, err := geminicli.EffectiveOAuthConfig(geminicli.OAuthConfig{
@@ -516,6 +533,9 @@ func isGeminiValidationOrIneligibleError(err error) bool {
 }
 
 func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExchangeCodeInput) (*GeminiTokenInfo, error) {
+	if input == nil {
+		return nil, fmt.Errorf("oauth input is required")
+	}
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] ========== ExchangeCode START ==========")
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] SessionID: %s", input.SessionID)
 
@@ -556,8 +576,12 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 	if redirectURI == "" {
 		redirectURI = geminicli.AIStudioOAuthRedirectURI
 	}
+	oauthClient, err := s.requireOAuthClient()
+	if err != nil {
+		return nil, err
+	}
 
-	tokenResp, err := s.oauthClient.ExchangeCode(ctx, oauthType, input.Code, session.CodeVerifier, redirectURI, proxyURL)
+	tokenResp, err := oauthClient.ExchangeCode(ctx, oauthType, input.Code, session.CodeVerifier, redirectURI, proxyURL)
 	if err != nil {
 		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] ERROR: Failed to exchange code: %v", err)
 		return nil, fmt.Errorf("failed to exchange code: %w", err)
@@ -717,6 +741,10 @@ func resolveGeminiOAuthRedirectURI(cfg geminicli.OAuthConfig, requestedRedirectU
 }
 
 func (s *GeminiOAuthService) RefreshToken(ctx context.Context, oauthType, refreshToken, proxyURL string) (*GeminiTokenInfo, error) {
+	oauthClient, err := s.requireOAuthClient()
+	if err != nil {
+		return nil, err
+	}
 	var lastErr error
 
 	for attempt := 0; attempt <= 3; attempt++ {
@@ -732,7 +760,7 @@ func (s *GeminiOAuthService) RefreshToken(ctx context.Context, oauthType, refres
 			}
 		}
 
-		tokenResp, err := s.oauthClient.RefreshToken(ctx, oauthType, refreshToken, proxyURL)
+		tokenResp, err := oauthClient.RefreshToken(ctx, oauthType, refreshToken, proxyURL)
 		if err == nil {
 			profile := s.extractProfileFromTokenResponse(ctx, tokenResp, proxyURL)
 			// 计算过期时间：减去 5 分钟安全时间窗口（考虑网络延迟和时钟偏差）
@@ -784,7 +812,7 @@ func isNonRetryableGeminiOAuthError(err error) bool {
 }
 
 func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *Account) (*GeminiTokenInfo, error) {
-	if account.Platform != PlatformGemini || account.Type != AccountTypeOAuth {
+	if account == nil || account.Platform != PlatformGemini || account.Type != AccountTypeOAuth {
 		return nil, fmt.Errorf("account is not a Gemini OAuth account")
 	}
 
@@ -802,12 +830,9 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 		return nil, fmt.Errorf("missing oauth_type and unable to infer a supported Gemini OAuth flow from stored credentials; please re-authorize this account")
 	}
 
-	var proxyURL string
-	if account.ProxyID != nil {
-		proxy, err := s.proxyRepo.GetByID(ctx, *account.ProxyID)
-		if err == nil && proxy != nil {
-			proxyURL = proxy.URL()
-		}
+	proxyURL, err := s.resolveProxyURL(ctx, account.ProxyID)
+	if err != nil {
+		return nil, err
 	}
 
 	tokenInfo, err := s.RefreshToken(ctx, oauthType, refreshToken, proxyURL)

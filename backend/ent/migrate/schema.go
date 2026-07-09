@@ -1943,6 +1943,7 @@ var (
 		{Name: "pay_amount_snapshot", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,2)"}},
 		{Name: "out_trade_no", Type: field.TypeString, Size: 64, Default: ""},
 		{Name: "payment_type", Type: field.TypeString, Size: 30, Default: ""},
+		{Name: "is_active", Type: field.TypeBool, Default: true},
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "invoice_id", Type: field.TypeInt64},
 	}
@@ -1954,7 +1955,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "invoice_orders_invoices_orders",
-				Columns:    []*schema.Column{InvoiceOrdersColumns[6]},
+				Columns:    []*schema.Column{InvoiceOrdersColumns[7]},
 				RefColumns: []*schema.Column{InvoicesColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -1963,12 +1964,15 @@ var (
 			{
 				Name:    "invoiceorder_invoice_id",
 				Unique:  false,
-				Columns: []*schema.Column{InvoiceOrdersColumns[6]},
+				Columns: []*schema.Column{InvoiceOrdersColumns[7]},
 			},
 			{
 				Name:    "invoiceorder_order_id",
-				Unique:  false,
+				Unique:  true,
 				Columns: []*schema.Column{InvoiceOrdersColumns[1]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "is_active = true",
+				},
 			},
 		},
 	}
@@ -2662,6 +2666,7 @@ var (
 		{Name: "client_type", Type: field.TypeString, Size: 50, Default: ""},
 		{Name: "user_agent", Type: field.TypeString, Size: 255, Default: ""},
 		{Name: "originator", Type: field.TypeString, Size: 50, Default: ""},
+		{Name: "http2_fingerprint", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "description", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "enable_grease", Type: field.TypeBool, Default: false},
 		{Name: "cipher_suites", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},

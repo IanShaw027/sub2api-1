@@ -15,8 +15,9 @@ import (
 // InvoiceOrder 是发票-订单的关联记录，pay_amount_snapshot 在写入时冻结，
 // 保证发票金额不随订单状态后续变化而漂移（会计正确性）。
 //
-// 订单互斥占用约束在应用层 Create 事务里保证（SELECT FOR UPDATE + 反查活跃发票），
-// 不引入 is_active 反范式列与 partial unique index。
+// 订单互斥占用约束双层保证：
+//   - 应用层 Create 事务仍用 SELECT FOR UPDATE + 反查活跃发票做友好报错；
+//   - DB 层用 is_active + partial unique index 兜底，防止旁路写入或未来锁路径漂移。
 type InvoiceOrder struct {
 	ent.Schema
 }
@@ -38,6 +39,7 @@ func (InvoiceOrder) Fields() []ent.Field {
 
 		field.String("out_trade_no").MaxLen(64).Default(""),
 		field.String("payment_type").MaxLen(30).Default(""),
+		field.Bool("is_active").Default(true),
 
 		field.Time("created_at").Immutable().Default(time.Now).
 			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
@@ -57,6 +59,8 @@ func (InvoiceOrder) Edges() []ent.Edge {
 func (InvoiceOrder) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("invoice_id"),
-		index.Fields("order_id"),
+		index.Fields("order_id").
+			Unique().
+			Annotations(entsql.IndexWhere("is_active = true")),
 	}
 }

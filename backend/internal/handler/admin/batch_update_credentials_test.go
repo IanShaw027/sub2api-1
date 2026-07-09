@@ -65,8 +65,50 @@ func (s *oauthAccountAdminService) GetAccount(ctx context.Context, id int64) (*s
 	return &service.Account{ID: id, Platform: service.PlatformKiro, Type: service.AccountTypeOAuth, Status: service.StatusActive}, nil
 }
 
+func (s *oauthAccountAdminService) GetAccountsByIDs(_ context.Context, ids []int64) ([]*service.Account, error) {
+	out := make([]*service.Account, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, &service.Account{ID: id, Platform: service.PlatformKiro, Type: service.AccountTypeOAuth, Status: service.StatusActive})
+	}
+	return out, nil
+}
+
 func (s *oauthAccountAdminService) UpdateAccount(ctx context.Context, id int64, input *service.UpdateAccountInput) (*service.Account, error) {
 	return &service.Account{ID: id, Platform: service.PlatformKiro, Type: service.AccountTypeOAuth, Status: service.StatusActive, Credentials: input.Credentials}, nil
+}
+
+type bulkLookupAdminService struct {
+	*stubAdminService
+	accounts             map[int64]service.Account
+	getAccountCalls      atomic.Int64
+	getAccountsByIDCalls atomic.Int64
+}
+
+func (s *bulkLookupAdminService) GetAccount(_ context.Context, id int64) (*service.Account, error) {
+	s.getAccountCalls.Add(1)
+	if account, ok := s.accounts[id]; ok {
+		acc := account
+		return &acc, nil
+	}
+	return s.stubAdminService.GetAccount(context.Background(), id)
+}
+
+func (s *bulkLookupAdminService) GetAccountsByIDs(_ context.Context, ids []int64) ([]*service.Account, error) {
+	s.getAccountsByIDCalls.Add(1)
+	out := make([]*service.Account, 0, len(ids))
+	for _, id := range ids {
+		if account, ok := s.accounts[id]; ok {
+			acc := account
+			out = append(out, &acc)
+			continue
+		}
+		account, err := s.stubAdminService.GetAccount(context.Background(), id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, account)
+	}
+	return out, nil
 }
 
 func TestBatchUpdateCredentials_AllSuccess(t *testing.T) {
@@ -272,4 +314,30 @@ func TestBulkUpdate_InvalidatesOAuthTokenCacheAfterCredentialWrite(t *testing.T)
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, []int64{1, 2}, invalidator.calls)
+}
+
+func TestBulkUpdate_UsesBatchLookupForPostUpdateInvalidation(t *testing.T) {
+	svc := &bulkLookupAdminService{
+		stubAdminService: newStubAdminService(),
+		accounts: map[int64]service.Account{
+			1: {ID: 1, Platform: service.PlatformKiro, Type: service.AccountTypeOAuth, Status: service.StatusActive},
+			2: {ID: 2, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth, Status: service.StatusActive},
+			3: {ID: 3, Platform: service.PlatformGemini, Type: service.AccountTypeAPIKey, Status: service.StatusActive},
+		},
+	}
+	router, _ := setupAccountHandlerWithService(svc)
+
+	body, _ := json.Marshal(BulkUpdateAccountsRequest{
+		AccountIDs: []int64{1, 2, 3},
+		Name:       "renamed",
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/admin/accounts/bulk-update", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, int64(0), svc.getAccountCalls.Load(), "post-update invalidation should not fan out into per-account lookups")
+	require.Equal(t, int64(1), svc.getAccountsByIDCalls.Load(), "post-update invalidation should batch load updated accounts once")
 }

@@ -387,3 +387,30 @@ func TestAccountService_TestCredentials_PropagatesRepositoryError(t *testing.T) 
 
 	require.ErrorIs(t, err, repoErr)
 }
+
+func TestAccountCredentialValidators_RejectNilAccount(t *testing.T) {
+	tests := []struct {
+		name string
+		fn   func(*Account) error
+	}{
+		{
+			name: "apikey credentials",
+			fn:   validateAPIKeyCredentials,
+		},
+		{
+			name: "oauth credentials",
+			fn:   validateOAuthCredentials,
+		},
+		{
+			name: "account test credentials",
+			fn:   validateAccountTestCredentials,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.fn(nil)
+			require.EqualError(t, err, "account is required")
+		})
+	}
+}

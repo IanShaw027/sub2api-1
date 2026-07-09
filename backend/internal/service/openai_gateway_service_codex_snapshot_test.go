@@ -1,8 +1,11 @@
 package service
 
 import (
+	"net/http"
 	"testing"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
 
 func TestCodexSnapshotBaseTime(t *testing.T) {
@@ -68,6 +71,39 @@ func TestCodexResetAtRFC3339(t *testing.T) {
 			t.Fatalf("got %s, want %s", *got, "2026-02-16T10:00:00Z")
 		}
 	})
+}
+
+func TestParseCodexRateLimitHeaders_NormalizesUpdatedAtToUTC(t *testing.T) {
+	if err := timezone.Init("Asia/Tokyo"); err != nil {
+		t.Fatalf("init timezone: %v", err)
+	}
+	defer func() {
+		if err := timezone.Init("UTC"); err != nil {
+			t.Fatalf("reset timezone: %v", err)
+		}
+	}()
+
+	headers := http.Header{
+		"X-Codex-Primary-Used-Percent":          []string{"12.5"},
+		"X-Codex-Primary-Reset-After-Seconds":   []string{"60"},
+		"X-Codex-Primary-Window-Minutes":        []string{"10080"},
+		"X-Codex-Secondary-Used-Percent":        []string{"3.5"},
+		"X-Codex-Secondary-Reset-After-Seconds": []string{"30"},
+		"X-Codex-Secondary-Window-Minutes":      []string{"300"},
+	}
+
+	snapshot := ParseCodexRateLimitHeaders(headers)
+	if snapshot == nil {
+		t.Fatal("expected non-nil snapshot")
+	}
+
+	updatedAt, err := time.Parse(time.RFC3339, snapshot.UpdatedAt)
+	if err != nil {
+		t.Fatalf("parse updatedAt: %v", err)
+	}
+	if _, offset := updatedAt.Zone(); offset != 0 {
+		t.Fatalf("expected zero UTC offset, got %s", snapshot.UpdatedAt)
+	}
 }
 
 func TestBuildCodexUsageExtraUpdates_UsesSnapshotUpdatedAt(t *testing.T) {

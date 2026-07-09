@@ -16,6 +16,12 @@ func TestPlatformFingerprintManager_AnthropicUserAgentMatchesClaudeDefaultHeader
 	require.Equal(t, claude.DefaultHeaders["User-Agent"], mgr.Get(PlatformAnthropic).CanonicalUA)
 }
 
+func TestPlatformFingerprintManager_GrokUserAgentDefaultsToBrowserLikeValue(t *testing.T) {
+	mgr := NewPlatformFingerprintManager(nil)
+
+	require.Equal(t, "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36", mgr.Get(PlatformGrok).CanonicalUA)
+}
+
 func TestFingerprintNormalizer_ApplyToRequest_OpenAIAndGrokKeepUserAndSkipClientMetadata(t *testing.T) {
 	n := NewFingerprintNormalizer(nil, nil, nil, &CanonicalFingerprintConfig{
 		Enabled:             true,
@@ -89,6 +95,24 @@ func TestFingerprintNormalizer_ApplyToRequest_OpenAIAndGrokDoNotRewritePromptTex
 			require.Equal(t, body, string(got))
 		})
 	}
+}
+
+func TestFingerprintNormalizer_ApplyToRequest_DoesNotRenameTopLevelEventsOutsideTelemetryEndpoints(t *testing.T) {
+	n := NewFingerprintNormalizer(nil, nil, nil, &CanonicalFingerprintConfig{
+		Enabled:            true,
+		AntiBanEnabled:     true,
+		EnabledByPlatform:  map[string]bool{"openai": true},
+		TelemetryPaths:     []string{"events", "segment"},
+		TriggerScanEnabled: false,
+	}, NewPlatformFingerprintManager(nil))
+
+	body := `{"events":[{"type":"business"}],"segment":{"trace":"drop"},"messages":[{"role":"user","content":"hi"}]}`
+	_, got, err := n.ApplyToRequest(nil, []byte(body), &CanonicalFingerprint{Platform: PlatformOpenAI})
+	require.NoError(t, err)
+	require.True(t, gjson.GetBytes(got, "events.0.type").Exists())
+	require.False(t, gjson.GetBytes(got, "events_canonical").Exists())
+	require.False(t, gjson.GetBytes(got, "segment").Exists())
+	require.True(t, gjson.GetBytes(got, "segment_canonical.trace").Exists())
 }
 
 func TestFingerprintNormalizer_ApplyToRequest_AnthropicStillRewritesAttributionPromptText(t *testing.T) {

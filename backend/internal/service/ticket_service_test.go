@@ -208,6 +208,15 @@ func TestTicketServiceCreateRejectsPayloadWithTooManyFields(t *testing.T) {
 	require.ErrorIs(t, err, ErrTicketPayloadInvalid)
 }
 
+func TestNormalizeTicketPayload_PreservesLargeIntegerLexemes(t *testing.T) {
+	payload := json.RawMessage(`{"order_no":1234567890123456789,"reason":"refund"}`)
+
+	normalized := normalizeTicketPayload(payload)
+	require.NotNil(t, normalized)
+	require.Contains(t, string(normalized), "1234567890123456789")
+	require.NotContains(t, string(normalized), "e+")
+}
+
 func TestTicketServiceReplyForUserRejectsOversizedContent(t *testing.T) {
 	svc := NewTicketService(&ticketRepoStub{
 		ticket: &SupportTicket{ID: 1, UserID: 9, Status: SupportTicketStatusSubmitted},

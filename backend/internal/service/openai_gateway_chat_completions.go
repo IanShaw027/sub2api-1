@@ -64,6 +64,9 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	defaultMappedModel string,
 	selectedFallbackModels ...string,
 ) (*OpenAIForwardResult, error) {
+	if account == nil {
+		return nil, errors.New("account is required")
+	}
 	restrictionResult := s.detectCodexClientRestriction(c, account, body)
 	logCodexCLIOnlyDetection(ctx, c, account, getAPIKeyIDFromContext(c), restrictionResult, body)
 	if restrictionResult.Enabled && !restrictionResult.Matched {
@@ -333,6 +336,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	var resp *http.Response
 	for {
 		applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+		upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsRuntime.Profile)
 		SetOpsLatencyMs(c, OpsOpenAIForwardPrepareLatencyMsKey, time.Since(startTime).Milliseconds())
 		upstreamStart := time.Now()
 		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
@@ -1627,22 +1631,4 @@ func writeChatCompletionsError(c *gin.Context, statusCode int, errType, message 
 			"message": message,
 		},
 	})
-}
-
-// buildChatStreamErrorSSE builds one SSE data frame carrying an OpenAI chat
-// streaming error object. Used when the stream must terminate with a visible
-// error (e.g. upstream cyber_policy), so programmatic clients stop retrying.
-// Marshal 失败的兜底会丢弃 message 原文，仅保留 code 与固定提示。
-func buildChatStreamErrorSSE(code, message string) string {
-	payload, err := json.Marshal(gin.H{
-		"error": gin.H{
-			"type":    "invalid_request_error",
-			"code":    code,
-			"message": message,
-		},
-	})
-	if err != nil {
-		return "data: {\"error\":{\"type\":\"invalid_request_error\",\"code\":\"" + code + "\",\"message\":\"upstream error\"}}\n\n"
-	}
-	return "data: " + string(payload) + "\n\n"
 }

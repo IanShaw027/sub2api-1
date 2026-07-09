@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -268,6 +269,106 @@ func TestNativeTLSCaptureListenerPersistsRequestMetadata(t *testing.T) {
 	require.Equal(t, []string{"[REDACTED]"}, event.HeadersSnapshot["authorization"])
 	require.Contains(t, event.BodySummary, "\"model\":\"gpt-5.4\"")
 	require.JSONEq(t, payload, event.RawPayload)
+}
+
+func TestNativeTLSCaptureListenerRejectsOversizedHTTPRequestBody(t *testing.T) {
+	const oversizedBodyBytes = (1 << 20) + 1
+
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets: map[string]int{"openai": 1},
+	})
+	require.NoError(t, err)
+
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
+		Address: "127.0.0.1:0",
+		Service: svc,
+	})
+	require.NoError(t, listener.Start())
+	t.Cleanup(func() { stopNativeCaptureListener(t, listener) })
+
+	conn, err := net.DialTimeout("tcp", listener.Addr().String(), 5*time.Second)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	uconn := utls.UClient(conn, &utls.Config{
+		ServerName:         "localhost",
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"http/1.1"},
+	}, utls.HelloCustom)
+	require.NoError(t, uconn.ApplyPreset(nativeClientHelloSpecHTTP1Only()))
+	require.NoError(t, uconn.Handshake())
+
+	payload := strings.Repeat("a", oversizedBodyBytes)
+	_, err = fmt.Fprintf(
+		uconn,
+		"POST /capture/openai/v1/responses?token=%s HTTP/1.1\r\nHost: %s\r\nUser-Agent: codex_exec/0.140.0\r\nOriginator: codex_exec\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+		task.Token,
+		listener.Addr().String(),
+		len(payload),
+		payload,
+	)
+	require.NoError(t, err)
+
+	resp, err := http.ReadResponse(bufio.NewReader(uconn), nil)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode)
+	require.Contains(t, string(body), "capture request body too large")
+	require.Empty(t, repo.samples)
+	require.Empty(t, repo.sessionEvents)
+}
+
+func TestNativeTLSCaptureListenerRejectsInvalidTokenBeforeReadingOversizedBody(t *testing.T) {
+	const oversizedBodyBytes = (1 << 20) + 1
+
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
+		Address: "127.0.0.1:0",
+		Service: svc,
+	})
+	require.NoError(t, listener.Start())
+	t.Cleanup(func() { stopNativeCaptureListener(t, listener) })
+
+	conn, err := net.DialTimeout("tcp", listener.Addr().String(), 5*time.Second)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	uconn := utls.UClient(conn, &utls.Config{
+		ServerName:         "localhost",
+		InsecureSkipVerify: true,
+		NextProtos:         []string{"http/1.1"},
+	}, utls.HelloCustom)
+	require.NoError(t, uconn.ApplyPreset(nativeClientHelloSpecHTTP1Only()))
+	require.NoError(t, uconn.Handshake())
+
+	payload := strings.Repeat("a", oversizedBodyBytes)
+	_, err = fmt.Fprintf(
+		uconn,
+		"POST /capture/openai/v1/responses?token=missing-task HTTP/1.1\r\nHost: %s\r\nUser-Agent: codex_exec/0.140.0\r\nOriginator: codex_exec\r\nContent-Type: application/json\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+		listener.Addr().String(),
+		len(payload),
+		payload,
+	)
+	require.NoError(t, err)
+
+	resp, err := http.ReadResponse(bufio.NewReader(uconn), nil)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	require.Contains(t, string(body), "running capture task not found")
+	require.Empty(t, repo.samples)
+	require.Empty(t, repo.sessionEvents)
 }
 
 func TestNativeTLSCaptureListenerResponsesStreamReturnsSSESuccess(t *testing.T) {
@@ -540,6 +641,7 @@ func TestNativeTLSCaptureListenerConfiguresIdleTimeout(t *testing.T) {
 	server := listener.server
 	listener.mu.RUnlock()
 	require.NotNil(t, server)
+	require.Equal(t, 30*time.Second, server.ReadTimeout)
 	require.Equal(t, 30*time.Second, server.IdleTimeout)
 }
 

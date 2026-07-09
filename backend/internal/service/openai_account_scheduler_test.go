@@ -16,8 +16,11 @@ import (
 
 type openAISnapshotCacheStub struct {
 	SchedulerCache
-	snapshotAccounts []*Account
-	accountsByID     map[int64]*Account
+	snapshotAccounts  []*Account
+	accountsByID      map[int64]*Account
+	getAccountCalls   int
+	batchGetCalls     int
+	panicOnGetAccount bool
 }
 
 type schedulerTestOpenAIAccountRepo struct {
@@ -443,6 +446,10 @@ func (s *openAISnapshotCacheStub) SetSnapshot(ctx context.Context, bucket Schedu
 }
 
 func (s *openAISnapshotCacheStub) GetAccount(ctx context.Context, accountID int64) (*Account, error) {
+	s.getAccountCalls++
+	if s.panicOnGetAccount {
+		panic("unexpected per-account GetAccount call")
+	}
 	if s.accountsByID == nil {
 		return nil, nil
 	}
@@ -452,6 +459,28 @@ func (s *openAISnapshotCacheStub) GetAccount(ctx context.Context, accountID int6
 	}
 	cloned := *account
 	return &cloned, nil
+}
+
+func (s *openAISnapshotCacheStub) GetAccounts(ctx context.Context, accountIDs []int64) (map[int64]*Account, error) {
+	s.batchGetCalls++
+	out := make(map[int64]*Account, len(accountIDs))
+	if s.accountsByID == nil {
+		return out, nil
+	}
+	seen := make(map[int64]struct{}, len(accountIDs))
+	for _, id := range accountIDs {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		account := s.accountsByID[id]
+		if account == nil {
+			continue
+		}
+		cloned := *account
+		out[id] = &cloned
+	}
+	return out, nil
 }
 
 func (s *openAISnapshotCacheStub) UpdateLastUsed(ctx context.Context, updates map[int64]time.Time) error {

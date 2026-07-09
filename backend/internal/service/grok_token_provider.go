@@ -55,7 +55,7 @@ func (p *GrokTokenProvider) SetTempUnschedCache(cache TempUnschedCache) {
 
 func (p *GrokTokenProvider) GetAccessToken(ctx context.Context, account *Account) (string, error) {
 	if account == nil {
-		return "", errors.New("account is nil")
+		return "", errors.New("account is required")
 	}
 	if account.Platform != PlatformGrok || account.Type != AccountTypeOAuth {
 		return "", errors.New("not a grok oauth account")

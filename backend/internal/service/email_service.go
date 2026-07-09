@@ -21,6 +21,7 @@ import (
 
 var (
 	ErrEmailNotConfigured    = infraerrors.ServiceUnavailable("EMAIL_NOT_CONFIGURED", "email service not configured")
+	ErrEmailCacheUnavailable = infraerrors.ServiceUnavailable("EMAIL_CACHE_UNAVAILABLE", "email cache unavailable")
 	ErrInvalidVerifyCode     = infraerrors.BadRequest("INVALID_VERIFY_CODE", "invalid or expired verification code")
 	ErrVerifyCodeTooFrequent = infraerrors.TooManyRequests("VERIFY_CODE_TOO_FREQUENT", "please wait before requesting a new code")
 	ErrVerifyCodeMaxAttempts = infraerrors.TooManyRequests("VERIFY_CODE_MAX_ATTEMPTS", "too many failed attempts, please request a new code")
@@ -111,6 +112,13 @@ func (s *EmailService) SetNotificationEmailService(notificationEmailService *Not
 	s.notificationEmailService = notificationEmailService
 }
 
+func (s *EmailService) requireCache() error {
+	if s == nil || s.cache == nil {
+		return ErrEmailCacheUnavailable
+	}
+	return nil
+}
+
 func firstEmailLocale(locales []string) string {
 	if len(locales) == 0 {
 		return ""
@@ -131,6 +139,9 @@ func emailRecipientName(email string) string {
 
 // GetSMTPConfig 从数据库获取SMTP配置
 func (s *EmailService) GetSMTPConfig(ctx context.Context) (*SMTPConfig, error) {
+	if s == nil || s.settingRepo == nil {
+		return nil, ErrEmailNotConfigured
+	}
 	keys := []string{
 		SettingKeySMTPHost,
 		SettingKeySMTPPort,
@@ -325,6 +336,9 @@ func (s *EmailService) GenerateVerifyCode() (string, error) {
 
 // SendVerifyCode 发送验证码邮件
 func (s *EmailService) SendVerifyCode(ctx context.Context, email, siteName string, locale ...string) error {
+	if err := s.requireCache(); err != nil {
+		return err
+	}
 	// 检查是否在冷却期内
 	existing, err := s.cache.GetVerificationCode(ctx, email)
 	if err == nil && existing != nil {
@@ -384,6 +398,9 @@ func (s *EmailService) SendVerifyCode(ctx context.Context, email, siteName strin
 
 // VerifyCode 验证验证码
 func (s *EmailService) VerifyCode(ctx context.Context, email, code string) error {
+	if err := s.requireCache(); err != nil {
+		return err
+	}
 	data, err := s.cache.GetVerificationCode(ctx, email)
 	if err != nil || data == nil {
 		return ErrInvalidVerifyCode
@@ -513,6 +530,9 @@ func (s *EmailService) GeneratePasswordResetToken() (string, error) {
 
 // SendPasswordResetEmail sends a password reset email with a reset link
 func (s *EmailService) SendPasswordResetEmail(ctx context.Context, email, siteName, resetURL string, locale ...string) error {
+	if err := s.requireCache(); err != nil {
+		return err
+	}
 	var token string
 	var needSaveToken bool
 
@@ -580,6 +600,9 @@ func (s *EmailService) SendPasswordResetEmail(ctx context.Context, email, siteNa
 // SendPasswordResetEmailWithCooldown sends password reset email with cooldown check (called by queue worker)
 // This method wraps SendPasswordResetEmail with email cooldown to prevent email bombing
 func (s *EmailService) SendPasswordResetEmailWithCooldown(ctx context.Context, email, siteName, resetURL string, locale ...string) error {
+	if err := s.requireCache(); err != nil {
+		return err
+	}
 	// Check email cooldown to prevent email bombing
 	if s.cache.IsPasswordResetEmailInCooldown(ctx, email) {
 		slog.Info("password reset email skipped due to cooldown", "email", email)
@@ -601,6 +624,9 @@ func (s *EmailService) SendPasswordResetEmailWithCooldown(ctx context.Context, e
 
 // VerifyPasswordResetToken verifies the password reset token without consuming it
 func (s *EmailService) VerifyPasswordResetToken(ctx context.Context, email, token string) error {
+	if err := s.requireCache(); err != nil {
+		return err
+	}
 	data, err := s.cache.GetPasswordResetToken(ctx, email)
 	if err != nil || data == nil {
 		return ErrInvalidResetToken
@@ -616,6 +642,9 @@ func (s *EmailService) VerifyPasswordResetToken(ctx context.Context, email, toke
 
 // ConsumePasswordResetToken verifies and deletes the token (one-time use)
 func (s *EmailService) ConsumePasswordResetToken(ctx context.Context, email, token string) error {
+	if err := s.requireCache(); err != nil {
+		return err
+	}
 	// Verify first
 	if err := s.VerifyPasswordResetToken(ctx, email, token); err != nil {
 		return err

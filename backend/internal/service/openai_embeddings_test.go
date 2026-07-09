@@ -209,6 +209,44 @@ func TestForwardVideos_ExtractsBillingMetadataFromXAIOfficialFields(t *testing.T
 	require.Equal(t, 1, result.VideoCount)
 }
 
+func TestForwardVideos_DoesNotFallbackToRequestedVariantCountWhenResponseHasEmptyDataArray(t *testing.T) {
+	setGinTestMode()
+
+	reqBody := []byte(`{"model":"grok-4.3","prompt":"make a video","seconds":4,"n_variants":5}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"application/json"},
+			"X-Request-Id": []string{"video-rid-empty-data"},
+		},
+		Body: io.NopCloser(strings.NewReader(`{"data":[],"model":"grok-4.3","status":"pending"}`)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:       45,
+		Platform: PlatformGrok,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "xai-test",
+		},
+	}
+
+	result, err := svc.ForwardVideos(context.Background(), c, account, reqBody, "/v1/videos")
+
+	require.NoError(t, err)
+	require.Equal(t, "grok-4.3", result.Model)
+	require.Equal(t, "video-rid-empty-data", result.RequestID)
+	require.Equal(t, 0, result.VideoCount)
+}
+
 func TestForwardVideos_FiltersUpstreamResponseHeaders(t *testing.T) {
 	setGinTestMode()
 
@@ -423,7 +461,7 @@ func TestForwardVideos_GETContentFlushesToHTTPClientBeforeUpstreamEOF(t *testing
 			errCh <- err
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		buf := make([]byte, len("first-video-bytes"))
 		n, readErr := io.ReadFull(resp.Body, buf)
 		if readErr != nil {

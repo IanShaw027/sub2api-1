@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 	"go.uber.org/zap"
 )
 
@@ -90,13 +92,15 @@ func (s *GatewayService) forwardMessagesToChatCompletions(
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Authorization", "Bearer "+token)
 	upstreamReq.Header.Set("Accept", "text/event-stream")
+	tlsProfile := s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http")
+	upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsProfile)
 
 	// 5. Send request
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
+	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsProfile)
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -175,6 +179,10 @@ func (s *GatewayService) streamCCResponseAsAnthropic(
 	var lastStopReason string
 	var finalUsage *apicompat.AnthropicUsage
 	clientDisconnect := false
+	// sawTerminal 记录是否见到真正的终止信号（finish_reason 或 [DONE]）。上游在无终止信号下 EOF
+	// 属于截断，绝不能合成 end_turn 当成正常结束——否则客户端把截断响应当成功并按已收 token 计费。
+	sawTerminal := false
+	var upstreamStreamErr error
 	var textBuf strings.Builder
 	var thinkingBuf strings.Builder
 	var toolUseBlocks []apicompat.AnthropicContentBlock
@@ -194,6 +202,14 @@ func (s *GatewayService) streamCCResponseAsAnthropic(
 		}
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
+			sawTerminal = true
+			break
+		}
+
+		// 中途上游错误：CC/OpenAI 流式错误为 data: {"error":{...}}，反序列化成空 Choices 的 chunk
+		// 会被静默吞掉。这里显式探测并中断，透传上游错误、不再合成正常结束。
+		if trimmed := strings.TrimSpace(data); strings.HasPrefix(trimmed, "{") && gjson.Get(trimmed, "error").Exists() {
+			upstreamStreamErr = fmt.Errorf("upstream stream error: %s", sanitizeUpstreamErrorMessage(gjson.Get(trimmed, "error.message").String()))
 			break
 		}
 
@@ -208,13 +224,14 @@ func (s *GatewayService) streamCCResponseAsAnthropic(
 
 		for _, choice := range chunk.Choices {
 			if choice.Delta.Content != nil {
-				textBuf.WriteString(*choice.Delta.Content)
+				_, _ = textBuf.WriteString(*choice.Delta.Content)
 			}
 			if reasoning := choice.Delta.EffectiveReasoningContent(); reasoning != "" {
-				thinkingBuf.WriteString(reasoning)
+				_, _ = thinkingBuf.WriteString(reasoning)
 			}
 			if choice.FinishReason != nil {
 				lastStopReason = *choice.FinishReason
+				sawTerminal = true
 			}
 			for _, tc := range choice.Delta.ToolCalls {
 				apicompat.AccumulateToolCall(state, &tc)
@@ -235,6 +252,23 @@ func (s *GatewayService) streamCCResponseAsAnthropic(
 	}
 	if scanErr := scanner.Err(); scanErr != nil && !clientDisconnect {
 		return ClaudeUsage{}, firstTokenMs, false, fmt.Errorf("upstream stream read: %w", scanErr)
+	}
+
+	// 中途上游错误：透传错误、不合成正常结束（避免出错响应被当成功计费）。
+	if upstreamStreamErr != nil {
+		if clientStream {
+			writeAnthropicStreamError(c.Writer, upstreamStreamErr)
+		}
+		return ClaudeUsage{}, firstTokenMs, false, upstreamStreamErr
+	}
+
+	// 上游在无终止信号下 EOF：截断。发错误事件（流式）并返回 error，绝不合成 end_turn。
+	if !sawTerminal && !clientDisconnect {
+		err := errors.New("upstream stream ended before a terminal event")
+		if clientStream {
+			writeAnthropicStreamError(c.Writer, err)
+		}
+		return ClaudeUsage{}, firstTokenMs, false, err
 	}
 
 	if clientStream {
@@ -292,4 +326,18 @@ func buildNonStreamingAnthropicResponse(id, model, stopReason, text, thinking st
 
 func writeAnthropicSSE(w gin.ResponseWriter, event string, data []byte) {
 	_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data)
+}
+
+// writeAnthropicStreamError 在流式响应已开始（HTTP 头已发）后，向客户端发出 Anthropic error 事件，
+// 明确告知本次流是失败/截断而非正常结束。用于中途上游错误或无终止信号的截断。
+func writeAnthropicStreamError(w gin.ResponseWriter, err error) {
+	payload, _ := json.Marshal(map[string]any{
+		"type": "error",
+		"error": map[string]any{
+			"type":    "api_error",
+			"message": sanitizeUpstreamErrorMessage(err.Error()),
+		},
+	})
+	writeAnthropicSSE(w, "error", payload)
+	w.Flush()
 }

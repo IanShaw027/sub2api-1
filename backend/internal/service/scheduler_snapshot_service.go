@@ -68,6 +68,10 @@ type schedulerLastUsedReader interface {
 	GetLastUsed(ctx context.Context, accountIDs []int64) (map[int64]time.Time, error)
 }
 
+type schedulerAccountBatchReader interface {
+	GetAccounts(ctx context.Context, accountIDs []int64) (map[int64]*Account, error)
+}
+
 type SchedulerSnapshotService struct {
 	cache         SchedulerCache
 	outboxRepo    SchedulerOutboxRepository
@@ -246,6 +250,20 @@ func (s *SchedulerSnapshotService) overlayLastUsedFromCache(ctx context.Context,
 					applyAccountLastUsedIfNewer(&accounts[i], usedAt)
 				}
 			}
+		}
+	}
+
+	if reader, ok := s.cache.(schedulerAccountBatchReader); ok && len(ids) > 0 {
+		cachedAccounts, err := reader.GetAccounts(ctx, ids)
+		if err == nil {
+			for i := range accounts {
+				cached := cachedAccounts[accounts[i].ID]
+				if cached == nil || cached.LastUsedAt == nil {
+					continue
+				}
+				applyAccountLastUsedIfNewer(&accounts[i], *cached.LastUsedAt)
+			}
+			return
 		}
 	}
 

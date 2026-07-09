@@ -2670,6 +2670,42 @@ func TestSchedulerSnapshotService_ListSchedulableAccounts_DBFallbackOverlaysCach
 	require.True(t, accounts[0].LastUsedAt.Equal(newLastUsed))
 }
 
+func TestSchedulerSnapshotService_ListSchedulableAccounts_DBFallbackUsesBatchCacheHydration(t *testing.T) {
+	oldLastUsed := time.Now().Add(-6 * time.Hour)
+	newLastUsed := time.Now().Add(-15 * time.Minute)
+	repo := stubOpenAIAccountRepo{
+		accounts: []Account{
+			{
+				ID:          47021,
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeAPIKey,
+				Status:      StatusActive,
+				Schedulable: true,
+				Concurrency: 1,
+				LastUsedAt:  &oldLastUsed,
+			},
+		},
+	}
+	cache := &openAISnapshotCacheStub{
+		accountsByID: map[int64]*Account{
+			47021: {
+				ID:         47021,
+				LastUsedAt: &newLastUsed,
+			},
+		},
+		panicOnGetAccount: true,
+	}
+	svc := NewSchedulerSnapshotService(cache, nil, repo, nil, nil)
+
+	accounts, _, err := svc.ListSchedulableAccounts(context.Background(), nil, PlatformOpenAI, false)
+	require.NoError(t, err)
+	require.Len(t, accounts, 1)
+	require.NotNil(t, accounts[0].LastUsedAt)
+	require.True(t, accounts[0].LastUsedAt.Equal(newLastUsed))
+	require.Equal(t, 1, cache.batchGetCalls)
+	require.Zero(t, cache.getAccountCalls)
+}
+
 func TestOpenAIGatewayService_ListOpenAIImageCandidateAccounts_OverlaysCachedLastUsed(t *testing.T) {
 	oldLastUsed := time.Now().Add(-5 * time.Hour)
 	newLastUsed := time.Now().Add(-10 * time.Minute)

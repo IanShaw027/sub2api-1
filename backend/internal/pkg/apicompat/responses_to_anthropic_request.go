@@ -136,9 +136,9 @@ func convertResponsesInputToAnthropic(inputRaw json.RawMessage) (json.RawMessage
 				}
 			}
 			// function_call → assistant message with tool_use block
-			input := json.RawMessage("{}")
-			if item.Arguments != "" {
-				input = json.RawMessage(item.Arguments)
+			input, err := responsesRequestFunctionCallInput(item.Arguments)
+			if err != nil {
+				return nil, nil, err
 			}
 			block := AnthropicContentBlock{
 				Type:  "tool_use",
@@ -219,6 +219,17 @@ func convertResponsesInputToAnthropic(inputRaw json.RawMessage) (json.RawMessage
 	messages = mergeConsecutiveMessages(messages)
 
 	return system, messages, nil
+}
+
+func responsesRequestFunctionCallInput(arguments string) (json.RawMessage, error) {
+	arguments = strings.TrimSpace(arguments)
+	if arguments == "" {
+		return json.RawMessage("{}"), nil
+	}
+	if !json.Valid([]byte(arguments)) {
+		return nil, fmt.Errorf("invalid function_call arguments: %q", arguments)
+	}
+	return json.RawMessage(arguments), nil
 }
 
 // normalizeAnthropicToolPairing rebuilds the message sequence so it satisfies
@@ -352,11 +363,14 @@ func webFetchHistoryMessagesFromFunctionCall(item ResponsesInputItem) (Anthropic
 		return AnthropicMessage{}, AnthropicMessage{}, false, false
 	}
 	rawResult, ok := payload["_sub2api_server_tool_result"]
+	callID := fromResponsesCallIDToAnthropic(item.CallID)
+	if !strings.HasPrefix(callID, "srvtoolu_") && !ok {
+		return AnthropicMessage{}, AnthropicMessage{}, false, false
+	}
 	if ok {
 		delete(payload, "_sub2api_server_tool_result")
 	}
 	input, _ := json.Marshal(payload)
-	callID := fromResponsesCallIDToAnthropic(item.CallID)
 	assistantBlocks, _ := json.Marshal([]AnthropicContentBlock{{
 		Type:  "server_tool_use",
 		ID:    callID,

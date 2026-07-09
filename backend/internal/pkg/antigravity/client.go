@@ -747,7 +747,7 @@ func checkFetchAvailableModelsRedirect(req *http.Request, via []*http.Request) e
 		return errors.New("stopped after 10 redirects")
 	}
 	if req == nil || req.URL == nil {
-		return errors.New("redirect url is nil")
+		return errors.New("redirect url is required")
 	}
 	if !isAllowedFetchAvailableModelsRedirectHost(req.URL.Hostname()) {
 		return fmt.Errorf("redirect to unsupported host: %s", req.URL.Hostname())

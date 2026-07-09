@@ -138,6 +138,16 @@ func TestSettingService_GetAllSettings_ReturnsKiroCodeExecutionSandboxCommand(t 
 	require.Equal(t, "sandbox-from-db", got.KiroCodeExecutionSandboxCommand)
 }
 
+func TestSettingService_GetAllSettings_NilRepoReturnsDefaults(t *testing.T) {
+	svc := NewSettingService(nil, &config.Config{})
+
+	got, err := svc.GetAllSettings(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, "Sub2API", got.SiteName)
+	require.True(t, got.PromoCodeEnabled)
+}
+
 func TestSettingService_GetAllSettingsAndUpdateSettings_PreserveGatewayDebugTimelineBodySettings(t *testing.T) {
 	repo := &kiroRuntimeSettingRepoStub{
 		values: map[string]string{

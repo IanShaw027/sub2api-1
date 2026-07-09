@@ -152,6 +152,21 @@ func TestGetBalanceNotifyConfig_InvalidThreshold(t *testing.T) {
 	require.Equal(t, 0.0, threshold)
 }
 
+func TestGetBalanceNotifyConfig_NilServiceOrRepoUsesSafeDefaults(t *testing.T) {
+	var nilService *BalanceNotifyService
+
+	enabled, threshold, url := nilService.getBalanceNotifyConfig(context.Background())
+	require.False(t, enabled)
+	require.Equal(t, 0.0, threshold)
+	require.Empty(t, url)
+
+	serviceWithNilRepo := &BalanceNotifyService{}
+	enabled, threshold, url = serviceWithNilRepo.getBalanceNotifyConfig(context.Background())
+	require.False(t, enabled)
+	require.Equal(t, 0.0, threshold)
+	require.Empty(t, url)
+}
+
 func TestIsAccountQuotaNotifyEnabled(t *testing.T) {
 	s, repo := newBalanceNotifyServiceForTest()
 
@@ -167,10 +182,34 @@ func TestIsAccountQuotaNotifyEnabled(t *testing.T) {
 	require.True(t, s.isAccountQuotaNotifyEnabled(context.Background()))
 }
 
+func TestIsAccountQuotaNotifyEnabled_NilServiceOrRepoReturnsFalse(t *testing.T) {
+	var nilService *BalanceNotifyService
+	require.False(t, nilService.isAccountQuotaNotifyEnabled(context.Background()))
+
+	serviceWithNilRepo := &BalanceNotifyService{}
+	require.False(t, serviceWithNilRepo.isAccountQuotaNotifyEnabled(context.Background()))
+}
+
+func TestGetAccountQuotaNotifyEmails_NilServiceOrRepoReturnsNil(t *testing.T) {
+	var nilService *BalanceNotifyService
+	require.Nil(t, nilService.getAccountQuotaNotifyEmails(context.Background()))
+
+	serviceWithNilRepo := &BalanceNotifyService{}
+	require.Nil(t, serviceWithNilRepo.getAccountQuotaNotifyEmails(context.Background()))
+}
+
 func TestGetSiteName_FallsBackToDefault(t *testing.T) {
 	s, _ := newBalanceNotifyServiceForTest()
 	name := s.getSiteName(context.Background())
 	require.Equal(t, defaultSiteName, name)
+}
+
+func TestGetSiteName_NilServiceOrRepoFallsBackToDefault(t *testing.T) {
+	var nilService *BalanceNotifyService
+	require.Equal(t, defaultSiteName, nilService.getSiteName(context.Background()))
+
+	serviceWithNilRepo := &BalanceNotifyService{}
+	require.Equal(t, defaultSiteName, serviceWithNilRepo.getSiteName(context.Background()))
 }
 
 func TestGetSiteName_Configured(t *testing.T) {

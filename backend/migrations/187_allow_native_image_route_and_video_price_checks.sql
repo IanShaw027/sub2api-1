@@ -6,7 +6,7 @@ ALTER TABLE groups
 
 ALTER TABLE groups
     ADD CONSTRAINT groups_image_generation_route_check
-    CHECK (image_generation_route IN ('codex', 'web2api', 'native'));
+    CHECK (image_generation_route IN ('codex', 'web2api', 'native')) NOT VALID;
 
 DO $$
 BEGIN
@@ -17,7 +17,7 @@ BEGIN
     ) THEN
         ALTER TABLE groups
             ADD CONSTRAINT groups_video_price_480p_per_sec_non_negative
-            CHECK (video_price_480p_per_sec IS NULL OR video_price_480p_per_sec >= 0);
+            CHECK (video_price_480p_per_sec IS NULL OR video_price_480p_per_sec >= 0) NOT VALID;
     END IF;
 
     IF NOT EXISTS (
@@ -27,7 +27,7 @@ BEGIN
     ) THEN
         ALTER TABLE groups
             ADD CONSTRAINT groups_video_price_720p_per_sec_non_negative
-            CHECK (video_price_720p_per_sec IS NULL OR video_price_720p_per_sec >= 0);
+            CHECK (video_price_720p_per_sec IS NULL OR video_price_720p_per_sec >= 0) NOT VALID;
     END IF;
 
     IF NOT EXISTS (
@@ -37,7 +37,7 @@ BEGIN
     ) THEN
         ALTER TABLE groups
             ADD CONSTRAINT groups_video_price_1080p_per_sec_non_negative
-            CHECK (video_price_1080p_per_sec IS NULL OR video_price_1080p_per_sec >= 0);
+            CHECK (video_price_1080p_per_sec IS NULL OR video_price_1080p_per_sec >= 0) NOT VALID;
     END IF;
 
     IF NOT EXISTS (
@@ -47,6 +47,6 @@ BEGIN
     ) THEN
         ALTER TABLE groups
             ADD CONSTRAINT groups_video_price_4k_per_sec_non_negative
-            CHECK (video_price_4k_per_sec IS NULL OR video_price_4k_per_sec >= 0);
+            CHECK (video_price_4k_per_sec IS NULL OR video_price_4k_per_sec >= 0) NOT VALID;
     END IF;
 END $$;

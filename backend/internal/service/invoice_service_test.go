@@ -2,23 +2,38 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	entdialect "entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 )
 
 type invoiceTestMediaService struct {
 	nextAssetID int64
 	uploads     []UploadMediaInput
+	uploadHook  func(context.Context, UploadMediaInput) error
+	deletedIDs  []int64
 }
 
-func (s *invoiceTestMediaService) Upload(_ context.Context, input UploadMediaInput) (*MediaAsset, error) {
+func (s *invoiceTestMediaService) Upload(ctx context.Context, input UploadMediaInput) (*MediaAsset, error) {
 	s.uploads = append(s.uploads, input)
+	if s.uploadHook != nil {
+		if err := s.uploadHook(ctx, input); err != nil {
+			return nil, err
+		}
+	}
 	s.nextAssetID++
 	now := time.Now()
 	return &MediaAsset{
@@ -50,12 +65,157 @@ func (s *invoiceTestMediaService) CreateDownloadURLForAdmin(_ context.Context, i
 	}, nil
 }
 
+func (s *invoiceTestMediaService) DeleteForAdmin(_ context.Context, id int64) error {
+	s.deletedIDs = append(s.deletedIDs, id)
+	return nil
+}
+
 func newInvoiceTestService(t *testing.T) (*dbent.Client, *invoiceTestMediaService, *InvoiceService) {
 	t.Helper()
 	client := newPaymentConfigServiceTestClient(t)
 	media := &invoiceTestMediaService{}
 	svc := NewInvoiceService(client, &PaymentService{entClient: client}, media)
 	return client, media, svc
+}
+
+type invoiceTxTracker struct {
+	active atomic.Int32
+}
+
+type trackingDriver struct {
+	entdialect.Driver
+	tracker *invoiceTxTracker
+}
+
+type trackingTx struct {
+	entdialect.Tx
+	tracker *invoiceTxTracker
+	once    sync.Once
+}
+
+type invoiceQueryCounter struct {
+	count atomic.Int32
+}
+
+func (c *invoiceQueryCounter) Reset() {
+	c.count.Store(0)
+}
+
+func (c *invoiceQueryCounter) Count() int {
+	return int(c.count.Load())
+}
+
+type queryCountingDriver struct {
+	entdialect.Driver
+	counter *invoiceQueryCounter
+}
+
+type queryCountingTx struct {
+	entdialect.Tx
+	counter *invoiceQueryCounter
+}
+
+func (d *queryCountingDriver) Query(ctx context.Context, query string, args, v any) error {
+	d.counter.count.Add(1)
+	return d.Driver.Query(ctx, query, args, v)
+}
+
+func (d *queryCountingDriver) Exec(ctx context.Context, query string, args, v any) error {
+	return d.Driver.Exec(ctx, query, args, v)
+}
+
+func (d *queryCountingDriver) Tx(ctx context.Context) (entdialect.Tx, error) {
+	tx, err := d.Driver.Tx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &queryCountingTx{Tx: tx, counter: d.counter}, nil
+}
+
+func (tx *queryCountingTx) Query(ctx context.Context, query string, args, v any) error {
+	tx.counter.count.Add(1)
+	return tx.Tx.Query(ctx, query, args, v)
+}
+
+func (tx *queryCountingTx) Exec(ctx context.Context, query string, args, v any) error {
+	return tx.Tx.Exec(ctx, query, args, v)
+}
+
+func (d *trackingDriver) Tx(ctx context.Context) (entdialect.Tx, error) {
+	tx, err := d.Driver.Tx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	d.tracker.active.Add(1)
+	return &trackingTx{Tx: tx, tracker: d.tracker}, nil
+}
+
+func (tx *trackingTx) Commit() error {
+	err := tx.Tx.Commit()
+	tx.once.Do(func() {
+		tx.tracker.active.Add(-1)
+	})
+	return err
+}
+
+func (tx *trackingTx) Rollback() error {
+	err := tx.Tx.Rollback()
+	tx.once.Do(func() {
+		tx.tracker.active.Add(-1)
+	})
+	return err
+}
+
+func newTrackedInvoiceTestService(t *testing.T) (*dbent.Client, *invoiceTestMediaService, *InvoiceService, *invoiceTxTracker) {
+	t.Helper()
+
+	dbName := fmt.Sprintf(
+		"file:%s?mode=memory&cache=shared",
+		strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()),
+	)
+	db, err := sql.Open("sqlite", dbName)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	require.NoError(t, err)
+
+	tracker := &invoiceTxTracker{}
+	drv := &trackingDriver{
+		Driver:  entsql.OpenDB(entdialect.SQLite, db),
+		tracker: tracker,
+	}
+	client := enttest.NewClient(t, enttest.WithOptions(dbent.Driver(drv)))
+	t.Cleanup(func() { _ = client.Close() })
+	media := &invoiceTestMediaService{}
+	svc := NewInvoiceService(client, &PaymentService{entClient: client}, media)
+	return client, media, svc, tracker
+}
+
+func newQueryCountedInvoiceTestService(t *testing.T) (*dbent.Client, *invoiceTestMediaService, *InvoiceService, *invoiceQueryCounter) {
+	t.Helper()
+
+	dbName := fmt.Sprintf(
+		"file:%s?mode=memory&cache=shared",
+		strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()),
+	)
+	db, err := sql.Open("sqlite", dbName)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	require.NoError(t, err)
+
+	counter := &invoiceQueryCounter{}
+	drv := &queryCountingDriver{
+		Driver:  entsql.OpenDB(entdialect.SQLite, db),
+		counter: counter,
+	}
+	client := enttest.NewClient(t, enttest.WithOptions(dbent.Driver(drv)))
+	t.Cleanup(func() { _ = client.Close() })
+	media := &invoiceTestMediaService{}
+	svc := NewInvoiceService(client, &PaymentService{entClient: client}, media)
+	return client, media, svc, counter
 }
 
 // seedInvoiceTestOrder 复用旧版本签名：返回一张 user / order / providerInstance。
@@ -124,6 +284,20 @@ func TestInvoiceServiceCreate_SingleOrder(t *testing.T) {
 	require.Len(t, inv.Orders, 1)
 	require.Equal(t, order.ID, inv.Orders[0].OrderID)
 	require.Equal(t, order.OutTradeNo, inv.Orders[0].OutTradeNo)
+}
+
+func TestFormatInvoiceAmountDisplay(t *testing.T) {
+	t.Run("single known currency uses currency code prefix", func(t *testing.T) {
+		require.Equal(t, "USD 318.00", formatInvoiceAmountDisplay(318, []string{"usd", "USD"}))
+	})
+
+	t.Run("mixed currencies fall back to raw amount", func(t *testing.T) {
+		require.Equal(t, "318.00", formatInvoiceAmountDisplay(318, []string{"USD", "EUR"}))
+	})
+
+	t.Run("unknown currency falls back to raw amount", func(t *testing.T) {
+		require.Equal(t, "318.00", formatInvoiceAmountDisplay(318, []string{""}))
+	})
 }
 
 func TestInvoiceServiceCreate_MultipleOrders(t *testing.T) {
@@ -222,6 +396,31 @@ func TestInvoiceServiceCreate_RejectsOrderInActiveInvoice(t *testing.T) {
 	require.Equal(t, 1, count)
 }
 
+func TestInvoiceServiceCreate_MapsInvoiceOrderConstraintConflict(t *testing.T) {
+	ctx := context.Background()
+	client, _, svc := newInvoiceTestService(t)
+
+	user, order, _ := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusCompleted)
+
+	trigger := fmt.Sprintf(`
+		CREATE TRIGGER invoice_order_active_conflict
+		BEFORE INSERT ON invoice_orders
+		WHEN NEW.order_id = %d AND NEW.is_active = 1
+		BEGIN
+			SELECT RAISE(ABORT, 'constraint failed: invoice_orders.order_id');
+		END;
+	`, order.ID)
+	_, err := client.ExecContext(ctx, trigger)
+	require.NoError(t, err)
+
+	_, err = svc.Create(ctx, user.ID, CreateInvoiceRequest{
+		OrderIDs: []int64{order.ID}, Title: "T", TaxNumber: "TX", Email: "x@a.com",
+	})
+	require.Error(t, err)
+	require.True(t, infraerrors.IsConflict(err), "expected conflict error, got %v", err)
+	require.Equal(t, "INVOICE_ORDER_ALREADY_ACTIVE", infraerrors.Reason(err))
+}
+
 func TestInvoiceServiceCancel_ReleasesOrders(t *testing.T) {
 	ctx := context.Background()
 	client, _, svc := newInvoiceTestService(t)
@@ -267,6 +466,96 @@ func TestInvoiceServiceCancel_RejectsIssued(t *testing.T) {
 	_ = client
 }
 
+func TestInvoiceServiceUploadFile_RejectsUnsupportedContentType(t *testing.T) {
+	ctx := context.Background()
+	client, _, svc := newInvoiceTestService(t)
+
+	user, order, _ := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusCompleted)
+	inv, err := svc.Create(ctx, user.ID, CreateInvoiceRequest{
+		OrderIDs: []int64{order.ID}, Title: "T", TaxNumber: "TX", Email: "x@a.com",
+	})
+	require.NoError(t, err)
+
+	_, err = svc.UploadFile(ctx, inv.ID, InvoiceFileUploadInput{
+		FileName:    "invoice.html",
+		ContentType: "text/html",
+		File:        []byte("<html></html>"),
+	})
+	require.Error(t, err)
+	require.Equal(t, "INVOICE_FILE_CONTENT_TYPE_INVALID", infraerrors.Reason(err))
+}
+
+func TestInvoiceServiceUploadFile_SanitizesStoredFileName(t *testing.T) {
+	ctx := context.Background()
+	client, _, svc := newInvoiceTestService(t)
+
+	user, order, _ := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusCompleted)
+	inv, err := svc.Create(ctx, user.ID, CreateInvoiceRequest{
+		OrderIDs: []int64{order.ID}, Title: "T", TaxNumber: "TX", Email: "x@a.com",
+	})
+	require.NoError(t, err)
+
+	issued, err := svc.UploadFile(ctx, inv.ID, InvoiceFileUploadInput{
+		FileName:    "invoice\"\r\n2026.pdf",
+		ContentType: "application/pdf",
+		File:        []byte("PDF"),
+	})
+	require.NoError(t, err)
+	require.Equal(t, "invoice2026.pdf", issued.FileName)
+}
+
+func TestInvoiceServiceUploadFile_RechecksStateAfterUpload(t *testing.T) {
+	ctx := context.Background()
+	client, media, svc, tracker := newTrackedInvoiceTestService(t)
+
+	user, order, _ := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusCompleted)
+	inv, err := svc.Create(ctx, user.ID, CreateInvoiceRequest{
+		OrderIDs: []int64{order.ID}, Title: "T", TaxNumber: "TX", Email: "x@a.com",
+	})
+	require.NoError(t, err)
+
+	var activeTxDuringUpload int32 = -1
+	media.uploadHook = func(ctx context.Context, _ UploadMediaInput) error {
+		activeTxDuringUpload = tracker.active.Load()
+		return nil
+	}
+
+	issued, err := svc.UploadFile(ctx, inv.ID, InvoiceFileUploadInput{
+		FileName:    "invoice.pdf",
+		ContentType: "application/pdf",
+		File:        []byte("PDF"),
+	})
+	require.NoError(t, err)
+	require.Equal(t, int32(0), activeTxDuringUpload, "upload must happen before opening the invoice transaction")
+	require.Equal(t, InvoiceStatusIssued, issued.Status)
+}
+
+func TestInvoiceServiceUploadFile_DeletesUploadedAssetWhenStateChangesAfterUpload(t *testing.T) {
+	ctx := context.Background()
+	client, media, svc, _ := newTrackedInvoiceTestService(t)
+
+	user, order, _ := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusCompleted)
+	inv, err := svc.Create(ctx, user.ID, CreateInvoiceRequest{
+		OrderIDs: []int64{order.ID}, Title: "T", TaxNumber: "TX", Email: "x@a.com",
+	})
+	require.NoError(t, err)
+
+	media.uploadHook = func(ctx context.Context, _ UploadMediaInput) error {
+		_, err := client.Invoice.UpdateOneID(inv.ID).SetStatus(InvoiceStatusCancelled).Save(ctx)
+		return err
+	}
+
+	issued, err := svc.UploadFile(ctx, inv.ID, InvoiceFileUploadInput{
+		FileName:    "invoice.pdf",
+		ContentType: "application/pdf",
+		File:        []byte("PDF"),
+	})
+	require.Nil(t, issued)
+	require.Error(t, err)
+	require.Equal(t, "INVOICE_CANNOT_UPLOAD", infraerrors.Reason(err))
+	require.Equal(t, []int64{1}, media.deletedIDs)
+}
+
 func TestInvoiceServiceList_FiltersByUserAndStatus(t *testing.T) {
 	ctx := context.Background()
 	client, _, svc := newInvoiceTestService(t)
@@ -296,6 +585,25 @@ func TestInvoiceServiceList_FiltersByUserAndStatus(t *testing.T) {
 	_, totalEmpty, err := svc.List(ctx, InvoiceListParams{UserID: &otherID})
 	require.NoError(t, err)
 	require.Equal(t, 0, totalEmpty)
+}
+
+func TestInvoiceServiceList_KeywordMatchOnOutTradeNoDoesNotRequirePrefetchQuery(t *testing.T) {
+	ctx := context.Background()
+	client, _, svc, counter := newQueryCountedInvoiceTestService(t)
+
+	user, order, _ := seedInvoiceTestOrder(t, ctx, client, true, OrderStatusCompleted)
+	inv, err := svc.Create(ctx, user.ID, CreateInvoiceRequest{
+		OrderIDs: []int64{order.ID}, Title: "T", TaxNumber: "TX", Email: "x@a.com",
+	})
+	require.NoError(t, err)
+
+	counter.Reset()
+	items, total, err := svc.List(ctx, InvoiceListParams{Keyword: order.OutTradeNo})
+	require.NoError(t, err)
+	require.Equal(t, 1, total)
+	require.Len(t, items, 1)
+	require.Equal(t, inv.ID, items[0].ID)
+	require.Equal(t, 2, counter.Count(), "keyword list should stay on count+page queries without prefetching invoice IDs")
 }
 
 func TestInvoiceServiceGetActiveLinksByOrderIDs(t *testing.T) {

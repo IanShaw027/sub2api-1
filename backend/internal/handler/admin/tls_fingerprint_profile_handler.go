@@ -30,6 +30,7 @@ type CreateTLSFingerprintProfileRequest struct {
 	Name                           string            `json:"name" binding:"required"`
 	UserAgent                      string            `json:"user_agent"`
 	Originator                     string            `json:"originator"`
+	HTTP2Fingerprint               string            `json:"http2_fingerprint"`
 	Description                    *string           `json:"description"`
 	EnableGREASE                   *bool             `json:"enable_grease"`
 	CipherSuites                   []uint16          `json:"cipher_suites"`
@@ -57,6 +58,7 @@ type UpdateTLSFingerprintProfileRequest struct {
 	Name                           *string           `json:"name"`
 	UserAgent                      *string           `json:"user_agent"`
 	Originator                     *string           `json:"originator"`
+	HTTP2Fingerprint               *string           `json:"http2_fingerprint"`
 	Description                    *string           `json:"description"`
 	EnableGREASE                   *bool             `json:"enable_grease"`
 	CipherSuites                   []uint16          `json:"cipher_suites"`
@@ -135,6 +137,7 @@ func (h *TLSFingerprintProfileHandler) Create(c *gin.Context) {
 		Name:                           req.Name,
 		UserAgent:                      req.UserAgent,
 		Originator:                     req.Originator,
+		HTTP2Fingerprint:               req.HTTP2Fingerprint,
 		Description:                    req.Description,
 		CipherSuites:                   req.CipherSuites,
 		Curves:                         req.Curves,
@@ -401,6 +404,7 @@ func (h *TLSFingerprintProfileHandler) Update(c *gin.Context) {
 		Name:                           existing.Name,
 		UserAgent:                      existing.UserAgent,
 		Originator:                     existing.Originator,
+		HTTP2Fingerprint:               existing.HTTP2Fingerprint,
 		Description:                    existing.Description,
 		EnableGREASE:                   existing.EnableGREASE,
 		CipherSuites:                   existing.CipherSuites,
@@ -439,6 +443,9 @@ func (h *TLSFingerprintProfileHandler) Update(c *gin.Context) {
 	}
 	if req.Originator != nil {
 		profile.Originator = *req.Originator
+	}
+	if req.HTTP2Fingerprint != nil {
+		profile.HTTP2Fingerprint = *req.HTTP2Fingerprint
 	}
 	if req.Description != nil {
 		profile.Description = req.Description

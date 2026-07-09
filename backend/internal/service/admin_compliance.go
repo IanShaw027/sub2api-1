@@ -101,7 +101,7 @@ func (s *SettingService) GetAdminComplianceStatus(ctx context.Context, adminUser
 		AckPhraseEN:    AdminComplianceAckPhraseEN,
 	}
 	if s == nil || s.settingRepo == nil {
-		return status, nil
+		return nil, infraerrors.InternalServer("SETTING_SERVICE_UNAVAILABLE", "setting service is unavailable")
 	}
 
 	raw, err := s.settingRepo.GetValue(ctx, adminComplianceAcknowledgementKey(adminUserID))

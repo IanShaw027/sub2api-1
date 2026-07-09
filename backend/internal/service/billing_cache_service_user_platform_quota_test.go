@@ -33,7 +33,9 @@ func (f *fakeIncrCache) IncrUserPlatformQuotaUsageCache(ctx context.Context, use
 }
 
 // IncrementUserPlatformQuotaUsage 已改为同步直写,不再走 worker。
-// 测试验证:同步调用立即调到 cache.IncrUserPlatformQuotaUsageCache。
+// 测试验证:同步调用立即调到 cache.IncrUserPlatformQuotaUsageCache，
+// 并始终标 dirty，保证 flusher_enabled=false 的降级路径在异常退出后仍可依赖
+// Redis 脏集 + 启动恢复 flush 把绝对快照补回 DB。
 func TestIncrementUserPlatformQuotaUsage_SyncCallsCache(t *testing.T) {
 	fake := &fakeIncrCache{}
 	cfg := &config.Config{}
@@ -50,10 +52,10 @@ func TestIncrementUserPlatformQuotaUsage_SyncCallsCache(t *testing.T) {
 	if len(fake.calls) != 2 {
 		t.Fatalf("expected 2 incr calls, got %d", len(fake.calls))
 	}
-	if fake.calls[0] != (incrCall{userID: 101, platform: "anthropic", cost: 0.25, ttl: 120 * time.Second, markDirty: false}) {
+	if fake.calls[0] != (incrCall{userID: 101, platform: "anthropic", cost: 0.25, ttl: 120 * time.Second, markDirty: true}) {
 		t.Errorf("call[0] = %+v", fake.calls[0])
 	}
-	if fake.calls[1] != (incrCall{userID: 101, platform: "openai", cost: 0.50, ttl: 120 * time.Second, markDirty: false}) {
+	if fake.calls[1] != (incrCall{userID: 101, platform: "openai", cost: 0.50, ttl: 120 * time.Second, markDirty: true}) {
 		t.Errorf("call[1] = %+v", fake.calls[1])
 	}
 }

@@ -312,7 +312,7 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
 	if account == nil {
-		return nil, fmt.Errorf("grok account is required")
+		return nil, fmt.Errorf("account is required")
 	}
 	if account.Platform != PlatformGrok {
 		return nil, fmt.Errorf("account platform %s is not supported for grok media", account.Platform)
@@ -354,7 +354,7 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	upstreamReq = upstreamReq.WithContext(WithHTTPUpstreamProfile(upstreamReq.Context(), HTTPUpstreamProfileOpenAI))
 	upstreamReq.Header.Set("Authorization", "Bearer "+token)
 	upstreamReq.Header.Set("Accept", "application/json")
-	upstreamReq.Header.Set("User-Agent", "sub2api-grok/1.0")
+	applyDefaultGrokUpstreamHeaders(upstreamReq)
 	if endpoint.RequiresRequestBody() {
 		contentType = strings.TrimSpace(contentType)
 		if contentType == "" {
@@ -362,6 +362,10 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 		}
 		upstreamReq.Header.Set("Content-Type", contentType)
 	}
+	// 与 /responses 走同一 OAuth token 命中同一 api.x.ai：media 端点必须复用相同的
+	// TLS 指纹 + 浏览器 UA，否则按身份关联的检测器会看到 JA3/UA 自相矛盾（默认 UA 仅作兜底）。
+	tlsRuntime := s.resolveGrokTLSFingerprintRuntime(ctx, c, account, "http")
+	applyGrokRuntimeHeaders(upstreamReq, tlsRuntime)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {

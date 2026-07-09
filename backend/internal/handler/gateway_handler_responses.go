@@ -43,8 +43,6 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		zap.Int64("api_key_id", apiKey.ID),
 		zap.Any("group_id", apiKey.GroupID),
 	)
-	requestCtx := c.Request.Context()
-
 	// Read request body
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 	if err != nil {
@@ -86,7 +84,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, reqStream, body)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 	SetClaudeCodeClientContext(c, body, nil)
-	requestCtx = c.Request.Context()
+	requestCtx := c.Request.Context()
 	h.emitGatewayDebugTimelineRequestReceived(c, service.PlatformAnthropic, "responses", requestStart, apiKey, subject.UserID, reqModel, reqStream, body)
 
 	if h.rejectIfCyberSessionBlocked(c, apiKey, body, reqModel, cyberBlockFormatResponses) {

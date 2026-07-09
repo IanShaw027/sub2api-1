@@ -89,6 +89,13 @@ func TestWriteConfigFileKeepsDefaultUserConcurrency(t *testing.T) {
 }
 
 func TestEnsureJWTSecretForBootstrap(t *testing.T) {
+	t.Run("rejects nil config", func(t *testing.T) {
+		err := ensureJWTSecretForBootstrap(nil)
+		if err == nil || err.Error() != "setup config is required" {
+			t.Fatalf("ensureJWTSecretForBootstrap(nil) error = %v", err)
+		}
+	})
+
 	t.Run("generates missing secret", func(t *testing.T) {
 		cfg := &SetupConfig{}
 		if err := ensureJWTSecretForBootstrap(cfg); err != nil {

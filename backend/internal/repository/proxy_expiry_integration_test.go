@@ -87,6 +87,33 @@ func (s *ProxyExpirySuite) TestSweep_ProxyMode_Healthy() {
 	s.Require().Equal(pid, *origin)
 }
 
+func (s *ProxyExpirySuite) TestSweep_ReRoutesAccountAgainWhenFallbackProxyLaterExpires() {
+	now := time.Now()
+	past := now.Add(-time.Hour)
+	future := now.Add(24 * time.Hour)
+
+	backup := s.mkProxy("p-backup", service.FallbackModeDirect, &future, nil)
+	originProxy := s.mkProxy("p-origin", service.FallbackModeProxy, &past, &backup)
+	aid := s.mkAccountWithProxy(originProxy)
+
+	_, err := s.repo.SweepExpiredProxies(s.ctx, now)
+	s.Require().NoError(err)
+	s.Require().Equal(backup, *s.accountProxyID(aid))
+
+	_, err = s.tx.ExecContext(s.ctx, `UPDATE proxies SET expires_at=$1 WHERE id=$2`, past, backup)
+	s.Require().NoError(err)
+
+	_, err = s.repo.SweepExpiredProxies(s.ctx, now)
+	s.Require().NoError(err)
+	s.Require().Nil(s.accountProxyID(aid))
+
+	var origin *int64
+	err = scanSingleRow(s.ctx, s.tx, `SELECT proxy_fallback_origin_id FROM accounts WHERE id=$1`, []any{aid}, &origin)
+	s.Require().NoError(err)
+	s.Require().NotNil(origin)
+	s.Require().Equal(originProxy, *origin)
+}
+
 func (s *ProxyExpirySuite) TestSweep_NoneMode_KeepsAccount() {
 	past := time.Now().Add(-time.Hour)
 	pid := s.mkProxy("p-none", service.FallbackModeNone, &past, nil)

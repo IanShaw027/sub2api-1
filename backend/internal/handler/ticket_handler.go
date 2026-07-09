@@ -304,23 +304,28 @@ func (h *TicketHandler) Reply(c *gin.Context) {
 		response.ErrorFrom(c, service.ErrTicketMessageRequired)
 		return
 	}
-	attachments, err := h.resolveAttachmentsForUser(c.Request.Context(), subject.UserID, req.Attachments)
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	if err := h.ticketService.ReplyForUser(c.Request.Context(), ticketID, service.CreateSupportTicketMessageInput{
-		UserID:      subject.UserID,
-		Content:     content,
-		Attachments: attachments,
-	}); err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	response.Success(c, gin.H{"message": "ok"})
+	executeUserIdempotentJSON(c, "tickets:reply", map[string]any{
+		"ticket_id":    ticketID,
+		"content":      content,
+		"attachments":  req.Attachments,
+		"expected_uid": subject.UserID,
+	}, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
+		attachments, err := h.resolveAttachmentsForUser(ctx, subject.UserID, ticketID, req.Attachments)
+		if err != nil {
+			return nil, err
+		}
+		if err := h.ticketService.ReplyForUser(ctx, ticketID, service.CreateSupportTicketMessageInput{
+			UserID:      subject.UserID,
+			Content:     content,
+			Attachments: attachments,
+		}); err != nil {
+			return nil, err
+		}
+		return gin.H{"message": "ok"}, nil
+	})
 }
 
-func (h *TicketHandler) resolveAttachmentsForUser(ctx context.Context, userID int64, refs []TicketAttachmentRefRequest) ([]service.TicketMessageAttachment, error) {
+func (h *TicketHandler) resolveAttachmentsForUser(ctx context.Context, userID, ticketID int64, refs []TicketAttachmentRefRequest) ([]service.TicketMessageAttachment, error) {
 	if len(refs) == 0 {
 		return nil, nil
 	}
@@ -329,7 +334,7 @@ func (h *TicketHandler) resolveAttachmentsForUser(ctx context.Context, userID in
 	}
 	attachments := make([]service.TicketMessageAttachment, 0, len(refs))
 	for _, ref := range refs {
-		asset, err := h.mediaService.GetForUser(ctx, userID, ref.MediaID)
+		asset, err := h.getTicketScopedMediaForUser(ctx, userID, ticketID, ref.MediaID)
 		if err != nil {
 			return nil, err
 		}
@@ -345,12 +350,29 @@ func (h *TicketHandler) resolveAttachmentsForUser(ctx context.Context, userID in
 	return attachments, nil
 }
 
+func (h *TicketHandler) getTicketScopedMediaForUser(ctx context.Context, userID, ticketID, mediaID int64) (*service.MediaAsset, error) {
+	if h.mediaService == nil {
+		return nil, service.ErrMediaStorageDisabled
+	}
+	asset, err := h.mediaService.GetForUser(ctx, userID, mediaID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(asset.BizType) != "ticket" || strings.TrimSpace(asset.BizID) != strconv.FormatInt(ticketID, 10) {
+		return nil, service.ErrMediaForbidden
+	}
+	return asset, nil
+}
+
 func (h *TicketHandler) hydrateMessageAttachmentsForUser(ctx context.Context, userID int64, message *service.SupportTicketMessage) {
 	if h.mediaService == nil || message == nil || len(message.Attachments) == 0 {
 		return
 	}
 	for i := range message.Attachments {
 		attachment := &message.Attachments[i]
+		if _, err := h.getTicketScopedMediaForUser(ctx, userID, message.TicketID, attachment.MediaID); err != nil {
+			continue
+		}
 		download, err := h.mediaService.CreateDownloadURLForUser(ctx, userID, attachment.MediaID)
 		if err == nil && download != nil {
 			attachment.URL = download.URL

@@ -53,10 +53,10 @@ func NewSubscriptionMaintenanceQueue(workerCount, queueSize int) *SubscriptionMa
 // 当队列已关闭时返回 error，不会 panic。
 func (q *SubscriptionMaintenanceQueue) TryEnqueue(task func()) error {
 	if q == nil {
-		return fmt.Errorf("maintenance queue is nil")
+		return fmt.Errorf("maintenance queue is required")
 	}
 	if task == nil {
-		return fmt.Errorf("maintenance task is nil")
+		return fmt.Errorf("maintenance task is required")
 	}
 
 	q.mu.RLock()

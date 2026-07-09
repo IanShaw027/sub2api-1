@@ -84,6 +84,116 @@ func TestUsageLogsRequestTypeCheckValidationRunsAfterNotValidAdd(t *testing.T) {
 	}
 }
 
+func TestHotTableCheckConstraintsAreAddedNotValid(t *testing.T) {
+	tests := []struct {
+		migration       string
+		constraintName  string
+		checkExpression string
+	}{
+		{
+			migration:       "156_user_platform_quotas_add_kiro.sql",
+			constraintName:  "USER_PLATFORM_QUOTAS_PLATFORM_CHECK",
+			checkExpression: "CHECK (PLATFORM IN ('ANTHROPIC', 'OPENAI', 'GEMINI', 'ANTIGRAVITY', 'KIRO')) NOT VALID",
+		},
+		{
+			migration:       "181_user_platform_quotas_add_grok.sql",
+			constraintName:  "USER_PLATFORM_QUOTAS_PLATFORM_CHECK",
+			checkExpression: "CHECK (PLATFORM IN ('ANTHROPIC', 'OPENAI', 'GEMINI', 'ANTIGRAVITY', 'KIRO', 'GROK')) NOT VALID",
+		},
+		{
+			migration:       "187_allow_native_image_route_and_video_price_checks.sql",
+			constraintName:  "GROUPS_IMAGE_GENERATION_ROUTE_CHECK",
+			checkExpression: "CHECK (IMAGE_GENERATION_ROUTE IN ('CODEX', 'WEB2API', 'NATIVE')) NOT VALID",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.migration, func(t *testing.T) {
+			content, err := FS.ReadFile(tt.migration)
+			require.NoError(t, err)
+
+			sql := normalizeMigrationSQLForSafetyTest(string(content))
+			require.Contains(t, sql, "ADD CONSTRAINT "+tt.constraintName)
+			require.Contains(t, sql, tt.checkExpression)
+		})
+	}
+}
+
+func TestHotTableCheckConstraintValidationRunsInFollowupMigration(t *testing.T) {
+	content, err := FS.ReadFile("196_validate_hot_table_check_constraints.sql")
+	require.NoError(t, err)
+
+	sql := normalizeMigrationSQLForSafetyTest(string(content))
+	for _, statement := range []string{
+		"ALTER TABLE USER_PLATFORM_QUOTAS VALIDATE CONSTRAINT USER_PLATFORM_QUOTAS_PLATFORM_CHECK",
+		"ALTER TABLE GROUPS VALIDATE CONSTRAINT GROUPS_IMAGE_GENERATION_ROUTE_CHECK",
+		"ALTER TABLE GROUPS VALIDATE CONSTRAINT GROUPS_VIDEO_PRICE_480P_PER_SEC_NON_NEGATIVE",
+		"ALTER TABLE GROUPS VALIDATE CONSTRAINT GROUPS_VIDEO_PRICE_720P_PER_SEC_NON_NEGATIVE",
+		"ALTER TABLE GROUPS VALIDATE CONSTRAINT GROUPS_VIDEO_PRICE_1080P_PER_SEC_NON_NEGATIVE",
+		"ALTER TABLE GROUPS VALIDATE CONSTRAINT GROUPS_VIDEO_PRICE_4K_PER_SEC_NON_NEGATIVE",
+	} {
+		require.Contains(t, sql, statement)
+	}
+}
+
+func TestPostReleaseNonNegativeChecksOnExistingTablesAreAddedNotValid(t *testing.T) {
+	tests := []struct {
+		migration       string
+		constraintName  string
+		checkExpression string
+	}{
+		{
+			migration:       "151_apply_rpm_parallel_constraints_and_replace_claude_code_template.sql",
+			constraintName:  "GROUPS_RPM_LIMIT_NON_NEGATIVE",
+			checkExpression: "CHECK (RPM_LIMIT >= 0) NOT VALID",
+		},
+		{
+			migration:       "151_apply_rpm_parallel_constraints_and_replace_claude_code_template.sql",
+			constraintName:  "USERS_RPM_LIMIT_NON_NEGATIVE",
+			checkExpression: "CHECK (RPM_LIMIT >= 0) NOT VALID",
+		},
+		{
+			migration:       "151_apply_rpm_parallel_constraints_and_replace_claude_code_template.sql",
+			constraintName:  "USER_GROUP_RATE_MULTIPLIERS_RPM_OVERRIDE_NON_NEGATIVE",
+			checkExpression: "CHECK (RPM_OVERRIDE IS NULL OR RPM_OVERRIDE >= 0) NOT VALID",
+		},
+		{
+			migration:       "188_add_group_audio_search_price_checks.sql",
+			constraintName:  "GROUPS_SEARCH_PRICE_PER_1K_NON_NEGATIVE",
+			checkExpression: "CHECK (SEARCH_PRICE_PER_1K IS NULL OR SEARCH_PRICE_PER_1K >= 0) NOT VALID",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.migration+"_"+tt.constraintName, func(t *testing.T) {
+			content, err := FS.ReadFile(tt.migration)
+			require.NoError(t, err)
+
+			sql := normalizeMigrationSQLForSafetyTest(string(content))
+			require.Contains(t, sql, "ADD CONSTRAINT "+tt.constraintName)
+			require.Contains(t, sql, tt.checkExpression)
+		})
+	}
+}
+
+func TestPostReleaseNonNegativeCheckValidationRunsInFollowupMigration(t *testing.T) {
+	content, err := FS.ReadFile("197_validate_post_release_non_negative_checks.sql")
+	require.NoError(t, err)
+
+	sql := normalizeMigrationSQLForSafetyTest(string(content))
+	for _, statement := range []string{
+		"ALTER TABLE GROUPS VALIDATE CONSTRAINT GROUPS_RPM_LIMIT_NON_NEGATIVE",
+		"ALTER TABLE USERS VALIDATE CONSTRAINT USERS_RPM_LIMIT_NON_NEGATIVE",
+		"ALTER TABLE USER_GROUP_RATE_MULTIPLIERS VALIDATE CONSTRAINT USER_GROUP_RATE_MULTIPLIERS_RPM_OVERRIDE_NON_NEGATIVE",
+		"ALTER TABLE GROUPS VALIDATE CONSTRAINT GROUPS_SEARCH_PRICE_PER_1K_NON_NEGATIVE",
+		"ALTER TABLE GROUPS VALIDATE CONSTRAINT GROUPS_AUDIO_REALTIME_PRICE_PER_MIN_NON_NEGATIVE",
+		"ALTER TABLE GROUPS VALIDATE CONSTRAINT GROUPS_AUDIO_TTS_PRICE_PER_MILLION_CHARS_NON_NEGATIVE",
+		"ALTER TABLE GROUPS VALIDATE CONSTRAINT GROUPS_AUDIO_STT_PRICE_PER_HOUR_NON_NEGATIVE",
+	} {
+		require.Contains(t, sql, statement)
+	}
+}
+
 func TestGroupDisplayNameLengthMigrationFailsBeforeTruncating(t *testing.T) {
 	content, err := FS.ReadFile("169_align_group_display_name_length.sql")
 	require.NoError(t, err)

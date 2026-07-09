@@ -139,6 +139,9 @@ type PricingService struct {
 
 // NewPricingService 创建价格服务
 func NewPricingService(cfg *config.Config, remoteClient PricingRemoteClient) *PricingService {
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
 	s := &PricingService{
 		cfg:          cfg,
 		remoteClient: remoteClient,
@@ -938,11 +941,17 @@ func (s *PricingService) ForceUpdate() error {
 
 // getPricingFilePath 获取价格文件路径
 func (s *PricingService) getPricingFilePath() string {
+	if s == nil || s.cfg == nil {
+		return filepath.Join("", "model_pricing.json")
+	}
 	return filepath.Join(s.cfg.Pricing.DataDir, "model_pricing.json")
 }
 
 // getHashFilePath 获取哈希文件路径
 func (s *PricingService) getHashFilePath() string {
+	if s == nil || s.cfg == nil {
+		return filepath.Join("", "model_pricing.sha256")
+	}
 	return filepath.Join(s.cfg.Pricing.DataDir, "model_pricing.sha256")
 }
 

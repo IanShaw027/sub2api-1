@@ -44,6 +44,13 @@ func TestNewOpenAIBackendAPIClient_DisablesCookieJar(t *testing.T) {
 	require.Nil(t, client.GetClient().Jar)
 }
 
+func TestReadAllWithLimitDetectionRejectsNilReader(t *testing.T) {
+	data, err := readAllWithLimitDetection(nil, 1024)
+
+	require.Nil(t, data)
+	require.EqualError(t, err, "reader is required")
+}
+
 type blockingOpenAIImagesHTTPUpstreamRecorder struct {
 	mu       sync.Mutex
 	active   int
@@ -674,9 +681,9 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_NormalizesOfficialAndCusto
 		{size: "2048x1152", wantSize: "2048x1152", wantTier: "2K"},
 		{size: "3840x2160", wantSize: "3840x2160", wantTier: "4K"},
 		{size: "2160x3840", wantSize: "2160x3840", wantTier: "4K"},
-		{size: "1024X768", wantSize: "1024x768", wantTier: "2K"},
+		{size: "1024X768", wantSize: "1024x768", wantTier: "1K"},
 		{size: "1280x768", wantSize: "1280x768", wantTier: "2K"},
-		{size: "2560x1440", wantSize: "2560x1440", wantTier: "2K"},
+		{size: "2560x1440", wantSize: "2560x1440", wantTier: "4K"},
 		{size: "2560x1600", wantSize: "2560x1600", wantTier: "4K"},
 		{size: "auto", wantSize: "auto", wantTier: "2K"},
 		{size: "1k", wantSize: "1024x1024", wantTier: "1K"},
@@ -1665,6 +1672,178 @@ func TestOpenAIGatewayServiceForwardImages_OAuthRecordsEmptyOutputTimeline(t *te
 	require.Contains(t, content, `"upstream_request_id":"req_img_empty"`)
 	require.Contains(t, content, "response.completed")
 	require.Contains(t, content, "upstream did not return image output")
+}
+
+func TestOpenAIGatewayServiceForwardImages_APIKeyNonStreamEmptyDataDoesNotFallbackToRequestedCount(t *testing.T) {
+	setGinTestMode()
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","n":3}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{},
+		httpUpstream: &openAIImagesHTTPUpstreamRecorder{
+			resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"application/json"},
+					"X-Request-Id": []string{"req_img_empty_data"},
+				},
+				Body: io.NopCloser(strings.NewReader(`{"created":1710000010,"data":[],"usage":{"input_tokens":5,"output_tokens":0,"output_tokens_details":{"image_tokens":0}}}`)),
+			},
+		},
+	}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+
+	account := &Account{
+		ID:       61,
+		Name:     "openai-apikey",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "test-api-key",
+			"base_url": "https://image-upstream.example/v1",
+		},
+	}
+
+	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Zero(t, result.ImageCount)
+}
+
+func TestOpenAIGatewayServiceForwardImages_APIKeyNonStreamUnknownSuccessShapeFallsBackToRequestedCount(t *testing.T) {
+	setGinTestMode()
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","n":3}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{},
+		httpUpstream: &openAIImagesHTTPUpstreamRecorder{
+			resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"application/json"},
+					"X-Request-Id": []string{"req_img_unknown_shape"},
+				},
+				Body: io.NopCloser(strings.NewReader(`{"created":1710000011,"result":{"assets":[{"uri":"one"},{"uri":"two"},{"uri":"three"}]},"usage":{"input_tokens":5,"output_tokens":0}}`)),
+			},
+		},
+	}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+
+	account := &Account{
+		ID:       62,
+		Name:     "openai-apikey",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "test-api-key",
+			"base_url": "https://image-upstream.example/v1",
+		},
+	}
+
+	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 3, result.ImageCount)
+}
+
+func TestOpenAIGatewayServiceForwardImages_APIKeyTopLevelErrorDoesNotFallbackToRequestedCount(t *testing.T) {
+	setGinTestMode()
+	body := []byte(`{"model":"gpt-image-2","prompt":"blocked image","n":2}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{},
+		httpUpstream: &openAIImagesHTTPUpstreamRecorder{
+			resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"application/json"},
+					"X-Request-Id": []string{"req_img_top_level_error"},
+				},
+				Body: io.NopCloser(strings.NewReader(`{"error":{"type":"content_policy_violation","message":"blocked"}}`)),
+			},
+		},
+	}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+
+	account := &Account{
+		ID:       63,
+		Name:     "openai-apikey",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":  "test-api-key",
+			"base_url": "https://image-upstream.example/v1",
+		},
+	}
+
+	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Zero(t, result.ImageCount)
+}
+
+func TestOpenAIGatewayServiceForwardImages_GrokOAuthUnknownSuccessShapeFallsBackToRequestedCount(t *testing.T) {
+	setGinTestMode()
+	body := []byte(`{"model":"grok-imagine-1","prompt":"draw a cat","n":2}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{},
+		httpUpstream: &openAIImagesHTTPUpstreamRecorder{
+			resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"application/json"},
+					"X-Request-Id": []string{"req_img_grok_unknown_shape"},
+				},
+				Body: io.NopCloser(strings.NewReader(`{"created":1710000012,"result":{"assets":[{"uri":"one"},{"uri":"two"}]},"usage":{"input_tokens":5,"output_tokens":0}}`)),
+			},
+		},
+	}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+
+	account := &Account{
+		ID:       64,
+		Name:     "grok-oauth",
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "xai-token",
+			"base_url":     "https://api.x.ai",
+		},
+	}
+
+	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 2, result.ImageCount)
 }
 
 func TestOpenAIGatewayServiceForwardImages_OAuthStreamingUnexpectedEOFFailoversBeforeOutput(t *testing.T) {

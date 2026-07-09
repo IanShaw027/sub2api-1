@@ -69,7 +69,7 @@ func TestAntigravityTokenProvider_GetAccessToken_Guards(t *testing.T) {
 	t.Run("nil account", func(t *testing.T) {
 		token, err := provider.GetAccessToken(context.Background(), nil)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "account is nil")
+		require.EqualError(t, err, "account is required")
 		require.Empty(t, token)
 	})
 

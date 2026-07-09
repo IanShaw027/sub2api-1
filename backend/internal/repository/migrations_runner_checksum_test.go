@@ -201,6 +201,15 @@ func TestIsMigrationChecksumCompatible(t *testing.T) {
 		require.True(t, ok)
 	})
 
+	t.Run("137历史checksum可兼容当前版本", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"137_subscription_fulfillment_claim_dedupe.sql",
+			"1e4fb3a58b36572fd37a86c1a363f9d1458887daf8dc1b55c0b98f6b136bd50c",
+			currentMigrationChecksumForTest(t, "137_subscription_fulfillment_claim_dedupe.sql"),
+		)
+		require.True(t, ok)
+	})
+
 	t.Run("138历史checksum可兼容当前版本", func(t *testing.T) {
 		ok := isMigrationChecksumCompatible(
 			"138_subscription_fulfillment_claim_unique_notx.sql",
@@ -224,6 +233,60 @@ func TestIsMigrationChecksumCompatible(t *testing.T) {
 			"184_add_group_audio_search_pricing.sql",
 			currentMigrationChecksumForTest(t, "184_add_group_audio_search_pricing.sql"),
 			"56b65dbc1dc1927c193b5b5bf74cf458a20070d5c12c23a28f95933f87d72ae9",
+		)
+		require.True(t, ok)
+	})
+
+	t.Run("151历史checksum可兼容当前版本", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"151_apply_rpm_parallel_constraints_and_replace_claude_code_template.sql",
+			"0fe932f50177afc05846b8489715030518659ef97c7f4ac76a381b2c57d26199",
+			currentMigrationChecksumForTest(t, "151_apply_rpm_parallel_constraints_and_replace_claude_code_template.sql"),
+		)
+		require.True(t, ok)
+	})
+
+	t.Run("156历史checksum可兼容当前版本", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"156_user_platform_quotas_add_kiro.sql",
+			"7b92806712dbd12b5bd2af0f582a76a0b8f3503f91b92b4efab361e5c53a3105",
+			currentMigrationChecksumForTest(t, "156_user_platform_quotas_add_kiro.sql"),
+		)
+		require.True(t, ok)
+	})
+
+	t.Run("181历史checksum可兼容当前版本", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"181_user_platform_quotas_add_grok.sql",
+			"4fc04d9a7550719aa672d4d4377eb099f37edfa688ea4caeafc8f3a77ef86db7",
+			currentMigrationChecksumForTest(t, "181_user_platform_quotas_add_grok.sql"),
+		)
+		require.True(t, ok)
+	})
+
+	t.Run("176_tls_capture_unification历史checksum可兼容当前版本", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"176_tls_fingerprint_capture_unification.sql",
+			"bf4072bb168f5a2af0eb33c46cf69ff4410d7c3bccaf7c6b1906e7e1ee006951",
+			currentMigrationChecksumForTest(t, "176_tls_fingerprint_capture_unification.sql"),
+		)
+		require.True(t, ok)
+	})
+
+	t.Run("187历史checksum可兼容当前版本", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"187_allow_native_image_route_and_video_price_checks.sql",
+			"547c29809e0c72d00b9aebbbd792e718e677a4906e8e6cd744031aa15a021c14",
+			currentMigrationChecksumForTest(t, "187_allow_native_image_route_and_video_price_checks.sql"),
+		)
+		require.True(t, ok)
+	})
+
+	t.Run("188历史checksum可兼容当前版本", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"188_add_group_audio_search_price_checks.sql",
+			"e6cf495ea038076bc1f9d03b36eec81f6e517cfb81dbf346a4ef3d802f7e0be0",
+			currentMigrationChecksumForTest(t, "188_add_group_audio_search_price_checks.sql"),
 		)
 		require.True(t, ok)
 	})

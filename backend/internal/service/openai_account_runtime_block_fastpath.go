@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/guard"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/util/httputil"
 )
 
@@ -238,7 +239,7 @@ func (s *OpenAIGatewayService) ShouldStopOpenAIOAuth429Failover(account *Account
 // Cloudflare challenge responses. The account is temporarily unschedulable but
 // recovers quickly so other accounts can be tried immediately.
 func (s *OpenAIGatewayService) markOpenAICloudflareChallenge(ctx context.Context, account *Account) {
-	if s == nil || !isOpenAIOAuthAccount(account) {
+	if s == nil || !isOpenAIAccount(account) {
 		return
 	}
 	level := openAICFBackoffLevel(account.ID)
@@ -251,6 +252,12 @@ func (s *OpenAIGatewayService) markOpenAICloudflareChallenge(ctx context.Context
 	cooldown := guard.CloudflareBackoff(level, &cfg)
 	if cooldown > 0 {
 		setOpenAICFBackoffLevel(account.ID, level+1)
-		s.BlockAccountScheduling(account, time.Now().Add(cooldown), "cloudflare_challenge")
+		until := time.Now().Add(cooldown)
+		s.BlockAccountScheduling(account, until, "cloudflare_challenge")
+		if s.accountRepo != nil {
+			if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, "cloudflare_challenge"); err != nil {
+				logger.LegacyPrintf("service.openai_gateway", "persist cloudflare challenge cooldown failed: account=%d err=%v", account.ID, err)
+			}
+		}
 	}
 }

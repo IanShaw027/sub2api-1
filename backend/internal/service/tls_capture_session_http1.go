@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 )
@@ -15,6 +16,24 @@ func (l *TLSCaptureListener) handleCapture(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "client hello was not captured", http.StatusBadRequest)
 		return
 	}
+	if strings.TrimSpace(nativeCaptureRequestToken(r)) == "" {
+		drainTLSCaptureRequestBody(r.Body)
+		http.Error(w, "capture token is required", http.StatusBadRequest)
+		return
+	}
+	if _, err := l.cfg.Service.ValidateRunningTaskToken(r.Context(), nativeCaptureRequestToken(r)); err != nil {
+		drainTLSCaptureRequestBody(r.Body)
+		http.Error(w, tlsCapturePublicErrorMessage(err, "capture submission failed"), http.StatusBadRequest)
+		return
+	}
+	if err := cacheTLSCaptureRequestBody(r); err != nil {
+		if errors.Is(err, errTLSCaptureRequestBodyTooLarge) {
+			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "failed to read capture request body", http.StatusBadRequest)
+		return
+	}
 	if nativeCaptureIsWebsocketRequest(r) {
 		l.handleCaptureWSHTTP1(w, r, raw)
 		return
@@ -22,7 +41,7 @@ func (l *TLSCaptureListener) handleCapture(w http.ResponseWriter, r *http.Reques
 	req := buildTLSCaptureHTTP1SubmitRequest(r, raw)
 	result, err := l.cfg.Service.SubmitNativeCapture(r.Context(), req)
 	if err != nil {
-		http.Error(w, "capture submission failed", http.StatusBadRequest)
+		http.Error(w, tlsCapturePublicErrorMessage(err, "capture submission failed"), http.StatusBadRequest)
 		return
 	}
 	if nativeCaptureShouldReturnStream(req) {

@@ -125,15 +125,19 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map
 }
 
 func responsesFunctionCallInput(arguments string) json.RawMessage {
+	return anthropicToolUseInputFromArguments(arguments)
+}
+
+func anthropicToolUseInputFromArguments(arguments string) json.RawMessage {
 	arguments = strings.TrimSpace(arguments)
 	if arguments == "" {
 		return json.RawMessage("{}")
 	}
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(arguments), &obj); err != nil || obj == nil {
-		return json.RawMessage("{}")
+	if json.Valid([]byte(arguments)) {
+		return json.RawMessage(arguments)
 	}
-	return json.RawMessage(arguments)
+	quoted, _ := json.Marshal(arguments)
+	return quoted
 }
 
 func newAnthropicUsageEnvelope(inputTokens, outputTokens, cacheReadTokens int) AnthropicUsage {
@@ -224,7 +228,7 @@ func responsesStatusToAnthropicStopReason(
 		if responsesOutputHasRefusal(output) {
 			return "refusal"
 		}
-		if len(blocks) > 0 && blocks[len(blocks)-1].Type == "tool_use" {
+		if anthropicBlocksContainType(blocks, "tool_use") {
 			return "tool_use"
 		}
 		return "end_turn"
@@ -236,6 +240,15 @@ func responsesStatusToAnthropicStopReason(
 	default:
 		return "end_turn"
 	}
+}
+
+func anthropicBlocksContainType(blocks []AnthropicContentBlock, want string) bool {
+	for _, block := range blocks {
+		if block.Type == want {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------------------------------------------------------------------------
@@ -322,12 +335,16 @@ func FinalizeResponsesAnthropicStream(state *ResponsesEventToAnthropicState) []A
 
 	var events []AnthropicStreamEvent
 	events = append(events, closeCurrentBlock(state)...)
+	stopReason := "end_turn"
+	if state.CurrentBlockType == "tool_use" {
+		stopReason = "tool_use"
+	}
 
 	events = append(events,
 		AnthropicStreamEvent{
 			Type: "message_delta",
 			Delta: &AnthropicDelta{
-				StopReason: "end_turn",
+				StopReason: stopReason,
 				Container:  json.RawMessage("null"),
 			},
 			ContextManagement: json.RawMessage("null"),

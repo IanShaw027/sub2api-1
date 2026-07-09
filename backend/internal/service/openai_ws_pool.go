@@ -114,17 +114,16 @@ func loadOpenAIWSPoolRuntimeSettings() (*openAIWSPoolRuntimeSettings, bool) {
 	return cached, true
 }
 
-func resetOpenAIWSPoolRuntimeSettingsCacheForTest() {
-	openAIWSPoolRuntimeSettingsCache = atomic.Value{}
-}
-
-// loadOpenAIWSPoolRuntimeSettingsForCompare 返回当前快照值用于变更检测。
-func loadOpenAIWSPoolRuntimeSettingsForCompare() (neutralPrewarmPercent, sessionIdleTTLSeconds int, ok bool) {
-	cached, found := loadOpenAIWSPoolRuntimeSettings()
-	if !found {
+func loadOpenAIWSPoolRuntimeSettingsForCompare() (int, int, bool) {
+	cached, ok := loadOpenAIWSPoolRuntimeSettings()
+	if !ok {
 		return 0, 0, false
 	}
 	return cached.neutralPrewarmPercent, cached.sessionIdleTTLSeconds, true
+}
+
+func resetOpenAIWSPoolRuntimeSettingsCacheForTest() {
+	openAIWSPoolRuntimeSettingsCache = atomic.Value{}
 }
 
 // openAIWSReconcileHook 由持有连接池的服务（OpenAIGatewayService）注册，
@@ -941,7 +940,6 @@ func (ap *openAIWSAccountPool) pruneNeutralVariantsLocked(now time.Time, ttl tim
 			lastSeen := variant.lastSeenAt
 			if lastSeen.IsZero() {
 				oldestKey = reuseKey
-				oldestAt = lastSeen
 				break
 			}
 			if oldestKey == "" || lastSeen.Before(oldestAt) {
@@ -1491,25 +1489,6 @@ func (p *openAIWSConnPool) pickOldestIdleConnLocked(ap *openAIWSAccountPool) *op
 	var oldest *openAIWSConn
 	for _, conn := range ap.conns {
 		if conn == nil || conn.isLeased() || conn.waiters.Load() > 0 || p.isConnPinnedLocked(ap, conn.id) {
-			continue
-		}
-		if oldest == nil || conn.lastUsedAt().Before(oldest.lastUsedAt()) {
-			oldest = conn
-		}
-	}
-	return oldest
-}
-
-func (p *openAIWSConnPool) pickOldestIdleNeutralConnLocked(ap *openAIWSAccountPool) *openAIWSConn {
-	if ap == nil || len(ap.conns) == 0 {
-		return nil
-	}
-	var oldest *openAIWSConn
-	for _, conn := range ap.conns {
-		if conn == nil || conn.profile != openAIWSConnProfileNeutral {
-			continue
-		}
-		if conn.isLeased() || conn.waiters.Load() > 0 || p.isConnPinnedLocked(ap, conn.id) {
 			continue
 		}
 		if oldest == nil || conn.lastUsedAt().Before(oldest.lastUsedAt()) {
@@ -2365,10 +2344,6 @@ func (p *openAIWSConnPool) ensureTargetIdleAsync(accountID int64) {
 	}()
 }
 
-func (p *openAIWSConnPool) targetNeutralConnCountLocked(accountConcurrency int) int {
-	return p.neutralPrewarmTargetForConcurrency(accountConcurrency)
-}
-
 func (p *openAIWSConnPool) targetConnCountLocked(ap *openAIWSAccountPool, maxConns int) int {
 	if ap == nil {
 		return 0
@@ -2558,7 +2533,7 @@ func (p *openAIWSConnPool) UnpinConn(accountID int64, connID string) {
 
 func (p *openAIWSConnPool) dialConn(ctx context.Context, req openAIWSAcquireRequest) (*openAIWSConn, error) {
 	if p == nil || p.clientDialer == nil {
-		return nil, errors.New("openai ws client dialer is nil")
+		return nil, errors.New("openai ws client dialer is required")
 	}
 	conn, status, handshakeHeaders, err := p.clientDialer.Dial(ctx, req.WSURL, req.Headers, req.ProxyURL, req.TLSProfile)
 	if err != nil {

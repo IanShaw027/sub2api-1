@@ -138,6 +138,30 @@ func TestChatCompletionsToResponses_FunctionToolParametersNormalized(t *testing.
 	assert.JSONEq(t, `{"type":"object","properties":{}}`, string(resp.Tools[0].Parameters))
 }
 
+func TestChatCompletionsToResponses_FunctionToolDefaultsStrictFalse(t *testing.T) {
+	req := &ChatCompletionsRequest{
+		Model: "gpt-4o",
+		Messages: []ChatMessage{
+			{Role: "user", Content: json.RawMessage(`"Call the function"`)},
+		},
+		Tools: []ChatTool{
+			{
+				Type: "function",
+				Function: &ChatFunction{
+					Name:       "ping",
+					Parameters: json.RawMessage(`{"type":"object"}`),
+				},
+			},
+		},
+	}
+
+	resp, err := ChatCompletionsToResponses(req)
+	require.NoError(t, err)
+	require.Len(t, resp.Tools, 1)
+	require.NotNil(t, resp.Tools[0].Strict)
+	assert.False(t, *resp.Tools[0].Strict)
+}
+
 func TestChatCompletionsToResponses_MapsNativeServerTools(t *testing.T) {
 	req := &ChatCompletionsRequest{
 		Model: "gpt-4o",

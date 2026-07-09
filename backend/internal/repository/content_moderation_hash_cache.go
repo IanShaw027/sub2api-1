@@ -11,19 +11,32 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/redis/go-redis/v9"
 )
 
+// contentModerationFlaggedHashSetKey 为旧的 flagged hash SET 索引（无 TTL，且读取需 SMembers 全量加载）。
+// 新实现改以 created-ZSet 为唯一权威索引，仅保留该常量以清理历史遗留数据。
 const contentModerationFlaggedHashSetKey = "content_moderation:flagged_hashes"
 const contentModerationFlaggedHashCreatedZSetKey = "content_moderation:flagged_hashes:created_at"
 const contentModerationFlaggedHashKeyPrefix = "content_moderation:fh:"
 const contentModerationFlaggedHashMetaKeyPrefix = "content_moderation:fh_meta:"
+
+// contentModerationFlaggedHashHitsKeyPrefix 为旧的 ZSet 命中记录 key（每命中一个纳秒唯一成员，无界）。
+// 已被 contentModerationFlaggedHashHitCountKeyPrefix（按业务日分桶 Hash）取代，仅保留删除路径引用
+// 以清理遗留数据；遗留 ZSet 也会靠自身 31 天 TTL 自然过期消亡。
 const contentModerationFlaggedHashHitsKeyPrefix = "content_moderation:fh_hits:"
+const contentModerationFlaggedHashHitCountKeyPrefix = "content_moderation:fh_hitc:"
+const flaggedHashHitDayLayout = "20060102"
 const contentModerationFlaggedHashTTL = 90 * 24 * time.Hour
 const contentModerationFlaggedHashHitTTL = 31 * 24 * time.Hour
 const contentModerationAPIKeyQuotaKeyPrefix = "content_moderation:api_key_quota:"
 const contentModerationAPIKeyQuotaTTL = 48 * time.Hour
+
+// flaggedHashPipelineChunkSize 为按 hash 批量读写时单次 pipeline 的分片上限，防止大集合下单个 pipeline
+// 命令数无界膨胀（每 hash 最多 5 个删除命令 / 3 个读命令）。
+const flaggedHashPipelineChunkSize = 500
 
 var contentModerationAPIKeyQuotaAdmitScript = redis.NewScript(`
 local now = tonumber(redis.call("TIME")[1])
@@ -120,7 +133,6 @@ func (c *contentModerationHashCache) RecordFlaggedInputHash(ctx context.Context,
 	expiresUnix := now.Add(contentModerationFlaggedHashTTL).Unix()
 	metaKey := contentModerationFlaggedHashMetaKeyPrefix + inputHash
 	pipe := c.rdb.Pipeline()
-	pipe.SAdd(ctx, contentModerationFlaggedHashSetKey, inputHash)
 	pipe.Set(ctx, contentModerationFlaggedHashKeyPrefix+inputHash, "1", contentModerationFlaggedHashTTL)
 	pipe.HSetNX(ctx, metaKey, "created_at", nowUnix)
 	pipe.HSet(ctx, metaKey, "expires_at", expiresUnix)
@@ -167,28 +179,57 @@ func (c *contentModerationHashCache) HasFlaggedInputHash(ctx context.Context, in
 		}
 		return true, nil
 	}
-	matched, err := c.rdb.SIsMember(ctx, contentModerationFlaggedHashSetKey, inputHash).Result()
-	if err != nil || !matched {
-		return matched, err
-	}
-	_, _ = c.DeleteFlaggedInputHash(ctx, inputHash)
 	return false, nil
 }
 
+// recordFlaggedInputHashHit 按业务日分桶累加命中次数：Hash field=业务日(YYYYMMDD)、值=当日次数。
+// 旧实现每次命中 ZAdd 一个纳秒唯一成员，30 天窗口内成员基数随重放无上限（违反有界 key 规则）；
+// 改为 HINCRBY 后单 key 的 field 数 ≤ key 存活天数(TTL 31 天 → ≤32)，天然有界，且保留精确次数。
+// 日界按业务时区算（读写同口径），过期 field 靠整 key TTL 回收 + 读取仅取窗口内 field。
 func (c *contentModerationHashCache) recordFlaggedInputHashHit(ctx context.Context, inputHash string) error {
+	// 时钟源取 Redis 服务器时间（与读取窗口同源，保证读写日界口径一致，也让测试可用模拟时钟推进），
+	// 再经 flaggedHashHitDay 转业务时区算日界。
 	now, err := c.rdb.Time(ctx).Result()
 	if err != nil {
 		return err
 	}
-	score := float64(now.Unix())
-	member := fmt.Sprintf("%d:%d", now.UnixNano(), time.Now().UnixNano())
-	key := contentModerationFlaggedHashHitsKeyPrefix + inputHash
+	key := contentModerationFlaggedHashHitCountKeyPrefix + inputHash
 	pipe := c.rdb.Pipeline()
-	pipe.ZAdd(ctx, key, redis.Z{Score: score, Member: member})
-	pipe.ZRemRangeByScore(ctx, key, "0", strconv.FormatInt(now.Add(-30*24*time.Hour).Unix()-1, 10))
+	pipe.HIncrBy(ctx, key, flaggedHashHitDay(now), 1)
 	pipe.Expire(ctx, key, contentModerationFlaggedHashHitTTL)
 	_, err = pipe.Exec(ctx)
 	return err
+}
+
+// flaggedHashHitDay 把绝对时刻映射到业务时区的日界字符串（YYYYMMDD），作为命中计数 Hash 的 field。
+func flaggedHashHitDay(t time.Time) string {
+	return timezone.StartOfDay(t).Format(flaggedHashHitDayLayout)
+}
+
+// flaggedHashHitWindowSum 汇总 [now-windowDays, now] 业务日窗口内的命中次数。
+// 命令已在调用方的 pipeline 中排队，这里只把 HMGET 结果按天求和。
+func flaggedHashHitWindowFields(now time.Time, windowDays int) []string {
+	fields := make([]string, 0, windowDays+1)
+	start := timezone.StartOfDay(now.AddDate(0, 0, -windowDays))
+	for d := 0; d <= windowDays; d++ {
+		fields = append(fields, flaggedHashHitDay(start.AddDate(0, 0, d)))
+	}
+	return fields
+}
+
+func sumRedisIntSlice(values []any) int64 {
+	var total int64
+	for _, v := range values {
+		if v == nil {
+			continue
+		}
+		if s, ok := v.(string); ok {
+			if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+				total += n
+			}
+		}
+	}
+	return total
 }
 
 func (c *contentModerationHashCache) ListFlaggedInputHashes(ctx context.Context, filter service.ContentModerationHashListFilter) ([]service.ContentModerationHashItem, *pagination.PaginationResult, error) {
@@ -203,30 +244,69 @@ func (c *contentModerationHashCache) ListFlaggedInputHashes(ctx context.Context,
 		page = 1
 	}
 	pageSize := filter.Pagination.Limit()
-	hashes, err := c.rdb.SMembers(ctx, contentModerationFlaggedHashSetKey).Result()
-	if err != nil {
-		return nil, nil, err
-	}
-	items := make([]service.ContentModerationHashItem, 0, len(hashes))
+	sortOrder := filter.Pagination.NormalizedSortOrder(pagination.SortOrderDesc)
 	now, err := c.rdb.Time(ctx).Result()
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, inputHash := range hashes {
-		inputHash = strings.TrimSpace(inputHash)
-		if inputHash == "" {
-			continue
+
+	// created_at 排序：走 created-ZSet 游标分页，只取当页 pageSize 个 hash id 再拉详情，
+	// 每页成本 O(pageSize) 而非 O(总量)。hits_7d/hits_30d 排序需要全量命中数才能排序，
+	// 无法靠单一有序索引分页，保留全量路径（admin 低频端点）。
+	switch strings.ToLower(strings.TrimSpace(filter.Pagination.SortBy)) {
+	case service.ContentModerationHashSortHits7D, service.ContentModerationHashSortHits30D:
+		return c.listFlaggedInputHashesFullScan(ctx, now, page, pageSize, filter.Pagination.SortBy, sortOrder)
+	default:
+		return c.listFlaggedInputHashesByCreated(ctx, now, page, pageSize, sortOrder)
+	}
+}
+
+// listFlaggedInputHashesByCreated 用 created-ZSet 分页：ZCard 取总数，ZRange/ZRevRange 取当页 hash id，
+// 仅对当页拉详情。prune 已在入口清理过期项，故此处 ZSet 与实际存活基本一致；batch 二次剔除作兜底。
+func (c *contentModerationHashCache) listFlaggedInputHashesByCreated(ctx context.Context, now time.Time, page, pageSize int, sortOrder string) ([]service.ContentModerationHashItem, *pagination.PaginationResult, error) {
+	total, err := c.rdb.ZCard(ctx, contentModerationFlaggedHashCreatedZSetKey).Result()
+	if err != nil {
+		return nil, nil, err
+	}
+	start := int64(page-1) * int64(pageSize)
+	stop := start + int64(pageSize) - 1
+	var pageHashes []string
+	if start < total {
+		if sortOrder == pagination.SortOrderAsc {
+			pageHashes, err = c.rdb.ZRange(ctx, contentModerationFlaggedHashCreatedZSetKey, start, stop).Result()
+		} else {
+			pageHashes, err = c.rdb.ZRevRange(ctx, contentModerationFlaggedHashCreatedZSetKey, start, stop).Result()
 		}
-		item, err := c.flaggedHashItem(ctx, inputHash, now)
 		if err != nil {
 			return nil, nil, err
 		}
-		if item.InputHash == "" {
-			continue
-		}
-		items = append(items, item)
 	}
-	sortFlaggedHashItems(items, filter.Pagination.SortBy, filter.Pagination.NormalizedSortOrder(pagination.SortOrderDesc))
+	items, expired, err := c.flaggedHashItemsBatch(ctx, pageHashes, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, err := c.deleteFlaggedInputHashesPipelined(ctx, expired); err != nil {
+		return nil, nil, err
+	}
+	// batch 结果顺序可能因分片/剔除与 ZSet 顺序错位，按 created_at 复排以保证页内稳定顺序。
+	sortFlaggedHashItems(items, service.ContentModerationHashSortCreatedAt, sortOrder)
+	return items, buildFlaggedHashPagination(total, page, pageSize), nil
+}
+
+// listFlaggedInputHashesFullScan 全量加载后按命中数排序分页（hits 排序专用）。
+func (c *contentModerationHashCache) listFlaggedInputHashesFullScan(ctx context.Context, now time.Time, page, pageSize int, sortBy, sortOrder string) ([]service.ContentModerationHashItem, *pagination.PaginationResult, error) {
+	hashes, err := c.rdb.ZRange(ctx, contentModerationFlaggedHashCreatedZSetKey, 0, -1).Result()
+	if err != nil {
+		return nil, nil, err
+	}
+	items, expired, err := c.flaggedHashItemsBatch(ctx, hashes, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	if _, err := c.deleteFlaggedInputHashesPipelined(ctx, expired); err != nil {
+		return nil, nil, err
+	}
+	sortFlaggedHashItems(items, sortBy, sortOrder)
 	total := int64(len(items))
 	start := (page - 1) * pageSize
 	if start > len(items) {
@@ -236,77 +316,118 @@ func (c *contentModerationHashCache) ListFlaggedInputHashes(ctx context.Context,
 	if end > len(items) {
 		end = len(items)
 	}
+	return items[start:end], buildFlaggedHashPagination(total, page, pageSize), nil
+}
+
+func buildFlaggedHashPagination(total int64, page, pageSize int) *pagination.PaginationResult {
 	pages := int(math.Ceil(float64(total) / float64(pageSize)))
 	if pages < 1 {
 		pages = 1
 	}
-	return items[start:end], &pagination.PaginationResult{
+	return &pagination.PaginationResult{
 		Total:    total,
 		Page:     page,
 		PageSize: pageSize,
 		Pages:    pages,
-	}, nil
+	}
 }
 
-func (c *contentModerationHashCache) flaggedHashItem(ctx context.Context, inputHash string, now time.Time) (service.ContentModerationHashItem, error) {
-	metaKey := contentModerationFlaggedHashMetaKeyPrefix + inputHash
-	fields, err := c.rdb.HMGet(ctx, metaKey,
-		"created_at",
-		"expires_at",
-		"excerpt",
-		"action",
-		"highest_category",
-		"matched_keyword",
-		"model",
-		"group_name",
-		"user_email",
-	).Result()
-	if err != nil {
-		return service.ContentModerationHashItem{}, err
+// flaggedHashItemsBatch 一次性批量取多个 flagged hash 的展示项：按分片走 pipeline，每 hash 发
+// HMGet(元数据) + ZScore(创建时间兜底) + 两个 ZCount(近 7/30 天命中)，消除逐 hash 的 N+1 往返。
+// 返回构建好的 items 与已过期需删除的 hash 列表（由调用方批量删除），与原逐条实现语义一致：
+// created_at 缺失回退 ZScore、再回退 now；expires 缺失按 TTL 顺延；已过期项排除并交由调用方清理。
+func (c *contentModerationHashCache) flaggedHashItemsBatch(ctx context.Context, hashes []string, now time.Time) ([]service.ContentModerationHashItem, []string, error) {
+	items := make([]service.ContentModerationHashItem, 0, len(hashes))
+	var toDelete []string
+	fields30d := flaggedHashHitWindowFields(now, 30)
+	hit7dCutoff := len(fields30d) - 8 // 最近 8 个 field（含今天，覆盖 7×24h 窗口）计入 7d
+	if hit7dCutoff < 0 {
+		hit7dCutoff = 0
 	}
-	createdUnix := redisInt64(fields[0])
-	expiresUnix := redisInt64(fields[1])
-	excerpt := redisString(fields[2])
-	if createdUnix <= 0 {
-		score, err := c.rdb.ZScore(ctx, contentModerationFlaggedHashCreatedZSetKey, inputHash).Result()
-		if err == nil {
-			createdUnix = int64(score)
+
+	for start := 0; start < len(hashes); start += flaggedHashPipelineChunkSize {
+		end := min(start+flaggedHashPipelineChunkSize, len(hashes))
+		chunk := hashes[start:end]
+
+		// 命中计数改按业务日分桶 Hash：取近 30 个业务日的 field（7d 为其尾部子集），单次 HMGET 拉回，
+		// 应用层分别对 7d/30d 窗口求和，替代旧的两次 ZCount。
+		pipe := c.rdb.Pipeline()
+		type hashCmds struct {
+			inputHash string
+			meta      *redis.SliceCmd
+			created   *redis.FloatCmd
+			hits      *redis.SliceCmd
+		}
+		cmds := make([]hashCmds, 0, len(chunk))
+		for _, inputHash := range chunk {
+			inputHash = strings.TrimSpace(inputHash)
+			if inputHash == "" {
+				continue
+			}
+			cmds = append(cmds, hashCmds{
+				inputHash: inputHash,
+				meta: pipe.HMGet(ctx, contentModerationFlaggedHashMetaKeyPrefix+inputHash,
+					"created_at", "expires_at", "excerpt", "action", "highest_category",
+					"matched_keyword", "model", "group_name", "user_email"),
+				created: pipe.ZScore(ctx, contentModerationFlaggedHashCreatedZSetKey, inputHash),
+				hits:    pipe.HMGet(ctx, contentModerationFlaggedHashHitCountKeyPrefix+inputHash, fields30d...),
+			})
+		}
+		if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
+			return nil, nil, err
+		}
+
+		for i := range cmds {
+			fields, err := cmds[i].meta.Result()
+			if err != nil && err != redis.Nil {
+				return nil, nil, err
+			}
+			createdUnix := redisInt64(fields[0])
+			if createdUnix <= 0 {
+				if score, scoreErr := cmds[i].created.Result(); scoreErr == nil {
+					createdUnix = int64(score)
+				} else if scoreErr != redis.Nil {
+					return nil, nil, scoreErr
+				}
+			}
+			if createdUnix <= 0 {
+				createdUnix = now.Unix()
+			}
+			expiresUnix := redisInt64(fields[1])
+			if expiresUnix <= 0 {
+				expiresUnix = createdUnix + int64(contentModerationFlaggedHashTTL/time.Second)
+			}
+			expiresAt := time.Unix(expiresUnix, 0)
+			if !expiresAt.After(now) {
+				toDelete = append(toDelete, cmds[i].inputHash)
+				continue
+			}
+			hitValues, err := cmds[i].hits.Result()
+			if err != nil && err != redis.Nil {
+				return nil, nil, err
+			}
+			hit30d := sumRedisIntSlice(hitValues)
+			var hit7d int64
+			if len(hitValues) >= hit7dCutoff {
+				hit7d = sumRedisIntSlice(hitValues[hit7dCutoff:])
+			}
+			items = append(items, service.ContentModerationHashItem{
+				InputHash:       cmds[i].inputHash,
+				InputExcerpt:    redisString(fields[2]),
+				Action:          redisString(fields[3]),
+				HighestCategory: redisString(fields[4]),
+				MatchedKeyword:  redisString(fields[5]),
+				Model:           redisString(fields[6]),
+				GroupName:       redisString(fields[7]),
+				UserEmail:       redisString(fields[8]),
+				CreatedAt:       time.Unix(createdUnix, 0),
+				ExpiresAt:       expiresAt,
+				HitCount7D:      hit7d,
+				HitCount30D:     hit30d,
+			})
 		}
 	}
-	if createdUnix <= 0 {
-		createdUnix = now.Unix()
-	}
-	if expiresUnix <= 0 {
-		expiresUnix = createdUnix + int64(contentModerationFlaggedHashTTL/time.Second)
-	}
-	expiresAt := time.Unix(expiresUnix, 0)
-	if !expiresAt.After(now) {
-		_, _ = c.DeleteFlaggedInputHash(ctx, inputHash)
-		return service.ContentModerationHashItem{}, nil
-	}
-	hitsKey := contentModerationFlaggedHashHitsKeyPrefix + inputHash
-	hit7d, err := c.rdb.ZCount(ctx, hitsKey, strconv.FormatInt(now.Add(-7*24*time.Hour).Unix(), 10), "+inf").Result()
-	if err != nil {
-		return service.ContentModerationHashItem{}, err
-	}
-	hit30d, err := c.rdb.ZCount(ctx, hitsKey, strconv.FormatInt(now.Add(-30*24*time.Hour).Unix(), 10), "+inf").Result()
-	if err != nil {
-		return service.ContentModerationHashItem{}, err
-	}
-	return service.ContentModerationHashItem{
-		InputHash:       inputHash,
-		InputExcerpt:    excerpt,
-		Action:          redisString(fields[3]),
-		HighestCategory: redisString(fields[4]),
-		MatchedKeyword:  redisString(fields[5]),
-		Model:           redisString(fields[6]),
-		GroupName:       redisString(fields[7]),
-		UserEmail:       redisString(fields[8]),
-		CreatedAt:       time.Unix(createdUnix, 0),
-		ExpiresAt:       expiresAt,
-		HitCount7D:      hit7d,
-		HitCount30D:     hit30d,
-	}, nil
+	return items, toDelete, nil
 }
 
 func sortFlaggedHashItems(items []service.ContentModerationHashItem, sortBy string, sortOrder string) {
@@ -365,17 +486,22 @@ func (c *contentModerationHashCache) DeleteFlaggedInputHash(ctx context.Context,
 	if c == nil || c.rdb == nil || inputHash == "" {
 		return false, nil
 	}
-	pipe := c.rdb.Pipeline()
-	srem := pipe.SRem(ctx, contentModerationFlaggedHashSetKey, inputHash)
-	pipe.Del(ctx, contentModerationFlaggedHashKeyPrefix+inputHash)
-	pipe.Del(ctx, contentModerationFlaggedHashMetaKeyPrefix+inputHash)
-	pipe.Del(ctx, contentModerationFlaggedHashHitsKeyPrefix+inputHash)
-	pipe.ZRem(ctx, contentModerationFlaggedHashCreatedZSetKey, inputHash)
-	_, err := pipe.Exec(ctx)
+	exists, err := c.rdb.Exists(ctx, contentModerationFlaggedHashKeyPrefix+inputHash).Result()
 	if err != nil {
 		return false, err
 	}
-	return srem.Val() > 0, nil
+	pipe := c.rdb.Pipeline()
+	pipe.SRem(ctx, contentModerationFlaggedHashSetKey, inputHash)
+	pipe.Del(ctx, contentModerationFlaggedHashKeyPrefix+inputHash)
+	pipe.Del(ctx, contentModerationFlaggedHashMetaKeyPrefix+inputHash)
+	pipe.Del(ctx, contentModerationFlaggedHashHitsKeyPrefix+inputHash)
+	pipe.Del(ctx, contentModerationFlaggedHashHitCountKeyPrefix+inputHash)
+	pipe.ZRem(ctx, contentModerationFlaggedHashCreatedZSetKey, inputHash)
+	_, err = pipe.Exec(ctx)
+	if err != nil {
+		return false, err
+	}
+	return exists > 0, nil
 }
 
 func (c *contentModerationHashCache) DeleteFlaggedInputHashes(ctx context.Context, inputHashes []string) (int64, error) {
@@ -383,7 +509,7 @@ func (c *contentModerationHashCache) DeleteFlaggedInputHashes(ctx context.Contex
 		return 0, nil
 	}
 	seen := map[string]struct{}{}
-	var deleted int64
+	unique := make([]string, 0, len(inputHashes))
 	for _, inputHash := range inputHashes {
 		inputHash = strings.TrimSpace(inputHash)
 		if inputHash == "" {
@@ -393,12 +519,43 @@ func (c *contentModerationHashCache) DeleteFlaggedInputHashes(ctx context.Contex
 			continue
 		}
 		seen[inputHash] = struct{}{}
-		ok, err := c.DeleteFlaggedInputHash(ctx, inputHash)
-		if err != nil {
+		unique = append(unique, inputHash)
+	}
+	return c.deleteFlaggedInputHashesPipelined(ctx, unique)
+}
+
+// deleteFlaggedInputHashesPipelined 批量删除多个 flagged hash 的全部关联 key（内容/元数据/命中统计/
+// 创建时间索引），并顺手清理遗留 SET 成员；按 flaggedHashPipelineChunkSize 分片走单次 pipeline，
+// 返回实际存在并删除的 hash 条数。替代逐 hash 多命令往返的 N+1。
+func (c *contentModerationHashCache) deleteFlaggedInputHashesPipelined(ctx context.Context, inputHashes []string) (int64, error) {
+	if c == nil || c.rdb == nil || len(inputHashes) == 0 {
+		return 0, nil
+	}
+	var deleted int64
+	for start := 0; start < len(inputHashes); start += flaggedHashPipelineChunkSize {
+		end := start + flaggedHashPipelineChunkSize
+		if end > len(inputHashes) {
+			end = len(inputHashes)
+		}
+		chunk := inputHashes[start:end]
+		pipe := c.rdb.Pipeline()
+		existsCmds := make([]*redis.IntCmd, len(chunk))
+		for i, inputHash := range chunk {
+			existsCmds[i] = pipe.Exists(ctx, contentModerationFlaggedHashKeyPrefix+inputHash)
+			pipe.SRem(ctx, contentModerationFlaggedHashSetKey, inputHash)
+			pipe.Del(ctx, contentModerationFlaggedHashKeyPrefix+inputHash)
+			pipe.Del(ctx, contentModerationFlaggedHashMetaKeyPrefix+inputHash)
+			pipe.Del(ctx, contentModerationFlaggedHashHitsKeyPrefix+inputHash)
+			pipe.Del(ctx, contentModerationFlaggedHashHitCountKeyPrefix+inputHash)
+			pipe.ZRem(ctx, contentModerationFlaggedHashCreatedZSetKey, inputHash)
+		}
+		if _, err := pipe.Exec(ctx); err != nil {
 			return deleted, err
 		}
-		if ok {
-			deleted++
+		for _, exists := range existsCmds {
+			if exists.Val() > 0 {
+				deleted++
+			}
 		}
 	}
 	return deleted, nil
@@ -408,29 +565,20 @@ func (c *contentModerationHashCache) ClearFlaggedInputHashes(ctx context.Context
 	if c == nil || c.rdb == nil {
 		return 0, nil
 	}
-	hashes, err := c.rdb.SMembers(ctx, contentModerationFlaggedHashSetKey).Result()
+	hashes, err := c.rdb.ZRange(ctx, contentModerationFlaggedHashCreatedZSetKey, 0, -1).Result()
 	if err != nil {
 		return 0, err
 	}
 	if len(hashes) == 0 {
+		_, _ = c.rdb.Del(ctx, contentModerationFlaggedHashSetKey).Result()
 		return 0, nil
 	}
-	pipe := c.rdb.Pipeline()
-	for _, inputHash := range hashes {
-		inputHash = strings.TrimSpace(inputHash)
-		if inputHash == "" {
-			continue
-		}
-		pipe.Del(ctx, contentModerationFlaggedHashKeyPrefix+inputHash)
-		pipe.Del(ctx, contentModerationFlaggedHashMetaKeyPrefix+inputHash)
-		pipe.Del(ctx, contentModerationFlaggedHashHitsKeyPrefix+inputHash)
-	}
-	pipe.Del(ctx, contentModerationFlaggedHashSetKey)
-	pipe.Del(ctx, contentModerationFlaggedHashCreatedZSetKey)
-	if _, err := pipe.Exec(ctx); err != nil {
+	deleted, err := c.deleteFlaggedInputHashesPipelined(ctx, hashes)
+	if err != nil {
 		return 0, err
 	}
-	return int64(len(hashes)), nil
+	_, _ = c.rdb.Del(ctx, contentModerationFlaggedHashSetKey).Result()
+	return deleted, nil
 }
 
 func (c *contentModerationHashCache) CountFlaggedInputHashes(ctx context.Context) (int64, error) {
@@ -440,7 +588,7 @@ func (c *contentModerationHashCache) CountFlaggedInputHashes(ctx context.Context
 	if err := c.pruneExpiredFlaggedHashes(ctx); err != nil {
 		return 0, err
 	}
-	return c.rdb.SCard(ctx, contentModerationFlaggedHashSetKey).Result()
+	return c.rdb.ZCard(ctx, contentModerationFlaggedHashCreatedZSetKey).Result()
 }
 
 func (c *contentModerationHashCache) pruneExpiredFlaggedHashes(ctx context.Context) error {
@@ -451,27 +599,53 @@ func (c *contentModerationHashCache) pruneExpiredFlaggedHashes(ctx context.Conte
 	if err != nil {
 		return err
 	}
-	hashes, err := c.rdb.SMembers(ctx, contentModerationFlaggedHashSetKey).Result()
+	hashes, err := c.rdb.ZRange(ctx, contentModerationFlaggedHashCreatedZSetKey, 0, -1).Result()
 	if err != nil {
 		return err
 	}
-	for _, inputHash := range hashes {
-		exists, err := c.rdb.Exists(ctx, contentModerationFlaggedHashKeyPrefix+inputHash).Result()
-		if err != nil {
+	if len(hashes) == 0 {
+		_, _ = c.rdb.Del(ctx, contentModerationFlaggedHashSetKey).Result()
+		return nil
+	}
+
+	// 批量探测：一次 pipeline（按分片）拿到每个 hash 的存活标记(Exists)与元数据过期时刻(HGet)，
+	// 消除逐 hash 往返；待删项收集后再一次批量删除。
+	var toDelete []string
+	for start := 0; start < len(hashes); start += flaggedHashPipelineChunkSize {
+		end := start + flaggedHashPipelineChunkSize
+		if end > len(hashes) {
+			end = len(hashes)
+		}
+		chunk := hashes[start:end]
+		pipe := c.rdb.Pipeline()
+		existsCmds := make([]*redis.IntCmd, len(chunk))
+		expiresCmds := make([]*redis.StringCmd, len(chunk))
+		for i, inputHash := range chunk {
+			existsCmds[i] = pipe.Exists(ctx, contentModerationFlaggedHashKeyPrefix+inputHash)
+			expiresCmds[i] = pipe.HGet(ctx, contentModerationFlaggedHashMetaKeyPrefix+inputHash, "expires_at")
+		}
+		if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
 			return err
 		}
-		if exists > 0 {
-			continue
-		}
-		expiresUnix, err := c.rdb.HGet(ctx, contentModerationFlaggedHashMetaKeyPrefix+inputHash, "expires_at").Int64()
-		if err != nil && err != redis.Nil {
-			return err
-		}
-		if expiresUnix <= 0 || expiresUnix <= now.Unix() {
-			if _, err := c.DeleteFlaggedInputHash(ctx, inputHash); err != nil {
+		for i, inputHash := range chunk {
+			exists, err := existsCmds[i].Result()
+			if err != nil {
 				return err
 			}
+			if exists > 0 {
+				continue
+			}
+			expiresUnix, err := expiresCmds[i].Int64()
+			if err != nil && err != redis.Nil {
+				return err
+			}
+			if expiresUnix <= 0 || expiresUnix <= now.Unix() {
+				toDelete = append(toDelete, inputHash)
+			}
 		}
+	}
+	if _, err := c.deleteFlaggedInputHashesPipelined(ctx, toDelete); err != nil {
+		return err
 	}
 	return nil
 }

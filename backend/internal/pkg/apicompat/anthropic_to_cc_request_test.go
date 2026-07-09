@@ -62,6 +62,20 @@ func TestAnthropicRequestToChatCompletions_MapsServerToolsToNativeTools(t *testi
 	require.JSONEq(t, `{"type":"web_search"}`, string(out.ToolChoice))
 }
 
+func TestAnthropicAssistantBlocksToChat_UnwrapsJSONStringToolUseInputBackToOriginalArguments(t *testing.T) {
+	msgs, err := anthropicAssistantBlocksToChat([]AnthropicContentBlock{{
+		Type:  "tool_use",
+		ID:    "call_1",
+		Name:  "get_weather",
+		Input: anthropicToolUseInputFromArguments(`{"city":`),
+	}})
+
+	require.NoError(t, err)
+	require.Len(t, msgs, 1)
+	require.Len(t, msgs[0].ToolCalls, 1)
+	require.Equal(t, `{"city":`, msgs[0].ToolCalls[0].Function.Arguments)
+}
+
 func TestAnthropicRequestToChatCompletions_RejectsUnsupportedServerTools(t *testing.T) {
 	req := &AnthropicRequest{
 		Model: "claude-sonnet-4-5",

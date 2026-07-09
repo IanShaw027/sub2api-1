@@ -60,7 +60,7 @@ func SanitizeStructure(text string) string {
 	// Reassemble
 	var b strings.Builder
 	for _, seg := range segments {
-		b.WriteString(seg.text)
+		_, _ = b.WriteString(seg.text)
 	}
 	return b.String()
 }

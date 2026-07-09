@@ -72,6 +72,21 @@ func (s *kiroUsageFetcherStub) HTTPUpstream() HTTPUpstream {
 	return s.upstream
 }
 
+// newKiroUsageTestProvider 构造走「带锁统一刷新入口」的 KiroTokenProvider 供 usage 测试注入。
+// tokenCache 传 nil → RefreshIfNeeded 降级为无分布式锁（进程内互斥仍在），但保留 DB 重读 +
+// invalid_grant 竞争恢复 + credentials-only 持久化；executor 用测试 upstream，故 /refreshToken
+// mock 仍生效。生产路径与此同源（ProvideKiroTokenProvider 也是同一 executor + transport）。
+func newKiroUsageTestProvider(repo AccountRepository, proxyRepo ProxyRepository, upstream HTTPUpstream) *KiroTokenProvider {
+	p := NewKiroTokenProvider(repo, nil)
+	refreshAPI := NewOAuthRefreshAPI(repo, nil)
+	executor := NewKiroTokenRefresher().
+		WithTransport(upstream, nil).
+		WithProxyRepo(proxyRepo)
+	p.SetRefreshAPI(refreshAPI, executor)
+	p.SetRefreshPolicy(KiroProviderRefreshPolicy())
+	return p
+}
+
 type kiroWindowStatsRepoStub struct {
 	geminiUsageLogRepoStub
 	windowStats    *usagestats.AccountStats
@@ -203,6 +218,28 @@ func TestAccountUsageService_PersistRefreshedKiroCredentials_InvalidatesUsageCac
 	require.NotNil(t, usage)
 	require.Equal(t, 1, upstream.calls)
 	require.Equal(t, "Kiro Pro", usage.KiroSubscriptionTitle)
+}
+
+func TestAccountUsageServiceGetUsageForAccountRejectsNilAccount(t *testing.T) {
+	t.Parallel()
+
+	svc := &AccountUsageService{}
+
+	usage, err := svc.getUsageForAccount(context.Background(), nil, false)
+
+	require.Nil(t, usage)
+	require.EqualError(t, err, "account is required")
+}
+
+func TestAccountUsageServiceGetKiroUsageRejectsNilAccount(t *testing.T) {
+	t.Parallel()
+
+	svc := &AccountUsageService{}
+
+	usage, err := svc.getKiroUsage(context.Background(), nil)
+
+	require.Nil(t, usage)
+	require.EqualError(t, err, "account is required")
 }
 
 func TestAccountUsageService_GetUsage_KiroFailureDoesNotClearRecoverableError(t *testing.T) {
@@ -579,22 +616,24 @@ func TestAccountUsageService_GetUsage_KiroRefreshUsesAssignedProxy(t *testing.T)
 			}
 		},
 	}
+	proxyRepo := &kiroDefaultProxyRepoStub{
+		getByIDFunc: func(ctx context.Context, id int64) (*Proxy, error) {
+			require.Equal(t, proxyID, id)
+			return &Proxy{
+				Protocol: "http",
+				Host:     "127.0.0.1",
+				Port:     8089,
+			}, nil
+		},
+	}
 	svc := &AccountUsageService{
 		accountRepo: repo,
 		usageFetcher: &kiroUsageFetcherStub{
 			upstream: upstream,
 		},
-		proxyRepo: &kiroDefaultProxyRepoStub{
-			getByIDFunc: func(ctx context.Context, id int64) (*Proxy, error) {
-				require.Equal(t, proxyID, id)
-				return &Proxy{
-					Protocol: "http",
-					Host:     "127.0.0.1",
-					Port:     8089,
-				}, nil
-			},
-		},
-		cache: NewUsageCache(),
+		kiroTokenProvider: newKiroUsageTestProvider(repo, proxyRepo, upstream),
+		proxyRepo:         proxyRepo,
+		cache:             NewUsageCache(),
 	}
 
 	usage, err := svc.GetUsage(context.Background(), account.ID)
@@ -616,8 +655,11 @@ func TestAccountUsageService_GetUsage_KiroRetriesInvalidTokenWithForcedRefresh(t
 		Platform: PlatformKiro,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
-			"access_token":  "cached-stale-token",
+			"access_token": "cached-stale-token",
+			// future expires_at：让 GetAccessToken 不主动预刷新，保留“用现有 token 发请求→上游 401→
+			// 强制刷新重试”这一被测场景。
 			"refresh_token": "refresh-token",
+			"expires_at":    time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
 		},
 	}
 	repo := &kiroUsageAccountRepo{account: account}
@@ -663,6 +705,7 @@ func TestAccountUsageService_GetUsage_KiroRetriesInvalidTokenWithForcedRefresh(t
 		usageFetcher: &kiroUsageFetcherStub{
 			upstream: upstream,
 		},
+		kiroTokenProvider:     newKiroUsageTestProvider(repo, nil, upstream),
 		cache:                 NewUsageCache(),
 		tokenCacheInvalidator: invalidator,
 	}
@@ -674,7 +717,8 @@ func TestAccountUsageService_GetUsage_KiroRetriesInvalidTokenWithForcedRefresh(t
 	require.Equal(t, "Kiro Pro", usage.KiroSubscriptionTitle)
 	require.Equal(t, "fresh-access-token", account.GetCredential("access_token"))
 	require.Equal(t, 3, upstream.calls)
-	require.Equal(t, 2, invalidator.calls)
+	// 强制刷新前置失效一次；credentials 持久化经 persistAccountCredentials 不再调 invalidator。
+	require.Equal(t, 1, invalidator.calls)
 	require.Equal(t, 1, repo.updateCalls)
 }
 
@@ -688,6 +732,7 @@ func TestAccountUsageService_GetUsage_KiroForcedRefreshFailureReturnsDegradedUsa
 		Credentials: map[string]any{
 			"access_token":  "cached-stale-token",
 			"refresh_token": "refresh-token",
+			"expires_at":    time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
 		},
 	}
 	repo := &kiroUsageAccountRepo{account: account}
@@ -709,6 +754,7 @@ func TestAccountUsageService_GetUsage_KiroForcedRefreshFailureReturnsDegradedUsa
 		usageFetcher: &kiroUsageFetcherStub{
 			upstream: upstream,
 		},
+		kiroTokenProvider:     newKiroUsageTestProvider(repo, nil, upstream),
 		cache:                 NewUsageCache(),
 		tokenCacheInvalidator: invalidator,
 	}
@@ -736,6 +782,7 @@ func TestAccountUsageService_GetUsage_KiroForcedRefreshAuthFailureReturnsReauthU
 		Credentials: map[string]any{
 			"access_token":  "cached-stale-token",
 			"refresh_token": "refresh-token",
+			"expires_at":    time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
 		},
 	}
 	repo := &kiroUsageAccountRepo{account: account}
@@ -761,6 +808,7 @@ func TestAccountUsageService_GetUsage_KiroForcedRefreshAuthFailureReturnsReauthU
 		usageFetcher: &kiroUsageFetcherStub{
 			upstream: upstream,
 		},
+		kiroTokenProvider:     newKiroUsageTestProvider(repo, nil, upstream),
 		cache:                 NewUsageCache(),
 		tokenCacheInvalidator: invalidator,
 	}

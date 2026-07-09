@@ -472,8 +472,8 @@ const (
 	// SettingKeyOpenAIWSActiveDeltaEnabled controls payload mutation for strict-delta
 	// continuation at runtime.
 	SettingKeyOpenAIWSActiveDeltaEnabled = "openai_ws_active_delta_enabled"
-	// SettingKeyOpenAIWSTempDiagLogsEnabled controls removable temporary OpenAI WS
-	// diagnostics (temporary_diag/remove_after_debug) at runtime.
+	// SettingKeyOpenAIWSTempDiagLogsEnabled controls legacy-tagged OpenAI WS
+	// diagnostics at runtime.
 	SettingKeyOpenAIWSTempDiagLogsEnabled = "openai_ws_temp_diag_logs_enabled"
 
 	// =========================

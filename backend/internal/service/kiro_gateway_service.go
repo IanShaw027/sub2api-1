@@ -26,7 +26,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/webfetch"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/websearch"
 	"github.com/gin-gonic/gin"
-	gocache "github.com/patrickmn/go-cache"
 	"go.uber.org/zap"
 )
 
@@ -77,7 +76,7 @@ type KiroGatewayService struct {
 	settingService        *SettingService
 	channelService        *ChannelService
 	fingerprintNormalizer *FingerprintNormalizer
-	fakeCache             *gocache.Cache
+	fakeCache             *kiroFakeCache
 	fakeCacheMu           sync.Mutex
 	fakeCacheStrategy     string
 	fakeCacheGen          uint64
@@ -120,11 +119,14 @@ func NewKiroGatewayService(
 		settingService:        settingService,
 		channelService:        channelService,
 		fingerprintNormalizer: fingerprintNormalizer,
-		fakeCache:             gocache.New(kiropkg.DefaultFakeCacheTTL, time.Minute),
+		fakeCache:             newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 }
 
 func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) (*ForwardResult, error) {
+	if account == nil {
+		return nil, errors.New("account is required")
+	}
 	if s.shouldEmulateWebSearch(ctx, account, parsed) {
 		return s.handleWebSearchEmulation(ctx, c, account, parsed)
 	}
@@ -221,6 +223,9 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 }
 
 func (s *KiroGatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) error {
+	if account == nil {
+		return errors.New("account is required")
+	}
 	_, billedInputTokens, _, err := s.validateAndConvertRequest(c, account, parsed, s.resolveKiroRuntimeSettings(ctx))
 	if err != nil {
 		return err
@@ -545,16 +550,6 @@ func resolveKiroRequestedModelWithRouting(ctx context.Context, settingService *S
 	return effectiveModel, nil
 }
 
-// isKiroFreeAccount 判断 Kiro 账号是否为 Free 订阅。
-// subscription_type 为空或含 "free" 时视为 Free。
-func isKiroFreeAccount(account *Account) bool {
-	if account == nil {
-		return true
-	}
-	subscriptionType := strings.ToLower(strings.TrimSpace(account.GetCredential("subscription_type")))
-	return subscriptionType == "" || strings.Contains(subscriptionType, "free")
-}
-
 func kiroContextBudgetTokensForModel(model string) int {
 	if kiropkg.SupportsOneMillionContextModel(model) {
 		return kiroOneMillionContextBudgetTokens
@@ -564,7 +559,7 @@ func kiroContextBudgetTokensForModel(model string) int {
 
 func (s *KiroGatewayService) resolveAccessToken(ctx context.Context, account *Account) (string, error) {
 	if account == nil {
-		return "", errors.New("account is nil")
+		return "", errors.New("account is required")
 	}
 	if account.Type == AccountTypeAPIKey {
 		apiKey := strings.TrimSpace(account.GetCredential("api_key"))
@@ -666,7 +661,7 @@ func (s *KiroGatewayService) buildRequest(ctx context.Context, account *Account,
 	if s.fingerprintNormalizer != nil {
 		ua := ""
 		if runtimeSettings != nil {
-			ua = fmt.Sprintf("aws-sdk-js/1.0.27 KiroIDE-%s-%s", runtimeSettings.KiroVersion, "")
+			ua, _ = kiropkg.BuildCodeWhispererStreamingUserAgents(runtimeSettings.KiroVersion, "", runtimeSettings.SystemVersion, runtimeSettings.NodeVersion)
 		}
 		canonical := s.fingerprintNormalizer.ResolveCanonical(ctx, account, ua)
 		if canonical != nil {
@@ -690,7 +685,7 @@ func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, bo
 	}
 
 	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
-	machineID := kiropkg.GenerateMachineID(account.GetCredential("machine_id"), "", account.GetCredential("refresh_token"))
+	machineID := kiropkg.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
 	host := fmt.Sprintf("q.%s.amazonaws.com", KiroRegion(account))
 	kiroVersion := runtimeSettings.KiroVersion
 	req.Header.Set("Content-Type", "application/json")
@@ -701,8 +696,9 @@ func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, bo
 	req.Header.Set("host", host)
 	req.Header.Set("x-amzn-codewhisperer-optout", "true")
 	req.Header.Set("x-amzn-kiro-agent-mode", "vibe")
-	req.Header.Set("x-amz-user-agent", fmt.Sprintf("aws-sdk-js/1.0.27 KiroIDE-%s-%s", kiroVersion, machineID))
-	req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/1.0.27 ua/2.1 os/%s lang/js md/nodejs#%s api/codewhispererstreaming#1.0.27 m/E KiroIDE-%s-%s", runtimeSettings.SystemVersion, runtimeSettings.NodeVersion, kiroVersion, machineID))
+	xAmzUserAgent, userAgent := kiropkg.BuildCodeWhispererStreamingUserAgents(kiroVersion, machineID, runtimeSettings.SystemVersion, runtimeSettings.NodeVersion)
+	req.Header.Set("x-amz-user-agent", xAmzUserAgent)
+	req.Header.Set("User-Agent", userAgent)
 	if runtimeSettings.KiroCommit != "" {
 		req.Header.Set("x-amzn-kiro-commit", runtimeSettings.KiroCommit)
 	}
@@ -972,20 +968,6 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 	// P1 identity sanitize on final non-stream outputs
 	textOutput = kiropkg.SanitizeIdentityText(textOutput)
 	nativeThinkingOutput = kiropkg.SanitizeIdentityText(nativeThinkingOutput)
-	if !hasVisibleOutput {
-		emptyErr := errors.New("kiro response contained no assistant output")
-		logKiroResponseAnomaly(ctx, account, parsed, false, "empty_output", emptyErr, 0, len(toolNames), nil)
-		s.handleProtocolError(ctx, c, account, parsed.Model, false, emptyErr)
-		c.JSON(http.StatusBadGateway, gin.H{
-			"type":  "error",
-			"error": gin.H{"type": "api_error", "message": "Kiro upstream returned no assistant output"},
-		})
-		return nil, emptyErr
-	}
-	if parsed.OnUpstreamAccepted != nil {
-		parsed.OnUpstreamAccepted()
-	}
-
 	content = append(content, shadowContent...)
 	content = append(content, toolUses...)
 	thinkingText := nativeThinkingOutput + reasoningThinkingText
@@ -1019,6 +1001,19 @@ func (s *KiroGatewayService) forwardNonStream(ctx context.Context, c *gin.Contex
 			ResponseBody:           []byte(kiroIncompleteToolUseClientMessage()),
 			RetryableOnSameAccount: true,
 		}
+	}
+	if !hasVisibleOutput {
+		emptyErr := errors.New("kiro response contained no assistant output")
+		logKiroResponseAnomaly(ctx, account, parsed, false, "empty_output", emptyErr, 0, len(toolNames), nil)
+		s.handleProtocolError(ctx, c, account, parsed.Model, false, emptyErr)
+		c.JSON(http.StatusBadGateway, gin.H{
+			"type":  "error",
+			"error": gin.H{"type": "api_error", "message": "Kiro upstream returned no assistant output"},
+		})
+		return nil, emptyErr
+	}
+	if parsed.OnUpstreamAccepted != nil {
+		parsed.OnUpstreamAccepted()
 	}
 	fakeCacheUsage := resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, inputTokens, runtimeSettings)
 	inputTokens = fakeCacheUsage.InputTokens
@@ -2338,19 +2333,6 @@ func kiroAnthropicUsageForDelta(inputTokens, outputTokens int, fakeCacheUsage ki
 	return usage
 }
 
-func writeKiroThinkingBlock(writer gin.ResponseWriter, index int, thinking string) error {
-	if thinking == "" {
-		return nil
-	}
-	if err := writeKiroThinkingBlockStart(writer, index); err != nil {
-		return err
-	}
-	if err := writeKiroThinkingBlockDelta(writer, index, thinking); err != nil {
-		return err
-	}
-	return writeKiroThinkingBlockStop(writer, index)
-}
-
 func writeKiroThinkingBlockStart(writer gin.ResponseWriter, index int) error {
 	return writeSSEEvent(writer, "content_block_start", map[string]any{
 		"type":  "content_block_start",
@@ -2842,9 +2824,10 @@ func buildKiroToolUseBlock(state *kiroToolState, converted *kiropkg.ConvertResul
 	raw := strings.TrimSpace(state.InputBuilder.String())
 	if raw != "" {
 		var parsed any
-		if err := json.Unmarshal([]byte(raw), &parsed); err == nil && parsed != nil {
-			input = parsed
+		if err := json.Unmarshal([]byte(raw), &parsed); err != nil || parsed == nil {
+			return nil, false
 		}
+		input = parsed
 	}
 	input = repairKiroControlPlaneToolInput(state.Name, input)
 	if serverToolUse, ok := kiropkg.AnthropicServerToolUseFromKiroToolUse(state.Name, input, kiroResponseToolMetadata(converted)); ok {
@@ -3098,6 +3081,10 @@ func isCodeExecutionToolState(state *kiroToolState) bool {
 	return n == "code_execution" || strings.HasPrefix(n, "code_execution_")
 }
 
+const defaultKiroCodeExecutionSandboxMaxConcurrent = 8
+
+var kiroCodeExecutionSandboxSem = make(chan struct{}, defaultKiroCodeExecutionSandboxMaxConcurrent)
+
 func extractCodeAndLang(state *kiroToolState) (code, lang string) {
 	if state == nil {
 		return "", "python"
@@ -3134,10 +3121,23 @@ func executeCodeInExplicitSandbox(ctx context.Context, code, language string, ru
 		return "", "[code execution sandbox unavailable]\ncode execution sandbox is not configured", true
 	}
 
+	// 宿主侧 sandboxCommand 进程本身也必须有全局并发上限；否则管理员一旦启用该能力，
+	// 高并发 code_execution 工具可同时拉起无限宿主子进程，形成条件性 DoS。
+	select {
+	case kiroCodeExecutionSandboxSem <- struct{}{}:
+		defer func() { <-kiroCodeExecutionSandboxSem }()
+	default:
+		return "", "[code execution sandbox busy]\ncode execution sandbox concurrency limit reached", true
+	}
+
 	// Enforce reasonable timeout to prevent hanging.
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
+	// 安全边界：sandboxCommand 由管理员配置，模型生成的不可信代码经 stdin 送入该命令。
+	// 本进程只保证超时与输出截断，不提供任何隔离——隔离完全依赖管理员填写的沙箱命令
+	// (nsjail/gVisor/容器等)。若管理员配置裸解释器即等于对全体用户开放主机 RCE。
+	// 该风险已在管理后台“代码执行沙箱命令”设置处显式红色告警，此处不重复处理。
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", sandboxCommand)
 	cmd.Env = []string{
 		"KIRO_CODE_EXECUTION_LANGUAGE=" + language,

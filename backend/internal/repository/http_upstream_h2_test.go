@@ -12,7 +12,6 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/net/http2"
 )
 
 // P4: ALPN 驱动的 h1/h2 出站分流单测。
@@ -29,7 +28,7 @@ func TestBuildUpstreamRoundTripperWithTLSFingerprintNonH2UsesHTTP1(t *testing.T)
 	settings := poolSettings{maxIdleConns: 10, idleConnTimeout: time.Minute}
 	profile := &tlsfingerprint.Profile{Name: "h1-only", ALPNProtocols: []string{"http/1.1"}}
 
-	rt, h1, err := buildUpstreamRoundTripperWithTLSFingerprint(settings, nil, profile)
+	rt, h1, err := buildUpstreamRoundTripperWithTLSFingerprint(settings, nil, profile, false)
 	require.NoError(t, err)
 	tr, ok := rt.(*http.Transport)
 	require.True(t, ok, "non-h2 profile should yield *http.Transport")
@@ -38,7 +37,7 @@ func TestBuildUpstreamRoundTripperWithTLSFingerprintNonH2UsesHTTP1(t *testing.T)
 	require.False(t, tr.ForceAttemptHTTP2)
 }
 
-func TestBuildUpstreamRoundTripperWithTLSFingerprintH2UsesHTTP2(t *testing.T) {
+func TestBuildUpstreamRoundTripperWithTLSFingerprintH2ProfilesWithoutReplayDataFallbackToHTTP1(t *testing.T) {
 	settings := poolSettings{maxIdleConns: 10, idleConnTimeout: time.Minute}
 	profile := &tlsfingerprint.Profile{Name: "h2", ALPNProtocols: []string{"h2", "http/1.1"}}
 
@@ -49,21 +48,50 @@ func TestBuildUpstreamRoundTripperWithTLSFingerprintH2UsesHTTP2(t *testing.T) {
 			parsed, err = url.Parse(proxy)
 			require.NoError(t, err)
 		}
-		rt, h1, err := buildUpstreamRoundTripperWithTLSFingerprint(settings, parsed, profile)
+		rt, h1, err := buildUpstreamRoundTripperWithTLSFingerprint(settings, parsed, profile, false)
 		require.NoError(t, err, "proxy=%q", proxy)
-		_, ok := rt.(*http2.Transport)
-		require.True(t, ok, "h2 profile should yield *http2.Transport (proxy=%q)", proxy)
-		require.Nil(t, h1, "h2 path has no HTTP/1.x transport handle (proxy=%q)", proxy)
+		tr, ok := rt.(*http.Transport)
+		require.True(t, ok, "missing replay data should fall back to *http.Transport for h2 profile (proxy=%q)", proxy)
+		require.NotNil(t, h1, "missing replay data should return HTTP/1.x transport handle (proxy=%q)", proxy)
+		require.Same(t, tr, h1)
+		require.False(t, tr.ForceAttemptHTTP2)
+	}
+}
+
+func TestBuildUpstreamRoundTripperWithTLSFingerprintH2ProfilesWithReplayDataUseCustomRoundTripper(t *testing.T) {
+	settings := poolSettings{maxIdleConns: 10, idleConnTimeout: time.Minute}
+	profile := &tlsfingerprint.Profile{
+		Name:             "h2",
+		ALPNProtocols:    []string{"h2", "http/1.1"},
+		HTTP2Fingerprint: "4:65535,1:4096,3:100|wu:12345|p:1:0:1:200|ph::method,:scheme,:authority,:path",
+	}
+
+	for _, proxy := range []string{"", "http://user:pass@127.0.0.1:8080", "socks5://127.0.0.1:1080"} {
+		var parsed *url.URL
+		if proxy != "" {
+			var err error
+			parsed, err = url.Parse(proxy)
+			require.NoError(t, err)
+		}
+		rt, h1, err := buildUpstreamRoundTripperWithTLSFingerprint(settings, parsed, profile, false)
+		require.NoError(t, err, "proxy=%q", proxy)
+		require.Nil(t, h1, "h2 replay path should not expose HTTP/1.x transport handle")
+		_, ok := rt.(*http2FingerprintReplayRoundTripper)
+		require.True(t, ok, "h2 replay data should yield custom h2 round tripper (proxy=%q)", proxy)
 	}
 }
 
 func TestBuildUpstreamRoundTripperWithTLSFingerprintH2UnknownProxyFailsClosed(t *testing.T) {
 	settings := poolSettings{maxIdleConns: 10, idleConnTimeout: time.Minute}
-	profile := &tlsfingerprint.Profile{Name: "h2", ALPNProtocols: []string{"h2", "http/1.1"}}
+	profile := &tlsfingerprint.Profile{
+		Name:             "h2",
+		ALPNProtocols:    []string{"h2", "http/1.1"},
+		HTTP2Fingerprint: "1:4096|ph::method,:scheme,:authority,:path",
+	}
 	parsed, err := url.Parse("quic://127.0.0.1:9999")
 	require.NoError(t, err)
 
-	rt, h1, err := buildUpstreamRoundTripperWithTLSFingerprint(settings, parsed, profile)
+	rt, h1, err := buildUpstreamRoundTripperWithTLSFingerprint(settings, parsed, profile, false)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unsupported proxy scheme")
 	require.Nil(t, rt)

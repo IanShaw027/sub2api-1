@@ -165,7 +165,11 @@ func (s *APIKeyService) deleteAuthCache(ctx context.Context, cacheKey string) {
 }
 
 func (s *APIKeyService) loadAuthCacheEntry(ctx context.Context, key, cacheKey string) (*APIKeyAuthCacheEntry, error) {
-	apiKey, err := s.apiKeyRepo.GetByKeyForAuth(ctx, key)
+	apiKeyRepo, err := s.requireAPIKeyRepo()
+	if err != nil {
+		return nil, err
+	}
+	apiKey, err := apiKeyRepo.GetByKeyForAuth(ctx, key)
 	if err != nil {
 		if errors.Is(err, ErrAPIKeyNotFound) {
 			entry := &APIKeyAuthCacheEntry{NotFound: true}

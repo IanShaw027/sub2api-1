@@ -758,7 +758,7 @@ func kiroTokenInfoMap(tokenInfo *KiroTokenInfo) map[string]any {
 		"login_hint":        tokenInfo.LoginHint,
 		"subscription_type": tokenInfo.SubscriptionType,
 	}
-	if machineID := kiropkg.GenerateMachineID("", "", tokenInfo.RefreshToken); machineID != "" {
+	if machineID := kiropkg.GenerateMachineID("", tokenInfo.RefreshToken); machineID != "" {
 		values["machine_id"] = machineID
 	}
 	for key, value := range values {

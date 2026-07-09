@@ -393,7 +393,7 @@ func batchUsageErrorMessage(err error) string {
 
 func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *Account, forceProbe bool) (*UsageInfo, error) {
 	if account == nil {
-		return nil, fmt.Errorf("account is nil")
+		return nil, fmt.Errorf("account is required")
 	}
 	accountID := account.ID
 
@@ -624,7 +624,7 @@ func (s *AccountUsageService) GetUsageBatch(ctx context.Context, accountIDs []in
 
 func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account) (*UsageInfo, error) {
 	if account == nil {
-		return nil, fmt.Errorf("account is nil")
+		return nil, fmt.Errorf("account is required")
 	}
 	if s.cache != nil {
 		if cached, ok := s.cache.kiroCache.Load(account.ID); ok {
@@ -643,23 +643,25 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 		kiroHTTPUpstream := s.kiroHTTPUpstream()
 		accessToken := ""
 		if forceRefresh {
+			// 走带分布式锁+DB 重读+invalid_grant 竞争恢复+credentials-only 持久化的统一刷新入口，
+			// 不再裸调 refresher.Refresh + 整行 accountRepo.Update（会与网关侧带锁刷新并发 lost-update
+			// 掉 token、把账号推上分叉的 refresh_token 链最终变砖）。RefreshAccount 用 kiroAdminRefreshSkew
+			// (100 年)使 NeedsRefresh 恒真，保留“强制换新 token”语义。
 			if err := s.invalidateKiroTokenCache(fetchCtx, account); err != nil {
 				log.Printf("warning: failed to invalidate Kiro token cache before usage refresh for account %d: %v", account.ID, err)
 			}
-			refresher := NewKiroTokenRefresher().
-				WithTransport(kiroHTTPUpstream, s.tlsFPProfileService).
-				WithSettingService(s.settingService).
-				WithProxyRepo(s.proxyRepo)
-			newCreds, err := refresher.Refresh(fetchCtx, account)
+			if s.kiroTokenProvider == nil {
+				return buildKiroDegradedUsage(fmt.Errorf("kiro token provider is not configured")), nil
+			}
+			refreshedAccount, err := s.kiroTokenProvider.RefreshAccount(fetchCtx, account)
 			if err != nil {
 				if shouldRetryKiroUsageWithForcedRefresh(err) {
 					return buildKiroDegradedUsage(fmt.Errorf("kiro usage upstream returned 401: %w", err)), nil
 				}
 				return buildKiroDegradedUsage(fmt.Errorf("kiro usage refresh failed after auth retry: %w", err)), nil
 			}
-			if err := s.persistRefreshedKiroCredentials(fetchCtx, account, newCreds); err != nil {
-				return nil, err
-			}
+			copyKiroAccountRuntimeState(account, refreshedAccount)
+			s.InvalidateKiroUsageCache(account.ID)
 			accessToken = account.GetCredential("access_token")
 		} else if s.kiroTokenProvider != nil {
 			var err error
@@ -671,17 +673,15 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 			accessToken = account.GetCredential("access_token")
 		}
 		if accessToken == "" {
-			refresher := NewKiroTokenRefresher().
-				WithTransport(kiroHTTPUpstream, s.tlsFPProfileService).
-				WithSettingService(s.settingService).
-				WithProxyRepo(s.proxyRepo)
-			newCreds, err := refresher.Refresh(fetchCtx, account)
+			if s.kiroTokenProvider == nil {
+				return buildKiroDegradedUsage(fmt.Errorf("kiro token provider is not configured")), nil
+			}
+			refreshedAccount, err := s.kiroTokenProvider.RefreshAccount(fetchCtx, account)
 			if err != nil {
 				return buildKiroDegradedUsage(err), nil
 			}
-			if err := s.persistRefreshedKiroCredentials(fetchCtx, account, newCreds); err != nil {
-				return nil, err
-			}
+			copyKiroAccountRuntimeState(account, refreshedAccount)
+			s.InvalidateKiroUsageCache(account.ID)
 			accessToken = account.GetCredential("access_token")
 		}
 
@@ -692,6 +692,14 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 		limits, err := usageService.FetchUsageLimits(fetchCtx, account, accessToken)
 		if err != nil {
 			if !forceRefresh && shouldRetryKiroUsageWithForcedRefresh(err) {
+				s.markKiroAccessTokenRejected(fetchCtx, account)
+				if s.kiroTokenProvider == nil {
+					// 首次请求拿旧 access token 命中 401 时，会尝试“强制刷新后重试”来恢复。
+					// 但若当前实例根本未配置 refresh 能力（测试/裁剪部署），不能把原始 401
+					// 降级语义改写成“provider 未配置”的网络错误，否则会丢掉 NeedsReauth/401
+					// 信号并错误清洗掉账号的可恢复认证态。
+					return buildKiroDegradedUsage(fmt.Errorf("kiro usage upstream returned 401: %w", err)), nil
+				}
 				return loadUsage(fetchCtx, true)
 			}
 			return buildKiroDegradedUsage(err), nil
@@ -894,18 +902,6 @@ func (s *AccountUsageService) kiroHTTPUpstream() HTTPUpstream {
 	return nil
 }
 
-func (s *AccountUsageService) persistRefreshedKiroCredentials(ctx context.Context, account *Account, newCreds map[string]any) error {
-	updated := *account
-	updated.Credentials = newCreds
-	if err := s.accountRepo.Update(ctx, &updated); err != nil {
-		return err
-	}
-	account.Credentials = updated.Credentials
-	s.InvalidateKiroUsageCache(account.ID)
-	_ = s.invalidateKiroTokenCache(ctx, account)
-	return nil
-}
-
 func (s *AccountUsageService) invalidateKiroTokenCache(ctx context.Context, account *Account) error {
 	if s.tokenCacheInvalidator != nil {
 		if err := s.tokenCacheInvalidator.InvalidateToken(ctx, account); err != nil {
@@ -913,6 +909,45 @@ func (s *AccountUsageService) invalidateKiroTokenCache(ctx context.Context, acco
 			return err
 		}
 	}
+	return nil
+}
+
+func (s *AccountUsageService) markKiroAccessTokenRejected(ctx context.Context, account *Account) {
+	if s == nil || account == nil {
+		return
+	}
+	credentials := cloneCredentials(account.Credentials)
+	if credentials == nil {
+		credentials = make(map[string]any, 1)
+	}
+	credentials["expires_at"] = time.Now().Add(-kiroTokenRefreshSkew).UTC().Format(time.RFC3339)
+	account.Credentials = credentials
+
+	updater, ok := any(s.accountRepo).(accountCredentialsUpdater)
+	if !ok || updater == nil {
+		return
+	}
+	if err := updater.UpdateCredentials(ctx, account.ID, credentials); err != nil {
+		log.Printf("warning: failed to persist rejected Kiro access token state for account %d: %v", account.ID, err)
+	}
+}
+
+// persistRefreshedKiroCredentials keeps unit tests and legacy refresh paths on the
+// same semantics after Kiro usage refresh was consolidated around RefreshAccount.
+// It persists the refreshed credentials, updates the caller's in-memory account,
+// invalidates the cached usage snapshot, and best-effort invalidates token cache.
+func (s *AccountUsageService) persistRefreshedKiroCredentials(ctx context.Context, account *Account, newCreds map[string]any) error {
+	if s == nil || account == nil {
+		return nil
+	}
+	updated := *account
+	updated.Credentials = cloneCredentials(newCreds)
+	if err := s.accountRepo.Update(ctx, &updated); err != nil {
+		return err
+	}
+	account.Credentials = cloneCredentials(newCreds)
+	s.InvalidateKiroUsageCache(account.ID)
+	_ = s.invalidateKiroTokenCache(ctx, account)
 	return nil
 }
 

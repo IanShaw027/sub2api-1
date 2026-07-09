@@ -256,6 +256,10 @@ func (s *NotificationEmailService) GetTemplate(ctx context.Context, event, local
 		Placeholders: append([]string(nil), info.Placeholders...),
 	}
 
+	if s == nil || s.settingRepo == nil {
+		return tmpl, nil
+	}
+
 	raw, err := s.settingRepo.GetValue(ctx, notificationEmailTemplateKey(normalizedEvent, normalizedLocale))
 	if err != nil {
 		if errors.Is(err, ErrSettingNotFound) {
@@ -283,6 +287,9 @@ func (s *NotificationEmailService) GetTemplate(ctx context.Context, event, local
 }
 
 func (s *NotificationEmailService) UpdateTemplate(ctx context.Context, event, locale, subject, htmlBody string) (NotificationEmailTemplate, error) {
+	if s == nil || s.settingRepo == nil {
+		return NotificationEmailTemplate{}, errors.New("setting repository not initialized")
+	}
 	_, normalizedEvent, err := s.eventInfo(event)
 	if err != nil {
 		return NotificationEmailTemplate{}, err
@@ -307,6 +314,9 @@ func (s *NotificationEmailService) UpdateTemplate(ctx context.Context, event, lo
 }
 
 func (s *NotificationEmailService) RestoreOfficialTemplate(ctx context.Context, event, locale string) (NotificationEmailTemplate, error) {
+	if s == nil || s.settingRepo == nil {
+		return NotificationEmailTemplate{}, errors.New("setting repository not initialized")
+	}
 	_, normalizedEvent, err := s.eventInfo(event)
 	if err != nil {
 		return NotificationEmailTemplate{}, err
@@ -356,6 +366,9 @@ func (s *NotificationEmailService) Send(ctx context.Context, input NotificationE
 	recipient := strings.TrimSpace(input.RecipientEmail)
 	if recipient == "" {
 		return nil
+	}
+	if s == nil || s.settingRepo == nil {
+		return notificationEmailConfigErr(errors.New("setting repository not initialized"))
 	}
 	if info.Optional {
 		unsubscribed, err := s.IsUnsubscribed(ctx, recipient, normalizedEvent)
@@ -445,6 +458,9 @@ func (s *NotificationEmailService) IsUnsubscribed(ctx context.Context, email, ev
 	if !info.Optional {
 		return false, nil
 	}
+	if s == nil || s.settingRepo == nil {
+		return false, nil
+	}
 	for _, key := range []string{notificationEmailPreferenceKey(normalizedEvent, email), legacyNotificationEmailPreferenceKey(normalizedEvent, email)} {
 		if strings.TrimSpace(key) == "" {
 			continue
@@ -461,6 +477,9 @@ func (s *NotificationEmailService) IsUnsubscribed(ctx context.Context, email, ev
 }
 
 func (s *NotificationEmailService) Unsubscribe(ctx context.Context, token string) (NotificationEmailUnsubscribeResult, error) {
+	if s == nil || s.settingRepo == nil {
+		return NotificationEmailUnsubscribeResult{}, errors.New("setting repository not initialized")
+	}
 	claims, err := s.parseUnsubscribeToken(ctx, token)
 	if err != nil {
 		return NotificationEmailUnsubscribeResult{}, err
@@ -634,6 +653,9 @@ func (s *NotificationEmailService) parseUnsubscribeToken(ctx context.Context, to
 }
 
 func (s *NotificationEmailService) unsubscribeSecret(ctx context.Context) (string, error) {
+	if s == nil || s.settingRepo == nil {
+		return "", errors.New("setting repository not initialized")
+	}
 	secret, err := s.settingRepo.GetValue(ctx, notificationEmailUnsubscribeSecretKey)
 	if err == nil && strings.TrimSpace(secret) != "" {
 		return strings.TrimSpace(secret), nil
@@ -653,6 +675,9 @@ func (s *NotificationEmailService) unsubscribeSecret(ctx context.Context) (strin
 }
 
 func (s *NotificationEmailService) deliveryExists(ctx context.Context, keys ...string) (bool, error) {
+	if s == nil || s.settingRepo == nil {
+		return false, errors.New("setting repository not initialized")
+	}
 	for _, key := range keys {
 		if strings.TrimSpace(key) == "" {
 			continue
@@ -1106,7 +1131,7 @@ var notificationEmailEventDefinitions = map[string]NotificationEmailEventInfo{
 		Category:    "billing",
 		Optional:    false,
 		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...),
-			"invoice_id", "invoice_title", "tax_number", "invoice_amount", "order_count",
+			"invoice_id", "invoice_title", "tax_number", "invoice_amount", "invoice_amount_display", "order_count",
 			"order_list_html", "invoice_download_url", "invoice_file_name"),
 	},
 }
@@ -1411,7 +1436,7 @@ var notificationEmailOfficialTemplates = map[string]map[string]notificationEmail
   <tr><td style="padding:6px 0;color:#71717a;">Invoice No.</td><td style="padding:6px 0;">#{{invoice_id}}</td></tr>
   <tr><td style="padding:6px 0;color:#71717a;">Title</td><td style="padding:6px 0;">{{invoice_title}}</td></tr>
   <tr><td style="padding:6px 0;color:#71717a;">Tax No.</td><td style="padding:6px 0;">{{tax_number}}</td></tr>
-  <tr><td style="padding:6px 0;color:#71717a;">Amount</td><td style="padding:6px 0;">¥{{invoice_amount}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">Amount</td><td style="padding:6px 0;">{{invoice_amount_display}}</td></tr>
   <tr><td style="padding:6px 0;color:#71717a;">Orders</td><td style="padding:6px 0;">{{order_count}}</td></tr>
 </table>
 <div>{{order_list_html}}</div>
@@ -1427,7 +1452,7 @@ var notificationEmailOfficialTemplates = map[string]map[string]notificationEmail
   <tr><td style="padding:6px 0;color:#71717a;">发票号</td><td style="padding:6px 0;">#{{invoice_id}}</td></tr>
   <tr><td style="padding:6px 0;color:#71717a;">抬头</td><td style="padding:6px 0;">{{invoice_title}}</td></tr>
   <tr><td style="padding:6px 0;color:#71717a;">税号</td><td style="padding:6px 0;">{{tax_number}}</td></tr>
-  <tr><td style="padding:6px 0;color:#71717a;">金额</td><td style="padding:6px 0;">¥{{invoice_amount}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">金额</td><td style="padding:6px 0;">{{invoice_amount_display}}</td></tr>
   <tr><td style="padding:6px 0;color:#71717a;">关联订单数</td><td style="padding:6px 0;">{{order_count}}</td></tr>
 </table>
 <div>{{order_list_html}}</div>

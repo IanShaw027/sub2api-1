@@ -105,7 +105,10 @@ func (s *stubMonitorSvc) AcquireChannelMonitorRunLock(_ context.Context, id int6
 }
 
 func newRunnerForTest(svc monitorRunnerSvc) *ChannelMonitorRunner {
-	return newChannelMonitorRunner(svc, nil)
+	settings := NewSettingService(&settingPublicRepoStub{values: map[string]string{
+		SettingKeyChannelMonitorEnabled: "true",
+	}}, nil)
+	return newChannelMonitorRunner(svc, settings)
 }
 
 // 等待 condition 在 timeout 内变 true，否则 t.Fatalf。轮询 5ms 一次。
@@ -376,8 +379,8 @@ func TestInFlight_AcquireReleaseSymmetric(t *testing.T) {
 	r.releaseInFlight(42)
 }
 
-// TestFire_PoolFullRunsSynchronously 验证 worker 池满时不会丢弃检测，而是同步执行本次任务。
-func TestFire_PoolFullRunsSynchronously(t *testing.T) {
+// TestFire_PoolFullSkipsRun 验证 worker 池满时会跳过本轮检测，并立即释放 inFlight 槽。
+func TestFire_PoolFullSkipsRun(t *testing.T) {
 	block := make(chan struct{})
 	svc := &stubMonitorSvc{runCalled: make(chan int64, 4), blockUntil: block}
 	r := newRunnerForTest(svc)
@@ -397,32 +400,26 @@ func TestFire_PoolFullRunsSynchronously(t *testing.T) {
 		close(done)
 	}()
 	select {
-	case id := <-svc.runCalled:
-		if id != 2 {
-			t.Fatalf("expected synchronous run for id=2, got %d", id)
-		}
+	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("pool-full fire did not execute synchronously")
+		t.Fatal("pool-full fire should return promptly after skipping")
 	}
 	select {
-	case <-done:
-		t.Fatal("synchronous fallback should stay blocked until RunCheck returns")
-	case <-time.After(50 * time.Millisecond):
+	case id := <-svc.runCalled:
+		if id == 2 {
+			t.Fatalf("pool-full fire should skip task 2, got unexpected run")
+		}
+	case <-time.After(100 * time.Millisecond):
 	}
+	if svc.runCount.Load() != 1 {
+		t.Fatalf("expected only the first task to run, got %d runs", svc.runCount.Load())
+	}
+	if !r.tryAcquireInFlight(2) {
+		t.Fatal("pool-full skip should release inFlight slot for task 2")
+	}
+	r.releaseInFlight(2)
 
 	close(block)
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("synchronous fallback did not return after RunCheck completed")
-	}
-	waitFor(t, time.Second, "task 2 in-flight released", func() bool {
-		if !r.tryAcquireInFlight(2) {
-			return false
-		}
-		r.releaseInFlight(2)
-		return true
-	})
 	stoppedWithin(t, r, 3*time.Second)
 }
 
@@ -562,6 +559,22 @@ func TestRunManual_RespectsFeatureSwitch(t *testing.T) {
 	}
 	if got := svc.runCount.Load(); got != 0 {
 		t.Fatalf("RunCheck should not be called when feature is disabled, got %d", got)
+	}
+
+	stoppedWithin(t, r, 3*time.Second)
+}
+
+func TestRunManual_NilSettingServiceBlocksExecution(t *testing.T) {
+	svc := &stubMonitorSvc{}
+	r := newChannelMonitorRunner(svc, nil)
+	r.Start()
+
+	_, err := r.RunManual(context.Background(), 12)
+	if !errors.Is(err, ErrChannelMonitorDisabled) {
+		t.Fatalf("expected ErrChannelMonitorDisabled with nil setting service, got %v", err)
+	}
+	if got := svc.runCount.Load(); got != 0 {
+		t.Fatalf("RunCheck should not be called when setting service is nil, got %d", got)
 	}
 
 	stoppedWithin(t, r, 3*time.Second)

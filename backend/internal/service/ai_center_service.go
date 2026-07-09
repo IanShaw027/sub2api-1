@@ -65,6 +65,10 @@ func (s *AICenterService) CreateSession(ctx context.Context, userID int64, input
 	if s == nil || input == nil {
 		return nil, infraerrors.BadRequest("AI_SESSION_INPUT_REQUIRED", "ai session input is required")
 	}
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
 	title := strings.TrimSpace(input.Title)
 	if title == "" {
 		title = "New chat"
@@ -80,10 +84,10 @@ func (s *AICenterService) CreateSession(ctx context.Context, userID int64, input
 	if input.SystemPrompt != nil {
 		session.SystemPrompt = strings.TrimSpace(*input.SystemPrompt)
 	}
-	if err := s.repo.CreateSession(ctx, session); err != nil {
+	if err := repo.CreateSession(ctx, session); err != nil {
 		return nil, err
 	}
-	if err := s.repo.CreateAuditLog(ctx, &AIAuditLog{
+	if err := repo.CreateAuditLog(ctx, &AIAuditLog{
 		OwnerUserID: &userID,
 		EntityType:  domainAIAuditEntitySession,
 		EntityID:    &session.ID,
@@ -97,21 +101,30 @@ func (s *AICenterService) CreateSession(ctx context.Context, userID int64, input
 }
 
 func (s *AICenterService) GetSession(ctx context.Context, userID, sessionID int64) (*AISession, error) {
-	if s == nil {
-		return nil, ErrAISessionNotFound
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
 	}
-	return s.repo.GetSessionByUserAndID(ctx, userID, sessionID)
+	return repo.GetSessionByUserAndID(ctx, userID, sessionID)
 }
 
 func (s *AICenterService) ListSessions(ctx context.Context, userID int64, params pagination.PaginationParams, status string) ([]AISession, *pagination.PaginationResult, error) {
-	return s.repo.ListSessions(ctx, userID, params, status)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, nil, err
+	}
+	return repo.ListSessions(ctx, userID, params, status)
 }
 
 func (s *AICenterService) UpdateSession(ctx context.Context, userID, sessionID int64, input *AIUpdateSessionInput) (*AISession, error) {
 	if s == nil || input == nil {
 		return nil, infraerrors.BadRequest("AI_SESSION_INPUT_REQUIRED", "ai session input is required")
 	}
-	session, err := s.repo.GetSessionByUserAndID(ctx, userID, sessionID)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	session, err := repo.GetSessionByUserAndID(ctx, userID, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -133,10 +146,10 @@ func (s *AICenterService) UpdateSession(ctx context.Context, userID, sessionID i
 		session.Metadata = cloneAIMap(*input.Metadata)
 	}
 	session.Trace = normalizeAIWriteTrace(ctx, input.Trace)
-	if err := s.repo.UpdateSession(ctx, session); err != nil {
+	if err := repo.UpdateSession(ctx, session); err != nil {
 		return nil, err
 	}
-	if err := s.repo.CreateAuditLog(ctx, &AIAuditLog{
+	if err := repo.CreateAuditLog(ctx, &AIAuditLog{
 		OwnerUserID: &userID,
 		EntityType:  domainAIAuditEntitySession,
 		EntityID:    &session.ID,
@@ -151,14 +164,18 @@ func (s *AICenterService) UpdateSession(ctx context.Context, userID, sessionID i
 }
 
 func (s *AICenterService) DeleteSession(ctx context.Context, userID, sessionID int64) error {
-	session, err := s.repo.GetSessionByUserAndID(ctx, userID, sessionID)
+	repo, err := s.requireRepo()
 	if err != nil {
 		return err
 	}
-	if err := s.repo.DeleteSession(ctx, sessionID); err != nil {
+	session, err := repo.GetSessionByUserAndID(ctx, userID, sessionID)
+	if err != nil {
 		return err
 	}
-	return s.repo.CreateAuditLog(ctx, &AIAuditLog{
+	if err := repo.DeleteSession(ctx, sessionID); err != nil {
+		return err
+	}
+	return repo.CreateAuditLog(ctx, &AIAuditLog{
 		OwnerUserID: &userID,
 		EntityType:  domainAIAuditEntitySession,
 		EntityID:    &session.ID,
@@ -168,17 +185,25 @@ func (s *AICenterService) DeleteSession(ctx context.Context, userID, sessionID i
 }
 
 func (s *AICenterService) ListSessionMessages(ctx context.Context, userID, sessionID int64, params pagination.PaginationParams) ([]AISessionMessage, *pagination.PaginationResult, error) {
-	if _, err := s.repo.GetSessionByUserAndID(ctx, userID, sessionID); err != nil {
+	repo, err := s.requireRepo()
+	if err != nil {
 		return nil, nil, err
 	}
-	return s.repo.ListSessionMessages(ctx, sessionID, params)
+	if _, err := repo.GetSessionByUserAndID(ctx, userID, sessionID); err != nil {
+		return nil, nil, err
+	}
+	return repo.ListSessionMessages(ctx, sessionID, params)
 }
 
 func (s *AICenterService) SendMessage(ctx context.Context, userID, sessionID int64, input *AISendMessageInput) (*AISendMessageResult, error) {
 	if s == nil || input == nil {
 		return nil, infraerrors.BadRequest("AI_MESSAGE_INPUT_REQUIRED", "ai message input is required")
 	}
-	session, err := s.repo.GetSessionByUserAndID(ctx, userID, sessionID)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	session, err := repo.GetSessionByUserAndID(ctx, userID, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +222,7 @@ func (s *AICenterService) SendMessage(ctx context.Context, userID, sessionID int
 	if input.ReplyToMessageID != nil {
 		message.ReplyToMessageID = input.ReplyToMessageID
 	}
-	if err := s.repo.CreateSessionMessages(ctx, []*AISessionMessage{message}); err != nil {
+	if err := repo.CreateSessionMessages(ctx, []*AISessionMessage{message}); err != nil {
 		return nil, err
 	}
 	msgs := []AISessionMessage{*message}
@@ -214,7 +239,7 @@ func (s *AICenterService) SendMessage(ctx context.Context, userID, sessionID int
 			Metadata:  cloneAIMap(input.AssistantReplyMetadata),
 			Trace:     normalizeAIWriteTrace(ctx, input.Trace),
 		}
-		if err := s.repo.CreateSessionMessages(ctx, []*AISessionMessage{assistant}); err != nil {
+		if err := repo.CreateSessionMessages(ctx, []*AISessionMessage{assistant}); err != nil {
 			return nil, err
 		}
 		msgs = append(msgs, *assistant)
@@ -222,10 +247,10 @@ func (s *AICenterService) SendMessage(ctx context.Context, userID, sessionID int
 	now := time.Now()
 	session.LastMessageAt = &now
 	session.Trace = normalizeAIWriteTrace(ctx, input.Trace)
-	if err := s.repo.UpdateSession(ctx, session); err != nil {
+	if err := repo.UpdateSession(ctx, session); err != nil {
 		return nil, err
 	}
-	if err := s.repo.CreateAuditLog(ctx, &AIAuditLog{
+	if err := repo.CreateAuditLog(ctx, &AIAuditLog{
 		OwnerUserID: &userID,
 		EntityType:  domainAIAuditEntitySessionMessage,
 		EntityID:    &message.ID,
@@ -351,6 +376,10 @@ func (s *AICenterService) CreatePromptTemplate(ctx context.Context, userID int64
 	if s == nil || input == nil {
 		return nil, infraerrors.BadRequest("AI_PROMPT_TEMPLATE_INPUT_REQUIRED", "ai prompt template input is required")
 	}
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
 	title := strings.TrimSpace(input.Title)
 	if title == "" {
 		return nil, infraerrors.BadRequest("AI_PROMPT_TEMPLATE_TITLE_REQUIRED", "prompt template title is required")
@@ -382,10 +411,10 @@ func (s *AICenterService) CreatePromptTemplate(ctx context.Context, userID int64
 		Metadata:   cloneAIMap(template.Metadata),
 		Trace:      template.Trace,
 	}
-	if err := s.repo.CreatePromptTemplate(ctx, template, version); err != nil {
+	if err := repo.CreatePromptTemplate(ctx, template, version); err != nil {
 		return nil, err
 	}
-	if err := s.repo.CreateAuditLog(ctx, &AIAuditLog{
+	if err := repo.CreateAuditLog(ctx, &AIAuditLog{
 		OwnerUserID: &userID,
 		EntityType:  domainAIAuditEntityPromptTemplate,
 		EntityID:    &template.ID,
@@ -402,7 +431,11 @@ func (s *AICenterService) UpdatePromptTemplate(ctx context.Context, userID, temp
 	if s == nil || input == nil {
 		return nil, infraerrors.BadRequest("AI_PROMPT_TEMPLATE_INPUT_REQUIRED", "ai prompt template input is required")
 	}
-	template, err := s.repo.GetPromptTemplateByUserAndID(ctx, userID, templateID)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	template, err := repo.GetPromptTemplateByUserAndID(ctx, userID, templateID)
 	if err != nil {
 		return nil, err
 	}
@@ -450,10 +483,10 @@ func (s *AICenterService) UpdatePromptTemplate(ctx context.Context, userID, temp
 		Metadata:   cloneAIMap(template.Metadata),
 		Trace:      template.Trace,
 	}
-	if err := s.repo.UpdatePromptTemplate(ctx, template, version); err != nil {
+	if err := repo.UpdatePromptTemplate(ctx, template, version); err != nil {
 		return nil, err
 	}
-	if err := s.repo.CreateAuditLog(ctx, &AIAuditLog{
+	if err := repo.CreateAuditLog(ctx, &AIAuditLog{
 		OwnerUserID: &userID,
 		EntityType:  domainAIAuditEntityPromptTemplate,
 		EntityID:    &template.ID,
@@ -468,14 +501,18 @@ func (s *AICenterService) UpdatePromptTemplate(ctx context.Context, userID, temp
 }
 
 func (s *AICenterService) DeletePromptTemplate(ctx context.Context, userID, templateID int64) error {
-	template, err := s.repo.GetPromptTemplateByUserAndID(ctx, userID, templateID)
+	repo, err := s.requireRepo()
 	if err != nil {
 		return err
 	}
-	if err := s.repo.DeletePromptTemplate(ctx, templateID); err != nil {
+	template, err := repo.GetPromptTemplateByUserAndID(ctx, userID, templateID)
+	if err != nil {
 		return err
 	}
-	return s.repo.CreateAuditLog(ctx, &AIAuditLog{
+	if err := repo.DeletePromptTemplate(ctx, templateID); err != nil {
+		return err
+	}
+	return repo.CreateAuditLog(ctx, &AIAuditLog{
 		OwnerUserID: &userID,
 		EntityType:  domainAIAuditEntityPromptTemplate,
 		EntityID:    &template.ID,
@@ -485,11 +522,15 @@ func (s *AICenterService) DeletePromptTemplate(ctx context.Context, userID, temp
 }
 
 func (s *AICenterService) GetPromptTemplate(ctx context.Context, userID int64, templateID int64) (*AIPromptTemplate, error) {
-	template, err := s.repo.GetPromptTemplateByUserAndID(ctx, userID, templateID)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	template, err := repo.GetPromptTemplateByUserAndID(ctx, userID, templateID)
 	if err == nil {
 		return template, nil
 	}
-	template, err = s.repo.GetPromptTemplateByID(ctx, templateID)
+	template, err = repo.GetPromptTemplateByID(ctx, templateID)
 	if err != nil {
 		return nil, err
 	}
@@ -500,12 +541,20 @@ func (s *AICenterService) GetPromptTemplate(ctx context.Context, userID int64, t
 }
 
 func (s *AICenterService) ListPromptTemplates(ctx context.Context, userID int64, isAdmin bool, params pagination.PaginationParams, filter AIListPromptTemplatesFilter) ([]AIPromptTemplate, *pagination.PaginationResult, error) {
-	return s.repo.ListPromptTemplates(ctx, userID, isAdmin, params, filter)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, nil, err
+	}
+	return repo.ListPromptTemplates(ctx, userID, isAdmin, params, filter)
 }
 
 func (s *AICenterService) CreateGenerationJob(ctx context.Context, userID int64, input *AICreateGenerationJobInput) (*AIGenerationJob, error) {
 	if s == nil || input == nil {
 		return nil, infraerrors.BadRequest("AI_GENERATION_JOB_INPUT_REQUIRED", "ai generation job input is required")
+	}
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
 	}
 	job := &AIGenerationJob{
 		UserID:           userID,
@@ -527,10 +576,10 @@ func (s *AICenterService) CreateGenerationJob(ctx context.Context, userID int64,
 	if job.Model == "" || job.Prompt == "" {
 		return nil, infraerrors.BadRequest("AI_GENERATION_JOB_INVALID", "model and prompt are required")
 	}
-	if err := s.repo.CreateGenerationJob(ctx, job); err != nil {
+	if err := repo.CreateGenerationJob(ctx, job); err != nil {
 		return nil, err
 	}
-	if err := s.repo.CreateAuditLog(ctx, &AIAuditLog{
+	if err := repo.CreateAuditLog(ctx, &AIAuditLog{
 		OwnerUserID: &userID,
 		EntityType:  domainAIAuditEntityGenerationJob,
 		EntityID:    &job.ID,
@@ -547,19 +596,35 @@ func (s *AICenterService) CreateAssets(ctx context.Context, assets []*AIAsset) e
 	if s == nil {
 		return infraerrors.BadRequest("AI_ASSET_INPUT_REQUIRED", "ai assets are required")
 	}
-	return s.repo.CreateAssets(ctx, assets)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return err
+	}
+	return repo.CreateAssets(ctx, assets)
 }
 
 func (s *AICenterService) ListGenerationJobs(ctx context.Context, userID int64, params pagination.PaginationParams, filter AIListGenerationJobsFilter) ([]AIGenerationJob, *pagination.PaginationResult, error) {
-	return s.repo.ListGenerationJobs(ctx, userID, false, params, filter)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, nil, err
+	}
+	return repo.ListGenerationJobs(ctx, userID, false, params, filter)
 }
 
 func (s *AICenterService) GetGenerationJob(ctx context.Context, userID, jobID int64) (*AIGenerationJob, error) {
-	return s.repo.GetGenerationJobByUserAndID(ctx, userID, jobID)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	return repo.GetGenerationJobByUserAndID(ctx, userID, jobID)
 }
 
 func (s *AICenterService) ListGallery(ctx context.Context, userID int64, params pagination.PaginationParams, filter AIListAssetsFilter) ([]AIAsset, *pagination.PaginationResult, error) {
-	items, result, err := s.repo.ListAssets(ctx, userID, false, params, filter)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, nil, err
+	}
+	items, result, err := repo.ListAssets(ctx, userID, false, params, filter)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -576,11 +641,19 @@ func (s *AICenterService) ListGallery(ctx context.Context, userID int64, params 
 }
 
 func (s *AICenterService) ListAssets(ctx context.Context, userID int64, isAdmin bool, params pagination.PaginationParams, filter AIListAssetsFilter) ([]AIAsset, *pagination.PaginationResult, error) {
-	return s.repo.ListAssets(ctx, userID, isAdmin, params, filter)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, nil, err
+	}
+	return repo.ListAssets(ctx, userID, isAdmin, params, filter)
 }
 
 func (s *AICenterService) GetAsset(ctx context.Context, userID, assetID int64) (*AIAsset, error) {
-	asset, err := s.repo.GetAssetByUserAndID(ctx, userID, assetID)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	asset, err := repo.GetAssetByUserAndID(ctx, userID, assetID)
 	if err != nil {
 		return nil, err
 	}
@@ -591,7 +664,11 @@ func (s *AICenterService) UpdateGenerationJob(ctx context.Context, operatorUserI
 	if s == nil || input == nil {
 		return nil, infraerrors.BadRequest("AI_GENERATION_JOB_INPUT_REQUIRED", "ai generation job input is required")
 	}
-	job, err := s.repo.GetGenerationJobByUserAndID(ctx, userID, jobID)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	job, err := repo.GetGenerationJobByUserAndID(ctx, userID, jobID)
 	if err != nil {
 		return nil, err
 	}
@@ -624,10 +701,10 @@ func (s *AICenterService) UpdateGenerationJob(ctx context.Context, operatorUserI
 		job.Parameters = cloneAIMap(*input.Parameters)
 	}
 	job.Trace = normalizeAIWriteTrace(ctx, input.Trace)
-	if err := s.repo.UpdateGenerationJob(ctx, job); err != nil {
+	if err := repo.UpdateGenerationJob(ctx, job); err != nil {
 		return nil, err
 	}
-	if err := s.repo.CreateAuditLog(ctx, &AIAuditLog{
+	if err := repo.CreateAuditLog(ctx, &AIAuditLog{
 		OperatorUserID: &operatorUserID,
 		OwnerUserID:    &userID,
 		EntityType:     domainAIAuditEntityGenerationJob,
@@ -646,7 +723,11 @@ func (s *AICenterService) UpdateAsset(ctx context.Context, operatorUserID, userI
 	if s == nil || input == nil {
 		return nil, infraerrors.BadRequest("AI_ASSET_INPUT_REQUIRED", "ai asset input is required")
 	}
-	asset, err := s.repo.GetAssetByUserAndID(ctx, userID, assetID)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	asset, err := repo.GetAssetByUserAndID(ctx, userID, assetID)
 	if err != nil {
 		return nil, err
 	}
@@ -688,10 +769,10 @@ func (s *AICenterService) UpdateAsset(ctx context.Context, operatorUserID, userI
 		asset.Metadata = cloneAIMap(*input.Metadata)
 	}
 	asset.Trace = normalizeAIWriteTrace(ctx, input.Trace)
-	if err := s.repo.UpdateAsset(ctx, asset); err != nil {
+	if err := repo.UpdateAsset(ctx, asset); err != nil {
 		return nil, err
 	}
-	if err := s.repo.CreateAuditLog(ctx, &AIAuditLog{
+	if err := repo.CreateAuditLog(ctx, &AIAuditLog{
 		OperatorUserID: &operatorUserID,
 		OwnerUserID:    &userID,
 		EntityType:     domainAIAuditEntityAsset,
@@ -707,15 +788,27 @@ func (s *AICenterService) UpdateAsset(ctx context.Context, operatorUserID, userI
 }
 
 func (s *AICenterService) AdminListPromptTemplates(ctx context.Context, operatorUserID int64, params pagination.PaginationParams, filter AIListPromptTemplatesFilter) ([]AIPromptTemplate, *pagination.PaginationResult, error) {
-	return s.repo.ListPromptTemplates(ctx, operatorUserID, true, params, filter)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, nil, err
+	}
+	return repo.ListPromptTemplates(ctx, operatorUserID, true, params, filter)
 }
 
 func (s *AICenterService) AdminGetPromptTemplate(ctx context.Context, templateID int64) (*AIPromptTemplate, error) {
-	return s.repo.GetPromptTemplateByID(ctx, templateID)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	return repo.GetPromptTemplateByID(ctx, templateID)
 }
 
 func (s *AICenterService) AdminModeratePromptTemplate(ctx context.Context, operatorUserID, templateID int64, moderationState string, reason string) (*AIPromptTemplate, error) {
-	template, err := s.repo.GetPromptTemplateByID(ctx, templateID)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	template, err := repo.GetPromptTemplateByID(ctx, templateID)
 	if err != nil {
 		return nil, err
 	}
@@ -725,10 +818,10 @@ func (s *AICenterService) AdminModeratePromptTemplate(ctx context.Context, opera
 		template.Visibility = AIVisibilityPrivate
 	}
 	template.Trace = normalizeAIWriteTrace(ctx, AIWriteTrace{})
-	if err := s.repo.UpdatePromptTemplate(ctx, template, nil); err != nil {
+	if err := repo.UpdatePromptTemplate(ctx, template, nil); err != nil {
 		return nil, err
 	}
-	if err := s.repo.CreateAuditLog(ctx, &AIAuditLog{
+	if err := repo.CreateAuditLog(ctx, &AIAuditLog{
 		OperatorUserID: &operatorUserID,
 		OwnerUserID:    &template.UserID,
 		EntityType:     domainAIAuditEntityPromptTemplate,
@@ -745,15 +838,27 @@ func (s *AICenterService) AdminModeratePromptTemplate(ctx context.Context, opera
 }
 
 func (s *AICenterService) AdminListGenerationJobs(ctx context.Context, operatorUserID int64, params pagination.PaginationParams, filter AIListGenerationJobsFilter) ([]AIGenerationJob, *pagination.PaginationResult, error) {
-	return s.repo.ListGenerationJobs(ctx, operatorUserID, true, params, filter)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, nil, err
+	}
+	return repo.ListGenerationJobs(ctx, operatorUserID, true, params, filter)
 }
 
 func (s *AICenterService) AdminGetGenerationJob(ctx context.Context, jobID int64) (*AIGenerationJob, error) {
-	return s.repo.GetGenerationJobByID(ctx, jobID)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	return repo.GetGenerationJobByID(ctx, jobID)
 }
 
 func (s *AICenterService) AdminModerateGenerationJob(ctx context.Context, operatorUserID, jobID int64, input *AIUpdateGenerationJobInput) (*AIGenerationJob, error) {
-	job, err := s.repo.GetGenerationJobByID(ctx, jobID)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	job, err := repo.GetGenerationJobByID(ctx, jobID)
 	if err != nil {
 		return nil, err
 	}
@@ -761,7 +866,11 @@ func (s *AICenterService) AdminModerateGenerationJob(ctx context.Context, operat
 }
 
 func (s *AICenterService) AdminListAssets(ctx context.Context, operatorUserID int64, params pagination.PaginationParams, filter AIListAssetsFilter) ([]AIAsset, *pagination.PaginationResult, error) {
-	items, result, err := s.repo.ListAssets(ctx, operatorUserID, true, params, filter)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, nil, err
+	}
+	items, result, err := repo.ListAssets(ctx, operatorUserID, true, params, filter)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -778,7 +887,11 @@ func (s *AICenterService) AdminListAssets(ctx context.Context, operatorUserID in
 }
 
 func (s *AICenterService) AdminGetAsset(ctx context.Context, assetID int64) (*AIAsset, error) {
-	asset, err := s.repo.GetAssetByID(ctx, assetID)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	asset, err := repo.GetAssetByID(ctx, assetID)
 	if err != nil {
 		return nil, err
 	}
@@ -786,7 +899,11 @@ func (s *AICenterService) AdminGetAsset(ctx context.Context, assetID int64) (*AI
 }
 
 func (s *AICenterService) AdminModerateAsset(ctx context.Context, operatorUserID, assetID int64, input *AIUpdateAssetInput) (*AIAsset, error) {
-	asset, err := s.repo.GetAssetByID(ctx, assetID)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	asset, err := repo.GetAssetByID(ctx, assetID)
 	if err != nil {
 		return nil, err
 	}
@@ -794,7 +911,11 @@ func (s *AICenterService) AdminModerateAsset(ctx context.Context, operatorUserID
 }
 
 func (s *AICenterService) AdminListAuditLogs(ctx context.Context, params pagination.PaginationParams, filter AIListAuditLogsFilter) ([]AIAuditLog, *pagination.PaginationResult, error) {
-	return s.repo.ListAuditLogs(ctx, params, filter)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, nil, err
+	}
+	return repo.ListAuditLogs(ctx, params, filter)
 }
 
 func (s *AICenterService) decorateAIAsset(ctx context.Context, viewerUserID int64, isAdmin bool, asset *AIAsset) *AIAsset {

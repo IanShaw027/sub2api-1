@@ -574,6 +574,23 @@ func TestRefreshIfNeeded_LocalMutexSerializesConcurrent(t *testing.T) {
 	mu.Lock()
 	require.Equal(t, 1, callCount, "only one refresh call should have been made")
 	mu.Unlock()
+	require.Zero(t, countRefreshAPILocalLocks(api), "local mutex entries should be cleaned up after waiters drain")
+}
+
+func TestRefreshIfNeeded_LocalMutexEntryIsReleasedAfterRefresh(t *testing.T) {
+	account := &Account{ID: 21, Platform: PlatformAnthropic, Type: AccountTypeOAuth}
+	repo := &refreshAPIAccountRepo{account: account}
+	executor := &refreshAPIExecutorStub{
+		needsRefresh: true,
+		credentials:  map[string]any{"access_token": "new-token"},
+	}
+
+	api := NewOAuthRefreshAPI(repo, nil)
+	result, err := api.RefreshIfNeeded(context.Background(), account, executor, 3*time.Minute)
+
+	require.NoError(t, err)
+	require.True(t, result.Refreshed)
+	require.Zero(t, countRefreshAPILocalLocks(api), "completed refresh should not leave per-key local mutexes behind")
 }
 
 // dynamicRefreshExecutor is a test helper with function-based NeedsRefresh and Refresh.
@@ -596,6 +613,12 @@ func (e *dynamicRefreshExecutor) Refresh(ctx context.Context, account *Account) 
 
 func (e *dynamicRefreshExecutor) CacheKey(_ *Account) string {
 	return e.cacheKey
+}
+
+func countRefreshAPILocalLocks(api *OAuthRefreshAPI) int {
+	api.localLocksMu.Lock()
+	defer api.localLocksMu.Unlock()
+	return len(api.localLocks)
 }
 
 // ========== NewOAuthRefreshAPI TTL tests ==========

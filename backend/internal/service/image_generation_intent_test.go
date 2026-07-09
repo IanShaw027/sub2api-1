@@ -161,6 +161,11 @@ func TestResolveOpenAIResponsesImageBillingConfigSupportsOfficialAndCustomSizes(
 			wantTier: "2K",
 		},
 		{
+			name:     "parseable invalid custom size uses native 2k floor",
+			body:     []byte(`{"model":"gpt-5.5","tools":[{"type":"image_generation","model":"gpt-image-2","size":"512x512"}]}`),
+			wantTier: "2K",
+		},
+		{
 			name:     "default image tool model supports flexible size",
 			body:     []byte(`{"model":"gpt-5.4","tools":[{"type":"image_generation","size":"2048x1152"}]}`),
 			wantTier: "2K",

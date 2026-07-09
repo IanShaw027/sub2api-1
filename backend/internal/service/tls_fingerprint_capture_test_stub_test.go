@@ -20,7 +20,8 @@ type tlsFingerprintCaptureRepoStub struct {
 
 	getRunningTaskByTokenErr error
 
-	beforeCreateSampleLocked func(*tlsFingerprintCaptureRepoStub, *TLSFingerprintCaptureSample)
+	beforeCreateSampleLocked    func(*tlsFingerprintCaptureRepoStub, *TLSFingerprintCaptureSample)
+	withTaskSubmissionLockCalls int
 }
 
 func newTLSFingerprintCaptureRepoStub() *tlsFingerprintCaptureRepoStub {
@@ -73,6 +74,16 @@ func (r *tlsFingerprintCaptureRepoStub) GetRunningTaskByToken(_ context.Context,
 		}
 	}
 	return nil, nil
+}
+
+func (r *tlsFingerprintCaptureRepoStub) WithTaskSubmissionLock(ctx context.Context, _ int64, fn func(context.Context) error) error {
+	r.mu.Lock()
+	r.withTaskSubmissionLockCalls++
+	r.mu.Unlock()
+	if fn == nil {
+		return nil
+	}
+	return fn(ctx)
 }
 
 func (r *tlsFingerprintCaptureRepoStub) FailGetRunningTaskByToken(err error) {

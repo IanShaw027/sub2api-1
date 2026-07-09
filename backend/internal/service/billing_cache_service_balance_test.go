@@ -126,3 +126,23 @@ func TestSyncBalanceCacheAfterDeduction_QueuesDeductWhenBalanceStillEligible(t *
 		return cache.deductCalls.Load() == 1
 	}, 2*time.Second, 10*time.Millisecond)
 }
+
+func TestGetUserBalance_NilUserRepoReturnsError(t *testing.T) {
+	svc := NewBillingCacheService(nil, nil, nil, nil, nil, nil, &config.Config{}, nil)
+	t.Cleanup(svc.Stop)
+
+	_, err := svc.GetUserBalance(context.Background(), 1)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "user repository is unavailable")
+}
+
+func TestGetSubscriptionStatus_NilSubscriptionRepoReturnsError(t *testing.T) {
+	svc := NewBillingCacheService(nil, nil, nil, nil, nil, nil, &config.Config{}, nil)
+	t.Cleanup(svc.Stop)
+
+	_, err := svc.GetSubscriptionStatus(context.Background(), 1, 2)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "subscription repository is unavailable")
+}

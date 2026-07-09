@@ -64,6 +64,18 @@ func TestAccountsParentAccountForeignKey(t *testing.T) {
 	require.Equal(t, entschema.Restrict, fk.OnDelete)
 }
 
+func TestInvoiceOrdersActiveOrderUniqueIndex(t *testing.T) {
+	column := findColumnByName(t, InvoiceOrdersTable, "is_active")
+	require.Equal(t, "is_active", column.Name)
+
+	idx := findIndexByName(t, InvoiceOrdersTable, "invoiceorder_order_id")
+	require.True(t, idx.Unique)
+	require.Len(t, idx.Columns, 1)
+	require.Equal(t, "order_id", idx.Columns[0].Name)
+	require.NotNil(t, idx.Annotation)
+	require.Equal(t, (&entsql.IndexAnnotation{Where: "is_active = true"}).Where, idx.Annotation.Where)
+}
+
 func findForeignKeyBySymbol(t *testing.T, table *entschema.Table, symbol string) *entschema.ForeignKey {
 	t.Helper()
 
@@ -102,5 +114,18 @@ func findForeignKeyByColumn(t *testing.T, table *entschema.Table, column string)
 	}
 
 	require.Failf(t, "missing foreign key", "table %s should include foreign key for column %s", table.Name, column)
+	return nil
+}
+
+func findColumnByName(t *testing.T, table *entschema.Table, name string) *entschema.Column {
+	t.Helper()
+
+	for _, col := range table.Columns {
+		if col.Name == name {
+			return col
+		}
+	}
+
+	require.Failf(t, "missing column", "table %s should include column %s", table.Name, name)
 	return nil
 }

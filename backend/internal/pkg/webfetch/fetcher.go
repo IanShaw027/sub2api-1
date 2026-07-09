@@ -270,7 +270,7 @@ func (d *fetchValidatedDialer) DialContext(ctx context.Context, network, addr st
 	if d == nil || d.base == nil {
 		return nil, &FetchError{
 			Code:    ErrorCodeClientConfig,
-			Message: "validated dialer base is nil",
+			Message: "validated dialer base is required",
 			Reason:  "client_config",
 		}
 	}
@@ -354,10 +354,10 @@ func newFetchValidatedProxyRoundTripper(proxyURL *url.URL) *fetchValidatedProxyR
 
 func (rt *fetchValidatedProxyRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	if rt == nil || rt.proxyURL == nil {
-		return nil, &FetchError{Code: ErrorCodeClientConfig, Message: "validated proxy URL is nil", Reason: "client_config"}
+		return nil, &FetchError{Code: ErrorCodeClientConfig, Message: "validated proxy URL is required", Reason: "client_config"}
 	}
 	if req == nil || req.URL == nil {
-		return nil, &FetchError{Code: ErrorCodeInvalidURL, Message: "request URL is nil", Reason: "invalid_url"}
+		return nil, &FetchError{Code: ErrorCodeInvalidURL, Message: "request URL is required", Reason: "invalid_url"}
 	}
 
 	originalHost := strings.ToLower(strings.TrimSpace(req.URL.Hostname()))
@@ -411,7 +411,7 @@ func (rt *fetchValidatedProxyRoundTripper) roundTripViaHTTPProxy(req *http.Reque
 		if connectResp.StatusCode < 200 || connectResp.StatusCode >= 300 {
 			return nil, fmt.Errorf("proxy CONNECT failed with status %d", connectResp.StatusCode)
 		}
-		tlsConn := tls.Client(conn, &tls.Config{ServerName: serverName})
+		tlsConn := tls.Client(conn, &tls.Config{ServerName: serverName, MinVersion: tls.VersionTLS12})
 		if err := tlsConn.HandshakeContext(req.Context()); err != nil {
 			return nil, err
 		}
@@ -456,7 +456,7 @@ func (rt *fetchValidatedProxyRoundTripper) roundTripViaSOCKSProxy(req *http.Requ
 	}()
 
 	if strings.EqualFold(req.URL.Scheme, "https") {
-		tlsConn := tls.Client(conn, &tls.Config{ServerName: serverName})
+		tlsConn := tls.Client(conn, &tls.Config{ServerName: serverName, MinVersion: tls.VersionTLS12})
 		if err := tlsConn.HandshakeContext(req.Context()); err != nil {
 			return nil, err
 		}
@@ -489,7 +489,7 @@ func (rt *fetchValidatedProxyRoundTripper) dialHTTPProxy(ctx context.Context) (n
 	if !strings.EqualFold(rt.proxyURL.Scheme, "https") {
 		return conn, nil
 	}
-	tlsConn := tls.Client(conn, &tls.Config{ServerName: rt.proxyURL.Hostname()})
+	tlsConn := tls.Client(conn, &tls.Config{ServerName: rt.proxyURL.Hostname(), MinVersion: tls.VersionTLS12})
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
 		_ = conn.Close()
 		return nil, err

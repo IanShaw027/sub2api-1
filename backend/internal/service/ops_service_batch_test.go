@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,6 +96,36 @@ func TestOpsServiceRecordErrorBatch_FallsBackToSingleInsert(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, batchCalls)
 	require.Equal(t, 2, singleCalls)
+}
+
+func TestOpsServiceRecordErrorBatch_SanitizesPrefilledRequestBodyJSON(t *testing.T) {
+	t.Parallel()
+
+	var captured *OpsInsertErrorLogInput
+	repo := &opsRepoMock{
+		InsertErrorLogFn: func(ctx context.Context, input *OpsInsertErrorLogInput) (int64, error) {
+			captured = input
+			return 1, nil
+		},
+	}
+	svc := NewOpsService(repo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	rawBody := `{"access_token":"secret-token","messages":[{"role":"user","content":"` +
+		strings.Repeat("x", opsMaxStoredRequestBodyBytes) + `"}]}`
+	entry := &OpsInsertErrorLogInput{
+		ErrorPhase:      "upstream",
+		ErrorType:       "upstream_error",
+		RequestBodyJSON: strPtr(rawBody),
+	}
+
+	require.NoError(t, svc.RecordErrorBatch(context.Background(), []*OpsInsertErrorLogInput{entry}))
+	require.NotNil(t, captured)
+	require.NotNil(t, captured.RequestBodyJSON)
+	require.NotContains(t, *captured.RequestBodyJSON, "secret-token")
+	require.Contains(t, *captured.RequestBodyJSON, "[REDACTED]")
+	require.True(t, captured.RequestBodyTruncated)
+	require.NotNil(t, captured.RequestBodyBytes)
+	require.Equal(t, len(rawBody), *captured.RequestBodyBytes)
 }
 
 func strPtr(v string) *string {

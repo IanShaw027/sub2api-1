@@ -28,6 +28,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
@@ -482,7 +483,7 @@ type OpenAIForwardResult struct {
 	wsReplayInput       []json.RawMessage
 	wsReplayInputExists bool
 
-	// strict-delta shadow 载体（TEMP_DIAG openai_ws_delta_shadow remove_after_debug=true）。
+	// strict-delta shadow 载体。
 	// 仅 shadow 度量用，承载本轮 raw upstream output 的 canonical 哈希和结构签名，不含原文。
 	DeltaShadowOutputHashes   [][32]byte
 	DeltaShadowOutputShapes   []string
@@ -608,6 +609,7 @@ type OpenAIGatewayService struct {
 	tlsFPRouterService    *TLSFingerprintRouterService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	fingerprintNormalizer *FingerprintNormalizer
+	gatewayService        *GatewayService
 
 	openaiWSPoolOnce              sync.Once
 	openaiWSStateStoreOnce        sync.Once
@@ -703,6 +705,7 @@ func NewOpenAIGatewayService(
 	}
 	svc.registerOpenAIWSPoolReconcileHook()
 	svc.logOpenAIWSModeBootstrap()
+	svc.startOpenAICompatSessionReaper()
 	TriggerOpenAIWSPoolReconcile()
 	return svc
 }
@@ -757,6 +760,13 @@ func (s *OpenAIGatewayService) checkChannelPricingRestriction(ctx context.Contex
 		return false
 	}
 	return s.channelService.IsModelRestricted(ctx, *groupID, billingModel)
+}
+
+func (s *OpenAIGatewayService) SetGatewayService(gateway *GatewayService) {
+	if s == nil {
+		return
+	}
+	s.gatewayService = gateway
 }
 
 func (s *OpenAIGatewayService) isUpstreamModelRestrictedByChannel(ctx context.Context, groupID int64, account *Account, requestedModel string, requireCompact bool) bool {
@@ -2614,10 +2624,6 @@ func (s *OpenAIGatewayService) SelectAccountForModelWithExclusions(ctx context.C
 	return s.selectAccountForModelWithExclusions(s.withOpenAIQuotaAutoPauseContext(ctx), groupID, PlatformOpenAI, sessionHash, requestedModel, excludedIDs, false, 0, "", "", false, false)
 }
 
-func shouldUseOpenAIGroupModelUnsupportedError(ctx context.Context, settingService *SettingService, accounts []Account, requestedModel string, requireCompact bool) bool {
-	return shouldUseOpenAICompatibleGroupModelUnsupportedError(ctx, settingService, PlatformOpenAI, accounts, requestedModel, requireCompact)
-}
-
 func shouldUseOpenAICompatibleGroupModelUnsupportedError(ctx context.Context, settingService *SettingService, platform string, accounts []Account, requestedModel string, requireCompact bool) bool {
 	requestedModel = strings.TrimSpace(requestedModel)
 	if requestedModel == "" || len(accounts) == 0 {
@@ -2675,21 +2681,11 @@ func (s *OpenAIGatewayService) openAISelectionErrorAccounts(ctx context.Context,
 	return filtered
 }
 
-// noAvailableOpenAISelectionError builds the standard "no account available" error
-// while preserving compact and group-model-unsupported semantics when applicable.
-func noAvailableOpenAISelectionError(requestedModel string, compactBlocked bool, accounts ...[]Account) error {
-	return noAvailableOpenAISelectionErrorWithRouting(context.Background(), nil, requestedModel, compactBlocked, false, accounts...)
-}
-
 func normalizeOpenAICompatiblePlatform(platform string) string {
 	if platform == PlatformGrok {
 		return PlatformGrok
 	}
 	return PlatformOpenAI
-}
-
-func noAvailableOpenAISelectionErrorWithRouting(ctx context.Context, settingService *SettingService, requestedModel string, compactBlocked bool, requireCompact bool, accounts ...[]Account) error {
-	return noAvailableOpenAICompatibleSelectionErrorWithRouting(ctx, settingService, PlatformOpenAI, requestedModel, compactBlocked, requireCompact, accounts...)
 }
 
 func noAvailableOpenAICompatibleSelectionErrorWithRouting(ctx context.Context, settingService *SettingService, platform string, requestedModel string, compactBlocked bool, requireCompact bool, accounts ...[]Account) error {
@@ -4109,7 +4105,6 @@ func (s *OpenAIGatewayService) tryAcquireAccountSlot(ctx context.Context, accoun
 }
 
 func concurrencyForOpenAIAccountSelection(account *Account, requiredImageRoute string) int {
-	requiredImageRoute = openAIImageRouteForAccountScheduling(requiredImageRoute)
 	if account == nil || account.Concurrency <= 0 {
 		return 1
 	}
@@ -4480,6 +4475,9 @@ func (s *OpenAIGatewayService) openAIHTTPIngressUpstreamWSEnabled() bool {
 
 // GetAccessToken gets the access token for an OpenAI account
 func (s *OpenAIGatewayService) GetAccessToken(ctx context.Context, account *Account) (string, string, error) {
+	if account == nil {
+		return "", "", errors.New("account is required")
+	}
 	if account.IsShadow() {
 		credAccount, err := resolveCredentialAccount(ctx, s.accountRepo, account)
 		if err != nil {
@@ -4591,6 +4589,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if failoverBody, ok := getOpenAIFailoverRequestBody(c, body); ok {
 		body = failoverBody
 		clearOpenAIRequestBodyCache(c)
+	}
+	if account == nil {
+		return nil, errors.New("account is required")
 	}
 
 	restrictionResult := s.detectCodexClientRestriction(c, account, body)
@@ -6132,6 +6133,7 @@ oauthTransformDone:
 			return nil, err
 		}
 		applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+		upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsRuntime.Profile)
 
 		// Get proxy URL
 		proxyURL := ""
@@ -6837,6 +6839,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			return nil, err
 		}
 		applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+		upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsRuntime.Profile)
 
 		SetOpsLatencyMs(c, OpsOpenAIForwardPrepareLatencyMsKey, time.Since(startTime).Milliseconds())
 		upstreamStart := time.Now()
@@ -9872,7 +9875,6 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			}
 			if sanitizedData, sanitized := sanitizeOpenAIResponseFailedEventForClient(dataBytes, eventType); sanitized {
 				openAICompatSetSSEFrameData(&frame, string(sanitizedData))
-				dataBytes = sanitizedData
 				data = string(sanitizedData)
 			}
 			// Replace model in response if needed.
@@ -9882,7 +9884,6 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				if replacedData, ok := extractOpenAISSEDataLine(replacedLine); ok {
 					openAICompatSetSSEFrameData(&frame, replacedData)
 					eventType, data = openAIStreamFrameEventTypeAndData(frame)
-					dataBytes = []byte(data)
 				}
 			}
 			startsClientOutput = forceFlushFailedEvent || openAIStreamDataStartsClientOutput(data, eventType)
@@ -11731,7 +11732,7 @@ func (s *OpenAIGatewayService) RecordCyberPolicyUsageLog(ctx context.Context, in
 
 // RecordUsage records usage and deducts balance
 func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRecordUsageInput) error {
-	if input == nil || input.Result == nil {
+	if input == nil || input.Result == nil || input.APIKey == nil || input.User == nil || input.Account == nil {
 		return errors.New("record usage input is required")
 	}
 	result := input.Result
@@ -11771,7 +11772,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		}
 		multiplier = resolver.Resolve(ctx, user.ID, *apiKey.GroupID, apiKey.Group.RateMultiplier)
 	}
-	multiplier, imageRateMultiplier := computePeakAwareMultipliers(apiKey, multiplier, time.Now())
+	multiplier, imageRateMultiplier := computePeakAwareMultipliers(apiKey, multiplier, timezone.Now())
 	effectiveRateMultiplier := multiplier
 
 	var cost *CostBreakdown
@@ -11935,7 +11936,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 	usageLog.DurationMs = &durationMs
 	usageLog.FirstTokenMs = result.FirstTokenMs
-	usageLog.CreatedAt = time.Now()
+	usageLog.CreatedAt = timezone.Now()
 	// 设置渠道信息
 	usageLog.ChannelID = optionalInt64Ptr(input.ChannelID)
 	usageLog.ModelMappingChain = optionalTrimmedStringPtr(input.ModelMappingChain)
@@ -11981,7 +11982,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 		logger.LegacyPrintf("service.openai_gateway", "[SIMPLE MODE] Usage recorded (not billed): user=%d, tokens=%d", usageLog.UserID, usageLog.TotalTokens())
-		s.deferredService.ScheduleLastUsedUpdate(account.ID)
+		if s.deferredService != nil {
+			s.deferredService.ScheduleLastUsedUpdate(account.ID)
+		}
 		return nil
 	}
 
@@ -12072,7 +12075,15 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 				STTPerHour:     apiKey.Group.AudioSTTPricePerHour,
 			}
 		}
-		return s.billingService.CalculateAudioCost(result.AudioUsage.Mode, result.AudioUsage.DurationOrUnits, groupConfig, 1), nil
+		audioCost := s.billingService.CalculateAudioCost(result.AudioUsage.Mode, result.AudioUsage.DurationOrUnits, groupConfig, 1)
+		if hasUsageTokens(tokens) {
+			tokenCost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier)
+			if err != nil {
+				return nil, err
+			}
+			return mergeCostBreakdowns(string(BillingModeAudio), tokenCost, audioCost), nil
+		}
+		return audioCost, nil
 	}
 	if result != nil && result.ImageCount > 0 {
 		if s.resolver != nil && apiKey != nil && apiKey.Group != nil {
@@ -12322,8 +12333,12 @@ func ParseCodexRateLimitHeaders(headers http.Header) *OpenAICodexUsageSnapshot {
 		return nil
 	}
 
-	snapshot.UpdatedAt = time.Now().Format(time.RFC3339)
+	snapshot.UpdatedAt = currentOpenAICodexSnapshotTime().Format(time.RFC3339)
 	return snapshot
+}
+
+func currentOpenAICodexSnapshotTime() time.Time {
+	return timezone.Now().UTC().Truncate(time.Second)
 }
 
 func codexSnapshotBaseTime(snapshot *OpenAICodexUsageSnapshot, fallback time.Time) time.Time {
@@ -12420,7 +12435,7 @@ func parseOpenAIWSCodexRateLimitSnapshot(payload []byte, now time.Time) *OpenAIC
 		return nil
 	}
 	if now.IsZero() {
-		now = time.Now()
+		now = currentOpenAICodexSnapshotTime()
 	}
 	now = now.UTC().Truncate(time.Second)
 
@@ -12476,7 +12491,7 @@ func (s *OpenAIGatewayService) recordOpenAIWSCodexRateLimitSnapshot(ctx context.
 	if s == nil || account == nil || account.ID <= 0 || account.Platform != PlatformOpenAI {
 		return
 	}
-	snapshot := parseOpenAIWSCodexRateLimitSnapshot(payload, time.Now().UTC().Truncate(time.Second))
+	snapshot := parseOpenAIWSCodexRateLimitSnapshot(payload, currentOpenAICodexSnapshotTime())
 	if snapshot == nil {
 		return
 	}
@@ -12514,7 +12529,7 @@ func (s *OpenAIGatewayService) persistOpenAIWSSoftRateLimitAdvisory(ctx context.
 	if s == nil || s.accountRepo == nil || account == nil || account.ID <= 0 || account.Platform != PlatformOpenAI {
 		return
 	}
-	now := time.Now().UTC().Truncate(time.Second)
+	now := currentOpenAICodexSnapshotTime()
 	snapshot := parseOpenAIWSCodexRateLimitSnapshot(payload, now)
 	updates := buildCodexUsageExtraUpdates(snapshot, now)
 	if len(updates) == 0 {
@@ -12572,7 +12587,7 @@ func (s *OpenAIGatewayService) updateCodexUsageSnapshot(ctx context.Context, acc
 		return
 	}
 
-	now := time.Now()
+	now := currentOpenAICodexSnapshotTime()
 	updates := buildCodexUsageExtraUpdates(snapshot, now)
 	if len(updates) == 0 {
 		return

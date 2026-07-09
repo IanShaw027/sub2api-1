@@ -271,6 +271,46 @@ func TestTicketHandlerReplyPersistsTicketAttachmentMetadataWithoutSignedURLs(t *
 	require.Empty(t, repo.replyMessage.Attachments[0].ThumbnailURL)
 }
 
+func TestTicketHandlerReplyIdempotencyReplaysWithoutDuplicateReply(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := newMemoryIdempotencyRepoStub()
+	cfg := service.DefaultIdempotencyConfig()
+	service.SetDefaultIdempotencyCoordinator(service.NewIdempotencyCoordinator(repo, cfg))
+	t.Cleanup(func() {
+		service.SetDefaultIdempotencyCoordinator(nil)
+	})
+
+	ticketRepo := &adminTicketHandlerRepoStub{
+		ticket: &service.SupportTicket{ID: 12, UserID: 77, Status: service.SupportTicketStatusSubmitted},
+	}
+	handler := NewTicketHandler(service.NewTicketService(ticketRepo, &adminTicketHandlerUserRepoStub{}), nil, nil)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 88})
+		c.Next()
+	})
+	router.POST("/api/v1/admin/tickets/:id/messages", handler.Reply)
+
+	call := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/tickets/12/messages", bytes.NewBufferString(`{"content":"reply once"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "admin-ticket-reply-1")
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	first := call()
+	require.Equal(t, http.StatusOK, first.Code)
+	require.Equal(t, 1, ticketRepo.addReplyCalls)
+
+	second := call()
+	require.Equal(t, http.StatusOK, second.Code)
+	require.Equal(t, "true", second.Header().Get("X-Idempotency-Replayed"))
+	require.Equal(t, 1, ticketRepo.addReplyCalls)
+}
+
 func TestTicketHandlerListMessagesFallsBackToImageURLWhenThumbnailMissing(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

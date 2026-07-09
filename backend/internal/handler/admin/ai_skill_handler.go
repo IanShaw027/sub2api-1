@@ -315,6 +315,49 @@ func (h *AIHandler) ListSkillSettlements(c *gin.Context) {
 	})
 }
 
+func (h *AIHandler) ReplaySkillSettlement(c *gin.Context) {
+	if _, ok := requireAdminAIAuth(c); !ok {
+		return
+	}
+	module, err := h.skillModuleOrErr()
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	settlementID, ok := parseAIID(c.Param("id"))
+	if !ok {
+		response.BadRequest(c, "Invalid settlement ID")
+		return
+	}
+	var req skillAdminActionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request body")
+		return
+	}
+	executeAdminIdempotentJSON(c, "skills:settlements:replay", gin.H{
+		"id":     settlementID,
+		"reason": strings.TrimSpace(req.Reason),
+		"note":   strings.TrimSpace(req.Note),
+		"trace":  req.Trace,
+	}, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
+		settlement, err := module.DomainRepo.GetSkillSettlementByID(ctx, settlementID)
+		if err != nil {
+			return nil, err
+		}
+		replayed, err := module.SettlementService.ReplaySettlement(ctx, settlement.RunID)
+		if err != nil {
+			return nil, err
+		}
+		return gin.H{
+			"message":       "ok",
+			"status":        replayed.Status,
+			"settlement_id": replayed.ID,
+			"run_id":        replayed.RunID,
+			"operated_at":   time.Now().UTC().Format(time.RFC3339),
+		}, nil
+	})
+}
+
 func adminSkillPagination(c *gin.Context) pagination.PaginationParams {
 	page, pageSize := response.ParsePagination(c)
 	return pagination.PaginationParams{

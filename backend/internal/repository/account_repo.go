@@ -100,11 +100,11 @@ var accountSchedulingThresholdSnapshotExtraKeys = []string{
 
 func jsonbDeleteKeysExpression(base string, keys []string) string {
 	var builder strings.Builder
-	builder.WriteString(base)
+	_, _ = builder.WriteString(base)
 	for _, key := range keys {
-		builder.WriteString(" - '")
-		builder.WriteString(key)
-		builder.WriteString("'")
+		_, _ = builder.WriteString(" - '")
+		_, _ = builder.WriteString(key)
+		_, _ = builder.WriteString("'")
 	}
 	return builder.String()
 }

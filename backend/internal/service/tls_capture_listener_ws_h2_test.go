@@ -5,6 +5,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"net/http"
 	"strings"
@@ -83,8 +84,8 @@ func TestTLSCaptureWebSocketH2MultiTurnCreatesReplayableSamplePerTurn(t *testing
 	require.Equal(t, "openai-responses-v1", repo.samples[1].WebsocketProtocol)
 	require.Equal(t, "websocket", repo.samples[0].ResponseMode)
 	require.Equal(t, "websocket", repo.samples[1].ResponseMode)
-	require.Equal(t, "1:4096,3:100,4:65535", repo.samples[0].HTTP2Fingerprint)
-	require.Equal(t, "1:4096,3:100,4:65535", repo.samples[1].HTTP2Fingerprint)
+	require.Equal(t, "1:4096,3:100,4:65535|ph::method,:scheme,:authority,:path,:protocol", repo.samples[0].HTTP2Fingerprint)
+	require.Equal(t, "1:4096,3:100,4:65535|ph::method,:scheme,:authority,:path,:protocol", repo.samples[1].HTTP2Fingerprint)
 	require.JSONEq(t, firstPayload, repo.samples[0].RawPayload)
 	require.JSONEq(t, secondPayload, repo.samples[1].RawPayload)
 	require.Equal(t, "ws-h2-session-123", repo.samples[0].SessionID)
@@ -206,6 +207,93 @@ func TestTLSCaptureWebSocketH2FragmentedTextMessageCreatesSingleReplayableSample
 	require.JSONEq(t, payload, repo.sessionEvents[0].RawPayload)
 }
 
+func TestTLSCaptureWebSocketH2RejectsOversizedFragmentedMessage(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets:          map[string]int{"openai": 1},
+		TransportTargets: map[string]int{string(tlsfpTransport.WebSocketH2): 1},
+	})
+	require.NoError(t, err)
+
+	listener := NewTLSCaptureListener(TLSCaptureListenerConfig{
+		Address: "127.0.0.1:0",
+		Service: svc,
+	})
+	require.NoError(t, listener.Start())
+	t.Cleanup(func() { stopNativeCaptureListener(t, listener) })
+
+	conn, fr := newTLSCaptureH2Client(t, listener.Addr().String())
+	t.Cleanup(func() { _ = conn.Close() })
+
+	require.NoError(t, writeTLSCaptureH2PrefaceAndSettings(conn, fr))
+	require.NoError(t, writeTLSCaptureH2WebSocketConnect(fr, 1, tlsCaptureH2WebSocketConnectRequest{
+		Path:       "/capture/openai/v1/responses",
+		Authority:  listener.Addr().String(),
+		Token:      task.Token,
+		UserAgent:  "codex_exec/0.140.0",
+		Originator: "codex_exec",
+		SessionID:  "ws-h2-too-large",
+		Protocol:   "openai-responses-v1",
+	}))
+
+	handshake := readTLSCaptureH2WebSocketHandshake(t, fr, 1)
+	require.Equal(t, "200", handshake.Status)
+
+	payload := strings.Repeat("a", tlsFingerprintNativeCaptureBodyLimit+1024)
+	const chunkSize = 60000
+	for offset := 0; offset < len(payload); offset += chunkSize {
+		end := offset + chunkSize
+		if end > len(payload) {
+			end = len(payload)
+		}
+		opcode := byte(0x0)
+		fin := false
+		if offset == 0 {
+			opcode = 0x1
+		}
+		if end == len(payload) {
+			fin = true
+		}
+		require.NoError(t, fr.WriteData(1, false, encodeTLSCaptureWebSocketClientFrame(opcode, fin, []byte(payload[offset:end]))))
+	}
+
+	opcode, _, endStream := readTLSCaptureH2WebSocketServerControlFrame(t, fr, 1)
+	require.Equal(t, byte(0x8), opcode)
+	require.False(t, endStream)
+	require.True(t, readTLSCaptureH2StreamEnd(t, fr, 1))
+	require.Empty(t, repo.samples)
+	require.Empty(t, repo.sessionEvents)
+}
+
+func TestDecodeTLSCaptureWebSocketClientFrame_AllowsExtendedPayloadLengthWithinCaptureLimit(t *testing.T) {
+	payload := bytes.Repeat([]byte("a"), 70_000)
+	frame := encodeTLSCaptureWebSocketClientFrameExtended(0x1, true, payload)
+
+	opcode, fin, decoded, remaining, ok, err := decodeTLSCaptureWebSocketClientFrame(frame)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.True(t, fin)
+	require.Equal(t, byte(0x1), opcode)
+	require.Equal(t, payload, decoded)
+	require.Empty(t, remaining)
+}
+
+func TestEncodeTLSCaptureWebSocketServerFrame_AllowsExtendedPayloadLengthWithinCaptureLimit(t *testing.T) {
+	payload := bytes.Repeat([]byte("b"), 70_000)
+
+	var frame []byte
+	require.NotPanics(t, func() {
+		frame = encodeTLSCaptureWebSocketServerFrame(0x1, payload)
+	})
+	require.Len(t, frame, 10+len(payload))
+	require.Equal(t, byte(0x81), frame[0])
+	require.Equal(t, byte(127), frame[1])
+	require.Equal(t, uint64(len(payload)), binary.BigEndian.Uint64(frame[2:10]))
+	require.Equal(t, payload, frame[10:])
+}
+
 type tlsCaptureH2WebSocketConnectRequest struct {
 	Path       string
 	Authority  string
@@ -310,13 +398,99 @@ func encodeTLSCaptureWebSocketClientFrame(opcode byte, fin bool, payload []byte)
 		first |= 0x80
 	}
 	frame = append(frame, first)
-	frame = append(frame, byte(0x80|len(payload)))
+	switch {
+	case len(payload) < 126:
+		frame = append(frame, byte(0x80|len(payload)))
+	case len(payload) <= 0xffff:
+		frame = append(frame, 0x80|126, byte(len(payload)>>8), byte(len(payload)))
+	default:
+		panic("client websocket payload too large for test helper")
+	}
 	mask := []byte{0x11, 0x22, 0x33, 0x44}
 	frame = append(frame, mask...)
 	for i, b := range payload {
 		frame = append(frame, b^mask[i%4])
 	}
 	return frame
+}
+
+func encodeTLSCaptureWebSocketClientFrameExtended(opcode byte, fin bool, payload []byte) []byte {
+	frame := make([]byte, 0, len(payload)+14)
+	first := opcode & 0x0f
+	if fin {
+		first |= 0x80
+	}
+	frame = append(frame, first)
+	frame = append(frame, 0x80|127)
+	var lenBuf [8]byte
+	binary.BigEndian.PutUint64(lenBuf[:], uint64(len(payload)))
+	frame = append(frame, lenBuf[:]...)
+	mask := []byte{0x11, 0x22, 0x33, 0x44}
+	frame = append(frame, mask...)
+	for i, b := range payload {
+		frame = append(frame, b^mask[i%4])
+	}
+	return frame
+}
+
+func readTLSCaptureH2WebSocketServerControlFrame(t *testing.T, fr *http2.Framer, streamID uint32) (byte, []byte, bool) {
+	t.Helper()
+
+	var buffer []byte
+	for {
+		frame, err := fr.ReadFrame()
+		require.NoError(t, err)
+		switch f := frame.(type) {
+		case *http2.SettingsFrame:
+			if !f.IsAck() {
+				require.NoError(t, fr.WriteSettingsAck())
+			}
+		case *http2.DataFrame:
+			if f.StreamID != streamID {
+				continue
+			}
+			buffer = append(buffer, f.Data()...)
+			if len(buffer) < 2 {
+				if f.StreamEnded() {
+					return 0, nil, true
+				}
+				continue
+			}
+			opcode := buffer[0] & 0x0f
+			payloadLen := int(buffer[1] & 0x7f)
+			offset := 2
+			if payloadLen == 126 {
+				require.GreaterOrEqual(t, len(buffer), 4)
+				payloadLen = int(buffer[2])<<8 | int(buffer[3])
+				offset = 4
+			}
+			require.GreaterOrEqual(t, len(buffer), offset+payloadLen)
+			payload := append([]byte(nil), buffer[offset:offset+payloadLen]...)
+			return opcode, payload, f.StreamEnded()
+		}
+	}
+}
+
+func readTLSCaptureH2StreamEnd(t *testing.T, fr *http2.Framer, streamID uint32) bool {
+	t.Helper()
+
+	for {
+		frame, err := fr.ReadFrame()
+		require.NoError(t, err)
+		switch f := frame.(type) {
+		case *http2.SettingsFrame:
+			if !f.IsAck() {
+				require.NoError(t, fr.WriteSettingsAck())
+			}
+		case *http2.DataFrame:
+			if f.StreamID != streamID {
+				continue
+			}
+			if f.StreamEnded() {
+				return true
+			}
+		}
+	}
 }
 
 func decodeTLSCaptureWebSocketServerFrame(buffer []byte) ([]byte, []byte, bool, error) {

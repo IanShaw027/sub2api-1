@@ -118,6 +118,54 @@ func TestUsageRecordWorkerPool_OverflowSync(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 }
 
+// 内联兜底并发达到上限后，后续溢出任务应被丢弃并计入 inline_capped，而不是阻塞请求 goroutine。
+func TestUsageRecordWorkerPool_OverflowSyncInlineCapped(t *testing.T) {
+	pool := NewUsageRecordWorkerPoolWithOptions(UsageRecordWorkerPoolOptions{
+		WorkerCount:               1,
+		QueueSize:                 1,
+		TaskTimeout:               time.Second,
+		OverflowPolicy:            config.UsageRecordOverflowPolicySync,
+		InlineFallbackConcurrency: 1,
+	})
+	t.Cleanup(pool.Stop)
+
+	block := make(chan struct{})
+	started := make(chan struct{})
+
+	// 占满 worker 与队列，使后续提交必然溢出。
+	require.Equal(t, UsageRecordSubmitModeEnqueued, pool.Submit(func(ctx context.Context) {
+		close(started)
+		<-block
+	}))
+	<-started
+	require.Equal(t, UsageRecordSubmitModeEnqueued, pool.Submit(func(ctx context.Context) {
+		<-block
+	}))
+
+	// 第一个溢出任务走内联兜底并阻塞，占住唯一的内联并发槽。
+	inlineHeld := make(chan struct{})
+	inlineMode := make(chan UsageRecordSubmitMode, 1)
+	go func() {
+		inlineMode <- pool.Submit(func(ctx context.Context) {
+			close(inlineHeld)
+			<-block
+		})
+	}()
+	<-inlineHeld
+
+	// 第二个溢出任务：内联槽已满，应立即丢弃、计入 inline_capped，绝不阻塞、绝不执行。
+	var capExecuted atomic.Bool
+	mode := pool.Submit(func(ctx context.Context) {
+		capExecuted.Store(true)
+	})
+	require.Equal(t, UsageRecordSubmitModeDropped, mode)
+	require.False(t, capExecuted.Load())
+	require.GreaterOrEqual(t, pool.Stats().DroppedInlineCapped, uint64(1))
+
+	close(block)
+	require.Equal(t, UsageRecordSubmitModeSync, <-inlineMode)
+}
+
 func TestUsageRecordWorkerPool_OverflowSample(t *testing.T) {
 	pool := NewUsageRecordWorkerPoolWithOptions(UsageRecordWorkerPoolOptions{
 		WorkerCount:           1,

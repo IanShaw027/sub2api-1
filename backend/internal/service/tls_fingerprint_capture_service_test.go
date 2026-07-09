@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/model"
 	tlsfpTransport "github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint/transport"
@@ -120,6 +121,7 @@ func TestTLSCaptureSampleDedupesExactReplayableObservation(t *testing.T) {
 func TestTLSCaptureSamplePayloadMergesSampleDimensionsIntoProfile(t *testing.T) {
 	payload, err := tlsCaptureSamplePayload(&TLSFingerprintCaptureSample{
 		ClientType:        "codex-cli",
+		HTTP2Fingerprint:  "1:4096|ph::method,:scheme,:authority,:path",
 		StainlessMetadata: map[string]any{"os": "Linux"},
 		Profile: &model.TLSFingerprintProfile{
 			Name:      "captured",
@@ -133,6 +135,7 @@ func TestTLSCaptureSamplePayloadMergesSampleDimensionsIntoProfile(t *testing.T) 
 	require.NoError(t, json.Unmarshal([]byte(payload), &got))
 	require.Equal(t, "linux", got["os"])
 	require.Equal(t, "codex-cli", got["client_type"])
+	require.Equal(t, "1:4096|ph::method,:scheme,:authority,:path", got["http2_fingerprint"])
 }
 
 func TestTLSCaptureSessionReplayabilityFailureCreatesSessionEventOnly(t *testing.T) {
@@ -285,17 +288,19 @@ func TestTLSCaptureParseFailureCreatesSessionEventForInspection(t *testing.T) {
 
 func TestTLSCaptureDefaultTransportInference(t *testing.T) {
 	tests := []struct {
-		name          string
-		alpn          string
-		isWebsocket   bool
-		explicit      string
-		wantTransport string
+		name             string
+		alpn             string
+		isWebsocket      bool
+		explicit         string
+		http2Fingerprint string
+		clientHelloKind  int
+		wantTransport    string
 	}{
 		{name: "defaults to http1", wantTransport: string(tlsfpTransport.HTTP1)},
-		{name: "defaults to h2 from ALPN", alpn: "h2", wantTransport: string(tlsfpTransport.H2)},
+		{name: "defaults to h2 from ALPN", alpn: "h2", http2Fingerprint: "1:4096|ph::method,:scheme,:authority,:path", clientHelloKind: 1, wantTransport: string(tlsfpTransport.H2)},
 		{name: "defaults to websocket-http1", isWebsocket: true, wantTransport: string(tlsfpTransport.WebSocketH1)},
-		{name: "defaults to websocket-h2", alpn: "h2", isWebsocket: true, wantTransport: string(tlsfpTransport.WebSocketH2)},
-		{name: "explicit transport wins", alpn: "h2", explicit: "custom-http", wantTransport: "custom-http"},
+		{name: "defaults to websocket-h2", alpn: "h2", isWebsocket: true, http2Fingerprint: "1:4096|ph::method,:scheme,:authority,:path,:protocol", clientHelloKind: 1, wantTransport: string(tlsfpTransport.WebSocketH2)},
+		{name: "explicit transport wins", alpn: "h2", explicit: string(tlsfpTransport.HTTP1), clientHelloKind: 1, wantTransport: string(tlsfpTransport.HTTP1)},
 	}
 
 	for _, tc := range tests {
@@ -310,14 +315,15 @@ func TestTLSCaptureDefaultTransportInference(t *testing.T) {
 			require.NoError(t, err)
 
 			result, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
-				Token:          task.Token,
-				Platform:       "openai",
-				Transport:      tc.explicit,
-				ALPNNegotiated: tc.alpn,
-				IsWebsocket:    tc.isWebsocket,
-				UserAgent:      "codex-tui/0.140.0",
-				Originator:     "codex_cli_rs",
-				ClientHello:    captureServiceTestClientHello(t, 0),
+				Token:            task.Token,
+				Platform:         "openai",
+				Transport:        tc.explicit,
+				ALPNNegotiated:   tc.alpn,
+				IsWebsocket:      tc.isWebsocket,
+				UserAgent:        "codex-tui/0.140.0",
+				Originator:       "codex_cli_rs",
+				HTTP2Fingerprint: tc.http2Fingerprint,
+				ClientHello:      captureServiceTestClientHello(t, tc.clientHelloKind),
 			})
 			require.NoError(t, err)
 			require.NotNil(t, result.Sample)
@@ -555,6 +561,175 @@ func TestTLSFingerprintCaptureServiceRecountsAfterConcurrentDifferentFingerprint
 	require.Len(t, repo.samples, 2)
 }
 
+func TestTLSFingerprintCaptureServiceSerializesQuotaCheckAgainstConcurrentDifferentFingerprintCreate(t *testing.T) {
+	repo := &tlsFingerprintCaptureBlockingCreateRepoStub{
+		tlsFingerprintCaptureRepoStub: newTLSFingerprintCaptureRepoStub(),
+		createEntered:                 make(chan struct{}, 4),
+		releaseCreate:                 make(chan struct{}),
+	}
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets: map[string]int{"openai": 1},
+	})
+	require.NoError(t, err)
+
+	type submitOutcome struct {
+		result *TLSFingerprintCaptureSubmitResult
+		err    error
+	}
+
+	firstDone := make(chan submitOutcome, 1)
+	go func() {
+		result, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+			Token:       task.Token,
+			Platform:    "openai",
+			UserAgent:   "codex-tui/0.140.0",
+			Originator:  "codex_cli_rs",
+			ClientHello: captureServiceTestClientHello(t, 0),
+		})
+		firstDone <- submitOutcome{result: result, err: err}
+	}()
+
+	select {
+	case <-repo.createEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first submission did not reach CreateSampleIfAbsent")
+	}
+
+	secondDone := make(chan submitOutcome, 1)
+	go func() {
+		result, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+			Token:       task.Token,
+			Platform:    "openai",
+			UserAgent:   "Codex Desktop/0.140.0",
+			Originator:  "codex_cli_rs",
+			ClientHello: captureServiceTestClientHello(t, 1),
+		})
+		secondDone <- submitOutcome{result: result, err: err}
+	}()
+
+	select {
+	case <-repo.createEntered:
+		t.Fatal("second concurrent submission reached CreateSampleIfAbsent before first create finished")
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	close(repo.releaseCreate)
+
+	first := <-firstDone
+	require.NoError(t, first.err)
+	require.NotNil(t, first.result)
+	require.True(t, first.result.Accepted)
+	require.False(t, first.result.Duplicate)
+
+	second := <-secondDone
+	require.NoError(t, second.err)
+	require.NotNil(t, second.result)
+	require.False(t, second.result.Accepted)
+	require.Equal(t, "platform_target_reached", second.result.IgnoredReason)
+
+	require.Len(t, repo.samples, 1)
+	require.Equal(t, map[string]int{"openai": 1}, second.result.Counts)
+}
+
+func TestTLSFingerprintCaptureServiceAllowsDifferentTasksToSubmitConcurrently(t *testing.T) {
+	repo := &tlsFingerprintCaptureTaskSelectiveBlockingRepoStub{
+		tlsFingerprintCaptureRepoStub: newTLSFingerprintCaptureRepoStub(),
+		createEntered:                 make(chan int64, 4),
+		releaseCreate:                 make(chan struct{}),
+	}
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	firstTask, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets: map[string]int{"openai": 1},
+	})
+	require.NoError(t, err)
+	secondTask, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets: map[string]int{"openai": 1},
+	})
+	require.NoError(t, err)
+	repo.blockedTaskID = firstTask.ID
+
+	type submitOutcome struct {
+		result *TLSFingerprintCaptureSubmitResult
+		err    error
+	}
+
+	firstDone := make(chan submitOutcome, 1)
+	go func() {
+		result, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+			Token:       firstTask.Token,
+			Platform:    "openai",
+			UserAgent:   "codex-tui/0.140.0",
+			Originator:  "codex_cli_rs",
+			ClientHello: captureServiceTestClientHello(t, 0),
+		})
+		firstDone <- submitOutcome{result: result, err: err}
+	}()
+
+	select {
+	case taskID := <-repo.createEntered:
+		require.Equal(t, firstTask.ID, taskID)
+	case <-time.After(2 * time.Second):
+		t.Fatal("first task submission did not reach CreateSampleIfAbsent")
+	}
+
+	secondDone := make(chan submitOutcome, 1)
+	go func() {
+		result, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+			Token:       secondTask.Token,
+			Platform:    "openai",
+			UserAgent:   "Codex Desktop/0.140.0",
+			Originator:  "codex_cli_rs",
+			ClientHello: captureServiceTestClientHello(t, 1),
+		})
+		secondDone <- submitOutcome{result: result, err: err}
+	}()
+
+	select {
+	case taskID := <-repo.createEntered:
+		require.Equal(t, secondTask.ID, taskID)
+	case <-time.After(150 * time.Millisecond):
+		t.Fatal("second task submission was blocked by unrelated task")
+	}
+
+	close(repo.releaseCreate)
+
+	first := <-firstDone
+	require.NoError(t, first.err)
+	require.NotNil(t, first.result)
+	require.True(t, first.result.Accepted)
+
+	second := <-secondDone
+	require.NoError(t, second.err)
+	require.NotNil(t, second.result)
+	require.True(t, second.result.Accepted)
+
+	require.Len(t, repo.samples, 2)
+}
+
+func TestTLSFingerprintCaptureServiceUsesRepositoryTaskSubmissionLock(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets: map[string]int{"openai": 1},
+	})
+	require.NoError(t, err)
+
+	result, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		UserAgent:   "codex-tui/0.140.0",
+		Originator:  "codex_cli_rs",
+		ClientHello: captureServiceTestClientHello(t, 0),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, repo.withTaskSubmissionLockCalls)
+}
+
 func TestTLSFingerprintCaptureServiceIgnoresNonMatchingUserAgent(t *testing.T) {
 	repo := newTLSFingerprintCaptureRepoStub()
 	svc := NewTLSFingerprintCaptureService(repo, nil)
@@ -617,11 +792,13 @@ func TestTLSFingerprintCaptureServiceImportsTaskSamplesToProfiles(t *testing.T) 
 	require.NoError(t, err)
 
 	first, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
-		Token:       task.Token,
-		Platform:    "openai",
-		UserAgent:   "codex-tui/0.140.0",
-		Originator:  "codex_cli_rs",
-		ClientHello: captureServiceTestClientHello(t, 0),
+		Token:            task.Token,
+		Platform:         "openai",
+		Transport:        "h2",
+		UserAgent:        "codex-tui/0.140.0",
+		Originator:       "codex_cli_rs",
+		HTTP2Fingerprint: "4:65535,1:4096,3:100|wu:12345|ph::method,:scheme,:authority,:path",
+		ClientHello:      captureServiceTestClientHello(t, 1),
 	})
 	require.NoError(t, err)
 	second, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
@@ -643,6 +820,7 @@ func TestTLSFingerprintCaptureServiceImportsTaskSamplesToProfiles(t *testing.T) 
 	require.Len(t, profileRepo.profiles, 2)
 	require.Equal(t, "openai", profileRepo.profiles[0].Platform)
 	require.Equal(t, "openai", profileRepo.profiles[1].Platform)
+	require.Equal(t, "4:65535,1:4096,3:100|wu:12345|ph::method,:scheme,:authority,:path", profileRepo.profiles[0].HTTP2Fingerprint)
 }
 
 func captureServiceTestClientHello(t *testing.T, variant int) []byte {
@@ -702,4 +880,45 @@ func (r *tlsFingerprintCaptureDuplicateCreateRepoStub) CreateSampleIfAbsent(_ co
 	r.nextSampleID++
 	r.samples = append(r.samples, created)
 	return cloneTLSFingerprintCaptureSample(created), false, nil
+}
+
+type tlsFingerprintCaptureBlockingCreateRepoStub struct {
+	*tlsFingerprintCaptureRepoStub
+	createEntered chan struct{}
+	releaseCreate chan struct{}
+}
+
+func (r *tlsFingerprintCaptureBlockingCreateRepoStub) CreateSampleIfAbsent(ctx context.Context, sample *TLSFingerprintCaptureSample) (*TLSFingerprintCaptureSample, bool, error) {
+	if r.createEntered != nil {
+		r.createEntered <- struct{}{}
+	}
+	if r.releaseCreate != nil {
+		select {
+		case <-ctx.Done():
+			return nil, false, ctx.Err()
+		case <-r.releaseCreate:
+		}
+	}
+	return r.tlsFingerprintCaptureRepoStub.CreateSampleIfAbsent(ctx, sample)
+}
+
+type tlsFingerprintCaptureTaskSelectiveBlockingRepoStub struct {
+	*tlsFingerprintCaptureRepoStub
+	blockedTaskID int64
+	createEntered chan int64
+	releaseCreate chan struct{}
+}
+
+func (r *tlsFingerprintCaptureTaskSelectiveBlockingRepoStub) CreateSampleIfAbsent(ctx context.Context, sample *TLSFingerprintCaptureSample) (*TLSFingerprintCaptureSample, bool, error) {
+	if r.createEntered != nil {
+		r.createEntered <- sample.TaskID
+	}
+	if r.releaseCreate != nil && sample.TaskID == r.blockedTaskID {
+		select {
+		case <-ctx.Done():
+			return nil, false, ctx.Err()
+		case <-r.releaseCreate:
+		}
+	}
+	return r.tlsFingerprintCaptureRepoStub.CreateSampleIfAbsent(ctx, sample)
 }

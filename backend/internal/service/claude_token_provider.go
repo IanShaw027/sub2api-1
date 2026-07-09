@@ -54,7 +54,7 @@ func (p *ClaudeTokenProvider) SetRefreshPolicy(policy ProviderRefreshPolicy) {
 // GetAccessToken returns a valid access_token.
 func (p *ClaudeTokenProvider) GetAccessToken(ctx context.Context, account *Account) (string, error) {
 	if account == nil {
-		return "", errors.New("account is nil")
+		return "", errors.New("account is required")
 	}
 	if account.Platform != PlatformAnthropic || (account.Type != AccountTypeOAuth && account.Type != AccountTypeServiceAccount) {
 		return "", errors.New("not an anthropic oauth or service account")

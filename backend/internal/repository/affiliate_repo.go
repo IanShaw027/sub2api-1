@@ -676,6 +676,38 @@ func (r *affiliateRepository) ReverseCreatorEarnings(ctx context.Context, input 
 			return err
 		}
 
+		var creditedAmount float64
+		if err := scanSingleRow(txCtx, txClient, `
+SELECT amount::double precision
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND source_skill_run_id = $2
+  AND action = 'creator_earning'
+LIMIT 1`, []any{input.CreatorUserID, input.RunID}, &creditedAmount); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			return fmt.Errorf("load creator earnings for reversal: %w", err)
+		}
+
+		var currentQuota, frozenQuota, historyQuota float64
+		if err := scanSingleRow(txCtx, txClient, `
+SELECT aff_quota::double precision,
+       aff_frozen_quota::double precision,
+       aff_history_quota::double precision
+FROM user_affiliates
+WHERE user_id = $1
+FOR UPDATE`, []any{input.CreatorUserID}, &currentQuota, &frozenQuota, &historyQuota); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return service.ErrUserNotFound
+			}
+			return fmt.Errorf("lock affiliate creator for reversal: %w", err)
+		}
+
+		// 幂等预检必须在 FOR UPDATE 之后：并发冲销在此串行化，第二笔拿到行锁时已能读到
+		// 第一笔提交的反向流水，从而幂等返回，避免重复冲销双扣 aff_quota / aff_history_quota。
+		// （反向流水 action='creator_earning_reverse' 缺覆盖唯一索引，下方 ON CONFLICT DO NOTHING
+		//  在配套唯一索引落地前不足以防并发，故以行锁 + 锁后预检为主防线。）
 		var existingReverse float64
 		err := scanSingleRow(txCtx, txClient, `
 SELECT amount::double precision
@@ -692,37 +724,9 @@ LIMIT 1`, []any{input.CreatorUserID, input.RunID}, &existingReverse)
 			return nil
 		}
 
-		var creditedAmount float64
-		if err := scanSingleRow(txCtx, txClient, `
-SELECT amount::double precision
-FROM user_affiliate_ledger
-WHERE user_id = $1
-  AND source_skill_run_id = $2
-  AND action = 'creator_earning'
-LIMIT 1`, []any{input.CreatorUserID, input.RunID}, &creditedAmount); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return nil
-			}
-			return fmt.Errorf("load creator earnings for reversal: %w", err)
-		}
-
 		amount := roundTo8(math.Min(requestedAmount, creditedAmount))
 		if amount <= 0 {
 			return nil
-		}
-
-		var currentQuota, frozenQuota, historyQuota float64
-		if err := scanSingleRow(txCtx, txClient, `
-SELECT aff_quota::double precision,
-       aff_frozen_quota::double precision,
-       aff_history_quota::double precision
-FROM user_affiliates
-WHERE user_id = $1
-FOR UPDATE`, []any{input.CreatorUserID}, &currentQuota, &frozenQuota, &historyQuota); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return service.ErrUserNotFound
-			}
-			return fmt.Errorf("lock affiliate creator for reversal: %w", err)
 		}
 
 		quotaAfter := roundTo8(math.Max(currentQuota-amount, 0))
@@ -1357,6 +1361,7 @@ SELECT po.id,
        COALESCE(invitee.username, ''),
        po.amount::double precision,
        po.pay_amount::double precision,
+       po.currency,
        ual.amount::double precision,
        po.payment_type,
        po.status,
@@ -1383,6 +1388,7 @@ LIMIT $`+fmt.Sprint(len(args)-1)+` OFFSET $`+fmt.Sprint(len(args)), args...)
 			&item.InviteeUsername,
 			&item.OrderAmount,
 			&item.PayAmount,
+			&item.Currency,
 			&item.RebateAmount,
 			&item.PaymentType,
 			&item.OrderStatus,

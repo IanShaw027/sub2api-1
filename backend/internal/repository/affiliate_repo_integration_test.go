@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -221,6 +222,148 @@ LIMIT 1`, creator.ID, run.ID)
 	require.InDelta(t, 7.5, quotaAfter, 1e-9)
 	require.InDelta(t, 7.5, historyAfter, 1e-9)
 	require.NoError(t, rows.Err())
+}
+
+func TestAffiliateRepository_ReverseCreatorEarnings_IdempotentBySkillRunUnderConcurrentCalls(t *testing.T) {
+	ctx := context.Background()
+	repo := NewAffiliateRepository(integrationEntClient, integrationDB)
+	creatorRepo, ok := repo.(interface {
+		CreditCreatorEarnings(context.Context, service.AISkillCreatorEarningsInput) (float64, error)
+		ReverseCreatorEarnings(context.Context, service.AISkillCreatorEarningsReversalInput) (float64, error)
+	})
+	require.True(t, ok, "production affiliate repository must support creator earnings reversal")
+
+	creator := mustCreateUser(t, integrationEntClient, &service.User{
+		Email:        fmt.Sprintf("skill-creator-reverse-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+	buyer := mustCreateUser(t, integrationEntClient, &service.User{
+		Email:        fmt.Sprintf("skill-creator-reverse-buyer-%d@example.com", time.Now().UnixNano()+1),
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		Concurrency:  5,
+	})
+
+	skill, err := integrationEntClient.AISkill.Create().
+		SetUserID(creator.ID).
+		SetSkillType("prompt_chat").
+		SetTitle("Creator reversal fixture").
+		SetVisibility("private").
+		SetSourceVisibility("public").
+		SetBillingMode("per_request").
+		SetPrice(10).
+		Save(ctx)
+	require.NoError(t, err)
+
+	version, err := integrationEntClient.AISkillVersion.Create().
+		SetSkillID(skill.ID).
+		SetUserID(creator.ID).
+		SetVersion(1).
+		SetReviewStatus("approved").
+		SetContentFormat("prompt").
+		SetRuntime("openai_chat").
+		SetSourceContent("say hi").
+		Save(ctx)
+	require.NoError(t, err)
+
+	run, err := integrationEntClient.AISkillRun.Create().
+		SetSkillID(skill.ID).
+		SetVersionID(version.ID).
+		SetUserID(buyer.ID).
+		SetRunMode("use").
+		SetStatus("succeeded").
+		SetBillingMode("per_request").
+		SetPrice(10).
+		Save(ctx)
+	require.NoError(t, err)
+
+	credited, err := creatorRepo.CreditCreatorEarnings(ctx, service.AISkillCreatorEarningsInput{
+		CreatorUserID: creator.ID,
+		BuyerUserID:   buyer.ID,
+		SkillID:       skill.ID,
+		VersionID:     version.ID,
+		RunID:         run.ID,
+		Amount:        7.5,
+		Currency:      "credit",
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 7.5, credited, 1e-9)
+
+	lockTx, err := integrationEntClient.Tx(ctx)
+	require.NoError(t, err)
+	lockCtx := dbent.NewTxContext(ctx, lockTx)
+	var lockedUserID int64
+	err = scanSingleRow(lockCtx, lockTx.Client(), `
+SELECT user_id
+FROM user_affiliates
+WHERE user_id = $1
+FOR UPDATE`, []any{creator.ID}, &lockedUserID)
+	require.NoError(t, err)
+	require.Equal(t, creator.ID, lockedUserID)
+
+	type reverseResult struct {
+		reversed float64
+		err      error
+	}
+	results := make(chan reverseResult, 2)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			reversed, reverseErr := creatorRepo.ReverseCreatorEarnings(ctx, service.AISkillCreatorEarningsReversalInput{
+				CreatorUserID: creator.ID,
+				BuyerUserID:   buyer.ID,
+				RunID:         run.ID,
+				Amount:        7.5,
+			})
+			results <- reverseResult{reversed: reversed, err: reverseErr}
+		}()
+	}
+	close(start)
+
+	// 先持有行锁，强制两个并发请求都卡在 FOR UPDATE 之前的幂等窗口。
+	// 如果未来有人把“锁后预检”退回锁前，这里会稳定复现双扣。
+	time.Sleep(150 * time.Millisecond)
+	require.NoError(t, lockTx.Rollback())
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("waiting for concurrent ReverseCreatorEarnings calls timed out")
+	}
+	close(results)
+
+	for result := range results {
+		require.NoError(t, result.err)
+		require.InDelta(t, 7.5, result.reversed, 1e-9)
+	}
+
+	quota := querySingleFloat(t, ctx, integrationEntClient,
+		"SELECT aff_quota::double precision FROM user_affiliates WHERE user_id = $1", creator.ID)
+	require.InDelta(t, 0.0, quota, 1e-9)
+	history := querySingleFloat(t, ctx, integrationEntClient,
+		"SELECT aff_history_quota::double precision FROM user_affiliates WHERE user_id = $1", creator.ID)
+	require.InDelta(t, 0.0, history, 1e-9)
+
+	reverseLedgerCount := querySingleInt(t, ctx, integrationEntClient, `
+SELECT COUNT(*)
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND source_skill_run_id = $2
+  AND action = 'creator_earning_reverse'`, creator.ID, run.ID)
+	require.Equal(t, 1, reverseLedgerCount)
 }
 
 // TestAffiliateRepository_AccrueQuota_ReusesOuterTransaction guards the

@@ -31,15 +31,10 @@ type GPTReasoningSignatureInfo struct {
 //   - Version byte must be 0x80
 //   - Ciphertext must be AES-block-aligned (multiple of 16)
 //   - Decoded payload must be at least 73 bytes
-func SanitizeReasoning(provider string, body []byte) []byte {
+func SanitizeReasoning(_ string, body []byte) []byte {
 	input := gjson.GetBytes(body, "input")
 	if !input.Exists() || !input.IsArray() {
 		return body
-	}
-
-	provider = strings.TrimSpace(provider)
-	if provider == "" {
-		provider = "codex"
 	}
 
 	updated := body

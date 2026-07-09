@@ -283,6 +283,30 @@ func TestAssignSubscriptionReuseWhenSemanticsMatch(t *testing.T) {
 	require.Equal(t, 0, subRepo.createCalls, "reuse should not create new subscription")
 }
 
+func TestAssignSubscriptionRejectsNilInput(t *testing.T) {
+	svc := NewSubscriptionService(groupRepoNoop{}, userSubRepoNoop{}, nil, nil, nil)
+
+	_, err := svc.AssignSubscription(context.Background(), nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "subscription input is required")
+}
+
+func TestAssignOrExtendSubscriptionRejectsNilInput(t *testing.T) {
+	svc := NewSubscriptionService(groupRepoNoop{}, userSubRepoNoop{}, nil, nil, nil)
+
+	_, _, err := svc.AssignOrExtendSubscription(context.Background(), nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "subscription input is required")
+}
+
+func TestBulkAssignSubscriptionRejectsNilInput(t *testing.T) {
+	svc := NewSubscriptionService(groupRepoNoop{}, userSubRepoNoop{}, nil, nil, nil)
+
+	_, err := svc.BulkAssignSubscription(context.Background(), nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "subscription input is required")
+}
+
 func TestAssignOrExtendSubscriptionReusesOuterTransactionContext(t *testing.T) {
 	start := time.Now().UTC().Add(24 * time.Hour)
 	groupRepo := &subscriptionGroupRepoStub{

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
 
@@ -168,9 +169,9 @@ func TestNormalizeSystemPromptPII_StringSystem(t *testing.T) {
 		t.Error("original git user should not remain")
 	}
 
-	// Working directory replaced with a realistic fake path that keeps the real project basename.
-	if !strings.Contains(sys, "/Users/jordan/projects/real-project") {
-		t.Error("working directory should be replaced with profile workDir parent and real project basename")
+	// Working directory replaced with the full fake path (no real project basename leaked).
+	if !strings.Contains(sys, "/Users/jordan/projects/webapp") {
+		t.Error("working directory should be replaced with the full profile workDir")
 	}
 	if strings.Contains(sys, "/Users/alice/real-project") {
 		t.Error("original working directory should not remain")
@@ -214,9 +215,63 @@ func TestNormalizeSystemPromptPII_StringSystem(t *testing.T) {
 	if wdr.RealDir != "/Users/alice/real-project" {
 		t.Errorf("wdr.RealDir: got %q, want /Users/alice/real-project", wdr.RealDir)
 	}
-	if wdr.FakeDir != "/Users/jordan/projects/real-project" {
-		t.Errorf("wdr.FakeDir: got %q, want /Users/jordan/projects/real-project", wdr.FakeDir)
+	// FakeDir 现为完整假路径（不再保留真实 basename real-project，避免真实项目名外发）。
+	if wdr.FakeDir != "/Users/jordan/projects/webapp" {
+		t.Errorf("wdr.FakeDir: got %q, want /Users/jordan/projects/webapp", wdr.FakeDir)
 	}
+	if strings.Contains(sys, "real-project") {
+		t.Error("real project basename must not leak into the fake work dir")
+	}
+}
+
+func TestNormalizeSystemPromptPII_StripsGitStatusMetadata(t *testing.T) {
+	profile := &AccountEnvProfile{
+		Email:     "user-abc123@claude-code.local",
+		GitUser:   "Jordan",
+		WorkDir:   "/Users/jordan/projects/webapp",
+		Platform:  "darwin",
+		Shell:     "zsh",
+		OSVersion: "Darwin 24.3.0",
+	}
+
+	body := []byte(`{
+		"model": "claude-opus-4-6",
+		"system": "You are Claude Code.\nIs directory a git repo: Yes\nCurrent branch: feature/real-secret\nMain branch: main\nRecent commits:\n- a1b2c3d fix internal project codename\n- d4e5f6g add private adapter\nStatus:\nM backend/internal/service/private.go\n?? secrets/roadmap.md\n# Environment\nYou have been invoked in the following environment:\n - Primary working directory: /Users/alice/real-project\n - Platform: darwin\n - Shell: bash\n - OS Version: Darwin 23.1.0\nDo your best.",
+		"messages": [{"role": "user", "content": "hi"}]
+	}`)
+
+	result, _ := normalizeSystemPromptPII(body, profile)
+	require.True(t, json.Valid(result))
+
+	sys := gjson.GetBytes(result, "system").String()
+	require.Contains(t, sys, "Is directory a git repo: Yes")
+	require.NotContains(t, sys, "feature/real-secret")
+	require.NotContains(t, sys, "fix internal project codename")
+	require.NotContains(t, sys, "backend/internal/service/private.go")
+	require.NotContains(t, sys, "secrets/roadmap.md")
+	require.NotContains(t, sys, "Current branch:")
+	require.NotContains(t, sys, "Main branch:")
+	require.NotContains(t, sys, "Recent commits:")
+	require.NotContains(t, sys, "\nStatus:\n")
+	require.Contains(t, sys, "# Environment")
+	require.Contains(t, sys, "Do your best.")
+}
+
+func TestNormalizeSystemPromptPII_NilProfileStillStripsGitStatusMetadata(t *testing.T) {
+	body := []byte(`{
+		"system": "Is directory a git repo: Yes\nCurrent branch: feature/real-secret\nRecent commits:\n- abc secret\nStatus:\nM private/file.go\nDo your best.",
+		"messages": []
+	}`)
+
+	result, wdr := normalizeSystemPromptPII(body, nil)
+	require.True(t, json.Valid(result))
+	require.Nil(t, wdr)
+
+	sys := gjson.GetBytes(result, "system").String()
+	require.Contains(t, sys, "Is directory a git repo: Yes")
+	require.NotContains(t, sys, "feature/real-secret")
+	require.NotContains(t, sys, "private/file.go")
+	require.Contains(t, sys, "Do your best.")
 }
 
 func TestNormalizeSystemPromptPII_ArraySystem(t *testing.T) {
@@ -262,8 +317,12 @@ func TestNormalizeSystemPromptPII_ArraySystem(t *testing.T) {
 	if !strings.Contains(block1, "Git user: Sam") {
 		t.Errorf("block 1 should contain profile git user, got: %q", block1)
 	}
-	if !strings.Contains(block1, "/home/sam/projects/myproject") {
-		t.Errorf("block 1 should contain profile workDir, got: %q", block1)
+	// 完整假路径，不再保留真实 basename myproject。
+	if !strings.Contains(block1, "/home/sam/projects/api-server") {
+		t.Errorf("block 1 should contain full profile workDir, got: %q", block1)
+	}
+	if strings.Contains(block1, "myproject") {
+		t.Errorf("real project basename must not leak into block 1, got: %q", block1)
 	}
 	if strings.Contains(block1, "bob@corp.io") || strings.Contains(block1, "Bob Smith") {
 		t.Error("original PII should not remain in block 1")
@@ -458,14 +517,15 @@ func TestRewriteSystemReminderEnvBlocksWithWorkDirRewrite_CapturesDirectoryForRe
 	if wdr.RealDir != "/opt/sub2api" {
 		t.Fatalf("wdr.RealDir = %q, want /opt/sub2api", wdr.RealDir)
 	}
-	if wdr.FakeDir != "/Users/jordan/projects/sub2api" {
-		t.Fatalf("wdr.FakeDir = %q, want /Users/jordan/projects/sub2api", wdr.FakeDir)
+	// 完整假路径，不再保留真实 basename sub2api。
+	if wdr.FakeDir != "/Users/jordan/projects/webapp" {
+		t.Fatalf("wdr.FakeDir = %q, want /Users/jordan/projects/webapp", wdr.FakeDir)
 	}
 	replaced := replaceWorkDirInBody(got, wdr)
 	if strings.Contains(string(replaced), "/opt/sub2api") {
 		t.Fatalf("real directory should be replaced throughout body: %s", replaced)
 	}
-	if !strings.Contains(string(replaced), "/Users/jordan/projects/sub2api/CLAUDE.md") {
+	if !strings.Contains(string(replaced), "/Users/jordan/projects/webapp/CLAUDE.md") {
 		t.Fatalf("non-reminder body paths should use fake directory after full-body replacement: %s", replaced)
 	}
 }
@@ -496,8 +556,3 @@ func TestShouldApplyClaudeAntiBanBodyTransformsForAccount_RequiresOAuthAndEnable
 // ---------------------------------------------------------------------------
 // Helpers (shared across tests)
 // ---------------------------------------------------------------------------
-
-// containsPII checks for known PII patterns
-func containsPII(s string) bool {
-	return strings.Contains(s, "email address is") && !strings.Contains(s, "@claude-code.local")
-}

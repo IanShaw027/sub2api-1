@@ -620,3 +620,39 @@ func TestPostRawJSON_DoesNotFollowRedirects(t *testing.T) {
 		t.Fatal("monitor HTTP client followed redirect to target")
 	}
 }
+
+func TestSanitizeErrorMessage_RedactsSKKeysWithUnderscoreSuffix(t *testing.T) {
+	msg := "upstream rejected key sk-proj-ABCDEFGHIJKLMNOPQRSTUVWXYZ123456_SECRETTAIL for this request"
+
+	sanitized := sanitizeErrorMessage(msg)
+
+	require.Contains(t, sanitized, "sk-***REDACTED***")
+	require.NotContains(t, sanitized, "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456")
+	require.NotContains(t, sanitized, "SECRETTAIL")
+}
+
+func TestRunCheckForModel_ErrorBodySanitizedBeforeTruncation(t *testing.T) {
+	swapMonitorHTTPClient(t)
+
+	const (
+		leakedFragment = "SECRET"
+		truncationTail = "...(body truncated)"
+	)
+	visibleKeyPrefix := "sk-proj-" + leakedFragment
+	bodyPrefix := strings.Repeat("a", monitorErrorBodySnippetMaxBytes-len(truncationTail)-len(visibleKeyPrefix))
+	body := bodyPrefix + visibleKeyPrefix + "WITHLONGTAIL1234567890" + strings.Repeat("z", 64)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	res := runCheckForModel(context.Background(), MonitorProviderAnthropic, srv.URL, "sk-fake", "claude-x", nil)
+
+	require.Equal(t, MonitorStatusError, res.Status)
+	require.Contains(t, res.Message, "upstream HTTP 401")
+	require.NotContains(t, res.Message, leakedFragment)
+	require.Contains(t, res.Message, "sk-***REDACTED***")
+}

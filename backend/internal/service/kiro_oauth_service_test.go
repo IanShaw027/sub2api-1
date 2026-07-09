@@ -265,8 +265,8 @@ func TestKiroTokenRefresherPersistsStableMachineIDBeforeRefreshTokenRotates(t *t
 	if err != nil {
 		t.Fatalf("refresh returned error: %v", err)
 	}
-	oldMachineID := kiropkg.GenerateMachineID("", "", oldRefresh)
-	newMachineID := kiropkg.GenerateMachineID("", "", newRefresh)
+	oldMachineID := kiropkg.GenerateMachineID("", oldRefresh)
+	newMachineID := kiropkg.GenerateMachineID("", newRefresh)
 	if got := strings.TrimSpace(stringCredential(credentials, "machine_id")); got != oldMachineID {
 		t.Fatalf("machine_id = %q, want stable old-token machine id %q", got, oldMachineID)
 	}
@@ -278,8 +278,8 @@ func TestKiroTokenRefresherPersistsStableMachineIDBeforeRefreshTokenRotates(t *t
 func TestValidateAndEnrichRefreshedCredentialsForAccountPreservesMachineID(t *testing.T) {
 	oldRefresh := "original-refresh-token"
 	newRefresh := "rotated-refresh-token"
-	oldMachineID := kiropkg.GenerateMachineID("", "", oldRefresh)
-	newMachineID := kiropkg.GenerateMachineID("", "", newRefresh)
+	oldMachineID := kiropkg.GenerateMachineID("", oldRefresh)
+	newMachineID := kiropkg.GenerateMachineID("", newRefresh)
 
 	svc := &KiroOAuthService{}
 	credentials, err := svc.ValidateAndEnrichRefreshedCredentialsForAccount(context.Background(), &Account{

@@ -123,6 +123,10 @@ func (s *userRepoStub) UpdateBalance(ctx context.Context, id int64, amount float
 	panic("unexpected UpdateBalance call")
 }
 
+func (s *userRepoStub) AddBalanceWithoutRecharge(ctx context.Context, id int64, amount float64) error {
+	panic("unexpected AddBalanceWithoutRecharge call")
+}
+
 func (s *userRepoStub) DeductBalance(ctx context.Context, id int64, amount float64) error {
 	panic("unexpected DeductBalance call")
 }
@@ -802,6 +806,24 @@ func TestAdminService_DeleteProxy_Success(t *testing.T) {
 	err := svc.DeleteProxy(context.Background(), 7)
 	require.NoError(t, err)
 	require.Equal(t, []int64{7}, repo.deletedIDs)
+}
+
+func TestAdminService_CreateProxy_RejectsNilInput(t *testing.T) {
+	repo := &proxyRepoStub{}
+	svc := &adminServiceImpl{proxyRepo: repo}
+
+	_, err := svc.CreateProxy(context.Background(), nil)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "proxy input is required")
+}
+
+func TestAdminService_UpdateProxy_RejectsNilInput(t *testing.T) {
+	repo := &proxyRepoStub{}
+	svc := &adminServiceImpl{proxyRepo: repo}
+
+	_, err := svc.UpdateProxy(context.Background(), 7, nil)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "proxy input is required")
 }
 
 func TestAdminService_DeleteProxy_Idempotent(t *testing.T) {

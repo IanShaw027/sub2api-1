@@ -2482,6 +2482,88 @@ func TestBindOIDCOAuthLoginReturns2FAChallengeWhenUserHasTotp(t *testing.T) {
 	require.Nil(t, storedSession.ConsumedAt)
 }
 
+func TestBindOIDCOAuthLogin_NilSettingServiceSkipsTotpChallenge(t *testing.T) {
+	totpCache := &oauthPendingFlowTotpCacheStub{}
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		settingValues: map[string]string{
+			service.SettingKeyTotpEnabled: "true",
+		},
+		totpCache:     totpCache,
+		totpEncryptor: oauthPendingFlowTotpEncryptorStub{},
+	})
+	ctx := context.Background()
+
+	passwordHash, err := handler.authService.HashPassword("secret-123")
+	require.NoError(t, err)
+	totpEnabledAt := time.Now().UTC().Add(-time.Hour)
+	secret := "JBSWY3DPEHPK3PXP"
+
+	existingUser, err := client.User.Create().
+		SetEmail("owner@example.com").
+		SetUsername("owner-user").
+		SetPasswordHash(passwordHash).
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusActive).
+		SetTotpEnabled(true).
+		SetTotpSecretEncrypted(secret).
+		SetTotpEnabledAt(totpEnabledAt).
+		Save(ctx)
+	require.NoError(t, err)
+
+	session, err := client.PendingAuthSession.Create().
+		SetSessionToken("bind-login-nil-setting-session-token").
+		SetIntent("adopt_existing_user_by_email").
+		SetProviderType("oidc").
+		SetProviderKey("https://issuer.example").
+		SetProviderSubject("oidc-bind-nil-setting-123").
+		SetTargetUserID(existingUser.ID).
+		SetResolvedEmail(existingUser.Email).
+		SetBrowserSessionKey("bind-login-nil-setting-browser-session-key").
+		SetUpstreamIdentityClaims(map[string]any{
+			"suggested_display_name": "Bound OIDC User",
+			"suggested_avatar_url":   "https://cdn.example/bound.png",
+		}).
+		SetRedirectTo("/profile").
+		SetExpiresAt(time.Now().UTC().Add(10 * time.Minute)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	handler.settingSvc = nil
+
+	body := bytes.NewBufferString(`{"email":"owner@example.com","password":"secret-123","adopt_display_name":false,"adopt_avatar":false}`)
+	recorder := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/oidc/bind-login", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue(session.SessionToken)})
+	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("bind-login-nil-setting-browser-session-key")})
+	ginCtx.Request = req
+
+	handler.BindOIDCOAuthLogin(ginCtx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.NotEmpty(t, payload["access_token"])
+	require.NotEmpty(t, payload["refresh_token"])
+	require.Equal(t, "Bearer", payload["token_type"])
+	require.NotContains(t, payload, "requires_2fa")
+
+	identity, err := client.AuthIdentity.Query().
+		Where(
+			authidentity.ProviderTypeEQ("oidc"),
+			authidentity.ProviderKeyEQ("https://issuer.example"),
+			authidentity.ProviderSubjectEQ("oidc-bind-nil-setting-123"),
+		).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, existingUser.ID, identity.UserID)
+
+	storedSession, err := client.PendingAuthSession.Get(ctx, session.ID)
+	require.NoError(t, err)
+	require.NotNil(t, storedSession.ConsumedAt)
+}
+
 func TestLogin2FARejectsSessionAfterTokenVersionChange(t *testing.T) {
 	totpCache := &oauthPendingFlowTotpCacheStub{}
 	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
@@ -3665,6 +3747,10 @@ func (r *oauthPendingFlowUserRepo) ListWithFilters(context.Context, pagination.P
 
 func (r *oauthPendingFlowUserRepo) UpdateBalance(context.Context, int64, float64) error {
 	panic("unexpected UpdateBalance call")
+}
+
+func (r *oauthPendingFlowUserRepo) AddBalanceWithoutRecharge(context.Context, int64, float64) error {
+	panic("unexpected AddBalanceWithoutRecharge call")
 }
 
 func (r *oauthPendingFlowUserRepo) DeductBalance(context.Context, int64, float64) error {

@@ -40,13 +40,13 @@ func TestOpenAIResponsesContinuationPlanner_DurableLaneAllowsColdHTTP(t *testing
 	planner := openAIResponsesContinuationPlanner{}
 
 	decision := planner.Plan(openAIResponsesContinuationInput{
-		AccountType:                   AccountTypeOAuth,
-		StoreDisabled:                 false,
-		PreviousResponseID:            "resp_durable_1",
-		LiveWSAvailable:               false,
-		StickyAccountHit:              true,
-		SessionWindowAvailable:        true,
-		DurableContinuationAllowed:    true,
+		AccountType:                    AccountTypeOAuth,
+		StoreDisabled:                  false,
+		PreviousResponseID:             "resp_durable_1",
+		LiveWSAvailable:                false,
+		StickyAccountHit:               true,
+		SessionWindowAvailable:         true,
+		DurableContinuationAllowed:     true,
 		PersistedContinuationAvailable: true,
 	})
 

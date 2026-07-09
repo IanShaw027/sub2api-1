@@ -693,6 +693,9 @@ func formatMaxTokens(max *int) string {
 
 // Create 创建渠道
 func (s *ChannelService) Create(ctx context.Context, input *CreateChannelInput) (*Channel, error) {
+	if input == nil {
+		return nil, fmt.Errorf("channel input is required")
+	}
 	exists, err := s.repo.ExistsByName(ctx, input.Name)
 	if err != nil {
 		return nil, fmt.Errorf("check channel exists: %w", err)
@@ -756,6 +759,9 @@ func (s *ChannelService) GetByID(ctx context.Context, id int64) (*Channel, error
 
 // Update 更新渠道
 func (s *ChannelService) Update(ctx context.Context, id int64, input *UpdateChannelInput) (*Channel, error) {
+	if input == nil {
+		return nil, fmt.Errorf("channel input is required")
+	}
 	channel, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get channel: %w", err)

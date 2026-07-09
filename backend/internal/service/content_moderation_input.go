@@ -10,19 +10,6 @@ import (
 
 var (
 	reAnyXMLTag = regexp.MustCompile(`</?[\w:.-]+(?:\s[^>]*)?>`)
-
-	moderationStripTags = []string{
-		"system-reminder",
-		"previous-summary",
-		"antml:thinking",
-		"thinking_mode",
-		"max_thinking_length",
-		"local-command-caveat",
-		"local-command-stdout",
-		"command-name",
-		"command-message",
-		"command-args",
-	}
 )
 
 func ExtractContentModerationText(protocol string, body []byte) string {
@@ -211,6 +198,26 @@ func appendLocalModerationInput(out *[]ContentModerationInput, parts []string, i
 		return
 	}
 	*out = append(*out, input)
+}
+
+// capLocalModerationInputs 给本地拦截扫描的输入集合施加聚合上限，把每请求成本封成固定预算，
+// 避免消息条数×每条文本随请求体无界放大(DoS)。保留最新的若干条(当前轮在尾部)，
+// 先按条数截断，再按累计 rune 预算从尾部向前保留，两者取更严者。
+func capLocalModerationInputs(inputs []ContentModerationInput, maxInputs, maxTotalRunes int) []ContentModerationInput {
+	if len(inputs) == 0 {
+		return inputs
+	}
+	if maxInputs > 0 && len(inputs) > maxInputs {
+		inputs = inputs[len(inputs)-maxInputs:]
+	}
+	total := 0
+	for i := len(inputs) - 1; i >= 0; i-- {
+		total += len([]rune(inputs[i].KeywordScanText()))
+		if total > maxTotalRunes {
+			return inputs[i+1:]
+		}
+	}
+	return inputs
 }
 
 func collectLastRoleMessage(messages gjson.Result, role string, parts *[]string, images *[]string) {
@@ -479,37 +486,16 @@ func stripXMLTagsForModeration(text string) string {
 	if text == "" {
 		return ""
 	}
-	for _, tag := range moderationStripTags {
-		text = stripTagWithContent(text, tag)
-	}
-	text = reAnyXMLTag.ReplaceAllString(text, "")
+	text = reAnyXMLTag.ReplaceAllString(text, " ")
 	return strings.TrimSpace(text)
-}
-
-func stripTagWithContent(text, tag string) string {
-	openTag := "<" + tag
-	closeTag := "</" + tag + ">"
-	for {
-		start := strings.Index(strings.ToLower(text), strings.ToLower(openTag))
-		if start < 0 {
-			break
-		}
-		tagEnd := strings.IndexByte(text[start:], '>')
-		if tagEnd < 0 {
-			text = text[:start]
-			break
-		}
-		closeStart := strings.Index(strings.ToLower(text[start+tagEnd+1:]), strings.ToLower(closeTag))
-		if closeStart < 0 {
-			text = text[:start] + text[start+tagEnd+1:]
-			continue
-		}
-		end := start + tagEnd + 1 + closeStart + len(closeTag)
-		text = text[:start] + text[end:]
-	}
-	return text
 }
 
 func normalizeContentModerationText(text string) string {
 	return strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
+}
+
+// normalizeContentModerationHashText 统一 hash/pre-check 与本地关键词匹配的 Unicode 基线，
+// 避免全角、零宽或同形字变体绕过已记录的输入哈希；不改动送审 API 使用的原始 Text。
+func normalizeContentModerationHashText(text string) string {
+	return strings.Join(strings.Fields(normalizeForKeywordMatch(text)), " ")
 }

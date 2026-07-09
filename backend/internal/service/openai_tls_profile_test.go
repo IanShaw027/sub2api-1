@@ -254,3 +254,110 @@ func TestTLSFingerprintProfileService_ResolveTLSProfile_RandomModeDoesNotUseOthe
 	require.NotNil(t, profile)
 	require.Equal(t, "Built-in Default (Node.js 24.x)", profile.Name)
 }
+
+func TestTLSFingerprintProfileService_ResolveTLSProfileForTransport_HTTPSelectsH2ProfileWhenReplayDataIsAvailable(t *testing.T) {
+	svc := &TLSFingerprintProfileService{
+		localCache: map[int64]*model.TLSFingerprintProfile{
+			42: {ID: 42, Platform: PlatformOpenAI, Name: "H2 Only", Transport: "h2", ALPNProtocols: []string{"h2", "http/1.1"}, HTTP2Fingerprint: "1:4096|ph::method,:scheme,:authority,:path"},
+		},
+	}
+
+	profile := svc.ResolveTLSProfileForTransport(&Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"enable_tls_fingerprint":     true,
+			"tls_fingerprint_profile_id": int64(42),
+		},
+	}, "http")
+
+	require.NotNil(t, profile)
+	require.Equal(t, "H2 Only", profile.Name)
+}
+
+func TestTLSFingerprintProfileService_ResolveTLSProfileForTransport_WebSocketDoesNotSelectWebSocketH2OnlyProfileWhileH2ReplayUnsupported(t *testing.T) {
+	svc := &TLSFingerprintProfileService{
+		localCache: map[int64]*model.TLSFingerprintProfile{
+			43: {ID: 43, Platform: PlatformOpenAI, Name: "WebSocket H2 Only", Transport: "websocket-h2"},
+		},
+	}
+
+	profile := svc.ResolveTLSProfileForTransport(&Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"enable_tls_fingerprint":     true,
+			"tls_fingerprint_profile_id": int64(43),
+		},
+	}, "websocket")
+
+	require.NotNil(t, profile)
+	require.Equal(t, "Built-in Default (Node.js 24.x)", profile.Name)
+}
+
+func TestTLSFingerprintProfileService_ResolveTLSProfileForTransport_WebSocketSelectsWebSocketH2ProfileWhenReplayDataIsAvailable(t *testing.T) {
+	svc := &TLSFingerprintProfileService{
+		localCache: map[int64]*model.TLSFingerprintProfile{
+			43: {
+				ID:               43,
+				Platform:         PlatformOpenAI,
+				Name:             "WebSocket H2 Only",
+				Transport:        "websocket-h2",
+				ALPNProtocols:    []string{"h2", "http/1.1"},
+				HTTP2Fingerprint: "1:4096|ph::method,:protocol,:scheme,:authority,:path",
+			},
+		},
+	}
+
+	profile := svc.ResolveTLSProfileForTransport(&Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"enable_tls_fingerprint":     true,
+			"tls_fingerprint_profile_id": int64(43),
+		},
+	}, "websocket")
+
+	require.NotNil(t, profile)
+	require.Equal(t, "WebSocket H2 Only", profile.Name)
+}
+
+func TestTLSFingerprintProfileService_ResolveTLSProfileForTransport_HTTPDoesNotSelectH2ProfileWithoutHTTP2Fingerprint(t *testing.T) {
+	svc := &TLSFingerprintProfileService{
+		localCache: map[int64]*model.TLSFingerprintProfile{
+			52: {ID: 52, Platform: PlatformOpenAI, Name: "H2 Missing Fingerprint", Transport: "h2", ALPNProtocols: []string{"h2", "http/1.1"}},
+		},
+	}
+
+	profile := svc.ResolveTLSProfileForTransport(&Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"enable_tls_fingerprint":     true,
+			"tls_fingerprint_profile_id": int64(52),
+		},
+	}, "http")
+
+	require.NotNil(t, profile)
+	require.Equal(t, "Built-in Default (Node.js 24.x)", profile.Name)
+}
+
+func TestTLSFingerprintProfileService_ResolveTLSProfileForTransport_WebSocketDoesNotSelectH2ProfileWithoutHTTP2Fingerprint(t *testing.T) {
+	svc := &TLSFingerprintProfileService{
+		localCache: map[int64]*model.TLSFingerprintProfile{
+			53: {ID: 53, Platform: PlatformOpenAI, Name: "WS H2 Missing Fingerprint", Transport: "websocket-h2", ALPNProtocols: []string{"h2", "http/1.1"}},
+		},
+	}
+
+	profile := svc.ResolveTLSProfileForTransport(&Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"enable_tls_fingerprint":     true,
+			"tls_fingerprint_profile_id": int64(53),
+		},
+	}, "websocket")
+
+	require.NotNil(t, profile)
+	require.Equal(t, "Built-in Default (Node.js 24.x)", profile.Name)
+}

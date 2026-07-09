@@ -2,10 +2,12 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturetask"
 	"github.com/Wei-Shaw/sub2api/internal/model"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
@@ -40,6 +42,36 @@ func (r *tlsFingerprintCaptureRepository) GetTaskByID(ctx context.Context, id in
 
 func (r *tlsFingerprintCaptureRepository) GetRunningTaskByToken(ctx context.Context, token string) (*service.TLSFingerprintCaptureTask, error) {
 	return r.taskRepo.GetRunningTaskByToken(ctx, token)
+}
+
+func (r *tlsFingerprintCaptureRepository) WithTaskSubmissionLock(ctx context.Context, taskID int64, fn func(context.Context) error) error {
+	if fn == nil {
+		return nil
+	}
+	if taskID <= 0 {
+		return fmt.Errorf("task id is required")
+	}
+	if tx := ent.TxFromContext(ctx); tx != nil {
+		if _, err := tx.TLSFingerprintCaptureTask.Query().Where(tlsfingerprintcapturetask.ID(taskID)).ForUpdate().Only(ctx); err != nil {
+			return err
+		}
+		return fn(ctx)
+	}
+
+	tx, err := r.taskRepo.client.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	txCtx := ent.NewTxContext(ctx, tx)
+	if _, err := tx.TLSFingerprintCaptureTask.Query().Where(tlsfingerprintcapturetask.ID(taskID)).ForUpdate().Only(txCtx); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if err := fn(txCtx); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *tlsFingerprintCaptureRepository) UpdateTask(ctx context.Context, task *service.TLSFingerprintCaptureTask) (*service.TLSFingerprintCaptureTask, error) {

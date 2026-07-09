@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,9 +14,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"golang.org/x/net/http2"
 )
 
 // HTTPUpstreamSuite HTTP 上游服务测试套件
@@ -102,7 +103,8 @@ func (s *HTTPUpstreamSuite) TestUpstreamDialerCachesDNSLookups() {
 			lookups++
 			return []net.IPAddr{{IP: net.ParseIP("203.0.113.10")}}, nil
 		},
-		now: func() time.Time { return now },
+		isBlockedIP: urlvalidator.IsBlockedResolvedIP,
+		now:         func() time.Time { return now },
 	}
 
 	first, err := dialer.lookupCachedIPAddrs(context.Background(), "api.openai.com")
@@ -138,6 +140,49 @@ func (s *HTTPUpstreamSuite) TestShouldValidateResolvedIPDoesNotDependOnAllowlist
 
 	s.cfg.Security.URLAllowlist.AllowPrivateHosts = true
 	require.False(s.T(), svc.shouldValidateResolvedIP(), "allow_private_hosts is the explicit escape hatch for private resolved IPs")
+}
+
+func (s *HTTPUpstreamSuite) TestUpstreamDialerRejectsBlockedResolvedIPFromLookupCache() {
+	dialer := &upstreamDialer{
+		base:       newUpstreamNetDialer(),
+		validateIP: true,
+		isBlockedIP: func(ip net.IP) bool {
+			return urlvalidator.IsBlockedResolvedIP(ip)
+		},
+		lookupIPAddr: func(context.Context, string) ([]net.IPAddr, error) {
+			return []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}, nil
+		},
+		now: time.Now,
+	}
+
+	conn, err := dialer.DialContext(context.Background(), "tcp", "api.openai.com:443")
+	require.Nil(s.T(), conn)
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "resolved ip 127.0.0.1 is not allowed")
+}
+
+func (s *HTTPUpstreamSuite) TestUpstreamDialerRejectsBlockedIPLiteralBeforeDial() {
+	dialer := &upstreamDialer{
+		base:       newUpstreamNetDialer(),
+		validateIP: true,
+		isBlockedIP: func(ip net.IP) bool {
+			return urlvalidator.IsBlockedResolvedIP(ip)
+		},
+		now: time.Now,
+	}
+
+	conn, err := dialer.DialContext(context.Background(), "tcp", "127.0.0.1:443")
+	require.Nil(s.T(), conn)
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "resolved ip 127.0.0.1 is not allowed")
+}
+
+func (s *HTTPUpstreamSuite) TestValidateRequestHost_RequiresRequestURL() {
+	s.cfg.Security.URLAllowlist.AllowPrivateHosts = false
+	svc := s.newService()
+
+	err := svc.validateRequestHost(&http.Request{})
+	require.EqualError(s.T(), err, "request url is required")
 }
 
 func (s *HTTPUpstreamSuite) TestOpenAIProfileDefaultsToHTTP2AndNoHeaderTimeout() {
@@ -190,7 +235,10 @@ func (s *HTTPUpstreamSuite) TestOpenAIProfileTLSFingerprintDoesNotInheritGeneric
 }
 
 func (s *HTTPUpstreamSuite) TestTLSFingerprintHTTPTransportProfileStripsHTTP2ALPN() {
-	profile := tlsfingerprint.ChromeProfile()
+	profile := &tlsfingerprint.Profile{
+		Name:          "h2-capable",
+		ALPNProtocols: []string{"h2", "http/1.1"},
+	}
 	require.Contains(s.T(), profile.ALPNProtocols, "h2")
 
 	transportProfile := tlsFingerprintHTTPTransportProfile(profile)
@@ -200,19 +248,32 @@ func (s *HTTPUpstreamSuite) TestTLSFingerprintHTTPTransportProfileStripsHTTP2ALP
 	require.Contains(s.T(), profile.ALPNProtocols, "h2", "original profile should not be mutated")
 }
 
-func (s *HTTPUpstreamSuite) TestOpenAIProfileTLSFingerprintH2ProfileUsesHTTP2Transport() {
+func (s *HTTPUpstreamSuite) TestOpenAIProfileTLSFingerprintH2ProfileForcedToHTTP1Transport() {
 	s.cfg.Gateway = config.GatewayConfig{
 		OpenAIHTTP2: config.GatewayOpenAIHTTP2Config{
 			Enabled: true,
 		},
 	}
 	svc := s.newService()
-	// ChromeProfile 的 ALPN 含 h2：现在应真正走 HTTP/2 出站(*http2.Transport)，
-	// 消除「TLS 伪装成 Chrome 但 ALPN 固定 http/1.1」的矛盾。
-	entry, err := svc.getClientEntryWithTLS("", 1, 1, tlsfingerprint.ChromeProfile(), service.HTTPUpstreamProfileOpenAI, false, false)
+	profile := &tlsfingerprint.Profile{
+		Name:          "h2-capable",
+		ALPNProtocols: []string{"h2", "http/1.1"},
+	}
+	// force-h1 兜底开启时，h2-capable profile 的 ALPN 虽含 h2，也短路走 *http.Transport(HTTP/1.1)：
+	// h2 分支只能用 Go 原生 x/net/http2 栈(SETTINGS/WINDOW_UPDATE/伪头序为 Go 默认)，浏览器
+	// ClientHello 套 Go h2 帧栈是高可信度自动化信号；强制 h1 让 JA3 与 h1 指纹至少不互相矛盾。
+	entry, err := svc.getClientEntryWithTLS("", 1, 1, profile, service.HTTPUpstreamProfileOpenAI, false, false)
 	require.NoError(s.T(), err)
-	_, ok := entry.client.Transport.(*http2.Transport)
-	require.True(s.T(), ok, "h2-capable TLS profile should use *http2.Transport for real HTTP/2 egress")
+	_, ok := entry.client.Transport.(*http.Transport)
+	require.True(s.T(), ok, "h2-capable TLS profile should be forced to *http.Transport under force-h1 fallback")
+}
+
+func (s *HTTPUpstreamSuite) TestResponseHeaderTimeoutRoundTripper_RequiresBase() {
+	rt := responseHeaderTimeoutRoundTripper{}
+
+	resp, err := rt.RoundTrip(httptest.NewRequest(http.MethodGet, "https://example.com", nil))
+	require.Nil(s.T(), resp)
+	require.EqualError(s.T(), err, "base round tripper is required")
 }
 
 func (s *HTTPUpstreamSuite) TestTLSFingerprintProfileChangeRebuildsClient() {
@@ -236,6 +297,26 @@ func (s *HTTPUpstreamSuite) TestTLSFingerprintProfileChangeRebuildsClient() {
 	require.NoError(s.T(), err)
 
 	require.NotSame(s.T(), entry1, entry2, "different TLS fingerprints must not reuse the same cached client")
+	require.Len(s.T(), svc.clients, 2)
+}
+
+func (s *HTTPUpstreamSuite) TestTLSFingerprintProxyIsolationDoesNotReuseClientAcrossAccounts() {
+	s.cfg.Gateway = config.GatewayConfig{
+		ConnectionPoolIsolation: config.ConnectionPoolIsolationProxy,
+	}
+	svc := s.newService()
+	profile := &tlsfingerprint.Profile{
+		Name:          "codex",
+		ALPNProtocols: []string{"http/1.1"},
+		CipherSuites:  []uint16{0x1301},
+	}
+
+	entry1, err := svc.getClientEntryWithTLS("http://proxy.local:8080", 101, 1, profile, service.HTTPUpstreamProfileDefault, false, false)
+	require.NoError(s.T(), err)
+	entry2, err := svc.getClientEntryWithTLS("http://proxy.local:8080", 202, 1, profile, service.HTTPUpstreamProfileDefault, false, false)
+	require.NoError(s.T(), err)
+
+	require.NotSame(s.T(), entry1, entry2, "TLS fingerprint clients must remain account-scoped even under proxy isolation")
 	require.Len(s.T(), svc.clients, 2)
 }
 

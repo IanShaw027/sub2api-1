@@ -12,14 +12,15 @@ import (
 // ChatChunkToAnthropicState tracks state for converting a sequence of Chat
 // Completions SSE chunks into Anthropic Messages SSE events.
 type ChatChunkToAnthropicState struct {
-	Model            string
-	MessageID        string
-	Created          int64
-	ContentIndex     int
-	ActiveToolCalls  map[int]*activeToolCallState
-	SentMessageStart bool
-	TextBlockOpen    bool
-	Usage            *AnthropicUsage
+	Model             string
+	MessageID         string
+	Created           int64
+	ContentIndex      int
+	ActiveToolCalls   map[int]*activeToolCallState
+	SentMessageStart  bool
+	ThinkingBlockOpen bool
+	TextBlockOpen     bool
+	Usage             *AnthropicUsage
 }
 
 type activeToolCallState struct {
@@ -79,6 +80,10 @@ func ChatChunkToAnthropicEvents(chunk *ChatCompletionsChunk, state *ChatChunkToA
 func FinalizeAnthropicStream(state *ChatChunkToAnthropicState, stopReason string) []AnthropicSSELine {
 	var events []AnthropicSSELine
 
+	if state.ThinkingBlockOpen {
+		events = append(events, state.buildContentBlockStop())
+		state.ThinkingBlockOpen = false
+	}
 	if state.TextBlockOpen {
 		events = append(events, state.buildContentBlockStop())
 		state.TextBlockOpen = false
@@ -145,7 +150,23 @@ func (s *ChatChunkToAnthropicState) buildMessageStart() AnthropicSSELine {
 func (s *ChatChunkToAnthropicState) processChoice(choice *ChatChunkChoice) []AnthropicSSELine {
 	var events []AnthropicSSELine
 
+	if reasoning := choice.Delta.EffectiveReasoningContent(); reasoning != "" {
+		if s.TextBlockOpen {
+			events = append(events, s.buildContentBlockStop())
+			s.TextBlockOpen = false
+		}
+		if !s.ThinkingBlockOpen {
+			events = append(events, s.buildContentBlockStart("thinking", ""))
+			s.ThinkingBlockOpen = true
+		}
+		events = append(events, s.buildThinkingDelta(reasoning))
+	}
+
 	if choice.Delta.Content != nil && *choice.Delta.Content != "" {
+		if s.ThinkingBlockOpen {
+			events = append(events, s.buildContentBlockStop())
+			s.ThinkingBlockOpen = false
+		}
 		if !s.TextBlockOpen {
 			events = append(events, s.buildContentBlockStart("text", ""))
 			s.TextBlockOpen = true
@@ -162,6 +183,10 @@ func (s *ChatChunkToAnthropicState) processChoice(choice *ChatChunkChoice) []Ant
 	}
 
 	if choice.FinishReason != nil {
+		if s.ThinkingBlockOpen {
+			events = append(events, s.buildContentBlockStop())
+			s.ThinkingBlockOpen = false
+		}
 		if s.TextBlockOpen {
 			events = append(events, s.buildContentBlockStop())
 			s.TextBlockOpen = false
@@ -209,6 +234,10 @@ func (s *ChatChunkToAnthropicState) processToolCall(idx int, tc *ChatToolCall) [
 	}
 
 	if !active.sentStart {
+		if s.ThinkingBlockOpen {
+			events = append(events, s.buildContentBlockStop())
+			s.ThinkingBlockOpen = false
+		}
 		if s.TextBlockOpen {
 			events = append(events, s.buildContentBlockStop())
 			s.TextBlockOpen = false
@@ -401,15 +430,11 @@ func BuildToolUseBlocks(state *ChatChunkToAnthropicState) []AnthropicContentBloc
 		if !ok {
 			continue
 		}
-		input := json.RawMessage(tc.argsBuf)
-		if len(input) == 0 {
-			input = json.RawMessage("{}")
-		}
 		blocks = append(blocks, AnthropicContentBlock{
 			Type:  "tool_use",
 			ID:    tc.id,
 			Name:  tc.name,
-			Input: input,
+			Input: anthropicToolUseInputFromArguments(tc.argsBuf),
 		})
 	}
 	return blocks

@@ -33,6 +33,8 @@ import (
 type userRepository struct {
 	client *dbent.Client
 	sql    sqlExecutor
+	// useUsageRollup 为 true 时用量排序读预聚合表 usage_user_daily_cost，否则实时聚合 usage_logs（回退/kill-switch）。
+	useUsageRollup bool
 }
 
 func NewUserRepository(client *dbent.Client, sqlDB *sql.DB) service.UserRepository {
@@ -836,6 +838,124 @@ LIMIT $%d OFFSET $%d
 	return result, nil
 }
 
+// optimizedUsageSortedRowsFromRollup 与 optimizedUsageSortedRows 等价，但从预聚合表 usage_user_daily_cost 读取，
+// 时间谓词由 created_at 时间戳窗口换成 bucket_date 业务日窗口，避免每次翻页对 usage_logs 近 30 天全表实时聚合。
+func (r *userRepository) optimizedUsageSortedRowsFromRollup(ctx context.Context, params pagination.PaginationParams, filters service.UserListFilters) ([]usageSortRow, error) {
+	exec := txAwareSQLExecutor(ctx, r.sql, r.client)
+	if exec == nil {
+		return nil, fmt.Errorf("sql executor is not configured")
+	}
+
+	rollingStart := time.Now().AddDate(0, 0, -30).UTC()
+	startDate := timezone.Today().AddDate(0, 0, -30).Format("2006-01-02")
+	boundaryDayEnd := timezone.Today().AddDate(0, 0, -29).UTC()
+	today := timezone.Today().Format("2006-01-02")
+	orderDirection := usageSortOrder(params.SortOrder)
+	sortExpr := usageSortExpression(params.SortBy)
+
+	clauses := make([]string, 0, 3)
+	args := make([]any, 0, 10)
+	argPos := 1
+	if filters.Status != "" {
+		clauses = append(clauses, fmt.Sprintf("u.status = $%d", argPos))
+		args = append(args, filters.Status)
+		argPos++
+	}
+	if filters.Role != "" {
+		clauses = append(clauses, fmt.Sprintf("u.role = $%d", argPos))
+		args = append(args, filters.Role)
+		argPos++
+	}
+	if filters.Search != "" {
+		searchArg := "%" + filters.Search + "%"
+		clauses = append(clauses, fmt.Sprintf("(u.email ILIKE $%d OR u.username ILIKE $%d OR u.notes ILIKE $%d OR EXISTS (SELECT 1 FROM api_keys ak WHERE ak.user_id = u.id AND ak.key ILIKE $%d))", argPos, argPos, argPos, argPos))
+		args = append(args, searchArg)
+		argPos++
+	}
+	whereSQL := ""
+	if len(clauses) > 0 {
+		whereSQL = "WHERE " + strings.Join(clauses, " AND ")
+	}
+
+	query := fmt.Sprintf(`
+WITH rollup_usage AS (
+  SELECT
+    user_id,
+    COALESCE(SUM(actual_cost) FILTER (WHERE bucket_date > $%d::date), 0) AS total_actual_cost,
+    COALESCE(SUM(actual_cost) FILTER (WHERE bucket_date = $%d::date), 0) AS today_actual_cost,
+    COALESCE(SUM(balance_actual_cost) FILTER (WHERE bucket_date = $%d::date), 0) AS today_balance_actual_cost,
+    COALESCE(SUM(subscription_actual_cost) FILTER (WHERE bucket_date = $%d::date), 0) AS today_subscription_actual_cost
+  FROM usage_user_daily_cost
+  WHERE bucket_date >= $%d::date
+  GROUP BY user_id
+),
+boundary_usage AS (
+  SELECT
+    user_id,
+    COALESCE(SUM(actual_cost), 0) AS total_actual_cost
+  FROM usage_logs
+  WHERE created_at >= $%d::timestamptz
+    AND created_at < $%d::timestamptz
+  GROUP BY user_id
+),
+usage_stats AS (
+  SELECT
+    COALESCE(ru.user_id, bu.user_id) AS user_id,
+    COALESCE(ru.total_actual_cost, 0) + COALESCE(bu.total_actual_cost, 0) AS total_actual_cost,
+    COALESCE(ru.today_actual_cost, 0) AS today_actual_cost,
+    COALESCE(ru.today_balance_actual_cost, 0) AS today_balance_actual_cost,
+    COALESCE(ru.today_subscription_actual_cost, 0) AS today_subscription_actual_cost
+  FROM rollup_usage ru
+  FULL OUTER JOIN boundary_usage bu ON bu.user_id = ru.user_id
+)
+SELECT
+  u.id,
+  COALESCE(us.today_actual_cost, 0) AS today_actual_cost,
+  COALESCE(us.today_balance_actual_cost, 0) AS today_balance_actual_cost,
+  COALESCE(us.today_subscription_actual_cost, 0) AS today_subscription_actual_cost,
+  COALESCE(us.total_actual_cost, 0) AS total_actual_cost
+FROM users u
+LEFT JOIN usage_stats us ON us.user_id = u.id
+%s
+ORDER BY %s %s, u.id %s
+LIMIT $%d OFFSET $%d
+`, argPos, argPos+1, argPos+1, argPos+1, argPos, argPos+2, argPos+3, whereSQL, sortExpr, orderDirection, orderDirection, argPos+4, argPos+5)
+
+	args = append(
+		args,
+		startDate,
+		today,
+		rollingStart,
+		boundaryDayEnd,
+		params.Limit(),
+		params.Offset(),
+	)
+	rows, err := exec.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make([]usageSortRow, 0)
+	for rows.Next() {
+		var row usageSortRow
+		if scanErr := rows.Scan(
+			&row.ID,
+			&row.TodayActualCost,
+			&row.TodayBalanceActualCost,
+			&row.TodaySubscriptionActualCost,
+			&row.TotalActualCost,
+		); scanErr != nil {
+			return nil, scanErr
+		}
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (r *userRepository) listWithUsageSort(ctx context.Context, q *dbent.UserQuery, params pagination.PaginationParams, filters service.UserListFilters) ([]service.User, *pagination.PaginationResult, error) {
 	total, err := q.Clone().Count(ctx)
 	if err != nil {
@@ -846,7 +966,13 @@ func (r *userRepository) listWithUsageSort(ctx context.Context, q *dbent.UserQue
 	}
 
 	if canUseOptimizedUsageSort(filters) {
-		rows, err := r.optimizedUsageSortedRows(ctx, params, filters)
+		var rows []usageSortRow
+		var err error
+		if r.useUsageRollup && service.IsUsageUserDailyCostRollupReady() {
+			rows, err = r.optimizedUsageSortedRowsFromRollup(ctx, params, filters)
+		} else {
+			rows, err = r.optimizedUsageSortedRows(ctx, params, filters)
+		}
 		if err == nil {
 			return r.buildUsageSortedUsers(ctx, rows, params, filters, total)
 		}

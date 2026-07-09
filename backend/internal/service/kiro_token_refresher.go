@@ -97,7 +97,7 @@ func (r *KiroTokenRefresher) Refresh(ctx context.Context, account *Account) (map
 		"expires_at":    expiresAt,
 	}
 	if strings.TrimSpace(account.GetCredential("machine_id")) == "" {
-		if machineID := kiropkg.GenerateMachineID("", "", account.GetCredential("refresh_token")); machineID != "" {
+		if machineID := kiropkg.GenerateMachineID("", account.GetCredential("refresh_token")); machineID != "" {
 			newCreds["machine_id"] = machineID
 		}
 	}
@@ -274,7 +274,7 @@ func (r *KiroTokenRefresher) doKiroRequest(req *http.Request, account *Account, 
 		runtimeSettings = r.settingService.GetKiroRuntimeSettings(req.Context())
 	}
 	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
-	machineID := kiropkg.GenerateMachineID(account.GetCredential("machine_id"), "", account.GetCredential("refresh_token"))
+	machineID := kiropkg.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
 	kiroVersion := runtimeSettings.KiroVersion
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("host", host)
@@ -283,11 +283,12 @@ func (r *KiroTokenRefresher) doKiroRequest(req *http.Request, account *Account, 
 		req.Header.Set("x-amzn-kiro-commit", runtimeSettings.KiroCommit)
 	}
 	if req.URL != nil && strings.Contains(req.URL.Host, "oidc.") {
-		req.Header.Set("x-amz-user-agent", fmt.Sprintf("aws-sdk-js/3.738.0 KiroIDE-%s-%s", kiroVersion, machineID))
+		xAmzUserAgent, userAgent := kiropkg.BuildSSOOIDCUserAgents(kiroVersion, machineID, runtimeSettings.SystemVersion, runtimeSettings.NodeVersion)
+		req.Header.Set("x-amz-user-agent", xAmzUserAgent)
 		req.Header.Set("Accept", "*/*")
 		req.Header.Set("Accept-Language", "*")
 		req.Header.Set("sec-fetch-mode", "cors")
-		req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/3.738.0 ua/2.1 os/%s lang/js md/nodejs#%s api/sso-oidc#3.738.0 m/E KiroIDE-%s-%s", runtimeSettings.SystemVersion, runtimeSettings.NodeVersion, kiroVersion, machineID))
+		req.Header.Set("User-Agent", userAgent)
 	}
 
 	resp, err := doKiroSidecarRequest(req, account, r.httpUpstream, r.tlsFPProfileService, 60*time.Second)

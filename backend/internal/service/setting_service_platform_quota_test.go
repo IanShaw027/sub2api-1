@@ -98,6 +98,21 @@ func TestGetDefaultPlatformQuotas_ReturnsAllowedPlatforms(t *testing.T) {
 	}
 }
 
+func TestGetDefaultPlatformQuotas_NilRepoReturnsAllowedPlatforms(t *testing.T) {
+	svc := NewSettingService(nil, &config.Config{})
+
+	got, err := svc.GetDefaultPlatformQuotas(context.Background())
+	require.NoError(t, err)
+	for _, platform := range AllowedQuotaPlatforms {
+		quota, ok := got[platform]
+		require.True(t, ok)
+		require.NotNil(t, quota)
+		require.Nil(t, quota.DailyLimitUSD)
+		require.Nil(t, quota.WeeklyLimitUSD)
+		require.Nil(t, quota.MonthlyLimitUSD)
+	}
+}
+
 func TestGetAuthSourcePlatformQuotas_OnlyConfiguredReturned(t *testing.T) {
 	source := "email"
 	// 新 JSON 格式：anthropic daily=5, monthly=100；openai weekly=0；gemini/antigravity 无配置
@@ -137,6 +152,13 @@ func TestGetAuthSourcePlatformQuotas_OnlyConfiguredReturned(t *testing.T) {
 	if _, ok := got["antigravity"]; ok {
 		t.Error("antigravity not configured, should be absent from result")
 	}
+}
+
+func TestGetAuthSourcePlatformQuotas_NilRepoReturnsEmptyMap(t *testing.T) {
+	svc := NewSettingService(nil, &config.Config{})
+
+	got := svc.GetAuthSourcePlatformQuotas(context.Background(), "email")
+	require.Empty(t, got)
 }
 
 func TestGetAuthSourcePlatformQuotas_AllNegativeOrEmpty_NoEntry(t *testing.T) {

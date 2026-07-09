@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -126,6 +125,7 @@ func (s *AccountTestService) doUpstreamWithTLS(c *gin.Context, req *http.Request
 	if s == nil || s.httpUpstream == nil {
 		return nil, errors.New("http upstream is not configured")
 	}
+	req = withOpenAIHTTP1RawHeaderReplay(req, account, profile)
 	upstreamStart := time.Now()
 	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, profile)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
@@ -163,7 +163,7 @@ func NewAccountTestService(
 
 func (s *AccountTestService) validateUpstreamBaseURL(raw string) (string, error) {
 	if s.cfg == nil {
-		return "", errors.New("config is not available")
+		return urlvalidator.ValidateURLFormat(raw, false)
 	}
 	if !s.cfg.Security.URLAllowlist.Enabled {
 		return urlvalidator.ValidateURLFormat(raw, s.cfg.Security.URLAllowlist.AllowInsecureHTTP)
@@ -1186,15 +1186,16 @@ func (s *AccountTestService) testOpenAIResponsesLikeAccountConnection(
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Authorization", "Bearer "+authToken)
+	tlsProfile := s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http")
 	if providerName == "grok" {
-		req.Header.Set("User-Agent", "sub2api-grok/1.0")
+		applyGrokTLSProfileHeaders(req, tlsProfile)
 	}
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
+	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, tlsProfile)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("%s /v1/responses request failed: %s", providerName, err.Error()))
 	}
@@ -1542,187 +1543,6 @@ func collectOpenAIImageTestResults(body []byte) ([]openAIImageTestResult, error)
 		}
 	}
 	return results, nil
-}
-
-func (s *AccountTestService) testOpenAIImageWeb2API(c *gin.Context, ctx context.Context, account *Account, modelID, prompt string) error {
-	authToken := account.GetOpenAIAccessToken()
-	if authToken == "" {
-		return s.sendErrorAndEnd(c, "No access token available")
-	}
-
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.Header().Set("X-Accel-Buffering", "no")
-	c.Writer.Flush()
-
-	s.sendEvent(c, TestEvent{Type: "test_start", Model: modelID})
-	s.sendEvent(c, TestEvent{Type: "content", Text: "Initializing ChatGPT backend...\n"})
-
-	gateway := &OpenAIGatewayService{
-		accountRepo:         s.accountRepo,
-		settingService:      s.settingService,
-		tlsFPProfileService: s.tlsFPProfileService,
-	}
-	headers, err := gateway.buildOpenAIBackendAPIHeaders(account, authToken)
-	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to build backend headers: %s", err.Error()))
-	}
-	profile := ResolveOpenAIImageWebProfile(account)
-	if profile == nil || !profile.HasOpenAIImageWeb2APIProfile() {
-		return s.sendErrorAndEnd(c, "OpenAI web2api image route requires complete web_profile (browser headers and cookie values)")
-	}
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
-	}
-	client, err := newOpenAIBackendAPIClient(proxyURL)
-	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to create client: %s", err.Error()))
-	}
-
-	if bootstrapErr := bootstrapOpenAIBackendAPI(ctx, client, headers); bootstrapErr != nil {
-		log.Printf("OpenAI image test bootstrap warning: %v", bootstrapErr)
-	}
-
-	s.sendEvent(c, TestEvent{Type: "content", Text: "Fetching chat requirements...\n"})
-	chatReqs, err := fetchOpenAIChatRequirements(ctx, client, headers, account, profile, gateway)
-	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Chat requirements failed: %s", err.Error()))
-	}
-	if chatReqs.Arkose.Required {
-		return s.sendErrorAndEnd(c, "Unsupported challenge: arkose required")
-	}
-
-	s.sendEvent(c, TestEvent{Type: "content", Text: "Preparing image conversation...\n"})
-	parentMessageID := uuid.NewString()
-	proofToken := generateOpenAIProofToken(chatReqs.ProofOfWork.Required, chatReqs.ProofOfWork.Seed, chatReqs.ProofOfWork.Difficulty, headers.Get("User-Agent"))
-	_ = initializeOpenAIImageConversation(ctx, client, headers, account, profile, gateway)
-	conduitToken, err := prepareOpenAIImageConversation(ctx, client, headers, account, profile, gateway, prompt, parentMessageID, chatReqs.Token, proofToken)
-	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Conversation prepare failed: %s", err.Error()))
-	}
-
-	convReq := buildOpenAIImageTestConversationRequest(prompt, parentMessageID)
-	convHeaders := cloneHTTPHeader(headers)
-	convHeaders.Set("Accept", "text/event-stream")
-	convHeaders.Set("Content-Type", "application/json")
-	setOpenAIBackendAPIRequestTarget(convHeaders, openAIChatGPTConversationURL, "/backend-api/f/conversation")
-	setOpenAIBackendAPIRequestCookieHeader(convHeaders, profile, openAIChatGPTConversationURL)
-	convHeaders.Set("openai-sentinel-chat-requirements-token", chatReqs.Token)
-	if conduitToken != "" {
-		convHeaders.Set("x-conduit-token", conduitToken)
-	}
-	if proofToken != "" {
-		convHeaders.Set("openai-sentinel-proof-token", proofToken)
-	}
-
-	s.sendEvent(c, TestEvent{Type: "content", Text: "Generating image...\n"})
-	resp, err := client.R().
-		SetContext(ctx).
-		DisableAutoReadResponse().
-		SetHeaders(headerToMap(convHeaders)).
-		SetBodyJsonMarshal(convReq).
-		Post(openAIChatGPTConversationURL)
-	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Conversation request failed: %s", err.Error()))
-	}
-	defer func() {
-		if resp != nil && resp.Body != nil {
-			_ = resp.Body.Close()
-		}
-	}()
-	gateway.applyOpenAIBackendAPIResponseState(ctx, account, profile, headers, resp.Response)
-	if resp.StatusCode >= 400 {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Conversation API returned %d", resp.StatusCode))
-	}
-
-	conversationID, pointerInfos, _, _, err := readOpenAIImageConversationStream(resp, time.Now())
-	if err != nil {
-		return s.sendErrorAndEnd(c, fmt.Sprintf("Stream read failed: %s", err.Error()))
-	}
-	pointerInfos = mergeOpenAIImagePointerInfos(pointerInfos, nil)
-	if conversationID != "" && !hasOpenAIFileServicePointerInfos(pointerInfos) {
-		s.sendEvent(c, TestEvent{Type: "content", Text: "Waiting for image generation to complete...\n"})
-		polledPointers, pollErr := pollOpenAIImageConversation(ctx, client, headers, account, profile, gateway, conversationID)
-		if pollErr != nil {
-			return s.sendErrorAndEnd(c, fmt.Sprintf("Poll failed: %s", pollErr.Error()))
-		}
-		pointerInfos = mergeOpenAIImagePointerInfos(pointerInfos, polledPointers)
-	}
-	pointerInfos = preferOpenAIFileServicePointerInfos(pointerInfos)
-	if len(pointerInfos) == 0 {
-		return s.sendErrorAndEnd(c, "No images returned from conversation")
-	}
-
-	s.sendEvent(c, TestEvent{Type: "content", Text: "Downloading generated image...\n"})
-	for _, pointer := range pointerInfos {
-		data, err := resolveOpenAIImageBytes(ctx, client, headers, profile, conversationID, pointer, openAIUpstreamErrorBodyReadLimit)
-		if err != nil {
-			return s.sendErrorAndEnd(c, fmt.Sprintf("Image download failed: %s", err.Error()))
-		}
-		b64 := base64.StdEncoding.EncodeToString(data)
-		mimeType := pointer.MimeType
-		if strings.TrimSpace(mimeType) == "" {
-			mimeType = http.DetectContentType(data)
-		}
-		if pointer.Prompt != "" {
-			s.sendEvent(c, TestEvent{Type: "content", Text: pointer.Prompt})
-		}
-		s.sendEvent(c, TestEvent{
-			Type:     "image",
-			ImageURL: "data:" + mimeType + ";base64," + b64,
-			MimeType: mimeType,
-		})
-	}
-
-	s.sendEvent(c, TestEvent{Type: "test_complete", Success: true})
-	return nil
-}
-
-func buildOpenAIImageTestConversationRequest(prompt, parentMessageID string) map[string]any {
-	promptText := strings.TrimSpace(prompt)
-	if promptText == "" {
-		promptText = "Generate an image."
-	}
-	metadata := map[string]any{
-		"developer_mode_connector_ids": []any{},
-		"selected_github_repos":        []any{},
-		"selected_all_github_repos":    false,
-		"system_hints":                 []string{"picture_v2"},
-		"serialization_metadata": map[string]any{
-			"custom_symbol_offsets": []any{},
-		},
-	}
-	message := map[string]any{
-		"id":     uuid.NewString(),
-		"author": map[string]any{"role": "user"},
-		"content": map[string]any{
-			"content_type": "text",
-			"parts":        []any{promptText},
-		},
-		"metadata":    metadata,
-		"create_time": float64(time.Now().UnixMilli()) / 1000,
-	}
-	return map[string]any{
-		"action":                   "next",
-		"client_prepare_state":     "sent",
-		"parent_message_id":        parentMessageID,
-		"messages":                 []any{message},
-		"model":                    "auto",
-		"timezone_offset_min":      openAITimezoneOffsetMinutes(),
-		"timezone":                 openAITimezoneName(),
-		"conversation_mode":        map[string]any{"kind": "primary_assistant"},
-		"system_hints":             []string{"picture_v2"},
-		"supports_buffering":       true,
-		"supported_encodings":      []string{"v1"},
-		"client_contextual_info":   map[string]any{"app_name": "chatgpt.com"},
-		"force_nulligen":           false,
-		"force_paragen":            false,
-		"force_paragen_model_slug": "",
-		"force_rate_limit":         false,
-		"websocket_request_id":     uuid.NewString(),
-	}
 }
 
 func (s *AccountTestService) reconcileOpenAI429State(ctx context.Context, account *Account, headers http.Header, body []byte) {

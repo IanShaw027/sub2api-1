@@ -1916,8 +1916,12 @@ func init() {
 	invoiceorder.DefaultPaymentType = invoiceorderDescPaymentType.Default.(string)
 	// invoiceorder.PaymentTypeValidator is a validator for the "payment_type" field. It is called by the builders before save.
 	invoiceorder.PaymentTypeValidator = invoiceorderDescPaymentType.Validators[0].(func(string) error)
+	// invoiceorderDescIsActive is the schema descriptor for is_active field.
+	invoiceorderDescIsActive := invoiceorderFields[5].Descriptor()
+	// invoiceorder.DefaultIsActive holds the default value on creation for the is_active field.
+	invoiceorder.DefaultIsActive = invoiceorderDescIsActive.Default.(bool)
 	// invoiceorderDescCreatedAt is the schema descriptor for created_at field.
-	invoiceorderDescCreatedAt := invoiceorderFields[5].Descriptor()
+	invoiceorderDescCreatedAt := invoiceorderFields[6].Descriptor()
 	// invoiceorder.DefaultCreatedAt holds the default value on creation for the created_at field.
 	invoiceorder.DefaultCreatedAt = invoiceorderDescCreatedAt.Default.(func() time.Time)
 	paymentauditlogFields := schema.PaymentAuditLog{}.Fields()
@@ -3068,8 +3072,12 @@ func init() {
 	tlsfingerprintprofile.DefaultOriginator = tlsfingerprintprofileDescOriginator.Default.(string)
 	// tlsfingerprintprofile.OriginatorValidator is a validator for the "originator" field. It is called by the builders before save.
 	tlsfingerprintprofile.OriginatorValidator = tlsfingerprintprofileDescOriginator.Validators[0].(func(string) error)
+	// tlsfingerprintprofileDescHttp2Fingerprint is the schema descriptor for http2_fingerprint field.
+	tlsfingerprintprofileDescHttp2Fingerprint := tlsfingerprintprofileFields[7].Descriptor()
+	// tlsfingerprintprofile.DefaultHttp2Fingerprint holds the default value on creation for the http2_fingerprint field.
+	tlsfingerprintprofile.DefaultHttp2Fingerprint = tlsfingerprintprofileDescHttp2Fingerprint.Default.(string)
 	// tlsfingerprintprofileDescEnableGrease is the schema descriptor for enable_grease field.
-	tlsfingerprintprofileDescEnableGrease := tlsfingerprintprofileFields[8].Descriptor()
+	tlsfingerprintprofileDescEnableGrease := tlsfingerprintprofileFields[9].Descriptor()
 	// tlsfingerprintprofile.DefaultEnableGrease holds the default value on creation for the enable_grease field.
 	tlsfingerprintprofile.DefaultEnableGrease = tlsfingerprintprofileDescEnableGrease.Default.(bool)
 	tlsfingerprintrouterMixin := schema.TLSFingerprintRouter{}.Mixin()

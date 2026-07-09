@@ -244,7 +244,7 @@ func validateCredentialsBaseURL(platform, raw string) error {
 
 func validateAPIKeyCredentials(account *Account) error {
 	if account == nil {
-		return errors.New("account is nil")
+		return errors.New("account is required")
 	}
 	apiKey := strings.TrimSpace(account.GetCredential("api_key"))
 	if apiKey == "" {
@@ -255,7 +255,7 @@ func validateAPIKeyCredentials(account *Account) error {
 
 func validateOAuthCredentials(account *Account) error {
 	if account == nil {
-		return errors.New("account is nil")
+		return errors.New("account is required")
 	}
 	if strings.TrimSpace(account.GetCredential("access_token")) == "" && strings.TrimSpace(account.GetCredential("refresh_token")) == "" {
 		return fmt.Errorf("%s access_token or refresh_token is required", account.Platform)
@@ -265,7 +265,7 @@ func validateOAuthCredentials(account *Account) error {
 
 func validateAccountTestCredentials(account *Account) error {
 	if account == nil {
-		return errors.New("account is nil")
+		return errors.New("account is required")
 	}
 	switch account.Type {
 	case AccountTypeAPIKey:
@@ -561,7 +561,7 @@ func kiroCredentialNestedMap(credentials map[string]any, key string) (map[string
 	if typed, ok := raw.(map[string]any); ok {
 		return typed, true
 	}
-	if typed, ok := raw.(map[string]interface{}); ok {
+	if typed, ok := raw.(map[string]any); ok {
 		return map[string]any(typed), true
 	}
 	return nil, false

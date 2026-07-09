@@ -25,7 +25,7 @@ func isKiroTLSFingerprintEnabled(account *Account) bool {
 
 func newKiroSidecarHTTPClient(account *Account, tlsFPProfileService *TLSFingerprintProfileService, timeout time.Duration) (*http.Client, error) {
 	if account == nil {
-		return nil, fmt.Errorf("account is nil")
+		return nil, fmt.Errorf("account is required")
 	}
 
 	poolSize := normalizeKiroTransportConcurrency(account.Concurrency)

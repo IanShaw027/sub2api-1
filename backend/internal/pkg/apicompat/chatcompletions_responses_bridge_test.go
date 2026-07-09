@@ -73,6 +73,13 @@ func TestResponsesToChatCompletionsRequest_InstructionsAndInputDeveloperRole(t *
 	assert.JSONEq(t, `"Hello"`, string(out.Messages[2].Content))
 }
 
+func TestResponsesToChatCompletionsRequest_RejectsNilRequest(t *testing.T) {
+	out, err := ResponsesToChatCompletionsRequest(nil)
+
+	require.Nil(t, out)
+	require.EqualError(t, err, "responses request is required")
+}
+
 func chatMessageRoles(messages []ChatMessage) []string {
 	roles := make([]string, 0, len(messages))
 	for _, message := range messages {

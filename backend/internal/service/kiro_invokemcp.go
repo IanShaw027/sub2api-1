@@ -75,10 +75,10 @@ func (s *KiroGatewayService) invokeKiroMCP(
 	arguments map[string]any,
 ) (string, error) {
 	if s == nil {
-		return "", errors.New("kiro gateway service is nil")
+		return "", errors.New("kiro gateway service is required")
 	}
 	if account == nil {
-		return "", errors.New("account is nil")
+		return "", errors.New("account is required")
 	}
 
 	runtimeSettings := s.resolveKiroRuntimeSettings(ctx)
@@ -200,7 +200,7 @@ func (s *KiroGatewayService) buildKiroMCPRequest(
 		return io.NopCloser(bytes.NewReader(body)), nil
 	}
 
-	machineID := kiropkg.GenerateMachineID(account.GetCredential("machine_id"), "", account.GetCredential("refresh_token"))
+	machineID := kiropkg.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
 	host := fmt.Sprintf("q.%s.amazonaws.com", region)
 	kiroVersion := runtimeSettings.KiroVersion
 
@@ -215,8 +215,9 @@ func (s *KiroGatewayService) buildKiroMCPRequest(
 	if profileARN != "" {
 		req.Header.Set("x-amzn-kiro-profile-arn", profileARN)
 	}
-	req.Header.Set("x-amz-user-agent", fmt.Sprintf("aws-sdk-js/1.0.27 KiroIDE-%s-%s", kiroVersion, machineID))
-	req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/1.0.27 ua/2.1 os/%s lang/js md/nodejs#%s api/codewhispererstreaming#1.0.27 m/E KiroIDE-%s-%s", runtimeSettings.SystemVersion, runtimeSettings.NodeVersion, kiroVersion, machineID))
+	xAmzUserAgent, userAgent := kiropkg.BuildCodeWhispererStreamingUserAgents(kiroVersion, machineID, runtimeSettings.SystemVersion, runtimeSettings.NodeVersion)
+	req.Header.Set("x-amz-user-agent", xAmzUserAgent)
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("amz-sdk-invocation-id", uuid.NewString())
 	req.Header.Set("amz-sdk-request", "attempt=1; max=3")
 	return req, nil

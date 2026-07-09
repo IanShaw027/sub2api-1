@@ -220,10 +220,6 @@ func IsBlockedResolvedIP(ip net.IP) bool {
 	return IsBlockedResolvedAddr(addr)
 }
 
-func isBlockedResolvedAddr(addr netip.Addr) bool {
-	return IsBlockedResolvedAddr(addr)
-}
-
 func IsBlockedResolvedAddr(addr netip.Addr) bool {
 	if !addr.IsValid() {
 		return true

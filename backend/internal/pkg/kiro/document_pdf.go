@@ -62,9 +62,9 @@ func extractPDFText(data []byte) (text string, err error) {
 				continue
 			}
 			if !first && t.Y != lastY {
-				limiter.WriteByte('\n')
+				_ = limiter.WriteByte('\n')
 			} else if !first {
-				limiter.WriteByte(' ')
+				_ = limiter.WriteByte(' ')
 			}
 			limiter.WriteString(t.S)
 			lastY = t.Y
@@ -77,7 +77,7 @@ func extractPDFText(data []byte) (text string, err error) {
 			break
 		}
 		if i < pagesToRead {
-			limiter.WriteByte('\n')
+			_ = limiter.WriteByte('\n')
 		}
 	}
 	result := strings.TrimSpace(limiter.String())

@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
+	tlsfpHTTP2 "github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint/http2"
 	tlsfpTransport "github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint/transport"
+	"github.com/gorilla/websocket"
 	"golang.org/x/net/http2"
 )
 
@@ -64,12 +67,15 @@ func (l *TLSCaptureListener) handleCaptureH2WebSocketDataFrame(
 	fr *http2.Framer,
 	streamID uint32,
 	raw []byte,
-	http2Fingerprint string,
+	connFingerprint tlsCaptureH2ConnectionFingerprint,
 	state *tlsCaptureH2StreamState,
 	data []byte,
 ) (bool, error) {
 	if l == nil || l.cfg.Service == nil || fr == nil || state == nil {
 		return false, nil
+	}
+	if len(state.websocketReadBuffer)+len(data) > tlsFingerprintNativeCaptureBodyLimit {
+		return true, writeTLSCaptureWSH2Close(fr, streamID, websocket.CloseMessageTooBig, "message too large")
 	}
 	state.websocketReadBuffer = append(state.websocketReadBuffer, data...)
 	for {
@@ -86,7 +92,7 @@ func (l *TLSCaptureListener) handleCaptureH2WebSocketDataFrame(
 		case 0x1:
 			if fin {
 				state.websocketRequestSequence++
-				submitReq := buildTLSCaptureWSH2SubmitRequest(raw, http2Fingerprint, state, streamID, state.websocketRequestSequence, payload)
+				submitReq := buildTLSCaptureWSH2SubmitRequest(raw, connFingerprint, state, streamID, state.websocketRequestSequence, payload)
 				result, err := l.cfg.Service.SubmitNativeCapture(context.Background(), submitReq)
 				if err != nil {
 					return false, err
@@ -96,18 +102,24 @@ func (l *TLSCaptureListener) handleCaptureH2WebSocketDataFrame(
 				}
 				continue
 			}
+			if len(payload) > tlsFingerprintNativeCaptureBodyLimit {
+				return true, writeTLSCaptureWSH2Close(fr, streamID, websocket.CloseMessageTooBig, "message too large")
+			}
 			state.websocketFragmentOpcode = opcode
 			state.websocketMessageBuffer = append(state.websocketMessageBuffer[:0], payload...)
 		case 0x0:
 			if state.websocketFragmentOpcode != 0x1 {
 				continue
 			}
+			if len(state.websocketMessageBuffer)+len(payload) > tlsFingerprintNativeCaptureBodyLimit {
+				return true, writeTLSCaptureWSH2Close(fr, streamID, websocket.CloseMessageTooBig, "message too large")
+			}
 			state.websocketMessageBuffer = append(state.websocketMessageBuffer, payload...)
 			if !fin {
 				continue
 			}
 			state.websocketRequestSequence++
-			submitReq := buildTLSCaptureWSH2SubmitRequest(raw, http2Fingerprint, state, streamID, state.websocketRequestSequence, state.websocketMessageBuffer)
+			submitReq := buildTLSCaptureWSH2SubmitRequest(raw, connFingerprint, state, streamID, state.websocketRequestSequence, state.websocketMessageBuffer)
 			result, err := l.cfg.Service.SubmitNativeCapture(context.Background(), submitReq)
 			if err != nil {
 				return false, err
@@ -135,7 +147,7 @@ func (l *TLSCaptureListener) handleCaptureH2WebSocketDataFrame(
 
 func buildTLSCaptureWSH2SubmitRequest(
 	raw []byte,
-	http2Fingerprint string,
+	connFingerprint tlsCaptureH2ConnectionFingerprint,
 	state *tlsCaptureH2StreamState,
 	streamID uint32,
 	requestSequence int,
@@ -165,7 +177,12 @@ func buildTLSCaptureWSH2SubmitRequest(
 	submitReq.ResponseMode = "websocket"
 	submitReq.RequestSequence = requestSequence
 	submitReq.StreamID = fmt.Sprintf("%d", streamID)
-	submitReq.HTTP2Fingerprint = strings.TrimSpace(http2Fingerprint)
+	submitReq.HTTP2Fingerprint = strings.TrimSpace(tlsfpHTTP2.Fingerprint(
+		connFingerprint.settings,
+		connFingerprint.connWindowUpdates,
+		connFingerprint.priorities,
+		state.pseudoHeaderOrder,
+	))
 	submitReq.RawPayload = string(payload)
 	submitReq.IsWebsocket = true
 	submitReq.HTTPMethod = http.MethodConnect
@@ -185,6 +202,17 @@ func writeNativeCaptureWSH2Response(fr *http2.Framer, streamID uint32, req TLSFi
 		return err
 	}
 	return fr.WriteData(streamID, false, encodeTLSCaptureWebSocketServerFrame(0x1, completed))
+}
+
+func writeTLSCaptureWSH2Close(fr *http2.Framer, streamID uint32, code int, reason string) error {
+	if fr == nil {
+		return nil
+	}
+	closePayload := websocket.FormatCloseMessage(code, reason)
+	if err := fr.WriteData(streamID, false, encodeTLSCaptureWebSocketServerFrame(0x8, closePayload)); err != nil {
+		return err
+	}
+	return fr.WriteData(streamID, true, nil)
 }
 
 func firstWebSocketSubprotocol(raw string) string {
@@ -212,7 +240,15 @@ func decodeTLSCaptureWebSocketClientFrame(buffer []byte) (opcode byte, fin bool,
 		payloadLen = int(buffer[offset])<<8 | int(buffer[offset+1])
 		offset += 2
 	case 127:
-		return 0, false, nil, buffer, false, fmt.Errorf("websocket payload too large")
+		if len(buffer) < offset+8 {
+			return 0, false, nil, buffer, false, nil
+		}
+		payloadLen64 := binary.BigEndian.Uint64(buffer[offset : offset+8])
+		if payloadLen64 > uint64(tlsFingerprintNativeCaptureBodyLimit) {
+			return 0, false, nil, buffer, false, fmt.Errorf("websocket payload too large")
+		}
+		payloadLen = int(payloadLen64)
+		offset += 8
 	}
 	if buffer[1]&0x80 == 0 {
 		return 0, false, nil, buffer, false, fmt.Errorf("client websocket frame must be masked")
@@ -241,7 +277,10 @@ func encodeTLSCaptureWebSocketServerFrame(opcode byte, payload []byte) []byte {
 	case len(payload) <= 0xffff:
 		frame = append(frame, 126, byte(len(payload)>>8), byte(len(payload)))
 	default:
-		panic("websocket payload too large")
+		var lenBuf [8]byte
+		frame = append(frame, 127)
+		binary.BigEndian.PutUint64(lenBuf[:], uint64(len(payload)))
+		frame = append(frame, lenBuf[:]...)
 	}
 	frame = append(frame, payload...)
 	return frame

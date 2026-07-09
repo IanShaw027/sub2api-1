@@ -100,6 +100,36 @@ ON user_affiliate_ledger(user_id, source_user_id);
 CREATE INDEX IF NOT EXISTS idx_user_affiliate_ledger_order
 ON user_affiliate_ledger(source_order_id);
 
+CREATE TABLE IF NOT EXISTS user_affiliate_ledger_migration_archive (
+    original_id BIGINT PRIMARY KEY,
+    archived_from_migration VARCHAR(128) NOT NULL,
+    archived_reason VARCHAR(128) NOT NULL,
+    row_data JSONB NOT NULL,
+    archived_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+WITH ranked AS (
+    SELECT id,
+           ROW_NUMBER() OVER (PARTITION BY user_id, source_order_id, action ORDER BY id) AS rn
+    FROM user_affiliate_ledger
+    WHERE action = 'accrue'
+      AND source_order_id IS NOT NULL
+)
+INSERT INTO user_affiliate_ledger_migration_archive (
+    original_id,
+    archived_from_migration,
+    archived_reason,
+    row_data
+)
+SELECT l.id,
+       '132_affiliate_policy_limits',
+       'duplicate affiliate ledger accrue row',
+       to_jsonb(l)
+FROM user_affiliate_ledger l
+JOIN ranked r ON r.id = l.id
+WHERE r.rn > 1
+ON CONFLICT (original_id) DO NOTHING;
+
 WITH ranked AS (
     SELECT id,
            ROW_NUMBER() OVER (PARTITION BY user_id, source_order_id, action ORDER BY id) AS rn

@@ -77,6 +77,20 @@ func (_c *InvoiceOrderCreate) SetNillablePaymentType(v *string) *InvoiceOrderCre
 	return _c
 }
 
+// SetIsActive sets the "is_active" field.
+func (_c *InvoiceOrderCreate) SetIsActive(v bool) *InvoiceOrderCreate {
+	_c.mutation.SetIsActive(v)
+	return _c
+}
+
+// SetNillableIsActive sets the "is_active" field if the given value is not nil.
+func (_c *InvoiceOrderCreate) SetNillableIsActive(v *bool) *InvoiceOrderCreate {
+	if v != nil {
+		_c.SetIsActive(*v)
+	}
+	return _c
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (_c *InvoiceOrderCreate) SetCreatedAt(v time.Time) *InvoiceOrderCreate {
 	_c.mutation.SetCreatedAt(v)
@@ -143,6 +157,10 @@ func (_c *InvoiceOrderCreate) defaults() {
 		v := invoiceorder.DefaultPaymentType
 		_c.mutation.SetPaymentType(v)
 	}
+	if _, ok := _c.mutation.IsActive(); !ok {
+		v := invoiceorder.DefaultIsActive
+		_c.mutation.SetIsActive(v)
+	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		v := invoiceorder.DefaultCreatedAt()
 		_c.mutation.SetCreatedAt(v)
@@ -175,6 +193,9 @@ func (_c *InvoiceOrderCreate) check() error {
 		if err := invoiceorder.PaymentTypeValidator(v); err != nil {
 			return &ValidationError{Name: "payment_type", err: fmt.Errorf(`ent: validator failed for field "InvoiceOrder.payment_type": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.IsActive(); !ok {
+		return &ValidationError{Name: "is_active", err: errors.New(`ent: missing required field "InvoiceOrder.is_active"`)}
 	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "InvoiceOrder.created_at"`)}
@@ -224,6 +245,10 @@ func (_c *InvoiceOrderCreate) createSpec() (*InvoiceOrder, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.PaymentType(); ok {
 		_spec.SetField(invoiceorder.FieldPaymentType, field.TypeString, value)
 		_node.PaymentType = value
+	}
+	if value, ok := _c.mutation.IsActive(); ok {
+		_spec.SetField(invoiceorder.FieldIsActive, field.TypeBool, value)
+		_node.IsActive = value
 	}
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(invoiceorder.FieldCreatedAt, field.TypeTime, value)
@@ -370,6 +395,18 @@ func (u *InvoiceOrderUpsert) UpdatePaymentType() *InvoiceOrderUpsert {
 	return u
 }
 
+// SetIsActive sets the "is_active" field.
+func (u *InvoiceOrderUpsert) SetIsActive(v bool) *InvoiceOrderUpsert {
+	u.Set(invoiceorder.FieldIsActive, v)
+	return u
+}
+
+// UpdateIsActive sets the "is_active" field to the value that was provided on create.
+func (u *InvoiceOrderUpsert) UpdateIsActive() *InvoiceOrderUpsert {
+	u.SetExcluded(invoiceorder.FieldIsActive)
+	return u
+}
+
 // UpdateNewValues updates the mutable fields using the new values that were set on create.
 // Using this option is equivalent to using:
 //
@@ -496,6 +533,20 @@ func (u *InvoiceOrderUpsertOne) SetPaymentType(v string) *InvoiceOrderUpsertOne 
 func (u *InvoiceOrderUpsertOne) UpdatePaymentType() *InvoiceOrderUpsertOne {
 	return u.Update(func(s *InvoiceOrderUpsert) {
 		s.UpdatePaymentType()
+	})
+}
+
+// SetIsActive sets the "is_active" field.
+func (u *InvoiceOrderUpsertOne) SetIsActive(v bool) *InvoiceOrderUpsertOne {
+	return u.Update(func(s *InvoiceOrderUpsert) {
+		s.SetIsActive(v)
+	})
+}
+
+// UpdateIsActive sets the "is_active" field to the value that was provided on create.
+func (u *InvoiceOrderUpsertOne) UpdateIsActive() *InvoiceOrderUpsertOne {
+	return u.Update(func(s *InvoiceOrderUpsert) {
+		s.UpdateIsActive()
 	})
 }
 
@@ -791,6 +842,20 @@ func (u *InvoiceOrderUpsertBulk) SetPaymentType(v string) *InvoiceOrderUpsertBul
 func (u *InvoiceOrderUpsertBulk) UpdatePaymentType() *InvoiceOrderUpsertBulk {
 	return u.Update(func(s *InvoiceOrderUpsert) {
 		s.UpdatePaymentType()
+	})
+}
+
+// SetIsActive sets the "is_active" field.
+func (u *InvoiceOrderUpsertBulk) SetIsActive(v bool) *InvoiceOrderUpsertBulk {
+	return u.Update(func(s *InvoiceOrderUpsert) {
+		s.SetIsActive(v)
+	})
+}
+
+// UpdateIsActive sets the "is_active" field to the value that was provided on create.
+func (u *InvoiceOrderUpsertBulk) UpdateIsActive() *InvoiceOrderUpsertBulk {
+	return u.Update(func(s *InvoiceOrderUpsert) {
+		s.UpdateIsActive()
 	})
 }
 

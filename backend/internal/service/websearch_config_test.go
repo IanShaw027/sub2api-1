@@ -98,6 +98,51 @@ func TestParseWebSearchConfigJSON_BackwardCompatibility(t *testing.T) {
 	require.Equal(t, int64(1000), *cfg.Providers[0].QuotaLimit)
 }
 
+func TestGetWebSearchEmulationConfig_NilServiceOrRepoReturnsEmptyConfig(t *testing.T) {
+	clearGlobalWebSearchConfig()
+	defer clearGlobalWebSearchConfig()
+
+	var nilService *SettingService
+	cfg, err := nilService.GetWebSearchEmulationConfig(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+	require.False(t, cfg.Enabled)
+	require.Empty(t, cfg.Providers)
+
+	serviceWithNilRepo := &SettingService{}
+	cfg, err = serviceWithNilRepo.GetWebSearchEmulationConfig(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+	require.False(t, cfg.Enabled)
+	require.Empty(t, cfg.Providers)
+}
+
+func TestIsWebSearchEmulationEnabled_NilServiceOrRepoReturnsFalse(t *testing.T) {
+	clearGlobalWebSearchConfig()
+	defer clearGlobalWebSearchConfig()
+
+	var nilService *SettingService
+	require.False(t, nilService.IsWebSearchEmulationEnabled(context.Background()))
+
+	serviceWithNilRepo := &SettingService{}
+	require.False(t, serviceWithNilRepo.IsWebSearchEmulationEnabled(context.Background()))
+}
+
+func TestSaveWebSearchEmulationConfig_NilServiceOrRepoReturnsRepoNotInitialized(t *testing.T) {
+	clearGlobalWebSearchConfig()
+	defer clearGlobalWebSearchConfig()
+
+	cfg := &WebSearchEmulationConfig{}
+
+	var nilService *SettingService
+	err := nilService.SaveWebSearchEmulationConfig(context.Background(), cfg)
+	require.EqualError(t, err, "setting repository not initialized")
+
+	serviceWithNilRepo := &SettingService{}
+	err = serviceWithNilRepo.SaveWebSearchEmulationConfig(context.Background(), cfg)
+	require.EqualError(t, err, "setting repository not initialized")
+}
+
 // --- SanitizeWebSearchConfig ---
 
 func TestSanitizeWebSearchConfig_MaskAPIKey(t *testing.T) {

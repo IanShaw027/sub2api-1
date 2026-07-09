@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -15,7 +16,6 @@ import (
 	tlsfpParser "github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint/parser"
 	tlsfpReplay "github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint/replay"
 	tlsfpTransport "github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint/transport"
-	utls "github.com/refraction-networking/utls"
 )
 
 const (
@@ -198,6 +198,7 @@ type TLSFingerprintCaptureRepository interface {
 	ListTasks(ctx context.Context) ([]*TLSFingerprintCaptureTask, error)
 	GetTaskByID(ctx context.Context, id int64) (*TLSFingerprintCaptureTask, error)
 	GetRunningTaskByToken(ctx context.Context, token string) (*TLSFingerprintCaptureTask, error)
+	WithTaskSubmissionLock(ctx context.Context, taskID int64, fn func(context.Context) error) error
 	UpdateTask(ctx context.Context, task *TLSFingerprintCaptureTask) (*TLSFingerprintCaptureTask, error)
 	DeleteTask(ctx context.Context, id int64) error
 	DeleteSamplesByTask(ctx context.Context, taskID int64) error
@@ -212,6 +213,16 @@ type TLSFingerprintCaptureService struct {
 	repo                       TLSFingerprintCaptureRepository
 	profileSvc                 *TLSFingerprintProfileService
 	nativeCapturePublicBaseURL string
+	// capture 配额判断依赖 count -> quota check -> insert -> recount 这一整段顺序；仓库层目前仅保证
+	// sample 去重插入原子，不保证“未超配再插入”这一复合条件原子。仓库层已按 task 行加锁，
+	// 这里仅在 service 内补同 task 的单进程序列化，避免不同 task 之间被全局锁误串行。
+	submitMu     sync.Mutex
+	taskSubmitMu map[int64]*tlsFingerprintCaptureTaskMutex
+}
+
+type tlsFingerprintCaptureTaskMutex struct {
+	mu   sync.Mutex
+	refs int
 }
 
 func NewTLSFingerprintCaptureService(repo TLSFingerprintCaptureRepository, profileSvc *TLSFingerprintProfileService) *TLSFingerprintCaptureService {
@@ -447,16 +458,9 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 	if s == nil || s.repo == nil {
 		return nil, fmt.Errorf("tls fingerprint capture repository is not configured")
 	}
-	token := strings.TrimSpace(req.Token)
-	if token == "" {
-		return nil, &model.ValidationError{Field: "token", Message: "token is required"}
-	}
-	task, err := s.repo.GetRunningTaskByToken(ctx, token)
+	task, err := s.ValidateRunningTaskToken(ctx, req.Token)
 	if err != nil {
 		return nil, err
-	}
-	if task == nil {
-		return nil, &model.ValidationError{Field: "token", Message: "running capture task not found"}
 	}
 
 	platform := strings.TrimSpace(req.Platform)
@@ -490,7 +494,14 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 		return ignoredTLSCaptureResult(task, "client_hello_required"), nil
 	}
 
-	parsed, err := parseTLSFingerprintClientHello(req.ClientHello, platform, transport, strings.TrimSpace(req.UserAgent), strings.TrimSpace(req.Originator))
+	parsed, err := parseTLSFingerprintClientHello(
+		req.ClientHello,
+		platform,
+		transport,
+		strings.TrimSpace(req.UserAgent),
+		strings.TrimSpace(req.Originator),
+		strings.TrimSpace(req.HTTP2Fingerprint),
+	)
 	if err != nil {
 		req.SessionEventType = defaultString(strings.TrimSpace(req.SessionEventType), "client_hello_parse_failed")
 		req.SessionEventError = defaultString(strings.TrimSpace(req.SessionEventError), err.Error())
@@ -509,118 +520,179 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 		return nil, sessionErr
 	}
 
-	counts, transportCounts, err := s.countSamples(ctx, task)
-	if err != nil {
-		return nil, err
-	}
-	profile := parsed.Profile
-	hash := parsed.Derived.ReplayHash
-	sampleFingerprint := buildTLSCaptureSampleFingerprint(platform, transport, hash, req)
+	var result *TLSFingerprintCaptureSubmitResult
+	if err := s.repo.WithTaskSubmissionLock(ctx, task.ID, func(lockCtx context.Context) error {
+		unlock := s.lockTaskSubmission(task.ID)
+		defer unlock()
 
-	if replayable := tlsCaptureReplayable(req.Replayable); !replayable {
-		event, eventErr := s.createCaptureSessionEvent(ctx, session, task, req, platform, transport, hash, nil, false, replayable)
-		if eventErr != nil {
-			return nil, eventErr
-		}
-		task, counts, transportCounts, err = s.refreshTaskProgress(ctx, task)
+		counts, transportCounts, err := s.countSamples(lockCtx, task)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		return ignoredTLSCaptureResultWithSession(task, "capture_not_replayable", session, event), nil
-	}
+		profile := parsed.Profile
+		hash := parsed.Derived.ReplayHash
+		sampleFingerprint := buildTLSCaptureSampleFingerprint(platform, transport, hash, req)
 
-	existing, err := s.repo.GetSampleByTaskHash(ctx, task.ID, sampleFingerprint)
-	if err != nil {
-		return nil, err
-	}
-	if existing != nil {
-		event, eventErr := s.createCaptureSessionEvent(ctx, session, task, req, platform, transport, hash, idPointer(existing.ID), false, true)
-		if eventErr != nil {
-			return nil, eventErr
+		if replayable := tlsCaptureReplayable(req.Replayable); !replayable {
+			event, eventErr := s.createCaptureSessionEvent(lockCtx, session, task, req, platform, transport, hash, nil, false, replayable)
+			if eventErr != nil {
+				return eventErr
+			}
+			task, _, _, err = s.refreshTaskProgress(lockCtx, task)
+			if err != nil {
+				return err
+			}
+			result = ignoredTLSCaptureResultWithSession(task, "capture_not_replayable", session, event)
+			return nil
 		}
-		task, counts, transportCounts, err = s.refreshTaskProgress(ctx, task)
+
+		existing, err := s.repo.GetSampleByTaskHash(lockCtx, task.ID, sampleFingerprint)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		return &TLSFingerprintCaptureSubmitResult{
+		if existing != nil {
+			event, eventErr := s.createCaptureSessionEvent(lockCtx, session, task, req, platform, transport, hash, idPointer(existing.ID), false, true)
+			if eventErr != nil {
+				return eventErr
+			}
+			task, counts, _, err = s.refreshTaskProgress(lockCtx, task)
+			if err != nil {
+				return err
+			}
+			result = &TLSFingerprintCaptureSubmitResult{
+				Accepted:        true,
+				Duplicate:       true,
+				FingerprintHash: existing.FingerprintHash,
+				Task:            task,
+				Sample:          existing,
+				Session:         session,
+				SessionEvent:    event,
+				Counts:          copyStringIntMap(counts),
+			}
+			return nil
+		}
+
+		if reached, reason := tlsCaptureSubmissionQuotaReached(task, counts, transportCounts, platform, transport); reached {
+			task, _, _, err = s.refreshTaskProgress(lockCtx, task)
+			if err != nil {
+				return err
+			}
+			result = ignoredTLSCaptureResult(task, reason)
+			return nil
+		}
+
+		rawClientHello := append([]byte(nil), req.ClientHello...)
+		sampleProfile := cloneTLSFingerprintCaptureProfile(profile)
+		mergeTLSCaptureSampleDimensionsIntoProfile(sampleProfile, strings.TrimSpace(req.ClientType), req.StainlessMetadata)
+		sample := &TLSFingerprintCaptureSample{
+			TaskID:            task.ID,
+			Platform:          platform,
+			Transport:         transport,
+			SessionID:         strings.TrimSpace(req.SessionID),
+			UserAgent:         strings.TrimSpace(req.UserAgent),
+			Originator:        strings.TrimSpace(req.Originator),
+			FingerprintHash:   sampleFingerprint,
+			ReplayHash:        hash,
+			JA3Raw:            strings.TrimSpace(parsed.Derived.JA3Raw),
+			JA3Hash:           strings.TrimSpace(parsed.Derived.JA3Hash),
+			JA4:               strings.TrimSpace(parsed.Derived.JA4),
+			RequestPath:       req.RequestPath,
+			HTTPMethod:        req.HTTPMethod,
+			IsWebsocket:       req.IsWebsocket,
+			WebsocketProtocol: strings.TrimSpace(req.WebsocketProtocol),
+			ClientType:        strings.TrimSpace(req.ClientType),
+			Model:             req.Model,
+			RequestKind:       strings.TrimSpace(req.RequestKind),
+			Streaming:         req.Streaming,
+			ResponseMode:      strings.TrimSpace(req.ResponseMode),
+			HTTP2Fingerprint:  defaultString(strings.TrimSpace(req.HTTP2Fingerprint), strings.TrimSpace(parsed.Derived.Http2Fingerprint)),
+			StainlessMetadata: copyStringAnyMap(req.StainlessMetadata),
+			Profile:           sampleProfile,
+			RawPayload:        req.RawPayload,
+			RawClientHello:    rawClientHello,
+			CapturedAt:        time.Now().UTC(),
+		}
+		created, inserted, err := s.repo.CreateSampleIfAbsent(lockCtx, sample)
+		if err != nil {
+			return err
+		}
+
+		counts, transportCounts, err = s.countSamples(lockCtx, task)
+		if err != nil {
+			return err
+		}
+		event, eventErr := s.createCaptureSessionEvent(lockCtx, session, task, req, platform, transport, hash, idPointer(created.ID), inserted, true)
+		if eventErr != nil {
+			return eventErr
+		}
+		task, err = s.updateTaskProgress(lockCtx, task, counts, transportCounts)
+		if err != nil {
+			return err
+		}
+
+		result = &TLSFingerprintCaptureSubmitResult{
 			Accepted:        true,
-			Duplicate:       true,
-			FingerprintHash: existing.FingerprintHash,
+			Duplicate:       !inserted,
+			FingerprintHash: created.FingerprintHash,
 			Task:            task,
-			Sample:          existing,
+			Sample:          created,
 			Session:         session,
 			SessionEvent:    event,
 			Counts:          copyStringIntMap(counts),
-		}, nil
-	}
-
-	if reached, reason := tlsCaptureSubmissionQuotaReached(task, counts, transportCounts, platform, transport); reached {
-		task, counts, transportCounts, err = s.refreshTaskProgress(ctx, task)
-		if err != nil {
-			return nil, err
 		}
-		return ignoredTLSCaptureResult(task, reason), nil
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *TLSFingerprintCaptureService) lockTaskSubmission(taskID int64) func() {
+	if s == nil || taskID <= 0 {
+		return func() {}
 	}
 
-	rawClientHello := append([]byte(nil), req.ClientHello...)
-	sampleProfile := cloneTLSFingerprintCaptureProfile(profile)
-	mergeTLSCaptureSampleDimensionsIntoProfile(sampleProfile, strings.TrimSpace(req.ClientType), req.StainlessMetadata)
-	sample := &TLSFingerprintCaptureSample{
-		TaskID:            task.ID,
-		Platform:          platform,
-		Transport:         transport,
-		SessionID:         strings.TrimSpace(req.SessionID),
-		UserAgent:         strings.TrimSpace(req.UserAgent),
-		Originator:        strings.TrimSpace(req.Originator),
-		FingerprintHash:   sampleFingerprint,
-		ReplayHash:        hash,
-		JA3Raw:            strings.TrimSpace(parsed.Derived.JA3Raw),
-		JA3Hash:           strings.TrimSpace(parsed.Derived.JA3Hash),
-		JA4:               strings.TrimSpace(parsed.Derived.JA4),
-		RequestPath:       req.RequestPath,
-		HTTPMethod:        req.HTTPMethod,
-		IsWebsocket:       req.IsWebsocket,
-		WebsocketProtocol: strings.TrimSpace(req.WebsocketProtocol),
-		ClientType:        strings.TrimSpace(req.ClientType),
-		Model:             req.Model,
-		RequestKind:       strings.TrimSpace(req.RequestKind),
-		Streaming:         req.Streaming,
-		ResponseMode:      strings.TrimSpace(req.ResponseMode),
-		HTTP2Fingerprint:  defaultString(strings.TrimSpace(req.HTTP2Fingerprint), strings.TrimSpace(parsed.Derived.Http2Fingerprint)),
-		StainlessMetadata: copyStringAnyMap(req.StainlessMetadata),
-		Profile:           sampleProfile,
-		RawPayload:        req.RawPayload,
-		RawClientHello:    rawClientHello,
-		CapturedAt:        time.Now().UTC(),
+	s.submitMu.Lock()
+	if s.taskSubmitMu == nil {
+		s.taskSubmitMu = make(map[int64]*tlsFingerprintCaptureTaskMutex)
 	}
-	created, inserted, err := s.repo.CreateSampleIfAbsent(ctx, sample)
+	taskMu := s.taskSubmitMu[taskID]
+	if taskMu == nil {
+		taskMu = &tlsFingerprintCaptureTaskMutex{}
+		s.taskSubmitMu[taskID] = taskMu
+	}
+	taskMu.refs++
+	s.submitMu.Unlock()
+
+	taskMu.mu.Lock()
+	return func() {
+		taskMu.mu.Unlock()
+
+		s.submitMu.Lock()
+		taskMu.refs--
+		if taskMu.refs == 0 {
+			delete(s.taskSubmitMu, taskID)
+		}
+		s.submitMu.Unlock()
+	}
+}
+
+func (s *TLSFingerprintCaptureService) ValidateRunningTaskToken(ctx context.Context, token string) (*TLSFingerprintCaptureTask, error) {
+	if s == nil || s.repo == nil {
+		return nil, fmt.Errorf("tls fingerprint capture repository is not configured")
+	}
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, &model.ValidationError{Field: "token", Message: "token is required"}
+	}
+	task, err := s.repo.GetRunningTaskByToken(ctx, token)
 	if err != nil {
 		return nil, err
 	}
-
-	counts, transportCounts, err = s.countSamples(ctx, task)
-	if err != nil {
-		return nil, err
+	if task == nil {
+		return nil, &model.ValidationError{Field: "token", Message: "running capture task not found"}
 	}
-	event, eventErr := s.createCaptureSessionEvent(ctx, session, task, req, platform, transport, hash, idPointer(created.ID), inserted, true)
-	if eventErr != nil {
-		return nil, eventErr
-	}
-	task, err = s.updateTaskProgress(ctx, task, counts, transportCounts)
-	if err != nil {
-		return nil, err
-	}
-
-	return &TLSFingerprintCaptureSubmitResult{
-		Accepted:        true,
-		Duplicate:       !inserted,
-		FingerprintHash: created.FingerprintHash,
-		Task:            task,
-		Sample:          created,
-		Session:         session,
-		SessionEvent:    event,
-		Counts:          copyStringIntMap(counts),
-	}, nil
+	return task, nil
 }
 
 func (s *TLSFingerprintCaptureService) updateTaskProgress(ctx context.Context, task *TLSFingerprintCaptureTask, counts, transportCounts map[string]int) (*TLSFingerprintCaptureTask, error) {
@@ -741,16 +813,6 @@ func tlsCaptureTargetsReached(targets, counts map[string]int) bool {
 		}
 	}
 	return true
-}
-
-func tlsCapturePlatformTargetReached(targets, counts map[string]int, platform string) bool {
-	target := targets[platform]
-	return target > 0 && counts[platform] >= target
-}
-
-func tlsCaptureTransportTargetReached(targets, counts map[string]int, transport string) bool {
-	target := targets[transport]
-	return target > 0 && counts[transport] >= target
 }
 
 // tlsCaptureSubmissionQuotaReached reports whether a new sample for the given
@@ -1034,6 +1096,9 @@ func tlsCaptureSamplePayload(sample *TLSFingerprintCaptureSample) (string, error
 	}
 	profile := cloneTLSFingerprintCaptureProfile(sample.Profile)
 	mergeTLSCaptureSampleDimensionsIntoProfile(profile, strings.TrimSpace(sample.ClientType), sample.StainlessMetadata)
+	if profile != nil && strings.TrimSpace(profile.HTTP2Fingerprint) == "" {
+		profile.HTTP2Fingerprint = strings.TrimSpace(sample.HTTP2Fingerprint)
+	}
 	encoded, err := json.Marshal(profile)
 	if err != nil {
 		return "", err
@@ -1142,7 +1207,7 @@ func boolFingerprintComponent(value bool) string {
 	return "0"
 }
 
-func parseTLSFingerprintClientHello(raw []byte, platform, transport, userAgent, originator string) (*tlsFingerprintParsedCapture, error) {
+func parseTLSFingerprintClientHello(raw []byte, platform, transport, userAgent, originator, http2Fingerprint string) (*tlsFingerprintParsedCapture, error) {
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("client hello is required")
 	}
@@ -1164,6 +1229,7 @@ func parseTLSFingerprintClientHello(raw []byte, platform, transport, userAgent, 
 	profile.Transport = transport
 	profile.UserAgent = userAgent
 	profile.Originator = originator
+	profile.HTTP2Fingerprint = http2Fingerprint
 	if err := validateCompleteTLSFingerprintProfile(profile); err != nil {
 		return nil, err
 	}
@@ -1199,155 +1265,6 @@ func tlsFingerprintProfileFromReplayProfile(profile *tlsfpReplay.ReplayProfile) 
 	}
 }
 
-func tlsFingerprintProfileFromSpec(spec *utls.ClientHelloSpec) *model.TLSFingerprintProfile {
-	if spec == nil {
-		return &model.TLSFingerprintProfile{Name: "native ClientHello capture"}
-	}
-	profile := &model.TLSFingerprintProfile{
-		Name:         "native ClientHello capture",
-		CipherSuites: append([]uint16(nil), spec.CipherSuites...),
-	}
-	for _, cipherSuite := range profile.CipherSuites {
-		if tlsCaptureIsGREASEValue(cipherSuite) {
-			profile.EnableGREASE = true
-			break
-		}
-	}
-	for _, ext := range spec.Extensions {
-		extID, ok := tlsCaptureExtensionID(ext)
-		if ok {
-			profile.Extensions = append(profile.Extensions, extID)
-			if tlsCaptureIsGREASEValue(extID) {
-				profile.EnableGREASE = true
-			}
-		}
-		switch typed := ext.(type) {
-		case *utls.SupportedCurvesExtension:
-			profile.Curves = tlsCaptureCurveIDsToUint16(typed.Curves)
-		case *utls.SupportedPointsExtension:
-			profile.PointFormats = tlsCaptureUint8sToUint16(typed.SupportedPoints)
-		case *utls.SignatureAlgorithmsExtension:
-			profile.SignatureAlgorithms = tlsCaptureSignatureSchemesToUint16(typed.SupportedSignatureAlgorithms)
-		case *utls.ALPNExtension:
-			profile.ALPNProtocols = append([]string(nil), typed.AlpnProtocols...)
-		case *utls.UtlsCompressCertExtension:
-			profile.CompressCertAlgos = tlsCaptureCertCompressionAlgosToUint16(typed.Algorithms)
-		case *utls.FakeDelegatedCredentialsExtension:
-			profile.DelegatedCredentialsAlgorithms = tlsCaptureSignatureSchemesToUint16(typed.SupportedSignatureAlgorithms)
-		case *utls.SupportedVersionsExtension:
-			profile.SupportedVersions = append([]uint16(nil), typed.Versions...)
-		case *utls.KeyShareExtension:
-			profile.KeyShareGroups = tlsCaptureKeyShareGroupsToUint16(typed.KeyShares)
-		case *utls.PSKKeyExchangeModesExtension:
-			profile.PSKModes = tlsCaptureUint8sToUint16(typed.Modes)
-		case *utls.SignatureAlgorithmsCertExtension:
-			if len(profile.SignatureAlgorithms) == 0 {
-				profile.SignatureAlgorithms = tlsCaptureSignatureSchemesToUint16(typed.SupportedSignatureAlgorithms)
-			}
-		case *utls.ApplicationSettingsExtension:
-			profile.ApplicationSettingsProtocols = append([]string(nil), typed.SupportedProtocols...)
-		case *utls.ApplicationSettingsExtensionNew:
-			profile.ApplicationSettingsProtocols = append([]string(nil), typed.SupportedProtocols...)
-		}
-	}
-	if len(profile.SupportedVersions) == 0 && spec.TLSVersMax != 0 {
-		profile.SupportedVersions = []uint16{spec.TLSVersMax}
-		if spec.TLSVersMin != 0 && spec.TLSVersMin != spec.TLSVersMax {
-			profile.SupportedVersions = append(profile.SupportedVersions, spec.TLSVersMin)
-		}
-	}
-	return profile
-}
-
-func tlsCaptureExtensionID(ext utls.TLSExtension) (uint16, bool) {
-	switch typed := ext.(type) {
-	case *utls.SNIExtension:
-		return 0, true
-	case *utls.StatusRequestExtension:
-		return 5, true
-	case *utls.SupportedCurvesExtension:
-		return 10, true
-	case *utls.SupportedPointsExtension:
-		return 11, true
-	case *utls.SignatureAlgorithmsExtension:
-		return 13, true
-	case *utls.ALPNExtension:
-		return 16, true
-	case *utls.StatusRequestV2Extension:
-		return 17, true
-	case *utls.SCTExtension:
-		return 18, true
-	case *utls.UtlsPaddingExtension:
-		return 21, true
-	case *utls.ExtendedMasterSecretExtension:
-		return 23, true
-	case *utls.FakeTokenBindingExtension:
-		return 24, true
-	case *utls.UtlsCompressCertExtension:
-		return 27, true
-	case *utls.FakeRecordSizeLimitExtension:
-		return 28, true
-	case *utls.FakeDelegatedCredentialsExtension:
-		return 34, true
-	case *utls.SessionTicketExtension:
-		return 35, true
-	case utls.PreSharedKeyExtension:
-		return 41, true
-	case *utls.SupportedVersionsExtension:
-		return 43, true
-	case *utls.CookieExtension:
-		return 44, true
-	case *utls.PSKKeyExchangeModesExtension:
-		return 45, true
-	case *utls.SignatureAlgorithmsCertExtension:
-		return 50, true
-	case *utls.KeyShareExtension:
-		return 51, true
-	case *utls.QUICTransportParametersExtension:
-		return 57, true
-	case *utls.GenericExtension:
-		return typed.Id, true
-	case *utls.UtlsGREASEExtension:
-		if typed.Value != 0 {
-			return typed.Value, true
-		}
-		return utls.GREASE_PLACEHOLDER, true
-	case *utls.GREASEEncryptedClientHelloExtension, *utls.UnimplementedECHExtension:
-		return 0xfe0d, true
-	case *utls.ApplicationSettingsExtension:
-		return 17513, true
-	case *utls.ApplicationSettingsExtensionNew:
-		return 17613, true
-	case *utls.NPNExtension:
-		return 13172, true
-	case *utls.FakeChannelIDExtension:
-		if typed.OldExtensionID {
-			return 30031, true
-		}
-		return 30032, true
-	case *utls.RenegotiationInfoExtension:
-		return 65281, true
-	default:
-		return 0, false
-	}
-}
-
-func tlsCaptureCurveIDsToUint16(in []utls.CurveID) []uint16 {
-	out := make([]uint16, 0, len(in))
-	for _, value := range in {
-		out = append(out, uint16(value))
-	}
-	return out
-}
-
-func tlsCaptureUint8sToUint16(in []uint8) []uint16 {
-	out := make([]uint16, 0, len(in))
-	for _, value := range in {
-		out = append(out, uint16(value))
-	}
-	return out
-}
-
 func cloneUint16BytesMap(in map[uint16][]byte) map[uint16][]byte {
 	if len(in) == 0 {
 		return nil
@@ -1364,34 +1281,6 @@ func defaultString(value, fallback string) string {
 		return fallback
 	}
 	return value
-}
-
-func tlsCaptureSignatureSchemesToUint16(in []utls.SignatureScheme) []uint16 {
-	out := make([]uint16, 0, len(in))
-	for _, value := range in {
-		out = append(out, uint16(value))
-	}
-	return out
-}
-
-func tlsCaptureCertCompressionAlgosToUint16(in []utls.CertCompressionAlgo) []uint16 {
-	out := make([]uint16, 0, len(in))
-	for _, value := range in {
-		out = append(out, uint16(value))
-	}
-	return out
-}
-
-func tlsCaptureKeyShareGroupsToUint16(in []utls.KeyShare) []uint16 {
-	out := make([]uint16, 0, len(in))
-	for _, value := range in {
-		out = append(out, uint16(value.Group))
-	}
-	return out
-}
-
-func tlsCaptureIsGREASEValue(v uint16) bool {
-	return v&0x0f0f == 0x0a0a && v>>8 == v&0xff
 }
 
 func newTLSFingerprintCaptureToken() (string, error) {

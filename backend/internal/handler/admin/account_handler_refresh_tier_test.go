@@ -107,9 +107,9 @@ func TestAccountHandlerRefreshTier_UsesBackwardCompatibleRefreshPath(t *testing.
 				Status:   service.StatusActive,
 				Credentials: map[string]any{
 					"refresh_token": "old-refresh-token",
-					"oauth_type":    "code_assist",
+					"oauth_type":    "google_one",
 					"project_id":    "project-1",
-					"tier_id":       "STANDARD",
+					"tier_id":       "google_ai_pro",
 				},
 			},
 		},
@@ -139,6 +139,46 @@ func TestAccountHandlerRefreshTier_UsesBackwardCompatibleRefreshPath(t *testing.
 	require.Equal(t, "new-refresh-token", adminSvc.accounts[42].Credentials["refresh_token"])
 }
 
+func TestAccountHandlerRefreshTier_RejectsNonGoogleOneAccount(t *testing.T) {
+	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
+
+	adminSvc := &refreshTierAccountAdminService{
+		stubAdminService: newStubAdminService(),
+		accounts: map[int64]service.Account{
+			42: {
+				ID:       42,
+				Name:     "gemini-code-assist",
+				Platform: service.PlatformGemini,
+				Type:     service.AccountTypeOAuth,
+				Status:   service.StatusActive,
+				Credentials: map[string]any{
+					"refresh_token": "old-refresh-token",
+					"oauth_type":    "code_assist",
+					"project_id":    "project-1",
+					"tier_id":       "STANDARD",
+				},
+			},
+		},
+	}
+	geminiSvc := service.NewGeminiOAuthService(
+		nil,
+		refreshTierGeminiOAuthClientStub{},
+		geminiOAuthHandlerMockCodeAssist{},
+		&config.Config{},
+	)
+	defer geminiSvc.Stop()
+
+	router := setupRefreshTierRouter(adminSvc, geminiSvc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/42/refresh-tier", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "Only Gemini Google One OAuth accounts support tier refresh")
+	require.Empty(t, adminSvc.accounts[42].Credentials["access_token"])
+}
+
 func TestAccountHandlerBatchRefreshTier_UsesBackwardCompatibleRefreshPath(t *testing.T) {
 	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
 
@@ -153,14 +193,78 @@ func TestAccountHandlerBatchRefreshTier_UsesBackwardCompatibleRefreshPath(t *tes
 				Status:   service.StatusActive,
 				Credentials: map[string]any{
 					"refresh_token": "old-refresh-token-1",
-					"oauth_type":    "code_assist",
+					"oauth_type":    "google_one",
 					"project_id":    "project-1",
-					"tier_id":       "STANDARD",
+					"tier_id":       "google_ai_pro",
 				},
 			},
 			43: {
 				ID:       43,
 				Name:     "gemini-oauth-2",
+				Platform: service.PlatformGemini,
+				Type:     service.AccountTypeOAuth,
+				Status:   service.StatusActive,
+				Credentials: map[string]any{
+					"refresh_token": "old-refresh-token-2",
+					"oauth_type":    "google_one",
+					"project_id":    "project-2",
+					"tier_id":       "google_ai_pro",
+				},
+			},
+		},
+	}
+	geminiSvc := service.NewGeminiOAuthService(
+		nil,
+		refreshTierGeminiOAuthClientStub{},
+		geminiOAuthHandlerMockCodeAssist{},
+		&config.Config{},
+	)
+	defer geminiSvc.Stop()
+
+	router := setupRefreshTierRouter(adminSvc, geminiSvc)
+
+	body, err := json.Marshal(map[string]any{"account_ids": []int64{42, 43}})
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/batch-refresh-tier", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	data, ok := resp.Data.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, float64(2), data["success"])
+	require.Equal(t, float64(0), data["failed"])
+	require.Equal(t, "new-access-token", adminSvc.accounts[42].Credentials["access_token"])
+	require.Equal(t, "new-access-token", adminSvc.accounts[43].Credentials["access_token"])
+}
+
+func TestAccountHandlerBatchRefreshTier_FailsNonGoogleOneAccountsWithoutBlockingOthers(t *testing.T) {
+	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
+
+	adminSvc := &refreshTierAccountAdminService{
+		stubAdminService: newStubAdminService(),
+		accounts: map[int64]service.Account{
+			42: {
+				ID:       42,
+				Name:     "gemini-google-one",
+				Platform: service.PlatformGemini,
+				Type:     service.AccountTypeOAuth,
+				Status:   service.StatusActive,
+				Credentials: map[string]any{
+					"refresh_token": "old-refresh-token-1",
+					"oauth_type":    "google_one",
+					"project_id":    "project-1",
+					"tier_id":       "google_ai_pro",
+				},
+			},
+			43: {
+				ID:       43,
+				Name:     "gemini-code-assist",
 				Platform: service.PlatformGemini,
 				Type:     service.AccountTypeOAuth,
 				Status:   service.StatusActive,
@@ -197,8 +301,16 @@ func TestAccountHandlerBatchRefreshTier_UsesBackwardCompatibleRefreshPath(t *tes
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	data, ok := resp.Data.(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, float64(2), data["success"])
-	require.Equal(t, float64(0), data["failed"])
+	require.Equal(t, float64(1), data["success"])
+	require.Equal(t, float64(1), data["failed"])
 	require.Equal(t, "new-access-token", adminSvc.accounts[42].Credentials["access_token"])
-	require.Equal(t, "new-access-token", adminSvc.accounts[43].Credentials["access_token"])
+	require.Empty(t, adminSvc.accounts[43].Credentials["access_token"])
+
+	errorsOut, ok := data["errors"].([]any)
+	require.True(t, ok)
+	require.Len(t, errorsOut, 1)
+	errItem, ok := errorsOut[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, float64(43), errItem["account_id"])
+	require.Contains(t, errItem["error"], "Only Gemini Google One OAuth accounts support tier refresh")
 }

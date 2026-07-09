@@ -192,7 +192,9 @@ func claudeTelemetryDropHandler(settingService *service.SettingService) gin.Hand
 		if !ok {
 			return
 		}
-		service.RecordGatewayDebugTimelineBody(settingService, c, "cc_aux_request", service.SanitizeClaudeTelemetryBatch(body, service.ClaudeTelemetrySanitizeOptions{}),
+		// ok=false 时 sanitizedTelemetry 为 nil：fail-closed，不把未脱敏原文记入 debug timeline。
+		sanitizedTelemetry, _ := service.SanitizeClaudeTelemetryBatch(body, service.ClaudeTelemetrySanitizeOptions{})
+		service.RecordGatewayDebugTimelineBody(settingService, c, "cc_aux_request", sanitizedTelemetry,
 			c.GetHeader("Content-Type"), map[string]any{
 				"component":     "cc_aux_endpoint",
 				"endpoint_name": "event_logging_batch",

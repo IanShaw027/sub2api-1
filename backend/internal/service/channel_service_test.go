@@ -1352,6 +1352,15 @@ func TestCreate_Success(t *testing.T) {
 	require.Equal(t, createdID, result.ID)
 }
 
+func TestCreate_RejectsNilInput(t *testing.T) {
+	repo := &mockChannelRepository{}
+	svc := newTestChannelService(repo)
+
+	_, err := svc.Create(context.Background(), nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "channel input is required")
+}
+
 func TestCreate_NameExists(t *testing.T) {
 	repo := &mockChannelRepository{
 		existsByNameFn: func(_ context.Context, _ string) (bool, error) {
@@ -1534,6 +1543,24 @@ func TestUpdate_Success(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
+}
+
+func TestUpdate_RejectsNilInput(t *testing.T) {
+	existing := &Channel{
+		ID:     1,
+		Name:   "original",
+		Status: StatusActive,
+	}
+	repo := &mockChannelRepository{
+		getByIDFn: func(_ context.Context, _ int64) (*Channel, error) {
+			return existing.Clone(), nil
+		},
+	}
+	svc := newTestChannelService(repo)
+
+	_, err := svc.Update(context.Background(), 1, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "channel input is required")
 }
 
 func TestUpdate_NotFound(t *testing.T) {

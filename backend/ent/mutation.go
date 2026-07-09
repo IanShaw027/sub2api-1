@@ -47812,6 +47812,7 @@ type InvoiceOrderMutation struct {
 	addpay_amount_snapshot *float64
 	out_trade_no           *string
 	payment_type           *string
+	is_active              *bool
 	created_at             *time.Time
 	clearedFields          map[string]struct{}
 	invoice                *int64
@@ -48139,6 +48140,42 @@ func (m *InvoiceOrderMutation) ResetPaymentType() {
 	m.payment_type = nil
 }
 
+// SetIsActive sets the "is_active" field.
+func (m *InvoiceOrderMutation) SetIsActive(b bool) {
+	m.is_active = &b
+}
+
+// IsActive returns the value of the "is_active" field in the mutation.
+func (m *InvoiceOrderMutation) IsActive() (r bool, exists bool) {
+	v := m.is_active
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIsActive returns the old "is_active" field's value of the InvoiceOrder entity.
+// If the InvoiceOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InvoiceOrderMutation) OldIsActive(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIsActive is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIsActive requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIsActive: %w", err)
+	}
+	return oldValue.IsActive, nil
+}
+
+// ResetIsActive resets all changes to the "is_active" field.
+func (m *InvoiceOrderMutation) ResetIsActive() {
+	m.is_active = nil
+}
+
 // SetCreatedAt sets the "created_at" field.
 func (m *InvoiceOrderMutation) SetCreatedAt(t time.Time) {
 	m.created_at = &t
@@ -48236,7 +48273,7 @@ func (m *InvoiceOrderMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InvoiceOrderMutation) Fields() []string {
-	fields := make([]string, 0, 6)
+	fields := make([]string, 0, 7)
 	if m.invoice != nil {
 		fields = append(fields, invoiceorder.FieldInvoiceID)
 	}
@@ -48251,6 +48288,9 @@ func (m *InvoiceOrderMutation) Fields() []string {
 	}
 	if m.payment_type != nil {
 		fields = append(fields, invoiceorder.FieldPaymentType)
+	}
+	if m.is_active != nil {
+		fields = append(fields, invoiceorder.FieldIsActive)
 	}
 	if m.created_at != nil {
 		fields = append(fields, invoiceorder.FieldCreatedAt)
@@ -48273,6 +48313,8 @@ func (m *InvoiceOrderMutation) Field(name string) (ent.Value, bool) {
 		return m.OutTradeNo()
 	case invoiceorder.FieldPaymentType:
 		return m.PaymentType()
+	case invoiceorder.FieldIsActive:
+		return m.IsActive()
 	case invoiceorder.FieldCreatedAt:
 		return m.CreatedAt()
 	}
@@ -48294,6 +48336,8 @@ func (m *InvoiceOrderMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldOutTradeNo(ctx)
 	case invoiceorder.FieldPaymentType:
 		return m.OldPaymentType(ctx)
+	case invoiceorder.FieldIsActive:
+		return m.OldIsActive(ctx)
 	case invoiceorder.FieldCreatedAt:
 		return m.OldCreatedAt(ctx)
 	}
@@ -48339,6 +48383,13 @@ func (m *InvoiceOrderMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetPaymentType(v)
+		return nil
+	case invoiceorder.FieldIsActive:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIsActive(v)
 		return nil
 	case invoiceorder.FieldCreatedAt:
 		v, ok := value.(time.Time)
@@ -48437,6 +48488,9 @@ func (m *InvoiceOrderMutation) ResetField(name string) error {
 		return nil
 	case invoiceorder.FieldPaymentType:
 		m.ResetPaymentType()
+		return nil
+	case invoiceorder.FieldIsActive:
+		m.ResetIsActive()
 		return nil
 	case invoiceorder.FieldCreatedAt:
 		m.ResetCreatedAt()
@@ -67628,6 +67682,7 @@ type TLSFingerprintProfileMutation struct {
 	client_type                            *string
 	user_agent                             *string
 	originator                             *string
+	http2_fingerprint                      *string
 	description                            *string
 	enable_grease                          *bool
 	cipher_suites                          *[]uint16
@@ -68083,6 +68138,42 @@ func (m *TLSFingerprintProfileMutation) OldOriginator(ctx context.Context) (v st
 // ResetOriginator resets all changes to the "originator" field.
 func (m *TLSFingerprintProfileMutation) ResetOriginator() {
 	m.originator = nil
+}
+
+// SetHttp2Fingerprint sets the "http2_fingerprint" field.
+func (m *TLSFingerprintProfileMutation) SetHttp2Fingerprint(s string) {
+	m.http2_fingerprint = &s
+}
+
+// Http2Fingerprint returns the value of the "http2_fingerprint" field in the mutation.
+func (m *TLSFingerprintProfileMutation) Http2Fingerprint() (r string, exists bool) {
+	v := m.http2_fingerprint
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldHttp2Fingerprint returns the old "http2_fingerprint" field's value of the TLSFingerprintProfile entity.
+// If the TLSFingerprintProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TLSFingerprintProfileMutation) OldHttp2Fingerprint(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldHttp2Fingerprint is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldHttp2Fingerprint requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldHttp2Fingerprint: %w", err)
+	}
+	return oldValue.Http2Fingerprint, nil
+}
+
+// ResetHttp2Fingerprint resets all changes to the "http2_fingerprint" field.
+func (m *TLSFingerprintProfileMutation) ResetHttp2Fingerprint() {
+	m.http2_fingerprint = nil
 }
 
 // SetDescription sets the "description" field.
@@ -69098,7 +69189,7 @@ func (m *TLSFingerprintProfileMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TLSFingerprintProfileMutation) Fields() []string {
-	fields := make([]string, 0, 25)
+	fields := make([]string, 0, 26)
 	if m.created_at != nil {
 		fields = append(fields, tlsfingerprintprofile.FieldCreatedAt)
 	}
@@ -69125,6 +69216,9 @@ func (m *TLSFingerprintProfileMutation) Fields() []string {
 	}
 	if m.originator != nil {
 		fields = append(fields, tlsfingerprintprofile.FieldOriginator)
+	}
+	if m.http2_fingerprint != nil {
+		fields = append(fields, tlsfingerprintprofile.FieldHttp2Fingerprint)
 	}
 	if m.description != nil {
 		fields = append(fields, tlsfingerprintprofile.FieldDescription)
@@ -69200,6 +69294,8 @@ func (m *TLSFingerprintProfileMutation) Field(name string) (ent.Value, bool) {
 		return m.UserAgent()
 	case tlsfingerprintprofile.FieldOriginator:
 		return m.Originator()
+	case tlsfingerprintprofile.FieldHttp2Fingerprint:
+		return m.Http2Fingerprint()
 	case tlsfingerprintprofile.FieldDescription:
 		return m.Description()
 	case tlsfingerprintprofile.FieldEnableGrease:
@@ -69259,6 +69355,8 @@ func (m *TLSFingerprintProfileMutation) OldField(ctx context.Context, name strin
 		return m.OldUserAgent(ctx)
 	case tlsfingerprintprofile.FieldOriginator:
 		return m.OldOriginator(ctx)
+	case tlsfingerprintprofile.FieldHttp2Fingerprint:
+		return m.OldHttp2Fingerprint(ctx)
 	case tlsfingerprintprofile.FieldDescription:
 		return m.OldDescription(ctx)
 	case tlsfingerprintprofile.FieldEnableGrease:
@@ -69362,6 +69460,13 @@ func (m *TLSFingerprintProfileMutation) SetField(name string, value ent.Value) e
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetOriginator(v)
+		return nil
+	case tlsfingerprintprofile.FieldHttp2Fingerprint:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetHttp2Fingerprint(v)
 		return nil
 	case tlsfingerprintprofile.FieldDescription:
 		v, ok := value.(string)
@@ -69643,6 +69748,9 @@ func (m *TLSFingerprintProfileMutation) ResetField(name string) error {
 		return nil
 	case tlsfingerprintprofile.FieldOriginator:
 		m.ResetOriginator()
+		return nil
+	case tlsfingerprintprofile.FieldHttp2Fingerprint:
+		m.ResetHttp2Fingerprint()
 		return nil
 	case tlsfingerprintprofile.FieldDescription:
 		m.ResetDescription()

@@ -43,6 +43,16 @@ func TestAdminService_CreateUser_Success(t *testing.T) {
 	require.Equal(t, user, repo.created[0])
 }
 
+func TestAdminService_CreateUser_RejectsNilInput(t *testing.T) {
+	repo := &userRepoStub{nextID: 10}
+	svc := &adminServiceImpl{userRepo: repo}
+
+	_, err := svc.CreateUser(context.Background(), nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "user input is required")
+	require.Empty(t, repo.created)
+}
+
 func TestAdminService_CreateUser_UsesDefaultBalanceWhenBalanceOmitted(t *testing.T) {
 	repo := &userRepoStub{nextID: 11}
 	cfg := &config.Config{

@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
+	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/stretchr/testify/require"
 )
@@ -141,6 +143,9 @@ func TestHandlePaymentNotification_LegacyFallbackUnknownOrder_ReturnsSentinel(t 
 func TestConfirmPaymentIsIdempotentForPaidAndRecharging(t *testing.T) {
 	ctx := context.Background()
 	client := newOrderNotFoundTestClient(t)
+	paidAt := time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Second)
+	completedAt := paidAt.Add(3 * time.Minute)
+	rechargingPaidAt := time.Now().Add(-90 * time.Minute).UTC().Truncate(time.Second)
 
 	user, err := client.User.Create().
 		SetEmail("paid-idempotent@example.com").
@@ -162,6 +167,8 @@ func TestConfirmPaymentIsIdempotentForPaidAndRecharging(t *testing.T) {
 		SetPaymentTradeNo("trade-existing").
 		SetOrderType(payment.OrderTypeBalance).
 		SetStatus(OrderStatusPaid).
+		SetPaidAt(paidAt).
+		SetCompletedAt(completedAt).
 		SetExpiresAt(time.Now().Add(time.Hour)).
 		SetClientIP("127.0.0.1").
 		SetSrcHost("example.com").
@@ -180,6 +187,7 @@ func TestConfirmPaymentIsIdempotentForPaidAndRecharging(t *testing.T) {
 		SetPaymentTradeNo("trade-existing").
 		SetOrderType(payment.OrderTypeBalance).
 		SetStatus(OrderStatusRecharging).
+		SetPaidAt(rechargingPaidAt).
 		SetExpiresAt(time.Now().Add(time.Hour)).
 		SetClientIP("127.0.0.1").
 		SetSrcHost("example.com").
@@ -193,7 +201,40 @@ func TestConfirmPaymentIsIdempotentForPaidAndRecharging(t *testing.T) {
 
 	err = svc.confirmPayment(ctx, paidOrder.ID, "trade-existing", paidOrder.PayAmount, payment.TypeStripe, nil)
 	require.NoError(t, err)
+	err = svc.confirmPayment(ctx, paidOrder.ID, "trade-existing", paidOrder.PayAmount, payment.TypeStripe, nil)
+	require.NoError(t, err)
 
 	err = svc.confirmPayment(ctx, rechargingOrder.ID, "trade-existing", rechargingOrder.PayAmount, payment.TypeStripe, nil)
 	require.NoError(t, err)
+	err = svc.confirmPayment(ctx, rechargingOrder.ID, "trade-existing", rechargingOrder.PayAmount, payment.TypeStripe, nil)
+	require.NoError(t, err)
+
+	reloadedPaid, err := client.PaymentOrder.Get(ctx, paidOrder.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPaid, reloadedPaid.Status)
+	require.Equal(t, "trade-existing", reloadedPaid.PaymentTradeNo)
+	require.NotNil(t, reloadedPaid.PaidAt)
+	require.Equal(t, paidAt, reloadedPaid.PaidAt.UTC().Truncate(time.Second))
+	require.NotNil(t, reloadedPaid.CompletedAt)
+	require.Equal(t, completedAt, reloadedPaid.CompletedAt.UTC().Truncate(time.Second))
+
+	reloadedRecharging, err := client.PaymentOrder.Get(ctx, rechargingOrder.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusRecharging, reloadedRecharging.Status)
+	require.Equal(t, "trade-existing", reloadedRecharging.PaymentTradeNo)
+	require.NotNil(t, reloadedRecharging.PaidAt)
+	require.Equal(t, rechargingPaidAt, reloadedRecharging.PaidAt.UTC().Truncate(time.Second))
+	require.Nil(t, reloadedRecharging.CompletedAt)
+
+	reloadedUser, err := client.User.Get(ctx, user.ID)
+	require.NoError(t, err)
+	require.Zero(t, reloadedUser.Balance)
+
+	for _, orderID := range []int64{paidOrder.ID, rechargingOrder.ID} {
+		logCount, err := client.PaymentAuditLog.Query().
+			Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(orderID, 10))).
+			Count(ctx)
+		require.NoError(t, err)
+		require.Zero(t, logCount, "confirmPayment on already-paid order %d must not emit fulfillment/audit side effects", orderID)
+	}
 }

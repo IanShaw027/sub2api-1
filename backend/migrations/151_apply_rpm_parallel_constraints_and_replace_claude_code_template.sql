@@ -10,7 +10,7 @@ BEGIN
     ) THEN
         ALTER TABLE groups
             ADD CONSTRAINT groups_rpm_limit_non_negative
-            CHECK (rpm_limit >= 0);
+            CHECK (rpm_limit >= 0) NOT VALID;
     END IF;
 END $$;
 
@@ -25,7 +25,7 @@ BEGIN
     ) THEN
         ALTER TABLE users
             ADD CONSTRAINT users_rpm_limit_non_negative
-            CHECK (rpm_limit >= 0);
+            CHECK (rpm_limit >= 0) NOT VALID;
     END IF;
 END $$;
 
@@ -40,7 +40,7 @@ BEGIN
     ) THEN
         ALTER TABLE user_group_rate_multipliers
             ADD CONSTRAINT user_group_rate_multipliers_rpm_override_non_negative
-            CHECK (rpm_override IS NULL OR rpm_override >= 0);
+            CHECK (rpm_override IS NULL OR rpm_override >= 0) NOT VALID;
     END IF;
 END $$;
 
@@ -61,6 +61,14 @@ ON CONFLICT (provider, name) DO UPDATE SET
     body_override_mode = EXCLUDED.body_override_mode,
     body_override = EXCLUDED.body_override,
     updated_at = NOW();
+
+CREATE TABLE IF NOT EXISTS channel_monitor_request_templates_migration_archive (
+    original_id BIGINT PRIMARY KEY,
+    archived_from_migration VARCHAR(128) NOT NULL,
+    archived_reason VARCHAR(128) NOT NULL,
+    row_data JSONB NOT NULL,
+    archived_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 
 DO $$
 DECLARE
@@ -89,6 +97,20 @@ BEGIN
         UPDATE channel_monitors
         SET template_id = v_example_id
         WHERE template_id = v_legacy_id;
+
+        INSERT INTO channel_monitor_request_templates_migration_archive (
+            original_id,
+            archived_from_migration,
+            archived_reason,
+            row_data
+        )
+        SELECT c.id,
+               '151_apply_rpm_parallel_constraints_and_replace_claude_code_template',
+               'legacy claude code template replaced by anthropic example template',
+               to_jsonb(c)
+        FROM channel_monitor_request_templates c
+        WHERE c.id = v_legacy_id
+        ON CONFLICT (original_id) DO NOTHING;
 
         DELETE FROM channel_monitor_request_templates
         WHERE id = v_legacy_id;

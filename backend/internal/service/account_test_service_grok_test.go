@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/model"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/gin-gonic/gin"
@@ -140,7 +141,7 @@ func TestAccountTestService_TestAccountConnection_GrokOAuthUsesXAIResponses(t *t
 	require.Equal(t, xai.DefaultBaseURL+"/responses", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer grok-access-token", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "application/json, text/event-stream", upstream.lastReq.Header.Get("Accept"))
-	require.Equal(t, "sub2api-grok/1.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, defaultGrokUpstreamUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(upstream.lastReq.Context()))
 	require.Equal(t, "grok-4.3", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, "hello grok", gjson.GetBytes(upstream.lastBody, "input.0.content.0.text").String())
@@ -149,6 +150,58 @@ func TestAccountTestService_TestAccountConnection_GrokOAuthUsesXAIResponses(t *t
 	require.False(t, gjson.GetBytes(upstream.lastBody, "messages").Exists())
 	require.Contains(t, rec.Body.String(), `"text":"ok"`)
 	require.Contains(t, rec.Body.String(), `"success":true`)
+}
+
+func TestAccountTestService_TestAccountConnection_GrokOAuthUsesProfileUserAgentWhenTLSEnabled(t *testing.T) {
+	setGinTestMode()
+
+	account := Account{
+		ID:          73979,
+		Name:        "grok-oauth-tls",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":  "grok-access-token",
+			"refresh_token": "grok-refresh-token",
+		},
+		Extra: map[string]any{
+			"enable_tls_fingerprint":     true,
+			"tls_fingerprint_profile_id": int64(91),
+		},
+	}
+	repo := stubOpenAIAccountRepo{accounts: []Account{account}}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n" +
+				"data: {\"type\":\"response.completed\"}\n\n" +
+				"data: [DONE]\n\n",
+		)),
+	}}
+	svc := &AccountTestService{
+		accountRepo:       repo,
+		grokTokenProvider: NewGrokTokenProvider(repo, nil),
+		httpUpstream:      upstream,
+		tlsFPProfileService: &TLSFingerprintProfileService{localCache: map[int64]*model.TLSFingerprintProfile{
+			91: {ID: 91, Name: "Grok Routed", Platform: "grok", Transport: "http", UserAgent: "grok-native/1.0", Originator: "grok_desktop"},
+		}},
+	}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/73979/test", bytes.NewReader(nil))
+
+	err := svc.TestAccountConnection(c, account.ID, "grok-4.3", "hello grok", "")
+	require.NoError(t, err)
+
+	require.True(t, upstream.tlsCalled)
+	require.NotNil(t, upstream.lastTLSProfile)
+	require.Equal(t, "grok-native/1.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "grok_desktop", upstream.lastReq.Header.Get("Originator"))
 }
 
 func TestAccountTestService_TestAccountConnection_GrokTextMappingToMediaStillUsesResponses(t *testing.T) {
@@ -227,7 +280,7 @@ func TestAccountTestService_TestAccountConnection_GrokImagineUsesNativeImagesAPI
 	require.Equal(t, xai.DefaultBaseURL+"/images/generations", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer grok-access-token", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Accept"))
-	require.Equal(t, "sub2api-grok/1.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, defaultGrokUpstreamUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, "grok-imagine-image-quality", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, "draw a cat", gjson.GetBytes(upstream.lastBody, "prompt").String())
 	require.NotContains(t, upstream.lastReq.URL.String(), "/responses")
@@ -312,7 +365,7 @@ func TestAccountTestService_TestAccountConnection_GrokImagineVideoUsesNativeVide
 	require.Equal(t, xai.DefaultBaseURL+"/videos/generations", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer grok-access-token", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Accept"))
-	require.Equal(t, "sub2api-grok/1.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, defaultGrokUpstreamUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, "grok-imagine-video", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, "make a cat video", gjson.GetBytes(upstream.lastBody, "prompt").String())
 	require.NotContains(t, upstream.lastReq.URL.String(), "/responses")

@@ -160,16 +160,16 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	writeClientMessage func([]byte) error,
 ) (*OpenAIForwardResult, error) {
 	if s == nil {
-		return nil, errors.New("service is nil")
+		return nil, errors.New("service is required")
 	}
 	if s.httpUpstream == nil {
-		return nil, errors.New("openai http upstream is nil")
+		return nil, errors.New("openai http upstream is required")
 	}
 	if account == nil {
-		return nil, errors.New("account is nil")
+		return nil, errors.New("account is required")
 	}
 	if writeClientMessage == nil {
-		return nil, errors.New("client websocket writer is nil")
+		return nil, errors.New("client websocket writer is required")
 	}
 
 	body, err := prepareOpenAIWSHTTPBridgeBody(payload)

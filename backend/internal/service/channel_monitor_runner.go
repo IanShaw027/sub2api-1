@@ -49,7 +49,7 @@ type monitorRunnerDistributedLocker interface {
 //   - Service 在 Create/Update/Delete 后通过 MonitorScheduler 接口回调，
 //     即时重建/取消对应任务（无需轮询 DB）
 //   - 实际 HTTP 检测交给 pond 池（容量 monitorWorkerConcurrency + 有界队列），
-//     防止突发并发拖垮上游，同时避免瞬时 worker 忙导致漏检
+//     防止突发并发拖垮上游；池满时跳过本轮，避免调度 goroutine 同步探测放大并发
 //
 // 历史清理与日聚合维护由 OpsCleanupService 的 cron 触发
 // ChannelMonitorService.RunDailyMaintenance（复用 leader lock + heartbeat），
@@ -101,7 +101,7 @@ func (t *scheduledMonitor) nextDelay() time.Duration {
 }
 
 // NewChannelMonitorRunner 构造调度器。Start 在 wire 中调用一次。
-// settingService 用于在每次 fire 前读取功能开关；传 nil 时视为总是启用（兼容测试）。
+// settingService 用于在每次 fire 前读取功能开关；缺失时按关闭处理，避免配置未就绪时误跑后台检测。
 //
 // pool 在构造时即建好：避免 Start 在 mu 内赋值、fire/Stop 在 mu 外读取的竞态隐患，
 // 且 pond.NewPool 创建本身近似零开销，提前建池不会浪费资源。
@@ -290,7 +290,7 @@ func (r *ChannelMonitorRunner) runScheduled(ctx context.Context, task *scheduled
 }
 
 // fire 提交一次检测到 worker 池。功能开关关闭时跳过本次（不取消任务，
-// 重新启用时立即恢复）；重复在飞时跳过。池满时同步执行，避免漏检。
+// 重新启用时立即恢复）；重复在飞时跳过。池满时告警并跳过本轮。
 func (r *ChannelMonitorRunner) fire(ctx context.Context, task *scheduledMonitor) {
 	if !r.isFeatureEnabled(ctx) {
 		r.pauseForDisabledFeature()
@@ -304,9 +304,9 @@ func (r *ChannelMonitorRunner) fire(ctx context.Context, task *scheduledMonitor)
 	if _, ok := r.pool.TrySubmit(func() {
 		r.runOne(ctx, task.id, task.name)
 	}); !ok {
-		slog.Warn("channel_monitor: worker pool full, run synchronously",
+		r.releaseInFlight(task.id)
+		slog.Warn("channel_monitor: worker pool full, skip run",
 			"monitor_id", task.id, "name", task.name)
-		r.runOne(ctx, task.id, task.name)
 	}
 }
 
@@ -370,7 +370,7 @@ func (r *ChannelMonitorRunner) RunManual(ctx context.Context, id int64) ([]*Chec
 	if r == nil || r.svc == nil {
 		return nil, ErrChannelMonitorNotFound
 	}
-	if r.settingService != nil && !r.settingService.GetChannelMonitorRuntime(ctx).Enabled {
+	if !r.isFeatureEnabled(ctx) {
 		return nil, ErrChannelMonitorDisabled
 	}
 	if !r.tryAcquireInFlight(id) {
@@ -401,7 +401,7 @@ func (r *ChannelMonitorRunner) acquireDistributedRunLock(ctx context.Context, mo
 
 func (r *ChannelMonitorRunner) isFeatureEnabled(ctx context.Context) bool {
 	if r == nil || r.settingService == nil {
-		return true
+		return false
 	}
 	return r.settingService.GetChannelMonitorRuntime(ctx).Enabled
 }

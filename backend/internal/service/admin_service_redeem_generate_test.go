@@ -36,6 +36,18 @@ func TestAdminService_GenerateRedeemCodes_PersistsExpiresAt(t *testing.T) {
 	require.WithinDuration(t, expiresAt, *redeemRepo.created[0].ExpiresAt, time.Second)
 }
 
+func TestAdminService_GenerateRedeemCodes_RejectsNilInput(t *testing.T) {
+	redeemRepo := &redeemRepoStub{}
+	svc := &adminServiceImpl{redeemCodeRepo: redeemRepo}
+
+	codes, err := svc.GenerateRedeemCodes(context.Background(), nil)
+
+	require.Nil(t, codes)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "redeem input is required")
+	require.Empty(t, redeemRepo.created)
+}
+
 func TestAdminService_GenerateRedeemCodes_RejectsPastExpiresAt(t *testing.T) {
 	expiresAt := time.Now().UTC().Add(-time.Hour)
 	redeemRepo := &redeemRepoStub{}

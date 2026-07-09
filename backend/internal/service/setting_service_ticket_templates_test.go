@@ -92,6 +92,15 @@ func TestSettingServiceGetAdminTicketReplyTemplatesStabilizesStoredDataWithoutRe
 	require.NotEqual(t, first[1].ID, first[2].ID)
 }
 
+func TestSettingServiceGetAdminTicketReplyTemplates_NilRepoReturnsEmptyList(t *testing.T) {
+	svc := NewSettingService(nil, nil)
+
+	got, err := svc.GetAdminTicketReplyTemplates(context.Background())
+
+	require.NoError(t, err)
+	require.Empty(t, got)
+}
+
 func TestSettingServiceSetAdminTicketReplyTemplatesPreservesSubmittedOrder(t *testing.T) {
 	repo := &ticketTemplateSettingReadWriteRepoStub{}
 	svc := NewSettingService(repo, nil)
@@ -123,4 +132,13 @@ func TestSettingServiceSetAdminTicketReplyTemplatesPreservesSubmittedOrder(t *te
 	got, err := svc.GetAdminTicketReplyTemplates(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, stored, got)
+}
+
+func TestSettingServiceSetAdminTicketReplyTemplates_NilRepoReturnsError(t *testing.T) {
+	svc := NewSettingService(nil, nil)
+
+	err := svc.SetAdminTicketReplyTemplates(context.Background(), []AdminTicketReplyTemplate{{Title: "Hi", Content: "There"}})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "setting repository unavailable")
 }

@@ -31,6 +31,7 @@ type InvoiceMediaService interface {
 	Upload(ctx context.Context, input UploadMediaInput) (*MediaAsset, error)
 	CreateDownloadURLForUser(ctx context.Context, requesterUserID, id int64) (*MediaDownloadURL, error)
 	CreateDownloadURLForAdmin(ctx context.Context, id int64) (*MediaDownloadURL, error)
+	DeleteForAdmin(ctx context.Context, id int64) error
 }
 
 type CreateInvoiceRequest struct {
@@ -143,6 +144,46 @@ func trimOptionalString(v *string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+func formatInvoiceAmountDisplay(amount float64, currencies []string) string {
+	formatted := fmt.Sprintf("%.2f", roundMoney(amount))
+	unique := make(map[string]struct{}, len(currencies))
+	normalized := make([]string, 0, len(currencies))
+	for _, currency := range currencies {
+		code := strings.ToUpper(strings.TrimSpace(currency))
+		if code == "" {
+			continue
+		}
+		if _, exists := unique[code]; exists {
+			continue
+		}
+		unique[code] = struct{}{}
+		normalized = append(normalized, code)
+	}
+	if len(normalized) == 1 {
+		return normalized[0] + " " + formatted
+	}
+	return formatted
+}
+
+func isAllowedInvoiceFileContentType(contentType string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(contentType))
+	return normalized == "application/pdf" || strings.HasPrefix(normalized, "image/")
+}
+
+func sanitizeInvoiceFileName(fileName string) string {
+	fileName = strings.TrimSpace(fileName)
+	if fileName == "" {
+		return "invoice"
+	}
+	fileName = strings.ReplaceAll(fileName, `"`, "")
+	fileName = strings.ReplaceAll(fileName, "\n", "")
+	fileName = strings.ReplaceAll(fileName, "\r", "")
+	if fileName == "" {
+		return "invoice"
+	}
+	return fileName
 }
 
 func invoiceDetailFromEnt(inv *dbent.Invoice, orders []*dbent.InvoiceOrder) *InvoiceDetail {
@@ -301,8 +342,12 @@ func (s *InvoiceService) Create(ctx context.Context, userID int64, req CreateInv
 			SetPayAmountSnapshot(roundMoney(o.PayAmount)).
 			SetOutTradeNo(o.OutTradeNo).
 			SetPaymentType(o.PaymentType).
+			SetIsActive(true).
 			Save(ctx)
 		if ioErr != nil {
+			if isInvoiceOrderActiveConstraintError(ioErr) {
+				return nil, infraerrors.Conflict("INVOICE_ORDER_ALREADY_ACTIVE", fmt.Sprintf("order %d already has an active invoice", o.ID))
+			}
 			err = fmt.Errorf("create invoice_order: %w", ioErr)
 			return nil, err
 		}
@@ -329,7 +374,10 @@ func (s *InvoiceService) queryActiveLinksTx(ctx context.Context, tx *dbent.Tx, o
 		return map[int64]OrderInvoiceLink{}, nil
 	}
 	rows, err := tx.InvoiceOrder.Query().
-		Where(invoiceorder.OrderIDIn(orderIDs...)).
+		Where(
+			invoiceorder.OrderIDIn(orderIDs...),
+			invoiceorder.IsActive(true),
+		).
 		WithInvoice().
 		All(ctx)
 	if err != nil {
@@ -364,6 +412,18 @@ func dedupeInt64(in []int64) []int64 {
 		out = append(out, v)
 	}
 	return out
+}
+
+func isInvoiceOrderActiveConstraintError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if dbent.IsConstraintError(err) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "invoiceorder_order_id") ||
+		strings.Contains(msg, "invoice_orders.order_id")
 }
 
 func (s *InvoiceService) Cancel(ctx context.Context, invoiceID, userID int64) (*InvoiceDetail, error) {
@@ -416,6 +476,12 @@ func (s *InvoiceService) cancelInternal(ctx context.Context, invoiceID int64, us
 	if err != nil {
 		return nil, fmt.Errorf("load invoice_orders: %w", err)
 	}
+	if err = tx.InvoiceOrder.Update().
+		Where(invoiceorder.InvoiceIDEQ(inv.ID)).
+		SetIsActive(false).
+		Exec(ctx); err != nil {
+		return nil, fmt.Errorf("release invoice_orders: %w", err)
+	}
 
 	if commitErr := tx.Commit(); commitErr != nil {
 		err = commitErr
@@ -433,10 +499,49 @@ func (s *InvoiceService) UploadFile(ctx context.Context, invoiceID int64, input 
 	if s.mediaSvc == nil {
 		return nil, infraerrors.ServiceUnavailable("INVOICE_FILE_STORAGE_UNAVAILABLE", "invoice file storage is unavailable")
 	}
-	fileName := strings.TrimSpace(input.FileName)
+	fileName := sanitizeInvoiceFileName(input.FileName)
 	if fileName == "" || len(input.File) == 0 {
 		return nil, infraerrors.BadRequest("INVOICE_FILE_REQUIRED", "invoice file is required")
 	}
+	contentType := strings.TrimSpace(input.ContentType)
+	if !isAllowedInvoiceFileContentType(contentType) {
+		return nil, infraerrors.BadRequest("INVOICE_FILE_CONTENT_TYPE_INVALID", "invoice file content type is invalid")
+	}
+
+	preflightInv, err := s.entClient.Invoice.Get(ctx, invoiceID)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return nil, infraerrors.NotFound("INVOICE_NOT_FOUND", "invoice not found")
+		}
+		return nil, fmt.Errorf("load invoice: %w", err)
+	}
+	if preflightInv.Status != InvoiceStatusApplied {
+		return nil, infraerrors.BadRequest("INVOICE_CANNOT_UPLOAD", "invoice not in APPLIED state")
+	}
+
+	ownerUserID := preflightInv.UserID
+	asset, err := s.mediaSvc.Upload(ctx, UploadMediaInput{
+		BizType:     "invoice",
+		BizID:       fmt.Sprintf("invoice-%d", preflightInv.ID),
+		Visibility:  MediaVisibilityPrivate,
+		OwnerUserID: &ownerUserID,
+		FileName:    fileName,
+		ContentType: contentType,
+		SizeBytes:   int64(len(input.File)),
+		File:        input.File,
+	})
+	if err != nil {
+		return nil, err
+	}
+	deleteUploadedAsset := true
+	defer func() {
+		if !deleteUploadedAsset || asset == nil || s.mediaSvc == nil {
+			return
+		}
+		if deleteErr := s.mediaSvc.DeleteForAdmin(ctx, asset.ID); deleteErr != nil {
+			slog.Warn("invoice upload orphan cleanup failed", "invoice_id", invoiceID, "media_asset_id", asset.ID, "error", deleteErr)
+		}
+	}()
 
 	tx, txErr := s.entClient.Tx(ctx)
 	if txErr != nil {
@@ -463,21 +568,6 @@ func (s *InvoiceService) UploadFile(ctx context.Context, invoiceID int64, input 
 		return nil, infraerrors.BadRequest("INVOICE_CANNOT_UPLOAD", "invoice not in APPLIED state")
 	}
 
-	ownerUserID := inv.UserID
-	asset, err := s.mediaSvc.Upload(ctx, UploadMediaInput{
-		BizType:     "invoice",
-		BizID:       fmt.Sprintf("invoice-%d", inv.ID),
-		Visibility:  MediaVisibilityPrivate,
-		OwnerUserID: &ownerUserID,
-		FileName:    fileName,
-		ContentType: strings.TrimSpace(input.ContentType),
-		SizeBytes:   int64(len(input.File)),
-		File:        input.File,
-	})
-	if err != nil {
-		return nil, err
-	}
-
 	now := time.Now()
 	inv, err = tx.Invoice.UpdateOneID(inv.ID).
 		SetStatus(InvoiceStatusIssued).
@@ -500,6 +590,7 @@ func (s *InvoiceService) UploadFile(ctx context.Context, invoiceID int64, input 
 		err = commitErr
 		return nil, fmt.Errorf("upload tx commit: %w", commitErr)
 	}
+	deleteUploadedAsset = false
 
 	for _, l := range links {
 		s.writeAuditLog(ctx, l.OrderID, "INVOICE_ISSUED", "admin", map[string]any{
@@ -566,22 +657,12 @@ func (s *InvoiceService) List(ctx context.Context, params InvoiceListParams) ([]
 		q = q.Where(invoice.StatusEQ(status))
 	}
 	if keyword := strings.TrimSpace(params.Keyword); keyword != "" {
-		matchedRows, err := s.entClient.InvoiceOrder.Query().
-			Where(invoiceorder.OutTradeNoContainsFold(keyword)).
-			All(ctx)
-		if err != nil {
-			return nil, 0, fmt.Errorf("keyword join lookup: %w", err)
-		}
-		matchedInvoiceIDs := make([]int64, 0, len(matchedRows))
-		for _, r := range matchedRows {
-			matchedInvoiceIDs = append(matchedInvoiceIDs, r.InvoiceID)
-		}
 		q = q.Where(invoice.Or(
 			invoice.TitleContainsFold(keyword),
 			invoice.EmailContainsFold(keyword),
 			invoice.UserEmailContainsFold(keyword),
 			invoice.TaxNumberContainsFold(keyword),
-			invoice.IDIn(matchedInvoiceIDs...),
+			invoice.HasOrdersWith(invoiceorder.OutTradeNoContainsFold(keyword)),
 		))
 	}
 
@@ -609,7 +690,10 @@ func (s *InvoiceService) GetActiveLinksByOrderIDs(ctx context.Context, orderIDs 
 		return map[int64]OrderInvoiceLink{}, nil
 	}
 	rows, err := s.entClient.InvoiceOrder.Query().
-		Where(invoiceorder.OrderIDIn(orderIDs...)).
+		Where(
+			invoiceorder.OrderIDIn(orderIDs...),
+			invoiceorder.IsActive(true),
+		).
 		WithInvoice().
 		All(ctx)
 	if err != nil {
@@ -760,14 +844,32 @@ func (s *InvoiceService) sendInvoiceIssuedEmail(ctx context.Context, invoiceID i
 		recipientName = recipient
 	}
 
+	var currencies []string
+	if len(links) > 0 {
+		orderIDs := make([]int64, 0, len(links))
+		for _, link := range links {
+			orderIDs = append(orderIDs, link.OrderID)
+		}
+		if orders, orderErr := s.entClient.PaymentOrder.Query().Where(paymentorder.IDIn(orderIDs...)).All(ctx); orderErr == nil {
+			currencies = make([]string, 0, len(orders))
+			for _, order := range orders {
+				if snapshot := psOrderProviderSnapshot(order); snapshot != nil {
+					currencies = append(currencies, snapshot.Currency)
+				}
+			}
+		}
+	}
+	invoiceAmountDisplay := formatInvoiceAmountDisplay(inv.InvoiceAmount, currencies)
+
 	variables := map[string]string{
-		"invoice_id":           strconv.FormatInt(inv.ID, 10),
-		"invoice_title":        inv.Title,
-		"tax_number":           inv.TaxNumber,
-		"invoice_amount":       fmt.Sprintf("%.2f", inv.InvoiceAmount),
-		"order_count":          strconv.Itoa(inv.OrderCount),
-		"invoice_download_url": downloadURL,
-		"invoice_file_name":    inv.FileName,
+		"invoice_id":             strconv.FormatInt(inv.ID, 10),
+		"invoice_title":          inv.Title,
+		"tax_number":             inv.TaxNumber,
+		"invoice_amount":         fmt.Sprintf("%.2f", inv.InvoiceAmount),
+		"invoice_amount_display": invoiceAmountDisplay,
+		"order_count":            strconv.Itoa(inv.OrderCount),
+		"invoice_download_url":   downloadURL,
+		"invoice_file_name":      inv.FileName,
 	}
 	rawHTML := map[string]string{
 		"order_list_html": renderInvoiceOrderListHTML(links),

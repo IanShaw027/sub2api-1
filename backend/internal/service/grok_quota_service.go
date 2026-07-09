@@ -37,11 +37,11 @@ type GrokQuotaResetResult struct {
 }
 
 type GrokQuotaService struct {
-	accountRepo         AccountRepository
-	proxyRepo           ProxyRepository
-	tokenProvider       *GrokTokenProvider
-	httpUpstream        HTTPUpstream
-	tlsFPProfileService *TLSFingerprintProfileService
+	accountRepo     AccountRepository
+	proxyRepo       ProxyRepository
+	tokenProvider   *GrokTokenProvider
+	httpUpstream    HTTPUpstream
+	tlsFPProfileSvc *TLSFingerprintProfileService
 }
 
 func NewGrokQuotaService(
@@ -49,18 +49,20 @@ func NewGrokQuotaService(
 	proxyRepo ProxyRepository,
 	tokenProvider *GrokTokenProvider,
 	httpUpstream HTTPUpstream,
+	tlsFPProfileSvc *TLSFingerprintProfileService,
 ) *GrokQuotaService {
 	return &GrokQuotaService{
-		accountRepo:   accountRepo,
-		proxyRepo:     proxyRepo,
-		tokenProvider: tokenProvider,
-		httpUpstream:  httpUpstream,
+		accountRepo:     accountRepo,
+		proxyRepo:       proxyRepo,
+		tokenProvider:   tokenProvider,
+		httpUpstream:    httpUpstream,
+		tlsFPProfileSvc: tlsFPProfileSvc,
 	}
 }
 
 func (s *GrokQuotaService) SetTLSFingerprintProfileService(profileService *TLSFingerprintProfileService) {
 	if s != nil {
-		s.tlsFPProfileService = profileService
+		s.tlsFPProfileSvc = profileService
 	}
 }
 
@@ -88,13 +90,17 @@ func (s *GrokQuotaService) ProbeUsage(ctx context.Context, accountID int64) (*Gr
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "sub2api-grok-quota-probe/1.0")
-	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
+	applyDefaultGrokUpstreamHeaders(req)
 
-	var tlsProfile = (*tlsfingerprint.Profile)(nil)
-	if s.tlsFPProfileService != nil {
-		tlsProfile = s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http")
+	// 探针命中与 /responses 同一 api.x.ai + 同一 OAuth token：必须复用账号绑定的
+	// TLS 指纹与浏览器 UA，否则周期性探针会以不一致的 JA3/UA 暴露整个订阅账号。
+	// 探针无入站 UA 上下文，按 transport 维度解析账号绑定 profile（profile 自带 UA 时覆盖默认探针 UA）。
+	var tlsProfile *tlsfingerprint.Profile
+	if s.tlsFPProfileSvc != nil {
+		tlsProfile = s.tlsFPProfileSvc.ResolveTLSProfileForTransport(account, "http")
 	}
+	applyGrokTLSProfileHeaders(req, tlsProfile)
+
 	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, maxInt(account.Concurrency, 1), tlsProfile)
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusBadGateway, "GROK_QUOTA_PROBE_REQUEST_FAILED", "upstream probe failed: %v", err)
@@ -102,19 +108,15 @@ func (s *GrokQuotaService) ProbeUsage(ctx context.Context, accountID int64) (*Gr
 	defer func() { _ = resp.Body.Close() }()
 
 	snapshot := xai.ObserveQuotaHeaders(resp.Header, resp.StatusCode, "active_probe")
-	// Only overwrite the durable quota snapshot when rate-limit headers were
-	// actually observed. Empty probes must not wipe prior Retry-After / remaining.
-	if snapshot != nil && snapshot.HeadersObserved {
-		_ = s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{
-			grokQuotaSnapshotExtraKey: snapshot,
-		})
-	}
+	_ = s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{
+		grokQuotaSnapshotExtraKey: snapshot,
+	})
 
 	result := &GrokQuotaProbeResult{
 		Source:          "active_probe",
 		Snapshot:        snapshot,
 		StatusCode:      resp.StatusCode,
-		HeadersObserved: snapshot != nil && snapshot.HeadersObserved,
+		HeadersObserved: snapshot.HeadersObserved,
 		ResetSupported:  false,
 		FetchedAt:       time.Now().Unix(),
 	}
@@ -196,9 +198,7 @@ func buildGrokQuotaProbeBody(account *Account) ([]byte, error) {
 	model := grokQuotaDefaultModel
 	if account != nil {
 		if mapped := strings.TrimSpace(account.GetMappedModel("grok")); mapped != "" {
-			if xai.IsGrokTextResponsesModelID(mapped) {
-				model = mapped
-			}
+			model = mapped
 		}
 	}
 	return json.Marshal(map[string]any{

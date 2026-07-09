@@ -161,6 +161,21 @@ func TestChannelMonitorHandler_RejectsAdminAPIWhenFeatureDisabled(t *testing.T) 
 	require.Contains(t, rec.Body.String(), "CHANNEL_MONITOR_DISABLED")
 }
 
+func TestChannelMonitorHandler_RejectsAdminAPIWhenSettingServiceMissing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewChannelMonitorHandler(nil, nil)
+
+	router := gin.New()
+	router.GET("/api/v1/admin/channel-monitors", h.List)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/channel-monitors", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Contains(t, rec.Body.String(), "CHANNEL_MONITOR_DISABLED")
+}
+
 func TestChannelMonitorHandler_CreateAcceptsKiroProvider(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &channelMonitorAdjustRepoStub{}
@@ -173,7 +188,10 @@ func TestChannelMonitorHandler_CreateAcceptsKiroProvider(t *testing.T) {
 		return nil
 	}
 	svc := service.NewChannelMonitorService(repo, channelMonitorAdjustEncryptorStub{})
-	h := NewChannelMonitorHandler(svc)
+	settings := service.NewSettingService(&channelMonitorSettingRepoStub{values: map[string]string{
+		service.SettingKeyChannelMonitorEnabled: "true",
+	}}, &config.Config{})
+	h := NewChannelMonitorHandler(svc, settings)
 
 	router := gin.New()
 	router.POST("/api/v1/admin/channel-monitors", h.Create)
@@ -217,7 +235,10 @@ func TestChannelMonitorHandler_CreateAcceptsGrokProvider(t *testing.T) {
 		return nil
 	}
 	svc := service.NewChannelMonitorService(repo, channelMonitorAdjustEncryptorStub{})
-	h := NewChannelMonitorHandler(svc)
+	settings := service.NewSettingService(&channelMonitorSettingRepoStub{values: map[string]string{
+		service.SettingKeyChannelMonitorEnabled: "true",
+	}}, &config.Config{})
+	h := NewChannelMonitorHandler(svc, settings)
 
 	router := gin.New()
 	router.POST("/api/v1/admin/channel-monitors", h.Create)
@@ -258,7 +279,10 @@ func TestChannelMonitorHandler_AdjustAvailability7dAcceptsZero(t *testing.T) {
 		},
 	}
 	svc := service.NewChannelMonitorService(repo, channelMonitorAdjustEncryptorStub{})
-	h := NewChannelMonitorHandler(svc)
+	settings := service.NewSettingService(&channelMonitorSettingRepoStub{values: map[string]string{
+		service.SettingKeyChannelMonitorEnabled: "true",
+	}}, &config.Config{})
+	h := NewChannelMonitorHandler(svc, settings)
 
 	router := gin.New()
 	router.POST("/api/v1/admin/channel-monitors/:id/availability-7d", h.AdjustAvailability7d)

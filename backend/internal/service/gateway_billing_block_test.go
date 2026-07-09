@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -92,7 +91,7 @@ func TestSignBillingHeaderCCH_PrintVector(t *testing.T) {
 	body := []byte(`{"system":[{"type":"text","text":"x-anthropic-billing-header: cc_version=2.1.161.abc; cc_entrypoint=cli; cch=00000;"}],"messages":[{"role":"user","content":"hello"}],"model":"claude-sonnet-4-20250514","max_tokens":8096,"stream":true}`)
 
 	h := xxhash.NewWithSeed(cchSeed)
-	h.Write(body)
+	_, _ = h.Write(body)
 	digest := h.Sum64()
 	masked := digest & 0xFFFFF
 	cchHex := fmt.Sprintf("%05x", masked)
@@ -108,51 +107,4 @@ func TestSignBillingHeaderCCH_PrintVector(t *testing.T) {
 	require.Contains(t, string(signed), "cch="+cchHex)
 	require.Equal(t, len(body), len(signed))
 	t.Logf("Signed OK:  cch=%s", cchHex)
-}
-
-// TestSignBillingHeaderCCH_VerifyAgainstRealCLI 用于验证我们的 cch 算法与真实 CLI 输出一致。
-//
-// 使用方法：
-//  1. 用 mitmproxy / Wireshark 抓取真实 Claude Code CLI 发送的请求 body
-//  2. 提取 body 中 "cch=XXXXX" 的真实值
-//  3. 将 body 中 "cch=XXXXX" 替换回 "cch=00000" 得到 placeholder body
-//  4. 添加到 testCases 中
-//
-// go test -tags unit -v -run TestSignBillingHeaderCCH_VerifyAgainstRealCLI ./internal/service/
-func TestSignBillingHeaderCCH_VerifyAgainstRealCLI(t *testing.T) {
-	type testCase struct {
-		name            string
-		placeholderBody []byte // body with cch=00000 (replace real cch back to 00000)
-		expectedCCH     string // 5-hex-char cch from real CLI (e.g. "a1b2c")
-	}
-
-	testCases := []testCase{
-		// TODO: 从真实 CLI 抓包填充。
-		// 示例：
-		// {
-		//     name: "real_cli_2.1.195_sonnet",
-		//     placeholderBody: []byte(`{"system":[{"type":"text","text":"x-anthropic-billing-header: cc_version=2.1.195.abc; cc_entrypoint=cli; cch=00000;"}],...}`),
-		//     expectedCCH: "a1b2c",
-		// },
-	}
-
-	if len(testCases) == 0 {
-		t.Skip("No real CLI test vectors provided yet — add captured request bodies to testCases")
-	}
-
-	passed := 0
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			require.True(t, bytes.Contains(tc.placeholderBody, []byte("cch=00000")),
-				"placeholderBody must contain cch=00000")
-
-			signed := signBillingHeaderCCH(tc.placeholderBody)
-			expectedTag := "cch=" + tc.expectedCCH
-			require.Contains(t, string(signed), expectedTag,
-				"cch mismatch: expected %q in signed body", expectedTag)
-			require.Equal(t, len(tc.placeholderBody), len(signed), "body length must not change")
-			passed++
-		})
-	}
-	t.Logf("Passed %d/%d real CLI verification cases", passed, len(testCases))
 }

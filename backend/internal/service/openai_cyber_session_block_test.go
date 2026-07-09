@@ -199,3 +199,12 @@ func TestCyberSessionBlock_RoundTrip(t *testing.T) {
 	// Different key: still not blocked.
 	require.False(t, svc.IsCyberSessionBlocked(ctx, "other-key"))
 }
+
+func TestGetCyberSessionBlockRuntime_NilRepoReturnsDefaults(t *testing.T) {
+	svc := NewSettingService(nil, nil)
+
+	enabled, ttl := svc.GetCyberSessionBlockRuntime(context.Background())
+
+	require.False(t, enabled)
+	require.Equal(t, time.Hour, ttl)
+}

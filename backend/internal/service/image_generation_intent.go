@@ -265,7 +265,7 @@ func resolveOpenAIResponsesImageBillingConfigDetailed(reqBody map[string]any, fa
 	if imageModel == "" {
 		imageModel = strings.TrimSpace(fallbackModel)
 	}
-	sizeTier := normalizeOpenAIImageSizeTier(imageSize)
+	sizeTier := normalizeOpenAIImageBillingTierFromRawSize(imageSize)
 	return OpenAIResponsesImageBillingConfig{
 		Model:     imageModel,
 		SizeTier:  sizeTier,
@@ -324,7 +324,7 @@ func resolveOpenAIResponsesImageBillingConfigDetailedFromBody(body []byte, fallb
 	}
 	return OpenAIResponsesImageBillingConfig{
 		Model:     imageModel,
-		SizeTier:  normalizeOpenAIImageSizeTier(imageSize),
+		SizeTier:  normalizeOpenAIImageBillingTierFromRawSize(imageSize),
 		InputSize: imageSize,
 	}, nil
 }

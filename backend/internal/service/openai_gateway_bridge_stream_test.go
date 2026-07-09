@@ -50,6 +50,68 @@ func TestStreamCCResponseAsAnthropicReturnsScannerError(t *testing.T) {
 	require.ErrorContains(t, err, "upstream stream truncated")
 }
 
+// 上游在无终止信号(finish_reason/[DONE])下干净 EOF：截断，必须返回 error 而非合成 end_turn 成功。
+func TestStreamCCResponseAsAnthropic_TruncationWithoutTerminalReturnsError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	resp := &http.Response{
+		Body: io.NopCloser(strings.NewReader(`data: {"choices":[{"delta":{"content":"hi"}}]}` + "\n\n")),
+	}
+
+	_, _, _, err := (&GatewayService{}).streamCCResponseAsAnthropic(t.Context(), c, resp, "claude-test", false, time.Now())
+
+	require.ErrorContains(t, err, "terminal event")
+}
+
+// 中途上游错误 chunk 不能被静默吞掉当成正常结束。
+func TestStreamCCResponseAsAnthropic_MidStreamErrorChunkReturnsError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	resp := &http.Response{
+		Body: io.NopCloser(strings.NewReader(`data: {"error":{"message":"boom","type":"server_error"}}` + "\n\n")),
+	}
+
+	_, _, _, err := (&GatewayService{}).streamCCResponseAsAnthropic(t.Context(), c, resp, "claude-test", false, time.Now())
+
+	require.ErrorContains(t, err, "boom")
+}
+
+// OpenAI-compat CC→Responses：无终止信号截断必须返回 error 且不写 data: [DONE]。
+func TestStreamOpenAICompatCCChatAsResponses_TruncationWithoutTerminalReturnsError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	resp := &http.Response{
+		Header: http.Header{},
+		Body:   io.NopCloser(strings.NewReader(`data: {"choices":[{"delta":{"content":"hi"}}]}` + "\n\n")),
+	}
+
+	result, err := (&GatewayService{}).streamOpenAICompatCCChatAsResponses(c, resp, "gpt-test", "gpt-up", nil, time.Now())
+
+	require.ErrorContains(t, err, "terminal event")
+	require.Nil(t, result)
+	require.NotContains(t, w.Body.String(), "data: [DONE]")
+}
+
+// OpenAI-compat CC→Responses：中途错误 chunk 必须透传为 error 且不合成 completed。
+func TestStreamOpenAICompatCCChatAsResponses_MidStreamErrorChunkReturnsError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	resp := &http.Response{
+		Header: http.Header{},
+		Body:   io.NopCloser(strings.NewReader(`data: {"error":{"message":"boom","type":"server_error"}}` + "\n\n")),
+	}
+
+	result, err := (&GatewayService{}).streamOpenAICompatCCChatAsResponses(c, resp, "gpt-test", "gpt-up", nil, time.Now())
+
+	require.ErrorContains(t, err, "boom")
+	require.Nil(t, result)
+	require.NotContains(t, w.Body.String(), "data: [DONE]")
+}
+
 func TestStreamAnthropicResponseAsCCReturnsScannerError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

@@ -1885,16 +1885,16 @@ func toolResultContent(v any) string {
 				stderr := stringField(block, "stderr")
 				var rendered strings.Builder
 				if stdout != "" {
-					rendered.WriteString(stdout)
+					_, _ = rendered.WriteString(stdout)
 				}
 				if stderr != "" {
 					if rendered.Len() > 0 {
-						rendered.WriteString("\n")
+						_, _ = rendered.WriteString("\n")
 					}
-					rendered.WriteString(stderr)
+					_, _ = rendered.WriteString(stderr)
 				}
 				if rendered.Len() == 0 {
-					rendered.WriteString("[code execution: no output]")
+					_, _ = rendered.WriteString("[code execution: no output]")
 				}
 				parts = append(parts, rendered.String())
 				continue

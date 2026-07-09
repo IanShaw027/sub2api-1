@@ -151,6 +151,15 @@ func TestKiroUsageService_FetchUsageLimits_UsesHTTPUpstreamTransport(t *testing.
 	}
 }
 
+func TestKiroUsageService_FetchUsageLimits_RejectsNilAccount(t *testing.T) {
+	service := NewKiroUsageService()
+
+	limits, err := service.FetchUsageLimits(context.Background(), nil, "access-token")
+
+	require.Nil(t, limits)
+	require.EqualError(t, err, "account is required")
+}
+
 func TestKiroUsageService_FetchUsageLimits_EncodesProfileARNQuery(t *testing.T) {
 	upstream := &kiroHTTPUpstreamRecorder{
 		resp: &http.Response{
@@ -206,6 +215,35 @@ func TestKiroUsageService_FetchUsageLimits_ExternalIDPSetsTokenTypeHeader(t *tes
 
 	require.NoError(t, err)
 	require.Equal(t, "EXTERNAL_IDP", upstream.req.Header.Get("TokenType"))
+}
+
+func TestKiroUsageService_FetchUsageLimits_UsesAlignedRuntimeUserAgentVersion(t *testing.T) {
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(strings.NewReader(`{
+				"subscriptionInfo":{"subscriptionTitle":"Kiro Pro"},
+				"usageBreakdownList":[{"currentUsageWithPrecision":12.5,"usageLimitWithPrecision":100}]
+			}`)),
+			Header: make(http.Header),
+		},
+	}
+	service := NewKiroUsageService().WithTransport(upstream, nil)
+	account := &Account{
+		ID:       45,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "refresh-token",
+		},
+	}
+
+	_, err := service.FetchUsageLimits(context.Background(), account, "access-token")
+
+	require.NoError(t, err)
+	require.Contains(t, upstream.req.Header.Get("x-amz-user-agent"), "aws-sdk-js/1.0.27")
+	require.Contains(t, upstream.req.Header.Get("User-Agent"), "aws-sdk-js/1.0.27")
+	require.Contains(t, upstream.req.Header.Get("User-Agent"), "api/codewhispererruntime#1.0.27")
 }
 
 func TestKiroTokenRefresher_Refresh_UsesHTTPUpstreamTransport(t *testing.T) {
@@ -654,4 +692,28 @@ func TestNewKiroSidecarHTTPClient_UsesTLSFingerprintTransportWhenEnabled(t *test
 	if transport.MaxConnsPerHost != 4 {
 		t.Fatalf("MaxConnsPerHost = %d, want 4", transport.MaxConnsPerHost)
 	}
+}
+
+func TestNewKiroSidecarHTTPClient_RejectsNilAccount(t *testing.T) {
+	client, err := newKiroSidecarHTTPClient(nil, &TLSFingerprintProfileService{}, 5*time.Second)
+
+	require.Nil(t, client)
+	require.EqualError(t, err, "account is required")
+}
+
+func TestDoKiroSidecarRequest_RejectsNilAccount(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "https://example.com", nil)
+	require.NoError(t, err)
+
+	resp, callErr := doKiroSidecarRequest(req, nil, nil, nil, 5*time.Second)
+
+	require.Nil(t, resp)
+	require.EqualError(t, callErr, "account is required")
+}
+
+func TestDoKiroSidecarRequest_RejectsNilRequest(t *testing.T) {
+	resp, err := doKiroSidecarRequest(nil, &Account{}, nil, nil, 5*time.Second)
+
+	require.Nil(t, resp)
+	require.EqualError(t, err, "request is required")
 }

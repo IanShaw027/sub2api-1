@@ -243,6 +243,34 @@ func (s *APIKeyService) SetRateLimitCacheInvalidator(inv RateLimitCacheInvalidat
 	s.rateLimitCacheInvalid = inv
 }
 
+func (s *APIKeyService) requireAPIKeyRepo() (APIKeyRepository, error) {
+	if s == nil || s.apiKeyRepo == nil {
+		return nil, fmt.Errorf("api key repository is unavailable")
+	}
+	return s.apiKeyRepo, nil
+}
+
+func (s *APIKeyService) requireUserRepo() (UserRepository, error) {
+	if s == nil || s.userRepo == nil {
+		return nil, fmt.Errorf("user repository is unavailable")
+	}
+	return s.userRepo, nil
+}
+
+func (s *APIKeyService) requireGroupRepo() (GroupRepository, error) {
+	if s == nil || s.groupRepo == nil {
+		return nil, fmt.Errorf("group repository is unavailable")
+	}
+	return s.groupRepo, nil
+}
+
+func (s *APIKeyService) requireUserSubRepo() (UserSubscriptionRepository, error) {
+	if s == nil || s.userSubRepo == nil {
+		return nil, fmt.Errorf("user subscription repository is unavailable")
+	}
+	return s.userSubRepo, nil
+}
+
 func (s *APIKeyService) compileAPIKeyIPRules(apiKey *APIKey) {
 	if apiKey == nil {
 		return
@@ -260,7 +288,10 @@ func (s *APIKeyService) GenerateKey() (string, error) {
 	}
 
 	// 转换为十六进制字符串并添加前缀
-	prefix := s.cfg.Default.APIKeyPrefix
+	prefix := ""
+	if s != nil && s.cfg != nil {
+		prefix = s.cfg.Default.APIKeyPrefix
+	}
 	if prefix == "" {
 		prefix = "sk-"
 	}
@@ -333,8 +364,12 @@ func (s *APIKeyService) canUserBindGroup(ctx context.Context, user *User, group 
 
 // Create 创建API Key
 func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIKeyRequest) (*APIKey, error) {
+	userRepo, err := s.requireUserRepo()
+	if err != nil {
+		return nil, err
+	}
 	// 验证用户存在
-	user, err := s.userRepo.GetByID(ctx, userID)
+	user, err := userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
 	}
@@ -355,9 +390,18 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 
 	// 验证分组权限（如果指定了分组）
 	if req.GroupID != nil {
-		group, err := s.groupRepo.GetByID(ctx, *req.GroupID)
+		groupRepo, err := s.requireGroupRepo()
+		if err != nil {
+			return nil, err
+		}
+		group, err := groupRepo.GetByID(ctx, *req.GroupID)
 		if err != nil {
 			return nil, fmt.Errorf("get group: %w", err)
+		}
+		if group.IsSubscriptionType() {
+			if _, err := s.requireUserSubRepo(); err != nil {
+				return nil, err
+			}
 		}
 
 		// 检查用户是否可以绑定该分组
@@ -370,6 +414,10 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 
 	// 判断是否使用自定义Key
 	if req.CustomKey != nil && *req.CustomKey != "" {
+		apiKeyRepo, err := s.requireAPIKeyRepo()
+		if err != nil {
+			return nil, err
+		}
 		// 检查限流（仅对自定义key进行限流）
 		if err := s.checkAPIKeyRateLimit(ctx, userID); err != nil {
 			return nil, err
@@ -381,7 +429,7 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 		}
 
 		// 检查Key是否已存在
-		exists, err := s.apiKeyRepo.ExistsByKey(ctx, *req.CustomKey)
+		exists, err := apiKeyRepo.ExistsByKey(ctx, *req.CustomKey)
 		if err != nil {
 			return nil, fmt.Errorf("check key exists: %w", err)
 		}
@@ -423,7 +471,11 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 		apiKey.ExpiresAt = &expiresAt
 	}
 
-	if err := s.apiKeyRepo.Create(ctx, apiKey); err != nil {
+	apiKeyRepo, err := s.requireAPIKeyRepo()
+	if err != nil {
+		return nil, err
+	}
+	if err := apiKeyRepo.Create(ctx, apiKey); err != nil {
 		return nil, fmt.Errorf("create api key: %w", err)
 	}
 
@@ -435,7 +487,11 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 
 // List 获取用户的API Key列表
 func (s *APIKeyService) List(ctx context.Context, userID int64, params pagination.PaginationParams, filters APIKeyListFilters) ([]APIKey, *pagination.PaginationResult, error) {
-	keys, pagination, err := s.apiKeyRepo.ListByUserID(ctx, userID, params, filters)
+	apiKeyRepo, err := s.requireAPIKeyRepo()
+	if err != nil {
+		return nil, nil, err
+	}
+	keys, pagination, err := apiKeyRepo.ListByUserID(ctx, userID, params, filters)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list api keys: %w", err)
 	}
@@ -447,7 +503,11 @@ func (s *APIKeyService) VerifyOwnership(ctx context.Context, userID int64, apiKe
 		return []int64{}, nil
 	}
 
-	validIDs, err := s.apiKeyRepo.VerifyOwnership(ctx, userID, apiKeyIDs)
+	apiKeyRepo, err := s.requireAPIKeyRepo()
+	if err != nil {
+		return nil, err
+	}
+	validIDs, err := apiKeyRepo.VerifyOwnership(ctx, userID, apiKeyIDs)
 	if err != nil {
 		return nil, fmt.Errorf("verify api key ownership: %w", err)
 	}
@@ -456,7 +516,11 @@ func (s *APIKeyService) VerifyOwnership(ctx context.Context, userID int64, apiKe
 
 // GetByID 根据ID获取API Key
 func (s *APIKeyService) GetByID(ctx context.Context, id int64) (*APIKey, error) {
-	apiKey, err := s.apiKeyRepo.GetByID(ctx, id)
+	apiKeyRepo, err := s.requireAPIKeyRepo()
+	if err != nil {
+		return nil, err
+	}
+	apiKey, err := apiKeyRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get api key: %w", err)
 	}
@@ -507,7 +571,11 @@ func (s *APIKeyService) GetByKey(ctx context.Context, key string) (*APIKey, erro
 		}
 	}
 
-	apiKey, err := s.apiKeyRepo.GetByKeyForAuth(ctx, key)
+	apiKeyRepo, err := s.requireAPIKeyRepo()
+	if err != nil {
+		return nil, err
+	}
+	apiKey, err := apiKeyRepo.GetByKeyForAuth(ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("get api key: %w", err)
 	}
@@ -518,7 +586,11 @@ func (s *APIKeyService) GetByKey(ctx context.Context, key string) (*APIKey, erro
 
 // Update 更新API Key
 func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req UpdateAPIKeyRequest) (*APIKey, error) {
-	apiKey, err := s.apiKeyRepo.GetByID(ctx, id)
+	apiKeyRepo, err := s.requireAPIKeyRepo()
+	if err != nil {
+		return nil, err
+	}
+	apiKey, err := apiKeyRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get api key: %w", err)
 	}
@@ -549,12 +621,20 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 
 	if req.GroupID != nil {
 		// 验证分组权限
-		user, err := s.userRepo.GetByID(ctx, userID)
+		userRepo, err := s.requireUserRepo()
+		if err != nil {
+			return nil, err
+		}
+		groupRepo, err := s.requireGroupRepo()
+		if err != nil {
+			return nil, err
+		}
+		user, err := userRepo.GetByID(ctx, userID)
 		if err != nil {
 			return nil, fmt.Errorf("get user: %w", err)
 		}
 
-		group, err := s.groupRepo.GetByID(ctx, *req.GroupID)
+		group, err := groupRepo.GetByID(ctx, *req.GroupID)
 		if err != nil {
 			return nil, fmt.Errorf("get group: %w", err)
 		}
@@ -627,7 +707,7 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 		apiKey.Window7dStart = nil
 	}
 
-	if err := s.apiKeyRepo.Update(ctx, apiKey); err != nil {
+	if err := apiKeyRepo.Update(ctx, apiKey); err != nil {
 		return nil, fmt.Errorf("update api key: %w", err)
 	}
 
@@ -644,7 +724,11 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 
 // Delete 删除API Key
 func (s *APIKeyService) Delete(ctx context.Context, id int64, userID int64) error {
-	key, ownerID, err := s.apiKeyRepo.GetKeyAndOwnerID(ctx, id)
+	apiKeyRepo, err := s.requireAPIKeyRepo()
+	if err != nil {
+		return err
+	}
+	key, ownerID, err := apiKeyRepo.GetKeyAndOwnerID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("get api key: %w", err)
 	}
@@ -655,7 +739,7 @@ func (s *APIKeyService) Delete(ctx context.Context, id int64, userID int64) erro
 	}
 
 	// 事务内:写审计 + 软删除(tombstone)。
-	if err := s.apiKeyRepo.DeleteWithAudit(ctx, id); err != nil {
+	if err := apiKeyRepo.DeleteWithAudit(ctx, id); err != nil {
 		return fmt.Errorf("delete api key: %w", err)
 	}
 
@@ -683,7 +767,11 @@ func (s *APIKeyService) ValidateKey(ctx context.Context, key string) (*APIKey, *
 	}
 
 	// 获取用户信息
-	user, err := s.userRepo.GetByID(ctx, apiKey.UserID)
+	userRepo, err := s.requireUserRepo()
+	if err != nil {
+		return nil, nil, err
+	}
+	user, err := userRepo.GetByID(ctx, apiKey.UserID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("get user: %w", err)
 	}
@@ -702,6 +790,10 @@ func (s *APIKeyService) TouchLastUsed(ctx context.Context, keyID int64) error {
 	if keyID <= 0 {
 		return nil
 	}
+	apiKeyRepo, err := s.requireAPIKeyRepo()
+	if err != nil {
+		return err
+	}
 
 	now := time.Now()
 	if v, ok := s.lastUsedTouchL1.Load(keyID); ok {
@@ -710,7 +802,7 @@ func (s *APIKeyService) TouchLastUsed(ctx context.Context, keyID int64) error {
 		}
 	}
 
-	_, err, _ := s.lastUsedTouchSF.Do(strconv.FormatInt(keyID, 10), func() (any, error) {
+	_, err, _ = s.lastUsedTouchSF.Do(strconv.FormatInt(keyID, 10), func() (any, error) {
 		latest := time.Now()
 		if v, ok := s.lastUsedTouchL1.Load(keyID); ok {
 			if nextAllowedAt, ok := v.(time.Time); ok && latest.Before(nextAllowedAt) {
@@ -718,7 +810,7 @@ func (s *APIKeyService) TouchLastUsed(ctx context.Context, keyID int64) error {
 			}
 		}
 
-		if err := s.apiKeyRepo.UpdateLastUsed(ctx, keyID, latest); err != nil {
+		if err := apiKeyRepo.UpdateLastUsed(ctx, keyID, latest); err != nil {
 			s.lastUsedTouchL1.Store(keyID, latest.Add(apiKeyLastUsedFailBackoff))
 			return nil, fmt.Errorf("touch api key last used: %w", err)
 		}
@@ -747,20 +839,32 @@ func (s *APIKeyService) IncrementUsage(ctx context.Context, keyID int64) error {
 // - 标准类型分组：公开的（非专属）或用户被明确允许的
 // - 订阅类型分组：用户有有效订阅的
 func (s *APIKeyService) GetAvailableGroups(ctx context.Context, userID int64) ([]Group, error) {
+	userRepo, err := s.requireUserRepo()
+	if err != nil {
+		return nil, err
+	}
+	groupRepo, err := s.requireGroupRepo()
+	if err != nil {
+		return nil, err
+	}
+	userSubRepo, err := s.requireUserSubRepo()
+	if err != nil {
+		return nil, err
+	}
 	// 获取用户信息
-	user, err := s.userRepo.GetByID(ctx, userID)
+	user, err := userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
 	}
 
 	// 获取所有活跃分组
-	allGroups, err := s.groupRepo.ListActive(ctx)
+	allGroups, err := groupRepo.ListActive(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list active groups: %w", err)
 	}
 
 	// 获取用户的所有有效订阅
-	activeSubscriptions, err := s.userSubRepo.ListActiveByUserID(ctx, userID)
+	activeSubscriptions, err := userSubRepo.ListActiveByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list active subscriptions: %w", err)
 	}
@@ -789,12 +893,20 @@ func (s *APIKeyService) GetAvailableGroups(ctx context.Context, userID int64) ([
 // - 只返回当前用户至少存在一个 active API Key 绑定到该分组的线路；
 // - 展示名由 Group.DisplayLabel() 兜底到 Name。
 func (s *APIKeyService) GetAvailableRouteGroups(ctx context.Context, userID int64) ([]Group, error) {
-	allGroups, err := s.groupRepo.ListActive(ctx)
+	groupRepo, err := s.requireGroupRepo()
+	if err != nil {
+		return nil, err
+	}
+	apiKeyRepo, err := s.requireAPIKeyRepo()
+	if err != nil {
+		return nil, err
+	}
+	allGroups, err := groupRepo.ListActive(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list active groups: %w", err)
 	}
 
-	keys, err := s.apiKeyRepo.SearchAPIKeys(ctx, userID, "", apiKeyRouteSelectionScanLimit)
+	keys, err := apiKeyRepo.SearchAPIKeys(ctx, userID, "", apiKeyRouteSelectionScanLimit)
 	if err != nil {
 		return nil, fmt.Errorf("list user route keys: %w", err)
 	}
@@ -837,7 +949,11 @@ func (s *APIKeyService) canUserBindGroupInternal(user *User, group *Group, subsc
 }
 
 func (s *APIKeyService) SearchAPIKeys(ctx context.Context, userID int64, keyword string, limit int) ([]APIKey, error) {
-	keys, err := s.apiKeyRepo.SearchAPIKeys(ctx, userID, keyword, limit)
+	apiKeyRepo, err := s.requireAPIKeyRepo()
+	if err != nil {
+		return nil, err
+	}
+	keys, err := apiKeyRepo.SearchAPIKeys(ctx, userID, keyword, limit)
 	if err != nil {
 		return nil, fmt.Errorf("search api keys: %w", err)
 	}
@@ -883,8 +999,12 @@ func (s *APIKeyService) UpdateQuotaUsed(ctx context.Context, apiKeyID int64, cos
 	type quotaStateReader interface {
 		IncrementQuotaUsedAndGetState(ctx context.Context, id int64, amount float64) (*APIKeyQuotaUsageState, error)
 	}
+	apiKeyRepo, err := s.requireAPIKeyRepo()
+	if err != nil {
+		return err
+	}
 
-	if repo, ok := s.apiKeyRepo.(quotaStateReader); ok {
+	if repo, ok := apiKeyRepo.(quotaStateReader); ok {
 		state, err := repo.IncrementQuotaUsedAndGetState(ctx, apiKeyID, cost)
 		if err != nil {
 			return fmt.Errorf("increment quota used: %w", err)
@@ -896,13 +1016,13 @@ func (s *APIKeyService) UpdateQuotaUsed(ctx context.Context, apiKeyID int64, cos
 	}
 
 	// Use repository to atomically increment quota_used
-	newQuotaUsed, err := s.apiKeyRepo.IncrementQuotaUsed(ctx, apiKeyID, cost)
+	newQuotaUsed, err := apiKeyRepo.IncrementQuotaUsed(ctx, apiKeyID, cost)
 	if err != nil {
 		return fmt.Errorf("increment quota used: %w", err)
 	}
 
 	// Check if quota is now exhausted and update status if needed
-	apiKey, err := s.apiKeyRepo.GetByID(ctx, apiKeyID)
+	apiKey, err := apiKeyRepo.GetByID(ctx, apiKeyID)
 	if err != nil {
 		return nil // Don't fail the request, just log
 	}
@@ -910,7 +1030,7 @@ func (s *APIKeyService) UpdateQuotaUsed(ctx context.Context, apiKeyID int64, cos
 	// If quota is set and now exhausted, update status
 	if apiKey.Quota > 0 && newQuotaUsed >= apiKey.Quota {
 		apiKey.Status = StatusAPIKeyQuotaExhausted
-		if err := s.apiKeyRepo.Update(ctx, apiKey); err != nil {
+		if err := apiKeyRepo.Update(ctx, apiKey); err != nil {
 			return nil // Don't fail the request
 		}
 		// Invalidate cache so next request sees the new status
@@ -922,7 +1042,11 @@ func (s *APIKeyService) UpdateQuotaUsed(ctx context.Context, apiKeyID int64, cos
 
 // GetRateLimitData returns rate limit usage and window state for an API key.
 func (s *APIKeyService) GetRateLimitData(ctx context.Context, id int64) (*APIKeyRateLimitData, error) {
-	return s.apiKeyRepo.GetRateLimitData(ctx, id)
+	apiKeyRepo, err := s.requireAPIKeyRepo()
+	if err != nil {
+		return nil, err
+	}
+	return apiKeyRepo.GetRateLimitData(ctx, id)
 }
 
 // UpdateRateLimitUsage atomically increments rate limit usage counters in the DB.
@@ -930,5 +1054,9 @@ func (s *APIKeyService) UpdateRateLimitUsage(ctx context.Context, apiKeyID int64
 	if cost <= 0 {
 		return nil
 	}
-	return s.apiKeyRepo.IncrementRateLimitUsage(ctx, apiKeyID, cost)
+	apiKeyRepo, err := s.requireAPIKeyRepo()
+	if err != nil {
+		return err
+	}
+	return apiKeyRepo.IncrementRateLimitUsage(ctx, apiKeyID, cost)
 }

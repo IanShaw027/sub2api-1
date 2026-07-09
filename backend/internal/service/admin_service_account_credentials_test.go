@@ -52,6 +52,30 @@ func TestAdminServiceUpdateAccountMergesCredentialPatchAndPreservesSensitiveValu
 	require.NotContains(t, updated.Credentials, "compact_model_mapping")
 }
 
+func TestAdminServiceUpdateAccountRejectsNilInput(t *testing.T) {
+	t.Parallel()
+
+	repo := &kiroDefaultAccountRepoStub{
+		accountsByID: map[int64]*Account{
+			42: {
+				ID:       42,
+				Name:     "openai-oauth",
+				Platform: PlatformOpenAI,
+				Type:     AccountTypeOAuth,
+				Status:   StatusActive,
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	updated, err := svc.UpdateAccount(context.Background(), 42, nil)
+
+	require.Nil(t, updated)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "account input is required")
+	require.Empty(t, repo.updatedAccounts)
+}
+
 func TestAdminServiceUpdateAccountIgnoresEmptySensitiveCredentialPatch(t *testing.T) {
 	t.Parallel()
 

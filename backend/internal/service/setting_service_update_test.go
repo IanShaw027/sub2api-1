@@ -232,6 +232,64 @@ func TestSettingService_UpdateSettings_RegistrationEmailSuffixWhitelist_Invalid(
 	require.Equal(t, "INVALID_REGISTRATION_EMAIL_SUFFIX_WHITELIST", infraerrors.Reason(err))
 }
 
+func TestSettingService_UpdateSettings_NilRepoReturnsError(t *testing.T) {
+	svc := NewSettingService(nil, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "setting repository unavailable")
+}
+
+func TestSettingService_OIDCSecurityWriteDefaults_NilRepoFallsBackToConfig(t *testing.T) {
+	svc := NewSettingService(nil, &config.Config{
+		OIDC: config.OIDCConnectConfig{
+			UsePKCEExplicit:          true,
+			UsePKCE:                  true,
+			ValidateIDTokenExplicit:  true,
+			ValidateIDToken:          false,
+		},
+	})
+
+	usePKCE, validateIDToken, err := svc.OIDCSecurityWriteDefaults(context.Background())
+
+	require.NoError(t, err)
+	require.True(t, usePKCE)
+	require.False(t, validateIDToken)
+}
+
+func TestSettingService_UpdateSettingsWithAuthSourceDefaults_NilRepoReturnsError(t *testing.T) {
+	svc := NewSettingService(nil, &config.Config{})
+
+	err := svc.UpdateSettingsWithAuthSourceDefaults(context.Background(), &SystemSettings{}, &AuthSourceDefaultSettings{})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "setting repository unavailable")
+}
+
+func TestSettingService_InitializeDefaultSettings_NilRepoReturnsError(t *testing.T) {
+	svc := NewSettingService(nil, &config.Config{
+		Default: config.DefaultConfig{
+			UserConcurrency: 5,
+			UserBalance:     1.25,
+		},
+	})
+
+	err := svc.InitializeDefaultSettings(context.Background())
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "setting repository unavailable")
+}
+
+func TestSettingService_InitializeDefaultSettings_NilConfigReturnsError(t *testing.T) {
+	svc := NewSettingService(&settingAntigravityUARepoStub{}, nil)
+
+	err := svc.InitializeDefaultSettings(context.Background())
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "config not loaded")
+}
+
 func TestParseDefaultSubscriptions_NormalizesValues(t *testing.T) {
 	got := parseDefaultSubscriptions(`[{"group_id":11,"validity_days":30},{"group_id":11,"validity_days":60},{"group_id":0,"validity_days":10},{"group_id":12,"validity_days":99999}]`)
 	require.Equal(t, []DefaultSubscriptionSetting{
@@ -561,7 +619,7 @@ func TestSettingService_UpdateSettings_OpenAIWSDeltaRuntimeSettings(t *testing.T
 	require.Equal(t, "true", repo.updates[SettingKeyOpenAIWSTempDiagLogsEnabled])
 	require.True(t, openAIWSDeltaShadowEnabled())
 	require.False(t, openAIWSActiveDeltaEnabled(), "active-delta should follow runtime DB-backed setting without restart")
-	require.False(t, shouldSuppressOpenAIWSTemporaryDiagnosticLog("temporary_diag=delta remove_after_debug=true"))
+	require.False(t, shouldSuppressOpenAIWSTemporaryDiagnosticLog("temporary_diag=sample"))
 }
 
 func TestSettingService_UpdateSettings_OpenAIWSDeltaRuntimeSettingsDefaultTrueOnPartialUpdate(t *testing.T) {
@@ -578,7 +636,7 @@ func TestSettingService_UpdateSettings_OpenAIWSDeltaRuntimeSettingsDefaultTrueOn
 	require.Equal(t, "false", repo.updates[SettingKeyOpenAIWSTempDiagLogsEnabled])
 	require.True(t, openAIWSDeltaShadowEnabled())
 	require.True(t, openAIWSActiveDeltaEnabled())
-	require.True(t, shouldSuppressOpenAIWSTemporaryDiagnosticLog("temporary_diag=delta remove_after_debug=true"))
+	require.True(t, shouldSuppressOpenAIWSTemporaryDiagnosticLog("temporary_diag=sample"))
 }
 
 func TestSettingService_LoadOpenAIWSDeltaRuntimeSettingsInitializesCache(t *testing.T) {
@@ -597,7 +655,7 @@ func TestSettingService_LoadOpenAIWSDeltaRuntimeSettingsInitializesCache(t *test
 	require.NoError(t, svc.LoadOpenAIWSDeltaRuntimeSettings(context.Background()))
 	require.True(t, openAIWSDeltaShadowEnabled())
 	require.False(t, openAIWSActiveDeltaEnabled())
-	require.False(t, shouldSuppressOpenAIWSTemporaryDiagnosticLog("temporary_diag=delta remove_after_debug=true"))
+	require.False(t, shouldSuppressOpenAIWSTemporaryDiagnosticLog("temporary_diag=sample"))
 }
 
 func TestSettingService_UpdateSettings_AntigravityUserAgentVersion(t *testing.T) {

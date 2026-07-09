@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -306,6 +307,106 @@ func TestResolveImageReferenceValidatesResolvedIPEachRequest(t *testing.T) {
 	}
 	if err == nil || err.Error() != "resolved ip rejected" {
 		t.Fatalf("error = %v, want resolved ip rejected", err)
+	}
+}
+
+func TestResolveImageReferenceRejectsNonDefaultRemotePort(t *testing.T) {
+	cfg := newMediaIngestTestConfig()
+
+	_, _, _, err := resolveImageReference(
+		context.Background(),
+		cfg,
+		"https://cdn.example.com:8443/image.png",
+		"image.png",
+		cfg.Media.MaxUploadSizeBytes,
+	)
+	if err == nil {
+		t.Fatalf("expected non-default port rejection")
+	}
+	if !strings.Contains(err.Error(), "port") {
+		t.Fatalf("error = %v, want port-related rejection", err)
+	}
+}
+
+func TestResolveImageReferenceRedirectValidatesEachHopAndLimitsCount(t *testing.T) {
+	cfg := newMediaIngestTestConfig()
+	var validatedHosts []string
+
+	restore := stubMediaIngestRemoteFetchHooks(t, func(host string) error {
+		validatedHosts = append(validatedHosts, host)
+		if host == "127.0.0.1" {
+			return errors.New("redirect target rejected")
+		}
+		return nil
+	}, func(_ *config.Config) (*http.Client, error) {
+		return &http.Client{
+			Transport: mediaIngestRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				switch req.URL.Host {
+				case "cdn.example.com":
+					return &http.Response{
+						StatusCode: http.StatusFound,
+						Header: http.Header{
+							"Location": []string{"http://127.0.0.1/image.png"},
+						},
+						Body:    io.NopCloser(bytes.NewReader(nil)),
+						Request: req,
+					}, nil
+				default:
+					t.Fatalf("unexpected request host %q", req.URL.Host)
+					return nil, nil
+				}
+			}),
+		}, nil
+	})
+	defer restore()
+
+	_, _, _, err := resolveImageReference(
+		context.Background(),
+		cfg,
+		"https://cdn.example.com/image.png",
+		"image.png",
+		cfg.Media.MaxUploadSizeBytes,
+	)
+	if err == nil || !strings.Contains(err.Error(), "redirect target rejected") {
+		t.Fatalf("error = %v, want redirect target rejected", err)
+	}
+	if len(validatedHosts) < 2 {
+		t.Fatalf("expected initial and redirect hosts to be validated, got %v", validatedHosts)
+	}
+}
+
+func TestResolveImageReferenceRejectsTooManyRedirects(t *testing.T) {
+	cfg := newMediaIngestTestConfig()
+
+	restore := stubMediaIngestRemoteFetchHooks(t, func(string) error { return nil }, func(_ *config.Config) (*http.Client, error) {
+		return &http.Client{
+			Transport: mediaIngestRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+				next, _ := url.Parse("https://cdn.example.com" + req.URL.Path + "/next")
+				return &http.Response{
+					StatusCode: http.StatusFound,
+					Header: http.Header{
+						"Location": []string{next.String()},
+					},
+					Body:    io.NopCloser(bytes.NewReader(nil)),
+					Request: req,
+				}, nil
+			}),
+		}, nil
+	})
+	defer restore()
+
+	_, _, _, err := resolveImageReference(
+		context.Background(),
+		cfg,
+		"https://cdn.example.com/image.png",
+		"image.png",
+		cfg.Media.MaxUploadSizeBytes,
+	)
+	if err == nil {
+		t.Fatalf("expected redirect limit rejection")
+	}
+	if !strings.Contains(err.Error(), "redirect") {
+		t.Fatalf("error = %v, want redirect-related rejection", err)
 	}
 }
 

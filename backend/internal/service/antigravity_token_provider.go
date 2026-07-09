@@ -67,7 +67,7 @@ func (p *AntigravityTokenProvider) SetTempUnschedCache(cache TempUnschedCache) {
 // GetAccessToken returns a valid access_token.
 func (p *AntigravityTokenProvider) GetAccessToken(ctx context.Context, account *Account) (string, error) {
 	if account == nil {
-		return "", errors.New("account is nil")
+		return "", errors.New("account is required")
 	}
 	if account.Platform != PlatformAntigravity {
 		return "", errors.New("not an antigravity account")

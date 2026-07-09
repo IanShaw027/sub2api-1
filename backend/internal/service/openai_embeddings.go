@@ -25,6 +25,9 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 	body []byte,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	if account == nil {
+		return nil, errors.New("account is required")
+	}
 	body = s.normalizeOpenAICompatibleFingerprintJSONBody(ctx, c, account, body, "embeddings")
 	startTime := time.Now()
 
@@ -91,6 +94,7 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 	}
 	tlsRuntime := s.resolveOpenAICompatibleTLSFingerprintRuntime(ctx, c, account, "http")
 	applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+	upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsRuntime.Profile)
 	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
@@ -363,6 +367,7 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	}
 	tlsRuntime := s.resolveOpenAICompatibleTLSFingerprintRuntime(ctx, c, account, "http")
 	applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+	upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsRuntime.Profile)
 
 	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 	if err != nil {
@@ -370,7 +375,7 @@ func (s *OpenAIGatewayService) ForwardVideos(
 		setOpsUpstreamError(c, 0, safeErr, "")
 		return nil, &UpstreamFailoverError{StatusCode: 0, ResponseBody: nil, RetryableOnSameAccount: true}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 400 && !videoBillingRequest {
 		pathJobID := ExtractGrokVideoRequestIDFromPath(targetPath)
@@ -545,12 +550,18 @@ func (s *OpenAIGatewayService) ForwardVideos(
 			strings.TrimSpace(gjson.GetBytes(respBody, "size").String()),
 			strings.TrimSpace(gjson.GetBytes(respBody, "resolution").String()),
 		))
-		videoCount = firstPositiveInt(
-			gjsonPositiveInt(body, "n_variants"),
-			gjsonPositiveInt(body, "n"),
-			int(gjson.GetBytes(respBody, "data.#").Int()),
-			1,
-		)
+		// 按响应实际交付的视频数量计费优先。若响应明确返回 data 数组但为空，
+		// 视为当前尚未交付任何视频，必须记 0；仅当响应完全不给出任何交付数量线索时，
+		// 才回退请求声明的 n_variants/n，避免 200 + data:[] 这类占位态按请求数量超额计费。
+		if data := gjson.GetBytes(respBody, "data"); data.Exists() && data.IsArray() {
+			videoCount = len(data.Array())
+		} else {
+			videoCount = firstPositiveInt(
+				gjsonPositiveInt(body, "n_variants"),
+				gjsonPositiveInt(body, "n"),
+				1,
+			)
+		}
 	}
 	// Capture async job id so the handler can pin sticky scheduling for GET polls.
 	responseID := extractGrokMediaVideoRequestID(respBody)

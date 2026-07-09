@@ -198,6 +198,9 @@ type AssignSubscriptionInput struct {
 
 // AssignSubscription 分配订阅给用户（不允许重复分配）
 func (s *SubscriptionService) AssignSubscription(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, error) {
+	if input == nil {
+		return nil, fmt.Errorf("subscription input is required")
+	}
 	sub, _, err := s.assignSubscriptionWithReuse(ctx, input)
 	if err != nil {
 		return nil, err
@@ -212,6 +215,9 @@ func (s *SubscriptionService) AssignSubscription(ctx context.Context, input *Ass
 //
 // 如果没有订阅：创建新订阅
 func (s *SubscriptionService) AssignOrExtendSubscription(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, bool, error) {
+	if input == nil {
+		return nil, false, fmt.Errorf("subscription input is required")
+	}
 	// 检查分组是否存在且为订阅类型
 	group, err := s.groupRepo.GetByID(ctx, input.GroupID)
 	if err != nil {
@@ -423,6 +429,9 @@ type BulkAssignResult struct {
 
 // BulkAssignSubscription 批量分配订阅
 func (s *SubscriptionService) BulkAssignSubscription(ctx context.Context, input *BulkAssignSubscriptionInput) (*BulkAssignResult, error) {
+	if input == nil {
+		return nil, fmt.Errorf("subscription input is required")
+	}
 	result := &BulkAssignResult{
 		Subscriptions: make([]UserSubscription, 0),
 		Errors:        make([]string, 0),

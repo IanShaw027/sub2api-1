@@ -13,7 +13,12 @@ import (
 // Must be placed AFTER JWT auth middleware so that the user role is available in context.
 func BackendModeUserGuard(settingService *service.SettingService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if settingService == nil || !settingService.IsBackendModeEnabled(c.Request.Context()) {
+		if settingService == nil {
+			response.Forbidden(c, "Backend mode is active. User self-service is disabled.")
+			c.Abort()
+			return
+		}
+		if !settingService.IsBackendModeEnabled(c.Request.Context()) {
 			c.Next()
 			return
 		}
@@ -72,7 +77,12 @@ func backendModeAllowsAuthPath(path string) bool {
 // still enforce admin-only login and forbid self-service registration.
 func BackendModeAuthGuard(settingService *service.SettingService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if settingService == nil || !settingService.IsBackendModeEnabled(c.Request.Context()) {
+		if settingService == nil {
+			response.Forbidden(c, "Backend mode is active. Registration and self-service auth flows are disabled.")
+			c.Abort()
+			return
+		}
+		if !settingService.IsBackendModeEnabled(c.Request.Context()) {
 			c.Next()
 			return
 		}
@@ -87,7 +97,7 @@ func BackendModeAuthGuard(settingService *service.SettingService) gin.HandlerFun
 
 func TicketFeatureGuard(settingService *service.SettingService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if settingService == nil || settingService.IsTicketEnabled(c.Request.Context()) {
+		if settingService != nil && settingService.IsTicketEnabled(c.Request.Context()) {
 			c.Next()
 			return
 		}
@@ -98,7 +108,7 @@ func TicketFeatureGuard(settingService *service.SettingService) gin.HandlerFunc 
 
 func AffiliateFeatureGuard(settingService *service.SettingService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if settingService == nil || settingService.IsAffiliateEnabled(c.Request.Context()) {
+		if settingService != nil && settingService.IsAffiliateEnabled(c.Request.Context()) {
 			c.Next()
 			return
 		}

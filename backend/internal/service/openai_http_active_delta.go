@@ -236,7 +236,6 @@ func (s *OpenAIGatewayService) bindHTTPResponseSessionContext(ctx context.Contex
 		rawVsClientVisibleEqual: true,
 	}
 	store.BindSessionContext(groupID, apiKeyID, sessionHash, value, ttl)
-	logOpenAIWSSessionContextBind(groupID, apiKeyID, account.ID, account.Type, sessionHash, "http", responseID, ttl, len(inputHashes), len(inputHashes), false, true)
 }
 
 func restoreOpenAIHTTPActiveDeltaFullReplayBody(original []byte) ([]byte, bool, error) {

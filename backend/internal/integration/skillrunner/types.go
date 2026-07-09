@@ -3,6 +3,7 @@ package skillrunner
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -96,7 +97,7 @@ func (g ReviewGate) Approved(bundleDigest string) bool {
 		return false
 	}
 	if g.ArtifactDigest == "" {
-		return true
+		return false
 	}
 	return strings.EqualFold(g.ArtifactDigest, bundleDigest)
 }
@@ -221,6 +222,20 @@ type DispatchResult struct {
 	HostScratchDir string       `json:"hostScratchDir,omitempty"`
 	InputPath      string       `json:"inputPath,omitempty"`
 	OutputPath     string       `json:"outputPath,omitempty"`
+	cleanup        func() error
+	cleanupOnce    sync.Once
+	cleanupErr     error
+}
+
+func (r *DispatchResult) Cleanup() error {
+	if r == nil || r.cleanup == nil {
+		return nil
+	}
+	r.cleanupOnce.Do(func() {
+		r.cleanupErr = r.cleanup()
+		r.cleanup = nil
+	})
+	return r.cleanupErr
 }
 
 type Runner interface {

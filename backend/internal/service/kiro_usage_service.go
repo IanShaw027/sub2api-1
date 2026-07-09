@@ -82,7 +82,7 @@ func (s *KiroUsageService) WithProxyRepo(proxyRepo ProxyRepository) *KiroUsageSe
 
 func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Account, accessToken string) (*KiroUsageLimits, error) {
 	if account == nil {
-		return nil, fmt.Errorf("account is nil")
+		return nil, fmt.Errorf("account is required")
 	}
 	account = s.prepareAccount(ctx, account)
 	host := fmt.Sprintf("q.%s.amazonaws.com", KiroRegion(account))
@@ -104,7 +104,7 @@ func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Accoun
 	if s != nil && s.settingService != nil {
 		runtimeSettings = s.settingService.GetKiroRuntimeSettings(ctx)
 	}
-	machineID := kiro.GenerateMachineID(account.GetCredential("machine_id"), "", account.GetCredential("refresh_token"))
+	machineID := kiro.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
 	kiroVersion := runtimeSettings.KiroVersion
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	if isKiroExternalIDPAccount(account) {
@@ -113,8 +113,9 @@ func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Accoun
 	req.Header.Set("host", host)
 	req.Header.Set("amz-sdk-invocation-id", generateRequestID())
 	req.Header.Set("amz-sdk-request", "attempt=1; max=1")
-	req.Header.Set("x-amz-user-agent", fmt.Sprintf("aws-sdk-js/1.0.0 KiroIDE-%s-%s", kiroVersion, machineID))
-	req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/1.0.0 ua/2.1 os/%s lang/js md/nodejs#%s api/codewhispererruntime#1.0.0 m/N,E KiroIDE-%s-%s", runtimeSettings.SystemVersion, runtimeSettings.NodeVersion, kiroVersion, machineID))
+	xAmzUserAgent, userAgent := kiro.BuildCodeWhispererRuntimeUserAgents(kiroVersion, machineID, runtimeSettings.SystemVersion, runtimeSettings.NodeVersion)
+	req.Header.Set("x-amz-user-agent", xAmzUserAgent)
+	req.Header.Set("User-Agent", userAgent)
 	if runtimeSettings.KiroCommit != "" {
 		req.Header.Set("x-amzn-kiro-commit", runtimeSettings.KiroCommit)
 	}
@@ -201,10 +202,10 @@ func doKiroSidecarRequest(
 	timeout time.Duration,
 ) (*http.Response, error) {
 	if req == nil {
-		return nil, fmt.Errorf("request is nil")
+		return nil, fmt.Errorf("request is required")
 	}
 	if account == nil {
-		return nil, fmt.Errorf("account is nil")
+		return nil, fmt.Errorf("account is required")
 	}
 	if httpUpstream != nil {
 		return httpUpstream.DoWithTLS(

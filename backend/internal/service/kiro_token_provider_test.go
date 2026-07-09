@@ -11,6 +11,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type kiroTokenProviderCacheStub struct {
+	refreshAPICacheStub
+	token        string
+	setCalls     int
+	lastSetToken string
+	lastSetTTL   time.Duration
+}
+
+func (s *kiroTokenProviderCacheStub) GetAccessToken(context.Context, string) (string, error) {
+	return s.token, nil
+}
+
+func (s *kiroTokenProviderCacheStub) SetAccessToken(_ context.Context, _ string, token string, ttl time.Duration) error {
+	s.setCalls++
+	s.lastSetToken = token
+	s.lastSetTTL = ttl
+	return nil
+}
+
 func TestKiroTokenProvider_RefreshAccount_UsesRefreshAPI(t *testing.T) {
 	t.Parallel()
 
@@ -44,6 +63,17 @@ func TestKiroTokenProvider_RefreshAccount_UsesRefreshAPI(t *testing.T) {
 	require.Equal(t, "fresh-refresh", refreshedAccount.GetCredential("refresh_token"))
 	require.Equal(t, 1, executor.refreshCalls)
 	require.Equal(t, 1, repo.updateCredentialsCalls)
+}
+
+func TestKiroTokenProvider_RefreshAccount_RejectsNilAccount(t *testing.T) {
+	t.Parallel()
+
+	provider := NewKiroTokenProvider(nil, nil)
+
+	account, err := provider.RefreshAccount(context.Background(), nil)
+
+	require.Nil(t, account)
+	require.EqualError(t, err, "account is required")
 }
 
 func TestKiroTokenProvider_RefreshAccount_FallsBackToExecutor(t *testing.T) {
@@ -205,6 +235,90 @@ func TestKiroTokenProvider_GetAccessTokenReturnsRefreshError(t *testing.T) {
 	require.Error(t, err)
 	require.Empty(t, token)
 	require.Equal(t, "stale-access", account.GetCredential("access_token"))
+}
+
+func TestKiroTokenProvider_GetAccessTokenRejectsNilAccount(t *testing.T) {
+	t.Parallel()
+
+	provider := NewKiroTokenProvider(nil, nil)
+
+	token, err := provider.GetAccessToken(context.Background(), nil)
+
+	require.Empty(t, token)
+	require.EqualError(t, err, "account is required")
+}
+
+func TestKiroTokenProvider_GetAccessTokenDoesNotUseCachedExpiredTokenAfterRefreshFailure(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       560,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "expired-access",
+			"refresh_token": "stale-refresh",
+			"expires_at":    time.Now().Add(-time.Minute).UTC().Format(time.RFC3339),
+		},
+	}
+	repo := &refreshAPIAccountRepo{account: account}
+	cache := &kiroTokenProviderCacheStub{
+		refreshAPICacheStub: refreshAPICacheStub{
+			lockResult: true,
+		},
+		token: "cached-expired-access",
+	}
+	executor := &refreshAPIExecutorStub{
+		needsRefresh: true,
+		err:          errors.New("refresh failed"),
+	}
+
+	provider := NewKiroTokenProvider(repo, cache)
+	provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), executor)
+
+	token, err := provider.GetAccessToken(context.Background(), account)
+	require.Error(t, err)
+	require.Empty(t, token)
+	require.Equal(t, 1, executor.refreshCalls)
+}
+
+func TestKiroTokenProvider_GetAccessTokenDoesNotCacheExpiredTokenAfterRefreshFailure(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       561,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "expired-access",
+			"refresh_token": "stale-refresh",
+			"expires_at":    time.Now().Add(-time.Minute).UTC().Format(time.RFC3339),
+		},
+	}
+	repo := &refreshAPIAccountRepo{account: account}
+	cache := &kiroTokenProviderCacheStub{
+		refreshAPICacheStub: refreshAPICacheStub{
+			lockResult: true,
+		},
+	}
+	executor := &refreshAPIExecutorStub{
+		needsRefresh: true,
+		err:          errors.New("refresh failed"),
+	}
+
+	provider := NewKiroTokenProvider(repo, cache)
+	provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), executor)
+	provider.SetRefreshPolicy(ProviderRefreshPolicy{
+		OnRefreshError: ProviderRefreshErrorUseExistingToken,
+		OnLockHeld:     ProviderLockHeldWaitForCache,
+		FailureTTL:     time.Minute,
+	})
+
+	token, err := provider.GetAccessToken(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, "expired-access", token)
+	require.Equal(t, 1, executor.refreshCalls)
+	require.Zero(t, cache.setCalls, "refresh failure should not re-cache the expired access token")
 }
 
 func TestKiroTokenProvider_GetAccessToken_WaitsForLockHolderToPersist(t *testing.T) {

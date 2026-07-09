@@ -100,8 +100,8 @@ func runCheckForModel(ctx context.Context, provider, endpoint, apiKey, model str
 		// 错误路径：用 rawBody 而非 respText（gjson textPath 抽取在错误响应里通常为空，
 		// 会丢掉真正的上游错误信息，例如 `{"error":{"message":"No available accounts ..."}}`）。
 		res.Status = MonitorStatusError
-		bodySnippet := truncateForErrorBody(rawBody)
-		res.Message = truncateMessage(sanitizeErrorMessage(fmt.Sprintf("upstream HTTP %d: %s", statusCode, bodySnippet)))
+		bodySnippet := truncateForErrorBody(sanitizeErrorMessage(rawBody))
+		res.Message = truncateMessage(fmt.Sprintf("upstream HTTP %d: %s", statusCode, bodySnippet))
 		return res
 	}
 
@@ -601,7 +601,7 @@ var monitorAPIKeyPatterns = []struct {
 	// Anthropic（带前缀，必须先匹配）：sk-ant-xxxxxxx
 	{regexp.MustCompile(`sk-ant-[A-Za-z0-9_-]{20,}`), "sk-ant-***REDACTED***"},
 	// OpenAI / Anthropic 通用 sk-: sk-xxxxxxx
-	{regexp.MustCompile(`sk-[A-Za-z0-9-]{20,}`), "sk-***REDACTED***"},
+	{regexp.MustCompile(`sk-[A-Za-z0-9_-]{20,}`), "sk-***REDACTED***"},
 	// Gemini / Google API Key：固定前缀 + 35 位
 	{regexp.MustCompile(`AIza[A-Za-z0-9_-]{35}`), "AIza***REDACTED***"},
 	// JWT 三段式（Bearer 后常出现）：eyJxxx.eyJxxx.signature

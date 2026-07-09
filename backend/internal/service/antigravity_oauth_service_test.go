@@ -21,6 +21,18 @@ func TestAntigravityOAuthServiceGenerateAuthURLFailsWhenProxyMissing(t *testing.
 	}
 }
 
+func TestAntigravityOAuthServiceExchangeCodeRejectsNilInput(t *testing.T) {
+	svc := NewAntigravityOAuthService(&mockAntigravityProxyRepo{})
+
+	_, err := svc.ExchangeCode(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected nil input error")
+	}
+	if !strings.Contains(err.Error(), "oauth input is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestAntigravityOAuthServiceExchangeCodeRejectsProxyOverride(t *testing.T) {
 	proxyID := int64(1)
 	overrideProxyID := int64(2)
@@ -49,6 +61,33 @@ func TestAntigravityOAuthServiceExchangeCodeRejectsProxyOverride(t *testing.T) {
 	})
 	if err == nil || strings.Contains(err.Error(), "override.proxy") {
 		t.Fatalf("expected exchange to ignore override proxy, got %v", err)
+	}
+}
+
+func TestAntigravityOAuthServiceRefreshAccountTokenRejectsNilAccount(t *testing.T) {
+	svc := NewAntigravityOAuthService(&mockAntigravityProxyRepo{})
+
+	_, err := svc.RefreshAccountToken(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected nil account error")
+	}
+	if !strings.Contains(err.Error(), "Antigravity OAuth") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestAntigravityOAuthServiceFillProjectIDRejectsNilAccount(t *testing.T) {
+	svc := NewAntigravityOAuthService(&mockAntigravityProxyRepo{})
+
+	projectID, err := svc.FillProjectID(context.Background(), nil, "access-token")
+	if err == nil {
+		t.Fatal("expected nil account error")
+	}
+	if projectID != "" {
+		t.Fatalf("expected empty projectID, got %q", projectID)
+	}
+	if err.Error() != "account is required" {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

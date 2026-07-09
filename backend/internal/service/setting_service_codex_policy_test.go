@@ -38,6 +38,24 @@ func TestGetCodexRestrictionPolicy_DefaultsSafe(t *testing.T) {
 	require.Empty(t, pol.Blacklist)
 }
 
+func TestGetCodexRestrictionPolicy_NilRepoUsesSafeDefaults(t *testing.T) {
+	svc := NewSettingService(nil, &config.Config{})
+	svc.codexRestrictionPolicySF.Forget("codex_restriction_policy")
+	svc.codexRestrictionPolicyCache.Store((*cachedCodexRestrictionPolicy)(nil))
+	t.Cleanup(func() {
+		svc.codexRestrictionPolicySF.Forget("codex_restriction_policy")
+		svc.codexRestrictionPolicyCache.Store((*cachedCodexRestrictionPolicy)(nil))
+	})
+
+	pol := svc.GetCodexRestrictionPolicy(context.Background())
+	require.Empty(t, pol.MinCodexVersion)
+	require.Empty(t, pol.MaxCodexVersion)
+	require.Empty(t, pol.Whitelist)
+	require.Empty(t, pol.Blacklist)
+	require.False(t, pol.AllowAppServerClients)
+	require.True(t, openaiEngineSignalsEqual(pol.EngineFingerprintSignals, openai.DefaultEngineFingerprintSignals))
+}
+
 func TestGetCodexRestrictionPolicy_InvalidJSONSafe(t *testing.T) {
 	svc := NewSettingService(&codexPolicyMigrationRepoStub{values: map[string]string{
 		SettingKeyCodexCLIOnlyWhitelist: "not-json",

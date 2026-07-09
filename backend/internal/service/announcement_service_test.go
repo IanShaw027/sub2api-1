@@ -90,6 +90,9 @@ func (*announcementUserRepoStub) GetByEmail(context.Context, string) (*User, err
 func (*announcementUserRepoStub) GetFirstAdmin(context.Context) (*User, error)      { return nil, nil }
 func (*announcementUserRepoStub) Update(context.Context, *User) error               { return nil }
 func (*announcementUserRepoStub) Delete(context.Context, int64) error               { return nil }
+func (*announcementUserRepoStub) AddBalanceWithoutRecharge(context.Context, int64, float64) error {
+	return nil
+}
 func (*announcementUserRepoStub) GetUserAvatar(context.Context, int64) (*UserAvatar, error) {
 	return nil, nil
 }

@@ -215,10 +215,33 @@ func TestAISkillRuntimeGatewayExecutesPromptImageThroughImagesRuntime(t *testing
 	require.Equal(t, "draw a fox", dispatch.Output["revised_prompt"])
 }
 
-func TestAISkillRuntimeGatewayRejectsScriptExecutionUntilExecutorIsWired(t *testing.T) {
+func TestAISkillRuntimeGatewayExecutesScriptThroughScriptRuntime(t *testing.T) {
 	t.Parallel()
 
-	runner := &aiSkillScriptRunnerStub{}
+	runner := &aiSkillScriptRunnerStub{
+		inspectResult: &skillrunner.Bundle{
+			Digest: "sha256:script-test",
+			Manifest: skillrunner.Manifest{
+				Metadata: skillrunner.ManifestMeta{
+					Name:    "script_python_echo",
+					Version: "v1",
+				},
+				Spec: skillrunner.ScriptSpec{
+					Type:       skillrunner.SkillTypeScript,
+					Runtime:    skillrunner.RuntimePython311,
+					Entrypoint: "main.py",
+					Protocol:   skillrunner.ProtocolJSONFileV1,
+				},
+			},
+		},
+		dispatchResult: &skillrunner.DispatchResult{
+			Plan: &skillrunner.SandboxPlan{
+				Environment: map[string]string{
+					"SUB2API_SKILL_INPUT": "/sandbox/input/request.json",
+				},
+			},
+		},
+	}
 	gateway := NewAISkillRuntimeGateway(nil, nil, NewAISkillScriptRunnerRuntime(runner))
 
 	dispatch, err := gateway.Execute(context.Background(), AISkillExecutionRequest{
@@ -233,12 +256,17 @@ func TestAISkillRuntimeGatewayRejectsScriptExecutionUntilExecutorIsWired(t *test
 			ScriptName:    "script_python_echo",
 			EntryPoint:    "main.py",
 			Protocol:      skillrunner.ProtocolJSONFileV1,
+			ApprovedArtifactDigest: "sha256:script-test",
+			VersionStatus:          AISkillVersionStatusApproved,
 			ArchiveBase64: base64.StdEncoding.EncodeToString(buildAISkillArchiveFromDir(t, filepath.Join("testdata", "skills", "script_python_echo"))),
 		},
 	})
-	require.ErrorIs(t, err, ErrAISkillScriptExecutionUnavailable)
-	require.Nil(t, dispatch)
-	require.Nil(t, runner.dispatchRequest, "script runtime must not dispatch until a real executor is wired")
+	require.NoError(t, err)
+	require.NotNil(t, dispatch)
+	require.Equal(t, AISkillRunStatusDispatched, dispatch.Status)
+	require.Equal(t, "skillrunner", dispatch.Provider)
+	require.Equal(t, "sha256:script-test", dispatch.ExternalJobID)
+	require.NotNil(t, runner.dispatchRequest, "script runtime should receive the dispatch request")
 }
 
 func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
@@ -509,6 +537,68 @@ func TestAISkillScriptRunnerRuntimeAcceptsMatchingDigestWithPrefixVariance(t *te
 	require.NotNil(t, result)
 	require.NotNil(t, runner.dispatchRequest)
 	require.Equal(t, skillrunner.ReviewStatusApproved, runner.dispatchRequest.Review.Status)
+}
+
+func TestAISkillScriptRunnerRuntimeRejectsMissingRuntimeBundleFields(t *testing.T) {
+	t.Parallel()
+
+	archive := buildAISkillArchiveFromDir(t, filepath.Join("testdata", "skills", "script_python_echo"))
+	archiveBase64 := base64.StdEncoding.EncodeToString(archive)
+
+	baseInput := AISkillScriptRuntimeInput{
+		RunID:                  1,
+		ArchiveBase64:          archiveBase64,
+		ApprovedArtifactDigest: "sha256:abc123",
+		VersionStatus:          AISkillVersionStatusApproved,
+		ScriptName:             "script_python_echo",
+		Runtime:                skillrunner.RuntimePython311,
+		EntryPoint:             "main.py",
+		Protocol:               skillrunner.ProtocolJSONFileV1,
+	}
+
+	for _, tc := range []struct {
+		name  string
+		input AISkillScriptRuntimeInput
+	}{
+		{
+			name:  "runtime",
+			input: func() AISkillScriptRuntimeInput { in := baseInput; in.Runtime = ""; return in }(),
+		},
+		{
+			name:  "entrypoint",
+			input: func() AISkillScriptRuntimeInput { in := baseInput; in.EntryPoint = ""; return in }(),
+		},
+		{
+			name:  "protocol",
+			input: func() AISkillScriptRuntimeInput { in := baseInput; in.Protocol = ""; return in }(),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			runner := &aiSkillScriptRunnerStub{
+				inspectResult: &skillrunner.Bundle{
+					Digest: "ABC123",
+					Manifest: skillrunner.Manifest{
+						Metadata: skillrunner.ManifestMeta{Name: "script_python_echo", Version: "v1"},
+						Spec: skillrunner.ScriptSpec{
+							Type:       skillrunner.SkillTypeScript,
+							Runtime:    skillrunner.RuntimePython311,
+							Entrypoint: "main.py",
+							Protocol:   skillrunner.ProtocolJSONFileV1,
+						},
+					},
+				},
+				dispatchResult: &skillrunner.DispatchResult{Plan: &skillrunner.SandboxPlan{}},
+			}
+			runtime := NewAISkillScriptRunnerRuntime(runner)
+
+			result, err := runtime.ExecuteScript(context.Background(), tc.input)
+			require.ErrorIs(t, err, ErrAISkillExecutionSpecInvalid)
+			require.Nil(t, result)
+			require.Nil(t, runner.dispatchRequest, "dispatch must not run when %s is missing", tc.name)
+		})
+	}
 }
 
 func TestAISkillScriptRunnerRuntimeRejectsArchivePathWithoutRoot(t *testing.T) {

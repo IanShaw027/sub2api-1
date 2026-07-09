@@ -22,6 +22,24 @@ func TestMigration158FailsLoudlyWhenInvoiceTargetsAlreadyContainData(t *testing.
 	require.NotContains(t, sql, "RAISE NOTICE 'invoices/invoice_orders 已有数据")
 }
 
+func TestMigration195AddsInvoiceOrderActiveGuardrail(t *testing.T) {
+	content, err := FS.ReadFile("195_add_invoice_order_active_unique_guard.sql")
+	require.NoError(t, err)
+
+	sql := normalizeMigrationSQLForSafetyTest(string(content))
+	require.Contains(t, sql, "ALTER TABLE INVOICE_ORDERS ADD COLUMN IF NOT EXISTS IS_ACTIVE BOOLEAN NOT NULL DEFAULT TRUE")
+	require.Contains(t, sql, "UPDATE INVOICE_ORDERS IO")
+	require.Contains(t, sql, "SET IS_ACTIVE = CASE WHEN I.STATUS = 'CANCELLED' THEN FALSE ELSE TRUE END")
+	require.Contains(t, sql, "FROM INVOICES I")
+	require.Contains(t, sql, "I.STATUS = 'CANCELLED'")
+	require.Contains(t, sql, "DROP INDEX IF EXISTS INVOICEORDER_ORDER_ID")
+	require.Contains(t, sql, "CREATE UNIQUE INDEX IF NOT EXISTS INVOICEORDER_ORDER_ID")
+	require.Contains(t, sql, "ON INVOICE_ORDERS (ORDER_ID)")
+	require.Contains(t, sql, "WHERE IS_ACTIVE = TRUE")
+	require.Contains(t, sql, "ROW_NUMBER() OVER ( PARTITION BY IO.ORDER_ID")
+	require.Contains(t, sql, "RN > 1")
+}
+
 func TestTLSFingerprintSeedCleanupOnlyTargetsExactSeededAccountExtra(t *testing.T) {
 	content, err := FS.ReadFile("172_cleanup_synthetic_tls_fingerprint_seed.sql")
 	require.NoError(t, err)
@@ -107,7 +125,6 @@ func TestMigrationFilenameNumericPrefixesStayDeliberate(t *testing.T) {
 		"154": {"154_account_spark_shadow.sql", "154_add_ops_system_logs_api_key_id.sql", "154_add_usage_logs_user_created_at_covering_index_notx.sql", "154a_account_spark_shadow_indexes_notx.sql"},
 		"155": {"155_add_ops_system_logs_api_key_id_index_notx.sql", "155_add_ticket_message_attachments.sql"},
 		"156": {"156_content_moderation_matched_keyword.sql", "156_user_platform_quotas_add_kiro.sql"},
-		"157": {"157_create_invoices_and_invoice_orders.sql", "157_user_platform_quotas_add_grok.sql"},
 		"158": {"158_add_group_peak_rate_multiplier.sql", "158_backfill_invoices_from_applications.sql", "158_enable_grok_media_generation_groups.sql"},
 		"161": {"161_add_opus48_to_model_mapping.sql", "161_channel_monitor_add_kiro_provider.sql"},
 		"162": {"162_create_codex_invite_reset_history.sql", "162_create_tls_fingerprint_routers.sql", "162_deleted_api_key_audit.sql"},

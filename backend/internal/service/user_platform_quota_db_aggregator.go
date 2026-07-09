@@ -13,6 +13,10 @@ const userPlatformQuotaDBBatchInterval = 250 * time.Millisecond
 
 var defaultUserPlatformQuotaDBAggregator = newUserPlatformQuotaDBAggregator(userPlatformQuotaDBBatchInterval)
 
+type userPlatformQuotaBatchIncrementer interface {
+	BatchIncrementUsageWithReset(ctx context.Context, deltas []UserPlatformQuotaUsageDelta, now time.Time) error
+}
+
 type userPlatformQuotaDBAggregator struct {
 	mu       sync.Mutex
 	interval time.Duration
@@ -48,6 +52,12 @@ func enqueueUserPlatformQuotaDBIncrement(repo UserPlatformQuotaRepository, userI
 	defaultUserPlatformQuotaDBAggregator.enqueue(repo, userID, platform, cost)
 }
 
+func StopDefaultUserPlatformQuotaDBAggregator() {
+	if defaultUserPlatformQuotaDBAggregator != nil {
+		defaultUserPlatformQuotaDBAggregator.Stop()
+	}
+}
+
 func (a *userPlatformQuotaDBAggregator) enqueue(repo UserPlatformQuotaRepository, userID int64, platform string, cost float64) {
 	if a == nil || repo == nil || userID == 0 || platform == "" || cost <= 0 {
 		return
@@ -75,6 +85,13 @@ func (a *userPlatformQuotaDBAggregator) enqueue(repo UserPlatformQuotaRepository
 	a.mu.Unlock()
 }
 
+func (a *userPlatformQuotaDBAggregator) Stop() {
+	if a == nil {
+		return
+	}
+	a.flushPending()
+}
+
 func (a *userPlatformQuotaDBAggregator) flushScheduled() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -90,8 +107,16 @@ func (a *userPlatformQuotaDBAggregator) flushPending() {
 	}
 
 	pending := a.drainPending()
+	if len(pending) == 0 {
+		return
+	}
+
+	now := time.Now().UTC()
+	if a.flushBatch(pending, now) {
+		return
+	}
 	for _, incr := range pending {
-		a.flushIncrement(incr)
+		a.flushIncrement(incr, now)
 	}
 }
 
@@ -115,7 +140,72 @@ func (a *userPlatformQuotaDBAggregator) drainPending() []userPlatformQuotaDBIncr
 	return pending
 }
 
-func (a *userPlatformQuotaDBAggregator) flushIncrement(incr userPlatformQuotaDBIncrement) {
+func (a *userPlatformQuotaDBAggregator) flushBatch(pending []userPlatformQuotaDBIncrement, now time.Time) bool {
+	type batchState struct {
+		repo   UserPlatformQuotaRepository
+		deltas []UserPlatformQuotaUsageDelta
+		count  int64
+	}
+
+	grouped := make(map[UserPlatformQuotaRepository]*batchState)
+	for _, incr := range pending {
+		if incr.repo == nil || incr.userID == 0 || incr.platform == "" || incr.cost <= 0 {
+			continue
+		}
+		if _, ok := incr.repo.(userPlatformQuotaBatchIncrementer); !ok {
+			return false
+		}
+		state := grouped[incr.repo]
+		if state == nil {
+			state = &batchState{repo: incr.repo}
+			grouped[incr.repo] = state
+		}
+		state.deltas = append(state.deltas, UserPlatformQuotaUsageDelta{
+			UserID:   incr.userID,
+			Platform: incr.platform,
+			Cost:     incr.cost,
+		})
+		if incr.count > 0 {
+			state.count += incr.count
+		} else {
+			state.count++
+		}
+	}
+	if len(grouped) == 0 {
+		return true
+	}
+
+	for _, state := range grouped {
+		ctx, cancel := context.WithTimeout(context.Background(), postUsageBillingTimeout)
+		batchRepo, ok := state.repo.(userPlatformQuotaBatchIncrementer)
+		if !ok {
+			cancel()
+			return false
+		}
+		err := batchRepo.BatchIncrementUsageWithReset(ctx, state.deltas, now)
+		cancel()
+		if err != nil {
+			failedCount := state.count
+			if failedCount <= 0 {
+				failedCount = int64(len(state.deltas))
+				if failedCount <= 0 {
+					failedCount = 1
+				}
+			}
+			userPlatformQuotaDBIncrErrorTotal.Add(failedCount)
+			logger.LegacyPrintf(
+				"service.gateway",
+				"ALERT: batch incr user platform quota DB failed batch_size=%d count=%d: %v",
+				len(state.deltas),
+				failedCount,
+				err,
+			)
+		}
+	}
+	return true
+}
+
+func (a *userPlatformQuotaDBAggregator) flushIncrement(incr userPlatformQuotaDBIncrement, now time.Time) {
 	if incr.repo == nil || incr.userID == 0 || incr.platform == "" || incr.cost <= 0 {
 		return
 	}
@@ -123,7 +213,7 @@ func (a *userPlatformQuotaDBAggregator) flushIncrement(incr userPlatformQuotaDBI
 	ctx, cancel := context.WithTimeout(context.Background(), postUsageBillingTimeout)
 	defer cancel()
 
-	if err := incr.repo.IncrementUsageWithReset(ctx, incr.userID, incr.platform, incr.cost, time.Now().UTC()); err != nil {
+	if err := incr.repo.IncrementUsageWithReset(ctx, incr.userID, incr.platform, incr.cost, now); err != nil {
 		failedCount := incr.count
 		if failedCount <= 0 {
 			failedCount = 1

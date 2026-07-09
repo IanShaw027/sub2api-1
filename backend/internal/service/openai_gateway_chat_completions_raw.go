@@ -197,8 +197,6 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	customUA := account.GetOpenAIUserAgent()
 	if customUA != "" {
 		upstreamReq.Header.Set("user-agent", customUA)
-	} else if account.Platform == PlatformGrok {
-		upstreamReq.Header.Set("user-agent", "sub2api-grok/1.0")
 	}
 
 	// 6. Send request
@@ -207,7 +205,12 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 		proxyURL = account.Proxy.URL()
 	}
 	tlsRuntime := s.resolveOpenAICompatibleTLSFingerprintRuntime(ctx, c, account, "http")
-	applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+		if account.Platform == PlatformGrok {
+			applyGrokRuntimeHeaders(upstreamReq, tlsRuntime)
+		} else {
+			applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+			upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsRuntime.Profile)
+		}
 	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)

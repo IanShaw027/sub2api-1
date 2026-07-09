@@ -61,9 +61,12 @@ const (
 	opsErrorLogMinWorkerCount = 4
 	opsErrorLogMaxWorkerCount = 32
 
-	opsErrorLogQueueSizePerWorker = 128
+	// 队列中的 entry 可能携带已脱敏/裁剪后的 request_body_json（单条上限 256KB）。
+	// 旧配置在 32 workers 时会放大到 4096 条 ≈ 1GB 级常驻峰值；ops 是 best-effort，
+	// 更可接受的是在错误风暴下更早丢弃低优先级日志，而不是挤占网关内存。
+	opsErrorLogQueueSizePerWorker = 32
 	opsErrorLogMinQueueSize       = 256
-	opsErrorLogMaxQueueSize       = 8192
+	opsErrorLogMaxQueueSize       = 1024
 	opsErrorLogBatchSize          = 32
 )
 
@@ -1327,9 +1330,7 @@ func parseOpsErrorResponse(body []byte) parsedOpsError {
 
 	if strings.HasPrefix(trimmed, "event: error\n") || strings.HasPrefix(trimmed, `data: {"type":"error"`) {
 		line := trimmed
-		if strings.HasPrefix(line, "event: error\n") {
-			line = strings.TrimPrefix(line, "event: error\n")
-		}
+		line = strings.TrimPrefix(line, "event: error\n")
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "data: ") {
 			line = strings.TrimSpace(strings.TrimPrefix(line, "data: "))

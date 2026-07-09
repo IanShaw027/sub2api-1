@@ -10,6 +10,14 @@ func TestTLSFingerprintProfileValidateAllowsCanonicalCaptureTransports(t *testin
 				Name:      "transport-ok",
 				Transport: transport,
 			}
+			switch transport {
+			case "h2":
+				profile.ALPNProtocols = []string{"h2", "http/1.1"}
+				profile.HTTP2Fingerprint = "1:4096|ph::method,:scheme,:authority,:path"
+			case "websocket-h2":
+				profile.ALPNProtocols = []string{"h2", "http/1.1"}
+				profile.HTTP2Fingerprint = "1:4096|ph::method,:scheme,:authority,:path,:protocol"
+			}
 			if err := profile.Validate(); err != nil {
 				t.Fatalf("Validate() error = %v, want nil", err)
 			}
@@ -127,6 +135,243 @@ func TestTLSFingerprintProfileValidateAllowsConsistentTLS13Fields(t *testing.T) 
 
 	if err := profile.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v, want nil", err)
+	}
+}
+
+func TestTLSFingerprintProfileValidateRejectsInvalidHTTP2Fingerprint(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile TLSFingerprintProfile
+		wantErr string
+	}{
+		{
+			name: "invalid settings pair",
+			profile: TLSFingerprintProfile{
+				Name:             "bad-h2-settings",
+				Transport:        "h2",
+				ALPNProtocols:    []string{"h2", "http/1.1"},
+				HTTP2Fingerprint: "1|ph::method,:scheme,:authority,:path",
+			},
+			wantErr: "http2_fingerprint is invalid",
+		},
+		{
+			name: "invalid priority tuple",
+			profile: TLSFingerprintProfile{
+				Name:             "bad-h2-priority",
+				Transport:        "h2",
+				ALPNProtocols:    []string{"h2", "http/1.1"},
+				HTTP2Fingerprint: "1:4096|p:1:0:2:200|ph::method,:scheme,:authority,:path",
+			},
+			wantErr: "http2_fingerprint is invalid",
+		},
+		{
+			name: "invalid pseudo header token",
+			profile: TLSFingerprintProfile{
+				Name:             "bad-h2-pseudo-order",
+				Transport:        "websocket-h2",
+				ALPNProtocols:    []string{"h2", "http/1.1"},
+				HTTP2Fingerprint: "1:4096|ph:method,:scheme,:authority,:path,:protocol",
+			},
+			wantErr: "http2_fingerprint is invalid",
+		},
+		{
+			name: "http1 transport cannot carry h2 fingerprint",
+			profile: TLSFingerprintProfile{
+				Name:             "http1-with-h2-fingerprint",
+				Transport:        "http1",
+				HTTP2Fingerprint: "1:4096|ph::method,:scheme,:authority,:path",
+			},
+			wantErr: "http2_fingerprint requires h2 or websocket-h2 transport",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.profile.Validate()
+			if err == nil {
+				t.Fatalf("Validate() error = nil, want containing %q", tt.wantErr)
+			}
+			if !containsString(err.Error(), tt.wantErr) {
+				t.Fatalf("Validate() error = %q, want containing %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestTLSFingerprintProfileValidateAllowsCanonicalHTTP2Fingerprint(t *testing.T) {
+	profile := TLSFingerprintProfile{
+		Name:             "good-h2-capture",
+		Transport:        "h2",
+		ALPNProtocols:    []string{"h2", "http/1.1"},
+		HTTP2Fingerprint: "4:65535,1:4096,3:100|wu:12345|p:1:0:1:200|ph::method,:scheme,:authority,:path",
+	}
+
+	if err := profile.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want nil", err)
+	}
+}
+
+func TestTLSFingerprintProfileValidateEnforcesTransportSpecificPseudoHeaders(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile TLSFingerprintProfile
+		wantErr string
+	}{
+		{
+			name: "websocket-h2 requires :protocol",
+			profile: TLSFingerprintProfile{
+				Name:             "missing-connect-protocol",
+				Transport:        "websocket-h2",
+				ALPNProtocols:    []string{"h2", "http/1.1"},
+				HTTP2Fingerprint: "1:4096|ph::method,:scheme,:authority,:path",
+			},
+			wantErr: "websocket-h2 http2_fingerprint must include :protocol pseudo header",
+		},
+		{
+			name: "plain h2 must not include :protocol",
+			profile: TLSFingerprintProfile{
+				Name:             "unexpected-connect-protocol",
+				Transport:        "h2",
+				ALPNProtocols:    []string{"h2", "http/1.1"},
+				HTTP2Fingerprint: "1:4096|ph::method,:scheme,:authority,:path,:protocol",
+			},
+			wantErr: "h2 http2_fingerprint must not include :protocol pseudo header",
+		},
+		{
+			name: "websocket-h2 with :protocol is allowed",
+			profile: TLSFingerprintProfile{
+				Name:             "valid-connect-protocol",
+				Transport:        "websocket-h2",
+				ALPNProtocols:    []string{"h2", "http/1.1"},
+				HTTP2Fingerprint: "1:4096|ph::method,:scheme,:authority,:path,:protocol",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.profile.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("Validate() error = nil, want containing %q", tt.wantErr)
+			}
+			if !containsString(err.Error(), tt.wantErr) {
+				t.Fatalf("Validate() error = %q, want containing %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestTLSFingerprintProfileValidateRequiresH2ALPNForH2Transports(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile TLSFingerprintProfile
+		wantErr string
+	}{
+		{
+			name: "h2 transport requires h2 ALPN",
+			profile: TLSFingerprintProfile{
+				Name:          "h2-without-h2-alpn",
+				Transport:     "h2",
+				ALPNProtocols: []string{"http/1.1"},
+			},
+			wantErr: "h2 transport requires alpn_protocols to include h2",
+		},
+		{
+			name: "websocket-h2 transport requires h2 ALPN",
+			profile: TLSFingerprintProfile{
+				Name:          "ws-h2-without-h2-alpn",
+				Transport:     "websocket-h2",
+				ALPNProtocols: []string{"http/1.1"},
+			},
+			wantErr: "websocket-h2 transport requires alpn_protocols to include h2",
+		},
+		{
+			name: "h2 transport with h2 ALPN is allowed",
+			profile: TLSFingerprintProfile{
+				Name:             "valid-h2-alpn",
+				Transport:        "h2",
+				ALPNProtocols:    []string{"h2", "http/1.1"},
+				HTTP2Fingerprint: "1:4096|ph::method,:scheme,:authority,:path",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.profile.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("Validate() error = nil, want containing %q", tt.wantErr)
+			}
+			if !containsString(err.Error(), tt.wantErr) {
+				t.Fatalf("Validate() error = %q, want containing %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestTLSFingerprintProfileValidateRequiresHTTP2FingerprintForH2Transports(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile TLSFingerprintProfile
+		wantErr string
+	}{
+		{
+			name: "h2 transport requires http2 fingerprint",
+			profile: TLSFingerprintProfile{
+				Name:          "h2-without-http2-fingerprint",
+				Transport:     "h2",
+				ALPNProtocols: []string{"h2", "http/1.1"},
+			},
+			wantErr: "h2 transport requires http2_fingerprint",
+		},
+		{
+			name: "websocket-h2 transport requires http2 fingerprint",
+			profile: TLSFingerprintProfile{
+				Name:          "ws-h2-without-http2-fingerprint",
+				Transport:     "websocket-h2",
+				ALPNProtocols: []string{"h2", "http/1.1"},
+			},
+			wantErr: "websocket-h2 transport requires http2_fingerprint",
+		},
+		{
+			name: "h2 transport with fingerprint is allowed",
+			profile: TLSFingerprintProfile{
+				Name:             "valid-h2-fingerprint",
+				Transport:        "h2",
+				ALPNProtocols:    []string{"h2", "http/1.1"},
+				HTTP2Fingerprint: "1:4096|ph::method,:scheme,:authority,:path",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.profile.Validate()
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("Validate() error = nil, want containing %q", tt.wantErr)
+			}
+			if !containsString(err.Error(), tt.wantErr) {
+				t.Fatalf("Validate() error = %q, want containing %q", err.Error(), tt.wantErr)
+			}
+		})
 	}
 }
 

@@ -106,7 +106,7 @@ services:
       # =======================================================================
       - MEDIA_ENABLED=${MEDIA_ENABLED:-false}
       - MEDIA_ENDPOINT=${MEDIA_ENDPOINT:-http://minio:9000}
-      - MEDIA_PUBLIC_BASE_URL=${MEDIA_PUBLIC_BASE_URL:-https://source.qazwc.com}
+      - MEDIA_PUBLIC_BASE_URL=${MEDIA_PUBLIC_BASE_URL:-}
       - MEDIA_ACCESS_KEY_ID=${MEDIA_ACCESS_KEY_ID:-}
       - MEDIA_SECRET_ACCESS_KEY=${MEDIA_SECRET_ACCESS_KEY:-}
       - MEDIA_REGION=${MEDIA_REGION:-auto}

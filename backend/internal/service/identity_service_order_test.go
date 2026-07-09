@@ -77,6 +77,18 @@ func TestIdentityService_RewriteUserIDWithMasking_PreservesTopLevelFieldOrder(t 
 	require.True(t, strings.Contains(resultStr, `"metadata":{"user_id":"`))
 }
 
+func TestIdentityService_RewriteUserIDWithMasking_NilAccountReturnsOriginalBody(t *testing.T) {
+	cache := &identityCacheStub{}
+	svc := NewIdentityService(cache)
+
+	body := []byte(`{"metadata":{"user_id":"u"},"stream":true}`)
+
+	result, err := svc.RewriteUserIDWithMasking(context.Background(), body, nil, "acc-uuid", "client-xyz", "claude-cli/2.1.78 (external, cli)")
+
+	require.NoError(t, err)
+	require.Equal(t, string(body), string(result))
+}
+
 func strconvQuote(v string) string {
 	return `"` + strings.ReplaceAll(strings.ReplaceAll(v, `\`, `\\`), `"`, `\"`) + `"`
 }

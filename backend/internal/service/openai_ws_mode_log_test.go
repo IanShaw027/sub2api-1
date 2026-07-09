@@ -73,8 +73,8 @@ func TestLogOpenAIWSModeInfoSuppressesTemporaryDiagnosticsByDefault(t *testing.T
 	logger.SetSink(sink)
 	t.Cleanup(func() { logger.SetSink(nil) })
 
-	logOpenAIWSModeInfo("openai_ws_diag_start temporary_diag=sticky_select remove_after_debug=true account_id=%d", 123)
-	logOpenAIWSModeInfoDirect("openai_ws_schedule_result temporary_diag=sticky_select remove_after_debug=true account_id=%d", 123)
+	logOpenAIWSModeInfo("sample_diag temporary_diag=sample account_id=%d", 123)
+	logOpenAIWSModeInfoDirect("sample_diag_direct temporary_diag=sample account_id=%d", 123)
 
 	require.Empty(t, sink.snapshot())
 }
@@ -98,11 +98,11 @@ func TestLogOpenAIWSModeInfoAllowsTemporaryDiagnosticsWhenExplicitlyEnabled(t *t
 	logger.SetSink(sink)
 	t.Cleanup(func() { logger.SetSink(nil) })
 
-	logOpenAIWSModeInfo("openai_ws_diag_start temporary_diag=sticky_select remove_after_debug=true account_id=%d", 123)
+	logOpenAIWSModeInfo("sample_diag temporary_diag=sample account_id=%d", 123)
 
 	events := sink.snapshot()
 	require.Len(t, events, 1)
-	require.Contains(t, events[0].Message, "openai_ws_diag_start")
+	require.Contains(t, events[0].Message, "sample_diag")
 }
 
 func TestOpenAIWSTemporaryDiagnosticLogSwitchCanChangeAtRuntime(t *testing.T) {
@@ -127,15 +127,15 @@ func TestOpenAIWSTemporaryDiagnosticLogSwitchCanChangeAtRuntime(t *testing.T) {
 	logger.SetSink(sink)
 	t.Cleanup(func() { logger.SetSink(nil) })
 
-	logOpenAIWSModeInfo("openai_ws_diag_start temporary_diag=sticky_select remove_after_debug=true account_id=%d", 123)
+	logOpenAIWSModeInfo("sample_diag temporary_diag=sample account_id=%d", 123)
 	require.Empty(t, sink.snapshot())
 
 	StoreOpenAIWSDeltaRuntimeSettings(true, true, true)
-	logOpenAIWSModeInfo("openai_ws_diag_start temporary_diag=sticky_select remove_after_debug=true account_id=%d", 456)
+	logOpenAIWSModeInfo("sample_diag temporary_diag=sample account_id=%d", 456)
 	require.Len(t, sink.snapshot(), 1)
 
 	StoreOpenAIWSDeltaRuntimeSettings(true, true, false)
-	logOpenAIWSModeInfo("openai_ws_diag_start temporary_diag=sticky_select remove_after_debug=true account_id=%d", 789)
+	logOpenAIWSModeInfo("sample_diag temporary_diag=sample account_id=%d", 789)
 	require.Len(t, sink.snapshot(), 1, "runtime switch should suppress new temporary diagnostics without restart")
 }
 

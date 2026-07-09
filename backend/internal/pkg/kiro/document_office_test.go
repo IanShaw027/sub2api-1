@@ -92,7 +92,7 @@ func TestExtractXlsxTextLimitsWorksheetCount(t *testing.T) {
 	zw := zip.NewWriter(&buf)
 	for i := 1; i <= officeMaxSheets+1; i++ {
 		w, _ := zw.Create(fmt.Sprintf("xl/worksheets/sheet%d.xml", i))
-		_, _ = w.Write([]byte(fmt.Sprintf(`<worksheet><sheetData><row><c t="inlineStr"><is><t>sheet-%d</t></is></c></row></sheetData></worksheet>`, i)))
+		_, _ = fmt.Fprintf(w, `<worksheet><sheetData><row><c t="inlineStr"><is><t>sheet-%d</t></is></c></row></sheetData></worksheet>`, i)
 	}
 	_ = zw.Close()
 
@@ -112,7 +112,7 @@ func TestExtractXlsxTextRejectsCumulativeWorksheetDecompressionBomb(t *testing.T
 		w, _ := zw.Create(fmt.Sprintf("xl/worksheets/sheet%d.xml", i))
 		_, _ = w.Write([]byte(`<worksheet><ignored>`))
 		_, _ = w.Write(padding)
-		_, _ = w.Write([]byte(fmt.Sprintf(`</ignored><sheetData><row><c t="inlineStr"><is><t>sheet-%d</t></is></c></row></sheetData></worksheet>`, i)))
+		_, _ = fmt.Fprintf(w, `</ignored><sheetData><row><c t="inlineStr"><is><t>sheet-%d</t></is></c></row></sheetData></worksheet>`, i)
 	}
 	_ = zw.Close()
 

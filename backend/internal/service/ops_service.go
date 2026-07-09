@@ -129,6 +129,9 @@ func (s *OpsService) RequireMonitoringEnabled(ctx context.Context) error {
 }
 
 func (s *OpsService) IsMonitoringEnabled(ctx context.Context) bool {
+	if s == nil {
+		return false
+	}
 	// Hard switch: disable ops entirely.
 	if s.cfg != nil && !s.cfg.Ops.Enabled {
 		return false
@@ -242,6 +245,8 @@ func (s *OpsService) prepareErrorLogInput(ctx context.Context, entry *OpsInsertE
 	// Sanitize + trim request body (errors only).
 	if len(rawRequestBody) > 0 {
 		entry.RequestBodyJSON, entry.RequestBodyTruncated, entry.RequestBodyBytes = PrepareOpsRequestBodyForQueue(rawRequestBody)
+	} else if entry.RequestBodyJSON != nil && strings.TrimSpace(*entry.RequestBodyJSON) != "" {
+		entry.RequestBodyJSON, entry.RequestBodyTruncated, entry.RequestBodyBytes = PrepareOpsRequestBodyForQueue([]byte(*entry.RequestBodyJSON))
 	}
 
 	// Sanitize + truncate error_body to avoid storing sensitive data.
@@ -404,6 +409,14 @@ func (s *OpsService) ListUserErrorRequests(ctx context.Context, userID int64, fi
 	// 用户端一律改走 category→ErrorPhasesAny/ErrorTypesAny(纯 ANY 过滤,不影响 status>=400 子句),
 	// 因此 recovered upstream(error_phase='upstream' 但 status<400,最终成功返回)记录对用户不可见——符合预期。
 	filter.Phase = ""
+	if s == nil || s.opsRepo == nil {
+		return &UserErrorRequestList{
+			Items:    []*UserErrorRequest{},
+			Total:    0,
+			Page:     1,
+			PageSize: 20,
+		}, nil
+	}
 
 	list, err := s.opsRepo.ListErrorLogs(ctx, filter)
 	if err != nil {
