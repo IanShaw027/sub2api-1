@@ -1431,7 +1431,8 @@
         "geminiCli": "Gemini CLI",
         "codexCli": "Codex CLI",
         "codexCliWs": "Codex CLI (WebSocket)",
-        "opencode": "OpenCode"
+        "opencode": "OpenCode",
+        "grokCli": "Grok CLI"
       },
       "antigravity": {
         "description": "为 Antigravity 分组配置 API 访问。请根据您使用的客户端选择对应的配置方式。",
@@ -1449,6 +1450,16 @@
         "title": "OpenCode 配置示例",
         "subtitle": "opencode.json",
         "hint": "配置文件路径：~/.config/opencode/opencode.json（或 opencode.jsonc），不存在需手动创建。可使用默认 provider（openai/anthropic/google）或自定义 provider_id。API Key 支持直接配置或通过客户端 /connect 命令配置。示例仅供参考，模型与选项可按需调整。"
+      },
+      "grok": {
+        "description": "为 Sub2API Grok 分组配置客户端接入。请在下方选择 Grok CLI、Codex CLI、Claude Code 或 OpenCode。",
+        "note": "这些环境变量将在当前终端会话中生效。如需永久配置，请将其添加到 ~/.bashrc、~/.zshrc 或相应的配置文件中。",
+        "configTomlHint": "推荐使用配置文件方式。支持配置多个模型，API Key 可通过 env_key 引用环境变量或直接写入 api_key（不推荐）。",
+        "claudeDescription": "将 Claude Code 指向本 Grok 分组的 Anthropic 兼容 /v1/messages 接口。默认模型为 grok-4.5；可将 ANTHROPIC_MODEL 设为任意 grok-* 以直通（服务端不做改写）。",
+        "claudeNote": "若客户端仍发送 claude-sonnet/opus/haiku 名称，服务端会映射到 grok-4.5；原生 grok-* 模型名不做映射。环境变量仅当前终端生效，永久配置请写入 shell profile。",
+        "codexDescription": "将 Codex CLI 指向本 Grok 分组的 OpenAI 兼容 Responses 接口。默认模型为 grok-4.5，可在 config.toml 中改为任意 grok-*。",
+        "codexNote": "Grok 上游为 HTTP/SSE，建议保持 supports_websockets = false（若开启，Sub2API 会将 WS 桥接为 HTTP）。如 ~/.codex 不存在请先创建。",
+        "codexConfigHint": "推荐复制到 ~/.codex/config.toml。可按需将 model 改为任意 grok-*。"
       }
     },
     "customKeyLabel": "自定义密钥",
@@ -5383,6 +5394,8 @@
       "errorTrend": "错误趋势",
       "errorDistribution": "错误分布",
       "switchRate": "平均账号切换",
+      "upstreamFailoverRate": "上游 Failover / 请求",
+      "stickyOriginalUnavailableRate": "粘性原账号不可用率",
       "systemLogs": {
         "title": "系统日志",
         "subtitle": "默认按最新时间倒序，支持筛选搜索与按条件清理。",
@@ -6134,7 +6147,7 @@
       "tooltips": {
         "totalRequests": "当前时间窗口内的总请求数和Token消耗量。",
         "throughputTrend": "当前窗口内的请求/QPS 与 token/TPS 趋势。",
-        "switchRateTrend": "近5小时内账号切换次数 / 请求总数的趋势（平均切换次数）。",
+        "switchRateTrend": "当前时间窗口内上游 Failover / 请求，以及粘性会话原账号不可用率趋势。",
         "latencyHistogram": "成功请求的请求时长分布（毫秒）。",
         "errorTrend": "SLA 错误趋势。恢复遥测是最终 200 的上游异常遥测，单独展示，不计入错误率/错误详情口径。",
         "errorDistribution": "按归属方统计的错误分布，附带状态码聚合明细。",

@@ -3690,6 +3690,7 @@ import type {
   AdminGroup,
   CreateGroupRequest,
   GroupPlatform,
+  ImageGenerationRoute,
   SubscriptionType,
   UpdateGroupRequest,
   VideoGenerationRoute,
@@ -4073,7 +4074,7 @@ const createForm = reactive({
   monthly_limit_usd: null as number | null,
   // 图片生成计费配置
   allow_image_generation: false,
-  image_generation_route: "codex" as const,
+  image_generation_route: "codex" as ImageGenerationRoute,
   openai_image_codex_enabled: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
@@ -4424,7 +4425,7 @@ const editForm = reactive({
   monthly_limit_usd: null as number | null,
   // 图片生成计费配置
   allow_image_generation: false,
-  image_generation_route: "codex" as const,
+  image_generation_route: "codex" as ImageGenerationRoute,
   openai_image_codex_enabled: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
@@ -5032,6 +5033,11 @@ const handleCreateGroup = async () => {
     applyOpenAIImageTypeSelection(
       requestData as OpenAIImageTypeSelectionRequest & OpenAIImageSelectionPayload,
     );
+    if (isGrokGroupPlatform(createForm.platform)) {
+      requestData.image_generation_route = "native";
+      requestData.video_generation_route = "native";
+      requestData.openai_image_codex_enabled = false;
+    }
     await adminAPI.groups.create(requestData);
     appStore.showSuccess(t("admin.groups.groupCreated"));
     closeCreateModal();
@@ -5206,6 +5212,12 @@ const handleUpdateGroup = async () => {
     payload.image_price_1k = normalizeUpdateImagePrice(payload.image_price_1k);
     payload.image_price_2k = normalizeUpdateImagePrice(payload.image_price_2k);
     payload.image_price_4k = normalizeUpdateImagePrice(payload.image_price_4k);
+    // Grok only supports native Imagine image/video routes (parity with create path).
+    if (isGrokGroupPlatform(editForm.platform)) {
+      payload.image_generation_route = "native";
+      payload.video_generation_route = "native";
+      payload.openai_image_codex_enabled = false;
+    }
     await adminAPI.groups.update(editingGroup.value.id, payload);
     appStore.showSuccess(t("admin.groups.groupUpdated"));
     closeEditModal();
@@ -5318,7 +5330,12 @@ watch(
       createForm.require_oauth_only = false;
       createForm.require_privacy_set = false;
     }
-    if (!isGrokGroupPlatform(newVal)) {
+    if (isGrokGroupPlatform(newVal)) {
+      // Grok only supports native Imagine image/video routes.
+      createForm.image_generation_route = "native";
+      createForm.video_generation_route = "native";
+      createForm.openai_image_codex_enabled = false;
+    } else {
       resetVideoPricingFormState(createForm);
       resetExplicitMediaPricingFormState(createForm);
     }

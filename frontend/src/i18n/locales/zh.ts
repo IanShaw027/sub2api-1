@@ -1394,6 +1394,7 @@ export default {
         geminiCli: 'Gemini CLI',
         codexCli: 'Codex CLI',
         codexCliWs: 'Codex CLI (WebSocket)',
+        grokCli: 'Grok CLI',
         opencode: 'OpenCode'
       },
       antigravity: {
@@ -1413,9 +1414,18 @@ export default {
       },
       grok: {
         description:
-          '将以下环境变量添加到您的终端配置文件或直接在终端中运行。支持通过 API Key 接入 Grok CLI (cli-chat-proxy.grok.com) 和 Codex (api.x.ai)。',
+          '为 Sub2API Grok 分组配置客户端接入。请在下方选择 Grok CLI、Codex CLI、Claude Code 或 OpenCode。',
         note: '这些环境变量将在当前终端会话中生效。如需永久配置，请将其添加到 ~/.bashrc、~/.zshrc 或相应的配置文件中。',
-        configTomlHint: '推荐使用配置文件方式。支持配置多个模型，API Key 可通过 env_key 引用环境变量或直接写入 api_key（不推荐）。'
+        configTomlHint: '推荐使用配置文件方式。支持配置多个模型，API Key 可通过 env_key 引用环境变量或直接写入 api_key（不推荐）。',
+        claudeDescription:
+          '将 Claude Code 指向本 Grok 分组的 Anthropic 兼容 /v1/messages 接口。默认模型为 grok-4.5；可将 ANTHROPIC_MODEL 设为任意 grok-* 以直通（服务端不做改写）。',
+        claudeNote:
+          '若客户端仍发送 claude-sonnet/opus/haiku 名称，服务端会映射到 grok-4.5；原生 grok-* 模型名不做映射。环境变量仅当前终端生效，永久配置请写入 shell profile。',
+        codexDescription:
+          '将 Codex CLI 指向本 Grok 分组的 OpenAI 兼容 Responses 接口。默认模型为 grok-4.5，可在 config.toml 中改为任意 grok-*。',
+        codexNote:
+          'Grok 上游为 HTTP/SSE，建议保持 supports_websockets = false（若开启，Sub2API 会将 WS 桥接为 HTTP）。如 ~/.codex 不存在请先创建。',
+        codexConfigHint: '推荐复制到 ~/.codex/config.toml。可按需将 model 改为任意 grok-*。'
       },
       opencode: {
         title: 'OpenCode 配置示例',
@@ -4669,8 +4679,8 @@ export default {
         modelRestrictionDisabledByPassthrough: '已开启自动透传：模型白名单/映射不会生效。',
       },
       grok: {
-        baseUrlHint: 'Grok 账号支持通过 API Key 接入 Grok CLI (cli-chat-proxy.grok.com/v1) 和 Codex (api.x.ai/v1)。',
-        apiKeyHint: '填写你的 Grok API Key。支持 CLI 和 Codex 两种 Base URL。'
+        baseUrlHint: '默认 https://api.x.ai/v1（Grok CLI 可用 cli-chat-proxy.grok.com/v1）。留空则使用平台默认值。',
+        apiKeyHint: '推荐使用订阅 OAuth 以获得完整能力（文本 + 图/视频）。如需纯文本 API Key，可通过管理端 API 创建。'
       },
       anthropic: {
         apiKeyPassthrough: '自动透传（仅替换认证）',
@@ -5048,7 +5058,7 @@ export default {
           missingExchangeParams: '缺少授权码、state 或 OAuth 会话',
           failedToExchangeCode: 'Grok 授权码兑换失败',
           failedToValidateRT: '验证 Grok refresh token 失败',
-          oauthOnlyHint: '首版 Grok 支持仅包含 OAuth 订阅的 Responses API 文本/推理转发。'
+          oauthOnlyHint: 'Grok 账号使用 xAI 订阅 OAuth。支持 Responses / Chat Completions / Claude Code messages，以及原生 Imagine 图/视频与 web_search。默认文本模型：grok-4.5。'
         },
         // Gemini specific
         gemini: {
@@ -6212,6 +6222,8 @@ export default {
       errorTrend: '错误趋势',
       errorDistribution: '错误分布',
       switchRate: '平均账号切换',
+      upstreamFailoverRate: '上游 Failover / 请求',
+      stickyOriginalUnavailableRate: '粘性原账号不可用率',
       systemLogs: {
         title: '系统日志',
         subtitle: '默认按最新时间倒序，支持筛选搜索与按条件清理。',
@@ -6985,7 +6997,7 @@ export default {
       tooltips: {
         totalRequests: '当前时间窗口内的总请求数和Token消耗量。',
         throughputTrend: '当前窗口内的请求/QPS 与 token/TPS 趋势。',
-        switchRateTrend: '近5小时内账号切换次数 / 请求总数的趋势（平均切换次数）。',
+        switchRateTrend: '当前时间窗口内上游 Failover / 请求，以及粘性会话原账号不可用率趋势。',
         latencyHistogram: '成功请求的请求时长分布（毫秒）。',
         errorTrend: 'SLA 错误趋势。恢复遥测是最终 200 的上游异常遥测，单独展示，不计入错误率/错误详情口径。',
         errorDistribution: '按归属方统计的错误分布，附带状态码聚合明细。',

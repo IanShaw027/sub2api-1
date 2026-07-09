@@ -225,16 +225,24 @@ const metaModels = [
 
 // xAI Grok
 const xaiModels = [
+  'grok-4.5',
   'grok-4.3',
   'grok-build-0.1',
   'grok-4.20-0309-reasoning',
   'grok-4.20-0309-non-reasoning',
   'grok-4.20-multi-agent-0309',
+  'grok-imagine-image-quality',
+  'grok-imagine-image',
+  'grok-imagine-video',
+  'grok-imagine-video-1.5',
   'grok',
   'grok-latest',
   'grok-build',
   'grok-4.20-reasoning',
-  'grok-4.20-non-reasoning'
+  'grok-4.20-non-reasoning',
+  'grok-imagine',
+  'grok-imagine-1',
+  'grok-imagine-edit'
 ]
 
 // Cohere
@@ -389,11 +397,17 @@ const geminiPresetMappings = [
 ]
 
 const grokPresetMappings = [
-  { label: 'Grok 4.3', from: 'grok-4.3', to: 'grok-4.3', color: 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800/50 dark:text-slate-300' },
-  { label: 'Grok Latest', from: 'grok-latest', to: 'grok-4.3', color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  { label: 'Grok 4.5', from: 'grok-4.5', to: 'grok-4.5', color: 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800/50 dark:text-slate-300' },
+  { label: 'Grok 4.3', from: 'grok-4.3', to: 'grok-4.3', color: 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800/50 dark:text-zinc-300' },
+  { label: 'Grok Latest', from: 'grok-latest', to: 'grok-4.5', color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400' },
   { label: 'Build 0.1', from: 'grok-build', to: 'grok-build-0.1', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400' },
   { label: '4.20 Reasoning', from: 'grok-4.20-reasoning', to: 'grok-4.20-0309-reasoning', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400' },
-  { label: '4.20 Non Reasoning', from: 'grok-4.20-non-reasoning', to: 'grok-4.20-0309-non-reasoning', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400' }
+  { label: '4.20 Non Reasoning', from: 'grok-4.20-non-reasoning', to: 'grok-4.20-0309-non-reasoning', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400' },
+  { label: 'Imagine Quality', from: 'grok-imagine', to: 'grok-imagine-image-quality', color: 'bg-rose-100 text-rose-700 hover:bg-rose-200 dark:bg-rose-900/30 dark:text-rose-400' },
+  { label: 'Imagine Edit', from: 'grok-imagine-edit', to: 'grok-imagine-image-quality', color: 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400' },
+  { label: 'Imagine Fast', from: 'grok-imagine-image', to: 'grok-imagine-image', color: 'bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-900/30 dark:text-pink-400' },
+  { label: 'Imagine Video', from: 'grok-imagine-video', to: 'grok-imagine-video', color: 'bg-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-200 dark:bg-fuchsia-900/30 dark:text-fuchsia-400' },
+  { label: 'Imagine Video 1.5', from: 'grok-imagine-video-1.5', to: 'grok-imagine-video-1.5', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400' }
 ]
 
 // Antigravity 预设映射（支持通配符）

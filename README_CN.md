@@ -536,7 +536,7 @@ gateway:
   sora_media_signed_url_ttl_seconds: 900
 ```
 
-> 若未配置签名密钥，`/sora/media-signed` 将返回 503。  
+> 若未配置签名密钥，`/sora/media-signed` 将返回 503。
 > 如需更严格的访问控制，可将 `sora_media_require_api_key` 设为 true，仅允许携带 API Key 的 `/sora/media` 访问。
 
 访问策略说明：
@@ -685,6 +685,44 @@ go generate ./cmd/server
 
 ---
 
+## Grok / xAI OAuth 支持
+
+Sub2API 通过 xAI OAuth 接入 Grok 订阅账号，并向客户端暴露 OpenAI 兼容接口。
+
+### 支持范围
+
+- 平台名：`grok`
+- 账号类型：OAuth 订阅账号（控制台创建以 OAuth 为主；文本也可走 apikey）
+- Responses：`/v1/responses`、`/responses`、`/backend-api/codex/responses` → `${XAI_BASE_URL:-https://api.x.ai/v1}/responses`
+- Claude Code 兼容：`/v1/messages`，Claude 模型名默认映射到 `grok-4.5`；原生 `grok-*` 不改写
+- Grok 分组不支持 `count_tokens`；xAI 没有兼容的输入 token 计数接口，因此该端点会明确返回不支持。
+- Chat Completions：`/v1/chat/completions`、`/chat/completions`
+- Codex WS：可接入 Responses 入口，Sub2API 桥接为 xAI HTTP/SSE
+- 默认文本模型：`grok-4.5`（另有 `grok-4.3`、`grok-build-0.1`、`grok-4.20-*` 等）
+- 原生 Imagine 图/视频与 `/v1/web_search`（Grok 专属）
+
+### 客户端配置
+
+控制台「使用 API 密钥」提供 Grok CLI / Codex CLI / Claude Code / OpenCode 引导。
+Claude Code 默认 `ANTHROPIC_MODEL=grok-4.5`；Codex 默认 `model = "grok-4.5"` 且 `supports_websockets = false`。
+
+### OAuth 环境变量
+
+| 变量 | 默认 |
+|------|------|
+| `XAI_OAUTH_CLIENT_ID` | 公开 xAI OAuth client ID |
+| `XAI_OAUTH_SCOPE` | `openid profile email offline_access grok-cli:access api:access` |
+| `XAI_OAUTH_REDIRECT_URI` | `http://127.0.0.1:56121/callback` |
+| `XAI_OAUTH_AUTHORIZE_URL` | `https://auth.x.ai/oauth2/authorize` |
+| `XAI_OAUTH_TOKEN_URL` | `https://auth.x.ai/oauth2/token` |
+| `XAI_BASE_URL` | `https://api.x.ai/v1` |
+
+### 额度展示
+
+xAI 额度被动解析响应头；未观察到上游限流头前显示为未知。`401` 需重新授权，`403` 视为订阅/权益失败，`429` 短冷却后重新调度。
+
+---
+
 ## Antigravity 使用说明
 
 Sub2API 支持 [Antigravity](https://antigravity.so/) 账户，授权后可通过专用端点访问 Claude 和 Gemini 模型。
@@ -711,7 +749,7 @@ Antigravity 账户支持可选的**混合调度**功能。开启后，通用端�
 
 
 ### 已知问题
-在 Claude Code 中，无法自动退出Plan Mode。（正常使用原生Claude Api时，Plan 完成后，Claude Code会弹出弹出选项让用户同意或拒绝Plan。） 
+在 Claude Code 中，无法自动退出Plan Mode。（正常使用原生Claude Api时，Plan 完成后，Claude Code会弹出弹出选项让用户同意或拒绝Plan。）
 解决办法：shift + Tab，手动退出Plan mode，然后输入内容 告诉 Claude Code 同意或拒绝 Plan
 ---
 

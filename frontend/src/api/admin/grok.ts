@@ -4,6 +4,7 @@
  */
 
 import { apiClient } from '../client'
+import type { Account } from '@/types'
 
 export interface GrokAuthUrlResponse {
   auth_url: string
@@ -118,4 +119,73 @@ export async function resetQuota(id: number): Promise<GrokQuotaResetResult> {
   return data
 }
 
-export default { generateAuthUrl, exchangeCode, refreshGrokToken, queryQuota, resetQuota }
+/**
+ * Create a Grok OAuth account by exchanging the OAuth code server-side.
+ * Backend requires session_id + code; optionally accepts state, redirect_uri,
+ * proxy_id, name, concurrency, priority, group_ids.
+ * Returns the full Account DTO after create.
+ */
+export interface GrokCreateFromOAuthRequest {
+  session_id: string
+  code: string
+  state?: string
+  redirect_uri?: string
+  proxy_id?: number | null
+  name?: string
+  concurrency?: number
+  priority?: number
+  group_ids?: number[]
+}
+
+export async function createFromOAuth(
+  payload: GrokCreateFromOAuthRequest
+): Promise<Account> {
+  const { data } = await apiClient.post<Account>(
+    '/admin/grok/oauth/create-from-oauth',
+    payload
+  )
+  return data
+}
+
+/**
+ * Refresh credentials for an existing Grok OAuth account.
+ * Backend merges new tokens into credentials and returns the updated Account DTO.
+ */
+export async function refreshAccountToken(id: number): Promise<Account> {
+  const { data } = await apiClient.post<Account>(`/admin/grok/accounts/${id}/refresh`)
+  return data
+}
+
+export interface GrokRuntimeSanityCheck {
+  value: string
+  valid: boolean
+  error?: string
+  is_default?: boolean
+}
+
+export interface GrokRuntimeSanityReport {
+  base_url: GrokRuntimeSanityCheck
+  oauth_authorize_url: GrokRuntimeSanityCheck
+  oauth_token_url: GrokRuntimeSanityCheck
+  oauth_redirect_uri: GrokRuntimeSanityCheck
+  unsafe_url_overrides: boolean
+  unsafe_high_concurrency: boolean
+  public_gateway_scope: string
+  proxy_policy: string
+}
+
+export async function runtimeSanity(): Promise<GrokRuntimeSanityReport> {
+  const { data } = await apiClient.get<GrokRuntimeSanityReport>('/admin/grok/runtime-sanity')
+  return data
+}
+
+export default {
+  generateAuthUrl,
+  exchangeCode,
+  refreshGrokToken,
+  queryQuota,
+  resetQuota,
+  createFromOAuth,
+  refreshAccountToken,
+  runtimeSanity,
+}

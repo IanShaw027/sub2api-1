@@ -367,7 +367,7 @@
         </div>
       </div>
 
-      <!-- Account Type Selection (Grok - OAuth only) -->
+      <!-- Account Type Selection (Grok - subscription OAuth; full features including media) -->
       <div v-if="form.platform === 'grok'">
         <label class="input-label">{{ t('admin.accounts.accountType') }}</label>
         <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2" data-tour="account-form-type">

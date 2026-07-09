@@ -271,7 +271,7 @@ describe('UseKeyModal', () => {
     expect(wrapper.text()).toContain('%userprofile%\\.grok/config.toml')
   })
 
-  it('defaults Grok to Grok CLI config and hides OpenCode tab', () => {
+  it('defaults Grok to Grok CLI and exposes Codex / Claude Code / OpenCode tabs', async () => {
     const wrapper = mount(UseKeyModal, {
       props: {
         show: true,
@@ -291,14 +291,50 @@ describe('UseKeyModal', () => {
       }
     })
 
-    expect(wrapper.text()).not.toContain('keys.useKeyModal.cliTabs.claudeCode')
-    expect(wrapper.text()).not.toContain('keys.useKeyModal.cliTabs.opencode')
-    const codeBlocks = wrapper.findAll('pre code').map((code) => code.text())
-    const allCode = codeBlocks.join('\n')
-    expect(allCode).toContain('GROK_MODELS_BASE_URL')
-    expect(allCode).toContain('XAI_API_KEY')
-    expect(allCode).toContain('[model.grok-build]')
-    expect(allCode).not.toContain('ANTHROPIC_BASE_URL')
-    expect(allCode).not.toContain('"openai"')
+    expect(wrapper.text()).toContain('keys.useKeyModal.cliTabs.grokCli')
+    expect(wrapper.text()).toContain('keys.useKeyModal.cliTabs.codexCli')
+    expect(wrapper.text()).toContain('keys.useKeyModal.cliTabs.claudeCode')
+    expect(wrapper.text()).toContain('keys.useKeyModal.cliTabs.opencode')
+
+    const grokCode = wrapper.findAll('pre code').map((code) => code.text()).join('\n')
+    expect(grokCode).toContain('GROK_MODELS_BASE_URL')
+    expect(grokCode).toContain('XAI_API_KEY')
+    expect(grokCode).toContain('[model.grok-4.5]')
+    expect(grokCode).toContain('default = "grok-4.5"')
+
+    const clickTab = async (label: string) => {
+      const tab = wrapper.findAll('button').find((button) => button.text().includes(label))
+      expect(tab).toBeDefined()
+      await tab!.trigger('click')
+      await nextTick()
+    }
+
+    await clickTab('keys.useKeyModal.cliTabs.claudeCode')
+    const claudeCode = wrapper.findAll('pre code').map((code) => code.text()).join('\n')
+    expect(claudeCode).toContain('ANTHROPIC_BASE_URL')
+    expect(claudeCode).toContain('ANTHROPIC_AUTH_TOKEN')
+    expect(claudeCode).toContain('ANTHROPIC_MODEL="grok-4.5"')
+    expect(claudeCode).not.toContain('GROK_MODELS_BASE_URL')
+
+    await clickTab('keys.useKeyModal.cliTabs.codexCli')
+    const codexCode = wrapper.findAll('pre code').map((code) => code.text()).join('\n')
+    expect(codexCode).toContain('model_provider = "sub2api"')
+    expect(codexCode).toContain('model = "grok-4.5"')
+    expect(codexCode).toContain('wire_api = "responses"')
+    expect(codexCode).toContain('supports_websockets = false')
+    expect(codexCode).toContain('experimental_bearer_token = "sk-grok"')
+
+    await clickTab('keys.useKeyModal.cliTabs.opencode')
+    const openCode = wrapper.findAll('pre code').map((code) => code.text()).join('\n')
+    expect(openCode).toContain('"baseURL": "https://example.com/v1"')
+    expect(openCode).toContain('"apiKey": "sk-grok"')
+    expect(openCode).toContain('"grok"')
+    expect(openCode).toContain('"grok-4.5"')
+    expect(openCode).toContain('"grok-4.3"')
+    expect(openCode).toContain('"grok-build-0.1"')
+    expect(openCode).toContain('"grok-latest"')
+    // Must not reuse OpenAI GPT catalog for Grok OpenCode
+    expect(openCode).not.toContain('"gpt-5.4"')
+    expect(openCode).not.toContain('"gpt-5.2"')
   })
 })

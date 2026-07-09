@@ -1402,6 +1402,7 @@ export default {
         geminiCli: 'Gemini CLI',
         codexCli: 'Codex CLI',
         codexCliWs: 'Codex CLI (WebSocket)',
+        grokCli: 'Grok CLI',
         opencode: 'OpenCode',
       },
       antigravity: {
@@ -1417,9 +1418,14 @@ export default {
         note: 'These environment variables will be active in the current terminal session. For permanent configuration, add them to ~/.bashrc, ~/.zshrc, or the appropriate configuration file.',
       },
       grok: {
-        description: 'Add the following environment variables to your terminal profile or run directly in terminal. Supports API Key access for both Grok CLI (cli-chat-proxy.grok.com) and Codex (api.x.ai).',
+        description: 'Configure Sub2API Grok group access. Use Grok CLI, Codex CLI, Claude Code, or OpenCode tabs below.',
         note: 'These environment variables will be active in the current terminal session. For permanent configuration, add them to ~/.bashrc, ~/.zshrc, or the appropriate configuration file.',
-        configTomlHint: 'Config file approach is recommended. Supports multiple models. API Key can be referenced via env_key (environment variable) or hardcoded in api_key (not recommended).'
+        configTomlHint: 'Config file approach is recommended. Supports multiple models. API Key can be referenced via env_key (environment variable) or hardcoded in api_key (not recommended).',
+        claudeDescription: 'Configure Claude Code to use this Grok group via the Anthropic-compatible /v1/messages endpoint. Defaults to grok-4.5; set ANTHROPIC_MODEL to any grok-* id to override without server remapping.',
+        claudeNote: 'Claude model names (claude-sonnet/opus/haiku) are mapped to grok-4.5 server-side. Native grok-* models pass through unchanged. These env vars apply to the current terminal session unless saved to your profile.',
+        codexDescription: 'Configure Codex CLI to use this Grok group via OpenAI-compatible Responses. Default model is grok-4.5; you can set any grok-* model in config.toml.',
+        codexNote: 'Grok upstream is HTTP/SSE. Keep supports_websockets = false (Sub2API bridges WS to HTTP if enabled). Create ~/.codex if it does not exist.',
+        codexConfigHint: 'Recommended: copy into ~/.codex/config.toml. Change model to any grok-* id as needed.',
       },
       opencode: {
         title: 'OpenCode Example',
@@ -4470,8 +4476,8 @@ export default {
         modelRestrictionDisabledByPassthrough: 'Automatic passthrough is enabled: model whitelist/mapping will not take effect.',
       },
       grok: {
-        baseUrlHint: 'Grok accounts support API Key access for both Grok CLI (cli-chat-proxy.grok.com/v1) and Codex (api.x.ai/v1).',
-        apiKeyHint: 'Enter your Grok API Key. Supports both CLI and Codex base URLs.'
+        baseUrlHint: 'Default is https://api.x.ai/v1 (or cli-chat-proxy.grok.com/v1 for Grok CLI). Leave empty to use the platform default.',
+        apiKeyHint: 'Subscription OAuth is recommended for full features (text + image/video). API Key is supported for text-only access via admin API if needed.'
       },
       anthropic: {
         apiKeyPassthrough: 'Auto passthrough (auth only)',
@@ -4858,7 +4864,7 @@ export default {
           missingExchangeParams: 'Missing authorization code, state, or OAuth session',
           failedToExchangeCode: 'Failed to exchange Grok authorization code',
           failedToValidateRT: 'Failed to validate Grok refresh token',
-          oauthOnlyHint: 'Initial Grok support is OAuth subscription-backed Responses API text and reasoning traffic only.'
+          oauthOnlyHint: 'Grok accounts use xAI subscription OAuth. Supports Responses / Chat Completions / Claude Code messages, plus native Imagine images & videos and web_search. Default text model: grok-4.5.'
         },
         // Gemini specific
 	        gemini: {
@@ -6064,6 +6070,8 @@ export default {
       errorTrend: 'Error Trend',
       errorDistribution: 'Error Distribution',
       switchRate: 'Avg switches',
+      upstreamFailoverRate: 'Upstream failovers / request',
+      stickyOriginalUnavailableRate: 'Sticky original unavailable rate',
       systemLogs: {
         title: 'System Logs',
         subtitle: 'Newest first by default. Supports filtering, searching, and cleanup by current conditions.',
@@ -6831,7 +6839,7 @@ export default {
       tooltips: {
         totalRequests: 'Total number of requests (including both successful and failed requests) in the selected time window.',
         throughputTrend: 'Requests/QPS + Tokens/TPS in the selected window.',
-        switchRateTrend: 'Trend of account switches / total requests over the last 5 hours (avg switches).',
+        switchRateTrend: 'Trend of upstream failovers / request and sticky-session original-account unavailable rate in the current time window.',
         latencyHistogram: 'Request duration distribution (ms) for successful requests.',
         errorTrend: 'SLA error counts over time. Recovered telemetry is final-200 upstream anomaly telemetry, shown separately and excluded from error-rate/details scope.',
         errorDistribution: 'Error distribution by owner, with status-code aggregates attached.',

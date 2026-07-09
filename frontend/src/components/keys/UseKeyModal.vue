@@ -291,7 +291,12 @@ const clientTabs = computed((): TabConfig[] => {
         { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
       ]
     case 'grok':
-      return []
+      return [
+        { id: 'grok', label: t('keys.useKeyModal.cliTabs.grokCli'), icon: TerminalIcon },
+        { id: 'codex', label: t('keys.useKeyModal.cliTabs.codexCli'), icon: TerminalIcon },
+        { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
+        { id: 'opencode', label: t('keys.useKeyModal.cliTabs.opencode'), icon: TerminalIcon }
+      ]
     default:
       return [
         { id: 'claude', label: t('keys.useKeyModal.cliTabs.claudeCode'), icon: TerminalIcon },
@@ -335,6 +340,15 @@ const platformDescription = computed(() => {
     case 'antigravity':
       return t('keys.useKeyModal.antigravity.description')
     case 'grok':
+      if (activeClientTab.value === 'claude') {
+        return t('keys.useKeyModal.grok.claudeDescription')
+      }
+      if (activeClientTab.value === 'codex') {
+        return t('keys.useKeyModal.grok.codexDescription')
+      }
+      if (activeClientTab.value === 'opencode') {
+        return t('keys.useKeyModal.grok.description')
+      }
       return t('keys.useKeyModal.grok.description')
     default:
       return t('keys.useKeyModal.description')
@@ -357,6 +371,12 @@ const platformNote = computed(() => {
         ? t('keys.useKeyModal.antigravity.claudeNote')
         : t('keys.useKeyModal.antigravity.geminiNote')
     case 'grok':
+      if (activeClientTab.value === 'claude') {
+        return t('keys.useKeyModal.grok.claudeNote')
+      }
+      if (activeClientTab.value === 'codex') {
+        return t('keys.useKeyModal.grok.codexNote')
+      }
       return t('keys.useKeyModal.grok.note')
     default:
       return t('keys.useKeyModal.note')
@@ -418,6 +438,8 @@ const currentFiles = computed((): FileConfig[] => {
           generateOpenCodeConfig('antigravity-claude', antigravityBase, apiKey, 'opencode.json (Claude)'),
           generateOpenCodeConfig('antigravity-gemini', antigravityGeminiBase, apiKey, 'opencode.json (Gemini)')
         ]
+      case 'grok':
+        return [generateOpenCodeConfig('grok', apiBase, apiKey)]
       default:
         return [generateOpenCodeConfig('openai', apiBase, apiKey)]
     }
@@ -442,6 +464,12 @@ const currentFiles = computed((): FileConfig[] => {
       }
       return generateAnthropicFiles(`${baseRoot}/antigravity`, apiKey)
     case 'grok':
+      if (activeClientTab.value === 'claude') {
+        return generateGrokClaudeCodeFiles(anthropicBase, apiKey)
+      }
+      if (activeClientTab.value === 'codex') {
+        return generateGrokCodexFiles(apiBase, apiKey)
+      }
       return generateGrokFiles(apiBase, apiKey)
     default:
       return generateAnthropicFiles(anthropicBase, apiKey)
@@ -621,6 +649,118 @@ responses_websockets_v2 = true
   ]
 }
 
+function generateGrokClaudeCodeFiles(baseUrl: string, apiKey: string): FileConfig[] {
+  // Claude Code against a Grok group: use Anthropic-compatible /v1/messages.
+  // Default model env vars point at grok-4.5 so the client sends native Grok IDs
+  // (no server-side Claude→Grok rewrite). Claude model names still map server-side.
+  let path: string
+  let content: string
+
+  switch (activeTab.value) {
+    case 'unix':
+      path = 'Terminal'
+      content = `export ANTHROPIC_BASE_URL="${baseUrl}"
+export ANTHROPIC_AUTH_TOKEN="${apiKey}"
+export ANTHROPIC_MODEL="grok-4.5"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="grok-4.5"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="grok-4.5"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="grok-4.5"
+export ANTHROPIC_SMALL_FAST_MODEL="grok-4.5"
+export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+export CLAUDE_CODE_ATTRIBUTION_HEADER=0`
+      break
+    case 'cmd':
+      path = 'Command Prompt'
+      content = `set ANTHROPIC_BASE_URL=${baseUrl}
+set ANTHROPIC_AUTH_TOKEN=${apiKey}
+set ANTHROPIC_MODEL=grok-4.5
+set ANTHROPIC_DEFAULT_OPUS_MODEL=grok-4.5
+set ANTHROPIC_DEFAULT_SONNET_MODEL=grok-4.5
+set ANTHROPIC_DEFAULT_HAIKU_MODEL=grok-4.5
+set ANTHROPIC_SMALL_FAST_MODEL=grok-4.5
+set CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+set CLAUDE_CODE_ATTRIBUTION_HEADER=0`
+      break
+    case 'powershell':
+      path = 'PowerShell'
+      content = `$env:ANTHROPIC_BASE_URL="${baseUrl}"
+$env:ANTHROPIC_AUTH_TOKEN="${apiKey}"
+$env:ANTHROPIC_MODEL="grok-4.5"
+$env:ANTHROPIC_DEFAULT_OPUS_MODEL="grok-4.5"
+$env:ANTHROPIC_DEFAULT_SONNET_MODEL="grok-4.5"
+$env:ANTHROPIC_DEFAULT_HAIKU_MODEL="grok-4.5"
+$env:ANTHROPIC_SMALL_FAST_MODEL="grok-4.5"
+$env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+$env:CLAUDE_CODE_ATTRIBUTION_HEADER=0`
+      break
+    default:
+      path = 'Terminal'
+      content = ''
+  }
+
+  const vscodeSettingsPath = activeTab.value === 'unix'
+    ? '~/.claude/settings.json'
+    : '%userprofile%\\.claude\\settings.json'
+
+  const vscodeContent = `{
+  "env": {
+    "ANTHROPIC_BASE_URL": "${baseUrl}",
+    "ANTHROPIC_AUTH_TOKEN": "${apiKey}",
+    "ANTHROPIC_MODEL": "grok-4.5",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "grok-4.5",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "grok-4.5",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "grok-4.5",
+    "ANTHROPIC_SMALL_FAST_MODEL": "grok-4.5",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_ATTRIBUTION_HEADER": "0"
+  }
+}`
+
+  return [
+    { path, content },
+    { path: vscodeSettingsPath, content: vscodeContent, hint: 'VSCode Claude Code' }
+  ]
+}
+
+function generateGrokCodexFiles(baseUrl: string, apiKey: string): FileConfig[] {
+  const isWindows = activeTab.value === 'cmd' || activeTab.value === 'powershell' || activeTab.value === 'windows'
+  const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
+
+  // Grok Responses is HTTP/SSE. Codex WS is accepted by Sub2API but bridged to HTTP.
+  const configContent = `# Codex CLI config for Sub2API Grok group access.
+# Default model is grok-4.5. You can switch to any grok-* model id
+# (e.g. grok-4.3, grok-build-0.1, grok-4.20-reasoning) without server rewrite.
+model_provider = "sub2api"
+model = "grok-4.5"
+# Optional personal preferences:
+# review_model = "grok-4.5"
+# model_reasoning_effort = "high"
+# disable_response_storage = true
+# network_access = "enabled"
+# windows_wsl_setup_acknowledged = true
+
+[model_providers.sub2api]
+name = "sub2api"
+base_url = "${baseUrl}"
+experimental_bearer_token = "${apiKey}"
+wire_api = "responses"
+requires_openai_auth = true
+# Grok upstream is HTTP/SSE; leave websockets disabled (Sub2API bridges WS→HTTP if enabled).
+supports_websockets = false
+
+# Optional features:
+# [features]
+# goals = true`
+
+  return [
+    {
+      path: `${configDir}/config.toml`,
+      content: configContent,
+      hint: t('keys.useKeyModal.grok.codexConfigHint')
+    }
+  ]
+}
+
 function generateGrokFiles(baseUrl: string, apiKey: string): FileConfig[] {
   const isWindows = activeTab.value === 'cmd' || activeTab.value === 'powershell'
   const configDir = isWindows ? '%userprofile%\\.grok' : '~/.grok'
@@ -663,13 +803,20 @@ models_base_url = "${baseUrl}"
 #   1. env_key = "XAI_API_KEY" (use environment variable)
 #   2. api_key = "sk-xxx..." (hardcode, not recommended for security)
 
+[model.grok-4.5]
+model = "grok-4.5"
+name = "Grok 4.5"
+api_backend = "responses"
+context_window = 500000
+env_key = "XAI_API_KEY"  # Recommended: use environment variable
+# api_key = "${apiKey}"  # Alternative: hardcode API key (not recommended)
+
 [model.grok-build]
 model = "grok-build"
 name = "Grok Build"
 api_backend = "responses"
 context_window = 512000
-env_key = "XAI_API_KEY"  # Recommended: use environment variable
-# api_key = "${apiKey}"  # Alternative: hardcode API key (not recommended)
+env_key = "XAI_API_KEY"
 
 [model.grok-4.20-reasoning]
 model = "grok-4.20-reasoning"
@@ -694,7 +841,7 @@ env_key = "XAI_API_KEY"
 
 # Set default model (optional)
 [models]
-default = "grok-build"`
+default = "grok-4.5"`
 
   return [
     { path: envPath, content: envContent },
@@ -1101,6 +1248,53 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     }
   }
 
+  // Grok text models exposed via OpenAI-compatible gateway.
+  // Keep in sync with xaiModels whitelist (text only — not Imagine media).
+  const grokModels = {
+    'grok-4.5': {
+      name: 'Grok 4.5',
+      limit: {
+        context: 256000,
+        output: 64000
+      }
+    },
+    'grok-4.3': {
+      name: 'Grok 4.3',
+      limit: {
+        context: 256000,
+        output: 64000
+      }
+    },
+    'grok-build-0.1': {
+      name: 'Grok Build 0.1',
+      limit: {
+        context: 256000,
+        output: 64000
+      }
+    },
+    'grok-4.20-reasoning': {
+      name: 'Grok 4.20 Reasoning',
+      limit: {
+        context: 256000,
+        output: 64000
+      }
+    },
+    'grok-4.20-non-reasoning': {
+      name: 'Grok 4.20 Non-Reasoning',
+      limit: {
+        context: 256000,
+        output: 64000
+      }
+    },
+    'grok-latest': {
+      name: 'Grok Latest',
+      limit: {
+        context: 256000,
+        output: 64000
+      }
+    }
+  }
+
   if (platform === 'gemini') {
     provider[platform].npm = '@ai-sdk/google'
     provider[platform].models = geminiModels
@@ -1116,6 +1310,9 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     provider[platform].models = antigravityGeminiModels
   } else if (platform === 'openai') {
     provider[platform].models = openaiModels
+  } else if (platform === 'grok') {
+    provider[platform].name = 'Grok (xAI)'
+    provider[platform].models = grokModels
   }
 
   const agent =

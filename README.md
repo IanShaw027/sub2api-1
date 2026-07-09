@@ -625,13 +625,15 @@ Sub2API supports Grok subscription accounts through xAI OAuth and forwards OpenA
 ### Supported Scope
 
 - Platform name: `grok`
-- Account type: OAuth subscription accounts
+- Account type: OAuth subscription accounts (dashboard create flow); API-key type is allowed for text-only access via admin API
 - Public Responses targets: `/v1/responses`, `/responses`, and `/backend-api/codex/responses`, forwarded to `${XAI_BASE_URL:-https://api.x.ai/v1}/responses`
-- Public Claude-compatible target: `/v1/messages`, converted to xAI Responses and returned as Anthropic Messages output for Claude CLI style clients
+- Public Claude-compatible target: `/v1/messages`, converted to xAI Responses and returned as Anthropic Messages output for Claude CLI style clients (Claude model names map to `grok-4.5`; native `grok-*` ids pass through)
+- Grok groups do not support `/v1/messages/count_tokens`; that endpoint fails closed with a not-supported response because xAI has no compatible input-token counter.
 - Public Chat Completions targets: `/v1/chat/completions` and `/chat/completions`, forwarded to `${XAI_BASE_URL:-https://api.x.ai/v1}/chat/completions`
 - Codex CLI style Responses WebSocket ingress is accepted on the Responses targets and bridged to xAI HTTP/SSE Responses upstream
-- Initial models: `grok-4.3`, `grok-build-0.1`, `grok-4.20-0309-reasoning`, `grok-4.20-0309-non-reasoning`, and `grok-4.20-multi-agent-0309`
-- Grok supports OpenAI-compatible Responses and Chat Completions for text, plus native Imagine image/video routes via subscription OAuth accounts (not raw API keys). Image/video support is aligned to https://docs.x.ai/developers/model-capabilities .
+- Initial models: `grok-4.5` (default for Claude Code / Codex / Grok CLI), `grok-4.3`, `grok-build-0.1`, `grok-4.20-0309-reasoning`, `grok-4.20-0309-non-reasoning`, and `grok-4.20-multi-agent-0309`
+- Grok supports OpenAI-compatible Responses and Chat Completions for text, plus native Imagine image/video routes via subscription OAuth accounts (not raw API keys). Image/video support is aligned to https://docs.x.ai/developers/model-capabilities.
+- Imagine models: `grok-imagine-image-quality`, `grok-imagine-image`, `grok-imagine-video`, `grok-imagine-video-1.5` (aliases such as `grok-imagine` → quality). Images accept official `{url,type:image_url}` objects; video POST jobs stick to the same account for GET status polls.
 
 ### OAuth Configuration
 
