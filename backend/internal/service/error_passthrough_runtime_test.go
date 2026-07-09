@@ -122,6 +122,70 @@ func TestOpenAIHandleErrorResponse_HidesBillingLimitMessage(t *testing.T) {
 	assert.Equal(t, "You've hit your usage limit. Upgrade to Plus to continue using Codex, or try again after 1:00 PM.", upstreamMessage)
 }
 
+func TestOpenAIHandleErrorResponse_AppliesGrokScopedRuleForGrokAccount(t *testing.T) {
+	setGinTestMode()
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	rule := newNonFailoverPassthroughRule(http.StatusUnprocessableEntity, "invalid schema", http.StatusTeapot, "Grok上游失败")
+	rule.Platforms = []string{model.PlatformGrok}
+	ruleSvc := &ErrorPassthroughService{}
+	ruleSvc.setLocalCache([]*model.ErrorPassthroughRule{rule})
+	BindErrorPassthroughService(c, ruleSvc)
+
+	svc := &OpenAIGatewayService{}
+	respBody := []byte(`{"error":{"message":"Invalid schema for field messages"}}`)
+	resp := &http.Response{
+		StatusCode: http.StatusUnprocessableEntity,
+		Body:       io.NopCloser(bytes.NewReader(respBody)),
+		Header:     http.Header{},
+	}
+	account := &Account{ID: 22, Platform: PlatformGrok, Type: AccountTypeAPIKey}
+
+	_, err := svc.handleErrorResponse(context.Background(), resp, c, account, nil)
+	require.Error(t, err)
+	assert.Equal(t, http.StatusTeapot, rec.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	errField, ok := payload["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "upstream_error", errField["type"])
+	assert.Equal(t, "Grok上游失败", errField["message"])
+}
+
+func TestOpenAIHandleErrorResponsePassthrough_AppliesGrokScopedRuleForGrokAccount(t *testing.T) {
+	setGinTestMode()
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	rule := newNonFailoverPassthroughRule(http.StatusUnprocessableEntity, "invalid schema", http.StatusTeapot, "Grok passthrough failed")
+	rule.Platforms = []string{model.PlatformGrok}
+	ruleSvc := &ErrorPassthroughService{}
+	ruleSvc.setLocalCache([]*model.ErrorPassthroughRule{rule})
+	BindErrorPassthroughService(c, ruleSvc)
+
+	svc := &OpenAIGatewayService{}
+	respBody := []byte(`{"error":{"message":"Invalid schema for field messages"}}`)
+	resp := &http.Response{
+		StatusCode: http.StatusUnprocessableEntity,
+		Body:       io.NopCloser(bytes.NewReader(respBody)),
+		Header:     http.Header{},
+	}
+	account := &Account{ID: 23, Platform: PlatformGrok, Type: AccountTypeAPIKey}
+
+	err := svc.handleErrorResponsePassthrough(context.Background(), resp, c, account, nil)
+	require.Error(t, err)
+	assert.Equal(t, http.StatusTeapot, rec.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	errField, ok := payload["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "upstream_error", errField["type"])
+	assert.Equal(t, "Grok passthrough failed", errField["message"])
+}
+
 func TestOpenAIHandleCompatErrorResponse_HidesBillingLimitMessage(t *testing.T) {
 	setGinTestMode()
 	rec := httptest.NewRecorder()

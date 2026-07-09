@@ -1853,8 +1853,8 @@ func TestKiroGatewayService_Forward_HTTPErrorRecordsOpsContext(t *testing.T) {
 
 	require.Error(t, err)
 	require.Nil(t, result)
-	require.Equal(t, http.StatusBadGateway, rec.Code)
-	require.Contains(t, rec.Body.String(), "Kiro upstream returned 400: invalid_request: selected model is not available for this account")
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.JSONEq(t, `{"error":"invalid_request","message":"selected model is not available for this account"}`, rec.Body.String())
 	require.ErrorContains(t, err, "Kiro upstream returned 400: invalid_request: selected model is not available for this account")
 	statusCodeValue, ok := c.Get(OpsUpstreamStatusCodeKey)
 	require.True(t, ok)
