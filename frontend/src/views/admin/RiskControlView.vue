@@ -1771,6 +1771,7 @@ const exemptUserKeyword = ref('')
 const exemptUserResults = ref<SimpleUser[]>([])
 const exemptUserDropdownOpen = ref(false)
 let exemptUserSearchTimer: ReturnType<typeof setTimeout> | null = null
+let exemptUserSearchSeq = 0
 
 const exemptUserIDSet = computed(() => new Set(configForm.auto_ban_exempt_users.map((u) => u.id)))
 
@@ -1778,15 +1779,19 @@ function debounceExemptUserSearch() {
   if (exemptUserSearchTimer) clearTimeout(exemptUserSearchTimer)
   exemptUserSearchTimer = setTimeout(async () => {
     const keyword = exemptUserKeyword.value.trim()
+    const reqSeq = ++exemptUserSearchSeq
     if (!keyword) {
       exemptUserResults.value = []
       exemptUserDropdownOpen.value = false
       return
     }
     try {
-      exemptUserResults.value = await adminAPI.usage.searchUsers(keyword)
+      const results = await adminAPI.usage.searchUsers(keyword)
+      if (reqSeq !== exemptUserSearchSeq) return
+      exemptUserResults.value = results
       exemptUserDropdownOpen.value = exemptUserResults.value.length > 0
     } catch {
+      if (reqSeq !== exemptUserSearchSeq) return
       exemptUserResults.value = []
       exemptUserDropdownOpen.value = false
     }

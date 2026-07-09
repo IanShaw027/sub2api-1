@@ -312,7 +312,14 @@
               <div
                 class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-primary-100 dark:bg-primary-900/30"
               >
-                <img v-if="row.avatar_url" :src="row.avatar_url" :alt="value" class="h-full w-full object-cover" />
+                <img
+                  v-if="safeAvatarUrl(row.avatar_url)"
+                  :src="safeAvatarUrl(row.avatar_url)"
+                  :alt="value"
+                  referrerpolicy="no-referrer"
+                  loading="lazy"
+                  class="h-full w-full object-cover"
+                />
                 <span v-else class="text-sm font-medium text-primary-700 dark:text-primary-300">
                   {{ value.charAt(0).toUpperCase() }}
                 </span>
@@ -825,6 +832,7 @@ import UserBalanceModal from '@/components/admin/user/UserBalanceModal.vue'
 import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryModal.vue'
 import GroupReplaceModal from '@/components/admin/user/GroupReplaceModal.vue'
 import { buildAppAbsoluteUrl } from '@/utils/url'
+import { safeImageUrl } from '@/utils/safeImageUrl'
 
 const appStore = useAppStore()
 
@@ -852,6 +860,8 @@ const handleUserUsageJump = (user: AdminUser) => {
   targetUrl.searchParams.set('end_date', endDate)
   window.open(targetUrl.toString(), '_self')
 }
+
+const safeAvatarUrl = (raw: unknown): string => safeImageUrl(raw)
 
 // Generate dynamic attribute columns from enabled definitions
 const attributeColumns = computed<Column[]>(() =>
@@ -1615,6 +1625,7 @@ const loadUsers = async () => {
         api_key_group_id: filters.apiKeyGroup ?? undefined,
         attributes: Object.keys(attrFilters).length > 0 ? attrFilters : undefined,
         include_subscriptions: hasVisibleSubscriptionsColumn.value,
+        include_usage_stats: true,
         sort_by: sortState.sort_by,
         sort_order: sortState.sort_order
       },

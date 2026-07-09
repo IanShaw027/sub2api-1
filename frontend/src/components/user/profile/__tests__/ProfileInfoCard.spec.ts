@@ -87,6 +87,38 @@ describe('ProfileInfoCard', () => {
     expect(wrapper.get('[data-testid="profile-auth-bindings-panel"]').exists()).toBe(true)
   })
 
+  it('renders trusted avatars with privacy-preserving attributes and hides unsafe ones', () => {
+    const safeWrapper = mount(ProfileInfoCard, {
+      props: {
+        user: createUser({ avatar_url: 'https://cdn.example.com/avatar.png' })
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    const safeAvatar = safeWrapper.get('img[alt="alice"]')
+    expect(safeAvatar.attributes('src')).toBe('https://cdn.example.com/avatar.png')
+    expect(safeAvatar.attributes('referrerpolicy')).toBe('no-referrer')
+    expect(safeAvatar.attributes('loading')).toBe('lazy')
+
+    const unsafeWrapper = mount(ProfileInfoCard, {
+      props: {
+        user: createUser({ avatar_url: 'javascript:alert(1)' })
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    expect(unsafeWrapper.find('img[alt="alice"]').exists()).toBe(false)
+    expect(unsafeWrapper.text()).toContain('A')
+  })
+
   it('renders compact profile source hints without restoring the old side column', () => {
     const wrapper = mount(ProfileInfoCard, {
       props: {

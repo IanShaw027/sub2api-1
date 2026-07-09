@@ -135,7 +135,7 @@ describe('StripePaymentView', () => {
     expect(wrapper.text()).toContain(formatPaymentAmount(103, 'HKD', 'zh-CN'))
   })
 
-  it('treats RECHARGING as a settled Stripe QR state and returns to the result page', async () => {
+  it('keeps polling while the Stripe order is still RECHARGING', async () => {
     vi.useFakeTimers()
     routeState.query = {
       order_id: '42',
@@ -166,19 +166,12 @@ describe('StripePaymentView', () => {
     await flushPromises()
 
     expect(paymentStore.pollOrderStatus).toHaveBeenCalledWith(42)
-    expect(wrapper.text()).toContain('payment.result.success')
+    expect(wrapper.text()).not.toContain('payment.result.success')
 
     await vi.advanceTimersByTimeAsync(2000)
     await flushPromises()
 
-    expect(routerPush).toHaveBeenCalledWith({
-      path: '/payment/result',
-      query: {
-        order_id: '42',
-        out_trade_no: 'sub2_stripe_42',
-        status: 'success',
-      },
-    })
+    expect(routerPush).not.toHaveBeenCalled()
     vi.useRealTimers()
   })
 

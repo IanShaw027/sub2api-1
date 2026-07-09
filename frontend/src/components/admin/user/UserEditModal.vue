@@ -9,11 +9,13 @@
       <div class="flex items-center gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800/60">
         <div class="h-14 w-14 overflow-hidden rounded-full bg-primary-100 dark:bg-primary-900/30">
           <img
-            v-if="user.avatar_url"
+            v-if="safeImageUrl(user.avatar_url)"
             data-test="user-avatar"
-            :src="user.avatar_url"
+            :src="safeImageUrl(user.avatar_url)"
             :alt="user.email"
             class="h-full w-full object-cover"
+            referrerpolicy="no-referrer"
+            loading="lazy"
           />
           <div v-else class="flex h-full w-full items-center justify-center text-lg font-semibold text-primary-700 dark:text-primary-300">
             {{ user.email.charAt(0).toUpperCase() }}
@@ -29,11 +31,13 @@
               class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2 py-1 dark:border-dark-700 dark:bg-dark-900"
             >
               <img
-                v-if="card.avatar_url"
+                v-if="safeImageUrl(card.avatar_url)"
                 :data-test="`identity-avatar-${card.provider}`"
-                :src="card.avatar_url"
+                :src="safeImageUrl(card.avatar_url)"
                 :alt="card.display_name || card.provider"
                 class="h-6 w-6 rounded-full object-cover"
+                referrerpolicy="no-referrer"
+                loading="lazy"
               />
               <div class="min-w-0">
                 <div class="truncate text-xs font-medium text-gray-700 dark:text-gray-200">
@@ -110,6 +114,7 @@ import { useAppStore } from '@/stores/app'
 import { useClipboard } from '@/composables/useClipboard'
 import { adminAPI } from '@/api/admin'
 import type { AdminUser, UserAttributeValuesMap } from '@/types'
+import { safeImageUrl } from '@/utils/safeImageUrl'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import UserAttributeForm from '@/components/user/UserAttributeForm.vue'
 import Icon from '@/components/icons/Icon.vue'

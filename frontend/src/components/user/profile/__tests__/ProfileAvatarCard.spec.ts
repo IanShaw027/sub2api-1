@@ -235,6 +235,8 @@ describe('ProfileAvatarCard', () => {
 
     const preview = wrapper.get('[data-testid="profile-avatar-preview"]')
     expect(preview.attributes('src')).toBe('data:image/webp;base64,Y29tcHJlc3NlZC1hdmF0YXI=')
+    expect(preview.attributes('referrerpolicy')).toBe('no-referrer')
+    expect(preview.attributes('loading')).toBe('lazy')
   })
 
   it('deletes the current avatar', async () => {
@@ -258,5 +260,39 @@ describe('ProfileAvatarCard', () => {
     expect(updateProfileMock).toHaveBeenCalledWith({ avatar_url: '' })
     expect(authStoreState.user?.avatar_url).toBeNull()
     expect(showSuccessMock).toHaveBeenCalledWith('Avatar removed')
+  })
+
+  it('renders trusted persisted avatars but hides unsafe persisted avatar URLs', () => {
+    authStoreState.user = createUser({ avatar_url: 'https://cdn.example.com/old.png' })
+
+    const safeWrapper = mount(ProfileAvatarCard, {
+      props: {
+        user: authStoreState.user
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    const safePreview = safeWrapper.get('[data-testid="profile-avatar-preview"]')
+    expect(safePreview.attributes('src')).toBe('https://cdn.example.com/old.png')
+    expect(safePreview.attributes('referrerpolicy')).toBe('no-referrer')
+    expect(safePreview.attributes('loading')).toBe('lazy')
+
+    const unsafeWrapper = mount(ProfileAvatarCard, {
+      props: {
+        user: createUser({ avatar_url: 'javascript:alert(1)' })
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    expect(unsafeWrapper.find('[data-testid="profile-avatar-preview"]').exists()).toBe(false)
+    expect(unsafeWrapper.text()).toContain('A')
   })
 })

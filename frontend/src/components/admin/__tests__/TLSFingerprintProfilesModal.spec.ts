@@ -114,6 +114,12 @@ describe('TLSFingerprintProfilesModal', () => {
     expect(values).toEqual(expect.arrayContaining(['', 'http1', 'h2', 'websocket-http1', 'websocket-h2']))
     expect(values).not.toContain('http')
     expect(values).not.toContain('websocket')
+    const labels = transportSelect!.findAll('option').map(option => option.text())
+    expect(labels).toEqual(expect.arrayContaining([
+      'admin.tlsFingerprintProfiles.form.transportH2CaptureOnly',
+      'admin.tlsFingerprintProfiles.form.transportWebsocketH2CaptureOnly',
+    ]))
+    expect(wrapper.text()).toContain('admin.tlsFingerprintProfiles.form.transportReplayHint')
   })
 
   it('exposes replay-only TLS fields in the profile form', async () => {

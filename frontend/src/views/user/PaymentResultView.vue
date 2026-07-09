@@ -133,8 +133,8 @@ interface ReturnInfo {
 }
 const returnInfo = ref<ReturnInfo | null>(null)
 
-const SUCCESS_STATUSES = new Set(['COMPLETED', 'PAID', 'RECHARGING'])
-const PENDING_STATUSES = new Set(['PENDING', 'CREATED', 'WAITING', 'PROCESSING'])
+const SUCCESS_STATUSES = new Set(['COMPLETED', 'PAID'])
+const PENDING_STATUSES = new Set(['PENDING', 'CREATED', 'WAITING', 'PROCESSING', 'RECHARGING'])
 const STATUS_REFRESH_INTERVAL_MS = 2000
 const STATUS_REFRESH_MAX_ATTEMPTS = 15
 

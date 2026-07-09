@@ -85,8 +85,47 @@ describe('UserEditModal', () => {
     })
 
     expect(wrapper.get('[data-test="user-avatar"]').attributes('src')).toBe('https://cdn.example.com/local-avatar.png')
+    expect(wrapper.get('[data-test="user-avatar"]').attributes('referrerpolicy')).toBe('no-referrer')
+    expect(wrapper.get('[data-test="user-avatar"]').attributes('loading')).toBe('lazy')
     expect(wrapper.text()).toContain('LinuxDo Nick')
     expect(wrapper.text()).toContain('linuxdo-user')
     expect(wrapper.get('[data-test="identity-avatar-linuxdo"]').attributes('src')).toBe('https://cdn.example.com/linuxdo-avatar.png')
+    expect(wrapper.get('[data-test="identity-avatar-linuxdo"]').attributes('referrerpolicy')).toBe('no-referrer')
+    expect(wrapper.get('[data-test="identity-avatar-linuxdo"]').attributes('loading')).toBe('lazy')
+  })
+
+  it('does not render unsafe avatar URLs', () => {
+    const wrapper = mount(UserEditModal, {
+      props: {
+        show: true,
+        user: {
+          ...user,
+          avatar_url: 'javascript:alert(1)',
+          auth_bindings: {
+            linuxdo: {
+              provider: 'linuxdo',
+              bound: true,
+              display_name: 'LinuxDo Nick',
+              avatar_url: 'javascript:alert(1)',
+              subject_hint: 'linuxdo-user'
+            }
+          }
+        }
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            props: ['show', 'title'],
+            template: '<div v-if="show"><slot /><slot name="footer" /></div>'
+          },
+          UserAttributeForm: true,
+          Icon: true
+        }
+      }
+    })
+
+    expect(wrapper.find('[data-test="user-avatar"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="identity-avatar-linuxdo"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('U')
   })
 })

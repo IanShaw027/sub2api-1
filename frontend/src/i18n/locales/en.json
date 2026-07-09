@@ -6272,6 +6272,7 @@
         "codeExecutionSandboxCommand": "Code Execution Sandbox Command",
         "codeExecutionSandboxCommandPlaceholder": "e.g. nsjail --quiet -- /usr/local/bin/kiro-code-sandbox",
         "codeExecutionSandboxCommandHint": "Leave empty to disable code_execution; the command receives code on stdin and reads the language from KIRO_CODE_EXECUTION_LANGUAGE.",
+        "codeExecutionSandboxCommandWarning": "Security warning: this command runs via /bin/sh -c on the gateway host and feeds untrusted, model-generated code to its stdin. You MUST provide a truly isolated sandbox (e.g. nsjail, gVisor, or a container with strong isolation). A bare interpreter such as python3 - or bash grants arbitrary remote code execution (RCE) on the host to every gateway user. Ensure the sandbox restricts filesystem, network, and syscalls, and runs with least privilege.",
         "cacheHitRateScale": "Cache Hit Rate Scale",
         "cacheHitRateScalePlaceholder": "0 - 100",
         "cacheHitRateScaleHint": "Range 0-100, entered as a percentage.",

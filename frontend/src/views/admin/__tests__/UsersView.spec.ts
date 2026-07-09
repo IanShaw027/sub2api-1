@@ -181,11 +181,100 @@ describe('admin UsersView', () => {
       20,
       expect.objectContaining({
         include_subscriptions: false,
+        include_usage_stats: true,
         sort_by: 'created_at',
         sort_order: 'desc'
       }),
       expect.any(Object)
     )
+  })
+
+  it('renders trusted avatar URLs with privacy-preserving image attributes', async () => {
+    listUsers.mockResolvedValueOnce({
+      items: [createAdminUser({ avatar_url: 'https://cdn.example.com/avatar.png' } as Partial<AdminUser>)],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    const avatar = wrapper.get('img[alt="scoped@example.com"]')
+    expect(avatar.attributes('src')).toBe('https://cdn.example.com/avatar.png')
+    expect(avatar.attributes('referrerpolicy')).toBe('no-referrer')
+    expect(avatar.attributes('loading')).toBe('lazy')
+  })
+
+  it('does not render unsafe avatar URLs in the admin users table', async () => {
+    listUsers.mockResolvedValueOnce({
+      items: [createAdminUser({ avatar_url: 'javascript:alert(1)' } as Partial<AdminUser>)],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+
+    const wrapper = mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.find('img[alt="scoped@example.com"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('S')
   })
 
   it('loads full user detail on demand before opening the platform quota modal', async () => {

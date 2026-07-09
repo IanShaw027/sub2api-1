@@ -556,10 +556,11 @@
             <select v-model="form.transport" class="input">
               <option value="">{{ t('admin.tlsFingerprintProfiles.form.transportAny') }}</option>
               <option value="http1">HTTP/1.1</option>
-              <option value="h2">HTTP/2</option>
+              <option value="h2">{{ t('admin.tlsFingerprintProfiles.form.transportH2CaptureOnly') }}</option>
               <option value="websocket-http1">WebSocket HTTP/1.1</option>
-              <option value="websocket-h2">WebSocket HTTP/2</option>
+              <option value="websocket-h2">{{ t('admin.tlsFingerprintProfiles.form.transportWebsocketH2CaptureOnly') }}</option>
             </select>
+            <p class="input-hint text-xs">{{ t('admin.tlsFingerprintProfiles.form.transportReplayHint') }}</p>
           </div>
           <div>
             <label class="input-label">{{ t('admin.tlsFingerprintProfiles.form.os') }}</label>

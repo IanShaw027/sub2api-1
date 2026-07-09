@@ -94,6 +94,8 @@
                 :src="avatarUrl"
                 :alt="displayName"
                 class="h-full w-full object-cover"
+                referrerpolicy="no-referrer"
+                loading="lazy"
               >
               <span v-else>{{ userInitials }}</span>
             </div>
@@ -211,6 +213,7 @@ import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMi
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import SupportQRCodesButton from '@/components/common/SupportQRCodesButton.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { safeImageUrl } from '@/utils/safeImageUrl'
 
 const router = useRouter()
 const route = useRoute()
@@ -225,7 +228,7 @@ const dropdownOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
 const supportQRCodes = computed(() => appStore.supportQRCodes)
-const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
+const avatarUrl = computed(() => safeImageUrl(user.value?.avatar_url))
 const helpDocsUrl = computed(() => (appStore.cachedPublicSettings?.doc_url || appStore.docUrl || '').trim())
 const downloadToolsUrl = computed(() => (appStore.cachedPublicSettings?.download_tools_url || appStore.downloadToolsUrl || '').trim())
 

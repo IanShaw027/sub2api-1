@@ -3514,6 +3514,15 @@
                     )
                   }}
                 </p>
+                <div
+                  class="mt-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300"
+                >
+                  {{
+                    t(
+                      "admin.settings.kiroRuntime.codeExecutionSandboxCommandWarning",
+                    )
+                  }}
+                </div>
               </div>
 
               <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -4981,8 +4990,8 @@
               <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
                 {{
                   localText(
-                    "在系统设置中控制指纹归一化、TLS 伪装、头部剥离、抖动、触发词清理等整套防封控功能对哪些平台生效。默认全部关闭，需要时手动为对应平台开启。",
-                    "Toggle the complete anti-ban suite (fingerprint normalizer + TLS spoof + header stripping + jitter + trigger sanitizers etc) per platform. Defaults to OFF for all; manually enable for platforms that need it (e.g. Grok/Codex).",
+                    "在系统设置中控制指纹归一化、TLS 伪装、头部剥离、触发词清理等整套防封控功能对哪些平台生效。默认全部关闭，需要时手动为对应平台开启。",
+                    "Toggle the complete anti-ban suite (fingerprint normalizer + TLS spoof + header stripping + trigger sanitizers etc) per platform. Defaults to OFF for all; manually enable for platforms that need it (e.g. Grok/Codex).",
                   )
                 }}
               </p>

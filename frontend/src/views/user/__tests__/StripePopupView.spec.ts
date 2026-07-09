@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { formatPaymentAmount } from '@/components/payment/currency'
 
 const routeState = vi.hoisted(() => ({
   query: {} as Record<string, unknown>,
@@ -55,6 +56,7 @@ describe('StripePopupView', () => {
       order_id: '42',
       method: 'wechat_pay',
       amount: '88',
+      currency: 'HKD',
     }
     loadStripe.mockReset().mockResolvedValue(stripeInstance)
     openerPostMessage.mockReset()
@@ -97,6 +99,8 @@ describe('StripePopupView', () => {
     const wrapper = mount(StripePopupView)
 
     await flushPromises()
+    expect(wrapper.text()).toContain(formatPaymentAmount(88, 'HKD'))
+    expect(wrapper.text()).not.toContain('¥88')
     expect(openerPostMessage).toHaveBeenCalledWith(
       { type: 'STRIPE_POPUP_READY' },
       window.location.origin,
@@ -124,7 +128,7 @@ describe('StripePopupView', () => {
     expect(windowClose).toHaveBeenCalled()
   })
 
-  it('treats RECHARGING as a settled popup state', async () => {
+  it('keeps polling while the popup order is still RECHARGING', async () => {
     const wrapper = mount(StripePopupView)
 
     await flushPromises()
@@ -142,6 +146,7 @@ describe('StripePopupView', () => {
     await flushPromises()
 
     expect(getOrder).toHaveBeenCalledWith(42)
-    expect(wrapper.text()).toContain('payment.result.success')
+    expect(wrapper.text()).not.toContain('payment.result.success')
+    expect(windowClose).not.toHaveBeenCalled()
   })
 })

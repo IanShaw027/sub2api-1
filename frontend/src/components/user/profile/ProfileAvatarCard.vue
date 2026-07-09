@@ -24,6 +24,8 @@
           :src="avatarPreviewUrl"
           :alt="displayName"
           class="h-full w-full object-cover"
+          referrerpolicy="no-referrer"
+          loading="lazy"
         >
         <span v-else>{{ avatarInitial }}</span>
       </div>
@@ -86,6 +88,7 @@ import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import type { User } from '@/types'
 import { extractApiErrorMessage } from '@/utils/apiError'
+import { safeImageUrl } from '@/utils/safeImageUrl'
 
 const props = withDefaults(defineProps<{
   user: User | null
@@ -106,7 +109,13 @@ const avatarSaving = ref(false)
 
 const displayName = computed(() => props.user?.username?.trim() || props.user?.email?.trim() || t('profile.user'))
 const avatarInitial = computed(() => displayName.value.charAt(0).toUpperCase() || 'U')
-const avatarPreviewUrl = computed(() => avatarDraft.value.trim() || props.user?.avatar_url?.trim() || '')
+const avatarPreviewUrl = computed(() => {
+  const draft = avatarDraft.value.trim()
+  if (draft) {
+    return draft
+  }
+  return safeImageUrl(props.user?.avatar_url)
+})
 
 watch(
   () => props.user?.avatar_url,

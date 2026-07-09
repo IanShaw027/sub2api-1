@@ -433,7 +433,7 @@ async function openRefundDialog(order: PaymentOrder) {
   try {
     const res = await paymentAPI.getRefundPreview(order.id)
     refundPreview.value = res.data
-    refundAmount.value = Math.max(0, Math.min(res.data.max_refund_amount, order.amount))
+    refundAmount.value = Math.max(0, Number(res.data.max_refund_amount || 0))
   } catch (err: unknown) {
     appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
   } finally {

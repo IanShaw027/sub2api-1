@@ -158,6 +158,18 @@
                 {{ selectedSettlement.note || t('skills.admin.settlement.noteEmpty') }}
               </p>
             </div>
+
+            <div v-if="selectedSettlement.settlement_status === 'rejected'" class="mt-6 flex justify-end">
+              <button
+                data-test="settlement-replay-button"
+                type="button"
+                class="btn btn-secondary btn-sm"
+                :disabled="replayLoading"
+                @click="handleReplaySettlement"
+              >
+                {{ replayLoading ? t('common.submitting', '提交中') : t('skills.admin.settlement.replayAction', '重试结算') }}
+              </button>
+            </div>
           </template>
 
           <template v-else>
@@ -206,6 +218,7 @@ const { t, locale } = useI18n()
 const appStore = useAppStore()
 
 const loading = ref(false)
+const replayLoading = ref(false)
 const settlements = ref<SkillSettlementItem[]>([])
 const selectedSettlement = ref<SkillSettlementItem | null>(null)
 
@@ -395,6 +408,21 @@ async function loadSettlements() {
     appStore.showError(extractApiErrorMessage(error, t('common.error', '加载失败')))
   } finally {
     loading.value = false
+  }
+}
+
+async function handleReplaySettlement() {
+  if (!selectedSettlement.value || selectedSettlement.value.settlement_status !== 'rejected') return
+
+  replayLoading.value = true
+  try {
+    const receipt = await adminSkillsAPI.replaySettlement(selectedSettlement.value.id, {})
+    appStore.showSuccess(receipt.message || t('skills.admin.settlement.replaySuccess', '已重新触发结算重试'))
+    await loadSettlements()
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, t('skills.admin.settlement.replayFailed', '重试结算失败')))
+  } finally {
+    replayLoading.value = false
   }
 }
 

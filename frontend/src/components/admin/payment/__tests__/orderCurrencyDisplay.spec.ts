@@ -216,6 +216,27 @@ describe('admin order currency display', () => {
     expect(text).toContain('$100.00')
   })
 
+  it('respects zero-decimal payment currencies in the shared order table', () => {
+    const wrapper = mount(OrderTable, {
+      props: {
+        orders: [
+          orderFactory({ id: 3, currency: 'JPY', amount: 100, pay_amount: 108 }),
+        ],
+        loading: false,
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          OrderStatusBadge: true,
+        },
+      },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('¥108')
+    expect(text).not.toContain('¥108.00')
+  })
+
   it('renders payment currency consistently in the admin order table', () => {
     const wrapper = mount(AdminOrderTable, {
       props: {
@@ -242,5 +263,31 @@ describe('admin order currency display', () => {
     expect(text).toContain('$108.00')
     expect(text).toContain('¥108.00')
     expect(text).toContain('$100.00')
+  })
+
+  it('respects zero-decimal payment currencies in the admin order table', () => {
+    const wrapper = mount(AdminOrderTable, {
+      props: {
+        orders: [
+          orderFactory({ id: 4, currency: 'JPY', amount: 100, pay_amount: 108 }),
+        ],
+        loading: false,
+        page: 1,
+        pageSize: 20,
+        total: 1,
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          Icon: true,
+          Pagination: true,
+          Select: true,
+        },
+      },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('¥108')
+    expect(text).not.toContain('¥108.00')
   })
 })

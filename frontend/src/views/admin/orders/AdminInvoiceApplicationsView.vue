@@ -37,7 +37,7 @@
                 <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ item.user_email }}</td>
                 <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ item.title }}</td>
                 <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ item.order_count }}</td>
-                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">¥{{ item.invoice_amount.toFixed(2) }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ formatPaymentAmount(item.invoice_amount, item.currency) }}</td>
                 <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ invoiceStatusLabel(item.status) }}</td>
                 <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(item.created_at) }}</td>
                 <td class="px-4 py-3 text-right">
@@ -63,7 +63,7 @@
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div><p class="text-xs text-gray-500 dark:text-gray-400">#</p><p class="text-sm text-gray-900 dark:text-white">#{{ detail.id }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.invoice.status') }}</p><p class="text-sm text-gray-900 dark:text-white">{{ invoiceStatusLabel(detail.status) }}</p></div>
-          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.invoice.amount') }}</p><p class="text-sm text-gray-900 dark:text-white">¥{{ detail.invoice_amount.toFixed(2) }}</p></div>
+          <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.invoice.amount') }}</p><p class="text-sm text-gray-900 dark:text-white">{{ formatPaymentAmount(detail.invoice_amount, detail.currency) }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.invoice.fileName') }}</p><p class="text-sm text-gray-900 dark:text-white">{{ detail.file_name || '-' }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.invoice.title') }}</p><p class="text-sm text-gray-900 dark:text-white">{{ detail.title }}</p></div>
           <div><p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.invoice.taxNumber') }}</p><p class="text-sm text-gray-900 dark:text-white">{{ detail.tax_number }}</p></div>
@@ -87,7 +87,7 @@
             <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-900">
               <tr v-for="o in detail.orders" :key="o.order_id">
                 <td class="px-3 py-2 text-sm font-mono text-gray-900 dark:text-white">{{ o.out_trade_no }}</td>
-                <td class="px-3 py-2 text-sm text-gray-700 dark:text-gray-300">¥{{ o.pay_amount_snapshot.toFixed(2) }}</td>
+                <td class="px-3 py-2 text-sm text-gray-700 dark:text-gray-300">{{ formatPaymentAmount(o.pay_amount_snapshot, detail.currency) }}</td>
                 <td class="px-3 py-2 text-sm text-gray-700 dark:text-gray-300">{{ o.payment_type }}</td>
                 <td class="px-3 py-2 text-sm text-gray-700 dark:text-gray-300">{{ formatDateTime(o.created_at) }}</td>
               </tr>
@@ -133,6 +133,7 @@ import { adminPaymentAPI } from '@/api/admin/payment'
 import type { Invoice } from '@/types/payment'
 import { useAppStore } from '@/stores/app'
 import { extractI18nErrorMessage } from '@/utils/apiError'
+import { formatPaymentAmount } from '@/components/payment/currency'
 import { formatOrderDateTime } from '@/components/payment/orderUtils'
 
 const { t } = useI18n()

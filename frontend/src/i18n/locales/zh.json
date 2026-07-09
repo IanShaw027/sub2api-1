@@ -6461,6 +6461,7 @@
         "codeExecutionSandboxCommand": "代码执行沙箱命令",
         "codeExecutionSandboxCommandPlaceholder": "例如：nsjail --quiet -- /usr/local/bin/kiro-code-sandbox",
         "codeExecutionSandboxCommandHint": "留空则禁用 code_execution；命令通过 stdin 接收代码，并通过 KIRO_CODE_EXECUTION_LANGUAGE 读取语言。",
+        "codeExecutionSandboxCommandWarning": "安全警告：该命令会以 /bin/sh -c 在网关主机上执行，并把模型生成的不可信代码送入其标准输入。必须填写真正隔离的沙箱（如 nsjail、gVisor、容器等强隔离方案）；若直接填写 python3 -、bash 等裸解释器，等同于对全体网关用户开放主机任意代码执行（RCE）。请确保沙箱限制文件系统、网络与系统调用，并以最小权限运行。",
         "cacheHitRateScale": "缓存命中率缩放",
         "cacheHitRateScalePlaceholder": "0 - 100",
         "cacheHitRateScaleHint": "范围 0-100，按百分比填写。",

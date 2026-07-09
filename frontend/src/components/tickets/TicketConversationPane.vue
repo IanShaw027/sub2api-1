@@ -25,7 +25,14 @@
           <template v-else>
           <template v-if="message.sender_role !== 'user'">
             <div class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 text-sm font-semibold text-gray-600 dark:bg-dark-600 dark:text-gray-200">
-              <img v-if="message.sender_avatar_snapshot" :src="message.sender_avatar_snapshot" :alt="message.sender_name_snapshot" class="h-full w-full object-cover" />
+              <img
+                v-if="safeImageUrl(message.sender_avatar_snapshot)"
+                :src="safeImageUrl(message.sender_avatar_snapshot)"
+                :alt="message.sender_name_snapshot"
+                class="h-full w-full object-cover"
+                referrerpolicy="no-referrer"
+                loading="lazy"
+              />
               <span v-else>{{ message.sender_name_snapshot.slice(0, 1).toUpperCase() }}</span>
             </div>
           </template>
@@ -70,7 +77,14 @@
 
           <template v-if="message.sender_role === 'user'">
             <div class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 text-sm font-semibold text-gray-600 dark:bg-dark-600 dark:text-gray-200">
-              <img v-if="message.sender_avatar_snapshot" :src="message.sender_avatar_snapshot" :alt="message.sender_name_snapshot" class="h-full w-full object-cover" />
+              <img
+                v-if="safeImageUrl(message.sender_avatar_snapshot)"
+                :src="safeImageUrl(message.sender_avatar_snapshot)"
+                :alt="message.sender_name_snapshot"
+                class="h-full w-full object-cover"
+                referrerpolicy="no-referrer"
+                loading="lazy"
+              />
               <span v-else>{{ message.sender_name_snapshot.slice(0, 1).toUpperCase() }}</span>
             </div>
           </template>
@@ -142,6 +156,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { formatDateTime } from '@/utils/format'
+import { safeImageUrl } from '@/utils/safeImageUrl'
 import type { SupportTicketMessage, TicketMessageAttachment, TicketSenderRole } from '@/types'
 
 const props = withDefaults(defineProps<{

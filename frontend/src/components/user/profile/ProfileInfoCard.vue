@@ -14,6 +14,8 @@
               :src="avatarUrl"
               :alt="displayName"
               class="h-full w-full object-cover"
+              referrerpolicy="no-referrer"
+              loading="lazy"
             >
             <span v-else>{{ avatarInitial }}</span>
           </div>
@@ -202,6 +204,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ProfileAvatarCard from '@/components/user/profile/ProfileAvatarCard.vue'
+import { safeImageUrl } from '@/utils/safeImageUrl'
 import ProfileEditForm from '@/components/user/profile/ProfileEditForm.vue'
 import ProfileIdentityBindingsSection from '@/components/user/profile/ProfileIdentityBindingsSection.vue'
 import type { SupportQRCodeEntry, User, UserAuthBindingStatus, UserAuthProvider, UserProfileSourceContext } from '@/types'
@@ -258,7 +261,7 @@ function isEmailBound(user: User | null | undefined): boolean {
   return normalized ?? false
 }
 
-const avatarUrl = computed(() => props.user?.avatar_url?.trim() || '')
+const avatarUrl = computed(() => safeImageUrl(props.user?.avatar_url))
 const displayName = computed(() => props.user?.username?.trim() || props.user?.email?.trim() || t('profile.user'))
 const contactInfoDisplay = computed(() => props.contactInfo?.trim() || '')
 const supportQRCodeItems = computed(() => (props.supportQRCodes || []).filter((entry) => entry?.image_url?.trim()))

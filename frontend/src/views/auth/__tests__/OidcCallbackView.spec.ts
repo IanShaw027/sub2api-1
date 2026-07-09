@@ -242,6 +242,47 @@ describe('OidcCallbackView', () => {
     expect(replace).toHaveBeenCalledWith('/dashboard')
   })
 
+  it('drops unsafe suggested avatar urls before adoption confirmation', async () => {
+    exchangePendingOAuthCompletion
+      .mockResolvedValueOnce({
+        redirect: '/dashboard',
+        adoption_required: true,
+        suggested_display_name: 'OIDC Nick',
+        suggested_avatar_url: 'javascript:alert(1)'
+      })
+      .mockResolvedValueOnce({
+        access_token: 'access-token',
+        refresh_token: 'refresh-token',
+        expires_in: 3600,
+        redirect: '/dashboard'
+      })
+    setToken.mockResolvedValue({})
+
+    const wrapper = mount(OidcCallbackView, {
+      global: {
+        stubs: {
+          AuthLayout: { template: '<div><slot /></div>' },
+          Icon: true,
+          RouterLink: { template: '<a><slot /></a>' },
+          transition: false
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.find('img').exists()).toBe(false)
+
+    const continueButton = wrapper.find('button')
+    await continueButton.trigger('click')
+    await flushPromises()
+
+    expect(exchangePendingOAuthCompletion).toHaveBeenNthCalledWith(2, {
+      adoptDisplayName: true,
+      adoptAvatar: false
+    })
+  })
+
   it('supports bind completion after adoption confirmation', async () => {
     exchangePendingOAuthCompletion
       .mockResolvedValueOnce({

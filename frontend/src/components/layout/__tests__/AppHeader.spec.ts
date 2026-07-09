@@ -22,3 +22,12 @@ describe('AppHeader document links', () => {
     expect(componentSource).not.toContain('`${base}/cli`')
   })
 })
+
+describe('AppHeader avatar rendering', () => {
+  it('sanitizes avatar URLs and adds privacy-preserving image attributes', () => {
+    expect(componentSource).toContain("import { safeImageUrl } from '@/utils/safeImageUrl'")
+    expect(componentSource).toContain("const avatarUrl = computed(() => safeImageUrl(user.value?.avatar_url))")
+    expect(componentSource).toContain('referrerpolicy="no-referrer"')
+    expect(componentSource).toContain('loading="lazy"')
+  })
+})

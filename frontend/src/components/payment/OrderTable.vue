@@ -30,9 +30,9 @@
         <span v-if="row.user_notes" class="ml-1 text-xs text-gray-400">({{ row.user_notes }})</span>
       </div>
     </template>
-    <template #cell-pay_amount="{ value, row }">
+    <template #cell-pay_amount="{ row }">
       <div class="text-sm">
-        <span class="font-medium text-gray-900 dark:text-white">{{ paymentAmountSymbol(row) }}{{ value.toFixed(2) }}</span>
+        <span class="font-medium text-gray-900 dark:text-white">{{ formatOrderPayAmount(row) }}</span>
         <span v-if="row.fee_rate > 0" class="ml-1 text-xs text-gray-400" :title="t('payment.orders.fee') + ': ' + row.fee_rate + '%'">
           ({{ t('payment.orders.fee') }} {{ row.fee_rate }}%)
         </span>
@@ -64,7 +64,7 @@ import type { Column } from '@/components/common/types'
 import DataTable from '@/components/common/DataTable.vue'
 import OrderStatusBadge from '@/components/payment/OrderStatusBadge.vue'
 import { paymentMethodDisplayKey } from '@/utils/i18n'
-import { currencySymbol } from '@/components/payment/currency'
+import { currencySymbol, formatPaymentAmount } from '@/components/payment/currency'
 
 const { t } = useI18n()
 
@@ -114,7 +114,7 @@ const computedColumns = computed((): Column[] => {
 
 const creditedAmountSymbol = currencySymbol('USD')
 
-function paymentAmountSymbol(order: PaymentOrder): string {
-  return currencySymbol(order.currency)
+function formatOrderPayAmount(order: PaymentOrder): string {
+  return formatPaymentAmount(order.pay_amount, order.currency)
 }
 </script>

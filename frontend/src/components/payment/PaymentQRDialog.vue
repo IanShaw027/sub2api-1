@@ -49,7 +49,7 @@
           </div>
           <div class="flex justify-between">
             <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.payAmount') }}</span>
-            <span class="font-medium text-gray-900 dark:text-white">{{ paymentAmountSymbol(paidOrder) }}{{ paidOrder.pay_amount.toFixed(2) }}</span>
+            <span class="font-medium text-gray-900 dark:text-white">{{ formatOrderPayAmount(paidOrder) }}</span>
           </div>
         </div>
       </div>
@@ -81,7 +81,7 @@ import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { getPaymentPopupFeatures } from '@/components/payment/providerConfig'
 import type { PaymentOrder } from '@/types/payment'
-import { currencySymbol } from '@/components/payment/currency'
+import { currencySymbol, formatPaymentAmount } from '@/components/payment/currency'
 import QRCode from 'qrcode'
 import alipayIcon from '@/assets/icons/alipay.svg'
 import wxpayIcon from '@/assets/icons/wxpay.svg'
@@ -139,8 +139,8 @@ const scanHint = computed(() => {
   return ''
 })
 
-function paymentAmountSymbol(order: PaymentOrder): string {
-  return currencySymbol(order.currency)
+function formatOrderPayAmount(order: PaymentOrder): string {
+  return formatPaymentAmount(order.pay_amount, order.currency)
 }
 
 const countdownDisplay = computed(() => {

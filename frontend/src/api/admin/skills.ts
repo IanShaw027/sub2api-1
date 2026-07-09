@@ -45,6 +45,15 @@ export interface SkillActionReceipt {
   operated_at: string
 }
 
+export interface SkillSettlementReplayReceipt {
+  action: 'replay'
+  message: string
+  status: string
+  operated_at: string
+  settlement_id?: number
+  run_id?: number
+}
+
 export interface SkillReviewItem {
   id: number
   skill_id: number
@@ -551,6 +560,18 @@ function normalizeActionReceipt(raw: unknown, action: SkillAdminAction): SkillAc
   }
 }
 
+function normalizeSettlementReplayReceipt(raw: unknown): SkillSettlementReplayReceipt {
+  const source = isRecord(raw) ? raw : {}
+  return {
+    action: 'replay',
+    message: asString(pickFirstValue(source, ['message']), '操作已提交'),
+    status: asString(pickFirstValue(source, ['status']), 'accepted'),
+    operated_at: asString(pickFirstValue(source, ['operated_at', 'updated_at']), new Date().toISOString()),
+    settlement_id: asNullableNumber(pickFirstValue(source, ['settlement_id', 'id'])) ?? undefined,
+    run_id: asNullableNumber(pickFirstValue(source, ['run_id'])) ?? undefined,
+  }
+}
+
 export async function listReviews(
   page = 1,
   pageSize = 20,
@@ -623,6 +644,14 @@ export async function forceSkillPrivate(skillID: number, payload?: SkillActionPa
   return normalizeActionReceipt(data, 'force-private')
 }
 
+export async function replaySettlement(
+  settlementID: number,
+  payload?: SkillActionPayload,
+): Promise<SkillSettlementReplayReceipt> {
+  const { data } = await apiClient.post(`/admin/skills/settlements/${settlementID}/replay`, payload ?? {})
+  return normalizeSettlementReplayReceipt(data)
+}
+
 export async function getRuntimeOverview(
   page = 1,
   pageSize = 20,
@@ -690,7 +719,8 @@ const adminSkillsAPI = {
   disableSkill,
   forceSkillPrivate,
   getRuntimeOverview,
-  listSettlements
+  listSettlements,
+  replaySettlement,
 }
 
 export default adminSkillsAPI

@@ -54,34 +54,61 @@ describe('tlsFingerprintProfileOptions', () => {
     ).map((profile) => profile.id)).toEqual([1, 2, 3])
   })
 
-  it('matches backend transport semantics: empty binding context keeps transport-specific profiles', () => {
+  it('matches backend transport semantics: empty binding context omits replay-unsupported capture-only profiles', () => {
     const transportProfiles = [
       { id: 1, name: 'Shared Any Transport', platform: 'openai', transport: '' },
+      { id: 4, name: 'HTTP/1.1 Only', platform: 'openai', transport: 'http1' },
       { id: 2, name: 'HTTP/2 Only', platform: 'openai', transport: 'h2' },
+      { id: 5, name: 'WebSocket HTTP/1.1 Only', platform: 'openai', transport: 'websocket-http1' },
       { id: 3, name: 'WebSocket Only', platform: 'openai', transport: 'websocket-h2' }
     ]
 
     expect(getTLSFingerprintProfilesForDimension(
       transportProfiles,
-      { platform: 'openai', os: 'windows' },
+      { platform: 'openai', os: 'windows', transport: 'http' },
       null
-    ).map((profile) => profile.id)).toEqual([1, 2, 3])
+    ).map((profile) => profile.id)).toEqual([1, 4])
+    expect(getTLSFingerprintProfilesForDimension(
+      transportProfiles,
+      { platform: 'openai', os: 'windows', transport: 'http' },
+      2
+    ).map((profile) => profile.id)).toEqual([1, 4, 2])
     expect(getTLSFingerprintProfilesForDimension(
       transportProfiles,
       { platform: 'openai', os: 'windows', transport: 'websocket' },
       null
-    ).map((profile) => profile.id)).toEqual([1, 3])
+    ).map((profile) => profile.id)).toEqual([1, 5])
+    expect(getTLSFingerprintProfilesForDimension(
+      transportProfiles,
+      { platform: 'openai', os: 'windows' },
+      null
+    ).map((profile) => profile.id)).toEqual([1, 4, 5])
     expect(getTLSFingerprintProfilesForDimension(
       transportProfiles,
       { platform: 'openai', os: 'windows' },
       2
-    ).map((profile) => profile.id)).toEqual([1, 2, 3])
+    ).map((profile) => profile.id)).toEqual([1, 4, 2, 5])
+    expect(getTLSFingerprintProfilesForDimension(
+      transportProfiles,
+      { platform: 'openai', os: 'windows' },
+      3
+    ).map((profile) => profile.id)).toEqual([1, 4, 5, 3])
 
     expect(getSelectableTLSFingerprintProfiles(
       transportProfiles,
       'openai',
       null
-    ).map((profile) => profile.id)).toEqual([1, 2, 3])
+    ).map((profile) => profile.id)).toEqual([1, 4, 5])
+    expect(getSelectableTLSFingerprintProfiles(
+      transportProfiles,
+      'openai',
+      2
+    ).map((profile) => profile.id)).toEqual([1, 4, 2, 5])
+    expect(getSelectableTLSFingerprintProfiles(
+      transportProfiles,
+      'openai',
+      3
+    ).map((profile) => profile.id)).toEqual([1, 4, 5, 3])
   })
 
   it('labels shared, platform-specific, and mismatched profiles explicitly', () => {

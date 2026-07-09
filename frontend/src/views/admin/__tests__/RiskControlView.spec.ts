@@ -12,6 +12,7 @@ const {
   getStatus,
   listLogs,
   getGroups,
+  searchUsers,
   showError,
   showSuccess,
 } = vi.hoisted(() => ({
@@ -20,6 +21,7 @@ const {
   getStatus: vi.fn(),
   listLogs: vi.fn(),
   getGroups: vi.fn(),
+  searchUsers: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
 }))
@@ -38,6 +40,9 @@ vi.mock('@/api/admin', () => ({
     },
     groups: {
       getAll: getGroups,
+    },
+    usage: {
+      searchUsers,
     },
   },
 }))
@@ -192,6 +197,7 @@ describe('admin RiskControlView', () => {
     getStatus.mockReset()
     listLogs.mockReset()
     getGroups.mockReset()
+    searchUsers.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
 
@@ -199,6 +205,7 @@ describe('admin RiskControlView', () => {
     getStatus.mockResolvedValue(runtimeStatus())
     listLogs.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 1 })
     getGroups.mockResolvedValue([])
+    searchUsers.mockResolvedValue([])
     updateConfig.mockImplementation(async (payload: UpdateContentModerationConfig) => ({
       ...baseConfig(),
       ...payload,
@@ -654,5 +661,59 @@ describe('admin RiskControlView', () => {
       'admin.riskControl.preBlockAPIKeyLoad',
       'admin.riskControl.workerStatus',
     ]))
+  })
+
+  it('keeps the latest exempt user search results when older requests resolve later', async () => {
+    vi.useFakeTimers()
+    const deferred = <T,>() => {
+      let resolve!: (value: T) => void
+      const promise = new Promise<T>((res) => {
+        resolve = res
+      })
+      return { promise, resolve }
+    }
+    const first = deferred<Array<{ id: number; email: string }>>()
+    const second = deferred<Array<{ id: number; email: string }>>()
+    searchUsers.mockImplementation((keyword: string) => {
+      if (keyword === 'alice') return second.promise
+      if (keyword === 'ali') return first.promise
+      return Promise.resolve([])
+    })
+
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm
+    setupState.exemptUserKeyword = 'ali'
+    setupState.debounceExemptUserSearch()
+    await vi.advanceTimersByTimeAsync(300)
+
+    setupState.exemptUserKeyword = 'alice'
+    setupState.debounceExemptUserSearch()
+    await vi.advanceTimersByTimeAsync(300)
+
+    second.resolve([{ id: 2, email: 'alice@example.com' }])
+    await flushPromises()
+
+    first.resolve([{ id: 1, email: 'ali@example.com' }])
+    await flushPromises()
+
+    expect(setupState.exemptUserResults).toEqual([{ id: 2, email: 'alice@example.com' }])
+    expect(setupState.exemptUserDropdownOpen).toBe(true)
+
+    vi.useRealTimers()
   })
 })

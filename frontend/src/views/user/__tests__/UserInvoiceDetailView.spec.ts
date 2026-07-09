@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { createI18n } from 'vue-i18n'
 import { createPinia } from 'pinia'
+import { formatPaymentAmount } from '@/components/payment/currency'
 
 const apiMock = vi.hoisted(() => ({
   getInvoice: vi.fn(),
@@ -111,5 +112,24 @@ describe('UserInvoiceDetailView', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('A001')
     expect(wrapper.text()).toContain('A002')
+  })
+
+  it('formats invoice and order amounts with invoice currency instead of hardcoded cny symbol', async () => {
+    apiMock.getInvoice.mockResolvedValueOnce({
+      data: fakeInvoice({
+        invoice_amount: 200,
+        currency: 'USD',
+        orders: [
+          { order_id: 1, out_trade_no: 'A001', pay_amount_snapshot: 123.45, payment_type: 'stripe', created_at: '2026-06-08T00:00:00Z' },
+        ],
+      }),
+    })
+    const wrapper = await mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain(formatPaymentAmount(200, 'USD'))
+    expect(wrapper.text()).toContain(formatPaymentAmount(123.45, 'USD'))
+    expect(wrapper.text()).not.toContain('¥200.00')
+    expect(wrapper.text()).not.toContain('¥123.45')
   })
 })

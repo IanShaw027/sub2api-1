@@ -333,7 +333,7 @@ function startPolling() {
   pollTimer = setInterval(async () => {
     const o = await paymentStore.pollOrderStatus(orderId)
     if (!o) return
-    if (o.status === 'COMPLETED' || o.status === 'PAID' || o.status === 'RECHARGING') {
+    if (o.status === 'COMPLETED' || o.status === 'PAID') {
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
       stripeSuccess.value = true
       wechatQrUrl.value = ''

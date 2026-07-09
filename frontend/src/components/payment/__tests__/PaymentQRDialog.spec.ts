@@ -102,4 +102,39 @@ describe('PaymentQRDialog currency display', () => {
     expect(wrapper.text()).toContain('$100.00')
     expect(wrapper.text()).toContain('¥108.00')
   })
+
+  it('omits forced decimal places for zero-decimal pay_amount currencies', async () => {
+    pollOrderStatus.mockResolvedValueOnce({
+      ...paidOrder,
+      pay_amount: 108,
+      currency: 'JPY',
+    })
+
+    const wrapper = mount(PaymentQRDialog, {
+      props: {
+        show: false,
+        orderId: 42,
+        qrCode: '',
+        expiresAt: '2099-01-01T10:30:00Z',
+        paymentType: 'alipay',
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            props: ['show'],
+            template: '<div v-if="show"><slot /><slot name="footer" /></div>',
+          },
+          Icon: true,
+        },
+      },
+    })
+
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(3000)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('¥108')
+    expect(wrapper.text()).not.toContain('¥108.00')
+  })
 })
