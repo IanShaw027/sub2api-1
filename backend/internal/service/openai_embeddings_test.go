@@ -682,3 +682,73 @@ func TestForwardEmbeddings_CyberPolicyMarksAndDoesNotFailover(t *testing.T) {
 	require.Equal(t, "blocked by policy", mark.Message)
 	require.Equal(t, http.StatusForbidden, mark.UpstreamStatus)
 }
+
+func TestForwardVideos_GETStatusReadErrorFailsWithoutWritingTruncatedBody(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/videos/video-job-status", nil)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"application/json"},
+		},
+		Body: errReadCloser{err: errors.New("status read failed")},
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:       47,
+		Platform: PlatformGrok,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "xai-test",
+		},
+	}
+
+	result, err := svc.ForwardVideos(context.Background(), c, account, nil, "/v1/videos/video-job-status")
+
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "read upstream video status response")
+	require.Empty(t, rec.Body.String())
+}
+
+func TestForwardVideos_ClientErrorReadErrorFailsWithoutParsingTruncatedBody(t *testing.T) {
+	setGinTestMode()
+
+	reqBody := []byte(`{"model":"grok-4.3","prompt":"make a video","seconds":4}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header: http.Header{
+			"Content-Type": []string{"application/json"},
+		},
+		Body: errReadCloser{err: errors.New("error body read failed")},
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:       48,
+		Platform: PlatformGrok,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "xai-test",
+		},
+	}
+
+	result, err := svc.ForwardVideos(context.Background(), c, account, reqBody, "/v1/videos")
+
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "read upstream video response")
+	require.Empty(t, rec.Body.String())
+}

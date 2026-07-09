@@ -415,7 +415,7 @@ func (s *OpenAIGatewayService) ForwardVideos(
 		}
 
 		// JSON status/retrieve: buffer so ResponseID can be extracted from body.
-		respBody, readErr := io.ReadAll(resp.Body)
+		respBody, readErr := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 		if readErr != nil {
 			return nil, fmt.Errorf("read upstream video status response: %w", readErr)
 		}
@@ -442,8 +442,11 @@ func (s *OpenAIGatewayService) ForwardVideos(
 		}, nil
 	}
 
-	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
+		respBody, readErr := s.readUpstreamErrorBodyWithError(resp)
+		if readErr != nil {
+			return nil, fmt.Errorf("read upstream video response: %w", readErr)
+		}
 		if hit, code, cyberMsg := detectOpenAICyberPolicy(respBody); hit {
 			MarkOpsCyberPolicy(c, CyberPolicyMark{
 				Code:           code,
@@ -517,6 +520,11 @@ func (s *OpenAIGatewayService) ForwardVideos(
 		c.Status(resp.StatusCode)
 		_, _ = c.Writer.Write(respBody)
 		return nil, fmt.Errorf("upstream video error: status %d", resp.StatusCode)
+	}
+
+	respBody, readErr := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
+	if readErr != nil {
+		return nil, fmt.Errorf("read upstream video response: %w", readErr)
 	}
 
 	// write success

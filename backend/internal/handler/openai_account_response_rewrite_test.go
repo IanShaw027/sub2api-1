@@ -153,3 +153,42 @@ func TestHandleFailoverExhausted_AccountRewritePrecedesGlobalPassthrough(t *test
 	require.Equal(t, "rate_limit_error", errObj["type"])
 	require.Equal(t, "Account rewrite message", errObj["message"])
 }
+
+func TestHandleFailoverExhausted_AppliesGrokScopedPassthroughForGrokAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	responseCode := http.StatusTeapot
+	customMessage := "Grok global passthrough"
+	passthroughService := service.NewErrorPassthroughService(openAIAccountRewritePassthroughRepoStub{
+		rules: []*model.ErrorPassthroughRule{
+			{
+				ID:              2,
+				Name:            "global-grok-429",
+				Enabled:         true,
+				Priority:        1,
+				ErrorCodes:      []int{http.StatusTooManyRequests},
+				Keywords:        []string{"too many requests"},
+				MatchMode:       model.MatchModeAll,
+				Platforms:       []string{model.PlatformGrok},
+				PassthroughCode: false,
+				ResponseCode:    &responseCode,
+				PassthroughBody: false,
+				CustomMessage:   &customMessage,
+			},
+		},
+	}, nil)
+
+	account := &service.Account{Platform: service.PlatformGrok}
+	h := &OpenAIGatewayHandler{errorPassthroughService: passthroughService}
+	h.handleFailoverExhausted(c, &service.UpstreamFailoverError{
+		StatusCode:   http.StatusTooManyRequests,
+		ResponseBody: []byte(`{"error":{"message":"Too many requests, please wait before trying again."}}`),
+	}, account, false)
+
+	require.Equal(t, http.StatusTeapot, w.Code)
+	require.Contains(t, w.Body.String(), "Grok global passthrough")
+}
