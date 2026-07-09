@@ -231,15 +231,24 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 			return nil, fmt.Errorf("upstream error: %d (passthrough rule matched) message=%s", resp.StatusCode, summary)
 		}
 
-		contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
-		if contentType == "" {
-			contentType = "application/json"
+		// 未命中透传规则：保留上游状态码（不再统一坍缩为 502），但用**消毒后**的
+		// Anthropic 形状错误体返回。绝不能把 CodeWhisperer 的原始 body 直接透传——
+		// 它是 AWS 形状 JSON（含 __type / requestId 等内部细节），既会泄露上游内部信息，
+		// 也会破坏期待 Anthropic 错误结构的客户端解析。upstreamMessage 已经过
+		// kiroSafeHTTPStatusErrorMessage 消毒。
+		errType := openAIImagesErrorTypeForStatus(resp.StatusCode)
+		message := upstreamMessage
+		if message == "" {
+			message = fmt.Sprintf("Kiro upstream request failed (status %d)", resp.StatusCode)
 		}
-		c.Data(resp.StatusCode, contentType, body)
-		if upstreamMessage == "" {
-			return nil, fmt.Errorf("upstream error: %d", resp.StatusCode)
-		}
-		return nil, fmt.Errorf("upstream error: %d message=%s", resp.StatusCode, upstreamMessage)
+		c.JSON(resp.StatusCode, gin.H{
+			"type": "error",
+			"error": gin.H{
+				"type":    errType,
+				"message": message,
+			},
+		})
+		return nil, fmt.Errorf("upstream error: %d message=%s", resp.StatusCode, message)
 	}
 	if parsed.Stream {
 		return s.forwardStream(ctx, c, account, resp, parsed, converted, billedInputTokens, start, fakeCachePlan, fakeCacheHit, runtimeSettings, "")

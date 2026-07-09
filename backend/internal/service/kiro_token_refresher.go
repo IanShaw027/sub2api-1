@@ -236,10 +236,7 @@ func (r *KiroTokenRefresher) refreshKiroExternalIDPToken(ctx context.Context, ac
 	if ValidateKiroRefreshTokenHealth(out.RefreshToken) == nil {
 		refreshToken = out.RefreshToken
 	}
-	expiresIn := out.ExpiresIn
-	if expiresIn <= 0 {
-		expiresIn = 3600
-	}
+	expiresIn := defaultKiroRefreshExpiresIn(out.ExpiresIn, "external_idp")
 	expiresAt = time.Now().Add(time.Duration(expiresIn) * time.Second).UTC().Format(time.RFC3339)
 	return out.AccessToken, refreshToken, expiresAt, nil
 }

@@ -1854,7 +1854,9 @@ func TestKiroGatewayService_Forward_HTTPErrorRecordsOpsContext(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, result)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.JSONEq(t, `{"error":"invalid_request","message":"selected model is not available for this account"}`, rec.Body.String())
+	// 未命中透传规则：保留上游状态码(400)，但返回**消毒后**的 Anthropic 形状错误体，
+	// 绝不把上游原始 JSON 直接透传给客户端（避免泄露上游内部细节 / 破坏客户端解析）。
+	require.JSONEq(t, `{"type":"error","error":{"type":"invalid_request_error","message":"Kiro upstream returned 400: invalid_request: selected model is not available for this account"}}`, rec.Body.String())
 	require.ErrorContains(t, err, "Kiro upstream returned 400: invalid_request: selected model is not available for this account")
 	statusCodeValue, ok := c.Get(OpsUpstreamStatusCodeKey)
 	require.True(t, ok)

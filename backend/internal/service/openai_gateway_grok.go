@@ -653,7 +653,18 @@ func buildGrokSchedulerExtraUpdates(snapshot *xai.QuotaSnapshot) map[string]any 
 		"grok_sched_usage_updated_at": time.Now().UTC().Format(time.RFC3339),
 	}
 	if reset != nil {
-		updates["grok_sched_reset_at"] = reset.UTC().Format(time.RFC3339)
+		// 防御：调度阈值暂停时长由 grok_sched_reset_at 决定。若上游返回脏的
+		// reset 头（例如把相对毫秒 "6000" 误当相对秒解析出 ~33h 的未来时刻），
+		// 不设上限会把耗尽账号长时间锁死。xAI 配额窗口不会超过一天，因此对
+		// 未来时刻做 grokMaxSchedulingResetHorizon 钳制；过去/无效值直接不写。
+		now := time.Now()
+		if reset.After(now) {
+			capped := *reset
+			if horizon := now.Add(grokMaxSchedulingResetHorizon); capped.After(horizon) {
+				capped = horizon
+			}
+			updates["grok_sched_reset_at"] = capped.UTC().Format(time.RFC3339)
+		}
 	}
 	return updates
 }
@@ -701,6 +712,12 @@ func grokSnapshotUtilization(snapshot *xai.QuotaSnapshot) (float64, *time.Time, 
 // `retry-after: 86400` (or a bogus reset header) from parking an account for a
 // day off one bad response.
 const grokMaxUpstreamCooldown = 30 * time.Minute
+
+// grokMaxSchedulingResetHorizon bounds how far into the future a Grok
+// scheduling-threshold pause (grok_sched_reset_at) may be set, so a malformed
+// upstream reset header can't park an over-threshold account for days. xAI quota
+// windows do not exceed ~a day.
+const grokMaxSchedulingResetHorizon = 25 * time.Hour
 
 func (s *OpenAIGatewayService) handleGrokAccountUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte) {
 	if s == nil || account == nil {
