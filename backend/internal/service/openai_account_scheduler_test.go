@@ -111,6 +111,24 @@ func TestAccountSupportsOpenAIEndpointCapability_InputTokensRequiresAPIKeyRespon
 		Type:     AccountTypeOAuth,
 	}
 	require.False(t, grok.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityResponsesInputTokens))
+	// Claude Code /v1/messages must be able to schedule Grok OAuth accounts.
+	require.True(t, grok.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityAnthropicMessagesIngress))
+	require.True(t, grok.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityResponsesIngress))
+	require.True(t, grok.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityChatCompletions))
+	require.True(t, grok.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityVideos))
+	require.True(t, grok.SupportsOpenAIImageCapability(OpenAIImagesCapabilityBasic))
+	require.True(t, grok.SupportsOpenAIImageCapability(OpenAIImagesCapabilityNative))
+
+	// Grok API-key accounts are text-only; Imagine image/video require OAuth.
+	grokAPIKey := &Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeAPIKey,
+	}
+	require.False(t, grokAPIKey.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityVideos))
+	require.False(t, grokAPIKey.SupportsOpenAIImageCapability(OpenAIImagesCapabilityBasic))
+	require.False(t, grokAPIKey.SupportsOpenAIImageCapability(OpenAIImagesCapabilityNative))
+	require.True(t, grokAPIKey.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityResponsesIngress))
+	require.True(t, grokAPIKey.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityChatCompletions))
 }
 
 func TestAccountTextEndpointAutoRouteEnabled_IsAccountLevelForOpenAIAndAnthropic(t *testing.T) {

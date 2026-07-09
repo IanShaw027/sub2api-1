@@ -305,6 +305,26 @@ describe('OpsDashboard request orchestration', () => {
     expect(modal.attributes('data-end-time')).toBe('2026-06-01T01:30:00Z')
   })
 
+  it('uses the selected custom time range for the account switch trend request', async () => {
+    routeState.query = {
+      tr: 'custom',
+      start_time: '2026-06-01T00:00:00Z',
+      end_time: '2026-06-01T01:30:00Z',
+    }
+
+    mountView()
+
+    await flushPromises()
+
+    expect(getThroughputTrendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start_time: '2026-06-01T00:00:00Z',
+        end_time: '2026-06-01T01:30:00Z',
+      }),
+      expect.any(Object),
+    )
+  })
+
   it('refreshes dashboard data and syncs the route when custom range changes while already custom', async () => {
     routeState.query = {
       tr: 'custom',

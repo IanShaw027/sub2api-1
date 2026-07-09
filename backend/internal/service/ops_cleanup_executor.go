@@ -28,6 +28,7 @@ type opsCleanupDeletedCounts struct {
 	errorLogs     int64
 	alertEvents   int64
 	systemLogs    int64
+	stickyEvents  int64
 	logAudits     int64
 	systemMetrics int64
 	hourlyPreagg  int64
@@ -36,10 +37,11 @@ type opsCleanupDeletedCounts struct {
 
 func (c opsCleanupDeletedCounts) String() string {
 	return fmt.Sprintf(
-		"error_logs=%d alert_events=%d system_logs=%d log_audits=%d system_metrics=%d hourly_preagg=%d daily_preagg=%d",
+		"error_logs=%d alert_events=%d system_logs=%d sticky_events=%d log_audits=%d system_metrics=%d hourly_preagg=%d daily_preagg=%d",
 		c.errorLogs,
 		c.alertEvents,
 		c.systemLogs,
+		c.stickyEvents,
 		c.logAudits,
 		c.systemMetrics,
 		c.hourlyPreagg,

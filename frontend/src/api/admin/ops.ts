@@ -82,6 +82,8 @@ export interface OpsThroughputTrendPoint {
   request_count: number
   token_consumed: number
   switch_count?: number
+  sticky_original_bound_count?: number
+  sticky_original_unavailable_count?: number
   qps: number
   tps: number
 }

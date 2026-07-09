@@ -48,7 +48,7 @@
           <OpsSwitchRateTrendChart
             :points="switchTrend?.points ?? []"
             :loading="loadingSwitchTrend"
-            :time-range="switchTrendTimeRange"
+            :time-range="timeRange"
             :fullscreen="isFullscreen"
           />
         </div>
@@ -234,9 +234,6 @@ const groupId = ref<number | null>(null)
 const queryMode = ref<QueryMode>('auto')
 const customStartTime = ref<string | null>(null)
 const customEndTime = ref<string | null>(null)
-const switchTrendWindowHours = 5
-const switchTrendTimeRange = `${switchTrendWindowHours}h`
-const switchTrendWindowMs = switchTrendWindowHours * 60 * 60 * 1000
 
 const QUERY_KEYS = {
   timeRange: 'tr',
@@ -687,19 +684,6 @@ function buildApiParams() {
   return params
 }
 
-function buildSwitchTrendParams() {
-  const params: any = {
-    platform: platform.value || undefined,
-    group_id: groupId.value ?? undefined,
-    mode: queryMode.value
-  }
-  const endTime = new Date()
-  const startTime = new Date(endTime.getTime() - switchTrendWindowMs)
-  params.start_time = startTime.toISOString()
-  params.end_time = endTime.toISOString()
-  return params
-}
-
 async function refreshOverviewWithCancel(fetchSeq: number, signal: AbortSignal) {
   if (!opsEnabled.value) return
   try {
@@ -717,7 +701,7 @@ async function refreshSwitchTrendWithCancel(fetchSeq: number, signal: AbortSigna
   if (!opsEnabled.value) return
   loadingSwitchTrend.value = true
   try {
-    const data = await opsAPI.getThroughputTrend(buildSwitchTrendParams(), { signal })
+    const data = await opsAPI.getThroughputTrend(buildApiParams(), { signal })
     if (fetchSeq !== dashboardFetchSeq) return
     switchTrend.value = data
   } catch (err: any) {

@@ -401,6 +401,7 @@ func (s *defaultOpenAIAccountScheduler) Select(
 	defer func() {
 		decision.LatencyMs = time.Since(start).Milliseconds()
 		s.metrics.recordSelect(decision)
+		s.service.recordOpenAIStickyScheduleDecision(ctx, req, decision)
 	}()
 
 	previousResponseID := strings.TrimSpace(req.PreviousResponseID)
