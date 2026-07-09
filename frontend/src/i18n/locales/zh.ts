@@ -3022,6 +3022,7 @@ export default {
         antigravity: 'Antigravity',
         kiro: 'Kiro',
         sora: 'Sora',
+        grok: 'Grok',
       },
       saving: '保存中...',
       noGroups: '暂无分组',

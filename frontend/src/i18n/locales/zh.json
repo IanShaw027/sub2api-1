@@ -1608,6 +1608,11 @@
     "imageSizeNotRecorded": "未记录",
     "imageSizeLegacyUnstandardized": "历史非标准尺寸",
     "imageSizeUnknown": "未知",
+    "videoResolution": "视频分辨率",
+    "videoDuration": "视频时长",
+    "videoCount": "视频数量",
+    "videoUnitPrice": "视频单价",
+    "videoSubtotal": "视频小计",
     "cacheRead": "读取",
     "cacheWrite": "写入",
     "serviceTier": "服务档位",
@@ -2806,7 +2811,8 @@
         "gemini": "Gemini",
         "antigravity": "Antigravity",
         "kiro": "Kiro",
-        "sora": "Sora"
+        "sora": "Sora",
+        "grok": "Grok"
       },
       "saving": "保存中...",
       "noGroups": "暂无分组",
@@ -3632,7 +3638,8 @@
         "gemini": "Gemini",
         "antigravity": "Antigravity",
         "kiro": "Kiro",
-        "sora": "Sora"
+        "sora": "Sora",
+        "grok": "Grok"
       },
       "types": {
         "oauth": "OAuth",

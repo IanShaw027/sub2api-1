@@ -630,6 +630,7 @@ func TestAPIContracts(t *testing.T) {
 							"duration_ms": 100,
 							"first_token_ms": 50,
 							"image_count": 0,
+							"video_count": 0,
 							"image_size": null,
 							"image_input_size": null,
 							"image_output_size": null,
@@ -1016,6 +1017,28 @@ func TestAPIContracts(t *testing.T) {
 					"threshold_count": 3,
 					"threshold_window_minutes": 1
 				}
+			}`,
+		},
+		{
+			name:       "GET /api/v1/admin/grok/accounts/:id/quota returns standard envelope when quota service is disabled",
+			method:     http.MethodGet,
+			path:       "/api/v1/admin/grok/accounts/101/quota",
+			wantStatus: http.StatusBadRequest,
+			wantJSON: `{
+				"code": 400,
+				"message": "grok quota service is not enabled"
+			}`,
+		},
+		{
+			name:       "POST /api/v1/admin/kiro/oauth/auth-url returns standard envelope when service is disabled",
+			method:     http.MethodPost,
+			path:       "/api/v1/admin/kiro/oauth/auth-url",
+			body:       `{}`,
+			headers:    map[string]string{"Content-Type": "application/json"},
+			wantStatus: http.StatusInternalServerError,
+			wantJSON: `{
+				"code": 500,
+				"message": "Kiro OAuth service is not configured"
 			}`,
 		},
 		{
@@ -1494,6 +1517,8 @@ func newContractDeps(t *testing.T) *contractDeps {
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService, nil, nil)
 	adminSettingHandler := adminhandler.NewSettingHandler(settingService, nil, nil, nil, nil, nil)
 	adminAccountHandler := adminhandler.NewAccountHandler(adminService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	adminGrokOAuthHandler := adminhandler.NewGrokOAuthHandler(nil, nil, nil)
+	adminKiroOAuthHandler := adminhandler.NewKiroOAuthHandler(nil, nil)
 
 	jwtAuth := func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{
@@ -1544,6 +1569,8 @@ func newContractDeps(t *testing.T) *contractDeps {
 	v1Admin.GET("/settings", adminSettingHandler.GetSettings)
 	v1Admin.GET("/settings/temp-unsched-threshold", adminSettingHandler.GetTempUnschedThresholdSettings)
 	v1Admin.PUT("/settings/temp-unsched-threshold", adminSettingHandler.UpdateTempUnschedThresholdSettings)
+	v1Admin.GET("/grok/accounts/:id/quota", adminGrokOAuthHandler.QueryQuota)
+	v1Admin.POST("/kiro/oauth/auth-url", adminKiroOAuthHandler.GenerateAuthURL)
 	v1Admin.POST("/accounts/bulk-update", adminAccountHandler.BulkUpdate)
 
 	return &contractDeps{
@@ -2588,6 +2615,10 @@ func (r *stubUsageLogRepo) SetUserLogs(userID int64, logs []service.UsageLog) {
 
 func (r *stubUsageLogRepo) Create(ctx context.Context, log *service.UsageLog) (bool, error) {
 	return false, errors.New("not implemented")
+}
+
+func (r *stubUsageLogRepo) RecordOpenAIStickyScheduleEvent(ctx context.Context, input *service.OpenAIStickyScheduleEventInput) error {
+	return errors.New("not implemented")
 }
 
 func (r *stubUsageLogRepo) GetByID(ctx context.Context, id int64) (*service.UsageLog, error) {

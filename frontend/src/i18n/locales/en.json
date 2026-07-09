@@ -1608,6 +1608,11 @@
     "imageSizeNotRecorded": "not recorded",
     "imageSizeLegacyUnstandardized": "legacy unstandardized",
     "imageSizeUnknown": "unknown",
+    "videoResolution": "Video resolution",
+    "videoDuration": "Video duration",
+    "videoCount": "Video count",
+    "videoUnitPrice": "Video unit price",
+    "videoSubtotal": "Video subtotal",
     "cacheRead": "Read",
     "cacheWrite": "Write",
     "serviceTier": "Service tier",
@@ -2777,7 +2782,8 @@
         "gemini": "Gemini",
         "antigravity": "Antigravity",
         "kiro": "Kiro",
-        "sora": "Sora"
+        "sora": "Sora",
+        "grok": "Grok"
       },
       "deleteConfirm": "Are you sure you want to delete '{name}'? All associated API keys will no longer belong to any group.",
       "deleteConfirmSubscription": "Are you sure you want to delete subscription group '{name}'? This will invalidate all API keys bound to this subscription and delete all related subscription records. This action cannot be undone.",
@@ -3434,7 +3440,8 @@
         "gemini": "Gemini",
         "antigravity": "Antigravity",
         "kiro": "Kiro",
-        "sora": "Sora"
+        "sora": "Sora",
+        "grok": "Grok"
       },
       "types": {
         "oauth": "OAuth",

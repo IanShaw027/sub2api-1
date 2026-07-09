@@ -4070,6 +4070,7 @@ export default {
         antigravity: 'Antigravity',
         kiro: 'Kiro',
         sora: 'Sora',
+        grok: 'Grok',
       },
       types: {
         oauth: 'OAuth',

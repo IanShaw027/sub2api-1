@@ -648,6 +648,8 @@ The Grok OAuth flow uses PKCE and does not require committing private secrets. T
 | `XAI_OAUTH_TOKEN_URL` | `https://auth.x.ai/oauth2/token` |
 | `XAI_BASE_URL` | `https://api.x.ai/v1` |
 
+These `XAI_OAUTH_*` and `XAI_BASE_URL` overrides are environment-variable-only settings; they are not configured through `deploy/config.example.yaml`.
+
 Administrators can create or reauthorize Grok accounts from the dashboard, or use the admin API:
 
 | Endpoint | Purpose |
@@ -664,6 +666,39 @@ Credential storage reuses the existing account JSON fields: `access_token`, `ref
 xAI quota is passive. Sub2API does not invent subscription quota values; it records whitelisted xAI rate-limit headers from successful or rate-limited upstream responses when xAI sends them. Before the first usable upstream response, the dashboard shows quota as unknown and still displays local Sub2API usage stats.
 
 `401` responses mark the account as needing reauthorization. `403` responses are treated as entitlement or subscription-tier failures instead of token-refresh loops. `429` responses use `Retry-After` or a short cooldown to temporarily remove the account from scheduling.
+
+---
+
+## Kiro Support
+
+Sub2API supports Kiro as a fully supported upstream platform for Kiro subscription accounts. Use platform name `kiro`; Kiro traffic uses the gateway's upstream account scheduling, monthly subscription quota handling, and TLS fingerprinting support.
+
+### Supported Login / Auth Methods
+
+- `social`: OAuth login through Kiro-supported social providers.
+- `builderid`: AWS Builder ID login.
+- `awsidc`: AWS IAM Identity Center (IdC) device flow.
+- `external_idp`: external identity provider login.
+
+Administrators can create or reauthorize Kiro accounts from the dashboard using the admin panel OAuth flow.
+
+### Kiro Runtime Defaults
+
+The admin settings page exposes concise Kiro runtime defaults for new requests:
+
+- fake-cache billing simulation: controls simulated cache hit behavior and cache TTL/minimum-token parameters used for billing/accounting.
+- Thinking simulation: controls simulated thinking/adaptive-thinking output behavior when Kiro requests require it.
+- Code-execution sandbox: optional command used to service Kiro `code_execution` tool calls; leave empty to disable.
+
+**⚠️ Security Warning: Kiro Code Execution Sandbox**
+
+When `kiro_code_execution_sandbox_command` is set, model-generated code is piped to `/bin/sh -c <command>` on the **host**. Any user holding a Sub2API API key that can reach Kiro can trigger host code execution through this feature. It is disabled by default because the setting is empty.
+
+Admins **MUST** provide their own isolation boundary, such as a container, gVisor, or firejail wrapper. Example:
+
+```bash
+kiro_code_execution_sandbox_command='firejail --quiet --private /usr/local/bin/kiro-code-sandbox'
+```
 
 ---
 
