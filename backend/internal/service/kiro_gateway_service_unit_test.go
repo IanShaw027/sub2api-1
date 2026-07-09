@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/model"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/websearch"
 	"github.com/gin-gonic/gin"
@@ -129,6 +130,105 @@ func (r *kiroGatewayRateLimitRepoStub) SetError(_ context.Context, id int64, err
 	r.errorIDs = append(r.errorIDs, id)
 	r.errorMsgs = append(r.errorMsgs, errorMsg)
 	return nil
+}
+
+func TestKiroGatewayService_Forward_TokenFailureReturnsFailoverAndTempUnsched(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	repo := &kiroGatewayRateLimitRepoStub{}
+	cache := &kiroTempUnschedCacheRecorder{}
+	svc := &KiroGatewayService{
+		httpUpstream:     &kiroHTTPUpstreamRecorder{},
+		rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, cache),
+	}
+
+	before := time.Now()
+	result, err := svc.Forward(context.Background(), c, &Account{
+		ID:       58620,
+		Name:     "revoked-refresh-token",
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+	}, &ParsedRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Body: NewRequestBodyRef([]byte(`{
+			"model":"claude-sonnet-4-5-20250929",
+			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+		}`)),
+	})
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr, "token acquisition failure should trigger account failover")
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.Contains(t, string(failoverErr.ResponseBody), "kiro token provider is not configured")
+	require.Empty(t, rec.Body.String(), "service must not write a 502 body before handler failover is exhausted")
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	require.Equal(t, []int64{58620}, repo.tempIDs)
+	require.Len(t, repo.tempUntil, 1)
+	require.WithinDuration(t, before.Add(kiroTransportFailureCooldown), repo.tempUntil[0], 5*time.Second)
+	require.Contains(t, repo.tempReasons[0], "kiro token provider is not configured")
+	require.Equal(t, []int64{58620}, cache.accountIDs)
+	require.Len(t, cache.states, 1)
+	require.Equal(t, kiroTokenFailureReasonKeyword, cache.states[0].MatchedKeyword)
+}
+
+func TestKiroGatewayService_Forward_NonFailoverHTTPErrorAppliesKiroPassthroughRule(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	ruleSvc := &ErrorPassthroughService{}
+	ruleSvc.setLocalCache([]*model.ErrorPassthroughRule{{
+		ID:              1,
+		Name:            "kiro-400-passthrough",
+		Enabled:         true,
+		Priority:        1,
+		ErrorCodes:      []int{http.StatusBadRequest},
+		Keywords:        []string{"kiro passthrough invalid field"},
+		MatchMode:       model.MatchModeAll,
+		Platforms:       []string{PlatformKiro},
+		PassthroughCode: true,
+		PassthroughBody: true,
+	}})
+	BindErrorPassthroughService(c, ruleSvc)
+
+	upstreamBody := `{"error":{"type":"invalid_request_error","message":"kiro passthrough invalid field"}}`
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+		},
+	}
+	svc := &KiroGatewayService{httpUpstream: upstream}
+
+	result, err := svc.Forward(context.Background(), c, &Account{
+		ID:       58621,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "kiro-api-key",
+		},
+	}, &ParsedRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Body: NewRequestBodyRef([]byte(`{
+			"model":"claude-sonnet-4-5-20250929",
+			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+		}`)),
+	})
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "kiro passthrough invalid field")
+	require.NotContains(t, rec.Body.String(), "api_error")
 }
 
 func TestKiroGatewayService_Forward_EmulatesWebSearchBeforeKiroUpstream(t *testing.T) {
@@ -286,7 +386,10 @@ func TestKiroGatewayService_Forward_InvalidTokenRetryFailureDoesNotLeakRetryErro
 
 	require.Error(t, err)
 	require.Nil(t, result)
-	require.Equal(t, http.StatusBadGateway, rec.Code)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.Empty(t, rec.Body.String())
 	require.NotContains(t, rec.Body.String(), "retry_error")
 	require.NotContains(t, err.Error(), "retry_error")
 }

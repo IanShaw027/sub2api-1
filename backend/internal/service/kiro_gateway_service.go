@@ -49,6 +49,7 @@ const (
 	// 让调度层在该窗口内跳过出错账号，避免重复打到不可达上游。命中后会一并触发 failover。
 	kiroTransportFailureCooldown      = 2 * time.Minute
 	kiroTransportFailureReasonKeyword = "kiro_transport_failure"
+	kiroTokenFailureReasonKeyword     = "kiro_token_failure"
 	kiroAccountStateUpdateTimeout     = 5 * time.Second
 
 	// 流式输出已经开始后，如果上游先退化成同一个短词反复输出、随后返回 exception frame，
@@ -143,11 +144,7 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 
 	accessToken, err := s.resolveAccessToken(ctx, account)
 	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{
-			"type":  "error",
-			"error": gin.H{"type": "api_error", "message": "Failed to get Kiro access token"},
-		})
-		return nil, err
+		return nil, s.handleKiroTokenError(ctx, account, err)
 	}
 
 	fakeCachePlan, fakeCacheHit := s.prepareFakeCachePlan(account, parsed, meta, runtimeSettings)
@@ -208,11 +205,41 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 			return nil, failoverErr
 		}
 		upstreamMessage := kiroSafeHTTPStatusErrorMessage("Kiro upstream", resp.StatusCode, body)
-		c.JSON(http.StatusBadGateway, gin.H{
-			"type":  "error",
-			"error": gin.H{"type": "api_error", "message": upstreamMessage},
-		})
-		return nil, fmt.Errorf("%s", upstreamMessage)
+		if status, errType, errMsg, matched := applyErrorPassthroughRule(
+			c,
+			account.Platform,
+			resp.StatusCode,
+			body,
+			resp.StatusCode,
+			"upstream_error",
+			upstreamMessage,
+		); matched {
+			c.JSON(status, gin.H{
+				"type": "error",
+				"error": gin.H{
+					"type":    errType,
+					"message": errMsg,
+				},
+			})
+			summary := upstreamMessage
+			if summary == "" {
+				summary = errMsg
+			}
+			if summary == "" {
+				return nil, fmt.Errorf("upstream error: %d (passthrough rule matched)", resp.StatusCode)
+			}
+			return nil, fmt.Errorf("upstream error: %d (passthrough rule matched) message=%s", resp.StatusCode, summary)
+		}
+
+		contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
+		if contentType == "" {
+			contentType = "application/json"
+		}
+		c.Data(resp.StatusCode, contentType, body)
+		if upstreamMessage == "" {
+			return nil, fmt.Errorf("upstream error: %d", resp.StatusCode)
+		}
+		return nil, fmt.Errorf("upstream error: %d message=%s", resp.StatusCode, upstreamMessage)
 	}
 	if parsed.Stream {
 		return s.forwardStream(ctx, c, account, resp, parsed, converted, billedInputTokens, start, fakeCachePlan, fakeCacheHit, runtimeSettings, "")
@@ -4025,6 +4052,24 @@ func kiroAccountStateContext(ctx context.Context) (context.Context, context.Canc
 		base = context.WithoutCancel(ctx)
 	}
 	return context.WithTimeout(base, kiroAccountStateUpdateTimeout)
+}
+
+// handleKiroTokenError 处理 access token 获取失败。
+//
+// token 刷新失败/等待刷新锁超时通常只影响当前 OAuth 账号；这里不直接写 502，
+// 而是返回 failover 错误交给 handler 主循环尝试同组其它账号，并给失败账号短冷却。
+func (s *KiroGatewayService) handleKiroTokenError(ctx context.Context, account *Account, tokenErr error) error {
+	if tokenErr == nil {
+		tokenErr = errors.New("failed to get Kiro access token")
+	}
+	message := sanitizeUpstreamErrorMessage(tokenErr.Error())
+	stateCtx, cancel := kiroAccountStateContext(ctx)
+	defer cancel()
+	s.markKiroFailureUnschedulable(stateCtx, account, http.StatusBadGateway, kiroTokenFailureReasonKeyword, message, kiroTransportFailureCooldown)
+	return &UpstreamFailoverError{
+		StatusCode:   http.StatusBadGateway,
+		ResponseBody: []byte(message),
+	}
 }
 
 // handleKiroTransportError 处理上游 transport 层失败（DoWithTLS 直接返回 err）。
