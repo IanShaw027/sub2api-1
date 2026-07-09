@@ -60,6 +60,8 @@ const (
 	FieldDefaultValidityDays = "default_validity_days"
 	// FieldAllowImageGeneration holds the string denoting the allow_image_generation field in the database.
 	FieldAllowImageGeneration = "allow_image_generation"
+	// FieldAllowBatchImageGeneration holds the string denoting the allow_batch_image_generation field in the database.
+	FieldAllowBatchImageGeneration = "allow_batch_image_generation"
 	// FieldImageGenerationRoute holds the string denoting the image_generation_route field in the database.
 	FieldImageGenerationRoute = "image_generation_route"
 	// FieldOpenaiImageMainModel holds the string denoting the openai_image_main_model field in the database.
@@ -80,6 +82,14 @@ const (
 	FieldImages2apiPrice2k = "images2api_price_2k"
 	// FieldImages2apiPrice4k holds the string denoting the images2api_price_4k field in the database.
 	FieldImages2apiPrice4k = "images2api_price_4k"
+	// FieldBatchImageDiscountMultiplier holds the string denoting the batch_image_discount_multiplier field in the database.
+	FieldBatchImageDiscountMultiplier = "batch_image_discount_multiplier"
+	// FieldBatchImageHoldMultiplier holds the string denoting the batch_image_hold_multiplier field in the database.
+	FieldBatchImageHoldMultiplier = "batch_image_hold_multiplier"
+	// FieldVideoRateIndependent holds the string denoting the video_rate_independent field in the database.
+	FieldVideoRateIndependent = "video_rate_independent"
+	// FieldVideoRateMultiplier holds the string denoting the video_rate_multiplier field in the database.
+	FieldVideoRateMultiplier = "video_rate_multiplier"
 	// FieldAllowVideoGeneration holds the string denoting the allow_video_generation field in the database.
 	FieldAllowVideoGeneration = "allow_video_generation"
 	// FieldVideoGenerationRoute holds the string denoting the video_generation_route field in the database.
@@ -92,6 +102,12 @@ const (
 	FieldVideoPrice1080pPerSec = "video_price_1080p_per_sec"
 	// FieldVideoPrice4kPerSec holds the string denoting the video_price_4k_per_sec field in the database.
 	FieldVideoPrice4kPerSec = "video_price_4k_per_sec"
+	// FieldVideoPrice480p holds the string denoting the video_price_480p field in the database.
+	FieldVideoPrice480p = "video_price_480p"
+	// FieldVideoPrice720p holds the string denoting the video_price_720p field in the database.
+	FieldVideoPrice720p = "video_price_720p"
+	// FieldVideoPrice1080p holds the string denoting the video_price_1080p field in the database.
+	FieldVideoPrice1080p = "video_price_1080p"
 	// FieldSearchPricePer1k holds the string denoting the search_price_per_1k field in the database.
 	FieldSearchPricePer1k = "search_price_per_1k"
 	// FieldAudioRealtimePricePerMin holds the string denoting the audio_realtime_price_per_min field in the database.
@@ -227,6 +243,7 @@ var Columns = []string{
 	FieldMonthlyLimitUsd,
 	FieldDefaultValidityDays,
 	FieldAllowImageGeneration,
+	FieldAllowBatchImageGeneration,
 	FieldImageGenerationRoute,
 	FieldOpenaiImageMainModel,
 	FieldImageRateIndependent,
@@ -237,12 +254,19 @@ var Columns = []string{
 	FieldImages2apiPrice1k,
 	FieldImages2apiPrice2k,
 	FieldImages2apiPrice4k,
+	FieldBatchImageDiscountMultiplier,
+	FieldBatchImageHoldMultiplier,
+	FieldVideoRateIndependent,
+	FieldVideoRateMultiplier,
 	FieldAllowVideoGeneration,
 	FieldVideoGenerationRoute,
 	FieldVideoPrice480pPerSec,
 	FieldVideoPrice720pPerSec,
 	FieldVideoPrice1080pPerSec,
 	FieldVideoPrice4kPerSec,
+	FieldVideoPrice480p,
+	FieldVideoPrice720p,
+	FieldVideoPrice1080p,
 	FieldSearchPricePer1k,
 	FieldAudioRealtimePricePerMin,
 	FieldAudioTtsPricePerMillionChars,
@@ -337,6 +361,8 @@ var (
 	DefaultDefaultValidityDays int
 	// DefaultAllowImageGeneration holds the default value on creation for the "allow_image_generation" field.
 	DefaultAllowImageGeneration bool
+	// DefaultAllowBatchImageGeneration holds the default value on creation for the "allow_batch_image_generation" field.
+	DefaultAllowBatchImageGeneration bool
 	// DefaultImageGenerationRoute holds the default value on creation for the "image_generation_route" field.
 	DefaultImageGenerationRoute string
 	// ImageGenerationRouteValidator is a validator for the "image_generation_route" field. It is called by the builders before save.
@@ -363,6 +389,20 @@ var (
 	Images2apiPrice2kValidator func(float64) error
 	// Images2apiPrice4kValidator is a validator for the "images2api_price_4k" field. It is called by the builders before save.
 	Images2apiPrice4kValidator func(float64) error
+	// DefaultBatchImageDiscountMultiplier holds the default value on creation for the "batch_image_discount_multiplier" field.
+	DefaultBatchImageDiscountMultiplier float64
+	// BatchImageDiscountMultiplierValidator is a validator for the "batch_image_discount_multiplier" field. It is called by the builders before save.
+	BatchImageDiscountMultiplierValidator func(float64) error
+	// DefaultBatchImageHoldMultiplier holds the default value on creation for the "batch_image_hold_multiplier" field.
+	DefaultBatchImageHoldMultiplier float64
+	// BatchImageHoldMultiplierValidator is a validator for the "batch_image_hold_multiplier" field. It is called by the builders before save.
+	BatchImageHoldMultiplierValidator func(float64) error
+	// DefaultVideoRateIndependent holds the default value on creation for the "video_rate_independent" field.
+	DefaultVideoRateIndependent bool
+	// DefaultVideoRateMultiplier holds the default value on creation for the "video_rate_multiplier" field.
+	DefaultVideoRateMultiplier float64
+	// VideoRateMultiplierValidator is a validator for the "video_rate_multiplier" field. It is called by the builders before save.
+	VideoRateMultiplierValidator func(float64) error
 	// DefaultAllowVideoGeneration holds the default value on creation for the "allow_video_generation" field.
 	DefaultAllowVideoGeneration bool
 	// DefaultVideoGenerationRoute holds the default value on creation for the "video_generation_route" field.
@@ -377,6 +417,12 @@ var (
 	VideoPrice1080pPerSecValidator func(float64) error
 	// VideoPrice4kPerSecValidator is a validator for the "video_price_4k_per_sec" field. It is called by the builders before save.
 	VideoPrice4kPerSecValidator func(float64) error
+	// VideoPrice480pValidator is a validator for the "video_price_480p" field. It is called by the builders before save.
+	VideoPrice480pValidator func(float64) error
+	// VideoPrice720pValidator is a validator for the "video_price_720p" field. It is called by the builders before save.
+	VideoPrice720pValidator func(float64) error
+	// VideoPrice1080pValidator is a validator for the "video_price_1080p" field. It is called by the builders before save.
+	VideoPrice1080pValidator func(float64) error
 	// SearchPricePer1kValidator is a validator for the "search_price_per_1k" field. It is called by the builders before save.
 	SearchPricePer1kValidator func(float64) error
 	// AudioRealtimePricePerMinValidator is a validator for the "audio_realtime_price_per_min" field. It is called by the builders before save.
@@ -531,6 +577,11 @@ func ByAllowImageGeneration(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAllowImageGeneration, opts...).ToFunc()
 }
 
+// ByAllowBatchImageGeneration orders the results by the allow_batch_image_generation field.
+func ByAllowBatchImageGeneration(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAllowBatchImageGeneration, opts...).ToFunc()
+}
+
 // ByImageGenerationRoute orders the results by the image_generation_route field.
 func ByImageGenerationRoute(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldImageGenerationRoute, opts...).ToFunc()
@@ -581,6 +632,26 @@ func ByImages2apiPrice4k(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldImages2apiPrice4k, opts...).ToFunc()
 }
 
+// ByBatchImageDiscountMultiplier orders the results by the batch_image_discount_multiplier field.
+func ByBatchImageDiscountMultiplier(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBatchImageDiscountMultiplier, opts...).ToFunc()
+}
+
+// ByBatchImageHoldMultiplier orders the results by the batch_image_hold_multiplier field.
+func ByBatchImageHoldMultiplier(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBatchImageHoldMultiplier, opts...).ToFunc()
+}
+
+// ByVideoRateIndependent orders the results by the video_rate_independent field.
+func ByVideoRateIndependent(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVideoRateIndependent, opts...).ToFunc()
+}
+
+// ByVideoRateMultiplier orders the results by the video_rate_multiplier field.
+func ByVideoRateMultiplier(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVideoRateMultiplier, opts...).ToFunc()
+}
+
 // ByAllowVideoGeneration orders the results by the allow_video_generation field.
 func ByAllowVideoGeneration(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAllowVideoGeneration, opts...).ToFunc()
@@ -609,6 +680,21 @@ func ByVideoPrice1080pPerSec(opts ...sql.OrderTermOption) OrderOption {
 // ByVideoPrice4kPerSec orders the results by the video_price_4k_per_sec field.
 func ByVideoPrice4kPerSec(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldVideoPrice4kPerSec, opts...).ToFunc()
+}
+
+// ByVideoPrice480p orders the results by the video_price_480p field.
+func ByVideoPrice480p(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVideoPrice480p, opts...).ToFunc()
+}
+
+// ByVideoPrice720p orders the results by the video_price_720p field.
+func ByVideoPrice720p(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVideoPrice720p, opts...).ToFunc()
+}
+
+// ByVideoPrice1080p orders the results by the video_price_1080p field.
+func ByVideoPrice1080p(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldVideoPrice1080p, opts...).ToFunc()
 }
 
 // BySearchPricePer1k orders the results by the search_price_per_1k field.

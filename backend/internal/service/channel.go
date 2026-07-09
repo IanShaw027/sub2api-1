@@ -596,3 +596,13 @@ func (c *Channel) SupportedModels() []SupportedModel {
 	})
 	return result
 }
+
+// IsValidUsageFilter validates usage-log billing_mode filters, including legacy empty/default exclusions at the repository layer.
+func (m BillingMode) IsValidUsageFilter() bool {
+	switch m {
+	case BillingModeToken, BillingModeImage, BillingModeAudio, BillingModeVideo, BillingModeSearch, BillingModePerRequest:
+		return true
+	default:
+		return false
+	}
+}

@@ -1429,10 +1429,13 @@ func (s *BillingService) getImageUnitPrice(model string, imageSize string, group
 
 // Official xAI Imagine list prices (https://docs.x.ai/docs/models).
 const (
-	grokImagineImageQualityPricePerImage = 0.05 // grok-imagine-image-quality
-	grokImagineImageFastPricePerImage    = 0.02 // grok-imagine-image
-	grokImagineVideoPricePerSecond       = 0.05 // grok-imagine-video
-	grokImagineVideo15PricePerSecond     = 0.08 // grok-imagine-video-1.5
+	grokImagineImageQualityPricePerImage  = 0.05 // grok-imagine-image-quality
+	grokImagineImageFastPricePerImage     = 0.02 // grok-imagine-image
+	grokImagineVideoPrice480pPerSecond    = 0.05 // grok-imagine-video 480p
+	grokImagineVideoPrice720pPerSecond    = 0.07 // grok-imagine-video 720p/1080p
+	grokImagineVideo15Price480pPerSecond  = 0.08 // grok-imagine-video-1.5 480p
+	grokImagineVideo15Price720pPerSecond  = 0.14 // grok-imagine-video-1.5 720p
+	grokImagineVideo15Price1080pPerSecond = 0.25 // grok-imagine-video-1.5 1080p/4k
 )
 
 // getDefaultImagePrice 获取 LiteLLM 默认图片价格
@@ -1509,17 +1512,21 @@ func getGrokImagineDefaultImagePrice(model string) float64 {
 }
 
 // CalculateVideoCost calculates video generation cost from group per-second pricing.
-// Optional modelOptional[0] enables catalog / Grok Imagine defaults when group config is absent.
-func (s *BillingService) CalculateVideoCost(videoSize string, seconds int, videoCount int, groupConfig *VideoPriceConfig, rateMultiplier float64, modelOptional ...string) *CostBreakdown {
-	if seconds <= 0 {
-		return &CostBreakdown{}
+//
+// It accepts both the local call shape:
+//
+//	CalculateVideoCost(videoSize, seconds, videoCount, groupConfig, rateMultiplier[, model])
+//
+// and the upstream call shape kept for merge compatibility:
+//
+//	CalculateVideoCost(model, resolution, videoCount, durationSeconds, groupConfig, rateMultiplier)
+func (s *BillingService) CalculateVideoCost(first string, args ...any) *CostBreakdown {
+	videoSize, seconds, videoCount, groupConfig, rateMultiplier, model, defaultMissingDuration := parseCalculateVideoCostArgs(first, args)
+	if defaultMissingDuration {
+		seconds = NormalizeVideoBillingDurationSecondsOrDefault(seconds)
 	}
-	if videoCount <= 0 {
-		videoCount = 1
-	}
-	model := ""
-	if len(modelOptional) > 0 {
-		model = modelOptional[0]
+	if seconds <= 0 || videoCount <= 0 {
+		return &CostBreakdown{BillingMode: string(BillingModeVideo)}
 	}
 	sizeTier := NormalizeVideoBillingTierOrDefault(videoSize)
 	unitPrice := s.getVideoUnitPrice(model, sizeTier, groupConfig)
@@ -1533,6 +1540,87 @@ func (s *BillingService) CalculateVideoCost(videoSize string, seconds int, video
 		ActualCost:  actualCost,
 		BillingMode: string(BillingModeVideo),
 	}
+}
+
+func parseCalculateVideoCostArgs(first string, args []any) (videoSize string, seconds int, videoCount int, groupConfig *VideoPriceConfig, rateMultiplier float64, model string, defaultMissingDuration bool) {
+	videoSize = first
+	rateMultiplier = 1
+	if len(args) == 0 {
+		return videoSize, seconds, videoCount, groupConfig, rateMultiplier, model, false
+	}
+	if resolution, ok := args[0].(string); ok {
+		// Upstream-compatible shape: model, resolution, count, duration, config, multiplier.
+		model = first
+		videoSize = resolution
+		videoCount = videoCostArgInt(args, 1)
+		seconds = videoCostArgInt(args, 2)
+		groupConfig = videoCostArgConfig(args, 3)
+		rateMultiplier = videoCostArgFloat(args, 4, 1)
+		return videoSize, seconds, videoCount, groupConfig, rateMultiplier, model, true
+	}
+	// Local shape: size, seconds, count, config, multiplier[, model].
+	seconds = videoCostArgInt(args, 0)
+	videoCount = videoCostArgInt(args, 1)
+	groupConfig = videoCostArgConfig(args, 2)
+	rateMultiplier = videoCostArgFloat(args, 3, 1)
+	model = videoCostArgString(args, 4)
+	return videoSize, seconds, videoCount, groupConfig, rateMultiplier, model, false
+}
+
+func videoCostArgInt(args []any, idx int) int {
+	if idx < 0 || idx >= len(args) {
+		return 0
+	}
+	switch v := args[idx].(type) {
+	case int:
+		return v
+	case int32:
+		return int(v)
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case float32:
+		return int(v)
+	default:
+		return 0
+	}
+}
+
+func videoCostArgFloat(args []any, idx int, fallback float64) float64 {
+	if idx < 0 || idx >= len(args) {
+		return fallback
+	}
+	switch v := args[idx].(type) {
+	case float64:
+		return v
+	case float32:
+		return float64(v)
+	case int:
+		return float64(v)
+	case int32:
+		return float64(v)
+	case int64:
+		return float64(v)
+	default:
+		return fallback
+	}
+}
+
+func videoCostArgConfig(args []any, idx int) *VideoPriceConfig {
+	if idx < 0 || idx >= len(args) || args[idx] == nil {
+		return nil
+	}
+	cfg, _ := args[idx].(*VideoPriceConfig)
+	return cfg
+}
+
+func videoCostArgString(args []any, idx int) string {
+	if idx < 0 || idx >= len(args) {
+		return ""
+	}
+	value, _ := args[idx].(string)
+	return strings.TrimSpace(value)
 }
 
 func (s *BillingService) GetVideoUnitPrice(model string, sizeTier string, groupConfig *VideoPriceConfig) float64 {
@@ -1568,27 +1656,50 @@ func (s *BillingService) getVideoUnitPrice(model string, sizeTier string, groupC
 			return *price
 		}
 	}
-	return s.getDefaultVideoPricePerSecond(model)
+	return s.getDefaultVideoPricePerSecond(model, sizeTier)
 }
 
 // getDefaultVideoPricePerSecond resolves catalog / hard-coded Grok Imagine per-second rates.
-func (s *BillingService) getDefaultVideoPricePerSecond(model string) float64 {
+func (s *BillingService) getDefaultVideoPricePerSecond(model string, sizeTier string) float64 {
+	if price := getGrokImagineDefaultVideoPricePerSecond(model, sizeTier); price > 0 {
+		return price
+	}
 	if s.pricingService != nil {
 		if pricing := s.pricingService.GetModelPricing(model); pricing != nil && pricing.OutputCostPerSecond > 0 {
 			return pricing.OutputCostPerSecond
 		}
 	}
-	return getGrokImagineDefaultVideoPricePerSecond(model)
+	return 0
 }
 
-func getGrokImagineDefaultVideoPricePerSecond(model string) float64 {
+func getGrokImagineDefaultVideoPricePerSecond(model string, sizeTierOptional ...string) float64 {
 	m := strings.ToLower(strings.TrimSpace(model))
+	sizeTier := VideoBillingTier480p
+	if len(sizeTierOptional) > 0 {
+		sizeTier = NormalizeVideoBillingTierOrDefault(sizeTierOptional[0])
+	}
 	switch {
 	case m == "grok-imagine-video-1.5" || strings.Contains(m, "video-1.5") || m == "grok-video-1.5":
-		return grokImagineVideo15PricePerSecond
+		switch sizeTier {
+		case VideoBillingTier480p:
+			return grokImagineVideo15Price480pPerSecond
+		case VideoBillingTier720p:
+			return grokImagineVideo15Price720pPerSecond
+		case VideoBillingTier1080p, VideoBillingTier4K:
+			return grokImagineVideo15Price1080pPerSecond
+		default:
+			return grokImagineVideo15Price480pPerSecond
+		}
 	case m == "grok-imagine-video" || m == "grok-video" || m == "grok-video-latest" ||
 		strings.HasPrefix(m, "grok-imagine-video") || strings.HasPrefix(m, "grok-video"):
-		return grokImagineVideoPricePerSecond
+		switch sizeTier {
+		case VideoBillingTier480p:
+			return grokImagineVideoPrice480pPerSecond
+		case VideoBillingTier720p, VideoBillingTier1080p, VideoBillingTier4K:
+			return grokImagineVideoPrice720pPerSecond
+		default:
+			return grokImagineVideoPrice480pPerSecond
+		}
 	default:
 		return 0
 	}

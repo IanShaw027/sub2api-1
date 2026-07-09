@@ -1840,3 +1840,99 @@ func shouldSkipOpsErrorLog(ctx context.Context, ops *service.OpsService, message
 func shouldSkipOpsErrorLogForCyber(c *gin.Context) bool {
 	return service.GetOpsCyberPolicy(c) != nil
 }
+
+// logOpsStreamError records an in-stream SSE error after the HTTP wire status has already been fixed at 200.
+func logOpsStreamError(c *gin.Context, ops *service.OpsService, wireStatus int) {
+	streamErr, ok := service.GetOpsStreamError(c)
+	if !ok || c == nil || c.Request == nil || c.Request.URL == nil {
+		return
+	}
+	if v, ok := c.Get(service.OpsSkipPassthroughKey); ok {
+		if skip, _ := v.(bool); skip {
+			return
+		}
+	}
+	classifyStatus := streamErr.IntendedStatus
+	if classifyStatus <= 0 {
+		classifyStatus = wireStatus
+	}
+	if shouldSkipOpsErrorLog(c.Request.Context(), ops, streamErr.Message, streamErr.Message, c.Request.URL.Path, classifyStatus) {
+		return
+	}
+	normalizedType := normalizeOpsErrorType(streamErr.ErrType, "")
+	phase := classifyOpsPhaseForContext(c, normalizedType, streamErr.Message, "")
+	isBusinessLimited := classifyOpsIsBusinessLimitedForContext(c, normalizedType, phase, "", classifyStatus, streamErr.Message)
+	errorOwner := classifyOpsErrorOwnerForContext(c, phase, normalizedType, streamErr.Message, "")
+	errorSource := classifyOpsErrorSourceForContext(c, phase, normalizedType, streamErr.Message, "")
+	apiKey := getOpsAPIKey(c)
+	clientRequestID, _ := c.Request.Context().Value(ctxkey.ClientRequestID).(string)
+	model, _ := c.Get(opsModelKey)
+	modelName, _ := model.(string)
+	accountIDV, _ := c.Get(opsAccountIDKey)
+	var accountID *int64
+	if v, ok := accountIDV.(int64); ok && v > 0 {
+		accountID = &v
+	}
+	fallbackPlatform := guessPlatformFromPath(c.Request.URL.Path)
+	platform := resolveOpsPlatform(apiKey, fallbackPlatform)
+	requestID := c.Writer.Header().Get("X-Request-Id")
+	if requestID == "" {
+		requestID = c.Writer.Header().Get("x-request-id")
+	}
+	entry := &service.OpsInsertErrorLogInput{
+		RequestID:         requestID,
+		ClientRequestID:   clientRequestID,
+		AccountID:         accountID,
+		Platform:          platform,
+		Model:             modelName,
+		RequestPath:       c.Request.URL.Path,
+		Stream:            true,
+		InboundEndpoint:   GetInboundEndpoint(c),
+		UpstreamEndpoint:  GetUpstreamEndpoint(c, platform),
+		RequestedModel:    modelName,
+		UserAgent:         c.GetHeader("User-Agent"),
+		ErrorPhase:        phase,
+		ErrorType:         normalizedType,
+		Severity:          classifyOpsSeverity(normalizedType, classifyStatus),
+		StatusCode:        wireStatus,
+		IsBusinessLimited: isBusinessLimited,
+		IsCountTokens:     isCountTokensRequest(c),
+		ErrorMessage:      streamErr.Message,
+		ErrorBody:         "",
+		ErrorSource:       errorSource,
+		ErrorOwner:        errorOwner,
+		CreatedAt:         time.Now(),
+	}
+	if v, ok := c.Get(opsUpstreamModelKey); ok {
+		if s, ok := v.(string); ok {
+			entry.UpstreamModel = strings.TrimSpace(s)
+		}
+	}
+	if v, ok := c.Get(opsRequestTypeKey); ok {
+		switch t := v.(type) {
+		case int16:
+			entry.RequestType = &t
+		case int:
+			v16 := int16(t)
+			entry.RequestType = &v16
+		}
+	}
+	applyOpsLatencyFieldsFromContext(c, entry)
+	if apiKey != nil {
+		entry.APIKeyID = &apiKey.ID
+		entry.APIKeyPrefix = keyPrefix(apiKey.Key, 8)
+		if apiKey.User != nil {
+			entry.UserID = &apiKey.User.ID
+		}
+		if apiKey.GroupID != nil {
+			entry.GroupID = apiKey.GroupID
+		}
+		if apiKey.Group != nil && apiKey.Group.Platform != "" {
+			entry.Platform = apiKey.Group.Platform
+		}
+	}
+	if clientIP := strings.TrimSpace(ip.GetClientIP(c)); clientIP != "" {
+		entry.ClientIP = &clientIP
+	}
+	enqueueOpsErrorLog(ops, entry)
+}

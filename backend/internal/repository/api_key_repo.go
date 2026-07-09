@@ -457,6 +457,9 @@ func (r *apiKeyRepository) ListByUserID(ctx context.Context, userID int64, param
 	for i := range keys {
 		outKeys = append(outKeys, *apiKeyEntityToService(keys[i]))
 	}
+	if err := r.attachAPIKeyLastUsedIPs(ctx, outKeys); err != nil {
+		return nil, nil, err
+	}
 
 	return outKeys, paginationResultFromTotal(int64(total), params), nil
 }
@@ -510,8 +513,68 @@ func (r *apiKeyRepository) ListByGroupID(ctx context.Context, groupID int64, par
 	for i := range keys {
 		outKeys = append(outKeys, *apiKeyEntityToService(keys[i]))
 	}
+	if err := r.attachAPIKeyLastUsedIPs(ctx, outKeys); err != nil {
+		return nil, nil, err
+	}
 
 	return outKeys, paginationResultFromTotal(int64(total), params), nil
+}
+
+func (r *apiKeyRepository) attachAPIKeyLastUsedIPs(ctx context.Context, keys []service.APIKey) error {
+	if r == nil || r.sql == nil || len(keys) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(keys))
+	for _, key := range keys {
+		if key.ID > 0 {
+			ids = append(ids, key.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+	query := fmt.Sprintf(`
+		SELECT api_key_id, ip_address
+		FROM (
+			SELECT api_key_id, ip_address, ROW_NUMBER() OVER (PARTITION BY api_key_id ORDER BY created_at DESC, id DESC) AS rn
+			FROM usage_logs
+			WHERE api_key_id IN (%s) AND TRIM(COALESCE(ip_address, '')) <> ''
+		) latest
+		WHERE rn = 1
+	`, strings.Join(placeholders, ","))
+	rows, err := r.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	lastIPs := make(map[int64]string)
+	for rows.Next() {
+		var apiKeyID int64
+		var ip string
+		if err := rows.Scan(&apiKeyID, &ip); err != nil {
+			return err
+		}
+		ip = strings.TrimSpace(ip)
+		if ip != "" {
+			lastIPs[apiKeyID] = ip
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range keys {
+		if ip, ok := lastIPs[keys[i].ID]; ok {
+			ipCopy := ip
+			keys[i].LastUsedIP = &ipCopy
+		}
+	}
+	return nil
 }
 
 func apiKeyListOrder(params pagination.PaginationParams) []func(*entsql.Selector) {

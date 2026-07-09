@@ -753,7 +753,46 @@ type openAIWSDeltaShadowLog struct {
 	FullBytes                int
 }
 
-func logOpenAIWSDeltaShadow(v openAIWSDeltaShadowLog) {}
+func logOpenAIWSDeltaShadow(v openAIWSDeltaShadowLog) {
+	if !openAIWSDeltaShadowEnabled() {
+		return
+	}
+	logOpenAIWSModeInfo(
+		"TEMP_DIAG(openai_ws_delta_shadow) remove_after_debug=true "+
+			"openai_ws_delta_shadow request_id=%s group_id=%d api_key_id=%d session_hash=%s "+
+			"account_id=%d conn_id=%s cached_found=%v cached_account_id=%d cached_conn_id=%s "+
+			"cached_last_response_id=%s conn_most_recent_response_id=%s cached_session_conn_id=%s "+
+			"current_session_conn_id=%s cached_conn_in_pool=%v cached_conn_profile=%s "+
+			"cached_conn_age_ms=%d cached_conn_idle_ms=%d cached_conn_lease_count=%d "+
+			"cached_conn_leased=%v cached_conn_waiters=%d cached_conn_last_response_id=%s "+
+			"allow_conn_reanchor=%v has_function_call_output=%v active=%v candidate=%v "+
+			"fallback_reason=%s account_mismatch_reason=%s conn_mismatch_reason=%s prefix_match=%v "+
+			"break_boundary=%s break_item_type=%s break_cached_item_type=%s break_cached_shape=%s "+
+			"break_current_shape=%s conn_match=%v most_recent_match=%v non_input_match=%v "+
+			"non_input_added_keys=%s non_input_removed_keys=%s non_input_changed_keys=%s "+
+			"non_input_cached_summary=%s non_input_current_summary=%s raw_client_equiv=%v "+
+			"sticky_account_id=%d sticky_account_hit=%v sticky_account_mismatch=%v "+
+			"conn_affinity_hit=%v preferred_conn_id=%s store_fallback_reason=%s "+
+			"conn_reanchor_blockers=%s materialized_count=%d current_input_count=%d "+
+			"delta_items=%d delta_bytes=%d full_items=%d full_bytes=%d",
+		v.RequestID, v.GroupID, v.APIKeyID, v.SessionHash,
+		v.AccountID, v.ConnID, v.CachedFound, v.CachedAccountID, v.CachedConnID,
+		v.CachedLastResponseID, v.ConnMostRecentResponseID, v.CachedSessionConnID,
+		v.CurrentSessionConnID, v.CachedConnInPool, v.CachedConnProfile,
+		v.CachedConnAgeMS, v.CachedConnIdleMS, v.CachedConnLeaseCount,
+		v.CachedConnLeased, v.CachedConnWaiters, v.CachedConnLastResponseID,
+		v.AllowConnReanchor, v.HasFunctionCallOutput, v.Active, v.Candidate,
+		v.FallbackReason, v.AccountMismatchReason, v.ConnMismatchReason, v.PrefixMatch,
+		v.BreakBoundary, v.BreakItemType, v.BreakCachedItemType, v.BreakCachedShape,
+		v.BreakCurrentShape, v.ConnMatch, v.MostRecentMatch, v.NonInputMatch,
+		v.NonInputAddedKeys, v.NonInputRemovedKeys, v.NonInputChangedKeys,
+		v.NonInputCachedSummary, v.NonInputCurrentSummary, v.RawClientEquiv,
+		v.StickyAccountID, v.StickyAccountHit, v.StickyAccountMismatch,
+		v.ConnAffinityHit, v.PreferredConnID, v.StoreFallbackReason,
+		v.ConnReanchorBlockers, v.MaterializedCount, v.CurrentInputCount,
+		v.DeltaItems, v.DeltaBytes, v.FullItems, v.FullBytes,
+	)
+}
 
 func openAIWSDeltaAccountMismatchReason(in openAIWSDeltaShadowInput, cachedAccountID int64) string {
 	if cachedAccountID == in.AccountID {

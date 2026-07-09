@@ -199,6 +199,7 @@ type UserBreakdownDimension struct {
 	BillingType  *int8  // filter by billing_type (non-nil to enable)
 	BillingMode  string // filter by billing_mode (non-empty to enable)
 	ExcludeAdmin bool   // exclude admin users when true
+	SortBy       string // sort column (empty = default)
 }
 
 // APIKeyUsageTrendPoint represents API key usage trend data point

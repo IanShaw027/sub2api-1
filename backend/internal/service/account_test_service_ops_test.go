@@ -250,3 +250,7 @@ func TestAccountTestService_TestAccountConnection_OpenAIDefaultModelRecordedInOp
 	require.Equal(t, openai.DefaultTestModel, captured.Model)
 	require.Equal(t, openai.DefaultTestModel, captured.RequestedModel)
 }
+
+func (s *kiroDefaultAccountRepoStub) ListAllWithFilters(ctx context.Context, platform, accountType, status, search string, groupID int64, privacyMode string) ([]Account, error) {
+	return nil, nil
+}

@@ -68,6 +68,12 @@ type accountGroupSlotReleaser interface {
 	ReleaseAccountSlotForGroup(ctx context.Context, accountID int64, groupID int64, requestID string) error
 }
 
+type APIKeyConcurrencyCache interface {
+	TrackAPIKeySlot(ctx context.Context, apiKeyID int64, requestID string) error
+	ReleaseAPIKeySlot(ctx context.Context, apiKeyID int64, requestID string) error
+	GetAPIKeyConcurrencyBatch(ctx context.Context, apiKeyIDs []int64) (map[int64]int, error)
+}
+
 var (
 	requestIDPrefix  = initRequestIDPrefix()
 	requestIDCounter atomic.Uint64
@@ -104,6 +110,7 @@ const (
 
 	defaultAccountLoadBatchCacheTTL = 200 * time.Millisecond
 	accountLoadBatchFetchTimeout    = 3 * time.Second
+	apiKeySlotTrackTimeout          = 2 * time.Second
 	maxAccountLoadBatchCacheEntries = 256
 )
 
@@ -538,6 +545,37 @@ func (s *ConcurrencyService) GetUsersLoadBatch(ctx context.Context, users []User
 	return s.cache.GetUsersLoadBatch(ctx, users)
 }
 
+// TrackAPIKeySlot records one active request slot for an API key without applying key-level concurrency limits.
+// It is fail-open: Redis/cache errors are logged and return a no-op release function.
+func (s *ConcurrencyService) TrackAPIKeySlot(ctx context.Context, apiKeyID int64) func() {
+	if s == nil || s.cache == nil || apiKeyID <= 0 {
+		return func() {}
+	}
+	cache, ok := s.cache.(APIKeyConcurrencyCache)
+	if !ok {
+		return func() {}
+	}
+	requestID := generateRequestID()
+	baseCtx := context.Background()
+	if ctx != nil {
+		baseCtx = context.WithoutCancel(ctx)
+	}
+	trackCtx, cancel := context.WithTimeout(baseCtx, apiKeySlotTrackTimeout)
+	err := cache.TrackAPIKeySlot(trackCtx, apiKeyID, requestID)
+	cancel()
+	if err != nil {
+		logger.LegacyPrintf("service.concurrency", "Warning: failed to track api key slot for %d (req=%s): %v", apiKeyID, requestID, err)
+		return func() {}
+	}
+	return func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := cache.ReleaseAPIKeySlot(bgCtx, apiKeyID, requestID); err != nil {
+			logger.LegacyPrintf("service.concurrency", "Warning: failed to release api key slot for %d (req=%s): %v", apiKeyID, requestID, err)
+		}
+	}
+}
+
 // CleanupExpiredAccountSlots removes expired slots for one account (background task).
 func (s *ConcurrencyService) CleanupExpiredAccountSlots(ctx context.Context, accountID int64) error {
 	if s.cache == nil {
@@ -548,11 +586,23 @@ func (s *ConcurrencyService) CleanupExpiredAccountSlots(ctx context.Context, acc
 
 // StartSlotCleanupWorker starts a background cleanup worker for expired account slots.
 func (s *ConcurrencyService) StartSlotCleanupWorker(accountRepo AccountRepository, interval time.Duration) {
-	if s == nil || s.cache == nil || accountRepo == nil || interval <= 0 {
+	if s == nil || s.cache == nil || interval <= 0 {
 		return
 	}
 
 	runCleanup := func() {
+		if accountRepo == nil {
+			if cacheWide, ok := s.cache.(interface {
+				CleanupExpiredAccountSlotKeys(context.Context) error
+			}); ok {
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				if err := cacheWide.CleanupExpiredAccountSlotKeys(cleanupCtx); err != nil {
+					logger.LegacyPrintf("service.concurrency", "Warning: cleanup expired account slot keys failed: %v", err)
+				}
+				cancel()
+			}
+			return
+		}
 		listCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		accounts, err := accountRepo.ListSchedulable(listCtx)
 		cancel()

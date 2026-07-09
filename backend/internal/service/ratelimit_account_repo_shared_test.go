@@ -157,3 +157,7 @@ func (r *rateLimitAccountRepoStub) ListShadowsByParent(context.Context, int64) (
 }
 
 var _ AccountRepository = (*rateLimitAccountRepoStub)(nil)
+
+func (s *rateLimitAccountRepoStub) ListAllWithFilters(ctx context.Context, platform, accountType, status, search string, groupID int64, privacyMode string) ([]Account, error) {
+	return nil, nil
+}

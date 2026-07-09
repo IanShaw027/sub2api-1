@@ -988,12 +988,23 @@ func stripOpenAIImageGenerationTools(reqBody map[string]any) bool {
 	if !removed {
 		return false
 	}
+	stripOpenAIImageGenerationToolChoice(reqBody)
 	if len(kept) == 0 {
 		delete(reqBody, "tools")
 		return true
 	}
 	reqBody["tools"] = kept
 	return true
+}
+
+func stripOpenAIImageGenerationToolChoice(reqBody map[string]any) {
+	choice, ok := reqBody["tool_choice"]
+	if !ok {
+		return
+	}
+	if openAIAnyToolChoiceSelectsImageGeneration(choice) {
+		delete(reqBody, "tool_choice")
+	}
 }
 
 // stripCodexSparkImageGenerationTools removes image_generation tool entries from

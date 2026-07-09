@@ -479,13 +479,17 @@ type OpenAIForwardResult struct {
 	ImageSizeSource      string
 	ImageSizeBreakdown   map[string]int
 	// SearchCount bills response/tool search calls (e.g. web_search_call, tool_search_call).
-	SearchCount         int
-	VideoSeconds        int
-	VideoSize           string
-	VideoCount          int
-	AudioUsage          *AudioUsage
-	wsReplayInput       []json.RawMessage
-	wsReplayInputExists bool
+	SearchCount int
+	// VideoSeconds/VideoSize are the local historical names; VideoDurationSeconds/VideoResolution
+	// are upstream names. Keep both so existing local paths and upstream tests/features stay compatible.
+	VideoSeconds         int
+	VideoSize            string
+	VideoCount           int
+	VideoResolution      string
+	VideoDurationSeconds int
+	AudioUsage           *AudioUsage
+	wsReplayInput        []json.RawMessage
+	wsReplayInputExists  bool
 
 	// strict-delta shadow 载体。
 	// 仅 shadow 度量用，承载本轮 raw upstream output 的 canonical 哈希和结构签名，不含原文。
@@ -4603,10 +4607,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	logCodexCLIOnlyDetection(ctx, c, account, apiKeyID, restrictionResult, body)
 	if restrictionResult.Enabled && !restrictionResult.Matched {
 		MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
+		message := CodexClientRestrictionMessage(restrictionResult)
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": gin.H{
 				"type":    "forbidden_error",
-				"message": "This account only allows Codex official clients",
+				"message": message,
 			},
 		})
 		return nil, errors.New("codex_cli_only restriction: only codex official clients are allowed")
@@ -4812,6 +4817,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		reqBody["instructions"] = "You are a helpful coding assistant."
 		bodyModified = true
 		markPatchSet("instructions", "You are a helpful coding assistant.")
+	}
+
+	if account.CodexImageGenerationExplicitToolPolicy() == codexImageGenerationExplicitToolPolicyStrip && stripOpenAIImageGenerationTools(reqBody) {
+		bodyModified = true
+		disablePatch()
+		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Stripped explicit image_generation tool by account policy")
 	}
 
 	if !isCompactRequest && codexImageGenerationBridgeEnabled && !isMessagesBridgeRequest && ensureOpenAIResponsesImageGenerationTool(reqBody) {
@@ -6600,6 +6611,7 @@ oauthTransformDone:
 			ResponseID:           responseID,
 			Usage:                *usage,
 			Model:                originalModel,
+			BillingModel:         upstreamModel,
 			UpstreamModel:        upstreamModel,
 			ServiceTier:          serviceTier,
 			ReasoningEffort:      reasoningEffort,
@@ -7086,6 +7098,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		ResponseID:      responseID,
 		Usage:           *usage,
 		Model:           reqModel,
+		BillingModel:    upstreamPassthroughModel,
 		UpstreamModel:   upstreamPassthroughModel,
 		ServiceTier:     extractOpenAIServiceTierFromBody(body),
 		ReasoningEffort: reasoningEffort,
@@ -7110,6 +7123,7 @@ func buildOpenAIPartialForwardResult(resp *http.Response, requestBody []byte, or
 		ResponseID:      strings.TrimSpace(responseID),
 		Usage:           *usage,
 		Model:           originalModel,
+		BillingModel:    upstreamModel,
 		UpstreamModel:   upstreamModel,
 		ServiceTier:     extractOpenAIServiceTierFromBody(requestBody),
 		ReasoningEffort: extractOpenAIReasoningEffortFromBody(requestBody, originalModel),
@@ -7149,6 +7163,7 @@ func buildOpenAIStreamingPartialForwardResult(resp *http.Response, requestBody [
 		ResponseID:      strings.TrimSpace(responseID),
 		Usage:           *usage,
 		Model:           originalModel,
+		BillingModel:    upstreamModel,
 		UpstreamModel:   upstreamModel,
 		ServiceTier:     extractOpenAIServiceTierFromBody(requestBody),
 		ReasoningEffort: extractOpenAIReasoningEffortFromBody(requestBody, originalModel),
@@ -8497,6 +8512,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if originalModel != "" && mappedModel != "" && originalModel != mappedModel {
 		body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
 	}
+	if writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
+		return &openaiNonStreamingResultPassthrough{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount, searchCount: searchCount}, nil
+	}
 	c.Data(resp.StatusCode, contentType, body)
 	return &openaiNonStreamingResultPassthrough{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount, searchCount: searchCount}, nil
 }
@@ -8590,10 +8608,13 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 			contentType = "text/event-stream"
 		}
 	}
+	searchCount := countOpenAISearchCallsInResponsesJSONBytes(body)
+	if writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
+		return &openaiNonStreamingResultPassthrough{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount, searchCount: searchCount}, nil
+	}
 	c.Writer.Header().Set("Content-Type", contentType)
 	c.Data(resp.StatusCode, contentType, body)
 
-	searchCount := countOpenAISearchCallsInResponsesJSONBytes(body)
 	return &openaiNonStreamingResultPassthrough{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount, searchCount: searchCount}, nil
 }
 
@@ -10845,6 +10866,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		}
 	}
 
+	if writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
+		return &openaiNonStreamingResult{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount, searchCount: searchCount}, nil
+	}
 	c.Data(resp.StatusCode, contentType, body)
 
 	return &openaiNonStreamingResult{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount, searchCount: searchCount}, nil
@@ -10942,6 +10966,9 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 		if contentType == "" {
 			contentType = "text/event-stream"
 		}
+	}
+	if writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
+		return &openaiNonStreamingResult{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount, searchCount: searchCount}, nil
 	}
 	c.Writer.Header().Set("Content-Type", contentType)
 	c.Data(resp.StatusCode, contentType, body)
@@ -11787,7 +11814,7 @@ func applyOpenAIResponsesImageBillingMeta(result *OpenAIForwardResult, body []by
 	}
 
 	if imageModel, imageSizeTier, err := resolveOpenAIResponsesImageBillingConfigFromBody(body, fallbackModel); err == nil {
-		if result.BillingModel == "" {
+		if imageModel != "" {
 			result.BillingModel = imageModel
 		}
 		if result.ImageSize == "" {
@@ -11891,7 +11918,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 
 	requestType := normalizeOpenAIRecordUsageRequestType(input, result)
 
-	apiKey := input.APIKey
+	apiKey := s.apiKeyWithFreshGroupMediaPricing(ctx, input.APIKey)
 	user := input.User
 	account := input.Account
 	subscription := input.Subscription
@@ -11921,6 +11948,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		multiplier = resolver.Resolve(ctx, user.ID, *apiKey.GroupID, apiKey.Group.RateMultiplier)
 	}
 	multiplier, imageRateMultiplier := computePeakAwareMultipliers(apiKey, multiplier, timezone.Now())
+	videoRateMultiplier := resolveVideoRateMultiplier(apiKey, multiplier)
 	effectiveRateMultiplier := multiplier
 
 	var cost *CostBreakdown
@@ -11954,6 +11982,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			billingModelCandidate,
 			multiplier,
 			imageRateMultiplier,
+			videoRateMultiplier,
 			tokens,
 			serviceTier,
 			requestType,
@@ -12006,7 +12035,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			cost = selectedCost.Cost
 		}
 	}
-	if result.AudioUsage != nil || openAIForwardResultHasVideoBilling(result) {
+	if openAIForwardResultHasVideoBilling(result) {
+		effectiveRateMultiplier = videoRateMultiplier
+	} else if result.AudioUsage != nil {
 		effectiveRateMultiplier = 1
 	} else if result.ImageCount > 0 && cost != nil && cost.BillingMode != string(BillingModeToken) {
 		effectiveRateMultiplier = imageRateMultiplier
@@ -12061,8 +12092,10 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		BilledByHigherPricedUpstream: selectedCost.BilledByHigherPricedUpstream,
 	}
 	if openAIForwardResultHasVideoBilling(result) {
+		usageLog.ImageSize = nil
 		usageLog.VideoResolution = optionalTrimmedStringPtr(videoMeta.resolution)
 		usageLog.VideoSeconds = &videoMeta.seconds
+		usageLog.VideoDurationSeconds = &videoMeta.seconds
 		usageLog.VideoCount = videoMeta.count
 		usageLog.VideoUnitPrice = &videoMeta.unitPrice
 	}
@@ -12203,6 +12236,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 	billingModel string,
 	multiplier float64,
 	imageRateMultiplier float64,
+	videoRateMultiplier float64,
 	tokens UsageTokens,
 	serviceTier string,
 	requestType RequestType,
@@ -12223,7 +12257,13 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		return searchCost, nil
 	}
 	if openAIForwardResultHasVideoBilling(result) {
-		return s.calculateOpenAIVideoRequestCost(result, apiKey, 1), nil
+		if s.resolver != nil && apiKey != nil && apiKey.Group != nil && !apiKeyHasConfiguredVideoPrice(apiKey, firstNonEmptyString(result.VideoResolution, result.VideoSize)) {
+			gid := apiKey.Group.ID
+			if resolved := s.resolver.Resolve(ctx, PricingInput{Model: billingModel, GroupID: &gid}); resolved != nil && resolved.Source == PricingSourceChannel && resolved.Mode == BillingModeToken {
+				return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier)
+			}
+		}
+		return s.calculateOpenAIVideoRequestCost(result, apiKey, videoRateMultiplier), nil
 	}
 	if result != nil && result.AudioUsage != nil {
 		var groupConfig *audioPriceConfig
@@ -12245,7 +12285,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		return audioCost, nil
 	}
 	if result != nil && result.ImageCount > 0 {
-		if s.resolver != nil && apiKey != nil && apiKey.Group != nil {
+		if !apiKeyHasConfiguredImagePrice(apiKey, result.ImageSize) && s.resolver != nil && apiKey != nil && apiKey.Group != nil {
 			gid := apiKey.Group.ID
 			if resolved := s.resolver.Resolve(ctx, PricingInput{Model: billingModel, GroupID: &gid}); resolved != nil && resolved.Source == PricingSourceChannel && resolved.Mode == BillingModeToken {
 				return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier)
@@ -12275,7 +12315,7 @@ func openAIForwardResultHasVideoBilling(result *OpenAIForwardResult) bool {
 	if result == nil {
 		return false
 	}
-	return result.VideoSeconds > 0 || result.VideoCount > 0 || strings.TrimSpace(result.VideoSize) != ""
+	return result.VideoSeconds > 0 || result.VideoDurationSeconds > 0 || result.VideoCount > 0 || strings.TrimSpace(result.VideoSize) != "" || strings.TrimSpace(result.VideoResolution) != ""
 }
 
 func serviceEndpointIsVideo(path string) bool {
@@ -12298,7 +12338,7 @@ type openAIVideoBillingMetadata struct {
 }
 
 func (s *OpenAIGatewayService) openAIVideoBillingMetadata(result *OpenAIForwardResult, apiKey *APIKey) openAIVideoBillingMetadata {
-	meta := openAIVideoBillingMetadata{count: 1}
+	meta := openAIVideoBillingMetadata{}
 	if result == nil {
 		meta.resolution = VideoBillingTier720p
 		return meta
@@ -12313,8 +12353,11 @@ func (s *OpenAIGatewayService) openAIVideoBillingMetadata(result *OpenAIForwardR
 	if meta.billingModel == "" {
 		meta.billingModel = strings.TrimSpace(result.Model)
 	}
-	meta.resolution = NormalizeVideoBillingTierOrDefault(result.VideoSize)
-	meta.seconds = result.VideoSeconds
+	meta.resolution = NormalizeVideoBillingResolutionOrDefault(firstNonEmptyString(result.VideoResolution, result.VideoSize))
+	meta.seconds = result.VideoDurationSeconds
+	if meta.seconds <= 0 {
+		meta.seconds = result.VideoSeconds
+	}
 	if meta.seconds <= 0 {
 		// Some async video creation / retrieval responses do not echo duration.
 		// Prefer the shared Grok media default when the model is Grok Imagine video;
@@ -12332,6 +12375,43 @@ func (s *OpenAIGatewayService) openAIVideoBillingMetadata(result *OpenAIForwardR
 		meta.unitPrice = s.billingService.GetVideoUnitPrice(meta.billingModel, meta.resolution, meta.groupConfig)
 	}
 	return meta
+}
+
+func (s *OpenAIGatewayService) apiKeyWithFreshGroupMediaPricing(ctx context.Context, apiKey *APIKey) *APIKey {
+	if apiKey == nil || apiKey.GroupID == nil || *apiKey.GroupID <= 0 {
+		return apiKey
+	}
+	if !groupMediaPricingLooksIncomplete(apiKey.Group) {
+		return apiKey
+	}
+	if s == nil || s.channelService == nil || s.channelService.groupRepo == nil {
+		return apiKey
+	}
+	group, err := s.channelService.groupRepo.GetByIDLite(ctx, *apiKey.GroupID)
+	if err != nil || group == nil {
+		return apiKey
+	}
+	clone := *apiKey
+	clone.Group = group
+	return &clone
+}
+
+// groupMediaPricingLooksIncomplete 判断分组对象是否可能缺失媒体计费字段（例如由不含
+// 这些字段的旧快照或手工构造的上下文对象生成）。image/video 独立倍率在数据库中的
+// 默认值均为 1.0，正常加载的分组不可能两个倍率同时为 0 且未开启独立倍率、全部媒体
+// 价为 nil——只有这种情况才回源查库，避免对未配置覆盖价的分组每条媒体用量都多打一次 DB 查询。
+func groupMediaPricingLooksIncomplete(group *Group) bool {
+	if group == nil {
+		return true
+	}
+	if group.ImageRateIndependent || group.VideoRateIndependent {
+		return false
+	}
+	if group.ImageRateMultiplier != 0 || group.VideoRateMultiplier != 0 {
+		return false
+	}
+	return group.ImagePrice1K == nil && group.ImagePrice2K == nil && group.ImagePrice4K == nil &&
+		group.VideoPrice480P == nil && group.VideoPrice720P == nil && group.VideoPrice1080P == nil
 }
 
 func isUsagePricingUnavailableError(err error) bool {
@@ -12425,7 +12505,7 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCost(
 	requestType RequestType,
 	rateMultiplier float64,
 ) *CostBreakdown {
-	if s.resolver != nil && apiKey != nil && apiKey.Group != nil {
+	if !apiKeyHasConfiguredImagePrice(apiKey, result.ImageSize) && s.resolver != nil && apiKey != nil && apiKey.Group != nil {
 		gid := apiKey.Group.ID
 		resolved := s.resolver.Resolve(ctx, PricingInput{Model: billingModel, GroupID: &gid})
 		if resolved != nil && resolved.Source == PricingSourceChannel && (resolved.Mode == BillingModeImage || resolved.Mode == BillingModePerRequest) {
@@ -13612,6 +13692,12 @@ func (s *OpenAIGatewayService) applyOpenAIFastPolicyToBody(ctx context.Context, 
 			return body, fmt.Errorf("strip service_tier from body: %w", err)
 		}
 		return trimmed, nil
+	case OpenAIFastPolicyActionForcePriority:
+		updated, err := sjson.SetBytes(body, "service_tier", OpenAIFastTierPriority)
+		if err != nil {
+			return body, fmt.Errorf("force service_tier priority on body: %w", err)
+		}
+		return updated, nil
 	default:
 		if normTier == rawTier {
 			return body, nil
@@ -13667,6 +13753,12 @@ func (s *OpenAIGatewayService) applyOpenAIFastPolicyToWSResponseCreate(ctx conte
 			return frame, nil, fmt.Errorf("strip service_tier from ws frame: %w", err)
 		}
 		return trimmed, nil, nil
+	case OpenAIFastPolicyActionForcePriority:
+		updated, err := sjson.SetBytes(frame, "service_tier", OpenAIFastTierPriority)
+		if err != nil {
+			return frame, nil, fmt.Errorf("force service_tier priority in ws frame: %w", err)
+		}
+		return updated, nil, nil
 	default:
 		if normTier == rawTier {
 			return frame, nil, nil

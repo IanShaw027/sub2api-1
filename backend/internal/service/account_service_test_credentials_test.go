@@ -414,3 +414,7 @@ func TestAccountCredentialValidators_RejectNilAccount(t *testing.T) {
 		})
 	}
 }
+
+func (s *accountCredentialsRepoStub) ListAllWithFilters(ctx context.Context, platform, accountType, status, search string, groupID int64, privacyMode string) ([]Account, error) {
+	return nil, nil
+}

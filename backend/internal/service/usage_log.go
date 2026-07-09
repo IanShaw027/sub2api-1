@@ -207,10 +207,11 @@ type UsageLog struct {
 	MediaType          *string
 
 	// 视频生成计费明细
-	VideoResolution *string
-	VideoSeconds    *int
-	VideoCount      int
-	VideoUnitPrice  *float64
+	VideoResolution      *string
+	VideoSeconds         *int
+	VideoDurationSeconds *int
+	VideoCount           int
+	VideoUnitPrice       *float64
 
 	CreatedAt time.Time
 

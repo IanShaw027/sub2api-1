@@ -180,8 +180,8 @@ func TestCalculateVideoCost_GrokImagineDefaultPerSecond(t *testing.T) {
 	svc := &BillingService{}
 
 	cost := svc.CalculateVideoCost("720p", 8, 1, nil, 1.0, "grok-imagine-video")
-	require.InDelta(t, 0.40, cost.TotalCost, 1e-12)
+	require.InDelta(t, 0.56, cost.TotalCost, 1e-12)
 
 	cost = svc.CalculateVideoCost("720p", 8, 1, nil, 1.0, "grok-imagine-video-1.5")
-	require.InDelta(t, 0.64, cost.TotalCost, 1e-12)
+	require.InDelta(t, 1.12, cost.TotalCost, 1e-12)
 }

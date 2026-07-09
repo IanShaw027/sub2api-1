@@ -4304,6 +4304,7 @@ func TestCalculateOpenAIVideoRequestCostGrokImagineUsesDefaultPriceWithoutGroupV
 		result.BillingModel,
 		1,
 		1,
+		1,
 		UsageTokens{},
 		"",
 		RequestTypeUnknown,
@@ -4311,7 +4312,7 @@ func TestCalculateOpenAIVideoRequestCostGrokImagineUsesDefaultPriceWithoutGroupV
 	require.NoError(t, err)
 	require.NotNil(t, breakdown)
 	require.Equal(t, "video", breakdown.BillingMode)
-	require.InDelta(t, 0.40, breakdown.TotalCost, 1e-12)
+	require.InDelta(t, 0.56, breakdown.TotalCost, 1e-12)
 }
 
 func TestForwardGrokResponsesSearchCountRequiresActualStreamingCall(t *testing.T) {

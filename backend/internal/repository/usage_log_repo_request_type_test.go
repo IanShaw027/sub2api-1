@@ -81,6 +81,9 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // image_output_size
 			sqlmock.AnyArg(), // image_size_source
 			sqlmock.AnyArg(), // image_size_breakdown
+			sqlmock.AnyArg(), // video_count
+			sqlmock.AnyArg(), // video_resolution
+			sqlmock.AnyArg(), // video_duration_seconds
 			sqlmock.AnyArg(), // service_tier
 			sqlmock.AnyArg(), // reasoning_effort
 			sqlmock.AnyArg(), // inbound_endpoint
@@ -172,6 +175,9 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(), // image_output_size
 			sqlmock.AnyArg(), // image_size_source
 			sqlmock.AnyArg(), // image_size_breakdown
+			sqlmock.AnyArg(), // video_count
+			sqlmock.AnyArg(), // video_resolution
+			sqlmock.AnyArg(), // video_duration_seconds
 			serviceTier,
 			sqlmock.AnyArg(),
 			sqlmock.AnyArg(),
@@ -317,9 +323,14 @@ func TestAppendUsageLogBillingModeWhereCondition(t *testing.T) {
 		wantCondition string
 	}{
 		{
-			name:          "image includes legacy image rows",
+			name:          "image includes explicit image and legacy image rows",
 			billingMode:   string(service.BillingModeImage),
-			wantCondition: "(billing_mode = $1 OR COALESCE(image_count, 0) > 0)",
+			wantCondition: "(billing_mode = $1 OR ((billing_mode IS NULL OR billing_mode = '') AND COALESCE(image_count, 0) > 0))",
+		},
+		{
+			name:          "video remains exact",
+			billingMode:   string(service.BillingModeVideo),
+			wantCondition: "billing_mode = $1",
 		},
 		{
 			name:          "token includes legacy non-image rows",
@@ -345,7 +356,7 @@ func TestAppendUsageLogBillingModeWhereCondition(t *testing.T) {
 func TestAppendUsageLogBillingModeWhereConditionWithAlias(t *testing.T) {
 	conditions, args := appendUsageLogBillingModeWhereConditionWithAlias(nil, nil, string(service.BillingModeImage), "ul")
 
-	require.Equal(t, []string{"(ul.billing_mode = $1 OR COALESCE(ul.image_count, 0) > 0)"}, conditions)
+	require.Equal(t, []string{"(ul.billing_mode = $1 OR ((ul.billing_mode IS NULL OR ul.billing_mode = '') AND COALESCE(ul.image_count, 0) > 0))"}, conditions)
 	require.Equal(t, []any{string(service.BillingModeImage)}, args)
 }
 
@@ -635,7 +646,7 @@ func TestUsageLogRepositoryGetStatsWithFiltersBillingModeAppliesToEndpointBreakd
 		BillingMode: "image",
 	}
 
-	mock.ExpectQuery("FROM usage_logs\\s+WHERE \\(billing_mode = \\$1 OR COALESCE\\(image_count, 0\\) > 0\\)").
+	mock.ExpectQuery("FROM usage_logs\\s+WHERE \\(billing_mode = \\$1 OR \\(\\(billing_mode IS NULL OR billing_mode = ''\\) AND COALESCE\\(image_count, 0\\) > 0\\)\\)").
 		WithArgs("image").
 		WillReturnRows(sqlmock.NewRows([]string{
 			"total_requests",
@@ -649,15 +660,15 @@ func TestUsageLogRepositoryGetStatsWithFiltersBillingModeAppliesToEndpointBreakd
 			"total_account_cost",
 			"avg_duration_ms",
 		}).AddRow(int64(2), int64(3), int64(4), int64(5), int64(2), int64(3), 1.5, 1.25, 1.5, 10.0))
-	mock.ExpectQuery("SELECT COALESCE\\(NULLIF\\(TRIM\\(inbound_endpoint\\), ''\\), 'unknown'\\) AS endpoint.*\\(billing_mode = \\$3 OR COALESCE\\(image_count, 0\\) > 0\\)").
+	mock.ExpectQuery("SELECT COALESCE\\(NULLIF\\(TRIM\\(inbound_endpoint\\), ''\\), 'unknown'\\) AS endpoint.*\\(billing_mode = \\$3 OR \\(\\(billing_mode IS NULL OR billing_mode = ''\\) AND COALESCE\\(image_count, 0\\) > 0\\)\\)").
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "image").
 		WillReturnRows(sqlmock.NewRows([]string{"endpoint", "requests", "total_tokens", "cost", "actual_cost"}).
 			AddRow("/v1/images", int64(1), int64(10), 0.5, 0.5))
-	mock.ExpectQuery("SELECT COALESCE\\(NULLIF\\(TRIM\\(upstream_endpoint\\), ''\\), 'unknown'\\) AS endpoint.*\\(billing_mode = \\$3 OR COALESCE\\(image_count, 0\\) > 0\\)").
+	mock.ExpectQuery("SELECT COALESCE\\(NULLIF\\(TRIM\\(upstream_endpoint\\), ''\\), 'unknown'\\) AS endpoint.*\\(billing_mode = \\$3 OR \\(\\(billing_mode IS NULL OR billing_mode = ''\\) AND COALESCE\\(image_count, 0\\) > 0\\)\\)").
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "image").
 		WillReturnRows(sqlmock.NewRows([]string{"endpoint", "requests", "total_tokens", "cost", "actual_cost"}).
 			AddRow("/images", int64(1), int64(10), 0.5, 0.5))
-	mock.ExpectQuery("SELECT CONCAT\\(.*\\(billing_mode = \\$3 OR COALESCE\\(image_count, 0\\) > 0\\)").
+	mock.ExpectQuery("SELECT CONCAT\\(.*\\(billing_mode = \\$3 OR \\(\\(billing_mode IS NULL OR billing_mode = ''\\) AND COALESCE\\(image_count, 0\\) > 0\\)\\)").
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "image").
 		WillReturnRows(sqlmock.NewRows([]string{"endpoint", "requests", "total_tokens", "cost", "actual_cost"}).
 			AddRow("/v1/images -> /images", int64(1), int64(10), 0.5, 0.5))
@@ -682,7 +693,7 @@ func TestUsageLogRepositoryGetUserBreakdownStatsAppliesBillingModeAndExcludeAdmi
 		ExcludeAdmin: true,
 	}
 
-	mock.ExpectQuery("FROM usage_logs ul.*\\(ul\\.billing_mode = \\$3 OR COALESCE\\(ul\\.image_count, 0\\) > 0\\).*NOT EXISTS \\(SELECT 1 FROM users _ua WHERE _ua.id = ul.user_id AND _ua.role = \\$4\\)").
+	mock.ExpectQuery("FROM usage_logs ul.*\\(ul\\.billing_mode = \\$3 OR \\(\\(ul\\.billing_mode IS NULL OR ul\\.billing_mode = ''\\) AND COALESCE\\(ul\\.image_count, 0\\) > 0\\)\\).*NOT EXISTS \\(SELECT 1 FROM users _ua WHERE _ua.id = ul.user_id AND _ua.role = \\$4\\)").
 		WithArgs(start, end, "image", service.RoleAdmin).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"user_id", "email", "requests", "total_tokens", "cost", "actual_cost", "account_cost",
@@ -963,6 +974,9 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{Valid: true, String: "3840x2160"},
 			sql.NullString{Valid: true, String: "output"},
 			sql.NullString{Valid: true, String: `{"4K":2}`},
+			0,                // video_count
+			sql.NullString{}, // video_resolution
+			sql.NullInt64{},  // video_duration_seconds
 			sql.NullString{},
 			sql.NullString{},
 			sql.NullString{},
@@ -1039,6 +1053,9 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{}, // image_output_size
 			sql.NullString{}, // image_size_source
 			sql.NullString{}, // image_size_breakdown
+			0,                // video_count
+			sql.NullString{}, // video_resolution
+			sql.NullInt64{},  // video_duration_seconds
 			sql.NullString{Valid: true, String: "priority"},
 			sql.NullString{},
 			sql.NullString{},
@@ -1100,6 +1117,9 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{}, // image_output_size
 			sql.NullString{}, // image_size_source
 			sql.NullString{}, // image_size_breakdown
+			0,                // video_count
+			sql.NullString{}, // video_resolution
+			sql.NullInt64{},  // video_duration_seconds
 			sql.NullString{Valid: true, String: "flex"},
 			sql.NullString{},
 			sql.NullString{},
@@ -1160,6 +1180,9 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{}, // image_output_size
 			sql.NullString{}, // image_size_source
 			sql.NullString{}, // image_size_breakdown
+			0,                // video_count
+			sql.NullString{}, // video_resolution
+			sql.NullInt64{},  // video_duration_seconds
 			sql.NullString{Valid: true, String: "priority"},
 			sql.NullString{},
 			sql.NullString{},

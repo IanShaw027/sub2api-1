@@ -63,6 +63,8 @@ type Group struct {
 	DefaultValidityDays int `json:"default_validity_days,omitempty"`
 	// 是否允许该分组使用图片生成能力
 	AllowImageGeneration bool `json:"allow_image_generation,omitempty"`
+	// 是否允许该分组使用批量图片生成能力
+	AllowBatchImageGeneration bool `json:"allow_batch_image_generation,omitempty"`
 	// 图片生成路由类型：codex / web2api / native（native 用于 Grok 原生图片等）
 	ImageGenerationRoute string `json:"image_generation_route,omitempty"`
 	// OpenAI OAuth/codex 图片请求的 Responses 主模型
@@ -83,6 +85,14 @@ type Group struct {
 	Images2apiPrice2k *float64 `json:"images2api_price_2k,omitempty"`
 	// Images2apiPrice4k holds the value of the "images2api_price_4k" field.
 	Images2apiPrice4k *float64 `json:"images2api_price_4k,omitempty"`
+	// 批量图片生成折扣倍率，最终单价会乘以该值；0 表示免费
+	BatchImageDiscountMultiplier float64 `json:"batch_image_discount_multiplier,omitempty"`
+	// 批量图片生成冻结价格比例，按普通生图原价乘以该比例冻结，结算后释放差额
+	BatchImageHoldMultiplier float64 `json:"batch_image_hold_multiplier,omitempty"`
+	// 视频生成是否使用独立倍率；false 表示共享分组有效倍率
+	VideoRateIndependent bool `json:"video_rate_independent,omitempty"`
+	// 视频生成独立倍率，仅 video_rate_independent=true 时生效
+	VideoRateMultiplier float64 `json:"video_rate_multiplier,omitempty"`
 	// 是否允许该分组使用视频生成能力
 	AllowVideoGeneration bool `json:"allow_video_generation,omitempty"`
 	// 视频生成路由类型：provider native
@@ -95,6 +105,12 @@ type Group struct {
 	VideoPrice1080pPerSec *float64 `json:"video_price_1080p_per_sec,omitempty"`
 	// VideoPrice4kPerSec holds the value of the "video_price_4k_per_sec" field.
 	VideoPrice4kPerSec *float64 `json:"video_price_4k_per_sec,omitempty"`
+	// VideoPrice480p holds the value of the "video_price_480p" field.
+	VideoPrice480p *float64 `json:"video_price_480p,omitempty"`
+	// VideoPrice720p holds the value of the "video_price_720p" field.
+	VideoPrice720p *float64 `json:"video_price_720p,omitempty"`
+	// VideoPrice1080p holds the value of the "video_price_1080p" field.
+	VideoPrice1080p *float64 `json:"video_price_1080p,omitempty"`
 	// 搜索工具价格 per 1000 calls（web_search、x_search 等），分组显式定价
 	SearchPricePer1k *float64 `json:"search_price_per_1k,omitempty"`
 	// Voice realtime 每分钟价格
@@ -241,9 +257,9 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case group.FieldModelRouting, group.FieldSupportedModelScopes, group.FieldMessagesDispatchModelConfig, group.FieldModelsListConfig:
 			values[i] = new([]byte)
-		case group.FieldPeakRateEnabled, group.FieldIsExclusive, group.FieldUserSelectable, group.FieldAllowImageGeneration, group.FieldImageRateIndependent, group.FieldAllowVideoGeneration, group.FieldClaudeCodeOnly, group.FieldModelRoutingEnabled, group.FieldMcpXMLInject, group.FieldAllowMessagesDispatch, group.FieldRequireOauthOnly, group.FieldRequirePrivacySet:
+		case group.FieldPeakRateEnabled, group.FieldIsExclusive, group.FieldUserSelectable, group.FieldAllowImageGeneration, group.FieldAllowBatchImageGeneration, group.FieldImageRateIndependent, group.FieldVideoRateIndependent, group.FieldAllowVideoGeneration, group.FieldClaudeCodeOnly, group.FieldModelRoutingEnabled, group.FieldMcpXMLInject, group.FieldAllowMessagesDispatch, group.FieldRequireOauthOnly, group.FieldRequirePrivacySet:
 			values[i] = new(sql.NullBool)
-		case group.FieldRateMultiplier, group.FieldRefundRateMultiplier, group.FieldPeakRateMultiplier, group.FieldDailyLimitUsd, group.FieldWeeklyLimitUsd, group.FieldMonthlyLimitUsd, group.FieldImageRateMultiplier, group.FieldImagePrice1k, group.FieldImagePrice2k, group.FieldImagePrice4k, group.FieldImages2apiPrice1k, group.FieldImages2apiPrice2k, group.FieldImages2apiPrice4k, group.FieldVideoPrice480pPerSec, group.FieldVideoPrice720pPerSec, group.FieldVideoPrice1080pPerSec, group.FieldVideoPrice4kPerSec, group.FieldSearchPricePer1k, group.FieldAudioRealtimePricePerMin, group.FieldAudioTtsPricePerMillionChars, group.FieldAudioSttPricePerHour:
+		case group.FieldRateMultiplier, group.FieldRefundRateMultiplier, group.FieldPeakRateMultiplier, group.FieldDailyLimitUsd, group.FieldWeeklyLimitUsd, group.FieldMonthlyLimitUsd, group.FieldImageRateMultiplier, group.FieldImagePrice1k, group.FieldImagePrice2k, group.FieldImagePrice4k, group.FieldImages2apiPrice1k, group.FieldImages2apiPrice2k, group.FieldImages2apiPrice4k, group.FieldBatchImageDiscountMultiplier, group.FieldBatchImageHoldMultiplier, group.FieldVideoRateMultiplier, group.FieldVideoPrice480pPerSec, group.FieldVideoPrice720pPerSec, group.FieldVideoPrice1080pPerSec, group.FieldVideoPrice4kPerSec, group.FieldVideoPrice480p, group.FieldVideoPrice720p, group.FieldVideoPrice1080p, group.FieldSearchPricePer1k, group.FieldAudioRealtimePricePerMin, group.FieldAudioTtsPricePerMillionChars, group.FieldAudioSttPricePerHour:
 			values[i] = new(sql.NullFloat64)
 		case group.FieldID, group.FieldDefaultValidityDays, group.FieldFallbackGroupID, group.FieldFallbackGroupIDOnInvalidRequest, group.FieldSortOrder, group.FieldRpmLimit:
 			values[i] = new(sql.NullInt64)
@@ -410,6 +426,12 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.AllowImageGeneration = value.Bool
 			}
+		case group.FieldAllowBatchImageGeneration:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field allow_batch_image_generation", values[i])
+			} else if value.Valid {
+				_m.AllowBatchImageGeneration = value.Bool
+			}
 		case group.FieldImageGenerationRoute:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field image_generation_route", values[i])
@@ -476,6 +498,30 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 				_m.Images2apiPrice4k = new(float64)
 				*_m.Images2apiPrice4k = value.Float64
 			}
+		case group.FieldBatchImageDiscountMultiplier:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field batch_image_discount_multiplier", values[i])
+			} else if value.Valid {
+				_m.BatchImageDiscountMultiplier = value.Float64
+			}
+		case group.FieldBatchImageHoldMultiplier:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field batch_image_hold_multiplier", values[i])
+			} else if value.Valid {
+				_m.BatchImageHoldMultiplier = value.Float64
+			}
+		case group.FieldVideoRateIndependent:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field video_rate_independent", values[i])
+			} else if value.Valid {
+				_m.VideoRateIndependent = value.Bool
+			}
+		case group.FieldVideoRateMultiplier:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field video_rate_multiplier", values[i])
+			} else if value.Valid {
+				_m.VideoRateMultiplier = value.Float64
+			}
 		case group.FieldAllowVideoGeneration:
 			if value, ok := values[i].(*sql.NullBool); !ok {
 				return fmt.Errorf("unexpected type %T for field allow_video_generation", values[i])
@@ -515,6 +561,27 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.VideoPrice4kPerSec = new(float64)
 				*_m.VideoPrice4kPerSec = value.Float64
+			}
+		case group.FieldVideoPrice480p:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field video_price_480p", values[i])
+			} else if value.Valid {
+				_m.VideoPrice480p = new(float64)
+				*_m.VideoPrice480p = value.Float64
+			}
+		case group.FieldVideoPrice720p:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field video_price_720p", values[i])
+			} else if value.Valid {
+				_m.VideoPrice720p = new(float64)
+				*_m.VideoPrice720p = value.Float64
+			}
+		case group.FieldVideoPrice1080p:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field video_price_1080p", values[i])
+			} else if value.Valid {
+				_m.VideoPrice1080p = new(float64)
+				*_m.VideoPrice1080p = value.Float64
 			}
 		case group.FieldSearchPricePer1k:
 			if value, ok := values[i].(*sql.NullFloat64); !ok {
@@ -798,6 +865,9 @@ func (_m *Group) String() string {
 	builder.WriteString("allow_image_generation=")
 	builder.WriteString(fmt.Sprintf("%v", _m.AllowImageGeneration))
 	builder.WriteString(", ")
+	builder.WriteString("allow_batch_image_generation=")
+	builder.WriteString(fmt.Sprintf("%v", _m.AllowBatchImageGeneration))
+	builder.WriteString(", ")
 	builder.WriteString("image_generation_route=")
 	builder.WriteString(_m.ImageGenerationRoute)
 	builder.WriteString(", ")
@@ -840,6 +910,18 @@ func (_m *Group) String() string {
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")
+	builder.WriteString("batch_image_discount_multiplier=")
+	builder.WriteString(fmt.Sprintf("%v", _m.BatchImageDiscountMultiplier))
+	builder.WriteString(", ")
+	builder.WriteString("batch_image_hold_multiplier=")
+	builder.WriteString(fmt.Sprintf("%v", _m.BatchImageHoldMultiplier))
+	builder.WriteString(", ")
+	builder.WriteString("video_rate_independent=")
+	builder.WriteString(fmt.Sprintf("%v", _m.VideoRateIndependent))
+	builder.WriteString(", ")
+	builder.WriteString("video_rate_multiplier=")
+	builder.WriteString(fmt.Sprintf("%v", _m.VideoRateMultiplier))
+	builder.WriteString(", ")
 	builder.WriteString("allow_video_generation=")
 	builder.WriteString(fmt.Sprintf("%v", _m.AllowVideoGeneration))
 	builder.WriteString(", ")
@@ -863,6 +945,21 @@ func (_m *Group) String() string {
 	builder.WriteString(", ")
 	if v := _m.VideoPrice4kPerSec; v != nil {
 		builder.WriteString("video_price_4k_per_sec=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.VideoPrice480p; v != nil {
+		builder.WriteString("video_price_480p=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.VideoPrice720p; v != nil {
+		builder.WriteString("video_price_720p=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.VideoPrice1080p; v != nil {
+		builder.WriteString("video_price_1080p=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

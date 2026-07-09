@@ -775,15 +775,23 @@ export interface Group {
   monthly_limit_usd: number | null
   // 图片生成计费配置
   allow_image_generation: boolean
+  allow_batch_image_generation: boolean
   image_generation_route: ImageGenerationRoute
   image_rate_independent: boolean
   image_rate_multiplier: number
+  batch_image_discount_multiplier: number
+  batch_image_hold_multiplier: number
   image_price_1k: number | null
   image_price_2k: number | null
   image_price_4k: number | null
   // 视频生成计费配置（仅 Grok/xAI native videos）
   allow_video_generation: boolean
   video_generation_route: VideoGenerationRoute
+  video_rate_independent: boolean
+  video_rate_multiplier: number
+  video_price_480p: number | null
+  video_price_720p: number | null
+  video_price_1080p: number | null
   video_price_480p_per_sec: number | null
   video_price_720p_per_sec: number | null
   video_price_1080p_per_sec: number | null
@@ -912,14 +920,22 @@ export interface CreateGroupRequest {
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
   allow_image_generation?: boolean
+  allow_batch_image_generation?: boolean
   image_generation_route?: ImageGenerationRoute
   image_rate_independent?: boolean
   image_rate_multiplier?: number
+  batch_image_discount_multiplier?: number
+  batch_image_hold_multiplier?: number
   image_price_1k?: number | null
   image_price_2k?: number | null
   image_price_4k?: number | null
   allow_video_generation?: boolean
   video_generation_route?: VideoGenerationRoute
+  video_rate_independent?: boolean
+  video_rate_multiplier?: number
+  video_price_480p?: number | null
+  video_price_720p?: number | null
+  video_price_1080p?: number | null
   video_price_480p_per_sec?: number | null
   video_price_720p_per_sec?: number | null
   video_price_1080p_per_sec?: number | null
@@ -963,14 +979,22 @@ export interface UpdateGroupRequest {
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
   allow_image_generation?: boolean
+  allow_batch_image_generation?: boolean
   image_generation_route?: ImageGenerationRoute
   image_rate_independent?: boolean
   image_rate_multiplier?: number
+  batch_image_discount_multiplier?: number
+  batch_image_hold_multiplier?: number
   image_price_1k?: number | null
   image_price_2k?: number | null
   image_price_4k?: number | null
   allow_video_generation?: boolean
   video_generation_route?: VideoGenerationRoute
+  video_rate_independent?: boolean
+  video_rate_multiplier?: number
+  video_price_480p?: number | null
+  video_price_720p?: number | null
+  video_price_1080p?: number | null
   video_price_480p_per_sec?: number | null
   video_price_720p_per_sec?: number | null
   video_price_1080p_per_sec?: number | null
@@ -1975,6 +1999,9 @@ export interface ModelStat {
 export interface EndpointStat {
   endpoint: string
   requests: number
+  input_tokens: number
+  output_tokens: number
+  cache_tokens: number
   total_tokens: number
   cost: number
   actual_cost: number
@@ -1984,6 +2011,9 @@ export interface GroupStat {
   group_id: number
   group_name: string
   requests: number
+  input_tokens: number
+  output_tokens: number
+  cache_tokens: number
   total_tokens: number
   cost: number // 标准计费
   actual_cost: number // 实际扣除
@@ -1994,6 +2024,9 @@ export interface UserBreakdownItem {
   user_id: number
   email: string
   requests: number
+  input_tokens: number
+  output_tokens: number
+  cache_tokens: number
   total_tokens: number
   cost: number
   actual_cost: number
@@ -2133,6 +2166,11 @@ export interface UserErrorRequest {
   message: string
   key_name: string
   key_deleted: boolean
+  client_ip?: string
+  group_name?: string
+  request_type?: number
+  stream?: boolean
+  user_agent?: string
 }
 
 export interface UserErrorRequestDetail extends UserErrorRequest {
@@ -2150,6 +2188,8 @@ export interface UserErrorListParams {
   status_code?: number
   category?: string
   api_key_id?: number
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
 }
 
 export interface UsageQueryParams {

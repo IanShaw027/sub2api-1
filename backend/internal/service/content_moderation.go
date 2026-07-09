@@ -3678,10 +3678,7 @@ func containsKeywordWithBoundary(text, keyword string, exSpans []blockedKeywordB
 		}
 		idx = start + 1
 	}
-	if isASCIICompactKeyword(keyword) {
-		return containsSpacedASCIIKeywordWithBoundary(text, keyword, exSpans, byteRuneIndex)
-	}
-	return false
+	return containsSeparatedKeywordWithBoundary(text, keyword, exSpans, byteRuneIndex)
 }
 
 func hasCJK(s string) bool {
@@ -3926,13 +3923,96 @@ func findBlockedKeywordOccurrences(text, term string, exSpans []blockedKeywordBy
 		}
 		idx = start + 1
 	}
-	if isASCIICompactKeyword(term) {
-		out = append(out, findSpacedASCIIKeywordOccurrences(text, term, exSpans, byteRuneIndex)...)
+	out = append(out, findSeparatedKeywordOccurrences(text, term, exSpans, byteRuneIndex)...)
+	if len(out) > 1 {
 		sort.Slice(out, func(i, j int) bool {
 			if out[i].startRune == out[j].startRune {
 				return out[i].endRune < out[j].endRune
 			}
 			return out[i].startRune < out[j].startRune
+		})
+	}
+	return out
+}
+
+func containsSeparatedKeywordWithBoundary(text, keyword string, exSpans []blockedKeywordByteSpan, byteRuneIndex func() map[int]int) bool {
+	var index map[int]int
+	if byteRuneIndex != nil {
+		index = byteRuneIndex()
+	}
+	if index == nil {
+		index = buildBlockedKeywordByteRuneIndex(text)
+	}
+	return len(findSeparatedKeywordOccurrences(text, keyword, exSpans, index)) > 0
+}
+
+func isModerationKeywordSeparator(r rune) bool {
+	return unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r)
+}
+
+func findSeparatedKeywordOccurrences(text, keyword string, exSpans []blockedKeywordByteSpan, byteRuneIndex map[int]int) []blockedKeywordOccurrence {
+	if keyword == "" || text == "" {
+		return nil
+	}
+	keywordRunes := []rune(keyword)
+	if len(keywordRunes) < 2 {
+		return nil
+	}
+	type runePos struct {
+		r     rune
+		start int
+		end   int
+	}
+	runes := make([]runePos, 0, utf8.RuneCountInString(text))
+	for byteIndex, r := range text {
+		runes = append(runes, runePos{r: r, start: byteIndex, end: byteIndex + utf8.RuneLen(r)})
+	}
+	cjk := hasCJK(keyword)
+	var out []blockedKeywordOccurrence
+	for i := 0; i < len(runes); i++ {
+		if runes[i].r != keywordRunes[0] {
+			continue
+		}
+		keywordIdx := 1
+		j := i + 1
+		sawSeparator := false
+		endByte := runes[i].end
+		failed := false
+		for j < len(runes) && keywordIdx < len(keywordRunes) {
+			r := runes[j].r
+			switch {
+			case isModerationKeywordSeparator(r):
+				sawSeparator = true
+				j++
+			case r == keywordRunes[keywordIdx]:
+				endByte = runes[j].end
+				keywordIdx++
+				j++
+			default:
+				failed = true
+				j = len(runes)
+			}
+		}
+		if failed || keywordIdx != len(keywordRunes) || !sawSeparator {
+			continue
+		}
+		startByte := runes[i].start
+		if !cjk && !hasBlockedKeywordWordBoundary(text, startByte, endByte) {
+			continue
+		}
+		if blockedKeywordSpanCovered(exSpans, startByte, endByte) {
+			continue
+		}
+		startRune, startOK := byteRuneIndex[startByte]
+		endRune, endOK := byteRuneIndex[endByte]
+		if !startOK || !endOK {
+			continue
+		}
+		out = append(out, blockedKeywordOccurrence{
+			startByte: startByte,
+			endByte:   endByte,
+			startRune: startRune,
+			endRune:   endRune,
 		})
 	}
 	return out
@@ -4340,16 +4420,15 @@ func (s *ContentModerationService) RecordCyberPolicyFlaggedHashes(ctx context.Co
 	if base.HighestCategory == "" {
 		base.HighestCategory = "cyber_policy"
 	}
-	for _, localInput := range ExtractContentModerationInputsForLocalBlock(requestProtocol, requestBody) {
-		inputHash := localInput.Hash()
-		if inputHash == "" {
-			continue
-		}
-		meta := base
-		meta.Excerpt = contentModerationExcerpt(localInput.ExcerptText())
-		if err := s.hashCache.RecordFlaggedInputHash(ctx, inputHash, meta); err != nil {
-			slog.Warn("content_moderation.cyber_record_hash_failed", "input_hash", inputHash, "error", err)
-		}
+	localInput := ExtractContentModerationInput(requestProtocol, requestBody)
+	inputHash := localInput.Hash()
+	if inputHash == "" {
+		return
+	}
+	meta := base
+	meta.Excerpt = contentModerationExcerpt(localInput.ExcerptText())
+	if err := s.hashCache.RecordFlaggedInputHash(ctx, inputHash, meta); err != nil {
+		slog.Warn("content_moderation.cyber_record_hash_failed", "input_hash", inputHash, "error", err)
 	}
 }
 

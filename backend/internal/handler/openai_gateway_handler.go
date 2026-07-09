@@ -3209,3 +3209,44 @@ func summarizeWSCloseErrorForLog(err error) (string, string) {
 	}
 	return closeStatus, closeReason
 }
+
+func isOpenAIResponsesCompactPromotablePath(path string) bool {
+	switch strings.TrimRight(path, "/") {
+	case "/v1/responses", "/backend-api/codex/responses":
+		return true
+	default:
+		return false
+	}
+}
+
+// normalizeOpenAIResponsesCompactRequest handles both path-based /responses/compact
+// requests and Codex remote-compact body-signal requests before downstream routing.
+func (h *OpenAIGatewayHandler) normalizeOpenAIResponsesCompactRequest(c *gin.Context, reqLog *zap.Logger, body []byte) ([]byte, bool) {
+	isCompactRequest := service.IsOpenAIResponsesCompactPathForTest(c)
+	if !isCompactRequest && c != nil && c.Request != nil && c.Request.URL != nil && isOpenAIResponsesCompactPromotablePath(c.Request.URL.Path) && service.HasCompactionTriggerInInput(body) {
+		c.Request.URL.Path = strings.TrimRight(c.Request.URL.Path, "/") + "/compact"
+		isCompactRequest = true
+		clientStream := gjson.GetBytes(body, "stream").Bool()
+		if clientStream {
+			service.MarkOpenAICompactClientStream(c)
+		}
+		if reqLog != nil {
+			reqLog.Info("codex.remote_compact.detected_body_signal", zap.Bool("client_stream", clientStream))
+		}
+	}
+	if !isCompactRequest {
+		return body, true
+	}
+	if compactSeed := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()); compactSeed != "" {
+		c.Set(service.OpenAICompactSessionSeedKeyForTest(), compactSeed)
+	}
+	normalizedCompactBody, normalizedCompact, compactErr := service.NormalizeOpenAICompactRequestBodyForTest(body)
+	if compactErr != nil {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to normalize compact request body")
+		return nil, false
+	}
+	if normalizedCompact {
+		body = normalizedCompactBody
+	}
+	return body, true
+}

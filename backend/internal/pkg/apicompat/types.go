@@ -292,9 +292,11 @@ type ResponsesRequest struct {
 	Include            []string            `json:"include,omitempty"`
 	Store              *bool               `json:"store,omitempty"`
 	Reasoning          *ResponsesReasoning `json:"reasoning,omitempty"`
+	Text               *ResponsesText      `json:"text,omitempty"`
 	ToolChoice         json.RawMessage     `json:"tool_choice,omitempty"`
 	ParallelToolCalls  *bool               `json:"parallel_tool_calls,omitempty"`
 	ServiceTier        string              `json:"service_tier,omitempty"`
+	PromptCacheKey     string              `json:"prompt_cache_key,omitempty"`
 	PreviousResponseID string              `json:"previous_response_id,omitempty"`
 }
 
@@ -302,6 +304,12 @@ type ResponsesRequest struct {
 type ResponsesReasoning struct {
 	Effort  string `json:"effort"`            // "low" | "medium" | "high" | "xhigh"
 	Summary string `json:"summary,omitempty"` // "auto" | "concise" | "detailed"
+}
+
+// ResponsesText configures text output options in the Responses API.
+type ResponsesText struct {
+	Format    json.RawMessage `json:"format,omitempty"`
+	Verbosity string          `json:"verbosity,omitempty"` // "low" | "medium" | "high"
 }
 
 // ResponsesInputItem is one item in the Responses API input array.
@@ -549,6 +557,7 @@ type ChatCompletionsRequest struct {
 	ReasoningEffort     string             `json:"reasoning_effort,omitempty"` // "low" | "medium" | "high" | "xhigh"
 	ServiceTier         string             `json:"service_tier,omitempty"`
 	Stop                json.RawMessage    `json:"stop,omitempty"` // string or []string
+	ResponseFormat      json.RawMessage    `json:"response_format,omitempty"`
 
 	// Legacy function calling (deprecated but still supported)
 	Functions    []ChatFunction  `json:"functions,omitempty"`

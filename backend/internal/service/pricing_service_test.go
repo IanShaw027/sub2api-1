@@ -523,15 +523,15 @@ func TestCalculateVideoCost_GrokImagineDefaultsWithoutGroupConfig(t *testing.T) 
 	cost := svc.CalculateVideoCost("720p", 8, 1, nil, 1.0)
 	require.InDelta(t, 0, cost.TotalCost, 1e-12)
 
-	// grok-imagine-video: $0.05/sec
+	// grok-imagine-video 720p: $0.07/sec
 	cost = svc.CalculateVideoCost("720p", 8, 1, nil, 1.0, "grok-imagine-video")
-	require.InDelta(t, 0.40, cost.TotalCost, 1e-12)
-	require.InDelta(t, 0.40, cost.ActualCost, 1e-12)
+	require.InDelta(t, 0.56, cost.TotalCost, 1e-12)
+	require.InDelta(t, 0.56, cost.ActualCost, 1e-12)
 	require.Equal(t, string(BillingModeVideo), cost.BillingMode)
 
-	// grok-imagine-video-1.5: $0.08/sec
+	// grok-imagine-video-1.5 1080p: $0.25/sec
 	cost = svc.CalculateVideoCost("1080p", 10, 2, nil, 1.0, "grok-imagine-video-1.5")
-	require.InDelta(t, 1.60, cost.TotalCost, 1e-12) // 0.08 * 10 * 2
+	require.InDelta(t, 5.00, cost.TotalCost, 1e-12) // 0.25 * 10 * 2
 
 	// Alias
 	cost = svc.CalculateVideoCost("480p", 5, 1, nil, 1.0, "grok-video-1.5")
@@ -556,8 +556,8 @@ func TestCalculateImageCost_GrokImagineUsesCatalogWhenPricingServicePresent(t *t
 	require.InDelta(t, 0.02, cost.TotalCost, 1e-12)
 
 	vCost := svc.CalculateVideoCost("720p", 6, 1, nil, 1.0, "grok-imagine-video")
-	require.InDelta(t, 0.30, vCost.TotalCost, 1e-12)
+	require.InDelta(t, 0.42, vCost.TotalCost, 1e-12)
 
 	vCost = svc.CalculateVideoCost("720p", 6, 1, nil, 1.0, "grok-imagine-video-1.5")
-	require.InDelta(t, 0.48, vCost.TotalCost, 1e-12)
+	require.InDelta(t, 0.84, vCost.TotalCost, 1e-12)
 }

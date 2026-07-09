@@ -726,6 +726,7 @@ type openAIAccountLoadPlan struct {
 // 打分维度：优先级 / 负载 / 队列 / 错误率 / 首字时延，以及可选的 Reset
 // （use-it-or-lose-it）因子——会话窗口剩余时间越短得分越高，默认权重 0 关闭。
 func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
+	_ context.Context,
 	req OpenAIAccountScheduleRequest,
 	filtered []*Account,
 	loadMap map[int64]*AccountLoadInfo,

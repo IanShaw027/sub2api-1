@@ -16,3 +16,29 @@ func resolveImageRateMultiplier(apiKey *APIKey, effectiveGroupMultiplier float64
 	}
 	return effectiveGroupMultiplier
 }
+
+func resolveVideoRateMultiplier(apiKey *APIKey, effectiveGroupMultiplier float64) float64 {
+	if apiKey != nil && apiKey.Group != nil && apiKey.Group.VideoRateIndependent {
+		if apiKey.Group.VideoRateMultiplier < 0 {
+			return 0
+		}
+		return apiKey.Group.VideoRateMultiplier
+	}
+	if apiKey != nil && apiKey.Group != nil && groupHasAnyConfiguredVideoPrice(apiKey.Group) {
+		// Explicit video prices are final media prices, like explicit OpenAI image
+		// prices. Do not apply the text/token group multiplier unless the group
+		// opts into an independent video multiplier.
+		return 1
+	}
+	return effectiveGroupMultiplier
+}
+
+func groupHasAnyConfiguredVideoPrice(group *Group) bool {
+	return group != nil && (group.VideoPrice480pPerSec != nil ||
+		group.VideoPrice720pPerSec != nil ||
+		group.VideoPrice1080pPerSec != nil ||
+		group.VideoPrice4kPerSec != nil ||
+		group.VideoPrice480P != nil ||
+		group.VideoPrice720P != nil ||
+		group.VideoPrice1080P != nil)
+}

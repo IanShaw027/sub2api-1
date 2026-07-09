@@ -47,25 +47,34 @@ type Group struct {
 	DefaultValidityDays int
 
 	// 图片生成计费配置（antigravity 和 gemini 平台使用）
-	AllowImageGeneration bool
-	ImageGenerationRoute string
-	OpenAIImageMainModel string
-	ImageRateIndependent bool
-	ImageRateMultiplier  float64
-	ImagePrice1K         *float64
-	ImagePrice2K         *float64
-	ImagePrice4K         *float64
-	Images2APIPrice1K    *float64
-	Images2APIPrice2K    *float64
-	Images2APIPrice4K    *float64
+	AllowImageGeneration         bool
+	AllowBatchImageGeneration    bool
+	ImageGenerationRoute         string
+	OpenAIImageMainModel         string
+	ImageRateIndependent         bool
+	ImageRateMultiplier          float64
+	ImagePrice1K                 *float64
+	ImagePrice2K                 *float64
+	ImagePrice4K                 *float64
+	Images2APIPrice1K            *float64
+	Images2APIPrice2K            *float64
+	Images2APIPrice4K            *float64
+	BatchImageDiscountMultiplier float64
+	BatchImageHoldMultiplier     float64
 
 	// 视频生成计费配置（仅 Grok/xAI native videos）
+	VideoRateIndependent bool
+	VideoRateMultiplier  float64
+
 	AllowVideoGeneration  bool
 	VideoGenerationRoute  string
 	VideoPrice480pPerSec  *float64
 	VideoPrice720pPerSec  *float64
 	VideoPrice1080pPerSec *float64
 	VideoPrice4kPerSec    *float64
+	VideoPrice480P        *float64
+	VideoPrice720P        *float64
+	VideoPrice1080P       *float64
 
 	// 搜索/工具 & 音频显式定价（分组级，不按文本 RateMultiplier，参考 OpenAI 图片定价）
 	SearchPricePer1k             *float64
@@ -297,10 +306,16 @@ func (g *Group) GetImagePriceForRequestType(imageSize string, requestType Reques
 }
 
 type VideoPriceConfig struct {
+	// Per-second prices used by local Grok/xAI native video billing.
 	Price480p  *float64
 	Price720p  *float64
 	Price1080p *float64
 	Price4K    *float64
+
+	// Upstream per-video/base prices used by batch/video helpers.
+	Price480P  *float64
+	Price720P  *float64
+	Price1080P *float64
 }
 
 func (g *Group) GetVideoPriceConfig() *VideoPriceConfig {
@@ -308,10 +323,40 @@ func (g *Group) GetVideoPriceConfig() *VideoPriceConfig {
 		return nil
 	}
 	return &VideoPriceConfig{
-		Price480p:  g.VideoPrice480pPerSec,
-		Price720p:  g.VideoPrice720pPerSec,
-		Price1080p: g.VideoPrice1080pPerSec,
+		Price480p:  firstFloatPtr(g.VideoPrice480pPerSec, g.VideoPrice480P),
+		Price720p:  firstFloatPtr(g.VideoPrice720pPerSec, g.VideoPrice720P),
+		Price1080p: firstFloatPtr(g.VideoPrice1080pPerSec, g.VideoPrice1080P),
 		Price4K:    g.VideoPrice4kPerSec,
+		Price480P:  g.VideoPrice480P,
+		Price720P:  g.VideoPrice720P,
+		Price1080P: g.VideoPrice1080P,
+	}
+}
+
+func firstFloatPtr(values ...*float64) *float64 {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+// GetVideoPrice returns the upstream per-video/base price for a resolution.
+// If unset, callers can fall back to per-second/default pricing.
+func (g *Group) GetVideoPrice(resolution string) *float64 {
+	if g == nil {
+		return nil
+	}
+	switch NormalizeVideoBillingResolutionOrDefault(resolution) {
+	case VideoBillingResolution480P:
+		return g.VideoPrice480P
+	case VideoBillingResolution720P:
+		return g.VideoPrice720P
+	case VideoBillingResolution1080P:
+		return g.VideoPrice1080P
+	default:
+		return g.VideoPrice480P
 	}
 }
 
