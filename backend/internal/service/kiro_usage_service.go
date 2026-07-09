@@ -350,6 +350,9 @@ func (f *KiroFreeTrial) isActive() bool {
 }
 
 func unixFloatToTime(v float64) time.Time {
+	if v >= 1e12 {
+		v = v / 1000
+	}
 	sec := int64(v)
 	nsec := int64((v - float64(sec)) * float64(time.Second))
 	return time.Unix(sec, nsec).UTC()

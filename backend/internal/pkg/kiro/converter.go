@@ -1899,6 +1899,10 @@ func toolResultContent(v any) string {
 				parts = append(parts, rendered.String())
 				continue
 			}
+			if strings.TrimSpace(stringField(block, "type")) == "image" {
+				parts = append(parts, "[image omitted]")
+				continue
+			}
 			encoded, _ := json.Marshal(block)
 			if len(encoded) > 0 {
 				parts = append(parts, string(encoded))
