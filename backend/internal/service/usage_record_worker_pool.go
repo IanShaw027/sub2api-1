@@ -18,6 +18,9 @@ const (
 	defaultUsageRecordWorkerCount        = 128
 	defaultUsageRecordQueueSize          = 16384
 	defaultUsageRecordTaskTimeoutSeconds = 5
+	// 同步内联兜底的默认并发上限：溢出内联执行会钉住请求 goroutine（best-effort 走
+	// detached 15s 窗口），上限防止持续溢出时钉住全部请求。默认与 worker 数同量级。
+	defaultUsageRecordInlineFallbackConcurrency = defaultUsageRecordWorkerCount
 	// 默认 sync：溢出时提交方内联执行，保证计费任务不被静默丢弃（issue #3656）。
 	defaultUsageRecordOverflowPolicy       = config.UsageRecordOverflowPolicySync
 	defaultUsageRecordOverflowSampleRatio  = 10
@@ -48,35 +51,37 @@ const (
 
 // UsageRecordWorkerPoolOptions 使用量记录池配置。
 type UsageRecordWorkerPoolOptions struct {
-	WorkerCount           int
-	QueueSize             int
-	TaskTimeout           time.Duration
-	OverflowPolicy        string
-	OverflowSamplePercent int
-	AutoScaleEnabled      bool
-	AutoScaleMinWorkers   int
-	AutoScaleMaxWorkers   int
-	AutoScaleUpPercent    int
-	AutoScaleDownPercent  int
-	AutoScaleUpStep       int
-	AutoScaleDownStep     int
-	AutoScaleInterval     time.Duration
-	AutoScaleCooldown     time.Duration
+	WorkerCount               int
+	QueueSize                 int
+	TaskTimeout               time.Duration
+	OverflowPolicy            string
+	OverflowSamplePercent     int
+	InlineFallbackConcurrency int
+	AutoScaleEnabled          bool
+	AutoScaleMinWorkers       int
+	AutoScaleMaxWorkers       int
+	AutoScaleUpPercent        int
+	AutoScaleDownPercent      int
+	AutoScaleUpStep           int
+	AutoScaleDownStep         int
+	AutoScaleInterval         time.Duration
+	AutoScaleCooldown         time.Duration
 }
 
 // UsageRecordWorkerPoolStats 使用量记录池运行时统计。
 type UsageRecordWorkerPoolStats struct {
-	MaxConcurrency     int
-	RunningWorkers     int64
-	WaitingTasks       uint64
-	SubmittedTasks     uint64
-	CompletedTasks     uint64
-	SuccessfulTasks    uint64
-	FailedTasks        uint64
-	DroppedTasks       uint64
-	DroppedQueueFull   uint64
-	DroppedPoolStopped uint64
-	SyncFallbackTasks  uint64
+	MaxConcurrency      int
+	RunningWorkers      int64
+	WaitingTasks        uint64
+	SubmittedTasks      uint64
+	CompletedTasks      uint64
+	SuccessfulTasks     uint64
+	FailedTasks         uint64
+	DroppedTasks        uint64
+	DroppedQueueFull    uint64
+	DroppedPoolStopped  uint64
+	DroppedInlineCapped uint64
+	SyncFallbackTasks   uint64
 }
 
 // UsageRecordWorkerPool 提供“有界队列 + 固定 worker”的异步执行器。
@@ -89,21 +94,27 @@ type UsageRecordWorkerPool struct {
 	overflowCounter       atomic.Uint64
 	droppedQueueFull      atomic.Uint64
 	droppedPoolStopped    atomic.Uint64
+	droppedInlineCapped   atomic.Uint64
 	syncFallback          atomic.Uint64
-	lastDropLogNanos      atomic.Int64
-	autoScaleEnabled      bool
-	autoScaleMinWorkers   int
-	autoScaleMaxWorkers   int
-	autoScaleUpPercent    int
-	autoScaleDownPercent  int
-	autoScaleUpStep       int
-	autoScaleDownStep     int
-	autoScaleInterval     time.Duration
-	autoScaleCooldown     time.Duration
-	lastScaleNanos        atomic.Int64
-	autoScaleCancel       context.CancelFunc
-	lifecycleWg           sync.WaitGroup
-	stopOnce              sync.Once
+	// inlineFallbackSem 限制同步内联兜底的并发度：溢出时内联执行会把请求 goroutine 钉在
+	// 计费写库（best-effort 走 detached 15s 窗口）上，无上限会在持续溢出时钉住全部请求
+	// goroutine、拖住连接。用带缓冲 channel 做非阻塞信号量，满则丢弃并计数（靠 usage_logs
+	// 的 ON CONFLICT 对账补偿），绝不阻塞等待空位。nil 表示不限并发。
+	inlineFallbackSem    chan struct{}
+	lastDropLogNanos     atomic.Int64
+	autoScaleEnabled     bool
+	autoScaleMinWorkers  int
+	autoScaleMaxWorkers  int
+	autoScaleUpPercent   int
+	autoScaleDownPercent int
+	autoScaleUpStep      int
+	autoScaleDownStep    int
+	autoScaleInterval    time.Duration
+	autoScaleCooldown    time.Duration
+	lastScaleNanos       atomic.Int64
+	autoScaleCancel      context.CancelFunc
+	lifecycleWg          sync.WaitGroup
+	stopOnce             sync.Once
 }
 
 // NewUsageRecordWorkerPool 从配置构建使用量记录池。
@@ -131,6 +142,10 @@ func NewUsageRecordWorkerPoolWithOptions(opts UsageRecordWorkerPoolOptions) *Usa
 		autoScaleCooldown:     opts.AutoScaleCooldown,
 	}
 
+	if opts.InlineFallbackConcurrency > 0 {
+		p.inlineFallbackSem = make(chan struct{}, opts.InlineFallbackConcurrency)
+	}
+
 	p.pool = pond.NewPool(
 		opts.WorkerCount,
 		pond.WithQueueSize(opts.QueueSize),
@@ -148,9 +163,7 @@ func (p *UsageRecordWorkerPool) Submit(task UsageRecordTask) UsageRecordSubmitMo
 		return UsageRecordSubmitModeDropped
 	}
 	if p.pool == nil || p.pool.Stopped() {
-		p.droppedPoolStopped.Add(1)
-		p.logDrop("stopped")
-		return UsageRecordSubmitModeDropped
+		return p.dropTask(&p.droppedPoolStopped, "stopped")
 	}
 
 	_, ok := p.pool.TrySubmit(func() {
@@ -161,26 +174,49 @@ func (p *UsageRecordWorkerPool) Submit(task UsageRecordTask) UsageRecordSubmitMo
 	}
 
 	if p.pool.Stopped() {
-		p.droppedPoolStopped.Add(1)
-		p.logDrop("stopped")
-		return UsageRecordSubmitModeDropped
+		return p.dropTask(&p.droppedPoolStopped, "stopped")
 	}
 
 	switch p.overflowPolicy {
 	case config.UsageRecordOverflowPolicySync:
-		p.syncFallback.Add(1)
-		p.execute(task)
-		return UsageRecordSubmitModeSync
+		if p.runInlineFallback(task) {
+			return UsageRecordSubmitModeSync
+		}
+		return p.dropTask(&p.droppedInlineCapped, "inline_capped")
 	case config.UsageRecordOverflowPolicySample:
 		if p.shouldSyncFallback() {
-			p.syncFallback.Add(1)
-			p.execute(task)
-			return UsageRecordSubmitModeSync
+			if p.runInlineFallback(task) {
+				return UsageRecordSubmitModeSync
+			}
+			return p.dropTask(&p.droppedInlineCapped, "inline_capped")
 		}
 	}
 
-	p.droppedQueueFull.Add(1)
-	p.logDrop("full")
+	return p.dropTask(&p.droppedQueueFull, "full")
+}
+
+// runInlineFallback 在受限并发下同步内联执行溢出任务。信号量满时返回 false（交由调用方
+// 记为 inline_capped 丢弃），绝不阻塞等待——避免持续溢出时把请求 goroutine 全部钉住。
+// 未配置并发上限（sem 为 nil）时保持旧行为：无条件内联执行。
+func (p *UsageRecordWorkerPool) runInlineFallback(task UsageRecordTask) bool {
+	if p.inlineFallbackSem != nil {
+		select {
+		case p.inlineFallbackSem <- struct{}{}:
+			defer func() { <-p.inlineFallbackSem }()
+		default:
+			return false
+		}
+	}
+	p.syncFallback.Add(1)
+	p.execute(task)
+	return true
+}
+
+func (p *UsageRecordWorkerPool) dropTask(counter *atomic.Uint64, reason string) UsageRecordSubmitMode {
+	if counter != nil {
+		counter.Add(1)
+	}
+	p.logDrop(reason)
 	return UsageRecordSubmitModeDropped
 }
 
@@ -190,17 +226,18 @@ func (p *UsageRecordWorkerPool) Stats() UsageRecordWorkerPoolStats {
 		return UsageRecordWorkerPoolStats{}
 	}
 	return UsageRecordWorkerPoolStats{
-		MaxConcurrency:     p.pool.MaxConcurrency(),
-		RunningWorkers:     p.pool.RunningWorkers(),
-		WaitingTasks:       p.pool.WaitingTasks(),
-		SubmittedTasks:     p.pool.SubmittedTasks(),
-		CompletedTasks:     p.pool.CompletedTasks(),
-		SuccessfulTasks:    p.pool.SuccessfulTasks(),
-		FailedTasks:        p.pool.FailedTasks(),
-		DroppedTasks:       p.pool.DroppedTasks(),
-		DroppedQueueFull:   p.droppedQueueFull.Load(),
-		DroppedPoolStopped: p.droppedPoolStopped.Load(),
-		SyncFallbackTasks:  p.syncFallback.Load(),
+		MaxConcurrency:      p.pool.MaxConcurrency(),
+		RunningWorkers:      p.pool.RunningWorkers(),
+		WaitingTasks:        p.pool.WaitingTasks(),
+		SubmittedTasks:      p.pool.SubmittedTasks(),
+		CompletedTasks:      p.pool.CompletedTasks(),
+		SuccessfulTasks:     p.pool.SuccessfulTasks(),
+		FailedTasks:         p.pool.FailedTasks(),
+		DroppedTasks:        p.pool.DroppedTasks(),
+		DroppedQueueFull:    p.droppedQueueFull.Load(),
+		DroppedPoolStopped:  p.droppedPoolStopped.Load(),
+		DroppedInlineCapped: p.droppedInlineCapped.Load(),
+		SyncFallbackTasks:   p.syncFallback.Load(),
 	}
 }
 
@@ -350,26 +387,28 @@ func (p *UsageRecordWorkerPool) logDrop(reason string) {
 		zap.Uint64("waiting_tasks", stats.WaitingTasks),
 		zap.Uint64("dropped_queue_full", stats.DroppedQueueFull),
 		zap.Uint64("dropped_pool_stopped", stats.DroppedPoolStopped),
+		zap.Uint64("dropped_inline_capped", stats.DroppedInlineCapped),
 		zap.Uint64("sync_fallback_tasks", stats.SyncFallbackTasks),
 	).Warn("usage_record.task_dropped")
 }
 
 func usageRecordPoolOptionsFromConfig(cfg *config.Config) UsageRecordWorkerPoolOptions {
 	opts := UsageRecordWorkerPoolOptions{
-		WorkerCount:           defaultUsageRecordWorkerCount,
-		QueueSize:             defaultUsageRecordQueueSize,
-		TaskTimeout:           time.Duration(defaultUsageRecordTaskTimeoutSeconds) * time.Second,
-		OverflowPolicy:        defaultUsageRecordOverflowPolicy,
-		OverflowSamplePercent: defaultUsageRecordOverflowSampleRatio,
-		AutoScaleEnabled:      defaultUsageRecordAutoScaleEnabled,
-		AutoScaleMinWorkers:   defaultUsageRecordAutoScaleMinWorkers,
-		AutoScaleMaxWorkers:   defaultUsageRecordAutoScaleMaxWorkers,
-		AutoScaleUpPercent:    defaultUsageRecordAutoScaleUpPercent,
-		AutoScaleDownPercent:  defaultUsageRecordAutoScaleDownPercent,
-		AutoScaleUpStep:       defaultUsageRecordAutoScaleUpStep,
-		AutoScaleDownStep:     defaultUsageRecordAutoScaleDownStep,
-		AutoScaleInterval:     defaultUsageRecordAutoScaleInterval,
-		AutoScaleCooldown:     defaultUsageRecordAutoScaleCooldown,
+		WorkerCount:               defaultUsageRecordWorkerCount,
+		QueueSize:                 defaultUsageRecordQueueSize,
+		TaskTimeout:               time.Duration(defaultUsageRecordTaskTimeoutSeconds) * time.Second,
+		OverflowPolicy:            defaultUsageRecordOverflowPolicy,
+		OverflowSamplePercent:     defaultUsageRecordOverflowSampleRatio,
+		InlineFallbackConcurrency: defaultUsageRecordInlineFallbackConcurrency,
+		AutoScaleEnabled:          defaultUsageRecordAutoScaleEnabled,
+		AutoScaleMinWorkers:       defaultUsageRecordAutoScaleMinWorkers,
+		AutoScaleMaxWorkers:       defaultUsageRecordAutoScaleMaxWorkers,
+		AutoScaleUpPercent:        defaultUsageRecordAutoScaleUpPercent,
+		AutoScaleDownPercent:      defaultUsageRecordAutoScaleDownPercent,
+		AutoScaleUpStep:           defaultUsageRecordAutoScaleUpStep,
+		AutoScaleDownStep:         defaultUsageRecordAutoScaleDownStep,
+		AutoScaleInterval:         defaultUsageRecordAutoScaleInterval,
+		AutoScaleCooldown:         defaultUsageRecordAutoScaleCooldown,
 	}
 	if cfg == nil {
 		return opts
@@ -388,6 +427,9 @@ func usageRecordPoolOptionsFromConfig(cfg *config.Config) UsageRecordWorkerPoolO
 	}
 	if cfg.Gateway.UsageRecord.OverflowSamplePercent >= 0 {
 		opts.OverflowSamplePercent = cfg.Gateway.UsageRecord.OverflowSamplePercent
+	}
+	if cfg.Gateway.UsageRecord.InlineFallbackConcurrency > 0 {
+		opts.InlineFallbackConcurrency = cfg.Gateway.UsageRecord.InlineFallbackConcurrency
 	}
 	opts.AutoScaleEnabled = cfg.Gateway.UsageRecord.AutoScaleEnabled
 	if cfg.Gateway.UsageRecord.AutoScaleMinWorkers > 0 {
@@ -434,6 +476,9 @@ func normalizeUsageRecordPoolOptions(opts UsageRecordWorkerPoolOptions) UsageRec
 		opts.OverflowPolicy = strings.ToLower(strings.TrimSpace(opts.OverflowPolicy))
 	default:
 		opts.OverflowPolicy = defaultUsageRecordOverflowPolicy
+	}
+	if opts.InlineFallbackConcurrency <= 0 {
+		opts.InlineFallbackConcurrency = opts.WorkerCount
 	}
 	if opts.OverflowSamplePercent < 0 {
 		opts.OverflowSamplePercent = 0

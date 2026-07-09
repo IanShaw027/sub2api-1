@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -65,8 +64,6 @@ type CanonicalFingerprintConfig struct {
 	StripProxyHeaders   []string
 	SpoofProcessMetrics bool
 	TelemetryPaths      []string
-	JitterMinMs         int
-	JitterMaxMs         int
 	// EnabledByPlatform: per-platform override for the whole anti-ban suite.
 	// Key must be explicitly true to enable; absent or false means disabled (default OFF).
 	EnabledByPlatform map[string]bool
@@ -84,8 +81,6 @@ type CanonicalFingerprintConfig struct {
 // PlatformProfile per platform overrides.
 type PlatformProfile struct {
 	CanonicalUA   string
-	JitterMinMs   int
-	JitterMaxMs   int
 	SpoofMemoryMB int
 	SpoofHeapMB   int
 	CPUInfo       string
@@ -149,9 +144,7 @@ func NewFingerprintNormalizer(
 			AntiBanEnabled:      true,
 			StripProxyHeaders:   []string{"x-litellm", "helicone", "cf-aig", "x-portkey", "x-forwarded", "via"},
 			SpoofProcessMetrics: true,
-			TelemetryPaths:      []string{"/telemetry", "datadog", "sentry", "statsig", "segment", "amplitude", "events"},
-			JitterMinMs:         10,
-			JitterMaxMs:         150,
+			TelemetryPaths:      []string{"/telemetry", "datadog", "sentry", "statsig", "segment", "amplitude"},
 		}
 	}
 	return &FingerprintNormalizer{
@@ -346,6 +339,9 @@ func (n *FingerprintNormalizer) ApplyToRequest(req *http.Request, body []byte, c
 		// Always safe telemetry stripping (all platforms)
 		for _, p := range n.cfg.TelemetryPaths {
 			key := strings.Trim(p, "/")
+			if !shouldRenameTelemetryJSONKey(req, key) {
+				continue
+			}
 			newBody = safeRenameJSONKey(newBody, key)
 			newBody = safeRenameJSONKey(newBody, "metadata."+key)
 		}
@@ -618,6 +614,7 @@ func scrubSystemPromptPII(b []byte) []byte {
 func scrubPIIInText(s string) string {
 	s = reUserEmail.ReplaceAllString(s, "")
 	s = reGitUser.ReplaceAllString(s, "")
+	s = scrubGitStatusMetadata(s)
 	return s
 }
 
@@ -853,68 +850,107 @@ func normalizeTextPII(s string, profile *AccountEnvProfile) (string, *WorkDirRew
 		s = reShell.ReplaceAllString(s, "${1}"+profile.Shell)
 	}
 
+	s = scrubGitStatusMetadata(s)
+
 	return s, wdr
 }
 
+func scrubGitStatusMetadata(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return s
+	}
+
+	lines := strings.Split(s, "\n")
+	out := make([]string, 0, len(lines))
+	skippingBlock := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		lower := strings.ToLower(trimmed)
+
+		if skippingBlock {
+			if trimmed == "" {
+				skippingBlock = false
+				continue
+			}
+			if isGitStatusSectionBoundary(trimmed, lower) {
+				skippingBlock = false
+			} else {
+				continue
+			}
+		}
+
+		switch {
+		case strings.HasPrefix(lower, "current branch:"):
+			continue
+		case strings.HasPrefix(lower, "main branch:"):
+			continue
+		case strings.HasPrefix(lower, "recent commits:"):
+			skippingBlock = true
+			continue
+		case lower == "status:" || strings.HasPrefix(lower, "status: "):
+			skippingBlock = true
+			continue
+		case strings.HasPrefix(lower, "is directory a git repo:"):
+			indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+			out = append(out, indent+"Is directory a git repo: Yes")
+			continue
+		}
+
+		out = append(out, line)
+	}
+
+	return strings.Join(out, "\n")
+}
+
+func isGitStatusSectionBoundary(trimmed string, lower string) bool {
+	if strings.HasPrefix(trimmed, "#") {
+		return true
+	}
+	for _, prefix := range []string{
+		"You have been invoked in the following environment:",
+		"Primary working directory:",
+		"Additional working directory:",
+		"Additional working directories:",
+		"- Primary working directory:",
+		"- Additional working directory:",
+		"- Additional working directories:",
+		"- Platform:",
+		"- Shell:",
+		"- OS Version:",
+		"Platform:",
+		"Shell:",
+		"OS Version:",
+		"The user's email address is",
+		"Git user:",
+		"Is directory a git repo:",
+		"Current branch:",
+		"Main branch:",
+		"Recent commits:",
+		"Status:",
+	} {
+		if strings.HasPrefix(trimmed, prefix) {
+			return true
+		}
+	}
+	// 普通正文/下一段提示通常不是 git status 明细；若行看起来像自然语言句子而非
+	// 文件状态/提交列表，结束跳过块，避免误吞后续 system prompt 内容。
+	if strings.HasSuffix(trimmed, ".") || strings.HasSuffix(trimmed, ":") {
+		return true
+	}
+	_ = lower
+	return false
+}
+
+// profileWorkDirForRealDir 返回账号稳定派生的完整假工作目录（profile.WorkDir，其最后一段
+// 已是 envProfileProjectNames 里的假项目名）。此前会用真实目录的 basename 覆盖假路径最后一段，
+// 导致真实仓库/项目名随 workdir 及其子路径外发 Anthropic；现直接用假路径。RealDir↔FakeDir
+// 仍是完整前缀映射，replaceWorkDirInBody/doReverseWorkDir 按前缀双向替换，子路径正确还原。
 func profileWorkDirForRealDir(profile *AccountEnvProfile, realDir string) string {
 	if profile == nil {
 		return ""
 	}
-	fallback := strings.TrimSpace(profile.WorkDir)
-	realDir = strings.TrimSpace(realDir)
-	project := projectBasenameFromDir(realDir)
-	if project == "" || fallback == "" {
-		return fallback
-	}
-	if strings.Contains(fallback, `\`) {
-		idx := strings.LastIndex(fallback, `\`)
-		if idx < 0 {
-			return fallback
-		}
-		return fallback[:idx+1] + project
-	}
-	parent := path.Dir(fallback)
-	if parent == "." || parent == "/" || parent == "" {
-		return fallback
-	}
-	return parent + "/" + project
-}
-
-func projectBasenameFromDir(dir string) string {
-	dir = strings.TrimSpace(dir)
-	if dir == "" {
-		return ""
-	}
-	dir = strings.TrimRight(dir, `/\`)
-	if dir == "" {
-		return ""
-	}
-	idx := strings.LastIndexAny(dir, `/\`)
-	if idx >= 0 {
-		dir = dir[idx+1:]
-	}
-	dir = strings.TrimSpace(dir)
-	if dir == "" || dir == "." || dir == ".." {
-		return ""
-	}
-	var b strings.Builder
-	for _, r := range dir {
-		switch {
-		case r >= 'a' && r <= 'z':
-			b.WriteRune(r)
-		case r >= 'A' && r <= 'Z':
-			b.WriteRune(r)
-		case r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case r == '-', r == '_', r == '.':
-			b.WriteRune(r)
-		}
-	}
-	project := strings.Trim(b.String(), ".-_")
-	if project == "" {
-		return ""
-	}
-	return project
+	return strings.TrimSpace(profile.WorkDir)
 }
 
 // WorkDirRewrite carries the real<->fake working dir pair so that:
@@ -1073,7 +1109,11 @@ func replaceTriggerPhrasesInText(s string, phrases [][2]string) string {
 // triggerPhraseIsPureAlpha returns true if the phrase contains only ASCII letters and spaces.
 func triggerPhraseIsPureAlpha(s string) bool {
 	for _, r := range s {
-		if !(r >= 'a' && r <= 'z') && !(r >= 'A' && r <= 'Z') && r != ' ' {
+		switch {
+		case r == ' ':
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		default:
 			return false
 		}
 	}
@@ -1134,6 +1174,21 @@ func safeRenameJSONKey(b []byte, key string) []byte {
 	return b
 }
 
+func shouldRenameTelemetryJSONKey(req *http.Request, key string) bool {
+	key = strings.TrimSpace(strings.ToLower(key))
+	if key == "" {
+		return false
+	}
+	if key != "events" {
+		return true
+	}
+	if req == nil || req.URL == nil {
+		return false
+	}
+	path := strings.ToLower(strings.TrimSpace(req.URL.Path))
+	return strings.Contains(path, "/telemetry") || strings.Contains(path, "/event_logging/")
+}
+
 func safeDeleteJSONKey(b []byte, key string) []byte {
 	if len(b) == 0 || key == "" {
 		return b
@@ -1154,8 +1209,6 @@ func NewPlatformFingerprintManager(cfg *config.Config) *PlatformFingerprintManag
 		profiles: map[string]PlatformProfile{
 			"anthropic": {
 				CanonicalUA:   "claude-cli/" + claude.CLICurrentVersion + " (external, cli)",
-				JitterMinMs:   10,
-				JitterMaxMs:   150,
 				SpoofMemoryMB: 8192,
 				SpoofHeapMB:   4096,
 				CPUInfo:       "Apple M2",
@@ -1163,9 +1216,7 @@ func NewPlatformFingerprintManager(cfg *config.Config) *PlatformFingerprintManag
 				BodyStripKeys: []string{"events", "stats"},
 			},
 			"openai": {
-				CanonicalUA:   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-				JitterMinMs:   5,
-				JitterMaxMs:   80,
+				CanonicalUA:   defaultBrowserLikeUpstreamUserAgent,
 				SpoofMemoryMB: 16384,
 				SpoofHeapMB:   8192,
 				CPUInfo:       "Intel Core i9",
@@ -1173,9 +1224,7 @@ func NewPlatformFingerprintManager(cfg *config.Config) *PlatformFingerprintManag
 				BodyStripKeys: []string{"user", "session"},
 			},
 			"grok": {
-				CanonicalUA:   "grok-cli/1.0",
-				JitterMinMs:   8,
-				JitterMaxMs:   120,
+				CanonicalUA:   defaultBrowserLikeUpstreamUserAgent,
 				SpoofMemoryMB: 8192,
 				SpoofHeapMB:   4096,
 				CPUInfo:       "AMD Ryzen",
@@ -1183,8 +1232,6 @@ func NewPlatformFingerprintManager(cfg *config.Config) *PlatformFingerprintManag
 			},
 			"antigravity": {
 				CanonicalUA:   "antigravity-client/0.9",
-				JitterMinMs:   10,
-				JitterMaxMs:   100,
 				SpoofMemoryMB: 4096,
 				SpoofHeapMB:   2048,
 				BodyStripKeys: []string{"device", "agent_id"},
@@ -1199,12 +1246,6 @@ func NewPlatformFingerprintManager(cfg *config.Config) *PlatformFingerprintManag
 			base := m.profiles[k] // zero-value if not hardcoded — new platform
 			if v.CanonicalUA != "" {
 				base.CanonicalUA = v.CanonicalUA
-			}
-			if v.JitterMinMs > 0 {
-				base.JitterMinMs = v.JitterMinMs
-			}
-			if v.JitterMaxMs > 0 {
-				base.JitterMaxMs = v.JitterMaxMs
 			}
 			if v.SpoofMemoryMB > 0 {
 				base.SpoofMemoryMB = v.SpoofMemoryMB
@@ -1236,8 +1277,6 @@ func (m *PlatformFingerprintManager) Get(platform string) PlatformProfile {
 	}
 	return PlatformProfile{
 		CanonicalUA:   "Mozilla/5.0 (compatible; GenericClient/1.0)",
-		JitterMinMs:   10,
-		JitterMaxMs:   80,
 		SpoofMemoryMB: 8192,
 		SpoofHeapMB:   4096,
 		CPUInfo:       "Generic CPU",
@@ -1261,9 +1300,7 @@ func ProvideFingerprintNormalizer(
 		AntiBanEnabled:      true,
 		StripProxyHeaders:   []string{"x-litellm", "helicone", "cf-aig", "x-portkey", "x-forwarded", "via"},
 		SpoofProcessMetrics: true,
-		TelemetryPaths:      []string{"/telemetry", "datadog", "sentry", "statsig", "segment", "amplitude", "events"},
-		JitterMinMs:         10,
-		JitterMaxMs:         150,
+		TelemetryPaths:      []string{"/telemetry", "datadog", "sentry", "statsig", "segment", "amplitude"},
 	}
 	if cfg != nil {
 		af := cfg.Gateway.AntiFingerprint
@@ -1275,8 +1312,6 @@ func ProvideFingerprintNormalizer(
 		if len(af.TelemetryPaths) > 0 {
 			normalizerCfg.TelemetryPaths = af.TelemetryPaths
 		}
-		normalizerCfg.JitterMinMs = af.JitterMinMs
-		normalizerCfg.JitterMaxMs = af.JitterMaxMs
 		// Trigger phrase scanning
 		normalizerCfg.TriggerScanEnabled = af.TriggerScanEnabled
 		normalizerCfg.TriggerPhrases = buildTriggerPhrasePairs(af.TriggerPhrases)
@@ -1289,8 +1324,6 @@ func ProvideFingerprintNormalizer(
 		normalizerCfg.AntiBanEnabled = ban.Enabled
 		if len(ban.Platforms) > 0 {
 			normalizerCfg.EnabledByPlatform = cloneAntiBanPlatforms(ban.Platforms)
-		} else if ban.Enabled {
-			// no map -> all off (default)
 		}
 	}
 	return NewFingerprintNormalizer(tlsProfile, tlsRouter, identity, normalizerCfg, mgr)
@@ -1305,13 +1338,6 @@ func (n *FingerprintNormalizer) SchemaPropRewrites() map[string]string {
 }
 
 // helpers
-func coalesce(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
-}
-
 func isSensitiveOpenAIKeyForImages(body []byte, key string) bool {
 	// rough heuristic: if images or embeddings present, be conservative on "user"
 	if gjson.GetBytes(body, "images").Exists() || gjson.GetBytes(body, "input").Exists() {

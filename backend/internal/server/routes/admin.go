@@ -159,6 +159,7 @@ func registerAdminAIRoutes(admin *gin.RouterGroup, h *handler.Handlers, settingS
 		skills.POST("/:id/force-private", h.Admin.AI.ForcePrivateSkill)
 		skills.GET("/runtime", h.Admin.AI.ListSkillRuntime)
 		skills.GET("/settlements", h.Admin.AI.ListSkillSettlements)
+		skills.POST("/settlements/:id/replay", h.Admin.AI.ReplaySkillSettlement)
 	}
 }
 
@@ -802,7 +803,7 @@ func registerChannelMonitorRoutes(admin *gin.RouterGroup, h *handler.Handlers, s
 
 func channelMonitorAdminFeatureGuard(settingService *service.SettingService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if settingService == nil || settingService.GetChannelMonitorRuntime(c.Request.Context()).Enabled {
+		if settingService != nil && settingService.GetChannelMonitorRuntime(c.Request.Context()).Enabled {
 			c.Next()
 			return
 		}

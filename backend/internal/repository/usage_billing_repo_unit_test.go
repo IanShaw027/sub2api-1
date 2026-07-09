@@ -117,3 +117,9 @@ func TestDeductUsageBillingBalance_ReturnsUserNotFoundWhenNoUserUpdated(t *testi
 	require.NoError(t, tx.Rollback())
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestUsageBillingRepositoryApply_RequiresDB(t *testing.T) {
+	result, err := (*usageBillingRepository)(nil).Apply(context.Background(), &service.UsageBillingCommand{})
+	require.Nil(t, result)
+	require.EqualError(t, err, "usage billing repository db is required")
+}

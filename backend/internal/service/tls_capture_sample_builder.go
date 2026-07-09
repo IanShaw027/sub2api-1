@@ -2,13 +2,19 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/model"
 )
+
+var errTLSCaptureRequestBodyTooLarge = errors.New("capture request body too large")
 
 func firstNonEmptyHeader(header http.Header, names ...string) string {
 	for _, name := range names {
@@ -53,9 +59,7 @@ func nativeCaptureRequestPlatform(r *http.Request) string {
 	if path == "" || path == "capture" {
 		return ""
 	}
-	if strings.HasPrefix(path, "capture/") {
-		path = strings.TrimPrefix(path, "capture/")
-	}
+	path = strings.TrimPrefix(path, "capture/")
 	if before, _, ok := strings.Cut(path, "/"); ok {
 		return strings.TrimSpace(before)
 	}
@@ -251,9 +255,7 @@ func nativeCaptureRequestPath(r *http.Request) string {
 				return "/"
 			}
 			prefix := platform + "/"
-			if strings.HasPrefix(rest, prefix) {
-				rest = strings.TrimPrefix(rest, prefix)
-			}
+			rest = strings.TrimPrefix(rest, prefix)
 		}
 		if rest == "" {
 			return "/"
@@ -343,12 +345,62 @@ func nativeCaptureRawBody(r *http.Request) []byte {
 	if body, ok := r.Context().Value(tlsFingerprintNativeCaptureBodyContextKey{}).([]byte); ok {
 		return append([]byte(nil), body...)
 	}
-	raw, err := io.ReadAll(r.Body)
+	raw, err := readTLSCaptureRequestBodyLimited(r.Body)
 	if err != nil {
 		return nil
 	}
 	r.Body = io.NopCloser(bytes.NewReader(raw))
 	return raw
+}
+
+func cacheTLSCaptureRequestBody(r *http.Request) error {
+	if r == nil || r.Body == nil {
+		return nil
+	}
+	if _, ok := r.Context().Value(tlsFingerprintNativeCaptureBodyContextKey{}).([]byte); ok {
+		return nil
+	}
+	raw, err := readTLSCaptureRequestBodyLimited(r.Body)
+	if err != nil {
+		return err
+	}
+	clone := r.Clone(context.WithValue(r.Context(), tlsFingerprintNativeCaptureBodyContextKey{}, append([]byte(nil), raw...)))
+	clone.Body = io.NopCloser(bytes.NewReader(raw))
+	clone.ContentLength = int64(len(raw))
+	*r = *clone
+	return nil
+}
+
+func readTLSCaptureRequestBodyLimited(body io.ReadCloser) ([]byte, error) {
+	raw, err := io.ReadAll(io.LimitReader(body, tlsFingerprintNativeCaptureBodyLimit+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > tlsFingerprintNativeCaptureBodyLimit {
+		return nil, errTLSCaptureRequestBodyTooLarge
+	}
+	return raw, nil
+}
+
+func drainTLSCaptureRequestBody(body io.ReadCloser) {
+	if body == nil {
+		return
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(body, tlsFingerprintNativeCaptureBodyLimit+1))
+}
+
+func tlsCapturePublicErrorMessage(err error, fallback string) string {
+	if err == nil {
+		return fallback
+	}
+	var validationErr *model.ValidationError
+	if errors.As(err, &validationErr) && strings.TrimSpace(validationErr.Message) != "" {
+		return validationErr.Message
+	}
+	if errors.Is(err, errTLSCaptureRequestBodyTooLarge) {
+		return err.Error()
+	}
+	return fallback
 }
 
 func nativeCaptureParsedRequestBody(r *http.Request) map[string]any {

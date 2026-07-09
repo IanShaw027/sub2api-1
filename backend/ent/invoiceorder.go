@@ -28,6 +28,8 @@ type InvoiceOrder struct {
 	OutTradeNo string `json:"out_trade_no,omitempty"`
 	// PaymentType holds the value of the "payment_type" field.
 	PaymentType string `json:"payment_type,omitempty"`
+	// IsActive holds the value of the "is_active" field.
+	IsActive bool `json:"is_active,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
@@ -61,6 +63,8 @@ func (*InvoiceOrder) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case invoiceorder.FieldIsActive:
+			values[i] = new(sql.NullBool)
 		case invoiceorder.FieldPayAmountSnapshot:
 			values[i] = new(sql.NullFloat64)
 		case invoiceorder.FieldID, invoiceorder.FieldInvoiceID, invoiceorder.FieldOrderID:
@@ -119,6 +123,12 @@ func (_m *InvoiceOrder) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field payment_type", values[i])
 			} else if value.Valid {
 				_m.PaymentType = value.String
+			}
+		case invoiceorder.FieldIsActive:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field is_active", values[i])
+			} else if value.Valid {
+				_m.IsActive = value.Bool
 			}
 		case invoiceorder.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -181,6 +191,9 @@ func (_m *InvoiceOrder) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("payment_type=")
 	builder.WriteString(_m.PaymentType)
+	builder.WriteString(", ")
+	builder.WriteString("is_active=")
+	builder.WriteString(fmt.Sprintf("%v", _m.IsActive))
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))

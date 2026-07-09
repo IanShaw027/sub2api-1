@@ -121,6 +121,10 @@ func TestMigrationChecksumCompatibilityRules_CoverEditedUpgradeCompatibilityMigr
 		"118_wechat_dual_mode_and_auth_source_defaults.sql",
 		"120_enforce_payment_orders_out_trade_no_unique_notx.sql",
 		"123_fix_legacy_auth_source_grant_on_signup_defaults.sql",
+		"148_expand_usage_log_request_type_check.sql",
+		"169_align_group_display_name_length.sql",
+		"176_add_tls_fingerprint_profile_transport.sql",
+		"185_expand_usage_log_request_type_check.sql",
 	} {
 		rule, ok := migrationChecksumCompatibilityRules[name]
 		require.Truef(t, ok, "missing compatibility rule for %s", name)
@@ -131,7 +135,6 @@ func TestMigrationChecksumCompatibilityRules_CoverEditedUpgradeCompatibilityMigr
 
 func TestGrokPlatformQuotaMigrationExtendsCheckConstraint(t *testing.T) {
 	for _, name := range []string{
-		"157_user_platform_quotas_add_grok.sql",
 		"181_user_platform_quotas_add_grok.sql",
 	} {
 		t.Run(name, func(t *testing.T) {

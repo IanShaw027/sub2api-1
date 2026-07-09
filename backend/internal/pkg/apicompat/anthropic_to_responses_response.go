@@ -61,10 +61,7 @@ func AnthropicToResponsesResponse(resp *AnthropicResponse) *ResponsesResponse {
 				}
 			}
 		case "tool_use":
-			args := "{}"
-			if len(block.Input) > 0 {
-				args = string(block.Input)
-			}
+			args := anthropicToolUseArguments(block.Input)
 			outputs = append(outputs, ResponsesOutput{
 				Type:      "function_call",
 				ID:        generateItemID(),
@@ -124,10 +121,7 @@ func AnthropicToResponsesResponse(resp *AnthropicResponse) *ResponsesResponse {
 				},
 			})
 		case strings.HasPrefix(strings.ToLower(strings.TrimSpace(block.Name)), "web_fetch"):
-			args := "{}"
-			if len(block.Input) > 0 {
-				args = string(block.Input)
-			}
+			args := anthropicToolUseArguments(block.Input)
 			outputs = append(outputs, ResponsesOutput{
 				Type:      "function_call",
 				ID:        generateItemID(),
@@ -212,6 +206,17 @@ func anthropicServerToolQuery(raw json.RawMessage) string {
 		return ""
 	}
 	return payload.Query
+}
+
+func anthropicToolUseArguments(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return "{}"
+	}
+	var encoded string
+	if err := json.Unmarshal(raw, &encoded); err == nil {
+		return encoded
+	}
+	return string(raw)
 }
 
 func anthropicWebSearchSources(raw json.RawMessage) []ResponsesWebSearchSource {
@@ -440,7 +445,7 @@ func anthToResHandleContentBlockStart(evt *AnthropicStreamEvent, state *Anthropi
 		state.CurrentName = evt.ContentBlock.Name
 		state.CurrentArgs = ""
 		state.CurrentArgsEmptyStart = false
-		if input := strings.TrimSpace(string(evt.ContentBlock.Input)); input != "" {
+		if input := strings.TrimSpace(anthropicToolUseArguments(evt.ContentBlock.Input)); input != "" {
 			state.CurrentArgs = input
 			state.CurrentArgsEmptyStart = input == "{}"
 		}
@@ -460,7 +465,7 @@ func anthToResHandleContentBlockStart(evt *AnthropicStreamEvent, state *Anthropi
 
 		state.CurrentArgs = ""
 		state.CurrentArgsEmptyStart = false
-		if input := strings.TrimSpace(string(evt.ContentBlock.Input)); input != "" {
+		if input := strings.TrimSpace(anthropicToolUseArguments(evt.ContentBlock.Input)); input != "" {
 			state.CurrentArgs = input
 			state.CurrentArgsEmptyStart = input == "{}"
 		}

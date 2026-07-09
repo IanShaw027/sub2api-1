@@ -1187,19 +1187,20 @@ func (h *AccountHandler) invalidateRefreshedOAuthTokenCache(ctx context.Context,
 	}
 }
 
-// Refresh handles refreshing account credentials
-// POST /api/v1/admin/accounts/:id/refresh
-func (h *AccountHandler) Refresh(c *gin.Context) {
+func (h *AccountHandler) handleRefreshAccount(c *gin.Context, eligibility func(*service.Account) bool, ineligibleMessage string) {
 	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "Invalid account ID")
 		return
 	}
 
-	// Get account
 	account, err := h.adminService.GetAccount(c.Request.Context(), accountID)
 	if err != nil {
 		response.NotFound(c, "Account not found")
+		return
+	}
+	if eligibility != nil && !eligibility(account) {
+		response.BadRequest(c, ineligibleMessage)
 		return
 	}
 
@@ -1208,7 +1209,10 @@ func (h *AccountHandler) Refresh(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	h.writeRefreshAccountResponse(c, updatedAccount, warning)
+}
 
+func (h *AccountHandler) writeRefreshAccountResponse(c *gin.Context, updatedAccount *service.Account, warning string) {
 	if warning == "missing_project_id_temporary" {
 		response.Success(c, gin.H{
 			"message": "Token refreshed successfully, but project_id could not be retrieved (will retry automatically)",
@@ -1218,6 +1222,94 @@ func (h *AccountHandler) Refresh(c *gin.Context) {
 	}
 
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), updatedAccount))
+}
+
+func (h *AccountHandler) handleBatchRefreshAccounts(ctx context.Context, accountIDs []int64, eligibility func(*service.Account) bool, ineligibleMessage string) (gin.H, error) {
+	accounts, err := h.adminService.GetAccountsByIDs(ctx, accountIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	foundIDs := make(map[int64]bool, len(accounts))
+	for _, acc := range accounts {
+		if acc != nil {
+			foundIDs[acc.ID] = true
+		}
+	}
+
+	const maxConcurrency = 10
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(maxConcurrency)
+
+	var mu sync.Mutex
+	var successCount, failedCount int
+	var errors []gin.H
+	var warnings []gin.H
+
+	for _, id := range accountIDs {
+		if !foundIDs[id] {
+			failedCount++
+			errors = append(errors, gin.H{
+				"account_id": id,
+				"error":      "account not found",
+			})
+		}
+	}
+
+	for _, account := range accounts {
+		acc := account
+		if acc == nil {
+			continue
+		}
+		if eligibility != nil && !eligibility(acc) {
+			failedCount++
+			errors = append(errors, gin.H{
+				"account_id": acc.ID,
+				"error":      ineligibleMessage,
+			})
+			continue
+		}
+
+		g.Go(func() error {
+			_, warning, err := h.refreshSingleAccount(gctx, acc)
+			mu.Lock()
+			if err != nil {
+				failedCount++
+				errors = append(errors, gin.H{
+					"account_id": acc.ID,
+					"error":      err.Error(),
+				})
+			} else {
+				successCount++
+				if warning != "" {
+					warnings = append(warnings, gin.H{
+						"account_id": acc.ID,
+						"warning":    warning,
+					})
+				}
+			}
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	return gin.H{
+		"total":    len(accountIDs),
+		"success":  successCount,
+		"failed":   failedCount,
+		"errors":   errors,
+		"warnings": warnings,
+	}, nil
+}
+
+// Refresh handles refreshing account credentials
+// POST /api/v1/admin/accounts/:id/refresh
+func (h *AccountHandler) Refresh(c *gin.Context) {
+	h.handleRefreshAccount(c, nil, "")
 }
 
 // ApplyOAuthCredentialsRequest is the payload for persisting re-authorized OAuth credentials.
@@ -1478,82 +1570,12 @@ func (h *AccountHandler) BatchRefresh(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-
-	accounts, err := h.adminService.GetAccountsByIDs(ctx, req.AccountIDs)
+	result, err := h.handleBatchRefreshAccounts(ctx, req.AccountIDs, nil, "")
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-
-	// 建立已获取账号的 ID 集合，检测缺失的 ID
-	foundIDs := make(map[int64]bool, len(accounts))
-	for _, acc := range accounts {
-		if acc != nil {
-			foundIDs[acc.ID] = true
-		}
-	}
-
-	const maxConcurrency = 10
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(maxConcurrency)
-
-	var mu sync.Mutex
-	var successCount, failedCount int
-	var errors []gin.H
-	var warnings []gin.H
-
-	// 将不存在的账号 ID 标记为失败
-	for _, id := range req.AccountIDs {
-		if !foundIDs[id] {
-			failedCount++
-			errors = append(errors, gin.H{
-				"account_id": id,
-				"error":      "account not found",
-			})
-		}
-	}
-
-	// 注意：所有 goroutine 必须 return nil，避免 errgroup cancel 其他并发任务
-	for _, account := range accounts {
-		acc := account // 闭包捕获
-		if acc == nil {
-			continue
-		}
-		g.Go(func() error {
-			_, warning, err := h.refreshSingleAccount(gctx, acc)
-			mu.Lock()
-			if err != nil {
-				failedCount++
-				errors = append(errors, gin.H{
-					"account_id": acc.ID,
-					"error":      err.Error(),
-				})
-			} else {
-				successCount++
-				if warning != "" {
-					warnings = append(warnings, gin.H{
-						"account_id": acc.ID,
-						"warning":    warning,
-					})
-				}
-			}
-			mu.Unlock()
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-
-	response.Success(c, gin.H{
-		"total":    len(req.AccountIDs),
-		"success":  successCount,
-		"failed":   failedCount,
-		"errors":   errors,
-		"warnings": warnings,
-	})
+	response.Success(c, result)
 }
 
 // BatchCreate handles batch creating accounts
@@ -1843,18 +1865,32 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	for _, accountID := range result.SuccessIDs {
-		account, getErr := h.adminService.GetAccount(c.Request.Context(), accountID)
+	if len(result.SuccessIDs) > 0 {
+		updatedAccounts, getErr := h.adminService.GetAccountsByIDs(c.Request.Context(), result.SuccessIDs)
 		if getErr != nil {
-			log.Printf("[WARN] Failed to load account %d after bulk update: %v", accountID, getErr)
-			continue
-		}
-		if len(req.Credentials) > 0 && h.tokenCacheInvalidator != nil && account.Type == service.AccountTypeOAuth {
-			if invalidateErr := h.tokenCacheInvalidator.InvalidateToken(c.Request.Context(), account); invalidateErr != nil {
-				log.Printf("[WARN] Failed to invalidate token cache for account %d after bulk update: %v", account.ID, invalidateErr)
+			log.Printf("[WARN] Failed to batch load accounts after bulk update: %v", getErr)
+		} else {
+			accountByID := make(map[int64]*service.Account, len(updatedAccounts))
+			for _, account := range updatedAccounts {
+				if account == nil {
+					continue
+				}
+				accountByID[account.ID] = account
+			}
+			for _, accountID := range result.SuccessIDs {
+				account := accountByID[accountID]
+				if account == nil {
+					log.Printf("[WARN] Failed to load account %d after bulk update: account missing from batch result", accountID)
+					continue
+				}
+				if len(req.Credentials) > 0 && h.tokenCacheInvalidator != nil && account.Type == service.AccountTypeOAuth {
+					if invalidateErr := h.tokenCacheInvalidator.InvalidateToken(c.Request.Context(), account); invalidateErr != nil {
+						log.Printf("[WARN] Failed to invalidate token cache for account %d after bulk update: %v", account.ID, invalidateErr)
+					}
+				}
+				h.invalidateKiroUsageCache(account)
 			}
 		}
-		h.invalidateKiroUsageCache(account)
 	}
 
 	response.Success(c, result)
@@ -2684,7 +2720,7 @@ func (h *AccountHandler) SetPrivacy(c *gin.Context) {
 // RefreshTier handles refreshing Google One tier for a single account
 // POST /api/v1/admin/accounts/:id/refresh-tier
 func (h *AccountHandler) RefreshTier(c *gin.Context) {
-	h.Refresh(c)
+	h.handleRefreshAccount(c, supportsGeminiGoogleOneTierRefresh, "Only Gemini Google One OAuth accounts support tier refresh")
 }
 
 // BatchRefreshTierRequest represents batch tier refresh request
@@ -2695,7 +2731,30 @@ type BatchRefreshTierRequest struct {
 // BatchRefreshTier handles batch refreshing Google One tier
 // POST /api/v1/admin/accounts/batch-refresh-tier
 func (h *AccountHandler) BatchRefreshTier(c *gin.Context) {
-	h.BatchRefresh(c)
+	var req BatchRefreshTierRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if len(req.AccountIDs) == 0 {
+		response.BadRequest(c, "account_ids is required")
+		return
+	}
+
+	ctx := c.Request.Context()
+	result, err := h.handleBatchRefreshAccounts(ctx, req.AccountIDs, supportsGeminiGoogleOneTierRefresh, "Only Gemini Google One OAuth accounts support tier refresh")
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func supportsGeminiGoogleOneTierRefresh(account *service.Account) bool {
+	return account != nil &&
+		account.Platform == service.PlatformGemini &&
+		account.IsOAuth() &&
+		strings.EqualFold(strings.TrimSpace(account.GeminiOAuthTypeSafe()), "google_one")
 }
 
 // GetAntigravityDefaultModelMapping 获取 Antigravity 平台的默认模型映射

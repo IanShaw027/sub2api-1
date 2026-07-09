@@ -28,6 +28,14 @@ type UserPlatformQuotaSnapshot struct {
 	MonthlyWindowStart time.Time
 }
 
+// UserPlatformQuotaUsageDelta 是 legacy DB 兜底路径按 (user, platform) 聚合后的增量写入载荷。
+// 与 Snapshot 不同，这里表达的是“在当前窗口上追加 cost”，而不是绝对值覆盖。
+type UserPlatformQuotaUsageDelta struct {
+	UserID   int64
+	Platform string
+	Cost     float64
+}
+
 // UserPlatformQuotaRecord service 层传输结构体（与 repository 层解耦）。
 type UserPlatformQuotaRecord struct {
 	UserID          int64

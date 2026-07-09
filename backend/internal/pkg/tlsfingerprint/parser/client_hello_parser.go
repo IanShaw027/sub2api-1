@@ -233,13 +233,6 @@ func isGREASEValue(v uint16) bool {
 	return v&0x0f0f == 0x0a0a && v>>8 == v&0xff
 }
 
-func ungrease(v uint16) uint16 {
-	if isGREASEValue(v) {
-		return 0
-	}
-	return v
-}
-
 func md5Hex(value string) string {
 	sum := md5.Sum([]byte(value))
 	return hex.EncodeToString(sum[:])

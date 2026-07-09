@@ -14,7 +14,14 @@
 
       <div v-if="showUserMeta" class="flex items-center gap-3 rounded-xl bg-gray-50 px-3 py-3 dark:bg-dark-700/40">
         <div class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 text-sm font-semibold text-gray-600 dark:bg-dark-600 dark:text-gray-200">
-          <img v-if="ticket.user_avatar_url" :src="ticket.user_avatar_url" :alt="ticket.user_name" class="h-full w-full object-cover" />
+          <img
+            v-if="safeImageUrl(ticket.user_avatar_url)"
+            :src="safeImageUrl(ticket.user_avatar_url)"
+            :alt="ticket.user_name"
+            class="h-full w-full object-cover"
+            referrerpolicy="no-referrer"
+            loading="lazy"
+          />
           <span v-else>{{ ticket.user_name.slice(0, 1).toUpperCase() }}</span>
         </div>
         <div class="min-w-0">
@@ -47,6 +54,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { formatDateTime } from '@/utils/format'
+import { safeImageUrl } from '@/utils/safeImageUrl'
 import { getTicketStatusBadgeClass } from '@/utils/tickets'
 import type { SupportTicket } from '@/types'
 import TicketCategoryForm from './TicketCategoryForm.vue'

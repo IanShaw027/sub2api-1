@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -303,4 +304,28 @@ func TestValidatedHTTPProxyRoundTripperDialsResolvedTargetIPAndPreservesHost(t *
 	require.Equal(t, "api.openai.com", <-hostSeen)
 	require.Equal(t, "api.openai.com", resp.Request.URL.Host)
 	require.Equal(t, "ok", string(body))
+}
+
+func TestValidatedHTTPProxyRoundTripper_RequiresProxyURL(t *testing.T) {
+	rt := &validatedProxyRoundTripper{}
+
+	resp, err := rt.RoundTrip(httptest.NewRequest(http.MethodGet, "https://example.com", nil))
+	require.Nil(t, resp)
+	require.EqualError(t, err, "validated proxy URL is required")
+}
+
+func TestValidatedHTTPProxyRoundTripper_RequiresRequestURL(t *testing.T) {
+	rt := &validatedProxyRoundTripper{proxyURL: &url.URL{Scheme: "http", Host: "proxy.example.com"}}
+
+	resp, err := rt.RoundTrip(&http.Request{})
+	require.Nil(t, resp)
+	require.EqualError(t, err, "validated proxy request URL is required")
+}
+
+func TestValidatedTransport_RequiresBase(t *testing.T) {
+	transport := &validatedTransport{}
+
+	conn, err := transport.DialContext(context.Background(), "tcp", "example.com:443")
+	require.Nil(t, conn)
+	require.EqualError(t, err, "validated dialer base is required")
 }

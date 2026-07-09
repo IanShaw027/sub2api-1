@@ -153,13 +153,8 @@ func TestHandleSmartRetry_QuotaExhausted_UsesCreditsAndStoresIndependentState(t 
 	require.Contains(t, string(upstream.requestBodies[0]), "enabledCreditTypes")
 	require.Empty(t, repo.modelRateLimitCalls, "overages 成功后不应写入普通 model_rate_limits")
 
-	raw, ok := c.Get(OpsUpstreamErrorsKey)
-	require.True(t, ok)
-	events, ok := raw.([]*OpsUpstreamErrorEvent)
-	require.True(t, ok)
-	require.Len(t, events, 1)
-	require.Equal(t, "retry", events[0].Kind)
-	require.Equal(t, http.StatusTooManyRequests, events[0].UpstreamStatusCode)
+	_, ok := c.Get(OpsUpstreamErrorsKey)
+	require.False(t, ok, "overages 补救成功后不应记录 retry 事件")
 }
 
 func TestHandleSmartRetry_RateLimited_DoesNotUseCredits(t *testing.T) {

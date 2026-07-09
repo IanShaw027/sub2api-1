@@ -13,9 +13,9 @@ import (
 func TestOpsRepositoryGetErrorTrendSeparatesRecoveredTelemetry(t *testing.T) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
-	repo := NewOpsRepository(db).(*opsRepository)
+	repo := NewOpsRepository(db)
 	start := time.Date(2026, 7, 2, 18, 0, 0, 0, time.UTC)
 	end := start.Add(time.Hour)
 	bucket := start
@@ -37,9 +37,9 @@ func TestOpsRepositoryGetErrorTrendSeparatesRecoveredTelemetry(t *testing.T) {
 func TestOpsRepositoryGetErrorDistributionSeparatesRecoveredTelemetryTotal(t *testing.T) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
-	repo := NewOpsRepository(db).(*opsRepository)
+	repo := NewOpsRepository(db)
 	start := time.Date(2026, 7, 2, 18, 0, 0, 0, time.UTC)
 	end := start.Add(time.Hour)
 

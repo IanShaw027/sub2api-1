@@ -20,6 +20,7 @@ import {
   listGovernanceSkills,
   listReviews,
   listSettlements,
+  replaySettlement,
   rejectReview,
 } from '@/api/admin/skills'
 
@@ -186,6 +187,13 @@ describe('admin skills api', () => {
         operated_at: '2026-05-01T00:11:00Z',
       },
     })
+    post.mockResolvedValueOnce({
+      data: {
+        message: 'replayed',
+        status: 'settled',
+        operated_at: '2026-05-01T00:12:00Z',
+      },
+    })
 
     await expect(
       listGovernanceSkills(1, 20, {
@@ -231,6 +239,10 @@ describe('admin skills api', () => {
       action: 'force-private',
       status: 'force_private',
     })
+    await expect(replaySettlement(77, { note: 'retry failed payout' })).resolves.toMatchObject({
+      action: 'replay',
+      status: 'settled',
+    })
 
     expect(get).toHaveBeenNthCalledWith(1, '/admin/skills/governance', {
       params: {
@@ -263,5 +275,6 @@ describe('admin skills api', () => {
     })
     expect(post).toHaveBeenNthCalledWith(1, '/admin/skills/55/disable', { reason: 'abuse' })
     expect(post).toHaveBeenNthCalledWith(2, '/admin/skills/55/force-private', { reason: 'license' })
+    expect(post).toHaveBeenNthCalledWith(3, '/admin/skills/settlements/77/replay', { note: 'retry failed payout' })
   })
 })

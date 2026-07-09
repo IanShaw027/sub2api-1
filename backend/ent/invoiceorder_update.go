@@ -112,6 +112,20 @@ func (_u *InvoiceOrderUpdate) SetNillablePaymentType(v *string) *InvoiceOrderUpd
 	return _u
 }
 
+// SetIsActive sets the "is_active" field.
+func (_u *InvoiceOrderUpdate) SetIsActive(v bool) *InvoiceOrderUpdate {
+	_u.mutation.SetIsActive(v)
+	return _u
+}
+
+// SetNillableIsActive sets the "is_active" field if the given value is not nil.
+func (_u *InvoiceOrderUpdate) SetNillableIsActive(v *bool) *InvoiceOrderUpdate {
+	if v != nil {
+		_u.SetIsActive(*v)
+	}
+	return _u
+}
+
 // SetInvoice sets the "invoice" edge to the Invoice entity.
 func (_u *InvoiceOrderUpdate) SetInvoice(v *Invoice) *InvoiceOrderUpdate {
 	return _u.SetInvoiceID(v.ID)
@@ -202,6 +216,9 @@ func (_u *InvoiceOrderUpdate) sqlSave(ctx context.Context) (_node int, err error
 	}
 	if value, ok := _u.mutation.PaymentType(); ok {
 		_spec.SetField(invoiceorder.FieldPaymentType, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.IsActive(); ok {
+		_spec.SetField(invoiceorder.FieldIsActive, field.TypeBool, value)
 	}
 	if _u.mutation.InvoiceCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -336,6 +353,20 @@ func (_u *InvoiceOrderUpdateOne) SetNillablePaymentType(v *string) *InvoiceOrder
 	return _u
 }
 
+// SetIsActive sets the "is_active" field.
+func (_u *InvoiceOrderUpdateOne) SetIsActive(v bool) *InvoiceOrderUpdateOne {
+	_u.mutation.SetIsActive(v)
+	return _u
+}
+
+// SetNillableIsActive sets the "is_active" field if the given value is not nil.
+func (_u *InvoiceOrderUpdateOne) SetNillableIsActive(v *bool) *InvoiceOrderUpdateOne {
+	if v != nil {
+		_u.SetIsActive(*v)
+	}
+	return _u
+}
+
 // SetInvoice sets the "invoice" edge to the Invoice entity.
 func (_u *InvoiceOrderUpdateOne) SetInvoice(v *Invoice) *InvoiceOrderUpdateOne {
 	return _u.SetInvoiceID(v.ID)
@@ -456,6 +487,9 @@ func (_u *InvoiceOrderUpdateOne) sqlSave(ctx context.Context) (_node *InvoiceOrd
 	}
 	if value, ok := _u.mutation.PaymentType(); ok {
 		_spec.SetField(invoiceorder.FieldPaymentType, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.IsActive(); ok {
+		_spec.SetField(invoiceorder.FieldIsActive, field.TypeBool, value)
 	}
 	if _u.mutation.InvoiceCleared() {
 		edge := &sqlgraph.EdgeSpec{

@@ -237,6 +237,35 @@ func TestSchedulerCacheGetSnapshotReflectsUpdateLastUsedHotPath(t *testing.T) {
 	require.WithinDuration(t, usedAt, *snapshot[0].LastUsedAt, time.Second)
 }
 
+func TestSchedulerCacheGetAccountsReflectsUpdateLastUsedHotPath(t *testing.T) {
+	ctx := context.Background()
+	rdb := testRedis(t)
+	cache := NewSchedulerCache(rdb).(*schedulerCache)
+
+	stale := time.Now().Add(-3 * time.Hour).UTC().Truncate(time.Second)
+	fresh := time.Now().Add(-5 * time.Minute).UTC().Truncate(time.Second)
+	account := service.Account{
+		ID:          1808,
+		Name:        "batch-account",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		LastUsedAt:  &stale,
+	}
+
+	require.NoError(t, cache.SetAccount(ctx, &account))
+	require.NoError(t, cache.UpdateLastUsed(ctx, map[int64]time.Time{account.ID: fresh}))
+
+	got, err := cache.GetAccounts(ctx, []int64{account.ID})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.NotNil(t, got[account.ID])
+	require.NotNil(t, got[account.ID].LastUsedAt)
+	require.True(t, got[account.ID].LastUsedAt.Equal(fresh))
+}
+
 func TestSchedulerCacheUpdateLastUsedUsesOverlayWithoutRewritingAccountState(t *testing.T) {
 	ctx := context.Background()
 	rdb := testRedis(t)

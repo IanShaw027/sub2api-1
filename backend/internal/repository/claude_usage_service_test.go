@@ -123,6 +123,18 @@ func (s *ClaudeUsageServiceSuite) TestFetchUsage_InvalidProxyReturnsError() {
 	require.ErrorContains(s.T(), err, "create http client failed")
 }
 
+func (s *ClaudeUsageServiceSuite) TestFetchUsageWithOptions_RejectsNilOptions() {
+	s.fetcher = &claudeUsageService{
+		usageURL:          "http://example.com",
+		allowPrivateHosts: true,
+	}
+
+	resp, err := s.fetcher.FetchUsageWithOptions(context.Background(), nil)
+
+	require.Nil(s.T(), resp)
+	require.EqualError(s.T(), err, "options are required")
+}
+
 func TestClaudeUsageServiceSuite(t *testing.T) {
 	suite.Run(t, new(ClaudeUsageServiceSuite))
 }

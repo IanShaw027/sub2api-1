@@ -3,6 +3,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -646,6 +648,84 @@ func TestAIHandlerRunSkillWithModeCleansUpUploadedAttachmentsOnExecutionFailure(
 			require.Len(t, store.deleted, 1)
 		})
 	}
+}
+
+func TestAIHandlerRunSkill_UsesBodyIdempotencyKeyForGenericReplay(t *testing.T) {
+	repo := newUserMemoryIdempotencyRepoStub()
+	cfg := service.DefaultIdempotencyConfig()
+	cfg.ObserveOnly = false
+	service.SetDefaultIdempotencyCoordinator(service.NewIdempotencyCoordinator(repo, cfg))
+	t.Cleanup(func() {
+		service.SetDefaultIdempotencyCoordinator(nil)
+	})
+
+	runRepo := &aiSkillHandlerRunRepo{}
+	handler := &AIHandler{}
+	versionID := int64(8)
+	runSvc := service.NewAISkillRunService(
+		&aiSkillHandlerRunSkillRepo{
+			skill: &service.AISkill{ID: 7, CreatorUserID: 42, Type: service.AISkillTypePromptChat},
+		},
+		&aiSkillHandlerRunVersionRepo{
+			version: &service.AISkillVersion{
+				ID:            versionID,
+				SkillID:       7,
+				CreatorUserID: 42,
+				Type:          service.AISkillTypePromptChat,
+				Status:        service.AISkillVersionStatusApproved,
+				ExecutionSpec: service.AISkillExecutionSpec{
+					Type: service.AISkillTypePromptChat,
+					PromptChat: &service.AISkillPromptChatSpec{
+						UserPromptTemplate: "Write about {{subject}}",
+					},
+				},
+				BillingPolicy: service.AISkillBillingPolicy{Mode: service.AISkillBillingModeFree},
+			},
+		},
+		runRepo,
+		service.NewAISkillSettlementService(nil, nil, nil),
+		nil,
+	)
+	handler.skillModule = &skillkit.Module{
+		DomainRepo: &aiSkillHandlerViewerRepo{
+			skill: &domain.AISkill{
+				ID:               7,
+				UserID:           42,
+				Type:             domain.AISkillTypePromptChat,
+				Visibility:       domain.AIVisibilityPublic,
+				CurrentVersionID: &versionID,
+			},
+		},
+		RunService: runSvc,
+	}
+
+	var executed atomic.Int32
+	router := gin.New()
+	router.Use(withUserSubject(42))
+	router.POST("/api/v1/ai/skills/:id/runs", func(c *gin.Context) {
+		executed.Add(1)
+		handler.RunSkill(c)
+	})
+
+	body := `{"mode":"use","idempotency_key":"body-run-key","parameters":{"subject":"sunrise"}}`
+	call := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/ai/skills/7/runs", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Del("Idempotency-Key")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	first := call()
+	require.Equal(t, http.StatusOK, first.Code, first.Body.String())
+	require.Len(t, runRepo.created, 1)
+
+	second := call()
+	require.Equal(t, http.StatusOK, second.Code, second.Body.String())
+	require.Equal(t, "true", second.Header().Get("X-Idempotency-Replayed"))
+	require.Len(t, runRepo.created, 1, "body idempotency key should prevent duplicate run creation")
+	require.Equal(t, int32(2), executed.Load(), "handler still runs twice, but side effect must replay from generic idempotency")
 }
 
 func TestResolveSkillRunVersionForViewerKeepsOwnerDraftAndViewerPublished(t *testing.T) {

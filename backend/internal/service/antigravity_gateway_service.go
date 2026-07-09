@@ -240,7 +240,6 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 		!p.account.isCreditsExhausted() {
 		result := s.attemptCreditsOveragesRetry(p, baseURL, modelName, waitDuration, resp.StatusCode, respBody)
 		if result.handled && result.resp != nil {
-			s.appendCoveredSmartRetryEvent(p, resp, respBody, baseURL)
 			return &smartRetryResult{
 				action: smartRetryActionBreakWithResp,
 				resp:   result.resp,
@@ -255,9 +254,6 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 		// 多账号场景下切换账号是最优选择，但单账号场景下设限流毫无意义（只会导致双重等待）。
 		if resp.StatusCode == http.StatusServiceUnavailable && isSingleAccountRetry(p.ctx) {
 			result := s.handleSingleAccountRetryInPlace(p, resp, respBody, baseURL, waitDuration, modelName)
-			if result != nil && result.resp != nil && result.resp.StatusCode < http.StatusBadRequest {
-				s.appendCoveredSmartRetryEvent(p, resp, respBody, baseURL)
-			}
 			return result
 		}
 
@@ -307,6 +303,7 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 				if exists && time.Now().Before(cooldownUntil) {
 					log.Printf("%s status=%d model_capacity_exhausted_dedup model=%s account=%d cooldown_until=%v (skip retry)",
 						p.prefix, resp.StatusCode, modelName, p.account.ID, cooldownUntil.Format("15:04:05"))
+					s.appendCoveredSmartRetryEvent(p, resp, respBody, baseURL)
 					return &smartRetryResult{
 						action: smartRetryActionBreakWithResp,
 						resp: &http.Response{
@@ -351,7 +348,6 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 			retryResp, retryErr := p.httpUpstream.Do(retryReq, p.proxyURL, p.account.ID, p.account.Concurrency)
 			SetOpsLatencyMs(p.c, OpsUpstreamLatencyMsKey, time.Since(retryStart).Milliseconds())
 			if retryErr == nil && retryResp != nil && retryResp.StatusCode != http.StatusTooManyRequests && retryResp.StatusCode != http.StatusServiceUnavailable {
-				s.appendCoveredSmartRetryEvent(p, resp, respBody, baseURL)
 				log.Printf("%s status=%d smart_retry_success attempt=%d/%d", p.prefix, retryResp.StatusCode, attempt, maxAttempts)
 				// 重试成功，清除 MODEL_CAPACITY_EXHAUSTED cooldown
 				if isModelCapacityExhausted && modelName != "" {
@@ -408,6 +404,7 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 			}
 			log.Printf("%s status=%d smart_retry_exhausted_model_capacity attempts=%d model=%s account=%d body=%s (model capacity exhausted, not switching account)",
 				p.prefix, resp.StatusCode, maxAttempts, modelName, p.account.ID, truncateForLog(retryBody, 200))
+			s.appendCoveredSmartRetryEvent(p, resp, retryBody, baseURL)
 			return &smartRetryResult{
 				action: smartRetryActionBreakWithResp,
 				resp: &http.Response{
@@ -423,6 +420,7 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 		if resp.StatusCode == http.StatusServiceUnavailable && isSingleAccountRetry(p.ctx) {
 			logger.LegacyPrintf("service.antigravity_gateway", "%s status=%d smart_retry_exhausted_single_account attempts=%d model=%s account=%d body=%s (return 503 directly)",
 				p.prefix, resp.StatusCode, antigravitySmartRetryMaxAttempts, modelName, p.account.ID, truncateForLog(retryBody, 200))
+			s.appendCoveredSmartRetryEvent(p, resp, retryBody, baseURL)
 			return &smartRetryResult{
 				action: smartRetryActionBreakWithResp,
 				resp: &http.Response{
@@ -578,6 +576,7 @@ func (s *AntigravityGatewayService) handleSingleAccountRetryInPlace(
 	}
 	logger.LegacyPrintf("service.antigravity_gateway", "%s status=%d single_account_503_retry_exhausted attempts=%d total_waited=%v model=%s account=%d body=%s (return 503 directly)",
 		p.prefix, resp.StatusCode, antigravitySingleAccountSmartRetryMaxAttempts, totalWaited, modelName, p.account.ID, truncateForLog(retryBody, 200))
+	s.appendCoveredSmartRetryEvent(p, resp, retryBody, baseURL)
 
 	return &smartRetryResult{
 		action: smartRetryActionBreakWithResp,
@@ -1141,6 +1140,9 @@ type TestConnectionResult struct {
 // 复用 antigravityRetryLoop 的完整重试 / credits overages / 智能重试逻辑，
 // 与真实调度行为一致。差异：不做账号切换（测试指定账号）、不记录 ops 错误。
 func (s *AntigravityGatewayService) TestConnection(ctx context.Context, account *Account, modelID string) (*TestConnectionResult, error) {
+	if account == nil {
+		return nil, errors.New("account is required")
+	}
 
 	// 获取 token
 	if s.tokenProvider == nil {
@@ -1450,6 +1452,9 @@ func (s *AntigravityGatewayService) unwrapV1InternalResponse(body []byte) ([]byt
 //	          ├─ 成功 → 正常返回
 //	          └─ 失败 → 设置模型限流 + 清除粘性绑定 → 切换账号
 func (s *AntigravityGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte, isStickySession bool) (*ForwardResult, error) {
+	if account == nil {
+		return nil, errors.New("account is required")
+	}
 	// 上游透传账号直接转发，不走 OAuth token 刷新
 	if account.Type == AccountTypeUpstream {
 		return s.ForwardUpstream(ctx, c, account, body)
@@ -2220,6 +2225,9 @@ func WithForwardGeminiSession(groupID int64, sessionHash string) ForwardGeminiOp
 }
 
 func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Context, account *Account, originalModel string, action string, stream bool, body []byte, isStickySession bool, options ...ForwardGeminiOption) (*ForwardResult, error) {
+	if account == nil {
+		return nil, errors.New("account is required")
+	}
 	startTime := time.Now()
 	forwardOpts := forwardGeminiOptions{}
 	for _, apply := range options {
@@ -3871,6 +3879,9 @@ func (s *AntigravityGatewayService) writeClaudeError(c *gin.Context, status int,
 
 // WriteMappedClaudeError 导出版本，供 handler 层使用（如 fallback 错误处理）
 func (s *AntigravityGatewayService) WriteMappedClaudeError(c *gin.Context, account *Account, upstreamStatus int, upstreamRequestID string, body []byte) error {
+	if account == nil {
+		return errors.New("account is required")
+	}
 	return s.writeMappedClaudeError(c, account, upstreamStatus, upstreamRequestID, body)
 }
 
@@ -4488,6 +4499,9 @@ func filterEmptyPartsFromGeminiRequest(body []byte) ([]byte, error) {
 
 // ForwardUpstream 使用 base_url + /v1/messages + 双 header 认证透传上游 Claude 请求
 func (s *AntigravityGatewayService) ForwardUpstream(ctx context.Context, c *gin.Context, account *Account, body []byte) (*ForwardResult, error) {
+	if account == nil {
+		return nil, errors.New("account is required")
+	}
 	startTime := time.Now()
 	sessionID := getSessionID(c)
 	prefix := logPrefix(sessionID, account.Name)

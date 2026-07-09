@@ -285,13 +285,13 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	wsDecision OpenAIWSProtocolDecision,
 ) error {
 	if s == nil {
-		return errors.New("service is nil")
+		return errors.New("service is required")
 	}
 	if clientConn == nil {
-		return errors.New("client websocket is nil")
+		return errors.New("client websocket is required")
 	}
 	if account == nil {
-		return errors.New("account is nil")
+		return errors.New("account is required")
 	}
 	if strings.TrimSpace(token) == "" {
 		return errors.New("token is empty")
@@ -436,7 +436,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 
 	dialer := s.getOpenAIWSPassthroughDialer()
 	if dialer == nil {
-		return errors.New("openai ws passthrough dialer is nil")
+		return errors.New("openai ws passthrough dialer is required")
 	}
 
 	dialCtx, cancelDial := context.WithTimeout(ctx, s.openAIWSDialTimeout())

@@ -61,6 +61,17 @@ func TestOpenAIOAuthService_ExchangeCode_StateRequired(t *testing.T) {
 	require.Equal(t, int32(0), atomic.LoadInt32(&client.exchangeCalled))
 }
 
+func TestOpenAIOAuthService_ExchangeCode_RejectsNilInput(t *testing.T) {
+	client := &openaiOAuthClientStateStub{}
+	svc := NewOpenAIOAuthService(nil, client)
+	defer svc.Stop()
+
+	_, err := svc.ExchangeCode(context.Background(), nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "oauth input is required")
+	require.Equal(t, int32(0), atomic.LoadInt32(&client.exchangeCalled))
+}
+
 func TestOpenAIOAuthService_ExchangeCode_StateMismatch(t *testing.T) {
 	client := &openaiOAuthClientStateStub{}
 	svc := NewOpenAIOAuthService(nil, client)

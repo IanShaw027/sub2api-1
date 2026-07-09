@@ -189,20 +189,11 @@ type cachedOpenAICodexUserAgent struct {
 	expiresAt int64 // unix nano
 }
 
-// cachedOpenAIAllowCodexPlugin Codex 插件放行开关缓存（进程内缓存，60s TTL）。
-type cachedOpenAIAllowCodexPlugin struct {
-	value     bool
-	expiresAt int64 // unix nano
-}
-
 type cachedOpenAIQuotaAutoPauseSettings struct {
 	settings  OpsOpenAIAccountQuotaAutoPauseSettings
 	expiresAt int64
 }
 
-const openAIAllowCodexPluginCacheTTL = 60 * time.Second
-const openAIAllowCodexPluginErrorTTL = 5 * time.Second
-const openAIAllowCodexPluginDBTimeout = 5 * time.Second
 const openAICodexUserAgentCacheTTL = 60 * time.Second
 const openAICodexUserAgentErrorTTL = 5 * time.Second
 const openAICodexUserAgentDBTimeout = 5 * time.Second
@@ -254,8 +245,6 @@ type SettingService struct {
 	webSearchManagerBuilder     WebSearchManagerBuilder
 	antigravityUAVersionCache   atomic.Value // *cachedAntigravityUserAgentVersion
 	antigravityUAVersionSF      singleflight.Group
-	openAIAllowCodexPluginCache atomic.Value // *cachedOpenAIAllowCodexPlugin
-	openAIAllowCodexPluginSF    singleflight.Group
 	openAICodexUACache          atomic.Value // *cachedOpenAICodexUserAgent
 	openAICodexUASF             singleflight.Group
 	codexRestrictionPolicyCache atomic.Value // *cachedCodexRestrictionPolicy
@@ -786,12 +775,20 @@ func (s *SettingService) SetProxyRepository(repo ProxyRepository) {
 
 // GetAllSettings 获取所有系统设置
 func (s *SettingService) GetAllSettings(ctx context.Context) (*SystemSettings, error) {
-	settings, err := s.settingRepo.GetAll(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get all settings: %w", err)
+	settings := map[string]string{}
+	if s != nil && s.settingRepo != nil {
+		var err error
+		settings, err = s.settingRepo.GetAll(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get all settings: %w", err)
+		}
 	}
 
-	parsed := s.parseSettings(settings)
+	parser := s
+	if parser == nil {
+		parser = &SettingService{cfg: &config.Config{}}
+	}
+	parsed := parser.parseSettings(settings)
 	s.refreshCachedSettings(parsed)
 	return parsed, nil
 }
@@ -854,11 +851,20 @@ func (s *SettingService) LoadOpenAIWSDeltaRuntimeSettings(ctx context.Context) e
 
 // GetFrontendURL 获取前端基础URL（数据库优先，fallback 到配置文件）
 func (s *SettingService) GetFrontendURL(ctx context.Context) string {
+	if s == nil || s.settingRepo == nil {
+		if s != nil && s.cfg != nil {
+			return s.cfg.Server.FrontendURL
+		}
+		return ""
+	}
 	val, err := s.settingRepo.GetValue(ctx, SettingKeyFrontendURL)
 	if err == nil && strings.TrimSpace(val) != "" {
 		return strings.TrimSpace(val)
 	}
-	return s.cfg.Server.FrontendURL
+	if s.cfg != nil {
+		return s.cfg.Server.FrontendURL
+	}
+	return ""
 }
 
 // GetCyberSessionBlockRuntime 返回 (开关, TTL)，进程内缓存 ~60s，
@@ -866,6 +872,9 @@ func (s *SettingService) GetFrontendURL(ctx context.Context) string {
 // 两个 setting key 在单次 singleflight 里一起读取，减少 DB 往返。
 // 默认值：开关 false，TTL 1h（与粘性会话对齐）。
 func (s *SettingService) GetCyberSessionBlockRuntime(ctx context.Context) (bool, time.Duration) {
+	if s == nil || s.settingRepo == nil {
+		return false, time.Hour
+	}
 	if cached, ok := s.cyberSessionBlockRuntimeCache.Load().(*cachedCyberSessionBlockRuntime); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
 			return cached.enabled, cached.ttl
@@ -919,6 +928,10 @@ func (s *SettingService) GetCyberSessionBlockRuntime(ctx context.Context) (bool,
 
 // GetPublicSettings 获取公开设置（无需登录）
 func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings, error) {
+	cfg := (*config.Config)(nil)
+	if s != nil {
+		cfg = s.cfg
+	}
 	keys := []string{
 		SettingKeyRegistrationEnabled,
 		SettingKeyEmailVerifyEnabled,
@@ -992,33 +1005,37 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyAllowUserViewErrorRequests,
 	}
 
-	settings, err := s.settingRepo.GetMultiple(ctx, keys)
-	if err != nil {
-		return nil, fmt.Errorf("get public settings: %w", err)
+	settings := map[string]string{}
+	if s != nil && s.settingRepo != nil {
+		var err error
+		settings, err = s.settingRepo.GetMultiple(ctx, keys)
+		if err != nil {
+			return nil, fmt.Errorf("get public settings: %w", err)
+		}
 	}
 
 	linuxDoEnabled := false
 	if raw, ok := settings[SettingKeyLinuxDoConnectEnabled]; ok {
 		linuxDoEnabled = raw == "true"
 	} else {
-		linuxDoEnabled = s.cfg != nil && s.cfg.LinuxDo.Enabled
+		linuxDoEnabled = cfg != nil && cfg.LinuxDo.Enabled
 	}
 	oidcEnabled := false
 	if raw, ok := settings[SettingKeyOIDCConnectEnabled]; ok {
 		oidcEnabled = raw == "true"
 	} else {
-		oidcEnabled = s.cfg != nil && s.cfg.OIDC.Enabled
+		oidcEnabled = cfg != nil && cfg.OIDC.Enabled
 	}
 	oidcProviderName := strings.TrimSpace(settings[SettingKeyOIDCConnectProviderName])
-	if oidcProviderName == "" && s.cfg != nil {
-		oidcProviderName = strings.TrimSpace(s.cfg.OIDC.ProviderName)
+	if oidcProviderName == "" && cfg != nil {
+		oidcProviderName = strings.TrimSpace(cfg.OIDC.ProviderName)
 	}
 	if oidcProviderName == "" {
 		oidcProviderName = "OIDC"
 	}
 	gitHubEnabled := s.emailOAuthPublicEnabled(settings, "github")
 	googleEnabled := s.emailOAuthPublicEnabled(settings, "google")
-	weChatEnabled, weChatOpenEnabled, weChatMPEnabled, weChatMobileEnabled := s.weChatOAuthCapabilitiesFromSettings(settings)
+	weChatEnabled, weChatOpenEnabled, weChatMPEnabled, weChatMobileEnabled := (&SettingService{cfg: cfg}).weChatOAuthCapabilitiesFromSettings(settings)
 
 	// Password reset requires email verification to be enabled
 	emailVerifyEnabled := settings[SettingKeyEmailVerifyEnabled] == "true"
@@ -1142,6 +1159,9 @@ type ChannelMonitorRuntime struct {
 // GetChannelMonitorRuntime reads the channel monitor feature flags directly from
 // the settings store. Fail-open: on error returns Enabled=true with the default interval.
 func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMonitorRuntime {
+	if s == nil || s.settingRepo == nil {
+		return ChannelMonitorRuntime{Enabled: true, DefaultIntervalSeconds: channelMonitorIntervalFallback}
+	}
 	vals, err := s.settingRepo.GetMultiple(ctx, []string{
 		SettingKeyChannelMonitorEnabled,
 		SettingKeyChannelMonitorDefaultIntervalSeconds,
@@ -1165,6 +1185,9 @@ type AvailableChannelsRuntime struct {
 // from the settings store. Fail-closed: on error returns Enabled=false, matching
 // the opt-in default (unknown ↔ disabled).
 func (s *SettingService) GetAvailableChannelsRuntime(ctx context.Context) AvailableChannelsRuntime {
+	if s == nil || s.settingRepo == nil {
+		return AvailableChannelsRuntime{Enabled: false}
+	}
 	vals, err := s.settingRepo.GetMultiple(ctx, []string{SettingKeyAvailableChannelsEnabled})
 	if err != nil {
 		return AvailableChannelsRuntime{Enabled: false}
@@ -1177,6 +1200,9 @@ func (s *SettingService) GetAvailableChannelsRuntime(ctx context.Context) Availa
 // IsUserErrorViewAllowed reads the user-facing error-requests visibility switch
 // directly from the settings store. Fail-closed: on error returns false (opt-in default).
 func (s *SettingService) IsUserErrorViewAllowed(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return false
+	}
 	vals, err := s.settingRepo.GetMultiple(ctx, []string{SettingKeyAllowUserViewErrorRequests})
 	if err != nil {
 		slog.Warn("failed to get allow_user_view_error_requests setting, defaulting to false", "error", err)
@@ -1434,6 +1460,9 @@ func normalizedCodexClientMarkers(markers []string) map[string]struct{} {
 // 仅在调用方已确认账号 codex_cli_only 开启时读取；进程内 atomic.Value 缓存（60s TTL）避免热路径访问 DB。
 // 任意键缺失/解析失败 → 安全默认：空名单、空版本、默认种子指纹信号。
 func (s *SettingService) GetCodexRestrictionPolicy(ctx context.Context) CodexRestrictionPolicy {
+	if s == nil || s.settingRepo == nil {
+		return CodexRestrictionPolicy{EngineFingerprintSignals: openai.DefaultEngineFingerprintSignals}
+	}
 	if cached, ok := s.codexRestrictionPolicyCache.Load().(*cachedCodexRestrictionPolicy); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
 			return cached.value
@@ -1476,6 +1505,9 @@ func (s *SettingService) GetCodexRestrictionPolicy(ctx context.Context) CodexRes
 
 // loadCodexClientEntries 读取并解析 []openai.AllowedClientEntry JSON 设置；缺失/空/非法 → nil（安全忽略）。
 func (s *SettingService) loadCodexClientEntries(ctx context.Context, key string) []openai.AllowedClientEntry {
+	if s == nil || s.settingRepo == nil {
+		return nil
+	}
 	v, err := s.settingRepo.GetValue(ctx, key)
 	if err != nil || strings.TrimSpace(v) == "" {
 		return nil
@@ -1489,6 +1521,9 @@ func (s *SettingService) loadCodexClientEntries(ctx context.Context, key string)
 
 // loadEngineFingerprintSignals 读取引擎指纹信号列表;缺失/空/非法 → 默认种子。
 func (s *SettingService) loadEngineFingerprintSignals(ctx context.Context) []openai.EngineFingerprintSignal {
+	if s == nil || s.settingRepo == nil {
+		return openai.DefaultEngineFingerprintSignals
+	}
 	v, err := s.settingRepo.GetValue(ctx, SettingKeyCodexCLIOnlyEngineFingerprintSignals)
 	if err != nil || strings.TrimSpace(v) == "" {
 		return openai.DefaultEngineFingerprintSignals
@@ -2020,6 +2055,9 @@ func stableStoredAdminTicketReplyTemplateID(tpl AdminTicketReplyTemplate, index 
 }
 
 func (s *SettingService) GetAdminTicketReplyTemplates(ctx context.Context) ([]AdminTicketReplyTemplate, error) {
+	if s == nil || s.settingRepo == nil {
+		return []AdminTicketReplyTemplate{}, nil
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyAdminTicketReplyTemplates)
 	if err != nil {
 		if errors.Is(err, ErrSettingNotFound) {
@@ -2040,6 +2078,9 @@ func (s *SettingService) GetAdminTicketReplyTemplates(ctx context.Context) ([]Ad
 }
 
 func (s *SettingService) SetAdminTicketReplyTemplates(ctx context.Context, templates []AdminTicketReplyTemplate) error {
+	if s == nil || s.settingRepo == nil {
+		return fmt.Errorf("setting repository unavailable")
+	}
 	normalized, err := normalizeAdminTicketReplyTemplates(templates)
 	if err != nil {
 		return err
@@ -2151,6 +2192,9 @@ func oidcCompatibilityWriteDefault(base config.OIDCConnectConfig, configured boo
 
 // UpdateSettings 更新系统设置
 func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSettings) error {
+	if s == nil || s.settingRepo == nil {
+		return fmt.Errorf("setting repository unavailable")
+	}
 	prevPoolSettings := snapshotOpenAIWSPoolRuntimeSettingsForUpdate()
 
 	updates, err := s.buildSystemSettingsUpdates(ctx, settings)
@@ -2169,17 +2213,21 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 }
 
 func (s *SettingService) OIDCSecurityWriteDefaults(ctx context.Context) (bool, bool, error) {
-	rawSettings, err := s.settingRepo.GetMultiple(ctx, []string{
-		SettingKeyOIDCConnectUsePKCE,
-		SettingKeyOIDCConnectValidateIDToken,
-	})
-	if err != nil {
-		return false, false, fmt.Errorf("get oidc security write defaults: %w", err)
-	}
-
 	base := config.OIDCConnectConfig{}
 	if s != nil && s.cfg != nil {
 		base = s.cfg.OIDC
+	}
+
+	rawSettings := map[string]string{}
+	if s != nil && s.settingRepo != nil {
+		var err error
+		rawSettings, err = s.settingRepo.GetMultiple(ctx, []string{
+			SettingKeyOIDCConnectUsePKCE,
+			SettingKeyOIDCConnectValidateIDToken,
+		})
+		if err != nil {
+			return false, false, fmt.Errorf("get oidc security write defaults: %w", err)
+		}
 	}
 
 	rawUsePKCE, hasUsePKCE := rawSettings[SettingKeyOIDCConnectUsePKCE]
@@ -2192,6 +2240,9 @@ func (s *SettingService) OIDCSecurityWriteDefaults(ctx context.Context) (bool, b
 
 // UpdateSettingsWithAuthSourceDefaults persists system settings and auth-source defaults in a single write.
 func (s *SettingService) UpdateSettingsWithAuthSourceDefaults(ctx context.Context, settings *SystemSettings, authDefaults *AuthSourceDefaultSettings) error {
+	if s == nil || s.settingRepo == nil {
+		return fmt.Errorf("setting repository unavailable")
+	}
 	prevPoolSettings := snapshotOpenAIWSPoolRuntimeSettingsForUpdate()
 
 	updates, err := s.buildSystemSettingsUpdates(ctx, settings)
@@ -2263,17 +2314,6 @@ func triggerOpenAIWSPoolReconcileIfRuntimeSettingsChanged(settings *SystemSettin
 	if poolSettingsChanged {
 		TriggerOpenAIWSPoolReconcile()
 	}
-}
-
-func hasOpenAIWSPoolRuntimeSettingsForUpdate(settings *SystemSettings) bool {
-	if settings == nil {
-		return false
-	}
-	return settings.OpenAIWSNeutralPrewarmPercent != 0 ||
-		settings.OpenAIWSSessionIdleTTLSeconds != 0 ||
-		settings.OpenAIWSMinIdlePerAccount != 0 ||
-		settings.OpenAIWSMaxIdlePerAccount != 0 ||
-		settings.OpenAIStickyReservePercent != 0
 }
 
 func normalizeOpenAIWSIdleSettingValues(minIdle, maxIdle int) (int, int) {
@@ -3060,21 +3100,25 @@ func (s *SettingService) GetEmailOAuthProviderConfig(ctx context.Context, provid
 	if provider != "github" && provider != "google" {
 		return config.EmailOAuthProviderConfig{}, infraerrors.NotFound("OAUTH_PROVIDER_NOT_FOUND", "oauth provider not found")
 	}
-	keys := []string{
-		SettingKeyGitHubOAuthEnabled,
-		SettingKeyGitHubOAuthClientID,
-		SettingKeyGitHubOAuthClientSecret,
-		SettingKeyGitHubOAuthRedirectURL,
-		SettingKeyGitHubOAuthFrontendRedirectURL,
-		SettingKeyGoogleOAuthEnabled,
-		SettingKeyGoogleOAuthClientID,
-		SettingKeyGoogleOAuthClientSecret,
-		SettingKeyGoogleOAuthRedirectURL,
-		SettingKeyGoogleOAuthFrontendRedirectURL,
-	}
-	settings, err := s.settingRepo.GetMultiple(ctx, keys)
-	if err != nil {
-		return config.EmailOAuthProviderConfig{}, fmt.Errorf("get email oauth settings: %w", err)
+	settings := map[string]string{}
+	if s != nil && s.settingRepo != nil {
+		keys := []string{
+			SettingKeyGitHubOAuthEnabled,
+			SettingKeyGitHubOAuthClientID,
+			SettingKeyGitHubOAuthClientSecret,
+			SettingKeyGitHubOAuthRedirectURL,
+			SettingKeyGitHubOAuthFrontendRedirectURL,
+			SettingKeyGoogleOAuthEnabled,
+			SettingKeyGoogleOAuthClientID,
+			SettingKeyGoogleOAuthClientSecret,
+			SettingKeyGoogleOAuthRedirectURL,
+			SettingKeyGoogleOAuthFrontendRedirectURL,
+		}
+		var err error
+		settings, err = s.settingRepo.GetMultiple(ctx, keys)
+		if err != nil {
+			return config.EmailOAuthProviderConfig{}, fmt.Errorf("get email oauth settings: %w", err)
+		}
 	}
 	cfg := s.effectiveEmailOAuthConfig(settings, provider)
 	if !cfg.Enabled {
@@ -3112,6 +3156,9 @@ func (s *SettingService) GetEmailOAuthProviderConfig(ctx context.Context, provid
 
 // IsRegistrationEnabled 检查是否开放注册
 func (s *SettingService) IsRegistrationEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return false
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationEnabled)
 	if err != nil {
 		// 安全默认：如果设置不存在或查询出错，默认关闭注册
@@ -3123,6 +3170,9 @@ func (s *SettingService) IsRegistrationEnabled(ctx context.Context) bool {
 // IsBackendModeEnabled checks if backend mode is enabled
 // Uses in-process atomic.Value cache with 60s TTL, zero-lock hot path
 func (s *SettingService) IsBackendModeEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return false
+	}
 	if cached, ok := backendModeCache.Load().(*cachedBackendMode); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
 			return cached.value
@@ -3174,6 +3224,17 @@ type gatewayForwardingSettingsResult struct {
 }
 
 func (s *SettingService) getGatewayForwardingSettingsCached(ctx context.Context) gatewayForwardingSettingsResult {
+	if s == nil || s.settingRepo == nil {
+		return gatewayForwardingSettingsResult{
+			fp:                               true,
+			mp:                               false,
+			claudeOAuthSystemPromptInjection: true,
+			cacheTTL1h:                       false,
+			rewriteMessageCacheControl:       false,
+			clientDatelineNormalization:      true,
+			claudeTelemetryMode:              ClaudeTelemetryModeDrop,
+		}
+	}
 	if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
 			return gatewayForwardingSettingsResult{
@@ -3432,6 +3493,9 @@ func (s *SettingService) GetClaudeOAuthSystemPromptInjectionSettings(ctx context
 
 // IsEmailVerifyEnabled 检查是否开启邮件验证
 func (s *SettingService) IsEmailVerifyEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return false
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyEmailVerifyEnabled)
 	if err != nil {
 		return false
@@ -3441,6 +3505,9 @@ func (s *SettingService) IsEmailVerifyEnabled(ctx context.Context) bool {
 
 // GetRegistrationEmailSuffixWhitelist returns normalized registration email suffix whitelist.
 func (s *SettingService) GetRegistrationEmailSuffixWhitelist(ctx context.Context) []string {
+	if s == nil || s.settingRepo == nil {
+		return []string{}
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationEmailSuffixWhitelist)
 	if err != nil {
 		return []string{}
@@ -3450,6 +3517,9 @@ func (s *SettingService) GetRegistrationEmailSuffixWhitelist(ctx context.Context
 
 // IsPromoCodeEnabled 检查是否启用优惠码功能
 func (s *SettingService) IsPromoCodeEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return true
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyPromoCodeEnabled)
 	if err != nil {
 		return true // 默认启用
@@ -3459,6 +3529,9 @@ func (s *SettingService) IsPromoCodeEnabled(ctx context.Context) bool {
 
 // IsInvitationCodeEnabled 检查是否启用邀请码注册功能
 func (s *SettingService) IsInvitationCodeEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return false
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyInvitationCodeEnabled)
 	if err != nil {
 		return false // 默认关闭
@@ -3468,6 +3541,9 @@ func (s *SettingService) IsInvitationCodeEnabled(ctx context.Context) bool {
 
 // GetCustomMenuItemsRaw returns the raw JSON string of custom_menu_items setting.
 func (s *SettingService) GetCustomMenuItemsRaw(ctx context.Context) string {
+	if s == nil || s.settingRepo == nil {
+		return "[]"
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyCustomMenuItems)
 	if err != nil {
 		return "[]"
@@ -3477,6 +3553,9 @@ func (s *SettingService) GetCustomMenuItemsRaw(ctx context.Context) string {
 
 // IsAffiliateEnabled 检查是否启用邀请返利功能（总开关）
 func (s *SettingService) IsAffiliateEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return false
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateEnabled)
 	if err != nil {
 		return false // 默认关闭
@@ -3488,6 +3567,9 @@ func (s *SettingService) IsAffiliateEnabled(ctx context.Context) bool {
 // 解析失败、缺失或越界都回退到 AffiliateRebateRateDefault — 该比例从不抛错，
 // 调用方只关心一个可用的数值。
 func (s *SettingService) GetAffiliateRebateRatePercent(ctx context.Context) float64 {
+	if s == nil || s.settingRepo == nil {
+		return AffiliateRebateRateDefault
+	}
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateRebateRate)
 	if err != nil {
 		return AffiliateRebateRateDefault
@@ -3502,6 +3584,9 @@ func (s *SettingService) GetAffiliateRebateRatePercent(ctx context.Context) floa
 // GetAffiliateRebateFreezeHours 返回返利冻结期（小时）。
 // 返回 0 表示不冻结（向后兼容）。
 func (s *SettingService) GetAffiliateRebateFreezeHours(ctx context.Context) int {
+	if s == nil || s.settingRepo == nil {
+		return AffiliateRebateFreezeHoursDefault
+	}
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateRebateFreezeHours)
 	if err != nil {
 		return AffiliateRebateFreezeHoursDefault
@@ -3519,6 +3604,9 @@ func (s *SettingService) GetAffiliateRebateFreezeHours(ctx context.Context) int 
 // GetAffiliateRebateDurationDays 返回返利有效期（天）。
 // 返回 0 表示永久有效。
 func (s *SettingService) GetAffiliateRebateDurationDays(ctx context.Context) int {
+	if s == nil || s.settingRepo == nil {
+		return AffiliateRebateDurationDaysDefault
+	}
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateRebateDurationDays)
 	if err != nil {
 		return AffiliateRebateDurationDaysDefault
@@ -3536,6 +3624,9 @@ func (s *SettingService) GetAffiliateRebateDurationDays(ctx context.Context) int
 // GetAffiliateRebatePerInviteeCap 返回单人返利上限。
 // 返回 0 表示无上限。
 func (s *SettingService) GetAffiliateRebatePerInviteeCap(ctx context.Context) float64 {
+	if s == nil || s.settingRepo == nil {
+		return AffiliateRebatePerInviteeCapDefault
+	}
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateRebatePerInviteeCap)
 	if err != nil {
 		return AffiliateRebatePerInviteeCapDefault
@@ -3550,6 +3641,9 @@ func (s *SettingService) GetAffiliateRebatePerInviteeCap(ctx context.Context) fl
 // IsPasswordResetEnabled 检查是否启用密码重置功能
 // 要求：必须同时开启邮件验证
 func (s *SettingService) IsPasswordResetEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return false
+	}
 	// Password reset requires email verification to be enabled
 	if !s.IsEmailVerifyEnabled(ctx) {
 		return false
@@ -3563,6 +3657,9 @@ func (s *SettingService) IsPasswordResetEnabled(ctx context.Context) bool {
 
 // IsTotpEnabled 检查是否启用 TOTP 双因素认证功能
 func (s *SettingService) IsTotpEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return false
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyTotpEnabled)
 	if err != nil {
 		return false // 默认关闭
@@ -3571,6 +3668,9 @@ func (s *SettingService) IsTotpEnabled(ctx context.Context) bool {
 }
 
 func (s *SettingService) IsTicketEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return false
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyTicketEnabled)
 	if err != nil {
 		return false
@@ -3581,11 +3681,14 @@ func (s *SettingService) IsTicketEnabled(ctx context.Context) bool {
 // IsTotpEncryptionKeyConfigured 检查 TOTP 加密密钥是否已手动配置
 // 只有手动配置了密钥才允许在管理后台启用 TOTP 功能
 func (s *SettingService) IsTotpEncryptionKeyConfigured() bool {
-	return s.cfg.Totp.EncryptionKeyConfigured
+	return s != nil && s.cfg != nil && s.cfg.Totp.EncryptionKeyConfigured
 }
 
 // GetSiteName 获取网站名称
 func (s *SettingService) GetSiteName(ctx context.Context) string {
+	if s == nil || s.settingRepo == nil {
+		return "Sub2API"
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeySiteName)
 	if err != nil || value == "" {
 		return "Sub2API"
@@ -3595,30 +3698,57 @@ func (s *SettingService) GetSiteName(ctx context.Context) string {
 
 // GetDefaultConcurrency 获取默认并发量
 func (s *SettingService) GetDefaultConcurrency(ctx context.Context) int {
+	if s == nil || s.settingRepo == nil {
+		if s != nil && s.cfg != nil {
+			return s.cfg.Default.UserConcurrency
+		}
+		return 0
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyDefaultConcurrency)
 	if err != nil {
-		return s.cfg.Default.UserConcurrency
+		if s.cfg != nil {
+			return s.cfg.Default.UserConcurrency
+		}
+		return 0
 	}
 	if v, err := strconv.Atoi(value); err == nil && v > 0 {
 		return v
 	}
-	return s.cfg.Default.UserConcurrency
+	if s.cfg != nil {
+		return s.cfg.Default.UserConcurrency
+	}
+	return 0
 }
 
 // GetDefaultBalance 获取默认余额
 func (s *SettingService) GetDefaultBalance(ctx context.Context) float64 {
+	if s == nil || s.settingRepo == nil {
+		if s != nil && s.cfg != nil {
+			return s.cfg.Default.UserBalance
+		}
+		return 0
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyDefaultBalance)
 	if err != nil {
-		return s.cfg.Default.UserBalance
+		if s.cfg != nil {
+			return s.cfg.Default.UserBalance
+		}
+		return 0
 	}
 	if v, err := strconv.ParseFloat(value, 64); err == nil && v >= 0 {
 		return v
 	}
-	return s.cfg.Default.UserBalance
+	if s.cfg != nil {
+		return s.cfg.Default.UserBalance
+	}
+	return 0
 }
 
 // GetDefaultUserRPMLimit 获取新用户默认 RPM 限制（0 = 不限制）。未配置则返回 0。
 func (s *SettingService) GetDefaultUserRPMLimit(ctx context.Context) int {
+	if s == nil || s.settingRepo == nil {
+		return 0
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyDefaultUserRPMLimit)
 	if err != nil || value == "" {
 		return 0
@@ -3631,6 +3761,9 @@ func (s *SettingService) GetDefaultUserRPMLimit(ctx context.Context) int {
 
 // GetDefaultSubscriptions 获取新用户默认订阅配置列表。
 func (s *SettingService) GetDefaultSubscriptions(ctx context.Context) []DefaultSubscriptionSetting {
+	if s == nil || s.settingRepo == nil {
+		return nil
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyDefaultSubscriptions)
 	if err != nil {
 		return nil
@@ -3639,6 +3772,9 @@ func (s *SettingService) GetDefaultSubscriptions(ctx context.Context) []DefaultS
 }
 
 func (s *SettingService) GetAuthSourceDefaultSettings(ctx context.Context) (*AuthSourceDefaultSettings, error) {
+	if s == nil || s.settingRepo == nil {
+		return &AuthSourceDefaultSettings{}, nil
+	}
 	keys := []string{
 		SettingKeyAuthSourceDefaultEmailBalance,
 		SettingKeyAuthSourceDefaultEmailConcurrency,
@@ -3725,6 +3861,9 @@ func (s *SettingService) ResolveAuthSourceGrantSettings(ctx context.Context, sig
 }
 
 func (s *SettingService) UpdateAuthSourceDefaultSettings(ctx context.Context, settings *AuthSourceDefaultSettings) error {
+	if s == nil || s.settingRepo == nil {
+		return fmt.Errorf("setting repository unavailable")
+	}
 	updates, err := s.buildAuthSourceDefaultUpdates(ctx, settings)
 	if err != nil {
 		return err
@@ -3741,6 +3880,12 @@ func (s *SettingService) UpdateAuthSourceDefaultSettings(ctx context.Context, se
 
 // InitializeDefaultSettings 初始化默认设置
 func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
+	if s == nil || s.settingRepo == nil {
+		return fmt.Errorf("setting repository unavailable")
+	}
+	if s.cfg == nil {
+		return infraerrors.ServiceUnavailable("CONFIG_NOT_READY", "config not loaded")
+	}
 	// 检查是否已有设置
 	_, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationEnabled)
 	if err == nil {
@@ -3980,6 +4125,10 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 
 // parseSettings 解析设置到结构体
 func (s *SettingService) parseSettings(settings map[string]string) *SystemSettings {
+	cfg := &config.Config{}
+	if s != nil && s.cfg != nil {
+		cfg = s.cfg
+	}
 	emailVerifyEnabled := settings[SettingKeyEmailVerifyEnabled] == "true"
 	loginAgreementDocuments := parseLoginAgreementDocuments(settings[SettingKeyLoginAgreementDocuments])
 	loginAgreementUpdatedAt := strings.TrimSpace(settings[SettingKeyLoginAgreementUpdatedAt])
@@ -4030,8 +4179,8 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	)
 	if raw, ok := settings[SettingKeyAPIKeyACLTrustForwardedIP]; ok && strings.TrimSpace(raw) != "" {
 		result.APIKeyACLTrustForwardedIP = strings.EqualFold(strings.TrimSpace(raw), "true")
-	} else if s.cfg != nil {
-		result.APIKeyACLTrustForwardedIP = s.cfg.TrustForwardedIPForAPIKeyACL()
+	} else {
+		result.APIKeyACLTrustForwardedIP = cfg.TrustForwardedIPForAPIKeyACL()
 	}
 
 	// 解析整数类型
@@ -4044,7 +4193,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	if concurrency, err := strconv.Atoi(settings[SettingKeyDefaultConcurrency]); err == nil {
 		result.DefaultConcurrency = concurrency
 	} else {
-		result.DefaultConcurrency = s.cfg.Default.UserConcurrency
+		result.DefaultConcurrency = cfg.Default.UserConcurrency
 	}
 
 	if rpm, err := strconv.Atoi(settings[SettingKeyDefaultUserRPMLimit]); err == nil && rpm >= 0 {
@@ -4055,7 +4204,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	if balance, err := strconv.ParseFloat(settings[SettingKeyDefaultBalance], 64); err == nil {
 		result.DefaultBalance = balance
 	} else {
-		result.DefaultBalance = s.cfg.Default.UserBalance
+		result.DefaultBalance = cfg.Default.UserBalance
 	}
 	if rebateRate, err := strconv.ParseFloat(settings[SettingKeyAffiliateRebateRate], 64); err == nil {
 		result.AffiliateRebateRate = clampAffiliateRebateRate(rebateRate)
@@ -4091,10 +4240,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// LinuxDo Connect 设置：
 	// - 兼容 config.yaml/env（避免老部署因为未迁移到数据库设置而被意外关闭）
 	// - 支持在后台“系统设置”中覆盖并持久化（存储于 DB）
-	linuxDoBase := config.LinuxDoConnectConfig{}
-	if s.cfg != nil {
-		linuxDoBase = s.cfg.LinuxDo
-	}
+	linuxDoBase := cfg.LinuxDo
 
 	if raw, ok := settings[SettingKeyLinuxDoConnectEnabled]; ok {
 		result.LinuxDoConnectEnabled = raw == "true"
@@ -4123,10 +4269,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// DingTalk Connect 设置：
 	// - 优先读取 DB 系统设置
 	// - 缺失时回退到 config/env，保持升级兼容
-	dingTalkBase := config.DingTalkConnectConfig{}
-	if s.cfg != nil {
-		dingTalkBase = s.cfg.DingTalk
-	}
+	dingTalkBase := cfg.DingTalk
 
 	if raw, ok := settings[SettingKeyDingTalkConnectEnabled]; ok {
 		result.DingTalkConnectEnabled = raw == "true"
@@ -4176,10 +4319,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// Generic OIDC 设置：
 	// - 兼容 config.yaml/env
 	// - 支持后台系统设置覆盖并持久化（存储于 DB）
-	oidcBase := config.OIDCConnectConfig{}
-	if s.cfg != nil {
-		oidcBase = s.cfg.OIDC
-	}
+	oidcBase := cfg.OIDC
 
 	if raw, ok := settings[SettingKeyOIDCConnectEnabled]; ok {
 		result.OIDCConnectEnabled = raw == "true"
@@ -4471,8 +4611,8 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	if result.AntiBanPlatforms == nil {
 		// fallback to cfg or sensible defaults
-		if s != nil && s.cfg != nil && len(s.cfg.Gateway.AntiBan.Platforms) > 0 {
-			result.AntiBanPlatforms = cloneAntiBanPlatforms(s.cfg.Gateway.AntiBan.Platforms)
+		if len(cfg.Gateway.AntiBan.Platforms) > 0 {
+			result.AntiBanPlatforms = cloneAntiBanPlatforms(cfg.Gateway.AntiBan.Platforms)
 		} else {
 			result.AntiBanPlatforms = normalizeAntiBanPlatforms(nil)
 		}
@@ -4539,13 +4679,13 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.OpenAIWSDeltaRuntimeSettingsLoaded = true
 	if raw, ok := settings[SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives]; ok && strings.TrimSpace(raw) != "" {
 		result.OpenAIOAuthImageBridgeDisableKeepAlives = strings.EqualFold(strings.TrimSpace(raw), "true")
-	} else if s.cfg != nil {
-		result.OpenAIOAuthImageBridgeDisableKeepAlives = s.cfg.Gateway.OpenAIOAuthImageBridgeDisableKeepAlives
+	} else {
+		result.OpenAIOAuthImageBridgeDisableKeepAlives = cfg.Gateway.OpenAIOAuthImageBridgeDisableKeepAlives
 	}
 	if raw, ok := settings[SettingKeyOpenAIOAuthImageBridgeFreshUpstreamClient]; ok && strings.TrimSpace(raw) != "" {
 		result.OpenAIOAuthImageBridgeFreshUpstreamClient = strings.EqualFold(strings.TrimSpace(raw), "true")
-	} else if s.cfg != nil {
-		result.OpenAIOAuthImageBridgeFreshUpstreamClient = s.cfg.Gateway.OpenAIOAuthImageBridgeFreshUpstreamClient
+	} else {
+		result.OpenAIOAuthImageBridgeFreshUpstreamClient = cfg.Gateway.OpenAIOAuthImageBridgeFreshUpstreamClient
 	}
 	// Balance low notification
 	result.BalanceLowNotifyEnabled = settings[SettingKeyBalanceLowNotifyEnabled] == "true"
@@ -4935,6 +5075,9 @@ func (s *SettingService) getStringOrDefault(settings map[string]string, key, def
 
 // IsTurnstileEnabled 检查是否启用 Turnstile 验证
 func (s *SettingService) IsTurnstileEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return false
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyTurnstileEnabled)
 	if err != nil {
 		return false
@@ -4944,6 +5087,9 @@ func (s *SettingService) IsTurnstileEnabled(ctx context.Context) bool {
 
 // GetTurnstileSecretKey 获取 Turnstile Secret Key
 func (s *SettingService) GetTurnstileSecretKey(ctx context.Context) string {
+	if s == nil || s.settingRepo == nil {
+		return ""
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyTurnstileSecretKey)
 	if err != nil {
 		return ""
@@ -4953,6 +5099,9 @@ func (s *SettingService) GetTurnstileSecretKey(ctx context.Context) string {
 
 // IsIdentityPatchEnabled 检查是否启用身份补丁（Claude -> Gemini systemInstruction 注入）
 func (s *SettingService) IsIdentityPatchEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return true
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyEnableIdentityPatch)
 	if err != nil {
 		// 默认开启，保持兼容
@@ -4963,6 +5112,9 @@ func (s *SettingService) IsIdentityPatchEnabled(ctx context.Context) bool {
 
 // GetIdentityPatchPrompt 获取自定义身份补丁提示词（为空表示使用内置默认模板）
 func (s *SettingService) GetIdentityPatchPrompt(ctx context.Context) string {
+	if s == nil || s.settingRepo == nil {
+		return ""
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyIdentityPatchPrompt)
 	if err != nil {
 		return ""
@@ -4972,6 +5124,9 @@ func (s *SettingService) GetIdentityPatchPrompt(ctx context.Context) string {
 
 // GenerateAdminAPIKey 生成新的管理员 API Key
 func (s *SettingService) GenerateAdminAPIKey(ctx context.Context) (string, error) {
+	if s == nil || s.settingRepo == nil {
+		return "", fmt.Errorf("setting repository unavailable")
+	}
 	// 生成 32 字节随机数 = 64 位十六进制字符
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
@@ -4991,6 +5146,9 @@ func (s *SettingService) GenerateAdminAPIKey(ctx context.Context) (string, error
 // GetAdminAPIKeyStatus 获取管理员 API Key 状态
 // 返回脱敏的 key、是否存在、错误
 func (s *SettingService) GetAdminAPIKeyStatus(ctx context.Context) (maskedKey string, exists bool, err error) {
+	if s == nil || s.settingRepo == nil {
+		return "", false, nil
+	}
 	key, err := s.settingRepo.GetValue(ctx, SettingKeyAdminAPIKey)
 	if err != nil {
 		if errors.Is(err, ErrSettingNotFound) {
@@ -5015,6 +5173,9 @@ func (s *SettingService) GetAdminAPIKeyStatus(ctx context.Context) (maskedKey st
 // GetAdminAPIKey 获取完整的管理员 API Key（仅供内部验证使用）
 // 如果未配置返回空字符串和 nil 错误，只有数据库错误时才返回 error
 func (s *SettingService) GetAdminAPIKey(ctx context.Context) (string, error) {
+	if s == nil || s.settingRepo == nil {
+		return "", nil
+	}
 	key, err := s.settingRepo.GetValue(ctx, SettingKeyAdminAPIKey)
 	if err != nil {
 		if errors.Is(err, ErrSettingNotFound) {
@@ -5027,11 +5188,17 @@ func (s *SettingService) GetAdminAPIKey(ctx context.Context) (string, error) {
 
 // DeleteAdminAPIKey 删除管理员 API Key
 func (s *SettingService) DeleteAdminAPIKey(ctx context.Context) error {
+	if s == nil || s.settingRepo == nil {
+		return fmt.Errorf("setting repository unavailable")
+	}
 	return s.settingRepo.Delete(ctx, SettingKeyAdminAPIKey)
 }
 
 // IsModelFallbackEnabled 检查是否启用模型兜底机制
 func (s *SettingService) IsModelFallbackEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return false
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyEnableModelFallback)
 	if err != nil {
 		return false // Default: disabled
@@ -5061,6 +5228,9 @@ func (s *SettingService) GetFallbackModel(ctx context.Context, platform string) 
 		return ""
 	}
 
+	if s == nil || s.settingRepo == nil {
+		return defaultModel
+	}
 	value, err := s.settingRepo.GetValue(ctx, key)
 	if err != nil || value == "" {
 		return defaultModel
@@ -5079,16 +5249,19 @@ func (s *SettingService) GetLinuxDoConnectOAuthConfig(ctx context.Context) (conf
 	}
 
 	effective := s.cfg.LinuxDo
-
-	keys := []string{
-		SettingKeyLinuxDoConnectEnabled,
-		SettingKeyLinuxDoConnectClientID,
-		SettingKeyLinuxDoConnectClientSecret,
-		SettingKeyLinuxDoConnectRedirectURL,
-	}
-	settings, err := s.settingRepo.GetMultiple(ctx, keys)
-	if err != nil {
-		return config.LinuxDoConnectConfig{}, fmt.Errorf("get linuxdo connect settings: %w", err)
+	settings := map[string]string{}
+	if s.settingRepo != nil {
+		keys := []string{
+			SettingKeyLinuxDoConnectEnabled,
+			SettingKeyLinuxDoConnectClientID,
+			SettingKeyLinuxDoConnectClientSecret,
+			SettingKeyLinuxDoConnectRedirectURL,
+		}
+		var err error
+		settings, err = s.settingRepo.GetMultiple(ctx, keys)
+		if err != nil {
+			return config.LinuxDoConnectConfig{}, fmt.Errorf("get linuxdo connect settings: %w", err)
+		}
 	}
 
 	if raw, ok := settings[SettingKeyLinuxDoConnectEnabled]; ok {
@@ -5168,28 +5341,31 @@ func (s *SettingService) GetDingTalkConnectOAuthConfig(ctx context.Context) (con
 	}
 
 	effective := s.cfg.DingTalk
-
-	keys := []string{
-		SettingKeyDingTalkConnectEnabled,
-		SettingKeyDingTalkConnectClientID,
-		SettingKeyDingTalkConnectClientSecret,
-		SettingKeyDingTalkConnectRedirectURL,
-		SettingKeyDingTalkConnectCorpRestrictionPolicy,
-		SettingKeyDingTalkConnectInternalCorpID,
-		SettingKeyDingTalkConnectBypassRegistration,
-		SettingKeyDingTalkConnectSyncCorpEmail,
-		SettingKeyDingTalkConnectSyncDisplayName,
-		SettingKeyDingTalkConnectSyncDept,
-		SettingKeyDingTalkConnectSyncCorpEmailAttrKey,
-		SettingKeyDingTalkConnectSyncDisplayNameAttrKey,
-		SettingKeyDingTalkConnectSyncDeptAttrKey,
-		SettingKeyDingTalkConnectSyncCorpEmailAttrName,
-		SettingKeyDingTalkConnectSyncDisplayNameAttrName,
-		SettingKeyDingTalkConnectSyncDeptAttrName,
-	}
-	settings, err := s.settingRepo.GetMultiple(ctx, keys)
-	if err != nil {
-		return config.DingTalkConnectConfig{}, fmt.Errorf("get dingtalk connect settings: %w", err)
+	settings := map[string]string{}
+	if s.settingRepo != nil {
+		keys := []string{
+			SettingKeyDingTalkConnectEnabled,
+			SettingKeyDingTalkConnectClientID,
+			SettingKeyDingTalkConnectClientSecret,
+			SettingKeyDingTalkConnectRedirectURL,
+			SettingKeyDingTalkConnectCorpRestrictionPolicy,
+			SettingKeyDingTalkConnectInternalCorpID,
+			SettingKeyDingTalkConnectBypassRegistration,
+			SettingKeyDingTalkConnectSyncCorpEmail,
+			SettingKeyDingTalkConnectSyncDisplayName,
+			SettingKeyDingTalkConnectSyncDept,
+			SettingKeyDingTalkConnectSyncCorpEmailAttrKey,
+			SettingKeyDingTalkConnectSyncDisplayNameAttrKey,
+			SettingKeyDingTalkConnectSyncDeptAttrKey,
+			SettingKeyDingTalkConnectSyncCorpEmailAttrName,
+			SettingKeyDingTalkConnectSyncDisplayNameAttrName,
+			SettingKeyDingTalkConnectSyncDeptAttrName,
+		}
+		var err error
+		settings, err = s.settingRepo.GetMultiple(ctx, keys)
+		if err != nil {
+			return config.DingTalkConnectConfig{}, fmt.Errorf("get dingtalk connect settings: %w", err)
+		}
 	}
 
 	if raw, ok := settings[SettingKeyDingTalkConnectEnabled]; ok {
@@ -5292,33 +5468,40 @@ func (s *SettingService) GetDingTalkConnectOAuthConfig(ctx context.Context) (con
 //
 // WeChat Connect 已回归 DB 系统设置模型，不再回退到 config/env。
 func (s *SettingService) GetWeChatConnectOAuthConfig(ctx context.Context) (WeChatConnectOAuthConfig, error) {
-	keys := []string{
-		SettingKeyWeChatConnectEnabled,
-		SettingKeyWeChatConnectAppID,
-		SettingKeyWeChatConnectAppSecret,
-		SettingKeyWeChatConnectOpenAppID,
-		SettingKeyWeChatConnectOpenAppSecret,
-		SettingKeyWeChatConnectMPAppID,
-		SettingKeyWeChatConnectMPAppSecret,
-		SettingKeyWeChatConnectMobileAppID,
-		SettingKeyWeChatConnectMobileAppSecret,
-		SettingKeyWeChatConnectOpenEnabled,
-		SettingKeyWeChatConnectMPEnabled,
-		SettingKeyWeChatConnectMobileEnabled,
-		SettingKeyWeChatConnectMode,
-		SettingKeyWeChatConnectScopes,
-		SettingKeyWeChatConnectRedirectURL,
-		SettingKeyWeChatConnectFrontendRedirectURL,
-	}
-	settings, err := s.settingRepo.GetMultiple(ctx, keys)
-	if err != nil {
-		return WeChatConnectOAuthConfig{}, fmt.Errorf("get wechat connect settings: %w", err)
+	settings := map[string]string{}
+	if s != nil && s.settingRepo != nil {
+		keys := []string{
+			SettingKeyWeChatConnectEnabled,
+			SettingKeyWeChatConnectAppID,
+			SettingKeyWeChatConnectAppSecret,
+			SettingKeyWeChatConnectOpenAppID,
+			SettingKeyWeChatConnectOpenAppSecret,
+			SettingKeyWeChatConnectMPAppID,
+			SettingKeyWeChatConnectMPAppSecret,
+			SettingKeyWeChatConnectMobileAppID,
+			SettingKeyWeChatConnectMobileAppSecret,
+			SettingKeyWeChatConnectOpenEnabled,
+			SettingKeyWeChatConnectMPEnabled,
+			SettingKeyWeChatConnectMobileEnabled,
+			SettingKeyWeChatConnectMode,
+			SettingKeyWeChatConnectScopes,
+			SettingKeyWeChatConnectRedirectURL,
+			SettingKeyWeChatConnectFrontendRedirectURL,
+		}
+		var err error
+		settings, err = s.settingRepo.GetMultiple(ctx, keys)
+		if err != nil {
+			return WeChatConnectOAuthConfig{}, fmt.Errorf("get wechat connect settings: %w", err)
+		}
 	}
 	return s.parseWeChatConnectOAuthConfig(settings)
 }
 
 // GetOverloadCooldownSettings 获取529过载冷却配置
 func (s *SettingService) GetOverloadCooldownSettings(ctx context.Context) (*OverloadCooldownSettings, error) {
+	if s == nil || s.settingRepo == nil {
+		return DefaultOverloadCooldownSettings(), nil
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyOverloadCooldownSettings)
 	if err != nil {
 		if errors.Is(err, ErrSettingNotFound) {
@@ -5351,6 +5534,9 @@ func (s *SettingService) SetOverloadCooldownSettings(ctx context.Context, settin
 	if settings == nil {
 		return fmt.Errorf("settings cannot be nil")
 	}
+	if s == nil || s.settingRepo == nil {
+		return fmt.Errorf("setting repository unavailable")
+	}
 
 	// 禁用时修正为合法值即可，不拒绝请求
 	if settings.CooldownMinutes < 1 || settings.CooldownMinutes > 120 {
@@ -5370,6 +5556,9 @@ func (s *SettingService) SetOverloadCooldownSettings(ctx context.Context, settin
 
 // GetRateLimit429CooldownSettings 获取429默认回避配置
 func (s *SettingService) GetRateLimit429CooldownSettings(ctx context.Context) (*RateLimit429CooldownSettings, error) {
+	if s == nil || s.settingRepo == nil {
+		return DefaultRateLimit429CooldownSettings(), nil
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyRateLimit429CooldownSettings)
 	if err != nil {
 		if errors.Is(err, ErrSettingNotFound) {
@@ -5400,6 +5589,9 @@ func (s *SettingService) GetRateLimit429CooldownSettings(ctx context.Context) (*
 func (s *SettingService) SetRateLimit429CooldownSettings(ctx context.Context, settings *RateLimit429CooldownSettings) error {
 	if settings == nil {
 		return fmt.Errorf("settings cannot be nil")
+	}
+	if s == nil || s.settingRepo == nil {
+		return fmt.Errorf("setting repository unavailable")
 	}
 
 	if settings.CooldownSeconds < 1 || settings.CooldownSeconds > 7200 {
@@ -5453,9 +5645,13 @@ func (s *SettingService) GetOIDCConnectOAuthConfig(ctx context.Context) (config.
 		SettingKeyOIDCConnectUserInfoIDPath,
 		SettingKeyOIDCConnectUserInfoUsernamePath,
 	}
-	settings, err := s.settingRepo.GetMultiple(ctx, keys)
-	if err != nil {
-		return config.OIDCConnectConfig{}, fmt.Errorf("get oidc connect settings: %w", err)
+	settings := map[string]string{}
+	if s.settingRepo != nil {
+		var err error
+		settings, err = s.settingRepo.GetMultiple(ctx, keys)
+		if err != nil {
+			return config.OIDCConnectConfig{}, fmt.Errorf("get oidc connect settings: %w", err)
+		}
 	}
 
 	if raw, ok := settings[SettingKeyOIDCConnectEnabled]; ok {
@@ -5696,6 +5892,9 @@ func oidcResolveProviderMetadata(ctx context.Context, discoveryURL string) (*oid
 
 // GetStreamTimeoutSettings 获取流超时处理配置
 func (s *SettingService) GetStreamTimeoutSettings(ctx context.Context) (*StreamTimeoutSettings, error) {
+	if s == nil || s.settingRepo == nil {
+		return DefaultStreamTimeoutSettings(), nil
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyStreamTimeoutSettings)
 	if err != nil {
 		if errors.Is(err, ErrSettingNotFound) {
@@ -5745,6 +5944,9 @@ func (s *SettingService) GetStreamTimeoutSettings(ctx context.Context) (*StreamT
 
 // IsUngroupedKeySchedulingAllowed 查询是否允许未分组 Key 调度
 func (s *SettingService) IsUngroupedKeySchedulingAllowed(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return false
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyAllowUngroupedKeyScheduling)
 	if err != nil {
 		return false // fail-closed: 查询失败时默认不允许
@@ -5753,6 +5955,9 @@ func (s *SettingService) IsUngroupedKeySchedulingAllowed(ctx context.Context) bo
 }
 
 func (s *SettingService) GetKiroRuntimeSettings(ctx context.Context) *KiroRuntimeSettings {
+	if s == nil || s.settingRepo == nil {
+		return DefaultKiroRuntimeSettings()
+	}
 	if cached, ok := kiroRuntimeSettingsCache.Load().(*cachedKiroRuntimeSettings); ok {
 		if cached != nil && cached.settings != nil && time.Now().UnixNano() < cached.expiresAt {
 			cloned := *cached.settings
@@ -5821,6 +6026,9 @@ func cloneAccountSchedulingThresholds(input map[string]int) map[string]int {
 }
 
 func (s *SettingService) GetAccountSchedulingThresholds(ctx context.Context) map[string]int {
+	if s == nil || s.settingRepo == nil {
+		return defaultAccountSchedulingThresholds()
+	}
 	if cached, ok := accountSchedulingThresholdsCache.Load().(*cachedAccountSchedulingThresholds); ok {
 		if cached != nil && len(cached.thresholds) > 0 && time.Now().UnixNano() < cached.expiresAt {
 			return cloneAccountSchedulingThresholds(cached.thresholds)
@@ -5876,6 +6084,9 @@ func (s *SettingService) GetAccountSchedulingThresholds(ctx context.Context) map
 // singleflight 防止缓存过期时 thundering herd
 // 返回空字符串表示不做对应方向的版本检查
 func (s *SettingService) GetClaudeCodeVersionBounds(ctx context.Context) (min, max string) {
+	if s == nil || s.settingRepo == nil {
+		return "", ""
+	}
 	if cached, ok := versionBoundsCache.Load().(*cachedVersionBounds); ok {
 		if time.Now().UnixNano() < cached.expiresAt {
 			return cached.min, cached.max
@@ -6030,6 +6241,9 @@ func (s *SettingService) SetOpenAIQuotaAutoPauseSettings(settings OpsOpenAIAccou
 
 // GetRectifierSettings 获取请求整流器配置
 func (s *SettingService) GetRectifierSettings(ctx context.Context) (*RectifierSettings, error) {
+	if s == nil || s.settingRepo == nil {
+		return DefaultRectifierSettings(), nil
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyRectifierSettings)
 	if err != nil {
 		if errors.Is(err, ErrSettingNotFound) {
@@ -6053,6 +6267,9 @@ func (s *SettingService) GetRectifierSettings(ctx context.Context) (*RectifierSe
 func (s *SettingService) SetRectifierSettings(ctx context.Context, settings *RectifierSettings) error {
 	if settings == nil {
 		return fmt.Errorf("settings cannot be nil")
+	}
+	if s == nil || s.settingRepo == nil {
+		return fmt.Errorf("setting repository unavailable")
 	}
 
 	data, err := json.Marshal(settings)
@@ -6083,6 +6300,9 @@ func (s *SettingService) IsBudgetRectifierEnabled(ctx context.Context) bool {
 
 // GetBetaPolicySettings 获取 Beta 策略配置
 func (s *SettingService) GetBetaPolicySettings(ctx context.Context) (*BetaPolicySettings, error) {
+	if s == nil || s.settingRepo == nil {
+		return DefaultBetaPolicySettings(), nil
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyBetaPolicySettings)
 	if err != nil {
 		if errors.Is(err, ErrSettingNotFound) {
@@ -6106,6 +6326,9 @@ func (s *SettingService) GetBetaPolicySettings(ctx context.Context) (*BetaPolicy
 func (s *SettingService) SetBetaPolicySettings(ctx context.Context, settings *BetaPolicySettings) error {
 	if settings == nil {
 		return fmt.Errorf("settings cannot be nil")
+	}
+	if s == nil || s.settingRepo == nil {
+		return fmt.Errorf("setting repository unavailable")
 	}
 
 	validActions := map[string]bool{
@@ -6149,6 +6372,9 @@ func (s *SettingService) SetBetaPolicySettings(ctx context.Context, settings *Be
 
 // GetOpenAIFastPolicySettings 获取 OpenAI fast 策略配置
 func (s *SettingService) GetOpenAIFastPolicySettings(ctx context.Context) (*OpenAIFastPolicySettings, error) {
+	if s == nil || s.settingRepo == nil {
+		return DefaultOpenAIFastPolicySettings(), nil
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyOpenAIFastPolicySettings)
 	if err != nil {
 		if errors.Is(err, ErrSettingNotFound) {
@@ -6178,6 +6404,9 @@ func (s *SettingService) GetOpenAIFastPolicySettings(ctx context.Context) (*Open
 func (s *SettingService) SetOpenAIFastPolicySettings(ctx context.Context, settings *OpenAIFastPolicySettings) error {
 	if settings == nil {
 		return fmt.Errorf("settings cannot be nil")
+	}
+	if s == nil || s.settingRepo == nil {
+		return fmt.Errorf("setting repository unavailable")
 	}
 
 	validActions := map[string]bool{
@@ -6230,6 +6459,9 @@ func (s *SettingService) SetStreamTimeoutSettings(ctx context.Context, settings 
 	if settings == nil {
 		return fmt.Errorf("settings cannot be nil")
 	}
+	if s == nil || s.settingRepo == nil {
+		return fmt.Errorf("setting repository unavailable")
+	}
 
 	// 验证配置值
 	if settings.TempUnschedMinutes < 1 || settings.TempUnschedMinutes > 60 {
@@ -6259,6 +6491,9 @@ func (s *SettingService) SetStreamTimeoutSettings(ctx context.Context, settings 
 
 // GetTempUnschedThresholdSettings 获取临时不可调度规则的窗口阈值配置
 func (s *SettingService) GetTempUnschedThresholdSettings(ctx context.Context) (*TempUnschedThresholdSettings, error) {
+	if s == nil || s.settingRepo == nil {
+		return DefaultTempUnschedThresholdSettings(), nil
+	}
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyTempUnschedThresholdSettings)
 	if err != nil {
 		if errors.Is(err, ErrSettingNotFound) {
@@ -6297,6 +6532,9 @@ func (s *SettingService) SetTempUnschedThresholdSettings(ctx context.Context, se
 	if settings == nil {
 		return fmt.Errorf("settings cannot be nil")
 	}
+	if s == nil || s.settingRepo == nil {
+		return fmt.Errorf("setting repository unavailable")
+	}
 
 	if settings.ThresholdCount < 1 || settings.ThresholdCount > 1000 {
 		return fmt.Errorf("threshold_count must be between 1-1000")
@@ -6322,6 +6560,9 @@ func (s *SettingService) GetDefaultPlatformQuotas(ctx context.Context) (map[stri
 	for _, platform := range AllowedQuotaPlatforms {
 		out[platform] = &DefaultPlatformQuotaSetting{}
 	}
+	if s == nil || s.settingRepo == nil {
+		return out, nil
+	}
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyDefaultPlatformQuotas)
 	if err != nil || raw == "" {
 		return out, nil // 无配置 = 全部不限制
@@ -6342,6 +6583,9 @@ func (s *SettingService) GetDefaultPlatformQuotas(ctx context.Context) (map[stri
 // GetAuthSourcePlatformQuotas 读取指定 auth source 的 platform quota 覆盖（仅返回有配置的平台，override 语义）。
 func (s *SettingService) GetAuthSourcePlatformQuotas(ctx context.Context, source string) map[string]*DefaultPlatformQuotaSetting {
 	out := map[string]*DefaultPlatformQuotaSetting{}
+	if s == nil || s.settingRepo == nil {
+		return out
+	}
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyAuthSourcePlatformQuotas(source))
 	if err != nil || raw == "" {
 		return out // 无 override

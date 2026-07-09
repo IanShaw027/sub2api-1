@@ -264,6 +264,26 @@ func TestHandleUpstreamError_PoolModeCustomErrorCodesOverride(t *testing.T) {
 	})
 }
 
+func TestCheckErrorPolicy_NilAccountReturnsNone(t *testing.T) {
+	repo := &errorPolicyRepoStub{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+
+	result := svc.CheckErrorPolicy(context.Background(), nil, http.StatusUnauthorized, []byte(`unauthorized`))
+
+	require.Equal(t, ErrorPolicyNone, result)
+}
+
+func TestHandleUpstreamError_NilAccountReturnsFalse(t *testing.T) {
+	repo := &errorPolicyRepoStub{}
+	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+
+	shouldDisable := svc.HandleUpstreamError(context.Background(), nil, http.StatusUnauthorized, http.Header{}, []byte(`unauthorized`))
+
+	require.False(t, shouldDisable)
+	require.Equal(t, 0, repo.setErrCalls)
+	require.Equal(t, 0, repo.tempCalls)
+}
+
 // ---------------------------------------------------------------------------
 // TestApplyErrorPolicy — 4 table-driven cases for the wrapper method
 // ---------------------------------------------------------------------------

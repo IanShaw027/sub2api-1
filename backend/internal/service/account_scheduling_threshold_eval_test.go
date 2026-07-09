@@ -185,6 +185,33 @@ func TestEvaluateAccountSchedulingThreshold_AccountOverrideHundredDisablesOpenAI
 	require.Equal(t, 100, decision.ThresholdPercent)
 }
 
+func TestEvaluateAccountSchedulingThreshold_AccountOverrideRoundsDecimalThreshold(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
+	wantUntil := now.Add(12 * time.Hour)
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Credentials: map[string]any{
+			"account_scheduling_threshold": 75.5,
+		},
+		Extra: map[string]any{
+			"codex_7d_used_percent": 80.0,
+			"codex_7d_reset_at":     wantUntil.Format(time.RFC3339),
+		},
+	}
+
+	decision := EvaluateAccountSchedulingThreshold(account, map[string]int{
+		PlatformOpenAI: 90,
+	}, now)
+
+	require.True(t, decision.ShouldPause)
+	require.Equal(t, 76, decision.ThresholdPercent)
+	require.Equal(t, 80.0, decision.UsedPercent)
+	require.NotNil(t, decision.Until)
+	require.True(t, wantUntil.Equal(*decision.Until))
+}
+
 func TestEvaluateAccountSchedulingThreshold_UnsupportedPlatformsDoNotPause(t *testing.T) {
 	t.Parallel()
 

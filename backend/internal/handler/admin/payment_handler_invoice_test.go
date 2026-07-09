@@ -187,6 +187,63 @@ func TestAdminRefundPreviewAllowsRefundRequestedOrderWithActiveInvoice(t *testin
 	require.Equal(t, 100.0, resp.Data.MaxRefundAmount)
 }
 
+func TestAdminRetryRefundAffiliateRebateReversalRouteIsCallable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx := t.Context()
+	client := newAdminPaymentHandlerTestClient(t)
+	paymentSvc := service.NewPaymentService(client, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := NewPaymentHandler(paymentSvc, nil, nil)
+
+	user, err := client.User.Create().
+		SetEmail("admin-rebate-retry@example.com").
+		SetPasswordHash("hash").
+		SetUsername("admin-rebate-retry-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	inst, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeAlipay).
+		SetName("admin-rebate-retry-provider").
+		SetConfig("{}").
+		SetSupportedTypes("alipay").
+		SetEnabled(true).
+		SetRefundEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(100).
+		SetFeeRate(0).
+		SetRechargeCode("ADMIN-REBATE-RETRY").
+		SetOutTradeNo("sub2_admin_rebate_retry").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("trade-admin-rebate-retry").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(service.OrderStatusRefunded).
+		SetRefundAmount(100).
+		SetRefundAt(time.Now()).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).
+		SetCompletedAt(time.Now()).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		SetProviderInstanceID(strconv.FormatInt(inst.ID, 10)).
+		SetProviderKey(payment.TypeAlipay).
+		Save(ctx)
+	require.NoError(t, err)
+
+	router := gin.New()
+	router.POST("/admin/payment/orders/:id/refund/rebate-reversal-retry", handler.RetryRefundAffiliateRebateReversal)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/admin/payment/orders/1/refund/rebate-reversal-retry", nil))
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+}
+
 func newAdminPaymentHandlerTestClient(t *testing.T) *dbent.Client {
 	t.Helper()
 	db, err := sql.Open("sqlite", "file:admin_payment_handler_invoice?mode=memory&cache=shared&_fk=1")

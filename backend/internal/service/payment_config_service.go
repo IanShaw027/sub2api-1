@@ -194,6 +194,9 @@ func NewPaymentConfigService(entClient *dbent.Client, settingRepo SettingReposit
 
 // IsPaymentEnabled returns whether the payment system is enabled.
 func (s *PaymentConfigService) IsPaymentEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return false
+	}
 	val, err := s.settingRepo.GetValue(ctx, SettingPaymentEnabled)
 	if err != nil {
 		return false
@@ -215,12 +218,16 @@ func (s *PaymentConfigService) GetPaymentConfig(ctx context.Context) (*PaymentCo
 		SettingPaymentVisibleMethodAlipayEnabled, SettingPaymentVisibleMethodAlipaySource,
 		SettingPaymentVisibleMethodWxpayEnabled, SettingPaymentVisibleMethodWxpaySource,
 	}
-	vals, err := s.settingRepo.GetMultiple(ctx, keys)
-	if err != nil {
-		return nil, fmt.Errorf("get payment config settings: %w", err)
+	vals := map[string]string{}
+	if s != nil && s.settingRepo != nil {
+		var err error
+		vals, err = s.settingRepo.GetMultiple(ctx, keys)
+		if err != nil {
+			return nil, fmt.Errorf("get payment config settings: %w", err)
+		}
 	}
 	cfg := s.parsePaymentConfig(vals)
-	if s.entClient != nil {
+	if s != nil && s.entClient != nil {
 		instances, err := s.entClient.PaymentProviderInstance.Query().
 			Where(paymentproviderinstance.EnabledEQ(true)).
 			Order(paymentproviderinstance.BySortOrder()).
@@ -307,6 +314,9 @@ func (s *PaymentConfigService) getStripePublishableKey(ctx context.Context) stri
 // nil-check before serialisation — this is inherent to patch-style update patterns
 // and cannot be meaningfully decomposed without introducing unnecessary abstraction.
 func (s *PaymentConfigService) UpdatePaymentConfig(ctx context.Context, req UpdatePaymentConfigRequest) error {
+	if s == nil || s.settingRepo == nil {
+		return fmt.Errorf("setting repository unavailable")
+	}
 	if req.BalanceRechargeMultiplier != nil {
 		if math.IsNaN(*req.BalanceRechargeMultiplier) || math.IsInf(*req.BalanceRechargeMultiplier, 0) || *req.BalanceRechargeMultiplier <= 0 {
 			return infraerrors.BadRequest("INVALID_BALANCE_RECHARGE_MULTIPLIER", "balance recharge multiplier must be greater than 0")

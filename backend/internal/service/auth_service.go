@@ -89,11 +89,13 @@ type signupGrantPlan struct {
 }
 
 func addProviderGrantToSignupPlan(plan signupGrantPlan, extra ProviderDefaultGrantSettings) signupGrantPlan {
-	plan.Balance += extra.Balance
-	plan.Concurrency += extra.Concurrency
-	if len(extra.Subscriptions) > 0 {
-		plan.Subscriptions = append(plan.Subscriptions, extra.Subscriptions...)
-	}
+	// ResolveAuthSourceGrantSettings 返回的是 provider-specific defaults/extras 本身，
+	// 不是“在全局默认上继续叠加的补丁”。若这里做 += / append，会把全局 balance、
+	// concurrency、subscriptions 再发一遍，造成 auth source 开启时资金/订阅超发。
+	// Platform quota 仍在调用方单独走 merge 语义。
+	plan.Balance = extra.Balance
+	plan.Concurrency = extra.Concurrency
+	plan.Subscriptions = append([]DefaultSubscriptionSetting(nil), extra.Subscriptions...)
 	return plan
 }
 
@@ -113,6 +115,9 @@ func NewAuthService(
 	affiliateService *AffiliateService,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 ) *AuthService {
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
 	return &AuthService{
 		entClient:             entClient,
 		userRepo:              userRepo,
@@ -1051,15 +1056,15 @@ func (s *AuthService) shouldApplyEmailFirstBindDefaults(
 	identity *dbent.AuthIdentity,
 	created bool,
 ) bool {
+	if s == nil || s.entClient == nil || userID <= 0 || identity == nil || identity.UserID != userID {
+		return false
+	}
 	source := emailAuthIdentitySource(identity.Metadata)
 	if source == "auth_service_login_backfill" {
 		return false
 	}
 	if created {
 		return true
-	}
-	if s == nil || s.entClient == nil || userID <= 0 || identity == nil || identity.UserID != userID {
-		return false
 	}
 	if source != "auth_service_dual_write" {
 		return false
@@ -1286,6 +1291,9 @@ func isReservedEmail(email string) bool {
 // GenerateToken 生成JWT access token
 // 使用新的access_token_expire_minutes配置项（如果配置了），否则回退到expire_hour
 func (s *AuthService) GenerateToken(user *User) (string, error) {
+	if user == nil {
+		return "", errors.New("user is required")
+	}
 	now := time.Now()
 	var expiresAt time.Time
 	if s.cfg.JWT.AccessTokenExpireMinutes > 0 {
@@ -1543,6 +1551,9 @@ type TokenPairWithUser struct {
 // GenerateTokenPair 生成Access Token和Refresh Token对
 // familyID: 可选的Token家族ID，用于Token轮转时保持家族关系
 func (s *AuthService) GenerateTokenPair(ctx context.Context, user *User, familyID string) (*TokenPair, error) {
+	if user == nil {
+		return nil, errors.New("user is required")
+	}
 	// 检查 refreshTokenCache 是否可用
 	if s.refreshTokenCache == nil {
 		return nil, errors.New("refresh token cache not configured")

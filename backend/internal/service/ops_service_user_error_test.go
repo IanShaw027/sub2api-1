@@ -176,6 +176,22 @@ func TestListUserErrorRequests_EnablesMatchDeletedKeyOwner(t *testing.T) {
 	}
 }
 
+func TestListUserErrorRequests_NilRepoReturnsEmpty(t *testing.T) {
+	svc := NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	out, err := svc.ListUserErrorRequests(context.Background(), 42, nil)
+
+	if err != nil {
+		t.Fatalf("ListUserErrorRequests() error = %v", err)
+	}
+	if out == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if out.Page != 1 || out.PageSize != 20 || out.Total != 0 || len(out.Items) != 0 {
+		t.Fatalf("unexpected nil-repo result: %+v", out)
+	}
+}
+
 func TestGetUserErrorRequestDetail_DeletedKeyOwnerAccess(t *testing.T) {
 	ownerUID := int64(777)
 	otherUID := int64(2)

@@ -203,7 +203,7 @@ func (c *IdempotencyCoordinator) Execute(
 	execute func(context.Context) (any, error),
 ) (*IdempotencyExecuteResult, error) {
 	if execute == nil {
-		return nil, infraerrors.InternalServer("IDEMPOTENCY_EXECUTOR_NIL", "idempotency executor is nil")
+		return nil, infraerrors.InternalServer("IDEMPOTENCY_EXECUTOR_NIL", "idempotency executor is required")
 	}
 
 	key, err := NormalizeIdempotencyKey(opts.IdempotencyKey)

@@ -130,6 +130,60 @@ func TestMatchBlockedKeyword_ProximityWithMultipleOccurrences(t *testing.T) {
 	require.Equal(t, "Reverse&&CTF", kw)
 }
 
+func TestMatchBlockedKeyword_AndRuleHighRepetitionNoCombinatorialBlowup(t *testing.T) {
+	// 反 DoS 回归：两个高频重复词条不得触发笛卡尔积级组合爆炸。
+	// 每个词条出现约 4000 次；旧实现会构造上千万级 span，此用例应快速返回。
+	// 两词条相邻共现，必须命中；用极小窗口的另一断言验证不共现时正确否定。
+	text := strings.Repeat("reverse ctf ", 4000)
+
+	kw, hit := matchBlockedKeyword(text, []string{"reverse&&ctf"}, nil, 50)
+	require.True(t, hit, "高频相邻共现必须命中")
+	require.Equal(t, "reverse&&ctf", kw)
+
+	// 两词条各自高频但相距恒超窗口时应否定，且不爆炸。
+	farText := strings.Repeat("reverse ", 4000) + strings.Repeat("x ", 4000) + strings.Repeat("ctf ", 4000)
+	_, farHit := matchBlockedKeyword(farText, []string{"reverse&&ctf:5"}, nil, contentModerationDefaultProximityWindow)
+	require.False(t, farHit, "窗口内不共现时应否定")
+}
+
+func TestMatchBlockedKeyword_ReusesByteRuneIndexAcrossRules(t *testing.T) {
+	text := "please reverse engineering a c t f binary"
+	keywords := []string{
+		"account&&recharge",
+		"reverse&&ctf",
+	}
+
+	calls := 0
+	prevHook := buildBlockedKeywordByteRuneIndexHook
+	buildBlockedKeywordByteRuneIndexHook = func() { calls++ }
+	t.Cleanup(func() { buildBlockedKeywordByteRuneIndexHook = prevHook })
+
+	kw, hit := matchBlockedKeyword(text, keywords, nil, contentModerationDefaultProximityWindow)
+
+	require.True(t, hit)
+	require.Equal(t, "reverse&&ctf", kw)
+	require.Equal(t, 1, calls, "single matchBlockedKeyword call should build byte->rune index at most once")
+}
+
+func TestMatchBlockedKeyword_ReusesByteRuneIndexAcrossCompactASCIIKeywords(t *testing.T) {
+	text := "please k i l l the process"
+	keywords := []string{
+		"bomb",
+		"kill",
+	}
+
+	calls := 0
+	prevHook := buildBlockedKeywordByteRuneIndexHook
+	buildBlockedKeywordByteRuneIndexHook = func() { calls++ }
+	t.Cleanup(func() { buildBlockedKeywordByteRuneIndexHook = prevHook })
+
+	kw, hit := matchBlockedKeyword(text, keywords, nil, contentModerationDefaultProximityWindow)
+
+	require.True(t, hit)
+	require.Equal(t, "kill", kw)
+	require.Equal(t, 1, calls, "compact ASCII keyword matching should build byte->rune index at most once per match")
+}
+
 // TestMatchBlockedKeyword_ProximityWithCJK 测试中文&&组合的邻近窗口
 
 func TestMatchBlockedKeyword_AndRuleProximityWindowIsOrderInsensitive(t *testing.T) {

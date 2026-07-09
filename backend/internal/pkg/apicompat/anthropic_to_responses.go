@@ -308,10 +308,7 @@ func anthropicAssistantToResponses(raw json.RawMessage) ([]ResponsesInputItem, e
 		if b.Type != "tool_use" {
 			continue
 		}
-		args := "{}"
-		if len(b.Input) > 0 {
-			args = string(b.Input)
-		}
+		args := anthropicToolUseArguments(b.Input)
 		fcID := toResponsesCallID(b.ID)
 		items = append(items, ResponsesInputItem{
 			Type:      "function_call",

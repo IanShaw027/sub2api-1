@@ -31,6 +31,8 @@ const (
 	FieldUserAgent = "user_agent"
 	// FieldOriginator holds the string denoting the originator field in the database.
 	FieldOriginator = "originator"
+	// FieldHttp2Fingerprint holds the string denoting the http2_fingerprint field in the database.
+	FieldHttp2Fingerprint = "http2_fingerprint"
 	// FieldDescription holds the string denoting the description field in the database.
 	FieldDescription = "description"
 	// FieldEnableGrease holds the string denoting the enable_grease field in the database.
@@ -79,6 +81,7 @@ var Columns = []string{
 	FieldClientType,
 	FieldUserAgent,
 	FieldOriginator,
+	FieldHttp2Fingerprint,
 	FieldDescription,
 	FieldEnableGrease,
 	FieldCipherSuites,
@@ -140,6 +143,8 @@ var (
 	DefaultOriginator string
 	// OriginatorValidator is a validator for the "originator" field. It is called by the builders before save.
 	OriginatorValidator func(string) error
+	// DefaultHttp2Fingerprint holds the default value on creation for the "http2_fingerprint" field.
+	DefaultHttp2Fingerprint string
 	// DefaultEnableGrease holds the default value on creation for the "enable_grease" field.
 	DefaultEnableGrease bool
 )
@@ -195,6 +200,11 @@ func ByUserAgent(opts ...sql.OrderTermOption) OrderOption {
 // ByOriginator orders the results by the originator field.
 func ByOriginator(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldOriginator, opts...).ToFunc()
+}
+
+// ByHttp2Fingerprint orders the results by the http2_fingerprint field.
+func ByHttp2Fingerprint(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldHttp2Fingerprint, opts...).ToFunc()
 }
 
 // ByDescription orders the results by the description field.

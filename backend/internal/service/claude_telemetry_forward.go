@@ -45,7 +45,12 @@ func (s *GatewayService) ForwardClaudeTelemetryBatch(ctx context.Context, groupI
 		}
 	}
 	profile := buildAccountEnvProfile(account.ID, fp)
-	cleaned := SanitizeClaudeTelemetryBatch(body, claudeTelemetrySanitizeOptions(account, fp, profile))
+	cleaned, ok := SanitizeClaudeTelemetryBatch(body, claudeTelemetrySanitizeOptions(account, fp, profile))
+	if !ok {
+		// fail-closed：无法确保脱敏时丢弃遥测，绝不转发未脱敏原文到 Anthropic。
+		slog.Warn("dropping claude telemetry batch: sanitization could not be verified", "account_id", account.ID)
+		return http.StatusOK, nil
+	}
 
 	req, err := http.NewRequestWithContext(forwardCtx, http.MethodPost, claudeTelemetryBatchURL, bytes.NewReader(cleaned))
 	if err != nil {
@@ -133,8 +138,12 @@ func claudeTelemetrySanitizeOptions(account *Account, fp *Fingerprint, profile *
 	if profile != nil {
 		email = profile.Email
 	}
-	canonicalEnv := map[string]any{}
+	var canonicalEnv map[string]any
+	platform := ""
+	arch := ""
 	if profile != nil {
+		platform = profile.Platform
+		arch = profile.Arch
 		canonicalEnv = map[string]any{
 			"platform": profile.Platform,
 			"arch":     profile.Arch,
@@ -146,6 +155,8 @@ func claudeTelemetrySanitizeOptions(account *Account, fp *Fingerprint, profile *
 		DeviceID:          deviceID,
 		Email:             email,
 		CanonicalEnv:      canonicalEnv,
+		Platform:          platform,
+		Arch:              arch,
 		ConstrainedMemory: 8 * 1024 * 1024 * 1024,
 		RSSRange:          [2]int64{300000000, 450000000},
 		HeapTotalRange:    [2]int64{100000000, 180000000},

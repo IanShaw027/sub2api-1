@@ -402,13 +402,13 @@ func (r *usageLogRepository) CreateBestEffort(ctx context.Context, log *service.
 		}
 	}
 
-	// 队列满时阻塞等待而非立即丢弃：批处理器持续排空队列，短暂等待即可入队。
-	// 立即丢弃会造成“已扣费但无 usage_log”的永久数据缺口（issue #3656）；
-	// 阻塞上限由调用方 ctx 期限约束，超时后由上层同步兜底。
+	// 队列满时立即返回 dropped，绝不阻塞热路径。
+	// 真正的“日志必须落库”由调用方在收到 dropped 后走同步直写兜底完成；
+	// 若此处改为等待队列排空，会把 usage 记录的异步路径反向变成请求背压点。
 	select {
 	case r.bestEffortBatchCh <- req:
-	case <-ctx.Done():
-		return service.MarkUsageLogCreateDropped(ctx.Err())
+	default:
+		return service.MarkUsageLogCreateDropped(errors.New("usage log best-effort queue full"))
 	}
 
 	select {
@@ -3057,12 +3057,14 @@ func (r *usageLogRepository) GetBatchUserUsageStats(ctx context.Context, userIDs
 		return result, nil
 	}
 
+	now := timezone.Now()
+
 	// 默认最近 30 天
 	if startTime.IsZero() {
-		startTime = time.Now().AddDate(0, 0, -30)
+		startTime = now.AddDate(0, 0, -30)
 	}
 	if endTime.IsZero() {
-		endTime = time.Now()
+		endTime = now
 	}
 
 	for _, id := range normalizedUserIDs {
@@ -3074,15 +3076,24 @@ func (r *usageLogRepository) GetBatchUserUsageStats(ctx context.Context, userIDs
 			user_id,
 			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $2 AND created_at < $3), 0) as total_cost,
 			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4), 0) as today_cost,
-			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4 AND subscription_id IS NULL), 0) as today_balance_cost,
-			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4 AND subscription_id IS NOT NULL), 0) as today_subscription_cost
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4 AND billing_type = $5), 0) as today_balance_cost,
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $4 AND billing_type = $6), 0) as today_subscription_cost
 		FROM usage_logs
 		WHERE user_id = ANY($1)
 		  AND created_at >= LEAST($2, $4)
 		GROUP BY user_id
 	`
 	today := timezone.Today()
-	rows, err := r.sql.QueryContext(ctx, query, pq.Array(normalizedUserIDs), startTime, endTime, today)
+	rows, err := r.sql.QueryContext(
+		ctx,
+		query,
+		pq.Array(normalizedUserIDs),
+		startTime,
+		endTime,
+		today,
+		int8(service.BillingTypeBalance),
+		int8(service.BillingTypeSubscription),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -3602,9 +3613,10 @@ func (r *usageLogRepository) GetUserBreakdownStats(ctx context.Context, startTim
 
 // GetAllGroupUsageSummary returns today's and cumulative actual_cost for every group.
 // todayStart is the start-of-day in the caller's timezone (UTC-based).
-// TODO(perf): This query scans ALL usage_logs rows for total_cost aggregation.
-// When usage_logs exceeds ~1M rows, consider adding a short-lived cache (30s)
-// or a materialized view / pre-aggregation table for cumulative costs.
+// Perf note: the raw query still scans all usage_logs rows for cumulative total_cost.
+// DashboardService now wraps this path with a short-lived in-process cache (~30s),
+// which reduces repeated admin hot-path scans. If this endpoint still becomes hot
+// at larger cardinalities, move cumulative costs to a materialized/pre-aggregated source.
 func (r *usageLogRepository) GetAllGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
 	query := `
 		SELECT

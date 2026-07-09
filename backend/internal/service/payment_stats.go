@@ -162,6 +162,25 @@ func (s *PaymentService) writeAuditLogWithClient(ctx context.Context, client *db
 	}
 }
 
+// writeAuditLogErr 为阻断式审计写入：与 writeAuditLog 相同，但返回错误而非仅记录。
+// 用于审计本身承载资金回补依据（如 REFUND_PENDING 的 balanceHeld）时，必须先确保
+// 审计持久化成功、再推进状态，避免审计丢失造成漏回补。
+func (s *PaymentService) writeAuditLogErr(ctx context.Context, oid int64, action, op string, detail map[string]any) error {
+	return s.writeAuditLogErrWithClient(ctx, s.entClient, oid, action, op, detail)
+}
+
+// writeAuditLogErrWithClient 与 writeAuditLogErr 相同，但用指定 client（可为事务 client），
+// 供需要将审计写入纳入同一事务、且失败必须回滚的路径使用。
+func (s *PaymentService) writeAuditLogErrWithClient(ctx context.Context, client *dbent.Client, oid int64, action, op string, detail map[string]any) error {
+	dj, _ := json.Marshal(detail)
+	_, err := client.PaymentAuditLog.Create().SetOrderID(strconv.FormatInt(oid, 10)).SetAction(action).SetDetail(string(dj)).SetOperator(op).Save(ctx)
+	if err != nil {
+		slog.Error("audit log failed", "orderID", oid, "action", action, "error", err)
+		return err
+	}
+	return nil
+}
+
 func (s *PaymentService) GetOrderAuditLogs(ctx context.Context, oid int64) ([]*dbent.PaymentAuditLog, error) {
 	return s.entClient.PaymentAuditLog.Query().Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(oid, 10))).Order(paymentauditlog.ByCreatedAt()).All(ctx)
 }

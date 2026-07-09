@@ -259,6 +259,7 @@ import {
   loadOAuthAffiliateCode,
   oauthAffiliatePayload
 } from '@/utils/oauthAffiliate'
+import { safeImageUrl } from '@/utils/safeImageUrl'
 
 const route = useRoute()
 const router = useRouter()
@@ -418,7 +419,7 @@ function applyAdoptionSuggestionState(completion: {
 }) {
   adoptionRequired.value = completion.adoption_required === true
   suggestedDisplayName.value = completion.suggested_display_name || ''
-  suggestedAvatarUrl.value = completion.suggested_avatar_url || ''
+  suggestedAvatarUrl.value = safeImageUrl(completion.suggested_avatar_url)
 
   if (!suggestedDisplayName.value) {
     adoptDisplayName.value = false

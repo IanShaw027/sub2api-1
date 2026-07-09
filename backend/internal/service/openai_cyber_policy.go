@@ -40,15 +40,17 @@ func MarkOpsCyberPolicy(c *gin.Context, mark CyberPolicyMark) {
 		return
 	}
 	if existing := GetOpsCyberPolicy(c); existing != nil {
-		if existing.UpstreamStatus == 0 && mark.UpstreamStatus != 0 {
-			existing.UpstreamStatus = mark.UpstreamStatus
+		updated := *existing
+		if updated.UpstreamStatus == 0 && mark.UpstreamStatus != 0 {
+			updated.UpstreamStatus = mark.UpstreamStatus
 		}
-		if existing.UpstreamInTok == 0 && mark.UpstreamInTok != 0 {
-			existing.UpstreamInTok = mark.UpstreamInTok
+		if updated.UpstreamInTok == 0 && mark.UpstreamInTok != 0 {
+			updated.UpstreamInTok = mark.UpstreamInTok
 		}
-		if existing.UpstreamOutTok == 0 && mark.UpstreamOutTok != 0 {
-			existing.UpstreamOutTok = mark.UpstreamOutTok
+		if updated.UpstreamOutTok == 0 && mark.UpstreamOutTok != 0 {
+			updated.UpstreamOutTok = mark.UpstreamOutTok
 		}
+		c.Set(opsCyberPolicyKey, &updated)
 		return
 	}
 	mark.Code = "cyber_policy"

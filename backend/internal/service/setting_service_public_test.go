@@ -198,6 +198,26 @@ func TestSettingService_GetPublicSettings_FallsBackToConfigForWeChatOAuthCapabil
 	require.False(t, settings.WeChatOAuthMobileEnabled)
 }
 
+func TestSettingService_GetPublicSettings_NilRepoUsesDefaultsAndConfigFallbacks(t *testing.T) {
+	svc := NewSettingService(nil, &config.Config{
+		LinuxDo: config.LinuxDoConnectConfig{
+			Enabled: true,
+		},
+		OIDC: config.OIDCConnectConfig{
+			Enabled:      true,
+			ProviderName: "Corp SSO",
+		},
+	})
+
+	settings, err := svc.GetPublicSettings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "Sub2API", settings.SiteName)
+	require.True(t, settings.PromoCodeEnabled)
+	require.True(t, settings.LinuxDoOAuthEnabled)
+	require.True(t, settings.OIDCOAuthEnabled)
+	require.Equal(t, "Corp SSO", settings.OIDCOAuthProviderName)
+}
+
 func TestSettingService_GetAIStudioRuntime_RespectsOptInFlag(t *testing.T) {
 	svc := NewSettingService(&settingPublicRepoStub{values: map[string]string{}}, &config.Config{})
 	require.False(t, svc.GetAIStudioRuntime(context.Background()).Enabled)

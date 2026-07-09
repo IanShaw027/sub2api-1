@@ -444,7 +444,7 @@ func TestRelay_NilConnections(t *testing.T) {
 		_, relayExit := Relay(ctx, nil, upstreamConn, firstPayload, RelayOptions{})
 		require.NotNil(t, relayExit)
 		require.Equal(t, "relay_init", relayExit.Stage)
-		require.Contains(t, relayExit.Err.Error(), "nil")
+		require.EqualError(t, relayExit.Err, "relay connection is required")
 	})
 
 	t.Run("nil upstream conn", func(t *testing.T) {
@@ -452,7 +452,7 @@ func TestRelay_NilConnections(t *testing.T) {
 		_, relayExit := Relay(ctx, clientConn, nil, firstPayload, RelayOptions{})
 		require.NotNil(t, relayExit)
 		require.Equal(t, "relay_init", relayExit.Stage)
-		require.Contains(t, relayExit.Err.Error(), "nil")
+		require.EqualError(t, relayExit.Err, "relay connection is required")
 	})
 }
 

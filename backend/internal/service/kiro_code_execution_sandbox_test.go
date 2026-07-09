@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
@@ -41,9 +43,38 @@ func TestExecuteCodeInExplicitSandbox_DoesNotInheritHostEnvironment(t *testing.T
 	require.Equal(t, "leak= lang=python code=print(1)", stdout)
 }
 
+func TestExecuteCodeInExplicitSandbox_RejectsWhenGlobalSandboxConcurrencyIsFull(t *testing.T) {
+	originalSem := kiroCodeExecutionSandboxSem
+	kiroCodeExecutionSandboxSem = make(chan struct{}, 1)
+	t.Cleanup(func() {
+		kiroCodeExecutionSandboxSem = originalSem
+	})
+
+	settings := DefaultKiroRuntimeSettings()
+	settings.CodeExecutionSandboxCommand = `sleep 0.3`
+
+	started := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		close(started)
+		_, _, _ = executeCodeInExplicitSandbox(context.Background(), "print('first')", "python", settings)
+	}()
+	<-started
+	time.Sleep(80 * time.Millisecond)
+
+	stdout, stderr, hadErr := executeCodeInExplicitSandbox(context.Background(), "print('second')", "python", settings)
+
+	require.True(t, hadErr)
+	require.Empty(t, stdout)
+	require.Contains(t, stderr, "sandbox busy")
+	wg.Wait()
+}
+
 func TestExecuteKiroShadowTool_CodeExecutionDefaultReturnsTypedSandboxError(t *testing.T) {
 	state := &kiroToolState{ToolUseID: "code-1", Name: "code_execution"}
-	state.InputBuilder.WriteString(`{"language":"python","code":"print('host must not run')"}`)
+	_, _ = state.InputBuilder.WriteString(`{"language":"python","code":"print('host must not run')"}`)
 	svc := &KiroGatewayService{}
 
 	blocks, summary, err := svc.executeKiroShadowTool(context.Background(), nil, state, kiropkg.ShadowToolBridge{
@@ -61,8 +92,12 @@ func TestExecuteKiroShadowTool_CodeExecutionDefaultReturnsTypedSandboxError(t *t
 	content, _ := result["content"].([]any)
 	require.Len(t, content, 1)
 	codeResult, _ := content[0].(map[string]any)
-	require.Equal(t, float64(1), float64(codeResult["return_code"].(int)))
-	require.Contains(t, codeResult["stderr"], "sandbox is not configured")
+	returnCode, ok := codeResult["return_code"].(int)
+	require.True(t, ok)
+	require.Equal(t, float64(1), float64(returnCode))
+	stderr, ok := codeResult["stderr"].(string)
+	require.True(t, ok)
+	require.Contains(t, stderr, "sandbox is not configured")
 }
 
 func TestExecuteKiroShadowTool_CodeExecutionUsesConfiguredSandboxCommand(t *testing.T) {
@@ -79,7 +114,7 @@ func TestExecuteKiroShadowTool_CodeExecutionUsesConfiguredSandboxCommand(t *test
 	}
 	svc := &KiroGatewayService{settingService: NewSettingService(repo, &config.Config{})}
 	state := &kiroToolState{ToolUseID: "code-2", Name: "code_execution"}
-	state.InputBuilder.WriteString(`{"language":"python","code":"print(7)"}`)
+	_, _ = state.InputBuilder.WriteString(`{"language":"python","code":"print(7)"}`)
 
 	blocks, summary, err := svc.executeKiroShadowTool(context.Background(), nil, state, kiropkg.ShadowToolBridge{
 		AnthropicType: "code_execution",
@@ -94,5 +129,7 @@ func TestExecuteKiroShadowTool_CodeExecutionUsesConfiguredSandboxCommand(t *test
 	content, _ := result["content"].([]any)
 	codeResult, _ := content[0].(map[string]any)
 	require.Equal(t, 0, codeResult["return_code"])
-	require.Equal(t, "lang=python code=print(7)", strings.TrimSpace(codeResult["stdout"].(string)))
+	stdout, ok := codeResult["stdout"].(string)
+	require.True(t, ok)
+	require.Equal(t, "lang=python code=print(7)", strings.TrimSpace(stdout))
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -110,27 +111,27 @@ func parseAccountSchedulingThresholdValue(raw any) (int, bool) {
 	case int64:
 		value = int(v)
 	case float64:
-		if v != float64(int(v)) {
-			return 0, false
-		}
-		value = int(v)
+		value = int(math.Round(v))
 	case float32:
-		if v != float32(int(v)) {
-			return 0, false
-		}
-		value = int(v)
+		value = int(math.Round(float64(v)))
 	case json.Number:
-		parsed, err := v.Int64()
+		parsed, err := v.Float64()
 		if err != nil {
 			return 0, false
 		}
-		value = int(parsed)
+		value = int(math.Round(parsed))
 	case string:
-		parsed, err := strconv.Atoi(strings.TrimSpace(v))
-		if err != nil {
+		raw := strings.TrimSpace(v)
+		parsed, err := strconv.Atoi(raw)
+		if err == nil {
+			value = parsed
+			break
+		}
+		parsedFloat, floatErr := strconv.ParseFloat(raw, 64)
+		if floatErr != nil {
 			return 0, false
 		}
-		value = parsed
+		value = int(math.Round(parsedFloat))
 	default:
 		return 0, false
 	}

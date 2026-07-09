@@ -29,6 +29,13 @@ func NewGrokOAuthService(proxyRepo ProxyRepository, oauthClient GrokOAuthClient)
 	}
 }
 
+func (s *GrokOAuthService) requireOAuthClient() (GrokOAuthClient, error) {
+	if s == nil || s.oauthClient == nil {
+		return nil, infraerrors.New(http.StatusInternalServerError, "GROK_OAUTH_CLIENT_NOT_CONFIGURED", "oauth client is not configured")
+	}
+	return s.oauthClient, nil
+}
+
 type GrokAuthURLResult struct {
 	AuthURL   string `json:"auth_url"`
 	SessionID string `json:"session_id"`
@@ -147,7 +154,11 @@ func (s *GrokOAuthService) ExchangeCode(ctx context.Context, input *GrokExchange
 	if !session.TryConsume() {
 		return nil, infraerrors.New(http.StatusBadRequest, "GROK_OAUTH_SESSION_ALREADY_USED", "oauth session has already been used")
 	}
-	tokenResp, err := s.oauthClient.ExchangeCode(ctx, code, session.CodeVerifier, redirectURI, proxyURL, session.ClientID)
+	oauthClient, err := s.requireOAuthClient()
+	if err != nil {
+		return nil, err
+	}
+	tokenResp, err := oauthClient.ExchangeCode(ctx, code, session.CodeVerifier, redirectURI, proxyURL, session.ClientID)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +173,11 @@ func (s *GrokOAuthService) RefreshToken(ctx context.Context, refreshToken, proxy
 	if refreshToken == "" {
 		return nil, infraerrors.New(http.StatusBadRequest, "GROK_OAUTH_NO_REFRESH_TOKEN", "refresh_token is required")
 	}
-	tokenResp, err := s.oauthClient.RefreshToken(ctx, refreshToken, proxyURL, clientID)
+	oauthClient, err := s.requireOAuthClient()
+	if err != nil {
+		return nil, err
+	}
+	tokenResp, err := oauthClient.RefreshToken(ctx, refreshToken, proxyURL, clientID)
 	if err != nil {
 		return nil, err
 	}

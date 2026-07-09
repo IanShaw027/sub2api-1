@@ -129,7 +129,7 @@ func signBillingHeaderCCH(body []byte) []byte {
 	}
 	offset += start
 	h := xxhash.NewWithSeed(cchSeed)
-	h.Write(body)
+	_, _ = h.Write(body)
 	digest := h.Sum64()
 	signed := []byte(fmt.Sprintf("cch=%05x", digest&0xFFFFF))
 	out := append([]byte(nil), body[:offset]...)
@@ -164,7 +164,7 @@ func verifyCCHFromRealCLI(body []byte) (realCCH, ourCCH string, match bool) {
 
 	// 用我们的算法重算
 	h := xxhash.NewWithSeed(cchSeed)
-	h.Write(placeholderBody)
+	_, _ = h.Write(placeholderBody)
 	digest := h.Sum64()
 	ourCCH = fmt.Sprintf("%05x", digest&0xFFFFF)
 

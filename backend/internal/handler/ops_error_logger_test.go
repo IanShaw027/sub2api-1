@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +15,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type opsErrorLoggerCancelKey struct{}
 
 type opsLoggerSettingRepoStub struct {
 	values map[string]string
@@ -199,6 +202,16 @@ func TestEnqueueOpsErrorLog_EarlyReturnBranches(t *testing.T) {
 	opsErrorLogMu.Unlock()
 	enqueueOpsErrorLog(ops, entry)
 	require.Equal(t, int64(0), OpsErrorLogEnqueuedTotal())
+}
+
+func TestOpsErrorLogConfig_CapsWorstCaseQueueFootprint(t *testing.T) {
+	prev := runtime.GOMAXPROCS(64)
+	t.Cleanup(func() { runtime.GOMAXPROCS(prev) })
+
+	workerCount, queueSize := opsErrorLogConfig()
+
+	require.Equal(t, opsErrorLogMaxWorkerCount, workerCount)
+	require.Equal(t, 1024, queueSize)
 }
 
 func TestOpsCaptureWriterPool_ResetOnRelease(t *testing.T) {
@@ -472,14 +485,14 @@ func TestOpsErrorLoggerMiddleware_SkipsRecoveredContextCanceledWhenRequestContex
 			UpstreamStatusCode: http.StatusOK,
 			Detail:             "context canceled",
 		}})
-		if cancel, ok := c.Request.Context().Value("cancel").(context.CancelFunc); ok {
+		if cancel, ok := c.Request.Context().Value(opsErrorLoggerCancelKey{}).(context.CancelFunc); ok {
 			cancel()
 		}
 		c.JSON(http.StatusOK, gin.H{"id": "img_123"})
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil).WithContext(context.WithValue(ctx, "cancel", context.CancelFunc(cancel)))
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil).WithContext(context.WithValue(ctx, opsErrorLoggerCancelKey{}, context.CancelFunc(cancel)))
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
@@ -512,14 +525,14 @@ func TestOpsErrorLoggerMiddleware_RecordsNonImageRecoveredContextCanceledWhenReq
 			UpstreamStatusCode: http.StatusOK,
 			Detail:             "context canceled",
 		}})
-		if cancel, ok := c.Request.Context().Value("cancel").(context.CancelFunc); ok {
+		if cancel, ok := c.Request.Context().Value(opsErrorLoggerCancelKey{}).(context.CancelFunc); ok {
 			cancel()
 		}
 		c.JSON(http.StatusOK, gin.H{"type": "message"})
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil).WithContext(context.WithValue(ctx, "cancel", context.CancelFunc(cancel)))
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", nil).WithContext(context.WithValue(ctx, opsErrorLoggerCancelKey{}, context.CancelFunc(cancel)))
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 

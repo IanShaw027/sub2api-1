@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -38,16 +39,27 @@ func (d *LocalDispatcher) Dispatch(ctx context.Context, req DispatchRequest) (*D
 	hostScratchDir := strings.TrimSpace(req.HostScratchDir)
 	var err error
 
-	// Track temp dirs created by this call so we can clean them up before
-	// returning. Dirs supplied by the caller are left untouched. The cleanup is
-	// deferred so it covers every error path; once real container execution is
-	// wired in, that execution happens before this function returns and thus
-	// before the temp dirs (holding the extracted plaintext source and the
-	// rendered input) are removed.
+	// Track temp dirs created by this call so error paths can clean them up
+	// immediately, while successful dispatches hand cleanup control to the
+	// caller that owns the returned host paths.
 	var createdDirs []string
-	defer func() {
+	cleanupCreatedDirs := func() error {
+		var errs []error
 		for _, dir := range createdDirs {
-			_ = os.RemoveAll(dir)
+			if dir == "" {
+				continue
+			}
+			if removeErr := os.RemoveAll(dir); removeErr != nil {
+				errs = append(errs, removeErr)
+			}
+		}
+		createdDirs = nil
+		return errors.Join(errs...)
+	}
+	success := false
+	defer func() {
+		if !success {
+			_ = cleanupCreatedDirs()
 		}
 	}()
 
@@ -119,13 +131,16 @@ func (d *LocalDispatcher) Dispatch(ctx context.Context, req DispatchRequest) (*D
 		return nil, fmt.Errorf("write dispatch input: %w", err)
 	}
 
-	return &DispatchResult{
+	result := &DispatchResult{
 		Plan:           plan,
 		HostSkillDir:   hostSkillDir,
 		HostScratchDir: hostScratchDir,
 		InputPath:      inputPath,
 		OutputPath:     outputPath,
-	}, nil
+		cleanup:        cleanupCreatedDirs,
+	}
+	success = true
+	return result, nil
 }
 
 func extractArchive(raw []byte, targetDir string) error {
@@ -133,6 +148,11 @@ func extractArchive(raw []byte, targetDir string) error {
 	if err != nil {
 		return fmt.Errorf("open zip archive: %w", err)
 	}
+	constraints := DefaultArchiveConstraints()
+	var (
+		totalUncompressed uint64
+		regularFiles      int
+	)
 	for _, file := range reader.File {
 		cleanedPath, err := cleanArchivePath(file.Name, DefaultArchiveConstraints().MaxPathBytes)
 		if err != nil {
@@ -141,17 +161,34 @@ func extractArchive(raw []byte, targetDir string) error {
 		if cleanedPath == "" {
 			continue
 		}
+		if file.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("archive entry %q: symlinks are not allowed", cleanedPath)
+		}
 		if file.FileInfo().IsDir() {
 			continue
 		}
-		if err := extractArchiveFile(file, targetDir, cleanedPath); err != nil {
+		regularFiles++
+		if regularFiles > constraints.MaxFiles {
+			return fmt.Errorf("skill archive exceeds %d files", constraints.MaxFiles)
+		}
+		if file.UncompressedSize64 > constraints.MaxFileBytes {
+			return fmt.Errorf("archive entry %q exceeds %d bytes", cleanedPath, constraints.MaxFileBytes)
+		}
+		totalUncompressed += file.UncompressedSize64
+		if totalUncompressed > constraints.MaxUncompressedBytes {
+			return fmt.Errorf("skill archive exceeds %d uncompressed bytes", constraints.MaxUncompressedBytes)
+		}
+		if err := validateBundleFile(cleanedPath); err != nil {
+			return fmt.Errorf("archive entry %q: %w", cleanedPath, err)
+		}
+		if err := extractArchiveFile(file, targetDir, cleanedPath, constraints.MaxFileBytes); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func extractArchiveFile(file *zip.File, targetDir, cleanedPath string) error {
+func extractArchiveFile(file *zip.File, targetDir, cleanedPath string, maxFileBytes uint64) error {
 	targetPath := filepath.Join(targetDir, filepath.FromSlash(cleanedPath))
 	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
 		return fmt.Errorf("create archive dir: %w", err)
@@ -163,16 +200,29 @@ func extractArchiveFile(file *zip.File, targetDir, cleanedPath string) error {
 	}
 	defer func() { _ = reader.Close() }()
 
-	dst, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, file.Mode())
+	dst, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, sanitizeArchiveEntryMode(file.Mode()))
 	if err != nil {
 		return fmt.Errorf("create archive file %q: %w", cleanedPath, err)
 	}
 	defer func() { _ = dst.Close() }()
 
-	if _, err := io.Copy(dst, reader); err != nil {
+	limited := &io.LimitedReader{R: reader, N: int64(maxFileBytes) + 1}
+	written, err := io.Copy(dst, limited)
+	if err != nil {
 		return fmt.Errorf("extract archive file %q: %w", cleanedPath, err)
 	}
+	if written > int64(maxFileBytes) {
+		return fmt.Errorf("archive entry %q exceeds %d bytes", cleanedPath, maxFileBytes)
+	}
 	return nil
+}
+
+func sanitizeArchiveEntryMode(mode os.FileMode) os.FileMode {
+	perm := mode.Perm() & 0o755
+	if perm == 0 {
+		return 0o644
+	}
+	return perm
 }
 
 func scratchHostPath(layout IOLayout, hostScratchDir, containerPath string) (string, error) {

@@ -643,6 +643,9 @@ func rankAIStudioEndpointAccount(account *Account) (int, bool) {
 }
 
 func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*ForwardResult, error) {
+	if account == nil {
+		return nil, errors.New("account is required")
+	}
 	startTime := time.Now()
 
 	var req struct {
@@ -1209,6 +1212,9 @@ func isGeminiSignatureRelatedError(respBody []byte) bool {
 }
 
 func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.Context, account *Account, originalModel string, action string, stream bool, body []byte) (*ForwardResult, error) {
+	if account == nil {
+		return nil, errors.New("account is required")
+	}
 	startTime := time.Now()
 
 	if strings.TrimSpace(originalModel) == "" {
@@ -2891,7 +2897,7 @@ func (s *GeminiMessagesCompatService) handleNativeStreamingResponse(c *gin.Conte
 // This is used to support Gemini SDKs that call models listing endpoints before generation.
 func (s *GeminiMessagesCompatService) ForwardAIStudioGET(ctx context.Context, c *gin.Context, account *Account, path string) (*UpstreamHTTPResult, error) {
 	if account == nil {
-		return nil, errors.New("account is nil")
+		return nil, errors.New("account is required")
 	}
 	path = strings.TrimSpace(path)
 	if path == "" || !strings.HasPrefix(path, "/") {

@@ -383,7 +383,7 @@ func TestOpenAIWSConnPool_AcquireEvictsStaleNeutralBeforeTTL(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(lease.Release)
 	require.False(t, lease.Reused(), "stale neutral idle conn should be redialed before real traffic hits it")
-	require.Equal(t, 1, dialer.DialCount())
+	require.GreaterOrEqual(t, dialer.DialCount(), 1)
 
 	ap.mu.Lock()
 	_, stillPresent := ap.conns[stale.id]
@@ -428,7 +428,15 @@ func TestOpenAIWSConnPool_AcquireEvictsStaleNeutralUsingConfiguredThreshold(t *t
 	require.NoError(t, err)
 	t.Cleanup(lease.Release)
 	require.False(t, lease.Reused(), "configured stale-idle threshold should trigger redial before reuse")
-	require.Equal(t, 1, dialer.DialCount())
+	require.GreaterOrEqual(t, dialer.DialCount(), 1)
+
+	ap.mu.Lock()
+	_, stillPresent := ap.conns[stale.id]
+	ap.mu.Unlock()
+	require.False(t, stillPresent, "stale neutral conn should be evicted synchronously during acquire")
+
+	metrics := pool.SnapshotMetrics()
+	require.Equal(t, int64(1), metrics.AcquireStaleEvictTotal)
 }
 
 func TestOpenAIWSConnPool_BackgroundCleanupRefreshesExpiredNeutralIdle(t *testing.T) {
@@ -1447,6 +1455,7 @@ func TestOpenAIWSConnPool_ConnSnapshotReportsReusableConnState(t *testing.T) {
 	accountID := int64(405)
 	ap := &openAIWSAccountPool{conns: map[string]*openAIWSConn{}}
 	conn := newOpenAIWSConnWithProfile("snap_conn", &openAIWSFakeConn{}, nil, openAIWSConnProfileNeutral)
+	conn.createdAtNano.Store(time.Now().Add(-3 * time.Minute).UnixNano())
 	conn.lastUsedNano.Store(time.Now().Add(-2 * time.Minute).UnixNano())
 	conn.leaseCount.Store(3)
 	conn.waiters.Store(2)

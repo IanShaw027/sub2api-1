@@ -138,6 +138,36 @@ func TestNewOAuthService(t *testing.T) {
 	svc.Stop()
 }
 
+func TestOAuthServiceExchangeCodeRejectsNilInput(t *testing.T) {
+	t.Parallel()
+
+	svc := NewOAuthService(&mockProxyRepoForOAuth{}, &mockClaudeOAuthClient{})
+	defer svc.Stop()
+
+	_, err := svc.ExchangeCode(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected nil input error")
+	}
+	if err.Error() != "oauth input is required" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestOAuthServiceCookieAuthRejectsNilInput(t *testing.T) {
+	t.Parallel()
+
+	svc := NewOAuthService(&mockProxyRepoForOAuth{}, &mockClaudeOAuthClient{})
+	defer svc.Stop()
+
+	_, err := svc.CookieAuth(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected nil input error")
+	}
+	if err.Error() != "cookie auth input is required" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestOAuthService_GenerateAuthURL(t *testing.T) {
 	t.Parallel()
 
@@ -196,6 +226,32 @@ func TestOAuthService_GenerateAuthURL_WithProxy(t *testing.T) {
 	}
 	if session.ProxyURL != "http://proxy.example.com:8080" {
 		t.Fatalf("ProxyURL 不匹配: got=%q", session.ProxyURL)
+	}
+}
+
+func TestOAuthService_GenerateAuthURL_DeletedProxyFallsBackToDirect(t *testing.T) {
+	t.Parallel()
+
+	proxyRepo := &mockProxyRepoForOAuth{
+		getByIDFunc: func(ctx context.Context, id int64) (*Proxy, error) {
+			return nil, ErrProxyNotFound
+		},
+	}
+	svc := NewOAuthService(proxyRepo, &mockClaudeOAuthClient{})
+	defer svc.Stop()
+
+	proxyID := int64(1)
+	result, err := svc.GenerateAuthURL(context.Background(), &proxyID)
+	if err != nil {
+		t.Fatalf("GenerateAuthURL 返回错误: %v", err)
+	}
+
+	session, ok := svc.sessionStore.Get(result.SessionID)
+	if !ok {
+		t.Fatal("session 未在 sessionStore 中找到")
+	}
+	if session.ProxyURL != "" {
+		t.Fatalf("deleted proxy should fall back to direct, got proxyURL=%q", session.ProxyURL)
 	}
 }
 
@@ -466,6 +522,21 @@ func TestOAuthService_RefreshAccountToken_NoRefreshToken(t *testing.T) {
 	}
 }
 
+func TestOAuthService_RefreshAccountToken_NilAccount(t *testing.T) {
+	t.Parallel()
+
+	svc := NewOAuthService(&mockProxyRepoForOAuth{}, &mockClaudeOAuthClient{})
+	defer svc.Stop()
+
+	_, err := svc.RefreshAccountToken(context.Background(), nil)
+	if err == nil {
+		t.Fatal("RefreshAccountToken 应返回错误（nil account）")
+	}
+	if err.Error() != "account is required" {
+		t.Fatalf("错误信息不匹配: got=%q", err.Error())
+	}
+}
+
 func TestOAuthService_RefreshAccountToken_EmptyRefreshToken(t *testing.T) {
 	t.Parallel()
 
@@ -564,6 +635,46 @@ func TestOAuthService_RefreshAccountToken_WithProxy(t *testing.T) {
 		ProxyID:  &proxyID,
 		Credentials: map[string]any{
 			"refresh_token": "rt-with-proxy",
+		},
+	}
+
+	_, err := svc.RefreshAccountToken(context.Background(), account)
+	if err != nil {
+		t.Fatalf("RefreshAccountToken 返回错误: %v", err)
+	}
+}
+
+func TestOAuthService_RefreshAccountToken_DeletedProxyFallsBackToDirect(t *testing.T) {
+	t.Parallel()
+
+	proxyRepo := &mockProxyRepoForOAuth{
+		getByIDFunc: func(ctx context.Context, id int64) (*Proxy, error) {
+			return nil, ErrProxyNotFound
+		},
+	}
+	client := &mockClaudeOAuthClient{
+		refreshTokenFunc: func(ctx context.Context, refreshToken, proxyURL string) (*oauth.TokenResponse, error) {
+			if proxyURL != "" {
+				t.Errorf("deleted proxy should refresh directly, got proxyURL=%q", proxyURL)
+			}
+			return &oauth.TokenResponse{
+				AccessToken: "refreshed",
+				ExpiresIn:   3600,
+			}, nil
+		},
+	}
+
+	svc := NewOAuthService(proxyRepo, client)
+	defer svc.Stop()
+
+	proxyID := int64(10)
+	account := &Account{
+		ID:       5,
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeOAuth,
+		ProxyID:  &proxyID,
+		Credentials: map[string]any{
+			"refresh_token": "rt-deleted-proxy",
 		},
 	}
 

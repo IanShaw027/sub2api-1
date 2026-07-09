@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"go.uber.org/zap"
@@ -47,7 +46,7 @@ func (p *KiroTokenProvider) SetRefreshPolicy(policy ProviderRefreshPolicy) {
 
 func (p *KiroTokenProvider) RefreshAccount(ctx context.Context, account *Account) (*Account, error) {
 	if account == nil {
-		return nil, errors.New("account is nil")
+		return nil, errors.New("account is required")
 	}
 	if account.Platform != PlatformKiro || account.Type != AccountTypeOAuth {
 		return nil, errors.New("not a kiro oauth account")
@@ -143,7 +142,7 @@ func kiroRefreshStateChanged(before, after *Account) bool {
 
 func (p *KiroTokenProvider) GetAccessToken(ctx context.Context, account *Account) (string, error) {
 	if account == nil {
-		return "", errors.New("account is nil")
+		return "", errors.New("account is required")
 	}
 	if account.Platform != PlatformKiro || account.Type != AccountTypeOAuth {
 		return "", errors.New("not a kiro oauth account")
@@ -151,15 +150,16 @@ func (p *KiroTokenProvider) GetAccessToken(ctx context.Context, account *Account
 
 	callerAccount := account
 	cacheKey := KiroTokenCacheKey(account)
+	expiresAt := account.GetCredentialAsTime("expires_at")
 	if p.tokenCache != nil {
-		if token, err := p.tokenCache.GetAccessToken(ctx, cacheKey); err == nil && token != "" {
+		cacheUsable := expiresAt != nil && time.Until(*expiresAt) > kiroTokenRefreshSkew
+		if token, err := p.tokenCache.GetAccessToken(ctx, cacheKey); err == nil && token != "" && cacheUsable {
 			kiroLogger(ctx, account).Info("kiro.access_token_cache_hit")
 			return token, nil
 		}
 		kiroLogger(ctx, account).Info("kiro.access_token_cache_miss")
 	}
 
-	expiresAt := account.GetCredentialAsTime("expires_at")
 	needsRefresh := expiresAt == nil || time.Until(*expiresAt) <= kiroTokenRefreshSkew
 	refreshFailed := false
 
@@ -213,15 +213,9 @@ func (p *KiroTokenProvider) GetAccessToken(ctx context.Context, account *Account
 				return "", errors.New("access_token not found after version check")
 			}
 			kiroLogger(ctx, account).Info("kiro.access_token_version_reloaded")
-		} else {
+		} else if !refreshFailed {
 			ttl := 30 * time.Minute
-			if refreshFailed {
-				if p.refreshPolicy.FailureTTL > 0 {
-					ttl = p.refreshPolicy.FailureTTL
-				} else {
-					ttl = time.Minute
-				}
-			} else if expiresAt != nil {
+			if expiresAt != nil {
 				until := time.Until(*expiresAt)
 				switch {
 				case until > kiroTokenCacheSkew:
@@ -283,11 +277,4 @@ func KiroAuthRegion(account *Account) string {
 		return value
 	}
 	return "us-east-1"
-}
-
-func KiroMachineID(account *Account) string {
-	if account == nil {
-		return ""
-	}
-	return fmt.Sprintf("%s|%s", account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
 }

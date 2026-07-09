@@ -200,6 +200,52 @@ func TestUserPlatformQuotaRepository_IncrementUsageWithReset_WeeklyReset(t *test
 	require.InDelta(t, 7.0, rec.MonthlyUsageUSD, 1e-9, "monthly accumulates (same month)")
 }
 
+func TestUserPlatformQuotaRepository_BatchIncrementUsageWithReset_MatchesSingleIncrementSemantics(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUserPlatformQuotaRepository(client)
+
+	userID1 := mustCreateUserForQuota(t, client)
+	userID2 := mustCreateUserForQuota(t, client)
+
+	month1 := time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)
+	month2 := time.Date(2026, 5, 2, 10, 0, 0, 0, time.UTC) // 距 4/1 已超过 30 天
+	day1 := time.Date(2026, 5, 22, 10, 0, 0, 0, time.UTC)  // 周五
+	day2 := time.Date(2026, 5, 23, 10, 0, 0, 0, time.UTC)  // 周六（同周）
+
+	require.NoError(t, repo.BatchIncrementUsageWithReset(ctx, []UserPlatformQuotaUsageDelta{
+		{UserID: userID1, Platform: "anthropic", Cost: 3.0},
+	}, day1))
+
+	require.NoError(t, repo.BatchIncrementUsageWithReset(ctx, []UserPlatformQuotaUsageDelta{
+		{UserID: userID2, Platform: "openai", Cost: 5.0},
+	}, month1))
+
+	require.NoError(t, repo.BatchIncrementUsageWithReset(ctx, []UserPlatformQuotaUsageDelta{
+		{UserID: userID1, Platform: "anthropic", Cost: 1.0},
+	}, day2))
+
+	require.NoError(t, repo.BatchIncrementUsageWithReset(ctx, []UserPlatformQuotaUsageDelta{
+		{UserID: userID2, Platform: "openai", Cost: 2.0},
+	}, month2))
+
+	rec1, err := repo.GetByUserPlatform(ctx, userID1, "anthropic")
+	require.NoError(t, err)
+	require.NotNil(t, rec1)
+	require.InDelta(t, 1.0, rec1.DailyUsageUSD, 1e-9, "daily should reset on the next day")
+	require.InDelta(t, 4.0, rec1.WeeklyUsageUSD, 1e-9, "weekly should accumulate within the same week")
+	require.InDelta(t, 4.0, rec1.MonthlyUsageUSD, 1e-9, "monthly should accumulate within 30-day window")
+
+	rec2, err := repo.GetByUserPlatform(ctx, userID2, "openai")
+	require.NoError(t, err)
+	require.NotNil(t, rec2)
+	require.InDelta(t, 2.0, rec2.DailyUsageUSD, 1e-9, "daily should reset after 30+ days")
+	require.InDelta(t, 2.0, rec2.WeeklyUsageUSD, 1e-9, "weekly should reset after 30+ days")
+	require.InDelta(t, 2.0, rec2.MonthlyUsageUSD, 1e-9, "monthly should reset after 30-day window expires")
+	require.NotNil(t, rec2.MonthlyWindowStart)
+	require.True(t, rec2.MonthlyWindowStart.Equal(month2), "monthly window start should advance only when reset")
+}
+
 func TestUserPlatformQuotaRepository_ResetExpiredWindow(t *testing.T) {
 	ctx := context.Background()
 	tx := testEntTx(t)

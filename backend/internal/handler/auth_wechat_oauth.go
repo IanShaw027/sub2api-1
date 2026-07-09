@@ -1175,7 +1175,7 @@ func exchangeWeChatOAuthCode(ctx context.Context, cfg wechatOAuthConfig, code st
 
 func fetchWeChatUserInfo(ctx context.Context, tokenResp *wechatOAuthTokenResponse) (*wechatOAuthUserInfoResponse, error) {
 	if tokenResp == nil {
-		return nil, fmt.Errorf("wechat token response is nil")
+		return nil, fmt.Errorf("wechat token response is required")
 	}
 
 	endpoint, err := url.Parse(wechatOAuthUserInfoURL)

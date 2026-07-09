@@ -1820,10 +1820,6 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 // doGrokNativeWebSearch executes web search using the Grok account's native capability
 // by calling the responses endpoint with web_search tool, then normalizes sources to unified format.
 func (h *GatewayHandler) doGrokNativeWebSearch(ctx context.Context, c *gin.Context, account *service.Account, query string, maxResults int) (*websearch.SearchResponse, string, error) {
-	if maxResults <= 0 {
-		maxResults = 5
-	}
-
 	// Build a minimal responses request that triggers Grok web search tool.
 	// Grok will perform the search using its backend and return sources in web_search_call or annotations.
 	searchBody := map[string]any{
@@ -1843,10 +1839,6 @@ func (h *GatewayHandler) doGrokNativeWebSearch(ctx context.Context, c *gin.Conte
 	// Extract sources from Grok responses output.
 	// Prefer web_search_call.action.sources (standardized), fallback to annotations or text links.
 	results := extractGrokWebSearchSources(respBytes)
-	if len(results) == 0 {
-		// Some Grok responses may return search results inline; as fallback keep empty or synthesize.
-		// For now return what we have (unified empty is acceptable if no sources surfaced).
-	}
 
 	providerName := "grok-native"
 	if account.Name != "" {
@@ -1857,13 +1849,6 @@ func (h *GatewayHandler) doGrokNativeWebSearch(ctx context.Context, c *gin.Conte
 		Results: results,
 		Query:   query,
 	}, providerName, nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // extractGrokWebSearchSources pulls url/title (and optional snippet) from a Grok responses body.

@@ -53,6 +53,9 @@ func NewTokenRefreshService(
 	tempUnschedCache TempUnschedCache,
 	grokOAuthServices ...*GrokOAuthService,
 ) *TokenRefreshService {
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
 	s := &TokenRefreshService{
 		accountRepo:      accountRepo,
 		refreshPolicy:    DefaultBackgroundRefreshPolicy(),

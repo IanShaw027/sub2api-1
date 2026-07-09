@@ -66,10 +66,10 @@ func TestOpenAIWSIngressPreviousResponseRecoveryEnabled(t *testing.T) {
 	t.Parallel()
 
 	var nilService *OpenAIGatewayService
-	require.True(t, nilService.openAIWSIngressPreviousResponseRecoveryEnabled(), "nil service should default to enabled")
+	require.False(t, nilService.openAIWSIngressPreviousResponseRecoveryEnabled(), "nil service should default to disabled")
 
 	svcWithNilCfg := &OpenAIGatewayService{}
-	require.True(t, svcWithNilCfg.openAIWSIngressPreviousResponseRecoveryEnabled(), "nil config should default to enabled")
+	require.False(t, svcWithNilCfg.openAIWSIngressPreviousResponseRecoveryEnabled(), "nil config should default to disabled")
 
 	svc := &OpenAIGatewayService{
 		cfg: &config.Config{},

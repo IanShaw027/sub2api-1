@@ -573,6 +573,15 @@ func TestAuthService_GenerateToken_UsesExpireHourWhenMinutesZero(t *testing.T) {
 	require.WithinDuration(t, claims.IssuedAt.Time.Add(24*time.Hour), claims.ExpiresAt.Time, 2*time.Second)
 }
 
+func TestAuthService_GenerateToken_RejectsNilUser(t *testing.T) {
+	service := newAuthService(&userRepoStub{}, nil, nil, nil)
+
+	token, err := service.GenerateToken(nil)
+
+	require.Empty(t, token)
+	require.EqualError(t, err, "user is required")
+}
+
 func TestAuthService_GenerateToken_UsesMinutesWhenConfigured(t *testing.T) {
 	service := newAuthService(&userRepoStub{}, nil, nil, nil)
 	service.cfg.JWT.ExpireHour = 24
@@ -598,6 +607,15 @@ func TestAuthService_GenerateToken_UsesMinutesWhenConfigured(t *testing.T) {
 	require.WithinDuration(t, claims.IssuedAt.Time.Add(90*time.Minute), claims.ExpiresAt.Time, 2*time.Second)
 }
 
+func TestAuthService_GenerateTokenPair_RejectsNilUser(t *testing.T) {
+	service := newAuthService(&userRepoStub{}, nil, nil, nil)
+
+	tokenPair, err := service.GenerateTokenPair(context.Background(), nil, "")
+
+	require.Nil(t, tokenPair)
+	require.EqualError(t, err, "user is required")
+}
+
 func TestAuthService_Register_AssignsDefaultSubscriptions(t *testing.T) {
 	repo := &userRepoStub{nextID: 42}
 	assigner := &defaultSubscriptionAssignerStub{}
@@ -619,7 +637,7 @@ func TestAuthService_Register_AssignsDefaultSubscriptions(t *testing.T) {
 	require.Equal(t, 7, assigner.calls[1].ValidityDays)
 }
 
-func TestAuthService_Register_AddsEmailSourceExtrasWhenGrantEnabled(t *testing.T) {
+func TestAuthService_Register_UsesEmailSourceDefaultsWhenGrantEnabled(t *testing.T) {
 	repo := &userRepoStub{nextID: 52}
 	assigner := &defaultSubscriptionAssignerStub{}
 	service := newAuthService(repo, map[string]string{
@@ -635,13 +653,11 @@ func TestAuthService_Register_AddsEmailSourceExtrasWhenGrantEnabled(t *testing.T
 	_, user, err := service.Register(context.Background(), "email-defaults@test.com", "password")
 	require.NoError(t, err)
 	require.NotNil(t, user)
-	require.Equal(t, 16.0, user.Balance)
-	require.Equal(t, 9, user.Concurrency)
-	require.Len(t, assigner.calls, 2)
-	require.Equal(t, int64(91), assigner.calls[0].GroupID)
-	require.Equal(t, 3, assigner.calls[0].ValidityDays)
-	require.Equal(t, int64(11), assigner.calls[1].GroupID)
-	require.Equal(t, 30, assigner.calls[1].ValidityDays)
+	require.Equal(t, 12.5, user.Balance)
+	require.Equal(t, 7, user.Concurrency)
+	require.Len(t, assigner.calls, 1)
+	require.Equal(t, int64(11), assigner.calls[0].GroupID)
+	require.Equal(t, 30, assigner.calls[0].ValidityDays)
 }
 
 func TestAuthService_Register_GrantOnSignupFalseFallsBackToGlobalDefaults(t *testing.T) {
@@ -667,7 +683,7 @@ func TestAuthService_Register_GrantOnSignupFalseFallsBackToGlobalDefaults(t *tes
 	require.Equal(t, 5, assigner.calls[0].ValidityDays)
 }
 
-func TestAuthService_Register_GrantOnSignupStacksSourceExtrasWithGlobalDefaults(t *testing.T) {
+func TestAuthService_Register_GrantOnSignupOverridesGlobalDefaults(t *testing.T) {
 	repo := &userRepoStub{nextID: 54}
 	assigner := &defaultSubscriptionAssignerStub{}
 	service := newAuthService(repo, map[string]string{
@@ -683,14 +699,12 @@ func TestAuthService_Register_GrantOnSignupStacksSourceExtrasWithGlobalDefaults(
 	_, user, err := service.Register(context.Background(), "email-merged@test.com", "password")
 	require.NoError(t, err)
 	require.NotNil(t, user)
-	require.Equal(t, 13.0, user.Balance)
-	require.Equal(t, 7, user.Concurrency)
-	require.Len(t, assigner.calls, 1)
-	require.Equal(t, int64(31), assigner.calls[0].GroupID)
-	require.Equal(t, 5, assigner.calls[0].ValidityDays)
+	require.Equal(t, 9.5, user.Balance)
+	require.Equal(t, 5, user.Concurrency)
+	require.Empty(t, assigner.calls)
 }
 
-func TestAuthService_LoginOrRegisterOAuthWithTokenPair_AddsLinuxDoSourceExtrasOnSignup(t *testing.T) {
+func TestAuthService_LoginOrRegisterOAuthWithTokenPair_UsesLinuxDoSourceDefaultsOnSignup(t *testing.T) {
 	repo := &userRepoStub{nextID: 61}
 	assigner := &defaultSubscriptionAssignerStub{}
 	service := newAuthService(repo, map[string]string{
@@ -709,14 +723,12 @@ func TestAuthService_LoginOrRegisterOAuthWithTokenPair_AddsLinuxDoSourceExtrasOn
 	require.NotNil(t, tokenPair)
 	require.NotNil(t, user)
 	require.Equal(t, int64(61), user.ID)
-	require.Equal(t, 25.25, user.Balance)
-	require.Equal(t, 11, user.Concurrency)
+	require.Equal(t, 21.75, user.Balance)
+	require.Equal(t, 9, user.Concurrency)
 	require.Len(t, repo.created, 1)
-	require.Len(t, assigner.calls, 2)
-	require.Equal(t, int64(81), assigner.calls[0].GroupID)
-	require.Equal(t, 1, assigner.calls[0].ValidityDays)
-	require.Equal(t, int64(22), assigner.calls[1].GroupID)
-	require.Equal(t, 14, assigner.calls[1].ValidityDays)
+	require.Len(t, assigner.calls, 1)
+	require.Equal(t, int64(22), assigner.calls[0].GroupID)
+	require.Equal(t, 14, assigner.calls[0].ValidityDays)
 }
 
 func TestAuthService_LoginOrRegisterOAuthWithTokenPair_ExistingUserDoesNotGrantAgain(t *testing.T) {

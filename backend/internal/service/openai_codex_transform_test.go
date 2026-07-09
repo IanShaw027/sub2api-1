@@ -477,6 +477,34 @@ func TestApplyCodexOAuthTransform_ConvertsToolRoleMessageToFunctionCallOutput(t 
 	require.False(t, hasRole)
 }
 
+func TestApplyCodexOAuthTransform_ConvertsToolRoleMessageOutputTextParts(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.4",
+		"input": []any{
+			map[string]any{
+				"type":         "message",
+				"role":         "tool",
+				"tool_call_id": "call_1",
+				"content": []any{
+					map[string]any{"type": "output_text", "text": "ok"},
+				},
+			},
+		},
+	}
+
+	applyCodexOAuthTransform(reqBody, true, false)
+
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 1)
+
+	item, ok := input[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "function_call_output", item["type"])
+	require.Equal(t, "fc_1", item["call_id"])
+	require.Equal(t, "ok", item["output"])
+}
+
 func TestApplyCodexOAuthTransform_TruncatesToolRoleMessageOutput(t *testing.T) {
 	oversized := strings.Repeat("b", codexToolOutputMaxChars+1)
 	reqBody := map[string]any{
@@ -1739,6 +1767,28 @@ func TestExtractSystemMessagesFromInput(t *testing.T) {
 			map[string]any{"type": "text", "text": "Be helpful."},
 		}, msg["content"])
 		require.Equal(t, "Be helpful.", reqBody["instructions"])
+	})
+
+	t.Run("array content system message accepts input_text parts", func(t *testing.T) {
+		reqBody := map[string]any{
+			"input": []any{
+				map[string]any{
+					"role": "system",
+					"content": []any{
+						map[string]any{"type": "input_text", "text": "Be helpful."},
+					},
+				},
+			},
+		}
+		result := extractSystemMessagesFromInput(reqBody)
+		require.True(t, result)
+		require.Equal(t, "Be helpful.", reqBody["instructions"])
+		input, ok := reqBody["input"].([]any)
+		require.True(t, ok)
+		require.Len(t, input, 1)
+		msg, ok := input[0].(map[string]any)
+		require.True(t, ok)
+		require.Equal(t, "developer", msg["role"])
 	})
 
 	t.Run("multiple system messages concatenated", func(t *testing.T) {

@@ -110,6 +110,9 @@ func (d *coderOpenAIWSClientDialer) Dial(
 	if targetURL == "" {
 		return nil, 0, nil, errors.New("ws url is empty")
 	}
+	if openAIWSTLSProfileWantsWebSocketH2(tlsProfile) {
+		return dialOpenAIWSH2(ctx, targetURL, headers, proxyURL, tlsProfile)
+	}
 
 	opts := &coderws.DialOptions{
 		HTTPHeader:      cloneHeader(headers),
@@ -158,7 +161,7 @@ func (d *coderOpenAIWSClientDialer) httpClientForDial(proxy string, tlsProfile *
 
 func newOpenAIWSTLSFingerprintHTTPClient(proxy string, profile *tlsfingerprint.Profile) (*http.Client, error) {
 	if profile == nil {
-		return nil, errors.New("tls fingerprint profile is nil")
+		return nil, errors.New("tls fingerprint profile is required")
 	}
 	transport := &http.Transport{
 		MaxIdleConns:        openAIWSProxyTransportMaxIdleConns,
@@ -224,7 +227,7 @@ func openAIWSHandshakeBodyFromError(err error) []byte {
 
 func (d *coderOpenAIWSClientDialer) proxyHTTPClient(proxy string) (*http.Client, error) {
 	if d == nil {
-		return nil, errors.New("openai ws dialer is nil")
+		return nil, errors.New("openai ws dialer is required")
 	}
 	normalizedProxy := strings.TrimSpace(proxy)
 	if normalizedProxy == "" {

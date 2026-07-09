@@ -182,6 +182,12 @@ describe('TLSFingerprintRoutersModal', () => {
     const transportSelect = wrapper.findAll('select').find(select => select.find('option[value="websocket-h2"]').exists())
     expect(transportSelect).toBeTruthy()
     await transportSelect!.setValue('websocket-h2')
+    const labels = transportSelect!.findAll('option').map(option => option.text())
+    expect(labels).toEqual(expect.arrayContaining([
+      'admin.tlsFingerprintRouters.form.transportH2CaptureOnly',
+      'admin.tlsFingerprintRouters.form.transportWebsocketH2CaptureOnly',
+    ]))
+    expect(wrapper.text()).toContain('admin.tlsFingerprintRouters.form.transportReplayHint')
 
     const submitButton = wrapper.findAll('button').find(button => button.text().includes('common.create'))
     expect(submitButton).toBeTruthy()

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import type { Invoice } from '@/types/payment'
+import { formatPaymentAmount } from '@/components/payment/currency'
 import AdminInvoiceApplicationsView from '../AdminInvoiceApplicationsView.vue'
 
 const { getInvoices, getInvoice, cancelInvoice, adminPaymentAPI } = vi.hoisted(() => {
@@ -139,6 +140,35 @@ describe('AdminInvoiceApplicationsView', () => {
     expect(dialog.text()).toContain('ORD-101')
     expect(dialog.text()).toContain('ORD-102')
     expect(dialog.text()).toContain('ORD-103')
+  })
+
+  it('formats list and detail amounts with invoice currency instead of hardcoded cny symbol', async () => {
+    getInvoices.mockResolvedValueOnce({
+      data: { items: [createInvoice({ invoice_amount: 318, currency: 'USD' })], total: 1, page: 1, page_size: 20 },
+    })
+    getInvoice.mockResolvedValueOnce({
+      data: createInvoice({
+        invoice_amount: 318,
+        currency: 'USD',
+        orders: [
+          { order_id: 101, out_trade_no: 'ORD-101', pay_amount_snapshot: 100.5, payment_type: 'stripe', created_at: '2026-06-08T00:00:00Z' },
+        ],
+      }),
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain(formatPaymentAmount(318, 'USD'))
+    expect(wrapper.text()).not.toContain('¥318.00')
+
+    await wrapper.findAll('button').find((b) => b.text().includes('common.view'))!.trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.find('[data-test="dialog"]')
+    expect(dialog.text()).toContain(formatPaymentAmount(318, 'USD'))
+    expect(dialog.text()).toContain(formatPaymentAmount(100.5, 'USD'))
+    expect(dialog.text()).not.toContain('¥100.50')
   })
 
   it('shows cancel button only when status is APPLIED', async () => {

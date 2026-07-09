@@ -424,3 +424,41 @@ func TestRateLimitService_GetTempUnschedStatus_FallsBackToDBReasonWhenCacheIsSpa
 	require.NotEmpty(t, cache.setStates)
 	require.Equal(t, "token refresh retry exhausted: upstream 401", cache.setStates[len(cache.setStates)-1].ErrorMessage)
 }
+
+func TestRateLimitService_ClearRateLimit_NilRepoReturnsError(t *testing.T) {
+	svc := NewRateLimitService(nil, nil, &config.Config{}, nil, nil)
+
+	err := svc.ClearRateLimit(context.Background(), 42)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "account repository unavailable")
+}
+
+func TestRateLimitService_RecoverAccountAfterSuccessfulTest_NilRepoReturnsError(t *testing.T) {
+	svc := NewRateLimitService(nil, nil, &config.Config{}, nil, nil)
+
+	result, err := svc.RecoverAccountAfterSuccessfulTest(context.Background(), 42)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Contains(t, err.Error(), "account repository unavailable")
+}
+
+func TestRateLimitService_ClearTempUnschedulable_NilRepoReturnsError(t *testing.T) {
+	svc := NewRateLimitService(nil, nil, &config.Config{}, nil, nil)
+
+	err := svc.ClearTempUnschedulable(context.Background(), 42)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "account repository unavailable")
+}
+
+func TestRateLimitService_GetTempUnschedStatus_NilRepoReturnsError(t *testing.T) {
+	svc := NewRateLimitService(nil, nil, &config.Config{}, nil, nil)
+
+	state, err := svc.GetTempUnschedStatus(context.Background(), 42)
+
+	require.Error(t, err)
+	require.Nil(t, state)
+	require.Contains(t, err.Error(), "account repository unavailable")
+}

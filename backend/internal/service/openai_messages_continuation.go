@@ -20,6 +20,36 @@ type openAICompatSessionResponseBinding struct {
 	ExpiresAt            time.Time
 }
 
+// openAICompatSessionReapInterval 为续接会话绑定的后台清扫周期。绑定 Store 后若再未被 Load（例如
+// 会话不再复用该 key），过期项不会被惰性删除路径触及；无周期清扫会随不同会话无界滞留内存(泄漏)。
+const openAICompatSessionReapInterval = 10 * time.Minute
+
+// startOpenAICompatSessionReaper 启动进程生命周期内的后台协程，周期扫描 openaiCompatSessionResponses，
+// 删除已过期或类型异常的绑定，给这张 sync.Map 兜底封顶。sync.Map 支持 Range 中并发 Delete。
+func (s *OpenAIGatewayService) startOpenAICompatSessionReaper() {
+	if s == nil {
+		return
+	}
+	ticker := time.NewTicker(openAICompatSessionReapInterval)
+	go func() {
+		defer ticker.Stop()
+		for range ticker.C {
+			s.reapExpiredOpenAICompatSessions(time.Now())
+		}
+	}()
+}
+
+// reapExpiredOpenAICompatSessions 删除截至 now 已过期或类型异常的续接会话绑定。
+func (s *OpenAIGatewayService) reapExpiredOpenAICompatSessions(now time.Time) {
+	s.openaiCompatSessionResponses.Range(func(key, value any) bool {
+		binding, ok := value.(openAICompatSessionResponseBinding)
+		if !ok || (!binding.ExpiresAt.IsZero() && now.After(binding.ExpiresAt)) {
+			s.openaiCompatSessionResponses.Delete(key)
+		}
+		return true
+	})
+}
+
 func openAICompatContinuationEnabled(account *Account, model string) bool {
 	if account == nil || account.Type != AccountTypeAPIKey {
 		return false

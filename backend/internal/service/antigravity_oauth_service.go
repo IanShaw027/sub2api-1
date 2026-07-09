@@ -22,6 +22,23 @@ func NewAntigravityOAuthService(proxyRepo ProxyRepository) *AntigravityOAuthServ
 	}
 }
 
+func (s *AntigravityOAuthService) resolveProxyURL(ctx context.Context, proxyID *int64) (string, error) {
+	if proxyID == nil {
+		return "", nil
+	}
+	if s == nil || s.proxyRepo == nil {
+		return "", fmt.Errorf("proxy repository is unavailable")
+	}
+	proxy, err := s.proxyRepo.GetByID(ctx, *proxyID)
+	if err != nil {
+		return "", err
+	}
+	if proxy == nil {
+		return "", ErrProxyNotFound
+	}
+	return proxy.URL(), nil
+}
+
 // AntigravityAuthURLResult is the result of generating an authorization URL
 type AntigravityAuthURLResult struct {
 	AuthURL   string `json:"auth_url"`
@@ -46,19 +63,9 @@ func (s *AntigravityOAuthService) GenerateAuthURL(ctx context.Context, proxyID *
 		return nil, fmt.Errorf("生成 session_id 失败: %w", err)
 	}
 
-	var proxyURL string
-	if proxyID != nil {
-		if s.proxyRepo == nil {
-			return nil, fmt.Errorf("proxy repository is unavailable")
-		}
-		proxy, err := s.proxyRepo.GetByID(ctx, *proxyID)
-		if err != nil {
-			return nil, err
-		}
-		if proxy == nil {
-			return nil, ErrProxyNotFound
-		}
-		proxyURL = proxy.URL()
+	proxyURL, err := s.resolveProxyURL(ctx, proxyID)
+	if err != nil {
+		return nil, err
 	}
 
 	session := &antigravity.OAuthSession{
@@ -103,6 +110,9 @@ type AntigravityTokenInfo struct {
 
 // ExchangeCode 用 authorization code 交换 token
 func (s *AntigravityOAuthService) ExchangeCode(ctx context.Context, input *AntigravityExchangeCodeInput) (*AntigravityTokenInfo, error) {
+	if input == nil {
+		return nil, fmt.Errorf("oauth input is required")
+	}
 	session, ok := s.sessionStore.Get(input.SessionID)
 	if !ok {
 		return nil, fmt.Errorf("session 不存在或已过期")
@@ -213,12 +223,9 @@ func (s *AntigravityOAuthService) RefreshToken(ctx context.Context, refreshToken
 
 // ValidateRefreshToken 用 refresh token 验证并获取完整的 token 信息（含 email 和 project_id）
 func (s *AntigravityOAuthService) ValidateRefreshToken(ctx context.Context, refreshToken string, proxyID *int64) (*AntigravityTokenInfo, error) {
-	var proxyURL string
-	if proxyID != nil {
-		proxy, err := s.proxyRepo.GetByID(ctx, *proxyID)
-		if err == nil && proxy != nil {
-			proxyURL = proxy.URL()
-		}
+	proxyURL, err := s.resolveProxyURL(ctx, proxyID)
+	if err != nil {
+		return nil, err
 	}
 
 	// 刷新 token
@@ -276,7 +283,7 @@ func isNonRetryableAntigravityOAuthError(err error) bool {
 
 // RefreshAccountToken 刷新账户的 token
 func (s *AntigravityOAuthService) RefreshAccountToken(ctx context.Context, account *Account) (*AntigravityTokenInfo, error) {
-	if account.Platform != PlatformAntigravity || account.Type != AccountTypeOAuth {
+	if account == nil || account.Platform != PlatformAntigravity || account.Type != AccountTypeOAuth {
 		return nil, fmt.Errorf("非 Antigravity OAuth 账户")
 	}
 
@@ -285,12 +292,9 @@ func (s *AntigravityOAuthService) RefreshAccountToken(ctx context.Context, accou
 		return nil, fmt.Errorf("无可用的 refresh_token")
 	}
 
-	var proxyURL string
-	if account.ProxyID != nil {
-		proxy, err := s.proxyRepo.GetByID(ctx, *account.ProxyID)
-		if err == nil && proxy != nil {
-			proxyURL = proxy.URL()
-		}
+	proxyURL, err := s.resolveProxyURL(ctx, account.ProxyID)
+	if err != nil {
+		return nil, err
 	}
 
 	tokenInfo, err := s.RefreshToken(ctx, refreshToken, proxyURL)
@@ -441,12 +445,12 @@ func resolveDefaultTierID(loadRaw map[string]any) string {
 
 // FillProjectID 仅获取 project_id，不刷新 OAuth token
 func (s *AntigravityOAuthService) FillProjectID(ctx context.Context, account *Account, accessToken string) (string, error) {
-	var proxyURL string
-	if account.ProxyID != nil {
-		proxy, err := s.proxyRepo.GetByID(ctx, *account.ProxyID)
-		if err == nil && proxy != nil {
-			proxyURL = proxy.URL()
-		}
+	if account == nil {
+		return "", fmt.Errorf("account is required")
+	}
+	proxyURL, err := s.resolveProxyURL(ctx, account.ProxyID)
+	if err != nil {
+		return "", err
 	}
 	result, err := s.loadProjectIDWithRetry(ctx, accessToken, proxyURL, 3)
 	if result != nil {

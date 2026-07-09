@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"math/rand/v2"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -52,10 +54,12 @@ func NewTLSFingerprintProfileService(
 	}
 
 	ctx := context.Background()
-	if err := svc.reloadFromDB(ctx); err != nil {
-		logger.LegacyPrintf("service.tls_fp_profile", "[TLSFPProfileService] Failed to load profiles from DB on startup: %v", err)
-		if fallbackErr := svc.refreshLocalCache(ctx); fallbackErr != nil {
-			logger.LegacyPrintf("service.tls_fp_profile", "[TLSFPProfileService] Failed to load profiles from cache fallback on startup: %v", fallbackErr)
+	if repo != nil {
+		if err := svc.reloadFromDB(ctx); err != nil {
+			logger.LegacyPrintf("service.tls_fp_profile", "[TLSFPProfileService] Failed to load profiles from DB on startup: %v", err)
+			if fallbackErr := svc.refreshLocalCache(ctx); fallbackErr != nil {
+				logger.LegacyPrintf("service.tls_fp_profile", "[TLSFPProfileService] Failed to load profiles from cache fallback on startup: %v", fallbackErr)
+			}
 		}
 	}
 
@@ -70,25 +74,52 @@ func NewTLSFingerprintProfileService(
 	return svc
 }
 
+func (s *TLSFingerprintProfileService) requireRepo() (TLSFingerprintProfileRepository, error) {
+	if s == nil || s.repo == nil {
+		return nil, errors.New("tls fingerprint profile repository is unavailable")
+	}
+	return s.repo, nil
+}
+
 // --- CRUD ---
 
 // List 获取所有模板
 func (s *TLSFingerprintProfileService) List(ctx context.Context) ([]*model.TLSFingerprintProfile, error) {
-	return s.repo.List(ctx)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	return repo.List(ctx)
 }
 
 // GetByID 根据 ID 获取模板
 func (s *TLSFingerprintProfileService) GetByID(ctx context.Context, id int64) (*model.TLSFingerprintProfile, error) {
-	return s.repo.GetByID(ctx, id)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
+	return repo.GetByID(ctx, id)
 }
 
 // Create 创建模板
 func (s *TLSFingerprintProfileService) Create(ctx context.Context, profile *model.TLSFingerprintProfile) (*model.TLSFingerprintProfile, error) {
+	if profile == nil {
+		return nil, errors.New("tls fingerprint profile is required")
+	}
+	if h2fp, err := canonicalizeHTTP2Fingerprint(profile.HTTP2Fingerprint); err != nil {
+		return nil, err
+	} else {
+		profile.HTTP2Fingerprint = h2fp
+	}
 	if err := profile.Validate(); err != nil {
 		return nil, err
 	}
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
 
-	created, err := s.repo.Create(ctx, profile)
+	created, err := repo.Create(ctx, profile)
 	if err != nil {
 		return nil, err
 	}
@@ -102,11 +133,23 @@ func (s *TLSFingerprintProfileService) Create(ctx context.Context, profile *mode
 
 // Update 更新模板
 func (s *TLSFingerprintProfileService) Update(ctx context.Context, profile *model.TLSFingerprintProfile) (*model.TLSFingerprintProfile, error) {
+	if profile == nil {
+		return nil, errors.New("tls fingerprint profile is required")
+	}
+	if h2fp, err := canonicalizeHTTP2Fingerprint(profile.HTTP2Fingerprint); err != nil {
+		return nil, err
+	} else {
+		profile.HTTP2Fingerprint = h2fp
+	}
 	if err := profile.Validate(); err != nil {
 		return nil, err
 	}
+	repo, err := s.requireRepo()
+	if err != nil {
+		return nil, err
+	}
 
-	updated, err := s.repo.Update(ctx, profile)
+	updated, err := repo.Update(ctx, profile)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +163,11 @@ func (s *TLSFingerprintProfileService) Update(ctx context.Context, profile *mode
 
 // Delete 删除模板
 func (s *TLSFingerprintProfileService) Delete(ctx context.Context, id int64) error {
-	if err := s.repo.Delete(ctx, id); err != nil {
+	repo, err := s.requireRepo()
+	if err != nil {
+		return err
+	}
+	if err := repo.Delete(ctx, id); err != nil {
 		return err
 	}
 
@@ -134,9 +181,12 @@ func (s *TLSFingerprintProfileService) Delete(ctx context.Context, id int64) err
 // --- 热路径：运行时 Profile 查找 ---
 
 // GetProfileByID 根据 ID 从本地缓存获取 Profile（用于 DoWithTLS 热路径）
-// 返回 nil 表示未找到，调用方应 fallback 到内置默认 Profile
+// 返回 nil 表示未找到或该模板当前运行时不可用，调用方应 fallback 到内置默认 Profile
 func (s *TLSFingerprintProfileService) GetProfileByID(id int64) *tlsfingerprint.Profile {
 	if p := s.getProfileModelByID(id); p != nil {
+		if !tlsFingerprintProfileRuntimeSupported(p) || tlsFingerprintProfileUsesUnsupportedH2Transport(p) {
+			return nil
+		}
 		return p.ToTLSProfile()
 	}
 	return nil
@@ -165,18 +215,49 @@ func (s *TLSFingerprintProfileService) ResolveTLSProfileByID(id int64) *tlsfinge
 
 func (s *TLSFingerprintProfileService) resolveProfileByIDForAccount(id int64, account *Account, transport string) *tlsfingerprint.Profile {
 	p := s.getProfileModelByID(id)
-	if p == nil || !tlsFingerprintProfileMatchesAccount(p, account, transport) {
+	if p == nil || !tlsFingerprintProfileRuntimeSupported(p) || tlsFingerprintProfileUsesUnsupportedH2Transport(p) || !tlsFingerprintProfileMatchesAccount(p, account, transport) {
 		return nil
 	}
 	return p.ToTLSProfile()
 }
 
-// getRandomProfileForPlatform 从同平台或 shared 模板中随机选择一个 Profile。
-func (s *TLSFingerprintProfileService) getRandomProfileForPlatform(platform string) *tlsfingerprint.Profile {
-	return s.getRandomProfileForPlatformTransport(platform, "")
+// 路由规则显式指定的 ProfileID 是管理员有意的强绑定，解析时只校验平台归属；真正的
+// transport 能力收口交给 runtimeSupported/transport 匹配。
+func (s *TLSFingerprintProfileService) resolveRouterProfileByIDForAccount(id int64, account *Account) *tlsfingerprint.Profile {
+	p := s.getProfileModelByID(id)
+	if p == nil || !tlsFingerprintProfileRuntimeSupported(p) {
+		return nil
+	}
+	if account != nil {
+		profilePlatform := strings.ToLower(strings.TrimSpace(p.Platform))
+		accountPlatform := strings.ToLower(strings.TrimSpace(account.Platform))
+		if profilePlatform != "" && profilePlatform != accountPlatform {
+			return nil
+		}
+	}
+	if tlsFingerprintProfileUsesUnsupportedH2Transport(p) {
+		return builtinDefaultTLSProfile()
+	}
+	return p.ToTLSProfile()
 }
 
-func (s *TLSFingerprintProfileService) getRandomProfileForPlatformTransport(platform, transport string) *tlsfingerprint.Profile {
+// pickStableProfile 在候选模板中按账号稳定选择一个：先按模板 ID 排序消除 map 遍历的
+// 顺序抖动，再用 accountID 取模定位。同一账号恒定选中同一 profile，保证单凭证的
+// JA3/JA4 跨请求稳定（不像每请求 rand 现掷会暴露异常指纹轮换）。accountID<=0 时无
+// 账号上下文，退化为随机选择。
+func pickStableProfile(profiles []*model.TLSFingerprintProfile, accountID int64) *tlsfingerprint.Profile {
+	if len(profiles) == 0 {
+		return nil
+	}
+	if accountID <= 0 {
+		return profiles[rand.IntN(len(profiles))].ToTLSProfile()
+	}
+	sort.Slice(profiles, func(i, j int) bool { return profiles[i].ID < profiles[j].ID })
+	idx := int(uint64(accountID) % uint64(len(profiles)))
+	return profiles[idx].ToTLSProfile()
+}
+
+func (s *TLSFingerprintProfileService) getRandomProfileForPlatformTransport(platform, transport string, accountID int64) *tlsfingerprint.Profile {
 	if s == nil {
 		return nil
 	}
@@ -193,6 +274,12 @@ func (s *TLSFingerprintProfileService) getRandomProfileForPlatformTransport(plat
 		if p == nil {
 			continue
 		}
+		if !tlsFingerprintProfileRuntimeSupported(p) {
+			continue
+		}
+		if tlsFingerprintProfileUsesUnsupportedH2Transport(p) {
+			continue
+		}
 		profilePlatform := strings.ToLower(strings.TrimSpace(p.Platform))
 		if profilePlatform != "" && profilePlatform != normalizedPlatform {
 			continue
@@ -206,16 +293,10 @@ func (s *TLSFingerprintProfileService) getRandomProfileForPlatformTransport(plat
 		return nil
 	}
 
-	return profiles[rand.IntN(len(profiles))].ToTLSProfile()
+	return pickStableProfile(profiles, accountID)
 }
 
-// getRandomProfileForDimension 从匹配 platform + os(+client_type) 的模板中随机选一个。
-// os/clientType 为空表示该维度不约束。platform 为空模板视为通用（shared）。
-func (s *TLSFingerprintProfileService) getRandomProfileForDimension(platform, os, clientType string) *tlsfingerprint.Profile {
-	return s.getRandomProfileForDimensionTransport(platform, os, clientType, "")
-}
-
-func (s *TLSFingerprintProfileService) getRandomProfileForDimensionTransport(platform, os, clientType, transport string) *tlsfingerprint.Profile {
+func (s *TLSFingerprintProfileService) getRandomProfileForDimensionTransport(platform, os, clientType, transport string, accountID int64) *tlsfingerprint.Profile {
 	if s == nil {
 		return nil
 	}
@@ -233,6 +314,12 @@ func (s *TLSFingerprintProfileService) getRandomProfileForDimensionTransport(pla
 	profiles := make([]*model.TLSFingerprintProfile, 0, len(s.localCache))
 	for _, p := range s.localCache {
 		if p == nil {
+			continue
+		}
+		if !tlsFingerprintProfileRuntimeSupported(p) {
+			continue
+		}
+		if tlsFingerprintProfileUsesUnsupportedH2Transport(p) {
 			continue
 		}
 		pPlatform := strings.ToLower(strings.TrimSpace(p.Platform))
@@ -259,7 +346,7 @@ func (s *TLSFingerprintProfileService) getRandomProfileForDimensionTransport(pla
 	if len(profiles) == 0 {
 		return nil
 	}
-	return profiles[rand.IntN(len(profiles))].ToTLSProfile()
+	return pickStableProfile(profiles, accountID)
 }
 
 // ResolveTLSProfileForDimension 按账号的「OS×client 绑定矩阵」解析运行时 Profile。
@@ -292,7 +379,7 @@ func (s *TLSFingerprintProfileService) resolveTLSProfileForDimension(account *Ac
 		return builtinDefaultTLSProfile(), true
 	}
 	if id == -1 {
-		if p := s.getRandomProfileForDimensionTransport(account.Platform, os, clientType, transport); p != nil {
+		if p := s.getRandomProfileForDimensionTransport(account.Platform, os, clientType, transport, account.ID); p != nil {
 			return p, true
 		}
 		if !defaultWhenUnresolved {
@@ -336,7 +423,7 @@ func (s *TLSFingerprintProfileService) ResolveTLSProfileForTransport(account *Ac
 	}
 	if id == -1 {
 		// 随机选择一个同平台或 shared profile
-		if p := s.getRandomProfileForPlatformTransport(account.Platform, transport); p != nil {
+		if p := s.getRandomProfileForPlatformTransport(account.Platform, transport, account.ID); p != nil {
 			return p
 		}
 	}
@@ -360,6 +447,23 @@ func tlsFingerprintProfileMatchesAccount(p *model.TLSFingerprintProfile, account
 		}
 	}
 	return tlsFingerprintProfileTransportMatches(p.Transport, transport)
+}
+
+func tlsFingerprintProfileRuntimeSupported(p *model.TLSFingerprintProfile) bool {
+	if p == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(p.Transport)) {
+	case "h2", "websocket-h2":
+		if strings.TrimSpace(p.HTTP2Fingerprint) == "" {
+			return false
+		}
+	}
+	return true
+}
+
+func tlsFingerprintProfileUsesUnsupportedH2Transport(p *model.TLSFingerprintProfile) bool {
+	return false
 }
 
 func tlsFingerprintProfileTransportMatches(profileTransport, runtimeTransport string) bool {
@@ -394,7 +498,11 @@ func (s *TLSFingerprintProfileService) refreshLocalCache(ctx context.Context) er
 }
 
 func (s *TLSFingerprintProfileService) reloadFromDB(ctx context.Context) error {
-	profiles, err := s.repo.List(ctx)
+	repo, err := s.requireRepo()
+	if err != nil {
+		return err
+	}
+	profiles, err := repo.List(ctx)
 	if err != nil {
 		return err
 	}

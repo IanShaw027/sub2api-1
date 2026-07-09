@@ -135,7 +135,7 @@ async function pollStatus() {
   if (!orderId.value) return
   const order = await paymentStore.pollOrderStatus(orderId.value)
   if (!order) return
-  if (order.status === 'COMPLETED' || order.status === 'PAID' || order.status === 'RECHARGING') {
+  if (order.status === 'COMPLETED' || order.status === 'PAID') {
     cleanup()
     router.push({ path: '/payment/result', query: { order_id: String(orderId.value), status: 'success' } })
   } else if (order.status === 'EXPIRED' || order.status === 'CANCELLED' || order.status === 'FAILED') {

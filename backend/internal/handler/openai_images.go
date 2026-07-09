@@ -667,10 +667,6 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	// Compute target path for sub-resources and preserve query string
 	// (e.g. /videos?limit=10, /videos/<id>/content).
 	targetPath := c.Request.URL.RequestURI()
-	// normalize to start with /v1 if needed? but use as-is for forward func
-	if !strings.HasPrefix(targetPath, "/v1/") && strings.HasPrefix(targetPath, "/") {
-		// keep client path, ForwardVideos will handle relative to base
-	}
 
 	// Sticky session: GET status/content reuses the account that created the job.
 	// POST generations bind the account after we learn request_id from the response.

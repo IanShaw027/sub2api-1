@@ -319,6 +319,58 @@ func TestMigration132BackfillsHistoricalAffiliateLedgerRowsSafely(t *testing.T) 
 	require.Contains(t, sql, "rebate_rate = CASE")
 }
 
+func TestHistoricalDeleteMigrationsArchiveRowsBeforeDelete(t *testing.T) {
+	tests := []struct {
+		migration string
+		archive   string
+	}{
+		{
+			migration: "131_affiliate_rebate_hardening.sql",
+			archive:   "payment_audit_logs_migration_archive",
+		},
+		{
+			migration: "132_affiliate_policy_limits.sql",
+			archive:   "user_affiliate_ledger_migration_archive",
+		},
+		{
+			migration: "137_subscription_fulfillment_claim_dedupe.sql",
+			archive:   "payment_audit_logs_migration_archive",
+		},
+		{
+			migration: "151_apply_rpm_parallel_constraints_and_replace_claude_code_template.sql",
+			archive:   "channel_monitor_request_templates_migration_archive",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.migration, func(t *testing.T) {
+			content, err := FS.ReadFile(tt.migration)
+			require.NoError(t, err)
+
+			sql := string(content)
+			normalized := strings.ToUpper(sql)
+			require.Contains(t, sql, "CREATE TABLE IF NOT EXISTS "+tt.archive)
+			require.Contains(t, sql, "INSERT INTO "+tt.archive)
+			require.Contains(t, normalized, "TO_JSONB(")
+			require.Contains(t, sql, "DELETE FROM")
+		})
+	}
+}
+
+func TestMigration176ArchivesAndDeduplicatesSamplesBeforeUniqueReplayIndex(t *testing.T) {
+	content, err := FS.ReadFile("176_tls_fingerprint_capture_unification.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	normalized := strings.ToUpper(sql)
+	require.Contains(t, sql, "CREATE TABLE IF NOT EXISTS tls_fingerprint_capture_samples_migration_archive")
+	require.Contains(t, normalized, "PARTITION BY TASK_ID, REPLAY_HASH, TRANSPORT")
+	require.Contains(t, normalized, "INSERT INTO TLS_FINGERPRINT_CAPTURE_SAMPLES_MIGRATION_ARCHIVE")
+	require.Contains(t, normalized, "TO_JSONB(")
+	require.Contains(t, normalized, "DELETE FROM TLS_FINGERPRINT_CAPTURE_SAMPLES")
+	require.Contains(t, normalized, "CREATE UNIQUE INDEX IF NOT EXISTS IDX_TLS_FP_CAPTURE_SAMPLES_TASK_REPLAY_TRANSPORT_UNIQUE")
+}
+
 func TestMigration145PreservesTemplateAssociationsWhileConvergingTemplateSet(t *testing.T) {
 	content, err := FS.ReadFile("145_seed_client_spoof_channel_monitor_templates.sql")
 	require.NoError(t, err)

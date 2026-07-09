@@ -9,6 +9,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"strconv"
@@ -229,7 +230,7 @@ func (h *MediaHandler) serveSignedDownload(c *gin.Context, thumbnail bool) {
 	}
 	setMediaCacheHeaders(c, false)
 	headers := map[string]string{
-		"Content-Disposition": `attachment; filename="` + fileName + `"`,
+		"Content-Disposition": buildDownloadContentDisposition(fileName),
 	}
 	c.DataFromReader(http.StatusOK, stream.SizeBytes, stream.ContentType, stream.Body, headers)
 }
@@ -326,4 +327,16 @@ func sanitizeDownloadFileName(fileName string) string {
 	fileName = strings.ReplaceAll(fileName, "\n", "")
 	fileName = strings.ReplaceAll(fileName, "\r", "")
 	return fileName
+}
+
+func buildDownloadContentDisposition(fileName string) string {
+	fileName = strings.TrimSpace(fileName)
+	if fileName == "" {
+		fileName = "download"
+	}
+	if value := mime.FormatMediaType("attachment", map[string]string{"filename": fileName}); value != "" {
+		return value
+	}
+	fileName = sanitizeDownloadFileName(fileName)
+	return `attachment; filename="` + fileName + `"`
 }

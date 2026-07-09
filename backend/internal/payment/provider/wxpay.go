@@ -456,6 +456,9 @@ func (w *Wxpay) VerifyNotification(ctx context.Context, rawBody string, headers 
 }
 
 func (w *Wxpay) Refund(ctx context.Context, req payment.RefundRequest) (*payment.RefundResponse, error) {
+	if strings.TrimSpace(req.RequestID) == "" {
+		return nil, fmt.Errorf("wxpay refund: missing request id")
+	}
 	c, err := w.ensureClient()
 	if err != nil {
 		return nil, err
@@ -539,10 +542,7 @@ func wxpayRefundOutRefundNo(req payment.RefundRequest) string {
 	if requestID := strings.TrimSpace(req.RequestID); requestID != "" {
 		return requestID
 	}
-	if orderID := strings.TrimSpace(req.OrderID); orderID != "" {
-		return orderID + "-refund"
-	}
-	return "refund"
+	return ""
 }
 
 func (w *Wxpay) queryOrderTotalFen(ctx context.Context, c *core.Client, orderID string) (int64, error) {

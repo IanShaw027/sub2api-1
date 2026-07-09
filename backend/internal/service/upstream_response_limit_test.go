@@ -24,6 +24,12 @@ func TestResolveUpstreamResponseReadLimit(t *testing.T) {
 }
 
 func TestReadUpstreamResponseBodyLimited(t *testing.T) {
+	t.Run("nil reader", func(t *testing.T) {
+		body, err := readUpstreamResponseBodyLimited(nil, 2)
+		require.Nil(t, body)
+		require.EqualError(t, err, "response body is required")
+	})
+
 	t.Run("within limit", func(t *testing.T) {
 		body, err := readUpstreamResponseBodyLimited(bytes.NewReader([]byte("ok")), 2)
 		require.NoError(t, err)

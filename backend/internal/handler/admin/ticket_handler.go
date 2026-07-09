@@ -152,20 +152,25 @@ func (h *TicketHandler) Reply(c *gin.Context) {
 		response.ErrorFrom(c, service.ErrTicketMessageRequired)
 		return
 	}
-	attachments, err := h.resolveAttachmentsForAdmin(c.Request.Context(), ticketID, req.Attachments)
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	if err := h.ticketService.ReplyForAdmin(c.Request.Context(), ticketID, service.CreateSupportTicketMessageInput{
-		UserID:      subject.UserID,
-		Content:     content,
-		Attachments: attachments,
-	}); err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	response.Success(c, gin.H{"message": "ok"})
+	executeAdminIdempotentJSON(c, "admin.tickets:reply", map[string]any{
+		"ticket_id":    ticketID,
+		"content":      content,
+		"attachments":  req.Attachments,
+		"expected_uid": subject.UserID,
+	}, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
+		attachments, err := h.resolveAttachmentsForAdmin(ctx, ticketID, req.Attachments)
+		if err != nil {
+			return nil, err
+		}
+		if err := h.ticketService.ReplyForAdmin(ctx, ticketID, service.CreateSupportTicketMessageInput{
+			UserID:      subject.UserID,
+			Content:     content,
+			Attachments: attachments,
+		}); err != nil {
+			return nil, err
+		}
+		return gin.H{"message": "ok"}, nil
+	})
 }
 
 func (h *TicketHandler) resolveAttachmentsForAdmin(ctx context.Context, ticketID int64, refs []TicketAttachmentRefRequest) ([]service.TicketMessageAttachment, error) {

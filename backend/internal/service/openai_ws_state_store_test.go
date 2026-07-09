@@ -513,6 +513,38 @@ func TestOpenAIWSStateStore_MaybeCleanupRemovesExpiredIncrementally(t *testing.T
 	require.Zero(t, remaining, "多轮 cleanup 后应逐步清空全部过期键")
 }
 
+func TestOpenAIWSStateStore_MaybeCleanupExpiresSessionInFlight(t *testing.T) {
+	raw := NewOpenAIWSStateStore(nil)
+	store, ok := raw.(*defaultOpenAIWSStateStore)
+	require.True(t, ok)
+
+	key := openAIWSSessionContextKey(7, 11, "sess_stale_inflight")
+	require.NotEmpty(t, key)
+
+	store.sessionInFlightMu.Lock()
+	store.sessionInFlight[key] = openAIWSSessionInFlightBinding{
+		expiresAt: time.Now().Add(-time.Minute),
+	}
+	store.sessionInFlightMu.Unlock()
+
+	require.True(t, store.TrySessionInFlight(7, 11, "sess_stale_inflight"), "过期 owner 不应继续挡住新请求")
+	store.EndSessionInFlight(7, 11, "sess_stale_inflight")
+
+	store.sessionInFlightMu.Lock()
+	store.sessionInFlight[key] = openAIWSSessionInFlightBinding{
+		expiresAt: time.Now().Add(-time.Minute),
+	}
+	store.sessionInFlightMu.Unlock()
+
+	store.lastCleanupUnixNano.Store(time.Now().Add(-2 * openAIWSStateStoreCleanupInterval).UnixNano())
+	store.maybeCleanup()
+
+	store.sessionInFlightMu.Lock()
+	_, exists := store.sessionInFlight[key]
+	store.sessionInFlightMu.Unlock()
+	require.False(t, exists, "cleanup 后应清掉陈旧 in-flight owner")
+}
+
 func TestEnsureBindingCapacity_EvictsOneWhenMapIsFull(t *testing.T) {
 	bindings := map[string]int{
 		"a": 1,

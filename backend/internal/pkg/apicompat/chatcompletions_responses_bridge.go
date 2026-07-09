@@ -12,7 +12,7 @@ import (
 // /v1/chat/completions.
 func ResponsesToChatCompletionsRequest(req *ResponsesRequest) (*ChatCompletionsRequest, error) {
 	if req == nil {
-		return nil, fmt.Errorf("responses request is nil")
+		return nil, fmt.Errorf("responses request is required")
 	}
 
 	functionNameMap := responsesNamespaceFunctionNameMap(req.Tools)
@@ -611,66 +611,6 @@ func responsesServerToolToNativeChatTool(tool ResponsesTool) (ChatTool, bool) {
 	}
 }
 
-func responsesServerToolToChatFunctionFallback(tool ResponsesTool) ChatTool {
-	name := canonicalResponsesServerToolFunctionName(tool)
-	description := strings.TrimSpace(tool.Description)
-	if description == "" {
-		description = defaultResponsesServerToolDescription(name)
-	}
-	parameters := bytesTrimSpace(tool.Parameters)
-	if len(parameters) == 0 || string(parameters) == "null" {
-		parameters = defaultResponsesServerToolParameters(name)
-	}
-	return ChatTool{
-		Type: "function",
-		Function: &ChatFunction{
-			Name:        name,
-			Description: description,
-			Parameters:  parameters,
-			Strict:      tool.Strict,
-		},
-	}
-}
-
-func canonicalResponsesServerToolFunctionName(tool ResponsesTool) string {
-	toolType := strings.ToLower(strings.TrimSpace(tool.Type))
-	switch {
-	case toolType == "google_search" || strings.HasPrefix(toolType, "web_search"):
-		return "web_search"
-	case strings.HasPrefix(toolType, "web_fetch"):
-		return "web_fetch"
-	}
-	if name := sanitizeChatFunctionName(tool.Name); name != "" {
-		return name
-	}
-	if name := sanitizeChatFunctionName(tool.Type); name != "" {
-		return name
-	}
-	return "tool"
-}
-
-func defaultResponsesServerToolDescription(name string) string {
-	switch name {
-	case "web_search":
-		return "Search the web for current information."
-	case "web_fetch":
-		return "Fetch a web page by URL."
-	default:
-		return "Invoke the requested tool."
-	}
-}
-
-func defaultResponsesServerToolParameters(name string) json.RawMessage {
-	switch name {
-	case "web_search":
-		return json.RawMessage(`{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}`)
-	case "web_fetch":
-		return json.RawMessage(`{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch"}},"required":["url"]}`)
-	default:
-		return json.RawMessage(`{"type":"object","properties":{}}`)
-	}
-}
-
 func sanitizeChatFunctionName(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -680,15 +620,15 @@ func sanitizeChatFunctionName(value string) string {
 	for _, r := range value {
 		switch {
 		case r >= 'a' && r <= 'z':
-			b.WriteRune(r)
+			_, _ = b.WriteRune(r)
 		case r >= 'A' && r <= 'Z':
-			b.WriteRune(r)
+			_, _ = b.WriteRune(r)
 		case r >= '0' && r <= '9':
-			b.WriteRune(r)
+			_, _ = b.WriteRune(r)
 		case r == '_' || r == '-':
-			b.WriteRune(r)
+			_, _ = b.WriteRune(r)
 		default:
-			b.WriteByte('_')
+			_ = b.WriteByte('_')
 		}
 	}
 	return strings.Trim(b.String(), "_-")

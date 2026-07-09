@@ -104,21 +104,17 @@ func TestDropOrphanFunctionCallOutputs(t *testing.T) {
 		}
 	})
 
-	t.Run("drops_output_when_call_source_appears_later", func(t *testing.T) {
+	t.Run("keeps_output_when_call_source_appears_later", func(t *testing.T) {
 		input := []any{
 			map[string]any{"type": "tool_search_output", "call_id": "call_late", "output": "ok"},
 			map[string]any{"type": "tool_search_call", "call_id": "call_late", "query": "hello"},
 		}
 		got, dropped := dropOrphanFunctionCallOutputs(input)
-		if !dropped {
-			t.Fatal("expected dropped=true when output appears before call source")
+		if dropped {
+			t.Fatal("expected later call source to keep the earlier output")
 		}
-		if len(got) != 1 {
-			t.Fatalf("expected only later call source kept, got %d items", len(got))
-		}
-		gotItem, _ := got[0].(map[string]any)
-		if gotType, _ := gotItem["type"].(string); gotType != "tool_search_call" {
-			t.Fatalf("expected call source kept, got %#v", got[0])
+		if len(got) != 2 {
+			t.Fatalf("expected pair preserved, got %d items", len(got))
 		}
 	})
 
@@ -136,21 +132,17 @@ func TestDropOrphanFunctionCallOutputs(t *testing.T) {
 		}
 	})
 
-	t.Run("item_reference_after_output_drops_orphan", func(t *testing.T) {
+	t.Run("item_reference_after_output_keeps_output", func(t *testing.T) {
 		input := []any{
 			map[string]any{"type": "custom_tool_call_output", "call_id": "call_ref", "output": "ok"},
 			map[string]any{"type": "item_reference", "id": "call_ref"},
 		}
 		got, dropped := dropOrphanFunctionCallOutputs(input)
-		if !dropped {
-			t.Fatal("expected dropped=true when output appears before item_reference")
+		if dropped {
+			t.Fatal("expected later item_reference to keep the earlier output")
 		}
-		if len(got) != 1 {
-			t.Fatalf("expected only later item_reference kept, got %d items", len(got))
-		}
-		gotItem, _ := got[0].(map[string]any)
-		if gotType, _ := gotItem["type"].(string); gotType != "item_reference" {
-			t.Fatalf("expected item_reference kept, got %#v", got[0])
+		if len(got) != 2 {
+			t.Fatalf("expected pair preserved, got %d items", len(got))
 		}
 	})
 }

@@ -54,6 +54,26 @@ server:
     # 每个流的最大上传缓冲区（字节，默认 512KB）
     max_upload_buffer_per_stream: 524288
 
+# TLS fingerprint native capture listener
+# TLS 指纹原生采集监听器
+tls_fingerprint_capture:
+  # Enable the dedicated TLS capture listener
+  # 启用独立的 TLS 采集监听器
+  enabled: false
+  # Bind host for the native capture listener
+  # 原生采集监听器绑定地址（默认仅监听本机，避免误暴露到公网）
+  host: "127.0.0.1"
+  # Bind port for the native capture listener
+  # 原生采集监听器端口
+  port: 8444
+  # Optional certificate/key pair. Leave both empty to auto-generate a self-signed cert.
+  # 可选证书/私钥。两者都留空时自动生成自签名证书。
+  cert_file: ""
+  key_file: ""
+  # Optional external base URL when the listener is published behind a reverse proxy
+  # 监听器通过反向代理对外发布时可填写外部访问地址
+  public_base_url: ""
+
 # =============================================================================
 # Run Mode Configuration
 # 运行模式配置
@@ -132,10 +152,6 @@ security:
     # Note: __CSP_NONCE__ will be replaced with 'nonce-xxx' at request time for inline script security
     # 注意：__CSP_NONCE__ 会在请求时被替换为 'nonce-xxx'，用于内联脚本安全
     policy: "default-src 'self'; script-src 'self' __CSP_NONCE__ https://challenges.cloudflare.com https://static.cloudflareinsights.com https://*.stripe.com https://static.airwallex.com https://checkout.airwallex.com https://static-demo.airwallex.com https://checkout-demo.airwallex.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://static.airwallex.com https://checkout.airwallex.com https://static-demo.airwallex.com https://checkout-demo.airwallex.com; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https:; frame-src https://challenges.cloudflare.com https://*.stripe.com https://checkout.airwallex.com https://checkout-demo.airwallex.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-  proxy_probe:
-    # Allow skipping TLS verification for proxy probe (debug only)
-    # 允许代理探测时跳过 TLS 证书验证（仅用于调试）
-    insecure_skip_verify: false
   proxy_fallback:
     # Allow auxiliary services (update check, pricing data) to fallback to direct
     # connection when proxy initialization fails. Does NOT affect AI gateway connections.
@@ -207,7 +223,7 @@ gateway:
   #
   # 注意：开启后会影响所有客户端的行为（不仅限于 VS Code / Codex CLI），请谨慎开启。
   force_codex_cli: false
-  # Per-platform anti-ban / anti-fingerprint suite (fingerprint normalizer + TLS spoof + header strip + jitter + trigger sanitization).
+  # Per-platform anti-ban / anti-fingerprint suite (fingerprint normalizer + TLS spoof + header strip + trigger sanitization).
   # Defaults to OFF ("默认应该是关的"). Enable explicitly per platform in System Settings > Gateway Settings (DB overrides).
   # 各平台防封控套件默认关闭；需在 系统设置 > 网关设置 里为具体平台手动开启（DB 优先覆盖此配置）。
   anti_ban:
@@ -393,7 +409,7 @@ gateway:
   concurrency_slot_ttl_minutes: 30
   # Stream data interval timeout (seconds), 0=disable
   # 流数据间隔超时（秒），0=禁用
-  stream_data_interval_timeout: 2000
+  stream_data_interval_timeout: 600
   # Stream keepalive interval (seconds), 0=disable
   # 流式 keepalive 间隔（秒），0=禁用
   stream_keepalive_interval: 10
@@ -781,6 +797,37 @@ idempotency:
   cleanup_batch_size: 500
 
 # =============================================================================
+# 审计/流水表自动保留（TTL purge）
+# Audit table retention: periodically batch-delete rows older than retention_days
+# 覆盖 ai_audit_logs / ai_skill_runs / ai_skill_settlements /
+#      codex_invite_reset_history / deleted_api_key_audits（按 created_at）
+# =============================================================================
+audit_retention:
+  # 启用后台自动清理（默认关闭，按需开启）
+  enabled: false
+  # 保留天数：早于 now-retention_days 的行会被删除
+  retention_days: 180
+  # 清理轮询间隔（秒）
+  cleanup_interval_seconds: 3600
+  # 每表每轮最大删除条数（分批，防长事务/锁）
+  batch_size: 1000
+
+# =============================================================================
+# 每用户·每业务日用量成本预聚合（管理后台按用量排序用户列表用）
+# User daily usage-cost rollup: powers admin user-list usage sorting without
+# scanning usage_logs on every page. Idempotent per-business-day recompute.
+# =============================================================================
+usage_user_daily_cost:
+  # 默认启用：用量排序读预聚合表；关闭则回退实时聚合 usage_logs（kill-switch）
+  enabled: true
+  # 聚合器轮询间隔（秒）：每轮重算今天+昨天并清理旧行
+  interval_seconds: 300
+  # 启动回填的业务日数（>= 排序窗口 30，默认 31 覆盖查询下界 today-30）
+  backfill_days: 31
+  # 预聚合行保留天数（必须 >= 30，排序取近 30 天）
+  retention_days: 35
+
+# =============================================================================
 # Media Storage Configuration
 # 媒体存储配置
 # =============================================================================
@@ -789,8 +836,9 @@ media:
   enabled: false
   # MinIO/S3 内网地址
   endpoint: "http://minio:9000"
-  # 对外资源域名，统一保持为 source.qazwc.com
-  public_base_url: "https://source.qazwc.com"
+  # 对外资源公开访问域名：启用媒体时必须显式配置为你自己的域名/CDN，留空启动即报错。
+  # 切勿指向第三方外部域名，否则公开媒体 URL 会被外部主机接管（钓鱼/追踪/失效风险）。
+  public_base_url: ""
   access_key_id: ""
   secret_access_key: ""
   region: "auto"

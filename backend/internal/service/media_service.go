@@ -33,6 +33,7 @@ import (
 const (
 	defaultMediaMaxUploadSizeBytes = 64 << 20
 	defaultMediaPresignTTL         = 15 * time.Minute
+	maxThumbnailPixels             = 50_000_000
 )
 
 var errMediaBizIDInvalid = infraerrors.BadRequest("MEDIA_BIZ_ID_INVALID", "media biz_id is invalid")
@@ -841,6 +842,9 @@ func sanitizeMediaFileName(fileName string) string {
 }
 
 func generateMediaThumbnail(source []byte, originalFileName string) ([]byte, string, string, error) {
+	if err := validateMediaThumbnailSource(source); err != nil {
+		return nil, "", "", err
+	}
 	src, _, err := image.Decode(bytes.NewReader(source))
 	if err != nil {
 		return nil, "", "", err
@@ -873,6 +877,20 @@ func generateMediaThumbnail(source []byte, originalFileName string) ([]byte, str
 		name = "thumbnail"
 	}
 	return buf.Bytes(), name + ".jpg", "image/jpeg", nil
+}
+
+func validateMediaThumbnailSource(source []byte) error {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(source))
+	if err != nil {
+		return err
+	}
+	if cfg.Width <= 0 || cfg.Height <= 0 {
+		return fmt.Errorf("invalid image dimensions")
+	}
+	if int64(cfg.Width)*int64(cfg.Height) > maxThumbnailPixels {
+		return fmt.Errorf("thumbnail pixel limit exceeded")
+	}
+	return nil
 }
 
 func minFloat64(a, b float64) float64 {

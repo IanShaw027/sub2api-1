@@ -133,6 +133,20 @@ func (_u *TLSFingerprintProfileUpdate) SetNillableOriginator(v *string) *TLSFing
 	return _u
 }
 
+// SetHttp2Fingerprint sets the "http2_fingerprint" field.
+func (_u *TLSFingerprintProfileUpdate) SetHttp2Fingerprint(v string) *TLSFingerprintProfileUpdate {
+	_u.mutation.SetHttp2Fingerprint(v)
+	return _u
+}
+
+// SetNillableHttp2Fingerprint sets the "http2_fingerprint" field if the given value is not nil.
+func (_u *TLSFingerprintProfileUpdate) SetNillableHttp2Fingerprint(v *string) *TLSFingerprintProfileUpdate {
+	if v != nil {
+		_u.SetHttp2Fingerprint(*v)
+	}
+	return _u
+}
+
 // SetDescription sets the "description" field.
 func (_u *TLSFingerprintProfileUpdate) SetDescription(v string) *TLSFingerprintProfileUpdate {
 	_u.mutation.SetDescription(v)
@@ -530,6 +544,9 @@ func (_u *TLSFingerprintProfileUpdate) sqlSave(ctx context.Context) (_node int, 
 	if value, ok := _u.mutation.Originator(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldOriginator, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.Http2Fingerprint(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldHttp2Fingerprint, field.TypeString, value)
+	}
 	if value, ok := _u.mutation.Description(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldDescription, field.TypeString, value)
 	}
@@ -808,6 +825,20 @@ func (_u *TLSFingerprintProfileUpdateOne) SetOriginator(v string) *TLSFingerprin
 func (_u *TLSFingerprintProfileUpdateOne) SetNillableOriginator(v *string) *TLSFingerprintProfileUpdateOne {
 	if v != nil {
 		_u.SetOriginator(*v)
+	}
+	return _u
+}
+
+// SetHttp2Fingerprint sets the "http2_fingerprint" field.
+func (_u *TLSFingerprintProfileUpdateOne) SetHttp2Fingerprint(v string) *TLSFingerprintProfileUpdateOne {
+	_u.mutation.SetHttp2Fingerprint(v)
+	return _u
+}
+
+// SetNillableHttp2Fingerprint sets the "http2_fingerprint" field if the given value is not nil.
+func (_u *TLSFingerprintProfileUpdateOne) SetNillableHttp2Fingerprint(v *string) *TLSFingerprintProfileUpdateOne {
+	if v != nil {
+		_u.SetHttp2Fingerprint(*v)
 	}
 	return _u
 }
@@ -1238,6 +1269,9 @@ func (_u *TLSFingerprintProfileUpdateOne) sqlSave(ctx context.Context) (_node *T
 	}
 	if value, ok := _u.mutation.Originator(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldOriginator, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.Http2Fingerprint(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldHttp2Fingerprint, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Description(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldDescription, field.TypeString, value)

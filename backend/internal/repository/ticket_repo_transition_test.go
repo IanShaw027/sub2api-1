@@ -31,6 +31,82 @@ func TestTicketRepositoryAddReplyRejectsWithdrawnTicket(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestTicketRepositoryAddReplyDeduplicatesRecentIdenticalReply(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &ticketRepository{db: db}
+	now := time.Now()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT status, current_revision_no, last_reply_role\\s+FROM support_tickets\\s+WHERE id = \\$1\\s+FOR UPDATE").
+		WithArgs(int64(11)).
+		WillReturnRows(sqlmock.NewRows([]string{"status", "current_revision_no", "last_reply_role"}).
+			AddRow(service.SupportTicketStatusSubmitted, 1, service.SupportTicketSenderRoleUser))
+	mock.ExpectQuery("SELECT sender_role, sender_user_id, message_type, content, COALESCE\\(attachments, '\\[\\]'::jsonb\\), created_at\\s+FROM support_ticket_messages\\s+WHERE ticket_id = \\$1\\s+ORDER BY created_at DESC, id DESC\\s+LIMIT 1").
+		WithArgs(int64(11)).
+		WillReturnRows(sqlmock.NewRows([]string{"sender_role", "sender_user_id", "message_type", "content", "attachments", "created_at"}).
+			AddRow(service.SupportTicketSenderRoleUser, int64(9), service.SupportTicketMessageTypeMessage, "hello", []byte("[]"), now.Add(-2*time.Second)))
+	mock.ExpectCommit()
+
+	err := repo.AddReply(context.Background(), 11, &service.SupportTicketMessage{
+		SenderRole: service.SupportTicketSenderRoleUser,
+		SenderUserID: func() *int64 {
+			id := int64(9)
+			return &id
+		}(),
+		MessageType: service.SupportTicketMessageTypeMessage,
+		Content:     "hello",
+		CreatedAt:   now,
+	}, service.SupportTicketSenderRoleUser, false, true, service.SupportTicketStatusWaitingAdmin)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestTicketRepositoryAddReplyDoesNotDeduplicateOldIdenticalReply(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &ticketRepository{db: db}
+	now := time.Now()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT status, current_revision_no, last_reply_role\\s+FROM support_tickets\\s+WHERE id = \\$1\\s+FOR UPDATE").
+		WithArgs(int64(12)).
+		WillReturnRows(sqlmock.NewRows([]string{"status", "current_revision_no", "last_reply_role"}).
+			AddRow(service.SupportTicketStatusSubmitted, 1, service.SupportTicketSenderRoleUser))
+	mock.ExpectQuery("SELECT sender_role, sender_user_id, message_type, content, COALESCE\\(attachments, '\\[\\]'::jsonb\\), created_at\\s+FROM support_ticket_messages\\s+WHERE ticket_id = \\$1\\s+ORDER BY created_at DESC, id DESC\\s+LIMIT 1").
+		WithArgs(int64(12)).
+		WillReturnRows(sqlmock.NewRows([]string{"sender_role", "sender_user_id", "message_type", "content", "attachments", "created_at"}).
+			AddRow(service.SupportTicketSenderRoleUser, int64(9), service.SupportTicketMessageTypeMessage, "hello", []byte("[]"), now.Add(-supportTicketReplyDedupWindow-time.Second)))
+	mock.ExpectQuery("INSERT INTO support_ticket_messages").
+		WithArgs(
+			int64(12),
+			service.SupportTicketSenderRoleUser,
+			sqlmock.AnyArg(),
+			"",
+			"",
+			service.SupportTicketMessageTypeMessage,
+			"hello",
+			[]byte("[]"),
+			now,
+		).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(2)))
+	mock.ExpectExec("UPDATE support_tickets\\s+SET latest_message_at = \\$2, last_reply_role = \\$3, unread_by_user = \\$4, unread_by_admin = \\$5,\\s+status = COALESCE\\(NULLIF\\(\\$6, ''\\), status\\), updated_at = NOW\\(\\)\\s+WHERE id = \\$1").
+		WithArgs(int64(12), now, service.SupportTicketSenderRoleUser, false, true, service.SupportTicketStatusWaitingAdmin).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	err := repo.AddReply(context.Background(), 12, &service.SupportTicketMessage{
+		SenderRole: service.SupportTicketSenderRoleUser,
+		SenderUserID: func() *int64 {
+			id := int64(9)
+			return &id
+		}(),
+		MessageType: service.SupportTicketMessageTypeMessage,
+		Content:     "hello",
+		CreatedAt:   now,
+	}, service.SupportTicketSenderRoleUser, false, true, service.SupportTicketStatusWaitingAdmin)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestTicketRepositoryCloseByUserRejectsWithdrawnTicket(t *testing.T) {
 	db, mock := newSQLMock(t)
 	repo := &ticketRepository{db: db}

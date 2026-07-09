@@ -158,3 +158,17 @@ func TestShouldStopOpenAIOAuth429Failover_StopsGrokAfterFirst429Switch(t *testin
 	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(apiKeyAccount, http.StatusTooManyRequests, 1))
 	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusInternalServerError, 1))
 }
+
+func TestMarkOpenAICloudflareChallenge_RuntimeBlocksAPIKeyAccount(t *testing.T) {
+	repo := &rateLimitAccountRepoStub{}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	account := &Account{ID: 48, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+
+	svc.markOpenAICloudflareChallenge(context.Background(), account)
+
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.Equal(t, 1, repo.tempCalls)
+	require.Equal(t, account.ID, repo.lastTempID)
+	require.Equal(t, "cloudflare_challenge", repo.lastTempReason)
+	require.True(t, repo.lastRateLimitedAt.IsZero())
+}

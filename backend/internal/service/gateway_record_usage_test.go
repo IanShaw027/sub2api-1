@@ -67,12 +67,18 @@ type openAIRecordUsageBestEffortLogRepoStub struct {
 	directCreateCalls int
 	lastLog           *UsageLog
 	lastCtxErr        error
+	lastDeadlineDelta time.Duration
+	hasDeadline       bool
 }
 
 func (s *openAIRecordUsageBestEffortLogRepoStub) CreateBestEffort(ctx context.Context, log *UsageLog) error {
 	s.bestEffortCalls++
 	s.lastLog = log
 	s.lastCtxErr = ctx.Err()
+	if deadline, ok := ctx.Deadline(); ok {
+		s.hasDeadline = true
+		s.lastDeadlineDelta = time.Until(deadline)
+	}
 	return s.bestEffortErr
 }
 
@@ -87,7 +93,95 @@ func (s *openAIRecordUsageBestEffortLogRepoStub) CreateDirect(ctx context.Contex
 	s.directCreateCalls++
 	s.lastLog = log
 	s.lastCtxErr = ctx.Err()
+	if deadline, ok := ctx.Deadline(); ok {
+		s.hasDeadline = true
+		s.lastDeadlineDelta = time.Until(deadline)
+	}
 	return false, s.directCreateErr
+}
+
+func TestWriteUsageLogBestEffort_UsesShortDetachedTimeout(t *testing.T) {
+	repo := &openAIRecordUsageBestEffortLogRepoStub{}
+
+	writeUsageLogBestEffort(context.Background(), repo, &UsageLog{
+		RequestID: "usage_timeout_window",
+		APIKeyID:  1,
+	}, "service.gateway")
+
+	require.True(t, repo.hasDeadline, "usage log best-effort should use a bounded detached timeout")
+	require.Less(t, repo.lastDeadlineDelta, 5*time.Second, "usage log write should use a much shorter window than the 15s billing timeout")
+}
+
+func TestGatewayServiceRecordUsage_RejectsNilInput(t *testing.T) {
+	svc := &GatewayService{}
+	require.Error(t, svc.RecordUsage(context.Background(), nil))
+	require.Error(t, svc.RecordUsage(context.Background(), &RecordUsageInput{}))
+}
+
+func TestGatewayServiceRecordUsage_SimpleModeWithoutDeferredServiceDoesNotPanic(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newGatewayRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	svc.cfg.RunMode = config.RunModeSimple
+	svc.deferredService = nil
+
+	require.NotPanics(t, func() {
+		err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+			Result: &ForwardResult{
+				RequestID: "gateway_simple_nil_deferred",
+				Usage: ClaudeUsage{
+					InputTokens:  10,
+					OutputTokens: 6,
+				},
+				Model:    "claude-sonnet-4",
+				Duration: time.Second,
+			},
+			APIKey:  &APIKey{ID: 501},
+			User:    &User{ID: 601},
+			Account: &Account{ID: 701},
+		})
+		require.NoError(t, err)
+	})
+	require.Equal(t, 1, usageRepo.calls, "simple mode should still persist usage log")
+}
+
+func TestGatewayServiceRecordUsageWithLongContext_RejectsNilInput(t *testing.T) {
+	svc := &GatewayService{}
+	require.Error(t, svc.RecordUsageWithLongContext(context.Background(), nil))
+	require.Error(t, svc.RecordUsageWithLongContext(context.Background(), &RecordUsageLongContextInput{}))
+}
+
+func TestGatewayServiceRecordUsage_RejectsMissingRequiredEntities(t *testing.T) {
+	svc := &GatewayService{}
+	validResult := &ForwardResult{Model: "claude-sonnet-4"}
+
+	require.Error(t, svc.RecordUsage(context.Background(), &RecordUsageInput{Result: validResult}))
+	require.Error(t, svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result:  validResult,
+		APIKey:  &APIKey{ID: 1},
+		Account: &Account{ID: 3},
+	}))
+	require.Error(t, svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: validResult,
+		APIKey: &APIKey{ID: 1},
+		User:   &User{ID: 2},
+	}))
+}
+
+func TestGatewayServiceRecordUsageWithLongContext_RejectsMissingRequiredEntities(t *testing.T) {
+	svc := &GatewayService{}
+	validResult := &ForwardResult{Model: "claude-sonnet-4"}
+
+	require.Error(t, svc.RecordUsageWithLongContext(context.Background(), &RecordUsageLongContextInput{Result: validResult}))
+	require.Error(t, svc.RecordUsageWithLongContext(context.Background(), &RecordUsageLongContextInput{
+		Result:  validResult,
+		APIKey:  &APIKey{ID: 1},
+		Account: &Account{ID: 3},
+	}))
+	require.Error(t, svc.RecordUsageWithLongContext(context.Background(), &RecordUsageLongContextInput{
+		Result: validResult,
+		APIKey: &APIKey{ID: 1},
+		User:   &User{ID: 2},
+	}))
 }
 
 func TestGatewayServiceRecordUsage_BillingUsesDetachedContext(t *testing.T) {
@@ -673,4 +767,74 @@ func TestGatewayServiceRecordUsage_SearchUsageBillsExplicitGroupPrice(t *testing
 	require.InDelta(t, 0.005, usageRepo.lastLog.ActualCost, 1e-12)
 	require.Equal(t, 1, userRepo.deductCalls)
 	require.InDelta(t, usageRepo.lastLog.ActualCost, userRepo.lastAmount, 1e-12)
+}
+
+func TestGatewayServiceRecordUsage_SearchUsageAppliesGroupRateMultiplier(t *testing.T) {
+	usageRepo := &openAIRecordUsageBestEffortLogRepoStub{}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newGatewayRecordUsageServiceForTest(usageRepo, userRepo, subRepo)
+	groupID := int64(42)
+	pricePer1k := 5.0
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID:   "search_usage_multiplier",
+			Model:       "grok-web-search",
+			SearchCount: 2,
+			Duration:    time.Second,
+		},
+		APIKey: &APIKey{ID: 101, GroupID: &groupID, Group: &Group{
+			ID:               groupID,
+			RateMultiplier:   2,
+			SearchPricePer1k: &pricePer1k,
+		}},
+		User:    &User{ID: 201},
+		Account: &Account{ID: 301, Platform: PlatformGrok},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.InDelta(t, 0.01, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, 0.02, usageRepo.lastLog.ActualCost, 1e-12)
+	require.Equal(t, 1, userRepo.deductCalls)
+	require.InDelta(t, 0.02, userRepo.lastAmount, 1e-12)
+}
+
+func TestGatewayServiceRecordUsage_SearchUsageAddsTokenCostInsteadOfReplacingIt(t *testing.T) {
+	usageRepo := &openAIRecordUsageBestEffortLogRepoStub{}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newGatewayRecordUsageServiceForTest(usageRepo, userRepo, subRepo)
+	groupID := int64(42)
+	pricePer1k := 5.0
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID:   "search_usage_with_tokens",
+			Model:       "grok-4.3",
+			SearchCount: 2,
+			Usage: ClaudeUsage{
+				InputTokens:  1000,
+				OutputTokens: 200,
+			},
+			Duration: time.Second,
+		},
+		APIKey: &APIKey{ID: 101, GroupID: &groupID, Group: &Group{
+			ID:               groupID,
+			RateMultiplier:   1,
+			SearchPricePer1k: &pricePer1k,
+		}},
+		User:    &User{ID: 201},
+		Account: &Account{ID: 301, Platform: PlatformGrok},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, usageRepo.lastLog.BillingMode)
+	require.Equal(t, string(BillingModeSearch), *usageRepo.lastLog.BillingMode)
+	require.Greater(t, usageRepo.lastLog.InputCost, 0.0, "search billing should retain token input cost")
+	require.Greater(t, usageRepo.lastLog.OutputCost, 0.0, "search billing should retain token output cost")
+	require.Greater(t, usageRepo.lastLog.TotalCost, 0.01, "total should exceed search-only cost")
+	require.Greater(t, userRepo.lastAmount, 0.01, "deducted balance should exceed search-only cost")
 }

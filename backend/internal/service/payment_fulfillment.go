@@ -596,21 +596,53 @@ func (s *PaymentService) doSub(ctx context.Context, o *dbent.PaymentOrder) error
 		}
 	}
 	orderNote := fmt.Sprintf("payment order %d", o.ID)
-	_, _, err = s.subscriptionSvc.AssignOrExtendSubscription(ctx, &AssignSubscriptionInput{UserID: o.UserID, GroupID: gid, ValidityDays: days, AssignedBy: 0, Notes: orderNote})
-	if err != nil {
+	if err := s.assignSubscriptionExactlyOnce(ctx, o, gid, days, orderNote); err != nil {
 		s.releaseSubscriptionFulfillmentClaim(ctx, o.ID)
-		return fmt.Errorf("assign subscription: %w", err)
+		return err
 	}
-	s.writeAuditLog(ctx, o.ID, "SUBSCRIPTION_SUCCESS", "system", map[string]any{
-		"rechargeCode":   o.RechargeCode,
-		"creditedAmount": o.Amount,
-		"payAmount":      o.PayAmount,
-	})
+	// 订单完成标记刻意留在事务外、且在 SUCCESS 哨兵提交之后：保持「哨兵先于完成」的恢复语义——
+	// 完成标记失败时哨兵已在库，重试走 doSub 的 state==Succeeded 分支只补完成、不重复发放。
 	if err := s.markCompletedWithoutAudit(ctx, o); err != nil {
 		return err
 	}
 	s.dispatchPaymentFulfillmentNotification(o, "SUBSCRIPTION_SUCCESS")
 	return nil
+}
+
+// assignSubscriptionExactlyOnce 把「订阅发放 + SUCCESS 哨兵审计」收进单个事务，二者同提交同回滚。
+//
+// 修复要害：此前 AssignOrExtendSubscription 先自行提交、SUCCESS 哨兵再单独写，二者之间的崩溃窗口
+// 会丢失「已发放」信号；重试时 orphaned-claim 恢复路径（doSub 中 state==Claimed 分支）会把订单当成
+// 未发放再次 AssignOrExtendSubscription，对已有订阅无条件 AddDate 累加 → 订阅天数重复发放。收进单
+// 事务后：崩溃前未提交即整体回滚（含 assign），重试重新发放不叠加；崩溃后已提交则哨兵在库，
+// state==Succeeded 直接跳过。订单完成标记不在本事务内（见调用方），以保留「哨兵先于完成」语义。
+func (s *PaymentService) assignSubscriptionExactlyOnce(ctx context.Context, o *dbent.PaymentOrder, groupID int64, days int, orderNote string) error {
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin subscription fulfillment transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// AssignOrExtendSubscription 复用外层事务（内部检测 dbent.TxFromContext 后不自提交）；
+	// 其存量续期与新建两条路径的 repo 写入都经 clientFromContext 落到本事务。
+	txCtx := dbent.NewTxContext(ctx, tx)
+	if _, _, err := s.subscriptionSvc.AssignOrExtendSubscription(txCtx, &AssignSubscriptionInput{
+		UserID:       o.UserID,
+		GroupID:      groupID,
+		ValidityDays: days,
+		AssignedBy:   0,
+		Notes:        orderNote,
+	}); err != nil {
+		return fmt.Errorf("assign subscription: %w", err)
+	}
+	if err := s.writeAuditLogErrWithClient(txCtx, tx.Client(), o.ID, "SUBSCRIPTION_SUCCESS", "system", map[string]any{
+		"rechargeCode":   o.RechargeCode,
+		"creditedAmount": o.Amount,
+		"payAmount":      o.PayAmount,
+	}); err != nil {
+		return fmt.Errorf("write subscription success audit: %w", err)
+	}
+	return tx.Commit()
 }
 
 type subscriptionFulfillmentAuditState int

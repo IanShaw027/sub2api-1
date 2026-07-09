@@ -95,6 +95,8 @@ type Config struct {
 	Gemini                  GeminiConfig                  `mapstructure:"gemini"`
 	Update                  UpdateConfig                  `mapstructure:"update"`
 	Idempotency             IdempotencyConfig             `mapstructure:"idempotency"`
+	AuditRetention          AuditRetentionConfig          `mapstructure:"audit_retention"`
+	UsageUserDailyCost      UsageUserDailyCostConfig      `mapstructure:"usage_user_daily_cost"`
 	Media                   MediaConfig                   `mapstructure:"media"`
 }
 
@@ -608,7 +610,6 @@ type SecurityConfig struct {
 	ResponseHeaders                  ResponseHeaderConfig `mapstructure:"response_headers"`
 	CSP                              CSPConfig            `mapstructure:"csp"`
 	ProxyFallback                    ProxyFallbackConfig  `mapstructure:"proxy_fallback"`
-	ProxyProbe                       ProxyProbeConfig     `mapstructure:"proxy_probe"`
 	TrustForwardedIPForAPIKeyACL     bool                 `mapstructure:"trust_forwarded_ip_for_api_key_acl"`
 	trustForwardedIPForAPIKeyACLLive *atomic.Bool         `mapstructure:"-"`
 }
@@ -665,10 +666,6 @@ type ProxyFallbackConfig struct {
 	// 这些关键路径的代理失败始终返回错误，不会回退直连。
 	// 默认 false：避免因代理配置错误导致服务器真实 IP 泄露。
 	AllowDirectOnError bool `mapstructure:"allow_direct_on_error"`
-}
-
-type ProxyProbeConfig struct {
-	InsecureSkipVerify bool `mapstructure:"insecure_skip_verify"` // 已禁用：禁止跳过 TLS 证书验证
 }
 
 type BillingConfig struct {
@@ -831,7 +828,7 @@ type GatewayConfig struct {
 	AntiFingerprint AntiFingerprintConfig `mapstructure:"anti_fingerprint"`
 
 	// AntiBan: per-platform toggles for the anti-ban / anti-fingerprinting suite
-	// (normalizer, TLS spoof, header stripping, jitter, trigger sanitization etc.)
+	// (normalizer, TLS spoof, header stripping, trigger sanitization etc.)
 	// Configurable in System Settings > Gateway Settings.
 	AntiBan AntiBanConfig `mapstructure:"anti_ban"`
 
@@ -1054,6 +1051,8 @@ type GatewayUsageRecordConfig struct {
 	OverflowPolicy string `mapstructure:"overflow_policy"`
 	// OverflowSamplePercent: sample 策略下，同步回写采样百分比（1-100）
 	OverflowSamplePercent int `mapstructure:"overflow_sample_percent"`
+	// InlineFallbackConcurrency: sync/sample 内联兜底的并发上限（0=默认取 worker 数）
+	InlineFallbackConcurrency int `mapstructure:"inline_fallback_concurrency"`
 
 	// AutoScaleEnabled: 是否启用 worker 自动扩缩容
 	AutoScaleEnabled bool `mapstructure:"auto_scale_enabled"`
@@ -1081,8 +1080,6 @@ type AntiFingerprintConfig struct {
 	StripProxyHeaders   []string `mapstructure:"strip_proxy_headers"`
 	SpoofProcessMetrics bool     `mapstructure:"spoof_process_metrics"`
 	TelemetryPaths      []string `mapstructure:"telemetry_paths"`
-	JitterMinMs         int      `mapstructure:"jitter_min_ms"`
-	JitterMaxMs         int      `mapstructure:"jitter_max_ms"`
 	// TriggerScanEnabled 开启后会扫描请求 body 中的已知第三方触发短语并替换/删除
 	TriggerScanEnabled bool `mapstructure:"trigger_scan_enabled"`
 	// TriggerPhrases 是触发短语→替换文本映射（空字符串=删除）
@@ -1094,8 +1091,6 @@ type AntiFingerprintConfig struct {
 	// PlatformProfiles: 各平台覆盖（key 如 "anthropic", "openai", "grok", "antigravity"）
 	PlatformProfiles map[string]struct {
 		CanonicalUA   string   `mapstructure:"canonical_ua"`
-		JitterMinMs   int      `mapstructure:"jitter_min_ms"`
-		JitterMaxMs   int      `mapstructure:"jitter_max_ms"`
 		SpoofMemoryMB int      `mapstructure:"spoof_memory_mb"`
 		SpoofHeapMB   int      `mapstructure:"spoof_heap_mb"`
 		CPUInfo       string   `mapstructure:"cpu_info"`
@@ -1105,7 +1100,7 @@ type AntiFingerprintConfig struct {
 }
 
 // AntiBanConfig per-platform enable/disable for the anti-ban suite (anti-fingerprint normalizer,
-// TLS spoofing, header stripping, trigger sanitization, jitter etc.).
+// TLS spoofing, header stripping, trigger sanitization etc.).
 // Exposed and editable in Admin System Settings > Gateway Settings.
 // Platforms: anthropic, openai, gemini, grok, kiro, antigravity, etc.
 type AntiBanConfig struct {
@@ -1415,6 +1410,30 @@ type UsageCleanupConfig struct {
 	TaskTimeoutSeconds int `mapstructure:"task_timeout_seconds"`
 }
 
+// AuditRetentionConfig 审计表自动保留(TTL purge)任务配置
+type AuditRetentionConfig struct {
+	// Enabled: 是否启用审计表清理任务
+	Enabled bool `mapstructure:"enabled"`
+	// RetentionDays: 保留天数，超过该期限(按 created_at)的旧行会被删除
+	RetentionDays int `mapstructure:"retention_days"`
+	// CleanupIntervalSeconds: 后台清理轮询间隔（秒）
+	CleanupIntervalSeconds int `mapstructure:"cleanup_interval_seconds"`
+	// BatchSize: 单批删除数量
+	BatchSize int `mapstructure:"batch_size"`
+}
+
+// UsageUserDailyCostConfig 每用户·每业务日用量成本预聚合(rollup)任务配置。
+type UsageUserDailyCostConfig struct {
+	// Enabled: 是否启用 rollup 任务；启用后管理后台用量排序读预聚合表，关闭则回退实时聚合 usage_logs
+	Enabled bool `mapstructure:"enabled"`
+	// IntervalSeconds: 后台重算轮询间隔（秒）
+	IntervalSeconds int `mapstructure:"interval_seconds"`
+	// BackfillDays: 启动时回填重算的业务日天数
+	BackfillDays int `mapstructure:"backfill_days"`
+	// RetentionDays: 预聚合行保留天数，超过则清理（须 >= 排序用的 30 天窗口）
+	RetentionDays int `mapstructure:"retention_days"`
+}
+
 func NormalizeRunMode(value string) string {
 	normalized := strings.ToLower(strings.TrimSpace(value))
 	switch normalized {
@@ -1647,7 +1666,7 @@ func setDefaults() {
 	viper.SetDefault("server.h2c.max_upload_buffer_per_stream", 512<<10)   // 512KB
 
 	viper.SetDefault("tls_fingerprint_capture.enabled", false)
-	viper.SetDefault("tls_fingerprint_capture.host", "0.0.0.0")
+	viper.SetDefault("tls_fingerprint_capture.host", "127.0.0.1")
 	viper.SetDefault("tls_fingerprint_capture.port", 8444)
 	viper.SetDefault("tls_fingerprint_capture.cert_file", "")
 	viper.SetDefault("tls_fingerprint_capture.key_file", "")
@@ -1699,7 +1718,6 @@ func setDefaults() {
 	viper.SetDefault("security.response_headers.force_remove", []string{})
 	viper.SetDefault("security.csp.enabled", true)
 	viper.SetDefault("security.csp.policy", DefaultCSPPolicy)
-	viper.SetDefault("security.proxy_probe.insecure_skip_verify", false)
 	viper.SetDefault("security.trust_forwarded_ip_for_api_key_acl", false)
 
 	// Security - disable direct fallback on proxy error
@@ -1926,6 +1944,19 @@ func setDefaults() {
 	viper.SetDefault("idempotency.cleanup_interval_seconds", 60)
 	viper.SetDefault("idempotency.cleanup_batch_size", 500)
 
+	// AuditRetention 审计表自动保留(TTL purge)
+	viper.SetDefault("audit_retention.enabled", false)
+	viper.SetDefault("audit_retention.retention_days", 180)
+	viper.SetDefault("audit_retention.cleanup_interval_seconds", 3600)
+	viper.SetDefault("audit_retention.batch_size", 1000)
+
+	// UsageUserDailyCost 每用户·每业务日用量成本预聚合(默认启用：管理后台用量排序依赖它；保留 35 > 排序用的 30 天窗口)
+	viper.SetDefault("usage_user_daily_cost.enabled", true)
+	viper.SetDefault("usage_user_daily_cost.interval_seconds", 300)
+	// 31 = 覆盖排序查询下界 today-30，使启动当天最旧日也被回填、无近似空洞。
+	viper.SetDefault("usage_user_daily_cost.backfill_days", 31)
+	viper.SetDefault("usage_user_daily_cost.retention_days", 35)
+
 	// Gateway
 	viper.SetDefault("gateway.response_header_timeout", 600) // 600秒(10分钟)等待上游响应头，LLM高负载时可能排队较久
 	viper.SetDefault("gateway.openai_response_header_timeout", 0)
@@ -2027,7 +2058,8 @@ func setDefaults() {
 	viper.SetDefault("gateway.max_upstream_clients", 5000)
 	viper.SetDefault("gateway.client_idle_ttl_seconds", 900)
 	viper.SetDefault("gateway.concurrency_slot_ttl_minutes", 30) // 并发槽位过期时间（支持超长请求）
-	viper.SetDefault("gateway.stream_data_interval_timeout", 2000)
+	// 默认流数据间隔超时为 10 分钟，既兼容长排队上游，又避免单条停滞流长期占用连接/并发槽。
+	viper.SetDefault("gateway.stream_data_interval_timeout", 600)
 	viper.SetDefault("gateway.stream_keepalive_interval", 10)
 	viper.SetDefault("gateway.image_stream_data_interval_timeout", 900)
 	viper.SetDefault("gateway.image_stream_keepalive_interval", 10)
@@ -2096,8 +2128,6 @@ func setDefaults() {
 	viper.SetDefault("gateway.anti_fingerprint.strip_proxy_headers", []string{"x-litellm", "helicone", "cf-aig", "x-portkey", "x-forwarded", "via"})
 	viper.SetDefault("gateway.anti_fingerprint.spoof_process_metrics", true)
 	viper.SetDefault("gateway.anti_fingerprint.telemetry_paths", []string{"/telemetry", "datadog", "sentry", "statsig", "segment", "amplitude", "events"})
-	viper.SetDefault("gateway.anti_fingerprint.jitter_min_ms", 10)
-	viper.SetDefault("gateway.anti_fingerprint.jitter_max_ms", 150)
 	// Trigger phrase scanning: detects and removes known third-party harness identifiers from request body
 	viper.SetDefault("gateway.anti_fingerprint.trigger_scan_enabled", true)
 	viper.SetDefault("gateway.anti_fingerprint.trigger_phrases", map[string]string{
@@ -2695,6 +2725,32 @@ func (c *Config) Validate() error {
 	if c.Idempotency.CleanupBatchSize <= 0 {
 		return fmt.Errorf("idempotency.cleanup_batch_size must be positive")
 	}
+	if c.AuditRetention.Enabled {
+		if c.AuditRetention.RetentionDays <= 0 {
+			return fmt.Errorf("audit_retention.retention_days must be positive")
+		}
+		if c.AuditRetention.CleanupIntervalSeconds <= 0 {
+			return fmt.Errorf("audit_retention.cleanup_interval_seconds must be positive")
+		}
+		if c.AuditRetention.BatchSize <= 0 {
+			return fmt.Errorf("audit_retention.batch_size must be positive")
+		}
+	}
+	if c.UsageUserDailyCost.Enabled {
+		if c.UsageUserDailyCost.IntervalSeconds <= 0 {
+			return fmt.Errorf("usage_user_daily_cost.interval_seconds must be positive")
+		}
+		if c.UsageUserDailyCost.BackfillDays <= 0 {
+			return fmt.Errorf("usage_user_daily_cost.backfill_days must be positive")
+		}
+		if c.UsageUserDailyCost.RetentionDays <= 0 {
+			return fmt.Errorf("usage_user_daily_cost.retention_days must be positive")
+		}
+		// 排序取近 30 天，保留窗口必须覆盖，否则边界日会被清理导致排序缺数据。
+		if c.UsageUserDailyCost.RetentionDays < 30 {
+			return fmt.Errorf("usage_user_daily_cost.retention_days must be >= 30 (sort reads last 30 days)")
+		}
+	}
 	if c.Gateway.MaxBodySize <= 0 {
 		return fmt.Errorf("gateway.max_body_size must be positive")
 	}
@@ -2709,26 +2765,6 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.OpenAIResponseHeaderTimeout < 0 {
 		return fmt.Errorf("gateway.openai_response_header_timeout must be non-negative")
-	}
-	if c.Gateway.AntiFingerprint.JitterMinMs < 0 {
-		return fmt.Errorf("gateway.anti_fingerprint.jitter_min_ms must be non-negative")
-	}
-	if c.Gateway.AntiFingerprint.JitterMaxMs < 0 {
-		return fmt.Errorf("gateway.anti_fingerprint.jitter_max_ms must be non-negative")
-	}
-	if c.Gateway.AntiFingerprint.JitterMaxMs < c.Gateway.AntiFingerprint.JitterMinMs {
-		return fmt.Errorf("gateway.anti_fingerprint.jitter_max_ms must be >= jitter_min_ms")
-	}
-	for platform, profile := range c.Gateway.AntiFingerprint.PlatformProfiles {
-		if profile.JitterMinMs < 0 {
-			return fmt.Errorf("gateway.anti_fingerprint.platform_profiles.%s.jitter_min_ms must be non-negative", platform)
-		}
-		if profile.JitterMaxMs < 0 {
-			return fmt.Errorf("gateway.anti_fingerprint.platform_profiles.%s.jitter_max_ms must be non-negative", platform)
-		}
-		if profile.JitterMaxMs > 0 && profile.JitterMinMs > 0 && profile.JitterMaxMs < profile.JitterMinMs {
-			return fmt.Errorf("gateway.anti_fingerprint.platform_profiles.%s.jitter_max_ms must be >= jitter_min_ms", platform)
-		}
 	}
 	if strings.TrimSpace(c.Gateway.ConnectionPoolIsolation) != "" {
 		switch c.Gateway.ConnectionPoolIsolation {

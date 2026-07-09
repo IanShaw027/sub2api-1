@@ -345,6 +345,7 @@ import {
   loadOAuthAffiliateCode,
   oauthAffiliatePayload
 } from '@/utils/oauthAffiliate'
+import { safeImageUrl } from '@/utils/safeImageUrl'
 
 const route = useRoute()
 const router = useRouter()
@@ -651,7 +652,7 @@ async function handleExistingAccountBinding() {
 function applyAdoptionSuggestionState(completion: PendingOAuthExchangeResponse) {
   adoptionRequired.value = completion.adoption_required === true
   suggestedDisplayName.value = completion.suggested_display_name || ''
-  suggestedAvatarUrl.value = completion.suggested_avatar_url || ''
+  suggestedAvatarUrl.value = safeImageUrl(completion.suggested_avatar_url)
 
   if (!suggestedDisplayName.value) {
     adoptDisplayName.value = false

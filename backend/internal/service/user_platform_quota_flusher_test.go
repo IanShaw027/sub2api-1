@@ -254,6 +254,34 @@ func TestFlusher_NilSafe(t *testing.T) {
 	f.Stop()
 }
 
+func TestNewUserPlatformQuotaUsageFlusher_NilConfigUsesDefaults(t *testing.T) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			t.Fatalf("nil cfg should not panic, got %v", recovered)
+		}
+	}()
+
+	f := NewUserPlatformQuotaUsageFlusher(nil, nil, nil, nil)
+	if f == nil {
+		t.Fatal("expected non-nil flusher")
+	}
+	if f.enabled {
+		t.Fatalf("nil cfg should default enabled=false")
+	}
+	if f.batchSize != defaultFlushBatchSize {
+		t.Fatalf("batchSize = %d, want %d", f.batchSize, defaultFlushBatchSize)
+	}
+	if f.interval != 2*time.Second {
+		t.Fatalf("interval = %v, want 2s", f.interval)
+	}
+	if f.flushTimeout != 3*time.Second {
+		t.Fatalf("flushTimeout = %v, want 3s", f.flushTimeout)
+	}
+	if f.metrics == nil {
+		t.Fatal("metrics should be initialized")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // 场景 6: StopPreventsFlush — stopped=true 后 tick() 不调 flush（writer 没收到 snaps）
 // ---------------------------------------------------------------------------
@@ -359,6 +387,30 @@ func TestNewUserPlatformQuotaUsageFlusher_EnabledField(t *testing.T) {
 		if f.enabled != enabled {
 			t.Errorf("enabled = %v, want %v", f.enabled, enabled)
 		}
+	}
+}
+
+func TestFlusher_StartWhenDisabledStillRunsOneShotRecoveryFlush(t *testing.T) {
+	keys := []UserPlatformQuotaKey{
+		{UserID: 1, Platform: "anthropic"},
+	}
+	cache := &mockQuotaDirtyCache{
+		popSequence: [][]UserPlatformQuotaKey{keys},
+		getEntries: []*UserPlatformQuotaCacheEntry{
+			makeEntry(1.0, 2.0, 3.0),
+		},
+	}
+	writer := &mockQuotaSnapshotWriter{}
+	f := newTestFlusher(cache, writer)
+	f.enabled = false
+
+	f.Start()
+
+	if len(writer.receivedSnaps) != 1 {
+		t.Fatalf("disabled start should still replay one dirty snapshot batch, got %d", len(writer.receivedSnaps))
+	}
+	if f.metrics.FlushSuccessTotal.Load() != 1 {
+		t.Fatalf("FlushSuccessTotal = %d, want 1", f.metrics.FlushSuccessTotal.Load())
 	}
 }
 

@@ -88,7 +88,7 @@ describe('PaymentQRCodeView', () => {
     vi.restoreAllMocks()
   })
 
-  it('treats RECHARGING as a settled QR state', async () => {
+  it('keeps waiting while the QR order is still RECHARGING', async () => {
     const wrapper = mount(PaymentQRCodeView, {
       global: {
         stubs: {
@@ -102,13 +102,7 @@ describe('PaymentQRCodeView', () => {
     await flushPromises()
 
     expect(pollOrderStatus).toHaveBeenCalledWith(42)
-    expect(routerPush).toHaveBeenCalledWith({
-      path: '/payment/result',
-      query: {
-        order_id: '42',
-        status: 'success',
-      },
-    })
+    expect(routerPush).not.toHaveBeenCalled()
     expect(wrapper.text()).not.toContain('payment.qr.expired')
   })
 })

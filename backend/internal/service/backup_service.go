@@ -264,6 +264,9 @@ func (s *BackupService) GetS3Config(ctx context.Context) (*BackupS3Config, error
 }
 
 func (s *BackupService) UpdateS3Config(ctx context.Context, cfg BackupS3Config) (*BackupS3Config, error) {
+	if s == nil || s.settingRepo == nil {
+		return nil, errors.New("setting repository not initialized")
+	}
 	legacyToStore := cfg
 	if strings.TrimSpace(legacyToStore.SecretAccessKey) == "" {
 		old, _ := s.loadS3Config(ctx)
@@ -338,6 +341,9 @@ func (s *BackupService) GetObjectStorageSettings(ctx context.Context) (*ObjectSt
 }
 
 func (s *BackupService) UpdateObjectStorageSettings(ctx context.Context, settings ObjectStorageSettings) (*ObjectStorageSettings, error) {
+	if s == nil || s.settingRepo == nil {
+		return nil, errors.New("setting repository not initialized")
+	}
 	settings = normalizeObjectStorageSettings(settings)
 	existing, err := effectiveObjectStorageSettings(ctx, s.settingRepo, s.encryptor, s.config())
 	if err != nil {
@@ -403,6 +409,9 @@ func (s *BackupService) TestObjectStorageProfile(ctx context.Context, profile Ob
 // ─── 定时备份管理 ───
 
 func (s *BackupService) GetSchedule(ctx context.Context) (*BackupScheduleConfig, error) {
+	if s == nil || s.settingRepo == nil {
+		return &BackupScheduleConfig{}, nil
+	}
 	raw, err := s.settingRepo.GetValue(ctx, settingKeyBackupSchedule)
 	if err != nil || raw == "" {
 		return &BackupScheduleConfig{}, nil
@@ -415,6 +424,9 @@ func (s *BackupService) GetSchedule(ctx context.Context) (*BackupScheduleConfig,
 }
 
 func (s *BackupService) UpdateSchedule(ctx context.Context, cfg BackupScheduleConfig) (*BackupScheduleConfig, error) {
+	if s == nil || s.settingRepo == nil {
+		return nil, errors.New("setting repository not initialized")
+	}
 	if cfg.Enabled && cfg.CronExpr == "" {
 		return nil, infraerrors.BadRequest("INVALID_CRON", "cron expression is required when schedule is enabled")
 	}
@@ -1143,6 +1155,9 @@ func preserveObjectStorageSecrets(next, existing ObjectStorageSettings) ObjectSt
 
 // loadRecords 加载备份记录，区分"无数据"和"数据损坏"
 func (s *BackupService) loadRecords(ctx context.Context) ([]BackupRecord, error) {
+	if s == nil {
+		return nil, nil //nolint:nilnil // nil service has no persisted records
+	}
 	s.recordsMu.Lock()
 	defer s.recordsMu.Unlock()
 	return s.loadRecordsLocked(ctx)
@@ -1150,6 +1165,9 @@ func (s *BackupService) loadRecords(ctx context.Context) ([]BackupRecord, error)
 
 // loadRecordsLocked 在已持有 recordsMu 锁的情况下加载记录
 func (s *BackupService) loadRecordsLocked(ctx context.Context) ([]BackupRecord, error) {
+	if s == nil || s.settingRepo == nil {
+		return nil, nil //nolint:nilnil // missing repo means no persisted records available
+	}
 	raw, err := s.settingRepo.GetValue(ctx, settingKeyBackupRecords)
 	if err != nil || raw == "" {
 		return nil, nil //nolint:nilnil // no records is a valid state
@@ -1163,6 +1181,9 @@ func (s *BackupService) loadRecordsLocked(ctx context.Context) ([]BackupRecord, 
 
 // saveRecordsLocked 在已持有 recordsMu 锁的情况下保存记录
 func (s *BackupService) saveRecordsLocked(ctx context.Context, records []BackupRecord) error {
+	if s == nil || s.settingRepo == nil {
+		return errors.New("setting repository not initialized")
+	}
 	data, err := json.Marshal(records)
 	if err != nil {
 		return err
@@ -1172,6 +1193,9 @@ func (s *BackupService) saveRecordsLocked(ctx context.Context, records []BackupR
 
 // saveRecord 保存单条记录（带互斥锁保护）
 func (s *BackupService) saveRecord(ctx context.Context, record *BackupRecord) error {
+	if s == nil || s.settingRepo == nil {
+		return errors.New("setting repository not initialized")
+	}
 	s.recordsMu.Lock()
 	defer s.recordsMu.Unlock()
 

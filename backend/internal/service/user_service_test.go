@@ -27,25 +27,26 @@ import (
 // --- mock: UserRepository ---
 
 type mockUserRepo struct {
-	updateBalanceErr        error
-	updateBalanceFn         func(ctx context.Context, id int64, amount float64) error
-	deductBalanceFn         func(ctx context.Context, id int64, amount float64) error
-	getByIDUser             *User
-	getByIDErr              error
-	identities              []UserAuthIdentityRecord
-	unbindIdentityErr       error
-	unboundProviders        []string
-	updateLastActiveErr     error
-	updateLastActiveUserIDs []int64
-	updateLastActiveAt      []time.Time
-	updateFn                func(ctx context.Context, user *User) error
-	updateCalls             int
-	upsertAvatarFn          func(ctx context.Context, userID int64, input UpsertUserAvatarInput) (*UserAvatar, error)
-	upsertAvatarArgs        []UpsertUserAvatarInput
-	deleteAvatarFn          func(ctx context.Context, userID int64) error
-	deleteAvatarIDs         []int64
-	getAvatarFn             func(ctx context.Context, userID int64) (*UserAvatar, error)
-	txCalls                 int
+	updateBalanceErr            error
+	updateBalanceFn             func(ctx context.Context, id int64, amount float64) error
+	addBalanceWithoutRechargeFn func(ctx context.Context, id int64, amount float64) error
+	deductBalanceFn             func(ctx context.Context, id int64, amount float64) error
+	getByIDUser                 *User
+	getByIDErr                  error
+	identities                  []UserAuthIdentityRecord
+	unbindIdentityErr           error
+	unboundProviders            []string
+	updateLastActiveErr         error
+	updateLastActiveUserIDs     []int64
+	updateLastActiveAt          []time.Time
+	updateFn                    func(ctx context.Context, user *User) error
+	updateCalls                 int
+	upsertAvatarFn              func(ctx context.Context, userID int64, input UpsertUserAvatarInput) (*UserAvatar, error)
+	upsertAvatarArgs            []UpsertUserAvatarInput
+	deleteAvatarFn              func(ctx context.Context, userID int64) error
+	deleteAvatarIDs             []int64
+	getAvatarFn                 func(ctx context.Context, userID int64) (*UserAvatar, error)
+	txCalls                     int
 }
 
 type mockUserRepoTxKey struct{}
@@ -237,6 +238,12 @@ func (m *mockUserRepo) UpdateBalance(ctx context.Context, id int64, amount float
 		return m.updateBalanceFn(ctx, id, amount)
 	}
 	return m.updateBalanceErr
+}
+func (m *mockUserRepo) AddBalanceWithoutRecharge(ctx context.Context, id int64, amount float64) error {
+	if m.addBalanceWithoutRechargeFn != nil {
+		return m.addBalanceWithoutRechargeFn(ctx, id, amount)
+	}
+	return nil
 }
 func (m *mockUserRepo) UpdateUserLastActiveAt(_ context.Context, userID int64, activeAt time.Time) error {
 	m.updateLastActiveUserIDs = append(m.updateLastActiveUserIDs, userID)

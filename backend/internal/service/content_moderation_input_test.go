@@ -250,3 +250,35 @@ func TestExtractContentModerationInput_ResponsesLastIsAssistantSkipped(t *testin
 	require.Empty(t, input.Text)
 	require.Empty(t, input.Images)
 }
+
+// capLocalModerationInputs 应把每请求本地扫描成本封成固定预算：先按条数截断（保留最新的），
+// 再按累计 rune 预算从尾部保留，两者取更严者；边界内原样返回。
+func TestCapLocalModerationInputs(t *testing.T) {
+	mk := func(text string) ContentModerationInput {
+		in := ContentModerationInput{Text: text}
+		in.Normalize()
+		return in
+	}
+
+	// 条数超限：只保留最新的 maxInputs 条（尾部）。
+	inputs := []ContentModerationInput{mk("a"), mk("b"), mk("c"), mk("d")}
+	capped := capLocalModerationInputs(inputs, 2, 1_000_000)
+	require.Len(t, capped, 2)
+	require.Equal(t, "c", capped[0].Text)
+	require.Equal(t, "d", capped[1].Text)
+
+	// rune 预算超限：从尾部保留到预算耗尽为止（每条 5 runes，预算 12 → 保留最后 2 条）。
+	inputs = []ContentModerationInput{mk("11111"), mk("22222"), mk("33333")}
+	capped = capLocalModerationInputs(inputs, 100, 12)
+	require.Len(t, capped, 2)
+	require.Equal(t, "22222", capped[0].Text)
+	require.Equal(t, "33333", capped[1].Text)
+
+	// 边界内：原样返回。
+	inputs = []ContentModerationInput{mk("x"), mk("y")}
+	capped = capLocalModerationInputs(inputs, 100, 1_000_000)
+	require.Len(t, capped, 2)
+
+	// 空输入安全。
+	require.Empty(t, capLocalModerationInputs(nil, 10, 10))
+}

@@ -147,6 +147,33 @@ func TestAnthropicToResponses_ToolUse(t *testing.T) {
 	assert.Equal(t, "Sunny, 72°F", items[3].Output)
 }
 
+func TestAnthropicToResponses_ToolUseJSONStringInputUnwrapsBackToOriginalArguments(t *testing.T) {
+	content, err := json.Marshal([]AnthropicContentBlock{{
+		Type:  "tool_use",
+		ID:    "call_1",
+		Name:  "get_weather",
+		Input: anthropicToolUseInputFromArguments(`{"city":`),
+	}})
+	require.NoError(t, err)
+
+	req := &AnthropicRequest{
+		Model:     "gpt-5.2",
+		MaxTokens: 1024,
+		Messages: []AnthropicMessage{
+			{Role: "assistant", Content: content},
+		},
+	}
+
+	resp, err := AnthropicToResponses(req)
+	require.NoError(t, err)
+
+	var items []ResponsesInputItem
+	require.NoError(t, json.Unmarshal(resp.Input, &items))
+	require.Len(t, items, 1)
+	assert.Equal(t, "function_call", items[0].Type)
+	assert.Equal(t, `{"city":`, items[0].Arguments)
+}
+
 func TestAnthropicToResponses_MapsWebFetchToolDefinition(t *testing.T) {
 	req := &AnthropicRequest{
 		Model:     "gpt-5.4",
@@ -428,41 +455,82 @@ func TestResponsesToAnthropic_ToolUse(t *testing.T) {
 	assert.Equal(t, "get_weather", anth.Content[1].Name)
 }
 
-func TestResponsesToAnthropic_ToolUseNormalizesEmptyOrInvalidArguments(t *testing.T) {
-	tests := []struct {
-		name      string
-		arguments string
-	}{
-		{name: "empty", arguments: ""},
-		{name: "invalid_json", arguments: `{"city":`},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			resp := &ResponsesResponse{
-				ID:     "resp_456",
-				Model:  "gpt-5.2",
-				Status: "completed",
-				Output: []ResponsesOutput{
-					{
-						Type:      "function_call",
-						CallID:    "call_1",
-						Name:      "get_weather",
-						Arguments: tt.arguments,
-					},
+func TestResponsesToAnthropic_ToolUseStopReasonPersistsWhenTrailingTextFollows(t *testing.T) {
+	resp := &ResponsesResponse{
+		ID:     "resp_tool_use_then_text",
+		Model:  "gpt-5.2",
+		Status: "completed",
+		Output: []ResponsesOutput{
+			{
+				Type:      "function_call",
+				CallID:    "call_1",
+				Name:      "get_weather",
+				Arguments: `{"city":"NYC"}`,
+			},
+			{
+				Type: "message",
+				Content: []ResponsesContentPart{
+					{Type: "output_text", Text: "Let me know once the tool returns."},
 				},
-			}
-
-			anth := ResponsesToAnthropic(resp, "claude-opus-4-6")
-
-			require.Len(t, anth.Content, 1)
-			require.Equal(t, "tool_use", anth.Content[0].Type)
-			require.True(t, json.Valid(anth.Content[0].Input))
-			require.JSONEq(t, `{}`, string(anth.Content[0].Input))
-			_, err := json.Marshal(anth)
-			require.NoError(t, err)
-		})
+			},
+		},
 	}
+
+	anth := ResponsesToAnthropic(resp, "claude-opus-4-6", nil)
+	assert.Equal(t, "tool_use", anth.StopReason)
+	require.Len(t, anth.Content, 2)
+	assert.Equal(t, "tool_use", anth.Content[0].Type)
+	assert.Equal(t, "text", anth.Content[1].Type)
+}
+
+func TestResponsesToAnthropic_ToolUseNormalizesEmptyArgumentsToEmptyObject(t *testing.T) {
+	resp := &ResponsesResponse{
+		ID:     "resp_456",
+		Model:  "gpt-5.2",
+		Status: "completed",
+		Output: []ResponsesOutput{
+			{
+				Type:      "function_call",
+				CallID:    "call_1",
+				Name:      "get_weather",
+				Arguments: "",
+			},
+		},
+	}
+
+	anth := ResponsesToAnthropic(resp, "claude-opus-4-6")
+
+	require.Len(t, anth.Content, 1)
+	require.Equal(t, "tool_use", anth.Content[0].Type)
+	require.True(t, json.Valid(anth.Content[0].Input))
+	require.JSONEq(t, `{}`, string(anth.Content[0].Input))
+	_, err := json.Marshal(anth)
+	require.NoError(t, err)
+}
+
+func TestResponsesToAnthropic_ToolUsePreservesInvalidArgumentsAsJSONString(t *testing.T) {
+	resp := &ResponsesResponse{
+		ID:     "resp_456",
+		Model:  "gpt-5.2",
+		Status: "completed",
+		Output: []ResponsesOutput{
+			{
+				Type:      "function_call",
+				CallID:    "call_1",
+				Name:      "get_weather",
+				Arguments: `{"city":`,
+			},
+		},
+	}
+
+	anth := ResponsesToAnthropic(resp, "claude-opus-4-6")
+
+	require.Len(t, anth.Content, 1)
+	require.Equal(t, "tool_use", anth.Content[0].Type)
+	require.True(t, json.Valid(anth.Content[0].Input))
+	require.Equal(t, `"{\"city\":"`, string(anth.Content[0].Input))
+	_, err := json.Marshal(anth)
+	require.NoError(t, err)
 }
 
 func TestClaudeToolNameMapFromTools_PreservesOriginalClaudeToolName(t *testing.T) {
@@ -1096,6 +1164,34 @@ func TestStreamingToolCall(t *testing.T) {
 	assert.Equal(t, "tool_use", events[0].Delta.StopReason)
 }
 
+func TestBuildToolUseBlocks_PreservesInvalidArgumentsAsJSONString(t *testing.T) {
+	state := NewChatChunkToAnthropicState("gpt-5.2")
+	AccumulateToolCall(state, &ChatToolCall{
+		ID:   "call_1",
+		Type: "function",
+		Function: ChatFunctionCall{
+			Name:      "get_weather",
+			Arguments: `{"city":`,
+		},
+	})
+
+	blocks := BuildToolUseBlocks(state)
+	require.Len(t, blocks, 1)
+	require.Equal(t, "tool_use", blocks[0].Type)
+	require.True(t, json.Valid(blocks[0].Input))
+	require.Equal(t, `"{\"city\":"`, string(blocks[0].Input))
+
+	resp := AnthropicResponse{
+		ID:      "msg_1",
+		Type:    "message",
+		Role:    "assistant",
+		Model:   "claude-opus-4-6",
+		Content: blocks,
+	}
+	_, err := json.Marshal(resp)
+	require.NoError(t, err)
+}
+
 func TestStreamingWebSearchUsesActionSources(t *testing.T) {
 	state := NewResponsesEventToAnthropicState()
 
@@ -1376,6 +1472,32 @@ func TestFinalizeStream_AbnormalTermination(t *testing.T) {
 	assert.Equal(t, "content_block_stop", events[0].Type)
 	assert.Equal(t, "message_delta", events[1].Type)
 	assert.Equal(t, "end_turn", events[1].Delta.StopReason)
+	assert.Equal(t, "message_stop", events[2].Type)
+}
+
+func TestFinalizeStream_AbnormalTerminationAfterToolUsePreservesToolUseStopReason(t *testing.T) {
+	state := NewResponsesEventToAnthropicState()
+
+	ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:     "response.created",
+		Response: &ResponsesResponse{ID: "resp_tool_1", Model: "gpt-5.2"},
+	}, state)
+
+	ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 0,
+		Item: &ResponsesOutput{
+			Type:   "function_call",
+			CallID: "call_1",
+			Name:   "readfile",
+		},
+	}, state)
+
+	events := FinalizeResponsesAnthropicStream(state)
+	require.Len(t, events, 3)
+	assert.Equal(t, "content_block_stop", events[0].Type)
+	assert.Equal(t, "message_delta", events[1].Type)
+	assert.Equal(t, "tool_use", events[1].Delta.StopReason)
 	assert.Equal(t, "message_stop", events[2].Type)
 }
 

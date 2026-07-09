@@ -45,13 +45,15 @@ func normalizeVideoBillingTier(size string) string {
 			longSide = width
 		}
 		switch {
-		case shortSide >= 2000 || longSide >= 3000:
+		case shortSide >= 1440 || longSide >= 2560:
 			return VideoBillingTier4K
 		case shortSide >= 1080:
 			return VideoBillingTier1080p
 		case shortSide >= 720:
 			return VideoBillingTier720p
 		case shortSide >= 480:
+			return VideoBillingTier480p
+		default:
 			return VideoBillingTier480p
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/model"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/stretchr/testify/require"
@@ -101,7 +102,7 @@ func TestGrokQuotaServiceProbeUsageStoresHeaders(t *testing.T) {
 		},
 		Body: io.NopCloser(strings.NewReader(`{"id":"resp_probe"}`)),
 	}}
-	svc := NewGrokQuotaService(repo, nil, NewGrokTokenProvider(repo, nil), upstream)
+	svc := NewGrokQuotaService(repo, nil, NewGrokTokenProvider(repo, nil), upstream, nil)
 
 	result, err := svc.ProbeUsage(context.Background(), 42)
 	require.NoError(t, err)
@@ -143,41 +144,7 @@ func TestBuildGrokQuotaProbeBodyUsesMappedTextResponsesModel(t *testing.T) {
 	require.False(t, gjson.GetBytes(body, "store").Bool())
 }
 
-func TestBuildGrokQuotaProbeBodyFallsBackWhenMappingIsNotTextResponsesModel(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name   string
-		mapped string
-	}{
-		{name: "image model", mapped: xai.DefaultImagineImageQualityModel},
-		{name: "video model", mapped: xai.DefaultImagineVideoModel},
-		{name: "non grok model", mapped: "gpt-5.5"},
-		{name: "unknown grok model", mapped: "grok-custom-non-responses"},
-	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			account := &Account{
-				Platform: PlatformGrok,
-				Type:     AccountTypeOAuth,
-				Credentials: map[string]any{
-					"model_mapping": map[string]any{
-						"grok": tt.mapped,
-					},
-				},
-			}
-
-			body, err := buildGrokQuotaProbeBody(account)
-			require.NoError(t, err)
-			require.Equal(t, xai.DefaultTextModel, gjson.GetBytes(body, "model").String())
-		})
-	}
-}
-
-func TestGrokQuotaServiceProbeUsageUsesTLSAwareTransport(t *testing.T) {
+func TestGrokQuotaServiceProbeUsageUsesProfileHeadersWhenTLSEnabled(t *testing.T) {
 	t.Parallel()
 
 	account := &Account{
@@ -188,6 +155,10 @@ func TestGrokQuotaServiceProbeUsageUsesTLSAwareTransport(t *testing.T) {
 		Credentials: map[string]any{
 			"access_token": "access-token",
 			"expires_at":   time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		},
+		Extra: map[string]any{
+			"enable_tls_fingerprint":     true,
+			"tls_fingerprint_profile_id": int64(91),
 		},
 	}
 	repo := &grokQuotaAccountRepo{
@@ -200,13 +171,21 @@ func TestGrokQuotaServiceProbeUsageUsesTLSAwareTransport(t *testing.T) {
 		Header:     http.Header{},
 		Body:       io.NopCloser(strings.NewReader(`{"id":"resp_probe"}`)),
 	}}
-	svc := NewGrokQuotaService(repo, nil, NewGrokTokenProvider(repo, nil), upstream)
+	svc := NewGrokQuotaService(
+		repo,
+		nil,
+		NewGrokTokenProvider(repo, nil),
+		upstream,
+		&TLSFingerprintProfileService{localCache: map[int64]*model.TLSFingerprintProfile{
+			91: {ID: 91, Name: "Grok Routed", Platform: "grok", Transport: "http", UserAgent: "grok-native/1.0", Originator: "grok_desktop"},
+		}},
+	)
 
 	_, err := svc.ProbeUsage(context.Background(), 47)
 	require.NoError(t, err)
-	require.True(t, upstream.tlsCalled, "Grok quota probe should use DoWithTLS like the main Grok HTTP path")
-	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(upstream.lastReq.Context()))
+	require.True(t, upstream.tlsCalled)
+	require.Equal(t, "grok-native/1.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "grok_desktop", upstream.lastReq.Header.Get("Originator"))
 }
 
 func TestGrokQuotaServiceProbeUsageLoadsProxyWhenAccountEdgeMissing(t *testing.T) {
@@ -244,7 +223,7 @@ func TestGrokQuotaServiceProbeUsageLoadsProxyWhenAccountEdgeMissing(t *testing.T
 		Header:     http.Header{},
 		Body:       io.NopCloser(strings.NewReader(`{"id":"resp_probe"}`)),
 	}}
-	svc := NewGrokQuotaService(repo, proxyRepo, NewGrokTokenProvider(repo, nil), upstream)
+	svc := NewGrokQuotaService(repo, proxyRepo, NewGrokTokenProvider(repo, nil), upstream, nil)
 
 	_, err := svc.ProbeUsage(context.Background(), 46)
 	require.NoError(t, err)
@@ -275,7 +254,7 @@ func TestGrokQuotaServiceProbeUsageStoresNoHeadersState(t *testing.T) {
 		Header:     http.Header{},
 		Body:       io.NopCloser(strings.NewReader(`{"id":"resp_probe"}`)),
 	}}
-	svc := NewGrokQuotaService(repo, nil, NewGrokTokenProvider(repo, nil), upstream)
+	svc := NewGrokQuotaService(repo, nil, NewGrokTokenProvider(repo, nil), upstream, nil)
 
 	result, err := svc.ProbeUsage(context.Background(), 45)
 	require.NoError(t, err)
@@ -287,9 +266,10 @@ func TestGrokQuotaServiceProbeUsageStoresNoHeadersState(t *testing.T) {
 	require.NotEmpty(t, result.Snapshot.LastProbeAt)
 	require.Empty(t, result.Snapshot.LastHeadersSeenAt)
 
-	// Empty probes must not overwrite a durable quota snapshot.
-	_, hasUpdate := repo.updates[45]
-	require.False(t, hasUpdate, "no-headers probe must not UpdateExtra quota snapshot")
+	stored, ok := repo.updates[45][grokQuotaSnapshotExtraKey].(*xai.QuotaSnapshot)
+	require.True(t, ok)
+	require.False(t, stored.HeadersObserved)
+	require.Equal(t, http.StatusOK, stored.StatusCode)
 }
 
 func TestGrokQuotaServiceProbeUsageReturnsRateLimitedSnapshot(t *testing.T) {
@@ -314,7 +294,7 @@ func TestGrokQuotaServiceProbeUsageReturnsRateLimitedSnapshot(t *testing.T) {
 		Header:     http.Header{"Retry-After": []string{"45"}},
 		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"rate limited"}}`)),
 	}}
-	svc := NewGrokQuotaService(repo, nil, NewGrokTokenProvider(repo, nil), upstream)
+	svc := NewGrokQuotaService(repo, nil, NewGrokTokenProvider(repo, nil), upstream, nil)
 
 	result, err := svc.ProbeUsage(context.Background(), 43)
 	require.NoError(t, err)
@@ -337,7 +317,7 @@ func TestGrokQuotaServiceResetQuotaUnsupported(t *testing.T) {
 			accountsByID: map[int64]*Account{44: account},
 		},
 	}
-	svc := NewGrokQuotaService(repo, nil, nil, nil)
+	svc := NewGrokQuotaService(repo, nil, nil, nil, nil)
 
 	_, err := svc.ResetQuota(context.Background(), 44)
 	require.Error(t, err)

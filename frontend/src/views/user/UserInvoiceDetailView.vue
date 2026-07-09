@@ -9,7 +9,7 @@
           <div>
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">#{{ invoice.id }} · {{ invoice.title }}</h2>
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              {{ statusLabel(invoice.status) }} · {{ t('payment.invoice.list.colOrderCount') }} {{ invoice.order_count }} · ¥{{ invoice.invoice_amount.toFixed(2) }}
+              {{ statusLabel(invoice.status) }} · {{ t('payment.invoice.list.colOrderCount') }} {{ invoice.order_count }} · {{ formatPaymentAmount(invoice.invoice_amount, invoice.currency) }}
             </p>
           </div>
           <div class="flex items-center gap-2">
@@ -51,7 +51,7 @@
           <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-900">
             <tr v-for="o in invoice.orders" :key="o.order_id">
               <td class="px-4 py-3 text-sm font-mono">{{ o.out_trade_no }}</td>
-              <td class="px-4 py-3 text-sm">¥{{ o.pay_amount_snapshot.toFixed(2) }}</td>
+              <td class="px-4 py-3 text-sm">{{ formatPaymentAmount(o.pay_amount_snapshot, invoice.currency) }}</td>
               <td class="px-4 py-3 text-sm">{{ o.payment_type }}</td>
               <td class="px-4 py-3 text-sm">{{ formatDate(o.created_at) }}</td>
             </tr>
@@ -77,6 +77,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { paymentAPI } from '@/api/payment'
 import type { Invoice } from '@/types/payment'
+import { formatPaymentAmount } from '@/components/payment/currency'
 import { useAppStore } from '@/stores'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import AppLayout from '@/components/layout/AppLayout.vue'

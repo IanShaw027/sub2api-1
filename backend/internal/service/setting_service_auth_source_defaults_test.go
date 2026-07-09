@@ -137,6 +137,15 @@ func TestSettingService_UpdateAuthSourceDefaultSettings_PersistsAllKeys(t *testi
 	require.Equal(t, []DefaultSubscriptionSetting{{GroupID: 24, ValidityDays: 90}}, got)
 }
 
+func TestSettingService_UpdateAuthSourceDefaultSettings_NilRepoReturnsError(t *testing.T) {
+	svc := NewSettingService(nil, &config.Config{})
+
+	err := svc.UpdateAuthSourceDefaultSettings(context.Background(), &AuthSourceDefaultSettings{})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "setting repository unavailable")
+}
+
 func TestSettingService_ResolveAuthSourceGrantSettings_ReturnsProviderExtrasOnly(t *testing.T) {
 	repo := &authSourceDefaultsRepoStub{
 		values: map[string]string{

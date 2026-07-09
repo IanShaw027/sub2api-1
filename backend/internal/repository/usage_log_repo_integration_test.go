@@ -350,14 +350,14 @@ func TestUsageLogRepositoryCreateBestEffort_BatchPathDuplicateRequestID(t *testi
 	}, 3*time.Second, 20*time.Millisecond)
 }
 
-func TestUsageLogRepositoryCreateBestEffort_QueueFullBlocksUntilCtxDeadline(t *testing.T) {
-	// 队列满时不再立即丢弃：阻塞等待入队，直到调用方 ctx 到期才标记 dropped（issue #3656）。
+func TestUsageLogRepositoryCreateBestEffort_QueueFullReturnsDroppedImmediately(t *testing.T) {
+	// 队列满时必须立即返回 dropped，让上层同步直写兜底，而不是把请求 goroutine 阻塞到 ctx 超时。
 	client := testEntClient(t)
 	repo := newUsageLogRepositoryWithSQL(client, integrationDB)
 	repo.bestEffortBatchCh = make(chan usageLogBestEffortRequest, 1)
 	repo.bestEffortBatchCh <- usageLogBestEffortRequest{}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	start := time.Now()
@@ -376,19 +376,17 @@ func TestUsageLogRepositoryCreateBestEffort_QueueFullBlocksUntilCtxDeadline(t *t
 
 	require.Error(t, err)
 	require.True(t, service.IsUsageLogCreateDropped(err))
-	require.GreaterOrEqual(t, time.Since(start), 150*time.Millisecond)
+	require.Less(t, time.Since(start), 100*time.Millisecond)
 }
 
-func TestUsageLogRepositoryCreateBestEffort_QueueFullWaitsForDrain(t *testing.T) {
-	// 队列满但批处理器随后排空时，阻塞的入队应成功完成而非丢弃。
+func TestUsageLogRepositoryCreateBestEffort_WaitsForWorkerResultAfterEnqueue(t *testing.T) {
+	// 只要成功入队，请求侧仍应等待 worker 回执，而不是 fire-and-forget。
 	client := testEntClient(t)
 	repo := newUsageLogRepositoryWithSQL(client, integrationDB)
 	repo.bestEffortBatchCh = make(chan usageLogBestEffortRequest, 1)
-	repo.bestEffortBatchCh <- usageLogBestEffortRequest{}
 
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		<-repo.bestEffortBatchCh // 排空占位请求，为阻塞中的入队腾出空间
 		req := <-repo.bestEffortBatchCh
 		sendUsageLogBestEffortResult(req.resultCh, nil)
 	}()
@@ -1451,7 +1449,7 @@ func (s *UsageLogRepoSuite) TestGetBatchUserUsageStatsSplitsTodayBalanceAndSubsc
 	apiKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: user.ID, Key: "sk-batch-split", Name: "k"})
 	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-batch-split"})
 	group := mustCreateGroup(s.T(), s.client, &service.Group{Name: "batch-split-group"})
-	now := time.Now()
+	now := timezone.Now()
 	subscription := s.client.UserSubscription.Create().
 		SetUserID(user.ID).
 		SetGroupID(group.ID).
@@ -1462,16 +1460,17 @@ func (s *UsageLogRepoSuite) TestGetBatchUserUsageStatsSplitsTodayBalanceAndSubsc
 		SetNotes("").
 		SaveX(s.ctx)
 
-	today := timezone.Today().Add(2 * time.Hour)
+	today := timezone.Now().UTC().Truncate(time.Second)
 	subscriptionID := subscription.ID
 	for _, input := range []struct {
 		cost           float64
 		createdAt      time.Time
 		subscriptionID *int64
+		billingType    int8
 	}{
-		{cost: 0.25, createdAt: today},
-		{cost: 0.75, createdAt: today, subscriptionID: &subscriptionID},
-		{cost: 0.50, createdAt: today.Add(-24 * time.Hour)},
+		{cost: 0.25, createdAt: today, billingType: service.BillingTypeBalance},
+		{cost: 0.75, createdAt: today, subscriptionID: &subscriptionID, billingType: service.BillingTypeSubscription},
+		{cost: 0.50, createdAt: today.Add(-24 * time.Hour), billingType: service.BillingTypeBalance},
 	} {
 		log := &service.UsageLog{
 			UserID:         user.ID,
@@ -1484,6 +1483,7 @@ func (s *UsageLogRepoSuite) TestGetBatchUserUsageStatsSplitsTodayBalanceAndSubsc
 			OutputTokens:   1,
 			TotalCost:      input.cost,
 			ActualCost:     input.cost,
+			BillingType:    input.billingType,
 			CreatedAt:      input.createdAt,
 		}
 		_, err := s.repo.Create(s.ctx, log)
@@ -1496,6 +1496,57 @@ func (s *UsageLogRepoSuite) TestGetBatchUserUsageStatsSplitsTodayBalanceAndSubsc
 	s.Require().InDelta(1.00, stats[user.ID].TodayActualCost, 0.000001)
 	s.Require().InDelta(0.25, stats[user.ID].TodayBalanceActualCost, 0.000001)
 	s.Require().InDelta(0.75, stats[user.ID].TodaySubscriptionActualCost, 0.000001)
+}
+
+func (s *UsageLogRepoSuite) TestGetBatchUserUsageStatsUsesBillingTypeNotSubscriptionID() {
+	user := mustCreateUser(s.T(), s.client, &service.User{Email: "batch-billing-type@test.com"})
+	apiKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: user.ID, Key: "sk-batch-billing-type", Name: "k"})
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-batch-billing-type"})
+	group := mustCreateGroup(s.T(), s.client, &service.Group{Name: "batch-billing-type-group"})
+	now := timezone.Now()
+	subscription := s.client.UserSubscription.Create().
+		SetUserID(user.ID).
+		SetGroupID(group.ID).
+		SetStartsAt(now.Add(-1 * time.Hour)).
+		SetExpiresAt(now.Add(24 * time.Hour)).
+		SetStatus(service.SubscriptionStatusActive).
+		SetAssignedAt(now).
+		SetNotes("").
+		SaveX(s.ctx)
+
+	today := timezone.Now().UTC().Truncate(time.Second)
+	subscriptionID := subscription.ID
+	for _, input := range []struct {
+		cost           float64
+		subscriptionID *int64
+		billingType    int8
+	}{
+		{cost: 0.75, subscriptionID: &subscriptionID, billingType: service.BillingTypeBalance},
+		{cost: 0.25, subscriptionID: nil, billingType: service.BillingTypeSubscription},
+	} {
+		log := &service.UsageLog{
+			UserID:         user.ID,
+			APIKeyID:       apiKey.ID,
+			AccountID:      account.ID,
+			SubscriptionID: input.subscriptionID,
+			RequestID:      uuid.New().String(),
+			Model:          "claude-3",
+			InputTokens:    1,
+			OutputTokens:   1,
+			TotalCost:      input.cost,
+			ActualCost:     input.cost,
+			BillingType:    input.billingType,
+			CreatedAt:      today,
+		}
+		_, err := s.repo.Create(s.ctx, log)
+		s.Require().NoError(err)
+	}
+
+	stats, err := s.repo.GetBatchUserUsageStats(s.ctx, []int64{user.ID}, time.Time{}, time.Time{})
+	s.Require().NoError(err)
+	s.Require().InDelta(1.00, stats[user.ID].TodayActualCost, 0.000001)
+	s.Require().InDelta(0.75, stats[user.ID].TodayBalanceActualCost, 0.000001)
+	s.Require().InDelta(0.25, stats[user.ID].TodaySubscriptionActualCost, 0.000001)
 }
 
 func (s *UsageLogRepoSuite) TestGetBatchUserUsageStats_Empty() {

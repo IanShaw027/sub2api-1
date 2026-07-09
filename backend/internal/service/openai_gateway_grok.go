@@ -92,7 +92,7 @@ func (s *OpenAIGatewayService) forwardGrokResponsesWithPromptCacheKey(
 		upstreamReq.Header.Set("session_id", generateSessionUUID(isolateOpenAISessionID(apiKeyID, trimmed)))
 	}
 	tlsRuntime := s.resolveGrokTLSFingerprintRuntime(ctx, c, account, "http")
-	applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+	applyGrokRuntimeHeaders(upstreamReq, tlsRuntime)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -138,7 +138,7 @@ func (s *OpenAIGatewayService) forwardGrokResponsesWithPromptCacheKey(
 					apiKeyID := getAPIKeyIDFromContext(c)
 					upstreamReq.Header.Set("session_id", generateSessionUUID(isolateOpenAISessionID(apiKeyID, trimmed)))
 				}
-				applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+				applyGrokRuntimeHeaders(upstreamReq, tlsRuntime)
 				continue
 			}
 		}
@@ -591,31 +591,6 @@ func buildGrokResponsesRequest(ctx context.Context, c *gin.Context, account *Acc
 	}
 	_ = account
 	return req, nil
-}
-
-func resolveGrokUpstreamUserAgent(c *gin.Context) string {
-	const fallback = "sub2api-grok/1.0"
-	if c == nil {
-		return fallback
-	}
-	ua := strings.TrimSpace(c.GetHeader("User-Agent"))
-	if ua == "" {
-		return fallback
-	}
-	lower := strings.ToLower(ua)
-	// Keep a stable identity for generic library agents; pass through real clients
-	// (Claude Code / Codex / Grok CLI) so upstream fingerprinting stays coherent.
-	switch {
-	case strings.HasPrefix(lower, "go-http-client"),
-		strings.HasPrefix(lower, "python-"),
-		strings.HasPrefix(lower, "axios/"),
-		strings.HasPrefix(lower, "node-fetch"),
-		strings.HasPrefix(lower, "curl/"),
-		strings.HasPrefix(lower, "wget/"):
-		return fallback
-	default:
-		return ua
-	}
 }
 
 func (s *OpenAIGatewayService) updateGrokUsageSnapshot(ctx context.Context, accountID int64, snapshot *xai.QuotaSnapshot) {

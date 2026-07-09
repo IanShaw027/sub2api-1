@@ -140,6 +140,20 @@ func (_c *TLSFingerprintProfileCreate) SetNillableOriginator(v *string) *TLSFing
 	return _c
 }
 
+// SetHttp2Fingerprint sets the "http2_fingerprint" field.
+func (_c *TLSFingerprintProfileCreate) SetHttp2Fingerprint(v string) *TLSFingerprintProfileCreate {
+	_c.mutation.SetHttp2Fingerprint(v)
+	return _c
+}
+
+// SetNillableHttp2Fingerprint sets the "http2_fingerprint" field if the given value is not nil.
+func (_c *TLSFingerprintProfileCreate) SetNillableHttp2Fingerprint(v *string) *TLSFingerprintProfileCreate {
+	if v != nil {
+		_c.SetHttp2Fingerprint(*v)
+	}
+	return _c
+}
+
 // SetDescription sets the "description" field.
 func (_c *TLSFingerprintProfileCreate) SetDescription(v string) *TLSFingerprintProfileCreate {
 	_c.mutation.SetDescription(v)
@@ -319,6 +333,10 @@ func (_c *TLSFingerprintProfileCreate) defaults() {
 		v := tlsfingerprintprofile.DefaultOriginator
 		_c.mutation.SetOriginator(v)
 	}
+	if _, ok := _c.mutation.Http2Fingerprint(); !ok {
+		v := tlsfingerprintprofile.DefaultHttp2Fingerprint
+		_c.mutation.SetHttp2Fingerprint(v)
+	}
 	if _, ok := _c.mutation.EnableGrease(); !ok {
 		v := tlsfingerprintprofile.DefaultEnableGrease
 		_c.mutation.SetEnableGrease(v)
@@ -389,6 +407,9 @@ func (_c *TLSFingerprintProfileCreate) check() error {
 			return &ValidationError{Name: "originator", err: fmt.Errorf(`ent: validator failed for field "TLSFingerprintProfile.originator": %w`, err)}
 		}
 	}
+	if _, ok := _c.mutation.Http2Fingerprint(); !ok {
+		return &ValidationError{Name: "http2_fingerprint", err: errors.New(`ent: missing required field "TLSFingerprintProfile.http2_fingerprint"`)}
+	}
 	if _, ok := _c.mutation.EnableGrease(); !ok {
 		return &ValidationError{Name: "enable_grease", err: errors.New(`ent: missing required field "TLSFingerprintProfile.enable_grease"`)}
 	}
@@ -454,6 +475,10 @@ func (_c *TLSFingerprintProfileCreate) createSpec() (*TLSFingerprintProfile, *sq
 	if value, ok := _c.mutation.Originator(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldOriginator, field.TypeString, value)
 		_node.Originator = value
+	}
+	if value, ok := _c.mutation.Http2Fingerprint(); ok {
+		_spec.SetField(tlsfingerprintprofile.FieldHttp2Fingerprint, field.TypeString, value)
+		_node.Http2Fingerprint = value
 	}
 	if value, ok := _c.mutation.Description(); ok {
 		_spec.SetField(tlsfingerprintprofile.FieldDescription, field.TypeString, value)
@@ -664,6 +689,18 @@ func (u *TLSFingerprintProfileUpsert) SetOriginator(v string) *TLSFingerprintPro
 // UpdateOriginator sets the "originator" field to the value that was provided on create.
 func (u *TLSFingerprintProfileUpsert) UpdateOriginator() *TLSFingerprintProfileUpsert {
 	u.SetExcluded(tlsfingerprintprofile.FieldOriginator)
+	return u
+}
+
+// SetHttp2Fingerprint sets the "http2_fingerprint" field.
+func (u *TLSFingerprintProfileUpsert) SetHttp2Fingerprint(v string) *TLSFingerprintProfileUpsert {
+	u.Set(tlsfingerprintprofile.FieldHttp2Fingerprint, v)
+	return u
+}
+
+// UpdateHttp2Fingerprint sets the "http2_fingerprint" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsert) UpdateHttp2Fingerprint() *TLSFingerprintProfileUpsert {
+	u.SetExcluded(tlsfingerprintprofile.FieldHttp2Fingerprint)
 	return u
 }
 
@@ -1103,6 +1140,20 @@ func (u *TLSFingerprintProfileUpsertOne) SetOriginator(v string) *TLSFingerprint
 func (u *TLSFingerprintProfileUpsertOne) UpdateOriginator() *TLSFingerprintProfileUpsertOne {
 	return u.Update(func(s *TLSFingerprintProfileUpsert) {
 		s.UpdateOriginator()
+	})
+}
+
+// SetHttp2Fingerprint sets the "http2_fingerprint" field.
+func (u *TLSFingerprintProfileUpsertOne) SetHttp2Fingerprint(v string) *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetHttp2Fingerprint(v)
+	})
+}
+
+// UpdateHttp2Fingerprint sets the "http2_fingerprint" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertOne) UpdateHttp2Fingerprint() *TLSFingerprintProfileUpsertOne {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateHttp2Fingerprint()
 	})
 }
 
@@ -1755,6 +1806,20 @@ func (u *TLSFingerprintProfileUpsertBulk) SetOriginator(v string) *TLSFingerprin
 func (u *TLSFingerprintProfileUpsertBulk) UpdateOriginator() *TLSFingerprintProfileUpsertBulk {
 	return u.Update(func(s *TLSFingerprintProfileUpsert) {
 		s.UpdateOriginator()
+	})
+}
+
+// SetHttp2Fingerprint sets the "http2_fingerprint" field.
+func (u *TLSFingerprintProfileUpsertBulk) SetHttp2Fingerprint(v string) *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.SetHttp2Fingerprint(v)
+	})
+}
+
+// UpdateHttp2Fingerprint sets the "http2_fingerprint" field to the value that was provided on create.
+func (u *TLSFingerprintProfileUpsertBulk) UpdateHttp2Fingerprint() *TLSFingerprintProfileUpsertBulk {
+	return u.Update(func(s *TLSFingerprintProfileUpsert) {
+		s.UpdateHttp2Fingerprint()
 	})
 }
 

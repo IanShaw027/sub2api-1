@@ -424,24 +424,6 @@ func (s *defaultOpenAIAccountScheduler) Select(
 			transportOK := s.isAccountTransportCompatible(selection.Account, req.RequiredTransport)
 			requestOK := transportOK && s.isAccountRequestCompatible(ctx, selection.Account, req)
 			if !transportOK || !requestOK {
-				reason := "request_incompatible_after_select"
-				if !transportOK {
-					reason = "transport_incompatible_after_select"
-				}
-				s.service.logOpenAIWSPreviousResponseStickyDiag(openAIWSPreviousResponseStickyDiagLog{
-					GroupID:            derefGroupID(req.GroupID),
-					APIKeyID:           req.APIKeyID,
-					PreviousResponseID: previousResponseID,
-					RequestedModel:     req.RequestedModel,
-					RequiredTransport:  req.RequiredTransport,
-					RequiredCapability: req.RequiredCapability,
-					AccountID:          selection.Account.ID,
-					AccountType:        selection.Account.Type,
-					Reason:             reason,
-					Action:             "load_balance_fallback",
-					DeletedBinding:     false,
-					SelectionHit:       false,
-				})
 				if selection.ReleaseFunc != nil {
 					selection.ReleaseFunc()
 				}
@@ -508,34 +490,6 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	if sessionHash == "" || s == nil || s.service == nil || s.service.cache == nil {
 		return result, nil
 	}
-	logReject := func(reason string, account *Account, accountID int64, deletedBinding bool, excluded bool) {
-		accountType := ""
-		if account != nil {
-			accountType = account.Type
-			if accountID <= 0 {
-				accountID = account.ID
-			}
-		}
-		s.service.logOpenAIWSStickySessionReject(openAIWSStickySessionRejectLog{
-			GroupID:               derefGroupID(req.GroupID),
-			APIKeyID:              req.APIKeyID,
-			SessionHash:           sessionHash,
-			AccountID:             accountID,
-			AccountType:           accountType,
-			Reason:                reason,
-			StickySource:          req.StickySource,
-			RequestedModel:        req.RequestedModel,
-			RequiredTransport:     req.RequiredTransport,
-			RequiredCapability:    req.RequiredCapability,
-			RequiredImageRoute:    req.RequiredImageRoute,
-			RequireOAuth:          req.RequireOAuthAccount,
-			RequireCompact:        req.RequireCompact,
-			DeletedBinding:        deletedBinding,
-			Excluded:              excluded,
-			ExcludedCount:         len(req.ExcludedIDs),
-			PreserveStickyBinding: req.PreserveStickyBinding,
-		})
-	}
 
 	accountID := req.StickyAccountID
 	if accountID <= 0 {
@@ -551,21 +505,17 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	result.AccountID = accountID
 	if req.ExcludedIDs != nil {
 		if _, excluded := req.ExcludedIDs[accountID]; excluded {
-			account, _ := s.service.getSchedulableAccount(ctx, accountID)
-			logReject("excluded", account, accountID, false, true)
 			return result, nil
 		}
 	}
 
 	account, err := s.service.getSchedulableAccount(ctx, accountID)
 	if err != nil || account == nil {
-		logReject("account_not_found", account, accountID, true, false)
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return result, nil
 	}
 	result.AccountType = account.Type
 	if !s.isStickyAccountWithinSchedulingScope(ctx, account.ID, req) {
-		logReject("out_of_scope", account, accountID, true, false)
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return result, nil
 	}
@@ -573,17 +523,14 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	if shouldClearOpenAIAccountForStickySelection(account, req.Platform, req.RequestedModel, req.RequiredImageRoute, stickyWaitTimeout) ||
 		account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) ||
 		!account.IsOpenAICompatible() {
-		logReject("sticky_clear_policy", account, accountID, true, false)
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return result, nil
 	}
 	if !isOpenAIStickyAccountEligibleForSelection(ctx, s.service.settingService, account, req.Platform, req.RequestedModel, req.RequireCompact, req.RequiredCapability, req.RequiredImageRoute, req.RequireOAuthAccount, req.RequireImageEnabled) {
-		logReject("candidate_incompatible", account, accountID, true, false)
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return result, nil
 	}
 	if !s.isAccountTransportCompatible(account, req.RequiredTransport) {
-		logReject("transport_incompatible", account, accountID, true, false)
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return result, nil
 	}
@@ -594,7 +541,6 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		!account.IsOpenAICompatible() ||
 		!s.isAccountTransportCompatible(account, req.RequiredTransport) ||
 		!s.isAccountRequestCompatible(ctx, account, req) {
-		logReject("recheck_failed", account, accountID, true, false)
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return result, nil
 	}
@@ -2314,251 +2260,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 	if decision.StickyAccountID == 0 && stickyInfo.AccountID > 0 {
 		decision.StickyAccountID = stickyInfo.AccountID
 	}
-	s.logOpenAIWSScheduleResultDiag(groupID, apiKeyID, sessionHash, requestedModel, requiredTransport, requiredCapability, stickyInfo.Source, selection, decision, err)
 	return selection, decision, err
-}
-
-func (s *OpenAIGatewayService) logOpenAIWSScheduleResultDiag(
-	groupID *int64,
-	apiKeyID int64,
-	sessionHash string,
-	requestedModel string,
-	requiredTransport OpenAIUpstreamTransport,
-	requiredCapability OpenAIEndpointCapability,
-	stickySource string,
-	selection *AccountSelectionResult,
-	decision OpenAIAccountScheduleDecision,
-	err error,
-) {
-	if strings.TrimSpace(sessionHash) == "" ||
-		requiredCapability != OpenAIEndpointCapabilityResponsesIngress ||
-		(requiredTransport != OpenAIUpstreamTransportAny && requiredTransport != OpenAIUpstreamTransportResponsesWebsocketV2) {
-		return
-	}
-
-	selectedAccountID := decision.SelectedAccountID
-	selectedAccountType := decision.SelectedAccountType
-	if selection != nil && selection.Account != nil {
-		selectedAccountID = selection.Account.ID
-		selectedAccountType = selection.Account.Type
-	}
-	if selectedAccountType != AccountTypeOAuth && decision.StickyAccountType != AccountTypeOAuth {
-		return
-	}
-
-	errMessage := ""
-	if err != nil {
-		errMessage = err.Error()
-	}
-	selectedDiffersFromSticky := decision.StickyAccountID > 0 && selectedAccountID > 0 && decision.StickyAccountID != selectedAccountID
-	logOpenAIWSModeInfoDirect(
-		"openai_ws_schedule_result temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d session=%s transport=%s model=%s sticky_source=%s layer=%s sticky_account_id=%d sticky_account_type=%s sticky_session_hit=%v sticky_session_context_bound=%v sticky_session_context_account_id=%d sticky_session_context_conn_id=%s sticky_escape_triggered=%v sticky_escape_suppressed=%v sticky_escape_reason=%s sticky_escape_error_rate=%.6f sticky_escape_ttft=%.0f selected_account_id=%d selected_account_type=%s selected_differs_from_sticky=%v candidate_count=%d top_k=%d load_skew=%.6f latency_ms=%d err=%s",
-		derefGroupID(groupID),
-		apiKeyID,
-		shortSessionHash(sessionHash),
-		normalizeOpenAIWSLogValue(openAIUpstreamTransportLogValue(requiredTransport)),
-		normalizeOpenAIWSLogValue(requestedModel),
-		normalizeOpenAIWSLogValue(stickySource),
-		normalizeOpenAIWSLogValue(decision.Layer),
-		decision.StickyAccountID,
-		normalizeOpenAIWSLogValue(decision.StickyAccountType),
-		decision.StickySessionHit,
-		decision.StickySessionContextBound,
-		decision.StickySessionContextAccountID,
-		truncateOpenAIWSLogValue(decision.StickySessionContextConnID, openAIWSIDValueMaxLen),
-		decision.StickyEscapeTriggered,
-		decision.StickyEscapeSuppressed,
-		normalizeOpenAIWSLogValue(decision.StickyEscapeReason),
-		decision.StickyEscapeErrorRate,
-		decision.StickyEscapeTTFT,
-		selectedAccountID,
-		normalizeOpenAIWSLogValue(selectedAccountType),
-		selectedDiffersFromSticky,
-		decision.CandidateCount,
-		decision.TopK,
-		decision.LoadSkew,
-		decision.LatencyMs,
-		truncateOpenAIWSLogValue(errMessage, openAIWSLogValueMaxLen),
-	)
-}
-
-type openAIWSStickySessionRejectLog struct {
-	GroupID               int64
-	APIKeyID              int64
-	SessionHash           string
-	AccountID             int64
-	AccountType           string
-	Reason                string
-	StickySource          string
-	RequestedModel        string
-	RequiredTransport     OpenAIUpstreamTransport
-	RequiredCapability    OpenAIEndpointCapability
-	RequiredImageRoute    string
-	RequireOAuth          bool
-	RequireCompact        bool
-	DeletedBinding        bool
-	Excluded              bool
-	ExcludedCount         int
-	PreserveStickyBinding bool
-}
-
-func openAIWSStickySessionRejectLogMessage(v openAIWSStickySessionRejectLog) string {
-	return fmt.Sprintf(
-		"openai_ws_sticky_session_reject temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d session=%s account_id=%d account_type=%s reason=%s sticky_source=%s model=%s transport=%s capability=%s image_route=%s require_oauth=%v require_compact=%v deleted_binding=%v excluded=%v excluded_count=%d preserve_sticky_binding=%v",
-		v.GroupID,
-		v.APIKeyID,
-		truncateOpenAIWSLogValue(v.SessionHash, 12),
-		v.AccountID,
-		normalizeOpenAIWSLogValue(v.AccountType),
-		normalizeOpenAIWSLogValueNoReplace(v.Reason),
-		normalizeOpenAIWSLogValue(v.StickySource),
-		normalizeOpenAIWSLogValue(v.RequestedModel),
-		normalizeOpenAIWSLogValue(openAIUpstreamTransportLogValue(v.RequiredTransport)),
-		normalizeOpenAIWSLogValue(string(v.RequiredCapability)),
-		normalizeOpenAIWSLogValue(v.RequiredImageRoute),
-		v.RequireOAuth,
-		v.RequireCompact,
-		v.DeletedBinding,
-		v.Excluded,
-		v.ExcludedCount,
-		v.PreserveStickyBinding,
-	)
-}
-
-func (s *OpenAIGatewayService) logOpenAIWSStickySessionReject(v openAIWSStickySessionRejectLog) {
-	if s == nil || !shouldLogOpenAIWSStickySelectDiag(v.RequiredCapability, v.RequiredTransport, v.AccountType, v.SessionHash) {
-		return
-	}
-	logOpenAIWSModeInfoDirect("%s", openAIWSStickySessionRejectLogMessage(v))
-}
-
-type openAIWSPreviousResponseStickyDiagLog struct {
-	GroupID                int64
-	APIKeyID               int64
-	PreviousResponseID     string
-	RequestedModel         string
-	RequiredTransport      OpenAIUpstreamTransport
-	RequiredCapability     OpenAIEndpointCapability
-	AccountID              int64
-	AccountType            string
-	Reason                 string
-	Action                 string
-	DeletedBinding         bool
-	SelectionHit           bool
-	ExcludedCount          int
-	ResponseConnID         string
-	ResponseConnHit        bool
-	ResponseConnInPool     bool
-	ResponseConnProfile    openAIWSConnProfile
-	ResponseConnAgeMS      int64
-	ResponseConnIdleMS     int64
-	ResponseConnLeaseCount int64
-}
-
-func openAIWSPreviousResponseStickyDiagLogMessage(v openAIWSPreviousResponseStickyDiagLog) string {
-	return fmt.Sprintf(
-		"openai_ws_previous_response_sticky_diag temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d previous_response_id=%s model=%s transport=%s capability=%s account_id=%d account_type=%s reason=%s action=%s deleted_binding=%v selection_hit=%v excluded_count=%d response_conn_id=%s response_conn_hit=%v response_conn_in_pool=%v response_conn_profile=%s response_conn_age_ms=%d response_conn_idle_ms=%d response_conn_lease_count=%d",
-		v.GroupID,
-		v.APIKeyID,
-		truncateOpenAIWSLogValue(v.PreviousResponseID, openAIWSIDValueMaxLen),
-		normalizeOpenAIWSLogValue(v.RequestedModel),
-		normalizeOpenAIWSLogValue(openAIUpstreamTransportLogValue(v.RequiredTransport)),
-		normalizeOpenAIWSLogValue(string(v.RequiredCapability)),
-		v.AccountID,
-		normalizeOpenAIWSLogValue(v.AccountType),
-		normalizeOpenAIWSLogValueNoReplace(v.Reason),
-		normalizeOpenAIWSLogValueNoReplace(v.Action),
-		v.DeletedBinding,
-		v.SelectionHit,
-		v.ExcludedCount,
-		truncateOpenAIWSLogValue(v.ResponseConnID, openAIWSIDValueMaxLen),
-		v.ResponseConnHit,
-		v.ResponseConnInPool,
-		openAIWSConnProfileSnapshotLogValue(v.ResponseConnProfile, v.ResponseConnInPool),
-		v.ResponseConnAgeMS,
-		v.ResponseConnIdleMS,
-		v.ResponseConnLeaseCount,
-	)
-}
-
-func (s *OpenAIGatewayService) logOpenAIWSPreviousResponseStickyDiag(v openAIWSPreviousResponseStickyDiagLog) {
-	if s == nil || strings.TrimSpace(v.PreviousResponseID) == "" ||
-		!shouldLogOpenAIWSStickySelectDiag(v.RequiredCapability, v.RequiredTransport, v.AccountType, v.PreviousResponseID) {
-		return
-	}
-	logOpenAIWSModeInfoDirect("%s", openAIWSPreviousResponseStickyDiagLogMessage(v))
-}
-
-func shouldLogOpenAIWSStickySelectDiag(requiredCapability OpenAIEndpointCapability, requiredTransport OpenAIUpstreamTransport, accountType string, anchor string) bool {
-	if strings.TrimSpace(anchor) == "" {
-		return false
-	}
-	if accountType != "" && accountType != AccountTypeOAuth {
-		return false
-	}
-	return requiredCapability == OpenAIEndpointCapabilityResponsesIngress ||
-		requiredTransport == OpenAIUpstreamTransportResponsesWebsocketV2
-}
-
-type openAIWSStickySelectDiagLog struct {
-	GroupID                    int64
-	APIKeyID                   int64
-	SessionHash                string
-	Source                     string
-	RedisSource                string
-	PrimaryKey                 string
-	PrimaryTTLMS               int64
-	PrimaryTTLError            string
-	LegacyKey                  string
-	LegacyTTLMS                int64
-	LegacyTTLError             string
-	AccountID                  int64
-	ConnID                     string
-	RedisAccountID             int64
-	SessionContextAccountID    int64
-	SessionContextConnID       string
-	SessionContextAccountMatch bool
-	SessionContextFallback     bool
-	SessionContextBound        bool
-	PrimaryHit                 bool
-	PrimaryError               string
-	LegacyFallbackEnabled      bool
-	LegacyFallbackAttempted    bool
-	LegacyFallbackHit          bool
-	LegacyError                string
-	RedisError                 string
-}
-
-func openAIWSStickySelectDiagLogMessage(v openAIWSStickySelectDiagLog) string {
-	return fmt.Sprintf(
-		"openai_ws_sticky_select_diag temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d session=%s source=%s redis_source=%s primary_key=%s primary_ttl_ms=%d primary_ttl_error=%s legacy_key=%s legacy_ttl_ms=%d legacy_ttl_error=%s account_id=%d conn_id=%s redis_account_id=%d session_context_account_id=%d session_context_conn_id=%s session_context_account_match=%v session_context_fallback=%v session_context_bound=%v primary_hit=%v primary_error=%s legacy_fallback_enabled=%v legacy_fallback_attempted=%v legacy_fallback_hit=%v legacy_error=%s redis_error=%s",
-		v.GroupID,
-		v.APIKeyID,
-		shortSessionHash(v.SessionHash),
-		normalizeOpenAIWSLogValue(v.Source),
-		normalizeOpenAIWSLogValue(v.RedisSource),
-		truncateOpenAIWSLogValue(v.PrimaryKey, openAIWSIDValueMaxLen),
-		v.PrimaryTTLMS,
-		normalizeOpenAIWSLogValue(v.PrimaryTTLError),
-		truncateOpenAIWSLogValue(v.LegacyKey, openAIWSIDValueMaxLen),
-		v.LegacyTTLMS,
-		normalizeOpenAIWSLogValue(v.LegacyTTLError),
-		v.AccountID,
-		normalizeOpenAIWSLogValue(v.ConnID),
-		v.RedisAccountID,
-		v.SessionContextAccountID,
-		truncateOpenAIWSLogValue(v.SessionContextConnID, openAIWSIDValueMaxLen),
-		v.SessionContextAccountMatch,
-		v.SessionContextFallback,
-		v.SessionContextBound,
-		v.PrimaryHit,
-		normalizeOpenAIWSLogValue(v.PrimaryError),
-		v.LegacyFallbackEnabled,
-		v.LegacyFallbackAttempted,
-		v.LegacyFallbackHit,
-		normalizeOpenAIWSLogValue(v.LegacyError),
-		normalizeOpenAIWSLogValue(v.RedisError),
-	)
 }
 
 type openAIWSScheduleStickyInfo struct {
@@ -2570,11 +2272,6 @@ type openAIWSScheduleStickyInfo struct {
 	SessionContextConnID       string
 	SessionContextAccountMatch bool
 	SessionContextBound        bool
-}
-
-func (s *OpenAIGatewayService) resolveOpenAIScheduleStickyAccountID(ctx context.Context, groupID *int64, apiKeyID int64, sessionHash string) (int64, string) {
-	info := s.resolveOpenAIScheduleStickyInfo(ctx, groupID, apiKeyID, sessionHash)
-	return info.AccountID, info.Source
 }
 
 func (s *OpenAIGatewayService) resolveOpenAIScheduleStickyInfo(ctx context.Context, groupID *int64, apiKeyID int64, sessionHash string) openAIWSScheduleStickyInfo {
@@ -2614,36 +2311,6 @@ func (s *OpenAIGatewayService) resolveOpenAIScheduleStickyInfo(ctx context.Conte
 	} else if sessionContextBound {
 		sessionContextBound = false
 	}
-	s.logOpenAIWSSessionContextStickySnapshot(groupID, apiKeyID, sessionHash, source, accountID)
-
-	logOpenAIWSModeInfoDirect("%s", openAIWSStickySelectDiagLogMessage(openAIWSStickySelectDiagLog{
-		GroupID:                    derefGroupID(groupID),
-		APIKeyID:                   apiKeyID,
-		SessionHash:                sessionHash,
-		Source:                     source,
-		RedisSource:                lookup.Source,
-		PrimaryKey:                 lookup.PrimaryKey,
-		PrimaryTTLMS:               lookup.PrimaryTTLMS,
-		PrimaryTTLError:            lookup.PrimaryTTLError,
-		LegacyKey:                  lookup.LegacyKey,
-		LegacyTTLMS:                lookup.LegacyTTLMS,
-		LegacyTTLError:             lookup.LegacyTTLError,
-		AccountID:                  accountID,
-		ConnID:                     connID,
-		RedisAccountID:             lookup.AccountID,
-		SessionContextAccountID:    sessionContextAccountID,
-		SessionContextConnID:       sessionContextConnID,
-		SessionContextAccountMatch: sessionContextAccountID > 0 && accountID > 0 && sessionContextAccountID == accountID,
-		SessionContextFallback:     source == "ws_session_context",
-		SessionContextBound:        sessionContextBound,
-		PrimaryHit:                 lookup.PrimaryHit,
-		PrimaryError:               lookup.PrimaryError,
-		LegacyFallbackEnabled:      lookup.LegacyFallbackEnabled,
-		LegacyFallbackAttempted:    lookup.LegacyFallbackAttempted,
-		LegacyFallbackHit:          lookup.LegacyFallbackHit,
-		LegacyError:                lookup.LegacyError,
-		RedisError:                 lookup.PrimaryError,
-	}))
 	return openAIWSScheduleStickyInfo{
 		AccountID:                  accountID,
 		Source:                     source,
@@ -2656,154 +2323,6 @@ func (s *OpenAIGatewayService) resolveOpenAIScheduleStickyInfo(ctx context.Conte
 	}
 }
 
-type openAIWSSessionContextStickySnapshotLog struct {
-	GroupID                  int64
-	APIKeyID                 int64
-	SessionHash              string
-	StickySource             string
-	StickyAccountID          int64
-	CachedFound              bool
-	CachedAccountID          int64
-	CachedConnID             string
-	CachedLastResponseID     string
-	AccountMatch             bool
-	AccountMatchState        string
-	AccountMatchReason       string
-	BoundConnID              string
-	BoundConnHit             bool
-	BoundConnMatch           bool
-	ConnLastResponseID       string
-	ConnLastResponseHit      bool
-	CachedConnInPool         bool
-	CachedConnProfile        openAIWSConnProfile
-	CachedConnAgeMS          int64
-	CachedConnIdleMS         int64
-	CachedConnLeaseCount     int64
-	CachedConnLeased         bool
-	CachedConnWaiters        int32
-	CachedConnLastResponseID string
-}
-
-func openAIWSSessionContextStickySnapshotLogMessage(v openAIWSSessionContextStickySnapshotLog) string {
-	return fmt.Sprintf(
-		"openai_ws_session_context_sticky_snapshot temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d session=%s sticky_source=%s sticky_account_id=%d cached_found=%v cached_account_id=%d cached_conn_id=%s cached_last_response_id=%s account_match=%v account_match_state=%s account_match_reason=%s bound_conn_id=%s bound_conn_hit=%v bound_conn_match=%v conn_last_response_id=%s conn_last_response_hit=%v cached_conn_in_pool=%v cached_conn_profile=%s cached_conn_age_ms=%d cached_conn_idle_ms=%d cached_conn_lease_count=%d cached_conn_leased=%v cached_conn_waiters=%d cached_conn_last_response_id=%s",
-		v.GroupID,
-		v.APIKeyID,
-		truncateOpenAIWSLogValue(v.SessionHash, 12),
-		normalizeOpenAIWSLogValue(v.StickySource),
-		v.StickyAccountID,
-		v.CachedFound,
-		v.CachedAccountID,
-		truncateOpenAIWSLogValue(v.CachedConnID, openAIWSIDValueMaxLen),
-		truncateOpenAIWSLogValue(v.CachedLastResponseID, openAIWSIDValueMaxLen),
-		v.AccountMatch,
-		normalizeOpenAIWSLogValue(v.AccountMatchState),
-		normalizeOpenAIWSLogValue(v.AccountMatchReason),
-		truncateOpenAIWSLogValue(v.BoundConnID, openAIWSIDValueMaxLen),
-		v.BoundConnHit,
-		v.BoundConnMatch,
-		truncateOpenAIWSLogValue(v.ConnLastResponseID, openAIWSIDValueMaxLen),
-		v.ConnLastResponseHit,
-		v.CachedConnInPool,
-		openAIWSConnProfileSnapshotLogValue(v.CachedConnProfile, v.CachedConnInPool),
-		v.CachedConnAgeMS,
-		v.CachedConnIdleMS,
-		v.CachedConnLeaseCount,
-		v.CachedConnLeased,
-		v.CachedConnWaiters,
-		truncateOpenAIWSLogValue(v.CachedConnLastResponseID, openAIWSIDValueMaxLen),
-	)
-}
-
-func openAIWSStickyAccountMatchState(stickyAccountID int64, cachedFound bool, cachedAccountID int64) string {
-	switch {
-	case !cachedFound && stickyAccountID > 0:
-		return "missing_session_context"
-	case !cachedFound:
-		return "no_session_context"
-	case stickyAccountID <= 0:
-		return "no_sticky_account"
-	case cachedAccountID == stickyAccountID:
-		return "match"
-	default:
-		return "mismatch"
-	}
-}
-
-func openAIWSStickyAccountMatchReason(stickyAccountID int64, cachedFound bool, cachedAccountID int64) string {
-	switch {
-	case !cachedFound && stickyAccountID > 0:
-		return "sticky_has_no_session_context"
-	case !cachedFound:
-		return "no_sticky_no_session_context"
-	case stickyAccountID <= 0:
-		return "no_sticky_account"
-	case cachedAccountID == stickyAccountID:
-		return "cached_account_matches_sticky"
-	default:
-		return "cached_account_differs_from_sticky"
-	}
-}
-
-func (s *OpenAIGatewayService) logOpenAIWSSessionContextStickySnapshot(groupID *int64, apiKeyID int64, sessionHash, stickySource string, stickyAccountID int64) {
-	if s == nil || apiKeyID <= 0 || strings.TrimSpace(sessionHash) == "" {
-		return
-	}
-	stateStore := s.getOpenAIWSStateStore()
-	if stateStore == nil {
-		return
-	}
-	group := derefGroupID(groupID)
-	cached, cachedFound := stateStore.GetSessionContext(group, apiKeyID, sessionHash)
-	if !cachedFound && stickyAccountID <= 0 {
-		return
-	}
-
-	log := openAIWSSessionContextStickySnapshotLog{
-		GroupID:         group,
-		APIKeyID:        apiKeyID,
-		SessionHash:     sessionHash,
-		StickySource:    stickySource,
-		StickyAccountID: stickyAccountID,
-		CachedFound:     cachedFound,
-		AccountMatch:    cachedFound && stickyAccountID > 0 && cached.accountID == stickyAccountID,
-		AccountMatchState: openAIWSStickyAccountMatchState(
-			stickyAccountID,
-			cachedFound,
-			cached.accountID,
-		),
-		AccountMatchReason: openAIWSStickyAccountMatchReason(
-			stickyAccountID,
-			cachedFound,
-			cached.accountID,
-		),
-	}
-	if cachedFound {
-		log.CachedAccountID = cached.accountID
-		log.CachedConnID = cached.connID
-		log.CachedLastResponseID = cached.lastResponseID
-		boundConnID, boundConnHit := stateStore.GetSessionConn(group, apiKeyID, cached.accountID, sessionHash)
-		log.BoundConnID = boundConnID
-		log.BoundConnHit = boundConnHit
-		log.BoundConnMatch = boundConnHit && strings.TrimSpace(boundConnID) == strings.TrimSpace(cached.connID)
-		connLastResponseID, connLastResponseHit := stateStore.GetConnLastResponse(cached.connID)
-		log.ConnLastResponseID = connLastResponseID
-		log.ConnLastResponseHit = connLastResponseHit
-		log.CachedConnLastResponseID = connLastResponseID
-		if pool := s.getOpenAIWSConnPool(); pool != nil {
-			snapshot := pool.ConnSnapshot(cached.accountID, cached.connID)
-			log.CachedConnInPool = snapshot.Exists
-			log.CachedConnProfile = snapshot.Profile
-			log.CachedConnAgeMS = snapshot.Age.Milliseconds()
-			log.CachedConnIdleMS = snapshot.Idle.Milliseconds()
-			log.CachedConnLeaseCount = snapshot.LeaseCount
-			log.CachedConnLeased = snapshot.Leased
-			log.CachedConnWaiters = snapshot.Waiters
-		}
-	}
-	logOpenAIWSModeInfoDirect("%s", openAIWSSessionContextStickySnapshotLogMessage(log))
-}
-
 func (s *OpenAIGatewayService) openAIWSSessionContextStickyCandidate(groupID *int64, apiKeyID int64, sessionHash string) (int64, string, bool) {
 	if s == nil || apiKeyID <= 0 || strings.TrimSpace(sessionHash) == "" {
 		return 0, "", false
@@ -2812,72 +2331,19 @@ func (s *OpenAIGatewayService) openAIWSSessionContextStickyCandidate(groupID *in
 	if stateStore == nil {
 		return 0, "", false
 	}
-	logReject := func(reason string, cached openAIWSSessionContextValue, boundConnID string, boundConnHit bool, connLastResponseID string, connLastResponseHit bool) {
-		cachedConnInPool := false
-		cachedConnProfile := openAIWSConnProfileSessionBound
-		cachedConnAgeMS := int64(0)
-		cachedConnIdleMS := int64(0)
-		cachedConnLeaseCount := int64(0)
-		cachedConnLeased := false
-		cachedConnWaiters := int32(0)
-		if cached.accountID > 0 && strings.TrimSpace(cached.connID) != "" {
-			if pool := s.getOpenAIWSConnPool(); pool != nil {
-				snapshot := pool.ConnSnapshot(cached.accountID, cached.connID)
-				cachedConnInPool = snapshot.Exists
-				cachedConnProfile = snapshot.Profile
-				cachedConnAgeMS = snapshot.Age.Milliseconds()
-				cachedConnIdleMS = snapshot.Idle.Milliseconds()
-				cachedConnLeaseCount = snapshot.LeaseCount
-				cachedConnLeased = snapshot.Leased
-				cachedConnWaiters = snapshot.Waiters
-			}
-		}
-		lastEvictReason, lastEvictAgeMS := openAIWSConnLastEvictForLog(stateStore, cached.connID)
-		logOpenAIWSModeInfoDirect(
-			"openai_ws_session_context_sticky_reject temporary_diag=sticky_select remove_after_debug=true group_id=%d api_key_id=%d session=%s reason=%s cached_account_id=%d cached_conn_id=%s cached_last_response_id=%s bound_conn_id=%s bound_conn_hit=%v bound_conn_match=%v conn_last_response_id=%s conn_last_response_hit=%v cached_conn_in_pool=%v cached_conn_profile=%s cached_conn_age_ms=%d cached_conn_idle_ms=%d cached_conn_lease_count=%d cached_conn_leased=%v cached_conn_waiters=%d cached_conn_last_evict_reason=%s cached_conn_last_evict_age_ms=%d",
-			derefGroupID(groupID),
-			apiKeyID,
-			shortSessionHash(sessionHash),
-			normalizeOpenAIWSLogValue(reason),
-			cached.accountID,
-			truncateOpenAIWSLogValue(cached.connID, openAIWSIDValueMaxLen),
-			truncateOpenAIWSLogValue(cached.lastResponseID, openAIWSIDValueMaxLen),
-			truncateOpenAIWSLogValue(boundConnID, openAIWSIDValueMaxLen),
-			boundConnHit,
-			boundConnHit && strings.TrimSpace(boundConnID) == strings.TrimSpace(cached.connID),
-			truncateOpenAIWSLogValue(connLastResponseID, openAIWSIDValueMaxLen),
-			connLastResponseHit,
-			cachedConnInPool,
-			openAIWSConnProfileSnapshotLogValue(cachedConnProfile, cachedConnInPool),
-			cachedConnAgeMS,
-			cachedConnIdleMS,
-			cachedConnLeaseCount,
-			cachedConnLeased,
-			cachedConnWaiters,
-			normalizeOpenAIWSLogValue(lastEvictReason),
-			lastEvictAgeMS,
-		)
-	}
 	cached, ok := stateStore.GetSessionContext(derefGroupID(groupID), apiKeyID, sessionHash)
 	if !ok || cached.accountID <= 0 {
-		if ok {
-			logReject("missing_cached_account", cached, "", false, "", false)
-		}
 		return 0, "", false
 	}
 	connID := strings.TrimSpace(cached.connID)
 	if connID == "" || strings.TrimSpace(cached.lastResponseID) == "" {
-		logReject("missing_cached_conn_or_response", cached, "", false, "", false)
 		return 0, "", false
 	}
 	boundConnID, ok := stateStore.GetSessionConn(derefGroupID(groupID), apiKeyID, cached.accountID, sessionHash)
 	if !ok || strings.TrimSpace(boundConnID) != connID {
-		logReject("session_conn_mismatch", cached, boundConnID, ok, "", false)
 		return 0, "", false
 	}
-	connLastResponseID, ok := stateStore.GetConnLastResponse(connID)
-	if !ok {
-		logReject("conn_last_response_miss", cached, boundConnID, true, connLastResponseID, false)
+	if _, ok := stateStore.GetConnLastResponse(connID); !ok {
 		return 0, "", false
 	}
 	return cached.accountID, connID, true

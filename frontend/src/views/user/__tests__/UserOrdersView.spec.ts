@@ -204,6 +204,59 @@ describe('UserOrdersView refund visibility', () => {
     expect(wrapper.text()).not.toContain('$12.34')
   })
 
+  it('uses preview max_refund_amount as the default refund amount instead of credited order amount', async () => {
+    paymentAPI.getMyOrders.mockResolvedValue({
+      data: {
+        items: [
+          createOrder({
+            id: 7,
+            out_trade_no: 'order-mixed-currency',
+            amount: 8,
+            pay_amount: 12.34,
+            currency: 'EUR',
+          }),
+        ],
+        total: 1,
+      },
+    })
+    paymentAPI.getRefundPreview.mockResolvedValue({
+      data: {
+        order_id: 7,
+        order_type: 'balance',
+        order_amount: 12.34,
+        already_refunded: 0,
+        max_refund_amount: 12.34,
+        refund_enabled: true,
+        auto_refund: false,
+      },
+    })
+
+    const wrapper = mount(UserOrdersView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          OrdersTabBar: OrdersTabBarStub,
+          BaseDialog: BaseDialogStub,
+          Pagination: PaginationStub,
+          Select: SelectStub,
+          Icon: IconStub,
+          OrderTable: OrderTableStub,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const refundButton = wrapper
+      .findAll('[data-test="row-actions-order-mixed-currency"] button')
+      .find((button) => button.text().includes('payment.orders.requestRefund'))
+    expect(refundButton).toBeTruthy()
+    await refundButton!.trigger('click')
+    await flushPromises()
+
+    expect((wrapper.get('input[type="number"]').element as HTMLInputElement).value).toBe('12.34')
+  })
+
   it('formats selected invoice totals by the selected orders currencies', async () => {
     paymentAPI.getMyOrders.mockResolvedValue({
       data: {

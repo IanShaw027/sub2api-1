@@ -278,7 +278,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 
 	// Check if TOTP 2FA is enabled for this user
-	if h.totpService != nil && h.settingSvc.IsTotpEnabled(c.Request.Context()) && user.TotpEnabled {
+	if h.totpService != nil && h.settingSvc != nil && h.settingSvc.IsTotpEnabled(c.Request.Context()) && user.TotpEnabled {
 		// Create a temporary login session for 2FA
 		tempToken, err := h.totpService.CreateLoginSession(c.Request.Context(), user.ID, user.Email, service.ResolveUserTokenVersion(user))
 		if err != nil {
@@ -635,7 +635,10 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 		return
 	}
 
-	frontendBaseURL := strings.TrimSpace(h.settingSvc.GetFrontendURL(c.Request.Context()))
+	frontendBaseURL := ""
+	if h != nil && h.settingSvc != nil {
+		frontendBaseURL = strings.TrimSpace(h.settingSvc.GetFrontendURL(c.Request.Context()))
+	}
 	if frontendBaseURL == "" {
 		slog.Error("frontend_url not configured in settings or config; cannot build password reset link")
 		response.InternalError(c, "Password reset is not configured")
@@ -717,7 +720,7 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	}
 
 	// Backend mode: block non-admin token refresh
-	if h.settingSvc.IsBackendModeEnabled(c.Request.Context()) && result.UserRole != "admin" {
+	if h.isBackendModeEnabled(c.Request.Context()) && result.UserRole != "admin" {
 		response.Forbidden(c, "Backend mode is active. Only admin login is allowed.")
 		return
 	}

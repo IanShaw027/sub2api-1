@@ -272,6 +272,63 @@ func (c *schedulerCache) GetAccount(ctx context.Context, accountID int64) (*serv
 	return account, nil
 }
 
+func (c *schedulerCache) GetAccounts(ctx context.Context, accountIDs []int64) (map[int64]*service.Account, error) {
+	if len(accountIDs) == 0 {
+		return map[int64]*service.Account{}, nil
+	}
+
+	ids := make([]int64, 0, len(accountIDs))
+	keys := make([]string, 0, len(accountIDs))
+	seen := make(map[int64]struct{}, len(accountIDs))
+	for _, id := range accountIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+		keys = append(keys, schedulerAccountKey(strconv.FormatInt(id, 10)))
+	}
+	if len(ids) == 0 {
+		return map[int64]*service.Account{}, nil
+	}
+
+	out := make(map[int64]*service.Account, len(ids))
+	decoded := make([]*service.Account, 0, len(ids))
+	chunkSize := c.mgetChunkSize
+	if chunkSize <= 0 {
+		chunkSize = defaultSchedulerSnapshotMGetChunkSize
+	}
+	for start := 0; start < len(keys); start += chunkSize {
+		end := start + chunkSize
+		if end > len(keys) {
+			end = len(keys)
+		}
+		values, err := c.rdb.MGet(ctx, keys[start:end]...).Result()
+		if err != nil {
+			return nil, err
+		}
+		for idx, value := range values {
+			if value == nil {
+				continue
+			}
+			account, err := decodeCachedAccount(value)
+			if err != nil {
+				return nil, err
+			}
+			id := ids[start+idx]
+			out[id] = account
+			decoded = append(decoded, account)
+		}
+	}
+	if err := c.overlayLastUsed(ctx, decoded); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *schedulerCache) SetAccount(ctx context.Context, account *service.Account) error {
 	if account == nil || account.ID <= 0 {
 		return nil

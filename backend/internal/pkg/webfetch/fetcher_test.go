@@ -267,6 +267,36 @@ func TestFetcherFetch_RejectsResolvedPrivateIPBeforeRequest(t *testing.T) {
 	require.False(t, called)
 }
 
+func TestFetchValidatedDialer_RequiresBase(t *testing.T) {
+	dialer := &fetchValidatedDialer{}
+
+	conn, err := dialer.DialContext(context.Background(), "tcp", "example.com:443")
+	require.Nil(t, conn)
+	var fetchErr *FetchError
+	require.ErrorAs(t, err, &fetchErr)
+	require.Equal(t, "validated dialer base is required", fetchErr.Message)
+}
+
+func TestFetchValidatedProxyRoundTripper_RequiresProxyURL(t *testing.T) {
+	rt := &fetchValidatedProxyRoundTripper{}
+
+	resp, err := rt.RoundTrip(httptest.NewRequest(http.MethodGet, "https://example.com", nil))
+	require.Nil(t, resp)
+	var fetchErr *FetchError
+	require.ErrorAs(t, err, &fetchErr)
+	require.Equal(t, "validated proxy URL is required", fetchErr.Message)
+}
+
+func TestFetchValidatedProxyRoundTripper_RequiresRequestURL(t *testing.T) {
+	rt := &fetchValidatedProxyRoundTripper{proxyURL: &url.URL{Scheme: "http", Host: "proxy.example.com"}}
+
+	resp, err := rt.RoundTrip(&http.Request{})
+	require.Nil(t, resp)
+	var fetchErr *FetchError
+	require.ErrorAs(t, err, &fetchErr)
+	require.Equal(t, "request URL is required", fetchErr.Message)
+}
+
 func TestFetcherFetch_RejectsPrivateIPResolvedAtDialTime(t *testing.T) {
 	originalValidateResolvedHost := validateResolvedFetchHost
 	validateResolvedFetchHost = func(string) error { return nil }

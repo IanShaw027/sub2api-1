@@ -80,6 +80,8 @@ var (
 	ErrAISkillBalanceServiceUnavailable  = infraerrors.ServiceUnavailable("AI_SKILL_BALANCE_UNAVAILABLE", "ai skill balance service unavailable")
 	ErrAISkillCreatorEarningsUnavailable = infraerrors.ServiceUnavailable("AI_SKILL_CREATOR_EARNINGS_UNAVAILABLE", "ai skill creator earnings service unavailable")
 	ErrAISkillCreatorEarningsMismatch    = infraerrors.Conflict("AI_SKILL_CREATOR_EARNINGS_MISMATCH", "creator earnings amount mismatch")
+	ErrAISkillSettlementInProgress       = infraerrors.Conflict("AI_SKILL_SETTLEMENT_IN_PROGRESS", "ai skill settlement is already pending")
+	ErrAISkillSettlementReplayUnsafe     = infraerrors.Conflict("AI_SKILL_SETTLEMENT_REPLAY_UNSAFE", "ai skill settlement failed after partial side effects and requires manual reconciliation before retry")
 )
 
 type AISkill struct {

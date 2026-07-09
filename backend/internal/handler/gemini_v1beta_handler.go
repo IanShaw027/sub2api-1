@@ -648,7 +648,7 @@ func (h *GatewayHandler) forwardGeminiAIStudioGETWithFailover(
 	pathForAccount func(*service.Account) string,
 ) (*service.UpstreamHTTPResult, *service.Account, error) {
 	if pathForAccount == nil {
-		return nil, nil, errors.New("path builder is nil")
+		return nil, nil, errors.New("path builder is required")
 	}
 
 	excludedIDs := make(map[int64]struct{})

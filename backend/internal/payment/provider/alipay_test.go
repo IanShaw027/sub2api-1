@@ -349,9 +349,10 @@ func TestAlipayRefundRejectsNoFundChangeResponse(t *testing.T) {
 
 	provider := &Alipay{client: &alipay.Client{}}
 	resp, err := provider.Refund(context.Background(), payment.RefundRequest{
-		OrderID: "sub2_refund_no_fund_change",
-		Amount:  "4.00",
-		Reason:  "admin refund",
+		OrderID:   "sub2_refund_no_fund_change",
+		Amount:    "4.00",
+		Reason:    "admin refund",
+		RequestID: "sub2api-refund-no-fund-change",
 	})
 	if err == nil {
 		t.Fatal("expected no-fund-change refund response to return an error")
@@ -395,6 +396,21 @@ func TestAlipayRefundUsesStableRequestID(t *testing.T) {
 	}
 }
 
+func TestAlipayRefundRequiresRequestID(t *testing.T) {
+	provider := &Alipay{client: &alipay.Client{}}
+	_, err := provider.Refund(context.Background(), payment.RefundRequest{
+		OrderID: "sub2_refund_missing_request_id",
+		Amount:  "4.00",
+		Reason:  "admin refund",
+	})
+	if err == nil {
+		t.Fatal("expected error when request id is missing")
+	}
+	if !strings.Contains(err.Error(), "request id") {
+		t.Fatalf("error = %q, want request id context", err.Error())
+	}
+}
+
 func TestAlipayRefundReturnsBusinessFailure(t *testing.T) {
 	origRefund := alipayTradeRefund
 	t.Cleanup(func() {
@@ -413,9 +429,10 @@ func TestAlipayRefundReturnsBusinessFailure(t *testing.T) {
 
 	provider := &Alipay{client: &alipay.Client{}}
 	resp, err := provider.Refund(context.Background(), payment.RefundRequest{
-		OrderID: "sub2_refund_illegal_ip",
-		Amount:  "4.00",
-		Reason:  "admin refund",
+		OrderID:   "sub2_refund_illegal_ip",
+		Amount:    "4.00",
+		Reason:    "admin refund",
+		RequestID: "sub2api-refund-illegal-ip",
 	})
 	if err == nil {
 		t.Fatal("expected Alipay business failure to return an error")

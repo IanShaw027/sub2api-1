@@ -102,6 +102,24 @@ func TestInvokeKiroMCP_BuildsJSONRPCRequest(t *testing.T) {
 	require.Equal(t, "arn:aws:codewhisperer:us-east-1:123:profile/ABC", body.ProfileArn)
 }
 
+func TestInvokeKiroMCP_RejectsNilAccount(t *testing.T) {
+	svc := &KiroGatewayService{}
+
+	text, err := svc.invokeKiroMCP(context.Background(), nil, kiroMCPToolSearch, map[string]any{"query": "hello"})
+
+	require.Empty(t, text)
+	require.EqualError(t, err, "account is required")
+}
+
+func TestInvokeKiroMCP_RejectsNilService(t *testing.T) {
+	var svc *KiroGatewayService
+
+	text, err := svc.invokeKiroMCP(context.Background(), newKiroMCPTestAccount(), kiroMCPToolSearch, map[string]any{"query": "hello"})
+
+	require.Empty(t, text)
+	require.EqualError(t, err, "kiro gateway service is required")
+}
+
 func TestInvokeKiroMCP_ParsesWebSearchResults(t *testing.T) {
 	inner := `{"results":[{"title":"AI News","url":"https://example.com/ai","snippet":"latest","domain":"example.com"},{"title":"T2","url":"https://e2.com","snippet":"s2"}]}`
 	outer, _ := json.Marshal(map[string]any{
@@ -181,7 +199,7 @@ func TestExecuteKiroShadowTool_MCPWebFetchHonorsBlockedDomainsBeforeInvoke(t *te
 		tokenProvider: NewKiroTokenProvider(nil, nil),
 	}
 	state := &kiroToolState{ToolUseID: "tool-fetch", Name: "web_fetch"}
-	state.InputBuilder.WriteString(`{"url":"https://blocked.example/fetch"}`)
+	_, _ = state.InputBuilder.WriteString(`{"url":"https://blocked.example/fetch"}`)
 
 	blocks, summary, err := svc.executeKiroShadowTool(context.Background(), newKiroMCPOAuthTestAccount(), state, kiropkg.ShadowToolBridge{
 		AnthropicType:  "web_fetch_20250305",
@@ -215,7 +233,7 @@ func TestExecuteKiroShadowTool_MCPWebFetchAppliesMaxContentTokens(t *testing.T) 
 		settingService: NewSettingService(nil, cfg),
 	}
 	state := &kiroToolState{ToolUseID: "tool-fetch", Name: "web_fetch"}
-	state.InputBuilder.WriteString(`{"url":"https://example.com/fetch"}`)
+	_, _ = state.InputBuilder.WriteString(`{"url":"https://example.com/fetch"}`)
 
 	blocks, summary, err := svc.executeKiroShadowTool(context.Background(), newKiroMCPOAuthTestAccount(), state, kiropkg.ShadowToolBridge{
 		AnthropicType:    "web_fetch_20250305",

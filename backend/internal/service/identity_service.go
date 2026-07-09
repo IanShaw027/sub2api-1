@@ -268,6 +268,9 @@ func (s *IdentityService) RewriteUserID(body []byte, accountID int64, accountUUI
 // 重要：此函数使用 json.RawMessage 保留其他字段的原始字节，
 // 避免重新序列化导致 thinking 块等内容被修改。
 func (s *IdentityService) RewriteUserIDWithMasking(ctx context.Context, body []byte, account *Account, accountUUID, cachedClientID, fingerprintUA string) ([]byte, error) {
+	if account == nil {
+		return body, nil
+	}
 	// 先执行常规的 RewriteUserID 逻辑
 	newBody, err := s.RewriteUserID(body, account.ID, accountUUID, cachedClientID, fingerprintUA)
 	if err != nil {

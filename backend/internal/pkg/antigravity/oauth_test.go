@@ -214,7 +214,7 @@ func TestURLAvailability_GetAvailableURLs_标记一个不可用(t *testing.T) {
 	ua := NewURLAvailability(10 * time.Minute)
 
 	if len(BaseURLs) < 2 {
-		t.Skip("BaseURLs 少于 2 个，跳过此测试")
+		t.Fatalf("BaseURLs = %d, want at least 2 default URLs for fallback coverage", len(BaseURLs))
 	}
 
 	ua.MarkUnavailable(BaseURLs[0])

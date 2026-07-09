@@ -88,6 +88,43 @@ func TestProxyService_TestConnection_ProxyNotFound(t *testing.T) {
 	require.ErrorIs(t, err, ErrProxyNotFound)
 }
 
+func TestProxyService_Create_NilRepoReturnsError(t *testing.T) {
+	t.Parallel()
+
+	svc := NewProxyService(nil)
+
+	_, err := svc.Create(context.Background(), CreateProxyRequest{
+		Protocol: "http",
+		Host:     "proxy.local",
+		Port:     8080,
+	})
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "proxy repository is unavailable")
+}
+
+func TestProxyService_GetByID_NilRepoReturnsError(t *testing.T) {
+	t.Parallel()
+
+	svc := NewProxyService(nil)
+
+	_, err := svc.GetByID(context.Background(), 1)
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "proxy repository is unavailable")
+}
+
+func TestProxyService_TestConnection_NilRepoReturnsError(t *testing.T) {
+	t.Parallel()
+
+	svc := NewProxyService(nil)
+
+	err := svc.TestConnection(context.Background(), 1)
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "proxy repository is unavailable")
+}
+
 func TestProxyService_TestConnection_InvalidProxyURL(t *testing.T) {
 	t.Parallel()
 

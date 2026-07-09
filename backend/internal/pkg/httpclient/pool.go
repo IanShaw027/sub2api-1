@@ -218,10 +218,10 @@ func newValidatedProxyRoundTripper(proxyURL *url.URL) *validatedProxyRoundTrippe
 
 func (t *validatedProxyRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	if t == nil || t.proxyURL == nil {
-		return nil, fmt.Errorf("validated proxy URL is nil")
+		return nil, fmt.Errorf("validated proxy URL is required")
 	}
 	if req == nil || req.URL == nil {
-		return nil, fmt.Errorf("validated proxy request URL is nil")
+		return nil, fmt.Errorf("validated proxy request URL is required")
 	}
 
 	originalHost := strings.ToLower(strings.TrimSpace(req.URL.Hostname()))
@@ -317,7 +317,7 @@ func (t *validatedProxyRoundTripper) roundTripViaHTTPProxy(req *http.Request, ou
 			return nil, fmt.Errorf("proxy CONNECT failed with status %d", connectResp.StatusCode)
 		}
 
-		tlsConn := tls.Client(conn, &tls.Config{ServerName: serverName})
+		tlsConn := tls.Client(conn, &tls.Config{ServerName: serverName, MinVersion: tls.VersionTLS12})
 		if err := tlsConn.HandshakeContext(req.Context()); err != nil {
 			return nil, err
 		}
@@ -362,7 +362,7 @@ func (t *validatedProxyRoundTripper) roundTripViaSOCKSProxy(req *http.Request, t
 	}()
 
 	if strings.EqualFold(req.URL.Scheme, "https") {
-		tlsConn := tls.Client(conn, &tls.Config{ServerName: serverName})
+		tlsConn := tls.Client(conn, &tls.Config{ServerName: serverName, MinVersion: tls.VersionTLS12})
 		if err := tlsConn.HandshakeContext(req.Context()); err != nil {
 			return nil, err
 		}
@@ -395,7 +395,7 @@ func (t *validatedProxyRoundTripper) dialHTTPProxy(ctx context.Context) (net.Con
 	if !strings.EqualFold(t.proxyURL.Scheme, "https") {
 		return conn, nil
 	}
-	tlsConn := tls.Client(conn, &tls.Config{ServerName: t.proxyURL.Hostname()})
+	tlsConn := tls.Client(conn, &tls.Config{ServerName: t.proxyURL.Hostname(), MinVersion: tls.VersionTLS12})
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
 		_ = conn.Close()
 		return nil, err
@@ -405,7 +405,7 @@ func (t *validatedProxyRoundTripper) dialHTTPProxy(ctx context.Context) (net.Con
 
 func (t *validatedTransport) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
 	if t == nil || t.base == nil {
-		return nil, fmt.Errorf("validated dialer base is nil")
+		return nil, fmt.Errorf("validated dialer base is required")
 	}
 
 	host, port, err := net.SplitHostPort(addr)

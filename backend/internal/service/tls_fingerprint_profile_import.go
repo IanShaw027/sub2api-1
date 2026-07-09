@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/model"
+	tlsfpHTTP2 "github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint/http2"
 	tlsfpParser "github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint/parser"
 	"gopkg.in/yaml.v3"
 )
@@ -152,12 +153,18 @@ func ParseTLSFingerprintCaptureProfile(raw string) (*model.TLSFingerprintProfile
 		ApplicationSettingsProtocols:   stringSliceField(payload, "application_settings_protocols"),
 		UserAgent:                      stringField(payload, "user_agent"),
 		Originator:                     stringField(payload, "originator"),
+		HTTP2Fingerprint:               stringField(payload, "http2_fingerprint"),
 	}
 	if desc := stringField(payload, "description"); desc != "" {
 		profile.Description = &desc
 	}
 	if profile.Name == "" {
 		profile.Name = deriveTLSFingerprintProfileName(payload)
+	}
+	if h2fp, err := canonicalizeHTTP2Fingerprint(profile.HTTP2Fingerprint); err != nil {
+		return nil, fmt.Errorf("canonicalize http2_fingerprint: %w", err)
+	} else {
+		profile.HTTP2Fingerprint = h2fp
 	}
 	if err := validateCompleteTLSFingerprintProfile(profile); err != nil {
 		return nil, err
@@ -194,10 +201,30 @@ func TLSFingerprintProfileReplayHash(profile *model.TLSFingerprintProfile) (stri
 		return "", err
 	}
 	transport := normalizeTLSCaptureImportTransport(profile.Transport)
-	if transport == "" {
-		return derived.ReplayHash, nil
+	hash := derived.ReplayHash
+	if transport != "" {
+		hash += "::" + transport
 	}
-	return derived.ReplayHash + "::" + transport, nil
+	if h2fp := strings.TrimSpace(profile.HTTP2Fingerprint); h2fp != "" {
+		canonicalH2FP, err := canonicalizeHTTP2Fingerprint(h2fp)
+		if err != nil {
+			return "", fmt.Errorf("canonicalize http2_fingerprint: %w", err)
+		}
+		hash += "::h2fp:" + canonicalH2FP
+	}
+	return hash, nil
+}
+
+func canonicalizeHTTP2Fingerprint(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	parsed, err := tlsfpHTTP2.ParseFingerprint(raw)
+	if err != nil {
+		return "", err
+	}
+	return tlsfpHTTP2.Fingerprint(parsed.Settings, parsed.ConnWindowUpdates, parsed.Priorities, parsed.PseudoHeaderOrder), nil
 }
 
 func normalizeTLSCaptureImportTransport(transport string) string {
@@ -220,6 +247,9 @@ func normalizeTLSCaptureImportTransport(transport string) string {
 func validateCompleteTLSFingerprintProfile(profile *model.TLSFingerprintProfile) error {
 	if profile.Name == "" {
 		return fmt.Errorf("name is required")
+	}
+	if err := profile.Validate(); err != nil {
+		return err
 	}
 	required := []struct {
 		name string

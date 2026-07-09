@@ -2,9 +2,11 @@
 package model
 
 import (
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	tlsfpHTTP2 "github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint/http2"
 	tlsfpTransport "github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint/transport"
 )
 
@@ -19,6 +21,7 @@ type TLSFingerprintProfile struct {
 	Name                           string            `json:"name"`
 	UserAgent                      string            `json:"user_agent"`
 	Originator                     string            `json:"originator"`
+	HTTP2Fingerprint               string            `json:"http2_fingerprint"`
 	Description                    *string           `json:"description"`
 	EnableGREASE                   bool              `json:"enable_grease"`
 	CipherSuites                   []uint16          `json:"cipher_suites"`
@@ -64,6 +67,48 @@ func (p *TLSFingerprintProfile) Validate() error {
 	default:
 		return &ValidationError{Field: "transport", Message: "transport must be empty, http1, h2, websocket-http1, or websocket-h2"}
 	}
+	switch p.Transport {
+	case string(tlsfpTransport.H2):
+		if !tlsFingerprintProfileHasALPN(p.ALPNProtocols, "h2") {
+			return &ValidationError{Field: "alpn_protocols", Message: "h2 transport requires alpn_protocols to include h2"}
+		}
+		if strings.TrimSpace(p.HTTP2Fingerprint) == "" {
+			return &ValidationError{Field: "http2_fingerprint", Message: "h2 transport requires http2_fingerprint"}
+		}
+	case string(tlsfpTransport.WebSocketH2):
+		if !tlsFingerprintProfileHasALPN(p.ALPNProtocols, "h2") {
+			return &ValidationError{Field: "alpn_protocols", Message: "websocket-h2 transport requires alpn_protocols to include h2"}
+		}
+		if strings.TrimSpace(p.HTTP2Fingerprint) == "" {
+			return &ValidationError{Field: "http2_fingerprint", Message: "websocket-h2 transport requires http2_fingerprint"}
+		}
+	}
+	if p.HTTP2Fingerprint != "" {
+		var parsedH2 *tlsfpHTTP2.ParsedFingerprint
+		switch p.Transport {
+		case "",
+			string(tlsfpTransport.H2),
+			string(tlsfpTransport.WebSocketH2):
+		default:
+			return &ValidationError{Field: "http2_fingerprint", Message: "http2_fingerprint requires h2 or websocket-h2 transport"}
+		}
+		parsed, err := tlsfpHTTP2.ParseFingerprint(p.HTTP2Fingerprint)
+		if err != nil {
+			return &ValidationError{Field: "http2_fingerprint", Message: "http2_fingerprint is invalid: " + err.Error()}
+		}
+		parsedH2 = parsed
+		hasConnectProtocol := tlsFingerprintHTTP2PseudoHeaderPresent(parsedH2.PseudoHeaderOrder, ":protocol")
+		switch p.Transport {
+		case string(tlsfpTransport.WebSocketH2):
+			if !hasConnectProtocol {
+				return &ValidationError{Field: "http2_fingerprint", Message: "websocket-h2 http2_fingerprint must include :protocol pseudo header"}
+			}
+		case string(tlsfpTransport.H2):
+			if hasConnectProtocol {
+				return &ValidationError{Field: "http2_fingerprint", Message: "h2 http2_fingerprint must not include :protocol pseudo header"}
+			}
+		}
+	}
 	if len(p.SupportedVersions) > 0 && !tlsFingerprintProfileHasExtension(p.Extensions, 43) {
 		return &ValidationError{Field: "supported_versions", Message: "supported_versions requires extension 43"}
 	}
@@ -99,6 +144,24 @@ func tlsFingerprintProfileHasExtension(extensions []uint16, target uint16) bool 
 	return false
 }
 
+func tlsFingerprintHTTP2PseudoHeaderPresent(headers []string, target string) bool {
+	for _, header := range headers {
+		if header == target {
+			return true
+		}
+	}
+	return false
+}
+
+func tlsFingerprintProfileHasALPN(protocols []string, target string) bool {
+	for _, protocol := range protocols {
+		if protocol == target {
+			return true
+		}
+	}
+	return false
+}
+
 // ToTLSProfile 将领域模型转换为运行时使用的 tlsfingerprint.Profile
 // 空切片字段会在 dialer 中 fallback 到内置默认值
 func (p *TLSFingerprintProfile) ToTLSProfile() *tlsfingerprint.Profile {
@@ -106,6 +169,7 @@ func (p *TLSFingerprintProfile) ToTLSProfile() *tlsfingerprint.Profile {
 		Name:                           p.Name,
 		UserAgent:                      p.UserAgent,
 		Originator:                     p.Originator,
+		HTTP2Fingerprint:               p.HTTP2Fingerprint,
 		EnableGREASE:                   p.EnableGREASE,
 		CipherSuites:                   p.CipherSuites,
 		Curves:                         p.Curves,

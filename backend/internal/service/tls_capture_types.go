@@ -8,9 +8,13 @@ import (
 )
 
 const (
-	tlsFingerprintNativeCaptureHeaderTimeout    = 10 * time.Second
-	tlsFingerprintNativeCaptureIdleTimeout      = 30 * time.Second
-	tlsFingerprintNativeCaptureBodySummaryLimit = 16 << 10
+	tlsFingerprintNativeCaptureHeaderTimeout        = 10 * time.Second
+	tlsFingerprintNativeCaptureReadTimeout          = 30 * time.Second
+	tlsFingerprintNativeCaptureIdleTimeout          = 30 * time.Second
+	tlsFingerprintNativeCaptureBodyLimit            = 1 << 20
+	tlsFingerprintNativeCaptureBodySummaryLimit     = 16 << 10
+	tlsFingerprintNativeCaptureMaxConcurrentStreams = 32
+	tlsFingerprintNativeCaptureMaxFrameSize         = 1 << 20
 )
 
 type TLSCaptureListenerConfig struct {

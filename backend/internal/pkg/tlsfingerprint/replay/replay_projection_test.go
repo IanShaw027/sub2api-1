@@ -2,6 +2,8 @@ package replay
 
 import (
 	"net"
+	"strconv"
+	"strings"
 	"testing"
 	_ "unsafe"
 
@@ -123,6 +125,80 @@ func TestToTLSFingerprintProfileProjectsGreaseExtensionPositionsToUTLSSpec(t *te
 	spec := buildClientHelloSpecFromProfile(ToTLSFingerprintProfile(replayProfile))
 
 	require.Equal(t, replayProfile.Extensions, extensionIDsFromSpec(t, spec))
+}
+
+func TestBuildClientHelloSpecFromProfile_ShufflesChromeLikeExtensionsAcrossBuilds(t *testing.T) {
+	profile := &tlsfingerprint.Profile{
+		Name:         "Captured Chrome 136",
+		UserAgent:    "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+		EnableGREASE: true,
+		CipherSuites: []uint16{utls.TLS_AES_128_GCM_SHA256, utls.TLS_AES_256_GCM_SHA384},
+		Curves:       []uint16{uint16(utls.X25519), uint16(utls.CurveP256)},
+		PointFormats: []uint16{0},
+		SignatureAlgorithms: []uint16{
+			0x0403, 0x0804, 0x0401,
+		},
+		ALPNProtocols:                []string{"h2", "http/1.1"},
+		SupportedVersions:            []uint16{utls.VersionTLS13, utls.VersionTLS12},
+		KeyShareGroups:               []uint16{uint16(utls.X25519)},
+		PSKModes:                     []uint16{uint16(utls.PskModeDHE)},
+		ApplicationSettingsProtocols: []string{"h2"},
+		Extensions: []uint16{
+			utls.GREASE_PLACEHOLDER,
+			0,
+			23,
+			65281,
+			10,
+			11,
+			35,
+			16,
+			5,
+			13,
+			18,
+			51,
+			45,
+			43,
+			27,
+			17513,
+		},
+		CompressCertAlgos: []uint16{2},
+	}
+
+	seen := map[string]struct{}{}
+	for range 24 {
+		spec := buildClientHelloSpecFromProfile(profile)
+		seen[joinExtensionIDs(extensionIDsFromSpec(t, spec))] = struct{}{}
+	}
+
+	require.Greater(t, len(seen), 1, "chrome-like replay profile should not be frozen to a single extension order")
+}
+
+func TestBuildClientHelloSpecFromProfile_KeepsNonChromeProfilesStable(t *testing.T) {
+	profile := &tlsfingerprint.Profile{
+		Name:         "Captured Codex CLI",
+		UserAgent:    "codex_cli_rs/0.140.0",
+		EnableGREASE: true,
+		CipherSuites: []uint16{utls.TLS_AES_128_GCM_SHA256, utls.TLS_AES_256_GCM_SHA384},
+		Curves:       []uint16{uint16(utls.X25519), uint16(utls.CurveP256)},
+		PointFormats: []uint16{0},
+		SignatureAlgorithms: []uint16{
+			0x0403, 0x0804, 0x0401,
+		},
+		ALPNProtocols:      []string{"h2", "http/1.1"},
+		SupportedVersions:  []uint16{utls.VersionTLS13, utls.VersionTLS12},
+		KeyShareGroups:     []uint16{uint16(utls.X25519)},
+		PSKModes:           []uint16{uint16(utls.PskModeDHE)},
+		Extensions:         []uint16{utls.GREASE_PLACEHOLDER, 0, 10, 11, 13, 16, 43, 45, 51},
+		ExtensionPayloads:  nil,
+		CompressCertAlgos:  nil,
+		ApplicationSettingsProtocols: nil,
+	}
+
+	first := joinExtensionIDs(extensionIDsFromSpec(t, buildClientHelloSpecFromProfile(profile)))
+	for range 12 {
+		spec := buildClientHelloSpecFromProfile(profile)
+		require.Equal(t, first, joinExtensionIDs(extensionIDsFromSpec(t, spec)))
+	}
 }
 
 func TestReplayProfileFromObservedPreservesUnknownExtensionPayloads(t *testing.T) {
@@ -270,4 +346,16 @@ func genericExtensionPayloads(spec *utls.ClientHelloSpec) map[uint16][]byte {
 		payloads[generic.Id] = append([]byte(nil), generic.Data...)
 	}
 	return payloads
+}
+
+func joinExtensionIDs(ids []uint16) string {
+	parts := make([]string, 0, len(ids))
+	for _, id := range ids {
+		parts = append(parts, stringID(id))
+	}
+	return strings.Join(parts, ",")
+}
+
+func stringID(id uint16) string {
+	return strconv.Itoa(int(id))
 }

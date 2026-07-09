@@ -542,11 +542,12 @@ func TestForwardAsAnthropic_AttachesPreviousResponseIDForCompatContinuation(t *t
 func TestShouldApplyAnthropicCompatFullReplayGuard(t *testing.T) {
 	t.Parallel()
 
-	require.True(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeAPIKey}, "", true, false, true))
-	require.False(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeAPIKey}, "resp_prev", true, false, true))
-	require.False(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeOAuth}, "", false, false, true))
-	require.False(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeAPIKey}, "", true, true, true))
-	require.False(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeAPIKey}, "", true, false, false))
+	require.True(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeAPIKey}, "", false, true))
+	require.True(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeAPIKey}, "", false, true), "guard should still apply even when continuation is not enabled")
+	require.False(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeAPIKey}, "resp_prev", false, true))
+	require.False(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeOAuth}, "", false, true))
+	require.False(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeAPIKey}, "", true, true))
+	require.False(t, shouldApplyAnthropicCompatFullReplayGuard(&Account{Type: AccountTypeAPIKey}, "", false, false))
 }
 
 func TestForwardAsAnthropic_PreviousResponseIDKeepsMultiToolCallContext(t *testing.T) {

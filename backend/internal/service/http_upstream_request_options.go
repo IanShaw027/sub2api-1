@@ -13,14 +13,18 @@ type HTTPUpstreamRequestOptions struct {
 	// DisableKeepAlives disables connection reuse for the current request.
 	// This implies a one-shot client so the transport can be safely mutated.
 	DisableKeepAlives bool
+	// RawHTTP1HeaderOrder enables one-shot raw HTTP/1.1 replay with the given
+	// explicit header name order/casing. Intended for anti-ban paths where
+	// net/http's canonicalization would otherwise destroy the desired wire shape.
+	RawHTTP1HeaderOrder []string
 }
 
 func (o HTTPUpstreamRequestOptions) HasOverrides() bool {
-	return o.FreshClient || o.DisableKeepAlives
+	return o.FreshClient || o.DisableKeepAlives || len(o.RawHTTP1HeaderOrder) > 0
 }
 
 func (o HTTPUpstreamRequestOptions) RequiresDedicatedClient() bool {
-	return o.FreshClient || o.DisableKeepAlives
+	return o.FreshClient || o.DisableKeepAlives || len(o.RawHTTP1HeaderOrder) > 0
 }
 
 // WithHTTPUpstreamRequestOptions stores per-request upstream transport options
@@ -33,6 +37,9 @@ func WithHTTPUpstreamRequestOptions(ctx context.Context, opts HTTPUpstreamReques
 	if existing.HasOverrides() {
 		opts.FreshClient = opts.FreshClient || existing.FreshClient
 		opts.DisableKeepAlives = opts.DisableKeepAlives || existing.DisableKeepAlives
+		if len(opts.RawHTTP1HeaderOrder) == 0 && len(existing.RawHTTP1HeaderOrder) > 0 {
+			opts.RawHTTP1HeaderOrder = append([]string(nil), existing.RawHTTP1HeaderOrder...)
+		}
 	}
 	return context.WithValue(ctx, httpUpstreamRequestOptionsKey{}, opts)
 }

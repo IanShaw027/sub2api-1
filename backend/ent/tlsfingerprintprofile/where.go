@@ -99,6 +99,11 @@ func Originator(v string) predicate.TLSFingerprintProfile {
 	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldOriginator, v))
 }
 
+// Http2Fingerprint applies equality check predicate on the "http2_fingerprint" field. It's identical to Http2FingerprintEQ.
+func Http2Fingerprint(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldHttp2Fingerprint, v))
+}
+
 // Description applies equality check predicate on the "description" field. It's identical to DescriptionEQ.
 func Description(v string) predicate.TLSFingerprintProfile {
 	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldDescription, v))
@@ -642,6 +647,71 @@ func OriginatorEqualFold(v string) predicate.TLSFingerprintProfile {
 // OriginatorContainsFold applies the ContainsFold predicate on the "originator" field.
 func OriginatorContainsFold(v string) predicate.TLSFingerprintProfile {
 	return predicate.TLSFingerprintProfile(sql.FieldContainsFold(FieldOriginator, v))
+}
+
+// Http2FingerprintEQ applies the EQ predicate on the "http2_fingerprint" field.
+func Http2FingerprintEQ(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldEQ(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintNEQ applies the NEQ predicate on the "http2_fingerprint" field.
+func Http2FingerprintNEQ(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldNEQ(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintIn applies the In predicate on the "http2_fingerprint" field.
+func Http2FingerprintIn(vs ...string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldIn(FieldHttp2Fingerprint, vs...))
+}
+
+// Http2FingerprintNotIn applies the NotIn predicate on the "http2_fingerprint" field.
+func Http2FingerprintNotIn(vs ...string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldNotIn(FieldHttp2Fingerprint, vs...))
+}
+
+// Http2FingerprintGT applies the GT predicate on the "http2_fingerprint" field.
+func Http2FingerprintGT(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldGT(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintGTE applies the GTE predicate on the "http2_fingerprint" field.
+func Http2FingerprintGTE(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldGTE(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintLT applies the LT predicate on the "http2_fingerprint" field.
+func Http2FingerprintLT(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldLT(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintLTE applies the LTE predicate on the "http2_fingerprint" field.
+func Http2FingerprintLTE(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldLTE(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintContains applies the Contains predicate on the "http2_fingerprint" field.
+func Http2FingerprintContains(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldContains(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintHasPrefix applies the HasPrefix predicate on the "http2_fingerprint" field.
+func Http2FingerprintHasPrefix(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldHasPrefix(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintHasSuffix applies the HasSuffix predicate on the "http2_fingerprint" field.
+func Http2FingerprintHasSuffix(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldHasSuffix(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintEqualFold applies the EqualFold predicate on the "http2_fingerprint" field.
+func Http2FingerprintEqualFold(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldEqualFold(FieldHttp2Fingerprint, v))
+}
+
+// Http2FingerprintContainsFold applies the ContainsFold predicate on the "http2_fingerprint" field.
+func Http2FingerprintContainsFold(v string) predicate.TLSFingerprintProfile {
+	return predicate.TLSFingerprintProfile(sql.FieldContainsFold(FieldHttp2Fingerprint, v))
 }
 
 // DescriptionEQ applies the EQ predicate on the "description" field.

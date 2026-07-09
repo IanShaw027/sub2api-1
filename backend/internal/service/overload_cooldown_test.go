@@ -207,6 +207,20 @@ func TestHandle529_EnabledFromDB_PausesAccount(t *testing.T) {
 	require.WithinDuration(t, before.Add(15*time.Minute), accountRepo.lastOverloadEnd, 2*time.Second)
 }
 
+func TestHandle529_NilConfigFallsBackToDefaultCooldown(t *testing.T) {
+	accountRepo := &overloadAccountRepoStub{}
+	svc := NewRateLimitService(accountRepo, nil, nil, nil, nil)
+
+	account := &Account{ID: 42, Platform: PlatformAnthropic, Type: AccountTypeOAuth}
+	before := time.Now()
+
+	require.NotPanics(t, func() {
+		svc.handle529(context.Background(), account)
+	})
+	require.Equal(t, 1, accountRepo.overloadCalls)
+	require.WithinDuration(t, before.Add(10*time.Minute), accountRepo.lastOverloadEnd, 2*time.Second)
+}
+
 func TestHandle529_DisabledFromDB_SkipsAccount(t *testing.T) {
 	accountRepo := &overloadAccountRepoStub{}
 	settingRepo := newMockSettingRepo()

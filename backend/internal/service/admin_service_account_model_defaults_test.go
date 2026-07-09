@@ -82,6 +82,18 @@ func TestAdminServiceCreateAccount_InjectsPlatformDefaultModelConfig(t *testing.
 	}, account.Credentials["compact_model_mapping"])
 }
 
+func TestAdminServiceCreateAccount_RejectsNilInput(t *testing.T) {
+	repo := &kiroDefaultAccountRepoStub{}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	account, err := svc.CreateAccount(context.Background(), nil)
+
+	require.Nil(t, account)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "account input is required")
+	require.Empty(t, repo.createdAccounts)
+}
+
 func TestAdminServiceCreateAccount_InjectsPlatformDefaultWhenModelMappingIsEmpty(t *testing.T) {
 	resetPlatformModelRoutingConfigCacheForTest()
 	settingRepo := &accountModelDefaultsSettingRepoStub{values: map[string]string{

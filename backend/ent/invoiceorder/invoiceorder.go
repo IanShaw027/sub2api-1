@@ -24,6 +24,8 @@ const (
 	FieldOutTradeNo = "out_trade_no"
 	// FieldPaymentType holds the string denoting the payment_type field in the database.
 	FieldPaymentType = "payment_type"
+	// FieldIsActive holds the string denoting the is_active field in the database.
+	FieldIsActive = "is_active"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// EdgeInvoice holds the string denoting the invoice edge name in mutations.
@@ -47,6 +49,7 @@ var Columns = []string{
 	FieldPayAmountSnapshot,
 	FieldOutTradeNo,
 	FieldPaymentType,
+	FieldIsActive,
 	FieldCreatedAt,
 }
 
@@ -71,6 +74,8 @@ var (
 	DefaultPaymentType string
 	// PaymentTypeValidator is a validator for the "payment_type" field. It is called by the builders before save.
 	PaymentTypeValidator func(string) error
+	// DefaultIsActive holds the default value on creation for the "is_active" field.
+	DefaultIsActive bool
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 )
@@ -106,6 +111,11 @@ func ByOutTradeNo(opts ...sql.OrderTermOption) OrderOption {
 // ByPaymentType orders the results by the payment_type field.
 func ByPaymentType(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPaymentType, opts...).ToFunc()
+}
+
+// ByIsActive orders the results by the is_active field.
+func ByIsActive(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldIsActive, opts...).ToFunc()
 }
 
 // ByCreatedAt orders the results by the created_at field.

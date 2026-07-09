@@ -150,9 +150,7 @@ func ProvideGrokQuotaService(
 	httpUpstream HTTPUpstream,
 	tlsFPProfileService *TLSFingerprintProfileService,
 ) *GrokQuotaService {
-	svc := NewGrokQuotaService(accountRepo, proxyRepo, tokenProvider, httpUpstream)
-	svc.SetTLSFingerprintProfileService(tlsFPProfileService)
-	return svc
+	return NewGrokQuotaService(accountRepo, proxyRepo, tokenProvider, httpUpstream, tlsFPProfileService)
 }
 
 // ProvideGeminiTokenProvider creates GeminiTokenProvider with OAuthRefreshAPI injection
@@ -615,6 +613,18 @@ func ProvideIdempotencyCleanupService(repo IdempotencyRepository, cfg *config.Co
 	return svc
 }
 
+func ProvideAuditRetentionService(repo AuditRetentionRepository, cfg *config.Config) *AuditRetentionService {
+	svc := NewAuditRetentionService(repo, cfg)
+	svc.Start()
+	return svc
+}
+
+func ProvideUsageUserDailyCostAggregator(repo UsageUserDailyCostRepository, cfg *config.Config) *UsageUserDailyCostAggregator {
+	svc := NewUsageUserDailyCostAggregator(repo, cfg)
+	svc.Start()
+	return svc
+}
+
 // ProvideScheduledTestService creates ScheduledTestService.
 func ProvideScheduledTestService(
 	planRepo ScheduledTestPlanRepository,
@@ -745,6 +755,7 @@ func ProvideAPIKeyService(
 }
 
 func ProvideGatewayService(
+	openAIGatewayService *OpenAIGatewayService,
 	accountRepo AccountRepository,
 	groupRepo GroupRepository,
 	usageLogRepo UsageLogRepository,
@@ -809,6 +820,9 @@ func ProvideGatewayService(
 	)
 	svc.SetKiroDeps(kiroTokenProvider, kiroGatewayService)
 	svc.SetGrokTokenProvider(grokTokenProvider)
+	if openAIGatewayService != nil {
+		openAIGatewayService.SetGatewayService(svc)
+	}
 	return svc
 }
 
@@ -924,6 +938,8 @@ var ProviderSet = wire.NewSet(
 	ProvideIdempotencyCoordinator,
 	ProvideSystemOperationLockService,
 	ProvideIdempotencyCleanupService,
+	ProvideAuditRetentionService,
+	ProvideUsageUserDailyCostAggregator,
 	ProvideScheduledTestService,
 	ProvideScheduledTestRunnerService,
 	NewGroupCapacityService,

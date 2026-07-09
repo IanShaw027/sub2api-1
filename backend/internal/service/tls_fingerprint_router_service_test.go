@@ -96,6 +96,22 @@ func TestTLSFingerprintRouterServiceMatchUserAgent(t *testing.T) {
 	require.Equal(t, "codex_cli_rs", result.UpstreamOriginator)
 }
 
+func TestTLSFingerprintRouterServiceCreateRejectsNilRouter(t *testing.T) {
+	svc := NewTLSFingerprintRouterService(&tlsFingerprintRouterRepoStub{}, nil)
+
+	_, err := svc.Create(context.Background(), nil)
+
+	require.EqualError(t, err, "tls fingerprint router is required")
+}
+
+func TestTLSFingerprintRouterServiceUpdateRejectsNilRouter(t *testing.T) {
+	svc := NewTLSFingerprintRouterService(&tlsFingerprintRouterRepoStub{}, nil)
+
+	_, err := svc.Update(context.Background(), nil)
+
+	require.EqualError(t, err, "tls fingerprint router is required")
+}
+
 func TestTLSFingerprintRouterServiceUpstreamOriginatorIsPassthrough(t *testing.T) {
 	router := &model.TLSFingerprintRouter{
 		ID:      11,
@@ -120,7 +136,7 @@ func TestTLSFingerprintRouterServiceUpstreamOriginatorIsPassthrough(t *testing.T
 	require.Equal(t, "codex_cli_rs", result.UpstreamOriginator)
 }
 
-func TestTLSFingerprintRouterServiceCanonicalTransportValuesValidateAndMatchRuntimeFamilies(t *testing.T) {
+func TestTLSFingerprintRouterServiceCanonicalTransportValuesValidateAndMatchSupportedRuntimeFamilies(t *testing.T) {
 	router := &model.TLSFingerprintRouter{
 		ID:      12,
 		Name:    "canonical transport",
@@ -135,12 +151,28 @@ func TestTLSFingerprintRouterServiceCanonicalTransportValuesValidateAndMatchRunt
 				TLSFingerprintProfileID: 15,
 			},
 			{
+				Name:                    "codex http1",
+				Enabled:                 true,
+				Transport:               "http1",
+				MatchType:               model.TLSFingerprintRouterMatchPrefix,
+				Pattern:                 "Codex/",
+				TLSFingerprintProfileID: 17,
+			},
+			{
 				Name:                    "codex ws h2",
 				Enabled:                 true,
 				Transport:               "websocket-h2",
 				MatchType:               model.TLSFingerprintRouterMatchPrefix,
 				Pattern:                 "Codex/",
 				TLSFingerprintProfileID: 16,
+			},
+			{
+				Name:                    "codex ws http1",
+				Enabled:                 true,
+				Transport:               "websocket-http1",
+				MatchType:               model.TLSFingerprintRouterMatchPrefix,
+				Pattern:                 "Codex/",
+				TLSFingerprintProfileID: 18,
 			},
 		},
 	}
@@ -149,11 +181,11 @@ func TestTLSFingerprintRouterServiceCanonicalTransportValuesValidateAndMatchRunt
 
 	result, ok := svc.MatchRequest(context.Background(), 12, "Codex/1.2.3", model.TLSFingerprintRouterTransportHTTP)
 	require.True(t, ok)
-	require.Equal(t, int64(15), result.ProfileID)
+	require.Equal(t, int64(17), result.ProfileID, "coarse HTTP runtime should skip h2-only rules and match http1")
 
 	result, ok = svc.MatchRequest(context.Background(), 12, "Codex/1.2.3", model.TLSFingerprintRouterTransportWebSocket)
 	require.True(t, ok)
-	require.Equal(t, int64(16), result.ProfileID)
+	require.Equal(t, int64(18), result.ProfileID, "coarse websocket runtime should skip websocket-h2 and match websocket-http1")
 }
 
 func TestTLSFingerprintRouterServiceLegacyCoarseTransportValuesStillValidate(t *testing.T) {

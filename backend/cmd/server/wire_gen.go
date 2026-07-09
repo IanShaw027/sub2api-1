@@ -44,7 +44,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	userRepository := repository.NewUserRepository(client, db)
+	userRepository := repository.ProvideUserRepository(client, db, configConfig)
 	redeemCodeRepository := repository.NewRedeemCodeRepository(client)
 	redisClient := repository.ProvideRedis(configConfig)
 	refreshTokenCache := repository.NewRefreshTokenCache(redisClient)
@@ -162,7 +162,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	digestSessionStore := service.NewDigestSessionStore()
 	kiroTokenProvider := service.ProvideKiroTokenProvider(accountRepository, proxyRepository, geminiTokenCache, httpUpstream, tlsFingerprintProfileService, oAuthRefreshAPI, settingService)
 	kiroGatewayService := service.ProvideKiroGatewayService(httpUpstream, kiroTokenProvider, rateLimitService, tlsFingerprintProfileService, settingService, channelService, fingerprintNormalizer)
-	gatewayService := service.ProvideGatewayService(accountRepository, groupRepository, usageLogRepository, usageBillingRepository, userRepository, userSubscriptionRepository, userGroupRateRepository, gatewayCache, configConfig, schedulerSnapshotService, concurrencyService, billingService, rateLimitService, billingCacheService, identityService, httpUpstream, deferredService, claudeTokenProvider, sessionLimitCache, rpmCache, digestSessionStore, settingService, tlsFingerprintProfileService, channelService, modelPricingResolver, balanceNotifyService, kiroTokenProvider, kiroGatewayService, grokTokenProvider, serviceUserPlatformQuotaRepository, fingerprintNormalizer)
+	gatewayService := service.ProvideGatewayService(openAIGatewayService, accountRepository, groupRepository, usageLogRepository, usageBillingRepository, userRepository, userSubscriptionRepository, userGroupRateRepository, gatewayCache, configConfig, schedulerSnapshotService, concurrencyService, billingService, rateLimitService, billingCacheService, identityService, httpUpstream, deferredService, claudeTokenProvider, sessionLimitCache, rpmCache, digestSessionStore, settingService, tlsFingerprintProfileService, channelService, modelPricingResolver, balanceNotifyService, kiroTokenProvider, kiroGatewayService, grokTokenProvider, serviceUserPlatformQuotaRepository, fingerprintNormalizer)
 	geminiOAuthClient := repository.NewGeminiOAuthClient(configConfig)
 	geminiCliCodeAssistClient := repository.NewGeminiCliCodeAssistClient()
 	geminiOAuthService := service.NewGeminiOAuthService(proxyRepository, geminiOAuthClient, geminiCliCodeAssistClient, configConfig)
@@ -305,6 +305,10 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	availableChannelHandler := handler.NewAvailableChannelHandler(channelService, apiKeyService, settingService)
 	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)
+	auditRetentionRepository := repository.NewAuditRetentionRepository(client, db)
+	auditRetentionService := service.ProvideAuditRetentionService(auditRetentionRepository, configConfig)
+	usageUserDailyCostRepository := repository.NewUsageUserDailyCostRepository(client, db)
+	usageUserDailyCostAggregator := service.ProvideUsageUserDailyCostAggregator(usageUserDailyCostRepository, configConfig)
 	handlers := handler.ProvideHandlers(authHandler, aiHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, ticketHandler, mediaHandler, announcementHandler, channelMonitorUserHandler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler, totpHandler, handlerPaymentHandler, paymentWebhookHandler, availableChannelHandler, module, aiSkillService, aiSkillVersionService, aiSkillReviewService, aiSkillSettlementService, aiSkillRunService, idempotencyCoordinator, idempotencyCleanupService)
 	jwtAuthMiddleware := middleware.NewJWTAuthMiddleware(authService, userService)
 	adminAuthMiddleware := middleware.NewAdminAuthMiddleware(authService, userService, settingService)
@@ -328,7 +332,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	if err != nil {
 		return nil, err
 	}
-	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, schedulerSnapshotService, tokenRefreshService, accountExpiryService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, kiroOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, userPlatformQuotaUsageFlusher, tlsCaptureListener)
+	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, schedulerSnapshotService, tokenRefreshService, accountExpiryService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, auditRetentionService, usageUserDailyCostAggregator, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, kiroOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, userPlatformQuotaUsageFlusher, tlsCaptureListener)
 	application := &Application{
 		Server:  httpServer,
 		Cleanup: v,
@@ -370,6 +374,8 @@ func provideCleanup(
 	subscriptionExpiry *service.SubscriptionExpiryService,
 	usageCleanup *service.UsageCleanupService,
 	idempotencyCleanup *service.IdempotencyCleanupService,
+	auditRetention *service.AuditRetentionService,
+	usageUserDailyCostAggregator *service.UsageUserDailyCostAggregator,
 	pricing *service.PricingService,
 	emailQueue *service.EmailQueueService,
 	billingCache *service.BillingCacheService,
@@ -450,6 +456,18 @@ func provideCleanup(
 			{"IdempotencyCleanupService", func() error {
 				if idempotencyCleanup != nil {
 					idempotencyCleanup.Stop()
+				}
+				return nil
+			}},
+			{"AuditRetentionService", func() error {
+				if auditRetention != nil {
+					auditRetention.Stop()
+				}
+				return nil
+			}},
+			{"UsageUserDailyCostAggregator", func() error {
+				if usageUserDailyCostAggregator != nil {
+					usageUserDailyCostAggregator.Stop()
 				}
 				return nil
 			}},

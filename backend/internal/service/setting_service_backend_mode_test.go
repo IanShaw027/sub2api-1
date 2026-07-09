@@ -143,6 +143,14 @@ func TestIsBackendModeEnabled_ReturnsFalseOnNotFound(t *testing.T) {
 	require.Equal(t, 1, repo.calls)
 }
 
+func TestGetRectifierSettings_NilRepoReturnsDefaults(t *testing.T) {
+	svc := NewSettingService(nil, &config.Config{})
+
+	settings, err := svc.GetRectifierSettings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, DefaultRectifierSettings(), settings)
+}
+
 func TestIsBackendModeEnabled_ReturnsFalseOnDBError(t *testing.T) {
 	resetBackendModeTestCache(t)
 
@@ -156,6 +164,14 @@ func TestIsBackendModeEnabled_ReturnsFalseOnDBError(t *testing.T) {
 
 	require.False(t, svc.IsBackendModeEnabled(context.Background()))
 	require.Equal(t, 1, repo.calls)
+}
+
+func TestIsBackendModeEnabled_NilRepoReturnsFalse(t *testing.T) {
+	resetBackendModeTestCache(t)
+
+	svc := NewSettingService(nil, &config.Config{})
+
+	require.False(t, svc.IsBackendModeEnabled(context.Background()))
 }
 
 func TestIsBackendModeEnabled_CachesResult(t *testing.T) {

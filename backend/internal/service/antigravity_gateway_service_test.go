@@ -2026,3 +2026,17 @@ func generateLargeUnwrapJSON(minSize int) []byte {
 	b, _ := json.Marshal(outer)
 	return b
 }
+
+func TestAntigravityGatewayServiceWriteMappedClaudeErrorRejectsNilAccount(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	svc := &AntigravityGatewayService{}
+
+	err := svc.WriteMappedClaudeError(c, nil, http.StatusBadRequest, "rid-test", []byte(`{"error":{"message":"bad request"}}`))
+
+	require.EqualError(t, err, "account is required")
+}

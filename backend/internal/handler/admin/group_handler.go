@@ -610,7 +610,7 @@ func parsePositiveInt64ListQuery(raw string) ([]int64, error) {
 		}
 		id, err := strconv.ParseInt(value, 10, 64)
 		if err != nil || id <= 0 {
-			return nil, fmt.Errorf("Invalid IDs query")
+			return nil, fmt.Errorf("invalid IDs query")
 		}
 		ids = append(ids, id)
 	}

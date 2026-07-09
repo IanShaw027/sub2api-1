@@ -41,6 +41,9 @@ func (f *fakeRepoForAdapter) UpsertForUser(_ context.Context, userID int64, reco
 func (f *fakeRepoForAdapter) BatchSnapshotUsage(_ context.Context, _ []UserPlatformQuotaSnapshot, _ time.Time) error {
 	return nil
 }
+func (f *fakeRepoForAdapter) BatchIncrementUsageWithReset(_ context.Context, _ []UserPlatformQuotaUsageDelta, _ time.Time) error {
+	return nil
+}
 
 func TestGenericAdapter_UpsertForUser_ForwardsRecords(t *testing.T) {
 	fake := &fakeRepoForAdapter{}

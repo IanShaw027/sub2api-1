@@ -139,11 +139,11 @@ func TestWxpayRefundOutRefundNoUsesStableRequestID(t *testing.T) {
 	}
 }
 
-func TestWxpayRefundOutRefundNoFallbackIsDeterministic(t *testing.T) {
+func TestWxpayRefundOutRefundNoRequiresRequestID(t *testing.T) {
 	got := wxpayRefundOutRefundNo(payment.RefundRequest{OrderID: "order_123"})
 
-	if got != "order_123-refund" {
-		t.Fatalf("wxpayRefundOutRefundNo fallback = %q, want deterministic order refund id", got)
+	if got != "" {
+		t.Fatalf("wxpayRefundOutRefundNo fallback = %q, want empty without request id", got)
 	}
 }
 

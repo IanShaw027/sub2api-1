@@ -251,6 +251,9 @@ func (s *BalanceNotifyService) asyncSendQuotaAlert(adminEmails []string, account
 
 // getBalanceNotifyConfig reads global balance notification settings.
 func (s *BalanceNotifyService) getBalanceNotifyConfig(ctx context.Context) (enabled bool, threshold float64, rechargeURL string) {
+	if s == nil || s.settingRepo == nil {
+		return false, 0, ""
+	}
 	keys := []string{SettingKeyBalanceLowNotifyEnabled, SettingKeyBalanceLowNotifyThreshold, SettingKeyBalanceLowNotifyRechargeURL}
 	settings, err := s.settingRepo.GetMultiple(ctx, keys)
 	if err != nil {
@@ -268,6 +271,9 @@ func (s *BalanceNotifyService) getBalanceNotifyConfig(ctx context.Context) (enab
 
 // isAccountQuotaNotifyEnabled checks the global account quota notification toggle.
 func (s *BalanceNotifyService) isAccountQuotaNotifyEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return false
+	}
 	val, err := s.settingRepo.GetValue(ctx, SettingKeyAccountQuotaNotifyEnabled)
 	if err != nil {
 		return false
@@ -278,6 +284,9 @@ func (s *BalanceNotifyService) isAccountQuotaNotifyEnabled(ctx context.Context) 
 // getAccountQuotaNotifyEmails reads admin notification emails from settings,
 // filtering out disabled and unverified entries.
 func (s *BalanceNotifyService) getAccountQuotaNotifyEmails(ctx context.Context) []string {
+	if s == nil || s.settingRepo == nil {
+		return nil
+	}
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyAccountQuotaNotifyEmails)
 	if err != nil || strings.TrimSpace(raw) == "" || raw == "[]" {
 		return nil
@@ -293,6 +302,9 @@ func (s *BalanceNotifyService) getAccountQuotaNotifyEmails(ctx context.Context) 
 
 // getSiteName reads site name from settings with fallback.
 func (s *BalanceNotifyService) getSiteName(ctx context.Context) string {
+	if s == nil || s.settingRepo == nil {
+		return defaultSiteName
+	}
 	name, err := s.settingRepo.GetValue(ctx, SettingKeySiteName)
 	if err != nil || name == "" {
 		return defaultSiteName

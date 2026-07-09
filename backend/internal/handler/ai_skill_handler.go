@@ -579,6 +579,10 @@ func (h *AIHandler) RunSkill(c *gin.Context) {
 		response.BadRequest(c, "Invalid request body")
 		return
 	}
+	idempotencyKey := normalizeSkillRunIdempotencyKey(c.GetHeader("Idempotency-Key"), req.IdempotencyKey)
+	if idempotencyKey != "" {
+		c.Request.Header.Set("Idempotency-Key", idempotencyKey)
+	}
 	executeUserIdempotentJSON(c, "skills:runs:create", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
 		skill, _, err := loadSkillForViewer(ctx, module, skillID, subject.UserID)
 		if err != nil {
@@ -598,7 +602,7 @@ func (h *AIHandler) RunSkill(c *gin.Context) {
 			Mode:           strings.TrimSpace(req.Mode),
 			Parameters:     req.Parameters,
 			Attachments:    attachments,
-			IdempotencyKey: strings.TrimSpace(req.IdempotencyKey),
+			IdempotencyKey: idempotencyKey,
 			Trace:          buildUserAITrace(req.Trace),
 		})
 		if err != nil {
@@ -639,6 +643,10 @@ func (h *AIHandler) runSkillWithMode(c *gin.Context, mode string) {
 			return
 		}
 	}
+	idempotencyKey := normalizeSkillRunIdempotencyKey(c.GetHeader("Idempotency-Key"), req.IdempotencyKey)
+	if idempotencyKey != "" {
+		c.Request.Header.Set("Idempotency-Key", idempotencyKey)
+	}
 	versionID := parseOptionalUserAIID(c.Query("version_id"))
 	parameters := req.Parameters
 	if parameters == nil {
@@ -669,7 +677,7 @@ func (h *AIHandler) runSkillWithMode(c *gin.Context, mode string) {
 			Mode:           mode,
 			Parameters:     parameters,
 			Attachments:    attachments,
-			IdempotencyKey: strings.TrimSpace(c.GetHeader("Idempotency-Key")),
+			IdempotencyKey: idempotencyKey,
 			Trace:          buildUserAITrace(aiTraceRequest{}),
 		})
 		if err != nil {
@@ -678,6 +686,14 @@ func (h *AIHandler) runSkillWithMode(c *gin.Context, mode string) {
 		}
 		return result, nil
 	})
+}
+
+func normalizeSkillRunIdempotencyKey(headerValue, bodyValue string) string {
+	headerKey := strings.TrimSpace(headerValue)
+	if headerKey != "" {
+		return headerKey
+	}
+	return strings.TrimSpace(bodyValue)
 }
 
 func (h *AIHandler) PublishSkillVersion(c *gin.Context) {

@@ -9,22 +9,20 @@ import (
 func NormalizeMachineID(machineID string) string {
 	trimmed := strings.TrimSpace(machineID)
 	if len(trimmed) == 64 && isHex(trimmed) {
-		return trimmed
+		return strings.ToLower(trimmed)
 	}
 
 	withoutDashes := strings.ReplaceAll(trimmed, "-", "")
 	if len(withoutDashes) == 32 && isHex(withoutDashes) {
-		return withoutDashes + withoutDashes
+		lower := strings.ToLower(withoutDashes)
+		return lower + lower
 	}
 
 	return ""
 }
 
-func GenerateMachineID(credentialMachineID, globalMachineID, refreshToken string) string {
+func GenerateMachineID(credentialMachineID, refreshToken string) string {
 	if normalized := NormalizeMachineID(credentialMachineID); normalized != "" {
-		return normalized
-	}
-	if normalized := NormalizeMachineID(globalMachineID); normalized != "" {
 		return normalized
 	}
 	refreshToken = strings.TrimSpace(refreshToken)

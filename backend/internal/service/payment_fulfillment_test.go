@@ -555,6 +555,82 @@ func TestSubscriptionFulfillmentWritesSuccessSentinelBeforeOrderCompletion(t *te
 	require.Equal(t, OrderStatusCompleted, reloaded.Status)
 }
 
+// 回归防线：订阅发放与 SUCCESS 哨兵必须原子——哨兵写入失败时 assign 整体回滚、claim 释放，
+// 不留「已发放但无哨兵」的孤儿状态（正是该状态会让 orphaned-claim 恢复路径重复发放）；
+// 重试则干净发放一次。
+func TestSubscriptionFulfillmentRollsBackAssignWhenSuccessSentinelWriteFails(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPaid, payment.OrderTypeSubscription)
+
+	repo := &paymentFulfillmentUserSubRepoStub{existing: &UserSubscription{
+		ID:        88,
+		UserID:    order.UserID,
+		GroupID:   *order.SubscriptionGroupID,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+		Status:    SubscriptionStatusActive,
+	}}
+	groupRepo := paymentFulfillmentGroupRepoStub{group: &Group{
+		ID:                  *order.SubscriptionGroupID,
+		Status:              payment.EntityStatusActive,
+		SubscriptionType:    SubscriptionTypeSubscription,
+		DefaultValidityDays: 30,
+	}}
+	subscriptionSvc := NewSubscriptionService(groupRepo, repo, nil, client, nil)
+	svc := &PaymentService{entClient: client, groupRepo: groupRepo, subscriptionSvc: subscriptionSvc}
+
+	trigger := fmt.Sprintf(`
+		CREATE TRIGGER fail_subscription_success_sentinel_once
+		BEFORE INSERT ON payment_audit_logs
+		WHEN NEW.action = 'SUBSCRIPTION_SUCCESS' AND NEW.order_id = '%d'
+		BEGIN
+			SELECT RAISE(FAIL, 'forced subscription success sentinel failure');
+		END;
+	`, order.ID)
+	_, err := client.ExecContext(ctx, trigger)
+	require.NoError(t, err)
+
+	err = svc.ExecuteSubscriptionFulfillment(ctx, order.ID)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "subscription success audit")
+
+	// 哨兵未持久化（assign+哨兵 事务整体回滚）
+	successCount, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("SUBSCRIPTION_SUCCESS")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, successCount)
+
+	// claim 已释放，重试重新发放而非卡在 orphaned-claim
+	claimCount, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("SUBSCRIPTION_FULFILLMENT_CLAIMED")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, claimCount)
+
+	// 订单未被标记完成
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.NotEqual(t, OrderStatusCompleted, reloaded.Status)
+
+	// 移除故障后重试：干净发放一次并完成
+	_, err = client.ExecContext(ctx, `DROP TRIGGER fail_subscription_success_sentinel_once`)
+	require.NoError(t, err)
+
+	err = svc.ExecuteSubscriptionFulfillment(ctx, order.ID)
+	require.NoError(t, err)
+
+	successCount, err = client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("SUBSCRIPTION_SUCCESS")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, successCount)
+
+	reloaded, err = client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+}
+
 func TestTryClaimSubscriptionFulfillmentAuditSkipsExistingSuccessSentinel(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentFulfillmentTestClient(t)

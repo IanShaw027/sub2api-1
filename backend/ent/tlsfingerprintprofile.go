@@ -36,6 +36,8 @@ type TLSFingerprintProfile struct {
 	UserAgent string `json:"user_agent,omitempty"`
 	// Originator holds the value of the "originator" field.
 	Originator string `json:"originator,omitempty"`
+	// Http2Fingerprint holds the value of the "http2_fingerprint" field.
+	Http2Fingerprint string `json:"http2_fingerprint,omitempty"`
 	// Description holds the value of the "description" field.
 	Description *string `json:"description,omitempty"`
 	// EnableGrease holds the value of the "enable_grease" field.
@@ -82,7 +84,7 @@ func (*TLSFingerprintProfile) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case tlsfingerprintprofile.FieldID:
 			values[i] = new(sql.NullInt64)
-		case tlsfingerprintprofile.FieldName, tlsfingerprintprofile.FieldPlatform, tlsfingerprintprofile.FieldTransport, tlsfingerprintprofile.FieldOs, tlsfingerprintprofile.FieldClientType, tlsfingerprintprofile.FieldUserAgent, tlsfingerprintprofile.FieldOriginator, tlsfingerprintprofile.FieldDescription:
+		case tlsfingerprintprofile.FieldName, tlsfingerprintprofile.FieldPlatform, tlsfingerprintprofile.FieldTransport, tlsfingerprintprofile.FieldOs, tlsfingerprintprofile.FieldClientType, tlsfingerprintprofile.FieldUserAgent, tlsfingerprintprofile.FieldOriginator, tlsfingerprintprofile.FieldHttp2Fingerprint, tlsfingerprintprofile.FieldDescription:
 			values[i] = new(sql.NullString)
 		case tlsfingerprintprofile.FieldCreatedAt, tlsfingerprintprofile.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -160,6 +162,12 @@ func (_m *TLSFingerprintProfile) assignValues(columns []string, values []any) er
 				return fmt.Errorf("unexpected type %T for field originator", values[i])
 			} else if value.Valid {
 				_m.Originator = value.String
+			}
+		case tlsfingerprintprofile.FieldHttp2Fingerprint:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field http2_fingerprint", values[i])
+			} else if value.Valid {
+				_m.Http2Fingerprint = value.String
 			}
 		case tlsfingerprintprofile.FieldDescription:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -348,6 +356,9 @@ func (_m *TLSFingerprintProfile) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("originator=")
 	builder.WriteString(_m.Originator)
+	builder.WriteString(", ")
+	builder.WriteString("http2_fingerprint=")
+	builder.WriteString(_m.Http2Fingerprint)
 	builder.WriteString(", ")
 	if v := _m.Description; v != nil {
 		builder.WriteString("description=")

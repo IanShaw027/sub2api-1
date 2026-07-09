@@ -236,6 +236,46 @@ describe('PaymentResultView', () => {
     expect(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)).toBeNull()
   })
 
+  it('treats RECHARGING as pending and keeps refreshing until the order is completed', async () => {
+    vi.useFakeTimers()
+    routeState.query = {
+      resume_token: 'resume-recharging',
+    }
+    window.localStorage.setItem(
+      PAYMENT_RECOVERY_STORAGE_KEY,
+      JSON.stringify(recoverySnapshotFactory('resume-recharging')),
+    )
+    resolveOrderPublicByResumeToken
+      .mockResolvedValueOnce({
+        data: orderFactory('RECHARGING'),
+      })
+      .mockResolvedValueOnce({
+        data: orderFactory('PAID'),
+      })
+
+    const wrapper = mount(PaymentResultView, {
+      global: {
+        stubs: {
+          OrderStatusBadge: true,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(resolveOrderPublicByResumeToken).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('payment.result.processing')
+    expect(wrapper.text()).not.toContain('payment.result.success')
+    expect(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)).not.toBeNull()
+
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+
+    expect(resolveOrderPublicByResumeToken).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('payment.result.success')
+    expect(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)).toBeNull()
+  })
+
   it('falls back to order_id polling when resume-token recovery fails', async () => {
     routeState.query = {
       resume_token: 'resume-fail',

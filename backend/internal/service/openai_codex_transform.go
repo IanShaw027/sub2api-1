@@ -184,21 +184,6 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 	)
 }
 
-func applyCodexOAuthTransformWithInputMode(
-	reqBody map[string]any,
-	isCodexCLI bool,
-	isCompact bool,
-	inputMode codexTransformInputMode,
-) codexTransformResult {
-	return applyCodexOAuthTransformWithInputModeAndOptions(
-		reqBody,
-		isCodexCLI,
-		isCompact,
-		inputMode,
-		codexOAuthTransformOptions{},
-	)
-}
-
 func applyCodexOAuthTransformWithInputModeAndOptions(
 	reqBody map[string]any,
 	isCodexCLI bool,
@@ -1368,7 +1353,7 @@ func getNormalizedCodexModel(modelID string) string {
 }
 
 // extractTextFromContent extracts plain text from a content value that is either
-// a Go string or a []any of content-part maps with type:"text".
+// a Go string or a []any of content-part maps with type:"text"/"input_text"/"output_text".
 func extractTextFromContent(content any) string {
 	switch v := content.(type) {
 	case string:
@@ -1380,7 +1365,7 @@ func extractTextFromContent(content any) string {
 			if !ok {
 				continue
 			}
-			if t, _ := m["type"].(string); t == "text" {
+			if t, _ := m["type"].(string); t == "text" || t == "input_text" || t == "output_text" {
 				if text, ok := m["text"].(string); ok {
 					parts = append(parts, text)
 				}
@@ -2210,12 +2195,14 @@ func normalizeCodexInputStructuredToolCallArguments(reqBody map[string]any) bool
 }
 
 // dropOrphanFunctionCallOutputs removes function_call_output items whose call_id
-// has no matching function_call (or other tool-call) item earlier in the same
+// has no matching function_call (or other tool-call) item anywhere in the same
 // input array. Sending an orphan function_call_output causes the upstream to
 // reject the request with "No tool call found for function call output with
 // call_id ...". The orphan typically arises when a client persists transcript
 // state but the matching function_call has already been pruned (e.g. because
 // it lived on a server-side previous_response chain that is no longer reachable).
+// A later call source still legitimizes an earlier output; only output items
+// are excluded from the first-pass source scan, so outputs never "seed" each other.
 func dropOrphanFunctionCallOutputs(input []any) ([]any, bool) {
 	if len(input) == 0 {
 		return input, false
@@ -2235,6 +2222,28 @@ func dropOrphanFunctionCallOutputs(input []any) ([]any, bool) {
 		}
 	}
 	seenCallIDs := make(map[string]struct{}, len(input))
+	for _, item := range input {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		typ, _ := m["type"].(string)
+		if !isCallSourceType(typ) {
+			continue
+		}
+		var ref string
+		if typ == "item_reference" {
+			ref, _ = m["id"].(string)
+		} else {
+			ref = toolCallContextIDFromMap(m)
+		}
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			continue
+		}
+		seenCallIDs[ref] = struct{}{}
+	}
+
 	filtered := make([]any, 0, len(input))
 	dropped := false
 	for _, item := range input {
@@ -2259,20 +2268,6 @@ func dropOrphanFunctionCallOutputs(input []any) ([]any, bool) {
 			continue
 		}
 		filtered = append(filtered, item)
-		if !isCallSourceType(typ) {
-			continue
-		}
-		var ref string
-		if typ == "item_reference" {
-			ref, _ = m["id"].(string)
-		} else {
-			ref = toolCallContextIDFromMap(m)
-		}
-		ref = strings.TrimSpace(ref)
-		if ref == "" {
-			continue
-		}
-		seenCallIDs[ref] = struct{}{}
 	}
 	if !dropped {
 		return input, false

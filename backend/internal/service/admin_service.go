@@ -1065,6 +1065,9 @@ func (s *adminServiceImpl) GetUserIdentitySummaries(ctx context.Context, userID 
 }
 
 func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInput) (*User, error) {
+	if input == nil {
+		return nil, fmt.Errorf("user input is required")
+	}
 	if input.RPMLimit < 0 {
 		return nil, infraerrors.BadRequest("INVALID_RPM_LIMIT", "rpm_limit must be >= 0")
 	}
@@ -1114,6 +1117,9 @@ func (s *adminServiceImpl) assignDefaultSubscriptions(ctx context.Context, userI
 }
 
 func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *UpdateUserInput) (*User, error) {
+	if input == nil {
+		return nil, fmt.Errorf("user input is required")
+	}
 	// 校验用户专属分组倍率：必须 > 0（nil 合法，表示清除专属倍率）
 	if input.GroupRates != nil {
 		for groupID, rate := range input.GroupRates {
@@ -2211,6 +2217,9 @@ func defaultAllowImageGenerationForPlatform(platform string) bool {
 }
 
 func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupInput) (*Group, error) {
+	if input == nil {
+		return nil, fmt.Errorf("group input is required")
+	}
 	if input.RateMultiplier <= 0 {
 		return nil, errors.New("rate_multiplier must be > 0")
 	}
@@ -2524,6 +2533,9 @@ func (s *adminServiceImpl) validateFallbackGroupOnInvalidRequest(ctx context.Con
 }
 
 func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *UpdateGroupInput) (*Group, error) {
+	if input == nil {
+		return nil, fmt.Errorf("group input is required")
+	}
 	group, err := s.groupRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -3098,7 +3110,7 @@ func (s *adminServiceImpl) ReplaceUserGroup(ctx context.Context, userID, oldGrou
 
 	// 事务保证原子性
 	if s.entClient == nil {
-		return nil, fmt.Errorf("entClient is nil, cannot perform group replacement")
+		return nil, fmt.Errorf("entClient is required for group replacement")
 	}
 	tx, err := s.entClient.Tx(ctx)
 	if err != nil {
@@ -3180,6 +3192,9 @@ func normalizeAccountConcurrency(platform, accountType string, concurrency int) 
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
+	if input == nil {
+		return nil, fmt.Errorf("account input is required")
+	}
 	if err := validatePlatformAccountType(input.Platform, input.Type); err != nil {
 		return nil, err
 	}
@@ -3315,6 +3330,9 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 }
 
 func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *UpdateAccountInput) (*Account, error) {
+	if input == nil {
+		return nil, fmt.Errorf("account input is required")
+	}
 	account, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -3529,6 +3547,9 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 // BulkUpdateAccounts updates multiple accounts in one request.
 // It merges credentials/extra keys instead of overwriting the whole object.
 func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUpdateAccountsInput) (*BulkUpdateAccountsResult, error) {
+	if input == nil {
+		return nil, fmt.Errorf("account input is required")
+	}
 	if len(input.AccountIDs) == 0 && input.Filters != nil {
 		accountIDs, err := s.resolveBulkUpdateTargetIDs(ctx, input.Filters)
 		if err != nil {
@@ -4241,6 +4262,9 @@ func (s *adminServiceImpl) GetProxiesByIDs(ctx context.Context, ids []int64) ([]
 }
 
 func (s *adminServiceImpl) CreateProxy(ctx context.Context, input *CreateProxyInput) (*Proxy, error) {
+	if input == nil {
+		return nil, fmt.Errorf("proxy input is required")
+	}
 	// 规范化 fallback_mode
 	mode := input.FallbackMode
 	if mode == "" {
@@ -4276,6 +4300,25 @@ func (s *adminServiceImpl) CreateProxy(ctx context.Context, input *CreateProxyIn
 }
 
 func (s *adminServiceImpl) UpdateProxy(ctx context.Context, id int64, input *UpdateProxyInput) (*Proxy, error) {
+	if input == nil {
+		return nil, fmt.Errorf("proxy input is required")
+	}
+	// 校验：backup_proxy_id 不能是自身
+	if input.BackupProxyID != nil && *input.BackupProxyID == id {
+		return nil, infraerrors.BadRequest("PROXY_BACKUP_SELF", "backup proxy cannot be itself")
+	}
+	// 规范化 fallback_mode
+	mode := input.FallbackMode
+	if mode == "" {
+		mode = FallbackModeNone
+	}
+	// 校验：mode=proxy 必须有 backup
+	if mode == FallbackModeProxy && input.BackupProxyID == nil {
+		return nil, infraerrors.BadRequest("PROXY_BACKUP_REQUIRED", "backup proxy required when fallback_mode=proxy")
+	}
+	if input.ExpiryWarnDays < 0 {
+		return nil, infraerrors.BadRequest("PROXY_WARN_DAYS_INVALID", "expiry_warn_days must be >= 0")
+	}
 	proxy, err := s.proxyRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -4415,6 +4458,9 @@ func (s *adminServiceImpl) GetRedeemCode(ctx context.Context, id int64) (*Redeem
 }
 
 func (s *adminServiceImpl) GenerateRedeemCodes(ctx context.Context, input *GenerateRedeemCodesInput) ([]RedeemCode, error) {
+	if input == nil {
+		return nil, fmt.Errorf("redeem input is required")
+	}
 	// 如果是订阅类型，验证必须有 GroupID
 	if input.Type == RedeemTypeSubscription {
 		if input.GroupID == nil {
@@ -4976,27 +5022,7 @@ func (s *adminServiceImpl) saveProxyLatency(ctx context.Context, proxyID int64, 
 	if s.proxyLatencyCache == nil || info == nil {
 		return
 	}
-
-	merged := *info
-	if latencies, err := s.proxyLatencyCache.GetProxyLatencies(ctx, []int64{proxyID}); err == nil {
-		if existing := latencies[proxyID]; existing != nil {
-			if merged.QualityCheckedAt == nil &&
-				merged.QualityScore == nil &&
-				merged.QualityGrade == "" &&
-				merged.QualityStatus == "" &&
-				merged.QualitySummary == "" &&
-				merged.QualityCFRay == "" {
-				merged.QualityStatus = existing.QualityStatus
-				merged.QualityScore = existing.QualityScore
-				merged.QualityGrade = existing.QualityGrade
-				merged.QualitySummary = existing.QualitySummary
-				merged.QualityCheckedAt = existing.QualityCheckedAt
-				merged.QualityCFRay = existing.QualityCFRay
-			}
-		}
-	}
-
-	if err := s.proxyLatencyCache.SetProxyLatency(ctx, proxyID, &merged); err != nil {
+	if err := s.proxyLatencyCache.SetProxyLatency(ctx, proxyID, info); err != nil {
 		logger.LegacyPrintf("service.admin", "Warning: store proxy latency cache failed: %v", err)
 	}
 }
@@ -5043,6 +5069,9 @@ func (s *adminServiceImpl) ResetAccountQuota(ctx context.Context, id int64) erro
 // EnsureOpenAIPrivacy 检查 OpenAI OAuth 账号是否已设置 privacy_mode，
 // 未设置则调用 disableOpenAITraining 并持久化到 Extra，返回设置的 mode 值。
 func (s *adminServiceImpl) EnsureOpenAIPrivacy(ctx context.Context, account *Account) string {
+	if account == nil {
+		return ""
+	}
 	// 影子账号不持凭据，隐私设置由母账号管理，直接跳过。
 	if account.IsCredentialShadow() {
 		return ""
@@ -5080,6 +5109,9 @@ func (s *adminServiceImpl) EnsureOpenAIPrivacy(ctx context.Context, account *Acc
 
 // ForceOpenAIPrivacy 强制重新设置 OpenAI OAuth 账号隐私，无论当前状态。
 func (s *adminServiceImpl) ForceOpenAIPrivacy(ctx context.Context, account *Account) string {
+	if account == nil {
+		return ""
+	}
 	// 影子账号不持凭据,隐私由母账号管理,直接跳过(与 EnsureOpenAIPrivacy 一致——外审第4轮)。
 	if account.IsCredentialShadow() {
 		return ""
@@ -5123,6 +5155,9 @@ func (s *adminServiceImpl) ForceOpenAIPrivacy(ctx context.Context, account *Acco
 // 仅当 privacy_mode 已成功设置（"privacy_set"）时跳过；
 // 未设置或之前失败（"privacy_set_failed"）均会重试。
 func (s *adminServiceImpl) EnsureAntigravityPrivacy(ctx context.Context, account *Account) string {
+	if account == nil {
+		return ""
+	}
 	if account.Platform != PlatformAntigravity || account.Type != AccountTypeOAuth {
 		return ""
 	}
@@ -5161,6 +5196,9 @@ func (s *adminServiceImpl) EnsureAntigravityPrivacy(ctx context.Context, account
 
 // ForceAntigravityPrivacy 强制重新设置 Antigravity OAuth 账号隐私，无论当前状态。
 func (s *adminServiceImpl) ForceAntigravityPrivacy(ctx context.Context, account *Account) string {
+	if account == nil {
+		return ""
+	}
 	if account.Platform != PlatformAntigravity || account.Type != AccountTypeOAuth {
 		return ""
 	}

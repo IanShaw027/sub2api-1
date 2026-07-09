@@ -2,7 +2,6 @@ package service
 
 import (
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -43,22 +42,10 @@ func ClassifyImageBillingTier(size string) (string, bool) {
 		return ImageBillingSize4K, true
 	}
 
-	width, height, ok := parseImageBillingDimensions(trimmed)
-	if !ok {
+	if _, _, ok := parseOpenAIImageSizeDimensions(trimmed); !ok {
 		return "", false
 	}
-	maxEdge := width
-	if height > maxEdge {
-		maxEdge = height
-	}
-	switch {
-	case maxEdge <= 1024:
-		return ImageBillingSize1K, true
-	case maxEdge <= 2048:
-		return ImageBillingSize2K, true
-	default:
-		return ImageBillingSize4K, true
-	}
+	return normalizeOpenAIImageBillingTierFromRawSize(trimmed), true
 }
 
 func NormalizeImageBillingTierOrDefault(size string) string {
@@ -171,25 +158,6 @@ func applyImageBillingResolution(
 	*outputSize = resolved.OutputSize
 	*source = resolved.Source
 	*breakdown = resolved.Breakdown
-}
-
-func parseImageBillingDimensions(size string) (int, int, bool) {
-	parts := strings.Split(strings.ToLower(strings.TrimSpace(size)), "x")
-	if len(parts) != 2 {
-		return 0, 0, false
-	}
-	width, err := strconv.Atoi(strings.TrimSpace(parts[0]))
-	if err != nil {
-		return 0, 0, false
-	}
-	height, err := strconv.Atoi(strings.TrimSpace(parts[1]))
-	if err != nil {
-		return 0, 0, false
-	}
-	if width <= 0 || height <= 0 {
-		return 0, 0, false
-	}
-	return width, height, true
 }
 
 func compactTrimmedStrings(values []string) []string {

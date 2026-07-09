@@ -67,7 +67,7 @@ func TestSubscriptionMaintenanceQueue_TryEnqueue_NilReceiver(t *testing.T) {
 	var q *SubscriptionMaintenanceQueue
 	err := q.TryEnqueue(func() {})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "nil")
+	require.EqualError(t, err, "maintenance queue is required")
 }
 
 func TestSubscriptionMaintenanceQueue_TryEnqueue_NilTask(t *testing.T) {
@@ -76,7 +76,7 @@ func TestSubscriptionMaintenanceQueue_TryEnqueue_NilTask(t *testing.T) {
 
 	err := q.TryEnqueue(nil)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "nil")
+	require.EqualError(t, err, "maintenance task is required")
 }
 
 func TestSubscriptionMaintenanceQueue_Stop_NilReceiver(t *testing.T) {

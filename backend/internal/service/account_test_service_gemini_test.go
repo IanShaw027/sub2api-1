@@ -111,6 +111,27 @@ func TestAccountTestService_BuildGeminiOAuthRequest_UnknownProjectIDStaysAIStudi
 	require.Equal(t, "Bearer gemini-token", req.Header.Get("Authorization"))
 }
 
+func TestAccountTestService_BuildGeminiOAuthRequest_NilConfigUsesSafeURLValidationDefaults(t *testing.T) {
+	t.Parallel()
+
+	svc := &AccountTestService{
+		geminiTokenProvider: &testGeminiTokenProvider{token: "gemini-token"},
+	}
+	account := &Account{
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"base_url": "https://generativelanguage.googleapis.com",
+		},
+	}
+
+	req, err := svc.buildGeminiOAuthRequest(context.Background(), account, "gemini-2.5-pro", []byte(`{"contents":[]}`))
+	require.NoError(t, err)
+	require.NotNil(t, req)
+	require.Contains(t, req.URL.String(), "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:streamGenerateContent")
+	require.Equal(t, "Bearer gemini-token", req.Header.Get("Authorization"))
+}
+
 func TestAccountTestService_BuildGeminiOAuthRequest_ExplicitCodeAssistRequiresProjectID(t *testing.T) {
 	t.Parallel()
 

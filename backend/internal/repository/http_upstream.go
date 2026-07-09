@@ -23,12 +23,12 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
-	"golang.org/x/net/http2"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyutil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	tlsfpHTTP2 "github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint/http2"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 )
@@ -217,12 +217,9 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 // profile 为 nil 时不启用 TLS 指纹，行为与 Do 方法相同。
 // profile 非 nil 时使用指定的 Profile 进行 TLS 指纹伪装。
 func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
-	if profile == nil && req != nil && req.URL != nil {
-		hostname := strings.ToLower(strings.TrimSpace(req.URL.Hostname()))
-		if strings.Contains(hostname, "chatgpt.com") || strings.Contains(hostname, "chatgpt") {
-			profile = tlsfingerprint.ChromeProfile()
-		}
-	}
+	// 不再对 chatgpt.com 自动套用硬编码的过时 Chrome 指纹兜底：经典 ChromeProfile 缺 PQ
+	// keyshare/ALPS，与真实 Chrome 不符，主动套用反而是可识别的伪造信号。无显式 captured
+	// profile 时走原生 Do(不伪装 TLS)，交由账号绑定的 profile 显式驱动指纹。
 	if profile == nil {
 		return s.Do(req, proxyURL, accountID, accountConcurrency)
 	}
@@ -299,11 +296,20 @@ func (s *httpUpstreamService) doWithRequestOverrides(
 	// h1Transport 指向可设置 DisableKeepAlives 等 HTTP/1.x 专属字段的 *http.Transport；
 	// 当 TLS 指纹经路走 HTTP/2(*http2.Transport) 时为 nil。
 	var h1Transport *http.Transport
-	if profile != nil {
-		roundTripper, h1Transport, err = buildUpstreamRoundTripperWithTLSFingerprint(settings, parsedProxy, profile)
+	if len(opts.RawHTTP1HeaderOrder) > 0 {
+		roundTripper = &http1HeaderReplayRoundTripper{
+			headerOrder:        append([]string(nil), opts.RawHTTP1HeaderOrder...),
+			proxyURL:           parsedProxy,
+			profile:            profile,
+			validateResolvedIP: s.shouldValidateResolvedIP(),
+		}
+		req = req.Clone(req.Context())
+		req.Close = true
+	} else if profile != nil {
+		roundTripper, h1Transport, err = buildUpstreamRoundTripperWithTLSFingerprint(settings, parsedProxy, profile, s.shouldValidateResolvedIP())
 	} else {
 		protocolMode = s.resolveProtocolMode(upstreamProfile, proxyKey, parsedProxy)
-		h1Transport, err = buildUpstreamTransport(settings, parsedProxy, protocolMode)
+		h1Transport, err = buildUpstreamTransport(settings, parsedProxy, protocolMode, s.shouldValidateResolvedIP())
 		roundTripper = h1Transport
 	}
 	if err != nil {
@@ -363,8 +369,11 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, upstreamProfile)
 	profileKey := tlsFingerprintProfileCacheKey(profile)
-	// TLS 指纹客户端使用独立的缓存键，加 "tls:" 前缀
-	cacheKey := "tls:" + profileKey + ":" + buildCacheKey(isolation, proxyKey, accountID, upstreamProtocolModeDefault)
+	// TLS 指纹经路即使在 proxy 隔离模式下，也必须保持账号级连接池隔离：
+	// 同一代理+同一 JA3 若被不同账号共用同一底层长连接/HTTP keep-alive，会把多账号请求
+	// 关联到同一 TLS 会话足迹，削弱反封禁的“每账号独立身份”目标。普通 HTTP 经路仍遵从用户
+	// 配置的 isolation；仅 TLS 伪装经路强制把 accountID 编入缓存键，避免跨账号复用。
+	cacheKey := "tls:" + profileKey + ":" + buildTLSFingerprintCacheKey(proxyKey, accountID, upstreamProtocolModeDefault)
 	poolKey := buildPoolKey(settings, upstreamProtocolModeDefault) + ":tls:" + profileKey
 
 	now := time.Now()
@@ -416,7 +425,7 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 
 	// 创建带 TLS 指纹的 Transport（profile ALPN 含 h2 时自动走 HTTP/2 出站）
 	slog.Debug("tls_fingerprint_creating_new_client", "account_id", accountID, "cache_key", cacheKey, "proxy", proxyKey)
-	roundTripper, _, err := buildUpstreamRoundTripperWithTLSFingerprint(settings, parsedProxy, profile)
+	roundTripper, _, err := buildUpstreamRoundTripperWithTLSFingerprint(settings, parsedProxy, profile, s.shouldValidateResolvedIP())
 	if err != nil {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("build TLS fingerprint transport: %w", err)
@@ -456,6 +465,10 @@ func tlsFingerprintProfileCacheKey(profile *tlsfingerprint.Profile) string {
 	return hex.EncodeToString(sum[:8])
 }
 
+func buildTLSFingerprintCacheKey(proxyKey string, accountID int64, protocolMode string) string {
+	return buildCacheKey(config.ConnectionPoolIsolationAccountProxy, proxyKey, accountID, protocolMode)
+}
+
 func (s *httpUpstreamService) shouldValidateResolvedIP() bool {
 	if s.cfg == nil {
 		return false
@@ -468,7 +481,7 @@ func (s *httpUpstreamService) validateRequestHost(req *http.Request) error {
 		return nil
 	}
 	if req == nil || req.URL == nil {
-		return errors.New("request url is nil")
+		return errors.New("request url is required")
 	}
 	host := strings.TrimSpace(req.URL.Hostname())
 	if host == "" {
@@ -578,7 +591,7 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 	}
 
 	// 缓存未命中或需要重建，创建新客户端
-	transport, err := buildUpstreamTransport(settings, parsedProxy, protocolMode)
+	transport, err := buildUpstreamTransport(settings, parsedProxy, protocolMode, s.shouldValidateResolvedIP())
 	if err != nil {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("build transport: %w", err)
@@ -1144,6 +1157,8 @@ func defaultPoolSettings(cfg *config.Config) poolSettings {
 type upstreamDialer struct {
 	base         *net.Dialer
 	lookupIPAddr func(context.Context, string) ([]net.IPAddr, error)
+	isBlockedIP  func(net.IP) bool
+	validateIP   bool
 	now          func() time.Time
 	cache        sync.Map // map[string]upstreamDNSCacheEntry
 }
@@ -1161,10 +1176,12 @@ func newUpstreamNetDialer() *net.Dialer {
 	}
 }
 
-func newUpstreamDialer() *upstreamDialer {
+func newUpstreamDialer(validateResolvedIP bool) *upstreamDialer {
 	return &upstreamDialer{
 		base:         newUpstreamNetDialer(),
 		lookupIPAddr: net.DefaultResolver.LookupIPAddr,
+		isBlockedIP:  urlvalidator.IsBlockedResolvedIP,
+		validateIP:   validateResolvedIP,
 		now:          time.Now,
 	}
 }
@@ -1182,10 +1199,17 @@ func (d *upstreamDialer) DialContext(ctx context.Context, network, address strin
 		return base.DialContext(ctx, network, address)
 	}
 	host = strings.Trim(host, "[]")
-	if net.ParseIP(host) != nil {
+	if ip := net.ParseIP(host); ip != nil {
+		if d.shouldValidateResolvedIP() && d.isBlockedIP(ip) {
+			return nil, fmt.Errorf("resolved ip %s is not allowed", ip.String())
+		}
 		return base.DialContext(ctx, network, address)
 	}
 	addrs, err := d.lookupCachedIPAddrs(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	addrs, err = d.filterResolvedIPAddrs(addrs)
 	if err != nil {
 		return nil, err
 	}
@@ -1194,6 +1218,26 @@ func (d *upstreamDialer) DialContext(ctx context.Context, network, address strin
 		return nil, fmt.Errorf("resolve %s: no IPs matching %s", host, network)
 	}
 	return dialResolvedUpstreamIPAddrs(ctx, base, network, port, ordered)
+}
+
+func (d *upstreamDialer) shouldValidateResolvedIP() bool {
+	return d != nil && d.validateIP
+}
+
+func (d *upstreamDialer) filterResolvedIPAddrs(addrs []net.IPAddr) ([]net.IPAddr, error) {
+	if !d.shouldValidateResolvedIP() || len(addrs) == 0 {
+		return addrs, nil
+	}
+	isBlockedIP := urlvalidator.IsBlockedResolvedIP
+	if d != nil && d.isBlockedIP != nil {
+		isBlockedIP = d.isBlockedIP
+	}
+	for _, addr := range addrs {
+		if isBlockedIP(addr.IP) {
+			return nil, fmt.Errorf("resolved ip %s is not allowed", addr.IP.String())
+		}
+	}
+	return addrs, nil
 }
 
 type upstreamDialResult struct {
@@ -1395,9 +1439,9 @@ func upstreamIPMatchesNetwork(ip net.IP, network string) bool {
 //   - MaxConnsPerHost: 每主机最大连接数（达到后新请求等待）
 //   - IdleConnTimeout: 空闲连接超时（超时后关闭）
 //   - ResponseHeaderTimeout: 等待响应头超时（不影响流式传输）
-func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMode string) (*http.Transport, error) {
+func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMode string, validateResolvedIP bool) (*http.Transport, error) {
 	transport := &http.Transport{
-		DialContext:           newUpstreamDialer().DialContext,
+		DialContext:           newUpstreamDialer(validateResolvedIP).DialContext,
 		MaxIdleConns:          settings.maxIdleConns,
 		MaxIdleConnsPerHost:   settings.maxIdleConnsPerHost,
 		MaxConnsPerHost:       settings.maxConnsPerHost,
@@ -1437,10 +1481,10 @@ func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMo
 //   - nil/空: 直连，使用 TLSFingerprintDialer
 //   - http/https: HTTP 代理，使用 HTTPProxyDialer（CONNECT 隧道 + utls 握手）
 //   - socks5: SOCKS5 代理，使用 SOCKS5ProxyDialer（SOCKS5 隧道 + utls 握手）
-func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *url.URL, profile *tlsfingerprint.Profile) (*http.Transport, error) {
+func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *url.URL, profile *tlsfingerprint.Profile, validateResolvedIP bool) (*http.Transport, error) {
 	transportProfile := tlsFingerprintHTTPTransportProfile(profile)
 	transport := &http.Transport{
-		DialContext:           newUpstreamDialer().DialContext,
+		DialContext:           newUpstreamDialer(validateResolvedIP).DialContext,
 		MaxIdleConns:          settings.maxIdleConns,
 		MaxIdleConnsPerHost:   settings.maxIdleConnsPerHost,
 		MaxConnsPerHost:       settings.maxConnsPerHost,
@@ -1450,7 +1494,7 @@ func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *u
 		ForceAttemptHTTP2: false,
 	}
 
-	dialTLS, fallbackProxy, err := tlsFingerprintDialTLSFunc(transportProfile, proxyURL)
+	dialTLS, fallbackProxy, err := tlsFingerprintDialTLSFunc(transportProfile, proxyURL, validateResolvedIP)
 	if err != nil {
 		return nil, err
 	}
@@ -1473,10 +1517,11 @@ func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *u
 func tlsFingerprintDialTLSFunc(
 	transportProfile *tlsfingerprint.Profile,
 	proxyURL *url.URL,
+	validateResolvedIP bool,
 ) (func(ctx context.Context, network, addr string) (net.Conn, error), bool, error) {
 	if proxyURL == nil {
 		slog.Debug("tls_fingerprint_transport_direct")
-		dialer := tlsfingerprint.NewDialer(transportProfile, newUpstreamDialer().DialContext)
+		dialer := tlsfingerprint.NewDialer(transportProfile, newUpstreamDialer(validateResolvedIP).DialContext)
 		return dialer.DialTLSContext, false, nil
 	}
 	switch strings.ToLower(proxyURL.Scheme) {
@@ -1510,7 +1555,8 @@ func tlsFingerprintProfileWantsH2(profile *tlsfingerprint.Profile) bool {
 
 // buildUpstreamRoundTripperWithTLSFingerprint 按 profile ALPN 是否含 h2 分流构建出站 RoundTripper。
 //   - 不含 h2（现有绝大多数模板）→ 现有 *http.Transport（HTTP/1.x），字节级零变化。
-//   - 含 h2 → *http2.Transport（utls dialer 接 DialTLSContext，真正走 HTTP/2，消除 ALPN 矛盾）。
+//   - 含 h2 但缺少可回放的 HTTP2Fingerprint → 回退 *http.Transport，ALPN 收敛为 http/1.1。
+//   - 含 h2 且带 HTTP2Fingerprint → 走自定义 h2 replay RoundTripper，消费 settings/wu/priority/ph。
 //
 // 第二个返回值是 h1 经路的 *http.Transport（用于设置 DisableKeepAlives 等 h1 专属字段）；
 // h2 经路时为 nil。
@@ -1518,42 +1564,40 @@ func buildUpstreamRoundTripperWithTLSFingerprint(
 	settings poolSettings,
 	proxyURL *url.URL,
 	profile *tlsfingerprint.Profile,
+	validateResolvedIP bool,
 ) (http.RoundTripper, *http.Transport, error) {
 	if !tlsFingerprintProfileWantsH2(profile) {
-		transport, err := buildUpstreamTransportWithTLSFingerprint(settings, proxyURL, profile)
+		transport, err := buildUpstreamTransportWithTLSFingerprint(settings, proxyURL, profile, validateResolvedIP)
 		if err != nil {
 			return nil, nil, err
 		}
 		return transport, transport, nil
 	}
-
-	// h2 经路：保留 profile 完整 ALPN（含 h2），让 utls ClientHello 真实提示 h2。
-	dialTLS, fallbackProxy, err := tlsFingerprintDialTLSFunc(profile, proxyURL)
+	parsedFingerprint, err := tlsfpHTTP2.ParseFingerprint(strings.TrimSpace(profile.HTTP2Fingerprint))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("parse http2 fingerprint: %w", err)
 	}
-	if fallbackProxy {
-		// 未知代理类型无法做 utls 隧道；沿用 h1 经路的 fail-closed 行为返回错误。
-		slog.Debug("tls_fingerprint_h2_unknown_proxy_fail_closed", "scheme", proxyURL.Scheme)
-		transport, err := buildUpstreamTransportWithTLSFingerprint(settings, proxyURL, profile)
+	if parsedFingerprint == nil || (len(parsedFingerprint.Settings) == 0 && len(parsedFingerprint.ConnWindowUpdates) == 0 && len(parsedFingerprint.Priorities) == 0 && len(parsedFingerprint.PseudoHeaderOrder) == 0) {
+		slog.Debug("tls_fingerprint_h2_profile_missing_replay_data_forced_h1", "profile", profile.Name)
+		transport, err := buildUpstreamTransportWithTLSFingerprint(settings, proxyURL, profile, validateResolvedIP)
 		if err != nil {
 			return nil, nil, err
 		}
 		return transport, transport, nil
 	}
-
-	h2 := &http2.Transport{
-		// http2.Transport.DialTLSContext 多一个 *tls.Config 参数；utls dialer 自己管 TLS 配置，忽略之。
-		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
-			return dialTLS(ctx, network, addr)
-		},
-		IdleConnTimeout: settings.idleConnTimeout,
+	if _, fallbackProxy, err := tlsFingerprintDialTLSFunc(profile, proxyURL, validateResolvedIP); err != nil {
+		return nil, nil, err
+	} else if fallbackProxy {
+		return nil, nil, fmt.Errorf("unsupported proxy scheme: %s", proxyURL.Scheme)
 	}
-	slog.Debug("tls_fingerprint_transport_h2_enabled", "profile", profile.Name)
-	if settings.responseHeaderTimeout > 0 {
-		return responseHeaderTimeoutRoundTripper{base: h2, timeout: settings.responseHeaderTimeout}, nil, nil
-	}
-	return h2, nil, nil
+	slog.Debug("tls_fingerprint_transport_h2_replay_enabled", "profile", profile.Name)
+	return &http2FingerprintReplayRoundTripper{
+		settings:           settings,
+		proxyURL:           proxyURL,
+		profile:            profile,
+		parsedFingerprint:  parsedFingerprint,
+		validateResolvedIP: validateResolvedIP,
+	}, nil, nil
 }
 
 type responseHeaderTimeoutRoundTripper struct {
@@ -1563,7 +1607,7 @@ type responseHeaderTimeoutRoundTripper struct {
 
 func (rt responseHeaderTimeoutRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	if rt.base == nil {
-		return nil, errors.New("base round tripper is nil")
+		return nil, errors.New("base round tripper is required")
 	}
 	if req == nil || rt.timeout <= 0 {
 		return rt.base.RoundTrip(req)

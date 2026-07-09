@@ -27,7 +27,7 @@ func (l *documentTextLimiter) WriteString(s string) {
 		return
 	}
 	if l.maxRunes <= 0 {
-		l.sb.WriteString(s)
+		_, _ = l.sb.WriteString(s)
 		return
 	}
 	remaining := l.maxRunes - l.written
@@ -37,26 +37,27 @@ func (l *documentTextLimiter) WriteString(s string) {
 	}
 	count := utf8.RuneCountInString(s)
 	if count <= remaining {
-		l.sb.WriteString(s)
+		_, _ = l.sb.WriteString(s)
 		l.written += count
 		return
 	}
 	runes := []rune(s)
-	l.sb.WriteString(string(runes[:remaining]))
+	_, _ = l.sb.WriteString(string(runes[:remaining]))
 	l.written += remaining
 	l.truncated = true
 }
 
-func (l *documentTextLimiter) WriteByte(b byte) {
+func (l *documentTextLimiter) WriteByte(b byte) error {
 	if l == nil || l.truncated {
-		return
+		return nil
 	}
 	if l.maxRunes > 0 && l.written >= l.maxRunes {
 		l.truncated = true
-		return
+		return nil
 	}
-	l.sb.WriteByte(b)
+	_ = l.sb.WriteByte(b)
 	l.written++
+	return nil
 }
 
 func (l *documentTextLimiter) String() string {

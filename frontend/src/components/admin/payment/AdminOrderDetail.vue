@@ -19,15 +19,15 @@
         </div>
         <div>
           <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.baseAmount') }}</p>
-          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ paymentAmountSymbol }}{{ baseAmount.toFixed(2) }}</p>
+          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ formatOrderAmount(baseAmount) }}</p>
         </div>
         <div v-if="order.fee_rate > 0">
           <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.fee') }} ({{ order.fee_rate }}%)</p>
-          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ paymentAmountSymbol }}{{ feeAmount.toFixed(2) }}</p>
+          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ formatOrderAmount(feeAmount) }}</p>
         </div>
         <div>
           <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.payAmount') }}</p>
-          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ paymentAmountSymbol }}{{ order.pay_amount.toFixed(2) }}</p>
+          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ formatOrderAmount(order.pay_amount) }}</p>
         </div>
         <div v-if="order.amount !== order.pay_amount">
           <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.orders.creditedAmount') }}</p>
@@ -120,7 +120,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import type { PaymentOrder } from '@/types/payment'
 import { statusBadgeClass, canRefund as canRefundStatus, formatOrderDateTime } from '@/components/payment/orderUtils'
 import { paymentMethodDisplayKey, paymentOrderTypeI18nKey, paymentStatusI18nKey } from '@/utils/i18n'
-import { currencySymbol } from '@/components/payment/currency'
+import { currencySymbol, formatPaymentAmount } from '@/components/payment/currency'
 
 const { t } = useI18n()
 
@@ -130,8 +130,6 @@ const props = defineProps<{
 }>()
 
 const creditedAmountSymbol = currencySymbol('USD')
-
-const paymentAmountSymbol = computed(() => currencySymbol(props.order?.currency))
 
 /** 充值金额 (base amount before fee) = pay_amount - fee = pay_amount / (1 + fee_rate/100) */
 const baseAmount = computed(() => {
@@ -158,6 +156,10 @@ const emit = defineEmits<{
 
 function canRefund(order: PaymentOrder): boolean {
   return canRefundStatus(order.status)
+}
+
+function formatOrderAmount(value: number): string {
+  return formatPaymentAmount(value, props.order?.currency)
 }
 
 function formatDateTime(dateStr: string): string {

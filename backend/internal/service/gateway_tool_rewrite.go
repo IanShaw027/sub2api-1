@@ -843,7 +843,7 @@ func restorePropNamesInJSONStringFragment(value string, reverse map[string]strin
 	changed := false
 	for i := 0; i < len(value); {
 		if value[i] != '"' {
-			out.WriteByte(value[i])
+			_ = out.WriteByte(value[i])
 			i++
 			continue
 		}
@@ -865,7 +865,7 @@ func restorePropNamesInJSONStringFragment(value string, reverse map[string]strin
 			}
 		}
 		if j >= len(value) {
-			out.WriteString(value[start:])
+			_, _ = out.WriteString(value[start:])
 			break
 		}
 		keyEnd := j + 1
@@ -875,16 +875,16 @@ func restorePropNamesInJSONStringFragment(value string, reverse map[string]strin
 		}
 		if colon < len(value) && value[colon] == ':' {
 			if real, ok := reverse[value[start+1:j]]; ok {
-				out.WriteByte('"')
-				out.WriteString(real)
-				out.WriteByte('"')
-				out.WriteString(value[keyEnd : colon+1])
+				_ = out.WriteByte('"')
+				_, _ = out.WriteString(real)
+				_ = out.WriteByte('"')
+				_, _ = out.WriteString(value[keyEnd : colon+1])
 				i = colon + 1
 				changed = true
 				continue
 			}
 		}
-		out.WriteString(value[start:keyEnd])
+		_, _ = out.WriteString(value[start:keyEnd])
 		i = keyEnd
 	}
 	if !changed {

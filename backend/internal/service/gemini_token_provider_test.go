@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -86,6 +88,59 @@ func TestGeminiTokenProvider_GetAccessToken_BackfillsProjectIDWhenAutoDetectFlag
 	require.Equal(t, 1, repo.updateCredentialsCalls)
 }
 
+// 并发取 token 的 project 探测必须被 singleflight 合并为一次上游 onboard，避免 N 个并发各跑一轮 ~10s。
+func TestGeminiTokenProvider_GetAccessToken_CollapsesConcurrentProjectDetection(t *testing.T) {
+	var loadCalls int32
+	release := make(chan struct{})
+	oauthService := &GeminiOAuthService{
+		codeAssist: &mockGeminiCodeAssistClient{
+			loadCodeAssistFunc: func(ctx context.Context, accessToken, proxyURL string, req *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+				atomic.AddInt32(&loadCalls, 1)
+				<-release // 阻塞，制造并发窗口让其余 goroutine 都进入并阻塞在 singleflight.Do
+				return &geminicli.LoadCodeAssistResponse{
+					CloudAICompanionProject: "detected-project",
+					CurrentTier:             &geminicli.TierInfo{ID: "STANDARD"},
+				}, nil
+			},
+		},
+	}
+	repo := &refreshAPIAccountRepo{account: &Account{ID: 201}}
+	provider := NewGeminiTokenProvider(repo, nil, oauthService)
+
+	const n = 20
+	var wg sync.WaitGroup
+	tokens := make([]string, n)
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			// 每个 goroutine 用独立 account（同 ID），避免共享 Credentials map 的并发写。
+			acct := &Account{
+				ID:       201,
+				Platform: PlatformGemini,
+				Type:     AccountTypeOAuth,
+				Credentials: map[string]any{
+					"access_token":           "access-token",
+					"oauth_type":             "code_assist",
+					"auto_detect_project_id": "true",
+				},
+			}
+			tokens[i], errs[i] = provider.GetAccessToken(context.Background(), acct)
+		}(i)
+	}
+	// 给所有 goroutine 时间进入 singleflight.Do（winner 阻塞在 mock，其余在 Do 上等待）后再放行。
+	time.Sleep(200 * time.Millisecond)
+	close(release)
+	wg.Wait()
+
+	for i := 0; i < n; i++ {
+		require.NoErrorf(t, errs[i], "goroutine %d", i)
+		require.Equal(t, "access-token", tokens[i])
+	}
+	require.Equal(t, int32(1), atomic.LoadInt32(&loadCalls), "并发 project 探测必须合并为一次上游 onboard")
+}
+
 func TestGeminiTokenProvider_GetAccessToken_GoogleOneDoesNotBackfillProjectIDWhenAutoDetectFlagSet(t *testing.T) {
 	t.Parallel()
 
@@ -146,6 +201,17 @@ func TestGeminiTokenProvider_GetAccessToken_GoogleOneTokenWithoutProjectIDDoesNo
 	require.Equal(t, "cached-access-token", token)
 	require.Equal(t, []string{"gemini:account:103"}, cache.getKeys)
 	require.Empty(t, cache.setKeys)
+}
+
+func TestGeminiTokenProvider_GetAccessToken_RejectsNilAccount(t *testing.T) {
+	t.Parallel()
+
+	provider := NewGeminiTokenProvider(nil, nil, nil)
+
+	token, err := provider.GetAccessToken(context.Background(), nil)
+
+	require.Empty(t, token)
+	require.EqualError(t, err, "account is required")
 }
 
 func TestGeminiTokenProvider_GetAccessToken_UsesAccountScopedCacheKeyEvenWhenProjectMatches(t *testing.T) {

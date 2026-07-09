@@ -30,6 +30,30 @@ func NewOpenAIOAuthService(proxyRepo ProxyRepository, oauthClient OpenAIOAuthCli
 	}
 }
 
+func (s *OpenAIOAuthService) resolveProxyURL(ctx context.Context, proxyID *int64) (string, error) {
+	if proxyID == nil {
+		return "", nil
+	}
+	if s == nil || s.proxyRepo == nil {
+		return "", infraerrors.New(http.StatusBadRequest, "OPENAI_OAUTH_PROXY_NOT_AVAILABLE", "proxy repository is unavailable")
+	}
+	proxy, err := s.proxyRepo.GetByID(ctx, *proxyID)
+	if err != nil {
+		return "", infraerrors.Newf(http.StatusBadRequest, "OPENAI_OAUTH_PROXY_NOT_FOUND", "proxy not found: %v", err)
+	}
+	if proxy == nil {
+		return "", nil
+	}
+	return proxy.URL(), nil
+}
+
+func (s *OpenAIOAuthService) requireOAuthClient() (OpenAIOAuthClient, error) {
+	if s == nil || s.oauthClient == nil {
+		return nil, infraerrors.New(http.StatusInternalServerError, "OPENAI_OAUTH_CLIENT_NOT_CONFIGURED", "oauth client is not configured")
+	}
+	return s.oauthClient, nil
+}
+
 // SetPrivacyClientFactory 注入 ImpersonateChrome 客户端工厂，
 // 用于调用 chatgpt.com/backend-api 获取账号信息（plan_type 等）。
 func (s *OpenAIOAuthService) SetPrivacyClientFactory(factory PrivacyClientFactory) {
@@ -64,15 +88,9 @@ func (s *OpenAIOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64
 	}
 
 	// Get proxy URL if specified
-	var proxyURL string
-	if proxyID != nil {
-		proxy, err := s.proxyRepo.GetByID(ctx, *proxyID)
-		if err != nil {
-			return nil, infraerrors.Newf(http.StatusBadRequest, "OPENAI_OAUTH_PROXY_NOT_FOUND", "proxy not found: %v", err)
-		}
-		if proxy != nil {
-			proxyURL = proxy.URL()
-		}
+	proxyURL, err := s.resolveProxyURL(ctx, proxyID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Resolve redirect URI against the server-side allowlist. Never trust the
@@ -140,6 +158,9 @@ type OpenAITokenInfo struct {
 
 // ExchangeCode exchanges authorization code for tokens
 func (s *OpenAIOAuthService) ExchangeCode(ctx context.Context, input *OpenAIExchangeCodeInput) (*OpenAITokenInfo, error) {
+	if input == nil {
+		return nil, infraerrors.New(http.StatusBadRequest, "OPENAI_OAUTH_INVALID_INPUT", "oauth input is required")
+	}
 	// Get session
 	session, ok := s.sessionStore.Get(input.SessionID)
 	if !ok {
@@ -155,12 +176,10 @@ func (s *OpenAIOAuthService) ExchangeCode(ctx context.Context, input *OpenAIExch
 	// Get proxy URL: prefer input.ProxyID, fallback to session.ProxyURL
 	proxyURL := session.ProxyURL
 	if input.ProxyID != nil {
-		proxy, err := s.proxyRepo.GetByID(ctx, *input.ProxyID)
+		var err error
+		proxyURL, err = s.resolveProxyURL(ctx, input.ProxyID)
 		if err != nil {
-			return nil, infraerrors.Newf(http.StatusBadRequest, "OPENAI_OAUTH_PROXY_NOT_FOUND", "proxy not found: %v", err)
-		}
-		if proxy != nil {
-			proxyURL = proxy.URL()
+			return nil, err
 		}
 	}
 
@@ -174,9 +193,13 @@ func (s *OpenAIOAuthService) ExchangeCode(ctx context.Context, input *OpenAIExch
 	if clientID == "" {
 		clientID = openai.ClientID
 	}
+	oauthClient, err := s.requireOAuthClient()
+	if err != nil {
+		return nil, err
+	}
 
 	// Exchange code for token
-	tokenResp, err := s.oauthClient.ExchangeCode(ctx, input.Code, session.CodeVerifier, redirectURI, proxyURL, clientID)
+	tokenResp, err := oauthClient.ExchangeCode(ctx, input.Code, session.CodeVerifier, redirectURI, proxyURL, clientID)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +251,11 @@ func (s *OpenAIOAuthService) RefreshToken(ctx context.Context, refreshToken stri
 
 // RefreshTokenWithClientID refreshes an OpenAI OAuth token with optional client_id.
 func (s *OpenAIOAuthService) RefreshTokenWithClientID(ctx context.Context, refreshToken string, proxyURL string, clientID string) (*OpenAITokenInfo, error) {
-	tokenResp, err := s.oauthClient.RefreshTokenWithClientID(ctx, refreshToken, proxyURL, clientID)
+	oauthClient, err := s.requireOAuthClient()
+	if err != nil {
+		return nil, err
+	}
+	tokenResp, err := oauthClient.RefreshTokenWithClientID(ctx, refreshToken, proxyURL, clientID)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +358,7 @@ func resolveChatGPTSubscriptionAccountID(tokenInfo *OpenAITokenInfo, orgID strin
 
 // RefreshAccountToken refreshes token for an OpenAI OAuth account
 func (s *OpenAIOAuthService) RefreshAccountToken(ctx context.Context, account *Account) (*OpenAITokenInfo, error) {
-	if account.Platform != PlatformOpenAI {
+	if account == nil || account.Platform != PlatformOpenAI {
 		return nil, infraerrors.New(http.StatusBadRequest, "OPENAI_OAUTH_INVALID_ACCOUNT", "account is not an OpenAI account")
 	}
 	if account.Type != AccountTypeOAuth {

@@ -25,6 +25,7 @@ import (
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"golang.org/x/text/unicode/norm"
 )
 
 const (
@@ -69,6 +70,18 @@ const (
 	maxContentModerationTimeoutMS     = 30000
 	maxModerationInputRunes           = 12000
 	maxModerationExcerptRunes         = 240
+	// maxModerationKeywordScanRunes 为本地关键词扫描全文的有界上限：远大于送审截断(12000)以堵住
+	// “把违规词推到 12000 之后”的绕过，同时封顶每请求成本——否则全文扫描会随请求体(网关默认可达
+	// 256MB)无界放大 NFKC + O(关键词数×全文) 匹配与 AND 路径每-rune byteRuneIndex，撑爆内存(DoS)。
+	maxModerationKeywordScanRunes = 200000
+	// maxModerationLocalBlockInputs / maxModerationLocalBlockTotalRunes 为整请求本地拦截扫描的聚合上限：
+	// 单条上限(maxModerationKeywordScanRunes)只封住每条消息，而 user 消息条数本身不设上限，
+	// Check() 会对每条跑 matchBlockedKeyword(NFKC + O(关键词数×文本))与哈希查询，
+	// 总 CPU 随 body(可达 256MB)线性放大，是普通已认证用户可主动触发的网关级 DoS。
+	// 裁剪保留最新的若干条消息(当前轮在尾部，与送审 auditContent 语义一致)，把每请求本地扫描
+	// 成本变成固定预算而非随请求体增长。
+	maxModerationLocalBlockInputs     = 256
+	maxModerationLocalBlockTotalRunes = 400000
 
 	defaultContentModerationWorkerCount          = 4
 	maxContentModerationWorkerCount              = 32
@@ -385,16 +398,30 @@ type ContentModerationCheckInput struct {
 }
 
 type ContentModerationInput struct {
-	Text   string
-	Images []string
+	Text string
+	// FullText 为归一化后按 maxModerationKeywordScanRunes 有界截断的全文，仅供本地确定性关键词扫描；
+	// 上限远大于送审 Text 的 maxModerationInputRunes，堵住“把违规词推到 12000 之后”的绕过，同时封顶成本。
+	// 送审 API 的 Text 仍按 maxModerationInputRunes 截断以控成本/时延。
+	FullText string
+	Images   []string
 }
 
 func (in *ContentModerationInput) Normalize() {
 	if in == nil {
 		return
 	}
-	in.Text = trimRunes(normalizeContentModerationText(in.Text), maxModerationInputRunes)
+	normalized := normalizeContentModerationText(in.Text)
+	in.FullText = trimRunes(normalized, maxModerationKeywordScanRunes)
+	in.Text = trimRunes(normalized, maxModerationInputRunes)
 	in.Images = normalizeModerationImages(in.Images)
+}
+
+// KeywordScanText 返回本地关键词扫描应覆盖的文本：优先全文，回退到截断文本。
+func (in ContentModerationInput) KeywordScanText() string {
+	if in.FullText != "" {
+		return in.FullText
+	}
+	return in.Text
 }
 
 func (in ContentModerationInput) IsEmpty() bool {
@@ -426,7 +453,7 @@ func (in ContentModerationInput) ExcerptText() string {
 func (in ContentModerationInput) Hash() string {
 	h := sha256.New()
 	_, _ = h.Write([]byte("text:"))
-	_, _ = h.Write([]byte(in.Text))
+	_, _ = h.Write([]byte(normalizeContentModerationHashText(in.Text)))
 	for _, image := range limitContentModerationImages(in.Images) {
 		imageHash := sha256.Sum256([]byte(image))
 		_, _ = h.Write([]byte("\nimage:"))
@@ -910,6 +937,9 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if err != nil {
 		return nil, fmt.Errorf("marshal content moderation config: %w", err)
 	}
+	if s == nil || s.settingRepo == nil {
+		return nil, fmt.Errorf("content moderation settings repository is unavailable")
+	}
 	if err := s.settingRepo.Set(ctx, SettingKeyContentModerationConfig, string(raw)); err != nil {
 		return nil, fmt.Errorf("save content moderation config: %w", err)
 	}
@@ -1101,6 +1131,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		return allow, nil
 	}
 	localContents := ExtractContentModerationInputsForLocalBlock(input.Protocol, input.Body)
+	localContents = capLocalModerationInputs(localContents, maxModerationLocalBlockInputs, maxModerationLocalBlockTotalRunes)
 	auditContent := ExtractContentModerationInput(input.Protocol, input.Body)
 	auditContent.Normalize()
 	if len(localContents) == 0 {
@@ -1129,7 +1160,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	if cfg.Mode == ContentModerationModePreBlock {
 		if cfg.KeywordBlockingMode != ContentModerationKeywordModeAPIOnly && len(cfg.BlockedKeywords) > 0 {
 			for _, localContent := range localContents {
-				if keyword, hit := matchBlockedKeyword(localContent.Text, cfg.BlockedKeywords, cfg.KeywordExceptions, cfg.DefaultProximityWindow); hit {
+				if keyword, hit := matchBlockedKeyword(localContent.KeywordScanText(), cfg.BlockedKeywords, cfg.KeywordExceptions, cfg.DefaultProximityWindow); hit {
 					localHash := localContent.Hash()
 					s.recordPreBlockSyncMetric(0, ContentModerationActionKeywordBlock)
 					slog.Info("content_moderation.keyword_block",
@@ -1525,14 +1556,6 @@ func (s *ContentModerationService) requeueAsyncTask(task contentModerationTask) 
 	}
 }
 
-func (s *ContentModerationService) processAsyncTask(ctx context.Context, id int, task contentModerationTask) bool {
-	cfg, err := s.loadConfig(ctx)
-	if err != nil || id >= cfg.WorkerCount {
-		return false
-	}
-	return s.processAsyncTaskWithConfig(ctx, id, cfg, task)
-}
-
 func (s *ContentModerationService) processAsyncTaskWithConfig(ctx context.Context, id int, cfg *ContentModerationConfig, task contentModerationTask) bool {
 	if task.log != nil {
 		s.asyncActive.Add(1)
@@ -1584,6 +1607,9 @@ func (s *ContentModerationService) dequeueAsyncTask(ctx context.Context, idleWai
 }
 
 func (s *ContentModerationService) ListLogs(ctx context.Context, filter ContentModerationLogFilter) ([]ContentModerationLog, *pagination.PaginationResult, error) {
+	if s == nil || s.repo == nil {
+		return nil, nil, infraerrors.InternalServer("CONTENT_MODERATION_LOG_REPOSITORY_UNAVAILABLE", "内容审计日志仓储不可用")
+	}
 	if filter.Pagination.Page <= 0 {
 		filter.Pagination.Page = 1
 	}
@@ -1823,6 +1849,11 @@ func (s *ContentModerationService) runCleanupOnce() {
 }
 
 func (s *ContentModerationService) loadConfig(ctx context.Context) (*ContentModerationConfig, error) {
+	if s == nil || s.settingRepo == nil {
+		cfg := defaultContentModerationConfig()
+		cfg.normalize()
+		return cfg, nil
+	}
 	s.configCacheMu.RLock()
 	if s.configCache != nil && time.Since(s.configCacheAt) < 5*time.Second {
 		cfg := cloneContentModerationConfig(s.configCache)
@@ -1868,9 +1899,13 @@ func (s *ContentModerationService) invalidateConfigCache() {
 }
 
 func (s *ContentModerationService) isRiskControlEnabled(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return false
+	}
 	if cached := s.riskEnabledCache.Load(); cached != nil {
 		if time.Now().Unix()-s.riskEnabledCacheAt.Load() < 5 {
-			return cached.(bool)
+			cachedEnabled, ok := cached.(bool)
+			return ok && cachedEnabled
 		}
 	}
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyRiskControlEnabled)
@@ -2801,21 +2836,6 @@ func contentModerationFreezeDurationForHTTPStatus(httpStatus int) time.Duration 
 	}
 }
 
-func isModerationRateLimitError(err error) bool {
-	if err == nil {
-		return false
-	}
-	var keyLimitErr *moderationAPIKeyRateLimitError
-	if errors.As(err, &keyLimitErr) {
-		return true
-	}
-	var httpErr *moderationAPIHTTPError
-	if errors.As(err, &httpErr) {
-		return httpErr.StatusCode == http.StatusTooManyRequests || httpErr.StatusCode == 529
-	}
-	return strings.Contains(strings.ToLower(err.Error()), "no moderation api key available")
-}
-
 func parseRetryAfter(value string, now time.Time) time.Time {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -3497,88 +3517,100 @@ func matchBlockedKeyword(text string, keywords, exceptions []string, defaultWind
 	if len(defaultWindowValues) > 0 {
 		defaultWindow = defaultWindowValues[0]
 	}
-	searchText := newBlockedKeywordSearchText(text)
-	exSpans := blockedKeywordExceptionSpans(searchText.text, exceptions)
+	lower := normalizeForKeywordMatch(text)
+	exSpans := blockedKeywordExceptionSpans(lower, exceptions)
+	var byteRuneIndex map[int]int
+	getByteRuneIndex := func() map[int]int {
+		if byteRuneIndex == nil {
+			byteRuneIndex = buildBlockedKeywordByteRuneIndex(lower)
+		}
+		return byteRuneIndex
+	}
 	for _, kw := range keywords {
 		if kw == "" {
 			continue
 		}
 		if terms := splitBlockedKeywordAndTerms(kw); len(terms) > 1 {
 			windowSize := parseProximityWindow(kw, defaultWindow)
-			compactTerms := compactBlockedKeywordTerms(terms)
-			if len(compactTerms) != len(terms) || len(compactTerms) < 2 {
-				continue
-			}
-			if matchBlockedKeywordAndTerms(searchText, compactTerms, exSpans, windowSize) {
+			if matchBlockedKeywordAndTerms(lower, terms, exSpans, windowSize, getByteRuneIndex()) {
 				return kw, true
 			}
 			continue
 		}
-		kwLower := normalizeBlockedKeywordComparable(kw)
-		if containsKeywordWithBoundary(searchText, kwLower, exSpans) {
+		kwLower := normalizeForKeywordMatch(kw)
+		if containsKeywordWithBoundary(lower, kwLower, exSpans, getByteRuneIndex) {
 			return kw, true
 		}
 	}
 	return "", false
 }
 
-type blockedKeywordSearchText struct {
-	text                string
-	originalLower       string
-	normStartToOrigByte map[int]int
-	normEndToOrigByte   map[int]int
-}
-
-func newBlockedKeywordSearchText(text string) blockedKeywordSearchText {
-	lower := strings.ToLower(text)
-	var b strings.Builder
-	b.Grow(len(lower))
-	startMap := make(map[int]int, len(lower))
-	endMap := make(map[int]int, len(lower)+1)
-	for originalByte, r := range lower {
-		if unicode.IsSpace(r) || unicode.IsPunct(r) {
-			continue
-		}
-		normStart := b.Len()
-		b.WriteRune(r)
-		normEnd := b.Len()
-		startMap[normStart] = originalByte
-		endMap[normEnd] = originalByte + len(string(r))
-	}
-	endMap[0] = 0
-	return blockedKeywordSearchText{
-		text:                b.String(),
-		originalLower:       lower,
-		normStartToOrigByte: startMap,
-		normEndToOrigByte:   endMap,
-	}
-}
-
-func normalizeBlockedKeywordComparable(text string) string {
-	if text == "" {
+// normalizeForKeywordMatch 为本地关键词匹配统一归一化：NFKC 折叠全角/兼容字符（ｃｔｆ→ctf）、
+// 剔除零宽与格式类字符（U+200B 零宽空格、U+FEFF、双向控制符等 Unicode Cf 类），再转小写。
+// 文本、关键词、例外短语走同一函数，保证三者在同一码位空间比较；否则用户可用全角或零宽字符
+// 夹带违规词绕过本地关键词拦截。仅作用于本地确定性匹配，不改动送审 API 的原文与审计摘要。
+func normalizeForKeywordMatch(s string) string {
+	if s == "" {
 		return ""
 	}
+	s = norm.NFKC.String(s)
+	s = stripModerationFormatRunes(s)
+	s = foldModerationConfusableRunes(s)
+	return strings.ToLower(s)
+}
+
+var moderationKeywordConfusableFold = map[rune]rune{
+	'а': 'a', // Cyrillic
+	'е': 'e',
+	'і': 'i',
+	'ј': 'j',
+	'к': 'k',
+	'м': 'm',
+	'о': 'o',
+	'р': 'p',
+	'с': 'c',
+	'т': 't',
+	'у': 'y',
+	'х': 'x',
+}
+
+// buildBlockedKeywordByteRuneIndexHook 仅供测试观测索引构建次数；生产路径保持 nil。
+var buildBlockedKeywordByteRuneIndexHook func()
+
+func foldModerationConfusableRunes(s string) string {
+	if !strings.ContainsFunc(s, func(r rune) bool {
+		_, ok := moderationKeywordConfusableFold[unicode.ToLower(r)]
+		return ok
+	}) {
+		return s
+	}
 	var b strings.Builder
-	b.Grow(len(text))
-	for _, r := range strings.ToLower(text) {
-		if unicode.IsSpace(r) || unicode.IsPunct(r) {
+	b.Grow(len(s))
+	for _, r := range s {
+		if folded, ok := moderationKeywordConfusableFold[unicode.ToLower(r)]; ok {
+			_, _ = b.WriteRune(folded)
 			continue
 		}
-		b.WriteRune(r)
+		_, _ = b.WriteRune(r)
 	}
 	return b.String()
 }
 
-func compactBlockedKeywordTerms(terms []string) []string {
-	out := make([]string, 0, len(terms))
-	for _, term := range terms {
-		compact := normalizeBlockedKeywordComparable(term)
-		if compact == "" {
+// stripModerationFormatRunes 剔除 Unicode 格式类（Cf）字符：涵盖零宽空格/连接符（U+200B-200D）、
+// 词连接符 U+2060、BOM U+FEFF、软连字符 U+00AD 及 RLO/LRO 等双向控制符，这些字符肉眼不可见却能割裂关键词。
+func stripModerationFormatRunes(s string) string {
+	if !strings.ContainsFunc(s, func(r rune) bool { return unicode.Is(unicode.Cf, r) }) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if unicode.Is(unicode.Cf, r) {
 			continue
 		}
-		out = append(out, compact)
+		_, _ = b.WriteRune(r)
 	}
-	return out
+	return b.String()
 }
 
 // blockedKeywordByteSpan 是 lowerText 中一段例外短语出现的字节区间 [start, end)。
@@ -3595,7 +3627,7 @@ func blockedKeywordExceptionSpans(lowerText string, exceptions []string) []block
 	}
 	var spans []blockedKeywordByteSpan
 	for _, ex := range exceptions {
-		exLower := normalizeBlockedKeywordComparable(ex)
+		exLower := normalizeForKeywordMatch(strings.TrimSpace(ex))
 		if exLower == "" {
 			continue
 		}
@@ -3624,28 +3656,32 @@ func blockedKeywordSpanCovered(spans []blockedKeywordByteSpan, start, end int) b
 
 // containsKeywordWithBoundary 判断 keyword 是否在 text 中存在“有效命中”：
 // 英文需满足词边界；任何被例外短语区间完整覆盖的出现都不计入。
-func containsKeywordWithBoundary(text blockedKeywordSearchText, keyword string, exSpans []blockedKeywordByteSpan) bool {
+func containsKeywordWithBoundary(text, keyword string, exSpans []blockedKeywordByteSpan, byteRuneIndex func() map[int]int) bool {
 	if keyword == "" {
 		return false
 	}
 	cjk := hasCJK(keyword)
 	idx := 0
 	for {
-		pos := strings.Index(text.text[idx:], keyword)
+		pos := strings.Index(text[idx:], keyword)
 		if pos < 0 {
-			return false
+			break
 		}
 		start := idx + pos
 		end := start + len(keyword)
 		ok := true
 		if !cjk {
-			ok = hasBlockedKeywordOriginalWordBoundary(text, start, end)
+			ok = hasBlockedKeywordWordBoundary(text, start, end)
 		}
 		if ok && !blockedKeywordSpanCovered(exSpans, start, end) {
 			return true
 		}
 		idx = start + 1
 	}
+	if isASCIICompactKeyword(keyword) {
+		return containsSpacedASCIIKeywordWithBoundary(text, keyword, exSpans, byteRuneIndex)
+	}
+	return false
 }
 
 func hasCJK(s string) bool {
@@ -3675,15 +3711,6 @@ func hasBlockedKeywordWordBoundary(text string, start, end int) bool {
 	return leftOK && rightOK
 }
 
-func hasBlockedKeywordOriginalWordBoundary(text blockedKeywordSearchText, start, end int) bool {
-	originalStart, startOK := text.normStartToOrigByte[start]
-	originalEnd, endOK := text.normEndToOrigByte[end]
-	if !startOK || !endOK || originalStart < 0 || originalEnd < originalStart || originalEnd > len(text.originalLower) {
-		return false
-	}
-	return hasBlockedKeywordWordBoundary(text.originalLower, originalStart, originalEnd)
-}
-
 func splitBlockedKeywordAndTerms(keyword string) []string {
 	if !strings.Contains(keyword, "&&") {
 		return nil
@@ -3695,13 +3722,25 @@ func splitBlockedKeywordAndTerms(keyword string) []string {
 	parts := strings.Split(keyword, "&&")
 	terms := make([]string, 0, len(parts))
 	for _, part := range parts {
-		term := strings.TrimSpace(part)
+		term := normalizeForKeywordMatch(strings.TrimSpace(part))
 		if term == "" {
 			continue
 		}
-		terms = append(terms, strings.ToLower(term))
+		terms = append(terms, term)
 	}
 	return terms
+}
+
+func isASCIICompactKeyword(keyword string) bool {
+	if len(keyword) < 3 {
+		return false
+	}
+	for _, r := range keyword {
+		if !isWordChar(r) || r > unicode.MaxASCII {
+			return false
+		}
+	}
+	return true
 }
 
 // parseProximityWindow 从关键词中解析窗口大小配置
@@ -3719,14 +3758,6 @@ func parseProximityWindow(keyword string, defaultWindowValues ...int) int {
 		return contentModerationDefaultProximityWindow
 	}
 	return defaultWindow
-}
-
-// removeProximityWindowSuffix 移除关键词中的合法窗口大小配置后缀。
-func removeProximityWindowSuffix(keyword string) string {
-	if base, _, hasSuffix := parseProximityWindowSuffix(keyword); hasSuffix {
-		return base
-	}
-	return keyword
 }
 
 func parseProximityWindowSuffix(keyword string) (base string, window int, hasSuffix bool) {
@@ -3774,19 +3805,21 @@ func parseProximityWindowSuffix(keyword string) (base string, window int, hasSuf
 
 // matchBlockedKeywordAndTerms 检查所有terms是否在邻近窗口内共现。
 // windowSize: 邻近窗口大小(字符数),所有terms必须在此范围内全部出现,避免长文本误判。
-func matchBlockedKeywordAndTerms(textLower blockedKeywordSearchText, terms []string, exSpans []blockedKeywordByteSpan, windowSize int) bool {
+func matchBlockedKeywordAndTerms(textLower string, terms []string, exSpans []blockedKeywordByteSpan, windowSize int, byteRuneIndex map[int]int) bool {
 	if len(terms) == 0 {
 		return false
 	}
 	if len(terms) == 1 {
-		return containsKeywordWithBoundary(textLower, terms[0], exSpans)
+		return containsKeywordWithBoundary(textLower, terms[0], exSpans, func() map[int]int { return byteRuneIndex })
 	}
 
 	if windowSize <= 0 {
 		windowSize = 200 // 默认窗口
 	}
 
-	byteRuneIndex := buildBlockedKeywordByteRuneIndex(textLower.text)
+	if byteRuneIndex == nil {
+		byteRuneIndex = buildBlockedKeywordByteRuneIndex(textLower)
+	}
 	occurrencesByTerm := make([][]blockedKeywordOccurrence, 0, len(terms))
 	for _, term := range terms {
 		occurrences := findBlockedKeywordOccurrences(textLower, term, exSpans, byteRuneIndex)
@@ -3796,29 +3829,48 @@ func matchBlockedKeywordAndTerms(textLower blockedKeywordSearchText, terms []str
 		occurrencesByTerm = append(occurrencesByTerm, occurrences)
 	}
 
-	ranges := make([]blockedKeywordRuneSpan, 0, len(occurrencesByTerm[0]))
-	for _, occ := range occurrencesByTerm[0] {
-		ranges = append(ranges, blockedKeywordRuneSpan{start: occ.startRune, end: occ.endRune})
+	// 邻近窗口判定：是否存在宽度 <= windowSize 的窗口，同时完整包含每个词条的至少一次出现。
+	// 早期实现用各词条出现的笛卡尔积逐层合并，规模随词条数呈乘积级爆炸（可被高频重复输入放大成 DoS）。
+	// 这里改为：以每个出现的 startRune 作为候选左边界，二分检查每个词条是否有真实 endRune
+	// 落在窗口内；复杂度 O(N*K*logM + 命中窗口内少量线扫)，随词条数线性、无组合爆炸，
+	// 也兼容“字母间插空白”的可变宽度命中。
+	candidateStarts := make([]int, 0, len(occurrencesByTerm[0]))
+	for _, occs := range occurrencesByTerm {
+		for _, occ := range occs {
+			candidateStarts = append(candidateStarts, occ.startRune)
+		}
 	}
-	for i := 1; i < len(occurrencesByTerm); i++ {
-		next := make([]blockedKeywordRuneSpan, 0, len(ranges)*len(occurrencesByTerm[i]))
-		for _, current := range ranges {
-			for _, occ := range occurrencesByTerm[i] {
-				merged := blockedKeywordRuneSpan{
-					start: min(current.start, occ.startRune),
-					end:   max(current.end, occ.endRune),
+	sort.Ints(candidateStarts)
+	prev := -1
+	for _, s := range candidateStarts {
+		if s == prev {
+			continue
+		}
+		prev = s
+		allPresent := true
+		for _, occs := range occurrencesByTerm {
+			lo := sort.Search(len(occs), func(k int) bool { return occs[k].startRune >= s })
+			windowEnd := s + windowSize
+			found := false
+			for j := lo; j < len(occs); j++ {
+				if occs[j].startRune > windowEnd {
+					break
 				}
-				if merged.end-merged.start <= windowSize {
-					next = append(next, merged)
+				if occs[j].endRune <= windowEnd {
+					found = true
+					break
 				}
 			}
+			if !found {
+				allPresent = false
+				break
+			}
 		}
-		if len(next) == 0 {
-			return false
+		if allPresent {
+			return true
 		}
-		ranges = next
 	}
-	return len(ranges) > 0
+	return false
 }
 
 type blockedKeywordOccurrence struct {
@@ -3828,12 +3880,10 @@ type blockedKeywordOccurrence struct {
 	endRune   int
 }
 
-type blockedKeywordRuneSpan struct {
-	start int
-	end   int
-}
-
 func buildBlockedKeywordByteRuneIndex(text string) map[int]int {
+	if buildBlockedKeywordByteRuneIndexHook != nil {
+		buildBlockedKeywordByteRuneIndexHook()
+	}
 	index := make(map[int]int, len(text)+1)
 	runeIndex := 0
 	for byteIndex := range text {
@@ -3844,7 +3894,7 @@ func buildBlockedKeywordByteRuneIndex(text string) map[int]int {
 	return index
 }
 
-func findBlockedKeywordOccurrences(text blockedKeywordSearchText, term string, exSpans []blockedKeywordByteSpan, byteRuneIndex map[int]int) []blockedKeywordOccurrence {
+func findBlockedKeywordOccurrences(text, term string, exSpans []blockedKeywordByteSpan, byteRuneIndex map[int]int) []blockedKeywordOccurrence {
 	if term == "" {
 		return nil
 	}
@@ -3852,15 +3902,15 @@ func findBlockedKeywordOccurrences(text blockedKeywordSearchText, term string, e
 	idx := 0
 	var out []blockedKeywordOccurrence
 	for {
-		pos := strings.Index(text.text[idx:], term)
+		pos := strings.Index(text[idx:], term)
 		if pos < 0 {
-			return out
+			break
 		}
 		start := idx + pos
 		end := start + len(term)
 		ok := true
 		if !cjk {
-			ok = hasBlockedKeywordOriginalWordBoundary(text, start, end)
+			ok = hasBlockedKeywordWordBoundary(text, start, end)
 		}
 		if ok && !blockedKeywordSpanCovered(exSpans, start, end) {
 			startRune, startOK := byteRuneIndex[start]
@@ -3876,28 +3926,94 @@ func findBlockedKeywordOccurrences(text blockedKeywordSearchText, term string, e
 		}
 		idx = start + 1
 	}
-}
-
-// adjustExceptionSpans 调整例外短语span的偏移量,用于窗口文本。
-func adjustExceptionSpans(spans []blockedKeywordByteSpan, offset int) []blockedKeywordByteSpan {
-	if len(spans) == 0 || offset == 0 {
-		return spans
-	}
-	adjusted := make([]blockedKeywordByteSpan, 0, len(spans))
-	for _, s := range spans {
-		if s.end <= offset {
-			continue // span完全在窗口之前
-		}
-		newStart := s.start - offset
-		if newStart < 0 {
-			newStart = 0
-		}
-		adjusted = append(adjusted, blockedKeywordByteSpan{
-			start: newStart,
-			end:   s.end - offset,
+	if isASCIICompactKeyword(term) {
+		out = append(out, findSpacedASCIIKeywordOccurrences(text, term, exSpans, byteRuneIndex)...)
+		sort.Slice(out, func(i, j int) bool {
+			if out[i].startRune == out[j].startRune {
+				return out[i].endRune < out[j].endRune
+			}
+			return out[i].startRune < out[j].startRune
 		})
 	}
-	return adjusted
+	return out
+}
+
+func containsSpacedASCIIKeywordWithBoundary(text, keyword string, exSpans []blockedKeywordByteSpan, byteRuneIndex func() map[int]int) bool {
+	var index map[int]int
+	if byteRuneIndex != nil {
+		index = byteRuneIndex()
+	}
+	if index == nil {
+		index = buildBlockedKeywordByteRuneIndex(text)
+	}
+	return len(findSpacedASCIIKeywordOccurrences(text, keyword, exSpans, index)) > 0
+}
+
+func findSpacedASCIIKeywordOccurrences(text, keyword string, exSpans []blockedKeywordByteSpan, byteRuneIndex map[int]int) []blockedKeywordOccurrence {
+	if !isASCIICompactKeyword(keyword) || text == "" {
+		return nil
+	}
+
+	type runePos struct {
+		r     rune
+		start int
+		end   int
+	}
+
+	runes := make([]runePos, 0, utf8.RuneCountInString(text))
+	for byteIndex, r := range text {
+		runes = append(runes, runePos{
+			r:     r,
+			start: byteIndex,
+			end:   byteIndex + utf8.RuneLen(r),
+		})
+	}
+	keywordRunes := []rune(keyword)
+	var out []blockedKeywordOccurrence
+
+	for i := 0; i < len(runes); i++ {
+		if runes[i].r != keywordRunes[0] {
+			continue
+		}
+		keywordIdx := 1
+		j := i + 1
+		sawSpace := false
+		endByte := runes[i].end
+		failed := false
+		for j < len(runes) && keywordIdx < len(keywordRunes) {
+			switch {
+			case unicode.IsSpace(runes[j].r):
+				sawSpace = true
+				j++
+			case runes[j].r == keywordRunes[keywordIdx]:
+				endByte = runes[j].end
+				keywordIdx++
+				j++
+			default:
+				failed = true
+				j = len(runes)
+			}
+		}
+		if failed || keywordIdx != len(keywordRunes) || !sawSpace {
+			continue
+		}
+		startByte := runes[i].start
+		if !hasBlockedKeywordWordBoundary(text, startByte, endByte) || blockedKeywordSpanCovered(exSpans, startByte, endByte) {
+			continue
+		}
+		startRune, startOK := byteRuneIndex[startByte]
+		endRune, endOK := byteRuneIndex[endByte]
+		if !startOK || !endOK {
+			continue
+		}
+		out = append(out, blockedKeywordOccurrence{
+			startByte: startByte,
+			endByte:   endByte,
+			startRune: startRune,
+			endRune:   endRune,
+		})
+	}
+	return out
 }
 
 func normalizeModerationAPIKeys(keys []string) []string {
@@ -4224,19 +4340,16 @@ func (s *ContentModerationService) RecordCyberPolicyFlaggedHashes(ctx context.Co
 	if base.HighestCategory == "" {
 		base.HighestCategory = "cyber_policy"
 	}
-	localInputs := ExtractContentModerationInputsForLocalBlock(requestProtocol, requestBody)
-	if len(localInputs) == 0 {
-		return
-	}
-	localInput := localInputs[len(localInputs)-1]
-	inputHash := localInput.Hash()
-	if inputHash == "" {
-		return
-	}
-	meta := base
-	meta.Excerpt = contentModerationExcerpt(localInput.ExcerptText())
-	if err := s.hashCache.RecordFlaggedInputHash(ctx, inputHash, meta); err != nil {
-		slog.Warn("content_moderation.cyber_record_hash_failed", "input_hash", inputHash, "error", err)
+	for _, localInput := range ExtractContentModerationInputsForLocalBlock(requestProtocol, requestBody) {
+		inputHash := localInput.Hash()
+		if inputHash == "" {
+			continue
+		}
+		meta := base
+		meta.Excerpt = contentModerationExcerpt(localInput.ExcerptText())
+		if err := s.hashCache.RecordFlaggedInputHash(ctx, inputHash, meta); err != nil {
+			slog.Warn("content_moderation.cyber_record_hash_failed", "input_hash", inputHash, "error", err)
+		}
 	}
 }
 

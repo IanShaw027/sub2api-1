@@ -24,7 +24,7 @@ func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBi
 		return &service.UsageBillingApplyResult{}, nil
 	}
 	if r == nil || r.db == nil {
-		return nil, errors.New("usage billing repository db is nil")
+		return nil, errors.New("usage billing repository db is required")
 	}
 
 	cmd.Normalize()

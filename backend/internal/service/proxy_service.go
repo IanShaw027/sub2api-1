@@ -81,8 +81,19 @@ func NewProxyService(proxyRepo ProxyRepository) *ProxyService {
 	}
 }
 
+func (s *ProxyService) requireProxyRepo() (ProxyRepository, error) {
+	if s == nil || s.proxyRepo == nil {
+		return nil, fmt.Errorf("proxy repository is unavailable")
+	}
+	return s.proxyRepo, nil
+}
+
 // Create 创建代理
 func (s *ProxyService) Create(ctx context.Context, req CreateProxyRequest) (*Proxy, error) {
+	proxyRepo, err := s.requireProxyRepo()
+	if err != nil {
+		return nil, err
+	}
 	// 创建代理
 	proxy := &Proxy{
 		Name:     req.Name,
@@ -94,7 +105,7 @@ func (s *ProxyService) Create(ctx context.Context, req CreateProxyRequest) (*Pro
 		Status:   StatusActive,
 	}
 
-	if err := s.proxyRepo.Create(ctx, proxy); err != nil {
+	if err := proxyRepo.Create(ctx, proxy); err != nil {
 		return nil, fmt.Errorf("create proxy: %w", err)
 	}
 
@@ -103,7 +114,11 @@ func (s *ProxyService) Create(ctx context.Context, req CreateProxyRequest) (*Pro
 
 // GetByID 根据ID获取代理
 func (s *ProxyService) GetByID(ctx context.Context, id int64) (*Proxy, error) {
-	proxy, err := s.proxyRepo.GetByID(ctx, id)
+	proxyRepo, err := s.requireProxyRepo()
+	if err != nil {
+		return nil, err
+	}
+	proxy, err := proxyRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get proxy: %w", err)
 	}
@@ -112,7 +127,11 @@ func (s *ProxyService) GetByID(ctx context.Context, id int64) (*Proxy, error) {
 
 // List 获取代理列表
 func (s *ProxyService) List(ctx context.Context, params pagination.PaginationParams) ([]Proxy, *pagination.PaginationResult, error) {
-	proxies, pagination, err := s.proxyRepo.List(ctx, params)
+	proxyRepo, err := s.requireProxyRepo()
+	if err != nil {
+		return nil, nil, err
+	}
+	proxies, pagination, err := proxyRepo.List(ctx, params)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list proxies: %w", err)
 	}
@@ -121,7 +140,11 @@ func (s *ProxyService) List(ctx context.Context, params pagination.PaginationPar
 
 // ListActive 获取活跃代理列表
 func (s *ProxyService) ListActive(ctx context.Context) ([]Proxy, error) {
-	proxies, err := s.proxyRepo.ListActive(ctx)
+	proxyRepo, err := s.requireProxyRepo()
+	if err != nil {
+		return nil, err
+	}
+	proxies, err := proxyRepo.ListActive(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list active proxies: %w", err)
 	}
@@ -130,7 +153,11 @@ func (s *ProxyService) ListActive(ctx context.Context) ([]Proxy, error) {
 
 // Update 更新代理
 func (s *ProxyService) Update(ctx context.Context, id int64, req UpdateProxyRequest) (*Proxy, error) {
-	proxy, err := s.proxyRepo.GetByID(ctx, id)
+	proxyRepo, err := s.requireProxyRepo()
+	if err != nil {
+		return nil, err
+	}
+	proxy, err := proxyRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get proxy: %w", err)
 	}
@@ -164,7 +191,7 @@ func (s *ProxyService) Update(ctx context.Context, id int64, req UpdateProxyRequ
 		proxy.Status = *req.Status
 	}
 
-	if err := s.proxyRepo.Update(ctx, proxy); err != nil {
+	if err := proxyRepo.Update(ctx, proxy); err != nil {
 		return nil, fmt.Errorf("update proxy: %w", err)
 	}
 
@@ -173,13 +200,17 @@ func (s *ProxyService) Update(ctx context.Context, id int64, req UpdateProxyRequ
 
 // Delete 删除代理
 func (s *ProxyService) Delete(ctx context.Context, id int64) error {
+	proxyRepo, err := s.requireProxyRepo()
+	if err != nil {
+		return err
+	}
 	// 检查代理是否存在
-	_, err := s.proxyRepo.GetByID(ctx, id)
+	_, err = proxyRepo.GetByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("get proxy: %w", err)
 	}
 
-	if err := s.proxyRepo.Delete(ctx, id); err != nil {
+	if err := proxyRepo.Delete(ctx, id); err != nil {
 		return fmt.Errorf("delete proxy: %w", err)
 	}
 
@@ -188,7 +219,11 @@ func (s *ProxyService) Delete(ctx context.Context, id int64) error {
 
 // TestConnection 测试代理连接
 func (s *ProxyService) TestConnection(ctx context.Context, id int64) error {
-	proxy, err := s.proxyRepo.GetByID(ctx, id)
+	proxyRepo, err := s.requireProxyRepo()
+	if err != nil {
+		return err
+	}
+	proxy, err := proxyRepo.GetByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("get proxy: %w", err)
 	}
@@ -243,7 +278,11 @@ func (s *ProxyService) TestConnection(ctx context.Context, id int64) error {
 
 // GetURL 获取代理URL
 func (s *ProxyService) GetURL(ctx context.Context, id int64) (string, error) {
-	proxy, err := s.proxyRepo.GetByID(ctx, id)
+	proxyRepo, err := s.requireProxyRepo()
+	if err != nil {
+		return "", err
+	}
+	proxy, err := proxyRepo.GetByID(ctx, id)
 	if err != nil {
 		return "", fmt.Errorf("get proxy: %w", err)
 	}

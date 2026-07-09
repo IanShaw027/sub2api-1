@@ -194,3 +194,32 @@ func TestResolveSignupGrantPlan_DisabledAuthSourceStillCarriesGlobalQuota(t *tes
 		t.Error("P1 violated: disabled auth source path dropped global platform quota")
 	}
 }
+
+// Auth source grant 设置是 provider extras only：一旦 grant_on_signup=true，
+// 余额/并发/默认订阅应由该 provider 默认值覆盖全局默认，而不是在全局默认上再叠加一层。
+// Platform quota 仍单独走 merge 语义（本测试聚焦 report 中指出的 Balance+= / append 问题）。
+func TestResolveSignupGrantPlan_EnabledAuthSourceOverridesGlobalScalarAndSubscriptionDefaults(t *testing.T) {
+	settings := map[string]string{
+		SettingKeyRegistrationEnabled:                 "true",
+		SettingKeyDefaultBalance:                      "3.5",
+		SettingKeyDefaultConcurrency:                  "2",
+		SettingKeyDefaultSubscriptions:                `[{"group_id":91,"validity_days":3}]`,
+		SettingKeyAuthSourceDefaultEmailBalance:       "12.5",
+		SettingKeyAuthSourceDefaultEmailConcurrency:   "7",
+		SettingKeyAuthSourceDefaultEmailSubscriptions: `[{"group_id":11,"validity_days":30}]`,
+		SettingKeyAuthSourceDefaultEmailGrantOnSignup: "true",
+	}
+
+	svc := newAuthService(nil, settings, nil, nil)
+	plan := svc.resolveSignupGrantPlan(context.Background(), "email")
+
+	if plan.Balance != 12.5 {
+		t.Fatalf("expected auth source balance to override global default, got %v", plan.Balance)
+	}
+	if plan.Concurrency != 7 {
+		t.Fatalf("expected auth source concurrency to override global default, got %d", plan.Concurrency)
+	}
+	if len(plan.Subscriptions) != 1 || plan.Subscriptions[0].GroupID != 11 || plan.Subscriptions[0].ValidityDays != 30 {
+		t.Fatalf("expected auth source subscriptions to override global defaults, got %+v", plan.Subscriptions)
+	}
+}

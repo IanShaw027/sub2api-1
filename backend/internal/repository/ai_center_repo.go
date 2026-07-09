@@ -12,8 +12,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/aiprompttemplate"
 	"github.com/Wei-Shaw/sub2api/ent/aisession"
 	"github.com/Wei-Shaw/sub2api/ent/aisessionmessage"
+	dbpredicate "github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+
+	entsql "entgo.io/ent/dialect/sql"
 )
 
 type aiCenterRepository struct {
@@ -374,21 +377,78 @@ func (r *aiCenterRepository) ListPromptTemplates(ctx context.Context, viewerUser
 	if filter.GroupID != nil {
 		q = q.Where(aiprompttemplate.GroupIDEQ(*filter.GroupID))
 	}
+	// Status 是派生字段（metadata.status 覆盖 + moderation_state/visibility 推导），下推 SQL 保持与 promptTemplateStatus 等价
+	if status := strings.TrimSpace(filter.Status); status != "" && status != "all" {
+		q = q.Where(dbpredicate.AIPromptTemplate(func(s *entsql.Selector) {
+			s.Where(promptTemplateStatusPredicate(s, status))
+		}))
+	}
+	// Search 下推 SQL：按字段分别 OR（原 Go 实现拼成单一 haystack 会跨字段边界误配，此处改为按字段匹配是等价语义微调）
+	// 转义 LIKE 元字符 \ % _，与原 strings.Contains 的字面子串语义严格一致（否则用户输入的 %/_ 会被当通配符）。
+	if search := strings.ToLower(strings.TrimSpace(filter.Search)); search != "" {
+		escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(search)
+		like := "%" + escaped + "%"
+		q = q.Where(dbpredicate.AIPromptTemplate(func(s *entsql.Selector) {
+			s.Where(promptTemplateSearchPredicate(s, like))
+		}))
+	}
+	total, err := q.Count(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 	items, err := q.Order(dbent.Desc(aiprompttemplate.FieldUpdatedAt), dbent.Desc(aiprompttemplate.FieldID)).
+		Offset(params.Offset()).
+		Limit(params.Limit()).
 		All(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	filtered := make([]service.AIPromptTemplate, 0, len(items))
+	out := make([]service.AIPromptTemplate, 0, len(items))
 	for i := range items {
 		if s := aiPromptTemplateEntityToService(items[i]); s != nil {
-			if !matchesPromptTemplateFilter(s, filter) {
-				continue
-			}
-			filtered = append(filtered, *s)
+			out = append(out, *s)
 		}
 	}
-	return paginatePromptTemplates(filtered, params), paginationResultFromTotal(int64(len(filtered)), params), nil
+	return out, paginationResultFromTotal(int64(total), params), nil
+}
+
+// promptTemplateStatusPredicate 生成派生 status 过滤谓词，与 promptTemplateStatus 严格等价
+func promptTemplateStatusPredicate(s *entsql.Selector, status string) *entsql.Predicate {
+	return entsql.P(func(b *entsql.Builder) {
+		b.WriteString("COALESCE(NULLIF(TRIM(").
+			Ident(s.C(aiprompttemplate.FieldMetadata)).
+			WriteString("->>'status'), ''), CASE WHEN ").
+			Ident(s.C(aiprompttemplate.FieldModerationState)).
+			WriteString(" = 'normal' AND ").
+			Ident(s.C(aiprompttemplate.FieldVisibility)).
+			WriteString(" = 'public' THEN 'published' WHEN ").
+			Ident(s.C(aiprompttemplate.FieldModerationState)).
+			WriteString(" = 'normal' THEN 'draft' WHEN ").
+			Ident(s.C(aiprompttemplate.FieldModerationState)).
+			WriteString(" = 'blocked' THEN 'hidden' ELSE 'archived' END) = ").
+			Arg(status)
+	})
+}
+
+// promptTemplateSearchPredicate 生成关键字过滤谓词，like 需已 LOWER + 前后加通配；用 Or 组合确保括号包裹
+func promptTemplateSearchPredicate(s *entsql.Selector, like string) *entsql.Predicate {
+	likeCol := func(expr string) *entsql.Predicate {
+		return entsql.P(func(b *entsql.Builder) {
+			b.WriteString(expr).WriteString(" LIKE ").Arg(like).WriteString(` ESCAPE '\'`)
+		})
+	}
+	tagsMatch := entsql.P(func(b *entsql.Builder) {
+		b.WriteString("EXISTS (SELECT 1 FROM jsonb_array_elements_text(").
+			Ident(s.C(aiprompttemplate.FieldTags)).
+			WriteString(") elem WHERE LOWER(elem) LIKE ").Arg(like).WriteString(` ESCAPE '\')`)
+	})
+	return entsql.Or(
+		likeCol("LOWER("+s.C(aiprompttemplate.FieldTitle)+")"),
+		likeCol("LOWER(COALESCE("+s.C(aiprompttemplate.FieldDescription)+", ''))"),
+		likeCol("LOWER(COALESCE("+s.C(aiprompttemplate.FieldCategory)+", ''))"),
+		likeCol("LOWER("+s.C(aiprompttemplate.FieldContent)+")"),
+		tagsMatch,
+	)
 }
 
 func (r *aiCenterRepository) DeletePromptTemplate(ctx context.Context, id int64) error {
@@ -706,28 +766,6 @@ const (
 	domainModerationNormal = "normal"
 )
 
-func matchesPromptTemplateFilter(item *service.AIPromptTemplate, filter service.AIListPromptTemplatesFilter) bool {
-	if item == nil {
-		return false
-	}
-	if filter.Status != "" && filter.Status != "all" && promptTemplateStatus(item) != strings.TrimSpace(filter.Status) {
-		return false
-	}
-	if search := strings.ToLower(strings.TrimSpace(filter.Search)); search != "" {
-		haystack := strings.ToLower(strings.Join([]string{
-			item.Title,
-			item.Description,
-			item.Category,
-			item.Content,
-			strings.Join(item.Tags, " "),
-		}, " "))
-		if !strings.Contains(haystack, search) {
-			return false
-		}
-	}
-	return true
-}
-
 func normalizeAIPromptScope(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "library":
@@ -757,26 +795,6 @@ func matchesAssetFilter(item *service.AIAsset, filter service.AIListAssetsFilter
 		}
 	}
 	return true
-}
-
-func promptTemplateStatus(item *service.AIPromptTemplate) string {
-	if item == nil {
-		return "draft"
-	}
-	if status := metadataString(item.Metadata, "status"); status != "" {
-		return status
-	}
-	switch item.ModerationState {
-	case domainModerationNormal:
-		if item.Visibility == domainVisibilityPublic {
-			return "published"
-		}
-		return "draft"
-	case "blocked":
-		return "hidden"
-	default:
-		return "archived"
-	}
 }
 
 func nillableString(src string) *string {
@@ -874,20 +892,6 @@ func aiMax(a, b int) int {
 		return a
 	}
 	return b
-}
-
-func paginatePromptTemplates(items []service.AIPromptTemplate, params pagination.PaginationParams) []service.AIPromptTemplate {
-	limit := params.Limit()
-	page := aiMax(1, params.Page)
-	start := (page - 1) * limit
-	if start >= len(items) {
-		return []service.AIPromptTemplate{}
-	}
-	end := start + limit
-	if end > len(items) {
-		end = len(items)
-	}
-	return items[start:end]
 }
 
 func paginateAssets(items []service.AIAsset, params pagination.PaginationParams) []service.AIAsset {

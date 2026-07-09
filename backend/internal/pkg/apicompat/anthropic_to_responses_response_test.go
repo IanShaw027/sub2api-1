@@ -106,6 +106,30 @@ func TestAnthropicToResponsesResponse_MapsWebFetchServerToolBlocksToFunctionCall
 	assert.Equal(t, "completed", out.Output[0].Status)
 }
 
+func TestAnthropicToResponsesResponse_UnwrapsJSONStringToolUseInputBackToOriginalArguments(t *testing.T) {
+	resp := &AnthropicResponse{
+		ID:         "msg_tool_use_invalid_args",
+		Type:       "message",
+		Role:       "assistant",
+		Model:      "claude-opus-4-6",
+		StopReason: "tool_use",
+		Content: []AnthropicContentBlock{
+			{
+				Type:  "tool_use",
+				ID:    "call_1",
+				Name:  "get_weather",
+				Input: []byte(`"{\"city\":"`),
+			},
+		},
+	}
+
+	out := AnthropicToResponsesResponse(resp)
+	require.Len(t, out.Output, 1)
+	assert.Equal(t, "function_call", out.Output[0].Type)
+	assert.Equal(t, "get_weather", out.Output[0].Name)
+	assert.Equal(t, `{"city":`, out.Output[0].Arguments)
+}
+
 func TestAnthropicEventToResponsesEvents_WebSearchServerToolUseWithoutResultStillCompletesOutputItem(t *testing.T) {
 	state := NewAnthropicEventToResponsesState()
 
@@ -226,6 +250,39 @@ func TestAnthropicEventToResponsesEvents_ToolUseInputPreservedOnDone(t *testing.
 	assert.Equal(t, "response.function_call_arguments.done", events[0].Type)
 	assert.Equal(t, `{"city":"NYC"}`, events[0].Arguments)
 	assert.Equal(t, "response.output_item.done", events[1].Type)
+}
+
+func TestAnthropicEventToResponsesEvents_ToolUseJSONStringInputUnwrapsBackToOriginalArguments(t *testing.T) {
+	state := NewAnthropicEventToResponsesState()
+
+	events := AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_start",
+		Message: &AnthropicResponse{
+			ID:    "msg_123",
+			Type:  "message",
+			Role:  "assistant",
+			Model: "claude-opus-4-6",
+		},
+	}, state)
+	require.Len(t, events, 1)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_start",
+		ContentBlock: &AnthropicContentBlock{
+			Type:  "tool_use",
+			ID:    "toolu_123",
+			Name:  "lookup_weather",
+			Input: anthropicToolUseInputFromArguments(`{"city":`),
+		},
+	}, state)
+	require.Len(t, events, 1)
+
+	events = AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "content_block_stop",
+	}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "response.function_call_arguments.done", events[0].Type)
+	assert.Equal(t, `{"city":`, events[0].Arguments)
 }
 
 func TestAnthropicEventToResponsesEvents_ToolUseEmptyStarterDoesNotPrefixArguments(t *testing.T) {

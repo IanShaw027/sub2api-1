@@ -330,15 +330,15 @@ func (a *Alipay) VerifyNotification(ctx context.Context, rawBody string, _ map[s
 
 // Refund requests a refund through Alipay.
 func (a *Alipay) Refund(ctx context.Context, req payment.RefundRequest) (*payment.RefundResponse, error) {
+	if strings.TrimSpace(req.RequestID) == "" {
+		return nil, fmt.Errorf("alipay refund: missing request id")
+	}
 	client, err := a.getClient()
 	if err != nil {
 		return nil, err
 	}
 
 	outRequestNo := strings.TrimSpace(req.RequestID)
-	if outRequestNo == "" {
-		outRequestNo = req.OrderID + alipayRefundSuffix
-	}
 	result, err := alipayTradeRefund(ctx, client, alipay.TradeRefund{
 		OutTradeNo:   req.OrderID,
 		RefundAmount: req.Amount,

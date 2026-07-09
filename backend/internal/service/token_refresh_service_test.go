@@ -153,6 +153,23 @@ func TestTokenRefreshService_RefreshWithRetry_InvalidatesCache(t *testing.T) {
 	require.Equal(t, "new-token", account.GetCredential("access_token"))
 }
 
+func TestNewTokenRefreshService_NilConfigDoesNotPanicAndDefaultsDisabled(t *testing.T) {
+	repo := &tokenRefreshAccountRepo{}
+
+	var service *TokenRefreshService
+	require.NotPanics(t, func() {
+		service = NewTokenRefreshService(repo, nil, nil, nil, nil, nil, nil, nil, nil)
+	})
+	require.NotNil(t, service)
+	require.NotNil(t, service.cfg)
+	require.False(t, service.cfg.Enabled, "nil cfg should default token refresh to disabled")
+
+	require.NotPanics(t, func() {
+		service.Start()
+		service.Stop()
+	})
+}
+
 func TestTokenRefreshService_RefreshWithRetry_InvalidatorErrorIgnored(t *testing.T) {
 	repo := &tokenRefreshAccountRepo{}
 	invalidator := &tokenCacheInvalidatorStub{err: errors.New("invalidate failed")}

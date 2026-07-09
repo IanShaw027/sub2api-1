@@ -25,7 +25,7 @@ func resolveUpstreamResponseReadLimit(cfg *config.Config) int64 {
 
 func readUpstreamResponseBodyLimited(reader io.Reader, maxBytes int64) ([]byte, error) {
 	if reader == nil {
-		return nil, errors.New("response body is nil")
+		return nil, errors.New("response body is required")
 	}
 	if maxBytes <= 0 {
 		maxBytes = defaultUpstreamResponseReadMaxBytes

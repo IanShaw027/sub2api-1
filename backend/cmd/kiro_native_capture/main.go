@@ -111,7 +111,7 @@ func main() {
 	summary := captureSummary{
 		AccountHash:  shortHash(strconv.FormatInt(account.ID, 10)),
 		Region:       kiroRegion(account),
-		RequestShape: redactAny(requestBody).(map[string]any),
+		RequestShape: redactedMap(requestBody),
 	}
 	if resp != nil {
 		summary.StatusCode = resp.StatusCode
@@ -137,7 +137,7 @@ func main() {
 		} else {
 			continuationRequest := buildNativeToolContinuationRequest(account, *model, requestBody, toolUse)
 			contResp, contBody, contErr := callKiro(ctx, account, accessToken, continuationRequest)
-			cont := &turnCapture{RequestShape: redactAny(continuationRequest).(map[string]any)}
+			cont := &turnCapture{RequestShape: redactedMap(continuationRequest)}
 			if contResp != nil {
 				cont.StatusCode = contResp.StatusCode
 			}
@@ -402,7 +402,7 @@ func callKiro(ctx context.Context, account *accountRow, accessToken string, payl
 		return nil, nil, err
 	}
 	host := fmt.Sprintf("q.%s.amazonaws.com", region)
-	machineID := kiro.GenerateMachineID(stringCredential(account.Credentials, "machine_id"), "", stringCredential(account.Credentials, "refresh_token"))
+	machineID := kiro.GenerateMachineID(stringCredential(account.Credentials, "machine_id"), stringCredential(account.Credentials, "refresh_token"))
 	kiroVersion := firstNonEmpty(os.Getenv("KIRO_CAPTURE_VERSION"), "0.10.0")
 	systemVersion := firstNonEmpty(os.Getenv("KIRO_CAPTURE_SYSTEM_VERSION"), "darwin#24.6.0")
 	nodeVersion := firstNonEmpty(os.Getenv("KIRO_CAPTURE_NODE_VERSION"), "22.21.1")
@@ -411,8 +411,9 @@ func callKiro(ctx context.Context, account *accountRow, accessToken string, payl
 	req.Header.Set("host", host)
 	req.Header.Set("x-amzn-codewhisperer-optout", "true")
 	req.Header.Set("x-amzn-kiro-agent-mode", "vibe")
-	req.Header.Set("x-amz-user-agent", fmt.Sprintf("aws-sdk-js/1.0.27 KiroIDE-%s-%s", kiroVersion, machineID))
-	req.Header.Set("User-Agent", fmt.Sprintf("aws-sdk-js/1.0.27 ua/2.1 os/%s lang/js md/nodejs#%s api/codewhispererstreaming#1.0.27 m/E KiroIDE-%s-%s", systemVersion, nodeVersion, kiroVersion, machineID))
+	xAmzUserAgent, userAgent := kiro.BuildCodeWhispererStreamingUserAgents(kiroVersion, machineID, systemVersion, nodeVersion)
+	req.Header.Set("x-amz-user-agent", xAmzUserAgent)
+	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("amz-sdk-invocation-id", uuid.NewString())
 	req.Header.Set("amz-sdk-request", "attempt=1; max=3")
 
@@ -543,7 +544,7 @@ func parseFrame(buffer []byte) (captureFrame, int, bool, error) {
 	frame := captureFrame{
 		MessageType: firstNonEmpty(headers[":message-type"], "event"),
 		EventType:   headers[":event-type"],
-		Payload:     redactAny(payload).(map[string]any),
+		Payload:     redactedMap(payload),
 	}
 	return frame, totalLength, true, nil
 }
@@ -681,6 +682,14 @@ func redactAny(value any) any {
 	}
 }
 
+func redactedMap(value any) map[string]any {
+	redacted, ok := redactAny(value).(map[string]any)
+	if !ok || redacted == nil {
+		return map[string]any{}
+	}
+	return redacted
+}
+
 func printSummary(summary captureSummary) {
 	encoded, err := json.MarshalIndent(summary, "", "  ")
 	if err != nil {
@@ -699,7 +708,7 @@ func kiroRegion(account *accountRow) string {
 }
 
 func stringCredential(credentials map[string]any, key string) string {
-	value, _ := credentials[key]
+	value := credentials[key]
 	switch v := value.(type) {
 	case string:
 		return strings.TrimSpace(v)
@@ -716,7 +725,7 @@ func anyStringField(values map[string]any, key string) string {
 	if values == nil {
 		return ""
 	}
-	value, _ := values[key]
+	value := values[key]
 	switch v := value.(type) {
 	case string:
 		return strings.TrimSpace(v)

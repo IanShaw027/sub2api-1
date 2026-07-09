@@ -158,6 +158,34 @@ func TestNotificationEmailAdditionalEventsAreListedAndPreviewable(t *testing.T) 
 	}
 }
 
+func TestNotificationEmailInvoiceIssuedPreviewUsesFormattedAmountDisplay(t *testing.T) {
+	svc := NewNotificationEmailService(newNotificationEmailMemorySettingRepo(), nil)
+	tmpl, err := svc.GetTemplate(context.Background(), NotificationEmailEventInvoiceIssued, "en")
+	require.NoError(t, err)
+
+	preview, err := renderNotificationEmail(
+		NotificationEmailEventInvoiceIssued,
+		tmpl.Subject,
+		tmpl.HTML,
+		map[string]string{
+			"invoice_id":             "42",
+			"invoice_title":          "ACME",
+			"tax_number":             "TX",
+			"invoice_amount":         "318.00",
+			"invoice_amount_display": "USD 318.00",
+			"order_count":            "3",
+			"invoice_download_url":   "https://files.example.com/invoice.pdf",
+			"invoice_file_name":      "invoice.pdf",
+		},
+		map[string]string{
+			"order_list_html": "<ul><li>#A001</li></ul>",
+		},
+	)
+	require.NoError(t, err)
+	require.Contains(t, preview.HTML, "USD 318.00")
+	require.NotContains(t, preview.HTML, "¥318.00")
+}
+
 func TestNotificationEmailRawHTMLVariablesAreTrustedOnlyForHTMLPlaceholders(t *testing.T) {
 	require.True(t, notificationEmailRawHTMLAllowed(NotificationEmailEventOpsScheduledReport, "report_html"))
 	require.False(t, notificationEmailRawHTMLAllowed(NotificationEmailEventOpsScheduledReport, "recipient_name"))

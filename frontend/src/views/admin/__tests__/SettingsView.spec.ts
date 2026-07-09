@@ -187,6 +187,7 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.kiroRuntime.codeExecutionSandboxCommand": "Code execution sandbox command",
     "admin.settings.kiroRuntime.codeExecutionSandboxCommandPlaceholder": "sandbox runner command",
     "admin.settings.kiroRuntime.codeExecutionSandboxCommandHint": "Empty disables code_execution; command receives code on stdin.",
+    "admin.settings.kiroRuntime.codeExecutionSandboxCommandWarning": "Security warning: runs on host, provide an isolated sandbox.",
     "admin.settings.kiroRuntime.cacheHitRateScale": "缓存命中率缩放",
     "admin.settings.kiroRuntime.cacheHitRateScalePlaceholder": "0 - 100",
     "admin.settings.kiroRuntime.cacheHitRateScaleHint": "范围 0-100，按百分比填写。",

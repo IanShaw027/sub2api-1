@@ -31,6 +31,7 @@ func ToTLSFingerprintProfile(profile *ReplayProfile) *tlsfingerprint.Profile {
 	}
 	return &tlsfingerprint.Profile{
 		Name:                           profile.Name,
+		HTTP2Fingerprint:               "",
 		EnableGREASE:                   profile.EnableGREASE,
 		CipherSuites:                   slices.Clone(profile.CipherSuites),
 		Curves:                         slices.Clone(profile.Curves),

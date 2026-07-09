@@ -68,7 +68,7 @@ func (s *OpenAIGatewayService) resolveOpenAITLSFingerprintRuntime(ctx context.Co
 	}
 	// 规则未带维度，或维度解析无果：回退到规则直出的 ProfileID（向后兼容旧规则）。
 	if profile == nil && match.ProfileID > 0 {
-		profile = s.tlsFPProfileService.resolveProfileByIDForAccount(match.ProfileID, account, transport)
+		profile = s.tlsFPProfileService.resolveRouterProfileByIDForAccount(match.ProfileID, account)
 	}
 	if profile == nil && hasDimensionMatch {
 		profile = builtinDefaultTLSProfile()
@@ -129,7 +129,7 @@ func (s *OpenAIGatewayService) resolveGrokTLSFingerprintRuntime(ctx context.Cont
 		}
 	}
 	if profile == nil && match.ProfileID > 0 {
-		profile = s.tlsFPProfileService.resolveProfileByIDForAccount(match.ProfileID, account, transport)
+		profile = s.tlsFPProfileService.resolveRouterProfileByIDForAccount(match.ProfileID, account)
 	}
 	if profile == nil && hasDimensionMatch {
 		profile = builtinDefaultTLSProfile()

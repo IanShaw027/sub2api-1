@@ -22,7 +22,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func shouldApplyAnthropicCompatFullReplayGuard(account *Account, previousResponseID string, continuationEnabled bool, continuationDisabled bool, compatReplayGuardEnabled bool) bool {
+func shouldApplyAnthropicCompatFullReplayGuard(account *Account, previousResponseID string, continuationDisabled bool, compatReplayGuardEnabled bool) bool {
 	if !compatReplayGuardEnabled || continuationDisabled {
 		return false
 	}
@@ -31,9 +31,6 @@ func shouldApplyAnthropicCompatFullReplayGuard(account *Account, previousRespons
 	}
 	if strings.TrimSpace(previousResponseID) != "" {
 		return false
-	}
-	if continuationEnabled {
-		return true
 	}
 	return true
 }
@@ -68,14 +65,7 @@ func (s *OpenAIGatewayService) forwardAnthropicMessagesViaRawChatCompletions(
 	if err != nil {
 		return nil, err
 	}
-	gateway := &GatewayService{
-		cfg:                  s.cfg,
-		httpUpstream:         s.httpUpstream,
-		rateLimitService:     s.rateLimitService,
-		settingService:       s.settingService,
-		responseHeaderFilter: s.responseHeaderFilter,
-		tlsFPProfileService:  s.tlsFPProfileService,
-	}
+	gateway := s.bridgeGatewayService()
 	result, err := gateway.forwardMessagesToChatCompletions(ctx, c, account, parsed)
 	if result == nil {
 		return nil, err
@@ -89,19 +79,44 @@ func (s *OpenAIGatewayService) forwardResponsesToAnthropicMessages(
 	account *Account,
 	body []byte,
 ) (*OpenAIForwardResult, error) {
-	gateway := &GatewayService{
-		cfg:                  s.cfg,
-		httpUpstream:         s.httpUpstream,
-		rateLimitService:     s.rateLimitService,
-		settingService:       s.settingService,
-		responseHeaderFilter: s.responseHeaderFilter,
-		tlsFPProfileService:  s.tlsFPProfileService,
-	}
+	gateway := s.bridgeGatewayService()
 	result, err := gateway.ForwardAsResponses(ctx, c, account, body, nil)
 	if result == nil {
 		return nil, err
 	}
 	return openAIForwardResultFromGatewayResult(result), err
+}
+
+func (s *OpenAIGatewayService) bridgeGatewayService() *GatewayService {
+	if s == nil {
+		return &GatewayService{}
+	}
+	if s.gatewayService != nil {
+		return s.gatewayService
+	}
+	return &GatewayService{
+		accountRepo:           s.accountRepo,
+		usageLogRepo:          s.usageLogRepo,
+		usageBillingRepo:      s.usageBillingRepo,
+		userRepo:              s.userRepo,
+		userSubRepo:           s.userSubRepo,
+		cache:                 s.cache,
+		cfg:                   s.cfg,
+		schedulerSnapshot:     s.schedulerSnapshot,
+		billingService:        s.billingService,
+		rateLimitService:      s.rateLimitService,
+		billingCacheService:   s.billingCacheService,
+		httpUpstream:          s.httpUpstream,
+		concurrencyService:    s.concurrencyService,
+		settingService:        s.settingService,
+		responseHeaderFilter:  s.responseHeaderFilter,
+		channelService:        s.channelService,
+		resolver:              s.resolver,
+		tlsFPProfileService:   s.tlsFPProfileService,
+		balanceNotifyService:  s.balanceNotifyService,
+		userPlatformQuotaRepo: s.userPlatformQuotaRepo,
+		fingerprintNormalizer: s.fingerprintNormalizer,
+	}
 }
 
 func openAIForwardResultFromGatewayResult(result *ForwardResult) *OpenAIForwardResult {
@@ -147,6 +162,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	if account == nil {
+		return nil, errors.New("account is required")
+	}
 	startTime := time.Now()
 	clearOpenAICodexCompatContext(c)
 	if ShouldForwardOpenAITextMessagesViaChatCompletions(account) {
@@ -203,7 +221,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if oauthTurnStateBridge {
 		setOpenAICompatMessagesBridgeContext(c, true)
 	}
-	if shouldApplyAnthropicCompatFullReplayGuard(account, previousResponseID, compatContinuationEnabled, compatContinuationDisabled, compatReplayGuardEnabled) {
+	if shouldApplyAnthropicCompatFullReplayGuard(account, previousResponseID, compatContinuationDisabled, compatReplayGuardEnabled) {
 		applyAnthropicCompatFullReplayGuard(&anthropicReq)
 	}
 
@@ -416,6 +434,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	var resp *http.Response
 	for {
 		applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+		upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsRuntime.Profile)
 		SetOpsLatencyMs(c, OpsOpenAIForwardPrepareLatencyMsKey, time.Since(startTime).Milliseconds())
 		upstreamStart := time.Now()
 		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
@@ -1080,7 +1099,7 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 	acc := apicompat.NewBufferedResponseAccumulator()
 	var usage OpenAIUsage
 	if resp == nil || resp.Body == nil {
-		return nil, usage, acc, errors.New("upstream response body is nil")
+		return nil, usage, acc, errors.New("upstream response body is required")
 	}
 
 	scanner := bufio.NewScanner(resp.Body)

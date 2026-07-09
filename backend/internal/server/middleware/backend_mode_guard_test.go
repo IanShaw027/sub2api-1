@@ -72,6 +72,17 @@ func newBackendModeSettingService(t *testing.T, enabled string) *service.Setting
 	return svc
 }
 
+func newFeatureGuardSettingService(t *testing.T, affiliateEnabled, ticketEnabled string) *service.SettingService {
+	t.Helper()
+	repo := &bmSettingRepo{
+		values: map[string]string{
+			service.SettingKeyAffiliateEnabled: affiliateEnabled,
+			service.SettingKeyTicketEnabled:    ticketEnabled,
+		},
+	}
+	return service.NewSettingService(repo, &config.Config{})
+}
+
 func stringPtr(v string) *string {
 	return &v
 }
@@ -91,10 +102,10 @@ func TestBackendModeUserGuard(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "nil_service_allows_all",
+			name:       "nil_service_blocks",
 			nilService: true,
 			role:       stringPtr("user"),
-			wantStatus: http.StatusOK,
+			wantStatus: http.StatusForbidden,
 		},
 		{
 			name:       "enabled_admin_allowed",
@@ -169,10 +180,10 @@ func TestBackendModeAuthGuard(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "nil_service_allows_all",
+			name:       "nil_service_blocks",
 			nilService: true,
 			path:       "/api/v1/auth/register",
-			wantStatus: http.StatusOK,
+			wantStatus: http.StatusForbidden,
 		},
 		{
 			name:       "enabled_allows_login",
@@ -389,6 +400,88 @@ func TestBackendModeAuthGuard(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
 			r.ServeHTTP(w, req)
 
+			require.Equal(t, tc.wantStatus, w.Code)
+		})
+	}
+}
+
+func TestTicketFeatureGuard(t *testing.T) {
+	tests := []struct {
+		name       string
+		svc        *service.SettingService
+		wantStatus int
+	}{
+		{
+			name:       "nil_service_blocks",
+			svc:        nil,
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "disabled_blocks",
+			svc:        newFeatureGuardSettingService(t, "false", "false"),
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "enabled_allows",
+			svc:        newFeatureGuardSettingService(t, "false", "true"),
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			r := gin.New()
+			r.Use(TicketFeatureGuard(tc.svc))
+			r.GET("/tickets", func(c *gin.Context) {
+				c.JSON(http.StatusOK, gin.H{"ok": true})
+			})
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/tickets", nil)
+			r.ServeHTTP(w, req)
+			require.Equal(t, tc.wantStatus, w.Code)
+		})
+	}
+}
+
+func TestAffiliateFeatureGuard(t *testing.T) {
+	tests := []struct {
+		name       string
+		svc        *service.SettingService
+		wantStatus int
+	}{
+		{
+			name:       "nil_service_blocks",
+			svc:        nil,
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "disabled_blocks",
+			svc:        newFeatureGuardSettingService(t, "false", "false"),
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "enabled_allows",
+			svc:        newFeatureGuardSettingService(t, "true", "false"),
+			wantStatus: http.StatusOK,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			r := gin.New()
+			r.Use(AffiliateFeatureGuard(tc.svc))
+			r.GET("/affiliate", func(c *gin.Context) {
+				c.JSON(http.StatusOK, gin.H{"ok": true})
+			})
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/affiliate", nil)
+			r.ServeHTTP(w, req)
 			require.Equal(t, tc.wantStatus, w.Code)
 		})
 	}

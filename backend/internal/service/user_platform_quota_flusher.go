@@ -65,6 +65,9 @@ type UserPlatformQuotaUsageFlusher struct {
 // NewUserPlatformQuotaUsageFlusher 创建 UserPlatformQuotaUsageFlusher。
 // cache(BillingCache) 隐式满足 quotaDirtyCache；quotaRepo(UserPlatformQuotaRepository) 隐式满足 quotaSnapshotWriter。
 func NewUserPlatformQuotaUsageFlusher(cfg *config.Config, cache BillingCache, quotaRepo UserPlatformQuotaRepository, tw *TimingWheelService) *UserPlatformQuotaUsageFlusher {
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
 	batchSize := cfg.Database.UserPlatformQuotaFlushBatchSize
 	if batchSize <= 0 {
 		batchSize = defaultFlushBatchSize
@@ -248,9 +251,15 @@ func (s *UserPlatformQuotaUsageFlusher) tick() {
 	s.flush()
 }
 
-// Start 注册定时 tick。flusher_enabled=false 时直接返回，不注册定时器。
+// Start 注册定时 tick。
+// 即使 flusher_enabled=false，也会先做一次启动恢复 flush，消费上次异常退出遗留的 dirty set，
+// 把 Redis 里的 user×platform 绝对快照补回 DB；仅周期调度仍受 enabled 开关控制。
 func (s *UserPlatformQuotaUsageFlusher) Start() {
-	if s == nil || !s.enabled {
+	if s == nil || s.cache == nil || s.quotaRepo == nil {
+		return
+	}
+	s.flush()
+	if !s.enabled || s.timingWheel == nil {
 		return
 	}
 	s.timingWheel.ScheduleRecurring("deferred:platform_quota", s.interval, s.tick)

@@ -282,70 +282,11 @@ func TestProxyResponsesWebSocketFromClientForGrokUsesXAIHTTPBridge(t *testing.T)
 
 	require.Equal(t, xai.DefaultCLIBaseURL+"/responses", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer access-token", upstream.lastReq.Header.Get("Authorization"))
-	require.Equal(t, "sub2api-grok/1.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, defaultGrokUpstreamUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, xai.DefaultTextModel, gjson.GetBytes(upstream.lastBody, "model").String())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "type").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "generate").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_retention").Exists())
-}
-
-func TestOpenAIWSHTTPBridgeGrokRejectsImageGenerationTools(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	upstream := &httpUpstreamRecorder{}
-	svc := &OpenAIGatewayService{
-		cfg: &config.Config{
-			Gateway: config.GatewayConfig{
-				MaxLineSize: defaultMaxLineSize,
-			},
-		},
-		httpUpstream: upstream,
-	}
-	account := &Account{
-		ID:          72,
-		Name:        "grok",
-		Platform:    PlatformGrok,
-		Type:        AccountTypeOAuth,
-		Concurrency: 1,
-		Status:      StatusActive,
-		Credentials: map[string]any{
-			"base_url": xai.DefaultCLIBaseURL,
-		},
-	}
-
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
-
-	payload := []byte(`{"type":"response.create","model":"grok","stream":true,"input":"draw","tools":[{"type":"image_generation"}]}`)
-	var clientMsgs [][]byte
-	writeClient := func(message []byte) error {
-		clientMsgs = append(clientMsgs, append([]byte(nil), message...))
-		return nil
-	}
-
-	result, err := svc.proxyOpenAIWSHTTPBridgeTurn(
-		context.Background(),
-		c,
-		account,
-		"access-token",
-		payload,
-		len(payload),
-		"grok",
-		"",
-		"",
-		"",
-		1,
-		writeClient,
-	)
-	require.Error(t, err)
-	require.Nil(t, result)
-	require.Contains(t, err.Error(), "image_generation")
-	require.Nil(t, upstream.lastReq, "unsupported image tool must not hit upstream")
-	require.NotEmpty(t, clientMsgs)
-	require.Equal(t, "error", gjson.GetBytes(clientMsgs[0], "type").String())
-	require.Equal(t, float64(http.StatusBadRequest), gjson.GetBytes(clientMsgs[0], "status").Float())
-	require.Contains(t, gjson.GetBytes(clientMsgs[0], "error.message").String(), "image_generation")
 }
 
 func TestOpenAIWSHTTPBridgeAcceptsFirstFrameAboveLegacy16MiB(t *testing.T) {

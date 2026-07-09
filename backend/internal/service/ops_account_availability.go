@@ -165,7 +165,7 @@ type OpsAccountAvailability struct {
 
 func (s *OpsService) GetAccountAvailability(ctx context.Context, platformFilter string, groupIDFilter *int64) (*OpsAccountAvailability, error) {
 	if s == nil {
-		return nil, errors.New("ops service is nil")
+		return nil, errors.New("ops service is required")
 	}
 
 	if s.getAccountAvailability != nil {

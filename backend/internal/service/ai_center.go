@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
@@ -281,6 +282,13 @@ type AICenterService struct {
 
 func NewAICenterService(repo AICenterRepository, mediaService *MediaService) *AICenterService {
 	return &AICenterService{repo: repo, mediaService: mediaService}
+}
+
+func (s *AICenterService) requireRepo() (AICenterRepository, error) {
+	if s == nil || s.repo == nil {
+		return nil, fmt.Errorf("AI_CENTER_REPO_UNAVAILABLE: ai center repository not available")
+	}
+	return s.repo, nil
 }
 
 func normalizeAIWriteTrace(ctx context.Context, trace AIWriteTrace) AIWriteTrace {

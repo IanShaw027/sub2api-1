@@ -145,13 +145,45 @@ func (g *DefaultAISkillRuntimeGateway) executePromptImage(ctx context.Context, r
 }
 
 func (g *DefaultAISkillRuntimeGateway) executeScript(ctx context.Context, req AISkillExecutionRequest) (*AISkillDispatchResult, error) {
-	if req.Script == nil {
-		return nil, ErrAISkillExecutionSpecInvalid
+	if g == nil || g.scriptRuntime == nil || req.Script == nil {
+		return nil, ErrAISkillServiceUnavailable
 	}
-	// The current skillrunner path still only validates/dispatches a sandbox plan
-	// and does not execute the script. Keep script skills fail-closed at the
-	// public runtime-gateway layer until a real executor is wired end-to-end.
-	return nil, ErrAISkillScriptExecutionUnavailable
+
+	result, err := g.scriptRuntime.ExecuteScript(ctx, AISkillScriptRuntimeInput{
+		RunID:                  req.RunID,
+		SkillID:                req.SkillID,
+		VersionID:              req.VersionID,
+		UserID:                 req.UserID,
+		Mode:                   req.Mode,
+		Runtime:                req.Script.Runtime,
+		ScriptName:             req.Script.ScriptName,
+		EntryPoint:             req.Script.EntryPoint,
+		Protocol:               req.Script.Protocol,
+		ArchivePath:            req.Script.ArchivePath,
+		ArchiveBase64:          req.Script.ArchiveBase64,
+		ApprovedArtifactDigest: req.Script.ApprovedArtifactDigest,
+		VersionStatus:          req.Script.VersionStatus,
+		ReviewerUserID:         req.Script.ReviewerUserID,
+		TimeoutSeconds:         req.Script.TimeoutSeconds,
+		Environment:            req.Script.Environment,
+		Arguments:              req.Script.Arguments,
+		Parameters:             req.Script.Parameters,
+		Trace:                  req.Trace,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, ErrAISkillServiceUnavailable
+	}
+
+	return &AISkillDispatchResult{
+		Status:        normalizeAISkillDispatchStatus(result.Status),
+		Provider:      "skillrunner",
+		ExternalJobID: strings.TrimSpace(result.ExternalJobID),
+		Output:        cloneAIMap(result.Output),
+		Metadata:      cloneAIMap(result.Metadata),
+	}, nil
 }
 
 type AISkillOpenAIRuntime struct {
@@ -325,6 +357,11 @@ func (r *AISkillScriptRunnerRuntime) ExecuteScript(ctx context.Context, input AI
 	})
 	if err != nil {
 		return nil, err
+	}
+	if dispatch != nil {
+		defer func() {
+			_ = dispatch.Cleanup()
+		}()
 	}
 
 	if dispatch != nil && dispatch.Plan != nil {
@@ -1500,16 +1537,22 @@ func validateAISkillScriptBundle(input AISkillScriptRuntimeInput, bundle *skillr
 	if bundle == nil {
 		return ErrAISkillExecutionSpecInvalid
 	}
+	runtime := strings.TrimSpace(input.Runtime)
+	entrypoint := strings.TrimSpace(input.EntryPoint)
+	protocol := strings.TrimSpace(input.Protocol)
+	if runtime == "" || entrypoint == "" || protocol == "" {
+		return ErrAISkillExecutionSpecInvalid
+	}
 	if scriptName := strings.TrimSpace(input.ScriptName); scriptName != "" && !strings.EqualFold(strings.TrimSpace(bundle.Manifest.Metadata.Name), scriptName) {
 		return fmt.Errorf("skill archive name mismatch: want %s got %s", scriptName, bundle.Manifest.Metadata.Name)
 	}
-	if runtime := strings.TrimSpace(input.Runtime); runtime != "" && !strings.EqualFold(strings.TrimSpace(bundle.Manifest.Spec.Runtime), runtime) {
+	if !strings.EqualFold(strings.TrimSpace(bundle.Manifest.Spec.Runtime), runtime) {
 		return fmt.Errorf("skill archive runtime mismatch: want %s got %s", runtime, bundle.Manifest.Spec.Runtime)
 	}
-	if entrypoint := strings.TrimSpace(input.EntryPoint); entrypoint != "" && strings.TrimSpace(bundle.Manifest.Spec.Entrypoint) != entrypoint {
+	if strings.TrimSpace(bundle.Manifest.Spec.Entrypoint) != entrypoint {
 		return fmt.Errorf("skill archive entrypoint mismatch: want %s got %s", entrypoint, bundle.Manifest.Spec.Entrypoint)
 	}
-	if protocol := strings.TrimSpace(input.Protocol); protocol != "" && !strings.EqualFold(strings.TrimSpace(bundle.Manifest.Spec.Protocol), protocol) {
+	if !strings.EqualFold(strings.TrimSpace(bundle.Manifest.Spec.Protocol), protocol) {
 		return fmt.Errorf("skill archive protocol mismatch: want %s got %s", protocol, bundle.Manifest.Spec.Protocol)
 	}
 	return nil

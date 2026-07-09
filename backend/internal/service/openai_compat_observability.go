@@ -16,6 +16,14 @@ type OpenAICompatRuntimeMetricsSnapshot struct {
 	Upstream5xxByModel            map[string]int64 `json:"upstream_5xx_by_model"`
 }
 
+// maxOpenAICompatModelMetricKeys 限制按 model 分桶的错误计数 map 的基数上限。upstreamModel 未命中
+// 映射时透传客户端请求值，属外部可控；无上限时随机 model 名可撑爆常驻内存。超限后新 model 归入
+// openAICompatModelMetricOverflowKey 溢出桶，保留可观测性同时封顶。
+const (
+	maxOpenAICompatModelMetricKeys     = 1000
+	openAICompatModelMetricOverflowKey = "__overflow__"
+)
+
 var (
 	openAICompatStrippedVerbosityTotal        atomic.Int64
 	openAICompatStrippedTemperatureTotal      atomic.Int64
@@ -27,6 +35,20 @@ var (
 	openAICompatUpstream4xxByModel = make(map[string]int64)
 	openAICompatUpstream5xxByModel = make(map[string]int64)
 )
+
+// recordBoundedModelMetric 在锁内对按 model 分桶的计数 map 加上限：已存在的 key 直接自增；
+// 新 key 仅在未达上限时创建，否则并入溢出桶，避免外部可控 model 名无界增长。
+func recordBoundedModelMetric(counts map[string]int64, model string) {
+	if _, ok := counts[model]; ok {
+		counts[model]++
+		return
+	}
+	if len(counts) >= maxOpenAICompatModelMetricKeys {
+		counts[openAICompatModelMetricOverflowKey]++
+		return
+	}
+	counts[model]++
+}
 
 func recordOpenAICompatStrippedField(field string) {
 	switch strings.TrimSpace(field) {
@@ -58,9 +80,9 @@ func recordOpenAICompatUpstreamStatus(model string, statusCode int) {
 
 	switch {
 	case statusCode >= 400 && statusCode < 500:
-		openAICompatUpstream4xxByModel[trimmedModel]++
+		recordBoundedModelMetric(openAICompatUpstream4xxByModel, trimmedModel)
 	case statusCode >= 500:
-		openAICompatUpstream5xxByModel[trimmedModel]++
+		recordBoundedModelMetric(openAICompatUpstream5xxByModel, trimmedModel)
 	}
 }
 

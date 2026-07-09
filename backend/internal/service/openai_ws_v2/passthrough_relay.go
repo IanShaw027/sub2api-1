@@ -127,7 +127,7 @@ func Relay(
 ) (RelayResult, *RelayExit) {
 	result := RelayResult{RequestModel: strings.TrimSpace(gjson.GetBytes(firstClientMessage, "model").String())}
 	if clientConn == nil || upstreamConn == nil {
-		return result, &RelayExit{Stage: "relay_init", Err: errors.New("relay connection is nil")}
+		return result, &RelayExit{Stage: "relay_init", Err: errors.New("relay connection is required")}
 	}
 	if ctx == nil {
 		ctx = context.Background()

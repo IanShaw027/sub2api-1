@@ -63,6 +63,28 @@ describe('TicketConversationPane', () => {
     expect(wrapper.get('button').text()).toBe('Custom Sending')
   })
 
+  it('does not render unsafe avatar snapshot URLs in the conversation', () => {
+    const wrapper = mount(TicketConversationPane, {
+      props: {
+        title: 'Conversation',
+        emptyText: 'Empty',
+        messages: [{
+          id: 1,
+          ticket_id: 1,
+          sender_role: 'admin',
+          sender_name_snapshot: 'Admin',
+          sender_avatar_snapshot: 'javascript:alert(1)',
+          message_type: 'message',
+          content: 'hello',
+          created_at: '2026-07-08T00:00:00Z',
+        }],
+      },
+    })
+
+    expect(wrapper.find('img[alt="Admin"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('A')
+  })
+
   it('submits on Enter but ignores Shift+Enter and IME composition Enter', async () => {
     const wrapper = mount(TicketConversationPane, {
       props: {

@@ -180,6 +180,9 @@ func (s *PromoService) GenerateRandomCode() (string, error) {
 
 // Create 创建优惠码
 func (s *PromoService) Create(ctx context.Context, input *CreatePromoCodeInput) (*PromoCode, error) {
+	if input == nil {
+		return nil, fmt.Errorf("promo input is required")
+	}
 	code := strings.TrimSpace(input.Code)
 	if code == "" {
 		// 自动生成
@@ -218,6 +221,9 @@ func (s *PromoService) GetByID(ctx context.Context, id int64) (*PromoCode, error
 
 // Update 更新优惠码
 func (s *PromoService) Update(ctx context.Context, id int64, input *UpdatePromoCodeInput) (*PromoCode, error) {
+	if input == nil {
+		return nil, fmt.Errorf("promo input is required")
+	}
 	promoCode, err := s.promoRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err

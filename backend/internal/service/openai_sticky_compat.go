@@ -12,7 +12,6 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
 )
 
 type openAILegacySessionHashContextKey struct{}
@@ -157,14 +156,14 @@ func openAIStickySessionLookupErrorValue(err error) string {
 	if err == nil {
 		return ""
 	}
-	if errors.Is(err, redis.Nil) {
+	if errors.Is(err, ErrGatewayCacheMiss) {
 		return "redis_nil"
 	}
 	return compactOpenAIWSLogValue(err.Error(), openAIWSLogValueMaxLen)
 }
 
 func openAIStickySessionMissSource(err error) string {
-	if err == nil || errors.Is(err, redis.Nil) {
+	if err == nil || errors.Is(err, ErrGatewayCacheMiss) {
 		return "redis_miss"
 	}
 	return "redis_error"

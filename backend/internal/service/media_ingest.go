@@ -21,6 +21,7 @@ import (
 )
 
 const defaultMediaIngestTimeout = 30 * time.Second
+const maxMediaIngestRedirects = 3
 
 var (
 	mediaIngestValidateHTTPURL    = validateMediaIngestHTTPURL
@@ -121,6 +122,9 @@ func resolveImageReference(ctx context.Context, cfg *config.Config, rawSource, f
 	if err != nil {
 		return nil, "", "", err
 	}
+	if err := validateMediaIngestPort(cfg, parsed); err != nil {
+		return nil, "", "", err
+	}
 	if err := validateMediaIngestResolvedHost(cfg, parsed.Hostname()); err != nil {
 		return nil, "", "", err
 	}
@@ -129,6 +133,7 @@ func resolveImageReference(ctx context.Context, cfg *config.Config, rawSource, f
 	if err != nil {
 		return nil, "", "", err
 	}
+	client = withMediaIngestRedirectPolicy(client, cfg)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, normalized, nil)
 	if err != nil {
@@ -214,6 +219,41 @@ func newMediaIngestHTTPClient(cfg *config.Config) (*http.Client, error) {
 	return httpclient.GetClient(mediaIngestHTTPClientOptions(cfg))
 }
 
+func withMediaIngestRedirectPolicy(client *http.Client, cfg *config.Config) *http.Client {
+	if client == nil {
+		return nil
+	}
+	cloned := *client
+	previousCheckRedirect := client.CheckRedirect
+	cloned.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= maxMediaIngestRedirects {
+			return fmt.Errorf("redirect limit exceeded")
+		}
+		if req == nil || req.URL == nil {
+			return fmt.Errorf("redirect target is invalid")
+		}
+		normalized, err := mediaIngestValidateHTTPURL(cfg, req.URL.String())
+		if err != nil {
+			return err
+		}
+		parsed, err := url.Parse(normalized)
+		if err != nil {
+			return err
+		}
+		if err := validateMediaIngestPort(cfg, parsed); err != nil {
+			return err
+		}
+		if err := validateMediaIngestResolvedHost(cfg, parsed.Hostname()); err != nil {
+			return err
+		}
+		if previousCheckRedirect != nil {
+			return previousCheckRedirect(req, via)
+		}
+		return nil
+	}
+	return &cloned
+}
+
 func mediaIngestHTTPClientOptions(cfg *config.Config) httpclient.Options {
 	// Keep the transport aligned with the configured literal-host policy. DNS
 	// rebinding protection is enforced explicitly per request above.
@@ -245,6 +285,30 @@ func validateMediaIngestResolvedHost(cfg *config.Config, host string) error {
 		return nil
 	}
 	return mediaIngestValidateResolvedIP(host)
+}
+
+func validateMediaIngestPort(cfg *config.Config, parsed *url.URL) error {
+	if parsed == nil {
+		return fmt.Errorf("invalid url")
+	}
+	port := strings.TrimSpace(parsed.Port())
+	if port == "" {
+		return nil
+	}
+	if cfg != nil && cfg.Security.URLAllowlist.AllowPrivateHosts && isPrivateLiteralHost(parsed.Hostname()) {
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(parsed.Scheme)) {
+	case "http":
+		if port == "80" {
+			return nil
+		}
+	case "https":
+		if port == "443" {
+			return nil
+		}
+	}
+	return fmt.Errorf("remote image port %s is not allowed", port)
 }
 
 func isPrivateLiteralHost(host string) bool {

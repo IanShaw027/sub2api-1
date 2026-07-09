@@ -111,6 +111,50 @@ BEGIN
     END IF;
 END $$;
 
+CREATE TABLE IF NOT EXISTS tls_fingerprint_capture_samples_migration_archive (
+    original_id BIGINT PRIMARY KEY,
+    archived_from_migration VARCHAR(128) NOT NULL,
+    archived_reason VARCHAR(128) NOT NULL,
+    row_data JSONB NOT NULL,
+    archived_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+WITH ranked AS (
+    SELECT id,
+           ROW_NUMBER() OVER (
+               PARTITION BY task_id, replay_hash, transport
+               ORDER BY id
+           ) AS rn
+    FROM tls_fingerprint_capture_samples
+)
+INSERT INTO tls_fingerprint_capture_samples_migration_archive (
+    original_id,
+    archived_from_migration,
+    archived_reason,
+    row_data
+)
+SELECT s.id,
+       '176_tls_fingerprint_capture_unification',
+       'duplicate replay_hash+transport sample before unique replay index',
+       to_jsonb(s)
+FROM tls_fingerprint_capture_samples s
+JOIN ranked r ON r.id = s.id
+WHERE r.rn > 1
+ON CONFLICT (original_id) DO NOTHING;
+
+WITH ranked AS (
+    SELECT id,
+           ROW_NUMBER() OVER (
+               PARTITION BY task_id, replay_hash, transport
+               ORDER BY id
+           ) AS rn
+    FROM tls_fingerprint_capture_samples
+)
+DELETE FROM tls_fingerprint_capture_samples s
+USING ranked r
+WHERE s.id = r.id
+  AND r.rn > 1;
+
 DROP INDEX IF EXISTS idx_tls_fp_capture_samples_task_hash;
 DROP INDEX IF EXISTS idx_tls_fp_capture_samples_task_replay_transport;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tls_fp_capture_samples_task_replay_transport_unique

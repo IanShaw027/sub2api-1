@@ -142,6 +142,8 @@ func TestTicketHandlerListMessagesSignsPrivateAttachmentURLs(t *testing.T) {
 	mediaSvc := service.NewMediaService(&ticketHandlerMediaRepoStub{
 		asset: &service.MediaAsset{
 			ID:                 321,
+			BizType:            "ticket",
+			BizID:              "12",
 			Visibility:         service.MediaVisibilityPrivate,
 			Status:             service.MediaStatusActive,
 			OwnerUserID:        &ownerID,
@@ -183,6 +185,88 @@ func TestTicketHandlerListMessagesSignsPrivateAttachmentURLs(t *testing.T) {
 	require.True(t, ok)
 	require.Contains(t, attachment["url"], "http://example.com/api/v1/media/download/321?")
 	require.Contains(t, attachment["thumbnail_url"], "http://example.com/api/v1/media/download/321/thumbnail?")
+}
+
+func TestTicketHandlerReplyRejectsAttachmentsOutsideTicketScope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ownerID := int64(99)
+	repo := &ticketHandlerRepoStub{
+		ticket: &service.SupportTicket{ID: 12, UserID: ownerID, Status: service.SupportTicketStatusSubmitted},
+	}
+	mediaSvc := service.NewMediaService(&ticketHandlerMediaRepoStub{
+		asset: &service.MediaAsset{
+			ID:               321,
+			BizType:          "avatar",
+			BizID:            "99",
+			Visibility:       service.MediaVisibilityPrivate,
+			Status:           service.MediaStatusActive,
+			OwnerUserID:      &ownerID,
+			OriginalFileName: "avatar.png",
+			MIMEType:         "image/png",
+			SizeBytes:        42,
+		},
+	}, &ticketHandlerMediaStoreStub{}, &config.Config{
+		Media: config.MediaConfig{
+			Enabled:               true,
+			Endpoint:              "https://s3.example.com",
+			Bucket:                "media",
+			AccessKeyID:           "test-ak",
+			SecretAccessKey:       "test-sk",
+			PublicBaseURL:         "https://media.example.com",
+			PresignExpiryMinutes:  10,
+			DownloadSigningSecret: "secret",
+		},
+	})
+	h := NewTicketHandler(service.NewTicketService(repo, &ticketHandlerUserRepoStub{}), mediaSvc)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Params = gin.Params{{Key: "id", Value: "12"}}
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: ownerID})
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/tickets/12/messages", strings.NewReader(`{"content":"reply","attachments":[{"media_id":321}]}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.Reply(c)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Zero(t, repo.addReplyCalls)
+}
+
+func TestTicketHandlerReplyIdempotencyReplaysWithoutDuplicateReply(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := newUserMemoryIdempotencyRepoStub()
+	cfg := service.DefaultIdempotencyConfig()
+	service.SetDefaultIdempotencyCoordinator(service.NewIdempotencyCoordinator(repo, cfg))
+	t.Cleanup(func() {
+		service.SetDefaultIdempotencyCoordinator(nil)
+	})
+
+	ticketRepo := &ticketHandlerRepoStub{
+		ticket: &service.SupportTicket{ID: 12, UserID: 99, Status: service.SupportTicketStatusSubmitted},
+	}
+	h := NewTicketHandler(service.NewTicketService(ticketRepo, &ticketHandlerUserRepoStub{}), nil)
+
+	router := gin.New()
+	router.Use(withUserSubject(99))
+	router.POST("/api/v1/tickets/:id/messages", h.Reply)
+
+	call := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/tickets/12/messages", strings.NewReader(`{"content":"reply once"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "ticket-reply-1")
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	first := call()
+	require.Equal(t, http.StatusOK, first.Code)
+	require.Equal(t, 1, ticketRepo.addReplyCalls)
+
+	second := call()
+	require.Equal(t, http.StatusOK, second.Code)
+	require.Equal(t, "true", second.Header().Get("X-Idempotency-Replayed"))
+	require.Equal(t, 1, ticketRepo.addReplyCalls)
 }
 
 type ticketHandlerRepoStub struct {
@@ -290,6 +374,9 @@ func (*ticketHandlerUserRepoStub) UpdateUserLastActiveAt(context.Context, int64,
 	return nil
 }
 func (*ticketHandlerUserRepoStub) UpdateBalance(context.Context, int64, float64) error { return nil }
+func (*ticketHandlerUserRepoStub) AddBalanceWithoutRecharge(context.Context, int64, float64) error {
+	return nil
+}
 func (*ticketHandlerUserRepoStub) DeductBalance(context.Context, int64, float64) error { return nil }
 func (*ticketHandlerUserRepoStub) UpdateConcurrency(context.Context, int64, int) error { return nil }
 func (*ticketHandlerUserRepoStub) BatchSetConcurrency(context.Context, []int64, int) (int, error) {

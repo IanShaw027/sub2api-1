@@ -22,7 +22,9 @@ var (
 
 // IsCloudflareChallengeResponse reports whether the upstream response matches Cloudflare challenge behavior.
 func IsCloudflareChallengeResponse(statusCode int, headers http.Header, body []byte) bool {
-	if statusCode != http.StatusForbidden && statusCode != http.StatusTooManyRequests {
+	if statusCode != http.StatusForbidden &&
+		statusCode != http.StatusTooManyRequests &&
+		statusCode != http.StatusServiceUnavailable {
 		return false
 	}
 

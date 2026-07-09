@@ -473,57 +473,6 @@ func sanitizeAccountExtraForDTO(extra map[string]any) map[string]any {
 	return filtered
 }
 
-func sanitizeOpenAIWebProfileForDTO(raw any) any {
-	profile, ok := raw.(map[string]any)
-	if !ok {
-		return raw
-	}
-
-	filtered := make(map[string]any, len(profile))
-	for key, value := range profile {
-		if key == "cookies" {
-			filtered[key] = sanitizeOpenAIWebProfileCookiesForDTO(value)
-			continue
-		}
-		filtered[key] = value
-	}
-	return filtered
-}
-
-func sanitizeOpenAIWebProfileCookiesForDTO(raw any) any {
-	switch cookies := raw.(type) {
-	case []map[string]any:
-		filtered := make([]map[string]any, 0, len(cookies))
-		for _, cookie := range cookies {
-			filtered = append(filtered, sanitizeOpenAIWebProfileCookieForDTO(cookie))
-		}
-		return filtered
-	case []any:
-		filtered := make([]any, 0, len(cookies))
-		for _, cookie := range cookies {
-			if cookieMap, ok := cookie.(map[string]any); ok {
-				filtered = append(filtered, sanitizeOpenAIWebProfileCookieForDTO(cookieMap))
-				continue
-			}
-			filtered = append(filtered, cookie)
-		}
-		return filtered
-	default:
-		return raw
-	}
-}
-
-func sanitizeOpenAIWebProfileCookieForDTO(cookie map[string]any) map[string]any {
-	filtered := make(map[string]any, len(cookie))
-	for key, value := range cookie {
-		if strings.EqualFold(strings.TrimSpace(key), "value") {
-			continue
-		}
-		filtered[key] = value
-	}
-	return filtered
-}
-
 func AccountFromServiceDetail(a *service.Account) *Account {
 	if a == nil {
 		return nil

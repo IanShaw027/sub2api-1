@@ -328,7 +328,7 @@ func createInstallLock() error {
 
 func ensureJWTSecretForBootstrap(cfg *SetupConfig) error {
 	if cfg == nil {
-		return fmt.Errorf("setup config is nil")
+		return fmt.Errorf("setup config is required")
 	}
 	cfg.JWT.Secret = strings.TrimSpace(cfg.JWT.Secret)
 	if cfg.JWT.Secret != "" {

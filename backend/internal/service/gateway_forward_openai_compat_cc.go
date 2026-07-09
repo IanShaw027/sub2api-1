@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 func shouldAutoRouteOpenAICompatCCUpstream(account *Account) bool {
@@ -181,12 +182,14 @@ func (s *GatewayService) sendOpenAICompatCCChatRequest(
 		}
 	}
 	setOpsUpstreamRequestBody(c, body)
+	tlsProfile := s.resolveGatewayTLSProfile(account)
+	upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsProfile)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.resolveGatewayTLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsProfile)
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
 		detail := recordDetailedUpstreamTransportError(c, err)
@@ -474,6 +477,10 @@ func (s *GatewayService) streamOpenAICompatCCChatAsResponses(
 	var usage ClaudeUsage
 	var firstTokenMs *int
 	clientDisconnected := false
+	// sawTerminal 记录是否见到真正的终止信号（finish_reason 或 [DONE]）。上游无终止信号即 EOF 属截断，
+	// 不能合成 response.completed+[DONE] 当成正常结束——否则客户端把截断响应当成功并按已收 token 计费。
+	sawTerminal := false
+	var upstreamStreamErr error
 
 	writeEvents := func(events []apicompat.ResponsesStreamEvent) {
 		if clientDisconnected {
@@ -493,6 +500,19 @@ func (s *GatewayService) streamOpenAICompatCCChatAsResponses(
 			c.Writer.Flush()
 		}
 	}
+	emitFailed := func(err error) {
+		writeEvents([]apicompat.ResponsesStreamEvent{{
+			Type: "response.failed",
+			Response: &apicompat.ResponsesResponse{
+				Model:  originalModel,
+				Status: "failed",
+				Error: &apicompat.ResponsesError{
+					Code:    "upstream_error",
+					Message: sanitizeUpstreamErrorMessage(err.Error()),
+				},
+			},
+		}})
+	}
 
 	for scanner.Scan() {
 		payload, ok := extractOpenAISSEDataLine(scanner.Text())
@@ -504,6 +524,13 @@ func (s *GatewayService) streamOpenAICompatCCChatAsResponses(
 			continue
 		}
 		if trimmed == "[DONE]" {
+			sawTerminal = true
+			break
+		}
+		// 中途上游错误：CC/OpenAI 流式错误为 data: {"error":{...}}，反序列化成空 Choices 的 chunk 会被
+		// 静默吞掉。显式探测并中断，透传上游错误、不再合成正常结束。
+		if strings.HasPrefix(trimmed, "{") && gjson.Get(trimmed, "error").Exists() {
+			upstreamStreamErr = fmt.Errorf("upstream stream error: %s", sanitizeUpstreamErrorMessage(gjson.Get(trimmed, "error.message").String()))
 			break
 		}
 		if u := extractCCStreamUsage(payload); u != nil {
@@ -519,12 +546,35 @@ func (s *GatewayService) streamOpenAICompatCCChatAsResponses(
 		if chunk.Usage != nil {
 			usage = claudeUsageFromChatUsage(chunk.Usage)
 		}
+		for _, choice := range chunk.Choices {
+			if choice.FinishReason != nil {
+				sawTerminal = true
+			}
+		}
 		if firstTokenMs == nil && !isOpenAIChatUsageOnlyStreamChunk(payload) {
 			elapsed := int(time.Since(startTime).Milliseconds())
 			firstTokenMs = &elapsed
 		}
 		writeEvents(apicompat.ChatCompletionsChunkToResponsesEvents(&chunk, state))
 	}
+
+	// 读错误 / 中途上游错误 / 无终止信号截断：都发 response.failed 事件并返回 error，
+	// 绝不合成 response.completed+[DONE]（避免出错/截断响应被当成功计费）。
+	if scanErr := scanner.Err(); scanErr != nil && !clientDisconnected {
+		wrapped := fmt.Errorf("upstream stream read: %w", scanErr)
+		emitFailed(wrapped)
+		return nil, wrapped
+	}
+	if upstreamStreamErr != nil {
+		emitFailed(upstreamStreamErr)
+		return nil, upstreamStreamErr
+	}
+	if !sawTerminal && !clientDisconnected {
+		err := errors.New("upstream stream ended before a terminal event")
+		emitFailed(err)
+		return nil, err
+	}
+
 	writeEvents(apicompat.FinalizeChatCompletionsResponsesStream(state))
 	if !clientDisconnected {
 		fmt.Fprint(c.Writer, "data: [DONE]\n\n") //nolint:errcheck
@@ -541,7 +591,7 @@ func (s *GatewayService) streamOpenAICompatCCChatAsResponses(
 		Duration:         time.Since(startTime),
 		FirstTokenMs:     firstTokenMs,
 		ClientDisconnect: clientDisconnected,
-	}, scanner.Err()
+	}, nil
 }
 
 func (s *GatewayService) gatewayMaxLineSize() int {

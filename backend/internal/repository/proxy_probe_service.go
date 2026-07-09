@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -21,15 +20,11 @@ func NewProxyExitInfoProber(cfg *config.Config) service.ProxyExitInfoProber {
 	validateResolvedIP := true
 	maxResponseBytes := defaultProxyProbeResponseMaxBytes
 	if cfg != nil {
-		insecure = cfg.Security.ProxyProbe.InsecureSkipVerify
 		allowPrivate = cfg.Security.URLAllowlist.AllowPrivateHosts
 		validateResolvedIP = cfg.Security.URLAllowlist.Enabled
 		if cfg.Gateway.ProxyProbeResponseReadMaxBytes > 0 {
 			maxResponseBytes = cfg.Gateway.ProxyProbeResponseReadMaxBytes
 		}
-	}
-	if insecure {
-		log.Printf("[ProxyProbe] Warning: insecure_skip_verify is not allowed and will cause probe failure.")
 	}
 	return &proxyProbeService{
 		insecureSkipVerify: insecure,

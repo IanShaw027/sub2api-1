@@ -141,6 +141,9 @@ func NewBillingCacheService(
 	cfg *config.Config,
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 ) *BillingCacheService {
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
 	svc := &BillingCacheService{
 		cache:                 cache,
 		userRepo:              userRepo,
@@ -352,6 +355,9 @@ func (s *BillingCacheService) GetUserBalance(ctx context.Context, userID int64) 
 
 // getUserBalanceFromDB 从数据库获取用户余额
 func (s *BillingCacheService) getUserBalanceFromDB(ctx context.Context, userID int64) (float64, error) {
+	if s == nil || s.userRepo == nil {
+		return 0, fmt.Errorf("user repository is unavailable")
+	}
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return 0, fmt.Errorf("get user balance: %w", err)
@@ -466,6 +472,9 @@ func (s *BillingCacheService) convertToPortsData(data *subscriptionCacheData) *S
 
 // getSubscriptionFromDB 从数据库获取订阅数据
 func (s *BillingCacheService) getSubscriptionFromDB(ctx context.Context, userID, groupID int64) (*subscriptionCacheData, error) {
+	if s == nil || s.subRepo == nil {
+		return nil, fmt.Errorf("subscription repository is unavailable")
+	}
 	sub, err := s.subRepo.GetActiveByUserIDAndGroupID(ctx, userID, groupID)
 	if err != nil {
 		return nil, fmt.Errorf("get subscription: %w", err)
@@ -718,7 +727,10 @@ func (s *BillingCacheService) IncrementUserPlatformQuotaUsage(userID int64, plat
 	ctx, cancel := context.WithTimeout(context.Background(), cacheWriteTimeout)
 	defer cancel()
 	ttl := time.Duration(s.cfg.Billing.UserPlatformQuotaCacheTTLSeconds) * time.Second
-	markDirty := s.cfg.Database.UserPlatformQuotaFlusherEnabled
+	// 即使 flusher_enabled=false 的降级路径仍保留同步 DB 直写，也要持续把 user×platform
+	// 标进 Redis 脏集：这样一旦进程在 legacy DB 聚合 flush 前崩溃，下次启动时的一次性
+	// recovery flush 仍能把 Redis 当前绝对值补回 DB，避免 250ms 内存窗口永久丢增量。
+	markDirty := true
 	if err := s.cache.IncrUserPlatformQuotaUsageCache(ctx, userID, platform, cost, ttl, markDirty); err != nil {
 		logger.LegacyPrintf("service.billing_cache",
 			"ALERT: incr user platform quota cache failed user=%d platform=%s cost=%f: %v",

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -54,6 +55,33 @@ func NewOAuthService(proxyRepo ProxyRepository, oauthClient ClaudeOAuthClient) *
 	}
 }
 
+func (s *OAuthService) resolveProxyURL(ctx context.Context, proxyID *int64) (string, error) {
+	if proxyID == nil {
+		return "", nil
+	}
+	if s == nil || s.proxyRepo == nil {
+		return "", fmt.Errorf("proxy repository is unavailable")
+	}
+	proxy, err := s.proxyRepo.GetByID(ctx, *proxyID)
+	if err != nil {
+		if errors.Is(err, ErrProxyNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	if proxy == nil {
+		return "", nil
+	}
+	return proxy.URL(), nil
+}
+
+func (s *OAuthService) requireOAuthClient() (ClaudeOAuthClient, error) {
+	if s == nil || s.oauthClient == nil {
+		return nil, fmt.Errorf("oauth client is not configured")
+	}
+	return s.oauthClient, nil
+}
+
 // GenerateAuthURLResult contains the authorization URL and session info
 type GenerateAuthURLResult struct {
 	AuthURL   string `json:"auth_url"`
@@ -92,12 +120,9 @@ func (s *OAuthService) generateAuthURLWithScope(ctx context.Context, scope strin
 	}
 
 	// Get proxy URL if specified
-	var proxyURL string
-	if proxyID != nil {
-		proxy, err := s.proxyRepo.GetByID(ctx, *proxyID)
-		if err == nil && proxy != nil {
-			proxyURL = proxy.URL()
-		}
+	proxyURL, err := s.resolveProxyURL(ctx, proxyID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Store session
@@ -141,6 +166,9 @@ type TokenInfo struct {
 
 // ExchangeCode exchanges authorization code for tokens
 func (s *OAuthService) ExchangeCode(ctx context.Context, input *ExchangeCodeInput) (*TokenInfo, error) {
+	if input == nil {
+		return nil, fmt.Errorf("oauth input is required")
+	}
 	// Get session
 	session, ok := s.sessionStore.Get(input.SessionID)
 	if !ok {
@@ -150,9 +178,10 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, input *ExchangeCodeInpu
 	// Get proxy URL
 	proxyURL := session.ProxyURL
 	if input.ProxyID != nil {
-		proxy, err := s.proxyRepo.GetByID(ctx, *input.ProxyID)
-		if err == nil && proxy != nil {
-			proxyURL = proxy.URL()
+		var err error
+		proxyURL, err = s.resolveProxyURL(ctx, input.ProxyID)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -180,13 +209,13 @@ type CookieAuthInput struct {
 
 // CookieAuth performs OAuth using sessionKey (cookie-based auto-auth)
 func (s *OAuthService) CookieAuth(ctx context.Context, input *CookieAuthInput) (*TokenInfo, error) {
+	if input == nil {
+		return nil, fmt.Errorf("cookie auth input is required")
+	}
 	// Get proxy URL if specified
-	var proxyURL string
-	if input.ProxyID != nil {
-		proxy, err := s.proxyRepo.GetByID(ctx, *input.ProxyID)
-		if err == nil && proxy != nil {
-			proxyURL = proxy.URL()
-		}
+	proxyURL, err := s.resolveProxyURL(ctx, input.ProxyID)
+	if err != nil {
+		return nil, err
 	}
 
 	// Determine scope and if this is a setup token
@@ -239,17 +268,29 @@ func (s *OAuthService) CookieAuth(ctx context.Context, input *CookieAuthInput) (
 
 // getOrganizationUUID gets the organization UUID from claude.ai using sessionKey
 func (s *OAuthService) getOrganizationUUID(ctx context.Context, sessionKey, proxyURL string) (string, error) {
-	return s.oauthClient.GetOrganizationUUID(ctx, sessionKey, proxyURL)
+	oauthClient, err := s.requireOAuthClient()
+	if err != nil {
+		return "", err
+	}
+	return oauthClient.GetOrganizationUUID(ctx, sessionKey, proxyURL)
 }
 
 // getAuthorizationCode gets the authorization code using sessionKey
 func (s *OAuthService) getAuthorizationCode(ctx context.Context, sessionKey, orgUUID, scope, codeChallenge, state, proxyURL string) (string, error) {
-	return s.oauthClient.GetAuthorizationCode(ctx, sessionKey, orgUUID, scope, codeChallenge, state, proxyURL)
+	oauthClient, err := s.requireOAuthClient()
+	if err != nil {
+		return "", err
+	}
+	return oauthClient.GetAuthorizationCode(ctx, sessionKey, orgUUID, scope, codeChallenge, state, proxyURL)
 }
 
 // exchangeCodeForToken exchanges authorization code for tokens
 func (s *OAuthService) exchangeCodeForToken(ctx context.Context, code, codeVerifier, state, proxyURL string, isSetupToken bool) (*TokenInfo, error) {
-	tokenResp, err := s.oauthClient.ExchangeCodeForToken(ctx, code, codeVerifier, state, proxyURL, isSetupToken)
+	oauthClient, err := s.requireOAuthClient()
+	if err != nil {
+		return nil, err
+	}
+	tokenResp, err := oauthClient.ExchangeCodeForToken(ctx, code, codeVerifier, state, proxyURL, isSetupToken)
 	if err != nil {
 		return nil, err
 	}
@@ -283,7 +324,11 @@ func (s *OAuthService) exchangeCodeForToken(ctx context.Context, code, codeVerif
 
 // RefreshToken refreshes an OAuth token
 func (s *OAuthService) RefreshToken(ctx context.Context, refreshToken string, proxyURL string) (*TokenInfo, error) {
-	tokenResp, err := s.oauthClient.RefreshToken(ctx, refreshToken, proxyURL)
+	oauthClient, err := s.requireOAuthClient()
+	if err != nil {
+		return nil, err
+	}
+	tokenResp, err := oauthClient.RefreshToken(ctx, refreshToken, proxyURL)
 	if err != nil {
 		return nil, err
 	}
@@ -300,17 +345,17 @@ func (s *OAuthService) RefreshToken(ctx context.Context, refreshToken string, pr
 
 // RefreshAccountToken refreshes token for an account
 func (s *OAuthService) RefreshAccountToken(ctx context.Context, account *Account) (*TokenInfo, error) {
+	if account == nil {
+		return nil, fmt.Errorf("account is required")
+	}
 	refreshToken := account.GetCredential("refresh_token")
 	if refreshToken == "" {
 		return nil, fmt.Errorf("no refresh token available")
 	}
 
-	var proxyURL string
-	if account.ProxyID != nil {
-		proxy, err := s.proxyRepo.GetByID(ctx, *account.ProxyID)
-		if err == nil && proxy != nil {
-			proxyURL = proxy.URL()
-		}
+	proxyURL, err := s.resolveProxyURL(ctx, account.ProxyID)
+	if err != nil {
+		return nil, err
 	}
 
 	return s.RefreshToken(ctx, refreshToken, proxyURL)

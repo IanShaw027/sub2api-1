@@ -201,7 +201,7 @@ func anthropicAssistantBlocksToChat(blocks []AnthropicContentBlock) ([]ChatMessa
 				Type: "function",
 				Function: ChatFunctionCall{
 					Name:      b.Name,
-					Arguments: string(b.Input),
+					Arguments: anthropicToolUseArguments(b.Input),
 				},
 			})
 		}

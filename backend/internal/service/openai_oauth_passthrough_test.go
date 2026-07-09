@@ -39,21 +39,6 @@ type httpUpstreamRecorder struct {
 	lastTLSProfile *tlsfingerprint.Profile
 }
 
-type passthroughErrReadCloser struct {
-	err error
-}
-
-func (r passthroughErrReadCloser) Read(_ []byte) (int, error) {
-	if r.err != nil {
-		return 0, r.err
-	}
-	return 0, io.ErrUnexpectedEOF
-}
-
-func (r passthroughErrReadCloser) Close() error {
-	return nil
-}
-
 func (u *httpUpstreamRecorder) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
 	u.lastReq = req
 	u.lastProxyURL = proxyURL

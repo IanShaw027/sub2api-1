@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 	"sync"
@@ -89,6 +90,9 @@ func (s *TLSFingerprintRouterService) GetByID(ctx context.Context, id int64) (*m
 
 // Create 创建路由。
 func (s *TLSFingerprintRouterService) Create(ctx context.Context, router *model.TLSFingerprintRouter) (*model.TLSFingerprintRouter, error) {
+	if router == nil {
+		return nil, errors.New("tls fingerprint router is required")
+	}
 	if err := router.Validate(); err != nil {
 		return nil, err
 	}
@@ -104,6 +108,9 @@ func (s *TLSFingerprintRouterService) Create(ctx context.Context, router *model.
 
 // Update 更新路由。
 func (s *TLSFingerprintRouterService) Update(ctx context.Context, router *model.TLSFingerprintRouter) (*model.TLSFingerprintRouter, error) {
+	if router == nil {
+		return nil, errors.New("tls fingerprint router is required")
+	}
 	if err := router.Validate(); err != nil {
 		return nil, err
 	}

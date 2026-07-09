@@ -193,7 +193,7 @@ func (s *UserRepoSuite) TestListWithFilters_SortByLastUsedAtDesc_UsesUsageLogsNo
 }
 
 func (s *UserRepoSuite) TestListWithFilters_SortByUsageCostFields() {
-	today := timezone.Today().Add(2 * time.Hour).UTC()
+	today := timezone.Now().UTC().Truncate(time.Second)
 	yesterday := today.Add(-24 * time.Hour)
 
 	group := s.mustCreateGroup("usage-sort-subscription")
@@ -251,7 +251,7 @@ func (s *UserRepoSuite) TestListWithFilters_SortByUsageCostFields() {
 }
 
 func (s *UserRepoSuite) TestListWithFilters_SortByUsageCostUsesBillingTypeNotSubscriptionID() {
-	today := timezone.Today().Add(2 * time.Hour).UTC()
+	today := timezone.Now().UTC().Truncate(time.Second)
 
 	user := s.mustCreateUser(&service.User{Email: "usage-billing-type@test.com"})
 	group := s.mustCreateGroup("usage-billing-type")
@@ -273,7 +273,7 @@ func (s *UserRepoSuite) TestListWithFilters_SortByUsageCostUsesBillingTypeNotSub
 }
 
 func (s *UserRepoSuite) TestListWithFilters_PopulatesUsageCostFieldsUsingBillingTypeNotSubscriptionID() {
-	today := timezone.Today().Add(2 * time.Hour).UTC()
+	today := timezone.Now().UTC().Truncate(time.Second)
 
 	user := s.mustCreateUser(&service.User{Email: "usage-populate-billing-type@test.com"})
 	group := s.mustCreateGroup("usage-populate-billing-type")

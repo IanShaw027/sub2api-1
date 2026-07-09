@@ -315,6 +315,9 @@ func kiro429LooksQuotaExhausted(responseBody []byte) bool {
 
 // NewRateLimitService 创建RateLimitService实例
 func NewRateLimitService(accountRepo AccountRepository, usageRepo UsageLogRepository, cfg *config.Config, geminiQuotaService *GeminiQuotaService, tempUnschedCache TempUnschedCache) *RateLimitService {
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
 	return &RateLimitService{
 		accountRepo:        accountRepo,
 		usageRepo:          usageRepo,
@@ -352,6 +355,13 @@ func (s *RateLimitService) SetTokenCacheInvalidator(invalidator TokenCacheInvali
 
 func (s *RateLimitService) SetAccountRuntimeBlocker(blocker AccountRuntimeBlocker) {
 	s.runtimeBlocker = blocker
+}
+
+func (s *RateLimitService) requireAccountRepo() (AccountRepository, error) {
+	if s == nil || s.accountRepo == nil {
+		return nil, fmt.Errorf("account repository unavailable")
+	}
+	return s.accountRepo, nil
 }
 
 func (s *RateLimitService) notifyAccountSchedulingBlocked(account *Account, until time.Time, reason string) {
@@ -476,6 +486,9 @@ const (
 // CheckErrorPolicy 检查自定义错误码和临时不可调度规则。
 // 自定义错误码命中时仍先允许 temp-unsched 规则执行阈值判定，避免首个命中绕过窗口阈值。
 func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Account, statusCode int, responseBody []byte) ErrorPolicyResult {
+	if account == nil {
+		return ErrorPolicyNone
+	}
 	if account.IsCustomErrorCodesEnabled() {
 		if account.ShouldHandleErrorCode(statusCode) {
 			switch s.evaluateTempUnschedulable(ctx, account, statusCode, responseBody) {
@@ -501,6 +514,9 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 // HandleUpstreamError 处理上游错误响应，标记账号状态
 // 返回是否应该停止该账号的调度
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
+	if account == nil {
+		return false
+	}
 	customErrorCodesEnabled := account.IsCustomErrorCodesEnabled()
 
 	if matched, _, _ := detectOpenAICyberPolicy(responseBody); matched {
@@ -1965,6 +1981,9 @@ func (s *RateLimitService) handle529(ctx context.Context, account *Account) {
 
 // UpdateSessionWindow 从成功响应更新5h窗口状态
 func (s *RateLimitService) UpdateSessionWindow(ctx context.Context, account *Account, headers http.Header) {
+	if s == nil || s.accountRepo == nil || account == nil || headers == nil {
+		return
+	}
 	status := headers.Get("anthropic-ratelimit-unified-5h-status")
 	if status == "" {
 		return
@@ -2065,20 +2084,24 @@ func (s *RateLimitService) UpdateSessionWindow(ctx context.Context, account *Acc
 
 // ClearRateLimit 清除账号的限流状态
 func (s *RateLimitService) ClearRateLimit(ctx context.Context, accountID int64) error {
-	if err := s.accountRepo.ClearRateLimit(ctx, accountID); err != nil {
+	accountRepo, err := s.requireAccountRepo()
+	if err != nil {
 		return err
 	}
-	if err := s.accountRepo.ClearAntigravityQuotaScopes(ctx, accountID); err != nil {
+	if err := accountRepo.ClearRateLimit(ctx, accountID); err != nil {
 		return err
 	}
-	if err := s.accountRepo.ClearModelRateLimits(ctx, accountID); err != nil {
+	if err := accountRepo.ClearAntigravityQuotaScopes(ctx, accountID); err != nil {
+		return err
+	}
+	if err := accountRepo.ClearModelRateLimits(ctx, accountID); err != nil {
 		return err
 	}
 	// 清除限流时一并清理临时不可调度状态，避免周限/窗口重置后仍被本地临时状态阻断。
-	if err := s.accountRepo.ClearTempUnschedulable(ctx, accountID); err != nil {
+	if err := accountRepo.ClearTempUnschedulable(ctx, accountID); err != nil {
 		return err
 	}
-	if err := clearAccountSchedulingThresholdSnapshots(ctx, s.accountRepo, accountID); err != nil {
+	if err := clearAccountSchedulingThresholdSnapshots(ctx, accountRepo, accountID); err != nil {
 		return err
 	}
 	if s.tempUnschedCache != nil {
@@ -2102,14 +2125,18 @@ func (s *RateLimitService) ResetOpenAI403Counter(ctx context.Context, accountID 
 
 // RecoverAccountState 按需恢复账号的可恢复运行时状态。
 func (s *RateLimitService) RecoverAccountState(ctx context.Context, accountID int64, options AccountRecoveryOptions) (*SuccessfulTestRecoveryResult, error) {
-	account, err := s.accountRepo.GetByID(ctx, accountID)
+	accountRepo, err := s.requireAccountRepo()
+	if err != nil {
+		return nil, err
+	}
+	account, err := accountRepo.GetByID(ctx, accountID)
 	if err != nil {
 		return nil, err
 	}
 
 	result := &SuccessfulTestRecoveryResult{}
 	if account.Status == StatusError {
-		if err := s.accountRepo.ClearError(ctx, accountID); err != nil {
+		if err := accountRepo.ClearError(ctx, accountID); err != nil {
 			return nil, err
 		}
 		result.ClearedError = true
@@ -2129,7 +2156,7 @@ func (s *RateLimitService) RecoverAccountState(ctx context.Context, accountID in
 	if result.ClearedError || result.ClearedRateLimit {
 		s.ResetOpenAI403Counter(ctx, accountID)
 		if result.ClearedError && !result.ClearedRateLimit {
-			if err := clearAccountSchedulingThresholdSnapshots(ctx, s.accountRepo, accountID); err != nil {
+			if err := clearAccountSchedulingThresholdSnapshots(ctx, accountRepo, accountID); err != nil {
 				return nil, err
 			}
 			s.notifyAccountSchedulingBlockCleared(accountID)
@@ -2146,7 +2173,11 @@ func (s *RateLimitService) RecoverAccountAfterSuccessfulTest(ctx context.Context
 }
 
 func (s *RateLimitService) ClearTempUnschedulable(ctx context.Context, accountID int64) error {
-	if err := s.accountRepo.ClearTempUnschedulable(ctx, accountID); err != nil {
+	accountRepo, err := s.requireAccountRepo()
+	if err != nil {
+		return err
+	}
+	if err := accountRepo.ClearTempUnschedulable(ctx, accountID); err != nil {
 		return err
 	}
 	if s.tempUnschedCache != nil {
@@ -2155,10 +2186,10 @@ func (s *RateLimitService) ClearTempUnschedulable(ctx context.Context, accountID
 		}
 	}
 	// 同时清除模型级别限流
-	if err := s.accountRepo.ClearModelRateLimits(ctx, accountID); err != nil {
+	if err := accountRepo.ClearModelRateLimits(ctx, accountID); err != nil {
 		slog.Warn("clear_model_rate_limits_on_temp_unsched_reset_failed", "account_id", accountID, "error", err)
 	}
-	if err := clearAccountSchedulingThresholdSnapshots(ctx, s.accountRepo, accountID); err != nil {
+	if err := clearAccountSchedulingThresholdSnapshots(ctx, accountRepo, accountID); err != nil {
 		return err
 	}
 	s.notifyAccountSchedulingBlockCleared(accountID)
@@ -2212,7 +2243,11 @@ func (s *RateLimitService) GetTempUnschedStatus(ctx context.Context, accountID i
 		}
 	}
 
-	account, err := s.accountRepo.GetByID(ctx, accountID)
+	accountRepo, err := s.requireAccountRepo()
+	if err != nil {
+		return nil, err
+	}
+	account, err := accountRepo.GetByID(ctx, accountID)
 	if err != nil {
 		return nil, err
 	}

@@ -1,7 +1,5 @@
 package service
 
-// TEMP_DIAG(openai_ws_delta_shadow) remove_after_debug=true
-//
 // Shadow-only instrumentation for gateway-side strict-delta continuation. Everything in
 // this file computes/measures the delta candidate; it MUST NOT mutate any upstream payload.
 // See plan: only-new-input-items continuation via previous_response_id, store=false/ZDR
@@ -15,7 +13,6 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/tidwall/gjson"
 )
 
@@ -756,92 +753,7 @@ type openAIWSDeltaShadowLog struct {
 	FullBytes                int
 }
 
-func logOpenAIWSDeltaShadow(v openAIWSDeltaShadowLog) {
-	if shouldSuppressOpenAIWSTemporaryDiagnosticLog("openai_ws_delta_shadow temporary_diag=openai_ws_delta_shadow remove_after_debug=true") {
-		return
-	}
-	logger.LegacyPrintf("service.openai_gateway",
-		"openai_ws_delta_shadow temporary_diag=openai_ws_delta_shadow remove_after_debug=true "+
-			"group_id=%d api_key_id=%d session=%s request_id=%s account_id=%d conn_id=%s "+
-			"cached_found=%v cached_account_id=%d cached_conn_id=%s cached_last_response_id=%s "+
-			"conn_most_recent_response_id=%s cached_session_conn_id=%s current_session_conn_id=%s "+
-			"cached_conn_in_pool=%v cached_conn_profile=%s cached_conn_age_ms=%d cached_conn_idle_ms=%d "+
-			"cached_conn_lease_count=%d cached_conn_leased=%v cached_conn_waiters=%d "+
-			"cached_conn_last_response_id=%s allow_conn_reanchor=%v "+
-			"has_function_call_output=%v active=%v candidate=%v fallback_reason=%s "+
-			"account_mismatch_reason=%s conn_mismatch_reason=%s prefix_match=%v "+
-			"break_boundary=%s break_item_type=%s break_cached_item_type=%s break_cached_shape=%s "+
-			"break_current_shape=%s conn_match=%v most_recent_match=%v non_input_match=%v "+
-			"non_input_added_keys=%s non_input_removed_keys=%s non_input_changed_keys=%s "+
-			"non_input_cached_summary=%s non_input_current_summary=%s raw_client_equiv=%v "+
-			"sticky_account_id=%d sticky_account_hit=%v sticky_account_conflict=%v conn_affinity_hit=%v preferred_conn_id=%s store_fallback_reason=%s "+
-			"conn_reanchor_blockers=%s materialized_count=%d current_input_count=%d delta_items=%d delta_bytes=%d "+
-			"full_items=%d full_bytes=%d",
-		v.GroupID,
-		v.APIKeyID,
-		truncateOpenAIWSLogValue(v.SessionHash, 12),
-		normalizeOpenAIWSLogValue(v.RequestID),
-		v.AccountID,
-		normalizeOpenAIWSLogValue(v.ConnID),
-		v.CachedFound,
-		v.CachedAccountID,
-		truncateOpenAIWSLogValue(v.CachedConnID, openAIWSIDValueMaxLen),
-		truncateOpenAIWSLogValue(v.CachedLastResponseID, openAIWSIDValueMaxLen),
-		truncateOpenAIWSLogValue(v.ConnMostRecentResponseID, openAIWSIDValueMaxLen),
-		truncateOpenAIWSLogValue(v.CachedSessionConnID, openAIWSIDValueMaxLen),
-		truncateOpenAIWSLogValue(v.CurrentSessionConnID, openAIWSIDValueMaxLen),
-		v.CachedConnInPool,
-		openAIWSConnProfileSnapshotLogValue(v.CachedConnProfile, v.CachedConnInPool),
-		v.CachedConnAgeMS,
-		v.CachedConnIdleMS,
-		v.CachedConnLeaseCount,
-		v.CachedConnLeased,
-		v.CachedConnWaiters,
-		truncateOpenAIWSLogValue(v.CachedConnLastResponseID, openAIWSIDValueMaxLen),
-		v.AllowConnReanchor,
-		v.HasFunctionCallOutput,
-		v.Active,
-		v.Candidate,
-		normalizeOpenAIWSLogValue(v.FallbackReason),
-		normalizeOpenAIWSLogValue(v.AccountMismatchReason),
-		normalizeOpenAIWSLogValue(v.ConnMismatchReason),
-		v.PrefixMatch,
-		normalizeOpenAIWSLogValue(v.BreakBoundary),
-		normalizeOpenAIWSLogValue(v.BreakItemType),
-		normalizeOpenAIWSLogValue(v.BreakCachedItemType),
-		truncateOpenAIWSLogValue(v.BreakCachedShape, openAIWSLogValueMaxLen),
-		truncateOpenAIWSLogValue(v.BreakCurrentShape, openAIWSLogValueMaxLen),
-		v.ConnMatch,
-		v.MostRecentMatch,
-		v.NonInputMatch,
-		normalizeOpenAIWSLogValue(v.NonInputAddedKeys),
-		normalizeOpenAIWSLogValue(v.NonInputRemovedKeys),
-		normalizeOpenAIWSLogValue(v.NonInputChangedKeys),
-		truncateOpenAIWSLogValue(v.NonInputCachedSummary, openAIWSLogValueMaxLen),
-		truncateOpenAIWSLogValue(v.NonInputCurrentSummary, openAIWSLogValueMaxLen),
-		v.RawClientEquiv,
-		v.StickyAccountID,
-		v.StickyAccountHit,
-		v.StickyAccountMismatch,
-		v.ConnAffinityHit,
-		truncateOpenAIWSLogValue(v.PreferredConnID, openAIWSIDValueMaxLen),
-		normalizeOpenAIWSLogValue(v.StoreFallbackReason),
-		normalizeOpenAIWSLogValue(v.ConnReanchorBlockers),
-		v.MaterializedCount,
-		v.CurrentInputCount,
-		v.DeltaItems,
-		v.DeltaBytes,
-		v.FullItems,
-		v.FullBytes,
-	)
-}
-
-func openAIWSConnProfileSnapshotLogValue(profile openAIWSConnProfile, exists bool) string {
-	if !exists {
-		return "-"
-	}
-	return normalizeOpenAIWSLogValue(openAIWSProfileUsageString(profile))
-}
+func logOpenAIWSDeltaShadow(v openAIWSDeltaShadowLog) {}
 
 func openAIWSDeltaAccountMismatchReason(in openAIWSDeltaShadowInput, cachedAccountID int64) string {
 	if cachedAccountID == in.AccountID {
@@ -973,6 +885,11 @@ func evaluateOpenAIWSDeltaShadowCandidate(in openAIWSDeltaShadowInput) openAIWSD
 
 	if !in.CachedFound {
 		log.FallbackReason = "no_session_context"
+		return log
+	}
+	if in.Cached.deltaFingerprintOmitted {
+		// 会话过长、delta 指纹已被封顶丢弃：无前缀可比，直接回退全量 replay（account 亲和仍在别处生效）。
+		log.FallbackReason = "session_context_oversized"
 		return log
 	}
 	if strings.TrimSpace(in.Cached.connID) == "http" && !in.AllowHTTPContext {

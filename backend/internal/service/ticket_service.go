@@ -414,8 +414,10 @@ func normalizeTicketPayload(payload json.RawMessage) json.RawMessage {
 	if trimmed == "" || trimmed == "null" || trimmed == "{}" {
 		return nil
 	}
-	var dst map[string]any
-	if err := json.Unmarshal(payload, &dst); err != nil {
+	var dst any
+	decoder := json.NewDecoder(strings.NewReader(string(payload)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&dst); err != nil {
 		return nil
 	}
 	normalized, err := json.Marshal(dst)

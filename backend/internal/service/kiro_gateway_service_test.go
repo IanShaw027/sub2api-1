@@ -23,7 +23,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/webfetch"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/websearch"
 	"github.com/gin-gonic/gin"
-	gocache "github.com/patrickmn/go-cache"
 	"github.com/stretchr/testify/require"
 )
 
@@ -119,6 +118,20 @@ func TestBuildKiroToolUseBlock_RepairsAskUserQuestionMissingQuestion(t *testing.
 	require.Equal(t, "QQ 数据清理范围选哪个？", question["header"])
 }
 
+func TestBuildKiroToolUseBlock_InvalidJSONInputDoesNotSilentlyFallbackToEmptyObject(t *testing.T) {
+	state := &kiroToolState{
+		ToolUseID: "toolu_bad",
+		Name:      "Bash",
+		Started:   true,
+	}
+	_, _ = state.InputBuilder.WriteString(`{"command":`)
+
+	block, ok := buildKiroToolUseBlock(state, nil)
+
+	require.False(t, ok)
+	require.Nil(t, block)
+}
+
 func TestKiroGatewayService_ResolveAccessToken_UsesAPIKeyForAPIKeyAccounts(t *testing.T) {
 	svc := &KiroGatewayService{}
 
@@ -135,9 +148,18 @@ func TestKiroGatewayService_ResolveAccessToken_UsesAPIKeyForAPIKeyAccounts(t *te
 	require.Equal(t, "kiro-api-key", token)
 }
 
+func TestKiroGatewayService_ResolveAccessToken_RejectsNilAccount(t *testing.T) {
+	svc := &KiroGatewayService{}
+
+	token, err := svc.resolveAccessToken(context.Background(), nil)
+
+	require.Empty(t, token)
+	require.EqualError(t, err, "account is required")
+}
+
 func TestKiroGatewayService_RefreshFakeCacheStrategyFlushesExistingEntries(t *testing.T) {
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 	plan := &kiropkg.FakeCachePlan{
 		IndependentKey:             "kiro:test:strategy:independent",
@@ -154,6 +176,7 @@ func TestKiroGatewayService_RefreshFakeCacheStrategyFlushesExistingEntries(t *te
 	plan.CacheStrategy = svc.fakeCacheStrategy
 	plan.CacheStrategyGeneration = svc.fakeCacheGen
 	svc.commitFakeCachePlan(plan, initial)
+	svc.fakeCache.wait()
 	_, found := svc.fakeCache.Get(plan.IndependentKey)
 	require.True(t, found)
 
@@ -169,7 +192,7 @@ func TestKiroGatewayService_RefreshFakeCacheStrategyFlushesExistingEntries(t *te
 
 func TestKiroGatewayService_CommitFakeCachePlanSkipsStaleStrategyGeneration(t *testing.T) {
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 	oldSettings := &KiroRuntimeSettings{
 		CacheHitRateScale:       95,
@@ -194,13 +217,14 @@ func TestKiroGatewayService_CommitFakeCachePlanSkipsStaleStrategyGeneration(t *t
 	svc.refreshFakeCacheStrategy(newSettings)
 	svc.commitFakeCachePlan(plan, oldSettings)
 
+	svc.fakeCache.wait()
 	_, found := svc.fakeCache.Get(plan.CurrentKey)
 	require.False(t, found, "old in-flight requests must not repopulate cache after strategy changes")
 }
 
 func TestKiroGatewayService_CommitFakeCachePlanSkipsConcurrentStaleGenerationAfterFlush(t *testing.T) {
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 	oldSettings := &KiroRuntimeSettings{
 		CacheHitRateScale:       95,
@@ -235,13 +259,14 @@ func TestKiroGatewayService_CommitFakeCachePlanSkipsConcurrentStaleGenerationAft
 	close(startCommit)
 	<-commitDone
 
+	svc.fakeCache.wait()
 	_, found := svc.fakeCache.Get(plan.CurrentKey)
 	require.False(t, found, "old in-flight requests must not repopulate cache after a concurrent flush")
 }
 
 func TestKiroGatewayService_CommitFakeCachePlanPersistsEffectiveProgress(t *testing.T) {
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 	settings := &KiroRuntimeSettings{
 		CacheHitRateScale:       95,
@@ -265,6 +290,7 @@ func TestKiroGatewayService_CommitFakeCachePlanPersistsEffectiveProgress(t *test
 	require.Equal(t, 0, usage.InputTokens)
 
 	svc.commitFakeCachePlan(plan, settings)
+	svc.fakeCache.wait()
 	progress, found := svc.fakeCache.Get(plan.SessionProgressKey)
 	require.True(t, found)
 	require.Equal(t, usage.CacheReadInputTokens+usage.CacheCreationInputTokens, progress)
@@ -272,7 +298,7 @@ func TestKiroGatewayService_CommitFakeCachePlanPersistsEffectiveProgress(t *test
 
 func TestKiroGatewayService_FakeCacheSessionProgressCarriesCheckpointAcrossTurns(t *testing.T) {
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 	account := &Account{ID: 77, Platform: PlatformKiro, Type: AccountTypeOAuth}
 	settings := &KiroRuntimeSettings{
@@ -320,6 +346,7 @@ func TestKiroGatewayService_FakeCacheSessionProgressCarriesCheckpointAcrossTurns
 	require.GreaterOrEqual(t, firstCacheable, firstCurrent)
 
 	svc.commitFakeCachePlan(firstPlan, settings)
+	svc.fakeCache.wait()
 
 	secondPlan, secondHit := svc.prepareFakeCachePlan(account, &ParsedRequest{Model: "claude-sonnet-4", Body: NewRequestBodyRef(secondBody), UserID: 1, APIKeyID: 2}, nil, settings)
 	require.NotNil(t, secondPlan)
@@ -363,7 +390,7 @@ func TestKiroGatewayService_ForwardSnapshotsFakeCacheHitBeforeUpstreamRequest(t 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 	upstream := &kiroMutatingHTTPUpstream{
 		beforeReturn: func() {
@@ -408,7 +435,7 @@ func TestKiroGatewayService_ForwardSnapshotsFakeCacheHitBeforeUpstreamRequest(t 
 
 func TestKiroGatewayService_PrepareFakeCachePlanReusesAcrossAccountsForSameUserAndAPIKey(t *testing.T) {
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 	settings := &KiroRuntimeSettings{
 		CacheHitRateScale:       100,
@@ -445,6 +472,7 @@ func TestKiroGatewayService_PrepareFakeCachePlanReusesAcrossAccountsForSameUserA
 	require.NotNil(t, firstPlan)
 	require.False(t, firstHit.Prefix)
 	svc.commitFakeCachePlan(firstPlan, settings)
+	svc.fakeCache.wait()
 
 	secondPlan, secondHit := svc.prepareFakeCachePlan(&Account{ID: 99, Platform: PlatformKiro, Type: AccountTypeOAuth}, &ParsedRequest{
 		Model:    "claude-sonnet-4",
@@ -915,7 +943,7 @@ func TestKiroGatewayService_ForwardStream_NativeThinkingBlocksUseUpstreamContent
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := bytes.Join([][]byte{
@@ -965,7 +993,7 @@ func TestKiroGatewayService_ForwardStream_ReasoningContentEventEmitsThinkingBloc
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := bytes.Join([][]byte{
@@ -1252,7 +1280,7 @@ func TestKiroGatewayService_ForwardStream_DoesNotSplitUTF8WhenBufferingThinkingM
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	chinese := "中文中文中文"
@@ -1383,7 +1411,7 @@ func TestKiroGatewayService_ForwardNonStream_ExceptionDoesNotCommitFakeCache(t *
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 	fakeCachePlan := &kiropkg.FakeCachePlan{
 		CurrentKey:             "kiro:test:nonstream",
@@ -1441,7 +1469,7 @@ func TestKiroGatewayService_ForwardStream_ExceptionDoesNotCommitFakeCacheOrEmitF
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 	fakeCachePlan := &kiropkg.FakeCachePlan{
 		CurrentKey:             "kiro:test:stream",
@@ -1504,7 +1532,7 @@ func TestKiroGatewayService_ForwardStream_DropsRepeatedWordHoldbackOnExceptionAn
 	c, _ := gin.CreateTestContext(rec)
 	repo := &kiroPreStartAccountRepoStub{}
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 		rateLimitService: &RateLimitService{
 			accountRepo: repo,
 		},
@@ -1577,7 +1605,7 @@ func TestKiroGatewayService_ForwardStream_FlushesRepeatedWordHoldbackOnNormalCom
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := bytes.Join([][]byte{
@@ -1617,7 +1645,7 @@ func TestKiroGatewayService_ForwardStream_SanitizesIdentityPhraseSplitAcrossDelt
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	// 先发一段普通文本确认流开始（首个确认块会裸发，不参与跨 delta holdback），
@@ -1689,7 +1717,7 @@ func TestKiroGatewayService_ForwardStream_ClientDisconnectMidStreamBillsPartialU
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil).WithContext(cancelCtx)
 
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	frame := buildKiroTestFrame(t, map[string]string{
@@ -1725,7 +1753,7 @@ func TestKiroGatewayService_ForwardNonStream_UsageMatchesAnthropicCacheShape(t *
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 	fakeCachePlan := &kiropkg.FakeCachePlan{
 		CurrentKey:             "kiro:test:usage-shape",
@@ -1779,7 +1807,7 @@ func TestKiroGatewayService_ForwardStream_PopulatesCacheCreationTTLBreakdown(t *
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 	fakeCachePlan := &kiropkg.FakeCachePlan{
 		CurrentKey:             "kiro:test:stream-cache-ttl",
@@ -2031,7 +2059,7 @@ func TestKiroGatewayService_ForwardNonStream_IncompleteFrameDoesNotCommitFakeCac
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 	fakeCachePlan := &kiropkg.FakeCachePlan{
 		CurrentKey:             "kiro:test:nonstream:truncated",
@@ -2072,7 +2100,7 @@ func TestKiroGatewayService_ForwardStream_IncompleteFrameDoesNotCommitFakeCacheO
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 	fakeCachePlan := &kiropkg.FakeCachePlan{
 		CurrentKey:             "kiro:test:stream:truncated",
@@ -2122,7 +2150,7 @@ func TestKiroGatewayService_ForwardNonStream_EmptyBodyFails(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	result, err := svc.forwardNonStream(
@@ -2152,7 +2180,7 @@ func TestKiroGatewayService_ForwardStream_EmptyBodyFailsWithoutFinalEvents(t *te
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	result, err := svc.forwardStream(
@@ -2189,7 +2217,7 @@ func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFailsWithoutStartingStr
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := buildKiroTestFrame(t, map[string]string{
@@ -2230,7 +2258,7 @@ func TestKiroGatewayService_ForwardNonStream_ContextOnlyBodyReturnsAnomaly(t *te
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := buildKiroTestFrame(t, map[string]string{
@@ -2270,7 +2298,7 @@ func TestKiroGatewayService_ForwardStream_ContextOnlyBodyFailsWithoutThinkingFal
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := buildKiroTestFrame(t, map[string]string{
@@ -2304,7 +2332,7 @@ func TestKiroGatewayService_ForwardStream_PlaceholderOnlyBodyFailsWithoutThinkin
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := buildKiroTestFrame(t, map[string]string{
@@ -2379,7 +2407,7 @@ func TestKiroGatewayService_ForwardNonStream_IncompleteToolUseReturnsRecoverable
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := buildKiroTestFrame(t, map[string]string{
@@ -2428,7 +2456,7 @@ func TestKiroGatewayService_ForwardNonStream_ValidToolUseWithoutStopSucceeds(t *
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := bytes.Join([][]byte{
@@ -2477,7 +2505,7 @@ func TestKiroGatewayService_ForwardNonStream_OfficialBashMapsBackToAnthropicName
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 	body := buildKiroTestFrame(t, map[string]string{
 		":message-type": "event",
 		":event-type":   "toolUseEvent",
@@ -2519,7 +2547,7 @@ func TestKiroGatewayService_ForwardNonStream_CustomBashStaysCustom(t *testing.T)
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 	body := buildKiroTestFrame(t, map[string]string{
 		":message-type": "event",
 		":event-type":   "toolUseEvent",
@@ -2556,7 +2584,7 @@ func TestKiroGatewayService_ForwardNonStream_OfficialTextEditorMapsBackToAnthrop
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 	body := buildKiroTestFrame(t, map[string]string{
 		":message-type": "event",
 		":event-type":   "toolUseEvent",
@@ -2615,7 +2643,7 @@ func TestKiroGatewayService_ForwardNonStream_NativeWebSearchMapsToServerToolUse(
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 	body := buildKiroTestFrame(t, map[string]string{
 		":message-type": "event",
 		":event-type":   "toolUseEvent",
@@ -2675,7 +2703,7 @@ func TestKiroGatewayService_ForwardNonStream_NativeWebFetchMapsToServerToolUse(t
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 	body := buildKiroTestFrame(t, map[string]string{
 		":message-type": "event",
 		":event-type":   "toolUseEvent",
@@ -2722,7 +2750,7 @@ func TestKiroGatewayService_ForwardNonStream_SuppressesTrailingPlaceholderFragme
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := bytes.Join([][]byte{
@@ -2775,7 +2803,7 @@ func TestKiroGatewayService_ForwardStream_ContextWindowExceededUsesStopReason(t 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := bytes.Join([][]byte{
@@ -2825,7 +2853,7 @@ func TestKiroGatewayService_ForwardStream_DoesNotBillContextUsagePercentageAsInp
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := append(
@@ -2898,7 +2926,7 @@ func TestKiroGatewayService_ForwardStream_ToolFirstUsesMonotonicBlockIndexes(t *
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := bytes.Join([][]byte{
@@ -2941,7 +2969,7 @@ func TestKiroGatewayService_ForwardStream_ToolOnlyCountsOutputTokens(t *testing.
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := buildKiroTestFrame(t, map[string]string{
@@ -2976,7 +3004,7 @@ func TestKiroGatewayService_ForwardStream_IncompleteToolUseEOFReturnsRecoverable
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := buildKiroTestFrame(t, map[string]string{
@@ -3028,7 +3056,7 @@ func TestKiroGatewayService_ForwardStream_ValidToolUseWithoutStopCompletesAtEOF(
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := bytes.Join([][]byte{
@@ -3078,7 +3106,7 @@ func TestKiroGatewayService_ForwardStream_TextToolTextClosesBlocksInOrder(t *tes
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := bytes.Join([][]byte{
@@ -3141,7 +3169,7 @@ func TestKiroGatewayService_ForwardStream_SuppressesBufferedPlaceholderFragmentB
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := bytes.Join([][]byte{
@@ -3195,7 +3223,7 @@ func TestKiroGatewayService_ForwardStream_PreservesWhitespaceInContentAndInputDe
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	svc := &KiroGatewayService{
-		fakeCache: gocache.New(time.Minute, time.Minute),
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 
 	body := bytes.Join([][]byte{
@@ -3276,7 +3304,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebSearchReturnsServerToolPau
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 
 	body := buildKiroTestFrame(t, map[string]string{
 		":message-type": "event",
@@ -3334,7 +3362,7 @@ func TestKiroGatewayService_ForwardStream_ShadowWebSearchEmitsInputJSONDeltaAndP
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 
 	body := buildKiroTestFrame(t, map[string]string{
 		":message-type": "event",
@@ -3432,7 +3460,7 @@ func TestKiroGatewayService_ForwardStream_NativeServerToolsEmitServerToolUse(t *
 
 			rec := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(rec)
-			svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+			svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 
 			body := buildKiroTestFrame(t, map[string]string{
 				":message-type": "event",
@@ -3482,7 +3510,7 @@ func TestKiroGatewayService_ForwardStream_NativeWebSearchLocalFallbackFailureEmi
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 
 	body := buildKiroTestFrame(t, map[string]string{
 		":message-type": "event",
@@ -3546,7 +3574,7 @@ func TestKiroGatewayService_ForwardNonStream_NativeWebSearchToolUseExecutesLocal
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 	body := buildKiroTestFrame(t, map[string]string{
 		":message-type": "event",
 		":event-type":   "toolUseEvent",
@@ -3595,7 +3623,7 @@ func TestKiroGatewayService_ForwardNonStream_NativeWebSearchLocalFallbackFailure
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 	body := buildKiroTestFrame(t, map[string]string{
 		":message-type": "event",
 		":event-type":   "toolUseEvent",
@@ -3656,7 +3684,7 @@ func TestKiroGatewayService_ForwardNonStream_NativeWebFetchToolUseExecutesLocalF
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.AllowPrivateHosts = true
 	svc := &KiroGatewayService{
-		fakeCache:      gocache.New(time.Minute, time.Minute),
+		fakeCache:      newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 		settingService: NewSettingService(nil, cfg),
 	}
 	body := buildKiroTestFrame(t, map[string]string{
@@ -3707,7 +3735,7 @@ func TestKiroGatewayService_ForwardNonStream_NativeWebFetchLocalFallbackFailureU
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 	body := buildKiroTestFrame(t, map[string]string{
 		":message-type": "event",
 		":event-type":   "toolUseEvent",
@@ -3770,7 +3798,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchReturnsServerToolPaus
 	cfg := &config.Config{}
 	cfg.Security.URLAllowlist.AllowPrivateHosts = true
 	svc := &KiroGatewayService{
-		fakeCache:      gocache.New(time.Minute, time.Minute),
+		fakeCache:      newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 		settingService: NewSettingService(nil, cfg),
 	}
 
@@ -3834,7 +3862,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchFailureReturnsStructu
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 
 	body := buildKiroTestFrame(t, map[string]string{
 		":message-type": "event",
@@ -3891,7 +3919,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchTruncatesToMaxContent
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 
 	body := buildKiroTestFrame(t, map[string]string{
 		":message-type": "event",
@@ -3956,7 +3984,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebToolsExceedMaxUsesReturnsE
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 
 	body := bytes.Join([][]byte{
 		buildKiroTestFrame(t, map[string]string{
@@ -4019,7 +4047,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowWebFetchPreservesContextWindo
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 
 	body := bytes.Join([][]byte{
 		buildKiroTestFrame(t, map[string]string{
@@ -4065,7 +4093,7 @@ func TestKiroGatewayService_ForwardNonStream_NormalToolBeforeShadowToolKeepsTool
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 
 	body := bytes.Join([][]byte{
 		buildKiroTestFrame(t, map[string]string{
@@ -4112,7 +4140,7 @@ func TestKiroGatewayService_ForwardNonStream_ShadowToolFollowedByNormalToolRetur
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 
 	body := bytes.Join([][]byte{
 		buildKiroTestFrame(t, map[string]string{
@@ -4157,7 +4185,7 @@ func TestKiroGatewayService_ForwardStream_NormalToolBeforeShadowToolKeepsToolUse
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 
 	body := bytes.Join([][]byte{
 		buildKiroTestFrame(t, map[string]string{
@@ -4218,7 +4246,7 @@ func TestKiroGatewayService_ForwardStream_ShadowToolFollowedByNormalToolReturnsC
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	svc := &KiroGatewayService{fakeCache: gocache.New(time.Minute, time.Minute)}
+	svc := &KiroGatewayService{fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries)}
 
 	body := bytes.Join([][]byte{
 		buildKiroTestFrame(t, map[string]string{
@@ -4297,7 +4325,7 @@ func TestGatewayForwardAsResponses_KiroWebSearchPauseTurnReturnsResponsesCall(t 
 	svc := &GatewayService{
 		kiroGatewayService: &KiroGatewayService{
 			httpUpstream: upstream,
-			fakeCache:    gocache.New(time.Minute, time.Minute),
+			fakeCache:    newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 		},
 	}
 	account := &Account{
@@ -4443,7 +4471,7 @@ func TestKiroGatewayService_Forward_ContinuationWithoutToolsRestoresNativeWebSea
 	}
 	svc := &KiroGatewayService{
 		httpUpstream: upstream,
-		fakeCache:    gocache.New(time.Minute, time.Minute),
+		fakeCache:    newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 	account := &Account{
 		ID:       303,
@@ -4515,7 +4543,7 @@ func TestKiroGatewayService_Forward_ContinuationWithoutToolsRestoresNativeWebFet
 	cfg.Security.URLAllowlist.AllowPrivateHosts = true
 	svc := &KiroGatewayService{
 		httpUpstream:   upstream,
-		fakeCache:      gocache.New(time.Minute, time.Minute),
+		fakeCache:      newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 		settingService: NewSettingService(nil, cfg),
 	}
 	account := &Account{
@@ -4633,7 +4661,7 @@ func TestKiroGatewayService_ForwardStream_NativeWebSearchContinuesToFinalAnswer(
 
 	svc := &KiroGatewayService{
 		httpUpstream: upstream,
-		fakeCache:    gocache.New(time.Minute, time.Minute),
+		fakeCache:    newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 	account := &Account{
 		ID:       305,
@@ -4726,7 +4754,7 @@ func TestKiroGatewayService_ForwardStream_NativeWebFetchContinuesToFinalAnswer(t
 
 	svc := &KiroGatewayService{
 		httpUpstream: upstream,
-		fakeCache:    gocache.New(time.Minute, time.Minute),
+		fakeCache:    newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
 	}
 	account := &Account{
 		ID:       306,

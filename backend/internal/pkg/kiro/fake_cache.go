@@ -15,6 +15,9 @@ const (
 	DefaultFakeCacheMinBlockTokens = 1024
 	DefaultFakeCacheIndependentTTL = 3600
 	DefaultFakeCachePrefixTTL      = 300
+	// DefaultFakeCacheMaxEntries 是进程内 fake cache 的硬性条目上限。go-cache 只有 TTL、无淘汰，
+	// 稳态条目 = 到达率×TTL(最长 1h)，是无界内存足迹；改用有界 LRU 后由此常量封顶。
+	DefaultFakeCacheMaxEntries = 100000
 )
 
 type FakeCachePlan struct {

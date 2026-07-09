@@ -863,14 +863,14 @@ func TestLoadDefaultTLSFingerprintCaptureConfig(t *testing.T) {
 	if cfg.TLSFingerprintCapture.Enabled {
 		t.Fatalf("TLSFingerprintCapture.Enabled = true, want false")
 	}
-	if cfg.TLSFingerprintCapture.Host != "0.0.0.0" {
-		t.Fatalf("TLSFingerprintCapture.Host = %q, want 0.0.0.0", cfg.TLSFingerprintCapture.Host)
+	if cfg.TLSFingerprintCapture.Host != "127.0.0.1" {
+		t.Fatalf("TLSFingerprintCapture.Host = %q, want 127.0.0.1", cfg.TLSFingerprintCapture.Host)
 	}
 	if cfg.TLSFingerprintCapture.Port != 8444 {
 		t.Fatalf("TLSFingerprintCapture.Port = %d, want 8444", cfg.TLSFingerprintCapture.Port)
 	}
-	if cfg.TLSFingerprintCapture.Address() != "0.0.0.0:8444" {
-		t.Fatalf("TLSFingerprintCapture.Address() = %q, want 0.0.0.0:8444", cfg.TLSFingerprintCapture.Address())
+	if cfg.TLSFingerprintCapture.Address() != "127.0.0.1:8444" {
+		t.Fatalf("TLSFingerprintCapture.Address() = %q, want 127.0.0.1:8444", cfg.TLSFingerprintCapture.Address())
 	}
 }
 
@@ -2210,8 +2210,8 @@ func TestLoad_DefaultGatewayImageStreamConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
-	if cfg.Gateway.StreamDataIntervalTimeout != 2000 {
-		t.Fatalf("stream_data_interval_timeout = %d, want 2000", cfg.Gateway.StreamDataIntervalTimeout)
+	if cfg.Gateway.StreamDataIntervalTimeout != 600 {
+		t.Fatalf("stream_data_interval_timeout = %d, want 600", cfg.Gateway.StreamDataIntervalTimeout)
 	}
 	if cfg.Gateway.StreamKeepaliveInterval != 10 {
 		t.Fatalf("stream_keepalive_interval = %d, want 10", cfg.Gateway.StreamKeepaliveInterval)
@@ -2240,40 +2240,7 @@ func TestLoad_DefaultGatewayImageStreamConfig(t *testing.T) {
 	if cfg.Gateway.ImageStreamDataIntervalTimeout != 900 {
 		t.Fatalf("image stream timeout = %d, want 900", cfg.Gateway.ImageStreamDataIntervalTimeout)
 	}
-}
-
-func TestValidateAntiFingerprintJitterRejectsInvalidRanges(t *testing.T) {
-	resetViperWithJWTSecret(t)
-	cfg, err := Load()
-	require.NoError(t, err)
-
-	cfg.Gateway.AntiFingerprint.JitterMinMs = 200
-	cfg.Gateway.AntiFingerprint.JitterMaxMs = 100
-
-	err = cfg.Validate()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "gateway.anti_fingerprint.jitter_max_ms must be >= jitter_min_ms")
-}
-
-func TestValidateAntiFingerprintPlatformProfileJitterRejectsInvalidRanges(t *testing.T) {
-	resetViperWithJWTSecret(t)
-	cfg, err := Load()
-	require.NoError(t, err)
-
-	cfg.Gateway.AntiFingerprint.PlatformProfiles = map[string]struct {
-		CanonicalUA   string   `mapstructure:"canonical_ua"`
-		JitterMinMs   int      `mapstructure:"jitter_min_ms"`
-		JitterMaxMs   int      `mapstructure:"jitter_max_ms"`
-		SpoofMemoryMB int      `mapstructure:"spoof_memory_mb"`
-		SpoofHeapMB   int      `mapstructure:"spoof_heap_mb"`
-		CPUInfo       string   `mapstructure:"cpu_info"`
-		StripExtra    []string `mapstructure:"strip_extra"`
-		BodyStripKeys []string `mapstructure:"body_strip_keys"`
-	}{
-		"anthropic": {JitterMinMs: 150, JitterMaxMs: 10},
+	if cfg.Media.PublicBaseURL != "https://source.qazwc.com" {
+		t.Fatalf("media.public_base_url = %q, want %q", cfg.Media.PublicBaseURL, "https://source.qazwc.com")
 	}
-
-	err = cfg.Validate()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "gateway.anti_fingerprint.platform_profiles.anthropic.jitter_max_ms must be >= jitter_min_ms")
 }

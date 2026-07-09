@@ -186,11 +186,27 @@ func (s *aiSkillStoreStub) UpdateSettlement(_ context.Context, settlement *AISki
 	return nil
 }
 
+type aiSkillUniqueSettlementStoreStub struct {
+	*aiSkillStoreStub
+}
+
+func newAISkillUniqueSettlementStoreStub() *aiSkillUniqueSettlementStoreStub {
+	return &aiSkillUniqueSettlementStoreStub{aiSkillStoreStub: newAISkillStoreStub()}
+}
+
+func (s *aiSkillUniqueSettlementStoreStub) CreateSettlement(ctx context.Context, settlement *AISkillSettlement) error {
+	if existing, err := s.GetSettlementByRunID(ctx, settlement.RunID); err == nil && existing != nil {
+		return errors.New("ai skill settlement already exists for run")
+	}
+	return s.aiSkillStoreStub.CreateSettlement(ctx, settlement)
+}
+
 type aiSkillBalanceChargerStub struct {
-	charges []AISkillBalanceChargeInput
-	refunds []AISkillBalanceRefundInput
-	result  *AISkillBalanceChargeResult
-	err     error
+	charges   []AISkillBalanceChargeInput
+	refunds   []AISkillBalanceRefundInput
+	result    *AISkillBalanceChargeResult
+	err       error
+	refundErr error
 }
 
 func (s *aiSkillBalanceChargerStub) ChargeUserBalance(_ context.Context, input AISkillBalanceChargeInput) (*AISkillBalanceChargeResult, error) {
@@ -207,6 +223,9 @@ func (s *aiSkillBalanceChargerStub) ChargeUserBalance(_ context.Context, input A
 
 func (s *aiSkillBalanceChargerStub) RefundUserBalance(_ context.Context, input AISkillBalanceRefundInput) (*AISkillBalanceRefundResult, error) {
 	s.refunds = append(s.refunds, input)
+	if s.refundErr != nil {
+		return nil, s.refundErr
+	}
 	return &AISkillBalanceRefundResult{RefundedAmount: input.Amount}, nil
 }
 
@@ -575,6 +594,228 @@ func TestAISkillSettlementReversesCreatorEarningsWhenCreditedAmountMismatches(t 
 		require.Equal(t, AISkillSettlementStatusFailed, stored.Status)
 		require.Contains(t, stored.FailureReason, ErrAISkillCreatorEarningsMismatch.Error())
 	}
+}
+
+func TestAISkillSettlementSettle_ReplaysExistingSettledRun(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newAISkillStoreStub()
+	balance := &aiSkillBalanceChargerStub{
+		result: &AISkillBalanceChargeResult{ChargedAmount: 12.5, BalanceAfter: 87.5},
+	}
+	creator := &aiSkillCreatorCreditorStub{}
+	settlementSvc := NewAISkillSettlementService(store, balance, creator)
+
+	first, err := settlementSvc.Settle(ctx, AISkillSettleInput{
+		RunID:         3003,
+		SkillID:       1003,
+		VersionID:     2003,
+		BuyerUserID:   902,
+		CreatorUserID: 702,
+		BillingPolicy: AISkillBillingPolicy{
+			Mode:                   AISkillBillingModePerRun,
+			PricePerRun:            12.5,
+			PlatformCommissionRate: 0.2,
+		},
+		Metadata: map[string]any{"scene": "idempotent-settle"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	require.Equal(t, AISkillSettlementStatusSettled, first.Status)
+	require.Len(t, balance.charges, 1)
+	require.Len(t, creator.inputs, 1)
+
+	replayed, err := settlementSvc.Settle(ctx, AISkillSettleInput{
+		RunID:         3003,
+		SkillID:       9999,
+		VersionID:     9999,
+		BuyerUserID:   1,
+		CreatorUserID: 2,
+		BillingPolicy: AISkillBillingPolicy{
+			Mode:                   AISkillBillingModePerRun,
+			PricePerRun:            88,
+			PlatformCommissionRate: 0.9,
+		},
+		Metadata: map[string]any{"scene": "replayed"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, replayed)
+	require.Equal(t, first.ID, replayed.ID)
+	require.Equal(t, first.RunID, replayed.RunID)
+	require.Equal(t, AISkillSettlementStatusSettled, replayed.Status)
+	require.Len(t, balance.charges, 1, "replayed settle must not charge buyer twice")
+	require.Len(t, creator.inputs, 1, "replayed settle must not credit creator twice")
+	require.Len(t, store.settlements, 1, "replayed settle must not create duplicate settlement rows")
+}
+
+func TestAISkillSettlementSettle_RetriesExistingFailedRunWhenCompensationCompleted(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newAISkillUniqueSettlementStoreStub()
+	balance := &aiSkillBalanceChargerStub{
+		result: &AISkillBalanceChargeResult{ChargedAmount: 12.5, BalanceAfter: 87.5},
+	}
+	creator := &aiSkillCreatorCreditorStub{err: errors.New("credit down")}
+	settlementSvc := NewAISkillSettlementService(store, balance, creator)
+
+	first, err := settlementSvc.Settle(ctx, AISkillSettleInput{
+		RunID:         3004,
+		SkillID:       1004,
+		VersionID:     2004,
+		BuyerUserID:   903,
+		CreatorUserID: 703,
+		BillingPolicy: AISkillBillingPolicy{
+			Mode:                   AISkillBillingModePerRun,
+			PricePerRun:            12.5,
+			PlatformCommissionRate: 0.2,
+		},
+		Metadata: map[string]any{"scene": "retry-failed"},
+	})
+	require.Error(t, err)
+	require.Nil(t, first)
+	require.Len(t, store.settlements, 1)
+
+	creator.err = nil
+	replayed, err := settlementSvc.Settle(ctx, AISkillSettleInput{
+		RunID:         3004,
+		SkillID:       1004,
+		VersionID:     2004,
+		BuyerUserID:   903,
+		CreatorUserID: 703,
+		BillingPolicy: AISkillBillingPolicy{
+			Mode:                   AISkillBillingModePerRun,
+			PricePerRun:            12.5,
+			PlatformCommissionRate: 0.2,
+		},
+		Metadata: map[string]any{"scene": "retry-failed"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, replayed)
+	require.Equal(t, AISkillSettlementStatusSettled, replayed.Status)
+	require.Len(t, store.settlements, 1, "retry should reuse the failed settlement row instead of inserting a duplicate")
+	require.Len(t, balance.charges, 2, "retry should attempt a fresh buyer charge after prior refund completed")
+	require.Len(t, balance.refunds, 1, "successful retry should not emit an extra refund")
+	require.Len(t, creator.inputs, 2, "retry should re-attempt creator credit")
+}
+
+func TestAISkillSettlementReplaySettlement_RetriesSafeFailedRunByRunID(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newAISkillUniqueSettlementStoreStub()
+	balance := &aiSkillBalanceChargerStub{
+		result: &AISkillBalanceChargeResult{ChargedAmount: 12.5, BalanceAfter: 87.5},
+	}
+	creator := &aiSkillCreatorCreditorStub{err: errors.New("credit down")}
+	settlementSvc := NewAISkillSettlementService(store, balance, creator)
+
+	first, err := settlementSvc.Settle(ctx, AISkillSettleInput{
+		RunID:         3005,
+		SkillID:       1005,
+		VersionID:     2005,
+		BuyerUserID:   904,
+		CreatorUserID: 704,
+		BillingPolicy: AISkillBillingPolicy{
+			Mode:                   AISkillBillingModePerRun,
+			PricePerRun:            12.5,
+			PlatformCommissionRate: 0.2,
+		},
+		Metadata: map[string]any{"scene": "replay-by-run-id"},
+	})
+	require.Error(t, err)
+	require.Nil(t, first)
+	require.Len(t, store.settlements, 1)
+
+	creator.err = nil
+	replayed, err := settlementSvc.ReplaySettlement(ctx, 3005)
+	require.NoError(t, err)
+	require.NotNil(t, replayed)
+	require.Equal(t, AISkillSettlementStatusSettled, replayed.Status)
+	require.Equal(t, int64(3005), replayed.RunID)
+	require.Len(t, store.settlements, 1)
+	require.Len(t, balance.charges, 2, "replay should issue a fresh buyer charge after prior refund completed")
+	require.Len(t, balance.refunds, 1)
+	require.Len(t, creator.inputs, 2)
+}
+
+func TestAISkillSettlementReplaySettlement_RejectsUnsafeFailedRun(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newAISkillUniqueSettlementStoreStub()
+	balance := &aiSkillBalanceChargerStub{
+		result:    &AISkillBalanceChargeResult{ChargedAmount: 12.5, BalanceAfter: 87.5},
+		refundErr: errors.New("refund down"),
+	}
+	creator := &aiSkillCreatorCreditorStub{err: errors.New("credit down")}
+	settlementSvc := NewAISkillSettlementService(store, balance, creator)
+
+	first, err := settlementSvc.Settle(ctx, AISkillSettleInput{
+		RunID:         3006,
+		SkillID:       1006,
+		VersionID:     2006,
+		BuyerUserID:   905,
+		CreatorUserID: 705,
+		BillingPolicy: AISkillBillingPolicy{
+			Mode:                   AISkillBillingModePerRun,
+			PricePerRun:            12.5,
+			PlatformCommissionRate: 0.2,
+		},
+		Metadata: map[string]any{"scene": "unsafe-replay"},
+	})
+	require.Error(t, err)
+	require.Nil(t, first)
+
+	replayed, err := settlementSvc.ReplaySettlement(ctx, 3006)
+	require.ErrorIs(t, err, ErrAISkillSettlementReplayUnsafe)
+	require.Nil(t, replayed)
+	require.Len(t, store.settlements, 1)
+	require.Len(t, balance.charges, 1, "unsafe replay must not attempt a second buyer charge")
+	require.Len(t, creator.inputs, 1, "unsafe replay must not attempt a second creator credit")
+}
+
+func TestAISkillSettlementReplaySettlement_AllowsReplayAfterSuccessfulCreatorReversalAndBuyerRefund(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newAISkillUniqueSettlementStoreStub()
+	balance := &aiSkillBalanceChargerStub{
+		result: &AISkillBalanceChargeResult{ChargedAmount: 12.5, BalanceAfter: 87.5},
+	}
+	creator := &aiSkillCreatorCreditorStub{amount: 9.5}
+	settlementSvc := NewAISkillSettlementService(store, balance, creator)
+
+	first, err := settlementSvc.Settle(ctx, AISkillSettleInput{
+		RunID:         3007,
+		SkillID:       1007,
+		VersionID:     2007,
+		BuyerUserID:   906,
+		CreatorUserID: 706,
+		BillingPolicy: AISkillBillingPolicy{
+			Mode:                   AISkillBillingModePerRun,
+			PricePerRun:            12.5,
+			PlatformCommissionRate: 0.2,
+		},
+		Metadata: map[string]any{"scene": "replay-after-compensation"},
+	})
+	require.ErrorIs(t, err, ErrAISkillCreatorEarningsMismatch)
+	require.Nil(t, first)
+	require.Len(t, balance.charges, 1)
+	require.Len(t, balance.refunds, 1)
+	require.Len(t, creator.inputs, 1)
+	require.Len(t, creator.reversals, 1)
+
+	creator.amount = 0
+	replayed, err := settlementSvc.ReplaySettlement(ctx, 3007)
+	require.NoError(t, err)
+	require.NotNil(t, replayed)
+	require.Equal(t, AISkillSettlementStatusSettled, replayed.Status)
+	require.Len(t, store.settlements, 1)
+	require.Len(t, balance.charges, 2, "safe replay should issue a fresh buyer charge after prior refund completed")
+	require.Len(t, balance.refunds, 1)
+	require.Len(t, creator.inputs, 2)
 }
 
 func TestAISkillRunServicePrepareBuildsPromptImageAndFreeSettlement(t *testing.T) {

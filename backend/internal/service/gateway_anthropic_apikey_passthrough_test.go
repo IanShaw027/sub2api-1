@@ -318,6 +318,73 @@ func TestGatewayService_MaybeRetryAnthropicModelFallback_BuildFailureRestoresOps
 	require.Equal(t, string(originalBody), string(opsBody))
 }
 
+// trackingReadCloser 记录 body 是否被读取/关闭，用于断言成功流式响应体未被预读。
+type trackingReadCloser struct {
+	r         io.Reader
+	readBytes int
+	closed    bool
+}
+
+func (t *trackingReadCloser) Read(p []byte) (int, error) {
+	n, err := t.r.Read(p)
+	t.readBytes += n
+	return n, err
+}
+
+func (t *trackingReadCloser) Close() error {
+	t.closed = true
+	return nil
+}
+
+// 回归防线：即便配置了 model fallback，200 成功/流式响应也绝不能被 maybeRetryAnthropicModelFallback
+// 预读/截断/替换 body —— 否则流式退化为全量缓冲且 >2MB 截断丢失尾部 usage 帧（CRITICAL）。
+func TestGatewayService_MaybeRetryAnthropicModelFallback_SuccessStreamBodyNotConsumed(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	svc := &GatewayService{
+		settingService: NewSettingService(&antigravityFallbackSettingRepoStub{values: map[string]string{
+			SettingKeyEnableModelFallback:    "true",
+			SettingKeyFallbackModelAnthropic: "claude-sonnet-4-6",
+		}}, &config.Config{}),
+	}
+	account := newAnthropicAPIKeyAccountForTest()
+
+	tracked := &trackingReadCloser{r: strings.NewReader("event: message_start\ndata: {}\n\n")}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       tracked,
+	}
+
+	fallbackResp, fallbackBody, _, _, applied := svc.maybeRetryAnthropicModelFallback(
+		context.Background(),
+		c,
+		account,
+		resp,
+		[]byte(`{"model":"claude-legacy"}`),
+		"claude-legacy",
+		"claude-legacy",
+		func(context.Context, []byte, string) (*http.Request, error) {
+			t.Fatal("build must not be called for a 200 streaming response")
+			return nil, nil
+		},
+		func(*http.Request) (*http.Response, error) {
+			t.Fatal("doReq must not be called for a 200 streaming response")
+			return nil, nil
+		},
+	)
+
+	require.False(t, applied)
+	require.Same(t, resp, fallbackResp)
+	require.Equal(t, `{"model":"claude-legacy"}`, string(fallbackBody))
+	require.Zero(t, tracked.readBytes, "200 stream body must not be pre-read")
+	require.False(t, tracked.closed, "200 stream body must not be closed/replaced")
+	require.Equal(t, io.ReadCloser(tracked), resp.Body, "200 stream body must remain the original reader")
+}
+
 // TestGatewayService_AnthropicAPIKeyPassthrough_ModelMappingEdgeCases 覆盖透传模式下模型映射的各种边界情况
 func TestGatewayService_AnthropicAPIKeyPassthrough_ModelMappingEdgeCases(t *testing.T) {
 	setGinTestMode()

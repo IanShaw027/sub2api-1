@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -35,6 +37,44 @@ func (s *AISkillSettlementService) QuoteVersion(version *AISkillVersion) (*AISki
 	return s.Quote(version.BillingPolicy)
 }
 
+func (s *AISkillSettlementService) ReplaySettlement(ctx context.Context, runID int64) (*AISkillSettlement, error) {
+	if s == nil || s.repo == nil {
+		return nil, ErrAISkillSettlementUnavailable
+	}
+	if runID <= 0 {
+		return nil, infraerrors.BadRequest("AI_SKILL_SETTLEMENT_INPUT_INVALID", "ai skill settlement input is invalid")
+	}
+
+	settlement, err := s.repo.GetSettlementByRunID(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	if settlement == nil {
+		return nil, ErrAISkillSettlementNotFound
+	}
+
+	return s.Settle(ctx, AISkillSettleInput{
+		RunID:         settlement.RunID,
+		SkillID:       settlement.SkillID,
+		VersionID:     settlement.VersionID,
+		BuyerUserID:   settlement.BuyerUserID,
+		CreatorUserID: settlement.CreatorUserID,
+		BillingPolicy: AISkillBillingPolicy{
+			Mode:                   settlement.BillingMode,
+			PricePerRun:            settlement.TotalAmount,
+			PlatformCommissionRate: settlement.PlatformCommissionRate,
+			Currency:               settlement.Currency,
+		},
+		Metadata: cloneAIMap(settlement.Metadata),
+		Trace: AIWriteTrace{
+			RequestID:  settlement.Trace.RequestID,
+			UsageLogID: settlement.Trace.UsageLogID,
+			APIKeyID:   settlement.Trace.APIKeyID,
+			GroupID:    settlement.Trace.GroupID,
+		},
+	})
+}
+
 func (s *AISkillSettlementService) Settle(ctx context.Context, input AISkillSettleInput) (*AISkillSettlement, error) {
 	if s == nil || s.repo == nil {
 		return nil, ErrAISkillSettlementUnavailable
@@ -42,34 +82,69 @@ func (s *AISkillSettlementService) Settle(ctx context.Context, input AISkillSett
 	if input.RunID <= 0 || input.SkillID <= 0 || input.VersionID <= 0 || input.BuyerUserID <= 0 || input.CreatorUserID <= 0 {
 		return nil, infraerrors.BadRequest("AI_SKILL_SETTLEMENT_INPUT_INVALID", "ai skill settlement input is invalid")
 	}
+	now := s.nowOrDefault()
+	var settlement *AISkillSettlement
+	if existing, err := s.repo.GetSettlementByRunID(ctx, input.RunID); err == nil && existing != nil {
+		status := strings.ToLower(strings.TrimSpace(existing.Status))
+		if status == AISkillSettlementStatusSettled || status == AISkillSettlementStatusSkipped {
+			return existing, nil
+		}
+		if status == AISkillSettlementStatusPending {
+			return nil, ErrAISkillSettlementInProgress
+		}
+		if status == AISkillSettlementStatusFailed {
+			if !canReplayFailedAISkillSettlement(existing) {
+				return nil, ErrAISkillSettlementReplayUnsafe
+			}
+			settlement = cloneAISkillSettlement(existing)
+			settlement.Status = AISkillSettlementStatusPending
+			settlement.FailureReason = ""
+			settlement.UpdatedAt = now
+			if err := s.repo.UpdateSettlement(ctx, settlement); err != nil {
+				return nil, err
+			}
+		}
+	} else if err != nil && !errorsIsAISkillSettlementNotFound(err) {
+		return nil, err
+	}
 	quote, err := s.Quote(input.BillingPolicy)
 	if err != nil {
 		return nil, err
 	}
-	now := s.nowOrDefault()
-	settlement := &AISkillSettlement{
-		RunID:                  input.RunID,
-		SkillID:                input.SkillID,
-		VersionID:              input.VersionID,
-		BuyerUserID:            input.BuyerUserID,
-		CreatorUserID:          input.CreatorUserID,
-		BillingMode:            quote.BillingMode,
-		Currency:               quote.Currency,
-		TotalAmount:            quote.TotalAmount,
-		PlatformAmount:         quote.PlatformAmount,
-		CreatorAmount:          quote.CreatorAmount,
-		PlatformCommissionRate: quote.PlatformCommissionRate,
-		Status:                 AISkillSettlementStatusPending,
-		Metadata:               cloneAIMap(input.Metadata),
-		Trace:                  normalizeAIWriteTrace(ctx, input.Trace),
-		CreatedAt:              now,
-		UpdatedAt:              now,
-	}
-	if quote.TotalAmount == 0 {
-		settlement.Status = AISkillSettlementStatusSkipped
-	}
-	if err := s.repo.CreateSettlement(ctx, settlement); err != nil {
-		return nil, err
+	if settlement == nil {
+		settlement = &AISkillSettlement{
+			RunID:                  input.RunID,
+			SkillID:                input.SkillID,
+			VersionID:              input.VersionID,
+			BuyerUserID:            input.BuyerUserID,
+			CreatorUserID:          input.CreatorUserID,
+			BillingMode:            quote.BillingMode,
+			Currency:               quote.Currency,
+			TotalAmount:            quote.TotalAmount,
+			PlatformAmount:         quote.PlatformAmount,
+			CreatorAmount:          quote.CreatorAmount,
+			PlatformCommissionRate: quote.PlatformCommissionRate,
+			Status:                 AISkillSettlementStatusPending,
+			Metadata:               cloneAIMap(input.Metadata),
+			Trace:                  normalizeAIWriteTrace(ctx, input.Trace),
+			CreatedAt:              now,
+			UpdatedAt:              now,
+		}
+		if quote.TotalAmount == 0 {
+			settlement.Status = AISkillSettlementStatusSkipped
+		}
+		if err := s.repo.CreateSettlement(ctx, settlement); err != nil {
+			return nil, err
+		}
+	} else {
+		settlement.Metadata = cloneAIMap(input.Metadata)
+		settlement.Trace = normalizeAIWriteTrace(ctx, input.Trace)
+		settlement.BillingMode = quote.BillingMode
+		settlement.Currency = quote.Currency
+		settlement.TotalAmount = quote.TotalAmount
+		settlement.PlatformAmount = quote.PlatformAmount
+		settlement.CreatorAmount = quote.CreatorAmount
+		settlement.PlatformCommissionRate = quote.PlatformCommissionRate
 	}
 	if quote.TotalAmount == 0 {
 		return settlement, nil
@@ -178,7 +253,11 @@ func (s *AISkillSettlementService) failAfterBuyerCharge(ctx context.Context, set
 		}); err != nil {
 			settlement.FailureReason = appendAISkillSettlementFailure(settlement.FailureReason, fmt.Errorf("creator reversal failed: %w", err))
 		} else if reversed > 0 {
-			settlement.CreatorCreditedAmount = roundTo(reversed, 8)
+			remaining := settlement.CreatorCreditedAmount - reversed
+			if remaining < 0 {
+				remaining = 0
+			}
+			settlement.CreatorCreditedAmount = roundTo(remaining, 8)
 		}
 	}
 	if refund.Amount > 0 {
@@ -217,4 +296,35 @@ func (s *AISkillSettlementService) markFailed(ctx context.Context, settlement *A
 	settlement.Status = AISkillSettlementStatusFailed
 	settlement.UpdatedAt = s.nowOrDefault()
 	return s.repo.UpdateSettlement(ctx, settlement)
+}
+
+func errorsIsAISkillSettlementNotFound(err error) bool {
+	return err == nil || errors.Is(err, ErrAISkillSettlementNotFound)
+}
+
+func canReplayFailedAISkillSettlement(settlement *AISkillSettlement) bool {
+	if settlement == nil || strings.ToLower(strings.TrimSpace(settlement.Status)) != AISkillSettlementStatusFailed {
+		return false
+	}
+	if settlement.CreatorCreditedAmount > 0 {
+		return false
+	}
+	reason := strings.ToLower(strings.TrimSpace(settlement.FailureReason))
+	if strings.Contains(reason, "buyer refund failed") || strings.Contains(reason, "creator reversal failed") {
+		return false
+	}
+	return true
+}
+
+func cloneAISkillSettlement(settlement *AISkillSettlement) *AISkillSettlement {
+	if settlement == nil {
+		return nil
+	}
+	copy := *settlement
+	copy.Metadata = cloneAIMap(settlement.Metadata)
+	if settlement.BalanceAfter != nil {
+		balanceAfter := *settlement.BalanceAfter
+		copy.BalanceAfter = &balanceAfter
+	}
+	return &copy
 }

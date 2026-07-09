@@ -29,13 +29,19 @@ type OAuthRefreshResult struct {
 	LockHeld       bool           // 锁被其他 worker 持有（未执行刷新）
 }
 
+type oauthRefreshLocalLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
 // OAuthRefreshAPI 统一的 OAuth Token 刷新入口
 // 封装分布式锁、进程内互斥锁、DB 重读、已刷新检查、竞争恢复等通用逻辑
 type OAuthRefreshAPI struct {
-	accountRepo AccountRepository
-	tokenCache  GeminiTokenCache // 可选，nil = 无分布式锁
-	lockTTL     time.Duration
-	localLocks  sync.Map // key: cacheKey string -> value: *sync.Mutex
+	accountRepo  AccountRepository
+	tokenCache   GeminiTokenCache // 可选，nil = 无分布式锁
+	lockTTL      time.Duration
+	localLocksMu sync.Mutex
+	localLocks   map[string]*oauthRefreshLocalLock
 }
 
 // NewOAuthRefreshAPI 创建统一刷新 API
@@ -49,18 +55,43 @@ func NewOAuthRefreshAPI(accountRepo AccountRepository, tokenCache GeminiTokenCac
 		accountRepo: accountRepo,
 		tokenCache:  tokenCache,
 		lockTTL:     ttl,
+		localLocks:  make(map[string]*oauthRefreshLocalLock),
 	}
 }
 
-// getLocalLock 返回指定 cacheKey 的进程内互斥锁
-func (api *OAuthRefreshAPI) getLocalLock(cacheKey string) *sync.Mutex {
-	actual, _ := api.localLocks.LoadOrStore(cacheKey, &sync.Mutex{})
-	mu, ok := actual.(*sync.Mutex)
-	if !ok {
-		mu = &sync.Mutex{}
-		api.localLocks.Store(cacheKey, mu)
+// acquireLocalLock 返回指定 cacheKey 的进程内互斥锁，并增加引用计数。
+// 调用方必须配对调用 releaseLocalLock；最后一个 waiter 退出时条目会从本地锁表回收，
+// 避免 localLocks 随 cacheKey 种类永久增长。
+func (api *OAuthRefreshAPI) acquireLocalLock(cacheKey string) *oauthRefreshLocalLock {
+	api.localLocksMu.Lock()
+	lock := api.localLocks[cacheKey]
+	if lock == nil {
+		lock = &oauthRefreshLocalLock{}
+		api.localLocks[cacheKey] = lock
 	}
-	return mu
+	lock.refs++
+	api.localLocksMu.Unlock()
+	lock.mu.Lock()
+	return lock
+}
+
+func (api *OAuthRefreshAPI) releaseLocalLock(cacheKey string, lock *oauthRefreshLocalLock) {
+	if lock == nil {
+		return
+	}
+	lock.mu.Unlock()
+
+	api.localLocksMu.Lock()
+	defer api.localLocksMu.Unlock()
+
+	current := api.localLocks[cacheKey]
+	if current != lock {
+		return
+	}
+	lock.refs--
+	if lock.refs <= 0 {
+		delete(api.localLocks, cacheKey)
+	}
 }
 
 // RefreshIfNeeded 在分布式锁保护下按需刷新 OAuth token
@@ -81,9 +112,8 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 	cacheKey := executor.CacheKey(account)
 
 	// 0. 获取进程内互斥锁（防止同一进程内的并发刷新竞争）
-	localMu := api.getLocalLock(cacheKey)
-	localMu.Lock()
-	defer localMu.Unlock()
+	localLock := api.acquireLocalLock(cacheKey)
+	defer api.releaseLocalLock(cacheKey, localLock)
 
 	// 1. 获取分布式锁
 	lockAcquired := false

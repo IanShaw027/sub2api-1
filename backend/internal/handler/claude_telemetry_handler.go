@@ -30,7 +30,9 @@ func (h *GatewayHandler) ClaudeTelemetryBatch(c *gin.Context) {
 		}
 	}
 
-	service.RecordGatewayDebugTimelineBody(h.settingService, c, "cc_aux_request", service.SanitizeClaudeTelemetryBatch(body, service.ClaudeTelemetrySanitizeOptions{}),
+	// ok=false 时 sanitizedTelemetry 为 nil：debug timeline 也 fail-closed，不记录未脱敏原文。
+	sanitizedTelemetry, _ := service.SanitizeClaudeTelemetryBatch(body, service.ClaudeTelemetrySanitizeOptions{})
+	service.RecordGatewayDebugTimelineBody(h.settingService, c, "cc_aux_request", sanitizedTelemetry,
 		c.GetHeader("Content-Type"), map[string]any{
 			"component":     "cc_aux_endpoint",
 			"endpoint_name": "event_logging_batch",

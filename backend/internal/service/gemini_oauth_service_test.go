@@ -199,6 +199,20 @@ func TestGeminiOAuthServiceExchangeCodeUsesSessionProxyAndRejectsOverride(t *tes
 	}
 }
 
+func TestGeminiOAuthServiceExchangeCodeRejectsNilInput(t *testing.T) {
+	t.Setenv(geminicli.GeminiCLIOAuthClientSecretEnv, "test-built-in-secret")
+
+	svc := NewGeminiOAuthService(&mockGeminiProxyRepo{}, &mockGeminiOAuthClient{}, &mockGeminiCodeAssistClient{}, &config.Config{})
+
+	_, err := svc.ExchangeCode(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected nil input error")
+	}
+	if !strings.Contains(err.Error(), "oauth input is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 // =====================
 // 新增测试：validateTierID
 // =====================
@@ -1039,6 +1053,21 @@ func TestGeminiOAuthService_RefreshAccountToken_NotGeminiOAuth(t *testing.T) {
 	_, err := svc.RefreshAccountToken(context.Background(), account)
 	if err == nil {
 		t.Fatal("应返回错误（非 Gemini OAuth 账号）")
+	}
+	if !strings.Contains(err.Error(), "not a Gemini OAuth account") {
+		t.Fatalf("错误信息不匹配: got=%q", err.Error())
+	}
+}
+
+func TestGeminiOAuthService_RefreshAccountToken_NilAccount(t *testing.T) {
+	t.Parallel()
+
+	svc := NewGeminiOAuthService(nil, nil, nil, &config.Config{})
+	defer svc.Stop()
+
+	_, err := svc.RefreshAccountToken(context.Background(), nil)
+	if err == nil {
+		t.Fatal("应返回错误（nil account）")
 	}
 	if !strings.Contains(err.Error(), "not a Gemini OAuth account") {
 		t.Fatalf("错误信息不匹配: got=%q", err.Error())

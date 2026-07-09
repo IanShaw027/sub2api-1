@@ -108,6 +108,98 @@ ja4: ignored-for-storage
 	require.NotEmpty(t, result.Profiles[0].FingerprintHash)
 }
 
+func TestTLSFingerprintProfileServiceCreateRejectsNilProfile(t *testing.T) {
+	svc := NewTLSFingerprintProfileService(&tlsFingerprintProfileImportRepoStub{}, nil)
+
+	_, err := svc.Create(context.Background(), nil)
+
+	require.EqualError(t, err, "tls fingerprint profile is required")
+}
+
+func TestTLSFingerprintProfileServiceUpdateRejectsNilProfile(t *testing.T) {
+	svc := NewTLSFingerprintProfileService(&tlsFingerprintProfileImportRepoStub{}, nil)
+
+	_, err := svc.Update(context.Background(), nil)
+
+	require.EqualError(t, err, "tls fingerprint profile is required")
+}
+
+func TestNewTLSFingerprintProfileService_NilRepoDoesNotPanic(t *testing.T) {
+	require.NotPanics(t, func() {
+		svc := NewTLSFingerprintProfileService(nil, nil)
+		require.NotNil(t, svc)
+		require.Nil(t, svc.GetProfileByID(1))
+	})
+}
+
+func TestTLSFingerprintProfileService_GetProfileByIDAllowsSupportedH2ProfilesAndSkipsMissingReplayData(t *testing.T) {
+	svc := &TLSFingerprintProfileService{
+		localCache: map[int64]*model.TLSFingerprintProfile{
+			7: {
+				ID:               7,
+				Name:             "Supported H2",
+				Transport:        "h2",
+				ALPNProtocols:    []string{"h2", "http/1.1"},
+				HTTP2Fingerprint: "1:4096|ph::method,:scheme,:authority,:path",
+			},
+			8: {
+				ID:               8,
+				Name:             "Supported WebSocket H2",
+				Transport:        "websocket-h2",
+				ALPNProtocols:    []string{"h2", "http/1.1"},
+				HTTP2Fingerprint: "1:4096|ph::method,:scheme,:authority,:path,:protocol",
+			},
+			9: {
+				ID:            9,
+				Name:          "Missing Replay Data",
+				Transport:     "h2",
+				ALPNProtocols: []string{"h2", "http/1.1"},
+			},
+		},
+	}
+
+	profile := svc.GetProfileByID(7)
+	require.NotNil(t, profile)
+	require.Equal(t, "Supported H2", profile.Name)
+	require.Equal(t, "Supported H2", svc.ResolveTLSProfileByID(7).Name)
+
+	wsProfile := svc.GetProfileByID(8)
+	require.NotNil(t, wsProfile)
+	require.Equal(t, "Supported WebSocket H2", wsProfile.Name)
+	require.Equal(t, "Supported WebSocket H2", svc.ResolveTLSProfileByID(8).Name)
+
+	require.Nil(t, svc.GetProfileByID(9))
+	require.Nil(t, svc.ResolveTLSProfileByID(9))
+}
+
+func TestTLSFingerprintProfileService_List_NilRepoReturnsError(t *testing.T) {
+	svc := NewTLSFingerprintProfileService(nil, nil)
+
+	_, err := svc.List(context.Background())
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "tls fingerprint profile repository is unavailable")
+}
+
+func TestTLSFingerprintProfileService_Create_NilRepoReturnsError(t *testing.T) {
+	svc := NewTLSFingerprintProfileService(nil, nil)
+
+	_, err := svc.Create(context.Background(), &model.TLSFingerprintProfile{
+		Name:             "openai-h2",
+		Platform:         "openai",
+		Transport:        "h2",
+		HTTP2Fingerprint: "1:4096|ph::method,:scheme,:authority,:path",
+		CipherSuites:     []uint16{4865, 4866, 4867},
+		Curves:           []uint16{29, 23, 24},
+		PointFormats:     []uint16{0},
+		ALPNProtocols:    []string{"h2", "http/1.1"},
+		Extensions:       []uint16{0, 10, 11, 13, 16, 43, 45, 51},
+	})
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "tls fingerprint profile repository is unavailable")
+}
+
 func TestTLSFingerprintProfileServiceImportCapturesParsesTransport(t *testing.T) {
 	repo := &tlsFingerprintProfileImportRepoStub{}
 	svc := NewTLSFingerprintProfileService(repo, nil)
@@ -116,6 +208,7 @@ func TestTLSFingerprintProfileServiceImportCapturesParsesTransport(t *testing.T)
 		Profiles: []string{`
 name: "Codex Desktop over h2"
 transport: "h2"
+http2_fingerprint: "1:4096|ph::method,:scheme,:authority,:path"
 enable_grease: false
 cipher_suites: [4865, 4866, 4867]
 curves: [29, 23, 24]
@@ -133,7 +226,38 @@ extensions: [0, 10, 11, 13, 16, 43, 45, 51]
 	require.Equal(t, 1, result.Imported)
 	require.Len(t, result.Profiles, 1)
 	require.Equal(t, "h2", result.Profiles[0].Profile.Transport)
+	require.Equal(t, "1:4096|ph::method,:scheme,:authority,:path", result.Profiles[0].Profile.HTTP2Fingerprint)
 	require.Equal(t, "h2", repo.profiles[0].Transport)
+	require.Equal(t, "1:4096|ph::method,:scheme,:authority,:path", repo.profiles[0].HTTP2Fingerprint)
+}
+
+func TestTLSFingerprintProfileServiceImportCapturesParsesHTTP2Fingerprint(t *testing.T) {
+	repo := &tlsFingerprintProfileImportRepoStub{}
+	svc := NewTLSFingerprintProfileService(repo, nil)
+
+	result, err := svc.ImportTLSFingerprintCaptures(context.Background(), TLSFingerprintCaptureImportRequest{
+		Profiles: []string{`
+name: "Codex Desktop over h2"
+transport: "h2"
+http2_fingerprint: "4:65535,1:4096,3:100|wu:12345|p:1:0:1:200|ph::method,:scheme,:authority,:path"
+enable_grease: false
+cipher_suites: [4865, 4866, 4867]
+curves: [29, 23, 24]
+point_formats: [0]
+signature_algorithms: [1027, 2052, 1025]
+alpn_protocols: ["h2", "http/1.1"]
+supported_versions: [772, 771]
+key_share_groups: [29]
+psk_modes: [1]
+extensions: [0, 10, 11, 13, 16, 43, 45, 51]
+`},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Imported)
+	require.Len(t, result.Profiles, 1)
+	require.Equal(t, "4:65535,1:4096,3:100|wu:12345|p:1:0:1:200|ph::method,:scheme,:authority,:path", result.Profiles[0].Profile.HTTP2Fingerprint)
+	require.Equal(t, "4:65535,1:4096,3:100|wu:12345|p:1:0:1:200|ph::method,:scheme,:authority,:path", repo.profiles[0].HTTP2Fingerprint)
 }
 
 func TestTLSFingerprintProfileServiceImportCapturesParsesDimensions(t *testing.T) {
@@ -144,6 +268,7 @@ func TestTLSFingerprintProfileServiceImportCapturesParsesDimensions(t *testing.T
 		Profiles: []string{`
 name: "Codex Desktop over h2"
 transport: "h2"
+http2_fingerprint: "1:4096|ph::method,:scheme,:authority,:path"
 os: "macos"
 client_type: "codex-cli"
 enable_grease: false
@@ -163,8 +288,10 @@ extensions: [0, 10, 11, 13, 16, 43, 45, 51]
 	require.Equal(t, 1, result.Imported)
 	require.Equal(t, "macos", result.Profiles[0].Profile.OS)
 	require.Equal(t, "codex-cli", result.Profiles[0].Profile.ClientType)
+	require.Equal(t, "1:4096|ph::method,:scheme,:authority,:path", result.Profiles[0].Profile.HTTP2Fingerprint)
 	require.Equal(t, "macos", repo.profiles[0].OS)
 	require.Equal(t, "codex-cli", repo.profiles[0].ClientType)
+	require.Equal(t, "1:4096|ph::method,:scheme,:authority,:path", repo.profiles[0].HTTP2Fingerprint)
 }
 
 func TestTLSFingerprintProfileServiceImportCapturesParsesParametricReplayExtensions(t *testing.T) {
@@ -255,7 +382,7 @@ func TestTLSFingerprintProfileServiceImportCapturesDoesNotDedupeDifferentTranspo
 	svc := NewTLSFingerprintProfileService(repo, nil)
 
 	payloadHTTP1 := `{"name":"Same TLS over HTTP1","transport":"http1","enable_grease":false,"cipher_suites":[4865,4866],"curves":[29,23],"point_formats":[0],"signature_algorithms":[1027],"alpn_protocols":["http/1.1"],"supported_versions":[772,771],"key_share_groups":[29],"psk_modes":[1],"extensions":[0,11,10,13,43,45,51]}`
-	payloadH2 := `{"name":"Same TLS over H2","transport":"h2","enable_grease":false,"cipher_suites":[4865,4866],"curves":[29,23],"point_formats":[0],"signature_algorithms":[1027],"alpn_protocols":["http/1.1"],"supported_versions":[772,771],"key_share_groups":[29],"psk_modes":[1],"extensions":[0,11,10,13,43,45,51]}`
+	payloadH2 := `{"name":"Same TLS over H2","transport":"h2","http2_fingerprint":"1:4096|ph::method,:scheme,:authority,:path","enable_grease":false,"cipher_suites":[4865,4866],"curves":[29,23],"point_formats":[0],"signature_algorithms":[1027],"alpn_protocols":["h2","http/1.1"],"supported_versions":[772,771],"key_share_groups":[29],"psk_modes":[1],"extensions":[0,11,10,13,43,45,51]}`
 
 	result, err := svc.ImportTLSFingerprintCaptures(context.Background(), TLSFingerprintCaptureImportRequest{
 		Profiles: []string{payloadHTTP1, payloadH2},
@@ -317,6 +444,56 @@ func TestTLSFingerprintProfileReplayHashChangesWhenTransportChanges(t *testing.T
 	changedHash, err := TLSFingerprintProfileReplayHash(changed)
 	require.NoError(t, err)
 	require.NotEqual(t, baseHash, changedHash)
+}
+
+func TestTLSFingerprintProfileReplayHashChangesWhenHTTP2FingerprintChanges(t *testing.T) {
+	base := &model.TLSFingerprintProfile{
+		Name:                "base",
+		Transport:           "h2",
+		HTTP2Fingerprint:    "1:4096|ph::method,:scheme,:authority,:path",
+		CipherSuites:        []uint16{4865, 4866},
+		Curves:              []uint16{29, 23},
+		PointFormats:        []uint16{0},
+		SignatureAlgorithms: []uint16{1027, 2052},
+		ALPNProtocols:       []string{"h2", "http/1.1"},
+		SupportedVersions:   []uint16{772, 771},
+		KeyShareGroups:      []uint16{29},
+		PSKModes:            []uint16{1},
+		Extensions:          []uint16{0, 11, 10, 13, 43, 45, 51},
+	}
+	changed := cloneTLSFingerprintProfile(base)
+	changed.HTTP2Fingerprint = "4:65535,1:4096,3:100|wu:12345|ph::method,:scheme,:authority,:path"
+
+	baseHash, err := TLSFingerprintProfileReplayHash(base)
+	require.NoError(t, err)
+	changedHash, err := TLSFingerprintProfileReplayHash(changed)
+	require.NoError(t, err)
+	require.NotEqual(t, baseHash, changedHash)
+}
+
+func TestTLSFingerprintProfileReplayHashCanonicalizesEquivalentHTTP2FingerprintFormatting(t *testing.T) {
+	base := &model.TLSFingerprintProfile{
+		Name:                "base",
+		Transport:           "h2",
+		HTTP2Fingerprint:    "4:65535,1:4096,3:100|wu:12345|p:1:0:1:200|ph::method,:scheme,:authority,:path",
+		CipherSuites:        []uint16{4865, 4866},
+		Curves:              []uint16{29, 23},
+		PointFormats:        []uint16{0},
+		SignatureAlgorithms: []uint16{1027, 2052},
+		ALPNProtocols:       []string{"h2", "http/1.1"},
+		SupportedVersions:   []uint16{772, 771},
+		KeyShareGroups:      []uint16{29},
+		PSKModes:            []uint16{1},
+		Extensions:          []uint16{0, 11, 10, 13, 43, 45, 51},
+	}
+	changed := cloneTLSFingerprintProfile(base)
+	changed.HTTP2Fingerprint = " 4:65535,1:4096,3:100 | wu:12345 | p:1:0:1:200 | ph::method,:scheme,:authority,:path "
+
+	baseHash, err := TLSFingerprintProfileReplayHash(base)
+	require.NoError(t, err)
+	changedHash, err := TLSFingerprintProfileReplayHash(changed)
+	require.NoError(t, err)
+	require.Equal(t, baseHash, changedHash)
 }
 
 func TestTLSFingerprintProfileReplayHashChangesWhenSignatureAlgorithmsCertChanges(t *testing.T) {
@@ -410,6 +587,20 @@ func TestTLSFingerprintProfileServiceImportCapturesRequiresSignatureAlgorithmsCe
 	require.Error(t, err)
 	require.Nil(t, result)
 	require.Contains(t, err.Error(), "signature_algorithms_cert is required")
+	require.Len(t, repo.profiles, 0)
+}
+
+func TestTLSFingerprintProfileServiceImportCapturesRejectsH2TransportWithoutH2ALPN(t *testing.T) {
+	repo := &tlsFingerprintProfileImportRepoStub{}
+	svc := NewTLSFingerprintProfileService(repo, nil)
+
+	result, err := svc.ImportTLSFingerprintCaptures(context.Background(), TLSFingerprintCaptureImportRequest{
+		Profiles: []string{`{"name":"bad h2 alpn","transport":"h2","cipher_suites":[4865],"curves":[29],"point_formats":[0],"signature_algorithms":[1027],"alpn_protocols":["http/1.1"],"supported_versions":[772],"key_share_groups":[29],"psk_modes":[1],"extensions":[0,10,11,13,43,45,51]}`},
+	})
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Contains(t, err.Error(), "h2 transport requires alpn_protocols to include h2")
 	require.Len(t, repo.profiles, 0)
 }
 

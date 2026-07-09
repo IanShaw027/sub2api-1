@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -21,6 +22,10 @@ func (l *TLSCaptureListener) handleCaptureWSHTTP1(w http.ResponseWriter, r *http
 		http.Error(w, "capture submission failed", http.StatusBadRequest)
 		return
 	}
+	if _, err := l.cfg.Service.ValidateRunningTaskToken(r.Context(), nativeCaptureRequestToken(r)); err != nil {
+		http.Error(w, tlsCapturePublicErrorMessage(err, "capture submission failed"), http.StatusBadRequest)
+		return
+	}
 
 	upgrader := websocket.Upgrader{
 		CheckOrigin:  func(*http.Request) bool { return true },
@@ -31,6 +36,7 @@ func (l *TLSCaptureListener) handleCaptureWSHTTP1(w http.ResponseWriter, r *http
 		return
 	}
 	defer func() { _ = conn.Close() }()
+	conn.SetReadLimit(tlsFingerprintNativeCaptureBodyLimit)
 
 	requestSequence := 0
 	for {
@@ -65,7 +71,7 @@ func buildTLSCaptureWSHTTP1SubmitRequest(
 	subprotocol string,
 	payload []byte,
 ) TLSFingerprintCaptureNativeSubmitRequest {
-	clone := r.Clone(r.Context())
+	clone := r.Clone(context.WithValue(r.Context(), tlsFingerprintNativeCaptureBodyContextKey{}, append([]byte(nil), payload...)))
 	clone.Header = r.Header.Clone()
 	clone.Body = io.NopCloser(bytes.NewReader(payload))
 	clone.ContentLength = int64(len(payload))
