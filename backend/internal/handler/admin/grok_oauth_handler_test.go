@@ -138,6 +138,78 @@ func TestGrokOAuthHandlerRefreshTokenRejectsMissingProxyWithoutUpstreamCall(t *t
 	require.Zero(t, oauthClient.refreshCalls)
 }
 
+type grokRefreshAccountAdminService struct {
+	stubAdminService
+	account *service.Account
+}
+
+func (s *grokRefreshAccountAdminService) GetAccount(_ context.Context, id int64) (*service.Account, error) {
+	if s.account != nil && s.account.ID == id {
+		return s.account, nil
+	}
+	return nil, service.ErrAccountNotFound
+}
+
+func (s *grokRefreshAccountAdminService) UpdateAccount(ctx context.Context, id int64, input *service.UpdateAccountInput) (*service.Account, error) {
+	_, _ = s.stubAdminService.UpdateAccount(ctx, id, input)
+	return &service.Account{
+		ID:          id,
+		Platform:    service.PlatformGrok,
+		Type:        service.AccountTypeOAuth,
+		Status:      service.StatusActive,
+		Credentials: input.Credentials,
+	}, nil
+}
+
+func TestGrokOAuthHandlerRefreshAccountTokenProbesQuota(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	adminSvc := &grokRefreshAccountAdminService{account: &service.Account{
+		ID:       44,
+		Platform: service.PlatformGrok,
+		Type:     service.AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token":  "old-access-token",
+			"refresh_token": "refresh-token",
+			"expires_at":    time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		},
+	}}
+	oauthClient := &grokOAuthHandlerClient{}
+	oauthService := service.NewGrokOAuthService(nil, oauthClient)
+	defer oauthService.Stop()
+
+	quotaRepo := &grokQuotaHandlerAccountRepo{account: &service.Account{
+		ID:          44,
+		Platform:    service.PlatformGrok,
+		Type:        service.AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "access-token",
+			"expires_at":   time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		},
+	}}
+	upstream := &grokQuotaHandlerUpstream{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"X-Subscription-Tier": []string{"supergrok"},
+		},
+		Body: io.NopCloser(strings.NewReader(`{"id":"resp_probe"}`)),
+	}}
+	quotaService := service.NewGrokQuotaService(quotaRepo, nil, service.NewGrokTokenProvider(quotaRepo, nil), upstream)
+	handler := NewGrokOAuthHandler(oauthService, adminSvc, quotaService)
+
+	router := gin.New()
+	router.POST("/api/v1/admin/grok/accounts/:id/refresh-token", handler.RefreshAccountToken)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/grok/accounts/44/refresh-token", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Eventually(t, func() bool { return upstream.lastReq != nil }, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, "Bearer access-token", upstream.lastReq.Header.Get("Authorization"))
+	require.NotNil(t, quotaRepo.updates[44])
+}
+
 func TestGrokOAuthHandlerResetQuotaReturnsUnsupported(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

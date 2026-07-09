@@ -156,6 +156,7 @@ func (h *GrokOAuthHandler) RefreshAccountToken(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	h.probeQuotaAsync(updatedAccount.ID)
 	response.Success(c, dto.AccountFromService(updatedAccount))
 }
 

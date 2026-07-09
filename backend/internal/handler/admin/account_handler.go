@@ -63,6 +63,7 @@ type AccountHandler struct {
 	sessionLimitCache       service.SessionLimitCache
 	rpmCache                service.RPMCache
 	tokenCacheInvalidator   service.TokenCacheInvalidator
+	grokQuotaService        *service.GrokQuotaService
 }
 
 // NewAccountHandler creates a new admin account handler
@@ -82,7 +83,12 @@ func NewAccountHandler(
 	sessionLimitCache service.SessionLimitCache,
 	rpmCache service.RPMCache,
 	tokenCacheInvalidator service.TokenCacheInvalidator,
+	grokQuotaServices ...*service.GrokQuotaService,
 ) *AccountHandler {
+	var grokQuotaService *service.GrokQuotaService
+	if len(grokQuotaServices) > 0 {
+		grokQuotaService = grokQuotaServices[0]
+	}
 	return &AccountHandler{
 		adminService:            adminService,
 		oauthService:            oauthService,
@@ -99,6 +105,7 @@ func NewAccountHandler(
 		sessionLimitCache:       sessionLimitCache,
 		rpmCache:                rpmCache,
 		tokenCacheInvalidator:   tokenCacheInvalidator,
+		grokQuotaService:        grokQuotaService,
 	}
 }
 
@@ -107,6 +114,13 @@ func (h *AccountHandler) SetKiroTokenProvider(provider *service.KiroTokenProvide
 		return
 	}
 	h.kiroTokenProvider = provider
+}
+
+func (h *AccountHandler) SetGrokQuotaService(quotaService *service.GrokQuotaService) {
+	if h == nil {
+		return
+	}
+	h.grokQuotaService = quotaService
 }
 
 // CreateAccountRequest represents create account request
@@ -619,6 +633,7 @@ func (h *AccountHandler) Create(c *gin.Context) {
 	// OpenAI APIKey 账号创建后异步探测上游 /v1/responses 能力。
 	// 探测失败不影响账号创建响应。
 	h.scheduleOpenAIResponsesProbe(createdAccount)
+	h.scheduleGrokQuotaProbe(createdAccount)
 	response.Success(c, result.Data)
 }
 
@@ -1137,8 +1152,30 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 	h.adminService.EnsureOpenAIPrivacy(ctx, updatedAccount)
 	// Antigravity OAuth: 刷新成功后检查并设置 privacy_mode
 	h.adminService.EnsureAntigravityPrivacy(ctx, updatedAccount)
+	h.scheduleGrokQuotaProbe(updatedAccount)
 
 	return updatedAccount, "", nil
+}
+
+func (h *AccountHandler) scheduleGrokQuotaProbe(account *service.Account) {
+	if h == nil || h.grokQuotaService == nil || account == nil {
+		return
+	}
+	if account.Platform != service.PlatformGrok || account.Type != service.AccountTypeOAuth {
+		return
+	}
+	accountID := account.ID
+	quotaService := h.grokQuotaService
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("grok_quota_probe_async_panic", "account_id", accountID, "recover", r)
+			}
+		}()
+		if _, err := quotaService.ProbeUsage(context.Background(), accountID); err != nil {
+			slog.Warn("grok_quota_probe_async_failed", "account_id", accountID, "err", err)
+		}
+	}()
 }
 
 func (h *AccountHandler) invalidateRefreshedOAuthTokenCache(ctx context.Context, account *service.Account) {
@@ -1278,6 +1315,7 @@ func (h *AccountHandler) ApplyOAuthCredentials(c *gin.Context) {
 			)
 		}
 	}
+	h.scheduleGrokQuotaProbe(updatedAccount)
 
 	response.Success(c, h.buildAccountResponseWithRuntime(ctx, updatedAccount))
 }

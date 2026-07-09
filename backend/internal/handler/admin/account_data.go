@@ -523,6 +523,7 @@ func (h *AccountHandler) importData(ctx context.Context, dataPayload DataPayload
 
 	// 收集需要异步设置隐私的 Antigravity OAuth 账号
 	var privacyAccounts []*service.Account
+	var grokQuotaAccounts []*service.Account
 	accountDedupIndex := map[string]int64{}
 	ambiguousAccountDedupKeys := map[string]struct{}{}
 	if dedupMode != dataImportDedupModeNone {
@@ -616,6 +617,9 @@ func (h *AccountHandler) importData(ctx context.Context, dataPayload DataPayload
 				if updated != nil && updated.Platform == service.PlatformAntigravity && updated.Type == service.AccountTypeOAuth {
 					privacyAccounts = append(privacyAccounts, updated)
 				}
+				if updated != nil && updated.Platform == service.PlatformGrok && updated.Type == service.AccountTypeOAuth {
+					grokQuotaAccounts = append(grokQuotaAccounts, updated)
+				}
 				result.AccountUpdated++
 				continue
 			}
@@ -652,6 +656,9 @@ func (h *AccountHandler) importData(ctx context.Context, dataPayload DataPayload
 		if created.Platform == service.PlatformAntigravity && created.Type == service.AccountTypeOAuth {
 			privacyAccounts = append(privacyAccounts, created)
 		}
+		if created.Platform == service.PlatformGrok && created.Type == service.AccountTypeOAuth {
+			grokQuotaAccounts = append(grokQuotaAccounts, created)
+		}
 		if dedupMode != dataImportDedupModeNone {
 			addDataAccountDedupKeys(accountDedupIndex, ambiguousAccountDedupKeys, created.ID, buildDataAccountDedupKeys(created.Platform, created.Type, created.Credentials))
 		}
@@ -673,6 +680,9 @@ func (h *AccountHandler) importData(ctx context.Context, dataPayload DataPayload
 			}
 			slog.Info("import_antigravity_privacy_done", "count", len(privacyAccounts))
 		}()
+	}
+	for _, acc := range grokQuotaAccounts {
+		h.scheduleGrokQuotaProbe(acc)
 	}
 
 	return result, nil
