@@ -181,7 +181,9 @@ const normalizedPlatforms = computed(() => {
   )
 })
 
-const upstreamSyncPlatforms = new Set(['anthropic', 'openai', 'gemini', 'antigravity', 'grok'])
+// 注意：Grok 不在此列表。后端 upstream_models.go 对 Grok 显式返回
+// "Grok upstream model sync is not supported"，若保留会渲染一个必然报错的同步按钮。
+const upstreamSyncPlatforms = new Set(['anthropic', 'openai', 'gemini', 'antigravity'])
 const canSyncUpstream = computed(() => {
   if (props.accountId) {
     if (normalizedPlatforms.value.length === 0) return true
