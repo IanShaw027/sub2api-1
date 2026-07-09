@@ -616,6 +616,39 @@ go generate ./cmd/server
 
 ---
 
+## Kiro サポート
+
+Sub2API は Kiro を完全対応の上流プラットフォームとしてサポートし、Kiro サブスクリプションアカウントを利用できます。プラットフォーム名は `kiro` です。Kiro トラフィックでは、ゲートウェイの上流アカウントスケジューリング、月次サブスクリプションクォータ処理、TLS フィンガープリントサポートを利用できます。
+
+### 対応ログイン / 認証方式
+
+- `social`: Kiro が対応するソーシャルプロバイダー経由の OAuth ログイン。
+- `builderid`: AWS Builder ID ログイン。
+- `awsidc`: AWS IAM Identity Center（IdC）デバイスフロー。
+- `external_idp`: 外部 ID プロバイダーによるログイン。
+
+管理者は、管理画面の OAuth フローから Kiro アカウントを作成または再認可できます。
+
+### Kiro Runtime Defaults
+
+管理画面では、新規リクエスト向けの Kiro ランタイム既定値を簡潔に設定できます:
+
+- fake-cache 課金シミュレーション: 課金/会計に使う模擬キャッシュヒット動作、キャッシュ TTL、最小トークン数などを制御します。
+- thinking シミュレーション: Kiro リクエストで必要な場合の simulated thinking / adaptive-thinking 出力動作を制御します。
+- コード実行サンドボックス: Kiro の `code_execution` ツール呼び出しを処理する任意のコマンドです。空のままにすると無効化されます。
+
+**⚠️ セキュリティ警告: Kiro コード実行サンドボックス**
+
+`kiro_code_execution_sandbox_command` を設定すると、モデルが生成したコードは**ホスト**上で `/bin/sh -c <command>` にパイプされて実行されます。Kiro に到達できる Sub2API API キーを持つ任意のユーザーが、この機能を通じてホスト上のコード実行をトリガーできます。この設定は空がデフォルトであり、デフォルトでは無効です。
+
+管理者は、コンテナ、gVisor、firejail ラッパーなど、独自の分離境界を**必ず**用意してください。例:
+
+```bash
+kiro_code_execution_sandbox_command='firejail --quiet --private /usr/local/bin/kiro-code-sandbox'
+```
+
+---
+
 ## Antigravity サポート
 
 Sub2API は [Antigravity](https://antigravity.so/) アカウントをサポートしています。認証後、Claude および Gemini モデル用の専用エンドポイントが利用可能になります。

@@ -717,9 +717,44 @@ Claude Code 默认 `ANTHROPIC_MODEL=grok-4.5`；Codex 默认 `model = "grok-4.5"
 | `XAI_OAUTH_TOKEN_URL` | `https://auth.x.ai/oauth2/token` |
 | `XAI_BASE_URL` | `https://api.x.ai/v1` |
 
+这些 `XAI_OAUTH_*` 与 `XAI_BASE_URL` 覆盖项仅支持通过环境变量配置；它们不在 `deploy/config.example.yaml` 中配置。
+
 ### 额度展示
 
 xAI 额度被动解析响应头；未观察到上游限流头前显示为未知。`401` 需重新授权，`403` 视为订阅/权益失败，`429` 短冷却后重新调度。
+
+---
+
+## Kiro 支持
+
+Sub2API 将 Kiro 作为完整支持的上游平台接入，适用于 Kiro 订阅账号。平台名为 `kiro`；Kiro 流量可使用网关的上游账号调度、月度订阅额度处理和 TLS 指纹支持。
+
+### 支持的登录 / 认证方式
+
+- `social`：通过 Kiro 支持的社交账号提供方进行 OAuth 登录。
+- `builderid`：AWS Builder ID 登录。
+- `awsidc`：AWS IAM Identity Center（IdC）设备流。
+- `external_idp`：外部身份提供方登录。
+
+管理员可在控制台通过 OAuth 流程创建或重新授权 Kiro 账号。
+
+### Kiro Runtime Defaults
+
+管理后台提供简洁的 Kiro 运行时默认配置，用于新请求：
+
+- fake-cache 计费模拟：控制模拟缓存命中行为，以及用于计费/统计的缓存 TTL、最小 token 等参数。
+- thinking 模拟：控制 Kiro 请求需要时的模拟 thinking / adaptive-thinking 输出行为。
+- 代码执行沙箱：用于处理 Kiro `code_execution` 工具调用的可选命令；留空即禁用。
+
+**⚠️ 安全警告：Kiro 代码执行沙箱**
+
+当设置 `kiro_code_execution_sandbox_command` 后，模型生成的代码会在**宿主机**上通过管道传给 `/bin/sh -c <command>` 执行。任何持有可访问 Kiro 的 Sub2API API Key 的用户，都可以通过此功能触发宿主机代码执行。该功能默认禁用，因为该设置默认为空。
+
+管理员**必须**自行提供隔离边界，例如容器、gVisor 或 firejail 包装器。例如：
+
+```bash
+kiro_code_execution_sandbox_command='firejail --quiet --private /usr/local/bin/kiro-code-sandbox'
+```
 
 ---
 
