@@ -9,6 +9,7 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 )
 
 type accountUsageCodexProbeRepo struct {
@@ -33,6 +34,84 @@ func (r *accountUsageCodexProbeRepo) SetRateLimited(_ context.Context, _ int64, 
 		r.rateLimitCh <- resetAt
 	}
 	return nil
+}
+
+type grokSevenDayUsageRepoStub struct {
+	geminiUsageLogRepoStub
+	requestedAccountID int64
+	requestedStart     time.Time
+	windowStats        *usagestats.AccountStats
+}
+
+func (r *grokSevenDayUsageRepoStub) GetAccountWindowStats(_ context.Context, accountID int64, startTime time.Time) (*usagestats.AccountStats, error) {
+	r.requestedAccountID = accountID
+	r.requestedStart = startTime
+	return r.windowStats, nil
+}
+
+func TestAccountUsageService_GetGrokUsageShowsSevenDayRatioAndBillingStats(t *testing.T) {
+	t.Parallel()
+
+	requestLimit := int64(100)
+	requestRemaining := int64(60)
+	tokenLimit := int64(1000)
+	tokenRemaining := int64(100)
+	resetUnix := time.Now().Add(7 * 24 * time.Hour).Unix()
+	account := &Account{
+		ID:       7042,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			grokQuotaSnapshotExtraKey: &xai.QuotaSnapshot{
+				Requests:  &xai.QuotaWindow{Limit: &requestLimit, Remaining: &requestRemaining},
+				Tokens:    &xai.QuotaWindow{Limit: &tokenLimit, Remaining: &tokenRemaining, ResetUnix: &resetUnix},
+				UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+			},
+		},
+	}
+	repo := &grokSevenDayUsageRepoStub{
+		windowStats: &usagestats.AccountStats{
+			Requests:     7,
+			Tokens:       700,
+			Cost:         1.23,
+			StandardCost: 1.11,
+			UserCost:     2.34,
+		},
+	}
+	svc := &AccountUsageService{usageLogRepo: repo, grokQuotaFetcher: NewGrokQuotaFetcher()}
+
+	usage, err := svc.getGrokUsage(context.Background(), account)
+
+	if err != nil {
+		t.Fatalf("getGrokUsage() error = %v", err)
+	}
+	if usage.SevenDay == nil {
+		t.Fatal("expected seven_day usage progress")
+	}
+	if usage.SevenDay.Utilization != 90 {
+		t.Fatalf("seven_day utilization = %v, want 90", usage.SevenDay.Utilization)
+	}
+	if usage.SevenDay.ResetsAt == nil || usage.SevenDay.ResetsAt.Unix() != resetUnix {
+		t.Fatalf("seven_day resets_at = %v, want unix %d", usage.SevenDay.ResetsAt, resetUnix)
+	}
+	if usage.SevenDay.WindowStats == nil {
+		t.Fatal("expected seven_day window_stats")
+	}
+	if usage.SevenDay.WindowStats.Requests != 7 || usage.SevenDay.WindowStats.Tokens != 700 {
+		t.Fatalf("seven_day window stats = %+v, want requests=7 tokens=700", usage.SevenDay.WindowStats)
+	}
+	if usage.SevenDay.WindowStats.Cost != 1.23 || usage.SevenDay.WindowStats.UserCost != 2.34 {
+		t.Fatalf("seven_day billing stats = %+v, want account=1.23 user=2.34", usage.SevenDay.WindowStats)
+	}
+	if usage.GrokLocalUsage != nil {
+		t.Fatalf("grok_local_usage should not drive the Grok usage window, got %+v", usage.GrokLocalUsage)
+	}
+	if repo.requestedAccountID != account.ID {
+		t.Fatalf("GetAccountWindowStats account id = %d, want %d", repo.requestedAccountID, account.ID)
+	}
+	if time.Since(repo.requestedStart) < 6*24*time.Hour {
+		t.Fatalf("GetAccountWindowStats start = %v, expected roughly 7d window", repo.requestedStart)
+	}
 }
 
 func TestShouldRefreshOpenAICodexSnapshot(t *testing.T) {

@@ -210,6 +210,64 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).toContain('7d|62|2026-03-13T12:00:00Z')
   })
 
+  it('Grok OAuth 用量窗只展示 7d 比例和 req/token/账号/用户计费统计', async () => {
+    getUsage.mockResolvedValue({
+      seven_day: {
+        utilization: 42,
+        resets_at: '2026-07-16T00:00:00Z',
+        remaining_seconds: 3600,
+        window_stats: {
+          requests: 7,
+          tokens: 700,
+          cost: 1.23,
+          standard_cost: 1.11,
+          user_cost: 2.34
+        }
+      },
+      grok_request_quota: { limit: 100, remaining: 58, reset_at: '2026-07-16T00:00:00Z' },
+      grok_token_quota: { limit: 1000, remaining: 580, reset_at: '2026-07-16T00:00:00Z' },
+      grok_retry_after_seconds: 60,
+      grok_quota_snapshot_state: 'no_headers',
+      grok_last_status_code: 200,
+      grok_last_quota_probe_at: '2026-07-09T00:00:00Z',
+      subscription_tier: 'supergrok',
+      subscription_tier_raw: 'supergrok',
+      grok_entitlement_status: 'active'
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 7001,
+          platform: 'grok',
+          type: 'oauth',
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}|{{ windowStats?.requests }}req|{{ windowStats?.tokens }}tok|A{{ windowStats?.cost }}|U{{ windowStats?.user_cost }}</div>'
+          },
+          AccountQuotaInfo: true,
+          GrokQuotaProbeCell: { template: '<div>PROBE_RESET_SHOULD_NOT_RENDER</div>' }
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('7d|42|2026-07-16T00:00:00Z|7req|700tok|A1.23|U2.34')
+    expect(wrapper.text()).not.toContain('supergrok')
+    expect(wrapper.text()).not.toContain('active')
+    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokRequests')
+    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokTokens')
+    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokNoHeaders')
+    expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokLastStatus')
+    expect(wrapper.text()).not.toContain('PROBE_RESET_SHOULD_NOT_RENDER')
+  })
+
   it('父级接管 batch usage 时不再自发调用逐个 getUsage', async () => {
     const requestBatchedUsage = vi.fn()
 

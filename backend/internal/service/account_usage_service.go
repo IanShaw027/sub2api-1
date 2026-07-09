@@ -1557,13 +1557,44 @@ func (s *AccountUsageService) getGrokUsage(ctx context.Context, account *Account
 	}
 
 	if s.usageLogRepo != nil && account != nil {
-		if stats, err := s.usageLogRepo.GetAccountTodayStats(ctx, account.ID); err == nil && stats != nil {
-			usage.GrokLocalUsage = windowStatsFromAccountStats(stats)
+		if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, time.Now().Add(-7*24*time.Hour)); err == nil && stats != nil {
+			if usage.SevenDay == nil {
+				usage.SevenDay = &UsageProgress{Utilization: 0}
+			}
+			usage.SevenDay.WindowStats = windowStatsFromAccountStats(stats)
+		}
+	}
+	if account != nil {
+		if snapshot, err := grokQuotaSnapshotFromExtra(account.Extra); err == nil {
+			if progress := grokQuotaSnapshotSevenDayProgress(snapshot); progress != nil {
+				if usage.SevenDay == nil {
+					usage.SevenDay = progress
+				} else {
+					usage.SevenDay.Utilization = progress.Utilization
+					usage.SevenDay.ResetsAt = progress.ResetsAt
+					usage.SevenDay.RemainingSeconds = progress.RemainingSeconds
+				}
+			}
 		}
 	}
 
 	enrichUsageWithAccountError(usage, account)
 	return usage, nil
+}
+
+func grokQuotaSnapshotSevenDayProgress(snapshot *xai.QuotaSnapshot) *UsageProgress {
+	utilization, resetAt, ok := grokSnapshotUtilization(snapshot)
+	if !ok {
+		return nil
+	}
+	progress := &UsageProgress{Utilization: utilization}
+	if resetAt != nil {
+		progress.ResetsAt = resetAt
+		if seconds := int(time.Until(*resetAt).Seconds()); seconds > 0 {
+			progress.RemainingSeconds = seconds
+		}
+	}
+	return progress
 }
 
 // recalcAntigravityRemainingSeconds 重新计算 Antigravity UsageInfo 中各窗口的 RemainingSeconds
