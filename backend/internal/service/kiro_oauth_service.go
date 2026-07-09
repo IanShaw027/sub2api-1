@@ -425,25 +425,31 @@ func (s *KiroOAuthService) CompleteDeviceAuthorization(ctx context.Context, inpu
 	if !ok {
 		return nil, fmt.Errorf("kiro 授权会话不存在或已过期。请重新生成授权链接，并在当前弹窗同一轮流程中于 30 分钟内完成授权后，再粘贴最新地址栏中的完整回调 URL")
 	}
-	if session.IDCContinuation == nil {
+
+	session.mu.Lock()
+	continuation := cloneKiroIDCContinuationSession(session.IDCContinuation)
+	proxyURLFallback := session.ProxyURL
+	session.mu.Unlock()
+
+	if continuation == nil {
 		return nil, fmt.Errorf("kiro device authorization continuation was not started for this session")
 	}
-	if time.Now().After(session.IDCContinuation.ExpiresAt) {
+	if time.Now().After(continuation.ExpiresAt) {
 		s.sessionStore.Delete(input.SessionID)
 		return nil, fmt.Errorf("kiro device authorization session expired; please restart the Kiro OAuth flow")
 	}
 
-	proxyURL, err := s.resolveProxyURL(ctx, input.ProxyID, session.ProxyURL)
+	proxyURL, err := s.resolveProxyURL(ctx, input.ProxyID, proxyURLFallback)
 	if err != nil {
 		return nil, err
 	}
 
 	tokenPayload, err := kiroIDCCompleteDeviceAuthorizationFunc(ctx, kiroIDCCompleteDeviceAuthorizationInput{
 		ProxyURL:     proxyURL,
-		ClientID:     session.IDCContinuation.ClientID,
-		ClientSecret: session.IDCContinuation.ClientSecret,
-		DeviceCode:   session.IDCContinuation.DeviceCode,
-		Region:       firstNonEmptyKiroString(session.IDCContinuation.Region, kiroIDCDefaultRegion),
+		ClientID:     continuation.ClientID,
+		ClientSecret: continuation.ClientSecret,
+		DeviceCode:   continuation.DeviceCode,
+		Region:       firstNonEmptyKiroString(continuation.Region, kiroIDCDefaultRegion),
 	})
 	if err != nil {
 		var apiErr *kiroIDCAPIError
@@ -451,16 +457,24 @@ func (s *KiroOAuthService) CompleteDeviceAuthorization(ctx context.Context, inpu
 			switch strings.ToLower(strings.TrimSpace(apiErr.ErrorCode)) {
 			case "authorization_pending":
 				return &KiroOAuthProgressResult{
-					Continuation: buildKiroIDCContinuationInfo(input.SessionID, session.IDCContinuation, "authorization_pending", "complete the browser/device authorization, then call device-complete again"),
+					Continuation: buildKiroIDCContinuationInfo(input.SessionID, continuation, "authorization_pending", "complete the browser/device authorization, then call device-complete again"),
 				}, nil
 			case "slow_down":
-				if session.IDCContinuation.IntervalSeconds <= 0 {
-					session.IDCContinuation.IntervalSeconds = 5
+				session.mu.Lock()
+				if session.IDCContinuation != nil {
+					if session.IDCContinuation.IntervalSeconds <= 0 {
+						session.IDCContinuation.IntervalSeconds = 5
+					}
+					session.IDCContinuation.IntervalSeconds += 5
+					continuation = cloneKiroIDCContinuationSession(session.IDCContinuation)
 				}
-				session.IDCContinuation.IntervalSeconds += 5
+				session.mu.Unlock()
+				if continuation == nil {
+					continuation = &KiroIDCContinuationSession{}
+				}
 				s.sessionStore.Set(input.SessionID, session)
 				return &KiroOAuthProgressResult{
-					Continuation: buildKiroIDCContinuationInfo(input.SessionID, session.IDCContinuation, "authorization_pending", "authorization is still pending; poll more slowly before calling device-complete again"),
+					Continuation: buildKiroIDCContinuationInfo(input.SessionID, continuation, "authorization_pending", "authorization is still pending; poll more slowly before calling device-complete again"),
 				}, nil
 			case "expired_token", "access_denied":
 				s.sessionStore.Delete(input.SessionID)
@@ -471,42 +485,53 @@ func (s *KiroOAuthService) CompleteDeviceAuthorization(ctx context.Context, inpu
 
 	enrichedPayload := map[string]any{
 		"auth_method":   "idc",
-		"client_id":     session.IDCContinuation.ClientID,
-		"client_secret": session.IDCContinuation.ClientSecret,
-		"issuer_url":    session.IDCContinuation.IssuerURL,
-		"idc_region":    session.IDCContinuation.Region,
-		"auth_region":   session.IDCContinuation.Region,
-		"region":        session.IDCContinuation.Region,
-		"login_hint":    session.IDCContinuation.LoginHint,
-		"login_option":  session.IDCContinuation.LoginOption,
+		"client_id":     continuation.ClientID,
+		"client_secret": continuation.ClientSecret,
+		"issuer_url":    continuation.IssuerURL,
+		"idc_region":    continuation.Region,
+		"auth_region":   continuation.Region,
+		"region":        continuation.Region,
+		"login_hint":    continuation.LoginHint,
+		"login_option":  continuation.LoginOption,
 	}
-	if len(session.IDCContinuation.Scopes) > 0 {
-		enrichedPayload["scope"] = strings.Join(session.IDCContinuation.Scopes, " ")
+	if len(continuation.Scopes) > 0 {
+		enrichedPayload["scope"] = strings.Join(continuation.Scopes, " ")
 	}
 	for key, value := range tokenPayload {
 		enrichedPayload[key] = value
 	}
 
 	query := url.Values{}
-	if session.IDCContinuation.LoginHint != "" {
-		query.Set("login_hint", session.IDCContinuation.LoginHint)
+	if continuation.LoginHint != "" {
+		query.Set("login_hint", continuation.LoginHint)
 	}
-	if len(session.IDCContinuation.Scopes) > 0 {
-		query.Set("scope", strings.Join(session.IDCContinuation.Scopes, " "))
+	if len(continuation.Scopes) > 0 {
+		query.Set("scope", strings.Join(continuation.Scopes, " "))
 	}
-	tokenInfo := buildKiroTokenInfo(enrichedPayload, query, session.IDCContinuation.LoginOption)
+	tokenInfo := buildKiroTokenInfo(enrichedPayload, query, continuation.LoginOption)
 	tokenInfo.AuthMethod = "idc"
-	tokenInfo.ClientID = firstNonEmptyKiroString(tokenInfo.ClientID, session.IDCContinuation.ClientID)
-	tokenInfo.ClientSecret = firstNonEmptyKiroString(tokenInfo.ClientSecret, session.IDCContinuation.ClientSecret)
-	tokenInfo.AuthRegion = firstNonEmptyKiroString(tokenInfo.AuthRegion, session.IDCContinuation.Region)
-	tokenInfo.IDCRegion = firstNonEmptyKiroString(tokenInfo.IDCRegion, session.IDCContinuation.Region)
-	tokenInfo.Region = firstNonEmptyKiroString(tokenInfo.Region, session.IDCContinuation.Region)
-	tokenInfo.IssuerURL = firstNonEmptyKiroString(tokenInfo.IssuerURL, session.IDCContinuation.IssuerURL)
-	tokenInfo.LoginHint = firstNonEmptyKiroString(tokenInfo.LoginHint, session.IDCContinuation.LoginHint)
+	tokenInfo.ClientID = firstNonEmptyKiroString(tokenInfo.ClientID, continuation.ClientID)
+	tokenInfo.ClientSecret = firstNonEmptyKiroString(tokenInfo.ClientSecret, continuation.ClientSecret)
+	tokenInfo.AuthRegion = firstNonEmptyKiroString(tokenInfo.AuthRegion, continuation.Region)
+	tokenInfo.IDCRegion = firstNonEmptyKiroString(tokenInfo.IDCRegion, continuation.Region)
+	tokenInfo.Region = firstNonEmptyKiroString(tokenInfo.Region, continuation.Region)
+	tokenInfo.IssuerURL = firstNonEmptyKiroString(tokenInfo.IssuerURL, continuation.IssuerURL)
+	tokenInfo.LoginHint = firstNonEmptyKiroString(tokenInfo.LoginHint, continuation.LoginHint)
 	s.enrichTokenInfo(ctx, tokenInfo)
 	s.sessionStore.Delete(input.SessionID)
 
 	return &KiroOAuthProgressResult{TokenInfo: tokenInfo}, nil
+}
+
+func cloneKiroIDCContinuationSession(in *KiroIDCContinuationSession) *KiroIDCContinuationSession {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	if in.Scopes != nil {
+		out.Scopes = append([]string(nil), in.Scopes...)
+	}
+	return &out
 }
 
 func (s *KiroOAuthService) exchangeCallbackProgress(ctx context.Context, input *KiroExchangeCallbackInput, allowIDCContinuation bool) (*KiroOAuthProgressResult, error) {

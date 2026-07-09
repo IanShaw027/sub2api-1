@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -149,7 +150,8 @@ func (r *KiroTokenRefresher) refreshKiroSocialToken(ctx context.Context, account
 	if ValidateKiroRefreshTokenHealth(out.RefreshToken) == nil {
 		refreshToken = out.RefreshToken
 	}
-	expiresAt = time.Now().Add(time.Duration(out.ExpiresIn) * time.Second).UTC().Format(time.RFC3339)
+	expiresIn := defaultKiroRefreshExpiresIn(out.ExpiresIn, "social")
+	expiresAt = time.Now().Add(time.Duration(expiresIn) * time.Second).UTC().Format(time.RFC3339)
 	return out.AccessToken, refreshToken, expiresAt, out.ProfileARN, nil
 }
 
@@ -176,7 +178,8 @@ func (r *KiroTokenRefresher) refreshKiroIDCToken(ctx context.Context, account *A
 	if ValidateKiroRefreshTokenHealth(out.RefreshToken) == nil {
 		refreshToken = out.RefreshToken
 	}
-	expiresAt = time.Now().Add(time.Duration(out.ExpiresIn) * time.Second).UTC().Format(time.RFC3339)
+	expiresIn := defaultKiroRefreshExpiresIn(out.ExpiresIn, "idc")
+	expiresAt = time.Now().Add(time.Duration(expiresIn) * time.Second).UTC().Format(time.RFC3339)
 	return out.AccessToken, refreshToken, expiresAt, nil
 }
 
@@ -239,6 +242,18 @@ func (r *KiroTokenRefresher) refreshKiroExternalIDPToken(ctx context.Context, ac
 	}
 	expiresAt = time.Now().Add(time.Duration(expiresIn) * time.Second).UTC().Format(time.RFC3339)
 	return out.AccessToken, refreshToken, expiresAt, nil
+}
+
+func defaultKiroRefreshExpiresIn(expiresIn int64, authMethod string) int64 {
+	if expiresIn > 0 {
+		return expiresIn
+	}
+	slog.Warn("kiro_refresh_missing_expires_in_defaulted",
+		"auth_method", authMethod,
+		"expires_in", expiresIn,
+		"default_expires_in", int64(3600),
+	)
+	return 3600
 }
 
 type kiroRefreshResponse struct {
