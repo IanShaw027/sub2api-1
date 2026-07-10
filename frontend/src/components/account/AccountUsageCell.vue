@@ -68,6 +68,15 @@
           color="purple"
         />
 
+        <!-- 7d Fable Window (OAuth only) -->
+        <UsageProgressBar
+          v-if="usageInfo.seven_day_fable"
+          label="7d F"
+          :utilization="usageInfo.seven_day_fable.utilization"
+          :resets-at="usageInfo.seven_day_fable.resets_at"
+          color="purple"
+        />
+
         <!-- Passive sampling label + active query button -->
         <div class="flex items-center gap-1.5 mt-0.5">
           <span
@@ -387,14 +396,35 @@
       <div v-else-if="error" class="text-xs text-red-500">
         {{ error }}
       </div>
-      <div v-else-if="usageInfo?.seven_day" class="space-y-1">
+      <div v-else-if="hasGrokUsageContent" class="space-y-1">
         <UsageProgressBar
+          v-if="usageInfo?.seven_day"
           label="7d"
           :utilization="usageInfo.seven_day.utilization"
           :resets-at="usageInfo.seven_day.resets_at"
           :window-stats="usageInfo.seven_day.window_stats"
           color="emerald"
         />
+        <UsageProgressBar
+          v-if="showGrokQuotaBars && grokRequestQuotaProgress"
+          :label="t('admin.accounts.usageWindow.grokRequests')"
+          :utilization="grokRequestQuotaProgress.utilization"
+          :resets-at="grokRequestQuotaProgress.resets_at"
+          color="emerald"
+        />
+        <UsageProgressBar
+          v-if="showGrokQuotaBars && grokTokenQuotaProgress"
+          :label="t('admin.accounts.usageWindow.grokTokens')"
+          :utilization="grokTokenQuotaProgress.utilization"
+          :resets-at="grokTokenQuotaProgress.resets_at"
+          color="indigo"
+        />
+        <div v-if="grokLocalUsageSummary" class="flex flex-wrap items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400">
+          <span>{{ grokLocalUsageSummary.requests }} req</span>
+          <span>{{ grokLocalUsageSummary.tokens }}</span>
+          <span title="usage.accountBilled">A ${{ grokLocalUsageSummary.accountCost }}</span>
+          <span title="usage.userBilled">U ${{ grokLocalUsageSummary.userCost }}</span>
+        </div>
       </div>
       <div v-else class="text-xs text-gray-400">-</div>
     </template>
@@ -700,6 +730,43 @@ const hasUsageProgressData = (progress?: UsageProgress | null): progress is Usag
     (stats?.user_cost ?? 0) > 0 ||
     (stats?.standard_cost ?? 0) > 0
 }
+
+const quotaWindowToProgress = (window?: { limit?: number; remaining?: number; reset_at?: string } | null): UsageProgress | null => {
+  if (!window || typeof window.limit !== 'number' || window.limit <= 0 || typeof window.remaining !== 'number') return null
+  const used = window.limit - window.remaining
+  return {
+    utilization: Math.round((used / window.limit) * 100),
+    resets_at: window.reset_at ?? null,
+    remaining_seconds: 0
+  }
+}
+
+const grokRequestQuotaProgress = computed(() => quotaWindowToProgress(usageInfo.value?.grok_request_quota))
+const grokTokenQuotaProgress = computed(() => quotaWindowToProgress(usageInfo.value?.grok_token_quota))
+
+const showGrokQuotaBars = computed(() => !usageInfo.value?.seven_day)
+
+const grokLocalUsageSummary = computed(() => {
+  const stats = usageInfo.value?.grok_local_usage
+  if (!stats) return null
+  return {
+    requests: formatCompactNumber(stats.requests ?? 0, { allowBillions: false }),
+    tokens: formatCompactNumber(stats.tokens ?? 0),
+    accountCost: (stats.standard_cost ?? stats.cost ?? 0).toFixed(2),
+    userCost: (stats.user_cost ?? stats.cost ?? 0).toFixed(2)
+  }
+})
+
+const hasGrokUsageContent = computed(() => {
+  const info = usageInfo.value
+  if (!info) return false
+  return !!(
+    info.seven_day ||
+    grokRequestQuotaProgress.value ||
+    grokTokenQuotaProgress.value ||
+    grokLocalUsageSummary.value
+  )
+})
 
 const isRouteVisible = (supported: boolean | undefined, hasData: boolean) => {
   if (supported === false) return false

@@ -1377,6 +1377,7 @@ export interface AccountUsageInfo {
   five_hour: UsageProgress | null
   seven_day: UsageProgress | null
   seven_day_sonnet: UsageProgress | null
+  seven_day_fable?: UsageProgress | null
   kiro_quota?: UsageProgress | null
   kiro_subscription_title?: string
   kiro_current_usage?: number
