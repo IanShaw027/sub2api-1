@@ -104,11 +104,14 @@
                 <!-- Price -->
                 <div class="flex items-baseline gap-2">
                   <span v-if="selectedPlan.original_price" class="text-sm text-gray-400 line-through dark:text-gray-500">
-                    {{ formatSelectedPaymentAmount(selectedPlan.original_price) }}
+                    {{ formatSelectedPaymentAmount(subscriptionGatewayBaseAmountFor(selectedPlan.original_price)) }}
                   </span>
-                  <span :class="['text-3xl font-bold', planTextClass]">{{ formatSelectedPaymentAmount(selectedPlan.price) }}</span>
+                  <span :class="['text-3xl font-bold', planTextClass]">{{ formatSelectedPaymentAmount(subPaymentAmount) }}</span>
                   <span class="text-sm text-gray-500 dark:text-gray-400">/ {{ planValiditySuffix }}</span>
                 </div>
+                <p v-if="subscriptionConversionNote" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ subscriptionConversionNote }}
+                </p>
                 <!-- Description -->
                 <p v-if="selectedPlan.description" class="mt-2 text-sm leading-relaxed text-gray-500 dark:text-gray-400">
                   {{ selectedPlan.description }}
@@ -593,18 +596,29 @@ function formatSelectedPaymentAmount(value: number): string {
   return formatPaymentAmount(value, selectedCurrency.value, localeCode.value)
 }
 
+const rechargeFeeRate = computed(() => {
+  const value = checkout.value?.recharge_fee_rate
+  return Number.isFinite(value) && value > 0 ? value : 0
+})
+
+function effectiveMethodFeeRate(type: string): number {
+  const methodFeeRate = visibleMethods.value[type]?.fee_rate
+  if (Number.isFinite(methodFeeRate) && methodFeeRate > 0) return methodFeeRate
+  return rechargeFeeRate.value
+}
+
 const methodOptions = computed<PaymentMethodOption[]>(() =>
   enabledMethods.value.map((type) => {
     const ml = visibleMethods.value[type]
     return {
       type,
-      fee_rate: ml?.fee_rate ?? 0,
-      available: ml?.available !== false && amountFitsMethod(validAmount.value, type),
+      fee_rate: effectiveMethodFeeRate(type),
+      available: ml?.available !== false && amountFitsMethod(methodGatewayAmount(validAmount.value, type), type),
     }
   })
 )
 
-const feeRate = computed(() => checkout.value?.recharge_fee_rate ?? 0)
+const feeRate = computed(() => effectiveMethodFeeRate(selectedMethod.value))
 const feeAmount = computed(() =>
   feeRate.value > 0 && validAmount.value > 0
     ? Math.ceil(((validAmount.value * feeRate.value) / 100) * 100) / 100
@@ -616,28 +630,61 @@ const totalAmount = computed(() =>
     : validAmount.value
 )
 
+function methodGatewayAmount(baseAmount: number, methodType: string): number {
+  const rate = effectiveMethodFeeRate(methodType)
+  const currency = normalizePaymentCurrency(visibleMethods.value[methodType]?.currency)
+  if (rate <= 0 || baseAmount <= 0) return baseAmount
+  const fee = ceilPaymentAmount((baseAmount * rate) / 100, currency)
+  return roundPaymentAmount(baseAmount + fee, currency)
+}
+
 const amountError = computed(() => {
   if (validAmount.value <= 0) return ''
   // No method can handle this amount
-  if (!enabledMethods.value.some((m) => amountFitsMethod(validAmount.value, m))) {
+  if (!enabledMethods.value.some((m) => amountFitsMethod(methodGatewayAmount(validAmount.value, m), m))) {
     return t('payment.amountNoMethod')
   }
   // Selected method can't handle this amount (but others can)
   const ml = selectedLimit.value
   if (ml) {
-    if (ml.single_min > 0 && validAmount.value < ml.single_min) return t('payment.amountTooLow', { min: formatSelectedPaymentAmount(ml.single_min) })
-    if (ml.single_max > 0 && validAmount.value > ml.single_max) return t('payment.amountTooHigh', { max: formatSelectedPaymentAmount(ml.single_max) })
+    if (ml.single_min > 0 && totalAmount.value < ml.single_min) return t('payment.amountTooLow', { min: formatSelectedPaymentAmount(ml.single_min) })
+    if (ml.single_max > 0 && totalAmount.value > ml.single_max) return t('payment.amountTooHigh', { max: formatSelectedPaymentAmount(ml.single_max) })
   }
   return ''
 })
 
 const canSubmit = computed(() =>
   validAmount.value > 0
-    && amountFitsMethod(validAmount.value, selectedMethod.value)
+    && amountFitsMethod(totalAmount.value, selectedMethod.value)
     && selectedLimit.value?.available !== false
 )
 
-const subPaymentAmount = computed(() => selectedPlan.value?.price ?? 0)
+const subscriptionUSDToCNYRate = computed(() => {
+  const rate = checkout.value.subscription_usd_to_cny_rate
+  return Number.isFinite(rate) && rate > 0 ? rate : 0
+})
+
+function subscriptionGatewayBaseAmountFor(value: number): number {
+  if (subscriptionUSDToCNYRate.value <= 0 || selectedCurrency.value !== 'CNY') return value
+  return roundPaymentAmount(value * subscriptionUSDToCNYRate.value, selectedCurrency.value)
+}
+
+function subscriptionGatewayBaseAmountForMethod(value: number, methodType: string): number {
+  const currency = normalizePaymentCurrency(visibleMethods.value[methodType]?.currency)
+  if (subscriptionUSDToCNYRate.value <= 0 || currency !== 'CNY') return value
+  return roundPaymentAmount(value * subscriptionUSDToCNYRate.value, currency)
+}
+
+const subPaymentAmount = computed(() => {
+  const price = selectedPlan.value?.price ?? 0
+  return subscriptionGatewayBaseAmountFor(price)
+})
+
+const subscriptionConversionNote = computed(() => {
+  const plan = selectedPlan.value
+  if (!plan || subscriptionUSDToCNYRate.value <= 0 || selectedCurrency.value !== 'CNY') return ''
+  return `${formatPaymentAmount(plan.price, 'USD', localeCode.value)} × ${subscriptionUSDToCNYRate.value.toFixed(2)}`
+})
 
 const subFeeAmount = computed(() => {
   if (feeRate.value <= 0 || subPaymentAmount.value <= 0) return 0
@@ -651,13 +698,15 @@ const subTotalAmount = computed(() => {
 
 // Subscription-specific: method options based on gateway pay amount
 const subMethodOptions = computed<PaymentMethodOption[]>(() => {
-  const gatewayAmount = subTotalAmount.value
   return enabledMethods.value.map((type) => {
     const ml = visibleMethods.value[type]
     return {
       type,
-      fee_rate: ml?.fee_rate ?? 0,
-      available: ml?.available !== false && amountFitsMethod(gatewayAmount, type),
+      fee_rate: effectiveMethodFeeRate(type),
+      available: ml?.available !== false && amountFitsMethod(
+        methodGatewayAmount(subscriptionGatewayBaseAmountForMethod(selectedPlan.value?.price ?? 0, type), type),
+        type,
+      ),
     }
   })
 })
@@ -670,8 +719,8 @@ const canSubmitSubscription = computed(() =>
 
 // Auto-switch to first available method when current selection can't handle the amount
 watch(() => [validAmount.value, selectedMethod.value] as const, ([amt, method]) => {
-  if (amt <= 0 || amountFitsMethod(amt, method)) return
-  const available = enabledMethods.value.find((m) => amountFitsMethod(amt, m))
+  if (amt <= 0 || amountFitsMethod(methodGatewayAmount(amt, method), method)) return
+  const available = enabledMethods.value.find((m) => amountFitsMethod(methodGatewayAmount(amt, m), m))
   if (available) selectedMethod.value = available
 })
 

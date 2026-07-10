@@ -21,6 +21,10 @@ func (s *PaymentConfigService) GetAvailableMethodLimits(ctx context.Context) (*M
 	if err != nil {
 		return nil, fmt.Errorf("query provider instances: %w", err)
 	}
+	cfg, err := s.GetPaymentConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get payment config: %w", err)
+	}
 	typeInstances := pcGroupByPaymentType(instances)
 	typeInstances = s.pcApplyEnabledVisibleMethodInstances(ctx, typeInstances, instances)
 	resp := &MethodLimitsResponse{
@@ -34,6 +38,7 @@ func (s *PaymentConfigService) GetAvailableMethodLimits(ctx context.Context) (*M
 		ml := pcAggregateMethodLimits(pt, insts)
 		ml.DisplayName = s.pcAggregateMethodDisplayName(pt, insts)
 		ml.Currency = currency
+		ml.FeeRate = cfg.RechargeFeeRate
 		resp.Methods[ml.PaymentType] = ml
 	}
 	resp.GlobalMin, resp.GlobalMax = pcComputeGlobalRange(resp.Methods)
@@ -82,6 +87,10 @@ func (s *PaymentConfigService) GetMethodLimits(ctx context.Context, types []stri
 	if err != nil {
 		return nil, fmt.Errorf("query provider instances: %w", err)
 	}
+	cfg, err := s.GetPaymentConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get payment config: %w", err)
+	}
 	result := make([]MethodLimits, 0, len(types))
 	for _, pt := range types {
 		var matching []*dbent.PaymentProviderInstance
@@ -97,6 +106,7 @@ func (s *PaymentConfigService) GetMethodLimits(ctx context.Context, types []stri
 		ml := pcAggregateMethodLimits(pt, matching)
 		ml.DisplayName = s.pcAggregateMethodDisplayName(pt, matching)
 		ml.Currency = currency
+		ml.FeeRate = cfg.RechargeFeeRate
 		result = append(result, ml)
 	}
 	return result, nil

@@ -105,6 +105,7 @@ function checkoutInfoFixture(overrides: Partial<CheckoutInfoResponse> = {}) {
     plans: [],
     balance_disabled: false,
     balance_recharge_multiplier: 1,
+    subscription_usd_to_cny_rate: 0,
     recharge_fee_rate: 0,
     help_text: '',
     help_image_url: '',
@@ -235,6 +236,92 @@ async function mountSubscriptionConfirm(options: Parameters<typeof checkoutInfoW
   return wrapper
 }
 
+async function mountRecharge(options: {
+  checkout?: Partial<CheckoutInfoResponse>
+  method?: Partial<MethodLimit>
+  amount?: number
+} = {}) {
+  vi.useRealTimers()
+  routeState.path = '/purchase'
+  routeState.query = {}
+  routerReplace.mockReset().mockResolvedValue(undefined)
+  routerPush.mockReset().mockResolvedValue(undefined)
+  routerResolve.mockClear()
+  createOrder.mockReset()
+  refreshUser.mockReset()
+  fetchActiveSubscriptions.mockReset().mockResolvedValue(undefined)
+  showError.mockReset()
+  showInfo.mockReset()
+  showWarning.mockReset()
+  getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({
+    ...options.checkout,
+    methods: {
+      wxpay: {
+        ...checkoutInfoFixture().data.methods.wxpay,
+        ...options.method,
+      },
+    },
+  }))
+  bridgeInvoke.mockReset()
+  window.localStorage.clear()
+  ;(window as Window & { WeixinJSBridge?: { invoke: typeof bridgeInvoke } }).WeixinJSBridge = undefined
+
+  const wrapper = shallowMount(PaymentView, {
+    global: {
+      stubs: {
+        AppLayout: {
+          template: '<div><slot /></div>',
+        },
+        Teleport: true,
+        Transition: false,
+      },
+    },
+  })
+  await flushPromises()
+  await flushPromises()
+  if (options.amount != null) {
+    wrapper.findComponent({ name: 'AmountInput' }).vm.$emit('update:modelValue', options.amount)
+    await flushPromises()
+  }
+  return wrapper
+}
+
+describe('PaymentView recharge confirmation amounts', () => {
+  it('passes the effective checkout fee rate to the payment method display', async () => {
+    const wrapper = await mountRecharge({
+      checkout: {
+        recharge_fee_rate: 2.5,
+      },
+      method: {
+        currency: 'CNY',
+        fee_rate: 0,
+      },
+      amount: 100,
+    })
+
+    const selector = wrapper.findComponent({ name: 'PaymentMethodSelector' })
+    const methods = selector.props('methods') as Array<{ type: string; fee_rate: number }>
+    expect(methods.find((method) => method.type === 'wxpay')?.fee_rate).toBe(2.5)
+  })
+
+  it('marks recharge payment method unavailable when fee-inclusive total exceeds method limit', async () => {
+    const wrapper = await mountRecharge({
+      checkout: {
+        recharge_fee_rate: 2.5,
+      },
+      method: {
+        currency: 'CNY',
+        single_max: 102,
+      },
+      amount: 100,
+    })
+
+    const selector = wrapper.findComponent({ name: 'PaymentMethodSelector' })
+    const methods = selector.props('methods') as Array<{ type: string; available: boolean }>
+    expect(methods.find((method) => method.type === 'wxpay')?.available).toBe(false)
+  })
+})
+
 describe('PaymentView subscription confirmation amounts', () => {
   it('keeps subscription plan price independent from balance recharge multiplier', async () => {
     const wrapper = await mountSubscriptionConfirm({
@@ -314,6 +401,49 @@ describe('PaymentView subscription confirmation amounts', () => {
     expect(usdWrapper.text()).toContain(formatPaymentAmount(9.99, 'USD'))
   })
 
+  it('converts subscription USD price to CNY gateway amount when subscription exchange rate is configured', async () => {
+    const wrapper = await mountSubscriptionConfirm({
+      checkout: {
+        subscription_usd_to_cny_rate: 7.15,
+      },
+      method: {
+        currency: 'CNY',
+      },
+      plan: {
+        price: 7.99,
+        original_price: 9.99,
+      },
+    })
+
+    const text = wrapper.text()
+    const convertedPrice = formatPaymentAmount(57.13, 'CNY')
+    const convertedOriginalPrice = formatPaymentAmount(71.43, 'CNY')
+
+    expect(text).toContain(convertedPrice)
+    expect(text).toContain(convertedOriginalPrice)
+    expect(text).toContain(`${formatPaymentAmount(7.99, 'USD')} × 7.15`)
+    expect(wrapper.findAll('button').some(button => button.text().includes(convertedPrice))).toBe(true)
+  })
+
+  it('validates subscription method limits against exchange-rate converted CNY pay amount', async () => {
+    const wrapper = await mountSubscriptionConfirm({
+      checkout: {
+        subscription_usd_to_cny_rate: 7.15,
+      },
+      method: {
+        currency: 'CNY',
+        single_max: 57,
+      },
+      plan: {
+        price: 7.99,
+      },
+    })
+
+    const selector = wrapper.findComponent({ name: 'PaymentMethodSelector' })
+    const methods = selector.props('methods') as Array<{ type: string; available: boolean }>
+    expect(methods.find((method) => method.type === 'wxpay')?.available).toBe(false)
+  })
+
   it('adds fee rate to the direct subscription price without applying balance multiplier', async () => {
     const wrapper = await mountSubscriptionConfirm({
       checkout: {
@@ -338,6 +468,25 @@ describe('PaymentView subscription confirmation amounts', () => {
     expect(text).toContain(total)
     expect(text).not.toContain(formatPaymentAmount(57.07, 'CNY'))
     expect(wrapper.findAll('button').some(button => button.text().includes(total))).toBe(true)
+  })
+
+  it('passes the checkout fee rate to the selected payment method display', async () => {
+    const wrapper = await mountSubscriptionConfirm({
+      checkout: {
+        recharge_fee_rate: 2.5,
+      },
+      method: {
+        currency: 'CNY',
+        fee_rate: 0,
+      },
+      plan: {
+        price: 7.99,
+      },
+    })
+
+    const selector = wrapper.findComponent({ name: 'PaymentMethodSelector' })
+    const methods = selector.props('methods') as Array<{ type: string; fee_rate: number }>
+    expect(methods.find((method) => method.type === 'wxpay')?.fee_rate).toBe(2.5)
   })
 
   it('marks subscription payment method unavailable when fee-inclusive total exceeds method limit', async () => {

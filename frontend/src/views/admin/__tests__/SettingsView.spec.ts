@@ -498,6 +498,7 @@ const baseSettingsResponse = {
   payment_enabled_types: [],
   payment_balance_disabled: false,
   payment_balance_recharge_multiplier: 1,
+  payment_subscription_usd_to_cny_rate: 7.15,
   payment_recharge_fee_rate: 0,
   payment_load_balance_strategy: "round-robin",
   payment_product_name_prefix: "",
@@ -780,6 +781,22 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(payload).not.toHaveProperty("payment_visible_method_wxpay_source");
     expect(payload).not.toHaveProperty("payment_visible_method_alipay_enabled");
     expect(payload).not.toHaveProperty("payment_visible_method_wxpay_enabled");
+  });
+
+  it("submits the subscription USD to CNY exchange rate with payment settings", async () => {
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openPaymentTab(wrapper);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        payment_subscription_usd_to_cny_rate: 7.15,
+      }),
+    );
   });
 
   it("submits Anthropic cache TTL injection gateway setting", async () => {
