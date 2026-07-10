@@ -95,7 +95,9 @@ func (s *OpenAIGatewayService) forwardGrokResponsesWithPromptCacheKey(
 	// does not share xAI conversation state (parity with OpenAI path).
 	if trimmed := strings.TrimSpace(promptCacheKey); trimmed != "" && upstreamReq.Header.Get("session_id") == "" {
 		apiKeyID := getAPIKeyIDFromContext(c)
-		upstreamReq.Header.Set("session_id", generateSessionUUID(isolateOpenAISessionID(apiKeyID, trimmed)))
+		sessionID := generateSessionUUID(isolateOpenAISessionID(apiKeyID, trimmed))
+		upstreamReq.Header.Set("session_id", sessionID)
+		upstreamReq.Header.Set("x-grok-conv-id", sessionID)
 	}
 	tlsRuntime := s.resolveGrokTLSFingerprintRuntime(ctx, c, account, "http")
 	applyGrokRuntimeHeaders(upstreamReq, tlsRuntime)
@@ -142,7 +144,9 @@ func (s *OpenAIGatewayService) forwardGrokResponsesWithPromptCacheKey(
 				}
 				if trimmed := strings.TrimSpace(promptCacheKey); trimmed != "" && upstreamReq.Header.Get("session_id") == "" {
 					apiKeyID := getAPIKeyIDFromContext(c)
-					upstreamReq.Header.Set("session_id", generateSessionUUID(isolateOpenAISessionID(apiKeyID, trimmed)))
+					sessionID := generateSessionUUID(isolateOpenAISessionID(apiKeyID, trimmed))
+					upstreamReq.Header.Set("session_id", sessionID)
+					upstreamReq.Header.Set("x-grok-conv-id", sessionID)
 				}
 				applyGrokRuntimeHeaders(upstreamReq, tlsRuntime)
 				continue
@@ -872,6 +876,7 @@ func buildGrokResponsesRequest(ctx context.Context, c *gin.Context, account *Acc
 	// Align with OpenAI Responses clients: accept both JSON and SSE so streaming
 	// Claude Code / Codex traffic works through the same Grok Responses upstream.
 	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Connection", "Keep-Alive")
 	req.Header.Set("OpenAI-Beta", "responses=experimental")
 
 	req.Header.Set("User-Agent", resolveGrokUpstreamUserAgent(c))
@@ -884,10 +889,17 @@ func buildGrokResponsesRequest(ctx context.Context, c *gin.Context, account *Acc
 		if sessionID := strings.TrimSpace(c.GetHeader("session_id")); sessionID != "" {
 			apiKeyID := getAPIKeyIDFromContext(c)
 			if apiKeyID > 0 {
-				req.Header.Set("session_id", isolateOpenAISessionID(apiKeyID, sessionID))
+				sessionID = isolateOpenAISessionID(apiKeyID, sessionID)
+				req.Header.Set("session_id", sessionID)
 			} else {
 				req.Header.Set("session_id", sessionID)
 			}
+			req.Header.Set("x-grok-conv-id", sessionID)
+		}
+	}
+	if req.Header.Get("x-grok-conv-id") == "" {
+		if promptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()); promptCacheKey != "" {
+			req.Header.Set("x-grok-conv-id", promptCacheKey)
 		}
 	}
 	_ = account
