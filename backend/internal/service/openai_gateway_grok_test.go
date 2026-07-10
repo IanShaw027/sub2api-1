@@ -21,6 +21,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 func TestPatchGrokResponsesBodySetsMappedModelAndDropsUnsupportedFields(t *testing.T) {
@@ -160,6 +161,38 @@ func TestPatchGrokResponsesBodyDropsToolChoiceWhenNoSupportedToolsRemain(t *test
 	require.False(t, gjson.GetBytes(patched, "tool_choice").Exists())
 }
 
+func TestPatchGrokResponsesBodyDropsParallelToolCallsWhenToolsEmptyOrMissing(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		body []byte
+	}{
+		{
+			name: "tools filtered empty",
+			body: []byte(`{"model":"grok-4.3","input":"hi","tools":[{"type":"image_generation"}],"tool_choice":"auto","parallel_tool_calls":true}`),
+		},
+		{
+			name: "tools missing",
+			body: []byte(`{"model":"grok-4.3","input":"hi","tool_choice":"auto","parallel_tool_calls":true}`),
+		},
+		{
+			name: "orphaned parallel only",
+			body: []byte(`{"model":"grok-4.3","input":"hi","parallel_tool_calls":true}`),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			patched, err := patchGrokResponsesBody(tt.body, "grok-4.3")
+			require.NoError(t, err)
+			require.False(t, gjson.GetBytes(patched, "tools").Exists(), string(patched))
+			require.False(t, gjson.GetBytes(patched, "tool_choice").Exists(), string(patched))
+			require.False(t, gjson.GetBytes(patched, "parallel_tool_calls").Exists(), string(patched))
+		})
+	}
+}
+
 func TestPatchGrokResponsesBodyRemovesEncryptedReasoningInclude(t *testing.T) {
 	t.Parallel()
 
@@ -186,6 +219,34 @@ func TestPatchGrokResponsesBodyDropsInvalidEncryptedContentLikeCPA(t *testing.T)
 	require.Equal(t, "user", gjson.GetBytes(patched, "input.1.role").String())
 	require.False(t, gjson.GetBytes(patched, "input.2").Exists())
 	require.False(t, strings.Contains(string(patched), "compaction"))
+}
+
+func TestPatchGrokResponsesBodyMergesAdjacentReasoningSummariesAfterSanitize(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"grok-4.3","input":[{"type":"reasoning","summary":[{"type":"summary_text","text":"first"}]},{"type":"reasoning","summary":[{"type":"summary_text","text":"second"}],"encrypted_content":"gAAAAABforeign-codex-replay"},{"role":"user","content":"hi"}]}`)
+
+	patched, err := patchGrokResponsesBody(body, "grok-4.3")
+	require.NoError(t, err)
+	require.Equal(t, "reasoning", gjson.GetBytes(patched, "input.0.type").String())
+	require.Equal(t, "first", gjson.GetBytes(patched, "input.0.summary.0.text").String())
+	require.Equal(t, "second", gjson.GetBytes(patched, "input.0.summary.1.text").String())
+	require.Equal(t, "user", gjson.GetBytes(patched, "input.1.role").String())
+	require.False(t, gjson.GetBytes(patched, "input.2").Exists())
+}
+
+func TestPatchGrokResponsesBodyRejectsLowEntropyEncryptedContent(t *testing.T) {
+	t.Parallel()
+
+	lowEntropy := "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	body := []byte(`{"model":"grok-4.3","input":[{"type":"reasoning","summary":[{"type":"summary_text","text":"low entropy"}],"encrypted_content":""},{"role":"user","content":"hi"}]}`)
+	body, err := sjson.SetBytes(body, "input.0.encrypted_content", lowEntropy)
+	require.NoError(t, err)
+
+	patched, err := patchGrokResponsesBody(body, "grok-4.3")
+	require.NoError(t, err)
+	require.False(t, gjson.GetBytes(patched, "input.0.encrypted_content").Exists(), string(patched))
+	require.Equal(t, "low entropy", gjson.GetBytes(patched, "input.0.summary.0.text").String())
 }
 
 func TestBuildGrokResponsesRequestUsesAccountBaseURLAndBearerToken(t *testing.T) {
@@ -703,6 +764,123 @@ func TestForwardGrokResponsesStreamingUsesXAIResponsesAndSnapshots(t *testing.T)
 	require.NotNil(t, repo.updates[52][grokQuotaSnapshotExtraKey])
 }
 
+func TestForwardGrokResponsesStreamingNormalizesXAIReasoningTextEvents(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	body := []byte(`{"model":"grok","input":"hi","stream":true}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	account := &Account{
+		ID:          152,
+		Name:        "grok",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "access-token",
+			"expires_at":   time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+			"base_url":     xai.DefaultCLIBaseURL,
+		},
+	}
+	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{accountsByID: map[int64]*Account{152: account}}}
+	upstreamBody := strings.Join([]string{
+		`event: response.output_item.added`,
+		`data: {"type":"response.output_item.added","sequence_number":1,"output_index":0,"item":{"id":"rs_1","type":"reasoning","status":"in_progress","summary":[]}}`,
+		``,
+		`event: response.content_part.added`,
+		`data: {"type":"response.content_part.added","sequence_number":2,"item_id":"rs_1","output_index":0,"content_index":0,"part":{"type":"reasoning_text","text":""}}`,
+		``,
+		`event: response.reasoning_text.delta`,
+		`data: {"type":"response.reasoning_text.delta","sequence_number":3,"item_id":"rs_1","output_index":0,"content_index":0,"delta":"thinking"}`,
+		``,
+		`event: response.reasoning_text.done`,
+		`data: {"type":"response.reasoning_text.done","sequence_number":4,"item_id":"rs_1","output_index":0,"content_index":0,"text":"thinking"}`,
+		``,
+		`event: response.output_item.done`,
+		`data: {"type":"response.output_item.done","sequence_number":5,"output_index":0,"item":{"id":"rs_1","type":"reasoning","status":"completed","summary":[],"content":[{"type":"reasoning_text","text":"thinking"}]}}`,
+		``,
+		`event: response.completed`,
+		`data: {"type":"response.completed","sequence_number":6,"response":{"id":"resp_reasoning","object":"response","status":"completed","model":"grok-4.3","output":[],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`,
+		``,
+	}, "\n")
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream, grokTokenProvider: NewGrokTokenProvider(repo, nil), accountRepo: repo}
+
+	result, err := svc.forwardGrokResponses(context.Background(), c, account, body, "grok", true, time.Now())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	output := recorder.Body.String()
+	require.NotContains(t, output, "reasoning_text")
+	for _, want := range []string{
+		"event: response.reasoning_summary_part.added",
+		"event: response.reasoning_summary_text.delta",
+		"event: response.reasoning_summary_text.done",
+		"event: response.reasoning_summary_part.done",
+		`"part":{"type":"summary_text","text":"thinking"}`,
+		`"summary_index":0`,
+		`"summary":[{"type":"summary_text","text":"thinking"}]`,
+	} {
+		require.Contains(t, output, want)
+	}
+	require.Less(t,
+		strings.Index(output, `"type":"response.reasoning_summary_text.done"`),
+		strings.Index(output, `"type":"response.reasoning_summary_part.done"`),
+		"reasoning text done must be emitted before part done",
+	)
+}
+
+func TestForwardGrokResponsesNonStreamNormalizesXAIReasoningOutput(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	body := []byte(`{"model":"grok","input":"hi","stream":false}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	account := &Account{
+		ID:          153,
+		Name:        "grok",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "access-token",
+			"expires_at":   time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+			"base_url":     xai.DefaultCLIBaseURL,
+		},
+	}
+	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{accountsByID: map[int64]*Account{153: account}}}
+	upstreamBody := strings.Join([]string{
+		`data: {"type":"response.output_item.done","sequence_number":1,"output_index":0,"item":{"id":"rs_1","type":"reasoning","status":"completed","summary":[],"content":[{"type":"reasoning_text","text":"thinking"}]}}`,
+		``,
+		`data: {"type":"response.completed","sequence_number":2,"response":{"id":"resp_reasoning","object":"response","status":"completed","model":"grok-4.3","output":[{"id":"rs_1","type":"reasoning","status":"completed","summary":[],"content":[{"type":"reasoning_text","text":"thinking"}]}],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`,
+		``,
+	}, "\n")
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream, grokTokenProvider: NewGrokTokenProvider(repo, nil), accountRepo: repo}
+
+	result, err := svc.forwardGrokResponses(context.Background(), c, account, body, "grok", false, time.Now())
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	payload := recorder.Body.String()
+	require.NotContains(t, payload, "reasoning_text")
+	require.Equal(t, "summary_text", gjson.Get(payload, "output.0.summary.0.type").String())
+	require.Equal(t, "thinking", gjson.Get(payload, "output.0.summary.0.text").String())
+	require.False(t, gjson.Get(payload, "output.0.content").Exists())
+}
+
 func TestForwardGrokResponsesAPIKeyUsesXAIResponses(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -786,12 +964,13 @@ func TestForwardGrokResponsesRetriesCompactionBlobErrorWithSanitizedReplay(t *te
 	require.NotNil(t, result)
 	require.Len(t, upstream.bodies, 2)
 	require.True(t, gjson.GetBytes(upstream.bodies[0], "previous_response_id").Exists())
-	require.True(t, strings.Contains(string(upstream.bodies[0]), "encrypted_content"))
+	require.False(t, strings.Contains(string(upstream.bodies[0]), "encrypted_content"))
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())
 	require.True(t, gjson.GetBytes(upstream.bodies[1], "store").Exists())
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "store").Bool())
 	require.False(t, strings.Contains(string(upstream.bodies[1]), "encrypted_content"))
-	require.Equal(t, "continue", gjson.GetBytes(upstream.bodies[1], "input.0.content.0.text").String())
+	require.Equal(t, "keep summary", gjson.GetBytes(upstream.bodies[1], "input.0.summary.0.text").String())
+	require.Equal(t, "continue", gjson.GetBytes(upstream.bodies[1], "input.1.content.0.text").String())
 	require.Equal(t, "rid_compaction_retry_ok", result.RequestID)
 	require.Equal(t, "resp_retry_ok", result.ResponseID)
 }

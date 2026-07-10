@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 const (
@@ -506,16 +508,98 @@ func sanitizeGrokInputEncryptedContent(body []byte) []byte {
 	if err != nil {
 		return body
 	}
+	return mergeAdjacentGrokInputReasoningSummaries(updated)
+}
+
+func mergeAdjacentGrokInputReasoningSummaries(body []byte) []byte {
+	input := gjson.GetBytes(body, "input")
+	if !input.Exists() || !input.IsArray() {
+		return body
+	}
+	changed := false
+	items := make([]json.RawMessage, 0, len(input.Array()))
+	for _, item := range input.Array() {
+		if len(items) > 0 && canMergeGrokReasoningSummary(items[len(items)-1], item) {
+			merged, ok := appendGrokReasoningSummary(items[len(items)-1], item.Get("summary").Array())
+			if ok {
+				items[len(items)-1] = json.RawMessage(merged)
+				changed = true
+				continue
+			}
+		}
+		items = append(items, json.RawMessage(item.Raw))
+	}
+	if !changed {
+		return body
+	}
+	rawInput, err := json.Marshal(items)
+	if err != nil {
+		return body
+	}
+	updated, err := sjson.SetRawBytes(body, "input", rawInput)
+	if err != nil {
+		return body
+	}
 	return updated
 }
 
-func isLikelyValidGrokEncryptedContent(raw string) bool {
-	sig := strings.TrimSpace(raw)
-	if sig == "" || sig != raw || len(sig) > 8*1024*1024 {
+func canMergeGrokReasoningSummary(previous json.RawMessage, current gjson.Result) bool {
+	previousItem := gjson.ParseBytes(previous)
+	if previousItem.Get("type").String() != "reasoning" || current.Get("type").String() != "reasoning" {
 		return false
 	}
-	if strings.HasPrefix(sig, "gAAAA") || strings.Contains(sig, "=") {
+	if !previousItem.Get("summary").IsArray() || !current.Get("summary").IsArray() {
 		return false
+	}
+	if len(current.Get("summary").Array()) == 0 {
+		return false
+	}
+	for name := range current.Map() {
+		if name != "type" && name != "summary" {
+			return false
+		}
+	}
+	return true
+}
+
+func appendGrokReasoningSummary(previous json.RawMessage, currentSummary []gjson.Result) ([]byte, bool) {
+	updated := []byte(previous)
+	summary := gjson.GetBytes(updated, "summary")
+	if !summary.IsArray() {
+		return previous, false
+	}
+	nextIndex := len(summary.Array())
+	for i, item := range currentSummary {
+		next, err := sjson.SetRawBytes(updated, fmt.Sprintf("summary.%d", nextIndex+i), []byte(item.Raw))
+		if err != nil {
+			return previous, false
+		}
+		updated = next
+	}
+	return updated, true
+}
+
+func isLikelyValidGrokEncryptedContent(raw string) bool {
+	_, err := inspectGrokEncryptedContent(raw)
+	return err == nil
+}
+
+func inspectGrokEncryptedContent(raw string) (int, error) {
+	sig := strings.TrimSpace(raw)
+	if sig == "" {
+		return 0, fmt.Errorf("empty Grok encrypted_content")
+	}
+	if len(sig) > 8*1024*1024 {
+		return 0, fmt.Errorf("Grok encrypted_content exceeds maximum length")
+	}
+	if sig != raw {
+		return 0, fmt.Errorf("Grok encrypted_content has leading or trailing whitespace")
+	}
+	if strings.HasPrefix(sig, "gAAAA") {
+		return 0, fmt.Errorf("Grok encrypted_content looks like GPT/Codex reasoning signature")
+	}
+	if strings.Contains(sig, "=") {
+		return 0, fmt.Errorf("invalid Grok encrypted_content: expected unpadded standard base64")
 	}
 	for _, r := range sig {
 		switch {
@@ -524,11 +608,155 @@ func isLikelyValidGrokEncryptedContent(raw string) bool {
 		case r >= '0' && r <= '9':
 		case r == '+' || r == '/':
 		default:
-			return false
+			return 0, fmt.Errorf("invalid Grok encrypted_content: contains non-base64 character")
 		}
 	}
+	if isDecodableClaudeThinkingSignature(sig) {
+		return 0, fmt.Errorf("Grok encrypted_content looks like Claude thinking signature")
+	}
+	if isKnownGeminiThoughtSignatureEnvelope(sig) {
+		return 0, fmt.Errorf("Grok encrypted_content looks like Gemini thoughtSignature")
+	}
 	decoded, err := base64.RawStdEncoding.DecodeString(sig)
-	return err == nil && len(decoded) >= 50
+	if err != nil {
+		return 0, fmt.Errorf("invalid Grok encrypted_content: base64 decode failed: %w", err)
+	}
+	if len(decoded) < 50 {
+		return 0, fmt.Errorf("invalid Grok encrypted_content: decoded payload too short")
+	}
+	if entropyRatio := byteEntropyRatio(decoded); entropyRatio < 0.85 {
+		return 0, fmt.Errorf("invalid Grok encrypted_content: decoded payload entropy ratio %.3f below %.3f", entropyRatio, 0.85)
+	}
+	return len(decoded), nil
+}
+
+func isDecodableClaudeThinkingSignature(raw string) bool {
+	sig := strings.TrimSpace(raw)
+	if idx := strings.IndexByte(sig, '#'); idx >= 0 {
+		sig = strings.TrimSpace(sig[idx+1:])
+	}
+	if sig == "" || len(sig) > 8*1024*1024 {
+		return false
+	}
+	switch sig[0] {
+	case 'E':
+		decoded, err := base64.StdEncoding.DecodeString(sig)
+		return err == nil && len(decoded) > 0
+	case 'R':
+		decoded, err := base64.StdEncoding.DecodeString(sig)
+		if err != nil || len(decoded) == 0 || decoded[0] != 'E' {
+			return false
+		}
+		innerDecoded, err := base64.StdEncoding.DecodeString(string(decoded))
+		return err == nil && len(innerDecoded) > 0
+	default:
+		return false
+	}
+}
+
+func isKnownGeminiThoughtSignatureEnvelope(raw string) bool {
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil || len(decoded) == 0 {
+		return false
+	}
+	envelope := classifyGeminiThoughtSignatureEnvelope(decoded)
+	return envelope != ""
+}
+
+func classifyGeminiThoughtSignatureEnvelope(decoded []byte) string {
+	switch {
+	case isGeminiField1Envelope(decoded):
+		return "protobuf_field_1"
+	case isGeminiField2Envelope(decoded):
+		return "protobuf_field_2"
+	default:
+		return ""
+	}
+}
+
+func isGeminiField1Envelope(decoded []byte) bool {
+	offset := 0
+	recordCount := 0
+	for offset < len(decoded) {
+		num, typ, n := protowire.ConsumeTag(decoded[offset:])
+		if n < 0 || num != 1 || typ != protowire.BytesType {
+			return false
+		}
+		offset += n
+		value, n := protowire.ConsumeBytes(decoded[offset:])
+		if n < 0 || !isLikelyGeminiOpaquePayload(value) {
+			return false
+		}
+		recordCount++
+		offset += n
+	}
+	return offset == len(decoded) && recordCount > 0
+}
+
+func isGeminiField2Envelope(decoded []byte) bool {
+	value, ok := consumeGeminiField2Field1Value(decoded)
+	return ok && isLikelyGeminiOpaquePayload(value)
+}
+
+func consumeGeminiField2Field1Value(decoded []byte) ([]byte, bool) {
+	num, typ, n := protowire.ConsumeTag(decoded)
+	if n < 0 || num != 2 || typ != protowire.BytesType {
+		return nil, false
+	}
+	offset := n
+	container, n := protowire.ConsumeBytes(decoded[offset:])
+	if n < 0 {
+		return nil, false
+	}
+	offset += n
+	if offset != len(decoded) {
+		return nil, false
+	}
+	num, typ, n = protowire.ConsumeTag(container)
+	if n < 0 || num != 1 || typ != protowire.BytesType {
+		return nil, false
+	}
+	containerOffset := n
+	value, n := protowire.ConsumeBytes(container[containerOffset:])
+	if n < 0 {
+		return nil, false
+	}
+	containerOffset += n
+	if containerOffset != len(container) {
+		return nil, false
+	}
+	return value, true
+}
+
+func isLikelyGeminiOpaquePayload(value []byte) bool {
+	return len(value) > 0 && value[0] == 0x01
+}
+
+func byteEntropyRatio(buf []byte) float64 {
+	if len(buf) == 0 {
+		return 0
+	}
+	var counts [256]int
+	for _, b := range buf {
+		counts[b]++
+	}
+	n := float64(len(buf))
+	entropy := 0.0
+	for _, count := range counts {
+		if count == 0 {
+			continue
+		}
+		p := float64(count) / n
+		entropy -= p * math.Log2(p)
+	}
+	maxSymbols := len(buf)
+	if maxSymbols > 256 {
+		maxSymbols = 256
+	}
+	if maxSymbols <= 1 {
+		return 0
+	}
+	return entropy / math.Log2(float64(maxSymbols))
 }
 
 func parseGrokThinkingSuffix(model string) (baseModel string, effort string) {
@@ -640,7 +868,7 @@ func normalizeGrokResponsesToolType(toolType string) string {
 func sanitizeGrokResponsesTools(body []byte) ([]byte, error) {
 	tools := gjson.GetBytes(body, "tools")
 	if !tools.Exists() || !tools.IsArray() {
-		return body, nil
+		return dropGrokToolChoiceWithoutTools(body)
 	}
 
 	rawTools := tools.Array()
@@ -667,6 +895,10 @@ func sanitizeGrokResponsesTools(body []byte) ([]byte, error) {
 			if err != nil {
 				return nil, err
 			}
+		}
+		body, err = dropGrokToolChoiceWithoutTools(body)
+		if err != nil {
+			return nil, err
 		}
 	} else {
 		encoded, marshalErr := json.Marshal(filteredTools)
@@ -697,6 +929,23 @@ func sanitizeGrokResponsesTools(body []byte) ([]byte, error) {
 			if rewritten, setErr := sjson.SetBytes(body, "tool_choice.type", normalized); setErr == nil {
 				body = rewritten
 			}
+		}
+	}
+	return body, nil
+}
+
+func dropGrokToolChoiceWithoutTools(body []byte) ([]byte, error) {
+	var err error
+	if gjson.GetBytes(body, "tool_choice").Exists() {
+		body, err = sjson.DeleteBytes(body, "tool_choice")
+		if err != nil {
+			return nil, err
+		}
+	}
+	if gjson.GetBytes(body, "parallel_tool_calls").Exists() {
+		body, err = sjson.DeleteBytes(body, "parallel_tool_calls")
+		if err != nil {
+			return nil, err
 		}
 	}
 	return body, nil
@@ -1285,4 +1534,234 @@ func ptrStringOrNil(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func normalizeGrokReasoningSSEFrame(frame openAICompatSSEFrame) ([]openAICompatSSEFrame, bool) {
+	data := strings.TrimSpace(openAICompatPayloadWithEventType(frame.Data, frame.EventType))
+	if data == "" || data == "[DONE]" || !gjson.Valid(data) {
+		return []openAICompatSSEFrame{frame}, false
+	}
+	normalizedDataEvents := normalizeGrokReasoningSummaryDataEvents([]byte(data))
+	if len(normalizedDataEvents) == 0 {
+		return []openAICompatSSEFrame{frame}, false
+	}
+	frames := make([]openAICompatSSEFrame, 0, len(normalizedDataEvents))
+	changed := len(normalizedDataEvents) != 1
+	for _, eventData := range normalizedDataEvents {
+		eventType := strings.TrimSpace(gjson.GetBytes(eventData, "type").String())
+		if eventType == "" {
+			eventType = normalizeGrokReasoningSummaryEventName(frame.EventType)
+		}
+		next := frame
+		if eventType != "" {
+			setOpenAICompatSSEFrameEventType(&next, eventType)
+		}
+		openAICompatSetSSEFrameData(&next, string(eventData))
+		if next.EventType != frame.EventType || next.Data != frame.Data {
+			changed = true
+		}
+		frames = append(frames, next)
+	}
+	return frames, changed
+}
+
+func setOpenAICompatSSEFrameEventType(frame *openAICompatSSEFrame, eventType string) {
+	if frame == nil {
+		return
+	}
+	eventType = strings.TrimSpace(eventType)
+	frame.EventType = eventType
+	if len(frame.Fields) == 0 {
+		return
+	}
+	updated := false
+	for i := range frame.Fields {
+		if frame.Fields[i].Name == "event" {
+			frame.Fields[i].Value = eventType
+			frame.Fields[i].Raw = "event: " + eventType
+			updated = true
+		}
+	}
+	if !updated && eventType != "" {
+		fields := make([]openAICompatSSEField, 0, len(frame.Fields)+1)
+		fields = append(fields, openAICompatSSEField{Name: "event", Value: eventType, Raw: "event: " + eventType})
+		fields = append(fields, frame.Fields...)
+		frame.Fields = fields
+	}
+}
+
+func normalizeGrokReasoningSummaryEventName(eventName string) string {
+	switch strings.TrimSpace(eventName) {
+	case "response.reasoning_text.delta":
+		return "response.reasoning_summary_text.delta"
+	case "response.reasoning_text.done":
+		return "response.reasoning_summary_part.done"
+	default:
+		return strings.TrimSpace(eventName)
+	}
+}
+
+func normalizeGrokReasoningSummaryDataEvents(eventData []byte) [][]byte {
+	if len(eventData) == 0 || !gjson.ValidBytes(eventData) {
+		return [][]byte{eventData}
+	}
+	if gjson.GetBytes(eventData, "type").String() != "response.reasoning_text.done" {
+		return [][]byte{normalizeGrokReasoningSummaryData(eventData)}
+	}
+
+	textDone, _ := sjson.SetBytes(eventData, "type", "response.reasoning_summary_text.done")
+	textDone = normalizeGrokReasoningSummaryIndex(textDone)
+	partDone := normalizeGrokReasoningSummaryData(eventData)
+	return [][]byte{textDone, partDone}
+}
+
+func normalizeGrokReasoningSummaryData(eventData []byte) []byte {
+	if len(eventData) == 0 || !gjson.ValidBytes(eventData) {
+		return eventData
+	}
+
+	normalized := eventData
+	switch gjson.GetBytes(normalized, "type").String() {
+	case "response.reasoning_text.delta":
+		normalized, _ = sjson.SetBytes(normalized, "type", "response.reasoning_summary_text.delta")
+		normalized = normalizeGrokReasoningSummaryIndex(normalized)
+	case "response.reasoning_text.done":
+		normalized, _ = sjson.SetBytes(normalized, "type", "response.reasoning_summary_part.done")
+		normalized, _ = sjson.SetBytes(normalized, "part.type", "summary_text")
+		if text := gjson.GetBytes(normalized, "text"); text.Exists() {
+			normalized, _ = sjson.SetBytes(normalized, "part.text", text.String())
+		}
+		normalized, _ = sjson.DeleteBytes(normalized, "text")
+		normalized = normalizeGrokReasoningSummaryIndex(normalized)
+	case "response.content_part.added":
+		if gjson.GetBytes(normalized, "part.type").String() == "reasoning_text" {
+			normalized, _ = sjson.SetBytes(normalized, "type", "response.reasoning_summary_part.added")
+			normalized, _ = sjson.SetBytes(normalized, "part.type", "summary_text")
+			normalized = normalizeGrokReasoningSummaryIndex(normalized)
+		}
+	case "response.content_part.done":
+		if gjson.GetBytes(normalized, "part.type").String() == "reasoning_text" {
+			normalized, _ = sjson.SetBytes(normalized, "type", "response.reasoning_summary_part.done")
+			normalized, _ = sjson.SetBytes(normalized, "part.type", "summary_text")
+			normalized = normalizeGrokReasoningSummaryIndex(normalized)
+		}
+	}
+
+	if item := gjson.GetBytes(normalized, "item"); item.Exists() && item.Type == gjson.JSON {
+		updatedItem := normalizeGrokReasoningOutputItem([]byte(item.Raw))
+		if !bytes.Equal(updatedItem, []byte(item.Raw)) {
+			normalized, _ = sjson.SetRawBytes(normalized, "item", updatedItem)
+		}
+	}
+	if output := gjson.GetBytes(normalized, "response.output"); output.IsArray() {
+		updatedOutput, changed := normalizeGrokReasoningOutputItems(output.Array())
+		if changed {
+			normalized, _ = sjson.SetRawBytes(normalized, "response.output", updatedOutput)
+		}
+	}
+
+	return normalized
+}
+
+func normalizeGrokReasoningSummaryIndex(eventData []byte) []byte {
+	contentIndex := gjson.GetBytes(eventData, "content_index")
+	if contentIndex.Exists() && contentIndex.Raw != "" && !gjson.GetBytes(eventData, "summary_index").Exists() {
+		eventData, _ = sjson.SetRawBytes(eventData, "summary_index", []byte(contentIndex.Raw))
+	}
+	eventData, _ = sjson.DeleteBytes(eventData, "content_index")
+	return eventData
+}
+
+func normalizeGrokReasoningResponseBody(body []byte) []byte {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return body
+	}
+	out := body
+	if output := gjson.GetBytes(out, "response.output"); output.IsArray() {
+		updatedOutput, changed := normalizeGrokReasoningOutputItems(output.Array())
+		if changed {
+			out, _ = sjson.SetRawBytes(out, "response.output", updatedOutput)
+		}
+	}
+	if output := gjson.GetBytes(out, "output"); output.IsArray() {
+		updatedOutput, changed := normalizeGrokReasoningOutputItems(output.Array())
+		if changed {
+			out, _ = sjson.SetRawBytes(out, "output", updatedOutput)
+		}
+	}
+	return out
+}
+
+func normalizeGrokReasoningOutputItems(items []gjson.Result) ([]byte, bool) {
+	var buf bytes.Buffer
+	buf.WriteByte('[')
+	changed := false
+	for i, item := range items {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		updatedItem := normalizeGrokReasoningOutputItem([]byte(item.Raw))
+		if !bytes.Equal(updatedItem, []byte(item.Raw)) {
+			changed = true
+		}
+		buf.Write(updatedItem)
+	}
+	buf.WriteByte(']')
+	return buf.Bytes(), changed
+}
+
+func normalizeGrokReasoningOutputItem(item []byte) []byte {
+	if !gjson.ValidBytes(item) || gjson.GetBytes(item, "type").String() != "reasoning" {
+		return item
+	}
+
+	normalized := item
+	if summary := gjson.GetBytes(normalized, "summary"); summary.IsArray() {
+		updatedSummary, changed := normalizeGrokReasoningSummaryItems(summary.Array())
+		if changed {
+			normalized, _ = sjson.SetRawBytes(normalized, "summary", updatedSummary)
+		}
+	}
+
+	content := gjson.GetBytes(normalized, "content")
+	if !content.IsArray() {
+		return normalized
+	}
+
+	summaryItems := make([]gjson.Result, 0, len(content.Array()))
+	for _, part := range content.Array() {
+		if part.Get("type").String() == "reasoning_text" {
+			summaryItems = append(summaryItems, part)
+		}
+	}
+	if len(summaryItems) == 0 {
+		return normalized
+	}
+
+	updatedSummary, _ := normalizeGrokReasoningSummaryItems(summaryItems)
+	normalized, _ = sjson.SetRawBytes(normalized, "summary", updatedSummary)
+	normalized, _ = sjson.DeleteBytes(normalized, "content")
+	return normalized
+}
+
+func normalizeGrokReasoningSummaryItems(items []gjson.Result) ([]byte, bool) {
+	var buf bytes.Buffer
+	buf.WriteByte('[')
+	changed := false
+	for i, item := range items {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		itemRaw := []byte(item.Raw)
+		if item.Get("type").String() == "reasoning_text" {
+			var errSet error
+			itemRaw, errSet = sjson.SetBytes(itemRaw, "type", "summary_text")
+			if errSet == nil {
+				changed = true
+			}
+		}
+		buf.Write(itemRaw)
+	}
+	buf.WriteByte(']')
+	return buf.Bytes(), changed
 }

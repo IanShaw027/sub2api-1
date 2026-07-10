@@ -293,11 +293,24 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	startTime := time.Now()
 
 	originalModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
+	clientVideoRequestBody := append([]byte(nil), body...)
 	if targetPath == "" {
 		targetPath = "/v1/videos"
 	}
 	targetPath = canonicalOpenAIVideoTargetPath(targetPath)
 	videoBillingRequest := isOpenAIVideoBillingRequest(c.Request.Method, targetPath)
+
+	// POST /v1/videos accepts OpenAI's video-create shape; xAI upstream expects
+	// native Imagine fields. Normalize before account mapping so live ForwardVideos
+	// matches the ForwardGrokMedia helper and CPA's xAI request builder.
+	if isOpenAIVideoCreateRequest(c.Request.Method, targetPath) && gjson.ValidBytes(body) {
+		var prepErr error
+		body, prepErr = normalizeGrokOpenAIVideoCreateJSONRequest(body)
+		if prepErr != nil {
+			writeOpenAIVideoFailedResponse(c, http.StatusBadRequest, originalModel, "invalid_request_error", prepErr.Error())
+			return nil, prepErr
+		}
+	}
 
 	// POST create/edit/extend: apply account mapping + Imagine alias normalization
 	// so live traffic matches ForwardGrokMedia. Keep originalModel for billing identity.
@@ -422,10 +435,15 @@ func (s *OpenAIGatewayService) ForwardVideos(
 			}, nil
 		}
 
-		// JSON status/retrieve: buffer so ResponseID can be extracted from body.
+		// JSON status/retrieve: buffer so ResponseID can be extracted from body,
+		// and normalize xAI's native retrieve payload to the OpenAI video object
+		// shape that CPA exposes.
 		respBody, readErr := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 		if readErr != nil {
 			return nil, fmt.Errorf("read upstream video status response: %w", readErr)
+		}
+		if normalized, normalizeErr := buildOpenAIVideoRetrieveResponseFromGrok(pathJobID, respBody, originalModel); normalizeErr == nil {
+			respBody = normalized
 		}
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 		if ct := strings.TrimSpace(resp.Header.Get("Content-Type")); ct != "" {
@@ -534,6 +552,12 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	if readErr != nil {
 		return nil, fmt.Errorf("read upstream video response: %w", readErr)
 	}
+	clientRespBody := respBody
+	if isOpenAIVideoCreateRequest(c.Request.Method, targetPath) {
+		if normalized, normalizeErr := buildOpenAIVideoCreateResponseFromGrok(respBody, clientVideoRequestBody, body, originalModel); normalizeErr == nil {
+			clientRespBody = normalized
+		}
+	}
 
 	// write success
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -541,10 +565,10 @@ func (s *OpenAIGatewayService) ForwardVideos(
 		c.Header("Content-Type", ct)
 	}
 	c.Status(resp.StatusCode)
-	_, _ = c.Writer.Write(respBody)
+	_, _ = c.Writer.Write(clientRespBody)
 
 	// Prefer original client model for billing/logging; upstream may echo rewritten id.
-	videoModel := firstNonEmptyString(originalModel, strings.TrimSpace(gjson.GetBytes(respBody, "model").String()))
+	videoModel := firstNonEmptyString(originalModel, strings.TrimSpace(gjson.GetBytes(clientRespBody, "model").String()))
 	resultUpstreamModel := firstNonEmptyString(upstreamModel, strings.TrimSpace(gjson.GetBytes(respBody, "model").String()), videoModel)
 	var videoSeconds int
 	var videoSize string
@@ -582,7 +606,10 @@ func (s *OpenAIGatewayService) ForwardVideos(
 		}
 	}
 	// Capture async job id so the handler can pin sticky scheduling for GET polls.
-	responseID := extractGrokMediaVideoRequestID(respBody)
+	responseID := extractGrokMediaVideoRequestID(clientRespBody)
+	if responseID == "" {
+		responseID = extractGrokMediaVideoRequestID(respBody)
+	}
 	if responseID == "" {
 		responseID = ExtractGrokVideoRequestIDFromPath(targetPath)
 	}

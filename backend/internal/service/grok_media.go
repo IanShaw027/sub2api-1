@@ -393,6 +393,11 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	if err != nil {
 		return nil, err
 	}
+	if endpoint == GrokMediaEndpointVideoStatus {
+		if normalized, normalizeErr := buildOpenAIVideoRetrieveResponseFromGrok(requestID, respBody, requestModel); normalizeErr == nil {
+			respBody = normalized
+		}
+	}
 	writeGrokMediaResponse(c, resp, respBody, s.responseHeaderFilter)
 	usage := grokMediaUsageFromResponse(endpoint, requestInfo, respBody)
 	resultModel := firstNonEmptyString(originalModel, requestInfo.Model)
@@ -499,6 +504,80 @@ func normalizeGrokVideoJSONRequest(body []byte) ([]byte, error) {
 		out, _ = sjson.DeleteBytes(out, "input_reference")
 		out, _ = sjson.DeleteBytes(out, "image_url")
 	}
+	referenceImages := collectGrokVideoReferenceImages(out)
+	if len(referenceImages) > 7 {
+		return nil, fmt.Errorf("reference_images supports at most 7 images on xAI")
+	}
+	if imageURL != "" && len(referenceImages) > 0 {
+		return nil, fmt.Errorf("image and reference_images cannot be combined on xAI")
+	}
+	if len(referenceImages) > 0 {
+		if duration := gjson.GetBytes(out, "duration"); duration.Exists() && duration.Int() > 10 {
+			out, err = sjson.SetBytes(out, "duration", 10)
+			if err != nil {
+				return nil, err
+			}
+		}
+		out, _ = sjson.DeleteBytes(out, "reference_images")
+		out, _ = sjson.DeleteBytes(out, "reference_image_urls")
+		for _, image := range referenceImages {
+			out, err = sjson.SetBytes(out, "reference_images.-1.url", image)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return out, nil
+}
+
+func normalizeGrokOpenAIVideoCreateJSONRequest(body []byte) ([]byte, error) {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return body, nil
+	}
+	if strings.TrimSpace(gjson.GetBytes(body, "prompt").String()) == "" {
+		return nil, fmt.Errorf("prompt is required")
+	}
+	out, err := normalizeGrokVideoJSONRequest(body)
+	if err != nil {
+		return nil, err
+	}
+	duration := gjsonPositiveInt(out, "duration")
+	if duration <= 0 {
+		duration = 4
+	}
+	if duration < 1 {
+		duration = 1
+	}
+	if duration > 15 {
+		duration = 15
+	}
+	out, err = sjson.SetBytes(out, "duration", duration)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(gjson.GetBytes(out, "aspect_ratio").String()) == "" && strings.TrimSpace(gjson.GetBytes(out, "resolution").String()) == "" {
+		out, err = sjson.SetBytes(out, "aspect_ratio", "9:16")
+		if err != nil {
+			return nil, err
+		}
+		out, err = sjson.SetBytes(out, "resolution", "720p")
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		if strings.TrimSpace(gjson.GetBytes(out, "aspect_ratio").String()) == "" {
+			out, err = sjson.SetBytes(out, "aspect_ratio", "9:16")
+			if err != nil {
+				return nil, err
+			}
+		}
+		if strings.TrimSpace(gjson.GetBytes(out, "resolution").String()) == "" {
+			out, err = sjson.SetBytes(out, "resolution", "720p")
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
 	return out, nil
 }
 
@@ -541,6 +620,38 @@ func grokVideoInputImageURL(body []byte) (string, error) {
 		}
 	}
 	return strings.TrimSpace(gjson.GetBytes(body, "image_url").String()), nil
+}
+
+func collectGrokVideoReferenceImages(body []byte) []string {
+	out := make([]string, 0)
+	appendRef := func(value string) {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	collectArray := func(result gjson.Result) {
+		if !result.IsArray() {
+			return
+		}
+		result.ForEach(func(_, item gjson.Result) bool {
+			if item.Type == gjson.String {
+				appendRef(item.String())
+				return true
+			}
+			if value := item.Get("url").String(); value != "" {
+				appendRef(value)
+				return true
+			}
+			if value := item.Get("image_url.url").String(); value != "" {
+				appendRef(value)
+			}
+			return true
+		})
+	}
+	collectArray(gjson.GetBytes(body, "reference_images"))
+	collectArray(gjson.GetBytes(body, "reference_image_urls"))
+	return out
 }
 
 func prepareGrokMediaMultipartEditsBody(body []byte, contentType string) ([]byte, string, error) {
@@ -804,6 +915,217 @@ func grokMediaUsageFromResponse(endpoint GrokMediaEndpoint, requestInfo GrokMedi
 		))
 	}
 	return meta
+}
+
+func writeOpenAIVideoFailedResponse(c *gin.Context, statusCode int, model string, code string, message string) {
+	if c == nil || c.Writer == nil || c.Writer.Written() {
+		return
+	}
+	if statusCode <= 0 {
+		statusCode = http.StatusBadRequest
+	}
+	body := buildOpenAIVideoFailedResponse(model, code, message)
+	c.Data(statusCode, "application/json", body)
+}
+
+func buildOpenAIVideoFailedResponse(model string, code string, message string) []byte {
+	model = responseGrokVideoModel(model)
+	code = strings.TrimSpace(code)
+	if code == "" {
+		code = "invalid_request_error"
+	}
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "Video generation failed"
+	}
+	out := []byte(`{"object":"video","status":"failed","progress":0}`)
+	out, _ = sjson.SetBytes(out, "id", fmt.Sprintf("video_%d", time.Now().UnixNano()))
+	out, _ = sjson.SetBytes(out, "model", model)
+	out, _ = sjson.SetBytes(out, "error.code", code)
+	out, _ = sjson.SetBytes(out, "error.message", message)
+	return out
+}
+
+func isOpenAIVideoCreateRequest(method, targetPath string) bool {
+	if !strings.EqualFold(strings.TrimSpace(method), http.MethodPost) {
+		return false
+	}
+	canonical := canonicalOpenAIVideoTargetPath(targetPath)
+	if idx := strings.IndexAny(canonical, "?#"); idx >= 0 {
+		canonical = canonical[:idx]
+	}
+	return strings.EqualFold(strings.TrimRight(canonical, "/"), "/v1/videos")
+}
+
+func buildOpenAIVideoCreateResponseFromGrok(payload []byte, requestBody []byte, upstreamRequestBody []byte, fallbackModel string) ([]byte, error) {
+	requestID := strings.TrimSpace(gjson.GetBytes(payload, "request_id").String())
+	if requestID == "" {
+		requestID = strings.TrimSpace(gjson.GetBytes(payload, "id").String())
+	}
+	if requestID == "" {
+		return nil, fmt.Errorf("xAI video response did not include request_id")
+	}
+
+	out := []byte(`{"object":"video","progress":0,"status":"queued"}`)
+	out, _ = sjson.SetBytes(out, "id", requestID)
+	out, _ = sjson.SetBytes(out, "model", responseGrokVideoModel(fallbackModel))
+	if prompt := strings.TrimSpace(gjson.GetBytes(requestBody, "prompt").String()); prompt != "" {
+		out, _ = sjson.SetBytes(out, "prompt", prompt)
+	}
+	out, _ = sjson.SetBytes(out, "seconds", grokOpenAIVideoCreateSeconds(upstreamRequestBody, requestBody))
+	out, _ = sjson.SetBytes(out, "size", grokOpenAIVideoCreateSize(requestBody))
+	out, _ = sjson.SetBytes(out, "created_at", time.Now().Unix())
+	if status := openAIGrokVideoStatus(gjson.GetBytes(payload, "status").String()); status != "" {
+		out, _ = sjson.SetBytes(out, "status", status)
+	}
+	if progress := gjson.GetBytes(payload, "progress"); progress.Exists() {
+		out, _ = sjson.SetRawBytes(out, "progress", []byte(progress.Raw))
+	}
+	return out, nil
+}
+
+func grokOpenAIVideoCreateSeconds(bodies ...[]byte) string {
+	for _, requestBody := range bodies {
+		for _, path := range []string{"duration", "seconds", "duration_seconds"} {
+			value := gjson.GetBytes(requestBody, path)
+			if !value.Exists() {
+				continue
+			}
+			if n := value.Int(); n > 0 {
+				return strconv.FormatInt(n, 10)
+			}
+			if raw := strings.TrimSpace(value.String()); raw != "" {
+				if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+					return strconv.Itoa(n)
+				}
+			}
+		}
+	}
+	return "4"
+}
+
+func grokOpenAIVideoCreateSize(requestBody []byte) string {
+	if size := strings.TrimSpace(gjson.GetBytes(requestBody, "size").String()); size != "" {
+		return size
+	}
+	switch strings.ToLower(strings.TrimSpace(gjson.GetBytes(requestBody, "aspect_ratio").String())) {
+	case "16:9", "landscape":
+		return "1280x720"
+	case "9:16", "portrait":
+		return "720x1280"
+	}
+	return "720x1280"
+}
+
+func buildOpenAIVideoRetrieveResponseFromGrok(videoID string, payload []byte, fallbackModel string) ([]byte, error) {
+	videoID = strings.TrimSpace(videoID)
+	if videoID == "" {
+		videoID = extractGrokMediaVideoRequestID(payload)
+	}
+	out := []byte(`{"object":"video"}`)
+	if videoID != "" {
+		out, _ = sjson.SetBytes(out, "id", videoID)
+	}
+	model := strings.TrimSpace(gjson.GetBytes(payload, "model").String())
+	if model == "" {
+		model = responseGrokVideoModel(fallbackModel)
+	}
+	out, _ = sjson.SetBytes(out, "model", model)
+
+	for _, field := range []string{"created_at", "completed_at", "expires_at", "prompt", "remixed_from_video_id", "size"} {
+		if value := gjson.GetBytes(payload, field); value.Exists() {
+			out, _ = sjson.SetRawBytes(out, field, []byte(value.Raw))
+		}
+	}
+
+	if status := openAIGrokVideoStatus(gjson.GetBytes(payload, "status").String()); status != "" {
+		out, _ = sjson.SetBytes(out, "status", status)
+	}
+	if progress := gjson.GetBytes(payload, "progress"); progress.Exists() {
+		out, _ = sjson.SetRawBytes(out, "progress", []byte(progress.Raw))
+	}
+	if seconds := gjson.GetBytes(payload, "seconds"); seconds.Exists() {
+		out, _ = sjson.SetRawBytes(out, "seconds", []byte(seconds.Raw))
+	} else if duration := gjson.GetBytes(payload, "video.duration"); duration.Exists() {
+		out, _ = sjson.SetBytes(out, "seconds", duration.String())
+	}
+	if videoURL := strings.TrimSpace(gjson.GetBytes(payload, "video.url").String()); videoURL != "" {
+		out, _ = sjson.SetBytes(out, "video_url", videoURL)
+	}
+	out = setOpenAIVideoErrorFromGrok(out, payload)
+	return out, nil
+}
+
+func responseGrokVideoModel(model string) string {
+	model = normalizeGrokMediaModelForEndpoint(GrokMediaEndpointVideosGenerations, model)
+	if strings.TrimSpace(model) == "" {
+		return xai.DefaultImagineVideoModel
+	}
+	return model
+}
+
+func setOpenAIVideoErrorFromGrok(out []byte, payload []byte) []byte {
+	if errPayload := gjson.GetBytes(payload, "error"); errPayload.Exists() {
+		out = markOpenAIVideoFailed(out)
+		if errPayload.Type == gjson.JSON && json.Valid([]byte(errPayload.Raw)) {
+			message := strings.TrimSpace(errPayload.Get("message").String())
+			if message != "" {
+				code := strings.TrimSpace(gjson.GetBytes(payload, "code").String())
+				if code == "" {
+					code = strings.TrimSpace(errPayload.Get("code").String())
+				}
+				if code == "" {
+					code = "video_generation_failed"
+				}
+				out, _ = sjson.SetBytes(out, "error.code", code)
+				out, _ = sjson.SetBytes(out, "error.message", message)
+			}
+			return out
+		}
+		message := strings.TrimSpace(errPayload.String())
+		if message != "" {
+			code := strings.TrimSpace(gjson.GetBytes(payload, "code").String())
+			if code == "" {
+				code = "video_generation_failed"
+			}
+			out, _ = sjson.SetBytes(out, "error.code", code)
+			out, _ = sjson.SetBytes(out, "error.message", message)
+		}
+		return out
+	}
+
+	code := strings.TrimSpace(gjson.GetBytes(payload, "code").String())
+	if code != "" {
+		out = markOpenAIVideoFailed(out)
+		out, _ = sjson.SetBytes(out, "error.code", code)
+		out, _ = sjson.SetBytes(out, "error.message", code)
+	}
+	return out
+}
+
+func markOpenAIVideoFailed(out []byte) []byte {
+	if !gjson.GetBytes(out, "status").Exists() {
+		out, _ = sjson.SetBytes(out, "status", "failed")
+	}
+	if !gjson.GetBytes(out, "progress").Exists() {
+		out, _ = sjson.SetRawBytes(out, "progress", []byte("0"))
+	}
+	return out
+}
+
+func openAIGrokVideoStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "queued", "pending":
+		return "queued"
+	case "in_progress", "processing", "running":
+		return "in_progress"
+	case "completed", "done", "succeeded", "success":
+		return "completed"
+	case "failed", "error", "expired", "cancelled", "canceled":
+		return "failed"
+	default:
+		return ""
+	}
 }
 
 func extractGrokMediaVideoRequestID(body []byte) string {
