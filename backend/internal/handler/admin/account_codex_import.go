@@ -265,6 +265,10 @@ func (h *AccountHandler) importCodexSessions(ctx context.Context, req CodexSessi
 				ExpiresAt:          effectiveExpiresAt,
 				AutoPauseOnExpired: autoPauseOnExpired,
 			}
+			if item.RefreshToken == "" {
+				updateInput.ExpiresAt = nil
+				updateInput.AutoPauseOnExpired = nil
+			}
 			if req.ProxyID != nil {
 				updateInput.ProxyID = req.ProxyID
 			}
@@ -296,6 +300,7 @@ func (h *AccountHandler) importCodexSessions(ctx context.Context, req CodexSessi
 			accountID := existing.ID
 			if updated != nil {
 				accountID = updated.ID
+				index.Remove(*existing)
 				index.Add(*updated)
 			}
 			result.Items = append(result.Items, CodexSessionImportItem{
@@ -885,6 +890,33 @@ func (i *codexAccountIndex) Add(account service.Account) {
 	}
 }
 
+func (i *codexAccountIndex) Remove(account service.Account) {
+	if i == nil || i.accountsByKey == nil {
+		return
+	}
+	keys := buildCodexImportIdentityKeys(
+		codexCredentialString(account.Credentials, "chatgpt_account_id"),
+		codexCredentialString(account.Credentials, "chatgpt_user_id"),
+		codexCredentialString(account.Credentials, "email"),
+		codexCredentialString(account.Credentials, "access_token"),
+		codexCredentialString(account.Credentials, "refresh_token"),
+	)
+	for _, key := range keys {
+		accounts := i.accountsByKey[key]
+		for idx := range accounts {
+			if accounts[idx].ID == account.ID {
+				accounts = append(accounts[:idx], accounts[idx+1:]...)
+				break
+			}
+		}
+		if len(accounts) == 0 {
+			delete(i.accountsByKey, key)
+			continue
+		}
+		i.accountsByKey[key] = accounts
+	}
+}
+
 // upsertCodexAccount 保留同一键下的全部候选账号（共享的 account: 键可对应
 // 团队内多个账号），同一账号重复 Add 时原位替换为最新状态。
 func upsertCodexAccount(accounts []service.Account, account service.Account) []service.Account {
@@ -966,10 +998,6 @@ func mergeCodexImportCredentials(existing, incoming map[string]any, item *codexI
 	out := mergeCodexImportMap(existing, incoming)
 	if item == nil {
 		return out
-	}
-	if strings.TrimSpace(item.RefreshToken) == "" {
-		delete(out, "refresh_token")
-		delete(out, "client_id")
 	}
 	if strings.TrimSpace(item.IDToken) == "" {
 		delete(out, "id_token")
