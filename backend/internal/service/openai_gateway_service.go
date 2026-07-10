@@ -8221,10 +8221,8 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				// 再打 cyber 标记，否则 mark 记到的是解析前的 0，导致流式 cyber 按 0 token 计费
 				// 而漏记真实用量。对齐 WS V2 / Chat 流式路径（均先解析 usage 再 Mark）。
 				s.parseSSEUsageBytes(dataBytes, usage)
-				if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, dataBytes, failedMessage); matched {
-					return err
-				}
-				if hit, code, msg := detectOpenAICyberPolicy(dataBytes); hit {
+				cyberHit, code, msg := detectOpenAICyberPolicy(dataBytes)
+				if cyberHit {
 					// cyber_policy 硬阻断：原样透传给客户端，绝不 failover/换号，
 					// 仅打请求级标记并按上游真实 token 计费（供 handler 事后审计/计费）。
 					MarkOpsCyberPolicy(c, CyberPolicyMark{
@@ -8235,7 +8233,13 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						UpstreamInTok:  usage.InputTokens,
 						UpstreamOutTok: usage.OutputTokens,
 					})
-				} else if !openAIStreamClientOutputStarted(c, clientOutputStarted) && openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
+				}
+				if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+					if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, dataBytes, failedMessage); matched {
+						return err
+					}
+				}
+				if !cyberHit && !openAIStreamClientOutputStarted(c, clientOutputStarted) && openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
 					sawFailedEvent = true
 					return s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, dataBytes, failedMessage)
 				}
@@ -9824,8 +9828,10 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
 		}
 		if sawFailedEvent {
-			if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, failedPayload, failedMessage); matched {
-				return resultWithUsage(), err
+			if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+				if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, failedPayload, failedMessage); matched {
+					return resultWithUsage(), err
+				}
 			}
 			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 		}
@@ -9849,8 +9855,10 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			return resultWithUsage(), nil, true
 		}
 		if sawFailedEvent {
-			if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, failedPayload, failedMessage); matched {
-				return resultWithUsage(), err, true
+			if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+				if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, failedPayload, failedMessage); matched {
+					return resultWithUsage(), err, true
+				}
 			}
 			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage), true
 		}
@@ -9935,11 +9943,8 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				// 再打 cyber 标记，否则 mark 记到的是解析前的 0，导致流式 cyber 按 0 token 计费
 				// 而漏记真实用量。对齐 WS V2 / Chat 流式路径（均先解析 usage 再 Mark）。
 				s.parseSSEUsageBytes(dataBytes, usage)
-				if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, dataBytes, failedMessage); matched {
-					streamFailoverErr = err
-					return
-				}
-				if hit, code, msg := detectOpenAICyberPolicy(dataBytes); hit {
+				cyberHit, code, msg := detectOpenAICyberPolicy(dataBytes)
+				if cyberHit {
 					MarkOpsCyberPolicy(c, CyberPolicyMark{
 						Code:           code,
 						Message:        msg,
@@ -9948,7 +9953,14 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 						UpstreamInTok:  usage.InputTokens,
 						UpstreamOutTok: usage.OutputTokens,
 					})
-				} else if !openAIStreamClientOutputStarted(c, clientOutputStarted) && openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
+				}
+				if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+					if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, dataBytes, failedMessage); matched {
+						streamFailoverErr = err
+						return
+					}
+				}
+				if !cyberHit && !openAIStreamClientOutputStarted(c, clientOutputStarted) && openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
 					sawFailedEvent = true
 					streamFailoverErr = s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, dataBytes, failedMessage)
 					return
