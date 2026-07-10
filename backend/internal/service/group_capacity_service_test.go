@@ -19,6 +19,25 @@ func (r groupCapacityAccountRepoStub) ListSchedulableByGroupID(_ context.Context
 	return append([]Account(nil), r.accountsByGroup[groupID]...), nil
 }
 
+type groupCapacityBatchAccountRepoStub struct {
+	groupCapacityAccountRepoStub
+	capacityRows []GroupAccountCapacityRow
+}
+
+func (r groupCapacityBatchAccountRepoStub) ListSchedulableCapacityByGroupIDs(_ context.Context, groupIDs []int64) ([]GroupAccountCapacityRow, error) {
+	allowed := make(map[int64]struct{}, len(groupIDs))
+	for _, groupID := range groupIDs {
+		allowed[groupID] = struct{}{}
+	}
+	rows := make([]GroupAccountCapacityRow, 0, len(r.capacityRows))
+	for _, row := range r.capacityRows {
+		if _, ok := allowed[row.GroupID]; ok {
+			rows = append(rows, row)
+		}
+	}
+	return rows, nil
+}
+
 type groupCapacityGroupRepoStub struct {
 	GroupRepository
 	groups []Group
@@ -93,6 +112,49 @@ func TestGroupCapacityReturnsGroupScopedUsedAndMax(t *testing.T) {
 	}
 	require.Equal(t, 2, byGroup[10].ConcurrencyUsed)
 	require.Equal(t, 14, byGroup[10].ConcurrencyMax)
+	require.Zero(t, byGroup[20].ConcurrencyUsed)
+	require.Equal(t, 10, byGroup[20].ConcurrencyMax)
+}
+
+func TestGroupCapacityBatchUsesGroupScopedConcurrencyForSharedAccounts(t *testing.T) {
+	accountRepo := groupCapacityBatchAccountRepoStub{
+		capacityRows: []GroupAccountCapacityRow{
+			{GroupID: 10, AccountID: 101, Concurrency: 10},
+			{GroupID: 20, AccountID: 101, Concurrency: 10},
+		},
+	}
+	groupRepo := groupCapacityGroupRepoStub{
+		groups: []Group{
+			{ID: 10, Status: StatusActive},
+			{ID: 20, Status: StatusActive},
+		},
+	}
+	concurrencyCache := groupCapacityConcurrencyCacheStub{
+		groupConcurrency: map[int64]int{
+			10: 1,
+			20: 0,
+		},
+		accountConcurrencyBatch: map[int64]int{
+			101: 5,
+		},
+	}
+	svc := NewGroupCapacityService(
+		accountRepo,
+		groupRepo,
+		NewConcurrencyService(concurrencyCache),
+		nil,
+		nil,
+	)
+
+	summaries, err := svc.GetAllGroupCapacity(context.Background())
+
+	require.NoError(t, err)
+	byGroup := map[int64]GroupCapacitySummary{}
+	for _, summary := range summaries {
+		byGroup[summary.GroupID] = summary
+	}
+	require.Equal(t, 1, byGroup[10].ConcurrencyUsed)
+	require.Equal(t, 10, byGroup[10].ConcurrencyMax)
 	require.Zero(t, byGroup[20].ConcurrencyUsed)
 	require.Equal(t, 10, byGroup[20].ConcurrencyMax)
 }

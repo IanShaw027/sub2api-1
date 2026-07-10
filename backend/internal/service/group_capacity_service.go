@@ -121,6 +121,16 @@ func (s *GroupCapacityService) getGroupCapacitiesBatch(ctx context.Context, grou
 		return results, nil
 	}
 
+	if s.concurrencyService != nil {
+		for i, groupID := range groupIDs {
+			used, err := s.concurrencyService.GetGroupConcurrency(ctx, groupID)
+			if err != nil {
+				return nil, err
+			}
+			results[i].ConcurrencyUsed = used
+		}
+	}
+
 	rows, err := lister.ListSchedulableCapacityByGroupIDs(ctx, groupIDs)
 	if err != nil {
 		return nil, err
@@ -182,15 +192,6 @@ func (s *GroupCapacityService) getGroupCapacitiesBatch(ctx context.Context, grou
 		return results, nil
 	}
 
-	concurrencyMap := map[int64]int{}
-	if s.concurrencyService != nil {
-		var err error
-		concurrencyMap, err = s.concurrencyService.GetAccountConcurrencyBatch(ctx, accountIDs)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	sessionAccountIDs := accountIDsForGroupsWithLimit(refs, groupIndex, results, func(summary GroupCapacitySummary) bool {
 		return summary.SessionsMax > 0
 	})
@@ -209,7 +210,6 @@ func (s *GroupCapacityService) getGroupCapacitiesBatch(ctx context.Context, grou
 
 	for _, ref := range refs {
 		idx := groupIndex[ref.groupID]
-		results[idx].ConcurrencyUsed += concurrencyMap[ref.accountID]
 		if sessionsMap != nil && results[idx].SessionsMax > 0 {
 			results[idx].SessionsUsed += sessionsMap[ref.accountID]
 		}
