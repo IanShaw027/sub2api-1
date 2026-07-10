@@ -878,29 +878,45 @@ func (i *codexAccountIndex) Add(account service.Account) {
 	if i.accountsByKey == nil {
 		i.accountsByKey = map[string][]service.Account{}
 	}
-	keys := buildCodexImportIdentityKeys(
-		codexCredentialString(account.Credentials, "chatgpt_account_id"),
-		codexCredentialString(account.Credentials, "chatgpt_user_id"),
-		codexCredentialString(account.Credentials, "email"),
-		codexCredentialString(account.Credentials, "access_token"),
-		codexCredentialString(account.Credentials, "refresh_token"),
-	)
+	keys := buildCodexAccountIndexKeys(account)
 	for _, key := range keys {
 		i.accountsByKey[key] = upsertCodexAccount(i.accountsByKey[key], account)
 	}
+}
+
+func buildCodexAccountIndexKeys(account service.Account) []string {
+	accountID := codexCredentialString(account.Credentials, "chatgpt_account_id")
+	userID := codexCredentialString(account.Credentials, "chatgpt_user_id")
+	email := codexCredentialString(account.Credentials, "email")
+	accessToken := codexCredentialString(account.Credentials, "access_token")
+	refreshToken := codexCredentialString(account.Credentials, "refresh_token")
+	keys := buildCodexImportIdentityKeys(accountID, userID, email, accessToken, refreshToken)
+	if strings.TrimSpace(refreshToken) != "" {
+		return keys
+	}
+	// Access-token-only imports must not use long-lived identity keys, but a
+	// stored access-token-only account can be upgraded by a later refresh-token
+	// import for the same ChatGPT user/team. Add those keys only to the index.
+	for _, key := range buildCodexImportIdentityKeys(accountID, userID, email, accessToken, "stored-refresh-upgrade") {
+		keys = appendCodexIdentityKey(keys, key)
+	}
+	return keys
+}
+
+func appendCodexIdentityKey(keys []string, key string) []string {
+	for _, existing := range keys {
+		if existing == key {
+			return keys
+		}
+	}
+	return append(keys, key)
 }
 
 func (i *codexAccountIndex) Remove(account service.Account) {
 	if i == nil || i.accountsByKey == nil {
 		return
 	}
-	keys := buildCodexImportIdentityKeys(
-		codexCredentialString(account.Credentials, "chatgpt_account_id"),
-		codexCredentialString(account.Credentials, "chatgpt_user_id"),
-		codexCredentialString(account.Credentials, "email"),
-		codexCredentialString(account.Credentials, "access_token"),
-		codexCredentialString(account.Credentials, "refresh_token"),
-	)
+	keys := buildCodexAccountIndexKeys(account)
 	for _, key := range keys {
 		accounts := i.accountsByKey[key]
 		for idx := range accounts {
