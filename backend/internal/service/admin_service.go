@@ -3263,7 +3263,7 @@ func (s *adminServiceImpl) GetAccountsByIDs(ctx context.Context, ids []int64) ([
 
 func normalizeAccountConcurrency(platform, accountType string, concurrency int) int {
 	if platform == PlatformGrok && accountType == AccountTypeOAuth && concurrency <= 0 {
-		return 1
+		return 10
 	}
 	return concurrency
 }
