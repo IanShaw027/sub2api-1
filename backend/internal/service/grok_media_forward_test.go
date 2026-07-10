@@ -103,6 +103,60 @@ func TestForwardVideos_CreateWithoutDurationDefaultsVideoSeconds(t *testing.T) {
 	require.True(t, OpenAIForwardResultHasVideoBillingForUsage(result))
 }
 
+func TestPrepareGrokMediaForwardBody_VideosNormalizesOpenAIShapeToXAI(t *testing.T) {
+	body := []byte(`{
+		"model":"xai/grok-imagine-video-1.5-preview",
+		"prompt":"animate",
+		"seconds":"8",
+		"size":"1280x720",
+		"input_reference":{"image_url":"https://cdn.example/ref.png"}
+	}`)
+
+	out, contentType, err := prepareGrokMediaForwardBody(GrokMediaEndpointVideosGenerations, body, "application/json")
+	require.NoError(t, err)
+	require.Equal(t, "application/json", contentType)
+	require.True(t, json.Valid(out))
+	require.Equal(t, "grok-imagine-video-1.5-preview", gjson.GetBytes(out, "model").String())
+	require.Equal(t, int64(8), gjson.GetBytes(out, "duration").Int())
+	require.Equal(t, "16:9", gjson.GetBytes(out, "aspect_ratio").String())
+	require.Equal(t, "720p", gjson.GetBytes(out, "resolution").String())
+	require.Equal(t, "https://cdn.example/ref.png", gjson.GetBytes(out, "image.url").String())
+	require.False(t, gjson.GetBytes(out, "seconds").Exists())
+	require.False(t, gjson.GetBytes(out, "size").Exists())
+	require.False(t, gjson.GetBytes(out, "input_reference").Exists())
+}
+
+func TestPrepareGrokMediaForwardBody_VideosNormalizesReferenceImages(t *testing.T) {
+	body := []byte(`{
+		"model":"grok-imagine-video",
+		"prompt":"animate refs",
+		"seconds":"12",
+		"reference_image_urls":["https://cdn.example/a.png", {"url":"https://cdn.example/ignored.png"}],
+		"reference_images":[{"image_url":{"url":"https://cdn.example/b.png"}}]
+	}`)
+
+	out, _, err := prepareGrokMediaForwardBody(GrokMediaEndpointVideosGenerations, body, "application/json")
+	require.NoError(t, err)
+	require.True(t, json.Valid(out))
+	require.Equal(t, int64(10), gjson.GetBytes(out, "duration").Int(), "CPA caps reference-image video duration at 10s")
+	require.Equal(t, "https://cdn.example/a.png", gjson.GetBytes(out, "reference_images.0.url").String())
+	require.Equal(t, "https://cdn.example/b.png", gjson.GetBytes(out, "reference_images.1.url").String())
+	require.False(t, gjson.GetBytes(out, "reference_image_urls").Exists())
+}
+
+func TestPrepareGrokMediaForwardBody_VideosRejectsImageAndReferenceImages(t *testing.T) {
+	body := []byte(`{
+		"model":"grok-imagine-video",
+		"prompt":"bad refs",
+		"image_url":"https://cdn.example/base.png",
+		"reference_images":["https://cdn.example/a.png"]
+	}`)
+
+	_, _, err := prepareGrokMediaForwardBody(GrokMediaEndpointVideosGenerations, body, "application/json")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "image and reference_images cannot be combined")
+}
+
 func TestForwardVideos_GETStatusExtractsResponseID(t *testing.T) {
 	setGinTestMode()
 

@@ -431,9 +431,116 @@ func prepareGrokMediaForwardBody(endpoint GrokMediaEndpoint, body []byte, conten
 			return out, contentType, err
 		}
 		return prepareGrokMediaMultipartEditsBody(body, contentType)
+	case GrokMediaEndpointVideosGenerations:
+		if gjson.ValidBytes(body) {
+			out, err := normalizeGrokVideoJSONRequest(body)
+			return out, contentType, err
+		}
+		return body, contentType, nil
 	default:
 		return body, contentType, nil
 	}
+}
+
+func normalizeGrokVideoJSONRequest(body []byte) ([]byte, error) {
+	out := body
+	var err error
+	if model := normalizeGrokMediaModelForEndpoint(GrokMediaEndpointVideosGenerations, gjson.GetBytes(out, "model").String()); model != "" {
+		out, err = sjson.SetBytes(out, "model", model)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if seconds := strings.TrimSpace(gjson.GetBytes(out, "seconds").String()); seconds != "" {
+		duration, parseErr := strconv.Atoi(seconds)
+		if parseErr != nil || duration <= 0 {
+			return nil, fmt.Errorf("seconds must be a positive integer")
+		}
+		out, err = sjson.SetBytes(out, "duration", duration)
+		if err != nil {
+			return nil, err
+		}
+		out, err = sjson.DeleteBytes(out, "seconds")
+		if err != nil {
+			return nil, err
+		}
+	}
+	if size := strings.TrimSpace(gjson.GetBytes(out, "size").String()); size != "" {
+		aspectRatio, resolution, sizeErr := grokVideoSizeOptions(size)
+		if sizeErr != nil {
+			return nil, sizeErr
+		}
+		if strings.TrimSpace(gjson.GetBytes(out, "aspect_ratio").String()) == "" {
+			out, err = sjson.SetBytes(out, "aspect_ratio", aspectRatio)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if strings.TrimSpace(gjson.GetBytes(out, "resolution").String()) == "" {
+			out, err = sjson.SetBytes(out, "resolution", resolution)
+			if err != nil {
+				return nil, err
+			}
+		}
+		out, err = sjson.DeleteBytes(out, "size")
+		if err != nil {
+			return nil, err
+		}
+	}
+	imageURL, err := grokVideoInputImageURL(out)
+	if err != nil {
+		return nil, err
+	}
+	if imageURL != "" {
+		out, err = sjson.SetBytes(out, "image.url", imageURL)
+		if err != nil {
+			return nil, err
+		}
+		out, _ = sjson.DeleteBytes(out, "input_reference")
+		out, _ = sjson.DeleteBytes(out, "image_url")
+	}
+	return out, nil
+}
+
+func grokVideoSizeOptions(size string) (aspectRatio string, resolution string, err error) {
+	switch strings.TrimSpace(size) {
+	case "720x1280", "1024x1792":
+		return "9:16", "720p", nil
+	case "1280x720", "1792x1024":
+		return "16:9", "720p", nil
+	default:
+		return "", "", fmt.Errorf("size must be one of 720x1280, 1280x720, 1024x1792, or 1792x1024")
+	}
+}
+
+func grokVideoInputImageURL(body []byte) (string, error) {
+	inputRef := gjson.GetBytes(body, "input_reference")
+	if inputRef.Exists() {
+		imageURL := strings.TrimSpace(inputRef.Get("image_url").String())
+		fileID := strings.TrimSpace(inputRef.Get("file_id").String())
+		if imageURL != "" && fileID != "" {
+			return "", fmt.Errorf("input_reference must provide exactly one of image_url or file_id")
+		}
+		if fileID != "" {
+			return "", fmt.Errorf("input_reference.file_id is not supported for xAI video generation; use input_reference.image_url")
+		}
+		if imageURL != "" {
+			return imageURL, nil
+		}
+	}
+	image := gjson.GetBytes(body, "image")
+	if image.Exists() {
+		if image.Type == gjson.String {
+			return strings.TrimSpace(image.String()), nil
+		}
+		if url := strings.TrimSpace(image.Get("url").String()); url != "" {
+			return url, nil
+		}
+		if url := strings.TrimSpace(image.Get("image_url.url").String()); url != "" {
+			return url, nil
+		}
+	}
+	return strings.TrimSpace(gjson.GetBytes(body, "image_url").String()), nil
 }
 
 func prepareGrokMediaMultipartEditsBody(body []byte, contentType string) ([]byte, string, error) {
