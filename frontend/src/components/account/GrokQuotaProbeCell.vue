@@ -50,6 +50,7 @@ import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { GrokQuotaProbeResult, GrokQuotaWindow } from '@/api/admin/grok'
 import type { Account } from '@/types'
+import { formatDateTime } from '@/utils/format'
 
 const props = defineProps<{
   account: Account
@@ -79,7 +80,8 @@ const extractErrorMessage = (e: unknown): string => {
 
 const formatWindow = (label: string, window?: GrokQuotaWindow | null): string | null => {
   if (!window || window.limit == null || window.remaining == null) return null
-  return `${label} ${window.remaining}/${window.limit}`
+  const base = `${label} ${window.remaining}/${window.limit}`
+  return window.reset_at ? `${base} · ${formatDateTime(window.reset_at)}` : base
 }
 
 const retryAfterLabel = computed(() => {
@@ -99,6 +101,9 @@ const summary = computed(() => {
   ].filter(Boolean)
   if (retryAfterLabel.value) {
     parts.push(t('admin.accounts.usageWindow.grokRetryAfter', { time: retryAfterLabel.value }))
+  }
+  if (snapshot.subscription_tier) {
+    parts.push(snapshot.subscription_tier)
   }
   if (snapshot.entitlement_status) {
     parts.push(snapshot.entitlement_status)

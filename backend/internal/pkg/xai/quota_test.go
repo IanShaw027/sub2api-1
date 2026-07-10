@@ -42,6 +42,22 @@ func TestParseQuotaHeaders(t *testing.T) {
 	require.NotContains(t, snapshot.Headers, "authorization")
 }
 
+func TestParseQuotaHeadersAcceptsXAITierAliases(t *testing.T) {
+	t.Parallel()
+
+	headers := http.Header{}
+	headers.Set("x-xai-user-tier", "supergrok-heavy")
+	headers.Set("x-xai-user-entitlement-status", "enabled")
+
+	snapshot := ParseQuotaHeaders(headers, http.StatusOK)
+	require.NotNil(t, snapshot)
+	require.True(t, snapshot.HeadersObserved)
+	require.Equal(t, "supergrok-heavy", snapshot.SubscriptionTier)
+	require.Equal(t, "enabled", snapshot.EntitlementStatus)
+	require.Equal(t, "supergrok-heavy", snapshot.Headers["x-xai-user-tier"])
+	require.Equal(t, "enabled", snapshot.Headers["x-xai-user-entitlement-status"])
+}
+
 func TestParseResetHeaderRelativeSecondsNotMisreadAsEpoch(t *testing.T) {
 	t.Parallel()
 
@@ -59,6 +75,39 @@ func TestParseResetHeaderRelativeSecondsNotMisreadAsEpoch(t *testing.T) {
 	got := *snapshot.Requests.ResetUnix
 	require.GreaterOrEqual(t, got, before+59)
 	require.LessOrEqual(t, got, time.Now().Unix()+61)
+}
+
+func TestParseResetHeaderDurationWindow(t *testing.T) {
+	t.Parallel()
+
+	headers := http.Header{}
+	headers.Set("x-ratelimit-reset-requests", "6m0s")
+	headers.Set("x-ratelimit-remaining-requests", "0")
+
+	before := time.Now().Unix()
+	snapshot := ParseQuotaHeaders(headers, http.StatusTooManyRequests)
+	require.NotNil(t, snapshot)
+	require.NotNil(t, snapshot.Requests)
+	require.NotNil(t, snapshot.Requests.ResetUnix)
+	got := *snapshot.Requests.ResetUnix
+	require.GreaterOrEqual(t, got, before+359)
+	require.LessOrEqual(t, got, time.Now().Unix()+361)
+}
+
+func TestParseResetHeaderSubsecondDurationCeilsToFutureSecond(t *testing.T) {
+	t.Parallel()
+
+	headers := http.Header{}
+	headers.Set("x-rate-limit-reset-tokens", "250ms")
+	headers.Set("x-rate-limit-remaining-tokens", "0")
+
+	before := time.Now().Unix()
+	snapshot := ParseQuotaHeaders(headers, http.StatusTooManyRequests)
+	require.NotNil(t, snapshot)
+	require.NotNil(t, snapshot.Tokens)
+	require.NotNil(t, snapshot.Tokens.ResetUnix)
+	require.GreaterOrEqual(t, *snapshot.Tokens.ResetUnix, before)
+	require.LessOrEqual(t, *snapshot.Tokens.ResetUnix, time.Now().Unix()+2)
 }
 
 func TestParseResetHeaderMillisecondsEpochNormalized(t *testing.T) {
