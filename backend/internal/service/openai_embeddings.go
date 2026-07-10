@@ -6,15 +6,20 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"go.uber.org/zap"
 )
 
@@ -293,22 +298,64 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	startTime := time.Now()
 
 	originalModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
+	if originalModel == "" {
+		originalModel = GetGrokMediaVideoBoundModel(c)
+	}
 	clientVideoRequestBody := append([]byte(nil), body...)
 	if targetPath == "" {
 		targetPath = "/v1/videos"
 	}
 	targetPath = canonicalOpenAIVideoTargetPath(targetPath)
 	videoBillingRequest := isOpenAIVideoBillingRequest(c.Request.Method, targetPath)
+	upstreamContentType := strings.TrimSpace(c.GetHeader("Content-Type"))
+	if isOpenAIVideoContentPath(targetPath) {
+		if variant := openAIVideoContentVariant(targetPath); variant != "" && variant != "video" {
+			errVariant := fmt.Errorf("Invalid request: variant %q is not available for xAI video downloads", variant)
+			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"message": errVariant.Error(), "type": "invalid_request_error"}})
+			return nil, errVariant
+		}
+	}
 
 	// POST /v1/videos accepts OpenAI's video-create shape; xAI upstream expects
 	// native Imagine fields. Normalize before account mapping so live ForwardVideos
 	// matches the ForwardGrokMedia helper and CPA's xAI request builder.
-	if isOpenAIVideoCreateRequest(c.Request.Method, targetPath) && gjson.ValidBytes(body) {
+	openAIVideoCreate := isOpenAIVideoCreateRequest(c.Request.Method, targetPath)
+	if openAIVideoCreate && !gjson.ValidBytes(body) {
+		if formBody, formErr := openAIVideoCreateJSONFromEncodedForm(body, upstreamContentType); formErr != nil {
+			writeOpenAIVideoFailedResponse(c, http.StatusBadRequest, originalModel, "invalid_request_error", formErr.Error())
+			return nil, formErr
+		} else if len(formBody) > 0 {
+			body = formBody
+			clientVideoRequestBody = append([]byte(nil), formBody...)
+			upstreamContentType = "application/json"
+			originalModel = strings.TrimSpace(gjson.GetBytes(body, "model").String())
+		}
+	}
+	if openAIVideoCreate && gjson.ValidBytes(body) {
+		if !isSupportedGrokOpenAIVideoModel(originalModel) {
+			errUnsupported := fmt.Errorf("Model %s is not supported on /v1/videos. Use sora-2.", originalModel)
+			writeOpenAIVideoFailedResponse(c, http.StatusBadRequest, originalModel, "invalid_request_error", errUnsupported.Error())
+			return nil, errUnsupported
+		}
+		if originalModel == "" {
+			originalModel = xai.DefaultImagineVideoModel
+			body = ReplaceModelInBody(body, originalModel)
+			clientVideoRequestBody = ReplaceModelInBody(clientVideoRequestBody, originalModel)
+		}
 		var prepErr error
 		body, prepErr = normalizeGrokOpenAIVideoCreateJSONRequest(body)
 		if prepErr != nil {
 			writeOpenAIVideoFailedResponse(c, http.StatusBadRequest, originalModel, "invalid_request_error", prepErr.Error())
 			return nil, prepErr
+		}
+	} else if videoBillingRequest && gjson.ValidBytes(body) {
+		if !isSupportedGrokNativeVideoModel(originalModel) {
+			errUnsupported := fmt.Errorf("Model %s is not supported on %s, /v1/videos/edits, or /v1/videos/extensions. Use %s.", originalModel, strings.TrimRight(targetPath, "/"), xai.DefaultImagineVideoModel)
+			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"message": errUnsupported.Error(), "type": "invalid_request_error"}})
+			return nil, errUnsupported
+		}
+		if originalModel == "" {
+			originalModel = xai.DefaultImagineVideoModel
 		}
 	}
 
@@ -341,6 +388,9 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	if err != nil {
 		return nil, fmt.Errorf("invalid base_url: %w", err)
 	}
+	if isOpenAIVideoContentPath(targetPath) {
+		return s.forwardGrokVideoContentViaRetrieve(ctx, c, account, token, validatedURL, targetPath, originalModel, upstreamModel, startTime)
+	}
 	targetURL := buildOpenAIEndpointURL(validatedURL, targetPath)
 
 	upstreamCtx, release := detachUpstreamContext(ctx)
@@ -352,8 +402,8 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	defer release()
 	upstreamReq = upstreamReq.WithContext(WithHTTPUpstreamProfile(upstreamReq.Context(), HTTPUpstreamProfileOpenAI))
 	if len(body) > 0 {
-		if ct := strings.TrimSpace(c.GetHeader("Content-Type")); ct != "" {
-			upstreamReq.Header.Set("Content-Type", ct)
+		if upstreamContentType != "" {
+			upstreamReq.Header.Set("Content-Type", upstreamContentType)
 		} else {
 			upstreamReq.Header.Set("Content-Type", "application/json")
 		}
@@ -569,6 +619,9 @@ func (s *OpenAIGatewayService) ForwardVideos(
 
 	// Prefer original client model for billing/logging; upstream may echo rewritten id.
 	videoModel := firstNonEmptyString(originalModel, strings.TrimSpace(gjson.GetBytes(clientRespBody, "model").String()))
+	if isOpenAIVideoCreateRequest(c.Request.Method, targetPath) && isGrokOpenAISoraVideoModel(originalModel) {
+		videoModel = firstNonEmptyString(strings.TrimSpace(gjson.GetBytes(clientRespBody, "model").String()), upstreamModel, responseGrokVideoModel(originalModel))
+	}
 	resultUpstreamModel := firstNonEmptyString(upstreamModel, strings.TrimSpace(gjson.GetBytes(respBody, "model").String()), videoModel)
 	var videoSeconds int
 	var videoSize string
@@ -627,6 +680,270 @@ func (s *OpenAIGatewayService) ForwardVideos(
 		VideoCount:      videoCount,
 	}
 	return res, nil
+}
+
+func (s *OpenAIGatewayService) forwardGrokVideoContentViaRetrieve(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	token string,
+	validatedBaseURL string,
+	targetPath string,
+	originalModel string,
+	upstreamModel string,
+	startTime time.Time,
+) (*OpenAIForwardResult, error) {
+	videoID := ExtractGrokVideoRequestIDFromPath(targetPath)
+	if strings.TrimSpace(videoID) == "" {
+		return nil, fmt.Errorf("video_id is required for video content")
+	}
+	statusPath := openAIVideoContentRetrieveTargetPath(targetPath)
+	statusURL := buildOpenAIEndpointURL(validatedBaseURL, statusPath)
+	proxyURL := ""
+	if account.Proxy != nil {
+		proxyURL = account.Proxy.URL()
+	}
+	tlsRuntime := s.resolveOpenAICompatibleTLSFingerprintRuntime(ctx, c, account, "http")
+
+	statusCtx, releaseStatus := detachUpstreamContext(ctx)
+	statusReq, err := http.NewRequestWithContext(statusCtx, http.MethodGet, statusURL, nil)
+	if err != nil {
+		releaseStatus()
+		return nil, fmt.Errorf("build upstream video status request: %w", err)
+	}
+	statusReq = statusReq.WithContext(WithHTTPUpstreamProfile(statusReq.Context(), HTTPUpstreamProfileOpenAI))
+	statusReq.Header.Set("Authorization", "Bearer "+token)
+	statusReq.Header.Set("Accept", "application/json")
+	applyOpenAITLSFingerprintRuntime(statusReq, tlsRuntime)
+	statusReq = withOpenAIHTTP1RawHeaderReplay(statusReq, account, tlsRuntime.Profile)
+	statusResp, err := s.httpUpstream.DoWithTLS(statusReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
+	releaseStatus()
+	if err != nil {
+		safeErr := sanitizeUpstreamErrorMessage(err.Error())
+		setOpsUpstreamError(c, 0, safeErr, "")
+		return nil, &UpstreamFailoverError{StatusCode: 0, ResponseBody: nil, RetryableOnSameAccount: true}
+	}
+	defer func() { _ = statusResp.Body.Close() }()
+	if statusResp.StatusCode >= 400 {
+		respBody, readErr := s.readUpstreamErrorBodyWithError(statusResp)
+		if readErr != nil {
+			return nil, fmt.Errorf("read upstream video status response: %w", readErr)
+		}
+		responseheaders.WriteFilteredHeaders(c.Writer.Header(), statusResp.Header, s.responseHeaderFilter)
+		c.Header("Content-Type", "application/json")
+		c.Status(statusResp.StatusCode)
+		_, _ = c.Writer.Write(respBody)
+		return nil, fmt.Errorf("upstream video status error: status %d", statusResp.StatusCode)
+	}
+	statusBody, readErr := ReadUpstreamResponseBody(statusResp.Body, s.cfg, c, openAITooLargeError)
+	if readErr != nil {
+		return nil, fmt.Errorf("read upstream video status response: %w", readErr)
+	}
+	contentURL, err := grokVideoContentURLFromPayload(statusBody)
+	if err != nil {
+		return nil, err
+	}
+
+	contentCtx, releaseContent := detachUpstreamContext(ctx)
+	contentReq, err := http.NewRequestWithContext(contentCtx, http.MethodGet, contentURL, nil)
+	if err != nil {
+		releaseContent()
+		return nil, fmt.Errorf("build upstream video content request: %w", err)
+	}
+	contentReq = contentReq.WithContext(WithHTTPUpstreamProfile(contentReq.Context(), HTTPUpstreamProfileOpenAI))
+	if accept := strings.TrimSpace(c.GetHeader("Accept")); accept != "" {
+		contentReq.Header.Set("Accept", accept)
+	}
+	applyOpenAITLSFingerprintRuntime(contentReq, tlsRuntime)
+	contentResp, err := s.httpUpstream.DoWithTLS(contentReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
+	releaseContent()
+	if err != nil {
+		safeErr := sanitizeUpstreamErrorMessage(err.Error())
+		setOpsUpstreamError(c, 0, safeErr, "")
+		return nil, fmt.Errorf("download upstream video content: %s", safeErr)
+	}
+	defer func() { _ = contentResp.Body.Close() }()
+	if contentResp.StatusCode < 200 || contentResp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(contentResp.Body)
+		msg := strings.TrimSpace(string(respBody))
+		if msg == "" {
+			msg = contentResp.Status
+		}
+		setOpsUpstreamError(c, contentResp.StatusCode, sanitizeUpstreamErrorMessage(msg), "")
+		c.Status(contentResp.StatusCode)
+		_, _ = c.Writer.Write(respBody)
+		return nil, fmt.Errorf("video content download failed: %s", msg)
+	}
+
+	responseheaders.WriteFilteredHeaders(c.Writer.Header(), contentResp.Header, s.responseHeaderFilter)
+	copyGrokVideoContentHeaders(c.Writer.Header(), contentResp.Header)
+	if ct := strings.TrimSpace(contentResp.Header.Get("Content-Type")); ct != "" {
+		c.Header("Content-Type", ct)
+	}
+	c.Status(contentResp.StatusCode)
+	if flusher, ok := c.Writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	buf := make([]byte, 32*1024)
+	for {
+		n, readErr := contentResp.Body.Read(buf)
+		if n > 0 {
+			if _, writeErr := c.Writer.Write(buf[:n]); writeErr != nil {
+				return nil, fmt.Errorf("stream upstream video content: %w", writeErr)
+			}
+			if flusher, ok := c.Writer.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+		if readErr != nil {
+			return nil, fmt.Errorf("stream upstream video content: %w", readErr)
+		}
+	}
+
+	videoModel := firstNonEmptyString(strings.TrimSpace(gjson.GetBytes(statusBody, "model").String()), originalModel, responseGrokVideoModel(upstreamModel))
+	return &OpenAIForwardResult{
+		RequestID:       firstNonEmptyString(statusResp.Header.Get("x-request-id"), statusResp.Header.Get("request-id"), statusResp.Header.Get("xai-request-id")),
+		ResponseID:      videoID,
+		Model:           videoModel,
+		UpstreamModel:   firstNonEmptyString(upstreamModel, videoModel),
+		Usage:           OpenAIUsage{},
+		ResponseHeaders: contentResp.Header.Clone(),
+		Duration:        time.Since(startTime),
+	}, nil
+}
+
+func openAIVideoContentVariant(targetPath string) string {
+	trimmed := strings.TrimSpace(targetPath)
+	idx := strings.IndexAny(trimmed, "?#")
+	if idx < 0 || idx+1 >= len(trimmed) {
+		return ""
+	}
+	rawQuery := trimmed[idx+1:]
+	if strings.HasPrefix(rawQuery, "?") || strings.HasPrefix(rawQuery, "#") {
+		rawQuery = rawQuery[1:]
+	}
+	values, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(values.Get("variant"))
+}
+
+func copyGrokVideoContentHeaders(dst http.Header, src http.Header) {
+	if dst == nil || src == nil {
+		return
+	}
+	for _, key := range []string{"Content-Type", "Content-Length", "Content-Disposition", "Cache-Control", "ETag", "Last-Modified"} {
+		if value := src.Get(key); value != "" {
+			dst.Set(key, value)
+		}
+	}
+}
+
+func openAIVideoContentRetrieveTargetPath(targetPath string) string {
+	canonical := canonicalOpenAIVideoTargetPath(targetPath)
+	if idx := strings.IndexAny(canonical, "?#"); idx >= 0 {
+		canonical = canonical[:idx]
+	}
+	canonical = strings.TrimRight(canonical, "/")
+	if strings.HasSuffix(strings.ToLower(canonical), "/content") {
+		canonical = canonical[:len(canonical)-len("/content")]
+	}
+	if canonical == "" {
+		return "/v1/videos"
+	}
+	return canonical
+}
+
+func grokVideoContentURLFromPayload(payload []byte) (string, error) {
+	rawURL := strings.TrimSpace(gjson.GetBytes(payload, "video.url").String())
+	if rawURL == "" {
+		return "", fmt.Errorf("xAI video response did not include video.url")
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed == nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return "", fmt.Errorf("xAI video response included invalid video.url")
+	}
+	return rawURL, nil
+}
+
+func openAIVideoCreateJSONFromEncodedForm(body []byte, contentType string) ([]byte, error) {
+	mediaType, params, err := mime.ParseMediaType(strings.TrimSpace(contentType))
+	if err != nil {
+		return nil, nil
+	}
+	values := make(url.Values)
+	switch strings.ToLower(mediaType) {
+	case "application/x-www-form-urlencoded":
+		parsed, parseErr := url.ParseQuery(string(body))
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		values = parsed
+	case "multipart/form-data":
+		boundary := strings.TrimSpace(params["boundary"])
+		if boundary == "" {
+			return nil, fmt.Errorf("multipart boundary is required")
+		}
+		reader := multipart.NewReader(strings.NewReader(string(body)), boundary)
+		form, readErr := reader.ReadForm(32 << 20)
+		if readErr != nil {
+			return nil, readErr
+		}
+		if form != nil {
+			defer func() { _ = form.RemoveAll() }()
+			values = form.Value
+		}
+	default:
+		return nil, nil
+	}
+	if len(values) == 0 {
+		return nil, nil
+	}
+	rawJSON := []byte(`{}`)
+	var errSet error
+	setString := func(path string, value string) error {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return nil
+		}
+		rawJSON, errSet = sjson.SetBytes(rawJSON, path, value)
+		return errSet
+	}
+	for _, field := range []string{"model", "prompt", "seconds", "size", "aspect_ratio", "resolution"} {
+		if err := setString(field, values.Get(field)); err != nil {
+			return nil, err
+		}
+	}
+	if err := setString("input_reference.image_url", firstFormValue(values, "input_reference[image_url]", "input_reference.image_url", "image_url")); err != nil {
+		return nil, err
+	}
+	if err := setString("input_reference.file_id", firstFormValue(values, "input_reference[file_id]", "input_reference.file_id", "file_id")); err != nil {
+		return nil, err
+	}
+	for _, ref := range strings.Split(strings.TrimSpace(values.Get("reference_image_urls")), ",") {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			continue
+		}
+		rawJSON, errSet = sjson.SetBytes(rawJSON, "reference_image_urls.-1", ref)
+		if errSet != nil {
+			return nil, errSet
+		}
+	}
+	return rawJSON, nil
+}
+
+func firstFormValue(values url.Values, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(values.Get(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // ExtractGrokVideoRequestIDFromPath returns the async video job id from a client path

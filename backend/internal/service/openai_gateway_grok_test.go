@@ -506,7 +506,7 @@ func TestForwardGrokMediaVideoGenerationReturnsUsageAndResponseID(t *testing.T) 
 	require.NoError(t, err)
 	require.Equal(t, "https://xai.test/v1/videos/generations", upstream.lastReq.URL.String())
 	require.Equal(t, "video-request-123", result.ResponseID)
-	require.Equal(t, "grok-imagine-video-1.5", result.BillingModel)
+	require.Equal(t, "grok-imagine-video-1.5-preview", result.BillingModel)
 	require.Equal(t, 3, result.Usage.InputTokens)
 	require.Equal(t, 4, result.Usage.OutputTokens)
 	require.Equal(t, 1, result.VideoCount)
@@ -549,7 +549,7 @@ func TestForwardGrokMediaVideoStatusUsesGETWithoutBody(t *testing.T) {
 	require.Empty(t, upstream.lastReq.Header.Get("Content-Type"))
 	require.Empty(t, upstream.lastBody)
 	require.Equal(t, http.StatusOK, recorder.Code)
-	require.JSONEq(t, `{"id":"request-123","status":"completed"}`, recorder.Body.String())
+	require.JSONEq(t, `{"object":"video","id":"request-123","model":"grok-imagine-video","status":"completed"}`, recorder.Body.String())
 	require.Equal(t, "xai-video-req", result.RequestID)
 }
 
@@ -566,6 +566,18 @@ func TestBindGrokMediaVideoRequestAccountUsesRequestIDStickyHash(t *testing.T) {
 	accountID, err := svc.getStickySessionAccountID(ctx, &groupID, hash)
 	require.NoError(t, err)
 	require.Equal(t, int64(63), accountID)
+}
+
+func TestBindGrokMediaVideoRequestModelUsesRequestIDStickyHash(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(7)
+	cache := &stubGatewayCache{}
+	svc := &OpenAIGatewayService{cache: cache}
+
+	require.NoError(t, svc.BindGrokMediaVideoRequestModel(ctx, &groupID, "video-request-preview", "grok-imagine-video-1.5-preview"))
+	got, err := svc.GetGrokMediaVideoRequestModel(ctx, &groupID, "video-request-preview")
+	require.NoError(t, err)
+	require.Equal(t, "grok-imagine-video-1.5-preview", got)
 }
 
 func TestForwardGrokMediaErrorHonorsCustomErrorCodes(t *testing.T) {

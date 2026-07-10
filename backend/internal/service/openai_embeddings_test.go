@@ -132,7 +132,7 @@ func TestForwardEmbeddings_APIKeyPassthroughRecordsUsageAndBatchInput(t *testing
 func TestForwardVideos_ExtractsBillingMetadataFromRequest(t *testing.T) {
 	setGinTestMode()
 
-	reqBody := []byte(`{"model":"grok-4.3","prompt":"make a video","seconds":4,"size":"720x1280","n_variants":2}`)
+	reqBody := []byte(`{"model":"grok-imagine-video","prompt":"make a video","seconds":4,"size":"720x1280","n_variants":2}`)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(reqBody))
@@ -144,7 +144,7 @@ func TestForwardVideos_ExtractsBillingMetadataFromRequest(t *testing.T) {
 			"Content-Type": []string{"application/json"},
 			"X-Request-Id": []string{"video-rid"},
 		},
-		Body: io.NopCloser(strings.NewReader(`{"id":"video-job","object":"video","model":"grok-4.3"}`)),
+		Body: io.NopCloser(strings.NewReader(`{"id":"video-job","object":"video","model":"grok-imagine-video"}`)),
 	}}
 	svc := &OpenAIGatewayService{
 		cfg:          &config.Config{},
@@ -162,7 +162,7 @@ func TestForwardVideos_ExtractsBillingMetadataFromRequest(t *testing.T) {
 	result, err := svc.ForwardVideos(context.Background(), c, account, reqBody, "/v1/videos")
 
 	require.NoError(t, err)
-	require.Equal(t, "grok-4.3", result.Model)
+	require.Equal(t, "grok-imagine-video", result.Model)
 	require.Equal(t, "video-rid", result.RequestID)
 	require.Equal(t, 4, result.VideoSeconds)
 	require.Equal(t, VideoBillingTier720p, result.VideoSize)
@@ -212,7 +212,7 @@ func TestForwardVideos_ExtractsBillingMetadataFromXAIOfficialFields(t *testing.T
 func TestForwardVideos_DoesNotFallbackToRequestedVariantCountWhenResponseHasEmptyDataArray(t *testing.T) {
 	setGinTestMode()
 
-	reqBody := []byte(`{"model":"grok-4.3","prompt":"make a video","seconds":4,"n_variants":5}`)
+	reqBody := []byte(`{"model":"grok-imagine-video","prompt":"make a video","seconds":4,"n_variants":5}`)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(reqBody))
@@ -224,7 +224,7 @@ func TestForwardVideos_DoesNotFallbackToRequestedVariantCountWhenResponseHasEmpt
 			"Content-Type": []string{"application/json"},
 			"X-Request-Id": []string{"video-rid-empty-data"},
 		},
-		Body: io.NopCloser(strings.NewReader(`{"data":[],"model":"grok-4.3","status":"pending"}`)),
+		Body: io.NopCloser(strings.NewReader(`{"data":[],"model":"grok-imagine-video","status":"pending"}`)),
 	}}
 	svc := &OpenAIGatewayService{
 		cfg:          &config.Config{},
@@ -242,7 +242,7 @@ func TestForwardVideos_DoesNotFallbackToRequestedVariantCountWhenResponseHasEmpt
 	result, err := svc.ForwardVideos(context.Background(), c, account, reqBody, "/v1/videos")
 
 	require.NoError(t, err)
-	require.Equal(t, "grok-4.3", result.Model)
+	require.Equal(t, "grok-imagine-video", result.Model)
 	require.Equal(t, "video-rid-empty-data", result.RequestID)
 	require.Equal(t, 0, result.VideoCount)
 }
@@ -250,7 +250,7 @@ func TestForwardVideos_DoesNotFallbackToRequestedVariantCountWhenResponseHasEmpt
 func TestForwardVideos_FiltersUpstreamResponseHeaders(t *testing.T) {
 	setGinTestMode()
 
-	reqBody := []byte(`{"model":"grok-4.3","prompt":"make a video","seconds":4}`)
+	reqBody := []byte(`{"model":"grok-imagine-video","prompt":"make a video","seconds":4}`)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(reqBody))
@@ -263,7 +263,7 @@ func TestForwardVideos_FiltersUpstreamResponseHeaders(t *testing.T) {
 			"Set-Cookie":   []string{"secret=upstream; Path=/; HttpOnly"},
 			"X-Request-Id": []string{"video-rid"},
 		},
-		Body: io.NopCloser(strings.NewReader(`{"id":"video-job","object":"video","model":"grok-4.3"}`)),
+		Body: io.NopCloser(strings.NewReader(`{"id":"video-job","object":"video","model":"grok-imagine-video"}`)),
 	}}
 	svc := &OpenAIGatewayService{
 		cfg:          &config.Config{},
@@ -290,7 +290,7 @@ func TestForwardVideos_FiltersUpstreamResponseHeaders(t *testing.T) {
 func TestForwardVideos_NormalizesRootAliasToV1Videos(t *testing.T) {
 	setGinTestMode()
 
-	reqBody := []byte(`{"model":"grok-4.3","prompt":"make a video","seconds":4}`)
+	reqBody := []byte(`{"model":"grok-imagine-video","prompt":"make a video","seconds":4}`)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/videos", bytes.NewReader(reqBody))
@@ -301,7 +301,7 @@ func TestForwardVideos_NormalizesRootAliasToV1Videos(t *testing.T) {
 		Header: http.Header{
 			"Content-Type": []string{"application/json"},
 		},
-		Body: io.NopCloser(strings.NewReader(`{"id":"video-job","object":"video","model":"grok-4.3"}`)),
+		Body: io.NopCloser(strings.NewReader(`{"id":"video-job","object":"video","model":"grok-imagine-video"}`)),
 	}}
 	svc := &OpenAIGatewayService{
 		cfg:          &config.Config{},
@@ -335,7 +335,7 @@ func TestForwardVideos_GETDoesNotExposeBillingMetadata(t *testing.T) {
 		Header: http.Header{
 			"Content-Type": []string{"application/json"},
 		},
-		Body: io.NopCloser(strings.NewReader(`{"id":"video-job","object":"video","model":"grok-4.3","size":"720p","duration":8}`)),
+		Body: io.NopCloser(strings.NewReader(`{"id":"video-job","object":"video","model":"grok-imagine-video","size":"720p","duration":8}`)),
 	}}
 	svc := &OpenAIGatewayService{
 		cfg:          &config.Config{},
@@ -360,6 +360,63 @@ func TestForwardVideos_GETDoesNotExposeBillingMetadata(t *testing.T) {
 	require.Empty(t, result.VideoSize)
 }
 
+func TestForwardVideos_GETContentRejectsUnsupportedVariantLikeCPA(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/videos/video-job/content?variant=thumbnail", nil)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"status":"done"}`))}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{ID: 54, Platform: PlatformGrok, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "xai-test"}}
+
+	result, err := svc.ForwardVideos(context.Background(), c, account, nil, "/v1/videos/video-job/content?variant=thumbnail")
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Nil(t, upstream.lastReq)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "variant")
+}
+
+func TestForwardVideos_GETContentRetrievesVideoURLThenDownloadsLikeCPA(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/videos/video-job/content", nil)
+	c.Request.Header.Set("Accept", "video/mp4")
+
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"status":"done","video":{"url":"https://vidgen.x.ai/video-job.mp4","duration":4}}`)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Type":        []string{"video/mp4"},
+				"Content-Disposition": []string{`attachment; filename="video.mp4"`},
+			},
+			Body: io.NopCloser(strings.NewReader("video-bytes")),
+		},
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{ID: 53, Platform: PlatformGrok, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "xai-test"}}
+
+	result, err := svc.ForwardVideos(context.Background(), c, account, nil, "/v1/videos/video-job/content")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.requests, 2)
+	require.Equal(t, "/v1/videos/video-job", upstream.requests[0].URL.Path)
+	require.Equal(t, "https://vidgen.x.ai/video-job.mp4", upstream.requests[1].URL.String())
+	require.Equal(t, "video/mp4", rec.Header().Get("Content-Type"))
+	require.Equal(t, `attachment; filename="video.mp4"`, rec.Header().Get("Content-Disposition"))
+	require.Equal(t, "video-bytes", rec.Body.String())
+	require.Equal(t, "video-job", result.ResponseID)
+}
+
 func TestForwardVideos_GETContentStreamsBeforeUpstreamEOF(t *testing.T) {
 	setGinTestMode()
 
@@ -369,14 +426,21 @@ func TestForwardVideos_GETContentStreamsBeforeUpstreamEOF(t *testing.T) {
 	c.Request.Header.Set("Accept", "video/mp4")
 
 	release := make(chan struct{})
-	upstream := &httpUpstreamRecorder{resp: &http.Response{
-		StatusCode: http.StatusOK,
-		Header: http.Header{
-			"Content-Type": []string{"video/mp4"},
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"status":"done","video":{"url":"https://vidgen.x.ai/video-job.mp4","duration":4}}`)),
 		},
-		Body: &blockingVideoContentBody{
-			firstChunk: []byte("first-video-bytes"),
-			release:    release,
+		{
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Type": []string{"video/mp4"},
+			},
+			Body: &blockingVideoContentBody{
+				firstChunk: []byte("first-video-bytes"),
+				release:    release,
+			},
 		},
 	}}
 	svc := &OpenAIGatewayService{
@@ -412,14 +476,21 @@ func TestForwardVideos_GETContentFlushesToHTTPClientBeforeUpstreamEOF(t *testing
 	setGinTestMode()
 
 	release := make(chan struct{})
-	upstream := &httpUpstreamRecorder{resp: &http.Response{
-		StatusCode: http.StatusOK,
-		Header: http.Header{
-			"Content-Type": []string{"video/mp4"},
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"status":"done","video":{"url":"https://vidgen.x.ai/video-job.mp4","duration":4}}`)),
 		},
-		Body: &blockingVideoContentBody{
-			firstChunk: []byte("first-video-bytes"),
-			release:    release,
+		{
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Type": []string{"video/mp4"},
+			},
+			Body: &blockingVideoContentBody{
+				firstChunk: []byte("first-video-bytes"),
+				release:    release,
+			},
 		},
 	}}
 	svc := &OpenAIGatewayService{
@@ -560,7 +631,7 @@ func TestForwardVideos_PreservesMultipartContentType(t *testing.T) {
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(strings.NewReader(`{"id":"video-job","object":"video","model":"grok-4.3"}`)),
+		Body:       io.NopCloser(strings.NewReader(`{"id":"video-job","object":"video","model":"grok-imagine-video"}`)),
 	}}
 	svc := &OpenAIGatewayService{
 		cfg:          &config.Config{},
@@ -586,7 +657,7 @@ func TestForwardVideos_PreservesMultipartContentType(t *testing.T) {
 func TestForwardVideos_ServerErrorReturnsFailoverWithoutWritingResponse(t *testing.T) {
 	setGinTestMode()
 
-	reqBody := []byte(`{"model":"grok-4.3","prompt":"make a video","seconds":4}`)
+	reqBody := []byte(`{"model":"grok-imagine-video","prompt":"make a video","seconds":4}`)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(reqBody))
@@ -626,7 +697,7 @@ func TestForwardVideos_ServerErrorReturnsFailoverWithoutWritingResponse(t *testi
 func TestForwardVideos_ClientErrorRecordsOpsUpstreamError(t *testing.T) {
 	setGinTestMode()
 
-	reqBody := []byte(`{"model":"grok-4.3","prompt":"make a video","seconds":4}`)
+	reqBody := []byte(`{"model":"grok-imagine-video","prompt":"make a video","seconds":4}`)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(reqBody))
@@ -758,7 +829,7 @@ func TestForwardVideos_GETStatusReadErrorFailsWithoutWritingTruncatedBody(t *tes
 func TestForwardVideos_ClientErrorReadErrorFailsWithoutParsingTruncatedBody(t *testing.T) {
 	setGinTestMode()
 
-	reqBody := []byte(`{"model":"grok-4.3","prompt":"make a video","seconds":4}`)
+	reqBody := []byte(`{"model":"grok-imagine-video","prompt":"make a video","seconds":4}`)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(reqBody))

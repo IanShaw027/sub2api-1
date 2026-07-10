@@ -668,11 +668,17 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	// (e.g. /videos?limit=10, /videos/<id>/content).
 	targetPath := c.Request.URL.RequestURI()
 
-	// Sticky session: GET status/content reuses the account that created the job.
-	// POST generations bind the account after we learn request_id from the response.
+	// Sticky session: GET status/content reuses the account and model that created the job.
+	// POST generations bind them after we learn request_id from the response.
 	sessionHash := ""
 	if videoJobID := service.ExtractGrokVideoRequestIDFromPath(c.Request.URL.Path); videoJobID != "" {
 		sessionHash = service.GrokMediaVideoRequestSessionHash(videoJobID)
+		if boundModel, modelErr := h.gatewayService.GetGrokMediaVideoRequestModel(c.Request.Context(), apiKey.GroupID, videoJobID); modelErr == nil && strings.TrimSpace(boundModel) != "" {
+			service.SetGrokMediaVideoBoundModel(c, boundModel)
+			if strings.TrimSpace(model) == "" {
+				model = boundModel
+			}
+		}
 	}
 
 	failedAccountIDs := make(map[int64]struct{})
@@ -786,6 +792,9 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 		h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, nil)
 		// Pin POST generations to this account so subsequent GET /videos/{id} polls stick.
 		if result != nil && strings.TrimSpace(result.ResponseID) != "" {
+			if bindModelErr := h.gatewayService.BindGrokMediaVideoRequestModel(c.Request.Context(), apiKey.GroupID, result.ResponseID, result.UpstreamModel); bindModelErr != nil {
+				reqLog.Warn("openai.videos.bind_model_failed", zap.Int64("account_id", account.ID), zap.String("response_id", result.ResponseID), zap.Error(bindModelErr))
+			}
 			if bindErr := h.gatewayService.BindGrokMediaVideoRequestAccount(c.Request.Context(), apiKey.GroupID, result.ResponseID, account.ID); bindErr != nil {
 				reqLog.Warn("openai.videos.bind_sticky_failed",
 					zap.Int64("account_id", account.ID),

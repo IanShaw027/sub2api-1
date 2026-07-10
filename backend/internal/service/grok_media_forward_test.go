@@ -207,6 +207,42 @@ func TestPrepareGrokMediaForwardBody_VideosHonorsExplicitAspectRatioAndResolutio
 	require.False(t, gjson.GetBytes(out, "size").Exists())
 }
 
+func TestForwardVideos_OpenAICreateFormRequestLikeCPA(t *testing.T) {
+	setGinTestMode()
+
+	var form bytes.Buffer
+	writer := multipart.NewWriter(&form)
+	require.NoError(t, writer.WriteField("model", "sora-2"))
+	require.NoError(t, writer.WriteField("prompt", "form video"))
+	require.NoError(t, writer.WriteField("seconds", "6"))
+	require.NoError(t, writer.WriteField("size", "1280x720"))
+	require.NoError(t, writer.WriteField("input_reference[image_url]", "https://cdn.example/ref.png"))
+	require.NoError(t, writer.Close())
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(form.Bytes()))
+	c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"request_id":"video-form-job","status":"pending"}`)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{ID: 107, Platform: PlatformGrok, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "xai-test"}}
+
+	result, err := svc.ForwardVideos(context.Background(), c, account, form.Bytes(), "/v1/videos")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Content-Type"))
+	require.JSONEq(t, `{"model":"grok-imagine-video","prompt":"form video","duration":6,"aspect_ratio":"16:9","resolution":"720p","image":{"url":"https://cdn.example/ref.png"}}`, string(upstream.lastBody))
+	require.Equal(t, "video-form-job", result.ResponseID)
+	require.Equal(t, "1280x720", gjson.Get(rec.Body.String(), "size").String())
+	require.Equal(t, 6, result.VideoSeconds)
+	require.Equal(t, "720p", result.VideoSize)
+}
+
 func TestForwardVideos_OpenAICreateDefaultsDurationAndSizeLikeCPA(t *testing.T) {
 	setGinTestMode()
 
@@ -289,6 +325,161 @@ func TestForwardVideos_OpenAICreateInvalidSizeReturnsFailedVideoResource(t *test
 	require.Contains(t, gjson.Get(body, "error.message").String(), "size must be one of")
 }
 
+func TestForwardVideos_OpenAICreateCanonicalizesAspectRatioAndResolutionLikeCPA(t *testing.T) {
+	setGinTestMode()
+
+	reqBody := []byte(`{"model":"grok-imagine-video","prompt":"alias options","aspect_ratio":"landscape","resolution":"1080p"}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"request_id":"video-alias-options","status":"pending"}`)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{ID: 101, Platform: PlatformGrok, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "xai-test"}}
+
+	_, err := svc.ForwardVideos(context.Background(), c, account, reqBody, "/v1/videos")
+	require.NoError(t, err)
+	require.Equal(t, "16:9", gjson.GetBytes(upstream.lastBody, "aspect_ratio").String())
+	// CPA accepts only 480p/720p for this path; unsupported values fall back to 720p.
+	require.Equal(t, "720p", gjson.GetBytes(upstream.lastBody, "resolution").String())
+}
+
+func TestPrepareGrokMediaForwardBody_VideosCanonicalizesExplicitOpenAIOptionsLikeCPA(t *testing.T) {
+	body := []byte(`{"model":"grok-imagine-video","prompt":"alias native","aspect_ratio":"square","resolution":"480p"}`)
+
+	out, _, err := prepareGrokMediaForwardBody(GrokMediaEndpointVideosGenerations, body, "application/json")
+	require.NoError(t, err)
+	require.Equal(t, "1:1", gjson.GetBytes(out, "aspect_ratio").String())
+	require.Equal(t, "480p", gjson.GetBytes(out, "resolution").String())
+}
+
+func TestForwardVideos_OpenAICreateMapsSoraModelToXAIBackendLikeCPA(t *testing.T) {
+	setGinTestMode()
+
+	reqBody := []byte(`{"model":"sora-2","prompt":"sora client","seconds":"8"}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"request_id":"video-sora-job","status":"pending"}`)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{ID: 102, Platform: PlatformGrok, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "xai-test"}}
+
+	result, err := svc.ForwardVideos(context.Background(), c, account, reqBody, "/v1/videos")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, xai.DefaultImagineVideoModel, gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, xai.DefaultImagineVideoModel, gjson.Get(rec.Body.String(), "model").String())
+	require.Equal(t, xai.DefaultImagineVideoModel, result.Model)
+	require.Equal(t, xai.DefaultImagineVideoModel, result.BillingModel)
+	require.Equal(t, xai.DefaultImagineVideoModel, result.UpstreamModel)
+}
+
+func TestForwardVideos_OpenAICreateDefaultsMissingModelToXAIBackendLikeCPA(t *testing.T) {
+	setGinTestMode()
+
+	reqBody := []byte(`{"prompt":"missing model client"}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"request_id":"video-default-model","status":"pending"}`)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{ID: 103, Platform: PlatformGrok, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "xai-test"}}
+
+	result, err := svc.ForwardVideos(context.Background(), c, account, reqBody, "/v1/videos")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, xai.DefaultImagineVideoModel, gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, xai.DefaultImagineVideoModel, gjson.Get(rec.Body.String(), "model").String())
+	require.Equal(t, xai.DefaultImagineVideoModel, result.Model)
+	require.Equal(t, xai.DefaultImagineVideoModel, result.UpstreamModel)
+}
+
+func TestForwardVideos_OpenAICreateRejectsUnsupportedModelLikeCPA(t *testing.T) {
+	setGinTestMode()
+
+	reqBody := []byte(`{"model":"codex/grok-imagine-video","prompt":"bad model"}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"request_id":"should-not-call"}`))}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{ID: 104, Platform: PlatformGrok, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "xai-test"}}
+
+	result, err := svc.ForwardVideos(context.Background(), c, account, reqBody, "/v1/videos")
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Nil(t, upstream.lastReq, "unsupported OpenAI video model must fail before upstream")
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, "video", gjson.Get(rec.Body.String(), "object").String())
+	require.Equal(t, "failed", gjson.Get(rec.Body.String(), "status").String())
+	require.Equal(t, "codex/grok-imagine-video", gjson.Get(rec.Body.String(), "model").String())
+	require.Equal(t, "invalid_request_error", gjson.Get(rec.Body.String(), "error.code").String())
+	require.Contains(t, gjson.Get(rec.Body.String(), "error.message").String(), "Model codex/grok-imagine-video is not supported")
+}
+
+func TestForwardVideos_XAINativeRejectsLegacyVideoAliasLikeCPA(t *testing.T) {
+	setGinTestMode()
+
+	reqBody := []byte(`{"model":"grok-video","prompt":"native legacy alias should fail"}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos/generations", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"request_id":"should-not-call"}`))}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{ID: 106, Platform: PlatformGrok, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "xai-test"}}
+
+	result, err := svc.ForwardVideos(context.Background(), c, account, reqBody, "/v1/videos/generations")
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Nil(t, upstream.lastReq, "native xAI video endpoint must reject non-CPA legacy aliases before upstream")
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, "invalid_request_error", gjson.Get(rec.Body.String(), "error.type").String())
+	require.Contains(t, gjson.Get(rec.Body.String(), "error.message").String(), "Model grok-video is not supported")
+}
+
+func TestForwardVideos_XAINativeRejectsSoraModelLikeCPA(t *testing.T) {
+	setGinTestMode()
+
+	reqBody := []byte(`{"model":"sora-2","prompt":"native bad model"}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/videos/generations", bytes.NewReader(reqBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"request_id":"should-not-call"}`))}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{ID: 105, Platform: PlatformGrok, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "xai-test"}}
+
+	result, err := svc.ForwardVideos(context.Background(), c, account, reqBody, "/v1/videos/generations")
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Nil(t, upstream.lastReq, "native xAI video endpoint must reject Sora before upstream")
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Equal(t, "invalid_request_error", gjson.Get(rec.Body.String(), "error.type").String())
+	require.Contains(t, gjson.Get(rec.Body.String(), "error.message").String(), "Model sora-2 is not supported")
+}
+
 func TestForwardVideos_NormalizesOpenAICreateShapeOnUpstreamBody(t *testing.T) {
 	setGinTestMode()
 
@@ -355,6 +546,29 @@ func TestForwardVideos_CreateNormalizesXAIResponseToOpenAIVideoObject(t *testing
 	require.True(t, gjson.Get(body, "created_at").Exists())
 	require.False(t, gjson.Get(body, "request_id").Exists())
 	require.False(t, gjson.Get(body, "usage").Exists())
+}
+
+func TestForwardVideos_GETStatusUsesBoundModelFallbackLikeCPA(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/videos/video-preview-job", nil)
+	SetGrokMediaVideoBoundModel(c, xai.DefaultImagineVideo15Model)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"video-preview-job","status":"completed","progress":100}`)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{}, httpUpstream: upstream}
+	account := &Account{ID: 106, Platform: PlatformGrok, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "xai-test"}}
+
+	result, err := svc.ForwardVideos(context.Background(), c, account, nil, "/v1/videos/video-preview-job")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, xai.DefaultImagineVideo15Model, gjson.Get(rec.Body.String(), "model").String())
+	require.Equal(t, xai.DefaultImagineVideo15Model, result.Model)
 }
 
 func TestForwardVideos_GETStatusExtractsResponseID(t *testing.T) {

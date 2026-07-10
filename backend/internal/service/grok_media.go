@@ -20,6 +20,26 @@ import (
 	"github.com/tidwall/sjson"
 )
 
+const grokMediaVideoBoundModelContextKey = "grok_media_video_bound_model"
+
+func SetGrokMediaVideoBoundModel(c *gin.Context, model string) {
+	if c == nil {
+		return
+	}
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return
+	}
+	c.Set(grokMediaVideoBoundModelContextKey, model)
+}
+
+func GetGrokMediaVideoBoundModel(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.GetString(grokMediaVideoBoundModelContextKey))
+}
+
 type GrokMediaEndpoint string
 
 const (
@@ -286,6 +306,45 @@ func (s *OpenAIGatewayService) BindGrokMediaVideoRequestAccount(ctx context.Cont
 	return s.BindStickySession(ctx, groupID, GrokMediaVideoRequestSessionHash(requestID), accountID)
 }
 
+func grokMediaVideoRequestModelSessionHash(requestID string) string {
+	base := GrokMediaVideoRequestSessionHash(requestID)
+	if base == "" {
+		return ""
+	}
+	return "grok-video-model:" + strings.TrimPrefix(base, "grok-video:")
+}
+
+func (s *OpenAIGatewayService) BindGrokMediaVideoRequestModel(ctx context.Context, groupID *int64, requestID string, model string) error {
+	if s == nil || s.cache == nil {
+		return nil
+	}
+	sessionHash := grokMediaVideoRequestModelSessionHash(requestID)
+	model = strings.TrimSpace(responseGrokVideoModel(model))
+	if sessionHash == "" || model == "" {
+		return nil
+	}
+	ttl := openaiStickySessionTTL
+	if s.cfg != nil && s.cfg.Gateway.OpenAIWS.StickySessionTTLSeconds > 0 {
+		ttl = time.Duration(s.cfg.Gateway.OpenAIWS.StickySessionTTLSeconds) * time.Second
+	}
+	return s.cache.SetOpenAIResponsesSessionWindow(ctx, derefGroupID(groupID), sessionHash, []byte(model), ttl)
+}
+
+func (s *OpenAIGatewayService) GetGrokMediaVideoRequestModel(ctx context.Context, groupID *int64, requestID string) (string, error) {
+	if s == nil || s.cache == nil {
+		return "", ErrGatewayCacheMiss
+	}
+	sessionHash := grokMediaVideoRequestModelSessionHash(requestID)
+	if sessionHash == "" {
+		return "", ErrGatewayCacheMiss
+	}
+	payload, err := s.cache.GetOpenAIResponsesSessionWindow(ctx, derefGroupID(groupID), sessionHash)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(payload)), nil
+}
+
 func (e GrokMediaEndpoint) upstreamURL(baseURL, requestID string) (string, error) {
 	switch e {
 	case GrokMediaEndpointImagesGenerations:
@@ -492,6 +551,18 @@ func normalizeGrokVideoJSONRequest(body []byte) ([]byte, error) {
 			return nil, err
 		}
 	}
+	if aspectRatio := grokVideoAspectRatioOption(gjson.GetBytes(out, "aspect_ratio").String(), ""); aspectRatio != "" {
+		out, err = sjson.SetBytes(out, "aspect_ratio", aspectRatio)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if resolution := grokVideoResolutionOption(gjson.GetBytes(out, "resolution").String(), ""); resolution != "" {
+		out, err = sjson.SetBytes(out, "resolution", resolution)
+		if err != nil {
+			return nil, err
+		}
+	}
 	imageURL, err := grokVideoInputImageURL(out)
 	if err != nil {
 		return nil, err
@@ -530,6 +601,38 @@ func normalizeGrokVideoJSONRequest(body []byte) ([]byte, error) {
 	return out, nil
 }
 
+func grokVideoAspectRatioOption(raw string, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1:1", "square":
+		return "1:1"
+	case "16:9", "landscape":
+		return "16:9"
+	case "9:16", "portrait":
+		return "9:16"
+	case "4:3":
+		return "4:3"
+	case "3:4":
+		return "3:4"
+	case "3:2":
+		return "3:2"
+	case "2:3":
+		return "2:3"
+	default:
+		return fallback
+	}
+}
+
+func grokVideoResolutionOption(raw string, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "480p":
+		return "480p"
+	case "720p":
+		return "720p"
+	default:
+		return fallback
+	}
+}
+
 func normalizeGrokOpenAIVideoCreateJSONRequest(body []byte) ([]byte, error) {
 	if len(body) == 0 || !gjson.ValidBytes(body) {
 		return body, nil
@@ -555,28 +658,15 @@ func normalizeGrokOpenAIVideoCreateJSONRequest(body []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(gjson.GetBytes(out, "aspect_ratio").String()) == "" && strings.TrimSpace(gjson.GetBytes(out, "resolution").String()) == "" {
-		out, err = sjson.SetBytes(out, "aspect_ratio", "9:16")
-		if err != nil {
-			return nil, err
-		}
-		out, err = sjson.SetBytes(out, "resolution", "720p")
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		if strings.TrimSpace(gjson.GetBytes(out, "aspect_ratio").String()) == "" {
-			out, err = sjson.SetBytes(out, "aspect_ratio", "9:16")
-			if err != nil {
-				return nil, err
-			}
-		}
-		if strings.TrimSpace(gjson.GetBytes(out, "resolution").String()) == "" {
-			out, err = sjson.SetBytes(out, "resolution", "720p")
-			if err != nil {
-				return nil, err
-			}
-		}
+	aspectRatio := grokVideoAspectRatioOption(gjson.GetBytes(out, "aspect_ratio").String(), "9:16")
+	out, err = sjson.SetBytes(out, "aspect_ratio", aspectRatio)
+	if err != nil {
+		return nil, err
+	}
+	resolution := grokVideoResolutionOption(gjson.GetBytes(out, "resolution").String(), "720p")
+	out, err = sjson.SetBytes(out, "resolution", resolution)
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -857,7 +947,7 @@ func normalizeGrokMediaModelForEndpoint(endpoint GrokMediaEndpoint, model string
 		}
 	case GrokMediaEndpointVideosGenerations:
 		switch strings.ToLower(model) {
-		case "grok-imagine-video", "grok-video", "grok-video-latest":
+		case "sora-2", "sora-2-pro", "grok-imagine-video", "grok-video", "grok-video-latest":
 			return xai.DefaultImagineVideoModel
 		case "grok-imagine-video-1.5", "grok-imagine-video-1.5-preview", "grok-video-1.5":
 			return xai.DefaultImagineVideo15Model
@@ -1054,6 +1144,59 @@ func buildOpenAIVideoRetrieveResponseFromGrok(videoID string, payload []byte, fa
 	}
 	out = setOpenAIVideoErrorFromGrok(out, payload)
 	return out, nil
+}
+
+func isGrokOpenAISoraVideoModel(model string) bool {
+	base := strings.ToLower(strings.TrimSpace(xai.StripGrokProviderPrefix(model)))
+	return base == "sora-2" || strings.HasPrefix(base, "sora-2-")
+}
+
+func isSupportedGrokOpenAIVideoModel(model string) bool {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return true
+	}
+	if isGrokOpenAISoraVideoModel(model) {
+		return true
+	}
+	prefix, base := grokVideoProviderModelParts(model)
+	prefix = strings.ToLower(strings.TrimSpace(prefix))
+	if prefix != "" && prefix != "xai" && prefix != "x-ai" && prefix != "grok" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(base)) {
+	case xai.DefaultImagineVideoModel, "grok-video", "grok-video-latest",
+		xai.DefaultImagineVideo15LegacyModel, xai.DefaultImagineVideo15Model, "grok-video-1.5":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSupportedGrokNativeVideoModel(model string) bool {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return true
+	}
+	prefix, base := grokVideoProviderModelParts(model)
+	prefix = strings.ToLower(strings.TrimSpace(prefix))
+	if prefix != "" && prefix != "xai" && prefix != "x-ai" && prefix != "grok" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(base)) {
+	case xai.DefaultImagineVideoModel, xai.DefaultImagineVideo15Model:
+		return true
+	default:
+		return false
+	}
+}
+
+func grokVideoProviderModelParts(model string) (string, string) {
+	trimmed := strings.TrimSpace(model)
+	if idx := strings.Index(trimmed, "/"); idx >= 0 {
+		return strings.ToLower(strings.TrimSpace(trimmed[:idx])), strings.TrimSpace(trimmed[idx+1:])
+	}
+	return "", trimmed
 }
 
 func responseGrokVideoModel(model string) string {
