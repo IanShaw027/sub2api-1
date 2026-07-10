@@ -227,7 +227,9 @@ func TestDefaultModelMappingIncludesGrokAliases(t *testing.T) {
 	require.Equal(t, DefaultImagineImageFastModel, mapping["grok-imagine-image"])
 	require.Equal(t, DefaultImagineImageQualityModel, mapping["grok-imagine-image-quality"])
 	require.Equal(t, DefaultImagineVideoModel, mapping["grok-imagine-video"])
-	require.Equal(t, DefaultImagineVideo15Model, mapping["grok-imagine-video-1.5"])
+	require.Equal(t, "grok-imagine-video-1.5-preview", mapping["grok-imagine-video-1.5"])
+	require.Equal(t, "grok-imagine-video-1.5-preview", mapping["grok-imagine-video-1.5-preview"])
+	require.Equal(t, "grok-imagine-video-1.5-preview", mapping["grok-video-1.5"])
 	// Codex / OpenAI / Claude client defaults map to current text default.
 	require.Equal(t, DefaultTextModel, mapping["gpt-*"])
 	require.Equal(t, DefaultTextModel, mapping["codex-*"])
@@ -238,6 +240,6 @@ func TestDefaultModelMappingIncludesGrokAliases(t *testing.T) {
 	require.Contains(t, ids, DefaultImagineImageQualityModel)
 	require.Contains(t, ids, DefaultImagineImageFastModel)
 	require.Contains(t, ids, DefaultImagineVideoModel)
-	require.Contains(t, ids, DefaultImagineVideo15Model)
+	require.Contains(t, ids, "grok-imagine-video-1.5-preview")
 	require.NotContains(t, ids, "grok-imagine-1")
 }

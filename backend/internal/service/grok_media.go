@@ -641,7 +641,7 @@ func normalizeGrokMediaModelForEndpoint(endpoint GrokMediaEndpoint, model string
 		switch strings.ToLower(model) {
 		case "grok-imagine-video", "grok-video", "grok-video-latest":
 			return xai.DefaultImagineVideoModel
-		case "grok-imagine-video-1.5", "grok-video-1.5":
+		case "grok-imagine-video-1.5", "grok-imagine-video-1.5-preview", "grok-video-1.5":
 			return xai.DefaultImagineVideo15Model
 		}
 	}

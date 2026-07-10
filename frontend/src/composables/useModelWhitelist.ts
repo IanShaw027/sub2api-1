@@ -240,6 +240,7 @@ const xaiModels = [
   'grok-imagine-image-quality',
   'grok-imagine-image',
   'grok-imagine-video',
+  'grok-imagine-video-1.5-preview',
   'grok-imagine-video-1.5',
   'grok',
   'grok-latest',
@@ -418,7 +419,8 @@ const grokPresetMappings = [
   { label: 'Imagine Edit', from: 'grok-imagine-edit', to: 'grok-imagine-image-quality', color: 'bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-900/30 dark:text-orange-400' },
   { label: 'Imagine Fast', from: 'grok-imagine-image', to: 'grok-imagine-image', color: 'bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-900/30 dark:text-pink-400' },
   { label: 'Imagine Video', from: 'grok-imagine-video', to: 'grok-imagine-video', color: 'bg-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-200 dark:bg-fuchsia-900/30 dark:text-fuchsia-400' },
-  { label: 'Imagine Video 1.5', from: 'grok-imagine-video-1.5', to: 'grok-imagine-video-1.5', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400' }
+  { label: 'Imagine Video 1.5 Preview', from: 'grok-imagine-video-1.5-preview', to: 'grok-imagine-video-1.5-preview', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400' },
+  { label: 'Imagine Video 1.5 Legacy', from: 'grok-imagine-video-1.5', to: 'grok-imagine-video-1.5-preview', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400' }
 ]
 
 // Antigravity 预设映射（支持通配符）

@@ -35,7 +35,7 @@ func TestForwardVideos_NormalizesVideoAliasOnUpstreamBody(t *testing.T) {
 			"Content-Type": []string{"application/json"},
 			"X-Request-Id": []string{"video-alias-rid"},
 		},
-		Body: io.NopCloser(strings.NewReader(`{"request_id":"video-job-alias","model":"grok-imagine-video-1.5","status":"pending"}`)),
+		Body: io.NopCloser(strings.NewReader(`{"request_id":"video-job-alias","model":"grok-imagine-video-1.5-preview","status":"pending"}`)),
 	}}
 	svc := &OpenAIGatewayService{
 		cfg:          &config.Config{},
@@ -54,11 +54,11 @@ func TestForwardVideos_NormalizesVideoAliasOnUpstreamBody(t *testing.T) {
 	result, err := svc.ForwardVideos(context.Background(), c, account, reqBody, "/v1/videos")
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, "grok-imagine-video-1.5", gjson.GetBytes(upstream.lastBody, "model").String(),
-		"live ForwardVideos path must rewrite grok-video-1.5 → grok-imagine-video-1.5")
+	require.Equal(t, "grok-imagine-video-1.5-preview", gjson.GetBytes(upstream.lastBody, "model").String(),
+		"live ForwardVideos path must rewrite grok-video-1.5 → CPA's grok-imagine-video-1.5-preview")
 	require.Equal(t, "grok-video-1.5", result.Model, "client model identity preserved for billing/logging")
 	require.Equal(t, "grok-video-1.5", result.BillingModel)
-	require.Equal(t, "grok-imagine-video-1.5", result.UpstreamModel)
+	require.Equal(t, "grok-imagine-video-1.5-preview", result.UpstreamModel)
 	require.Equal(t, "video-job-alias", result.ResponseID)
 	require.Equal(t, 6, result.VideoSeconds)
 }

@@ -261,10 +261,15 @@ func TestDefaultPricingIncludesGrokImagineMediaModels(t *testing.T) {
 	require.Equal(t, "video_generation", video.Mode)
 	require.InDelta(t, 0.05, video.OutputCostPerSecond, 1e-12)
 
-	video15 := svc.GetModelPricing("grok-imagine-video-1.5")
+	video15 := svc.GetModelPricing("grok-imagine-video-1.5-preview")
 	require.NotNil(t, video15)
 	require.Equal(t, "video_generation", video15.Mode)
 	require.InDelta(t, 0.08, video15.OutputCostPerSecond, 1e-12)
+
+	legacyVideo15 := svc.GetModelPricing("grok-imagine-video-1.5")
+	require.NotNil(t, legacyVideo15)
+	require.Equal(t, "video_generation", legacyVideo15.Mode)
+	require.InDelta(t, 0.08, legacyVideo15.OutputCostPerSecond, 1e-12)
 }
 
 func TestGetModelPricing_GrokUsesXAIProviderCandidate(t *testing.T) {

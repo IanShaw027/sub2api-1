@@ -65,6 +65,18 @@ describe('useModelWhitelist', () => {
     expect(models).toContain('grok-build-latest')
   })
 
+  it('xAI 模型列表和预设包含 CPA 的 Imagine Video 1.5 preview ID 并保留旧别名', () => {
+    const models = getModelsByPlatform('grok')
+    const presets = getPresetMappingsByPlatform('grok')
+
+    expect(models).toContain('grok-imagine-video-1.5-preview')
+    expect(models).toContain('grok-imagine-video-1.5')
+    expect(presets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: 'grok-imagine-video-1.5', to: 'grok-imagine-video-1.5-preview' }),
+      expect.objectContaining({ from: 'grok-imagine-video-1.5-preview', to: 'grok-imagine-video-1.5-preview' })
+    ]))
+  })
+
   it('combined 模式支持 Grok 4.5 官方别名映射', () => {
     const mapping = buildModelMappingObject(
       'combined',

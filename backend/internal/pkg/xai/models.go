@@ -19,10 +19,11 @@ const DefaultTextModel = "grok-4.5"
 
 // Official Imagine model IDs (https://docs.x.ai/docs/models).
 const (
-	DefaultImagineImageQualityModel = "grok-imagine-image-quality"
-	DefaultImagineImageFastModel    = "grok-imagine-image"
-	DefaultImagineVideoModel        = "grok-imagine-video"
-	DefaultImagineVideo15Model      = "grok-imagine-video-1.5"
+	DefaultImagineImageQualityModel  = "grok-imagine-image-quality"
+	DefaultImagineImageFastModel     = "grok-imagine-image"
+	DefaultImagineVideoModel         = "grok-imagine-video"
+	DefaultImagineVideo15LegacyModel = "grok-imagine-video-1.5"
+	DefaultImagineVideo15Model       = "grok-imagine-video-1.5-preview"
 )
 
 var defaultModels = []Model{
@@ -37,7 +38,8 @@ var defaultModels = []Model{
 	{ID: DefaultImagineImageQualityModel, Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok Imagine Image Quality"},
 	{ID: DefaultImagineImageFastModel, Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok Imagine Image"},
 	{ID: DefaultImagineVideoModel, Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok Imagine Video"},
-	{ID: DefaultImagineVideo15Model, Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok Imagine Video 1.5"},
+	{ID: DefaultImagineVideo15Model, Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok Imagine Video 1.5 Preview"},
+	{ID: DefaultImagineVideo15LegacyModel, Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok Imagine Video 1.5 Legacy"},
 }
 
 func DefaultModels() []Model {
@@ -86,6 +88,8 @@ func DefaultModelMapping() map[string]string {
 	mapping["grok-imagine-image-quality"] = DefaultImagineImageQualityModel
 	mapping["grok-imagine-video"] = DefaultImagineVideoModel
 	mapping["grok-imagine-video-1.5"] = DefaultImagineVideo15Model
+	mapping["grok-imagine-video-1.5-preview"] = DefaultImagineVideo15Model
+	mapping["grok-video-1.5"] = DefaultImagineVideo15Model
 	// Codex / OpenAI Responses client defaults (trailing-* wildcards only).
 	// Covers gpt-5.5, gpt-5.3-codex, gpt-5.1-codex-mini, codex-auto-review, o3-mini, …
 	mapping["gpt-*"] = DefaultTextModel
