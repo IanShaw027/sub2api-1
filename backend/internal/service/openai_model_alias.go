@@ -141,7 +141,7 @@ func normalizeGPT56ModelAlias(model string) string {
 		}
 	}
 	switch suffix {
-	case "none", "low", "medium", "high", "xhigh", "x-high", "extrahigh", "extra-high", "max":
+	case "none", "low", "medium", "high", "xhigh", "x-high", "extrahigh", "extra-high", "max", "ultra":
 		return prefix + "-" + modelPart
 	default:
 		return ""

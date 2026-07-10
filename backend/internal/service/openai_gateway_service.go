@@ -2549,6 +2549,11 @@ func openAIRequestScopedSessionSeed(apiKeyID int64, sessionID string) string {
 	return fmt.Sprintf("api_key:%d:%s", apiKeyID, normalized)
 }
 
+// codexDefaultOriginator is the Codex CLI default originator value. Upstream's
+// add_originator_header only emits the `originator` header when the resolved
+// value differs from this default; the default client omits it entirely.
+const codexDefaultOriginator = "codex_cli_rs"
+
 func resolveOpenAIUpstreamOriginator(c *gin.Context, isOfficialClient bool) string {
 	if c != nil {
 		if originator := strings.TrimSpace(c.GetHeader("originator")); originator != "" {
@@ -2556,9 +2561,24 @@ func resolveOpenAIUpstreamOriginator(c *gin.Context, isOfficialClient bool) stri
 		}
 	}
 	if isOfficialClient {
-		return "codex_cli_rs"
+		return codexDefaultOriginator
 	}
 	return "opencode"
+}
+
+// applyOpenAIUpstreamOriginatorHeader mirrors upstream add_originator_header for
+// the main request-forwarding path: the `originator` header is only sent when
+// the resolved value differs from the default Codex CLI originator. The default
+// client (and any empty value) omits the header entirely.
+func applyOpenAIUpstreamOriginatorHeader(header http.Header, originator string) {
+	if header == nil {
+		return
+	}
+	if strings.TrimSpace(originator) == "" || originator == codexDefaultOriginator {
+		header.Del("originator")
+		return
+	}
+	header.Set("originator", originator)
 }
 
 func resolveOpenAIUpstreamSessionID(c *gin.Context, promptCacheKey string) string {
@@ -7320,13 +7340,12 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		}
 		if compactPath || officialClient || isMessagesBridge {
 			req.Header.Del("conversation_id")
-			req.Header.Del("OpenAI-Beta")
-		} else if req.Header.Get("OpenAI-Beta") == "" {
-			req.Header.Set("OpenAI-Beta", "responses=experimental")
 		}
-		if req.Header.Get("originator") == "" {
-			req.Header.Set("originator", resolveOpenAIUpstreamOriginator(c, officialClient))
-		}
+		// Upstream HTTP responses no longer sends OpenAI-Beta (it is a WS-only
+		// handshake header now), so never emit the legacy
+		// `responses=experimental` value on the HTTP forwarding path.
+		req.Header.Del("OpenAI-Beta")
+		applyOpenAIUpstreamOriginatorHeader(req.Header, resolveOpenAIUpstreamOriginator(c, officialClient))
 		if clientSessionID != "" {
 			req.Header.Set("session_id", clientSessionID)
 		}
@@ -8734,7 +8753,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		if isMessagesBridge {
 			req.Header.Del("originator")
 		} else {
-			req.Header.Set("originator", resolveOpenAIUpstreamOriginator(c, isCodexCLI))
+			applyOpenAIUpstreamOriginatorHeader(req.Header, resolveOpenAIUpstreamOriginator(c, isCodexCLI))
 		}
 		officialClient := isCodexCLI
 		sessionID := resolveOpenAIUpstreamSessionID(c, promptCacheKey)
@@ -8746,11 +8765,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 				sessionID = resolveOpenAICompactSessionID(c, body)
 			}
 		} else {
-			if officialClient || isMessagesBridge {
-				req.Header.Del("OpenAI-Beta")
-			} else {
-				req.Header.Set("OpenAI-Beta", "responses=experimental")
-			}
+			// Upstream HTTP responses no longer sends OpenAI-Beta (WS-only
+			// handshake header now); never emit `responses=experimental`.
+			req.Header.Del("OpenAI-Beta")
 			if strings.TrimSpace(req.Header.Get("accept")) == "" {
 				req.Header.Set("accept", "text/event-stream")
 			}
@@ -12640,6 +12657,12 @@ func ParseCodexRateLimitHeaders(headers http.Header) *OpenAICodexUsageSnapshot {
 	snapshot := &OpenAICodexUsageSnapshot{}
 	hasData := false
 
+	// Baseline time for both the snapshot timestamp and reset-at→relative
+	// conversion. Using a single value keeps codexResetAtRFC3339 (which adds the
+	// relative seconds back onto UpdatedAt) consistent with the original
+	// absolute reset-at value.
+	now := currentOpenAICodexSnapshotTime()
+
 	// Helper to parse float64 from header
 	parseFloat := func(key string) *float64 {
 		if v := headers.Get(key); v != "" {
@@ -12660,12 +12683,33 @@ func ParseCodexRateLimitHeaders(headers http.Header) *OpenAICodexUsageSnapshot {
 		return nil
 	}
 
+	// Helper to resolve reset-after seconds with dual-header compatibility.
+	// Prefers the legacy relative `*-reset-after-seconds` header. When that is
+	// absent, falls back to the current upstream absolute `*-reset-at` (unix
+	// seconds) header, converting it to relative seconds against `now`. Negative
+	// results (reset time already in the past) clamp to 0.
+	parseResetAfter := func(afterKey, atKey string) *int {
+		if v := parseInt(afterKey); v != nil {
+			return v
+		}
+		if v := headers.Get(atKey); v != "" {
+			if ts, err := strconv.ParseInt(v, 10, 64); err == nil {
+				sec := int(ts - now.Unix())
+				if sec < 0 {
+					sec = 0
+				}
+				return &sec
+			}
+		}
+		return nil
+	}
+
 	// Primary (weekly) limits
 	if v := parseFloat("x-codex-primary-used-percent"); v != nil {
 		snapshot.PrimaryUsedPercent = v
 		hasData = true
 	}
-	if v := parseInt("x-codex-primary-reset-after-seconds"); v != nil {
+	if v := parseResetAfter("x-codex-primary-reset-after-seconds", "x-codex-primary-reset-at"); v != nil {
 		snapshot.PrimaryResetAfterSeconds = v
 		hasData = true
 	}
@@ -12679,7 +12723,7 @@ func ParseCodexRateLimitHeaders(headers http.Header) *OpenAICodexUsageSnapshot {
 		snapshot.SecondaryUsedPercent = v
 		hasData = true
 	}
-	if v := parseInt("x-codex-secondary-reset-after-seconds"); v != nil {
+	if v := parseResetAfter("x-codex-secondary-reset-after-seconds", "x-codex-secondary-reset-at"); v != nil {
 		snapshot.SecondaryResetAfterSeconds = v
 		hasData = true
 	}
@@ -12698,7 +12742,7 @@ func ParseCodexRateLimitHeaders(headers http.Header) *OpenAICodexUsageSnapshot {
 		return nil
 	}
 
-	snapshot.UpdatedAt = currentOpenAICodexSnapshotTime().Format(time.RFC3339)
+	snapshot.UpdatedAt = now.Format(time.RFC3339)
 	return snapshot
 }
 
@@ -14188,8 +14232,12 @@ func normalizeOpenAIReasoningEffort(raw string) string {
 		return ""
 	case "low", "medium", "high":
 		return value
-	case "xhigh", "extrahigh", "max":
+	case "xhigh", "extrahigh":
 		return "xhigh"
+	case "max":
+		return "max"
+	case "ultra":
+		return "ultra"
 	default:
 		// Only store known effort levels for now to keep UI consistent.
 		return ""

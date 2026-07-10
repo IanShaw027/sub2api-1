@@ -89,6 +89,12 @@ func splitOpenAICompatReasoningModel(model string) (normalizedModel string, reas
 			return trimmed, "", false
 		}
 		reasoningEffort = "max"
+	case "ultra":
+		// ultra is only a valid reasoning suffix for the gpt-5.6 family.
+		if normalizeGPT56ModelAlias(modelID) == "" {
+			return trimmed, "", false
+		}
+		reasoningEffort = "ultra"
 	default:
 		return trimmed, "", false
 	}
@@ -103,6 +109,10 @@ func openAIReasoningEffortToClaudeOutputEffort(effort string) string {
 	case "xhigh":
 		return "max"
 	case "max":
+		return "max"
+	case "ultra":
+		// Claude's output effort enum tops out at "max"
+		// (see NormalizeClaudeOutputEffort), so ultra maps to the highest tier.
 		return "max"
 	default:
 		return ""
