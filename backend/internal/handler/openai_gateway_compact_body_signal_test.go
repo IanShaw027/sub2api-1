@@ -166,23 +166,30 @@ func TestNormalizeOpenAIResponsesCompactRequest_PathBasedStreamTrueNotMarked(t *
 // promotion before validating request fields. Helper-only coverage would miss a
 // dropped call site during a merge.
 func TestOpenAIResponses_BodySignalPromotesAtHandlerEntry(t *testing.T) {
-	body := []byte(`{"stream":true,"prompt_cache_key":"pck-handler-entry","input":[{"type":"compaction_trigger"}]}`)
-	c := newCompactBodySignalTestContext(t, "/v1/responses", body)
+	for name, path := range map[string]string{
+		"public responses": "/v1/responses",
+		"codex backend":    "/backend-api/codex/responses",
+	} {
+		t.Run(name, func(t *testing.T) {
+			body := []byte(`{"stream":true,"prompt_cache_key":"pck-handler-entry","input":[{"type":"compaction_trigger"}]}`)
+			c := newCompactBodySignalTestContext(t, path, body)
 
-	groupID := int64(2)
-	c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{
-		ID:      101,
-		GroupID: &groupID,
-		User:    &service.User{ID: 1},
-	})
-	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 1, Concurrency: 1})
+			groupID := int64(2)
+			c.Set(string(middleware.ContextKeyAPIKey), &service.APIKey{
+				ID:      101,
+				GroupID: &groupID,
+				User:    &service.User{ID: 1},
+			})
+			c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 1, Concurrency: 1})
 
-	h := newOpenAIHandlerForPreviousResponseIDValidation(t, nil)
-	h.Responses(c)
+			h := newOpenAIHandlerForPreviousResponseIDValidation(t, nil)
+			h.Responses(c)
 
-	require.Equal(t, http.StatusBadRequest, c.Writer.Status())
-	require.Equal(t, "/v1/responses/compact", c.Request.URL.Path)
-	marked, exists := c.Get(service.OpenAICompactClientStreamKeyForTest())
-	require.True(t, exists)
-	require.Equal(t, true, marked)
+			require.Equal(t, http.StatusBadRequest, c.Writer.Status())
+			require.Equal(t, path+"/compact", c.Request.URL.Path)
+			marked, exists := c.Get(service.OpenAICompactClientStreamKeyForTest())
+			require.True(t, exists)
+			require.Equal(t, true, marked)
+		})
+	}
 }

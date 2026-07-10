@@ -65,6 +65,36 @@ func TestPatchGrokResponsesBodyKeepsExplicitReasoningEffortOverSuffix(t *testing
 	require.Equal(t, "high", gjson.GetBytes(patched, "reasoning.effort").String())
 }
 
+func TestPatchGrokResponsesBodyDropsReasoningEffortForModelsWithoutCPAThinking(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		upstreamModel string
+		wantEffort    bool
+	}{
+		{name: "grok 4.3 supports thinking", upstreamModel: "grok-4.3", wantEffort: true},
+		{name: "grok 3 mini supports thinking", upstreamModel: "grok-3-mini", wantEffort: true},
+		{name: "grok 4.20 reasoning supports thinking", upstreamModel: "grok-4.20-0309-reasoning", wantEffort: true},
+		{name: "grok 4.20 multi agent supports thinking", upstreamModel: "grok-4.20-multi-agent-0309", wantEffort: true},
+		{name: "composer has no CPA thinking metadata", upstreamModel: "grok-composer-2.5-fast", wantEffort: false},
+		{name: "non reasoning 4.20 has no CPA thinking metadata", upstreamModel: "grok-4.20-0309-non-reasoning", wantEffort: false},
+		{name: "legacy grok 4 has no CPA thinking metadata", upstreamModel: "grok-4", wantEffort: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(`{"model":"grok","input":"hello","reasoning":{"effort":"high"}}`)
+			patched, err := patchGrokResponsesBody(body, tt.upstreamModel)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantEffort, gjson.GetBytes(patched, "reasoning.effort").Exists(), string(patched))
+			if !tt.wantEffort {
+				require.False(t, gjson.GetBytes(patched, "reasoning").Exists(), string(patched))
+			}
+		})
+	}
+}
+
 func TestPatchGrokResponsesBodyDropsNestedUnsupportedFields(t *testing.T) {
 	t.Parallel()
 
@@ -128,6 +158,34 @@ func TestPatchGrokResponsesBodyDropsToolChoiceWhenNoSupportedToolsRemain(t *test
 	require.True(t, json.Valid(patched))
 	require.False(t, gjson.GetBytes(patched, "tools").Exists())
 	require.False(t, gjson.GetBytes(patched, "tool_choice").Exists())
+}
+
+func TestPatchGrokResponsesBodyRemovesEncryptedReasoningInclude(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"grok-4.3","input":"hello","include":["reasoning.encrypted_content","response.output_text.delta"]}`)
+
+	patched, err := patchGrokResponsesBody(body, "grok-4.3")
+	require.NoError(t, err)
+	require.False(t, strings.Contains(string(patched), "reasoning.encrypted_content"))
+	require.Equal(t, "response.output_text.delta", gjson.GetBytes(patched, "include.0").String())
+	require.False(t, gjson.GetBytes(patched, "include.1").Exists())
+}
+
+func TestPatchGrokResponsesBodyDropsInvalidEncryptedContentLikeCPA(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"grok-4.3","input":[{"type":"reasoning","summary":[{"type":"summary_text","text":"keep"}],"content":null,"encrypted_content":"gAAAAABinvalid-gpt-shape"},{"type":"compaction","encrypted_content":"gAAAAABforeign-codex-replay"},{"role":"user","content":"hi"}]}`)
+
+	patched, err := patchGrokResponsesBody(body, "grok-4.3")
+	require.NoError(t, err)
+	require.Equal(t, "reasoning", gjson.GetBytes(patched, "input.0.type").String())
+	require.Equal(t, "keep", gjson.GetBytes(patched, "input.0.summary.0.text").String())
+	require.False(t, gjson.GetBytes(patched, "input.0.encrypted_content").Exists())
+	require.False(t, gjson.GetBytes(patched, "input.0.content").Exists())
+	require.Equal(t, "user", gjson.GetBytes(patched, "input.1.role").String())
+	require.False(t, gjson.GetBytes(patched, "input.2").Exists())
+	require.False(t, strings.Contains(string(patched), "compaction"))
 }
 
 func TestBuildGrokResponsesRequestUsesAccountBaseURLAndBearerToken(t *testing.T) {

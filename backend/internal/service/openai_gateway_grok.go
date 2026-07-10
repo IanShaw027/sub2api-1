@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -346,6 +347,18 @@ func patchGrokResponsesBody(body []byte, upstreamModel string) ([]byte, error) {
 			return nil, err
 		}
 	}
+	if !grokSupportsReasoningEffort(upstreamModel) && gjson.GetBytes(out, "reasoning.effort").Exists() {
+		out, err = sjson.DeleteBytes(out, "reasoning.effort")
+		if err != nil {
+			return nil, err
+		}
+		if reasoning := gjson.GetBytes(out, "reasoning"); reasoning.Exists() && reasoning.IsObject() && len(reasoning.Map()) == 0 {
+			out, err = sjson.DeleteBytes(out, "reasoning")
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
 	// Do not force stream=true when the client omitted/false'd it. The handler
 	// branches on pre-patch reqStream; forcing stream here desyncs body vs path
 	// (SSE upstream + non-stream client handling). Keep stream aligned with the client.
@@ -384,11 +397,138 @@ func patchGrokResponsesBody(body []byte, upstreamModel string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	out = sanitizeGrokResponsesReasoningState(out)
 	out, err = sanitizeGrokResponsesTools(out)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+func grokSupportsReasoningEffort(model string) bool {
+	normalized := strings.ToLower(xai.StripGrokProviderPrefix(model))
+	switch normalized {
+	case xai.DefaultTextModel,
+		"grok-4.5-latest",
+		"grok-4.3",
+		"grok-4.3-latest",
+		"grok-3-mini",
+		"grok-3-mini-fast",
+		"grok-4.20-0309-reasoning",
+		"grok-4.20-reasoning",
+		"grok-4.20-multi-agent-0309":
+		return true
+	default:
+		return false
+	}
+}
+
+func sanitizeGrokResponsesReasoningState(body []byte) []byte {
+	body = removeGrokEncryptedReasoningInclude(body)
+	body = sanitizeGrokInputEncryptedContent(body)
+	return body
+}
+
+func removeGrokEncryptedReasoningInclude(body []byte) []byte {
+	include := gjson.GetBytes(body, "include")
+	if !include.Exists() || !include.IsArray() {
+		return body
+	}
+	kept := make([]string, 0, len(include.Array()))
+	changed := false
+	for _, item := range include.Array() {
+		value := strings.TrimSpace(item.String())
+		if value == "" || value == "reasoning.encrypted_content" {
+			changed = true
+			continue
+		}
+		kept = append(kept, value)
+	}
+	if !changed {
+		return body
+	}
+	updated, err := sjson.SetBytes(body, "include", kept)
+	if err != nil {
+		return body
+	}
+	return updated
+}
+
+func sanitizeGrokInputEncryptedContent(body []byte) []byte {
+	input := gjson.GetBytes(body, "input")
+	if !input.Exists() || !input.IsArray() {
+		return body
+	}
+	items := input.Array()
+	filtered := make([]json.RawMessage, 0, len(items))
+	changed := false
+	for _, item := range items {
+		itemType := strings.TrimSpace(item.Get("type").String())
+		if itemType != "reasoning" && itemType != "compaction" {
+			filtered = append(filtered, json.RawMessage(item.Raw))
+			continue
+		}
+		raw := []byte(item.Raw)
+		if itemType == "reasoning" {
+			if content := item.Get("content"); content.Exists() && content.Type == gjson.Null {
+				if next, err := sjson.DeleteBytes(raw, "content"); err == nil {
+					raw = next
+					changed = true
+				}
+			}
+		}
+		encrypted := gjson.GetBytes(raw, "encrypted_content")
+		if !encrypted.Exists() {
+			filtered = append(filtered, json.RawMessage(raw))
+			continue
+		}
+		if encrypted.Type == gjson.String && isLikelyValidGrokEncryptedContent(encrypted.String()) {
+			filtered = append(filtered, json.RawMessage(raw))
+			continue
+		}
+		changed = true
+		if itemType == "compaction" {
+			continue
+		}
+		if next, err := sjson.DeleteBytes(raw, "encrypted_content"); err == nil {
+			raw = next
+		}
+		filtered = append(filtered, json.RawMessage(raw))
+	}
+	if !changed {
+		return body
+	}
+	rawInput, err := json.Marshal(filtered)
+	if err != nil {
+		return body
+	}
+	updated, err := sjson.SetRawBytes(body, "input", rawInput)
+	if err != nil {
+		return body
+	}
+	return updated
+}
+
+func isLikelyValidGrokEncryptedContent(raw string) bool {
+	sig := strings.TrimSpace(raw)
+	if sig == "" || sig != raw || len(sig) > 8*1024*1024 {
+		return false
+	}
+	if strings.HasPrefix(sig, "gAAAA") || strings.Contains(sig, "=") {
+		return false
+	}
+	for _, r := range sig {
+		switch {
+		case r >= 'A' && r <= 'Z':
+		case r >= 'a' && r <= 'z':
+		case r >= '0' && r <= '9':
+		case r == '+' || r == '/':
+		default:
+			return false
+		}
+	}
+	decoded, err := base64.RawStdEncoding.DecodeString(sig)
+	return err == nil && len(decoded) >= 50
 }
 
 func parseGrokThinkingSuffix(model string) (baseModel string, effort string) {
