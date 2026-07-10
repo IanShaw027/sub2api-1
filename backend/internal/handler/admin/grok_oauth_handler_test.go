@@ -195,7 +195,7 @@ func TestGrokOAuthHandlerRefreshAccountTokenProbesQuota(t *testing.T) {
 		},
 		Body: io.NopCloser(strings.NewReader(`{"id":"resp_probe"}`)),
 	}}
-	quotaService := service.NewGrokQuotaService(quotaRepo, nil, service.NewGrokTokenProvider(quotaRepo, nil), upstream)
+	quotaService := service.NewGrokQuotaService(quotaRepo, nil, service.NewGrokTokenProvider(quotaRepo, nil), upstream, nil)
 	handler := NewGrokOAuthHandler(oauthService, adminSvc, quotaService)
 
 	router := gin.New()

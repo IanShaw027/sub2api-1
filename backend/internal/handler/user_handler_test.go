@@ -127,6 +127,9 @@ func (s *userHandlerRepoStub) ListWithFilters(context.Context, pagination.Pagina
 	return nil, nil, nil
 }
 func (s *userHandlerRepoStub) UpdateBalance(context.Context, int64, float64) error { return nil }
+func (s *userHandlerRepoStub) AddBalanceWithoutRecharge(context.Context, int64, float64) error {
+	return nil
+}
 func (s *userHandlerRepoStub) DeductBalance(context.Context, int64, float64) error { return nil }
 func (s *userHandlerRepoStub) UpdateConcurrency(context.Context, int64, int) error { return nil }
 func (s *userHandlerRepoStub) BatchSetConcurrency(context.Context, []int64, int) (int, error) {
