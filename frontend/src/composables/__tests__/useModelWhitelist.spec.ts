@@ -62,6 +62,8 @@ describe('useModelWhitelist', () => {
 
     expect(models).toContain('grok-4.5')
     expect(models).toContain('grok-4.5-latest')
+    expect(models).toContain('grok-3-mini')
+    expect(models).toContain('grok-3-mini-fast')
     expect(models).toContain('grok-build-latest')
   })
 

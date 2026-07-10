@@ -630,7 +630,7 @@ func normalizeGrokMediaForwardBody(
 }
 
 func normalizeGrokMediaModelForEndpoint(endpoint GrokMediaEndpoint, model string) string {
-	model = strings.TrimSpace(model)
+	model = xai.StripGrokProviderPrefix(model)
 	switch endpoint {
 	case GrokMediaEndpointImagesGenerations, GrokMediaEndpointImagesEdits:
 		switch strings.ToLower(model) {

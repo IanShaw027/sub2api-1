@@ -231,6 +231,8 @@ const xaiModels = [
   'grok-4.5',
   'grok-4.5-latest',
   'grok-4.3',
+  'grok-3-mini',
+  'grok-3-mini-fast',
   'grok-build-0.1',
   'grok-build-latest',
   'grok-composer-2.5-fast',

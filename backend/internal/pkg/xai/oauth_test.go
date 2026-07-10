@@ -210,8 +210,11 @@ func TestDefaultModelMappingIncludesGrokAliases(t *testing.T) {
 	require.Equal(t, DefaultTextModel, mapping["grok"])
 	require.Equal(t, DefaultTextModel, mapping["grok-latest"])
 	require.Equal(t, "grok-4.5", mapping["grok-4.5"])
+	require.Equal(t, "grok-4.5", mapping["xai/grok-4.5"])
 	require.Equal(t, DefaultTextModel, mapping["grok-4.5-latest"])
 	require.Equal(t, "grok-4.3", mapping["grok-4.3"])
+	require.Equal(t, "grok-3-mini", mapping["grok-3-mini"])
+	require.Equal(t, "grok-3-mini-fast", mapping["grok-3-mini-fast"])
 	require.Equal(t, "grok-build-0.1", mapping["grok-build"])
 	require.Equal(t, "grok-build-0.1", mapping["grok-build-latest"])
 	require.Equal(t, "grok-composer-2.5-fast", mapping["grok-composer-2.5-fast"])
@@ -241,5 +244,11 @@ func TestDefaultModelMappingIncludesGrokAliases(t *testing.T) {
 	require.Contains(t, ids, DefaultImagineImageFastModel)
 	require.Contains(t, ids, DefaultImagineVideoModel)
 	require.Contains(t, ids, "grok-imagine-video-1.5-preview")
+	require.Contains(t, ids, "grok-3-mini")
+	require.Contains(t, ids, "grok-3-mini-fast")
 	require.NotContains(t, ids, "grok-imagine-1")
+
+	require.True(t, IsGrokTextResponsesModelID("grok-3-mini"))
+	require.True(t, IsGrokTextResponsesModelID("grok-3-mini-fast"))
+	require.True(t, IsGrokTextResponsesModelID("xai/grok-4.5"))
 }

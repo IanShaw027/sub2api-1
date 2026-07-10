@@ -30,6 +30,8 @@ var defaultModels = []Model{
 	// Text
 	{ID: "grok-4.5", Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok 4.5"},
 	{ID: "grok-4.3", Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok 4.3"},
+	{ID: "grok-3-mini", Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok 3 Mini"},
+	{ID: "grok-3-mini-fast", Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok 3 Mini Fast"},
 	{ID: "grok-build-0.1", Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok Build 0.1"},
 	{ID: "grok-4.20-0309-reasoning", Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok 4.20 Reasoning"},
 	{ID: "grok-4.20-0309-non-reasoning", Object: "model", Type: "model", OwnedBy: "xai", DisplayName: "Grok 4.20 Non Reasoning"},
@@ -99,13 +101,49 @@ func DefaultModelMapping() map[string]string {
 	mapping["o4*"] = DefaultTextModel
 	// Claude Code defaults (defense in depth; /v1/messages also remaps via group dispatch).
 	mapping["claude-*"] = DefaultTextModel
+	addGrokProviderPrefixedMappings(mapping)
 	return mapping
+}
+
+func addGrokProviderPrefixedMappings(mapping map[string]string) {
+	snapshot := make(map[string]string, len(mapping))
+	for key, value := range mapping {
+		snapshot[key] = value
+	}
+	for key, value := range snapshot {
+		if !isGrokNativeOrAlias(key) {
+			continue
+		}
+		for _, prefix := range []string{"xai/", "x-ai/", "grok/"} {
+			mapping[prefix+key] = value
+		}
+	}
+}
+
+func isGrokNativeOrAlias(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(model, "grok") ||
+		strings.HasPrefix(model, "imagine") ||
+		strings.HasPrefix(model, "composer")
+}
+
+// StripGrokProviderPrefix removes common provider prefixes accepted by CPA for
+// xAI/Grok models, returning the native model ID.
+func StripGrokProviderPrefix(model string) string {
+	trimmed := strings.TrimSpace(model)
+	lower := strings.ToLower(trimmed)
+	for _, prefix := range []string{"xai/", "x-ai/", "grok/"} {
+		if strings.HasPrefix(lower, prefix) {
+			return strings.TrimSpace(trimmed[len(prefix):])
+		}
+	}
+	return trimmed
 }
 
 // IsGrokModelID reports whether model looks like a native Grok/xAI model id
 // (including aliases). Claude/OpenAI model names return false.
 func IsGrokModelID(model string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(model))
+	normalized := strings.ToLower(StripGrokProviderPrefix(model))
 	if normalized == "" {
 		return false
 	}
@@ -123,7 +161,7 @@ func IsGrokModelID(model string) bool {
 // that can be sent to the xAI Responses API. Imagine image/video models and
 // unknown custom grok-* IDs return false.
 func IsGrokTextResponsesModelID(model string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(model))
+	normalized := strings.ToLower(StripGrokProviderPrefix(model))
 	switch normalized {
 	case DefaultTextModel,
 		"grok",
@@ -131,6 +169,8 @@ func IsGrokTextResponsesModelID(model string) bool {
 		"grok-4.5-latest",
 		"grok-4.3",
 		"grok-4.3-latest",
+		"grok-3-mini",
+		"grok-3-mini-fast",
 		"grok-build",
 		"grok-build-latest",
 		"grok-build-0.1",
