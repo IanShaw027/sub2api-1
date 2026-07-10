@@ -73,7 +73,7 @@ func (s *GrokQuotaService) ProbeUsage(ctx context.Context, accountID int64) (*Gr
 		return nil, err
 	}
 
-	probeModel := grokQuotaProbeModel()
+	probeModel := resolveGrokQuotaProbeModel(account)
 	body, err := buildGrokQuotaProbeBody(probeModel)
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusBadRequest, "GROK_QUOTA_PROBE_BODY_ERROR", "failed to build probe body: %v", err)
@@ -201,8 +201,8 @@ func grokQuotaProbeModel() string {
 	return grokQuotaDefaultModel
 }
 
-func buildGrokQuotaProbeBody(model string) ([]byte, error) {
-	model = strings.TrimSpace(model)
+func buildGrokQuotaProbeBody(modelOrAccount any) ([]byte, error) {
+	model := resolveGrokQuotaProbeModel(modelOrAccount)
 	if model == "" {
 		model = grokQuotaDefaultModel
 	}
@@ -212,4 +212,23 @@ func buildGrokQuotaProbeBody(model string) ([]byte, error) {
 		"max_output_tokens": 1,
 		"store":             false,
 	})
+}
+
+func resolveGrokQuotaProbeModel(modelOrAccount any) string {
+	switch v := modelOrAccount.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case *Account:
+		if v != nil {
+			// Probe from the public Grok alias first so account-level model_mapping
+			// stays consistent with real traffic (for example grok -> grok-4.3).
+			if mapped, matched := v.ResolveMappedModel("grok"); matched && strings.TrimSpace(mapped) != "" {
+				return strings.TrimSpace(mapped)
+			}
+			if mapped, matched := v.ResolveMappedModel(grokQuotaProbeModel()); matched && strings.TrimSpace(mapped) != "" {
+				return strings.TrimSpace(mapped)
+			}
+		}
+	}
+	return grokQuotaProbeModel()
 }

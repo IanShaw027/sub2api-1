@@ -73,7 +73,7 @@ func (s *GroupCapacityService) GetAllGroupCapacity(ctx context.Context) ([]Group
 		return s.getGroupCapacitiesBatch(ctx, groupIDs, lister)
 	}
 
-	return s.getGroupCapacitiesSequential(ctx, groupIDs), nil
+	return s.getGroupCapacitiesSequential(ctx, groupIDs)
 }
 
 func (s *GroupCapacityService) listActiveGroupIDs(ctx context.Context) ([]int64, error) {
@@ -92,18 +92,17 @@ func (s *GroupCapacityService) listActiveGroupIDs(ctx context.Context) ([]int64,
 	return groupIDs, nil
 }
 
-func (s *GroupCapacityService) getGroupCapacitiesSequential(ctx context.Context, groupIDs []int64) []GroupCapacitySummary {
+func (s *GroupCapacityService) getGroupCapacitiesSequential(ctx context.Context, groupIDs []int64) ([]GroupCapacitySummary, error) {
 	results := make([]GroupCapacitySummary, 0, len(groupIDs))
 	for _, groupID := range groupIDs {
 		cap, err := s.getGroupCapacity(ctx, groupID)
 		if err != nil {
-			// Skip groups with errors, return partial results.
-			continue
+			return nil, err
 		}
 		cap.GroupID = groupID
 		results = append(results, cap)
 	}
-	return results
+	return results, nil
 }
 
 type groupCapacityAccountRef struct {
@@ -185,7 +184,11 @@ func (s *GroupCapacityService) getGroupCapacitiesBatch(ctx context.Context, grou
 
 	concurrencyMap := map[int64]int{}
 	if s.concurrencyService != nil {
-		concurrencyMap, _ = s.concurrencyService.GetAccountConcurrencyBatch(ctx, accountIDs)
+		var err error
+		concurrencyMap, err = s.concurrencyService.GetAccountConcurrencyBatch(ctx, accountIDs)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	sessionAccountIDs := accountIDsForGroupsWithLimit(refs, groupIndex, results, func(summary GroupCapacitySummary) bool {

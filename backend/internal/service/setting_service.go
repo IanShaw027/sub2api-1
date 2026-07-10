@@ -2761,6 +2761,18 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingPaymentVisibleMethodAlipayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodAlipayEnabled)
 	updates[SettingPaymentVisibleMethodWxpayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodWxpayEnabled)
 	updates[openAIAdvancedSchedulerSettingKey] = strconv.FormatBool(settings.OpenAIAdvancedSchedulerEnabled)
+	updates[SettingKeyOpenAIAdvancedSchedulerStickyWeightedEnabled] = strconv.FormatBool(settings.OpenAIAdvancedSchedulerStickyWeightedEnabled)
+	updates[SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled] = strconv.FormatBool(settings.OpenAIAdvancedSchedulerSubscriptionPriorityEnabled)
+	updates[SettingKeyOpenAIAdvancedSchedulerLBTopK] = normalizeOpenAIAdvancedSchedulerSettingString(settings.OpenAIAdvancedSchedulerLBTopK)
+	updates[SettingKeyOpenAIAdvancedSchedulerWeightPriority] = normalizeOpenAIAdvancedSchedulerSettingString(settings.OpenAIAdvancedSchedulerWeightPriority)
+	updates[SettingKeyOpenAIAdvancedSchedulerWeightLoad] = normalizeOpenAIAdvancedSchedulerSettingString(settings.OpenAIAdvancedSchedulerWeightLoad)
+	updates[SettingKeyOpenAIAdvancedSchedulerWeightQueue] = normalizeOpenAIAdvancedSchedulerSettingString(settings.OpenAIAdvancedSchedulerWeightQueue)
+	updates[SettingKeyOpenAIAdvancedSchedulerWeightErrorRate] = normalizeOpenAIAdvancedSchedulerSettingString(settings.OpenAIAdvancedSchedulerWeightErrorRate)
+	updates[SettingKeyOpenAIAdvancedSchedulerWeightTTFT] = normalizeOpenAIAdvancedSchedulerSettingString(settings.OpenAIAdvancedSchedulerWeightTTFT)
+	updates[SettingKeyOpenAIAdvancedSchedulerWeightReset] = normalizeOpenAIAdvancedSchedulerSettingString(settings.OpenAIAdvancedSchedulerWeightReset)
+	updates[SettingKeyOpenAIAdvancedSchedulerWeightQuotaHeadroom] = normalizeOpenAIAdvancedSchedulerSettingString(settings.OpenAIAdvancedSchedulerWeightQuotaHeadroom)
+	updates[SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse] = normalizeOpenAIAdvancedSchedulerSettingString(settings.OpenAIAdvancedSchedulerWeightPreviousResponse)
+	updates[SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky] = normalizeOpenAIAdvancedSchedulerSettingString(settings.OpenAIAdvancedSchedulerWeightSessionSticky)
 	updates[SettingKeyOpenAIStickyReservePercent] = strconv.Itoa(boundedIntOrDefault(settings.OpenAIStickyReservePercent, 0, 100, 0))
 	updates[SettingKeyOpenAIStickyWaitTimeoutSeconds] = strconv.Itoa(boundedIntOrDefault(settings.OpenAIStickyWaitTimeoutSeconds, 1, 300, 30))
 	updates[SettingKeyOpenAIWSMinIdlePerAccount] = strconv.Itoa(openAIWSMinIdle)
@@ -4644,6 +4656,40 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.PaymentVisibleMethodAlipayEnabled = settings[SettingPaymentVisibleMethodAlipayEnabled] == "true"
 	result.PaymentVisibleMethodWxpayEnabled = settings[SettingPaymentVisibleMethodWxpayEnabled] == "true"
 	result.OpenAIAdvancedSchedulerEnabled = settings[openAIAdvancedSchedulerSettingKey] == "true"
+	result.OpenAIAdvancedSchedulerStickyWeightedEnabled = settings[SettingKeyOpenAIAdvancedSchedulerStickyWeightedEnabled] == "true"
+	result.OpenAIAdvancedSchedulerSubscriptionPriorityEnabled = settings[SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled] == "true"
+	result.OpenAIAdvancedSchedulerLBTopK = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerLBTopK])
+	result.OpenAIAdvancedSchedulerWeightPriority = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightPriority])
+	result.OpenAIAdvancedSchedulerWeightLoad = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightLoad])
+	result.OpenAIAdvancedSchedulerWeightQueue = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightQueue])
+	result.OpenAIAdvancedSchedulerWeightErrorRate = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightErrorRate])
+	result.OpenAIAdvancedSchedulerWeightTTFT = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightTTFT])
+	result.OpenAIAdvancedSchedulerWeightReset = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightReset])
+	result.OpenAIAdvancedSchedulerWeightQuotaHeadroom = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightQuotaHeadroom])
+	result.OpenAIAdvancedSchedulerWeightPreviousResponse = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse])
+	result.OpenAIAdvancedSchedulerWeightSessionSticky = strings.TrimSpace(settings[SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky])
+	result.OpenAIAdvancedSchedulerEffectiveLBTopK = result.OpenAIAdvancedSchedulerLBTopK
+	result.OpenAIAdvancedSchedulerEffectiveWeightPriority = result.OpenAIAdvancedSchedulerWeightPriority
+	result.OpenAIAdvancedSchedulerEffectiveWeightLoad = result.OpenAIAdvancedSchedulerWeightLoad
+	result.OpenAIAdvancedSchedulerEffectiveWeightQueue = result.OpenAIAdvancedSchedulerWeightQueue
+	result.OpenAIAdvancedSchedulerEffectiveWeightErrorRate = result.OpenAIAdvancedSchedulerWeightErrorRate
+	result.OpenAIAdvancedSchedulerEffectiveWeightTTFT = result.OpenAIAdvancedSchedulerWeightTTFT
+	result.OpenAIAdvancedSchedulerEffectiveWeightReset = result.OpenAIAdvancedSchedulerWeightReset
+	result.OpenAIAdvancedSchedulerEffectiveWeightQuotaHeadroom = result.OpenAIAdvancedSchedulerWeightQuotaHeadroom
+	result.OpenAIAdvancedSchedulerEffectiveWeightPreviousResponse = result.OpenAIAdvancedSchedulerWeightPreviousResponse
+	result.OpenAIAdvancedSchedulerEffectiveWeightSessionSticky = result.OpenAIAdvancedSchedulerWeightSessionSticky
+	if s.cfg != nil {
+		result.OpenAIAdvancedSchedulerEffectiveLBTopK = strconv.Itoa(s.cfg.Gateway.OpenAIWS.LBTopK)
+		result.OpenAIAdvancedSchedulerEffectiveWeightPriority = normalizeOpenAIAdvancedSchedulerSettingString(strconv.FormatFloat(s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority, 'f', -1, 64))
+		result.OpenAIAdvancedSchedulerEffectiveWeightLoad = normalizeOpenAIAdvancedSchedulerSettingString(strconv.FormatFloat(s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Load, 'f', -1, 64))
+		result.OpenAIAdvancedSchedulerEffectiveWeightQueue = normalizeOpenAIAdvancedSchedulerSettingString(strconv.FormatFloat(s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Queue, 'f', -1, 64))
+		result.OpenAIAdvancedSchedulerEffectiveWeightErrorRate = normalizeOpenAIAdvancedSchedulerSettingString(strconv.FormatFloat(s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.ErrorRate, 'f', -1, 64))
+		result.OpenAIAdvancedSchedulerEffectiveWeightTTFT = normalizeOpenAIAdvancedSchedulerSettingString(strconv.FormatFloat(s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT, 'f', -1, 64))
+		result.OpenAIAdvancedSchedulerEffectiveWeightReset = normalizeOpenAIAdvancedSchedulerSettingString(strconv.FormatFloat(s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Reset, 'f', -1, 64))
+		result.OpenAIAdvancedSchedulerEffectiveWeightQuotaHeadroom = normalizeOpenAIAdvancedSchedulerSettingString(strconv.FormatFloat(s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.QuotaHeadroom, 'f', -1, 64))
+		result.OpenAIAdvancedSchedulerEffectiveWeightPreviousResponse = normalizeOpenAIAdvancedSchedulerSettingString(strconv.FormatFloat(s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.PreviousResponse, 'f', -1, 64))
+		result.OpenAIAdvancedSchedulerEffectiveWeightSessionSticky = normalizeOpenAIAdvancedSchedulerSettingString(strconv.FormatFloat(s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights.SessionSticky, 'f', -1, 64))
+	}
 	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyOpenAIStickyReservePercent])); err == nil {
 		result.OpenAIStickyReservePercent = boundedIntOrDefault(v, 0, 100, 0)
 	} else {
@@ -4864,6 +4910,17 @@ func boundedIntOrDefault(value, minValue, maxValue, defaultValue int) int {
 		return defaultValue
 	}
 	return value
+}
+
+func normalizeOpenAIAdvancedSchedulerSettingString(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	if parsed, err := strconv.ParseFloat(trimmed, 64); err == nil {
+		return strconv.FormatFloat(parsed, 'f', -1, 64)
+	}
+	return trimmed
 }
 
 func clampInt(value, minValue, maxValue, defaultValue int) int {

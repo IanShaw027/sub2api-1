@@ -356,6 +356,9 @@ func TestResolveOpenAICompactUpstreamModel(t *testing.T) {
 
 func TestNormalizeCodexModel(t *testing.T) {
 	cases := map[string]string{
+		"gpt-5.6-sol":                "gpt-5.6-sol",
+		"gpt-5.6-terra":              "gpt-5.6-terra",
+		"gpt-5.6-luna":               "gpt-5.6-luna",
 		"gpt-5.3-codex-spark":       "gpt-5.3-codex-spark",
 		"gpt-5.3-codex-spark-high":  "gpt-5.3-codex-spark",
 		"gpt-5.3-codex-spark-xhigh": "gpt-5.3-codex-spark",

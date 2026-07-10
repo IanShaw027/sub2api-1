@@ -29,6 +29,13 @@ export function mergeLocaleMessages(
   return merged
 }
 
+export function mergeLocaleMessageSources(...sources: LocaleMessages[]): LocaleMessages {
+  return sources.reduce<LocaleMessages>(
+    (merged, source) => mergeLocaleMessages(merged, source),
+    {}
+  )
+}
+
 export function collectLocaleConflicts(
   base: LocaleMessages,
   override: LocaleMessages,
@@ -55,26 +62,28 @@ const localeLoaders: Record<LocaleCode, () => Promise<LocaleMessages>> = {
   // Runtime messages are currently split across JSON and TS locale sources.
   // Merge them so newer TS-only keys do not disappear from the shipped UI.
   en: async () => {
-    const [jsonModule, tsModule] = await Promise.all([
+    const [jsonModule, tsModule, splitModule] = await Promise.all([
       import('./locales/en.json'),
-      import('./locales/en.ts')
+      import('./locales/en.ts'),
+      import('./locales/en/index.ts')
     ])
     const conflicts = collectLocaleConflicts(jsonModule.default, tsModule.default)
     if (conflicts.length > 0) {
       console.warn(`[i18n] locale conflicts detected for en: ${conflicts.join(', ')}`)
     }
-    return mergeLocaleMessages(jsonModule.default, tsModule.default)
+    return mergeLocaleMessageSources(jsonModule.default, splitModule.default, tsModule.default)
   },
   zh: async () => {
-    const [jsonModule, tsModule] = await Promise.all([
+    const [jsonModule, tsModule, splitModule] = await Promise.all([
       import('./locales/zh.json'),
-      import('./locales/zh.ts')
+      import('./locales/zh.ts'),
+      import('./locales/zh/index.ts')
     ])
     const conflicts = collectLocaleConflicts(jsonModule.default, tsModule.default)
     if (conflicts.length > 0) {
       console.warn(`[i18n] locale conflicts detected for zh: ${conflicts.join(', ')}`)
     }
-    return mergeLocaleMessages(jsonModule.default, tsModule.default)
+    return mergeLocaleMessageSources(jsonModule.default, splitModule.default, tsModule.default)
   }
 }
 

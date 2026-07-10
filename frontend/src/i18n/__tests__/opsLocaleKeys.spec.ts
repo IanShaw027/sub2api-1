@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import en from '@/i18n/locales/en'
+import { mergeLocaleMessageSources } from '@/i18n'
+import enJson from '@/i18n/locales/en.json'
+import enTs from '@/i18n/locales/en.ts'
+import enSplit from '@/i18n/locales/en/index'
+
+const en = mergeLocaleMessageSources(enJson, enSplit, enTs)
 
 function flattenKeys(obj: Record<string, any>, prefix = ''): string[] {
   const keys: string[] = []

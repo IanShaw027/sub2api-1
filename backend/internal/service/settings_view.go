@@ -247,19 +247,41 @@ type SystemSettings struct {
 	PaymentVisibleMethodWxpayEnabled  bool
 
 	// OpenAI account scheduling
-	OpenAIAdvancedSchedulerEnabled            bool
-	OpenAIStickyReservePercent                int
-	OpenAIStickyWaitTimeoutSeconds            int
-	OpenAIWSMinIdlePerAccount                 int
-	OpenAIWSMaxIdlePerAccount                 int
-	OpenAIWSNeutralPrewarmPercent             int
-	OpenAIWSSessionIdleTTLSeconds             int
-	OpenAIWSDeltaShadowEnabled                bool
-	OpenAIWSActiveDeltaEnabled                bool
-	OpenAIWSTempDiagLogsEnabled               bool
-	OpenAIWSDeltaRuntimeSettingsLoaded        bool
-	OpenAIOAuthImageBridgeDisableKeepAlives   bool
-	OpenAIOAuthImageBridgeFreshUpstreamClient bool
+	OpenAIAdvancedSchedulerEnabled                         bool
+	OpenAIAdvancedSchedulerStickyWeightedEnabled           bool
+	OpenAIAdvancedSchedulerSubscriptionPriorityEnabled     bool
+	OpenAIAdvancedSchedulerLBTopK                          string
+	OpenAIAdvancedSchedulerWeightPriority                  string
+	OpenAIAdvancedSchedulerWeightLoad                      string
+	OpenAIAdvancedSchedulerWeightQueue                     string
+	OpenAIAdvancedSchedulerWeightErrorRate                 string
+	OpenAIAdvancedSchedulerWeightTTFT                      string
+	OpenAIAdvancedSchedulerWeightReset                     string
+	OpenAIAdvancedSchedulerWeightQuotaHeadroom             string
+	OpenAIAdvancedSchedulerWeightPreviousResponse          string
+	OpenAIAdvancedSchedulerWeightSessionSticky             string
+	OpenAIAdvancedSchedulerEffectiveLBTopK                 string
+	OpenAIAdvancedSchedulerEffectiveWeightPriority         string
+	OpenAIAdvancedSchedulerEffectiveWeightLoad             string
+	OpenAIAdvancedSchedulerEffectiveWeightQueue            string
+	OpenAIAdvancedSchedulerEffectiveWeightErrorRate        string
+	OpenAIAdvancedSchedulerEffectiveWeightTTFT             string
+	OpenAIAdvancedSchedulerEffectiveWeightReset            string
+	OpenAIAdvancedSchedulerEffectiveWeightQuotaHeadroom    string
+	OpenAIAdvancedSchedulerEffectiveWeightPreviousResponse string
+	OpenAIAdvancedSchedulerEffectiveWeightSessionSticky    string
+	OpenAIStickyReservePercent                             int
+	OpenAIStickyWaitTimeoutSeconds                         int
+	OpenAIWSMinIdlePerAccount                              int
+	OpenAIWSMaxIdlePerAccount                              int
+	OpenAIWSNeutralPrewarmPercent                          int
+	OpenAIWSSessionIdleTTLSeconds                          int
+	OpenAIWSDeltaShadowEnabled                             bool
+	OpenAIWSActiveDeltaEnabled                             bool
+	OpenAIWSTempDiagLogsEnabled                            bool
+	OpenAIWSDeltaRuntimeSettingsLoaded                     bool
+	OpenAIOAuthImageBridgeDisableKeepAlives                bool
+	OpenAIOAuthImageBridgeFreshUpstreamClient              bool
 
 	// Balance low notification
 	BalanceLowNotifyEnabled     bool

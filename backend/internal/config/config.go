@@ -1076,6 +1076,10 @@ type GatewayOpenAIWSSchedulerScoreWeights struct {
 	Reset float64 `mapstructure:"reset"`
 	// QuotaHeadroom 倾向 7d 剩余额度更健康的账号；默认 0（关闭，不改变原有行为）。
 	QuotaHeadroom float64 `mapstructure:"quota_headroom"`
+	// PreviousResponse 倾向命中 previous_response_id 绑定账号。
+	PreviousResponse float64 `mapstructure:"previous_response"`
+	// SessionSticky 倾向命中 session_hash 粘性账号。
+	SessionSticky float64 `mapstructure:"session_sticky"`
 }
 
 // GatewayOpenAISchedulerConfig OpenAI 高级调度器配置。

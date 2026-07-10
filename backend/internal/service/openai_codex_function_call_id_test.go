@@ -28,7 +28,7 @@ func TestFilterCodexInput_StripsFunctionCallItemID_WhenPreservingReferences(t *t
 		},
 	}
 
-	filtered := filterCodexInputWithOptions(input, codexInputFilterOptions{
+	filtered, _ := filterCodexInputWithOptions(input, codexInputFilterOptions{
 		PreserveReferences: true,
 	})
 
@@ -56,7 +56,7 @@ func TestFilterCodexInput_KeepsFcID_WhenPreservingReferences(t *testing.T) {
 		},
 	}
 
-	filtered := filterCodexInputWithOptions(input, codexInputFilterOptions{
+	filtered, _ := filterCodexInputWithOptions(input, codexInputFilterOptions{
 		PreserveReferences: true,
 	})
 
@@ -80,7 +80,7 @@ func TestFilterCodexInput_StripsItemIDFromAllToolCallInputTypes(t *testing.T) {
 				"name":    "tool",
 			},
 		}
-		filtered := filterCodexInputWithOptions(input, codexInputFilterOptions{
+		filtered, _ := filterCodexInputWithOptions(input, codexInputFilterOptions{
 			PreserveReferences: true,
 		})
 		require.Len(t, filtered, 1)
@@ -104,7 +104,7 @@ func TestFilterCodexInput_OutputTypeKeepsItemID(t *testing.T) {
 		},
 	}
 
-	filtered := filterCodexInputWithOptions(input, codexInputFilterOptions{
+	filtered, _ := filterCodexInputWithOptions(input, codexInputFilterOptions{
 		PreserveReferences: true,
 	})
 
@@ -125,7 +125,7 @@ func TestFilterCodexInput_NonToolCallItemKeepsID(t *testing.T) {
 		},
 	}
 
-	filtered := filterCodexInputWithOptions(input, codexInputFilterOptions{
+	filtered, _ := filterCodexInputWithOptions(input, codexInputFilterOptions{
 		PreserveReferences: true,
 	})
 

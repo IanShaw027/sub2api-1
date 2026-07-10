@@ -1512,8 +1512,50 @@ func TestApplyCodexOAuthTransform_StripsCodexMessageNoiseFields(t *testing.T) {
 	require.NotContains(t, msg, "thought_signature")
 }
 
+func TestApplyCodexOAuthTransform_StripsInputNamespaceField(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.6-luna",
+		"input": []any{
+			map[string]any{
+				"type":      "function_call",
+				"name":      "lookup",
+				"call_id":   "fc_123",
+				"arguments": "{}",
+				"namespace": "functions",
+			},
+			map[string]any{
+				"type":      "function_call_output",
+				"call_id":   "fc_123",
+				"output":    "ok",
+				"namespace": "functions",
+			},
+		},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, true, false)
+
+	require.True(t, result.Modified)
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 2)
+	for _, rawItem := range input {
+		item, ok := rawItem.(map[string]any)
+		require.True(t, ok)
+		require.NotContains(t, item, "namespace")
+	}
+}
+
 func TestNormalizeCodexModel_Gpt53(t *testing.T) {
 	cases := map[string]string{
+		"gpt-5.6-sol":                "gpt-5.6-sol",
+		"gpt5.6-sol":                 "gpt-5.6-sol",
+		"gpt 5.6 sol":                "gpt-5.6-sol",
+		"gpt-5.6-terra":              "gpt-5.6-terra",
+		"gpt5.6-terra":               "gpt-5.6-terra",
+		"gpt 5.6 terra":              "gpt-5.6-terra",
+		"gpt-5.6-luna":               "gpt-5.6-luna",
+		"gpt5.6-luna":                "gpt-5.6-luna",
+		"gpt 5.6 luna":               "gpt-5.6-luna",
 		"gpt-5.4":                   "gpt-5.4",
 		"gpt5.5":                    "gpt-5.5",
 		"openai/gpt5.5":             "gpt-5.5",

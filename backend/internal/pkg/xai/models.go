@@ -70,9 +70,14 @@ func DefaultModelMapping() map[string]string {
 	// Generic text aliases resolve to the current default text model.
 	mapping["grok"] = DefaultTextModel
 	mapping["grok-latest"] = DefaultTextModel
+	mapping["grok-4.5-latest"] = DefaultTextModel
 	mapping["grok-build"] = "grok-build-0.1"
+	mapping["grok-build-latest"] = "grok-build-0.1"
 	mapping["grok-4.20-reasoning"] = "grok-4.20-0309-reasoning"
 	mapping["grok-4.20-non-reasoning"] = "grok-4.20-0309-non-reasoning"
+	mapping["grok-composer-2.5-fast"] = "grok-composer-2.5-fast"
+	mapping["grok-composer"] = "grok-composer-2.5-fast"
+	mapping["composer-2.5"] = "grok-composer-2.5-fast"
 	// Imagine aliases / legacy IDs → official catalog.
 	mapping["grok-imagine"] = DefaultImagineImageQualityModel
 	mapping["grok-imagine-1"] = DefaultImagineImageQualityModel
@@ -123,7 +128,11 @@ func IsGrokTextResponsesModelID(model string) bool {
 		"grok-4.3",
 		"grok-4.3-latest",
 		"grok-build",
+		"grok-build-latest",
 		"grok-build-0.1",
+		"grok-composer-2.5-fast",
+		"grok-composer",
+		"composer-2.5",
 		"grok-code-fast",
 		"grok-code-fast-1",
 		"grok-code-fast-1-0825",

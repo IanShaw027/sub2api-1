@@ -7,11 +7,15 @@ vi.mock('@/api/admin/accounts', () => ({
 import { buildModelMappingObject, getModelsByPlatform, getPresetMappingsByPlatform } from '../useModelWhitelist'
 
 describe('useModelWhitelist', () => {
-  it('openai 模型列表包含 GPT-5.4 官方快照', () => {
+  it('openai 模型列表包含 GPT-5.6 和 GPT-5.4 官方快照', () => {
     const models = getModelsByPlatform('openai')
 
     expect(models).toContain('gpt-4o')
     expect(models).toContain('gpt-4o-mini')
+    expect(models).toContain('gpt-5.6')
+    expect(models).toContain('gpt-5.6-sol')
+    expect(models).toContain('gpt-5.6-terra')
+    expect(models).toContain('gpt-5.6-luna')
     expect(models).toContain('gpt-5.4')
     expect(models).toContain('gpt-5.4-mini')
     expect(models).toContain('gpt-5.4-2026-03-05')
@@ -123,6 +127,16 @@ describe('useModelWhitelist', () => {
     expect(mapping).toEqual({
       'gpt-5.4-2026-03-05': 'gpt-5.4-2026-03-05'
     })
+  })
+
+  it('openai 快速预设包含 GPT-5.6 三个官方模型', () => {
+    const presets = getPresetMappingsByPlatform('openai')
+
+    expect(presets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: 'gpt-5.6-sol', to: 'gpt-5.6-sol' }),
+      expect.objectContaining({ from: 'gpt-5.6-terra', to: 'gpt-5.6-terra' }),
+      expect.objectContaining({ from: 'gpt-5.6-luna', to: 'gpt-5.6-luna' })
+    ]))
   })
 
   it('whitelist keeps GPT-5.4 mini exact mappings', () => {

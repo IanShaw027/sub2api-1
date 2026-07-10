@@ -213,9 +213,19 @@ func tlsFingerprintRouterRuleMatches(rule model.TLSFingerprintRouterRule, userAg
 }
 
 func tlsFingerprintRouterRuleTransportAllowed(rule model.TLSFingerprintRouterRule, transport string) bool {
-	ruleTransport := strings.TrimSpace(rule.Transport)
+	ruleTransport := strings.ToLower(strings.TrimSpace(rule.Transport))
+	transport = strings.ToLower(strings.TrimSpace(transport))
 	if ruleTransport == "" {
 		return true
+	}
+	// Router rules are ordered first-match-wins. When runtime only knows the
+	// coarse family, prefer the HTTP/1 variants; h2/ws-h2 require explicit
+	// runtime support and must not shadow the compatible rule that follows.
+	switch transport {
+	case model.TLSFingerprintRouterTransportHTTP:
+		return ruleTransport == model.TLSFingerprintRouterTransportHTTP || ruleTransport == model.TLSFingerprintRouterTransportHTTP1
+	case model.TLSFingerprintRouterTransportWebSocket:
+		return ruleTransport == model.TLSFingerprintRouterTransportWebSocket || ruleTransport == model.TLSFingerprintRouterTransportWSHTTP1
 	}
 	return tlsFingerprintProfileTransportMatches(ruleTransport, transport)
 }

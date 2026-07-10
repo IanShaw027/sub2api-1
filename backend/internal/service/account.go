@@ -683,6 +683,7 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any, hasModelMapping
 	}
 	if len(result) > 0 {
 		if a.Platform == domain.PlatformAntigravity {
+			normalizeAntigravityGemini31ProAliases(result)
 			ensureAntigravityDefaultPassthroughs(result, []string{
 				"gemini-3-flash",
 				"gemini-3.1-pro-high",
@@ -938,6 +939,37 @@ func modelWhitelistSignature(raw any) uint64 {
 	return h.Sum64()
 }
 
+func normalizeAntigravityGemini31ProAliases(mapping map[string]string) {
+	if mapping == nil {
+		return
+	}
+	agent := domain.AntigravityGemini31ProAgentModel
+	if mapping[agent] != agent {
+		return
+	}
+	aliases := []string{"gemini-3.1-pro", "gemini-3.1-pro-high", "gemini-3.1-pro-preview"}
+	for _, alias := range aliases {
+		if _, exists := mapping[alias]; !exists {
+			wildcardMatched := false
+			for pattern := range mapping {
+				if pattern != alias && matchWildcard(pattern, alias) {
+					wildcardMatched = true
+					break
+				}
+			}
+			if wildcardMatched {
+				continue
+			}
+			mapping[alias] = agent
+			continue
+		}
+		switch mapping[alias] {
+		case alias, "gemini-3.1-pro-high", "gemini-3.1-pro-preview":
+			mapping[alias] = agent
+		}
+	}
+}
+
 func ensureAntigravityDefaultPassthrough(mapping map[string]string, model string) {
 	if mapping == nil || model == "" {
 		return
@@ -1009,6 +1041,9 @@ func (a *Account) IsModelSupported(requestedModel string) bool {
 		if a != nil && a.Platform == PlatformKiro && a.hasExplicitModelMappingEntries() {
 			return false
 		}
+		if a != nil && a.IsOpenAIOAuth() && !a.IsOpenAIPassthroughEnabled() {
+			return isOpenAIOAuthServableModel(requestedModel)
+		}
 		return true // 无映射 = 允许所有
 	}
 	if mappingSupportsRequestedModel(mapping, requestedModel) {
@@ -1016,6 +1051,33 @@ func (a *Account) IsModelSupported(requestedModel string) bool {
 	}
 	normalized := normalizeRequestedModelForLookup(a.Platform, requestedModel)
 	return normalized != requestedModel && mappingSupportsRequestedModel(mapping, normalized)
+}
+
+func isOpenAIOAuthServableModel(model string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(model))
+	if normalized == "" {
+		return true
+	}
+	if idx := strings.LastIndex(normalized, "/"); idx >= 0 {
+		normalized = strings.TrimSpace(normalized[idx+1:])
+	}
+	blockedPrefixes := []string{
+		"deepseek-",
+		"glm-",
+		"kimi-",
+		"moonshot-",
+		"gemini-",
+		"grok-",
+		"qwen",
+		"minimax-",
+		"llama-",
+	}
+	for _, prefix := range blockedPrefixes {
+		if strings.HasPrefix(normalized, prefix) {
+			return false
+		}
+	}
+	return true
 }
 
 // GetMappedModel 获取映射后的模型名（支持通配符，最长优先匹配）

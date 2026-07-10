@@ -133,6 +133,25 @@ describe('i18n runtime locale merge', () => {
     expect(messages.admin.riskControl.modelFilterInclude).toBe('仅指定模型')
   })
 
+  it('merges split locale modules into runtime messages for recently added dashboard and key labels', async () => {
+    const { loadLocaleMessages } = await import('../index')
+
+    await loadLocaleMessages('en')
+    await loadLocaleMessages('zh')
+
+    expect(setLocaleMessage).toHaveBeenCalledTimes(2)
+    const [, enMessages] = setLocaleMessage.mock.calls[0]
+    const [, zhMessages] = setLocaleMessage.mock.calls[1]
+
+    expect(enMessages.admin.dashboard.groupPricing).toBe('Group Pricing')
+    expect(enMessages.admin.dashboard.groupPricingDesc).toBe('Configure batch discount and hold ratio')
+    expect(enMessages.keys.currentConcurrency).toBe('Current Concurrency')
+
+    expect(zhMessages.admin.dashboard.groupPricing).toBe('分组定价')
+    expect(zhMessages.admin.dashboard.groupPricingDesc).toBe('设置批量折扣和冻结比例')
+    expect(zhMessages.keys.currentConcurrency).toBe('当前并发')
+  })
+
   it('keeps runtime english overrides aligned with locale json semantics', async () => {
     const { loadLocaleMessages } = await import('../index')
 

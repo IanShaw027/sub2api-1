@@ -54,14 +54,14 @@ func normalizeKnownOpenAICodexModel(model string) string {
 	if normalized == "" {
 		return ""
 	}
+	if mapped := normalizeGPT56ModelAlias(normalized); mapped != "" {
+		return mapped
+	}
+	if strings.HasPrefix(normalized, "gpt-5.6") {
+		return normalized
+	}
 
 	switch {
-	case strings.Contains(normalized, "gpt-5.6-sol"):
-		return "gpt-5.6-sol"
-	case strings.Contains(normalized, "gpt-5.6-terra"):
-		return "gpt-5.6-terra"
-	case strings.Contains(normalized, "gpt-5.6-luna"):
-		return "gpt-5.6-luna"
 	case strings.Contains(normalized, "gpt-5.5-pro"):
 		return "gpt-5.5-pro"
 	case strings.Contains(normalized, "gpt-5.5"):
@@ -110,6 +110,39 @@ func normalizeKnownOpenAICodexModel(model string) string {
 		return normalized
 	case strings.Contains(normalized, "gpt-5"):
 		return "gpt-5.4"
+	default:
+		return ""
+	}
+}
+
+func normalizeGPT56ModelAlias(model string) string {
+	normalized := canonicalizeOpenAIModelAliasSpelling(model)
+	if normalized == "" {
+		return ""
+	}
+	const prefix = "gpt-5.6"
+	if normalized == prefix {
+		return "gpt-5.6-sol"
+	}
+	if !strings.HasPrefix(normalized, prefix+"-") {
+		return ""
+	}
+	remainder := strings.TrimPrefix(normalized, prefix+"-")
+	modelPart := "sol"
+	suffix := remainder
+	for _, candidate := range []string{"sol", "terra", "luna"} {
+		if remainder == candidate {
+			return prefix + "-" + candidate
+		}
+		if strings.HasPrefix(remainder, candidate+"-") {
+			modelPart = candidate
+			suffix = strings.TrimPrefix(remainder, candidate+"-")
+			break
+		}
+	}
+	switch suffix {
+	case "none", "low", "medium", "high", "xhigh", "x-high", "extrahigh", "extra-high", "max":
+		return prefix + "-" + modelPart
 	default:
 		return ""
 	}

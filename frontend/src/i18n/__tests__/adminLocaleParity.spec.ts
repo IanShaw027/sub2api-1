@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
-import { mergeLocaleMessages } from '../index'
+import { mergeLocaleMessageSources } from '../index'
 import enJson from '../locales/en.json'
 import zhJson from '../locales/zh.json'
 import enTs from '../locales/en.ts'
 import zhTs from '../locales/zh.ts'
+import enSplit from '../locales/en/index'
+import zhSplit from '../locales/zh/index'
 
 const requiredRuntimeKeys = [
   'admin.dashboard.newUsersToday',
@@ -128,8 +130,8 @@ function collectStaticTranslationKeys() {
 describe('admin locale parity', () => {
   it('keeps newly referenced admin keys present in runtime locales', () => {
     const localeSources = [
-      { name: 'en runtime', messages: mergeLocaleMessages(enJson, enTs) },
-      { name: 'zh runtime', messages: mergeLocaleMessages(zhJson, zhTs) },
+      { name: 'en runtime', messages: mergeLocaleMessageSources(enJson, enSplit, enTs) },
+      { name: 'zh runtime', messages: mergeLocaleMessageSources(zhJson, zhSplit, zhTs) },
     ]
 
     for (const key of requiredRuntimeKeys) {
@@ -141,8 +143,8 @@ describe('admin locale parity', () => {
 
   it('keeps static translation references present in runtime locales', () => {
     const localeSources = [
-      { name: 'en runtime', messages: mergeLocaleMessages(enJson, enTs) },
-      { name: 'zh runtime', messages: mergeLocaleMessages(zhJson, zhTs) },
+      { name: 'en runtime', messages: mergeLocaleMessageSources(enJson, enSplit, enTs) },
+      { name: 'zh runtime', messages: mergeLocaleMessageSources(zhJson, zhSplit, zhTs) },
     ]
     const missing: string[] = []
 
@@ -163,8 +165,8 @@ describe('admin locale parity', () => {
       { name: 'zh JSON', messages: zhJson },
       { name: 'en TS', messages: enTs },
       { name: 'zh TS', messages: zhTs },
-      { name: 'en runtime', messages: mergeLocaleMessages(enJson, enTs) },
-      { name: 'zh runtime', messages: mergeLocaleMessages(zhJson, zhTs) },
+      { name: 'en runtime', messages: mergeLocaleMessageSources(enJson, enSplit, enTs) },
+      { name: 'zh runtime', messages: mergeLocaleMessageSources(zhJson, zhSplit, zhTs) },
     ]
 
     for (const key of requiredRedeemBatchUpdateKeys) {

@@ -29,6 +29,15 @@ type Usage struct {
 	ImageOutputTokens        int
 }
 
+func firstNonZeroGJSONInt(values ...gjson.Result) int64 {
+	for _, value := range values {
+		if value.Exists() && value.Int() != 0 {
+			return value.Int()
+		}
+	}
+	return 0
+}
+
 type RelayResult struct {
 	RequestModel            string
 	Usage                   Usage
@@ -1058,7 +1067,7 @@ func parseUsageAndAccumulate(
 	parsedUsage := Usage{
 		InputTokens:              inputTokens,
 		OutputTokens:             outputTokens,
-		CacheCreationInputTokens: int(usageResult.Get("cache_creation_input_tokens").Int()),
+		CacheCreationInputTokens: int(firstNonZeroGJSONInt(usageResult.Get("cache_creation_input_tokens"), usageResult.Get("cache_write_tokens"), usageResult.Get("input_tokens_details.cache_write_tokens"))),
 		CacheReadInputTokens:     cachedTokens,
 		ImageOutputTokens:        int(imageTokens),
 	}

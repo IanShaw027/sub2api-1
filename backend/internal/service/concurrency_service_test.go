@@ -33,6 +33,8 @@ type stubConcurrencyCacheForTest struct {
 	loadBatchErr               error
 	usersLoadBatch             map[int64]*UserLoadInfo
 	usersLoadErr               error
+	apiKeyConcurrency          map[int64]int
+	apiKeyConcurrencyErr       error
 	cleanupErr                 error
 	accountConcurrencyBatch    map[int64]int
 	accountConcurrencyBatchErr error
@@ -147,6 +149,22 @@ func (c *stubConcurrencyCacheForTest) GetAccountsLoadBatch(_ context.Context, _ 
 }
 func (c *stubConcurrencyCacheForTest) GetUsersLoadBatch(_ context.Context, _ []UserWithConcurrency) (map[int64]*UserLoadInfo, error) {
 	return c.usersLoadBatch, c.usersLoadErr
+}
+func (c *stubConcurrencyCacheForTest) GetAPIKeyConcurrencyBatch(_ context.Context, apiKeyIDs []int64) (map[int64]int, error) {
+	if c.apiKeyConcurrencyErr != nil {
+		return nil, c.apiKeyConcurrencyErr
+	}
+	out := make(map[int64]int, len(apiKeyIDs))
+	for _, id := range apiKeyIDs {
+		out[id] = c.apiKeyConcurrency[id]
+	}
+	return out, nil
+}
+func (c *stubConcurrencyCacheForTest) TrackAPIKeySlot(_ context.Context, _ int64, _ string) error {
+	return nil
+}
+func (c *stubConcurrencyCacheForTest) ReleaseAPIKeySlot(_ context.Context, _ int64, _ string) error {
+	return nil
 }
 func (c *stubConcurrencyCacheForTest) CleanupExpiredAccountSlots(_ context.Context, _ int64) error {
 	return c.cleanupErr

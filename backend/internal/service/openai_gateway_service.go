@@ -8050,6 +8050,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	sawSuccessfulTerminal := false
 	sawFailedEvent := false
 	failedMessage := ""
+	var failedPayload []byte
 	clientOutputStarted := false
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	imageCounter := newOpenAIImageOutputCounter()
@@ -8213,12 +8214,16 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			}
 
 			forceFlushFailedEvent := false
-			if eventType == "response.failed" {
+			if eventType == "response.failed" || strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String()) == "response.failed" {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
+				failedPayload = append(failedPayload[:0], dataBytes...)
 				// response.failed 自带上游已消耗的 usage（input token 通常已扣）；必须先解析
 				// 再打 cyber 标记，否则 mark 记到的是解析前的 0，导致流式 cyber 按 0 token 计费
 				// 而漏记真实用量。对齐 WS V2 / Chat 流式路径（均先解析 usage 再 Mark）。
 				s.parseSSEUsageBytes(dataBytes, usage)
+				if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, dataBytes, failedMessage); matched {
+					return err
+				}
 				if hit, code, msg := detectOpenAICyberPolicy(dataBytes); hit {
 					// cyber_policy 硬阻断：原样透传给客户端，绝不 failover/换号，
 					// 仅打请求级标记并按上游真实 token 计费（供 handler 事后审计/计费）。
@@ -8548,7 +8553,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 				usage:       extractOpenAIUsagePointerFromSSEEventBytes(terminalPayload),
 				responseID:  strings.TrimSpace(gjson.GetBytes(terminalPayload, "response.id").String()),
 				searchCount: countOpenAISearchCallsInResponsesSSEBody(bodyText),
-			}, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
+			}, s.writeOpenAIResponseFailedProtocolError(resp, c, account, terminalPayload, msg)
 		}
 		if !ok {
 			if response := extractOpenAISSETerminalResponse(terminalPayload); len(response) > 0 {
@@ -8590,7 +8595,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 			if msg == "" {
 				msg = "Upstream compact response failed"
 			}
-			return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
+			return nil, s.writeOpenAIResponseFailedProtocolError(resp, c, account, terminalPayload, msg)
 		}
 		usage = s.parseSSEUsageFromBody(bodyText)
 		if originalModel != "" && mappedModel != "" && originalModel != mappedModel {
@@ -9668,6 +9673,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	sawSuccessfulTerminal := false
 	sawFailedEvent := false
 	failedMessage := ""
+	var failedPayload []byte
 	clientOutputStarted := false
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
 	var streamFailoverErr error
@@ -9818,6 +9824,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
 		}
 		if sawFailedEvent {
+			if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, failedPayload, failedMessage); matched {
+				return resultWithUsage(), err
+			}
 			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 		}
 		if !clientDisconnected {
@@ -9840,6 +9849,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 			return resultWithUsage(), nil, true
 		}
 		if sawFailedEvent {
+			if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, failedPayload, failedMessage); matched {
+				return resultWithUsage(), err, true
+			}
 			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage), true
 		}
 		// 客户端断开/取消请求时，上游读取往往会返回 context canceled。
@@ -9916,12 +9928,17 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				return
 			}
 
-			if eventType == "response.failed" {
+			if eventType == "response.failed" || strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String()) == "response.failed" {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
+				failedPayload = append(failedPayload[:0], dataBytes...)
 				// response.failed 自带上游已消耗的 usage（input token 通常已扣）；必须先解析
 				// 再打 cyber 标记，否则 mark 记到的是解析前的 0，导致流式 cyber 按 0 token 计费
 				// 而漏记真实用量。对齐 WS V2 / Chat 流式路径（均先解析 usage 再 Mark）。
 				s.parseSSEUsageBytes(dataBytes, usage)
+				if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, dataBytes, failedMessage); matched {
+					streamFailoverErr = err
+					return
+				}
 				if hit, code, msg := detectOpenAICyberPolicy(dataBytes); hit {
 					MarkOpsCyberPolicy(c, CyberPolicyMark{
 						Code:           code,
@@ -10793,6 +10810,22 @@ func openAIUsageFromGJSON(value gjson.Result) (OpenAIUsage, bool) {
 	if !cacheReadNode.Exists() {
 		cacheReadNode = value.Get("prompt_tokens_details.cached_tokens")
 	}
+	cacheCreationNode := value.Get("cache_creation_input_tokens")
+	if !cacheCreationNode.Exists() || cacheCreationNode.Int() == 0 {
+		if node := value.Get("cache_write_tokens"); node.Exists() {
+			cacheCreationNode = node
+		}
+	}
+	if !cacheCreationNode.Exists() || cacheCreationNode.Int() == 0 {
+		if node := value.Get("input_tokens_details.cache_write_tokens"); node.Exists() {
+			cacheCreationNode = node
+		}
+	}
+	if !cacheCreationNode.Exists() || cacheCreationNode.Int() == 0 {
+		if node := value.Get("prompt_tokens_details.cache_write_tokens"); node.Exists() {
+			cacheCreationNode = node
+		}
+	}
 	imageOutputNode := value.Get("output_tokens_details.image_tokens")
 	hasImage := imageOutputNode.Exists()
 	if !hasImage {
@@ -10805,7 +10838,7 @@ func openAIUsageFromGJSON(value gjson.Result) (OpenAIUsage, bool) {
 	return OpenAIUsage{
 		InputTokens:              int(inputNode.Int()),
 		OutputTokens:             int(outputNode.Int()),
-		CacheCreationInputTokens: int(value.Get("cache_creation_input_tokens").Int()),
+		CacheCreationInputTokens: int(cacheCreationNode.Int()),
 		CacheReadInputTokens:     int(cacheReadNode.Int()),
 		ImageOutputTokens:        int(imageOutputNode.Int()),
 	}, true
@@ -10904,7 +10937,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 				usage:       extractOpenAIUsagePointerFromSSEEventBytes(terminalPayload),
 				responseID:  strings.TrimSpace(gjson.GetBytes(terminalPayload, "response.id").String()),
 				searchCount: countOpenAISearchCallsInResponsesSSEBody(bodyText),
-			}, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
+			}, s.writeOpenAIResponseFailedProtocolError(resp, c, account, terminalPayload, msg)
 		}
 		if !ok {
 			if response := extractOpenAISSETerminalResponse(terminalPayload); len(response) > 0 {
@@ -10949,7 +10982,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			if msg == "" {
 				msg = "Upstream compact response failed"
 			}
-			return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
+			return nil, s.writeOpenAIResponseFailedProtocolError(resp, c, account, terminalPayload, msg)
 		}
 		usage = s.parseSSEUsageFromBody(bodyText)
 		if originalModel != mappedModel {
@@ -11076,6 +11109,62 @@ func sanitizeOpenAIResponseFailedEventForClient(payload []byte, eventType string
 		updated = next
 	}
 	return updated, !bytes.Equal(updated, payload)
+}
+
+func (s *OpenAIGatewayService) tryWriteOpenAIResponseFailedPassthrough(resp *http.Response, c *gin.Context, account *Account, payload []byte, message string) (error, bool) {
+	message = sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
+	if message == "" {
+		message = "Upstream compact response failed"
+	}
+	codeRaw := firstNonEmptyString(
+		strings.TrimSpace(gjson.GetBytes(payload, "response.error.code").String()),
+		strings.TrimSpace(gjson.GetBytes(payload, "error.code").String()),
+	)
+	typeRaw := firstNonEmptyString(
+		strings.TrimSpace(gjson.GetBytes(payload, "response.error.type").String()),
+		strings.TrimSpace(gjson.GetBytes(payload, "error.type").String()),
+	)
+	semanticStatus := openAIWSErrorHTTPStatusFromRaw(codeRaw, typeRaw)
+	if semanticStatus == 0 || semanticStatus == http.StatusBadGateway {
+		semanticStatus = http.StatusOK
+	}
+	platform := ""
+	if account != nil {
+		platform = account.Platform
+	}
+	status, errType, errMsg, matched := applyErrorPassthroughRule(c, platform, semanticStatus, payload, http.StatusBadGateway, "upstream_error", message)
+	if !matched && semanticStatus != http.StatusOK {
+		status, errType, errMsg, matched = applyErrorPassthroughRule(c, platform, http.StatusOK, payload, http.StatusBadGateway, "upstream_error", message)
+	}
+	if !matched && platform != PlatformOpenAI {
+		status, errType, errMsg, matched = applyErrorPassthroughRule(c, PlatformOpenAI, semanticStatus, payload, http.StatusBadGateway, "upstream_error", message)
+		if !matched && semanticStatus != http.StatusOK {
+			status, errType, errMsg, matched = applyErrorPassthroughRule(c, PlatformOpenAI, http.StatusOK, payload, http.StatusBadGateway, "upstream_error", message)
+		}
+	}
+	if !matched {
+		return nil, false
+	}
+	if strings.TrimSpace(errMsg) == "" {
+		errMsg = message
+	}
+	setOpsUpstreamError(c, status, errMsg, "")
+	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	MarkResponseCommitted(c)
+	c.JSON(status, gin.H{"error": gin.H{"type": errType, "message": errMsg}})
+	return fmt.Errorf("upstream response failed: passthrough rule matched: %s", errMsg), true
+}
+
+func (s *OpenAIGatewayService) writeOpenAIResponseFailedProtocolError(resp *http.Response, c *gin.Context, account *Account, payload []byte, message string) error {
+	if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, payload, message); matched {
+		return err
+	}
+	message = sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
+	if message == "" {
+		message = "Upstream compact response failed"
+	}
+	return s.writeOpenAINonStreamingProtocolError(resp, c, message)
 }
 
 func (s *OpenAIGatewayService) writeOpenAINonStreamingProtocolError(resp *http.Response, c *gin.Context, message string) error {

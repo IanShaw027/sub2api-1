@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"html"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -204,6 +205,7 @@ type APIKeyService struct {
 	groupRepo             GroupRepository
 	userSubRepo           UserSubscriptionRepository
 	userGroupRateRepo     UserGroupRateRepository
+	concurrencyService    *ConcurrencyService
 	cache                 APIKeyCache
 	rateLimitCacheInvalid RateLimitCacheInvalidator // optional: invalidate Redis rate limit cache
 	cfg                   *config.Config
@@ -212,6 +214,10 @@ type APIKeyService struct {
 	authGroup             singleflight.Group
 	lastUsedTouchL1       sync.Map // keyID -> nextAllowedAt(time.Time)
 	lastUsedTouchSF       singleflight.Group
+}
+
+type apiKeyListAllByUserIDRepository interface {
+	ListAllByUserID(ctx context.Context, userID int64, filters APIKeyListFilters) ([]APIKey, error)
 }
 
 // NewAPIKeyService 创建API Key服务实例
@@ -491,10 +497,23 @@ func (s *APIKeyService) List(ctx context.Context, userID int64, params paginatio
 	if err != nil {
 		return nil, nil, err
 	}
+	if isAPIKeyCurrentConcurrencySort(params) {
+		if allRepo, ok := apiKeyRepo.(apiKeyListAllByUserIDRepository); ok {
+			keys, err := allRepo.ListAllByUserID(ctx, userID, filters)
+			if err != nil {
+				return nil, nil, fmt.Errorf("list api keys: %w", err)
+			}
+			s.attachAPIKeyCurrentConcurrency(ctx, keys)
+			sortAPIKeysByCurrentConcurrency(keys, params.NormalizedSortOrder(pagination.SortOrderDesc))
+			pagedKeys, page := paginateAPIKeys(keys, params)
+			return pagedKeys, page, nil
+		}
+	}
 	keys, pagination, err := apiKeyRepo.ListByUserID(ctx, userID, params, filters)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list api keys: %w", err)
 	}
+	s.attachAPIKeyCurrentConcurrency(ctx, keys)
 	return keys, pagination, nil
 }
 
@@ -524,8 +543,88 @@ func (s *APIKeyService) GetByID(ctx context.Context, id int64) (*APIKey, error) 
 	if err != nil {
 		return nil, fmt.Errorf("get api key: %w", err)
 	}
+	s.attachAPIKeyCurrentConcurrencyPtr(ctx, apiKey)
 	s.compileAPIKeyIPRules(apiKey)
 	return apiKey, nil
+}
+
+func isAPIKeyCurrentConcurrencySort(params pagination.PaginationParams) bool {
+	return strings.EqualFold(strings.TrimSpace(params.SortBy), "current_concurrency")
+}
+
+func (s *APIKeyService) attachAPIKeyCurrentConcurrency(ctx context.Context, keys []APIKey) {
+	if s == nil || s.concurrencyService == nil || len(keys) == 0 {
+		return
+	}
+	ids := make([]int64, 0, len(keys))
+	for i := range keys {
+		if keys[i].ID > 0 {
+			ids = append(ids, keys[i].ID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	counts, err := s.concurrencyService.GetAPIKeyConcurrencyBatch(ctx, ids)
+	if err != nil {
+		return
+	}
+	for i := range keys {
+		keys[i].CurrentConcurrency = counts[keys[i].ID]
+	}
+}
+
+func (s *APIKeyService) attachAPIKeyCurrentConcurrencyPtr(ctx context.Context, key *APIKey) {
+	if key == nil {
+		return
+	}
+	keys := []APIKey{*key}
+	s.attachAPIKeyCurrentConcurrency(ctx, keys)
+	key.CurrentConcurrency = keys[0].CurrentConcurrency
+}
+
+func sortAPIKeysByCurrentConcurrency(keys []APIKey, sortOrder string) {
+	desc := sortOrder != pagination.SortOrderAsc
+	sort.SliceStable(keys, func(i, j int) bool {
+		if keys[i].CurrentConcurrency != keys[j].CurrentConcurrency {
+			if desc {
+				return keys[i].CurrentConcurrency > keys[j].CurrentConcurrency
+			}
+			return keys[i].CurrentConcurrency < keys[j].CurrentConcurrency
+		}
+		if desc {
+			return keys[i].ID > keys[j].ID
+		}
+		return keys[i].ID < keys[j].ID
+	})
+}
+
+func paginateAPIKeys(keys []APIKey, params pagination.PaginationParams) ([]APIKey, *pagination.PaginationResult) {
+	page := params.Page
+	if page < 1 {
+		page = 1
+	}
+	pageSize := params.Limit()
+	total := len(keys)
+	pages := 0
+	if pageSize > 0 {
+		pages = (total + pageSize - 1) / pageSize
+	}
+	offset := (page - 1) * pageSize
+	if offset > total {
+		offset = total
+	}
+	end := offset + pageSize
+	if end > total {
+		end = total
+	}
+	out := append([]APIKey(nil), keys[offset:end]...)
+	return out, &pagination.PaginationResult{
+		Total:    int64(total),
+		Page:     page,
+		PageSize: pageSize,
+		Pages:    pages,
+	}
 }
 
 // GetByKey 根据Key字符串获取API Key（用于认证）

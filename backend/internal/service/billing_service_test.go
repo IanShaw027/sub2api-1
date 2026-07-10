@@ -1049,7 +1049,7 @@ func TestCalculateGrokImagineImageCostUsesDefaultRateCard(t *testing.T) {
 	require.InDelta(t, 0.02, standard1K.TotalCost, 1e-10)
 	require.InDelta(t, 0.02, standard2K.TotalCost, 1e-10)
 	require.InDelta(t, 0.05, quality1K.TotalCost, 1e-10)
-	require.InDelta(t, 0.07, quality2K.TotalCost, 1e-10)
+	require.InDelta(t, 0.05, quality2K.TotalCost, 1e-10)
 }
 
 func TestCalculateGrokImagineVideoCostUsesDefaultRateCard(t *testing.T) {
@@ -1179,14 +1179,25 @@ func TestCalculateCostWithLongContext_PropagatesError(t *testing.T) {
 func TestGetModelPricing_Grok45OfficialFallback(t *testing.T) {
 	svc := newTestBillingService()
 
-	for _, model := range []string{"grok", "grok-latest", "grok-4.5", "grok-4.5-latest", "grok-build-latest"} {
-		model := model
-		t.Run(model, func(t *testing.T) {
-			pricing, err := svc.GetModelPricing(model)
+	for _, tt := range []struct {
+		model     string
+		input     float64
+		output    float64
+		cacheRead float64
+	}{
+		{model: "grok", input: 2e-6, output: 6e-6, cacheRead: 0.5e-6},
+		{model: "grok-latest", input: 2e-6, output: 6e-6, cacheRead: 0.5e-6},
+		{model: "grok-4.5", input: 2e-6, output: 6e-6, cacheRead: 0.5e-6},
+		{model: "grok-4.5-latest", input: 2e-6, output: 6e-6, cacheRead: 0.5e-6},
+		{model: "grok-build-latest", input: 1e-6, output: 2e-6, cacheRead: 0.2e-6},
+	} {
+		tt := tt
+		t.Run(tt.model, func(t *testing.T) {
+			pricing, err := svc.GetModelPricing(tt.model)
 			require.NoError(t, err)
-			require.InDelta(t, 2e-6, pricing.InputPricePerToken, 1e-12)
-			require.InDelta(t, 6e-6, pricing.OutputPricePerToken, 1e-12)
-			require.InDelta(t, 0.5e-6, pricing.CacheReadPricePerToken, 1e-12)
+			require.InDelta(t, tt.input, pricing.InputPricePerToken, 1e-12)
+			require.InDelta(t, tt.output, pricing.OutputPricePerToken, 1e-12)
+			require.InDelta(t, tt.cacheRead, pricing.CacheReadPricePerToken, 1e-12)
 			require.False(t, pricing.SupportsCacheBreakdown)
 		})
 	}

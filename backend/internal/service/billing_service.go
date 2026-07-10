@@ -299,6 +299,45 @@ func (s *BillingService) initFallbackPricing() {
 	// GPT-5.5 / GPT-5.5 Pro 暂无独立定价，回退到 GPT-5.4。
 	s.fallbackPrices["gpt-5.5"] = s.fallbackPrices["gpt-5.4"]
 	s.fallbackPrices["gpt-5.5-pro"] = s.fallbackPrices["gpt-5.4"]
+	s.fallbackPrices["gpt-5.6-sol"] = &ModelPricing{
+		InputPricePerToken:             5e-6,
+		InputPricePerTokenPriority:     10e-6,
+		OutputPricePerToken:            30e-6,
+		OutputPricePerTokenPriority:    60e-6,
+		CacheCreationPricePerToken:     6.25e-6,
+		CacheReadPricePerToken:         0.5e-6,
+		CacheReadPricePerTokenPriority: 1e-6,
+		SupportsCacheBreakdown:         false,
+		LongContextInputThreshold:      openAIGPT54LongContextInputThreshold,
+		LongContextInputMultiplier:     openAIGPT54LongContextInputMultiplier,
+		LongContextOutputMultiplier:    openAIGPT54LongContextOutputMultiplier,
+	}
+	s.fallbackPrices["gpt-5.6-terra"] = &ModelPricing{
+		InputPricePerToken:             2.5e-6,
+		InputPricePerTokenPriority:     5e-6,
+		OutputPricePerToken:            15e-6,
+		OutputPricePerTokenPriority:    30e-6,
+		CacheCreationPricePerToken:     3.125e-6,
+		CacheReadPricePerToken:         0.25e-6,
+		CacheReadPricePerTokenPriority: 0.5e-6,
+		SupportsCacheBreakdown:         false,
+		LongContextInputThreshold:      openAIGPT54LongContextInputThreshold,
+		LongContextInputMultiplier:     openAIGPT54LongContextInputMultiplier,
+		LongContextOutputMultiplier:    openAIGPT54LongContextOutputMultiplier,
+	}
+	s.fallbackPrices["gpt-5.6-luna"] = &ModelPricing{
+		InputPricePerToken:             1e-6,
+		InputPricePerTokenPriority:     2e-6,
+		OutputPricePerToken:            6e-6,
+		OutputPricePerTokenPriority:    12e-6,
+		CacheCreationPricePerToken:     1.25e-6,
+		CacheReadPricePerToken:         0.1e-6,
+		CacheReadPricePerTokenPriority: 0.2e-6,
+		SupportsCacheBreakdown:         false,
+		LongContextInputThreshold:      openAIGPT54LongContextInputThreshold,
+		LongContextInputMultiplier:     openAIGPT54LongContextInputMultiplier,
+		LongContextOutputMultiplier:    openAIGPT54LongContextOutputMultiplier,
+	}
 
 	s.fallbackPrices["gpt-5.4-mini"] = &ModelPricing{
 		InputPricePerToken:     7.5e-7,
@@ -741,6 +780,12 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	// OpenAI（GPT-5 / Codex 族）：仅匹配已知型号，避免未知 OpenAI 型号误计价。
 	if normalized := normalizeOpenAIPricingFallbackModel(modelLower); normalized != "" {
 		switch normalized {
+		case "gpt-5.6-sol":
+			return s.fallbackPrices["gpt-5.6-sol"]
+		case "gpt-5.6-terra":
+			return s.fallbackPrices["gpt-5.6-terra"]
+		case "gpt-5.6-luna":
+			return s.fallbackPrices["gpt-5.6-luna"]
 		case "gpt-5.5-pro":
 			return s.fallbackPrices["gpt-5.5-pro"]
 		case "gpt-5.5":
@@ -821,6 +866,12 @@ func normalizeOpenAIPricingFallbackModel(model string) string {
 	}
 
 	// 定价回退保留账单族群，不复用上游路由归一化里的跨版本折叠。
+	if mapped := normalizeGPT56ModelAlias(canonical); mapped != "" {
+		return mapped
+	}
+	if strings.HasPrefix(canonical, "gpt-5.6") {
+		return ""
+	}
 	switch {
 	case strings.HasPrefix(canonical, "gpt-5.5"):
 		return "gpt-5.5"
@@ -1224,14 +1275,17 @@ func isOpenAIGPT54Model(model string) bool {
 	// normalizeCodexModel 的默认兜底把非 OpenAI 模型（claude-*、gemini-*、gpt-4o）
 	// 误识别为 gpt-5.4。
 	normalized := normalizeOpenAIPricingFallbackModel(model)
-	return normalized == "gpt-5.4" || normalized == "gpt-5.5"
+	return normalized == "gpt-5.4" || normalized == "gpt-5.5" || strings.HasPrefix(normalized, "gpt-5.6-")
 }
 
 // CalculateCostWithConfig 使用配置中的默认倍率计算费用
 func (s *BillingService) CalculateCostWithConfig(model string, tokens UsageTokens) (*CostBreakdown, error) {
-	multiplier := s.cfg.Default.RateMultiplier
-	if multiplier <= 0 {
-		multiplier = 1.0
+	multiplier := 1.0
+	if s != nil && s.cfg != nil {
+		multiplier = s.cfg.Default.RateMultiplier
+		if multiplier <= 0 {
+			multiplier = 1.0
+		}
 	}
 	return s.CalculateCost(model, tokens, multiplier)
 }
@@ -1632,19 +1686,24 @@ func (s *BillingService) getVideoUnitPrice(model string, sizeTier string, groupC
 		var price *float64
 		switch NormalizeVideoBillingTierOrDefault(sizeTier) {
 		case VideoBillingTier480p:
-			price = groupConfig.Price480p
+			price = firstFloatPtr(groupConfig.Price480p, groupConfig.Price480P)
 		case VideoBillingTier720p:
-			price = groupConfig.Price720p
+			price = firstFloatPtr(groupConfig.Price720p, groupConfig.Price720P)
 		case VideoBillingTier1080p:
-			price = groupConfig.Price1080p
+			price = firstFloatPtr(groupConfig.Price1080p, groupConfig.Price1080P)
 		case VideoBillingTier4K:
 			price = groupConfig.Price4K
 		default:
-			price = groupConfig.Price720p
+			price = firstFloatPtr(groupConfig.Price720p, groupConfig.Price720P)
 		}
 		if price == nil {
-			// Fallback to highest non-nil defined price (avoid 0 for 4K or missing tier per report)
-			for _, p := range []*float64{groupConfig.Price4K, groupConfig.Price1080p, groupConfig.Price720p, groupConfig.Price480p} {
+			// Fallback to highest non-nil defined price (avoid 0 for 4K or missing tier per report).
+			for _, p := range []*float64{
+				groupConfig.Price4K,
+				firstFloatPtr(groupConfig.Price1080p, groupConfig.Price1080P),
+				firstFloatPtr(groupConfig.Price720p, groupConfig.Price720P),
+				firstFloatPtr(groupConfig.Price480p, groupConfig.Price480P),
+			} {
 				if p != nil {
 					price = p
 					log.Printf("[Billing] video price tier %s not configured, falling back to highest configured tier", sizeTier)
@@ -1723,11 +1782,14 @@ func (s *BillingService) CalculateSearchCost(numCalls int, groupPricePer1k *floa
 	if groupPricePer1k == nil || *groupPricePer1k <= 0 {
 		return &CostBreakdown{}
 	}
+	if rateMultiplier < 0 {
+		rateMultiplier = 0
+	}
 	unit := *groupPricePer1k / 1000.0 // per call
 	total := unit * float64(numCalls)
 	return &CostBreakdown{
 		TotalCost:   total,
-		ActualCost:  total,
+		ActualCost:  total * rateMultiplier,
 		BillingMode: string(BillingModeSearch), // reuse or add if needed; for now use a mode
 	}
 }

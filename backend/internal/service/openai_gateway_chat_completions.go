@@ -1101,6 +1101,9 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 		if errMessage == "" {
 			errMessage = "Upstream response failed"
 		}
+		if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, finalFailurePayload, errMessage); matched {
+			return nil, err
+		}
 		// cyber_policy 致命不可重试：不 failover，以 Chat Completions 错误格式回写（F4），
 		// 标记供 handler 事后写风控/邮件/tokens=0 用量行。
 		if hit, code, msg := detectOpenAICyberPolicy(finalFailurePayload); hit {
@@ -1297,6 +1300,11 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 				return true
 			}
 			if !downstreamFlushed && !c.Writer.Written() {
+				if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, payloadBytes, errMessage); matched {
+					downstreamFlushed = true
+					streamFailedErr = err
+					return true
+				}
 				if openAIStreamFailedEventShouldFailover([]byte(payload), errMessage) {
 					streamFailedErr = newChatCompletionsResponseFailedFailover(resp, []byte(payload), errMessage)
 				} else {

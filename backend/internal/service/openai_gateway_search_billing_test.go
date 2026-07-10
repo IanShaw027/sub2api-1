@@ -44,6 +44,7 @@ func TestOpenAIGatewayServiceCalculateOpenAIRecordUsageCost_SearchDoesNotReplace
 		"grok-4.3",
 		1,
 		1,
+		1,
 		usage,
 		"",
 		RequestTypeUnknown,

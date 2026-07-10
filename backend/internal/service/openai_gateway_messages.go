@@ -698,6 +698,13 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	// 按真实 token 计费，且绝不 failover/换号。
 	if strings.TrimSpace(finalResponse.Status) == "failed" {
 		payload, _ := json.Marshal(gin.H{"type": "response.failed", "response": finalResponse})
+		errMessage := extractResponsesFailureMessage(finalResponse, payload)
+		if errMessage == "" {
+			errMessage = "Upstream response failed"
+		}
+		if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, payload, errMessage); matched {
+			return nil, err
+		}
 		if hit, code, msg := detectOpenAICyberPolicy(payload); hit {
 			MarkOpsCyberPolicy(c, CyberPolicyMark{
 				Code:           code,
@@ -714,6 +721,8 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 			writeAnthropicError(c, http.StatusBadRequest, "invalid_request_error", clientMsg)
 			return nil, fmt.Errorf("openai cyber_policy: %s", msg)
 		}
+		writeAnthropicError(c, http.StatusBadGateway, "upstream_error", errMessage)
+		return nil, fmt.Errorf("upstream response failed: %s", errMessage)
 	}
 
 	// When the terminal event has an empty output array, reconstruct from
@@ -774,6 +783,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	sawTerminalEvent := false
 	clientDisconnected := false
 	clientOutputStarted := false
+	streamFailedErr := error(nil)
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -818,6 +828,18 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		}
 		if event.Type == "response.failed" {
 			payloadBytes := []byte(payload)
+			errMessage := extractResponsesFailureMessage(event.Response, payloadBytes)
+			if errMessage == "" {
+				errMessage = "Upstream response failed"
+			}
+			if !clientOutputStarted && !c.Writer.Written() {
+				if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, payloadBytes, errMessage); matched {
+					clientDisconnected = true
+					streamFailedErr = err
+					sawTerminalEvent = true
+					return true
+				}
+			}
 			// cyber_policy 致命且不可重试：绝不 failover/换号。先解析 response.failed
 			// 自带的真实 usage 再打请求级标记（供 handler 事后审计/按真实 token 计费），
 			// 以 Anthropic SSE error 事件回写让客户端停止重试，丢弃后续转换输出。
@@ -850,6 +872,20 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				sawTerminalEvent = true
 				return true
 			}
+			if !clientOutputStarted && !c.Writer.Written() {
+				writeAnthropicError(c, http.StatusBadGateway, "upstream_error", errMessage)
+			} else if !clientDisconnected {
+				errBody := fmt.Sprintf(`{"type":"error","error":{"type":%q,"message":%q}}`, "upstream_error", errMessage)
+				if _, werr := fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", errBody); werr == nil {
+					c.Writer.Flush()
+				} else {
+					clientDisconnected = true
+				}
+			}
+			streamFailedErr = fmt.Errorf("upstream response failed: %s", errMessage)
+			clientDisconnected = true
+			sawTerminalEvent = true
+			return true
 		}
 
 		isTerminalEvent := isOpenAICompatResponsesTerminalEvent(event.Type)
@@ -909,6 +945,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			}
 			s.recordOpenAIMessagesStreamUpstreamError(c, account, requestID, "stream_missing_terminal", message)
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
+		}
+		if streamFailedErr != nil {
+			return resultWithUsage(), streamFailedErr
 		}
 		if clientDisconnected {
 			return resultWithUsage(), nil

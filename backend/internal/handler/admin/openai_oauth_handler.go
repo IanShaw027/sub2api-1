@@ -28,16 +28,12 @@ func oauthPlatformFromPath(c *gin.Context) string {
 func NewOpenAIOAuthHandler(
 	openaiOAuthService *service.OpenAIOAuthService,
 	adminService service.AdminService,
-	quotaService ...*service.OpenAIQuotaService,
+	quotaService *service.OpenAIQuotaService,
 ) *OpenAIOAuthHandler {
-	var qs *service.OpenAIQuotaService
-	if len(quotaService) > 0 {
-		qs = quotaService[0]
-	}
 	return &OpenAIOAuthHandler{
 		openaiOAuthService: openaiOAuthService,
 		adminService:       adminService,
-		quotaService:       qs,
+		quotaService:       quotaService,
 	}
 }
 

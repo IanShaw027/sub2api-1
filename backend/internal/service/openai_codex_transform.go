@@ -28,6 +28,10 @@ func sanitizeCodexToolName(name string) string {
 }
 
 var codexModelMap = map[string]string{
+	"gpt-5.6":                    "gpt-5.6-sol",
+	"gpt-5.6-sol":                "gpt-5.6-sol",
+	"gpt-5.6-terra":              "gpt-5.6-terra",
+	"gpt-5.6-luna":               "gpt-5.6-luna",
 	"gpt-5.5":                    "gpt-5.5",
 	"gpt-5.5-pro":                "gpt-5.5-pro",
 	"codex-auto-review":          "codex-auto-review",
@@ -134,6 +138,7 @@ const (
 )
 
 type codexInputFilterOptions struct {
+	PreserveReferences                        bool
 	rewriteToolContinuationIDs                bool
 	dropItemReferences                        bool
 	dropNonToolItemIDs                        bool
@@ -874,8 +879,14 @@ func normalizeCodexModel(model string) string {
 	if mapped := getNormalizedCodexModel(modelID); mapped != "" {
 		return mapped
 	}
+	if mapped := normalizeGPT56ModelAlias(modelID); mapped != "" {
+		return mapped
+	}
 
 	normalized := strings.ToLower(modelID)
+	if strings.HasPrefix(normalized, "gpt-5.6") {
+		return modelID
+	}
 
 	if strings.Contains(normalized, "gpt-5.5-pro") || strings.Contains(normalized, "gpt 5.5 pro") {
 		return "gpt-5.5-pro"
@@ -1958,6 +1969,11 @@ func filterCodexInput(input []any, rewriteToolContinuationIDs bool) []any {
 }
 
 func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]any, bool) {
+	if opts.PreserveReferences {
+		opts.rewriteToolContinuationIDs = false
+		opts.dropItemReferences = false
+		opts.dropNonToolItemIDs = false
+	}
 	filtered := make([]any, 0, len(input))
 	modified := false
 	for _, item := range input {
@@ -2056,16 +2072,22 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 
 			if isCodexToolCallContextItemType(typ) {
 				if id, ok := m["id"].(string); ok && strings.TrimSpace(id) != "" && !strings.HasPrefix(strings.TrimSpace(id), "fc") {
-					fixedID := ""
-					if opts.rewriteToolContinuationIDs && strings.TrimSpace(callID) != "" {
-						fixedID = strings.TrimSpace(callID)
-					} else {
-						fixedID = fixCallIDPrefix(strings.TrimSpace(id))
-					}
-					if fixedID != "" && fixedID != id {
+					if opts.PreserveReferences {
 						ensureCopy()
-						newItem["id"] = fixedID
+						delete(newItem, "id")
 						modified = true
+					} else {
+						fixedID := ""
+						if opts.rewriteToolContinuationIDs && strings.TrimSpace(callID) != "" {
+							fixedID = strings.TrimSpace(callID)
+						} else {
+							fixedID = fixCallIDPrefix(strings.TrimSpace(id))
+						}
+						if fixedID != "" && fixedID != id {
+							ensureCopy()
+							newItem["id"] = fixedID
+							modified = true
+						}
 					}
 				}
 			}
@@ -2128,7 +2150,7 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 			}
 		}
 
-		if sanitizedItem, sanitized := sanitizeCodexInputItem(newItem); sanitized {
+		if sanitizedItem, sanitized := sanitizeCodexInputItemWithOptions(newItem, opts.PreserveReferences); sanitized {
 			newItem = sanitizedItem
 			modified = true
 		}
@@ -2293,7 +2315,15 @@ var codexMessageInputAllowedFields = map[string]struct{}{
 	"id":      {},
 }
 
+var codexInputUnsupportedFields = map[string]struct{}{
+	"namespace": {},
+}
+
 func sanitizeCodexInputItem(item map[string]any) (map[string]any, bool) {
+	return sanitizeCodexInputItemWithOptions(item, false)
+}
+
+func sanitizeCodexInputItemWithOptions(item map[string]any, preserveReferences bool) (map[string]any, bool) {
 	if len(item) == 0 {
 		return item, false
 	}
@@ -2310,7 +2340,7 @@ func sanitizeCodexInputItem(item map[string]any) (map[string]any, bool) {
 				modified = true
 				continue
 			}
-			if key == "id" {
+			if key == "id" && !preserveReferences {
 				id, _ := value.(string)
 				if strings.TrimSpace(id) == "" || !strings.HasPrefix(strings.TrimSpace(id), "msg") {
 					modified = true
@@ -2328,7 +2358,8 @@ func sanitizeCodexInputItem(item map[string]any) (map[string]any, bool) {
 	var sanitized map[string]any
 	modified := false
 	for key, value := range item {
-		if value != nil {
+		_, unsupported := codexInputUnsupportedFields[key]
+		if value != nil && !unsupported {
 			continue
 		}
 		if sanitized == nil {

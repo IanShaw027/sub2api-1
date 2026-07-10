@@ -18,6 +18,18 @@ func (s *usageBillingRepoApplyStub) Apply(_ context.Context, _ *UsageBillingComm
 	return s.result, s.err
 }
 
+func (s *usageBillingRepoApplyStub) ReserveBatchImageBalance(_ context.Context, _ *BatchImageBalanceHoldCommand) (*BatchImageBalanceHoldResult, error) {
+	return &BatchImageBalanceHoldResult{}, nil
+}
+
+func (s *usageBillingRepoApplyStub) CaptureBatchImageBalance(_ context.Context, _ *BatchImageBalanceHoldCommand) (*BatchImageBalanceHoldResult, error) {
+	return &BatchImageBalanceHoldResult{}, nil
+}
+
+func (s *usageBillingRepoApplyStub) ReleaseBatchImageBalance(_ context.Context, _ *BatchImageBalanceHoldCommand) (*BatchImageBalanceHoldResult, error) {
+	return &BatchImageBalanceHoldResult{}, nil
+}
+
 func TestApplyUsageBilling_NotAppliedWithoutDeferredServiceDoesNotPanic(t *testing.T) {
 	repo := &usageBillingRepoApplyStub{result: &UsageBillingApplyResult{Applied: false}}
 	p := &postUsageBillingParams{

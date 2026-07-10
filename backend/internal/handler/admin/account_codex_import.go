@@ -594,7 +594,7 @@ func normalizeCodexImportEntry(entry codexImportEntry) (*codexImportAccount, err
 
 	fingerprint := codexTokenFingerprint(item.AccessToken)
 	item.Extra["access_token_sha256"] = fingerprint
-	item.IdentityKeys = buildCodexIdentityKeys(item.AccountID, item.UserID, item.Email, item.AccessToken)
+	item.IdentityKeys = buildCodexImportIdentityKeys(item.AccountID, item.UserID, item.Email, item.AccessToken, item.RefreshToken)
 	item.Name = buildCodexImportAccountName(item, entry.Index)
 
 	return item, nil
@@ -821,10 +821,18 @@ func sanitizeCodexImportCredentialExtras(input map[string]any) map[string]any {
 	return out
 }
 
-// buildCodexIdentityKeys 按身份强度排序生成匹配键：chatgpt_account_id 在同一
-// ChatGPT 团队内是共享的，因此 account: 键排在最后，且命中时还需通过
-// codexIdentityConflicts 的跨用户校验才生效。
-func buildCodexIdentityKeys(accountID, userID, email, accessToken string) []string {
+// buildCodexImportIdentityKeys 按身份强度排序生成匹配键。没有 refresh_token
+// 的 accessToken-only 导入不可续期，不能依赖长期账号/user/email 身份去
+// 覆盖存量 OAuth 凭据，只用 access token 指纹去重同一短期令牌。
+func buildCodexImportIdentityKeys(accountID, userID, email, accessToken, refreshToken string) []string {
+	accessToken = strings.TrimSpace(accessToken)
+	if strings.TrimSpace(refreshToken) == "" {
+		if accessToken == "" {
+			return nil
+		}
+		return []string{"access:" + codexTokenFingerprint(accessToken)}
+	}
+
 	keys := make([]string, 0, 4)
 	accountID = strings.TrimSpace(accountID)
 	userID = strings.TrimSpace(userID)
@@ -841,7 +849,7 @@ func buildCodexIdentityKeys(accountID, userID, email, accessToken string) []stri
 	if accountID == "" && userID == "" && email != "" {
 		keys = append(keys, "email:"+email)
 	}
-	if accessToken = strings.TrimSpace(accessToken); accessToken != "" {
+	if accessToken != "" {
 		keys = append(keys, "access:"+codexTokenFingerprint(accessToken))
 	}
 	if accountID != "" {
@@ -865,11 +873,12 @@ func (i *codexAccountIndex) Add(account service.Account) {
 	if i.accountsByKey == nil {
 		i.accountsByKey = map[string][]service.Account{}
 	}
-	keys := buildCodexIdentityKeys(
+	keys := buildCodexImportIdentityKeys(
 		codexCredentialString(account.Credentials, "chatgpt_account_id"),
 		codexCredentialString(account.Credentials, "chatgpt_user_id"),
 		codexCredentialString(account.Credentials, "email"),
 		codexCredentialString(account.Credentials, "access_token"),
+		codexCredentialString(account.Credentials, "refresh_token"),
 	)
 	for _, key := range keys {
 		i.accountsByKey[key] = upsertCodexAccount(i.accountsByKey[key], account)

@@ -7637,10 +7637,20 @@ func populateOpenAIUsageFromResponseJSON(body []byte, usage *OpenAIUsage) {
 		"usage.input_tokens",
 		"usage.output_tokens",
 		"usage.input_tokens_details.cached_tokens",
+		"usage.cache_creation_input_tokens",
+		"usage.cache_write_tokens",
+		"usage.input_tokens_details.cache_write_tokens",
 	)
 	usage.InputTokens = int(values[0].Int())
 	usage.OutputTokens = int(values[1].Int())
 	usage.CacheReadInputTokens = int(values[2].Int())
+	usage.CacheCreationInputTokens = int(values[3].Int())
+	if usage.CacheCreationInputTokens == 0 {
+		usage.CacheCreationInputTokens = int(values[4].Int())
+	}
+	if usage.CacheCreationInputTokens == 0 {
+		usage.CacheCreationInputTokens = int(values[5].Int())
+	}
 }
 
 func getOpenAIGroupIDFromContext(c *gin.Context) int64 {
@@ -8038,7 +8048,8 @@ func openAIWSErrorHTTPStatusFromRaw(codeRaw, errTypeRaw string) int {
 		strings.Contains(code, "invalid_request"),
 		strings.Contains(code, "bad_request"),
 		code == "invalid_encrypted_content",
-		code == "previous_response_not_found":
+		code == "previous_response_not_found",
+		code == "context_length_exceeded":
 		return http.StatusBadRequest
 	case strings.Contains(errType, "authentication"),
 		strings.Contains(code, "invalid_api_key"),

@@ -545,6 +545,19 @@ func (s *ConcurrencyService) GetUsersLoadBatch(ctx context.Context, users []User
 	return s.cache.GetUsersLoadBatch(ctx, users)
 }
 
+func (s *ConcurrencyService) GetAPIKeyConcurrencyBatch(ctx context.Context, apiKeyIDs []int64) (map[int64]int, error) {
+	if s == nil || s.cache == nil || len(apiKeyIDs) == 0 {
+		return map[int64]int{}, nil
+	}
+	cache, ok := s.cache.(APIKeyConcurrencyCache)
+	if !ok {
+		return map[int64]int{}, nil
+	}
+	redisCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return cache.GetAPIKeyConcurrencyBatch(redisCtx, apiKeyIDs)
+}
+
 // TrackAPIKeySlot records one active request slot for an API key without applying key-level concurrency limits.
 // It is fail-open: Redis/cache errors are logged and return a no-op release function.
 func (s *ConcurrencyService) TrackAPIKeySlot(ctx context.Context, apiKeyID int64) func() {
