@@ -80,6 +80,78 @@ func TestUsageBillingRepositoryApply_DeduplicatesBalanceBilling(t *testing.T) {
 	require.Equal(t, 1, dedupCount)
 }
 
+func TestUsageBillingRepositoryBatchImageBalance_PreservesTenDecimalPlaces(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+
+	for _, tc := range []struct {
+		name            string
+		settle          func(context.Context, *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error)
+		actualAmount    float64
+		expectedBalance string
+	}{
+		{
+			name:            "release",
+			settle:          repo.ReleaseBatchImageBalance,
+			expectedBalance: "1.0000000000",
+		},
+		{
+			name:            "capture",
+			settle:          repo.CaptureBatchImageBalance,
+			actualAmount:    0.1000000000,
+			expectedBalance: "0.9000000000",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			user := mustCreateUser(t, client, &service.User{
+				Email:        fmt.Sprintf("batch-image-precision-%s-%s@example.com", tc.name, uuid.NewString()),
+				PasswordHash: "hash",
+				Balance:      1,
+			})
+			apiKey := mustCreateApiKey(t, client, &service.APIKey{
+				UserID: user.ID,
+				Key:    "sk-batch-image-precision-" + uuid.NewString(),
+				Name:   "batch-image-precision",
+			})
+			batchID := "imgbatch_precision_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+			holdAmount := 0.1234567810
+
+			_, err := repo.ReserveBatchImageBalance(ctx, &service.BatchImageBalanceHoldCommand{
+				RequestID:  service.BatchImageHoldRequestID(batchID),
+				APIKeyID:   apiKey.ID,
+				UserID:     user.ID,
+				BatchID:    batchID,
+				HoldAmount: holdAmount,
+			})
+			require.NoError(t, err)
+
+			var frozenAfterReserve string
+			require.NoError(t, integrationDB.QueryRowContext(ctx,
+				"SELECT frozen_balance::text FROM users WHERE id = $1", user.ID,
+			).Scan(&frozenAfterReserve))
+			require.Equal(t, "0.1234567810", frozenAfterReserve)
+
+			_, err = tc.settle(ctx, &service.BatchImageBalanceHoldCommand{
+				RequestID:    "batch_image_" + tc.name + ":" + batchID,
+				APIKeyID:     apiKey.ID,
+				UserID:       user.ID,
+				BatchID:      batchID,
+				HoldAmount:   holdAmount,
+				ActualAmount: tc.actualAmount,
+			})
+			require.NoError(t, err)
+
+			var balance, frozen string
+			require.NoError(t, integrationDB.QueryRowContext(ctx,
+				"SELECT balance::text, frozen_balance::text FROM users WHERE id = $1", user.ID,
+			).Scan(&balance, &frozen))
+			require.Equal(t, tc.expectedBalance, balance)
+			require.Equal(t, "0.0000000000", frozen)
+		})
+	}
+}
+
 func TestUsageBillingRepositoryApply_DeduplicatesSubscriptionBilling(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)

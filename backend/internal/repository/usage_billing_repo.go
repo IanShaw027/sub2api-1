@@ -9,6 +9,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/shopspring/decimal"
 )
 
 type usageBillingRepository struct {
@@ -276,6 +277,7 @@ func reserveUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 	if cmd.HoldAmount <= 0 {
 		return &service.BatchImageBalanceHoldResult{}, nil
 	}
+	holdAmount := batchImageMoneyDecimal(cmd.HoldAmount)
 	var balance, frozen float64
 	err := tx.QueryRowContext(ctx, `
 		UPDATE users
@@ -284,7 +286,7 @@ func reserveUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 			updated_at = NOW()
 		WHERE id = $2 AND deleted_at IS NULL AND balance >= $1
 		RETURNING balance, frozen_balance
-	`, cmd.HoldAmount, cmd.UserID).Scan(&balance, &frozen)
+	`, holdAmount.StringFixed(10), cmd.UserID).Scan(&balance, &frozen)
 	if err == nil {
 		return &service.BatchImageBalanceHoldResult{NewBalance: &balance, FrozenBalance: &frozen}, nil
 	}
@@ -303,7 +305,9 @@ func captureUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 	if cmd.HoldAmount <= 0 && cmd.ActualAmount <= 0 {
 		return &service.BatchImageBalanceHoldResult{}, nil
 	}
-	if cmd.ActualAmount-cmd.HoldAmount > 0.00000001 {
+	holdAmount := batchImageMoneyDecimal(cmd.HoldAmount)
+	actualAmount := batchImageMoneyDecimal(cmd.ActualAmount)
+	if actualAmount.GreaterThan(holdAmount) {
 		return nil, service.ErrBatchImageSettlementCostExceedsHold
 	}
 	var balance, frozen float64
@@ -316,7 +320,7 @@ func captureUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 			updated_at = NOW()
 		WHERE id = $3 AND deleted_at IS NULL AND COALESCE(frozen_balance, 0) >= $1
 		RETURNING balance, frozen_balance
-	`, cmd.HoldAmount, cmd.ActualAmount, cmd.UserID).Scan(&balance, &frozen)
+	`, holdAmount.StringFixed(10), actualAmount.StringFixed(10), cmd.UserID).Scan(&balance, &frozen)
 	if err == nil {
 		return &service.BatchImageBalanceHoldResult{NewBalance: &balance, FrozenBalance: &frozen}, nil
 	}
@@ -335,6 +339,7 @@ func releaseUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 	if cmd.HoldAmount <= 0 {
 		return &service.BatchImageBalanceHoldResult{}, nil
 	}
+	holdAmount := batchImageMoneyDecimal(cmd.HoldAmount)
 	// 释放前校验该 job 确实预留过 hold（hold request id 已被 claim），
 	// 防止从未成功冻结的 job 触发"幻影释放"，从其他用户的冻结资金池中凭空生成余额。
 	held, heldErr := batchImageHoldClaimExists(ctx, tx, service.BatchImageHoldRequestID(cmd.BatchID), cmd.APIKeyID)
@@ -353,7 +358,7 @@ func releaseUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 			updated_at = NOW()
 		WHERE id = $2 AND deleted_at IS NULL AND COALESCE(frozen_balance, 0) >= $1
 		RETURNING balance, frozen_balance
-	`, cmd.HoldAmount, cmd.UserID).Scan(&balance, &frozen)
+	`, holdAmount.StringFixed(10), cmd.UserID).Scan(&balance, &frozen)
 	if err == nil {
 		return &service.BatchImageBalanceHoldResult{NewBalance: &balance, FrozenBalance: &frozen}, nil
 	}
@@ -366,6 +371,10 @@ func releaseUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 		return nil, service.ErrUserNotFound
 	}
 	return nil, errors.New("batch image frozen balance is insufficient")
+}
+
+func batchImageMoneyDecimal(amount float64) decimal.Decimal {
+	return decimal.NewFromFloat(amount).Round(10)
 }
 
 // batchImageHoldClaimExists 检查 hold request id 是否已在 dedup（或归档）表中被 claim，
