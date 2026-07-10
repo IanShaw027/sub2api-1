@@ -5232,7 +5232,8 @@ func TestOpenAIBuildUpstreamRequest_ForceCodexCLIOnlyOverridesUserAgent(t *testi
 	require.NoError(t, err)
 	require.Equal(t, codexCLIUserAgent, req.Header.Get("User-Agent"))
 	require.Equal(t, "opencode", req.Header.Get("Originator"))
-	require.Equal(t, "responses=experimental", req.Header.Get("OpenAI-Beta"))
+	// Upstream HTTP responses no longer sends OpenAI-Beta (WS-only header).
+	require.Empty(t, req.Header.Get("OpenAI-Beta"))
 	require.Equal(t, isolateOpenAISessionID(42, "sess-nonofficial"), req.Header.Get("Session_Id"))
 	require.Equal(t, isolateOpenAISessionID(42, "sess-nonofficial"), req.Header.Get("Conversation_Id"))
 }
@@ -5257,7 +5258,8 @@ func TestOpenAIBuildUpstreamRequestOpenAIPassthrough_NonOfficialOAuthPreservesUs
 	require.NoError(t, err)
 	require.Equal(t, "custom-client/1.0", req.Header.Get("User-Agent"))
 	require.Equal(t, "opencode", req.Header.Get("Originator"))
-	require.Equal(t, "responses=experimental", req.Header.Get("OpenAI-Beta"))
+	// Upstream HTTP responses no longer sends OpenAI-Beta (WS-only header).
+	require.Empty(t, req.Header.Get("OpenAI-Beta"))
 }
 
 func TestOpenAIBuildUpstreamRequest_APIKeySkipsOAuthOnlyCodexHeaders(t *testing.T) {
@@ -5346,7 +5348,8 @@ func TestOpenAIBuildUpstreamRequestOAuthOfficialClientOriginatorCompatibility(t 
 	}{
 		{name: "desktop originator preserved", originator: "Codex Desktop", wantOriginator: "Codex Desktop"},
 		{name: "vscode originator preserved", originator: "codex_vscode", wantOriginator: "codex_vscode"},
-		{name: "official ua fallback to codex_cli_rs", userAgent: "Codex Desktop/1.2.3", wantOriginator: "codex_cli_rs"},
+		// Default codex_cli_rs originator is now omitted (mirrors upstream add_originator_header).
+		{name: "official ua fallback omits default originator", userAgent: "Codex Desktop/1.2.3", wantOriginator: ""},
 	}
 
 	for _, tt := range tests {

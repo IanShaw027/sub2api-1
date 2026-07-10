@@ -345,95 +345,109 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			continue
 		}
 
-		upstreamMessage := []byte(trimmedData)
-		eventType, eventResponseID, _ := parseOpenAIWSEventEnvelope(upstreamMessage)
-		if responseID == "" && eventResponseID != "" {
-			responseID = eventResponseID
-		}
-		if eventType != "" {
-			eventCount++
-			if firstEventType == "" {
-				firstEventType = eventType
-			}
-			lastEventType = eventType
-		}
-		if isOpenAIWSTokenEvent(eventType) {
-			tokenEventCount++
-			if firstTokenMs == nil {
-				ms := int(time.Since(turnStart).Milliseconds())
-				firstTokenMs = &ms
-			}
-		}
-		if openAIWSEventShouldParseUsage(eventType) {
-			parseOpenAIWSResponseUsageFromCompletedEvent(upstreamMessage, &usage)
-		}
-		imageCounter.AddSSEData(upstreamMessage)
-
-		if needModelReplace && len(mappedModelBytes) > 0 && openAIWSEventMayContainModel(eventType) && strings.Contains(trimmedData, mappedModel) {
-			upstreamMessage = replaceOpenAIWSMessageModel(upstreamMessage, mappedModel, originalModel)
-		}
-		if s.toolCorrector != nil && openAIWSEventMayContainToolCalls(eventType) && openAIWSMessageLikelyContainsToolCalls(upstreamMessage) {
-			if corrected, changed := s.toolCorrector.CorrectToolCallsInSSEBytes(upstreamMessage); changed {
-				upstreamMessage = corrected
-			}
-		}
-		replayCollector.AddEvent(eventType, upstreamMessage)
-
-		if !clientDisconnected {
-			if err := writeClientMessage(upstreamMessage); err != nil {
-				if isOpenAIWSClientDisconnectError(err) {
-					clientDisconnected = true
-					closeStatus, closeReason := summarizeOpenAIWSReadCloseError(err)
-					logOpenAIWSModeInfo(
-						"ingress_ws_http_bridge_client_disconnected_drain account_id=%d turn=%d close_status=%s close_reason=%s",
-						account.ID,
-						turn,
-						closeStatus,
-						truncateOpenAIWSLogValue(closeReason, openAIWSHeaderValueMaxLen),
-					)
-				} else {
-					return nil, wrapOpenAIWSIngressTurnError(
-						"write_client",
-						fmt.Errorf("write client websocket event: %w", err),
-						wroteDownstream,
-					)
+		upstreamMessages := [][]byte{[]byte(trimmedData)}
+		if account.Platform == PlatformGrok {
+			frames, _ := normalizeGrokReasoningSSEFrame(openAICompatSSEFrame{Data: trimmedData})
+			if len(frames) > 0 {
+				upstreamMessages = upstreamMessages[:0]
+				for _, frame := range frames {
+					if data := strings.TrimSpace(frame.Data); data != "" {
+						upstreamMessages = append(upstreamMessages, []byte(data))
+					}
 				}
-			} else {
-				wroteDownstream = true
 			}
 		}
 
-		if eventType == "error" {
-			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(upstreamMessage)
-			s.persistOpenAIWSRateLimitSignal(ctx, account, resp.Header, upstreamMessage, errCodeRaw, errTypeRaw, errMsgRaw)
-			errMessage := strings.TrimSpace(errMsgRaw)
-			if errMessage == "" {
-				errMessage = "upstream error event"
+		for _, upstreamMessage := range upstreamMessages {
+			eventType, eventResponseID, _ := parseOpenAIWSEventEnvelope(upstreamMessage)
+			if responseID == "" && eventResponseID != "" {
+				responseID = eventResponseID
 			}
-			return resultWithUsage(), errors.New(errMessage)
-		}
-		if isOpenAIWSTerminalEvent(eventType) {
-			terminalEventCount++
-			firstTokenMsValue := -1
-			if firstTokenMs != nil {
-				firstTokenMsValue = *firstTokenMs
+			if eventType != "" {
+				eventCount++
+				if firstEventType == "" {
+					firstEventType = eventType
+				}
+				lastEventType = eventType
 			}
-			logOpenAIWSModeInfo(
-				"ingress_ws_http_bridge_turn_completed account_id=%d turn=%d response_id=%s payload_bytes=%d duration_ms=%d events=%d token_events=%d terminal_events=%d first_event=%s last_event=%s first_token_ms=%d client_disconnected=%v",
-				account.ID,
-				turn,
-				truncateOpenAIWSLogValue(responseID, openAIWSIDValueMaxLen),
-				payloadBytes,
-				time.Since(turnStart).Milliseconds(),
-				eventCount,
-				tokenEventCount,
-				terminalEventCount,
-				truncateOpenAIWSLogValue(firstEventType, openAIWSLogValueMaxLen),
-				truncateOpenAIWSLogValue(lastEventType, openAIWSLogValueMaxLen),
-				firstTokenMsValue,
-				clientDisconnected,
-			)
-			return resultWithUsage(), nil
+			if isOpenAIWSTokenEvent(eventType) {
+				tokenEventCount++
+				if firstTokenMs == nil {
+					ms := int(time.Since(turnStart).Milliseconds())
+					firstTokenMs = &ms
+				}
+			}
+			if openAIWSEventShouldParseUsage(eventType) {
+				parseOpenAIWSResponseUsageFromCompletedEvent(upstreamMessage, &usage)
+			}
+			imageCounter.AddSSEData(upstreamMessage)
+
+			if needModelReplace && len(mappedModelBytes) > 0 && openAIWSEventMayContainModel(eventType) && strings.Contains(string(upstreamMessage), mappedModel) {
+				upstreamMessage = replaceOpenAIWSMessageModel(upstreamMessage, mappedModel, originalModel)
+			}
+			if s.toolCorrector != nil && openAIWSEventMayContainToolCalls(eventType) && openAIWSMessageLikelyContainsToolCalls(upstreamMessage) {
+				if corrected, changed := s.toolCorrector.CorrectToolCallsInSSEBytes(upstreamMessage); changed {
+					upstreamMessage = corrected
+				}
+			}
+			replayCollector.AddEvent(eventType, upstreamMessage)
+
+			if !clientDisconnected {
+				if err := writeClientMessage(upstreamMessage); err != nil {
+					if isOpenAIWSClientDisconnectError(err) {
+						clientDisconnected = true
+						closeStatus, closeReason := summarizeOpenAIWSReadCloseError(err)
+						logOpenAIWSModeInfo(
+							"ingress_ws_http_bridge_client_disconnected_drain account_id=%d turn=%d close_status=%s close_reason=%s",
+							account.ID,
+							turn,
+							closeStatus,
+							truncateOpenAIWSLogValue(closeReason, openAIWSHeaderValueMaxLen),
+						)
+					} else {
+						return nil, wrapOpenAIWSIngressTurnError(
+							"write_client",
+							fmt.Errorf("write client websocket event: %w", err),
+							wroteDownstream,
+						)
+					}
+				} else {
+					wroteDownstream = true
+				}
+			}
+
+			if eventType == "error" {
+				errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(upstreamMessage)
+				s.persistOpenAIWSRateLimitSignal(ctx, account, resp.Header, upstreamMessage, errCodeRaw, errTypeRaw, errMsgRaw)
+				errMessage := strings.TrimSpace(errMsgRaw)
+				if errMessage == "" {
+					errMessage = "upstream error event"
+				}
+				return resultWithUsage(), errors.New(errMessage)
+			}
+			if isOpenAIWSTerminalEvent(eventType) {
+				terminalEventCount++
+				firstTokenMsValue := -1
+				if firstTokenMs != nil {
+					firstTokenMsValue = *firstTokenMs
+				}
+				logOpenAIWSModeInfo(
+					"ingress_ws_http_bridge_turn_completed account_id=%d turn=%d response_id=%s payload_bytes=%d duration_ms=%d events=%d token_events=%d terminal_events=%d first_event=%s last_event=%s first_token_ms=%d client_disconnected=%v",
+					account.ID,
+					turn,
+					truncateOpenAIWSLogValue(responseID, openAIWSIDValueMaxLen),
+					payloadBytes,
+					time.Since(turnStart).Milliseconds(),
+					eventCount,
+					tokenEventCount,
+					terminalEventCount,
+					truncateOpenAIWSLogValue(firstEventType, openAIWSLogValueMaxLen),
+					truncateOpenAIWSLogValue(lastEventType, openAIWSLogValueMaxLen),
+					firstTokenMsValue,
+					clientDisconnected,
+				)
+				return resultWithUsage(), nil
+			}
 		}
 	}
 	if err := scanner.Err(); err != nil {

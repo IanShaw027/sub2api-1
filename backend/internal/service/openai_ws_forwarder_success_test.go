@@ -755,7 +755,8 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStoreFalseByDefault(t *testing.T
 	require.Empty(t, captureDialer.lastHeaders.Get("x-client-request-id"))
 	require.Empty(t, captureDialer.lastHeaders.Get("x-codex-installation-id"))
 	require.Equal(t, codexCLIUserAgent, captureDialer.lastHeaders.Get("user-agent"))
-	require.Equal(t, "codex_cli_rs", captureDialer.lastHeaders.Get("originator"))
+	// Default codex_cli_rs originator is now omitted (mirrors upstream add_originator_header).
+	require.Empty(t, captureDialer.lastHeaders.Get("originator"))
 	require.Equal(t, "install-1", gjson.Get(requestJSON, "client_metadata.x-codex-installation-id").String())
 	require.Equal(t, isolatedWindowID, gjson.Get(requestJSON, "client_metadata.x-codex-window-id").String())
 	require.Equal(t, "memories,prevent_idle_sleep", gjson.Get(requestJSON, "client_metadata.x-codex-beta-features").String())
@@ -1628,7 +1629,8 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testi
 	}{
 		{name: "desktop originator preserved", originator: "Codex Desktop", wantOriginator: "Codex Desktop"},
 		{name: "vscode originator preserved", originator: "codex_vscode", wantOriginator: "codex_vscode"},
-		{name: "official ua fallback to codex_cli_rs", userAgent: "Codex Desktop/1.2.3", wantOriginator: "codex_cli_rs"},
+		// Default codex_cli_rs originator is now omitted (mirrors upstream add_originator_header).
+		{name: "official ua fallback omits default originator", userAgent: "Codex Desktop/1.2.3", wantOriginator: ""},
 	}
 
 	for _, tt := range tests {

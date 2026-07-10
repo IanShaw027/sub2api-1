@@ -5133,7 +5133,9 @@ func TestBuildOpenAIWSNeutralHeaders_NoSessionIdentity(t *testing.T) {
 
 	require.Equal(t, "Bearer tok_abc", headers.Get("authorization"))
 	require.Equal(t, "acct_123", headers.Get("chatgpt-account-id"))
-	require.NotEmpty(t, headers.Get("originator"))
+	// isCodexCLI=true resolves to the default codex_cli_rs originator, which is
+	// now omitted (mirrors upstream add_originator_header).
+	require.Empty(t, headers.Get("originator"))
 	require.NotEmpty(t, headers.Get("OpenAI-Beta"))
 	require.NotEmpty(t, headers.Get("user-agent"))
 

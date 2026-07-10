@@ -4268,6 +4268,28 @@ func TestOpenAIGatewayService_SchedulerWrappersAndDefaults(t *testing.T) {
 	require.Equal(t, 0.4, customWeights.Queue)
 	require.Equal(t, 0.5, customWeights.ErrorRate)
 	require.Equal(t, 0.6, customWeights.TTFT)
+	require.Equal(t, 0.0, customWeights.Previous)
+	require.Equal(t, 0.0, customWeights.SessionSticky)
+}
+
+func TestOpenAIGatewayService_OpenAIWSSchedulerWeightsIncludesStickyWeights(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.PreviousResponse = 2.5
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights.SessionSticky = 1.75
+
+	svc := &OpenAIGatewayService{cfg: cfg}
+	weights := svc.openAIWSSchedulerWeights()
+	require.Equal(t, 2.5, weights.Previous)
+	require.Equal(t, 1.75, weights.SessionSticky)
+
+	snapshot := buildOpenAIAccountSchedulerScoreSnapshot(
+		[]*Account{{ID: 70001, Priority: 1}},
+		map[int64]*AccountLoadInfo{},
+		weights,
+		true,
+	)
+	require.Contains(t, snapshot, int64(70001))
+	require.InDelta(t, snapshot[70001].BaseScore+4.25, snapshot[70001].StickyScore, 1e-9)
 }
 
 func TestDefaultOpenAIAccountScheduler_IsAccountTransportCompatible_Branches(t *testing.T) {

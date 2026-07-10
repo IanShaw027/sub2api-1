@@ -176,6 +176,82 @@ func TestOpenAIWSHTTPBridgeRelaysSSEFramesAsWebSocketMessages(t *testing.T) {
 	require.True(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
 }
 
+func TestOpenAIWSHTTPBridgeForGrokNormalizesReasoningTextEvents(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	sseBody := strings.Join([]string{
+		`event: response.content_part.added`,
+		`data: {"type":"response.content_part.added","sequence_number":2,"item_id":"rs_1","output_index":0,"content_index":0,"part":{"type":"reasoning_text","text":""}}`,
+		``,
+		`event: response.reasoning_text.delta`,
+		`data: {"type":"response.reasoning_text.delta","sequence_number":3,"item_id":"rs_1","output_index":0,"content_index":0,"delta":"thinking"}`,
+		``,
+		`event: response.reasoning_text.done`,
+		`data: {"type":"response.reasoning_text.done","sequence_number":4,"item_id":"rs_1","output_index":0,"content_index":0,"text":"thinking"}`,
+		``,
+		`event: response.output_item.done`,
+		`data: {"type":"response.output_item.done","sequence_number":5,"output_index":0,"item":{"id":"rs_1","type":"reasoning","status":"completed","summary":[],"content":[{"type":"reasoning_text","text":"thinking"}]}}`,
+		``,
+		`event: response.completed`,
+		`data: {"type":"response.completed","sequence_number":6,"response":{"id":"resp_grok_ws_reasoning","model":"grok-4.3","usage":{"input_tokens":4,"output_tokens":2}}}`,
+		``,
+	}, "\n")
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(sseBody)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          72,
+		Name:        "grok",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Status:      StatusActive,
+		Credentials: map[string]any{"base_url": xai.DefaultCLIBaseURL},
+	}
+	rec := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(rec)
+	ginCtx.Request = httptest.NewRequest(http.MethodGet, "/v1/realtime", nil)
+
+	var messages []string
+	result, err := svc.proxyOpenAIWSHTTPBridgeTurn(
+		context.Background(),
+		ginCtx,
+		account,
+		"access-token",
+		[]byte(`{"type":"response.create","generate":true,"model":"grok","stream":true,"input":"hi"}`),
+		80,
+		"grok",
+		"",
+		"",
+		"",
+		1,
+		func(message []byte) error {
+			messages = append(messages, string(message))
+			return nil
+		},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	output := strings.Join(messages, "\n")
+	require.NotContains(t, output, "reasoning_text")
+	for _, want := range []string{
+		`"type":"response.reasoning_summary_part.added"`,
+		`"type":"response.reasoning_summary_text.delta"`,
+		`"type":"response.reasoning_summary_text.done"`,
+		`"type":"response.reasoning_summary_part.done"`,
+		`"part":{"type":"summary_text","text":"thinking"}`,
+		`"summary":[{"type":"summary_text","text":"thinking"}]`,
+	} {
+		require.Contains(t, output, want)
+	}
+}
+
 func TestProxyResponsesWebSocketFromClientForGrokUsesXAIHTTPBridge(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

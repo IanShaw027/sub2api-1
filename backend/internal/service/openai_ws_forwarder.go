@@ -2177,7 +2177,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 			headers.Set("chatgpt-account-id", chatgptAccountID)
 		}
 		setOpenAIChatGPTAccountHeaders(headers, account)
-		headers.Set("originator", resolveOpenAIUpstreamOriginator(c, isCodexCLI))
+		applyOpenAIUpstreamOriginatorHeader(headers, resolveOpenAIUpstreamOriginator(c, isCodexCLI))
 		if c != nil {
 			if windowID := strings.TrimSpace(c.GetHeader(openAIWSWindowIDHeader)); windowID != "" {
 				headers.Set(openAIWSWindowIDHeader, isolateOpenAIWSWindowID(apiKeyID, windowID))
@@ -2240,7 +2240,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSNeutralHeaders(
 		if chatgptAccountID := account.GetChatGPTAccountID(); chatgptAccountID != "" {
 			headers.Set("chatgpt-account-id", chatgptAccountID)
 		}
-		headers.Set("originator", resolveOpenAIUpstreamOriginator(nil, isCodexCLI))
+		applyOpenAIUpstreamOriginatorHeader(headers, resolveOpenAIUpstreamOriginator(nil, isCodexCLI))
 	}
 
 	betaValue := openAIWSBetaV2Value
@@ -2273,6 +2273,10 @@ func applyOpenAIWSFingerprintRuntimeHeaders(headers http.Header, runtime openAIT
 		headers.Set("user-agent", runtime.UpstreamUserAgent)
 	}
 	if runtime.UpstreamOriginator != "" {
+		// Fingerprint-runtime originator is an explicit anti-ban override
+		// configured by the operator (mirrors the HTTP
+		// applyOpenAITLSFingerprintRuntime path); send it verbatim rather than
+		// applying the omit-default rule so codex_cli_rs spoofing keeps working.
 		headers.Set("originator", runtime.UpstreamOriginator)
 	}
 }

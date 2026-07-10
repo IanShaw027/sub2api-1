@@ -8280,7 +8280,10 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				dataBytes = []byte(data)
 				trimmedData = strings.TrimSpace(data)
 			}
-			suppressReasoningSummary := isOpenAIResponsesReasoningSummaryStreamEvent(eventType)
+			// xAI/Grok emits reasoning_text events that CPA exposes after normalizing
+			// to OpenAI reasoning_summary_* events. Keep the historical suppression for
+			// non-Grok OpenAI streams, but do not drop normalized Grok reasoning.
+			suppressReasoningSummary := account.Platform != PlatformGrok && isOpenAIResponsesReasoningSummaryStreamEvent(eventType)
 			if !suppressReasoningSummary {
 				if sanitizedData, sanitized := sanitizeOpenAIResponsesReasoningSummariesForClient(dataBytes); sanitized {
 					openAICompatSetSSEFrameData(&frame, string(sanitizedData))
@@ -8589,6 +8592,9 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	usage := &OpenAIUsage{}
 	imageCount := 0
 	if ok {
+		if account != nil && account.Platform == PlatformGrok {
+			finalResponse = normalizeGrokReasoningResponseBody(finalResponse)
+		}
 		if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(finalResponse); parsed {
 			*usage = parsedUsage
 		} else {
@@ -9904,7 +9910,19 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		sendErrorEvent("stream_read_error")
 		return resultWithUsage(), fmt.Errorf("stream read error: %w", scanErr), true
 	}
-	processSSEFrame := func(frame openAICompatSSEFrame, queueDrained bool) {
+	var processSSEFrame func(frame openAICompatSSEFrame, queueDrained bool)
+	processSSEFrame = func(frame openAICompatSSEFrame, queueDrained bool) {
+		if account != nil && account.Platform == PlatformGrok {
+			if normalizedFrames, normalized := normalizeGrokReasoningSSEFrame(frame); normalized {
+				for i, normalizedFrame := range normalizedFrames {
+					processSSEFrame(normalizedFrame, queueDrained && i == len(normalizedFrames)-1)
+					if streamFailoverErr != nil {
+						return
+					}
+				}
+				return
+			}
+		}
 		if streamFailoverErr != nil {
 			return
 		}
@@ -9991,7 +10009,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				_, data = openAIStreamFrameEventTypeAndData(frame)
 				dataBytes = correctedData
 			}
-			suppressReasoningSummary := isOpenAIResponsesReasoningSummaryStreamEvent(eventType)
+			suppressReasoningSummary := account.Platform != PlatformGrok && isOpenAIResponsesReasoningSummaryStreamEvent(eventType)
 			startsClientOutput = !suppressReasoningSummary && (forceFlushFailedEvent || openAIStreamFrameStartsClientOutput(frame))
 			flushForFirstToken = firstTokenMs == nil && startsClientOutput && strings.TrimSpace(data) != "[DONE]"
 			if flushForFirstToken {
@@ -10021,7 +10039,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				openAICompatSetSSEFrameData(&frame, string(sanitizedData))
 				data = string(sanitizedData)
 			}
-			if !suppressReasoningSummary {
+			if !suppressReasoningSummary && account.Platform != PlatformGrok {
 				if sanitizedData, sanitized := sanitizeOpenAIResponsesReasoningSummariesForClient(dataBytes); sanitized {
 					openAICompatSetSSEFrameData(&frame, string(sanitizedData))
 					dataBytes = sanitizedData
@@ -10899,6 +10917,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(body); matched {
 		return nil, s.newOpenAISoftRateLimitFailoverError(ctx, c, account, false, resp.Header.Get("x-request-id"), body, advisoryMsg)
 	}
+	if account != nil && account.Platform == PlatformGrok {
+		body = normalizeGrokReasoningResponseBody(body)
+	}
 
 	usageValue, usageOK := extractOpenAIUsageFromJSONBytes(body)
 	if !gjson.ValidBytes(body) {
@@ -10980,6 +11001,9 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 	imageCount := 0
 	searchCount := 0
 	if ok {
+		if account != nil && account.Platform == PlatformGrok {
+			finalResponse = normalizeGrokReasoningResponseBody(finalResponse)
+		}
 		if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(finalResponse); parsed {
 			*usage = parsedUsage
 		} else {
@@ -10992,6 +11016,9 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			if outputJSON, reconstructed := reconstructResponseOutputFromSSE(bodyText); reconstructed {
 				if patched, err := sjson.SetRawBytes(finalResponse, "output", outputJSON); err == nil {
 					finalResponse = patched
+					if account != nil && account.Platform == PlatformGrok {
+						finalResponse = normalizeGrokReasoningResponseBody(finalResponse)
+					}
 				}
 			}
 		}
