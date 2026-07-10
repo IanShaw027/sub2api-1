@@ -104,7 +104,9 @@ func TestAccountTestService_OpenAIImageOAuthDefaultCallsImagesEndpoint(t *testin
 	require.Equal(t, "gpt-image-2", tool["model"])
 	require.Contains(t, rec.Body.String(), "data:image/png;base64,aGVsbG8=")
 	require.Contains(t, rec.Body.String(), "\"success\":true")
-	require.Equal(t, "codex_cli_rs", upstream.lastReq.Header.Get("originator"))
+	// Default codex_cli_rs originator is omitted on the shared forward path
+	// (mirrors upstream add_originator_header).
+	require.Empty(t, upstream.lastReq.Header.Get("originator"))
 	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, "text/event-stream", upstream.lastReq.Header.Get("Accept"))
 	require.LessOrEqual(t, len(upstream.lastReq.Header.Get("session_id")), 64)
@@ -217,7 +219,9 @@ func TestAccountTestService_OpenAIImageOAuthPromotesOfficialCodexUserAgentOrigin
 
 	err := svc.testOpenAIImageOAuth(c, context.Background(), account, "gpt-image-2", "draw a cat")
 	require.NoError(t, err)
-	require.Equal(t, "codex_cli_rs", upstream.lastReq.Header.Get("originator"))
+	// Official codex UA resolves to the default codex_cli_rs originator, which is
+	// omitted on the shared forward path (mirrors upstream add_originator_header).
+	require.Empty(t, upstream.lastReq.Header.Get("originator"))
 	require.Equal(t, "codex_cli_rs/0.200.0", upstream.lastReq.Header.Get("User-Agent"))
 }
 
