@@ -29,6 +29,91 @@ func TestPrepareOpenAIWSHTTPBridgeBodyStripsWSFields(t *testing.T) {
 	require.Equal(t, "hi", gjson.GetBytes(body, "input").String())
 }
 
+func TestPrepareOpenAIWSHTTPBridgeBodyKeepsGenerateFalseLikeCPA(t *testing.T) {
+	body, err := prepareOpenAIWSHTTPBridgeBody([]byte(`{"type":"response.create","generate":false,"model":"grok-4.3","stream":true,"input":"warm up"}`))
+	require.NoError(t, err)
+	require.True(t, gjson.GetBytes(body, "generate").Exists(), "generate=false must reach xAI for warmup turns")
+	require.False(t, gjson.GetBytes(body, "generate").Bool())
+	require.True(t, gjson.GetBytes(body, "stream").Bool())
+}
+
+func TestOpenAIWSHTTPBridgeCompletesGenerateFalseWarmupLikeCPA(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	sseBody := strings.Join([]string{
+		`data: {"type":"response.created","response":{"id":"resp-warmup-bridge","object":"response","status":"in_progress","output":[]}}`,
+		"",
+	}, "\n")
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(sseBody)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}},
+		httpUpstream: upstream,
+	}
+	account := &Account{ID: 73, Name: "grok", Platform: PlatformGrok, Type: AccountTypeOAuth, Concurrency: 1, Status: StatusActive, Credentials: map[string]any{"base_url": xai.DefaultCLIBaseURL}}
+	rec := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(rec)
+	ginCtx.Request = httptest.NewRequest(http.MethodGet, "/v1/realtime", nil)
+
+	var messages []string
+	result, err := svc.proxyOpenAIWSHTTPBridgeTurn(
+		context.Background(), ginCtx, account, "access-token",
+		[]byte(`{"type":"response.create","generate":false,"model":"grok","stream":true,"input":"warm up"}`),
+		80, "grok", "", "", "", 1,
+		func(message []byte) error {
+			messages = append(messages, string(message))
+			return nil
+		},
+	)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, gjson.GetBytes(upstream.lastBody, "generate").Exists())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "generate").Bool())
+	require.Len(t, messages, 2)
+	require.Equal(t, "response.created", gjson.Get(messages[0], "type").String())
+	require.Equal(t, "response.completed", gjson.Get(messages[1], "type").String())
+	require.Equal(t, "resp-warmup-bridge", gjson.Get(messages[1], "response.id").String())
+	require.Equal(t, "completed", gjson.Get(messages[1], "response.status").String())
+}
+
+func TestOpenAIWSHTTPBridgeStopsOnBareErrorPayloadLikeCPA(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	sseBody := strings.Join([]string{
+		`data: {"error":{"message":"Request validation error: instructions and previous_response_id together","type":"api_error"}}`,
+		"",
+	}, "\n")
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(sseBody)),
+	}}
+	svc := &OpenAIGatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}}, httpUpstream: upstream}
+	account := &Account{ID: 74, Name: "grok", Platform: PlatformGrok, Type: AccountTypeOAuth, Concurrency: 1, Status: StatusActive, Credentials: map[string]any{"base_url": xai.DefaultCLIBaseURL}}
+	rec := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(rec)
+	ginCtx.Request = httptest.NewRequest(http.MethodGet, "/v1/realtime", nil)
+
+	var messages []string
+	result, err := svc.proxyOpenAIWSHTTPBridgeTurn(
+		context.Background(), ginCtx, account, "access-token",
+		[]byte(`{"type":"response.create","generate":true,"model":"grok","stream":true,"input":"hi"}`),
+		80, "grok", "", "", "", 1,
+		func(message []byte) error {
+			messages = append(messages, string(message))
+			return nil
+		},
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "instructions and previous_response_id together")
+	require.NotNil(t, result)
+	require.Len(t, messages, 1)
+	require.Equal(t, "api_error", gjson.Get(messages[0], "error.type").String())
+}
+
 func TestOpenAIWSHTTPBridgeDecisionKeepsSmallFramesOnWS(t *testing.T) {
 	svc := &OpenAIGatewayService{
 		cfg: &config.Config{

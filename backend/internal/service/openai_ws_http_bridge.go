@@ -63,9 +63,16 @@ func prepareOpenAIWSHTTPBridgeBody(payload []byte) ([]byte, error) {
 	if body == nil {
 		return nil, errors.New("response.create payload must be a JSON object")
 	}
+	keepGenerateFalse := false
+	if generate, ok := body["generate"].(bool); ok && !generate {
+		keepGenerateFalse = true
+	}
 	delete(body, "type")
 	delete(body, "generate")
 	delete(body, "previous_response_id")
+	if keepGenerateFalse {
+		body["generate"] = false
+	}
 	body["stream"] = true
 	return json.Marshal(body)
 }
@@ -272,6 +279,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	imageCounter := newOpenAIImageOutputCounter()
 	var firstTokenMs *int
 	reqStream := openAIWSPayloadBoolFromRaw(body, "stream", true)
+	generateFalseWarmup := gjson.GetBytes(body, "generate").Exists() && !gjson.GetBytes(body, "generate").Bool()
 	eventCount := 0
 	tokenEventCount := 0
 	terminalEventCount := 0
@@ -360,6 +368,9 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 
 		for _, upstreamMessage := range upstreamMessages {
 			eventType, eventResponseID, _ := parseOpenAIWSEventEnvelope(upstreamMessage)
+			if eventType == "" && gjson.GetBytes(upstreamMessage, "error").Exists() {
+				eventType = "error"
+			}
 			if responseID == "" && eventResponseID != "" {
 				responseID = eventResponseID
 			}
@@ -453,8 +464,43 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	if err := scanner.Err(); err != nil {
 		return resultWithUsage(), fmt.Errorf("read upstream http bridge stream: %w", err)
 	}
+	if generateFalseWarmup && eventCount > 0 && responseID != "" {
+		completed := buildOpenAIWSHTTPBridgeGenerateFalseCompletedEvent(responseID)
+		if !clientDisconnected {
+			if err := writeClientMessage(completed); err != nil {
+				return nil, wrapOpenAIWSIngressTurnError(
+					"write_client",
+					fmt.Errorf("write client websocket event: %w", err),
+					wroteDownstream,
+				)
+			}
+		}
+		return resultWithUsage(), nil
+	}
 	if sawDone && eventCount > 0 {
 		return resultWithUsage(), nil
 	}
 	return resultWithUsage(), errors.New("upstream http bridge stream ended before terminal event")
+}
+
+func buildOpenAIWSHTTPBridgeGenerateFalseCompletedEvent(responseID string) []byte {
+	event := map[string]any{
+		"type": "response.completed",
+		"response": map[string]any{
+			"id":     strings.TrimSpace(responseID),
+			"object": "response",
+			"status": "completed",
+			"output": []any{},
+			"usage": map[string]any{
+				"input_tokens":  0,
+				"output_tokens": 0,
+				"total_tokens":  0,
+			},
+		},
+	}
+	body, err := json.Marshal(event)
+	if err != nil {
+		return []byte(`{"type":"response.completed","response":{"status":"completed","output":[]}}`)
+	}
+	return body
 }
