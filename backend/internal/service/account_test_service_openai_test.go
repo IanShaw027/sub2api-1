@@ -137,6 +137,56 @@ func TestAccountTestService_OpenAISuccessPersistsSnapshotFromHeaders(t *testing.
 	require.Contains(t, recorder.Body.String(), "test_complete")
 }
 
+func TestAccountTestService_OpenAIOAuthProbeSendsCodexIdentityHeaders(t *testing.T) {
+	setGinTestMode()
+	ctx, _ := newTestContext()
+
+	resp := newJSONResponse(http.StatusOK, "")
+	resp.Body = io.NopCloser(strings.NewReader(`data: {"type":"response.completed"}
+
+`))
+
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{httpUpstream: upstream}
+	account := &Account{
+		ID:          91,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{"access_token": "test-token"},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.6-luna", "", "")
+	require.NoError(t, err)
+	require.Len(t, upstream.requests, 1)
+	req := upstream.requests[0]
+	require.Equal(t, "chatgpt.com", req.Host)
+	require.Equal(t, "text/event-stream", req.Header.Get("Accept"))
+	require.Equal(t, "codex_cli_rs", req.Header.Get("Originator"))
+	require.Equal(t, codexCLIUserAgent, req.Header.Get("User-Agent"))
+	require.Equal(t, "0.144.1", req.Header.Get("Version"))
+}
+
+func TestNormalizeOpenAICodexProbeVersionPromotesOlderVersions(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "empty", in: "", want: "0.144.1"},
+		{name: "old default", in: "0.125.0", want: "0.144.1"},
+		{name: "below minimum", in: "0.143.9", want: "0.144.1"},
+		{name: "minimum", in: "0.144.0", want: "0.144.0"},
+		{name: "newer", in: "0.144.1", want: "0.144.1"},
+		{name: "future desktop", in: "26.616.71553", want: "26.616.71553"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, normalizeOpenAICodexProbeVersion(tt.in))
+		})
+	}
+}
+
 func TestAccountTestService_OpenAIShadowUsesParentCredentialsAndShadowModel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, recorder := newTestContext()

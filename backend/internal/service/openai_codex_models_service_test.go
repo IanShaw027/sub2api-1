@@ -22,11 +22,12 @@ func newCodexModelsTestAccount() *Account {
 func TestFetchCodexModelsManifestPassthrough(t *testing.T) {
 	manifestBody := `{"models":[{"slug":"gpt-5.5","display_name":"GPT-5.5"}]}`
 
-	var gotAuth, gotAccountID, gotOriginator, gotClientVersion string
+	var gotAuth, gotAccountID, gotOriginator, gotVersion, gotClientVersion string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		gotAccountID = r.Header.Get("chatgpt-account-id")
 		gotOriginator = r.Header.Get("Originator")
+		gotVersion = r.Header.Get("Version")
 		gotClientVersion = r.URL.Query().Get("client_version")
 		w.Header().Set("ETag", `W/"abc123"`)
 		w.Header().Set("Content-Type", "application/json")
@@ -59,7 +60,10 @@ func TestFetchCodexModelsManifestPassthrough(t *testing.T) {
 	if gotOriginator != "codex_cli_rs" {
 		t.Errorf("originator header: got %q", gotOriginator)
 	}
-	if gotClientVersion != "0.137.0" {
+	if gotVersion != "0.144.1" {
+		t.Errorf("version header: got %q", gotVersion)
+	}
+	if gotClientVersion != "0.144.1" {
 		t.Errorf("client_version query: got %q", gotClientVersion)
 	}
 }

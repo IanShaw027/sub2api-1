@@ -1047,9 +1047,11 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	req.Header.Set("Authorization", "Bearer "+authToken)
 
 	// Set OAuth-specific headers for ChatGPT internal API
+	tlsProfile := s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http")
 	if isOAuth {
 		req.Host = "chatgpt.com"
 		req.Header.Set("accept", "text/event-stream")
+		applyOpenAICodexProbeIdentityHeaders(req.Header, credentialAccount, tlsProfile)
 		setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
 	}
 
@@ -1059,7 +1061,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
+	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, tlsProfile)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -1268,11 +1270,10 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+authToken)
+	tlsProfile := s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http")
 
 	if isOAuth {
-		req.Header.Set("Originator", "codex_cli_rs")
-		req.Header.Set("User-Agent", codexCLIUserAgent)
-		req.Header.Set("Version", codexCLIVersion)
+		applyOpenAICodexProbeIdentityHeaders(req.Header, account, tlsProfile)
 		probeSessionID := compactProbeSessionID(account.ID)
 		req.Header.Set("Session_ID", probeSessionID)
 		req.Host = "chatgpt.com"
@@ -1284,7 +1285,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
+	resp, err := s.doUpstreamWithTLS(c, req, account, proxyURL, tlsProfile)
 	if err != nil {
 		if s.accountRepo != nil {
 			updates := buildOpenAICompactProbeExtraUpdates(nil, nil, err, time.Now())

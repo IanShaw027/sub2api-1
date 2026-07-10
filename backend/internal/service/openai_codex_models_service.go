@@ -50,6 +50,7 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 	if clientVersion == "" {
 		clientVersion = openAICodexProbeVersion
 	}
+	clientVersion = normalizeOpenAICodexProbeVersion(clientVersion)
 	requestURL := chatgptCodexModelsURL + "?client_version=" + url.QueryEscape(clientVersion)
 
 	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
