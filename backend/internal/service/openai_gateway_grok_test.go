@@ -43,6 +43,28 @@ func TestPatchGrokResponsesBodySetsMappedModelAndDropsUnsupportedFields(t *testi
 	require.Equal(t, "high", gjson.GetBytes(patched, "reasoning.effort").String())
 }
 
+func TestPatchGrokResponsesBodyAppliesCPAThinkingSuffix(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"grok-4.3","input":"hello"}`)
+
+	patched, err := patchGrokResponsesBody(body, "grok-4.3(low)")
+	require.NoError(t, err)
+	require.Equal(t, "grok-4.3", gjson.GetBytes(patched, "model").String())
+	require.Equal(t, "low", gjson.GetBytes(patched, "reasoning.effort").String())
+}
+
+func TestPatchGrokResponsesBodyKeepsExplicitReasoningEffortOverSuffix(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"grok-4.3","input":"hello","reasoning":{"effort":"high"}}`)
+
+	patched, err := patchGrokResponsesBody(body, "grok-4.3(low)")
+	require.NoError(t, err)
+	require.Equal(t, "grok-4.3", gjson.GetBytes(patched, "model").String())
+	require.Equal(t, "high", gjson.GetBytes(patched, "reasoning.effort").String())
+}
+
 func TestPatchGrokResponsesBodyDropsNestedUnsupportedFields(t *testing.T) {
 	t.Parallel()
 
@@ -218,6 +240,8 @@ func TestNormalizeGrokMediaModelForEndpoint(t *testing.T) {
 		{name: "video 1.5 legacy alias maps to CPA preview id", endpoint: GrokMediaEndpointVideosGenerations, model: "grok-imagine-video-1.5", want: "grok-imagine-video-1.5-preview"},
 		{name: "video 1.5 preview passthrough", endpoint: GrokMediaEndpointVideosGenerations, model: "grok-imagine-video-1.5-preview", want: "grok-imagine-video-1.5-preview"},
 		{name: "video 1.5 short alias maps to CPA preview id", endpoint: GrokMediaEndpointVideosGenerations, model: "grok-video-1.5", want: "grok-imagine-video-1.5-preview"},
+		{name: "provider-prefixed image alias", endpoint: GrokMediaEndpointImagesGenerations, model: "xai/grok-imagine", want: "grok-imagine-image-quality"},
+		{name: "provider-prefixed video preview", endpoint: GrokMediaEndpointVideosGenerations, model: "x-ai/grok-imagine-video-1.5-preview", want: "grok-imagine-video-1.5-preview"},
 	}
 
 	for _, tt := range tests {

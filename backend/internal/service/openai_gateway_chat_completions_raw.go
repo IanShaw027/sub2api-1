@@ -165,6 +165,22 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 		return nil, fmt.Errorf("account %d missing %s credential", account.ID, tokenKind)
 	}
 
+	var bridgeUsage OpenAIUsage
+	if account.Platform == PlatformGrok {
+		bridgedBody, usage, bridged, bridgeErr := s.bridgeGrokComposerImageInputs(ctx, c, account, upstreamBody, token)
+		if bridgeErr != nil {
+			var failoverErr *UpstreamFailoverError
+			if !errors.As(bridgeErr, &failoverErr) && c != nil && c.Writer != nil && !c.Writer.Written() {
+				writeChatCompletionsError(c, http.StatusBadGateway, "upstream_error", bridgeErr.Error())
+			}
+			return nil, bridgeErr
+		}
+		if bridged {
+			upstreamBody = bridgedBody
+			addOpenAIUsage(&bridgeUsage, usage)
+		}
+	}
+
 	targetURL, err := s.rawChatCompletionsURL(account)
 	if err != nil {
 		return nil, err
@@ -205,12 +221,12 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 		proxyURL = account.Proxy.URL()
 	}
 	tlsRuntime := s.resolveOpenAICompatibleTLSFingerprintRuntime(ctx, c, account, "http")
-		if account.Platform == PlatformGrok {
-			applyGrokRuntimeHeaders(upstreamReq, tlsRuntime)
-		} else {
-			applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
-			upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsRuntime.Profile)
-		}
+	if account.Platform == PlatformGrok {
+		applyGrokRuntimeHeaders(upstreamReq, tlsRuntime)
+	} else {
+		applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+		upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsRuntime.Profile)
+	}
 	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
@@ -281,11 +297,18 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 		s.updateGrokUsageSnapshot(ctx, account.ID, xai.ParseQuotaHeaders(resp.Header, resp.StatusCode))
 	}
 
-	// 8. Forward response
+	// 8. Forward response and include any Grok image-description bridge usage.
+	var result *OpenAIForwardResult
+	var forwardErr error
 	if clientStream {
-		return s.streamRawChatCompletions(c, resp, account, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime, len(body))
+		result, forwardErr = s.streamRawChatCompletions(c, resp, account, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime, len(body))
+	} else {
+		result, forwardErr = s.bufferRawChatCompletions(c, resp, account, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
 	}
-	return s.bufferRawChatCompletions(c, resp, account, originalModel, billingModel, upstreamModel, reasoningEffort, serviceTier, startTime)
+	if result != nil {
+		addOpenAIUsage(&result.Usage, bridgeUsage)
+	}
+	return result, forwardErr
 }
 
 const openAISilentRefusalMinRequestBodyBytes = 1024

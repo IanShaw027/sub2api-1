@@ -334,9 +334,17 @@ func patchGrokResponsesBody(body []byte, upstreamModel string) ([]byte, error) {
 		return nil, fmt.Errorf("invalid json request body")
 	}
 	upstreamModel = xai.ResolveDefaultTextModel(upstreamModel)
+	baseModel, suffixEffort := parseGrokThinkingSuffix(upstreamModel)
+	upstreamModel = xai.StripGrokProviderPrefix(baseModel)
 	out, err := sjson.SetBytes(body, "model", upstreamModel)
 	if err != nil {
 		return nil, err
+	}
+	if suffixEffort != "" && strings.TrimSpace(gjson.GetBytes(out, "reasoning.effort").String()) == "" {
+		out, err = sjson.SetBytes(out, "reasoning.effort", suffixEffort)
+		if err != nil {
+			return nil, err
+		}
 	}
 	// Do not force stream=true when the client omitted/false'd it. The handler
 	// branches on pre-patch reqStream; forcing stream here desyncs body vs path
@@ -381,6 +389,29 @@ func patchGrokResponsesBody(body []byte, upstreamModel string) ([]byte, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+func parseGrokThinkingSuffix(model string) (baseModel string, effort string) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return model, ""
+	}
+	if !strings.HasSuffix(model, ")") {
+		return model, ""
+	}
+	open := strings.LastIndex(model, "(")
+	if open <= 0 {
+		return model, ""
+	}
+	base := strings.TrimSpace(model[:open])
+	suffix := strings.ToLower(strings.TrimSpace(strings.TrimSuffix(model[open+1:], ")")))
+	switch suffix {
+	case "low", "medium", "high":
+		if base != "" {
+			return base, suffix
+		}
+	}
+	return model, ""
 }
 
 var grokResponsesUnsupportedRecursiveFields = map[string]struct{}{
