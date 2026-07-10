@@ -27,6 +27,17 @@ type userRepoStub struct {
 	getByEmailErr error
 }
 
+type guardedUserRepoStub struct {
+	*userRepoStub
+	guardErr   error
+	guardCalls []int64
+}
+
+func (s *guardedUserRepoStub) EnsureUserCanDeleteBatchImageState(_ context.Context, userID int64) error {
+	s.guardCalls = append(s.guardCalls, userID)
+	return s.guardErr
+}
+
 func (s *userRepoStub) Create(ctx context.Context, user *User) error {
 	if s.createErr != nil {
 		return s.createErr
@@ -85,6 +96,10 @@ func (s *userRepoStub) Update(ctx context.Context, user *User) error {
 func (s *userRepoStub) Delete(ctx context.Context, id int64) error {
 	s.deletedIDs = append(s.deletedIDs, id)
 	return s.deleteErr
+}
+
+func (s *userRepoStub) EnsureUserCanDeleteBatchImageState(context.Context, int64) error {
+	return nil
 }
 
 func (s *userRepoStub) GetUserAvatar(ctx context.Context, userID int64) (*UserAvatar, error) {
@@ -743,6 +758,50 @@ func TestAdminService_DeleteUser_DeleteError(t *testing.T) {
 
 	err := svc.DeleteUser(context.Background(), 9)
 	require.ErrorIs(t, err, deleteErr)
+	require.Equal(t, []int64{9}, repo.deletedIDs)
+}
+
+func TestAdminService_DeleteUser_RejectsActiveBatchImageJobBeforeDeletingAPIKeys(t *testing.T) {
+	repo := &guardedUserRepoStub{
+		userRepoStub: &userRepoStub{user: &User{ID: 7, Role: RoleUser}},
+		guardErr:     errors.New("cannot delete user with active batch image jobs"),
+	}
+	apiKeyRepo := &apiKeyRepoStub{
+		allowListByUserID: true,
+		listByUserIDKeys:  []APIKey{{ID: 11, UserID: 7, Key: "sk-active-batch"}},
+	}
+	svc := &adminServiceImpl{userRepo: repo, apiKeyRepo: apiKeyRepo}
+
+	err := svc.DeleteUser(context.Background(), 7)
+
+	require.ErrorContains(t, err, "active batch image jobs")
+	require.Equal(t, []int64{7}, repo.guardCalls)
+	require.Empty(t, apiKeyRepo.deletedIDs)
+	require.Empty(t, repo.deletedIDs)
+}
+
+func TestAdminService_DeleteUser_RejectsFrozenBatchImageBalance(t *testing.T) {
+	repo := &guardedUserRepoStub{
+		userRepoStub: &userRepoStub{user: &User{ID: 8, Role: RoleUser}},
+		guardErr:     errors.New("cannot delete user with non-zero frozen batch image balance"),
+	}
+	svc := &adminServiceImpl{userRepo: repo}
+
+	err := svc.DeleteUser(context.Background(), 8)
+
+	require.ErrorContains(t, err, "frozen batch image balance")
+	require.Equal(t, []int64{8}, repo.guardCalls)
+	require.Empty(t, repo.deletedIDs)
+}
+
+func TestAdminService_DeleteUser_AllowsTerminalBatchImageJobsWithoutFrozenBalance(t *testing.T) {
+	repo := &guardedUserRepoStub{userRepoStub: &userRepoStub{user: &User{ID: 9, Role: RoleUser}}}
+	svc := &adminServiceImpl{userRepo: repo}
+
+	err := svc.DeleteUser(context.Background(), 9)
+
+	require.NoError(t, err)
+	require.Equal(t, []int64{9}, repo.guardCalls)
 	require.Equal(t, []int64{9}, repo.deletedIDs)
 }
 

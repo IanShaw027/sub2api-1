@@ -396,6 +396,53 @@ func (r *userRepository) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+func (r *userRepository) EnsureUserCanDeleteBatchImageState(ctx context.Context, userID int64) error {
+	exec := txAwareSQLExecutor(ctx, r.sql, r.client)
+	if exec == nil {
+		return errors.New("user repository sql executor is not configured")
+	}
+
+	rows, err := exec.QueryContext(ctx, `
+		WITH user_lock AS MATERIALIZED (
+			SELECT pg_advisory_xact_lock(hashtextextended('batch_image_user:' || CAST(CAST($1 AS bigint) AS text), 0))
+		)
+		SELECT
+			frozen_balance <> 0 AS has_frozen_balance,
+			EXISTS (
+				SELECT 1
+				FROM batch_image_jobs
+				WHERE user_id = $1
+					AND status NOT IN ('completed', 'failed', 'cancelled', 'output_deleted')
+			) AS has_active_jobs
+		FROM users
+		CROSS JOIN user_lock
+		WHERE id = $1 AND deleted_at IS NULL
+		FOR UPDATE
+	`, userID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		return service.ErrUserNotFound
+	}
+	var hasFrozenBalance, hasActiveJobs bool
+	if err := rows.Scan(&hasFrozenBalance, &hasActiveJobs); err != nil {
+		return err
+	}
+	if hasFrozenBalance {
+		return service.ErrUserHasFrozenBalance
+	}
+	if hasActiveJobs {
+		return service.ErrUserHasActiveBatchImageJobs
+	}
+	return rows.Err()
+}
+
 // deleteUser 在给定 client（可能是外部事务 client）上删除用户及其身份关联记录，自身不开启/提交事务。
 func (r *userRepository) deleteUser(ctx context.Context, exec *dbent.Client, id int64) error {
 	identityIDs, err := exec.AuthIdentity.Query().

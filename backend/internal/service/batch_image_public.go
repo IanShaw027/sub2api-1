@@ -214,16 +214,7 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 	if idempotencyKey != "" {
 		existing, err := s.Repo.GetBatchImageJobByIdempotencyKey(ctx, owner.UserID, owner.APIKeyID, idempotencyKey)
 		if err == nil {
-			if batchImageDerefString(existing.RequestHash) != requestHash {
-				return nil, ErrBatchImageIdempotencyConflict
-			}
-			if existing.Status == BatchImageJobStatusSubmitted && s.Queue != nil {
-				if enqueueErr := s.Queue.Enqueue(ctx, existing.BatchID); enqueueErr != nil && !errors.Is(enqueueErr, ErrBatchImageAlreadyQueued) {
-					_ = s.Repo.RecordBatchImageJobSubmitFailure(ctx, existing.BatchID, "QUEUE_FAILED", sanitizeBatchImagePublicMessage(enqueueErr.Error()), false)
-					return nil, ErrBatchImageQueueFailed
-				}
-			}
-			return BatchImageJobToPublic(existing), nil
+			return s.replayBatchImageSubmission(ctx, existing, requestHash)
 		}
 		if !errors.Is(err, ErrBatchImageJobNotFound) {
 			return nil, err
@@ -284,6 +275,9 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 	})
 	if err != nil {
 		return nil, err
+	}
+	if job.BatchID != batchID {
+		return s.replayBatchImageSubmission(ctx, job, requestHash)
 	}
 	if err := reserveBatchImageBalanceHold(ctx, s.BillingRepo, job, requestHash); err != nil {
 		code := "BILLING_HOLD_FAILED"
@@ -397,6 +391,19 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 		return nil, err
 	}
 	return BatchImageJobToPublic(created), nil
+}
+
+func (s *BatchImagePublicService) replayBatchImageSubmission(ctx context.Context, existing *BatchImageJob, requestHash string) (*BatchImagePublicBatch, error) {
+	if existing == nil || batchImageDerefString(existing.RequestHash) != requestHash {
+		return nil, ErrBatchImageIdempotencyConflict
+	}
+	if existing.Status == BatchImageJobStatusSubmitted && s.Queue != nil {
+		if err := s.Queue.Enqueue(ctx, existing.BatchID); err != nil && !errors.Is(err, ErrBatchImageAlreadyQueued) {
+			_ = s.Repo.RecordBatchImageJobSubmitFailure(ctx, existing.BatchID, "QUEUE_FAILED", sanitizeBatchImagePublicMessage(err.Error()), false)
+			return nil, ErrBatchImageQueueFailed
+		}
+	}
+	return BatchImageJobToPublic(existing), nil
 }
 
 func (s *BatchImagePublicService) releaseFailedSubmitHold(ctx context.Context, job *BatchImageJob, requestHash string) error {

@@ -657,6 +657,10 @@ type userGroupRateBatchReader interface {
 	GetByUserIDs(ctx context.Context, userIDs []int64) (map[int64]map[int64]float64, error)
 }
 
+type batchImageUserDeletionGuard interface {
+	EnsureUserCanDeleteBatchImageState(ctx context.Context, userID int64) error
+}
+
 func (s *adminServiceImpl) SetAccountCredentialRefreshers(refreshAPI *OAuthRefreshAPI, executors ...OAuthRefreshExecutor) {
 	s.oauthRefreshAPI = refreshAPI
 	s.oauthRefreshExecutors = executors
@@ -1368,6 +1372,14 @@ func (s *adminServiceImpl) listUserAPIKeysForDeletion(ctx context.Context, userI
 }
 
 func (s *adminServiceImpl) deleteUserWithAPIKeys(ctx context.Context, userID int64, apiKeys []APIKey) error {
+	guard, ok := s.userRepo.(batchImageUserDeletionGuard)
+	if !ok {
+		return errors.New("user repository does not support batch image deletion guard")
+	}
+	if err := guard.EnsureUserCanDeleteBatchImageState(ctx, userID); err != nil {
+		return err
+	}
+
 	if s.apiKeyRepo != nil {
 		for _, key := range apiKeys {
 			if key.ID <= 0 {

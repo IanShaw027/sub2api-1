@@ -1,9 +1,16 @@
 package service
 
 import (
+	"net/http"
 	"time"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"golang.org/x/crypto/bcrypt"
+)
+
+var (
+	ErrUserHasActiveBatchImageJobs = infraerrors.New(http.StatusConflict, "USER_HAS_ACTIVE_BATCH_IMAGE_JOBS", "cannot delete user with active batch image jobs")
+	ErrUserHasFrozenBalance        = infraerrors.New(http.StatusConflict, "USER_HAS_FROZEN_BATCH_IMAGE_BALANCE", "cannot delete user with non-zero frozen batch image balance")
 )
 
 type User struct {

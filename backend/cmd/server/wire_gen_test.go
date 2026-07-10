@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -49,6 +50,15 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 	idempotencyCleanupSvc := service.NewIdempotencyCleanupService(nil, cfg)
 	schedulerSnapshotSvc := service.NewSchedulerSnapshotService(nil, nil, nil, nil, cfg)
 	opsSystemLogSinkSvc := service.NewOpsSystemLogSink(nil)
+	batchImageWorker := service.NewBatchImageWorkerRuntime(
+		service.NewBatchImageWorker(&blockingBatchImageQueue{}, batchImageProcessor{}, service.BatchImageWorkerOptions{
+			DelayedPollInterval: time.Hour,
+			RecoveryInterval:    time.Hour,
+		}),
+		&config.Config{BatchImage: config.BatchImageConfig{QueueEnabled: true}},
+	)
+	batchImageWorker.Start()
+	require.True(t, batchImageWorker.Running())
 
 	cleanup := provideCleanup(
 		nil, // entClient
@@ -68,6 +78,8 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		idempotencyCleanupSvc,
 		nil, // auditRetention
 		nil, // usageUserDailyCostAggregator
+		nil, // batchImageCleanup
+		batchImageWorker,
 		pricingSvc,
 		emailQueueSvc,
 		billingCacheSvc,
@@ -91,4 +103,36 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 	require.NotPanics(t, func() {
 		cleanup()
 	})
+	require.False(t, batchImageWorker.Running())
+}
+
+type batchImageProcessor struct{}
+
+func (batchImageProcessor) Process(context.Context, string) (service.BatchImageProcessResult, error) {
+	return service.BatchImageProcessResult{Terminal: true}, nil
+}
+
+type blockingBatchImageQueue struct{}
+
+func (*blockingBatchImageQueue) Enqueue(context.Context, string) error { return nil }
+
+func (*blockingBatchImageQueue) Reserve(ctx context.Context, _ time.Duration) (service.ReservedBatchImageJob, error) {
+	<-ctx.Done()
+	return service.ReservedBatchImageJob{}, ctx.Err()
+}
+
+func (*blockingBatchImageQueue) RequeueAfter(context.Context, string, time.Duration) error {
+	return nil
+}
+
+func (*blockingBatchImageQueue) Ack(context.Context, string) error       { return nil }
+func (*blockingBatchImageQueue) Heartbeat(context.Context, string) error { return nil }
+func (*blockingBatchImageQueue) MoveDueDelayedToReady(context.Context, int) (int, error) {
+	return 0, nil
+}
+func (*blockingBatchImageQueue) RecoverStaleActive(context.Context, time.Duration, int) (int, error) {
+	return 0, nil
+}
+func (*blockingBatchImageQueue) TryAcquireJobLock(context.Context, string, time.Duration) (service.BatchImageJobLock, bool, error) {
+	return nil, false, nil
 }

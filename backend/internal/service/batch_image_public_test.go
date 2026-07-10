@@ -415,6 +415,36 @@ func TestBatchImagePublicService_Submit(t *testing.T) {
 		require.NotEmpty(t, first.ID)
 	})
 
+	t.Run("idempotency conflict discovered during insert replays without side effects", func(t *testing.T) {
+		svc, baseRepo, _, gemini, _ := newTestBatchImagePublicService(true)
+		req := validBatchImageSubmitRequest()
+		normalized, err := svc.validateSubmitRequest(req)
+		require.NoError(t, err)
+		apiKeyID := int64(22)
+		existing := &BatchImageJob{
+			BatchID:        "imgbatch_concurrent_winner",
+			UserID:         11,
+			APIKeyID:       &apiKeyID,
+			Provider:       BatchImageProviderGeminiAPI,
+			Model:          normalized.Model,
+			Status:         BatchImageJobStatusCreated,
+			ItemCount:      len(normalized.Items),
+			IdempotencyKey: batchImageStringPtr("client-key"),
+			RequestHash:    batchImageStringPtr(HashBatchImageSubmitRequest(normalized)),
+			CreatedAt:      time.Now(),
+		}
+		svc.Repo = &postInsertReplayBatchImageRepo{
+			BatchImageRepository: baseRepo,
+			existing:             existing,
+		}
+
+		got, err := svc.Submit(ctx, testBatchImageOwner(), req, "client-key")
+		require.NoError(t, err)
+		require.Equal(t, existing.BatchID, got.ID)
+		require.Empty(t, svc.BillingRepo.(*fakeBatchImageBillingRepo).reserves)
+		require.Empty(t, gemini.submits)
+	})
+
 	t.Run("public response does not expose internals", func(t *testing.T) {
 		svc, _, _, _, _ := newTestBatchImagePublicService(true)
 		got, err := svc.Submit(ctx, testBatchImageOwner(), validBatchImageSubmitRequest(), "")
@@ -424,6 +454,19 @@ func TestBatchImagePublicService_Submit(t *testing.T) {
 		require.NoError(t, err)
 		requireBatchImagePublicJSONHasNoInternals(t, string(body))
 	})
+}
+
+type postInsertReplayBatchImageRepo struct {
+	BatchImageRepository
+	existing *BatchImageJob
+}
+
+func (r *postInsertReplayBatchImageRepo) GetBatchImageJobByIdempotencyKey(context.Context, int64, int64, string) (*BatchImageJob, error) {
+	return nil, ErrBatchImageJobNotFound
+}
+
+func (r *postInsertReplayBatchImageRepo) CreateBatchImageJob(context.Context, CreateBatchImageJobParams) (*BatchImageJob, error) {
+	return r.existing, nil
 }
 
 func TestBatchImagePublicService_List(t *testing.T) {

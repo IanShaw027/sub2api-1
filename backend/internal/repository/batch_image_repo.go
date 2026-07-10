@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -44,10 +46,44 @@ func (r *batchImageRepository) CreateBatchImageJob(ctx context.Context, params s
 	}
 
 	job, err := createBatchImageJobWithSQL(ctx, r.sql, params)
-	if err != nil {
-		return nil, translatePersistenceError(err, nil, service.ErrBatchImageJobExists)
+	if err == nil {
+		return job, nil
 	}
-	return job, nil
+	if !errors.Is(err, sql.ErrNoRows) && !isUniqueConstraintViolation(err) {
+		return nil, err
+	}
+	userActive, userErr := r.isActiveBatchImageUser(ctx, params.UserID)
+	if userErr != nil {
+		return nil, userErr
+	}
+	if !userActive {
+		return nil, service.ErrUserNotFound
+	}
+
+	if params.IdempotencyKey != nil && strings.TrimSpace(*params.IdempotencyKey) != "" {
+		existing, getErr := r.getBatchImageJobByIdempotencyKey(ctx, params.UserID, params.APIKeyID, strings.TrimSpace(*params.IdempotencyKey))
+		if getErr == nil {
+			if batchImageStringValue(existing.RequestHash) != batchImageStringValue(params.RequestHash) {
+				return nil, service.ErrBatchImageIdempotencyConflict
+			}
+			return existing, nil
+		}
+		if !errors.Is(getErr, service.ErrBatchImageJobNotFound) {
+			return nil, getErr
+		}
+	}
+	return nil, service.ErrBatchImageJobExists
+}
+
+func (r *batchImageRepository) isActiveBatchImageUser(ctx context.Context, userID int64) (bool, error) {
+	var active bool
+	err := r.sql.QueryRowContext(ctx, `
+SELECT EXISTS (
+	SELECT 1
+	FROM users
+	WHERE id = $1 AND deleted_at IS NULL
+)`, userID).Scan(&active)
+	return active, err
 }
 
 func (r *batchImageRepository) GetBatchImageJobByBatchID(ctx context.Context, batchID string) (*service.BatchImageJob, error) {
@@ -59,13 +95,24 @@ func (r *batchImageRepository) GetBatchImageJobByBatchID(ctx context.Context, ba
 }
 
 func (r *batchImageRepository) GetBatchImageJobByIdempotencyKey(ctx context.Context, userID, apiKeyID int64, key string) (*service.BatchImageJob, error) {
+	return r.getBatchImageJobByIdempotencyKey(ctx, userID, &apiKeyID, key)
+}
+
+func (r *batchImageRepository) getBatchImageJobByIdempotencyKey(ctx context.Context, userID int64, apiKeyID *int64, key string) (*service.BatchImageJob, error) {
 	job, err := scanBatchImageJob(r.sql.QueryRowContext(ctx, batchImageJobSelectSQL+`
- WHERE user_id = $1 AND api_key_id = $2 AND idempotency_key = $3
+ WHERE user_id = $1 AND api_key_id IS NOT DISTINCT FROM $2 AND idempotency_key = $3
  ORDER BY id DESC LIMIT 1`, userID, apiKeyID, key))
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrBatchImageJobNotFound, nil)
 	}
 	return job, nil
+}
+
+func batchImageStringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
 }
 
 func (r *batchImageRepository) GetBatchImageJobByBatchIDForOwner(ctx context.Context, userID, apiKeyID int64, batchID string) (*service.BatchImageJob, error) {
@@ -741,6 +788,15 @@ func (r *batchImageRepository) AppendBatchImageEvent(ctx context.Context, batchI
 
 func createBatchImageJobWithSQL(ctx context.Context, sqlq batchImageSQLExecutor, params service.CreateBatchImageJobParams) (*service.BatchImageJob, error) {
 	return scanBatchImageJob(sqlq.QueryRowContext(ctx, `
+WITH user_lock AS MATERIALIZED (
+    SELECT pg_advisory_xact_lock(hashtextextended('batch_image_user:' || CAST(CAST($2 AS bigint) AS text), 0))
+), locked_user AS MATERIALIZED (
+	SELECT users.id
+	FROM users
+	CROSS JOIN user_lock
+	WHERE users.id = $2 AND users.deleted_at IS NULL
+	FOR UPDATE OF users
+)
 INSERT INTO batch_image_jobs (
     batch_id, user_id, api_key_id, account_id, provider, model, task_name, parent_batch_id, status,
     provider_job_name, provider_input_ref, provider_output_ref, gcs_input_uri, gcs_output_uri,
@@ -751,17 +807,18 @@ INSERT INTO batch_image_jobs (
     pricing_snapshot_version,
     currency, hold_id,
     idempotency_key, request_hash, manifest_hash, retry_count, output_expires_at
-) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9,
+) SELECT
+	$1, $2, $3, $4, $5, $6, $7, $8, $9,
     $10, $11, $12, $13, $14,
     $15, $16, $17, $18,
     $19, $20, $21,
     $22, $23, $24,
     $25, $26, $27, $28,
     $29,
-    $30, $31,
-    $32, $33, $34, $35, $36
-)
+	$30, $31,
+	$32, $33, $34, $35, $36
+FROM locked_user
+ON CONFLICT DO NOTHING
 RETURNING `+batchImageJobColumns,
 		params.BatchID, params.UserID, params.APIKeyID, params.AccountID, params.Provider, params.Model, params.TaskName, params.ParentBatchID, params.Status,
 		params.ProviderJobName, params.ProviderInputRef, params.ProviderOutputRef, params.GCSInputURI, params.GCSOutputURI,

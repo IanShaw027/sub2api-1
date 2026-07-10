@@ -87,6 +87,8 @@ func provideCleanup(
 	idempotencyCleanup *service.IdempotencyCleanupService,
 	auditRetention *service.AuditRetentionService,
 	usageUserDailyCostAggregator *service.UsageUserDailyCostAggregator,
+	batchImageCleanup *service.BatchImageCleanupService,
+	batchImageWorker *service.BatchImageWorkerRuntime,
 	pricing *service.PricingService,
 	emailQueue *service.EmailQueueService,
 	billingCache *service.BillingCacheService,
@@ -180,6 +182,18 @@ func provideCleanup(
 			{"UsageUserDailyCostAggregator", func() error {
 				if usageUserDailyCostAggregator != nil {
 					usageUserDailyCostAggregator.Stop()
+				}
+				return nil
+			}},
+			{"BatchImageCleanupService", func() error {
+				if batchImageCleanup != nil {
+					batchImageCleanup.Stop()
+				}
+				return nil
+			}},
+			{"BatchImageWorkerRuntime", func() error {
+				if batchImageWorker != nil {
+					batchImageWorker.Stop()
 				}
 				return nil
 			}},

@@ -29,6 +29,7 @@ func newGatewayRoutesTestRouter(platform ...string) *gin.Engine {
 		&handler.Handlers{
 			Gateway:       &handler.GatewayHandler{},
 			OpenAIGateway: &handler.OpenAIGatewayHandler{},
+			BatchImage:    &handler.BatchImageHandler{},
 		},
 		servermiddleware.APIKeyAuthMiddleware(func(c *gin.Context) {
 			groupID := int64(1)
@@ -46,6 +47,30 @@ func newGatewayRoutesTestRouter(platform ...string) *gin.Engine {
 	)
 
 	return router
+}
+
+func TestGatewayRoutesBatchImagePathsAreRegistered(t *testing.T) {
+	router := newGatewayRoutesTestRouter()
+	registered := make(map[string]struct{}, len(router.Routes()))
+	for _, route := range router.Routes() {
+		registered[route.Method+" "+route.Path] = struct{}{}
+	}
+
+	for _, route := range []string{
+		http.MethodPost + " /v1/images/batches",
+		http.MethodGet + " /v1/images/batches",
+		http.MethodGet + " /v1/images/batches/models",
+		http.MethodGet + " /v1/images/batches/:id",
+		http.MethodGet + " /v1/images/batches/:id/items",
+		http.MethodGet + " /v1/images/batches/:id/items/:custom_id/content",
+		http.MethodGet + " /v1/images/batches/:id/download",
+		http.MethodPost + " /v1/images/batches/:id/cancel",
+		http.MethodDelete + " /v1/images/batches/:id",
+		http.MethodDelete + " /v1/images/batches/:id/outputs",
+	} {
+		_, ok := registered[route]
+		require.True(t, ok, "route %s should be registered", route)
+	}
 }
 
 func TestGatewayImageRouteKindForPlatform(t *testing.T) {
