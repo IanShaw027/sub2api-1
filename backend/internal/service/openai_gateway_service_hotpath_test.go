@@ -892,11 +892,11 @@ func TestExtractOpenAIReasoningEffortFromBody(t *testing.T) {
 			wantValue: "xhigh",
 		},
 		{
-			name:      "DeepSeek max 保留为 max",
+			name:      "DeepSeek max 归一化为 xhigh",
 			body:      []byte(`{"reasoning_effort":"max"}`),
 			model:     "deepseek-v4-pro",
 			wantNil:   false,
-			wantValue: "max",
+			wantValue: "xhigh",
 		},
 		{
 			name:    "minimal 归一化为空",
