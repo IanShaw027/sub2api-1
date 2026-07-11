@@ -124,10 +124,49 @@ type contentModerationTestRepo struct {
 func (r *contentModerationTestRepo) CreateLog(ctx context.Context, log *ContentModerationLog) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.createLogLocked(log)
+}
+
+type atomicContentModerationTestRepo struct {
+	*contentModerationTestRepo
+}
+
+func (r *atomicContentModerationTestRepo) CreateLogWithViolationCount(_ context.Context, log *ContentModerationLog, since time.Time, excludeCyberPolicy bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.createErr != nil {
+		return r.createErr
+	}
+	if log == nil || log.UserID == nil {
+		return r.createLogLocked(log)
+	}
+
+	count := 0
+	for i := range r.logs {
+		item := &r.logs[i]
+		if item.UserID == nil || *item.UserID != *log.UserID || !item.Flagged || item.Action == ContentModerationActionHashBlock || item.Action == ContentModerationActionHashObserve {
+			continue
+		}
+		if excludeCyberPolicy && item.Action == ContentModerationActionCyberPolicy {
+			continue
+		}
+		if item.CreatedAt.IsZero() || item.CreatedAt.Before(since) {
+			continue
+		}
+		count++
+	}
+	log.ViolationCount = count + 1
+	return r.createLogLocked(log)
+}
+
+func (r *contentModerationTestRepo) createLogLocked(log *ContentModerationLog) error {
 	if r.createErr != nil {
 		return r.createErr
 	}
 	if log != nil {
+		if log.CreatedAt.IsZero() {
+			log.CreatedAt = time.Now()
+		}
 		if log.ID <= 0 {
 			r.nextID++
 			log.ID = r.nextID
@@ -2708,6 +2747,34 @@ func TestContentModerationAutoBanDisablesRegularUserAtThreshold(t *testing.T) {
 	require.Len(t, userRepo.updated, 1)
 	require.Equal(t, StatusDisabled, userRepo.user.Status)
 	require.Equal(t, []int64{userID}, invalidator.userIDs)
+}
+
+func TestContentModerationViolationCountIsAtomicUnderConcurrency(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.ViolationWindowHours = 24
+	cfg.BanThreshold = 1000
+
+	const requests = 32
+	userID := int64(1001)
+	repo := &atomicContentModerationTestRepo{contentModerationTestRepo: &contentModerationTestRepo{}}
+	svc := &ContentModerationService{repo: repo}
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(requests)
+	for i := 0; i < requests; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			svc.persistContentModerationLog(context.Background(), cfg, newContentModerationFlaggedLog(userID), "", false, true)
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	logs := requireContentModerationLogCount(t, repo.contentModerationTestRepo, requests)
+	for i := range logs {
+		require.Equal(t, i+1, logs[i].ViolationCount, "each committed violation must receive a unique monotonic count")
+	}
 }
 
 func TestContentModerationAdminBelowBanThresholdRecordsViolationOnly(t *testing.T) {

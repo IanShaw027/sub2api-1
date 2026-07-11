@@ -91,6 +91,10 @@ type cacheWriteTask struct {
 	balance          float64
 	amount           float64
 	subscriptionData *subscriptionCacheData
+	// subscriptionGeneration fences a DB snapshot against a later cache
+	// invalidation. It is only used when the cache supports the generation API.
+	subscriptionGeneration       int64
+	subscriptionGenerationFenced bool
 }
 
 // apiKeyRateLimitLoader defines the interface for loading rate limit data from DB.
@@ -101,6 +105,13 @@ type apiKeyRateLimitLoader interface {
 type subscriptionCacheInvalidationPubSub interface {
 	PublishSubscriptionCacheInvalidation(ctx context.Context, cacheKey string) error
 	SubscribeSubscriptionCacheInvalidation(ctx context.Context, handler func(cacheKey string)) error
+}
+
+// subscriptionCacheGenerationFence prevents a cache-miss DB snapshot from
+// being written after a concurrent subscription invalidation.
+type subscriptionCacheGenerationFence interface {
+	GetSubscriptionCacheGeneration(ctx context.Context, userID, groupID int64) (int64, error)
+	SetSubscriptionCacheIfGeneration(ctx context.Context, userID, groupID int64, data *SubscriptionCacheData, expectedGeneration int64) (bool, error)
 }
 
 // BillingCacheService 计费缓存服务
@@ -226,6 +237,24 @@ func (s *BillingCacheService) cacheWriteWorker(ch <-chan cacheWriteTask) {
 		case cacheWriteSetBalance:
 			s.setBalanceCache(ctx, task.userID, task.balance)
 		case cacheWriteSetSubscription:
+			if task.subscriptionGenerationFenced {
+				fence, ok := s.cache.(subscriptionCacheGenerationFence)
+				if !ok {
+					logger.LegacyPrintf("service.billing_cache", "Warning: subscription cache generation fence disappeared for user %d group %d", task.userID, task.groupID)
+					break
+				}
+				_, err := fence.SetSubscriptionCacheIfGeneration(
+					ctx,
+					task.userID,
+					task.groupID,
+					s.convertToPortsData(task.subscriptionData),
+					task.subscriptionGeneration,
+				)
+				if err != nil {
+					logger.LegacyPrintf("service.billing_cache", "Warning: fenced subscription cache set failed for user %d group %d: %v", task.userID, task.groupID, err)
+				}
+				break
+			}
 			s.setSubscriptionCache(ctx, task.userID, task.groupID, task.subscriptionData)
 		case cacheWriteUpdateSubscriptionUsage:
 			if s.cache != nil {
@@ -431,19 +460,61 @@ func (s *BillingCacheService) GetSubscriptionStatus(ctx context.Context, userID,
 		return s.convertFromPortsData(cacheData), nil
 	}
 
-	// 缓存未命中，从数据库读取
-	data, err := s.getSubscriptionFromDB(ctx, userID, groupID)
-	if err != nil {
-		return nil, err
+	// Capture the generation before the DB read. Invalidation atomically advances
+	// this value, so an old snapshot cannot repopulate Redis after a DEL.
+	var (
+		generation       int64
+		generationFenced bool
+		cacheWriteSafe   = true
+	)
+	if fence, ok := s.cache.(subscriptionCacheGenerationFence); ok {
+		cacheWriteSafe = false
+		var generationErr error
+		generation, generationErr = fence.GetSubscriptionCacheGeneration(ctx, userID, groupID)
+		if generationErr != nil {
+			logger.LegacyPrintf("service.billing_cache", "Warning: get subscription cache generation failed for user %d group %d: %v", userID, groupID, generationErr)
+		} else {
+			generationFenced = true
+			cacheWriteSafe = true
+		}
 	}
 
-	// 异步建立缓存
-	_ = s.enqueueCacheWrite(cacheWriteTask{
-		kind:             cacheWriteSetSubscription,
-		userID:           userID,
-		groupID:          groupID,
-		subscriptionData: data,
-	})
+	// 缓存未命中，从数据库读取。若 invalidation 与读取重叠，则用新
+	// generation 再读一次，避免当前请求本身继续使用 mutation 前快照。
+	var data *subscriptionCacheData
+	for attempt := 0; attempt < 2; attempt++ {
+		data, err = s.getSubscriptionFromDB(ctx, userID, groupID)
+		if err != nil {
+			return nil, err
+		}
+		if !generationFenced || attempt == 1 {
+			break
+		}
+		fence := s.cache.(subscriptionCacheGenerationFence)
+		currentGeneration, generationErr := fence.GetSubscriptionCacheGeneration(ctx, userID, groupID)
+		if generationErr != nil {
+			logger.LegacyPrintf("service.billing_cache", "Warning: recheck subscription cache generation failed for user %d group %d: %v", userID, groupID, generationErr)
+			cacheWriteSafe = false
+			break
+		}
+		if currentGeneration == generation {
+			break
+		}
+		generation = currentGeneration
+	}
+
+	// 异步建立缓存。生产 Redis 实现使用 generation CAS；读取 generation
+	// 失败时宁可跳过回填，也不允许无栅栏写入旧快照。
+	if cacheWriteSafe {
+		_ = s.enqueueCacheWrite(cacheWriteTask{
+			kind:                         cacheWriteSetSubscription,
+			userID:                       userID,
+			groupID:                      groupID,
+			subscriptionData:             data,
+			subscriptionGeneration:       generation,
+			subscriptionGenerationFenced: generationFenced,
+		})
+	}
 
 	return data, nil
 }

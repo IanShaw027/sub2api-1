@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -28,6 +30,17 @@ func stripKeepaliveComments(body string) string {
 		blocks = append(blocks, block)
 	}
 	return strings.Join(blocks, "\n\n")
+}
+
+func requireSingleCompactFailure(t *testing.T, body, errType, message string) {
+	t.Helper()
+	events := parseCompactBridgeSSE(t, stripKeepaliveComments(body))
+	require.Len(t, events, 1)
+	require.Equal(t, "response.failed", events[0][0])
+	require.Equal(t, "response.failed", gjson.Get(events[0][1], "type").String())
+	require.Equal(t, "failed", gjson.Get(events[0][1], "response.status").String())
+	require.Equal(t, errType, gjson.Get(events[0][1], "response.error.code").String())
+	require.Contains(t, gjson.Get(events[0][1], "response.error.message").String(), message)
 }
 
 func TestStartOpenAICompactSSEKeepalive_NoopWhenUnmarkedOrDisabled(t *testing.T) {
@@ -156,16 +169,15 @@ func TestWriteOpenAINonStreamingProtocolError_BeforeKeepaliveCommitKeepsJSONStat
 	require.Contains(t, gjson.Get(rec.Body.String(), "error.message").String(), "fast invalid payload")
 }
 
-// 未被显式拦截的写回路径（直接操作 c.Writer）也必须与心跳互斥：包装器在
-// 请求侧任何响应构造时停拍。-race 下验证无数据竞争，且停拍后不再有心跳
-// 字节写出。
+// 底层 writer 包装只负责写互斥；协议错误路径必须使用 compact-aware helper
+// 才能在心跳提交后生成 response.failed。这里单独验证直接写不会与心跳交错。
 func TestOpenAICompactKeepaliveWriter_RequestSideWriteSuspendsBeats(t *testing.T) {
 	c, rec := newCompactBridgeTestContext(t, true)
 	stop := StartOpenAICompactSSEKeepalive(c, keepaliveTestInterval)
 	defer stop()
 	waitForKeepaliveBeats()
 
-	// 模拟未拦截路径的直接写回（如 Forward 内部本地拒绝的 c.JSON）。
+	// 模拟底层调用方直接接管 writer。
 	_, err := c.Writer.Write([]byte(`{"error":"local reject"}`))
 	require.NoError(t, err)
 
@@ -174,6 +186,88 @@ func TestOpenAICompactKeepaliveWriter_RequestSideWriteSuspendsBeats(t *testing.T
 	require.Equal(t, lenAfterWrite, rec.Body.Len(), "请求侧写回后心跳必须停止")
 	require.Contains(t, rec.Body.String(), ": keepalive\n\n")
 	require.Contains(t, rec.Body.String(), `{"error":"local reject"}`)
+}
+
+func TestOpenAIGatewayServiceForward_CompactLocalRejectAfterHeartbeatEmitsFailedEvent(t *testing.T) {
+	c, rec := newCompactBridgeTestContext(t, true)
+	stop := StartOpenAICompactSSEKeepalive(c, keepaliveTestInterval)
+	defer stop()
+	waitForKeepaliveBeats()
+
+	svc := &OpenAIGatewayService{codexDetector: &stubCodexRestrictionDetector{result: CodexClientRestrictionDetectionResult{
+		Enabled: true,
+		Matched: false,
+		Reason:  CodexClientRestrictionReasonNotMatchedUA,
+	}}}
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Extra:    map[string]any{"codex_cli_only": true},
+	}
+
+	_, err := svc.Forward(context.Background(), c, account, []byte(`{"model":"gpt-5.1-codex"}`))
+	require.Error(t, err)
+	require.Equal(t, http.StatusOK, rec.Code)
+	requireSingleCompactFailure(t, rec.Body.String(), "forbidden_error", "Codex official clients")
+	streamErr, ok := GetOpsStreamError(c)
+	require.True(t, ok)
+	require.Equal(t, http.StatusForbidden, streamErr.IntendedStatus)
+}
+
+func TestOpenAIHandleErrorResponse_CompactAfterHeartbeatEmitsFailedEvent(t *testing.T) {
+	c, rec := newCompactBridgeTestContext(t, true)
+	stop := StartOpenAICompactSSEKeepalive(c, keepaliveTestInterval)
+	defer stop()
+	waitForKeepaliveBeats()
+
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"Stream must be set to true"}}`)),
+	}
+	account := &Account{ID: 12, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	_, err := (&OpenAIGatewayService{}).handleErrorResponse(context.Background(), resp, c, account, nil)
+
+	require.Error(t, err)
+	require.Equal(t, http.StatusOK, rec.Code)
+	requireSingleCompactFailure(t, rec.Body.String(), "invalid_request_error", "Stream must be set to true")
+	streamErr, ok := GetOpsStreamError(c)
+	require.True(t, ok)
+	require.Equal(t, http.StatusBadRequest, streamErr.IntendedStatus)
+}
+
+func TestOpenAIHandleErrorResponsePassthrough_CompactAfterHeartbeatEmitsFailedEvent(t *testing.T) {
+	c, rec := newCompactBridgeTestContext(t, true)
+	stop := StartOpenAICompactSSEKeepalive(c, keepaliveTestInterval)
+	defer stop()
+	waitForKeepaliveBeats()
+
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"invalid compact request"}}`)),
+	}
+	account := &Account{ID: 13, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	err := (&OpenAIGatewayService{}).handleErrorResponsePassthrough(context.Background(), resp, c, account, nil)
+
+	require.Error(t, err)
+	require.Equal(t, http.StatusOK, rec.Code)
+	requireSingleCompactFailure(t, rec.Body.String(), "upstream_error", "invalid compact request")
+	streamErr, ok := GetOpsStreamError(c)
+	require.True(t, ok)
+	require.Equal(t, http.StatusBadRequest, streamErr.IntendedStatus)
+}
+
+func TestOpenAICompactSupportTier_RejectsChatOnlyAPIKeyAccount(t *testing.T) {
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Extra: map[string]any{
+			"openai_responses_supported": false,
+		},
+	}
+
+	require.Zero(t, openAICompactSupportTier(account))
 }
 
 // fast policy block 在心跳提交后必须降级为 response.failed 终止事件。

@@ -21,6 +21,7 @@ const (
 	subCacheInvalidateChannel = "subscription:cache:invalidate"
 	billingCacheTTL           = 5 * time.Minute
 	billingCacheJitter        = 30 * time.Second
+	subscriptionFenceTTL      = 24 * time.Hour
 	rateLimitCacheTTL         = 7 * 24 * time.Hour // 7 days matches the longest window
 
 	// Rate limit window durations — must match service.RateLimitWindow* constants.
@@ -47,6 +48,10 @@ func billingBalanceKey(userID int64) string {
 // billingSubKey generates the Redis key for subscription cache.
 func billingSubKey(userID, groupID int64) string {
 	return fmt.Sprintf("%s%d:%d", billingSubKeyPrefix, userID, groupID)
+}
+
+func billingSubGenerationKey(userID, groupID int64) string {
+	return billingSubKey(userID, groupID) + ":generation"
 }
 
 const (
@@ -95,6 +100,29 @@ var (
 		redis.call('HINCRBYFLOAT', KEYS[1], 'monthly_usage', cost)
 		redis.call('EXPIRE', KEYS[1], ARGV[2])
 		return 1
+	`)
+
+	setSubscriptionIfGenerationScript = redis.NewScript(`
+		local current = tonumber(redis.call('GET', KEYS[2]) or '0')
+		if current ~= tonumber(ARGV[1]) then
+			return 0
+		end
+		redis.call('HSET', KEYS[1],
+			'status', ARGV[3],
+			'expires_at', ARGV[4],
+			'daily_usage', ARGV[5],
+			'weekly_usage', ARGV[6],
+			'monthly_usage', ARGV[7],
+			'version', ARGV[8])
+		redis.call('EXPIRE', KEYS[1], ARGV[2])
+		return 1
+	`)
+
+	invalidateSubscriptionScript = redis.NewScript(`
+		local generation = redis.call('INCR', KEYS[2])
+		redis.call('EXPIRE', KEYS[2], ARGV[1])
+		redis.call('DEL', KEYS[1])
+		return generation
 	`)
 
 	// updateRateLimitUsageScript atomically increments all three rate limit usage counters
@@ -242,6 +270,37 @@ func (c *billingCache) SetSubscriptionCache(ctx context.Context, userID, groupID
 	return err
 }
 
+func (c *billingCache) GetSubscriptionCacheGeneration(ctx context.Context, userID, groupID int64) (int64, error) {
+	generation, err := c.rdb.Get(ctx, billingSubGenerationKey(userID, groupID)).Int64()
+	if errors.Is(err, redis.Nil) {
+		return 0, nil
+	}
+	return generation, err
+}
+
+func (c *billingCache) SetSubscriptionCacheIfGeneration(ctx context.Context, userID, groupID int64, data *service.SubscriptionCacheData, expectedGeneration int64) (bool, error) {
+	if data == nil {
+		return false, nil
+	}
+	result, err := setSubscriptionIfGenerationScript.Run(
+		ctx,
+		c.rdb,
+		[]string{billingSubKey(userID, groupID), billingSubGenerationKey(userID, groupID)},
+		expectedGeneration,
+		int(jitteredTTL().Seconds()),
+		data.Status,
+		data.ExpiresAt.Unix(),
+		data.DailyUsage,
+		data.WeeklyUsage,
+		data.MonthlyUsage,
+		data.Version,
+	).Int64()
+	if err != nil {
+		return false, err
+	}
+	return result == 1, nil
+}
+
 func (c *billingCache) UpdateSubscriptionUsage(ctx context.Context, userID, groupID int64, cost float64) error {
 	key := billingSubKey(userID, groupID)
 	_, err := updateSubUsageScript.Run(ctx, c.rdb, []string{key}, cost, int(jitteredTTL().Seconds())).Result()
@@ -253,8 +312,13 @@ func (c *billingCache) UpdateSubscriptionUsage(ctx context.Context, userID, grou
 }
 
 func (c *billingCache) InvalidateSubscriptionCache(ctx context.Context, userID, groupID int64) error {
-	key := billingSubKey(userID, groupID)
-	return c.rdb.Del(ctx, key).Err()
+	_, err := invalidateSubscriptionScript.Run(
+		ctx,
+		c.rdb,
+		[]string{billingSubKey(userID, groupID), billingSubGenerationKey(userID, groupID)},
+		int(subscriptionFenceTTL.Seconds()),
+	).Result()
+	return err
 }
 
 func (c *billingCache) PublishSubscriptionCacheInvalidation(ctx context.Context, cacheKey string) error {

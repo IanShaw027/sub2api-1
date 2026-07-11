@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -16,13 +17,67 @@ type contentModerationRepository struct {
 	db *sql.DB
 }
 
+type contentModerationQueryRower interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 func NewContentModerationRepository(db *sql.DB) service.ContentModerationRepository {
 	return &contentModerationRepository{db: db}
 }
 
 func (r *contentModerationRepository) CreateLog(ctx context.Context, log *service.ContentModerationLog) error {
+	return createContentModerationLog(ctx, r.db, log)
+}
+
+// CreateLogWithViolationCount serializes count-and-insert for a user across
+// application instances. The default READ COMMITTED isolation is intentional:
+// after waiting for the advisory lock, the count query must observe the prior
+// holder's committed insert.
+func (r *contentModerationRepository) CreateLogWithViolationCount(ctx context.Context, log *service.ContentModerationLog, since time.Time, excludeCyberPolicy bool) error {
+	if log == nil || log.UserID == nil || *log.UserID <= 0 {
+		return r.CreateLog(ctx, log)
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin content moderation violation transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var lockResult any
+	if err := tx.QueryRowContext(ctx, `
+SELECT pg_advisory_xact_lock(
+    hashtextextended('content_moderation_violation:' || CAST(CAST($1 AS bigint) AS text), 0)
+)`, *log.UserID).Scan(&lockResult); err != nil {
+		return fmt.Errorf("lock content moderation violation user: %w", err)
+	}
+
+	count, err := countFlaggedByUserSince(ctx, tx, *log.UserID, since, excludeCyberPolicy)
+	if err != nil {
+		return err
+	}
+
+	pending := *log
+	pending.ViolationCount = count + 1
+	if err := createContentModerationLog(ctx, tx, &pending); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit content moderation violation transaction: %w", err)
+	}
+
+	log.ID = pending.ID
+	log.CreatedAt = pending.CreatedAt
+	log.ViolationCount = pending.ViolationCount
+	return nil
+}
+
+func createContentModerationLog(ctx context.Context, queryer contentModerationQueryRower, log *service.ContentModerationLog) error {
 	if log == nil {
 		return nil
+	}
+	if queryer == nil {
+		return errors.New("content moderation log queryer is nil")
 	}
 	categoryScores, err := json.Marshal(log.CategoryScores)
 	if err != nil {
@@ -48,7 +103,7 @@ func (r *contentModerationRepository) CreateLog(ctx context.Context, log *servic
 	if log.UpstreamLatencyMS != nil {
 		latency = *log.UpstreamLatencyMS
 	}
-	err = r.db.QueryRowContext(ctx, `
+	err = queryer.QueryRowContext(ctx, `
 INSERT INTO content_moderation_logs (
     request_id, user_id, user_email, api_key_id, api_key_name, group_id, group_name,
     endpoint, provider, model, mode, action, flagged, highest_category, highest_score,
@@ -179,12 +234,19 @@ LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs)),
 }
 
 func (r *contentModerationRepository) CountFlaggedByUserSince(ctx context.Context, userID int64, since time.Time, excludeCyberPolicy bool) (int, error) {
+	return countFlaggedByUserSince(ctx, r.db, userID, since, excludeCyberPolicy)
+}
+
+func countFlaggedByUserSince(ctx context.Context, queryer contentModerationQueryRower, userID int64, since time.Time, excludeCyberPolicy bool) (int, error) {
 	if userID <= 0 {
 		return 0, nil
 	}
+	if queryer == nil {
+		return 0, errors.New("content moderation count queryer is nil")
+	}
 	// SQL 中的 'cyber_policy' 字面量须与 service.ContentModerationActionCyberPolicy 保持一致。
 	var count int
-	err := r.db.QueryRowContext(ctx, `
+	err := queryer.QueryRowContext(ctx, `
 WITH last_auto_ban AS (
     SELECT MAX(created_at) AS at
     FROM content_moderation_logs

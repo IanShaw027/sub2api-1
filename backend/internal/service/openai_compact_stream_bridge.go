@@ -134,6 +134,52 @@ func writeOpenAICompactSSEFailureMessage(c *gin.Context, statusCode int, errType
 	c.Writer.Flush()
 }
 
+// writeOpenAICompactAwareJSONError preserves the normal HTTP JSON error path
+// until a compact heartbeat commits the response as SSE. After that point the
+// wire status is fixed at 200, so the only valid terminal response is an
+// in-band response.failed event.
+func writeOpenAICompactAwareJSONError(c *gin.Context, statusCode int, errType, message string) {
+	writeOpenAICompactAwareJSONErrorPayload(c, statusCode, errType, message, gin.H{
+		"error": gin.H{
+			"type":    errType,
+			"message": message,
+		},
+	})
+}
+
+func writeOpenAICompactAwareJSONErrorPayload(c *gin.Context, statusCode int, errType, message string, payload any) {
+	if c == nil {
+		return
+	}
+	if writeOpenAICompactCommittedFailure(c, statusCode, errType, message) {
+		return
+	}
+	c.JSON(statusCode, payload)
+}
+
+// writeOpenAICompactAwareDataError is the raw-body counterpart used by
+// passthrough and cyber-policy errors. Before the first heartbeat it preserves
+// the upstream status, content type, and body exactly; afterwards it extracts a
+// safe message and terminates the already-committed SSE response in band.
+func writeOpenAICompactAwareDataError(c *gin.Context, statusCode int, contentType string, body []byte) {
+	if c == nil {
+		return
+	}
+	if openAICompactClientWantsStream(c) && StopOpenAICompactSSEKeepaliveCommitted(c) {
+		writeOpenAICompactSSEFailure(c, statusCode, body)
+		return
+	}
+	c.Data(statusCode, contentType, body)
+}
+
+func writeOpenAICompactCommittedFailure(c *gin.Context, statusCode int, errType, message string) bool {
+	if c == nil || !openAICompactClientWantsStream(c) || !StopOpenAICompactSSEKeepaliveCommitted(c) {
+		return false
+	}
+	writeOpenAICompactSSEFailureMessage(c, statusCode, errType, message)
+	return true
+}
+
 // buildOpenAICompactSSEPayload 把 compact 的 Response JSON 转成 SSE 事件序列：
 // 每个 output[] item 一条 response.output_item.done，最后一条 response.completed
 // 携带完整 response 对象。Codex 的 SSE 解析只从 output_item.done 收集 item，

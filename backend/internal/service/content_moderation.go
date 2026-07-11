@@ -629,6 +629,14 @@ type ContentModerationRepository interface {
 	UpdateLogAutoBanned(ctx context.Context, id int64, autoBanned bool) error
 }
 
+// contentModerationViolationLogRepository is an optional production capability.
+// Keeping it separate avoids widening ContentModerationRepository and breaking
+// lightweight adapters, while PostgreSQL can still make count-and-insert atomic
+// across instances.
+type contentModerationViolationLogRepository interface {
+	CreateLogWithViolationCount(ctx context.Context, log *ContentModerationLog, since time.Time, excludeCyberPolicy bool) error
+}
+
 type ContentModerationHashCache interface {
 	RecordFlaggedInputHash(ctx context.Context, inputHash string, meta ContentModerationHashMeta) error
 	HasFlaggedInputHash(ctx context.Context, inputHash string) (bool, error)
@@ -2156,10 +2164,13 @@ func (s *ContentModerationService) persistContentModerationLog(ctx context.Conte
 		return
 	}
 	if applySideEffects {
-		s.prepareFlaggedViolationCount(ctx, cfg, log)
-	}
-	if !s.writeContentModerationLog(ctx, log) {
-		return
+		if !s.writeContentModerationViolationLog(ctx, cfg, log) {
+			return
+		}
+	} else {
+		if !s.writeContentModerationLog(ctx, log) {
+			return
+		}
 	}
 	if recordHash && s.hashCache != nil {
 		// log.InputExcerpt 已由 contentModerationExcerpt 脱敏并截断，安全用于展示。
@@ -2204,6 +2215,27 @@ func (s *ContentModerationService) writeContentModerationLog(ctx context.Context
 		return false
 	}
 	return true
+}
+
+func (s *ContentModerationService) writeContentModerationViolationLog(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog) bool {
+	if s == nil || s.repo == nil || log == nil {
+		return false
+	}
+	if cfg != nil && cfg.ViolationWindowHours > 0 && log.Flagged && log.UserID != nil && *log.UserID > 0 {
+		if atomicRepo, ok := s.repo.(contentModerationViolationLogRepository); ok {
+			since := time.Now().Add(-time.Duration(cfg.ViolationWindowHours) * time.Hour)
+			if err := atomicRepo.CreateLogWithViolationCount(ctx, log, since, cfg.CyberPolicyExcludeFromBanCount); err != nil {
+				slog.Warn("content_moderation.create_log_failed", "user_id", contentModerationEmailUserID(log), "endpoint", log.Endpoint, "action", log.Action, "error", err)
+				return false
+			}
+			return true
+		}
+	}
+
+	// Compatibility fallback for repositories that do not expose the atomic
+	// PostgreSQL capability (primarily tests and external adapters).
+	s.prepareFlaggedViolationCount(ctx, cfg, log)
+	return s.writeContentModerationLog(ctx, log)
 }
 
 func (s *ContentModerationService) prepareFlaggedViolationCount(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog) {
@@ -4503,14 +4535,15 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 		Error:           trimRunes(redactContentModerationSecrets(errBody), maxModerationExcerptRunes*4),
 		CreatedAt:       time.Now(),
 	}
-	// 开关开时 cyber_policy 不参与封号计数：当次不判定（此处跳过），
-	// 历史行由 CountFlaggedByUserSince 的 excludeCyberPolicy 排除。
-	if !cfg.CyberPolicyExcludeFromBanCount {
-		s.prepareFlaggedViolationCount(ctx, cfg, log)
-	}
 	log.EmailSent = false
-	if err := s.repo.CreateLog(ctx, log); err != nil {
-		slog.Warn("content_moderation.cyber_create_log_failed", "user_id", in.UserID, "error", err)
+	// 开关开时 cyber_policy 不参与封号计数：当次直接落库；否则使用与
+	// pre-block 相同的跨实例原子计数+落库路径。
+	if cfg.CyberPolicyExcludeFromBanCount {
+		if err := s.repo.CreateLog(ctx, log); err != nil {
+			slog.Warn("content_moderation.cyber_create_log_failed", "user_id", in.UserID, "error", err)
+			return
+		}
+	} else if !s.writeContentModerationViolationLog(ctx, cfg, log) {
 		return
 	}
 	autoBanJustApplied := false

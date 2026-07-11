@@ -81,6 +81,49 @@ func TestContentModerationRepositoryCountFlaggedByUserSince_ExcludesCyberPolicyW
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestContentModerationRepositoryCreateLogWithViolationCount_LocksCountsAndInsertsInOneTransaction(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := NewContentModerationRepository(db).(*contentModerationRepository)
+	userID := int64(1001)
+	since := time.Now().Add(-24 * time.Hour)
+	createdAt := time.Now()
+	log := &service.ContentModerationLog{
+		RequestID: "req-1",
+		UserID:    &userID,
+		Endpoint:  "/v1/responses",
+		Mode:      service.ContentModerationModePreBlock,
+		Action:    service.ContentModerationActionBlock,
+		Flagged:   true,
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT pg_advisory_xact_lock").
+		WithArgs(userID).
+		WillReturnRows(sqlmock.NewRows([]string{"pg_advisory_xact_lock"}).AddRow(nil))
+	mock.ExpectQuery(regexp.QuoteMeta("AND action NOT IN ('hash_block', 'hash_observe')")).
+		WithArgs(userID, since, false).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+	mock.ExpectQuery("INSERT INTO content_moderation_logs").
+		WithArgs(
+			"req-1", userID, "", nil, "", nil, "",
+			"/v1/responses", "", "", service.ContentModerationModePreBlock, service.ContentModerationActionBlock, true, "", float64(0),
+			"null", "null", "", nil, "", 3, false, false, nil, "",
+		).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(77), createdAt))
+	mock.ExpectCommit()
+
+	err = repo.CreateLogWithViolationCount(context.Background(), log, since, false)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(77), log.ID)
+	require.Equal(t, createdAt, log.CreatedAt)
+	require.Equal(t, 3, log.ViolationCount)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestContentModerationRepositoryUpdateLogAutoBanned(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)

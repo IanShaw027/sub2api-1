@@ -8,6 +8,7 @@ import (
 	"math/rand/v2"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -54,8 +55,14 @@ type SubscriptionService struct {
 	subCacheGroup  singleflight.Group
 	subCacheTTL    time.Duration
 	subCacheJitter int // 抖动百分比
+	subCacheFences [256]subscriptionCacheFence
 
 	maintenanceQueue *SubscriptionMaintenanceQueue
+}
+
+type subscriptionCacheFence struct {
+	mu         sync.RWMutex
+	generation uint64
 }
 
 // NewSubscriptionService 创建订阅服务
@@ -121,6 +128,17 @@ func subCacheKey(userID, groupID int64) string {
 	return "sub:" + strconv.FormatInt(userID, 10) + ":" + strconv.FormatInt(groupID, 10)
 }
 
+func (s *SubscriptionService) subCacheFenceForKey(key string) *subscriptionCacheFence {
+	// FNV-1a is sufficient for spreading cache keys over a fixed, leak-free set
+	// of locks. Collisions only cause an occasional conservative cache refill.
+	var hash uint32 = 2166136261
+	for i := 0; i < len(key); i++ {
+		hash ^= uint32(key[i])
+		hash *= 16777619
+	}
+	return &s.subCacheFences[hash%uint32(len(s.subCacheFences))]
+}
+
 // jitteredTTL 为 TTL 添加抖动，避免集中过期
 func (s *SubscriptionService) jitteredTTL(ttl time.Duration) time.Duration {
 	if ttl <= 0 || s.subCacheJitter <= 0 {
@@ -140,10 +158,7 @@ func (s *SubscriptionService) jitteredTTL(ttl time.Duration) time.Duration {
 
 // InvalidateSubCache 失效指定用户+分组的订阅 L1 缓存
 func (s *SubscriptionService) InvalidateSubCache(userID, groupID int64) {
-	if s.subCacheL1 == nil {
-		return
-	}
-	s.subCacheL1.Del(subCacheKey(userID, groupID))
+	s.invalidateSubCacheKeySync(subCacheKey(userID, groupID))
 }
 
 // InvalidateSubCacheSync 失效订阅 L1 缓存并等待 Ristretto 删除操作生效。
@@ -152,6 +167,11 @@ func (s *SubscriptionService) InvalidateSubCacheSync(userID, groupID int64) {
 }
 
 func (s *SubscriptionService) invalidateSubCacheKeySync(key string) {
+	fence := s.subCacheFenceForKey(key)
+	fence.mu.Lock()
+	defer fence.mu.Unlock()
+	fence.generation++
+	s.subCacheGroup.Forget(key)
 	if s.subCacheL1 == nil {
 		return
 	}
@@ -737,28 +757,49 @@ func (s *SubscriptionService) GetByID(ctx context.Context, id int64) (*UserSubsc
 // 返回缓存对象的浅拷贝，调用方可安全修改字段而不会污染缓存或触发 data race。
 func (s *SubscriptionService) GetActiveSubscription(ctx context.Context, userID, groupID int64) (*UserSubscription, error) {
 	key := subCacheKey(userID, groupID)
+	fence := s.subCacheFenceForKey(key)
 
 	// L1 缓存命中：返回浅拷贝
 	if s.subCacheL1 != nil {
+		fence.mu.RLock()
 		if v, ok := s.subCacheL1.Get(key); ok {
 			if sub, ok := v.(*UserSubscription); ok {
 				cp := *sub
+				fence.mu.RUnlock()
 				return &cp, nil
 			}
 		}
+		fence.mu.RUnlock()
 	}
 
 	// singleflight 防止并发击穿
 	value, err, _ := s.subCacheGroup.Do(key, func() (any, error) {
-		sub, err := s.userSubRepo.GetActiveByUserIDAndGroupID(ctx, userID, groupID)
-		if err != nil {
-			return nil, err // 直接透传 repo 已翻译的错误（NotFound → ErrSubscriptionNotFound，其他错误原样返回）
+		// Retry once when invalidation overlaps the DB read. This avoids returning
+		// the pre-mutation snapshot to callers that joined this singleflight.
+		for attempt := 0; attempt < 2; attempt++ {
+			fence.mu.RLock()
+			generation := fence.generation
+			fence.mu.RUnlock()
+
+			sub, err := s.userSubRepo.GetActiveByUserIDAndGroupID(ctx, userID, groupID)
+			if err != nil {
+				return nil, err // 直接透传 repo 已翻译的错误（NotFound → ErrSubscriptionNotFound，其他错误原样返回）
+			}
+
+			fence.mu.Lock()
+			if generation == fence.generation {
+				if s.subCacheL1 != nil && s.subCacheL1.SetWithTTL(key, sub, 1, s.jitteredTTL(s.subCacheTTL)) {
+					s.subCacheL1.Wait()
+				}
+				fence.mu.Unlock()
+				return sub, nil
+			}
+			fence.mu.Unlock()
 		}
-		// 写入 L1 缓存
-		if s.subCacheL1 != nil {
-			_ = s.subCacheL1.SetWithTTL(key, sub, 1, s.jitteredTTL(s.subCacheTTL))
-		}
-		return sub, nil
+
+		// A second concurrent mutation is rare. Return a final uncached DB read
+		// rather than risk an unbounded retry loop under sustained churn.
+		return s.userSubRepo.GetActiveByUserIDAndGroupID(ctx, userID, groupID)
 	})
 	if err != nil {
 		return nil, err
