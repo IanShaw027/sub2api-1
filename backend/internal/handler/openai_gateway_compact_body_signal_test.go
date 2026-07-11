@@ -2,10 +2,14 @@ package handler
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -183,6 +187,8 @@ func TestOpenAIResponses_BodySignalPromotesAtHandlerEntry(t *testing.T) {
 			c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 1, Concurrency: 1})
 
 			h := newOpenAIHandlerForPreviousResponseIDValidation(t, nil)
+			h.cfg = &config.Config{}
+			h.cfg.Gateway.StreamKeepaliveInterval = 1
 			h.Responses(c)
 
 			require.Equal(t, http.StatusBadRequest, c.Writer.Status())
@@ -190,6 +196,89 @@ func TestOpenAIResponses_BodySignalPromotesAtHandlerEntry(t *testing.T) {
 			marked, exists := c.Get(service.OpenAICompactClientStreamKeyForTest())
 			require.True(t, exists)
 			require.Equal(t, true, marked)
+			_, keepaliveStarted := c.Get("openai_compact_sse_keepalive")
+			require.True(t, keepaliveStarted, "handler entry must wire the compact keepalive")
 		})
 	}
+}
+
+func newCompactKeepaliveHandlerTestContext(t *testing.T) (*gin.Context, *httptest.ResponseRecorder) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", nil)
+	service.MarkOpenAICompactClientStream(c)
+	return c, rec
+}
+
+func waitForCompactKeepaliveCommit(t *testing.T, c *gin.Context) {
+	t.Helper()
+	require.Eventually(t, c.Writer.Written, time.Second, time.Millisecond)
+}
+
+func TestErrorResponse_CompactKeepalivePreservesPreAndPostCommitSemantics(t *testing.T) {
+	t.Run("before first heartbeat keeps JSON status", func(t *testing.T) {
+		c, rec := newCompactKeepaliveHandlerTestContext(t)
+		stop := service.StartOpenAICompactSSEKeepalive(c, time.Hour)
+		defer stop()
+
+		(&OpenAIGatewayHandler{}).errorResponse(c, http.StatusForbidden, "permission_error", "blocked")
+
+		require.Equal(t, http.StatusForbidden, rec.Code)
+		require.Equal(t, "permission_error", gjson.GetBytes(rec.Body.Bytes(), "error.type").String())
+		require.NotContains(t, rec.Body.String(), "event: response.failed")
+		_, hasStreamErr := service.GetOpsStreamError(c)
+		require.False(t, hasStreamErr)
+	})
+
+	t.Run("after heartbeat terminates SSE in band", func(t *testing.T) {
+		c, rec := newCompactKeepaliveHandlerTestContext(t)
+		stop := service.StartOpenAICompactSSEKeepalive(c, time.Millisecond)
+		defer stop()
+		waitForCompactKeepaliveCommit(t, c)
+
+		(&OpenAIGatewayHandler{}).errorResponse(c, http.StatusForbidden, "permission_error", "blocked")
+
+		require.Equal(t, http.StatusOK, rec.Code)
+		require.Contains(t, rec.Body.String(), ": keepalive\n\n")
+		require.Contains(t, rec.Body.String(), "event: response.failed\n")
+		require.Contains(t, rec.Body.String(), `"message":"blocked"`)
+		streamErr, hasStreamErr := service.GetOpsStreamError(c)
+		require.True(t, hasStreamErr)
+		require.Equal(t, "permission_error", streamErr.ErrType)
+		require.Equal(t, http.StatusForbidden, streamErr.IntendedStatus)
+	})
+}
+
+func TestHandleStreamingAwareError_CompactHeartbeatMarksSemanticFailure(t *testing.T) {
+	c, rec := newCompactKeepaliveHandlerTestContext(t)
+	stop := service.StartOpenAICompactSSEKeepalive(c, time.Millisecond)
+	defer stop()
+	waitForCompactKeepaliveCommit(t, c)
+
+	(&OpenAIGatewayHandler{}).handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "retry later", false)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "event: response.failed\n")
+	streamErr, ok := service.GetOpsStreamError(c)
+	require.True(t, ok)
+	require.Equal(t, "rate_limit_error", streamErr.ErrType)
+	require.Equal(t, http.StatusTooManyRequests, streamErr.IntendedStatus)
+}
+
+func TestOpenAIForwardErrorAlreadyCommunicated_IgnoresCompactHeartbeatBytes(t *testing.T) {
+	c, _ := newCompactKeepaliveHandlerTestContext(t)
+	stop := service.StartOpenAICompactSSEKeepalive(c, time.Millisecond)
+	defer stop()
+	before := service.OpenAICompactKeepaliveAdjustedWrittenSize(c)
+	waitForCompactKeepaliveCommit(t, c)
+
+	forwardErr := errors.New("upstream response failed: policy rejection")
+	require.False(t, openAIForwardErrorAlreadyCommunicated(c, before, forwardErr), "heartbeat bytes are not an upstream response")
+
+	_, err := c.Writer.WriteString("event: response.failed\n\n")
+	require.NoError(t, err)
+	require.True(t, openAIForwardErrorAlreadyCommunicated(c, before, forwardErr), "real response bytes must still suppress a duplicate fallback")
+	require.True(t, strings.Contains(c.Writer.Header().Get("Content-Type"), "text/event-stream"))
 }

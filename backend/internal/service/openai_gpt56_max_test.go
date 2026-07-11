@@ -90,11 +90,63 @@ func TestNormalizeOpenAICodexCompactReasoningEffortForAccountScopesCompatibility
 			c, _ := gin.CreateTestContext(rec)
 			c.Request = httptest.NewRequest(http.MethodPost, tt.path, nil)
 
-			normalized, changed, err := normalizeOpenAICodexCompactReasoningEffortForAccount(c, tt.account, body)
+			normalized, changed, err := normalizeOpenAICodexCompactReasoningEffortForAccount(context.Background(), c, nil, tt.account, body)
 
 			require.NoError(t, err)
 			require.Equal(t, tt.changed, changed)
 			require.Equal(t, tt.want, gjson.GetBytes(normalized, "reasoning.effort").String())
+		})
+	}
+}
+
+func TestNormalizeOpenAICodexCompactReasoningEffortUsesFinalMappedModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"alias","input":"compact me","reasoning":{"effort":"max"}}`)
+
+	tests := []struct {
+		name           string
+		settingService *SettingService
+		account        *Account
+	}{
+		{
+			name: "account compact mapping",
+			account: &Account{
+				Platform: PlatformOpenAI,
+				Type:     AccountTypeOAuth,
+				Credentials: map[string]any{
+					"model_mapping":         map[string]any{"alias": "gpt-5.5"},
+					"compact_model_mapping": map[string]any{"gpt-5.5": "gpt-5.6-terra"},
+				},
+			},
+		},
+		{
+			name: "platform default compact mapping",
+			settingService: NewSettingService(&kiroRuntimeSettingRepoStub{values: map[string]string{
+				SettingKeyPlatformDefaultAccountModelConfig: `{
+					"openai": {
+						"model_mapping": {"alias": "gpt-5.5"},
+						"compact_model_mapping": {"gpt-5.5": "gpt-5.6-sol"}
+					}
+				}`,
+			}}, &config.Config{}),
+			account: &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetPlatformModelRoutingConfigCacheForTest()
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses/compact", nil)
+
+			normalized, changed, err := normalizeOpenAICodexCompactReasoningEffortForAccount(
+				context.Background(), c, tt.settingService, tt.account, body,
+			)
+
+			require.NoError(t, err)
+			require.True(t, changed)
+			require.Equal(t, "xhigh", gjson.GetBytes(normalized, "reasoning.effort").String())
 		})
 	}
 }

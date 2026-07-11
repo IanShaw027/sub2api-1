@@ -548,6 +548,33 @@ func TestCalculateCost_LongContextAppliesMultiplierToCacheCreation5mAnd1h(t *tes
 		"both 5m and 1h cache_creation prices should be scaled by LongContextInputMultiplier")
 }
 
+func TestComputeTokenBreakdownComposesPriorityAndLongContextCacheCreationMultipliers(t *testing.T) {
+	svc := newTestBillingService()
+	pricing := &ModelPricing{
+		InputPricePerToken:          1e-6,
+		InputPricePerTokenPriority:  2e-6,
+		OutputPricePerToken:         3e-6,
+		CacheCreation5mPrice:        4e-6,
+		CacheCreation1hPrice:        5e-6,
+		SupportsCacheBreakdown:      true,
+		LongContextInputThreshold:   272000,
+		LongContextInputMultiplier:  2,
+		LongContextOutputMultiplier: 1.5,
+	}
+	tokens := UsageTokens{
+		InputTokens:           300000,
+		CacheCreation5mTokens: 100,
+		CacheCreation1hTokens: 50,
+	}
+
+	cost := svc.computeTokenBreakdown(pricing, tokens, 1, "priority", true)
+
+	baseCacheCreation := float64(tokens.CacheCreation5mTokens)*pricing.CacheCreation5mPrice +
+		float64(tokens.CacheCreation1hTokens)*pricing.CacheCreation1hPrice
+	require.InDelta(t, baseCacheCreation*2*2, cost.CacheCreationCost, 1e-12,
+		"priority and long-context multipliers must both apply to cache creation")
+}
+
 func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 	svc := newTestBillingService()
 

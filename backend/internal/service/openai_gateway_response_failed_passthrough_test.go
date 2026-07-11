@@ -138,6 +138,35 @@ func TestForwardAsAnthropic_ResponseFailed_PassthroughRule(t *testing.T) {
 	require.NotEmpty(t, errMsg, "passthrough should preserve error message")
 }
 
+func TestCompactResponseFailedPassthroughAfterKeepaliveCommitStaysSSE(t *testing.T) {
+	c, rec := newCompactBridgeTestContext(t, true)
+	bindPassthroughRule(c, PlatformOpenAI, []string{"context_length_exceeded"}, http.StatusBadRequest)
+	stop := StartOpenAICompactSSEKeepalive(c, keepaliveTestInterval)
+	defer stop()
+	waitForKeepaliveBeats()
+
+	payload := []byte(`{"type":"response.failed","response":{"status":"failed","error":{"code":"context_length_exceeded","message":"context window exceeded"}}}`)
+	svc := &OpenAIGatewayService{}
+	err := svc.writeOpenAIResponseFailedProtocolError(
+		&http.Response{Header: make(http.Header)},
+		c,
+		&Account{Platform: PlatformOpenAI},
+		payload,
+		"context window exceeded",
+	)
+
+	require.Error(t, err)
+	require.Equal(t, http.StatusOK, rec.Code)
+	events := parseCompactBridgeSSE(t, stripKeepaliveComments(rec.Body.String()))
+	require.Len(t, events, 1)
+	require.Equal(t, "response.failed", events[0][0])
+	require.Equal(t, "upstream_error", gjson.Get(events[0][1], "response.error.code").String())
+	require.Contains(t, gjson.Get(events[0][1], "response.error.message").String(), "context window")
+	streamErr, ok := GetOpsStreamError(c)
+	require.True(t, ok)
+	require.Equal(t, http.StatusBadRequest, streamErr.IntendedStatus)
+}
+
 func TestCompatCyberPolicyMarkedBeforeResponseFailedPassthrough(t *testing.T) {
 	tests := []struct {
 		name      string

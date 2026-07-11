@@ -97,6 +97,7 @@ func (s *GatewayService) forwardResponsesToOpenAICompatCC(
 	}
 	clientStream := responsesReq.Stream
 	reasoningEffort := ExtractResponsesReasoningEffortFromBody(body)
+	toolCompatibility := newResponsesChatToolCompatibility(responsesReq.Tools)
 
 	chatReq, err := apicompat.ResponsesToChatCompletionsRequest(&responsesReq)
 	if err != nil {
@@ -127,9 +128,9 @@ func (s *GatewayService) forwardResponsesToOpenAICompatCC(
 	}
 
 	if clientStream {
-		return s.streamOpenAICompatCCChatAsResponses(c, resp, originalModel, mappedModel, reasoningEffort, startTime)
+		return s.streamOpenAICompatCCChatAsResponses(c, resp, originalModel, mappedModel, reasoningEffort, toolCompatibility, startTime)
 	}
-	return s.bufferOpenAICompatCCChatAsResponses(c, resp, originalModel, mappedModel, reasoningEffort, startTime)
+	return s.bufferOpenAICompatCCChatAsResponses(c, resp, originalModel, mappedModel, reasoningEffort, toolCompatibility, startTime)
 }
 
 func (s *GatewayService) sendOpenAICompatCCChatRequest(
@@ -353,6 +354,7 @@ func (s *GatewayService) bufferOpenAICompatCCChatAsResponses(
 	originalModel string,
 	mappedModel string,
 	reasoningEffort *string,
+	toolCompatibility responsesChatToolCompatibility,
 	startTime time.Time,
 ) (*ForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
@@ -369,7 +371,13 @@ func (s *GatewayService) bufferOpenAICompatCCChatAsResponses(
 		writeResponsesError(c, http.StatusBadGateway, "api_error", "Failed to parse upstream response")
 		return nil, fmt.Errorf("parse chat completions response: %w", err)
 	}
-	responsesResp := apicompat.ChatCompletionsResponseToResponses(&ccResp, originalModel)
+	responsesResp := apicompat.ChatCompletionsResponseToResponses(
+		&ccResp,
+		originalModel,
+		toolCompatibility.customTools,
+		toolCompatibility.toolSearch,
+		toolCompatibility.namespaceTools,
+	)
 	usage := claudeUsageFromChatUsage(ccResp.Usage)
 
 	if s.responseHeaderFilter != nil {
@@ -459,6 +467,7 @@ func (s *GatewayService) streamOpenAICompatCCChatAsResponses(
 	originalModel string,
 	mappedModel string,
 	reasoningEffort *string,
+	toolCompatibility responsesChatToolCompatibility,
 	startTime time.Time,
 ) (*ForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
@@ -472,6 +481,7 @@ func (s *GatewayService) streamOpenAICompatCCChatAsResponses(
 	c.Writer.WriteHeader(http.StatusOK)
 
 	state := apicompat.NewChatCompletionsToResponsesStreamState(originalModel)
+	toolCompatibility.applyTo(state)
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), s.gatewayMaxLineSize())
 	var usage ClaudeUsage

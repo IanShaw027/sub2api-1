@@ -121,6 +121,41 @@ func TestWriteOpenAICompactSSEBridge_BeforeKeepaliveCommitFailureKeepsJSONPath(t
 	require.Zero(t, rec.Body.Len())
 }
 
+func TestWriteOpenAINonStreamingProtocolError_AfterKeepaliveCommitEmitsFailedEvent(t *testing.T) {
+	c, rec := newCompactBridgeTestContext(t, true)
+	stop := StartOpenAICompactSSEKeepalive(c, keepaliveTestInterval)
+	defer stop()
+	waitForKeepaliveBeats()
+
+	svc := &OpenAIGatewayService{}
+	err := svc.writeOpenAINonStreamingProtocolError(&http.Response{Header: make(http.Header)}, c, "invalid compact payload")
+
+	require.Error(t, err)
+	require.Equal(t, http.StatusOK, rec.Code)
+	events := parseCompactBridgeSSE(t, stripKeepaliveComments(rec.Body.String()))
+	require.Len(t, events, 1)
+	require.Equal(t, "response.failed", events[0][0])
+	require.Equal(t, "upstream_error", gjson.Get(events[0][1], "response.error.code").String())
+	require.Contains(t, gjson.Get(events[0][1], "response.error.message").String(), "invalid compact payload")
+	streamErr, ok := GetOpsStreamError(c)
+	require.True(t, ok)
+	require.Equal(t, http.StatusBadGateway, streamErr.IntendedStatus)
+}
+
+func TestWriteOpenAINonStreamingProtocolError_BeforeKeepaliveCommitKeepsJSONStatus(t *testing.T) {
+	c, rec := newCompactBridgeTestContext(t, true)
+	stop := StartOpenAICompactSSEKeepalive(c, time.Hour)
+	defer stop()
+
+	svc := &OpenAIGatewayService{}
+	err := svc.writeOpenAINonStreamingProtocolError(&http.Response{Header: make(http.Header)}, c, "fast invalid payload")
+
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadGateway, rec.Code)
+	require.Equal(t, "upstream_error", gjson.Get(rec.Body.String(), "error.type").String())
+	require.Contains(t, gjson.Get(rec.Body.String(), "error.message").String(), "fast invalid payload")
+}
+
 // 未被显式拦截的写回路径（直接操作 c.Writer）也必须与心跳互斥：包装器在
 // 请求侧任何响应构造时停拍。-race 下验证无数据竞争，且停拍后不再有心跳
 // 字节写出。

@@ -229,6 +229,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	} else {
 		body = normalizedBody
 	}
+	// Body-signal compact waits for a unary upstream response while the client
+	// still consumes SSE. Keep the downstream connection alive during that wait.
+	stopCompactKeepalive := service.StartOpenAICompactSSEKeepalive(c, h.openAICompactKeepaliveInterval())
+	defer stopCompactKeepalive()
 
 	// 校验请求体 JSON 合法性
 	if !gjson.ValidBytes(body) {
@@ -560,7 +564,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		// Codex CLI 会报 "response.created received twice"。
 		// 注意：仅用于跨账号 switch 守卫；同账号 pool-mode 重试依赖
 		// service 层 replay 去重，不能在此拦截。
-		writerSizeBeforeForward := c.Writer.Size()
+		writerSizeBeforeForward := service.OpenAICompactKeepaliveAdjustedWrittenSize(c)
 		result, err := h.gatewayService.Forward(c.Request.Context(), c, account, forwardBody)
 		cyberBlockKeyHTTP := ""
 		if service.GetOpsCyberPolicy(c) != nil {
@@ -692,7 +696,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 							"inbound_endpoint":   GetInboundEndpoint(c),
 							"upstream_status":    failoverErr.StatusCode,
 							"writer_size_before": writerSizeBeforeForward,
-							"writer_size_after":  c.Writer.Size(),
+							"writer_size_after":  service.OpenAICompactKeepaliveAdjustedWrittenSize(c),
 						}),
 					})
 					// 跨账号切换前的终态帧守卫：若本次 Forward 已向客户端写出
@@ -701,7 +705,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					// "response.created received twice"）。此时不再 continue，
 					// 直接按 failover 耗尽收口。同账号 pool-mode 重试在上面已经
 					// continue，不会走到这里，因此其 replay 去重不受影响。
-					if c.Writer.Size() != writerSizeBeforeForward {
+					if service.OpenAICompactKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward {
 						reqLog.Warn("openai.failover_blocked_after_stream_started",
 							zap.Int64("account_id", account.ID),
 							zap.Int("upstream_status", failoverErr.StatusCode),
@@ -756,9 +760,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						"upstream_error_response_already_written":  upstreamErrorAlreadyCommunicated,
 						"stream_started":                           streamStarted,
 						"previous_response_id_present":             previousResponseID != "",
-						"writer_size_changed_during_forward":       c.Writer.Size() != writerSizeBeforeForward,
+						"writer_size_changed_during_forward":       service.OpenAICompactKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward,
 						"writer_size_before_forward":               writerSizeBeforeForward,
-						"writer_size_after_forward_error_response": c.Writer.Size(),
+						"writer_size_after_forward_error_response": service.OpenAICompactKeepaliveAdjustedWrittenSize(c),
 					}),
 				})
 				fields := []zap.Field{
@@ -897,6 +901,13 @@ func (h *OpenAIGatewayHandler) logOpenAIRemoteCompactOutcome(c *gin.Context, sta
 	outcome := "failed"
 	if status >= 200 && status < 300 {
 		outcome = "succeeded"
+	}
+	// A heartbeat commits HTTP 200 before a later in-band response.failed. Use
+	// the semantic stream outcome instead of treating the wire status as success.
+	if outcome == "succeeded" && c != nil {
+		if _, hasStreamErr := service.GetOpsStreamError(c); hasStreamErr {
+			outcome = "failed"
+		}
 	}
 	latencyMs := time.Since(startedAt).Milliseconds()
 	if latencyMs < 0 {
@@ -2548,6 +2559,13 @@ func (h *OpenAIGatewayHandler) mapUpstreamError(statusCode int) (int, string, st
 
 // handleStreamingAwareError handles errors that may occur after streaming has started
 func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
+	// Once a compact heartbeat has committed HTTP 200, errors must be expressed
+	// as a terminal Responses SSE event. Stopping first also hands the writer
+	// back to the request goroutine without racing the heartbeat goroutine.
+	if service.StopOpenAICompactSSEKeepaliveCommitted(c) {
+		service.MarkOpsStreamError(c, errType, message, status)
+		streamStarted = true
+	}
 	if openAIStreamingResponseStarted(c, streamStarted) {
 		// /v1/responses 的严格 SDK（Codex CLI）要求终止事件必须属于
 		// response.completed/failed/incomplete/cancelled 集合。
@@ -2625,6 +2643,10 @@ func (h *OpenAIGatewayHandler) ensureForwardErrorResponse(c *gin.Context, stream
 	if shouldSuppressForwardErrorResponse(c, forwardErr) {
 		return false
 	}
+	// Stop before inspecting writer state so reads cannot race a heartbeat.
+	if service.StopOpenAICompactSSEKeepaliveCommitted(c) {
+		streamStarted = true
+	}
 	if c.Writer.Written() {
 		if !openAIStreamingResponseStarted(c, streamStarted) {
 			return false
@@ -2673,7 +2695,8 @@ func openAIForwardErrorAlreadyCommunicated(c *gin.Context, writerSizeBeforeForwa
 	if err == nil || c == nil || c.Writer == nil {
 		return false
 	}
-	if c.Writer.Size() == writerSizeBeforeForward {
+	// Heartbeat comments are transport liveness bytes, not an upstream response.
+	if service.OpenAICompactKeepaliveAdjustedWrittenSize(c) == writerSizeBeforeForward {
 		return false
 	}
 
@@ -2701,12 +2724,27 @@ func openAIForwardErrorAlreadyCommunicated(c *gin.Context, writerSizeBeforeForwa
 
 // errorResponse returns OpenAI API format error response
 func (h *OpenAIGatewayHandler) errorResponse(c *gin.Context, status int, errType, message string) {
+	// A committed compact heartbeat fixes the wire status at 200. Appending a
+	// JSON error would corrupt the SSE stream, so terminate it in-band instead.
+	if service.StopOpenAICompactSSEKeepaliveCommitted(c) {
+		service.MarkOpsStreamError(c, errType, message, status)
+		if writeResponsesFailedSSE(c, errType, message) {
+			return
+		}
+	}
 	c.JSON(status, gin.H{
 		"error": gin.H{
 			"type":    errType,
 			"message": message,
 		},
 	})
+}
+
+func (h *OpenAIGatewayHandler) openAICompactKeepaliveInterval() time.Duration {
+	if h == nil || h.cfg == nil || h.cfg.Gateway.StreamKeepaliveInterval <= 0 {
+		return 0
+	}
+	return time.Duration(h.cfg.Gateway.StreamKeepaliveInterval) * time.Second
 }
 
 func setOpenAIClientTransportHTTP(c *gin.Context) {
@@ -2982,6 +3020,15 @@ func (h *OpenAIGatewayHandler) rejectIfCyberSessionBlocked(c *gin.Context, apiKe
 	}
 	if !h.gatewayService.IsCyberSessionBlocked(c.Request.Context(), key) {
 		return false
+	}
+	// A compact heartbeat may already have committed HTTP 200 while the block
+	// lookup was running. Preserve a valid Responses stream in that case.
+	if format == cyberBlockFormatResponses && service.StopOpenAICompactSSEKeepaliveCommitted(c) {
+		service.MarkOpsStreamError(c, "permission_error", cyberSessionBlockedClientMsg, http.StatusForbidden)
+		if writeResponsesFailedSSE(c, "permission_error", cyberSessionBlockedClientMsg) {
+			h.enqueueCyberSessionBlockedOpsEntry(c, apiKey, model, key)
+			return true
+		}
 	}
 	switch format {
 	case cyberBlockFormatAnthropic:

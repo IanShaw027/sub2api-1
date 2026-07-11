@@ -88,7 +88,7 @@ func TestStreamOpenAICompatCCChatAsResponses_TruncationWithoutTerminalReturnsErr
 		Body:   io.NopCloser(strings.NewReader(`data: {"choices":[{"delta":{"content":"hi"}}]}` + "\n\n")),
 	}
 
-	result, err := (&GatewayService{}).streamOpenAICompatCCChatAsResponses(c, resp, "gpt-test", "gpt-up", nil, time.Now())
+	result, err := (&GatewayService{}).streamOpenAICompatCCChatAsResponses(c, resp, "gpt-test", "gpt-up", nil, responsesChatToolCompatibility{}, time.Now())
 
 	require.ErrorContains(t, err, "terminal event")
 	require.Nil(t, result)
@@ -105,7 +105,7 @@ func TestStreamOpenAICompatCCChatAsResponses_MidStreamErrorChunkReturnsError(t *
 		Body:   io.NopCloser(strings.NewReader(`data: {"error":{"message":"boom","type":"server_error"}}` + "\n\n")),
 	}
 
-	result, err := (&GatewayService{}).streamOpenAICompatCCChatAsResponses(c, resp, "gpt-test", "gpt-up", nil, time.Now())
+	result, err := (&GatewayService{}).streamOpenAICompatCCChatAsResponses(c, resp, "gpt-test", "gpt-up", nil, responsesChatToolCompatibility{}, time.Now())
 
 	require.ErrorContains(t, err, "boom")
 	require.Nil(t, result)

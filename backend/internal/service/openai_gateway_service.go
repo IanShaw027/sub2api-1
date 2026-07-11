@@ -4637,7 +4637,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return nil, errors.New("codex_cli_only restriction: only codex official clients are allowed")
 	}
 
-	normalizedBody, normalized, err := normalizeOpenAICodexCompactReasoningEffortForAccount(c, account, body)
+	normalizedBody, normalized, err := normalizeOpenAICodexCompactReasoningEffortForAccount(ctx, c, s.settingService, account, body)
 	if err != nil {
 		return nil, err
 	}
@@ -7386,6 +7386,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 				}
 			}
 		}
+	} else if isOpenAIResponsesCompactPath(c) {
+		// API-key compact is a unary JSON protocol. Override an inbound SSE
+		// Accept value that may have passed through the header allowlist.
+		req.Header.Set("accept", "application/json")
 	}
 
 	// 透传模式也支持账户自定义 User-Agent 与 ForceCodexCLI 兜底。
@@ -8812,6 +8816,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 				req.Header.Set("conversation_id", isolateOpenAISessionID(apiKeyID, sessionID))
 			}
 		}
+	} else if isOpenAIResponsesCompactPath(c) {
+		// API-key compact is a unary JSON protocol. Override an inbound SSE
+		// Accept value that may have passed through the header allowlist.
+		req.Header.Set("accept", "application/json")
 	}
 
 	// Apply custom User-Agent if configured
@@ -11248,6 +11256,10 @@ func (s *OpenAIGatewayService) tryWriteOpenAIResponseFailedPassthrough(resp *htt
 		errMsg = message
 	}
 	setOpsUpstreamError(c, status, errMsg, "")
+	if openAICompactClientWantsStream(c) && StopOpenAICompactSSEKeepaliveCommitted(c) {
+		writeOpenAICompactSSEFailureMessage(c, status, errType, errMsg)
+		return fmt.Errorf("upstream response failed: passthrough rule matched: %s", errMsg), true
+	}
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 	MarkResponseCommitted(c)
@@ -11272,6 +11284,12 @@ func (s *OpenAIGatewayService) writeOpenAINonStreamingProtocolError(resp *http.R
 		message = "Upstream returned an invalid non-streaming response"
 	}
 	setOpsUpstreamError(c, http.StatusBadGateway, message, "")
+	// A body-signal compact heartbeat may already have committed HTTP 200. In
+	// that case JSON would corrupt the SSE stream, so terminate it in-band.
+	if openAICompactClientWantsStream(c) && StopOpenAICompactSSEKeepaliveCommitted(c) {
+		writeOpenAICompactSSEFailureMessage(c, http.StatusBadGateway, "upstream_error", message)
+		return fmt.Errorf("non-streaming openai protocol error: %s", message)
+	}
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 	c.JSON(http.StatusBadGateway, gin.H{
@@ -11918,13 +11936,19 @@ func normalizeOpenAICompactRequestBody(body []byte) ([]byte, bool, error) {
 	return normalized, true, nil
 }
 
-func normalizeOpenAICodexCompactReasoningEffortForAccount(c *gin.Context, account *Account, body []byte) ([]byte, bool, error) {
+func normalizeOpenAICodexCompactReasoningEffortForAccount(
+	ctx context.Context,
+	c *gin.Context,
+	settingService *SettingService,
+	account *Account,
+	body []byte,
+) ([]byte, bool, error) {
 	if account == nil || !account.IsOpenAIOAuth() || !isOpenAIResponsesCompactPath(c) {
 		return body, false, nil
 	}
 
 	requestedModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
-	effectiveModel := account.GetMappedModel(requestedModel)
+	effectiveModel := ResolveEffectiveModelRouting(ctx, settingService, account, requestedModel, true).Model
 	return normalizeOpenAICodexCompactReasoningEffort(body, effectiveModel)
 }
 

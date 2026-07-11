@@ -145,6 +145,56 @@ func TestRejectIfCyberSessionBlocked_FailOpen(t *testing.T) {
 	require.False(t, h2.rejectIfCyberSessionBlocked(c, key, []byte(`{}`), "gpt-5", cyberBlockFormatResponses), "nil gateway service → pass")
 }
 
+func TestRejectIfCyberSessionBlocked_CompactHeartbeatTerminatesSSE(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := []byte(`{"model":"gpt-5","prompt_cache_key":"blocked-compact-session","input":[{"type":"compaction_trigger"}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", strings.NewReader(string(body)))
+
+	cache := &handlerCyberCacheStoreStub{}
+	settingSvc := service.NewSettingService(
+		&handlerCyberSettingRepoStub{vals: map[string]string{
+			service.SettingKeyCyberSessionBlockEnabled:    "true",
+			service.SettingKeyCyberSessionBlockTTLSeconds: "60",
+		}},
+		&config.Config{},
+	)
+	gatewaySvc := service.NewOpenAIGatewayService(
+		nil, nil, nil, nil, nil, nil,
+		cache,
+		&config.Config{},
+		nil, nil, nil, nil,
+		&service.BillingCacheService{},
+		nil, &service.DeferredService{},
+		nil, nil, nil, nil, nil, nil,
+		settingSvc,
+		nil, nil,
+	)
+	apiKey := &service.APIKey{ID: 22, Key: "sk-compact-test", User: &service.User{ID: 33}}
+	key := service.CyberSessionBlockKey(apiKey.ID, c, body)
+	require.NotEmpty(t, key)
+	cache.blocked = map[string]bool{key: true}
+
+	service.MarkOpenAICompactClientStream(c)
+	stop := service.StartOpenAICompactSSEKeepalive(c, time.Millisecond)
+	defer stop()
+	waitForCompactKeepaliveCommit(t, c)
+
+	blocked := (&OpenAIGatewayHandler{gatewayService: gatewaySvc}).rejectIfCyberSessionBlocked(
+		c, apiKey, body, "gpt-5", cyberBlockFormatResponses,
+	)
+
+	require.True(t, blocked)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "event: response.failed\n")
+	require.Contains(t, rec.Body.String(), cyberSessionBlockedClientMsg)
+	streamErr, ok := service.GetOpsStreamError(c)
+	require.True(t, ok)
+	require.Equal(t, "permission_error", streamErr.ErrType)
+	require.Equal(t, http.StatusForbidden, streamErr.IntendedStatus)
+}
+
 // TestRecordCyberPolicyIfMarked_BlockKeyPlumbed verifies the 6th param is
 // accepted and a non-empty key with nil gateway service does not panic
 // (write-side guards live in the service layer).

@@ -55,6 +55,17 @@ func TestPatchGrokResponsesBodyAppliesCPAThinkingSuffix(t *testing.T) {
 	require.Equal(t, "low", gjson.GetBytes(patched, "reasoning.effort").String())
 }
 
+func TestExtractGrokResponsesReasoningEffortSupportsOpenAICompatibleField(t *testing.T) {
+	t.Parallel()
+
+	effort := extractOpenAIReasoningEffortFromBody(
+		[]byte(`{"model":"grok-4.3","reasoning_effort":"high"}`),
+		"grok-4.3",
+	)
+	require.NotNil(t, effort)
+	require.Equal(t, "high", *effort)
+}
+
 func TestPatchGrokResponsesBodyKeepsExplicitReasoningEffortOverSuffix(t *testing.T) {
 	t.Parallel()
 
@@ -707,7 +718,7 @@ func TestForwardGrokResponsesStreamingUsesXAIResponsesAndSnapshots(t *testing.T)
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	body := []byte(`{"model":"grok","input":"hi","stream":true,"prompt_cache_key":"grok-session-1"}`)
+	body := []byte(`{"model":"grok","input":"hi","stream":true,"prompt_cache_key":"grok-session-1","reasoning_effort":"high"}`)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Request.Header.Set("OpenAI-Beta", "responses=experimental")
@@ -757,6 +768,7 @@ func TestForwardGrokResponsesStreamingUsesXAIResponsesAndSnapshots(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, xai.DefaultCLIBaseURL+"/responses", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer access-token", upstream.lastReq.Header.Get("Authorization"))
+	require.Equal(t, "high", gjson.GetBytes(upstream.lastBody, "reasoning_effort").String())
 	require.Equal(t, "Keep-Alive", upstream.lastReq.Header.Get("Connection"))
 	require.Equal(t, "responses=experimental", upstream.lastReq.Header.Get("OpenAI-Beta"))
 	require.NotEmpty(t, upstream.lastReq.Header.Get("session_id"))
@@ -771,6 +783,8 @@ func TestForwardGrokResponsesStreamingUsesXAIResponsesAndSnapshots(t *testing.T)
 	require.Equal(t, 5, result.Usage.InputTokens)
 	require.Equal(t, 3, result.Usage.OutputTokens)
 	require.Equal(t, 2, result.Usage.CacheReadInputTokens)
+	require.NotNil(t, result.ReasoningEffort)
+	require.Equal(t, "high", *result.ReasoningEffort)
 	require.Contains(t, recorder.Header().Get("Content-Type"), "text/event-stream")
 	require.Contains(t, recorder.Body.String(), "response.output_text.delta")
 	require.NotNil(t, repo.updates[52][grokQuotaSnapshotExtraKey])

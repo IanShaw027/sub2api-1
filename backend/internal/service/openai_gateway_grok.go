@@ -235,7 +235,7 @@ func (s *OpenAIGatewayService) forwardGrokResponsesWithPromptCacheKey(
 		Model:           originalModel,
 		BillingModel:    upstreamModel,
 		UpstreamModel:   upstreamModel,
-		ReasoningEffort: ptrStringOrNil(normalizeOpenAIReasoningEffort(gjson.GetBytes(patchedBody, "reasoning.effort").String())),
+		ReasoningEffort: extractOpenAIReasoningEffortFromBody(patchedBody, originalModel, upstreamModel),
 		Stream:          reqStream,
 		OpenAIWSMode:    false,
 		ResponseHeaders: resp.Header.Clone(),

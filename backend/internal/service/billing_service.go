@@ -1122,7 +1122,7 @@ func (s *BillingService) computeTokenBreakdown(
 		// 缓存创建（cache_write）也是输入侧操作，三档价格（标准 / 5m / 1h）
 		// 都通过 computeCacheCreationCost 直接读取 pricing.*，不会经过这里
 		// 的倍率修改，因此显式向下传一个倍率，避免长上下文场景下被漏乘。
-		cacheCreationMultiplier = pricing.LongContextInputMultiplier
+		cacheCreationMultiplier *= pricing.LongContextInputMultiplier
 	}
 	bd := &CostBreakdown{}
 	// 分离图片输入 token 与文本输入 token（多模态 embedding 等图文不同价场景）。

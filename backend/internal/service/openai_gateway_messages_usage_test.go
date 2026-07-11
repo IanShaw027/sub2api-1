@@ -26,3 +26,20 @@ func TestCopyOpenAIUsageFromResponsesUsageTrustsCanonicalCacheCreationValue(t *t
 	require.Equal(t, 3, got.CacheReadInputTokens)
 	require.Zero(t, got.CacheCreationInputTokens)
 }
+
+func TestCopyOpenAIUsageFromResponsesUsagePreservesCanonicalCacheCreationTokens(t *testing.T) {
+	usage := &apicompat.ResponsesUsage{
+		InputTokens:              20,
+		OutputTokens:             2,
+		CacheCreationInputTokens: 19,
+		InputTokensDetails: &apicompat.ResponsesInputTokensDetails{
+			CachedTokens:     3,
+			CacheWriteTokens: 7,
+		},
+	}
+
+	got := copyOpenAIUsageFromResponsesUsage(usage)
+
+	require.Equal(t, 19, got.CacheCreationInputTokens)
+	require.Equal(t, 3, got.CacheReadInputTokens)
+}
