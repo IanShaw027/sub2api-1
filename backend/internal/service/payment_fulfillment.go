@@ -623,16 +623,16 @@ func (s *PaymentService) assignSubscriptionExactlyOnce(ctx context.Context, o *d
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// AssignOrExtendSubscription 复用外层事务（内部检测 dbent.TxFromContext 后不自提交）；
-	// 其存量续期与新建两条路径的 repo 写入都经 clientFromContext 落到本事务。
+	// Subscription assignment reuses this transaction and defers cache
+	// invalidation until the assignment and success sentinel are both committed.
 	txCtx := dbent.NewTxContext(ctx, tx)
-	if _, _, err := s.subscriptionSvc.AssignOrExtendSubscription(txCtx, &AssignSubscriptionInput{
+	if _, _, err := s.subscriptionSvc.assignOrExtendSubscription(txCtx, &AssignSubscriptionInput{
 		UserID:       o.UserID,
 		GroupID:      groupID,
 		ValidityDays: days,
 		AssignedBy:   0,
 		Notes:        orderNote,
-	}); err != nil {
+	}, true); err != nil {
 		return fmt.Errorf("assign subscription: %w", err)
 	}
 	if err := s.writeAuditLogErrWithClient(txCtx, tx.Client(), o.ID, "SUBSCRIPTION_SUCCESS", "system", map[string]any{
@@ -642,7 +642,13 @@ func (s *PaymentService) assignSubscriptionExactlyOnce(ctx context.Context, o *d
 	}); err != nil {
 		return fmt.Errorf("write subscription success audit: %w", err)
 	}
-	return tx.Commit()
+	if err := s.commitTx(tx); err != nil {
+		return fmt.Errorf("commit subscription fulfillment transaction: %w", err)
+	}
+	if err := s.subscriptionSvc.invalidateSubscriptionCaches(o.UserID, groupID); err != nil {
+		return fmt.Errorf("invalidate subscription cache after fulfillment: %w", err)
+	}
+	return nil
 }
 
 type subscriptionFulfillmentAuditState int

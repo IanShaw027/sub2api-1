@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	"github.com/dgraph-io/ristretto"
 	"github.com/stretchr/testify/require"
 
 	"entgo.io/ent/dialect"
@@ -553,6 +554,60 @@ func TestSubscriptionFulfillmentWritesSuccessSentinelBeforeOrderCompletion(t *te
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+}
+
+func TestAssignSubscriptionExactlyOnceDefersCacheInvalidationUntilCommit(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPaid, payment.OrderTypeSubscription)
+
+	repo := &paymentFulfillmentUserSubRepoStub{existing: &UserSubscription{
+		ID:        56,
+		UserID:    order.UserID,
+		GroupID:   *order.SubscriptionGroupID,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+		Status:    SubscriptionStatusActive,
+	}}
+	groupRepo := paymentFulfillmentGroupRepoStub{group: &Group{
+		ID:               *order.SubscriptionGroupID,
+		Status:           payment.EntityStatusActive,
+		SubscriptionType: SubscriptionTypeSubscription,
+	}}
+	cache, err := ristretto.NewCache(&ristretto.Config{NumCounters: 1_000, MaxCost: 100, BufferItems: 64})
+	require.NoError(t, err)
+	t.Cleanup(cache.Close)
+
+	subscriptionSvc := NewSubscriptionService(groupRepo, repo, nil, client, nil)
+	subscriptionSvc.subCacheL1 = cache
+	key := subCacheKey(order.UserID, *order.SubscriptionGroupID)
+	require.True(t, cache.Set(key, &UserSubscription{ID: 999}, 1))
+	cache.Wait()
+
+	commitObserved := false
+	svc := &PaymentService{
+		entClient:       client,
+		groupRepo:       groupRepo,
+		subscriptionSvc: subscriptionSvc,
+		commitPaymentTx: func(tx *dbent.Tx) error {
+			commitObserved = true
+			cache.Wait()
+			_, cached := cache.Get(key)
+			require.True(t, cached, "assignment cache must remain intact until the outer transaction commits")
+			return tx.Commit()
+		},
+	}
+
+	err = svc.assignSubscriptionExactlyOnce(
+		ctx,
+		order,
+		*order.SubscriptionGroupID,
+		*order.SubscriptionDays,
+		fmt.Sprintf("payment order %d", order.ID),
+	)
+	require.NoError(t, err)
+	require.True(t, commitObserved, "subscription fulfillment must use the payment transaction commit hook")
+	_, cachedAfterCommit := cache.Get(key)
+	require.False(t, cachedAfterCommit, "committed subscription must invalidate the stale assignment cache synchronously")
 }
 
 // 回归防线：订阅发放与 SUCCESS 哨兵必须原子——哨兵写入失败时 assign 整体回滚、claim 释放，

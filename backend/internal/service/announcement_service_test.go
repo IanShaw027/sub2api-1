@@ -234,13 +234,16 @@ func (*announcementUserSubRepoStub) UpdateNotes(context.Context, int64, string) 
 func (*announcementUserSubRepoStub) ActivateWindows(context.Context, int64, time.Time) error {
 	return nil
 }
-func (*announcementUserSubRepoStub) ResetDailyUsage(context.Context, int64, time.Time) error {
+func (*announcementUserSubRepoStub) ResetUsageWindows(context.Context, int64, bool, bool, bool, time.Time) error {
 	return nil
 }
-func (*announcementUserSubRepoStub) ResetWeeklyUsage(context.Context, int64, time.Time) error {
+func (*announcementUserSubRepoStub) ResetDailyUsage(context.Context, int64, *time.Time, time.Time) error {
 	return nil
 }
-func (*announcementUserSubRepoStub) ResetMonthlyUsage(context.Context, int64, time.Time) error {
+func (*announcementUserSubRepoStub) ResetWeeklyUsage(context.Context, int64, *time.Time, time.Time) error {
+	return nil
+}
+func (*announcementUserSubRepoStub) ResetMonthlyUsage(context.Context, int64, *time.Time, time.Time) error {
 	return nil
 }
 func (*announcementUserSubRepoStub) IncrementUsage(context.Context, int64, float64) error { return nil }
