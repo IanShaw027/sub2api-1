@@ -258,6 +258,8 @@ func TestAPIContracts(t *testing.T) {
 					"ip_whitelist": null,
 					"ip_blacklist": null,
 					"last_used_at": null,
+					"last_used_ip": null,
+					"current_concurrency": 0,
 					"quota": 0,
 					"quota_used": 0,
 					"rate_limit_5h": 0,
@@ -307,6 +309,8 @@ func TestAPIContracts(t *testing.T) {
 							"ip_whitelist": null,
 							"ip_blacklist": null,
 							"last_used_at": null,
+							"last_used_ip": null,
+							"current_concurrency": 0,
 							"quota": 0,
 							"quota_used": 0,
 							"rate_limit_5h": 0,
@@ -939,6 +943,7 @@ func TestAPIContracts(t *testing.T) {
 					"payment_balance_disabled": false,
 					"payment_balance_recharge_multiplier": 0,
 					"payment_recharge_fee_rate": 0,
+					"payment_subscription_usd_to_cny_rate": 0,
 					"payment_load_balance_strategy": "",
 					"payment_product_name_prefix": "",
 					"payment_product_name_suffix": "",
@@ -1259,6 +1264,7 @@ func TestAPIContracts(t *testing.T) {
 					"payment_balance_disabled": false,
 					"payment_balance_recharge_multiplier": 0,
 					"payment_recharge_fee_rate": 0,
+					"payment_subscription_usd_to_cny_rate": 0,
 					"payment_load_balance_strategy": "",
 					"payment_product_name_prefix": "",
 					"payment_product_name_suffix": "",
@@ -1674,6 +1680,10 @@ func (r *stubUserRepo) UpdateBalance(ctx context.Context, id int64, amount float
 	return errors.New("not implemented")
 }
 
+func (r *stubUserRepo) AddBalanceWithoutRecharge(ctx context.Context, id int64, amount float64) error {
+	return errors.New("not implemented")
+}
+
 func (r *stubUserRepo) DeductBalance(ctx context.Context, id int64, amount float64) error {
 	return errors.New("not implemented")
 }
@@ -1924,6 +1934,10 @@ func (s *stubAccountRepo) List(ctx context.Context, params pagination.Pagination
 
 func (s *stubAccountRepo) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string) ([]service.Account, *pagination.PaginationResult, error) {
 	return nil, nil, errors.New("not implemented")
+}
+
+func (s *stubAccountRepo) ListAllWithFilters(ctx context.Context, platform, accountType, status, search string, groupID int64, privacyMode string) ([]service.Account, error) {
+	return nil, errors.New("not implemented")
 }
 
 func (s *stubAccountRepo) ListByGroup(ctx context.Context, groupID int64) ([]service.Account, error) {
