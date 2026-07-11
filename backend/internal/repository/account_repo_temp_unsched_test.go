@@ -57,7 +57,7 @@ func TestAccountRepository_ListOAuthRefreshCandidates_SQLFilter(t *testing.T) {
 	normalized := normalizeSQLWhitespace(capturedSQL)
 	require.Contains(t, normalized, "deleted_at IS NULL")
 	require.Contains(t, normalized, "status = 'active'")
-	require.Contains(t, normalized, "type = 'oauth'")
+	require.Contains(t, normalized, "type IN ('oauth', 'setup-token')")
 	require.Regexp(t, `platform IN \([^)]*\)`, normalized)
 	require.NotContains(t, normalized, "'anthropic', 'openai', 'gemini', 'antigravity', 'kiro', 'grok'")
 	require.ElementsMatch(t, expectedPlatforms, argsToStrings(capturedArgs))
