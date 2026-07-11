@@ -5,6 +5,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 type slotCleanupCache struct {
@@ -15,6 +17,16 @@ type slotCleanupCache struct {
 func (c *slotCleanupCache) CleanupExpiredAccountSlotKeys(context.Context) error {
 	c.calls.Add(1)
 	return nil
+}
+
+type slotCleanupAccountRepo struct {
+	AccountRepository
+	calls atomic.Int64
+}
+
+func (r *slotCleanupAccountRepo) ListSchedulable(context.Context) ([]Account, error) {
+	r.calls.Add(1)
+	return nil, nil
 }
 
 func TestStartSlotCleanupWorker_UsesCacheWideCleanupWithoutAccountRepo(t *testing.T) {
@@ -36,4 +48,16 @@ func TestStartSlotCleanupWorker_UsesCacheWideCleanupWithoutAccountRepo(t *testin
 		case <-ticker.C:
 		}
 	}
+}
+
+func TestStartSlotCleanupWorker_UsesCacheWideCleanupWithAccountRepo(t *testing.T) {
+	cache := &slotCleanupCache{}
+	repo := &slotCleanupAccountRepo{}
+	svc := NewConcurrencyService(cache)
+
+	svc.StartSlotCleanupWorker(repo, time.Hour)
+
+	require.Eventually(t, func() bool {
+		return cache.calls.Load() > 0 && repo.calls.Load() > 0
+	}, time.Second, 10*time.Millisecond)
 }

@@ -39,7 +39,7 @@ type ConcurrencyCache interface {
 	ReleaseUserSlot(ctx context.Context, userID int64, requestID string) error
 	GetUserConcurrency(ctx context.Context, userID int64) (int, error)
 
-	// 等待队列计数（只在首次创建时设置 TTL）
+	// 等待队列计数（每次入队都会刷新 TTL，避免长时间排队时计数提前过期）
 	IncrementWaitCount(ctx context.Context, userID int64, maxWait int) (bool, error)
 	DecrementWaitCount(ctx context.Context, userID int64) error
 
@@ -49,6 +49,7 @@ type ConcurrencyCache interface {
 
 	// 清理过期槽位（后台任务）
 	CleanupExpiredAccountSlots(ctx context.Context, accountID int64) error
+	CleanupExpiredAccountSlotKeys(ctx context.Context) error
 
 	// 启动时清理旧进程遗留槽位与等待计数
 	CleanupStaleProcessSlots(ctx context.Context, activeRequestPrefix string) error
@@ -604,16 +605,16 @@ func (s *ConcurrencyService) StartSlotCleanupWorker(accountRepo AccountRepositor
 	}
 
 	runCleanup := func() {
-		if accountRepo == nil {
-			if cacheWide, ok := s.cache.(interface {
-				CleanupExpiredAccountSlotKeys(context.Context) error
-			}); ok {
-				cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				if err := cacheWide.CleanupExpiredAccountSlotKeys(cleanupCtx); err != nil {
-					logger.LegacyPrintf("service.concurrency", "Warning: cleanup expired account slot keys failed: %v", err)
-				}
-				cancel()
+		if cacheWide, ok := s.cache.(interface {
+			CleanupExpiredAccountSlotKeys(context.Context) error
+		}); ok {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := cacheWide.CleanupExpiredAccountSlotKeys(cleanupCtx); err != nil {
+				logger.LegacyPrintf("service.concurrency", "Warning: cleanup expired account, user, and group slot keys failed: %v", err)
 			}
+			cancel()
+		}
+		if accountRepo == nil {
 			return
 		}
 		listCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
