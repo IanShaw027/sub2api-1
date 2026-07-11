@@ -27,11 +27,11 @@ type codexInviteResetAdminServiceStub struct {
 	extraUpdateIDs []int64
 }
 
-func (s codexInviteResetAdminServiceStub) GetAccount(ctx context.Context, id int64) (*Account, error) {
+func (s *codexInviteResetAdminServiceStub) GetAccount(ctx context.Context, id int64) (*Account, error) {
 	return s.account, nil
 }
 
-func (s codexInviteResetAdminServiceStub) GetProxy(ctx context.Context, id int64) (*Proxy, error) {
+func (s *codexInviteResetAdminServiceStub) GetProxy(ctx context.Context, id int64) (*Proxy, error) {
 	return s.proxy, nil
 }
 

@@ -92,8 +92,13 @@ func (s *aiSkillScriptRunnerStub) Dispatch(_ context.Context, req skillrunner.Di
 	if s.dispatchResult == nil {
 		return nil, nil
 	}
-	copyResult := *s.dispatchResult
-	return &copyResult, nil
+	return &skillrunner.DispatchResult{
+		Plan:           s.dispatchResult.Plan,
+		HostSkillDir:   s.dispatchResult.HostSkillDir,
+		HostScratchDir: s.dispatchResult.HostScratchDir,
+		InputPath:      s.dispatchResult.InputPath,
+		OutputPath:     s.dispatchResult.OutputPath,
+	}, nil
 }
 
 func TestAISkillRuntimeGatewayExecutesPromptChatThroughCompatRuntime(t *testing.T) {
@@ -252,13 +257,13 @@ func TestAISkillRuntimeGatewayExecutesScriptThroughScriptRuntime(t *testing.T) {
 		Mode:      AISkillRunModeUse,
 		Type:      AISkillTypeScript,
 		Script: &AISkillScriptExecution{
-			Runtime:       skillrunner.RuntimePython311,
-			ScriptName:    "script_python_echo",
-			EntryPoint:    "main.py",
-			Protocol:      skillrunner.ProtocolJSONFileV1,
+			Runtime:                skillrunner.RuntimePython311,
+			ScriptName:             "script_python_echo",
+			EntryPoint:             "main.py",
+			Protocol:               skillrunner.ProtocolJSONFileV1,
 			ApprovedArtifactDigest: "sha256:script-test",
 			VersionStatus:          AISkillVersionStatusApproved,
-			ArchiveBase64: base64.StdEncoding.EncodeToString(buildAISkillArchiveFromDir(t, filepath.Join("testdata", "skills", "script_python_echo"))),
+			ArchiveBase64:          base64.StdEncoding.EncodeToString(buildAISkillArchiveFromDir(t, filepath.Join("testdata", "skills", "script_python_echo"))),
 		},
 	})
 	require.NoError(t, err)
