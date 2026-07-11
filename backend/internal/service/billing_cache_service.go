@@ -464,10 +464,12 @@ func (s *BillingCacheService) GetSubscriptionStatus(ctx context.Context, userID,
 	// this value, so an old snapshot cannot repopulate Redis after a DEL.
 	var (
 		generation       int64
+		generationFence  subscriptionCacheGenerationFence
 		generationFenced bool
 		cacheWriteSafe   = true
 	)
 	if fence, ok := s.cache.(subscriptionCacheGenerationFence); ok {
+		generationFence = fence
 		cacheWriteSafe = false
 		var generationErr error
 		generation, generationErr = fence.GetSubscriptionCacheGeneration(ctx, userID, groupID)
@@ -490,8 +492,7 @@ func (s *BillingCacheService) GetSubscriptionStatus(ctx context.Context, userID,
 		if !generationFenced || attempt == 1 {
 			break
 		}
-		fence := s.cache.(subscriptionCacheGenerationFence)
-		currentGeneration, generationErr := fence.GetSubscriptionCacheGeneration(ctx, userID, groupID)
+		currentGeneration, generationErr := generationFence.GetSubscriptionCacheGeneration(ctx, userID, groupID)
 		if generationErr != nil {
 			logger.LegacyPrintf("service.billing_cache", "Warning: recheck subscription cache generation failed for user %d group %d: %v", userID, groupID, generationErr)
 			cacheWriteSafe = false

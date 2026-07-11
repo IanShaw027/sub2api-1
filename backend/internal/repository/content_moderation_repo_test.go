@@ -86,7 +86,8 @@ func TestContentModerationRepositoryCreateLogWithViolationCount_LocksCountsAndIn
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
-	repo := NewContentModerationRepository(db).(*contentModerationRepository)
+	repo, ok := NewContentModerationRepository(db).(*contentModerationRepository)
+	require.True(t, ok)
 	userID := int64(1001)
 	since := time.Now().Add(-24 * time.Hour)
 	createdAt := time.Now()

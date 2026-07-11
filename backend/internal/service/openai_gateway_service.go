@@ -1138,7 +1138,7 @@ func resolveOpenAIWSFallbackErrorResponse(err error) (statusCode int, errType st
 }
 
 func (s *OpenAIGatewayService) newOpenAIWSFailoverError(c *gin.Context, account *Account, wsErr error) *UpstreamFailoverError {
-	if c != nil && c.Writer != nil && c.Writer.Written() {
+	if openAIClientOutputWritten(c) {
 		return nil
 	}
 	statusCode, errType, clientMessage, upstreamMessage, ok := resolveOpenAIWSFallbackErrorResponse(wsErr)
@@ -1289,7 +1289,7 @@ func (s *OpenAIGatewayService) prepareOpenAIWSContinuationFailoverBody(c *gin.Co
 }
 
 func (s *OpenAIGatewayService) writeOpenAIWSFallbackErrorResponse(c *gin.Context, account *Account, wsErr error) bool {
-	if c == nil || c.Writer == nil || c.Writer.Written() {
+	if c == nil || c.Writer == nil || openAIClientOutputWritten(c) {
 		return false
 	}
 	if IsOpenAIWSSessionPreemptedError(wsErr) {
@@ -6067,7 +6067,7 @@ oauthTransformDone:
 		if failoverErr := s.newOpenAIWSFailoverError(c, account, wsErr); failoverErr != nil {
 			return nil, failoverErr
 		}
-		if c != nil && c.Writer != nil && !c.Writer.Written() &&
+		if c != nil && c.Writer != nil && !openAIClientOutputWritten(c) &&
 			shouldFallbackOpenAIWSToHTTP(wsErr) &&
 			canFallbackOpenAIWSFullReplayPayloadToHTTP(wsHTTPFallbackBody) &&
 			canFallbackOpenAIWSFullReplayPayloadToHTTP(body) {
@@ -7593,7 +7593,17 @@ func openAIStreamClientOutputStarted(c *gin.Context, localStarted bool) bool {
 	if localStarted {
 		return true
 	}
-	return c != nil && c.Writer != nil && c.Writer.Written()
+	return openAIClientOutputWritten(c)
+}
+
+// openAIClientOutputWritten ignores transport-only compact heartbeat comments.
+// They commit HTTP 200 but do not represent an upstream response and therefore
+// must not suppress WS failover, HTTP fallback, or typed terminal errors.
+func openAIClientOutputWritten(c *gin.Context) bool {
+	if c == nil || c.Writer == nil {
+		return false
+	}
+	return OpenAICompactKeepaliveAdjustedWrittenSize(c) >= 0
 }
 
 func openAIStreamEventIsPreamble(eventType string) bool {

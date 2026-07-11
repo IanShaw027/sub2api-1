@@ -281,6 +281,36 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 	return nil
 }
 
+// DisableUserForContentModeration atomically transitions a regular user to
+// disabled without rewriting unrelated profile, balance, or auth fields. The
+// predicates are evaluated by PostgreSQL under the row update lock, making the
+// transition safe across application instances.
+func (r *userRepository) DisableUserForContentModeration(ctx context.Context, userID int64) (changed bool, skippedAdmin bool, err error) {
+	client := clientFromContext(ctx, r.client)
+	updated, err := client.User.Update().
+		Where(
+			dbuser.IDEQ(userID),
+			dbuser.StatusNEQ(service.StatusDisabled),
+			dbuser.RoleNEQ(service.RoleAdmin),
+		).
+		SetStatus(service.StatusDisabled).
+		Save(ctx)
+	if err != nil {
+		return false, false, translatePersistenceError(err, service.ErrUserNotFound, nil)
+	}
+	if updated > 0 {
+		return true, false, nil
+	}
+
+	current, err := client.User.Query().
+		Where(dbuser.IDEQ(userID)).
+		Only(ctx)
+	if err != nil {
+		return false, false, translatePersistenceError(err, service.ErrUserNotFound, nil)
+	}
+	return false, current.Role == service.RoleAdmin, nil
+}
+
 func ensureEmailAuthIdentityWithClient(ctx context.Context, client *dbent.Client, userID int64, email string, source string) error {
 	client = clientFromContext(ctx, client)
 	if client == nil || userID <= 0 {

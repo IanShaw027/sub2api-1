@@ -637,6 +637,13 @@ type contentModerationViolationLogRepository interface {
 	CreateLogWithViolationCount(ctx context.Context, log *ContentModerationLog, since time.Time, excludeCyberPolicy bool) error
 }
 
+// contentModerationUserDisabler is the production CAS used by auto-ban. It
+// changes only the status column and reports whether this call performed the
+// transition, so concurrent hits cannot repeat ban-only side effects.
+type contentModerationUserDisabler interface {
+	DisableUserForContentModeration(ctx context.Context, userID int64) (changed bool, skippedAdmin bool, err error)
+}
+
 type ContentModerationHashCache interface {
 	RecordFlaggedInputHash(ctx context.Context, inputHash string, meta ContentModerationHashMeta) error
 	HasFlaggedInputHash(ctx context.Context, inputHash string) (bool, error)
@@ -2266,6 +2273,25 @@ func (s *ContentModerationService) applyFlaggedAccountSideEffects(ctx context.Co
 		return false
 	}
 	if cfg.AutoBanEnabled && cfg.BanThreshold > 0 && count >= cfg.BanThreshold && s.userRepo != nil {
+		if disabler, ok := s.userRepo.(contentModerationUserDisabler); ok {
+			changed, skippedAdmin, err := disabler.DisableUserForContentModeration(ctx, *log.UserID)
+			if err != nil {
+				slog.Warn("content_moderation.ban_update_user_failed", "user_id", *log.UserID, "error", err)
+				return false
+			}
+			if skippedAdmin {
+				slog.Warn("content_moderation.autoban_skipped_admin", "user_id", *log.UserID, "role", RoleAdmin, "count", count, "threshold", cfg.BanThreshold)
+				return false
+			}
+			if changed && s.authCacheInvalidator != nil {
+				s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, *log.UserID)
+			}
+			log.AutoBanned = true
+			return changed
+		}
+
+		// Compatibility fallback for lightweight adapters without the production
+		// status-only CAS capability.
 		user, err := s.userRepo.GetByID(ctx, *log.UserID)
 		if err != nil {
 			slog.Warn("content_moderation.ban_get_user_failed", "user_id", *log.UserID, "error", err)

@@ -276,6 +276,29 @@ type contentModerationTestUserRepo struct {
 	updated []User
 }
 
+type contentModerationCASUserRepo struct {
+	*contentModerationTestUserRepo
+	mu           sync.Mutex
+	disableCalls int
+}
+
+func (r *contentModerationCASUserRepo) DisableUserForContentModeration(_ context.Context, _ int64) (bool, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.disableCalls++
+	if r.user == nil {
+		return false, false, ErrUserNotFound
+	}
+	if r.user.IsAdmin() {
+		return false, true, nil
+	}
+	if r.user.Status == StatusDisabled {
+		return false, false, nil
+	}
+	r.user.Status = StatusDisabled
+	return true, false, nil
+}
+
 func (r *contentModerationTestUserRepo) Create(ctx context.Context, user *User) error {
 	panic("unexpected Create call")
 }
@@ -2775,6 +2798,47 @@ func TestContentModerationViolationCountIsAtomicUnderConcurrency(t *testing.T) {
 	for i := range logs {
 		require.Equal(t, i+1, logs[i].ViolationCount, "each committed violation must receive a unique monotonic count")
 	}
+}
+
+func TestContentModerationAutoBanCASAppliesTransitionOnce(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.AutoBanEnabled = true
+	cfg.BanThreshold = 3
+	userID := int64(1001)
+	userRepo := &contentModerationCASUserRepo{contentModerationTestUserRepo: &contentModerationTestUserRepo{
+		user: &User{ID: userID, Role: RoleUser, Status: StatusActive},
+	}}
+	svc := &ContentModerationService{userRepo: userRepo}
+
+	const requests = 32
+	start := make(chan struct{})
+	var applied atomic.Int64
+	var notMarked atomic.Int64
+	var wg sync.WaitGroup
+	wg.Add(requests)
+	for i := 0; i < requests; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			log := newContentModerationFlaggedLog(userID)
+			log.ViolationCount = cfg.BanThreshold
+			if svc.applyFlaggedAccountSideEffects(context.Background(), cfg, log) {
+				applied.Add(1)
+			}
+			if !log.AutoBanned {
+				notMarked.Add(1)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	require.Equal(t, int64(1), applied.Load(), "only the CAS winner may run ban-only side effects")
+	require.Zero(t, notMarked.Load())
+	userRepo.mu.Lock()
+	defer userRepo.mu.Unlock()
+	require.Equal(t, requests, userRepo.disableCalls)
+	require.Equal(t, StatusDisabled, userRepo.user.Status)
 }
 
 func TestContentModerationAdminBelowBanThresholdRecordsViolationOnly(t *testing.T) {

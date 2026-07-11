@@ -161,6 +161,80 @@ func (s *UserRepoSuite) TestUpdate() {
 	s.Require().Equal("updated", updated.Username)
 }
 
+func (s *UserRepoSuite) TestDisableUserForContentModerationIsStatusOnlyCAS() {
+	regular := s.mustCreateUser(&service.User{
+		Email:    "moderation-cas@test.com",
+		Username: "preserve-me",
+		Role:     service.RoleUser,
+		Status:   service.StatusActive,
+		Balance:  42,
+	})
+
+	changed, skippedAdmin, err := s.repo.DisableUserForContentModeration(s.ctx, regular.ID)
+	s.Require().NoError(err)
+	s.Require().True(changed)
+	s.Require().False(skippedAdmin)
+
+	got, err := s.repo.GetByID(s.ctx, regular.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(service.StatusDisabled, got.Status)
+	s.Require().Equal("preserve-me", got.Username)
+	s.Require().Equal(float64(42), got.Balance)
+
+	changed, skippedAdmin, err = s.repo.DisableUserForContentModeration(s.ctx, regular.ID)
+	s.Require().NoError(err)
+	s.Require().False(changed, "the transition must be idempotent")
+	s.Require().False(skippedAdmin)
+
+	admin := s.mustCreateUser(&service.User{
+		Email:  "moderation-admin@test.com",
+		Role:   service.RoleAdmin,
+		Status: service.StatusActive,
+	})
+	changed, skippedAdmin, err = s.repo.DisableUserForContentModeration(s.ctx, admin.ID)
+	s.Require().NoError(err)
+	s.Require().False(changed)
+	s.Require().True(skippedAdmin)
+	got, err = s.repo.GetByID(s.ctx, admin.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(service.StatusActive, got.Status)
+
+	concurrent := s.mustCreateUser(&service.User{
+		Email:  "moderation-concurrent@test.com",
+		Role:   service.RoleUser,
+		Status: service.StatusActive,
+	})
+	const attempts = 16
+	start := make(chan struct{})
+	results := make(chan bool, attempts)
+	errs := make(chan error, attempts)
+	var wg sync.WaitGroup
+	wg.Add(attempts)
+	for i := 0; i < attempts; i++ {
+		go func() {
+			defer wg.Done()
+			<-start
+			changed, _, disableErr := s.repo.DisableUserForContentModeration(s.ctx, concurrent.ID)
+			results <- changed
+			errs <- disableErr
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+	for disableErr := range errs {
+		s.Require().NoError(disableErr)
+	}
+	changedCount := 0
+	for changed := range results {
+		if changed {
+			changedCount++
+		}
+	}
+	s.Require().Equal(1, changedCount, "exactly one concurrent transition must win")
+}
+
 func (s *UserRepoSuite) TestUpdateIgnoresNoRowsFromConflictingEmailIdentityUpsert() {
 	user := s.mustCreateUser(&service.User{Email: "update-existing-identity@test.com", Username: "original"})
 

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -268,6 +269,43 @@ func TestOpenAICompactSupportTier_RejectsChatOnlyAPIKeyAccount(t *testing.T) {
 	}
 
 	require.Zero(t, openAICompactSupportTier(account))
+}
+
+func TestOpenAICompactHeartbeatDoesNotSuppressWSFailover(t *testing.T) {
+	c, rec := newCompactBridgeTestContext(t, true)
+	stop := StartOpenAICompactSSEKeepalive(c, keepaliveTestInterval)
+	defer stop()
+	waitForKeepaliveBeats()
+	require.True(t, c.Writer.Written(), "the heartbeat should have committed HTTP 200")
+	require.False(t, openAIClientOutputWritten(c), "heartbeat comments are not semantic client output")
+
+	svc := &OpenAIGatewayService{}
+	failoverErr := svc.newOpenAIWSFailoverError(
+		c,
+		&Account{ID: 33, Platform: PlatformOpenAI, Name: "compact-ws"},
+		wrapOpenAIWSFallback("upstream_rate_limited", errors.New("upstream rate limit")),
+	)
+
+	require.NotNil(t, failoverErr)
+	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+	require.True(t, StopOpenAICompactSSEKeepaliveCommitted(c))
+	require.Empty(t, stripKeepaliveComments(rec.Body.String()), "failover classification must not append a terminal response")
+}
+
+func TestOpenAICompactHeartbeatDoesNotSuppressWSFallbackError(t *testing.T) {
+	c, rec := newCompactBridgeTestContext(t, true)
+	stop := StartOpenAICompactSSEKeepalive(c, keepaliveTestInterval)
+	defer stop()
+	waitForKeepaliveBeats()
+
+	wrote := (&OpenAIGatewayService{}).writeOpenAIWSFallbackErrorResponse(
+		c,
+		&Account{ID: 34, Platform: PlatformOpenAI, Name: "compact-ws"},
+		wrapOpenAIWSFallback("upgrade_required", errors.New("websocket upgrade required")),
+	)
+
+	require.True(t, wrote)
+	requireSingleCompactFailure(t, rec.Body.String(), "upstream_error", "upgrade required")
 }
 
 // fast policy block 在心跳提交后必须降级为 response.failed 终止事件。
