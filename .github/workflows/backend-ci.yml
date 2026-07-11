@@ -35,7 +35,7 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: Verify Go version
         run: |
-          go version | grep -q 'go1.26.4'
+          go version | grep -q 'go1.26.5'
       - name: Verify go.mod/go.sum are tidy
         working-directory: backend
         run: |
@@ -128,7 +128,7 @@ jobs:
           cache-dependency-path: backend/go.sum
       - name: Verify Go version
         run: |
-          go version | grep -q 'go1.26.4'
+          go version | grep -q 'go1.26.5'
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
