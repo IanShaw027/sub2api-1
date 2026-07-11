@@ -911,7 +911,7 @@ func TestResponsesToChatCompletionsRequest_SkipsUnsupportedServerTools(t *testin
 	require.Empty(t, out.Tools)
 }
 
-func TestResponsesToChatCompletionsRequest_FallsBackUnsupportedServerToolChoice(t *testing.T) {
+func TestResponsesToChatCompletionsRequest_DropsUnsupportedServerToolChoice(t *testing.T) {
 	req := &ResponsesRequest{
 		Model:      "gpt-4o",
 		Input:      json.RawMessage(`"hello"`),
@@ -920,13 +920,14 @@ func TestResponsesToChatCompletionsRequest_FallsBackUnsupportedServerToolChoice(
 
 	out, err := ResponsesToChatCompletionsRequest(req)
 	require.NoError(t, err)
-	require.JSONEq(t, `"auto"`, string(out.ToolChoice))
+	require.Empty(t, out.ToolChoice)
 }
 
 func TestResponsesToChatCompletionsRequest_MapsStringServerToolChoice(t *testing.T) {
 	req := &ResponsesRequest{
 		Model:      "gpt-4o",
 		Input:      json.RawMessage(`"hello"`),
+		Tools:      []ResponsesTool{{Type: "google_search"}},
 		ToolChoice: json.RawMessage(`"google_search"`),
 	}
 
@@ -939,6 +940,7 @@ func TestResponsesToChatCompletionsRequest_FallsBackUnsupportedStringToolChoice(
 	req := &ResponsesRequest{
 		Model:      "gpt-4o",
 		Input:      json.RawMessage(`"hello"`),
+		Tools:      []ResponsesTool{{Type: "function", Name: "wait"}},
 		ToolChoice: json.RawMessage(`"image_generation"`),
 	}
 

@@ -39,8 +39,8 @@ func TestResponsesToChatCompletionsRequest_DropsToolChoiceWhenNoConvertibleTools
 		Model: "glm-5.2",
 		Input: json.RawMessage(`"hi"`),
 		Tools: []ResponsesTool{
-			{Type: "web_search"},
 			{Type: "image_generation"},
+			{Type: "file_search"},
 		},
 		ToolChoice: json.RawMessage(`"auto"`),
 	}
@@ -577,15 +577,15 @@ func TestResponsesToChatCompletionsRequest_RejectsToolSearchNameConflict(t *test
 // tool_choice 指向被转换丢弃的工具（如 web_search）或不存在的名字时不能原样转发，
 // chat 上游会因选择项指向未声明工具而 400；字符串形式与指向幸存工具的选择保持转发。
 func TestResponsesToChatCompletionsRequest_DropsToolChoiceForDroppedTool(t *testing.T) {
-	// 强制选择被丢弃的 web_search：工具没了，选择项也必须丢。
+	// 强制选择被丢弃的 image_generation：工具没了，选择项也必须丢。
 	out, err := ResponsesToChatCompletionsRequest(&ResponsesRequest{
 		Model: "glm-5.2",
 		Input: json.RawMessage(`"hi"`),
 		Tools: []ResponsesTool{
 			{Type: "function", Name: "wait", Parameters: json.RawMessage(`{"type":"object","properties":{}}`)},
-			{Type: "web_search"},
+			{Type: "image_generation"},
 		},
-		ToolChoice: json.RawMessage(`{"type":"web_search"}`),
+		ToolChoice: json.RawMessage(`{"type":"image_generation"}`),
 	})
 	require.NoError(t, err)
 	require.Len(t, out.Tools, 1)
@@ -758,7 +758,7 @@ func TestChatCompletionsChunkToResponsesEvents_NamespacedToolCallStream(t *testi
 	events := ChatCompletionsChunkToResponsesEvents(chunk, state)
 	events = append(events, FinalizeChatCompletionsResponsesStream(state)...)
 
-	var added, itemDone *ResponsesStreamEvent
+	var added, argumentsDelta, itemDone *ResponsesStreamEvent
 	for i := range events {
 		evt := &events[i]
 		switch evt.Type {
@@ -770,6 +770,8 @@ func TestChatCompletionsChunkToResponsesEvents_NamespacedToolCallStream(t *testi
 			if evt.Item != nil && evt.Item.Type == "function_call" {
 				itemDone = evt
 			}
+		case "response.function_call_arguments.delta":
+			argumentsDelta = evt
 		case "response.custom_tool_call_input.delta", "response.custom_tool_call_input.done":
 			t.Fatalf("namespace 子工具调用不应产出 custom 事件: %s", evt.Type)
 		}
@@ -779,6 +781,8 @@ func TestChatCompletionsChunkToResponsesEvents_NamespacedToolCallStream(t *testi
 	assert.Equal(t, "function_call", added.Item.Type)
 	assert.Equal(t, "echo", added.Item.Name)
 	assert.Equal(t, "mcp__svc", added.Item.Namespace)
+	require.NotNil(t, argumentsDelta, "缺少 namespace 调用的参数增量")
+	assert.Equal(t, "echo", argumentsDelta.Name)
 
 	require.NotNil(t, itemDone, "缺少 namespace 调用的 output_item.done")
 	assert.Equal(t, "call_n", itemDone.Item.CallID)

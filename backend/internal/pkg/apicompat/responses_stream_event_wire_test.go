@@ -130,6 +130,8 @@ func TestWire_CustomToolCallInputIndexPresentAtZero(t *testing.T) {
 	})
 	require.Contains(t, done, "output_index")
 	require.EqualValues(t, 0, done["output_index"])
+	require.Equal(t, "call_1", done["call_id"])
+	require.Equal(t, "exec", done["name"])
 	require.Equal(t, "dir", done["input"])
 	require.NotContains(t, done, "delta")
 }

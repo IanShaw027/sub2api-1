@@ -40,6 +40,7 @@ func ResponsesToChatCompletionsRequest(req *ResponsesRequest) (*ChatCompletionsR
 		TopP:                req.TopP,
 		Stream:              req.Stream,
 		ServiceTier:         req.ServiceTier,
+		ParallelToolCalls:   req.ParallelToolCalls,
 	}
 	if req.Reasoning != nil {
 		out.ReasoningEffort = req.Reasoning.Effort
@@ -51,8 +52,19 @@ func ResponsesToChatCompletionsRequest(req *ResponsesRequest) (*ChatCompletionsR
 		}
 		out.Tools = tools
 	}
-	if len(req.ToolChoice) > 0 {
-		toolChoice, err := responsesToolChoiceToChatToolChoice(req.ToolChoice, functionNameMap)
+	if len(out.Tools) > 0 && len(req.ToolChoice) > 0 {
+		declared := make(map[string]string, len(out.Tools)+len(functionNameMap))
+		for _, tool := range out.Tools {
+			if tool.Function != nil {
+				declared[tool.Function.Name] = tool.Function.Name
+			} else {
+				declared[tool.Type] = tool.Type
+			}
+		}
+		for original, mapped := range functionNameMap {
+			declared[original] = mapped
+		}
+		toolChoice, err := responsesToolChoiceToChatToolChoice(req.ToolChoice, declared)
 		if err != nil {
 			return nil, err
 		}
@@ -147,16 +159,28 @@ func buildChatMessagesFromItems(messages []ChatMessage, rawItems []json.RawMessa
 				pendingReasoning = txt
 			}
 			continue
-		case "function_call":
+		case "function_call", "custom_tool_call", "tool_search_call":
 			arguments := rawString(item["arguments"])
+			if itemType == "custom_tool_call" {
+				encoded, _ := json.Marshal(map[string]string{"input": rawString(item["input"])})
+				arguments = string(encoded)
+			} else if itemType == "tool_search_call" && arguments == "" {
+				arguments = strings.TrimSpace(string(item["arguments"]))
+			}
 			if strings.TrimSpace(arguments) == "" {
 				arguments = "{}"
+			}
+			name := rawString(item["name"])
+			if itemType == "tool_search_call" {
+				name = toolSearchProxyName
+			} else if namespace := rawString(item["namespace"]); namespace != "" {
+				name = responseFunctionChatName(name, namespace)
 			}
 			toolCall := ChatToolCall{
 				ID:   rawString(item["call_id"]),
 				Type: "function",
 				Function: ChatFunctionCall{
-					Name:      rawString(item["name"]),
+					Name:      name,
 					Arguments: arguments,
 				},
 			}
@@ -177,8 +201,12 @@ func buildChatMessagesFromItems(messages []ChatMessage, rawItems []json.RawMessa
 			}
 			pendingReasoning = ""
 			continue
-		case "function_call_output":
-			content, _ := json.Marshal(rawString(item["output"]))
+		case "function_call_output", "custom_tool_call_output", "tool_search_output":
+			output := rawString(item["output"])
+			if output == "" && len(bytesTrimSpace(item["output"])) > 0 {
+				output = strings.TrimSpace(string(item["output"]))
+			}
+			content, _ := json.Marshal(output)
 			messages = append(messages, ChatMessage{
 				Role:       "tool",
 				ToolCallID: rawString(item["call_id"]),
@@ -447,16 +475,45 @@ func chatContentFromSingleResponsesPart(partType string, part map[string]json.Ra
 }
 
 func responsesToolsToChatTools(tools []ResponsesTool) ([]ChatTool, error) {
+	topLevel := make(map[string]bool)
+	for _, tool := range tools {
+		switch {
+		case tool.Type == "function" && tool.Name != "":
+			topLevel[responseFunctionChatName(tool.Name, "")] = true
+		case tool.Type == "custom" && tool.Name != "":
+			topLevel[tool.Name] = true
+		}
+	}
 	out := make([]ChatTool, 0, len(tools))
 	seenServerTools := make(map[string]struct{})
 	seenFunctionTools := make(map[string]struct{})
+	flatOwner := make(map[string]NamespacedToolName)
+	toolSearchDeclared := false
 	for _, tool := range tools {
 		if strings.EqualFold(strings.TrimSpace(tool.Type), "namespace") {
-			namespaceTools, err := responsesNamespaceToolsToChatTools(tool, seenFunctionTools)
+			namespaceTools, err := namespaceChildrenToChatTools(tool, topLevel, flatOwner)
 			if err != nil {
 				return nil, err
 			}
 			out = append(out, namespaceTools...)
+			continue
+		}
+		if tool.Type == "custom" {
+			out = append(out, ChatTool{Type: "function", Function: &ChatFunction{
+				Name: tool.Name, Description: tool.Description, Parameters: json.RawMessage(customToolInputSchema),
+			}})
+			seenFunctionTools[tool.Name] = struct{}{}
+			continue
+		}
+		if tool.Type == "tool_search" {
+			if topLevel[toolSearchProxyName] {
+				return nil, fmt.Errorf("built-in tool_search conflicts with a declared tool named %q", toolSearchProxyName)
+			}
+			if !toolSearchDeclared {
+				toolSearchDeclared = true
+				out = append(out, toolSearchProxyChatTool())
+				seenFunctionTools[toolSearchProxyName] = struct{}{}
+			}
 			continue
 		}
 		if chatTool, ok := responsesServerToolToNativeChatTool(tool); ok {
@@ -548,7 +605,11 @@ func collectResponsesNamespaceFunctionNames(tool ResponsesTool, namespace string
 		} else if nextNamespace == "" {
 			nextNamespace = namespace
 		}
-		for _, child := range tool.Tools {
+		children := tool.Tools
+		if len(children) == 0 {
+			children = tool.Children
+		}
+		for _, child := range children {
 			collectResponsesNamespaceFunctionNames(child, nextNamespace, out)
 		}
 	case toolType == "function":
@@ -567,6 +628,9 @@ func responseFunctionChatName(name string, namespace string) string {
 	name = strings.TrimSpace(name)
 	namespace = strings.TrimSpace(namespace)
 	if namespace != "" {
+		if !strings.Contains(namespace, ".") && !strings.Contains(name, ".") {
+			return flattenNamespaceToolName(namespace, name)
+		}
 		name = namespace + "." + name
 	}
 	return sanitizeChatFunctionName(name)
@@ -584,6 +648,9 @@ func remapResponsesInputFunctionNames(input json.RawMessage, nameMap map[string]
 	for _, item := range items {
 		itemType, _ := item["type"].(string)
 		if itemType != "function_call" && itemType != "custom_tool_call" && itemType != "mcp_tool_call" {
+			continue
+		}
+		if namespace, _ := item["namespace"].(string); strings.TrimSpace(namespace) != "" {
 			continue
 		}
 		name, _ := item["name"].(string)
@@ -645,7 +712,7 @@ func responsesToolChoiceToChatToolChoice(raw json.RawMessage, functionNameMap ma
 		case "auto", "none", "required":
 			return raw, nil
 		}
-		if chatTool, ok := responsesServerToolToNativeChatTool(ResponsesTool{Type: choiceString}); ok {
+		if chatTool, ok := responsesServerToolToNativeChatTool(ResponsesTool{Type: choiceString}); ok && functionNameMap[chatTool.Type] != "" {
 			out, err := json.Marshal(map[string]any{"type": chatTool.Type})
 			if err != nil {
 				return raw, nil
@@ -660,7 +727,7 @@ func responsesToolChoiceToChatToolChoice(raw json.RawMessage, functionNameMap ma
 		return raw, nil
 	}
 	choiceType := rawString(choice["type"])
-	if choiceType != "function" {
+	if choiceType != "function" && choiceType != "custom" && choiceType != "tool_search" {
 		switch choiceType {
 		case "auto", "none", "required":
 			out, err := json.Marshal(choiceType)
@@ -669,16 +736,19 @@ func responsesToolChoiceToChatToolChoice(raw json.RawMessage, functionNameMap ma
 			}
 			return out, nil
 		}
-		if chatTool, ok := responsesServerToolToNativeChatTool(ResponsesTool{Type: choiceType}); ok {
+		if chatTool, ok := responsesServerToolToNativeChatTool(ResponsesTool{Type: choiceType}); ok && functionNameMap[chatTool.Type] != "" {
 			out, err := json.Marshal(map[string]any{"type": chatTool.Type})
 			if err != nil {
 				return raw, nil
 			}
 			return out, nil
 		}
-		return json.Marshal("auto")
+		return nil, nil
 	}
 	name := rawString(choice["name"])
+	if choiceType == "tool_search" {
+		name = toolSearchProxyName
+	}
 	if name == "" {
 		name = rawNestedString(choice["function"], "name")
 	}
@@ -688,7 +758,7 @@ func responsesToolChoiceToChatToolChoice(raw json.RawMessage, functionNameMap ma
 	if mapped := functionNameMap[strings.TrimSpace(name)]; mapped != "" {
 		name = mapped
 	} else {
-		name = sanitizeChatFunctionName(name)
+		return nil, nil
 	}
 	out, err := json.Marshal(map[string]any{
 		"type": "function",
@@ -704,7 +774,19 @@ func responsesToolChoiceToChatToolChoice(raw json.RawMessage, functionNameMap ma
 
 // ChatCompletionsResponseToResponses converts a non-streaming Chat Completions
 // response into a Responses API response.
-func ChatCompletionsResponseToResponses(resp *ChatCompletionsResponse, model string) *ResponsesResponse {
+func ChatCompletionsResponseToResponses(resp *ChatCompletionsResponse, model string, compatibility ...any) *ResponsesResponse {
+	var customTools map[string]bool
+	var toolSearch bool
+	var namespaceTools map[string]NamespacedToolName
+	if len(compatibility) > 0 {
+		customTools, _ = compatibility[0].(map[string]bool)
+	}
+	if len(compatibility) > 1 {
+		toolSearch, _ = compatibility[1].(bool)
+	}
+	if len(compatibility) > 2 {
+		namespaceTools, _ = compatibility[2].(map[string]NamespacedToolName)
+	}
 	id := ""
 	if resp != nil {
 		id = resp.ID
@@ -729,7 +811,7 @@ func ChatCompletionsResponseToResponses(resp *ChatCompletionsResponse, model str
 
 	if len(resp.Choices) > 0 {
 		choice := resp.Choices[0]
-		out.Output = chatMessageToResponsesOutput(choice.Message)
+		out.Output = chatMessageToResponsesOutput(choice.Message, customTools, toolSearch, namespaceTools)
 		switch choice.FinishReason {
 		case "length":
 			out.Status = "incomplete"
@@ -748,7 +830,7 @@ func ChatCompletionsResponseToResponses(resp *ChatCompletionsResponse, model str
 	return out
 }
 
-func chatMessageToResponsesOutput(message ChatMessage) []ResponsesOutput {
+func chatMessageToResponsesOutput(message ChatMessage, customTools map[string]bool, toolSearch bool, namespaceTools map[string]NamespacedToolName) []ResponsesOutput {
 	var outputs []ResponsesOutput
 	if message.ReasoningContent != "" {
 		outputs = append(outputs, ResponsesOutput{
@@ -782,6 +864,27 @@ func chatMessageToResponsesOutput(message ChatMessage) []ResponsesOutput {
 		arguments := toolCall.Function.Arguments
 		if strings.TrimSpace(arguments) == "" {
 			arguments = "{}"
+		}
+		if customTools[toolCall.Function.Name] {
+			outputs = append(outputs, ResponsesOutput{
+				Type: "custom_tool_call", ID: generateItemID(), CallID: toolCall.ID,
+				Name: toolCall.Function.Name, Input: extractCustomToolCallInput(arguments), Status: "completed",
+			})
+			continue
+		}
+		if toolSearch && toolCall.Function.Name == toolSearchProxyName {
+			outputs = append(outputs, ResponsesOutput{
+				Type: "tool_search_call", ID: generateItemID(), CallID: toolCall.ID,
+				Arguments: arguments, Status: "completed",
+			})
+			continue
+		}
+		if namespaced, ok := namespaceTools[toolCall.Function.Name]; ok {
+			outputs = append(outputs, ResponsesOutput{
+				Type: "function_call", ID: generateItemID(), CallID: toolCall.ID,
+				Name: namespaced.Name, Namespace: namespaced.Namespace, Arguments: arguments, Status: "completed",
+			})
+			continue
 		}
 		outputs = append(outputs, ResponsesOutput{
 			Type:      "function_call",
@@ -842,9 +945,17 @@ func ChatUsageToResponsesUsage(usage *ChatUsage) *ResponsesUsage {
 	if out.TotalTokens == 0 {
 		out.TotalTokens = out.InputTokens + out.OutputTokens
 	}
-	if usage.PromptTokensDetails != nil && usage.PromptTokensDetails.CachedTokens > 0 {
+	if usage.PromptTokensDetails != nil && (usage.PromptTokensDetails.CachedTokens > 0 ||
+		usage.PromptTokensDetails.CacheCreationTokens > 0 || usage.PromptTokensDetails.CacheWriteTokens > 0) {
 		out.InputTokensDetails = &ResponsesInputTokensDetails{
-			CachedTokens: usage.PromptTokensDetails.CachedTokens,
+			CachedTokens:        usage.PromptTokensDetails.CachedTokens,
+			CacheCreationTokens: usage.PromptTokensDetails.CacheCreationTokens,
+			CacheWriteTokens:    usage.PromptTokensDetails.CacheWriteTokens,
+		}
+		if usage.PromptTokensDetails.CacheWriteTokens > 0 {
+			out.CacheCreationInputTokens = usage.PromptTokensDetails.CacheWriteTokens
+		} else {
+			out.CacheCreationInputTokens = usage.PromptTokensDetails.CacheCreationTokens
 		}
 	}
 	return out
@@ -887,6 +998,18 @@ type ChatCompletionsToResponsesStreamState struct {
 	ToolItemIDs     map[int]string
 	ToolOutputIndex map[int]int
 
+	// Compatibility metadata from the original Responses request. Chat
+	// Completions represents every client-side tool as a function, so the return
+	// path needs this context to restore the original Responses item shape.
+	CustomTools        map[string]bool
+	ToolSearchDeclared bool
+	NamespaceTools     map[string]NamespacedToolName
+
+	toolIsCustom     map[int]bool
+	toolIsToolSearch map[int]bool
+	toolNamespace    map[int]NamespacedToolName
+	toolAnnounced    map[int]bool
+
 	FinishReason string
 	Usage        *ResponsesUsage
 }
@@ -894,12 +1017,16 @@ type ChatCompletionsToResponsesStreamState struct {
 // NewChatCompletionsToResponsesStreamState returns an initialized stream state.
 func NewChatCompletionsToResponsesStreamState(model string) *ChatCompletionsToResponsesStreamState {
 	return &ChatCompletionsToResponsesStreamState{
-		ResponseID:      generateResponsesID(),
-		Model:           model,
-		Created:         time.Now().Unix(),
-		ToolCalls:       make(map[int]*ChatToolCall),
-		ToolItemIDs:     make(map[int]string),
-		ToolOutputIndex: make(map[int]int),
+		ResponseID:       generateResponsesID(),
+		Model:            model,
+		Created:          time.Now().Unix(),
+		ToolCalls:        make(map[int]*ChatToolCall),
+		ToolItemIDs:      make(map[int]string),
+		ToolOutputIndex:  make(map[int]int),
+		toolIsCustom:     make(map[int]bool),
+		toolIsToolSearch: make(map[int]bool),
+		toolNamespace:    make(map[int]NamespacedToolName),
+		toolAnnounced:    make(map[int]bool),
 	}
 }
 
@@ -983,19 +1110,8 @@ func ChatCompletionsChunkToResponsesEvents(
 				copyCall.Function.Arguments = ""
 				state.ToolCalls[idx] = &copyCall
 				stored = &copyCall
-				itemID := generateItemID()
-				state.ToolItemIDs[idx] = itemID
+				state.ToolItemIDs[idx] = generateItemID()
 				state.ToolOutputIndex[idx] = state.allocOutputIndex()
-				events = append(events, chatToResponsesEvent(state, "response.output_item.added", &ResponsesStreamEvent{
-					OutputIndex: state.ToolOutputIndex[idx],
-					Item: &ResponsesOutput{
-						Type:   "function_call",
-						ID:     itemID,
-						CallID: stored.ID,
-						Name:   stored.Function.Name,
-						Status: "in_progress",
-					},
-				}))
 			} else {
 				if toolCall.ID != "" {
 					stored.ID = toolCall.ID
@@ -1004,17 +1120,22 @@ func ChatCompletionsChunkToResponsesEvents(
 					stored.Function.Name = toolCall.Function.Name
 				}
 			}
+			events = append(events, announceChatToolItem(state, idx, stored, false)...)
 			if toolCall.Function.Arguments != "" {
 				stored.Function.Arguments += toolCall.Function.Arguments
-			}
-			if toolCall.Function.Arguments != "" {
-				events = append(events, chatToResponsesEvent(state, "response.function_call_arguments.delta", &ResponsesStreamEvent{
-					OutputIndex: state.ToolOutputIndex[idx],
-					ItemID:      state.ToolItemIDs[idx],
-					Delta:       toolCall.Function.Arguments,
-					CallID:      stored.ID,
-					Name:        stored.Function.Name,
-				}))
+				if state.toolAnnounced[idx] && !state.toolIsCustom[idx] && !state.toolIsToolSearch[idx] {
+					name := stored.Function.Name
+					if namespaced, ok := state.toolNamespace[idx]; ok {
+						name = namespaced.Name
+					}
+					events = append(events, chatToResponsesEvent(state, "response.function_call_arguments.delta", &ResponsesStreamEvent{
+						OutputIndex: state.ToolOutputIndex[idx],
+						ItemID:      state.ToolItemIDs[idx],
+						Delta:       toolCall.Function.Arguments,
+						CallID:      stored.ID,
+						Name:        name,
+					}))
+				}
 			}
 		}
 		if choice.FinishReason != nil && *choice.FinishReason != "" {
@@ -1228,6 +1349,64 @@ func ensureChatToResponsesTextPart(state *ChatCompletionsToResponsesStreamState)
 	})}
 }
 
+// announceChatToolItem waits for a streamed tool name when compatibility
+// metadata is present. The name determines the Responses item type, and an
+// output_item.added event cannot be corrected after it has been sent.
+func announceChatToolItem(
+	state *ChatCompletionsToResponsesStreamState,
+	idx int,
+	stored *ChatToolCall,
+	force bool,
+) []ResponsesStreamEvent {
+	if state.toolAnnounced[idx] {
+		return nil
+	}
+	if !force && stored.Function.Name == "" && (len(state.CustomTools) > 0 || state.ToolSearchDeclared || len(state.NamespaceTools) > 0) {
+		return nil
+	}
+
+	state.toolAnnounced[idx] = true
+	isCustom := state.CustomTools[stored.Function.Name]
+	isToolSearch := !isCustom && state.ToolSearchDeclared && stored.Function.Name == toolSearchProxyName
+	state.toolIsCustom[idx] = isCustom
+	state.toolIsToolSearch[idx] = isToolSearch
+
+	itemType := "function_call"
+	if isCustom {
+		itemType = "custom_tool_call"
+	} else if isToolSearch {
+		itemType = "tool_search_call"
+	}
+
+	itemName, itemNamespace := stored.Function.Name, ""
+	if namespaced, ok := state.NamespaceTools[stored.Function.Name]; ok && !isCustom && !isToolSearch {
+		state.toolNamespace[idx] = namespaced
+		itemName, itemNamespace = namespaced.Name, namespaced.Namespace
+	}
+
+	events := []ResponsesStreamEvent{chatToResponsesEvent(state, "response.output_item.added", &ResponsesStreamEvent{
+		OutputIndex: state.ToolOutputIndex[idx],
+		Item: &ResponsesOutput{
+			Type:      itemType,
+			ID:        state.ToolItemIDs[idx],
+			CallID:    stored.ID,
+			Name:      itemName,
+			Namespace: itemNamespace,
+			Status:    "in_progress",
+		},
+	})}
+	if !isCustom && !isToolSearch && stored.Function.Arguments != "" {
+		events = append(events, chatToResponsesEvent(state, "response.function_call_arguments.delta", &ResponsesStreamEvent{
+			OutputIndex: state.ToolOutputIndex[idx],
+			ItemID:      state.ToolItemIDs[idx],
+			Delta:       stored.Function.Arguments,
+			CallID:      stored.ID,
+			Name:        itemName,
+		}))
+	}
+	return events
+}
+
 // closeChatToolItems emits function_call_arguments.done + output_item.done for
 // every tool call opened during the stream, carrying the full call_id/name/
 // arguments so codex can deserialize and execute the call. Mirrors cc-switch's
@@ -1246,17 +1425,66 @@ func closeChatToolItems(state *ChatCompletionsToResponsesStreamState) []Response
 		if !opened {
 			continue
 		}
+		events = append(events, announceChatToolItem(state, i, toolCall, true)...)
 		arguments := toolCall.Function.Arguments
 		if strings.TrimSpace(arguments) == "" {
 			arguments = "{}"
 		}
 		outputIndex := state.ToolOutputIndex[i]
+		if state.toolIsCustom[i] {
+			input := extractCustomToolCallInput(arguments)
+			if input != "" {
+				events = append(events, chatToResponsesEvent(state, "response.custom_tool_call_input.delta", &ResponsesStreamEvent{
+					OutputIndex: outputIndex,
+					ItemID:      itemID,
+					Delta:       input,
+				}))
+			}
+			events = append(events,
+				chatToResponsesEvent(state, "response.custom_tool_call_input.done", &ResponsesStreamEvent{
+					OutputIndex: outputIndex,
+					ItemID:      itemID,
+					CallID:      toolCall.ID,
+					Name:        toolCall.Function.Name,
+					Input:       input,
+				}),
+				chatToResponsesEvent(state, "response.output_item.done", &ResponsesStreamEvent{
+					OutputIndex: outputIndex,
+					Item: &ResponsesOutput{
+						Type:   "custom_tool_call",
+						ID:     itemID,
+						CallID: toolCall.ID,
+						Name:   toolCall.Function.Name,
+						Input:  input,
+						Status: "completed",
+					},
+				}),
+			)
+			continue
+		}
+		if state.toolIsToolSearch[i] {
+			events = append(events, chatToResponsesEvent(state, "response.output_item.done", &ResponsesStreamEvent{
+				OutputIndex: outputIndex,
+				Item: &ResponsesOutput{
+					Type:      "tool_search_call",
+					ID:        itemID,
+					CallID:    toolCall.ID,
+					Arguments: arguments,
+					Status:    "completed",
+				},
+			}))
+			continue
+		}
+		name, namespace := toolCall.Function.Name, ""
+		if namespaced, ok := state.toolNamespace[i]; ok {
+			name, namespace = namespaced.Name, namespaced.Namespace
+		}
 		events = append(events,
 			chatToResponsesEvent(state, "response.function_call_arguments.done", &ResponsesStreamEvent{
 				OutputIndex: outputIndex,
 				ItemID:      itemID,
 				CallID:      toolCall.ID,
-				Name:        toolCall.Function.Name,
+				Name:        name,
 				Arguments:   arguments,
 			}),
 			chatToResponsesEvent(state, "response.output_item.done", &ResponsesStreamEvent{
@@ -1265,7 +1493,8 @@ func closeChatToolItems(state *ChatCompletionsToResponsesStreamState) []Response
 					Type:      "function_call",
 					ID:        itemID,
 					CallID:    toolCall.ID,
-					Name:      toolCall.Function.Name,
+					Name:      name,
+					Namespace: namespace,
 					Arguments: arguments,
 					Status:    "completed",
 				},
@@ -1306,11 +1535,37 @@ func (state *ChatCompletionsToResponsesStreamState) chatOutput() []ResponsesOutp
 		}
 		arguments := toolCall.Function.Arguments
 		arguments = normalizeChatToolCallArguments(arguments)
+		if state.toolIsCustom[i] {
+			outputs = append(outputs, ResponsesOutput{
+				Type:   "custom_tool_call",
+				ID:     state.toolCallItemID(i),
+				CallID: toolCall.ID,
+				Name:   toolCall.Function.Name,
+				Input:  extractCustomToolCallInput(arguments),
+				Status: "completed",
+			})
+			continue
+		}
+		if state.toolIsToolSearch[i] {
+			outputs = append(outputs, ResponsesOutput{
+				Type:      "tool_search_call",
+				ID:        state.toolCallItemID(i),
+				CallID:    toolCall.ID,
+				Arguments: arguments,
+				Status:    "completed",
+			})
+			continue
+		}
+		name, namespace := toolCall.Function.Name, ""
+		if namespaced, ok := state.toolNamespace[i]; ok {
+			name, namespace = namespaced.Name, namespaced.Namespace
+		}
 		outputs = append(outputs, ResponsesOutput{
 			Type:      "function_call",
 			ID:        state.toolCallItemID(i),
 			CallID:    toolCall.ID,
-			Name:      toolCall.Function.Name,
+			Name:      name,
+			Namespace: namespace,
 			Arguments: arguments,
 			Status:    "completed",
 		})

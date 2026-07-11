@@ -167,12 +167,14 @@ func anthropicUsageFromResponsesUsage(u *ResponsesUsage) AnthropicUsage {
 		cacheReadTokens = u.InputTokensDetails.CachedTokens
 	}
 
-	inputTokens := u.InputTokens - cacheReadTokens
+	inputTokens := u.InputTokens - cacheReadTokens - u.CacheCreationInputTokens
 	if inputTokens < 0 {
 		inputTokens = 0
 	}
 
-	return newAnthropicUsageEnvelope(inputTokens, u.OutputTokens, cacheReadTokens)
+	usage := newAnthropicUsageEnvelope(inputTokens, u.OutputTokens, cacheReadTokens)
+	usage.CacheCreationInputTokens = u.CacheCreationInputTokens
+	return usage
 }
 
 func refusalStopDetails(explanation string) *AnthropicStopDetails {
@@ -269,9 +271,10 @@ type ResponsesEventToAnthropicState struct {
 	// OutputIndexToBlockIdx maps Responses output_index → Anthropic content block index.
 	OutputIndexToBlockIdx map[int]int
 
-	InputTokens          int
-	OutputTokens         int
-	CacheReadInputTokens int
+	InputTokens              int
+	OutputTokens             int
+	CacheReadInputTokens     int
+	CacheCreationInputTokens int
 
 	ResponseID string
 	Model      string
@@ -350,6 +353,7 @@ func FinalizeResponsesAnthropicStream(state *ResponsesEventToAnthropicState) []A
 			ContextManagement: json.RawMessage("null"),
 			Usage: func() *AnthropicUsage {
 				usage := newAnthropicUsageEnvelope(state.InputTokens, state.OutputTokens, state.CacheReadInputTokens)
+				usage.CacheCreationInputTokens = state.CacheCreationInputTokens
 				return &usage
 			}(),
 		},
@@ -649,6 +653,7 @@ func resToAnthHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 		state.InputTokens = usage.InputTokens
 		state.OutputTokens = usage.OutputTokens
 		state.CacheReadInputTokens = usage.CacheReadInputTokens
+		state.CacheCreationInputTokens = usage.CacheCreationInputTokens
 	}
 	if evt.Response != nil {
 		if evt.Response.Usage != nil {
@@ -656,6 +661,7 @@ func resToAnthHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 			state.InputTokens = usage.InputTokens
 			state.OutputTokens = usage.OutputTokens
 			state.CacheReadInputTokens = usage.CacheReadInputTokens
+			state.CacheCreationInputTokens = usage.CacheCreationInputTokens
 		}
 		switch evt.Response.Status {
 		case "incomplete":
@@ -720,6 +726,7 @@ func resToAnthHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 			ContextManagement: json.RawMessage("null"),
 			Usage: func() *AnthropicUsage {
 				usage := newAnthropicUsageEnvelope(state.InputTokens, state.OutputTokens, state.CacheReadInputTokens)
+				usage.CacheCreationInputTokens = state.CacheCreationInputTokens
 				return &usage
 			}(),
 		},
