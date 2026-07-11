@@ -157,8 +157,34 @@ func normalizeGPT56ModelAlias(model string) string {
 	case "none", "low", "medium", "high", "xhigh", "x-high", "extrahigh", "extra-high", "max", "ultra":
 		return prefix + "-" + modelPart
 	default:
+		if isKnownCodexModelSuffix(suffix) {
+			return prefix + "-" + modelPart
+		}
 		return ""
 	}
+}
+
+func isKnownCodexModelSuffix(suffix string) bool {
+	switch suffix {
+	case "none", "minimal", "low", "medium", "high", "xhigh":
+		return true
+	}
+	return isCodexDateSuffix(suffix)
+}
+
+func isCodexDateSuffix(suffix string) bool {
+	parts := strings.Split(suffix, "-")
+	if len(parts) != 3 || len(parts[0]) != 4 || len(parts[1]) != 2 || len(parts[2]) != 2 {
+		return false
+	}
+	for _, part := range parts {
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func appendUsageBillingModelCandidate(candidates []string, seen map[string]struct{}, model string) []string {

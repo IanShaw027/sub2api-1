@@ -225,7 +225,7 @@ func openAIAnyToolsContainImageGenNamespace(tools any) bool {
 		if !ok {
 			continue
 		}
-		if strings.TrimSpace(firstNonEmptyString(tool["type"])) == "namespace" && strings.TrimSpace(firstNonEmptyString(tool["name"])) == "image_gen" {
+		if strings.TrimSpace(firstNonEmptyString(tool["type"])) == "namespace" && isOpenAIImageGenNamespaceName(firstNonEmptyString(tool["name"])) {
 			return true
 		}
 	}

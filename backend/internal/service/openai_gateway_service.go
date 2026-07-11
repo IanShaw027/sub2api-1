@@ -4646,6 +4646,19 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		clearOpenAIRequestBodyCache(c)
 	}
 
+	isCodexCLI := isOpenAICodexOfficialOrForcedClientRequest(c, s.cfg)
+	if isCodexCLI && account.CodexImageGenerationExplicitToolPolicy() == codexImageGenerationExplicitToolPolicyStrip {
+		strippedBody, stripped, stripErr := stripOpenAIImageGenerationToolsBytes(body)
+		if stripErr != nil {
+			return nil, stripErr
+		}
+		if stripped {
+			body = strippedBody
+			clearOpenAIRequestBodyCache(c)
+			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Stripped /responses image_generation tool for Codex client by account policy")
+		}
+	}
+
 	originalBody := append([]byte(nil), body...)
 	requestView := newOpenAIRequestView(body)
 	reqModel, reqStream, promptCacheKey := requestView.Model, requestView.Stream, requestView.PromptCacheKey
@@ -4693,7 +4706,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body)
 	}
 
-	isCodexCLI := isOpenAICodexOfficialOrForcedClientRequest(c, s.cfg)
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
 	clientTransport := GetOpenAIClientTransport(c)
 	// 默认仅允许 WS 入站请求走 WS 上游；显式开启时 HTTP /v1/responses
@@ -4735,9 +4747,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	passthroughEnabled := account.IsOpenAIPassthroughEnabled()
 	if passthroughEnabled {
 		// 透传分支只需要轻量提取字段，避免热路径全量 Unmarshal。
-		reasoningEffort := extractOpenAIReasoningEffortFromBody(body, reqModel)
+		mappedModel := account.GetMappedModel(reqModel)
+		reasoningEffort := extractOpenAIReasoningEffortFromBody(body, mappedModel, reqModel)
 		// 国产模型默认 effort 补充：也要用 mappedModel 判定是否是 passback-required 上游。
-		reasoningEffort = ApplyThinkingEnabledFallback(reasoningEffort, body, account.GetMappedModel(reqModel))
+		reasoningEffort = ApplyThinkingEnabledFallback(reasoningEffort, body, mappedModel)
 		return s.forwardOpenAIPassthrough(ctx, c, account, originalBody, reqModel, reasoningEffort, startTime)
 	}
 
@@ -6632,7 +6645,7 @@ oauthTransformDone:
 			usage = &OpenAIUsage{}
 		}
 
-		reasoningEffort := extractOpenAIReasoningEffortFromBody(body, originalModel)
+		reasoningEffort := extractOpenAIReasoningEffortFromBody(body, upstreamModel, billingModel, originalModel)
 		serviceTier := extractOpenAIServiceTierFromBody(body)
 
 		result := &OpenAIForwardResult{
@@ -7155,7 +7168,7 @@ func buildOpenAIPartialForwardResult(resp *http.Response, requestBody []byte, or
 		BillingModel:    upstreamModel,
 		UpstreamModel:   upstreamModel,
 		ServiceTier:     extractOpenAIServiceTierFromBody(requestBody),
-		ReasoningEffort: extractOpenAIReasoningEffortFromBody(requestBody, originalModel),
+		ReasoningEffort: extractOpenAIReasoningEffortFromBody(requestBody, upstreamModel, originalModel),
 		Stream:          false,
 		OpenAIWSMode:    false,
 		ResponseHeaders: resp.Header.Clone(),
@@ -7195,7 +7208,7 @@ func buildOpenAIStreamingPartialForwardResult(resp *http.Response, requestBody [
 		BillingModel:    upstreamModel,
 		UpstreamModel:   upstreamModel,
 		ServiceTier:     extractOpenAIServiceTierFromBody(requestBody),
-		ReasoningEffort: extractOpenAIReasoningEffortFromBody(requestBody, originalModel),
+		ReasoningEffort: extractOpenAIReasoningEffortFromBody(requestBody, upstreamModel, originalModel),
 		Stream:          true,
 		OpenAIWSMode:    false,
 		ResponseHeaders: resp.Header.Clone(),
@@ -12523,9 +12536,10 @@ func normalizeRecordedInputTokens(account *Account, usage OpenAIUsage) int {
 		return inputTokens
 	}
 
-	// OpenAI-style usage reports include cache reads inside input_tokens, but
-	// usage_logs stores only the billable non-cached remainder.
+	// OpenAI-style usage reports include cache reads and cache writes inside
+	// input_tokens, but usage_logs stores only the non-cached remainder.
 	inputTokens -= usage.CacheReadInputTokens
+	inputTokens -= usage.CacheCreationInputTokens
 	if inputTokens < 0 {
 		return 0
 	}
@@ -14082,6 +14096,10 @@ func writeOpenAIFastPolicyBlockedResponse(c *gin.Context, err *OpenAIFastBlocked
 		return
 	}
 	MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
+	if StopOpenAICompactSSEKeepaliveCommitted(c) {
+		writeOpenAICompactSSEFailureMessage(c, http.StatusForbidden, "permission_error", err.Message)
+		return
+	}
 	c.JSON(http.StatusForbidden, gin.H{
 		"error": gin.H{
 			"type":    "permission_error",
