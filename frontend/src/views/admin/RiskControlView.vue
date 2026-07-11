@@ -1706,6 +1706,7 @@ const resultOptions = computed<SelectOption[]>(() => [
   { value: 'block', label: t('admin.riskControl.result.apiBlock') },
   { value: 'keyword_block', label: t('admin.riskControl.result.keywordBlock') },
   { value: 'hash_block', label: t('admin.riskControl.result.hashBlock') },
+  { value: 'hash_observe', label: t('admin.riskControl.result.hashObserve') },
   { value: 'cyber_policy', label: t('admin.riskControl.result.cyberPolicy') },
   { value: 'attention', label: t('admin.riskControl.result.attention') },
   { value: 'allow', label: t('admin.riskControl.result.pass') },
@@ -2715,6 +2716,7 @@ function modeDescription(mode: ModerationMode): string {
 
 function resultLabel(row: ContentModerationLog): string {
   if (row.action === 'cyber_policy') return t('admin.riskControl.action.cyberPolicy')
+  if (row.action === 'hash_observe') return t('admin.riskControl.action.hashObserve')
   if (row.action === 'hash_block') return t('admin.riskControl.action.hashBlock')
   if (row.action === 'keyword_block') return t('admin.riskControl.action.keywordBlock')
   if (row.action === 'block') return t('admin.riskControl.action.block')

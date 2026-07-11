@@ -30,6 +30,7 @@ func TestBuildContentModerationLogWhere_SupportsExactResultTypes(t *testing.T) {
 		{name: "api block", result: "block", contains: "l.action = 'block'"},
 		{name: "keyword block", result: "keyword_block", contains: "l.action = 'keyword_block'"},
 		{name: "hash block", result: "hash_block", contains: "l.action = 'hash_block'"},
+		{name: "hash observe", result: "hash_observe", contains: "l.action = 'hash_observe'"},
 		{name: "cyber policy", result: "cyber_policy", contains: "l.action = 'cyber_policy'"},
 		{name: "allow", result: "allow", contains: "l.action = 'allow' AND l.flagged = FALSE AND l.error = ''"},
 	}
@@ -44,14 +45,14 @@ func TestBuildContentModerationLogWhere_SupportsExactResultTypes(t *testing.T) {
 	}
 }
 
-func TestContentModerationRepositoryCountFlaggedByUserSince_ExcludesHashBlock(t *testing.T) {
+func TestContentModerationRepositoryCountFlaggedByUserSince_ExcludesHashActions(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
 	repo := NewContentModerationRepository(db)
 	since := time.Now().Add(-time.Hour)
-	mock.ExpectQuery(regexp.QuoteMeta("AND action <> 'hash_block'")).
+	mock.ExpectQuery(regexp.QuoteMeta("AND action NOT IN ('hash_block', 'hash_observe')")).
 		WithArgs(int64(1001), since, false).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
 

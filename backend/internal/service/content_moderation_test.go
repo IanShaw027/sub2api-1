@@ -136,7 +136,7 @@ func (r *contentModerationTestRepo) CountFlaggedByUserSince(ctx context.Context,
 	defer r.mu.Unlock()
 	count := 0
 	for _, log := range r.logs {
-		if log.UserID == nil || *log.UserID != userID || !log.Flagged || log.Action == ContentModerationActionHashBlock {
+		if log.UserID == nil || *log.UserID != userID || !log.Flagged || log.Action == ContentModerationActionHashBlock || log.Action == ContentModerationActionHashObserve {
 			continue
 		}
 		if excludeCyberPolicy && log.Action == ContentModerationActionCyberPolicy {
@@ -2437,6 +2437,74 @@ func TestContentModerationCheck_PreHashUsesRedisHashCache(t *testing.T) {
 	require.Equal(t, ContentModerationActionHashBlock, logs[0].Action)
 	require.Equal(t, 1.0, logs[0].CategoryScores["hash"])
 	require.Equal(t, ContentModerationModePreBlock, logs[0].Mode)
+	require.Zero(t, logs[0].ViolationCount)
+	require.False(t, logs[0].AutoBanned)
+	require.Empty(t, userRepo.updated)
+}
+
+func TestContentModerationCheck_ObservePreHashHitAllowsAndRecordsWithoutUpstream(t *testing.T) {
+	var requestCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{
+			Results: []moderationAPIResult{{
+				CategoryScores: map[string]float64{"sexual": 0.9},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModeObserve
+	cfg.PreHashCheckEnabled = true
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.AutoBanEnabled = true
+	cfg.BanThreshold = 1
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	content := ContentModerationInput{Text: "known flagged prompt"}
+	content.Normalize()
+	inputHash := content.Hash()
+	hashCache := &contentModerationTestHashCache{hashes: map[string]struct{}{
+		inputHash: {},
+	}}
+	repo := &contentModerationTestRepo{}
+	userRepo := &contentModerationTestUserRepo{user: &User{ID: 1001, Status: StatusActive}}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		hashCache,
+		nil,
+		userRepo,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		UserID:   1001,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"known flagged prompt"}]}`),
+	})
+
+	require.NoError(t, err)
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.True(t, decision.Flagged)
+	require.Equal(t, "hash_observe", decision.Action)
+	require.Equal(t, inputHash, decision.InputHash)
+	require.Zero(t, requestCount.Load())
+	require.Equal(t, []string{inputHash}, hashCache.snapshotChecked())
+	require.Empty(t, hashCache.snapshotRecorded())
+	logs := requireContentModerationLogCount(t, repo, 1)
+	require.Equal(t, "hash_observe", logs[0].Action)
+	require.Equal(t, ContentModerationModeObserve, logs[0].Mode)
+	require.True(t, logs[0].Flagged)
 	require.Zero(t, logs[0].ViolationCount)
 	require.False(t, logs[0].AutoBanned)
 	require.Empty(t, userRepo.updated)

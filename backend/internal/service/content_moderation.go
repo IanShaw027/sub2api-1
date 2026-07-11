@@ -39,6 +39,7 @@ const (
 	ContentModerationActionAllow        = "allow"
 	ContentModerationActionBlock        = "block"
 	ContentModerationActionHashBlock    = "hash_block"
+	ContentModerationActionHashObserve  = "hash_observe"
 	ContentModerationActionKeywordBlock = "keyword_block"
 	ContentModerationActionAttention    = "attention"
 	ContentModerationActionError        = "error"
@@ -613,7 +614,7 @@ type ContentModerationBatchDeleteHashesResult struct {
 type ContentModerationRepository interface {
 	CreateLog(ctx context.Context, log *ContentModerationLog) error
 	ListLogs(ctx context.Context, filter ContentModerationLogFilter) ([]ContentModerationLog, *pagination.PaginationResult, error)
-	// CountFlaggedByUserSince 统计窗口内计入封号的违规次数（排除 hash_block；
+	// CountFlaggedByUserSince 统计窗口内计入封号的违规次数（排除 hash_block/hash_observe；
 	// excludeCyberPolicy 为 true 时额外排除 cyber_policy 行）。
 	CountFlaggedByUserSince(ctx context.Context, userID int64, since time.Time, excludeCyberPolicy bool) (int, error)
 	CleanupExpiredLogs(ctx context.Context, hitBefore time.Time, nonHitBefore time.Time) (*ContentModerationCleanupResult, error)
@@ -1200,9 +1201,31 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 				continue
 			}
 			if matched {
-				if cfg.Mode == ContentModerationModePreBlock {
-					s.recordPreBlockSyncMetric(0, ContentModerationActionHashBlock)
+				scores := map[string]float64{"hash": 1.0}
+				if cfg.Mode == ContentModerationModeObserve {
+					slog.Info("content_moderation.hash_observe",
+						"user_id", input.UserID,
+						"api_key_id", input.APIKeyID,
+						"group_id", contentModerationLogGroupID(input.GroupID),
+						"endpoint", input.Endpoint,
+						"protocol", input.Protocol,
+						"input_hash", localHash)
+					log := s.buildLog(input, cfg, ContentModerationActionHashObserve, true, "hash", 1.0, scores, localContent.ExcerptText(), nil, nil, "")
+					s.enqueueRecord(ctx, input, cfg, log, localHash, false, false)
+					return &ContentModerationDecision{
+						Allowed:         true,
+						Flagged:         true,
+						InputHash:       localHash,
+						HighestCategory: "hash",
+						HighestScore:    1.0,
+						CategoryScores:  scores,
+						Action:          ContentModerationActionHashObserve,
+					}, nil
 				}
+				if cfg.Mode != ContentModerationModePreBlock {
+					continue
+				}
+				s.recordPreBlockSyncMetric(0, ContentModerationActionHashBlock)
 				slog.Info("content_moderation.hash_block",
 					"user_id", input.UserID,
 					"api_key_id", input.APIKeyID,
@@ -1214,7 +1237,6 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 				if message != "" {
 					message = fmt.Sprintf("%s（hash: %s）", message, localHash)
 				}
-				scores := map[string]float64{"hash": 1.0}
 				log := s.buildLog(input, cfg, ContentModerationActionHashBlock, true, "hash", 1.0, scores, localContent.ExcerptText(), nil, nil, "")
 				s.enqueueRecord(ctx, input, cfg, log, localHash, false, false)
 				return &ContentModerationDecision{

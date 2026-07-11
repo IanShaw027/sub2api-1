@@ -446,6 +446,7 @@ describe('admin RiskControlView', () => {
       'block',
       'keyword_block',
       'hash_block',
+      'hash_observe',
       'cyber_policy',
       'attention',
       'error',
@@ -461,6 +462,9 @@ describe('admin RiskControlView', () => {
       page: 1,
       result: 'keyword_block',
     }))
+
+    expect(setupState.resultLabel({ action: 'hash_observe', flagged: true, error: '' }))
+      .toBe('admin.riskControl.action.hashObserve')
   })
 
   it('shows the current input column capped at 500 characters while keeping full detail text', async () => {

@@ -194,7 +194,7 @@ SELECT COUNT(*)
 FROM content_moderation_logs
 WHERE user_id = $1
   AND flagged = TRUE
-  AND action <> 'hash_block'
+  AND action NOT IN ('hash_block', 'hash_observe')
   AND ($3::bool IS FALSE OR action <> 'cyber_policy')
   AND created_at >= $2
   AND created_at > COALESCE((SELECT at FROM last_auto_ban), '-infinity'::timestamptz)
@@ -265,6 +265,8 @@ func buildContentModerationLogWhere(filter service.ContentModerationLogFilter) (
 		where = append(where, "l.action = 'keyword_block'")
 	case "hash", "hash_block":
 		where = append(where, "l.action = 'hash_block'")
+	case "hash_observe":
+		where = append(where, "l.action = 'hash_observe'")
 	case "cyber", "cyber_policy":
 		where = append(where, "l.action = 'cyber_policy'")
 	case "attention":
