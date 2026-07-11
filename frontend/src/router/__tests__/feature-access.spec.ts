@@ -30,6 +30,12 @@ const appStore = vi.hoisted(() => ({
   fetchPublicSettings: vi.fn(),
 }))
 
+const adminComplianceStore = vi.hoisted(() => ({
+  initialized: true,
+  fetchStatus: vi.fn(),
+  requireAcknowledgement: vi.fn(),
+}))
+
 vi.mock('vue-router', () => ({
   createWebHistory: vi.fn(() => ({})),
   createRouter: vi.fn(() => ({
@@ -54,11 +60,7 @@ vi.mock('@/stores/adminSettings', () => ({
 }))
 
 vi.mock('@/stores/adminCompliance', () => ({
-  useAdminComplianceStore: () => ({
-    initialized: true,
-    fetchStatus: vi.fn(),
-    requireAcknowledgement: vi.fn(),
-  }),
+  useAdminComplianceStore: () => adminComplianceStore,
 }))
 
 vi.mock('@/composables/useNavigationLoading', () => ({
@@ -117,6 +119,52 @@ describe('feature route guard', () => {
     appStore.publicSettingsLoaded = false
     appStore.cachedPublicSettings = null
     appStore.fetchPublicSettings.mockReset()
+    adminComplianceStore.initialized = true
+    adminComplianceStore.fetchStatus.mockReset()
+    adminComplianceStore.requireAcknowledgement.mockReset()
+  })
+
+  it('waits for admin compliance status before entering an admin route', async () => {
+    authStore.isAdmin = true
+    adminComplianceStore.initialized = false
+    const deferred = createDeferred<void>()
+    adminComplianceStore.fetchStatus.mockReturnValue(deferred.promise)
+
+    const { navigation, next } = runGuard(
+      { requiresAdmin: true },
+      '/admin/users',
+    )
+
+    await vi.waitFor(() =>
+      expect(adminComplianceStore.fetchStatus).toHaveBeenCalledTimes(1),
+    )
+    expect(next).not.toHaveBeenCalled()
+
+    deferred.resolve()
+    await navigation
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith()
+  })
+
+  it('restores the compliance dialog from a structured 423 guard response', async () => {
+    authStore.isAdmin = true
+    adminComplianceStore.initialized = false
+    const metadata = { version: 'v2026.06.10' }
+    adminComplianceStore.fetchStatus.mockRejectedValue({
+      status: 423,
+      code: 'ADMIN_COMPLIANCE_ACK_REQUIRED',
+      metadata,
+    })
+
+    const { navigation, next } = runGuard(
+      { requiresAdmin: true },
+      '/admin/users',
+    )
+    await navigation
+
+    expect(adminComplianceStore.requireAcknowledgement).toHaveBeenCalledWith(metadata)
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith()
   })
 
   it('waits for the first public-settings request before deciding payment access', async () => {

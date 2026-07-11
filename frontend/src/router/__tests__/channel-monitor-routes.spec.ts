@@ -19,6 +19,12 @@ const appStore = vi.hoisted(() => ({
   },
 }))
 
+const adminComplianceStore = vi.hoisted(() => ({
+  initialized: true,
+  fetchStatus: vi.fn(),
+  requireAcknowledgement: vi.fn(),
+}))
+
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => authStore,
 }))
@@ -29,6 +35,10 @@ vi.mock('@/stores/app', () => ({
 
 vi.mock('@/stores/adminSettings', () => ({
   useAdminSettingsStore: () => ({ customMenuItems: [] }),
+}))
+
+vi.mock('@/stores/adminCompliance', () => ({
+  useAdminComplianceStore: () => adminComplianceStore,
 }))
 
 vi.mock('@/composables/useNavigationLoading', () => ({
