@@ -1,11 +1,14 @@
 package handler
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"log"
+	"net"
+	"net/http"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -585,63 +588,240 @@ func setOpsSelectedAccount(c *gin.Context, accountID int64, platform ...string) 
 }
 
 type opsCaptureWriter struct {
-	gin.ResponseWriter
-	limit int
-	buf   bytes.Buffer
+	// The per-acquisition handle is never pooled; generation binds it to one state lease.
+	state      *opsCaptureWriterState
+	generation uint64
+	pool       opsCaptureWriterStatePool
+}
+
+type opsCaptureWriterState struct {
+	mu             sync.RWMutex
+	generation     uint64
+	responseWriter gin.ResponseWriter
+	limit          int
+	buf            bytes.Buffer
 }
 
 const opsCaptureWriterLimit = 64 * 1024
 
-var opsCaptureWriterPool = sync.Pool{
+type opsCaptureWriterStatePool interface {
+	Get() any
+	Put(any)
+}
+
+var opsCaptureWriterPool opsCaptureWriterStatePool = &sync.Pool{
 	New: func() any {
-		return &opsCaptureWriter{limit: opsCaptureWriterLimit}
+		return &opsCaptureWriterState{limit: opsCaptureWriterLimit}
 	},
 }
 
 func acquireOpsCaptureWriter(rw gin.ResponseWriter) *opsCaptureWriter {
-	w, ok := opsCaptureWriterPool.Get().(*opsCaptureWriter)
-	if !ok || w == nil {
-		w = &opsCaptureWriter{}
+	return acquireOpsCaptureWriterFromPool(opsCaptureWriterPool, rw)
+}
+
+func acquireOpsCaptureWriterFromPool(pool opsCaptureWriterStatePool, rw gin.ResponseWriter) *opsCaptureWriter {
+	var pooled any
+	if pool != nil {
+		pooled = pool.Get()
 	}
-	w.ResponseWriter = rw
-	w.limit = opsCaptureWriterLimit
-	w.buf.Reset()
-	return w
+	state, ok := pooled.(*opsCaptureWriterState)
+	if !ok || state == nil {
+		state = &opsCaptureWriterState{}
+	}
+	state.mu.Lock()
+	state.generation++
+	state.responseWriter = rw
+	state.limit = opsCaptureWriterLimit
+	state.buf.Reset()
+	generation := state.generation
+	state.mu.Unlock()
+	return &opsCaptureWriter{state: state, generation: generation, pool: pool}
 }
 
 func releaseOpsCaptureWriter(w *opsCaptureWriter) {
-	if w == nil {
+	if w == nil || w.state == nil {
 		return
 	}
-	w.ResponseWriter = nil
-	w.limit = opsCaptureWriterLimit
-	w.buf.Reset()
-	opsCaptureWriterPool.Put(w)
+	state := w.state
+	state.mu.Lock()
+	if state.generation != w.generation {
+		state.mu.Unlock()
+		return
+	}
+	state.generation++
+	state.responseWriter = nil
+	state.limit = opsCaptureWriterLimit
+	state.buf.Reset()
+	state.mu.Unlock()
+	if w.pool != nil {
+		w.pool.Put(state)
+	}
+}
+
+func (w *opsCaptureWriter) lockActive() (*opsCaptureWriterState, gin.ResponseWriter) {
+	if w == nil || w.state == nil {
+		return nil, nil
+	}
+	state := w.state
+	state.mu.RLock()
+	if state.generation != w.generation || state.responseWriter == nil {
+		state.mu.RUnlock()
+		return nil, nil
+	}
+	return state, state.responseWriter
+}
+
+func (w *opsCaptureWriter) lockActiveWrite() (*opsCaptureWriterState, gin.ResponseWriter) {
+	if w == nil || w.state == nil {
+		return nil, nil
+	}
+	state := w.state
+	state.mu.Lock()
+	if state.generation != w.generation || state.responseWriter == nil {
+		state.mu.Unlock()
+		return nil, nil
+	}
+	return state, state.responseWriter
+}
+
+func (w *opsCaptureWriter) capturedBytes() []byte {
+	state, _ := w.lockActive()
+	if state == nil {
+		return nil
+	}
+	defer state.mu.RUnlock()
+	return append([]byte(nil), state.buf.Bytes()...)
+}
+
+func (w *opsCaptureWriter) Header() http.Header {
+	state, rw := w.lockActive()
+	if state == nil {
+		return http.Header{}
+	}
+	defer state.mu.RUnlock()
+	return rw.Header()
+}
+
+func (w *opsCaptureWriter) WriteHeader(code int) {
+	state, rw := w.lockActive()
+	if state == nil {
+		return
+	}
+	defer state.mu.RUnlock()
+	rw.WriteHeader(code)
+}
+
+func (w *opsCaptureWriter) WriteHeaderNow() {
+	state, rw := w.lockActive()
+	if state == nil {
+		return
+	}
+	defer state.mu.RUnlock()
+	rw.WriteHeaderNow()
+}
+
+func (w *opsCaptureWriter) Status() int {
+	state, rw := w.lockActive()
+	if state == nil {
+		return 0
+	}
+	defer state.mu.RUnlock()
+	return rw.Status()
+}
+
+func (w *opsCaptureWriter) Size() int {
+	state, rw := w.lockActive()
+	if state == nil {
+		return -1
+	}
+	defer state.mu.RUnlock()
+	return rw.Size()
+}
+
+func (w *opsCaptureWriter) Written() bool {
+	state, rw := w.lockActive()
+	if state == nil {
+		return false
+	}
+	defer state.mu.RUnlock()
+	return rw.Written()
+}
+
+func (w *opsCaptureWriter) Flush() {
+	state, rw := w.lockActive()
+	if state == nil {
+		return
+	}
+	defer state.mu.RUnlock()
+	rw.Flush()
+}
+
+func (w *opsCaptureWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	state, rw := w.lockActive()
+	if state == nil {
+		return nil, nil, errors.New("response writer released")
+	}
+	defer state.mu.RUnlock()
+	return rw.Hijack()
+}
+
+func (w *opsCaptureWriter) CloseNotify() <-chan bool {
+	state, rw := w.lockActive()
+	if state == nil {
+		ch := make(chan bool)
+		close(ch)
+		return ch
+	}
+	defer state.mu.RUnlock()
+	return rw.CloseNotify()
+}
+
+func (w *opsCaptureWriter) Pusher() http.Pusher {
+	state, rw := w.lockActive()
+	if state == nil {
+		return nil
+	}
+	defer state.mu.RUnlock()
+	return rw.Pusher()
 }
 
 func (w *opsCaptureWriter) Write(b []byte) (int, error) {
-	if shouldCaptureOpsResponseChunkBytes(b, w.Status()) && w.limit > 0 && w.buf.Len() < w.limit {
-		remaining := w.limit - w.buf.Len()
+	// Keep capture and delegate write in one exclusive lease so release cannot reset or reuse state mid-call.
+	state, rw := w.lockActiveWrite()
+	if state == nil {
+		return 0, nil
+	}
+	defer state.mu.Unlock()
+	if shouldCaptureOpsResponseChunkBytes(b, rw.Status()) && state.limit > 0 && state.buf.Len() < state.limit {
+		remaining := state.limit - state.buf.Len()
 		if len(b) > remaining {
-			_, _ = w.buf.Write(b[:remaining])
+			_, _ = state.buf.Write(b[:remaining])
 		} else {
-			_, _ = w.buf.Write(b)
+			_, _ = state.buf.Write(b)
 		}
 	}
-	return w.ResponseWriter.Write(b)
+	return rw.Write(b)
 }
 
 func (w *opsCaptureWriter) WriteString(s string) (int, error) {
-	if shouldCaptureOpsResponseChunkString(s, w.Status()) && w.limit > 0 && w.buf.Len() < w.limit {
-		remaining := w.limit - w.buf.Len()
+	// bytes.Buffer is not safe under concurrent RWMutex readers; writes require the exclusive lease.
+	state, rw := w.lockActiveWrite()
+	if state == nil {
+		return 0, nil
+	}
+	defer state.mu.Unlock()
+	if shouldCaptureOpsResponseChunkString(s, rw.Status()) && state.limit > 0 && state.buf.Len() < state.limit {
+		remaining := state.limit - state.buf.Len()
 		if len(s) > remaining {
-			_, _ = w.buf.WriteString(s[:remaining])
+			_, _ = state.buf.WriteString(s[:remaining])
 		} else {
-			_, _ = w.buf.WriteString(s)
+			_, _ = state.buf.WriteString(s)
 		}
 	}
-	return w.ResponseWriter.WriteString(s)
+	return rw.WriteString(s)
 }
+
+var _ gin.ResponseWriter = (*opsCaptureWriter)(nil)
 
 func shouldCaptureOpsResponseChunkBytes(b []byte, status int) bool {
 	if status >= 400 {
@@ -695,7 +875,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 
 		status := c.Writer.Status()
 		if status < 400 {
-			body := w.buf.Bytes()
+			body := w.capturedBytes()
 			parsed := parseOpsErrorResponse(body)
 			if parsed.StreamFailure {
 				status = inferStreamFailureStatus(c, parsed)
@@ -963,7 +1143,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			}
 		}
 
-		body := w.buf.Bytes()
+		body := w.capturedBytes()
 		parsed := parseOpsErrorResponse(body)
 
 		// Skip logging if a passthrough rule with skip_monitoring=true matched.

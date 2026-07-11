@@ -223,15 +223,17 @@ func TestOpsCaptureWriterPool_ResetOnRelease(t *testing.T) {
 
 	writer := acquireOpsCaptureWriter(c.Writer)
 	require.NotNil(t, writer)
-	_, err := writer.buf.WriteString("temp-error-body")
+	c.Writer.WriteHeader(http.StatusInternalServerError)
+	_, err := writer.WriteString("temp-error-body")
 	require.NoError(t, err)
+	require.NotEmpty(t, writer.capturedBytes())
 
 	releaseOpsCaptureWriter(writer)
 
 	reused := acquireOpsCaptureWriter(c.Writer)
 	defer releaseOpsCaptureWriter(reused)
 
-	require.Zero(t, reused.buf.Len(), "writer should be reset before reuse")
+	require.Empty(t, reused.capturedBytes(), "writer should be reset before reuse")
 }
 
 func TestOpsErrorLoggerMiddleware_RecordsNoAvailableAccounts(t *testing.T) {
