@@ -29,15 +29,6 @@ type Usage struct {
 	ImageOutputTokens        int
 }
 
-func firstNonZeroGJSONInt(values ...gjson.Result) int64 {
-	for _, value := range values {
-		if value.Exists() && value.Int() != 0 {
-			return value.Int()
-		}
-	}
-	return 0
-}
-
 type RelayResult struct {
 	RequestModel            string
 	Usage                   Usage
@@ -1067,7 +1058,7 @@ func parseUsageAndAccumulate(
 	parsedUsage := Usage{
 		InputTokens:              inputTokens,
 		OutputTokens:             outputTokens,
-		CacheCreationInputTokens: int(firstNonZeroGJSONInt(usageResult.Get("cache_creation_input_tokens"), usageResult.Get("cache_write_tokens"), usageResult.Get("input_tokens_details.cache_write_tokens"))),
+		CacheCreationInputTokens: openAICacheCreationTokensFromUsage(usageResult),
 		CacheReadInputTokens:     cachedTokens,
 		ImageOutputTokens:        int(imageTokens),
 	}
@@ -1088,6 +1079,31 @@ func parseUsageIntField(value gjson.Result, required bool) (int, bool) {
 		return 0, false
 	}
 	return int(value.Int()), true
+}
+
+func openAICacheCreationTokensFromUsage(value gjson.Result) int {
+	for _, field := range []string{
+		"input_tokens_details.cache_write_tokens",
+		"prompt_tokens_details.cache_write_tokens",
+		"input_tokens_details.cache_creation_tokens",
+		"prompt_tokens_details.cache_creation_tokens",
+	} {
+		result := value.Get(field)
+		if result.Exists() {
+			return max(int(result.Int()), 0)
+		}
+	}
+	for _, field := range []string{
+		"cache_write_tokens",
+		"cache_creation_input_tokens",
+		"cache_write_input_tokens",
+		"cache_creation_tokens",
+	} {
+		if tokens := int(value.Get(field).Int()); tokens > 0 {
+			return tokens
+		}
+	}
+	return 0
 }
 
 func enrichResult(result *RelayResult, state *relayState, duration time.Duration) {
