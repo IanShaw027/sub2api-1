@@ -95,8 +95,16 @@ const AppLayoutStub = { template: '<div><slot /></div>' }
 const UsageFiltersStub = {
   props: ['modelValue'],
   emits: ['update:modelValue', 'change', 'refresh', 'reset', 'cleanup', 'export'],
+  expose: ['setUserKeyword'],
+  data: () => ({ userKeyword: '' }),
+  methods: {
+    setUserKeyword(email: string) {
+      this.userKeyword = email
+    },
+  },
   template: `
     <div>
+      <span data-test="usage-filter-user-keyword">{{ userKeyword }}</span>
       <button
         data-test="exclude-admin-toggle"
         @click="$emit('update:modelValue', { ...modelValue, exclude_admin: !modelValue.exclude_admin }); $emit('change')"
@@ -790,6 +798,7 @@ describe('admin UsageView ranking tab', () => {
 
     expect((wrapper.vm as any).activeTab).toBe('usage')
     expect((wrapper.vm as any).filters.user_id).toBe(5)
+    expect(wrapper.find('[data-test="usage-filter-user-keyword"]').text()).toBe('rank@test.com')
     expect(list).toHaveBeenCalledWith(expect.objectContaining({ user_id: 5 }), expect.anything())
   })
 })

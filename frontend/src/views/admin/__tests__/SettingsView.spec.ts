@@ -733,6 +733,115 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(getWebSearchEmulationConfig).toHaveBeenCalledTimes(1);
   });
 
+  it("loads OpenAI Fast/Flex user IDs into an isolated array and exposes add/remove controls", async () => {
+    const loadedUserIDs = [1001];
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      openai_fast_policy_settings: {
+        rules: [
+          {
+            service_tier: "priority",
+            action: "filter",
+            scope: "all",
+            user_ids: loadedUserIDs,
+          },
+        ],
+      },
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+    await openGatewayTab(wrapper);
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm;
+    const rule = setupState.openaiFastPolicyForm.rules[0];
+    expect(rule.user_ids).toEqual([1001]);
+    loadedUserIDs.push(1002);
+    expect(rule.user_ids).toEqual([1001]);
+
+    const userIDInput = wrapper.find(
+      'input[placeholder="admin.settings.openaiFastPolicy.userIdPlaceholder"]',
+    );
+    expect(userIDInput.attributes("type")).toBe("number");
+    expect(userIDInput.attributes("min")).toBe("1");
+    expect(userIDInput.attributes("step")).toBe("1");
+
+    const addButton = wrapper
+      .findAll("button")
+      .find((node) =>
+        node.text().includes("admin.settings.openaiFastPolicy.addUserId"),
+      );
+    expect(addButton).toBeDefined();
+    await addButton?.trigger("click");
+    expect(rule.user_ids).toEqual([1001, 0]);
+
+    const removeButton = wrapper.find(
+      'button[title="admin.settings.openaiFastPolicy.removeUserId"]',
+    );
+    expect(removeButton.exists()).toBe(true);
+    await removeButton.trigger("click");
+    expect(rule.user_ids).toEqual([0]);
+
+    setupState.addOpenAIFastPolicyRule();
+    expect(setupState.openaiFastPolicyForm.rules.at(-1).user_ids).toEqual([]);
+  });
+
+  it("omits empty OpenAI Fast/Flex user IDs when saving and clones refreshed IDs", async () => {
+    const loadedUserIDs: number[] = [];
+    const selectedUserIDs = [1001];
+    const refreshedUserIDs = [2002, 2003];
+    const baseRule = {
+      service_tier: "priority",
+      action: "filter",
+      scope: "all",
+      user_ids: loadedUserIDs,
+    };
+    const selectedRule = {
+      ...baseRule,
+      user_ids: selectedUserIDs,
+    };
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      openai_fast_policy_settings: { rules: [baseRule, selectedRule] },
+    });
+    updateSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      openai_fast_policy_settings: {
+        rules: [
+          { ...baseRule, user_ids: refreshedUserIDs },
+          selectedRule,
+        ],
+      },
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    const submittedRules = updateSettings.mock.calls[0]?.[0]
+      .openai_fast_policy_settings.rules;
+    expect(submittedRules[0].user_ids).toBeUndefined();
+    expect(submittedRules[1].user_ids).toEqual([1001]);
+
+    const setupState = (wrapper.vm as any).$?.setupState ?? wrapper.vm;
+    const refreshedRule = setupState.openaiFastPolicyForm.rules[0];
+    expect(refreshedRule.user_ids).toEqual([2002, 2003]);
+    refreshedUserIDs.push(2004);
+    expect(refreshedRule.user_ids).toEqual([2002, 2003]);
+  });
+
+  it("does not overwrite OpenAI Fast/Flex policy when settings omitted it", async () => {
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings.mock.calls[0]?.[0]).not.toHaveProperty(
+      "openai_fast_policy_settings",
+    );
+  });
+
   it("does not render legacy visible payment method controls", async () => {
     const wrapper = mountView();
 

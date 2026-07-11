@@ -214,6 +214,7 @@ import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import SupportQRCodesButton from '@/components/common/SupportQRCodesButton.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { safeImageUrl } from '@/utils/safeImageUrl'
+import { sanitizeUrl } from '@/utils/url'
 
 const router = useRouter()
 const route = useRoute()
@@ -229,7 +230,9 @@ const dropdownRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
 const supportQRCodes = computed(() => appStore.supportQRCodes)
 const avatarUrl = computed(() => safeImageUrl(user.value?.avatar_url))
-const helpDocsUrl = computed(() => (appStore.cachedPublicSettings?.doc_url || appStore.docUrl || '').trim())
+const helpDocsUrl = computed(() => appStore.cachedPublicSettings?.doc_url
+  ? sanitizeUrl(appStore.cachedPublicSettings.doc_url)
+  : sanitizeUrl(appStore.docUrl))
 const downloadToolsUrl = computed(() => (appStore.cachedPublicSettings?.download_tools_url || appStore.downloadToolsUrl || '').trim())
 
 // 只在标准模式的管理员下显示新手引导按钮

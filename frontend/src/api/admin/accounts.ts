@@ -15,6 +15,7 @@ import type {
   AccountUsageStatsResponse,
   TempUnschedulableStatus,
   AdminDataPayload,
+  AdminDataImportPayload,
   AdminDataImportResult,
   CodexSessionImportRequest,
   CodexSessionImportResult,
@@ -625,7 +626,7 @@ export async function exportData(options?: {
 }
 
 export async function importData(payload: {
-  data: AdminDataPayload
+  data: AdminDataImportPayload
   skip_default_group_bind?: boolean
   dedup_mode?: 'none' | 'overwrite' | 'ignore'
 }): Promise<AdminDataImportResult> {

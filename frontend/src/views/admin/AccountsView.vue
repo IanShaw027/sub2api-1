@@ -344,6 +344,29 @@
           <template #cell-priority="{ value }">
             <span class="text-sm text-gray-700 dark:text-gray-300">{{ value }}</span>
           </template>
+          <template #header-scheduler_score="{ column }">
+            <div class="flex items-center">
+              <span>{{ column.label }}</span>
+              <HelpTooltip :content="t('admin.accounts.schedulerScore.hint')" width-class="w-80" />
+            </div>
+          </template>
+          <template #cell-scheduler_score="{ row }">
+            <div v-if="getSchedulerScoreRows(row).length" class="flex min-w-[7rem] flex-col gap-0.5 font-mono text-[11px] leading-4">
+              <div
+                v-for="score in getSchedulerScoreRows(row)"
+                :key="String(score.group_id)"
+                class="flex items-center gap-1 whitespace-nowrap text-gray-700 dark:text-gray-300"
+                :title="`${formatSchedulerScoreGroup(score)} / ${formatSchedulerScore(score.base_score)} / ${formatStickySchedulerScore(score)}`"
+              >
+                <span class="max-w-[4.75rem] truncate text-gray-500 dark:text-dark-400">{{ formatSchedulerScoreGroup(score) }}</span>
+                <span class="text-gray-300 dark:text-gray-600">/</span>
+                <span>{{ formatSchedulerScore(score.base_score) }}</span>
+                <span class="text-gray-300 dark:text-gray-600">/</span>
+                <span class="text-primary-700 dark:text-primary-300">{{ formatStickySchedulerScore(score) }}</span>
+              </div>
+            </div>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+          </template>
           <template #cell-last_used_at="{ value }">
             <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatRelativeTime(value) }}</span>
           </template>
@@ -511,7 +534,7 @@ import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
 import { collectGeminiTierMetadataSources } from '@/utils/geminiExtra'
 import { formatOAuthAccountName } from '@/utils/oauthAccountName'
 import { inferGeminiOAuthType } from '@/utils/geminiOAuthType'
-import type { Account, AccountPlatform, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel, AccountUsageInfo } from '@/types'
+import type { Account, AccountPlatform, AccountSchedulerGroupScore, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel, AccountUsageInfo } from '@/types'
 import {
   normalizeOpenAIEndpointCapabilities,
   supportsTextEndpointAutoRoute
@@ -618,8 +641,10 @@ const exportingData = ref(false)
 const showAccountToolsDropdown = ref(false)
 const accountToolsDropdownRef = ref<HTMLElement | null>(null)
 const hiddenColumns = reactive<Set<string>>(new Set())
-const DEFAULT_HIDDEN_COLUMNS = ['today_stats', 'proxy', 'notes', 'priority', 'rate_multiplier']
+const DEFAULT_HIDDEN_COLUMNS = ['today_stats', 'proxy', 'notes', 'priority', 'scheduler_score', 'rate_multiplier']
 const HIDDEN_COLUMNS_KEY = 'account-hidden-columns'
+const HIDDEN_COLUMNS_VERSION_KEY = 'account-hidden-columns-version'
+const HIDDEN_COLUMNS_CURRENT_VERSION = 'scheduler-score-hidden-by-default'
 
 // Sorting settings
 const ACCOUNT_SORT_STORAGE_KEY = 'account-table-sort'
@@ -881,6 +906,34 @@ const autoRefreshIntervalLabel = (sec: number) => {
   return `${sec}s`
 }
 
+const formatSchedulerScore = (value: unknown): string => {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  return num.toFixed(6).replace(/\.?0+$/, '')
+}
+
+const formatStickySchedulerScore = (score: AccountSchedulerGroupScore): string => {
+  if (score.sticky_score_infinity) return '+∞'
+  return formatSchedulerScore(score.sticky_score)
+}
+
+const getSchedulerScoreRows = (account: Account): AccountSchedulerGroupScore[] => {
+  const groupRows = Array.isArray(account.scheduler_scores)
+    ? account.scheduler_scores.filter(score => score.group_id != null)
+    : []
+  if (groupRows.length) return groupRows
+  if (account.scheduler_score) {
+    return [{ group_id: null, ...account.scheduler_score }]
+  }
+  return []
+}
+
+const formatSchedulerScoreGroup = (score: AccountSchedulerGroupScore): string => {
+  if (score.group_name) return score.group_name
+  if (score.group_id != null) return `#${score.group_id}`
+  return t('admin.accounts.schedulerScore.ungrouped')
+}
+
 const loadSavedColumns = () => {
   try {
     const saved = localStorage.getItem(HIDDEN_COLUMNS_KEY)
@@ -889,10 +942,16 @@ const loadSavedColumns = () => {
       parsed.forEach(key => {
         hiddenColumns.add(key)
       })
+      if (localStorage.getItem(HIDDEN_COLUMNS_VERSION_KEY) !== HIDDEN_COLUMNS_CURRENT_VERSION) {
+        hiddenColumns.add('scheduler_score')
+        localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
+        localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
+      }
     } else {
       DEFAULT_HIDDEN_COLUMNS.forEach(key => {
         hiddenColumns.add(key)
       })
+      localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
     }
   } catch (e) {
     console.error('Failed to load saved columns:', e)
@@ -905,6 +964,7 @@ const loadSavedColumns = () => {
 const saveColumnsToStorage = () => {
   try {
     localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
+    localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
   } catch (e) {
     console.error('Failed to save columns:', e)
   }
@@ -977,9 +1037,20 @@ const toggleColumn = (key: string) => {
       console.error('Failed to load account today stats after showing column:', error)
     })
   }
+  if (key === 'scheduler_score') {
+    syncAccountListDerivedParams()
+    load().catch((error) => {
+      console.error('Failed to reload accounts after toggling scheduler score column:', error)
+    })
+  }
 }
 
 const isColumnVisible = (key: string) => !hiddenColumns.has(key)
+const shouldIncludeSchedulerScore = () => isColumnVisible('scheduler_score')
+const syncAccountListDerivedParams = () => {
+  const requestParams = params as any
+  requestParams.include_scheduler_score = shouldIncludeSchedulerScore() ? '1' : '0'
+}
 
 const {
   items: accounts,
@@ -1000,6 +1071,7 @@ const {
     privacy_mode: '',
     group: '',
     search: '',
+    include_scheduler_score: shouldIncludeSchedulerScore() ? '1' : '0',
     sort_by: sortState.sort_by,
     sort_order: sortState.sort_order
   }
@@ -1045,6 +1117,7 @@ const isFirstLoad = ref(true)
 const load = async () => {
   baseDebouncedReload.cancel()
   const requestParams = params as any
+  syncAccountListDerivedParams()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = false
@@ -1061,6 +1134,7 @@ const load = async () => {
 
 const reload = async () => {
   baseDebouncedReload.cancel()
+  syncAccountListDerivedParams()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = false
@@ -1069,6 +1143,7 @@ const reload = async () => {
 }
 
 const debouncedReload = () => {
+  syncAccountListDerivedParams()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = true
@@ -1077,6 +1152,7 @@ const debouncedReload = () => {
 
 const handlePageChange = (page: number) => {
   baseDebouncedReload.cancel()
+  syncAccountListDerivedParams()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = true
@@ -1085,6 +1161,7 @@ const handlePageChange = (page: number) => {
 
 const handlePageSizeChange = (size: number) => {
   baseDebouncedReload.cancel()
+  syncAccountListDerivedParams()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = true
@@ -1098,6 +1175,7 @@ const handleSort = (key: string, order: AccountSortOrder) => {
   const requestParams = params as any
   requestParams.sort_by = key
   requestParams.sort_order = order
+  syncAccountListDerivedParams()
   pagination.page = 1
   hasPendingListSync.value = false
   resetAutoRefreshCache()
@@ -1170,6 +1248,8 @@ const shouldReplaceAutoRefreshRow = (current: Account, next: Account) => {
     current.rate_limit_reset_at !== next.rate_limit_reset_at ||
     current.overload_until !== next.overload_until ||
     current.temp_unschedulable_until !== next.temp_unschedulable_until ||
+    JSON.stringify(current.scheduler_score ?? null) !== JSON.stringify(next.scheduler_score ?? null) ||
+    JSON.stringify(current.scheduler_scores ?? null) !== JSON.stringify(next.scheduler_scores ?? null) ||
     buildOpenAIUsageRefreshKey(current) !== buildOpenAIUsageRefreshKey(next)
   )
 }
@@ -1243,6 +1323,7 @@ const mergeAccountsIncrementally = (nextRows: Account[]) => {
 
 const refreshAccountsIncrementally = async () => {
   if (autoRefreshFetching.value) return
+  syncAccountListDerivedParams()
   autoRefreshFetching.value = true
   try {
     const result = await adminAPI.accounts.listWithEtag(
@@ -1255,6 +1336,7 @@ const refreshAccountsIncrementally = async () => {
         privacy_mode?: string
         group?: string
         search?: string
+        include_scheduler_score?: string
         sort_by?: string
         sort_order?: AccountSortOrder
 
@@ -1610,6 +1692,7 @@ const allColumns = computed(() => {
     { key: 'usage', label: t('admin.accounts.columns.usageWindows'), sortable: false },
     { key: 'proxy', label: t('admin.accounts.columns.proxy'), sortable: false },
     { key: 'priority', label: t('admin.accounts.columns.priority'), sortable: true },
+    { key: 'scheduler_score', label: t('admin.accounts.columns.schedulerScore'), sortable: false },
     { key: 'rate_multiplier', label: t('admin.accounts.columns.billingRateMultiplier'), sortable: true },
     { key: 'last_used_at', label: t('admin.accounts.columns.lastUsed'), sortable: true },
     { key: 'created_at', label: t('admin.accounts.columns.createdAt'), sortable: true },

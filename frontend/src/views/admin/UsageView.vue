@@ -64,7 +64,7 @@
           <TokenUsageTrend v-if="!filters.exclude_admin" :trend-data="trendData" :loading="chartsLoading" />
         </div>
       </div>
-      <UsageFilters v-model="filters" :start-date="startDate" :end-date="endDate" :exporting="exporting" :model-options="modelNameOptions" @change="applyFilters" @refresh="refreshData" @reset="resetFilters" @cleanup="openCleanupDialog" @export="exportToExcel">
+      <UsageFilters ref="usageFiltersRef" v-model="filters" :start-date="startDate" :end-date="endDate" :exporting="exporting" :model-options="modelNameOptions" @change="applyFilters" @refresh="refreshData" @reset="resetFilters" @cleanup="openCleanupDialog" @export="exportToExcel">
         <template #after-reset>
           <div class="relative" ref="columnDropdownRef">
             <button
@@ -101,11 +101,16 @@
         </template>
       </UsageFilters>
       <div class="mb-4 flex gap-2 border-b border-gray-200 dark:border-dark-700">
-        <button class="tab" :class="{ 'tab-active': activeTab === 'usage' }" @click="activeTab = 'usage'">
-          {{ t('usage.tabs.usage') }}
-        </button>
-        <button class="tab" :class="{ 'tab-active': activeTab === 'errors' }" @click="switchToErrorsTab">
-          {{ t('usage.tabs.errors') }}
+        <button
+          v-for="tab in detailTabs"
+          :key="tab.key"
+          type="button"
+          data-testid="usage-detail-tab"
+          class="tab"
+          :class="{ 'tab-active': activeTab === tab.key }"
+          @click="switchTab(tab.key)"
+        >
+          {{ tab.label }}
         </button>
       </div>
       <div v-show="activeTab === 'usage'">
@@ -130,6 +135,16 @@
           @update:page="onErrPage"
           @update:pageSize="onErrPageSize" />
         <OpsErrorDetailModal v-model:show="showErrorModal" :error-id="selectedErrorId" :error-type="'request'" />
+      </div>
+      <div v-if="rankingMounted" v-show="activeTab === 'ranking'">
+        <UserTokenRanking
+          ref="rankingRef"
+          :start-date="startDate"
+          :end-date="endDate"
+          :filters="breakdownFilters"
+          :model="filters.model"
+          @select-user="handleRankingSelectUser"
+        />
       </div>
     </div>
   </AppLayout>
@@ -162,6 +177,7 @@ import { resolveUsageRequestType, requestTypeToLegacyStream } from '@/utils/usag
 import AppLayout from '@/components/layout/AppLayout.vue'; import Pagination from '@/components/common/Pagination.vue'; import Select from '@/components/common/Select.vue'; import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'; import UsageFilters from '@/components/admin/usage/UsageFilters.vue'
 import UsageTable from '@/components/admin/usage/UsageTable.vue'; import UsageExportProgress from '@/components/admin/usage/UsageExportProgress.vue'
+import UserTokenRanking from '@/components/admin/usage/UserTokenRanking.vue'
 import UsageCleanupDialog from '@/components/admin/usage/UsageCleanupDialog.vue'
 import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryModal.vue'
 import OpsErrorLogTable from '@/views/admin/ops/components/OpsErrorLogTable.vue'
@@ -257,6 +273,13 @@ const handleUserClick = async (userId: number) => {
     if (seq !== balanceHistoryReqSeq) return
     appStore.showError(t('admin.usage.failedToLoadUser'))
   }
+}
+
+const handleRankingSelectUser = (userId: number, email: string) => {
+  filters.value = { ...filters.value, user_id: userId }
+  usageFiltersRef.value?.setUserKeyword(email || '')
+  activeTab.value = 'usage'
+  applyFilters()
 }
 
 const closeBalanceHistoryModal = () => {
@@ -515,6 +538,7 @@ const refreshData = () => {
   loadModelStats(modelDistributionSource.value, true)
   loadChartData()
   if (activeTab.value === 'errors') loadAdminErrors()
+  if (rankingMounted.value) rankingRef.value?.reload()
 }
 const resetFilters = () => {
   const range = getLast24HoursRangeDates()
@@ -683,8 +707,25 @@ const loadSavedColumns = () => {
   }
 }
 
+type DetailTab = 'usage' | 'errors' | 'ranking'
+const activeTab = ref<DetailTab>('usage')
+const detailTabs = computed(() => [
+  { key: 'usage' as const, label: t('usage.tabs.usage') },
+  { key: 'errors' as const, label: t('usage.tabs.errors') },
+  { key: 'ranking' as const, label: t('usage.tabs.ranking') }
+])
+const rankingMounted = ref(false)
+const rankingRef = ref<InstanceType<typeof UserTokenRanking> | null>(null)
+const usageFiltersRef = ref<InstanceType<typeof UsageFilters> | null>(null)
+
+const switchTab = (tab: DetailTab) => {
+  activeTab.value = tab
+  if (tab === 'errors' && errRows.value.length === 0) loadAdminErrors()
+  if (tab === 'ranking') rankingMounted.value = true
+}
+const switchToErrorsTab = () => switchTab('errors')
+
 // Error tab state
-const activeTab = ref<'usage' | 'errors'>('usage')
 const errRows = ref<OpsErrorLog[]>([])
 const errLoading = ref(false)
 const errPage = ref(1)
@@ -728,7 +769,6 @@ const loadAdminErrors = async () => {
 const onErrPage = (p: number) => { errPage.value = p; loadAdminErrors() }
 const onErrPageSize = (s: number) => { errPageSize.value = s; errPage.value = 1; loadAdminErrors() }
 const openError = (id: number) => { selectedErrorId.value = id; showErrorModal.value = true }
-const switchToErrorsTab = () => { activeTab.value = 'errors'; if (errRows.value.length === 0) loadAdminErrors() }
 
 const showColumnDropdown = ref(false)
 const columnDropdownRef = ref<HTMLElement | null>(null)
@@ -768,5 +808,5 @@ watch(modelDistributionSource, (source) => {
   void loadModelStats(source)
 })
 
-defineExpose({ requestedModelStats, refreshData })
+defineExpose({ requestedModelStats, refreshData, switchToErrorsTab })
 </script>

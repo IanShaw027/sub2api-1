@@ -38,6 +38,8 @@ export default {
       dataImportParseFailedFile: '文件 {name} 解析失败',
       dataImportInvalidFile: '文件 {name} 不是受支持的导出数据文件',
       dataImportIgnoredFiles: '已忽略 {count} 个非 JSON 文件',
+      dataImportArchiveSingleFile: '归档导入每次只支持一个 .zip 或 .cpa 文件',
+      dataImportMixedFormats: '标准备份对象与 Kiro 账号数组不能混合导入',
       dataImportFailed: '数据导入失败',
       dataImportResult: '导入结果',
       dataImportResultSummary: '代理创建 {proxy_created}，复用 {proxy_reused}，失败 {proxy_failed}；账号创建 {account_created}，失败 {account_failed}',

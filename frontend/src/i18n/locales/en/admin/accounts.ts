@@ -38,6 +38,8 @@ export default {
       dataImportParseFailedFile: 'Failed to parse {name}',
       dataImportInvalidFile: '{name} is not a supported data export file',
       dataImportIgnoredFiles: 'Ignored {count} non-JSON file(s)',
+      dataImportArchiveSingleFile: 'Archive imports only support one .zip or .cpa file at a time',
+      dataImportMixedFormats: 'Standard backup objects and Kiro account arrays cannot be imported together',
       dataImportFailed: 'Data import failed',
       dataImportResult: 'Import Result',
       dataImportResultSummary: 'Proxies created {proxy_created}, reused {proxy_reused}, failed {proxy_failed}; Accounts created {account_created}, failed {account_failed}',

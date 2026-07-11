@@ -461,4 +461,12 @@ onMounted(async () => {
 onUnmounted(() => {
   document.removeEventListener('click', onDocumentClick)
 })
+
+const setUserKeyword = (email: string) => {
+  userKeyword.value = email
+  userResults.value = []
+  showUserDropdown.value = false
+}
+
+defineExpose({ setUserKeyword })
 </script>

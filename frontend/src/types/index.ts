@@ -1238,6 +1238,13 @@ export interface Account<
   concurrency: number
   load_factor?: number | null
   current_concurrency?: number // Real-time concurrency count from Redis
+  scheduler_score?: {
+    base_score: number
+    sticky_score?: number
+    sticky_score_infinity?: boolean
+    sticky_weighted_enabled: boolean
+  } | null
+  scheduler_scores?: AccountSchedulerGroupScore[] | null
   priority: number
   rate_multiplier?: number // Account billing multiplier (>=0, 0 means free)
   status: 'active' | 'inactive' | 'error'
@@ -1330,6 +1337,16 @@ export interface Account<
   parent_privacy_mode?: string
   parent_subscription_expires_at?: string
   parent_chatgpt_account_id?: string
+}
+
+export interface AccountSchedulerGroupScore {
+  group_id?: number | null
+  group_name?: string
+  group_priority?: number | null
+  base_score: number
+  sticky_score?: number
+  sticky_score_infinity?: boolean
+  sticky_weighted_enabled: boolean
 }
 
 // Account Usage types
@@ -1588,6 +1605,8 @@ export interface AdminDataPayload {
   // 导出时被排除的 spark 影子账号数量(影子不持凭据、其调度配置不在备份范围)。
   skipped_shadows?: number
 }
+
+export type AdminDataImportPayload = AdminDataPayload | Record<string, unknown>[]
 
 export interface AdminDataProxy {
   proxy_key: string

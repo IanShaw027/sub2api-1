@@ -249,4 +249,57 @@ describe('admin AccountsView scheduler score column', () => {
     expect(emptyCell.exists()).toBe(true)
     expect(emptyCell.text()).toBe('-')
   })
+
+  it('updates scheduler scores returned by incremental auto-refresh without an updated_at change', async () => {
+    localStorage.setItem('account-hidden-columns', JSON.stringify(['today_stats']))
+    localStorage.setItem('account-hidden-columns-version', 'scheduler-score-hidden-by-default')
+
+    const wrapper = mountView()
+    try {
+      await flushPromises()
+      vi.useFakeTimers()
+      const initialResponse = await listAccounts.mock.results[0]!.value
+      listWithEtag.mockResolvedValue({
+        notModified: false,
+        etag: 'scheduler-v2',
+        data: {
+          ...initialResponse,
+          items: initialResponse.items.map((account: any) => account.id === 1
+            ? {
+                ...account,
+                scheduler_score: {
+                  ...account.scheduler_score,
+                  base_score: 9.5
+                }
+              }
+            : account)
+        }
+      })
+
+      await wrapper.find('button[title="admin.accounts.autoRefresh"]').trigger('click')
+      const enableButton = wrapper.findAll('button').find((button) =>
+        button.text().includes('admin.accounts.enableAutoRefresh')
+      )
+      const fiveSecondButton = wrapper.findAll('button').find((button) =>
+        button.text().includes('admin.accounts.refreshInterval5s')
+      )
+      if (!enableButton || !fiveSecondButton) throw new Error('auto-refresh controls not found')
+
+      await enableButton.trigger('click')
+      await fiveSecondButton.trigger('click')
+      await vi.advanceTimersByTimeAsync(6000)
+      await flushPromises()
+
+      expect(listWithEtag).toHaveBeenCalledWith(
+        1,
+        20,
+        expect.objectContaining({ include_scheduler_score: '1' }),
+        expect.anything()
+      )
+      expect(wrapper.find('[data-test="scheduler-score-1"]').text()).toContain('9.5')
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
 })
