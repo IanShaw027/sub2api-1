@@ -1263,36 +1263,41 @@ router.beforeEach(async (to, _from, next) => {
 
   await ensurePublicSettingsForFeatureRoute(to)
 
-  // 公共设置可能尚未加载（App.vue 的 onMounted 异步拉取晚于首次导航，且纯静态部署
-  // 无 __APP_CONFIG__ 注入）。此时 cachedPublicSettings 为空会把 payment/risk_control
-  // 误判为“未启用”而错误拦截，故这里先确保设置加载完成。
-  if ((to.meta.requiresPayment || to.meta.requiresRiskControl) && !appStore.publicSettingsLoaded) {
-    try {
-      await appStore.fetchPublicSettings()
-    } catch (error) {
-      console.warn('Failed to load public settings in route guard', error)
-    }
-  }
-
   // Check payment requirement (internal payment system only)
-  if (to.meta.requiresPayment === true && !isFeatureFlagEnabled(FeatureFlags.payment)) {
+  if (
+    to.meta.requiresPayment === true &&
+    isFeatureFlagResolved(FeatureFlags.payment) &&
+    !isFeatureFlagEnabled(FeatureFlags.payment)
+  ) {
     next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
     return
   }
 
   // Check ticket module requirement
-  if (to.meta.requiresTicket === true && !isFeatureFlagEnabled(FeatureFlags.ticket)) {
+  if (
+    to.meta.requiresTicket === true &&
+    isFeatureFlagResolved(FeatureFlags.ticket) &&
+    !isFeatureFlagEnabled(FeatureFlags.ticket)
+  ) {
     next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
     return
   }
 
   // Check affiliate module requirement
-  if (to.meta.requiresAffiliate === true && !isFeatureFlagEnabled(FeatureFlags.affiliate)) {
+  if (
+    to.meta.requiresAffiliate === true &&
+    isFeatureFlagResolved(FeatureFlags.affiliate) &&
+    !isFeatureFlagEnabled(FeatureFlags.affiliate)
+  ) {
     next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
     return
   }
 
-  if (to.meta.requiresAiStudio === true && !isFeatureFlagEnabled(FeatureFlags.aiStudio)) {
+  if (
+    to.meta.requiresAiStudio === true &&
+    isFeatureFlagResolved(FeatureFlags.aiStudio) &&
+    !isFeatureFlagEnabled(FeatureFlags.aiStudio)
+  ) {
     next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
     return
   }
@@ -1303,17 +1308,29 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
-  if (to.meta.requiresChannelMonitor === true && !isChannelMonitorRouteEnabled()) {
+  if (
+    to.meta.requiresChannelMonitor === true &&
+    isFeatureFlagResolved(FeatureFlags.channelMonitor) &&
+    !isChannelMonitorRouteEnabled()
+  ) {
     next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
     return
   }
 
-  if (to.meta.requiresAvailableChannels === true && !isFeatureFlagEnabled(FeatureFlags.availableChannels)) {
+  if (
+    to.meta.requiresAvailableChannels === true &&
+    isFeatureFlagResolved(FeatureFlags.availableChannels) &&
+    !isFeatureFlagEnabled(FeatureFlags.availableChannels)
+  ) {
     next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
     return
   }
 
-  if (to.meta.requiresRiskControl === true && !isFeatureFlagEnabled(FeatureFlags.riskControl)) {
+  if (
+    to.meta.requiresRiskControl === true &&
+    isFeatureFlagResolved(FeatureFlags.riskControl) &&
+    !isFeatureFlagEnabled(FeatureFlags.riskControl)
+  ) {
     next(authStore.isAdmin ? '/admin/settings' : '/dashboard')
     return
   }
