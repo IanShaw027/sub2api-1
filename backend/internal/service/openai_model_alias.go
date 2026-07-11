@@ -115,6 +115,19 @@ func normalizeKnownOpenAICodexModel(model string) string {
 	}
 }
 
+func isOpenAIGPT56Model(model string) bool {
+	normalized := canonicalizeOpenAIModelAliasSpelling(model)
+	if normalizeGPT56ModelAlias(normalized) != "" {
+		return true
+	}
+	for _, prefix := range []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"} {
+		if normalized == prefix || strings.HasPrefix(normalized, prefix+"-") {
+			return true
+		}
+	}
+	return false
+}
+
 func normalizeGPT56ModelAlias(model string) string {
 	normalized := canonicalizeOpenAIModelAliasSpelling(model)
 	if normalized == "" {
