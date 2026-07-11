@@ -1024,6 +1024,7 @@ export default {
         userIdPlaceholder: '例如: 1001',
         addUserId: '添加用户 ID',
         removeUserId: '移除用户 ID',
+        userIdsInvalid: '用户 ID 必须是唯一的正整数。',
         errorMessage: '错误消息',
         errorMessagePlaceholder: '拦截时返回的自定义错误消息',
         errorMessageHint: '留空则使用默认错误消息。',

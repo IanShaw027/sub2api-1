@@ -144,10 +144,11 @@ describe('useModelWhitelist', () => {
     })
   })
 
-  it('openai 快速预设包含 GPT-5.6 三个官方模型', () => {
+  it('openai 快速预设包含 GPT-5.6 canonical 和三个官方变体', () => {
     const presets = getPresetMappingsByPlatform('openai')
 
     expect(presets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ from: 'gpt-5.6', to: 'gpt-5.6' }),
       expect.objectContaining({ from: 'gpt-5.6-sol', to: 'gpt-5.6-sol' }),
       expect.objectContaining({ from: 'gpt-5.6-terra', to: 'gpt-5.6-terra' }),
       expect.objectContaining({ from: 'gpt-5.6-luna', to: 'gpt-5.6-luna' })

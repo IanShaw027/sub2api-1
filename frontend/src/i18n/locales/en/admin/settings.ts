@@ -1029,6 +1029,7 @@ export default {
         userIdPlaceholder: 'e.g., 1001',
         addUserId: 'Add user ID',
         removeUserId: 'Remove user ID',
+        userIdsInvalid: 'User IDs must be unique positive integers.',
         errorMessage: 'Error message',
         errorMessagePlaceholder: 'Custom error message when blocked',
         errorMessageHint: 'Leave empty for the default message.',

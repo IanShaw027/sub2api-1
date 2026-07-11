@@ -188,6 +188,32 @@ describe('PaymentProviderDialog payment guide', () => {
     expect(payload.payment_mode).toBe('redirect')
   })
 
+  it.each([
+    { providerKey: 'alipay', staleMode: 'popup', expectedMode: '' },
+    { providerKey: 'easypay', staleMode: 'redirect', expectedMode: 'qrcode' },
+  ])(
+    'coerces stale $providerKey payment mode before saving',
+    async ({ providerKey, staleMode, expectedMode }) => {
+      const provider = providerFactory({
+        provider_key: providerKey,
+        name: 'Stale provider',
+        supported_types: [providerKey],
+        payment_mode: staleMode,
+        config: providerKey === 'alipay'
+          ? { appId: '2021001234567890' }
+          : { pid: '1001', apiBase: 'https://pay.example.com' },
+      })
+      const wrapper = mountDialog({ editing: provider })
+
+      ;(wrapper.vm as unknown as { loadProvider: (provider: ProviderInstance) => void }).loadProvider(provider)
+      await nextTick()
+      await wrapper.find('form').trigger('submit.prevent')
+
+      const payload = wrapper.emitted('save')?.[0]?.[0] as { payment_mode: string }
+      expect(payload.payment_mode).toBe(expectedMode)
+    },
+  )
+
   it('emits an empty Airwallex accountId when the admin clears it', async () => {
     const provider = providerFactory({
       config: {

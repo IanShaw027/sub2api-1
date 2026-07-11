@@ -579,6 +579,16 @@ function defaultPaymentModeForProvider(providerKey: string): string {
   return ''
 }
 
+function isValidPaymentModeForProvider(providerKey: string, mode: string): boolean {
+  if (providerKey === 'easypay') {
+    return mode === PAYMENT_MODE_QRCODE || mode === PAYMENT_MODE_POPUP
+  }
+  if (providerKey === 'alipay') {
+    return mode === '' || mode === PAYMENT_MODE_REDIRECT
+  }
+  return mode === ''
+}
+
 function clearConfig() {
   Object.keys(config).forEach(k => delete config[k])
   Object.keys(limits).forEach(k => delete limits[k])
@@ -785,7 +795,10 @@ function loadProvider(provider: ProviderInstance) {
     ? [...provider.supported_types]
     : []
   form.enabled = provider.enabled
-  form.payment_mode = provider.payment_mode || defaultPaymentModeForProvider(provider.provider_key)
+  const paymentMode = provider.payment_mode || ''
+  form.payment_mode = isValidPaymentModeForProvider(provider.provider_key, paymentMode)
+    ? paymentMode
+    : defaultPaymentModeForProvider(provider.provider_key)
   form.refund_enabled = provider.refund_enabled
   form.allow_user_refund = provider.allow_user_refund
   form.invoice_enabled = provider.invoice_enabled
