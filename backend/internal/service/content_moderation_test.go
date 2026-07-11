@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -114,15 +115,26 @@ func (r *contentModerationBlockingSettingRepo) GetValue(ctx context.Context, key
 }
 
 type contentModerationTestRepo struct {
-	mu   sync.Mutex
-	logs []ContentModerationLog
+	mu        sync.Mutex
+	nextID    int64
+	logs      []ContentModerationLog
+	createErr error
 }
 
 func (r *contentModerationTestRepo) CreateLog(ctx context.Context, log *ContentModerationLog) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.createErr != nil {
+		return r.createErr
+	}
 	if log != nil {
-		r.logs = append(r.logs, *log)
+		if log.ID <= 0 {
+			r.nextID++
+			log.ID = r.nextID
+		} else if log.ID > r.nextID {
+			r.nextID = log.ID
+		}
+		r.logs = append(r.logs, *cloneContentModerationLog(log))
 	}
 	return nil
 }
@@ -155,14 +167,36 @@ func (r *contentModerationTestRepo) CleanupExpiredLogs(ctx context.Context, hitB
 }
 
 func (r *contentModerationTestRepo) UpdateLogEmailSent(ctx context.Context, id int64, sent bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.logs {
+		if r.logs[i].ID == id {
+			r.logs[i].EmailSent = sent
+			break
+		}
+	}
+	return nil
+}
+
+func (r *contentModerationTestRepo) UpdateLogAutoBanned(ctx context.Context, id int64, autoBanned bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.logs {
+		if r.logs[i].ID == id {
+			r.logs[i].AutoBanned = autoBanned
+			break
+		}
+	}
 	return nil
 }
 
 func (r *contentModerationTestRepo) snapshotLogs() []ContentModerationLog {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]ContentModerationLog, len(r.logs))
-	copy(out, r.logs)
+	out := make([]ContentModerationLog, 0, len(r.logs))
+	for i := range r.logs {
+		out = append(out, *cloneContentModerationLog(&r.logs[i]))
+	}
 	return out
 }
 
@@ -2695,6 +2729,263 @@ func TestContentModerationAdminBelowBanThresholdRecordsViolationOnly(t *testing.
 	require.Equal(t, StatusActive, userRepo.user.Status)
 	require.Empty(t, userRepo.updated)
 	require.Empty(t, invalidator.userIDs)
+}
+
+func TestContentModerationPersistenceFailureStopsFlaggedSideEffects(t *testing.T) {
+	settings := newNotificationEmailMemorySettingRepo()
+	smtpServer := startNotificationEmailTestSMTPServer(t)
+	require.NoError(t, settings.SetMultiple(context.Background(), smtpServer.settings()))
+
+	userID := int64(1001)
+	repo := &contentModerationTestRepo{createErr: errors.New("write failed")}
+	hashCache := &contentModerationTestHashCache{}
+	userRepo := &contentModerationTestUserRepo{user: &User{ID: userID, Role: RoleUser, Status: StatusActive}}
+	invalidator := &contentModerationTestAuthCacheInvalidator{}
+	svc := &ContentModerationService{
+		settingRepo:          settings,
+		repo:                 repo,
+		hashCache:            hashCache,
+		userRepo:             userRepo,
+		authCacheInvalidator: invalidator,
+		emailService:         NewEmailService(settings, nil),
+	}
+	cfg := defaultContentModerationConfig()
+	cfg.BanThreshold = 1
+	cfg.EmailOnHit = true
+	log := newContentModerationFlaggedLog(userID)
+	log.UserEmail = "user@example.com"
+
+	svc.persistContentModerationLog(context.Background(), cfg, log, strings.Repeat("a", 64), true, true)
+
+	require.Empty(t, repo.snapshotLogs())
+	require.Empty(t, hashCache.snapshotRecorded())
+	require.Empty(t, userRepo.updated)
+	require.Empty(t, invalidator.userIDs)
+	require.Equal(t, int64(0), smtpServer.messageCount())
+}
+
+func TestContentModerationFlaggedNotificationUsesSnapshotAndUpdatesPersistedLog(t *testing.T) {
+	settings := newNotificationEmailMemorySettingRepo()
+	smtpServer := startNotificationEmailTestSMTPServer(t)
+	require.NoError(t, settings.SetMultiple(context.Background(), smtpServer.settings()))
+
+	repo := &contentModerationTestRepo{}
+	svc := &ContentModerationService{
+		settingRepo:  settings,
+		repo:         repo,
+		emailService: NewEmailService(settings, nil),
+	}
+	userID := int64(42)
+	latency := 17
+	queueDelay := 9
+	log := &ContentModerationLog{
+		UserID:            &userID,
+		UserEmail:         "original@example.com",
+		Flagged:           true,
+		HighestCategory:   "sexual",
+		HighestScore:      0.9,
+		CategoryScores:    map[string]float64{"sexual": 0.9},
+		ThresholdSnapshot: map[string]float64{"sexual": 0.65},
+		UpstreamLatencyMS: &latency,
+		QueueDelayMS:      &queueDelay,
+		ViolationCount:    2,
+		CreatedAt:         time.Now(),
+	}
+	require.NoError(t, repo.CreateLog(context.Background(), log))
+	cfg := defaultContentModerationConfig()
+	cfg.EmailOnHit = true
+	cfg.BanThreshold = 7
+
+	svc.enqueueFlaggedNotification(cfg, log, false)
+	cfg.EmailOnHit = false
+	cfg.BanThreshold = 999
+	log.UserEmail = "changed@example.com"
+	*log.UserID = 999
+	log.CategoryScores["sexual"] = 0
+	log.ThresholdSnapshot["sexual"] = 0
+	*log.UpstreamLatencyMS = 999
+	*log.QueueDelayMS = 999
+
+	require.Eventually(t, func() bool {
+		logs := repo.snapshotLogs()
+		return len(logs) == 1 && logs[0].EmailSent
+	}, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, int64(1), smtpServer.messageCount())
+	require.Contains(t, smtpServer.latestMessage(), "To: original@example.com")
+	require.Contains(t, smtpServer.latestMessage(), "阈值 7")
+	require.False(t, log.EmailSent, "async delivery must update the persisted row, not mutate the caller's log")
+	require.Eventually(t, func() bool {
+		return len(contentModerationNotificationSlots) == 0
+	}, time.Second, 10*time.Millisecond)
+}
+
+func TestContentModerationNotificationUsesBoundedContext(t *testing.T) {
+	repo := &contentModerationTestRepo{}
+	log := &ContentModerationLog{Flagged: true}
+	require.NoError(t, repo.CreateLog(context.Background(), log))
+	svc := &ContentModerationService{repo: repo}
+	deadlineRemaining := make(chan time.Duration, 1)
+
+	svc.enqueueContentModerationNotification(log, func(ctx context.Context) bool {
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			deadlineRemaining <- 0
+			return false
+		}
+		deadlineRemaining <- time.Until(deadline)
+		return false
+	})
+
+	select {
+	case remaining := <-deadlineRemaining:
+		require.Greater(t, remaining, 29*time.Second)
+		require.LessOrEqual(t, remaining, contentModerationNotificationTimeout)
+	case <-time.After(time.Second):
+		t.Fatal("notification task did not start")
+	}
+	require.Eventually(t, func() bool {
+		return len(contentModerationNotificationSlots) == 0
+	}, time.Second, 10*time.Millisecond)
+}
+
+func TestContentModerationNotificationRecoversPanicAndReleasesSlot(t *testing.T) {
+	require.Eventually(t, func() bool {
+		return len(contentModerationNotificationSlots) == 0
+	}, time.Second, 10*time.Millisecond)
+	repo := &contentModerationTestRepo{}
+	log := &ContentModerationLog{Flagged: true}
+	require.NoError(t, repo.CreateLog(context.Background(), log))
+	svc := &ContentModerationService{repo: repo}
+
+	svc.enqueueContentModerationNotification(log, func(context.Context) bool {
+		panic("send failed")
+	})
+
+	require.Eventually(t, func() bool {
+		return len(contentModerationNotificationSlots) == 0
+	}, time.Second, 10*time.Millisecond)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.False(t, logs[0].EmailSent)
+}
+
+func TestSendFlaggedNotificationSideEffectsIsNilUserSafe(t *testing.T) {
+	log := &ContentModerationLog{
+		Flagged:   true,
+		UserEmail: "user@example.com",
+	}
+	svc := &ContentModerationService{emailService: &EmailService{}}
+	cfg := defaultContentModerationConfig()
+	cfg.EmailOnHit = true
+
+	require.NotPanics(t, func() {
+		require.False(t, svc.sendFlaggedNotificationSideEffects(context.Background(), cfg, log, false))
+	})
+	require.False(t, log.EmailSent)
+}
+
+func TestContentModerationNotificationQueueFullDoesNotBlock(t *testing.T) {
+	require.Eventually(t, func() bool {
+		return len(contentModerationNotificationSlots) == 0
+	}, time.Second, 10*time.Millisecond)
+	filled := 0
+	for filled < cap(contentModerationNotificationSlots) {
+		contentModerationNotificationSlots <- struct{}{}
+		filled++
+	}
+	t.Cleanup(func() {
+		for i := 0; i < filled; i++ {
+			select {
+			case <-contentModerationNotificationSlots:
+			default:
+				return
+			}
+		}
+	})
+
+	svc := &ContentModerationService{emailService: &EmailService{}}
+	cfg := defaultContentModerationConfig()
+	cfg.EmailOnHit = true
+	startedAt := time.Now()
+	svc.enqueueFlaggedNotification(cfg, &ContentModerationLog{
+		ID:        1,
+		Flagged:   true,
+		UserEmail: "user@example.com",
+	}, false)
+
+	require.Less(t, time.Since(startedAt), 100*time.Millisecond)
+	require.Equal(t, cap(contentModerationNotificationSlots), len(contentModerationNotificationSlots))
+}
+
+func TestCloneContentModerationLogDeepCopiesMutableFields(t *testing.T) {
+	userID := int64(1)
+	apiKeyID := int64(2)
+	groupID := int64(3)
+	latency := 4
+	queueDelay := 5
+	original := &ContentModerationLog{
+		UserID:            &userID,
+		APIKeyID:          &apiKeyID,
+		GroupID:           &groupID,
+		CategoryScores:    map[string]float64{"sexual": 0.9},
+		ThresholdSnapshot: map[string]float64{"sexual": 0.65},
+		UpstreamLatencyMS: &latency,
+		QueueDelayMS:      &queueDelay,
+	}
+
+	cloned := cloneContentModerationLog(original)
+	*original.UserID = 11
+	*original.APIKeyID = 12
+	*original.GroupID = 13
+	original.CategoryScores["sexual"] = 0
+	original.ThresholdSnapshot["sexual"] = 0
+	*original.UpstreamLatencyMS = 14
+	*original.QueueDelayMS = 15
+
+	require.Equal(t, int64(1), *cloned.UserID)
+	require.Equal(t, int64(2), *cloned.APIKeyID)
+	require.Equal(t, int64(3), *cloned.GroupID)
+	require.Equal(t, 0.9, cloned.CategoryScores["sexual"])
+	require.Equal(t, 0.65, cloned.ThresholdSnapshot["sexual"])
+	require.Equal(t, 4, *cloned.UpstreamLatencyMS)
+	require.Equal(t, 5, *cloned.QueueDelayMS)
+}
+
+func TestCloneContentModerationConfigDeepCopiesMutableFields(t *testing.T) {
+	original := defaultContentModerationConfig()
+	original.APIKeys = []string{"key-1"}
+	original.APIKeyMetadata = []ContentModerationAPIKeyMetadata{{KeyHash: "hash-1", AccountEmail: "one@example.com"}}
+	original.GroupIDs = []int64{1}
+	original.APIKeyExemptGroupIDs = []int64{2}
+	original.AutoBanExemptUserIDs = []int64{3}
+	original.AutoBanExemptUserEmails = []string{"two@example.com"}
+	original.BlockedKeywords = []string{"blocked"}
+	original.KeywordExceptions = []string{"allowed"}
+	original.Thresholds = map[string]float64{"sexual": 0.65}
+	original.ModelFilter.Models = []string{"gpt-5"}
+
+	cloned := cloneContentModerationConfig(original)
+	original.APIKeys[0] = "changed"
+	original.APIKeyMetadata[0].AccountEmail = "changed@example.com"
+	original.GroupIDs[0] = 11
+	original.APIKeyExemptGroupIDs[0] = 12
+	original.AutoBanExemptUserIDs[0] = 13
+	original.AutoBanExemptUserEmails[0] = "changed@example.com"
+	original.BlockedKeywords[0] = "changed"
+	original.KeywordExceptions[0] = "changed"
+	original.Thresholds["sexual"] = 0
+	original.ModelFilter.Models[0] = "changed"
+
+	require.Equal(t, "key-1", cloned.APIKeys[0])
+	require.Equal(t, "one@example.com", cloned.APIKeyMetadata[0].AccountEmail)
+	require.Equal(t, int64(1), cloned.GroupIDs[0])
+	require.Equal(t, int64(2), cloned.APIKeyExemptGroupIDs[0])
+	require.Equal(t, int64(3), cloned.AutoBanExemptUserIDs[0])
+	require.Equal(t, "two@example.com", cloned.AutoBanExemptUserEmails[0])
+	require.Equal(t, "blocked", cloned.BlockedKeywords[0])
+	require.Equal(t, "allowed", cloned.KeywordExceptions[0])
+	require.Equal(t, 0.65, cloned.Thresholds["sexual"])
+	require.Equal(t, "gpt-5", cloned.ModelFilter.Models[0])
 }
 
 func TestContentModerationListLogs_NilRepoReturnsError(t *testing.T) {

@@ -80,3 +80,17 @@ func TestContentModerationRepositoryCountFlaggedByUserSince_ExcludesCyberPolicyW
 	require.Equal(t, 3, count)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestContentModerationRepositoryUpdateLogAutoBanned(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := NewContentModerationRepository(db)
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE content_moderation_logs SET auto_banned = $1 WHERE id = $2")).
+		WithArgs(true, int64(77)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	require.NoError(t, repo.UpdateLogAutoBanned(context.Background(), 77, true))
+	require.NoError(t, mock.ExpectationsWereMet())
+}

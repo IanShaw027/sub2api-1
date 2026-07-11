@@ -2107,14 +2107,21 @@ func (r *contentModerationHandlerSettingRepo) Delete(ctx context.Context, key st
 }
 
 type contentModerationHandlerTestRepo struct {
-	mu   sync.Mutex
-	logs []service.ContentModerationLog
+	mu     sync.Mutex
+	nextID int64
+	logs   []service.ContentModerationLog
 }
 
 func (r *contentModerationHandlerTestRepo) CreateLog(ctx context.Context, log *service.ContentModerationLog) error {
 	if log != nil {
 		r.mu.Lock()
 		defer r.mu.Unlock()
+		if log.ID <= 0 {
+			r.nextID++
+			log.ID = r.nextID
+		} else if log.ID > r.nextID {
+			r.nextID = log.ID
+		}
 		r.logs = append(r.logs, *log)
 	}
 	return nil
@@ -2141,6 +2148,26 @@ func (r *contentModerationHandlerTestRepo) CountFlaggedByUserSince(ctx context.C
 }
 
 func (r *contentModerationHandlerTestRepo) UpdateLogEmailSent(ctx context.Context, id int64, sent bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.logs {
+		if r.logs[i].ID == id {
+			r.logs[i].EmailSent = sent
+			break
+		}
+	}
+	return nil
+}
+
+func (r *contentModerationHandlerTestRepo) UpdateLogAutoBanned(ctx context.Context, id int64, autoBanned bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.logs {
+		if r.logs[i].ID == id {
+			r.logs[i].AutoBanned = autoBanned
+			break
+		}
+	}
 	return nil
 }
 

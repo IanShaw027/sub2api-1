@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -33,6 +34,13 @@ func (r *cyberOrderingTestRepo) UpdateLogEmailSent(ctx context.Context, id int64
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calls = append(r.calls, "update_email_sent")
+	return nil
+}
+
+func (r *cyberOrderingTestRepo) UpdateLogAutoBanned(ctx context.Context, id int64, autoBanned bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, "update_auto_banned")
 	return nil
 }
 
@@ -204,16 +212,13 @@ func TestRecordCyberPolicyEvent_RecordsLatestRequestUserSegmentHash(t *testing.T
 // log is persisted BEFORE email delivery, and EmailSent is patched afterwards —
 // SMTP hangs can no longer swallow the audit record.
 //
-// Note on email ordering: EmailService is a concrete type with no injectable
-// send interface, so SMTP-success cannot be simulated in unit tests.
-// With emailService=nil the email block is skipped and UpdateLogEmailSent is not
-// called (correct: logPersisted && emailSent guard). The test therefore asserts
-// the two invariants that ARE observable without real SMTP:
+// With emailService=nil the email task is skipped and UpdateLogEmailSent is not
+// called. The test therefore isolates these two ordering invariants:
 //  1. CreateLog runs first (calls[0]=="create").
 //  2. The log is stored with EmailSent=false (not pre-set to true).
 //
-// The update_email_sent path is covered by integration/e2e tests where a real
-// (or test-double) SMTP endpoint is available.
+// The successful update_email_sent path is covered below with the local SMTP
+// test server.
 func TestRecordCyberPolicyEvent_CreateLogBeforeEmail(t *testing.T) {
 	repo := &cyberOrderingTestRepo{}
 	svc := NewContentModerationService(
@@ -247,9 +252,75 @@ func TestRecordCyberPolicyEvent_CreateLogBeforeEmail(t *testing.T) {
 	require.False(t, emailSents[0], "log must be stored with EmailSent=false initially (F7)")
 
 	// With emailService=nil, no email is sent, so UpdateLogEmailSent must NOT
-	// be called (logPersisted && emailSent guard correctly suppresses the patch).
+	// be called because no delivery succeeded.
 	require.NotContains(t, calls, "update_email_sent",
 		"UpdateLogEmailSent must not be called when no email was sent")
+}
+
+func TestRecordCyberPolicyEvent_PersistenceFailureStopsSideEffects(t *testing.T) {
+	settings := newNotificationEmailMemorySettingRepo()
+	smtpServer := startNotificationEmailTestSMTPServer(t)
+	require.NoError(t, settings.SetMultiple(context.Background(), smtpServer.settings()))
+	require.NoError(t, settings.Set(context.Background(), SettingKeyRiskControlEnabled, "true"))
+	require.NoError(t, settings.Set(context.Background(), SettingKeyContentModerationConfig, `{"auto_ban_enabled":true,"ban_threshold":1}`))
+
+	repo := &contentModerationTestRepo{createErr: errors.New("write failed")}
+	hashCache := &contentModerationTestHashCache{}
+	userRepo := &contentModerationTestUserRepo{user: &User{ID: 8, Role: RoleUser, Status: StatusActive}}
+	invalidator := &contentModerationTestAuthCacheInvalidator{}
+	svc := &ContentModerationService{
+		settingRepo:          settings,
+		repo:                 repo,
+		hashCache:            hashCache,
+		userRepo:             userRepo,
+		authCacheInvalidator: invalidator,
+		emailService:         NewEmailService(settings, nil),
+	}
+
+	svc.RecordCyberPolicyEvent(context.Background(), CyberPolicyRecordInput{
+		UserID:          8,
+		UserEmail:       "user@example.com",
+		RequestProtocol: ContentModerationProtocolOpenAIChat,
+		RequestBody:     []byte(`{"messages":[{"role":"user","content":"blocked prompt"}]}`),
+		UpstreamMessage: "blocked",
+	})
+
+	require.Empty(t, repo.snapshotLogs())
+	require.Empty(t, hashCache.snapshotRecorded())
+	require.Empty(t, userRepo.updated)
+	require.Empty(t, invalidator.userIDs)
+	require.Equal(t, int64(0), smtpServer.messageCount())
+}
+
+func TestRecordCyberPolicyEvent_EmailIsAsyncAndUpdatesPersistedLog(t *testing.T) {
+	settings := newNotificationEmailMemorySettingRepo()
+	smtpServer := startNotificationEmailTestSMTPServer(t)
+	require.NoError(t, settings.SetMultiple(context.Background(), smtpServer.settings()))
+	require.NoError(t, settings.Set(context.Background(), SettingKeyRiskControlEnabled, "true"))
+	repo := &contentModerationTestRepo{}
+	svc := &ContentModerationService{
+		settingRepo:  settings,
+		repo:         repo,
+		emailService: NewEmailService(settings, nil),
+	}
+
+	svc.RecordCyberPolicyEvent(context.Background(), CyberPolicyRecordInput{
+		UserID:          9,
+		UserEmail:       "cyber@example.com",
+		Model:           "gpt-5",
+		UpstreamMessage: "blocked",
+		SkipHashRecord:  true,
+	})
+
+	require.Eventually(t, func() bool {
+		logs := repo.snapshotLogs()
+		return len(logs) == 1 && logs[0].EmailSent
+	}, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, int64(1), smtpServer.messageCount())
+	require.Contains(t, smtpServer.latestMessage(), "To: cyber@example.com")
+	require.Eventually(t, func() bool {
+		return len(contentModerationNotificationSlots) == 0
+	}, time.Second, 10*time.Millisecond)
 }
 
 // banCountArgsTestRepo 在 contentModerationTestRepo 基础上记录
@@ -275,7 +346,7 @@ func (r *banCountArgsTestRepo) snapshotCountCalls() []bool {
 	return out
 }
 
-func TestApplyFlaggedAccountSideEffects_PassesExcludeCyberFlag(t *testing.T) {
+func TestPrepareFlaggedViolationCount_PassesExcludeCyberFlag(t *testing.T) {
 	repo := &banCountArgsTestRepo{}
 	svc := NewContentModerationService(
 		&contentModerationTestSettingRepo{values: map[string]string{}},
@@ -285,13 +356,13 @@ func TestApplyFlaggedAccountSideEffects_PassesExcludeCyberFlag(t *testing.T) {
 
 	cfgExclude := defaultContentModerationConfig()
 	cfgExclude.CyberPolicyExcludeFromBanCount = true
-	svc.applyFlaggedAccountSideEffects(context.Background(), cfgExclude, &ContentModerationLog{Flagged: true, UserID: &userID})
+	svc.prepareFlaggedViolationCount(context.Background(), cfgExclude, &ContentModerationLog{Flagged: true, UserID: &userID})
 
 	cfgDefault := defaultContentModerationConfig() // 默认 false
-	svc.applyFlaggedAccountSideEffects(context.Background(), cfgDefault, &ContentModerationLog{Flagged: true, UserID: &userID})
+	svc.prepareFlaggedViolationCount(context.Background(), cfgDefault, &ContentModerationLog{Flagged: true, UserID: &userID})
 
 	require.Equal(t, []bool{true, false}, repo.snapshotCountCalls(),
-		"applyFlaggedAccountSideEffects 必须把 cfg.CyberPolicyExcludeFromBanCount 透传给 COUNT 查询")
+		"prepareFlaggedViolationCount 必须把 cfg.CyberPolicyExcludeFromBanCount 透传给 COUNT 查询")
 }
 
 func TestRecordCyberPolicyEvent_ExcludeFromBanCount_SkipsBanJudgment(t *testing.T) {

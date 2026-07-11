@@ -121,7 +121,12 @@ const (
 	contentModerationCleanupInterval = 24 * time.Hour
 	contentModerationCleanupTimeout  = 30 * time.Minute
 	contentModerationCleanupDelay    = 5 * time.Minute
+
+	contentModerationNotificationConcurrency = 32
+	contentModerationNotificationTimeout     = 30 * time.Second
 )
+
+var contentModerationNotificationSlots = make(chan struct{}, contentModerationNotificationConcurrency)
 
 var contentModerationCategoryOrder = []string{
 	"harassment",
@@ -620,6 +625,8 @@ type ContentModerationRepository interface {
 	CleanupExpiredLogs(ctx context.Context, hitBefore time.Time, nonHitBefore time.Time) (*ContentModerationCleanupResult, error)
 	// UpdateLogEmailSent 回写邮件发送结果（F7：CreateLog 先行后补 EmailSent）。
 	UpdateLogEmailSent(ctx context.Context, id int64, sent bool) error
+	// UpdateLogAutoBanned 回写审计落库后执行的自动封禁结果。
+	UpdateLogAutoBanned(ctx context.Context, id int64, autoBanned bool) error
 }
 
 type ContentModerationHashCache interface {
@@ -681,12 +688,14 @@ type ContentModerationService struct {
 }
 
 type contentModerationTask struct {
-	input      ContentModerationCheckInput
-	content    ContentModerationInput
-	inputHash  string
-	log        *ContentModerationLog
-	config     *ContentModerationConfig
-	enqueuedAt time.Time
+	input            ContentModerationCheckInput
+	content          ContentModerationInput
+	inputHash        string
+	log              *ContentModerationLog
+	config           *ContentModerationConfig
+	recordHash       bool
+	applySideEffects bool
+	enqueuedAt       time.Time
 }
 
 type contentModerationKeyHealth struct {
@@ -1487,9 +1496,14 @@ func (s *ContentModerationService) enqueueRecord(ctx context.Context, input Cont
 	if s == nil || log == nil {
 		return
 	}
-	s.applyContentModerationPersistenceEffects(ctx, cfg, log, inputHash, recordHash, applySideEffects)
+	// Blocking decisions must make their audit durable before mutating hash/account state.
+	// This also preserves the existing guarantee that those side effects are visible on return.
+	if applySideEffects {
+		s.persistContentModerationLog(ctx, cfg, log, inputHash, recordHash, true)
+		return
+	}
 	if s.asyncQueue == nil {
-		s.writeContentModerationLog(ctx, log)
+		s.persistContentModerationLog(ctx, cfg, log, inputHash, recordHash, applySideEffects)
 		return
 	}
 	queueSize := defaultContentModerationQueueSize
@@ -1502,15 +1516,17 @@ func (s *ContentModerationService) enqueueRecord(ctx context.Context, input Cont
 			"endpoint", input.Endpoint,
 			"action", log.Action,
 			"queue_size", queueSize)
-		s.writeContentModerationLog(ctx, log)
+		s.persistContentModerationLog(ctx, cfg, log, inputHash, recordHash, applySideEffects)
 		return
 	}
 	task := contentModerationTask{
-		input:      input,
-		inputHash:  inputHash,
-		log:        log,
-		config:     cloneContentModerationConfig(cfg),
-		enqueuedAt: time.Now(),
+		input:            input,
+		inputHash:        inputHash,
+		log:              cloneContentModerationLog(log),
+		config:           cloneContentModerationConfig(cfg),
+		recordHash:       recordHash,
+		applySideEffects: applySideEffects,
+		enqueuedAt:       time.Now(),
 	}
 	select {
 	case s.asyncQueue <- task:
@@ -1520,7 +1536,7 @@ func (s *ContentModerationService) enqueueRecord(ctx context.Context, input Cont
 			"user_id", input.UserID,
 			"endpoint", input.Endpoint,
 			"action", log.Action)
-		s.writeContentModerationLog(ctx, log)
+		s.persistContentModerationLog(ctx, cfg, log, inputHash, recordHash, applySideEffects)
 	}
 }
 
@@ -1570,7 +1586,7 @@ func (s *ContentModerationService) requeueAsyncTask(task contentModerationTask) 
 		if task.log != nil {
 			queueDelay := int(time.Since(task.enqueuedAt).Milliseconds())
 			task.log.QueueDelayMS = &queueDelay
-			s.writeContentModerationLog(context.Background(), task.log)
+			s.persistContentModerationLog(context.Background(), task.config, task.log, task.inputHash, task.recordHash, task.applySideEffects)
 		} else {
 			s.asyncDropped.Add(1)
 		}
@@ -1584,7 +1600,7 @@ func (s *ContentModerationService) processAsyncTaskWithConfig(ctx context.Contex
 		defer s.asyncActive.Add(-1)
 		queueDelay := int(time.Since(task.enqueuedAt).Milliseconds())
 		task.log.QueueDelayMS = &queueDelay
-		s.writeContentModerationLog(ctx, task.log)
+		s.persistContentModerationLog(ctx, task.config, task.log, task.inputHash, task.recordHash, task.applySideEffects)
 		s.asyncProcessed.Add(1)
 		return true
 	}
@@ -2139,12 +2155,10 @@ func (s *ContentModerationService) persistContentModerationLog(ctx context.Conte
 	if s == nil || log == nil {
 		return
 	}
-	s.applyContentModerationPersistenceEffects(ctx, cfg, log, hashText, recordHash, applySideEffects)
-	s.writeContentModerationLog(ctx, log)
-}
-
-func (s *ContentModerationService) applyContentModerationPersistenceEffects(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog, hashText string, recordHash bool, applySideEffects bool) {
-	if s == nil || log == nil {
+	if applySideEffects {
+		s.prepareFlaggedViolationCount(ctx, cfg, log)
+	}
+	if !s.writeContentModerationLog(ctx, log) {
 		return
 	}
 	if recordHash && s.hashCache != nil {
@@ -2153,11 +2167,16 @@ func (s *ContentModerationService) applyContentModerationPersistenceEffects(ctx 
 			slog.Warn("content_moderation.record_hash_failed", "user_id", contentModerationEmailUserID(log), "endpoint", log.Endpoint, "error", err)
 		}
 	}
-	autoBanJustApplied := false
-	if applySideEffects {
-		autoBanJustApplied = s.applyFlaggedAccountSideEffects(ctx, cfg, log)
-		go s.sendFlaggedNotificationSideEffects(context.Background(), cfg, log, autoBanJustApplied)
+	if !applySideEffects {
+		return
 	}
+	autoBanJustApplied := s.applyFlaggedAccountSideEffects(ctx, cfg, log)
+	if log.AutoBanned && s.repo != nil && log.ID > 0 {
+		if err := s.repo.UpdateLogAutoBanned(ctx, log.ID, true); err != nil {
+			slog.Warn("content_moderation.update_auto_banned_failed", "log_id", log.ID, "error", err)
+		}
+	}
+	s.enqueueFlaggedNotification(cfg, log, autoBanJustApplied)
 }
 
 // contentModerationHashMetaFromLog 从审核记录快照出可展示的哈希上下文。
@@ -2176,18 +2195,20 @@ func contentModerationHashMetaFromLog(log *ContentModerationLog) ContentModerati
 	}
 }
 
-func (s *ContentModerationService) writeContentModerationLog(ctx context.Context, log *ContentModerationLog) {
-	if s.repo != nil {
-		if err := s.repo.CreateLog(ctx, log); err != nil {
-			slog.Warn("content_moderation.create_log_failed", "user_id", contentModerationEmailUserID(log), "endpoint", log.Endpoint, "action", log.Action, "error", err)
-			return
-		}
+func (s *ContentModerationService) writeContentModerationLog(ctx context.Context, log *ContentModerationLog) bool {
+	if s.repo == nil {
+		return false
 	}
+	if err := s.repo.CreateLog(ctx, log); err != nil {
+		slog.Warn("content_moderation.create_log_failed", "user_id", contentModerationEmailUserID(log), "endpoint", log.Endpoint, "action", log.Action, "error", err)
+		return false
+	}
+	return true
 }
 
-func (s *ContentModerationService) applyFlaggedAccountSideEffects(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog) bool {
-	if s == nil || cfg == nil || log == nil || !log.Flagged || log.UserID == nil || *log.UserID <= 0 {
-		return false
+func (s *ContentModerationService) prepareFlaggedViolationCount(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog) {
+	if cfg == nil || log == nil || !log.Flagged || log.UserID == nil || *log.UserID <= 0 {
+		return
 	}
 	count := 1
 	if s.repo != nil && cfg.ViolationWindowHours > 0 {
@@ -2197,6 +2218,17 @@ func (s *ContentModerationService) applyFlaggedAccountSideEffects(ctx context.Co
 		}
 	}
 	log.ViolationCount = count
+}
+
+func (s *ContentModerationService) applyFlaggedAccountSideEffects(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog) bool {
+	if s == nil || cfg == nil || log == nil || !log.Flagged || log.UserID == nil || *log.UserID <= 0 {
+		return false
+	}
+	count := log.ViolationCount
+	if count <= 0 {
+		count = 1
+		log.ViolationCount = count
+	}
 	autoBanJustApplied := false
 	if cfg.isAutoBanExempt(log) {
 		return false
@@ -2228,6 +2260,62 @@ func (s *ContentModerationService) applyFlaggedAccountSideEffects(ctx context.Co
 	return autoBanJustApplied
 }
 
+func (s *ContentModerationService) enqueueFlaggedNotification(cfg *ContentModerationConfig, log *ContentModerationLog, autoBanJustApplied bool) {
+	if s == nil || cfg == nil || log == nil || !log.Flagged || s.emailService == nil || strings.TrimSpace(log.UserEmail) == "" {
+		return
+	}
+	if !cfg.EmailOnHit && !autoBanJustApplied {
+		return
+	}
+	cfgSnapshot := cloneContentModerationConfig(cfg)
+	logSnapshot := cloneContentModerationLog(log)
+	s.enqueueContentModerationNotification(logSnapshot, func(ctx context.Context) bool {
+		return s.sendFlaggedNotificationSideEffects(ctx, cfgSnapshot, logSnapshot, autoBanJustApplied)
+	})
+}
+
+func (s *ContentModerationService) enqueueCyberPolicyNotification(cfg *ContentModerationConfig, log *ContentModerationLog, autoBanJustApplied bool) {
+	if s == nil || cfg == nil || log == nil || s.emailService == nil || strings.TrimSpace(log.UserEmail) == "" {
+		return
+	}
+	cfgSnapshot := cloneContentModerationConfig(cfg)
+	logSnapshot := cloneContentModerationLog(log)
+	s.enqueueContentModerationNotification(logSnapshot, func(ctx context.Context) bool {
+		return s.sendCyberPolicyNotificationSideEffects(ctx, cfgSnapshot, logSnapshot, autoBanJustApplied)
+	})
+}
+
+func (s *ContentModerationService) enqueueContentModerationNotification(log *ContentModerationLog, send func(context.Context) bool) {
+	if s == nil || log == nil || send == nil {
+		return
+	}
+	select {
+	case contentModerationNotificationSlots <- struct{}{}:
+	default:
+		slog.Warn("content_moderation.notification_queue_full", "log_id", log.ID, "user_id", contentModerationEmailUserID(log))
+		return
+	}
+	go func() {
+		defer func() { <-contentModerationNotificationSlots }()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				slog.Error("content_moderation.notification_panic", "log_id", log.ID, "recover", recovered)
+			}
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), contentModerationNotificationTimeout)
+		defer cancel()
+		if !send(ctx) {
+			return
+		}
+		if s.repo == nil || log.ID <= 0 {
+			return
+		}
+		if err := s.repo.UpdateLogEmailSent(ctx, log.ID, true); err != nil {
+			slog.Warn("content_moderation.update_email_sent_failed", "log_id", log.ID, "error", err)
+		}
+	}()
+}
+
 func (cfg *ContentModerationConfig) isAutoBanExempt(log *ContentModerationLog) bool {
 	if cfg == nil || log == nil {
 		return false
@@ -2251,29 +2339,29 @@ func (cfg *ContentModerationConfig) isAutoBanExempt(log *ContentModerationLog) b
 	return false
 }
 
-func (s *ContentModerationService) sendFlaggedNotificationSideEffects(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog, autoBanJustApplied bool) {
+func (s *ContentModerationService) sendFlaggedNotificationSideEffects(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog, autoBanJustApplied bool) bool {
 	if s == nil || cfg == nil || log == nil || !log.Flagged {
-		return
+		return false
 	}
 	if s.emailService == nil || strings.TrimSpace(log.UserEmail) == "" {
-		return
+		return false
 	}
 	emailSent := false
 	if cfg.EmailOnHit {
 		if err := s.sendViolationEmail(ctx, cfg, log); err != nil {
-			slog.Warn("content_moderation.email_failed", "user_id", *log.UserID, "email", log.UserEmail, "error", err)
+			slog.Warn("content_moderation.email_failed", "user_id", contentModerationEmailUserID(log), "email", log.UserEmail, "error", err)
 		} else {
 			emailSent = true
 		}
 	}
 	if autoBanJustApplied {
 		if err := s.sendAccountDisabledEmail(ctx, cfg, log); err != nil {
-			slog.Warn("content_moderation.ban_email_failed", "user_id", *log.UserID, "email", log.UserEmail, "error", err)
+			slog.Warn("content_moderation.ban_email_failed", "user_id", contentModerationEmailUserID(log), "email", log.UserEmail, "error", err)
 		} else {
 			emailSent = true
 		}
 	}
-	log.EmailSent = emailSent
+	return emailSent
 }
 
 func (s *ContentModerationService) sendViolationEmail(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog) error {
@@ -2442,6 +2530,21 @@ func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerati
 		Type:   cfg.ModelFilter.Type,
 		Models: append([]string(nil), cfg.ModelFilter.Models...),
 	}
+	return &clone
+}
+
+func cloneContentModerationLog(log *ContentModerationLog) *ContentModerationLog {
+	if log == nil {
+		return nil
+	}
+	clone := *log
+	clone.UserID = cloneInt64Ptr(log.UserID)
+	clone.APIKeyID = cloneInt64Ptr(log.APIKeyID)
+	clone.GroupID = cloneInt64Ptr(log.GroupID)
+	clone.CategoryScores = cloneFloatMap(log.CategoryScores)
+	clone.ThresholdSnapshot = cloneFloatMap(log.ThresholdSnapshot)
+	clone.UpstreamLatencyMS = cloneIntPtr(log.UpstreamLatencyMS)
+	clone.QueueDelayMS = cloneIntPtr(log.QueueDelayMS)
 	return &clone
 }
 
@@ -4299,6 +4402,14 @@ func cloneInt64Ptr(in *int64) *int64 {
 	return &v
 }
 
+func cloneIntPtr(in *int) *int {
+	if in == nil {
+		return nil
+	}
+	v := *in
+	return &v
+}
+
 func trimRunes(text string, max int) string {
 	if max <= 0 {
 		return ""
@@ -4394,39 +4505,27 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 	}
 	// 开关开时 cyber_policy 不参与封号计数：当次不判定（此处跳过），
 	// 历史行由 CountFlaggedByUserSince 的 excludeCyberPolicy 排除。
-	autoBanned := false
 	if !cfg.CyberPolicyExcludeFromBanCount {
-		autoBanned = s.applyFlaggedAccountSideEffects(ctx, cfg, log)
+		s.prepareFlaggedViolationCount(ctx, cfg, log)
 	}
 	log.EmailSent = false
-	logPersisted := true
 	if err := s.repo.CreateLog(ctx, log); err != nil {
-		logPersisted = false
 		slog.Warn("content_moderation.cyber_create_log_failed", "user_id", in.UserID, "error", err)
+		return
+	}
+	autoBanJustApplied := false
+	if !cfg.CyberPolicyExcludeFromBanCount {
+		autoBanJustApplied = s.applyFlaggedAccountSideEffects(ctx, cfg, log)
+		if log.AutoBanned && log.ID > 0 {
+			if err := s.repo.UpdateLogAutoBanned(ctx, log.ID, true); err != nil {
+				slog.Warn("content_moderation.cyber_update_auto_banned_failed", "log_id", log.ID, "error", err)
+			}
+		}
 	}
 	if !in.SkipHashRecord {
 		s.RecordCyberPolicyFlaggedHashes(ctx, in.RequestProtocol, in.RequestBody, contentModerationHashMetaFromLog(log))
 	}
-	emailSent := false
-	if s.emailService != nil && strings.TrimSpace(log.UserEmail) != "" {
-		if err := s.sendCyberPolicyEmail(ctx, log); err != nil {
-			slog.Warn("content_moderation.cyber_email_failed", "user_id", in.UserID, "error", err)
-		} else {
-			emailSent = true
-		}
-		if autoBanned {
-			if err := s.sendAccountDisabledEmail(ctx, cfg, log); err != nil {
-				slog.Warn("content_moderation.cyber_ban_email_failed", "user_id", in.UserID, "error", err)
-			} else {
-				emailSent = true
-			}
-		}
-	}
-	if logPersisted && emailSent {
-		if err := s.repo.UpdateLogEmailSent(ctx, log.ID, true); err != nil {
-			slog.Warn("content_moderation.cyber_update_email_sent_failed", "log_id", log.ID, "error", err)
-		}
-	}
+	s.enqueueCyberPolicyNotification(cfg, log, autoBanJustApplied)
 }
 
 func (s *ContentModerationService) RecordCyberPolicyFlaggedHashes(ctx context.Context, requestProtocol string, requestBody []byte, base ContentModerationHashMeta) {
@@ -4452,6 +4551,26 @@ func (s *ContentModerationService) RecordCyberPolicyFlaggedHashes(ctx context.Co
 	if err := s.hashCache.RecordFlaggedInputHash(ctx, inputHash, meta); err != nil {
 		slog.Warn("content_moderation.cyber_record_hash_failed", "input_hash", inputHash, "error", err)
 	}
+}
+
+func (s *ContentModerationService) sendCyberPolicyNotificationSideEffects(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog, autoBanJustApplied bool) bool {
+	if s == nil || cfg == nil || log == nil || !log.Flagged || s.emailService == nil || strings.TrimSpace(log.UserEmail) == "" {
+		return false
+	}
+	emailSent := false
+	if err := s.sendCyberPolicyEmail(ctx, log); err != nil {
+		slog.Warn("content_moderation.cyber_email_failed", "user_id", contentModerationEmailUserID(log), "error", err)
+	} else {
+		emailSent = true
+	}
+	if autoBanJustApplied {
+		if err := s.sendAccountDisabledEmail(ctx, cfg, log); err != nil {
+			slog.Warn("content_moderation.cyber_ban_email_failed", "user_id", contentModerationEmailUserID(log), "error", err)
+		} else {
+			emailSent = true
+		}
+	}
+	return emailSent
 }
 
 func (s *ContentModerationService) sendCyberPolicyEmail(ctx context.Context, log *ContentModerationLog) error {

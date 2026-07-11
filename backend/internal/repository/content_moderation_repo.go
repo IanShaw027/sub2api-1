@@ -213,6 +213,14 @@ func (r *contentModerationRepository) UpdateLogEmailSent(ctx context.Context, id
 	return nil
 }
 
+func (r *contentModerationRepository) UpdateLogAutoBanned(ctx context.Context, id int64, autoBanned bool) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE content_moderation_logs SET auto_banned = $1 WHERE id = $2`, autoBanned, id)
+	if err != nil {
+		return fmt.Errorf("update content moderation log auto_banned: %w", err)
+	}
+	return nil
+}
+
 func (r *contentModerationRepository) CleanupExpiredLogs(ctx context.Context, hitBefore time.Time, nonHitBefore time.Time) (*service.ContentModerationCleanupResult, error) {
 	result := &service.ContentModerationCleanupResult{FinishedAt: time.Now()}
 	if r == nil || r.db == nil {
