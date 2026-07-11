@@ -80,6 +80,26 @@ func TestResponsesToChatCompletionsRequest_RejectsNilRequest(t *testing.T) {
 	require.EqualError(t, err, "responses request is required")
 }
 
+func TestResponsesToChatCompletionsRequest_ParallelToolCalls(t *testing.T) {
+	parallel := false
+	req := &ResponsesRequest{
+		Model: "gpt-4o",
+		Input: json.RawMessage(`[
+			{"role":"user","content":"Use tools"}
+		]`),
+		ParallelToolCalls: &parallel,
+	}
+
+	out, err := ResponsesToChatCompletionsRequest(req)
+	require.NoError(t, err)
+	require.NotNil(t, out.ParallelToolCalls)
+	assert.False(t, *out.ParallelToolCalls)
+
+	payload, err := json.Marshal(out)
+	require.NoError(t, err)
+	assert.Contains(t, string(payload), `"parallel_tool_calls":false`)
+}
+
 func chatMessageRoles(messages []ChatMessage) []string {
 	roles := make([]string, 0, len(messages))
 	for _, message := range messages {
