@@ -4925,6 +4925,7 @@
   "gpt-5.6-sol": {
     "cache_read_input_token_cost": 5e-07,
     "cache_creation_input_token_cost": 6.25e-06,
+    "cache_creation_input_token_cost_priority": 1.25e-05,
     "cache_read_input_token_cost_above_272k_tokens": 1e-06,
     "cache_creation_input_token_cost_above_1hr": 1.25e-05,
     "cache_read_input_token_cost_flex": 2.5e-07,
@@ -4975,6 +4976,7 @@
   "gpt-5.6-terra": {
     "cache_read_input_token_cost": 2.5e-07,
     "cache_creation_input_token_cost": 3.125e-06,
+    "cache_creation_input_token_cost_priority": 6.25e-06,
     "cache_read_input_token_cost_above_272k_tokens": 5e-07,
     "cache_creation_input_token_cost_above_1hr": 6.25e-06,
     "cache_read_input_token_cost_flex": 1.25e-07,
@@ -5025,6 +5027,7 @@
   "gpt-5.6-luna": {
     "cache_read_input_token_cost": 1e-07,
     "cache_creation_input_token_cost": 1.25e-06,
+    "cache_creation_input_token_cost_priority": 2.5e-06,
     "cache_read_input_token_cost_above_272k_tokens": 2e-07,
     "cache_creation_input_token_cost_above_1hr": 2.5e-06,
     "cache_read_input_token_cost_flex": 5e-08,
