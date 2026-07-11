@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"testing"
 	"time"
@@ -184,6 +185,7 @@ type subscriptionUserSubRepoStub struct {
 	byUserGroup   map[string]*UserSubscription
 	createCalls   int
 	lastExtendCtx context.Context
+	lastLockCtx   context.Context
 }
 
 func newSubscriptionUserSubRepoStub() *subscriptionUserSubRepoStub {
@@ -223,6 +225,11 @@ func (s *subscriptionUserSubRepoStub) GetByUserIDAndGroupID(_ context.Context, u
 	}
 	cp := *sub
 	return &cp, nil
+}
+
+func (s *subscriptionUserSubRepoStub) GetByUserIDAndGroupIDForUpdate(ctx context.Context, userID, groupID int64) (*UserSubscription, error) {
+	s.lastLockCtx = ctx
+	return s.GetByUserIDAndGroupID(ctx, userID, groupID)
 }
 
 func (s *subscriptionUserSubRepoStub) Create(_ context.Context, sub *UserSubscription) error {
@@ -363,7 +370,14 @@ func TestAssignOrExtendSubscriptionReusesOuterTransactionContext(t *testing.T) {
 		Notes:     "init",
 	})
 
+	cache, err := ristretto.NewCache(&ristretto.Config{NumCounters: 1_000, MaxCost: 100, BufferItems: 64})
+	require.NoError(t, err)
+	t.Cleanup(cache.Close)
 	svc := NewSubscriptionService(groupRepo, subRepo, nil, nil, nil)
+	svc.subCacheL1 = cache
+	cacheKey := subCacheKey(3001, 1)
+	require.True(t, cache.Set(cacheKey, &UserSubscription{ID: 999}, 1))
+	cache.Wait()
 	txCtx := dbent.NewTxContext(context.Background(), &dbent.Tx{})
 	sub, reused, err := svc.AssignOrExtendSubscription(txCtx, &AssignSubscriptionInput{
 		UserID:       3001,
@@ -375,7 +389,104 @@ func TestAssignOrExtendSubscriptionReusesOuterTransactionContext(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, reused)
 	require.Equal(t, int64(30), sub.ID)
+	require.Same(t, txCtx, subRepo.lastLockCtx)
 	require.Same(t, txCtx, subRepo.lastExtendCtx)
+	_, cached := cache.Get(cacheKey)
+	require.True(t, cached, "an outer transaction must not invalidate assignment caches before commit")
+}
+
+func TestInvalidateRedeemSubscriptionCachesClearsSubscriptionL1(t *testing.T) {
+	cache, err := ristretto.NewCache(&ristretto.Config{NumCounters: 1_000, MaxCost: 100, BufferItems: 64})
+	require.NoError(t, err)
+	t.Cleanup(cache.Close)
+
+	const userID int64 = 4001
+	groupID := int64(9)
+	key := subCacheKey(userID, groupID)
+	require.True(t, cache.Set(key, &UserSubscription{ID: 77}, 1))
+	cache.Wait()
+
+	subscriptionSvc := &SubscriptionService{subCacheL1: cache}
+	redeemSvc := &RedeemService{subscriptionService: subscriptionSvc}
+	redeemSvc.invalidateRedeemCaches(context.Background(), userID, &RedeemCode{
+		Type:    RedeemTypeSubscription,
+		GroupID: &groupID,
+	})
+
+	_, cached := cache.Get(key)
+	require.False(t, cached, "post-commit redeem invalidation must clear the subscription L1 cache")
+}
+
+type subscriptionInvalidationCacheStub struct {
+	BillingCache
+	invalidateErr     error
+	publishErr        error
+	invalidationCalls int
+	publishCalls      int
+	publishedKey      string
+}
+
+func (s *subscriptionInvalidationCacheStub) InvalidateSubscriptionCache(context.Context, int64, int64) error {
+	s.invalidationCalls++
+	return s.invalidateErr
+}
+
+func (s *subscriptionInvalidationCacheStub) PublishSubscriptionCacheInvalidation(_ context.Context, cacheKey string) error {
+	s.publishCalls++
+	s.publishedKey = cacheKey
+	return s.publishErr
+}
+
+func (s *subscriptionInvalidationCacheStub) SubscribeSubscriptionCacheInvalidation(context.Context, func(string)) error {
+	return nil
+}
+
+func TestInvalidateSubscriptionCachesPublishesWhenRedisDeleteFails(t *testing.T) {
+	cache := &subscriptionInvalidationCacheStub{invalidateErr: errors.New("redis delete failed")}
+	svc := &SubscriptionService{billingCacheService: &BillingCacheService{cache: cache}}
+
+	err := svc.invalidateSubscriptionCaches(4101, 19)
+
+	require.ErrorContains(t, err, "redis delete failed")
+	require.Equal(t, 1, cache.invalidationCalls)
+	require.Equal(t, 1, cache.publishCalls, "cross-instance invalidation must not be skipped after a local delete failure")
+	require.Equal(t, subCacheKey(4101, 19), cache.publishedKey)
+}
+
+type redeemFallbackInvalidationCacheStub struct {
+	BillingCache
+	published chan string
+}
+
+func (s *redeemFallbackInvalidationCacheStub) InvalidateSubscriptionCache(context.Context, int64, int64) error {
+	return errors.New("redis delete failed")
+}
+
+func (s *redeemFallbackInvalidationCacheStub) PublishSubscriptionCacheInvalidation(_ context.Context, cacheKey string) error {
+	s.published <- cacheKey
+	return nil
+}
+
+func (s *redeemFallbackInvalidationCacheStub) SubscribeSubscriptionCacheInvalidation(context.Context, func(string)) error {
+	return nil
+}
+
+func TestInvalidateRedeemSubscriptionCachesFallbackPublishesAfterDeleteFailure(t *testing.T) {
+	cache := &redeemFallbackInvalidationCacheStub{published: make(chan string, 1)}
+	groupID := int64(29)
+	svc := &RedeemService{billingCacheService: &BillingCacheService{cache: cache}}
+
+	svc.invalidateRedeemCaches(context.Background(), 4201, &RedeemCode{
+		Type:    RedeemTypeSubscription,
+		GroupID: &groupID,
+	})
+
+	select {
+	case key := <-cache.published:
+		require.Equal(t, subCacheKey(4201, groupID), key)
+	case <-time.After(time.Second):
+		t.Fatal("cross-instance invalidation was not published")
+	}
 }
 
 func TestAssignSubscriptionConflictWhenSemanticsMismatch(t *testing.T) {

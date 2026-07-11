@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand/v2"
@@ -178,13 +179,14 @@ func (s *SubscriptionService) invalidateSubscriptionCaches(userID, groupID int64
 
 	cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	var invalidationErrs []error
 	if err := s.billingCacheService.InvalidateSubscription(cacheCtx, userID, groupID); err != nil {
-		return fmt.Errorf("invalidate billing subscription cache: %w", err)
+		invalidationErrs = append(invalidationErrs, fmt.Errorf("invalidate billing subscription cache: %w", err))
 	}
 	if err := s.billingCacheService.PublishSubscriptionCacheInvalidation(cacheCtx, subCacheKey(userID, groupID)); err != nil {
-		return fmt.Errorf("publish subscription cache invalidation: %w", err)
+		invalidationErrs = append(invalidationErrs, fmt.Errorf("publish subscription cache invalidation: %w", err))
 	}
-	return nil
+	return errors.Join(invalidationErrs...)
 }
 
 // AssignSubscriptionInput 分配订阅输入
@@ -215,7 +217,28 @@ func (s *SubscriptionService) AssignSubscription(ctx context.Context, input *Ass
 //
 // 如果没有订阅：创建新订阅
 func (s *SubscriptionService) AssignOrExtendSubscription(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, bool, error) {
-	return s.assignOrExtendSubscription(ctx, input, false)
+	if input == nil {
+		return nil, false, fmt.Errorf("subscription input is required")
+	}
+	if dbent.TxFromContext(ctx) != nil || s.entClient == nil {
+		return s.assignOrExtendSubscription(ctx, input, dbent.TxFromContext(ctx) != nil)
+	}
+
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("begin transaction: %w", err)
+	}
+	txCtx := dbent.NewTxContext(ctx, tx)
+	sub, extended, err := s.assignOrExtendSubscription(txCtx, input, true)
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, false, fmt.Errorf("commit transaction: %w", err)
+	}
+	s.maybeInvalidateAssignmentCaches(input.UserID, input.GroupID, false)
+	return sub, extended, nil
 }
 
 func (s *SubscriptionService) assignOrExtendSubscription(ctx context.Context, input *AssignSubscriptionInput, deferCacheInvalidation bool) (*UserSubscription, bool, error) {
@@ -232,7 +255,7 @@ func (s *SubscriptionService) assignOrExtendSubscription(ctx context.Context, in
 	}
 
 	// 查询是否已有订阅
-	existingSub, err := s.userSubRepo.GetByUserIDAndGroupID(ctx, input.UserID, input.GroupID)
+	existingSub, err := s.getSubscriptionForAssignment(ctx, input.UserID, input.GroupID)
 	if err != nil {
 		// 不存在记录是正常情况，其他错误需要返回
 		existingSub = nil
@@ -293,6 +316,19 @@ func (s *SubscriptionService) assignOrExtendSubscription(ctx context.Context, in
 	s.maybeInvalidateAssignmentCaches(input.UserID, input.GroupID, deferCacheInvalidation)
 
 	return sub, false, nil // false 表示是新建
+}
+
+type userSubscriptionLockingRepository interface {
+	GetByUserIDAndGroupIDForUpdate(ctx context.Context, userID, groupID int64) (*UserSubscription, error)
+}
+
+func (s *SubscriptionService) getSubscriptionForAssignment(ctx context.Context, userID, groupID int64) (*UserSubscription, error) {
+	if dbent.TxFromContext(ctx) != nil {
+		if lockingRepo, ok := s.userSubRepo.(userSubscriptionLockingRepository); ok {
+			return lockingRepo.GetByUserIDAndGroupIDForUpdate(ctx, userID, groupID)
+		}
+	}
+	return s.userSubRepo.GetByUserIDAndGroupID(ctx, userID, groupID)
 }
 
 func (s *SubscriptionService) maybeInvalidateAssignmentCaches(userID, groupID int64, deferred bool) {

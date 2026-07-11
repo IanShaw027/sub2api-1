@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/dgraph-io/ristretto"
 	"github.com/stretchr/testify/require"
 
@@ -29,6 +30,34 @@ import (
 func TestCalculateGatewayRefundAmountUsesStrictCentComparison(t *testing.T) {
 	got := calculateGatewayRefundAmount(100, 80, 99.99, "CNY")
 	require.True(t, math.Abs(got-79.99) < 0.000001, "got %.8f", got)
+}
+
+func TestAlreadyProcessedPropagatesReloadFailure(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPaid, payment.OrderTypeBalance)
+	reloadErr := errors.New("database temporarily unavailable")
+	client.PaymentOrder.Intercept(dbent.InterceptFunc(func(dbent.Querier) dbent.Querier {
+		return dbent.QuerierFunc(func(context.Context, dbent.Query) (dbent.Value, error) {
+			return nil, reloadErr
+		})
+	}))
+
+	err := (&PaymentService{entClient: client}).alreadyProcessed(ctx, order, "trade-reload", order.PayAmount, "test")
+
+	require.ErrorIs(t, err, reloadErr)
+	require.Contains(t, err.Error(), "reload payment order")
+}
+
+func TestAlreadyProcessedReturnsOrderNotFoundWhenConcurrentDeleteWins(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPaid, payment.OrderTypeBalance)
+	require.NoError(t, client.PaymentOrder.DeleteOneID(order.ID).Exec(ctx))
+
+	err := (&PaymentService{entClient: client}).alreadyProcessed(ctx, order, "trade-deleted", order.PayAmount, "test")
+
+	require.ErrorIs(t, err, ErrOrderNotFound)
 }
 
 type paymentFulfillmentTestProvider struct {
@@ -68,6 +97,17 @@ type paymentFulfillmentUserSubRepoStub struct {
 	existing    *UserSubscription
 	extendCalls int
 	getByIDErr  error
+}
+
+type paymentFulfillmentBillingCacheStub struct {
+	BillingCache
+	invalidationErr   error
+	invalidationCalls int
+}
+
+func (s *paymentFulfillmentBillingCacheStub) InvalidateSubscriptionCache(context.Context, int64, int64) error {
+	s.invalidationCalls++
+	return s.invalidationErr
 }
 
 func (s *paymentFulfillmentUserSubRepoStub) GetByUserIDAndGroupID(context.Context, int64, int64) (*UserSubscription, error) {
@@ -608,6 +648,158 @@ func TestAssignSubscriptionExactlyOnceDefersCacheInvalidationUntilCommit(t *test
 	require.True(t, commitObserved, "subscription fulfillment must use the payment transaction commit hook")
 	_, cachedAfterCommit := cache.Get(key)
 	require.False(t, cachedAfterCommit, "committed subscription must invalidate the stale assignment cache synchronously")
+}
+
+func TestSubscriptionFulfillmentCacheInvalidationFailureDoesNotFailCommittedEntitlement(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPaid, payment.OrderTypeSubscription)
+
+	repo := &paymentFulfillmentUserSubRepoStub{existing: &UserSubscription{
+		ID:        57,
+		UserID:    order.UserID,
+		GroupID:   *order.SubscriptionGroupID,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+		Status:    SubscriptionStatusActive,
+	}}
+	groupRepo := paymentFulfillmentGroupRepoStub{group: &Group{
+		ID:               *order.SubscriptionGroupID,
+		Status:           payment.EntityStatusActive,
+		SubscriptionType: SubscriptionTypeSubscription,
+	}}
+	cache := &paymentFulfillmentBillingCacheStub{invalidationErr: errors.New("redis unavailable")}
+	billingCacheSvc := &BillingCacheService{cache: cache}
+	subscriptionSvc := NewSubscriptionService(groupRepo, repo, billingCacheSvc, client, nil)
+	svc := &PaymentService{entClient: client, groupRepo: groupRepo, subscriptionSvc: subscriptionSvc}
+
+	require.NoError(t, svc.ExecuteSubscriptionFulfillment(ctx, order.ID))
+	require.Equal(t, 1, cache.invalidationCalls)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Nil(t, reloaded.FailedAt)
+	require.Nil(t, reloaded.FailedReason)
+}
+
+func TestRetryFulfillmentRejectsFreshRechargingLease(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusRecharging, payment.OrderTypeSubscription)
+	order, err := client.PaymentOrder.UpdateOneID(order.ID).SetPaidAt(time.Now()).Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+	err = svc.RetryFulfillment(ctx, order.ID)
+	require.Error(t, err)
+	require.Equal(t, "CONFLICT", infraerrors.Reason(err))
+
+	reloaded, getErr := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, getErr)
+	require.Equal(t, OrderStatusRecharging, reloaded.Status)
+}
+
+func TestFulfillmentLeaseVersionRejectsStaleWorker(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusRecharging, payment.OrderTypeSubscription)
+	staleAt := time.Now().Add(-paymentFulfillmentLeaseDuration - time.Minute).UTC().Truncate(time.Microsecond)
+	order, err := client.PaymentOrder.UpdateOneID(order.ID).SetPaidAt(time.Now()).SetUpdatedAt(staleAt).Save(ctx)
+	require.NoError(t, err)
+	svc := &PaymentService{entClient: client}
+
+	firstLease, err := svc.acquirePaymentFulfillmentLease(ctx, order)
+	require.NoError(t, err)
+	require.NotNil(t, firstLease)
+
+	_, err = client.PaymentOrder.UpdateOneID(order.ID).SetUpdatedAt(staleAt).Save(ctx)
+	require.NoError(t, err)
+	staleOrder, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	time.Sleep(time.Millisecond)
+	secondLease, err := svc.acquirePaymentFulfillmentLease(ctx, staleOrder)
+	require.NoError(t, err)
+	require.NotNil(t, secondLease)
+	require.False(t, firstLease.version.Equal(secondLease.version))
+
+	completed, err := completePaymentOrderWithLease(ctx, client, order, firstLease)
+	require.Error(t, err)
+	require.False(t, completed)
+	require.Equal(t, "CONFLICT", infraerrors.Reason(err))
+	svc.markFailed(ctx, order.ID, firstLease, errors.New("stale worker failure"))
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusRecharging, reloaded.Status)
+	completed, err = completePaymentOrderWithLease(ctx, client, order, secondLease)
+	require.NoError(t, err)
+	require.True(t, completed)
+}
+
+func TestExecuteSubscriptionFulfillmentRecoversStaleLeaseFromSuccessSentinel(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusRecharging, payment.OrderTypeSubscription)
+	staleAt := time.Now().Add(-paymentFulfillmentLeaseDuration - time.Minute)
+	order, err := client.PaymentOrder.UpdateOneID(order.ID).SetPaidAt(time.Now()).SetUpdatedAt(staleAt).Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentAuditLog.Create().
+		SetOrderID(strconv.FormatInt(order.ID, 10)).
+		SetAction("SUBSCRIPTION_SUCCESS").
+		SetDetail(`{"status":"completed"}`).
+		SetOperator("system").
+		Save(ctx)
+	require.NoError(t, err)
+
+	groupRepo := paymentFulfillmentGroupRepoStub{group: &Group{
+		ID:               *order.SubscriptionGroupID,
+		Status:           payment.EntityStatusActive,
+		SubscriptionType: SubscriptionTypeSubscription,
+	}}
+	cache := &paymentFulfillmentBillingCacheStub{invalidationErr: errors.New("redis unavailable")}
+	billingCacheSvc := &BillingCacheService{cache: cache}
+	svc := &PaymentService{
+		entClient:       client,
+		groupRepo:       groupRepo,
+		subscriptionSvc: NewSubscriptionService(groupRepo, &paymentFulfillmentUserSubRepoStub{}, billingCacheSvc, client, nil),
+	}
+
+	require.NoError(t, svc.ExecuteSubscriptionFulfillment(ctx, order.ID))
+	require.Equal(t, 1, cache.invalidationCalls, "success-sentinel recovery must retry post-commit cache invalidation")
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+}
+
+func TestExecuteBalanceFulfillmentRecoversUsedCodeWithoutCreditingAgain(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusRecharging, payment.OrderTypeBalance)
+	staleAt := time.Now().Add(-paymentFulfillmentLeaseDuration - time.Minute)
+	order, err := client.PaymentOrder.UpdateOneID(order.ID).SetPaidAt(time.Now()).SetUpdatedAt(staleAt).Save(ctx)
+	require.NoError(t, err)
+	_, err = client.User.UpdateOneID(order.UserID).SetBalance(order.Amount).SetTotalRecharged(order.Amount).Save(ctx)
+	require.NoError(t, err)
+	_, err = client.RedeemCode.Create().
+		SetCode(order.RechargeCode).
+		SetType(RedeemTypeBalance).
+		SetValue(order.Amount).
+		SetStatus(StatusUsed).
+		SetUsedBy(order.UserID).
+		SetUsedAt(time.Now()).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+	require.NoError(t, svc.ExecuteBalanceFulfillment(ctx, order.ID))
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	userAfter, err := client.User.Get(ctx, order.UserID)
+	require.NoError(t, err)
+	require.Equal(t, order.Amount, userAfter.Balance)
+	require.Equal(t, order.Amount, userAfter.TotalRecharged)
 }
 
 // 回归防线：订阅发放与 SUCCESS 哨兵必须原子——哨兵写入失败时 assign 整体回滚、claim 释放，

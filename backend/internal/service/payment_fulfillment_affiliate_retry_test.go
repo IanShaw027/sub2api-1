@@ -358,6 +358,85 @@ func TestExecuteBalanceFulfillment_DoesNotApplyAffiliateRebateBeforeCompletionSu
 	require.False(t, svc.hasAuditLog(ctx, order.ID, "AFFILIATE_REBATE_FAILED"))
 }
 
+func TestExecuteSubscriptionFulfillmentAppliesAffiliateRebate(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPaid, payment.OrderTypeSubscription)
+
+	inviterID := int64(6677)
+	affiliateRepo := &paymentFulfillmentAffiliateRepoStub{
+		summary: &AffiliateSummary{UserID: order.UserID, InviterID: &inviterID},
+	}
+	affiliateService := &AffiliateService{
+		repo: affiliateRepo,
+		settingRepo: &paymentFulfillmentAffiliateSettingRepoStub{values: map[string]string{
+			SettingKeyAffiliateEnabled:    "true",
+			SettingKeyAffiliateRebateRate: "20",
+		}},
+	}
+	groupRepo := paymentFulfillmentGroupRepoStub{group: &Group{
+		ID:               *order.SubscriptionGroupID,
+		Status:           payment.EntityStatusActive,
+		SubscriptionType: SubscriptionTypeSubscription,
+	}}
+	subRepo := &paymentFulfillmentUserSubRepoStub{existing: &UserSubscription{
+		ID:        77,
+		UserID:    order.UserID,
+		GroupID:   *order.SubscriptionGroupID,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+		Status:    SubscriptionStatusActive,
+	}}
+	svc := &PaymentService{
+		entClient:        client,
+		groupRepo:        groupRepo,
+		subscriptionSvc:  NewSubscriptionService(groupRepo, subRepo, nil, client, nil),
+		affiliateService: affiliateService,
+	}
+
+	require.NoError(t, svc.ExecuteSubscriptionFulfillment(ctx, order.ID))
+	require.Equal(t, 1, affiliateRepo.accrueHits)
+	require.Equal(t, order.ID, affiliateRepo.accrueUsed.SourceOrderID)
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "AFFILIATE_REBATE_APPLIED"))
+}
+
+func TestRetryFulfillmentCompletedSubscriptionDoesNotDuplicateAffiliateRebate(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPaid, payment.OrderTypeSubscription)
+	now := time.Now()
+	_, err := client.PaymentOrder.UpdateOneID(order.ID).
+		SetStatus(OrderStatusCompleted).
+		SetPaidAt(now).
+		SetCompletedAt(now).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentAuditLog.Create().
+		SetOrderID(fmt.Sprintf("%d", order.ID)).
+		SetAction("AFFILIATE_REBATE_APPLIED").
+		SetDetail(`{"baseAmount":100,"rebateAmount":20}`).
+		SetOperator("system").
+		Save(ctx)
+	require.NoError(t, err)
+
+	inviterID := int64(7789)
+	affiliateRepo := &paymentFulfillmentAffiliateRepoStub{
+		summary: &AffiliateSummary{UserID: order.UserID, InviterID: &inviterID},
+	}
+	svc := &PaymentService{
+		entClient: client,
+		affiliateService: &AffiliateService{
+			repo: affiliateRepo,
+			settingRepo: &paymentFulfillmentAffiliateSettingRepoStub{values: map[string]string{
+				SettingKeyAffiliateEnabled:    "true",
+				SettingKeyAffiliateRebateRate: "20",
+			}},
+		},
+	}
+
+	require.NoError(t, svc.RetryFulfillment(ctx, order.ID))
+	require.Zero(t, affiliateRepo.accrueHits)
+}
+
 func TestRetryFulfillment_CompletedOrderBackfillsMissingAffiliateRebate(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentFulfillmentTestClient(t)

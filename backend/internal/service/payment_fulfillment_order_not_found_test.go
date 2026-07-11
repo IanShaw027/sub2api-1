@@ -18,6 +18,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -140,11 +141,10 @@ func TestHandlePaymentNotification_LegacyFallbackUnknownOrder_ReturnsSentinel(t 
 	require.Contains(t, err.Error(), notification.OrderID)
 }
 
-func TestConfirmPaymentIsIdempotentForPaidAndRecharging(t *testing.T) {
+func TestConfirmPaymentRecoversPaidAndRejectsFreshRechargingLease(t *testing.T) {
 	ctx := context.Background()
 	client := newOrderNotFoundTestClient(t)
 	paidAt := time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Second)
-	completedAt := paidAt.Add(3 * time.Minute)
 	rechargingPaidAt := time.Now().Add(-90 * time.Minute).UTC().Truncate(time.Second)
 
 	user, err := client.User.Create().
@@ -168,7 +168,6 @@ func TestConfirmPaymentIsIdempotentForPaidAndRecharging(t *testing.T) {
 		SetOrderType(payment.OrderTypeBalance).
 		SetStatus(OrderStatusPaid).
 		SetPaidAt(paidAt).
-		SetCompletedAt(completedAt).
 		SetExpiresAt(time.Now().Add(time.Hour)).
 		SetClientIP("127.0.0.1").
 		SetSrcHost("example.com").
@@ -205,18 +204,19 @@ func TestConfirmPaymentIsIdempotentForPaidAndRecharging(t *testing.T) {
 	require.NoError(t, err)
 
 	err = svc.confirmPayment(ctx, rechargingOrder.ID, "trade-existing", rechargingOrder.PayAmount, payment.TypeStripe, nil)
-	require.NoError(t, err)
+	require.Error(t, err)
+	require.Equal(t, "CONFLICT", infraerrors.Reason(err))
 	err = svc.confirmPayment(ctx, rechargingOrder.ID, "trade-existing", rechargingOrder.PayAmount, payment.TypeStripe, nil)
-	require.NoError(t, err)
+	require.Error(t, err)
+	require.Equal(t, "CONFLICT", infraerrors.Reason(err))
 
 	reloadedPaid, err := client.PaymentOrder.Get(ctx, paidOrder.ID)
 	require.NoError(t, err)
-	require.Equal(t, OrderStatusPaid, reloadedPaid.Status)
+	require.Equal(t, OrderStatusCompleted, reloadedPaid.Status)
 	require.Equal(t, "trade-existing", reloadedPaid.PaymentTradeNo)
 	require.NotNil(t, reloadedPaid.PaidAt)
 	require.Equal(t, paidAt, reloadedPaid.PaidAt.UTC().Truncate(time.Second))
 	require.NotNil(t, reloadedPaid.CompletedAt)
-	require.Equal(t, completedAt, reloadedPaid.CompletedAt.UTC().Truncate(time.Second))
 
 	reloadedRecharging, err := client.PaymentOrder.Get(ctx, rechargingOrder.ID)
 	require.NoError(t, err)
@@ -228,13 +228,20 @@ func TestConfirmPaymentIsIdempotentForPaidAndRecharging(t *testing.T) {
 
 	reloadedUser, err := client.User.Get(ctx, user.ID)
 	require.NoError(t, err)
-	require.Zero(t, reloadedUser.Balance)
+	require.Equal(t, paidOrder.Amount, reloadedUser.Balance)
 
-	for _, orderID := range []int64{paidOrder.ID, rechargingOrder.ID} {
-		logCount, err := client.PaymentAuditLog.Query().
-			Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(orderID, 10))).
-			Count(ctx)
-		require.NoError(t, err)
-		require.Zero(t, logCount, "confirmPayment on already-paid order %d must not emit fulfillment/audit side effects", orderID)
-	}
+	paidSuccessCount, err := client.PaymentAuditLog.Query().
+		Where(
+			paymentauditlog.OrderIDEQ(strconv.FormatInt(paidOrder.ID, 10)),
+			paymentauditlog.ActionEQ("RECHARGE_SUCCESS"),
+		).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, paidSuccessCount, "repeated PAID webhook must fulfill exactly once")
+
+	rechargingLogCount, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(rechargingOrder.ID, 10))).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, rechargingLogCount, "fresh lease conflict must not emit fulfillment side effects")
 }
