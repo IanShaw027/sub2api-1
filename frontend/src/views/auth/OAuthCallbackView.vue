@@ -154,6 +154,7 @@ import { useAppStore, useAuthStore } from '@/stores'
 import { apiClient } from '@/api/client'
 import { buildApiUrl } from '@/api/url'
 import {
+import { sanitizeRedirectPath } from '@/utils/sanitize'
   exchangePendingOAuthCompletion,
   getOAuthCompletionKind,
   persistOAuthTokenContext,
@@ -240,14 +241,6 @@ function readTokenResponse(params: URLSearchParams): OAuthTokenResponse | null {
   return response
 }
 
-function sanitizeRedirectPath(path: string | null | undefined): string {
-  if (!path) return '/dashboard'
-  if (!path.startsWith('/')) return '/dashboard'
-  if (path.startsWith('//')) return '/dashboard'
-  if (path.includes('://')) return '/dashboard'
-  if (path.includes('\n') || path.includes('\r')) return '/dashboard'
-  return path
-}
 
 function readPendingEmailOAuthProvider(): 'github' | 'google' | null {
   if (typeof window === 'undefined') return null

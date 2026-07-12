@@ -369,7 +369,10 @@ export default {
 
   adminCompliance: {
     title: 'Deployment and Operation Compliance Acknowledgment',
+    unavailableTitle: 'Compliance Status Unavailable',
     blockingNotice: 'Deployment and operation compliance acknowledgment is required before continuing to use the console.',
+    unavailableNotice: 'The admin console is locked until compliance status can be verified.',
+    unavailableDescription: 'We could not load the compliance status (network or server error). Admin pages stay blocked for safety. Retry when connectivity is restored, or log out.',
     riskNotice: 'This acknowledgment provides clear, conspicuous, and reproducible notice of compliance obligations and operation risks for self-hosted instances.',
     version: 'Document Version',
     openDocument: 'Open the GitHub document',
@@ -381,7 +384,10 @@ export default {
     logout: 'Log out',
     accept: 'Acknowledge and Continue',
     accepted: 'Compliance acknowledgment recorded',
-    acceptFailed: 'Failed to submit acknowledgment'
+    acceptFailed: 'Failed to submit acknowledgment',
+    retry: 'Retry',
+    retrySuccess: 'Compliance status loaded',
+    retryFailed: 'Still unable to load compliance status'
   },
 
   legal: {

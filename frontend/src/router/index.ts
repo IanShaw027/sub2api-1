@@ -1277,15 +1277,15 @@ router.beforeEach(async (to, _from, next) => {
           adminComplianceStore.requireAcknowledgement(err.metadata)
         } else {
           // Fail closed: network/5xx/unknown errors must not open admin chrome.
-          adminComplianceStore.requireAcknowledgement()
+          // Use unavailable state (retry UX) rather than a fake ack dialog.
+          adminComplianceStore.markStatusUnavailable()
         }
       }
     }
-    // Hard-block admin SPA navigation until compliance is acknowledged.
-    // Backend AdminComplianceGuard already returns 423 for admin APIs; keep
-    // the dialog as UX, but do not mount admin chrome before ack.
+    // Hard-block admin SPA navigation until compliance is acknowledged
+    // (or status is temporarily unavailable). Backend still enforces 423.
     // next(false) skips afterEach, so end loading explicitly.
-    if (adminComplianceStore.required || adminComplianceStore.shouldShow) {
+    if (adminComplianceStore.required || adminComplianceStore.unavailable || adminComplianceStore.shouldShow) {
       navigationLoading.endNavigation()
       next(false)
       return

@@ -240,6 +240,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { AuthLayout } from '@/components/layout'
 import PendingOAuthCreateAccountForm, {
+import { sanitizeRedirectPath } from '@/utils/sanitize'
   type PendingOAuthCreateAccountPayload
 } from '@/components/auth/PendingOAuthCreateAccountForm.vue'
 import { apiClient } from '@/api/client'
@@ -380,14 +381,6 @@ function readLegacyFragmentLogin(params: URLSearchParams): OAuthTokenResponse | 
   return completion
 }
 
-function sanitizeRedirectPath(path: string | null | undefined): string {
-  if (!path) return '/dashboard'
-  if (!path.startsWith('/')) return '/dashboard'
-  if (path.startsWith('//')) return '/dashboard'
-  if (path.includes('://')) return '/dashboard'
-  if (path.includes('\n') || path.includes('\r')) return '/dashboard'
-  return path
-}
 
 function currentAdoptionDecision(): OAuthAdoptionDecision {
   return {

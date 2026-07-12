@@ -1646,9 +1646,9 @@ var (
 				Columns: []*schema.Column{BatchImageJobsColumns[5], BatchImageJobsColumns[8]},
 			},
 			{
-				Name:    "batchimagejob_idempotency_key",
-				Unique:  false,
-				Columns: []*schema.Column{BatchImageJobsColumns[23]},
+				Name:    "batch_image_jobs_idempotency_owner_uq",
+				Unique:  true,
+				Columns: []*schema.Column{BatchImageJobsColumns[2], BatchImageJobsColumns[3], BatchImageJobsColumns[23]},
 				Annotation: &entsql.IndexAnnotation{
 					Where: "idempotency_key IS NOT NULL AND idempotency_key <> ''",
 				},
@@ -2157,7 +2157,7 @@ var (
 				Columns: []*schema.Column{InvoiceOrdersColumns[7]},
 			},
 			{
-				Name:    "invoiceorder_order_id",
+				Name:    "invoiceorder_order_id_active_unique",
 				Unique:  true,
 				Columns: []*schema.Column{InvoiceOrdersColumns[1]},
 				Annotation: &entsql.IndexAnnotation{

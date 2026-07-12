@@ -33,11 +33,18 @@ const appStore = vi.hoisted(() => ({
 const adminComplianceStore = vi.hoisted(() => ({
   initialized: true,
   required: false,
+  unavailable: false,
   shouldShow: false,
   fetchStatus: vi.fn(),
   requireAcknowledgement: vi.fn((metadata?: Record<string, string>) => {
     void metadata
     adminComplianceStore.required = true
+    adminComplianceStore.unavailable = false
+    adminComplianceStore.shouldShow = true
+  }),
+  markStatusUnavailable: vi.fn(() => {
+    adminComplianceStore.required = false
+    adminComplianceStore.unavailable = true
     adminComplianceStore.shouldShow = true
   }),
 }))
@@ -129,12 +136,20 @@ describe('feature route guard', () => {
     appStore.fetchPublicSettings.mockReset()
     adminComplianceStore.initialized = true
     adminComplianceStore.required = false
+    adminComplianceStore.unavailable = false
     adminComplianceStore.shouldShow = false
     adminComplianceStore.fetchStatus.mockReset()
     adminComplianceStore.requireAcknowledgement.mockReset()
+    adminComplianceStore.markStatusUnavailable.mockReset()
     adminComplianceStore.requireAcknowledgement.mockImplementation((metadata?: Record<string, string>) => {
       void metadata
       adminComplianceStore.required = true
+      adminComplianceStore.unavailable = false
+      adminComplianceStore.shouldShow = true
+    })
+    adminComplianceStore.markStatusUnavailable.mockImplementation(() => {
+      adminComplianceStore.required = false
+      adminComplianceStore.unavailable = true
       adminComplianceStore.shouldShow = true
     })
     navigationLoading.startNavigation.mockReset()
@@ -197,8 +212,8 @@ describe('feature route guard', () => {
     )
     await navigation
 
-    expect(adminComplianceStore.requireAcknowledgement).toHaveBeenCalledOnce()
-    expect(adminComplianceStore.requireAcknowledgement).toHaveBeenCalledWith()
+    expect(adminComplianceStore.markStatusUnavailable).toHaveBeenCalledOnce()
+    expect(adminComplianceStore.requireAcknowledgement).not.toHaveBeenCalled()
     expect(navigationLoading.endNavigation).toHaveBeenCalledOnce()
     expect(next).toHaveBeenCalledOnce()
     expect(next).toHaveBeenCalledWith(false)

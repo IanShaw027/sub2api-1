@@ -22,9 +22,11 @@ const appStore = vi.hoisted(() => ({
 const adminComplianceStore = vi.hoisted(() => ({
   initialized: true,
   required: false,
+  unavailable: false,
   shouldShow: false,
   fetchStatus: vi.fn(),
   requireAcknowledgement: vi.fn(),
+  markStatusUnavailable: vi.fn(),
 }))
 
 vi.mock('@/stores/auth', () => ({

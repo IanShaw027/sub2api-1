@@ -1447,8 +1447,18 @@
       <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div>
           <label class="input-label">{{ t('admin.accounts.concurrency') }}</label>
-          <input v-model.number="form.concurrency" type="number" min="1" class="input"
-            @input="form.concurrency = Math.max(1, form.concurrency || 1)" />
+          <input
+            v-model.number="form.concurrency"
+            type="number"
+            min="1"
+            :max="isGrokOAuthConcurrencyLocked ? 1 : undefined"
+            class="input"
+            data-testid="edit-account-concurrency"
+            @input="clampFormConcurrency"
+          />
+          <p v-if="isGrokOAuthConcurrencyLocked" class="input-hint">
+            {{ t('admin.accounts.grokOAuthConcurrencyHint', 'Grok OAuth concurrency is limited to 1 by default') }}
+          </p>
         </div>
         <div>
           <label class="input-label">{{ t('admin.accounts.loadFactor') }}</label>
@@ -2765,6 +2775,10 @@ import {
   buildModelMappingObject,
   isValidWildcardPattern
 } from '@/composables/useModelWhitelist'
+import {
+  isGrokOAuthConcurrency,
+  resolveAccountConcurrency
+} from '@/utils/accountConcurrency'
 
 interface Props {
   show: boolean
@@ -3335,6 +3349,16 @@ const form = reactive({
   expires_at: null as number | null
 })
 
+const isGrokOAuthConcurrencyLocked = computed(
+  () => isGrokOAuthConcurrency(props.account?.platform || '', props.account?.type || ''),
+)
+
+const clampFormConcurrency = () => {
+  const platform = props.account?.platform || ''
+  const type = props.account?.type || ''
+  form.concurrency = resolveAccountConcurrency(platform, type, form.concurrency)
+}
+
 const statusOptions = computed(() => {
   const options = [
     { value: 'active', label: t('common.active') },
@@ -3380,7 +3404,11 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   form.name = newAccount.name
   form.notes = newAccount.notes || ''
   form.proxy_id = newAccount.proxy_id
-  form.concurrency = newAccount.concurrency
+  form.concurrency = resolveAccountConcurrency(
+    newAccount.platform,
+    newAccount.type,
+    newAccount.concurrency,
+  )
   form.load_factor = newAccount.load_factor ?? null
   form.priority = newAccount.priority
   form.rate_multiplier = newAccount.rate_multiplier ?? 1
@@ -4629,6 +4657,7 @@ const handleSubmit = async () => {
     }
   }
 
+  clampFormConcurrency()
   const updatePayload: UpdateAccountRequest = { ...form }
   try {
     // 后端期望 proxy_id: 0 表示清除代理，而不是 null

@@ -6,15 +6,20 @@ import { getLocale } from '@/i18n'
 const FALLBACK_ZH_PHRASE = '我已阅读、理解并同意 Sub2API 部署与运营合规承诺'
 const FALLBACK_EN_PHRASE = 'I have read, understood, and agree to the Sub2API Deployment and Operation Compliance Commitment'
 
+export type AdminComplianceBlockReason = 'required' | 'unavailable' | null
+
 export const useAdminComplianceStore = defineStore('adminCompliance', () => {
   const status = ref<AdminComplianceStatus | null>(null)
   const loading = ref(false)
   const submitting = ref(false)
   const initialized = ref(false)
   const forceVisible = ref(false)
+  /** Distinguishes real ack-required (423) from temporary status-fetch failures. */
+  const blockReason = ref<AdminComplianceBlockReason>(null)
 
-  const required = computed(() => status.value?.required === true)
-  const shouldShow = computed(() => required.value || forceVisible.value)
+  const required = computed(() => status.value?.required === true || blockReason.value === 'required')
+  const unavailable = computed(() => blockReason.value === 'unavailable')
+  const shouldShow = computed(() => required.value || unavailable.value || forceVisible.value)
   const currentLocale = computed(() => getLocale())
   const expectedPhrase = computed(() => {
     if (currentLocale.value === 'zh') {
@@ -29,6 +34,7 @@ export const useAdminComplianceStore = defineStore('adminCompliance', () => {
       const nextStatus = await adminComplianceAPI.getStatus()
       status.value = nextStatus
       initialized.value = true
+      blockReason.value = nextStatus.required ? 'required' : null
       forceVisible.value = nextStatus.required
       return nextStatus
     } finally {
@@ -44,6 +50,7 @@ export const useAdminComplianceStore = defineStore('adminCompliance', () => {
         language: currentLocale.value
       })
       status.value = nextStatus
+      blockReason.value = nextStatus.required ? 'required' : null
       forceVisible.value = nextStatus.required
       return nextStatus
     } finally {
@@ -64,7 +71,32 @@ export const useAdminComplianceStore = defineStore('adminCompliance', () => {
       acknowledgement: status.value?.acknowledgement
     }
     initialized.value = true
+    blockReason.value = 'required'
     forceVisible.value = true
+  }
+
+  /** Fail-closed lockout when status cannot be loaded (network/5xx). Not a real ack dialog. */
+  function markStatusUnavailable(): void {
+    initialized.value = false
+    blockReason.value = 'unavailable'
+    forceVisible.value = true
+  }
+
+  async function retryStatusFetch(): Promise<void> {
+    loading.value = true
+    try {
+      await fetchStatus()
+    } catch (error) {
+      const err = error as { status?: number; code?: string; metadata?: Partial<AdminComplianceStatus> }
+      if (err.status === 423 && err.code === 'ADMIN_COMPLIANCE_ACK_REQUIRED') {
+        requireAcknowledgement(err.metadata)
+        return
+      }
+      markStatusUnavailable()
+      throw error
+    } finally {
+      loading.value = false
+    }
   }
 
   function reset(): void {
@@ -73,6 +105,7 @@ export const useAdminComplianceStore = defineStore('adminCompliance', () => {
     submitting.value = false
     initialized.value = false
     forceVisible.value = false
+    blockReason.value = null
   }
 
   return {
@@ -80,12 +113,16 @@ export const useAdminComplianceStore = defineStore('adminCompliance', () => {
     loading,
     submitting,
     initialized,
+    blockReason,
     required,
+    unavailable,
     shouldShow,
     expectedPhrase,
     fetchStatus,
     accept,
     requireAcknowledgement,
+    markStatusUnavailable,
+    retryStatusFetch,
     reset
   }
 })

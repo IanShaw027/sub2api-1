@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/migrations"
 	_ "github.com/lib/pq"
 )
@@ -24,51 +25,21 @@ type migrationChecksum struct {
 	Checksum string
 }
 
-// checksumSyncAllowlist restricts DEPLOY_SYNC_SCHEMA_CHECKSUMS rewrites to
-// migrations that have historical compatibility exceptions in
-// repository.migrationChecksumCompatibilityRules.
-//
-// Keep this list in sync with that map. Sync must never rewrite arbitrary
-// mismatched checksums — only known, intentional historical edits.
-var checksumSyncAllowlist = map[string]struct{}{
-	"054_drop_legacy_cache_columns.sql":                       {},
-	"061_add_usage_log_request_type.sql":                      {},
-	"109_auth_identity_compat_backfill.sql":                   {},
-	"110_pending_auth_and_provider_default_grants.sql":        {},
-	"112_add_payment_order_provider_key_snapshot.sql":         {},
-	"115_auth_identity_legacy_external_backfill.sql":          {},
-	"116_auth_identity_legacy_external_safety_reports.sql":    {},
-	"118_wechat_dual_mode_and_auth_source_defaults.sql":       {},
-	"119_enforce_payment_orders_out_trade_no_unique.sql":      {},
-	"120_enforce_payment_orders_out_trade_no_unique_notx.sql": {},
-	"123_fix_legacy_auth_source_grant_on_signup_defaults.sql": {},
-	"125_add_channel_monitors.sql":                            {},
-	"126_add_channel_monitor_aggregation.sql":                 {},
-	"131_affiliate_rebate_hardening.sql":                      {},
-	"132_affiliate_policy_limits.sql":                         {},
-	"137_subscription_fulfillment_claim_dedupe.sql":           {},
-	"138_subscription_fulfillment_claim_unique_notx.sql":      {},
-	"148_expand_usage_log_request_type_check.sql":             {},
-	"151_apply_rpm_parallel_constraints_and_replace_claude_code_template.sql": {},
-	"156_user_platform_quotas_add_kiro.sql":                   {},
-	"169_align_group_display_name_length.sql":                 {},
-	"176_add_tls_fingerprint_profile_transport.sql":           {},
-	"176_tls_fingerprint_capture_unification.sql":             {},
-	"181_user_platform_quotas_add_grok.sql":                   {},
-	"184_add_group_audio_search_pricing.sql":                  {},
-	"185_expand_usage_log_request_type_check.sql":             {},
-	"187_allow_native_image_route_and_video_price_checks.sql": {},
-	"188_add_group_audio_search_price_checks.sql":             {},
-	"195_add_invoice_order_active_unique_guard.sql":           {},
-	"199_batch_image_idempotency_unique.sql":                  {},
+// shouldSyncMigrationChecksum reports whether a mismatched DB checksum may be
+// rewritten to the embedded file checksum. Only migrations with historical
+// compatibility exceptions (single source: repository rules) are eligible.
+func shouldSyncMigrationChecksum(filename string) bool {
+	_, ok := checksumSyncAllowlist()[filename]
+	return ok
 }
 
-// shouldSyncMigrationChecksum reports whether a mismatched DB checksum may be
-// rewritten to the embedded file checksum. Only allowlisted historical
-// compatibility migrations are eligible.
-func shouldSyncMigrationChecksum(filename string) bool {
-	_, ok := checksumSyncAllowlist[filename]
-	return ok
+func checksumSyncAllowlist() map[string]struct{} {
+	names := repository.MigrationChecksumCompatibilityFilenames()
+	out := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		out[name] = struct{}{}
+	}
+	return out
 }
 
 func main() {

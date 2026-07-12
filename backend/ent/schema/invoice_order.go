@@ -59,8 +59,11 @@ func (InvoiceOrder) Edges() []ent.Edge {
 func (InvoiceOrder) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("invoice_id"),
+		// StorageKey must match migration 195a:
+		// invoiceorder_order_id_active_unique (create-first concurrent unique).
 		index.Fields("order_id").
 			Unique().
+			StorageKey("invoiceorder_order_id_active_unique").
 			Annotations(entsql.IndexWhere("is_active = true")),
 	}
 }

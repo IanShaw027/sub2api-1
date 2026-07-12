@@ -621,6 +621,18 @@ func checksumSet(values ...string) map[string]struct{} {
 	return out
 }
 
+// MigrationChecksumCompatibilityFilenames returns migration filenames that have
+// historical checksum-compatibility exceptions. Used by deploy tooling
+// (cmd/sync_checksums) so the allowlist is not duplicated outside this package.
+func MigrationChecksumCompatibilityFilenames() []string {
+	names := make([]string, 0, len(migrationChecksumCompatibilityRules))
+	for name := range migrationChecksumCompatibilityRules {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func newMigrationChecksumCompatibilityRule(fileChecksum string, acceptedDBChecksums ...string) migrationChecksumCompatibilityRule {
 	return migrationChecksumCompatibilityRule{
 		fileChecksum:       fileChecksum,

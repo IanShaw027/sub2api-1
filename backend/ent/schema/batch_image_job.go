@@ -77,7 +77,12 @@ func (BatchImageJob) Indexes() []ent.Index {
 		index.Fields("user_id", "created_at"),
 		index.Fields("status"),
 		index.Fields("provider", "status"),
-		index.Fields("idempotency_key").Annotations(entsql.IndexWhere("idempotency_key IS NOT NULL AND idempotency_key <> ''")),
+		// StorageKey must match migration 199a: batch_image_jobs_idempotency_owner_uq.
+		// DB uses NULLS NOT DISTINCT (Postgres); ent schema documents the unique owner scope.
+		index.Fields("user_id", "api_key_id", "idempotency_key").
+			Unique().
+			StorageKey("batch_image_jobs_idempotency_owner_uq").
+			Annotations(entsql.IndexWhere("idempotency_key IS NOT NULL AND idempotency_key <> ''")),
 		index.Fields("manifest_hash").Unique().Annotations(entsql.IndexWhere("manifest_hash IS NOT NULL AND manifest_hash <> ''")),
 		index.Fields("output_expires_at"),
 		index.Fields("downloaded_at"),

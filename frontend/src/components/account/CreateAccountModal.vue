@@ -3813,6 +3813,7 @@ import {
 } from '@/components/account/credentialsBuilder'
 import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
+import { isGrokOAuthConcurrency, resolveAccountConcurrency } from '@/utils/accountConcurrency'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
 import {
   OPENAI_WS_MODE_CTX_POOL,
@@ -4438,20 +4439,6 @@ const form = reactive({
   group_ids: [] as number[],
   expires_at: null as number | null
 })
-
-// Grok personal OAuth subscriptions are sensitive to multi-session load.
-// Backend rejects concurrency > 1 unless XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE is set.
-// Keep the create form aligned with that default so submits don't fail unexpectedly.
-const isGrokOAuthConcurrency = (platform: string, type: string) =>
-  platform === 'grok' && type === 'oauth'
-
-const resolveAccountConcurrency = (platform: string, type: string, concurrency: number): number => {
-  const n = Math.max(1, Number(concurrency) || 1)
-  if (isGrokOAuthConcurrency(platform, type)) {
-    return 1
-  }
-  return n
-}
 
 const isGrokOAuthConcurrencyLocked = computed(
   () => isGrokOAuthConcurrency(form.platform, form.type)

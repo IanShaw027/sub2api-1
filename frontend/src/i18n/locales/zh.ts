@@ -369,7 +369,10 @@ export default {
 
   adminCompliance: {
     title: '部署与运营合规确认',
+    unavailableTitle: '合规状态暂不可用',
     blockingNotice: '继续使用控制台前，须完成部署与运营合规确认。',
+    unavailableNotice: '在确认合规状态前，管理控制台保持锁定。',
+    unavailableDescription: '暂时无法加载合规状态（网络或服务异常）。为安全起见，管理页面不会开放。请在网络恢复后重试，或退出登录。',
     riskNotice: '本确认用于以清晰、显著、可留痕的方式提示自部署实例的合规义务与运营风险。',
     version: '协议版本',
     openDocument: '在 GitHub 查看协议文件',
@@ -381,7 +384,10 @@ export default {
     logout: '退出登录',
     accept: '确认并继续',
     accepted: '合规确认已记录',
-    acceptFailed: '提交确认失败'
+    acceptFailed: '提交确认失败',
+    retry: '重试',
+    retrySuccess: '合规状态已加载',
+    retryFailed: '仍无法加载合规状态'
   },
 
   legal: {

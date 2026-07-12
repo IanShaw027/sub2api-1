@@ -1,7 +1,7 @@
 <template>
   <BaseDialog
     :show="visible"
-    :title="t('adminCompliance.title')"
+    :title="dialogTitle"
     width="wide"
     :close-on-escape="false"
     :close-on-click-outside="false"
@@ -10,66 +10,77 @@
     @close="noop"
   >
     <div class="space-y-5">
-      <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+      <div
+        class="rounded-lg border p-4 text-sm"
+        :class="isUnavailable
+          ? 'border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100'
+          : 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100'"
+      >
         <div class="flex gap-3">
           <Icon name="exclamationTriangle" size="md" class="mt-0.5 flex-shrink-0" />
           <div class="space-y-2">
-            <p class="font-semibold">{{ t('adminCompliance.blockingNotice') }}</p>
-            <p class="leading-6">{{ t('adminCompliance.riskNotice') }}</p>
+            <p class="font-semibold">
+              {{ isUnavailable ? t('adminCompliance.unavailableNotice') : t('adminCompliance.blockingNotice') }}
+            </p>
+            <p class="leading-6">
+              {{ isUnavailable ? t('adminCompliance.unavailableDescription') : t('adminCompliance.riskNotice') }}
+            </p>
           </div>
         </div>
       </div>
 
-      <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_240px]">
-        <section class="min-h-[320px] max-h-[46vh] overflow-y-auto rounded-lg border border-gray-200 bg-white p-5 dark:border-dark-700 dark:bg-dark-900">
-          <div class="legal-document-content" v-html="renderedDocument"></div>
-        </section>
+      <template v-if="!isUnavailable">
+        <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_240px]">
+          <section class="min-h-[320px] max-h-[46vh] overflow-y-auto rounded-lg border border-gray-200 bg-white p-5 dark:border-dark-700 dark:bg-dark-900">
+            <div class="legal-document-content" v-html="renderedDocument"></div>
+          </section>
 
-        <aside class="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm dark:border-dark-700 dark:bg-dark-900/60">
-          <div>
-            <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-dark-400">
-              {{ t('adminCompliance.version') }}
+          <aside class="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm dark:border-dark-700 dark:bg-dark-900/60">
+            <div>
+              <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-dark-400">
+                {{ t('adminCompliance.version') }}
+              </p>
+              <p class="mt-1 break-all font-mono text-gray-900 dark:text-white">
+                {{ complianceStore.status?.version || 'v2026.06.10' }}
+              </p>
+            </div>
+            <a
+              :href="documentUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center gap-2 text-primary-600 underline underline-offset-4 hover:text-primary-700 dark:text-primary-300 dark:hover:text-primary-200"
+            >
+              <Icon name="externalLink" size="sm" />
+              {{ t('adminCompliance.openDocument') }}
+            </a>
+            <p class="leading-6 text-gray-600 dark:text-dark-300">
+              {{ t('adminCompliance.documentSource') }}
             </p>
-            <p class="mt-1 break-all font-mono text-gray-900 dark:text-white">
-              {{ complianceStore.status?.version || 'v2026.06.10' }}
-            </p>
-          </div>
-          <a
-            :href="documentUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="inline-flex items-center gap-2 text-primary-600 underline underline-offset-4 hover:text-primary-700 dark:text-primary-300 dark:hover:text-primary-200"
-          >
-            <Icon name="externalLink" size="sm" />
-            {{ t('adminCompliance.openDocument') }}
-          </a>
-          <p class="leading-6 text-gray-600 dark:text-dark-300">
-            {{ t('adminCompliance.documentSource') }}
-          </p>
-        </aside>
-      </div>
-
-      <div class="space-y-3">
-        <label for="admin-compliance-phrase" class="block text-sm font-semibold text-gray-900 dark:text-white">
-          {{ t('adminCompliance.inputLabel') }}
-        </label>
-        <div class="rounded-lg bg-gray-100 px-3 py-2 font-mono text-sm text-gray-900 dark:bg-dark-800 dark:text-dark-100">
-          {{ expectedPhrase }}
+          </aside>
         </div>
-        <Input
-          id="admin-compliance-phrase"
-          v-model="typedPhrase"
-          :placeholder="t('adminCompliance.inputPlaceholder')"
-          autocomplete="off"
-          :disabled="complianceStore.submitting"
-          :error="inputError"
-          @enter="submit"
-        />
-      </div>
 
-      <p class="text-xs leading-5 text-gray-500 dark:text-dark-400">
-        {{ t('adminCompliance.legalNote') }}
-      </p>
+        <div class="space-y-3">
+          <label for="admin-compliance-phrase" class="block text-sm font-semibold text-gray-900 dark:text-white">
+            {{ t('adminCompliance.inputLabel') }}
+          </label>
+          <div class="rounded-lg bg-gray-100 px-3 py-2 font-mono text-sm text-gray-900 dark:bg-dark-800 dark:text-dark-100">
+            {{ expectedPhrase }}
+          </div>
+          <Input
+            id="admin-compliance-phrase"
+            v-model="typedPhrase"
+            :placeholder="t('adminCompliance.inputPlaceholder')"
+            autocomplete="off"
+            :disabled="complianceStore.submitting"
+            :error="inputError"
+            @enter="submit"
+          />
+        </div>
+
+        <p class="text-xs leading-5 text-gray-500 dark:text-dark-400">
+          {{ t('adminCompliance.legalNote') }}
+        </p>
+      </template>
     </div>
 
     <template #footer>
@@ -77,12 +88,23 @@
         <button
           type="button"
           class="btn btn-secondary"
-          :disabled="complianceStore.submitting"
+          :disabled="complianceStore.submitting || complianceStore.loading"
           @click="logout"
         >
           {{ t('adminCompliance.logout') }}
         </button>
         <button
+          v-if="isUnavailable"
+          type="button"
+          class="btn btn-primary"
+          :disabled="complianceStore.loading"
+          @click="retry"
+        >
+          <span v-if="complianceStore.loading">{{ t('common.loading') }}</span>
+          <span v-else>{{ t('adminCompliance.retry') }}</span>
+        </button>
+        <button
+          v-else
           type="button"
           class="btn btn-primary"
           :disabled="!canSubmit || complianceStore.submitting"
@@ -122,6 +144,10 @@ marked.setOptions({
 })
 
 const visible = computed(() => authStore.isAuthenticated && authStore.isAdmin && complianceStore.shouldShow)
+const isUnavailable = computed(() => complianceStore.unavailable)
+const dialogTitle = computed(() =>
+  isUnavailable.value ? t('adminCompliance.unavailableTitle') : t('adminCompliance.title'),
+)
 const expectedPhrase = computed(() => complianceStore.expectedPhrase)
 const canSubmit = computed(() => typedPhrase.value.trim() === expectedPhrase.value)
 const currentDocument = computed(() => getLocale() === 'zh' ? zhDocument : enDocument)
@@ -174,6 +200,17 @@ async function submit(): Promise<void> {
   } catch (error) {
     const message = (error as { message?: string })?.message || t('adminCompliance.acceptFailed')
     appStore.showError(message)
+  }
+}
+
+async function retry(): Promise<void> {
+  try {
+    await complianceStore.retryStatusFetch()
+    if (!complianceStore.shouldShow) {
+      appStore.showSuccess(t('adminCompliance.retrySuccess'))
+    }
+  } catch {
+    appStore.showError(t('adminCompliance.retryFailed'))
   }
 }
 
