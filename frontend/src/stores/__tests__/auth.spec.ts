@@ -362,7 +362,11 @@ describe('useAuthStore', () => {
       const store = useAuthStore()
       await store.login({ email: 'test@example.com', password: '123456' })
 
-      const updatedUser = { ...fakeUser, username: 'updated-name' }
+      const updatedUser = {
+        ...fakeUser,
+        username: 'updated-name',
+        avatar_url: 'data:image/webp;base64,YXZhdGFy'
+      }
       mockGetCurrentUser.mockResolvedValue({ data: updatedUser })
 
       const result = await store.refreshUser()

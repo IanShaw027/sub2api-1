@@ -173,6 +173,28 @@ describe('ProfileAvatarCard', () => {
     })
 
     expect(wrapper.find('[data-testid="profile-avatar-input"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="profile-avatar-file-input"]').attributes('accept')).toBe('image/png,image/jpeg,image/gif,image/webp')
+  })
+
+  it('rejects unsupported image formats before creating a persisted draft', async () => {
+    authStoreState.user = createUser()
+    const wrapper = mount(ProfileAvatarCard, {
+      props: { user: authStoreState.user },
+      global: { stubs: { Icon: true } }
+    })
+    const fileInput = wrapper.get('[data-testid="profile-avatar-file-input"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [new File(['<svg xmlns="http://www.w3.org/2000/svg"/>'], 'avatar.svg', { type: 'image/svg+xml' })],
+      configurable: true
+    })
+
+    await fileInput.trigger('change')
+    await flushAsyncWork()
+
+    expect(showErrorMock).toHaveBeenCalledWith('Please choose an image file')
+    expect(wrapper.find('[data-testid="profile-avatar-preview"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="profile-avatar-save"]').attributes('disabled')).toBeDefined()
+    expect(updateProfileMock).not.toHaveBeenCalled()
   })
 
   it('compresses an uploaded image that exceeds the 20KB target before saving', async () => {
@@ -294,5 +316,21 @@ describe('ProfileAvatarCard', () => {
 
     expect(unsafeWrapper.find('[data-testid="profile-avatar-preview"]').exists()).toBe(false)
     expect(unsafeWrapper.text()).toContain('A')
+  })
+
+  it('renders a persisted inline raster avatar after refresh', () => {
+    const avatar = 'data:image/webp;base64,YXZhdGFy'
+    const wrapper = mount(ProfileAvatarCard, {
+      props: {
+        user: createUser({ avatar_url: avatar })
+      },
+      global: {
+        stubs: {
+          Icon: true
+        }
+      }
+    })
+
+    expect(wrapper.get('[data-testid="profile-avatar-preview"]').attributes('src')).toBe(avatar)
   })
 })

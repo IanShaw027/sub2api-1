@@ -48,7 +48,7 @@
             <input
               data-testid="profile-avatar-file-input"
               type="file"
-              accept="image/*"
+              accept="image/png,image/jpeg,image/gif,image/webp"
               class="hidden"
               @change="handleAvatarFileChange"
             >
@@ -102,6 +102,7 @@ const authStore = useAuthStore()
 const appStore = useAppStore()
 
 const targetAvatarUploadBytes = 20 * 1024
+const supportedAvatarFileTypes = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp'])
 const avatarScaleSteps = [1, 0.92, 0.84, 0.76, 0.68, 0.6, 0.52, 0.44, 0.36]
 const avatarQualitySteps = [0.92, 0.84, 0.76, 0.68, 0.6, 0.52, 0.44, 0.36]
 const avatarDraft = ref('')
@@ -130,7 +131,7 @@ function normalizeUploadedAvatar(value: string): string | null {
     return null
   }
 
-  if (!/^data:image\/[a-zA-Z0-9.+-]+;base64,/i.test(normalized)) {
+  if (!normalized.startsWith('data:image/') || safeImageUrl(normalized) !== normalized) {
     appStore.showError(t('profile.avatar.uploadRequired'))
     return null
   }
@@ -198,7 +199,7 @@ async function compressAvatarFile(file: File): Promise<File> {
 }
 
 async function prepareAvatarUpload(file: File): Promise<File> {
-  if (!file.type.startsWith('image/')) {
+  if (!supportedAvatarFileTypes.has(file.type.toLowerCase())) {
     throw new Error(t('profile.avatar.invalidType'))
   }
   if (file.type === 'image/gif') {
