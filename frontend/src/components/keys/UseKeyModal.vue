@@ -729,7 +729,7 @@ function generateGrokCodexFiles(baseUrl: string, apiKey: string): FileConfig[] {
   // Grok Responses is HTTP/SSE. Codex WS is accepted by Sub2API but bridged to HTTP.
   const configContent = `# Codex CLI config for Sub2API Grok group access.
 # Default model is grok-4.5. You can switch to any grok-* model id
-# (e.g. grok-4.3, grok-build-0.1, grok-4.20-reasoning) without server rewrite.
+# (e.g. grok-4.3, grok-build-0.1, grok-4.20-multi-agent-0309) without server rewrite.
 model_provider = "sub2api"
 model = "grok-4.5"
 # Optional personal preferences:
@@ -803,7 +803,7 @@ models_base_url = "${baseUrl}"
 #   1. env_key = "XAI_API_KEY" (use environment variable)
 #   2. api_key = "sk-xxx..." (hardcode, not recommended for security)
 
-[model.grok-4.5]
+[model."grok-4.5"]
 model = "grok-4.5"
 name = "Grok 4.5"
 api_backend = "responses"
@@ -811,24 +811,25 @@ context_window = 500000
 env_key = "XAI_API_KEY"  # Recommended: use environment variable
 # api_key = "${apiKey}"  # Alternative: hardcode API key (not recommended)
 
-[model.grok-build]
-model = "grok-build"
+[model."grok-build-0.1"]
+model = "grok-build-0.1"
 name = "Grok Build"
 api_backend = "responses"
 context_window = 512000
 env_key = "XAI_API_KEY"
 
-[model.grok-4.20-reasoning]
-model = "grok-4.20-reasoning"
-name = "Grok 4.20 Reasoning"
+[model."grok-4.20-multi-agent-0309"]
+model = "grok-4.20-multi-agent-0309"
+name = "Grok 4.20 Multi Agent"
 api_backend = "responses"
-context_window = 512000
+context_window = 1000000
 env_key = "XAI_API_KEY"
 
-[model.grok-latest]
-model = "grok-latest"
-name = "Grok Latest"
+[model."grok-4.3"]
+model = "grok-4.3"
+name = "Grok 4.3"
 api_backend = "responses"
+context_window = 1000000
 env_key = "XAI_API_KEY"
 
 # You can add more models as needed:
@@ -1322,14 +1323,7 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
     'grok-4.5': {
       name: 'Grok 4.5',
       limit: {
-        context: 256000,
-        output: 64000
-      }
-    },
-    'grok-4.3': {
-      name: 'Grok 4.3',
-      limit: {
-        context: 256000,
+        context: 500000,
         output: 64000
       }
     },
@@ -1340,24 +1334,17 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
         output: 64000
       }
     },
-    'grok-4.20-reasoning': {
-      name: 'Grok 4.20 Reasoning',
+    'grok-4.20-multi-agent-0309': {
+      name: 'Grok 4.20 Multi Agent',
       limit: {
-        context: 256000,
+        context: 1000000,
         output: 64000
       }
     },
-    'grok-4.20-non-reasoning': {
-      name: 'Grok 4.20 Non-Reasoning',
+    'grok-4.3': {
+      name: 'Grok 4.3',
       limit: {
-        context: 256000,
-        output: 64000
-      }
-    },
-    'grok-latest': {
-      name: 'Grok Latest',
-      limit: {
-        context: 256000,
+        context: 1000000,
         output: 64000
       }
     }

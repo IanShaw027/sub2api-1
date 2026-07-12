@@ -6201,7 +6201,8 @@
     "supported_output_modalities": [
       "text"
     ],
-    "supports_prompt_caching": true
+    "supports_prompt_caching": true,
+    "source": "https://docs.x.ai/developers/pricing"
   },
   "xai/grok-4.3": {
     "cache_read_input_token_cost": 2e-07,
@@ -6220,7 +6221,8 @@
     "supported_output_modalities": [
       "text"
     ],
-    "supports_prompt_caching": true
+    "supports_prompt_caching": true,
+    "source": "https://docs.x.ai/developers/pricing"
   },
   "xai/grok-4.20-0309-reasoning": {
     "cache_read_input_token_cost": 2e-07,
@@ -6239,7 +6241,8 @@
     "supported_output_modalities": [
       "text"
     ],
-    "supports_prompt_caching": true
+    "supports_prompt_caching": true,
+    "source": "https://docs.x.ai/developers/pricing"
   },
   "xai/grok-4.20-0309-non-reasoning": {
     "cache_read_input_token_cost": 2e-07,
@@ -6258,7 +6261,8 @@
     "supported_output_modalities": [
       "text"
     ],
-    "supports_prompt_caching": true
+    "supports_prompt_caching": true,
+    "source": "https://docs.x.ai/developers/pricing"
   },
   "xai/grok-4.20-multi-agent-0309": {
     "cache_read_input_token_cost": 2e-07,
@@ -6277,7 +6281,8 @@
     "supported_output_modalities": [
       "text"
     ],
-    "supports_prompt_caching": true
+    "supports_prompt_caching": true,
+    "source": "https://docs.x.ai/developers/pricing"
   },
   "xai/grok-build-0.1": {
     "cache_read_input_token_cost": 2e-07,
@@ -6295,14 +6300,16 @@
     "supported_output_modalities": [
       "text"
     ],
-    "supports_prompt_caching": true
+    "supports_prompt_caching": true,
+    "max_input_tokens": 256000,
+    "source": "https://docs.x.ai/developers/pricing"
   },
   "xai/grok-imagine-image-quality": {
     "litellm_provider": "xai",
     "mode": "image_generation",
     "output_cost_per_image": 0.05,
     "output_cost_per_token": 0.0,
-    "source": "https://docs.x.ai/docs/models",
+    "source": "https://docs.x.ai/developers/pricing",
     "supported_endpoints": [
       "/v1/images/generations",
       "/v1/images/edits"
@@ -6320,7 +6327,7 @@
     "mode": "image_generation",
     "output_cost_per_image": 0.02,
     "output_cost_per_token": 0.0,
-    "source": "https://docs.x.ai/docs/models",
+    "source": "https://docs.x.ai/developers/pricing",
     "supported_endpoints": [
       "/v1/images/generations",
       "/v1/images/edits"
@@ -6338,13 +6345,14 @@
     "mode": "video_generation",
     "output_cost_per_second": 0.05,
     "output_cost_per_token": 0.0,
-    "source": "https://docs.x.ai/docs/models",
+    "source": "https://docs.x.ai/developers/pricing",
     "supported_endpoints": [
       "/v1/videos/generations"
     ],
     "supported_modalities": [
       "text",
-      "image"
+      "image",
+      "video"
     ],
     "supported_output_modalities": [
       "video"
@@ -6355,12 +6363,11 @@
     "mode": "video_generation",
     "output_cost_per_second": 0.08,
     "output_cost_per_token": 0.0,
-    "source": "https://docs.x.ai/docs/models",
+    "source": "https://docs.x.ai/developers/pricing",
     "supported_endpoints": [
       "/v1/videos/generations"
     ],
     "supported_modalities": [
-      "text",
       "image"
     ],
     "supported_output_modalities": [
@@ -6372,12 +6379,11 @@
     "mode": "video_generation",
     "output_cost_per_second": 0.08,
     "output_cost_per_token": 0.0,
-    "source": "https://docs.x.ai/docs/models",
+    "source": "https://docs.x.ai/developers/pricing",
     "supported_endpoints": [
       "/v1/videos/generations"
     ],
     "supported_modalities": [
-      "text",
       "image"
     ],
     "supported_output_modalities": [

@@ -336,7 +336,10 @@ describe('UseKeyModal', () => {
     const grokCode = wrapper.findAll('pre code').map((code) => code.text()).join('\n')
     expect(grokCode).toContain('GROK_MODELS_BASE_URL')
     expect(grokCode).toContain('XAI_API_KEY')
-    expect(grokCode).toContain('[model.grok-4.5]')
+    expect(grokCode).toContain('[model."grok-4.5"]')
+    expect(grokCode).toContain('[model."grok-build-0.1"]')
+    expect(grokCode).toContain('[model."grok-4.20-multi-agent-0309"]')
+    expect(grokCode).toContain('[model."grok-4.3"]')
     expect(grokCode).toContain('default = "grok-4.5"')
 
     const clickTab = async (label: string) => {
@@ -369,7 +372,7 @@ describe('UseKeyModal', () => {
     expect(openCode).toContain('"grok-4.5"')
     expect(openCode).toContain('"grok-4.3"')
     expect(openCode).toContain('"grok-build-0.1"')
-    expect(openCode).toContain('"grok-latest"')
+    expect(openCode).toContain('"grok-4.20-multi-agent-0309"')
     // Must not reuse OpenAI GPT catalog for Grok OpenCode
     expect(openCode).not.toContain('"gpt-5.4"')
     expect(openCode).not.toContain('"gpt-5.2"')
