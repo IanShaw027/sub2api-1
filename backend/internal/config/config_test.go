@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -2011,6 +2012,24 @@ func TestValidateConfig_OpenAIWSRules(t *testing.T) {
 			name:    "scheduler_score_weights session_sticky 不能为负数",
 			mutate:  func(c *Config) { c.Gateway.OpenAIWS.SchedulerScoreWeights.SessionSticky = -0.1 },
 			wantErr: "gateway.openai_ws.scheduler_score_weights.* must be non-negative",
+		},
+		{
+			name:    "scheduler_score_weights 不能为 NaN",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = math.NaN() },
+			wantErr: "gateway.openai_ws.scheduler_score_weights.* must be non-negative finite numbers",
+		},
+		{
+			name:    "scheduler_score_weights 不能为无穷大",
+			mutate:  func(c *Config) { c.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = math.Inf(1) },
+			wantErr: "gateway.openai_ws.scheduler_score_weights.* must be non-negative finite numbers",
+		},
+		{
+			name: "scheduler_score_weights 总和必须有限",
+			mutate: func(c *Config) {
+				c.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = math.MaxFloat64
+				c.Gateway.OpenAIWS.SchedulerScoreWeights.Load = math.MaxFloat64
+			},
+			wantErr: "gateway.openai_ws.scheduler_score_weights must have a finite positive sum",
 		},
 		{
 			name: "scheduler_score_weights 不能全为 0",

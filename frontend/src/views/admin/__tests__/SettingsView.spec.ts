@@ -219,6 +219,7 @@ vi.mock("vue-i18n", async () => {
     "admin.settings.payment.findProvider": "查看支持的支付方式",
     "admin.settings.openaiExperimentalScheduler.title": "OpenAI 实验调度策略",
     "admin.settings.openaiExperimentalScheduler.description": "默认关闭。开启后仅影响本网关在 OpenAI 账号间的实验性调度选择逻辑，不代表上游 OpenAI 官方能力。",
+    "admin.settings.openaiExperimentalScheduler.defaultPlaceholder": "默认值：{value}",
     "admin.settings.site.uploadImage": "上传图片",
     "admin.settings.site.remove": "移除",
     "admin.settings.site.contactInfo": "客服联系方式",
@@ -1321,6 +1322,8 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(wrapper.get('[data-testid="openai-advanced-scheduler-enabled"]').attributes("checked")).toBeDefined();
     expect(wrapper.get('[data-testid="openai-advanced-scheduler-sticky-weighted"]').attributes("checked")).toBeDefined();
     expect(wrapper.get('[data-testid="openai-advanced-scheduler-lb_top_k"]').element).toHaveProperty("value", "11");
+    expect(wrapper.get('[data-testid="openai-advanced-scheduler-weight_previous_response"]').attributes("placeholder")).toBe("默认值：0");
+    expect(wrapper.get('[data-testid="openai-advanced-scheduler-weight_session_sticky"]').attributes("placeholder")).toBe("默认值：0");
 
     await wrapper
       .get('[data-testid="openai-advanced-scheduler-subscription-priority"]')

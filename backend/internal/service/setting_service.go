@@ -2383,6 +2383,9 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	if err != nil {
 		return nil, err
 	}
+	if err := s.normalizeOpenAIAdvancedSchedulerOverrides(settings); err != nil {
+		return nil, err
+	}
 	settings.PaymentVisibleMethodAlipaySource = alipaySource
 	settings.PaymentVisibleMethodWxpaySource = wxpaySource
 	openAIWSMinIdle, openAIWSMaxIdle := normalizeOpenAIWSIdleSettingValues(
@@ -4837,6 +4840,8 @@ func normalizeKiroRuntimeSettings(settings *KiroRuntimeSettings) *KiroRuntimeSet
 	if settings == nil {
 		return DefaultKiroRuntimeSettings()
 	}
+	normalized := *settings
+	settings = &normalized
 
 	settings.KiroVersion = normalizeKiroHeaderValue(settings.KiroVersion, defaultKiroVersion)
 	settings.KiroCommit = normalizeKiroOptionalHeaderValue(settings.KiroCommit)
@@ -4941,6 +4946,121 @@ func normalizeOpenAIAdvancedSchedulerSettingString(value string) string {
 		return strconv.FormatFloat(parsed, 'f', -1, 64)
 	}
 	return trimmed
+}
+
+func (s *SettingService) openAIAdvancedSchedulerEffectiveWeights() config.GatewayOpenAIWSSchedulerScoreWeights {
+	defaults := config.GatewayOpenAIWSSchedulerScoreWeights{
+		Priority:         1,
+		Load:             1,
+		Queue:            0.7,
+		ErrorRate:        0.8,
+		TTFT:             0.5,
+		PreviousResponse: 0,
+		SessionSticky:    0,
+	}
+	if s == nil || s.cfg == nil {
+		return defaults
+	}
+
+	weights := s.cfg.Gateway.OpenAIWS.SchedulerScoreWeights
+	weightSum := weights.Priority + weights.Load + weights.Queue + weights.ErrorRate + weights.TTFT +
+		weights.Reset + weights.QuotaHeadroom + weights.PreviousResponse + weights.SessionSticky
+	if weightSum <= 0 || math.IsNaN(weightSum) || math.IsInf(weightSum, 0) {
+		return defaults
+	}
+	return weights
+}
+
+func (s *SettingService) normalizeOpenAIAdvancedSchedulerOverrides(settings *SystemSettings) error {
+	lbTopK, err := normalizeOptionalPositiveIntString(settings.OpenAIAdvancedSchedulerLBTopK)
+	if err != nil {
+		return infraerrors.BadRequest(
+			"INVALID_OPENAI_ADVANCED_SCHEDULER_LB_TOP_K",
+			"openai advanced scheduler TopK must be a positive integer or empty",
+		)
+	}
+	settings.OpenAIAdvancedSchedulerLBTopK = lbTopK
+
+	weights := []*string{
+		&settings.OpenAIAdvancedSchedulerWeightPriority,
+		&settings.OpenAIAdvancedSchedulerWeightLoad,
+		&settings.OpenAIAdvancedSchedulerWeightQueue,
+		&settings.OpenAIAdvancedSchedulerWeightErrorRate,
+		&settings.OpenAIAdvancedSchedulerWeightTTFT,
+		&settings.OpenAIAdvancedSchedulerWeightReset,
+		&settings.OpenAIAdvancedSchedulerWeightQuotaHeadroom,
+		&settings.OpenAIAdvancedSchedulerWeightPreviousResponse,
+		&settings.OpenAIAdvancedSchedulerWeightSessionSticky,
+	}
+	for _, target := range weights {
+		normalized, err := normalizeOptionalNonNegativeFloatString(*target)
+		if err != nil {
+			return infraerrors.BadRequest(
+				"INVALID_OPENAI_ADVANCED_SCHEDULER_WEIGHT",
+				"openai advanced scheduler weights must be non-negative numbers or empty",
+			)
+		}
+		*target = normalized
+	}
+
+	effective := s.openAIAdvancedSchedulerEffectiveWeights()
+	weightSum := resolveOpenAIAdvancedSchedulerWeight(settings.OpenAIAdvancedSchedulerWeightPriority, effective.Priority) +
+		resolveOpenAIAdvancedSchedulerWeight(settings.OpenAIAdvancedSchedulerWeightLoad, effective.Load) +
+		resolveOpenAIAdvancedSchedulerWeight(settings.OpenAIAdvancedSchedulerWeightQueue, effective.Queue) +
+		resolveOpenAIAdvancedSchedulerWeight(settings.OpenAIAdvancedSchedulerWeightErrorRate, effective.ErrorRate) +
+		resolveOpenAIAdvancedSchedulerWeight(settings.OpenAIAdvancedSchedulerWeightTTFT, effective.TTFT) +
+		resolveOpenAIAdvancedSchedulerWeight(settings.OpenAIAdvancedSchedulerWeightReset, effective.Reset) +
+		resolveOpenAIAdvancedSchedulerWeight(settings.OpenAIAdvancedSchedulerWeightQuotaHeadroom, effective.QuotaHeadroom) +
+		resolveOpenAIAdvancedSchedulerWeight(settings.OpenAIAdvancedSchedulerWeightPreviousResponse, effective.PreviousResponse) +
+		resolveOpenAIAdvancedSchedulerWeight(settings.OpenAIAdvancedSchedulerWeightSessionSticky, effective.SessionSticky)
+	if weightSum <= 0 {
+		return infraerrors.BadRequest(
+			"INVALID_OPENAI_ADVANCED_SCHEDULER_WEIGHT",
+			"openai advanced scheduler weights must not all be zero",
+		)
+	}
+	if math.IsNaN(weightSum) || math.IsInf(weightSum, 0) {
+		return infraerrors.BadRequest(
+			"INVALID_OPENAI_ADVANCED_SCHEDULER_WEIGHT",
+			"openai advanced scheduler weights must have a finite positive sum",
+		)
+	}
+	return nil
+}
+
+func resolveOpenAIAdvancedSchedulerWeight(normalized string, fallback float64) float64 {
+	if normalized == "" {
+		return fallback
+	}
+	value, err := strconv.ParseFloat(normalized, 64)
+	if err != nil {
+		return fallback
+	}
+	return value
+}
+
+func normalizeOptionalPositiveIntString(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return "", fmt.Errorf("invalid positive integer")
+	}
+	return strconv.Itoa(value), nil
+}
+
+func normalizeOptionalNonNegativeFloatString(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil || value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+		return "", fmt.Errorf("invalid non-negative float")
+	}
+	return strconv.FormatFloat(value, 'f', -1, 64), nil
 }
 
 func clampInt(value, minValue, maxValue, defaultValue int) int {

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -3028,16 +3029,21 @@ func (c *Config) Validate() error {
 	if c.Gateway.OpenAIHTTP2.FallbackTTLSeconds < 0 {
 		return fmt.Errorf("gateway.openai_http2.fallback_ttl_seconds must be non-negative")
 	}
-	if c.Gateway.OpenAIWS.SchedulerScoreWeights.Priority < 0 ||
-		c.Gateway.OpenAIWS.SchedulerScoreWeights.Load < 0 ||
-		c.Gateway.OpenAIWS.SchedulerScoreWeights.Queue < 0 ||
-		c.Gateway.OpenAIWS.SchedulerScoreWeights.ErrorRate < 0 ||
-		c.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT < 0 ||
-		c.Gateway.OpenAIWS.SchedulerScoreWeights.Reset < 0 ||
-		c.Gateway.OpenAIWS.SchedulerScoreWeights.QuotaHeadroom < 0 ||
-		c.Gateway.OpenAIWS.SchedulerScoreWeights.PreviousResponse < 0 ||
-		c.Gateway.OpenAIWS.SchedulerScoreWeights.SessionSticky < 0 {
-		return fmt.Errorf("gateway.openai_ws.scheduler_score_weights.* must be non-negative")
+	schedulerWeights := []float64{
+		c.Gateway.OpenAIWS.SchedulerScoreWeights.Priority,
+		c.Gateway.OpenAIWS.SchedulerScoreWeights.Load,
+		c.Gateway.OpenAIWS.SchedulerScoreWeights.Queue,
+		c.Gateway.OpenAIWS.SchedulerScoreWeights.ErrorRate,
+		c.Gateway.OpenAIWS.SchedulerScoreWeights.TTFT,
+		c.Gateway.OpenAIWS.SchedulerScoreWeights.Reset,
+		c.Gateway.OpenAIWS.SchedulerScoreWeights.QuotaHeadroom,
+		c.Gateway.OpenAIWS.SchedulerScoreWeights.PreviousResponse,
+		c.Gateway.OpenAIWS.SchedulerScoreWeights.SessionSticky,
+	}
+	for _, weight := range schedulerWeights {
+		if weight < 0 || math.IsNaN(weight) || math.IsInf(weight, 0) {
+			return fmt.Errorf("gateway.openai_ws.scheduler_score_weights.* must be non-negative finite numbers")
+		}
 	}
 	weightSum := c.Gateway.OpenAIWS.SchedulerScoreWeights.Priority +
 		c.Gateway.OpenAIWS.SchedulerScoreWeights.Load +
@@ -3050,6 +3056,9 @@ func (c *Config) Validate() error {
 		c.Gateway.OpenAIWS.SchedulerScoreWeights.SessionSticky
 	if weightSum <= 0 {
 		return fmt.Errorf("gateway.openai_ws.scheduler_score_weights must not all be zero")
+	}
+	if math.IsNaN(weightSum) || math.IsInf(weightSum, 0) {
+		return fmt.Errorf("gateway.openai_ws.scheduler_score_weights must have a finite positive sum")
 	}
 	if c.Gateway.OpenAIScheduler.StickyEscapeTTFTMs <= 0 {
 		return fmt.Errorf("gateway.openai_scheduler.sticky_escape_ttft_ms must be positive")

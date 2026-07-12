@@ -422,6 +422,165 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 	require.Equal(t, 8.0, runtime.weightOverrides["previous_response"])
 }
 
+func TestSettingService_UpdateSettings_RejectsInvalidAdvancedSchedulerOverrides(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*SystemSettings)
+		reason string
+	}{
+		{
+			name: "zero top k",
+			mutate: func(settings *SystemSettings) {
+				settings.OpenAIAdvancedSchedulerLBTopK = "0"
+			},
+			reason: "INVALID_OPENAI_ADVANCED_SCHEDULER_LB_TOP_K",
+		},
+		{
+			name: "fractional top k",
+			mutate: func(settings *SystemSettings) {
+				settings.OpenAIAdvancedSchedulerLBTopK = "1.5"
+			},
+			reason: "INVALID_OPENAI_ADVANCED_SCHEDULER_LB_TOP_K",
+		},
+		{
+			name: "non numeric top k",
+			mutate: func(settings *SystemSettings) {
+				settings.OpenAIAdvancedSchedulerLBTopK = "many"
+			},
+			reason: "INVALID_OPENAI_ADVANCED_SCHEDULER_LB_TOP_K",
+		},
+		{
+			name: "negative weight",
+			mutate: func(settings *SystemSettings) {
+				settings.OpenAIAdvancedSchedulerWeightPriority = "-0.1"
+			},
+			reason: "INVALID_OPENAI_ADVANCED_SCHEDULER_WEIGHT",
+		},
+		{
+			name: "non finite weight",
+			mutate: func(settings *SystemSettings) {
+				settings.OpenAIAdvancedSchedulerWeightLoad = "NaN"
+			},
+			reason: "INVALID_OPENAI_ADVANCED_SCHEDULER_WEIGHT",
+		},
+		{
+			name: "infinite weight",
+			mutate: func(settings *SystemSettings) {
+				settings.OpenAIAdvancedSchedulerWeightLoad = "+Inf"
+			},
+			reason: "INVALID_OPENAI_ADVANCED_SCHEDULER_WEIGHT",
+		},
+		{
+			name: "non numeric weight",
+			mutate: func(settings *SystemSettings) {
+				settings.OpenAIAdvancedSchedulerWeightQueue = "heavy"
+			},
+			reason: "INVALID_OPENAI_ADVANCED_SCHEDULER_WEIGHT",
+		},
+		{
+			name: "overflowing weight sum",
+			mutate: func(settings *SystemSettings) {
+				settings.OpenAIAdvancedSchedulerWeightPriority = "1e308"
+				settings.OpenAIAdvancedSchedulerWeightLoad = "1e308"
+			},
+			reason: "INVALID_OPENAI_ADVANCED_SCHEDULER_WEIGHT",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &settingUpdateRepoStub{}
+			svc := NewSettingService(repo, &config.Config{})
+			settings := &SystemSettings{}
+			tt.mutate(settings)
+
+			err := svc.UpdateSettings(context.Background(), settings)
+
+			require.Error(t, err)
+			require.Equal(t, tt.reason, infraerrors.Reason(err))
+			require.Nil(t, repo.updates)
+		})
+	}
+}
+
+func TestSettingService_UpdateSettings_RejectsAllZeroAdvancedSchedulerWeights(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.SchedulerScoreWeights = config.GatewayOpenAIWSSchedulerScoreWeights{
+		Priority:      1,
+		Load:          1,
+		Queue:         1,
+		ErrorRate:     1,
+		TTFT:          1,
+		QuotaHeadroom: 1,
+	}
+	svc := NewSettingService(repo, cfg)
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		OpenAIAdvancedSchedulerWeightPriority:      "0",
+		OpenAIAdvancedSchedulerWeightLoad:          "0",
+		OpenAIAdvancedSchedulerWeightQueue:         "0",
+		OpenAIAdvancedSchedulerWeightErrorRate:     "0",
+		OpenAIAdvancedSchedulerWeightTTFT:          "0",
+		OpenAIAdvancedSchedulerWeightQuotaHeadroom: "0",
+	})
+
+	require.Error(t, err)
+	require.Equal(t, "INVALID_OPENAI_ADVANCED_SCHEDULER_WEIGHT", infraerrors.Reason(err))
+	require.Contains(t, err.Error(), "weights must not all be zero")
+	require.Nil(t, repo.updates)
+}
+
+func TestSettingService_UpdateSettings_AllowsSingleNonZeroAdvancedSchedulerWeight(t *testing.T) {
+	tests := []struct {
+		name string
+		set  func(*SystemSettings)
+	}{
+		{
+			name: "reset",
+			set: func(settings *SystemSettings) {
+				settings.OpenAIAdvancedSchedulerWeightReset = "0.1"
+			},
+		},
+		{
+			name: "previous response",
+			set: func(settings *SystemSettings) {
+				settings.OpenAIAdvancedSchedulerWeightPreviousResponse = "0.1"
+			},
+		},
+		{
+			name: "session sticky",
+			set: func(settings *SystemSettings) {
+				settings.OpenAIAdvancedSchedulerWeightSessionSticky = "0.1"
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &settingUpdateRepoStub{}
+			svc := NewSettingService(repo, &config.Config{})
+			settings := &SystemSettings{
+				OpenAIAdvancedSchedulerWeightPriority:         "0",
+				OpenAIAdvancedSchedulerWeightLoad:             "0",
+				OpenAIAdvancedSchedulerWeightQueue:            "0",
+				OpenAIAdvancedSchedulerWeightErrorRate:        "0",
+				OpenAIAdvancedSchedulerWeightTTFT:             "0",
+				OpenAIAdvancedSchedulerWeightReset:            "0",
+				OpenAIAdvancedSchedulerWeightQuotaHeadroom:    "0",
+				OpenAIAdvancedSchedulerWeightPreviousResponse: "0",
+				OpenAIAdvancedSchedulerWeightSessionSticky:    "0",
+			}
+			tt.set(settings)
+
+			err := svc.UpdateSettings(context.Background(), settings)
+
+			require.NoError(t, err)
+			require.NotNil(t, repo.updates)
+		})
+	}
+}
+
 func TestSettingService_GetAllSettings_OpenAIAdvancedSchedulerEffectiveValuesUseConfig(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.LBTopK = 13

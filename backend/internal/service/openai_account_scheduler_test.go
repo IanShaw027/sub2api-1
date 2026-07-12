@@ -718,7 +718,7 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerAppliesPreviousResponseW
 	newGateway := func(previousWeight string) *OpenAIGatewayService {
 		resetOpenAIAdvancedSchedulerSettingCacheForTest()
 		cfg := newSchedulerTestOpenAIWSV2Config()
-		cfg.Gateway.OpenAIWS.LBTopK = 1
+		cfg.Gateway.OpenAIWS.LBTopK = 2
 		cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = 1
 		svc := &OpenAIGatewayService{
 			accountRepo: schedulerTestOpenAIAccountRepo{accounts: accounts},
@@ -825,6 +825,140 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerAppliesPreviousResponseW
 			selection.ReleaseFunc()
 		}
 	})
+}
+
+func TestOpenAIGatewayService_SelectAccountWithSchedulerScoresWeightedStickyWaitCandidates(t *testing.T) {
+	ctx := context.Background()
+	groupID := int64(101206)
+	apiKeyID := int64(216500)
+	stickyAccountID := int64(216501)
+	preferredAccountID := int64(216502)
+	accounts := []Account{
+		{
+			ID:          stickyAccountID,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    100,
+			GroupIDs:    []int64{groupID},
+		},
+		{
+			ID:          preferredAccountID,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    0,
+			GroupIDs:    []int64{groupID},
+		},
+	}
+
+	tests := []struct {
+		name          string
+		weightKey     string
+		weight        string
+		previous      bool
+		wantAccountID int64
+	}{
+		{
+			name:          "zero previous response weight keeps the better candidate",
+			weightKey:     SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse,
+			weight:        "0",
+			previous:      true,
+			wantAccountID: preferredAccountID,
+		},
+		{
+			name:          "positive previous response weight promotes the bound account",
+			weightKey:     SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse,
+			weight:        "10",
+			previous:      true,
+			wantAccountID: stickyAccountID,
+		},
+		{
+			name:          "zero session sticky weight keeps the better candidate",
+			weightKey:     SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky,
+			weight:        "0",
+			wantAccountID: preferredAccountID,
+		},
+		{
+			name:          "positive session sticky weight promotes the bound account",
+			weightKey:     SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky,
+			weight:        "10",
+			wantAccountID: stickyAccountID,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetOpenAIAdvancedSchedulerSettingCacheForTest()
+			cfg := newSchedulerTestOpenAIWSV2Config()
+			cfg.Gateway.OpenAIWS.LBTopK = 1
+			cfg.Gateway.OpenAIWS.SchedulerScoreWeights.Priority = 1
+			cache := &schedulerTestGatewayCache{sessionBindings: map[string]int64{}}
+			sessionHash := "weighted-wait-session"
+			if !tt.previous {
+				cache.sessionBindings["openai:"+sessionHash] = stickyAccountID
+			}
+			svc := &OpenAIGatewayService{
+				accountRepo: schedulerTestOpenAIAccountRepo{accounts: accounts},
+				cache:       cache,
+				cfg:         cfg,
+				rateLimitService: newOpenAIAdvancedSchedulerRateLimitServiceWithSettings(map[string]string{
+					openAIAdvancedSchedulerSettingKey:                      "true",
+					SettingKeyOpenAIAdvancedSchedulerStickyWeightedEnabled: "true",
+					tt.weightKey: tt.weight,
+				}),
+				concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{
+					loadMap: map[int64]*AccountLoadInfo{
+						stickyAccountID: {
+							AccountID:          stickyAccountID,
+							CurrentConcurrency: 1,
+							LoadRate:           100,
+						},
+						preferredAccountID: {
+							AccountID:          preferredAccountID,
+							CurrentConcurrency: 1,
+							LoadRate:           100,
+						},
+					},
+				}),
+			}
+
+			var (
+				selection *AccountSelectionResult
+				decision  OpenAIAccountScheduleDecision
+				err       error
+			)
+			if tt.previous {
+				const previousResponseID = "resp_weighted_wait"
+				require.NoError(t, svc.getOpenAIWSStateStore().BindResponseAccount(
+					ctx, groupID, apiKeyID, previousResponseID, stickyAccountID, time.Hour,
+				))
+				selection, decision, err = svc.SelectAccountWithSchedulerForResponses(
+					ctx, &groupID, apiKeyID, previousResponseID, "", "gpt-5.1", nil,
+					OpenAIUpstreamTransportAny, false, false,
+					PlatformOpenAI, OpenAIAccountSchedulerOptionPreviousResponseCanMove,
+				)
+			} else {
+				selection, decision, err = svc.SelectAccountWithScheduler(
+					ctx, &groupID, "", sessionHash, "gpt-5.1", nil,
+					OpenAIUpstreamTransportHTTPSSE, false,
+				)
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, selection)
+			require.NotNil(t, selection.Account)
+			require.Equal(t, tt.wantAccountID, selection.Account.ID)
+			require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
+			require.False(t, selection.Acquired)
+			require.NotNil(t, selection.WaitPlan)
+			require.Equal(t, tt.wantAccountID, selection.WaitPlan.AccountID)
+		})
+	}
 }
 
 func TestOpenAIGatewayService_HardPreviousResponseRejectsAccountMovedOutOfGroup(t *testing.T) {

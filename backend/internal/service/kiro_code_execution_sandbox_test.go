@@ -20,6 +20,24 @@ func TestExecuteCodeInExplicitSandbox_DefaultDisabled(t *testing.T) {
 	require.Contains(t, stderr, "code execution sandbox is not configured")
 }
 
+func TestNormalizeKiroRuntimeSettingsDoesNotMutateInput(t *testing.T) {
+	settings := &KiroRuntimeSettings{
+		KiroVersion:                 "",
+		CacheHitRateScale:           101,
+		CodeExecutionSandboxCommand: "  sandbox-command  ",
+	}
+
+	normalized := normalizeKiroRuntimeSettings(settings)
+
+	require.NotSame(t, settings, normalized)
+	require.Empty(t, settings.KiroVersion)
+	require.Equal(t, 101, settings.CacheHitRateScale)
+	require.Equal(t, "  sandbox-command  ", settings.CodeExecutionSandboxCommand)
+	require.Equal(t, defaultKiroVersion, normalized.KiroVersion)
+	require.Equal(t, defaultKiroCacheHitRateScale, normalized.CacheHitRateScale)
+	require.Equal(t, "sandbox-command", normalized.CodeExecutionSandboxCommand)
+}
+
 func TestExecuteCodeInExplicitSandbox_UsesConfiguredCommandWithCodeOnStdin(t *testing.T) {
 	settings := DefaultKiroRuntimeSettings()
 	settings.CodeExecutionSandboxCommand = `printf 'sandbox:%s' "$(cat)"`

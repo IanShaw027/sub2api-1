@@ -10068,12 +10068,12 @@ const openAIAdvancedSchedulerWeightFields = computed<
     {
       key: "openai_advanced_scheduler_weight_previous_response",
       label: t("admin.settings.openaiExperimentalScheduler.previousResponseWeight"),
-      placeholder: placeholder("openai_advanced_scheduler_effective_weight_previous_response", "5"),
+      placeholder: placeholder("openai_advanced_scheduler_effective_weight_previous_response", "0"),
     },
     {
       key: "openai_advanced_scheduler_weight_session_sticky",
       label: t("admin.settings.openaiExperimentalScheduler.sessionStickyWeight"),
-      placeholder: placeholder("openai_advanced_scheduler_effective_weight_session_sticky", "3"),
+      placeholder: placeholder("openai_advanced_scheduler_effective_weight_session_sticky", "0"),
     },
   ];
 });

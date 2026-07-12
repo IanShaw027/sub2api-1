@@ -1128,48 +1128,6 @@ func buildOpenAIWeightedSelectionOrder(
 	return order
 }
 
-func prioritizeOpenAIWeightedStickyCandidates(
-	candidates []openAIAccountCandidateScore,
-	req OpenAIAccountScheduleRequest,
-) []openAIAccountCandidateScore {
-	if !req.StickyWeighted || len(candidates) <= 1 {
-		return candidates
-	}
-
-	stickyIDs := make([]int64, 0, 2)
-	if req.PreviousResponseCanMove && req.StickyPreviousAccountID > 0 {
-		stickyIDs = append(stickyIDs, req.StickyPreviousAccountID)
-	}
-	if req.StickyAccountID > 0 && req.StickyAccountID != req.StickyPreviousAccountID {
-		stickyIDs = append(stickyIDs, req.StickyAccountID)
-	}
-	if len(stickyIDs) == 0 {
-		return candidates
-	}
-
-	ordered := make([]openAIAccountCandidateScore, 0, len(candidates))
-	used := make(map[int64]struct{}, len(stickyIDs))
-	for _, stickyID := range stickyIDs {
-		for _, candidate := range candidates {
-			if candidate.account != nil && candidate.account.ID == stickyID {
-				ordered = append(ordered, candidate)
-				used[stickyID] = struct{}{}
-				break
-			}
-		}
-	}
-	for _, candidate := range candidates {
-		if candidate.account == nil {
-			ordered = append(ordered, candidate)
-			continue
-		}
-		if _, exists := used[candidate.account.ID]; !exists {
-			ordered = append(ordered, candidate)
-		}
-	}
-	return ordered
-}
-
 func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	ctx context.Context,
 	req OpenAIAccountScheduleRequest,
@@ -1391,6 +1349,22 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		}
 	}
 
+	// The wait pool includes accounts already at their fresh-session admission
+	// limit, so it is not a subset of the scored eligible pool above. Score it
+	// independently; otherwise weighted sticky and every other scheduler weight
+	// collapse to tie-break ordering when all accounts are saturated.
+	if len(waitCandidates) == len(candidates) {
+		// With no saturated accounts both pools contain the same candidates, so
+		// reuse the scores already computed on the normal hot path.
+		waitCandidates = append([]openAIAccountCandidateScore(nil), candidates...)
+	} else if len(waitCandidates) > 0 {
+		waitAccounts := make([]*Account, 0, len(waitCandidates))
+		for _, candidate := range waitCandidates {
+			waitAccounts = append(waitAccounts, candidate.account)
+		}
+		waitCandidates = s.buildOpenAIAccountLoadPlan(ctx, req, waitAccounts, loadMap).candidates
+	}
+
 	topK := 0
 	if len(candidates) > 0 {
 		topK = s.service.openAIWSLBTopKForRequest(ctx)
@@ -1414,7 +1388,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			poolTopK = 1
 		}
 		ranked := selectTopKOpenAICandidates(pool, poolTopK)
-		ordered := prioritizeOpenAIWeightedStickyCandidates(buildOpenAIWeightedSelectionOrder(ranked, req), req)
+		ordered := buildOpenAIWeightedSelectionOrder(ranked, req)
 		return reorderOpenAIImageRouteRateLimitedCandidates(ordered, req.RequiredImageRoute)
 	}
 	sortCompactRetryCandidates := func(pool []openAIAccountCandidateScore) []openAIAccountCandidateScore {
