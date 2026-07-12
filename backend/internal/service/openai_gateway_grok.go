@@ -1304,6 +1304,9 @@ func buildGrokResponsesRequest(ctx context.Context, c *gin.Context, account *Acc
 		if v := strings.TrimSpace(c.GetHeader("OpenAI-Beta")); v != "" {
 			req.Header.Set("OpenAI-Beta", v)
 		}
+		if convID := strings.TrimSpace(c.GetHeader("x-grok-conv-id")); convID != "" {
+			req.Header.Set("x-grok-conv-id", isolateOpenAISessionID(getAPIKeyIDFromContext(c), convID))
+		}
 		// Preserve client session affinity when present so multi-turn Codex /
 		// Claude Code conversations stay sticky on Grok upstream.
 		if sessionID := strings.TrimSpace(c.GetHeader("session_id")); sessionID != "" {

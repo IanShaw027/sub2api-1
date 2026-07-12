@@ -475,6 +475,9 @@ const (
 	// SettingKeyOpenAIWSTempDiagLogsEnabled controls legacy-tagged OpenAI WS
 	// diagnostics at runtime.
 	SettingKeyOpenAIWSTempDiagLogsEnabled = "openai_ws_temp_diag_logs_enabled"
+	// SettingKeyOpenAIWSTempDiagLogsRPM caps anomaly-only OpenAI WS diagnostic
+	// records per process and minute.
+	SettingKeyOpenAIWSTempDiagLogsRPM = "openai_ws_temp_diag_logs_rpm"
 
 	// =========================
 	// Sora S3 存储配置

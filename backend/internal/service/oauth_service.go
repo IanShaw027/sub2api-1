@@ -23,6 +23,10 @@ type OpenAIOAuthClient interface {
 type GrokOAuthClient interface {
 	ExchangeCode(ctx context.Context, code, codeVerifier, redirectURI, proxyURL, clientID string) (*xai.TokenResponse, error)
 	RefreshToken(ctx context.Context, refreshToken, proxyURL, clientID string) (*xai.TokenResponse, error)
+	RequestDeviceCode(ctx context.Context, proxyURL, clientID string) (*GrokDeviceCodeResponse, error)
+	AutoAuthorizeDeviceCode(ctx context.Context, ssoToken, userCode, proxyURL string) error
+	PollDeviceToken(ctx context.Context, deviceCode string, interval, expiresIn int, proxyURL, clientID string) (*xai.TokenResponse, error)
+	LoginWithPassword(ctx context.Context, email, password, proxyURL string) (*GrokPasswordLoginResult, error)
 }
 
 // GrokOAuthTokenService is the narrow refresh port used by Grok token providers.

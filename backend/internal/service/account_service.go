@@ -399,7 +399,7 @@ func shouldDeleteCredentialOnUpdate(key string, value any) bool {
 
 func isSensitiveCredentialKey(key string) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {
-	case "access_token", "refresh_token", "api_key", "client_secret", "client_id", "session_token", "password", "cookie":
+	case "access_token", "refresh_token", "sso_token", "api_key", "client_secret", "client_id", "session_token", "password", "cookie":
 		return true
 	default:
 		return false

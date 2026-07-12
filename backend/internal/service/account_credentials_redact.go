@@ -6,7 +6,7 @@ package service
 // 额外含 client_id 等"防误清空"键），两份清单的**秘密类**键必须保持同步。
 var SensitiveCredentialKeys = []string{
 	// OAuth
-	"access_token", "refresh_token", "id_token",
+	"access_token", "refresh_token", "id_token", "sso_token",
 	// OAuth 动态注册客户端秘密（Kiro IdC/BuilderID 的 SSO-OIDC client_secret）
 	"client_secret",
 	// API Key 类

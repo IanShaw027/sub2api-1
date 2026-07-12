@@ -214,6 +214,20 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	if customUA != "" {
 		upstreamReq.Header.Set("user-agent", customUA)
 	}
+	if account.Platform == PlatformGrok {
+		grokConvID := strings.TrimSpace(c.Request.Header.Get("x-grok-conv-id"))
+		if grokConvID == "" {
+			grokConvID = strings.TrimSpace(promptCacheKey)
+		}
+		if grokConvID != "" {
+			apiKeyID := getAPIKeyIDFromContext(c)
+			isolatedConvID := isolateOpenAISessionID(apiKeyID, grokConvID)
+			upstreamReq.Header.Set("x-grok-conv-id", isolatedConvID)
+			if upstreamReq.Header.Get("session_id") == "" {
+				upstreamReq.Header.Set("session_id", generateSessionUUID(isolatedConvID))
+			}
+		}
+	}
 
 	// 6. Send request
 	proxyURL := ""

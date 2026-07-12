@@ -81,7 +81,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	}
 
 	if account.Platform == PlatformGrok {
-		return s.forwardAsRawChatCompletions(ctx, c, account, body, defaultMappedModel)
+		return s.forwardAsRawChatCompletions(ctx, c, account, body, promptCacheKey, defaultMappedModel)
 	}
 
 	// 入口分流：APIKey 账号 + 强制或已探测确认上游不支持 Responses，走 CC 直转。

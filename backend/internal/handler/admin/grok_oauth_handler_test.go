@@ -33,6 +33,30 @@ func (c *grokOAuthHandlerClient) RefreshToken(context.Context, string, string, s
 	return &xai.TokenResponse{AccessToken: "access-token", RefreshToken: "refresh-token", ExpiresIn: 3600}, nil
 }
 
+func (c *grokOAuthHandlerClient) RequestDeviceCode(context.Context, string, string) (*service.GrokDeviceCodeResponse, error) {
+	return &service.GrokDeviceCodeResponse{
+		DeviceCode: "device-code",
+		UserCode:   "user-code",
+		ExpiresIn:  900,
+		Interval:   5,
+	}, nil
+}
+
+func (c *grokOAuthHandlerClient) AutoAuthorizeDeviceCode(context.Context, string, string, string) error {
+	return nil
+}
+
+func (c *grokOAuthHandlerClient) PollDeviceToken(context.Context, string, int, int, string, string) (*xai.TokenResponse, error) {
+	return &xai.TokenResponse{AccessToken: "access-token", RefreshToken: "refresh-token", ExpiresIn: 3600}, nil
+}
+
+func (c *grokOAuthHandlerClient) LoginWithPassword(_ context.Context, email, _ string, _ string) (*service.GrokPasswordLoginResult, error) {
+	return &service.GrokPasswordLoginResult{
+		Email:    email,
+		SSOToken: "sso-from-password",
+	}, nil
+}
+
 type grokQuotaHandlerAccountRepo struct {
 	service.AccountRepository
 	account *service.Account
@@ -250,4 +274,45 @@ func TestGrokOAuthHandlerRuntimeSanityDoesNotExposeSecrets(t *testing.T) {
 	require.NotContains(t, rec.Body.String(), "access_token")
 	require.NotContains(t, rec.Body.String(), "secret")
 	require.NotContains(t, rec.Body.String(), "client-secret-like-value")
+}
+
+func TestGrokOAuthHandlerValidateSSOTokenReturnsTokenInfo(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	oauthClient := &grokOAuthHandlerClient{}
+	oauthService := service.NewGrokOAuthService(nil, oauthClient)
+	defer oauthService.Stop()
+	handler := NewGrokOAuthHandler(oauthService, nil, nil)
+
+	router := gin.New()
+	router.POST("/api/v1/admin/grok/oauth/sso-token", handler.ValidateSSOToken)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/grok/oauth/sso-token", strings.NewReader(`{"sso_token":"sso-token"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"access_token":"access-token"`)
+	require.Contains(t, rec.Body.String(), `"sso_token":"sso-token"`)
+}
+
+func TestGrokOAuthHandlerAuthorizePasswordReturnsTokenInfoWithoutPassword(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	oauthClient := &grokOAuthHandlerClient{}
+	oauthService := service.NewGrokOAuthService(nil, oauthClient)
+	defer oauthService.Stop()
+	handler := NewGrokOAuthHandler(oauthService, nil, nil)
+
+	router := gin.New()
+	router.POST("/api/v1/admin/grok/oauth/password", handler.AuthorizePassword)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/grok/oauth/password", strings.NewReader(`{"email":"user@example.com","password":"super-secret"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"email":"user@example.com"`)
+	require.Contains(t, rec.Body.String(), `"sso_token":"sso-from-password"`)
+	require.NotContains(t, rec.Body.String(), "super-secret")
 }

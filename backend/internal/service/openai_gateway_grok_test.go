@@ -284,6 +284,32 @@ func TestBuildGrokResponsesRequestUsesAccountBaseURLAndBearerToken(t *testing.T)
 	require.Equal(t, `{"model":"grok-4.3"}`, strings.TrimSpace(string(data)))
 }
 
+func TestBuildGrokResponsesRequestIsolatesXGrokConversationIDByAPIKey(t *testing.T) {
+	account := &Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"base_url": xai.DefaultCLIBaseURL,
+		},
+	}
+	build := func(apiKeyID int64) *http.Request {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+		c.Request.Header.Set("x-grok-conv-id", "shared-conversation")
+		c.Set("api_key", &APIKey{ID: apiKeyID, Group: &Group{Platform: PlatformGrok}})
+		req, err := buildGrokResponsesRequest(context.Background(), c, account, []byte(`{"model":"grok-4.3"}`), "access-token")
+		require.NoError(t, err)
+		return req
+	}
+
+	first := build(101).Header.Get("x-grok-conv-id")
+	second := build(202).Header.Get("x-grok-conv-id")
+	require.Equal(t, isolateOpenAISessionID(101, "shared-conversation"), first)
+	require.Equal(t, isolateOpenAISessionID(202, "shared-conversation"), second)
+	require.NotEqual(t, first, second)
+}
+
 func TestBuildGrokResponsesRequestRejectsUnsafeAccountBaseURL(t *testing.T) {
 	t.Parallel()
 
@@ -1185,6 +1211,174 @@ func TestForwardAsChatCompletionsForGrokStreamingUsesRawXAIChatCompletions(t *te
 	require.Equal(t, 1, result.Usage.CacheReadInputTokens)
 	require.Contains(t, recorder.Body.String(), "data: [DONE]")
 	require.NotNil(t, repo.updates[53][grokQuotaSnapshotExtraKey])
+}
+
+func TestForwardAsChatCompletionsForGrokUsesXGrokConvIDHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	body := []byte(`{"model":"grok","messages":[{"role":"user","content":"hi"}],"stream":false}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("x-grok-conv-id", "grok-conv-raw-1")
+	c.Set("api_key", &APIKey{ID: 77, Group: &Group{Platform: PlatformGrok}})
+
+	account := &Account{
+		ID:          531,
+		Name:        "grok",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "access-token",
+			"expires_at":   time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+			"base_url":     xai.DefaultCLIBaseURL,
+		},
+	}
+	repo := &grokQuotaAccountRepo{
+		mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
+			accountsByID: map[int64]*Account{531: account},
+		},
+	}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type":   []string{"application/json"},
+			"Xai-Request-Id": []string{"xai-req"},
+		},
+		Body: io.NopCloser(strings.NewReader(`{"id":"chatcmpl","object":"chat.completion","model":"grok-4.3","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}`)),
+	}}
+	svc := &OpenAIGatewayService{
+		httpUpstream:      upstream,
+		grokTokenProvider: NewGrokTokenProvider(repo, nil),
+		accountRepo:       repo,
+	}
+
+	_, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "grok-conv-raw-1", "")
+	require.NoError(t, err)
+	require.Equal(t, isolateOpenAISessionID(77, "grok-conv-raw-1"), upstream.lastReq.Header.Get("x-grok-conv-id"))
+	require.NotEmpty(t, upstream.lastReq.Header.Get("session_id"))
+}
+
+func TestForwardAsChatCompletionsForGrokUsesPromptCacheKeyArgumentForAffinity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	body := []byte(`{"model":"grok","messages":[{"role":"user","content":"hi"}],"stream":false}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("api_key", &APIKey{ID: 78, Group: &Group{Platform: PlatformGrok}})
+
+	account := &Account{
+		ID:          532,
+		Name:        "grok",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "access-token",
+			"expires_at":   time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+			"base_url":     xai.DefaultCLIBaseURL,
+		},
+	}
+	repo := &grokQuotaAccountRepo{
+		mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
+			accountsByID: map[int64]*Account{532: account},
+		},
+	}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type":   []string{"application/json"},
+			"Xai-Request-Id": []string{"xai-req"},
+		},
+		Body: io.NopCloser(strings.NewReader(`{"id":"chatcmpl","object":"chat.completion","model":"grok-4.3","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}`)),
+	}}
+	svc := &OpenAIGatewayService{
+		httpUpstream:      upstream,
+		grokTokenProvider: NewGrokTokenProvider(repo, nil),
+		accountRepo:       repo,
+	}
+
+	_, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "pcache-grok-raw-1", "")
+	require.NoError(t, err)
+	require.Equal(t, isolateOpenAISessionID(78, "pcache-grok-raw-1"), upstream.lastReq.Header.Get("x-grok-conv-id"))
+	require.NotEmpty(t, upstream.lastReq.Header.Get("session_id"))
+}
+
+func TestForwardAsChatCompletionsForGrokDoesNotDeriveAffinityWhenPromptCacheKeyMissing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	newService := func(upstream *httpUpstreamRecorder) *OpenAIGatewayService {
+		account := &Account{
+			ID:          533,
+			Name:        "grok",
+			Platform:    PlatformGrok,
+			Type:        AccountTypeOAuth,
+			Concurrency: 1,
+			Credentials: map[string]any{
+				"access_token": "access-token",
+				"expires_at":   time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+				"base_url":     xai.DefaultCLIBaseURL,
+			},
+		}
+		repo := &grokQuotaAccountRepo{
+			mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
+				accountsByID: map[int64]*Account{533: account},
+			},
+		}
+		return &OpenAIGatewayService{
+			httpUpstream:      upstream,
+			grokTokenProvider: NewGrokTokenProvider(repo, nil),
+			accountRepo:       repo,
+		}
+	}
+
+	buildCtx := func(body []byte) (*gin.Context, *Account, *httpUpstreamRecorder, *OpenAIGatewayService) {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Set("api_key", &APIKey{ID: 79, Group: &Group{Platform: PlatformGrok}})
+
+		account := &Account{
+			ID:          533,
+			Name:        "grok",
+			Platform:    PlatformGrok,
+			Type:        AccountTypeOAuth,
+			Concurrency: 1,
+			Credentials: map[string]any{
+				"access_token": "access-token",
+				"expires_at":   time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+				"base_url":     xai.DefaultCLIBaseURL,
+			},
+		}
+		upstream := &httpUpstreamRecorder{resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Type":   []string{"application/json"},
+				"Xai-Request-Id": []string{"xai-req"},
+			},
+			Body: io.NopCloser(strings.NewReader(`{"id":"chatcmpl","object":"chat.completion","model":"grok-4.3","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}`)),
+		}}
+		svc := newService(upstream)
+		return c, account, upstream, svc
+	}
+
+	body := []byte(`{"model":"grok","messages":[{"role":"user","content":"hello grok"}],"stream":false}`)
+	c1, account1, upstream1, svc1 := buildCtx(body)
+	_, err := svc1.ForwardAsChatCompletions(context.Background(), c1, account1, body, "", "")
+	require.NoError(t, err)
+
+	c2, account2, upstream2, svc2 := buildCtx(body)
+	_, err = svc2.ForwardAsChatCompletions(context.Background(), c2, account2, body, "", "")
+	require.NoError(t, err)
+
+	require.Empty(t, upstream1.lastReq.Header.Get("x-grok-conv-id"))
+	require.Empty(t, upstream2.lastReq.Header.Get("x-grok-conv-id"))
+	require.Empty(t, upstream1.lastReq.Header.Get("session_id"))
 }
 
 func TestForwardAsChatCompletionsForGrokComposerBridgesImageInput(t *testing.T) {

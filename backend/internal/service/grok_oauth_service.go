@@ -101,6 +101,7 @@ type GrokExchangeCodeInput struct {
 type GrokTokenInfo struct {
 	AccessToken       string `json:"access_token"`
 	RefreshToken      string `json:"refresh_token,omitempty"`
+	SSOToken          string `json:"sso_token,omitempty"`
 	IDToken           string `json:"id_token,omitempty"`
 	TokenType         string `json:"token_type,omitempty"`
 	ExpiresIn         int64  `json:"expires_in"`
@@ -110,6 +111,20 @@ type GrokTokenInfo struct {
 	Email             string `json:"email,omitempty"`
 	SubscriptionTier  string `json:"subscription_tier,omitempty"`
 	EntitlementStatus string `json:"entitlement_status,omitempty"`
+}
+
+type GrokDeviceCodeResponse struct {
+	DeviceCode              string `json:"device_code"`
+	UserCode                string `json:"user_code"`
+	VerificationURI         string `json:"verification_uri,omitempty"`
+	VerificationURIComplete string `json:"verification_uri_complete,omitempty"`
+	ExpiresIn               int    `json:"expires_in"`
+	Interval                int    `json:"interval"`
+}
+
+type GrokPasswordLoginResult struct {
+	Email    string `json:"email,omitempty"`
+	SSOToken string `json:"sso_token"`
 }
 
 func (s *GrokOAuthService) ExchangeCode(ctx context.Context, input *GrokExchangeCodeInput) (*GrokTokenInfo, error) {
@@ -199,6 +214,74 @@ func (s *GrokOAuthService) ValidateRefreshToken(ctx context.Context, refreshToke
 	return s.RefreshToken(ctx, refreshToken, proxyURL, xai.EffectiveClientID())
 }
 
+func (s *GrokOAuthService) ValidateSSOToken(ctx context.Context, ssoToken string, proxyID *int64) (*GrokTokenInfo, error) {
+	ssoToken = strings.TrimSpace(ssoToken)
+	if ssoToken == "" {
+		return nil, infraerrors.New(http.StatusBadRequest, "GROK_OAUTH_NO_SSO_TOKEN", "sso_token is required")
+	}
+	proxyURL, err := s.proxyURL(ctx, proxyID)
+	if err != nil {
+		return nil, err
+	}
+	oauthClient, err := s.requireOAuthClient()
+	if err != nil {
+		return nil, err
+	}
+	device, err := oauthClient.RequestDeviceCode(ctx, proxyURL, xai.EffectiveClientID())
+	if err != nil {
+		return nil, err
+	}
+	if device == nil || strings.TrimSpace(device.DeviceCode) == "" || strings.TrimSpace(device.UserCode) == "" {
+		return nil, infraerrors.New(http.StatusBadGateway, "GROK_OAUTH_INVALID_DEVICE_CODE", "grok oauth device code response is invalid")
+	}
+	if err := oauthClient.AutoAuthorizeDeviceCode(ctx, ssoToken, device.UserCode, proxyURL); err != nil {
+		return nil, err
+	}
+	tokenResp, err := oauthClient.PollDeviceToken(ctx, device.DeviceCode, device.Interval, device.ExpiresIn, proxyURL, xai.EffectiveClientID())
+	if err != nil {
+		return nil, err
+	}
+	if err := validateGrokTokenResponse(tokenResp); err != nil {
+		return nil, err
+	}
+	info := s.tokenInfoFromResponse(tokenResp, xai.EffectiveClientID(), nil)
+	info.SSOToken = ssoToken
+	return info, nil
+}
+
+func (s *GrokOAuthService) AuthorizePassword(ctx context.Context, email, password string, proxyID *int64) (*GrokTokenInfo, error) {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return nil, infraerrors.New(http.StatusBadRequest, "GROK_OAUTH_EMAIL_REQUIRED", "email is required")
+	}
+	if strings.TrimSpace(password) == "" {
+		return nil, infraerrors.New(http.StatusBadRequest, "GROK_OAUTH_PASSWORD_REQUIRED", "password is required")
+	}
+	proxyURL, err := s.proxyURL(ctx, proxyID)
+	if err != nil {
+		return nil, err
+	}
+	oauthClient, err := s.requireOAuthClient()
+	if err != nil {
+		return nil, err
+	}
+	loginResult, err := oauthClient.LoginWithPassword(ctx, email, password, proxyURL)
+	if err != nil {
+		return nil, err
+	}
+	if loginResult == nil || strings.TrimSpace(loginResult.SSOToken) == "" {
+		return nil, infraerrors.New(http.StatusBadGateway, "GROK_OAUTH_PASSWORD_LOGIN_FAILED", "grok password login did not return sso_token")
+	}
+	info, err := s.ValidateSSOToken(ctx, loginResult.SSOToken, proxyID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(info.Email) == "" {
+		info.Email = loginResult.Email
+	}
+	return info, nil
+}
+
 func (s *GrokOAuthService) RefreshAccountToken(ctx context.Context, account *Account) (*GrokTokenInfo, error) {
 	if account == nil || account.Platform != PlatformGrok {
 		return nil, infraerrors.New(http.StatusBadRequest, "GROK_OAUTH_INVALID_ACCOUNT", "account is not a Grok account")
@@ -237,6 +320,9 @@ func (s *GrokOAuthService) BuildAccountCredentials(tokenInfo *GrokTokenInfo) map
 	}
 	if tokenInfo.RefreshToken != "" {
 		creds["refresh_token"] = tokenInfo.RefreshToken
+	}
+	if tokenInfo.SSOToken != "" {
+		creds["sso_token"] = tokenInfo.SSOToken
 	}
 	if tokenInfo.TokenType != "" {
 		creds["token_type"] = tokenInfo.TokenType
