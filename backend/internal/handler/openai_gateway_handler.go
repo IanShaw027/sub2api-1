@@ -1095,9 +1095,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			currentRoutingModel = effectiveMappedModel
 		}
 		reqLog.Debug("openai_messages.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
+		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapabilityAndAPIKey(
 			c.Request.Context(),
 			apiKey.GroupID,
+			apiKey.ID,
 			"", // no previous_response_id
 			sessionHash,
 			currentRoutingModel,

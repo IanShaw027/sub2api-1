@@ -2116,11 +2116,39 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForCapability(
 	requireCompact bool,
 	platformOverride ...string,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	return s.SelectAccountWithSchedulerForCapabilityAndAPIKey(
+		ctx,
+		groupID,
+		0,
+		previousResponseID,
+		sessionHash,
+		requestedModel,
+		excludedIDs,
+		requiredTransport,
+		requiredCapability,
+		requireCompact,
+		platformOverride...,
+	)
+}
+
+func (s *OpenAIGatewayService) SelectAccountWithSchedulerForCapabilityAndAPIKey(
+	ctx context.Context,
+	groupID *int64,
+	apiKeyID int64,
+	previousResponseID string,
+	sessionHash string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requiredCapability OpenAIEndpointCapability,
+	requireCompact bool,
+	platformOverride ...string,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
 	platform := PlatformOpenAI
 	if len(platformOverride) > 0 {
 		platform = platformOverride[0]
 	}
-	return s.selectAccountWithScheduler(ctx, groupID, 0, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, requiredCapability, "", "", false, false, requireCompact, platform, false)
+	return s.selectAccountWithScheduler(ctx, groupID, apiKeyID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, requiredCapability, "", "", false, false, requireCompact, platform, false)
 }
 
 func (s *OpenAIGatewayService) SelectAccountWithSchedulerForCapabilityNoAcquire(

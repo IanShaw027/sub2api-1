@@ -1204,6 +1204,7 @@ describe("admin SettingsView payment visible method controls", () => {
     setupState.form.openai_ws_delta_shadow_enabled = true;
     setupState.form.openai_ws_active_delta_enabled = false;
     setupState.form.openai_ws_temp_diag_logs_enabled = true;
+    setupState.form.openai_ws_temp_diag_logs_rpm = 25;
 
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
@@ -1214,6 +1215,7 @@ describe("admin SettingsView payment visible method controls", () => {
         openai_ws_delta_shadow_enabled: true,
         openai_ws_active_delta_enabled: false,
         openai_ws_temp_diag_logs_enabled: true,
+        openai_ws_temp_diag_logs_rpm: 25,
       }),
     );
   });

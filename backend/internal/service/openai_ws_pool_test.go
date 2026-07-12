@@ -195,6 +195,55 @@ func TestOpenAIWSConnPool_NeutralPrewarmTargetUsesAccountConcurrencyPercent(t *t
 	require.Equal(t, 15, pool.neutralPrewarmTargetForAccount(account), "100 percent matches account concurrency")
 }
 
+func TestOpenAIWSConnPool_AccountPoolSnapshotCapturesInventoryAndRequestMatches(t *testing.T) {
+	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
+	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)
+
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 8
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+	StoreOpenAIWSPoolRuntimeSettingsWithIdle(60, 600, 1, 8, 0)
+
+	account := &Account{ID: 680, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 5}
+	req := openAIWSAcquireRequest{Account: account, WSURL: "wss://example.invalid/ws", Profile: openAIWSConnProfileNeutral}
+	matching := newOpenAIWSConnWithProfileAndReuseKey("matching", &openAIWSFakeConn{}, nil, openAIWSConnProfileNeutral, openAIWSConnReuseKeyForAcquire(req))
+	matching.markNeutralStock()
+	mismatched := newOpenAIWSConnWithProfileAndReuseKey("mismatched", &openAIWSFakeConn{}, nil, openAIWSConnProfileNeutral, "different")
+	session := newOpenAIWSConnWithProfile("session", &openAIWSFakeConn{}, nil, openAIWSConnProfileSessionBound)
+	require.True(t, session.tryAcquire())
+	t.Cleanup(session.release)
+
+	ap := pool.getOrCreateAccountPool(account.ID)
+	ap.mu.Lock()
+	ap.conns[matching.id] = matching
+	ap.conns[mismatched.id] = mismatched
+	ap.conns[session.id] = session
+	ap.creating = 1
+	ap.creatingNeutral = 1
+	ap.prewarmActive = true
+	ap.prewarmFails = 2
+	ap.mu.Unlock()
+
+	snapshot := pool.AccountPoolSnapshot(account, req)
+	require.Equal(t, 3, snapshot.TotalConns)
+	require.Equal(t, 2, snapshot.NeutralConns)
+	require.Equal(t, 1, snapshot.SessionBoundConns)
+	require.Equal(t, 2, snapshot.IdleNeutralConns)
+	require.Equal(t, 0, snapshot.IdleSessionBoundConns)
+	require.Equal(t, 1, snapshot.NeutralStockConns)
+	require.Equal(t, 1, snapshot.MatchingConns)
+	require.Equal(t, 1, snapshot.MatchingIdleConns)
+	require.Equal(t, 1, snapshot.LeasedConns)
+	require.Equal(t, 1, snapshot.Creating)
+	require.True(t, snapshot.PrewarmActive)
+	require.Equal(t, 2, snapshot.PrewarmFailures)
+	require.Equal(t, 3, snapshot.NeutralPrewarmTarget)
+	require.Equal(t, "matching_idle_available", classifyOpenAIWSPoolAcquireState(snapshot, req))
+	require.Equal(t, "force_new_conn", classifyOpenAIWSPoolAcquireState(snapshot, openAIWSAcquireRequest{ForceNewConn: true}))
+	require.Equal(t, "no_matching_variant", classifyOpenAIWSPoolAcquireState(openAIWSAccountPoolSnapshot{TotalConns: 2}, req))
+}
+
 func TestOpenAIWSConnPool_NeutralPrewarmTargetHonorsMinIdleForLowConcurrency(t *testing.T) {
 	resetOpenAIWSPoolRuntimeSettingsCacheForTest()
 	t.Cleanup(resetOpenAIWSPoolRuntimeSettingsCacheForTest)

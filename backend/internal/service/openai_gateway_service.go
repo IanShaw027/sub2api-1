@@ -2459,6 +2459,9 @@ func (s *OpenAIGatewayService) ExtractSessionID(c *gin.Context, body []byte) str
 	if sessionID == "" {
 		sessionID = strings.TrimSpace(c.GetHeader("conversation_id"))
 	}
+	if sessionID == "" && isGrokChatCompletionsSessionContext(c) {
+		sessionID = strings.TrimSpace(c.GetHeader("x-grok-conv-id"))
+	}
 	if sessionID == "" && len(body) > 0 {
 		sessionID = strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
 	}
@@ -2498,6 +2501,9 @@ func (s *OpenAIGatewayService) GenerateSessionHash(c *gin.Context, body []byte) 
 	if sessionID == "" {
 		sessionID = strings.TrimSpace(c.GetHeader("conversation_id"))
 	}
+	if sessionID == "" && isGrokChatCompletionsSessionContext(c) {
+		sessionID = strings.TrimSpace(c.GetHeader("x-grok-conv-id"))
+	}
 	if sessionID == "" && len(body) > 0 {
 		sessionID = strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
 	}
@@ -2508,6 +2514,17 @@ func (s *OpenAIGatewayService) GenerateSessionHash(c *gin.Context, body []byte) 
 	currentHash, legacyHash := deriveOpenAIRequestScopedSessionHashes(c, sessionID)
 	attachOpenAILegacySessionHashToGin(c, legacyHash)
 	return currentHash
+}
+
+func isGrokChatCompletionsSessionContext(c *gin.Context) bool {
+	if c == nil || c.Request == nil {
+		return false
+	}
+	apiKey := getAPIKeyFromContext(c)
+	if apiKey == nil || apiKey.Group == nil || apiKey.Group.Platform != PlatformGrok {
+		return false
+	}
+	return NormalizeInboundEndpoint(c.Request.URL.Path) == EndpointChatCompletions
 }
 
 // GenerateSessionHashWithFallback 先按常规信号生成会话哈希；
@@ -5966,6 +5983,21 @@ oauthTransformDone:
 			if reason != "" {
 				wsLastFailureReason = reason
 			}
+			var fallbackState *openAIWSFallbackError
+			errors.As(wsErr, &fallbackState)
+			logOpenAIWSTemporaryAnomaly(
+				"attempt_failed",
+				"account_id=%d attempt=%d max_attempts=%d reason=%s retryable=%v active_delta=%v previous_response_id_present=%v wrote_downstream=%v cause=%s",
+				account.ID,
+				attempt,
+				maxAttempts,
+				normalizeOpenAIWSLogValue(reason),
+				retryable,
+				fallbackState != nil && fallbackState.ActiveDelta,
+				fallbackState != nil && strings.TrimSpace(fallbackState.PreviousResponseID) != "",
+				c != nil && c.Writer != nil && c.Writer.Size() > 0,
+				truncateOpenAIWSLogValue(wsErr.Error(), openAIWSLogValueMaxLen),
+			)
 			// previous_response_not_found 说明续链锚点不可用：
 			// 对非 function_call_output 场景，允许一次“去掉 previous_response_id 后重放”。
 			if reason == "previous_response_not_found" && recoverPrevResponseNotFound(attempt) {
@@ -6122,6 +6154,16 @@ oauthTransformDone:
 			clearOpenAIRequestBodyCache(c)
 			setOpsUpstreamRequestBody(c, body)
 			SetOpsOpenAIWSTransportPath(c, "http_after_ws_fallback")
+			logOpenAIWSTemporaryAnomaly(
+				"http_fallback",
+				"request_id=%s client_request_id=%s account_id=%d reason=%s payload_bytes=%d previous_response_id_present=%v",
+				normalizeOpenAIWSLogValue(requestID),
+				normalizeOpenAIWSLogValue(clientRequestID),
+				account.ID,
+				normalizeOpenAIWSLogValue(reason),
+				len(body),
+				gjson.GetBytes(body, "previous_response_id").Exists(),
+			)
 			logOpenAIWSModeInfo(
 				"fallback_to_http request_id=%s client_request_id=%s account_id=%d reason=%s action=replay_current_payload bytes=%d fallback_scope=http_after_ws_error transport_path=http_after_ws_fallback",
 				normalizeOpenAIWSLogValue(requestID),

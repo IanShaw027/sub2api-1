@@ -4104,13 +4104,36 @@
                     <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                       {{
                         localText(
-                          "控制 temporary_diag/remove_after_debug 日志输出，例如 openai_ws_delta_shadow；仅影响日志，不影响 Active Delta 逻辑。",
-                          "Controls temporary_diag/remove_after_debug logs such as openai_ws_delta_shadow; affects logging only, not Active Delta behavior.",
+                          "仅记录 WS 重试/回退、连接或预热失败，以及首 token 超过 2 秒的请求；使用 info 日志级别，不会开启全局 debug。",
+                          "Records only WS retry/fallback, connection or prewarm failures, and requests whose first token exceeds 2 seconds. Uses info level without enabling global debug.",
                         )
                       }}
                     </p>
                   </div>
                   <Toggle v-model="form.openai_ws_temp_diag_logs_enabled" />
+                </div>
+
+                <div>
+                  <label class="label">
+                    {{ localText("临时诊断日志 RPM 上限", "Diagnostic Log RPM Limit") }}
+                  </label>
+                  <input
+                    v-model.number="form.openai_ws_temp_diag_logs_rpm"
+                    type="number"
+                    min="1"
+                    max="600"
+                    step="1"
+                    class="input"
+                    placeholder="60"
+                  />
+                  <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{
+                      localText(
+                        "单进程每分钟最多写入的 OpenAI WS 异常诊断条数；超限记录会被抑制，并在下一分钟的首条日志中报告抑制数量。",
+                        "Maximum OpenAI WS anomaly records written per process per minute. Excess records are suppressed and reported by the first record in the next minute.",
+                      )
+                    }}
+                  </p>
                 </div>
               </div>
 
@@ -9693,6 +9716,7 @@ type SettingsForm = Omit<
   openai_ws_delta_shadow_enabled: boolean;
   openai_ws_active_delta_enabled: boolean;
   openai_ws_temp_diag_logs_enabled: boolean;
+  openai_ws_temp_diag_logs_rpm: number;
   default_platform_quotas: DefaultPlatformQuotasMap;
   openai_oauth_image_bridge_disable_keepalives: boolean;
   openai_oauth_image_bridge_fresh_upstream_client: boolean;
@@ -9891,6 +9915,7 @@ const form = reactive<SettingsForm>({
   openai_ws_delta_shadow_enabled: true,
   openai_ws_active_delta_enabled: true,
   openai_ws_temp_diag_logs_enabled: false,
+  openai_ws_temp_diag_logs_rpm: 60,
   platform_default_account_model_config: {},
   // Identity patch (Claude -> Gemini)
   enable_identity_patch: true,
@@ -11706,6 +11731,10 @@ async function saveSettings() {
       openai_ws_delta_shadow_enabled: form.openai_ws_delta_shadow_enabled,
       openai_ws_active_delta_enabled: form.openai_ws_active_delta_enabled,
       openai_ws_temp_diag_logs_enabled: form.openai_ws_temp_diag_logs_enabled,
+      openai_ws_temp_diag_logs_rpm: Math.max(
+        1,
+        Math.min(600, Math.floor(Number(form.openai_ws_temp_diag_logs_rpm) || 60)),
+      ),
       openai_oauth_image_bridge_disable_keepalives:
         form.openai_oauth_image_bridge_disable_keepalives,
       openai_oauth_image_bridge_fresh_upstream_client:

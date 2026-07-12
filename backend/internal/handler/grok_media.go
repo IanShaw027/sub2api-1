@@ -167,9 +167,10 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	routingStart := time.Now()
 
 	for {
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
+		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapabilityAndAPIKey(
 			requestCtx,
 			apiKey.GroupID,
+			apiKey.ID,
 			"",
 			sessionHash,
 			requestModel,

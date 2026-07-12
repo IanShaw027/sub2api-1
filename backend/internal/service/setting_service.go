@@ -836,6 +836,7 @@ func (s *SettingService) LoadOpenAIWSDeltaRuntimeSettings(ctx context.Context) e
 		SettingKeyOpenAIWSDeltaShadowEnabled,
 		SettingKeyOpenAIWSActiveDeltaEnabled,
 		SettingKeyOpenAIWSTempDiagLogsEnabled,
+		SettingKeyOpenAIWSTempDiagLogsRPM,
 	})
 	if err != nil {
 		return fmt.Errorf("get openai ws delta runtime settings: %w", err)
@@ -846,6 +847,7 @@ func (s *SettingService) LoadOpenAIWSDeltaRuntimeSettings(ctx context.Context) e
 		parsed.OpenAIWSActiveDeltaEnabled,
 		parsed.OpenAIWSTempDiagLogsEnabled,
 	)
+	StoreOpenAIWSTemporaryDiagnosticLogsRPM(parsed.OpenAIWSTempDiagLogsRPM)
 	return nil
 }
 
@@ -2396,10 +2398,12 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	openAIWSDeltaShadowEnabled := true
 	openAIWSActiveDeltaEnabled := true
 	openAIWSTempDiagLogsEnabled := false
+	openAIWSTempDiagLogsRPM := defaultOpenAIWSTempDiagLogsRPM
 	if settings.OpenAIWSDeltaRuntimeSettingsLoaded {
 		openAIWSDeltaShadowEnabled = settings.OpenAIWSDeltaShadowEnabled
 		openAIWSActiveDeltaEnabled = settings.OpenAIWSActiveDeltaEnabled
 		openAIWSTempDiagLogsEnabled = settings.OpenAIWSTempDiagLogsEnabled
+		openAIWSTempDiagLogsRPM = normalizeOpenAIWSTempDiagLogsRPM(settings.OpenAIWSTempDiagLogsRPM)
 	}
 	settings.WeChatConnectAppID = strings.TrimSpace(settings.WeChatConnectAppID)
 	settings.WeChatConnectAppSecret = strings.TrimSpace(settings.WeChatConnectAppSecret)
@@ -2785,6 +2789,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyOpenAIWSDeltaShadowEnabled] = strconv.FormatBool(openAIWSDeltaShadowEnabled)
 	updates[SettingKeyOpenAIWSActiveDeltaEnabled] = strconv.FormatBool(openAIWSActiveDeltaEnabled)
 	updates[SettingKeyOpenAIWSTempDiagLogsEnabled] = strconv.FormatBool(openAIWSTempDiagLogsEnabled)
+	updates[SettingKeyOpenAIWSTempDiagLogsRPM] = strconv.Itoa(openAIWSTempDiagLogsRPM)
 	updates[SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives] = strconv.FormatBool(settings.OpenAIOAuthImageBridgeDisableKeepAlives)
 	updates[SettingKeyOpenAIOAuthImageBridgeFreshUpstreamClient] = strconv.FormatBool(settings.OpenAIOAuthImageBridgeFreshUpstreamClient)
 
@@ -3070,6 +3075,7 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 		settings.OpenAIWSActiveDeltaEnabled || !settings.OpenAIWSDeltaRuntimeSettingsLoaded,
 		settings.OpenAIWSTempDiagLogsEnabled,
 	)
+	StoreOpenAIWSTemporaryDiagnosticLogsRPM(settings.OpenAIWSTempDiagLogsRPM)
 	openAIOAuthImageBridgeTransportSettingsSF.Forget(openAIOAuthImageBridgeTransportSettingsKey)
 	openAIOAuthImageBridgeTransportSettingsCache.Store(&cachedOpenAIOAuthImageBridgeTransportSettings{
 		disableKeepAlives: settings.OpenAIOAuthImageBridgeDisableKeepAlives,
@@ -4088,6 +4094,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyOpenAIWSDeltaShadowEnabled:        "true",
 		SettingKeyOpenAIWSActiveDeltaEnabled:        "true",
 		SettingKeyOpenAIWSTempDiagLogsEnabled:       "false",
+		SettingKeyOpenAIWSTempDiagLogsRPM:           strconv.Itoa(defaultOpenAIWSTempDiagLogsRPM),
 		// Identity patch defaults
 		SettingKeyEnableIdentityPatch: "true",
 		SettingKeyIdentityPatchPrompt: "",
@@ -4745,6 +4752,11 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.OpenAIWSDeltaShadowEnabled = parseBoolSettingOrDefault(settings, SettingKeyOpenAIWSDeltaShadowEnabled, true)
 	result.OpenAIWSActiveDeltaEnabled = parseBoolSettingOrDefault(settings, SettingKeyOpenAIWSActiveDeltaEnabled, true)
 	result.OpenAIWSTempDiagLogsEnabled = parseBoolSettingOrDefault(settings, SettingKeyOpenAIWSTempDiagLogsEnabled, false)
+	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyOpenAIWSTempDiagLogsRPM])); err == nil {
+		result.OpenAIWSTempDiagLogsRPM = normalizeOpenAIWSTempDiagLogsRPM(v)
+	} else {
+		result.OpenAIWSTempDiagLogsRPM = defaultOpenAIWSTempDiagLogsRPM
+	}
 	result.OpenAIWSDeltaRuntimeSettingsLoaded = true
 	if raw, ok := settings[SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives]; ok && strings.TrimSpace(raw) != "" {
 		result.OpenAIOAuthImageBridgeDisableKeepAlives = strings.EqualFold(strings.TrimSpace(raw), "true")

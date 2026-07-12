@@ -24,6 +24,7 @@ type openAIWSDeltaRuntimeSettings struct {
 }
 
 var openAIWSDeltaRuntimeSettingsCache atomic.Value // *openAIWSDeltaRuntimeSettings
+var openAIWSTempDiagLogsRPMCache atomic.Int64
 
 func defaultOpenAIWSDeltaRuntimeSettings() openAIWSDeltaRuntimeSettings {
 	return openAIWSDeltaRuntimeSettings{
@@ -62,6 +63,8 @@ func StoreOpenAIWSDeltaRuntimeSettings(deltaShadowEnabled, activeDeltaEnabled, t
 
 func resetOpenAIWSDeltaRuntimeSettingsForTest() {
 	openAIWSDeltaRuntimeSettingsCache.Store(&openAIWSDeltaRuntimeSettings{})
+	openAIWSTempDiagLogsRPMCache.Store(0)
+	resetOpenAIWSTempDiagRateLimiterForTest()
 }
 
 // openAIWSDeltaShadowEnabled gates all shadow instrumentation. Default on; ops can disable
@@ -80,6 +83,17 @@ func openAIWSActiveDeltaEnabled() bool {
 
 func openAIWSTemporaryDiagnosticLogsEnabled() bool {
 	return loadOpenAIWSDeltaRuntimeSettings().tempDiagLogsEnabled
+}
+
+func StoreOpenAIWSTemporaryDiagnosticLogsRPM(rpm int) {
+	openAIWSTempDiagLogsRPMCache.Store(int64(normalizeOpenAIWSTempDiagLogsRPM(rpm)))
+}
+
+func openAIWSTemporaryDiagnosticLogsRPM() int {
+	if rpm := int(openAIWSTempDiagLogsRPMCache.Load()); rpm > 0 {
+		return normalizeOpenAIWSTempDiagLogsRPM(rpm)
+	}
+	return defaultOpenAIWSTempDiagLogsRPM
 }
 
 // openAIWSHashSlicesEqual reports whether two canonical-hash slices are identical.

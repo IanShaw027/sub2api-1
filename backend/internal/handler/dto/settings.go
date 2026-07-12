@@ -272,6 +272,7 @@ type SystemSettings struct {
 	OpenAIWSDeltaShadowEnabled                             bool   `json:"openai_ws_delta_shadow_enabled"`
 	OpenAIWSActiveDeltaEnabled                             bool   `json:"openai_ws_active_delta_enabled"`
 	OpenAIWSTempDiagLogsEnabled                            bool   `json:"openai_ws_temp_diag_logs_enabled"`
+	OpenAIWSTempDiagLogsRPM                                int    `json:"openai_ws_temp_diag_logs_rpm"`
 	OpenAIOAuthImageBridgeDisableKeepAlives                bool   `json:"openai_oauth_image_bridge_disable_keepalives"`
 	OpenAIOAuthImageBridgeFreshUpstreamClient              bool   `json:"openai_oauth_image_bridge_fresh_upstream_client"`
 

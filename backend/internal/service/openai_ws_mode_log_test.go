@@ -3,11 +3,103 @@ package service
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestOpenAIWSTempDiagRateLimiterCapsAndReportsPreviousWindow(t *testing.T) {
+	limiter := &openAIWSTempDiagRateLimiter{}
+	start := time.Unix(120, 0)
+
+	allowed, suppressed := limiter.allow(start, 2)
+	require.True(t, allowed)
+	require.Zero(t, suppressed)
+	allowed, suppressed = limiter.allow(start.Add(time.Second), 2)
+	require.True(t, allowed)
+	require.Zero(t, suppressed)
+	allowed, _ = limiter.allow(start.Add(2*time.Second), 2)
+	require.False(t, allowed)
+
+	allowed, suppressed = limiter.allow(start.Add(time.Minute), 2)
+	require.True(t, allowed)
+	require.EqualValues(t, 1, suppressed)
+}
+
+func TestOpenAIWSTemporaryAnomalyEmitsAtInfoWithRPMCap(t *testing.T) {
+	resetOpenAIWSDeltaRuntimeSettingsForTest()
+	t.Cleanup(resetOpenAIWSDeltaRuntimeSettingsForTest)
+	StoreOpenAIWSDeltaRuntimeSettings(true, true, true)
+	StoreOpenAIWSTemporaryDiagnosticLogsRPM(2)
+
+	err := logger.Init(logger.InitOptions{
+		Level:       "info",
+		Format:      "json",
+		ServiceName: "sub2api",
+		Environment: "test",
+		Output: logger.OutputOptions{
+			ToStdout: true,
+			ToFile:   false,
+		},
+		Sampling: logger.SamplingOptions{Enabled: false},
+	})
+	require.NoError(t, err)
+
+	sink := &openAIWSModeLogTestSink{}
+	logger.SetSink(sink)
+	t.Cleanup(func() { logger.SetSink(nil) })
+
+	logOpenAIWSTemporaryAnomaly("attempt_failed", "account_id=%d", 1)
+	logOpenAIWSTemporaryAnomaly("http_fallback", "account_id=%d", 2)
+	logOpenAIWSTemporaryAnomaly("read_fail", "account_id=%d", 3)
+
+	events := sink.snapshot()
+	require.Len(t, events, 2)
+	require.Equal(t, "info", events[0].Level)
+	require.Contains(t, events[0].Message, "event=attempt_failed")
+	require.Contains(t, events[0].Message, "rpm_limit=2")
+}
+
+func TestLogOpenAIWSSlowCompletionOnlyLogsAboveThreshold(t *testing.T) {
+	resetOpenAIWSDeltaRuntimeSettingsForTest()
+	t.Cleanup(resetOpenAIWSDeltaRuntimeSettingsForTest)
+	StoreOpenAIWSDeltaRuntimeSettings(true, true, true)
+	StoreOpenAIWSTemporaryDiagnosticLogsRPM(10)
+
+	err := logger.Init(logger.InitOptions{
+		Level:       "info",
+		Format:      "json",
+		ServiceName: "sub2api",
+		Environment: "test",
+		Output:      logger.OutputOptions{ToStdout: true},
+		Sampling:    logger.SamplingOptions{Enabled: false},
+	})
+	require.NoError(t, err)
+	sink := &openAIWSModeLogTestSink{}
+	logger.SetSink(sink)
+	t.Cleanup(func() { logger.SetSink(nil) })
+
+	logOpenAIWSSlowCompletion(openAIWSDiagnosticCompletedLog{FirstTokenMs: openAIWSTempDiagSlowTTFTMs})
+	require.Empty(t, sink.snapshot())
+	logOpenAIWSSlowCompletion(openAIWSDiagnosticCompletedLog{
+		AccountID:           42,
+		FirstTokenMs:        openAIWSTempDiagSlowTTFTMs + 1,
+		DeltaFallbackReason: "no_session_context",
+		PoolAcquireState:    "no_matching_variant",
+		PoolSnapshot: openAIWSAccountPoolSnapshot{
+			TotalConns:        4,
+			MatchingIdleConns: 2,
+		},
+	})
+	require.Len(t, sink.snapshot(), 1)
+	require.Contains(t, sink.snapshot()[0].Message, "event=slow_first_token")
+	require.Contains(t, sink.snapshot()[0].Message, "delta_fallback_reason=no_session_context")
+	require.Contains(t, sink.snapshot()[0].Message, "pool_total=4")
+	require.Contains(t, sink.snapshot()[0].Message, "pool_acquire_state=no_matching_variant")
+	require.Contains(t, sink.snapshot()[0].Message, "pool_matching_idle=2")
+}
 
 type openAIWSModeLogTestSink struct {
 	mu     sync.Mutex

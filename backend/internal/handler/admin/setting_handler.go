@@ -716,6 +716,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		OpenAIWSDeltaShadowEnabled:                settings.OpenAIWSDeltaShadowEnabled,
 		OpenAIWSActiveDeltaEnabled:                settings.OpenAIWSActiveDeltaEnabled,
 		OpenAIWSTempDiagLogsEnabled:               settings.OpenAIWSTempDiagLogsEnabled,
+		OpenAIWSTempDiagLogsRPM:                   settings.OpenAIWSTempDiagLogsRPM,
 		OpenAIOAuthImageBridgeDisableKeepAlives:   settings.OpenAIOAuthImageBridgeDisableKeepAlives,
 		OpenAIOAuthImageBridgeFreshUpstreamClient: settings.OpenAIOAuthImageBridgeFreshUpstreamClient,
 		BalanceLowNotifyEnabled:                   settings.BalanceLowNotifyEnabled,
@@ -1110,6 +1111,7 @@ type UpdateSettingsRequest struct {
 	OpenAIWSDeltaShadowEnabled                *bool `json:"openai_ws_delta_shadow_enabled"`
 	OpenAIWSActiveDeltaEnabled                *bool `json:"openai_ws_active_delta_enabled"`
 	OpenAIWSTempDiagLogsEnabled               *bool `json:"openai_ws_temp_diag_logs_enabled"`
+	OpenAIWSTempDiagLogsRPM                   *int  `json:"openai_ws_temp_diag_logs_rpm"`
 	OpenAIOAuthImageBridgeDisableKeepAlives   *bool `json:"openai_oauth_image_bridge_disable_keepalives"`
 	OpenAIOAuthImageBridgeFreshUpstreamClient *bool `json:"openai_oauth_image_bridge_fresh_upstream_client"`
 
@@ -2834,6 +2836,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpenAIWSTempDiagLogsEnabled
 		}(),
+		OpenAIWSTempDiagLogsRPM: func() int {
+			if req.OpenAIWSTempDiagLogsRPM != nil {
+				return *req.OpenAIWSTempDiagLogsRPM
+			}
+			return previousSettings.OpenAIWSTempDiagLogsRPM
+		}(),
 		OpenAIWSDeltaRuntimeSettingsLoaded: true,
 		OpenAIOAuthImageBridgeDisableKeepAlives: func() bool {
 			if req.OpenAIOAuthImageBridgeDisableKeepAlives != nil {
@@ -3283,6 +3291,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		OpenAIWSDeltaShadowEnabled:                updatedSettings.OpenAIWSDeltaShadowEnabled,
 		OpenAIWSActiveDeltaEnabled:                updatedSettings.OpenAIWSActiveDeltaEnabled,
 		OpenAIWSTempDiagLogsEnabled:               updatedSettings.OpenAIWSTempDiagLogsEnabled,
+		OpenAIWSTempDiagLogsRPM:                   updatedSettings.OpenAIWSTempDiagLogsRPM,
 		OpenAIOAuthImageBridgeDisableKeepAlives:   updatedSettings.OpenAIOAuthImageBridgeDisableKeepAlives,
 		OpenAIOAuthImageBridgeFreshUpstreamClient: updatedSettings.OpenAIOAuthImageBridgeFreshUpstreamClient,
 		BalanceLowNotifyEnabled:                   updatedSettings.BalanceLowNotifyEnabled,
@@ -3905,6 +3914,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.OpenAIWSTempDiagLogsEnabled != after.OpenAIWSTempDiagLogsEnabled {
 		changed = append(changed, "openai_ws_temp_diag_logs_enabled")
+	}
+	if before.OpenAIWSTempDiagLogsRPM != after.OpenAIWSTempDiagLogsRPM {
+		changed = append(changed, "openai_ws_temp_diag_logs_rpm")
 	}
 	if before.OpenAIOAuthImageBridgeDisableKeepAlives != after.OpenAIOAuthImageBridgeDisableKeepAlives {
 		changed = append(changed, "openai_oauth_image_bridge_disable_keepalives")

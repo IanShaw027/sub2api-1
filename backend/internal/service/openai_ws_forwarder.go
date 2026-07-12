@@ -1078,6 +1078,19 @@ type openAIWSDiagnosticStartLog struct {
 	AffinityOnlyReuse         bool
 	StoreDisabledConnMode     string
 	ProxyEnabled              bool
+	PoolSnapshot              openAIWSAccountPoolSnapshot
+	PoolAcquireState          string
+	DeltaCandidate            bool
+	DeltaFallbackReason       string
+	DeltaPrefixMatch          bool
+	DeltaConnMatch            bool
+	DeltaMostRecentMatch      bool
+	DeltaNonInputMatch        bool
+	DeltaRawClientEquiv       bool
+	DeltaBreakBoundary        string
+	DeltaBreakItemType        string
+	DeltaStoreFallbackReason  string
+	DeltaConnReanchorBlockers string
 }
 
 func shouldForceOpenAIWSPreferredConn(account *Account, preferredConnID string, snapshot openAIWSConnAcquireSnapshot, connProfile openAIWSConnProfile, forceNewConn, httpIngressWSOneShot bool) bool {
@@ -1141,6 +1154,8 @@ type openAIWSDiagnosticCompletedLog struct {
 	ConnAgeMs                   int64
 	ConnIdleMs                  int64
 	ConnLeaseCount              int64
+	ConnPickMs                  int64
+	QueueWaitMs                 int64
 	WriteSentMs                 int
 	DurationMs                  int64
 	FirstTokenMs                int
@@ -1166,6 +1181,19 @@ type openAIWSDiagnosticCompletedLog struct {
 	DeltaBytes                  int
 	FullItems                   int
 	FullBytes                   int
+	PoolSnapshot                openAIWSAccountPoolSnapshot
+	PoolAcquireState            string
+	DeltaCandidate              bool
+	DeltaFallbackReason         string
+	DeltaPrefixMatch            bool
+	DeltaConnMatch              bool
+	DeltaMostRecentMatch        bool
+	DeltaNonInputMatch          bool
+	DeltaRawClientEquiv         bool
+	DeltaBreakBoundary          string
+	DeltaBreakItemType          string
+	DeltaStoreFallbackReason    string
+	DeltaConnReanchorBlockers   string
 }
 
 func openAIWSTransportPathFromStart(v openAIWSDiagnosticStartLog) string {
@@ -1622,7 +1650,9 @@ func openAIWSReadFailLogMessage(v openAIWSReadFailLog) string {
 }
 
 func logOpenAIWSReadFail(v openAIWSReadFailLog) {
-	logOpenAIWSModeInfo("%s", openAIWSReadFailLogMessage(v))
+	message := openAIWSReadFailLogMessage(v)
+	logOpenAIWSModeInfo("%s", message)
+	logOpenAIWSTemporaryAnomaly("read_fail", "%s", message)
 }
 
 func buildOpenAIWSSyntheticReadFailureEvent(responseID, model, message string, usage *OpenAIUsage) []byte {
@@ -3969,6 +3999,10 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		forcePreferredConn = shouldForceOpenAIWSPreferredConn(account, preferredConnID, preferredAcquireSnapshot, connProfile, forceNewConn, httpIngressWSOneShot)
 		acquireReq.ForcePreferredConn = forcePreferredConn
 	}
+	poolSnapshot := openAIWSAccountPoolSnapshot{}
+	if openAIWSTemporaryDiagnosticLogsEnabled() {
+		poolSnapshot = pool.AccountPoolSnapshot(account, acquireReq)
+	}
 	lease, err := pool.Acquire(acquireCtx, acquireReq)
 	if err != nil && forcePreferredConn && errors.Is(err, errOpenAIWSPreferredConnUnavailable) &&
 		canFallbackOpenAIWSPreferredConnUnavailable(storeDisabled, previousResponseID) {
@@ -3989,6 +4023,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		acquireReq.AffinityOnlyReuse = false
 		acquireReq.Profile = openAIWSConnProfileNeutral
 		acquireReq.Headers = wsHeaders
+		if openAIWSTemporaryDiagnosticLogsEnabled() {
+			poolSnapshot = pool.AccountPoolSnapshot(account, acquireReq)
+		}
 		lease, err = pool.Acquire(acquireCtx, acquireReq)
 	}
 	if err != nil {
@@ -4003,6 +4040,44 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			return nil, wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted)
 		}
 		dialStatus, dialClass, dialCloseStatus, dialCloseReason, dialRespServer, dialRespVia, dialRespCFRay, dialRespReqID := summarizeOpenAIWSDialError(err)
+		logOpenAIWSTemporaryAnomaly(
+			"acquire_fail",
+			"account_id=%d account_type=%s transport=%s reason=%s dial_status=%d dial_class=%s dial_close_status=%s dial_close_reason=%s dial_resp_server=%s dial_resp_via=%s dial_resp_cf_ray=%s dial_resp_x_request_id=%s cause=%s preferred_conn_id=%s force_new_conn=%v ws_host=%s ws_path=%s proxy_enabled=%v pool_acquire_state=%s pool_total=%d pool_neutral=%d pool_session_bound=%d pool_idle_neutral=%d pool_idle_session_bound=%d pool_neutral_stock=%d pool_matching=%d pool_matching_idle=%d pool_leased=%d pool_waiters=%d pool_creating=%d pool_prewarm_active=%v pool_prewarm_failures=%d pool_neutral_target=%d pool_effective_max=%d",
+			account.ID,
+			account.Type,
+			normalizeOpenAIWSLogValue(string(decision.Transport)),
+			normalizeOpenAIWSLogValue(classifyOpenAIWSAcquireError(err)),
+			dialStatus,
+			dialClass,
+			dialCloseStatus,
+			truncateOpenAIWSLogValue(dialCloseReason, openAIWSHeaderValueMaxLen),
+			dialRespServer,
+			dialRespVia,
+			dialRespCFRay,
+			dialRespReqID,
+			truncateOpenAIWSLogValue(err.Error(), openAIWSLogValueMaxLen),
+			truncateOpenAIWSLogValue(preferredConnID, openAIWSIDValueMaxLen),
+			forceNewConn,
+			wsHost,
+			wsPath,
+			account.ProxyID != nil && account.Proxy != nil,
+			normalizeOpenAIWSLogValueNoReplace(classifyOpenAIWSPoolAcquireState(poolSnapshot, acquireReq)),
+			poolSnapshot.TotalConns,
+			poolSnapshot.NeutralConns,
+			poolSnapshot.SessionBoundConns,
+			poolSnapshot.IdleNeutralConns,
+			poolSnapshot.IdleSessionBoundConns,
+			poolSnapshot.NeutralStockConns,
+			poolSnapshot.MatchingConns,
+			poolSnapshot.MatchingIdleConns,
+			poolSnapshot.LeasedConns,
+			poolSnapshot.Waiters,
+			poolSnapshot.Creating,
+			poolSnapshot.PrewarmActive,
+			poolSnapshot.PrewarmFailures,
+			poolSnapshot.NeutralPrewarmTarget,
+			poolSnapshot.EffectiveMaxConns,
+		)
 		logOpenAIWSModeInfo(
 			"acquire_fail account_id=%d account_type=%s transport=%s reason=%s dial_status=%d dial_class=%s dial_close_status=%s dial_close_reason=%s dial_resp_server=%s dial_resp_via=%s dial_resp_cf_ray=%s dial_resp_x_request_id=%s cause=%s preferred_conn_id=%s force_new_conn=%v ws_host=%s ws_path=%s proxy_enabled=%v",
 			account.ID,
@@ -4043,6 +4118,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		lease.Release()
 	}()
 	connID := strings.TrimSpace(lease.ConnID())
+	poolAcquireState := classifyOpenAIWSPoolAcquireState(poolSnapshot, acquireReq)
 	if promoteNeutralConnToSessionBound {
 		pool.PromoteNeutralConnToSessionBound(account.ID, connID)
 	}
@@ -4063,6 +4139,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	// reduced to just the trailing input items.
 	contextPayloadRaw := openAIWSActiveDeltaContextPayloadRaw(payload, storeDecision)
 	deltaShadowEnabled := openAIWSDeltaShadowEnabled()
+	activeDeltaRuntimeEnabled := openAIWSActiveDeltaEnabled()
 	activeDeltaLog := openAIWSDeltaShadowLog{}
 	activeDeltaApplied := false
 	shadowOwner := false
@@ -4098,7 +4175,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				CachedFound:              found,
 			}
 			populateOpenAIWSDeltaShadowBindingDiagnostics(&shadowInput, stateStore, pool, groupID, apiKeyID, sessionHash, account.ID, cached, found)
-			if openAIWSActiveDeltaEnabled() {
+			if activeDeltaRuntimeEnabled {
 				if deltaPayload, deltaLog, applied, buildErr := buildOpenAIWSActiveDeltaPayload(shadowInput); buildErr == nil && applied {
 					payload = deltaPayload
 					payloadBytes = -1
@@ -4129,6 +4206,24 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			}
 		}
 		logOpenAIWSDeltaShadow(activeDeltaLog)
+	}
+	if !activeDeltaApplied && strings.TrimSpace(activeDeltaLog.FallbackReason) == "" {
+		switch {
+		case !deltaShadowEnabled:
+			activeDeltaLog.FallbackReason = "delta_shadow_disabled"
+		case sessionPreemptedPrevious:
+			activeDeltaLog.FallbackReason = "session_preempted_previous"
+		case httpIngressWSOneShot:
+			activeDeltaLog.FallbackReason = "http_ingress_ws_one_shot"
+		case stateStore == nil:
+			activeDeltaLog.FallbackReason = "state_store_unavailable"
+		case sessionHash == "":
+			activeDeltaLog.FallbackReason = "missing_session_hash"
+		case !activeDeltaRuntimeEnabled && activeDeltaLog.Candidate:
+			activeDeltaLog.FallbackReason = "active_delta_disabled"
+		default:
+			activeDeltaLog.FallbackReason = "not_candidate"
+		}
 	}
 	defer func() {
 		if shadowOwner {
@@ -4201,6 +4296,19 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		AffinityOnlyReuse:         affinityOnlyReuse,
 		StoreDisabledConnMode:     storeDisabledConnMode,
 		ProxyEnabled:              account.ProxyID != nil && account.Proxy != nil,
+		PoolSnapshot:              poolSnapshot,
+		PoolAcquireState:          poolAcquireState,
+		DeltaCandidate:            activeDeltaLog.Candidate,
+		DeltaFallbackReason:       activeDeltaLog.FallbackReason,
+		DeltaPrefixMatch:          activeDeltaLog.PrefixMatch,
+		DeltaConnMatch:            activeDeltaLog.ConnMatch,
+		DeltaMostRecentMatch:      activeDeltaLog.MostRecentMatch,
+		DeltaNonInputMatch:        activeDeltaLog.NonInputMatch,
+		DeltaRawClientEquiv:       activeDeltaLog.RawClientEquiv,
+		DeltaBreakBoundary:        activeDeltaLog.BreakBoundary,
+		DeltaBreakItemType:        activeDeltaLog.BreakItemType,
+		DeltaStoreFallbackReason:  activeDeltaLog.StoreFallbackReason,
+		DeltaConnReanchorBlockers: activeDeltaLog.ConnReanchorBlockers,
 	}
 	SetOpsOpenAIWSTransportPath(c, openAIWSTransportPathFromStart(diagnosticStart))
 	s.EmitOpenAIGatewayDebugTimelineEvent(c, OpenAIGatewayDebugTimelineEventInput{
@@ -4212,6 +4320,47 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		Stream:         reqStream,
 		Fields:         openAIWSDiagnosticStartTimelineFields(groupID, apiKeyID, diagnosticStart),
 	})
+	if attempt > 1 || strings.TrimSpace(lastFailureReason) != "" {
+		logOpenAIWSTemporaryAnomaly(
+			"retry_attempt_start",
+			"request_id=%s client_request_id=%s account_id=%d attempt=%d retry_last_reason=%s active_delta=%v delta_candidate=%v delta_fallback_reason=%s delta_prefix_match=%v delta_conn_match=%v delta_most_recent_match=%v delta_non_input_match=%v delta_raw_client_equiv=%v conn_profile=%s conn_reused=%v conn_pick_ms=%d queue_wait_ms=%d payload_bytes=%d previous_response_id_present=%v pool_acquire_state=%s pool_total=%d pool_neutral=%d pool_session_bound=%d pool_idle_neutral=%d pool_idle_session_bound=%d pool_neutral_stock=%d pool_matching=%d pool_matching_idle=%d pool_leased=%d pool_waiters=%d pool_creating=%d pool_prewarm_active=%v pool_prewarm_failures=%d pool_neutral_target=%d pool_effective_max=%d",
+			normalizeOpenAIWSLogValue(requestID),
+			normalizeOpenAIWSLogValue(clientRequestID),
+			account.ID,
+			attempt,
+			normalizeOpenAIWSLogValueNoReplace(lastFailureReason),
+			activeDeltaApplied,
+			diagnosticStart.DeltaCandidate,
+			normalizeOpenAIWSLogValueNoReplace(diagnosticStart.DeltaFallbackReason),
+			diagnosticStart.DeltaPrefixMatch,
+			diagnosticStart.DeltaConnMatch,
+			diagnosticStart.DeltaMostRecentMatch,
+			diagnosticStart.DeltaNonInputMatch,
+			diagnosticStart.DeltaRawClientEquiv,
+			normalizeOpenAIWSLogValue(openAIWSProfileUsageString(connProfile)),
+			lease.Reused(),
+			lease.ConnPickDuration().Milliseconds(),
+			lease.QueueWaitDuration().Milliseconds(),
+			resolvePayloadBytes(),
+			previousResponseID != "",
+			normalizeOpenAIWSLogValueNoReplace(diagnosticStart.PoolAcquireState),
+			diagnosticStart.PoolSnapshot.TotalConns,
+			diagnosticStart.PoolSnapshot.NeutralConns,
+			diagnosticStart.PoolSnapshot.SessionBoundConns,
+			diagnosticStart.PoolSnapshot.IdleNeutralConns,
+			diagnosticStart.PoolSnapshot.IdleSessionBoundConns,
+			diagnosticStart.PoolSnapshot.NeutralStockConns,
+			diagnosticStart.PoolSnapshot.MatchingConns,
+			diagnosticStart.PoolSnapshot.MatchingIdleConns,
+			diagnosticStart.PoolSnapshot.LeasedConns,
+			diagnosticStart.PoolSnapshot.Waiters,
+			diagnosticStart.PoolSnapshot.Creating,
+			diagnosticStart.PoolSnapshot.PrewarmActive,
+			diagnosticStart.PoolSnapshot.PrewarmFailures,
+			diagnosticStart.PoolSnapshot.NeutralPrewarmTarget,
+			diagnosticStart.PoolSnapshot.EffectiveMaxConns,
+		)
+	}
 	if previousResponseID != "" {
 		logOpenAIWSContinuationProbe(openAIWSContinuationProbeLog{
 			AccountID:                 account.ID,
@@ -4399,7 +4548,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		if account.ProxyID != nil {
 			proxyID = *account.ProxyID
 		}
-		logOpenAIWSModeInfo("%s", openAIWSWriteRequestFailLogMessage(openAIWSWriteRequestFailLog{
+		writeFailureMessage := openAIWSWriteRequestFailLogMessage(openAIWSWriteRequestFailLog{
 			RequestID:                requestID,
 			ClientRequestID:          clientRequestID,
 			AccountID:                account.ID,
@@ -4451,7 +4600,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			ProxyEnabled:             account.ProxyID != nil && account.Proxy != nil,
 			ProxyID:                  proxyID,
 			Cause:                    err.Error(),
-		}))
+		})
+		logOpenAIWSModeInfo("%s", writeFailureMessage)
+		logOpenAIWSTemporaryAnomaly("write_request_fail", "%s", writeFailureMessage)
 		return nil, wrapOpenAIWSFallback("write_request", err)
 	}
 	writeSentMs := int(time.Since(startTime).Milliseconds())
@@ -5165,6 +5316,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		ConnAgeMs:                   lease.ConnAge().Milliseconds(),
 		ConnIdleMs:                  lease.ConnIdleDuration().Milliseconds(),
 		ConnLeaseCount:              lease.ConnLeaseCount(),
+		ConnPickMs:                  lease.ConnPickDuration().Milliseconds(),
+		QueueWaitMs:                 lease.QueueWaitDuration().Milliseconds(),
 		WriteSentMs:                 writeSentMs,
 		DurationMs:                  durationMs,
 		FirstTokenMs:                firstTokenMsValue,
@@ -5190,7 +5343,21 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		DeltaBytes:                  activeDeltaLog.DeltaBytes,
 		FullItems:                   activeDeltaLog.FullItems,
 		FullBytes:                   activeDeltaLog.FullBytes,
+		PoolSnapshot:                poolSnapshot,
+		PoolAcquireState:            poolAcquireState,
+		DeltaCandidate:              activeDeltaLog.Candidate,
+		DeltaFallbackReason:         activeDeltaLog.FallbackReason,
+		DeltaPrefixMatch:            activeDeltaLog.PrefixMatch,
+		DeltaConnMatch:              activeDeltaLog.ConnMatch,
+		DeltaMostRecentMatch:        activeDeltaLog.MostRecentMatch,
+		DeltaNonInputMatch:          activeDeltaLog.NonInputMatch,
+		DeltaRawClientEquiv:         activeDeltaLog.RawClientEquiv,
+		DeltaBreakBoundary:          activeDeltaLog.BreakBoundary,
+		DeltaBreakItemType:          activeDeltaLog.BreakItemType,
+		DeltaStoreFallbackReason:    activeDeltaLog.StoreFallbackReason,
+		DeltaConnReanchorBlockers:   activeDeltaLog.ConnReanchorBlockers,
 	}
+	logOpenAIWSSlowCompletion(diagnosticCompleted)
 	s.EmitOpenAIGatewayDebugTimelineEvent(c, OpenAIGatewayDebugTimelineEventInput{
 		Stage:          "openai_ws_completed",
 		EndpointKind:   "responses",

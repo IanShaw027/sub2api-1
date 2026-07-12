@@ -292,6 +292,45 @@ type openAIWSConnAcquireSnapshot struct {
 	ReuseKeyMatches  bool
 }
 
+type openAIWSAccountPoolSnapshot struct {
+	TotalConns            int
+	NeutralConns          int
+	SessionBoundConns     int
+	IdleNeutralConns      int
+	IdleSessionBoundConns int
+	NeutralStockConns     int
+	MatchingConns         int
+	MatchingIdleConns     int
+	LeasedConns           int
+	Waiters               int
+	Creating              int
+	CreatingNeutral       int
+	CreatingSessionBound  int
+	PinnedConns           int
+	NeutralVariants       int
+	NeutralPrewarmTarget  int
+	EffectiveMaxConns     int
+	PrewarmActive         bool
+	PrewarmFailures       int
+}
+
+func classifyOpenAIWSPoolAcquireState(snapshot openAIWSAccountPoolSnapshot, req openAIWSAcquireRequest) string {
+	switch {
+	case req.ForceNewConn:
+		return "force_new_conn"
+	case req.ForcePreferredConn && snapshot.MatchingIdleConns == 0:
+		return "preferred_conn_unavailable"
+	case snapshot.TotalConns == 0:
+		return "pool_empty"
+	case snapshot.MatchingConns == 0:
+		return "no_matching_variant"
+	case snapshot.MatchingIdleConns == 0:
+		return "matching_conns_busy"
+	default:
+		return "matching_idle_available"
+	}
+}
+
 func (l *openAIWSConnLease) activeConn() (*openAIWSConn, error) {
 	if l == nil || l.conn == nil {
 		return nil, errOpenAIWSConnClosed
@@ -2150,6 +2189,65 @@ func (p *openAIWSConnPool) AccountPoolLoad(accountID int64) (inflight int, waite
 	return inflight, waiters, len(ap.conns)
 }
 
+func (p *openAIWSConnPool) AccountPoolSnapshot(account *Account, req openAIWSAcquireRequest) openAIWSAccountPoolSnapshot {
+	if p == nil || account == nil || account.ID <= 0 {
+		return openAIWSAccountPoolSnapshot{}
+	}
+	snapshot := openAIWSAccountPoolSnapshot{
+		NeutralPrewarmTarget: p.neutralPrewarmTargetForAccount(account),
+		EffectiveMaxConns:    p.effectiveMaxConnsByAccount(account),
+	}
+	ap, ok := p.getAccountPool(account.ID)
+	if !ok || ap == nil {
+		return snapshot
+	}
+	ap.mu.Lock()
+	defer ap.mu.Unlock()
+
+	snapshot.Creating = ap.creating
+	snapshot.CreatingNeutral = ap.creatingNeutral
+	snapshot.CreatingSessionBound = ap.creatingSessionBound
+	snapshot.PinnedConns = len(ap.pinnedConns)
+	snapshot.NeutralVariants = len(ap.neutralVariants)
+	snapshot.PrewarmActive = ap.prewarmActive
+	snapshot.PrewarmFailures = ap.prewarmFails
+	for _, conn := range ap.conns {
+		if conn == nil {
+			continue
+		}
+		snapshot.TotalConns++
+		leased := conn.isLeased()
+		waiters := int(conn.waiters.Load())
+		if leased {
+			snapshot.LeasedConns++
+		}
+		snapshot.Waiters += waiters
+		idle := !leased && waiters == 0
+		switch conn.profile {
+		case openAIWSConnProfileNeutral:
+			snapshot.NeutralConns++
+			if idle {
+				snapshot.IdleNeutralConns++
+			}
+			if conn.isNeutralStock() {
+				snapshot.NeutralStockConns++
+			}
+		case openAIWSConnProfileSessionBound:
+			snapshot.SessionBoundConns++
+			if idle {
+				snapshot.IdleSessionBoundConns++
+			}
+		}
+		if conn.matchesAcquire(req) {
+			snapshot.MatchingConns++
+			if idle {
+				snapshot.MatchingIdleConns++
+			}
+		}
+	}
+	return snapshot
+}
+
 type openAIWSConnSnapshot struct {
 	Exists     bool
 	Profile    openAIWSConnProfile
@@ -2434,7 +2532,16 @@ func (p *openAIWSConnPool) prewarmConns(accountID int64, req openAIWSAcquireRequ
 		if err != nil {
 			ap.prewarmFails++
 			ap.prewarmFailAt = time.Now()
+			failureCount := ap.prewarmFails
 			ap.mu.Unlock()
+			logOpenAIWSTemporaryAnomaly(
+				"pool_prewarm_dial_fail",
+				"account_id=%d conn_profile=%s prewarm_failures=%d cause=%s",
+				accountID,
+				normalizeOpenAIWSLogValue(openAIWSProfileUsageString(req.Profile)),
+				failureCount,
+				truncateOpenAIWSLogValue(err.Error(), openAIWSLogValueMaxLen),
+			)
 			continue
 		}
 		if req.Profile == openAIWSConnProfileNeutral {

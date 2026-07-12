@@ -454,6 +454,39 @@ func TestOpenAIGatewayService_GenerateSessionHash_NoExplicitSignalDoesNotCreateS
 	require.Empty(t, svc.GenerateSessionHash(c, body), "content alone is not a stable client session boundary")
 }
 
+func TestOpenAIGatewayService_GenerateSessionHash_GrokChatUsesXGrokConvID(t *testing.T) {
+	setGinTestMode()
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	c.Request.Header.Set("x-grok-conv-id", "grok-conv-123")
+	c.Set("api_key", &APIKey{ID: 11, Group: &Group{Platform: PlatformGrok}})
+
+	svc := &OpenAIGatewayService{}
+
+	got := svc.GenerateSessionHash(c, nil)
+	require.NotEmpty(t, got)
+	require.Equal(t, got, svc.GenerateSessionHash(c, nil))
+	require.Equal(t, "grok-conv-123", svc.ExtractSessionID(c, nil))
+}
+
+func TestOpenAIGatewayService_GenerateSessionHash_GrokChatWithoutExplicitSignalStaysUnstuck(t *testing.T) {
+	setGinTestMode()
+	svc := &OpenAIGatewayService{}
+	body := []byte(`{"model":"grok-4.5","messages":[{"role":"user","content":"hello grok"}]}`)
+
+	newCtx := func(apiKeyID int64) *gin.Context {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		c.Set("api_key", &APIKey{ID: apiKeyID, Group: &Group{Platform: PlatformGrok}})
+		return c
+	}
+
+	require.Empty(t, svc.GenerateSessionHash(newCtx(11), body))
+	require.Empty(t, svc.GenerateSessionHash(newCtx(12), body))
+}
+
 func TestOpenAIGatewayService_GenerateExplicitSessionHash_SkipsContentFallback(t *testing.T) {
 	setGinTestMode()
 	svc := &OpenAIGatewayService{}

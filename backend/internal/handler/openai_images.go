@@ -693,9 +693,10 @@ func (h *OpenAIGatewayHandler) Videos(c *gin.Context) {
 	requestPlatform := openAICompatibleRequestPlatform(apiKey)
 
 	for {
-		selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
+		selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapabilityAndAPIKey(
 			c.Request.Context(),
 			apiKey.GroupID,
+			apiKey.ID,
 			"",
 			sessionHash,
 			model,

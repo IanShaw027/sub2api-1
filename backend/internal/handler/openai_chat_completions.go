@@ -83,6 +83,13 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	}
 
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
+	reqLog.Debug("openai_chat_completions.request_received",
+		zap.Int("request_body_bytes", len(body)),
+		zap.Bool("has_header_session_id", strings.TrimSpace(c.GetHeader("session_id")) != ""),
+		zap.Bool("has_header_conversation_id", strings.TrimSpace(c.GetHeader("conversation_id")) != ""),
+		zap.Bool("has_header_x_grok_conv_id", strings.TrimSpace(c.GetHeader("x-grok-conv-id")) != ""),
+		zap.Bool("has_prompt_cache_key", strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()) != ""),
+	)
 
 	setOpsRequestContext(c, reqModel, reqStream, body)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
@@ -129,6 +136,10 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 	sessionHash := h.gatewayService.GenerateSessionHash(c, body)
 	promptCacheKey := h.gatewayService.ExtractSessionID(c, body)
+	reqLog.Debug("openai_chat_completions.session_resolution",
+		zap.Bool("session_hash_present", strings.TrimSpace(sessionHash) != ""),
+		zap.Bool("resolved_session_id_present", strings.TrimSpace(promptCacheKey) != ""),
+	)
 	requiredCapability := openAIChatCompletionsRequiredCapability(body)
 
 	maxAccountSwitches := h.maxAccountSwitches
@@ -140,9 +151,10 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 	for {
 		reqLog.Debug("openai_chat_completions.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
-		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
+		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapabilityAndAPIKey(
 			c.Request.Context(),
 			apiKey.GroupID,
+			apiKey.ID,
 			"",
 			sessionHash,
 			reqModel,

@@ -279,6 +279,7 @@ type SystemSettings struct {
 	OpenAIWSDeltaShadowEnabled                             bool
 	OpenAIWSActiveDeltaEnabled                             bool
 	OpenAIWSTempDiagLogsEnabled                            bool
+	OpenAIWSTempDiagLogsRPM                                int
 	OpenAIWSDeltaRuntimeSettingsLoaded                     bool
 	OpenAIOAuthImageBridgeDisableKeepAlives                bool
 	OpenAIOAuthImageBridgeFreshUpstreamClient              bool

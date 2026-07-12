@@ -865,6 +865,7 @@ func TestSettingService_UpdateSettings_OpenAIWSDeltaRuntimeSettings(t *testing.T
 		OpenAIWSDeltaShadowEnabled:                true,
 		OpenAIWSActiveDeltaEnabled:                false,
 		OpenAIWSTempDiagLogsEnabled:               true,
+		OpenAIWSTempDiagLogsRPM:                   25,
 		OpenAIWSDeltaRuntimeSettingsLoaded:        true,
 		OpenAIWSNeutralPrewarmPercent:             20,
 		OpenAIWSSessionIdleTTLSeconds:             120,
@@ -879,6 +880,7 @@ func TestSettingService_UpdateSettings_OpenAIWSDeltaRuntimeSettings(t *testing.T
 	require.Equal(t, "true", repo.updates[SettingKeyOpenAIWSDeltaShadowEnabled])
 	require.Equal(t, "false", repo.updates[SettingKeyOpenAIWSActiveDeltaEnabled])
 	require.Equal(t, "true", repo.updates[SettingKeyOpenAIWSTempDiagLogsEnabled])
+	require.Equal(t, "25", repo.updates[SettingKeyOpenAIWSTempDiagLogsRPM])
 	require.True(t, openAIWSDeltaShadowEnabled())
 	require.False(t, openAIWSActiveDeltaEnabled(), "active-delta should follow runtime DB-backed setting without restart")
 	require.False(t, shouldSuppressOpenAIWSTemporaryDiagnosticLog("temporary_diag=sample"))
@@ -896,6 +898,7 @@ func TestSettingService_UpdateSettings_OpenAIWSDeltaRuntimeSettingsDefaultTrueOn
 	require.Equal(t, "true", repo.updates[SettingKeyOpenAIWSDeltaShadowEnabled])
 	require.Equal(t, "true", repo.updates[SettingKeyOpenAIWSActiveDeltaEnabled])
 	require.Equal(t, "false", repo.updates[SettingKeyOpenAIWSTempDiagLogsEnabled])
+	require.Equal(t, "60", repo.updates[SettingKeyOpenAIWSTempDiagLogsRPM])
 	require.True(t, openAIWSDeltaShadowEnabled())
 	require.True(t, openAIWSActiveDeltaEnabled())
 	require.True(t, shouldSuppressOpenAIWSTemporaryDiagnosticLog("temporary_diag=sample"))
@@ -910,6 +913,7 @@ func TestSettingService_LoadOpenAIWSDeltaRuntimeSettingsInitializesCache(t *test
 			SettingKeyOpenAIWSDeltaShadowEnabled:  "true",
 			SettingKeyOpenAIWSActiveDeltaEnabled:  "false",
 			SettingKeyOpenAIWSTempDiagLogsEnabled: "true",
+			SettingKeyOpenAIWSTempDiagLogsRPM:     "15",
 		},
 	}
 	svc := NewSettingService(repo, &config.Config{})
@@ -918,6 +922,7 @@ func TestSettingService_LoadOpenAIWSDeltaRuntimeSettingsInitializesCache(t *test
 	require.True(t, openAIWSDeltaShadowEnabled())
 	require.False(t, openAIWSActiveDeltaEnabled())
 	require.False(t, shouldSuppressOpenAIWSTemporaryDiagnosticLog("temporary_diag=sample"))
+	require.Equal(t, 15, openAIWSTemporaryDiagnosticLogsRPM())
 }
 
 func TestSettingService_UpdateSettings_AntigravityUserAgentVersion(t *testing.T) {
