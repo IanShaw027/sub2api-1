@@ -63,7 +63,10 @@ func (s *authCacheInvalidatorStub) InvalidateAuthCacheByGroupID(ctx context.Cont
 }
 
 func TestAdminService_UpdateUserBalance_InvalidatesAuthCache(t *testing.T) {
-	baseRepo := &userRepoStub{user: &User{ID: 7, Balance: 10}}
+	baseRepo := &userRepoStub{
+		user:   &User{ID: 7, Balance: 10},
+		avatar: &UserAvatar{StorageProvider: "inline", URL: "data:image/png;base64,YXZhdGFy", ContentType: "image/png"},
+	}
 	repo := &balanceUserRepoStub{userRepoStub: baseRepo}
 	redeemRepo := &balanceRedeemRepoStub{redeemRepoStub: &redeemRepoStub{}}
 	invalidator := &authCacheInvalidatorStub{}
@@ -73,8 +76,10 @@ func TestAdminService_UpdateUserBalance_InvalidatesAuthCache(t *testing.T) {
 		authCacheInvalidator: invalidator,
 	}
 
-	_, err := svc.UpdateUserBalance(context.Background(), 7, 5, "add", "")
+	updated, err := svc.UpdateUserBalance(context.Background(), 7, 5, "add", "")
 	require.NoError(t, err)
+	require.Equal(t, baseRepo.avatar.URL, updated.AvatarURL)
+	require.Equal(t, []int64{7}, baseRepo.avatarLookups)
 	require.Equal(t, []int64{7}, invalidator.userIDs)
 	require.Len(t, redeemRepo.created, 1)
 }

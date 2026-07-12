@@ -286,7 +286,7 @@ func TestSetAvatar_StoresDataURLInSharedMedia(t *testing.T) {
 	require.Equal(t, avatar.URL, repo.upsertAvatarArg[0].URL)
 }
 
-func TestSetAvatar_SkipsGeneratedThumbnailForOversizedImageBomb(t *testing.T) {
+func TestSetAvatar_RejectsOversizedImageBomb(t *testing.T) {
 	raw := buildUserServiceMediaAvatarOversizedPNGHeader()
 	dataURL := "data:image/png;base64," + encodeBase64(raw)
 	repo := &userServiceMediaAvatarRepo{
@@ -296,15 +296,11 @@ func TestSetAvatar_SkipsGeneratedThumbnailForOversizedImageBomb(t *testing.T) {
 	svc := NewUserService(repo, nil, nil, nil, mediaSvc)
 
 	avatar, err := svc.SetAvatar(context.Background(), 7, dataURL)
-	require.NoError(t, err)
-	require.NotNil(t, avatar)
-	require.Len(t, repo.upsertAvatarArg, 1)
-	require.Len(t, store.uploadedObjectKeys, 1, "oversized thumbnail source should not upload generated thumbnail")
-	require.Len(t, mediaRepo.assets, 1)
-	for _, asset := range mediaRepo.assets {
-		require.Empty(t, asset.ThumbnailObjectKey)
-		require.Empty(t, asset.ThumbnailMIMEType)
-	}
+	require.ErrorIs(t, err, ErrAvatarInvalid)
+	require.Nil(t, avatar)
+	require.Empty(t, repo.upsertAvatarArg)
+	require.Empty(t, store.uploadedObjectKeys)
+	require.Empty(t, mediaRepo.assets)
 }
 
 func TestValidateMediaThumbnailSourceRejectsOversizedPixelHeader(t *testing.T) {

@@ -14,6 +14,9 @@ import (
 
 type userRepoStub struct {
 	user          *User
+	avatar        *UserAvatar
+	avatarErr     error
+	avatarLookups []int64
 	getErr        error
 	createErr     error
 	deleteErr     error
@@ -103,7 +106,15 @@ func (s *userRepoStub) EnsureUserCanDeleteBatchImageState(context.Context, int64
 }
 
 func (s *userRepoStub) GetUserAvatar(ctx context.Context, userID int64) (*UserAvatar, error) {
-	panic("unexpected GetUserAvatar call")
+	s.avatarLookups = append(s.avatarLookups, userID)
+	if s.avatarErr != nil {
+		return nil, s.avatarErr
+	}
+	if s.avatar == nil {
+		return nil, nil
+	}
+	clone := *s.avatar
+	return &clone, nil
 }
 
 func (s *userRepoStub) UpsertUserAvatar(ctx context.Context, userID int64, input UpsertUserAvatarInput) (*UserAvatar, error) {

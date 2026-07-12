@@ -1023,11 +1023,7 @@ func (s *adminServiceImpl) GetUser(ctx context.Context, id int64) (*User, error)
 	if err != nil {
 		return nil, err
 	}
-	if avatar, avatarErr := s.userRepo.GetUserAvatar(ctx, id); avatarErr == nil {
-		applyUserAvatar(user, avatar)
-	} else {
-		logger.LegacyPrintf("service.admin", "failed to load user avatar: user_id=%d err=%v", id, avatarErr)
-	}
+	s.populateUserAvatarBestEffort(ctx, user)
 	lastUsedAt, latestErr := s.userRepo.GetLatestUsedAtByUserID(ctx, id)
 	if latestErr != nil {
 		logger.LegacyPrintf("service.admin", "failed to load user last_used_at: user_id=%d err=%v", id, latestErr)
@@ -1051,12 +1047,20 @@ func (s *adminServiceImpl) GetUserIncludeDeleted(ctx context.Context, id int64) 
 	if err != nil {
 		return nil, err
 	}
-	if avatar, avatarErr := s.userRepo.GetUserAvatar(ctx, id); avatarErr == nil {
-		applyUserAvatar(user, avatar)
-	} else {
-		logger.LegacyPrintf("service.admin", "failed to load deleted user avatar: user_id=%d err=%v", id, avatarErr)
-	}
+	s.populateUserAvatarBestEffort(ctx, user)
 	return user, nil
+}
+
+func (s *adminServiceImpl) populateUserAvatarBestEffort(ctx context.Context, user *User) {
+	if s == nil || s.userRepo == nil || user == nil || user.ID <= 0 {
+		return
+	}
+	avatar, err := s.userRepo.GetUserAvatar(ctx, user.ID)
+	if err != nil {
+		logger.LegacyPrintf("service.admin", "failed to load user avatar: user_id=%d err=%v", user.ID, err)
+		return
+	}
+	applyUserAvatar(user, avatar)
 }
 
 func (s *adminServiceImpl) GetUserIdentitySummaries(ctx context.Context, userID int64, user *User) (UserIdentitySummarySet, error) {
@@ -1276,22 +1280,23 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 		code, err := GenerateRedeemCode()
 		if err != nil {
 			logger.LegacyPrintf("service.admin", "failed to generate adjustment redeem code: %v", err)
-			return user, nil
-		}
-		adjustmentRecord := &RedeemCode{
-			Code:   code,
-			Type:   AdjustmentTypeAdminConcurrency,
-			Value:  float64(concurrencyDiff),
-			Status: StatusUsed,
-			UsedBy: &user.ID,
-		}
-		now := time.Now()
-		adjustmentRecord.UsedAt = &now
-		if err := s.redeemCodeRepo.Create(ctx, adjustmentRecord); err != nil {
-			logger.LegacyPrintf("service.admin", "failed to create concurrency adjustment redeem code: %v", err)
+		} else {
+			adjustmentRecord := &RedeemCode{
+				Code:   code,
+				Type:   AdjustmentTypeAdminConcurrency,
+				Value:  float64(concurrencyDiff),
+				Status: StatusUsed,
+				UsedBy: &user.ID,
+			}
+			now := time.Now()
+			adjustmentRecord.UsedAt = &now
+			if err := s.redeemCodeRepo.Create(ctx, adjustmentRecord); err != nil {
+				logger.LegacyPrintf("service.admin", "failed to create concurrency adjustment redeem code: %v", err)
+			}
 		}
 	}
 
+	s.populateUserAvatarBestEffort(ctx, user)
 	return user, nil
 }
 
@@ -1490,25 +1495,25 @@ func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, 
 		code, err := GenerateRedeemCode()
 		if err != nil {
 			logger.LegacyPrintf("service.admin", "failed to generate adjustment redeem code: %v", err)
-			return user, nil
-		}
+		} else {
+			adjustmentRecord := &RedeemCode{
+				Code:   code,
+				Type:   AdjustmentTypeAdminBalance,
+				Value:  balanceDiff,
+				Status: StatusUsed,
+				UsedBy: &user.ID,
+				Notes:  notes,
+			}
+			now := time.Now()
+			adjustmentRecord.UsedAt = &now
 
-		adjustmentRecord := &RedeemCode{
-			Code:   code,
-			Type:   AdjustmentTypeAdminBalance,
-			Value:  balanceDiff,
-			Status: StatusUsed,
-			UsedBy: &user.ID,
-			Notes:  notes,
-		}
-		now := time.Now()
-		adjustmentRecord.UsedAt = &now
-
-		if err := s.redeemCodeRepo.Create(ctx, adjustmentRecord); err != nil {
-			logger.LegacyPrintf("service.admin", "failed to create balance adjustment redeem code: %v", err)
+			if err := s.redeemCodeRepo.Create(ctx, adjustmentRecord); err != nil {
+				logger.LegacyPrintf("service.admin", "failed to create balance adjustment redeem code: %v", err)
+			}
 		}
 	}
 
+	s.populateUserAvatarBestEffort(ctx, user)
 	return user, nil
 }
 

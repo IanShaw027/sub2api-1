@@ -408,6 +408,34 @@ func TestUserHandlerGetProfileReturnsLegacyCompatibilityFields(t *testing.T) {
 	require.Equal(t, "linuxdo", usernameSource["source"])
 }
 
+func TestUserProfileResponseIncludesDingTalkBindingAndProfileSources(t *testing.T) {
+	avatarURL := "https://cdn.example.com/dingtalk.png"
+	user := &service.User{
+		ID:        41,
+		Email:     "dingtalk-user@dingtalk-connect.invalid",
+		Username:  "DingTalk Alice",
+		AvatarURL: avatarURL,
+	}
+	identities := service.UserIdentitySummarySet{
+		DingTalk: service.UserIdentitySummary{
+			Provider:    "dingtalk",
+			Bound:       true,
+			DisplayName: "DingTalk Alice",
+			AvatarURL:   avatarURL,
+		},
+		GitHub: service.UserIdentitySummary{Provider: "github", CanBind: true},
+		Google: service.UserIdentitySummary{Provider: "google", CanBind: true},
+	}
+
+	profile := userProfileResponseFromService(user, identities)
+	require.True(t, profile.DingTalkBound)
+	require.True(t, profile.AuthBindings["dingtalk"].Bound)
+	require.Equal(t, "github", profile.AuthBindings["github"].Provider)
+	require.Equal(t, "google", profile.AuthBindings["google"].Provider)
+	require.Equal(t, "dingtalk", profile.AvatarSource.Provider)
+	require.Equal(t, "dingtalk", profile.UsernameSource.Provider)
+}
+
 func TestUserHandlerGetProfileDoesNotInferEditedProfileSourcesWithoutMatchingIdentityMetadata(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

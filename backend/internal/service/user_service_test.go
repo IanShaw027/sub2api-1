@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -557,6 +558,98 @@ func TestGetProfileIdentitySummaries_IncludesGitHubAndGoogleBindings(t *testing.
 	require.Equal(t, "Google Alice", summaries.Google.DisplayName)
 }
 
+func TestGetProfileIdentitySummaries_IncludesDingTalkAndCountsItAsAlternativeLogin(t *testing.T) {
+	repo := &mockUserRepo{
+		getByIDUser: &User{
+			ID:           81,
+			Email:        "dingtalk-user@dingtalk-connect.invalid",
+			SignupSource: "dingtalk",
+		},
+		identities: []UserAuthIdentityRecord{
+			{
+				ProviderType:    "dingtalk",
+				ProviderKey:     "dingtalk",
+				ProviderSubject: "dingtalk-subject-81",
+				Metadata: map[string]any{
+					"display_name": "DingTalk Alice",
+				},
+			},
+			{
+				ProviderType:    "github",
+				ProviderKey:     "github",
+				ProviderSubject: "github-subject-81",
+			},
+		},
+	}
+	svc := NewUserService(repo, nil, nil, nil)
+
+	summaries, err := svc.GetProfileIdentitySummaries(context.Background(), 81, repo.getByIDUser)
+	require.NoError(t, err)
+
+	raw, err := json.Marshal(summaries)
+	require.NoError(t, err)
+	var byProvider map[string]UserIdentitySummary
+	require.NoError(t, json.Unmarshal(raw, &byProvider))
+	dingtalk, ok := byProvider["dingtalk"]
+	require.True(t, ok)
+	require.True(t, dingtalk.Bound)
+	require.Equal(t, "DingTalk Alice", dingtalk.DisplayName)
+	require.True(t, dingtalk.CanUnbind)
+	require.True(t, summaries.GitHub.CanUnbind)
+}
+
+func TestGetProfileIdentitySummaries_AppliesDingTalkAvailabilityGate(t *testing.T) {
+	testCases := []struct {
+		name       string
+		enabled    string
+		canBind    bool
+		expectPath string
+	}{
+		{
+			name:       "enabled",
+			enabled:    "true",
+			canBind:    true,
+			expectPath: "/api/v1/auth/oauth/dingtalk/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile",
+		},
+		{
+			name:    "disabled",
+			enabled: "false",
+			canBind: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &mockUserRepo{
+				getByIDUser: &User{ID: 82, Email: "alice@example.com"},
+				identities: []UserAuthIdentityRecord{
+					{
+						ProviderType:    "email",
+						ProviderKey:     "email",
+						ProviderSubject: "alice@example.com",
+					},
+				},
+			}
+			settings := &mockUserSettingRepo{values: map[string]string{
+				SettingKeyDingTalkConnectEnabled: tc.enabled,
+			}}
+			svc := NewUserService(repo, settings, nil, nil)
+
+			summaries, err := svc.GetProfileIdentitySummaries(context.Background(), 82, repo.getByIDUser)
+			require.NoError(t, err)
+			raw, err := json.Marshal(summaries)
+			require.NoError(t, err)
+			var byProvider map[string]UserIdentitySummary
+			require.NoError(t, json.Unmarshal(raw, &byProvider))
+			dingtalk, ok := byProvider["dingtalk"]
+			require.True(t, ok)
+			require.Equal(t, "dingtalk", dingtalk.Provider)
+			require.Equal(t, tc.canBind, dingtalk.CanBind)
+			require.Equal(t, tc.expectPath, dingtalk.BindStartPath)
+		})
+	}
+}
+
 func TestUnbindUserAuthProviderRejectsLastRemainingLoginMethod(t *testing.T) {
 	repo := &mockUserRepo{
 		getByIDUser: &User{
@@ -909,6 +1002,44 @@ func TestPrepareIdentityBindingStart_AllowsGitHubAndGoogleProviders(t *testing.T
 	}
 }
 
+func TestPrepareIdentityBindingStart_NormalizesDingTalkAndBuildsBindURL(t *testing.T) {
+	repo := &mockUserRepo{
+		getByIDUser: &User{
+			ID:       191,
+			Email:    "bindable@example.com",
+			Username: "bindable-user",
+			Role:     RoleUser,
+			Status:   StatusActive,
+		},
+		identities: []UserAuthIdentityRecord{
+			{
+				ProviderType:    "email",
+				ProviderKey:     "email",
+				ProviderSubject: "bindable@example.com",
+			},
+		},
+	}
+	settings := &mockUserSettingRepo{values: map[string]string{
+		SettingKeyDingTalkConnectEnabled: "true",
+	}}
+	svc := NewUserService(repo, settings, nil, nil)
+
+	result, err := svc.PrepareIdentityBindingStart(context.Background(), StartUserIdentityBindingRequest{
+		UserID:     191,
+		Provider:   "  DingTalk  ",
+		RedirectTo: "/settings/profile",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "dingtalk", result.Provider)
+	require.Equal(
+		t,
+		"/api/v1/auth/oauth/dingtalk/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile",
+		result.AuthorizeURL,
+	)
+}
+
 func TestUnbindUserAuthProvider_NormalizesGitHubAndGoogleProviders(t *testing.T) {
 	repo := &mockUserRepo{
 		getByIDUser: &User{
@@ -1013,8 +1144,15 @@ func TestNewUserService_FieldsAssignment(t *testing.T) {
 	require.Equal(t, cache, svc.billingCache)
 }
 
+func buildSmallUserAvatarPNG(t *testing.T) []byte {
+	t.Helper()
+	var encoded bytes.Buffer
+	require.NoError(t, png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 2, 2))))
+	return encoded.Bytes()
+}
+
 func TestUpdateProfile_StoresInlineAvatarWithinLimit(t *testing.T) {
-	raw := []byte("small-avatar")
+	raw := buildSmallUserAvatarPNG(t)
 	dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(raw)
 	repo := &mockUserRepo{
 		getByIDUser: &User{
@@ -1040,6 +1178,23 @@ func TestUpdateProfile_StoresInlineAvatarWithinLimit(t *testing.T) {
 	require.Equal(t, "image/png", updated.AvatarMIME)
 	require.Equal(t, len(raw), updated.AvatarByteSize)
 	require.NotEmpty(t, updated.AvatarSHA256)
+}
+
+func TestValidateUserAvatarRejectsUnsupportedAndMalformedInlineImages(t *testing.T) {
+	tests := []string{
+		"data:image/png;base64,",
+		"data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("not-an-image")),
+		"data:image/svg+xml;base64," + base64.StdEncoding.EncodeToString([]byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`)),
+	}
+	for _, avatar := range tests {
+		require.Error(t, ValidateUserAvatar(avatar))
+	}
+}
+
+func TestValidateUserAvatarAcceptsValidRasterImage(t *testing.T) {
+	raw := buildSmallUserAvatarPNG(t)
+	avatar := "data:image/png;base64," + base64.StdEncoding.EncodeToString(raw)
+	require.NoError(t, ValidateUserAvatar(avatar))
 }
 
 func TestUpdateProfile_CompressesInlineAvatarToTwentyKilobytes(t *testing.T) {
@@ -1115,9 +1270,10 @@ func TestUpdateProfile_RejectsInlineAvatarOverLimit(t *testing.T) {
 }
 
 func TestUpdateProfile_StoresRemoteAvatarURL(t *testing.T) {
+	raw := buildSmallUserAvatarPNG(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
-		_, _ = w.Write([]byte("remote-avatar"))
+		_, _ = w.Write(raw)
 	}))
 	defer server.Close()
 

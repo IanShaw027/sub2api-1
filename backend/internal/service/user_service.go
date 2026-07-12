@@ -24,6 +24,7 @@ import (
 	"time"
 
 	xdraw "golang.org/x/image/draw"
+	_ "golang.org/x/image/webp"
 )
 
 var (
@@ -52,6 +53,7 @@ const (
 	maxNotifyEmails      = 3 // Maximum number of notification emails per user
 	maxInlineAvatarBytes = 100 * 1024
 	targetAvatarBytes    = 20 * 1024
+	maxAvatarPixels      = 16_777_216
 
 	// User-level rate limiting for notify email verification codes
 	notifyCodeUserRateLimit  = 5
@@ -165,12 +167,13 @@ type UserIdentitySummary struct {
 }
 
 type UserIdentitySummarySet struct {
-	Email   UserIdentitySummary `json:"email"`
-	LinuxDo UserIdentitySummary `json:"linuxdo"`
-	OIDC    UserIdentitySummary `json:"oidc"`
-	WeChat  UserIdentitySummary `json:"wechat"`
-	GitHub  UserIdentitySummary `json:"github"`
-	Google  UserIdentitySummary `json:"google"`
+	Email    UserIdentitySummary `json:"email"`
+	LinuxDo  UserIdentitySummary `json:"linuxdo"`
+	OIDC     UserIdentitySummary `json:"oidc"`
+	WeChat   UserIdentitySummary `json:"wechat"`
+	DingTalk UserIdentitySummary `json:"dingtalk"`
+	GitHub   UserIdentitySummary `json:"github"`
+	Google   UserIdentitySummary `json:"google"`
 }
 
 type StartUserIdentityBindingRequest struct {
@@ -302,12 +305,13 @@ func (s *UserService) GetProfileIdentitySummaries(ctx context.Context, userID in
 	}
 
 	summaries := UserIdentitySummarySet{
-		Email:   s.buildEmailIdentitySummary(user, records),
-		LinuxDo: s.buildProviderIdentitySummary("linuxdo", user, records),
-		OIDC:    s.buildProviderIdentitySummary("oidc", user, records),
-		WeChat:  s.buildProviderIdentitySummary("wechat", user, records),
-		GitHub:  s.buildProviderIdentitySummary("github", user, records),
-		Google:  s.buildProviderIdentitySummary("google", user, records),
+		Email:    s.buildEmailIdentitySummary(user, records),
+		LinuxDo:  s.buildProviderIdentitySummary("linuxdo", user, records),
+		OIDC:     s.buildProviderIdentitySummary("oidc", user, records),
+		WeChat:   s.buildProviderIdentitySummary("wechat", user, records),
+		DingTalk: s.buildProviderIdentitySummary("dingtalk", user, records),
+		GitHub:   s.buildProviderIdentitySummary("github", user, records),
+		Google:   s.buildProviderIdentitySummary("google", user, records),
 	}
 
 	s.applyExplicitProviderAvailability(ctx, &summaries)
@@ -329,6 +333,7 @@ func (s *UserService) applyExplicitProviderAvailability(ctx context.Context, sum
 		SettingKeyWeChatConnectMPEnabled,
 		SettingKeyWeChatConnectMobileEnabled,
 		SettingKeyWeChatConnectMode,
+		SettingKeyDingTalkConnectEnabled,
 	})
 	if err != nil {
 		return
@@ -336,6 +341,9 @@ func (s *UserService) applyExplicitProviderAvailability(ctx context.Context, sum
 
 	if raw, ok := settings[SettingKeyLinuxDoConnectEnabled]; ok && strings.TrimSpace(raw) != "" && raw != "true" {
 		disableIdentityBindAction(&summaries.LinuxDo)
+	}
+	if raw, ok := settings[SettingKeyDingTalkConnectEnabled]; ok && strings.TrimSpace(raw) != "" && raw != "true" {
+		disableIdentityBindAction(&summaries.DingTalk)
 	}
 	if raw, ok := settings[SettingKeyOIDCConnectEnabled]; ok && strings.TrimSpace(raw) != "" && raw != "true" {
 		disableIdentityBindAction(&summaries.OIDC)
@@ -453,6 +461,8 @@ func identitySummaryForProvider(summaries UserIdentitySummarySet, provider strin
 		return summaries.OIDC
 	case "wechat":
 		return summaries.WeChat
+	case "dingtalk":
+		return summaries.DingTalk
 	case "github":
 		return summaries.GitHub
 	case "google":
@@ -662,6 +672,10 @@ func (s *UserService) setAvatarViaMedia(ctx context.Context, userID int64, raw s
 	if err != nil {
 		return nil, nil, err
 	}
+	contentType, err = validateUserAvatarImage(body)
+	if err != nil {
+		return nil, nil, err
+	}
 	if len(body) > targetAvatarBytes {
 		body, contentType, err = compressInlineAvatar(body)
 		if err != nil {
@@ -792,12 +806,18 @@ func normalizeInlineUserAvatarInput(raw string) (UpsertUserAvatarInput, error) {
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
+	if err != nil || len(decoded) == 0 {
 		return UpsertUserAvatarInput{}, ErrAvatarInvalid
 	}
 	if len(decoded) > maxInlineAvatarBytes {
 		return UpsertUserAvatarInput{}, ErrAvatarTooLarge
 	}
+
+	contentType, err = validateUserAvatarImage(decoded)
+	if err != nil {
+		return UpsertUserAvatarInput{}, err
+	}
+	raw = "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(decoded)
 
 	if len(decoded) > targetAvatarBytes {
 		decoded, contentType, err = compressInlineAvatar(decoded)
@@ -815,6 +835,37 @@ func normalizeInlineUserAvatarInput(raw string) (UpsertUserAvatarInput, error) {
 		ByteSize:        len(decoded),
 		SHA256:          hex.EncodeToString(sum[:]),
 	}, nil
+}
+
+func validateUserAvatarImage(decoded []byte) (string, error) {
+	if len(decoded) == 0 {
+		return "", ErrAvatarInvalid
+	}
+	config, format, err := image.DecodeConfig(bytes.NewReader(decoded))
+	if err != nil || config.Width <= 0 || config.Height <= 0 {
+		return "", ErrAvatarInvalid
+	}
+	if int64(config.Width) > maxAvatarPixels/int64(config.Height) {
+		return "", ErrAvatarInvalid
+	}
+	contentType := ""
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "png":
+		contentType = "image/png"
+	case "jpeg":
+		contentType = "image/jpeg"
+	case "gif":
+		contentType = "image/gif"
+	case "webp":
+		contentType = "image/webp"
+	default:
+		return "", ErrAvatarNotImage
+	}
+	decodedImage, decodedFormat, err := image.Decode(bytes.NewReader(decoded))
+	if err != nil || decodedImage == nil || decodedImage.Bounds().Empty() || !strings.EqualFold(decodedFormat, format) {
+		return "", ErrAvatarInvalid
+	}
+	return contentType, nil
 }
 
 func compressInlineAvatar(decoded []byte) ([]byte, string, error) {
@@ -940,7 +991,7 @@ func (s *UserService) canUnbindProvider(provider string, user *User, records []U
 		return true
 	}
 
-	for _, candidate := range []string{"linuxdo", "oidc", "wechat", "github", "google"} {
+	for _, candidate := range []string{"linuxdo", "oidc", "wechat", "dingtalk", "github", "google"} {
 		if candidate == provider {
 			continue
 		}
@@ -1016,6 +1067,8 @@ func buildUserIdentityBindAuthorizeURL(provider, redirectTo string) (string, err
 		path = "/api/v1/auth/oauth/oidc/bind/start"
 	case "wechat":
 		path = "/api/v1/auth/oauth/wechat/bind/start"
+	case "dingtalk":
+		path = "/api/v1/auth/oauth/dingtalk/bind/start"
 	case "github":
 		path = "/api/v1/auth/oauth/github/bind/start"
 	case "google":
@@ -1038,6 +1091,8 @@ func normalizeUserIdentityProvider(provider string) string {
 		return "oidc"
 	case "wechat":
 		return "wechat"
+	case "dingtalk":
+		return "dingtalk"
 	case "github":
 		return "github"
 	case "google":

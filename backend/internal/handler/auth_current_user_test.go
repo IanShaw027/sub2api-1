@@ -40,6 +40,15 @@ func TestAuthHandlerGetCurrentUserReturnsProfileCompatibilityFields(t *testing.T
 					"avatar_url": "https://cdn.example.com/linuxdo.png",
 				},
 			},
+			{
+				ProviderType:    "dingtalk",
+				ProviderKey:     "dingtalk",
+				ProviderSubject: "dingtalk-subject-31",
+				VerifiedAt:      &verifiedAt,
+				Metadata: map[string]any{
+					"display_name": "DingTalk User",
+				},
+			},
 		},
 	}
 
@@ -66,6 +75,7 @@ func TestAuthHandlerGetCurrentUserReturnsProfileCompatibilityFields(t *testing.T
 	require.Equal(t, 0, resp.Code)
 	require.Equal(t, true, resp.Data["email_bound"])
 	require.Equal(t, true, resp.Data["linuxdo_bound"])
+	require.Equal(t, true, resp.Data["dingtalk_bound"])
 	require.Equal(t, "https://cdn.example.com/linuxdo.png", resp.Data["avatar_url"])
 	require.NotEmpty(t, resp.Data["last_active_at"])
 
@@ -74,6 +84,9 @@ func TestAuthHandlerGetCurrentUserReturnsProfileCompatibilityFields(t *testing.T
 	linuxdoBinding, ok := authBindings["linuxdo"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, true, linuxdoBinding["bound"])
+	dingtalkBinding, ok := authBindings["dingtalk"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, dingtalkBinding["bound"])
 
 	avatarSource, ok := resp.Data["avatar_source"].(map[string]any)
 	require.True(t, ok)

@@ -31,7 +31,10 @@ func (s *rpmUserRepoStub) Update(_ context.Context, user *User) error {
 }
 
 func TestAdminService_UpdateUser_InvalidatesAuthCacheOnRPMLimitChange(t *testing.T) {
-	base := &userRepoStub{user: &User{ID: 42, Email: "u@example.com", RPMLimit: 10}}
+	base := &userRepoStub{
+		user:   &User{ID: 42, Email: "u@example.com", RPMLimit: 10},
+		avatar: &UserAvatar{StorageProvider: "remote_url", URL: "https://cdn.example.com/u.png", ContentType: "image/png"},
+	}
 	repo := &rpmUserRepoStub{userRepoStub: base}
 	invalidator := &authCacheInvalidatorStub{}
 	svc := &adminServiceImpl{
@@ -47,6 +50,8 @@ func TestAdminService_UpdateUser_InvalidatesAuthCacheOnRPMLimitChange(t *testing
 	require.NoError(t, err)
 	require.NotNil(t, updated)
 	require.Equal(t, 60, updated.RPMLimit)
+	require.Equal(t, base.avatar.URL, updated.AvatarURL)
+	require.Equal(t, []int64{42}, base.avatarLookups)
 	require.Equal(t, []int64{42}, invalidator.userIDs, "仅修改 RPMLimit 也应失效 API Key 认证缓存")
 }
 
