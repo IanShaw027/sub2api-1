@@ -566,14 +566,76 @@ func extractCCStreamUsage(payload string) *OpenAIUsage {
 	if !usageResult.Exists() || !usageResult.IsObject() {
 		return nil
 	}
-	u := OpenAIUsage{
-		InputTokens:  int(gjson.Get(payload, "usage.prompt_tokens").Int()),
-		OutputTokens: int(gjson.Get(payload, "usage.completion_tokens").Int()),
-	}
-	if cached := gjson.Get(payload, "usage.prompt_tokens_details.cached_tokens"); cached.Exists() {
-		u.CacheReadInputTokens = int(cached.Int())
-	}
+	u := openAIRawChatUsageFromGJSON(usageResult)
 	return &u
+}
+
+// openAIRawChatUsageFromGJSON intentionally accepts partial usage objects.
+// OpenAI-compatible providers sometimes omit completion_tokens (or the input
+// counterpart) on interrupted/zero-output responses; the legacy raw path
+// preserved the fields that were present and treated the rest as zero.
+func openAIRawChatUsageFromGJSON(value gjson.Result) OpenAIUsage {
+	readInt := func(paths ...string) int {
+		for _, path := range paths {
+			node := value.Get(path)
+			if node.Exists() {
+				return int(node.Int())
+			}
+		}
+		return 0
+	}
+	readNonNegativeInt := func(paths ...string) (int, bool) {
+		for _, path := range paths {
+			node := value.Get(path)
+			if node.Exists() {
+				return max(int(node.Int()), 0), true
+			}
+		}
+		return 0, false
+	}
+	cacheRead, cacheReadExists := readNonNegativeInt(
+		"prompt_tokens_details.cached_tokens",
+		"input_tokens_details.cached_tokens",
+	)
+	if !cacheReadExists {
+		cacheRead = firstPositiveGJSONInt(
+			value.Get("cache_read_input_tokens"),
+			value.Get("cache_read_tokens"),
+			value.Get("cached_tokens"),
+		)
+	}
+	cacheCreation, cacheCreationExists := readNonNegativeInt(
+		"prompt_tokens_details.cache_write_tokens",
+		"prompt_tokens_details.cache_creation_tokens",
+		"input_tokens_details.cache_write_tokens",
+		"input_tokens_details.cache_creation_tokens",
+	)
+	if !cacheCreationExists {
+		cacheCreation = firstPositiveGJSONInt(
+			value.Get("cache_write_tokens"),
+			value.Get("cache_creation_input_tokens"),
+			value.Get("cache_write_input_tokens"),
+			value.Get("cache_creation_tokens"),
+		)
+	}
+	return OpenAIUsage{
+		InputTokens:              readInt("prompt_tokens", "input_tokens"),
+		OutputTokens:             readInt("completion_tokens", "output_tokens"),
+		CacheCreationInputTokens: cacheCreation,
+		CacheReadInputTokens:     cacheRead,
+		ImageOutputTokens:        readInt("completion_tokens_details.image_tokens", "output_tokens_details.image_tokens"),
+	}
+}
+
+func extractRawChatCompletionsUsageFromJSONBytes(body []byte) (OpenAIUsage, bool) {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return OpenAIUsage{}, false
+	}
+	usage := gjson.GetBytes(body, "usage")
+	if !usage.Exists() || !usage.IsObject() {
+		return OpenAIUsage{}, false
+	}
+	return openAIRawChatUsageFromGJSON(usage), true
 }
 
 // bufferRawChatCompletions 透传上游 CC 非流式 JSON 响应。
@@ -597,16 +659,9 @@ func (s *OpenAIGatewayService) bufferRawChatCompletions(
 		}
 		return nil, fmt.Errorf("read upstream body: %w", err)
 	}
-	var ccResp apicompat.ChatCompletionsResponse
 	var usage OpenAIUsage
-	if err := json.Unmarshal(respBody, &ccResp); err == nil && ccResp.Usage != nil {
-		usage = OpenAIUsage{
-			InputTokens:  ccResp.Usage.PromptTokens,
-			OutputTokens: ccResp.Usage.CompletionTokens,
-		}
-		if ccResp.Usage.PromptTokensDetails != nil {
-			usage.CacheReadInputTokens = ccResp.Usage.PromptTokensDetails.CachedTokens
-		}
+	if parsedUsage, ok := extractRawChatCompletionsUsageFromJSONBytes(respBody); ok {
+		usage = parsedUsage
 	}
 	_ = markOpsCyberPolicyIfDetected(c, respBody, http.StatusOK, usage.InputTokens, usage.OutputTokens)
 

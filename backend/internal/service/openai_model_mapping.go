@@ -44,6 +44,52 @@ func resolveOpenAIForwardModelWithSettingsAndSelectedFallback(ctx context.Contex
 	return mappedModel
 }
 
+// OpenAI OAuth accounts without an explicit model mapping should not absorb
+// model families that Codex cannot serve. Unknown aliases remain fail-open so
+// channel-level mappings can still rewrite them after account selection.
+var openAIOAuthForeignModelPrefixes = []string{
+	"deepseek-",
+	"glm-",
+	"kimi-",
+	"moonshot-",
+	"qwen-",
+	"qwen2-",
+	"qwen2.5-",
+	"qwen3-",
+	"qwen4-",
+	"qwq-",
+	"minimax-",
+	"gemini-",
+	"gemma-",
+	"grok-",
+	"doubao-",
+	"hunyuan-",
+	"llama-",
+	"llama2-",
+	"llama3-",
+	"meta-llama",
+	"mistral-",
+	"mixtral-",
+	"baichuan-",
+	"ernie-",
+	"step-",
+	"seed-",
+	"yi-",
+}
+
+func isOpenAIOAuthServableModel(requestedModel string) bool {
+	model := strings.ToLower(lastOpenAIModelSegment(requestedModel))
+	if model == "" {
+		return true
+	}
+	for _, prefix := range openAIOAuthForeignModelPrefixes {
+		if strings.HasPrefix(model, prefix) {
+			return false
+		}
+	}
+	return true
+}
+
 func resolveOpenAICompactFallbackUpstreamModel(ctx context.Context, settingService *SettingService, account *Account, fallbackModel string) string {
 	fallbackModel = strings.TrimSpace(fallbackModel)
 	if fallbackModel == "" {

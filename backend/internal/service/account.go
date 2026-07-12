@@ -1053,33 +1053,6 @@ func (a *Account) IsModelSupported(requestedModel string) bool {
 	return normalized != requestedModel && mappingSupportsRequestedModel(mapping, normalized)
 }
 
-func isOpenAIOAuthServableModel(model string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(model))
-	if normalized == "" {
-		return true
-	}
-	if idx := strings.LastIndex(normalized, "/"); idx >= 0 {
-		normalized = strings.TrimSpace(normalized[idx+1:])
-	}
-	blockedPrefixes := []string{
-		"deepseek-",
-		"glm-",
-		"kimi-",
-		"moonshot-",
-		"gemini-",
-		"grok-",
-		"qwen",
-		"minimax-",
-		"llama-",
-	}
-	for _, prefix := range blockedPrefixes {
-		if strings.HasPrefix(normalized, prefix) {
-			return false
-		}
-	}
-	return true
-}
-
 // GetMappedModel 获取映射后的模型名（支持通配符，最长优先匹配）
 // 如果未配置 mapping，返回原始模型名
 func (a *Account) GetMappedModel(requestedModel string) string {

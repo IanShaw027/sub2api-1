@@ -51,10 +51,27 @@ func TestIsModelSupported_OpenAIOAuthEmptyMapping_RejectsForeignModels(t *testin
 		"kimi-k2",
 		"moonshot-v1-128k",
 		"gemini-3.0-pro",
+		"gemma-3-27b",
 		"grok-4",
+		"qwen-2.5-coder",
+		"qwen2.5-coder",
 		"qwen3-max",
+		"qwen4-coder",
+		"qwq-32b",
 		"minimax-m2.5",
+		"doubao-seed-1.6",
+		"hunyuan-t1",
 		"llama-3.3-70b",
+		"llama2-70b",
+		"llama3-70b",
+		"meta-llama/Llama-3.3-70B-Instruct",
+		"mistral-large-latest",
+		"mixtral-8x22b",
+		"baichuan-4",
+		"ernie-4.5",
+		"step-2-16k",
+		"seed-1.6",
+		"yi-large",
 		"provider/deepseek-v4", // vendor/model 形式取最后一段判定
 	}
 	for _, model := range foreign {
@@ -106,5 +123,9 @@ func TestIsOpenAIOAuthServableModel(t *testing.T) {
 	require.True(t, isOpenAIOAuthServableModel("DeepThink-x"))  // 非黑名单前缀，保持允许
 	require.False(t, isOpenAIOAuthServableModel("DeepSeek-V4")) // 大小写不敏感
 	require.False(t, isOpenAIOAuthServableModel("qwen3-235b-thinking"))
-	require.True(t, isOpenAIOAuthServableModel("deepseekcoder")) // 无连字符 → 非黑名单前缀，保持允许
+	require.False(t, isOpenAIOAuthServableModel("provider/mistral-large-latest"))
+	require.False(t, isOpenAIOAuthServableModel("meta-llama/Llama-3.3-70B-Instruct"))
+	require.True(t, isOpenAIOAuthServableModel("deepseekcoder"))
+	require.True(t, isOpenAIOAuthServableModel("qwen_custom_alias"))
+	require.True(t, isOpenAIOAuthServableModel("qwenfoo"))
 }
