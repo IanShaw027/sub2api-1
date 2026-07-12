@@ -3400,6 +3400,7 @@
         :loading="kiroOAuth.loading.value"
         :error="kiroOAuth.error.value"
         :continuation="kiroOAuth.continuation.value"
+        :external-i-d-p-authorization="kiroOAuth.externalIDPAuthorization.value"
         @generate-url="handleGenerateUrl"
         @submit="handleKiroAuthorize"
         @submit-refresh-token="handleKiroValidateRT"

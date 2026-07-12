@@ -130,6 +130,7 @@ function buildOAuthComposable() {
     oauthState: ref('oauth-state'),
     state: ref('oauth-state'),
     continuation: ref(null),
+    externalIDPAuthorization: ref(null),
     resetState: vi.fn(),
     cancelDeviceAuthorization: vi.fn(),
     generateAuthUrl: vi.fn(),
@@ -313,6 +314,10 @@ const KiroAuthorizationFlowStub = defineComponent({
       default: () => ({})
     },
     continuation: {
+      type: Object,
+      default: null
+    },
+    externalIDPAuthorization: {
       type: Object,
       default: null
     }

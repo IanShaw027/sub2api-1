@@ -134,6 +134,7 @@
         :initial-credentials="kiroCredentials"
         :initial-extra="kiroExtra"
         :continuation="kiroOAuth.continuation.value"
+        :external-i-d-p-authorization="kiroOAuth.externalIDPAuthorization.value"
         @generate-url="handleGenerateUrl"
         @submit="handleKiroReauthorize"
         @submit-refresh-token="handleKiroValidateRT"

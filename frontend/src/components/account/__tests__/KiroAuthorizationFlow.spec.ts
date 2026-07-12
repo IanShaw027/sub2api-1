@@ -181,4 +181,34 @@ describe('KiroAuthorizationFlow', () => {
     expect(copyToClipboardMock).toHaveBeenCalledWith('https://example.com/kiro/oauth', 'common.copiedToClipboard')
     expect(wrapper.text()).toContain('admin.accounts.kiro.runtimeManagedHint')
   })
+
+  it('shows Microsoft External IdP authorization details and keeps final callback input available', async () => {
+    const authUrl = 'https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize?client_id=client-1'
+    const wrapper = mountComponent({
+      mode: 'create',
+      authUrl: 'https://app.kiro.dev/signin?state=state-1',
+      externalIDPAuthorization: {
+        session_id: 'session-1',
+        status: 'authorization_required',
+        auth_method: 'external_idp',
+        login_option: 'external_idp',
+        auth_url: authUrl,
+        client_id: 'client-1',
+        redirect_uri: 'http://localhost:3128/signin/callback?login_option=external_idp',
+        issuer_url: 'https://login.microsoftonline.com/tenant/v2.0',
+        scopes: ['scope-a', 'offline_access'],
+        login_hint: 'user@example.com'
+      }
+    })
+
+    expect(wrapper.text()).toContain('admin.accounts.kiro.externalIdpAuthorizationTitle')
+    expect(wrapper.text()).toContain(authUrl)
+    expect(wrapper.text()).toContain('client-1')
+    expect(wrapper.text()).toContain('admin.accounts.kiro.externalIdpRedirectUri')
+    expect(wrapper.get('textarea[placeholder="admin.accounts.kiro.callbackUrlPlaceholder"]').exists()).toBe(true)
+
+    await wrapper.get(`a[href="${authUrl}"]`).trigger('click')
+    await findButtonByText(wrapper, 'common.copy').trigger('click')
+    expect(copyToClipboardMock).toHaveBeenCalledWith(authUrl, 'common.copiedToClipboard')
+  })
 })

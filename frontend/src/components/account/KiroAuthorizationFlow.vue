@@ -364,6 +364,78 @@
       </div>
 
       <div
+        v-if="inputMode === 'oauth' && externalIDPAuthorization"
+        class="rounded-lg border border-blue-300 bg-blue-50/80 p-4 dark:border-blue-700/60 dark:bg-blue-900/20"
+      >
+        <div class="flex items-start gap-3">
+          <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">
+            4
+          </div>
+          <div class="flex-1 space-y-3">
+            <div>
+              <p class="font-medium text-blue-950 dark:text-blue-100">
+                {{ t('admin.accounts.kiro.externalIdpAuthorizationTitle') }}
+              </p>
+              <p class="mt-1 text-sm text-blue-800 dark:text-blue-200">
+                {{ t('admin.accounts.kiro.externalIdpAuthorizationDesc') }}
+              </p>
+            </div>
+
+            <div class="rounded-md border border-blue-200 bg-white/80 p-3 dark:border-blue-800/60 dark:bg-gray-800/60">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+                {{ t('admin.accounts.kiro.externalIdpAuthUrlLabel') }}
+              </p>
+              <div class="flex flex-wrap items-center gap-2">
+                <a
+                  :href="externalIDPAuthorization.auth_url"
+                  target="_blank"
+                  rel="noopener"
+                  class="btn btn-primary text-xs"
+                >
+                  <Icon name="link" size="sm" class="mr-2" />
+                  {{ t('admin.accounts.kiro.externalIdpOpenMicrosoft') }}
+                </a>
+                <button
+                  type="button"
+                  class="btn btn-secondary text-xs"
+                  @click="copyToClipboard(externalIDPAuthorization.auth_url, t('common.copiedToClipboard'))"
+                >
+                  <Icon v-if="!copied" name="copy" size="sm" class="mr-1" />
+                  <Icon v-else name="check" size="sm" class="mr-1 text-green-500" :stroke-width="2" />
+                  {{ t('common.copy') }}
+                </button>
+              </div>
+              <p class="mt-2 break-all font-mono text-xs text-blue-800 dark:text-blue-200">
+                {{ externalIDPAuthorization.auth_url }}
+              </p>
+            </div>
+
+            <div class="grid grid-cols-1 gap-2 text-xs text-blue-900 dark:text-blue-100 md:grid-cols-2">
+              <div v-if="externalIDPAuthorization.client_id" class="break-all">
+                {{ t('admin.accounts.kiro.externalIdpClientId', { value: externalIDPAuthorization.client_id }) }}
+              </div>
+              <div v-if="externalIDPAuthorization.redirect_uri" class="break-all">
+                {{ t('admin.accounts.kiro.externalIdpRedirectUri', { value: externalIDPAuthorization.redirect_uri }) }}
+              </div>
+              <div v-if="externalIDPAuthorization.issuer_url" class="break-all">
+                {{ t('admin.accounts.kiro.externalIdpIssuerUrl', { value: externalIDPAuthorization.issuer_url }) }}
+              </div>
+              <div v-if="externalIDPAuthorization.login_hint" class="break-all">
+                {{ t('admin.accounts.kiro.externalIdpLoginHint', { value: externalIDPAuthorization.login_hint }) }}
+              </div>
+              <div v-if="externalIDPAuthorization.scopes?.length" class="break-all md:col-span-2">
+                {{ t('admin.accounts.kiro.externalIdpScopes', { value: externalIDPAuthorization.scopes.join(' ') }) }}
+              </div>
+            </div>
+
+            <div class="rounded-md border border-blue-200 bg-white/70 p-3 text-xs text-blue-900 dark:border-blue-800/60 dark:bg-gray-800/60 dark:text-blue-100">
+              {{ t('admin.accounts.kiro.externalIdpFinalCallbackHint') }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
         v-if="inputMode === 'refresh_token'"
         class="rounded-lg border border-cyan-300 bg-white/80 p-4 dark:border-cyan-700 dark:bg-gray-800/80"
       >
@@ -581,7 +653,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import type { KiroAccountExtra, KiroCredentials } from '@/types'
-import type { KiroIDCContinuationInfo } from '@/api/admin/kiro'
+import type { KiroExternalIDPAuthorizationInfo, KiroIDCContinuationInfo } from '@/api/admin/kiro'
 
 interface Props {
   mode?: 'create' | 'reauth'
@@ -592,6 +664,7 @@ interface Props {
   initialCredentials?: KiroCredentials | null
   initialExtra?: KiroAccountExtra | null
   continuation?: KiroIDCContinuationInfo | null
+  externalIDPAuthorization?: KiroExternalIDPAuthorizationInfo | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -602,7 +675,8 @@ const props = withDefaults(defineProps<Props>(), {
   callbackBaseUrl: '',
   initialCredentials: null,
   initialExtra: null,
-  continuation: null
+  continuation: null,
+  externalIDPAuthorization: null
 })
 
 const emit = defineEmits<{
