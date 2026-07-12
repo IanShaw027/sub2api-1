@@ -435,14 +435,26 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
 
 	body := map[string]any{
-		"promo_code_enabled":                              true,
-		"payment_visible_method_alipay_source":            "easypay",
-		"payment_visible_method_wxpay_source":             "wxpay",
-		"payment_visible_method_alipay_enabled":           true,
-		"payment_visible_method_wxpay_enabled":            false,
-		"openai_advanced_scheduler_enabled":               true,
-		"openai_oauth_image_bridge_disable_keepalives":    true,
-		"openai_oauth_image_bridge_fresh_upstream_client": true,
+		"promo_code_enabled":                                      true,
+		"payment_visible_method_alipay_source":                    "easypay",
+		"payment_visible_method_wxpay_source":                     "wxpay",
+		"payment_visible_method_alipay_enabled":                   true,
+		"payment_visible_method_wxpay_enabled":                    false,
+		"openai_advanced_scheduler_enabled":                       true,
+		"openai_advanced_scheduler_sticky_weighted_enabled":       true,
+		"openai_advanced_scheduler_subscription_priority_enabled": true,
+		"openai_advanced_scheduler_lb_top_k":                      " 9 ",
+		"openai_advanced_scheduler_weight_priority":               "1.25",
+		"openai_advanced_scheduler_weight_load":                   "0.9",
+		"openai_advanced_scheduler_weight_queue":                  "0.7",
+		"openai_advanced_scheduler_weight_error_rate":             "0.8",
+		"openai_advanced_scheduler_weight_ttft":                   "0.5",
+		"openai_advanced_scheduler_weight_reset":                  "0.1",
+		"openai_advanced_scheduler_weight_quota_headroom":         "0.2",
+		"openai_advanced_scheduler_weight_previous_response":      "5",
+		"openai_advanced_scheduler_weight_session_sticky":         "3",
+		"openai_oauth_image_bridge_disable_keepalives":            true,
+		"openai_oauth_image_bridge_fresh_upstream_client":         true,
 	}
 	rawBody, err := json.Marshal(body)
 	require.NoError(t, err)
@@ -460,6 +472,23 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, "true", repo.values[service.SettingPaymentVisibleMethodAlipayEnabled])
 	require.Equal(t, "false", repo.values[service.SettingPaymentVisibleMethodWxpayEnabled])
 	require.Equal(t, "true", repo.values["openai_advanced_scheduler_enabled"])
+	require.Equal(t, "true", repo.values[service.SettingKeyOpenAIAdvancedSchedulerStickyWeightedEnabled])
+	require.Equal(t, "true", repo.values[service.SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled])
+	expectedSchedulerOverrides := map[string]string{
+		service.SettingKeyOpenAIAdvancedSchedulerLBTopK:                 "9",
+		service.SettingKeyOpenAIAdvancedSchedulerWeightPriority:         "1.25",
+		service.SettingKeyOpenAIAdvancedSchedulerWeightLoad:             "0.9",
+		service.SettingKeyOpenAIAdvancedSchedulerWeightQueue:            "0.7",
+		service.SettingKeyOpenAIAdvancedSchedulerWeightErrorRate:        "0.8",
+		service.SettingKeyOpenAIAdvancedSchedulerWeightTTFT:             "0.5",
+		service.SettingKeyOpenAIAdvancedSchedulerWeightReset:            "0.1",
+		service.SettingKeyOpenAIAdvancedSchedulerWeightQuotaHeadroom:    "0.2",
+		service.SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse: "5",
+		service.SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky:    "3",
+	}
+	for key, expected := range expectedSchedulerOverrides {
+		require.Equal(t, expected, repo.values[key], key)
+	}
 	require.Equal(t, "true", repo.values[service.SettingKeyOpenAIOAuthImageBridgeDisableKeepAlives])
 	require.Equal(t, "true", repo.values[service.SettingKeyOpenAIOAuthImageBridgeFreshUpstreamClient])
 
@@ -472,6 +501,11 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, true, data["payment_visible_method_alipay_enabled"])
 	require.Equal(t, false, data["payment_visible_method_wxpay_enabled"])
 	require.Equal(t, true, data["openai_advanced_scheduler_enabled"])
+	require.Equal(t, true, data["openai_advanced_scheduler_sticky_weighted_enabled"])
+	require.Equal(t, true, data["openai_advanced_scheduler_subscription_priority_enabled"])
+	require.Equal(t, "9", data["openai_advanced_scheduler_lb_top_k"])
+	require.Equal(t, "1.25", data["openai_advanced_scheduler_weight_priority"])
+	require.Equal(t, "3", data["openai_advanced_scheduler_weight_session_sticky"])
 	require.Equal(t, true, data["openai_oauth_image_bridge_disable_keepalives"])
 	require.Equal(t, true, data["openai_oauth_image_bridge_fresh_upstream_client"])
 }
@@ -480,11 +514,15 @@ func TestSettingHandler_UpdateSettings_PreservesLegacyBlankPaymentVisibleMethodS
 	gin.SetMode(gin.TestMode)
 	repo := &settingHandlerRepoStub{
 		values: map[string]string{
-			service.SettingKeyPromoCodeEnabled:               "true",
-			service.SettingPaymentVisibleMethodAlipayEnabled: "true",
-			service.SettingPaymentVisibleMethodAlipaySource:  "",
-			service.SettingPaymentVisibleMethodWxpayEnabled:  "false",
-			service.SettingPaymentVisibleMethodWxpaySource:   "",
+			service.SettingKeyPromoCodeEnabled:                                   "true",
+			service.SettingPaymentVisibleMethodAlipayEnabled:                     "true",
+			service.SettingPaymentVisibleMethodAlipaySource:                      "",
+			service.SettingPaymentVisibleMethodWxpayEnabled:                      "false",
+			service.SettingPaymentVisibleMethodWxpaySource:                       "",
+			service.SettingKeyOpenAIAdvancedSchedulerStickyWeightedEnabled:       "true",
+			service.SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled: "true",
+			service.SettingKeyOpenAIAdvancedSchedulerLBTopK:                      "13",
+			service.SettingKeyOpenAIAdvancedSchedulerWeightPriority:              "1.75",
 		},
 	}
 	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
@@ -506,6 +544,10 @@ func TestSettingHandler_UpdateSettings_PreservesLegacyBlankPaymentVisibleMethodS
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, "", repo.values[service.SettingPaymentVisibleMethodAlipaySource])
 	require.Equal(t, "true", repo.values[service.SettingPaymentVisibleMethodAlipayEnabled])
+	require.Equal(t, "true", repo.values[service.SettingKeyOpenAIAdvancedSchedulerStickyWeightedEnabled])
+	require.Equal(t, "true", repo.values[service.SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled])
+	require.Equal(t, "13", repo.values[service.SettingKeyOpenAIAdvancedSchedulerLBTopK])
+	require.Equal(t, "1.75", repo.values[service.SettingKeyOpenAIAdvancedSchedulerWeightPriority])
 }
 
 func TestSettingHandler_UpdateSettings_PersistsExplicitFalseOIDCCompatibilityFlags(t *testing.T) {

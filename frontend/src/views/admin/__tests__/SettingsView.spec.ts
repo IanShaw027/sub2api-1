@@ -1293,6 +1293,57 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(wrapper.text()).not.toContain("OpenAI 高级调度器");
   });
 
+  it("loads and submits advanced scheduler policy controls without dropping branch scheduler settings", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      payment_visible_method_wxpay_enabled: false,
+      openai_advanced_scheduler_enabled: true,
+      openai_advanced_scheduler_sticky_weighted_enabled: true,
+      openai_advanced_scheduler_subscription_priority_enabled: false,
+      openai_advanced_scheduler_lb_top_k: "11",
+      openai_advanced_scheduler_weight_priority: "1.5",
+      openai_advanced_scheduler_weight_load: "0.9",
+      openai_advanced_scheduler_weight_queue: "0.7",
+      openai_advanced_scheduler_weight_error_rate: "0.8",
+      openai_advanced_scheduler_weight_ttft: "0.5",
+      openai_advanced_scheduler_weight_reset: "0.1",
+      openai_advanced_scheduler_weight_quota_headroom: "0.2",
+      openai_advanced_scheduler_weight_previous_response: "5",
+      openai_advanced_scheduler_weight_session_sticky: "3",
+      openai_advanced_scheduler_effective_lb_top_k: "7",
+      openai_sticky_reserve_percent: 25,
+      openai_sticky_wait_timeout_seconds: 45,
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(wrapper.get('[data-testid="openai-advanced-scheduler-enabled"]').attributes("checked")).toBeDefined();
+    expect(wrapper.get('[data-testid="openai-advanced-scheduler-sticky-weighted"]').attributes("checked")).toBeDefined();
+    expect(wrapper.get('[data-testid="openai-advanced-scheduler-lb_top_k"]').element).toHaveProperty("value", "11");
+
+    await wrapper
+      .get('[data-testid="openai-advanced-scheduler-subscription-priority"]')
+      .setValue(true);
+    await wrapper
+      .get('[data-testid="openai-advanced-scheduler-weight_priority"]')
+      .setValue(" 2.5 ");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    const payload = updateSettings.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      openai_advanced_scheduler_enabled: true,
+      openai_advanced_scheduler_sticky_weighted_enabled: true,
+      openai_advanced_scheduler_subscription_priority_enabled: true,
+      openai_advanced_scheduler_lb_top_k: "11",
+      openai_advanced_scheduler_weight_priority: "2.5",
+      openai_advanced_scheduler_weight_session_sticky: "3",
+      openai_sticky_reserve_percent: 25,
+      openai_sticky_wait_timeout_seconds: 45,
+    });
+  });
+
   it("passes translated upload and remove labels to the payment help image uploader", async () => {
     const wrapper = mountView();
 

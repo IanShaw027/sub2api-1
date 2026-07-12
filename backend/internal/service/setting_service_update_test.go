@@ -280,10 +280,10 @@ func TestSettingService_UpdateSettings_NilRepoReturnsError(t *testing.T) {
 func TestSettingService_OIDCSecurityWriteDefaults_NilRepoFallsBackToConfig(t *testing.T) {
 	svc := NewSettingService(nil, &config.Config{
 		OIDC: config.OIDCConnectConfig{
-			UsePKCEExplicit:          true,
-			UsePKCE:                  true,
-			ValidateIDTokenExplicit:  true,
-			ValidateIDToken:          false,
+			UsePKCEExplicit:         true,
+			UsePKCE:                 true,
+			ValidateIDTokenExplicit: true,
+			ValidateIDToken:         false,
 		},
 	})
 
@@ -411,6 +411,15 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 	require.Equal(t, "0.2", repo.updates[SettingKeyOpenAIAdvancedSchedulerWeightQuotaHeadroom])
 	require.Equal(t, "8", repo.updates[SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse])
 	require.Equal(t, "4", repo.updates[SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky])
+
+	gateway := &OpenAIGatewayService{cfg: &config.Config{}}
+	runtime := gateway.openAIAdvancedSchedulerRuntimeSettings(context.Background())
+	require.True(t, runtime.enabled)
+	require.True(t, runtime.stickyWeightedEnabled)
+	require.True(t, runtime.subscriptionPriorityEnabled)
+	require.Equal(t, 3, runtime.lbTopKOverride)
+	require.Equal(t, 2.5, runtime.weightOverrides["priority"])
+	require.Equal(t, 8.0, runtime.weightOverrides["previous_response"])
 }
 
 func TestSettingService_GetAllSettings_OpenAIAdvancedSchedulerEffectiveValuesUseConfig(t *testing.T) {

@@ -3016,9 +3016,29 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 		expiresAt: time.Now().Add(antigravityUserAgentVersionCacheTTL).UnixNano(),
 	})
 	openAIAdvancedSchedulerSettingSF.Forget(openAIAdvancedSchedulerSettingKey)
+	advancedSchedulerValues := map[string]string{
+		openAIAdvancedSchedulerSettingKey:                            strconv.FormatBool(settings.OpenAIAdvancedSchedulerEnabled),
+		SettingKeyOpenAIAdvancedSchedulerStickyWeightedEnabled:       strconv.FormatBool(settings.OpenAIAdvancedSchedulerStickyWeightedEnabled),
+		SettingKeyOpenAIAdvancedSchedulerSubscriptionPriorityEnabled: strconv.FormatBool(settings.OpenAIAdvancedSchedulerSubscriptionPriorityEnabled),
+		SettingKeyOpenAIAdvancedSchedulerLBTopK:                      settings.OpenAIAdvancedSchedulerLBTopK,
+		SettingKeyOpenAIAdvancedSchedulerWeightPriority:              settings.OpenAIAdvancedSchedulerWeightPriority,
+		SettingKeyOpenAIAdvancedSchedulerWeightLoad:                  settings.OpenAIAdvancedSchedulerWeightLoad,
+		SettingKeyOpenAIAdvancedSchedulerWeightQueue:                 settings.OpenAIAdvancedSchedulerWeightQueue,
+		SettingKeyOpenAIAdvancedSchedulerWeightErrorRate:             settings.OpenAIAdvancedSchedulerWeightErrorRate,
+		SettingKeyOpenAIAdvancedSchedulerWeightTTFT:                  settings.OpenAIAdvancedSchedulerWeightTTFT,
+		SettingKeyOpenAIAdvancedSchedulerWeightReset:                 settings.OpenAIAdvancedSchedulerWeightReset,
+		SettingKeyOpenAIAdvancedSchedulerWeightQuotaHeadroom:         settings.OpenAIAdvancedSchedulerWeightQuotaHeadroom,
+		SettingKeyOpenAIAdvancedSchedulerWeightPreviousResponse:      settings.OpenAIAdvancedSchedulerWeightPreviousResponse,
+		SettingKeyOpenAIAdvancedSchedulerWeightSessionSticky:         settings.OpenAIAdvancedSchedulerWeightSessionSticky,
+	}
+	advancedSchedulerRuntime := parseOpenAIAdvancedSchedulerRuntimeSettings(advancedSchedulerValues)
 	openAIAdvancedSchedulerSettingCache.Store(&cachedOpenAIAdvancedSchedulerSetting{
-		enabled:   settings.OpenAIAdvancedSchedulerEnabled,
-		expiresAt: time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
+		enabled:                     advancedSchedulerRuntime.enabled,
+		stickyWeightedEnabled:       advancedSchedulerRuntime.stickyWeightedEnabled,
+		subscriptionPriorityEnabled: advancedSchedulerRuntime.subscriptionPriorityEnabled,
+		lbTopKOverride:              advancedSchedulerRuntime.lbTopKOverride,
+		weightOverrides:             cloneOpenAIAdvancedSchedulerWeightOverrides(advancedSchedulerRuntime.weightOverrides),
+		expiresAt:                   time.Now().Add(openAIAdvancedSchedulerSettingCacheTTL).UnixNano(),
 	})
 	openAIStickyReservePercentSettingSF.Forget(SettingKeyOpenAIStickyReservePercent)
 	openAIStickyReservePercentSettingCache.Store(&cachedOpenAIStickyReservePercentSetting{

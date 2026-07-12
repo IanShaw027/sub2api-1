@@ -93,6 +93,13 @@ func (h *OpenAIGatewayHandler) selectOpenAIAccountForResponses(
 	return h.gatewayService.SelectAccountWithSchedulerForResponsesCapability(ctx, groupID, apiKeyID, previousResponseID, sessionHash, requestedModel, excludedIDs, requiredTransport, imageIntent, requireCompact, requiredCapability, requestPlatform)
 }
 
+func openAIWSFirstMessageForScheduledAccount(body []byte, previousResponseID string, previousResponseCanMove, stickyPreviousHit bool) []byte {
+	if strings.TrimSpace(previousResponseID) == "" || !previousResponseCanMove || stickyPreviousHit {
+		return body
+	}
+	return service.RemovePreviousResponseIDFromBody(body)
+}
+
 type accountSlotAcquireStatus int
 
 const (
@@ -1664,11 +1671,14 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "previous_response_id must be a response.id (resp_*), not a message id")
 		return
 	}
+	firstMessageToolCoverage := service.AnalyzeToolCallOutputContextCoverageBytes(firstMessage)
+	previousResponseCanMove := !firstMessageToolCoverage.HasFunctionCallOutput || firstMessageToolCoverage.ContextCoversAllCallIDs
 	reqLog = reqLog.With(
 		zap.Bool("ws_ingress", true),
 		zap.String("model", reqModel),
 		zap.Bool("has_previous_response_id", previousResponseID != ""),
 		zap.String("previous_response_id_kind", previousResponseIDKind),
+		zap.Bool("previous_response_can_move", previousResponseCanMove),
 	)
 	setOpsRequestContext(c, reqModel, true, firstMessage)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeWSV2))
@@ -1764,6 +1774,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	requestPlatform := openAICompatibleRequestPlatform(apiKey)
+	schedulerOptions := []string{requestPlatform}
+	if previousResponseCanMove {
+		schedulerOptions = append(schedulerOptions, service.OpenAIAccountSchedulerOptionPreviousResponseCanMove)
+	}
 	requiredTransport := service.OpenAIUpstreamTransportResponsesWebsocketV2Ingress
 	if requestPlatform == service.PlatformGrok {
 		requiredTransport = service.OpenAIUpstreamTransportHTTPSSE
@@ -1797,7 +1811,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			requiredTransport,
 			wsPreviewImageIntent,
 			false,
-			requestPlatform,
+			schedulerOptions...,
 		)
 		if err != nil {
 			reqLog.Warn("openai.websocket_account_select_failed",
@@ -1821,8 +1835,14 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		}
 
 		account := selection.Account
+		forwardWSFirstMessage := openAIWSFirstMessageForScheduledAccount(
+			wsFirstMessage,
+			previousResponseID,
+			previousResponseCanMove,
+			scheduleDecision.StickyPreviousHit,
+		)
 		effectiveWSFirstModel := resolveOpenAIResponsesEffectiveModel(account, wsFirstModel)
-		firstTurnImageIntent, firstTurnNeedsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveWSFirstModel, wsFirstMessage)
+		firstTurnImageIntent, firstTurnNeedsImageSlot := classifyOpenAIResponsesImageRequest(allowImageGeneration, effectiveWSFirstModel, forwardWSFirstMessage)
 		if firstTurnImageIntent && !allowImageGeneration {
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
@@ -2114,7 +2134,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			},
 		}
 
-		if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks); err != nil {
+		if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, forwardWSFirstMessage, hooks); err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
 				h.reportOpenAIAccountScheduleFailure(c, account.ID, err)

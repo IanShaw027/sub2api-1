@@ -684,7 +684,29 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		PaymentVisibleMethodWxpaySource:           settings.PaymentVisibleMethodWxpaySource,
 		PaymentVisibleMethodAlipayEnabled:         settings.PaymentVisibleMethodAlipayEnabled,
 		PaymentVisibleMethodWxpayEnabled:          settings.PaymentVisibleMethodWxpayEnabled,
-		OpenAIAdvancedSchedulerEnabled:            settings.OpenAIAdvancedSchedulerEnabled,
+		OpenAIAdvancedSchedulerEnabled:                         settings.OpenAIAdvancedSchedulerEnabled,
+		OpenAIAdvancedSchedulerStickyWeightedEnabled:           settings.OpenAIAdvancedSchedulerStickyWeightedEnabled,
+		OpenAIAdvancedSchedulerSubscriptionPriorityEnabled:     settings.OpenAIAdvancedSchedulerSubscriptionPriorityEnabled,
+		OpenAIAdvancedSchedulerLBTopK:                          settings.OpenAIAdvancedSchedulerLBTopK,
+		OpenAIAdvancedSchedulerWeightPriority:                  settings.OpenAIAdvancedSchedulerWeightPriority,
+		OpenAIAdvancedSchedulerWeightLoad:                      settings.OpenAIAdvancedSchedulerWeightLoad,
+		OpenAIAdvancedSchedulerWeightQueue:                     settings.OpenAIAdvancedSchedulerWeightQueue,
+		OpenAIAdvancedSchedulerWeightErrorRate:                 settings.OpenAIAdvancedSchedulerWeightErrorRate,
+		OpenAIAdvancedSchedulerWeightTTFT:                      settings.OpenAIAdvancedSchedulerWeightTTFT,
+		OpenAIAdvancedSchedulerWeightReset:                     settings.OpenAIAdvancedSchedulerWeightReset,
+		OpenAIAdvancedSchedulerWeightQuotaHeadroom:             settings.OpenAIAdvancedSchedulerWeightQuotaHeadroom,
+		OpenAIAdvancedSchedulerWeightPreviousResponse:          settings.OpenAIAdvancedSchedulerWeightPreviousResponse,
+		OpenAIAdvancedSchedulerWeightSessionSticky:             settings.OpenAIAdvancedSchedulerWeightSessionSticky,
+		OpenAIAdvancedSchedulerEffectiveLBTopK:                 settings.OpenAIAdvancedSchedulerEffectiveLBTopK,
+		OpenAIAdvancedSchedulerEffectiveWeightPriority:         settings.OpenAIAdvancedSchedulerEffectiveWeightPriority,
+		OpenAIAdvancedSchedulerEffectiveWeightLoad:             settings.OpenAIAdvancedSchedulerEffectiveWeightLoad,
+		OpenAIAdvancedSchedulerEffectiveWeightQueue:            settings.OpenAIAdvancedSchedulerEffectiveWeightQueue,
+		OpenAIAdvancedSchedulerEffectiveWeightErrorRate:        settings.OpenAIAdvancedSchedulerEffectiveWeightErrorRate,
+		OpenAIAdvancedSchedulerEffectiveWeightTTFT:             settings.OpenAIAdvancedSchedulerEffectiveWeightTTFT,
+		OpenAIAdvancedSchedulerEffectiveWeightReset:            settings.OpenAIAdvancedSchedulerEffectiveWeightReset,
+		OpenAIAdvancedSchedulerEffectiveWeightQuotaHeadroom:    settings.OpenAIAdvancedSchedulerEffectiveWeightQuotaHeadroom,
+		OpenAIAdvancedSchedulerEffectiveWeightPreviousResponse: settings.OpenAIAdvancedSchedulerEffectiveWeightPreviousResponse,
+		OpenAIAdvancedSchedulerEffectiveWeightSessionSticky:    settings.OpenAIAdvancedSchedulerEffectiveWeightSessionSticky,
 		OpenAIStickyReservePercent:                settings.OpenAIStickyReservePercent,
 		OpenAIStickyWaitTimeoutSeconds:            settings.OpenAIStickyWaitTimeoutSeconds,
 		OpenAIWSMinIdlePerAccount:                 settings.OpenAIWSMinIdlePerAccount,
@@ -1066,7 +1088,19 @@ type UpdateSettingsRequest struct {
 	PaymentVisibleMethodWxpayEnabled  *bool   `json:"payment_visible_method_wxpay_enabled"`
 
 	// OpenAI account scheduling
-	OpenAIAdvancedSchedulerEnabled            *bool `json:"openai_advanced_scheduler_enabled"`
+	OpenAIAdvancedSchedulerEnabled                     *bool   `json:"openai_advanced_scheduler_enabled"`
+	OpenAIAdvancedSchedulerStickyWeightedEnabled       *bool   `json:"openai_advanced_scheduler_sticky_weighted_enabled"`
+	OpenAIAdvancedSchedulerSubscriptionPriorityEnabled *bool   `json:"openai_advanced_scheduler_subscription_priority_enabled"`
+	OpenAIAdvancedSchedulerLBTopK                      *string `json:"openai_advanced_scheduler_lb_top_k"`
+	OpenAIAdvancedSchedulerWeightPriority              *string `json:"openai_advanced_scheduler_weight_priority"`
+	OpenAIAdvancedSchedulerWeightLoad                  *string `json:"openai_advanced_scheduler_weight_load"`
+	OpenAIAdvancedSchedulerWeightQueue                 *string `json:"openai_advanced_scheduler_weight_queue"`
+	OpenAIAdvancedSchedulerWeightErrorRate             *string `json:"openai_advanced_scheduler_weight_error_rate"`
+	OpenAIAdvancedSchedulerWeightTTFT                  *string `json:"openai_advanced_scheduler_weight_ttft"`
+	OpenAIAdvancedSchedulerWeightReset                 *string `json:"openai_advanced_scheduler_weight_reset"`
+	OpenAIAdvancedSchedulerWeightQuotaHeadroom         *string `json:"openai_advanced_scheduler_weight_quota_headroom"`
+	OpenAIAdvancedSchedulerWeightPreviousResponse      *string `json:"openai_advanced_scheduler_weight_previous_response"`
+	OpenAIAdvancedSchedulerWeightSessionSticky         *string `json:"openai_advanced_scheduler_weight_session_sticky"`
 	OpenAIStickyReservePercent                *int  `json:"openai_sticky_reserve_percent"`
 	OpenAIStickyWaitTimeoutSeconds            *int  `json:"openai_sticky_wait_timeout_seconds"`
 	OpenAIWSMinIdlePerAccount                 *int  `json:"openai_ws_min_idle_per_account"`
@@ -2656,6 +2690,54 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpenAIAdvancedSchedulerEnabled
 		}(),
+		OpenAIAdvancedSchedulerStickyWeightedEnabled: boolValueOrDefault(
+			req.OpenAIAdvancedSchedulerStickyWeightedEnabled,
+			previousSettings.OpenAIAdvancedSchedulerStickyWeightedEnabled,
+		),
+		OpenAIAdvancedSchedulerSubscriptionPriorityEnabled: boolValueOrDefault(
+			req.OpenAIAdvancedSchedulerSubscriptionPriorityEnabled,
+			previousSettings.OpenAIAdvancedSchedulerSubscriptionPriorityEnabled,
+		),
+		OpenAIAdvancedSchedulerLBTopK: trimmedStringValueOrDefault(
+			req.OpenAIAdvancedSchedulerLBTopK,
+			previousSettings.OpenAIAdvancedSchedulerLBTopK,
+		),
+		OpenAIAdvancedSchedulerWeightPriority: trimmedStringValueOrDefault(
+			req.OpenAIAdvancedSchedulerWeightPriority,
+			previousSettings.OpenAIAdvancedSchedulerWeightPriority,
+		),
+		OpenAIAdvancedSchedulerWeightLoad: trimmedStringValueOrDefault(
+			req.OpenAIAdvancedSchedulerWeightLoad,
+			previousSettings.OpenAIAdvancedSchedulerWeightLoad,
+		),
+		OpenAIAdvancedSchedulerWeightQueue: trimmedStringValueOrDefault(
+			req.OpenAIAdvancedSchedulerWeightQueue,
+			previousSettings.OpenAIAdvancedSchedulerWeightQueue,
+		),
+		OpenAIAdvancedSchedulerWeightErrorRate: trimmedStringValueOrDefault(
+			req.OpenAIAdvancedSchedulerWeightErrorRate,
+			previousSettings.OpenAIAdvancedSchedulerWeightErrorRate,
+		),
+		OpenAIAdvancedSchedulerWeightTTFT: trimmedStringValueOrDefault(
+			req.OpenAIAdvancedSchedulerWeightTTFT,
+			previousSettings.OpenAIAdvancedSchedulerWeightTTFT,
+		),
+		OpenAIAdvancedSchedulerWeightReset: trimmedStringValueOrDefault(
+			req.OpenAIAdvancedSchedulerWeightReset,
+			previousSettings.OpenAIAdvancedSchedulerWeightReset,
+		),
+		OpenAIAdvancedSchedulerWeightQuotaHeadroom: trimmedStringValueOrDefault(
+			req.OpenAIAdvancedSchedulerWeightQuotaHeadroom,
+			previousSettings.OpenAIAdvancedSchedulerWeightQuotaHeadroom,
+		),
+		OpenAIAdvancedSchedulerWeightPreviousResponse: trimmedStringValueOrDefault(
+			req.OpenAIAdvancedSchedulerWeightPreviousResponse,
+			previousSettings.OpenAIAdvancedSchedulerWeightPreviousResponse,
+		),
+		OpenAIAdvancedSchedulerWeightSessionSticky: trimmedStringValueOrDefault(
+			req.OpenAIAdvancedSchedulerWeightSessionSticky,
+			previousSettings.OpenAIAdvancedSchedulerWeightSessionSticky,
+		),
 		OpenAIStickyReservePercent: func() int {
 			if req.OpenAIStickyReservePercent != nil {
 				value := *req.OpenAIStickyReservePercent
@@ -3169,7 +3251,29 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PaymentVisibleMethodWxpaySource:           updatedSettings.PaymentVisibleMethodWxpaySource,
 		PaymentVisibleMethodAlipayEnabled:         updatedSettings.PaymentVisibleMethodAlipayEnabled,
 		PaymentVisibleMethodWxpayEnabled:          updatedSettings.PaymentVisibleMethodWxpayEnabled,
-		OpenAIAdvancedSchedulerEnabled:            updatedSettings.OpenAIAdvancedSchedulerEnabled,
+		OpenAIAdvancedSchedulerEnabled:                         updatedSettings.OpenAIAdvancedSchedulerEnabled,
+		OpenAIAdvancedSchedulerStickyWeightedEnabled:           updatedSettings.OpenAIAdvancedSchedulerStickyWeightedEnabled,
+		OpenAIAdvancedSchedulerSubscriptionPriorityEnabled:     updatedSettings.OpenAIAdvancedSchedulerSubscriptionPriorityEnabled,
+		OpenAIAdvancedSchedulerLBTopK:                          updatedSettings.OpenAIAdvancedSchedulerLBTopK,
+		OpenAIAdvancedSchedulerWeightPriority:                  updatedSettings.OpenAIAdvancedSchedulerWeightPriority,
+		OpenAIAdvancedSchedulerWeightLoad:                      updatedSettings.OpenAIAdvancedSchedulerWeightLoad,
+		OpenAIAdvancedSchedulerWeightQueue:                     updatedSettings.OpenAIAdvancedSchedulerWeightQueue,
+		OpenAIAdvancedSchedulerWeightErrorRate:                 updatedSettings.OpenAIAdvancedSchedulerWeightErrorRate,
+		OpenAIAdvancedSchedulerWeightTTFT:                      updatedSettings.OpenAIAdvancedSchedulerWeightTTFT,
+		OpenAIAdvancedSchedulerWeightReset:                     updatedSettings.OpenAIAdvancedSchedulerWeightReset,
+		OpenAIAdvancedSchedulerWeightQuotaHeadroom:             updatedSettings.OpenAIAdvancedSchedulerWeightQuotaHeadroom,
+		OpenAIAdvancedSchedulerWeightPreviousResponse:          updatedSettings.OpenAIAdvancedSchedulerWeightPreviousResponse,
+		OpenAIAdvancedSchedulerWeightSessionSticky:             updatedSettings.OpenAIAdvancedSchedulerWeightSessionSticky,
+		OpenAIAdvancedSchedulerEffectiveLBTopK:                 updatedSettings.OpenAIAdvancedSchedulerEffectiveLBTopK,
+		OpenAIAdvancedSchedulerEffectiveWeightPriority:         updatedSettings.OpenAIAdvancedSchedulerEffectiveWeightPriority,
+		OpenAIAdvancedSchedulerEffectiveWeightLoad:             updatedSettings.OpenAIAdvancedSchedulerEffectiveWeightLoad,
+		OpenAIAdvancedSchedulerEffectiveWeightQueue:            updatedSettings.OpenAIAdvancedSchedulerEffectiveWeightQueue,
+		OpenAIAdvancedSchedulerEffectiveWeightErrorRate:        updatedSettings.OpenAIAdvancedSchedulerEffectiveWeightErrorRate,
+		OpenAIAdvancedSchedulerEffectiveWeightTTFT:             updatedSettings.OpenAIAdvancedSchedulerEffectiveWeightTTFT,
+		OpenAIAdvancedSchedulerEffectiveWeightReset:            updatedSettings.OpenAIAdvancedSchedulerEffectiveWeightReset,
+		OpenAIAdvancedSchedulerEffectiveWeightQuotaHeadroom:    updatedSettings.OpenAIAdvancedSchedulerEffectiveWeightQuotaHeadroom,
+		OpenAIAdvancedSchedulerEffectiveWeightPreviousResponse: updatedSettings.OpenAIAdvancedSchedulerEffectiveWeightPreviousResponse,
+		OpenAIAdvancedSchedulerEffectiveWeightSessionSticky:    updatedSettings.OpenAIAdvancedSchedulerEffectiveWeightSessionSticky,
 		OpenAIStickyReservePercent:                updatedSettings.OpenAIStickyReservePercent,
 		OpenAIStickyWaitTimeoutSeconds:            updatedSettings.OpenAIStickyWaitTimeoutSeconds,
 		OpenAIWSMinIdlePerAccount:                 updatedSettings.OpenAIWSMinIdlePerAccount,
@@ -3749,6 +3853,32 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.OpenAIAdvancedSchedulerEnabled != after.OpenAIAdvancedSchedulerEnabled {
 		changed = append(changed, "openai_advanced_scheduler_enabled")
 	}
+	if before.OpenAIAdvancedSchedulerStickyWeightedEnabled != after.OpenAIAdvancedSchedulerStickyWeightedEnabled {
+		changed = append(changed, "openai_advanced_scheduler_sticky_weighted_enabled")
+	}
+	if before.OpenAIAdvancedSchedulerSubscriptionPriorityEnabled != after.OpenAIAdvancedSchedulerSubscriptionPriorityEnabled {
+		changed = append(changed, "openai_advanced_scheduler_subscription_priority_enabled")
+	}
+	advancedSchedulerOverrides := []struct {
+		name         string
+		before, after string
+	}{
+		{"openai_advanced_scheduler_lb_top_k", before.OpenAIAdvancedSchedulerLBTopK, after.OpenAIAdvancedSchedulerLBTopK},
+		{"openai_advanced_scheduler_weight_priority", before.OpenAIAdvancedSchedulerWeightPriority, after.OpenAIAdvancedSchedulerWeightPriority},
+		{"openai_advanced_scheduler_weight_load", before.OpenAIAdvancedSchedulerWeightLoad, after.OpenAIAdvancedSchedulerWeightLoad},
+		{"openai_advanced_scheduler_weight_queue", before.OpenAIAdvancedSchedulerWeightQueue, after.OpenAIAdvancedSchedulerWeightQueue},
+		{"openai_advanced_scheduler_weight_error_rate", before.OpenAIAdvancedSchedulerWeightErrorRate, after.OpenAIAdvancedSchedulerWeightErrorRate},
+		{"openai_advanced_scheduler_weight_ttft", before.OpenAIAdvancedSchedulerWeightTTFT, after.OpenAIAdvancedSchedulerWeightTTFT},
+		{"openai_advanced_scheduler_weight_reset", before.OpenAIAdvancedSchedulerWeightReset, after.OpenAIAdvancedSchedulerWeightReset},
+		{"openai_advanced_scheduler_weight_quota_headroom", before.OpenAIAdvancedSchedulerWeightQuotaHeadroom, after.OpenAIAdvancedSchedulerWeightQuotaHeadroom},
+		{"openai_advanced_scheduler_weight_previous_response", before.OpenAIAdvancedSchedulerWeightPreviousResponse, after.OpenAIAdvancedSchedulerWeightPreviousResponse},
+		{"openai_advanced_scheduler_weight_session_sticky", before.OpenAIAdvancedSchedulerWeightSessionSticky, after.OpenAIAdvancedSchedulerWeightSessionSticky},
+	}
+	for _, field := range advancedSchedulerOverrides {
+		if field.before != field.after {
+			changed = append(changed, field.name)
+		}
+	}
 	if before.OpenAIStickyReservePercent != after.OpenAIStickyReservePercent {
 		changed = append(changed, "openai_sticky_reserve_percent")
 	}
@@ -4011,6 +4141,13 @@ func boolValueOrDefault(value *bool, fallback bool) bool {
 		return fallback
 	}
 	return *value
+}
+
+func trimmedStringValueOrDefault(value *string, fallback string) string {
+	if value == nil {
+		return fallback
+	}
+	return strings.TrimSpace(*value)
 }
 
 func preserveOmittedSettingsFields(rawFields map[string]json.RawMessage, req *UpdateSettingsRequest, previous *service.SystemSettings) {

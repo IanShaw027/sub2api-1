@@ -7794,6 +7794,11 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 		_ = store.DeleteResponseAccount(ctx, group, apiKeyID, responseID)
 		return nil, nil
 	}
+	if !s.openAIStickyAccountWithinGroupScope(ctx, account, groupID) {
+		logDiag("group_scope_mismatch", "delete_binding", account, accountID, true, false)
+		_ = store.DeleteResponseAccount(ctx, group, apiKeyID, responseID)
+		return nil, nil
+	}
 
 	result, acquireErr := s.tryAcquireAccountSlot(ctx, accountID, groupID, account.Concurrency)
 	if acquireErr == nil && result.Acquired {

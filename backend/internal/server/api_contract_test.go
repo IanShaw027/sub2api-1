@@ -67,9 +67,10 @@ func TestAPIContracts(t *testing.T) {
 					"balance_notify_threshold": null,
 					"balance_notify_extra_emails": null,
 					"total_recharged": 0,
-					"linuxdo_bound": false,
-					"oidc_bound": false,
-					"wechat_bound": false,
+						"linuxdo_bound": false,
+						"oidc_bound": false,
+						"wechat_bound": false,
+						"dingtalk_bound": false,
 					"identities": {
 							"email": {
 								"provider": "email",
@@ -115,14 +116,22 @@ func TestAPIContracts(t *testing.T) {
 							"can_unbind": false,
 							"bind_start_path": "/api/v1/auth/oauth/oidc/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
 						},
-						"wechat": {
-							"provider": "wechat",
-							"bound": false,
-							"bound_count": 0,
-							"can_bind": true,
-							"can_unbind": false,
-							"bind_start_path": "/api/v1/auth/oauth/wechat/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
-						}
+							"wechat": {
+								"provider": "wechat",
+								"bound": false,
+								"bound_count": 0,
+								"can_bind": true,
+								"can_unbind": false,
+								"bind_start_path": "/api/v1/auth/oauth/wechat/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
+							},
+							"dingtalk": {
+								"provider": "dingtalk",
+								"bound": false,
+								"bound_count": 0,
+								"can_bind": true,
+								"can_unbind": false,
+								"bind_start_path": "/api/v1/auth/oauth/dingtalk/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
+							}
 					},
 					"identity_bindings": {
 						"email": {
@@ -169,14 +178,22 @@ func TestAPIContracts(t *testing.T) {
 							"can_unbind": false,
 							"bind_start_path": "/api/v1/auth/oauth/oidc/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
 						},
-						"wechat": {
-							"provider": "wechat",
-							"bound": false,
-							"bound_count": 0,
-							"can_bind": true,
-							"can_unbind": false,
-							"bind_start_path": "/api/v1/auth/oauth/wechat/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
-						}
+							"wechat": {
+								"provider": "wechat",
+								"bound": false,
+								"bound_count": 0,
+								"can_bind": true,
+								"can_unbind": false,
+								"bind_start_path": "/api/v1/auth/oauth/wechat/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
+							},
+							"dingtalk": {
+								"provider": "dingtalk",
+								"bound": false,
+								"bound_count": 0,
+								"can_bind": true,
+								"can_unbind": false,
+								"bind_start_path": "/api/v1/auth/oauth/dingtalk/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
+							}
 					},
 					"auth_bindings": {
 							"email": {
@@ -223,14 +240,22 @@ func TestAPIContracts(t *testing.T) {
 							"can_unbind": false,
 							"bind_start_path": "/api/v1/auth/oauth/oidc/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
 						},
-						"wechat": {
-							"provider": "wechat",
-							"bound": false,
-							"bound_count": 0,
-							"can_bind": true,
-							"can_unbind": false,
-							"bind_start_path": "/api/v1/auth/oauth/wechat/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
-						}
+							"wechat": {
+								"provider": "wechat",
+								"bound": false,
+								"bound_count": 0,
+								"can_bind": true,
+								"can_unbind": false,
+								"bind_start_path": "/api/v1/auth/oauth/wechat/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
+							},
+							"dingtalk": {
+								"provider": "dingtalk",
+								"bound": false,
+								"bound_count": 0,
+								"can_bind": true,
+								"can_unbind": false,
+								"bind_start_path": "/api/v1/auth/oauth/dingtalk/bind/start?intent=bind_current_user&redirect=%2Fsettings%2Fprofile"
+							}
 					},
 					"run_mode": "standard"
 				}
@@ -913,10 +938,32 @@ func TestAPIContracts(t *testing.T) {
 					"kiro_code_execution_sandbox_command": "",
 						"payment_visible_method_alipay_source": "easypay_alipay",
 						"payment_visible_method_wxpay_source": "official_wxpay",
-						"payment_visible_method_alipay_enabled": true,
-						"payment_visible_method_wxpay_enabled": false,
-						"openai_advanced_scheduler_enabled": true,
-						"openai_oauth_image_bridge_disable_keepalives": false,
+							"payment_visible_method_alipay_enabled": true,
+							"payment_visible_method_wxpay_enabled": false,
+							"openai_advanced_scheduler_enabled": true,
+							"openai_advanced_scheduler_sticky_weighted_enabled": false,
+							"openai_advanced_scheduler_subscription_priority_enabled": false,
+							"openai_advanced_scheduler_lb_top_k": "",
+							"openai_advanced_scheduler_weight_priority": "",
+							"openai_advanced_scheduler_weight_load": "",
+							"openai_advanced_scheduler_weight_queue": "",
+							"openai_advanced_scheduler_weight_session_sticky": "",
+							"openai_advanced_scheduler_weight_quota_headroom": "",
+							"openai_advanced_scheduler_weight_reset": "",
+							"openai_advanced_scheduler_weight_error_rate": "",
+							"openai_advanced_scheduler_weight_ttft": "",
+							"openai_advanced_scheduler_weight_previous_response": "",
+							"openai_advanced_scheduler_effective_lb_top_k": "0",
+							"openai_advanced_scheduler_effective_weight_priority": "0",
+							"openai_advanced_scheduler_effective_weight_load": "0",
+							"openai_advanced_scheduler_effective_weight_queue": "0",
+							"openai_advanced_scheduler_effective_weight_session_sticky": "0",
+							"openai_advanced_scheduler_effective_weight_quota_headroom": "0",
+							"openai_advanced_scheduler_effective_weight_reset": "0",
+							"openai_advanced_scheduler_effective_weight_error_rate": "0",
+							"openai_advanced_scheduler_effective_weight_ttft": "0",
+							"openai_advanced_scheduler_effective_weight_previous_response": "0",
+							"openai_oauth_image_bridge_disable_keepalives": false,
 						"openai_oauth_image_bridge_fresh_upstream_client": false,
 							"openai_sticky_reserve_percent": 30,
 							"openai_sticky_wait_timeout_seconds": 30,
@@ -1236,10 +1283,32 @@ func TestAPIContracts(t *testing.T) {
 					"web_search_emulation_enabled": false,
 					"payment_visible_method_alipay_source": "",
 						"payment_visible_method_wxpay_source": "",
-						"payment_visible_method_alipay_enabled": false,
-						"payment_visible_method_wxpay_enabled": false,
-						"openai_advanced_scheduler_enabled": false,
-						"openai_oauth_image_bridge_disable_keepalives": false,
+							"payment_visible_method_alipay_enabled": false,
+							"payment_visible_method_wxpay_enabled": false,
+							"openai_advanced_scheduler_enabled": false,
+							"openai_advanced_scheduler_sticky_weighted_enabled": false,
+							"openai_advanced_scheduler_subscription_priority_enabled": false,
+							"openai_advanced_scheduler_lb_top_k": "",
+							"openai_advanced_scheduler_weight_priority": "",
+							"openai_advanced_scheduler_weight_load": "",
+							"openai_advanced_scheduler_weight_queue": "",
+							"openai_advanced_scheduler_weight_session_sticky": "",
+							"openai_advanced_scheduler_weight_quota_headroom": "",
+							"openai_advanced_scheduler_weight_reset": "",
+							"openai_advanced_scheduler_weight_error_rate": "",
+							"openai_advanced_scheduler_weight_ttft": "",
+							"openai_advanced_scheduler_weight_previous_response": "",
+							"openai_advanced_scheduler_effective_lb_top_k": "0",
+							"openai_advanced_scheduler_effective_weight_priority": "0",
+							"openai_advanced_scheduler_effective_weight_load": "0",
+							"openai_advanced_scheduler_effective_weight_queue": "0",
+							"openai_advanced_scheduler_effective_weight_session_sticky": "0",
+							"openai_advanced_scheduler_effective_weight_quota_headroom": "0",
+							"openai_advanced_scheduler_effective_weight_reset": "0",
+							"openai_advanced_scheduler_effective_weight_error_rate": "0",
+							"openai_advanced_scheduler_effective_weight_ttft": "0",
+							"openai_advanced_scheduler_effective_weight_previous_response": "0",
+							"openai_oauth_image_bridge_disable_keepalives": false,
 						"openai_oauth_image_bridge_fresh_upstream_client": false,
 							"openai_sticky_reserve_percent": 30,
 							"openai_sticky_wait_timeout_seconds": 30,

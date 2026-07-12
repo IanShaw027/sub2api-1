@@ -40,6 +40,30 @@ func openAIWSResponseAccountCacheKeyForHandlerTest(apiKeyID int64, responseID st
 	return "openai:response:" + hex.EncodeToString(sum[:])
 }
 
+func TestOpenAIWSFirstMessageForScheduledAccount_StripsOnlyMovableMiss(t *testing.T) {
+	body := []byte(`{"type":"response.create","model":"gpt-5.1","previous_response_id":"resp_previous","input":[]}`)
+
+	moved := openAIWSFirstMessageForScheduledAccount(body, "resp_previous", true, false)
+	require.True(t, gjson.ValidBytes(moved))
+	require.False(t, gjson.GetBytes(moved, "previous_response_id").Exists())
+
+	notMovable := openAIWSFirstMessageForScheduledAccount(body, "resp_previous", false, false)
+	require.Equal(t, body, notMovable)
+
+	stickyHit := openAIWSFirstMessageForScheduledAccount(body, "resp_previous", true, true)
+	require.Equal(t, body, stickyHit)
+
+	withoutPrevious := openAIWSFirstMessageForScheduledAccount(body, "", true, false)
+	require.Equal(t, body, withoutPrevious)
+
+	partialToolContext := []byte(`{"type":"response.create","model":"gpt-5.1","previous_response_id":"resp_previous","input":[{"type":"function_call","call_id":"call_a"},{"type":"function_call_output","call_id":"call_a"},{"type":"function_call_output","call_id":"call_b"}]}`)
+	coverage := service.AnalyzeToolCallOutputContextCoverageBytes(partialToolContext)
+	partialCanMove := !coverage.HasFunctionCallOutput || coverage.ContextCoversAllCallIDs
+	require.False(t, partialCanMove)
+	partialPrepared := openAIWSFirstMessageForScheduledAccount(partialToolContext, "resp_previous", partialCanMove, false)
+	require.Equal(t, "resp_previous", gjson.GetBytes(partialPrepared, "previous_response_id").String())
+}
+
 func TestOpenAIHandleStreamingAwareError_JSONEscaping(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -240,18 +240,40 @@ type SystemSettings struct {
 	PaymentVisibleMethodWxpayEnabled  bool   `json:"payment_visible_method_wxpay_enabled"`
 
 	// OpenAI account scheduling
-	OpenAIAdvancedSchedulerEnabled            bool `json:"openai_advanced_scheduler_enabled"`
-	OpenAIStickyReservePercent                int  `json:"openai_sticky_reserve_percent"`
-	OpenAIStickyWaitTimeoutSeconds            int  `json:"openai_sticky_wait_timeout_seconds"`
-	OpenAIWSMinIdlePerAccount                 int  `json:"openai_ws_min_idle_per_account"`
-	OpenAIWSMaxIdlePerAccount                 int  `json:"openai_ws_max_idle_per_account"`
-	OpenAIWSNeutralPrewarmPercent             int  `json:"openai_ws_neutral_prewarm_percent"`
-	OpenAIWSSessionIdleTTLSeconds             int  `json:"openai_ws_session_idle_ttl_seconds"`
-	OpenAIWSDeltaShadowEnabled                bool `json:"openai_ws_delta_shadow_enabled"`
-	OpenAIWSActiveDeltaEnabled                bool `json:"openai_ws_active_delta_enabled"`
-	OpenAIWSTempDiagLogsEnabled               bool `json:"openai_ws_temp_diag_logs_enabled"`
-	OpenAIOAuthImageBridgeDisableKeepAlives   bool `json:"openai_oauth_image_bridge_disable_keepalives"`
-	OpenAIOAuthImageBridgeFreshUpstreamClient bool `json:"openai_oauth_image_bridge_fresh_upstream_client"`
+	OpenAIAdvancedSchedulerEnabled                         bool   `json:"openai_advanced_scheduler_enabled"`
+	OpenAIAdvancedSchedulerStickyWeightedEnabled           bool   `json:"openai_advanced_scheduler_sticky_weighted_enabled"`
+	OpenAIAdvancedSchedulerSubscriptionPriorityEnabled     bool   `json:"openai_advanced_scheduler_subscription_priority_enabled"`
+	OpenAIAdvancedSchedulerLBTopK                          string `json:"openai_advanced_scheduler_lb_top_k"`
+	OpenAIAdvancedSchedulerWeightPriority                  string `json:"openai_advanced_scheduler_weight_priority"`
+	OpenAIAdvancedSchedulerWeightLoad                      string `json:"openai_advanced_scheduler_weight_load"`
+	OpenAIAdvancedSchedulerWeightQueue                     string `json:"openai_advanced_scheduler_weight_queue"`
+	OpenAIAdvancedSchedulerWeightErrorRate                 string `json:"openai_advanced_scheduler_weight_error_rate"`
+	OpenAIAdvancedSchedulerWeightTTFT                      string `json:"openai_advanced_scheduler_weight_ttft"`
+	OpenAIAdvancedSchedulerWeightReset                     string `json:"openai_advanced_scheduler_weight_reset"`
+	OpenAIAdvancedSchedulerWeightQuotaHeadroom             string `json:"openai_advanced_scheduler_weight_quota_headroom"`
+	OpenAIAdvancedSchedulerWeightPreviousResponse          string `json:"openai_advanced_scheduler_weight_previous_response"`
+	OpenAIAdvancedSchedulerWeightSessionSticky             string `json:"openai_advanced_scheduler_weight_session_sticky"`
+	OpenAIAdvancedSchedulerEffectiveLBTopK                 string `json:"openai_advanced_scheduler_effective_lb_top_k"`
+	OpenAIAdvancedSchedulerEffectiveWeightPriority         string `json:"openai_advanced_scheduler_effective_weight_priority"`
+	OpenAIAdvancedSchedulerEffectiveWeightLoad             string `json:"openai_advanced_scheduler_effective_weight_load"`
+	OpenAIAdvancedSchedulerEffectiveWeightQueue            string `json:"openai_advanced_scheduler_effective_weight_queue"`
+	OpenAIAdvancedSchedulerEffectiveWeightErrorRate        string `json:"openai_advanced_scheduler_effective_weight_error_rate"`
+	OpenAIAdvancedSchedulerEffectiveWeightTTFT             string `json:"openai_advanced_scheduler_effective_weight_ttft"`
+	OpenAIAdvancedSchedulerEffectiveWeightReset            string `json:"openai_advanced_scheduler_effective_weight_reset"`
+	OpenAIAdvancedSchedulerEffectiveWeightQuotaHeadroom    string `json:"openai_advanced_scheduler_effective_weight_quota_headroom"`
+	OpenAIAdvancedSchedulerEffectiveWeightPreviousResponse string `json:"openai_advanced_scheduler_effective_weight_previous_response"`
+	OpenAIAdvancedSchedulerEffectiveWeightSessionSticky    string `json:"openai_advanced_scheduler_effective_weight_session_sticky"`
+	OpenAIStickyReservePercent                             int    `json:"openai_sticky_reserve_percent"`
+	OpenAIStickyWaitTimeoutSeconds                         int    `json:"openai_sticky_wait_timeout_seconds"`
+	OpenAIWSMinIdlePerAccount                              int    `json:"openai_ws_min_idle_per_account"`
+	OpenAIWSMaxIdlePerAccount                              int    `json:"openai_ws_max_idle_per_account"`
+	OpenAIWSNeutralPrewarmPercent                          int    `json:"openai_ws_neutral_prewarm_percent"`
+	OpenAIWSSessionIdleTTLSeconds                          int    `json:"openai_ws_session_idle_ttl_seconds"`
+	OpenAIWSDeltaShadowEnabled                             bool   `json:"openai_ws_delta_shadow_enabled"`
+	OpenAIWSActiveDeltaEnabled                             bool   `json:"openai_ws_active_delta_enabled"`
+	OpenAIWSTempDiagLogsEnabled                            bool   `json:"openai_ws_temp_diag_logs_enabled"`
+	OpenAIOAuthImageBridgeDisableKeepAlives                bool   `json:"openai_oauth_image_bridge_disable_keepalives"`
+	OpenAIOAuthImageBridgeFreshUpstreamClient              bool   `json:"openai_oauth_image_bridge_fresh_upstream_client"`
 
 	// Payment configuration
 	PaymentEnabled                   bool     `json:"payment_enabled"`
