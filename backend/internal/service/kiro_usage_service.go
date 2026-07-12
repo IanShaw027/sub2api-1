@@ -44,6 +44,16 @@ type KiroFreeTrial struct {
 	FreeTrialStatus           *string `json:"freeTrialStatus"`
 }
 
+type KiroAvailableProfiles struct {
+	Profiles []KiroAvailableProfile `json:"profiles"`
+}
+
+type KiroAvailableProfile struct {
+	ARN         string `json:"arn"`
+	ProfileARN  string `json:"profileArn"`
+	ProfileName string `json:"profileName"`
+}
+
 type KiroUsageService struct {
 	httpUpstream        HTTPUpstream
 	tlsFPProfileService *TLSFingerprintProfileService
@@ -149,6 +159,148 @@ func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Accoun
 	}
 	kiroLogger(ctx, account).Info("kiro.usage_limits_fetched", fields...)
 	return &out, nil
+}
+
+func (s *KiroUsageService) ResolveBestProfileARN(ctx context.Context, account *Account, accessToken string) (string, *KiroUsageLimits, error) {
+	if account == nil {
+		return "", nil, fmt.Errorf("account is required")
+	}
+	accessToken = strings.TrimSpace(accessToken)
+	if accessToken == "" {
+		return "", nil, fmt.Errorf("access_token is required")
+	}
+	account = s.prepareAccount(ctx, account)
+
+	profiles := make([]string, 0, 2)
+	seen := make(map[string]bool)
+	for _, region := range kiroProfileDiscoveryRegions(account) {
+		out, err := s.fetchAvailableProfilesInRegion(ctx, account, accessToken, region)
+		if err != nil {
+			kiroLogger(ctx, account).Warn("kiro.available_profiles_failed", zap.String("region", region), zap.Error(err))
+			continue
+		}
+		for _, profile := range out.Profiles {
+			arn := strings.TrimSpace(firstNonEmptyKiroString(profile.ARN, profile.ProfileARN))
+			if arn == "" || seen[arn] {
+				continue
+			}
+			seen[arn] = true
+			profiles = append(profiles, arn)
+		}
+	}
+	if len(profiles) == 0 {
+		return "", nil, fmt.Errorf("kiro available profiles returned no profileArn")
+	}
+
+	var firstErr error
+	for _, arn := range profiles {
+		candidate := cloneAccountForKiroProfile(account, arn)
+		usage, err := s.FetchUsageLimits(ctx, candidate, accessToken)
+		if err == nil {
+			return arn, usage, nil
+		}
+		if firstErr == nil {
+			firstErr = err
+		}
+		kiroLogger(ctx, account).Warn("kiro.profile_usage_probe_failed", zap.String("profile_arn", arn), zap.Error(err))
+	}
+	if firstErr != nil {
+		kiroLogger(ctx, account).Warn("kiro.profile_usage_probe_all_failed", zap.Error(firstErr))
+	}
+	return profiles[0], nil, nil
+}
+
+func (s *KiroUsageService) fetchAvailableProfilesInRegion(ctx context.Context, account *Account, accessToken, region string) (*KiroAvailableProfiles, error) {
+	if account == nil {
+		return nil, fmt.Errorf("account is required")
+	}
+	region = strings.TrimSpace(region)
+	if region == "" {
+		region = "us-east-1"
+	}
+	host := fmt.Sprintf("q.%s.amazonaws.com", region)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://"+host+"/", strings.NewReader(`{"maxResults":10}`))
+	if err != nil {
+		return nil, err
+	}
+	runtimeSettings := DefaultKiroRuntimeSettings()
+	if s != nil && s.settingService != nil {
+		runtimeSettings = s.settingService.GetKiroRuntimeSettings(ctx)
+	}
+	machineID := kiro.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
+	kiroVersion := runtimeSettings.KiroVersion
+	req.Header.Set("Content-Type", "application/x-amz-json-1.0")
+	req.Header.Set("x-amz-target", "AmazonCodeWhispererService.ListAvailableProfiles")
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	if isKiroExternalIDPAccount(account) {
+		req.Header.Set("TokenType", "EXTERNAL_IDP")
+	}
+	req.Header.Set("host", host)
+	req.Header.Set("amz-sdk-invocation-id", generateRequestID())
+	req.Header.Set("amz-sdk-request", "attempt=1; max=1")
+	xAmzUserAgent, userAgent := kiro.BuildCodeWhispererRuntimeUserAgents(kiroVersion, machineID, runtimeSettings.SystemVersion, runtimeSettings.NodeVersion)
+	req.Header.Set("x-amz-user-agent", xAmzUserAgent)
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := doKiroSidecarRequest(req, account, s.httpUpstream, s.tlsFPProfileService, 60*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, buildKiroUsageUpstreamError(resp)
+	}
+	var out KiroAvailableProfiles
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func kiroProfileDiscoveryRegions(account *Account) []string {
+	out := []string{}
+	add := func(region string) {
+		region = strings.TrimSpace(region)
+		if region == "" {
+			return
+		}
+		for _, existing := range out {
+			if existing == region {
+				return
+			}
+		}
+		out = append(out, region)
+	}
+	add(profileARNRegion(accountCredential(account, "profile_arn")))
+	add(accountCredential(account, "api_region"))
+	add(accountCredential(account, "auth_region"))
+	add(accountCredential(account, "region"))
+	add("us-east-1")
+	add("eu-central-1")
+	return out
+}
+
+func cloneAccountForKiroProfile(account *Account, profileARN string) *Account {
+	if account == nil {
+		return nil
+	}
+	cloned := *account
+	cloned.Credentials = cloneCredentials(account.Credentials)
+	if cloned.Credentials == nil {
+		cloned.Credentials = map[string]any{}
+	}
+	profileARN = strings.TrimSpace(profileARN)
+	if profileARN != "" {
+		cloned.Credentials["profile_arn"] = profileARN
+		if profileID := profileARNProfileID(profileARN); profileID != "" {
+			cloned.Credentials["profile_id"] = profileID
+		}
+		if region := profileARNRegion(profileARN); region != "" {
+			cloned.Credentials["api_region"] = region
+			cloned.Credentials["region"] = region
+		}
+	}
+	return &cloned
 }
 
 func buildKiroUsageUpstreamError(resp *http.Response) error {

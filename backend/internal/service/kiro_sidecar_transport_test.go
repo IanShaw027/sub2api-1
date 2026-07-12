@@ -246,6 +246,84 @@ func TestKiroUsageService_FetchUsageLimits_UsesAlignedRuntimeUserAgentVersion(t 
 	require.Contains(t, upstream.req.Header.Get("User-Agent"), "api/codewhispererruntime#1.0.27")
 }
 
+func TestKiroUsageService_ResolveBestProfileARNChoosesProfileWithUsage(t *testing.T) {
+	calls := []string{}
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			calls = append(calls, req.Method+" "+req.URL.Host+" "+req.URL.Path+" "+req.URL.Query().Get("profileArn")+" "+req.Header.Get("TokenType"))
+			if req.Method == http.MethodPost && req.URL.Path == "/" && req.Header.Get("x-amz-target") == "AmazonCodeWhispererService.ListAvailableProfiles" {
+				switch req.URL.Host {
+				case "q.us-east-1.amazonaws.com":
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(`{"profiles":[{"arn":"arn:aws:codewhisperer:us-east-1:111111111111:profile/USEAST","profileName":"us"}]}`)),
+						Header:     make(http.Header),
+					}, nil
+				case "q.eu-central-1.amazonaws.com":
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(`{"profiles":[{"arn":"arn:aws:codewhisperer:eu-central-1:222222222222:profile/EUCENTRAL","profileName":"eu"}]}`)),
+						Header:     make(http.Header),
+					}, nil
+				}
+			}
+			if req.Method == http.MethodGet && req.URL.Path == "/getUsageLimits" {
+				if strings.Contains(req.URL.Query().Get("profileArn"), ":us-east-1:") {
+					return &http.Response{
+						StatusCode: http.StatusForbidden,
+						Body:       io.NopCloser(strings.NewReader(`{"message":"FEATURE_NOT_SUPPORTED","reason":"FEATURE_NOT_SUPPORTED"}`)),
+						Header:     make(http.Header),
+					}, nil
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body: io.NopCloser(strings.NewReader(`{
+						"subscriptionInfo":{"subscriptionTitle":"KIRO POWER"},
+						"usageBreakdownList":[{"currentUsageWithPrecision":0,"usageLimitWithPrecision":10000}]
+					}`)),
+					Header: make(http.Header),
+				}, nil
+			}
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.String())
+			return nil, nil
+		},
+	}
+	service := NewKiroUsageService().WithTransport(upstream, &TLSFingerprintProfileService{})
+	account := &Account{
+		ID:          87,
+		Platform:    PlatformKiro,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"refresh_token": "refresh-token",
+			"auth_method":   "external_idp",
+		},
+	}
+
+	arn, usage, err := service.ResolveBestProfileARN(context.Background(), account, "access-token")
+
+	require.NoError(t, err)
+	require.Equal(t, "arn:aws:codewhisperer:eu-central-1:222222222222:profile/EUCENTRAL", arn)
+	require.NotNil(t, usage)
+	require.Equal(t, "KIRO POWER", usage.SubscriptionTitle())
+	require.Len(t, calls, 4)
+	require.Contains(t, strings.Join(calls, "\n"), "EXTERNAL_IDP")
+}
+
+func TestKiroRegionPrefersProfileARNRegion(t *testing.T) {
+	account := &Account{
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"profile_arn": "arn:aws:codewhisperer:eu-central-1:222222222222:profile/EUCENTRAL",
+			"api_region":  "us-east-1",
+			"region":      "us-east-1",
+		},
+	}
+
+	require.Equal(t, "eu-central-1", KiroRegion(account))
+}
+
 func TestKiroTokenRefresher_Refresh_UsesHTTPUpstreamTransport(t *testing.T) {
 	upstream := &kiroHTTPUpstreamRecorder{
 		resp: &http.Response{

@@ -254,6 +254,9 @@ func KiroRegion(account *Account) string {
 	if account == nil {
 		return "us-east-1"
 	}
+	if value := profileARNRegion(account.GetCredential("profile_arn")); value != "" {
+		return value
+	}
 	if value := account.GetCredential("api_region"); value != "" {
 		return value
 	}
