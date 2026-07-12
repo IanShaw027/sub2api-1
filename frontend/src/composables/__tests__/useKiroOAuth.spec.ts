@@ -25,6 +25,7 @@ vi.mock('vue-i18n', async () => {
   }
 })
 
+import { adminAPI } from '@/api/admin'
 import { stripKiroRuntimeExtra, useKiroOAuth } from '../useKiroOAuth'
 
 describe('useKiroOAuth', () => {
@@ -89,5 +90,35 @@ describe('useKiroOAuth', () => {
     expect(kiroOAuth.buildAccountName({ user_id: 'arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK' } as any)).toBe('EHGA3GRVQMUK')
     expect(kiroOAuth.buildAccountName({ plan_name: 'Pro' } as any)).toBe('Kiro Pro')
     expect(kiroOAuth.buildAccountName({} as any)).toBe('Kiro OAuth Account')
+  })
+
+  it('stores External IdP authorization progress without setting an error', async () => {
+    const openMock = vi.spyOn(window, 'open').mockReturnValue(null)
+    vi.mocked(adminAPI.kiro.exchangeCallback).mockResolvedValueOnce({
+      external_idp: {
+        session_id: 'session-1',
+        status: 'authorization_required',
+        auth_method: 'external_idp',
+        auth_url: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize?client_id=client-1',
+        client_id: 'client-1',
+        redirect_uri: 'http://localhost:3128/signin/callback?login_option=external_idp'
+      }
+    } as any)
+
+    const kiroOAuth = useKiroOAuth()
+    kiroOAuth.sessionId.value = 'session-1'
+
+    const result = await kiroOAuth.exchangeCallback('http://localhost:3128/signin/callback?login_option=external_idp')
+
+    expect(result).toBeNull()
+    expect(kiroOAuth.error.value).toBe('')
+    expect(kiroOAuth.externalIDPAuthorization.value?.auth_url).toContain('login.microsoftonline.com')
+    expect(openMock).toHaveBeenCalledWith(
+      'https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize?client_id=client-1',
+      '_blank',
+      'noopener'
+    )
+
+    openMock.mockRestore()
   })
 })

@@ -196,7 +196,6 @@ export function useKiroOAuth() {
           if (typeof window !== 'undefined' && progress.external_idp.auth_url) {
             window.open(progress.external_idp.auth_url, '_blank', 'noopener')
           }
-          error.value = progress.external_idp.message || t('admin.accounts.kiro.callbackUrlHint')
           return null
         }
         error.value = t('admin.accounts.kiro.idcDeviceUnexpected')
