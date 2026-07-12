@@ -1303,15 +1303,7 @@ func externalIDPRedirectURIFromCallback(parsedCallbackURL *url.URL) string {
 		return ""
 	}
 	out := *parsedCallbackURL
-	values := url.Values{}
-	loginOption := firstNonEmptyKiroString(
-		strings.TrimSpace(parsedCallbackURL.Query().Get("login_option")),
-		strings.TrimSpace(parsedCallbackURL.Query().Get("loginOption")),
-	)
-	if loginOption != "" {
-		values.Set("login_option", loginOption)
-	}
-	out.RawQuery = values.Encode()
+	out.RawQuery = ""
 	out.ForceQuery = false
 	out.Fragment = ""
 	return out.String()

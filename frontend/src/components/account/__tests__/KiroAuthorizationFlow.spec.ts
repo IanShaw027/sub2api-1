@@ -194,7 +194,7 @@ describe('KiroAuthorizationFlow', () => {
         login_option: 'external_idp',
         auth_url: authUrl,
         client_id: 'client-1',
-        redirect_uri: 'http://localhost:3128/signin/callback?login_option=external_idp',
+        redirect_uri: 'http://localhost:3128/signin/callback',
         issuer_url: 'https://login.microsoftonline.com/tenant/v2.0',
         scopes: ['scope-a', 'offline_access'],
         login_hint: 'user@example.com'

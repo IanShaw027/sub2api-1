@@ -101,14 +101,14 @@ describe('useKiroOAuth', () => {
         auth_method: 'external_idp',
         auth_url: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize?client_id=client-1',
         client_id: 'client-1',
-        redirect_uri: 'http://localhost:3128/signin/callback?login_option=external_idp'
+        redirect_uri: 'http://localhost:3128/signin/callback'
       }
     } as any)
 
     const kiroOAuth = useKiroOAuth()
     kiroOAuth.sessionId.value = 'session-1'
 
-    const result = await kiroOAuth.exchangeCallback('http://localhost:3128/signin/callback?login_option=external_idp')
+    const result = await kiroOAuth.exchangeCallback('http://localhost:3128/signin/callback')
 
     expect(result).toBeNull()
     expect(kiroOAuth.error.value).toBe('')

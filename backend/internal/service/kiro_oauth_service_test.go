@@ -264,11 +264,11 @@ func TestKiroOAuthServiceExchangeCallbackOrStartContinuationReturnsMicrosoftExte
 	if query.Get("client_id") != clientID {
 		t.Fatalf("client_id = %q, want %q", query.Get("client_id"), clientID)
 	}
-	if query.Get("redirect_uri") != "http://localhost:3128/signin/callback?login_option=external_idp" {
+	if query.Get("redirect_uri") != "http://localhost:3128/signin/callback" {
 		t.Fatalf("redirect_uri = %q", query.Get("redirect_uri"))
 	}
-	if strings.Contains(query.Get("redirect_uri"), "login_hint=") || strings.Contains(query.Get("redirect_uri"), "issuer_url=") || strings.Contains(query.Get("redirect_uri"), "scopes=") {
-		t.Fatalf("redirect_uri should only preserve login_option, got %q", query.Get("redirect_uri"))
+	if strings.Contains(query.Get("redirect_uri"), "?") || strings.Contains(query.Get("redirect_uri"), "login_option=") || strings.Contains(query.Get("redirect_uri"), "login_hint=") || strings.Contains(query.Get("redirect_uri"), "issuer_url=") || strings.Contains(query.Get("redirect_uri"), "scopes=") {
+		t.Fatalf("redirect_uri should be the Azure-registered callback URL without query params, got %q", query.Get("redirect_uri"))
 	}
 	if query.Get("state") != state {
 		t.Fatalf("state = %q, want %q", query.Get("state"), state)
@@ -286,6 +286,9 @@ func TestKiroOAuthServiceExchangeCallbackOrStartContinuationReturnsMicrosoftExte
 	}
 	if stored.ExternalIDP.TokenEndpoint != "https://login.microsoftonline.com/035247e5-0116-4d03-a92f-989b7476ca4f/oauth2/v2.0/token" {
 		t.Fatalf("token endpoint = %q", stored.ExternalIDP.TokenEndpoint)
+	}
+	if stored.ExternalIDP.RedirectURI != "http://localhost:3128/signin/callback" {
+		t.Fatalf("stored external_idp redirect_uri = %q", stored.ExternalIDP.RedirectURI)
 	}
 }
 
