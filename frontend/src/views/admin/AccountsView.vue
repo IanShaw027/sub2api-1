@@ -244,12 +244,22 @@
                 {{ getDisplayAccountName(row, value) }}
               </span>
               <span
-                v-if="row.extra?.email_address"
+                v-if="getAccountSecondaryEmail(row)"
                 class="max-w-[400px] truncate text-xs text-gray-500 dark:text-gray-400"
-                :title="row.extra.email_address"
+                :title="getAccountSecondaryEmail(row)"
               >
-                {{ row.extra.email_address }}
+                {{ getAccountSecondaryEmail(row) }}
               </span>
+              <div v-if="getKiroNameMetadata(row).length" class="mt-0.5 flex max-w-[400px] flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-gray-500 dark:text-gray-400">
+                <span
+                  v-for="item in getKiroNameMetadata(row)"
+                  :key="item.key"
+                  class="max-w-[190px] truncate"
+                  :title="item.value"
+                >
+                  {{ item.label }}: {{ item.value }}
+                </span>
+              </div>
             </div>
           </template>
           <template #cell-notes="{ value }">
@@ -273,6 +283,14 @@
                   :class="['inline-block rounded px-1.5 py-0.5 text-[10px] font-medium', getAntigravityTierClass(row)]"
                 >
                   {{ getAntigravityTierLabel(row) }}
+                </span>
+                <span
+                  v-if="hasAntigravityIneligibleTier(row)"
+                  class="inline-flex h-4 w-4 items-center justify-center rounded-full bg-red-100 text-[10px] font-bold text-red-600 dark:bg-red-900/40 dark:text-red-300"
+                  :title="t('admin.accounts.ineligibleWarning')"
+                  aria-label="Antigravity tier warning"
+                >
+                  !
                 </span>
               </div>
               <div
@@ -329,6 +347,7 @@
               :batched-usage-error="usageBatchErrorByAccountId[String(row.id)] ?? null"
               :batched-usage-loading="usageBatchLoadingByAccountId[String(row.id)] === true"
               :request-batched-usage="isDesktopViewport ? queueBatchedUsage : null"
+              @usage-loaded="handleAccountUsageLoaded(row.id, $event)"
             />
           </template>
           <template #cell-proxy="{ row }">
@@ -774,6 +793,11 @@ const setUsageBatchState = (accountID: number, usage: AccountUsageInfo | null, e
     ...usageBatchErrorByAccountId.value,
     [key]: error
   }
+}
+
+const handleAccountUsageLoaded = (accountID: number, usage: AccountUsageInfo) => {
+  if (usageBatchByAccountId.value[String(accountID)] === usage) return
+  setUsageBatchState(accountID, usage, null)
 }
 
 const flushQueuedUsageBatch = async () => {
@@ -1497,6 +1521,12 @@ function getAntigravityTierLabel(row: any): string | null {
   }
 }
 
+function hasAntigravityIneligibleTier(row: any): boolean {
+  if (row?.platform !== 'antigravity') return false
+  const tiers = row?.extra?.load_code_assist?.ineligibleTiers
+  return Array.isArray(tiers) && tiers.length > 0
+}
+
 function normalizeGeminiPlatformTier(value: unknown): string {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : ''
   if (!normalized) return ''
@@ -1557,6 +1587,10 @@ function getPlatformBadgePlanType(row: any): string | undefined {
     ]
     const tier = candidates.find((value): value is string => typeof value === 'string' && value.trim().length > 0)
     return tier?.trim() || undefined
+  }
+  if (row?.platform === 'kiro') {
+    const usageTitle = usageBatchByAccountId.value[String(row.id)]?.kiro_subscription_title
+    if (typeof usageTitle === 'string' && usageTitle.trim()) return usageTitle.trim()
   }
   if (row?.platform === 'gemini') {
     const normalizedTier = collectGeminiTierMetadataSources(
@@ -1639,6 +1673,27 @@ function getDisplayAccountName(row: any, fallbackName: string): string {
     })
   }
   return fallbackName
+}
+
+function getAccountSecondaryEmail(row: any): string {
+  const candidates = row?.platform === 'kiro'
+    ? [usageBatchByAccountId.value[String(row.id)]?.kiro_email, row?.extra?.email_address, row?.credentials?.email]
+    : [row?.extra?.email_address]
+  return candidates.find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.trim() || ''
+}
+
+function getKiroNameMetadata(row: any): Array<{ key: string; label: string; value: string }> {
+  if (row?.platform !== 'kiro') return []
+  const usage = usageBatchByAccountId.value[String(row.id)]
+  const firstString = (...values: unknown[]) => values.find(
+    (value): value is string => typeof value === 'string' && value.trim().length > 0
+  )?.trim() || ''
+  const profileID = firstString(usage?.kiro_profile_id, row?.credentials?.profile_id, row?.extra?.profile_id)
+  const loginProvider = firstString(usage?.kiro_login_provider, row?.credentials?.login_provider, row?.extra?.login_provider)
+  return [
+    { key: 'profile', label: t('admin.accounts.kiro.profileIdShort'), value: profileID },
+    { key: 'login', label: t('admin.accounts.kiro.loginProviderShort'), value: loginProvider }
+  ].filter((item) => item.value)
 }
 
 type OpenAICompactBadgeState = 'active' | 'blocked' | 'auto'

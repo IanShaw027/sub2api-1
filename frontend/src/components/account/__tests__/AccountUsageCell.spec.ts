@@ -78,7 +78,7 @@ describe('AccountUsageCell', () => {
     })
   })
 
-  it('Kiro 用量会显示订阅名、overage 标记和邮箱', async () => {
+  it('Kiro 用量只显示请求统计、30d 进度和额度摘要', async () => {
     getUsage.mockResolvedValue({
       kiro_subscription_title: 'Kiro Pro',
       kiro_overage_capability: 'ENABLED',
@@ -102,8 +102,8 @@ describe('AccountUsageCell', () => {
       global: {
         stubs: {
           UsageProgressBar: {
-            props: ['label', 'utilization', 'resetsAt', 'color'],
-            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}</div>'
+            props: ['label', 'utilization', 'resetsAt', 'windowStats', 'showEmptyWindowStats', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}|{{ windowStats?.requests }}|{{ showEmptyWindowStats }}</div>'
           },
           AccountQuotaInfo: true
         }
@@ -112,13 +112,14 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Kiro Pro')
-    expect(wrapper.text()).toContain('admin.accounts.kiro.overageEnabled')
-    expect(wrapper.text()).toContain('kiro-user@example.com')
-    expect(wrapper.text()).toContain('$0|32|2026-07-12T08:00:00Z')
+    expect(wrapper.text()).toContain('30d|32|2026-07-12T08:00:00Z|0|true')
+    expect(wrapper.text()).toContain('admin.accounts.kiro.quotaCompact')
+    expect(wrapper.text()).not.toContain('Kiro Pro')
+    expect(wrapper.text()).not.toContain('kiro-user@example.com')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.overageEnabled')
   })
 
-  it('Kiro 用量会展示 profile/login/status 诊断标签', async () => {
+  it('Kiro 用量不再混入 profile/login/status 诊断标签', async () => {
     getUsage.mockResolvedValue({
       kiro_subscription_title: 'Kiro Pro',
       kiro_quota: {
@@ -153,15 +154,14 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('admin.accounts.kiro.profileIdShort')
-    expect(wrapper.text()).toContain('PROFILE-123')
-    expect(wrapper.text()).toContain('admin.accounts.kiro.loginProviderShort')
-    expect(wrapper.text()).toContain('microsoft')
-    expect(wrapper.text()).toContain('admin.accounts.kiro.statusReasonShort')
-    expect(wrapper.text()).toContain('FEATURE_NOT_SUPPORTED')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.profileIdShort')
+    expect(wrapper.text()).not.toContain('PROFILE-123')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.loginProviderShort')
+    expect(wrapper.text()).not.toContain('microsoft')
+    expect(wrapper.text()).not.toContain('FEATURE_NOT_SUPPORTED')
   })
 
-  it('Kiro 用量会把不支持超额和未知套餐显示为明确徽标', async () => {
+  it('Kiro 未知套餐不再占用用量窗口', async () => {
     getUsage.mockResolvedValue({
       kiro_overage_capability: 'NOT_SUPPORTED',
       kiro_overage_enabled: false,
@@ -193,11 +193,12 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('admin.accounts.kiro.subscriptionUnknown')
-    expect(wrapper.text()).toContain('admin.accounts.kiro.overageUnsupported')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.subscriptionUnknown')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.overageUnsupported')
+    expect(wrapper.text()).toContain('admin.accounts.kiro.quotaCompact')
   })
 
-  it('Kiro 用量会把可开未开的超额显示为 capable 徽标', async () => {
+  it('Kiro 套餐和超额能力不再渲染为用量徽标', async () => {
     getUsage.mockResolvedValue({
       kiro_subscription_title: 'Kiro Power',
       kiro_overage_capability: 'SUPPORTED',
@@ -230,8 +231,8 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Kiro Power')
-    expect(wrapper.text()).toContain('admin.accounts.kiro.overageCapable')
+    expect(wrapper.text()).not.toContain('Kiro Power')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.overageCapable')
     expect(wrapper.text()).not.toContain('admin.accounts.kiro.overageUnsupported')
   })
 

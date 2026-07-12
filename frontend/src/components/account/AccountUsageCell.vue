@@ -190,7 +190,7 @@
     </template>
 
 
-    <!-- Kiro OAuth accounts: total quota display -->
+    <!-- Kiro OAuth accounts: local request stats, 30d quota progress, quota summary -->
     <template v-else-if="account.platform === 'kiro' && account.type === 'oauth'">
       <div v-if="loading" class="space-y-1.5">
         <div class="flex items-center gap-1">
@@ -211,49 +211,20 @@
         </span>
       </div>
       <div v-else-if="usageInfo?.kiro_quota" class="space-y-1">
-        <div class="mb-1 flex flex-wrap items-center gap-1">
-          <span
-            class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium"
-            :class="kiroSubscriptionBadgeClass"
-          >
-            {{ kiroSubscriptionBadgeLabel }}
-          </span>
-          <span
-            class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium"
-            :class="kiroOverageBadgeClass"
-          >
-            {{ kiroOverageBadgeLabel }}
-          </span>
-        </div>
-        <div v-if="usageInfo.kiro_email" class="text-[10px] text-gray-500 dark:text-gray-400 truncate" :title="usageInfo.kiro_email">
-          {{ usageInfo.kiro_email }}
-        </div>
-        <KiroDiagnosticChips
-          :credentials="account.credentials || {}"
-          :extra="account.extra || {}"
-          :usage-info="usageInfo || {}"
-          :include-profile-mode="false"
-          chip-class="inline-flex rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-        />
         <UsageProgressBar
-          :label="kiroUsageLabel"
+          label="30d"
           :utilization="usageInfo.kiro_quota.utilization"
           :resets-at="usageInfo.kiro_quota.resets_at"
           :window-stats="kiroQuotaStats"
+          :show-empty-window-stats="true"
           color="cyan"
         />
-        <div class="text-[10px] text-gray-500 dark:text-gray-400">
-          {{ kiroUsageSummary }}
-        </div>
-        <div v-if="kiroQuotaBreakdownSummary.length" class="space-y-0.5 text-[10px] text-gray-500 dark:text-gray-400">
-          <div
-            v-for="item in kiroQuotaBreakdownSummary"
-            :key="item.key"
-            class="flex items-center justify-between gap-2"
-          >
-            <span>{{ item.label }}</span>
-            <span class="tabular-nums">{{ item.summary }}</span>
-          </div>
+        <div class="whitespace-nowrap text-[10px] text-gray-500 dark:text-gray-400">
+          {{ t('admin.accounts.kiro.quotaCompact', {
+            limit: formatKiroMoney(usageInfo.kiro_usage_limit),
+            overage: kiroOverageDisplay,
+            used: formatKiroMoney(usageInfo.kiro_current_usage)
+          }) }}
         </div>
       </div>
       <div v-else class="text-xs text-gray-400">-</div>
@@ -261,40 +232,6 @@
 
     <!-- Antigravity OAuth accounts: fetch usage from API -->
     <template v-else-if="account.platform === 'antigravity' && account.type === 'oauth'">
-      <!-- 账户类型徽章 -->
-      <div v-if="antigravityTierLabel" class="mb-1 flex items-center gap-1">
-        <span
-          :class="[
-            'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
-            antigravityTierClass
-          ]"
-        >
-          {{ antigravityTierLabel }}
-        </span>
-        <!-- 不合格账户警告图标 -->
-        <span
-          v-if="hasIneligibleTiers"
-          class="group relative cursor-help"
-        >
-          <svg
-            class="h-3.5 w-3.5 text-red-500"
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path
-              fill-rule="evenodd"
-              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-              clip-rule="evenodd"
-            />
-          </svg>
-          <span
-            class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-gray-700"
-          >
-            {{ t('admin.accounts.ineligibleWarning') }}
-          </span>
-        </span>
-      </div>
-
       <!-- Forbidden state (403) -->
       <div v-if="isForbidden" class="space-y-1">
         <span
@@ -603,7 +540,7 @@ import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'v
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
-import type { Account, AccountUsageInfo, Group, KiroQuotaBreakdown, UsageProgress, WindowStats } from '@/types'
+import type { Account, AccountUsageInfo, Group, UsageProgress, WindowStats } from '@/types'
 import type { CodexInviteResetStatus } from '@/api/admin/accounts'
 import { buildGeminiUsageRefreshKey, buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
@@ -611,7 +548,6 @@ import { Icon } from '@/components/icons'
 import { formatCompactNumber } from '@/utils/format'
 import UsageProgressBar from './UsageProgressBar.vue'
 import CodexInviteResetModal from './CodexInviteResetModal.vue'
-import KiroDiagnosticChips from './KiroDiagnosticChips.vue'
 
 // Module-level cache shared across all AccountUsageCell instances
 const _usageCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
@@ -640,6 +576,9 @@ const props = withDefaults(
     requestBatchedUsage: null
   }
 )
+const emit = defineEmits<{
+  'usage-loaded': [usage: AccountUsageInfo]
+}>()
 
 const { t } = useI18n()
 const desktopViewportQuery = '(min-width: 768px)'
@@ -651,6 +590,9 @@ const loading = ref(false)
 const activeQueryLoading = ref(false)
 const error = ref<string | null>(null)
 const usageInfo = ref<AccountUsageInfo | null>(null)
+watch(usageInfo, (usage) => {
+  if (usage) emit('usage-loaded', usage)
+})
 const rootRef = ref<HTMLElement | null>(null)
 const isDesktopViewport = ref(
   typeof window === 'undefined' ? true : window.matchMedia(desktopViewportQuery).matches
@@ -865,112 +807,17 @@ const hasOpenAIUsageContent = computed(() => {
 const kiroQuotaStats = computed<WindowStats | null>(() => {
   if (props.account.platform !== 'kiro') return null
   if (usageInfo.value?.kiro_quota?.window_stats) return usageInfo.value.kiro_quota.window_stats
-  return null
-})
-
-const kiroUsageLabel = computed(() => {
-  const limit = usageInfo.value?.kiro_usage_limit
-  if (typeof limit !== 'number' || Number.isNaN(limit) || limit <= 0) return '$0'
-  return `$${formatKiroMoney(limit)}`
-})
-
-const kiroUsageSummary = computed(() => t('admin.accounts.kiro.usageSummary', {
-  used: formatKiroMoney(usageInfo.value?.kiro_current_usage),
-  limit: formatKiroMoney(usageInfo.value?.kiro_usage_limit),
-  remaining: formatKiroMoney(usageInfo.value?.kiro_remaining)
-}))
-
-const kiroSubscriptionTitle = computed(() => {
-  const title = usageInfo.value?.kiro_subscription_title?.trim()
-  return title || t('admin.accounts.kiro.subscriptionUnknown')
-})
-
-const kiroSubscriptionBadgeLabel = computed(() => kiroSubscriptionTitle.value)
-
-const kiroSubscriptionBadgeClass = computed(() => {
-  const title = kiroSubscriptionTitle.value.toLowerCase()
-  if (title.includes('power')) {
-    return 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/40 dark:text-fuchsia-300'
-  }
-  if (title.includes('pro+') || title.includes('pro plus')) {
-    return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-  }
-  if (title.includes('pro')) {
-    return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300'
-  }
-  if (title.includes('free')) {
-    return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
-  }
-  return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+  return { requests: 0, tokens: 0, cost: 0, standard_cost: 0, user_cost: 0 }
 })
 
 const kiroOverageCapabilityValue = computed(() => (usageInfo.value?.kiro_overage_capability || '').trim().toUpperCase())
 
-const kiroOverageState = computed<'enabled' | 'capable' | 'unsupported' | 'unknown'>(() => {
-  if (usageInfo.value?.kiro_overage_enabled === true) return 'enabled'
+const kiroOverageDisplay = computed(() => {
+  if (usageInfo.value?.kiro_overage_enabled === true) return 'true'
+  if (usageInfo.value?.kiro_overage_enabled === false) return 'false'
   const capability = kiroOverageCapabilityValue.value
-  if (!capability) return 'unknown'
-  if (['SUPPORTED', 'ENABLED', 'AVAILABLE', 'CAPABLE'].includes(capability)) return 'capable'
-  if (['UNSUPPORTED', 'DISABLED', 'NOT_SUPPORTED', 'INELIGIBLE', 'UNAVAILABLE'].includes(capability)) return 'unsupported'
-  return 'unknown'
-})
-
-const kiroOverageBadgeLabel = computed(() => {
-  switch (kiroOverageState.value) {
-    case 'enabled':
-      return t('admin.accounts.kiro.overageEnabled')
-    case 'capable':
-      return t('admin.accounts.kiro.overageCapable')
-    case 'unsupported':
-      return t('admin.accounts.kiro.overageUnsupported')
-    default:
-      return t('admin.accounts.kiro.overageUnknown')
-  }
-})
-
-const kiroOverageBadgeClass = computed(() => {
-  switch (kiroOverageState.value) {
-    case 'enabled':
-      return 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'
-    case 'capable':
-      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-    case 'unsupported':
-      return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
-    default:
-      return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
-  }
-})
-
-const formatKiroQuotaBreakdownSummary = (quota?: KiroQuotaBreakdown | null) => {
-  if (!quota) return ''
-  return t('admin.accounts.kiro.quotaPartSummary', {
-    used: formatKiroMoney(quota.current_usage),
-    limit: formatKiroMoney(quota.usage_limit),
-    remaining: formatKiroMoney(quota.remaining)
-  })
-}
-
-const kiroQuotaBreakdownSummary = computed(() => {
-  const info = usageInfo.value
-  if (!info) return []
-
-  return [
-    {
-      key: 'monthly',
-      label: t('admin.accounts.kiro.monthlyQuota'),
-      summary: formatKiroQuotaBreakdownSummary(info.kiro_monthly_quota)
-    },
-    {
-      key: 'bonus',
-      label: t('admin.accounts.kiro.bonusQuota'),
-      summary: formatKiroQuotaBreakdownSummary(info.kiro_bonus_quota)
-    },
-    {
-      key: 'free_trial',
-      label: t('admin.accounts.kiro.freeTrialQuota'),
-      summary: formatKiroQuotaBreakdownSummary(info.kiro_free_trial_quota)
-    }
-  ].filter((item) => item.summary)
+  if (['SUPPORTED', 'ENABLED', 'AVAILABLE', 'CAPABLE'].includes(capability)) return 'false'
+  return 'null'
 })
 
 const openAIUsageRefreshKey = computed(() => buildOpenAIUsageRefreshKey(props.account))
@@ -1064,28 +911,6 @@ const aiCreditsDisplay = computed(() => {
   return total.toFixed(0)
 })
 
-// Antigravity 账户类型（从 load_code_assist 响应中提取）
-const antigravityTier = computed(() => {
-  const extra = props.account.extra as Record<string, unknown> | undefined
-  if (!extra) return null
-
-  const loadCodeAssist = extra.load_code_assist as Record<string, unknown> | undefined
-  if (!loadCodeAssist) return null
-
-  // 优先取 paidTier，否则取 currentTier
-  const paidTier = loadCodeAssist.paidTier as Record<string, unknown> | undefined
-  if (paidTier && typeof paidTier.id === 'string') {
-    return paidTier.id
-  }
-
-  const currentTier = loadCodeAssist.currentTier as Record<string, unknown> | undefined
-  if (currentTier && typeof currentTier.id === 'string') {
-    return currentTier.id
-  }
-
-  return null
-})
-
 type GeminiWindowBar = {
   key: string
   label: string
@@ -1155,46 +980,6 @@ const geminiUsageBars = computed(() => {
   ]
 
   return bars.filter((bar): bar is GeminiWindowBar => bar !== null)
-})
-
-// 账户类型显示标签
-const antigravityTierLabel = computed(() => {
-  switch (antigravityTier.value) {
-    case 'free-tier':
-      return t('admin.accounts.tier.free')
-    case 'g1-pro-tier':
-      return t('admin.accounts.tier.pro')
-    case 'g1-ultra-tier':
-      return t('admin.accounts.tier.ultra')
-    default:
-      return null
-  }
-})
-
-// 账户类型徽章样式
-const antigravityTierClass = computed(() => {
-  switch (antigravityTier.value) {
-    case 'free-tier':
-      return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-    case 'g1-pro-tier':
-      return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
-    case 'g1-ultra-tier':
-      return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
-    default:
-      return ''
-  }
-})
-
-// 检测账户是否有不合格状态（ineligibleTiers）
-const hasIneligibleTiers = computed(() => {
-  const extra = props.account.extra as Record<string, unknown> | undefined
-  if (!extra) return false
-
-  const loadCodeAssist = extra.load_code_assist as Record<string, unknown> | undefined
-  if (!loadCodeAssist) return false
-
-  const ineligibleTiers = loadCodeAssist.ineligibleTiers as unknown[] | undefined
-  return Array.isArray(ineligibleTiers) && ineligibleTiers.length > 0
 })
 
 // Antigravity 403 forbidden 状态

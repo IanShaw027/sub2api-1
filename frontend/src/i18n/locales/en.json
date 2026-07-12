@@ -4466,11 +4466,7 @@
         "manualApiKeyDesc": "Enter a Kiro API key or a bearer token that can call the upstream directly.",
         "apiKeyPlaceholder": "Enter Kiro API key or bearer token",
         "apiKeyHint": "Enter a Kiro API key or a compatible upstream bearer token.",
-        "usageSummary": "Used ${used} / Limit ${limit} · Remaining ${remaining}",
-        "quotaPartSummary": "${used}/${limit} · left ${remaining}",
-        "monthlyQuota": "Monthly",
-        "bonusQuota": "Bonus",
-        "freeTrialQuota": "Trial"
+        "quotaCompact": "Limit ${limit} · Overage {overage} · Used ${used}"
       },
       "testAccountConnection": "Test Account Connection",
       "account": "Account",

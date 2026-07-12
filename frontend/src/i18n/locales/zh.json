@@ -4625,11 +4625,7 @@
         "manualApiKeyDesc": "手工录入 Kiro API Key 或可直连上游的 Bearer Token。",
         "apiKeyPlaceholder": "输入 Kiro API Key 或 Bearer Token",
         "apiKeyHint": "填写 Kiro API Key 或兼容上游的 Bearer Token。",
-        "usageSummary": "已用 ${used} / 限额 ${limit} · 剩余 ${remaining}",
-        "quotaPartSummary": "${used}/${limit} · 剩余 ${remaining}",
-        "monthlyQuota": "每月",
-        "bonusQuota": "赠送",
-        "freeTrialQuota": "试用"
+        "quotaCompact": "限额 ${limit} · 超额 {overage} · 已用 ${used}"
       },
       "testAccountConnection": "测试账号连接",
       "account": "账号",

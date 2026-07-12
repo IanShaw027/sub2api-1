@@ -111,6 +111,29 @@ describe('UsageProgressBar', () => {
     expect(wrapper.text()).not.toContain('remaining')
   })
 
+  it('showEmptyWindowStats=true 时固定显示零请求统计', () => {
+    const wrapper = mount(UsageProgressBar, {
+      props: {
+        label: '30d',
+        utilization: 0,
+        resetsAt: null,
+        showEmptyWindowStats: true,
+        windowStats: {
+          requests: 0,
+          tokens: 0,
+          cost: 0,
+          standard_cost: 0,
+          user_cost: 0
+        },
+        color: 'cyan'
+      }
+    })
+
+    expect(wrapper.text()).toContain('0 req')
+    expect(wrapper.text()).toContain('A $0.00')
+    expect(wrapper.text()).toContain('U $0.00')
+  })
+
   it('长标签使用更宽的最小宽度且禁止换行', () => {
     const wrapper = mount(UsageProgressBar, {
       props: {

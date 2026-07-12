@@ -94,9 +94,19 @@ const DataTableStub = defineComponent({
     })
 
     return () => h('div', { ref: wrapperRef, 'data-test': 'data-table' }, sortedData.value.slice(0, visibleRowCount.value).map((row: any) =>
-      h('div', { key: row.id, 'data-test': `row-${row.id}` }, slots['cell-usage']?.({ row, value: null }))
+      h('div', { key: row.id, 'data-test': `row-${row.id}` }, [
+        slots['cell-name']?.({ row, value: row.name }),
+        slots['cell-platform_type']?.({ row, value: null }),
+        slots['cell-usage']?.({ row, value: null })
+      ])
     ))
   }
+})
+
+const PlatformTypeBadgeStub = defineComponent({
+  name: 'PlatformTypeBadgeStub',
+  props: ['platform', 'type', 'planType'],
+  template: '<div class="platform-badge" :data-platform="platform" :data-plan-type="planType">{{ platform }} {{ type }} {{ planType }}</div>'
 })
 
 const AccountTableActionsStub = defineComponent({
@@ -139,7 +149,7 @@ function mountView() {
         CreateAccountModal: true,
         EditAccountModal: true,
         BulkEditAccountModal: true,
-        PlatformTypeBadge: true,
+        PlatformTypeBadge: PlatformTypeBadgeStub,
         AccountCapacityCell: true,
         AccountStatusIndicator: true,
         AccountTodayStatsCell: true,
@@ -360,6 +370,71 @@ describe('admin AccountsView usage batch loading', () => {
     expect(getBatchUsage).toHaveBeenCalledTimes(1)
     expect(getBatchUsage).toHaveBeenCalledWith([103], false)
     expect(getUsage).not.toHaveBeenCalled()
+  })
+
+  it('distributes Kiro identity metadata and tier into the name and platform columns', async () => {
+    listAccounts.mockResolvedValue({
+      items: [{
+        id: 104,
+        name: 'kiro-oauth',
+        platform: 'kiro',
+        type: 'oauth',
+        status: 'active',
+        concurrency: 1,
+        priority: 1,
+        schedulable: true,
+        last_used_at: null,
+        expires_at: null,
+        auto_pause_on_expired: true,
+        created_at: '2026-07-12T00:00:00Z',
+        updated_at: '2026-07-12T00:00:00Z',
+        error_message: null,
+        proxy_id: null,
+        rate_limited_at: null,
+        rate_limit_reset_at: null,
+        overload_until: null,
+        temp_unschedulable_until: null,
+        temp_unschedulable_reason: null,
+        session_window_start: null,
+        session_window_end: null,
+        session_window_status: null,
+        credentials: {},
+        extra: {},
+        groups: []
+      }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+    getBatchUsage.mockResolvedValue({
+      usage: {
+        '104': {
+          kiro_subscription_title: 'KIRO POWER',
+          kiro_email: 'kiro@example.com',
+          kiro_profile_id: 'ACPYXKUPYE3H',
+          kiro_login_provider: 'ExternalIdp',
+          kiro_usage_limit: 10000,
+          kiro_current_usage: 0,
+          kiro_quota: {
+            utilization: 0,
+            resets_at: '2026-08-01T00:00:00Z',
+            remaining_seconds: 100,
+            window_stats: { requests: 0, tokens: 0, cost: 0, standard_cost: 0, user_cost: 0 }
+          }
+        }
+      },
+      errors: {}
+    })
+
+    const wrapper = mountView()
+    await waitForBatchQueue()
+
+    const row = wrapper.get('[data-test="row-104"]')
+    expect(row.text()).toContain('kiro@example.com')
+    expect(row.text()).toContain('admin.accounts.kiro.profileIdShort: ACPYXKUPYE3H')
+    expect(row.text()).toContain('admin.accounts.kiro.loginProviderShort: ExternalIdp')
+    expect(row.get('.platform-badge').attributes('data-plan-type')).toBe('KIRO POWER')
   })
 
   it('does not load proxy options until the create modal is opened', async () => {
