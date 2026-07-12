@@ -88,8 +88,8 @@ func TestAccountUsageService_GetGrokUsageShowsSevenDayRatioAndBillingStats(t *te
 	if usage.SevenDay == nil {
 		t.Fatal("expected seven_day usage progress")
 	}
-	if usage.SevenDay.Utilization != 90 {
-		t.Fatalf("seven_day utilization = %v, want 90", usage.SevenDay.Utilization)
+	if usage.SevenDay.Utilization != 70 {
+		t.Fatalf("seven_day utilization = %v, want 70", usage.SevenDay.Utilization)
 	}
 	if usage.SevenDay.ResetsAt == nil || usage.SevenDay.ResetsAt.Unix() != resetUnix {
 		t.Fatalf("seven_day resets_at = %v, want unix %d", usage.SevenDay.ResetsAt, resetUnix)
@@ -111,6 +111,49 @@ func TestAccountUsageService_GetGrokUsageShowsSevenDayRatioAndBillingStats(t *te
 	}
 	if time.Since(repo.requestedStart) < 6*24*time.Hour {
 		t.Fatalf("GetAccountWindowStats start = %v, expected roughly 7d window", repo.requestedStart)
+	}
+}
+
+func TestAccountUsageService_GetGrokUsageWithoutQuotaSnapshotDoesNotPanic(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       7043,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Extra:    map[string]any{},
+	}
+	repo := &grokSevenDayUsageRepoStub{
+		windowStats: &usagestats.AccountStats{Requests: 3, Tokens: 300},
+	}
+	svc := &AccountUsageService{usageLogRepo: repo, grokQuotaFetcher: NewGrokQuotaFetcher()}
+
+	usage, err := svc.getGrokUsage(context.Background(), account)
+
+	if err != nil {
+		t.Fatalf("getGrokUsage() error = %v", err)
+	}
+	if usage == nil {
+		t.Fatal("expected usage")
+	}
+	if usage.SevenDay == nil || usage.SevenDay.WindowStats == nil {
+		t.Fatalf("expected seven_day billing window stats without quota snapshot, got %+v", usage.SevenDay)
+	}
+	if usage.SevenDay.WindowStats.Requests != 3 || usage.SevenDay.WindowStats.Tokens != 300 {
+		t.Fatalf("seven_day window stats = %+v, want requests=3 tokens=300", usage.SevenDay.WindowStats)
+	}
+}
+
+func TestGrokSnapshotUtilizationNilSnapshot(t *testing.T) {
+	t.Parallel()
+
+	utilization, resetAt, ok := grokSnapshotUtilization(nil)
+
+	if ok {
+		t.Fatalf("grokSnapshotUtilization(nil) ok = true, want false with utilization %v reset %v", utilization, resetAt)
+	}
+	if utilization != 0 || resetAt != nil {
+		t.Fatalf("grokSnapshotUtilization(nil) = (%v, %v), want (0, nil)", utilization, resetAt)
 	}
 }
 

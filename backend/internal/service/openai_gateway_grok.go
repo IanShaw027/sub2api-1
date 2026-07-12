@@ -1380,6 +1380,9 @@ func buildGrokSchedulerExtraUpdates(snapshot *xai.QuotaSnapshot) map[string]any 
 // grokSnapshotUtilization returns the highest window utilization (0-100) across
 // the requests/tokens quota windows and the reset time of that window.
 func grokSnapshotUtilization(snapshot *xai.QuotaSnapshot) (float64, *time.Time, bool) {
+	if snapshot == nil {
+		return 0, nil, false
+	}
 	best := -1.0
 	var bestReset *time.Time
 	consider := func(window *xai.QuotaWindow) {
