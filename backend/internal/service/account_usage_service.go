@@ -1623,8 +1623,10 @@ func (s *AccountUsageService) getGrokUsage(ctx context.Context, account *Account
 		}
 	}
 
+	var sevenDayStats *usagestats.AccountStats
 	if s.usageLogRepo != nil && account != nil {
 		if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, time.Now().Add(-7*24*time.Hour)); err == nil && stats != nil {
+			sevenDayStats = stats
 			if usage.SevenDay == nil {
 				usage.SevenDay = &UsageProgress{Utilization: 0}
 			}
@@ -1637,7 +1639,11 @@ func (s *AccountUsageService) getGrokUsage(ctx context.Context, account *Account
 				if usage.SevenDay == nil {
 					usage.SevenDay = progress
 				} else {
-					usage.SevenDay.Utilization = progress.Utilization
+					if localUtil, ok := grokLocalSevenDayUtilization(snapshot, sevenDayStats); ok {
+						usage.SevenDay.Utilization = localUtil
+					} else {
+						usage.SevenDay.Utilization = progress.Utilization
+					}
 					usage.SevenDay.ResetsAt = progress.ResetsAt
 					usage.SevenDay.RemainingSeconds = progress.RemainingSeconds
 				}
@@ -1647,6 +1653,35 @@ func (s *AccountUsageService) getGrokUsage(ctx context.Context, account *Account
 
 	enrichUsageWithAccountError(usage, account)
 	return usage, nil
+}
+
+func grokLocalSevenDayUtilization(snapshot *xai.QuotaSnapshot, stats *usagestats.AccountStats) (float64, bool) {
+	if snapshot == nil || stats == nil {
+		return 0, false
+	}
+	best := -1.0
+	consider := func(used, limit int64) {
+		if used < 0 || limit <= 0 {
+			return
+		}
+		util := float64(used) / float64(limit) * 100
+		if util < 0 {
+			util = 0
+		}
+		if util > best {
+			best = util
+		}
+	}
+	if snapshot.Requests != nil && snapshot.Requests.Limit != nil {
+		consider(stats.Requests, *snapshot.Requests.Limit)
+	}
+	if snapshot.Tokens != nil && snapshot.Tokens.Limit != nil {
+		consider(stats.Tokens, *snapshot.Tokens.Limit)
+	}
+	if best < 0 {
+		return 0, false
+	}
+	return best, true
 }
 
 func grokQuotaSnapshotSevenDayProgress(snapshot *xai.QuotaSnapshot) *UsageProgress {
