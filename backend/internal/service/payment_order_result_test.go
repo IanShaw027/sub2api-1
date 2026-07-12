@@ -9,6 +9,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBuildCreateOrderResponseDefaultsToOrderCreated(t *testing.T) {
@@ -197,18 +198,14 @@ func TestCalculateCreateOrderPayAmountForSubscriptionKeepsNonCNYPrice(t *testing
 	}
 }
 
-// 换算是 opt-in：未配置汇率（rate=0）时，CNY 订阅保持 price 直付的存量行为。
-// 该测试锁住存量部署升级后行为不变的兼容承诺。
-func TestCalculateCreateOrderPayAmountForSubscriptionKeepsDirectPriceWhenRateDisabled(t *testing.T) {
+func TestCalculateCreateOrderPayAmountForSubscriptionRejectsCNYWhenRateDisabled(t *testing.T) {
 	t.Parallel()
 
 	amountStr, amount, err := calculateCreateOrderPayAmountForOrderType(9.99, 0, "CNY", payment.OrderTypeSubscription, 0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if amountStr != "9.99" || amount != 9.99 {
-		t.Fatalf("subscription CNY pay amount without rate = (%q, %v), want (9.99, 9.99)", amountStr, amount)
-	}
+	require.Error(t, err)
+	require.Equal(t, "INVALID_PAYMENT_CONFIG", infraerrors.Reason(err))
+	require.Empty(t, amountStr)
+	require.Zero(t, amount)
 }
 
 // 汇率只作用于订阅订单，余额充值订单不受影响。

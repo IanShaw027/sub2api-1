@@ -24,7 +24,10 @@ func (c *CompositeTokenCacheInvalidator) InvalidateToken(ctx context.Context, ac
 	if c == nil || c.cache == nil || account == nil {
 		return nil
 	}
-	if account.Type != AccountTypeOAuth {
+	// Align with token_refresh: setup-token is treated as OAuth-like (IsOAuth()).
+	// ClaudeTokenProvider may still reject setup-token for GetAccessToken, but
+	// invalidation must not no-op so Anthropic setup-token cache keys are cleared.
+	if !account.IsOAuth() {
 		return nil
 	}
 

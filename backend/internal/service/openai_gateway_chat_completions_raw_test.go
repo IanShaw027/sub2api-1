@@ -15,6 +15,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -78,6 +79,112 @@ func TestBuildOpenAIResponsesURL_ProbeURL(t *testing.T) {
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestForwardAsRawChatCompletions_GrokIsolatesSessionAndConvIDByAPIKey(t *testing.T) {
+	setGinTestMode()
+
+	body := []byte(`{"model":"grok","messages":[{"role":"user","content":"hi"}],"stream":false,"prompt_cache_key":"shared-session"}`)
+	account := &Account{
+		ID:          201,
+		Name:        "grok-raw-cc",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "xai-key",
+			"base_url": xai.DefaultCLIBaseURL,
+		},
+	}
+
+	run := func(apiKeyID int64, clientConvID string) (sessionID, convID string) {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		if clientConvID != "" {
+			c.Request.Header.Set("x-grok-conv-id", clientConvID)
+			c.Request.Header.Set("session_id", clientConvID)
+		}
+		c.Set("api_key", &APIKey{ID: apiKeyID})
+
+		upstream := &httpUpstreamRecorder{resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_grok_raw"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"id":"chatcmpl_grok","object":"chat.completion","model":"grok-4.3","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`,
+			)),
+		}}
+		svc := &OpenAIGatewayService{
+			cfg:          rawChatCompletionsTestConfig(),
+			httpUpstream: upstream,
+		}
+
+		result, err := svc.forwardAsRawChatCompletions(context.Background(), c, account, body, "shared-session")
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotNil(t, upstream.lastReq)
+
+		sessionID = upstream.lastReq.Header.Get("session_id")
+		convID = upstream.lastReq.Header.Get("x-grok-conv-id")
+		require.NotEmpty(t, sessionID)
+		require.Equal(t, sessionID, convID)
+		require.NotEqual(t, "shared-session", convID)
+		require.NotEqual(t, clientConvID, convID)
+		require.Equal(t, generateSessionUUID(isolateOpenAISessionID(apiKeyID, "shared-session")), sessionID)
+		require.Equal(t, "shared-session", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+		return sessionID, convID
+	}
+
+	idA, convA := run(11, "client-raw-conv")
+	idB, convB := run(22, "client-raw-conv")
+	require.Equal(t, idA, convA)
+	require.Equal(t, idB, convB)
+	require.NotEqual(t, idA, idB, "different API keys must not share Grok conversation ids on raw CC")
+}
+
+func TestForwardAsChatCompletions_GrokPassesPromptCacheKeyForSessionIsolation(t *testing.T) {
+	setGinTestMode()
+
+	body := []byte(`{"model":"grok","messages":[{"role":"user","content":"hi"}],"stream":false}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("api_key", &APIKey{ID: 77})
+
+	account := &Account{
+		ID:          202,
+		Name:        "grok-cc-entry",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "xai-key",
+			"base_url": xai.DefaultCLIBaseURL,
+		},
+	}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_grok_entry"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"id":"chatcmpl_grok","object":"chat.completion","model":"grok-4.3","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`,
+		)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          rawChatCompletionsTestConfig(),
+		httpUpstream: upstream,
+	}
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "cache-key-grok", "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq)
+
+	expected := generateSessionUUID(isolateOpenAISessionID(77, "cache-key-grok"))
+	require.Equal(t, expected, upstream.lastReq.Header.Get("session_id"))
+	require.Equal(t, expected, upstream.lastReq.Header.Get("x-grok-conv-id"))
+	require.Equal(t, "cache-key-grok", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
 }
 
 func TestForwardAsRawChatCompletions_ForcesStreamUsageUpstreamAndPassesUsageDownstream(t *testing.T) {

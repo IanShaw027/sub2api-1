@@ -620,6 +620,15 @@ func (h *AccountHandler) importData(ctx context.Context, dataPayload DataPayload
 				if updated != nil && updated.Platform == service.PlatformGrok && updated.Type == service.AccountTypeOAuth {
 					grokQuotaAccounts = append(grokQuotaAccounts, updated)
 				}
+				if updated != nil && updated.IsOAuth() && h.tokenCacheInvalidator != nil {
+					if invalidateErr := h.tokenCacheInvalidator.InvalidateToken(ctx, updated); invalidateErr != nil {
+						slog.Warn("data_import.invalidate_token_failed",
+							"account_id", updated.ID,
+							"account_name", updated.Name,
+							"err", invalidateErr,
+						)
+					}
+				}
 				result.AccountUpdated++
 				continue
 			}

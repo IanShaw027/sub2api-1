@@ -174,14 +174,6 @@ func TestCompositeTokenCacheInvalidator_SkipNonOAuth(t *testing.T) {
 				Type:     AccountTypeAPIKey,
 			},
 		},
-		{
-			name: "claude_setup_token",
-			account: &Account{
-				ID:       4,
-				Platform: PlatformAnthropic,
-				Type:     AccountTypeSetupToken,
-			},
-		},
 	}
 
 	for _, tt := range tests {
@@ -192,6 +184,24 @@ func TestCompositeTokenCacheInvalidator_SkipNonOAuth(t *testing.T) {
 			require.Empty(t, cache.deletedKeys)
 		})
 	}
+}
+
+func TestCompositeTokenCacheInvalidator_ClaudeSetupToken(t *testing.T) {
+	// setup-token is OAuth-like (IsOAuth()); Anthropic cache key should be deleted.
+	cache := &geminiTokenCacheStub{}
+	invalidator := NewCompositeTokenCacheInvalidator(cache)
+	account := &Account{
+		ID:       4,
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeSetupToken,
+		Credentials: map[string]any{
+			"access_token": "setup-token-value",
+		},
+	}
+
+	err := invalidator.InvalidateToken(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, []string{"claude:account:4"}, cache.deletedKeys)
 }
 
 func TestCompositeTokenCacheInvalidator_SkipUnsupportedPlatform(t *testing.T) {

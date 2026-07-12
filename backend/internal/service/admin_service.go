@@ -3276,10 +3276,56 @@ func (s *adminServiceImpl) GetAccountsByIDs(ctx context.Context, ids []int64) ([
 }
 
 func normalizeAccountConcurrency(platform, accountType string, concurrency int) int {
+	// Grok personal OAuth subscriptions are sensitive to multi-session load.
+	// Default to 1; higher values require an explicit unsafe env gate.
 	if platform == PlatformGrok && accountType == AccountTypeOAuth && concurrency <= 0 {
-		return 10
+		return 1
 	}
 	return concurrency
+}
+
+func validateGrokOAuthConcurrency(platform, accountType string, concurrency int) error {
+	if platform != PlatformGrok || accountType != AccountTypeOAuth {
+		return nil
+	}
+	if concurrency > 1 && !xai.AllowUnsafeHighConcurrency() {
+		return infraerrors.BadRequest(
+			"GROK_UNSAFE_CONCURRENCY",
+			"Grok OAuth concurrency > 1 requires XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE=1",
+		)
+	}
+	return nil
+}
+
+// normalizeAndValidateBulkConcurrency applies per-account concurrency normalization
+// and Grok OAuth unsafe-gate validation for bulk updates.
+//
+// Returns:
+//   - uniform value pointer when every targeted account normalizes to the same concurrency
+//     (safe to write via AccountBulkUpdate with a single column value)
+//   - (nil, nil) when normalized values differ across accounts (caller must update per-account)
+//   - error when any Grok OAuth account would violate the concurrency gate
+func normalizeAndValidateBulkConcurrency(accountByID map[int64]*Account, accountIDs []int64, concurrency int) (*int, error) {
+	var uniform *int
+	for _, accountID := range accountIDs {
+		account := accountByID[accountID]
+		if account == nil {
+			continue
+		}
+		normalized := normalizeAccountConcurrency(account.Platform, account.Type, concurrency)
+		if err := validateGrokOAuthConcurrency(account.Platform, account.Type, normalized); err != nil {
+			return nil, err
+		}
+		if uniform == nil {
+			value := normalized
+			uniform = &value
+			continue
+		}
+		if *uniform != normalized {
+			return nil, nil
+		}
+	}
+	return uniform, nil
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
@@ -3287,6 +3333,10 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 		return nil, fmt.Errorf("account input is required")
 	}
 	if err := validatePlatformAccountType(input.Platform, input.Type); err != nil {
+		return nil, err
+	}
+	input.Concurrency = normalizeAccountConcurrency(input.Platform, input.Type, input.Concurrency)
+	if err := validateGrokOAuthConcurrency(input.Platform, input.Type, input.Concurrency); err != nil {
 		return nil, err
 	}
 	if input.Platform == PlatformKiro && input.Type == AccountTypeOAuth {
@@ -3537,7 +3587,11 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	// 只在指针非 nil 时更新 Concurrency（支持设置为 0）
 	if input.Concurrency != nil {
-		account.Concurrency = normalizeAccountConcurrency(account.Platform, account.Type, *input.Concurrency)
+		normalized := normalizeAccountConcurrency(account.Platform, account.Type, *input.Concurrency)
+		if err := validateGrokOAuthConcurrency(account.Platform, account.Type, normalized); err != nil {
+			return nil, err
+		}
+		account.Concurrency = normalized
 	}
 	// 只在指针非 nil 时更新 Priority（支持设置为 0）
 	if input.Priority != nil {
@@ -3699,6 +3753,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 				"spark shadow account proxy is inherited from its parent and cannot be changed directly")
 		}
 	}
+	if err := validateBulkModelRoutingUpdatePlatforms(input, accountByID); err != nil {
+		return nil, err
+	}
 
 	// 预检查混合渠道风险：在任何写操作之前，若发现风险立即返回错误。
 	if needMixedChannelCheck {
@@ -3752,7 +3809,26 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		return nil, errors.New("load_factor must be <= 10000")
 	}
 
-	if len(kiroCredentialUpdateIDs) > 0 {
+	// Normalize + validate concurrency per account (Grok OAuth unsafe gate).
+	// Prefer failing the whole bulk request when any account would violate,
+	// consistent with other bulk pre-checks (mixed channel / Kiro credentials).
+	var bulkConcurrency *int
+	concurrencyNeedsPerAccount := false
+	if input.Concurrency != nil {
+		uniform, err := normalizeAndValidateBulkConcurrency(accountByID, input.AccountIDs, *input.Concurrency)
+		if err != nil {
+			return nil, err
+		}
+		if uniform == nil {
+			// Normalized values differ across accounts (e.g. concurrency<=0 with
+			// mixed Grok OAuth + other platforms). Fall back to per-account writes.
+			concurrencyNeedsPerAccount = true
+		} else {
+			bulkConcurrency = uniform
+		}
+	}
+
+	if len(kiroCredentialUpdateIDs) > 0 || concurrencyNeedsPerAccount {
 		for _, accountID := range input.AccountIDs {
 			account := accountByID[accountID]
 			if account == nil {
@@ -3794,8 +3870,8 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	if input.ProxyID != nil {
 		repoUpdates.ProxyID = input.ProxyID
 	}
-	if input.Concurrency != nil {
-		repoUpdates.Concurrency = input.Concurrency
+	if bulkConcurrency != nil {
+		repoUpdates.Concurrency = bulkConcurrency
 	}
 	if input.Priority != nil {
 		repoUpdates.Priority = input.Priority
@@ -3883,6 +3959,43 @@ func (s *adminServiceImpl) finishBulkUpdateGroupBindings(ctx context.Context, in
 	return result, nil
 }
 
+func validateBulkModelRoutingUpdatePlatforms(input *BulkUpdateAccountsInput, accountByID map[int64]*Account) error {
+	if input == nil || !bulkCredentialsContainModelRoutingFields(input.Credentials) {
+		return nil
+	}
+	platforms := make(map[string]struct{}, len(input.AccountIDs))
+	for _, accountID := range input.AccountIDs {
+		account := accountByID[accountID]
+		if account == nil {
+			continue
+		}
+		platform := strings.ToLower(strings.TrimSpace(account.Platform))
+		if platform == "" {
+			continue
+		}
+		platforms[platform] = struct{}{}
+	}
+	if len(platforms) <= 1 {
+		return nil
+	}
+	return infraerrors.BadRequest(
+		"BULK_MODEL_ROUTING_MIXED_PLATFORMS",
+		"bulk updates for model routing credentials must target accounts from a single platform",
+	)
+}
+
+func bulkCredentialsContainModelRoutingFields(credentials map[string]any) bool {
+	if len(credentials) == 0 {
+		return false
+	}
+	for _, key := range []string{"model_mapping", "compact_model_mapping", "model_whitelist"} {
+		if _, ok := credentials[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *adminServiceImpl) propagateBulkProxyToShadows(ctx context.Context, input *BulkUpdateAccountsInput, accountByID map[int64]*Account) error {
 	if input == nil || input.ProxyID == nil {
 		return nil
@@ -3919,7 +4032,7 @@ func applyBulkUpdateInputToAccount(account *Account, input *BulkUpdateAccountsIn
 		account.ProxyFallbackOriginID = nil
 	}
 	if input.Concurrency != nil {
-		account.Concurrency = *input.Concurrency
+		account.Concurrency = normalizeAccountConcurrency(account.Platform, account.Type, *input.Concurrency)
 	}
 	if input.Priority != nil {
 		account.Priority = *input.Priority

@@ -1027,6 +1027,47 @@ func TestForwardGrokResponsesRetriesCompactionBlobErrorWithSanitizedReplay(t *te
 	require.Equal(t, "resp_retry_ok", result.ResponseID)
 }
 
+func TestForwardGrokResponsesIsolatesPromptCacheKeyConversationByAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	account := &Account{
+		ID:          60,
+		Name:        "grok-apikey",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "xai-key",
+			"base_url": xai.DefaultCLIBaseURL,
+		},
+	}
+	body := []byte(`{"model":"grok","prompt_cache_key":"shared-session","input":"hi","stream":false}`)
+	run := func(apiKeyID int64) string {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Set("api_key", &APIKey{ID: apiKeyID})
+
+		upstream := &httpUpstreamRecorder{resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"id":"resp_grok","object":"response","model":"grok-4.3","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`)),
+		}}
+		svc := &OpenAIGatewayService{httpUpstream: upstream}
+
+		result, err := svc.forwardGrokResponses(context.Background(), c, account, body, "grok", false, time.Now())
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		convID := upstream.lastReq.Header.Get("x-grok-conv-id")
+		require.NotEmpty(t, convID)
+		require.NotEqual(t, "shared-session", convID)
+		return convID
+	}
+
+	require.NotEqual(t, run(101), run(202))
+}
+
 func TestForwardGrokResponsesUsesTLSRouterProfileAndHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

@@ -171,6 +171,33 @@ func TestTokenRefreshService_RefreshWithRetry_InvalidatesCache(t *testing.T) {
 	require.Equal(t, "new-token", account.GetCredential("access_token"))
 }
 
+func TestTokenRefreshService_RefreshWithRetry_InvalidatesSetupTokenCache(t *testing.T) {
+	repo := &tokenRefreshAccountRepo{}
+	invalidator := &tokenCacheInvalidatorStub{}
+	cfg := &config.Config{
+		TokenRefresh: config.TokenRefreshConfig{
+			MaxRetries:          1,
+			RetryBackoffSeconds: 0,
+		},
+	}
+	service := NewTokenRefreshService(repo, nil, nil, nil, nil, invalidator, nil, cfg, nil)
+	account := &Account{
+		ID:       6,
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeSetupToken,
+	}
+	refresher := &tokenRefresherStub{
+		credentials: map[string]any{
+			"access_token": "setup-token-new",
+		},
+	}
+
+	err := service.refreshWithRetry(context.Background(), account, refresher, refresher, time.Hour)
+	require.NoError(t, err)
+	require.Equal(t, 1, invalidator.calls, "setup-token refresh must invalidate token cache")
+	require.Equal(t, "setup-token-new", account.GetCredential("access_token"))
+}
+
 func TestNewTokenRefreshService_NilConfigDoesNotPanicAndDefaultsDisabled(t *testing.T) {
 	repo := &tokenRefreshAccountRepo{}
 

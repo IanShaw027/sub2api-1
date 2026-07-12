@@ -54,6 +54,10 @@ type dataAccount struct {
 }
 
 func setupAccountDataRouter() (*gin.Engine, *stubAdminService) {
+	return setupAccountDataRouterWithInvalidator(nil)
+}
+
+func setupAccountDataRouterWithInvalidator(invalidator service.TokenCacheInvalidator) (*gin.Engine, *stubAdminService) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	adminSvc := newStubAdminService()
@@ -73,7 +77,7 @@ func setupAccountDataRouter() (*gin.Engine, *stubAdminService) {
 		nil,
 		nil,
 		nil,
-		nil,
+		invalidator,
 	)
 
 	router.GET("/api/v1/admin/accounts/data", h.ExportData)
@@ -592,6 +596,52 @@ func TestImportDataDedupOverwriteUpdatesExistingAccount(t *testing.T) {
 	require.Equal(t, service.AccountTypeOAuth, adminSvc.updatedAccounts[0].Type)
 	require.Equal(t, map[string]any{"profile_id": "PROFILE1", "refresh_token": "new-rt"}, adminSvc.updatedAccounts[0].Credentials)
 	require.Equal(t, map[string]any{"plan_name": "Pro"}, adminSvc.updatedAccounts[0].Extra)
+}
+
+func TestImportDataDedupOverwriteInvalidatesSetupTokenCache(t *testing.T) {
+	invalidator := &tokenCacheInvalidatorStub{}
+	router, adminSvc := setupAccountDataRouterWithInvalidator(invalidator)
+	adminSvc.accounts = []service.Account{
+		{
+			ID:          12,
+			Name:        "existing",
+			Platform:    service.PlatformKiro,
+			Type:        service.AccountTypeSetupToken,
+			Credentials: map[string]any{"profile_id": "PROFILE-SETUP", "access_token": "old-token"},
+		},
+	}
+
+	dataPayload := map[string]any{
+		"data": map[string]any{
+			"type":    dataType,
+			"version": dataVersion,
+			"proxies": []map[string]any{},
+			"accounts": []map[string]any{
+				{
+					"name":        "imported",
+					"platform":    service.PlatformKiro,
+					"type":        service.AccountTypeSetupToken,
+					"credentials": map[string]any{"profile_id": "PROFILE-SETUP", "access_token": "new-token"},
+					"concurrency": 5,
+					"priority":    60,
+				},
+			},
+		},
+		"skip_default_group_bind": true,
+		"dedup_mode":              dataImportDedupModeOverwrite,
+	}
+
+	body, _ := json.Marshal(dataPayload)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/data", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp dataImportResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 1, resp.Data.AccountUpdated)
+	require.Equal(t, []int64{12}, invalidator.calls)
 }
 
 func TestImportDataDedupOverwriteMatchesExistingEmailWhenImportedAccountAddsStableID(t *testing.T) {

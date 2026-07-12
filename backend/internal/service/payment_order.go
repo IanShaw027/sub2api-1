@@ -654,23 +654,31 @@ func calculateCreateOrderPayAmount(limitAmount, feeRate float64, currency string
 func calculateCreateOrderPayAmountForOrderType(limitAmount, feeRate float64, currency, orderType string, usdToCnyRate float64) (string, float64, error) {
 	paymentAmount := limitAmount
 	if orderType == payment.OrderTypeSubscription {
-		paymentAmount = calculateSubscriptionGatewayBaseAmount(limitAmount, usdToCnyRate, currency)
+		var err error
+		paymentAmount, err = calculateSubscriptionGatewayBaseAmount(limitAmount, usdToCnyRate, currency)
+		if err != nil {
+			return "", 0, err
+		}
 	}
 	return calculateCreateOrderPayAmount(paymentAmount, feeRate, currency)
 }
 
 // calculateSubscriptionGatewayBaseAmount 计算订阅订单的网关扣款基数。
-// 换算是显式 opt-in：仅当管理员配置了订阅汇率（rate > 0，1 USD = rate CNY）
-// 且网关币种为 CNY 时，按 price × rate 换算；未配置时保持 price 直付的存量行为。
-func calculateSubscriptionGatewayBaseAmount(amount, usdToCnyRate float64, currency string) float64 {
+// 当订阅价格以 USD 维护而网关币种为 CNY 时，必须显式配置正数汇率，避免把
+// USD 数值直接当 CNY 扣款。
+func calculateSubscriptionGatewayBaseAmount(amount, usdToCnyRate float64, currency string) (float64, error) {
 	rate := normalizeSubscriptionUSDToCNYRate(usdToCnyRate)
-	if rate <= 0 || currency != payment.DefaultPaymentCurrency {
-		return amount
+	if currency != payment.DefaultPaymentCurrency {
+		return amount, nil
+	}
+	if rate <= 0 {
+		return 0, infraerrors.BadRequest("INVALID_PAYMENT_CONFIG", "subscription CNY payment requires a positive USD to CNY rate").
+			WithMetadata(map[string]string{"currency": currency})
 	}
 	return decimal.NewFromFloat(amount).
 		Mul(decimal.NewFromFloat(rate)).
 		Round(int32(payment.CurrencyMaxFractionDigits(currency))).
-		InexactFloat64()
+		InexactFloat64(), nil
 }
 
 func validateCreateOrderAmountCurrency(amount float64, currency string) error {

@@ -1055,7 +1055,18 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"protocol", input.Protocol)
 		return allow, nil
 	}
-	if !s.isRiskControlEnabled(ctx) {
+	riskControlEnabled, riskErr := s.riskControlEnabled(ctx)
+	if riskErr != nil {
+		slog.Error("content_moderation.risk_control_load_failed",
+			"user_id", input.UserID,
+			"api_key_id", input.APIKeyID,
+			"group_id", contentModerationLogGroupID(input.GroupID),
+			"endpoint", input.Endpoint,
+			"protocol", input.Protocol,
+			"error", riskErr)
+		return contentModerationConfigLoadFailureDecision(riskErr), nil
+	}
+	if !riskControlEnabled {
 		slog.Info("content_moderation.skip_feature_disabled",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
@@ -1066,14 +1077,14 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	}
 	cfg, err := s.loadConfig(ctx)
 	if err != nil {
-		slog.Warn("content_moderation.skip_config_load_failed",
+		slog.Error("content_moderation.config_load_failed",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
 			"group_id", contentModerationLogGroupID(input.GroupID),
 			"endpoint", input.Endpoint,
 			"protocol", input.Protocol,
 			"error", err)
-		return allow, nil
+		return contentModerationConfigLoadFailureDecision(err), nil
 	}
 	inGroupScope := cfg.includesGroup(input.GroupID)
 	apiKeyGroupExempt := cfg.exemptsAPIKeyGroup(input.APIKeyID, input.GroupID)
@@ -1952,23 +1963,45 @@ func (s *ContentModerationService) invalidateConfigCache() {
 }
 
 func (s *ContentModerationService) isRiskControlEnabled(ctx context.Context) bool {
+	enabled, err := s.riskControlEnabled(ctx)
+	return err == nil && enabled
+}
+
+func (s *ContentModerationService) riskControlEnabled(ctx context.Context) (bool, error) {
 	if s == nil || s.settingRepo == nil {
-		return false
+		return false, nil
 	}
 	if cached := s.riskEnabledCache.Load(); cached != nil {
 		if time.Now().Unix()-s.riskEnabledCacheAt.Load() < 5 {
 			cachedEnabled, ok := cached.(bool)
-			return ok && cachedEnabled
+			return ok && cachedEnabled, nil
 		}
 	}
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyRiskControlEnabled)
 	if err != nil {
-		return false
+		if errors.Is(err, ErrSettingNotFound) {
+			return false, nil
+		}
+		return false, fmt.Errorf("get risk control enabled: %w", err)
 	}
 	enabled := raw == "true"
 	s.riskEnabledCache.Store(enabled)
 	s.riskEnabledCacheAt.Store(time.Now().Unix())
-	return enabled
+	return enabled, nil
+}
+
+func contentModerationConfigLoadFailureDecision(err error) *ContentModerationDecision {
+	message := defaultContentModerationAuditFailureMessage
+	if err != nil {
+		message = message + ": " + trimRunes(err.Error(), 160)
+	}
+	return &ContentModerationDecision{
+		Allowed:    false,
+		Blocked:    true,
+		Action:     ContentModerationActionError,
+		StatusCode: http.StatusServiceUnavailable,
+		Message:    message,
+	}
 }
 
 func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *ContentModerationConfig) error {
@@ -2286,7 +2319,9 @@ func (s *ContentModerationService) applyFlaggedAccountSideEffects(ctx context.Co
 			if changed && s.authCacheInvalidator != nil {
 				s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, *log.UserID)
 			}
-			log.AutoBanned = true
+			// Only the CAS winner stamps auto_banned; concurrent losers must not
+			// pollute audit rows or last_auto_ban window timing.
+			log.AutoBanned = changed
 			return changed
 		}
 
@@ -2313,7 +2348,7 @@ func (s *ContentModerationService) applyFlaggedAccountSideEffects(ctx context.Co
 			}
 			autoBanJustApplied = true
 		}
-		log.AutoBanned = true
+		log.AutoBanned = autoBanJustApplied
 	}
 	return autoBanJustApplied
 }

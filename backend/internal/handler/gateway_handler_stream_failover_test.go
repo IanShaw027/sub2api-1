@@ -37,8 +37,8 @@ func TestStreamWrittenGuard_MessagesPath_AbortFailoverOnSSEContentWritten(t *tes
 	_, err := c.Writer.Write([]byte(partialMessageStartSSE))
 	require.NoError(t, err)
 
-	// 步骤 3：验证守卫条件成立（c.Writer.Size() != sizeBeforeForward）
-	require.NotEqual(t, sizeBeforeForward, c.Writer.Size(),
+	// 步骤 3：验证生产守卫条件成立（已写入 SSE 内容）
+	require.True(t, gatewayFailoverStreamAlreadyWritten(c, sizeBeforeForward),
 		"写入 SSE 内容后 writer size 必须增加，守卫条件应为 true")
 
 	// 步骤 4：模拟 UpstreamFailoverError（上游在流中途返回 403）
@@ -115,9 +115,7 @@ func TestStreamWrittenGuard_NoByteWritten_GuardNotTriggered(t *testing.T) {
 	// Forward 未写入任何字节直接返回错误（例如 401 发生在连接建立前）
 	// c.Writer.Size() 仍为 -1
 
-	// 守卫条件：sizeBeforeForward == c.Writer.Size() → 不触发
-	guardTriggered := c.Writer.Size() != sizeBeforeForward
-	require.False(t, guardTriggered,
+	require.False(t, gatewayFailoverStreamAlreadyWritten(c, sizeBeforeForward),
 		"未写入任何字节时，守卫条件必须为 false，应允许正常 failover 继续")
 }
 

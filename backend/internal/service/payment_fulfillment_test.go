@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -101,12 +102,18 @@ type paymentFulfillmentUserSubRepoStub struct {
 
 type paymentFulfillmentBillingCacheStub struct {
 	BillingCache
-	invalidationErr   error
-	invalidationCalls int
+	invalidationErr          error
+	invalidationCalls        int32
+	balanceInvalidationCalls int32
 }
 
 func (s *paymentFulfillmentBillingCacheStub) InvalidateSubscriptionCache(context.Context, int64, int64) error {
-	s.invalidationCalls++
+	atomic.AddInt32(&s.invalidationCalls, 1)
+	return s.invalidationErr
+}
+
+func (s *paymentFulfillmentBillingCacheStub) InvalidateUserBalance(context.Context, int64) error {
+	atomic.AddInt32(&s.balanceInvalidationCalls, 1)
 	return s.invalidationErr
 }
 
@@ -309,7 +316,7 @@ func TestHandlePaymentNotificationCancelledOrderWithinGraceRecoversAndFulfills(t
 	require.Equal(t, 1, recoveredCount)
 }
 
-func TestHandlePaymentNotificationCancelledOrderBeyondGraceDoesNotFulfill(t *testing.T) {
+func TestHandlePaymentNotificationCancelledOrderBeyondGraceRecoversAndFulfills(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentFulfillmentTestClient(t)
 	order := createPaymentFulfillmentOrder(t, client, OrderStatusCancelled, payment.OrderTypeBalance)
@@ -327,9 +334,10 @@ func TestHandlePaymentNotificationCancelledOrderBeyondGraceDoesNotFulfill(t *tes
 
 	got, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
-	require.Equal(t, OrderStatusCancelled, got.Status)
-	require.Empty(t, got.PaymentTradeNo)
-	require.Nil(t, got.PaidAt)
+	require.Equal(t, OrderStatusCompleted, got.Status)
+	require.Equal(t, "provider-trade-cancelled-late", got.PaymentTradeNo)
+	require.NotNil(t, got.PaidAt)
+	require.NotNil(t, got.CompletedAt)
 
 	orderID := strconv.FormatInt(order.ID, 10)
 	lateCount, err := client.PaymentAuditLog.Query().
@@ -337,6 +345,12 @@ func TestHandlePaymentNotificationCancelledOrderBeyondGraceDoesNotFulfill(t *tes
 		Count(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, lateCount)
+
+	paidCount, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(orderID), paymentauditlog.ActionEQ("ORDER_PAID")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, paidCount)
 }
 
 func TestHandlePaymentNotificationFailedOrderReconcilesPaidMetadataBeforeFulfillment(t *testing.T) {
@@ -368,7 +382,7 @@ func TestHandlePaymentNotificationFailedOrderReconcilesPaidMetadataBeforeFulfill
 	require.Nil(t, got.FailedReason)
 }
 
-func TestHandlePaymentNotificationExpiredBeyondGraceAuditsProviderTradeNo(t *testing.T) {
+func TestHandlePaymentNotificationExpiredBeyondGraceRecoversAndFulfills(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentFulfillmentTestClient(t)
 	order := createPaymentFulfillmentOrder(t, client, OrderStatusExpired, payment.OrderTypeBalance)
@@ -386,9 +400,10 @@ func TestHandlePaymentNotificationExpiredBeyondGraceAuditsProviderTradeNo(t *tes
 
 	got, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
-	require.Equal(t, OrderStatusExpired, got.Status)
-	require.Empty(t, got.PaymentTradeNo)
-	require.Nil(t, got.PaidAt)
+	require.Equal(t, OrderStatusCompleted, got.Status)
+	require.Equal(t, "provider-trade-expired", got.PaymentTradeNo)
+	require.NotNil(t, got.PaidAt)
+	require.NotNil(t, got.CompletedAt)
 	orderID := strconv.FormatInt(order.ID, 10)
 
 	logs, err := client.PaymentAuditLog.Query().
@@ -398,6 +413,12 @@ func TestHandlePaymentNotificationExpiredBeyondGraceAuditsProviderTradeNo(t *tes
 	require.Len(t, logs, 1)
 	require.Equal(t, payment.TypeAlipay, logs[0].Operator)
 	require.Contains(t, logs[0].Detail, "provider-trade-expired")
+
+	paidCount, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(orderID), paymentauditlog.ActionEQ("ORDER_PAID")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, paidCount)
 }
 
 func TestExecuteSubscriptionFulfillmentCompletesWhenPostCommitReloadFails(t *testing.T) {
@@ -673,7 +694,7 @@ func TestSubscriptionFulfillmentCacheInvalidationFailureDoesNotFailCommittedEnti
 	svc := &PaymentService{entClient: client, groupRepo: groupRepo, subscriptionSvc: subscriptionSvc}
 
 	require.NoError(t, svc.ExecuteSubscriptionFulfillment(ctx, order.ID))
-	require.Equal(t, 1, cache.invalidationCalls)
+	require.Equal(t, int32(1), atomic.LoadInt32(&cache.invalidationCalls))
 
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
@@ -765,7 +786,7 @@ func TestExecuteSubscriptionFulfillmentRecoversStaleLeaseFromSuccessSentinel(t *
 	}
 
 	require.NoError(t, svc.ExecuteSubscriptionFulfillment(ctx, order.ID))
-	require.Equal(t, 1, cache.invalidationCalls, "success-sentinel recovery must retry post-commit cache invalidation")
+	require.Equal(t, int32(1), atomic.LoadInt32(&cache.invalidationCalls), "success-sentinel recovery must retry post-commit cache invalidation")
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusCompleted, reloaded.Status)
@@ -800,6 +821,90 @@ func TestExecuteBalanceFulfillmentRecoversUsedCodeWithoutCreditingAgain(t *testi
 	require.NoError(t, err)
 	require.Equal(t, order.Amount, userAfter.Balance)
 	require.Equal(t, order.Amount, userAfter.TotalRecharged)
+}
+
+func TestExecuteBalanceFulfillmentInvalidatesUserBalanceCacheAfterCommit(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPaid, payment.OrderTypeBalance)
+	cache := &paymentFulfillmentBillingCacheStub{}
+	svc := &PaymentService{
+		entClient: client,
+		redeemService: &RedeemService{
+			billingCacheService: &BillingCacheService{cache: cache},
+		},
+	}
+
+	require.NoError(t, svc.ExecuteBalanceFulfillment(ctx, order.ID))
+	require.Eventually(t, func() bool {
+		return atomic.LoadInt32(&cache.balanceInvalidationCalls) == 1
+	}, time.Second, 10*time.Millisecond)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+}
+
+// Crash after commit before cache invalidation leaves COMPLETED order with stale
+// Redis balance. Re-entering fulfillment (webhook redelivery, admin retry, etc.)
+// must best-effort re-invalidate without re-crediting.
+func TestExecuteBalanceFulfillmentCompletedReInvalidatesUserBalanceCache(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusCompleted, payment.OrderTypeBalance)
+	// Pre-credit so a mistaken re-fulfillment would be observable.
+	_, err := client.User.UpdateOneID(order.UserID).SetBalance(order.Amount).SetTotalRecharged(order.Amount).Save(ctx)
+	require.NoError(t, err)
+	_, err = client.RedeemCode.Create().
+		SetCode(order.RechargeCode).
+		SetType(RedeemTypeBalance).
+		SetValue(order.Amount).
+		SetStatus(StatusUsed).
+		SetUsedBy(order.UserID).
+		SetUsedAt(time.Now()).
+		Save(ctx)
+	require.NoError(t, err)
+
+	cache := &paymentFulfillmentBillingCacheStub{}
+	svc := &PaymentService{
+		entClient: client,
+		redeemService: &RedeemService{
+			billingCacheService: &BillingCacheService{cache: cache},
+		},
+	}
+
+	require.NoError(t, svc.ExecuteBalanceFulfillment(ctx, order.ID))
+	require.Eventually(t, func() bool {
+		return atomic.LoadInt32(&cache.balanceInvalidationCalls) == 1
+	}, time.Second, 10*time.Millisecond, "COMPLETED early-return must re-invalidate user balance cache")
+
+	// No double credit.
+	userAfter, err := client.User.Get(ctx, order.UserID)
+	require.NoError(t, err)
+	require.Equal(t, order.Amount, userAfter.Balance)
+	require.Equal(t, order.Amount, userAfter.TotalRecharged)
+}
+
+func TestRetryFulfillmentCompletedBalanceReInvalidatesUserBalanceCache(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusCompleted, payment.OrderTypeBalance)
+	now := time.Now()
+	order, err := client.PaymentOrder.UpdateOneID(order.ID).SetPaidAt(now).SetCompletedAt(now).Save(ctx)
+	require.NoError(t, err)
+
+	cache := &paymentFulfillmentBillingCacheStub{}
+	svc := &PaymentService{
+		entClient: client,
+		redeemService: &RedeemService{
+			billingCacheService: &BillingCacheService{cache: cache},
+		},
+	}
+
+	require.NoError(t, svc.RetryFulfillment(ctx, order.ID))
+	require.Eventually(t, func() bool {
+		return atomic.LoadInt32(&cache.balanceInvalidationCalls) == 1
+	}, time.Second, 10*time.Millisecond, "RetryFulfillment on COMPLETED balance order must re-invalidate cache")
 }
 
 // 回归防线：订阅发放与 SUCCESS 哨兵必须原子——哨兵写入失败时 assign 整体回滚、claim 释放，

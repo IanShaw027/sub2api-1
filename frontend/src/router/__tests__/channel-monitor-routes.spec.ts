@@ -21,6 +21,8 @@ const appStore = vi.hoisted(() => ({
 
 const adminComplianceStore = vi.hoisted(() => ({
   initialized: true,
+  required: false,
+  shouldShow: false,
   fetchStatus: vi.fn(),
   requireAcknowledgement: vi.fn(),
 }))

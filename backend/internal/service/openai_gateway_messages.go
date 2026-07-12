@@ -412,14 +412,22 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	// Override session_id with a deterministic UUID derived from the isolated
 	// session key, ensuring different API keys produce different upstream sessions.
 	// Grok OAuth Claude Code traffic also needs isolation so concurrent keys do
-	// not share xAI session state.
+	// not share xAI session state (session_id and x-grok-conv-id must stay in sync).
 	if (account.Type == AccountTypeAPIKey || account.Platform == PlatformGrok) && promptCacheKey != "" {
 		apiKeyID := getAPIKeyIDFromContext(c)
-		upstreamReq.Header.Set("session_id", generateSessionUUID(isolateOpenAISessionID(apiKeyID, promptCacheKey)))
+		sessionID := generateSessionUUID(isolateOpenAISessionID(apiKeyID, promptCacheKey))
+		upstreamReq.Header.Set("session_id", sessionID)
+		if account.Platform == PlatformGrok {
+			upstreamReq.Header.Set("x-grok-conv-id", sessionID)
+		}
 	}
 	if (oauthTurnStateBridge || oauthDerivedSessionBridge) && promptCacheKey != "" {
 		apiKeyID := getAPIKeyIDFromContext(c)
-		upstreamReq.Header.Set("session_id", generateSessionUUID(isolateOpenAISessionID(apiKeyID, promptCacheKey)))
+		sessionID := generateSessionUUID(isolateOpenAISessionID(apiKeyID, promptCacheKey))
+		upstreamReq.Header.Set("session_id", sessionID)
+		if account.Platform == PlatformGrok {
+			upstreamReq.Header.Set("x-grok-conv-id", sessionID)
+		}
 	}
 	if account.Type == AccountTypeOAuth && account.Platform != PlatformGrok {
 		// Anthropic Messages compatibility uses the ChatGPT Codex SSE endpoint.

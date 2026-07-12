@@ -111,7 +111,7 @@ func (s *PaymentService) confirmPayment(ctx context.Context, oid int64, tradeNo 
 		})
 		return fmt.Errorf("invalid paid amount from provider: %v", paid)
 	}
-	if math.Abs(paid-o.PayAmount) > paymentAmountToleranceForCurrency(PaymentOrderCurrency(o)) {
+	if !amountEqualForCurrency(paid, o.PayAmount, PaymentOrderCurrency(o)) {
 		s.writeAuditLog(ctx, o.ID, "PAYMENT_AMOUNT_MISMATCH", pk, map[string]any{"expected": o.PayAmount, "paid": paid, "tradeNo": tradeNo})
 		return fmt.Errorf("amount mismatch: expected %s, got %s", strconv.FormatFloat(o.PayAmount, 'f', -1, 64), strconv.FormatFloat(paid, 'f', -1, 64))
 	}
@@ -225,7 +225,11 @@ func (s *PaymentService) alreadyProcessed(ctx context.Context, o *dbent.PaymentO
 			"paidAmount": paid,
 			"reason":     "payment arrived after cancellation",
 		})
-		return nil
+		recovered, recoverErr := s.markTerminalOrderPaidAndReload(ctx, cur, tradeNo, paid, pk, "PAYMENT_AFTER_CANCELLED")
+		if recoverErr != nil {
+			return recoverErr
+		}
+		return s.executeFulfillment(ctx, recovered.ID)
 	case OrderStatusExpired:
 		slog.Warn("webhook payment success for expired order beyond grace period",
 			"orderID", o.ID,
@@ -241,10 +245,71 @@ func (s *PaymentService) alreadyProcessed(ctx context.Context, o *dbent.PaymentO
 			"paidAmount": paid,
 			"reason":     "payment arrived after expiry grace period",
 		})
-		return nil
+		recovered, recoverErr := s.markTerminalOrderPaidAndReload(ctx, cur, tradeNo, paid, pk, "PAYMENT_AFTER_EXPIRY")
+		if recoverErr != nil {
+			return recoverErr
+		}
+		return s.executeFulfillment(ctx, recovered.ID)
 	default:
 		return nil
 	}
+}
+
+func (s *PaymentService) markTerminalOrderPaidAndReload(ctx context.Context, o *dbent.PaymentOrder, tradeNo string, paid float64, pk string, recoveryAction string) (*dbent.PaymentOrder, error) {
+	if o == nil {
+		return nil, errors.New("nil payment order")
+	}
+	if o.Status != OrderStatusCancelled && o.Status != OrderStatusExpired {
+		return o, nil
+	}
+	if !isValidProviderAmount(paid) {
+		s.writeAuditLog(ctx, o.ID, "PAYMENT_INVALID_AMOUNT", pk, map[string]any{
+			"expected": o.PayAmount,
+			"paid":     paid,
+			"tradeNo":  strings.TrimSpace(tradeNo),
+		})
+		return nil, fmt.Errorf("invalid paid amount from provider: %v", paid)
+	}
+	if !amountEqualForCurrency(paid, o.PayAmount, PaymentOrderCurrency(o)) {
+		s.writeAuditLog(ctx, o.ID, "PAYMENT_AMOUNT_MISMATCH", pk, map[string]any{
+			"expected": o.PayAmount,
+			"paid":     paid,
+			"tradeNo":  strings.TrimSpace(tradeNo),
+		})
+		return nil, fmt.Errorf("amount mismatch: expected %s, got %s", strconv.FormatFloat(o.PayAmount, 'f', -1, 64), strconv.FormatFloat(paid, 'f', -1, 64))
+	}
+
+	now := time.Now()
+	update := s.entClient.PaymentOrder.Update().
+		Where(paymentorder.IDEQ(o.ID), paymentorder.StatusEQ(o.Status)).
+		SetStatus(OrderStatusPaid).
+		SetPayAmount(paid).
+		ClearFailedAt().
+		ClearFailedReason()
+	if strings.TrimSpace(tradeNo) != "" {
+		update = update.SetPaymentTradeNo(strings.TrimSpace(tradeNo))
+	}
+	if o.PaidAt == nil {
+		update = update.SetPaidAt(now)
+	}
+	updated, err := update.Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("recover terminal order as paid: %w", err)
+	}
+	if updated > 0 {
+		s.writeAuditLog(ctx, o.ID, "ORDER_PAID", pk, map[string]any{
+			"tradeNo":         strings.TrimSpace(tradeNo),
+			"paidAmount":      paid,
+			"previous_status": o.Status,
+			"reason":          "provider confirmed payment after order reached " + o.Status,
+			"recovery_action": recoveryAction,
+		})
+	}
+	reloaded, err := s.entClient.PaymentOrder.Get(ctx, o.ID)
+	if err != nil {
+		return nil, fmt.Errorf("reload recovered terminal order: %w", err)
+	}
+	return reloaded, nil
 }
 
 func (s *PaymentService) executeFulfillment(ctx context.Context, oid int64) error {
@@ -264,6 +329,11 @@ func (s *PaymentService) ExecuteBalanceFulfillment(ctx context.Context, oid int6
 		return infraerrors.NotFound("NOT_FOUND", "order not found")
 	}
 	if o.Status == OrderStatusCompleted {
+		// Balance credit is already committed, but a previous post-commit cache
+		// invalidation may have failed (e.g. crash between commit and invalidate).
+		// Retry invalidation on every COMPLETED encounter without turning cache
+		// availability into fulfillment failure — mirrors subscription recovery.
+		s.invalidateBalanceCacheBestEffort(ctx, o.UserID)
 		return nil
 	}
 	if psIsRefundStatus(o.Status) {
@@ -277,6 +347,9 @@ func (s *PaymentService) ExecuteBalanceFulfillment(ctx context.Context, oid int6
 		return err
 	}
 	if lease == nil {
+		// Concurrent worker finished first; still best-effort re-invalidate in
+		// case that worker crashed after commit before cache invalidation.
+		s.invalidateBalanceCacheBestEffort(ctx, o.UserID)
 		return nil
 	}
 	if err := s.doBalance(ctx, o, lease); err != nil {
@@ -415,6 +488,7 @@ func (s *PaymentService) doBalanceInTx(ctx context.Context, o *dbent.PaymentOrde
 		if err := tx.Commit(); err != nil {
 			return err
 		}
+		s.invalidateBalanceFulfillmentCache(ctx, o.UserID, existing)
 		if completed {
 			s.dispatchPaymentFulfillmentNotification(o, "RECHARGE_SUCCESS")
 		}
@@ -475,11 +549,38 @@ func (s *PaymentService) doBalanceInTx(ctx context.Context, o *dbent.PaymentOrde
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	s.invalidateBalanceFulfillmentCache(ctx, o.UserID, existing)
 	if completed {
 		s.dispatchPaymentFulfillmentNotification(o, "RECHARGE_SUCCESS")
 	}
 	s.applyAffiliateRebateBestEffort(ctx, o)
 	return nil
+}
+
+func (s *PaymentService) invalidateBalanceFulfillmentCache(ctx context.Context, userID int64, redeemCode *dbent.RedeemCode) {
+	if s == nil || s.redeemService == nil || redeemCode == nil {
+		return
+	}
+	s.redeemService.invalidateRedeemCaches(ctx, userID, &RedeemCode{
+		ID:     redeemCode.ID,
+		Code:   redeemCode.Code,
+		Type:   redeemCode.Type,
+		Value:  redeemCode.Value,
+		Status: redeemCode.Status,
+	})
+}
+
+// invalidateBalanceCacheBestEffort re-invalidates the user balance cache after a
+// balance fulfillment has already committed. Used on COMPLETED recovery paths
+// where a prior post-commit invalidation may have been lost (process crash).
+// Failures are swallowed — cache unavailability must not surface as fulfillment
+// failure once the credit is durable.
+func (s *PaymentService) invalidateBalanceCacheBestEffort(ctx context.Context, userID int64) {
+	if s == nil || s.redeemService == nil {
+		return
+	}
+	// Balance-type invalidation only needs Type; no redeem-code row lookup required.
+	s.redeemService.invalidateRedeemCaches(ctx, userID, &RedeemCode{Type: RedeemTypeBalance})
 }
 
 func (s *PaymentService) applyAffiliateRebateBestEffort(ctx context.Context, o *dbent.PaymentOrder) {
@@ -1070,6 +1171,11 @@ func (s *PaymentService) RetryFulfillment(ctx context.Context, oid int64) error 
 		return infraerrors.BadRequest("INVALID_STATUS", "refund-related order cannot retry")
 	}
 	if o.Status == OrderStatusCompleted {
+		// Re-invalidate balance cache for completed balance orders: a prior
+		// post-commit invalidation may have been lost after the credit committed.
+		if o.OrderType == payment.OrderTypeBalance {
+			s.invalidateBalanceCacheBestEffort(ctx, o.UserID)
+		}
 		s.applyAffiliateRebateBestEffort(ctx, o)
 		return nil
 	}

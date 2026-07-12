@@ -237,6 +237,20 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	tlsRuntime := s.resolveOpenAICompatibleTLSFingerprintRuntime(ctx, c, account, "http")
 	if account.Platform == PlatformGrok {
 		applyGrokRuntimeHeaders(upstreamReq, tlsRuntime)
+		// Isolate session_id / x-grok-conv-id so multi-tenant Grok traffic does
+		// not share xAI conversation state (parity with Responses / Messages).
+		// Never forward a raw client x-grok-conv-id: openaiCCRawAllowedHeaders
+		// already blocks it, and we overwrite both headers from an isolated seed.
+		sessionSeed := strings.TrimSpace(promptCacheKey)
+		if sessionSeed == "" {
+			sessionSeed = strings.TrimSpace(gjson.GetBytes(upstreamBody, "prompt_cache_key").String())
+		}
+		if sessionSeed != "" {
+			apiKeyID := getAPIKeyIDFromContext(c)
+			sessionID := generateSessionUUID(isolateOpenAISessionID(apiKeyID, sessionSeed))
+			upstreamReq.Header.Set("session_id", sessionID)
+			upstreamReq.Header.Set("x-grok-conv-id", sessionID)
+		}
 	} else {
 		applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
 		upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsRuntime.Profile)

@@ -43,10 +43,30 @@ func ResponsesToChatCompletions(resp *ResponsesResponse, model string) *ChatComp
 			}
 		case "function_call":
 			toolCalls = append(toolCalls, ChatToolCall{
-				ID:   item.CallID,
+				ID:   responsesChatToolCallID(item),
 				Type: "function",
 				Function: ChatFunctionCall{
 					Name:      item.Name,
+					Arguments: item.Arguments,
+				},
+			})
+		case "custom_tool_call":
+			// Freeform/custom tools (e.g. Codex exec/apply_patch) surface as
+			// function tool_calls with {"input":...} envelope for Chat Completions.
+			toolCalls = append(toolCalls, ChatToolCall{
+				ID:   responsesChatToolCallID(item),
+				Type: "function",
+				Function: ChatFunctionCall{
+					Name:      item.Name,
+					Arguments: responsesCustomToolCallChatArguments(item.Input),
+				},
+			})
+		case "tool_search_call":
+			toolCalls = append(toolCalls, ChatToolCall{
+				ID:   responsesChatToolCallID(item),
+				Type: "function",
+				Function: ChatFunctionCall{
+					Name:      toolSearchProxyName,
 					Arguments: item.Arguments,
 				},
 			})
@@ -84,6 +104,32 @@ func ResponsesToChatCompletions(resp *ResponsesResponse, model string) *ChatComp
 	out.Usage = chatUsageFromResponsesUsage(resp.Usage)
 
 	return out
+}
+
+func responsesChatToolCallID(item ResponsesOutput) string {
+	if strings.TrimSpace(item.CallID) != "" {
+		return item.CallID
+	}
+	return item.ID
+}
+
+func responsesCustomToolCallChatArguments(input string) string {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return `{"input":""}`
+	}
+	// Already a JSON object (or other structured value) — keep as-is when valid object with "input".
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(input), &obj); err == nil {
+		if _, ok := obj["input"]; ok {
+			return input
+		}
+	}
+	encoded, err := json.Marshal(map[string]string{"input": input})
+	if err != nil {
+		return `{"input":""}`
+	}
+	return string(encoded)
 }
 
 func responsesStatusToChatFinishReason(status string, details *ResponsesIncompleteDetails, failedErr *ResponsesError, toolCalls []ChatToolCall) string {
@@ -158,8 +204,12 @@ type ResponsesEventToChatState struct {
 	NextToolCallIndex      int         // next sequential tool_call index to assign
 	OutputIndexToToolIndex map[int]int // Responses output_index → Chat tool_calls index
 	ToolArgDeltaSeen       map[int]bool
-	IncludeUsage           bool
-	Usage                  *ChatUsage
+	// CustomToolArgAccum holds freeform custom_tool_call input text accumulated
+	// from *_input.delta events. Freeform args are not forwarded as raw deltas;
+	// they are emitted once as a {"input":...} Chat envelope on done.
+	CustomToolArgAccum map[int]string
+	IncludeUsage       bool
+	Usage              *ChatUsage
 }
 
 // NewResponsesEventToChatState returns an initialised stream state.
@@ -169,6 +219,7 @@ func NewResponsesEventToChatState() *ResponsesEventToChatState {
 		Created:                time.Now().Unix(),
 		OutputIndexToToolIndex: make(map[int]int),
 		ToolArgDeltaSeen:       make(map[int]bool),
+		CustomToolArgAccum:     make(map[int]string),
 	}
 }
 
@@ -277,9 +328,14 @@ func resToChatHandleTextDelta(evt *ResponsesStreamEvent, state *ResponsesEventTo
 }
 
 func resToChatHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
-	// function_call 与 custom_tool_call（custom/freeform 工具）均按工具调用注册，
-	// 以便后续 *_input.delta / *_arguments.delta 能映射到正确的工具索引。
-	if evt.Item == nil || (evt.Item.Type != "function_call" && evt.Item.Type != "custom_tool_call") {
+	// function_call、custom_tool_call（custom/freeform）与 tool_search_call 均按
+	// 工具调用注册，以便后续 *_input.delta / *_arguments.delta 能映射到正确索引。
+	if evt.Item == nil {
+		return nil
+	}
+	switch evt.Item.Type {
+	case "function_call", "custom_tool_call", "tool_search_call":
+	default:
 		return nil
 	}
 
@@ -288,13 +344,19 @@ func resToChatHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesE
 	state.OutputIndexToToolIndex[evt.OutputIndex] = idx
 	state.NextToolCallIndex++
 
+	name := evt.Item.Name
+	if evt.Item.Type == "tool_search_call" {
+		// Non-stream maps tool_search_call → function tool named toolSearchProxyName.
+		name = toolSearchProxyName
+	}
+
 	return []ChatCompletionsChunk{makeChatDeltaChunk(state, ChatDelta{
 		ToolCalls: []ChatToolCall{{
 			Index: &idx,
 			ID:    evt.Item.CallID,
 			Type:  "function",
 			Function: ChatFunctionCall{
-				Name: evt.Item.Name,
+				Name: name,
 			},
 		}},
 	})}
@@ -309,6 +371,15 @@ func resToChatHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 	if !ok {
 		return nil
 	}
+
+	// Freeform custom tool inputs are raw text (e.g. apply_patch body). Emitting
+	// them as Chat tool argument deltas would disagree with the non-stream path,
+	// which always surfaces {"input":...}. Accumulate and wrap on done instead.
+	if evt.Type == "response.custom_tool_call_input.delta" {
+		state.CustomToolArgAccum[evt.OutputIndex] += evt.Delta
+		return nil
+	}
+
 	state.ToolArgDeltaSeen[evt.OutputIndex] = true
 
 	return []ChatCompletionsChunk{makeChatDeltaChunk(state, ChatDelta{
@@ -322,15 +393,37 @@ func resToChatHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 }
 
 func resToChatHandleFuncArgsDone(evt *ResponsesStreamEvent, state *ResponsesEventToChatState) []ChatCompletionsChunk {
+	idx, ok := state.OutputIndexToToolIndex[evt.OutputIndex]
+	if !ok {
+		return nil
+	}
+
+	// custom_tool_call: emit the Chat {"input":...} envelope once on done.
+	// Prefer the full done payload; fall back to accumulated freeform deltas.
+	if evt.Type == "response.custom_tool_call_input.done" {
+		if state.ToolArgDeltaSeen[evt.OutputIndex] {
+			return nil
+		}
+		args := responseEventDoneArguments(evt)
+		if args == "" {
+			args = state.CustomToolArgAccum[evt.OutputIndex]
+		}
+		state.ToolArgDeltaSeen[evt.OutputIndex] = true
+		return []ChatCompletionsChunk{makeChatDeltaChunk(state, ChatDelta{
+			ToolCalls: []ChatToolCall{{
+				Index: &idx,
+				Function: ChatFunctionCall{
+					Arguments: responsesCustomToolCallChatArguments(args),
+				},
+			}},
+		})}
+	}
+
 	if state.ToolArgDeltaSeen[evt.OutputIndex] {
 		return nil
 	}
 	args := responseEventDoneArguments(evt)
 	if args == "" {
-		return nil
-	}
-	idx, ok := state.OutputIndexToToolIndex[evt.OutputIndex]
-	if !ok {
 		return nil
 	}
 	state.ToolArgDeltaSeen[evt.OutputIndex] = true

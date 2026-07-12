@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![Go](https://img.shields.io/badge/Go-1.25.7-00ADD8.svg)](https://golang.org/)
+[![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8.svg)](https://golang.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4+-4FC08D.svg)](https://vuejs.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-336791.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-DC382D.svg)](https://redis.io/)
@@ -192,7 +192,7 @@ Sub2API を拡張・統合するコミュニティプロジェクト:
 
 | コンポーネント | 技術 |
 |-----------|------------|
-| バックエンド | Go 1.25.7, Gin, Ent |
+| バックエンド | Go 1.26.5, Gin, Ent |
 | フロントエンド | Vue 3.4+, Vite 5+, TailwindCSS |
 | データベース | PostgreSQL 15+ |
 | キャッシュ/キュー | Redis 7+ |
@@ -452,7 +452,7 @@ rm -rf data/ postgres_data/ redis_data/
 
 #### 前提条件
 
-- Go 1.21+
+- Go 1.26.5
 - Node.js 18+
 - PostgreSQL 15+
 - Redis 7+
@@ -539,20 +539,20 @@ default:
 
 **⚠️ セキュリティ警告: HTTP URL 設定**
 
-`security.url_allowlist.enabled=false` の場合、システムは最小限の URL バリデーションのみを行い、**デフォルトで HTTP URL を許可**します（開発フレンドリーモード。Docker Compose デプロイのデフォルトも同じです）。本番環境では、以下のように明示的に HTTPS のみに制限することを推奨します:
+`security.url_allowlist.enabled=false` の場合、システムは最小限の URL バリデーションを行い、**デフォルトで HTTP URL を拒否**し、HTTPS のみを許可します。HTTP URL を許可する（例: 開発や内部テスト）には、明示的に次を設定する必要があります:
 
 ```yaml
 security:
   url_allowlist:
     enabled: false                # 許可リストチェックを無効化
-    allow_insecure_http: false    # HTTPS のみ許可（本番環境推奨）
+    allow_insecure_http: true     # HTTP URL を許可（⚠️ 不安全）
 ```
 
 **または環境変数で設定:**
 
 ```bash
 SECURITY_URL_ALLOWLIST_ENABLED=false
-SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP=false
+SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP=true
 ```
 
 **HTTP を許可するリスク:**
@@ -566,7 +566,7 @@ SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP=false
 - ✅ HTTPS 取得前のアカウント接続テスト
 - ❌ 本番環境（HTTPS のみを使用）
 
-**`allow_insecure_http: false` 設定時に HTTP URL で表示されるエラー例:**
+**この設定がない場合のエラー例:**
 ```
 Invalid base URL: invalid url scheme: http
 ```

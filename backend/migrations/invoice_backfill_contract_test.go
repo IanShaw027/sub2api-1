@@ -32,12 +32,24 @@ func TestMigration195AddsInvoiceOrderActiveGuardrail(t *testing.T) {
 	require.Contains(t, sql, "SET IS_ACTIVE = CASE WHEN I.STATUS = 'CANCELLED' THEN FALSE ELSE TRUE END")
 	require.Contains(t, sql, "FROM INVOICES I")
 	require.Contains(t, sql, "I.STATUS = 'CANCELLED'")
-	require.Contains(t, sql, "DROP INDEX IF EXISTS INVOICEORDER_ORDER_ID")
-	require.Contains(t, sql, "CREATE UNIQUE INDEX IF NOT EXISTS INVOICEORDER_ORDER_ID")
-	require.Contains(t, sql, "ON INVOICE_ORDERS (ORDER_ID)")
-	require.Contains(t, sql, "WHERE IS_ACTIVE = TRUE")
 	require.Contains(t, sql, "ROW_NUMBER() OVER ( PARTITION BY IO.ORDER_ID")
 	require.Contains(t, sql, "RN > 1")
+	require.NotContains(t, sql, "DROP INDEX")
+	require.NotContains(t, sql, "CREATE UNIQUE INDEX")
+
+	notxContent, err := FS.ReadFile("195a_add_invoice_order_active_unique_guard_notx.sql")
+	require.NoError(t, err)
+
+	notxSQL := normalizeMigrationSQLForSafetyTest(string(notxContent))
+	// Create-first under a new name so a failed unique build never removes the
+	// legacy non-unique invoiceorder_order_id index.
+	createStmt := "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS INVOICEORDER_ORDER_ID_ACTIVE_UNIQUE"
+	dropStmt := "DROP INDEX CONCURRENTLY IF EXISTS INVOICEORDER_ORDER_ID"
+	require.Contains(t, notxSQL, createStmt)
+	require.Contains(t, notxSQL, dropStmt)
+	require.Contains(t, notxSQL, "ON INVOICE_ORDERS (ORDER_ID)")
+	require.Contains(t, notxSQL, "WHERE IS_ACTIVE = TRUE")
+	require.Less(t, strings.Index(notxSQL, createStmt), strings.Index(notxSQL, dropStmt))
 }
 
 func TestTLSFingerprintSeedCleanupOnlyTargetsExactSeededAccountExtra(t *testing.T) {
@@ -145,6 +157,8 @@ func TestMigrationFilenameNumericPrefixesStayDeliberate(t *testing.T) {
 		"191": {"191_add_user_affiliate_ledger_reverse_action_unique_notx.sql", "191_restore_usage_request_type_cyber_value.sql", "191a_validate_usage_log_request_type_check.sql"},
 		"192": {"192_audit_retention_created_at_indexes_notx.sql", "192_ops_sticky_schedule_events.sql"},
 		"193": {"193_add_usage_log_video_billing_details.sql", "193_add_usage_log_video_billing_details_index_notx.sql", "193_create_usage_user_daily_cost.sql"},
+		"195": {"195_add_invoice_order_active_unique_guard.sql", "195a_add_invoice_order_active_unique_guard_notx.sql"},
+		"199": {"199_batch_image_idempotency_unique.sql", "199a_batch_image_idempotency_unique_notx.sql"},
 	}
 
 	byPrefix := make(map[string][]string)

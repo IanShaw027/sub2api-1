@@ -1685,8 +1685,17 @@ func buildOpenAIWSSyntheticReadFailureEvent(responseID, model, message string, u
 			"total_tokens":  usage.InputTokens + usage.OutputTokens,
 		}
 		if usage.CacheReadInputTokens != 0 || usage.CacheCreationInputTokens != 0 {
-			usageBody["input_tokens_details"] = map[string]any{
+			details := map[string]any{
 				"cached_tokens": usage.CacheReadInputTokens,
+			}
+			if usage.CacheCreationInputTokens != 0 {
+				// GPT-5.6-style nested cache-write field used by usage extractors.
+				details["cache_write_tokens"] = usage.CacheCreationInputTokens
+			}
+			usageBody["input_tokens_details"] = details
+			if usage.CacheCreationInputTokens != 0 {
+				usageBody["cache_creation_input_tokens"] = usage.CacheCreationInputTokens
+				usageBody["cache_write_tokens"] = usage.CacheCreationInputTokens
 			}
 		}
 		if usage.ImageOutputTokens != 0 {
@@ -7790,24 +7799,31 @@ func populateOpenAIUsageFromResponseJSON(body []byte, usage *OpenAIUsage) {
 	if usage == nil || len(body) == 0 {
 		return
 	}
-	values := gjson.GetManyBytes(
-		body,
-		"usage.input_tokens",
-		"usage.output_tokens",
-		"usage.input_tokens_details.cached_tokens",
-		"usage.cache_creation_input_tokens",
-		"usage.cache_write_tokens",
-		"usage.input_tokens_details.cache_write_tokens",
-	)
-	usage.InputTokens = int(values[0].Int())
-	usage.OutputTokens = int(values[1].Int())
-	usage.CacheReadInputTokens = int(values[2].Int())
-	usage.CacheCreationInputTokens = int(values[3].Int())
-	if usage.CacheCreationInputTokens == 0 {
-		usage.CacheCreationInputTokens = int(values[4].Int())
+	parsedUsage, ok := extractOpenAIUsageFromJSONBytes(body)
+	if !ok {
+		return
 	}
-	if usage.CacheCreationInputTokens == 0 {
-		usage.CacheCreationInputTokens = int(values[5].Int())
+	mergeOpenAIUsageNonZero(usage, parsedUsage)
+}
+
+func mergeOpenAIUsageNonZero(dst *OpenAIUsage, src OpenAIUsage) {
+	if dst == nil {
+		return
+	}
+	if src.InputTokens > 0 {
+		dst.InputTokens = src.InputTokens
+	}
+	if src.OutputTokens > 0 {
+		dst.OutputTokens = src.OutputTokens
+	}
+	if src.CacheReadInputTokens > 0 {
+		dst.CacheReadInputTokens = src.CacheReadInputTokens
+	}
+	if src.CacheCreationInputTokens > 0 {
+		dst.CacheCreationInputTokens = src.CacheCreationInputTokens
+	}
+	if src.ImageOutputTokens > 0 {
+		dst.ImageOutputTokens = src.ImageOutputTokens
 	}
 }
 

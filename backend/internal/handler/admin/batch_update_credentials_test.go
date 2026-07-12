@@ -59,22 +59,30 @@ func (s *tokenCacheInvalidatorStub) InvalidateToken(_ context.Context, account *
 
 type oauthAccountAdminService struct {
 	*stubAdminService
+	accountType string
+}
+
+func (s *oauthAccountAdminService) resolvedAccountType() string {
+	if s.accountType != "" {
+		return s.accountType
+	}
+	return service.AccountTypeOAuth
 }
 
 func (s *oauthAccountAdminService) GetAccount(ctx context.Context, id int64) (*service.Account, error) {
-	return &service.Account{ID: id, Platform: service.PlatformKiro, Type: service.AccountTypeOAuth, Status: service.StatusActive}, nil
+	return &service.Account{ID: id, Platform: service.PlatformKiro, Type: s.resolvedAccountType(), Status: service.StatusActive}, nil
 }
 
 func (s *oauthAccountAdminService) GetAccountsByIDs(_ context.Context, ids []int64) ([]*service.Account, error) {
 	out := make([]*service.Account, 0, len(ids))
 	for _, id := range ids {
-		out = append(out, &service.Account{ID: id, Platform: service.PlatformKiro, Type: service.AccountTypeOAuth, Status: service.StatusActive})
+		out = append(out, &service.Account{ID: id, Platform: service.PlatformKiro, Type: s.resolvedAccountType(), Status: service.StatusActive})
 	}
 	return out, nil
 }
 
 func (s *oauthAccountAdminService) UpdateAccount(ctx context.Context, id int64, input *service.UpdateAccountInput) (*service.Account, error) {
-	return &service.Account{ID: id, Platform: service.PlatformKiro, Type: service.AccountTypeOAuth, Status: service.StatusActive, Credentials: input.Credentials}, nil
+	return &service.Account{ID: id, Platform: service.PlatformKiro, Type: s.resolvedAccountType(), Status: service.StatusActive, Credentials: input.Credentials}, nil
 }
 
 type bulkLookupAdminService struct {
@@ -295,6 +303,26 @@ func TestBatchUpdateCredentials_InvalidatesOAuthTokenCache(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, []int64{1, 2}, invalidator.calls)
+}
+
+func TestBatchUpdateCredentials_InvalidatesSetupTokenCache(t *testing.T) {
+	svc := &oauthAccountAdminService{stubAdminService: newStubAdminService(), accountType: service.AccountTypeSetupToken}
+	invalidator := &tokenCacheInvalidatorStub{}
+	router, _ := setupAccountHandlerWithServiceAndInvalidator(svc, invalidator)
+
+	body, _ := json.Marshal(BatchUpdateCredentialsRequest{
+		AccountIDs: []int64{21},
+		Field:      "account_uuid",
+		Value:      "setup-token-account-uuid",
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/admin/accounts/batch-update-credentials", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, []int64{21}, invalidator.calls)
 }
 
 func TestBulkUpdate_InvalidatesOAuthTokenCacheAfterCredentialWrite(t *testing.T) {

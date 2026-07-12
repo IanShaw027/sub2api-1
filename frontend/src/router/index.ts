@@ -1275,8 +1275,20 @@ router.beforeEach(async (to, _from, next) => {
         }
         if (err.status === 423 && err.code === 'ADMIN_COMPLIANCE_ACK_REQUIRED') {
           adminComplianceStore.requireAcknowledgement(err.metadata)
+        } else {
+          // Fail closed: network/5xx/unknown errors must not open admin chrome.
+          adminComplianceStore.requireAcknowledgement()
         }
       }
+    }
+    // Hard-block admin SPA navigation until compliance is acknowledged.
+    // Backend AdminComplianceGuard already returns 423 for admin APIs; keep
+    // the dialog as UX, but do not mount admin chrome before ack.
+    // next(false) skips afterEach, so end loading explicitly.
+    if (adminComplianceStore.required || adminComplianceStore.shouldShow) {
+      navigationLoading.endNavigation()
+      next(false)
+      return
     }
   }
 

@@ -17,14 +17,14 @@ exceptions:
   - package: lodash
     advisory: "GHSA-r5fr-rjxr-66jc"
     severity: high
-    reason: "lodash _.template not used with untrusted input; only internal admin UI templates"
-    mitigation: "No user-controlled template strings; plan to migrate to lodash-es tree-shaken imports"
-    expires_on: "2026-07-02"
-    owner: "security@your-domain"
+    reason: "Transitive dependency only; repository source does not call _.template with untrusted input"
+    mitigation: "Keep pnpm audit enforced; revisit when upstream dependencies can drop lodash"
+    expires_on: "2026-10-06"
+    owner: "maintainers"
   - package: lodash-es
     advisory: "GHSA-r5fr-rjxr-66jc"
     severity: high
-    reason: "lodash-es _.template not used with untrusted input; only internal admin UI templates"
-    mitigation: "No user-controlled template strings; plan to migrate to native JS alternatives"
-    expires_on: "2026-07-02"
-    owner: "security@your-domain"
+    reason: "Transitive dependency only; repository source does not call _.template with untrusted input"
+    mitigation: "Keep pnpm audit enforced; revisit when upstream dependencies can drop lodash-es"
+    expires_on: "2026-10-06"
+    owner: "maintainers"

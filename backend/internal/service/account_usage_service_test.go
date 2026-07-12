@@ -88,8 +88,8 @@ func TestAccountUsageService_GetGrokUsageShowsSevenDayRatioAndBillingStats(t *te
 	if usage.SevenDay == nil {
 		t.Fatal("expected seven_day usage progress")
 	}
-	if usage.SevenDay.Utilization != 70 {
-		t.Fatalf("seven_day utilization = %v, want 70", usage.SevenDay.Utilization)
+	if usage.SevenDay.Utilization != 90 {
+		t.Fatalf("seven_day utilization = %v, want 90", usage.SevenDay.Utilization)
 	}
 	if usage.SevenDay.ResetsAt == nil || usage.SevenDay.ResetsAt.Unix() != resetUnix {
 		t.Fatalf("seven_day resets_at = %v, want unix %d", usage.SevenDay.ResetsAt, resetUnix)

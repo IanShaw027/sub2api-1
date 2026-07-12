@@ -2802,8 +2802,15 @@
       <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div>
           <label class="input-label">{{ t('admin.accounts.concurrency') }}</label>
-          <input v-model.number="form.concurrency" type="number" min="1" class="input"
-            @input="form.concurrency = Math.max(1, form.concurrency || 1)" />
+          <input
+            v-model.number="form.concurrency"
+            type="number"
+            min="1"
+            :max="isGrokOAuthConcurrencyLocked ? 1 : undefined"
+            class="input"
+            data-testid="account-form-concurrency"
+            @input="clampFormConcurrency"
+          />
         </div>
         <div>
           <label class="input-label">{{ t('admin.accounts.loadFactor') }}</label>
@@ -4432,6 +4439,28 @@ const form = reactive({
   expires_at: null as number | null
 })
 
+// Grok personal OAuth subscriptions are sensitive to multi-session load.
+// Backend rejects concurrency > 1 unless XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE is set.
+// Keep the create form aligned with that default so submits don't fail unexpectedly.
+const isGrokOAuthConcurrency = (platform: string, type: string) =>
+  platform === 'grok' && type === 'oauth'
+
+const resolveAccountConcurrency = (platform: string, type: string, concurrency: number): number => {
+  const n = Math.max(1, Number(concurrency) || 1)
+  if (isGrokOAuthConcurrency(platform, type)) {
+    return 1
+  }
+  return n
+}
+
+const isGrokOAuthConcurrencyLocked = computed(
+  () => isGrokOAuthConcurrency(form.platform, form.type)
+)
+
+const clampFormConcurrency = () => {
+  form.concurrency = resolveAccountConcurrency(form.platform, form.type, form.concurrency)
+}
+
 const translateWithFallback = (key: string, fallback: string) => {
   const translated = t(key)
   return translated === key ? fallback : translated
@@ -4543,25 +4572,21 @@ watch(
   ([platform, category, method, agType, currentKiroType]) => {
     if (platform === 'kiro') {
       form.type = currentKiroType
-      return
-    }
-    // Antigravity upstream 类型（实际创建为 apikey）
-    if (platform === 'antigravity' && agType === 'upstream') {
+    } else if (platform === 'antigravity' && agType === 'upstream') {
+      // Antigravity upstream 类型（实际创建为 apikey）
       form.type = 'apikey'
-      return
-    }
-    // Bedrock 类型
-    if (platform === 'anthropic' && category === 'bedrock') {
+    } else if (platform === 'anthropic' && category === 'bedrock') {
+      // Bedrock 类型
       form.type = 'bedrock' as AccountType
-      return
-    }
-    if ((form.platform === 'gemini' || form.platform === 'anthropic') && category === 'service_account') {
+    } else if ((form.platform === 'gemini' || form.platform === 'anthropic') && category === 'service_account') {
       form.type = 'service_account' as AccountType
     } else if (category === 'oauth-based') {
       form.type = form.platform === 'anthropic' ? method as AccountType : 'oauth'
     } else {
       form.type = 'apikey'
     }
+    // Re-clamp after type sync: switching Grok back to OAuth must force concurrency=1.
+    clampFormConcurrency()
   },
   { immediate: true }
 )
@@ -4624,7 +4649,7 @@ watch(
       accountCategory.value = 'oauth-based'
       addMethod.value = 'oauth'
       modelRestrictionMode.value = 'mapping'
-      form.concurrency = 1
+      form.concurrency = resolveAccountConcurrency('grok', 'oauth', form.concurrency)
       form.load_factor = null
     }
     if (newPlatform !== 'gemini' && newPlatform !== 'anthropic' && accountCategory.value === 'service_account') {
@@ -4996,6 +5021,11 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
 
 const finalizeCreateAccountPayload = (payload: CreateAccountRequest): CreateAccountRequest => ({
   ...payload,
+  concurrency: resolveAccountConcurrency(
+    payload.platform,
+    payload.type,
+    payload.concurrency ?? form.concurrency
+  ),
   extra: buildTextEndpointAutoRouteExtra(payload.platform, payload.type, payload.extra as Record<string, unknown> | undefined)
 })
 
@@ -5036,7 +5066,7 @@ const resetForm = () => {
   form.type = 'oauth'
   form.credentials = {}
   form.proxy_id = null
-  form.concurrency = 10
+  form.concurrency = resolveAccountConcurrency(form.platform, form.type, 10)
   form.load_factor = null
   form.priority = 1
   form.rate_multiplier = 1
@@ -5875,7 +5905,7 @@ const createGrokOAuthAccount = async (tokenInfo: Record<string, unknown>, accoun
     return false
   }
 
-  await adminAPI.accounts.create({
+  await adminAPI.accounts.create(finalizeCreateAccountPayload({
     name: accountName,
     notes: form.notes,
     platform: 'grok',
@@ -5890,7 +5920,7 @@ const createGrokOAuthAccount = async (tokenInfo: Record<string, unknown>, accoun
     group_ids: form.group_ids,
     expires_at: form.expires_at,
     auto_pause_on_expired: autoPauseOnExpired.value
-  })
+  }))
   return true
 }
 

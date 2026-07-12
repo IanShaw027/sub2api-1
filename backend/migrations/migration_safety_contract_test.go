@@ -194,6 +194,54 @@ func TestPostReleaseNonNegativeCheckValidationRunsInFollowupMigration(t *testing
 	}
 }
 
+func TestHotTableUniqueIndexesAreCreatedConcurrently(t *testing.T) {
+	tests := []struct {
+		transactionalMigration string
+		notxMigration          string
+		dropIndex              string
+		createIndex            string
+	}{
+		{
+			transactionalMigration: "195_add_invoice_order_active_unique_guard.sql",
+			notxMigration:          "195a_add_invoice_order_active_unique_guard_notx.sql",
+			// Create under a new unique name first; only drop the legacy non-unique
+			// invoiceorder_order_id after uniqueness exists (create-first safety).
+			dropIndex:   "DROP INDEX CONCURRENTLY IF EXISTS INVOICEORDER_ORDER_ID",
+			createIndex: "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS INVOICEORDER_ORDER_ID_ACTIVE_UNIQUE",
+		},
+		{
+			transactionalMigration: "199_batch_image_idempotency_unique.sql",
+			notxMigration:          "199a_batch_image_idempotency_unique_notx.sql",
+			dropIndex:              "DROP INDEX CONCURRENTLY IF EXISTS BATCH_IMAGE_JOBS_IDEMPOTENCY_KEY_IDX",
+			createIndex:            "CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS BATCH_IMAGE_JOBS_IDEMPOTENCY_OWNER_UQ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.transactionalMigration, func(t *testing.T) {
+			content, err := FS.ReadFile(tt.transactionalMigration)
+			require.NoError(t, err)
+			sql := normalizeMigrationSQLForSafetyTest(string(content))
+			require.NotContains(t, sql, "CREATE UNIQUE INDEX")
+			require.NotContains(t, sql, "DROP INDEX")
+
+			notxContent, err := FS.ReadFile(tt.notxMigration)
+			require.NoError(t, err)
+			notxSQL := normalizeMigrationSQLForSafetyTest(string(notxContent))
+			require.Contains(t, notxSQL, tt.dropIndex)
+			require.Contains(t, notxSQL, tt.createIndex)
+
+			// Create-first: if CREATE fails mid-migration, the legacy index must
+			// still exist. Dropping first would leave a uniqueness gap.
+			createPos := strings.Index(notxSQL, tt.createIndex)
+			dropPos := strings.Index(notxSQL, tt.dropIndex)
+			require.NotEqual(t, -1, createPos, "create statement missing in %s", tt.notxMigration)
+			require.NotEqual(t, -1, dropPos, "drop statement missing in %s", tt.notxMigration)
+			require.Less(t, createPos, dropPos, "%s must CREATE unique index before DROP of legacy index", tt.notxMigration)
+		})
+	}
+}
+
 func TestGroupDisplayNameLengthMigrationFailsBeforeTruncating(t *testing.T) {
 	content, err := FS.ReadFile("169_align_group_display_name_length.sql")
 	require.NoError(t, err)

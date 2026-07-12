@@ -114,6 +114,19 @@ func (r *contentModerationBlockingSettingRepo) GetValue(ctx context.Context, key
 	return value, err
 }
 
+type contentModerationFailingSettingRepo struct {
+	*contentModerationTestSettingRepo
+	failKey string
+	err     error
+}
+
+func (r *contentModerationFailingSettingRepo) GetValue(ctx context.Context, key string) (string, error) {
+	if key == r.failKey {
+		return "", r.err
+	}
+	return r.contentModerationTestSettingRepo.GetValue(ctx, key)
+}
+
 type contentModerationTestRepo struct {
 	mu        sync.Mutex
 	nextID    int64
@@ -1407,6 +1420,66 @@ func TestContentModerationIsRiskControlEnabled_NilServiceOrRepoReturnsFalse(t *t
 
 	serviceWithNilRepo := NewContentModerationService(nil, nil, nil, nil, nil, nil, nil)
 	require.False(t, serviceWithNilRepo.isRiskControlEnabled(context.Background()))
+}
+
+func TestContentModerationCheck_RiskControlSettingReadFailureBlocks(t *testing.T) {
+	svc := NewContentModerationService(
+		&contentModerationFailingSettingRepo{
+			contentModerationTestSettingRepo: &contentModerationTestSettingRepo{values: map[string]string{}},
+			failKey:                          SettingKeyRiskControlEnabled,
+			err:                              errors.New("settings store unavailable"),
+		},
+		&contentModerationTestRepo{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		APIKeyID: 7,
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"hello"}`),
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, decision)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionError, decision.Action)
+	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
+}
+
+func TestContentModerationCheck_ConfigReadFailureBlocksWhenRiskControlEnabled(t *testing.T) {
+	svc := NewContentModerationService(
+		&contentModerationFailingSettingRepo{
+			contentModerationTestSettingRepo: &contentModerationTestSettingRepo{values: map[string]string{
+				SettingKeyRiskControlEnabled: "true",
+			}},
+			failKey: SettingKeyContentModerationConfig,
+			err:     errors.New("config read failed"),
+		},
+		&contentModerationTestRepo{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision, err := svc.Check(context.Background(), ContentModerationCheckInput{
+		APIKeyID: 8,
+		Protocol: ContentModerationProtocolOpenAIResponses,
+		Body:     []byte(`{"input":"hello"}`),
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, decision)
+	require.False(t, decision.Allowed)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionError, decision.Action)
+	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
 }
 
 func TestContentModerationCheck_ModelFilterUsesRequestedModelNotBodyModel(t *testing.T) {
@@ -2834,7 +2907,8 @@ func TestContentModerationAutoBanCASAppliesTransitionOnce(t *testing.T) {
 	wg.Wait()
 
 	require.Equal(t, int64(1), applied.Load(), "only the CAS winner may run ban-only side effects")
-	require.Zero(t, notMarked.Load())
+	// Concurrent CAS losers must not stamp AutoBanned on their audit logs.
+	require.Equal(t, int64(requests-1), notMarked.Load(), "losers must leave AutoBanned=false")
 	userRepo.mu.Lock()
 	defer userRepo.mu.Unlock()
 	require.Equal(t, requests, userRepo.disableCalls)

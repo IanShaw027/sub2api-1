@@ -49,6 +49,25 @@ func newGatewayRoutesTestRouter(platform ...string) *gin.Engine {
 	return router
 }
 
+func assertGatewayRouteRegistered(t *testing.T, router *gin.Engine, method, path string) {
+	t.Helper()
+	for _, route := range router.Routes() {
+		if route.Method != method {
+			continue
+		}
+		if route.Path == path {
+			return
+		}
+		if strings.HasSuffix(route.Path, "/*subpath") {
+			prefix := strings.TrimSuffix(route.Path, "/*subpath")
+			if strings.HasPrefix(path, prefix+"/") {
+				return
+			}
+		}
+	}
+	require.Failf(t, "route not registered", "method=%s path=%s", method, path)
+}
+
 func TestGatewayRoutesBatchImagePathsAreRegistered(t *testing.T) {
 	router := newGatewayRoutesTestRouter()
 	registered := make(map[string]struct{}, len(router.Routes()))
@@ -93,7 +112,7 @@ func TestGatewayRoutesOpenAIResponsesCompactPathIsRegistered(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
-		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should hit OpenAI responses handler", path)
+		assertGatewayRouteRegistered(t, router, http.MethodPost, path)
 	}
 }
 
@@ -111,7 +130,7 @@ func TestGatewayRoutesOpenAIImagesPathsAreRegistered(t *testing.T) {
 			w := httptest.NewRecorder()
 
 			router.ServeHTTP(w, req)
-			require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should be available for platform %s", path, plat)
+			assertGatewayRouteRegistered(t, router, http.MethodPost, path)
 		}
 	}
 }
@@ -130,7 +149,8 @@ func TestGatewayRoutesGrokImagesPathsAreRegistered(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
-		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should expose images for Grok groups (uses subscription OAuth)", path)
+		assertGatewayRouteRegistered(t, router, http.MethodPost, path)
+		require.NotContains(t, w.Body.String(), "Images API is not supported for this platform")
 	}
 }
 
@@ -185,7 +205,8 @@ func TestGatewayRoutesGrokVideosPathsAreRegistered(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
-		require.NotEqual(t, http.StatusNotFound, w.Code, "method=%s path=%s should hit videos handler for Grok groups", tc.method, tc.path)
+		assertGatewayRouteRegistered(t, router, tc.method, tc.path)
+		require.NotContains(t, w.Body.String(), "Videos API is not supported for this platform")
 	}
 }
 
@@ -223,7 +244,7 @@ func TestGatewayRoutesGrokImagesAndVideosPathsAreRegistered(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
-		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should hit Grok media handler", path)
+		assertGatewayRouteRegistered(t, router, http.MethodPost, path)
 		require.NotContains(t, w.Body.String(), "not supported for this platform")
 	}
 
@@ -235,7 +256,7 @@ func TestGatewayRoutesGrokImagesAndVideosPathsAreRegistered(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
-		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should hit Grok video handler", path)
+		assertGatewayRouteRegistered(t, router, http.MethodGet, path)
 		require.NotContains(t, w.Body.String(), "not supported for this platform")
 	}
 }
@@ -282,7 +303,7 @@ func TestGatewayRoutesGrokAllowsCLICompatibilityEntrypoints(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
-		require.NotEqual(t, http.StatusNotFound, w.Code, "method=%s path=%s", tc.method, tc.path)
+		assertGatewayRouteRegistered(t, router, tc.method, tc.path)
 		require.NotContains(t, w.Body.String(), "not supported for Grok groups")
 	}
 
@@ -309,7 +330,7 @@ func TestGatewayRoutesGrokAllowsCLICompatibilityEntrypoints(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)
-		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should still reach Responses handler", path)
+		assertGatewayRouteRegistered(t, router, http.MethodPost, path)
 	}
 }
 
@@ -358,5 +379,5 @@ func TestGatewayRoutesOpenAICountTokensPathIsRegistered(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
-	require.NotEqual(t, http.StatusNotFound, w.Code)
+	assertGatewayRouteRegistered(t, router, http.MethodPost, "/v1/messages/count_tokens")
 }

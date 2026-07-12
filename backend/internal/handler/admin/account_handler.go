@@ -1011,7 +1011,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	if req.Credentials != nil && account.Type == service.AccountTypeOAuth && h.tokenCacheInvalidator != nil {
+	if req.Credentials != nil && account.IsOAuth() && h.tokenCacheInvalidator != nil {
 		if err := h.tokenCacheInvalidator.InvalidateToken(c.Request.Context(), account); err != nil {
 			log.Printf("[WARN] Failed to invalidate token cache for account %d after update: %v", account.ID, err)
 		}
@@ -2087,7 +2087,7 @@ func (h *AccountHandler) BatchUpdateCredentials(c *gin.Context) {
 			})
 			continue
 		}
-		if account.Type == service.AccountTypeOAuth && h.tokenCacheInvalidator != nil {
+		if account.IsOAuth() && h.tokenCacheInvalidator != nil {
 			if err := h.tokenCacheInvalidator.InvalidateToken(ctx, account); err != nil {
 				log.Printf("[WARN] Failed to invalidate token cache for account %d after bulk credential update: %v", account.ID, err)
 			}
@@ -2201,7 +2201,7 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 					log.Printf("[WARN] Failed to load account %d after bulk update: account missing from batch result", accountID)
 					continue
 				}
-				if len(req.Credentials) > 0 && h.tokenCacheInvalidator != nil && account.Type == service.AccountTypeOAuth {
+				if len(req.Credentials) > 0 && h.tokenCacheInvalidator != nil && account.IsOAuth() {
 					if invalidateErr := h.tokenCacheInvalidator.InvalidateToken(c.Request.Context(), account); invalidateErr != nil {
 						log.Printf("[WARN] Failed to invalidate token cache for account %d after bulk update: %v", account.ID, invalidateErr)
 					}

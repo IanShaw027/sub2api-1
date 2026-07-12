@@ -3,13 +3,15 @@
   <div v-if="homeContent" class="min-h-screen">
     <!-- iframe mode -->
     <iframe
-      v-if="isHomeContentUrl"
-      :src="homeContent.trim()"
+      v-if="homeContentUrl"
+      :src="homeContentUrl"
       class="h-screen w-full border-0"
+      sandbox="allow-forms allow-popups allow-popups-to-escape-sandbox allow-scripts"
+      referrerpolicy="no-referrer"
       allowfullscreen
     ></iframe>
-    <!-- HTML mode - SECURITY: homeContent is admin-only setting, XSS risk is acceptable -->
-    <div v-else v-html="homeContent"></div>
+    <!-- HTML mode -->
+    <div v-else v-html="sanitizedHomeContent"></div>
   </div>
 
   <!-- Default Home Page -->
@@ -410,6 +412,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore, useAppStore } from '@/stores'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { sanitizeHtml } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 
 const { t } = useI18n()
@@ -423,11 +426,13 @@ const siteLogo = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.site_
 const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'AI API Gateway Platform')
 const docUrl = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.doc_url || appStore.docUrl || ''))
 const homeContent = computed(() => appStore.cachedPublicSettings?.home_content || '')
+const sanitizedHomeContent = computed(() => sanitizeHtml(homeContent.value))
 
 // Check if homeContent is a URL (for iframe display)
-const isHomeContentUrl = computed(() => {
+const homeContentUrl = computed(() => {
   const content = homeContent.value.trim()
-  return content.startsWith('http://') || content.startsWith('https://')
+  if (!content.match(/^https?:\/\//i)) return ''
+  return sanitizeUrl(content)
 })
 
 // Theme

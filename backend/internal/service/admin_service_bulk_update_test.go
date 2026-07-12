@@ -14,26 +14,29 @@ import (
 
 type accountRepoStubForBulkUpdate struct {
 	accountRepoStub
-	bulkUpdateCalled bool
-	bulkUpdateErr    error
-	bulkUpdateIDs    []int64
-	bindGroupErrByID map[int64]error
-	bindGroupsCalls  []int64
-	getByIDsAccounts []*Account
-	getByIDsErr      error
-	getByIDsCalled   bool
-	getByIDsIDs      []int64
-	getByIDAccounts  map[int64]*Account
-	getByIDErrByID   map[int64]error
-	getByIDCalled    []int64
-	listByGroupData  map[int64][]Account
-	listByGroupErr   map[int64]error
-	listData         []Account
-	listResult       *pagination.PaginationResult
-	listErr          error
-	listCalled       bool
-	lastListParams   pagination.PaginationParams
-	lastListFilters  struct {
+	bulkUpdateCalled     bool
+	bulkUpdateErr        error
+	bulkUpdateIDs        []int64
+	lastBulkUpdate       AccountBulkUpdate
+	updateCalled         bool
+	updateCalls          []*Account
+	bindGroupErrByID     map[int64]error
+	bindGroupsCalls      []int64
+	getByIDsAccounts     []*Account
+	getByIDsErr          error
+	getByIDsCalled       bool
+	getByIDsIDs          []int64
+	getByIDAccounts      map[int64]*Account
+	getByIDErrByID       map[int64]error
+	getByIDCalled        []int64
+	listByGroupData      map[int64][]Account
+	listByGroupErr       map[int64]error
+	listData             []Account
+	listResult           *pagination.PaginationResult
+	listErr              error
+	listCalled           bool
+	lastListParams       pagination.PaginationParams
+	lastListFilters      struct {
 		platform    string
 		accountType string
 		status      string
@@ -43,13 +46,24 @@ type accountRepoStubForBulkUpdate struct {
 	}
 }
 
-func (s *accountRepoStubForBulkUpdate) BulkUpdate(_ context.Context, ids []int64, _ AccountBulkUpdate) (int64, error) {
+func (s *accountRepoStubForBulkUpdate) BulkUpdate(_ context.Context, ids []int64, updates AccountBulkUpdate) (int64, error) {
 	s.bulkUpdateCalled = true
 	s.bulkUpdateIDs = append([]int64{}, ids...)
+	s.lastBulkUpdate = updates
 	if s.bulkUpdateErr != nil {
 		return 0, s.bulkUpdateErr
 	}
 	return int64(len(ids)), nil
+}
+
+func (s *accountRepoStubForBulkUpdate) Update(_ context.Context, account *Account) error {
+	s.updateCalled = true
+	if account != nil {
+		// Capture a shallow copy so later mutations do not affect assertions.
+		copied := *account
+		s.updateCalls = append(s.updateCalls, &copied)
+	}
+	return nil
 }
 
 func (s *accountRepoStubForBulkUpdate) BindGroups(_ context.Context, accountID int64, _ []int64) error {
@@ -214,6 +228,53 @@ func TestAdminService_BulkUpdateAccounts_GroupOnlySkipsAccountTableUpdate(t *tes
 	require.Empty(t, result.FailedIDs)
 }
 
+func TestAdminService_BulkUpdateAccounts_RejectsModelMappingAcrossMixedPlatforms(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+			{ID: 2, Platform: PlatformAntigravity, Type: AccountTypeOAuth},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1, 2},
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"alias": "upstream"},
+		},
+		SkipMixedChannelCheck: true,
+	})
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "single platform")
+	require.False(t, repo.bulkUpdateCalled)
+	require.Empty(t, repo.bindGroupsCalls)
+}
+
+func TestAdminService_BulkUpdateAccounts_AllowsModelMappingWithinSinglePlatform(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+			{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1, 2},
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"alias": "upstream"},
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, repo.bulkUpdateCalled)
+	require.ElementsMatch(t, []int64{1, 2}, repo.bulkUpdateIDs)
+	require.Equal(t, 2, result.Success)
+}
+
 func TestApplyBulkUpdateInputToAccount_ProxyIDZeroClearsProxy(t *testing.T) {
 	t.Parallel()
 
@@ -331,4 +392,109 @@ func TestApplyBulkUpdateInputToAccountProxyChangeClearsFallbackOrigin(t *testing
 	applyBulkUpdateInputToAccount(account, &BulkUpdateAccountsInput{ProxyID: &newProxyID})
 
 	require.Nil(t, account.ProxyFallbackOriginID)
+}
+
+func TestAdminService_BulkUpdateAccounts_RejectsGrokOAuthHighConcurrencyWithoutEnv(t *testing.T) {
+	t.Setenv("XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE", "")
+
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformGrok, Type: AccountTypeOAuth, Concurrency: 1},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	concurrency := 10
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:  []int64{1},
+		Concurrency: &concurrency,
+	})
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE")
+	require.False(t, repo.bulkUpdateCalled)
+	require.False(t, repo.updateCalled)
+}
+
+func TestAdminService_BulkUpdateAccounts_AllowsGrokOAuthHighConcurrencyWithEnv(t *testing.T) {
+	t.Setenv("XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE", "1")
+
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformGrok, Type: AccountTypeOAuth, Concurrency: 1},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	concurrency := 10
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:  []int64{1},
+		Concurrency: &concurrency,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, repo.bulkUpdateCalled)
+	require.NotNil(t, repo.lastBulkUpdate.Concurrency)
+	require.Equal(t, 10, *repo.lastBulkUpdate.Concurrency)
+	require.Equal(t, 1, result.Success)
+}
+
+func TestAdminService_BulkUpdateAccounts_AllowsNonGrokHighConcurrency(t *testing.T) {
+	t.Setenv("XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE", "")
+
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1},
+			{ID: 2, Platform: PlatformGrok, Type: AccountTypeAPIKey, Concurrency: 1},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	concurrency := 10
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:  []int64{1, 2},
+		Concurrency: &concurrency,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, repo.bulkUpdateCalled)
+	require.NotNil(t, repo.lastBulkUpdate.Concurrency)
+	require.Equal(t, 10, *repo.lastBulkUpdate.Concurrency)
+	require.Equal(t, 2, result.Success)
+}
+
+func TestAdminService_BulkUpdateAccounts_RejectsMixedBulkWhenAnyGrokOAuthViolates(t *testing.T) {
+	t.Setenv("XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE", "")
+
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1},
+			{ID: 2, Platform: PlatformGrok, Type: AccountTypeOAuth, Concurrency: 1},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	concurrency := 10
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:  []int64{1, 2},
+		Concurrency: &concurrency,
+	})
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE")
+	require.False(t, repo.bulkUpdateCalled)
+	require.False(t, repo.updateCalled)
+}
+
+func TestApplyBulkUpdateInputToAccount_NormalizesGrokOAuthConcurrency(t *testing.T) {
+	account := &Account{Platform: PlatformGrok, Type: AccountTypeOAuth, Concurrency: 1}
+	zero := 0
+
+	applyBulkUpdateInputToAccount(account, &BulkUpdateAccountsInput{Concurrency: &zero})
+
+	require.Equal(t, 1, account.Concurrency)
 }

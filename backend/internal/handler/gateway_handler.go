@@ -522,7 +522,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				if errors.As(err, &failoverErr) {
 					h.emitGatewayDebugTimelineAttemptFinished(c, platform, "messages", "failover", requestStart, apiKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, err)
 					// 流式内容已写入客户端，无法撤销，禁止 failover 以防止流拼接腐化
-					if c.Writer.Size() != writerSizeBeforeForward {
+					if gatewayFailoverStreamAlreadyWritten(c, writerSizeBeforeForward) {
 						h.handleFailoverExhausted(c, failoverErr, service.PlatformGemini, true)
 						return
 					}
@@ -987,7 +987,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				if errors.As(err, &failoverErr) {
 					h.emitGatewayDebugTimelineAttemptFinished(c, platform, "messages", "failover", requestStart, currentAPIKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, err)
 					// 流式内容已写入客户端，无法撤销，禁止 failover 以防止流拼接腐化
-					if c.Writer.Size() != writerSizeBeforeForward {
+					if gatewayFailoverStreamAlreadyWritten(c, writerSizeBeforeForward) {
 						h.handleFailoverExhausted(c, failoverErr, account.Platform, true)
 						return
 					}
@@ -2007,6 +2007,13 @@ func (h *GatewayHandler) calculateSubscriptionRemaining(group *service.Group, su
 func (h *GatewayHandler) handleConcurrencyError(c *gin.Context, err error, slotType string, streamStarted bool) {
 	status, errType, message := concurrencyErrorResponse(err, slotType)
 	h.handleStreamingAwareError(c, status, errType, message, streamStarted)
+}
+
+func gatewayFailoverStreamAlreadyWritten(c *gin.Context, writerSizeBeforeForward int) bool {
+	if c == nil || c.Writer == nil {
+		return false
+	}
+	return c.Writer.Size() != writerSizeBeforeForward
 }
 
 func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *service.UpstreamFailoverError, platform string, streamStarted bool) {

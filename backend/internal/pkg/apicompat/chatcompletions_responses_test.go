@@ -666,6 +666,39 @@ func TestResponsesToChatCompletions_ToolCalls(t *testing.T) {
 	assert.Equal(t, `{"city":"NYC"}`, msg.ToolCalls[0].Function.Arguments)
 }
 
+func TestResponsesToChatCompletions_CustomAndToolSearchCalls(t *testing.T) {
+	resp := &ResponsesResponse{
+		ID:     "resp_custom_search",
+		Status: "completed",
+		Output: []ResponsesOutput{
+			{
+				Type:   "custom_tool_call",
+				CallID: "call_exec",
+				Name:   "exec",
+				Input:  "dir",
+			},
+			{
+				Type:      "tool_search_call",
+				CallID:    "call_search",
+				Arguments: `{"query":"docs"}`,
+			},
+		},
+	}
+
+	chat := ResponsesToChatCompletions(resp, "gpt-5.2")
+	require.Len(t, chat.Choices, 1)
+	assert.Equal(t, "tool_calls", chat.Choices[0].FinishReason)
+
+	msg := chat.Choices[0].Message
+	require.Len(t, msg.ToolCalls, 2)
+	assert.Equal(t, "call_exec", msg.ToolCalls[0].ID)
+	assert.Equal(t, "exec", msg.ToolCalls[0].Function.Name)
+	assert.JSONEq(t, `{"input":"dir"}`, msg.ToolCalls[0].Function.Arguments)
+	assert.Equal(t, "call_search", msg.ToolCalls[1].ID)
+	assert.Equal(t, toolSearchProxyName, msg.ToolCalls[1].Function.Name)
+	assert.Equal(t, `{"query":"docs"}`, msg.ToolCalls[1].Function.Arguments)
+}
+
 func TestResponsesToChatCompletions_Reasoning(t *testing.T) {
 	resp := &ResponsesResponse{
 		ID:     "resp_789",

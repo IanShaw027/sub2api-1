@@ -84,6 +84,22 @@ func TestOpenAIUsageExtractionReadsGPT56CacheWriteTokens(t *testing.T) {
 	require.Equal(t, 4, usage.CacheReadInputTokens)
 }
 
+func TestPopulateOpenAIUsageFromResponseJSONDoesNotZeroParsedCacheWriteTokens(t *testing.T) {
+	usage := &OpenAIUsage{
+		InputTokens:              10,
+		OutputTokens:             2,
+		CacheCreationInputTokens: 3,
+		CacheReadInputTokens:     4,
+	}
+
+	populateOpenAIUsageFromResponseJSON([]byte(`{"usage":{"input_tokens":10,"output_tokens":2,"input_tokens_details":{"cached_tokens":4,"cache_write_tokens":0}}}`), usage)
+
+	require.Equal(t, 10, usage.InputTokens)
+	require.Equal(t, 2, usage.OutputTokens)
+	require.Equal(t, 3, usage.CacheCreationInputTokens)
+	require.Equal(t, 4, usage.CacheReadInputTokens)
+}
+
 func TestBillingServiceGPT56PricingIncludesCacheWrites(t *testing.T) {
 	svc := NewBillingService(&config.Config{}, nil)
 

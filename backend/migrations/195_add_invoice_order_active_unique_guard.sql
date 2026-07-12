@@ -50,8 +50,6 @@ FROM ranked_active ra
 WHERE io.id = ra.id
   AND ra.rn > 1;
 
-DROP INDEX IF EXISTS invoiceorder_order_id;
-
-CREATE UNIQUE INDEX IF NOT EXISTS invoiceorder_order_id
-    ON invoice_orders (order_id)
-    WHERE is_active = TRUE;
+-- The partial unique index is created concurrently in
+-- 195a_add_invoice_order_active_unique_guard_notx.sql. Keep this data-shaping
+-- migration transactional so the backfill/dedup state is all-or-nothing.

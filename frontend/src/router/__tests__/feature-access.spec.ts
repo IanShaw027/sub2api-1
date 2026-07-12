@@ -32,8 +32,20 @@ const appStore = vi.hoisted(() => ({
 
 const adminComplianceStore = vi.hoisted(() => ({
   initialized: true,
+  required: false,
+  shouldShow: false,
   fetchStatus: vi.fn(),
-  requireAcknowledgement: vi.fn(),
+  requireAcknowledgement: vi.fn((metadata?: Record<string, string>) => {
+    void metadata
+    adminComplianceStore.required = true
+    adminComplianceStore.shouldShow = true
+  }),
+}))
+
+const navigationLoading = vi.hoisted(() => ({
+  startNavigation: vi.fn(),
+  endNavigation: vi.fn(),
+  isLoading: { value: false },
 }))
 
 vi.mock('vue-router', () => ({
@@ -64,11 +76,7 @@ vi.mock('@/stores/adminCompliance', () => ({
 }))
 
 vi.mock('@/composables/useNavigationLoading', () => ({
-  useNavigationLoadingState: () => ({
-    startNavigation: vi.fn(),
-    endNavigation: vi.fn(),
-    isLoading: { value: false },
-  }),
+  useNavigationLoadingState: () => navigationLoading,
 }))
 
 vi.mock('@/composables/useRoutePrefetch', () => ({
@@ -120,8 +128,17 @@ describe('feature route guard', () => {
     appStore.cachedPublicSettings = null
     appStore.fetchPublicSettings.mockReset()
     adminComplianceStore.initialized = true
+    adminComplianceStore.required = false
+    adminComplianceStore.shouldShow = false
     adminComplianceStore.fetchStatus.mockReset()
     adminComplianceStore.requireAcknowledgement.mockReset()
+    adminComplianceStore.requireAcknowledgement.mockImplementation((metadata?: Record<string, string>) => {
+      void metadata
+      adminComplianceStore.required = true
+      adminComplianceStore.shouldShow = true
+    })
+    navigationLoading.startNavigation.mockReset()
+    navigationLoading.endNavigation.mockReset()
   })
 
   it('waits for admin compliance status before entering an admin route', async () => {
@@ -144,9 +161,10 @@ describe('feature route guard', () => {
     await navigation
     expect(next).toHaveBeenCalledOnce()
     expect(next).toHaveBeenCalledWith()
+    expect(navigationLoading.endNavigation).not.toHaveBeenCalled()
   })
 
-  it('restores the compliance dialog from a structured 423 guard response', async () => {
+  it('hard-blocks admin navigation when compliance acknowledgement is required', async () => {
     authStore.isAdmin = true
     adminComplianceStore.initialized = false
     const metadata = { version: 'v2026.06.10' }
@@ -163,8 +181,27 @@ describe('feature route guard', () => {
     await navigation
 
     expect(adminComplianceStore.requireAcknowledgement).toHaveBeenCalledWith(metadata)
+    expect(navigationLoading.endNavigation).toHaveBeenCalledOnce()
     expect(next).toHaveBeenCalledOnce()
-    expect(next).toHaveBeenCalledWith()
+    expect(next).toHaveBeenCalledWith(false)
+  })
+
+  it('fail-closes admin navigation when compliance status fetch fails non-423', async () => {
+    authStore.isAdmin = true
+    adminComplianceStore.initialized = false
+    adminComplianceStore.fetchStatus.mockRejectedValue(new Error('network down'))
+
+    const { navigation, next } = runGuard(
+      { requiresAdmin: true },
+      '/admin/users',
+    )
+    await navigation
+
+    expect(adminComplianceStore.requireAcknowledgement).toHaveBeenCalledOnce()
+    expect(adminComplianceStore.requireAcknowledgement).toHaveBeenCalledWith()
+    expect(navigationLoading.endNavigation).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith(false)
   })
 
   it('waits for the first public-settings request before deciding payment access', async () => {

@@ -291,6 +291,24 @@ func TestIsMigrationChecksumCompatible(t *testing.T) {
 		require.True(t, ok)
 	})
 
+	t.Run("195历史checksum可兼容拆分后的事务迁移", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"195_add_invoice_order_active_unique_guard.sql",
+			"a775587a040b17780ed37e5fe8efcf223de52263f1f75a5bb4b7c1f6af0b7a99",
+			currentMigrationChecksumForTest(t, "195_add_invoice_order_active_unique_guard.sql"),
+		)
+		require.True(t, ok)
+	})
+
+	t.Run("199历史checksum可兼容拆分后的事务迁移", func(t *testing.T) {
+		ok := isMigrationChecksumCompatible(
+			"199_batch_image_idempotency_unique.sql",
+			"7b75bba89c5e33f996a6bdde61bec4751daf6c410cd9259e63a5b71829fe898b",
+			currentMigrationChecksumForTest(t, "199_batch_image_idempotency_unique.sql"),
+		)
+		require.True(t, ok)
+	})
+
 	t.Run("119未知checksum不兼容", func(t *testing.T) {
 		ok := isMigrationChecksumCompatible(
 			"119_enforce_payment_orders_out_trade_no_unique.sql",

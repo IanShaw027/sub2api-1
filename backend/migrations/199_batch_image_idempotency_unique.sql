@@ -12,8 +12,5 @@ BEGIN
     END IF;
 END $$;
 
-DROP INDEX IF EXISTS batch_image_jobs_idempotency_key_idx;
-
-CREATE UNIQUE INDEX batch_image_jobs_idempotency_owner_uq
-    ON batch_image_jobs (user_id, api_key_id, idempotency_key) NULLS NOT DISTINCT
-    WHERE idempotency_key IS NOT NULL AND idempotency_key <> '';
+-- The unique index is created concurrently in
+-- 199a_batch_image_idempotency_unique_notx.sql after this duplicate precheck.

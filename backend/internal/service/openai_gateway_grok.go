@@ -1139,7 +1139,11 @@ func (s *OpenAIGatewayService) describeGrokComposerImage(
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	// Match main Grok Responses/media paths: same TLS fingerprint profile + UA/originator.
+	tlsRuntime := s.resolveGrokTLSFingerprintRuntime(ctx, c, account, "http")
+	applyGrokRuntimeHeaders(upstreamReq, tlsRuntime)
+
+	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 	if err != nil {
 		return "", OpenAIUsage{}, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 	}
@@ -1313,16 +1317,16 @@ func buildGrokResponsesRequest(ctx context.Context, c *gin.Context, account *Acc
 			apiKeyID := getAPIKeyIDFromContext(c)
 			if apiKeyID > 0 {
 				sessionID = isolateOpenAISessionID(apiKeyID, sessionID)
-				req.Header.Set("session_id", sessionID)
-			} else {
-				req.Header.Set("session_id", sessionID)
 			}
+			req.Header.Set("session_id", sessionID)
 			req.Header.Set("x-grok-conv-id", sessionID)
 		}
 	}
 	if req.Header.Get("x-grok-conv-id") == "" {
 		if promptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()); promptCacheKey != "" {
-			req.Header.Set("x-grok-conv-id", promptCacheKey)
+			apiKeyID := getAPIKeyIDFromContext(c)
+			sessionID := generateSessionUUID(isolateOpenAISessionID(apiKeyID, promptCacheKey))
+			req.Header.Set("x-grok-conv-id", sessionID)
 		}
 	}
 	_ = account

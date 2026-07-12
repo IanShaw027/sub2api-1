@@ -80,6 +80,20 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map
 				Name:  MapClaudeToolName(item.Name, toolNameMap),
 				Input: responsesFunctionCallInput(item.Arguments),
 			})
+		case "custom_tool_call":
+			blocks = append(blocks, AnthropicContentBlock{
+				Type:  "tool_use",
+				ID:    fromResponsesCallID(responsesCallIDOrItemID(item)),
+				Name:  MapClaudeToolName(item.Name, toolNameMap),
+				Input: responsesFunctionCallInput(item.Input),
+			})
+		case "tool_search_call":
+			blocks = append(blocks, AnthropicContentBlock{
+				Type:  "tool_use",
+				ID:    fromResponsesCallID(responsesCallIDOrItemID(item)),
+				Name:  toolSearchProxyName,
+				Input: toolSearchCallArgumentsJSON(item.Arguments),
+			})
 		case "web_search_call":
 			toolUseID := "srvtoolu_" + item.ID
 			query := ""
@@ -126,6 +140,13 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map
 
 func responsesFunctionCallInput(arguments string) json.RawMessage {
 	return anthropicToolUseInputFromArguments(arguments)
+}
+
+func responsesCallIDOrItemID(item ResponsesOutput) string {
+	if strings.TrimSpace(item.CallID) != "" {
+		return item.CallID
+	}
+	return item.ID
 }
 
 func anthropicToolUseInputFromArguments(arguments string) json.RawMessage {
@@ -268,6 +289,14 @@ type ResponsesEventToAnthropicState struct {
 	CurrentBlockType          string // "text" | "thinking" | "tool_use"
 	HasReceivedArgumentsDelta bool
 
+	// SawToolUse is true once any client tool_use block was opened. Used by
+	// FinalizeResponsesAnthropicStream when Response.Output is unavailable.
+	SawToolUse bool
+
+	// customToolInputBuf accumulates freeform custom_tool_call input deltas so
+	// they can be JSON-encoded on done (matching anthropicToolUseInputFromArguments).
+	customToolInputBuf string
+
 	// OutputIndexToBlockIdx maps Responses output_index → Anthropic content block index.
 	OutputIndexToBlockIdx map[int]int
 
@@ -312,7 +341,7 @@ func ResponsesEventToAnthropicEvents(
 		// custom/freeform 工具的输入增量与 function_call 参数增量同形。
 		"response.custom_tool_call_input.delta":
 		return resToAnthHandleFuncArgsDelta(evt, state)
-	case "response.function_call_arguments.done":
+	case "response.function_call_arguments.done", "response.custom_tool_call_input.done":
 		return resToAnthHandleFuncArgsDone(evt, state)
 	case "response.output_item.done":
 		return resToAnthHandleOutputItemDone(evt, state)
@@ -339,7 +368,9 @@ func FinalizeResponsesAnthropicStream(state *ResponsesEventToAnthropicState) []A
 	var events []AnthropicStreamEvent
 	events = append(events, closeCurrentBlock(state)...)
 	stopReason := "end_turn"
-	if state.CurrentBlockType == "tool_use" {
+	// Prefer SawToolUse: closeCurrentBlock does not clear CurrentBlockType, but a
+	// later text block can overwrite it; SawToolUse survives mixed content.
+	if state.SawToolUse || state.CurrentBlockType == "tool_use" {
 		stopReason = "tool_use"
 	}
 
@@ -415,9 +446,9 @@ func resToAnthHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesE
 	}
 
 	switch evt.Item.Type {
-	// function_call 与 custom_tool_call（custom/freeform 工具，如新版 apply_patch）
+	// function_call、custom_tool_call（freeform，如 apply_patch）与 tool_search_call
 	// 同样映射为 Anthropic 的 tool_use 块。
-	case "function_call", "custom_tool_call":
+	case "function_call", "custom_tool_call", "tool_search_call":
 		var events []AnthropicStreamEvent
 		events = append(events, closeCurrentBlock(state)...)
 
@@ -426,14 +457,26 @@ func resToAnthHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesE
 		state.ContentBlockOpen = true
 		state.CurrentBlockType = "tool_use"
 		state.HasReceivedArgumentsDelta = false
+		state.customToolInputBuf = ""
+		state.SawToolUse = true
+
+		callID := evt.Item.CallID
+		name := MapClaudeToolName(evt.Item.Name, state.ToolNameMap)
+		switch evt.Item.Type {
+		case "tool_search_call":
+			callID = responsesCallIDOrItemID(*evt.Item)
+			name = toolSearchProxyName
+		case "custom_tool_call":
+			callID = responsesCallIDOrItemID(*evt.Item)
+		}
 
 		events = append(events, AnthropicStreamEvent{
 			Type:  "content_block_start",
 			Index: &idx,
 			ContentBlock: &AnthropicContentBlock{
 				Type:  "tool_use",
-				ID:    fromResponsesCallID(evt.Item.CallID),
-				Name:  MapClaudeToolName(evt.Item.Name, state.ToolNameMap),
+				ID:    fromResponsesCallID(callID),
+				Name:  name,
 				Input: json.RawMessage("{}"),
 			},
 		})
@@ -506,6 +549,18 @@ func resToAnthHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 		return nil
 	}
 
+	// Freeform custom_tool_call input is plain text, not JSON fragments.
+	// Buffer until done and encode with anthropicToolUseInputFromArguments so
+	// PartialJSON is valid JSON (matches non-stream ResponsesToAnthropic).
+	if evt.Type == "response.custom_tool_call_input.delta" {
+		if _, ok := state.OutputIndexToBlockIdx[evt.OutputIndex]; !ok {
+			return nil
+		}
+		state.customToolInputBuf += evt.Delta
+		state.HasReceivedArgumentsDelta = true
+		return nil
+	}
+
 	blockIdx, ok := state.OutputIndexToBlockIdx[evt.OutputIndex]
 	if !ok {
 		return nil
@@ -524,7 +579,32 @@ func resToAnthHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 
 func resToAnthHandleFuncArgsDone(evt *ResponsesStreamEvent, state *ResponsesEventToAnthropicState) []AnthropicStreamEvent {
 	var events []AnthropicStreamEvent
-	if !state.HasReceivedArgumentsDelta && strings.TrimSpace(evt.Arguments) != "" {
+	isCustom := evt.Type == "response.custom_tool_call_input.done"
+	arguments := evt.Arguments
+	if isCustom {
+		// Prefer authoritative full input from done; fall back to buffered deltas.
+		if strings.TrimSpace(evt.Input) != "" {
+			arguments = evt.Input
+		} else {
+			arguments = state.customToolInputBuf
+		}
+		state.customToolInputBuf = ""
+	}
+
+	// function_call: synthesize input_json_delta only when no prior deltas.
+	// custom freeform: always emit once, JSON-encoded like non-stream.
+	shouldEmit := false
+	partial := arguments
+	if isCustom {
+		if strings.TrimSpace(arguments) != "" {
+			partial = string(anthropicToolUseInputFromArguments(arguments))
+			shouldEmit = true
+		}
+	} else if !state.HasReceivedArgumentsDelta && strings.TrimSpace(arguments) != "" {
+		shouldEmit = true
+	}
+
+	if shouldEmit {
 		blockIdx, ok := state.OutputIndexToBlockIdx[evt.OutputIndex]
 		if !ok && state.ContentBlockOpen && state.CurrentBlockType == "tool_use" {
 			blockIdx = state.ContentBlockIndex
@@ -536,7 +616,7 @@ func resToAnthHandleFuncArgsDone(evt *ResponsesStreamEvent, state *ResponsesEven
 				Index: &blockIdx,
 				Delta: &AnthropicDelta{
 					Type:        "input_json_delta",
-					PartialJSON: evt.Arguments,
+					PartialJSON: partial,
 				},
 			})
 			state.HasReceivedArgumentsDelta = true
@@ -583,6 +663,34 @@ func resToAnthHandleOutputItemDone(evt *ResponsesStreamEvent, state *ResponsesEv
 	// Handle web_search_call → synthesize server_tool_use + web_search_tool_result blocks.
 	if evt.Item.Type == "web_search_call" && evt.Item.Status == "completed" {
 		return resToAnthHandleWebSearchDone(evt, state)
+	}
+
+	// tool_search_call typically carries full arguments only on output_item.done
+	// (no function_call_arguments.delta/done). Synthesize input_json_delta then.
+	if evt.Item.Type == "tool_search_call" && !state.HasReceivedArgumentsDelta {
+		var events []AnthropicStreamEvent
+		if strings.TrimSpace(evt.Item.Arguments) != "" {
+			blockIdx, ok := state.OutputIndexToBlockIdx[evt.OutputIndex]
+			if !ok && state.ContentBlockOpen && state.CurrentBlockType == "tool_use" {
+				blockIdx = state.ContentBlockIndex
+				ok = true
+			}
+			if ok {
+				events = append(events, AnthropicStreamEvent{
+					Type:  "content_block_delta",
+					Index: &blockIdx,
+					Delta: &AnthropicDelta{
+						Type:        "input_json_delta",
+						PartialJSON: string(toolSearchCallArgumentsJSON(evt.Item.Arguments)),
+					},
+				})
+				state.HasReceivedArgumentsDelta = true
+			}
+		}
+		if state.ContentBlockOpen && state.CurrentBlockType == "tool_use" {
+			events = append(events, closeCurrentBlock(state)...)
+		}
+		return events
 	}
 
 	if state.ContentBlockOpen {
@@ -684,7 +792,11 @@ func resToAnthHandleCompleted(evt *ResponsesStreamEvent, state *ResponsesEventTo
 				stopDetails = refusalStopDetails(refusalExplanation)
 				break
 			}
-			if state.ContentBlockIndex > 0 && state.CurrentBlockType == "tool_use" {
+			// Prefer Response.Output (authoritative) over residual CurrentBlockType.
+			// closeCurrentBlock does not clear CurrentBlockType, so residual state can
+			// mis-classify stop_reason after mixed text/tool content. SawToolUse covers
+			// streams where Output is empty but a tool_use block was opened.
+			if responsesOutputHasToolCall(evt.Response.Output) || state.SawToolUse || state.CurrentBlockType == "tool_use" {
 				stopReason = "tool_use"
 			}
 		case "failed":
@@ -758,6 +870,18 @@ func responsesOutputHasRefusal(output []ResponsesOutput) bool {
 			if part.Type == "refusal" && part.Refusal != "" {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// responsesOutputHasToolCall reports whether Response.Output contains any
+// client-executable tool call that should map to Anthropic stop_reason=tool_use.
+func responsesOutputHasToolCall(output []ResponsesOutput) bool {
+	for _, item := range output {
+		switch item.Type {
+		case "function_call", "custom_tool_call", "tool_search_call":
+			return true
 		}
 	}
 	return false
