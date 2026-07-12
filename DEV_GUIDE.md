@@ -344,3 +344,7 @@ sub2api-bmai/
 - [Ent 文档](https://entgo.io/docs/getting-started)
 - [Vue3 文档](https://vuejs.org/)
 - [pnpm 文档](https://pnpm.io/)
+
+## Grok OAuth concurrency
+
+Grok OAuth accounts default to concurrency **1**. Setting concurrency > 1 requires the process environment variable `XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE=1` (admin Create/Update/Bulk all enforce this). The admin UI clamps Grok OAuth concurrency to 1.

@@ -6,7 +6,16 @@ from datetime import date
 
 
 HIGH_SEVERITIES = {"high", "critical"}
-REQUIRED_FIELDS = {"package", "advisory", "severity", "mitigation", "expires_on"}
+REQUIRED_FIELDS = {"package", "advisory", "severity", "mitigation", "expires_on", "owner"}
+PLACEHOLDER_OWNERS = {
+    "",
+    "security@your-domain",
+    "security@example.com",
+    "todo",
+    "tbd",
+    "n/a",
+    "na",
+}
 
 
 def split_kv(line: str) -> tuple[str, str]:
@@ -167,6 +176,13 @@ def main() -> int:
         if missing:
             errors.append(
                 f"Exception missing required fields {missing}: {exc.get('package', '<unknown>')}"
+            )
+            continue
+        owner = str(exc.get("owner", "")).strip()
+        if owner.lower() in PLACEHOLDER_OWNERS:
+            errors.append(
+                f"Exception has placeholder or empty owner for {exc.get('package', '<unknown>')} "
+                f"[{exc.get('advisory', '')}]; set a real maintainer identity"
             )
             continue
         exc_severity = normalize_severity(exc.get("severity"))

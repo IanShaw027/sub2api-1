@@ -64,6 +64,18 @@ Configure the following in Admin Dashboard **Settings → Payment Settings**:
 | **Order Timeout** | Order timeout in minutes (minimum 1) | 30 |
 | **Max Pending Orders** | Maximum concurrent pending orders per user | 3 |
 | **Load Balance Strategy** | Strategy for selecting provider instances | Round Robin |
+| **Subscription USD→CNY Rate** | CNY charged per 1 USD of subscription plan price on CNY channels | `0` (unset) |
+
+#### Subscription USD→CNY rate (important)
+
+Subscription plan prices are treated as **USD** amounts in the product catalog.
+
+- When a user pays a **subscription** order through a **CNY** gateway currency (typical Alipay / WeChat), the gateway amount is `plan_price_usd × subscription_usd_to_cny_rate`.
+- A **positive** rate is **required** for CNY subscription checkout. If the rate is `0` or unset, order creation fails with `INVALID_PAYMENT_CONFIG` (fail-closed to avoid charging a USD number as CNY).
+- Balance top-ups are unaffected (they already use CNY amounts directly).
+- Non-CNY subscription currencies do not apply this conversion.
+
+Set this under **Settings → Payment Settings** before enabling CNY channels for subscription sales. If plan prices are already denominated in CNY and you still use CNY gateways, set the rate to `1.0` only when that matches your catalog currency policy (prefer keeping catalog prices in USD and a real FX rate).
 
 ### Frontend Visible Method Routing
 

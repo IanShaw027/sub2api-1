@@ -61,6 +61,10 @@ const accountAutopauseExpiryIndexMigration = "151_account_autopause_expiry_index
 const accountAutopauseExpiryIndex = "idx_accounts_autopause_expiry_due"
 const schedulerOutboxPendingDedupKeyMigration = "153_scheduler_outbox_pending_dedup_key_index_notx.sql"
 const schedulerOutboxPendingDedupKeyIndex = "idx_scheduler_outbox_pending_dedup_key"
+const invoiceOrderActiveUniqueMigration = "195a_add_invoice_order_active_unique_guard_notx.sql"
+const invoiceOrderActiveUniqueIndex = "invoiceorder_order_id_active_unique"
+const batchImageIdempotencyUniqueMigration = "199a_batch_image_idempotency_unique_notx.sql"
+const batchImageIdempotencyUniqueIndex = "batch_image_jobs_idempotency_owner_uq"
 
 type migrationChecksumCompatibilityRule struct {
 	fileChecksum       string
@@ -293,6 +297,12 @@ func prepareNonTransactionalMigration(ctx context.Context, db *sql.DB, name stri
 		return prepareInvalidIndexRetry(ctx, db, accountAutopauseExpiryIndex)
 	case schedulerOutboxPendingDedupKeyMigration:
 		return prepareInvalidIndexRetry(ctx, db, schedulerOutboxPendingDedupKeyIndex)
+	case invoiceOrderActiveUniqueMigration:
+		// Drop INVALID partial unique left by a failed CREATE INDEX CONCURRENTLY
+		// so IF NOT EXISTS does not no-op past a non-enforcing index.
+		return prepareInvalidIndexRetry(ctx, db, invoiceOrderActiveUniqueIndex)
+	case batchImageIdempotencyUniqueMigration:
+		return prepareInvalidIndexRetry(ctx, db, batchImageIdempotencyUniqueIndex)
 	default:
 		return nil
 	}

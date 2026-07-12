@@ -1,5 +1,7 @@
 # Sub2API
 
+
+- [安全策略](SECURITY.md) — 漏洞披露与支持版本
 <div align="center">
 
 [![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8.svg)](https://golang.org/)

@@ -164,6 +164,32 @@ func TestPrepareNonTransactionalMigration_PreparesAutopauseExpiryIndexRetry(t *t
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestPrepareNonTransactionalMigration_PreparesInvoiceAndBatchImageUniqueIndexRetry(t *testing.T) {
+	for _, tc := range []struct {
+		migration string
+		index     string
+	}{
+		{invoiceOrderActiveUniqueMigration, invoiceOrderActiveUniqueIndex},
+		{batchImageIdempotencyUniqueMigration, batchImageIdempotencyUniqueIndex},
+	} {
+		t.Run(tc.migration, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer func() { _ = db.Close() }()
+
+			mock.ExpectQuery("SELECT EXISTS").
+				WithArgs(tc.index).
+				WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+			mock.ExpectExec("DROP INDEX CONCURRENTLY IF EXISTS " + tc.index).
+				WillReturnResult(sqlmock.NewResult(0, 0))
+
+			err = prepareNonTransactionalMigration(context.Background(), db, tc.migration)
+			require.NoError(t, err)
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestPublishedHistoricalMigrationsRemainImmutable(t *testing.T) {
 	expected := map[string]string{
 		"125_add_group_rpm_limit.sql":         "f77d3eed98860f8ebd4772a909441736e88e572352c0e6b137fa9c1860bd9d52",

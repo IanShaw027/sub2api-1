@@ -1,5 +1,7 @@
 # Sub2API
 
+
+- [Security Policy](SECURITY.md) — vulnerability reporting and supported versions
 <div align="center">
 
 [![Go](https://img.shields.io/badge/Go-1.26.5-00ADD8.svg)](https://golang.org/)

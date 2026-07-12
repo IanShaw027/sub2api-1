@@ -529,8 +529,8 @@ export default {
         balanceRechargePreview: '预览：1 CNY = {usd} USD',
         subscriptionUsdToCnyRate: '订阅 CNY 换算汇率',
         subscriptionUsdToCnyRateHint:
-          'CNY 支付通道下，套餐每 1 USD 价格收取多少 CNY（如 7.15）。0 或留空 = 不换算，订阅按 price 数值直接收款。启用后所有套餐 price 必须按 USD 定价',
-        subscriptionUsdToCnyRateDisabled: '未启用（按 price 直付）',
+          '通过 CNY 支付通道（支付宝/微信）售卖订阅时必填：套餐每 1 USD 价格收取多少 CNY（如 7.15）。套餐 price 须按 USD 定价。仅在不通过 CNY 通道售卖订阅时才可留 0 —— 此时 CNY 订阅下单会被后端拒绝，直至配置正数汇率。',
+        subscriptionUsdToCnyRateDisabled: '未设置（CNY 订阅下单将被拒绝）',
         rechargeFeeRate: '充值手续费率',
         rechargeFeeRateHint: '用户充值时额外收取的手续费百分比，0 表示不收取手续费',
         rechargeFeePreview: '预览：充值 100 元，手续费 {fee} 元',

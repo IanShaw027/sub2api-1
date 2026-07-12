@@ -533,8 +533,8 @@ export default {
         balanceRechargePreview: 'Preview: 1 CNY = {usd} USD',
         subscriptionUsdToCnyRate: 'Subscription USD to CNY Rate',
         subscriptionUsdToCnyRateHint:
-          'CNY charged per 1 USD of plan price on CNY channels (e.g. 7.15). 0 or empty = disabled, plan price is charged as-is. When enabled, all plan prices must be set in USD',
-        subscriptionUsdToCnyRateDisabled: 'Disabled (price charged as-is)',
+          'Required for subscription checkout on CNY payment channels (Alipay/WeChat). Enter CNY charged per 1 USD of plan price (e.g. 7.15). Plan prices must be denominated in USD. Leave 0 only when you do not sell subscriptions via CNY channels — CNY subscription orders will fail until a positive rate is set.',
+        subscriptionUsdToCnyRateDisabled: 'Not set (CNY subscription checkout blocked)',
         rechargeFeeRate: 'Recharge Fee Rate',
         rechargeFeeRateHint: 'Percentage of service fee charged on top of recharge amount, 0 means no fee',
         rechargeFeePreview: 'Preview: Recharge 100, fee {fee}',

@@ -154,6 +154,7 @@ import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import { useAuthStore, useAppStore } from '@/stores'
 import {
+import { sanitizeRedirectPath } from '@/utils/sanitize'
   persistOAuthTokenContext,
   getPublicSettings,
   isOAuthLoginCompletion,
@@ -271,7 +272,7 @@ onMounted(async () => {
       pendingAuthToken.value = registerData.pending_auth_token || activePendingSession?.token || ''
       pendingAuthTokenField.value = registerData.pending_auth_token_field || activePendingSession?.token_field || 'pending_auth_token'
       pendingProvider.value = registerData.pending_provider || activePendingSession?.provider || ''
-      pendingRedirect.value = registerData.pending_redirect || activePendingSession?.redirect || ''
+      pendingRedirect.value = sanitizeRedirectPath(registerData.pending_redirect || activePendingSession?.redirect || '')
       pendingAdoptionDecision.value = registerData.pending_adoption_decision
         ? {
             adoptDisplayName: registerData.pending_adoption_decision.adopt_display_name === true,
@@ -286,7 +287,7 @@ onMounted(async () => {
     pendingAuthToken.value = activePendingSession.token
     pendingAuthTokenField.value = activePendingSession.token_field
     pendingProvider.value = activePendingSession.provider
-    pendingRedirect.value = activePendingSession.redirect || ''
+    pendingRedirect.value = sanitizeRedirectPath(activePendingSession.redirect || '')
   }
 
   // Load public settings
@@ -389,7 +390,12 @@ function persistPendingOAuthSession(provider: string, redirect?: string): void {
     token: pendingAuthToken.value,
     token_field: pendingAuthTokenField.value,
     provider: provider.trim() || pendingProvider.value.trim(),
-    redirect: redirect || pendingRedirect.value || undefined,
+    redirect: (() => {
+      const raw = redirect || pendingRedirect.value
+      if (!raw) return undefined
+      const cleaned = sanitizeRedirectPath(raw, '')
+      return cleaned || undefined
+    })(),
   })
 }
 
@@ -555,7 +561,7 @@ async function handleVerify(): Promise<void> {
     clearAllAffiliateReferralCodes()
 
     // Redirect to dashboard
-    await router.push(pendingRedirect.value || '/dashboard')
+    await router.push(sanitizeRedirectPath(pendingRedirect.value, '/dashboard'))
   } catch (error: unknown) {
     errorMessage.value = buildAuthErrorMessage(error, {
       fallback: t('auth.verifyFailed')

@@ -25,7 +25,7 @@ const (
 	SettingBalancePayDisabled  = "BALANCE_PAYMENT_DISABLED"
 	SettingBalanceRechargeMult = "BALANCE_RECHARGE_MULTIPLIER"
 	// SettingSubscriptionUSDToCNYRate 是订阅 CNY 换算汇率（1 USD = X CNY）。
-	// 0/未配置 = 关闭换算（订阅按 price 数值直付），显式配置后 CNY 通道订阅按 price × rate 收款。
+	// 0/未配置 = 未设置：CNY 通道订阅下单 fail-closed；正数时 CNY 通道按 price_usd × rate 收款。
 	SettingSubscriptionUSDToCNYRate = "SUBSCRIPTION_USD_TO_CNY_RATE"
 	SettingRechargeFeeRate          = "RECHARGE_FEE_RATE"
 	SettingProductNamePrefix        = "PRODUCT_NAME_PREFIX"
@@ -57,7 +57,7 @@ type PaymentConfig struct {
 	EnabledTypes              []string `json:"enabled_payment_types"`
 	BalanceDisabled           bool     `json:"balance_disabled"`
 	BalanceRechargeMultiplier float64  `json:"balance_recharge_multiplier"`
-	// SubscriptionUSDToCNYRate 为 0 时订阅换算关闭（兼容存量行为）。
+	// SubscriptionUSDToCNYRate 为 0 时表示未配置；CNY 订阅下单需要正数汇率。
 	SubscriptionUSDToCNYRate float64 `json:"subscription_usd_to_cny_rate"`
 	RechargeFeeRate          float64 `json:"recharge_fee_rate"`
 	LoadBalanceStrategy      string  `json:"load_balance_strategy"`
