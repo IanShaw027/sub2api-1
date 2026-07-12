@@ -264,8 +264,11 @@ func TestKiroOAuthServiceExchangeCallbackOrStartContinuationReturnsMicrosoftExte
 	if query.Get("client_id") != clientID {
 		t.Fatalf("client_id = %q, want %q", query.Get("client_id"), clientID)
 	}
-	if query.Get("redirect_uri") != "http://localhost:3128/signin/callback" {
+	if query.Get("redirect_uri") != "http://localhost:3128/signin/callback?login_option=external_idp" {
 		t.Fatalf("redirect_uri = %q", query.Get("redirect_uri"))
+	}
+	if strings.Contains(query.Get("redirect_uri"), "login_hint=") || strings.Contains(query.Get("redirect_uri"), "issuer_url=") || strings.Contains(query.Get("redirect_uri"), "scopes=") {
+		t.Fatalf("redirect_uri should only preserve login_option, got %q", query.Get("redirect_uri"))
 	}
 	if query.Get("state") != state {
 		t.Fatalf("state = %q, want %q", query.Get("state"), state)
