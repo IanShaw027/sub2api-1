@@ -159,6 +159,35 @@ export async function reauthorizeKiroOAuth(
   return data
 }
 
+export interface KiroDiscoveredProfile {
+  arn?: string
+  profileArn?: string
+  profileName?: string
+  profile_name?: string
+  region?: string
+}
+
+export async function getKiroProfiles(id: number): Promise<KiroDiscoveredProfile[]> {
+  const { data } = await apiClient.get<{ profiles: KiroDiscoveredProfile[] }>(`/admin/accounts/${id}/profiles`)
+  return data.profiles || []
+}
+
+export async function setKiroOverage(id: number, enabled: boolean): Promise<{ id: number; enabled: boolean }> {
+  const { data } = await apiClient.post<{ id: number; enabled: boolean }>(`/admin/accounts/${id}/kiro/overage`, { enabled })
+  return data
+}
+
+export async function enableAllKiroOverage(): Promise<{
+  enabled_count: number
+  results: Array<{ id: number; status: string; error?: string }>
+}> {
+  const { data } = await apiClient.post<{
+    enabled_count: number
+    results: Array<{ id: number; status: string; error?: string }>
+  }>('/admin/accounts/kiro/overage/enable-all')
+  return data
+}
+
 /**
  * Check mixed-channel risk for account-group binding.
  */
@@ -951,6 +980,9 @@ export const accountsAPI = {
   create,
   update,
   reauthorizeKiroOAuth,
+  getKiroProfiles,
+  setKiroOverage,
+  enableAllKiroOverage,
   checkMixedChannelRisk,
   delete: deleteAccount,
   toggleStatus,

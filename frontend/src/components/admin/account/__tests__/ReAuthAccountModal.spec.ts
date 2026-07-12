@@ -4,22 +4,34 @@ import { defineComponent, h, ref } from 'vue'
 
 const {
   updateAccountMock,
+  applyOAuthCredentialsMock,
   reauthorizeKiroOAuthMock,
   createAccountMock,
   clearErrorMock,
   exchangeCallbackMock,
   validateRefreshTokenMock,
+  grokValidateRefreshTokenMock,
+  grokValidateSSOTokenMock,
+  grokAuthorizePasswordMock,
+  grokExchangeAuthCodeMock,
+  grokGenerateAuthUrlMock,
   geminiGenerateAuthUrlMock,
   buildCredentialsMock,
   buildExtraInfoMock,
   buildAccountNameMock
 } = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
+  applyOAuthCredentialsMock: vi.fn(),
   reauthorizeKiroOAuthMock: vi.fn(),
   createAccountMock: vi.fn(),
   clearErrorMock: vi.fn(),
   exchangeCallbackMock: vi.fn(),
   validateRefreshTokenMock: vi.fn(),
+  grokValidateRefreshTokenMock: vi.fn(),
+  grokValidateSSOTokenMock: vi.fn(),
+  grokAuthorizePasswordMock: vi.fn(),
+  grokExchangeAuthCodeMock: vi.fn(),
+  grokGenerateAuthUrlMock: vi.fn(),
   geminiGenerateAuthUrlMock: vi.fn(),
   buildCredentialsMock: vi.fn(),
   buildExtraInfoMock: vi.fn(),
@@ -38,6 +50,7 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
       update: updateAccountMock,
+      applyOAuthCredentials: applyOAuthCredentialsMock,
       reauthorizeKiroOAuth: reauthorizeKiroOAuthMock,
       create: createAccountMock,
       clearError: clearErrorMock
@@ -84,6 +97,36 @@ vi.mock('@/composables/useGeminiOAuth', () => ({
 
 vi.mock('@/composables/useAntigravityOAuth', () => ({
   useAntigravityOAuth: () => buildOAuthComposable()
+}))
+
+vi.mock('@/composables/useGrokOAuth', () => ({
+  useGrokOAuth: () => ({
+    authUrl: ref(''),
+    sessionId: ref('grok-session-id'),
+    loading: ref(false),
+    error: ref(''),
+    state: ref('grok-oauth-state'),
+    resetState: vi.fn(),
+    generateAuthUrl: grokGenerateAuthUrlMock,
+    exchangeAuthCode: grokExchangeAuthCodeMock,
+    validateRefreshToken: grokValidateRefreshTokenMock,
+    validateSSOToken: grokValidateSSOTokenMock,
+    authorizePassword: grokAuthorizePasswordMock,
+    buildCredentials: (tokenInfo?: any) => {
+      const credentials: Record<string, unknown> = {
+        access_token: tokenInfo?.access_token,
+        refresh_token: tokenInfo?.refresh_token,
+        sso_token: tokenInfo?.sso_token,
+        email: tokenInfo?.email
+      }
+      return Object.fromEntries(Object.entries(credentials).filter(([, value]) => value !== undefined && value !== ''))
+    },
+    buildExtraInfo: (tokenInfo?: any) => {
+      const extra: Record<string, unknown> = {}
+      if (tokenInfo?.email) extra.email = tokenInfo.email
+      return extra
+    }
+  })
 }))
 
 vi.mock('@/composables/useKiroOAuth', () => ({
@@ -151,6 +194,14 @@ const KiroAuthorizationFlowStub = defineComponent({
       type: String,
       default: ''
     },
+    accountId: {
+      type: Number,
+      default: null
+    },
+    proxyId: {
+      type: Number,
+      default: null
+    },
     loading: {
       type: Boolean,
       default: false
@@ -209,6 +260,16 @@ const KiroAuthorizationFlowStub = defineComponent({
   }
 })
 
+const oauthFlowExposeState = {
+  authCode: '',
+  oauthState: '',
+  projectId: '',
+  requiresProjectIdRecovery: false,
+  sessionKey: '',
+  inputMethod: 'manual',
+  reset: vi.fn()
+}
+
 const OAuthAuthorizationFlowStub = defineComponent({
   name: 'OAuthAuthorizationFlow',
   props: {
@@ -233,17 +294,9 @@ const OAuthAuthorizationFlowStub = defineComponent({
       default: false
     }
   },
-  emits: ['generate-url'],
+  emits: ['generate-url', 'cookie-auth', 'validate-refresh-token', 'validate-sso-token', 'authorize-password'],
   setup(props, { expose, emit }) {
-    expose({
-      authCode: '',
-      oauthState: '',
-      projectId: '',
-      requiresProjectIdRecovery: false,
-      sessionKey: '',
-      inputMethod: 'manual',
-      reset: vi.fn()
-    })
+    expose(oauthFlowExposeState)
     return () => h('div', {}, [
       h('div', {
         'data-testid': 'oauth-flow',
@@ -312,6 +365,32 @@ function buildGeminiOAuthAccount() {
   } as any
 }
 
+function buildGrokOAuthAccount() {
+  return {
+    id: 54,
+    name: 'Grok OAuth',
+    notes: '',
+    platform: 'grok',
+    type: 'oauth',
+    credentials: {
+      refresh_token: 'grok-rt-old',
+      access_token: 'grok-at-old'
+    },
+    extra: {
+      email: 'grok-old@example.com'
+    },
+    proxy_id: null,
+    concurrency: 1,
+    priority: 1,
+    rate_multiplier: 1,
+    status: 'error',
+    error_message: 'expired',
+    group_ids: [],
+    expires_at: null,
+    auto_pause_on_expired: false
+  } as any
+}
+
 function mountModal(account = buildKiroAccount('apikey')) {
   return mount(ReAuthAccountModal, {
     props: {
@@ -331,17 +410,30 @@ function mountModal(account = buildKiroAccount('apikey')) {
 
 describe('admin ReAuthAccountModal', () => {
   beforeEach(() => {
+    oauthFlowExposeState.authCode = ''
+    oauthFlowExposeState.oauthState = ''
+    oauthFlowExposeState.projectId = ''
+    oauthFlowExposeState.requiresProjectIdRecovery = false
+    oauthFlowExposeState.sessionKey = ''
+    oauthFlowExposeState.inputMethod = 'manual'
     updateAccountMock.mockReset()
+    applyOAuthCredentialsMock.mockReset()
     reauthorizeKiroOAuthMock.mockReset()
     createAccountMock.mockReset()
     clearErrorMock.mockReset()
     exchangeCallbackMock.mockReset()
     validateRefreshTokenMock.mockReset()
+    grokValidateRefreshTokenMock.mockReset()
+    grokValidateSSOTokenMock.mockReset()
+    grokAuthorizePasswordMock.mockReset()
+    grokExchangeAuthCodeMock.mockReset()
+    grokGenerateAuthUrlMock.mockReset()
     geminiGenerateAuthUrlMock.mockReset()
     buildCredentialsMock.mockReset()
     buildExtraInfoMock.mockReset()
     buildAccountNameMock.mockReset()
     createAccountMock.mockResolvedValue({})
+    applyOAuthCredentialsMock.mockResolvedValue({})
 
     exchangeCallbackMock.mockResolvedValue({
       access_token: 'access-new',
@@ -375,6 +467,28 @@ describe('admin ReAuthAccountModal', () => {
     updateAccountMock.mockResolvedValue({})
     reauthorizeKiroOAuthMock.mockResolvedValue({})
     clearErrorMock.mockResolvedValue(buildKiroAccount('oauth'))
+    grokExchangeAuthCodeMock.mockResolvedValue({
+      access_token: 'grok-at-new',
+      refresh_token: 'grok-rt-new',
+      email: 'grok@example.com'
+    })
+    grokValidateRefreshTokenMock.mockResolvedValue({
+      access_token: 'grok-at-new',
+      refresh_token: 'grok-rt-new',
+      email: 'grok@example.com'
+    })
+    grokValidateSSOTokenMock.mockResolvedValue({
+      access_token: 'grok-at-new',
+      refresh_token: 'grok-rt-new',
+      sso_token: 'grok-sso-new',
+      email: 'grok@example.com'
+    })
+    grokAuthorizePasswordMock.mockResolvedValue({
+      access_token: 'grok-at-new',
+      refresh_token: 'grok-rt-new',
+      sso_token: 'grok-password-sso',
+      email: 'grok@example.com'
+    })
   })
 
   it('does not mount the Kiro OAuth reauthorization flow for Kiro API key accounts', () => {
@@ -760,6 +874,30 @@ describe('admin ReAuthAccountModal', () => {
     }))
   })
 
+  it('shows Kiro diagnostic summary in reauth modal', async () => {
+    const account = buildKiroAccount('oauth')
+    account.credentials = {
+      refresh_token: 'rt-old',
+      region: 'us-east-1',
+      profile_arn: 'arn:aws:codewhisperer:us-east-1:123:profile/CURRENT'
+    }
+    account.extra = {
+      profile_id: 'PROFILE-123',
+      login_provider: 'microsoft',
+      kiro_status_reason: 'FEATURE_NOT_SUPPORTED'
+    }
+
+    const wrapper = mountModal(account)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.accounts.kiro.diagnosticSummaryTitle')
+    expect(wrapper.text()).toContain('admin.accounts.kiro.profileModeShort')
+    expect(wrapper.text()).toContain('admin.accounts.kiro.profileStateManual')
+    expect(wrapper.text()).toContain('PROFILE-123')
+    expect(wrapper.text()).toContain('microsoft')
+    expect(wrapper.text()).toContain('FEATURE_NOT_SUPPORTED')
+  })
+
   it('removes stale IDC credentials when Kiro callback reauth switches back to social credentials', async () => {
     const account = buildKiroAccount('oauth')
     account.credentials = {
@@ -791,5 +929,82 @@ describe('admin ReAuthAccountModal', () => {
     expect(credentials).not.toHaveProperty('client_secret')
     expect(credentials).not.toHaveProperty('issuer_url')
     expect(credentials).not.toHaveProperty('idc_region')
+  })
+
+  it('reauthorizes Grok OAuth accounts from manual refresh token input', async () => {
+    const wrapper = mountModal(buildGrokOAuthAccount())
+
+    wrapper.getComponent(OAuthAuthorizationFlowStub).vm.$emit('validate-refresh-token', 'grok-rt-manual')
+    await flushPromises()
+
+    expect(grokValidateRefreshTokenMock).toHaveBeenCalledWith('grok-rt-manual', null)
+    expect(applyOAuthCredentialsMock).toHaveBeenCalledWith(54, expect.objectContaining({
+      type: 'oauth',
+      credentials: expect.objectContaining({
+        refresh_token: 'grok-rt-new',
+        access_token: 'grok-at-new'
+      }),
+      extra: expect.objectContaining({
+        email: 'grok@example.com'
+      })
+    }))
+  })
+
+  it('reauthorizes Grok OAuth accounts from manual SSO token input', async () => {
+    const wrapper = mountModal(buildGrokOAuthAccount())
+
+    wrapper.getComponent(OAuthAuthorizationFlowStub).vm.$emit('validate-sso-token', 'grok-sso-manual')
+    await flushPromises()
+
+    expect(grokValidateSSOTokenMock).toHaveBeenCalledWith('grok-sso-manual', null)
+    expect(applyOAuthCredentialsMock).toHaveBeenCalledWith(54, expect.objectContaining({
+      credentials: expect.objectContaining({
+        sso_token: 'grok-sso-new',
+        refresh_token: 'grok-rt-new'
+      })
+    }))
+  })
+
+  it('reauthorizes Grok OAuth accounts from manual email-password input without persisting password', async () => {
+    const wrapper = mountModal(buildGrokOAuthAccount())
+
+    wrapper.getComponent(OAuthAuthorizationFlowStub).vm.$emit('authorize-password', 'grok@example.com----super-secret')
+    await flushPromises()
+
+    expect(grokAuthorizePasswordMock).toHaveBeenCalledWith('grok@example.com----super-secret', null)
+    const payload = applyOAuthCredentialsMock.mock.calls[0]?.[1]
+    expect(payload.credentials).toEqual(expect.objectContaining({
+      sso_token: 'grok-password-sso',
+      refresh_token: 'grok-rt-new'
+    }))
+    expect(JSON.stringify(payload)).not.toContain('super-secret')
+  })
+
+  it('rejects multiline Grok credentials in single-account reauthorization', async () => {
+    const wrapper = mountModal(buildGrokOAuthAccount())
+    const flow = wrapper.getComponent(OAuthAuthorizationFlowStub)
+
+    flow.vm.$emit('validate-refresh-token', 'rt-one\nrt-two')
+    flow.vm.$emit('validate-sso-token', 'sso-one\nsso-two')
+    flow.vm.$emit('authorize-password', 'one@example.com----one\ntwo@example.com----two')
+    await flushPromises()
+
+    expect(grokValidateRefreshTokenMock).not.toHaveBeenCalled()
+    expect(grokValidateSSOTokenMock).not.toHaveBeenCalled()
+    expect(grokAuthorizePasswordMock).not.toHaveBeenCalled()
+    expect(applyOAuthCredentialsMock).not.toHaveBeenCalled()
+  })
+
+  it('shows Kiro diagnostics stored in account credentials', () => {
+    const account = buildKiroAccount('oauth')
+    account.credentials = {
+      ...account.credentials,
+      profile_id: 'PROFILE-CREDENTIALS',
+      login_provider: 'google',
+      status_reason: 'FEATURE_NOT_SUPPORTED'
+    }
+    const wrapper = mountModal(account)
+
+    expect(wrapper.text()).toContain('admin.accounts.kiro.diagnosticSummaryTitle')
   })
 })

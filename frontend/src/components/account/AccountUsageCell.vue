@@ -211,11 +211,30 @@
         </span>
       </div>
       <div v-else-if="usageInfo?.kiro_quota" class="space-y-1">
-        <div v-if="usageInfo.kiro_subscription_title" class="mb-1 flex items-center gap-1">
-          <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300">
-            {{ usageInfo.kiro_subscription_title }}
+        <div class="mb-1 flex flex-wrap items-center gap-1">
+          <span
+            class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium"
+            :class="kiroSubscriptionBadgeClass"
+          >
+            {{ kiroSubscriptionBadgeLabel }}
+          </span>
+          <span
+            class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium"
+            :class="kiroOverageBadgeClass"
+          >
+            {{ kiroOverageBadgeLabel }}
           </span>
         </div>
+        <div v-if="usageInfo.kiro_email" class="text-[10px] text-gray-500 dark:text-gray-400 truncate" :title="usageInfo.kiro_email">
+          {{ usageInfo.kiro_email }}
+        </div>
+        <KiroDiagnosticChips
+          :credentials="account.credentials || {}"
+          :extra="account.extra || {}"
+          :usage-info="usageInfo || {}"
+          :include-profile-mode="false"
+          chip-class="inline-flex rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+        />
         <UsageProgressBar
           :label="kiroUsageLabel"
           :utilization="usageInfo.kiro_quota.utilization"
@@ -592,6 +611,7 @@ import { Icon } from '@/components/icons'
 import { formatCompactNumber } from '@/utils/format'
 import UsageProgressBar from './UsageProgressBar.vue'
 import CodexInviteResetModal from './CodexInviteResetModal.vue'
+import KiroDiagnosticChips from './KiroDiagnosticChips.vue'
 
 // Module-level cache shared across all AccountUsageCell instances
 const _usageCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
@@ -859,6 +879,67 @@ const kiroUsageSummary = computed(() => t('admin.accounts.kiro.usageSummary', {
   limit: formatKiroMoney(usageInfo.value?.kiro_usage_limit),
   remaining: formatKiroMoney(usageInfo.value?.kiro_remaining)
 }))
+
+const kiroSubscriptionTitle = computed(() => {
+  const title = usageInfo.value?.kiro_subscription_title?.trim()
+  return title || t('admin.accounts.kiro.subscriptionUnknown')
+})
+
+const kiroSubscriptionBadgeLabel = computed(() => kiroSubscriptionTitle.value)
+
+const kiroSubscriptionBadgeClass = computed(() => {
+  const title = kiroSubscriptionTitle.value.toLowerCase()
+  if (title.includes('power')) {
+    return 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/40 dark:text-fuchsia-300'
+  }
+  if (title.includes('pro+') || title.includes('pro plus')) {
+    return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+  }
+  if (title.includes('pro')) {
+    return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300'
+  }
+  if (title.includes('free')) {
+    return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
+  }
+  return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+})
+
+const kiroOverageCapabilityValue = computed(() => (usageInfo.value?.kiro_overage_capability || '').trim().toUpperCase())
+
+const kiroOverageState = computed<'enabled' | 'capable' | 'unsupported' | 'unknown'>(() => {
+  if (usageInfo.value?.kiro_overage_enabled === true) return 'enabled'
+  const capability = kiroOverageCapabilityValue.value
+  if (!capability) return 'unknown'
+  if (['SUPPORTED', 'ENABLED', 'AVAILABLE', 'CAPABLE'].includes(capability)) return 'capable'
+  if (['UNSUPPORTED', 'DISABLED', 'NOT_SUPPORTED', 'INELIGIBLE', 'UNAVAILABLE'].includes(capability)) return 'unsupported'
+  return 'unknown'
+})
+
+const kiroOverageBadgeLabel = computed(() => {
+  switch (kiroOverageState.value) {
+    case 'enabled':
+      return t('admin.accounts.kiro.overageEnabled')
+    case 'capable':
+      return t('admin.accounts.kiro.overageCapable')
+    case 'unsupported':
+      return t('admin.accounts.kiro.overageUnsupported')
+    default:
+      return t('admin.accounts.kiro.overageUnknown')
+  }
+})
+
+const kiroOverageBadgeClass = computed(() => {
+  switch (kiroOverageState.value) {
+    case 'enabled':
+      return 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'
+    case 'capable':
+      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+    case 'unsupported':
+      return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
+    default:
+      return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+  }
+})
 
 const formatKiroQuotaBreakdownSummary = (quota?: KiroQuotaBreakdown | null) => {
   if (!quota) return ''

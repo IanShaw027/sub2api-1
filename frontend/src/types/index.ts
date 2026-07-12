@@ -1400,6 +1400,12 @@ export interface AccountUsageInfo {
   kiro_current_usage?: number
   kiro_usage_limit?: number
   kiro_remaining?: number
+  kiro_email?: string
+  kiro_overage_capability?: string
+  kiro_overage_enabled?: boolean | null
+  kiro_profile_id?: string
+  kiro_login_provider?: string
+  kiro_status_reason?: string
   kiro_monthly_quota?: KiroQuotaBreakdown | null
   kiro_bonus_quota?: KiroQuotaBreakdown | null
   kiro_free_trial_quota?: KiroQuotaBreakdown | null

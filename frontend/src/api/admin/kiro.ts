@@ -31,6 +31,13 @@ export interface KiroRefreshTokenRequest {
   proxy_id?: number
 }
 
+export interface KiroDiscoveredProfile {
+  arn?: string
+  profileArn?: string
+  profileName?: string
+  region?: string
+}
+
 export interface KiroTokenInfo {
   access_token?: string
   refresh_token?: string
@@ -145,9 +152,20 @@ export async function refreshToken(
   return data
 }
 
+export async function discoverProfiles(
+  payload: KiroRefreshTokenRequest
+): Promise<KiroDiscoveredProfile[]> {
+  const { data } = await apiClient.post<{ profiles: KiroDiscoveredProfile[] }>(
+    '/admin/kiro/oauth/discover-profiles',
+    payload
+  )
+  return data.profiles || []
+}
+
 export default {
   generateAuthUrl,
   exchangeCallback,
   deviceComplete,
-  refreshToken
+  refreshToken,
+  discoverProfiles
 }

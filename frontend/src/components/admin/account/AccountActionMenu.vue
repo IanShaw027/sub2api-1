@@ -56,6 +56,10 @@
               <Icon name="refresh" size="sm" />
               {{ t('admin.accounts.resetQuota') }}
             </button>
+            <button v-if="isKiroOAuth" @click="$emit('enable-kiro-overage', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-violet-600 hover:bg-gray-100 dark:hover:bg-dark-700">
+              <Icon name="sparkles" size="sm" />
+              {{ t('admin.accounts.kiro.enableOverageAction') }}
+            </button>
           </template>
         </div>
       </div>
@@ -70,7 +74,7 @@ import { Icon } from '@/components/icons'
 import type { Account } from '@/types'
 
 const props = defineProps<{ show: boolean; account: Account | null; position: { top: number; left: number } | null }>()
-const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'reauth', 'refresh-token', 'recover-state', 'reset-quota', 'set-privacy', 'create-spark-shadow'])
+const emit = defineEmits(['close', 'test', 'stats', 'schedule', 'reauth', 'refresh-token', 'recover-state', 'reset-quota', 'set-privacy', 'create-spark-shadow', 'enable-kiro-overage'])
 const { t } = useI18n()
 const now = ref(Date.now())
 let clockTimer: ReturnType<typeof setInterval> | null = null

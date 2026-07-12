@@ -157,9 +157,7 @@
                 : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
             ]"
           >
-            <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M5 3h3v7l6-7h4l-7 8 8 10h-4l-6-8-1 1v7H5z" />
-            </svg>
+            <PlatformIcon platform="kiro" size="md" />
             Kiro
           </button>
           <button
@@ -3397,6 +3395,7 @@
         mode="create"
         :auth-url="kiroOAuth.authUrl.value"
         :callback-base-url="kiroOAuth.callbackBaseUrl?.value || ''"
+        :proxy-id="form.proxy_id || null"
         :loading="kiroOAuth.loading.value"
         :error="kiroOAuth.error.value"
         :continuation="kiroOAuth.continuation.value"
@@ -3420,6 +3419,8 @@
         :allow-multiple="form.platform === 'anthropic'"
         :show-cookie-option="form.platform === 'anthropic'"
         :show-refresh-token-option="form.platform === 'openai' || form.platform === 'antigravity' || form.platform === 'grok'"
+        :show-sso-token-option="form.platform === 'grok'"
+        :show-email-password-option="form.platform === 'grok'"
         :show-mobile-refresh-token-option="form.platform === 'openai'"
         :show-session-token-option="false"
         :show-access-token-option="false"
@@ -3432,6 +3433,8 @@
         @generate-url="handleGenerateUrl"
         @cookie-auth="handleCookieAuth"
         @validate-refresh-token="handleValidateRefreshToken"
+        @validate-sso-token="handleValidateSSOToken"
+        @authorize-password="handleAuthorizePassword"
         @validate-mobile-refresh-token="handleOpenAIValidateMobileRT"
         @validate-session-token="handleValidateSessionToken"
         @import-codex-session="handleOpenAIImportCodexSession"
@@ -5643,6 +5646,18 @@ const handleValidateRefreshToken = (rt: string) => {
   }
 }
 
+const handleValidateSSOToken = (ssoToken: string) => {
+  if (form.platform === 'grok') {
+    handleGrokValidateSSO(ssoToken)
+  }
+}
+
+const handleAuthorizePassword = (emailPasswordInput: string) => {
+  if (form.platform === 'grok') {
+    handleGrokAuthorizePassword(emailPasswordInput)
+  }
+}
+
 const buildKiroModelMapping = () => buildModelMappingObject(
   modelRestrictionMode.value,
   allowedModels.value,
@@ -5871,6 +5886,38 @@ const buildGrokAccountName = (tokenInfo: { email?: unknown }, fallbackName?: str
   return email || 'Grok OAuth Account'
 }
 
+const createGrokOAuthAccount = async (tokenInfo: Record<string, unknown>, accountName: string) => {
+  const credentials = grokOAuth.buildCredentials(tokenInfo)
+  const extra = grokOAuth.buildExtraInfo(tokenInfo)
+  applyTLSFingerprintExtra(extra, true, 'defaultOS')
+
+  const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
+  if (modelMapping) {
+    credentials.model_mapping = modelMapping
+  }
+  if (!applyTempUnschedConfig(credentials)) {
+    return false
+  }
+
+  await adminAPI.accounts.create({
+    name: accountName,
+    notes: form.notes,
+    platform: 'grok',
+    type: 'oauth',
+    credentials,
+    extra,
+    proxy_id: form.proxy_id,
+    concurrency: form.concurrency,
+    load_factor: form.load_factor ?? undefined,
+    priority: form.priority,
+    rate_multiplier: form.rate_multiplier,
+    group_ids: form.group_ids,
+    expires_at: form.expires_at,
+    auto_pause_on_expired: autoPauseOnExpired.value
+  })
+  return true
+}
+
 // Grok 手动 RT 批量验证和创建
 const handleGrokValidateRT = async (refreshTokenInput: string) => {
   if (!refreshTokenInput.trim()) return
@@ -5903,36 +5950,10 @@ const handleGrokValidateRT = async (refreshTokenInput: string) => {
           continue
         }
 
-        const credentials = grokOAuth.buildCredentials(tokenInfo)
-        const extra = grokOAuth.buildExtraInfo(tokenInfo)
-        applyTLSFingerprintExtra(extra, true, 'defaultOS')
         const baseName = buildGrokAccountName(tokenInfo, form.name)
         const accountName = refreshTokens.length > 1 ? `${baseName} #${i + 1}` : baseName
-
-        const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
-        if (modelMapping) {
-          credentials.model_mapping = modelMapping
-        }
-        if (!applyTempUnschedConfig(credentials)) {
-          return
-        }
-
-        await adminAPI.accounts.create({
-          name: accountName,
-          notes: form.notes,
-          platform: 'grok',
-          type: 'oauth',
-          credentials,
-          extra,
-          proxy_id: form.proxy_id,
-          concurrency: form.concurrency,
-          load_factor: form.load_factor ?? undefined,
-          priority: form.priority,
-          rate_multiplier: form.rate_multiplier,
-          group_ids: form.group_ids,
-          expires_at: form.expires_at,
-          auto_pause_on_expired: autoPauseOnExpired.value
-        })
+        const created = await createGrokOAuthAccount(tokenInfo as Record<string, unknown>, accountName)
+        if (!created) return
         successCount++
       } catch (error: any) {
         failedCount++
@@ -5944,6 +5965,132 @@ const handleGrokValidateRT = async (refreshTokenInput: string) => {
     if (successCount > 0 && failedCount === 0) {
       appStore.showSuccess(
         refreshTokens.length > 1
+          ? t('admin.accounts.oauth.batchSuccess', { count: successCount })
+          : t('admin.accounts.accountCreated')
+      )
+      emit('created')
+      handleClose()
+    } else if (successCount > 0) {
+      appStore.showWarning(t('admin.accounts.oauth.batchPartialSuccess', { success: successCount, failed: failedCount }))
+      grokOAuth.error.value = errors.join('\n')
+      emit('created')
+    } else {
+      grokOAuth.error.value = errors.join('\n')
+      appStore.showError(t('admin.accounts.oauth.batchFailed'))
+    }
+  } finally {
+    grokOAuth.loading.value = false
+  }
+}
+
+const handleGrokValidateSSO = async (ssoTokenInput: string) => {
+  if (!ssoTokenInput.trim()) return
+
+  const ssoTokens = ssoTokenInput
+    .split('\n')
+    .map((token) => token.trim())
+    .filter((token) => token)
+
+  if (ssoTokens.length === 0) {
+    grokOAuth.error.value = t('admin.accounts.oauth.grok.pleaseEnterSSOToken')
+    return
+  }
+
+  grokOAuth.loading.value = true
+  grokOAuth.error.value = ''
+
+  let successCount = 0
+  let failedCount = 0
+  const errors: string[] = []
+
+  try {
+    for (let i = 0; i < ssoTokens.length; i++) {
+      try {
+        const tokenInfo = await grokOAuth.validateSSOToken(ssoTokens[i], form.proxy_id)
+        if (!tokenInfo) {
+          failedCount++
+          errors.push(`#${i + 1}: ${grokOAuth.error.value || 'Validation failed'}`)
+          grokOAuth.error.value = ''
+          continue
+        }
+        const baseName = buildGrokAccountName(tokenInfo, form.name)
+        const accountName = ssoTokens.length > 1 ? `${baseName} #${i + 1}` : baseName
+        const created = await createGrokOAuthAccount(tokenInfo as Record<string, unknown>, accountName)
+        if (!created) return
+        successCount++
+      } catch (error: any) {
+        failedCount++
+        const errMsg = error.response?.data?.detail || error.message || 'Unknown error'
+        errors.push(`#${i + 1}: ${errMsg}`)
+      }
+    }
+
+    if (successCount > 0 && failedCount === 0) {
+      appStore.showSuccess(
+        ssoTokens.length > 1
+          ? t('admin.accounts.oauth.batchSuccess', { count: successCount })
+          : t('admin.accounts.accountCreated')
+      )
+      emit('created')
+      handleClose()
+    } else if (successCount > 0) {
+      appStore.showWarning(t('admin.accounts.oauth.batchPartialSuccess', { success: successCount, failed: failedCount }))
+      grokOAuth.error.value = errors.join('\n')
+      emit('created')
+    } else {
+      grokOAuth.error.value = errors.join('\n')
+      appStore.showError(t('admin.accounts.oauth.batchFailed'))
+    }
+  } finally {
+    grokOAuth.loading.value = false
+  }
+}
+
+const handleGrokAuthorizePassword = async (emailPasswordInput: string) => {
+  if (!emailPasswordInput.trim()) return
+
+  const lines = emailPasswordInput
+    .split('\n')
+    .map((line) => line.endsWith('\r') ? line.slice(0, -1) : line)
+    .filter((line) => line.trim())
+
+  if (lines.length === 0) {
+    grokOAuth.error.value = t('admin.accounts.oauth.grok.pleaseEnterEmailPassword')
+    return
+  }
+
+  grokOAuth.loading.value = true
+  grokOAuth.error.value = ''
+
+  let successCount = 0
+  let failedCount = 0
+  const errors: string[] = []
+
+  try {
+    for (let i = 0; i < lines.length; i++) {
+      try {
+        const tokenInfo = await grokOAuth.authorizePassword(lines[i], form.proxy_id)
+        if (!tokenInfo) {
+          failedCount++
+          errors.push(`#${i + 1}: ${grokOAuth.error.value || 'Authorization failed'}`)
+          grokOAuth.error.value = ''
+          continue
+        }
+        const baseName = buildGrokAccountName(tokenInfo, form.name)
+        const accountName = lines.length > 1 ? `${baseName} #${i + 1}` : baseName
+        const created = await createGrokOAuthAccount(tokenInfo as Record<string, unknown>, accountName)
+        if (!created) return
+        successCount++
+      } catch (error: any) {
+        failedCount++
+        const errMsg = error.response?.data?.detail || error.message || 'Unknown error'
+        errors.push(`#${i + 1}: ${errMsg}`)
+      }
+    }
+
+    if (successCount > 0 && failedCount === 0) {
+      appStore.showSuccess(
+        lines.length > 1
           ? t('admin.accounts.oauth.batchSuccess', { count: successCount })
           : t('admin.accounts.accountCreated')
       )

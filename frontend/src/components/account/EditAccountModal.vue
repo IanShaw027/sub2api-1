@@ -59,6 +59,64 @@
       </div>
 
       <div
+        v-if="account.platform === 'kiro' && account.type === 'oauth'"
+        class="space-y-4 rounded-lg border border-violet-200 bg-violet-50/60 p-4 dark:border-violet-900/40 dark:bg-violet-950/20"
+      >
+        <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.profileArnLabel') }}</label>
+            <p class="input-hint">{{ t('admin.accounts.kiro.runtimeManagedHint') }}</p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-secondary"
+            :disabled="discoveringKiroProfiles"
+            @click="discoverKiroProfilesForEdit"
+          >
+            {{ discoveringKiroProfiles ? t('admin.accounts.oauth.generating') : t('admin.accounts.kiro.discoverProfiles') }}
+          </button>
+        </div>
+        <select
+          v-if="kiroProfileSelectOptions.length > 0"
+          v-model="selectedKiroProfileArnChoice"
+          class="input"
+        >
+          <option :value="KIRO_PROFILE_CHOICE_KEEP">{{ t('admin.accounts.leaveEmptyToKeep') }}</option>
+          <option :value="KIRO_PROFILE_CHOICE_AUTO">{{ t('common.clear') }}</option>
+          <option
+            v-for="profile in kiroProfileSelectOptions"
+            :key="profile.arn"
+            :value="profile.arn"
+          >
+            {{ profile.name }}
+          </option>
+        </select>
+        <div class="flex flex-wrap items-center gap-2 text-xs">
+          <span
+            class="inline-flex rounded px-1.5 py-0.5 font-medium"
+            :class="kiroProfileStatusBadgeClass"
+          >
+            {{ kiroProfileStatusLabel }}
+          </span>
+          <span
+            v-if="kiroProfilePendingHint"
+            class="text-violet-700 dark:text-violet-300"
+          >
+            {{ kiroProfilePendingHint }}
+          </span>
+        </div>
+        <p v-if="currentKiroProfileArn" class="text-xs text-gray-500 dark:text-gray-400">
+          {{ t('common.current') }}: {{ currentKiroProfileArn }}
+        </p>
+        <KiroDiagnosticChips
+          :credentials="account.credentials || {}"
+          :extra="account.extra || {}"
+          :include-profile-mode="false"
+          chip-class="inline-flex rounded bg-white/80 px-2 py-1 text-xs text-violet-800 dark:bg-black/10 dark:text-violet-200"
+        />
+      </div>
+
+      <div
         v-if="account.platform === 'kiro'"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
@@ -2635,6 +2693,7 @@ import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import { adminAPI } from '@/api/admin'
+import type { KiroDiscoveredProfile } from '@/api/admin/accounts'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
 import type {
   Account,
@@ -2654,6 +2713,7 @@ import ProxySelector from '@/components/common/ProxySelector.vue'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import AccountQuotaInfo from '@/components/account/AccountQuotaInfo.vue'
+import KiroDiagnosticChips from '@/components/account/KiroDiagnosticChips.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import TempUnschedRulesForm from '@/components/account/TempUnschedRulesForm.vue'
@@ -2902,6 +2962,60 @@ const cacheTTLOverrideEnabled = ref(false)
 const cacheTTLOverrideTarget = ref<string>('5m')
 const customBaseUrlEnabled = ref(false)
 const customBaseUrl = ref('')
+const KIRO_PROFILE_CHOICE_KEEP = '__keep__'
+const KIRO_PROFILE_CHOICE_AUTO = '__auto__'
+const discoveringKiroProfiles = ref(false)
+const discoveredKiroProfiles = ref<KiroDiscoveredProfile[]>([])
+const selectedKiroProfileArnChoice = ref<string>(KIRO_PROFILE_CHOICE_KEEP)
+const currentKiroProfileArn = computed(() => {
+  if (props.account?.platform !== 'kiro') return ''
+  const raw = (props.account.credentials as Record<string, unknown> | undefined)?.profile_arn
+  return typeof raw === 'string' ? raw : ''
+})
+const effectiveKiroProfileChoice = computed(() => {
+  if (selectedKiroProfileArnChoice.value === KIRO_PROFILE_CHOICE_KEEP) {
+    return currentKiroProfileArn.value
+  }
+  if (selectedKiroProfileArnChoice.value === KIRO_PROFILE_CHOICE_AUTO) {
+    return ''
+  }
+  return selectedKiroProfileArnChoice.value
+})
+const kiroProfileStatusLabel = computed(() => {
+  return effectiveKiroProfileChoice.value
+    ? t('admin.accounts.kiro.profileStateManual')
+    : t('admin.accounts.kiro.profileStateAuto')
+})
+const kiroProfileStatusBadgeClass = computed(() => {
+  return effectiveKiroProfileChoice.value
+    ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'
+    : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+})
+const kiroProfilePendingHint = computed(() => {
+  if (selectedKiroProfileArnChoice.value === KIRO_PROFILE_CHOICE_KEEP) return ''
+  return selectedKiroProfileArnChoice.value === KIRO_PROFILE_CHOICE_AUTO
+    ? t('admin.accounts.kiro.profileStatePendingAuto')
+    : t('admin.accounts.kiro.profileStatePendingManual')
+})
+const kiroProfileSelectOptions = computed(() => {
+  const seen = new Set<string>()
+  const options: Array<{ arn: string; name: string }> = []
+  for (const profile of discoveredKiroProfiles.value) {
+    const arn = typeof profile?.profileArn === 'string' && profile.profileArn
+      ? profile.profileArn
+      : typeof profile?.arn === 'string'
+        ? profile.arn
+        : ''
+    if (!arn || seen.has(arn)) continue
+    seen.add(arn)
+    const label = profile.profileName || arn.split('/').pop() || arn
+    options.push({ arn, name: label })
+  }
+  if (currentKiroProfileArn.value && !seen.has(currentKiroProfileArn.value)) {
+    options.unshift({ arn: currentKiroProfileArn.value, name: currentKiroProfileArn.value })
+  }
+  return options
+})
 
 // OpenAI 自动透传开关（OAuth/API Key）
 const openaiPassthroughEnabled = ref(false)
@@ -3273,6 +3387,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   form.status = (newAccount.status === 'active' || newAccount.status === 'inactive' || newAccount.status === 'error')
     ? newAccount.status
     : 'active'
+  discoveredKiroProfiles.value = []
+  selectedKiroProfileArnChoice.value = KIRO_PROFILE_CHOICE_KEEP
+  discoveringKiroProfiles.value = false
   form.group_ids = newAccount.group_ids || []
   form.expires_at = newAccount.expires_at ?? null
 
@@ -4435,6 +4552,18 @@ watch(
 )
 
 // Methods
+const discoverKiroProfilesForEdit = async () => {
+  if (!props.account || props.account.platform !== 'kiro' || props.account.type !== 'oauth') return
+  discoveringKiroProfiles.value = true
+  try {
+    discoveredKiroProfiles.value = await adminAPI.accounts.getKiroProfiles(props.account.id)
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.accounts.kiro.discoverProfilesFailed'))
+  } finally {
+    discoveringKiroProfiles.value = false
+  }
+}
+
 const handleClose = () => {
   antigravityMixedChannelConfirmed.value = false
   clearMixedChannelDialog()
@@ -4551,6 +4680,12 @@ const handleSubmit = async () => {
       }
 
       applyKiroModelRestrictionPatch(newCredentials, currentCredentials)
+
+      if (selectedKiroProfileArnChoice.value === KIRO_PROFILE_CHOICE_AUTO) {
+        newCredentials.profile_arn = ''
+      } else if (selectedKiroProfileArnChoice.value !== KIRO_PROFILE_CHOICE_KEEP) {
+        newCredentials.profile_arn = selectedKiroProfileArnChoice.value
+      }
 
       if (Object.keys(newCredentials).length > 0) {
         updatePayload.credentials = newCredentials

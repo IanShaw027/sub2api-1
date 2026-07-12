@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRegisterAdminRoutesIncludesKiroOAuthEndpoints(t *testing.T) {
+func TestRegisterAdminRoutesIncludesKiroAccountEndpoints(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	router := gin.New()
@@ -27,11 +27,9 @@ func TestRegisterAdminRoutesIncludesKiroOAuthEndpoints(t *testing.T) {
 	)
 
 	expected := map[string]struct{}{
-		"POST /api/v1/admin/kiro/oauth/auth-url":          {},
-		"POST /api/v1/admin/kiro/oauth/exchange-callback": {},
-		"POST /api/v1/admin/kiro/oauth/device-complete":   {},
-		"POST /api/v1/admin/kiro/oauth/refresh-token":     {},
-		"POST /api/v1/admin/kiro/oauth/discover-profiles": {},
+		"GET /api/v1/admin/accounts/:id/profiles":         {},
+		"POST /api/v1/admin/accounts/:id/kiro/overage":   {},
+		"POST /api/v1/admin/accounts/kiro/overage/enable-all": {},
 	}
 
 	for _, route := range router.Routes() {
@@ -39,5 +37,5 @@ func TestRegisterAdminRoutesIncludesKiroOAuthEndpoints(t *testing.T) {
 		delete(expected, key)
 	}
 
-	require.Empty(t, expected, "expected kiro oauth routes to be registered")
+	require.Empty(t, expected, "expected Kiro account routes to be registered")
 }

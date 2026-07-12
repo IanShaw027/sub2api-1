@@ -80,4 +80,29 @@ describe('AccountActionMenu', () => {
 
     wrapper.unmount()
   })
+
+  it('shows kiro overage action for kiro oauth accounts and emits click', async () => {
+    const wrapper = mount(AccountActionMenu, {
+      props: {
+        show: true,
+        position: { top: 0, left: 0 },
+        account: makeAccount({ platform: 'kiro', type: 'oauth' })
+      },
+      attachTo: document.body,
+      global: {
+        stubs: {
+          Teleport: true
+        }
+      }
+    })
+
+    expect(document.body.textContent).toContain('admin.accounts.kiro.enableOverageAction')
+
+    const btn = wrapper.findAll('button').find((candidate) => candidate.text().includes('admin.accounts.kiro.enableOverageAction'))
+    expect(btn).toBeTruthy()
+    await btn!.trigger('click')
+
+    expect(wrapper.emitted('enable-kiro-overage')).toBeTruthy()
+    wrapper.unmount()
+  })
 })

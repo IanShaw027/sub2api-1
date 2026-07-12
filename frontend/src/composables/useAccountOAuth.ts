@@ -4,7 +4,7 @@ import { adminAPI } from '@/api/admin'
 import { formatOAuthAccountName } from '@/utils/oauthAccountName'
 
 export type AddMethod = 'oauth' | 'setup-token'
-export type AuthInputMethod = 'manual' | 'cookie' | 'refresh_token' | 'mobile_refresh_token' | 'session_token' | 'access_token' | 'codex_session' | 'codex_pat'
+export type AuthInputMethod = 'manual' | 'cookie' | 'refresh_token' | 'mobile_refresh_token' | 'session_token' | 'access_token' | 'codex_session' | 'codex_pat' | 'sso_token' | 'email_password'
 
 export interface OAuthState {
   authUrl: string

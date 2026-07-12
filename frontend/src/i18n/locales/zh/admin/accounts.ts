@@ -955,13 +955,25 @@ export default {
           refreshTokenAuth: '手动输入 RT',
           refreshTokenDesc: '输入已有的 xAI refresh token，支持批量输入（每行一个）。',
           refreshTokenPlaceholder: '粘贴您的 xAI refresh token...\n支持多个，每行一个',
+          ssoTokenAuth: '手动输入 SSO',
+          ssoTokenDesc: '输入已有的 xAI SSO Token，支持批量输入（每行一个），系统会自动完成 OAuth 授权并创建账号。',
+          ssoTokenPlaceholder: '粘贴您的 xAI SSO Token...\n支持多个，每行一个',
+          emailPasswordAuth: '邮箱密码输入',
+          emailPasswordDesc: '按行输入 xAI 账号凭据，格式为 email----password。系统会自动登录、换取 OAuth 凭据并创建账号，密码不会保存。',
+          emailPasswordInputLabel: '邮箱与密码',
+          emailPasswordPlaceholder: 'user@example.com----password\n支持多个，每行一个',
           validating: '验证中...',
           validateAndCreate: '验证并创建账号',
           pleaseEnterRefreshToken: '请输入 Refresh Token',
+          pleaseEnterSSOToken: '请输入 SSO Token',
+          pleaseEnterEmailPassword: '请输入邮箱和密码',
           failedToGenerateUrl: '生成 Grok 授权链接失败',
           missingExchangeParams: '缺少授权码、state 或 OAuth 会话',
           failedToExchangeCode: 'Grok 授权码兑换失败',
           failedToValidateRT: '验证 Grok refresh token 失败',
+          failedToValidateSSO: '验证 Grok SSO Token 失败',
+          failedToAuthorizePassword: 'Grok 邮箱密码授权失败',
+          singleCredentialOnly: '重新授权每次只能提交一条凭据。',
           errors: {
             GROK_OAUTH_SESSION_NOT_FOUND:
               'Grok OAuth 会话不存在或已过期。请重新生成授权链接，并粘贴最新的回调链接。',
@@ -973,6 +985,14 @@ export default {
               '缺少 Grok 授权码。请粘贴完整 callback URL、查询字符串或 code 值。',
             GROK_OAUTH_NO_REFRESH_TOKEN:
               'Grok 响应未返回 refresh token。请重新生成授权链接，并再次确认 offline access 授权。',
+            GROK_OAUTH_NO_SSO_TOKEN:
+              '该 Grok 授权流程需要提供 SSO Token。',
+            GROK_OAUTH_EMAIL_REQUIRED:
+              'Grok 邮箱密码授权需要填写邮箱。',
+            GROK_OAUTH_PASSWORD_REQUIRED:
+              'Grok 邮箱密码授权需要填写密码。',
+            GROK_OAUTH_CAPTCHA_KEY_REQUIRED:
+              '服务器未配置 YesCaptcha client key，暂时无法使用 Grok 邮箱密码授权。',
             GROK_OAUTH_PROXY_NOT_AVAILABLE:
               '无法查询 Grok OAuth 代理配置。请检查选择的代理后重试。',
             GROK_OAUTH_PROXY_NOT_FOUND:

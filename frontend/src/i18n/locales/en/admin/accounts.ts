@@ -868,13 +868,25 @@ export default {
           refreshTokenAuth: 'Manual RT Input',
           refreshTokenDesc: 'Enter existing xAI refresh token(s). Supports batch input, one per line.',
           refreshTokenPlaceholder: 'Paste your xAI refresh token...\nSupports multiple, one per line',
+          ssoTokenAuth: 'Manual SSO Input',
+          ssoTokenDesc: 'Enter existing xAI SSO token(s). Supports batch input, one token per line. The system will auto-authorize OAuth and create accounts.',
+          ssoTokenPlaceholder: 'Paste your xAI SSO token...\nSupports multiple, one per line',
+          emailPasswordAuth: 'Email/Password Input',
+          emailPasswordDesc: 'Enter xAI account credentials line by line in the format email----password. The system logs in, exchanges to OAuth, and creates accounts without saving the password.',
+          emailPasswordInputLabel: 'Email and Password',
+          emailPasswordPlaceholder: 'user@example.com----password\nSupports multiple, one per line',
           validating: 'Validating...',
           validateAndCreate: 'Validate & Create Account',
           pleaseEnterRefreshToken: 'Please enter Refresh Token',
+          pleaseEnterSSOToken: 'Please enter SSO Token',
+          pleaseEnterEmailPassword: 'Please enter email and password',
           failedToGenerateUrl: 'Failed to generate Grok auth URL',
           missingExchangeParams: 'Missing authorization code, state, or OAuth session',
           failedToExchangeCode: 'Failed to exchange Grok authorization code',
           failedToValidateRT: 'Failed to validate Grok refresh token',
+          failedToValidateSSO: 'Failed to validate Grok SSO token',
+          failedToAuthorizePassword: 'Failed to authorize Grok email/password',
+          singleCredentialOnly: 'Reauthorization accepts only one credential at a time.',
           errors: {
             GROK_OAUTH_SESSION_NOT_FOUND:
               'Grok OAuth session was not found or has expired. Generate a new auth URL and paste the newest callback URL.',
@@ -886,6 +898,14 @@ export default {
               'The Grok authorization code is missing. Paste the full callback URL, query string, or code value.',
             GROK_OAUTH_NO_REFRESH_TOKEN:
               'The Grok response did not include a refresh token. Generate a new auth URL and approve offline access again.',
+            GROK_OAUTH_NO_SSO_TOKEN:
+              'The SSO token is required for this Grok authorization flow.',
+            GROK_OAUTH_EMAIL_REQUIRED:
+              'Email is required for Grok password authorization.',
+            GROK_OAUTH_PASSWORD_REQUIRED:
+              'Password is required for Grok password authorization.',
+            GROK_OAUTH_CAPTCHA_KEY_REQUIRED:
+              'YesCaptcha client key is required on the server before Grok email/password authorization can be used.',
             GROK_OAUTH_PROXY_NOT_AVAILABLE:
               'Grok OAuth proxy lookup is unavailable. Check the selected proxy and retry.',
             GROK_OAUTH_PROXY_NOT_FOUND:

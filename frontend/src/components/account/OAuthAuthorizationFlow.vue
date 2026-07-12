@@ -149,6 +149,28 @@
                 t('admin.accounts.oauth.openai.codexPatAuth')
               }}</span>
             </label>
+            <label v-if="showSSOTokenOption" class="flex cursor-pointer items-center gap-2">
+              <input
+                v-model="inputMethod"
+                type="radio"
+                value="sso_token"
+                class="text-blue-600 focus:ring-blue-500"
+              />
+              <span class="text-sm text-blue-900 dark:text-blue-200">{{
+                t(getOAuthKey('ssoTokenAuth'))
+              }}</span>
+            </label>
+            <label v-if="showEmailPasswordOption" class="flex cursor-pointer items-center gap-2">
+              <input
+                v-model="inputMethod"
+                type="radio"
+                value="email_password"
+                class="text-blue-600 focus:ring-blue-500"
+              />
+              <span class="text-sm text-blue-900 dark:text-blue-200">{{
+                t(getOAuthKey('emailPasswordAuth'))
+              }}</span>
+            </label>
           </div>
         </div>
 
@@ -169,20 +191,28 @@
                 <Icon name="key" size="sm" class="text-blue-500" />
                 Refresh Token
                 <span
-                  v-if="parsedRefreshTokenCount > 1"
+                  v-if="allowMultiple && parsedRefreshTokenCount > 1"
                   class="rounded-full bg-blue-500 px-2 py-0.5 text-xs text-white"
                 >
                   {{ t('admin.accounts.oauth.keysCount', { count: parsedRefreshTokenCount }) }}
                 </span>
               </label>
               <textarea
+                v-if="allowMultiple"
                 v-model="refreshTokenInput"
                 rows="3"
                 class="input w-full resize-y font-mono text-sm"
                 :placeholder="t(getOAuthKey('refreshTokenPlaceholder'))"
               ></textarea>
+              <input
+                v-else
+                v-model="refreshTokenInput"
+                type="text"
+                class="input w-full font-mono text-sm"
+                :placeholder="t(getOAuthKey('refreshTokenPlaceholder'))"
+              />
               <p
-                v-if="parsedRefreshTokenCount > 1"
+                v-if="allowMultiple && parsedRefreshTokenCount > 1"
                 class="mt-1 text-xs text-blue-600 dark:text-blue-400"
               >
                 {{ t('admin.accounts.oauth.batchCreateAccounts', { count: parsedRefreshTokenCount }) }}
@@ -232,6 +262,110 @@
                   ? t(getOAuthKey('validating'))
                   : t(getOAuthKey('validateAndCreate'))
               }}
+            </button>
+          </div>
+        </div>
+
+        <div v-if="inputMethod === 'sso_token'" class="space-y-4">
+          <div
+            class="rounded-lg border border-blue-300 bg-white/80 p-4 dark:border-blue-600 dark:bg-gray-800/80"
+          >
+            <p class="mb-3 text-sm text-blue-700 dark:text-blue-300">
+              {{ t(getOAuthKey('ssoTokenDesc')) }}
+            </p>
+            <div class="mb-4">
+              <label
+                class="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300"
+              >
+                <Icon name="key" size="sm" class="text-blue-500" />
+                SSO Token
+                <span
+                  v-if="allowMultiple && parsedSSOTokenCount > 1"
+                  class="rounded-full bg-blue-500 px-2 py-0.5 text-xs text-white"
+                >
+                  {{ t('admin.accounts.oauth.keysCount', { count: parsedSSOTokenCount }) }}
+                </span>
+              </label>
+              <textarea
+                v-if="allowMultiple"
+                v-model="ssoTokenInput"
+                rows="3"
+                class="input w-full resize-y font-mono text-sm"
+                :placeholder="t(getOAuthKey('ssoTokenPlaceholder'))"
+              ></textarea>
+              <input
+                v-else
+                v-model="ssoTokenInput"
+                type="text"
+                class="input w-full font-mono text-sm"
+                :placeholder="t(getOAuthKey('ssoTokenPlaceholder'))"
+              />
+            </div>
+            <div
+              v-if="error"
+              class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-700 dark:bg-red-900/30"
+            >
+              <p class="whitespace-pre-line text-sm text-red-600 dark:text-red-400">
+                {{ error }}
+              </p>
+            </div>
+            <button
+              type="button"
+              class="btn btn-primary w-full"
+              :disabled="loading || !ssoTokenInput.trim()"
+              @click="handleValidateSSOToken"
+            >
+              <Icon v-if="!loading" name="sparkles" size="sm" class="mr-2" />
+              {{ loading ? t(getOAuthKey('validating')) : t(getOAuthKey('validateAndCreate')) }}
+            </button>
+          </div>
+        </div>
+
+        <div v-if="inputMethod === 'email_password'" class="space-y-4">
+          <div
+            class="rounded-lg border border-blue-300 bg-white/80 p-4 dark:border-blue-600 dark:bg-gray-800/80"
+          >
+            <p class="mb-3 text-sm text-blue-700 dark:text-blue-300">
+              {{ t(getOAuthKey('emailPasswordDesc')) }}
+            </p>
+            <div class="mb-4">
+              <label
+                class="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300"
+              >
+                <Icon name="user" size="sm" class="text-blue-500" />
+                {{ t(getOAuthKey('emailPasswordInputLabel')) }}
+              </label>
+              <textarea
+                v-if="allowMultiple"
+                v-model="emailPasswordInput"
+                rows="3"
+                class="input w-full resize-y font-mono text-sm"
+                :placeholder="t(getOAuthKey('emailPasswordPlaceholder'))"
+              ></textarea>
+              <input
+                v-else
+                v-model="emailPasswordInput"
+                type="text"
+                class="input w-full font-mono text-sm"
+                :placeholder="t(getOAuthKey('emailPasswordPlaceholder'))"
+              />
+            </div>
+            <div
+              v-if="error"
+              class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-700 dark:bg-red-900/30"
+            >
+              <p class="whitespace-pre-line text-sm text-red-600 dark:text-red-400">
+                {{ error }}
+              </p>
+            </div>
+            <button
+              type="button"
+              class="btn btn-primary w-full"
+              :disabled="loading || !emailPasswordInput.trim()"
+              @click="handleAuthorizePassword"
+            >
+              <Icon v-if="!loading" name="sparkles" size="sm" class="mr-2" />
+              {{ loading ? t(getOAuthKey('validating')) : t(getOAuthKey('validateAndCreate')) }}
             </button>
           </div>
         </div>
@@ -903,6 +1037,8 @@ interface Props {
   showAccessTokenOption?: boolean
   showCodexSessionImportOption?: boolean
   showCodexPatOption?: boolean
+  showSSOTokenOption?: boolean
+  showEmailPasswordOption?: boolean
   platform?: AccountPlatform // Platform type for different UI/text
   showProjectId?: boolean // New prop to control project ID visibility
   showProjectIdRecovery?: boolean
@@ -926,6 +1062,8 @@ const props = withDefaults(defineProps<Props>(), {
   showAccessTokenOption: false,
   showCodexSessionImportOption: false,
   showCodexPatOption: false,
+  showSSOTokenOption: false,
+  showEmailPasswordOption: false,
   platform: 'anthropic',
   showProjectId: true,
   showProjectIdRecovery: false,
@@ -938,6 +1076,8 @@ const emit = defineEmits<{
   'exchange-code': [code: string]
   'cookie-auth': [sessionKey: string]
   'validate-refresh-token': [refreshToken: string]
+  'validate-sso-token': [ssoToken: string]
+  'authorize-password': [emailPasswordInput: string]
   'validate-mobile-refresh-token': [refreshToken: string]
   'validate-session-token': [sessionToken: string]
   'import-access-token': [accessToken: string]
@@ -1029,6 +1169,8 @@ const inputMethod = ref<AuthInputMethod>(props.showCookieOption ? 'manual' : 'ma
 const authCodeInput = ref('')
 const sessionKeyInput = ref('')
 const refreshTokenInput = ref('')
+const ssoTokenInput = ref('')
+const emailPasswordInput = ref('')
 const sessionTokenInput = ref('')
 const codexSessionInput = ref('')
 const codexPATInput = ref('')
@@ -1046,7 +1188,7 @@ const showGeminiProjectRegenerateWarning = computed(
 )
 
 // Computed: show method selection when either cookie or refresh token option is enabled
-const showMethodSelection = computed(() => props.showCookieOption || props.showRefreshTokenOption || props.showMobileRefreshTokenOption || props.showSessionTokenOption || props.showAccessTokenOption || props.showCodexSessionImportOption || props.showCodexPatOption)
+const showMethodSelection = computed(() => props.showCookieOption || props.showRefreshTokenOption || props.showMobileRefreshTokenOption || props.showSessionTokenOption || props.showAccessTokenOption || props.showCodexSessionImportOption || props.showCodexPatOption || props.showSSOTokenOption || props.showEmailPasswordOption)
 
 // Clipboard
 const { copied, copyToClipboard } = useClipboard()
@@ -1065,6 +1207,13 @@ const parsedRefreshTokenCount = computed(() => {
     .split('\n')
     .map((rt) => rt.trim())
     .filter((rt) => rt).length
+})
+
+const parsedSSOTokenCount = computed(() => {
+  return ssoTokenInput.value
+    .split('\n')
+    .map((token) => token.trim())
+    .filter((token) => token).length
 })
 
 const parsedCodexSessionCount = computed(() => {
@@ -1171,6 +1320,18 @@ const handleValidateRefreshToken = () => {
   }
 }
 
+const handleValidateSSOToken = () => {
+  if (ssoTokenInput.value.trim()) {
+    emit('validate-sso-token', ssoTokenInput.value.trim())
+  }
+}
+
+const handleAuthorizePassword = () => {
+  if (emailPasswordInput.value.trim()) {
+    emit('authorize-password', emailPasswordInput.value)
+  }
+}
+
 const handleImportCodexSession = () => {
   if (codexSessionInput.value.trim()) {
     emit('import-codex-session', codexSessionInput.value.trim())
@@ -1193,6 +1354,8 @@ defineExpose({
   ),
   sessionKey: sessionKeyInput,
   refreshToken: refreshTokenInput,
+  ssoToken: ssoTokenInput,
+  emailPassword: emailPasswordInput,
   sessionToken: sessionTokenInput,
   codexSession: codexSessionInput,
   codexPAT: codexPATInput,
@@ -1204,6 +1367,8 @@ defineExpose({
     generatedGeminiProjectId.value = ''
     sessionKeyInput.value = ''
     refreshTokenInput.value = ''
+    ssoTokenInput.value = ''
+    emailPasswordInput.value = ''
     sessionTokenInput.value = ''
     codexSessionInput.value = ''
     codexPATInput.value = ''

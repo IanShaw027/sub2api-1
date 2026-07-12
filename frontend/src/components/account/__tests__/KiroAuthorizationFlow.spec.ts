@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 
 const copyToClipboardMock = vi.fn()
+const { getKiroProfilesMock, discoverKiroProfilesMock } = vi.hoisted(() => ({
+  getKiroProfilesMock: vi.fn(),
+  discoverKiroProfilesMock: vi.fn()
+}))
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
@@ -18,6 +22,14 @@ vi.mock('@/composables/useClipboard', () => ({
     copied: { value: false },
     copyToClipboard: copyToClipboardMock
   })
+}))
+
+vi.mock('@/api/admin/accounts', () => ({
+  getKiroProfiles: getKiroProfilesMock
+}))
+
+vi.mock('@/api/admin/kiro', () => ({
+  discoverProfiles: discoverKiroProfilesMock
 }))
 
 import KiroAuthorizationFlow from '../KiroAuthorizationFlow.vue'
@@ -42,6 +54,8 @@ function findButtonByText(wrapper: ReturnType<typeof mountComponent>, text: stri
 describe('KiroAuthorizationFlow', () => {
   beforeEach(() => {
     copyToClipboardMock.mockReset()
+    getKiroProfilesMock.mockReset()
+    discoverKiroProfilesMock.mockReset()
   })
 
   it('keeps create manual refresh-token submission behavior', async () => {
@@ -210,5 +224,90 @@ describe('KiroAuthorizationFlow', () => {
     await wrapper.get(`a[href="${authUrl}"]`).trigger('click')
     await findButtonByText(wrapper, 'common.copy').trigger('click')
     expect(copyToClipboardMock).toHaveBeenCalledWith(authUrl, 'common.copiedToClipboard')
+  })
+
+  it('discovers kiro profiles in reauth mode and populates profile arn selection', async () => {
+    getKiroProfilesMock.mockResolvedValue([
+      {
+        arn: 'arn:aws:codewhisperer:eu-central-1:123:profile/EU',
+        profileName: 'eu'
+      }
+    ])
+    const wrapper = mountComponent({
+      mode: 'reauth',
+      accountId: 77
+    })
+
+    await findButtonByText(wrapper, 'admin.accounts.kiro.discoverProfiles').trigger('click')
+
+    expect(getKiroProfilesMock).toHaveBeenCalledWith(77)
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+    const matched = wrapper
+      .findAll('input[placeholder="admin.accounts.kiro.optionalPlaceholder"]')
+      .some((candidate) =>
+        (candidate.element as HTMLInputElement).value.includes('arn:aws:codewhisperer:eu-central-1:123:profile/EU')
+      )
+    expect(matched).toBe(true)
+  })
+
+  it('shows profile status badges in reauth mode', async () => {
+    const wrapper = mountComponent({
+      mode: 'reauth',
+      initialCredentials: {
+        profile_arn: 'arn:aws:codewhisperer:us-east-1:123:profile/CURRENT'
+      }
+    })
+
+    expect(wrapper.text()).toContain('admin.accounts.kiro.profileStateManual')
+
+    const profileInput = wrapper
+      .findAll('input[placeholder="admin.accounts.kiro.optionalPlaceholder"]')
+      .find((candidate) => (candidate.element as HTMLInputElement).value.includes('arn:aws:codewhisperer'))
+    expect(profileInput).toBeTruthy()
+    await profileInput!.setValue('')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('admin.accounts.kiro.profileStateAuto')
+    expect(wrapper.text()).toContain('admin.accounts.kiro.profileStatePendingAuto')
+  })
+
+  it('discovers kiro profiles from manual refresh-token input in create mode', async () => {
+    discoverKiroProfilesMock.mockResolvedValue([
+      {
+        profileArn: 'arn:aws:codewhisperer:eu-west-1:123:profile/EUWEST',
+        profileName: 'eu-west-profile'
+      }
+    ])
+    const wrapper = mountComponent({
+      mode: 'create',
+      proxyId: 9
+    })
+
+    await wrapper.get('input[value="refresh_token"]').setValue()
+    await wrapper
+      .get('textarea[placeholder="admin.accounts.kiro.refreshTokenPlaceholderBatch"]')
+      .setValue('rt-discover')
+
+    await findButtonByText(wrapper, 'admin.accounts.kiro.discoverProfiles').trigger('click')
+
+    expect(discoverKiroProfilesMock).toHaveBeenCalledWith({
+      credentials: {
+        refresh_token: 'rt-discover',
+        auth_method: 'social',
+        region: 'us-east-1'
+      },
+      extra: {},
+      proxy_id: 9
+    })
+
+    await Promise.resolve()
+    await wrapper.vm.$nextTick()
+    const matched = wrapper
+      .findAll('input[placeholder="admin.accounts.kiro.optionalPlaceholder"]')
+      .some((candidate) =>
+        (candidate.element as HTMLInputElement).value.includes('arn:aws:codewhisperer:eu-west-1:123:profile/EUWEST')
+      )
+    expect(matched).toBe(true)
   })
 })

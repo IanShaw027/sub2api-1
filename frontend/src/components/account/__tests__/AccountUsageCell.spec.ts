@@ -78,6 +78,163 @@ describe('AccountUsageCell', () => {
     })
   })
 
+  it('Kiro 用量会显示订阅名、overage 标记和邮箱', async () => {
+    getUsage.mockResolvedValue({
+      kiro_subscription_title: 'Kiro Pro',
+      kiro_overage_capability: 'ENABLED',
+      kiro_overage_enabled: true,
+      kiro_email: 'kiro-user@example.com',
+      kiro_quota: {
+        utilization: 32,
+        resets_at: '2026-07-12T08:00:00Z'
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 5101,
+          platform: 'kiro',
+          type: 'oauth',
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}</div>'
+          },
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Kiro Pro')
+    expect(wrapper.text()).toContain('admin.accounts.kiro.overageEnabled')
+    expect(wrapper.text()).toContain('kiro-user@example.com')
+    expect(wrapper.text()).toContain('$0|32|2026-07-12T08:00:00Z')
+  })
+
+  it('Kiro 用量会展示 profile/login/status 诊断标签', async () => {
+    getUsage.mockResolvedValue({
+      kiro_subscription_title: 'Kiro Pro',
+      kiro_quota: {
+        utilization: 18,
+        resets_at: '2026-07-12T08:00:00Z'
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 5104,
+          platform: 'kiro',
+          type: 'oauth',
+          extra: {
+            profile_id: 'PROFILE-123',
+            login_provider: 'microsoft',
+            kiro_status_reason: 'FEATURE_NOT_SUPPORTED'
+          }
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}</div>'
+          },
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.accounts.kiro.profileIdShort')
+    expect(wrapper.text()).toContain('PROFILE-123')
+    expect(wrapper.text()).toContain('admin.accounts.kiro.loginProviderShort')
+    expect(wrapper.text()).toContain('microsoft')
+    expect(wrapper.text()).toContain('admin.accounts.kiro.statusReasonShort')
+    expect(wrapper.text()).toContain('FEATURE_NOT_SUPPORTED')
+  })
+
+  it('Kiro 用量会把不支持超额和未知套餐显示为明确徽标', async () => {
+    getUsage.mockResolvedValue({
+      kiro_overage_capability: 'NOT_SUPPORTED',
+      kiro_overage_enabled: false,
+      kiro_quota: {
+        utilization: 12,
+        resets_at: '2026-07-12T08:00:00Z'
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 5102,
+          platform: 'kiro',
+          type: 'oauth',
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}</div>'
+          },
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.accounts.kiro.subscriptionUnknown')
+    expect(wrapper.text()).toContain('admin.accounts.kiro.overageUnsupported')
+  })
+
+  it('Kiro 用量会把可开未开的超额显示为 capable 徽标', async () => {
+    getUsage.mockResolvedValue({
+      kiro_subscription_title: 'Kiro Power',
+      kiro_overage_capability: 'SUPPORTED',
+      kiro_overage_enabled: false,
+      kiro_quota: {
+        utilization: 55,
+        resets_at: '2026-07-12T08:00:00Z'
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 5103,
+          platform: 'kiro',
+          type: 'oauth',
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}</div>'
+          },
+          AccountQuotaInfo: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Kiro Power')
+    expect(wrapper.text()).toContain('admin.accounts.kiro.overageCapable')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.overageUnsupported')
+  })
+
   it('Antigravity 图片用量会聚合新旧 image 模型', async () => {
     getUsage.mockResolvedValue({
       antigravity_quota: {

@@ -79,6 +79,7 @@ export default {
     settings: 'Settings',
     chooseFile: 'Choose File',
     copy: 'Copy',
+    current: 'Current',
     notAvailable: 'N/A',
     now: 'Now',
     today: 'Today',

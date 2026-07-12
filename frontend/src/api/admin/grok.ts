@@ -30,6 +30,7 @@ export interface GrokTokenInfo {
   refresh_token?: string
   token_type?: string
   id_token?: string
+  sso_token?: string
   expires_at?: number | string
   expires_in?: number
   scope?: string
@@ -110,6 +111,37 @@ export async function refreshGrokToken(
   return data
 }
 
+export async function validateSSOToken(
+  ssoToken: string,
+  proxyId?: number | null
+): Promise<GrokTokenInfo> {
+  const payload: Record<string, unknown> = { sso_token: ssoToken }
+  if (proxyId) payload.proxy_id = proxyId
+
+  const { data } = await apiClient.post<GrokTokenInfo>(
+    '/admin/grok/oauth/sso-token',
+    payload
+  )
+  return data
+}
+
+export async function authorizePassword(
+  emailPasswordInput: string,
+  proxyId?: number | null
+): Promise<GrokTokenInfo> {
+  const [emailRaw, ...passwordParts] = emailPasswordInput.split('----')
+  const email = emailRaw?.trim() || ''
+  const password = passwordParts.join('----')
+  const payload: Record<string, unknown> = { email, password }
+  if (proxyId) payload.proxy_id = proxyId
+
+  const { data } = await apiClient.post<GrokTokenInfo>(
+    '/admin/grok/oauth/password',
+    payload
+  )
+  return data
+}
+
 export async function queryQuota(id: number): Promise<GrokQuotaProbeResult> {
   const { data } = await apiClient.get<GrokQuotaProbeResult>(`/admin/grok/accounts/${id}/quota`)
   return data
@@ -184,6 +216,8 @@ export default {
   generateAuthUrl,
   exchangeCode,
   refreshGrokToken,
+  validateSSOToken,
+  authorizePassword,
   queryQuota,
   resetQuota,
   createFromOAuth,

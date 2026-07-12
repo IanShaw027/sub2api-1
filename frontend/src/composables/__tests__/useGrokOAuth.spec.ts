@@ -24,7 +24,9 @@ vi.mock('@/api/admin', () => ({
     grok: {
       generateAuthUrl: vi.fn(),
       exchangeCode: vi.fn(),
-      refreshGrokToken: vi.fn()
+      refreshGrokToken: vi.fn(),
+      validateSSOToken: vi.fn(),
+      authorizePassword: vi.fn()
     }
   }
 }))
@@ -51,5 +53,51 @@ describe('useGrokOAuth.exchangeAuthCode', () => {
     expect(oauth.error.value).toBe(
       'Grok OAuth state 与当前会话不匹配。请粘贴同一次生成的授权链接返回的回调 URL。'
     )
+  })
+
+  it('validates SSO token through admin API', async () => {
+    vi.mocked(adminAPI.grok.validateSSOToken).mockResolvedValueOnce({
+      access_token: 'access',
+      sso_token: 'sso-token'
+    } as any)
+    const oauth = useGrokOAuth()
+
+    const tokenInfo = await oauth.validateSSOToken('  sso-token  ', 9)
+
+    expect(adminAPI.grok.validateSSOToken).toHaveBeenCalledWith('sso-token', 9)
+    expect(tokenInfo).toEqual({
+      access_token: 'access',
+      sso_token: 'sso-token'
+    })
+  })
+
+  it('authorizes email/password through admin API', async () => {
+    vi.mocked(adminAPI.grok.authorizePassword).mockResolvedValueOnce({
+      access_token: 'access',
+      email: 'user@example.com'
+    } as any)
+    const oauth = useGrokOAuth()
+
+    const tokenInfo = await oauth.authorizePassword('  user@example.com---- secret  ', 7)
+
+    expect(adminAPI.grok.authorizePassword).toHaveBeenCalledWith('  user@example.com---- secret  ', 7)
+    expect(tokenInfo).toEqual({
+      access_token: 'access',
+      email: 'user@example.com'
+    })
+  })
+
+  it('persists the SSO token returned by the real credential builder', () => {
+    const oauth = useGrokOAuth()
+
+    expect(oauth.buildCredentials({
+      access_token: 'access',
+      refresh_token: 'refresh',
+      sso_token: 'sso-token'
+    })).toEqual({
+      access_token: 'access',
+      refresh_token: 'refresh',
+      sso_token: 'sso-token'
+    })
   })
 })

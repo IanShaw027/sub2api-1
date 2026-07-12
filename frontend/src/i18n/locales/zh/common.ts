@@ -79,6 +79,7 @@ export default {
     settings: '设置',
     chooseFile: '选择文件',
     copy: '复制',
+    current: '当前',
     notAvailable: '不可用',
     now: '现在',
     today: '今天',

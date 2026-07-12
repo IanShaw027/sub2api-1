@@ -32,6 +32,8 @@ func TestRegisterAdminRoutesIncludesGrokOAuthEndpoints(t *testing.T) {
 		"POST /api/v1/admin/grok/oauth/auth-url":           {},
 		"POST /api/v1/admin/grok/oauth/exchange-code":      {},
 		"POST /api/v1/admin/grok/oauth/refresh-token":      {},
+		"POST /api/v1/admin/grok/oauth/sso-token":          {},
+		"POST /api/v1/admin/grok/oauth/password":           {},
 		"POST /api/v1/admin/grok/oauth/create-from-oauth":  {},
 		"POST /api/v1/admin/grok/accounts/:id/refresh":     {},
 		"GET /api/v1/admin/grok/accounts/:id/quota":        {},

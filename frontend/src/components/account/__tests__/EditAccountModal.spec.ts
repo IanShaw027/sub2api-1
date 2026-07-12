@@ -11,6 +11,7 @@ const {
   listTlsFingerprintProfilesMock,
   listTlsFingerprintRoutersMock,
   getPaymentConfigMock,
+  getKiroProfilesMock,
   authIsSimpleMode,
   adminSettingsStoreMock
 } = vi.hoisted(() => {
@@ -32,6 +33,7 @@ const {
     listTlsFingerprintProfilesMock: vi.fn(),
     listTlsFingerprintRoutersMock: vi.fn(),
     getPaymentConfigMock: vi.fn(),
+    getKiroProfilesMock: vi.fn(),
     authIsSimpleMode: { value: false },
     adminSettingsStoreMock
   }
@@ -74,7 +76,8 @@ vi.mock('@/api/admin', () => ({
     },
     accounts: {
       update: updateAccountMock,
-      checkMixedChannelRisk: checkMixedChannelRiskMock
+      checkMixedChannelRisk: checkMixedChannelRiskMock,
+      getKiroProfiles: getKiroProfilesMock
     }
   }
 }))
@@ -1637,6 +1640,130 @@ describe('EditAccountModal', () => {
 
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toBeUndefined()
+  })
+
+  it('allows Kiro OAuth edit modal to discover and submit profile arn override', async () => {
+    const account = {
+      id: 61,
+      name: 'Kiro OAuth',
+      notes: '',
+      platform: 'kiro',
+      type: 'oauth',
+      credentials: {
+        profile_arn: 'arn:aws:bedrock:us-east-1:123456789012:inference-profile/current',
+        auth_method: 'social'
+      },
+      extra: {},
+      proxy_id: null,
+      concurrency: 1,
+      priority: 1,
+      rate_multiplier: 1,
+      status: 'active',
+      group_ids: [],
+      expires_at: null,
+      auto_pause_on_expired: false
+    } as any
+
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    getSettingsMock.mockReset()
+    getWebSearchEmulationConfigMock.mockReset()
+    listTlsFingerprintProfilesMock.mockReset()
+    listTlsFingerprintRoutersMock.mockReset()
+    getKiroProfilesMock.mockReset()
+    getSettingsMock.mockResolvedValue({})
+    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
+    listTlsFingerprintProfilesMock.mockResolvedValue([])
+    listTlsFingerprintRoutersMock.mockResolvedValue([])
+    getKiroProfilesMock.mockResolvedValue([
+      { profileArn: 'arn:aws:bedrock:eu-central-1:123456789012:inference-profile/eu', profileName: 'eu-profile' }
+    ])
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.text()).toContain('admin.accounts.kiro.profileStateManual')
+
+    const discoverButton = wrapper.findAll('button').find(candidate => candidate.text().includes('admin.accounts.kiro.discoverProfiles'))
+    expect(discoverButton).toBeTruthy()
+    await discoverButton!.trigger('click')
+    await flushPromises()
+
+    const select = wrapper.findAll('select').find(candidate => candidate.findAll('option').some(option => option.text().includes('eu-profile')))
+    expect(select).toBeTruthy()
+    await select!.setValue('arn:aws:bedrock:eu-central-1:123456789012:inference-profile/eu')
+    expect(wrapper.text()).toContain('admin.accounts.kiro.profileStatePendingManual')
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(getKiroProfilesMock).toHaveBeenCalledWith(61)
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).toEqual({
+      profile_arn: 'arn:aws:bedrock:eu-central-1:123456789012:inference-profile/eu'
+    })
+  })
+
+  it('shows auto-detect profile status for Kiro OAuth accounts without profile override', async () => {
+    const account = {
+      id: 62,
+      name: 'Kiro OAuth Auto',
+      notes: '',
+      platform: 'kiro',
+      type: 'oauth',
+      credentials: {
+        auth_method: 'social'
+      },
+      extra: {},
+      proxy_id: null,
+      concurrency: 1,
+      priority: 1,
+      rate_multiplier: 1,
+      status: 'active',
+      group_ids: [],
+      expires_at: null,
+      auto_pause_on_expired: false
+    } as any
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.text()).toContain('admin.accounts.kiro.profileStateAuto')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.profileStateManual')
+  })
+
+  it('shows Kiro diagnostic chips in edit modal', async () => {
+    const account = {
+      id: 63,
+      name: 'Kiro OAuth Diagnostics',
+      notes: '',
+      platform: 'kiro',
+      type: 'oauth',
+      credentials: {
+        auth_method: 'social',
+        profile_arn: 'arn:aws:codewhisperer:us-east-1:123:profile/CURRENT'
+      },
+      extra: {
+        profile_id: 'PROFILE-999',
+        login_provider: 'microsoft',
+        kiro_status_reason: 'FEATURE_NOT_SUPPORTED'
+      },
+      proxy_id: null,
+      concurrency: 1,
+      priority: 1,
+      rate_multiplier: 1,
+      status: 'active',
+      group_ids: [],
+      expires_at: null,
+      auto_pause_on_expired: false
+    } as any
+
+    const wrapper = mountModal(account)
+    await wrapper.setProps({ show: true })
+
+    expect(wrapper.text()).toContain('PROFILE-999')
+    expect(wrapper.text()).toContain('microsoft')
+    expect(wrapper.text()).toContain('FEATURE_NOT_SUPPORTED')
   })
 
   it('does not expose or mutate Kiro OAuth authentication credentials', async () => {

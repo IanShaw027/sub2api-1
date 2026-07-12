@@ -113,6 +113,60 @@ export function useGrokOAuth() {
     }
   }
 
+  const validateSSOToken = async (
+    ssoToken: string,
+    proxyId?: number | null
+  ): Promise<GrokTokenInfo | null> => {
+    if (!ssoToken.trim()) {
+      error.value = t('admin.accounts.oauth.grok.pleaseEnterSSOToken')
+      return null
+    }
+
+    loading.value = true
+    error.value = ''
+
+    try {
+      return await adminAPI.grok.validateSSOToken(ssoToken.trim(), proxyId)
+    } catch (err: any) {
+      error.value = extractI18nErrorMessage(
+        err,
+        t,
+        'admin.accounts.oauth.grok.errors',
+        t('admin.accounts.oauth.grok.failedToValidateSSO')
+      )
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const authorizePassword = async (
+    emailPasswordInput: string,
+    proxyId?: number | null
+  ): Promise<GrokTokenInfo | null> => {
+    if (!emailPasswordInput.trim()) {
+      error.value = t('admin.accounts.oauth.grok.pleaseEnterEmailPassword')
+      return null
+    }
+
+    loading.value = true
+    error.value = ''
+
+    try {
+      return await adminAPI.grok.authorizePassword(emailPasswordInput, proxyId)
+    } catch (err: any) {
+      error.value = extractI18nErrorMessage(
+        err,
+        t,
+        'admin.accounts.oauth.grok.errors',
+        t('admin.accounts.oauth.grok.failedToAuthorizePassword')
+      )
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
   const buildCredentials = (tokenInfo: GrokTokenInfo): Record<string, unknown> => {
     const credentials: Record<string, unknown> = {
       access_token: tokenInfo.access_token,
@@ -126,6 +180,7 @@ export function useGrokOAuth() {
     }
     if (tokenInfo.refresh_token) credentials.refresh_token = tokenInfo.refresh_token
     if (tokenInfo.id_token) credentials.id_token = tokenInfo.id_token
+    if (tokenInfo.sso_token) credentials.sso_token = tokenInfo.sso_token
     return Object.fromEntries(Object.entries(credentials).filter(([, value]) => value !== undefined && value !== ''))
   }
 
@@ -147,6 +202,8 @@ export function useGrokOAuth() {
     generateAuthUrl,
     exchangeAuthCode,
     validateRefreshToken,
+    validateSSOToken,
+    authorizePassword,
     buildCredentials,
     buildExtraInfo
   }

@@ -974,6 +974,7 @@ func TestAPIContracts(t *testing.T) {
 							"openai_ws_neutral_prewarm_percent": 20,
 							"openai_ws_session_idle_ttl_seconds": 1000,
 							"openai_ws_temp_diag_logs_enabled": false,
+							"openai_ws_temp_diag_logs_rpm":     60,
 							"openai_codex_user_agent": "",
 					"openai_fast_policy_settings": {
 						"rules": []
@@ -1319,6 +1320,7 @@ func TestAPIContracts(t *testing.T) {
 							"openai_ws_neutral_prewarm_percent": 20,
 							"openai_ws_session_idle_ttl_seconds": 1000,
 							"openai_ws_temp_diag_logs_enabled": false,
+							"openai_ws_temp_diag_logs_rpm":     60,
 						"openai_codex_user_agent": "",
 					"openai_fast_policy_settings": {
 						"rules": []

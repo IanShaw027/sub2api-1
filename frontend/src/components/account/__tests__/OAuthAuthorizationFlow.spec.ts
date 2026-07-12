@@ -177,4 +177,68 @@ describe('OAuthAuthorizationFlow', () => {
     expect(wrapper.text()).toContain('admin.accounts.oauth.gemini.projectIdChangedRegenerate')
     expect((wrapper.vm as any).$?.exposed?.requiresProjectIdRecovery?.value).toBe(true)
   })
+
+  it('shows Grok manual SSO and password authorization methods when enabled', () => {
+    const wrapper = mountComponent({
+      platform: 'grok',
+      showRefreshTokenOption: true,
+      showSSOTokenOption: true,
+      showEmailPasswordOption: true
+    })
+
+    expect(wrapper.text()).toContain('admin.accounts.oauth.grok.refreshTokenAuth')
+    expect(wrapper.text()).toContain('admin.accounts.oauth.grok.ssoTokenAuth')
+    expect(wrapper.text()).toContain('admin.accounts.oauth.grok.emailPasswordAuth')
+  })
+
+  it('emits validate-sso-token for Grok manual SSO input', async () => {
+    const wrapper = mountComponent({
+      platform: 'grok',
+      showSSOTokenOption: true,
+      allowMultiple: true
+    })
+
+    await wrapper.get('input[type="radio"][value="sso_token"]').setValue(true)
+    await wrapper.get('textarea').setValue('sso-line-1\nsso-line-2')
+    const validateButton = wrapper.findAll('button').find((candidate) =>
+      candidate.text().includes('admin.accounts.oauth.grok.validateAndCreate')
+    )
+    expect(validateButton).toBeTruthy()
+    await validateButton!.trigger('click')
+
+    expect(wrapper.emitted('validate-sso-token')).toEqual([['sso-line-1\nsso-line-2']])
+  })
+
+  it('emits authorize-password for Grok manual email-password input', async () => {
+    const wrapper = mountComponent({
+      platform: 'grok',
+      showEmailPasswordOption: true
+    })
+
+    await wrapper.get('input[type="radio"][value="email_password"]').setValue(true)
+    const passwordInput = wrapper.get('input[placeholder="admin.accounts.oauth.grok.emailPasswordPlaceholder"]')
+    await passwordInput.setValue(' user@example.com---- secret  ')
+    const validateButton = wrapper.findAll('button').find((candidate) =>
+      candidate.text().includes('admin.accounts.oauth.grok.validateAndCreate')
+    )
+    expect(validateButton).toBeTruthy()
+    await validateButton!.trigger('click')
+
+    expect(wrapper.emitted('authorize-password')).toEqual([[' user@example.com---- secret  ']])
+  })
+
+  it('uses single-line credential inputs and hides batch counts when multiple input is disabled', async () => {
+    const wrapper = mountComponent({
+      platform: 'grok',
+      showRefreshTokenOption: true,
+      allowMultiple: false
+    })
+
+    await wrapper.get('input[type="radio"][value="refresh_token"]').setValue(true)
+    const input = wrapper.get('input[placeholder="admin.accounts.oauth.grok.refreshTokenPlaceholder"]')
+    await input.setValue('single-token')
+
+    expect(wrapper.find('textarea[placeholder="admin.accounts.oauth.grok.refreshTokenPlaceholder"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('admin.accounts.oauth.batchCreateAccounts')
+  })
 })

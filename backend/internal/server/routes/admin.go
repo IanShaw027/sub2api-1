@@ -376,6 +376,9 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		accounts.POST("/today-stats/batch", h.Admin.Account.GetBatchTodayStats)
 		accounts.POST("/:id/clear-rate-limit", h.Admin.Account.ClearRateLimit)
 		accounts.POST("/:id/reset-quota", h.Admin.Account.ResetQuota)
+		accounts.GET("/:id/profiles", h.Admin.Account.GetKiroProfiles)
+		accounts.POST("/:id/kiro/overage", h.Admin.Account.SetKiroOverage)
+		accounts.POST("/kiro/overage/enable-all", h.Admin.Account.EnableAllKiroOverage)
 		accounts.GET("/:id/codex/invite-reset/status", h.Admin.CodexInviteReset.GetStatus)
 		accounts.GET("/:id/codex/invite-reset/history", h.Admin.CodexInviteReset.ListHistory)
 		accounts.POST("/:id/codex/invite-reset/invite", h.Admin.CodexInviteReset.SendInvite)
@@ -492,6 +495,7 @@ func registerKiroOAuthRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		kiro.POST("/oauth/exchange-callback", h.Admin.KiroOAuth.ExchangeCallback)
 		kiro.POST("/oauth/device-complete", h.Admin.KiroOAuth.DeviceComplete)
 		kiro.POST("/oauth/refresh-token", h.Admin.KiroOAuth.RefreshToken)
+		kiro.POST("/oauth/discover-profiles", h.Admin.KiroOAuth.DiscoverProfiles)
 	}
 }
 
@@ -501,6 +505,8 @@ func registerGrokOAuthRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		grok.POST("/oauth/auth-url", h.Admin.GrokOAuth.GenerateAuthURL)
 		grok.POST("/oauth/exchange-code", h.Admin.GrokOAuth.ExchangeCode)
 		grok.POST("/oauth/refresh-token", h.Admin.GrokOAuth.RefreshToken)
+		grok.POST("/oauth/sso-token", h.Admin.GrokOAuth.ValidateSSOToken)
+		grok.POST("/oauth/password", h.Admin.GrokOAuth.AuthorizePassword)
 		grok.POST("/oauth/create-from-oauth", h.Admin.GrokOAuth.CreateAccountFromOAuth)
 		grok.POST("/accounts/:id/refresh", h.Admin.GrokOAuth.RefreshAccountToken)
 		grok.GET("/accounts/:id/quota", h.Admin.GrokOAuth.QueryQuota)

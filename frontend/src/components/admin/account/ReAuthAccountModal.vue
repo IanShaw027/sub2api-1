@@ -52,6 +52,21 @@
         </div>
       </div>
 
+      <div
+        v-if="isKiroOAuth && kiroDiagnosticItems.length"
+        class="rounded-lg border border-cyan-200 bg-cyan-50/60 p-4 dark:border-cyan-900/40 dark:bg-cyan-950/20"
+      >
+        <div class="mb-2 text-sm font-medium text-cyan-900 dark:text-cyan-100">
+          {{ t('admin.accounts.kiro.diagnosticSummaryTitle') }}
+        </div>
+        <KiroDiagnosticChips
+          :credentials="account.credentials || {}"
+          :extra="account.extra || {}"
+          :usage-info="{}"
+          chip-class="inline-flex rounded bg-white/80 px-2 py-1 text-cyan-800 dark:bg-black/10 dark:text-cyan-200"
+        />
+      </div>
+
       <!-- Add Method Selection (Claude only) -->
       <fieldset v-if="isAnthropic" class="border-0 p-0">
         <legend class="input-label">{{ t('admin.accounts.oauth.authMethod') }}</legend>
@@ -127,6 +142,8 @@
       <KiroAuthorizationFlow
         v-if="isKiroOAuth"
         mode="reauth"
+        :account-id="account?.id || null"
+        :proxy-id="account?.proxy_id || null"
         :auth-url="kiroOAuth.authUrl.value"
         :callback-base-url="kiroOAuth.callbackBaseUrl.value"
         :loading="kiroReauthLoading"
@@ -153,6 +170,9 @@
         :show-help="isAnthropic"
         :show-proxy-warning="isAnthropic"
         :show-cookie-option="isAnthropic"
+        :show-refresh-token-option="isGrok"
+        :show-sso-token-option="isGrok"
+        :show-email-password-option="isGrok"
         :allow-multiple="false"
         :method-label="t('admin.accounts.inputMethod')"
         :platform="isOpenAI ? 'openai' : isGemini ? 'gemini' : isAntigravity ? 'antigravity' : isGrok ? 'grok' : 'anthropic'"
@@ -161,6 +181,9 @@
         :show-gemini-project-bootstrap-tip="isGemini && geminiOAuthType === 'code_assist'"
         @generate-url="handleGenerateUrl"
         @cookie-auth="handleCookieAuth"
+        @validate-refresh-token="handleValidateRefreshToken"
+        @validate-sso-token="handleValidateSSOToken"
+        @authorize-password="handleAuthorizePassword"
       />
 
     </div>
@@ -239,6 +262,7 @@ import { useGrokOAuth } from '@/composables/useGrokOAuth'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import OAuthAuthorizationFlow from '@/components/account/OAuthAuthorizationFlow.vue'
+import KiroDiagnosticChips from '@/components/account/KiroDiagnosticChips.vue'
 import KiroAuthorizationFlow from '@/components/account/KiroAuthorizationFlow.vue'
 
 // Type for exposed OAuthAuthorizationFlow component
@@ -304,6 +328,20 @@ const kiroExtra = computed((): KiroAccountExtra & Record<string, unknown> => {
     return {}
   }
   return props.account?.extra || {}
+})
+const kiroDiagnosticItems = computed(() => {
+  if (!isKiroOAuth.value) return []
+  const credentials = (props.account?.credentials || {}) as Record<string, unknown>
+  const extra = (props.account?.extra || {}) as Record<string, unknown>
+  const hasProfileArn = typeof credentials.profile_arn === 'string' && credentials.profile_arn.trim() !== ''
+  const hasProfileID = typeof credentials.profile_id === 'string' && credentials.profile_id.trim() !== ''
+    || typeof extra.profile_id === 'string' && extra.profile_id.trim() !== ''
+  const hasLoginProvider = typeof credentials.login_provider === 'string' && credentials.login_provider.trim() !== ''
+    || typeof extra.login_provider === 'string' && extra.login_provider.trim() !== ''
+  const hasStatusReason = typeof credentials.status_reason === 'string' && credentials.status_reason.trim() !== ''
+    || typeof credentials.kiro_status_reason === 'string' && credentials.kiro_status_reason.trim() !== ''
+    || typeof extra.kiro_status_reason === 'string' && extra.kiro_status_reason.trim() !== ''
+  return hasProfileArn || hasProfileID || hasLoginProvider || hasStatusReason ? [1] : []
 })
 const dialogTitle = computed(() => t('admin.accounts.reAuthorizeAccount'))
 const isGrok = computed(() => props.account?.platform === 'grok')
@@ -491,6 +529,44 @@ const finishKiroReauthorization = async (
   }
 }
 
+const finishGrokReauthorization = async (
+  credentials: Record<string, unknown>,
+  extra: Record<string, unknown>
+) => {
+  if (!props.account) return
+
+  try {
+    const updatedAccount = await adminAPI.accounts.applyOAuthCredentials(props.account.id, {
+      type: 'oauth',
+      credentials,
+      extra
+    })
+    appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
+    emit('reauthorized', updatedAccount)
+    handleClose()
+  } catch (error: any) {
+    const message =
+      error?.response?.data?.detail ||
+      error?.message ||
+      t('admin.accounts.oauth.authFailed')
+    grokOAuth.error.value = message
+    appStore.showError(message)
+  }
+}
+
+const handleGrokManualTokenInfo = async (tokenInfo: Record<string, unknown> | null) => {
+  if (!props.account || !tokenInfo) return
+  const credentials = mergeRecord(
+    (props.account.credentials || {}) as Record<string, unknown>,
+    grokOAuth.buildCredentials(tokenInfo)
+  )
+  const extra = mergeRecord(
+    (props.account.extra || {}) as Record<string, unknown>,
+    grokOAuth.buildExtraInfo(tokenInfo)
+  )
+  await finishGrokReauthorization(credentials, extra)
+}
+
 const handleKiroReauthorize = async (payload: {
   callbackUrl: string
   credentials: Record<string, unknown>
@@ -663,6 +739,40 @@ const handleGenerateUrl = async () => {
   } else {
     await claudeOAuth.generateAuthUrl(addMethod.value, props.account.proxy_id)
   }
+}
+
+const hasMultipleCredentialLines = (value: string): boolean => {
+  return value.split(/\r?\n/).filter((line) => line.trim() !== '').length > 1
+}
+
+const handleValidateRefreshToken = async (refreshToken: string) => {
+  if (!isGrok.value) return
+  if (hasMultipleCredentialLines(refreshToken)) {
+    appStore.showError(t('admin.accounts.oauth.grok.singleCredentialOnly'))
+    return
+  }
+  const tokenInfo = await grokOAuth.validateRefreshToken(refreshToken, props.account?.proxy_id)
+  await handleGrokManualTokenInfo(tokenInfo as Record<string, unknown> | null)
+}
+
+const handleValidateSSOToken = async (ssoToken: string) => {
+  if (!isGrok.value) return
+  if (hasMultipleCredentialLines(ssoToken)) {
+    appStore.showError(t('admin.accounts.oauth.grok.singleCredentialOnly'))
+    return
+  }
+  const tokenInfo = await grokOAuth.validateSSOToken(ssoToken, props.account?.proxy_id)
+  await handleGrokManualTokenInfo(tokenInfo as Record<string, unknown> | null)
+}
+
+const handleAuthorizePassword = async (emailPasswordInput: string) => {
+  if (!isGrok.value) return
+  if (hasMultipleCredentialLines(emailPasswordInput)) {
+    appStore.showError(t('admin.accounts.oauth.grok.singleCredentialOnly'))
+    return
+  }
+  const tokenInfo = await grokOAuth.authorizePassword(emailPasswordInput, props.account?.proxy_id)
+  await handleGrokManualTokenInfo(tokenInfo as Record<string, unknown> | null)
 }
 
 const handleExchangeCode = async () => {

@@ -95,6 +95,9 @@ describe('i18n runtime locale merge', () => {
     expect(messages.admin.accounts.oauth.gemini.aiStudioNotConfiguredShort).toBe('未配置')
     expect(messages.admin.accounts.gemini.oauthType.badges.adminRequired).toBe('需要管理员')
     expect(messages.admin.accounts.kiro.refreshNowTitle).toContain('已保存的 refresh token')
+    expect(messages.admin.accounts.kiro.enableOverageAction).toContain('Kiro')
+    expect(messages.admin.accounts.oauth.grok.ssoTokenAuth).toContain('SSO')
+    expect(messages.admin.accounts.oauth.grok.emailPasswordAuth).toContain('邮箱密码')
     expect(messages.admin.proxies.description).toBe('管理代理服务器配置')
     expect(messages.admin.settings.gatewayForwarding.description).toBe(
       '控制请求转发到上游 OAuth 账号时的行为'
@@ -197,6 +200,9 @@ describe('i18n runtime locale merge', () => {
     expect(messages.admin.accounts.kiro.refreshNowTitle).toContain(
       'stored refresh token'
     )
+    expect(messages.admin.accounts.kiro.enableOverageAction).toContain('Overage')
+    expect(messages.admin.accounts.oauth.grok.ssoTokenAuth).toContain('SSO')
+    expect(messages.admin.accounts.oauth.grok.emailPasswordAuth).toContain('Email')
     expect(messages.admin.proxies.description).toBe('Manage proxy servers for accounts')
     expect(messages.admin.settings.gatewayForwarding.description).toBe(
       'Control how requests are forwarded to upstream OAuth accounts'

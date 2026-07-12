@@ -15,7 +15,9 @@ const {
   kiroValidateRefreshTokenMock,
   grokExchangeAuthCodeMock,
   grokGenerateAuthUrlMock,
-  grokValidateRefreshTokenMock
+  grokValidateRefreshTokenMock,
+  grokValidateSSOTokenMock,
+  grokAuthorizePasswordMock
 } = vi.hoisted(() => ({
   showErrorMock: vi.fn(),
   showSuccessMock: vi.fn(),
@@ -29,7 +31,9 @@ const {
   kiroValidateRefreshTokenMock: vi.fn(),
   grokExchangeAuthCodeMock: vi.fn(),
   grokGenerateAuthUrlMock: vi.fn(),
-  grokValidateRefreshTokenMock: vi.fn()
+  grokValidateRefreshTokenMock: vi.fn(),
+  grokValidateSSOTokenMock: vi.fn(),
+  grokAuthorizePasswordMock: vi.fn()
 }))
 
 vi.mock('@/stores/app', () => ({
@@ -189,10 +193,13 @@ vi.mock('@/composables/useGrokOAuth', () => ({
     generateAuthUrl: grokGenerateAuthUrlMock,
     exchangeAuthCode: grokExchangeAuthCodeMock,
     validateRefreshToken: grokValidateRefreshTokenMock,
+    validateSSOToken: grokValidateSSOTokenMock,
+    authorizePassword: grokAuthorizePasswordMock,
     buildCredentials: (tokenInfo?: any) => {
       const credentials: Record<string, unknown> = {
         access_token: tokenInfo?.access_token,
         refresh_token: tokenInfo?.refresh_token,
+        sso_token: tokenInfo?.sso_token,
         email: tokenInfo?.email
       }
       return Object.fromEntries(Object.entries(credentials).filter(([, value]) => value !== undefined && value !== ''))
@@ -384,6 +391,8 @@ describe('CreateAccountModal', () => {
     grokExchangeAuthCodeMock.mockReset()
     grokGenerateAuthUrlMock.mockReset()
     grokValidateRefreshTokenMock.mockReset()
+    grokValidateSSOTokenMock.mockReset()
+    grokAuthorizePasswordMock.mockReset()
 
     createMock.mockResolvedValue(undefined)
     checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
@@ -407,6 +416,18 @@ describe('CreateAccountModal', () => {
     grokValidateRefreshTokenMock.mockResolvedValue({
       refresh_token: 'grok-rt-test',
       access_token: 'grok-at-test',
+      email: 'grok-owner@example.com'
+    })
+    grokValidateSSOTokenMock.mockResolvedValue({
+      refresh_token: 'grok-rt-test',
+      access_token: 'grok-at-test',
+      sso_token: 'grok-sso-test',
+      email: 'grok-owner@example.com'
+    })
+    grokAuthorizePasswordMock.mockResolvedValue({
+      refresh_token: 'grok-rt-test',
+      access_token: 'grok-at-test',
+      sso_token: 'grok-password-sso',
       email: 'grok-owner@example.com'
     })
   })
@@ -912,6 +933,51 @@ describe('CreateAccountModal', () => {
         tls_fingerprint_default_os: 'linux'
       })
     }))
+  })
+
+  it('creates a Grok OAuth account from manual SSO token and persists sso_token', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'Grok').trigger('click')
+    await nextTick()
+    await flushPromises()
+
+    await (wrapper.vm as any).handleGrokValidateSSO('grok-sso-test')
+    await flushPromises()
+
+    expect(grokValidateSSOTokenMock).toHaveBeenCalledWith('grok-sso-test', null)
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      platform: 'grok',
+      type: 'oauth',
+      credentials: expect.objectContaining({
+        sso_token: 'grok-sso-test',
+        refresh_token: 'grok-rt-test'
+      })
+    }))
+  })
+
+  it('creates a Grok OAuth account from manual email-password auth without persisting password', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await findButtonByText(wrapper, 'Grok').trigger('click')
+    await nextTick()
+    await flushPromises()
+
+    await (wrapper.vm as any).handleGrokAuthorizePassword(' grok-owner@example.com---- super-secret  ')
+    await flushPromises()
+
+    expect(grokAuthorizePasswordMock).toHaveBeenCalledWith(' grok-owner@example.com---- super-secret  ', null)
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      platform: 'grok',
+      type: 'oauth',
+      credentials: expect.objectContaining({
+        sso_token: 'grok-password-sso',
+        refresh_token: 'grok-rt-test'
+      })
+    }))
+    expect(JSON.stringify(createMock.mock.calls[0][0])).not.toContain('super-secret')
   })
 
   it('clears a direct TLS fingerprint profile selection when switching to an incompatible platform', async () => {

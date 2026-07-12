@@ -205,12 +205,52 @@
                 </div>
                 <div>
                   <label class="input-label">{{ t('admin.accounts.kiro.profileArnLabel') }}</label>
+                  <div v-if="canDiscoverProfiles" class="mb-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      class="btn btn-secondary text-xs"
+                      :disabled="discoveringProfiles"
+                      @click="discoverProfiles"
+                    >
+                      {{ discoveringProfiles ? t('admin.accounts.oauth.generating') : t('admin.accounts.kiro.discoverProfiles') }}
+                    </button>
+                    <select
+                      v-if="discoveredProfiles.length"
+                      v-model="selectedDiscoveredProfile"
+                      class="input text-sm"
+                    >
+                      <option
+                        v-for="profile in discoveredProfiles"
+                        :key="profile.arn || profile.profileArn"
+                        :value="(profile.arn || profile.profileArn || '').trim()"
+                      >
+                        {{ profile.profileName || profile.arn || profile.profileArn }}
+                      </option>
+                    </select>
+                  </div>
                   <input
                     v-model="profileARN"
                     type="text"
                     class="input font-mono text-sm"
                     :placeholder="t('admin.accounts.kiro.optionalPlaceholder')"
                   />
+                  <div
+                    v-if="mode === 'reauth'"
+                    class="mt-2 flex flex-wrap items-center gap-2 text-xs"
+                  >
+                    <span
+                      class="inline-flex rounded px-1.5 py-0.5 font-medium"
+                      :class="kiroProfileStatusBadgeClass"
+                    >
+                      {{ kiroProfileStatusLabel }}
+                    </span>
+                    <span
+                      v-if="kiroProfilePendingHint"
+                      class="text-cyan-700 dark:text-cyan-300"
+                    >
+                      {{ kiroProfilePendingHint }}
+                    </span>
+                  </div>
                 </div>
                 <div>
                   <label class="input-label">{{ t('admin.accounts.kiro.machineIdLabel') }}</label>
@@ -599,12 +639,52 @@
             </div>
             <div>
               <label class="input-label">{{ t('admin.accounts.kiro.profileArnLabel') }}</label>
+              <div v-if="canDiscoverProfiles" class="mb-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  class="btn btn-secondary text-xs"
+                  :disabled="discoveringProfiles"
+                  @click="discoverProfiles"
+                >
+                  {{ discoveringProfiles ? t('admin.accounts.oauth.generating') : t('admin.accounts.kiro.discoverProfiles') }}
+                </button>
+                <select
+                  v-if="discoveredProfiles.length"
+                  v-model="selectedDiscoveredProfile"
+                  class="input text-sm"
+                >
+                  <option
+                    v-for="profile in discoveredProfiles"
+                    :key="profile.arn || profile.profileArn"
+                    :value="(profile.arn || profile.profileArn || '').trim()"
+                  >
+                    {{ profile.profileName || profile.arn || profile.profileArn }}
+                  </option>
+                </select>
+              </div>
               <input
                 v-model="profileARN"
                 type="text"
                 class="input font-mono text-sm"
                 :placeholder="t('admin.accounts.kiro.optionalPlaceholder')"
               />
+              <div
+                v-if="mode === 'reauth'"
+                class="mt-2 flex flex-wrap items-center gap-2 text-xs"
+              >
+                <span
+                  class="inline-flex rounded px-1.5 py-0.5 font-medium"
+                  :class="kiroProfileStatusBadgeClass"
+                >
+                  {{ kiroProfileStatusLabel }}
+                </span>
+                <span
+                  v-if="kiroProfilePendingHint"
+                  class="text-cyan-700 dark:text-cyan-300"
+                >
+                  {{ kiroProfilePendingHint }}
+                </span>
+              </div>
             </div>
             <div>
               <label class="input-label">{{ t('admin.accounts.kiro.machineIdLabel') }}</label>
@@ -652,8 +732,10 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import { useClipboard } from '@/composables/useClipboard'
+import { getKiroProfiles } from '@/api/admin/accounts'
 import type { KiroAccountExtra, KiroCredentials } from '@/types'
-import type { KiroExternalIDPAuthorizationInfo, KiroIDCContinuationInfo } from '@/api/admin/kiro'
+import { discoverProfiles as discoverKiroProfiles } from '@/api/admin/kiro'
+import type { KiroDiscoveredProfile, KiroExternalIDPAuthorizationInfo, KiroIDCContinuationInfo } from '@/api/admin/kiro'
 
 interface Props {
   mode?: 'create' | 'reauth'
@@ -661,6 +743,8 @@ interface Props {
   error?: string
   authUrl?: string
   callbackBaseUrl?: string
+  accountId?: number | null
+  proxyId?: number | null
   initialCredentials?: KiroCredentials | null
   initialExtra?: KiroAccountExtra | null
   continuation?: KiroIDCContinuationInfo | null
@@ -673,6 +757,8 @@ const props = withDefaults(defineProps<Props>(), {
   error: '',
   authUrl: '',
   callbackBaseUrl: '',
+  accountId: null,
+  proxyId: null,
   initialCredentials: null,
   initialExtra: null,
   continuation: null,
@@ -714,6 +800,8 @@ const manualTokenEndpoint = ref('')
 const manualIssuerURL = ref('')
 const manualScopes = ref('')
 const manualLoginHint = ref('')
+const discoveringProfiles = ref(false)
+const discoveredProfiles = ref<KiroDiscoveredProfile[]>([])
 
 const title = computed(() => (
   props.mode === 'reauth'
@@ -745,6 +833,39 @@ const parsedRefreshTokenCount = computed(() => (
     .filter((rt) => rt).length
 ))
 
+const canDiscoverProfiles = computed(() => {
+  if (props.accountId && props.mode === 'reauth') return true
+  return inputMode.value === 'refresh_token' && manualRefreshToken.value.trim().length > 0
+})
+const currentProfileArn = computed(() => {
+  const raw = props.initialCredentials?.profile_arn
+  return typeof raw === 'string' ? raw.trim() : ''
+})
+const effectiveProfileArn = computed(() => profileARN.value.trim())
+const kiroProfileStatusLabel = computed(() => {
+  return effectiveProfileArn.value
+    ? t('admin.accounts.kiro.profileStateManual')
+    : t('admin.accounts.kiro.profileStateAuto')
+})
+const kiroProfileStatusBadgeClass = computed(() => {
+  return effectiveProfileArn.value
+    ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300'
+    : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+})
+const kiroProfilePendingHint = computed(() => {
+  if (props.mode !== 'reauth') return ''
+  if (effectiveProfileArn.value === currentProfileArn.value) return ''
+  return effectiveProfileArn.value
+    ? t('admin.accounts.kiro.profileStatePendingManual')
+    : t('admin.accounts.kiro.profileStatePendingAuto')
+})
+const selectedDiscoveredProfile = computed({
+  get: () => profileARN.value,
+  set: (value: string) => {
+    profileARN.value = value
+  }
+})
+
 const resetForm = () => {
   const credentials = props.initialCredentials || {}
   callbackUrl.value = ''
@@ -764,6 +885,7 @@ const resetForm = () => {
   manualIssuerURL.value = credentials.issuer_url || ''
   manualScopes.value = credentials.scopes || ''
   manualLoginHint.value = credentials.login_hint || ''
+  discoveredProfiles.value = []
   localError.value = ''
 }
 
@@ -861,6 +983,52 @@ const handleSubmitRefreshToken = () => {
     credentials,
     extra: {}
   })
+}
+
+const discoverProfiles = async () => {
+  if (discoveringProfiles.value) return
+  localError.value = ''
+  discoveringProfiles.value = true
+  try {
+    let profiles: KiroDiscoveredProfile[] = []
+    if (props.accountId && props.mode === 'reauth') {
+      profiles = await getKiroProfiles(props.accountId)
+    } else {
+      const credentials: Record<string, unknown> = {
+        refresh_token: manualRefreshToken.value.trim(),
+        auth_method: manualAuthMethod.value,
+        region: region.value.trim() || 'us-east-1'
+      }
+      if (manualAuthMethod.value === 'idc') {
+        if (manualClientID.value.trim()) credentials.client_id = manualClientID.value.trim()
+        if (manualClientSecret.value.trim()) credentials.client_secret = manualClientSecret.value.trim()
+      }
+      if (manualAuthMethod.value === 'external_idp') {
+        if (manualClientID.value.trim()) credentials.client_id = manualClientID.value.trim()
+        if (manualTokenEndpoint.value.trim()) credentials.token_endpoint = manualTokenEndpoint.value.trim()
+        if (manualIssuerURL.value.trim()) credentials.issuer_url = manualIssuerURL.value.trim()
+        if (manualScopes.value.trim()) credentials.scopes = manualScopes.value.trim()
+        if (manualLoginHint.value.trim()) credentials.login_hint = manualLoginHint.value.trim()
+      }
+      if (authRegion.value.trim()) credentials.auth_region = authRegion.value.trim()
+      if (apiRegion.value.trim()) credentials.api_region = apiRegion.value.trim()
+      if (profileARN.value.trim()) credentials.profile_arn = profileARN.value.trim()
+      if (machineID.value.trim()) credentials.machine_id = machineID.value.trim()
+      profiles = await discoverKiroProfiles({
+        credentials,
+        extra: {},
+        proxy_id: props.proxyId || undefined
+      })
+    }
+    discoveredProfiles.value = profiles
+    if (!profileARN.value.trim() && profiles.length > 0) {
+      selectedDiscoveredProfile.value = String(profiles[0].arn || profiles[0].profileArn || '').trim()
+    }
+  } catch (err: any) {
+    localError.value = err?.response?.data?.message || err?.message || t('admin.accounts.kiro.discoverProfilesFailed')
+  } finally {
+    discoveringProfiles.value = false
+  }
 }
 
 const verificationUrl = computed(() => (
