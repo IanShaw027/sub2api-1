@@ -14,6 +14,10 @@ export interface KiroExchangeCallbackRequest {
   session_id: string
   callback_url: string
   proxy_id?: number
+  client_id?: string
+  issuer_url?: string
+  scopes?: string[]
+  login_hint?: string
 }
 
 export interface KiroDeviceCompleteRequest {
@@ -76,9 +80,25 @@ export interface KiroIDCContinuationInfo {
   message?: string
 }
 
+export interface KiroExternalIDPAuthorizationInfo {
+  session_id: string
+  status: string
+  auth_method: string
+  login_option?: string
+  auth_url: string
+  client_id?: string
+  issuer_url?: string
+  token_endpoint?: string
+  redirect_uri?: string
+  scopes?: string[]
+  login_hint?: string
+  message?: string
+}
+
 export interface KiroOAuthProgressResult {
   token_info?: KiroTokenInfo | null
   continuation?: KiroIDCContinuationInfo | null
+  external_idp?: KiroExternalIDPAuthorizationInfo | null
 }
 
 export type KiroExchangeCallbackResponse = KiroTokenInfo | KiroOAuthProgressResult
@@ -88,7 +108,7 @@ export function isKiroContinuationResponse(
 ): value is KiroOAuthProgressResult {
   if (!value || typeof value !== 'object') return false
   const candidate = value as KiroOAuthProgressResult
-  return Boolean(candidate.continuation)
+  return Boolean(candidate.continuation || candidate.external_idp)
 }
 
 export async function generateAuthUrl(

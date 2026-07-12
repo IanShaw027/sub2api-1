@@ -56,6 +56,7 @@ type KiroExchangeCallbackRequest struct {
 	IDCRegion   string   `json:"idc_region"`
 	Scopes      []string `json:"scopes"`
 	LoginHint   string   `json:"login_hint"`
+	ClientID    string   `json:"client_id"`
 	ClientName  string   `json:"client_name"`
 }
 
@@ -79,6 +80,7 @@ func (h *KiroOAuthHandler) ExchangeCallback(c *gin.Context) {
 		IDCRegion:   strings.TrimSpace(req.IDCRegion),
 		Scopes:      req.Scopes,
 		LoginHint:   strings.TrimSpace(req.LoginHint),
+		ClientID:    strings.TrimSpace(req.ClientID),
 		ClientName:  strings.TrimSpace(req.ClientName),
 	})
 	if err != nil {

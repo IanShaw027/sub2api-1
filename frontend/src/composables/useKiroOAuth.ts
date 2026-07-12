@@ -6,6 +6,7 @@ import type { KiroAccountExtra, KiroCredentials } from '@/types'
 import type {
   KiroAuthUrlRequest,
   KiroExchangeCallbackRequest,
+  KiroExternalIDPAuthorizationInfo,
   KiroIDCContinuationInfo,
   KiroOAuthProgressResult,
   KiroTokenInfo
@@ -62,6 +63,7 @@ export function useKiroOAuth() {
   const loading = ref(false)
   const error = ref('')
   const continuation = ref<KiroIDCContinuationInfo | null>(null)
+  const externalIDPAuthorization = ref<KiroExternalIDPAuthorizationInfo | null>(null)
   const cancelToken = ref(0)
 
   const resetState = () => {
@@ -71,12 +73,14 @@ export function useKiroOAuth() {
     loading.value = false
     error.value = ''
     continuation.value = null
+    externalIDPAuthorization.value = null
     cancelToken.value += 1
   }
 
   const cancelDeviceAuthorization = () => {
     cancelToken.value += 1
     continuation.value = null
+    externalIDPAuthorization.value = null
     loading.value = false
   }
 
@@ -87,6 +91,7 @@ export function useKiroOAuth() {
     callbackBaseUrl.value = ''
     error.value = ''
     continuation.value = null
+    externalIDPAuthorization.value = null
 
     try {
       const payload: KiroAuthUrlRequest = {}
@@ -168,6 +173,7 @@ export function useKiroOAuth() {
     loading.value = true
     error.value = ''
     continuation.value = null
+    externalIDPAuthorization.value = null
 
     try {
       const payload: KiroExchangeCallbackRequest = {
@@ -184,6 +190,14 @@ export function useKiroOAuth() {
         if (progress.continuation) {
           continuation.value = progress.continuation
           return await pollDeviceAuthorization(progress.continuation, proxyId)
+        }
+        if (progress.external_idp) {
+          externalIDPAuthorization.value = progress.external_idp
+          if (typeof window !== 'undefined' && progress.external_idp.auth_url) {
+            window.open(progress.external_idp.auth_url, '_blank', 'noopener')
+          }
+          error.value = progress.external_idp.message || t('admin.accounts.kiro.callbackUrlHint')
+          return null
         }
         error.value = t('admin.accounts.kiro.idcDeviceUnexpected')
         return null
@@ -318,6 +332,7 @@ export function useKiroOAuth() {
     loading,
     error,
     continuation,
+    externalIDPAuthorization,
     resetState,
     cancelDeviceAuthorization,
     generateAuthUrl,

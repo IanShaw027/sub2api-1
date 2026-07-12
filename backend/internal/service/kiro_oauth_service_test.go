@@ -205,6 +205,195 @@ func TestKiroOAuthServiceExchangeCallbackRejectsExternalIDPWhenKiroUsageForbidde
 	}
 }
 
+func TestKiroOAuthServiceExchangeCallbackOrStartContinuationReturnsMicrosoftExternalIDPAuthURL(t *testing.T) {
+	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, nil, nil, nil)
+	svc.usageService = nil
+	defer svc.Stop()
+
+	const (
+		sessionID   = "session-ms-start"
+		state       = "state-ms-start"
+		redirectURI = "http://localhost:3128"
+		issuerURL   = "https://login.microsoftonline.com/035247e5-0116-4d03-a92f-989b7476ca4f/v2.0"
+		clientID    = "2d3c7e3b-bd70-4d35-b397-34ba184e7572"
+		loginHint   = "jenspeter.bijelic@chinaq2.click"
+	)
+	svc.sessionStore.Set(sessionID, &KiroOAuthSession{
+		State:           state,
+		CodeVerifier:    "verifier-ms-start",
+		RedirectURI:     redirectURI,
+		CallbackBaseURL: redirectURI,
+		CreatedAt:       time.Now(),
+	})
+
+	callbackURL := "http://localhost:3128/signin/callback?login_option=external_idp" +
+		"&login_hint=" + url.QueryEscape(loginHint) +
+		"&issuer_url=" + url.QueryEscape(issuerURL) +
+		"&client_id=" + url.QueryEscape(clientID) +
+		"&state=" + url.QueryEscape(state) +
+		"&scopes=" + url.QueryEscape("api://"+clientID+"/codewhisperer:conversations api://"+clientID+"/codewhisperer:completions offline_access")
+
+	progress, err := svc.ExchangeCallbackOrStartContinuation(context.Background(), &KiroExchangeCallbackInput{
+		SessionID:   sessionID,
+		CallbackURL: callbackURL,
+	})
+	if err != nil {
+		t.Fatalf("ExchangeCallbackOrStartContinuation returned error: %v", err)
+	}
+	if progress == nil || progress.ExternalIDP == nil {
+		t.Fatal("expected external_idp authorization result")
+	}
+	if progress.TokenInfo != nil {
+		t.Fatal("did not expect token info before Microsoft callback returns code")
+	}
+
+	authURL, err := url.Parse(progress.ExternalIDP.AuthURL)
+	if err != nil {
+		t.Fatalf("invalid external_idp auth_url: %v", err)
+	}
+	if authURL.String() == callbackURL {
+		t.Fatal("external_idp continuation should return Microsoft authorize URL, not echo the Kiro callback")
+	}
+	if authURL.Scheme != "https" || authURL.Host != "login.microsoftonline.com" || authURL.Path != "/035247e5-0116-4d03-a92f-989b7476ca4f/oauth2/v2.0/authorize" {
+		t.Fatalf("unexpected Microsoft authorize endpoint: %s", authURL.String())
+	}
+	query := authURL.Query()
+	if query.Get("response_type") != "code" {
+		t.Fatalf("response_type = %q, want code", query.Get("response_type"))
+	}
+	if query.Get("client_id") != clientID {
+		t.Fatalf("client_id = %q, want %q", query.Get("client_id"), clientID)
+	}
+	if query.Get("redirect_uri") != "http://localhost:3128/signin/callback" {
+		t.Fatalf("redirect_uri = %q", query.Get("redirect_uri"))
+	}
+	if query.Get("state") != state {
+		t.Fatalf("state = %q, want %q", query.Get("state"), state)
+	}
+	if query.Get("login_hint") != loginHint {
+		t.Fatalf("login_hint = %q, want %q", query.Get("login_hint"), loginHint)
+	}
+	if !strings.Contains(query.Get("scope"), "offline_access") {
+		t.Fatalf("scope should preserve requested scopes, got %q", query.Get("scope"))
+	}
+
+	stored, ok := svc.sessionStore.Get(sessionID)
+	if !ok || stored.ExternalIDP == nil {
+		t.Fatal("expected external_idp session material to be stored")
+	}
+	if stored.ExternalIDP.TokenEndpoint != "https://login.microsoftonline.com/035247e5-0116-4d03-a92f-989b7476ca4f/oauth2/v2.0/token" {
+		t.Fatalf("token endpoint = %q", stored.ExternalIDP.TokenEndpoint)
+	}
+}
+
+func TestKiroOAuthServiceExchangeCallbackExchangesMicrosoftExternalIDPCode(t *testing.T) {
+	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, nil, nil, nil)
+	svc.usageService = nil
+	defer svc.Stop()
+
+	const (
+		sessionID     = "session-ms-code"
+		state         = "state-ms-code"
+		code          = "microsoft-code"
+		clientID      = "microsoft-public-client"
+		tokenEndpoint = "https://login.microsoftonline.com/tenant/oauth2/v2.0/token"
+		issuerURL     = "https://login.microsoftonline.com/tenant/v2.0"
+		redirectURI   = "http://localhost:3128/signin/callback"
+	)
+	svc.sessionStore.Set(sessionID, &KiroOAuthSession{
+		State:           state,
+		CodeVerifier:    "verifier-ms-code",
+		RedirectURI:     "http://localhost:3128",
+		CallbackBaseURL: "http://localhost:3128",
+		CreatedAt:       time.Now(),
+		ExternalIDP: &KiroExternalIDPSession{
+			ClientID:      clientID,
+			IssuerURL:     issuerURL,
+			TokenEndpoint: tokenEndpoint,
+			RedirectURI:   redirectURI,
+			Scopes:        []string{"scope-a", "offline_access"},
+			LoginHint:     "dev@example.com",
+			CreatedAt:     time.Now(),
+		},
+	})
+
+	originalExchange := kiroExternalIDPCodeExchangeFunc
+	kiroExternalIDPCodeExchangeFunc = func(ctx context.Context, input kiroExternalIDPCodeExchangeInput) (map[string]any, error) {
+		if input.Code != code {
+			t.Fatalf("code = %q, want %q", input.Code, code)
+		}
+		if input.ClientID != clientID {
+			t.Fatalf("client_id = %q, want %q", input.ClientID, clientID)
+		}
+		if input.TokenEndpoint != tokenEndpoint {
+			t.Fatalf("token_endpoint = %q, want %q", input.TokenEndpoint, tokenEndpoint)
+		}
+		if input.RedirectURI != redirectURI {
+			t.Fatalf("redirect_uri = %q, want %q", input.RedirectURI, redirectURI)
+		}
+		return map[string]any{
+			"access_token":  "ms-access-token",
+			"refresh_token": "ms-refresh-token",
+			"expires_in":    int64(3600),
+			"profileArn":    "arn:aws:codewhisperer:us-east-1:904962390873:profile/CQRAXYDP9YVD",
+		}, nil
+	}
+	t.Cleanup(func() {
+		kiroExternalIDPCodeExchangeFunc = originalExchange
+	})
+
+	progress, err := svc.ExchangeCallbackOrStartContinuation(context.Background(), &KiroExchangeCallbackInput{
+		SessionID:   sessionID,
+		CallbackURL: "http://localhost:3128/signin/callback?code=" + code + "&state=" + state,
+	})
+	if err != nil {
+		t.Fatalf("ExchangeCallbackOrStartContinuation returned error: %v", err)
+	}
+	if progress == nil || progress.TokenInfo == nil {
+		t.Fatal("expected token info after Microsoft code exchange")
+	}
+	if progress.TokenInfo.AuthMethod != "external_idp" {
+		t.Fatalf("auth_method = %q, want external_idp", progress.TokenInfo.AuthMethod)
+	}
+	if progress.TokenInfo.ClientID != clientID {
+		t.Fatalf("client_id = %q, want %q", progress.TokenInfo.ClientID, clientID)
+	}
+	if progress.TokenInfo.TokenEndpoint != tokenEndpoint {
+		t.Fatalf("token_endpoint = %q, want %q", progress.TokenInfo.TokenEndpoint, tokenEndpoint)
+	}
+	if progress.TokenInfo.IssuerURL != issuerURL {
+		t.Fatalf("issuer_url = %q, want %q", progress.TokenInfo.IssuerURL, issuerURL)
+	}
+	if _, ok := svc.sessionStore.Get(sessionID); ok {
+		t.Fatal("expected session to be deleted after successful Microsoft code exchange")
+	}
+}
+
+func TestKiroOAuthServiceExchangeCallbackExternalIDPRequiresMicrosoftClientIDAndIssuer(t *testing.T) {
+	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, nil, nil, nil)
+	svc.usageService = nil
+	defer svc.Stop()
+
+	svc.sessionStore.Set("session-ms-missing", &KiroOAuthSession{
+		State:           "state-ms-missing",
+		CodeVerifier:    "verifier-ms-missing",
+		RedirectURI:     "http://localhost:3128",
+		CallbackBaseURL: "http://localhost:3128",
+		CreatedAt:       time.Now(),
+	})
+
+	_, err := svc.ExchangeCallbackOrStartContinuation(context.Background(), &KiroExchangeCallbackInput{
+		SessionID:   "session-ms-missing",
+		CallbackURL: "http://localhost:3128/signin/callback?state=state-ms-missing&login_option=external_idp&issuer_url=https%3A%2F%2Flogin.microsoftonline.com%2Ftenant%2Fv2.0",
+	})
+	if err == nil {
+		t.Fatal("expected missing client_id to fail")
+	}
+	if !strings.Contains(err.Error(), "client_id") {
+		t.Fatalf("error %q should mention client_id", err.Error())
+	}
+}
+
 func TestKiroTokenRefresherRejectsRefreshResponseWithoutAccessToken(t *testing.T) {
 	upstream := &kiroHTTPUpstreamRecorder{
 		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {

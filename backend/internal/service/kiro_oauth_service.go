@@ -38,6 +38,7 @@ var kiroFindCallbackBaseURLFunc = findKiroCallbackBaseURL
 var kiroIDCRegisterClientFunc = registerKiroIDCClient
 var kiroIDCStartDeviceAuthorizationFunc = startKiroIDCDeviceAuthorization
 var kiroIDCCompleteDeviceAuthorizationFunc = completeKiroIDCDeviceAuthorization
+var kiroExternalIDPCodeExchangeFunc = exchangeKiroExternalIDPCodeForToken
 
 type KiroOAuthSession struct {
 	State           string
@@ -47,6 +48,7 @@ type KiroOAuthSession struct {
 	ProxyURL        string
 	CreatedAt       time.Time
 	IDCContinuation *KiroIDCContinuationSession
+	ExternalIDP     *KiroExternalIDPSession
 
 	// mu guards the mutable parts of a session that may be touched by
 	// concurrent callback / continuation requests sharing the same session
@@ -175,6 +177,7 @@ type KiroExchangeCallbackInput struct {
 	IDCRegion   string
 	Scopes      []string
 	LoginHint   string
+	ClientID    string
 	ClientName  string
 }
 
@@ -184,8 +187,9 @@ type KiroDeviceCompleteInput struct {
 }
 
 type KiroOAuthProgressResult struct {
-	TokenInfo    *KiroTokenInfo           `json:"token_info,omitempty"`
-	Continuation *KiroIDCContinuationInfo `json:"continuation,omitempty"`
+	TokenInfo    *KiroTokenInfo                    `json:"token_info,omitempty"`
+	Continuation *KiroIDCContinuationInfo          `json:"continuation,omitempty"`
+	ExternalIDP  *KiroExternalIDPAuthorizationInfo `json:"external_idp,omitempty"`
 }
 
 func (s *KiroOAuthService) resolveProxyURL(ctx context.Context, proxyID *int64, fallbackProxyURL string) (string, error) {
@@ -253,6 +257,31 @@ type KiroIDCContinuationSession struct {
 	CreatedAt               time.Time
 }
 
+type KiroExternalIDPSession struct {
+	ClientID      string
+	IssuerURL     string
+	TokenEndpoint string
+	RedirectURI   string
+	Scopes        []string
+	LoginHint     string
+	CreatedAt     time.Time
+}
+
+type KiroExternalIDPAuthorizationInfo struct {
+	SessionID     string   `json:"session_id"`
+	Status        string   `json:"status"`
+	AuthMethod    string   `json:"auth_method"`
+	LoginOption   string   `json:"login_option,omitempty"`
+	AuthURL       string   `json:"auth_url"`
+	ClientID      string   `json:"client_id,omitempty"`
+	IssuerURL     string   `json:"issuer_url,omitempty"`
+	TokenEndpoint string   `json:"token_endpoint,omitempty"`
+	RedirectURI   string   `json:"redirect_uri,omitempty"`
+	Scopes        []string `json:"scopes,omitempty"`
+	LoginHint     string   `json:"login_hint,omitempty"`
+	Message       string   `json:"message,omitempty"`
+}
+
 type KiroIDCContinuationInfo struct {
 	SessionID               string   `json:"session_id"`
 	Status                  string   `json:"status"`
@@ -309,6 +338,15 @@ type kiroIDCCompleteDeviceAuthorizationInput struct {
 	ClientSecret string
 	DeviceCode   string
 	Region       string
+}
+
+type kiroExternalIDPCodeExchangeInput struct {
+	ProxyURL      string
+	Code          string
+	ClientID      string
+	TokenEndpoint string
+	RedirectURI   string
+	Scopes        []string
 }
 
 type kiroIDCAPIError struct {
@@ -534,6 +572,17 @@ func cloneKiroIDCContinuationSession(in *KiroIDCContinuationSession) *KiroIDCCon
 	return &out
 }
 
+func cloneKiroExternalIDPSession(in *KiroExternalIDPSession) *KiroExternalIDPSession {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	if in.Scopes != nil {
+		out.Scopes = append([]string(nil), in.Scopes...)
+	}
+	return &out
+}
+
 func (s *KiroOAuthService) exchangeCallbackProgress(ctx context.Context, input *KiroExchangeCallbackInput, allowIDCContinuation bool) (*KiroOAuthProgressResult, error) {
 	if s == nil || s.sessionStore == nil {
 		return nil, fmt.Errorf("kiro oauth service is unavailable")
@@ -593,7 +642,10 @@ func (s *KiroOAuthService) exchangeCallbackProgress(ctx context.Context, input *
 			}
 			return nil, fmt.Errorf("the current kiro login mode requires additional IDC material and cannot be imported automatically")
 		case "external_idp":
-			return nil, fmt.Errorf("the current kiro external IdP callback does not provide an authorization code")
+			if allowIDCContinuation {
+				return s.startOrResumeExternalIDPAuthorization(ctx, input, session, parsedURL, query)
+			}
+			return nil, fmt.Errorf("the current kiro external IdP callback requires Microsoft authorization before an authorization code is available")
 		default:
 			return nil, fmt.Errorf("kiro callback is missing authorization code")
 		}
@@ -610,6 +662,31 @@ func (s *KiroOAuthService) exchangeCallbackProgress(ctx context.Context, input *
 	// URL cannot be exchanged twice.
 	if !session.tryConsume() {
 		return nil, fmt.Errorf("kiro 授权会话已被使用，无法重复兑换。请重新生成授权链接并在同一轮流程中完成授权")
+	}
+
+	session.mu.Lock()
+	externalIDP := cloneKiroExternalIDPSession(session.ExternalIDP)
+	session.mu.Unlock()
+	if externalIDP != nil {
+		tokenPayload, err := kiroExternalIDPCodeExchangeFunc(ctx, kiroExternalIDPCodeExchangeInput{
+			ProxyURL:      proxyURL,
+			Code:          code,
+			ClientID:      externalIDP.ClientID,
+			TokenEndpoint: externalIDP.TokenEndpoint,
+			RedirectURI:   externalIDP.RedirectURI,
+			Scopes:        externalIDP.Scopes,
+		})
+		if err != nil {
+			s.sessionStore.Delete(input.SessionID)
+			return nil, err
+		}
+		s.sessionStore.Delete(input.SessionID)
+		enrichKiroExternalIDPTokenPayload(tokenPayload, externalIDP)
+		tokenInfo := buildKiroTokenInfo(tokenPayload, query, "external_idp")
+		if err := s.enrichTokenInfoForExternalIDPAuth(ctx, nil, tokenInfo); err != nil {
+			return nil, err
+		}
+		return &KiroOAuthProgressResult{TokenInfo: tokenInfo}, nil
 	}
 
 	tokenExchangeRedirectURI := buildKiroTokenExchangeRedirectURI(redirectURI, parsedURL, loginOption)
@@ -1001,6 +1078,273 @@ func (s *KiroOAuthService) startOrResumeIDCContinuation(
 	return &KiroOAuthProgressResult{
 		Continuation: buildKiroIDCContinuationInfo(input.SessionID, continuation, "authorization_pending", "complete the device authorization in your browser, then call device-complete to retrieve the final Kiro IDC tokens"),
 	}, nil
+}
+
+func (s *KiroOAuthService) startOrResumeExternalIDPAuthorization(
+	ctx context.Context,
+	input *KiroExchangeCallbackInput,
+	session *KiroOAuthSession,
+	parsedCallbackURL *url.URL,
+	query url.Values,
+) (*KiroOAuthProgressResult, error) {
+	if session == nil {
+		return nil, fmt.Errorf("kiro oauth session is required")
+	}
+
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	proxyURL, err := s.resolveProxyURL(ctx, input.ProxyID, session.ProxyURL)
+	if err != nil {
+		return nil, err
+	}
+	session.ProxyURL = proxyURL
+
+	externalSession, authURL, err := resolveKiroExternalIDPAuthorization(input, parsedCallbackURL, query)
+	if err != nil {
+		return nil, err
+	}
+	session.ExternalIDP = externalSession
+	s.sessionStore.Set(input.SessionID, session)
+
+	return &KiroOAuthProgressResult{
+		ExternalIDP: buildKiroExternalIDPAuthorizationInfo(input.SessionID, externalSession, authURL),
+	}, nil
+}
+
+func resolveKiroExternalIDPAuthorization(
+	input *KiroExchangeCallbackInput,
+	parsedCallbackURL *url.URL,
+	query url.Values,
+) (*KiroExternalIDPSession, string, error) {
+	clientID := firstNonEmptyKiroString(
+		strings.TrimSpace(query.Get("client_id")),
+		strings.TrimSpace(query.Get("clientId")),
+	)
+	if clientID == "" && input != nil {
+		clientID = strings.TrimSpace(input.ClientID)
+	}
+	if clientID == "" {
+		return nil, "", fmt.Errorf("kiro external_idp client_id is required")
+	}
+
+	issuerURL := firstNonEmptyKiroString(
+		strings.TrimSpace(query.Get("issuer_url")),
+		strings.TrimSpace(query.Get("issuerUrl")),
+	)
+	if issuerURL == "" && input != nil {
+		issuerURL = strings.TrimSpace(input.IssuerURL)
+	}
+	tokenEndpoint := deriveMicrosoftTokenEndpointFromIssuer(issuerURL)
+	if tokenEndpoint == "" {
+		tokenEndpoint = normalizeKiroMicrosoftTokenEndpoint(firstNonEmptyKiroString(
+			strings.TrimSpace(query.Get("token_endpoint")),
+			strings.TrimSpace(query.Get("tokenEndpoint")),
+		))
+	}
+	if tokenEndpoint == "" {
+		return nil, "", fmt.Errorf("kiro external_idp Microsoft issuer_url or token_endpoint is required")
+	}
+	if issuerURL == "" {
+		issuerURL = deriveMicrosoftIssuerFromTokenEndpoint(tokenEndpoint)
+	}
+	authorizeEndpoint := deriveMicrosoftAuthorizeEndpointFromIssuer(issuerURL)
+	if authorizeEndpoint == "" {
+		return nil, "", fmt.Errorf("kiro external_idp issuer_url must be a Microsoft login.microsoftonline.com v2.0 issuer")
+	}
+
+	scopes := normalizeKiroExternalIDPScopes(input, query)
+	if len(scopes) == 0 {
+		return nil, "", fmt.Errorf("kiro external_idp scopes are required")
+	}
+	redirectURI := externalIDPRedirectURIFromCallback(parsedCallbackURL)
+	if redirectURI == "" {
+		return nil, "", fmt.Errorf("kiro external_idp redirect_uri could not be derived from callback URL")
+	}
+	loginHint := firstNonEmptyKiroString(
+		strings.TrimSpace(query.Get("login_hint")),
+		strings.TrimSpace(query.Get("loginHint")),
+	)
+	if loginHint == "" && input != nil {
+		loginHint = strings.TrimSpace(input.LoginHint)
+	}
+
+	params := url.Values{}
+	params.Set("client_id", clientID)
+	params.Set("response_type", "code")
+	params.Set("redirect_uri", redirectURI)
+	params.Set("scope", strings.Join(scopes, " "))
+	if state := strings.TrimSpace(query.Get("state")); state != "" {
+		params.Set("state", state)
+	}
+	if loginHint != "" {
+		params.Set("login_hint", loginHint)
+	}
+
+	externalSession := &KiroExternalIDPSession{
+		ClientID:      clientID,
+		IssuerURL:     issuerURL,
+		TokenEndpoint: tokenEndpoint,
+		RedirectURI:   redirectURI,
+		Scopes:        scopes,
+		LoginHint:     loginHint,
+		CreatedAt:     time.Now(),
+	}
+	return externalSession, authorizeEndpoint + "?" + params.Encode(), nil
+}
+
+func buildKiroExternalIDPAuthorizationInfo(sessionID string, session *KiroExternalIDPSession, authURL string) *KiroExternalIDPAuthorizationInfo {
+	if session == nil {
+		return nil
+	}
+	return &KiroExternalIDPAuthorizationInfo{
+		SessionID:     sessionID,
+		Status:        "authorization_required",
+		AuthMethod:    "external_idp",
+		LoginOption:   "external_idp",
+		AuthURL:       authURL,
+		ClientID:      session.ClientID,
+		IssuerURL:     session.IssuerURL,
+		TokenEndpoint: session.TokenEndpoint,
+		RedirectURI:   session.RedirectURI,
+		Scopes:        append([]string(nil), session.Scopes...),
+		LoginHint:     session.LoginHint,
+		Message:       "open the Microsoft authorization URL, complete sign-in, then paste the final localhost callback URL containing code",
+	}
+}
+
+func exchangeKiroExternalIDPCodeForToken(ctx context.Context, input kiroExternalIDPCodeExchangeInput) (map[string]any, error) {
+	form := url.Values{}
+	form.Set("grant_type", "authorization_code")
+	form.Set("client_id", strings.TrimSpace(input.ClientID))
+	form.Set("code", strings.TrimSpace(input.Code))
+	form.Set("redirect_uri", strings.TrimSpace(input.RedirectURI))
+	if len(input.Scopes) > 0 {
+		form.Set("scope", strings.Join(input.Scopes, " "))
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, input.TokenEndpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	client := http.DefaultClient
+	if proxyURL := strings.TrimSpace(input.ProxyURL); proxyURL != "" {
+		proxy, err := url.Parse(proxyURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid kiro external_idp proxy URL: %w", err)
+		}
+		client = &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxy)}, Timeout: 60 * time.Second}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, buildKiroRefreshUpstreamError(resp.StatusCode, body)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func enrichKiroExternalIDPTokenPayload(payload map[string]any, session *KiroExternalIDPSession) {
+	if payload == nil || session == nil {
+		return
+	}
+	payload["auth_method"] = "external_idp"
+	payload["login_option"] = "external_idp"
+	payload["provider"] = "ExternalIdp"
+	if session.ClientID != "" {
+		payload["client_id"] = session.ClientID
+	}
+	if session.TokenEndpoint != "" {
+		payload["token_endpoint"] = session.TokenEndpoint
+	}
+	if session.IssuerURL != "" {
+		payload["issuer_url"] = session.IssuerURL
+	}
+	if len(session.Scopes) > 0 {
+		payload["scopes"] = strings.Join(session.Scopes, " ")
+	}
+	if session.LoginHint != "" {
+		payload["login_hint"] = session.LoginHint
+	}
+}
+
+func normalizeKiroExternalIDPScopes(input *KiroExchangeCallbackInput, query url.Values) []string {
+	if input != nil && len(input.Scopes) > 0 {
+		if filtered := filterEmptyKiroStrings(input.Scopes); len(filtered) > 0 {
+			return filtered
+		}
+	}
+	scopeText := firstNonEmptyKiroString(query.Get("scopes"), query.Get("scope"))
+	if scopeText == "" {
+		return nil
+	}
+	parts := strings.FieldsFunc(scopeText, func(r rune) bool {
+		return r == ' ' || r == ','
+	})
+	return filterEmptyKiroStrings(parts)
+}
+
+func externalIDPRedirectURIFromCallback(parsedCallbackURL *url.URL) string {
+	if parsedCallbackURL == nil || parsedCallbackURL.Scheme == "" || parsedCallbackURL.Host == "" || parsedCallbackURL.Path == "" {
+		return ""
+	}
+	out := *parsedCallbackURL
+	out.RawQuery = ""
+	out.ForceQuery = false
+	out.Fragment = ""
+	return out.String()
+}
+
+func deriveMicrosoftAuthorizeEndpointFromIssuer(issuerURL string) string {
+	issuerURL = strings.TrimSpace(issuerURL)
+	if issuerURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(issuerURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil {
+		return ""
+	}
+	if strings.ToLower(parsed.Scheme) != "https" || parsed.Port() != "" || strings.ToLower(parsed.Hostname()) != "login.microsoftonline.com" {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) == 0 || strings.TrimSpace(parts[0]) == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/authorize", parts[0])
+}
+
+func deriveMicrosoftIssuerFromTokenEndpoint(tokenEndpoint string) string {
+	tokenEndpoint = strings.TrimSpace(tokenEndpoint)
+	if tokenEndpoint == "" {
+		return ""
+	}
+	parsed, err := url.Parse(tokenEndpoint)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil {
+		return ""
+	}
+	if strings.ToLower(parsed.Scheme) != "https" || parsed.Port() != "" || strings.ToLower(parsed.Hostname()) != "login.microsoftonline.com" {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) < 1 || strings.TrimSpace(parts[0]) == "" {
+		return ""
+	}
+	return fmt.Sprintf("https://login.microsoftonline.com/%s/v2.0", parts[0])
 }
 
 type kiroIDCContinuationConfig struct {
