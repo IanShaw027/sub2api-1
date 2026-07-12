@@ -221,3 +221,57 @@ func TestAuthHandlerLogin_NilSettingServiceDoesNotTriggerTotpBranch(t *testing.T
 	require.Equal(t, "Bearer", resp.Data.TokenType)
 	require.False(t, resp.Data.Requires2FA)
 }
+
+func TestAuthHandlerLoginHydratesAvatarFromSeparateRecord(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	user := &service.User{
+		ID:           34,
+		Email:        "avatar-login@example.com",
+		Username:     "avatar-login",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		TokenVersion: 1,
+	}
+	require.NoError(t, user.SetPassword("correct-password"))
+	repo := &userHandlerRepoStub{
+		user: user,
+		avatar: &service.UserAvatar{
+			StorageProvider: "inline",
+			URL:             "data:image/png;base64,YXZhdGFy",
+			ContentType:     "image/png",
+		},
+	}
+	refreshTokenCache := newAuthRefreshTokenCacheStub()
+	cfg := &config.Config{JWT: config.JWTConfig{
+		Secret:                 "test-secret",
+		ExpireHour:             1,
+		RefreshTokenExpireDays: 7,
+	}}
+	authService := service.NewAuthService(nil, repo, nil, refreshTokenCache, cfg, nil, nil, nil, nil, nil, nil, nil, nil)
+	h := &AuthHandler{
+		authService: authService,
+		userService: service.NewUserService(repo, nil, nil, nil),
+	}
+
+	body := []byte(`{"email":"avatar-login@example.com","password":"correct-password","turnstile_token":""}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.Login(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			User struct {
+				AvatarURL string `json:"avatar_url"`
+			} `json:"user"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+	require.Equal(t, repo.avatar.URL, resp.Data.User.AvatarURL)
+}

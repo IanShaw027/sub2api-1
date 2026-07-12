@@ -88,6 +88,48 @@ func TestAuthHandlerGetCurrentUserReturnsProfileCompatibilityFields(t *testing.T
 	require.Equal(t, "linuxdo", usernameSource["source"])
 }
 
+func TestAuthHandlerGetCurrentUserHydratesAvatarFromSeparateRecord(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &userHandlerRepoStub{
+		user: &service.User{
+			ID:       33,
+			Email:    "avatar-record@example.com",
+			Username: "avatar-record",
+			Role:     service.RoleUser,
+			Status:   service.StatusActive,
+		},
+		avatar: &service.UserAvatar{
+			StorageProvider: "remote_url",
+			URL:             "https://cdn.example.com/separate-avatar.png",
+			ContentType:     "image/png",
+			ByteSize:        2048,
+			SHA256:          "separate-avatar-sha256",
+		},
+	}
+	handler := &AuthHandler{userService: service.NewUserService(repo, nil, nil, nil)}
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 33})
+
+	handler.GetCurrentUser(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Empty(t, repo.user.AvatarURL, "base user row must not provide the avatar")
+
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			AvatarURL string `json:"avatar_url"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+	require.Equal(t, "https://cdn.example.com/separate-avatar.png", resp.Data.AvatarURL)
+}
+
 func TestAuthHandlerGetCurrentUserDoesNotTouchLastActiveByDefault(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

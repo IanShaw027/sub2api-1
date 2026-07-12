@@ -21,6 +21,7 @@ import (
 
 type userHandlerRepoStub struct {
 	user       *service.User
+	avatar     *service.UserAvatar
 	identities []service.UserAuthIdentityRecord
 	unbound    []string
 }
@@ -87,6 +88,10 @@ func (s *userHandlerRepoStub) Update(_ context.Context, user *service.User) erro
 }
 func (s *userHandlerRepoStub) Delete(context.Context, int64) error { return nil }
 func (s *userHandlerRepoStub) GetUserAvatar(context.Context, int64) (*service.UserAvatar, error) {
+	if s.avatar != nil {
+		cloned := *s.avatar
+		return &cloned, nil
+	}
 	if s.user == nil || s.user.AvatarURL == "" {
 		return nil, nil
 	}

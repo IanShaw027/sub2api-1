@@ -619,6 +619,9 @@ func (r *userRepository) ListWithFilters(ctx context.Context, params pagination.
 		outUsers = append(outUsers, *u)
 		userMap[u.ID] = &outUsers[len(outUsers)-1]
 	}
+	if err := r.populateUserAvatars(ctx, userMap); err != nil {
+		return nil, nil, err
+	}
 
 	shouldLoadSubscriptions := filters.IncludeSubscriptions == nil || *filters.IncludeSubscriptions
 	if shouldLoadSubscriptions {
@@ -1080,6 +1083,9 @@ func (r *userRepository) listWithUsageSort(ctx context.Context, q *dbent.UserQue
 		outUsers = append(outUsers, *u)
 		userMap[u.ID] = &outUsers[len(outUsers)-1]
 	}
+	if err := r.populateUserAvatars(ctx, userMap); err != nil {
+		return nil, nil, err
+	}
 
 	shouldLoadSubscriptions := filters.IncludeSubscriptions == nil || *filters.IncludeSubscriptions
 	if shouldLoadSubscriptions {
@@ -1163,6 +1169,9 @@ func (r *userRepository) buildUsageSortedUsers(ctx context.Context, rows []usage
 	userMapForPopulate := make(map[int64]*service.User, len(outUsers))
 	for i := range outUsers {
 		userMapForPopulate[outUsers[i].ID] = &outUsers[i]
+	}
+	if err := r.populateUserAvatars(ctx, userMapForPopulate); err != nil {
+		return nil, nil, err
 	}
 
 	shouldLoadSubscriptions := filters.IncludeSubscriptions == nil || *filters.IncludeSubscriptions

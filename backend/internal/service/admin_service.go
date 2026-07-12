@@ -1047,7 +1047,16 @@ func (s *adminServiceImpl) GetUser(ctx context.Context, id int64) (*User, error)
 }
 
 func (s *adminServiceImpl) GetUserIncludeDeleted(ctx context.Context, id int64) (*User, error) {
-	return s.userRepo.GetByIDIncludeDeleted(ctx, id)
+	user, err := s.userRepo.GetByIDIncludeDeleted(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if avatar, avatarErr := s.userRepo.GetUserAvatar(ctx, id); avatarErr == nil {
+		applyUserAvatar(user, avatar)
+	} else {
+		logger.LegacyPrintf("service.admin", "failed to load deleted user avatar: user_id=%d err=%v", id, avatarErr)
+	}
+	return user, nil
 }
 
 func (s *adminServiceImpl) GetUserIdentitySummaries(ctx context.Context, userID int64, user *User) (UserIdentitySummarySet, error) {

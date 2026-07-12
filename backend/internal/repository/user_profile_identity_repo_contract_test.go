@@ -12,6 +12,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/suite"
 )
@@ -524,6 +525,17 @@ func (s *UserProfileIdentityRepoSuite) TestUserAvatarCRUDAndUserLookup() {
 	s.Require().Equal("remote_url", loadedAvatar.StorageProvider)
 	s.Require().Equal("https://cdn.example.com/avatar.png", loadedAvatar.URL)
 	s.Require().Zero(loadedAvatar.ByteSize)
+
+	listedUsers, _, err := s.repo.ListWithFilters(
+		s.ctx,
+		pagination.PaginationParams{Page: 1, PageSize: 10},
+		service.UserListFilters{Search: user.Email},
+	)
+	s.Require().NoError(err)
+	s.Require().Len(listedUsers, 1)
+	s.Require().Equal(user.ID, listedUsers[0].ID)
+	s.Require().Equal("remote_url", listedUsers[0].AvatarSource)
+	s.Require().Equal("https://cdn.example.com/avatar.png", listedUsers[0].AvatarURL)
 
 	s.Require().NoError(s.repo.DeleteUserAvatar(s.ctx, user.ID))
 	loadedAvatar, err = s.repo.GetUserAvatar(s.ctx, user.ID)

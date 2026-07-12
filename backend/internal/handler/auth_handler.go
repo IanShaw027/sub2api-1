@@ -107,6 +107,13 @@ func ensureLoginUserActive(user *service.User) error {
 // respondWithTokenPair 生成 Token 对并返回认证响应
 // 如果 Token 对生成失败，回退到只返回 Access Token（向后兼容）
 func (h *AuthHandler) respondWithTokenPair(c *gin.Context, user *service.User, messages ...string) {
+	if h.userService != nil && user != nil {
+		if hydrated, err := h.userService.GetByID(c.Request.Context(), user.ID); err == nil {
+			user = hydrated
+		} else {
+			slog.Warn("failed to hydrate authenticated user", "error", err, "user_id", user.ID)
+		}
+	}
 	if err := ensureLoginUserActive(user); err != nil {
 		response.ErrorFrom(c, err)
 		return
