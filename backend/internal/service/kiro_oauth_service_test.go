@@ -264,11 +264,11 @@ func TestKiroOAuthServiceExchangeCallbackOrStartContinuationReturnsMicrosoftExte
 	if query.Get("client_id") != clientID {
 		t.Fatalf("client_id = %q, want %q", query.Get("client_id"), clientID)
 	}
-	if query.Get("redirect_uri") != "http://localhost:3128/signin/callback" {
+	if query.Get("redirect_uri") != "http://localhost/oauth/callback" {
 		t.Fatalf("redirect_uri = %q", query.Get("redirect_uri"))
 	}
 	if strings.Contains(query.Get("redirect_uri"), "?") || strings.Contains(query.Get("redirect_uri"), "login_option=") || strings.Contains(query.Get("redirect_uri"), "login_hint=") || strings.Contains(query.Get("redirect_uri"), "issuer_url=") || strings.Contains(query.Get("redirect_uri"), "scopes=") {
-		t.Fatalf("redirect_uri should be the Azure-registered callback URL without query params, got %q", query.Get("redirect_uri"))
+		t.Fatalf("redirect_uri should be the Kiro Entra registered localhost callback without query params, got %q", query.Get("redirect_uri"))
 	}
 	if query.Get("state") != state {
 		t.Fatalf("state = %q, want %q", query.Get("state"), state)
@@ -287,7 +287,7 @@ func TestKiroOAuthServiceExchangeCallbackOrStartContinuationReturnsMicrosoftExte
 	if stored.ExternalIDP.TokenEndpoint != "https://login.microsoftonline.com/035247e5-0116-4d03-a92f-989b7476ca4f/oauth2/v2.0/token" {
 		t.Fatalf("token endpoint = %q", stored.ExternalIDP.TokenEndpoint)
 	}
-	if stored.ExternalIDP.RedirectURI != "http://localhost:3128/signin/callback" {
+	if stored.ExternalIDP.RedirectURI != "http://localhost/oauth/callback" {
 		t.Fatalf("stored external_idp redirect_uri = %q", stored.ExternalIDP.RedirectURI)
 	}
 }
@@ -304,7 +304,7 @@ func TestKiroOAuthServiceExchangeCallbackExchangesMicrosoftExternalIDPCode(t *te
 		clientID      = "microsoft-public-client"
 		tokenEndpoint = "https://login.microsoftonline.com/tenant/oauth2/v2.0/token"
 		issuerURL     = "https://login.microsoftonline.com/tenant/v2.0"
-		redirectURI   = "http://localhost:3128/signin/callback"
+		redirectURI   = "http://localhost/oauth/callback"
 	)
 	svc.sessionStore.Set(sessionID, &KiroOAuthSession{
 		State:           state,
@@ -350,7 +350,7 @@ func TestKiroOAuthServiceExchangeCallbackExchangesMicrosoftExternalIDPCode(t *te
 
 	progress, err := svc.ExchangeCallbackOrStartContinuation(context.Background(), &KiroExchangeCallbackInput{
 		SessionID:   sessionID,
-		CallbackURL: "http://localhost:3128/signin/callback?code=" + code + "&state=" + state,
+		CallbackURL: "http://localhost/oauth/callback?code=" + code + "&state=" + state,
 	})
 	if err != nil {
 		t.Fatalf("ExchangeCallbackOrStartContinuation returned error: %v", err)
@@ -372,6 +372,159 @@ func TestKiroOAuthServiceExchangeCallbackExchangesMicrosoftExternalIDPCode(t *te
 	}
 	if _, ok := svc.sessionStore.Get(sessionID); ok {
 		t.Fatal("expected session to be deleted after successful Microsoft code exchange")
+	}
+}
+
+func TestKiroOAuthServiceExchangeCallbackExternalIDPCodeAllowsMissingProfileARN(t *testing.T) {
+	usageUpstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			if req.Method != http.MethodGet || req.URL.Host != "q.us-east-1.amazonaws.com" || req.URL.Path != "/getUsageLimits" {
+				t.Fatalf("unexpected validation request: %s %s", req.Method, req.URL.String())
+			}
+			if got := req.Header.Get("TokenType"); got != "EXTERNAL_IDP" {
+				t.Fatalf("TokenType header = %q, want EXTERNAL_IDP", got)
+			}
+			if got := req.URL.Query().Get("profileArn"); got != "" {
+				t.Fatalf("profileArn query = %q, want empty when Microsoft token response omits profileArn", got)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body: io.NopCloser(strings.NewReader(`{
+					"subscriptionInfo":{"subscriptionTitle":"Kiro Pro"},
+					"usageBreakdownList":[{"currentUsageWithPrecision":1,"usageLimitWithPrecision":100}]
+				}`)),
+				Header: make(http.Header),
+			}, nil
+		},
+	}
+	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, usageUpstream, &TLSFingerprintProfileService{}, nil)
+	defer svc.Stop()
+
+	const (
+		sessionID     = "session-ms-code-no-profile"
+		state         = "state-ms-code-no-profile"
+		code          = "microsoft-code-no-profile"
+		clientID      = "microsoft-public-client"
+		tokenEndpoint = "https://login.microsoftonline.com/tenant/oauth2/v2.0/token"
+		issuerURL     = "https://login.microsoftonline.com/tenant/v2.0"
+		redirectURI   = "http://localhost/oauth/callback"
+	)
+	svc.sessionStore.Set(sessionID, &KiroOAuthSession{
+		State:           state,
+		CodeVerifier:    "verifier-ms-code-no-profile",
+		RedirectURI:     "http://localhost:3128",
+		CallbackBaseURL: "http://localhost:3128",
+		CreatedAt:       time.Now(),
+		ExternalIDP: &KiroExternalIDPSession{
+			ClientID:      clientID,
+			IssuerURL:     issuerURL,
+			TokenEndpoint: tokenEndpoint,
+			RedirectURI:   redirectURI,
+			Scopes:        []string{"scope-a", "offline_access"},
+			LoginHint:     "dev@example.com",
+			CreatedAt:     time.Now(),
+		},
+	})
+
+	originalExchange := kiroExternalIDPCodeExchangeFunc
+	kiroExternalIDPCodeExchangeFunc = func(ctx context.Context, input kiroExternalIDPCodeExchangeInput) (map[string]any, error) {
+		return map[string]any{
+			"access_token":  "ms-access-token",
+			"refresh_token": "ms-refresh-token",
+			"expires_in":    int64(3600),
+		}, nil
+	}
+	t.Cleanup(func() {
+		kiroExternalIDPCodeExchangeFunc = originalExchange
+	})
+
+	progress, err := svc.ExchangeCallbackOrStartContinuation(context.Background(), &KiroExchangeCallbackInput{
+		SessionID:   sessionID,
+		CallbackURL: "http://localhost/oauth/callback?code=" + code + "&state=" + state,
+	})
+	if err != nil {
+		t.Fatalf("ExchangeCallbackOrStartContinuation returned error: %v", err)
+	}
+	if progress == nil || progress.TokenInfo == nil {
+		t.Fatal("expected token info after Microsoft code exchange")
+	}
+	if progress.TokenInfo.ProfileARN != "" {
+		t.Fatalf("profile_arn = %q, want empty when Microsoft token response omits it", progress.TokenInfo.ProfileARN)
+	}
+	if progress.TokenInfo.PlanName != "Kiro Pro" {
+		t.Fatalf("plan_name = %q, want Kiro Pro", progress.TokenInfo.PlanName)
+	}
+}
+
+func TestKiroOAuthServiceExchangeCallbackExternalIDPIgnoresUnsupportedUsageProbe(t *testing.T) {
+	usageUpstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			if req.Method != http.MethodGet || req.URL.Host != "q.us-east-1.amazonaws.com" || req.URL.Path != "/getUsageLimits" {
+				t.Fatalf("unexpected validation request: %s %s", req.Method, req.URL.String())
+			}
+			if got := req.Header.Get("TokenType"); got != "EXTERNAL_IDP" {
+				t.Fatalf("TokenType header = %q, want EXTERNAL_IDP", got)
+			}
+			return &http.Response{
+				StatusCode: http.StatusForbidden,
+				Body:       io.NopCloser(strings.NewReader(`{"error":"FEATURE_NOT_SUPPORTED"}`)),
+				Header:     make(http.Header),
+			}, nil
+		},
+	}
+	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, usageUpstream, &TLSFingerprintProfileService{}, nil)
+	defer svc.Stop()
+
+	const (
+		sessionID     = "session-ms-code-unsupported-usage"
+		state         = "state-ms-code-unsupported-usage"
+		code          = "microsoft-code-unsupported-usage"
+		clientID      = "microsoft-public-client"
+		tokenEndpoint = "https://login.microsoftonline.com/tenant/oauth2/v2.0/token"
+		issuerURL     = "https://login.microsoftonline.com/tenant/v2.0"
+		redirectURI   = "http://localhost/oauth/callback"
+	)
+	svc.sessionStore.Set(sessionID, &KiroOAuthSession{
+		State:           state,
+		CodeVerifier:    "verifier-ms-code-unsupported-usage",
+		RedirectURI:     "http://localhost:3128",
+		CallbackBaseURL: "http://localhost:3128",
+		CreatedAt:       time.Now(),
+		ExternalIDP: &KiroExternalIDPSession{
+			ClientID:      clientID,
+			IssuerURL:     issuerURL,
+			TokenEndpoint: tokenEndpoint,
+			RedirectURI:   redirectURI,
+			Scopes:        []string{"scope-a", "offline_access"},
+			LoginHint:     "dev@example.com",
+			CreatedAt:     time.Now(),
+		},
+	})
+
+	originalExchange := kiroExternalIDPCodeExchangeFunc
+	kiroExternalIDPCodeExchangeFunc = func(ctx context.Context, input kiroExternalIDPCodeExchangeInput) (map[string]any, error) {
+		return map[string]any{
+			"access_token":  "ms-access-token",
+			"refresh_token": "ms-refresh-token",
+			"expires_in":    int64(3600),
+		}, nil
+	}
+	t.Cleanup(func() {
+		kiroExternalIDPCodeExchangeFunc = originalExchange
+	})
+
+	progress, err := svc.ExchangeCallbackOrStartContinuation(context.Background(), &KiroExchangeCallbackInput{
+		SessionID:   sessionID,
+		CallbackURL: "http://localhost/oauth/callback?code=" + code + "&state=" + state,
+	})
+	if err != nil {
+		t.Fatalf("ExchangeCallbackOrStartContinuation returned error: %v", err)
+	}
+	if progress == nil || progress.TokenInfo == nil {
+		t.Fatal("expected token info after Microsoft code exchange")
+	}
+	if progress.TokenInfo.AuthMethod != "external_idp" {
+		t.Fatalf("auth_method = %q, want external_idp", progress.TokenInfo.AuthMethod)
 	}
 }
 

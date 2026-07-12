@@ -21,14 +21,15 @@ import (
 )
 
 const (
-	kiroOAuthPortalURL        = "https://app.kiro.dev/signin"
-	kiroOAuthTokenEndpoint    = "https://prod.us-east-1.auth.desktop.kiro.dev/oauth/token"
-	kiroOAuthCallbackBaseURL  = "http://localhost:3128"
-	kiroOAuthSessionTTL       = 30 * time.Minute
-	kiroOAuthDefaultUserAgent = "sub2api Kiro OAuth"
-	kiroIDCDefaultStartURL    = "https://view.awsapps.com/start"
-	kiroIDCDefaultRegion      = "us-east-1"
-	kiroIDCDeviceGrantType    = "urn:ietf:params:oauth:grant-type:device_code"
+	kiroOAuthPortalURL         = "https://app.kiro.dev/signin"
+	kiroOAuthTokenEndpoint     = "https://prod.us-east-1.auth.desktop.kiro.dev/oauth/token"
+	kiroOAuthCallbackBaseURL   = "http://localhost:3128"
+	kiroExternalIDPRedirectURI = "http://localhost/oauth/callback"
+	kiroOAuthSessionTTL        = 30 * time.Minute
+	kiroOAuthDefaultUserAgent  = "sub2api Kiro OAuth"
+	kiroIDCDefaultStartURL     = "https://view.awsapps.com/start"
+	kiroIDCDefaultRegion       = "us-east-1"
+	kiroIDCDeviceGrantType     = "urn:ietf:params:oauth:grant-type:device_code"
 )
 
 var kiroIDCDefaultScopes = []string{"codewhisperer:conversations"}
@@ -609,7 +610,11 @@ func (s *KiroOAuthService) exchangeCallbackProgress(ctx context.Context, input *
 	}
 	parsedURL, err := parseKiroCallbackURL(input.CallbackURL, callbackBaseURL)
 	if err != nil {
-		return nil, err
+		if externalIDPParsed, externalIDPErr := parseKiroExternalIDPFinalCallbackURL(input.CallbackURL); externalIDPErr == nil {
+			parsedURL = externalIDPParsed
+		} else {
+			return nil, err
+		}
 	}
 
 	if path := parsedURL.Path; path != "/oauth/callback" && path != "/signin/callback" {
@@ -715,7 +720,10 @@ func (s *KiroOAuthService) enrichTokenInfoForAccount(ctx context.Context, baseAc
 }
 
 func (s *KiroOAuthService) enrichTokenInfoForAccountResult(ctx context.Context, baseAccount *Account, tokenInfo *KiroTokenInfo) (*KiroUsageLimits, error) {
-	if s == nil || tokenInfo == nil || tokenInfo.AccessToken == "" || tokenInfo.ProfileARN == "" || s.usageService == nil {
+	if s == nil || tokenInfo == nil || tokenInfo.AccessToken == "" || s.usageService == nil {
+		return nil, nil
+	}
+	if tokenInfo.ProfileARN == "" && NormalizeKiroAuthMethod(kiroTokenInfoMap(tokenInfo)) != "external_idp" {
 		return nil, nil
 	}
 	credentials := map[string]any{
@@ -815,16 +823,25 @@ func (s *KiroOAuthService) enrichTokenInfoForExternalIDPAuth(ctx context.Context
 	if tokenInfo.AccessToken == "" {
 		return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro external_idp access_token is required")
 	}
-	if tokenInfo.ProfileARN == "" {
-		return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro external_idp profile_arn is required")
-	}
 	if _, err := s.enrichTokenInfoForAccountResult(ctx, account, tokenInfo); err != nil {
+		if isKiroExternalIDPUsageUnsupportedError(err) {
+			tokenInfo.StatusReason = "kiro external_idp usage probe is not supported by upstream"
+			return nil
+		}
 		return infraerrors.BadRequest(
 			"INVALID_KIRO_CREDENTIALS",
 			"kiro external_idp credentials refreshed, but Kiro rejected them: "+err.Error(),
 		)
 	}
 	return nil
+}
+
+func isKiroExternalIDPUsageUnsupportedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToUpper(err.Error())
+	return strings.Contains(text, "KIRO USAGE UPSTREAM RETURNED") && strings.Contains(text, "FEATURE_NOT_SUPPORTED")
 }
 
 func kiroTokenInfoMap(tokenInfo *KiroTokenInfo) map[string]any {
@@ -1299,14 +1316,25 @@ func normalizeKiroExternalIDPScopes(input *KiroExchangeCallbackInput, query url.
 }
 
 func externalIDPRedirectURIFromCallback(parsedCallbackURL *url.URL) string {
-	if parsedCallbackURL == nil || parsedCallbackURL.Scheme == "" || parsedCallbackURL.Host == "" || parsedCallbackURL.Path == "" {
-		return ""
+	return kiroExternalIDPRedirectURI
+}
+
+func parseKiroExternalIDPFinalCallbackURL(rawValue string) (*url.URL, error) {
+	parsed, err := url.Parse(strings.TrimSpace(rawValue))
+	if err != nil {
+		return nil, fmt.Errorf("invalid kiro external_idp callback URL: %w", err)
 	}
-	out := *parsedCallbackURL
-	out.RawQuery = ""
-	out.ForceQuery = false
-	out.Fragment = ""
-	return out.String()
+	registered, err := url.Parse(kiroExternalIDPRedirectURI)
+	if err != nil {
+		return nil, err
+	}
+	if parsed == nil || registered == nil ||
+		!strings.EqualFold(parsed.Scheme, registered.Scheme) ||
+		!strings.EqualFold(parsed.Host, registered.Host) ||
+		parsed.Path != registered.Path {
+		return nil, fmt.Errorf("kiro external_idp callback origin does not match the registered Microsoft callback")
+	}
+	return parsed, nil
 }
 
 func deriveMicrosoftAuthorizeEndpointFromIssuer(issuerURL string) string {
