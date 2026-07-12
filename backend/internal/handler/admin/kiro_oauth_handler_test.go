@@ -194,6 +194,66 @@ func TestKiroOAuthHandlerRefreshTokenRejectsExternalIDPWhenKiroUsageForbidden(t 
 	require.Equal(t, "EXTERNAL_IDP", upstream.kiroTokenType)
 }
 
+func TestKiroOAuthHandlerDiscoverProfilesFromCredentials(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	upstream := &kiroDiscoverProfilesUpstream{}
+	refresher := service.NewKiroTokenRefresher().WithTransport(upstream, &service.TLSFingerprintProfileService{})
+	handler := NewKiroOAuthHandler(nil, refresher)
+	router := gin.New()
+	router.POST("/discover-profiles", handler.DiscoverProfiles)
+
+	body := []byte(`{"credentials":{"refresh_token":"kiro-refresh-token-valid-123456","auth_method":"social","region":"us-east-1"}}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/discover-profiles", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(rec, req)
+
+	require.Equalf(t, http.StatusOK, rec.Code, "body=%s requests=%v", rec.Body.String(), upstream.requests)
+	require.True(t, upstream.sawRefresh)
+	require.True(t, upstream.sawAvailableProfiles)
+	require.Contains(t, rec.Body.String(), "eu-profile")
+	require.Contains(t, rec.Body.String(), "arn:aws:codewhisperer:eu-central-1:123:profile/EU")
+}
+
+func TestKiroOAuthHandlerDiscoverProfilesRequiresConfiguredRefreshService(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	handler := NewKiroOAuthHandler(nil, nil)
+	router.POST("/discover-profiles", handler.DiscoverProfiles)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/discover-profiles", bytes.NewReader([]byte(`{"credentials":{"refresh_token":"kiro-refresh-token-valid-123456"}}`)))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Contains(t, rec.Body.String(), "Kiro OAuth refresh service is not configured")
+}
+
+func TestKiroOAuthHandlerDiscoverProfilesRejectsIDCWithoutClientCredentials(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	handler := NewKiroOAuthHandler(nil, service.NewKiroTokenRefresher())
+	router.POST("/discover-profiles", handler.DiscoverProfiles)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/discover-profiles", bytes.NewReader([]byte(`{"credentials":{"refresh_token":"kiro-refresh-token-valid-123456","auth_method":"idc"}}`)))
+	req.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "kiro idc client_id and client_secret are required")
+}
+
 type kiroExternalIDPValidationUpstream struct {
 	sawMicrosoftRefresh bool
 	sawKiroUsageCheck   bool
@@ -236,5 +296,42 @@ func responseWithStatus(status int, body string) *http.Response {
 		StatusCode: status,
 		Body:       io.NopCloser(strings.NewReader(body)),
 		Header:     make(http.Header),
+	}
+}
+
+type kiroDiscoverProfilesUpstream struct {
+	sawRefresh           bool
+	sawAvailableProfiles bool
+	requests             []string
+}
+
+func (u *kiroDiscoverProfilesUpstream) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
+	return u.DoWithTLS(req, proxyURL, accountID, accountConcurrency, nil)
+}
+
+func (u *kiroDiscoverProfilesUpstream) DoWithTLS(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	u.requests = append(u.requests, req.Method+" "+req.URL.String()+" target="+req.Header.Get("x-amz-target"))
+	switch {
+	case req.Method == http.MethodPost && strings.HasSuffix(strings.ToLower(req.URL.Host), ".auth.desktop.kiro.dev") && req.URL.Path == "/refreshToken":
+		u.sawRefresh = true
+		return responseWithStatus(http.StatusOK, `{
+			"accessToken":"new-access-token",
+			"refreshToken":"new-refresh-token",
+			"expiresIn":3600,
+			"userId":"user-1"
+		}`), nil
+	case req.Method == http.MethodPost &&
+		strings.HasPrefix(strings.ToLower(req.URL.Host), "q.") &&
+		req.URL.Path == "/" &&
+		req.Header.Get("x-amz-target") == "AmazonCodeWhispererService.ListAvailableProfiles":
+		u.sawAvailableProfiles = true
+		return responseWithStatus(http.StatusOK, `{
+			"profiles":[
+				{"arn":"arn:aws:codewhisperer:eu-central-1:123:profile/EU","profileName":"eu-profile","region":"eu-central-1"},
+				{"arn":"arn:aws:codewhisperer:us-east-1:123:profile/US","profileName":"us-profile","region":"us-east-1"}
+			]
+		}`), nil
+	default:
+		return responseWithStatus(http.StatusInternalServerError, `{"message":"unexpected request"}`), nil
 	}
 }

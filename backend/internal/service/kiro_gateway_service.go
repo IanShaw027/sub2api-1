@@ -43,6 +43,9 @@ const (
 	kiroOneMillionContextBudgetTokens   = 900000
 	kiroContextUsagePercentKey          = "kiro_context_usage_percentage"
 	kiroShortOutputTokenThreshold       = 20
+	kiroProfileResolutionCacheMax       = 1024
+	kiroProfileResolutionSuccessTTL     = time.Hour
+	kiroProfileResolutionFailureTTL     = 5 * time.Minute
 
 	// kiroTransportFailureCooldown：transport 层故障（非客户端取消）短期冷却时长，
 	// 让调度层在该窗口内跳过出错账号，避免重复打到不可达上游。命中后会一并触发 failover。
@@ -81,6 +84,13 @@ type KiroGatewayService struct {
 	fakeCacheMu           sync.Mutex
 	fakeCacheStrategy     string
 	fakeCacheGen          uint64
+	profileResolutionMu   sync.Mutex
+	profileResolution     map[int64]kiroProfileResolutionCacheEntry
+}
+
+type kiroProfileResolutionCacheEntry struct {
+	profileARN string
+	expiresAt  time.Time
 }
 
 type kiroPreparedRequestMeta struct {
@@ -148,6 +158,10 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 	if err != nil {
 		return nil, s.handleKiroTokenError(ctx, account, err)
 	}
+	if err := s.ensureKiroResolvedProfileARN(ctx, account, accessToken); err != nil {
+		return nil, err
+	}
+	converted.Body = injectResolvedKiroProfileARNIntoConvertedBody(converted.Body, account)
 
 	fakeCachePlan, fakeCacheHit := s.prepareFakeCachePlan(account, parsed, meta, runtimeSettings)
 	logKiroFakeCachePlan(ctx, account, parsed, fakeCachePlan, fakeCacheHit)
@@ -387,6 +401,23 @@ func injectKiroProfileARNIntoAnthropicBody(body []byte, account *Account) []byte
 	return encoded
 }
 
+func injectResolvedKiroProfileARNIntoConvertedBody(body []byte, account *Account) []byte {
+	profileARN := strings.TrimSpace(accountCredential(account, "profile_arn"))
+	if profileARN == "" || len(body) == 0 {
+		return body
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return body
+	}
+	payload["profileArn"] = profileARN
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return body
+	}
+	return encoded
+}
+
 func accountCredential(account *Account, key string) string {
 	if account == nil {
 		return ""
@@ -610,6 +641,97 @@ func (s *KiroGatewayService) resolveAccessToken(ctx context.Context, account *Ac
 	return s.tokenProvider.GetAccessToken(ctx, account)
 }
 
+func (s *KiroGatewayService) ensureKiroResolvedProfileARN(ctx context.Context, account *Account, accessToken string) error {
+	if account == nil || account.Platform != PlatformKiro || account.Type != AccountTypeOAuth {
+		return nil
+	}
+	if !isKiroExternalIDPAccount(account) {
+		return nil
+	}
+	if strings.TrimSpace(accountCredential(account, "profile_arn")) != "" {
+		return nil
+	}
+	if strings.TrimSpace(accessToken) == "" {
+		return nil
+	}
+	if arn, cached := s.cachedKiroProfileResolution(account.ID); cached {
+		applyKiroResolvedProfileARN(account, arn)
+		return nil
+	}
+	usageService := NewKiroUsageService().WithTransport(s.httpUpstream, s.tlsFPProfileSvc).WithSettingService(s.settingService)
+	arn, _, err := usageService.ResolveBestProfileARN(ctx, account, accessToken)
+	if err != nil {
+		s.cacheKiroProfileResolution(account.ID, "", kiroProfileResolutionFailureTTL)
+		kiroLogger(ctx, account).Warn("kiro.resolve_profile_arn_before_request_failed", zap.Error(err))
+		return nil
+	}
+	arn = strings.TrimSpace(arn)
+	if arn == "" {
+		s.cacheKiroProfileResolution(account.ID, "", kiroProfileResolutionFailureTTL)
+		return nil
+	}
+	s.cacheKiroProfileResolution(account.ID, arn, kiroProfileResolutionSuccessTTL)
+	applyKiroResolvedProfileARN(account, arn)
+	return nil
+}
+
+func applyKiroResolvedProfileARN(account *Account, arn string) {
+	if account == nil || strings.TrimSpace(arn) == "" {
+		return
+	}
+	if account.Credentials == nil {
+		account.Credentials = map[string]any{}
+	}
+	account.Credentials["profile_arn"] = arn
+	if profileID := profileARNProfileID(arn); profileID != "" {
+		account.Credentials["profile_id"] = profileID
+	}
+	if region := profileARNRegion(arn); region != "" {
+		account.Credentials["api_region"] = region
+		account.Credentials["region"] = region
+	}
+}
+
+func (s *KiroGatewayService) cachedKiroProfileResolution(accountID int64) (string, bool) {
+	if s == nil || accountID <= 0 {
+		return "", false
+	}
+	s.profileResolutionMu.Lock()
+	defer s.profileResolutionMu.Unlock()
+	entry, ok := s.profileResolution[accountID]
+	if !ok || time.Now().After(entry.expiresAt) {
+		delete(s.profileResolution, accountID)
+		return "", false
+	}
+	return entry.profileARN, true
+}
+
+func (s *KiroGatewayService) cacheKiroProfileResolution(accountID int64, arn string, ttl time.Duration) {
+	if s == nil || accountID <= 0 || ttl <= 0 {
+		return
+	}
+	s.profileResolutionMu.Lock()
+	defer s.profileResolutionMu.Unlock()
+	if s.profileResolution == nil {
+		s.profileResolution = make(map[int64]kiroProfileResolutionCacheEntry)
+	}
+	now := time.Now()
+	if len(s.profileResolution) >= kiroProfileResolutionCacheMax {
+		for id, entry := range s.profileResolution {
+			if now.After(entry.expiresAt) {
+				delete(s.profileResolution, id)
+			}
+		}
+	}
+	if len(s.profileResolution) >= kiroProfileResolutionCacheMax {
+		for id := range s.profileResolution {
+			delete(s.profileResolution, id)
+			break
+		}
+	}
+	s.profileResolution[accountID] = kiroProfileResolutionCacheEntry{profileARN: strings.TrimSpace(arn), expiresAt: now.Add(ttl)}
+}
+
 func (s *KiroGatewayService) resolveKiroRuntimeSettings(ctx context.Context) *KiroRuntimeSettings {
 	if s != nil && s.settingService != nil {
 		if s.settingService.settingRepo == nil {
@@ -711,7 +833,7 @@ func (s *KiroGatewayService) buildRequest(ctx context.Context, account *Account,
 }
 
 func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, body []byte, accessToken string, runtimeSettings *KiroRuntimeSettings) (*http.Request, error) {
-	url := fmt.Sprintf("https://q.%s.amazonaws.com/generateAssistantResponse", KiroRegion(account))
+	url := kiroAPIURL(account)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -722,12 +844,14 @@ func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, bo
 
 	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
 	machineID := kiropkg.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
-	host := fmt.Sprintf("q.%s.amazonaws.com", KiroRegion(account))
+	host := req.URL.Host
 	kiroVersion := runtimeSettings.KiroVersion
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	if isKiroExternalIDPAccount(account) {
 		req.Header.Set("TokenType", "EXTERNAL_IDP")
+	} else if account != nil && account.Type == AccountTypeAPIKey {
+		req.Header.Set("TokenType", "API_KEY")
 	}
 	req.Header.Set("host", host)
 	req.Header.Set("x-amzn-codewhisperer-optout", "true")
@@ -741,6 +865,28 @@ func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, bo
 	req.Header.Set("amz-sdk-invocation-id", generateRequestID())
 	req.Header.Set("amz-sdk-request", "attempt=1; max=3")
 	return req, nil
+}
+
+func kiroEndpointName(account *Account) string {
+	if account == nil {
+		return "q"
+	}
+	switch strings.ToLower(strings.TrimSpace(accountCredential(account, "endpoint"))) {
+	case "runtime":
+		return "runtime"
+	default:
+		return "q"
+	}
+}
+
+func kiroAPIURL(account *Account) string {
+	region := KiroRegion(account)
+	switch kiroEndpointName(account) {
+	case "runtime":
+		return fmt.Sprintf("https://runtime.%s.kiro.dev/generateAssistantResponse", region)
+	default:
+		return fmt.Sprintf("https://q.%s.amazonaws.com/generateAssistantResponse", region)
+	}
 }
 
 func isKiroExternalIDPAccount(account *Account) bool {

@@ -87,6 +87,12 @@ func (s *KiroGatewayService) invokeKiroMCP(
 	if err != nil {
 		return "", fmt.Errorf("kiro mcp: resolve access token: %w", err)
 	}
+	if err := s.ensureKiroResolvedProfileARN(ctx, account, accessToken); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(accountCredential(account, "profile_arn")) == "" {
+		return "", errors.New("kiro mcp: profile_arn is required")
+	}
 
 	req, err := s.buildKiroMCPRequest(ctx, account, toolName, arguments, accessToken, runtimeSettings)
 	if err != nil {
@@ -192,6 +198,9 @@ func (s *KiroGatewayService) buildKiroMCPRequest(
 
 	region := KiroRegion(account)
 	url := fmt.Sprintf("https://q.%s.amazonaws.com/", region)
+	if kiroEndpointName(account) == "runtime" {
+		url = fmt.Sprintf("https://runtime.%s.kiro.dev/mcp", region)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("kiro mcp: new request: %w", err)
@@ -201,7 +210,7 @@ func (s *KiroGatewayService) buildKiroMCPRequest(
 	}
 
 	machineID := kiropkg.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
-	host := fmt.Sprintf("q.%s.amazonaws.com", region)
+	host := req.URL.Host
 	kiroVersion := runtimeSettings.KiroVersion
 
 	req.Header.Set("host", host)
@@ -209,6 +218,8 @@ func (s *KiroGatewayService) buildKiroMCPRequest(
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	if isKiroExternalIDPAccount(account) {
 		req.Header.Set("TokenType", "EXTERNAL_IDP")
+	} else if account != nil && account.Type == AccountTypeAPIKey {
+		req.Header.Set("TokenType", "API_KEY")
 	}
 	req.Header.Set("x-amz-target", kiroMCPTarget)
 	req.Header.Set("x-amzn-codewhisperer-optout", "true")
@@ -253,8 +264,9 @@ func kiroMCPWebSearchResults(innerText string) ([]websearch.SearchResult, error)
 	return results, nil
 }
 
-// kiroMCPEligible 判断该账号是否可用原生 InvokeMCP:
-// 必须是 kiro OAuth 账号且配置了 profile_arn(API-key 账号与缺 ARN 的账号跳过,回退外部 provider)。
+// kiroMCPEligible 判断该账号是否可尝试原生 InvokeMCP。
+// External-IDP OAuth accounts may resolve profile_arn lazily. Other OAuth
+// accounts need an existing ARN; their auth flow cannot resolve one.
 func kiroMCPEligible(account *Account) bool {
 	if account == nil {
 		return false
@@ -262,7 +274,7 @@ func kiroMCPEligible(account *Account) bool {
 	if account.Platform != PlatformKiro || account.Type != AccountTypeOAuth {
 		return false
 	}
-	return strings.TrimSpace(accountCredential(account, "profile_arn")) != ""
+	return strings.TrimSpace(accountCredential(account, "profile_arn")) != "" || isKiroExternalIDPAccount(account)
 }
 
 // kiroMCPWebSearch 用原生 InvokeMCP 执行 web_search。不适用/失败时返回 (nil, err),

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -211,6 +212,82 @@ func TestAccountHandlerGetAvailableModels_KiroUsesExplicitModelMapping(t *testin
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Len(t, resp.Data, 1)
 	require.Equal(t, "claude-sonnet-4.6", resp.Data[0].ID)
+}
+
+func TestAccountHandlerGetAvailableModels_KiroUsesFetchedModelsWhenNoMapping(t *testing.T) {
+	originalFetch := fetchKiroAvailableModels
+	fetchKiroAvailableModels = func(ctx context.Context, account *service.Account, provider *service.KiroTokenProvider, usageSvc *service.AccountUsageService) ([]claude.Model, error) {
+		require.NotNil(t, account)
+		require.Equal(t, service.PlatformKiro, account.Platform)
+		return []claude.Model{
+			{ID: "claude-sonnet-4.7", Type: "model", DisplayName: "Claude Sonnet 4.7"},
+			{ID: "claude-opus-4.1", Type: "model", DisplayName: "Claude Opus 4.1"},
+		}, nil
+	}
+	t.Cleanup(func() { fetchKiroAvailableModels = originalFetch })
+
+	svc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID:       46,
+			Name:     "kiro-oauth-live-models",
+			Platform: service.PlatformKiro,
+			Type:     service.AccountTypeOAuth,
+			Status:   service.StatusActive,
+		},
+	}
+	router := setupAvailableModelsRouter(svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/46/models", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Len(t, resp.Data, 2)
+	require.Equal(t, "claude-sonnet-4.7", resp.Data[0].ID)
+	require.Equal(t, "claude-opus-4.1", resp.Data[1].ID)
+}
+
+func TestAccountHandlerGetAvailableModels_KiroFallsBackToDefaultsWhenFetchFails(t *testing.T) {
+	originalFetch := fetchKiroAvailableModels
+	fetchKiroAvailableModels = func(ctx context.Context, account *service.Account, provider *service.KiroTokenProvider, usageSvc *service.AccountUsageService) ([]claude.Model, error) {
+		return nil, context.DeadlineExceeded
+	}
+	t.Cleanup(func() { fetchKiroAvailableModels = originalFetch })
+
+	svc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID:       47,
+			Name:     "kiro-oauth-fallback",
+			Platform: service.PlatformKiro,
+			Type:     service.AccountTypeOAuth,
+			Status:   service.StatusActive,
+		},
+	}
+	router := setupAvailableModelsRouter(svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/47/models", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.NotEmpty(t, resp.Data)
+	require.Equal(t, service.PlatformKiro, svc.account.Platform)
 }
 
 func TestAccountHandlerGetAvailableModels_GrokUsesExplicitModelMapping(t *testing.T) {

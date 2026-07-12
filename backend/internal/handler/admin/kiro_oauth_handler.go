@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -180,6 +181,83 @@ func (h *KiroOAuthHandler) RefreshToken(c *gin.Context) {
 	}
 
 	response.Success(c, credentials)
+}
+
+// DiscoverProfiles validates Kiro OAuth credentials through the refresh path
+// and resolves the currently available profiles without requiring a saved
+// account first.
+// POST /api/v1/admin/kiro/oauth/discover-profiles
+func (h *KiroOAuthHandler) DiscoverProfiles(c *gin.Context) {
+	var req KiroRefreshTokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "请求无效: "+err.Error())
+		return
+	}
+	if h == nil || h.refresher == nil {
+		response.InternalError(c, "Kiro OAuth refresh service is not configured")
+		return
+	}
+
+	account, err := h.buildValidatedKiroOAuthAccount(c, req)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	accessToken := strings.TrimSpace(stringCredentialValue(account.Credentials, "access_token"))
+	if accessToken == "" {
+		response.BadRequest(c, "kiro access_token is required after refresh")
+		return
+	}
+
+	profiles, err := h.refresher.UsageService().ResolveAvailableProfiles(c.Request.Context(), account, accessToken)
+	if err != nil {
+		response.BadRequest(c, "Failed to discover Kiro profiles: "+err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{"profiles": profiles})
+}
+
+func (h *KiroOAuthHandler) buildValidatedKiroOAuthAccount(c *gin.Context, req KiroRefreshTokenRequest) (*service.Account, error) {
+	req.Credentials = service.NormalizeKiroOAuthCredentialShape(req.Credentials)
+	refreshToken := strings.TrimSpace(stringCredentialValue(req.Credentials, "refresh_token"))
+	if err := service.ValidateKiroRefreshTokenHealth(refreshToken); err != nil {
+		return nil, err
+	}
+
+	authMethod := service.NormalizeKiroAuthMethod(req.Credentials)
+	if service.KiroAuthMethodUsesIDCRefresh(authMethod) {
+		clientID := strings.TrimSpace(stringCredentialValue(req.Credentials, "client_id"))
+		clientSecret := strings.TrimSpace(stringCredentialValue(req.Credentials, "client_secret"))
+		if clientID == "" || clientSecret == "" {
+			return nil, infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro idc client_id and client_secret are required")
+		}
+	}
+
+	account := &service.Account{
+		Platform:    service.PlatformKiro,
+		Type:        service.AccountTypeOAuth,
+		Credentials: req.Credentials,
+		Extra:       req.Extra,
+		ProxyID:     req.ProxyID,
+		Concurrency: 1,
+	}
+
+	credentials, err := h.refresher.Refresh(c.Request.Context(), account)
+	if err != nil {
+		return nil, err
+	}
+	if h.oauthService != nil {
+		account.Credentials = credentials
+		credentials, err = h.oauthService.ValidateAndEnrichRefreshedCredentialsForAccount(c.Request.Context(), account, credentials)
+		if err != nil {
+			return nil, err
+		}
+	}
+	account.Credentials = credentials
+
+	return account, nil
 }
 
 func stringCredentialValue(credentials map[string]any, key string) string {

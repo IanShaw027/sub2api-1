@@ -54,6 +54,13 @@ func (r *KiroTokenRefresher) WithProxyRepo(proxyRepo ProxyRepository) *KiroToken
 	return r
 }
 
+func (r *KiroTokenRefresher) UsageService() *KiroUsageService {
+	return NewKiroUsageService().
+		WithTransport(r.httpUpstream, r.tlsFPProfileService).
+		WithSettingService(r.settingService).
+		WithProxyRepo(r.proxyRepo)
+}
+
 func (r *KiroTokenRefresher) CacheKey(account *Account) string {
 	return KiroTokenCacheKey(account)
 }

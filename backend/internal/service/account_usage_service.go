@@ -244,6 +244,12 @@ type UsageInfo struct {
 	KiroCurrentUsage      float64             `json:"kiro_current_usage,omitempty"`
 	KiroUsageLimit        float64             `json:"kiro_usage_limit,omitempty"`
 	KiroRemaining         float64             `json:"kiro_remaining,omitempty"`
+	KiroEmail             string              `json:"kiro_email,omitempty"`
+	KiroOverageCapability string              `json:"kiro_overage_capability,omitempty"`
+	KiroOverageEnabled    *bool               `json:"kiro_overage_enabled,omitempty"`
+	KiroProfileID         string              `json:"kiro_profile_id,omitempty"`
+	KiroLoginProvider     string              `json:"kiro_login_provider,omitempty"`
+	KiroStatusReason      string              `json:"kiro_status_reason,omitempty"`
 	KiroMonthlyQuota      *KiroQuotaBreakdown `json:"kiro_monthly_quota,omitempty"`
 	KiroBonusQuota        *KiroQuotaBreakdown `json:"kiro_bonus_quota,omitempty"`
 	KiroFreeTrialQuota    *KiroQuotaBreakdown `json:"kiro_free_trial_quota,omitempty"`
@@ -364,6 +370,18 @@ func NewAccountUsageService(
 		tlsFPProfileService:     tlsFPProfileService,
 		settingService:          settingService,
 	}
+}
+
+// NewKiroUsageService returns a Kiro usage client with the same transport,
+// fingerprint, proxy and runtime-setting dependencies as the live gateway.
+func (s *AccountUsageService) NewKiroUsageService() *KiroUsageService {
+	if s == nil {
+		return NewKiroUsageService()
+	}
+	return NewKiroUsageService().
+		WithTransport(s.kiroHTTPUpstream(), s.tlsFPProfileService).
+		WithSettingService(s.settingService).
+		WithProxyRepo(s.proxyRepo)
 }
 
 func supportsAnthropicPassiveUsage(account *Account) bool {
@@ -698,10 +716,7 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 			accessToken = account.GetCredential("access_token")
 		}
 
-		usageService := NewKiroUsageService().
-			WithTransport(kiroHTTPUpstream, s.tlsFPProfileService).
-			WithSettingService(s.settingService).
-			WithProxyRepo(s.proxyRepo)
+		usageService := s.NewKiroUsageService().WithTransport(kiroHTTPUpstream, s.tlsFPProfileService)
 		limits, err := usageService.FetchUsageLimits(fetchCtx, account, accessToken)
 		if err != nil {
 			if !forceRefresh && shouldRetryKiroUsageWithForcedRefresh(err) {
@@ -749,6 +764,12 @@ func (s *AccountUsageService) getKiroUsage(ctx context.Context, account *Account
 			KiroCurrentUsage:      currentUsage,
 			KiroUsageLimit:        usageLimit,
 			KiroRemaining:         remaining,
+			KiroEmail:             limits.Email(),
+			KiroOverageCapability: limits.OverageCapability(),
+			KiroOverageEnabled:    limits.OverageEnabled(),
+			KiroProfileID:         firstNonEmptyKiroString(account.GetCredential("profile_id"), account.GetExtraString("profile_id")),
+			KiroLoginProvider:     firstNonEmptyKiroString(account.GetCredential("login_provider"), account.GetExtraString("login_provider")),
+			KiroStatusReason:      firstNonEmptyKiroString(account.GetCredential("status_reason"), account.GetCredential("kiro_status_reason"), account.GetExtraString("status_reason"), account.GetExtraString("kiro_status_reason")),
 			KiroMonthlyQuota:      monthlyQuota,
 			KiroBonusQuota:        bonusQuota,
 			KiroFreeTrialQuota:    freeTrialQuota,

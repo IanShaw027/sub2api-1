@@ -716,6 +716,109 @@ func TestBuildKiroGenerateAssistantRequest_ExternalIDPSetsTokenTypeHeader(t *tes
 	require.Equal(t, "EXTERNAL_IDP", req.Header.Get("TokenType"))
 }
 
+func TestBuildKiroGenerateAssistantRequest_APIKeySetsTokenTypeHeader(t *testing.T) {
+	account := &Account{
+		ID:       113,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+	}
+
+	req, err := buildKiroGenerateAssistantRequest(context.Background(), account, []byte(`{}`), "api-key-token", DefaultKiroRuntimeSettings())
+
+	require.NoError(t, err)
+	require.Equal(t, "API_KEY", req.Header.Get("TokenType"))
+}
+
+func TestBuildKiroGenerateAssistantRequest_RuntimeEndpointUsesRuntimeHost(t *testing.T) {
+	account := &Account{
+		ID:       115,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"endpoint":   "runtime",
+			"api_region": "eu-central-1",
+		},
+	}
+
+	req, err := buildKiroGenerateAssistantRequest(context.Background(), account, []byte(`{}`), "access-token", DefaultKiroRuntimeSettings())
+
+	require.NoError(t, err)
+	require.Equal(t, "runtime.eu-central-1.kiro.dev", req.URL.Host)
+	require.Equal(t, "runtime.eu-central-1.kiro.dev", req.Host)
+}
+
+func TestKiroGatewayServiceEnsureKiroResolvedProfileARN(t *testing.T) {
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			if req.Method == http.MethodPost && req.URL.Path == "/" && req.Header.Get("x-amz-target") == "AmazonCodeWhispererService.ListAvailableProfiles" {
+				switch req.URL.Host {
+				case "q.us-east-1.amazonaws.com":
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(`{"profiles":[{"arn":"arn:aws:codewhisperer:us-east-1:111111111111:profile/USEAST"}]}`)),
+						Header:     make(http.Header),
+					}, nil
+				case "q.eu-central-1.amazonaws.com":
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(`{"profiles":[{"arn":"arn:aws:codewhisperer:eu-central-1:222222222222:profile/EUCENTRAL"}]}`)),
+						Header:     make(http.Header),
+					}, nil
+				}
+			}
+			if req.Method == http.MethodGet && req.URL.Path == "/getUsageLimits" {
+				if strings.Contains(req.URL.Query().Get("profileArn"), ":us-east-1:") {
+					return &http.Response{
+						StatusCode: http.StatusForbidden,
+						Body:       io.NopCloser(strings.NewReader(`{"message":"FEATURE_NOT_SUPPORTED","reason":"FEATURE_NOT_SUPPORTED"}`)),
+						Header:     make(http.Header),
+					}, nil
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body: io.NopCloser(strings.NewReader(`{
+						"subscriptionInfo":{"subscriptionTitle":"KIRO POWER"},
+						"usageBreakdownList":[{"currentUsageWithPrecision":0,"usageLimitWithPrecision":10000}]
+					}`)),
+					Header: make(http.Header),
+				}, nil
+			}
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.String())
+			return nil, nil
+		},
+	}
+	svc := &KiroGatewayService{
+		httpUpstream:    upstream,
+		tlsFPProfileSvc: &TLSFingerprintProfileService{},
+	}
+	account := &Account{
+		ID:          114,
+		Platform:    PlatformKiro,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"auth_method":   "external_idp",
+			"refresh_token": "refresh-token",
+		},
+	}
+
+	err := svc.ensureKiroResolvedProfileARN(context.Background(), account, "access-token")
+
+	require.NoError(t, err)
+	require.Equal(t, "arn:aws:codewhisperer:eu-central-1:222222222222:profile/EUCENTRAL", account.GetCredential("profile_arn"))
+	require.Equal(t, "EUCENTRAL", account.GetCredential("profile_id"))
+	require.Equal(t, "eu-central-1", account.GetCredential("api_region"))
+
+	requestCount := upstream.calls
+	freshAccount := &Account{
+		ID: account.ID, Platform: PlatformKiro, Type: AccountTypeOAuth, Concurrency: 1,
+		Credentials: map[string]any{"auth_method": "external_idp", "refresh_token": "refresh-token"},
+	}
+	require.NoError(t, svc.ensureKiroResolvedProfileARN(context.Background(), freshAccount, "access-token"))
+	require.Equal(t, requestCount, upstream.calls, "cached resolution must avoid repeating the profile probes")
+	require.Equal(t, account.GetCredential("profile_arn"), freshAccount.GetCredential("profile_arn"))
+}
+
 func TestPrepareKiroConvertedRequest_IncludesAccountProfileARN(t *testing.T) {
 	account := &Account{
 		ID:       111,

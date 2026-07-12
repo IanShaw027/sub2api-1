@@ -246,3 +246,128 @@ func TestAccountHandlerReauthorizeKiroOAuthClearsRecoverableState(t *testing.T) 
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, service.StatusActive, resp.Data.Status)
 }
+
+func TestAccountHandlerGetKiroProfiles(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	originalFetch := fetchKiroDiscoveredProfiles
+	fetchKiroDiscoveredProfiles = func(ctx context.Context, account *service.Account, provider *service.KiroTokenProvider, usageSvc *service.AccountUsageService) ([]service.KiroAvailableProfile, error) {
+		require.NotNil(t, account)
+		require.Equal(t, service.PlatformKiro, account.Platform)
+		return []service.KiroAvailableProfile{
+			{ARN: "arn:aws:codewhisperer:eu-central-1:123:profile/EU", ProfileName: "eu"},
+			{ARN: "arn:aws:codewhisperer:us-east-1:123:profile/US", ProfileName: "us"},
+		}, nil
+	}
+	t.Cleanup(func() { fetchKiroDiscoveredProfiles = originalFetch })
+
+	adminSvc := &kiroReauthAdminServiceStub{
+		stubAdminService: newStubAdminService(),
+		getAccountResp: &service.Account{
+			ID:       77,
+			Platform: service.PlatformKiro,
+			Type:     service.AccountTypeOAuth,
+			Status:   service.StatusActive,
+		},
+	}
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := gin.New()
+	router.GET("/api/v1/admin/accounts/:id/profiles", handler.GetKiroProfiles)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/77/profiles", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp struct {
+		Data struct {
+			Profiles []service.KiroAvailableProfile `json:"profiles"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Len(t, resp.Data.Profiles, 2)
+	require.Equal(t, "arn:aws:codewhisperer:eu-central-1:123:profile/EU", resp.Data.Profiles[0].ARN)
+}
+
+func TestAccountHandlerSetKiroOverage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	originalSetter := setKiroOveragePreference
+	setKiroOveragePreference = func(ctx context.Context, account *service.Account, provider *service.KiroTokenProvider, usageSvc *service.AccountUsageService, enabled bool) error {
+		require.NotNil(t, account)
+		require.Equal(t, int64(78), account.ID)
+		require.True(t, enabled)
+		return nil
+	}
+	t.Cleanup(func() { setKiroOveragePreference = originalSetter })
+
+	adminSvc := &kiroReauthAdminServiceStub{
+		stubAdminService: newStubAdminService(),
+		getAccountResp: &service.Account{
+			ID:       78,
+			Platform: service.PlatformKiro,
+			Type:     service.AccountTypeOAuth,
+			Status:   service.StatusActive,
+		},
+	}
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, &service.AccountUsageService{}, nil, nil, nil, nil, nil, nil)
+	router := gin.New()
+	router.POST("/api/v1/admin/accounts/:id/kiro/overage", handler.SetKiroOverage)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/78/kiro/overage", bytes.NewReader([]byte(`{"enabled":true}`)))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestAccountHandlerEnableAllKiroOverage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	originalSetter := setKiroOveragePreference
+	originalUsage := fetchAdminKiroUsage
+	setCalls := []int64{}
+	setKiroOveragePreference = func(ctx context.Context, account *service.Account, provider *service.KiroTokenProvider, usageSvc *service.AccountUsageService, enabled bool) error {
+		setCalls = append(setCalls, account.ID)
+		return nil
+	}
+	fetchAdminKiroUsage = func(ctx context.Context, usageSvc *service.AccountUsageService, accountID int64) (*service.UsageInfo, error) {
+		switch accountID {
+		case 201:
+			enabled := false
+			return &service.UsageInfo{KiroOverageCapability: "SUPPORTED", KiroOverageEnabled: &enabled}, nil
+		case 202:
+			enabled := true
+			return &service.UsageInfo{KiroOverageCapability: "SUPPORTED", KiroOverageEnabled: &enabled}, nil
+		case 204:
+			enabled := false
+			return &service.UsageInfo{KiroOverageCapability: "INELIGIBLE", KiroOverageEnabled: &enabled}, nil
+		case 205:
+			enabled := false
+			return &service.UsageInfo{KiroOverageCapability: "AVAILABLE", KiroOverageEnabled: &enabled}, nil
+		default:
+			return &service.UsageInfo{}, nil
+		}
+	}
+	t.Cleanup(func() {
+		setKiroOveragePreference = originalSetter
+		fetchAdminKiroUsage = originalUsage
+	})
+
+	adminSvc := newStubAdminService()
+	adminSvc.accounts = []service.Account{
+		{ID: 201, Platform: service.PlatformKiro, Type: service.AccountTypeOAuth, Status: service.StatusActive},
+		{ID: 202, Platform: service.PlatformKiro, Type: service.AccountTypeOAuth, Status: service.StatusActive},
+		{ID: 203, Platform: service.PlatformKiro, Type: service.AccountTypeOAuth, Status: service.StatusActive},
+		{ID: 204, Platform: service.PlatformKiro, Type: service.AccountTypeOAuth, Status: service.StatusActive},
+		{ID: 205, Platform: service.PlatformKiro, Type: service.AccountTypeOAuth, Status: service.StatusActive},
+	}
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, &service.AccountUsageService{}, nil, nil, nil, nil, nil, nil)
+	router := gin.New()
+	router.POST("/api/v1/admin/accounts/kiro/overage/enable-all", handler.EnableAllKiroOverage)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/kiro/overage/enable-all", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, []int64{201, 205}, setCalls)
+}

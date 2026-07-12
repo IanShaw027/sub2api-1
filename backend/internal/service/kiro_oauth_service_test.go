@@ -133,7 +133,7 @@ func TestKiroOAuthServiceExchangeCallbackUsesCallbackPathAndLoginOptionForTokenE
 func TestKiroOAuthServiceExchangeCallbackRejectsExternalIDPWhenKiroUsageForbidden(t *testing.T) {
 	usageUpstream := &kiroHTTPUpstreamRecorder{
 		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
-			if req.Method != http.MethodGet || req.URL.Host != "q.us-east-1.amazonaws.com" || req.URL.Path != "/getUsageLimits" {
+			if req.Method != http.MethodGet || req.URL.Path != "/getUsageLimits" {
 				t.Fatalf("unexpected validation request: %s %s", req.Method, req.URL.String())
 			}
 			if got := req.Header.Get("TokenType"); got != "EXTERNAL_IDP" {
@@ -200,8 +200,8 @@ func TestKiroOAuthServiceExchangeCallbackRejectsExternalIDPWhenKiroUsageForbidde
 	if !strings.Contains(err.Error(), "Kiro rejected") {
 		t.Fatalf("error %q should mention Kiro rejection", err.Error())
 	}
-	if usageUpstream.calls != 1 {
-		t.Fatalf("usage validation calls = %d, want 1", usageUpstream.calls)
+	if usageUpstream.calls < 1 {
+		t.Fatalf("usage validation calls = %d, want at least 1", usageUpstream.calls)
 	}
 }
 
@@ -225,6 +225,15 @@ func TestKiroOAuthServiceExchangeCallbackOrStartContinuationReturnsMicrosoftExte
 		CallbackBaseURL: redirectURI,
 		CreatedAt:       time.Now(),
 	})
+	originalDiscovery := kiroExternalIDPDiscoveryFunc
+	kiroExternalIDPDiscoveryFunc = func(ctx context.Context, issuer string) (*kiroExternalIDPMetadata, error) {
+		return &kiroExternalIDPMetadata{
+			IssuerURL:     issuerURL,
+			AuthorizeURL:  "https://login.microsoftonline.com/035247e5-0116-4d03-a92f-989b7476ca4f/oauth2/v2.0/authorize",
+			TokenEndpoint: "https://login.microsoftonline.com/035247e5-0116-4d03-a92f-989b7476ca4f/oauth2/v2.0/token",
+		}, nil
+	}
+	t.Cleanup(func() { kiroExternalIDPDiscoveryFunc = originalDiscovery })
 
 	callbackURL := "http://localhost:3128/signin/callback?login_option=external_idp" +
 		"&login_hint=" + url.QueryEscape(loginHint) +
@@ -270,14 +279,20 @@ func TestKiroOAuthServiceExchangeCallbackOrStartContinuationReturnsMicrosoftExte
 	if strings.Contains(query.Get("redirect_uri"), "?") || strings.Contains(query.Get("redirect_uri"), "login_option=") || strings.Contains(query.Get("redirect_uri"), "login_hint=") || strings.Contains(query.Get("redirect_uri"), "issuer_url=") || strings.Contains(query.Get("redirect_uri"), "scopes=") {
 		t.Fatalf("redirect_uri should be the Kiro Entra registered localhost callback without query params, got %q", query.Get("redirect_uri"))
 	}
-	if query.Get("state") != state {
-		t.Fatalf("state = %q, want %q", query.Get("state"), state)
+	if query.Get("state") == "" || query.Get("state") == state {
+		t.Fatalf("state = %q, want a dedicated external_idp leg2 state", query.Get("state"))
 	}
 	if query.Get("login_hint") != loginHint {
 		t.Fatalf("login_hint = %q, want %q", query.Get("login_hint"), loginHint)
 	}
 	if !strings.Contains(query.Get("scope"), "offline_access") {
 		t.Fatalf("scope should preserve requested scopes, got %q", query.Get("scope"))
+	}
+	if query.Get("code_challenge") == "" {
+		t.Fatal("expected PKCE code_challenge")
+	}
+	if query.Get("code_challenge_method") != "S256" {
+		t.Fatalf("code_challenge_method = %q, want S256", query.Get("code_challenge_method"))
 	}
 
 	stored, ok := svc.sessionStore.Get(sessionID)
@@ -289,6 +304,12 @@ func TestKiroOAuthServiceExchangeCallbackOrStartContinuationReturnsMicrosoftExte
 	}
 	if stored.ExternalIDP.RedirectURI != "http://localhost/oauth/callback" {
 		t.Fatalf("stored external_idp redirect_uri = %q", stored.ExternalIDP.RedirectURI)
+	}
+	if stored.ExternalIDP.CodeVerifier == "" {
+		t.Fatal("expected stored external_idp code_verifier")
+	}
+	if stored.ExternalIDP.State == "" || stored.ExternalIDP.State == state {
+		t.Fatalf("unexpected stored external_idp state = %q", stored.ExternalIDP.State)
 	}
 }
 
@@ -315,8 +336,11 @@ func TestKiroOAuthServiceExchangeCallbackExchangesMicrosoftExternalIDPCode(t *te
 		ExternalIDP: &KiroExternalIDPSession{
 			ClientID:      clientID,
 			IssuerURL:     issuerURL,
+			AuthorizeURL:  "https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize",
 			TokenEndpoint: tokenEndpoint,
 			RedirectURI:   redirectURI,
+			State:         "external-state-ms-code",
+			CodeVerifier:  "external-code-verifier",
 			Scopes:        []string{"scope-a", "offline_access"},
 			LoginHint:     "dev@example.com",
 			CreatedAt:     time.Now(),
@@ -337,6 +361,9 @@ func TestKiroOAuthServiceExchangeCallbackExchangesMicrosoftExternalIDPCode(t *te
 		if input.RedirectURI != redirectURI {
 			t.Fatalf("redirect_uri = %q, want %q", input.RedirectURI, redirectURI)
 		}
+		if input.CodeVerifier != "external-code-verifier" {
+			t.Fatalf("code_verifier = %q, want %q", input.CodeVerifier, "external-code-verifier")
+		}
 		return map[string]any{
 			"access_token":  "ms-access-token",
 			"refresh_token": "ms-refresh-token",
@@ -350,7 +377,7 @@ func TestKiroOAuthServiceExchangeCallbackExchangesMicrosoftExternalIDPCode(t *te
 
 	progress, err := svc.ExchangeCallbackOrStartContinuation(context.Background(), &KiroExchangeCallbackInput{
 		SessionID:   sessionID,
-		CallbackURL: "http://localhost/oauth/callback?code=" + code + "&state=" + state,
+		CallbackURL: "http://localhost/oauth/callback?code=" + code + "&state=external-state-ms-code",
 	})
 	if err != nil {
 		t.Fatalf("ExchangeCallbackOrStartContinuation returned error: %v", err)
@@ -375,26 +402,158 @@ func TestKiroOAuthServiceExchangeCallbackExchangesMicrosoftExternalIDPCode(t *te
 	}
 }
 
+func TestResolveKiroExternalIDPAuthorizationUsesOIDCDiscovery(t *testing.T) {
+	originalDiscovery := kiroExternalIDPDiscoveryFunc
+	kiroExternalIDPDiscoveryFunc = func(ctx context.Context, issuer string) (*kiroExternalIDPMetadata, error) {
+		if issuer != "https://example.com/tenant/v2.0" {
+			t.Fatalf("issuer = %q", issuer)
+		}
+		return &kiroExternalIDPMetadata{
+			IssuerURL:     issuer,
+			AuthorizeURL:  "https://example.com/oauth2/v2.0/authorize",
+			TokenEndpoint: "https://example.com/oauth2/v2.0/token",
+		}, nil
+	}
+	t.Cleanup(func() { kiroExternalIDPDiscoveryFunc = originalDiscovery })
+
+	parsed, err := url.Parse("http://localhost:3128/signin/callback?login_option=external_idp")
+	if err != nil {
+		t.Fatalf("parse callback: %v", err)
+	}
+	session, authURL, err := resolveKiroExternalIDPAuthorization(context.Background(), &KiroExchangeCallbackInput{
+		ClientID:  "client-123",
+		IssuerURL: "https://example.com/tenant/v2.0",
+		Scopes:    []string{"openid", "offline_access"},
+	}, parsed, url.Values{
+		"client_id":  []string{"client-123"},
+		"issuer_url": []string{"https://example.com/tenant/v2.0"},
+		"state":      []string{"kiro-state"},
+		"scopes":     []string{"openid offline_access"},
+	})
+	if err != nil {
+		t.Fatalf("resolveKiroExternalIDPAuthorization error: %v", err)
+	}
+	if session == nil {
+		t.Fatal("expected session")
+	}
+	if session.AuthorizeURL != "https://example.com/oauth2/v2.0/authorize" {
+		t.Fatalf("authorize_url = %q", session.AuthorizeURL)
+	}
+	if session.TokenEndpoint != "https://example.com/oauth2/v2.0/token" {
+		t.Fatalf("token_endpoint = %q", session.TokenEndpoint)
+	}
+	parsedAuth, err := url.Parse(authURL)
+	if err != nil {
+		t.Fatalf("parse authURL: %v", err)
+	}
+	if parsedAuth.Host != "example.com" {
+		t.Fatalf("auth host = %q", parsedAuth.Host)
+	}
+	if parsedAuth.Query().Get("code_challenge") == "" {
+		t.Fatal("expected discovery-driven auth URL to include PKCE code_challenge")
+	}
+}
+
+func TestDiscoverKiroExternalIDPMetadataUsesInjectedHTTPClient(t *testing.T) {
+	issuer := "https://example.com/tenant/v2.0"
+	client := &http.Client{Transport: kiroOAuthRoundTripperFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/tenant/v2.0/.well-known/openid-configuration" {
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(`{
+			"issuer":"` + issuer + `",
+			"authorization_endpoint":"` + issuer + `/oauth2/v2.0/authorize",
+			"token_endpoint":"` + issuer + `/oauth2/v2.0/token"
+		}`)),
+			Request: r,
+		}, nil
+	})}
+
+	originalClient := kiroExternalIDPHTTPClient
+	kiroExternalIDPHTTPClient = client
+	t.Cleanup(func() { kiroExternalIDPHTTPClient = originalClient })
+
+	metadata, err := discoverKiroExternalIDPMetadata(context.Background(), issuer)
+	if err != nil {
+		t.Fatalf("discoverKiroExternalIDPMetadata error: %v", err)
+	}
+	if metadata == nil {
+		t.Fatal("expected metadata")
+	}
+	if metadata.AuthorizeURL != issuer+"/oauth2/v2.0/authorize" {
+		t.Fatalf("authorize_url = %q", metadata.AuthorizeURL)
+	}
+	if metadata.TokenEndpoint != issuer+"/oauth2/v2.0/token" {
+		t.Fatalf("token_endpoint = %q", metadata.TokenEndpoint)
+	}
+}
+
+type kiroOAuthRoundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f kiroOAuthRoundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestDiscoverKiroExternalIDPMetadataRejectsUnsafeTargets(t *testing.T) {
+	_, err := discoverKiroExternalIDPMetadata(context.Background(), "https://127.0.0.1/tenant")
+	if err == nil || !strings.Contains(err.Error(), "not public") {
+		t.Fatalf("expected private target rejection, got %v", err)
+	}
+
+	metadata := &kiroExternalIDPMetadata{
+		IssuerURL:     "https://example.com/tenant",
+		AuthorizeURL:  "https://evil.example.net/authorize",
+		TokenEndpoint: "https://example.com/token",
+	}
+	err = validateKiroExternalIDPMetadataURLs(context.Background(), metadata)
+	if err == nil || !strings.Contains(err.Error(), "issuer host") {
+		t.Fatalf("expected cross-origin endpoint rejection, got %v", err)
+	}
+}
+
+func TestExchangeKiroExternalIDPCodeRejectsPrivateTokenEndpoint(t *testing.T) {
+	_, err := exchangeKiroExternalIDPCodeForToken(context.Background(), kiroExternalIDPCodeExchangeInput{
+		Code:          "code",
+		ClientID:      "client",
+		TokenEndpoint: "https://127.0.0.1/token",
+		RedirectURI:   "http://localhost/oauth/callback",
+	})
+	if err == nil || !strings.Contains(err.Error(), "not public") {
+		t.Fatalf("expected private token endpoint rejection, got %v", err)
+	}
+}
+
 func TestKiroOAuthServiceExchangeCallbackExternalIDPCodeAllowsMissingProfileARN(t *testing.T) {
 	usageUpstream := &kiroHTTPUpstreamRecorder{
 		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
-			if req.Method != http.MethodGet || req.URL.Host != "q.us-east-1.amazonaws.com" || req.URL.Path != "/getUsageLimits" {
-				t.Fatalf("unexpected validation request: %s %s", req.Method, req.URL.String())
-			}
 			if got := req.Header.Get("TokenType"); got != "EXTERNAL_IDP" {
 				t.Fatalf("TokenType header = %q, want EXTERNAL_IDP", got)
 			}
-			if got := req.URL.Query().Get("profileArn"); got != "" {
-				t.Fatalf("profileArn query = %q, want empty when Microsoft token response omits profileArn", got)
+			if req.Method == http.MethodGet && req.URL.Host == "q.us-east-1.amazonaws.com" && req.URL.Path == "/getUsageLimits" {
+				if got := req.URL.Query().Get("profileArn"); got != "" {
+					t.Fatalf("profileArn query = %q, want empty when Microsoft token response omits profileArn", got)
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body: io.NopCloser(strings.NewReader(`{
+						"subscriptionInfo":{"subscriptionTitle":"Kiro Pro"},
+						"usageBreakdownList":[{"currentUsageWithPrecision":1,"usageLimitWithPrecision":100}]
+					}`)),
+					Header: make(http.Header),
+				}, nil
 			}
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Body: io.NopCloser(strings.NewReader(`{
-					"subscriptionInfo":{"subscriptionTitle":"Kiro Pro"},
-					"usageBreakdownList":[{"currentUsageWithPrecision":1,"usageLimitWithPrecision":100}]
-				}`)),
-				Header: make(http.Header),
-			}, nil
+			if req.Method == http.MethodPost && req.URL.Path == "/" && req.Header.Get("x-amz-target") == "AmazonCodeWhispererService.ListAvailableProfiles" {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader(`{"profiles":[]}`)),
+					Header:     make(http.Header),
+				}, nil
+			}
+			t.Fatalf("unexpected validation request: %s %s", req.Method, req.URL.String())
+			return nil, nil
 		},
 	}
 	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, usageUpstream, &TLSFingerprintProfileService{}, nil)

@@ -147,11 +147,15 @@ func TestKiroMCPEligible(t *testing.T) {
 	a.Type = AccountTypeOAuth
 	require.True(t, kiroMCPEligible(a))
 
-	// 缺 profile_arn → 不 eligible
+	// 普通 OAuth 缺 profile_arn 时不能惰性解析，不应多打一发无效 MCP 请求。
 	a2 := newKiroMCPTestAccount()
 	a2.Type = AccountTypeOAuth
 	delete(a2.Credentials, "profile_arn")
 	require.False(t, kiroMCPEligible(a2))
+
+	// External-IDP OAuth 可以在网关请求前惰性解析 profile_arn。
+	a2.Credentials["auth_method"] = "external_idp"
+	require.True(t, kiroMCPEligible(a2))
 
 	// 非 kiro 平台 → 不 eligible
 	a3 := newKiroMCPTestAccount()
@@ -160,6 +164,40 @@ func TestKiroMCPEligible(t *testing.T) {
 	require.False(t, kiroMCPEligible(a3))
 
 	require.False(t, kiroMCPEligible(nil))
+}
+
+func TestBuildKiroMCPRequest_APIKeySetsTokenTypeHeader(t *testing.T) {
+	svc := &KiroGatewayService{}
+	account := &Account{
+		ID:       901,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+	}
+
+	req, err := svc.buildKiroMCPRequest(context.Background(), account, kiroMCPToolSearch, map[string]any{"query": "hi"}, "api-key-token", DefaultKiroRuntimeSettings())
+
+	require.NoError(t, err)
+	require.Equal(t, "API_KEY", req.Header.Get("TokenType"))
+}
+
+func TestBuildKiroMCPRequest_RuntimeEndpointUsesRuntimeHost(t *testing.T) {
+	svc := &KiroGatewayService{}
+	account := &Account{
+		ID:       902,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"profile_arn": "arn:aws:codewhisperer:eu-central-1:123:profile/ABC",
+			"endpoint":    "runtime",
+			"api_region":  "eu-central-1",
+		},
+	}
+
+	req, err := svc.buildKiroMCPRequest(context.Background(), account, kiroMCPToolSearch, map[string]any{"query": "hi"}, "oauth-token", DefaultKiroRuntimeSettings())
+
+	require.NoError(t, err)
+	require.Equal(t, "runtime.eu-central-1.kiro.dev", req.URL.Host)
+	require.Equal(t, "runtime.eu-central-1.kiro.dev", req.Host)
 }
 
 func TestInvokeKiroMCP_RPCError(t *testing.T) {

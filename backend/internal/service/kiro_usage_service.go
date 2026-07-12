@@ -15,13 +15,24 @@ import (
 )
 
 type KiroUsageLimits struct {
-	NextDateReset    *float64              `json:"nextDateReset"`
-	SubscriptionInfo *KiroSubscriptionInfo `json:"subscriptionInfo"`
-	UsageBreakdowns  []KiroUsageBreakdown  `json:"usageBreakdownList"`
+	NextDateReset        *float64                  `json:"nextDateReset"`
+	SubscriptionInfo     *KiroSubscriptionInfo     `json:"subscriptionInfo"`
+	UsageBreakdowns      []KiroUsageBreakdown      `json:"usageBreakdownList"`
+	OverageConfiguration *KiroOverageConfiguration `json:"overageConfiguration"`
+	UserInfo             *KiroUserInfo             `json:"userInfo"`
 }
 
 type KiroSubscriptionInfo struct {
 	SubscriptionTitle *string `json:"subscriptionTitle"`
+	OverageCapability *string `json:"overageCapability"`
+}
+
+type KiroOverageConfiguration struct {
+	Enabled *bool `json:"enabled"`
+}
+
+type KiroUserInfo struct {
+	Email *string `json:"email"`
 }
 
 type KiroUsageBreakdown struct {
@@ -52,6 +63,10 @@ type KiroAvailableProfile struct {
 	ARN         string `json:"arn"`
 	ProfileARN  string `json:"profileArn"`
 	ProfileName string `json:"profileName"`
+}
+
+type KiroAvailableModel struct {
+	ModelID string `json:"modelId"`
 }
 
 type KiroUsageService struct {
@@ -95,70 +110,138 @@ func (s *KiroUsageService) FetchUsageLimits(ctx context.Context, account *Accoun
 		return nil, fmt.Errorf("account is required")
 	}
 	account = s.prepareAccount(ctx, account)
-	host := fmt.Sprintf("q.%s.amazonaws.com", KiroRegion(account))
-	params := url.Values{
-		"origin":       {"AI_EDITOR"},
-		"resourceType": {"AGENTIC_REQUEST"},
+	var firstErr error
+	for _, region := range kiroRESTRegions(account) {
+		out, err := s.fetchUsageLimitsInRegion(ctx, account, accessToken, region)
+		if err == nil {
+			if account != nil && account.Credentials != nil {
+				account.Credentials["api_region"] = region
+				account.Credentials["region"] = region
+			}
+			fields := []zap.Field{
+				zap.String("region", region),
+				zap.Float64("current_usage", out.CurrentUsage()),
+				zap.Float64("usage_limit", out.UsageLimit()),
+				zap.Float64("remaining_usage", out.Remaining()),
+				zap.String("subscription_title", out.SubscriptionTitle()),
+			}
+			if resetAt := out.ResetAt(); resetAt != nil {
+				fields = append(fields, zap.Time("reset_at", *resetAt))
+			}
+			kiroLogger(ctx, account).Info("kiro.usage_limits_fetched", fields...)
+			return out, nil
+		}
+		if firstErr == nil {
+			firstErr = err
+		}
+		kiroLogger(ctx, account).Warn("kiro.usage_limits_failed", zap.String("region", region), zap.Error(err))
+		if shouldStopKiroUsageRegionFallback(err) {
+			return nil, err
+		}
 	}
-	if profileARN := account.GetCredential("profile_arn"); profileARN != "" {
-		params.Set("profileArn", profileARN)
+	if firstErr == nil {
+		firstErr = fmt.Errorf("kiro usage region candidates exhausted")
 	}
-	url := fmt.Sprintf("https://%s/getUsageLimits?%s", host, params.Encode())
+	return nil, firstErr
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func (s *KiroUsageService) FetchAvailableModels(ctx context.Context, account *Account, accessToken string) ([]KiroAvailableModel, error) {
+	if account == nil {
+		return nil, fmt.Errorf("account is required")
+	}
+	account = s.prepareAccount(ctx, account)
+	var firstErr error
+	for _, region := range kiroRESTRegions(account) {
+		models, err := s.fetchAvailableModelsInRegion(ctx, account, accessToken, region)
+		if err == nil && len(models) > 0 {
+			return models, nil
+		}
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	return nil, fmt.Errorf("kiro available models returned empty result")
+}
+
+func (s *KiroUsageService) SetOveragePreference(ctx context.Context, account *Account, accessToken string, enabled bool) error {
+	if account == nil {
+		return fmt.Errorf("account is required")
+	}
+	account = s.prepareAccount(ctx, account)
+	status := "DISABLED"
+	if enabled {
+		status = "ENABLED"
+	}
+	body := map[string]any{
+		"overageConfiguration": map[string]any{
+			"overageStatus": status,
+		},
+	}
+	if profileARN := strings.TrimSpace(account.GetCredential("profile_arn")); profileARN != "" {
+		body["profileArn"] = profileARN
+	}
+	payload, err := json.Marshal(body)
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	runtimeSettings := DefaultKiroRuntimeSettings()
-	if s != nil && s.settingService != nil {
-		runtimeSettings = s.settingService.GetKiroRuntimeSettings(ctx)
+	var firstErr error
+	for _, region := range kiroRESTRegions(account) {
+		host := fmt.Sprintf("q.%s.amazonaws.com", region)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://"+host+"/setUserPreference", strings.NewReader(string(payload)))
+		if err != nil {
+			return err
+		}
+		runtimeSettings := DefaultKiroRuntimeSettings()
+		if s != nil && s.settingService != nil {
+			runtimeSettings = s.settingService.GetKiroRuntimeSettings(ctx)
+		}
+		machineID := kiro.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
+		kiroVersion := runtimeSettings.KiroVersion
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+		if isKiroExternalIDPAccount(account) {
+			req.Header.Set("TokenType", "EXTERNAL_IDP")
+		} else if account.Type == AccountTypeAPIKey {
+			req.Header.Set("TokenType", "API_KEY")
+		}
+		req.Header.Set("host", host)
+		req.Header.Set("amz-sdk-invocation-id", generateRequestID())
+		req.Header.Set("amz-sdk-request", "attempt=1; max=1")
+		xAmzUserAgent, userAgent := kiro.BuildCodeWhispererRuntimeUserAgents(kiroVersion, machineID, runtimeSettings.SystemVersion, runtimeSettings.NodeVersion)
+		req.Header.Set("x-amz-user-agent", xAmzUserAgent)
+		req.Header.Set("User-Agent", userAgent)
+		resp, err := doKiroSidecarRequest(req, account, s.httpUpstream, s.tlsFPProfileService, 60*time.Second)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		err = func() error {
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				return nil
+			}
+			return buildKiroUsageUpstreamError(resp)
+		}()
+		if err == nil {
+			return nil
+		}
+		if firstErr == nil {
+			firstErr = err
+		}
+		if resp.StatusCode == http.StatusForbidden {
+			continue
+		}
+		return err
 	}
-	machineID := kiro.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
-	kiroVersion := runtimeSettings.KiroVersion
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	if isKiroExternalIDPAccount(account) {
-		req.Header.Set("TokenType", "EXTERNAL_IDP")
+	if firstErr == nil {
+		firstErr = fmt.Errorf("kiro setUserPreference failed")
 	}
-	req.Header.Set("host", host)
-	req.Header.Set("amz-sdk-invocation-id", generateRequestID())
-	req.Header.Set("amz-sdk-request", "attempt=1; max=1")
-	xAmzUserAgent, userAgent := kiro.BuildCodeWhispererRuntimeUserAgents(kiroVersion, machineID, runtimeSettings.SystemVersion, runtimeSettings.NodeVersion)
-	req.Header.Set("x-amz-user-agent", xAmzUserAgent)
-	req.Header.Set("User-Agent", userAgent)
-	if runtimeSettings.KiroCommit != "" {
-		req.Header.Set("x-amzn-kiro-commit", runtimeSettings.KiroCommit)
-	}
-
-	resp, err := doKiroSidecarRequest(req, account, s.httpUpstream, s.tlsFPProfileService, 60*time.Second)
-	if err != nil {
-		kiroLogger(ctx, account).Warn("kiro.usage_limits_failed", zap.Error(err))
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		err := buildKiroUsageUpstreamError(resp)
-		kiroLogger(ctx, account).Warn("kiro.usage_limits_failed", zap.Int("status_code", resp.StatusCode), zap.Error(err))
-		return nil, err
-	}
-
-	var out KiroUsageLimits
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		kiroLogger(ctx, account).Warn("kiro.usage_limits_failed", zap.Error(err))
-		return nil, err
-	}
-	fields := []zap.Field{
-		zap.Float64("current_usage", out.CurrentUsage()),
-		zap.Float64("usage_limit", out.UsageLimit()),
-		zap.Float64("remaining_usage", out.Remaining()),
-		zap.String("subscription_title", out.SubscriptionTitle()),
-	}
-	if resetAt := out.ResetAt(); resetAt != nil {
-		fields = append(fields, zap.Time("reset_at", *resetAt))
-	}
-	kiroLogger(ctx, account).Info("kiro.usage_limits_fetched", fields...)
-	return &out, nil
+	return firstErr
 }
 
 func (s *KiroUsageService) ResolveBestProfileARN(ctx context.Context, account *Account, accessToken string) (string, *KiroUsageLimits, error) {
@@ -192,22 +275,123 @@ func (s *KiroUsageService) ResolveBestProfileARN(ctx context.Context, account *A
 		return "", nil, fmt.Errorf("kiro available profiles returned no profileArn")
 	}
 
-	var firstErr error
+	var (
+		firstErr   error
+		firstOKARN string
+		firstOK    *KiroUsageLimits
+		preferred  string
+		preferredU *KiroUsageLimits
+	)
 	for _, arn := range profiles {
 		candidate := cloneAccountForKiroProfile(account, arn)
 		usage, err := s.FetchUsageLimits(ctx, candidate, accessToken)
 		if err == nil {
-			return arn, usage, nil
+			if firstOKARN == "" {
+				firstOKARN = arn
+				firstOK = usage
+			}
+			if profileARNRegion(arn) != "us-east-1" {
+				preferred = arn
+				preferredU = usage
+				break
+			}
+			continue
 		}
 		if firstErr == nil {
 			firstErr = err
 		}
 		kiroLogger(ctx, account).Warn("kiro.profile_usage_probe_failed", zap.String("profile_arn", arn), zap.Error(err))
 	}
+	if preferred != "" {
+		return preferred, preferredU, nil
+	}
+	if firstOKARN != "" {
+		return firstOKARN, firstOK, nil
+	}
 	if firstErr != nil {
 		kiroLogger(ctx, account).Warn("kiro.profile_usage_probe_all_failed", zap.Error(firstErr))
 	}
 	return profiles[0], nil, nil
+}
+
+func (s *KiroUsageService) ResolveAvailableProfiles(ctx context.Context, account *Account, accessToken string) ([]KiroAvailableProfile, error) {
+	if account == nil {
+		return nil, fmt.Errorf("account is required")
+	}
+	accessToken = strings.TrimSpace(accessToken)
+	if accessToken == "" {
+		return nil, fmt.Errorf("access_token is required")
+	}
+	account = s.prepareAccount(ctx, account)
+	seen := map[string]bool{}
+	profiles := make([]KiroAvailableProfile, 0, 4)
+	for _, region := range kiroProfileDiscoveryRegions(account) {
+		out, err := s.fetchAvailableProfilesInRegion(ctx, account, accessToken, region)
+		if err != nil {
+			continue
+		}
+		for _, profile := range out.Profiles {
+			arn := strings.TrimSpace(firstNonEmptyKiroString(profile.ARN, profile.ProfileARN))
+			if arn == "" || seen[arn] {
+				continue
+			}
+			seen[arn] = true
+			profiles = append(profiles, profile)
+		}
+	}
+	if len(profiles) == 0 {
+		return nil, fmt.Errorf("kiro available profiles returned no profiles")
+	}
+	return profiles, nil
+}
+
+func (s *KiroUsageService) fetchUsageLimitsInRegion(ctx context.Context, account *Account, accessToken, region string) (*KiroUsageLimits, error) {
+	host := fmt.Sprintf("q.%s.amazonaws.com", region)
+	params := url.Values{
+		"origin":       {"AI_EDITOR"},
+		"resourceType": {"AGENTIC_REQUEST"},
+	}
+	if profileARN := account.GetCredential("profile_arn"); profileARN != "" {
+		params.Set("profileArn", profileARN)
+	}
+	reqURL := fmt.Sprintf("https://%s/getUsageLimits?%s", host, params.Encode())
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	runtimeSettings := DefaultKiroRuntimeSettings()
+	if s != nil && s.settingService != nil {
+		runtimeSettings = s.settingService.GetKiroRuntimeSettings(ctx)
+	}
+	machineID := kiro.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
+	kiroVersion := runtimeSettings.KiroVersion
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	if isKiroExternalIDPAccount(account) {
+		req.Header.Set("TokenType", "EXTERNAL_IDP")
+	}
+	req.Header.Set("host", host)
+	req.Header.Set("amz-sdk-invocation-id", generateRequestID())
+	req.Header.Set("amz-sdk-request", "attempt=1; max=1")
+	xAmzUserAgent, userAgent := kiro.BuildCodeWhispererRuntimeUserAgents(kiroVersion, machineID, runtimeSettings.SystemVersion, runtimeSettings.NodeVersion)
+	req.Header.Set("x-amz-user-agent", xAmzUserAgent)
+	req.Header.Set("User-Agent", userAgent)
+	if runtimeSettings.KiroCommit != "" {
+		req.Header.Set("x-amzn-kiro-commit", runtimeSettings.KiroCommit)
+	}
+	resp, err := doKiroSidecarRequest(req, account, s.httpUpstream, s.tlsFPProfileService, 60*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, buildKiroUsageUpstreamError(resp)
+	}
+	var out KiroUsageLimits
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 func (s *KiroUsageService) fetchAvailableProfilesInRegion(ctx context.Context, account *Account, accessToken, region string) (*KiroAvailableProfiles, error) {
@@ -257,7 +441,69 @@ func (s *KiroUsageService) fetchAvailableProfilesInRegion(ctx context.Context, a
 	return &out, nil
 }
 
+func (s *KiroUsageService) fetchAvailableModelsInRegion(ctx context.Context, account *Account, accessToken, region string) ([]KiroAvailableModel, error) {
+	host := fmt.Sprintf("q.%s.amazonaws.com", region)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+host+"/listAvailableModels?origin=AI_EDITOR", nil)
+	if err != nil {
+		return nil, err
+	}
+	runtimeSettings := DefaultKiroRuntimeSettings()
+	if s != nil && s.settingService != nil {
+		runtimeSettings = s.settingService.GetKiroRuntimeSettings(ctx)
+	}
+	machineID := kiro.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
+	kiroVersion := runtimeSettings.KiroVersion
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	if isKiroExternalIDPAccount(account) {
+		req.Header.Set("TokenType", "EXTERNAL_IDP")
+	}
+	req.Header.Set("host", host)
+	req.Header.Set("amz-sdk-invocation-id", generateRequestID())
+	req.Header.Set("amz-sdk-request", "attempt=1; max=1")
+	xAmzUserAgent, userAgent := kiro.BuildCodeWhispererRuntimeUserAgents(kiroVersion, machineID, runtimeSettings.SystemVersion, runtimeSettings.NodeVersion)
+	req.Header.Set("x-amz-user-agent", xAmzUserAgent)
+	req.Header.Set("User-Agent", userAgent)
+	resp, err := doKiroSidecarRequest(req, account, s.httpUpstream, s.tlsFPProfileService, 60*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, buildKiroUsageUpstreamError(resp)
+	}
+	var out struct {
+		Models []KiroAvailableModel `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out.Models, nil
+}
+
 func kiroProfileDiscoveryRegions(account *Account) []string {
+	out := []string{}
+	add := func(region string) {
+		region = strings.TrimSpace(region)
+		if region == "" {
+			return
+		}
+		for _, existing := range out {
+			if existing == region {
+				return
+			}
+		}
+		out = append(out, region)
+	}
+	add(profileARNRegion(accountCredential(account, "profile_arn")))
+	add(accountCredential(account, "api_region"))
+	add(accountCredential(account, "auth_region"))
+	add(accountCredential(account, "region"))
+	add("us-east-1")
+	add("eu-central-1")
+	return out
+}
+
+func kiroRESTRegions(account *Account) []string {
 	out := []string{}
 	add := func(region string) {
 		region = strings.TrimSpace(region)
@@ -330,6 +576,19 @@ func buildKiroUsageUpstreamError(resp *http.Response) error {
 	return fmt.Errorf("kiro usage upstream returned %d: %s", resp.StatusCode, detail)
 }
 
+func shouldStopKiroUsageRegionFallback(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := strings.ToLower(err.Error())
+	return strings.Contains(errStr, "kiro usage upstream returned 401") ||
+		strings.Contains(errStr, "invalid token") ||
+		strings.Contains(errStr, "invalid_token") ||
+		strings.Contains(errStr, "expired token") ||
+		strings.Contains(errStr, "token expired") ||
+		strings.Contains(errStr, "unauthorized")
+}
+
 func (s *KiroUsageService) prepareAccount(ctx context.Context, account *Account) *Account {
 	if account == nil || account.Proxy != nil || account.ProxyID == nil || s == nil || s.proxyRepo == nil {
 		return account
@@ -387,7 +646,28 @@ func (k *KiroUsageLimits) SubscriptionTitle() string {
 	if k == nil || k.SubscriptionInfo == nil || k.SubscriptionInfo.SubscriptionTitle == nil {
 		return ""
 	}
-	return *k.SubscriptionInfo.SubscriptionTitle
+	return strings.TrimSpace(*k.SubscriptionInfo.SubscriptionTitle)
+}
+
+func (k *KiroUsageLimits) OverageEnabled() *bool {
+	if k == nil || k.OverageConfiguration == nil {
+		return nil
+	}
+	return k.OverageConfiguration.Enabled
+}
+
+func (k *KiroUsageLimits) OverageCapability() string {
+	if k == nil || k.SubscriptionInfo == nil || k.SubscriptionInfo.OverageCapability == nil {
+		return ""
+	}
+	return strings.TrimSpace(*k.SubscriptionInfo.OverageCapability)
+}
+
+func (k *KiroUsageLimits) Email() string {
+	if k == nil || k.UserInfo == nil || k.UserInfo.Email == nil {
+		return ""
+	}
+	return strings.TrimSpace(*k.UserInfo.Email)
 }
 
 func (k *KiroUsageLimits) CurrentUsage() float64 {

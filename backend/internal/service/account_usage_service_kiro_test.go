@@ -348,6 +348,62 @@ func TestAccountUsageService_GetUsage_KiroCachesSuccessfulUsage(t *testing.T) {
 	require.GreaterOrEqual(t, second.KiroQuota.RemainingSeconds, 0)
 }
 
+func TestAccountUsageService_GetUsage_KiroIncludesOverageCapabilityAndEmail(t *testing.T) {
+	t.Parallel()
+
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body: io.NopCloser(strings.NewReader(`{
+					"userInfo":{"email":"kiro@example.com"},
+					"overageConfiguration":{"enabled":true},
+					"subscriptionInfo":{"subscriptionTitle":"Kiro Pro","overageCapability":"SUPPORTED"},
+					"usageBreakdownList":[{"currentUsageWithPrecision":12.5,"usageLimitWithPrecision":100,"nextDateReset":4102444800}]
+				}`)),
+				Header: make(http.Header),
+			}, nil
+		},
+	}
+	account := &Account{
+		ID:       991,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"profile_id":         "STALE-PROFILE",
+			"login_provider":     "stale-provider",
+			"kiro_status_reason": "STALE-REASON",
+		},
+		Credentials: map[string]any{
+			"access_token":   "access-token",
+			"refresh_token":  "refresh-token",
+			"profile_id":     "PROFILE-123",
+			"login_provider": "microsoft",
+			"status_reason":  "FEATURE_NOT_SUPPORTED",
+		},
+	}
+	repo := &kiroUsageAccountRepo{account: account}
+	svc := &AccountUsageService{
+		accountRepo: repo,
+		usageFetcher: &kiroUsageFetcherStub{
+			upstream: upstream,
+		},
+		cache: NewUsageCache(),
+	}
+
+	usage, err := svc.GetUsage(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+	require.Equal(t, "kiro@example.com", usage.KiroEmail)
+	require.Equal(t, "SUPPORTED", usage.KiroOverageCapability)
+	require.NotNil(t, usage.KiroOverageEnabled)
+	require.True(t, *usage.KiroOverageEnabled)
+	require.Equal(t, "PROFILE-123", usage.KiroProfileID)
+	require.Equal(t, "microsoft", usage.KiroLoginProvider)
+	require.Equal(t, "FEATURE_NOT_SUPPORTED", usage.KiroStatusReason)
+}
+
 func TestAccountUsageService_GetUsage_KiroPersistsSchedulerSnapshotIntoExtra(t *testing.T) {
 	t.Parallel()
 

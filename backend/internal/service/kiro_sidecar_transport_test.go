@@ -306,8 +306,103 @@ func TestKiroUsageService_ResolveBestProfileARNChoosesProfileWithUsage(t *testin
 	require.Equal(t, "arn:aws:codewhisperer:eu-central-1:222222222222:profile/EUCENTRAL", arn)
 	require.NotNil(t, usage)
 	require.Equal(t, "KIRO POWER", usage.SubscriptionTitle())
-	require.Len(t, calls, 4)
+	require.GreaterOrEqual(t, len(calls), 4)
 	require.Contains(t, strings.Join(calls, "\n"), "EXTERNAL_IDP")
+}
+
+func TestKiroUsageService_ResolveBestProfileARNPrefersNonUSEastWhenMultipleProfilesWork(t *testing.T) {
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			if req.Method == http.MethodPost && req.URL.Path == "/" && req.Header.Get("x-amz-target") == "AmazonCodeWhispererService.ListAvailableProfiles" {
+				switch req.URL.Host {
+				case "q.us-east-1.amazonaws.com":
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(`{"profiles":[{"arn":"arn:aws:codewhisperer:us-east-1:111111111111:profile/USEAST"}]}`)),
+						Header:     make(http.Header),
+					}, nil
+				case "q.eu-central-1.amazonaws.com":
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(`{"profiles":[{"arn":"arn:aws:codewhisperer:eu-central-1:222222222222:profile/EUCENTRAL"}]}`)),
+						Header:     make(http.Header),
+					}, nil
+				}
+			}
+			if req.Method == http.MethodGet && req.URL.Path == "/getUsageLimits" {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body: io.NopCloser(strings.NewReader(`{
+						"subscriptionInfo":{"subscriptionTitle":"KIRO POWER"},
+						"usageBreakdownList":[{"currentUsageWithPrecision":0,"usageLimitWithPrecision":10000}]
+					}`)),
+					Header: make(http.Header),
+				}, nil
+			}
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.String())
+			return nil, nil
+		},
+	}
+	service := NewKiroUsageService().WithTransport(upstream, &TLSFingerprintProfileService{})
+	account := &Account{
+		ID:          88,
+		Platform:    PlatformKiro,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{"refresh_token": "refresh-token"},
+	}
+
+	arn, usage, err := service.ResolveBestProfileARN(context.Background(), account, "access-token")
+
+	require.NoError(t, err)
+	require.Equal(t, "arn:aws:codewhisperer:eu-central-1:222222222222:profile/EUCENTRAL", arn)
+	require.NotNil(t, usage)
+}
+
+func TestKiroUsageService_FetchUsageLimitsFallsBackToSecondaryRegion(t *testing.T) {
+	calls := []string{}
+	upstream := &kiroHTTPUpstreamRecorder{
+		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+			calls = append(calls, req.URL.Host)
+			if req.Method == http.MethodGet && req.URL.Path == "/getUsageLimits" {
+				switch req.URL.Host {
+				case "q.eu-west-1.amazonaws.com":
+					return &http.Response{
+						StatusCode: http.StatusForbidden,
+						Body:       io.NopCloser(strings.NewReader(`{"message":"FEATURE_NOT_SUPPORTED","reason":"FEATURE_NOT_SUPPORTED"}`)),
+						Header:     make(http.Header),
+					}, nil
+				case "q.us-east-1.amazonaws.com":
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body: io.NopCloser(strings.NewReader(`{
+							"subscriptionInfo":{"subscriptionTitle":"KIRO POWER"},
+							"usageBreakdownList":[{"currentUsageWithPrecision":5,"usageLimitWithPrecision":10}]
+						}`)),
+						Header: make(http.Header),
+					}, nil
+				}
+			}
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.String())
+			return nil, nil
+		},
+	}
+	service := NewKiroUsageService().WithTransport(upstream, &TLSFingerprintProfileService{})
+	account := &Account{
+		ID:       89,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"api_region":    "eu-west-1",
+			"refresh_token": "refresh-token",
+		},
+	}
+
+	usage, err := service.FetchUsageLimits(context.Background(), account, "access-token")
+
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+	require.Equal(t, []string{"q.eu-west-1.amazonaws.com", "q.us-east-1.amazonaws.com"}, calls[:2])
 }
 
 func TestKiroRegionPrefersProfileARNRegion(t *testing.T) {
