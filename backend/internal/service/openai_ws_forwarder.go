@@ -2221,6 +2221,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	if s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
 		headers.Set("user-agent", codexCLIUserAgent)
 	}
+	finalizeOpenAICodexIdentityHeaders(headers, account, false)
 
 	return headers, sessionResolution, nil
 }
@@ -2262,11 +2263,12 @@ func (s *OpenAIGatewayService) buildOpenAIWSNeutralHeaders(
 	if s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
 		headers.Set("user-agent", codexCLIUserAgent)
 	}
+	finalizeOpenAICodexIdentityHeaders(headers, account, false)
 
 	return headers
 }
 
-func applyOpenAIWSFingerprintRuntimeHeaders(headers http.Header, runtime openAITLSFingerprintRuntime) {
+func applyOpenAIWSFingerprintRuntimeHeaders(headers http.Header, runtime openAITLSFingerprintRuntime, account *Account) {
 	if headers == nil {
 		return
 	}
@@ -2274,12 +2276,11 @@ func applyOpenAIWSFingerprintRuntimeHeaders(headers http.Header, runtime openAIT
 		headers.Set("user-agent", runtime.UpstreamUserAgent)
 	}
 	if runtime.UpstreamOriginator != "" {
-		// Fingerprint-runtime originator is an explicit anti-ban override
-		// configured by the operator (mirrors the HTTP
-		// applyOpenAITLSFingerprintRuntime path); send it verbatim rather than
-		// applying the omit-default rule so codex_cli_rs spoofing keeps working.
+		// Apply the operator-selected fingerprint first; OAuth identity is paired
+		// against the resulting User-Agent below before the handshake is sent.
 		headers.Set("originator", runtime.UpstreamOriginator)
 	}
+	finalizeOpenAICodexIdentityHeaders(headers, account, false)
 }
 
 func (s *OpenAIGatewayService) buildOpenAIWSCreatePayload(reqBody map[string]any, account *Account) map[string]any {
@@ -3835,7 +3836,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	if buildHdrErr != nil {
 		return nil, fmt.Errorf("build ws headers: %w", buildHdrErr)
 	}
-	applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
+	applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime, account)
 	if httpIngressWSOneShot {
 		// 无会话 one-shot：使用账号级中性握手头，不绑定 session/response。
 		connProfile = openAIWSConnProfileNeutral
@@ -3843,7 +3844,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			forceNewConn = true
 		}
 		wsHeaders = s.buildOpenAIWSNeutralHeaders(account, token, decision, isCodexCLI)
-		applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
+		applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime, account)
 	}
 	if preferNeutralForSafeFullReplay || shouldUseOpenAIWSNeutralForColdSession(account, httpIngressWSOneShot, storeDisabled, previousResponseID, sessionHash, turnState, turnMetadata, payload) {
 		useNeutral := preferredConnID == ""
@@ -3862,7 +3863,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				forceNewConn = false
 			}
 			wsHeaders = s.buildOpenAIWSNeutralHeaders(account, token, decision, isCodexCLI)
-			applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
+			applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime, account)
 			promoteNeutralConnToSessionBound = true
 		}
 	}
@@ -3980,7 +3981,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		forceNewConn = false
 		affinityOnlyReuse = false
 		wsHeaders = s.buildOpenAIWSNeutralHeaders(account, token, decision, isCodexCLI)
-		applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
+		applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime, account)
 		promoteNeutralConnToSessionBound = true
 		acquireReq.PreferredConnID = ""
 		acquireReq.ForcePreferredConn = false
@@ -5910,7 +5911,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	if buildHdrErr != nil {
 		return fmt.Errorf("build ws headers: %w", buildHdrErr)
 	}
-	applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime)
+	applyOpenAIWSFingerprintRuntimeHeaders(wsHeaders, tlsFPRuntime, account)
 	baseAcquireReq := openAIWSAcquireRequest{
 		Account:    account,
 		WSURL:      wsURL,
@@ -7298,7 +7299,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if updHdrErr != nil {
 				return fmt.Errorf("build ws headers: %w", updHdrErr)
 			}
-			applyOpenAIWSFingerprintRuntimeHeaders(updatedHeaders, tlsFPRuntime)
+			applyOpenAIWSFingerprintRuntimeHeaders(updatedHeaders, tlsFPRuntime, account)
 			baseAcquireReq.Headers = updatedHeaders
 		}
 		if nextPayload.previousResponseID != "" {

@@ -29,6 +29,7 @@ func applyOpenAICodexProbeIdentityHeaders(header http.Header, account *Account, 
 	header.Set("Originator", originator)
 	header.Set("User-Agent", userAgent)
 	header.Set("Version", normalizeOpenAICodexProbeVersion(codexCLIVersion))
+	enforceCodexIdentityHeaders(header)
 }
 
 func resolveOpenAICodexProbeUserAgent(account *Account, profile *tlsfingerprint.Profile) string {

@@ -335,7 +335,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	httpMaxOutputTokensRetryTried := false
 	var resp *http.Response
 	for {
-		applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+		applyOpenAICodexTLSFingerprintRuntime(upstreamReq, tlsRuntime, account, false)
 		upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsRuntime.Profile)
 		SetOpsLatencyMs(c, OpsOpenAIForwardPrepareLatencyMsKey, time.Since(startTime).Milliseconds())
 		upstreamStart := time.Now()

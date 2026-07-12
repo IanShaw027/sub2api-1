@@ -390,6 +390,15 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	}
 
 	// 6. Build upstream request
+	if account.Type == AccountTypeOAuth && account.Platform != PlatformGrok {
+		// Every Anthropic Messages conversion is a compatibility bridge, even
+		// when a non-Codex target model produces no prompt-cache marker. Mark it
+		// before the shared builder so its intentionally minimal identity shape
+		// (non-browser client UA preserved unless an explicit runtime override is
+		// configured, no originator) cannot be normalized as a regular OAuth
+		// Responses request.
+		setOpenAICompatMessagesBridgeContext(c, true)
+	}
 	var upstreamReq *http.Request
 	if account.Platform == PlatformGrok {
 		upstreamReq, err = buildGrokResponsesRequest(upstreamCtx, c, account, responsesBody, token)
@@ -433,7 +442,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	httpCodexCompatRetryTried := false
 	var resp *http.Response
 	for {
-		applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+		applyOpenAICodexTLSFingerprintRuntime(upstreamReq, tlsRuntime, account, true)
 		upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsRuntime.Profile)
 		SetOpsLatencyMs(c, OpsOpenAIForwardPrepareLatencyMsKey, time.Since(startTime).Milliseconds())
 		upstreamStart := time.Now()

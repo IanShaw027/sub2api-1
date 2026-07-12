@@ -167,6 +167,20 @@ func TestAccountTestService_OpenAIOAuthProbeSendsCodexIdentityHeaders(t *testing
 	require.Equal(t, "0.144.1", req.Header.Get("Version"))
 }
 
+func TestApplyOpenAICodexProbeIdentityHeadersPairsCapturedProfileIdentity(t *testing.T) {
+	header := make(http.Header)
+	profile := &tlsfingerprint.Profile{
+		UserAgent:  "codex-tui/0.144.1 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.144.1)",
+		Originator: "codex_cli_rs",
+	}
+
+	applyOpenAICodexProbeIdentityHeaders(header, nil, profile)
+
+	require.Equal(t, profile.UserAgent, header.Get("User-Agent"))
+	require.Equal(t, "codex-tui", header.Get("Originator"))
+	require.Equal(t, "0.144.1", header.Get("Version"))
+}
+
 func TestNormalizeOpenAICodexProbeVersionPromotesOlderVersions(t *testing.T) {
 	tests := []struct {
 		name string

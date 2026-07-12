@@ -112,3 +112,77 @@ func TestEnforceCodexIdentityHeaders_NoOriginatorIsNoop(t *testing.T) {
 	require.Empty(t, h.Get("originator"))
 	require.Equal(t, "luna/1.0.0", h.Get("user-agent"))
 }
+
+func TestFinalizeOpenAICodexIdentityHeaders(t *testing.T) {
+	tuiUA := "codex-tui/0.144.1 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.144.1)"
+	oauthAccount := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	t.Run("materializes identity from final user agent", func(t *testing.T) {
+		h := make(http.Header)
+		h.Set("user-agent", tuiUA)
+
+		finalizeOpenAICodexIdentityHeaders(h, oauthAccount, false)
+
+		require.Equal(t, tuiUA, h.Get("user-agent"))
+		require.Equal(t, "codex-tui", h.Get("originator"))
+	})
+
+	t.Run("third party identity falls back and omits default originator", func(t *testing.T) {
+		h := make(http.Header)
+		h.Set("user-agent", "luna/1.0.0")
+		h.Set("originator", "opencode")
+
+		finalizeOpenAICodexIdentityHeaders(h, oauthAccount, false)
+
+		require.Equal(t, codexCLIUserAgent, h.Get("user-agent"))
+		require.Empty(t, h.Get("originator"))
+	})
+
+	t.Run("messages bridge keeps minimal identity shape", func(t *testing.T) {
+		h := make(http.Header)
+		h.Set("user-agent", "luna/1.0.0")
+		h.Set("originator", "codex_cli_rs")
+
+		finalizeOpenAICodexIdentityHeaders(h, oauthAccount, true)
+
+		require.Equal(t, "luna/1.0.0", h.Get("user-agent"))
+		require.Empty(t, h.Get("originator"))
+	})
+
+	t.Run("api key headers are untouched", func(t *testing.T) {
+		h := make(http.Header)
+		h.Set("user-agent", "custom-client/1.0")
+		h.Set("originator", "custom-originator")
+
+		finalizeOpenAICodexIdentityHeaders(h, &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, false)
+
+		require.Equal(t, "custom-client/1.0", h.Get("user-agent"))
+		require.Equal(t, "custom-originator", h.Get("originator"))
+	})
+}
+
+func TestApplyOpenAICodexTLSFingerprintRuntimeFinalizesOverride(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", nil)
+	require.NoError(t, err)
+	runtime := openAITLSFingerprintRuntime{
+		UpstreamUserAgent:  "codex-tui/0.144.1 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.144.1)",
+		UpstreamOriginator: codexDefaultOriginator,
+	}
+
+	applyOpenAICodexTLSFingerprintRuntime(req, runtime, &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}, false)
+
+	require.Equal(t, runtime.UpstreamUserAgent, req.Header.Get("user-agent"))
+	require.Equal(t, "codex-tui", req.Header.Get("originator"))
+
+	bridgeReq, err := http.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", nil)
+	require.NoError(t, err)
+	applyOpenAICodexTLSFingerprintRuntime(bridgeReq, runtime, &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}, true)
+	require.Equal(t, runtime.UpstreamUserAgent, bridgeReq.Header.Get("user-agent"))
+	require.Empty(t, bridgeReq.Header.Get("originator"))
+
+	apiKeyReq, err := http.NewRequest(http.MethodPost, "https://api.openai.com/v1/responses", nil)
+	require.NoError(t, err)
+	applyOpenAICodexTLSFingerprintRuntime(apiKeyReq, runtime, &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, false)
+	require.Equal(t, runtime.UpstreamUserAgent, apiKeyReq.Header.Get("user-agent"))
+	require.Equal(t, runtime.UpstreamOriginator, apiKeyReq.Header.Get("originator"))
+}

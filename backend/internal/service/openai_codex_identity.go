@@ -32,3 +32,34 @@ func enforceCodexIdentityHeaders(h http.Header) {
 		h.Set("version", codexCLIVersion)
 	}
 }
+
+// finalizeOpenAICodexIdentityHeaders applies the OAuth-only terminal identity
+// policy after every User-Agent/originator override. The default CLI
+// originator is temporarily materialized so the final User-Agent can still be
+// validated, then omitted again to preserve add_originator_header semantics.
+func finalizeOpenAICodexIdentityHeaders(h http.Header, account *Account, messagesBridge bool) {
+	if h == nil || account == nil || account.Type != AccountTypeOAuth || account.Platform == PlatformGrok {
+		return
+	}
+	if messagesBridge {
+		h.Del("originator")
+		return
+	}
+	if strings.TrimSpace(h.Get("originator")) == "" {
+		h.Set("originator", codexDefaultOriginator)
+	}
+	enforceCodexIdentityHeaders(h)
+	applyOpenAIUpstreamOriginatorHeader(h, h.Get("originator"))
+}
+
+func applyOpenAICodexTLSFingerprintRuntime(
+	req *http.Request,
+	runtime openAITLSFingerprintRuntime,
+	account *Account,
+	messagesBridge bool,
+) {
+	applyOpenAITLSFingerprintRuntime(req, runtime)
+	if req != nil {
+		finalizeOpenAICodexIdentityHeaders(req.Header, account, messagesBridge)
+	}
+}

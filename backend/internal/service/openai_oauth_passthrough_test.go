@@ -708,7 +708,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_CompactUsesJSONAndKeepsNonStreami
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", bytes.NewReader(nil))
 	c.Request.Header.Set("Accept", "*/*")
-	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.1.0")
+	c.Request.Header.Set("User-Agent", "codex_exec/0.144.1")
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Request.Header.Set("Session_Id", "cache-123")
 	c.Request.Header.Set("X-Codex-Installation-Id", "inst-123")
@@ -1804,9 +1804,9 @@ func TestOpenAIGatewayService_OAuthLegacy_CompositeCodexUAUsesCodexOriginator(t 
 	_, err := svc.Forward(context.Background(), c, account, inputBody)
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastReq)
-	// Official Codex client resolves to the default codex_cli_rs originator, which
-	// upstream (and now this gateway) omits from the request headers.
-	require.Empty(t, upstream.lastReq.Header.Get("originator"))
+	// Browser-shaped composite identities use the configured/default codex-tui
+	// anti-challenge profile, then pair originator to that final User-Agent.
+	require.Equal(t, "codex-tui", upstream.lastReq.Header.Get("originator"))
 	require.NotEqual(t, "opencode", upstream.lastReq.Header.Get("originator"))
 }
 
@@ -2166,7 +2166,7 @@ func TestOpenAIGatewayService_OpenAIPassthrough_Transient5xxTriggerFailoverWitho
 	}
 }
 
-func TestOpenAIGatewayService_OAuthPassthrough_NonCodexUAPreservesUserAgentWithoutForceCodexCLI(t *testing.T) {
+func TestOpenAIGatewayService_OAuthPassthrough_NonCodexUAFallsBackWithoutForceCodexCLI(t *testing.T) {
 	setGinTestMode()
 
 	rec := httptest.NewRecorder()
@@ -2206,8 +2206,8 @@ func TestOpenAIGatewayService_OAuthPassthrough_NonCodexUAPreservesUserAgentWitho
 	require.NoError(t, err)
 	require.Equal(t, false, gjson.GetBytes(upstream.lastBody, "store").Bool())
 	require.Equal(t, true, gjson.GetBytes(upstream.lastBody, "stream").Bool())
-	require.Equal(t, "curl/8.0", upstream.lastReq.Header.Get("User-Agent"))
-	require.Equal(t, "opencode", upstream.lastReq.Header.Get("Originator"))
+	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Empty(t, upstream.lastReq.Header.Get("Originator"))
 }
 
 func TestOpenAIGatewayService_CodexCLIOnly_RejectsNonCodexClient(t *testing.T) {

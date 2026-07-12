@@ -428,7 +428,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	if buildHdrErr != nil {
 		return fmt.Errorf("build ws headers: %w", buildHdrErr)
 	}
-	applyOpenAIWSFingerprintRuntimeHeaders(headers, tlsFPRuntime)
+	applyOpenAIWSFingerprintRuntimeHeaders(headers, tlsFPRuntime, account)
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()

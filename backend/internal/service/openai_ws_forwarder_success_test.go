@@ -1627,10 +1627,11 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testi
 		originator     string
 		wantOriginator string
 	}{
-		{name: "desktop originator preserved", originator: "Codex Desktop", wantOriginator: "Codex Desktop"},
-		{name: "vscode originator preserved", originator: "codex_vscode", wantOriginator: "codex_vscode"},
+		{name: "desktop paired identity preserved", userAgent: "Codex Desktop/1.2.3", originator: "Codex Desktop", wantOriginator: "Codex Desktop"},
+		{name: "vscode paired identity preserved", userAgent: "codex_vscode/1.0.0", originator: "codex_vscode", wantOriginator: "codex_vscode"},
+		{name: "mismatched default is paired to tui", userAgent: "codex-tui/0.144.1", originator: "codex_cli_rs", wantOriginator: "codex-tui"},
 		// Default codex_cli_rs originator is now omitted (mirrors upstream add_originator_header).
-		{name: "official ua fallback omits default originator", userAgent: "Codex Desktop/1.2.3", wantOriginator: ""},
+		{name: "default cli originator is omitted", userAgent: "codex_cli_rs/0.144.1", wantOriginator: ""},
 	}
 
 	for _, tt := range tests {
@@ -1700,7 +1701,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testi
 	}
 }
 
-func TestOpenAIGatewayService_BuildOpenAIWSHeaders_NonOfficialOAuthPreservesUserAgentWithoutForceCodexCLI(t *testing.T) {
+func TestOpenAIGatewayService_BuildOpenAIWSHeaders_NonOfficialOAuthFallsBackToCodexIdentity(t *testing.T) {
 	setGinTestMode()
 
 	rec := httptest.NewRecorder()
@@ -1718,8 +1719,8 @@ func TestOpenAIGatewayService_BuildOpenAIWSHeaders_NonOfficialOAuthPreservesUser
 
 	headers, _, err := svc.buildOpenAIWSHeaders(context.Background(), c, account, "token", OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportResponsesWebsocketV2}, false, "", "", "")
 	require.NoError(t, err)
-	require.Equal(t, "custom-client/1.0", headers.Get("User-Agent"))
-	require.Equal(t, "opencode", headers.Get("Originator"))
+	require.Equal(t, codexCLIUserAgent, headers.Get("User-Agent"))
+	require.Empty(t, headers.Get("Originator"))
 	require.Equal(t, openAIWSBetaV2Value, headers.Get("OpenAI-Beta"))
 }
 

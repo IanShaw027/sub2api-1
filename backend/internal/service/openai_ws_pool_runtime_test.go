@@ -638,8 +638,8 @@ func TestOpenAIWSPoolReconcilePrewarmUsesTLSFingerprintRuntime(t *testing.T) {
 				ID:         77,
 				Name:       "WS Routed TLS",
 				Platform:   "openai",
-				UserAgent:  "ws-profile-ua/1.0",
-				Originator: "ws_profile_origin",
+				UserAgent:  "codex-tui/0.144.1",
+				Originator: codexDefaultOriginator,
 			},
 		}},
 	}
@@ -661,8 +661,8 @@ func TestOpenAIWSPoolReconcilePrewarmUsesTLSFingerprintRuntime(t *testing.T) {
 	require.Equal(t, int32(1), dialer.dialCount.Load())
 	require.NotNil(t, dialer.lastTLSProfile)
 	require.Equal(t, "WS Routed TLS", dialer.lastTLSProfile.Name)
-	require.Equal(t, "ws-profile-ua/1.0", dialer.lastHeaders.Get("user-agent"))
-	require.Equal(t, "ws_profile_origin", dialer.lastHeaders.Get("originator"))
+	require.Equal(t, "codex-tui/0.144.1", dialer.lastHeaders.Get("user-agent"))
+	require.Equal(t, "codex-tui", dialer.lastHeaders.Get("originator"))
 }
 
 func TestOpenAIWSPoolReconcile_IneligibleStopsInFlightNeutralPrewarmFromReaddingConnection(t *testing.T) {

@@ -2591,11 +2591,32 @@ func resolveOpenAIUpstreamSessionID(c *gin.Context, promptCacheKey string) strin
 	return ""
 }
 
-func shouldUseOpenAIMessagesBridgeHeaders(c *gin.Context, body []byte) bool {
+func shouldUseOpenAIMessagesBridgeHeaders(c *gin.Context, body []byte, promptCacheKey string) bool {
 	if isOpenAICompatMessagesBridgeContext(c) {
 		return true
 	}
-	return isOpenAICompatMessagesBridgeBody(body)
+	return isOpenAICompatMessagesBridgeBody(body) ||
+		isOpenAICompatMessagesBridgePromptCacheKey(strings.TrimSpace(promptCacheKey))
+}
+
+// overrideBrowserUserAgent replaces browser-shaped OAuth traffic with the
+// configured Codex identity before terminal identity pairing. This avoids
+// browser challenges on the ChatGPT internal endpoint while preserving
+// non-browser clients and all API-key traffic.
+func (s *OpenAIGatewayService) overrideBrowserUserAgent(ctx context.Context, account *Account, req *http.Request) {
+	if req == nil || account == nil || account.Type != AccountTypeOAuth {
+		return
+	}
+	if !openai.IsBrowserUserAgent(req.Header.Get("user-agent")) {
+		return
+	}
+	codexUA := DefaultOpenAICodexUserAgent
+	if s != nil && s.settingService != nil {
+		if configured := strings.TrimSpace(s.settingService.GetOpenAICodexUserAgent(ctx)); configured != "" {
+			codexUA = configured
+		}
+	}
+	req.Header.Set("user-agent", codexUA)
 }
 
 // BindStickySession sets session -> account binding with standard TTL.
@@ -6176,7 +6197,8 @@ oauthTransformDone:
 		if err != nil {
 			return nil, err
 		}
-		applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+		isMessagesBridgeIdentity := shouldUseOpenAIMessagesBridgeHeaders(c, body, promptCacheKey)
+		applyOpenAICodexTLSFingerprintRuntime(upstreamReq, tlsRuntime, account, isMessagesBridgeIdentity)
 		upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsRuntime.Profile)
 
 		// Get proxy URL
@@ -6874,7 +6896,8 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		if err != nil {
 			return nil, err
 		}
-		applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+		isMessagesBridgeIdentity := shouldUseOpenAIMessagesBridgeHeaders(c, body, promptCacheKey)
+		applyOpenAICodexTLSFingerprintRuntime(upstreamReq, tlsRuntime, account, isMessagesBridgeIdentity)
 		upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsRuntime.Profile)
 
 		SetOpsLatencyMs(c, OpsOpenAIForwardPrepareLatencyMsKey, time.Since(startTime).Milliseconds())
@@ -6928,9 +6951,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
 		upstreamCode := extractUpstreamErrorCode(respBody)
 		isCompact := isOpenAIResponsesCompactPath(c)
-		isMessagesBridge := isOpenAICompatMessagesBridgeContext(c) ||
-			shouldUseOpenAIMessagesBridgeHeaders(c, body) ||
-			isOpenAICompatMessagesBridgePromptCacheKey(strings.TrimSpace(promptCacheKey))
+		isMessagesBridge := shouldUseOpenAIMessagesBridgeHeaders(c, body, promptCacheKey)
 		if !previousResponseIDRetryTried &&
 			resp.StatusCode == http.StatusBadRequest &&
 			isOpenAIUnsupportedPreviousResponseIDError(upstreamCode, upstreamMsg) {
@@ -7303,6 +7324,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	req.Header.Set("authorization", "Bearer "+token)
 
 	// OAuth 透传到 ChatGPT internal API 时补齐必要头。
+	isMessagesBridge := false
 	if account.Type == AccountTypeOAuth {
 		req.Host = "chatgpt.com"
 		if chatgptAccountID := account.GetChatGPTAccountID(); chatgptAccountID != "" {
@@ -7310,8 +7332,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		}
 		compactPath := isOpenAIResponsesCompactPath(c)
 		officialClient := isOpenAICodexOfficialOrForcedClientRequest(c, s.cfg)
-		isMessagesBridge := shouldUseOpenAIMessagesBridgeHeaders(c, body) ||
-			isOpenAICompatMessagesBridgePromptCacheKey(strings.TrimSpace(promptCacheKey))
+		isMessagesBridge = shouldUseOpenAIMessagesBridgeHeaders(c, body, promptCacheKey)
 		setOpenAIChatGPTAccountHeaders(req.Header, account)
 		// 先保存客户端原始值，再做 compact 补充，避免后续统一隔离时读到已处理的值。
 		clientSessionID := strings.TrimSpace(req.Header.Get("session_id"))
@@ -7372,6 +7393,8 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	if s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
 		req.Header.Set("user-agent", codexCLIUserAgent)
 	}
+	s.overrideBrowserUserAgent(ctx, account, req)
+	finalizeOpenAICodexIdentityHeaders(req.Header, account, isMessagesBridge)
 
 	if req.Header.Get("content-type") == "" {
 		req.Header.Set("content-type", "application/json")
@@ -8738,6 +8761,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	req.Header.Set("authorization", "Bearer "+token)
 
 	// Set headers specific to OAuth accounts (ChatGPT internal API)
+	isMessagesBridge := false
 	if account.Type == AccountTypeOAuth {
 		// Required: set Host for ChatGPT API (must use req.Host, not Header.Set)
 		req.Host = "chatgpt.com"
@@ -8758,8 +8782,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	if account.Type == AccountTypeOAuth {
 		req.Header.Del("conversation_id")
 		req.Header.Del("session_id")
-		isMessagesBridge := shouldUseOpenAIMessagesBridgeHeaders(c, body) ||
-			isOpenAICompatMessagesBridgePromptCacheKey(strings.TrimSpace(promptCacheKey))
+		isMessagesBridge = shouldUseOpenAIMessagesBridgeHeaders(c, body, promptCacheKey)
 		if isMessagesBridge {
 			req.Header.Del("originator")
 		} else {
@@ -8810,6 +8833,8 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	if s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
 		req.Header.Set("user-agent", codexCLIUserAgent)
 	}
+	s.overrideBrowserUserAgent(ctx, account, req)
+	finalizeOpenAICodexIdentityHeaders(req.Header, account, isMessagesBridge)
 
 	// Ensure required headers exist
 	if req.Header.Get("content-type") == "" {

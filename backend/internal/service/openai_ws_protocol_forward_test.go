@@ -5148,7 +5148,7 @@ func TestBuildOpenAIWSNeutralHeaders_NoSessionIdentity(t *testing.T) {
 	}
 }
 
-func TestOpenAIWSFingerprintRuntimeHeadersOverrideDefaults(t *testing.T) {
+func TestOpenAIWSFingerprintRuntimeHeadersFinalizeOAuthIdentity(t *testing.T) {
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
 	account := &Account{
 		ID:       43,
@@ -5163,14 +5163,14 @@ func TestOpenAIWSFingerprintRuntimeHeadersOverrideDefaults(t *testing.T) {
 	}
 	decision := OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportResponsesWebsocketV2}
 	runtime := openAITLSFingerprintRuntime{
-		UpstreamUserAgent:  "router-upstream/2.0",
-		UpstreamOriginator: "router-originator",
+		UpstreamUserAgent:  "codex-tui/0.144.1 (Mac OS X 14.0; arm64) iTerm (codex-tui; 0.144.1)",
+		UpstreamOriginator: codexDefaultOriginator,
 		Matched:            true,
 	}
 
 	headers := svc.buildOpenAIWSNeutralHeaders(account, "tok_abc", decision, true)
-	applyOpenAIWSFingerprintRuntimeHeaders(headers, runtime)
+	applyOpenAIWSFingerprintRuntimeHeaders(headers, runtime, account)
 
-	require.Equal(t, "router-upstream/2.0", headers.Get("user-agent"))
-	require.Equal(t, "router-originator", headers.Get("originator"))
+	require.Equal(t, runtime.UpstreamUserAgent, headers.Get("user-agent"))
+	require.Equal(t, "codex-tui", headers.Get("originator"))
 }

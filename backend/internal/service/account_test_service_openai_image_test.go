@@ -150,7 +150,7 @@ func TestAccountTestService_OpenAIImageOAuthIgnoresCompactProbeMode(t *testing.T
 	require.Equal(t, "gpt-image-2", gjson.GetBytes(upstream.lastBody, "tools.0.model").String())
 }
 
-func TestAccountTestService_OpenAIImageOAuthPreservesInboundOriginator(t *testing.T) {
+func TestAccountTestService_OpenAIImageOAuthPreservesPairedInboundOriginator(t *testing.T) {
 	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -178,13 +178,14 @@ func TestAccountTestService_OpenAIImageOAuthPreservesInboundOriginator(t *testin
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
 			"access_token": "token-123",
+			"user_agent":   "codex_vscode/0.144.1",
 		},
 	}
 
 	err := svc.testOpenAIImageOAuth(c, context.Background(), account, "gpt-image-2", "draw a cat")
 	require.NoError(t, err)
 	require.Equal(t, "codex_vscode", upstream.lastReq.Header.Get("originator"))
-	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "codex_vscode/0.144.1", upstream.lastReq.Header.Get("User-Agent"))
 }
 
 func TestAccountTestService_OpenAIImageOAuthPromotesOfficialCodexUserAgentOriginator(t *testing.T) {

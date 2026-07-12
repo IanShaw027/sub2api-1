@@ -133,6 +133,7 @@ func TestOpenAIGatewayService_Forward_OAuthCompactUsesCodexShape(t *testing.T) {
 	c.Request.Header.Set("X-Codex-Installation-Id", "inst-123")
 	c.Request.Header.Set("X-Codex-Window-Id", "cache-123:0")
 	c.Request.Header.Set("Originator", "codex_exec")
+	c.Request.Header.Set("User-Agent", "codex_exec/0.144.1")
 
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,

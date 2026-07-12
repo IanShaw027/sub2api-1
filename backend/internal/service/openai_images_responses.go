@@ -1619,7 +1619,7 @@ func (s *OpenAIGatewayService) doOpenAIImagesOAuthRequest(
 		proxyURL = account.Proxy.URL()
 	}
 	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "http")
-	applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+	applyOpenAICodexTLSFingerprintRuntime(upstreamReq, tlsRuntime, account, false)
 	upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsRuntime.Profile)
 	if beforeDispatch := openAIImagesOAuthDispatchHookFromContext(ctx); beforeDispatch != nil {
 		beforeDispatch()
