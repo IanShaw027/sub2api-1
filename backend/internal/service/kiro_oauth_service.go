@@ -18,6 +18,7 @@ import (
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
+	"go.uber.org/zap"
 )
 
 const (
@@ -825,6 +826,11 @@ func (s *KiroOAuthService) enrichTokenInfoForExternalIDPAuth(ctx context.Context
 	}
 	if _, err := s.enrichTokenInfoForAccountResult(ctx, account, tokenInfo); err != nil {
 		if isKiroExternalIDPUsageUnsupportedError(err) {
+			if resolveErr := s.resolveExternalIDPProfileAndUsage(ctx, account, tokenInfo); resolveErr == nil {
+				return nil
+			} else {
+				kiroLogger(ctx, account).Warn("kiro.external_idp_profile_resolve_failed", zap.Error(resolveErr))
+			}
 			tokenInfo.StatusReason = "kiro external_idp usage probe is not supported by upstream"
 			return nil
 		}
@@ -832,6 +838,64 @@ func (s *KiroOAuthService) enrichTokenInfoForExternalIDPAuth(ctx context.Context
 			"INVALID_KIRO_CREDENTIALS",
 			"kiro external_idp credentials refreshed, but Kiro rejected them: "+err.Error(),
 		)
+	}
+	return nil
+}
+
+func (s *KiroOAuthService) resolveExternalIDPProfileAndUsage(ctx context.Context, account *Account, tokenInfo *KiroTokenInfo) error {
+	if s == nil || s.usageService == nil || tokenInfo == nil || strings.TrimSpace(tokenInfo.AccessToken) == "" {
+		return fmt.Errorf("kiro external_idp profile resolver is not configured")
+	}
+	credentials := kiroTokenInfoMap(tokenInfo)
+	if account != nil {
+		credentials = MergeCredentials(cloneCredentials(account.Credentials), credentials)
+	}
+	probeAccount := account
+	if probeAccount == nil {
+		probeAccount = &Account{
+			Platform:    PlatformKiro,
+			Type:        AccountTypeOAuth,
+			Credentials: credentials,
+			Concurrency: 1,
+		}
+	} else {
+		cloned := *account
+		cloned.Credentials = credentials
+		if cloned.Concurrency <= 0 {
+			cloned.Concurrency = 1
+		}
+		probeAccount = &cloned
+	}
+	arn, usage, err := s.usageService.WithProxyRepo(s.proxyRepo).ResolveBestProfileARN(ctx, probeAccount, tokenInfo.AccessToken)
+	if err != nil {
+		return err
+	}
+	arn = strings.TrimSpace(arn)
+	if arn == "" {
+		return fmt.Errorf("kiro external_idp available profiles did not include profileArn")
+	}
+	tokenInfo.ProfileARN = arn
+	tokenInfo.ProfileID = profileARNProfileID(arn)
+	if region := profileARNRegion(arn); region != "" {
+		tokenInfo.APIRegion = region
+		tokenInfo.Region = region
+	}
+	if usage == nil {
+		var usageErr error
+		usage, usageErr = s.enrichTokenInfoForAccountResult(ctx, account, tokenInfo)
+		if usageErr != nil {
+			return usageErr
+		}
+	}
+	if usage != nil {
+		subscriptionTitle := strings.TrimSpace(usage.SubscriptionTitle())
+		if subscriptionTitle != "" {
+			tokenInfo.PlanName = subscriptionTitle
+			tokenInfo.SubscriptionType = subscriptionTitle
+		}
+		if resetAt := usage.ResetAt(); resetAt != nil {
+			tokenInfo.UsageResetAt = resetAt.Format(time.RFC3339)
+		}
 	}
 	return nil
 }

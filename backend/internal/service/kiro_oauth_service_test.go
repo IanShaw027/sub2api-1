@@ -459,17 +459,44 @@ func TestKiroOAuthServiceExchangeCallbackExternalIDPCodeAllowsMissingProfileARN(
 func TestKiroOAuthServiceExchangeCallbackExternalIDPIgnoresUnsupportedUsageProbe(t *testing.T) {
 	usageUpstream := &kiroHTTPUpstreamRecorder{
 		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
-			if req.Method != http.MethodGet || req.URL.Host != "q.us-east-1.amazonaws.com" || req.URL.Path != "/getUsageLimits" {
-				t.Fatalf("unexpected validation request: %s %s", req.Method, req.URL.String())
-			}
 			if got := req.Header.Get("TokenType"); got != "EXTERNAL_IDP" {
 				t.Fatalf("TokenType header = %q, want EXTERNAL_IDP", got)
 			}
-			return &http.Response{
-				StatusCode: http.StatusForbidden,
-				Body:       io.NopCloser(strings.NewReader(`{"error":"FEATURE_NOT_SUPPORTED"}`)),
-				Header:     make(http.Header),
-			}, nil
+			if req.Method == http.MethodGet && req.URL.Host == "q.us-east-1.amazonaws.com" && req.URL.Path == "/getUsageLimits" {
+				return &http.Response{
+					StatusCode: http.StatusForbidden,
+					Body:       io.NopCloser(strings.NewReader(`{"error":"FEATURE_NOT_SUPPORTED"}`)),
+					Header:     make(http.Header),
+				}, nil
+			}
+			if req.Method == http.MethodPost && req.URL.Path == "/" && req.Header.Get("x-amz-target") == "AmazonCodeWhispererService.ListAvailableProfiles" {
+				switch req.URL.Host {
+				case "q.us-east-1.amazonaws.com":
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(`{"profiles":[{"arn":"arn:aws:codewhisperer:us-east-1:111111111111:profile/USEAST"}]}`)),
+						Header:     make(http.Header),
+					}, nil
+				case "q.eu-central-1.amazonaws.com":
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(strings.NewReader(`{"profiles":[{"arn":"arn:aws:codewhisperer:eu-central-1:222222222222:profile/EUCENTRAL"}]}`)),
+						Header:     make(http.Header),
+					}, nil
+				}
+			}
+			if req.Method == http.MethodGet && req.URL.Path == "/getUsageLimits" && req.URL.Host == "q.eu-central-1.amazonaws.com" {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body: io.NopCloser(strings.NewReader(`{
+						"subscriptionInfo":{"subscriptionTitle":"KIRO POWER"},
+						"usageBreakdownList":[{"currentUsageWithPrecision":0,"usageLimitWithPrecision":10000}]
+					}`)),
+					Header: make(http.Header),
+				}, nil
+			}
+			t.Fatalf("unexpected validation request: %s %s", req.Method, req.URL.String())
+			return nil, nil
 		},
 	}
 	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, usageUpstream, &TLSFingerprintProfileService{}, nil)
@@ -525,6 +552,15 @@ func TestKiroOAuthServiceExchangeCallbackExternalIDPIgnoresUnsupportedUsageProbe
 	}
 	if progress.TokenInfo.AuthMethod != "external_idp" {
 		t.Fatalf("auth_method = %q, want external_idp", progress.TokenInfo.AuthMethod)
+	}
+	if progress.TokenInfo.ProfileARN != "arn:aws:codewhisperer:eu-central-1:222222222222:profile/EUCENTRAL" {
+		t.Fatalf("profile_arn = %q", progress.TokenInfo.ProfileARN)
+	}
+	if progress.TokenInfo.APIRegion != "eu-central-1" || progress.TokenInfo.Region != "eu-central-1" {
+		t.Fatalf("regions = api:%q region:%q", progress.TokenInfo.APIRegion, progress.TokenInfo.Region)
+	}
+	if progress.TokenInfo.PlanName != "KIRO POWER" {
+		t.Fatalf("plan_name = %q, want KIRO POWER", progress.TokenInfo.PlanName)
 	}
 }
 
