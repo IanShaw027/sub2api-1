@@ -27,7 +27,12 @@
                       : 'from-orange-500 to-orange-600'
             ]"
           >
-            <Icon name="sparkles" size="md" class="text-white" />
+            <PlatformIcon
+              :platform="account.platform"
+              size="lg"
+              class="text-white"
+              data-testid="reauth-platform-icon"
+            />
           </div>
           <div>
             <span class="block font-semibold text-gray-900 dark:text-white">{{
@@ -261,6 +266,7 @@ import { inferGeminiOAuthType } from '@/utils/geminiOAuthType'
 import { useGrokOAuth } from '@/composables/useGrokOAuth'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
+import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import OAuthAuthorizationFlow from '@/components/account/OAuthAuthorizationFlow.vue'
 import KiroDiagnosticChips from '@/components/account/KiroDiagnosticChips.vue'
 import KiroAuthorizationFlow from '@/components/account/KiroAuthorizationFlow.vue'

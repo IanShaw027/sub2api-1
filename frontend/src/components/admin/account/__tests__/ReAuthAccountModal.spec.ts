@@ -491,6 +491,12 @@ describe('admin ReAuthAccountModal', () => {
     })
   })
 
+  it('renders the current account platform icon in the account summary', () => {
+    const wrapper = mountModal(buildKiroAccount('apikey'))
+
+    expect(wrapper.get('[data-testid="reauth-platform-icon"]').attributes('viewBox')).toBe('0 0 24 24')
+  })
+
   it('does not mount the Kiro OAuth reauthorization flow for Kiro API key accounts', () => {
     const wrapper = mountModal(buildKiroAccount('apikey'))
 

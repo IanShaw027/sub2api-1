@@ -81,7 +81,7 @@
                 : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
             ]"
           >
-            <Icon name="sparkles" size="sm" />
+            <PlatformIcon platform="anthropic" size="md" />
             Anthropic
           </button>
           <button
@@ -94,19 +94,7 @@
                 : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
             ]"
           >
-            <svg
-              class="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="1.5"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"
-              />
-            </svg>
+            <PlatformIcon platform="openai" size="md" />
             OpenAI
           </button>
           <button
@@ -119,19 +107,7 @@
                 : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
             ]"
           >
-            <svg
-              class="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="1.5"
-            >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M12 2l1.5 6.5L20 10l-6.5 1.5L12 18l-1.5-6.5L4 10l6.5-1.5L12 2z"
-              />
-            </svg>
+            <PlatformIcon platform="gemini" size="md" />
             Gemini
           </button>
           <button
@@ -144,7 +120,7 @@
                 : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
             ]"
           >
-            <Icon name="cloud" size="sm" />
+            <PlatformIcon platform="antigravity" size="md" />
             Antigravity
           </button>
           <button
@@ -170,7 +146,7 @@
                 : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
             ]"
           >
-            <PlatformIcon platform="grok" size="sm" />
+            <PlatformIcon platform="grok" size="md" />
             Grok
           </button>
         </div>

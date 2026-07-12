@@ -357,7 +357,10 @@ function mountModal() {
         QuotaLimitCard: true,
         OAuthAuthorizationFlow: OAuthAuthorizationFlowStub,
         KiroAuthorizationFlow: KiroAuthorizationFlowStub,
-        PlatformIcon: true
+        PlatformIcon: {
+          props: ['platform', 'size'],
+          template: '<svg data-testid="platform-icon" :data-platform="platform" :data-size="size" />'
+        }
       }
     }
   })
@@ -445,6 +448,15 @@ describe('CreateAccountModal', () => {
       'Kiro',
       'Grok'
     ])
+    expect(platformButtons.map((button) => button.get('[data-testid="platform-icon"]').attributes('data-platform'))).toEqual([
+      'anthropic',
+      'openai',
+      'gemini',
+      'antigravity',
+      'kiro',
+      'grok'
+    ])
+    expect(platformButtons.every((button) => button.get('[data-testid="platform-icon"]').attributes('data-size') === 'md')).toBe(true)
 
     await platformButtons[5].trigger('click')
     await nextTick()
