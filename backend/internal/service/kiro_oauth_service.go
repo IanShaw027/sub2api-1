@@ -19,6 +19,9 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"go.uber.org/zap"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/redissession"
+	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -46,14 +49,14 @@ var kiroExternalIDPHTTPClient = newSSRFSafeHTTPClient(15 * time.Second)
 var kiroExternalIDPHostBlockedFunc = isPrivateOrLoopbackHost
 
 type KiroOAuthSession struct {
-	State           string
-	CodeVerifier    string
-	RedirectURI     string
-	CallbackBaseURL string
-	ProxyURL        string
-	CreatedAt       time.Time
-	IDCContinuation *KiroIDCContinuationSession
-	ExternalIDP     *KiroExternalIDPSession
+	State           string                      `json:"state"`
+	CodeVerifier    string                      `json:"code_verifier"`
+	RedirectURI     string                      `json:"redirect_uri"`
+	CallbackBaseURL string                      `json:"callback_base_url"`
+	ProxyURL        string                      `json:"proxy_url,omitempty"`
+	CreatedAt       time.Time                   `json:"created_at"`
+	IDCContinuation *KiroIDCContinuationSession `json:"idc_continuation,omitempty"`
+	ExternalIDP     *KiroExternalIDPSession     `json:"external_idp,omitempty"`
 
 	// mu guards the mutable parts of a session that may be touched by
 	// concurrent callback / continuation requests sharing the same session
@@ -87,6 +90,7 @@ type KiroOAuthSessionStore struct {
 	sessions map[string]*KiroOAuthSession
 	stopOnce sync.Once
 	stopCh   chan struct{}
+	remote   *redissession.Store
 }
 
 func NewKiroOAuthSessionStore() *KiroOAuthSessionStore {
@@ -98,13 +102,48 @@ func NewKiroOAuthSessionStore() *KiroOAuthSessionStore {
 	return store
 }
 
+// NewKiroRedisOAuthSessionStore shares OAuth sessions across replicas via Redis.
+func NewKiroRedisOAuthSessionStore(rdb *redis.Client) *KiroOAuthSessionStore {
+	store := NewKiroOAuthSessionStore()
+	if rdb != nil {
+		store.remote = redissession.New(rdb, "oauth:session:kiro", kiroOAuthSessionTTL)
+	}
+	return store
+}
+
 func (s *KiroOAuthSessionStore) Set(sessionID string, session *KiroOAuthSession) {
+	if session == nil {
+		return
+	}
+	if s != nil && s.remote != nil {
+		// Marshal without mutex: only exported fields have json tags.
+		_ = s.remote.Set(context.Background(), sessionID, session)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions[sessionID] = session
 }
 
 func (s *KiroOAuthSessionStore) Get(sessionID string) (*KiroOAuthSession, bool) {
+	if s != nil && s.remote != nil {
+		var session KiroOAuthSession
+		ok, err := s.remote.Get(context.Background(), sessionID, &session)
+		if err != nil || !ok {
+			return nil, false
+		}
+		if time.Since(session.CreatedAt) > kiroOAuthSessionTTL {
+			_ = s.remote.Delete(context.Background(), sessionID)
+			return nil, false
+		}
+		// Check multi-instance consume marker.
+		if used, _ := s.remote.IsUsed(context.Background(), sessionID); used {
+			session.consumed = true
+		}
+		s.mu.Lock()
+		s.sessions[sessionID] = &session
+		s.mu.Unlock()
+		return &session, true
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	session, ok := s.sessions[sessionID]
@@ -118,9 +157,27 @@ func (s *KiroOAuthSessionStore) Get(sessionID string) (*KiroOAuthSession, bool) 
 }
 
 func (s *KiroOAuthSessionStore) Delete(sessionID string) {
+	if s != nil && s.remote != nil {
+		_ = s.remote.Delete(context.Background(), sessionID)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.sessions, sessionID)
+}
+
+func (s *KiroOAuthSessionStore) TryConsumeSession(sessionID string) bool {
+	if s == nil {
+		return false
+	}
+	if s.remote != nil {
+		ok, err := s.remote.TryConsume(context.Background(), sessionID)
+		return err == nil && ok
+	}
+	session, ok := s.Get(sessionID)
+	if !ok {
+		return false
+	}
+	return session.tryConsume()
 }
 
 func (s *KiroOAuthSessionStore) Stop() {
@@ -165,6 +222,15 @@ func NewKiroOAuthService(
 		proxyRepo:    proxyRepo,
 		usageService: NewKiroUsageService().WithTransport(httpUpstream, tlsFPProfileService).WithSettingService(settingService),
 	}
+}
+
+// WithRedisSessionStore enables multi-instance OAuth session sharing via Redis.
+func (s *KiroOAuthService) WithRedisSessionStore(rdb *redis.Client) *KiroOAuthService {
+	if s == nil || rdb == nil {
+		return s
+	}
+	s.sessionStore = NewKiroRedisOAuthSessionStore(rdb)
+	return s
 }
 
 type KiroAuthURLResult struct {
@@ -245,34 +311,34 @@ type KiroTokenInfo struct {
 }
 
 type KiroIDCContinuationSession struct {
-	LoginOption             string
-	ClientID                string
-	ClientSecret            string
-	DeviceCode              string
-	UserCode                string
-	VerificationURI         string
-	VerificationURIComplete string
-	StartURL                string
-	IssuerURL               string
-	Region                  string
-	Scopes                  []string
-	LoginHint               string
-	IntervalSeconds         int64
-	ExpiresAt               time.Time
-	CreatedAt               time.Time
+	LoginOption             string    `json:"login_option,omitempty"`
+	ClientID                string    `json:"client_id,omitempty"`
+	ClientSecret            string    `json:"client_secret,omitempty"`
+	DeviceCode              string    `json:"device_code,omitempty"`
+	UserCode                string    `json:"user_code,omitempty"`
+	VerificationURI         string    `json:"verification_uri,omitempty"`
+	VerificationURIComplete string    `json:"verification_uri_complete,omitempty"`
+	StartURL                string    `json:"start_url,omitempty"`
+	IssuerURL               string    `json:"issuer_url,omitempty"`
+	Region                  string    `json:"region,omitempty"`
+	Scopes                  []string  `json:"scopes,omitempty"`
+	LoginHint               string    `json:"login_hint,omitempty"`
+	IntervalSeconds         int64     `json:"interval_seconds,omitempty"`
+	ExpiresAt               time.Time `json:"expires_at,omitempty"`
+	CreatedAt               time.Time `json:"created_at,omitempty"`
 }
 
 type KiroExternalIDPSession struct {
-	ClientID      string
-	IssuerURL     string
-	AuthorizeURL  string
-	TokenEndpoint string
-	RedirectURI   string
-	State         string
-	CodeVerifier  string
-	Scopes        []string
-	LoginHint     string
-	CreatedAt     time.Time
+	ClientID      string    `json:"client_id,omitempty"`
+	IssuerURL     string    `json:"issuer_url,omitempty"`
+	AuthorizeURL  string    `json:"authorize_url,omitempty"`
+	TokenEndpoint string    `json:"token_endpoint,omitempty"`
+	RedirectURI   string    `json:"redirect_uri,omitempty"`
+	State         string    `json:"state,omitempty"`
+	CodeVerifier  string    `json:"code_verifier,omitempty"`
+	Scopes        []string  `json:"scopes,omitempty"`
+	LoginHint     string    `json:"login_hint,omitempty"`
+	CreatedAt     time.Time `json:"created_at,omitempty"`
 }
 
 type KiroExternalIDPAuthorizationInfo struct {
@@ -697,10 +763,9 @@ func (s *KiroOAuthService) exchangeCallbackProgress(ctx context.Context, input *
 	}
 
 	// Atomically claim the session before redeeming the single-use
-	// authorization code. Concurrent or replayed callbacks for the same
-	// session pointer lose the race and are rejected, so a leaked callback
-	// URL cannot be exchanged twice.
-	if !session.tryConsume() {
+	// authorization code. Concurrent or replayed callbacks (including across
+	// replicas when Redis is configured) lose the race and are rejected.
+	if !s.sessionStore.TryConsumeSession(input.SessionID) {
 		return nil, fmt.Errorf("kiro 授权会话已被使用，无法重复兑换。请重新生成授权链接并在同一轮流程中完成授权")
 	}
 

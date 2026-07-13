@@ -3631,6 +3631,58 @@ func TestContentModerationClearFlaggedInputHashesAndStatusCount(t *testing.T) {
 	require.Equal(t, int64(0), status.FlaggedHashCount)
 }
 
+func TestContentModerationCheck_ObserveAPIFlagDoesNotAutoBan(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(moderationAPIResponse{
+			Results: []moderationAPIResult{{
+				CategoryScores: map[string]float64{"sexual": 0.95},
+			}},
+		})
+	}))
+	defer server.Close()
+
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModeObserve
+	cfg.BaseURL = server.URL
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.AutoBanEnabled = true
+	cfg.BanThreshold = 1
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	hashCache := &contentModerationTestHashCache{}
+	userRepo := &contentModerationTestUserRepo{user: &User{ID: 4101, Status: StatusActive}}
+	svc := &ContentModerationService{
+		settingRepo: &contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo:       repo,
+		hashCache:  hashCache,
+		userRepo:   userRepo,
+		httpClient: server.Client(),
+		asyncQueue: make(chan contentModerationTask, 1),
+		keyHealth:  make(map[string]*contentModerationKeyHealth),
+	}
+
+	decision := svc.checkSync(context.Background(), ContentModerationCheckInput{
+		UserID:   4101,
+		Protocol: ContentModerationProtocolOpenAIChat,
+		Body:     []byte(`{"messages":[{"role":"user","content":"observe flagged"}]}`),
+	}, cfg, ContentModerationInput{Text: "observe flagged"}, strings.Repeat("c", 64), contentModerationIntPtr(10), false)
+
+	require.True(t, decision.Allowed)
+	require.False(t, decision.Blocked)
+	require.True(t, decision.Flagged)
+	requireContentModerationLogCount(t, repo, 1)
+	require.Zero(t, repo.logs[0].ViolationCount, "observe mode must not accumulate ban-driving violation counts")
+	require.False(t, repo.logs[0].AutoBanned)
+	require.Empty(t, userRepo.updated, "observe mode must never auto-ban")
+	requireRecordedHashCount(t, hashCache, 1)
+}
+
 func TestContentModerationCheck_AsyncFlaggedWritesRedisHashCache(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(moderationAPIResponse{

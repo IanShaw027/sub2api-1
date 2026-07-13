@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
+
+	"github.com/redis/go-redis/v9"
 )
 
 type AntigravityOAuthService struct {
@@ -20,6 +22,15 @@ func NewAntigravityOAuthService(proxyRepo ProxyRepository) *AntigravityOAuthServ
 		sessionStore: antigravity.NewSessionStore(),
 		proxyRepo:    proxyRepo,
 	}
+}
+
+// WithRedisSessionStore enables multi-instance OAuth session sharing via Redis.
+func (s *AntigravityOAuthService) WithRedisSessionStore(rdb *redis.Client) *AntigravityOAuthService {
+	if s == nil || rdb == nil {
+		return s
+	}
+	s.sessionStore = antigravity.NewRedisSessionStore(rdb)
+	return s
 }
 
 func (s *AntigravityOAuthService) resolveProxyURL(ctx context.Context, proxyID *int64) (string, error) {
@@ -121,6 +132,11 @@ func (s *AntigravityOAuthService) ExchangeCode(ctx context.Context, input *Antig
 	if strings.TrimSpace(input.State) == "" || input.State != session.State {
 		return nil, fmt.Errorf("state 无效")
 	}
+	// Multi-instance single-use claim before token exchange.
+	if !s.sessionStore.TryConsumeSession(input.SessionID) {
+		return nil, fmt.Errorf("oauth session has already been used")
+	}
+	defer s.sessionStore.Delete(input.SessionID)
 
 	proxyURL := session.ProxyURL
 
@@ -134,9 +150,6 @@ func (s *AntigravityOAuthService) ExchangeCode(ctx context.Context, input *Antig
 	if err != nil {
 		return nil, fmt.Errorf("token 交换失败: %w", err)
 	}
-
-	// 删除 session
-	s.sessionStore.Delete(input.SessionID)
 
 	// 计算过期时间（减去 5 分钟安全窗口）
 	expiresAt := time.Now().Unix() + tokenResp.ExpiresIn - 300

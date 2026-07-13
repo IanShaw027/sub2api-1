@@ -3476,7 +3476,12 @@ func (s *SettingService) ResolveGrokMediaBaseURL(_ context.Context, account *Acc
 		if pinned := strings.TrimSpace(account.GetCredential("base_url")); pinned != "" {
 			pinned = strings.TrimRight(pinned, "/")
 			if !isGrokCLIChatProxyBaseURL(pinned) {
-				return pinned
+				// Media paths must honor the same host allowlist as text inference
+				// (api.x.ai / cli-chat-proxy). Reject arbitrary account base_url so
+				// OAuth bearer tokens are never sent to untrusted hosts.
+				if validated, err := xai.ValidateBaseURL(pinned); err == nil {
+					return validated
+				}
 			}
 		}
 	}

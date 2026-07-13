@@ -25,6 +25,7 @@ import (
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -778,7 +779,13 @@ func NewContentModerationService(
 		userRepo:             userRepo,
 		authCacheInvalidator: authCacheInvalidator,
 		emailService:         emailService,
-		httpClient:           &http.Client{},
+		httpClient: &http.Client{
+			// Never follow redirects: base_url is admin-controlled and could
+			// otherwise bounce the moderation API key toward an internal host.
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 		workerCount:          maxContentModerationWorkerCount,
 		asyncQueue:           make(chan contentModerationTask, maxContentModerationQueueSize),
 		keyHealth:            make(map[string]*contentModerationKeyHealth),
@@ -1422,10 +1429,13 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 	}
 	if flagged || cfg.RecordNonHits || attention {
 		log := s.buildLog(input, cfg, action, flagged, highestCategory, highestScore, result.CategoryScores, content.ExcerptText(), &latency, queueDelay, "")
+		// observe mode may record logs/hashes for later analysis, but must NOT drive
+		// violation counters or auto-ban. Only pre_block applies account side effects.
+		applySideEffects := flagged && cfg.Mode == ContentModerationModePreBlock
 		if queueDelay == nil && cfg.Mode == ContentModerationModePreBlock {
-			s.enqueueRecord(ctx, input, cfg, log, hashText, flagged, flagged)
+			s.enqueueRecord(ctx, input, cfg, log, hashText, flagged, applySideEffects)
 		} else {
-			s.persistContentModerationLog(ctx, cfg, log, hashText, flagged, flagged)
+			s.persistContentModerationLog(ctx, cfg, log, hashText, flagged, applySideEffects)
 		}
 	}
 	if blocked {
@@ -2014,8 +2024,13 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 	default:
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_MODE", "内容审计模式无效")
 	}
-	if _, err := url.ParseRequestURI(cfg.BaseURL); err != nil {
-		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_BASE_URL", "OpenAI Base URL 无效")
+	// Fail closed: only HTTPS public hosts. ParseRequestURI alone allows
+	// http://169.254.169.254 and other SSRF targets that follow redirects.
+	if _, err := urlvalidator.ValidateHTTPSURL(cfg.BaseURL, urlvalidator.ValidationOptions{
+		AllowPrivate:     false,
+		RequireAllowlist: false,
+	}); err != nil {
+		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_BASE_URL", "OpenAI Base URL 无效（须为 HTTPS 且不可指向私网地址）")
 	}
 	if cfg.BlockStatus < 400 || cfg.BlockStatus > 599 {
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_BLOCK_STATUS", "拦截 HTTP 状态码必须在 400-599 之间")

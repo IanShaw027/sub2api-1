@@ -11,6 +11,7 @@ import (
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+	"github.com/redis/go-redis/v9"
 )
 
 const grokDefaultAccessTokenTTL = 6 * time.Hour
@@ -27,6 +28,15 @@ func NewGrokOAuthService(proxyRepo ProxyRepository, oauthClient GrokOAuthClient)
 		proxyRepo:    proxyRepo,
 		oauthClient:  oauthClient,
 	}
+}
+
+// WithRedisSessionStore enables multi-instance OAuth session sharing via Redis.
+func (s *GrokOAuthService) WithRedisSessionStore(rdb *redis.Client) *GrokOAuthService {
+	if s == nil || rdb == nil {
+		return s
+	}
+	s.sessionStore = xai.NewRedisSessionStore(rdb)
+	return s
 }
 
 func (s *GrokOAuthService) requireOAuthClient() (GrokOAuthClient, error) {
@@ -166,7 +176,8 @@ func (s *GrokOAuthService) ExchangeCode(ctx context.Context, input *GrokExchange
 		redirectURI = input.RedirectURI
 	}
 
-	if !session.TryConsume() {
+	// Multi-instance safe consume (Redis SET NX when configured; local mutex otherwise).
+	if !s.sessionStore.TryConsumeSession(input.SessionID) {
 		return nil, infraerrors.New(http.StatusBadRequest, "GROK_OAUTH_SESSION_ALREADY_USED", "oauth session has already been used")
 	}
 	oauthClient, err := s.requireOAuthClient()

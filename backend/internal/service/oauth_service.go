@@ -10,6 +10,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/oauth"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // OpenAIOAuthClient interface for OpenAI OAuth operations
@@ -57,6 +59,15 @@ func NewOAuthService(proxyRepo ProxyRepository, oauthClient ClaudeOAuthClient) *
 		proxyRepo:    proxyRepo,
 		oauthClient:  oauthClient,
 	}
+}
+
+// WithRedisSessionStore enables multi-instance OAuth session sharing via Redis.
+func (s *OAuthService) WithRedisSessionStore(rdb *redis.Client) *OAuthService {
+	if s == nil || rdb == nil {
+		return s
+	}
+	s.sessionStore = oauth.NewRedisSessionStore(rdb)
+	return s
 }
 
 func (s *OAuthService) resolveProxyURL(ctx context.Context, proxyID *int64) (string, error) {
@@ -178,6 +189,11 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, input *ExchangeCodeInpu
 	if !ok {
 		return nil, fmt.Errorf("session not found or expired")
 	}
+	// Multi-instance single-use claim before token exchange.
+	if !s.sessionStore.TryConsumeSession(input.SessionID) {
+		return nil, fmt.Errorf("oauth session has already been used")
+	}
+	defer s.sessionStore.Delete(input.SessionID)
 
 	// Get proxy URL
 	proxyURL := session.ProxyURL
@@ -197,9 +213,6 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, input *ExchangeCodeInpu
 	if err != nil {
 		return nil, err
 	}
-
-	// Delete session after successful exchange
-	s.sessionStore.Delete(input.SessionID)
 
 	return tokenInfo, nil
 }

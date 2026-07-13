@@ -16,6 +16,9 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/redissession"
+	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -281,13 +284,23 @@ type OAuthSession struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-// SessionStore OAuth session 存储
+// SessionStore manages OAuth sessions (memory + optional Redis for multi-instance).
 type SessionStore struct {
 	mu       sync.RWMutex
 	sessions map[string]*OAuthSession
+	stopOnce sync.Once
 	stopCh   chan struct{}
+	remote   *redissession.Store
 }
 
+type oauthSessionDTO struct {
+	State        string    `json:"state"`
+	CodeVerifier string    `json:"code_verifier"`
+	ProxyURL     string    `json:"proxy_url,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// NewSessionStore creates a new session store
 func NewSessionStore() *SessionStore {
 	store := &SessionStore{
 		sessions: make(map[string]*OAuthSession),
@@ -297,13 +310,54 @@ func NewSessionStore() *SessionStore {
 	return store
 }
 
+// NewRedisSessionStore returns a multi-instance session store backed by Redis.
+func NewRedisSessionStore(rdb *redis.Client) *SessionStore {
+	store := NewSessionStore()
+	if rdb != nil {
+		store.remote = redissession.New(rdb, "oauth:session:antigravity", SessionTTL)
+	}
+	return store
+}
+
 func (s *SessionStore) Set(sessionID string, session *OAuthSession) {
+	if session == nil {
+		return
+	}
+	if s != nil && s.remote != nil {
+		_ = s.remote.Set(context.Background(), sessionID, oauthSessionDTO{
+			State: session.State,
+			CodeVerifier: session.CodeVerifier,
+			ProxyURL: session.ProxyURL,
+			CreatedAt: session.CreatedAt,
+		})
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions[sessionID] = session
 }
 
 func (s *SessionStore) Get(sessionID string) (*OAuthSession, bool) {
+	if s != nil && s.remote != nil {
+		var dto oauthSessionDTO
+		ok, err := s.remote.Get(context.Background(), sessionID, &dto)
+		if err != nil || !ok {
+			return nil, false
+		}
+		if time.Since(dto.CreatedAt) > SessionTTL {
+			_ = s.remote.Delete(context.Background(), sessionID)
+			return nil, false
+		}
+		session := &OAuthSession{
+			State: dto.State,
+			CodeVerifier: dto.CodeVerifier,
+			ProxyURL: dto.ProxyURL,
+			CreatedAt: dto.CreatedAt,
+		}
+		s.mu.Lock()
+		s.sessions[sessionID] = session
+		s.mu.Unlock()
+		return session, true
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	session, ok := s.sessions[sessionID]
@@ -317,10 +371,28 @@ func (s *SessionStore) Get(sessionID string) (*OAuthSession, bool) {
 }
 
 func (s *SessionStore) Delete(sessionID string) {
+	if s != nil && s.remote != nil {
+		_ = s.remote.Delete(context.Background(), sessionID)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.sessions, sessionID)
 }
+
+// TryConsumeSession marks the session used once (Redis SET NX when configured).
+func (s *SessionStore) TryConsumeSession(sessionID string) bool {
+	if s == nil {
+		return false
+	}
+	if s.remote != nil {
+		ok, err := s.remote.TryConsume(context.Background(), sessionID)
+		return err == nil && ok
+	}
+	// Memory-only stores without per-session consume: treat delete as consume no-op success.
+	_, ok := s.Get(sessionID)
+	return ok
+}
+
 
 func (s *SessionStore) Stop() {
 	select {

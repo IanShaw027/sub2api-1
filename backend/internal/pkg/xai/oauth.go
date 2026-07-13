@@ -1,6 +1,7 @@
 package xai
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -12,8 +13,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/redissession"
 	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
+	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -70,12 +73,27 @@ func (s *OAuthSession) TryConsume() bool {
 	return true
 }
 
-// SessionStore manages xAI OAuth sessions in memory.
+// SessionStore manages xAI OAuth sessions.
+// When constructed with NewRedisSessionStore, state is shared across replicas
+// via Redis; otherwise it falls back to process-local memory.
 type SessionStore struct {
 	mu       sync.RWMutex
 	sessions map[string]*OAuthSession
 	stopOnce sync.Once
 	stopCh   chan struct{}
+	remote   *redissession.Store
+}
+
+// oauthSessionDTO is the Redis-safe projection (no mutex fields).
+type oauthSessionDTO struct {
+	State         string    `json:"state"`
+	CodeVerifier  string    `json:"code_verifier"`
+	CodeChallenge string    `json:"code_challenge"`
+	ClientID      string    `json:"client_id,omitempty"`
+	Scope         string    `json:"scope,omitempty"`
+	ProxyURL      string    `json:"proxy_url,omitempty"`
+	RedirectURI   string    `json:"redirect_uri"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 func NewSessionStore() *SessionStore {
@@ -87,13 +105,65 @@ func NewSessionStore() *SessionStore {
 	return store
 }
 
+// NewRedisSessionStore returns a multi-instance session store backed by Redis.
+// Falls back to in-memory when rdb is nil.
+func NewRedisSessionStore(rdb *redis.Client) *SessionStore {
+	store := NewSessionStore()
+	if rdb != nil {
+		store.remote = redissession.New(rdb, "oauth:session:xai", SessionTTL)
+	}
+	return store
+}
+
 func (s *SessionStore) Set(sessionID string, session *OAuthSession) {
+	if session == nil {
+		return
+	}
+	if s != nil && s.remote != nil {
+		_ = s.remote.Set(context.Background(), sessionID, oauthSessionDTO{
+			State:         session.State,
+			CodeVerifier:  session.CodeVerifier,
+			CodeChallenge: session.CodeChallenge,
+			ClientID:      session.ClientID,
+			Scope:         session.Scope,
+			ProxyURL:      session.ProxyURL,
+			RedirectURI:   session.RedirectURI,
+			CreatedAt:     session.CreatedAt,
+		})
+		// Keep a local copy for TryConsume on the same process without re-fetch races.
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions[sessionID] = session
 }
 
 func (s *SessionStore) Get(sessionID string) (*OAuthSession, bool) {
+	if s != nil && s.remote != nil {
+		var dto oauthSessionDTO
+		ok, err := s.remote.Get(context.Background(), sessionID, &dto)
+		if err != nil || !ok {
+			return nil, false
+		}
+		if time.Since(dto.CreatedAt) > SessionTTL {
+			_ = s.remote.Delete(context.Background(), sessionID)
+			return nil, false
+		}
+		// Rebuild session pointer; consumed is tracked via redis used-key.
+		session := &OAuthSession{
+			State:         dto.State,
+			CodeVerifier:  dto.CodeVerifier,
+			CodeChallenge: dto.CodeChallenge,
+			ClientID:      dto.ClientID,
+			Scope:         dto.Scope,
+			ProxyURL:      dto.ProxyURL,
+			RedirectURI:   dto.RedirectURI,
+			CreatedAt:     dto.CreatedAt,
+		}
+		s.mu.Lock()
+		s.sessions[sessionID] = session
+		s.mu.Unlock()
+		return session, true
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	session, ok := s.sessions[sessionID]
@@ -107,9 +177,29 @@ func (s *SessionStore) Get(sessionID string) (*OAuthSession, bool) {
 }
 
 func (s *SessionStore) Delete(sessionID string) {
+	if s != nil && s.remote != nil {
+		_ = s.remote.Delete(context.Background(), sessionID)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.sessions, sessionID)
+}
+
+// TryConsumeSession marks a multi-instance session as used exactly once.
+// Prefer this over OAuthSession.TryConsume when Redis is enabled.
+func (s *SessionStore) TryConsumeSession(sessionID string) bool {
+	if s == nil {
+		return false
+	}
+	if s.remote != nil {
+		ok, err := s.remote.TryConsume(context.Background(), sessionID)
+		return err == nil && ok
+	}
+	session, ok := s.Get(sessionID)
+	if !ok {
+		return false
+	}
+	return session.TryConsume()
 }
 
 func (s *SessionStore) Stop() {

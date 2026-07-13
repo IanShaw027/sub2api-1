@@ -992,7 +992,9 @@ func (s *PaymentService) reverseAffiliateRebateBestEffort(ctx context.Context, o
 	if s == nil || s.affiliateService == nil || o == nil {
 		return
 	}
-	if o.OrderType != payment.OrderTypeBalance || o.Amount <= 0 || totalRefunded <= 0 {
+	// Balance top-ups and subscription purchases both accrue invite rebates on
+	// fulfillment; refunds of either order type must claw the proportional rebate back.
+	if (o.OrderType != payment.OrderTypeBalance && o.OrderType != payment.OrderTypeSubscription) || o.Amount <= 0 || totalRefunded <= 0 {
 		return
 	}
 	reversed, err := s.affiliateService.ReverseInviteRebateForOrder(ctx, o.ID, totalRefunded, o.Amount)

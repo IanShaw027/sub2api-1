@@ -11,6 +11,8 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/google/uuid"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // OpenAIOAuthService handles OpenAI OAuth authentication flows
@@ -28,6 +30,15 @@ func NewOpenAIOAuthService(proxyRepo ProxyRepository, oauthClient OpenAIOAuthCli
 		proxyRepo:    proxyRepo,
 		oauthClient:  oauthClient,
 	}
+}
+
+// WithRedisSessionStore enables multi-instance OAuth session sharing via Redis.
+func (s *OpenAIOAuthService) WithRedisSessionStore(rdb *redis.Client) *OpenAIOAuthService {
+	if s == nil || rdb == nil {
+		return s
+	}
+	s.sessionStore = openai.NewRedisSessionStore(rdb)
+	return s
 }
 
 func (s *OpenAIOAuthService) resolveProxyURL(ctx context.Context, proxyID *int64) (string, error) {
@@ -172,6 +183,11 @@ func (s *OpenAIOAuthService) ExchangeCode(ctx context.Context, input *OpenAIExch
 	if subtle.ConstantTimeCompare([]byte(input.State), []byte(session.State)) != 1 {
 		return nil, infraerrors.New(http.StatusBadRequest, "OPENAI_OAUTH_INVALID_STATE", "invalid oauth state")
 	}
+	// Multi-instance single-use claim before token exchange.
+	if !s.sessionStore.TryConsumeSession(input.SessionID) {
+		return nil, infraerrors.New(http.StatusBadRequest, "OPENAI_OAUTH_SESSION_ALREADY_USED", "oauth session has already been used")
+	}
+	defer s.sessionStore.Delete(input.SessionID)
 
 	// Get proxy URL: prefer input.ProxyID, fallback to session.ProxyURL
 	proxyURL := session.ProxyURL
@@ -214,9 +230,6 @@ func (s *OpenAIOAuthService) ExchangeCode(ctx context.Context, input *OpenAIExch
 			userInfo = claims.GetUserInfo()
 		}
 	}
-
-	// Delete session after successful exchange
-	s.sessionStore.Delete(input.SessionID)
 
 	tokenInfo := &OpenAITokenInfo{
 		AccessToken:  tokenResp.AccessToken,
