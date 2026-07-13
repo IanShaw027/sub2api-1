@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -63,6 +64,9 @@ type OpsService struct {
 	// UpdateOpsAdvancedSettings 写入新配置后调用，把最新的 quota auto-pause 全局默认阈值
 	// 立即同步到调度热路径读取的内存缓存，避免下次请求才能感知新值。
 	quotaAutoPauseSink func(OpsOpenAIAccountQuotaAutoPauseSettings)
+
+	upstreamFailureQueueOnce sync.Once
+	upstreamFailureQueue     chan *OpsInsertErrorLogInput
 }
 
 // CleanupReloader 由 OpsCleanupService 实现。
@@ -118,6 +122,7 @@ func NewOpsService(
 		systemLogSink:             systemLogSink,
 	}
 	svc.applyRuntimeLogConfigOnStartup(context.Background())
+	bindOpsUpstreamFailureSink(svc, gatewayService, openAIGatewayService, geminiCompatService, antigravityGatewayService)
 	return svc
 }
 
@@ -352,6 +357,12 @@ func sanitizeOpsUpstreamErrors(entry *OpsInsertErrorLogInput) error {
 			} else {
 				out.UpstreamRequestBody = ""
 			}
+		}
+
+		out.UpstreamResponseBody = strings.TrimSpace(out.UpstreamResponseBody)
+		if out.UpstreamResponseBody != "" {
+			sanitizedBody, _ := sanitizeErrorBodyForStorage(out.UpstreamResponseBody, opsMaxStoredErrorBodyBytes)
+			out.UpstreamResponseBody = sanitizedBody
 		}
 
 		// Drop fully-empty events (can happen if only status code was known).

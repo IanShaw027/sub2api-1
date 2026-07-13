@@ -67,8 +67,11 @@ func (s *OpenAIGatewayService) ReconcileOpenAIWSPool(ctx context.Context) {
 
 func (s *OpenAIGatewayService) runOpenAIWSPoolReconcileRound(ctx context.Context) {
 	if s.accountRepo == nil {
-		if s.openaiWSPool != nil {
-			s.openaiWSPool.ReconcileShrink()
+		s.openaiWSPoolMu.RLock()
+		pool := s.openaiWSPool
+		s.openaiWSPoolMu.RUnlock()
+		if pool != nil {
+			pool.ReconcileShrink()
 		}
 		return
 	}

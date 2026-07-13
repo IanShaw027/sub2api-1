@@ -1092,6 +1092,30 @@ type openAIWSConnPool struct {
 	workerStopCh chan struct{}
 	workerWg     sync.WaitGroup
 	closeOnce    sync.Once
+
+	failureSinkMu sync.RWMutex
+	failureSink   OpsUpstreamFailureSink
+}
+
+func (p *openAIWSConnPool) setOpsUpstreamFailureSink(sink OpsUpstreamFailureSink) {
+	if p == nil {
+		return
+	}
+	p.failureSinkMu.Lock()
+	p.failureSink = sink
+	p.failureSinkMu.Unlock()
+}
+
+func (p *openAIWSConnPool) reportUpstreamFailure(ctx context.Context, failure OpsUpstreamFailure) {
+	if p == nil {
+		return
+	}
+	p.failureSinkMu.RLock()
+	sink := p.failureSink
+	p.failureSinkMu.RUnlock()
+	if sink != nil {
+		sink.EnqueueOpsUpstreamFailure(ctx, failure)
+	}
 }
 
 type openAIWSPoolReconcileTarget struct {
@@ -1288,6 +1312,13 @@ func (p *openAIWSConnPool) runBackgroundHealthChecks(now time.Time, candidates [
 				idleMS := conn.idleDuration(now).Milliseconds()
 				err := conn.pingWithTimeout(openAIWSRequestPathPingTO)
 				if err != nil {
+					p.reportUpstreamFailure(context.Background(), OpsUpstreamFailure{
+						Platform:  PlatformOpenAI,
+						AccountID: candidate.accountID,
+						Method:    "WS PING",
+						Kind:      "background_ping",
+						Err:       err,
+					})
 					logOpenAIWSTemporaryAnomaly(
 						"background_ping_fail",
 						"account_id=%d conn_id=%s conn_profile=%s conn_age_ms=%d conn_idle_ms=%d conn_lease_count=%d cause=%s",
@@ -2623,6 +2654,14 @@ func (p *openAIWSConnPool) prewarmConns(accountID int64, req openAIWSAcquireRequ
 			ap.prewarmFailAt = time.Now()
 			failureCount := ap.prewarmFails
 			ap.mu.Unlock()
+			p.reportUpstreamFailure(ctx, OpsUpstreamFailure{
+				Platform:  PlatformOpenAI,
+				AccountID: accountID,
+				Method:    http.MethodGet,
+				URL:       req.WSURL,
+				Kind:      "ws_prewarm_dial",
+				Err:       err,
+			})
 			logOpenAIWSTemporaryAnomaly(
 				"pool_prewarm_dial_fail",
 				"account_id=%d conn_profile=%s prewarm_failures=%d cause=%s",

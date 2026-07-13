@@ -1919,11 +1919,52 @@ func (s *OpenAIGatewayService) getOpenAIWSConnPool() *openAIWSConnPool {
 		return nil
 	}
 	s.openaiWSPoolOnce.Do(func() {
+		s.openaiWSPoolMu.Lock()
 		if s.openaiWSPool == nil {
 			s.openaiWSPool = newOpenAIWSConnPool(s.cfg)
 		}
+		pool := s.openaiWSPool
+		s.openaiWSPoolMu.Unlock()
+		s.opsUpstreamFailureSinkMu.RLock()
+		sink := s.opsUpstreamFailureSink
+		s.opsUpstreamFailureSinkMu.RUnlock()
+		pool.setOpsUpstreamFailureSink(sink)
 	})
-	return s.openaiWSPool
+	s.openaiWSPoolMu.RLock()
+	pool := s.openaiWSPool
+	s.openaiWSPoolMu.RUnlock()
+	return pool
+}
+
+func (s *OpenAIGatewayService) reportOpenAIWSAttemptFailure(ctx context.Context, account *Account, err error) {
+	if s == nil || account == nil || err == nil || IsOpenAIWSSessionPreemptedError(err) {
+		return
+	}
+	var turnErr *openAIWSIngressTurnError
+	if errors.As(err, &turnErr) && turnErr != nil && turnErr.stage == "write_client" {
+		return
+	}
+	reason, _ := classifyOpenAIWSReconnectReason(err)
+	switch reason {
+	case "invalid_state", "build_ws_url", "unsafe_tool_continuation", "streaming_not_supported":
+		return
+	}
+	wsURL, buildErr := s.buildOpenAIResponsesWSURL(account)
+	if buildErr != nil {
+		wsURL = ""
+	}
+	kind := "ws_attempt"
+	if reason != "" {
+		kind += "_" + reason
+	}
+	s.reportOpsUpstreamFailure(ctx, OpsUpstreamFailure{
+		Platform:  PlatformOpenAI,
+		AccountID: account.ID,
+		Method:    "WS",
+		URL:       wsURL,
+		Kind:      kind,
+		Err:       err,
+	})
 }
 
 func (s *OpenAIGatewayService) getOpenAIWSPassthroughDialer() openAIWSClientDialer {

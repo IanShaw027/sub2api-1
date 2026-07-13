@@ -1,10 +1,38 @@
 package service
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 )
+
+// OpsUpstreamFailure describes one physical upstream attempt that failed.
+// It is intentionally transport-oriented so shared HTTP/WS clients can report
+// failures without depending on a specific gateway implementation.
+type OpsUpstreamFailure struct {
+	Platform     string
+	AccountID    int64
+	Method       string
+	URL          string
+	Kind         string
+	StatusCode   int
+	ResponseBody string
+	Err          error
+}
+
+// OpsUpstreamFailureSink persists individual failed upstream attempts. The
+// implementation must not block the gateway hot path.
+type OpsUpstreamFailureSink interface {
+	EnqueueOpsUpstreamFailure(ctx context.Context, failure OpsUpstreamFailure)
+}
+
+// HTTPUpstreamFailureSinkSetter is implemented by the shared HTTP upstream
+// transport. It stays separate from HTTPUpstream so existing test transports
+// do not need no-op setter methods.
+type HTTPUpstreamFailureSinkSetter interface {
+	SetOpsUpstreamFailureSink(sink OpsUpstreamFailureSink)
+}
 
 // HTTPUpstream 上游 HTTP 请求接口
 // 用于向上游 API（Claude、OpenAI、Gemini 等）发送请求

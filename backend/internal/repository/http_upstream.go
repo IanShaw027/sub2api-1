@@ -135,8 +135,117 @@ type httpUpstreamService struct {
 	cfg     *config.Config                  // 全局配置
 	mu      sync.RWMutex                    // 保护 clients map 的读写锁
 	clients map[string]*upstreamClientEntry // 客户端缓存池，key 由隔离策略决定
+
+	failureSinkMu sync.RWMutex
+	failureSink   service.OpsUpstreamFailureSink
 	// OpenAI 走 HTTP/HTTPS 代理时的 H2->H1 回退状态（key=标准化 proxyKey）
 	openAIHTTP2Fallbacks sync.Map
+}
+
+const opsUpstreamFailureResponseBodyLimit = 20 * 1024
+
+type opsUpstreamFailureCaptureBody struct {
+	body     io.ReadCloser
+	mu       sync.Mutex
+	captured []byte
+	once     sync.Once
+	report   func(string)
+}
+
+func (b *opsUpstreamFailureCaptureBody) Read(p []byte) (int, error) {
+	n, err := b.body.Read(p)
+	if n > 0 {
+		b.mu.Lock()
+		remaining := opsUpstreamFailureResponseBodyLimit - len(b.captured)
+		if remaining > 0 {
+			if n < remaining {
+				remaining = n
+			}
+			b.captured = append(b.captured, p[:remaining]...)
+		}
+		b.mu.Unlock()
+	}
+	if errors.Is(err, io.EOF) {
+		b.finish()
+	}
+	return n, err
+}
+
+func (b *opsUpstreamFailureCaptureBody) Close() error {
+	b.finish()
+	return b.body.Close()
+}
+
+func (b *opsUpstreamFailureCaptureBody) finish() {
+	b.once.Do(func() {
+		b.mu.Lock()
+		body := string(append([]byte(nil), b.captured...))
+		b.mu.Unlock()
+		if b.report != nil {
+			b.report(body)
+		}
+	})
+}
+
+func (s *httpUpstreamService) SetOpsUpstreamFailureSink(sink service.OpsUpstreamFailureSink) {
+	if s == nil {
+		return
+	}
+	s.failureSinkMu.Lock()
+	s.failureSink = sink
+	s.failureSinkMu.Unlock()
+}
+
+func (s *httpUpstreamService) reportUpstreamFailure(req *http.Request, accountID int64, resp *http.Response, err error) {
+	if s == nil || (err == nil && (resp == nil || resp.StatusCode < http.StatusBadRequest)) {
+		return
+	}
+	s.failureSinkMu.RLock()
+	sink := s.failureSink
+	s.failureSinkMu.RUnlock()
+	if sink == nil {
+		return
+	}
+	ctx := context.Background()
+	method := ""
+	rawURL := ""
+	if req != nil {
+		ctx = req.Context()
+		method = req.Method
+		if req.URL != nil {
+			rawURL = req.URL.String()
+		}
+	}
+	statusCode := 0
+	if resp != nil {
+		statusCode = resp.StatusCode
+		if rawURL == "" && resp.Request != nil && resp.Request.URL != nil {
+			rawURL = resp.Request.URL.String()
+		}
+	}
+	failure := service.OpsUpstreamFailure{
+		AccountID:  accountID,
+		Method:     method,
+		URL:        rawURL,
+		Kind:       "http_attempt",
+		StatusCode: statusCode,
+		Err:        err,
+	}
+	if req != nil && service.HTTPUpstreamProfileFromContext(req.Context()) == service.HTTPUpstreamProfileOpenAI {
+		failure.Platform = service.PlatformOpenAI
+	}
+	if err == nil && resp != nil && resp.Body != nil {
+		originalBody := resp.Body
+		resp.Body = &opsUpstreamFailureCaptureBody{
+			body: originalBody,
+			report: func(responseBody string) {
+				failure.ResponseBody = responseBody
+				sink.EnqueueOpsUpstreamFailure(ctx, failure)
+			},
+		}
+		return
+	}
+	sink.EnqueueOpsUpstreamFailure(ctx, failure)
 }
 
 // NewHTTPUpstream 创建通用 HTTP 上游服务
@@ -179,6 +288,7 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 		profile = service.HTTPUpstreamProfileFromContext(req.Context())
 	}
 	if resp, err, handled := s.doWithRequestOverrides(req, proxyURL, accountID, accountConcurrency, nil, profile); handled {
+		s.reportUpstreamFailure(req, accountID, resp, err)
 		return resp, err
 	}
 
@@ -191,6 +301,7 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	// 执行请求
 	resp, err := entry.client.Do(req)
 	if err != nil {
+		s.reportUpstreamFailure(req, accountID, resp, err)
 		s.recordOpenAIHTTP2Failure(profile, entry.protocolMode, entry.proxyKey, err)
 		// 请求失败，立即减少计数
 		atomic.AddInt64(&entry.inFlight, -1)
@@ -201,6 +312,7 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 
 	// 如果上游返回了压缩内容，解压后再交给业务层
 	decompressResponseBody(resp)
+	s.reportUpstreamFailure(req, accountID, resp, nil)
 
 	// 包装响应体，在关闭时自动减少计数并更新时间戳
 	// 这确保了流式响应（如 SSE）在完全读取前不会被淘汰
@@ -242,6 +354,7 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 		return nil, err
 	}
 	if resp, err, handled := s.doWithRequestOverrides(req, proxyURL, accountID, accountConcurrency, profile, upstreamProfile); handled {
+		s.reportUpstreamFailure(req, accountID, resp, err)
 		return resp, err
 	}
 
@@ -253,6 +366,7 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 
 	resp, err := entry.client.Do(req)
 	if err != nil {
+		s.reportUpstreamFailure(req, accountID, resp, err)
 		atomic.AddInt64(&entry.inFlight, -1)
 		atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())
 		slog.Debug("tls_fingerprint_request_failed", "account_id", accountID, "error", err)
@@ -260,6 +374,7 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	}
 
 	decompressResponseBody(resp)
+	s.reportUpstreamFailure(req, accountID, resp, nil)
 
 	resp.Body = wrapTrackedBody(resp.Body, func() {
 		atomic.AddInt64(&entry.inFlight, -1)
