@@ -45,6 +45,7 @@ type stubConcurrencyCacheForTest struct {
 	groupAcquireCalls   []groupSlotCall
 	groupReleaseCalls   []groupSlotCall
 	accountAcquireCalls int
+	userAcquireCalls    int
 	loadBatchCalls      atomic.Int64
 }
 
@@ -129,9 +130,12 @@ func (c *stubConcurrencyCacheForTest) GetAccountWaitingCount(_ context.Context, 
 	return c.waitCount, c.waitCountErr
 }
 func (c *stubConcurrencyCacheForTest) AcquireUserSlot(_ context.Context, _ int64, _ int, _ string) (bool, error) {
+	c.userAcquireCalls++
 	return c.acquireResult, c.acquireErr
 }
-func (c *stubConcurrencyCacheForTest) ReleaseUserSlot(_ context.Context, _ int64, _ string) error {
+func (c *stubConcurrencyCacheForTest) ReleaseUserSlot(_ context.Context, userID int64, requestID string) error {
+	c.releasedAccountIDs = append(c.releasedAccountIDs, userID)
+	c.releasedRequestIDs = append(c.releasedRequestIDs, requestID)
 	return c.releaseErr
 }
 func (c *stubConcurrencyCacheForTest) GetUserConcurrency(_ context.Context, _ int64) (int, error) {
@@ -544,4 +548,46 @@ func TestIncrementAccountWaitCount_NilCache(t *testing.T) {
 	allowed, err := svc.IncrementAccountWaitCount(context.Background(), 1, 10)
 	require.NoError(t, err)
 	require.True(t, allowed)
+}
+
+func TestAcquireAccountSlot_ReleaseStopsHeartbeatRenewals(t *testing.T) {
+	t.Parallel()
+	cache := &stubConcurrencyCacheForTest{acquireResult: true}
+	svc := NewConcurrencyService(cache)
+	svc.SetSlotHeartbeatInterval(20 * time.Millisecond)
+
+	result, err := svc.AcquireAccountSlot(context.Background(), 7, 5)
+	require.NoError(t, err)
+	require.True(t, result.Acquired)
+	require.NotNil(t, result.ReleaseFunc)
+
+	// Wait for at least one heartbeat renew (re-acquire with same request id).
+	require.Eventually(t, func() bool {
+		return cache.accountAcquireCalls >= 2
+	}, time.Second, 10*time.Millisecond, "heartbeat should renew slot via re-acquire")
+
+	result.ReleaseFunc()
+	callsAfterRelease := cache.accountAcquireCalls
+	time.Sleep(60 * time.Millisecond)
+	require.Equal(t, callsAfterRelease, cache.accountAcquireCalls, "heartbeat must stop after release")
+	require.Contains(t, cache.releasedAccountIDs, int64(7))
+}
+
+func TestAcquireUserSlot_HeartbeatRenewsUntilRelease(t *testing.T) {
+	t.Parallel()
+	cache := &stubConcurrencyCacheForTest{acquireResult: true}
+	svc := NewConcurrencyService(cache)
+	svc.SetSlotHeartbeatInterval(20 * time.Millisecond)
+
+	result, err := svc.AcquireUserSlot(context.Background(), 9, 3)
+	require.NoError(t, err)
+	require.True(t, result.Acquired)
+	require.Eventually(t, func() bool {
+		return cache.userAcquireCalls >= 2
+	}, time.Second, 10*time.Millisecond, "heartbeat should renew user slot")
+	result.ReleaseFunc()
+	callsAfterRelease := cache.userAcquireCalls
+	time.Sleep(60 * time.Millisecond)
+	require.Equal(t, callsAfterRelease, cache.userAcquireCalls)
+	require.NotEmpty(t, cache.releasedRequestIDs)
 }

@@ -4880,7 +4880,19 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			syntheticFailed := buildOpenAIWSSyntheticReadFailureEvent(responseID, originalModel, errMessage, usage)
 			emitStreamMessage(syntheticFailed, true)
 			cleanExit = false
-			return nil, fmt.Errorf("openai ws read event after downstream stream started: %w", readErr)
+			return buildOpenAIWSPartialForwardResult(openAIWSPartialForwardInput{
+				responseID:    responseID,
+				usage:         usage,
+				originalModel: originalModel,
+				mappedModel:   mappedModel,
+				reqStream:     reqStream,
+				duration:      time.Since(startTime),
+				firstTokenMs:  firstTokenMs,
+				imageCount:    imageCounter.Count(),
+				clientDisc:    clientDisconnected,
+				reqBody:       reqBody,
+				headers:       lease.HandshakeHeaders(),
+			}), fmt.Errorf("openai ws read event after downstream stream started: %w", readErr)
 		}
 
 		eventType, eventResponseID, responseField := parseOpenAIWSEventEnvelope(message)
@@ -5204,7 +5216,21 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				flushBufferedStreamEvents("response_failed")
 				emitStreamMessage(buildOpenAIWSErrorEventFailedTerminal(responseID, originalModel, clientErrType, clientErrCode, errMsg), true)
 			}
-			return nil, fmt.Errorf("upstream response failed: %s", errMsg)
+			// Downstream already received stream frames; return partial usage so
+			// AfterTurn can bill consumed tokens instead of dropping the result.
+			return buildOpenAIWSPartialForwardResult(openAIWSPartialForwardInput{
+				responseID:    responseID,
+				usage:         usage,
+				originalModel: originalModel,
+				mappedModel:   mappedModel,
+				reqStream:     reqStream,
+				duration:      time.Since(startTime),
+				firstTokenMs:  firstTokenMs,
+				imageCount:    imageCounter.Count(),
+				clientDisc:    clientDisconnected,
+				reqBody:       reqBody,
+				headers:       lease.HandshakeHeaders(),
+			}), fmt.Errorf("upstream response failed: %s", errMsg)
 		}
 
 		if reqStream {
@@ -5257,7 +5283,19 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			if !wroteDownstream {
 				return nil, wrapOpenAIWSFallback("missing_final_response", errors.New("no terminal response payload"))
 			}
-			return nil, errors.New("ws finished without final response")
+			return buildOpenAIWSPartialForwardResult(openAIWSPartialForwardInput{
+				responseID:    responseID,
+				usage:         usage,
+				originalModel: originalModel,
+				mappedModel:   mappedModel,
+				reqStream:     reqStream,
+				duration:      time.Since(startTime),
+				firstTokenMs:  firstTokenMs,
+				imageCount:    imageCounter.Count(),
+				clientDisc:    clientDisconnected,
+				reqBody:       reqBody,
+				headers:       lease.HandshakeHeaders(),
+			}), errors.New("ws finished without final response")
 		}
 
 		if needModelReplace {

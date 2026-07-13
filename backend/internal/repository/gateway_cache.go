@@ -104,3 +104,31 @@ func (c *gatewayCache) DeleteOpenAIResponsesSessionWindow(ctx context.Context, g
 	key := buildOpenAIResponsesSessionWindowKey(groupID, sessionHash)
 	return c.rdb.Del(ctx, key).Err()
 }
+
+// compareAndDeleteSessionWindowScript deletes the key only when its current
+// value exactly matches ARGV[1]. Returns 1 on delete, 0 when missing/mismatched.
+var compareAndDeleteSessionWindowScript = redis.NewScript(`
+local current = redis.call('GET', KEYS[1])
+if current == false then
+  return 0
+end
+if current == ARGV[1] then
+  redis.call('DEL', KEYS[1])
+  return 1
+end
+return 0
+`)
+
+// CompareAndDeleteOpenAIResponsesSessionWindow atomically releases a WS
+// preemption owner token without racing a newer claim.
+func (c *gatewayCache) CompareAndDeleteOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, expected []byte) (bool, error) {
+	if c == nil || c.rdb == nil {
+		return false, nil
+	}
+	key := buildOpenAIResponsesSessionWindowKey(groupID, sessionHash)
+	n, err := compareAndDeleteSessionWindowScript.Run(ctx, c.rdb, []string{key}, expected).Int()
+	if err != nil {
+		return false, err
+	}
+	return n == 1, nil
+}

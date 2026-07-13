@@ -127,12 +127,18 @@ type ConcurrencyService struct {
 	accountLoadCacheMu  sync.RWMutex
 	accountLoadCache    map[string]cachedAccountLoadBatch
 	accountLoadGroup    singleflight.Group
+
+	// slotHeartbeatInterval controls how often held slots re-touch Redis scores so
+	// long-running requests outlive concurrency_slot_ttl. Zero uses the default.
+	slotHeartbeatInterval atomic.Int64
 }
 
 type cachedAccountLoadBatch struct {
 	loadMap   map[int64]*AccountLoadInfo
 	expiresAt time.Time
 }
+
+const defaultSlotHeartbeatInterval = 5 * time.Minute
 
 // NewConcurrencyService 创建并发控制服务。
 func NewConcurrencyService(cache ConcurrencyCache) *ConcurrencyService {
@@ -141,7 +147,52 @@ func NewConcurrencyService(cache ConcurrencyCache) *ConcurrencyService {
 		accountLoadCache: make(map[string]cachedAccountLoadBatch),
 	}
 	svc.SetAccountLoadBatchCacheTTL(defaultAccountLoadBatchCacheTTL)
+	svc.SetSlotHeartbeatInterval(defaultSlotHeartbeatInterval)
 	return svc
+}
+
+// SetSlotHeartbeatInterval sets how often acquired slots re-touch Redis.
+// Non-positive values disable heartbeat (tests / emergency).
+func (s *ConcurrencyService) SetSlotHeartbeatInterval(interval time.Duration) {
+	if s == nil {
+		return
+	}
+	s.slotHeartbeatInterval.Store(int64(interval))
+}
+
+func (s *ConcurrencyService) slotHeartbeatEvery() time.Duration {
+	if s == nil {
+		return 0
+	}
+	return time.Duration(s.slotHeartbeatInterval.Load())
+}
+
+// startSlotHeartbeat periodically invokes renew until the returned stop func is
+// called. renew must be idempotent (re-acquire with the same requestID).
+func (s *ConcurrencyService) startSlotHeartbeat(renew func(context.Context)) (stop func()) {
+	interval := s.slotHeartbeatEvery()
+	if interval <= 0 || renew == nil {
+		return func() {}
+	}
+	stopCh := make(chan struct{})
+	var once sync.Once
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopCh:
+				return
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				renew(ctx)
+				cancel()
+			}
+		}
+	}()
+	return func() {
+		once.Do(func() { close(stopCh) })
+	}
 }
 
 // SetAccountLoadBatchCacheTTL 设置账号负载批量读取的极短 TTL 缓存；非正数表示禁用缓存。
@@ -268,9 +319,28 @@ func (s *ConcurrencyService) AcquireAccountSlotForGroup(ctx context.Context, acc
 			return nil, err
 		}
 
+		// Re-acquire with the same requestID refreshes ZSET score + key TTL
+		// (see concurrency acquireScript), so long requests outlive slot TTL.
+		stopHeartbeat := s.startSlotHeartbeat(func(renewCtx context.Context) {
+			if s.cache == nil {
+				return
+			}
+			if _, renewErr := s.cache.AcquireAccountSlot(renewCtx, accountID, maxConcurrency, requestID); renewErr != nil {
+				logger.LegacyPrintf("service.concurrency", "Warning: failed to renew account slot for %d (req=%s): %v", accountID, requestID, renewErr)
+			}
+			if groupID != nil && *groupID > 0 {
+				if groupTracker, ok := s.cache.(groupConcurrencyCache); ok && groupTracker != nil {
+					if renewErr := groupTracker.AcquireGroupSlot(renewCtx, *groupID, requestID); renewErr != nil {
+						logger.LegacyPrintf("service.concurrency", "Warning: failed to renew group slot for %d (req=%s): %v", *groupID, requestID, renewErr)
+					}
+				}
+			}
+		})
+
 		return &AcquireResult{
 			Acquired: true,
 			ReleaseFunc: func() {
+				stopHeartbeat()
 				bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 				releaseAccountAndGroupSlot(bgCtx)
@@ -305,9 +375,18 @@ func (s *ConcurrencyService) AcquireUserSlot(ctx context.Context, userID int64, 
 	}
 
 	if acquired {
+		stopHeartbeat := s.startSlotHeartbeat(func(renewCtx context.Context) {
+			if s.cache == nil {
+				return
+			}
+			if _, renewErr := s.cache.AcquireUserSlot(renewCtx, userID, maxConcurrency, requestID); renewErr != nil {
+				logger.LegacyPrintf("service.concurrency", "Warning: failed to renew user slot for %d (req=%s): %v", userID, requestID, renewErr)
+			}
+		})
 		return &AcquireResult{
 			Acquired: true,
 			ReleaseFunc: func() {
+				stopHeartbeat()
 				bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 				if err := s.cache.ReleaseUserSlot(bgCtx, userID, requestID); err != nil {

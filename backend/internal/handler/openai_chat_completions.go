@@ -261,8 +261,18 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
 		if err != nil {
-			if result != nil && result.ImageCount > 0 {
-				reqLog.Warn("openai_chat_completions.forward_partial_error_with_image_result",
+			if result != nil {
+				// Cyber already billed via recordCyberPolicyIfMarked(forwardErrored=true).
+				if service.GetOpsCyberPolicy(c) != nil {
+					reqLog.Warn("openai_chat_completions.forward_partial_error_cyber_billed",
+						zap.Int64("account_id", account.ID),
+						zap.Int("image_count", result.ImageCount),
+						zap.Error(err),
+					)
+					return
+				}
+				// Bill any partial result (token and/or image), not only ImageCount>0.
+				reqLog.Warn("openai_chat_completions.forward_partial_error_result",
 					zap.Int64("account_id", account.ID),
 					zap.Int("image_count", result.ImageCount),
 					zap.Error(err),

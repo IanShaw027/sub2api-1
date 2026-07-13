@@ -596,13 +596,24 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		}
 		if err != nil {
 			if result != nil {
+				// Align with WS AfterTurn: cyber hits already bill via
+				// recordCyberPolicyIfMarked(forwardErrored=true). Do not also
+				// RecordUsage or the same request is double-charged.
+				if service.GetOpsCyberPolicy(c) != nil {
+					reqLog.Warn("openai.forward_partial_error_result_cyber_billed",
+						zap.Int64("account_id", account.ID),
+						zap.Int("image_count", result.ImageCount),
+						zap.Int("search_count", result.SearchCount),
+						zap.Error(err),
+					)
+					return
+				}
 				userAgent := c.GetHeader("User-Agent")
 				clientIP := ip.GetClientIP(c)
 				requestPayloadHash := service.HashUsageRequestPayload(body)
 				inboundEndpoint := GetInboundEndpoint(c)
 				upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account)
 				quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-				cyberBlocked := service.GetOpsCyberPolicy(c) != nil
 				h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
 					if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 						Result:             result,
@@ -618,7 +629,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						APIKeyService:      h.apiKeyService,
 						QuotaPlatform:      quotaPlatform,
 						ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
-						CyberBlocked:       cyberBlocked,
+						CyberBlocked:       false,
 					}); err != nil {
 						logger.L().With(
 							zap.String("component", "handler.openai_gateway.responses"),
@@ -1196,8 +1207,18 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
 		if err != nil {
-			if result != nil && result.ImageCount > 0 {
-				reqLog.Warn("openai_messages.forward_partial_error_with_image_result",
+			if result != nil {
+				// Cyber already billed via recordCyberPolicyIfMarked(forwardErrored=true).
+				if service.GetOpsCyberPolicy(c) != nil {
+					reqLog.Warn("openai_messages.forward_partial_error_cyber_billed",
+						zap.Int64("account_id", account.ID),
+						zap.Int("image_count", result.ImageCount),
+						zap.Error(err),
+					)
+					return
+				}
+				// Bill any partial result (token and/or image), not only ImageCount>0.
+				reqLog.Warn("openai_messages.forward_partial_error_result",
 					zap.Int64("account_id", account.ID),
 					zap.Int("image_count", result.ImageCount),
 					zap.Error(err),
@@ -1249,13 +1270,6 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						zap.Int("max_switches", maxAccountSwitches),
 					)
 					continue
-				}
-				if result != nil && result.ClientDisconnect {
-					reqLog.Info("openai_messages.client_disconnected",
-						zap.Int64("account_id", account.ID),
-						zap.Error(err),
-					)
-					return
 				}
 				h.reportOpenAIAccountScheduleFailure(c, account.ID, err)
 				wroteFallback := h.ensureAnthropicErrorResponse(c, streamStarted)
@@ -2082,7 +2096,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					cyberBlockedThisConn = true
 				}
 				if turnErr != nil {
-					if result == nil || result.ImageCount <= 0 {
+					if result == nil {
 						return
 					}
 					// cyber 命中时该 turn 的用量已由 recordCyberPolicyIfMarked(forwardErrored=true)
@@ -2090,9 +2104,13 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					if service.GetOpsCyberPolicy(c) != nil {
 						return
 					}
-					reqLog.Warn("openai.websocket_partial_error_with_image_result",
+					// Bill any terminal partial (token and/or image). Previously only
+					// ImageCount>0 fell through, so mid-stream token usage was lost.
+					reqLog.Warn("openai.websocket_partial_error_result",
 						zap.Int64("account_id", account.ID),
 						zap.Int("image_count", result.ImageCount),
+						zap.Int("input_tokens", result.Usage.InputTokens),
+						zap.Int("output_tokens", result.Usage.OutputTokens),
 						zap.Error(turnErr),
 					)
 				}

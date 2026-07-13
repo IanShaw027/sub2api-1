@@ -7178,6 +7178,19 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	if reqStream {
 		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, upstreamPassthroughModel)
 		if err != nil {
+			// Align with non-passthrough streaming: terminal errors already consumed
+			// upstream quota and cannot be retried, so bill partial usage. Failover
+			// errors return nil so the caller can switch accounts without double-billing.
+			if result != nil && openaiStreamingErrorBillsPartial(err) {
+				streamResult := &openaiStreamingResult{
+					usage:        result.usage,
+					firstTokenMs: result.firstTokenMs,
+					responseID:   result.responseID,
+					imageCount:   result.imageCount,
+					searchCount:  result.searchCount,
+				}
+				return buildOpenAIStreamingPartialForwardResult(resp, body, reqModel, upstreamPassthroughModel, streamResult, time.Since(startTime)), err
+			}
 			return nil, err
 		}
 		usage = result.usage
@@ -7309,6 +7322,52 @@ func openaiStreamingErrorBillsPartial(err error) bool {
 	}
 	var failoverErr *UpstreamFailoverError
 	return !errors.As(err, &failoverErr)
+}
+
+// openAIWSPartialForwardInput carries the fields needed to construct a billable
+// partial OpenAIForwardResult after a terminal WS failure (response.failed /
+// mid-stream read error) where downstream output already started.
+type openAIWSPartialForwardInput struct {
+	responseID    string
+	usage         *OpenAIUsage
+	originalModel string
+	mappedModel   string
+	reqStream     bool
+	duration      time.Duration
+	firstTokenMs  *int
+	imageCount    int
+	clientDisc    bool
+	reqBody       map[string]any
+	headers       http.Header
+}
+
+// buildOpenAIWSPartialForwardResult builds a billable partial result for WS
+// terminal errors so AfterTurn can RecordUsage instead of dropping tokens.
+func buildOpenAIWSPartialForwardResult(in openAIWSPartialForwardInput) *OpenAIForwardResult {
+	usage := in.usage
+	if usage == nil {
+		usage = &OpenAIUsage{}
+	}
+	result := &OpenAIForwardResult{
+		RequestID:          strings.TrimSpace(in.responseID),
+		Usage:              *usage,
+		Model:              in.originalModel,
+		UpstreamModel:      in.mappedModel,
+		Stream:             in.reqStream,
+		OpenAIWSMode:       true,
+		Duration:           in.duration,
+		FirstTokenMs:       in.firstTokenMs,
+		ImageCount:         in.imageCount,
+		ClientDisconnected: in.clientDisc,
+	}
+	if in.headers != nil {
+		result.ResponseHeaders = in.headers.Clone()
+	}
+	if in.reqBody != nil {
+		result.ServiceTier = extractOpenAIServiceTier(in.reqBody)
+		result.ReasoningEffort = extractOpenAIReasoningEffort(in.reqBody, in.mappedModel, in.originalModel)
+	}
+	return result
 }
 
 func logOpenAIPassthroughInstructionsRejected(
