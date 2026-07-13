@@ -112,6 +112,75 @@ func TestOpenAIWSConnPool_CleanupIntervalsFollowSessionIdleTTL(t *testing.T) {
 	require.Equal(t, 30*time.Second, pool.backgroundSweepInterval())
 }
 
+func TestOpenAIWSConnPool_BackgroundHealthCheckEvictsOnlyEligibleFailedConns(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 8
+	pool := newOpenAIWSConnPool(cfg)
+	t.Cleanup(pool.Close)
+
+	account := &Account{ID: 44, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 8}
+	ap := pool.getOrCreateAccountPool(account.ID)
+	now := time.Now()
+	newConn := func(id string, probe *openAIWSHealthProbeConn) *openAIWSConn {
+		conn := newOpenAIWSConnWithProfile(id, probe, nil, openAIWSConnProfileSessionBound)
+		conn.lastUsedNano.Store(now.Add(-(openAIWSBackgroundPingIdle + time.Second)).UnixNano())
+		return conn
+	}
+
+	failedProbe := &openAIWSHealthProbeConn{pingErr: errors.New("stale socket")}
+	healthyProbe := &openAIWSHealthProbeConn{}
+	leasedProbe := &openAIWSHealthProbeConn{pingErr: errors.New("must not ping leased")}
+	pinnedProbe := &openAIWSHealthProbeConn{pingErr: errors.New("must not ping pinned")}
+	waiterProbe := &openAIWSHealthProbeConn{pingErr: errors.New("must not ping waiter")}
+
+	failed := newConn("failed", failedProbe)
+	healthy := newConn("healthy", healthyProbe)
+	leased := newConn("leased", leasedProbe)
+	pinned := newConn("pinned", pinnedProbe)
+	waiter := newConn("waiter", waiterProbe)
+	require.True(t, leased.tryAcquire())
+	t.Cleanup(leased.release)
+	pinnedCount := 1
+	waiter.waiters.Store(1)
+
+	ap.mu.Lock()
+	ap.lastAcquire = &openAIWSAcquireRequest{Account: account, Profile: openAIWSConnProfileSessionBound}
+	for _, conn := range []*openAIWSConn{failed, healthy, leased, pinned, waiter} {
+		ap.conns[conn.id] = conn
+	}
+	ap.pinnedConns[pinned.id] = pinnedCount
+	ap.mu.Unlock()
+
+	pool.runBackgroundCleanupSweep(now)
+
+	ap.mu.Lock()
+	_, failedKept := ap.conns[failed.id]
+	_, healthyKept := ap.conns[healthy.id]
+	_, leasedKept := ap.conns[leased.id]
+	_, pinnedKept := ap.conns[pinned.id]
+	_, waiterKept := ap.conns[waiter.id]
+	ap.mu.Unlock()
+	require.False(t, failedKept, "failed idle connection should be evicted")
+	require.True(t, healthyKept)
+	require.True(t, leasedKept)
+	require.True(t, pinnedKept)
+	require.True(t, waiterKept)
+	require.Equal(t, int32(1), failedProbe.pings.Load())
+	require.Equal(t, int32(1), healthyProbe.pings.Load())
+	require.Equal(t, int32(0), leasedProbe.pings.Load())
+	require.Equal(t, int32(0), pinnedProbe.pings.Load())
+	require.Equal(t, int32(0), waiterProbe.pings.Load())
+	require.False(t, healthy.isLeased(), "healthy probe must release its temporary lease")
+
+	pool.runBackgroundCleanupSweep(now.Add(time.Second))
+	require.Equal(t, int32(1), healthyProbe.pings.Load(), "healthy connection should not be probed again before the sweep interval")
+}
+
+func TestOpenAIWSRequestPathPingTimeoutIsBounded(t *testing.T) {
+	require.Equal(t, 750*time.Millisecond, openAIWSRequestPathPingTO)
+	require.Less(t, openAIWSRequestPathPingTO, openAIWSConnHealthCheckTO)
+}
+
 func TestOpenAIWSConnLease_WriteJSONAndGuards(t *testing.T) {
 	conn := newOpenAIWSConn("lease_write", 1, &openAIWSFakeConn{}, nil)
 	lease := &openAIWSConnLease{conn: conn}
@@ -2070,6 +2139,24 @@ type openAIWSFakeConn struct {
 	closed  bool
 	payload [][]byte
 }
+
+type openAIWSHealthProbeConn struct {
+	pings   atomic.Int32
+	pingErr error
+}
+
+func (c *openAIWSHealthProbeConn) WriteJSON(context.Context, any) error { return nil }
+
+func (c *openAIWSHealthProbeConn) ReadMessage(context.Context) ([]byte, error) {
+	return []byte(`{"type":"response.completed"}`), nil
+}
+
+func (c *openAIWSHealthProbeConn) Ping(context.Context) error {
+	c.pings.Add(1)
+	return c.pingErr
+}
+
+func (c *openAIWSHealthProbeConn) Close() error { return nil }
 
 func (c *openAIWSFakeConn) WriteJSON(ctx context.Context, value any) error {
 	_ = ctx

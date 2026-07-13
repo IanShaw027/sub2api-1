@@ -23,9 +23,12 @@ import (
 const (
 	openAIWSConnMaxAge              = 60 * time.Minute
 	openAIWSConnHealthCheckTO       = 2 * time.Second
+	openAIWSRequestPathPingTO       = 750 * time.Millisecond
 	openAIWSConnPrewarmExtraDelay   = 2 * time.Second
 	openAIWSAcquireCleanupInterval  = 3 * time.Second
 	openAIWSBackgroundSweepTicker   = 30 * time.Second
+	openAIWSBackgroundPingIdle      = 20 * time.Second
+	openAIWSBackgroundPingWorkers   = 16
 	openAIWSNeutralIdleTTLSafeCap   = 70 * time.Second
 	openAIWSNeutralAcquireStaleIdle = 1000 * time.Second
 	defaultOpenAIWSDialTimeout      = 10 * time.Second
@@ -512,6 +515,7 @@ type openAIWSConn struct {
 	waiters       atomic.Int32
 	createdAtNano atomic.Int64
 	lastUsedNano  atomic.Int64
+	lastPingNano  atomic.Int64
 	leaseCount    atomic.Int64
 	prewarmed     atomic.Bool
 	neutralStock  atomic.Bool
@@ -737,6 +741,24 @@ func (c *openAIWSConn) pingWithTimeout(timeout time.Duration) error {
 		return err
 	}
 	return nil
+}
+
+func (c *openAIWSConn) backgroundPingDue(now time.Time, interval time.Duration) bool {
+	if c == nil || interval <= 0 {
+		return false
+	}
+	lastPingNano := c.lastPingNano.Load()
+	return lastPingNano <= 0 || now.Sub(time.Unix(0, lastPingNano)) >= interval
+}
+
+func (c *openAIWSConn) markBackgroundPing(now time.Time) {
+	if c == nil {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	c.lastPingNano.Store(now.UnixNano())
 }
 
 func (c *openAIWSConn) touch() {
@@ -1076,6 +1098,11 @@ type openAIWSPoolReconcileTarget struct {
 	accountConcurrency int
 }
 
+type openAIWSHealthCheckCandidate struct {
+	accountID int64
+	conn      *openAIWSConn
+}
+
 func newOpenAIWSConnPool(cfg *config.Config) *openAIWSConnPool {
 	pool := &openAIWSConnPool{
 		cfg:          cfg,
@@ -1196,6 +1223,7 @@ func (p *openAIWSConnPool) runBackgroundCleanupSweep(now time.Time) {
 		evicted   []*openAIWSConn
 	}
 	results := make([]cleanupResult, 0)
+	healthChecks := make([]openAIWSHealthCheckCandidate, 0)
 	p.accounts.Range(func(key any, value any) bool {
 		accountID, _ := key.(int64)
 		ap, ok := value.(*openAIWSAccountPool)
@@ -1210,6 +1238,17 @@ func (p *openAIWSConnPool) runBackgroundCleanupSweep(now time.Time) {
 			accountConcurrency = ap.lastAcquire.Account.Concurrency
 		}
 		evicted := p.cleanupAccountLocked(ap, now, accountConcurrency)
+		for _, conn := range ap.conns {
+			if conn == nil || p.isConnPinnedLocked(ap, conn.id) || conn.isLeased() || conn.waiters.Load() > 0 {
+				continue
+			}
+			if conn.idleDuration(now) < openAIWSBackgroundPingIdle || !conn.backgroundPingDue(now, p.backgroundSweepInterval()) {
+				continue
+			}
+			if conn.tryAcquire() {
+				healthChecks = append(healthChecks, openAIWSHealthCheckCandidate{accountID: accountID, conn: conn})
+			}
+		}
 		ap.lastCleanupAt = now
 		ap.mu.Unlock()
 		if len(evicted) > 0 {
@@ -1220,9 +1259,59 @@ func (p *openAIWSConnPool) runBackgroundCleanupSweep(now time.Time) {
 	for _, result := range results {
 		closeOpenAIWSConns(result.evicted)
 	}
+	p.runBackgroundHealthChecks(now, healthChecks)
 	for _, result := range results {
 		p.ensureTargetIdleAsync(result.accountID)
 	}
+}
+
+func (p *openAIWSConnPool) runBackgroundHealthChecks(now time.Time, candidates []openAIWSHealthCheckCandidate) {
+	if p == nil || len(candidates) == 0 {
+		return
+	}
+	workers := openAIWSBackgroundPingWorkers
+	if workers > len(candidates) {
+		workers = len(candidates)
+	}
+	jobs := make(chan openAIWSHealthCheckCandidate)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for candidate := range jobs {
+				conn := candidate.conn
+				if conn == nil {
+					continue
+				}
+				ageMS := conn.age(now).Milliseconds()
+				idleMS := conn.idleDuration(now).Milliseconds()
+				err := conn.pingWithTimeout(openAIWSRequestPathPingTO)
+				if err != nil {
+					logOpenAIWSTemporaryAnomaly(
+						"background_ping_fail",
+						"account_id=%d conn_id=%s conn_profile=%s conn_age_ms=%d conn_idle_ms=%d conn_lease_count=%d cause=%s",
+						candidate.accountID,
+						truncateOpenAIWSLogValue(conn.id, openAIWSIDValueMaxLen),
+						normalizeOpenAIWSLogValue(openAIWSProfileUsageString(conn.profile)),
+						ageMS,
+						idleMS,
+						conn.leaseCount.Load(),
+						truncateOpenAIWSLogValue(err.Error(), openAIWSLogValueMaxLen),
+					)
+					p.evictConn(candidate.accountID, conn.id, "background_ping_fail")
+				} else {
+					conn.markBackgroundPing(now)
+				}
+				conn.release()
+			}
+		}()
+	}
+	for _, candidate := range candidates {
+		jobs <- candidate
+	}
+	close(jobs)
+	wg.Wait()
 }
 
 func (p *openAIWSConnPool) Acquire(ctx context.Context, req openAIWSAcquireRequest) (*openAIWSConnLease, error) {

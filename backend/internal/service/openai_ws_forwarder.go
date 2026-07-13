@@ -4483,10 +4483,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			ConnAffinityHit:          connAffinityHit,
 			Result:                   "ok",
 		}
-		if pingErr := lease.PingWithTimeout(openAIWSConnHealthCheckTO); pingErr != nil {
+		if pingErr := lease.PingWithTimeout(openAIWSRequestPathPingTO); pingErr != nil {
 			pingLog.Result = "fail"
 			pingLog.Cause = pingErr.Error()
 			logOpenAIWSModeInfo("%s", openAIWSPrewritePingLogMessage(pingLog))
+			logOpenAIWSTemporaryAnomaly("prewrite_ping_fail", "%s", openAIWSPrewritePingLogMessage(pingLog))
 			s.logOpenAIWSBindingSnapshot(
 				ctx,
 				"prewrite_ping_fail",
@@ -7088,7 +7089,18 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 		}
 		if shouldPreflightPing {
-			if pingErr := sessionLease.PingWithTimeout(openAIWSConnHealthCheckTO); pingErr != nil {
+			if pingErr := sessionLease.PingWithTimeout(openAIWSRequestPathPingTO); pingErr != nil {
+				logOpenAIWSTemporaryAnomaly(
+					"ingress_prewrite_ping_fail",
+					"account_id=%d turn=%d conn_id=%s conn_age_ms=%d conn_idle_ms=%d conn_lease_count=%d cause=%s",
+					account.ID,
+					turn,
+					truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
+					sessionLease.ConnAge().Milliseconds(),
+					sessionLease.ConnIdleDuration().Milliseconds(),
+					sessionLease.ConnLeaseCount(),
+					truncateOpenAIWSLogValue(pingErr.Error(), openAIWSLogValueMaxLen),
+				)
 				logOpenAIWSModeInfo(
 					"ingress_ws_upstream_preflight_ping_fail account_id=%d turn=%d conn_id=%s cause=%s",
 					account.ID,
