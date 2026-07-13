@@ -20,6 +20,15 @@ func (s *captureOpsUpstreamFailureSink) EnqueueOpsUpstreamFailure(_ context.Cont
 	s.failures = append(s.failures, failure)
 }
 
+func TestNewOpsServiceDoesNotBindPerAttemptFailureSink(t *testing.T) {
+	openAI := &OpenAIGatewayService{}
+	_ = NewOpsService(nil, nil, nil, nil, nil, nil, nil, openAI, nil, nil, nil)
+
+	openAI.opsUpstreamFailureSinkMu.RLock()
+	defer openAI.opsUpstreamFailureSinkMu.RUnlock()
+	require.Nil(t, openAI.opsUpstreamFailureSink)
+}
+
 func TestBuildOpsUpstreamFailureEntry_TransportTimeout(t *testing.T) {
 	ctx := context.WithValue(context.Background(), ctxkey.RequestID, "req-timeout")
 	ctx = context.WithValue(ctx, ctxkey.ClientRequestID, "client-timeout")

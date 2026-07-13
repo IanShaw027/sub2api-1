@@ -286,7 +286,7 @@ func TestOpsErrorLoggerMiddleware_RecordsNoAvailableAccounts(t *testing.T) {
 	}
 }
 
-func TestOpsErrorLoggerMiddleware_RecordsRecoveredUpstreamErrorOnSuccessfulRequest(t *testing.T) {
+func TestOpsErrorLoggerMiddleware_SkipsRecoveredUpstreamErrorOnSuccessfulRequest(t *testing.T) {
 	resetOpsErrorLoggerStateForTest(t)
 	t.Cleanup(func() { resetOpsErrorLoggerStateForTest(t) })
 	gin.SetMode(gin.TestMode)
@@ -319,23 +319,8 @@ func TestOpsErrorLoggerMiddleware_RecordsRecoveredUpstreamErrorOnSuccessfulReque
 	r.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.Equal(t, int64(1), OpsErrorLogEnqueuedTotal())
-	require.Equal(t, int64(1), OpsErrorLogQueueLength())
-
-	select {
-	case job := <-opsErrorLogQueue:
-		opsErrorLogQueueLen.Add(-1)
-		require.NotNil(t, job.entry)
-		require.Equal(t, http.StatusOK, job.entry.StatusCode)
-		require.Equal(t, "upstream", job.entry.ErrorPhase)
-		require.Equal(t, "upstream_error", job.entry.ErrorType)
-		require.Contains(t, job.entry.ErrorMessage, "Recovered upstream error")
-		require.Contains(t, job.entry.ErrorMessage, "incomplete_tool_use_completed")
-		require.Len(t, job.entry.UpstreamErrors, 1)
-		require.Equal(t, "response_anomaly", job.entry.UpstreamErrors[0].Kind)
-	default:
-		t.Fatal("expected recovered upstream anomaly to be enqueued")
-	}
+	require.Equal(t, int64(0), OpsErrorLogEnqueuedTotal())
+	require.Equal(t, int64(0), OpsErrorLogQueueLength())
 }
 
 func TestOpsErrorLoggerMiddleware_ResponsesFailedSSEUsesFailureStatus(t *testing.T) {

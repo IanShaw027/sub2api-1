@@ -122,7 +122,9 @@ func NewOpsService(
 		systemLogSink:             systemLogSink,
 	}
 	svc.applyRuntimeLogConfigOnStartup(context.Background())
-	bindOpsUpstreamFailureSink(svc, gatewayService, openAIGatewayService, geminiCompatService, antigravityGatewayService)
+	// ops_error_logs is reserved for the final client-visible request outcome.
+	// Physical upstream attempts are internal telemetry and must not write rows
+	// before the request has finished.
 	return svc
 }
 
