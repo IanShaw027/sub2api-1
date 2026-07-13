@@ -3894,7 +3894,10 @@ func (s *adminServiceImpl) finishBulkUpdateGroupBindings(ctx context.Context, in
 }
 
 func validateBulkModelRoutingUpdatePlatforms(input *BulkUpdateAccountsInput, accountByID map[int64]*Account) error {
-	if input == nil || !bulkCredentialsContainModelRoutingFields(input.Credentials) {
+	// Any credentials payload is platform-sensitive (model routing, concurrency
+	// knobs, capability flags). Mixing platforms in one bulk edit can corrupt
+	// account-specific credential shapes — reject regardless of which keys are set.
+	if input == nil || len(input.Credentials) == 0 {
 		return nil
 	}
 	platforms := make(map[string]struct{}, len(input.AccountIDs))
@@ -3916,18 +3919,6 @@ func validateBulkModelRoutingUpdatePlatforms(input *BulkUpdateAccountsInput, acc
 		"BULK_MODEL_ROUTING_MIXED_PLATFORMS",
 		"bulk updates for model routing credentials must target accounts from a single platform",
 	)
-}
-
-func bulkCredentialsContainModelRoutingFields(credentials map[string]any) bool {
-	if len(credentials) == 0 {
-		return false
-	}
-	for _, key := range []string{"model_mapping", "compact_model_mapping", "model_whitelist"} {
-		if _, ok := credentials[key]; ok {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *adminServiceImpl) propagateBulkProxyToShadows(ctx context.Context, input *BulkUpdateAccountsInput, accountByID map[int64]*Account) error {

@@ -2,6 +2,20 @@
 
 ## Overview
 
+## Operational Safety (large tables)
+
+- Migrations run automatically on service **startup** via `ApplyMigrations`.
+- Avoid long-running `UPDATE`/`ALTER` on hot tables (especially `usage_logs`) in
+  transactional startup migrations — they can block traffic for large deployments.
+- Prefer `_notx.sql` + `CREATE/DROP INDEX CONCURRENTLY`, or run data backfills as
+  offline jobs with explicit batching.
+- `deploy.sh` rollback restores the binary/checksum only; **it does not reverse
+  applied schema**. Always take a DB snapshot before upgrading when migrations
+  touch hot paths.
+- Checksum allowlists exist for historical in-place edits; **do not rewrite
+  already-applied SQL**. Ship a new forward migration instead.
+
+
 This directory contains SQL migration files for database schema changes. The migration system uses SHA256 checksums to ensure migration immutability and consistency across environments.
 
 ## Migration File Naming

@@ -625,22 +625,6 @@ type AccountBulkEditTarget =
       selectedTypes: AccountType[]
       textEndpointAutoRouteConfigurable: boolean
     }
-const selPlatforms = computed<AccountPlatform[]>(() => {
-  const platforms = new Set(
-    accounts.value
-      .filter(a => isSelected(a.id))
-      .map(a => a.platform)
-  )
-  return [...platforms]
-})
-const selTypes = computed<AccountType[]>(() => {
-  const types = new Set(
-    accounts.value
-      .filter(a => isSelected(a.id))
-      .map(a => a.type)
-  )
-  return [...types]
-})
 const showCreate = ref(false)
 const showEdit = ref(false)
 const showSync = ref(false)
@@ -649,6 +633,14 @@ const showExportDataDialog = ref(false)
 const includeProxyOnExport = ref(true)
 const showBulkEdit = ref(false)
 const bulkEditTarget = ref<AccountBulkEditTarget | null>(null)
+// Cross-page selection metadata: selIds can accumulate across pages, but
+// accounts[] only holds the current page. Keep platform/type for every selected id.
+type SelectedAccountMeta = {
+  platform: AccountPlatform
+  type: AccountType
+  credentials?: Account['credentials']
+}
+const selectedAccountMeta = ref(new Map<number, SelectedAccountMeta>())
 const showTempUnsched = ref(false)
 const showDeleteDialog = ref(false)
 const showCreateShadowDialog = ref(false)
@@ -1136,6 +1128,52 @@ const {
 } = useTableSelection<Account>({
   rows: accounts,
   getId: (account) => account.id
+})
+
+// Keep platform/type for selected IDs that leave the current page.
+watch(
+  [accounts, selIds],
+  () => {
+    const selected = new Set(selIds.value)
+    const next = new Map<number, SelectedAccountMeta>()
+    for (const [id, meta] of selectedAccountMeta.value.entries()) {
+      if (selected.has(id)) next.set(id, meta)
+    }
+    for (const account of accounts.value) {
+      if (selected.has(account.id)) {
+        next.set(account.id, {
+          platform: account.platform,
+          type: account.type,
+          credentials: account.credentials
+        })
+      }
+    }
+    selectedAccountMeta.value = next
+  },
+  { deep: true }
+)
+
+const selPlatforms = computed<AccountPlatform[]>(() => {
+  const platforms = new Set<AccountPlatform>()
+  for (const id of selIds.value) {
+    const meta = selectedAccountMeta.value.get(id)
+    if (meta?.platform) platforms.add(meta.platform)
+  }
+  for (const account of accounts.value) {
+    if (isSelected(account.id) && account.platform) platforms.add(account.platform)
+  }
+  return [...platforms]
+})
+const selTypes = computed<AccountType[]>(() => {
+  const types = new Set<AccountType>()
+  for (const id of selIds.value) {
+    const meta = selectedAccountMeta.value.get(id)
+    if (meta?.type) types.add(meta.type)
+  }
+  for (const account of accounts.value) {
+    if (isSelected(account.id) && account.type) types.add(account.type)
+  }
+  return [...types]
 })
 
 const swipeVirtualContext: SwipeSelectVirtualContext = {
@@ -2084,9 +2122,19 @@ const collectFilteredSelectionMetadata = async (filters: Record<string, unknown>
 }
 
 const openBulkEditSelected = () => {
-  const { textEndpointAutoRouteConfigurable } = collectSelectionMetadata(
-    accounts.value.filter(a => isSelected(a.id))
-  )
+  // Prefer cached cross-page meta; fall back to current page rows.
+  const selectedRows: Account[] = selIds.value.map((id) => {
+    const live = accounts.value.find(a => a.id === id)
+    if (live) return live
+    const meta = selectedAccountMeta.value.get(id)
+    return {
+      id,
+      platform: meta?.platform ?? ('' as AccountPlatform),
+      type: meta?.type ?? ('' as AccountType),
+      credentials: meta?.credentials
+    } as Account
+  }).filter(a => a.platform)
+  const { textEndpointAutoRouteConfigurable } = collectSelectionMetadata(selectedRows)
   bulkEditTarget.value = {
     mode: 'selected',
     accountIds: [...selIds.value],

@@ -61,8 +61,9 @@ func ProvideOpenAIOAuthService(
 	proxyRepo ProxyRepository,
 	oauthClient OpenAIOAuthClient,
 	privacyClientFactory PrivacyClientFactory,
+	rdb *redis.Client,
 ) *OpenAIOAuthService {
-	svc := NewOpenAIOAuthService(proxyRepo, oauthClient)
+	svc := NewOpenAIOAuthService(proxyRepo, oauthClient).WithRedisSessionStore(rdb)
 	svc.SetPrivacyClientFactory(privacyClientFactory)
 	return svc
 }
@@ -419,8 +420,10 @@ func ProvideAISkillRunService(
 	runRepo AISkillRunRepository,
 	settlementService *AISkillSettlementService,
 	runtimeGateway AISkillRuntimeGateway,
+	apiKeyRepo AISkillBillingAPIKeyLookup,
 ) *AISkillRunService {
-	return NewAISkillRunService(skillRepo, versionRepo, runRepo, settlementService, runtimeGateway)
+	return NewAISkillRunService(skillRepo, versionRepo, runRepo, settlementService, runtimeGateway).
+		WithAPIKeyRepository(apiKeyRepo)
 }
 
 // ProvideConcurrencyService creates ConcurrencyService and starts slot cleanup worker.
@@ -431,6 +434,14 @@ func ProvideConcurrencyService(cache ConcurrencyCache, accountRepo AccountReposi
 	}
 	if cfg != nil {
 		svc.SetAccountLoadBatchCacheTTL(time.Duration(cfg.Gateway.Scheduling.LoadBatchCacheTTLMS) * time.Millisecond)
+		// Heartbeat at ~1/3 of slot TTL so long requests re-touch Redis before expiry.
+		if cfg.Gateway.ConcurrencySlotTTLMinutes > 0 {
+			interval := time.Duration(cfg.Gateway.ConcurrencySlotTTLMinutes) * time.Minute / 3
+			if interval < time.Minute {
+				interval = time.Minute
+			}
+			svc.SetSlotHeartbeatInterval(interval)
+		}
 		svc.StartSlotCleanupWorker(accountRepo, cfg.Gateway.Scheduling.SlotCleanupInterval)
 	}
 	return svc

@@ -471,3 +471,26 @@ func TestApplyBulkUpdateInputToAccount_UsesGrokOAuthConcurrencyUnchanged(t *test
 
 	require.Equal(t, 0, account.Concurrency)
 }
+
+func TestAdminService_BulkUpdateAccounts_RejectsCredentialsAcrossMixedPlatforms(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+			{ID: 2, Platform: PlatformAnthropic, Type: AccountTypeOAuth},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1, 2},
+		Credentials: map[string]any{
+			"priority": 10,
+		},
+		SkipMixedChannelCheck: true,
+	})
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "single platform")
+	require.False(t, repo.bulkUpdateCalled)
+}
