@@ -286,14 +286,50 @@ func TestKiroGatewayService_CommitFakeCachePlanPersistsEffectiveProgress(t *test
 	plan.CacheStrategyGeneration = svc.fakeCacheGen
 	usage := resolveKiroFakeCacheUsage(plan, kiropkg.FakeCacheHitState{}, 1200, settings)
 	require.Equal(t, 0, usage.CacheReadInputTokens)
-	require.Equal(t, 1200, usage.CacheCreationInputTokens)
-	require.Equal(t, 0, usage.InputTokens)
+	require.Equal(t, 1140, usage.CacheCreationInputTokens)
+	require.Equal(t, 60, usage.InputTokens)
 
 	svc.commitFakeCachePlan(plan, settings)
 	svc.fakeCache.wait()
 	progress, found := svc.fakeCache.Get(plan.SessionProgressKey)
 	require.True(t, found)
 	require.Equal(t, usage.CacheReadInputTokens+usage.CacheCreationInputTokens, progress)
+}
+
+func TestKiroGatewayService_CommitFakeCachePlanPersistsZeroEffectiveProgress(t *testing.T) {
+	svc := &KiroGatewayService{
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
+	}
+	settings := &KiroRuntimeSettings{
+		CacheHitRateScale:       0,
+		CacheMinBlockTokens:     0,
+		CacheIndependentTTLSecs: 3600,
+		CachePrefixTTLSecs:      300,
+	}
+	plan := &kiropkg.FakeCachePlan{
+		SessionProgressKey:           "kiro:test:session-progress:zero",
+		CurrentPrefixKey:             "kiro:test:prefix:current:zero",
+		CurrentCacheableTokens:       1200,
+		CurrentPrefixCacheableTokens: 1200,
+	}
+
+	svc.refreshFakeCacheStrategy(settings)
+	plan.CacheStrategy = svc.fakeCacheStrategy
+	plan.CacheStrategyGeneration = svc.fakeCacheGen
+	svc.fakeCache.Set(plan.SessionProgressKey, 900, time.Minute)
+	svc.fakeCache.wait()
+
+	usage := resolveKiroFakeCacheUsage(plan, kiropkg.FakeCacheHitState{}, 1200, settings)
+	require.Equal(t, 1200, usage.InputTokens)
+	require.Zero(t, usage.CacheReadInputTokens)
+	require.Zero(t, usage.CacheCreationInputTokens)
+	require.True(t, plan.UsageResolved)
+
+	svc.commitFakeCachePlan(plan, settings)
+	svc.fakeCache.wait()
+	progress, found := svc.fakeCache.Get(plan.SessionProgressKey)
+	require.True(t, found)
+	require.Equal(t, 0, progress)
 }
 
 func TestKiroGatewayService_FakeCacheSessionProgressCarriesCheckpointAcrossTurns(t *testing.T) {
@@ -345,6 +381,8 @@ func TestKiroGatewayService_FakeCacheSessionProgressCarriesCheckpointAcrossTurns
 	require.Positive(t, firstCurrent)
 	require.GreaterOrEqual(t, firstCacheable, firstCurrent)
 
+	firstUsage := resolveKiroFakeCacheUsage(firstPlan, firstHit, firstCacheable, settings)
+	require.Equal(t, firstCacheable, firstUsage.CacheReadInputTokens+firstUsage.CacheCreationInputTokens)
 	svc.commitFakeCachePlan(firstPlan, settings)
 	svc.fakeCache.wait()
 

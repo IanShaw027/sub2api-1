@@ -2852,8 +2852,9 @@ func (s *KiroGatewayService) prepareFakeCachePlan(account *Account, parsed *Pars
 		}
 		if plan.SessionProgressKey != "" {
 			if value, ok := s.fakeCache.Get(plan.SessionProgressKey); ok {
-				if tokens, ok := value.(int); ok && tokens > hit.EffectiveCachedTokens {
+				if tokens, ok := value.(int); ok && tokens >= 0 {
 					hit.EffectiveCachedTokens = tokens
+					hit.HasEffectiveCachedTokens = true
 				}
 			}
 		}
@@ -2913,20 +2914,12 @@ func (s *KiroGatewayService) commitFakeCachePlan(plan *kiropkg.FakeCachePlan, ru
 		}
 		s.fakeCache.Set(checkpoint.Key, struct{}{}, time.Duration(runtimeSettings.CachePrefixTTLSecs)*time.Second)
 	}
-	if plan.SessionProgressKey != "" {
-		// Persist session progress on the ideal cumulative cacheable basis. Hit-rate
-		// scaling only reclassifies part of the current turn from read to creation;
-		// it must not shrink the next turn's cache basis.
+	if plan.SessionProgressKey != "" && plan.UsageResolved {
+		// Persist only the cache span actually read or written this turn. Cache-write
+		// scaling moves the remainder to input, so it must not enter the next turn's
+		// read basis.
 		effectiveTokens := plan.RecordedEffectiveCachedTokens
-		if effectiveTokens <= 0 {
-			effectiveTokens = plan.CurrentCacheableTokens
-			if checkpointTokens := plan.CurrentCheckpointTokens(); checkpointTokens > effectiveTokens {
-				effectiveTokens = checkpointTokens
-			}
-		}
-		if effectiveTokens > 0 {
-			s.fakeCache.Set(plan.SessionProgressKey, effectiveTokens, time.Duration(runtimeSettings.CachePrefixTTLSecs)*time.Second)
-		}
+		s.fakeCache.Set(plan.SessionProgressKey, effectiveTokens, time.Duration(runtimeSettings.CachePrefixTTLSecs)*time.Second)
 	}
 }
 
