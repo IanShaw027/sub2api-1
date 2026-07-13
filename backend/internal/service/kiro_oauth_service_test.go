@@ -206,6 +206,8 @@ func TestKiroOAuthServiceExchangeCallbackRejectsExternalIDPWhenKiroUsageForbidde
 }
 
 func TestKiroOAuthServiceExchangeCallbackOrStartContinuationReturnsMicrosoftExternalIDPAuthURL(t *testing.T) {
+	stubKiroExternalIDPPublicHostCheck(t)
+
 	svc := NewKiroOAuthService(&kiroDefaultProxyRepoStub{}, nil, nil, nil)
 	svc.usageService = nil
 	defer svc.Stop()
@@ -403,6 +405,8 @@ func TestKiroOAuthServiceExchangeCallbackExchangesMicrosoftExternalIDPCode(t *te
 }
 
 func TestResolveKiroExternalIDPAuthorizationUsesOIDCDiscovery(t *testing.T) {
+	stubKiroExternalIDPPublicHostCheck(t)
+
 	originalDiscovery := kiroExternalIDPDiscoveryFunc
 	kiroExternalIDPDiscoveryFunc = func(ctx context.Context, issuer string) (*kiroExternalIDPMetadata, error) {
 		if issuer != "https://example.com/tenant/v2.0" {
@@ -455,6 +459,8 @@ func TestResolveKiroExternalIDPAuthorizationUsesOIDCDiscovery(t *testing.T) {
 }
 
 func TestDiscoverKiroExternalIDPMetadataUsesInjectedHTTPClient(t *testing.T) {
+	stubKiroExternalIDPPublicHostCheck(t)
+
 	issuer := "https://example.com/tenant/v2.0"
 	client := &http.Client{Transport: kiroOAuthRoundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/tenant/v2.0/.well-known/openid-configuration" {
@@ -498,6 +504,8 @@ func (f kiroOAuthRoundTripperFunc) RoundTrip(req *http.Request) (*http.Response,
 }
 
 func TestDiscoverKiroExternalIDPMetadataRejectsUnsafeTargets(t *testing.T) {
+	stubKiroExternalIDPPublicHostCheck(t)
+
 	_, err := discoverKiroExternalIDPMetadata(context.Background(), "https://127.0.0.1/tenant")
 	if err == nil || !strings.Contains(err.Error(), "not public") {
 		t.Fatalf("expected private target rejection, got %v", err)
@@ -512,6 +520,20 @@ func TestDiscoverKiroExternalIDPMetadataRejectsUnsafeTargets(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "issuer host") {
 		t.Fatalf("expected cross-origin endpoint rejection, got %v", err)
 	}
+}
+
+func stubKiroExternalIDPPublicHostCheck(t *testing.T) {
+	t.Helper()
+	original := kiroExternalIDPHostBlockedFunc
+	kiroExternalIDPHostBlockedFunc = func(_ context.Context, hostname string) (bool, error) {
+		switch strings.ToLower(strings.TrimSpace(hostname)) {
+		case "", "localhost", "127.0.0.1", "::1":
+			return true, nil
+		default:
+			return false, nil
+		}
+	}
+	t.Cleanup(func() { kiroExternalIDPHostBlockedFunc = original })
 }
 
 func TestExchangeKiroExternalIDPCodeRejectsPrivateTokenEndpoint(t *testing.T) {

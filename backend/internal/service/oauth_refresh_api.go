@@ -118,7 +118,7 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 	// 1. 获取分布式锁
 	lockAcquired := false
 	if api.tokenCache != nil {
-		acquired, lockErr := api.tokenCache.AcquireRefreshLock(ctx, cacheKey, api.lockTTL)
+		leaseToken, acquired, lockErr := api.tokenCache.AcquireRefreshLock(ctx, cacheKey, api.lockTTL)
 		if lockErr != nil {
 			// Redis 错误，降级为无锁刷新（进程内互斥锁仍生效）
 			slog.Warn("oauth_refresh_lock_failed_degraded",
@@ -131,7 +131,7 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 			return &OAuthRefreshResult{LockHeld: true}, nil
 		} else {
 			lockAcquired = true
-			defer func() { _ = api.tokenCache.ReleaseRefreshLock(ctx, cacheKey) }()
+			defer func() { _ = api.tokenCache.ReleaseRefreshLock(ctx, cacheKey, leaseToken) }()
 		}
 	}
 

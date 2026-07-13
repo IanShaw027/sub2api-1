@@ -980,7 +980,8 @@ func (s *PaymentService) hasAuditLog(ctx context.Context, orderID int64, action 
 }
 
 func (s *PaymentService) applyAffiliateRebateForOrder(ctx context.Context, o *dbent.PaymentOrder) error {
-	if o == nil || (o.OrderType != payment.OrderTypeBalance && o.OrderType != payment.OrderTypeSubscription) || o.Amount <= 0 {
+	rebateBaseAmount := affiliateRebateBaseAmount(o)
+	if o == nil || (o.OrderType != payment.OrderTypeBalance && o.OrderType != payment.OrderTypeSubscription) || rebateBaseAmount <= 0 {
 		return nil
 	}
 	if s.affiliateService == nil {
@@ -1008,7 +1009,7 @@ func (s *PaymentService) applyAffiliateRebateForOrder(ctx context.Context, o *db
 	}
 
 	txCtx := dbent.NewTxContext(ctx, tx)
-	claimed, err := s.tryClaimAffiliateRebateAudit(txCtx, tx.Client(), o.ID, o.Amount)
+	claimed, err := s.tryClaimAffiliateRebateAudit(txCtx, tx.Client(), o.ID, rebateBaseAmount)
 	if err != nil {
 		return failAfterRollback("claim affiliate rebate audit", err)
 	}
@@ -1018,14 +1019,14 @@ func (s *PaymentService) applyAffiliateRebateForOrder(ctx context.Context, o *db
 		return nil
 	}
 
-	rebateAmount, err := s.affiliateService.AccrueInviteRebateForOrder(txCtx, o.UserID, o.ID, o.Amount)
+	rebateAmount, err := s.affiliateService.AccrueInviteRebateForOrder(txCtx, o.UserID, o.ID, rebateBaseAmount)
 	if err != nil {
 		return failAfterRollback("accrue invite rebate", err)
 	}
 
 	if rebateAmount <= 0 {
 		if err := s.updateClaimedAffiliateRebateAudit(txCtx, tx.Client(), o.ID, "AFFILIATE_REBATE_SKIPPED", map[string]any{
-			"baseAmount": o.Amount,
+			"baseAmount": rebateBaseAmount,
 			"reason":     "no inviter bound or rebate amount <= 0",
 		}); err != nil {
 			return failAfterRollback("update skipped affiliate rebate audit", err)
@@ -1041,7 +1042,7 @@ func (s *PaymentService) applyAffiliateRebateForOrder(ctx context.Context, o *db
 	}
 
 	if err := s.updateClaimedAffiliateRebateAudit(txCtx, tx.Client(), o.ID, "AFFILIATE_REBATE_APPLIED", map[string]any{
-		"baseAmount":   o.Amount,
+		"baseAmount":   rebateBaseAmount,
 		"rebateAmount": rebateAmount,
 	}); err != nil {
 		return failAfterRollback("update applied affiliate rebate audit", err)
@@ -1055,6 +1056,16 @@ func (s *PaymentService) applyAffiliateRebateForOrder(ctx context.Context, o *db
 	}
 	txDone = true
 	return nil
+}
+
+func affiliateRebateBaseAmount(o *dbent.PaymentOrder) float64 {
+	if o == nil {
+		return 0
+	}
+	if o.PayAmount > 0 {
+		return o.PayAmount
+	}
+	return o.Amount
 }
 
 func (s *PaymentService) logAffiliateRebateFailure(ctx context.Context, orderID int64, stage string, err error) {

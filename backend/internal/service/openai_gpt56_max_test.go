@@ -34,15 +34,15 @@ func TestNormalizeOpenAIReasoningEffortForGPT56(t *testing.T) {
 	}
 }
 
-func TestNormalizeOpenAICodexCompactReasoningEffortDowngradesMax(t *testing.T) {
+func TestNormalizeOpenAICodexCompactReasoningEffortPreservesGPT56Max(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.6-sol","input":"compact me","reasoning":{"effort":"max","summary":"auto"}}`)
 
 	normalized, changed, err := normalizeOpenAICodexCompactReasoningEffort(body, "gpt-5.6-sol")
 
 	require.NoError(t, err)
-	require.True(t, changed)
+	require.False(t, changed)
 	require.Equal(t, "gpt-5.6-sol", gjson.GetBytes(normalized, "model").String())
-	require.Equal(t, "xhigh", gjson.GetBytes(normalized, "reasoning.effort").String())
+	require.Equal(t, "max", gjson.GetBytes(normalized, "reasoning.effort").String())
 	require.Equal(t, "auto", gjson.GetBytes(normalized, "reasoning.summary").String())
 }
 
@@ -58,11 +58,10 @@ func TestNormalizeOpenAICodexCompactReasoningEffortForAccountScopesCompatibility
 		want    string
 	}{
 		{
-			name:    "OpenAI OAuth compact 降级",
+			name:    "OpenAI OAuth compact 保留 GPT-5.6 max",
 			path:    "/openai/v1/responses/compact",
 			account: &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth},
-			changed: true,
-			want:    "xhigh",
+			want:    "max",
 		},
 		{
 			name:    "OpenAI OAuth 普通请求保留",
@@ -145,8 +144,8 @@ func TestNormalizeOpenAICodexCompactReasoningEffortUsesFinalMappedModel(t *testi
 			)
 
 			require.NoError(t, err)
-			require.True(t, changed)
-			require.Equal(t, "xhigh", gjson.GetBytes(normalized, "reasoning.effort").String())
+			require.False(t, changed)
+			require.Equal(t, "max", gjson.GetBytes(normalized, "reasoning.effort").String())
 		})
 	}
 }

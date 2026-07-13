@@ -39,11 +39,11 @@ func (c *grokTokenCacheForProviderTest) DeleteAccessToken(context.Context, strin
 	return nil
 }
 
-func (c *grokTokenCacheForProviderTest) AcquireRefreshLock(context.Context, string, time.Duration) (bool, error) {
-	return c.lockResult, nil
+func (c *grokTokenCacheForProviderTest) AcquireRefreshLock(context.Context, string, time.Duration) (string, bool, error) {
+	return "lease", c.lockResult, nil
 }
 
-func (c *grokTokenCacheForProviderTest) ReleaseRefreshLock(context.Context, string) error {
+func (c *grokTokenCacheForProviderTest) ReleaseRefreshLock(_ context.Context, _ string, _ string) error {
 	c.releaseCalls++
 	return nil
 }

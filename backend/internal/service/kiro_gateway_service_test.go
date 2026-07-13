@@ -3066,6 +3066,56 @@ func TestKiroGatewayService_ForwardStream_ToolFirstUsesMonotonicBlockIndexes(t *
 	require.Less(t, strings.Index(rec.Body.String(), `"index":0`), strings.Index(rec.Body.String(), `"index":1`))
 }
 
+func TestKiroGatewayService_ForwardStream_PostStartWriterFailureReturnsPartialResult(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Writer = &kiroFailingResponseWriter{ResponseWriter: c.Writer, failAfter: 6}
+	svc := &KiroGatewayService{
+		fakeCache: newKiroFakeCache(kiropkg.DefaultFakeCacheMaxEntries),
+	}
+
+	body := buildKiroTestFrame(t, map[string]string{
+		":message-type": "event",
+		":event-type":   "assistantResponseEvent",
+	}, map[string]any{"content": "bill this partial text"})
+
+	result, err := svc.forwardStream(
+		context.Background(),
+		c,
+		&Account{ID: 5, Platform: PlatformKiro, Type: AccountTypeOAuth},
+		&http.Response{Body: io.NopCloser(bytes.NewReader(body)), Header: http.Header{}},
+		&ParsedRequest{Model: "claude-sonnet-4", Stream: true},
+		&kiropkg.ConvertResult{Model: "claude-sonnet-4.5"},
+		32,
+		time.Now(),
+		nil,
+		kiropkg.FakeCacheHitState{},
+		nil,
+		"",
+	)
+
+	require.Error(t, err)
+	require.NotNil(t, result, "post-start writer failures must return a billable partial result")
+	require.True(t, result.Stream)
+	require.Greater(t, result.Usage.OutputTokens, 0)
+}
+
+type kiroFailingResponseWriter struct {
+	gin.ResponseWriter
+	writes    int
+	failAfter int
+}
+
+func (w *kiroFailingResponseWriter) Write(data []byte) (int, error) {
+	w.writes++
+	if w.failAfter > 0 && w.writes > w.failAfter {
+		return 0, errors.New("kiro test writer failed")
+	}
+	return w.ResponseWriter.Write(data)
+}
+
 func TestKiroGatewayService_ForwardStream_ToolOnlyCountsOutputTokens(t *testing.T) {
 	setGinTestMode()
 

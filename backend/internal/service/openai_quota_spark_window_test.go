@@ -52,11 +52,13 @@ func (c *stubQuotaTokenCache) SetAccessToken(_ context.Context, _ string, _ stri
 
 func (c *stubQuotaTokenCache) DeleteAccessToken(_ context.Context, _ string) error { return nil }
 
-func (c *stubQuotaTokenCache) AcquireRefreshLock(_ context.Context, _ string, _ time.Duration) (bool, error) {
-	return true, nil
+func (c *stubQuotaTokenCache) AcquireRefreshLock(_ context.Context, _ string, _ time.Duration) (string, bool, error) {
+	return "lease", true, nil
 }
 
-func (c *stubQuotaTokenCache) ReleaseRefreshLock(_ context.Context, _ string) error { return nil }
+func (c *stubQuotaTokenCache) ReleaseRefreshLock(_ context.Context, _ string, _ string) error {
+	return nil
+}
 
 // newQuotaRedirectingFactory 返回 PrivacyClientFactory，将请求重定向到 httptest.Server。
 func newQuotaRedirectingFactory(srv *httptest.Server) PrivacyClientFactory {

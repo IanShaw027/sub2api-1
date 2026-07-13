@@ -425,7 +425,7 @@ func BuildToolUseBlocks(state *ChatChunkToAnthropicState) []AnthropicContentBloc
 		return nil
 	}
 	blocks := make([]AnthropicContentBlock, 0, len(state.ActiveToolCalls))
-	for i := 0; i < len(state.ActiveToolCalls); i++ {
+	for _, i := range sortedActiveToolCallIndexes(state.ActiveToolCalls) {
 		tc, ok := state.ActiveToolCalls[i]
 		if !ok {
 			continue

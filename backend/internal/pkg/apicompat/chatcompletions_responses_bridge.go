@@ -3,6 +3,7 @@ package apicompat
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -1416,7 +1417,7 @@ func closeChatToolItems(state *ChatCompletionsToResponsesStreamState) []Response
 		return nil
 	}
 	var events []ResponsesStreamEvent
-	for i := 0; i < len(state.ToolCalls); i++ {
+	for _, i := range sortedChatToolCallIndexes(state.ToolCalls) {
 		toolCall, ok := state.ToolCalls[i]
 		if !ok || toolCall == nil {
 			continue
@@ -1528,7 +1529,7 @@ func (state *ChatCompletionsToResponsesStreamState) chatOutput() []ResponsesOutp
 			Status: "completed",
 		})
 	}
-	for i := 0; i < len(state.ToolCalls); i++ {
+	for _, i := range sortedChatToolCallIndexes(state.ToolCalls) {
 		toolCall, ok := state.ToolCalls[i]
 		if !ok || toolCall == nil {
 			continue
@@ -1571,6 +1572,15 @@ func (state *ChatCompletionsToResponsesStreamState) chatOutput() []ResponsesOutp
 		})
 	}
 	return outputs
+}
+
+func sortedChatToolCallIndexes(toolCalls map[int]*ChatToolCall) []int {
+	indexes := make([]int, 0, len(toolCalls))
+	for idx := range toolCalls {
+		indexes = append(indexes, idx)
+	}
+	sort.Ints(indexes)
+	return indexes
 }
 
 func chatToResponsesEvent(

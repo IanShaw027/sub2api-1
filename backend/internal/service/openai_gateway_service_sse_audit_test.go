@@ -10,6 +10,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 type gatewaySSEAuditInvokeResult struct {
@@ -197,6 +198,21 @@ func TestGatewaySSEAudit_PassthroughFailedTerminalReturnsProtocolError(t *testin
 	require.Contains(t, result.contentType, "application/json")
 	require.Contains(t, result.body, `"type":"upstream_error"`)
 	require.Contains(t, result.body, `upstream rejected request`)
+}
+
+func TestExtractOpenAISSETerminalEventTreatsBareErrorAsFailed(t *testing.T) {
+	body := strings.Join([]string{
+		`event: error`,
+		`data: {"error":{"message":"upstream rejected request"}}`,
+		`data: [DONE]`,
+	}, "\n")
+
+	terminalType, terminalPayload, ok := extractOpenAISSETerminalEvent(body)
+
+	require.True(t, ok)
+	require.Equal(t, "response.failed", terminalType)
+	require.Equal(t, "response.failed", gjson.GetBytes(terminalPayload, "type").String())
+	require.Equal(t, "upstream rejected request", gjson.GetBytes(terminalPayload, "error.message").String())
 }
 
 func TestGatewaySSEAudit_ResponseFailedTerminalEnvelopeReturnsJSON(t *testing.T) {

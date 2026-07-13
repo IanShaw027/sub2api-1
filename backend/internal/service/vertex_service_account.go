@@ -162,9 +162,10 @@ func getVertexServiceAccountAccessToken(ctx context.Context, cache GeminiTokenCa
 	locked := false
 	if cache != nil {
 		var lockErr error
-		locked, lockErr = cache.AcquireRefreshLock(ctx, cacheKey, 30*time.Second)
+		var leaseToken string
+		leaseToken, locked, lockErr = cache.AcquireRefreshLock(ctx, cacheKey, 30*time.Second)
 		if lockErr == nil && locked {
-			defer func() { _ = cache.ReleaseRefreshLock(ctx, cacheKey) }()
+			defer func() { _ = cache.ReleaseRefreshLock(ctx, cacheKey, leaseToken) }()
 		} else if lockErr != nil {
 			slog.Warn("vertex_service_account_token_lock_failed", "account_id", account.ID, "error", lockErr)
 		} else {

@@ -43,6 +43,7 @@ var kiroIDCCompleteDeviceAuthorizationFunc = completeKiroIDCDeviceAuthorization
 var kiroExternalIDPCodeExchangeFunc = exchangeKiroExternalIDPCodeForToken
 var kiroExternalIDPDiscoveryFunc = discoverKiroExternalIDPMetadata
 var kiroExternalIDPHTTPClient = newSSRFSafeHTTPClient(15 * time.Second)
+var kiroExternalIDPHostBlockedFunc = isPrivateOrLoopbackHost
 
 type KiroOAuthSession struct {
 	State           string
@@ -1526,7 +1527,7 @@ func validateKiroExternalIDPEndpoint(ctx context.Context, rawURL, name, issuerHo
 	if issuerHost != "" && !strings.EqualFold(parsed.Hostname(), issuerHost) {
 		return fmt.Errorf("%s must use the issuer host", name)
 	}
-	blocked, err := isPrivateOrLoopbackHost(ctx, parsed.Hostname())
+	blocked, err := kiroExternalIDPHostBlockedFunc(ctx, parsed.Hostname())
 	if err != nil {
 		return fmt.Errorf("resolve %s host: %w", name, err)
 	}

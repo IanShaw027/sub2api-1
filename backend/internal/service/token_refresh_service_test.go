@@ -759,11 +759,11 @@ func (m *mockTokenCacheForRefreshAPI) DeleteAccessToken(_ context.Context, _ str
 	return nil
 }
 
-func (m *mockTokenCacheForRefreshAPI) AcquireRefreshLock(_ context.Context, _ string, _ time.Duration) (bool, error) {
-	return m.lockResult, m.lockErr
+func (m *mockTokenCacheForRefreshAPI) AcquireRefreshLock(_ context.Context, _ string, _ time.Duration) (string, bool, error) {
+	return "lease", m.lockResult, m.lockErr
 }
 
-func (m *mockTokenCacheForRefreshAPI) ReleaseRefreshLock(_ context.Context, _ string) error {
+func (m *mockTokenCacheForRefreshAPI) ReleaseRefreshLock(_ context.Context, _ string, _ string) error {
 	m.releaseCalls++
 	return nil
 }

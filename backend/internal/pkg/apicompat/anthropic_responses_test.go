@@ -1239,6 +1239,25 @@ func TestBuildToolUseBlocks_PreservesInvalidArgumentsAsJSONString(t *testing.T) 
 	require.NoError(t, err)
 }
 
+func TestBuildToolUseBlocks_PreservesSparseToolCallIndex(t *testing.T) {
+	state := NewChatChunkToAnthropicState("gpt-5.2")
+	AccumulateToolCall(state, &ChatToolCall{
+		Index: ccIntPtr(1),
+		ID:    "call_sparse",
+		Type:  "function",
+		Function: ChatFunctionCall{
+			Name:      "get_weather",
+			Arguments: `{"city":"NYC"}`,
+		},
+	})
+
+	blocks := BuildToolUseBlocks(state)
+	require.Len(t, blocks, 1)
+	require.Equal(t, "call_sparse", blocks[0].ID)
+	require.Equal(t, "get_weather", blocks[0].Name)
+	require.JSONEq(t, `{"city":"NYC"}`, string(blocks[0].Input))
+}
+
 func TestStreamingWebSearchUsesActionSources(t *testing.T) {
 	state := NewResponsesEventToAnthropicState()
 

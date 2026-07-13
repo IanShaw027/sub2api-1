@@ -41,13 +41,13 @@ func (s *geminiTokenProviderCacheRecorder) DeleteAccessToken(_ context.Context, 
 	return nil
 }
 
-func (s *geminiTokenProviderCacheRecorder) AcquireRefreshLock(_ context.Context, cacheKey string, ttl time.Duration) (bool, error) {
+func (s *geminiTokenProviderCacheRecorder) AcquireRefreshLock(_ context.Context, cacheKey string, ttl time.Duration) (string, bool, error) {
 	_ = cacheKey
 	_ = ttl
-	return true, nil
+	return "lease", true, nil
 }
 
-func (s *geminiTokenProviderCacheRecorder) ReleaseRefreshLock(_ context.Context, cacheKey string) error {
+func (s *geminiTokenProviderCacheRecorder) ReleaseRefreshLock(_ context.Context, cacheKey string, _ string) error {
 	_ = cacheKey
 	return nil
 }

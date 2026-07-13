@@ -112,11 +112,11 @@ func (c *refreshAPICacheStub) SetAccessToken(context.Context, string, string, ti
 
 func (c *refreshAPICacheStub) DeleteAccessToken(context.Context, string) error { return nil }
 
-func (c *refreshAPICacheStub) AcquireRefreshLock(context.Context, string, time.Duration) (bool, error) {
-	return c.lockResult, c.lockErr
+func (c *refreshAPICacheStub) AcquireRefreshLock(context.Context, string, time.Duration) (string, bool, error) {
+	return "lease", c.lockResult, c.lockErr
 }
 
-func (c *refreshAPICacheStub) ReleaseRefreshLock(context.Context, string) error {
+func (c *refreshAPICacheStub) ReleaseRefreshLock(_ context.Context, _ string, _ string) error {
 	c.releaseCalls++
 	return nil
 }

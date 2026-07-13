@@ -153,8 +153,8 @@ import { useClipboard } from '@/composables/useClipboard'
 import { useAppStore, useAuthStore } from '@/stores'
 import { apiClient } from '@/api/client'
 import { buildApiUrl } from '@/api/url'
-import {
 import { sanitizeRedirectPath } from '@/utils/sanitize'
+import {
   exchangePendingOAuthCompletion,
   getOAuthCompletionKind,
   persistOAuthTokenContext,

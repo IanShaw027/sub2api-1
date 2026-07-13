@@ -6,10 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/stretchr/testify/require"
 )
@@ -476,4 +478,47 @@ func TestRetryFulfillment_CompletedOrderBackfillsMissingAffiliateRebate(t *testi
 	require.NoError(t, err)
 	require.Equal(t, 1, affiliateRepo.accrueHits)
 	require.True(t, svc.hasAuditLog(ctx, order.ID, "AFFILIATE_REBATE_APPLIED"))
+}
+
+func TestApplyAffiliateRebateForSubscriptionUsesPayAmount(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusCompleted, payment.OrderTypeSubscription)
+	order, err := client.PaymentOrder.UpdateOneID(order.ID).
+		SetAmount(9.99).
+		SetPayAmount(71.43).
+		Save(ctx)
+	require.NoError(t, err)
+
+	inviterID := int64(12345)
+	affiliateRepo := &paymentFulfillmentAffiliateRepoStub{
+		summary: &AffiliateSummary{
+			UserID:    order.UserID,
+			InviterID: &inviterID,
+		},
+	}
+	affiliateService := &AffiliateService{
+		repo: affiliateRepo,
+		settingRepo: &paymentFulfillmentAffiliateSettingRepoStub{
+			values: map[string]string{
+				SettingKeyAffiliateEnabled:    "true",
+				SettingKeyAffiliateRebateRate: "20",
+			},
+		},
+	}
+	svc := &PaymentService{entClient: client, affiliateService: affiliateService}
+
+	require.NoError(t, svc.applyAffiliateRebateForOrder(ctx, order))
+	require.Equal(t, 1, affiliateRepo.accrueHits)
+	require.InDelta(t, 71.43, affiliateRepo.accrueUsed.BaseAmount, 0.000001)
+	require.InDelta(t, 14.286, affiliateRepo.accrueUsed.Amount, 0.000001)
+
+	entry, err := client.PaymentAuditLog.Query().
+		Where(
+			paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)),
+			paymentauditlog.ActionEQ("AFFILIATE_REBATE_APPLIED"),
+		).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Contains(t, entry.Detail, `"baseAmount":71.43`)
 }

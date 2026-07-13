@@ -32,8 +32,11 @@ func TestMigration195AddsInvoiceOrderActiveGuardrail(t *testing.T) {
 	require.Contains(t, sql, "SET IS_ACTIVE = CASE WHEN I.STATUS = 'CANCELLED' THEN FALSE ELSE TRUE END")
 	require.Contains(t, sql, "FROM INVOICES I")
 	require.Contains(t, sql, "I.STATUS = 'CANCELLED'")
-	require.Contains(t, sql, "ROW_NUMBER() OVER ( PARTITION BY IO.ORDER_ID")
-	require.Contains(t, sql, "RN > 1")
+	require.Contains(t, sql, "RAISE EXCEPTION 'CANNOT ENFORCE INVOICE ORDER ACTIVE UNIQUENESS")
+	require.Contains(t, sql, "HAVING COUNT(*) > 1")
+	require.Contains(t, sql, "RESOLVE MANUALLY BEFORE MIGRATION")
+	require.NotContains(t, sql, "ROW_NUMBER() OVER")
+	require.NotContains(t, sql, "RN > 1")
 	require.NotContains(t, sql, "DROP INDEX")
 	require.NotContains(t, sql, "CREATE UNIQUE INDEX")
 

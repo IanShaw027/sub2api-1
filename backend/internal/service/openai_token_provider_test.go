@@ -70,18 +70,18 @@ func (s *openAITokenCacheStub) DeleteAccessToken(ctx context.Context, cacheKey s
 	return nil
 }
 
-func (s *openAITokenCacheStub) AcquireRefreshLock(ctx context.Context, cacheKey string, ttl time.Duration) (bool, error) {
+func (s *openAITokenCacheStub) AcquireRefreshLock(ctx context.Context, cacheKey string, ttl time.Duration) (string, bool, error) {
 	atomic.AddInt32(&s.lockCalled, 1)
 	if s.lockErr != nil {
-		return false, s.lockErr
+		return "", false, s.lockErr
 	}
 	if s.simulateLockRace {
-		return false, nil
+		return "", false, nil
 	}
-	return s.lockAcquired, nil
+	return "lease", s.lockAcquired, nil
 }
 
-func (s *openAITokenCacheStub) ReleaseRefreshLock(ctx context.Context, cacheKey string) error {
+func (s *openAITokenCacheStub) ReleaseRefreshLock(ctx context.Context, cacheKey string, _ string) error {
 	atomic.AddInt32(&s.unlockCalled, 1)
 	return s.releaseLockErr
 }
@@ -311,9 +311,9 @@ func (p *testOpenAITokenProvider) GetAccessToken(ctx context.Context, account *A
 	needsRefresh := expiresAt == nil || time.Until(*expiresAt) <= openAITokenRefreshSkew
 	refreshFailed := false
 	if needsRefresh && p.tokenCache != nil {
-		locked, err := p.tokenCache.AcquireRefreshLock(ctx, cacheKey, 30*time.Second)
+		leaseToken, locked, err := p.tokenCache.AcquireRefreshLock(ctx, cacheKey, 30*time.Second)
 		if err == nil && locked {
-			defer func() { _ = p.tokenCache.ReleaseRefreshLock(ctx, cacheKey) }()
+			defer func() { _ = p.tokenCache.ReleaseRefreshLock(ctx, cacheKey, leaseToken) }()
 
 			// Check cache again after acquiring lock
 			if token, err := p.tokenCache.GetAccessToken(ctx, cacheKey); err == nil && token != "" {

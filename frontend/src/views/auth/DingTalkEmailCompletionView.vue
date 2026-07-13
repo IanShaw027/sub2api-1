@@ -28,9 +28,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { AuthLayout } from '@/components/layout'
 import PendingOAuthCreateAccountForm, {
-import { sanitizeRedirectPath } from '@/utils/sanitize'
   type PendingOAuthCreateAccountPayload
 } from '@/components/auth/PendingOAuthCreateAccountForm.vue'
+import { sanitizeRedirectPath } from '@/utils/sanitize'
 import { apiClient } from '@/api/client'
 import { useAuthStore, useAppStore } from '@/stores'
 import {

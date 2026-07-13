@@ -1333,6 +1333,12 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			},
 		}
 	}
+	returnPartialIfStreamStarted := func(err error) (*ForwardResult, error) {
+		if streamStarted {
+			return buildKiroPartialStreamResult(), err
+		}
+		return nil, err
+	}
 	debugAggregator := BeginKiroFrameAggregator(s.settingService, c)
 	defer func() {
 		debugAggregator.Finalize("upstream_response_body", map[string]any{
@@ -1756,7 +1762,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						}
 						handledErr := s.handleFrameFailureWithCooldown(ctx, c, account, resp.Header.Get("x-amzn-requestid"), frame, failureErr, false, cooldown, reasonKeyword)
 						if err := closeOpenKiroBlocksSafely(); err != nil {
-							return nil, err
+							return returnPartialIfStreamStarted(err)
 						}
 						_ = writeKiroStreamError(writer, kiroPostStartFrameFailureClientMessage(failureErr))
 						anomalyKind := "frame_failure"
@@ -1792,18 +1798,18 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 					}
 					if !streamStarted {
 						if err := startStream(inputTokens); err != nil {
-							return nil, err
+							return returnPartialIfStreamStarted(err)
 						}
 					}
 					if !thinkingBlockOpen {
 						if err := openThinkingBlock(); err != nil {
-							return nil, err
+							return returnPartialIfStreamStarted(err)
 						}
 						reasoningThinkingActive = true
 					}
 					if reasoningText != "" {
 						if err := emitThinkingDelta(reasoningText); err != nil {
-							return nil, err
+							return returnPartialIfStreamStarted(err)
 						}
 					}
 					if reasoningSignature != "" {
@@ -1818,13 +1824,13 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 					}
 					if reasoningThinkingActive && thinkingBlockOpen {
 						if err := closeThinkingBlock(); err != nil {
-							return nil, err
+							return returnPartialIfStreamStarted(err)
 						}
 						reasoningThinkingActive = false
 						nativeThinkingExtracted = true
 					}
 					if err := processAssistantContent(content); err != nil {
-						return nil, err
+						return returnPartialIfStreamStarted(err)
 					}
 				case "toolUseEvent":
 					suppressTrailingHoldback()
@@ -1849,7 +1855,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						}
 						if !streamStarted {
 							if err := startStream(inputTokens); err != nil {
-								return nil, err
+								return returnPartialIfStreamStarted(err)
 							}
 						}
 						if inputChunk != "" {
@@ -1857,15 +1863,15 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						}
 						if booleanField(frame.Payload, "stop") {
 							if err := ensureShadowMaxUsesNotExceeded(completedShadowToolUses, shadowMaxUsesLimit); err != nil {
-								return nil, err
+								return returnPartialIfStreamStarted(err)
 							}
 							if thinkingBlockOpen {
 								if err := emitThinkingDelta(nativeThinkingBuffer); err != nil {
-									return nil, err
+									return returnPartialIfStreamStarted(err)
 								}
 								nativeThinkingBuffer = ""
 								if err := closeThinkingBlock(); err != nil {
-									return nil, err
+									return returnPartialIfStreamStarted(err)
 								}
 								nativeThinkingExtracted = true
 								reasoningThinkingActive = false
@@ -1873,14 +1879,14 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 							if !nativeThinkingExtracted && nativeThinkingBuffer != "" {
 								if strings.TrimSpace(nativeThinkingBuffer) != "" {
 									if err := emitTextDelta(nativeThinkingBuffer); err != nil {
-										return nil, err
+										return returnPartialIfStreamStarted(err)
 									}
 								}
 								nativeThinkingBuffer = ""
 							}
 							suppressTrailingHoldback()
 							if err := closeTextBlock(); err != nil {
-								return nil, err
+								return returnPartialIfStreamStarted(err)
 							}
 							shadowBlocks, shadowOutput, shadowErr := s.executeKiroShadowTool(ctx, account, state, shadowBridge)
 							if shadowErr != nil && !isNativeRunnable {
@@ -1939,7 +1945,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 								blockIndex := nextBlockIndex
 								nextBlockIndex++
 								if err := writeKiroShadowStreamBlock(writer, blockIndex, block, rawShadowInput); err != nil {
-									return nil, err
+									return returnPartialIfStreamStarted(err)
 								}
 							}
 							if isNativeRunnable && shadowErr == nil {
@@ -1970,7 +1976,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						conflictErr := kiroShadowToolConflictError(state.Name)
 						if streamStarted {
 							if err := closeOpenKiroBlocksSafely(); err != nil {
-								return nil, err
+								return returnPartialIfStreamStarted(err)
 							}
 						}
 						_ = writeKiroStreamError(writer, conflictErr.Error())
@@ -1993,16 +1999,16 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 							completedToolUses++
 							if !streamStarted {
 								if err := startStream(inputTokens); err != nil {
-									return nil, err
+									return returnPartialIfStreamStarted(err)
 								}
 							}
 							if thinkingBlockOpen {
 								if err := emitThinkingDelta(nativeThinkingBuffer); err != nil {
-									return nil, err
+									return returnPartialIfStreamStarted(err)
 								}
 								nativeThinkingBuffer = ""
 								if err := closeThinkingBlock(); err != nil {
-									return nil, err
+									return returnPartialIfStreamStarted(err)
 								}
 								nativeThinkingExtracted = true
 								reasoningThinkingActive = false
@@ -2010,14 +2016,14 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 							if !nativeThinkingExtracted && nativeThinkingBuffer != "" {
 								if strings.TrimSpace(nativeThinkingBuffer) != "" {
 									if err := emitTextDelta(nativeThinkingBuffer); err != nil {
-										return nil, err
+										return returnPartialIfStreamStarted(err)
 									}
 								}
 								nativeThinkingBuffer = ""
 							}
 							suppressTrailingHoldback()
 							if err := closeTextBlock(); err != nil {
-								return nil, err
+								return returnPartialIfStreamStarted(err)
 							}
 							toolUseBlock, ok := buildKiroToolUseBlock(state, converted)
 							if ok {
@@ -2025,11 +2031,11 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 								nextBlockIndex++
 								if strings.TrimSpace(kiroShadowStringField(toolUseBlock, "type")) == "server_tool_use" {
 									if err := writeKiroShadowStreamBlock(writer, blockIndex, toolUseBlock, state.InputBuilder.String()); err != nil {
-										return nil, err
+										return returnPartialIfStreamStarted(err)
 									}
 								} else {
 									if err := writeKiroCompleteToolStreamBlock(writer, blockIndex, toolUseBlock); err != nil {
-										return nil, err
+										return returnPartialIfStreamStarted(err)
 									}
 								}
 								if name := strings.TrimSpace(kiroShadowStringField(toolUseBlock, "name")); name != "" {
@@ -2042,17 +2048,17 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 					}
 					if !streamStarted {
 						if err := startStream(inputTokens); err != nil {
-							return nil, err
+							return returnPartialIfStreamStarted(err)
 						}
 					}
 					if !state.Started {
 						if thinkingBlockOpen {
 							if err := emitThinkingDelta(nativeThinkingBuffer); err != nil {
-								return nil, err
+								return returnPartialIfStreamStarted(err)
 							}
 							nativeThinkingBuffer = ""
 							if err := closeThinkingBlock(); err != nil {
-								return nil, err
+								return returnPartialIfStreamStarted(err)
 							}
 							nativeThinkingExtracted = true
 							reasoningThinkingActive = false
@@ -2060,14 +2066,14 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						if !nativeThinkingExtracted && nativeThinkingBuffer != "" {
 							if strings.TrimSpace(nativeThinkingBuffer) != "" {
 								if err := emitTextDelta(nativeThinkingBuffer); err != nil {
-									return nil, err
+									return returnPartialIfStreamStarted(err)
 								}
 							}
 							nativeThinkingBuffer = ""
 						}
 						suppressTrailingHoldback()
 						if err := closeTextBlock(); err != nil {
-							return nil, err
+							return returnPartialIfStreamStarted(err)
 						}
 						state.Started = true
 						state.BlockIndex = nextBlockIndex
@@ -2082,7 +2088,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 								"input": map[string]any{},
 							},
 						}); err != nil {
-							return nil, err
+							return returnPartialIfStreamStarted(err)
 						}
 					}
 					inputChunk := rawStringField(frame.Payload, "input")
@@ -2097,7 +2103,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 								"partial_json": inputChunk,
 							},
 						}); err != nil {
-							return nil, err
+							return returnPartialIfStreamStarted(err)
 						}
 					}
 					if booleanField(frame.Payload, "stop") {
@@ -2114,7 +2120,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 							"type":  "content_block_stop",
 							"index": state.BlockIndex,
 						}); err != nil {
-							return nil, err
+							return returnPartialIfStreamStarted(err)
 						}
 					}
 				}
@@ -2142,7 +2148,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 					}
 					if streamStarted {
 						if err := closeOpenKiroBlocksSafely(); err != nil {
-							return nil, err
+							return returnPartialIfStreamStarted(err)
 						}
 					}
 					_ = writeKiroStreamError(writer, incompleteErr.Error())
@@ -2167,7 +2173,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			}
 			if streamStarted {
 				if err := closeOpenKiroBlocksSafely(); err != nil {
-					return nil, err
+					return returnPartialIfStreamStarted(err)
 				}
 			}
 			_ = writeKiroStreamError(writer, readErr.Error())
@@ -2178,17 +2184,17 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	}
 	if thinkingBlockOpen {
 		if err := emitThinkingDelta(nativeThinkingBuffer); err != nil {
-			return nil, err
+			return returnPartialIfStreamStarted(err)
 		}
 		nativeThinkingBuffer = ""
 		if err := closeThinkingBlock(); err != nil {
-			return nil, err
+			return returnPartialIfStreamStarted(err)
 		}
 		nativeThinkingExtracted = true
 	} else if nativeThinkingBuffer != "" {
 		if strings.TrimSpace(nativeThinkingBuffer) != "" {
 			if err := emitTextDelta(nativeThinkingBuffer); err != nil {
-				return nil, err
+				return returnPartialIfStreamStarted(err)
 			}
 		}
 		nativeThinkingBuffer = ""
@@ -2218,18 +2224,18 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						}
 						if !streamStarted {
 							if err := startStream(inputTokens); err != nil {
-								return nil, err
+								return returnPartialIfStreamStarted(err)
 							}
 						}
 						if !thinkingBlockOpen {
 							if err := openThinkingBlock(); err != nil {
-								return nil, err
+								return returnPartialIfStreamStarted(err)
 							}
 							reasoningThinkingActive = true
 						}
 						if reasoningText != "" {
 							if err := emitThinkingDelta(reasoningText); err != nil {
-								return nil, err
+								return returnPartialIfStreamStarted(err)
 							}
 						}
 						if reasoningSignature != "" {
@@ -2242,13 +2248,13 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 						}
 						if reasoningThinkingActive && thinkingBlockOpen {
 							if err := closeThinkingBlock(); err != nil {
-								return nil, err
+								return returnPartialIfStreamStarted(err)
 							}
 							reasoningThinkingActive = false
 							nativeThinkingExtracted = true
 						}
 						if err := processAssistantContent(content); err != nil {
-							return nil, err
+							return returnPartialIfStreamStarted(err)
 						}
 						continuationHadAssistantText = true
 					case "contextUsageEvent":
@@ -2267,17 +2273,17 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 				}
 				if thinkingBlockOpen {
 					if err := emitThinkingDelta(nativeThinkingBuffer); err != nil {
-						return nil, err
+						return returnPartialIfStreamStarted(err)
 					}
 					nativeThinkingBuffer = ""
 					if err := closeThinkingBlock(); err != nil {
-						return nil, err
+						return returnPartialIfStreamStarted(err)
 					}
 					nativeThinkingExtracted = true
 				} else if nativeThinkingBuffer != "" {
 					if strings.TrimSpace(nativeThinkingBuffer) != "" {
 						if err := emitTextDelta(nativeThinkingBuffer); err != nil {
-							return nil, err
+							return returnPartialIfStreamStarted(err)
 						}
 					}
 					nativeThinkingBuffer = ""
@@ -2286,16 +2292,16 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		}
 	}
 	if err := flushIdentityHoldback(); err != nil {
-		return nil, err
+		return returnPartialIfStreamStarted(err)
 	}
 	// Flush any buffered leading text now that the stream has ended. A
 	// pure-placeholder buffer is dropped here, leaving textOutputBuilder empty so
 	// the empty-output guard below can engage the fallback path.
 	if err := flushPendingPlaceholder(); err != nil {
-		return nil, err
+		return returnPartialIfStreamStarted(err)
 	}
 	if err := flushIdentityHoldback(); err != nil {
-		return nil, err
+		return returnPartialIfStreamStarted(err)
 	}
 	visibleToolUses, completedVisibleToolUses, partialToolUses := kiroVisibleToolStateCounts(toolStates, toolOrder)
 	hasVisibleToolOutput := visibleToolUses > 0
@@ -2323,7 +2329,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		outputTokens, _ := computeStreamUsageTokens()
 		incompleteErr := errors.New("kiro response completed with incomplete tool_use output")
 		if err := writeKiroStreamError(writer, kiroIncompleteToolUseClientMessage()); err != nil {
-			return nil, err
+			return returnPartialIfStreamStarted(err)
 		}
 		logKiroResponseAnomaly(ctx, account, parsed, true, "incomplete_tool_use_completed", incompleteErr, partialTelemetry.FramesSeen, partialTelemetry.ToolUseCount, partialTelemetry.ContextUsagePercentage)
 		if c != nil && account != nil {
@@ -2347,7 +2353,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		}
 		if streamStarted {
 			if err := closeOpenKiroBlocksSafely(); err != nil {
-				return nil, err
+				return returnPartialIfStreamStarted(err)
 			}
 		}
 		_ = writeKiroStreamError(writer, kiroEmptyOutputClientMessage(lastContextUsagePercentage))
@@ -2358,10 +2364,10 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	outputTokens, streamThinkingTokens := computeStreamUsageTokens()
 	telemetry := buildStreamTelemetry()
 	if err := closeTextBlock(); err != nil {
-		return nil, err
+		return returnPartialIfStreamStarted(err)
 	}
 	if err := closeOpenKiroBlocks(writer, false, 0, false, 0, toolStates); err != nil {
-		return nil, err
+		return returnPartialIfStreamStarted(err)
 	}
 
 	finalFakeCacheUsage := resolveKiroFakeCacheUsage(fakeCachePlan, fakeCacheHit, inputTokens, runtimeSettings)
@@ -2372,10 +2378,10 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 		"usage":              kiroAnthropicUsageForDelta(inputTokens, outputTokens, finalFakeCacheUsage, streamThinkingTokens),
 		"context_management": map[string]any{"applied_edits": []any{}},
 	}); err != nil {
-		return nil, err
+		return returnPartialIfStreamStarted(err)
 	}
 	if err := writeSSEEvent(writer, "message_stop", map[string]any{"type": "message_stop"}); err != nil {
-		return nil, err
+		return returnPartialIfStreamStarted(err)
 	}
 	s.commitFakeCachePlan(fakeCachePlan, runtimeSettings)
 

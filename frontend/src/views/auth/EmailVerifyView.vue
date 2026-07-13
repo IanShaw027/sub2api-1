@@ -153,8 +153,8 @@ import { AuthLayout } from '@/components/layout'
 import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import { useAuthStore, useAppStore } from '@/stores'
-import {
 import { sanitizeRedirectPath } from '@/utils/sanitize'
+import {
   persistOAuthTokenContext,
   getPublicSettings,
   isOAuthLoginCompletion,

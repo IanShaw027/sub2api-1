@@ -56,14 +56,14 @@ func (s *geminiCompatTokenCacheStub) DeleteAccessToken(ctx context.Context, cach
 	return nil
 }
 
-func (s *geminiCompatTokenCacheStub) AcquireRefreshLock(ctx context.Context, cacheKey string, ttl time.Duration) (bool, error) {
+func (s *geminiCompatTokenCacheStub) AcquireRefreshLock(ctx context.Context, cacheKey string, ttl time.Duration) (string, bool, error) {
 	_ = ctx
 	_ = cacheKey
 	_ = ttl
-	return true, nil
+	return "lease", true, nil
 }
 
-func (s *geminiCompatTokenCacheStub) ReleaseRefreshLock(ctx context.Context, cacheKey string) error {
+func (s *geminiCompatTokenCacheStub) ReleaseRefreshLock(ctx context.Context, cacheKey string, _ string) error {
 	_ = ctx
 	_ = cacheKey
 	return nil

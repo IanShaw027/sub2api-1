@@ -6,6 +6,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestNormalizeCodexModel_GPT56FamilyAndReasoningSuffixes(t *testing.T) {
@@ -68,6 +69,24 @@ func TestNormalizeOpenAIReasoningEffort_MaxAndUltra(t *testing.T) {
 	require.Equal(t, "ultra", normalizeOpenAIReasoningEffort("ultra"))
 	require.Equal(t, "ultra", normalizeOpenAIReasoningEffort(" Ultra "))
 	require.Equal(t, "", normalizeOpenAIReasoningEffort("none"))
+}
+
+func TestNormalizeOpenAICodexCompactReasoningEffortDirectPreservesGPT56Max(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","reasoning":{"effort":"max"}}`)
+
+	got, changed, err := normalizeOpenAICodexCompactReasoningEffort(body, "gpt-5.6-sol")
+
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.JSONEq(t, string(body), string(got))
+}
+
+func TestNormalizeOpenAICodexCompactReasoningEffortMapsNonGPT56Max(t *testing.T) {
+	got, changed, err := normalizeOpenAICodexCompactReasoningEffort([]byte(`{"model":"gpt-5.4","reasoning":{"effort":"max"}}`), "gpt-5.4")
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "xhigh", gjson.GetBytes(got, "reasoning.effort").String())
 }
 
 func TestOpenAIUsageExtractionReadsGPT56CacheWriteTokens(t *testing.T) {

@@ -179,6 +179,22 @@ func TestStream_ToolCallLifecycleComplete(t *testing.T) {
 	require.True(t, sawItemDone, "function_call output_item.done missing")
 }
 
+func TestStream_SparseToolCallIndexFinalizesToolCall(t *testing.T) {
+	events := collectStreamEvents(t, []string{
+		`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_sparse","type":"function","function":{"name":"exec","arguments":"{\"cmd\":\"ls\"}"}}]}}]}`,
+		`{"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`,
+	})
+
+	var sawArgsDone bool
+	for _, e := range events {
+		if e.Type == "response.function_call_arguments.done" && e.CallID == "call_sparse" {
+			sawArgsDone = true
+			require.JSONEq(t, `{"cmd":"ls"}`, e.Arguments)
+		}
+	}
+	require.True(t, sawArgsDone, "sparse tool_call index should still emit function_call_arguments.done")
+}
+
 // TestStream_ToolCallArgumentsInFirstChunkNotDoubled guards the GLM/Zhipu shape
 // where a single tool_call delta chunk carries id+name+arguments together.
 // Earlier code copied the whole tool_call (including arguments) into state and

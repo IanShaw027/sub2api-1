@@ -11149,6 +11149,11 @@ func extractOpenAISSETerminalEvent(body string) (string, []byte, bool) {
 			continue
 		}
 		eventType := strings.TrimSpace(gjson.Get(data, "type").String())
+		if eventType == "error" {
+			terminalType = "response.failed"
+			terminalPayload = normalizeOpenAIErrorSSEPayloadAsResponseFailed([]byte(data))
+			continue
+		}
 		if eventType == "response.failed" {
 			if terminalType == "" {
 				terminalType = eventType
@@ -11168,6 +11173,17 @@ func extractOpenAISSETerminalEvent(body string) (string, []byte, bool) {
 		return terminalType, terminalPayload, true
 	}
 	return "", nil, false
+}
+
+func normalizeOpenAIErrorSSEPayloadAsResponseFailed(payload []byte) []byte {
+	if len(payload) == 0 || !gjson.ValidBytes(payload) {
+		return payload
+	}
+	normalized, err := sjson.SetBytes(payload, "type", "response.failed")
+	if err != nil {
+		return payload
+	}
+	return normalized
 }
 
 func extractOpenAISSETerminalResponse(terminalPayload []byte) []byte {
@@ -11975,12 +11991,16 @@ func normalizeOpenAICodexCompactReasoningEffortForAccount(
 }
 
 func normalizeOpenAICodexCompactReasoningEffort(body []byte, effectiveModel string) ([]byte, bool, error) {
-	if !isOpenAIGPT56Model(effectiveModel) ||
-		!strings.EqualFold(strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String()), "max") {
+	rawEffort := strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String())
+	if !strings.EqualFold(rawEffort, "max") {
+		return body, false, nil
+	}
+	normalizedEffort := normalizeOpenAIReasoningEffortForModel(rawEffort, effectiveModel)
+	if normalizedEffort == "" || strings.EqualFold(rawEffort, normalizedEffort) {
 		return body, false, nil
 	}
 
-	normalized, err := sjson.SetBytes(body, "reasoning.effort", "xhigh")
+	normalized, err := sjson.SetBytes(body, "reasoning.effort", normalizedEffort)
 	if err != nil {
 		return body, false, fmt.Errorf("normalize codex compact reasoning effort: %w", err)
 	}

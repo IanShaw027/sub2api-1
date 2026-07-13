@@ -1449,6 +1449,48 @@ func TestPaymentOrderQueryReferenceUsesOutTradeNoForOfficialProviders(t *testing
 	}))
 }
 
+func TestCheckDailyLimitUsesPayAmountForSubscriptionOrders(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderLifecycleTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("daily-limit@example.com").
+		SetPasswordHash("hash").
+		SetUsername("daily-limit-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(9.99).
+		SetPayAmount(71.43).
+		SetFeeRate(0).
+		SetRechargeCode("DAILY-LIMIT-SUBSCRIPTION").
+		SetOutTradeNo("sub2_daily_limit_subscription").
+		SetPaymentTradeNo("trade-daily-limit").
+		SetPaymentType(payment.TypeAlipay).
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusCompleted).
+		SetPaidAt(time.Now()).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetSubscriptionGroupID(10).
+		SetSubscriptionDays(30).
+		Save(ctx)
+	require.NoError(t, err)
+
+	tx, err := client.Tx(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback() }()
+
+	err = (&PaymentService{}).checkDailyLimit(ctx, tx, user.ID, 20, 90)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "daily_limit_exceeded")
+}
+
 func newPaymentOrderLifecycleTestClient(t *testing.T) *dbent.Client {
 	t.Helper()
 
