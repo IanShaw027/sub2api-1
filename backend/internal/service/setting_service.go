@@ -22,6 +22,7 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/imroc/req/v3"
 	"golang.org/x/sync/singleflight"
 )
@@ -381,6 +382,11 @@ const (
 
 	ClaudeTelemetryModeDrop    = "drop"
 	ClaudeTelemetryModeForward = "forward"
+
+	// GrokDefaultBaseURLModeAPI uses the official Public API host.
+	GrokDefaultBaseURLModeAPI = "api"
+	// GrokDefaultBaseURLModeCLI uses the Grok Build CLI chat-proxy host.
+	GrokDefaultBaseURLModeCLI = "cli"
 
 	defaultAuthSourceBalance     = 0
 	defaultAuthSourceConcurrency = 5
@@ -2702,6 +2708,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyEnableFingerprintUnification] = strconv.FormatBool(settings.EnableFingerprintUnification)
 	updates[SettingKeyEnableMetadataPassthrough] = strconv.FormatBool(settings.EnableMetadataPassthrough)
 	updates[SettingKeyClaudeTelemetryMode] = normalizeClaudeTelemetryMode(settings.ClaudeTelemetryMode)
+	updates[SettingKeyGrokDefaultBaseURLMode] = normalizeGrokDefaultBaseURLMode(settings.GrokDefaultBaseURLMode)
 	gatewayDebugTimeline := normalizeGatewayDebugTimelineSettings(GatewayDebugTimelineSettings{
 		Enabled:       settings.GatewayDebugTimelineEnabled,
 		Directory:     settings.GatewayDebugTimelineDirectory,
@@ -3408,6 +3415,82 @@ func (s *SettingService) GetClaudeTelemetryMode(ctx context.Context) string {
 		return ClaudeTelemetryModeDrop
 	}
 	return normalizeClaudeTelemetryMode(s.getGatewayForwardingSettingsCached(ctx).claudeTelemetryMode)
+}
+
+func normalizeGrokDefaultBaseURLMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case GrokDefaultBaseURLModeCLI:
+		return GrokDefaultBaseURLModeCLI
+	default:
+		return GrokDefaultBaseURLModeAPI
+	}
+}
+
+// GrokBaseURLForMode maps a mode id to the absolute Grok upstream base URL.
+func GrokBaseURLForMode(mode string) string {
+	if normalizeGrokDefaultBaseURLMode(mode) == GrokDefaultBaseURLModeCLI {
+		return xai.DefaultCLIBaseURL
+	}
+	return xai.DefaultBaseURL
+}
+
+// GetGrokDefaultBaseURLMode returns api|cli for Grok accounts without credentials.base_url.
+func (s *SettingService) GetGrokDefaultBaseURLMode(ctx context.Context) string {
+	if s == nil || s.settingRepo == nil {
+		return GrokDefaultBaseURLModeAPI
+	}
+	// Prefer full settings parse cache via GetAll is heavy; read single key with short timeout.
+	dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), gatewayForwardingDBTimeout)
+	defer cancel()
+	raw, err := s.settingRepo.GetValue(dbCtx, SettingKeyGrokDefaultBaseURLMode)
+	if err != nil {
+		return GrokDefaultBaseURLModeAPI
+	}
+	return normalizeGrokDefaultBaseURLMode(raw)
+}
+
+// GetGrokDefaultBaseURL returns the absolute default Grok upstream base URL.
+func (s *SettingService) GetGrokDefaultBaseURL(ctx context.Context) string {
+	return GrokBaseURLForMode(s.GetGrokDefaultBaseURLMode(ctx))
+}
+
+// ResolveGrokBaseURL returns account credentials.base_url when set, otherwise the system default.
+// Used for chat/responses inference only. Media and billing use different resolvers.
+func (s *SettingService) ResolveGrokBaseURL(ctx context.Context, account *Account) string {
+	def := xai.DefaultBaseURL
+	if s != nil {
+		def = s.GetGrokDefaultBaseURL(ctx)
+	}
+	if account == nil {
+		return def
+	}
+	return account.GetGrokBaseURLOr(def)
+}
+
+// ResolveGrokMediaBaseURL returns the upstream base for Grok Imagine images/videos.
+// Official media APIs live on api.x.ai; cli-chat-proxy is chat/Build-quota only.
+// System grok_default_base_url_mode=cli must NOT redirect media. Explicit account
+// base_url is honored only when it is not the CLI chat-proxy host.
+func (s *SettingService) ResolveGrokMediaBaseURL(_ context.Context, account *Account) string {
+	if account != nil {
+		if pinned := strings.TrimSpace(account.GetCredential("base_url")); pinned != "" {
+			pinned = strings.TrimRight(pinned, "/")
+			if !isGrokCLIChatProxyBaseURL(pinned) {
+				return pinned
+			}
+		}
+	}
+	return xai.DefaultBaseURL
+}
+
+func isGrokCLIChatProxyBaseURL(baseURL string) bool {
+	normalized := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	cli := strings.TrimRight(xai.DefaultCLIBaseURL, "/")
+	if strings.EqualFold(normalized, cli) {
+		return true
+	}
+	// Host-only comparison (path may be empty or /v1).
+	return strings.Contains(strings.ToLower(normalized), "cli-chat-proxy.grok.com")
 }
 
 // IsAnthropicCacheTTL1hInjectionEnabled 检查是否对 Anthropic OAuth/SetupToken 请求体注入 1h cache_control ttl。
@@ -4605,6 +4688,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	result.EnableMetadataPassthrough = settings[SettingKeyEnableMetadataPassthrough] == "true"
 	result.ClaudeTelemetryMode = normalizeClaudeTelemetryMode(settings[SettingKeyClaudeTelemetryMode])
+	result.GrokDefaultBaseURLMode = normalizeGrokDefaultBaseURLMode(settings[SettingKeyGrokDefaultBaseURLMode])
 	gatewayDebugTimeline := parseGatewayDebugTimelineSettings(settings)
 	result.GatewayDebugTimelineEnabled = gatewayDebugTimeline.Enabled
 	result.GatewayDebugTimelineDirectory = gatewayDebugTimeline.Directory

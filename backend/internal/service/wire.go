@@ -159,8 +159,11 @@ func ProvideGrokQuotaService(
 	tokenProvider *GrokTokenProvider,
 	httpUpstream HTTPUpstream,
 	tlsFPProfileService *TLSFingerprintProfileService,
+	settingService *SettingService,
 ) *GrokQuotaService {
-	return NewGrokQuotaService(accountRepo, proxyRepo, tokenProvider, httpUpstream, tlsFPProfileService)
+	svc := NewGrokQuotaService(accountRepo, proxyRepo, tokenProvider, httpUpstream, tlsFPProfileService)
+	svc.SetSettingService(settingService)
+	return svc
 }
 
 // ProvideGeminiTokenProvider creates GeminiTokenProvider with OAuthRefreshAPI injection

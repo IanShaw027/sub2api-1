@@ -228,7 +228,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	geminiAccountAccessTokenProvider := service.ProvideGeminiAccountAccessTokenProvider(geminiTokenProvider)
 	accountTestService := service.NewAccountTestService(accountRepository, geminiAccountAccessTokenProvider, kiroTokenProvider, claudeTokenProvider, grokTokenProvider, antigravityGatewayService, httpUpstream, configConfig, tlsFingerprintProfileService, settingService, opsService)
 	crsSyncService := service.NewCRSSyncService(accountRepository, proxyRepository, oAuthService, openAIOAuthService, geminiOAuthService, configConfig)
-	grokQuotaService := service.ProvideGrokQuotaService(accountRepository, proxyRepository, grokTokenProvider, httpUpstream, tlsFingerprintProfileService)
+	grokQuotaService := service.ProvideGrokQuotaService(accountRepository, proxyRepository, grokTokenProvider, httpUpstream, tlsFingerprintProfileService, settingService)
 	accountHandler := handler.ProvideAdminAccountHandler(adminService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, kiroTokenProvider, rateLimitService, accountUsageService, accountTestService, concurrencyService, crsSyncService, sessionLimitCache, rpmCache, compositeTokenCacheInvalidator, grokQuotaService)
 	adminAnnouncementHandler := admin.NewAnnouncementHandler(announcementService)
 	dataManagementService := service.NewDataManagementService()

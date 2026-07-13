@@ -233,6 +233,9 @@ func ProvideAdminAccountHandler(
 	tokenCacheInvalidator service.TokenCacheInvalidator,
 	grokQuotaService *service.GrokQuotaService,
 ) *admin.AccountHandler {
+	if accountUsageService != nil && grokQuotaService != nil {
+		accountUsageService.SetGrokQuotaService(grokQuotaService)
+	}
 	return admin.NewAccountHandler(
 		adminService,
 		oauthService,

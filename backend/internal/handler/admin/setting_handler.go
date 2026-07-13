@@ -648,6 +648,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		EnableFingerprintUnification:           settings.EnableFingerprintUnification,
 		EnableMetadataPassthrough:              settings.EnableMetadataPassthrough,
 		ClaudeTelemetryMode:                    settings.ClaudeTelemetryMode,
+		GrokDefaultBaseURLMode:                 settings.GrokDefaultBaseURLMode,
 		GatewayDebugTimelineEnabled:            settings.GatewayDebugTimelineEnabled,
 		GatewayDebugTimelineDirectory:          settings.GatewayDebugTimelineDirectory,
 		GatewayDebugTimelineRetentionDays:      settings.GatewayDebugTimelineRetentionDays,
@@ -1045,6 +1046,7 @@ type UpdateSettingsRequest struct {
 	EnableFingerprintUnification           *bool   `json:"enable_fingerprint_unification"`
 	EnableMetadataPassthrough              *bool   `json:"enable_metadata_passthrough"`
 	ClaudeTelemetryMode                    *string `json:"claude_telemetry_mode"`
+	GrokDefaultBaseURLMode                 *string `json:"grok_default_base_url_mode"`
 	GatewayDebugTimelineEnabled            *bool   `json:"gateway_debug_timeline_enabled"`
 	GatewayDebugTimelineDirectory          *string `json:"gateway_debug_timeline_directory"`
 	GatewayDebugTimelineRetentionDays      *int    `json:"gateway_debug_timeline_retention_days"`
@@ -2508,6 +2510,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.ClaudeTelemetryMode
 		}(),
+		GrokDefaultBaseURLMode: func() string {
+			if req.GrokDefaultBaseURLMode != nil {
+				return strings.TrimSpace(*req.GrokDefaultBaseURLMode)
+			}
+			return previousSettings.GrokDefaultBaseURLMode
+		}(),
 		EnableClaudeOAuthSystemPromptInjection: func() bool {
 			if req.EnableClaudeOAuthSystemPromptInjection != nil {
 				return *req.EnableClaudeOAuthSystemPromptInjection
@@ -3238,6 +3246,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		RewriteMessageCacheControl:                             updatedSettings.RewriteMessageCacheControl,
 		EnableClientDatelineNormalization:                      updatedSettings.EnableClientDatelineNormalization,
 		ClaudeTelemetryMode:                                    updatedSettings.ClaudeTelemetryMode,
+		GrokDefaultBaseURLMode:                                 updatedSettings.GrokDefaultBaseURLMode,
 		AntigravityUserAgentVersion:                            updatedSettings.AntigravityUserAgentVersion,
 		OpenAICodexUserAgent:                                   updatedSettings.OpenAICodexUserAgent,
 		AntiBanPlatforms:                                       updatedSettings.AntiBanPlatforms,
@@ -3805,6 +3814,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.ClaudeTelemetryMode != after.ClaudeTelemetryMode {
 		changed = append(changed, "claude_telemetry_mode")
+	}
+	if before.GrokDefaultBaseURLMode != after.GrokDefaultBaseURLMode {
+		changed = append(changed, "grok_default_base_url_mode")
 	}
 	if before.EnableClaudeOAuthSystemPromptInjection != after.EnableClaudeOAuthSystemPromptInjection {
 		changed = append(changed, "enable_claude_oauth_system_prompt_injection")

@@ -381,7 +381,17 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	if err != nil {
 		return nil, err
 	}
-	targetURL, err := endpoint.upstreamURL(account.GetGrokBaseURL(), requestID)
+	// Imagine images/videos always use official api.x.ai (not cli-chat-proxy / system CLI mode).
+	baseURL := xai.DefaultBaseURL
+	if s != nil && s.settingService != nil {
+		baseURL = s.settingService.ResolveGrokMediaBaseURL(ctx, account)
+	} else if account != nil {
+		baseURL = account.GetGrokBaseURLOr(xai.DefaultBaseURL)
+		if isGrokCLIChatProxyBaseURL(baseURL) {
+			baseURL = xai.DefaultBaseURL
+		}
+	}
+	targetURL, err := endpoint.upstreamURL(baseURL, requestID)
 	if err != nil {
 		return nil, err
 	}

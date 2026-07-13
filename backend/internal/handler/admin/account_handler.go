@@ -1023,6 +1023,10 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	if len(req.Credentials) > 0 {
 		h.scheduleOpenAIResponsesProbe(account)
 	}
+	// Grok OAuth: credentials/proxy/extra 变更后主动刷新官方 billing。
+	if len(req.Credentials) > 0 || req.ProxyID != nil || len(req.Extra) > 0 {
+		h.scheduleGrokQuotaProbe(account)
+	}
 
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
@@ -1476,23 +1480,28 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 }
 
 func (h *AccountHandler) scheduleGrokQuotaProbe(account *service.Account) {
-	if h == nil || h.grokQuotaService == nil || account == nil {
+	if h == nil || account == nil {
 		return
 	}
 	if account.Platform != service.PlatformGrok || account.Type != service.AccountTypeOAuth {
 		return
 	}
 	accountID := account.ID
+	if h.accountUsageService != nil {
+		h.accountUsageService.InvalidateGrokUsageCache(accountID)
+	}
 	quotaService := h.grokQuotaService
+	if quotaService == nil {
+		return
+	}
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Error("grok_quota_probe_async_panic", "account_id", accountID, "recover", r)
+				slog.Error("grok_usage_refresh_async_panic", "account_id", accountID, "recover", r)
 			}
 		}()
-		if _, err := quotaService.ProbeUsage(context.Background(), accountID); err != nil {
-			slog.Warn("grok_quota_probe_async_failed", "account_id", accountID, "err", err)
-		}
+		// Active pull of official billing (/usage) + best-effort rate-limit probe.
+		quotaService.RefreshAccountUsage(context.Background(), accountID)
 	}()
 }
 
@@ -1967,6 +1976,8 @@ func (h *AccountHandler) BatchCreate(c *gin.Context) {
 			}
 			// OpenAI APIKey 账号异步探测 /v1/responses 能力。
 			h.scheduleOpenAIResponsesProbe(account)
+			// Grok OAuth: 批量创建后主动拉官方 billing。
+			h.scheduleGrokQuotaProbe(account)
 			success++
 			results = append(results, gin.H{
 				"name":    item.Name,
@@ -2207,6 +2218,10 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 					}
 				}
 				h.invalidateKiroUsageCache(account)
+				// Grok OAuth: credentials/proxy changes should refresh official billing snapshot.
+				if len(req.Credentials) > 0 || req.ProxyID != nil || len(req.Extra) > 0 {
+					h.scheduleGrokQuotaProbe(account)
+				}
 			}
 		}
 	}

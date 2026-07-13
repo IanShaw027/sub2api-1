@@ -465,7 +465,12 @@ func (s *AccountTestService) testGrokAccountConnection(c *gin.Context, account *
 		testModelID,
 		prompt,
 		authToken,
-		account.GetGrokBaseURL(),
+		func() string {
+			if s != nil && s.settingService != nil {
+				return s.settingService.ResolveGrokBaseURL(ctx, account)
+			}
+			return account.GetGrokBaseURL()
+		}(),
 		"grok",
 		true,
 	)

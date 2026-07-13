@@ -345,7 +345,9 @@ func (s *GrokOAuthService) BuildAccountCredentials(tokenInfo *GrokTokenInfo) map
 	if tokenInfo.EntitlementStatus != "" {
 		creds["entitlement_status"] = tokenInfo.EntitlementStatus
 	}
-	creds["base_url"] = xai.DefaultBaseURL
+	// Leave base_url unset so the system gateway setting
+	// (grok_default_base_url_mode: api|cli) controls the default upstream.
+	// Operators can still pin an explicit base_url per account.
 	return creds
 }
 

@@ -204,6 +204,8 @@ type SystemSettings struct {
 	EnableFingerprintUnification           bool   // 是否统一 OAuth 账号的指纹头（默认 true）
 	EnableMetadataPassthrough              bool   // 是否透传客户端原始 metadata（默认 false）
 	ClaudeTelemetryMode                    string // Claude Code 遥测处理：drop/forward
+	// GrokDefaultBaseURLMode 控制 Grok 未配置 credentials.base_url 时的默认上游：api | cli
+	GrokDefaultBaseURLMode string
 	GatewayDebugTimelineEnabled            bool
 	GatewayDebugTimelineDirectory          string
 	GatewayDebugTimelineRetentionDays      int

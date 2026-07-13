@@ -374,7 +374,11 @@ func buildOpenAISilentRefusalErrorBody() []byte {
 
 func (s *OpenAIGatewayService) rawChatCompletionsURL(account *Account) (string, error) {
 	if account.Platform == PlatformGrok {
-		targetURL, err := xai.BuildChatCompletionsURL(account.GetGrokBaseURL())
+		baseURL := account.GetGrokBaseURL()
+		if s != nil && s.settingService != nil {
+			baseURL = s.settingService.ResolveGrokBaseURL(context.Background(), account)
+		}
+		targetURL, err := xai.BuildChatCompletionsURL(baseURL)
 		if err != nil {
 			return "", fmt.Errorf("invalid grok base_url: %w", err)
 		}

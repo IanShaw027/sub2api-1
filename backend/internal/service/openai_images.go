@@ -29,6 +29,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/reqclientpool"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -1327,11 +1328,15 @@ func (s *OpenAIGatewayService) buildOpenAIImagesRequest(
 		targetURL = openAIImagesEditsURL
 	}
 	baseURL := account.GetOpenAIBaseURL()
-	if account.Platform == PlatformGrok || account.Type == AccountTypeOAuth {
-		if grokBase := account.GetGrokBaseURL(); grokBase != "" {
-			baseURL = grokBase
-		} else if account.Platform == PlatformGrok {
-			baseURL = "https://api.x.ai"
+	if account.Platform == PlatformGrok {
+		// Media is official Public API only; ignore system CLI chat-proxy mode.
+		if s != nil && s.settingService != nil {
+			baseURL = s.settingService.ResolveGrokMediaBaseURL(ctx, account)
+		} else {
+			baseURL = account.GetGrokBaseURLOr(xai.DefaultBaseURL)
+			if isGrokCLIChatProxyBaseURL(baseURL) {
+				baseURL = xai.DefaultBaseURL
+			}
 		}
 	}
 	if baseURL != "" {

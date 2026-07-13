@@ -205,7 +205,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			releaseUpstreamCtx()
 			return nil, err
 		}
-		upstreamReq, err = buildGrokResponsesRequest(upstreamCtx, c, account, body, token)
+		upstreamReq, err = buildGrokResponsesRequest(upstreamCtx, c, account, body, token, s.settingService)
 	} else {
 		upstreamReq, err = s.buildUpstreamRequestOpenAIPassthrough(upstreamCtx, c, account, body, token, "")
 	}

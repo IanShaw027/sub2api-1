@@ -16,9 +16,13 @@ import (
 )
 
 const (
-	grokQuotaUpstreamTimeout = 20 * time.Second
-	grokQuotaProbeInput      = "."
-	grokQuotaDefaultModel    = xai.DefaultTextModel
+	grokQuotaUpstreamTimeout   = 20 * time.Second
+	grokBillingUpstreamTimeout = 15 * time.Second
+	grokQuotaProbeInput        = "."
+	grokQuotaDefaultModel      = xai.DefaultTextModel
+	grokBillingSnapshotExtraKey = "grok_billing_snapshot"
+	grokClientVersionHeader    = "0.2.99"
+	grokClientModeHeader       = "cli"
 )
 
 type GrokQuotaProbeResult struct {
@@ -43,6 +47,7 @@ type GrokQuotaService struct {
 	tokenProvider   *GrokTokenProvider
 	httpUpstream    HTTPUpstream
 	tlsFPProfileSvc *TLSFingerprintProfileService
+	settingService  *SettingService
 }
 
 func NewGrokQuotaService(
@@ -58,6 +63,13 @@ func NewGrokQuotaService(
 		tokenProvider:   tokenProvider,
 		httpUpstream:    httpUpstream,
 		tlsFPProfileSvc: tlsFPProfileSvc,
+	}
+}
+
+// SetSettingService injects system settings (used for Grok default base URL mode).
+func (s *GrokQuotaService) SetSettingService(settingService *SettingService) {
+	if s != nil {
+		s.settingService = settingService
 	}
 }
 
@@ -78,7 +90,11 @@ func (s *GrokQuotaService) ProbeUsage(ctx context.Context, accountID int64) (*Gr
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusBadRequest, "GROK_QUOTA_PROBE_BODY_ERROR", "failed to build probe body: %v", err)
 	}
-	targetURL, err := xai.BuildResponsesURL(account.GetGrokBaseURL())
+	baseURL := account.GetGrokBaseURL()
+	if s.settingService != nil {
+		baseURL = s.settingService.ResolveGrokBaseURL(ctx, account)
+	}
+	targetURL, err := xai.BuildResponsesURL(baseURL)
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusBadRequest, "GROK_QUOTA_BASE_URL_INVALID", "invalid Grok base_url: %v", err)
 	}
@@ -140,6 +156,132 @@ func (s *GrokQuotaService) ResetQuota(ctx context.Context, accountID int64) (*Gr
 		return nil, err
 	}
 	return nil, infraerrors.New(http.StatusNotImplemented, "GROK_QUOTA_RESET_UNSUPPORTED", "xAI does not expose a Grok subscription quota reset endpoint for OAuth accounts")
+}
+
+// FetchBilling actively pulls Grok CLI /usage billing endpoints and persists a snapshot
+// into account.Extra[grok_billing_snapshot]. Endpoints live on cli-chat-proxy, not api.x.ai.
+func (s *GrokQuotaService) FetchBilling(ctx context.Context, accountID int64) (*xai.BillingSnapshot, error) {
+	account, token, proxyURL, err := s.prepareProbe(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+
+	baseURL := xai.CLIBillingBaseURL()
+	callCtx, cancel := context.WithTimeout(ctx, grokBillingUpstreamTimeout)
+	defer cancel()
+
+	var tlsProfile *tlsfingerprint.Profile
+	if s.tlsFPProfileSvc != nil {
+		tlsProfile = s.tlsFPProfileSvc.ResolveTLSProfileForTransport(account, "http")
+	}
+
+	snapshot := &xai.BillingSnapshot{
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+		Source:    "active_billing",
+	}
+
+	// Parallel-ish sequential is fine; keep simple and share auth headers.
+	creditsBody, creditsErr := s.doGrokBillingGET(callCtx, account, token, proxyURL, tlsProfile, baseURL, xai.BillingPathCredits)
+	if creditsErr != nil {
+		snapshot.FetchError = creditsErr.Error()
+		slog.Warn("grok_billing_credits_failed", "account_id", account.ID, "err", creditsErr)
+	} else if parsed, parseErr := xai.ParseCreditsBilling(creditsBody); parseErr != nil {
+		snapshot.FetchError = "parse credits billing: " + parseErr.Error()
+	} else if parsed != nil {
+		snapshot.Credits = parsed.Config
+	}
+
+	monthlyBody, monthlyErr := s.doGrokBillingGET(callCtx, account, token, proxyURL, tlsProfile, baseURL, xai.BillingPathMonthly)
+	if monthlyErr != nil {
+		if snapshot.FetchError == "" {
+			snapshot.FetchError = monthlyErr.Error()
+		}
+		slog.Warn("grok_billing_monthly_failed", "account_id", account.ID, "err", monthlyErr)
+	} else if parsed, parseErr := xai.ParseMonthlyBilling(monthlyBody); parseErr != nil {
+		if snapshot.FetchError == "" {
+			snapshot.FetchError = "parse monthly billing: " + parseErr.Error()
+		}
+	} else if parsed != nil {
+		snapshot.Monthly = parsed.Config
+	}
+
+	userBody, userErr := s.doGrokBillingGET(callCtx, account, token, proxyURL, tlsProfile, baseURL, xai.UserPathSubscription)
+	if userErr == nil {
+		if parsed, parseErr := xai.ParseUserSubscription(userBody); parseErr == nil && parsed != nil {
+			snapshot.SubscriptionTier = parsed.SubscriptionTier
+			snapshot.Email = parsed.Email
+			snapshot.HasGrokCodeAccess = parsed.HasGrokCodeAccess
+		}
+	}
+
+	// Persist even partial results so list/passive can show last known state.
+	if s.accountRepo != nil {
+		if err := s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{
+			grokBillingSnapshotExtraKey: snapshot,
+		}); err != nil {
+			slog.Warn("grok_billing_snapshot_persist_failed", "account_id", account.ID, "err", err)
+		}
+	}
+
+	if snapshot.Credits == nil && snapshot.Monthly == nil {
+		if snapshot.FetchError != "" {
+			return snapshot, infraerrors.Newf(http.StatusBadGateway, "GROK_BILLING_FETCH_FAILED", "failed to fetch grok billing: %s", snapshot.FetchError)
+		}
+		return snapshot, infraerrors.New(http.StatusBadGateway, "GROK_BILLING_FETCH_FAILED", "failed to fetch grok billing: empty response")
+	}
+	return snapshot, nil
+}
+
+// RefreshAccountUsage runs billing fetch (primary) and best-effort rate-limit probe.
+func (s *GrokQuotaService) RefreshAccountUsage(ctx context.Context, accountID int64) {
+	if s == nil {
+		return
+	}
+	if _, err := s.FetchBilling(ctx, accountID); err != nil {
+		slog.Warn("grok_billing_refresh_failed", "account_id", accountID, "err", err)
+	}
+	// Probe is optional and may fail on free-tier / missing responses access; never block billing.
+	if _, err := s.ProbeUsage(ctx, accountID); err != nil {
+		slog.Debug("grok_quota_probe_after_billing_failed", "account_id", accountID, "err", err)
+	}
+}
+
+func (s *GrokQuotaService) doGrokBillingGET(
+	ctx context.Context,
+	account *Account,
+	token, proxyURL string,
+	tlsProfile *tlsfingerprint.Profile,
+	baseURL, pathWithQuery string,
+) ([]byte, error) {
+	if s == nil || s.httpUpstream == nil {
+		return nil, infraerrors.New(http.StatusInternalServerError, "GROK_QUOTA_NOT_CONFIGURED", "grok quota service is not configured")
+	}
+	targetURL, err := xai.BuildBillingURL(baseURL, pathWithQuery)
+	if err != nil {
+		return nil, infraerrors.Newf(http.StatusBadRequest, "GROK_BILLING_URL_INVALID", "invalid billing url: %v", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return nil, infraerrors.Newf(http.StatusInternalServerError, "GROK_BILLING_REQUEST_BUILD_FAILED", "failed to build request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("x-grok-client-version", grokClientVersionHeader)
+	req.Header.Set("x-grok-client-mode", grokClientModeHeader)
+	applyDefaultGrokUpstreamHeaders(req)
+	applyGrokTLSProfileHeaders(req, tlsProfile)
+
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, maxInt(account.Concurrency, 1), tlsProfile)
+	if err != nil {
+		return nil, infraerrors.Newf(http.StatusBadGateway, "GROK_BILLING_REQUEST_FAILED", "upstream billing request failed: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode >= 400 {
+		bodyText := truncate(strings.TrimSpace(string(body)), 240)
+		return nil, infraerrors.Newf(mapUpstreamStatus(resp.StatusCode), "GROK_BILLING_UPSTREAM_ERROR", "upstream returned %d for %s: %s", resp.StatusCode, pathWithQuery, bodyText)
+	}
+	return body, nil
 }
 
 func (s *GrokQuotaService) prepareProbe(ctx context.Context, accountID int64) (*Account, string, string, error) {

@@ -104,7 +104,7 @@ func (s *OpenAIGatewayService) forwardGrokResponsesWithPromptCacheKey(
 
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 	defer releaseUpstreamCtx()
-	upstreamReq, err := buildGrokResponsesRequest(upstreamCtx, c, account, patchedBody, token)
+	upstreamReq, err := buildGrokResponsesRequest(upstreamCtx, c, account, patchedBody, token, s.settingService)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +155,7 @@ func (s *OpenAIGatewayService) forwardGrokResponsesWithPromptCacheKey(
 					promptCacheKey = strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
 				}
 				setOpsUpstreamRequestBody(c, patchedBody)
-				upstreamReq, err = buildGrokResponsesRequest(upstreamCtx, c, account, patchedBody, token)
+				upstreamReq, err = buildGrokResponsesRequest(upstreamCtx, c, account, patchedBody, token, s.settingService)
 				if err != nil {
 					return nil, err
 				}
@@ -1373,7 +1373,7 @@ func (s *OpenAIGatewayService) describeGrokComposerImage(
 	}
 
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
-	upstreamReq, err := buildGrokResponsesRequest(upstreamCtx, c, account, body, token)
+	upstreamReq, err := buildGrokResponsesRequest(upstreamCtx, c, account, body, token, s.settingService)
 	releaseUpstreamCtx()
 	if err != nil {
 		return "", OpenAIUsage{}, fmt.Errorf("build grok composer image bridge request: %w", err)
@@ -1531,8 +1531,12 @@ func grokComposerTextFromPart(part any) string {
 	}
 }
 
-func buildGrokResponsesRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token string) (*http.Request, error) {
-	targetURL, err := xai.BuildResponsesURL(account.GetGrokBaseURL())
+func buildGrokResponsesRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token string, settingService *SettingService) (*http.Request, error) {
+	baseURL := account.GetGrokBaseURL()
+	if settingService != nil {
+		baseURL = settingService.ResolveGrokBaseURL(ctx, account)
+	}
+	targetURL, err := xai.BuildResponsesURL(baseURL)
 	if err != nil {
 		return nil, err
 	}

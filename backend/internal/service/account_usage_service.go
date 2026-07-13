@@ -128,10 +128,17 @@ type UsageCache struct {
 	windowStatsCache  sync.Map           // accountID -> *windowStatsCache
 	antigravityCache  sync.Map           // accountID -> *antigravityUsageCache
 	kiroCache         sync.Map           // accountID -> *kiroUsageCache
+	grokCache         sync.Map           // accountID -> *grokUsageCache
 	apiFlight         singleflight.Group // 防止同一账号的并发请求击穿缓存（Anthropic）
 	antigravityFlight singleflight.Group // 防止同一 Antigravity 账号的并发请求击穿缓存
 	kiroFlight        singleflight.Group // 防止同一 Kiro 账号的并发请求击穿缓存
+	grokFlight        singleflight.Group // 防止同一 Grok 账号的并发 billing 请求击穿缓存
 	openAIProbeCache  sync.Map           // accountID -> time.Time
+}
+
+type grokUsageCache struct {
+	usageInfo *UsageInfo
+	timestamp time.Time
 }
 
 // NewUsageCache 创建 UsageCache 实例
@@ -215,16 +222,20 @@ type UsageInfo struct {
 	// Antigravity 多模型配额
 	AntigravityQuota map[string]*AntigravityModelQuota `json:"antigravity_quota,omitempty"`
 
-	// Grok / xAI 被动额度快照
-	GrokRequestQuota       *xai.QuotaWindow `json:"grok_request_quota,omitempty"`
-	GrokTokenQuota         *xai.QuotaWindow `json:"grok_token_quota,omitempty"`
-	GrokRetryAfterSeconds  *int             `json:"grok_retry_after_seconds,omitempty"`
-	GrokEntitlementStatus  string           `json:"grok_entitlement_status,omitempty"`
-	GrokQuotaSnapshotState string           `json:"grok_quota_snapshot_state,omitempty"`
-	GrokLastQuotaProbeAt   string           `json:"grok_last_quota_probe_at,omitempty"`
-	GrokLastHeadersSeenAt  string           `json:"grok_last_headers_seen_at,omitempty"`
-	GrokLastStatusCode     int              `json:"grok_last_status_code,omitempty"`
-	GrokLocalUsage         *WindowStats     `json:"grok_local_usage,omitempty"`
+	// Grok / xAI 被动额度快照 + 官方 billing
+	GrokRequestQuota       *xai.QuotaWindow    `json:"grok_request_quota,omitempty"`
+	GrokTokenQuota         *xai.QuotaWindow    `json:"grok_token_quota,omitempty"`
+	GrokRetryAfterSeconds  *int                `json:"grok_retry_after_seconds,omitempty"`
+	GrokEntitlementStatus  string              `json:"grok_entitlement_status,omitempty"`
+	GrokQuotaSnapshotState string              `json:"grok_quota_snapshot_state,omitempty"`
+	GrokLastQuotaProbeAt   string              `json:"grok_last_quota_probe_at,omitempty"`
+	GrokLastHeadersSeenAt  string              `json:"grok_last_headers_seen_at,omitempty"`
+	GrokLastStatusCode     int                 `json:"grok_last_status_code,omitempty"`
+	GrokLocalUsage         *WindowStats        `json:"grok_local_usage,omitempty"`
+	// ThirtyDay is the official monthly billing window (Grok /billing used/monthlyLimit).
+	ThirtyDay *UsageProgress `json:"thirty_day,omitempty"`
+	// GrokBilling holds absolute balance/limit/overage numbers from cli-chat-proxy.
+	GrokBilling *GrokBillingInfo `json:"grok_billing,omitempty"`
 
 	// Antigravity 账号级信息
 	SubscriptionTier    string `json:"subscription_tier,omitempty"`     // 归一化订阅等级: FREE/PRO/ULTRA/UNKNOWN
@@ -281,6 +292,21 @@ type UsageInfo struct {
 	Error string `json:"error,omitempty"`
 }
 
+// GrokBillingInfo is the balance/limit row for Grok OAuth usage cells.
+type GrokBillingInfo struct {
+	PrepaidBalance       float64    `json:"prepaid_balance"`
+	MonthlyLimit         float64    `json:"monthly_limit"`
+	MonthlyUsed          float64    `json:"monthly_used"`
+	OnDemandCap          float64    `json:"on_demand_cap"`
+	OnDemandUsed         float64    `json:"on_demand_used"`
+	TopUpMethod          string     `json:"top_up_method,omitempty"`
+	IsUnifiedBillingUser bool       `json:"is_unified_billing_user,omitempty"`
+	WeeklyPeriodStart    *time.Time `json:"weekly_period_start,omitempty"`
+	WeeklyPeriodEnd      *time.Time `json:"weekly_period_end,omitempty"`
+	MonthlyPeriodStart   *time.Time `json:"monthly_period_start,omitempty"`
+	MonthlyPeriodEnd     *time.Time `json:"monthly_period_end,omitempty"`
+}
+
 type ClaudeUsageWindow struct {
 	Utilization float64 `json:"utilization"`
 	ResetsAt    string  `json:"resets_at"`
@@ -328,6 +354,7 @@ type AccountUsageService struct {
 	antigravityQuotaFetcher *AntigravityQuotaFetcher
 	kiroTokenProvider       *KiroTokenProvider
 	grokQuotaFetcher        *GrokQuotaFetcher
+	grokQuotaService        *GrokQuotaService
 	openAIQuotaService      *OpenAIQuotaService
 	cache                   *UsageCache
 	identityCache           IdentityCache
@@ -370,6 +397,21 @@ func NewAccountUsageService(
 		tlsFPProfileService:     tlsFPProfileService,
 		settingService:          settingService,
 	}
+}
+
+// SetGrokQuotaService injects the active Grok billing/probe client (wired after construction).
+func (s *AccountUsageService) SetGrokQuotaService(quotaService *GrokQuotaService) {
+	if s != nil {
+		s.grokQuotaService = quotaService
+	}
+}
+
+// InvalidateGrokUsageCache drops in-memory Grok usage cache for an account.
+func (s *AccountUsageService) InvalidateGrokUsageCache(accountID int64) {
+	if s == nil || s.cache == nil {
+		return
+	}
+	s.cache.grokCache.Delete(accountID)
 }
 
 // NewKiroUsageService returns a Kiro usage client with the same transport,
@@ -456,7 +498,7 @@ func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *A
 	}
 
 	if account.Platform == PlatformGrok {
-		usage, err := s.getGrokUsage(ctx, account)
+		usage, err := s.getGrokUsage(ctx, account, forceProbe)
 		if err == nil {
 			s.tryClearRecoverableAccountError(ctx, account)
 		}
@@ -1630,12 +1672,76 @@ func (s *AccountUsageService) getAntigravityUsage(ctx context.Context, account *
 	return usage, nil
 }
 
-func (s *AccountUsageService) getGrokUsage(ctx context.Context, account *Account) (*UsageInfo, error) {
-	if s.grokQuotaFetcher == nil {
+const grokUsageCacheTTL = 3 * time.Minute
+
+func (s *AccountUsageService) getGrokUsage(ctx context.Context, account *Account, force bool) (*UsageInfo, error) {
+	if account == nil {
+		now := time.Now()
+		return &UsageInfo{UpdatedAt: &now, Error: "account is required"}, nil
+	}
+
+	if !force && s.cache != nil {
+		if cached, ok := s.cache.grokCache.Load(account.ID); ok {
+			if entry, ok := cached.(*grokUsageCache); ok && entry != nil && entry.usageInfo != nil {
+				if time.Since(entry.timestamp) < grokUsageCacheTTL {
+					usage := cloneGrokUsageInfo(entry.usageInfo)
+					recalcGrokRemainingSeconds(usage)
+					return usage, nil
+				}
+			}
+		}
+	}
+
+	flightKey := fmt.Sprintf("grok-usage:%d", account.ID)
+	result, err, _ := s.cacheGrokFlight().Do(flightKey, func() (any, error) {
+		if !force && s.cache != nil {
+			if cached, ok := s.cache.grokCache.Load(account.ID); ok {
+				if entry, ok := cached.(*grokUsageCache); ok && entry != nil && entry.usageInfo != nil {
+					if time.Since(entry.timestamp) < grokUsageCacheTTL {
+						return cloneGrokUsageInfo(entry.usageInfo), nil
+					}
+				}
+			}
+		}
+		usage := s.buildGrokUsageInfo(ctx, account, force)
+		if s.cache != nil && usage != nil {
+			s.cache.grokCache.Store(account.ID, &grokUsageCache{
+				usageInfo: cloneGrokUsageInfo(usage),
+				timestamp: time.Now(),
+			})
+		}
+		return usage, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	usage, _ := result.(*UsageInfo)
+	if usage == nil {
 		now := time.Now()
 		return &UsageInfo{UpdatedAt: &now}, nil
 	}
-	usage := s.grokQuotaFetcher.BuildUsageInfo(account)
+	recalcGrokRemainingSeconds(usage)
+	return usage, nil
+}
+
+func (s *AccountUsageService) cacheGrokFlight() *singleflight.Group {
+	if s != nil && s.cache != nil {
+		return &s.cache.grokFlight
+	}
+	// No shared cache: use a throwaway group (no cross-request coalescing).
+	return new(singleflight.Group)
+}
+
+func (s *AccountUsageService) buildGrokUsageInfo(ctx context.Context, account *Account, force bool) *UsageInfo {
+	now := time.Now()
+	usage := &UsageInfo{Source: "active", UpdatedAt: &now}
+	if s.grokQuotaFetcher != nil {
+		usage = s.grokQuotaFetcher.BuildUsageInfo(account)
+		usage.Source = "active"
+		if usage.UpdatedAt == nil {
+			usage.UpdatedAt = &now
+		}
+	}
 	if usage.GrokQuotaSnapshotState == "" {
 		if usage.ErrorCode == "quota_unknown" {
 			usage.GrokQuotaSnapshotState = "unknown_until_first_response"
@@ -1644,30 +1750,240 @@ func (s *AccountUsageService) getGrokUsage(ctx context.Context, account *Account
 		}
 	}
 
-	if s.usageLogRepo != nil && account != nil {
-		if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, time.Now().Add(-7*24*time.Hour)); err == nil && stats != nil {
+	// Prefer persisted billing snapshot; actively refresh when forced or missing/stale.
+	billingSnap := grokBillingSnapshotFromExtra(account.Extra)
+	needFetch := force || billingSnap == nil || grokBillingSnapshotStale(billingSnap, now)
+	if needFetch && s.grokQuotaService != nil {
+		if fetched, err := s.grokQuotaService.FetchBilling(ctx, account.ID); err == nil && fetched != nil {
+			billingSnap = fetched
+			// Keep account.Extra in sync for subsequent passive reads in this process.
+			if account.Extra == nil {
+				account.Extra = map[string]any{}
+			}
+			account.Extra[grokBillingSnapshotExtraKey] = fetched
+		} else if err != nil && usage.Error == "" {
+			usage.Error = fmt.Sprintf("grok billing fetch failed: %v", err)
+			if strings.Contains(strings.ToLower(err.Error()), "401") ||
+				strings.Contains(strings.ToLower(err.Error()), "unauthenticated") ||
+				strings.Contains(strings.ToLower(err.Error()), "token") {
+				usage.NeedsReauth = true
+				usage.ErrorCode = "unauthenticated"
+			}
+		}
+	}
+
+	applyGrokBillingSnapshot(usage, billingSnap, now)
+
+	// Local Sub2API stats aligned to official weekly period when known; else rolling 7d.
+	windowStart := now.Add(-7 * 24 * time.Hour)
+	if usage.GrokBilling != nil && usage.GrokBilling.WeeklyPeriodStart != nil {
+		windowStart = *usage.GrokBilling.WeeklyPeriodStart
+	} else if usage.SevenDay != nil && usage.SevenDay.ResetsAt != nil {
+		// If we only know end, approximate start as end-7d for local aggregation.
+		windowStart = usage.SevenDay.ResetsAt.Add(-7 * 24 * time.Hour)
+	}
+	if s.usageLogRepo != nil {
+		if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, windowStart); err == nil && stats != nil {
+			ws := windowStatsFromAccountStats(stats)
+			usage.GrokLocalUsage = ws
 			if usage.SevenDay == nil {
 				usage.SevenDay = &UsageProgress{Utilization: 0}
 			}
-			usage.SevenDay.WindowStats = windowStatsFromAccountStats(stats)
+			usage.SevenDay.WindowStats = ws
 		}
 	}
-	if account != nil {
+
+	// Legacy rate-limit header snapshot may still supply seven_day if billing missing.
+	if usage.SevenDay == nil || (usage.SevenDay.Utilization == 0 && usage.SevenDay.ResetsAt == nil) {
 		if snapshot, err := grokQuotaSnapshotFromExtra(account.Extra); err == nil {
 			if progress := grokQuotaSnapshotSevenDayProgress(snapshot); progress != nil {
 				if usage.SevenDay == nil {
 					usage.SevenDay = progress
 				} else {
-					usage.SevenDay.Utilization = progress.Utilization
-					usage.SevenDay.ResetsAt = progress.ResetsAt
-					usage.SevenDay.RemainingSeconds = progress.RemainingSeconds
+					if usage.SevenDay.Utilization == 0 {
+						usage.SevenDay.Utilization = progress.Utilization
+					}
+					if usage.SevenDay.ResetsAt == nil {
+						usage.SevenDay.ResetsAt = progress.ResetsAt
+						usage.SevenDay.RemainingSeconds = progress.RemainingSeconds
+					}
 				}
 			}
 		}
 	}
 
 	enrichUsageWithAccountError(usage, account)
-	return usage, nil
+	return usage
+}
+
+func grokBillingSnapshotStale(snap *xai.BillingSnapshot, now time.Time) bool {
+	if snap == nil {
+		return true
+	}
+	if strings.TrimSpace(snap.UpdatedAt) == "" {
+		return true
+	}
+	t, err := time.Parse(time.RFC3339, snap.UpdatedAt)
+	if err != nil {
+		t2, err2 := time.Parse(time.RFC3339Nano, snap.UpdatedAt)
+		if err2 != nil {
+			return true
+		}
+		t = t2
+	}
+	return now.Sub(t) > grokUsageCacheTTL
+}
+
+func grokBillingSnapshotFromExtra(extra map[string]any) *xai.BillingSnapshot {
+	if extra == nil {
+		return nil
+	}
+	raw, ok := extra[grokBillingSnapshotExtraKey]
+	if !ok || raw == nil {
+		return nil
+	}
+	switch v := raw.(type) {
+	case *xai.BillingSnapshot:
+		return v
+	case xai.BillingSnapshot:
+		return &v
+	default:
+		data, err := json.Marshal(raw)
+		if err != nil {
+			return nil
+		}
+		var out xai.BillingSnapshot
+		if err := json.Unmarshal(data, &out); err != nil {
+			return nil
+		}
+		return &out
+	}
+}
+
+func applyGrokBillingSnapshot(usage *UsageInfo, snap *xai.BillingSnapshot, now time.Time) {
+	if usage == nil || snap == nil {
+		return
+	}
+	if usage.UpdatedAt == nil {
+		if t, err := time.Parse(time.RFC3339, snap.UpdatedAt); err == nil {
+			usage.UpdatedAt = &t
+		}
+	}
+	if snap.SubscriptionTier != "" {
+		usage.SubscriptionTier = snap.SubscriptionTier
+		usage.SubscriptionTierRaw = snap.SubscriptionTier
+	}
+	if snap.FetchError != "" && usage.Error == "" && snap.Credits == nil && snap.Monthly == nil {
+		usage.Error = snap.FetchError
+	}
+
+	billing := &GrokBillingInfo{}
+	hasBilling := false
+
+	if snap.Credits != nil {
+		hasBilling = true
+		start, end := xai.WeeklyPeriodBounds(snap.Credits)
+		billing.WeeklyPeriodStart = start
+		billing.WeeklyPeriodEnd = end
+		billing.PrepaidBalance = xai.Money(snap.Credits.PrepaidBalance)
+		billing.OnDemandCap = xai.Money(snap.Credits.OnDemandCap)
+		billing.OnDemandUsed = xai.Money(snap.Credits.OnDemandUsed)
+		billing.TopUpMethod = snap.Credits.TopUpMethod
+		billing.IsUnifiedBillingUser = snap.Credits.IsUnifiedBillingUser
+
+		seven := &UsageProgress{
+			Utilization: xai.WeeklyUtilization(snap.Credits),
+			ResetsAt:    end,
+		}
+		if end != nil {
+			if sec := int(end.Sub(now).Seconds()); sec > 0 {
+				seven.RemainingSeconds = sec
+			}
+		}
+		// Preserve any local window_stats already attached.
+		if usage.SevenDay != nil {
+			seven.WindowStats = usage.SevenDay.WindowStats
+		}
+		usage.SevenDay = seven
+	}
+
+	if snap.Monthly != nil {
+		hasBilling = true
+		billing.MonthlyLimit = xai.Money(snap.Monthly.MonthlyLimit)
+		billing.MonthlyUsed = xai.Money(snap.Monthly.Used)
+		if billing.OnDemandCap == 0 {
+			billing.OnDemandCap = xai.Money(snap.Monthly.OnDemandCap)
+		}
+		if start, err := xai.ParseRFC3339Flexible(snap.Monthly.BillingPeriodStart); err == nil {
+			billing.MonthlyPeriodStart = start
+		}
+		end := xai.MonthlyPeriodEnd(snap.Monthly)
+		billing.MonthlyPeriodEnd = end
+		thirty := &UsageProgress{
+			Utilization: xai.MonthlyUtilization(snap.Monthly),
+			ResetsAt:    end,
+		}
+		if end != nil {
+			if sec := int(end.Sub(now).Seconds()); sec > 0 {
+				thirty.RemainingSeconds = sec
+			}
+		}
+		usage.ThirtyDay = thirty
+	}
+
+	if hasBilling {
+		usage.GrokBilling = billing
+		// Clear "unknown until first response" once official billing is present.
+		if usage.ErrorCode == "quota_unknown" && (usage.SevenDay != nil || usage.ThirtyDay != nil) {
+			usage.ErrorCode = ""
+			if strings.Contains(strings.ToLower(usage.Error), "unknown until") ||
+				strings.Contains(strings.ToLower(usage.Error), "no xai quota headers") {
+				usage.Error = ""
+			}
+		}
+	}
+}
+
+func recalcGrokRemainingSeconds(info *UsageInfo) {
+	if info == nil {
+		return
+	}
+	now := time.Now()
+	for _, progress := range []*UsageProgress{info.SevenDay, info.ThirtyDay} {
+		if progress == nil || progress.ResetsAt == nil {
+			continue
+		}
+		sec := int(progress.ResetsAt.Sub(now).Seconds())
+		if sec < 0 {
+			sec = 0
+		}
+		progress.RemainingSeconds = sec
+	}
+}
+
+func cloneGrokUsageInfo(src *UsageInfo) *UsageInfo {
+	if src == nil {
+		return nil
+	}
+	// Shallow copy is enough for cache isolation of top-level pointers we mutate (remaining_seconds).
+	cp := *src
+	if src.SevenDay != nil {
+		seven := *src.SevenDay
+		cp.SevenDay = &seven
+	}
+	if src.ThirtyDay != nil {
+		thirty := *src.ThirtyDay
+		cp.ThirtyDay = &thirty
+	}
+	if src.GrokBilling != nil {
+		billing := *src.GrokBilling
+		cp.GrokBilling = &billing
+	}
+	if src.GrokLocalUsage != nil {
+		local := *src.GrokLocalUsage
+		cp.GrokLocalUsage = &local
+	}
+	return &cp
 }
 
 func grokQuotaSnapshotSevenDayProgress(snapshot *xai.QuotaSnapshot) *UsageProgress {

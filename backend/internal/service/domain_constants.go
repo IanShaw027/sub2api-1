@@ -552,6 +552,10 @@ const (
 	SettingKeyEnableMetadataPassthrough = "enable_metadata_passthrough"
 	// SettingKeyClaudeTelemetryMode 控制 Claude Code 遥测处理：drop=直接 200 丢弃，forward=清洗后代发。
 	SettingKeyClaudeTelemetryMode = "claude_telemetry_mode"
+	// SettingKeyGrokDefaultBaseURLMode 控制 Grok 账号未显式配置 base_url 时的默认上游：
+	// api=https://api.x.ai/v1（官方 Public API），cli=https://cli-chat-proxy.grok.com/v1（Grok Build CLI）。
+	// 账号 credentials.base_url 非空时始终优先账号配置。billing/usage 仍固定走 CLI proxy。
+	SettingKeyGrokDefaultBaseURLMode = "grok_default_base_url_mode"
 	// Gateway debug timeline settings are DB-backed runtime controls for
 	// detailed per-request trace logs. Defaults are disabled and bounded.
 	SettingKeyGatewayDebugTimelineEnabled       = "gateway_debug_timeline_enabled"

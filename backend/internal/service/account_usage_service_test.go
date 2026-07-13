@@ -78,9 +78,9 @@ func TestAccountUsageService_GetGrokUsageShowsSevenDayRatioAndBillingStats(t *te
 			UserCost:     2.34,
 		},
 	}
-	svc := &AccountUsageService{usageLogRepo: repo, grokQuotaFetcher: NewGrokQuotaFetcher()}
+	svc := &AccountUsageService{usageLogRepo: repo, grokQuotaFetcher: NewGrokQuotaFetcher(), cache: NewUsageCache()}
 
-	usage, err := svc.getGrokUsage(context.Background(), account)
+	usage, err := svc.getGrokUsage(context.Background(), account, false)
 
 	if err != nil {
 		t.Fatalf("getGrokUsage() error = %v", err)
@@ -103,8 +103,8 @@ func TestAccountUsageService_GetGrokUsageShowsSevenDayRatioAndBillingStats(t *te
 	if usage.SevenDay.WindowStats.Cost != 1.23 || usage.SevenDay.WindowStats.UserCost != 2.34 {
 		t.Fatalf("seven_day billing stats = %+v, want account=1.23 user=2.34", usage.SevenDay.WindowStats)
 	}
-	if usage.GrokLocalUsage != nil {
-		t.Fatalf("grok_local_usage should not drive the Grok usage window, got %+v", usage.GrokLocalUsage)
+	if usage.GrokLocalUsage == nil || usage.GrokLocalUsage.Requests != 7 {
+		t.Fatalf("grok_local_usage = %+v, want requests=7 aligned to weekly window", usage.GrokLocalUsage)
 	}
 	if repo.requestedAccountID != account.ID {
 		t.Fatalf("GetAccountWindowStats account id = %d, want %d", repo.requestedAccountID, account.ID)
@@ -126,9 +126,9 @@ func TestAccountUsageService_GetGrokUsageWithoutQuotaSnapshotDoesNotPanic(t *tes
 	repo := &grokSevenDayUsageRepoStub{
 		windowStats: &usagestats.AccountStats{Requests: 3, Tokens: 300},
 	}
-	svc := &AccountUsageService{usageLogRepo: repo, grokQuotaFetcher: NewGrokQuotaFetcher()}
+	svc := &AccountUsageService{usageLogRepo: repo, grokQuotaFetcher: NewGrokQuotaFetcher(), cache: NewUsageCache()}
 
-	usage, err := svc.getGrokUsage(context.Background(), account)
+	usage, err := svc.getGrokUsage(context.Background(), account, false)
 
 	if err != nil {
 		t.Fatalf("getGrokUsage() error = %v", err)
@@ -141,6 +141,77 @@ func TestAccountUsageService_GetGrokUsageWithoutQuotaSnapshotDoesNotPanic(t *tes
 	}
 	if usage.SevenDay.WindowStats.Requests != 3 || usage.SevenDay.WindowStats.Tokens != 300 {
 		t.Fatalf("seven_day window stats = %+v, want requests=3 tokens=300", usage.SevenDay.WindowStats)
+	}
+}
+
+func TestAccountUsageService_GetGrokUsageAppliesOfficialBillingSnapshot(t *testing.T) {
+	t.Parallel()
+
+	weekStart := time.Now().UTC().Add(-3 * 24 * time.Hour).Truncate(time.Second)
+	weekEnd := weekStart.Add(7 * 24 * time.Hour)
+	monthEnd := time.Date(weekStart.Year(), weekStart.Month()+1, 1, 0, 0, 0, 0, time.UTC)
+	account := &Account{
+		ID:       7044,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			grokBillingSnapshotExtraKey: &xai.BillingSnapshot{
+				UpdatedAt:        time.Now().UTC().Format(time.RFC3339),
+				SubscriptionTier: "GrokPro",
+				Credits: &xai.CreditsBillingConfig{
+					CurrentPeriod: &xai.UsagePeriod{
+						Type:  "USAGE_PERIOD_TYPE_WEEKLY",
+						Start: weekStart.Format(time.RFC3339Nano),
+						End:   weekEnd.Format(time.RFC3339Nano),
+					},
+					CreditUsagePercent:   55,
+					PrepaidBalance:       &xai.MoneyVal{Val: 12},
+					OnDemandCap:          &xai.MoneyVal{Val: 100},
+					OnDemandUsed:         &xai.MoneyVal{Val: 5},
+					IsUnifiedBillingUser: true,
+				},
+				Monthly: &xai.MonthlyBillingConfig{
+					MonthlyLimit:       &xai.MoneyVal{Val: 15000},
+					Used:               &xai.MoneyVal{Val: 2192},
+					BillingPeriodEnd:   monthEnd.Format(time.RFC3339),
+					BillingPeriodStart: time.Date(weekStart.Year(), weekStart.Month(), 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339),
+				},
+			},
+		},
+	}
+	repo := &grokSevenDayUsageRepoStub{
+		windowStats: &usagestats.AccountStats{Requests: 9, Tokens: 900, UserCost: 1.5},
+	}
+	svc := &AccountUsageService{usageLogRepo: repo, grokQuotaFetcher: NewGrokQuotaFetcher(), cache: NewUsageCache()}
+
+	usage, err := svc.getGrokUsage(context.Background(), account, false)
+	if err != nil {
+		t.Fatalf("getGrokUsage() error = %v", err)
+	}
+	if usage.SevenDay == nil || usage.SevenDay.Utilization != 55 {
+		t.Fatalf("seven_day = %+v, want utilization 55", usage.SevenDay)
+	}
+	if usage.SevenDay.ResetsAt == nil || !usage.SevenDay.ResetsAt.Equal(weekEnd) {
+		t.Fatalf("seven_day resets_at = %v, want %v", usage.SevenDay.ResetsAt, weekEnd)
+	}
+	if usage.ThirtyDay == nil || usage.ThirtyDay.Utilization < 14 || usage.ThirtyDay.Utilization > 15 {
+		t.Fatalf("thirty_day = %+v, want ~14.6%%", usage.ThirtyDay)
+	}
+	if usage.GrokBilling == nil || usage.GrokBilling.MonthlyUsed != 2192 || usage.GrokBilling.MonthlyLimit != 15000 {
+		t.Fatalf("grok_billing = %+v", usage.GrokBilling)
+	}
+	if usage.GrokBilling.PrepaidBalance != 12 || usage.GrokBilling.OnDemandCap != 100 {
+		t.Fatalf("grok_billing balance fields = %+v", usage.GrokBilling)
+	}
+	if usage.SubscriptionTier != "GrokPro" {
+		t.Fatalf("subscription_tier = %q, want GrokPro", usage.SubscriptionTier)
+	}
+	// Local stats window must align to official weekly period start.
+	if !repo.requestedStart.Equal(weekStart) && repo.requestedStart.Sub(weekStart).Abs() > time.Second {
+		t.Fatalf("window start = %v, want official weekly start %v", repo.requestedStart, weekStart)
+	}
+	if usage.GrokLocalUsage == nil || usage.GrokLocalUsage.Requests != 9 {
+		t.Fatalf("grok_local_usage = %+v, want requests=9", usage.GrokLocalUsage)
 	}
 }
 

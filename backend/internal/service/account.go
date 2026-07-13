@@ -1565,12 +1565,22 @@ func (a *Account) GetOpenAIRefreshToken() string {
 }
 
 func (a *Account) GetGrokBaseURL() string {
-	if !a.IsGrok() {
+	return a.GetGrokBaseURLOr(xai.DefaultBaseURL)
+}
+
+// GetGrokBaseURLOr returns credentials.base_url when set; otherwise defaultBaseURL
+// (falling back to the official Public API host when defaultBaseURL is empty).
+// System gateway setting "grok_default_base_url_mode" should be passed as defaultBaseURL
+// via SettingService.ResolveGrokBaseURL so operators can switch api.x.ai vs cli-chat-proxy.
+func (a *Account) GetGrokBaseURLOr(defaultBaseURL string) string {
+	if a == nil || !a.IsGrok() {
 		return ""
 	}
-	baseURL := a.GetCredential("base_url")
-	if baseURL != "" {
+	if baseURL := strings.TrimSpace(a.GetCredential("base_url")); baseURL != "" {
 		return baseURL
+	}
+	if strings.TrimSpace(defaultBaseURL) != "" {
+		return strings.TrimRight(strings.TrimSpace(defaultBaseURL), "/")
 	}
 	return xai.DefaultBaseURL
 }

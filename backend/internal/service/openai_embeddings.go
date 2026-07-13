@@ -371,7 +371,16 @@ func (s *OpenAIGatewayService) ForwardVideos(
 	if err != nil {
 		return nil, fmt.Errorf("get access token for video: %w", err)
 	}
-	baseURL := account.GetGrokBaseURL()
+	// Grok video generations always target official api.x.ai Imagine endpoints.
+	baseURL := xai.DefaultBaseURL
+	if s != nil && s.settingService != nil {
+		baseURL = s.settingService.ResolveGrokMediaBaseURL(ctx, account)
+	} else if account != nil {
+		baseURL = account.GetGrokBaseURLOr(xai.DefaultBaseURL)
+		if isGrokCLIChatProxyBaseURL(baseURL) {
+			baseURL = xai.DefaultBaseURL
+		}
+	}
 	if token == "" {
 		return nil, fmt.Errorf("account %d missing token for video generation", account.ID)
 	}

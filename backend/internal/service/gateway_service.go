@@ -4408,7 +4408,11 @@ func (s *GatewayService) DoGrokNativeResponsesJSON(ctx context.Context, c *gin.C
 		return nil, fmt.Errorf("get grok token: %w", err)
 	}
 	// GetGrokBaseURL already includes /v1; BuildResponsesURL appends /responses only.
-	targetURL, err := xai.BuildResponsesURL(account.GetGrokBaseURL())
+	baseURL := account.GetGrokBaseURL()
+	if s != nil && s.settingService != nil {
+		baseURL = s.settingService.ResolveGrokBaseURL(ctx, account)
+	}
+	targetURL, err := xai.BuildResponsesURL(baseURL)
 	if err != nil {
 		return nil, err
 	}

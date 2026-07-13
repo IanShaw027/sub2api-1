@@ -399,7 +399,7 @@ func TestBuildGrokResponsesRequestUsesAccountBaseURLAndBearerToken(t *testing.T)
 		},
 	}
 
-	req, err := buildGrokResponsesRequest(context.Background(), nil, account, []byte(`{"model":"grok-4.3"}`), "access-token")
+	req, err := buildGrokResponsesRequest(context.Background(), nil, account, []byte(`{"model":"grok-4.3"}`), "access-token", nil)
 	require.NoError(t, err)
 	require.Equal(t, http.MethodPost, req.Method)
 	require.Equal(t, "https://xai.test/v1/responses", req.URL.String())
@@ -426,7 +426,7 @@ func TestBuildGrokResponsesRequestIsolatesXGrokConversationIDByAPIKey(t *testing
 		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 		c.Request.Header.Set("x-grok-conv-id", "shared-conversation")
 		c.Set("api_key", &APIKey{ID: apiKeyID, Group: &Group{Platform: PlatformGrok}})
-		req, err := buildGrokResponsesRequest(context.Background(), c, account, []byte(`{"model":"grok-4.3"}`), "access-token")
+		req, err := buildGrokResponsesRequest(context.Background(), c, account, []byte(`{"model":"grok-4.3"}`), "access-token", nil)
 		require.NoError(t, err)
 		return req
 	}
@@ -449,7 +449,7 @@ func TestBuildGrokResponsesRequestRejectsUnsafeAccountBaseURL(t *testing.T) {
 		},
 	}
 
-	_, err := buildGrokResponsesRequest(context.Background(), nil, account, []byte(`{"model":"grok-4.3"}`), "access-token")
+	_, err := buildGrokResponsesRequest(context.Background(), nil, account, []byte(`{"model":"grok-4.3"}`), "access-token", nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid base url")
 }
