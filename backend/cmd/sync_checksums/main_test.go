@@ -12,11 +12,19 @@ import (
 func TestShouldSyncMigrationChecksum(t *testing.T) {
 	t.Parallel()
 
-	require.True(t, shouldSyncMigrationChecksum("054_drop_legacy_cache_columns.sql"))
-	require.True(t, shouldSyncMigrationChecksum("199_batch_image_idempotency_unique.sql"))
-	require.False(t, shouldSyncMigrationChecksum("001_init.sql"))
-	require.False(t, shouldSyncMigrationChecksum("unknown_migration.sql"))
-	require.False(t, shouldSyncMigrationChecksum(""))
+	require.True(t, shouldSyncMigrationChecksum(
+		"195_add_invoice_order_active_unique_guard.sql",
+		"a775587a040b17780ed37e5fe8efcf223de52263f1f75a5bb4b7c1f6af0b7a99",
+		"ddeda6f9fcf3063d9e7fcefbd308e9bc8539a938baa3ca784a30970acbccbe92",
+	))
+	require.False(t, shouldSyncMigrationChecksum(
+		"195_add_invoice_order_active_unique_guard.sql",
+		"unknown-db-checksum",
+		"ddeda6f9fcf3063d9e7fcefbd308e9bc8539a938baa3ca784a30970acbccbe92",
+	))
+	require.False(t, shouldSyncMigrationChecksum("001_init.sql", "old", "new"))
+	require.False(t, shouldSyncMigrationChecksum("unknown_migration.sql", "old", "new"))
+	require.False(t, shouldSyncMigrationChecksum("", "old", "new"))
 }
 
 func TestSyncDatabaseChecksumsUsesTransaction(t *testing.T) {
@@ -26,7 +34,7 @@ func TestSyncDatabaseChecksumsUsesTransaction(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE schema_migrations SET checksum = \$1 WHERE filename = \$2`).
-		WithArgs("new-checksum", "054_drop_legacy_cache_columns.sql").
+		WithArgs("82de761156e03876653e7a6a4eee883cd927847036f779b0b9f34c42a8af7a7d", "054_drop_legacy_cache_columns.sql").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
@@ -34,11 +42,11 @@ func TestSyncDatabaseChecksumsUsesTransaction(t *testing.T) {
 		context.Background(),
 		db,
 		[]migrationChecksum{
-			{Filename: "054_drop_legacy_cache_columns.sql", Checksum: "new-checksum"},
+			{Filename: "054_drop_legacy_cache_columns.sql", Checksum: "82de761156e03876653e7a6a4eee883cd927847036f779b0b9f34c42a8af7a7d"},
 			{Filename: "002_same.sql", Checksum: "same-checksum"},
 		},
 		map[string]string{
-			"054_drop_legacy_cache_columns.sql": "old-checksum",
+			"054_drop_legacy_cache_columns.sql": "182c193f3359946cf094090cd9e57d5c3fd9abaffbc1e8fc378646b8a6fa12b4",
 			"002_same.sql":                      "same-checksum",
 		},
 	)
@@ -53,11 +61,11 @@ func TestSyncDatabaseChecksumsSkipsNonAllowlistedMismatches(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
-	// Only the allowlisted migration should be rewritten; arbitrary mismatches
-	// must be skipped even when DEPLOY_SYNC_SCHEMA_CHECKSUMS is opted in.
+	// Only the exact known checksum pair should be rewritten; arbitrary
+	// mismatches must be skipped even for a migration with compatibility rules.
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE schema_migrations SET checksum = \$1 WHERE filename = \$2`).
-		WithArgs("new-allowlisted", "061_add_usage_log_request_type.sql").
+		WithArgs("66207e7aa5dd0429c2e2c0fabdaf79783ff157fa0af2e81adff2ee03790ec65c", "061_add_usage_log_request_type.sql").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
@@ -66,13 +74,15 @@ func TestSyncDatabaseChecksumsSkipsNonAllowlistedMismatches(t *testing.T) {
 		db,
 		[]migrationChecksum{
 			{Filename: "001_init.sql", Checksum: "new-init"},
-			{Filename: "061_add_usage_log_request_type.sql", Checksum: "new-allowlisted"},
+			{Filename: "061_add_usage_log_request_type.sql", Checksum: "66207e7aa5dd0429c2e2c0fabdaf79783ff157fa0af2e81adff2ee03790ec65c"},
+			{Filename: "195_add_invoice_order_active_unique_guard.sql", Checksum: "ddeda6f9fcf3063d9e7fcefbd308e9bc8539a938baa3ca784a30970acbccbe92"},
 			{Filename: "999_unrelated.sql", Checksum: "new-unrelated"},
 		},
 		map[string]string{
-			"001_init.sql":                     "old-init",
-			"061_add_usage_log_request_type.sql": "old-allowlisted",
-			"999_unrelated.sql":                "old-unrelated",
+			"001_init.sql":                                  "old-init",
+			"061_add_usage_log_request_type.sql":            "08a248652cbab7cfde147fc6ef8cda464f2477674e20b718312faa252e0481c0",
+			"195_add_invoice_order_active_unique_guard.sql": "unknown-old-checksum",
+			"999_unrelated.sql":                             "old-unrelated",
 		},
 	)
 
@@ -88,10 +98,10 @@ func TestSyncDatabaseChecksumsRollsBackOnUpdateError(t *testing.T) {
 
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE schema_migrations SET checksum = \$1 WHERE filename = \$2`).
-		WithArgs("new-1", "054_drop_legacy_cache_columns.sql").
+		WithArgs("82de761156e03876653e7a6a4eee883cd927847036f779b0b9f34c42a8af7a7d", "054_drop_legacy_cache_columns.sql").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`UPDATE schema_migrations SET checksum = \$1 WHERE filename = \$2`).
-		WithArgs("new-2", "061_add_usage_log_request_type.sql").
+		WithArgs("66207e7aa5dd0429c2e2c0fabdaf79783ff157fa0af2e81adff2ee03790ec65c", "061_add_usage_log_request_type.sql").
 		WillReturnError(errors.New("db update failed"))
 	mock.ExpectRollback()
 
@@ -99,12 +109,12 @@ func TestSyncDatabaseChecksumsRollsBackOnUpdateError(t *testing.T) {
 		context.Background(),
 		db,
 		[]migrationChecksum{
-			{Filename: "054_drop_legacy_cache_columns.sql", Checksum: "new-1"},
-			{Filename: "061_add_usage_log_request_type.sql", Checksum: "new-2"},
+			{Filename: "054_drop_legacy_cache_columns.sql", Checksum: "82de761156e03876653e7a6a4eee883cd927847036f779b0b9f34c42a8af7a7d"},
+			{Filename: "061_add_usage_log_request_type.sql", Checksum: "66207e7aa5dd0429c2e2c0fabdaf79783ff157fa0af2e81adff2ee03790ec65c"},
 		},
 		map[string]string{
-			"054_drop_legacy_cache_columns.sql": "old-1",
-			"061_add_usage_log_request_type.sql": "old-2",
+			"054_drop_legacy_cache_columns.sql":  "182c193f3359946cf094090cd9e57d5c3fd9abaffbc1e8fc378646b8a6fa12b4",
+			"061_add_usage_log_request_type.sql": "08a248652cbab7cfde147fc6ef8cda464f2477674e20b718312faa252e0481c0",
 		},
 	)
 

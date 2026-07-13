@@ -106,7 +106,7 @@ var migrationChecksumCompatibilityRules = map[string]migrationChecksumCompatibil
 	"185_expand_usage_log_request_type_check.sql":                             newMigrationChecksumCompatibilityRule("7bd5bbbc8ff72472958f6b86d6e02078409d65590057c5770afa8e890a930471", "641c9dd756f0174ac42741a810086971b9fd2cee631089a176d01db1273d851f"),
 	"187_allow_native_image_route_and_video_price_checks.sql":                 newMigrationChecksumCompatibilityRule("95b068111a938093d2dd0db20d9695c45231edf62b0fde2a671ccda1b399e988", "547c29809e0c72d00b9aebbbd792e718e677a4906e8e6cd744031aa15a021c14"),
 	"188_add_group_audio_search_price_checks.sql":                             newMigrationChecksumCompatibilityRule("483bb83fed29a0f571e5c8278bf8c070fdc8094c26170b7971d5d6ba521046bd", "e6cf495ea038076bc1f9d03b36eec81f6e517cfb81dbf346a4ef3d802f7e0be0"),
-	"195_add_invoice_order_active_unique_guard.sql":                           newMigrationChecksumCompatibilityRule("c5e9a08d3cd3370379b5e7be71692a286c75e5a55314d6eb660540c711e0b770", "a775587a040b17780ed37e5fe8efcf223de52263f1f75a5bb4b7c1f6af0b7a99"),
+	"195_add_invoice_order_active_unique_guard.sql":                           newMigrationChecksumCompatibilityRule("ddeda6f9fcf3063d9e7fcefbd308e9bc8539a938baa3ca784a30970acbccbe92", "a775587a040b17780ed37e5fe8efcf223de52263f1f75a5bb4b7c1f6af0b7a99", "c5e9a08d3cd3370379b5e7be71692a286c75e5a55314d6eb660540c711e0b770"),
 	"199_batch_image_idempotency_unique.sql":                                  newMigrationChecksumCompatibilityRule("522656bdbe527d30332718d52c51770085f32b842f5a4a7d18e755c9921b3598", "7b75bba89c5e33f996a6bdde61bec4751daf6c410cd9259e63a5b71829fe898b"),
 }
 
@@ -631,18 +631,6 @@ func checksumSet(values ...string) map[string]struct{} {
 	return out
 }
 
-// MigrationChecksumCompatibilityFilenames returns migration filenames that have
-// historical checksum-compatibility exceptions. Used by deploy tooling
-// (cmd/sync_checksums) so the allowlist is not duplicated outside this package.
-func MigrationChecksumCompatibilityFilenames() []string {
-	names := make([]string, 0, len(migrationChecksumCompatibilityRules))
-	for name := range migrationChecksumCompatibilityRules {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
-}
-
 func newMigrationChecksumCompatibilityRule(fileChecksum string, acceptedDBChecksums ...string) migrationChecksumCompatibilityRule {
 	return migrationChecksumCompatibilityRule{
 		fileChecksum:       fileChecksum,
@@ -662,6 +650,13 @@ func isMigrationChecksumCompatible(name, dbChecksum, fileChecksum string) bool {
 	}
 	_, fileOK := rule.acceptedChecksums[fileChecksum]
 	return fileOK
+}
+
+// IsMigrationChecksumCompatible reports whether an exact database/file checksum
+// pair is a known historical migration edit. Deploy tooling uses the same
+// rules as startup validation so checksum rewrites cannot broaden compatibility.
+func IsMigrationChecksumCompatible(name, dbChecksum, fileChecksum string) bool {
+	return isMigrationChecksumCompatible(name, dbChecksum, fileChecksum)
 }
 
 func validateMigrationExecutionMode(name, content string) (bool, error) {

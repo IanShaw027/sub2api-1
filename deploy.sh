@@ -530,9 +530,9 @@ if [ $BACKUP_WAIT_COUNT -gt 0 ]; then
     echo "✓ 备份已完成"
 fi
 
-# 停服前备份数据库校验和，供部署失败回滚使用。默认不改写 schema_migrations；
-# 如需手动兼容历史误改迁移，显式设置 DEPLOY_SYNC_SCHEMA_CHECKSUMS=1。
-echo "🔄 备份数据库校验和..."
+# 停服前备份并同步已知兼容迁移的数据库校验和，失败时不影响当前服务。
+# sync_checksums 只会改写与 repository 精确兼容规则匹配的 checksum 对。
+echo "🔄 备份并同步数据库校验和..."
 CONFIG_FILE="$(find_config_file || true)"
 if [ -z "$CONFIG_FILE" ]; then
     echo "❌ 未找到 config.yaml，尝试过 /etc/sub2api/config.yaml、$REPO_ROOT/config.yaml、$REPO_ROOT/data/config.yaml" >&2
@@ -542,14 +542,8 @@ fi
 echo "   使用配置文件: $CONFIG_FILE"
 DATABASE_DSN="$(build_database_dsn "$CONFIG_FILE")"
 CHECKSUM_BACKUP_PATH="$CACHE_DIR/schema-migrations.$DEPLOY_RUN_ID.json"
-if [ "${DEPLOY_SYNC_SCHEMA_CHECKSUMS:-0}" = "1" ]; then
-    echo "⚠️  DEPLOY_SYNC_SCHEMA_CHECKSUMS=1，正在改写 schema_migrations checksum"
-    SUB2API_DATABASE_DSN="$DATABASE_DSN" go run ./cmd/sync_checksums --backup-file "$CHECKSUM_BACKUP_PATH"
-    echo "✓ 数据库校验和同步完成"
-else
-    SUB2API_DATABASE_DSN="$DATABASE_DSN" go run ./cmd/sync_checksums --backup-file "$CHECKSUM_BACKUP_PATH" --backup-only
-    echo "✓ 数据库校验和备份完成（未改写 schema_migrations）"
-fi
+SUB2API_DATABASE_DSN="$DATABASE_DSN" go run ./cmd/sync_checksums --backup-file "$CHECKSUM_BACKUP_PATH"
+echo "✓ 数据库校验和备份及同步完成"
 
 BACKUP_BINARY_PATH=""
 if [ "$NEED_BACKEND_BUILD" -eq 1 ]; then

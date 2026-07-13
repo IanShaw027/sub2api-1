@@ -25,21 +25,10 @@ type migrationChecksum struct {
 	Checksum string
 }
 
-// shouldSyncMigrationChecksum reports whether a mismatched DB checksum may be
-// rewritten to the embedded file checksum. Only migrations with historical
-// compatibility exceptions (single source: repository rules) are eligible.
-func shouldSyncMigrationChecksum(filename string) bool {
-	_, ok := checksumSyncAllowlist()[filename]
-	return ok
-}
-
-func checksumSyncAllowlist() map[string]struct{} {
-	names := repository.MigrationChecksumCompatibilityFilenames()
-	out := make(map[string]struct{}, len(names))
-	for _, name := range names {
-		out[name] = struct{}{}
-	}
-	return out
+// shouldSyncMigrationChecksum only allows exact checksum pairs already accepted
+// by startup migration validation.
+func shouldSyncMigrationChecksum(filename, dbChecksum, fileChecksum string) bool {
+	return repository.IsMigrationChecksumCompatible(filename, dbChecksum, fileChecksum)
 }
 
 func main() {
@@ -217,8 +206,8 @@ func syncDatabaseChecksums(ctx context.Context, db *sql.DB, fileChecksums []migr
 		if !ok || dbChecksum == item.Checksum {
 			continue
 		}
-		if !shouldSyncMigrationChecksum(item.Filename) {
-			fmt.Printf("skipped %s (not in checksum sync allowlist; refusing to rewrite arbitrary mismatch)\n", item.Filename)
+		if !shouldSyncMigrationChecksum(item.Filename, dbChecksum, item.Checksum) {
+			fmt.Printf("skipped %s (checksum pair is not an approved compatibility rule; refusing to rewrite arbitrary mismatch)\n", item.Filename)
 			continue
 		}
 		if _, err := tx.ExecContext(ctx,

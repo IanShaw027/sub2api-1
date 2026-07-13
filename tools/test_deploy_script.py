@@ -419,7 +419,7 @@ class DeployScriptTest(unittest.TestCase):
         self.assertNotIn("pnpm build", log)
         self.assertNotIn("go build", log)
         self.assertIn("go run ./cmd/sync_checksums --backup-file", log)
-        self.assertIn("--backup-only", log)
+        self.assertNotIn("--backup-only", log)
         self.assertIn("systemctl restart sub2api-test", log)
         self.assertNotIn("systemctl stop", log)
         self.assertNotIn("systemctl start", log)
@@ -452,7 +452,7 @@ class DeployScriptTest(unittest.TestCase):
         self.assertIn("pnpm build", log_lines)
         self.assertTrue(any(line.startswith("go build ") for line in log_lines), log_lines)
         sync_index = next(
-            i for i, line in enumerate(log_lines) if line.startswith("go run ./cmd/sync_checksums --backup-file ") and line.endswith(" --backup-only")
+            i for i, line in enumerate(log_lines) if line.startswith("go run ./cmd/sync_checksums --backup-file ")
         )
         self.assertNotIn("go clean clean -cache", log_lines)
         restart_index = log_lines.index("systemctl restart sub2api-test")
@@ -486,7 +486,8 @@ class DeployScriptTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         log_lines = self.log_path.read_text(encoding="utf-8").splitlines()
         self.assertEqual(log_lines.count("systemctl restart sub2api-test"), 3, log_lines)
-        self.assertTrue(any(line.startswith("go run ./cmd/sync_checksums --backup-file ") and line.endswith(" --backup-only") for line in log_lines), log_lines)
+        self.assertTrue(any(line.startswith("go run ./cmd/sync_checksums --backup-file ") for line in log_lines), log_lines)
+        self.assertFalse(any(line.endswith(" --backup-only") for line in log_lines), log_lines)
         self.assertTrue(any(line.startswith("go run ./cmd/sync_checksums --restore-file ") for line in log_lines), log_lines)
         self.assertIn("version=old commit=old", old_binary.read_text(encoding="utf-8"))
 
@@ -581,18 +582,21 @@ class DeployScriptTest(unittest.TestCase):
         log_lines = self.log_path.read_text(encoding="utf-8").splitlines()
         self.assertNotIn("go build", "\n".join(log_lines))
         self.assertEqual(log_lines.count("systemctl restart sub2api-test"), 3, log_lines)
-        self.assertTrue(any(line.startswith("go run ./cmd/sync_checksums --backup-file ") and line.endswith(" --backup-only") for line in log_lines), log_lines)
+        self.assertTrue(any(line.startswith("go run ./cmd/sync_checksums --backup-file ") for line in log_lines), log_lines)
+        self.assertFalse(any(line.endswith(" --backup-only") for line in log_lines), log_lines)
         self.assertTrue(any(line.startswith("go run ./cmd/sync_checksums --restore-file ") for line in log_lines), log_lines)
 
-    def test_checksum_sync_requires_explicit_opt_in(self) -> None:
-        result = self.run_deploy({"DEPLOY_SYNC_SCHEMA_CHECKSUMS": "1"})
+    def test_checksum_sync_is_default_before_restart(self) -> None:
+        result = self.run_deploy()
 
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         log_lines = self.log_path.read_text(encoding="utf-8").splitlines()
         sync_lines = [line for line in log_lines if line.startswith("go run ./cmd/sync_checksums --backup-file ")]
         self.assertEqual(len(sync_lines), 1, log_lines)
         self.assertNotIn("--backup-only", sync_lines[0])
-        self.assertIn("DEPLOY_SYNC_SCHEMA_CHECKSUMS=1", result.stdout)
+        restart_index = log_lines.index("systemctl restart sub2api-test")
+        self.assertLess(log_lines.index(sync_lines[0]), restart_index)
+        self.assertIn("数据库校验和备份及同步完成", result.stdout)
 
 
 if __name__ == "__main__":
