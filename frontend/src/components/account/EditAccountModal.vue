@@ -1451,14 +1451,10 @@
             v-model.number="form.concurrency"
             type="number"
             min="1"
-            :max="isGrokOAuthConcurrencyLocked ? 1 : undefined"
             class="input"
             data-testid="edit-account-concurrency"
             @input="clampFormConcurrency"
           />
-          <p v-if="isGrokOAuthConcurrencyLocked" class="input-hint">
-            {{ t('admin.accounts.grokOAuthConcurrencyHint', 'Grok OAuth concurrency is limited to 1 by default') }}
-          </p>
         </div>
         <div>
           <label class="input-label">{{ t('admin.accounts.loadFactor') }}</label>
@@ -2775,10 +2771,7 @@ import {
   buildModelMappingObject,
   isValidWildcardPattern
 } from '@/composables/useModelWhitelist'
-import {
-  isGrokOAuthConcurrency,
-  resolveAccountConcurrency
-} from '@/utils/accountConcurrency'
+import { resolveAccountConcurrency } from '@/utils/accountConcurrency'
 
 interface Props {
   show: boolean
@@ -3349,14 +3342,8 @@ const form = reactive({
   expires_at: null as number | null
 })
 
-const isGrokOAuthConcurrencyLocked = computed(
-  () => isGrokOAuthConcurrency(props.account?.platform || '', props.account?.type || ''),
-)
-
 const clampFormConcurrency = () => {
-  const platform = props.account?.platform || ''
-  const type = props.account?.type || ''
-  form.concurrency = resolveAccountConcurrency(platform, type, form.concurrency)
+  form.concurrency = resolveAccountConcurrency(form.concurrency)
 }
 
 const statusOptions = computed(() => {
@@ -3404,11 +3391,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   form.name = newAccount.name
   form.notes = newAccount.notes || ''
   form.proxy_id = newAccount.proxy_id
-  form.concurrency = resolveAccountConcurrency(
-    newAccount.platform,
-    newAccount.type,
-    newAccount.concurrency,
-  )
+  form.concurrency = resolveAccountConcurrency(newAccount.concurrency)
   form.load_factor = newAccount.load_factor ?? null
   form.priority = newAccount.priority
   form.rate_multiplier = newAccount.rate_multiplier ?? 1

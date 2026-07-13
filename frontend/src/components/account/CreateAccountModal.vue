@@ -2806,7 +2806,6 @@
             v-model.number="form.concurrency"
             type="number"
             min="1"
-            :max="isGrokOAuthConcurrencyLocked ? 1 : undefined"
             class="input"
             data-testid="account-form-concurrency"
             @input="clampFormConcurrency"
@@ -3813,7 +3812,7 @@ import {
 } from '@/components/account/credentialsBuilder'
 import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
-import { isGrokOAuthConcurrency, resolveAccountConcurrency } from '@/utils/accountConcurrency'
+import { resolveAccountConcurrency } from '@/utils/accountConcurrency'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
 import {
   OPENAI_WS_MODE_CTX_POOL,
@@ -4440,12 +4439,8 @@ const form = reactive({
   expires_at: null as number | null
 })
 
-const isGrokOAuthConcurrencyLocked = computed(
-  () => isGrokOAuthConcurrency(form.platform, form.type)
-)
-
 const clampFormConcurrency = () => {
-  form.concurrency = resolveAccountConcurrency(form.platform, form.type, form.concurrency)
+  form.concurrency = resolveAccountConcurrency(form.concurrency)
 }
 
 const translateWithFallback = (key: string, fallback: string) => {
@@ -4572,7 +4567,6 @@ watch(
     } else {
       form.type = 'apikey'
     }
-    // Re-clamp after type sync: switching Grok back to OAuth must force concurrency=1.
     clampFormConcurrency()
   },
   { immediate: true }
@@ -4636,7 +4630,6 @@ watch(
       accountCategory.value = 'oauth-based'
       addMethod.value = 'oauth'
       modelRestrictionMode.value = 'mapping'
-      form.concurrency = resolveAccountConcurrency('grok', 'oauth', form.concurrency)
       form.load_factor = null
     }
     if (newPlatform !== 'gemini' && newPlatform !== 'anthropic' && accountCategory.value === 'service_account') {
@@ -5008,11 +5001,7 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
 
 const finalizeCreateAccountPayload = (payload: CreateAccountRequest): CreateAccountRequest => ({
   ...payload,
-  concurrency: resolveAccountConcurrency(
-    payload.platform,
-    payload.type,
-    payload.concurrency ?? form.concurrency
-  ),
+  concurrency: resolveAccountConcurrency(payload.concurrency ?? form.concurrency),
   extra: buildTextEndpointAutoRouteExtra(payload.platform, payload.type, payload.extra as Record<string, unknown> | undefined)
 })
 
@@ -5053,7 +5042,7 @@ const resetForm = () => {
   form.type = 'oauth'
   form.credentials = {}
   form.proxy_id = null
-  form.concurrency = resolveAccountConcurrency(form.platform, form.type, 10)
+  form.concurrency = resolveAccountConcurrency(10)
   form.load_factor = null
   form.priority = 1
   form.rate_multiplier = 1

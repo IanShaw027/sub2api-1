@@ -307,6 +307,26 @@ function mountModal(account = buildAccount(), show = false) {
 }
 
 describe('EditAccountModal', () => {
+  it('uses the general concurrency behavior for Grok OAuth', async () => {
+    resetCommonMocks()
+    const account = {
+      ...buildAccount(),
+      name: 'Grok OAuth',
+      platform: 'grok',
+      type: 'oauth',
+      concurrency: 10
+    } as any
+    const wrapper = mountModal(account, true)
+    await flushPromises()
+
+    const concurrencyInput = wrapper.get('[data-testid="edit-account-concurrency"]')
+    expect(concurrencyInput.attributes('max')).toBeUndefined()
+    expect((wrapper.vm as any).form.concurrency).toBe(10)
+
+    await concurrencyInput.setValue(20)
+    expect((wrapper.vm as any).form.concurrency).toBe(20)
+  })
+
   it('mounts without initialization errors when initially opened for Kiro accounts', () => {
     resetCommonMocks()
     const account = {

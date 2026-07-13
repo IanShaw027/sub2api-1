@@ -169,7 +169,6 @@ func TestRuntimeSanityReportsSafeDefaults(t *testing.T) {
 	t.Setenv(EnvTokenURL, "")
 	t.Setenv(EnvRedirectURI, "")
 	t.Setenv(EnvAllowUnsafeURLOverrides, "")
-	t.Setenv(EnvUnsafeAllowHighConcurrency, "")
 
 	report := RuntimeSanity()
 	require.True(t, report.BaseURL.Valid)
@@ -179,7 +178,6 @@ func TestRuntimeSanityReportsSafeDefaults(t *testing.T) {
 	require.True(t, report.OAuthTokenURL.Valid)
 	require.True(t, report.OAuthRedirectURI.Valid)
 	require.False(t, report.UnsafeURLOverrides)
-	require.False(t, report.UnsafeHighConcurrency)
 	require.Equal(t, "responses_only", report.PublicGatewayScope)
 	require.Contains(t, report.ProxyPolicy, "account_proxy_optional")
 }

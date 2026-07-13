@@ -202,7 +202,6 @@ export interface GrokRuntimeSanityReport {
   oauth_token_url: GrokRuntimeSanityCheck
   oauth_redirect_uri: GrokRuntimeSanityCheck
   unsafe_url_overrides: boolean
-  unsafe_high_concurrency: boolean
   public_gateway_scope: string
   proxy_policy: string
 }

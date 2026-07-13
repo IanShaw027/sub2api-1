@@ -3289,68 +3289,11 @@ func (s *adminServiceImpl) GetAccountsByIDs(ctx context.Context, ids []int64) ([
 	return accounts, nil
 }
 
-func normalizeAccountConcurrency(platform, accountType string, concurrency int) int {
-	// Grok personal OAuth subscriptions are sensitive to multi-session load.
-	// Default to 1; higher values require an explicit unsafe env gate.
-	if platform == PlatformGrok && accountType == AccountTypeOAuth && concurrency <= 0 {
-		return 1
-	}
-	return concurrency
-}
-
-func validateGrokOAuthConcurrency(platform, accountType string, concurrency int) error {
-	if platform != PlatformGrok || accountType != AccountTypeOAuth {
-		return nil
-	}
-	if concurrency > 1 && !xai.AllowUnsafeHighConcurrency() {
-		return infraerrors.BadRequest(
-			"GROK_UNSAFE_CONCURRENCY",
-			"Grok OAuth concurrency > 1 requires XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE=1",
-		)
-	}
-	return nil
-}
-
-// normalizeAndValidateBulkConcurrency applies per-account concurrency normalization
-// and Grok OAuth unsafe-gate validation for bulk updates.
-//
-// Returns:
-//   - uniform value pointer when every targeted account normalizes to the same concurrency
-//     (safe to write via AccountBulkUpdate with a single column value)
-//   - (nil, nil) when normalized values differ across accounts (caller must update per-account)
-//   - error when any Grok OAuth account would violate the concurrency gate
-func normalizeAndValidateBulkConcurrency(accountByID map[int64]*Account, accountIDs []int64, concurrency int) (*int, error) {
-	var uniform *int
-	for _, accountID := range accountIDs {
-		account := accountByID[accountID]
-		if account == nil {
-			continue
-		}
-		normalized := normalizeAccountConcurrency(account.Platform, account.Type, concurrency)
-		if err := validateGrokOAuthConcurrency(account.Platform, account.Type, normalized); err != nil {
-			return nil, err
-		}
-		if uniform == nil {
-			value := normalized
-			uniform = &value
-			continue
-		}
-		if *uniform != normalized {
-			return nil, nil
-		}
-	}
-	return uniform, nil
-}
-
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
 	if input == nil {
 		return nil, fmt.Errorf("account input is required")
 	}
 	if err := validatePlatformAccountType(input.Platform, input.Type); err != nil {
-		return nil, err
-	}
-	input.Concurrency = normalizeAccountConcurrency(input.Platform, input.Type, input.Concurrency)
-	if err := validateGrokOAuthConcurrency(input.Platform, input.Type, input.Concurrency); err != nil {
 		return nil, err
 	}
 	if input.Platform == PlatformKiro && input.Type == AccountTypeOAuth {
@@ -3410,7 +3353,7 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 		Credentials: input.Credentials,
 		Extra:       input.Extra,
 		ProxyID:     input.ProxyID,
-		Concurrency: normalizeAccountConcurrency(input.Platform, input.Type, input.Concurrency),
+		Concurrency: input.Concurrency,
 		Priority:    input.Priority,
 		Status:      StatusActive,
 		Schedulable: true,
@@ -3601,11 +3544,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	// 只在指针非 nil 时更新 Concurrency（支持设置为 0）
 	if input.Concurrency != nil {
-		normalized := normalizeAccountConcurrency(account.Platform, account.Type, *input.Concurrency)
-		if err := validateGrokOAuthConcurrency(account.Platform, account.Type, normalized); err != nil {
-			return nil, err
-		}
-		account.Concurrency = normalized
+		account.Concurrency = *input.Concurrency
 	}
 	// 只在指针非 nil 时更新 Priority（支持设置为 0）
 	if input.Priority != nil {
@@ -3823,26 +3762,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		return nil, errors.New("load_factor must be <= 10000")
 	}
 
-	// Normalize + validate concurrency per account (Grok OAuth unsafe gate).
-	// Prefer failing the whole bulk request when any account would violate,
-	// consistent with other bulk pre-checks (mixed channel / Kiro credentials).
-	var bulkConcurrency *int
-	concurrencyNeedsPerAccount := false
-	if input.Concurrency != nil {
-		uniform, err := normalizeAndValidateBulkConcurrency(accountByID, input.AccountIDs, *input.Concurrency)
-		if err != nil {
-			return nil, err
-		}
-		if uniform == nil {
-			// Normalized values differ across accounts (e.g. concurrency<=0 with
-			// mixed Grok OAuth + other platforms). Fall back to per-account writes.
-			concurrencyNeedsPerAccount = true
-		} else {
-			bulkConcurrency = uniform
-		}
-	}
-
-	if len(kiroCredentialUpdateIDs) > 0 || concurrencyNeedsPerAccount {
+	if len(kiroCredentialUpdateIDs) > 0 {
 		for _, accountID := range input.AccountIDs {
 			account := accountByID[accountID]
 			if account == nil {
@@ -3884,8 +3804,8 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	if input.ProxyID != nil {
 		repoUpdates.ProxyID = input.ProxyID
 	}
-	if bulkConcurrency != nil {
-		repoUpdates.Concurrency = bulkConcurrency
+	if input.Concurrency != nil {
+		repoUpdates.Concurrency = input.Concurrency
 	}
 	if input.Priority != nil {
 		repoUpdates.Priority = input.Priority
@@ -4046,7 +3966,7 @@ func applyBulkUpdateInputToAccount(account *Account, input *BulkUpdateAccountsIn
 		account.ProxyFallbackOriginID = nil
 	}
 	if input.Concurrency != nil {
-		account.Concurrency = normalizeAccountConcurrency(account.Platform, account.Type, *input.Concurrency)
+		account.Concurrency = *input.Concurrency
 	}
 	if input.Priority != nil {
 		account.Priority = *input.Priority

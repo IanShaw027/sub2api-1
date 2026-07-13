@@ -464,11 +464,10 @@ describe('CreateAccountModal', () => {
     expect((wrapper.vm as any).form.platform).toBe('grok')
   })
 
-  it('defaults Grok OAuth concurrency to 1 and clamps user input above 1', async () => {
+  it('uses the general concurrency behavior for Grok OAuth', async () => {
     const wrapper = mountModal()
     await flushPromises()
 
-    // Non-Grok platforms keep the general default of 10
     expect((wrapper.vm as any).form.concurrency).toBe(10)
 
     await findButtonByText(wrapper, 'Grok').trigger('click')
@@ -476,15 +475,13 @@ describe('CreateAccountModal', () => {
 
     expect((wrapper.vm as any).form.platform).toBe('grok')
     expect((wrapper.vm as any).form.type).toBe('oauth')
-    expect((wrapper.vm as any).form.concurrency).toBe(1)
+    expect((wrapper.vm as any).form.concurrency).toBe(10)
 
-    // Manual bump must be clamped back to 1 for Grok OAuth
     const concurrencyInput = wrapper.get('[data-testid="account-form-concurrency"]')
-    await concurrencyInput.setValue(10)
+    await concurrencyInput.setValue(20)
     await nextTick()
-    expect((wrapper.vm as any).form.concurrency).toBe(1)
+    expect((wrapper.vm as any).form.concurrency).toBe(20)
 
-    // API key accounts on Grok may use higher concurrency
     ;(wrapper.vm as any).accountCategory = 'apikey'
     await nextTick()
     expect((wrapper.vm as any).form.type).toBe('apikey')
@@ -492,21 +489,19 @@ describe('CreateAccountModal', () => {
     await nextTick()
     expect((wrapper.vm as any).form.concurrency).toBe(5)
 
-    // Switching back to OAuth re-clamps to 1
     ;(wrapper.vm as any).accountCategory = 'oauth-based'
     await nextTick()
     expect((wrapper.vm as any).form.type).toBe('oauth')
-    expect((wrapper.vm as any).form.concurrency).toBe(1)
+    expect((wrapper.vm as any).form.concurrency).toBe(5)
 
-    // Submit path must also force concurrency=1 even if form state is stale
-    ;(wrapper.vm as any).form.concurrency = 10
+    ;(wrapper.vm as any).form.concurrency = 12
     await (wrapper.vm as any).handleGrokExchange('auth-code')
     await flushPromises()
 
     expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
       platform: 'grok',
       type: 'oauth',
-      concurrency: 1
+      concurrency: 12
     }))
   })
 

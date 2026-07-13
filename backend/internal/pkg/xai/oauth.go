@@ -28,14 +28,13 @@ const (
 	DefaultRedirectURI  = "http://127.0.0.1:56121/callback"
 	SessionTTL          = 30 * time.Minute
 
-	EnvAuthorizeURL               = "XAI_OAUTH_AUTHORIZE_URL"
-	EnvTokenURL                   = "XAI_OAUTH_TOKEN_URL"
-	EnvClientID                   = "XAI_OAUTH_CLIENT_ID"
-	EnvScope                      = "XAI_OAUTH_SCOPE"
-	EnvRedirectURI                = "XAI_OAUTH_REDIRECT_URI"
-	EnvBaseURL                    = "XAI_BASE_URL"
-	EnvAllowUnsafeURLOverrides    = "XAI_ALLOW_UNSAFE_URL_OVERRIDES"
-	EnvUnsafeAllowHighConcurrency = "XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE"
+	EnvAuthorizeURL            = "XAI_OAUTH_AUTHORIZE_URL"
+	EnvTokenURL                = "XAI_OAUTH_TOKEN_URL"
+	EnvClientID                = "XAI_OAUTH_CLIENT_ID"
+	EnvScope                   = "XAI_OAUTH_SCOPE"
+	EnvRedirectURI             = "XAI_OAUTH_REDIRECT_URI"
+	EnvBaseURL                 = "XAI_BASE_URL"
+	EnvAllowUnsafeURLOverrides = "XAI_ALLOW_UNSAFE_URL_OVERRIDES"
 )
 
 var (
@@ -188,26 +187,24 @@ type RuntimeSanityCheck struct {
 }
 
 type RuntimeSanityReport struct {
-	BaseURL               RuntimeSanityCheck `json:"base_url"`
-	OAuthAuthorizeURL     RuntimeSanityCheck `json:"oauth_authorize_url"`
-	OAuthTokenURL         RuntimeSanityCheck `json:"oauth_token_url"`
-	OAuthRedirectURI      RuntimeSanityCheck `json:"oauth_redirect_uri"`
-	UnsafeURLOverrides    bool               `json:"unsafe_url_overrides"`
-	UnsafeHighConcurrency bool               `json:"unsafe_high_concurrency"`
-	PublicGatewayScope    string             `json:"public_gateway_scope"`
-	ProxyPolicy           string             `json:"proxy_policy"`
+	BaseURL            RuntimeSanityCheck `json:"base_url"`
+	OAuthAuthorizeURL  RuntimeSanityCheck `json:"oauth_authorize_url"`
+	OAuthTokenURL      RuntimeSanityCheck `json:"oauth_token_url"`
+	OAuthRedirectURI   RuntimeSanityCheck `json:"oauth_redirect_uri"`
+	UnsafeURLOverrides bool               `json:"unsafe_url_overrides"`
+	PublicGatewayScope string             `json:"public_gateway_scope"`
+	ProxyPolicy        string             `json:"proxy_policy"`
 }
 
 func RuntimeSanity() RuntimeSanityReport {
 	return RuntimeSanityReport{
-		BaseURL:               runtimeSanityCheck(EffectiveBaseURL(""), EnvBaseURL, ValidatedBaseURL),
-		OAuthAuthorizeURL:     runtimeSanityCheck(EffectiveAuthorizeURL(), EnvAuthorizeURL, func(string) (string, error) { return ValidatedAuthorizeURL() }),
-		OAuthTokenURL:         runtimeSanityCheck(EffectiveTokenURL(), EnvTokenURL, func(string) (string, error) { return ValidatedTokenURL() }),
-		OAuthRedirectURI:      runtimeSanityCheck(EffectiveRedirectURI(""), EnvRedirectURI, validateRedirectURI),
-		UnsafeURLOverrides:    AllowUnsafeURLOverrides(),
-		UnsafeHighConcurrency: AllowUnsafeHighConcurrency(),
-		PublicGatewayScope:    "responses_only",
-		ProxyPolicy:           "account_proxy_optional; upstream URL allowlists enforced unless unsafe overrides are enabled",
+		BaseURL:            runtimeSanityCheck(EffectiveBaseURL(""), EnvBaseURL, ValidatedBaseURL),
+		OAuthAuthorizeURL:  runtimeSanityCheck(EffectiveAuthorizeURL(), EnvAuthorizeURL, func(string) (string, error) { return ValidatedAuthorizeURL() }),
+		OAuthTokenURL:      runtimeSanityCheck(EffectiveTokenURL(), EnvTokenURL, func(string) (string, error) { return ValidatedTokenURL() }),
+		OAuthRedirectURI:   runtimeSanityCheck(EffectiveRedirectURI(""), EnvRedirectURI, validateRedirectURI),
+		UnsafeURLOverrides: AllowUnsafeURLOverrides(),
+		PublicGatewayScope: "responses_only",
+		ProxyPolicy:        "account_proxy_optional; upstream URL allowlists enforced unless unsafe overrides are enabled",
 	}
 }
 
@@ -303,10 +300,6 @@ func normalizeKnownBaseURLPath(raw string) (string, error) {
 
 func AllowUnsafeURLOverrides() bool {
 	return envBool(EnvAllowUnsafeURLOverrides)
-}
-
-func AllowUnsafeHighConcurrency() bool {
-	return envBool(EnvUnsafeAllowHighConcurrency)
 }
 
 func envOrDefault(key, fallback string) string {

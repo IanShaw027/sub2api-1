@@ -3,28 +3,52 @@
 package service
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestNormalizeAccountConcurrencyDefaultsInvalidGrokOAuthToOne(t *testing.T) {
-	require.Equal(t, 1, normalizeAccountConcurrency(PlatformGrok, AccountTypeOAuth, 0))
-	require.Equal(t, 1, normalizeAccountConcurrency(PlatformGrok, AccountTypeOAuth, -5))
+func TestAdminServiceCreateAccount_AllowsGrokOAuthHighConcurrency(t *testing.T) {
+	repo := &kiroDefaultAccountRepoStub{}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	account, err := svc.CreateAccount(context.Background(), &CreateAccountInput{
+		Name:                 "grok-oauth",
+		Platform:             PlatformGrok,
+		Type:                 AccountTypeOAuth,
+		Concurrency:          10,
+		SkipDefaultGroupBind: true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, 10, account.Concurrency)
+	require.Len(t, repo.createdAccounts, 1)
 }
 
-func TestNormalizeAccountConcurrencyPreservesExplicitValues(t *testing.T) {
-	require.Equal(t, 50, normalizeAccountConcurrency(PlatformGrok, AccountTypeOAuth, 50))
-	require.Equal(t, 2, normalizeAccountConcurrency(PlatformOpenAI, AccountTypeOAuth, 2))
-	require.Equal(t, 2, normalizeAccountConcurrency(PlatformGrok, AccountTypeAPIKey, 2))
-}
+func TestAdminServiceUpdateAccount_AllowsGrokOAuthHighConcurrency(t *testing.T) {
+	repo := &kiroDefaultAccountRepoStub{
+		accountsByID: map[int64]*Account{
+			42: {
+				ID:          42,
+				Name:        "grok-oauth",
+				Platform:    PlatformGrok,
+				Type:        AccountTypeOAuth,
+				Concurrency: 1,
+				Status:      StatusActive,
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+	concurrency := 10
 
-func TestValidateGrokOAuthConcurrencyRequiresUnsafeGate(t *testing.T) {
-	t.Setenv("XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE", "")
-	require.Error(t, validateGrokOAuthConcurrency(PlatformGrok, AccountTypeOAuth, 10))
-	require.NoError(t, validateGrokOAuthConcurrency(PlatformGrok, AccountTypeOAuth, 1))
-	require.NoError(t, validateGrokOAuthConcurrency(PlatformOpenAI, AccountTypeOAuth, 10))
+	account, err := svc.UpdateAccount(context.Background(), 42, &UpdateAccountInput{
+		Concurrency: &concurrency,
+	})
 
-	t.Setenv("XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE", "1")
-	require.NoError(t, validateGrokOAuthConcurrency(PlatformGrok, AccountTypeOAuth, 10))
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, 10, account.Concurrency)
+	require.Len(t, repo.updatedAccounts, 1)
 }

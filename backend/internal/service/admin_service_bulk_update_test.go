@@ -14,29 +14,29 @@ import (
 
 type accountRepoStubForBulkUpdate struct {
 	accountRepoStub
-	bulkUpdateCalled     bool
-	bulkUpdateErr        error
-	bulkUpdateIDs        []int64
-	lastBulkUpdate       AccountBulkUpdate
-	updateCalled         bool
-	updateCalls          []*Account
-	bindGroupErrByID     map[int64]error
-	bindGroupsCalls      []int64
-	getByIDsAccounts     []*Account
-	getByIDsErr          error
-	getByIDsCalled       bool
-	getByIDsIDs          []int64
-	getByIDAccounts      map[int64]*Account
-	getByIDErrByID       map[int64]error
-	getByIDCalled        []int64
-	listByGroupData      map[int64][]Account
-	listByGroupErr       map[int64]error
-	listData             []Account
-	listResult           *pagination.PaginationResult
-	listErr              error
-	listCalled           bool
-	lastListParams       pagination.PaginationParams
-	lastListFilters      struct {
+	bulkUpdateCalled bool
+	bulkUpdateErr    error
+	bulkUpdateIDs    []int64
+	lastBulkUpdate   AccountBulkUpdate
+	updateCalled     bool
+	updateCalls      []*Account
+	bindGroupErrByID map[int64]error
+	bindGroupsCalls  []int64
+	getByIDsAccounts []*Account
+	getByIDsErr      error
+	getByIDsCalled   bool
+	getByIDsIDs      []int64
+	getByIDAccounts  map[int64]*Account
+	getByIDErrByID   map[int64]error
+	getByIDCalled    []int64
+	listByGroupData  map[int64][]Account
+	listByGroupErr   map[int64]error
+	listData         []Account
+	listResult       *pagination.PaginationResult
+	listErr          error
+	listCalled       bool
+	lastListParams   pagination.PaginationParams
+	lastListFilters  struct {
 		platform    string
 		accountType string
 		status      string
@@ -394,32 +394,7 @@ func TestApplyBulkUpdateInputToAccountProxyChangeClearsFallbackOrigin(t *testing
 	require.Nil(t, account.ProxyFallbackOriginID)
 }
 
-func TestAdminService_BulkUpdateAccounts_RejectsGrokOAuthHighConcurrencyWithoutEnv(t *testing.T) {
-	t.Setenv("XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE", "")
-
-	repo := &accountRepoStubForBulkUpdate{
-		getByIDsAccounts: []*Account{
-			{ID: 1, Platform: PlatformGrok, Type: AccountTypeOAuth, Concurrency: 1},
-		},
-	}
-	svc := &adminServiceImpl{accountRepo: repo}
-
-	concurrency := 10
-	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
-		AccountIDs:  []int64{1},
-		Concurrency: &concurrency,
-	})
-
-	require.Nil(t, result)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE")
-	require.False(t, repo.bulkUpdateCalled)
-	require.False(t, repo.updateCalled)
-}
-
-func TestAdminService_BulkUpdateAccounts_AllowsGrokOAuthHighConcurrencyWithEnv(t *testing.T) {
-	t.Setenv("XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE", "1")
-
+func TestAdminService_BulkUpdateAccounts_AllowsGrokOAuthHighConcurrency(t *testing.T) {
 	repo := &accountRepoStubForBulkUpdate{
 		getByIDsAccounts: []*Account{
 			{ID: 1, Platform: PlatformGrok, Type: AccountTypeOAuth, Concurrency: 1},
@@ -442,8 +417,6 @@ func TestAdminService_BulkUpdateAccounts_AllowsGrokOAuthHighConcurrencyWithEnv(t
 }
 
 func TestAdminService_BulkUpdateAccounts_AllowsNonGrokHighConcurrency(t *testing.T) {
-	t.Setenv("XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE", "")
-
 	repo := &accountRepoStubForBulkUpdate{
 		getByIDsAccounts: []*Account{
 			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1},
@@ -466,9 +439,7 @@ func TestAdminService_BulkUpdateAccounts_AllowsNonGrokHighConcurrency(t *testing
 	require.Equal(t, 2, result.Success)
 }
 
-func TestAdminService_BulkUpdateAccounts_RejectsMixedBulkWhenAnyGrokOAuthViolates(t *testing.T) {
-	t.Setenv("XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE", "")
-
+func TestAdminService_BulkUpdateAccounts_AllowsMixedBulkWithGrokOAuthHighConcurrency(t *testing.T) {
 	repo := &accountRepoStubForBulkUpdate{
 		getByIDsAccounts: []*Account{
 			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1},
@@ -483,18 +454,20 @@ func TestAdminService_BulkUpdateAccounts_RejectsMixedBulkWhenAnyGrokOAuthViolate
 		Concurrency: &concurrency,
 	})
 
-	require.Nil(t, result)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE")
-	require.False(t, repo.bulkUpdateCalled)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, repo.bulkUpdateCalled)
+	require.NotNil(t, repo.lastBulkUpdate.Concurrency)
+	require.Equal(t, 10, *repo.lastBulkUpdate.Concurrency)
 	require.False(t, repo.updateCalled)
+	require.Equal(t, 2, result.Success)
 }
 
-func TestApplyBulkUpdateInputToAccount_NormalizesGrokOAuthConcurrency(t *testing.T) {
+func TestApplyBulkUpdateInputToAccount_UsesGrokOAuthConcurrencyUnchanged(t *testing.T) {
 	account := &Account{Platform: PlatformGrok, Type: AccountTypeOAuth, Concurrency: 1}
 	zero := 0
 
 	applyBulkUpdateInputToAccount(account, &BulkUpdateAccountsInput{Concurrency: &zero})
 
-	require.Equal(t, 1, account.Concurrency)
+	require.Equal(t, 0, account.Concurrency)
 }
