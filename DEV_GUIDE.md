@@ -347,4 +347,4 @@ sub2api-bmai/
 
 ## Grok OAuth concurrency
 
-Grok OAuth accounts default to concurrency **1**. Setting concurrency > 1 requires the process environment variable `XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE=1` (admin Create/Update/Bulk all enforce this). The admin UI clamps Grok OAuth concurrency to 1.
+Grok OAuth accounts use the same concurrency setting as other platforms. Admin Create, Update, and Bulk operations do not apply a Grok-specific limit, and the admin UI uses the standard account concurrency control.

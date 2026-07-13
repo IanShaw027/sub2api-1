@@ -85,5 +85,5 @@ Expired exceptions fail CI and require a new review.
 When upgrading, operators should be aware of:
 
 - **Subscription CNY checkout** requires a positive `subscription_usd_to_cny_rate` (see `docs/PAYMENT.md`).
-- **Grok OAuth concurrency > 1** requires `XAI_GROK_UNSAFE_ALLOW_CONCURRENCY_GT_ONE=1` (default is 1).
+- **Grok OAuth concurrency** follows the standard account concurrency setting without a platform-specific gate.
 - **Admin compliance** hard-blocks the SPA until acknowledgement succeeds or status can be loaded; the API remains authoritative with HTTP 423.
