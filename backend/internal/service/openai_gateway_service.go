@@ -1234,6 +1234,25 @@ func canFallbackOpenAIWSFullReplayPayloadToHTTP(payload []byte) bool {
 	return openAIWSRawItemsHaveToolCallContextForOutputs(inputItems)
 }
 
+func openAIWSHTTPFallbackBlocker(c *gin.Context, wsErr error, wsPayload, originalPayload []byte) string {
+	if c == nil || c.Writer == nil {
+		return "response_writer_missing"
+	}
+	if openAIClientOutputWritten(c) {
+		return "client_output_written"
+	}
+	if !shouldFallbackOpenAIWSToHTTP(wsErr) {
+		return "reason_not_eligible"
+	}
+	if !canFallbackOpenAIWSFullReplayPayloadToHTTP(wsPayload) {
+		return "ws_payload_not_replayable"
+	}
+	if !canFallbackOpenAIWSFullReplayPayloadToHTTP(originalPayload) {
+		return "original_payload_not_replayable"
+	}
+	return ""
+}
+
 func openAIWSActiveDeltaPreviousResponseID(wsErr error) string {
 	var fallbackErr *openAIWSFallbackError
 	if !errors.As(wsErr, &fallbackErr) || fallbackErr == nil || !fallbackErr.ActiveDelta {
@@ -6120,10 +6139,8 @@ oauthTransformDone:
 		if failoverErr := s.newOpenAIWSFailoverError(c, account, wsErr); failoverErr != nil {
 			return nil, failoverErr
 		}
-		if c != nil && c.Writer != nil && !openAIClientOutputWritten(c) &&
-			shouldFallbackOpenAIWSToHTTP(wsErr) &&
-			canFallbackOpenAIWSFullReplayPayloadToHTTP(wsHTTPFallbackBody) &&
-			canFallbackOpenAIWSFullReplayPayloadToHTTP(body) {
+		fallbackBlocker := openAIWSHTTPFallbackBlocker(c, wsErr, wsHTTPFallbackBody, body)
+		if fallbackBlocker == "" {
 			reason, _ := classifyOpenAIWSReconnectReason(wsErr)
 			requestID, clientRequestID := openAIWSRequestLogIDs(c)
 			body = append([]byte(nil), body...)
@@ -6173,6 +6190,19 @@ oauthTransformDone:
 				len(body),
 			)
 		} else {
+			reason, _ := classifyOpenAIWSReconnectReason(wsErr)
+			requestID, clientRequestID := openAIWSRequestLogIDs(c)
+			logOpenAIWSTemporaryAnomaly(
+				"http_fallback_skipped",
+				"request_id=%s client_request_id=%s account_id=%d reason=%s blocker=%s ws_payload_bytes=%d original_payload_bytes=%d",
+				normalizeOpenAIWSLogValue(requestID),
+				normalizeOpenAIWSLogValue(clientRequestID),
+				account.ID,
+				normalizeOpenAIWSLogValue(reason),
+				normalizeOpenAIWSLogValue(fallbackBlocker),
+				len(wsHTTPFallbackBody),
+				len(body),
+			)
 			s.writeOpenAIWSFallbackErrorResponse(c, account, wsErr)
 			return nil, wsErr
 		}

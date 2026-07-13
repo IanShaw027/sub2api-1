@@ -8152,6 +8152,8 @@ func classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw string) (stri
 	msg := strings.ToLower(strings.TrimSpace(msgRaw))
 
 	switch code {
+	case "message_too_big", "payload_too_large", "request_too_large":
+		return "message_too_big", true
 	case "upgrade_required":
 		return "upgrade_required", true
 	case "websocket_not_supported", "websocket_unsupported":
@@ -8172,6 +8174,11 @@ func classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw string) (stri
 	}
 	if isOpenAIWSModelUnavailableEvent(code, errType, msg) {
 		return "model_unavailable", true
+	}
+	if strings.Contains(msg, "message too big") ||
+		strings.Contains(msg, "payload too large") ||
+		strings.Contains(msg, "request too large") {
+		return "message_too_big", true
 	}
 	if strings.Contains(msg, "upgrade required") || strings.Contains(msg, "status 426") {
 		return "upgrade_required", true

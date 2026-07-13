@@ -186,6 +186,23 @@ func TestShouldFallbackOpenAIWSToHTTP_AuthFailed(t *testing.T) {
 	require.True(t, shouldFallbackOpenAIWSToHTTP(err))
 }
 
+func TestOpenAIWSHTTPFallbackBlockerRequiresReplayablePayloadAndNoOutput(t *testing.T) {
+	safePayload := []byte(`{"model":"gpt-5.5","input":[{"type":"message","role":"user","content":"hello"}]}`)
+	unsafeToolPayload := []byte(`{"model":"gpt-5.5","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}]}`)
+	err := wrapOpenAIWSFallback("message_too_big", coderws.CloseError{Code: coderws.StatusMessageTooBig})
+
+	require.Equal(t, "response_writer_missing", openAIWSHTTPFallbackBlocker(nil, err, safePayload, safePayload))
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	require.Empty(t, openAIWSHTTPFallbackBlocker(c, err, safePayload, safePayload))
+	require.Equal(t, "ws_payload_not_replayable", openAIWSHTTPFallbackBlocker(c, err, unsafeToolPayload, safePayload))
+	require.Equal(t, "original_payload_not_replayable", openAIWSHTTPFallbackBlocker(c, err, safePayload, unsafeToolPayload))
+
+	_, writeErr := c.Writer.Write([]byte("started"))
+	require.NoError(t, writeErr)
+	require.Equal(t, "client_output_written", openAIWSHTTPFallbackBlocker(c, err, safePayload, safePayload))
+}
+
 func TestShouldFallbackOpenAIWSToHTTP_SessionPreempted(t *testing.T) {
 	require.False(t, shouldFallbackOpenAIWSToHTTP(wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted)))
 }
@@ -377,6 +394,16 @@ func TestClassifyOpenAIWSReadFallbackReason(t *testing.T) {
 	require.Equal(t, "message_too_big", classifyOpenAIWSReadFallbackReason(coderws.CloseError{Code: coderws.StatusMessageTooBig}))
 	require.Equal(t, "normal_close", classifyOpenAIWSReadFallbackReason(coderws.CloseError{Code: coderws.StatusNormalClosure}))
 	require.Equal(t, "read_event", classifyOpenAIWSReadFallbackReason(errors.New("io")))
+}
+
+func TestClassifyOpenAIWSErrorEventMessageTooBig(t *testing.T) {
+	reason, canFallback := classifyOpenAIWSErrorEventFromRaw("message_too_big", "invalid_request_error", "frame rejected")
+	require.Equal(t, "message_too_big", reason)
+	require.True(t, canFallback)
+
+	reason, canFallback = classifyOpenAIWSErrorEventFromRaw("server_error", "server_error", "request payload too large")
+	require.Equal(t, "message_too_big", reason)
+	require.True(t, canFallback)
 }
 
 func TestOpenAIWSNormalCloseIsRetryableWithNewConnection(t *testing.T) {
