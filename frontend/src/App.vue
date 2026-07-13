@@ -114,6 +114,7 @@ watch(
       subscriptionStore.clear()
       announcementStore.reset()
       aiStudioStore.reset()
+      adminComplianceStore.reset()
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   },

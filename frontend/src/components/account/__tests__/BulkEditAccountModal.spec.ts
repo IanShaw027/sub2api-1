@@ -150,6 +150,22 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
+  it('blocks bulk edit when selected accounts span multiple platforms', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai', 'anthropic'],
+      selectedTypes: ['oauth']
+    })
+
+    await wrapper.get('#bulk-edit-model-restriction-enabled').setValue(true)
+    const submitButton = wrapper.find('button[type="submit"]')
+    expect(submitButton.attributes('disabled')).toBeDefined()
+
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).not.toHaveBeenCalled()
+  })
+
   it('OpenAI 账号批量编辑可开启自动透传', async () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],

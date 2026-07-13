@@ -1285,7 +1285,7 @@
         <button
           type="submit"
           form="bulk-edit-account-form"
-          :disabled="submitting"
+          :disabled="submitting || isMixedPlatform"
           class="btn btn-primary"
         >
           <svg
@@ -2003,6 +2003,14 @@ const preCheckMixedChannelRisk = async (built: Record<string, unknown>): Promise
 const handleSubmit = async () => {
   if (targetMode.value === 'selected' && props.accountIds.length === 0) {
     appStore.showError(t('admin.accounts.bulkEdit.noSelection'))
+    return
+  }
+  if (isMixedPlatform.value) {
+    appStore.showError(
+      t('admin.accounts.bulkEdit.mixedPlatformWarning', {
+        platforms: targetSelectedPlatforms.value.join(', ')
+      })
+    )
     return
   }
 
