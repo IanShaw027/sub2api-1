@@ -296,7 +296,7 @@ type AnthropicEventToResponsesState struct {
 	CurrentName           string
 	CurrentArgs           string
 	CurrentArgsEmptyStart bool
-	CurrentStopReason     string
+	StopReason            string
 	CurrentServerToolType string
 	CurrentServerToolOpen bool
 	CurrentWebSearch      *WebSearchAction
@@ -645,7 +645,7 @@ func anthToResHandleMessageDelta(evt *AnthropicStreamEvent, state *AnthropicEven
 		}
 	}
 	if evt.Delta != nil && strings.TrimSpace(evt.Delta.StopReason) != "" {
-		state.CurrentStopReason = strings.TrimSpace(evt.Delta.StopReason)
+		state.StopReason = strings.TrimSpace(evt.Delta.StopReason)
 	}
 
 	return nil
@@ -662,10 +662,10 @@ func anthToResHandleMessageStop(state *AnthropicEventToResponsesState) []Respons
 	events = append(events, closeCurrentResponsesItem(state)...)
 
 	// Determine status
-	status := anthropicStopReasonToResponsesStatus(state.CurrentStopReason, nil)
+	status := anthropicStopReasonToResponsesStatus(state.StopReason, nil)
 	var incompleteDetails *ResponsesIncompleteDetails
 	if status == "incomplete" {
-		incompleteDetails = &ResponsesIncompleteDetails{Reason: anthropicStopReasonToResponsesIncompleteReason(state.CurrentStopReason)}
+		incompleteDetails = &ResponsesIncompleteDetails{Reason: anthropicStopReasonToResponsesIncompleteReason(state.StopReason)}
 	}
 
 	// Emit response.completed
@@ -764,8 +764,12 @@ func makeResponsesCompletedEvent(
 		}
 	}
 
+	eventType := "response.completed"
+	if status == "incomplete" {
+		eventType = "response.incomplete"
+	}
 	return ResponsesStreamEvent{
-		Type:           "response.completed",
+		Type:           eventType,
 		SequenceNumber: seq,
 		Response: &ResponsesResponse{
 			ID:                state.ResponseID,

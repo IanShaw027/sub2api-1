@@ -396,6 +396,7 @@
           :label="t('admin.accounts.usageWindow.grokRequests')"
           :utilization="grokRequestQuotaProgress.utilization"
           :resets-at="grokRequestQuotaProgress.resets_at"
+          :remaining-capacity="true"
           color="emerald"
         />
         <UsageProgressBar
@@ -403,6 +404,7 @@
           :label="t('admin.accounts.usageWindow.grokTokens')"
           :utilization="grokTokenQuotaProgress.utilization"
           :resets-at="grokTokenQuotaProgress.resets_at"
+          :remaining-capacity="true"
           color="indigo"
         />
       </div>
@@ -719,9 +721,9 @@ const hasUsageProgressData = (progress?: UsageProgress | null): progress is Usag
 
 const quotaWindowToProgress = (window?: { limit?: number; remaining?: number; reset_at?: string } | null): UsageProgress | null => {
   if (!window || typeof window.limit !== 'number' || window.limit <= 0 || typeof window.remaining !== 'number') return null
-  const used = window.limit - window.remaining
+  const remaining = Math.min(window.limit, Math.max(0, window.remaining))
   return {
-    utilization: Math.round((used / window.limit) * 100),
+    utilization: Math.round((remaining / window.limit) * 100),
     resets_at: window.reset_at ?? null,
     remaining_seconds: 0
   }

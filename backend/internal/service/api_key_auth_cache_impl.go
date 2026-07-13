@@ -15,7 +15,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 14 // v14: reload snapshots for group peak-rate fields
+const apiKeyAuthSnapshotVersion = 15 // v15: include group web search per-call pricing
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -284,6 +284,7 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			VideoPrice720pPerSec:            group.VideoPrice720pPerSec,
 			VideoPrice1080pPerSec:           group.VideoPrice1080pPerSec,
 			VideoPrice4kPerSec:              group.VideoPrice4kPerSec,
+			WebSearchPricePerCall:           group.WebSearchPricePerCall,
 			SearchPricePer1k:                group.SearchPricePer1k,
 			AudioRealtimePricePerMin:        group.AudioRealtimePricePerMin,
 			AudioTTSPricePerMillionChars:    group.AudioTTSPricePerMillionChars,
@@ -383,6 +384,7 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			VideoPrice720pPerSec:            snapshot.Group.VideoPrice720pPerSec,
 			VideoPrice1080pPerSec:           snapshot.Group.VideoPrice1080pPerSec,
 			VideoPrice4kPerSec:              snapshot.Group.VideoPrice4kPerSec,
+			WebSearchPricePerCall:           snapshot.Group.WebSearchPricePerCall,
 			SearchPricePer1k:                snapshot.Group.SearchPricePer1k,
 			AudioRealtimePricePerMin:        snapshot.Group.AudioRealtimePricePerMin,
 			AudioTTSPricePerMillionChars:    snapshot.Group.AudioTTSPricePerMillionChars,

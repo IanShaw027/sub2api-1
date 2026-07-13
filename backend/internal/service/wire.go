@@ -68,6 +68,28 @@ func ProvideOpenAIOAuthService(
 	return svc
 }
 
+func ProvideOAuthService(proxyRepo ProxyRepository, oauthClient ClaudeOAuthClient, rdb *redis.Client) *OAuthService {
+	return NewOAuthService(proxyRepo, oauthClient).WithRedisSessionStore(rdb)
+}
+
+func ProvideGrokOAuthService(proxyRepo ProxyRepository, oauthClient GrokOAuthClient, rdb *redis.Client) *GrokOAuthService {
+	return NewGrokOAuthService(proxyRepo, oauthClient).WithRedisSessionStore(rdb)
+}
+
+func ProvideAntigravityOAuthService(proxyRepo ProxyRepository, rdb *redis.Client) *AntigravityOAuthService {
+	return NewAntigravityOAuthService(proxyRepo).WithRedisSessionStore(rdb)
+}
+
+func ProvideKiroOAuthService(
+	proxyRepo ProxyRepository,
+	httpUpstream HTTPUpstream,
+	tlsFPProfileService *TLSFingerprintProfileService,
+	settingService *SettingService,
+	rdb *redis.Client,
+) *KiroOAuthService {
+	return NewKiroOAuthService(proxyRepo, httpUpstream, tlsFPProfileService, settingService).WithRedisSessionStore(rdb)
+}
+
 // ProvideTokenRefreshService creates and starts TokenRefreshService
 func ProvideTokenRefreshService(
 	accountRepo AccountRepository,
@@ -424,6 +446,10 @@ func ProvideAISkillRunService(
 ) *AISkillRunService {
 	return NewAISkillRunService(skillRepo, versionRepo, runRepo, settlementService, runtimeGateway).
 		WithAPIKeyRepository(apiKeyRepo)
+}
+
+func ProvideAISkillBillingAPIKeyLookup(apiKeyRepo APIKeyRepository) AISkillBillingAPIKeyLookup {
+	return apiKeyRepo
 }
 
 // ProvideConcurrencyService creates ConcurrencyService and starts slot cleanup worker.
@@ -877,16 +903,16 @@ var ProviderSet = wire.NewSet(
 	ProvideOpenAIGatewayService,
 	wire.Bind(new(AccountRuntimeBlocker), new(*OpenAIGatewayService)),
 	ProvideCodexInviteResetService,
-	NewOAuthService,
+	ProvideOAuthService,
 	ProvideOpenAIOAuthService,
-	NewGrokOAuthService,
+	ProvideGrokOAuthService,
 	wire.Bind(new(GrokOAuthTokenService), new(*GrokOAuthService)),
 	NewGeminiOAuthService,
 	NewGeminiQuotaService,
 	NewCompositeTokenCacheInvalidator,
 	wire.Bind(new(TokenCacheInvalidator), new(*CompositeTokenCacheInvalidator)),
-	NewAntigravityOAuthService,
-	NewKiroOAuthService,
+	ProvideAntigravityOAuthService,
+	ProvideKiroOAuthService,
 	ProvideOAuthRefreshAPI,
 	ProvideGeminiTokenProvider,
 	ProvideGeminiAccountAccessTokenProvider,
@@ -931,6 +957,7 @@ var ProviderSet = wire.NewSet(
 	ProvideAISkillVersionService,
 	ProvideAISkillReviewService,
 	ProvideAISkillSettlementService,
+	ProvideAISkillBillingAPIKeyLookup,
 	ProvideAISkillRunService,
 	wire.Bind(new(DefaultSubscriptionAssigner), new(*SubscriptionService)),
 	ProvideConcurrencyService,

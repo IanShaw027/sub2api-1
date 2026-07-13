@@ -3419,10 +3419,10 @@ func (s *SettingService) GetClaudeTelemetryMode(ctx context.Context) string {
 
 func normalizeGrokDefaultBaseURLMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case GrokDefaultBaseURLModeCLI:
-		return GrokDefaultBaseURLModeCLI
-	default:
+	case GrokDefaultBaseURLModeAPI:
 		return GrokDefaultBaseURLModeAPI
+	default:
+		return GrokDefaultBaseURLModeCLI
 	}
 }
 
@@ -3437,14 +3437,14 @@ func GrokBaseURLForMode(mode string) string {
 // GetGrokDefaultBaseURLMode returns api|cli for Grok accounts without credentials.base_url.
 func (s *SettingService) GetGrokDefaultBaseURLMode(ctx context.Context) string {
 	if s == nil || s.settingRepo == nil {
-		return GrokDefaultBaseURLModeAPI
+		return GrokDefaultBaseURLModeCLI
 	}
 	// Prefer full settings parse cache via GetAll is heavy; read single key with short timeout.
 	dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), gatewayForwardingDBTimeout)
 	defer cancel()
 	raw, err := s.settingRepo.GetValue(dbCtx, SettingKeyGrokDefaultBaseURLMode)
 	if err != nil {
-		return GrokDefaultBaseURLModeAPI
+		return GrokDefaultBaseURLModeCLI
 	}
 	return normalizeGrokDefaultBaseURLMode(raw)
 }
@@ -3457,7 +3457,7 @@ func (s *SettingService) GetGrokDefaultBaseURL(ctx context.Context) string {
 // ResolveGrokBaseURL returns account credentials.base_url when set, otherwise the system default.
 // Used for chat/responses inference only. Media and billing use different resolvers.
 func (s *SettingService) ResolveGrokBaseURL(ctx context.Context, account *Account) string {
-	def := xai.DefaultBaseURL
+	def := xai.DefaultCLIBaseURL
 	if s != nil {
 		def = s.GetGrokDefaultBaseURL(ctx)
 	}
@@ -3479,7 +3479,11 @@ func (s *SettingService) ResolveGrokMediaBaseURL(_ context.Context, account *Acc
 				// Media paths must honor the same host allowlist as text inference
 				// (api.x.ai / cli-chat-proxy). Reject arbitrary account base_url so
 				// OAuth bearer tokens are never sent to untrusted hosts.
-				if validated, err := xai.ValidateBaseURL(pinned); err == nil {
+				validate := xai.ValidateBaseURL
+				if account.IsGrokOAuth() {
+					validate = xai.ValidateTrustedBaseURL
+				}
+				if validated, err := validate(pinned); err == nil {
 					return validated
 				}
 			}

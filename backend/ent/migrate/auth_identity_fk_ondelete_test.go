@@ -68,7 +68,7 @@ func TestInvoiceOrdersActiveOrderUniqueIndex(t *testing.T) {
 	column := findColumnByName(t, InvoiceOrdersTable, "is_active")
 	require.Equal(t, "is_active", column.Name)
 
-	idx := findIndexByName(t, InvoiceOrdersTable, "invoiceorder_order_id")
+	idx := findIndexByName(t, InvoiceOrdersTable, "invoiceorder_order_id_active_unique")
 	require.True(t, idx.Unique)
 	require.Len(t, idx.Columns, 1)
 	require.Equal(t, "order_id", idx.Columns[0].Name)

@@ -3194,38 +3194,10 @@
                   <p class="mb-2 text-xs text-gray-400 dark:text-gray-500">
                     {{ t("admin.settings.openaiFastPolicy.userIdsHint") }}
                   </p>
-                  <div
-                    v-for="(_, userIDIndex) in rule.user_ids || []"
-                    :key="userIDIndex"
-                    class="mb-1.5 flex items-center gap-2"
-                  >
-                    <input
-                      v-model.number="rule.user_ids![userIDIndex]"
-                      type="number"
-                      min="1"
-                      step="1"
-                      class="input input-sm flex-1"
-                      :placeholder="
-                        t('admin.settings.openaiFastPolicy.userIdPlaceholder')
-                      "
-                    />
-                    <button
-                      type="button"
-                      @click="removeOpenAIFastPolicyUserID(rule, userIDIndex)"
-                      class="flex h-7 w-7 shrink-0 items-center justify-center rounded text-red-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
-                      :title="t('admin.settings.openaiFastPolicy.removeUserId')"
-                    >
-                      <Icon name="x" size="xs" :stroke-width="2" />
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    @click="addOpenAIFastPolicyUserID(rule)"
-                    class="mb-2 inline-flex items-center gap-1 text-xs text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-                  >
-                    <Icon name="plus" size="xs" :stroke-width="2" />
-                    {{ t("admin.settings.openaiFastPolicy.addUserId") }}
-                  </button>
+                  <OpenAIFastPolicyUserSelector
+                    :model-value="(rule.user_ids || []).filter((id): id is number => typeof id === 'number')"
+                    @update:model-value="rule.user_ids = $event"
+                  />
                 </div>
 
                 <!-- Error Message (only when action=block) -->
@@ -8816,6 +8788,9 @@ const BackupSettings = defineAsyncComponent(
 const EmailTemplateEditor = defineAsyncComponent(
   () => import("@/views/admin/settings/EmailTemplateEditor.vue"),
 );
+const OpenAIFastPolicyUserSelector = defineAsyncComponent(
+  () => import("@/views/admin/settings/OpenAIFastPolicyUserSelector.vue"),
+);
 
 const { t, locale } = useI18n();
 const appStore = useAppStore();
@@ -9986,7 +9961,7 @@ const form = reactive<SettingsForm>({
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
   claude_telemetry_mode: "drop",
-  grok_default_base_url_mode: "api",
+  grok_default_base_url_mode: "cli",
   gateway_debug_timeline_enabled: false,
   gateway_debug_timeline_directory: "logs/gateway-debug",
   gateway_debug_timeline_retention_days: 7,
@@ -11629,7 +11604,7 @@ async function saveSettings() {
       claude_telemetry_mode:
         form.claude_telemetry_mode === "forward" ? "forward" : "drop",
       grok_default_base_url_mode:
-        form.grok_default_base_url_mode === "cli" ? "cli" : "api",
+        form.grok_default_base_url_mode === "api" ? "api" : "cli",
       gateway_debug_timeline_enabled: form.gateway_debug_timeline_enabled,
       gateway_debug_timeline_directory:
         form.gateway_debug_timeline_directory || "logs/gateway-debug",
@@ -12395,11 +12370,6 @@ function removeOpenAIFastPolicyRule(index: number) {
   openaiFastPolicyForm.rules.splice(index, 1);
 }
 
-function addOpenAIFastPolicyUserID(rule: OpenAIFastPolicyRuleForm) {
-  if (!rule.user_ids) rule.user_ids = [];
-  rule.user_ids.push(null);
-}
-
 function normalizeOpenAIFastPolicyUserIDs(
   values: readonly unknown[] | undefined,
 ): number[] | null {
@@ -12417,13 +12387,6 @@ function normalizeOpenAIFastPolicyUserIDs(
     normalized.push(userID);
   }
   return normalized;
-}
-
-function removeOpenAIFastPolicyUserID(
-  rule: OpenAIFastPolicyRuleForm,
-  idx: number,
-) {
-  rule.user_ids?.splice(idx, 1);
 }
 
 function addOpenAIFastPolicyModelPattern(rule: OpenAIFastPolicyRuleForm) {

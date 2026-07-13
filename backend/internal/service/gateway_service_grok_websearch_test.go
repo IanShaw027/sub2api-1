@@ -51,7 +51,7 @@ func TestDoGrokNativeResponsesJSONUsesBuildResponsesURLNotDoubleV1(t *testing.T)
 	require.Contains(t, string(resp), "resp_search")
 
 	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, "https://api.x.ai/v1/responses", upstream.lastReq.URL.String())
+	require.Equal(t, "https://cli-chat-proxy.grok.com/v1/responses", upstream.lastReq.URL.String())
 	require.NotContains(t, upstream.lastReq.URL.String(), "/v1/v1/")
 	require.Equal(t, "Bearer access-token", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "responses=experimental", upstream.lastReq.Header.Get("OpenAI-Beta"))

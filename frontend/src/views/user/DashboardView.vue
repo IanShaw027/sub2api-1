@@ -39,6 +39,7 @@ import UserDashboardRecentUsage from '@/components/user/dashboard/UserDashboardR
 import UserDashboardQuickActions from '@/components/user/dashboard/UserDashboardQuickActions.vue'
 import UserBalanceHistoryModal from '@/components/user/UserBalanceHistoryModal.vue'
 import type { UsageLog, TrendDataPoint, ModelStat, PlatformQuotaItem } from '@/types'
+import { formatDateLocalInput } from '@/utils/format'
 
 const authStore = useAuthStore()
 const user = computed(() => authStore.user)
@@ -52,9 +53,8 @@ const recentUsage = ref<UsageLog[]>([])
 const platformQuotas = ref<PlatformQuotaItem[] | null>(null)
 const showBalanceHistory = ref(false)
 
-const formatLD = (d: Date) => d.toISOString().split('T')[0]
-const startDate = ref(formatLD(new Date(Date.now() - 6 * 86400000)))
-const endDate = ref(formatLD(new Date()))
+const startDate = ref(formatDateLocalInput(new Date(Date.now() - 6 * 86400000)))
+const endDate = ref(formatDateLocalInput(new Date()))
 const granularity = ref('day')
 
 const loadStats = async () => {

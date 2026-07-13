@@ -107,6 +107,7 @@ describe('useSkillsCenterStore', () => {
       can_install: true,
       can_run: true,
     })
+    get.mockResolvedValue({ data: { items: [{ id: 7, status: 'active' }] } })
     post.mockResolvedValue({ data: { status: 'dispatched' } })
   })
 
@@ -128,6 +129,7 @@ describe('useSkillsCenterStore', () => {
           api_key: 'abc123',
           retries: 2,
         },
+        trace: { api_key_id: 7 },
       },
       {
         params: {
@@ -143,6 +145,7 @@ describe('useSkillsCenterStore', () => {
           api_key: 'abc123',
           retries: 2,
         },
+        trace: { api_key_id: 7 },
       },
       undefined
     )

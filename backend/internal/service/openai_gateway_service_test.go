@@ -4338,6 +4338,7 @@ func TestCalculateOpenAIVideoRequestCostGrokImagineUsesDefaultPriceWithoutGroupV
 		1,
 		1,
 		1,
+		1,
 		UsageTokens{},
 		"",
 		RequestTypeUnknown,
@@ -5365,7 +5366,7 @@ func TestOpenAIBuildUpstreamRequest_BrowserUAUsesConfiguredCodexIdentity(t *test
 	}
 }
 
-func TestOpenAIBuildUpstreamRequest_APIKeySkipsOAuthOnlyCodexHeaders(t *testing.T) {
+func TestOpenAIBuildUpstreamRequest_APIKeyForwardsBetaButSkipsOAuthOnlyCodexHeaders(t *testing.T) {
 	setGinTestMode()
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -5383,13 +5384,13 @@ func TestOpenAIBuildUpstreamRequest_APIKeySkipsOAuthOnlyCodexHeaders(t *testing.
 
 	req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", true, "", false)
 	require.NoError(t, err)
-	require.Empty(t, req.Header.Get("X-Codex-Beta-Features"))
+	require.Equal(t, "memories,prevent_idle_sleep", req.Header.Get("X-Codex-Beta-Features"))
 	require.Empty(t, req.Header.Get("X-Client-Request-Id"))
 	require.Empty(t, req.Header.Get("X-Codex-Window-Id"))
 
 	passthroughReq, err := svc.buildUpstreamRequestOpenAIPassthrough(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", "")
 	require.NoError(t, err)
-	require.Empty(t, passthroughReq.Header.Get("X-Codex-Beta-Features"))
+	require.Equal(t, "memories,prevent_idle_sleep", passthroughReq.Header.Get("X-Codex-Beta-Features"))
 	require.Empty(t, passthroughReq.Header.Get("X-Client-Request-Id"))
 	require.Empty(t, passthroughReq.Header.Get("X-Codex-Window-Id"))
 	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(req.Context()))

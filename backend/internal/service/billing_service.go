@@ -831,7 +831,8 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 		return s.fallbackPrices["grok-4.5"]
 	case "grok-4.3", "grok-4.3-latest":
 		return s.fallbackPrices["grok-4.3"]
-	case "grok-build", "grok-build-0.1", "grok-code-fast", "grok-code-fast-1", "grok-code-fast-1-0825":
+	case "grok-build", "grok-build-0.1", "grok-code-fast", "grok-code-fast-1", "grok-code-fast-1-0825",
+		"grok-composer", "grok-composer-2.5-fast", "composer-2.5":
 		return s.fallbackPrices["grok-build-0.1"]
 	case "grok-4.20-0309-reasoning", "grok-4.20-reasoning":
 		return s.fallbackPrices["grok-4.20-0309-reasoning"]
@@ -854,7 +855,7 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 		return s.fallbackPrices["grok-4.3"]
 	}
 	// Grok Build / code-fast family
-	if strings.Contains(modelLower, "grok-build") || strings.Contains(modelLower, "grok-code-fast") {
+	if strings.Contains(modelLower, "grok-build") || strings.Contains(modelLower, "grok-code-fast") || strings.Contains(modelLower, "grok-composer") {
 		return s.fallbackPrices["grok-build-0.1"]
 	}
 	// grok-imagine-* and any other unknown grok-* → nil so media/token callers
@@ -1465,6 +1466,27 @@ type ImagePriceConfig struct {
 	Price1K *float64 // 1K 尺寸价格（nil 表示使用默认值）
 	Price2K *float64 // 2K 尺寸价格（nil 表示使用默认值）
 	Price4K *float64 // 4K 尺寸价格（nil 表示使用默认值）
+}
+
+const defaultWebSearchPricePerCall = 0.01
+
+func (s *BillingService) CalculateWebSearchCost(callCount int, groupPrice *float64, rateMultiplier float64) *CostBreakdown {
+	if callCount <= 0 {
+		return &CostBreakdown{}
+	}
+	unitPrice := defaultWebSearchPricePerCall
+	if groupPrice != nil && *groupPrice >= 0 {
+		unitPrice = *groupPrice
+	}
+	if rateMultiplier < 0 {
+		rateMultiplier = 0
+	}
+	totalCost := unitPrice * float64(callCount)
+	return &CostBreakdown{
+		TotalCost:   totalCost,
+		ActualCost:  totalCost * rateMultiplier,
+		BillingMode: string(BillingModePerRequest),
+	}
 }
 
 // CalculateImageCost 计算图片生成费用

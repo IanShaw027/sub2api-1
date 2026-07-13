@@ -1,12 +1,13 @@
 # Sub2API Deployment Files
 
-This directory contains files for deploying Sub2API on Linux servers.
+This directory contains files for deploying Sub2API on Linux servers and Apple-silicon Macs.
 
 ## Deployment Methods
 
 | Method | Best For | Setup Wizard |
 |--------|----------|--------------|
 | **Docker Compose** | Quick setup, all-in-one | Not needed (auto-setup) |
+| **Apple container** | Native local stack on macOS 26 | Not needed (auto-setup) |
 | **Binary Install** | Production servers, systemd | Web-based wizard |
 
 ## Files
@@ -16,7 +17,9 @@ This directory contains files for deploying Sub2API on Linux servers.
 | `docker-compose.yml` | Docker Compose configuration (named volumes) |
 | `docker-compose.local.yml` | Docker Compose configuration (local directories, easy migration) |
 | `docker-deploy.sh` | **One-click Docker deployment script (recommended)** |
-| `.env.example` | Docker environment variables template |
+| `apple-container.sh` | Native Apple `container` lifecycle script |
+| `APPLE_CONTAINER.md` | Apple `container` deployment and operations guide |
+| `.env.example` | Container environment variables template |
 | `DOCKER.md` | Docker Hub documentation |
 | `install.sh` | One-click binary installation script |
 | `install-datamanagementd.sh` | datamanagementd 一键安装脚本 |
@@ -24,6 +27,23 @@ This directory contains files for deploying Sub2API on Linux servers.
 | `sub2api-datamanagementd.service` | datamanagementd systemd service unit file |
 | `DATAMANAGEMENTD_CN.md` | datamanagementd 部署与联动说明（中文） |
 | `config.example.yaml` | Example configuration file |
+
+---
+
+## Apple container Deployment
+
+Apple-silicon Macs running macOS 26 can run the complete Sub2API, PostgreSQL, and Redis stack with Apple `container` 1.1.0 or newer:
+
+```bash
+./apple-container.sh init
+./apple-container.sh up
+./apple-container.sh status
+./apple-container.sh logs app -f
+```
+
+The script uses Apple named volumes, starts dependencies in order, and performs live readiness checks. It does not provide a continuous restart supervisor; run `./apple-container.sh up` after a host reboot. Docker Compose remains the recommended production deployment path.
+
+See [APPLE_CONTAINER.md](./APPLE_CONTAINER.md) for configuration, upgrades, persistence, networking behavior, and limitations.
 
 ---
 
@@ -76,6 +96,7 @@ cd sub2api/deploy
 
 # Configure environment
 cp .env.example .env
+chmod 600 .env
 nano .env  # Set POSTGRES_PASSWORD and other required variables
 
 # Generate secure secrets (recommended)
@@ -568,55 +589,44 @@ sudo systemctl status redis
 
 ## TLS Fingerprint Configuration
 
-Sub2API supports TLS fingerprint simulation to make requests appear as if they come from the official Claude CLI (Node.js client).
+Sub2API supports **DB-backed TLS fingerprint profiles**, live **capture tasks**, and **account-level routing** so outbound traffic can replay real client ClientHello (+ optional HTTP/2) fingerprints for Claude / OpenAI / Grok / Kiro.
 
-> **💡 Tip:** Visit **[tls.sub2api.org](https://tls.sub2api.org/)** to get TLS fingerprint information for different devices and browsers.
+> **💡 Tip:** Use the in-app public collector page (`/tls-fingerprint-collector`) or enable the native capture listener below. Profiles live in PostgreSQL (Admin → TLS Fingerprint Profiles), not in static YAML.
 
-### Default Behavior
+### Ops workflow (recommended)
 
-- Built-in `claude_cli_v2` profile simulates Node.js 20.x + OpenSSL 3.x
-- JA3 Hash: `1a28e69016765d92e3b381168d68922c`
-- JA4: `t13d5911h1_a33745022dd6_1f22a2ca17c4`
-- Profile selection: `accountID % profileCount`
+1. Enable the native capture listener (`tls_fingerprint_capture.enabled: true`).
+2. Admin creates a **capture task** (targets + optional UA keywords) and copies the task token from the single-task view (list APIs redact tokens).
+3. Point the real client (Codex / Claude Code / Grok / Kiro) at the capture base URL; prefer header `X-TLS-Fingerprint-Token` (or `Authorization: Bearer`) over query tokens.
+4. Import selected samples into **profiles** (Admin → capture task → import).
+5. Bind accounts:
+   - `enable_tls_fingerprint`
+   - optional single `tls_fingerprint_profile_id` (or `-1` random same-platform)
+   - optional `tls_fingerprint_router_id` (UA/transport → dimension or profile)
+   - optional `tls_fingerprint_bindings` matrix (`os` or `os/client_type` → profile id)
+   - optional `tls_fingerprint_default_os` when there is no inbound UA
+6. Seed dimension router packs (`openai-dimension-pack`, `claude-dimension-pack`, `grok-dimension-pack`, `kiro-dimension-pack`) ship with migrations and emit **OS/client_type dimensions** (not hard-coded profile IDs). Map those dimensions to imported profiles per account.
 
-### Configuration
+### Capture listener config
 
 ```yaml
-gateway:
-  tls_fingerprint:
-    enabled: true  # Global switch
-    profiles:
-      # Simple profile (uses default cipher suites)
-      profile_1:
-        name: "Profile 1"
-
-      # Profile with custom cipher suites (use compact array format)
-      profile_2:
-        name: "Profile 2"
-        cipher_suites: [4866, 4867, 4865, 49199, 49195, 49200, 49196]
-        curves: [29, 23, 24]
-        point_formats: 0
-
-      # Another custom profile
-      profile_3:
-        name: "Profile 3"
-        cipher_suites: [4865, 4866, 4867, 49199, 49200]
-        curves: [29, 23, 24, 25]
+tls_fingerprint_capture:
+  enabled: false          # set true to collect live ClientHello / H2 samples
+  host: "127.0.0.1"       # keep loopback unless you intentionally publish it
+  port: 8444
+  cert_file: ""           # optional; empty = auto self-signed for local capture
+  key_file: ""
+  public_base_url: ""     # external URL when published behind a reverse proxy
 ```
 
-### Profile Fields
+### Account / anti-ban notes
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | string | Display name (required) |
-| `cipher_suites` | []uint16 | Cipher suites in decimal. Empty = default |
-| `curves` | []uint16 | Elliptic curves in decimal. Empty = default |
-| `point_formats` | []uint8 | EC point formats. Empty = default |
+- Account TLS is **off by default** until `extra.enable_tls_fingerprint=true`.
+- Per-platform anti-ban suite (`gateway.anti_ban.platforms.*`) is separate from TLS selection; both default off per platform and can be toggled in System Settings.
+- `h2` / `websocket-h2` profiles are **replayable** when `http2_fingerprint` is present (outbound `DoWithTLS` H2 path).
+- Capture task **restart** clears prior samples so quota progress starts clean; import before restart if you need the old captures.
+- Request bodies are **not stored by default**; set task `capture_filters.store_body=true` only when debugging.
 
-### Common Values Reference
+### Built-in fallback
 
-**Cipher Suites (TLS 1.3):** `4865` (AES_128_GCM), `4866` (AES_256_GCM), `4867` (CHACHA20)
-
-**Cipher Suites (TLS 1.2):** `49195`, `49196`, `49199`, `49200` (ECDHE variants)
-
-**Curves:** `29` (X25519), `23` (P-256), `24` (P-384), `25` (P-521)
+When TLS is enabled but no profile is bound, the dialer falls back to the built-in Node.js 24.x defaults (Claude Code oriented). Prefer **captured** profiles for production accuracy.

@@ -55,7 +55,9 @@ server:
     max_upload_buffer_per_stream: 524288
 
 # TLS fingerprint native capture listener
-# TLS 指纹原生采集监听器
+# TLS 指纹原生采集监听器（ClientHello + H2 采样 → Admin 导入为 DB profile）
+# Profiles/routers live in PostgreSQL (Admin UI), not under gateway.tls_fingerprint YAML.
+# 指纹模板与路由规则在数据库中管理，不再使用静态 YAML profiles。
 tls_fingerprint_capture:
   # Enable the dedicated TLS capture listener
   # 启用独立的 TLS 采集监听器
@@ -73,6 +75,11 @@ tls_fingerprint_capture:
   # Optional external base URL when the listener is published behind a reverse proxy
   # 监听器通过反向代理对外发布时可填写外部访问地址
   public_base_url: ""
+  # Ops notes:
+  # - Prefer header X-TLS-Fingerprint-Token / Authorization Bearer over ?token=
+  # - Capture task list API redacts tokens; fetch a single task to copy the token
+  # - Restart clears samples so quota starts clean; import before restart if needed
+  # - Request bodies are not stored unless task capture_filters.store_body=true
 
 # =============================================================================
 # Run Mode Configuration
@@ -284,6 +291,10 @@ gateway:
     # ingress 默认模式：off|ctx_pool|passthrough|http_bridge（仅 mode_router_v2_enabled=true 生效）
     # 兼容旧值：shared/dedicated 会按 ctx_pool 处理。
     ingress_mode_default: ctx_pool
+    # Close a client WebSocket that stays idle between completed turns (seconds). Set 0 to disable.
+    ingress_inter_turn_idle_timeout_seconds: 300
+    # Limit live client WebSocket ingress sessions per API key across all instances. Set 0 to disable.
+    max_ingress_connections_per_api_key: 64
     # 全局总开关，默认 true；关闭时所有请求保持原有 HTTP/SSE 路由
     enabled: true
     # 按账号类型细分开关

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -77,6 +78,86 @@ type APIKeyConcurrencyCache interface {
 	TrackAPIKeySlot(ctx context.Context, apiKeyID int64, requestID string) error
 	ReleaseAPIKeySlot(ctx context.Context, apiKeyID int64, requestID string) error
 	GetAPIKeyConcurrencyBatch(ctx context.Context, apiKeyIDs []int64) (map[int64]int, error)
+}
+
+type OpenAIWSIngressLeaseCache interface {
+	AcquireOpenAIWSIngressLease(ctx context.Context, apiKeyID int64, maxConnections int, leaseID string) (bool, error)
+	RefreshOpenAIWSIngressLease(ctx context.Context, apiKeyID int64, leaseID string) (bool, error)
+	ReleaseOpenAIWSIngressLease(ctx context.Context, apiKeyID int64, leaseID string) error
+}
+
+const (
+	openAIWSIngressLeaseTTL             = 60 * time.Second
+	openAIWSIngressLeaseRefreshInterval = 20 * time.Second
+	openAIWSIngressLeaseOperationTO     = 2 * time.Second
+)
+
+var ErrOpenAIWSIngressLeaseLost = errors.New("openai websocket ingress lease lost")
+
+type OpenAIWSIngressLease struct {
+	ctx      context.Context
+	cancel   context.CancelCauseFunc
+	cache    OpenAIWSIngressLeaseCache
+	apiKeyID int64
+	leaseID  string
+
+	stopOnce    sync.Once
+	stopCh      chan struct{}
+	refreshDone chan struct{}
+}
+
+func (l *OpenAIWSIngressLease) Context() context.Context {
+	if l == nil || l.ctx == nil {
+		return context.Background()
+	}
+	return l.ctx
+}
+
+func (l *OpenAIWSIngressLease) Release() {
+	if l == nil {
+		return
+	}
+	l.stopOnce.Do(func() {
+		close(l.stopCh)
+		l.cancel(nil)
+		<-l.refreshDone
+		if l.cache == nil || l.apiKeyID <= 0 || l.leaseID == "" {
+			return
+		}
+		releaseCtx, cancel := context.WithTimeout(context.Background(), openAIWSIngressLeaseOperationTO)
+		defer cancel()
+		if err := l.cache.ReleaseOpenAIWSIngressLease(releaseCtx, l.apiKeyID, l.leaseID); err != nil {
+			logger.L().Warn("openai_ws_ingress_lease_release_failed", zap.Int64("api_key_id", l.apiKeyID), zap.Error(err))
+		}
+	})
+}
+
+func (l *OpenAIWSIngressLease) refreshLoop() {
+	defer close(l.refreshDone)
+	ticker := time.NewTicker(openAIWSIngressLeaseRefreshInterval)
+	defer ticker.Stop()
+	lastConfirmedAt := time.Now()
+	for {
+		select {
+		case <-l.ctx.Done():
+			return
+		case <-l.stopCh:
+			return
+		case <-ticker.C:
+		}
+		refreshCtx, cancel := context.WithTimeout(context.Background(), openAIWSIngressLeaseOperationTO)
+		owned, err := l.cache.RefreshOpenAIWSIngressLease(refreshCtx, l.apiKeyID, l.leaseID)
+		cancel()
+		if err == nil && owned {
+			lastConfirmedAt = time.Now()
+			continue
+		}
+		if err == nil || time.Since(lastConfirmedAt) >= openAIWSIngressLeaseTTL {
+			l.cancel(ErrOpenAIWSIngressLeaseLost)
+			return
+		}
+		logger.L().Warn("openai_ws_ingress_lease_refresh_failed", zap.Int64("api_key_id", l.apiKeyID), zap.Error(err))
+	}
 }
 
 var (
@@ -149,6 +230,45 @@ func NewConcurrencyService(cache ConcurrencyCache) *ConcurrencyService {
 	svc.SetAccountLoadBatchCacheTTL(defaultAccountLoadBatchCacheTTL)
 	svc.SetSlotHeartbeatInterval(defaultSlotHeartbeatInterval)
 	return svc
+}
+
+func (s *ConcurrencyService) AcquireOpenAIWSIngressLease(ctx context.Context, apiKeyID int64, maxConnections int) (*OpenAIWSIngressLease, bool, error) {
+	if maxConnections <= 0 {
+		return nil, true, nil
+	}
+	if s == nil || s.cache == nil || apiKeyID <= 0 {
+		return nil, false, errors.New("openai websocket ingress lease cache is unavailable")
+	}
+	cache, ok := s.cache.(OpenAIWSIngressLeaseCache)
+	if !ok {
+		return nil, false, errors.New("openai websocket ingress lease cache is unsupported")
+	}
+	leaseID := generateRequestID()
+	baseCtx := context.Background()
+	if ctx != nil {
+		baseCtx = context.WithoutCancel(ctx)
+	}
+	acquireCtx, cancel := context.WithTimeout(baseCtx, openAIWSIngressLeaseOperationTO)
+	acquired, err := cache.AcquireOpenAIWSIngressLease(acquireCtx, apiKeyID, maxConnections, leaseID)
+	cancel()
+	if err != nil || !acquired {
+		return nil, acquired, err
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	leaseCtx, leaseCancel := context.WithCancelCause(ctx)
+	lease := &OpenAIWSIngressLease{
+		ctx:         leaseCtx,
+		cancel:      leaseCancel,
+		cache:       cache,
+		apiKeyID:    apiKeyID,
+		leaseID:     leaseID,
+		stopCh:      make(chan struct{}),
+		refreshDone: make(chan struct{}),
+	}
+	go lease.refreshLoop()
+	return lease, true, nil
 }
 
 // SetSlotHeartbeatInterval sets how often acquired slots re-touch Redis.

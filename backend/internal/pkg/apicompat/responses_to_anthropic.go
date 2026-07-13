@@ -288,6 +288,9 @@ type ResponsesEventToAnthropicState struct {
 	ContentBlockOpen          bool
 	CurrentBlockType          string // "text" | "thinking" | "tool_use"
 	HasReceivedArgumentsDelta bool
+	CurrentToolName           string
+	CurrentToolArgs           string
+	CurrentToolHadDelta       bool
 
 	// SawToolUse is true once any client tool_use block was opened. Used by
 	// FinalizeResponsesAnthropicStream when Response.Output is unavailable.
@@ -457,6 +460,8 @@ func resToAnthHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesE
 		state.ContentBlockOpen = true
 		state.CurrentBlockType = "tool_use"
 		state.HasReceivedArgumentsDelta = false
+		state.CurrentToolArgs = ""
+		state.CurrentToolHadDelta = false
 		state.customToolInputBuf = ""
 		state.SawToolUse = true
 
@@ -469,6 +474,7 @@ func resToAnthHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesE
 		case "custom_tool_call":
 			callID = responsesCallIDOrItemID(*evt.Item)
 		}
+		state.CurrentToolName = name
 
 		events = append(events, AnthropicStreamEvent{
 			Type:  "content_block_start",
@@ -558,6 +564,7 @@ func resToAnthHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 		}
 		state.customToolInputBuf += evt.Delta
 		state.HasReceivedArgumentsDelta = true
+		state.CurrentToolHadDelta = true
 		return nil
 	}
 
@@ -566,6 +573,8 @@ func resToAnthHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 		return nil
 	}
 	state.HasReceivedArgumentsDelta = true
+	state.CurrentToolHadDelta = true
+	state.CurrentToolArgs += evt.Delta
 
 	return []AnthropicStreamEvent{{
 		Type:  "content_block_delta",

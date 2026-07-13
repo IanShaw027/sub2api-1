@@ -8,6 +8,7 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"math"
+	"net/url"
 	"reflect"
 	"regexp"
 	"sort"
@@ -1565,6 +1566,9 @@ func (a *Account) GetOpenAIRefreshToken() string {
 }
 
 func (a *Account) GetGrokBaseURL() string {
+	if a != nil && a.IsGrokOAuth() {
+		return a.GetGrokBaseURLOr(xai.DefaultCLIBaseURL)
+	}
 	return a.GetGrokBaseURLOr(xai.DefaultBaseURL)
 }
 
@@ -1576,11 +1580,79 @@ func (a *Account) GetGrokBaseURLOr(defaultBaseURL string) string {
 	if a == nil || !a.IsGrok() {
 		return ""
 	}
-	if baseURL := strings.TrimSpace(a.GetCredential("base_url")); baseURL != "" {
+	defaultBaseURL = strings.TrimRight(strings.TrimSpace(defaultBaseURL), "/")
+	if defaultBaseURL == "" {
+		if a.IsGrokOAuth() {
+			defaultBaseURL = xai.DefaultCLIBaseURL
+		} else {
+			defaultBaseURL = xai.DefaultBaseURL
+		}
+	}
+
+	baseURL := strings.TrimSpace(a.GetCredential("base_url"))
+	if baseURL == "" {
+		return defaultBaseURL
+	}
+	if !a.IsGrokOAuth() {
 		return baseURL
 	}
-	if strings.TrimSpace(defaultBaseURL) != "" {
-		return strings.TrimRight(strings.TrimSpace(defaultBaseURL), "/")
+	// Older OAuth accounts stored api.x.ai as a generated default. When the
+	// selected system mode is CLI, treat that value as legacy rather than as an
+	// explicit pin. Selecting API mode still routes those accounts to api.x.ai.
+	if isOfficialGrokAPIBaseURL(baseURL) && isOfficialGrokCLIBaseURL(defaultBaseURL) {
+		return xai.DefaultCLIBaseURL
+	}
+	if validated, err := xai.ValidateTrustedBaseURL(baseURL); err == nil {
+		return validated
+	}
+	return defaultBaseURL
+}
+
+func isOfficialGrokAPIBaseURL(raw string) bool {
+	return isOfficialGrokBaseURL(raw, xai.DefaultBaseURL)
+}
+
+func isOfficialGrokCLIBaseURL(raw string) bool {
+	return isOfficialGrokBaseURL(raw, xai.DefaultCLIBaseURL)
+}
+
+func isOfficialGrokBaseURL(raw, expected string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed == nil || parsed.Opaque != "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return false
+	}
+	defaultURL, err := url.Parse(expected)
+	if err != nil {
+		return false
+	}
+	if !strings.EqualFold(parsed.Scheme, defaultURL.Scheme) || !strings.EqualFold(parsed.Hostname(), defaultURL.Hostname()) {
+		return false
+	}
+	if port := parsed.Port(); port != "" {
+		portNumber, err := strconv.Atoi(port)
+		if err != nil || portNumber != 443 {
+			return false
+		}
+	}
+	path := strings.TrimRight(parsed.Path, "/")
+	return path == "" || path == strings.TrimRight(defaultURL.Path, "/")
+}
+
+// GetGrokMediaBaseURL keeps OAuth media traffic on trusted Imagine endpoints;
+// API-key accounts may use their configured public HTTPS API.
+func (a *Account) GetGrokMediaBaseURL() string {
+	if a == nil || !a.IsGrok() {
+		return ""
+	}
+	if !a.IsGrokOAuth() {
+		return a.GetGrokBaseURL()
+	}
+	baseURL := strings.TrimSpace(a.GetCredential("base_url"))
+	if baseURL == "" || isGrokCLIChatProxyBaseURL(baseURL) {
+		return xai.DefaultBaseURL
+	}
+	if validated, err := xai.ValidateTrustedBaseURL(baseURL); err == nil {
+		return validated
 	}
 	return xai.DefaultBaseURL
 }

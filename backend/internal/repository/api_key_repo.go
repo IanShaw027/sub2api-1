@@ -17,7 +17,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/lib/pq"
 
+	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 )
 
@@ -565,21 +567,11 @@ func (r *apiKeyRepository) attachAPIKeyLastUsedIPs(ctx context.Context, keys []s
 	if len(ids) == 0 {
 		return nil
 	}
-	placeholders := make([]string, len(ids))
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
-		args[i] = id
+	dialectName := ""
+	if r.client != nil && r.client.Driver() != nil {
+		dialectName = r.client.Driver().Dialect()
 	}
-	query := fmt.Sprintf(`
-		SELECT api_key_id, ip_address
-		FROM (
-			SELECT api_key_id, ip_address, ROW_NUMBER() OVER (PARTITION BY api_key_id ORDER BY created_at DESC, id DESC) AS rn
-			FROM usage_logs
-			WHERE api_key_id IN (%s) AND TRIM(COALESCE(ip_address, '')) <> ''
-		) latest
-		WHERE rn = 1
-	`, strings.Join(placeholders, ","))
+	query, args := latestUsageLogIPsQuery(ids, dialectName)
 	rows, err := r.sql.QueryContext(ctx, query, args...)
 	if err != nil {
 		return err
@@ -607,6 +599,41 @@ func (r *apiKeyRepository) attachAPIKeyLastUsedIPs(ctx context.Context, keys []s
 		}
 	}
 	return nil
+}
+
+func latestUsageLogIPsQuery(apiKeyIDs []int64, dialectName string) (string, []any) {
+	if dialectName == dialect.Postgres {
+		return `
+		SELECT requested.api_key_id, latest.ip_address
+		FROM unnest($1::bigint[]) AS requested(api_key_id)
+		CROSS JOIN LATERAL (
+			SELECT ul.ip_address
+			FROM usage_logs AS ul
+			WHERE ul.api_key_id = requested.api_key_id
+				AND ul.ip_address IS NOT NULL
+				AND ul.ip_address <> ''
+			ORDER BY ul.created_at DESC, ul.id DESC
+			LIMIT 1
+		) AS latest`, []any{pq.Array(apiKeyIDs)}
+	}
+
+	placeholders := make([]string, len(apiKeyIDs))
+	args := make([]any, len(apiKeyIDs))
+	for i, id := range apiKeyIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	return fmt.Sprintf(`
+		SELECT api_key_id, ip_address
+		FROM (
+			SELECT api_key_id, ip_address,
+				ROW_NUMBER() OVER (PARTITION BY api_key_id ORDER BY created_at DESC, id DESC) AS rn
+			FROM usage_logs
+			WHERE api_key_id IN (%s)
+				AND ip_address IS NOT NULL
+				AND ip_address <> ''
+		) ranked
+		WHERE rn = 1`, strings.Join(placeholders, ", ")), args
 }
 
 func apiKeyListOrder(params pagination.PaginationParams) []func(*entsql.Selector) {
@@ -950,6 +977,7 @@ func groupEntityToService(g *dbent.Group) *service.Group {
 		VideoPrice720pPerSec:            g.VideoPrice720pPerSec,
 		VideoPrice1080pPerSec:           g.VideoPrice1080pPerSec,
 		VideoPrice4kPerSec:              g.VideoPrice4kPerSec,
+		WebSearchPricePerCall:           g.WebSearchPricePerCall,
 		SearchPricePer1k:                g.SearchPricePer1k,
 		AudioRealtimePricePerMin:        g.AudioRealtimePricePerMin,
 		AudioTTSPricePerMillionChars:    g.AudioTtsPricePerMillionChars,

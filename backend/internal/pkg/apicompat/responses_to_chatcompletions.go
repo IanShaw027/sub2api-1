@@ -135,8 +135,13 @@ func responsesCustomToolCallChatArguments(input string) string {
 func responsesStatusToChatFinishReason(status string, details *ResponsesIncompleteDetails, failedErr *ResponsesError, toolCalls []ChatToolCall) string {
 	switch status {
 	case "incomplete":
-		if details != nil && details.Reason == "max_output_tokens" {
-			return "length"
+		if details != nil {
+			switch details.Reason {
+			case "max_output_tokens":
+				return "length"
+			case "content_filter":
+				return "content_filter"
+			}
 		}
 		if details != nil && details.Reason == "content_filter" {
 			return "content_filter"

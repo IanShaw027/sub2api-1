@@ -101,3 +101,20 @@ describe('useGrokOAuth.exchangeAuthCode', () => {
     })
   })
 })
+
+describe('useGrokOAuth.buildCredentials', () => {
+  it('leaves the OAuth upstream unpinned so the system mode controls inference', () => {
+    const oauth = useGrokOAuth()
+
+    const credentials = oauth.buildCredentials({
+      access_token: 'access-token',
+      token_type: 'Bearer',
+      expires_at: 1_900_000_000,
+      client_id: 'client-id',
+      scope: 'openid grok-cli:access',
+      email: 'grok@example.com'
+    })
+
+    expect(credentials.base_url).toBeUndefined()
+  })
+})

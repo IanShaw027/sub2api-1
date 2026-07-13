@@ -142,7 +142,7 @@ func TestAccountTestService_TestAccountConnection_GrokOAuthUsesXAIResponses(t *t
 	require.NoError(t, err)
 
 	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, xai.DefaultBaseURL+"/responses", upstream.lastReq.URL.String())
+	require.Equal(t, xai.DefaultCLIBaseURL+"/responses", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer grok-access-token", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "application/json, text/event-stream", upstream.lastReq.Header.Get("Accept"))
 	require.Equal(t, defaultGrokUpstreamUserAgent, upstream.lastReq.Header.Get("User-Agent"))
@@ -243,7 +243,7 @@ func TestAccountTestService_TestAccountConnection_GrokTextMappingToMediaStillUse
 	require.NoError(t, err)
 
 	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, xai.DefaultBaseURL+"/responses", upstream.lastReq.URL.String())
+	require.Equal(t, xai.DefaultCLIBaseURL+"/responses", upstream.lastReq.URL.String())
 	require.Equal(t, "grok-4.3", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.NotContains(t, upstream.lastReq.URL.String(), "/videos/generations")
 	require.Contains(t, rec.Body.String(), `"success":true`)

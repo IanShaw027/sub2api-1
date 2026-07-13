@@ -39,9 +39,12 @@ const (
 	singleAccountBackoffDelay = 2 * time.Second
 )
 
-func sameAccountRetryPolicy(failoverErr *service.UpstreamFailoverError) (time.Duration, int) {
+func sameAccountRetryPolicy(failoverErr *service.UpstreamFailoverError, retryLimit int) (time.Duration, int) {
 	delay := sameAccountRetryDelay
-	maxRetries := maxSameAccountRetries
+	maxRetries := retryLimit
+	if maxRetries < 0 {
+		maxRetries = 0
+	}
 	if failoverErr == nil {
 		return delay, maxRetries
 	}
@@ -108,6 +111,7 @@ func (s *FailoverState) HandleFailoverError(
 	gatewayService TempUnscheduler,
 	accountID int64,
 	platform string,
+	retryLimit int,
 	failoverErr *service.UpstreamFailoverError,
 ) FailoverAction {
 	s.LastFailoverErr = failoverErr
@@ -118,7 +122,7 @@ func (s *FailoverState) HandleFailoverError(
 	}
 
 	// 同账号重试：对 RetryableOnSameAccount 的临时性错误，先在同一账号上重试
-	retryDelay, retryMax := sameAccountRetryPolicy(failoverErr)
+	retryDelay, retryMax := sameAccountRetryPolicy(failoverErr, retryLimit)
 	if failoverErr.RetryableOnSameAccount && s.SameAccountRetryCount[accountID] < retryMax {
 		s.SameAccountRetryCount[accountID]++
 		logger.FromContext(ctx).Warn("gateway.failover_same_account_retry",

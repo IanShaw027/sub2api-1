@@ -1718,7 +1718,7 @@ describe('AccountUsageCell', () => {
 		expect(badges.some(node => node.attributes('title') === 'usage.userBilled')).toBe(true)
   })
 
-  it('Grok OAuth 无官方窗口时不重复展示独立本地行并保留超限百分比', async () => {
+  it('Grok OAuth 无官方窗口时不重复展示独立本地行并展示剩余容量', async () => {
     getUsage.mockResolvedValue({
       grok_local_usage: {
         requests: 4,
@@ -1764,7 +1764,7 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).not.toContain('A $0.12')
     expect(wrapper.text()).not.toContain('U $0.34')
     // Without official seven_day/thirty_day, fallback header req bar is shown.
-    expect(wrapper.text()).toContain('admin.accounts.usageWindow.grokRequests|120|2026-07-09T16:00:00Z')
+    expect(wrapper.text()).toContain('admin.accounts.usageWindow.grokRequests|0|2026-07-09T16:00:00Z')
   })
 
   it('Grok OAuth 展示官方 7d/30d 与余额行', async () => {

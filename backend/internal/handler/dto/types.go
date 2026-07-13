@@ -133,6 +133,7 @@ type Group struct {
 	VideoPrice720pPerSec  *float64 `json:"video_price_720p_per_sec"`
 	VideoPrice1080pPerSec *float64 `json:"video_price_1080p_per_sec"`
 	VideoPrice4kPerSec    *float64 `json:"video_price_4k_per_sec"`
+	WebSearchPricePerCall *float64 `json:"web_search_price_per_call"`
 
 	// 新增：搜索与音频显式定价（Grok 等平台分组级，不按文本倍率）
 	SearchPricePer1k             *float64 `json:"search_price_per_1k"`

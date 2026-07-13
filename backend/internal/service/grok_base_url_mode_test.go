@@ -10,12 +10,12 @@ import (
 
 func TestNormalizeGrokDefaultBaseURLMode(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, GrokDefaultBaseURLModeAPI, normalizeGrokDefaultBaseURLMode(""))
+	require.Equal(t, GrokDefaultBaseURLModeCLI, normalizeGrokDefaultBaseURLMode(""))
 	require.Equal(t, GrokDefaultBaseURLModeAPI, normalizeGrokDefaultBaseURLMode("api"))
 	require.Equal(t, GrokDefaultBaseURLModeAPI, normalizeGrokDefaultBaseURLMode("API"))
 	require.Equal(t, GrokDefaultBaseURLModeCLI, normalizeGrokDefaultBaseURLMode("cli"))
 	require.Equal(t, GrokDefaultBaseURLModeCLI, normalizeGrokDefaultBaseURLMode(" CLI "))
-	require.Equal(t, GrokDefaultBaseURLModeAPI, normalizeGrokDefaultBaseURLMode("unknown"))
+	require.Equal(t, GrokDefaultBaseURLModeCLI, normalizeGrokDefaultBaseURLMode("unknown"))
 }
 
 func TestGrokBaseURLForMode(t *testing.T) {
@@ -32,10 +32,11 @@ func TestAccountGetGrokBaseURLOr(t *testing.T) {
 		Credentials: map[string]any{},
 	}
 	require.Equal(t, xai.DefaultCLIBaseURL, acc.GetGrokBaseURLOr(xai.DefaultCLIBaseURL))
-	require.Equal(t, xai.DefaultBaseURL, acc.GetGrokBaseURLOr(""))
+	require.Equal(t, xai.DefaultCLIBaseURL, acc.GetGrokBaseURLOr(""))
 
 	acc.Credentials["base_url"] = "https://api.x.ai/v1"
-	require.Equal(t, "https://api.x.ai/v1", acc.GetGrokBaseURLOr(xai.DefaultCLIBaseURL))
+	require.Equal(t, xai.DefaultCLIBaseURL, acc.GetGrokBaseURLOr(xai.DefaultCLIBaseURL))
+	require.Equal(t, xai.DefaultBaseURL, acc.GetGrokBaseURLOr(xai.DefaultBaseURL))
 }
 
 func TestSettingServiceResolveGrokBaseURL(t *testing.T) {
@@ -48,7 +49,7 @@ func TestSettingServiceResolveGrokBaseURL(t *testing.T) {
 	require.Equal(t, xai.DefaultCLIBaseURL, svc.ResolveGrokBaseURL(context.Background(), acc))
 
 	acc.Credentials["base_url"] = xai.DefaultBaseURL
-	require.Equal(t, xai.DefaultBaseURL, svc.ResolveGrokBaseURL(context.Background(), acc))
+	require.Equal(t, xai.DefaultCLIBaseURL, svc.ResolveGrokBaseURL(context.Background(), acc))
 }
 
 func TestSettingServiceResolveGrokMediaBaseURLIgnoresCLIMode(t *testing.T) {

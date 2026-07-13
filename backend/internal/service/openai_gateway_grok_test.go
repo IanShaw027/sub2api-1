@@ -440,7 +440,7 @@ func TestBuildGrokResponsesRequestIsolatesXGrokConversationIDByAPIKey(t *testing
 	require.NotEqual(t, first, second)
 }
 
-func TestBuildGrokResponsesRequestRejectsUnsafeAccountBaseURL(t *testing.T) {
+func TestBuildGrokResponsesRequestFallsBackFromUnsafeAccountBaseURL(t *testing.T) {
 	t.Parallel()
 
 	account := &Account{
@@ -451,9 +451,9 @@ func TestBuildGrokResponsesRequestRejectsUnsafeAccountBaseURL(t *testing.T) {
 		},
 	}
 
-	_, err := buildGrokResponsesRequest(context.Background(), nil, account, []byte(`{"model":"grok-4.3"}`), "access-token", nil)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid base url")
+	req, err := buildGrokResponsesRequest(context.Background(), nil, account, []byte(`{"model":"grok-4.3"}`), "access-token", nil)
+	require.NoError(t, err)
+	require.Equal(t, xai.DefaultCLIBaseURL+"/responses", req.URL.String())
 }
 
 func TestGrokMediaGenerationGateCoversImagesAndVideo(t *testing.T) {
@@ -878,6 +878,7 @@ func TestForwardGrokResponsesStreamingUsesXAIResponsesAndSnapshots(t *testing.T)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Request.Header.Set("OpenAI-Beta", "responses=experimental")
+	c.Set("api_key", &APIKey{ID: 52, Group: &Group{Platform: PlatformGrok}})
 
 	account := &Account{
 		ID:          52,
@@ -931,7 +932,8 @@ func TestForwardGrokResponsesStreamingUsesXAIResponsesAndSnapshots(t *testing.T)
 	require.Equal(t, upstream.lastReq.Header.Get("session_id"), upstream.lastReq.Header.Get("x-grok-conv-id"))
 	require.NotEqual(t, "grok-session-1", upstream.lastReq.Header.Get("x-grok-conv-id"))
 	require.Equal(t, xai.DefaultTextModel, gjson.GetBytes(upstream.lastBody, "model").String())
-	require.Equal(t, "grok-session-1", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+	require.Equal(t, upstream.lastReq.Header.Get("session_id"), gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+	require.NotEqual(t, "grok-session-1", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
 	require.True(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
 	require.True(t, result.Stream)
 	require.Equal(t, "resp_grok", result.ResponseID)
@@ -1507,7 +1509,7 @@ func TestForwardAsChatCompletionsForGrokUsesXGrokConvIDHeader(t *testing.T) {
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	body := []byte(`{"model":"grok","messages":[{"role":"user","content":"hi"}],"stream":false}`)
+	body := []byte(`{"model":"grok-4.3","messages":[{"role":"user","content":"hi"}],"stream":false}`)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Request.Header.Set("x-grok-conv-id", "grok-conv-raw-1")
@@ -1544,7 +1546,7 @@ func TestForwardAsChatCompletionsForGrokUsesXGrokConvIDHeader(t *testing.T) {
 		accountRepo:       repo,
 	}
 
-	_, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "grok-conv-raw-1", "")
+	_, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "grok-conv-raw-1", "grok-4.3")
 	require.NoError(t, err)
 	require.Equal(t, isolateOpenAISessionID(77, "grok-conv-raw-1"), upstream.lastReq.Header.Get("x-grok-conv-id"))
 	require.NotEmpty(t, upstream.lastReq.Header.Get("session_id"))
@@ -1555,7 +1557,7 @@ func TestForwardAsChatCompletionsForGrokUsesPromptCacheKeyArgumentForAffinity(t 
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
-	body := []byte(`{"model":"grok","messages":[{"role":"user","content":"hi"}],"stream":false}`)
+	body := []byte(`{"model":"grok-4.3","messages":[{"role":"user","content":"hi"}],"stream":false}`)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("api_key", &APIKey{ID: 78, Group: &Group{Platform: PlatformGrok}})
@@ -1591,7 +1593,7 @@ func TestForwardAsChatCompletionsForGrokUsesPromptCacheKeyArgumentForAffinity(t 
 		accountRepo:       repo,
 	}
 
-	_, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "pcache-grok-raw-1", "")
+	_, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "pcache-grok-raw-1", "grok-4.3")
 	require.NoError(t, err)
 	require.Equal(t, isolateOpenAISessionID(78, "pcache-grok-raw-1"), upstream.lastReq.Header.Get("x-grok-conv-id"))
 	require.NotEmpty(t, upstream.lastReq.Header.Get("session_id"))
@@ -1656,13 +1658,13 @@ func TestForwardAsChatCompletionsForGrokDoesNotDeriveAffinityWhenPromptCacheKeyM
 		return c, account, upstream, svc
 	}
 
-	body := []byte(`{"model":"grok","messages":[{"role":"user","content":"hello grok"}],"stream":false}`)
+	body := []byte(`{"model":"grok-4.3","messages":[{"role":"user","content":"hello grok"}],"stream":false}`)
 	c1, account1, upstream1, svc1 := buildCtx(body)
-	_, err := svc1.ForwardAsChatCompletions(context.Background(), c1, account1, body, "", "")
+	_, err := svc1.ForwardAsChatCompletions(context.Background(), c1, account1, body, "", "grok-4.3")
 	require.NoError(t, err)
 
 	c2, account2, upstream2, svc2 := buildCtx(body)
-	_, err = svc2.ForwardAsChatCompletions(context.Background(), c2, account2, body, "", "")
+	_, err = svc2.ForwardAsChatCompletions(context.Background(), c2, account2, body, "", "grok-4.3")
 	require.NoError(t, err)
 
 	require.Empty(t, upstream1.lastReq.Header.Get("x-grok-conv-id"))

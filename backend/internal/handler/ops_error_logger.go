@@ -521,6 +521,35 @@ func shouldSuppressRecoveredContextCanceled(c *gin.Context, events []*service.Op
 	return false
 }
 
+func shouldRecordRecoveredContextCanceled(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.Context() == nil || c.Request.Context().Err() == nil {
+		return false
+	}
+	containsCanceled := func(s string) bool {
+		return strings.Contains(strings.ToLower(strings.TrimSpace(s)), "context canceled")
+	}
+	if v, ok := c.Get(service.OpsUpstreamErrorMessageKey); ok {
+		if message, ok := v.(string); ok && containsCanceled(message) {
+			return true
+		}
+	}
+	if v, ok := c.Get(service.OpsUpstreamErrorDetailKey); ok {
+		if detail, ok := v.(string); ok && containsCanceled(detail) {
+			return true
+		}
+	}
+	if v, ok := c.Get(service.OpsUpstreamErrorsKey); ok {
+		if events, ok := v.([]*service.OpsUpstreamErrorEvent); ok {
+			for _, event := range events {
+				if event != nil && (containsCanceled(event.Message) || containsCanceled(event.Detail) || containsCanceled(event.UpstreamResponseBody)) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func isOpsImageRequest(c *gin.Context) bool {
 	if c == nil {
 		return false
@@ -878,7 +907,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			parsed := parseOpsErrorResponse(body)
 			if parsed.StreamFailure {
 				status = inferStreamFailureStatus(c, parsed)
-			} else {
+			} else if !shouldRecordRecoveredContextCanceled(c) {
 				return
 			}
 		}
@@ -1065,6 +1094,12 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 					}
 				}
 			}
+		}
+		if shouldSuppressRecoveredContextCanceled(c, entry.UpstreamErrors, entry.UpstreamErrorMessage, entry.UpstreamErrorDetail) {
+			return
+		}
+		if strings.TrimSpace(entry.ErrorMessage) == "" && entry.UpstreamErrorMessage != nil {
+			entry.ErrorMessage = strings.TrimSpace(*entry.UpstreamErrorMessage)
 		}
 
 		if apiKey != nil {

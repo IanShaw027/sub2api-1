@@ -75,6 +75,7 @@ type Group struct {
 	VideoPrice480P        *float64
 	VideoPrice720P        *float64
 	VideoPrice1080P       *float64
+	WebSearchPricePerCall *float64
 
 	// 搜索/工具 & 音频显式定价（分组级，不按文本 RateMultiplier，参考 OpenAI 图片定价）
 	SearchPricePer1k             *float64

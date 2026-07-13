@@ -42,6 +42,7 @@ func TestOpenAIGatewayServiceCalculateOpenAIRecordUsageCost_AudioDoesNotReplaceT
 		1,
 		1,
 		1,
+		1,
 		usage,
 		"",
 		RequestTypeUnknown,

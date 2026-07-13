@@ -563,6 +563,19 @@ function mountView() {
         EmailTemplateEditor: {
           template: '<div data-testid="email-template-editor-stub" />',
         },
+        OpenAIFastPolicyUserSelector: {
+          props: ['modelValue'],
+          emits: ['update:modelValue'],
+          template: `
+            <div>
+              <input type="text" placeholder="admin.settings.openaiFastPolicy.userSearchPlaceholder" />
+              <button
+                title="admin.settings.openaiFastPolicy.removeUser"
+                @click="$emit('update:modelValue', [])"
+              />
+            </div>
+          `,
+        },
       },
     },
   });
@@ -734,7 +747,7 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(getWebSearchEmulationConfig).toHaveBeenCalledTimes(1);
   });
 
-  it("loads OpenAI Fast/Flex user IDs into an isolated array and exposes add/remove controls", async () => {
+  it("loads OpenAI Fast/Flex user IDs into an isolated array and exposes the user search selector", async () => {
     const loadedUserIDs = [1001];
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
@@ -760,28 +773,18 @@ describe("admin SettingsView payment visible method controls", () => {
     loadedUserIDs.push(1002);
     expect(rule.user_ids).toEqual([1001]);
 
-    const userIDInput = wrapper.find(
-      'input[placeholder="admin.settings.openaiFastPolicy.userIdPlaceholder"]',
+    const userSearchInput = wrapper.find(
+      'input[placeholder="admin.settings.openaiFastPolicy.userSearchPlaceholder"]',
     );
-    expect(userIDInput.attributes("type")).toBe("number");
-    expect(userIDInput.attributes("min")).toBe("1");
-    expect(userIDInput.attributes("step")).toBe("1");
-
-    const addButton = wrapper
-      .findAll("button")
-      .find((node) =>
-        node.text().includes("admin.settings.openaiFastPolicy.addUserId"),
-      );
-    expect(addButton).toBeDefined();
-    await addButton?.trigger("click");
-    expect(rule.user_ids).toEqual([1001, null]);
+    expect(userSearchInput.exists()).toBe(true);
+    expect(userSearchInput.attributes("type")).toBe("text");
 
     const removeButton = wrapper.find(
-      'button[title="admin.settings.openaiFastPolicy.removeUserId"]',
+      'button[title="admin.settings.openaiFastPolicy.removeUser"]',
     );
     expect(removeButton.exists()).toBe(true);
     await removeButton.trigger("click");
-    expect(rule.user_ids).toEqual([null]);
+    expect(rule.user_ids).toEqual([]);
 
     setupState.addOpenAIFastPolicyRule();
     expect(setupState.openaiFastPolicyForm.rules.at(-1).user_ids).toEqual([]);

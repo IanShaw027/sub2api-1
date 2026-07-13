@@ -478,6 +478,14 @@ func (l *openAIWSConnLease) PingWithTimeout(timeout time.Duration) error {
 	return conn.pingWithTimeout(timeout)
 }
 
+func (l *openAIWSConnLease) SupportsIdlePingWithoutReader() bool {
+	conn, err := l.activeConn()
+	if err != nil {
+		return false
+	}
+	return conn.supportsIdlePingWithoutReader()
+}
+
 func (l *openAIWSConnLease) MarkBroken() {
 	l.MarkBrokenFor("evict")
 }
@@ -504,6 +512,7 @@ type openAIWSConn struct {
 	ws openAIWSClientConn
 
 	handshakeHeaders http.Header
+	betaFeatures     string
 
 	leaseCh   chan struct{}
 	closedCh  chan struct{}
@@ -550,7 +559,7 @@ func newOpenAIWSConnWithProfileAndReuseKey(id string, ws openAIWSClientConn, han
 }
 
 func (c *openAIWSConn) matchesAcquire(req openAIWSAcquireRequest) bool {
-	if c == nil || c.profile != req.Profile {
+	if c == nil || c.profile != req.Profile || c.betaFeatures != normalizeOpenAIWSBetaFeatures(req.Headers) {
 		return false
 	}
 	useIdentity := stringsTrim(req.IdentityKey) != "" || req.TLSProfile != nil
@@ -741,6 +750,14 @@ func (c *openAIWSConn) pingWithTimeout(timeout time.Duration) error {
 		return err
 	}
 	return nil
+}
+
+func (c *openAIWSConn) supportsIdlePingWithoutReader() bool {
+	if c == nil || c.ws == nil {
+		return false
+	}
+	capable, ok := c.ws.(openAIWSIdlePingCapable)
+	return !ok || capable.SupportsIdlePingWithoutReader()
 }
 
 func (c *openAIWSConn) backgroundPingDue(now time.Time, interval time.Duration) bool {
@@ -1263,7 +1280,7 @@ func (p *openAIWSConnPool) runBackgroundCleanupSweep(now time.Time) {
 		}
 		evicted := p.cleanupAccountLocked(ap, now, accountConcurrency)
 		for _, conn := range ap.conns {
-			if conn == nil || p.isConnPinnedLocked(ap, conn.id) || conn.isLeased() || conn.waiters.Load() > 0 {
+			if conn == nil || p.isConnPinnedLocked(ap, conn.id) || conn.isLeased() || conn.waiters.Load() > 0 || !conn.supportsIdlePingWithoutReader() {
 				continue
 			}
 			if conn.idleDuration(now) < openAIWSBackgroundPingIdle || !conn.backgroundPingDue(now, p.backgroundSweepInterval()) {
@@ -1823,6 +1840,7 @@ func openAIWSConnReuseKeyForAcquire(req openAIWSAcquireRequest) string {
 		stringsTrim(req.ProxyURL),
 		headerValue("authorization"),
 		headerValue("OpenAI-Beta"),
+		normalizeOpenAIWSBetaFeatures(req.Headers),
 		headerValue("originator"),
 		headerValue("user-agent"),
 		headerValue("chatgpt-account-id"),
@@ -2789,6 +2807,7 @@ func (p *openAIWSConnPool) dialConn(ctx context.Context, req openAIWSAcquireRequ
 	id := p.nextConnID(req.Account.ID)
 	wsConn := newOpenAIWSConnWithProfileAndReuseKey(id, conn, handshakeHeaders, req.Profile, openAIWSConnReuseKeyForAcquire(req))
 	wsConn.identityKey = openAIWSAcquireIdentityKey(req)
+	wsConn.betaFeatures = normalizeOpenAIWSBetaFeatures(req.Headers)
 	return wsConn, nil
 }
 
@@ -2987,6 +3006,7 @@ func openAIWSAcquireIdentityKey(req openAIWSAcquireRequest) string {
 		"ua=" + strings.TrimSpace(req.Headers.Get("user-agent")),
 		"originator=" + strings.TrimSpace(req.Headers.Get("originator")),
 		"beta=" + strings.TrimSpace(req.Headers.Get("openai-beta")),
+		"codex_beta_features=" + normalizeOpenAIWSBetaFeatures(req.Headers),
 	}
 	return strings.Join(parts, "\n")
 }
@@ -3026,6 +3046,31 @@ func cloneHeader(src http.Header) http.Header {
 		dst[k] = copied
 	}
 	return dst
+}
+
+func normalizeOpenAIWSBetaFeatures(headers http.Header) string {
+	features := make(map[string]struct{})
+	for name, values := range headers {
+		if !strings.EqualFold(strings.TrimSpace(name), "x-codex-beta-features") {
+			continue
+		}
+		for _, value := range values {
+			for _, feature := range strings.Split(value, ",") {
+				if feature = strings.TrimSpace(feature); feature != "" {
+					features[feature] = struct{}{}
+				}
+			}
+		}
+	}
+	if len(features) == 0 {
+		return ""
+	}
+	normalized := make([]string, 0, len(features))
+	for feature := range features {
+		normalized = append(normalized, feature)
+	}
+	sort.Strings(normalized)
+	return strings.Join(normalized, ",")
 }
 
 func closeOpenAIWSConns(conns []*openAIWSConn) {

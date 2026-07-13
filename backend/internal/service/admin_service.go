@@ -258,6 +258,7 @@ type CreateGroupInput struct {
 	VideoPrice720pPerSec  *float64
 	VideoPrice1080pPerSec *float64
 	VideoPrice4kPerSec    *float64
+	WebSearchPricePerCall *float64
 
 	SearchPricePer1k             *float64
 	AudioRealtimePricePerMin     *float64
@@ -328,6 +329,8 @@ type UpdateGroupInput struct {
 	VideoPrice1080pPerSecSet bool
 	VideoPrice4kPerSec       *float64
 	VideoPrice4kPerSecSet    bool
+	WebSearchPricePerCall    *float64
+	WebSearchPricePerCallSet bool
 
 	// 搜索与音频显式定价（支持 clear via *Set）
 	SearchPricePer1k                *float64
@@ -2485,6 +2488,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		VideoPrice720pPerSec:  videoPrice720p,
 		VideoPrice1080pPerSec: videoPrice1080p,
 		VideoPrice4kPerSec:    videoPrice4k,
+		WebSearchPricePerCall: normalizePrice(input.WebSearchPricePerCall),
 
 		SearchPricePer1k:             normalizePrice(input.SearchPricePer1k),
 		AudioRealtimePricePerMin:     normalizePrice(input.AudioRealtimePricePerMin),
@@ -2770,6 +2774,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if input.VideoPrice4kPerSecSet {
 		group.VideoPrice4kPerSec = normalizePrice(input.VideoPrice4kPerSec)
+	}
+	if input.WebSearchPricePerCallSet {
+		group.WebSearchPricePerCall = normalizePrice(input.WebSearchPricePerCall)
 	}
 
 	if input.SearchPricePer1kSet {

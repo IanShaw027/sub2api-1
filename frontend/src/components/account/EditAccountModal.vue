@@ -1784,6 +1784,23 @@
       </div>
 
       <div
+        v-if="account?.platform === 'openai' && account?.type === 'oauth' && !isSparkShadow"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between gap-4">
+          <div class="min-w-0">
+            <label class="input-label mb-0">{{ t('admin.accounts.openai.planType') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openai.planTypeDesc') }}
+            </p>
+          </div>
+          <div class="w-44 shrink-0">
+            <Select v-model="editPlanType" :options="planTypeOptions" />
+          </div>
+        </div>
+      </div>
+
+      <div
         v-if="account?.platform === 'openai' && account?.type === 'apikey'"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
@@ -2725,6 +2742,7 @@ import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import TempUnschedRulesForm from '@/components/account/TempUnschedRulesForm.vue'
 import CustomErrorCodesForm from '@/components/account/CustomErrorCodesForm.vue'
 import { applyInterceptWarmup } from '@/components/account/credentialsBuilder'
+import { buildPlanTypeOptions, readPlanType } from '@/components/account/credentialsBuilder'
 import { buildCustomErrorCodesResult } from '@/components/account/customErrorCodes'
 import {
   buildResponseRewriteRules,
@@ -3026,6 +3044,7 @@ const kiroProfileSelectOptions = computed(() => {
 
 // OpenAI 自动透传开关（OAuth/API Key）
 const openaiPassthroughEnabled = ref(false)
+const editPlanType = ref('')
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAICompactSupported = ref<boolean | null>(null)
 const openAICompactCheckedAt = ref<string | null>(null)
@@ -3156,6 +3175,9 @@ const openAICompactModeOptions = computed(() => [
   { value: 'force_on', label: t('admin.accounts.openai.compactModeForceOn') },
   { value: 'force_off', label: t('admin.accounts.openai.compactModeForceOff') }
 ])
+const planTypeOptions = computed(() =>
+  buildPlanTypeOptions(editPlanType.value, t('admin.accounts.openai.planTypeClear'))
+)
 const openAIResponsesModeOptions = computed(() => [
   { value: 'auto', label: t('admin.accounts.openai.responsesModeAuto') },
   { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
@@ -3428,6 +3450,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 
   // Load OpenAI passthrough toggle (OpenAI OAuth/SetupToken/API Key)
   openaiPassthroughEnabled.value = false
+  editPlanType.value = ''
   openAICompactMode.value = 'auto'
   openAICompactSupported.value = null
   openAICompactCheckedAt.value = null
@@ -3454,6 +3477,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   webSearchEmulationMode.value = 'default'
   if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
+    editPlanType.value = newAccount.type === 'oauth' ? readPlanType(credentials) : ''
     openAICompactMode.value = (extra?.openai_compact_mode as OpenAICompactMode) || 'auto'
     openAIResponsesMode.value = newAccount.type === 'apikey' && isOpenAIResponsesMode(extra?.openai_responses_mode)
       ? extra.openai_responses_mode
@@ -3489,7 +3513,6 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       codexCLIOnlyAppServerEnabled.value =
         extra?.codex_cli_only_allow_app_server === true
     }
-    const credentials = newAccount.credentials as Record<string, unknown> | undefined
     openAIEndpointCapabilities.value = normalizeOpenAIEndpointCapabilities(credentials?.openai_capabilities)
     const compactMappings = credentials?.compact_model_mapping as Record<string, string> | undefined
     if (compactMappings && typeof compactMappings === 'object') {
@@ -5362,6 +5385,18 @@ const handleSubmit = async () => {
         (props.account.extra as Record<string, unknown>) ||
         {}
       updatePayload.extra = stripOpenAIImageGenerationExtra(currentExtra)
+    }
+
+    if (props.account.platform === 'openai' && props.account.type === 'oauth' && !isSparkShadow.value) {
+      const currentPlanType = readPlanType(props.account.credentials as Record<string, unknown>)
+      const nextPlanType = editPlanType.value.trim()
+      if (nextPlanType !== currentPlanType.trim()) {
+        const pendingCredentials = (updatePayload.credentials as Record<string, unknown>) || {}
+        updatePayload.credentials = {
+          ...pendingCredentials,
+          plan_type: nextPlanType || null
+        }
+      }
     }
 
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {

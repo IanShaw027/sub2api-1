@@ -1396,6 +1396,22 @@
           </div>
         </div>
 
+        <div v-if="createForm.platform === 'openai'" class="border-t pt-4">
+          <h4 class="mb-3 text-sm font-medium text-gray-700 dark:text-gray-300">
+            {{ t("admin.groups.webSearchPricing.title") }}
+          </h4>
+          <label class="input-label">{{ t("admin.groups.webSearchPricing.pricePerCall") }}</label>
+          <input
+            v-model.number="createForm.web_search_price_per_call"
+            type="number"
+            step="0.001"
+            min="0"
+            placeholder="0.01"
+            class="input"
+          />
+          <p class="input-hint">{{ t("admin.groups.webSearchPricing.pricePerCallHint") }}</p>
+        </div>
+
         <!-- OpenAI Messages 调度配置（仅 openai 平台） -->
         <div
           v-if="createForm.platform === 'openai'"
@@ -2986,6 +3002,22 @@
           </div>
         </div>
 
+        <div v-if="editForm.platform === 'openai'" class="border-t pt-4">
+          <h4 class="mb-3 text-sm font-medium text-gray-700 dark:text-gray-300">
+            {{ t("admin.groups.webSearchPricing.title") }}
+          </h4>
+          <label class="input-label">{{ t("admin.groups.webSearchPricing.pricePerCall") }}</label>
+          <input
+            v-model.number="editForm.web_search_price_per_call"
+            type="number"
+            step="0.001"
+            min="0"
+            placeholder="0.01"
+            class="input"
+          />
+          <p class="input-hint">{{ t("admin.groups.webSearchPricing.pricePerCallHint") }}</p>
+        </div>
+
         <!-- OpenAI Messages 调度配置（仅 openai 平台） -->
         <div
           v-if="editForm.platform === 'openai'"
@@ -4093,6 +4125,7 @@ const createForm = reactive({
   audio_realtime_price_per_min: null as number | null,
   audio_tts_price_per_million_chars: null as number | null,
   audio_stt_price_per_hour: null as number | null,
+  web_search_price_per_call: null as number | null,
   // Claude Code 客户端限制（仅 anthropic 平台使用）
   claude_code_only: false,
   fallback_group_id: null as number | null,
@@ -4444,6 +4477,7 @@ const editForm = reactive({
   audio_realtime_price_per_min: null as number | null,
   audio_tts_price_per_million_chars: null as number | null,
   audio_stt_price_per_hour: null as number | null,
+  web_search_price_per_call: null as number | null,
   // Claude Code 客户端限制（仅 anthropic 平台使用）
   claude_code_only: false,
   fallback_group_id: null as number | null,
@@ -4784,6 +4818,7 @@ const closeCreateModal = () => {
   createForm.image_price_4k = null;
   resetVideoPricingFormState(createForm);
   resetExplicitMediaPricingFormState(createForm);
+  createForm.web_search_price_per_call = null;
   createForm.claude_code_only = false;
   createForm.fallback_group_id = null;
   createForm.fallback_group_id_on_invalid_request = null;
@@ -5030,6 +5065,9 @@ const handleCreateGroup = async () => {
     requestData.image_price_4k = normalizeNullablePrice(requestData.image_price_4k);
     normalizeVideoPricingPayload(requestData);
     normalizeExplicitMediaPricingPayload(requestData);
+    requestData.web_search_price_per_call = createForm.platform === "openai"
+      ? normalizeNullablePrice(requestData.web_search_price_per_call)
+      : null;
     applyOpenAIImageTypeSelection(
       requestData as OpenAIImageTypeSelectionRequest & OpenAIImageSelectionPayload,
     );
@@ -5080,6 +5118,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.daily_limit_usd = group.daily_limit_usd;
   editForm.weekly_limit_usd = group.weekly_limit_usd;
   editForm.monthly_limit_usd = group.monthly_limit_usd;
+  editForm.web_search_price_per_call = group.web_search_price_per_call ?? null;
   Object.assign(editForm, deriveOpenAIImageFormState(group));
   Object.assign(editForm, deriveVideoPricingFormState(group));
   Object.assign(editForm, deriveExplicitMediaPricingFormState(group));
@@ -5139,6 +5178,7 @@ const closeEditModal = () => {
   resetMessagesDispatchFormState(editForm);
   resetVideoPricingFormState(editForm);
   resetExplicitMediaPricingFormState(editForm);
+  editForm.web_search_price_per_call = null;
   resetModelsListState(editModelsListState);
 };
 
@@ -5206,6 +5246,9 @@ const handleUpdateGroup = async () => {
     );
     normalizeVideoPricingPayload(payload);
     normalizeExplicitMediaPricingPayload(payload);
+    payload.web_search_price_per_call = editForm.platform === "openai"
+      ? normalizeNullablePrice(payload.web_search_price_per_call)
+      : null;
     applyOpenAIImageTypeSelection(
       payload as OpenAIImageTypeSelectionRequest & OpenAIImageSelectionPayload,
     );

@@ -151,6 +151,7 @@ type CreateGroupRequest struct {
 	VideoPrice720pPerSec  *float64 `json:"video_price_720p_per_sec"`
 	VideoPrice1080pPerSec *float64 `json:"video_price_1080p_per_sec"`
 	VideoPrice4kPerSec    *float64 `json:"video_price_4k_per_sec"`
+	WebSearchPricePerCall *float64 `json:"web_search_price_per_call"`
 
 	SearchPricePer1k             *float64 `json:"search_price_per_1k"`
 	AudioRealtimePricePerMin     *float64 `json:"audio_realtime_price_per_min"`
@@ -216,6 +217,7 @@ type UpdateGroupRequest struct {
 	VideoPrice720pPerSec  optionalFloatField `json:"video_price_720p_per_sec"`
 	VideoPrice1080pPerSec optionalFloatField `json:"video_price_1080p_per_sec"`
 	VideoPrice4kPerSec    optionalFloatField `json:"video_price_4k_per_sec"`
+	WebSearchPricePerCall optionalFloatField `json:"web_search_price_per_call"`
 
 	// 搜索与音频显式定价（Grok 图片/音频/search 支持，不按文本倍率）
 	SearchPricePer1k             optionalFloatField `json:"search_price_per_1k"`
@@ -400,6 +402,7 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		VideoPrice720pPerSec:  req.VideoPrice720pPerSec,
 		VideoPrice1080pPerSec: req.VideoPrice1080pPerSec,
 		VideoPrice4kPerSec:    req.VideoPrice4kPerSec,
+		WebSearchPricePerCall: req.WebSearchPricePerCall,
 
 		SearchPricePer1k:             req.SearchPricePer1k,
 		AudioRealtimePricePerMin:     req.AudioRealtimePricePerMin,
@@ -484,6 +487,8 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		VideoPrice1080pPerSecSet: req.VideoPrice1080pPerSec.Set(),
 		VideoPrice4kPerSec:       req.VideoPrice4kPerSec.Value(),
 		VideoPrice4kPerSecSet:    req.VideoPrice4kPerSec.Set(),
+		WebSearchPricePerCall:    req.WebSearchPricePerCall.Value(),
+		WebSearchPricePerCallSet: req.WebSearchPricePerCall.Set(),
 
 		SearchPricePer1k:                req.SearchPricePer1k.Value(),
 		SearchPricePer1kSet:             req.SearchPricePer1k.Set(),

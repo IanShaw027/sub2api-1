@@ -61,6 +61,8 @@ const accountAutopauseExpiryIndexMigration = "151_account_autopause_expiry_index
 const accountAutopauseExpiryIndex = "idx_accounts_autopause_expiry_due"
 const schedulerOutboxPendingDedupKeyMigration = "153_scheduler_outbox_pending_dedup_key_index_notx.sql"
 const schedulerOutboxPendingDedupKeyIndex = "idx_scheduler_outbox_pending_dedup_key"
+const latestAPIKeyIPIndexMigration = "202_add_usage_logs_api_key_latest_ip_index_notx.sql"
+const latestAPIKeyIPIndex = "idx_usage_logs_api_key_latest_ip"
 const invoiceOrderActiveUniqueMigration = "195a_add_invoice_order_active_unique_guard_notx.sql"
 const invoiceOrderActiveUniqueIndex = "invoiceorder_order_id_active_unique"
 const batchImageIdempotencyUniqueMigration = "199a_batch_image_idempotency_unique_notx.sql"
@@ -297,6 +299,8 @@ func prepareNonTransactionalMigration(ctx context.Context, db *sql.DB, name stri
 		return prepareInvalidIndexRetry(ctx, db, accountAutopauseExpiryIndex)
 	case schedulerOutboxPendingDedupKeyMigration:
 		return prepareInvalidIndexRetry(ctx, db, schedulerOutboxPendingDedupKeyIndex)
+	case latestAPIKeyIPIndexMigration:
+		return prepareInvalidIndexRetry(ctx, db, latestAPIKeyIPIndex)
 	case invoiceOrderActiveUniqueMigration:
 		// Drop INVALID partial unique left by a failed CREATE INDEX CONCURRENTLY
 		// so IF NOT EXISTS does not no-op past a non-enforcing index.

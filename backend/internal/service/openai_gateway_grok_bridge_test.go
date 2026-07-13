@@ -25,6 +25,8 @@ type grokBridgeAccountRepo struct {
 	tempUnschedCalls      int
 	lastTempUnschedID     int64
 	lastTempUnschedReason string
+	rateLimitedCalls      int
+	lastRateLimitedID     int64
 }
 
 func (r *grokBridgeAccountRepo) GetByID(_ context.Context, id int64) (*Account, error) {
@@ -48,6 +50,12 @@ func (r *grokBridgeAccountRepo) SetTempUnschedulable(_ context.Context, id int64
 	r.tempUnschedCalls++
 	r.lastTempUnschedID = id
 	r.lastTempUnschedReason = reason
+	return nil
+}
+
+func (r *grokBridgeAccountRepo) SetRateLimited(_ context.Context, id int64, _ time.Time) error {
+	r.rateLimitedCalls++
+	r.lastRateLimitedID = id
 	return nil
 }
 
@@ -384,6 +392,7 @@ func TestProxyOpenAIWSHTTPBridgeForGrok429ReturnsFailoverBeforeClientError(t *te
 	require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
 	require.Equal(t, "45", failoverErr.ResponseHeaders.Get("Retry-After"))
 	require.Empty(t, downstream)
-	require.Equal(t, 1, repo.tempUnschedCalls)
-	require.Equal(t, int64(59), repo.lastTempUnschedID)
+	require.Zero(t, repo.tempUnschedCalls)
+	require.Equal(t, 1, repo.rateLimitedCalls)
+	require.Equal(t, int64(59), repo.lastRateLimitedID)
 }

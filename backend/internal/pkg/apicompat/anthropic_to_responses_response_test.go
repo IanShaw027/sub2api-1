@@ -617,7 +617,7 @@ func TestAnthropicEventToResponsesEvents_MessageStopUsesStopReasonForIncompleteS
 		Type: "message_stop",
 	}, state)
 	require.Len(t, events, 1)
-	assert.Equal(t, "response.completed", events[0].Type)
+	assert.Equal(t, "response.incomplete", events[0].Type)
 	require.NotNil(t, events[0].Response)
 	assert.Equal(t, "incomplete", events[0].Response.Status)
 	require.NotNil(t, events[0].Response.IncompleteDetails)

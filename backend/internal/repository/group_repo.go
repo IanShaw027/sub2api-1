@@ -67,6 +67,7 @@ func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) er
 		SetNillableVideoPrice720pPerSec(groupIn.VideoPrice720pPerSec).
 		SetNillableVideoPrice1080pPerSec(groupIn.VideoPrice1080pPerSec).
 		SetNillableVideoPrice4kPerSec(groupIn.VideoPrice4kPerSec).
+		SetNillableWebSearchPricePerCall(groupIn.WebSearchPricePerCall).
 		SetNillableSearchPricePer1k(groupIn.SearchPricePer1k).
 		SetNillableAudioRealtimePricePerMin(groupIn.AudioRealtimePricePerMin).
 		SetNillableAudioTtsPricePerMillionChars(groupIn.AudioTTSPricePerMillionChars).
@@ -175,6 +176,7 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		SetNillableVideoPrice720pPerSec(groupIn.VideoPrice720pPerSec).
 		SetNillableVideoPrice1080pPerSec(groupIn.VideoPrice1080pPerSec).
 		SetNillableVideoPrice4kPerSec(groupIn.VideoPrice4kPerSec).
+		SetNillableWebSearchPricePerCall(groupIn.WebSearchPricePerCall).
 		SetNillableSearchPricePer1k(groupIn.SearchPricePer1k).
 		SetNillableAudioRealtimePricePerMin(groupIn.AudioRealtimePricePerMin).
 		SetNillableAudioTtsPricePerMillionChars(groupIn.AudioTTSPricePerMillionChars).
@@ -285,6 +287,11 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		builder = builder.SetVideoPrice4kPerSec(*groupIn.VideoPrice4kPerSec)
 	} else {
 		builder = builder.ClearVideoPrice4kPerSec()
+	}
+	if groupIn.WebSearchPricePerCall != nil {
+		builder = builder.SetWebSearchPricePerCall(*groupIn.WebSearchPricePerCall)
+	} else {
+		builder = builder.ClearWebSearchPricePerCall()
 	}
 
 	// 处理 FallbackGroupID：nil 时清除，否则设置

@@ -66,6 +66,7 @@ const (
 	openAIWSRetryBackoffMaxDefault       = 2 * time.Second
 	openAIWSRetryJitterRatioDefault      = 0.2
 	openAICompactSessionSeedKey          = "openai_compact_session_seed"
+	openAIUpstreamEndpointContextKey     = "openai_actual_upstream_endpoint"
 	openAICodexTransformObsKey           = "openai_codex_transform_observability"
 	openAICodexCompatFallbackKey         = "openai_codex_compat_fallback"
 	openAICodexCompatFallbackReasonKey   = "openai_codex_compat_fallback_reason"
@@ -292,7 +293,6 @@ var openaiPassthroughAllowedHeaders = map[string]bool{
 
 var openaiOAuthOnlyHeaders = map[string]bool{
 	"x-client-request-id":      true,
-	"x-codex-beta-features":    true,
 	"x-codex-installation-id":  true,
 	"x-codex-turn-state":       true,
 	"x-codex-turn-metadata":    true,
@@ -445,6 +445,8 @@ type OpenAIForwardResult struct {
 	// UpstreamModel is the actual model sent to the upstream provider after mapping.
 	// Empty when no mapping was applied (requested model was used as-is).
 	UpstreamModel string
+	// UpstreamEndpoint is the actual upstream API path selected at runtime.
+	UpstreamEndpoint string
 	// ServiceTier records the OpenAI Responses API service tier, e.g. "priority" / "flex".
 	// Nil means the request did not specify a recognized tier.
 	ServiceTier *string
@@ -480,6 +482,8 @@ type OpenAIForwardResult struct {
 	ImageSizeBreakdown   map[string]int
 	// SearchCount bills response/tool search calls (e.g. web_search_call, tool_search_call).
 	SearchCount int
+	// WebSearchCalls bills successful standalone Codex alpha/search requests per call.
+	WebSearchCalls int
 	// VideoSeconds/VideoSize are the local historical names; VideoDurationSeconds/VideoResolution
 	// are upstream names. Keep both so existing local paths and upstream tests/features stay compatible.
 	VideoSeconds         int
@@ -497,6 +501,27 @@ type OpenAIForwardResult struct {
 	DeltaShadowOutputShapes   []string
 	DeltaShadowOutputCaptured bool
 	DeltaShadowRawClientEquiv bool
+}
+
+func SetActualOpenAIUpstreamEndpoint(c *gin.Context, endpoint string) {
+	if c == nil {
+		return
+	}
+	if endpoint = strings.TrimSpace(endpoint); endpoint != "" {
+		c.Set(openAIUpstreamEndpointContextKey, endpoint)
+	}
+}
+
+func GetActualOpenAIUpstreamEndpoint(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	value, exists := c.Get(openAIUpstreamEndpointContextKey)
+	if !exists {
+		return ""
+	}
+	endpoint, _ := value.(string)
+	return strings.TrimSpace(endpoint)
 }
 
 // ResolveUsageRequestID returns the stable request identifier shared by usage
@@ -2488,7 +2513,7 @@ func (s *OpenAIGatewayService) ExtractSessionID(c *gin.Context, body []byte) str
 	if sessionID == "" {
 		sessionID = strings.TrimSpace(c.GetHeader("conversation_id"))
 	}
-	if sessionID == "" && isGrokChatCompletionsSessionContext(c) {
+	if sessionID == "" && isGrokRequestContext(c) {
 		sessionID = strings.TrimSpace(c.GetHeader("x-grok-conv-id"))
 	}
 	if sessionID == "" && len(body) > 0 {
@@ -2530,7 +2555,7 @@ func (s *OpenAIGatewayService) GenerateSessionHash(c *gin.Context, body []byte) 
 	if sessionID == "" {
 		sessionID = strings.TrimSpace(c.GetHeader("conversation_id"))
 	}
-	if sessionID == "" && isGrokChatCompletionsSessionContext(c) {
+	if sessionID == "" && isGrokRequestContext(c) {
 		sessionID = strings.TrimSpace(c.GetHeader("x-grok-conv-id"))
 	}
 	if sessionID == "" && len(body) > 0 {
@@ -11942,6 +11967,7 @@ func trimOpenAIStoreFalseReasoningItems(reqBody map[string]any) bool {
 
 	filtered, modified := filterCodexInputWithOptions(input, codexInputFilterOptions{
 		dropReasoningItemsWithoutEncryptedContent: true,
+		preserveValidMessageIDs:                   true,
 	})
 	if !modified {
 		return false
@@ -12429,6 +12455,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		}
 		multiplier = resolver.Resolve(ctx, user.ID, *apiKey.GroupID, apiKey.Group.RateMultiplier)
 	}
+	perRequestRateMultiplier := multiplier
 	multiplier, imageRateMultiplier := computePeakAwareMultipliers(apiKey, multiplier, timezone.Now())
 	videoRateMultiplier := resolveVideoRateMultiplier(apiKey, multiplier)
 	effectiveRateMultiplier := multiplier
@@ -12465,6 +12492,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			multiplier,
 			imageRateMultiplier,
 			videoRateMultiplier,
+			perRequestRateMultiplier,
 			tokens,
 			serviceTier,
 			requestType,
@@ -12517,7 +12545,9 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			cost = selectedCost.Cost
 		}
 	}
-	if openAIForwardResultHasVideoBilling(result) {
+	if result.WebSearchCalls > 0 {
+		effectiveRateMultiplier = perRequestRateMultiplier
+	} else if openAIForwardResultHasVideoBilling(result) {
 		effectiveRateMultiplier = videoRateMultiplier
 	} else if result.AudioUsage != nil {
 		effectiveRateMultiplier = 1
@@ -12720,10 +12750,18 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 	multiplier float64,
 	imageRateMultiplier float64,
 	videoRateMultiplier float64,
+	perRequestRateMultiplier float64,
 	tokens UsageTokens,
 	serviceTier string,
 	requestType RequestType,
 ) (*CostBreakdown, error) {
+	if result != nil && result.WebSearchCalls > 0 {
+		var groupPrice *float64
+		if apiKey != nil && apiKey.Group != nil {
+			groupPrice = apiKey.Group.WebSearchPricePerCall
+		}
+		return s.billingService.CalculateWebSearchCost(result.WebSearchCalls, groupPrice, perRequestRateMultiplier), nil
+	}
 	if result != nil && result.SearchCount > 0 {
 		var groupPrice *float64
 		if apiKey != nil && apiKey.Group != nil {

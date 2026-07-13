@@ -139,6 +139,7 @@ const (
 
 type codexInputFilterOptions struct {
 	PreserveReferences                        bool
+	preserveValidMessageIDs                   bool
 	rewriteToolContinuationIDs                bool
 	dropItemReferences                        bool
 	dropNonToolItemIDs                        bool
@@ -446,6 +447,7 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
 		}
 		filterOptions := codexInputFilterOptions{
 			rewriteToolContinuationIDs: hasCodexToolContinuationInput(input),
+			preserveValidMessageIDs:    true,
 		}
 		if !filterOptions.rewriteToolContinuationIDs {
 			filterOptions.dropItemReferences = true
@@ -460,6 +462,7 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
 			filterOptions.dropOrphanFunctionCallOutputs = true
 		case "input_schema":
 			filterOptions.dropNonToolItemIDs = true
+			filterOptions.preserveValidMessageIDs = false
 		case "item_reference":
 			filterOptions.dropItemReferences = true
 			filterOptions.dropNonToolItemIDs = true
@@ -2224,7 +2227,15 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 			modified = true
 		}
 
-		if opts.dropNonToolItemIDs && !isCodexToolCallItemType(typ) && !codexInputItemPreservesID(typ) {
+		if typ == "message" {
+			id, hasID := m["id"].(string)
+			dropAllMessageIDs := !opts.PreserveReferences && !opts.rewriteToolContinuationIDs && !opts.preserveValidMessageIDs
+			if hasID && (dropAllMessageIDs || (id != "" && !strings.HasPrefix(id, "msg"))) {
+				ensureCopy()
+				delete(newItem, "id")
+				modified = true
+			}
+		} else if opts.dropNonToolItemIDs && !isCodexToolCallItemType(typ) && !codexInputItemPreservesID(typ) {
 			if _, exists := newItem["id"]; exists {
 				ensureCopy()
 				delete(newItem, "id")
