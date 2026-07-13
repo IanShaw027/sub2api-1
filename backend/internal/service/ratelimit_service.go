@@ -1326,6 +1326,19 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 	// 1b. Grok/xAI 平台：解析 x-ratelimit-reset-* / retry-after，按重置时间限流。
 	//     使用带上限的冷却，避免异常上游返回超大 retry-after 把账号长时间摘除。
 	if account.Platform == PlatformGrok {
+		// spending-limit 表示 billing 额度已经耗尽，不是普通 RPM/TPM 限流。
+		// 按已满周/月窗口中更晚的结束时间停调，避免每隔几分钟重试一次。
+		if isGrokSpendingLimitError(responseBody) {
+			if resetAt := grokSpendingLimitResetTime(account, time.Now()); resetAt != nil {
+				s.notifyAccountSchedulingBlocked(account, *resetAt, "grok_billing_spending_limit")
+				if err := s.accountRepo.SetRateLimited(ctx, account.ID, *resetAt); err != nil {
+					slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
+					return
+				}
+				slog.Info("grok_account_billing_spending_limit", "account_id", account.ID, "reset_at", *resetAt, "reset_in", time.Until(*resetAt).Truncate(time.Second))
+				return
+			}
+		}
 		if resetAt := grokRateLimitResetTime(headers); resetAt != nil {
 			s.notifyAccountSchedulingBlocked(account, *resetAt, "429")
 			if err := s.accountRepo.SetRateLimited(ctx, account.ID, *resetAt); err != nil {

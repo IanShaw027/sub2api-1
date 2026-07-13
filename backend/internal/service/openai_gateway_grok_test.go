@@ -105,17 +105,19 @@ func TestSanitizeGrokChatCompletionsMessagesPreservesToolSemantics(t *testing.T)
 		"model":"grok-build-0.1",
 		"messages":[
 			{"role":"system","content":""},
-			{"role":"assistant","content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]},
+			{"role":"assistant","name":"assistant-agent","content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]},
 			{"role":"tool","tool_call_id":"call_1","content":""},
-			{"role":"user","content":[{"type":"text","text":""},{"type":"text","text":"continue"}]}
+			{"role":"user","name":"client","content":[{"type":"text","text":""},{"type":"text","text":"continue"}]}
 		]
 	}`)
 	patched, err := sanitizeGrokChatCompletionsMessages(body)
 	require.NoError(t, err)
 	require.Len(t, gjson.GetBytes(patched, "messages").Array(), 3, string(patched))
 	require.False(t, gjson.GetBytes(patched, "messages.0.content").Exists(), string(patched))
+	require.False(t, gjson.GetBytes(patched, "messages.0.name").Exists(), string(patched))
 	require.Equal(t, "(empty)", gjson.GetBytes(patched, "messages.1.content").String())
 	require.Equal(t, "continue", gjson.GetBytes(patched, "messages.2.content.0.text").String())
+	require.Equal(t, "client", gjson.GetBytes(patched, "messages.2.name").String())
 }
 
 func TestSanitizeGrokChatCompletionsMessagesRejectsAllEmptyInput(t *testing.T) {

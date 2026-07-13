@@ -25,6 +25,14 @@ const (
 	grokComposerImageBridgeMaxOutputTokens = 512
 )
 
+var grok45UnsupportedSamplingFields = []string{
+	"presence_penalty",
+	"presencePenalty",
+	"frequency_penalty",
+	"frequencyPenalty",
+	"stop",
+}
+
 type grokInvalidRequestError struct {
 	message string
 }
@@ -411,15 +419,9 @@ func patchGrokResponsesBody(body []byte, upstreamModel string) ([]byte, error) {
 			return nil, err
 		}
 	}
-	if strings.EqualFold(upstreamModel, "grok-4.5") {
-		for _, unsupportedField := range []string{"presence_penalty", "presencePenalty", "frequency_penalty", "frequencyPenalty", "stop"} {
-			if gjson.GetBytes(out, unsupportedField).Exists() {
-				out, err = sjson.DeleteBytes(out, unsupportedField)
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
+	out, err = sanitizeGrokModelUnsupportedFields(out, upstreamModel)
+	if err != nil {
+		return nil, err
 	}
 	out, err = sanitizeGrokResponsesUnsupportedFields(out)
 	if err != nil {
@@ -435,6 +437,28 @@ func patchGrokResponsesBody(body []byte, upstreamModel string) ([]byte, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+func sanitizeGrokModelUnsupportedFields(body []byte, upstreamModel string) ([]byte, error) {
+	updated := body
+	fields := make([]string, 0, len(grok45UnsupportedSamplingFields)+2)
+	if strings.EqualFold(strings.TrimSpace(upstreamModel), "grok-4.5") {
+		fields = append(fields, grok45UnsupportedSamplingFields...)
+	}
+	if !grokSupportsReasoningEffort(upstreamModel) {
+		fields = append(fields, "reasoning_effort", "reasoningEffort")
+	}
+	for _, field := range fields {
+		if !gjson.GetBytes(updated, field).Exists() {
+			continue
+		}
+		next, err := sjson.DeleteBytes(updated, field)
+		if err != nil {
+			return nil, fmt.Errorf("delete unsupported Grok model field %s: %w", field, err)
+		}
+		updated = next
+	}
+	return updated, nil
 }
 
 func sanitizeGrokResponsesInput(body []byte) ([]byte, error) {
@@ -514,6 +538,9 @@ func sanitizeGrokChatCompletionsMessages(body []byte) ([]byte, error) {
 			continue
 		}
 		role := strings.ToLower(strings.TrimSpace(grokStringValue(message["role"])))
+		if role != "user" {
+			delete(message, "name")
+		}
 		content, keep := sanitizeGrokMessageContent(message["content"])
 		if !keep {
 			switch role {
@@ -615,7 +642,8 @@ func grokStringValue(value any) string {
 }
 
 func grokSupportsReasoningEffort(model string) bool {
-	normalized := strings.ToLower(xai.StripGrokProviderPrefix(model))
+	baseModel, _ := parseGrokThinkingSuffix(model)
+	normalized := strings.ToLower(xai.StripGrokProviderPrefix(baseModel))
 	switch normalized {
 	case xai.DefaultTextModel,
 		"grok-4.5-latest",
@@ -1785,6 +1813,37 @@ func grokRateLimitResetTime(headers http.Header) *time.Time {
 		}
 	}
 	return reset
+}
+
+// grokSpendingLimitResetTime returns the latest reset among exhausted official
+// billing windows. If both weekly credits and the monthly allowance are full,
+// the account cannot recover until both constraints have reset. Unlike
+// short-lived request/token limits, billing resets must not be cooldown-capped.
+func grokSpendingLimitResetTime(account *Account, now time.Time) *time.Time {
+	if account == nil {
+		return nil
+	}
+	snapshot := grokBillingSnapshotFromExtra(account.Extra)
+	if snapshot == nil {
+		return nil
+	}
+	var resetAt *time.Time
+	consider := func(candidate *time.Time) {
+		if candidate == nil || !candidate.After(now) {
+			return
+		}
+		if resetAt == nil || candidate.After(*resetAt) {
+			resetAt = candidate
+		}
+	}
+	if xai.WeeklyUtilization(snapshot.Credits) >= 100 {
+		_, weeklyEnd := xai.WeeklyPeriodBounds(snapshot.Credits)
+		consider(weeklyEnd)
+	}
+	if xai.MonthlyUtilization(snapshot.Monthly) >= 100 {
+		consider(xai.MonthlyPeriodEnd(snapshot.Monthly))
+	}
+	return resetAt
 }
 
 func (s *OpenAIGatewayService) tempUnscheduleGrok(ctx context.Context, account *Account, cooldown time.Duration, reason string) {

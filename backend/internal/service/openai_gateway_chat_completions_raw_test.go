@@ -191,7 +191,68 @@ func TestForwardAsChatCompletions_GrokPassesPromptCacheKeyForSessionIsolation(t 
 	expectedConvID := isolateOpenAISessionID(77, "cache-key-grok")
 	require.Equal(t, generateSessionUUID(expectedConvID), upstream.lastReq.Header.Get("session_id"))
 	require.Equal(t, expectedConvID, upstream.lastReq.Header.Get("x-grok-conv-id"))
+	require.Equal(t, grokClientVersionHeader, upstream.lastReq.Header.Get("x-grok-client-version"))
+	require.Equal(t, grokClientIdentifierHeader, upstream.lastReq.Header.Get("x-grok-client-identifier"))
 	require.Equal(t, "cache-key-grok", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+}
+
+func TestForwardAsChatCompletions_Grok45DropsUnsupportedSamplingFields(t *testing.T) {
+	setGinTestMode()
+
+	body := []byte(`{"model":"grok-4.5","messages":[{"role":"user","content":"hi"}],"stream":false,"frequencyPenalty":0.3,"frequency_penalty":0.4,"presencePenalty":0.5,"presence_penalty":0.6,"stop":["done"]}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	account := &Account{
+		ID:          203,
+		Name:        "grok-45-compat",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "xai-key",
+			"base_url": xai.DefaultBaseURL,
+		},
+	}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid_grok_45_compat"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"id":"chatcmpl_grok","object":"chat.completion","model":"grok-4.5","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`,
+		)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          rawChatCompletionsTestConfig(),
+		httpUpstream: upstream,
+	}
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq)
+	require.Equal(t, "grok-4.5", gjson.GetBytes(upstream.lastBody, "model").String())
+	for _, field := range grok45UnsupportedSamplingFields {
+		require.Falsef(t, gjson.GetBytes(upstream.lastBody, field).Exists(), "field %s must not reach Grok 4.5", field)
+	}
+}
+
+func TestSanitizeGrokModelUnsupportedFieldsPreservesOtherModels(t *testing.T) {
+	body := []byte(`{"model":"grok-4.3","frequency_penalty":0.4,"presence_penalty":0.6,"stop":["done"],"reasoningEffort":"high"}`)
+
+	patched, err := sanitizeGrokModelUnsupportedFields(body, "xai/grok-4.3(high)")
+	require.NoError(t, err)
+	require.JSONEq(t, string(body), string(patched))
+}
+
+func TestSanitizeGrokModelUnsupportedFieldsDropsReasoningEffortForUnsupportedModel(t *testing.T) {
+	body := []byte(`{"model":"grok-build-0.1","reasoning_effort":"high","reasoningEffort":"high"}`)
+
+	patched, err := sanitizeGrokModelUnsupportedFields(body, "grok-build-0.1")
+	require.NoError(t, err)
+	require.False(t, gjson.GetBytes(patched, "reasoning_effort").Exists())
+	require.False(t, gjson.GetBytes(patched, "reasoningEffort").Exists())
 }
 
 func TestForwardAsRawChatCompletions_ForcesStreamUsageUpstreamAndPassesUsageDownstream(t *testing.T) {

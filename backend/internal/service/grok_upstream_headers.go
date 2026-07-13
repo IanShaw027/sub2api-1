@@ -12,6 +12,12 @@ import (
 const defaultBrowserLikeUpstreamUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 const defaultGrokUpstreamUserAgent = defaultBrowserLikeUpstreamUserAgent
 
+const (
+	grokClientVersionHeader    = "0.2.99"
+	grokClientIdentifierHeader = "grok-shell"
+	grokClientModeHeader       = "cli"
+)
+
 func applyDefaultGrokUpstreamHeaders(req *http.Request) {
 	if req == nil {
 		return
@@ -19,6 +25,10 @@ func applyDefaultGrokUpstreamHeaders(req *http.Request) {
 	if strings.TrimSpace(req.Header.Get("User-Agent")) == "" {
 		req.Header.Set("User-Agent", defaultGrokUpstreamUserAgent)
 	}
+	// cli-chat-proxy validates the CLI version from this dedicated header,
+	// not from the version embedded in User-Agent.
+	req.Header.Set("x-grok-client-version", grokClientVersionHeader)
+	req.Header.Set("x-grok-client-identifier", grokClientIdentifierHeader)
 }
 
 func applyGrokTLSProfileHeaders(req *http.Request, profile *tlsfingerprint.Profile) {

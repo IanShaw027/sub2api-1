@@ -16,13 +16,11 @@ import (
 )
 
 const (
-	grokQuotaUpstreamTimeout   = 20 * time.Second
-	grokBillingUpstreamTimeout = 15 * time.Second
-	grokQuotaProbeInput        = "."
-	grokQuotaDefaultModel      = xai.DefaultTextModel
+	grokQuotaUpstreamTimeout    = 20 * time.Second
+	grokBillingUpstreamTimeout  = 15 * time.Second
+	grokQuotaProbeInput         = "."
+	grokQuotaDefaultModel       = xai.DefaultTextModel
 	grokBillingSnapshotExtraKey = "grok_billing_snapshot"
-	grokClientVersionHeader    = "0.2.99"
-	grokClientModeHeader       = "cli"
 )
 
 type GrokQuotaProbeResult struct {

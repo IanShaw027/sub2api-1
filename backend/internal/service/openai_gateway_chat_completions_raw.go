@@ -120,6 +120,10 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 			}
 			return nil, fmt.Errorf("normalize Grok chat messages: %w", compatErr)
 		}
+		upstreamBody, compatErr = sanitizeGrokModelUnsupportedFields(upstreamBody, upstreamModel)
+		if compatErr != nil {
+			return nil, fmt.Errorf("normalize Grok model fields: %w", compatErr)
+		}
 	}
 	promptCacheKey = strings.TrimSpace(promptCacheKey)
 	if promptCacheKey != "" {

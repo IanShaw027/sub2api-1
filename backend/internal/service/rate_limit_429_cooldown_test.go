@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/stretchr/testify/require"
 )
 
@@ -107,6 +108,135 @@ func TestHandle429_GrokCapsOversizedRetryAfter(t *testing.T) {
 	require.Equal(t, 1, accountRepo.rateLimitCalls)
 	require.True(t, accountRepo.lastRateLimitReset.Before(before.Add(grokMaxUpstreamCooldown+time.Second)))
 	require.True(t, accountRepo.lastRateLimitReset.After(before.Add(grokMaxUpstreamCooldown-time.Second)))
+}
+
+func TestHandle429_GrokSpendingLimitUsesWeeklyBillingReset(t *testing.T) {
+	accountRepo := &rateLimit429AccountRepoStub{}
+	svc := NewRateLimitService(accountRepo, nil, &config.Config{}, nil, nil)
+	resetAt := time.Now().Add(5 * 24 * time.Hour).UTC().Truncate(time.Second)
+	account := &Account{
+		ID:       79,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			grokBillingSnapshotExtraKey: &xai.BillingSnapshot{
+				Credits: &xai.CreditsBillingConfig{
+					CreditUsagePercent: 100,
+					CurrentPeriod: &xai.UsagePeriod{
+						End: resetAt.Format(time.RFC3339),
+					},
+				},
+			},
+		},
+	}
+
+	svc.handle429(
+		context.Background(),
+		account,
+		http.Header{"Retry-After": []string{"45"}},
+		[]byte(`{"code":"personal-team-blocked:spending-limit"}`),
+	)
+
+	require.Equal(t, 1, accountRepo.rateLimitCalls)
+	require.Equal(t, resetAt, accountRepo.lastRateLimitReset)
+}
+
+func TestHandle429_GrokSpendingLimitUsesMonthlyBillingReset(t *testing.T) {
+	accountRepo := &rateLimit429AccountRepoStub{}
+	svc := NewRateLimitService(accountRepo, nil, &config.Config{}, nil, nil)
+	resetAt := time.Now().Add(18 * 24 * time.Hour).UTC().Truncate(time.Second)
+	account := &Account{
+		ID:       81,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			grokBillingSnapshotExtraKey: &xai.BillingSnapshot{
+				Credits: &xai.CreditsBillingConfig{CreditUsagePercent: 40},
+				Monthly: &xai.MonthlyBillingConfig{
+					MonthlyLimit:     &xai.MoneyVal{Val: 15000},
+					Used:             &xai.MoneyVal{Val: 15000},
+					BillingPeriodEnd: resetAt.Format(time.RFC3339),
+				},
+			},
+		},
+	}
+
+	svc.handle429(
+		context.Background(),
+		account,
+		http.Header{"Retry-After": []string{"45"}},
+		[]byte(`{"code":"personal-team-blocked:spending-limit"}`),
+	)
+
+	require.Equal(t, 1, accountRepo.rateLimitCalls)
+	require.Equal(t, resetAt, accountRepo.lastRateLimitReset)
+}
+
+func TestHandle429_GrokSpendingLimitUsesLaterOfWeeklyAndMonthlyReset(t *testing.T) {
+	accountRepo := &rateLimit429AccountRepoStub{}
+	svc := NewRateLimitService(accountRepo, nil, &config.Config{}, nil, nil)
+	weeklyEnd := time.Now().Add(3 * 24 * time.Hour).UTC().Truncate(time.Second)
+	monthlyEnd := time.Now().Add(18 * 24 * time.Hour).UTC().Truncate(time.Second)
+	account := &Account{
+		ID:       82,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			grokBillingSnapshotExtraKey: &xai.BillingSnapshot{
+				Credits: &xai.CreditsBillingConfig{
+					CreditUsagePercent: 100,
+					CurrentPeriod:      &xai.UsagePeriod{End: weeklyEnd.Format(time.RFC3339)},
+				},
+				Monthly: &xai.MonthlyBillingConfig{
+					MonthlyLimit:     &xai.MoneyVal{Val: 15000},
+					Used:             &xai.MoneyVal{Val: 16000},
+					BillingPeriodEnd: monthlyEnd.Format(time.RFC3339),
+				},
+			},
+		},
+	}
+
+	svc.handle429(
+		context.Background(),
+		account,
+		nil,
+		[]byte(`{"code":"personal-team-blocked:spending-limit"}`),
+	)
+
+	require.Equal(t, 1, accountRepo.rateLimitCalls)
+	require.Equal(t, monthlyEnd, accountRepo.lastRateLimitReset)
+}
+
+func TestHandle429_GrokSpendingLimitIgnoresUnexhaustedWeeklySnapshot(t *testing.T) {
+	accountRepo := &rateLimit429AccountRepoStub{}
+	svc := NewRateLimitService(accountRepo, nil, &config.Config{}, nil, nil)
+	account := &Account{
+		ID:       80,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			grokBillingSnapshotExtraKey: &xai.BillingSnapshot{
+				Credits: &xai.CreditsBillingConfig{
+					CreditUsagePercent: 99,
+					CurrentPeriod: &xai.UsagePeriod{
+						End: time.Now().Add(5 * 24 * time.Hour).UTC().Format(time.RFC3339),
+					},
+				},
+			},
+		},
+	}
+	before := time.Now()
+
+	svc.handle429(
+		context.Background(),
+		account,
+		http.Header{"Retry-After": []string{"45"}},
+		[]byte(`{"code":"personal-team-blocked:spending-limit"}`),
+	)
+
+	require.Equal(t, 1, accountRepo.rateLimitCalls)
+	require.True(t, accountRepo.lastRateLimitReset.After(before.Add(44*time.Second)))
+	require.True(t, accountRepo.lastRateLimitReset.Before(before.Add(46*time.Second)))
 }
 
 func TestHandle429_FallbackDisabledSkipsLocalMark(t *testing.T) {
