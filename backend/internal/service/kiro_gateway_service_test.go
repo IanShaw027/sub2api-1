@@ -700,6 +700,10 @@ func TestPrepareKiroConvertedRequest_PromotesLargeContextToOneMillionModelWithou
 	require.Equal(t, "claude-sonnet-4.6", current["modelId"])
 }
 
+func TestKiroContextBudgetTokensForModel_Sonnet5UsesOneMillionWindow(t *testing.T) {
+	require.Equal(t, kiroOneMillionContextBudgetTokens, kiroContextBudgetTokensForModel("claude-sonnet-5"))
+}
+
 func TestBuildKiroGenerateAssistantRequest_ExternalIDPSetsTokenTypeHeader(t *testing.T) {
 	account := &Account{
 		ID:       112,

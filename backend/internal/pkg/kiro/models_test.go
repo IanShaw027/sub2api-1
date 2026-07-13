@@ -104,6 +104,8 @@ func TestSupportsOneMillionContextModel(t *testing.T) {
 	tests := map[string]bool{
 		"claude-sonnet-4-6":          true,
 		"claude-sonnet-4.6-1m":       true,
+		"claude-sonnet-5":            true,
+		"claude-sonnet-5-1m":         true,
 		"claude-opus-4.6":            true,
 		"claude-opus-4.7[1m]":        true,
 		"claude-opus-4-8-1m":         true,

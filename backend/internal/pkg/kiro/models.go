@@ -165,6 +165,7 @@ var kiroClaudeModelPattern = regexp.MustCompile(`^claude-(haiku|sonnet|opus)-(\d
 
 var kiroOneMillionContextModels = map[string]struct{}{
 	"claude-sonnet-4.6": {},
+	"claude-sonnet-5":   {},
 	"claude-opus-4.6":   {},
 	"claude-opus-4.7":   {},
 	"claude-opus-4.8":   {},
