@@ -1144,6 +1144,7 @@ export default {
       geminiAccount: 'Gemini Account',
       antigravityAccount: 'Antigravity Account',
       grokAccount: 'Grok Account',
+      grokOAuthConcurrencyHint: 'Grok OAuth concurrency is limited to 1 by default',
       inputMethod: 'Input Method',
       reAuthorizedSuccess: 'Account re-authorized successfully',
       // Test Modal
@@ -1230,6 +1231,13 @@ export default {
         grokLastStatus: 'Status {status}',
         grokLastProbe: 'Probe {time}',
         grokLastHeadersSeen: 'Headers {time}',
+        grokLocalHint: 'Local Sub2API stats, window aligned to the official 7d credit period',
+        grokBalance: 'Bal',
+        grokPrepaid: 'Prepaid balance (prepaidBalance)',
+        grokUsed: 'Used',
+        grokMonthlyLimit: 'Monthly used/monthlyLimit',
+        grokOverage: 'Overage onDemandUsed/onDemandCap',
+        grokOverageShort: 'OD',
         passiveSampled: 'Passive',
         activeQuery: 'Query'
       },

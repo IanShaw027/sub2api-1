@@ -4621,6 +4621,32 @@
                 </select>
               </div>
 
+              <!-- Grok default base URL (api.x.ai vs cli-chat-proxy) -->
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div class="max-w-2xl">
+                  <label
+                    class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                  >
+                    {{ t("admin.settings.gatewayForwarding.grokDefaultBaseURLMode") }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.gatewayForwarding.grokDefaultBaseURLModeHint") }}
+                  </p>
+                </div>
+                <select
+                  v-model="form.grok_default_base_url_mode"
+                  class="input w-full sm:w-72"
+                  data-testid="grok-default-base-url-mode"
+                >
+                  <option value="api">
+                    {{ t("admin.settings.gatewayForwarding.grokDefaultBaseURLModeAPI") }}
+                  </option>
+                  <option value="cli">
+                    {{ t("admin.settings.gatewayForwarding.grokDefaultBaseURLModeCLI") }}
+                  </option>
+                </select>
+              </div>
+
               <!-- Gateway Debug Timeline -->
               <div class="rounded-lg border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
                 <div class="flex items-center justify-between gap-4">
@@ -9960,6 +9986,7 @@ const form = reactive<SettingsForm>({
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
   claude_telemetry_mode: "drop",
+  grok_default_base_url_mode: "api",
   gateway_debug_timeline_enabled: false,
   gateway_debug_timeline_directory: "logs/gateway-debug",
   gateway_debug_timeline_retention_days: 7,
@@ -11601,6 +11628,8 @@ async function saveSettings() {
       enable_metadata_passthrough: form.enable_metadata_passthrough,
       claude_telemetry_mode:
         form.claude_telemetry_mode === "forward" ? "forward" : "drop",
+      grok_default_base_url_mode:
+        form.grok_default_base_url_mode === "cli" ? "cli" : "api",
       gateway_debug_timeline_enabled: form.gateway_debug_timeline_enabled,
       gateway_debug_timeline_directory:
         form.gateway_debug_timeline_directory || "logs/gateway-debug",

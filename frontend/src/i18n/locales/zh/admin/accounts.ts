@@ -329,6 +329,13 @@ export default {
         grokLastStatus: '状态 {status}',
         grokLastProbe: '探测 {time}',
         grokLastHeadersSeen: '响应头 {time}',
+        grokLocalHint: '本平台统计，时间窗口与官方 7d credit 周期对齐',
+        grokBalance: '余额',
+        grokPrepaid: '预付余额 (prepaidBalance)',
+        grokUsed: '已用',
+        grokMonthlyLimit: '月额度 used/monthlyLimit',
+        grokOverage: '超额 onDemandUsed/onDemandCap',
+        grokOverageShort: '超额',
         passiveSampled: '被动采样',
         activeQuery: '查询'
       },
@@ -1226,6 +1233,7 @@ export default {
       geminiAccount: 'Gemini 账号',
       antigravityAccount: 'Antigravity 账号',
       grokAccount: 'Grok 账号',
+      grokOAuthConcurrencyHint: 'Grok OAuth 默认并发限制为 1',
       inputMethod: '输入方式',
       reAuthorizedSuccess: '账号重新授权成功',
       // Test Modal

@@ -873,6 +873,8 @@ export interface SystemSettings {
   enable_fingerprint_unification: boolean;
   enable_metadata_passthrough: boolean;
   claude_telemetry_mode: string;
+  /** Grok default upstream when account has no credentials.base_url: api | cli */
+  grok_default_base_url_mode: string;
   gateway_debug_timeline_enabled: boolean;
   gateway_debug_timeline_directory: string;
   gateway_debug_timeline_retention_days: number;
@@ -1198,6 +1200,7 @@ export interface UpdateSettingsRequest {
   enable_fingerprint_unification?: boolean;
   enable_metadata_passthrough?: boolean;
   claude_telemetry_mode?: string;
+  grok_default_base_url_mode?: string;
   gateway_debug_timeline_enabled?: boolean;
   gateway_debug_timeline_directory?: string;
   gateway_debug_timeline_retention_days?: number;

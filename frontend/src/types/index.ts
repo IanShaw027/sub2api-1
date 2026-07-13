@@ -1388,6 +1388,21 @@ export interface GrokQuotaWindow {
   reset_at?: string
 }
 
+/** Absolute balance / limit / overage from Grok CLI billing APIs. */
+export interface GrokBillingInfo {
+  prepaid_balance: number
+  monthly_limit: number
+  monthly_used: number
+  on_demand_cap: number
+  on_demand_used: number
+  top_up_method?: string
+  is_unified_billing_user?: boolean
+  weekly_period_start?: string | null
+  weekly_period_end?: string | null
+  monthly_period_start?: string | null
+  monthly_period_end?: string | null
+}
+
 export interface AccountUsageInfo {
   source?: 'passive' | 'active'
   updated_at: string | null
@@ -1428,6 +1443,10 @@ export interface AccountUsageInfo {
   grok_last_headers_seen_at?: string
   grok_last_status_code?: number
   grok_local_usage?: WindowStats | null
+  /** Official Grok monthly billing window (used / monthlyLimit). */
+  thirty_day?: UsageProgress | null
+  /** Absolute balance / limit / overage from cli-chat-proxy billing APIs. */
+  grok_billing?: GrokBillingInfo | null
   ai_credits?: Array<{
     credit_type?: string
     amount?: number

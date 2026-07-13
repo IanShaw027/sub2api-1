@@ -1762,11 +1762,68 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).toContain('1.2K')
     expect(wrapper.text()).toContain('A $0.12')
     expect(wrapper.text()).toContain('U $0.34')
+    // Without official seven_day/thirty_day, fallback header req bar is shown.
     expect(wrapper.text()).toContain('admin.accounts.usageWindow.grokRequests|120|2026-07-09T16:00:00Z')
+  })
 
-    const badges = wrapper.findAll('span[title]')
-    expect(badges.some(node => node.attributes('title') === 'usage.accountBilled')).toBe(true)
-    expect(badges.some(node => node.attributes('title') === 'usage.userBilled')).toBe(true)
+  it('Grok OAuth 展示官方 7d/30d 与余额行', async () => {
+    getUsage.mockResolvedValue({
+      seven_day: {
+        utilization: 55,
+        resets_at: '2026-07-20T08:44:35Z',
+        remaining_seconds: 1000,
+        window_stats: {
+          requests: 9,
+          tokens: 900,
+          cost: 1.1,
+          standard_cost: 1.1,
+          user_cost: 2.2
+        }
+      },
+      thirty_day: {
+        utilization: 14.6,
+        resets_at: '2026-08-01T00:00:00Z',
+        remaining_seconds: 2000
+      },
+      grok_billing: {
+        prepaid_balance: 0,
+        monthly_limit: 15000,
+        monthly_used: 2192,
+        on_demand_cap: 0,
+        on_demand_used: 0
+      },
+      grok_quota_snapshot_state: 'observed'
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 3862,
+          platform: 'grok',
+          type: 'oauth',
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}</div>'
+          },
+          AccountQuotaInfo: true,
+          GrokQuotaProbeCell: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('9 req')
+    expect(wrapper.text()).toContain('A $1.10')
+    expect(wrapper.text()).toContain('U $2.20')
+    expect(wrapper.text()).toContain('7d|55|2026-07-20T08:44:35Z')
+    expect(wrapper.text()).toContain('30d|14.6|2026-08-01T00:00:00Z')
+    expect(wrapper.text()).toContain('2.2K/15.0K')
   })
 
   it('Key 账号在 today stats loading 时显示骨架屏', async () => {
