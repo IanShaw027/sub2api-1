@@ -61,6 +61,31 @@ func TestAlreadyProcessedReturnsOrderNotFoundWhenConcurrentDeleteWins(t *testing
 	require.ErrorIs(t, err, ErrOrderNotFound)
 }
 
+func TestCompletePaymentOrderWithLeaseSurvivesUpdatedAtRewrite(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusPaid, payment.OrderTypeBalance)
+	svc := &PaymentService{entClient: client}
+
+	lease, err := svc.acquirePaymentFulfillmentLease(ctx, order)
+	require.NoError(t, err)
+	require.NotNil(t, lease)
+
+	_, err = client.PaymentOrder.UpdateOneID(order.ID).
+		SetProviderKey("audit-side-effect").
+		Save(ctx)
+	require.NoError(t, err)
+
+	completed, err := completePaymentOrderWithLease(ctx, client, order, lease)
+	require.NoError(t, err)
+	require.True(t, completed)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Empty(t, reloaded.FulfillmentLeaseToken)
+}
+
 type paymentFulfillmentTestProvider struct {
 	key            string
 	supportedTypes []payment.PaymentType
@@ -720,7 +745,7 @@ func TestRetryFulfillmentRejectsFreshRechargingLease(t *testing.T) {
 	require.Equal(t, OrderStatusRecharging, reloaded.Status)
 }
 
-func TestFulfillmentLeaseVersionRejectsStaleWorker(t *testing.T) {
+func TestFulfillmentLeaseTokenRejectsStaleWorker(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentFulfillmentTestClient(t)
 	order := createPaymentFulfillmentOrder(t, client, OrderStatusRecharging, payment.OrderTypeSubscription)
@@ -741,7 +766,7 @@ func TestFulfillmentLeaseVersionRejectsStaleWorker(t *testing.T) {
 	secondLease, err := svc.acquirePaymentFulfillmentLease(ctx, staleOrder)
 	require.NoError(t, err)
 	require.NotNil(t, secondLease)
-	require.False(t, firstLease.version.Equal(secondLease.version))
+	require.NotEqual(t, firstLease.token, secondLease.token)
 
 	completed, err := completePaymentOrderWithLease(ctx, client, order, firstLease)
 	require.Error(t, err)

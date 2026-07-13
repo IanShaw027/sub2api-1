@@ -88,6 +88,8 @@ const (
 	FieldFailedAt = "failed_at"
 	// FieldFailedReason holds the string denoting the failed_reason field in the database.
 	FieldFailedReason = "failed_reason"
+	// FieldFulfillmentLeaseToken holds the string denoting the fulfillment_lease_token field in the database.
+	FieldFulfillmentLeaseToken = "fulfillment_lease_token"
 	// FieldClientIP holds the string denoting the client_ip field in the database.
 	FieldClientIP = "client_ip"
 	// FieldSrcHost holds the string denoting the src_host field in the database.
@@ -151,6 +153,7 @@ var Columns = []string{
 	FieldCompletedAt,
 	FieldFailedAt,
 	FieldFailedReason,
+	FieldFulfillmentLeaseToken,
 	FieldClientIP,
 	FieldSrcHost,
 	FieldSrcURL,
@@ -209,6 +212,10 @@ var (
 	DefaultRefundRequestedAmount float64
 	// RefundRequestedByValidator is a validator for the "refund_requested_by" field. It is called by the builders before save.
 	RefundRequestedByValidator func(string) error
+	// DefaultFulfillmentLeaseToken holds the default value on creation for the "fulfillment_lease_token" field.
+	DefaultFulfillmentLeaseToken string
+	// FulfillmentLeaseTokenValidator is a validator for the "fulfillment_lease_token" field. It is called by the builders before save.
+	FulfillmentLeaseTokenValidator func(string) error
 	// ClientIPValidator is a validator for the "client_ip" field. It is called by the builders before save.
 	ClientIPValidator func(string) error
 	// SrcHostValidator is a validator for the "src_host" field. It is called by the builders before save.
@@ -407,6 +414,11 @@ func ByFailedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByFailedReason orders the results by the failed_reason field.
 func ByFailedReason(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldFailedReason, opts...).ToFunc()
+}
+
+// ByFulfillmentLeaseToken orders the results by the fulfillment_lease_token field.
+func ByFulfillmentLeaseToken(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFulfillmentLeaseToken, opts...).ToFunc()
 }
 
 // ByClientIP orders the results by the client_ip field.

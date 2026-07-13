@@ -65,6 +65,10 @@ type groupConcurrencyReader interface {
 	GetGroupConcurrency(ctx context.Context, groupID int64) (int, error)
 }
 
+type groupConcurrencyBatchReader interface {
+	GetGroupConcurrencyBatch(ctx context.Context, groupIDs []int64) (map[int64]int, error)
+}
+
 type accountGroupSlotReleaser interface {
 	ReleaseAccountSlotForGroup(ctx context.Context, accountID int64, groupID int64, requestID string) error
 }
@@ -690,4 +694,37 @@ func (s *ConcurrencyService) GetGroupConcurrency(ctx context.Context, groupID in
 		return 0, fmt.Errorf("get group concurrency for %d: %w", groupID, err)
 	}
 	return count, nil
+}
+
+func (s *ConcurrencyService) GetGroupConcurrencyBatch(ctx context.Context, groupIDs []int64) (map[int64]int, error) {
+	result := make(map[int64]int, len(groupIDs))
+	if len(groupIDs) == 0 {
+		return result, nil
+	}
+	if s.cache == nil {
+		return nil, errors.New("group concurrency cache unavailable")
+	}
+	groupScopedCache, ok := s.cache.(groupConcurrencyBatchReader)
+	if !ok {
+		for _, groupID := range groupIDs {
+			count, err := s.GetGroupConcurrency(ctx, groupID)
+			if err != nil {
+				return nil, err
+			}
+			result[groupID] = count
+		}
+		return result, nil
+	}
+
+	redisCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	counts, err := groupScopedCache.GetGroupConcurrencyBatch(redisCtx, groupIDs)
+	if err != nil {
+		return nil, fmt.Errorf("get group concurrency batch: %w", err)
+	}
+	for _, groupID := range groupIDs {
+		result[groupID] = counts[groupID]
+	}
+	return result, nil
 }

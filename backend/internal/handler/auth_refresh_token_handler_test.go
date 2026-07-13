@@ -274,4 +274,54 @@ func TestAuthHandlerLoginHydratesAvatarFromSeparateRecord(t *testing.T) {
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
 	require.Equal(t, 0, resp.Code)
 	require.Equal(t, repo.avatar.URL, resp.Data.User.AvatarURL)
+	require.Equal(t, 1, repo.getAvatar)
+}
+
+func TestAuthHandlerLoginSkipsHydrationWhenAvatarAlreadyPresent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	user := &service.User{
+		ID:           35,
+		Email:        "avatar-present-login@example.com",
+		Username:     "avatar-present-login",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+		TokenVersion: 1,
+		AvatarURL:    "https://cdn.example.com/avatar.png",
+	}
+	require.NoError(t, user.SetPassword("correct-password"))
+	repo := &userHandlerRepoStub{user: user}
+	refreshTokenCache := newAuthRefreshTokenCacheStub()
+	cfg := &config.Config{JWT: config.JWTConfig{
+		Secret:                 "test-secret",
+		ExpireHour:             1,
+		RefreshTokenExpireDays: 7,
+	}}
+	authService := service.NewAuthService(nil, repo, nil, refreshTokenCache, cfg, nil, nil, nil, nil, nil, nil, nil, nil)
+	h := &AuthHandler{
+		authService: authService,
+		userService: service.NewUserService(repo, nil, nil, nil),
+	}
+
+	body := []byte(`{"email":"avatar-present-login@example.com","password":"correct-password","turnstile_token":""}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	h.Login(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			User struct {
+				AvatarURL string `json:"avatar_url"`
+			} `json:"user"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+	require.Equal(t, "https://cdn.example.com/avatar.png", resp.Data.User.AvatarURL)
+	require.Zero(t, repo.getAvatar)
 }

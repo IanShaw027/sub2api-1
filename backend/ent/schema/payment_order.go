@@ -159,6 +159,9 @@ func (PaymentOrder) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "text"}),
+		field.String("fulfillment_lease_token").
+			MaxLen(64).
+			Default(""),
 
 		// 来源信息
 		field.String("client_ip").

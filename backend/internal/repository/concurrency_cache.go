@@ -58,7 +58,9 @@ var (
 	// ARGV[1] = maxConcurrency
 	// ARGV[2] = TTL（秒）
 	// ARGV[3] = requestID
-	// 返回 {是否成功, Redis 当前秒}，Go 侧复用同一时间源写活跃索引，省去额外 TIME 往返。
+	// KEYS[2] = optional active index zset key
+	// ARGV[4] = optional active index member
+	// 返回 {是否成功, Redis 当前秒}。
 	acquireScript = redis.NewScript(`
 		-- Redis 3.2-4.x compat: opt into effects replication so redis.call('TIME')
 		-- replicates correctly. No-op on Redis 5.0+ (effects replication is default).
@@ -67,6 +69,8 @@ var (
 		local maxConcurrency = tonumber(ARGV[1])
 		local ttl = tonumber(ARGV[2])
 		local requestID = ARGV[3]
+		local indexKey = KEYS[2]
+		local indexMember = ARGV[4]
 
 		-- 使用 Redis 服务器时间，确保多实例时钟一致
 		local timeResult = redis.call('TIME')
@@ -81,6 +85,9 @@ var (
 		if exists ~= false then
 			redis.call('ZADD', key, now, requestID)
 			redis.call('EXPIRE', key, ttl)
+			if indexKey and indexMember and indexMember ~= '' then
+				redis.call('ZADD', indexKey, now + ttl, indexMember)
+			end
 			return {1, now}
 		end
 
@@ -89,6 +96,9 @@ var (
 		if count < maxConcurrency then
 			redis.call('ZADD', key, now, requestID)
 			redis.call('EXPIRE', key, ttl)
+			if indexKey and indexMember and indexMember ~= '' then
+				redis.call('ZADD', indexKey, now + ttl, indexMember)
+			end
 			return {1, now}
 		end
 
@@ -118,7 +128,9 @@ var (
 	// trackSlotScript 记录 stats-only 槽位，不做并发上限判断。
 	// KEYS[1] = 有序集合键
 	// ARGV[1] = TTL（秒）
+	// KEYS[2] = optional active index zset key
 	// ARGV[2] = requestID
+	// ARGV[3] = optional active index member
 	trackSlotScript = redis.NewScript(`
 		-- Redis 3.2-4.x compat: opt into effects replication so redis.call('TIME')
 		-- replicates correctly. No-op on Redis 5.0+ (effects replication is default).
@@ -126,6 +138,8 @@ var (
 		local key = KEYS[1]
 		local ttl = tonumber(ARGV[1])
 		local requestID = ARGV[2]
+		local indexKey = KEYS[2]
+		local indexMember = ARGV[3]
 
 		local timeResult = redis.call('TIME')
 		local now = tonumber(timeResult[1])
@@ -134,6 +148,9 @@ var (
 		redis.call('ZREMRANGEBYSCORE', key, '-inf', expireBefore)
 		redis.call('ZADD', key, now, requestID)
 		redis.call('EXPIRE', key, ttl)
+		if indexKey and indexMember and indexMember ~= '' then
+			redis.call('ZADD', indexKey, now + ttl, indexMember)
+		end
 		return 1
 	`)
 
@@ -241,7 +258,7 @@ var (
 		local removed = 0
 		for i = 2, #ARGV do
 			local score = redis.call('ZSCORE', KEYS[1], ARGV[i])
-			if score ~= false and tonumber(score) <= maxScore then
+			if score ~= false and tonumber(score) < maxScore then
 				removed = removed + redis.call('ZREM', KEYS[1], ARGV[i])
 			end
 		end
@@ -365,7 +382,7 @@ func (c *concurrencyCache) refreshActiveIndex(ctx context.Context, indexKey stri
 	}
 	member := strconv.FormatInt(id, 10)
 	if load.slotCount == 0 && load.waitCount <= 0 {
-		c.removeActiveIndexMembersAtOrBefore(ctx, indexKey, []string{member}, now)
+		c.removeActiveIndexMembersBefore(ctx, indexKey, []string{member}, now)
 		return
 	}
 
@@ -489,10 +506,10 @@ func (c *concurrencyCache) readIndexLoads(ctx context.Context, spec slotIndexSpe
 	return loads, staleMembers, nil
 }
 
-// removeActiveIndexMembersAtOrBefore conditionally removes invalid members.
+// removeActiveIndexMembersBefore conditionally removes invalid members.
 // maxScore is the Redis time captured before reading their backing load; a
 // later acquire advances the score and protects the member from stale cleanup.
-func (c *concurrencyCache) removeActiveIndexMembersAtOrBefore(ctx context.Context, indexKey string, members []string, maxScore int64) {
+func (c *concurrencyCache) removeActiveIndexMembersBefore(ctx context.Context, indexKey string, members []string, maxScore int64) {
 	if len(members) == 0 {
 		return
 	}
@@ -527,14 +544,11 @@ func runScriptInt64Pair(ctx context.Context, rdb *redis.Client, script *redis.Sc
 
 func (c *concurrencyCache) AcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
 	key := accountSlotKey(accountID)
+	member := strconv.FormatInt(accountID, 10)
 	// 时间戳在 Lua 脚本内使用 Redis TIME 命令获取，确保多实例时钟一致
-	result, now, err := runScriptInt64Pair(ctx, c.rdb, acquireScript, []string{key}, maxConcurrency, c.slotTTLSeconds, requestID)
+	result, _, err := runScriptInt64Pair(ctx, c.rdb, acquireScript, []string{key, accountActiveIndexKey}, maxConcurrency, c.slotTTLSeconds, requestID, member)
 	if err != nil {
 		return false, err
-	}
-	if result == 1 {
-		// 成功占槽后标记活跃账号，后台清理即可从索引定位候选账号。
-		c.touchActiveIndexAt(ctx, accountActiveIndexKey, accountID, now+int64(c.slotTTLSeconds))
 	}
 	return result == 1, nil
 }
@@ -558,10 +572,9 @@ func (c *concurrencyCache) AcquireGroupSlot(ctx context.Context, groupID int64, 
 	if groupID <= 0 {
 		return nil
 	}
-	if _, err := trackSlotScript.Run(ctx, c.rdb, []string{groupSlotKey(groupID)}, c.slotTTLSeconds, requestID).Result(); err != nil {
+	if _, err := trackSlotScript.Run(ctx, c.rdb, []string{groupSlotKey(groupID), groupActiveIndexKey}, c.slotTTLSeconds, requestID, strconv.FormatInt(groupID, 10)).Result(); err != nil {
 		return err
 	}
-	c.refreshGroupActiveIndex(ctx, groupID)
 	return nil
 }
 
@@ -618,6 +631,53 @@ func (c *concurrencyCache) GetGroupConcurrency(ctx context.Context, groupID int6
 	return getCountScript.Run(ctx, c.rdb, []string{groupSlotKey(groupID)}, c.slotTTLSeconds).Int()
 }
 
+func (c *concurrencyCache) GetGroupConcurrencyBatch(ctx context.Context, groupIDs []int64) (map[int64]int, error) {
+	if len(groupIDs) == 0 {
+		return map[int64]int{}, nil
+	}
+
+	now, err := c.rdb.Time(ctx).Result()
+	if err != nil {
+		return nil, fmt.Errorf("redis TIME: %w", err)
+	}
+	cutoffTime := now.Unix() - int64(c.slotTTLSeconds)
+
+	pipe := c.rdb.Pipeline()
+	type groupCmd struct {
+		groupID int64
+		zcard   *redis.IntCmd
+	}
+	cmds := make([]groupCmd, 0, len(groupIDs))
+	seen := make(map[int64]struct{}, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if groupID <= 0 {
+			continue
+		}
+		if _, ok := seen[groupID]; ok {
+			continue
+		}
+		seen[groupID] = struct{}{}
+		slotKey := groupSlotKey(groupID)
+		pipe.ZRemRangeByScore(ctx, slotKey, "-inf", strconv.FormatInt(cutoffTime, 10))
+		cmds = append(cmds, groupCmd{
+			groupID: groupID,
+			zcard:   pipe.ZCard(ctx, slotKey),
+		})
+	}
+	if len(cmds) == 0 {
+		return map[int64]int{}, nil
+	}
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+		return nil, fmt.Errorf("pipeline exec: %w", err)
+	}
+
+	result := make(map[int64]int, len(groupIDs))
+	for _, cmd := range cmds {
+		result[cmd.groupID] = int(cmd.zcard.Val())
+	}
+	return result, nil
+}
+
 func (c *concurrencyCache) GetAccountConcurrencyBatch(ctx context.Context, accountIDs []int64) (map[int64]int, error) {
 	if len(accountIDs) == 0 {
 		return map[int64]int{}, nil
@@ -659,14 +719,11 @@ func (c *concurrencyCache) GetAccountConcurrencyBatch(ctx context.Context, accou
 
 func (c *concurrencyCache) AcquireUserSlot(ctx context.Context, userID int64, maxConcurrency int, requestID string) (bool, error) {
 	key := userSlotKey(userID)
+	member := strconv.FormatInt(userID, 10)
 	// 时间戳在 Lua 脚本内使用 Redis TIME 命令获取，确保多实例时钟一致
-	result, now, err := runScriptInt64Pair(ctx, c.rdb, acquireScript, []string{key}, maxConcurrency, c.slotTTLSeconds, requestID)
+	result, _, err := runScriptInt64Pair(ctx, c.rdb, acquireScript, []string{key, userActiveIndexKey}, maxConcurrency, c.slotTTLSeconds, requestID, member)
 	if err != nil {
 		return false, err
-	}
-	if result == 1 {
-		// 成功占槽后标记活跃用户，避免启动清理依赖全量 SCAN。
-		c.touchActiveIndexAt(ctx, userActiveIndexKey, userID, now+int64(c.slotTTLSeconds))
 	}
 	return result == 1, nil
 }
@@ -981,7 +1038,7 @@ func (c *concurrencyCache) reconcileExpiredIndexCandidates(ctx context.Context, 
 			logger.LegacyPrintf("repository.concurrency", "Warning: refresh %d active index members in %s failed: %v", len(refreshed), spec.indexKey, err)
 		}
 	}
-	c.removeActiveIndexMembersAtOrBefore(ctx, spec.indexKey, staleMembers, now)
+	c.removeActiveIndexMembersBefore(ctx, spec.indexKey, staleMembers, now)
 	return nil
 }
 

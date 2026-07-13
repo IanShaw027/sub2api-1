@@ -995,6 +995,38 @@ func TestCalculateCostWithLongContext_AboveThreshold_CacheBelowThreshold(t *test
 	require.True(t, cost.ActualCost > normalCost.ActualCost, "长上下文费用应高于正常费用")
 }
 
+func TestCalculateCostWithLongContext_IncludesCacheCreationInThreshold(t *testing.T) {
+	svc := newTestBillingService()
+
+	tokens := UsageTokens{
+		InputTokens:           10000,
+		OutputTokens:          1000,
+		CacheReadTokens:       100000,
+		CacheCreationTokens:   120000,
+		CacheCreation5mTokens: 120000,
+	}
+	cost, err := svc.CalculateCostWithLongContext("claude-sonnet-4", tokens, 1.0, 200000, 2.0)
+	require.NoError(t, err)
+
+	inRange, err := svc.CalculateCost("claude-sonnet-4", UsageTokens{
+		OutputTokens:          1000,
+		CacheReadTokens:       100000,
+		CacheCreationTokens:   100000,
+		CacheCreation5mTokens: 100000,
+	}, 1.0)
+	require.NoError(t, err)
+
+	outRange, err := svc.CalculateCost("claude-sonnet-4", UsageTokens{
+		InputTokens:           10000,
+		CacheCreationTokens:   20000,
+		CacheCreation5mTokens: 20000,
+	}, 2.0)
+	require.NoError(t, err)
+
+	require.InDelta(t, inRange.ActualCost+outRange.ActualCost, cost.ActualCost, 1e-10)
+	require.InDelta(t, inRange.CacheCreationCost+outRange.CacheCreationCost, cost.CacheCreationCost, 1e-10)
+}
+
 func TestCalculateCostWithLongContext_DisabledThreshold(t *testing.T) {
 	svc := newTestBillingService()
 

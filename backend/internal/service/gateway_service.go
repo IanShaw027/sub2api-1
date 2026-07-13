@@ -2062,11 +2062,15 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 										stickyCacheMissReason = "session_limit"
 										// 会话限制已满，继续到负载感知选择
 									} else {
+										hydratedStickyAccount, hydrateErr := s.hydrateSelectedAccount(ctx, stickyAccount)
+										if hydrateErr != nil {
+											return nil, hydrateErr
+										}
 										return &AccountSelectionResult{
-											Account: stickyAccount,
+											Account: hydratedStickyAccount,
 											WaitPlan: &AccountWaitPlan{
 												AccountID:      stickyAccountID,
-												MaxConcurrency: stickyAccount.Concurrency,
+												MaxConcurrency: hydratedStickyAccount.Concurrency,
 												Timeout:        cfg.StickySessionWaitTimeout,
 												MaxWaiting:     cfg.StickySessionMaxWaiting,
 											},

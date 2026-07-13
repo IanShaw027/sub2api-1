@@ -93,6 +93,8 @@ type PaymentOrder struct {
 	FailedAt *time.Time `json:"failed_at,omitempty"`
 	// FailedReason holds the value of the "failed_reason" field.
 	FailedReason *string `json:"failed_reason,omitempty"`
+	// FulfillmentLeaseToken holds the value of the "fulfillment_lease_token" field.
+	FulfillmentLeaseToken string `json:"fulfillment_lease_token,omitempty"`
 	// ClientIP holds the value of the "client_ip" field.
 	ClientIP string `json:"client_ip,omitempty"`
 	// SrcHost holds the value of the "src_host" field.
@@ -142,7 +144,7 @@ func (*PaymentOrder) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldPlanID, paymentorder.FieldSubscriptionGroupID, paymentorder.FieldSubscriptionDays, paymentorder.FieldInvoiceFileMediaID:
 			values[i] = new(sql.NullInt64)
-		case paymentorder.FieldUserEmail, paymentorder.FieldUserName, paymentorder.FieldUserNotes, paymentorder.FieldRechargeCode, paymentorder.FieldOutTradeNo, paymentorder.FieldPaymentType, paymentorder.FieldPaymentTradeNo, paymentorder.FieldPayURL, paymentorder.FieldQrCode, paymentorder.FieldQrCodeImg, paymentorder.FieldOrderType, paymentorder.FieldProviderInstanceID, paymentorder.FieldProviderKey, paymentorder.FieldStatus, paymentorder.FieldInvoiceStatus, paymentorder.FieldRefundReason, paymentorder.FieldRefundRequestReason, paymentorder.FieldRefundRequestedBy, paymentorder.FieldFailedReason, paymentorder.FieldClientIP, paymentorder.FieldSrcHost, paymentorder.FieldSrcURL:
+		case paymentorder.FieldUserEmail, paymentorder.FieldUserName, paymentorder.FieldUserNotes, paymentorder.FieldRechargeCode, paymentorder.FieldOutTradeNo, paymentorder.FieldPaymentType, paymentorder.FieldPaymentTradeNo, paymentorder.FieldPayURL, paymentorder.FieldQrCode, paymentorder.FieldQrCodeImg, paymentorder.FieldOrderType, paymentorder.FieldProviderInstanceID, paymentorder.FieldProviderKey, paymentorder.FieldStatus, paymentorder.FieldInvoiceStatus, paymentorder.FieldRefundReason, paymentorder.FieldRefundRequestReason, paymentorder.FieldRefundRequestedBy, paymentorder.FieldFailedReason, paymentorder.FieldFulfillmentLeaseToken, paymentorder.FieldClientIP, paymentorder.FieldSrcHost, paymentorder.FieldSrcURL:
 			values[i] = new(sql.NullString)
 		case paymentorder.FieldRefundAt, paymentorder.FieldRefundRequestedAt, paymentorder.FieldExpiresAt, paymentorder.FieldPaidAt, paymentorder.FieldCompletedAt, paymentorder.FieldFailedAt, paymentorder.FieldCreatedAt, paymentorder.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -410,6 +412,12 @@ func (_m *PaymentOrder) assignValues(columns []string, values []any) error {
 				_m.FailedReason = new(string)
 				*_m.FailedReason = value.String
 			}
+		case paymentorder.FieldFulfillmentLeaseToken:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field fulfillment_lease_token", values[i])
+			} else if value.Valid {
+				_m.FulfillmentLeaseToken = value.String
+			}
 		case paymentorder.FieldClientIP:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field client_ip", values[i])
@@ -630,6 +638,9 @@ func (_m *PaymentOrder) String() string {
 		builder.WriteString("failed_reason=")
 		builder.WriteString(*v)
 	}
+	builder.WriteString(", ")
+	builder.WriteString("fulfillment_lease_token=")
+	builder.WriteString(_m.FulfillmentLeaseToken)
 	builder.WriteString(", ")
 	builder.WriteString("client_ip=")
 	builder.WriteString(_m.ClientIP)

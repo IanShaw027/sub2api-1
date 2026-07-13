@@ -51,6 +51,7 @@ type groupCapacityConcurrencyCacheStub struct {
 	ConcurrencyCache
 	groupConcurrency           map[int64]int
 	groupConcurrencyErr        error
+	groupConcurrencyBatchCalls int
 	accountConcurrencyBatch    map[int64]int
 	accountConcurrencyBatchErr error
 }
@@ -60,6 +61,18 @@ func (c groupCapacityConcurrencyCacheStub) GetGroupConcurrency(_ context.Context
 		return 0, c.groupConcurrencyErr
 	}
 	return c.groupConcurrency[groupID], nil
+}
+
+func (c *groupCapacityConcurrencyCacheStub) GetGroupConcurrencyBatch(_ context.Context, groupIDs []int64) (map[int64]int, error) {
+	c.groupConcurrencyBatchCalls++
+	if c.groupConcurrencyErr != nil {
+		return nil, c.groupConcurrencyErr
+	}
+	result := make(map[int64]int, len(groupIDs))
+	for _, groupID := range groupIDs {
+		result[groupID] = c.groupConcurrency[groupID]
+	}
+	return result, nil
 }
 
 func (c groupCapacityConcurrencyCacheStub) GetAccountConcurrencyBatch(_ context.Context, accountIDs []int64) (map[int64]int, error) {
@@ -88,7 +101,7 @@ func TestGroupCapacityReturnsGroupScopedUsedAndMax(t *testing.T) {
 			{ID: 20, Status: StatusActive},
 		},
 	}
-	concurrencyCache := groupCapacityConcurrencyCacheStub{
+	concurrencyCache := &groupCapacityConcurrencyCacheStub{
 		groupConcurrency: map[int64]int{
 			10: 2,
 			20: 0,
@@ -129,7 +142,7 @@ func TestGroupCapacityBatchUsesGroupScopedConcurrencyForSharedAccounts(t *testin
 			{ID: 20, Status: StatusActive},
 		},
 	}
-	concurrencyCache := groupCapacityConcurrencyCacheStub{
+	concurrencyCache := &groupCapacityConcurrencyCacheStub{
 		groupConcurrency: map[int64]int{
 			10: 1,
 			20: 0,
@@ -157,6 +170,7 @@ func TestGroupCapacityBatchUsesGroupScopedConcurrencyForSharedAccounts(t *testin
 	require.Equal(t, 10, byGroup[10].ConcurrencyMax)
 	require.Zero(t, byGroup[20].ConcurrencyUsed)
 	require.Equal(t, 10, byGroup[20].ConcurrencyMax)
+	require.Equal(t, 1, concurrencyCache.groupConcurrencyBatchCalls)
 }
 
 func TestGroupCapacityReturnsErrorWhenGroupConcurrencyReadFails(t *testing.T) {
@@ -170,7 +184,7 @@ func TestGroupCapacityReturnsErrorWhenGroupConcurrencyReadFails(t *testing.T) {
 	groupRepo := groupCapacityGroupRepoStub{
 		groups: []Group{{ID: 10, Status: StatusActive}},
 	}
-	concurrencyCache := groupCapacityConcurrencyCacheStub{
+	concurrencyCache := &groupCapacityConcurrencyCacheStub{
 		groupConcurrencyErr: errors.New("redis read failed"),
 		accountConcurrencyBatch: map[int64]int{
 			101: 2,

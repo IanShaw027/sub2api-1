@@ -122,12 +122,12 @@ func (s *GroupCapacityService) getGroupCapacitiesBatch(ctx context.Context, grou
 	}
 
 	if s.concurrencyService != nil {
+		usedByGroup, err := s.concurrencyService.GetGroupConcurrencyBatch(ctx, groupIDs)
+		if err != nil {
+			return nil, err
+		}
 		for i, groupID := range groupIDs {
-			used, err := s.concurrencyService.GetGroupConcurrency(ctx, groupID)
-			if err != nil {
-				return nil, err
-			}
-			results[i].ConcurrencyUsed = used
+			results[i].ConcurrencyUsed = usedByGroup[groupID]
 		}
 	}
 

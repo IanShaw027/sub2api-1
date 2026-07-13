@@ -1335,38 +1335,44 @@ func (s *BillingService) CalculateCostWithLongContext(model string, tokens Usage
 		return s.CalculateCost(model, tokens, rateMultiplier)
 	}
 
-	// 计算总输入 token（缓存读取 + 新输入）
-	total := tokens.CacheReadTokens + tokens.InputTokens
+	// 计算总输入 token（缓存读取 + 缓存写入 + 新输入）
+	total := tokens.CacheReadTokens + tokens.CacheCreationTokens + tokens.InputTokens
 	if total <= threshold {
 		return s.CalculateCost(model, tokens, rateMultiplier)
 	}
 
 	// 拆分成范围内和范围外
-	var inRangeCacheTokens, inRangeInputTokens int
-	var outRangeCacheTokens, outRangeInputTokens int
-
-	if tokens.CacheReadTokens >= threshold {
-		// 缓存已超过阈值：范围内只有缓存，范围外是超出的缓存+全部输入
-		inRangeCacheTokens = threshold
-		inRangeInputTokens = 0
-		outRangeCacheTokens = tokens.CacheReadTokens - threshold
-		outRangeInputTokens = tokens.InputTokens
-	} else {
-		// 缓存未超过阈值：范围内是全部缓存+部分输入，范围外是剩余输入
-		inRangeCacheTokens = tokens.CacheReadTokens
-		inRangeInputTokens = threshold - tokens.CacheReadTokens
-		outRangeCacheTokens = 0
-		outRangeInputTokens = tokens.InputTokens - inRangeInputTokens
+	remaining := threshold
+	takeInRange := func(n int) (int, int) {
+		if n <= 0 {
+			return 0, 0
+		}
+		if remaining <= 0 {
+			return 0, n
+		}
+		in := min(n, remaining)
+		remaining -= in
+		return in, n - in
 	}
+	inRangeCacheTokens, outRangeCacheTokens := takeInRange(tokens.CacheReadTokens)
+	inRangeCacheCreation5mTokens, outRangeCacheCreation5mTokens := takeInRange(tokens.CacheCreation5mTokens)
+	inRangeCacheCreation1hTokens, outRangeCacheCreation1hTokens := takeInRange(tokens.CacheCreation1hTokens)
+	breakdownCacheCreationTokens := tokens.CacheCreation5mTokens + tokens.CacheCreation1hTokens
+	inRangeCacheCreationTokens := inRangeCacheCreation5mTokens + inRangeCacheCreation1hTokens
+	outRangeCacheCreationTokens := outRangeCacheCreation5mTokens + outRangeCacheCreation1hTokens
+	if breakdownCacheCreationTokens == 0 {
+		inRangeCacheCreationTokens, outRangeCacheCreationTokens = takeInRange(tokens.CacheCreationTokens)
+	}
+	inRangeInputTokens, outRangeInputTokens := takeInRange(tokens.InputTokens)
 
 	// 范围内部分：正常计费
 	inRangeTokens := UsageTokens{
 		InputTokens:           inRangeInputTokens,
 		OutputTokens:          tokens.OutputTokens, // 输出只算一次
-		CacheCreationTokens:   tokens.CacheCreationTokens,
+		CacheCreationTokens:   inRangeCacheCreationTokens,
 		CacheReadTokens:       inRangeCacheTokens,
-		CacheCreation5mTokens: tokens.CacheCreation5mTokens,
-		CacheCreation1hTokens: tokens.CacheCreation1hTokens,
+		CacheCreation5mTokens: inRangeCacheCreation5mTokens,
+		CacheCreation1hTokens: inRangeCacheCreation1hTokens,
 		ImageOutputTokens:     tokens.ImageOutputTokens,
 	}
 	inRangeCost, err := s.CalculateCost(model, inRangeTokens, rateMultiplier)
@@ -1376,8 +1382,11 @@ func (s *BillingService) CalculateCostWithLongContext(model string, tokens Usage
 
 	// 范围外部分：× extraMultiplier 计费
 	outRangeTokens := UsageTokens{
-		InputTokens:     outRangeInputTokens,
-		CacheReadTokens: outRangeCacheTokens,
+		InputTokens:           outRangeInputTokens,
+		CacheCreationTokens:   outRangeCacheCreationTokens,
+		CacheReadTokens:       outRangeCacheTokens,
+		CacheCreation5mTokens: outRangeCacheCreation5mTokens,
+		CacheCreation1hTokens: outRangeCacheCreation1hTokens,
 	}
 	outRangeCost, err := s.CalculateCost(model, outRangeTokens, rateMultiplier*extraMultiplier)
 	if err != nil {
@@ -1389,7 +1398,7 @@ func (s *BillingService) CalculateCostWithLongContext(model string, tokens Usage
 		InputCost:         inRangeCost.InputCost + outRangeCost.InputCost,
 		OutputCost:        inRangeCost.OutputCost,
 		ImageOutputCost:   inRangeCost.ImageOutputCost,
-		CacheCreationCost: inRangeCost.CacheCreationCost,
+		CacheCreationCost: inRangeCost.CacheCreationCost + outRangeCost.CacheCreationCost,
 		CacheReadCost:     inRangeCost.CacheReadCost + outRangeCost.CacheReadCost,
 		TotalCost:         inRangeCost.TotalCost + outRangeCost.TotalCost,
 		ActualCost:        inRangeCost.ActualCost + outRangeCost.ActualCost,

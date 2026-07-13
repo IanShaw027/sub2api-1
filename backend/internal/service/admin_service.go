@@ -179,6 +179,10 @@ type UpdateUserInput struct {
 	ActorAdminID int64
 }
 
+type lastAdminGuardedUserUpdater interface {
+	UpdatePreservingLastAdmin(ctx context.Context, user *User) error
+}
+
 type AdminBindAuthIdentityInput struct {
 	ProviderType    string
 	ProviderKey     string
@@ -1207,6 +1211,7 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 	oldRole := user.Role
 	oldRPMLimit := user.RPMLimit
 	oldAllowedGroups := append([]int64(nil), user.AllowedGroups...)
+	guardedAdminDemotion := false
 
 	if input.Email != "" {
 		user.Email = input.Email
@@ -1234,7 +1239,9 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 			return nil, err
 		}
 		if user.Role == RoleAdmin && role == RoleUser {
-			if err := s.ensureNotLastAdmin(ctx); err != nil {
+			if _, ok := s.userRepo.(lastAdminGuardedUserUpdater); ok {
+				guardedAdminDemotion = true
+			} else if err := s.ensureNotLastAdmin(ctx); err != nil {
 				return nil, err
 			}
 		}
@@ -1256,8 +1263,15 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 		user.AllowedGroups = *input.AllowedGroups
 	}
 
-	if err := s.userRepo.Update(ctx, user); err != nil {
-		return nil, err
+	if guardedAdminDemotion {
+		guardedRepo := s.userRepo.(lastAdminGuardedUserUpdater)
+		if err := guardedRepo.UpdatePreservingLastAdmin(ctx, user); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := s.userRepo.Update(ctx, user); err != nil {
+			return nil, err
+		}
 	}
 
 	// 同步用户专属分组倍率

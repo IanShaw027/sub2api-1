@@ -161,6 +161,34 @@ func (s *UserRepoSuite) TestUpdate() {
 	s.Require().Equal("updated", updated.Username)
 }
 
+func (s *UserRepoSuite) TestUpdatePreservingLastAdminRejectsLastAdminDemotion() {
+	first := s.mustCreateUser(&service.User{
+		Email:    "admin-one@test.com",
+		Username: "admin-one",
+		Role:     service.RoleAdmin,
+	})
+	second := s.mustCreateUser(&service.User{
+		Email:    "admin-two@test.com",
+		Username: "admin-two",
+		Role:     service.RoleAdmin,
+	})
+
+	first.Role = service.RoleUser
+	s.Require().NoError(s.repo.UpdatePreservingLastAdmin(s.ctx, first))
+
+	firstAfter, err := s.repo.GetByID(s.ctx, first.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(service.RoleUser, firstAfter.Role)
+
+	second.Role = service.RoleUser
+	err = s.repo.UpdatePreservingLastAdmin(s.ctx, second)
+	s.Require().Error(err)
+
+	secondAfter, err := s.repo.GetByID(s.ctx, second.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(service.RoleAdmin, secondAfter.Role)
+}
+
 func (s *UserRepoSuite) TestDisableUserForContentModerationIsStatusOnlyCAS() {
 	regular := s.mustCreateUser(&service.User{
 		Email:    "moderation-cas@test.com",

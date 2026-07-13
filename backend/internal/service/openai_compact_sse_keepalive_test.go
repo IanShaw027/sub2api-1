@@ -84,6 +84,19 @@ func TestOpenAICompactSSEKeepalive_StopBeforeFirstBeatKeepsWriterUntouched(t *te
 	require.False(t, StopOpenAICompactSSEKeepaliveCommitted(c))
 }
 
+func TestOpenAICompactSSEKeepalive_HeaderAccessDoesNotStopHeartbeat(t *testing.T) {
+	c, rec := newCompactBridgeTestContext(t, true)
+	stop := StartOpenAICompactSSEKeepalive(c, keepaliveTestInterval)
+	defer stop()
+
+	c.Writer.Header().Set("X-Test-Read-Header", "ok")
+	waitForKeepaliveBeats()
+
+	require.True(t, StopOpenAICompactSSEKeepaliveCommitted(c))
+	require.Contains(t, rec.Body.String(), ": keepalive\n\n")
+	require.Equal(t, "ok", rec.Header().Get("X-Test-Read-Header"))
+}
+
 // 心跳已提交后，2xx 桥接续写事件而不重复提交响应头。
 func TestWriteOpenAICompactSSEBridge_AfterKeepaliveCommitAppendsEvents(t *testing.T) {
 	c, rec := newCompactBridgeTestContext(t, true)

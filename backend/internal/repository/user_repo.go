@@ -281,6 +281,120 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 	return nil
 }
 
+func (r *userRepository) UpdatePreservingLastAdmin(ctx context.Context, userIn *service.User) error {
+	if userIn == nil {
+		return nil
+	}
+	if userIn.Role != service.RoleUser {
+		return r.Update(ctx, userIn)
+	}
+
+	tx, err := r.client.Tx(ctx)
+	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
+		return err
+	}
+
+	var txClient *dbent.Client
+	txCtx := ctx
+	if err == nil {
+		defer func() { _ = tx.Rollback() }()
+		txClient = tx.Client()
+		txCtx = dbent.NewTxContext(ctx, tx)
+	} else {
+		if existingTx := dbent.TxFromContext(ctx); existingTx != nil {
+			txClient = existingTx.Client()
+		} else {
+			txClient = r.client
+		}
+	}
+
+	admins, err := txClient.User.Query().
+		Where(dbuser.RoleEQ(service.RoleAdmin)).
+		Order(dbent.Asc(dbuser.FieldID)).
+		ForUpdate().
+		All(txCtx)
+	if err != nil {
+		return fmt.Errorf("lock admin users: %w", err)
+	}
+	if len(admins) <= 1 {
+		return errors.New("cannot demote the last admin user")
+	}
+	targetEmail := ""
+	for _, admin := range admins {
+		if admin.ID == userIn.ID {
+			targetEmail = admin.Email
+			break
+		}
+	}
+	if targetEmail == "" {
+		return service.ErrUserNotFound
+	}
+
+	releaseEmailLock, err := lockRepositoryScopedKeys(
+		txCtx,
+		txClient,
+		txAwareSQLExecutor(txCtx, r.sql, r.client),
+		normalizedEmailUniquenessLockKey(userIn.Email),
+	)
+	if err != nil {
+		return err
+	}
+	defer releaseEmailLock()
+
+	if err := ensureNormalizedEmailAvailableWithClient(txCtx, txClient, userIn.ID, userIn.Email); err != nil {
+		return err
+	}
+
+	updateOp := txClient.User.UpdateOneID(userIn.ID).
+		SetEmail(userIn.Email).
+		SetUsername(userIn.Username).
+		SetNotes(userIn.Notes).
+		SetPasswordHash(userIn.PasswordHash).
+		SetRole(userIn.Role).
+		SetBalance(userIn.Balance).
+		SetConcurrency(userIn.Concurrency).
+		SetStatus(userIn.Status).
+		SetBalanceNotifyEnabled(userIn.BalanceNotifyEnabled).
+		SetBalanceNotifyThresholdType(userIn.BalanceNotifyThresholdType).
+		SetNillableBalanceNotifyThreshold(userIn.BalanceNotifyThreshold).
+		SetBalanceNotifyExtraEmails(marshalExtraEmails(userIn.BalanceNotifyExtraEmails)).
+		SetTotalRecharged(userIn.TotalRecharged).
+		SetRpmLimit(userIn.RPMLimit).
+		SetTokenVersion(userIn.TokenVersion)
+	if userIn.SignupSource != "" {
+		updateOp = updateOp.SetSignupSource(userIn.SignupSource)
+	}
+	if userIn.LastLoginAt != nil {
+		updateOp = updateOp.SetLastLoginAt(*userIn.LastLoginAt)
+	}
+	if userIn.LastActiveAt != nil {
+		updateOp = updateOp.SetLastActiveAt(*userIn.LastActiveAt)
+	}
+	if userIn.BalanceNotifyThreshold == nil {
+		updateOp = updateOp.ClearBalanceNotifyThreshold()
+	}
+	updated, err := updateOp.Save(txCtx)
+	if err != nil {
+		return translatePersistenceError(err, service.ErrUserNotFound, service.ErrEmailExists)
+	}
+
+	if err := r.syncUserAllowedGroupsWithClient(txCtx, txClient, updated.ID, userIn.AllowedGroups); err != nil {
+		return err
+	}
+	if err := replaceEmailAuthIdentityWithClient(txCtx, txClient, updated.ID, targetEmail, updated.Email, "user_repo_update"); err != nil {
+		return err
+	}
+
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+
+	userIn.UpdatedAt = updated.UpdatedAt
+	return nil
+}
+
 // DisableUserForContentModeration atomically transitions a regular user to
 // disabled without rewriting unrelated profile, balance, or auth fields. The
 // predicates are evaluated by PostgreSQL under the row update lock, making the

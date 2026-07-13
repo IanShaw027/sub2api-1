@@ -24,6 +24,8 @@ type userHandlerRepoStub struct {
 	avatar     *service.UserAvatar
 	identities []service.UserAuthIdentityRecord
 	unbound    []string
+	getByID    int
+	getAvatar  int
 }
 
 type userHandlerSettingRepoStub struct {
@@ -70,6 +72,7 @@ func (s *userHandlerSettingRepoStub) Delete(context.Context, string) error { ret
 
 func (s *userHandlerRepoStub) Create(context.Context, *service.User) error { return nil }
 func (s *userHandlerRepoStub) GetByID(context.Context, int64) (*service.User, error) {
+	s.getByID++
 	cloned := *s.user
 	return &cloned, nil
 }
@@ -88,6 +91,7 @@ func (s *userHandlerRepoStub) Update(_ context.Context, user *service.User) erro
 }
 func (s *userHandlerRepoStub) Delete(context.Context, int64) error { return nil }
 func (s *userHandlerRepoStub) GetUserAvatar(context.Context, int64) (*service.UserAvatar, error) {
+	s.getAvatar++
 	if s.avatar != nil {
 		cloned := *s.avatar
 		return &cloned, nil

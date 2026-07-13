@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,7 +33,7 @@ var ErrOrderNotFound = errors.New("payment order not found")
 const paymentFulfillmentLeaseDuration = 5 * time.Minute
 
 type paymentFulfillmentLease struct {
-	version time.Time
+	token string
 }
 
 // --- Payment Notification & Fulfillment ---
@@ -366,6 +368,10 @@ func (s *PaymentService) acquirePaymentFulfillmentLease(ctx context.Context, o *
 
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	staleBefore := now.Add(-paymentFulfillmentLeaseDuration)
+	leaseToken, err := newPaymentFulfillmentLeaseToken()
+	if err != nil {
+		return nil, fmt.Errorf("generate fulfillment lease token: %w", err)
+	}
 	updated, err := s.entClient.PaymentOrder.Update().
 		Where(
 			paymentorder.IDEQ(o.ID),
@@ -378,6 +384,7 @@ func (s *PaymentService) acquirePaymentFulfillmentLease(ctx context.Context, o *
 			),
 		).
 		SetStatus(OrderStatusRecharging).
+		SetFulfillmentLeaseToken(leaseToken).
 		SetUpdatedAt(now).
 		ClearFailedAt().
 		ClearFailedReason().
@@ -406,7 +413,18 @@ func (s *PaymentService) acquirePaymentFulfillmentLease(ctx context.Context, o *
 	if claimed.Status != OrderStatusRecharging {
 		return nil, infraerrors.Conflict("CONFLICT", "fulfillment lease was lost")
 	}
-	return &paymentFulfillmentLease{version: claimed.UpdatedAt}, nil
+	if claimed.FulfillmentLeaseToken != leaseToken {
+		return nil, infraerrors.Conflict("CONFLICT", "fulfillment lease token was lost")
+	}
+	return &paymentFulfillmentLease{token: leaseToken}, nil
+}
+
+func newPaymentFulfillmentLeaseToken() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b[:]), nil
 }
 
 // redeemAction represents the idempotency decision for balance fulfillment.
@@ -610,10 +628,11 @@ func completePaymentOrderWithLease(ctx context.Context, client *dbent.Client, o 
 		Where(
 			paymentorder.IDEQ(o.ID),
 			paymentorder.StatusEQ(OrderStatusRecharging),
-			paymentorder.UpdatedAtEQ(lease.version),
+			paymentorder.FulfillmentLeaseTokenEQ(lease.token),
 		).
 		SetStatus(OrderStatusCompleted).
 		SetCompletedAt(now).
+		SetFulfillmentLeaseToken("").
 		Save(ctx)
 	if err != nil {
 		return false, fmt.Errorf("mark completed: %w", err)
@@ -1154,14 +1173,14 @@ func (s *PaymentService) markFailed(ctx context.Context, oid int64, lease *payme
 	}
 	now := time.Now()
 	r := psErrMsg(cause)
-	// The lease version prevents a stale worker from overwriting a newer owner.
+	// The lease token prevents a stale worker from overwriting a newer owner.
 	c, e := s.entClient.PaymentOrder.Update().
 		Where(
 			paymentorder.IDEQ(oid),
 			paymentorder.StatusEQ(OrderStatusRecharging),
-			paymentorder.UpdatedAtEQ(lease.version),
+			paymentorder.FulfillmentLeaseTokenEQ(lease.token),
 		).
-		SetStatus(OrderStatusFailed).SetFailedAt(now).SetFailedReason(r).Save(ctx)
+		SetStatus(OrderStatusFailed).SetFulfillmentLeaseToken("").SetFailedAt(now).SetFailedReason(r).Save(ctx)
 	if e != nil {
 		slog.Error("mark FAILED", "orderID", oid, "error", e)
 	}

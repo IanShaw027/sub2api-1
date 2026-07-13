@@ -178,14 +178,12 @@ type openAICompactKeepaliveWriter struct {
 	k *openAICompactSSEKeepalive
 }
 
-// suspend 停拍心跳；幂等。任何响应构造（含 Header 访问——写响应必先操作
-// 响应头）都视为请求侧接管 ResponseWriter。
+// suspend 停拍心跳；幂等。任何响应写入都视为请求侧接管 ResponseWriter。
 func (w *openAICompactKeepaliveWriter) suspend() {
 	w.k.Stop()
 }
 
 func (w *openAICompactKeepaliveWriter) Header() http.Header {
-	w.suspend()
 	return w.ResponseWriter.Header()
 }
 

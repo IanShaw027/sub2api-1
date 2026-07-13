@@ -845,7 +845,7 @@ func validateUserAvatarImage(decoded []byte) (string, error) {
 	if err != nil || config.Width <= 0 || config.Height <= 0 {
 		return "", ErrAvatarInvalid
 	}
-	if int64(config.Width) > maxAvatarPixels/int64(config.Height) {
+	if int64(config.Width)*int64(config.Height) > maxAvatarPixels {
 		return "", ErrAvatarInvalid
 	}
 	contentType := ""
@@ -860,10 +860,6 @@ func validateUserAvatarImage(decoded []byte) (string, error) {
 		contentType = "image/webp"
 	default:
 		return "", ErrAvatarNotImage
-	}
-	decodedImage, decodedFormat, err := image.Decode(bytes.NewReader(decoded))
-	if err != nil || decodedImage == nil || decodedImage.Bounds().Empty() || !strings.EqualFold(decodedFormat, format) {
-		return "", ErrAvatarInvalid
 	}
 	return contentType, nil
 }

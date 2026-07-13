@@ -36,6 +36,7 @@ export const useAppStore = defineStore('app', () => {
   const downloadToolsUrl = ref<string>('')
   const cachedPublicSettings = ref<PublicSettings | null>(null)
   let publicSettingsRequest: Promise<PublicSettings | null> | null = null
+  let publicSettingsRequestID = 0
 
   // Version cache state
   const versionLoaded = ref<boolean>(false)
@@ -319,9 +320,7 @@ export const useAppStore = defineStore('app', () => {
    * @param force - Force refresh from API
    */
   function fetchPublicSettings(force = false): Promise<PublicSettings | null> {
-    // All callers share an active refresh, including forced callers, so an
-    // older request cannot overwrite newer settings or return stale data.
-    if (publicSettingsRequest) {
+    if (publicSettingsRequest && !force) {
       return publicSettingsRequest
     }
 
@@ -396,9 +395,12 @@ export const useAppStore = defineStore('app', () => {
       return Promise.resolve(null)
     }
 
+    const requestID = ++publicSettingsRequestID
     const request = apiRequest
       .then((data) => {
-        applySettings(data)
+        if (requestID === publicSettingsRequestID) {
+          applySettings(data)
+        }
         return data
       })
       .catch((error) => {
@@ -406,7 +408,7 @@ export const useAppStore = defineStore('app', () => {
         return null
       })
       .finally(() => {
-        if (publicSettingsRequest === request) {
+        if (requestID === publicSettingsRequestID && publicSettingsRequest === request) {
           publicSettingsRequest = null
           publicSettingsLoading.value = false
         }

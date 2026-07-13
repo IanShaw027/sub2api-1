@@ -55332,6 +55332,7 @@ type PaymentOrderMutation struct {
 	completed_at               *time.Time
 	failed_at                  *time.Time
 	failed_reason              *string
+	fulfillment_lease_token    *string
 	client_ip                  *string
 	src_host                   *string
 	src_url                    *string
@@ -57219,6 +57220,42 @@ func (m *PaymentOrderMutation) ResetFailedReason() {
 	delete(m.clearedFields, paymentorder.FieldFailedReason)
 }
 
+// SetFulfillmentLeaseToken sets the "fulfillment_lease_token" field.
+func (m *PaymentOrderMutation) SetFulfillmentLeaseToken(s string) {
+	m.fulfillment_lease_token = &s
+}
+
+// FulfillmentLeaseToken returns the value of the "fulfillment_lease_token" field in the mutation.
+func (m *PaymentOrderMutation) FulfillmentLeaseToken() (r string, exists bool) {
+	v := m.fulfillment_lease_token
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFulfillmentLeaseToken returns the old "fulfillment_lease_token" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldFulfillmentLeaseToken(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFulfillmentLeaseToken is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFulfillmentLeaseToken requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFulfillmentLeaseToken: %w", err)
+	}
+	return oldValue.FulfillmentLeaseToken, nil
+}
+
+// ResetFulfillmentLeaseToken resets all changes to the "fulfillment_lease_token" field.
+func (m *PaymentOrderMutation) ResetFulfillmentLeaseToken() {
+	m.fulfillment_lease_token = nil
+}
+
 // SetClientIP sets the "client_ip" field.
 func (m *PaymentOrderMutation) SetClientIP(s string) {
 	m.client_ip = &s
@@ -57473,7 +57510,7 @@ func (m *PaymentOrderMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PaymentOrderMutation) Fields() []string {
-	fields := make([]string, 0, 42)
+	fields := make([]string, 0, 43)
 	if m.user != nil {
 		fields = append(fields, paymentorder.FieldUserID)
 	}
@@ -57585,6 +57622,9 @@ func (m *PaymentOrderMutation) Fields() []string {
 	if m.failed_reason != nil {
 		fields = append(fields, paymentorder.FieldFailedReason)
 	}
+	if m.fulfillment_lease_token != nil {
+		fields = append(fields, paymentorder.FieldFulfillmentLeaseToken)
+	}
 	if m.client_ip != nil {
 		fields = append(fields, paymentorder.FieldClientIP)
 	}
@@ -57682,6 +57722,8 @@ func (m *PaymentOrderMutation) Field(name string) (ent.Value, bool) {
 		return m.FailedAt()
 	case paymentorder.FieldFailedReason:
 		return m.FailedReason()
+	case paymentorder.FieldFulfillmentLeaseToken:
+		return m.FulfillmentLeaseToken()
 	case paymentorder.FieldClientIP:
 		return m.ClientIP()
 	case paymentorder.FieldSrcHost:
@@ -57775,6 +57817,8 @@ func (m *PaymentOrderMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldFailedAt(ctx)
 	case paymentorder.FieldFailedReason:
 		return m.OldFailedReason(ctx)
+	case paymentorder.FieldFulfillmentLeaseToken:
+		return m.OldFulfillmentLeaseToken(ctx)
 	case paymentorder.FieldClientIP:
 		return m.OldClientIP(ctx)
 	case paymentorder.FieldSrcHost:
@@ -58052,6 +58096,13 @@ func (m *PaymentOrderMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetFailedReason(v)
+		return nil
+	case paymentorder.FieldFulfillmentLeaseToken:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFulfillmentLeaseToken(v)
 		return nil
 	case paymentorder.FieldClientIP:
 		v, ok := value.(string)
@@ -58487,6 +58538,9 @@ func (m *PaymentOrderMutation) ResetField(name string) error {
 		return nil
 	case paymentorder.FieldFailedReason:
 		m.ResetFailedReason()
+		return nil
+	case paymentorder.FieldFulfillmentLeaseToken:
+		m.ResetFulfillmentLeaseToken()
 		return nil
 	case paymentorder.FieldClientIP:
 		m.ResetClientIP()

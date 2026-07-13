@@ -722,6 +722,20 @@ func (_u *PaymentOrderUpdate) ClearFailedReason() *PaymentOrderUpdate {
 	return _u
 }
 
+// SetFulfillmentLeaseToken sets the "fulfillment_lease_token" field.
+func (_u *PaymentOrderUpdate) SetFulfillmentLeaseToken(v string) *PaymentOrderUpdate {
+	_u.mutation.SetFulfillmentLeaseToken(v)
+	return _u
+}
+
+// SetNillableFulfillmentLeaseToken sets the "fulfillment_lease_token" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableFulfillmentLeaseToken(v *string) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetFulfillmentLeaseToken(*v)
+	}
+	return _u
+}
+
 // SetClientIP sets the "client_ip" field.
 func (_u *PaymentOrderUpdate) SetClientIP(v string) *PaymentOrderUpdate {
 	_u.mutation.SetClientIP(v)
@@ -888,6 +902,11 @@ func (_u *PaymentOrderUpdate) check() error {
 	if v, ok := _u.mutation.RefundRequestedBy(); ok {
 		if err := paymentorder.RefundRequestedByValidator(v); err != nil {
 			return &ValidationError{Name: "refund_requested_by", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.refund_requested_by": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.FulfillmentLeaseToken(); ok {
+		if err := paymentorder.FulfillmentLeaseTokenValidator(v); err != nil {
+			return &ValidationError{Name: "fulfillment_lease_token", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.fulfillment_lease_token": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.ClientIP(); ok {
@@ -1112,6 +1131,9 @@ func (_u *PaymentOrderUpdate) sqlSave(ctx context.Context) (_node int, err error
 	}
 	if _u.mutation.FailedReasonCleared() {
 		_spec.ClearField(paymentorder.FieldFailedReason, field.TypeString)
+	}
+	if value, ok := _u.mutation.FulfillmentLeaseToken(); ok {
+		_spec.SetField(paymentorder.FieldFulfillmentLeaseToken, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.ClientIP(); ok {
 		_spec.SetField(paymentorder.FieldClientIP, field.TypeString, value)
@@ -1870,6 +1892,20 @@ func (_u *PaymentOrderUpdateOne) ClearFailedReason() *PaymentOrderUpdateOne {
 	return _u
 }
 
+// SetFulfillmentLeaseToken sets the "fulfillment_lease_token" field.
+func (_u *PaymentOrderUpdateOne) SetFulfillmentLeaseToken(v string) *PaymentOrderUpdateOne {
+	_u.mutation.SetFulfillmentLeaseToken(v)
+	return _u
+}
+
+// SetNillableFulfillmentLeaseToken sets the "fulfillment_lease_token" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableFulfillmentLeaseToken(v *string) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetFulfillmentLeaseToken(*v)
+	}
+	return _u
+}
+
 // SetClientIP sets the "client_ip" field.
 func (_u *PaymentOrderUpdateOne) SetClientIP(v string) *PaymentOrderUpdateOne {
 	_u.mutation.SetClientIP(v)
@@ -2049,6 +2085,11 @@ func (_u *PaymentOrderUpdateOne) check() error {
 	if v, ok := _u.mutation.RefundRequestedBy(); ok {
 		if err := paymentorder.RefundRequestedByValidator(v); err != nil {
 			return &ValidationError{Name: "refund_requested_by", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.refund_requested_by": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.FulfillmentLeaseToken(); ok {
+		if err := paymentorder.FulfillmentLeaseTokenValidator(v); err != nil {
+			return &ValidationError{Name: "fulfillment_lease_token", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.fulfillment_lease_token": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.ClientIP(); ok {
@@ -2290,6 +2331,9 @@ func (_u *PaymentOrderUpdateOne) sqlSave(ctx context.Context) (_node *PaymentOrd
 	}
 	if _u.mutation.FailedReasonCleared() {
 		_spec.ClearField(paymentorder.FieldFailedReason, field.TypeString)
+	}
+	if value, ok := _u.mutation.FulfillmentLeaseToken(); ok {
+		_spec.SetField(paymentorder.FieldFulfillmentLeaseToken, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.ClientIP(); ok {
 		_spec.SetField(paymentorder.FieldClientIP, field.TypeString, value)

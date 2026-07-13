@@ -889,7 +889,7 @@ func (s *ConcurrencyCacheSuite) TestActiveIndexCleanupDoesNotRemoveConcurrentRef
 
 	// Simulate an acquire racing after cleanup observed the stale score.
 	s.rawCache.touchActiveIndexAt(s.ctx, accountActiveIndexKey, accountID, now+100)
-	s.rawCache.removeActiveIndexMembersAtOrBefore(s.ctx, accountActiveIndexKey, []string{member}, now)
+	s.rawCache.removeActiveIndexMembersBefore(s.ctx, accountActiveIndexKey, []string{member}, now)
 
 	score, err := s.rdb.ZScore(s.ctx, accountActiveIndexKey, member).Result()
 	require.NoError(s.T(), err)
@@ -900,4 +900,21 @@ func (s *ConcurrencyCacheSuite) TestActiveIndexCleanupDoesNotRemoveConcurrentRef
 	score, err = s.rdb.ZScore(s.ctx, accountActiveIndexKey, member).Result()
 	require.NoError(s.T(), err)
 	require.EqualValues(s.T(), now+100, int64(score))
+}
+
+func (s *ConcurrencyCacheSuite) TestActiveIndexCleanupKeepsSameSecondRefresh() {
+	accountID := int64(4902)
+	member := strconv.FormatInt(accountID, 10)
+	now, err := s.rawCache.redisUnixSeconds(s.ctx)
+	require.NoError(s.T(), err)
+	require.NoError(s.T(), s.rdb.ZAdd(s.ctx, accountActiveIndexKey, redis.Z{
+		Score:  float64(now),
+		Member: member,
+	}).Err())
+
+	s.rawCache.removeActiveIndexMembersBefore(s.ctx, accountActiveIndexKey, []string{member}, now)
+
+	score, err := s.rdb.ZScore(s.ctx, accountActiveIndexKey, member).Result()
+	require.NoError(s.T(), err)
+	require.EqualValues(s.T(), now, int64(score))
 }
