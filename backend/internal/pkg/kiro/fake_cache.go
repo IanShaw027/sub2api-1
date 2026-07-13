@@ -40,6 +40,9 @@ type FakeCachePlan struct {
 	// commitFakeCachePlan persists it to SessionProgress so the next turn can
 	// use the last successfully written cache span as the read basis.
 	RecordedEffectiveCachedTokens int
+	// UsageResolved distinguishes an actual zero cached span from a plan that
+	// has not had ResolveUsageWithConfig called yet.
+	UsageResolved bool
 }
 
 type FakeCacheCheckpoint struct {
@@ -58,10 +61,11 @@ type FakeCacheHitState struct {
 	Prefix           bool
 	CheckpointTokens int
 	// EffectiveCachedTokens is the cacheable weight carried over from the
-	// previous turn (persisted under SessionProgressKey). It caps the ideal cache
-	// read basis so a sub-100% hit-rate scale does not let later turns read
-	// tokens that were never effectively written.
-	EffectiveCachedTokens int
+	// previous turn (persisted under SessionProgressKey). When present, including
+	// an explicit zero, it replaces the hit-derived read basis so later turns do
+	// not read tokens that were never effectively written.
+	EffectiveCachedTokens    int
+	HasEffectiveCachedTokens bool
 }
 
 type FakeCacheUsageConfig struct {
@@ -195,7 +199,7 @@ func (p *FakeCachePlan) ResolveUsageWithConfig(totalInputTokens int, hit FakeCac
 		}
 	}
 
-	return p.resolveFakeCacheUsage(totalInputTokens, currentTokens, idealRead, hit.EffectiveCachedTokens, config.HitRateScale)
+	return p.resolveFakeCacheUsage(totalInputTokens, currentTokens, idealRead, hit.EffectiveCachedTokens, hit.HasEffectiveCachedTokens, config.HitRateScale)
 }
 
 // resolveFakeCacheUsage splits the request into Anthropic-style non-cached
@@ -204,15 +208,16 @@ func (p *FakeCachePlan) ResolveUsageWithConfig(totalInputTokens int, hit FakeCac
 //   - currentTokens is the cacheable prefix visible this turn. It is the upper
 //     bound for cache_read + cache_creation.
 //   - idealRead is the cacheable prefix known to have existed before this turn.
-//     SessionProgress caps it when available because that value reflects the
-//     effective cache span actually written by prior turns.
-//   - hitRateScale only redistributes the cacheable portion between cache_read
-//     and cache_creation. The scaled-away read does not become pure input.
+//     SessionProgress replaces this hit-derived basis when available because
+//     it reflects the effective cache span actually written by prior turns.
+//   - hitRateScale applies only to cache creation for the current turn's growth.
+//     The scaled-away creation becomes non-cached input; previously cached
+//     progress is read in full and is never scaled again.
 //   - RecordedEffectiveCachedTokens stores read + creation so the next turn's
 //     cache read can continue from the effective written span.
-func (p *FakeCachePlan) resolveFakeCacheUsage(totalInputTokens, currentTokens, idealRead, effectiveCap, hitRateScale int) FakeCacheUsage {
+func (p *FakeCachePlan) resolveFakeCacheUsage(totalInputTokens, currentTokens, idealRead, effectiveCap int, hasEffectiveCap bool, hitRateScale int) FakeCacheUsage {
 	read := idealRead
-	if effectiveCap > 0 {
+	if hasEffectiveCap {
 		read = effectiveCap
 	}
 	if read > currentTokens {
@@ -227,12 +232,7 @@ func (p *FakeCachePlan) resolveFakeCacheUsage(totalInputTokens, currentTokens, i
 	}
 	growth = clampFakeCacheTokens(growth, totalInputTokens-read)
 
-	created := growth
-	if hitRateScale < 100 {
-		scaledRead := read * hitRateScale / 100
-		created += read - scaledRead
-		read = scaledRead
-	}
+	created := growth * hitRateScale / 100
 	if created < 0 {
 		created = 0
 	}
@@ -247,6 +247,7 @@ func (p *FakeCachePlan) resolveFakeCacheUsage(totalInputTokens, currentTokens, i
 
 	if p != nil {
 		p.RecordedEffectiveCachedTokens = read + created
+		p.UsageResolved = true
 	}
 
 	return FakeCacheUsage{
