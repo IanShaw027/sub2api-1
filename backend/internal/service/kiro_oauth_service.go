@@ -724,7 +724,7 @@ func (s *KiroOAuthService) exchangeCallbackProgress(ctx context.Context, input *
 		s.sessionStore.Delete(input.SessionID)
 		enrichKiroExternalIDPTokenPayload(tokenPayload, externalIDP)
 		tokenInfo := buildKiroTokenInfo(tokenPayload, query, "external_idp")
-		if err := s.enrichTokenInfoForExternalIDPAuth(ctx, nil, tokenInfo); err != nil {
+		if err := s.bestEffortEnrichTokenInfoAfterExternalIDPExchange(ctx, nil, tokenInfo); err != nil {
 			return nil, err
 		}
 		return &KiroOAuthProgressResult{TokenInfo: tokenInfo}, nil
@@ -741,7 +741,7 @@ func (s *KiroOAuthService) exchangeCallbackProgress(ctx context.Context, input *
 	s.sessionStore.Delete(input.SessionID)
 
 	tokenInfo := buildKiroTokenInfo(tokenPayload, query, loginOption)
-	if err := s.enrichTokenInfoForExternalIDPAuth(ctx, nil, tokenInfo); err != nil {
+	if err := s.bestEffortEnrichTokenInfoAfterExternalIDPExchange(ctx, nil, tokenInfo); err != nil {
 		return nil, err
 	}
 	return &KiroOAuthProgressResult{TokenInfo: tokenInfo}, nil
@@ -887,6 +887,22 @@ func (s *KiroOAuthService) enrichTokenInfoForExternalIDPAuth(ctx context.Context
 	if strings.TrimSpace(tokenInfo.ProfileARN) == "" {
 		if resolveErr := s.resolveExternalIDPProfileAndUsage(ctx, account, tokenInfo); resolveErr == nil {
 			return nil
+		}
+	}
+	return nil
+}
+
+func (s *KiroOAuthService) bestEffortEnrichTokenInfoAfterExternalIDPExchange(ctx context.Context, account *Account, tokenInfo *KiroTokenInfo) error {
+	if tokenInfo == nil {
+		return nil
+	}
+	if NormalizeKiroAuthMethod(kiroTokenInfoMap(tokenInfo)) == "external_idp" && strings.TrimSpace(tokenInfo.AccessToken) == "" {
+		return infraerrors.BadRequest("INVALID_KIRO_CREDENTIALS", "kiro external_idp access_token is required")
+	}
+	if err := s.enrichTokenInfoForExternalIDPAuth(ctx, account, tokenInfo); err != nil {
+		kiroLogger(ctx, account).Warn("kiro.external_idp_post_exchange_enrich_failed", zap.Error(err))
+		if strings.TrimSpace(tokenInfo.StatusReason) == "" {
+			tokenInfo.StatusReason = "kiro external_idp token exchange succeeded, but profile and usage enrichment failed"
 		}
 	}
 	return nil

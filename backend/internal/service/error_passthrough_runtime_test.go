@@ -558,6 +558,47 @@ func TestGeminiWriteGeminiMappedError_SetsResponseCommitted(t *testing.T) {
 	assert.True(t, IsResponseCommitted(c), "Gemini path must mark response committed")
 }
 
+func TestApplyErrorPassthroughRule_RedactsSensitiveMessageWhenPassthroughBodyEnabled(t *testing.T) {
+	setGinTestMode()
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	rule := &model.ErrorPassthroughRule{
+		ID:              1,
+		Name:            "redact-passthrough",
+		Enabled:         true,
+		Priority:        1,
+		ErrorCodes:      []int{http.StatusBadGateway},
+		Keywords:        []string{"upstream"},
+		MatchMode:       model.MatchModeAll,
+		Platforms:       []string{model.PlatformOpenAI},
+		PassthroughCode: true,
+		PassthroughBody: true,
+	}
+	ruleSvc := &ErrorPassthroughService{}
+	ruleSvc.setLocalCache([]*model.ErrorPassthroughRule{rule})
+	BindErrorPassthroughService(c, ruleSvc)
+
+	body := []byte(`{"error":{"message":"upstream failed https://api.example.test/v1?key=sk-secret Authorization: Bearer tok-secret"}}`)
+	status, errType, errMsg, matched := applyErrorPassthroughRule(
+		c,
+		PlatformOpenAI,
+		http.StatusBadGateway,
+		body,
+		http.StatusBadGateway,
+		"upstream_error",
+		"Upstream request failed",
+	)
+
+	require.True(t, matched)
+	assert.Equal(t, http.StatusBadGateway, status)
+	assert.Equal(t, "upstream_error", errType)
+	assert.Contains(t, errMsg, "key=***")
+	assert.Contains(t, errMsg, "Authorization: Bearer [REDACTED]")
+	assert.NotContains(t, errMsg, "sk-secret")
+	assert.NotContains(t, errMsg, "tok-secret")
+}
+
 func newNonFailoverPassthroughRule(statusCode int, keyword string, respCode int, customMessage string) *model.ErrorPassthroughRule {
 	return &model.ErrorPassthroughRule{
 		ID:              1,

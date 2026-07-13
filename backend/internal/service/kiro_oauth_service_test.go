@@ -130,7 +130,7 @@ func TestKiroOAuthServiceExchangeCallbackUsesCallbackPathAndLoginOptionForTokenE
 	}
 }
 
-func TestKiroOAuthServiceExchangeCallbackRejectsExternalIDPWhenKiroUsageForbidden(t *testing.T) {
+func TestKiroOAuthServiceExchangeCallbackKeepsExternalIDPTokenWhenKiroUsageForbidden(t *testing.T) {
 	usageUpstream := &kiroHTTPUpstreamRecorder{
 		doFunc: func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
 			if req.Method != http.MethodGet || req.URL.Path != "/getUsageLimits" {
@@ -191,14 +191,17 @@ func TestKiroOAuthServiceExchangeCallbackRejectsExternalIDPWhenKiroUsageForbidde
 		CallbackURL: callbackURL,
 	})
 
-	if err == nil {
-		t.Fatal("expected external_idp callback to fail when Kiro rejects the refreshed credentials")
+	if err != nil {
+		t.Fatalf("expected external_idp callback to return token despite enrichment failure, got %v", err)
 	}
-	if result != nil {
-		t.Fatalf("expected no token result on validation failure, got %#v", result)
+	if result == nil || result.TokenInfo == nil {
+		t.Fatalf("expected token result on enrichment failure, got %#v", result)
 	}
-	if !strings.Contains(err.Error(), "Kiro rejected") {
-		t.Fatalf("error %q should mention Kiro rejection", err.Error())
+	if result.TokenInfo.AccessToken != "new-ms-access-token" {
+		t.Fatalf("access_token = %q", result.TokenInfo.AccessToken)
+	}
+	if !strings.Contains(result.TokenInfo.StatusReason, "enrichment failed") {
+		t.Fatalf("status_reason %q should mention enrichment failure", result.TokenInfo.StatusReason)
 	}
 	if usageUpstream.calls < 1 {
 		t.Fatalf("usage validation calls = %d, want at least 1", usageUpstream.calls)

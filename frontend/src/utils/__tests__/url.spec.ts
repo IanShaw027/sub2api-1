@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildAppAbsoluteUrl, buildAppPath } from '@/utils/url'
+import { buildAppAbsoluteUrl, buildAppPath, sanitizeUrl } from '@/utils/url'
 
 describe('url utils', () => {
   it('builds app path under root base url', () => {
@@ -20,5 +20,14 @@ describe('url utils', () => {
     expect(buildAppAbsoluteUrl('admin/usage', 'https://app.example.com', '/console/')).toBe(
       'https://app.example.com/console/admin/usage'
     )
+  })
+
+  it('allows only padded raster image data URLs when requested', () => {
+    const valid = 'data:image/png;base64,QUJDRA=='
+    expect(sanitizeUrl(valid, { allowDataUrl: true })).toBe(valid)
+    expect(sanitizeUrl('data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=', { allowDataUrl: true })).toBe('')
+    expect(sanitizeUrl('data:image/png;base64,QUJD=', { allowDataUrl: true })).toBe('')
+    expect(sanitizeUrl('data:image/png;base64,QUJD===', { allowDataUrl: true })).toBe('')
+    expect(sanitizeUrl('data:image/png;base64,not valid base64', { allowDataUrl: true })).toBe('')
   })
 })

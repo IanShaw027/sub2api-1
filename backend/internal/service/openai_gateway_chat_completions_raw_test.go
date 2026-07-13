@@ -128,19 +128,26 @@ func TestForwardAsRawChatCompletions_GrokIsolatesSessionAndConvIDByAPIKey(t *tes
 		sessionID = upstream.lastReq.Header.Get("session_id")
 		convID = upstream.lastReq.Header.Get("x-grok-conv-id")
 		require.NotEmpty(t, sessionID)
-		require.Equal(t, sessionID, convID)
+		require.NotEmpty(t, convID)
 		require.NotEqual(t, "shared-session", convID)
 		require.NotEqual(t, clientConvID, convID)
-		require.Equal(t, generateSessionUUID(isolateOpenAISessionID(apiKeyID, "shared-session")), sessionID)
+		expectedSeed := clientConvID
+		if expectedSeed == "" {
+			expectedSeed = "shared-session"
+		}
+		isolatedConvID := isolateOpenAISessionID(apiKeyID, expectedSeed)
+		require.Equal(t, generateSessionUUID(isolatedConvID), sessionID)
+		require.Equal(t, isolatedConvID, convID)
 		require.Equal(t, "shared-session", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
 		return sessionID, convID
 	}
 
 	idA, convA := run(11, "client-raw-conv")
 	idB, convB := run(22, "client-raw-conv")
-	require.Equal(t, idA, convA)
-	require.Equal(t, idB, convB)
+	require.Equal(t, generateSessionUUID(convA), idA)
+	require.Equal(t, generateSessionUUID(convB), idB)
 	require.NotEqual(t, idA, idB, "different API keys must not share Grok conversation ids on raw CC")
+	require.NotEqual(t, convA, convB, "different API keys must not share Grok conversation ids on raw CC")
 }
 
 func TestForwardAsChatCompletions_GrokPassesPromptCacheKeyForSessionIsolation(t *testing.T) {
@@ -181,9 +188,9 @@ func TestForwardAsChatCompletions_GrokPassesPromptCacheKeyForSessionIsolation(t 
 	require.NotNil(t, result)
 	require.NotNil(t, upstream.lastReq)
 
-	expected := generateSessionUUID(isolateOpenAISessionID(77, "cache-key-grok"))
-	require.Equal(t, expected, upstream.lastReq.Header.Get("session_id"))
-	require.Equal(t, expected, upstream.lastReq.Header.Get("x-grok-conv-id"))
+	expectedConvID := isolateOpenAISessionID(77, "cache-key-grok")
+	require.Equal(t, generateSessionUUID(expectedConvID), upstream.lastReq.Header.Get("session_id"))
+	require.Equal(t, expectedConvID, upstream.lastReq.Header.Get("x-grok-conv-id"))
 	require.Equal(t, "cache-key-grok", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
 }
 

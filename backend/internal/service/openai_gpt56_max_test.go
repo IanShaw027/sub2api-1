@@ -232,7 +232,7 @@ func TestOpenAIGatewayServiceForwardPreservesMappedGPT56MaxEffort(t *testing.T) 
 	require.Equal(t, "max", *result.ReasoningEffort)
 }
 
-func TestOpenAIGatewayServiceForwardOAuthCompactDowngradesMaxEffort(t *testing.T) {
+func TestOpenAIGatewayServiceForwardOAuthCompactPreservesGPT56MaxEffort(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := &httpUpstreamRecorder{
 		resp: &http.Response{
@@ -269,9 +269,9 @@ func TestOpenAIGatewayServiceForwardOAuthCompactDowngradesMaxEffort(t *testing.T
 	require.NotNil(t, result)
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t, chatgptCodexURL+"/compact", upstream.lastReq.URL.String())
-	require.Equal(t, "xhigh", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())
+	require.Equal(t, "max", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())
 	require.NotNil(t, result.ReasoningEffort)
-	require.Equal(t, "xhigh", *result.ReasoningEffort)
+	require.Equal(t, "max", *result.ReasoningEffort)
 }
 
 func TestOpenAIGatewayServiceForwardOAuthResponsesPreservesMaxEffort(t *testing.T) {
