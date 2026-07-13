@@ -522,6 +522,7 @@ func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*Ref
 				s.restoreStatus(ctx, p)
 				return nil, fmt.Errorf("deduction: %w", err)
 			}
+			s.invalidateBalanceCacheBestEffort(ctx, p.Order.UserID)
 			p.DeductionApplied = true
 		} else {
 			slog.Warn("skipping balance deduction on retry (previous rollback failed)", "orderID", p.OrderID)
@@ -825,6 +826,7 @@ func (s *PaymentService) applyRefundFinalDeduction(ctx context.Context, p *Refun
 		if err := s.userRepo.DeductBalance(ctx, p.Order.UserID, p.BalanceToDeduct); err != nil {
 			return fmt.Errorf("deduction: %w", err)
 		}
+		s.invalidateBalanceCacheBestEffort(ctx, p.Order.UserID)
 		p.DeductionApplied = true
 	}
 	if p.DeductionType == payment.DeductionTypeSubscription && p.SubDaysToDeduct > 0 && p.SubscriptionID > 0 {
@@ -873,6 +875,7 @@ func (s *PaymentService) retryPendingRefundDeductionRollback(ctx context.Context
 		} else if err := restoreUserBalanceWithoutRecharge(ctx, s.userRepo, o.UserID, pendingDetail.BalanceHeld); err != nil {
 			failures = append(failures, psErrMsg(err))
 		} else {
+			s.invalidateBalanceCacheBestEffort(ctx, o.UserID)
 			s.writeAuditLog(ctx, o.ID, "REFUND_ROLLBACK_RETRIED", "admin", map[string]any{
 				"gatewayError":    psErrMsg(gErr),
 				"balanceRestored": pendingDetail.BalanceHeld,
@@ -1183,6 +1186,7 @@ func (s *PaymentService) RollbackRefund(ctx context.Context, p *RefundPlan, gErr
 			s.writeAuditLog(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED", "admin", map[string]any{"gatewayError": psErrMsg(gErr), "rollbackError": psErrMsg(err), "balanceDeducted": p.BalanceToDeduct})
 			return false
 		}
+		s.invalidateBalanceCacheBestEffort(ctx, p.Order.UserID)
 	}
 	if p.DeductionType == payment.DeductionTypeSubscription && p.SubDaysToDeduct > 0 && p.SubscriptionID > 0 {
 		if _, err := s.subscriptionSvc.ExtendSubscription(ctx, p.SubscriptionID, p.SubDaysToDeduct); err != nil {

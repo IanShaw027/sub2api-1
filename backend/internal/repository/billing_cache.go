@@ -15,14 +15,16 @@ import (
 )
 
 const (
-	billingBalanceKeyPrefix   = "billing:balance:"
-	billingSubKeyPrefix       = "billing:sub:"
-	billingRateLimitKeyPrefix = "apikey:rate:"
-	subCacheInvalidateChannel = "subscription:cache:invalidate"
-	billingCacheTTL           = 5 * time.Minute
-	billingCacheJitter        = 30 * time.Second
-	subscriptionFenceTTL      = 24 * time.Hour
-	rateLimitCacheTTL         = 7 * 24 * time.Hour // 7 days matches the longest window
+	billingBalanceKeyPrefix          = "billing:balance:"
+	billingBalanceGenerationPrefix   = "billing:balance:generation:"
+	billingSubKeyPrefix              = "billing:sub:"
+	billingRateLimitKeyPrefix        = "apikey:rate:"
+	billingRateLimitGenerationPrefix = "apikey:rate:generation:"
+	subCacheInvalidateChannel        = "subscription:cache:invalidate"
+	billingCacheTTL                  = 5 * time.Minute
+	billingCacheJitter               = 30 * time.Second
+	subscriptionFenceTTL             = 24 * time.Hour
+	rateLimitCacheTTL                = 7 * 24 * time.Hour // 7 days matches the longest window
 
 	// Rate limit window durations — must match service.RateLimitWindow* constants.
 	rateLimitWindow5h = 5 * time.Hour
@@ -45,6 +47,10 @@ func billingBalanceKey(userID int64) string {
 	return fmt.Sprintf("%s%d", billingBalanceKeyPrefix, userID)
 }
 
+func billingBalanceGenerationKey(userID int64) string {
+	return fmt.Sprintf("%s%d", billingBalanceGenerationPrefix, userID)
+}
+
 // billingSubKey generates the Redis key for subscription cache.
 func billingSubKey(userID, groupID int64) string {
 	return fmt.Sprintf("%s%d:%d", billingSubKeyPrefix, userID, groupID)
@@ -52,6 +58,10 @@ func billingSubKey(userID, groupID int64) string {
 
 func billingSubGenerationKey(userID, groupID int64) string {
 	return billingSubKey(userID, groupID) + ":generation"
+}
+
+func billingRateLimitGenerationKey(keyID int64) string {
+	return fmt.Sprintf("%s%d", billingRateLimitGenerationPrefix, keyID)
 }
 
 const (
@@ -78,6 +88,35 @@ const (
 )
 
 var (
+	setStringIfGenerationScript = redis.NewScript(`
+		local current = tonumber(redis.call('GET', KEYS[2]) or '0')
+		if current ~= tonumber(ARGV[1]) then
+			return 0
+		end
+		redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
+		return 1
+	`)
+
+	invalidateWithGenerationScript = redis.NewScript(`
+		local generation = redis.call('INCR', KEYS[2])
+		redis.call('EXPIRE', KEYS[2], ARGV[1])
+		redis.call('DEL', KEYS[1])
+		return generation
+	`)
+
+	setHashIfGenerationScript = redis.NewScript(`
+		local current = tonumber(redis.call('GET', KEYS[2]) or '0')
+		if current ~= tonumber(ARGV[1]) then
+			return 0
+		end
+		redis.call('DEL', KEYS[1])
+		for i = 3, #ARGV - 1, 2 do
+			redis.call('HSET', KEYS[1], ARGV[i], ARGV[i + 1])
+		end
+		redis.call('EXPIRE', KEYS[1], ARGV[2])
+		return 1
+	`)
+
 	deductBalanceScript = redis.NewScript(`
 		local current = redis.call('GET', KEYS[1])
 		if current == false then
@@ -186,6 +225,24 @@ func (c *billingCache) SetUserBalance(ctx context.Context, userID int64, balance
 	return c.rdb.Set(ctx, key, balance, jitteredTTL()).Err()
 }
 
+func (c *billingCache) GetBalanceCacheGeneration(ctx context.Context, userID int64) (int64, error) {
+	generation, err := c.rdb.Get(ctx, billingBalanceGenerationKey(userID)).Int64()
+	if errors.Is(err, redis.Nil) {
+		return 0, nil
+	}
+	return generation, err
+}
+
+func (c *billingCache) SetUserBalanceIfGeneration(ctx context.Context, userID int64, balance float64, expectedGeneration int64) (bool, error) {
+	result, err := setStringIfGenerationScript.Run(ctx, c.rdb,
+		[]string{billingBalanceKey(userID), billingBalanceGenerationKey(userID)},
+		expectedGeneration, balance, int(jitteredTTL().Seconds())).Int64()
+	if err != nil {
+		return false, err
+	}
+	return result == 1, nil
+}
+
 func (c *billingCache) DeductUserBalance(ctx context.Context, userID int64, amount float64) error {
 	key := billingBalanceKey(userID)
 	_, err := deductBalanceScript.Run(ctx, c.rdb, []string{key}, amount, int(jitteredTTL().Seconds())).Result()
@@ -197,8 +254,10 @@ func (c *billingCache) DeductUserBalance(ctx context.Context, userID int64, amou
 }
 
 func (c *billingCache) InvalidateUserBalance(ctx context.Context, userID int64) error {
-	key := billingBalanceKey(userID)
-	return c.rdb.Del(ctx, key).Err()
+	_, err := invalidateWithGenerationScript.Run(ctx, c.rdb,
+		[]string{billingBalanceKey(userID), billingBalanceGenerationKey(userID)},
+		int(subscriptionFenceTTL.Seconds())).Result()
+	return err
 }
 
 func (c *billingCache) GetSubscriptionCache(ctx context.Context, userID, groupID int64) (*service.SubscriptionCacheData, error) {
@@ -411,6 +470,34 @@ func (c *billingCache) SetAPIKeyRateLimit(ctx context.Context, keyID int64, data
 	return err
 }
 
+func (c *billingCache) GetAPIKeyRateLimitGeneration(ctx context.Context, keyID int64) (int64, error) {
+	generation, err := c.rdb.Get(ctx, billingRateLimitGenerationKey(keyID)).Int64()
+	if errors.Is(err, redis.Nil) {
+		return 0, nil
+	}
+	return generation, err
+}
+
+func (c *billingCache) SetAPIKeyRateLimitIfGeneration(ctx context.Context, keyID int64, data *service.APIKeyRateLimitCacheData, expectedGeneration int64) (bool, error) {
+	if data == nil {
+		return false, nil
+	}
+	result, err := setHashIfGenerationScript.Run(ctx, c.rdb,
+		[]string{billingRateLimitKey(keyID), billingRateLimitGenerationKey(keyID)},
+		expectedGeneration, int(rateLimitCacheTTL.Seconds()),
+		rateLimitFieldUsage5h, data.Usage5h,
+		rateLimitFieldUsage1d, data.Usage1d,
+		rateLimitFieldUsage7d, data.Usage7d,
+		rateLimitFieldWindow5h, data.Window5h,
+		rateLimitFieldWindow1d, data.Window1d,
+		rateLimitFieldWindow7d, data.Window7d,
+	).Int64()
+	if err != nil {
+		return false, err
+	}
+	return result == 1, nil
+}
+
 func (c *billingCache) UpdateAPIKeyRateLimitUsage(ctx context.Context, keyID int64, cost float64) error {
 	key := billingRateLimitKey(keyID)
 	now := time.Now().Unix()
@@ -430,8 +517,10 @@ func (c *billingCache) UpdateAPIKeyRateLimitUsage(ctx context.Context, keyID int
 }
 
 func (c *billingCache) InvalidateAPIKeyRateLimit(ctx context.Context, keyID int64) error {
-	key := billingRateLimitKey(keyID)
-	return c.rdb.Del(ctx, key).Err()
+	_, err := invalidateWithGenerationScript.Run(ctx, c.rdb,
+		[]string{billingRateLimitKey(keyID), billingRateLimitGenerationKey(keyID)},
+		int(rateLimitCacheTTL.Seconds())).Result()
+	return err
 }
 
 // ============================================
@@ -441,6 +530,10 @@ func (c *billingCache) InvalidateAPIKeyRateLimit(ctx context.Context, keyID int6
 // userPlatformQuotaCacheKey 构造 Redis key
 func userPlatformQuotaCacheKey(userID int64, platform string) string {
 	return fmt.Sprintf("billing:user_platform_quota:%d:%s", userID, platform)
+}
+
+func userPlatformQuotaGenerationKey(userID int64, platform string) string {
+	return fmt.Sprintf("billing:user_platform_quota:generation:%d:%s", userID, platform)
 }
 
 // parseUserPlatformQuotaHash 将 Redis HGETALL 返回的 map[string]string 反序列化为
@@ -555,8 +648,56 @@ func (c *billingCache) SetUserPlatformQuotaCache(ctx context.Context, userID int
 	return err
 }
 
+func (c *billingCache) GetUserPlatformQuotaCacheGeneration(ctx context.Context, userID int64, platform string) (int64, error) {
+	generation, err := c.rdb.Get(ctx, userPlatformQuotaGenerationKey(userID, platform)).Int64()
+	if errors.Is(err, redis.Nil) {
+		return 0, nil
+	}
+	return generation, err
+}
+
+func (c *billingCache) SetUserPlatformQuotaCacheIfGeneration(ctx context.Context, userID int64, platform string, entry *service.UserPlatformQuotaCacheEntry, ttl time.Duration, expectedGeneration int64) (bool, error) {
+	if entry == nil {
+		return false, nil
+	}
+	fmtFloatPtr := func(p *float64) string {
+		if p == nil {
+			return ""
+		}
+		return strconv.FormatFloat(*p, 'f', -1, 64)
+	}
+	fmtTimePtr := func(p *time.Time) string {
+		if p == nil {
+			return ""
+		}
+		return strconv.FormatInt(p.Unix(), 10)
+	}
+	result, err := setHashIfGenerationScript.Run(ctx, c.rdb,
+		[]string{userPlatformQuotaCacheKey(userID, platform), userPlatformQuotaGenerationKey(userID, platform)},
+		expectedGeneration, int(ttl.Seconds()),
+		"daily_usage", entry.DailyUsageUSD,
+		"weekly_usage", entry.WeeklyUsageUSD,
+		"monthly_usage", entry.MonthlyUsageUSD,
+		"version", entry.Version,
+		"schema_version", entry.SchemaVersion,
+		"daily_limit", fmtFloatPtr(entry.DailyLimitUSD),
+		"weekly_limit", fmtFloatPtr(entry.WeeklyLimitUSD),
+		"monthly_limit", fmtFloatPtr(entry.MonthlyLimitUSD),
+		"daily_window_start", fmtTimePtr(entry.DailyWindowStart),
+		"weekly_window_start", fmtTimePtr(entry.WeeklyWindowStart),
+		"monthly_window_start", fmtTimePtr(entry.MonthlyWindowStart),
+	).Int64()
+	if err != nil {
+		return false, err
+	}
+	return result == 1, nil
+}
+
 func (c *billingCache) DeleteUserPlatformQuotaCache(ctx context.Context, userID int64, platform string) error {
-	return c.rdb.Del(ctx, userPlatformQuotaCacheKey(userID, platform)).Err()
+	_, err := invalidateWithGenerationScript.Run(ctx, c.rdb,
+		[]string{userPlatformQuotaCacheKey(userID, platform), userPlatformQuotaGenerationKey(userID, platform)},
+		int(subscriptionFenceTTL.Seconds())).Result()
+	return err
 }
 
 // updateUserPlatformQuotaUsageScript 缓存累加：EXISTS + schema_version 双重守卫。
