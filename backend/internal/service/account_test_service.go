@@ -602,7 +602,7 @@ func (s *AccountTestService) testGrokVideoConnection(c *gin.Context, ctx context
 	return nil
 }
 
-func (s *AccountTestService) reconcileGrokTestState(ctx context.Context, account *Account, statusCode int, headers http.Header) {
+func (s *AccountTestService) reconcileGrokTestState(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte) {
 	if s == nil || s.accountRepo == nil || account == nil {
 		return
 	}
@@ -619,6 +619,15 @@ func (s *AccountTestService) reconcileGrokTestState(ctx context.Context, account
 		cooldown = 10 * time.Minute
 		reason = "grok oauth token unauthorized"
 	case http.StatusForbidden:
+		if isGrokSpendingLimitError(responseBody) {
+			limiter := &RateLimitService{
+				accountRepo:    s.accountRepo,
+				cfg:            s.cfg,
+				settingService: s.settingService,
+			}
+			limiter.handle429(ctx, account, headers, responseBody)
+			return
+		}
 		cooldown = 30 * time.Minute
 		reason = "grok entitlement or subscription tier denied"
 	case http.StatusTooManyRequests:
@@ -1206,7 +1215,7 @@ func (s *AccountTestService) testOpenAIResponsesLikeAccountConnection(
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		if providerName == "grok" {
-			s.reconcileGrokTestState(ctx, account, resp.StatusCode, resp.Header)
+			s.reconcileGrokTestState(ctx, account, resp.StatusCode, resp.Header, body)
 		} else if resp.StatusCode == http.StatusTooManyRequests {
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}

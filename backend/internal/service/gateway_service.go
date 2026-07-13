@@ -8495,6 +8495,15 @@ func extractUpstreamErrorMessage(body []byte) string {
 		return m
 	}
 
+	// xAI style: {"code":"invalid-argument","error":"..."}.
+	// Only accept a string here so an arbitrary nested error object is never
+	// serialized into a client-visible message.
+	if errValue := gjson.GetBytes(body, "error"); errValue.Type == gjson.String {
+		if msg := strings.TrimSpace(errValue.String()); msg != "" {
+			return msg
+		}
+	}
+
 	// ChatGPT 内部 API 风格：{"detail":"..."}
 	if d := gjson.GetBytes(body, "detail").String(); strings.TrimSpace(d) != "" {
 		return d
@@ -8507,6 +8516,11 @@ func extractUpstreamErrorMessage(body []byte) string {
 func extractUpstreamErrorCode(body []byte) string {
 	if code := strings.TrimSpace(gjson.GetBytes(body, "error.code").String()); code != "" {
 		return code
+	}
+	if codeValue := gjson.GetBytes(body, "code"); codeValue.Type == gjson.String {
+		if code := strings.TrimSpace(codeValue.String()); code != "" {
+			return code
+		}
 	}
 
 	inner := strings.TrimSpace(gjson.GetBytes(body, "error.message").String())

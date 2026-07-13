@@ -73,6 +73,8 @@ type grokTestAccountRepo struct {
 	lastTempUnschedUntil  time.Time
 	lastTempUnschedReason string
 	setRateLimitedCalls   int
+	lastRateLimitedID     int64
+	lastRateLimitedUntil  time.Time
 }
 
 func (r *grokTestAccountRepo) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
@@ -93,8 +95,10 @@ func (r *grokTestAccountRepo) SetTempUnschedulable(_ context.Context, id int64, 
 	return nil
 }
 
-func (r *grokTestAccountRepo) SetRateLimited(_ context.Context, _ int64, _ time.Time) error {
+func (r *grokTestAccountRepo) SetRateLimited(_ context.Context, id int64, until time.Time) error {
 	r.setRateLimitedCalls++
+	r.lastRateLimitedID = id
+	r.lastRateLimitedUntil = until
 	return nil
 }
 
@@ -581,4 +585,69 @@ func TestAccountTestService_TestAccountConnection_GrokOAuth429UsesGrokReconcile(
 	require.NotZero(t, repo.lastTempUnschedUntil)
 	require.Zero(t, repo.setRateLimitedCalls)
 	require.Contains(t, rec.Body.String(), "429")
+}
+
+func TestAccountTestService_TestAccountConnection_GrokOAuth403SpendingLimitUsesRateLimitedState(t *testing.T) {
+	setGinTestMode()
+
+	account := Account{
+		ID:          73980,
+		Name:        "grok-oauth-spending-limit",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":  "grok-access-token",
+			"refresh_token": "grok-refresh-token",
+		},
+	}
+	repo := &grokTestAccountRepo{stubOpenAIAccountRepo: stubOpenAIAccountRepo{accounts: []Account{account}}}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusForbidden,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(
+			`{"code":"personal-team-blocked:spending-limit","error":"You have run out of credits or need a Grok subscription."}`,
+		)),
+	}}
+	svc := &AccountTestService{
+		accountRepo:       repo,
+		grokTokenProvider: NewGrokTokenProvider(repo, nil),
+		httpUpstream:      upstream,
+	}
+	before := time.Now()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/73980/test", bytes.NewReader(nil))
+
+	err := svc.TestAccountConnection(c, account.ID, "grok-4.3", "hello grok", "")
+	require.Error(t, err)
+	require.Equal(t, 1, repo.setRateLimitedCalls)
+	require.Equal(t, account.ID, repo.lastRateLimitedID)
+	require.True(t, repo.lastRateLimitedUntil.After(before))
+	require.Zero(t, repo.tempUnschedCalls)
+	require.Contains(t, rec.Body.String(), "personal-team-blocked:spending-limit")
+}
+
+func TestAccountTestService_ReconcileGrok403EntitlementKeepsTempUnschedulableState(t *testing.T) {
+	account := &Account{ID: 73981, Platform: PlatformGrok, Type: AccountTypeOAuth}
+	repo := &grokTestAccountRepo{}
+	svc := &AccountTestService{accountRepo: repo}
+	before := time.Now()
+
+	svc.reconcileGrokTestState(
+		context.Background(),
+		account,
+		http.StatusForbidden,
+		nil,
+		[]byte(`{"code":"personal-team-blocked:subscription-required","error":"A Grok subscription is required"}`),
+	)
+
+	require.Equal(t, 1, repo.tempUnschedCalls)
+	require.Equal(t, account.ID, repo.lastTempUnschedID)
+	require.Equal(t, "grok entitlement or subscription tier denied", repo.lastTempUnschedReason)
+	require.True(t, repo.lastTempUnschedUntil.After(before.Add(30*time.Minute-time.Second)))
+	require.Zero(t, repo.setRateLimitedCalls)
 }

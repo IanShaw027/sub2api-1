@@ -25,6 +25,17 @@ const (
 	grokComposerImageBridgeMaxOutputTokens = 512
 )
 
+type grokInvalidRequestError struct {
+	message string
+}
+
+func (e *grokInvalidRequestError) Error() string {
+	if e == nil {
+		return "invalid Grok request"
+	}
+	return e.message
+}
+
 func (s *OpenAIGatewayService) forwardGrokResponses(
 	ctx context.Context,
 	c *gin.Context,
@@ -68,6 +79,9 @@ func (s *OpenAIGatewayService) forwardGrokResponsesWithPromptCacheKey(
 
 	patchedBody, err := patchGrokResponsesBody(body, upstreamModel)
 	if err != nil {
+		if invalidErr, ok := err.(*grokInvalidRequestError); ok && c != nil && c.Writer != nil && !c.Writer.Written() {
+			writeOpenAICompactAwareJSONError(c, http.StatusBadRequest, "invalid_request_error", invalidErr.Error())
+		}
 		return nil, err
 	}
 	// Inject prompt_cache_key into body when provided so xAI can sticky-route.
@@ -385,6 +399,18 @@ func patchGrokResponsesBody(body []byte, upstreamModel string) ([]byte, error) {
 			}
 		}
 	}
+	if maxTokens := gjson.GetBytes(out, "max_tokens"); maxTokens.Exists() {
+		if !gjson.GetBytes(out, "max_output_tokens").Exists() {
+			out, err = sjson.SetRawBytes(out, "max_output_tokens", []byte(maxTokens.Raw))
+			if err != nil {
+				return nil, err
+			}
+		}
+		out, err = sjson.DeleteBytes(out, "max_tokens")
+		if err != nil {
+			return nil, err
+		}
+	}
 	if strings.EqualFold(upstreamModel, "grok-4.5") {
 		for _, unsupportedField := range []string{"presence_penalty", "presencePenalty", "frequency_penalty", "frequencyPenalty", "stop"} {
 			if gjson.GetBytes(out, unsupportedField).Exists() {
@@ -400,11 +426,192 @@ func patchGrokResponsesBody(body []byte, upstreamModel string) ([]byte, error) {
 		return nil, err
 	}
 	out = sanitizeGrokResponsesReasoningState(out)
+	out, err = sanitizeGrokResponsesInput(out)
+	if err != nil {
+		return nil, err
+	}
 	out, err = sanitizeGrokResponsesTools(out)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+func sanitizeGrokResponsesInput(body []byte) ([]byte, error) {
+	input := gjson.GetBytes(body, "input")
+	if !input.Exists() {
+		return body, nil
+	}
+	if input.Type == gjson.String {
+		if strings.TrimSpace(input.String()) == "" {
+			return nil, &grokInvalidRequestError{message: "input must contain at least one non-empty content block"}
+		}
+		return body, nil
+	}
+	if !input.IsArray() {
+		return body, nil
+	}
+
+	var items []any
+	if err := json.Unmarshal([]byte(input.Raw), &items); err != nil {
+		return nil, fmt.Errorf("parse Grok Responses input: %w", err)
+	}
+	filtered := make([]any, 0, len(items))
+	for _, item := range items {
+		itemMap, ok := item.(map[string]any)
+		if !ok {
+			if text, isString := item.(string); !isString || strings.TrimSpace(text) != "" {
+				filtered = append(filtered, item)
+			}
+			continue
+		}
+
+		itemType := strings.ToLower(strings.TrimSpace(grokStringValue(itemMap["type"])))
+		role := strings.ToLower(strings.TrimSpace(grokStringValue(itemMap["role"])))
+		if role != "" || itemType == "message" {
+			content, keep := sanitizeGrokMessageContent(itemMap["content"])
+			if !keep {
+				continue
+			}
+			itemMap["content"] = content
+		} else if itemType == "function_call_output" {
+			if output, ok := itemMap["output"].(string); ok && strings.TrimSpace(output) == "" {
+				itemMap["output"] = "(empty)"
+			}
+		}
+		filtered = append(filtered, itemMap)
+	}
+	if len(filtered) == 0 {
+		return nil, &grokInvalidRequestError{message: "input must contain at least one non-empty content block"}
+	}
+
+	raw, err := json.Marshal(filtered)
+	if err != nil {
+		return nil, fmt.Errorf("serialize sanitized Grok Responses input: %w", err)
+	}
+	updated, err := sjson.SetRawBytes(body, "input", raw)
+	if err != nil {
+		return nil, fmt.Errorf("set sanitized Grok Responses input: %w", err)
+	}
+	return updated, nil
+}
+
+func sanitizeGrokChatCompletionsMessages(body []byte) ([]byte, error) {
+	messages := gjson.GetBytes(body, "messages")
+	if !messages.Exists() || !messages.IsArray() {
+		return body, nil
+	}
+
+	var items []any
+	if err := json.Unmarshal([]byte(messages.Raw), &items); err != nil {
+		return nil, fmt.Errorf("parse Grok Chat Completions messages: %w", err)
+	}
+	filtered := make([]any, 0, len(items))
+	for _, item := range items {
+		message, ok := item.(map[string]any)
+		if !ok {
+			filtered = append(filtered, item)
+			continue
+		}
+		role := strings.ToLower(strings.TrimSpace(grokStringValue(message["role"])))
+		content, keep := sanitizeGrokMessageContent(message["content"])
+		if !keep {
+			switch role {
+			case "tool", "function":
+				message["content"] = "(empty)"
+			case "assistant":
+				if _, hasToolCalls := message["tool_calls"]; !hasToolCalls && message["function_call"] == nil {
+					continue
+				}
+				delete(message, "content")
+			default:
+				continue
+			}
+		} else {
+			message["content"] = content
+		}
+		filtered = append(filtered, message)
+	}
+	if len(filtered) == 0 {
+		return nil, &grokInvalidRequestError{message: "messages must contain at least one non-empty content block"}
+	}
+
+	raw, err := json.Marshal(filtered)
+	if err != nil {
+		return nil, fmt.Errorf("serialize sanitized Grok Chat Completions messages: %w", err)
+	}
+	updated, err := sjson.SetRawBytes(body, "messages", raw)
+	if err != nil {
+		return nil, fmt.Errorf("set sanitized Grok Chat Completions messages: %w", err)
+	}
+	return updated, nil
+}
+
+func sanitizeGrokMessageContent(content any) (any, bool) {
+	switch value := content.(type) {
+	case nil:
+		return nil, false
+	case string:
+		if strings.TrimSpace(value) == "" {
+			return nil, false
+		}
+		return value, true
+	case []any:
+		filtered := make([]any, 0, len(value))
+		for _, part := range value {
+			partMap, ok := part.(map[string]any)
+			if !ok {
+				if text, isString := part.(string); !isString || strings.TrimSpace(text) != "" {
+					filtered = append(filtered, part)
+				}
+				continue
+			}
+			partType := strings.ToLower(strings.TrimSpace(grokStringValue(partMap["type"])))
+			switch partType {
+			case "text", "input_text", "output_text":
+				if strings.TrimSpace(grokStringValue(partMap["text"])) == "" {
+					continue
+				}
+			case "image_url", "input_image":
+				if !grokContentPartHasImageURL(partMap) {
+					continue
+				}
+			}
+			filtered = append(filtered, partMap)
+		}
+		if len(filtered) == 0 {
+			return nil, false
+		}
+		return filtered, true
+	default:
+		return content, true
+	}
+}
+
+func grokContentPartHasImageURL(part map[string]any) bool {
+	for _, field := range []string{"file_id", "file_data"} {
+		if strings.TrimSpace(grokStringValue(part[field])) != "" {
+			return true
+		}
+	}
+	raw := part["image_url"]
+	if raw == nil {
+		raw = part["file_url"]
+	}
+	switch value := raw.(type) {
+	case string:
+		return strings.TrimSpace(value) != "" && !isEmptyBase64DataURI(strings.TrimSpace(value))
+	case map[string]any:
+		url := strings.TrimSpace(grokStringValue(value["url"]))
+		return url != "" && !isEmptyBase64DataURI(url)
+	default:
+		return false
+	}
+}
+
+func grokStringValue(value any) string {
+	text, _ := value.(string)
+	return text
 }
 
 func grokSupportsReasoningEffort(model string) bool {
@@ -873,18 +1080,19 @@ func sanitizeGrokResponsesTools(body []byte) ([]byte, error) {
 
 	rawTools := tools.Array()
 	filteredTools := make([]json.RawMessage, 0, len(rawTools))
-	for _, tool := range rawTools {
+	for index, tool := range rawTools {
 		toolType := normalizeGrokResponsesToolType(strings.TrimSpace(tool.Get("type").String()))
 		if _, ok := grokResponsesSupportedToolTypes[toolType]; !ok {
 			continue
 		}
-		raw := json.RawMessage(tool.Raw)
-		if original := strings.TrimSpace(tool.Get("type").String()); original != toolType {
-			if rewritten, err := sjson.SetBytes([]byte(tool.Raw), "type", toolType); err == nil {
-				raw = json.RawMessage(rewritten)
-			}
+		raw, err := normalizeGrokResponsesToolPayload(tool, toolType, index)
+		if err != nil {
+			return nil, err
 		}
 		filteredTools = append(filteredTools, raw)
+	}
+	if len(filteredTools) > 250 {
+		return nil, &grokInvalidRequestError{message: fmt.Sprintf("tools must contain at most 250 supported entries; got %d", len(filteredTools))}
 	}
 
 	var err error
@@ -925,13 +1133,50 @@ func sanitizeGrokResponsesTools(body []byte) ([]byte, error) {
 	// Rewrite tool_choice.type aliases (e.g. local_shell → shell) for xAI.
 	if toolChoice.IsObject() {
 		original := strings.TrimSpace(toolChoice.Get("type").String())
-		if normalized := normalizeGrokResponsesToolType(original); original != "" && normalized != original {
+		normalized := normalizeGrokResponsesToolType(original)
+		if original != "" && normalized != original {
 			if rewritten, setErr := sjson.SetBytes(body, "tool_choice.type", normalized); setErr == nil {
 				body = rewritten
 			}
 		}
+		if normalized == "function" && strings.TrimSpace(gjson.GetBytes(body, "tool_choice.name").String()) == "" {
+			if nestedName := strings.TrimSpace(gjson.GetBytes(body, "tool_choice.function.name").String()); nestedName != "" {
+				if rewritten, setErr := sjson.SetBytes(body, "tool_choice.name", nestedName); setErr == nil {
+					body = rewritten
+				}
+				if rewritten, deleteErr := sjson.DeleteBytes(body, "tool_choice.function"); deleteErr == nil {
+					body = rewritten
+				}
+			}
+		}
 	}
 	return body, nil
+}
+
+func normalizeGrokResponsesToolPayload(tool gjson.Result, toolType string, index int) (json.RawMessage, error) {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(tool.Raw), &payload); err != nil {
+		return nil, fmt.Errorf("parse Grok tool %d: %w", index, err)
+	}
+	payload["type"] = toolType
+	if toolType == "function" {
+		if nested, ok := payload["function"].(map[string]any); ok {
+			for key, value := range nested {
+				if _, exists := payload[key]; !exists {
+					payload[key] = value
+				}
+			}
+			delete(payload, "function")
+		}
+		if strings.TrimSpace(grokStringValue(payload["name"])) == "" {
+			return nil, &grokInvalidRequestError{message: fmt.Sprintf("tools[%d].name is required for function tools", index)}
+		}
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("serialize Grok tool %d: %w", index, err)
+	}
+	return json.RawMessage(raw), nil
 }
 
 func dropGrokToolChoiceWithoutTools(body []byte) ([]byte, error) {
@@ -1464,6 +1709,13 @@ func (s *OpenAIGatewayService) handleGrokAccountUpstreamError(ctx context.Contex
 		// Defensive fallback if the rate-limit service is unwired (tests).
 		s.tempUnscheduleGrok(ctx, account, grokUpstreamCooldownFor(statusCode, headers), "grok upstream error")
 	case http.StatusForbidden:
+		// xAI reports an exhausted spending/credit allowance as 403 rather than
+		// 429. Route that exact error through the normal rate-limit state so the
+		// scheduler uses upstream reset headers or the configured 429 fallback.
+		if isGrokSpendingLimitError(responseBody) && s.rateLimitService != nil {
+			s.rateLimitService.handle429(ctx, account, headers, responseBody)
+			return
+		}
 		// Keep 403 recoverable with a bounded cooldown rather than the generic
 		// permanent SetError — a transient entitlement/tier 403 should not kill
 		// the account outright.
@@ -1473,6 +1725,14 @@ func (s *OpenAIGatewayService) handleGrokAccountUpstreamError(ctx context.Contex
 			s.tempUnscheduleGrok(ctx, account, 2*time.Minute, "grok upstream temporary error")
 		}
 	}
+}
+
+func isGrokSpendingLimitError(responseBody []byte) bool {
+	code := strings.ToLower(strings.TrimSpace(firstNonEmpty(
+		gjson.GetBytes(responseBody, "code").String(),
+		gjson.GetBytes(responseBody, "error.code").String(),
+	)))
+	return code == "personal-team-blocked:spending-limit"
 }
 
 // grokUpstreamCooldownFor derives a capped cooldown from the upstream reset /

@@ -112,6 +112,15 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 		return nil, fmt.Errorf("normalize raw chat compat body: %w", compatErr)
 	}
 	upstreamBody = compatBody
+	if account.Platform == PlatformGrok {
+		upstreamBody, compatErr = sanitizeGrokChatCompletionsMessages(upstreamBody)
+		if compatErr != nil {
+			if invalidErr, ok := compatErr.(*grokInvalidRequestError); ok {
+				writeChatCompletionsError(c, http.StatusBadRequest, "invalid_request_error", invalidErr.Error())
+			}
+			return nil, fmt.Errorf("normalize Grok chat messages: %w", compatErr)
+		}
+	}
 	promptCacheKey = strings.TrimSpace(promptCacheKey)
 	if promptCacheKey != "" {
 		existingPromptCacheKey := gjson.GetBytes(upstreamBody, "prompt_cache_key")

@@ -32,6 +32,21 @@ func newMinimalGatewayService() *GatewayService {
 	}
 }
 
+func TestExtractUpstreamErrorMessageSupportsXAIStringError(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"code":"invalid-argument","error":"Empty content block"}`)
+	require.Equal(t, "Empty content block", ExtractUpstreamErrorMessage(body))
+	require.Equal(t, "invalid-argument", extractUpstreamErrorCode(body))
+}
+
+func TestExtractUpstreamErrorMessageDoesNotExposeErrorObject(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"error":{"code":"invalid-argument"}}`)
+	require.Empty(t, ExtractUpstreamErrorMessage(body))
+}
+
 func TestParseSSEUsage_MessageStart(t *testing.T) {
 	svc := newMinimalGatewayService()
 	usage := &ClaudeUsage{}
