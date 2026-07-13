@@ -1546,8 +1546,10 @@ func TestForwardAsChatCompletionsForGrokUsesXGrokConvIDHeader(t *testing.T) {
 
 	_, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "grok-conv-raw-1", "")
 	require.NoError(t, err)
-	require.Equal(t, isolateOpenAISessionID(77, "grok-conv-raw-1"), upstream.lastReq.Header.Get("x-grok-conv-id"))
-	require.NotEmpty(t, upstream.lastReq.Header.Get("session_id"))
+	expectedSessionID := generateSessionUUID(isolateOpenAISessionID(77, "grok-conv-raw-1"))
+	require.Equal(t, expectedSessionID, upstream.lastReq.Header.Get("x-grok-conv-id"))
+	require.Equal(t, expectedSessionID, upstream.lastReq.Header.Get("session_id"))
+	require.Equal(t, expectedSessionID, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
 }
 
 func TestForwardAsChatCompletionsForGrokUsesPromptCacheKeyArgumentForAffinity(t *testing.T) {
@@ -1593,8 +1595,10 @@ func TestForwardAsChatCompletionsForGrokUsesPromptCacheKeyArgumentForAffinity(t 
 
 	_, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "pcache-grok-raw-1", "")
 	require.NoError(t, err)
-	require.Equal(t, isolateOpenAISessionID(78, "pcache-grok-raw-1"), upstream.lastReq.Header.Get("x-grok-conv-id"))
-	require.NotEmpty(t, upstream.lastReq.Header.Get("session_id"))
+	expectedSessionID := generateSessionUUID(isolateOpenAISessionID(78, "pcache-grok-raw-1"))
+	require.Equal(t, expectedSessionID, upstream.lastReq.Header.Get("x-grok-conv-id"))
+	require.Equal(t, expectedSessionID, upstream.lastReq.Header.Get("session_id"))
+	require.Equal(t, expectedSessionID, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
 }
 
 func TestForwardAsChatCompletionsForGrokDoesNotDeriveAffinityWhenPromptCacheKeyMissing(t *testing.T) {

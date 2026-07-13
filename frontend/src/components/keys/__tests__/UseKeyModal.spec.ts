@@ -341,6 +341,15 @@ describe('UseKeyModal', () => {
     expect(grokCode).toContain('[model."grok-4.20-multi-agent-0309"]')
     expect(grokCode).toContain('[model."grok-4.3"]')
     expect(grokCode).toContain('default = "grok-4.5"')
+    expect(grokCode).toContain('Keep api_backend = "responses" on every model entry.')
+
+    const modelBlocks = grokCode
+      .split(/(?=^\[model\.)/m)
+      .filter((block) => block.startsWith('[model."'))
+    expect(modelBlocks).toHaveLength(4)
+    for (const block of modelBlocks) {
+      expect(block).toContain('api_backend = "responses"')
+    }
 
     const clickTab = async (label: string) => {
       const tab = wrapper.findAll('button').find((button) => button.text().includes(label))

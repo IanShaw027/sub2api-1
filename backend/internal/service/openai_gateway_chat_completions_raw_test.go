@@ -135,17 +135,17 @@ func TestForwardAsRawChatCompletions_GrokIsolatesSessionAndConvIDByAPIKey(t *tes
 		if expectedSeed == "" {
 			expectedSeed = "shared-session"
 		}
-		isolatedConvID := isolateOpenAISessionID(apiKeyID, expectedSeed)
-		require.Equal(t, generateSessionUUID(isolatedConvID), sessionID)
-		require.Equal(t, isolatedConvID, convID)
-		require.Equal(t, "shared-session", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+		expectedSessionID := generateSessionUUID(isolateOpenAISessionID(apiKeyID, expectedSeed))
+		require.Equal(t, expectedSessionID, sessionID)
+		require.Equal(t, expectedSessionID, convID)
+		require.Equal(t, expectedSessionID, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
 		return sessionID, convID
 	}
 
 	idA, convA := run(11, "client-raw-conv")
 	idB, convB := run(22, "client-raw-conv")
-	require.Equal(t, generateSessionUUID(convA), idA)
-	require.Equal(t, generateSessionUUID(convB), idB)
+	require.Equal(t, idA, convA)
+	require.Equal(t, idB, convB)
 	require.NotEqual(t, idA, idB, "different API keys must not share Grok conversation ids on raw CC")
 	require.NotEqual(t, convA, convB, "different API keys must not share Grok conversation ids on raw CC")
 }
@@ -188,12 +188,12 @@ func TestForwardAsChatCompletions_GrokPassesPromptCacheKeyForSessionIsolation(t 
 	require.NotNil(t, result)
 	require.NotNil(t, upstream.lastReq)
 
-	expectedConvID := isolateOpenAISessionID(77, "cache-key-grok")
-	require.Equal(t, generateSessionUUID(expectedConvID), upstream.lastReq.Header.Get("session_id"))
-	require.Equal(t, expectedConvID, upstream.lastReq.Header.Get("x-grok-conv-id"))
+	expectedSessionID := generateSessionUUID(isolateOpenAISessionID(77, "cache-key-grok"))
+	require.Equal(t, expectedSessionID, upstream.lastReq.Header.Get("session_id"))
+	require.Equal(t, expectedSessionID, upstream.lastReq.Header.Get("x-grok-conv-id"))
 	require.Equal(t, grokClientVersionHeader, upstream.lastReq.Header.Get("x-grok-client-version"))
 	require.Equal(t, grokClientIdentifierHeader, upstream.lastReq.Header.Get("x-grok-client-identifier"))
-	require.Equal(t, "cache-key-grok", gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+	require.Equal(t, expectedSessionID, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
 }
 
 func TestForwardAsChatCompletions_Grok45DropsUnsupportedSamplingFields(t *testing.T) {

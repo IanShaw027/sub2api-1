@@ -341,6 +341,20 @@ func TestGetUpstreamEndpoint_FullFlow(t *testing.T) {
 	require.Equal(t, "/v1/responses/compact", got)
 }
 
+func TestResolveOpenAIUpstreamEndpoint_GrokChatUsesRawChat(t *testing.T) {
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, EndpointChatCompletions, nil)
+	c.Set(ctxKeyInboundEndpoint, EndpointChatCompletions)
+
+	account := &service.Account{
+		Platform: service.PlatformGrok,
+		Type:     service.AccountTypeOAuth,
+	}
+
+	require.Equal(t, EndpointChatCompletions, resolveOpenAIUpstreamEndpoint(c, account))
+}
+
 func TestResolveOpenAIMessagesUpstreamEndpoint_TextAutoRouteForceChat(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
