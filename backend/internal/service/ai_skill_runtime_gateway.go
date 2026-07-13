@@ -90,6 +90,7 @@ func (g *DefaultAISkillRuntimeGateway) executePromptChat(ctx context.Context, re
 		PromptCacheKey: buildAISkillPromptCacheKey(req, model),
 		Model:          model,
 		Body:           body,
+		BillingAPIKey:  req.BillingAPIKey,
 	})
 	if err != nil {
 		return nil, err
@@ -120,12 +121,13 @@ func (g *DefaultAISkillRuntimeGateway) executePromptImage(ctx context.Context, r
 	}
 
 	result, err := g.imageRuntime.ExecuteImages(ctx, AISkillOpenAIImageRuntimeInput{
-		GroupID:     resolveAISkillGroupID(req),
-		SessionHash: buildAISkillSessionHash(req, model),
-		Model:       model,
-		Path:        path,
-		ContentType: "application/json",
-		Body:        body,
+		GroupID:       resolveAISkillGroupID(req),
+		SessionHash:   buildAISkillSessionHash(req, model),
+		Model:         model,
+		Path:          path,
+		ContentType:   "application/json",
+		Body:          body,
+		BillingAPIKey: req.BillingAPIKey,
 	})
 	if err != nil {
 		return nil, err
@@ -213,6 +215,7 @@ func (r *AISkillOpenAIRuntime) ExecuteChatCompat(ctx context.Context, input AISk
 	if err != nil {
 		return nil, err
 	}
+	attachAISkillBillingAPIKey(ginCtx, input.BillingAPIKey)
 
 	forward, err := r.gateway.ForwardAsChatCompletions(
 		ginCtx.Request.Context(),
@@ -223,6 +226,16 @@ func (r *AISkillOpenAIRuntime) ExecuteChatCompat(ctx context.Context, input AISk
 		model,
 		"",
 	)
+	// Bill partial/success results when a billing key is present. Failures must
+	// surface so use-mode runs cannot complete without token attribution.
+	if forward != nil {
+		if billErr := r.recordAISkillOpenAIUsage(ctx, ginCtx, input.BillingAPIKey, account, model, forward); billErr != nil {
+			if err == nil {
+				return nil, billErr
+			}
+			return nil, fmt.Errorf("%w; also failed to record usage: %v", err, billErr)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -262,6 +275,8 @@ func (r *AISkillOpenAIRuntime) ExecuteImages(ctx context.Context, input AISkillO
 		return nil, err
 	}
 
+	attachAISkillBillingAPIKey(ginCtx, input.BillingAPIKey)
+
 	parsed, err := r.gateway.ParseOpenAIImagesRequest(ginCtx, input.Body)
 	if err != nil {
 		return nil, err
@@ -275,6 +290,14 @@ func (r *AISkillOpenAIRuntime) ExecuteImages(ctx context.Context, input AISkillO
 		parsed,
 		model,
 	)
+	if forward != nil {
+		if billErr := r.recordAISkillOpenAIUsage(ctx, ginCtx, input.BillingAPIKey, account, model, forward); billErr != nil {
+			if err == nil {
+				return nil, billErr
+			}
+			return nil, fmt.Errorf("%w; also failed to record usage: %v", err, billErr)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -283,6 +306,58 @@ func (r *AISkillOpenAIRuntime) ExecuteImages(ctx context.Context, input AISkillO
 		Forward:      forward,
 		ResponseBody: append([]byte(nil), recorder.Body.Bytes()...),
 	}, nil
+}
+
+func attachAISkillBillingAPIKey(c *gin.Context, apiKey *APIKey) {
+	if c == nil || apiKey == nil {
+		return
+	}
+	// Mirror middleware key so any gateway code that reads context API key sees the buyer.
+	c.Set("api_key", apiKey)
+}
+
+func (r *AISkillOpenAIRuntime) recordAISkillOpenAIUsage(
+	ctx context.Context,
+	c *gin.Context,
+	apiKey *APIKey,
+	account *Account,
+	model string,
+	result *OpenAIForwardResult,
+) error {
+	// No billing key means test-mode / free attribution path — skip intentionally.
+	if apiKey == nil {
+		return nil
+	}
+	if r == nil || r.gateway == nil || apiKey.User == nil || account == nil || result == nil {
+		return fmt.Errorf("skill token billing is incomplete: missing gateway context")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	inboundEndpoint := ""
+	if c != nil && c.Request != nil && c.Request.URL != nil {
+		inboundEndpoint = c.Request.URL.Path
+	}
+	userAgent := ""
+	if c != nil && c.Request != nil {
+		userAgent = c.Request.UserAgent()
+	}
+	if err := r.gateway.RecordUsage(ctx, &OpenAIRecordUsageInput{
+		Result:          result,
+		APIKey:          apiKey,
+		User:            apiKey.User,
+		Account:         account,
+		InboundEndpoint: inboundEndpoint,
+		UserAgent:       userAgent,
+		QuotaPlatform:   PlatformOpenAI,
+		ChannelUsageFields: ChannelUsageFields{
+			OriginalModel:      model,
+			ChannelMappedModel: firstNonEmptyString(result.UpstreamModel, model),
+		},
+	}); err != nil {
+		return fmt.Errorf("record skill token usage: %w", err)
+	}
+	return nil
 }
 
 type AISkillScriptRunnerRuntime struct {
@@ -893,8 +968,13 @@ func buildAISkillRuntimeSeed(req AISkillExecutionRequest, model string) string {
 }
 
 func resolveAISkillGroupID(req AISkillExecutionRequest) *int64 {
+	// Prefer the billing API key's authorized group — it is server-loaded and
+	// ownership-checked. Never trust client-supplied Trace.GroupID.
+	if req.BillingAPIKey != nil && req.BillingAPIKey.GroupID != nil && *req.BillingAPIKey.GroupID > 0 {
+		return req.BillingAPIKey.GroupID
+	}
+	// Fall back to server-owned skill/version/settlement traces only.
 	for _, candidate := range []*int64{
-		req.Trace.GroupID,
 		traceGroupID(req.Settlement),
 		traceGroupID(req.Version),
 		traceGroupID(req.Skill),

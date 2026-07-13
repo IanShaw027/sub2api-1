@@ -9,12 +9,19 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
+// AISkillBillingAPIKeyLookup loads a buyer's API key for token billing attribution.
+// Narrower than APIKeyRepository so tests can stub GetByID alone.
+type AISkillBillingAPIKeyLookup interface {
+	GetByID(ctx context.Context, id int64) (*APIKey, error)
+}
+
 type AISkillRunService struct {
 	skillRepo         AISkillRepository
 	versionRepo       AISkillVersionRepository
 	runRepo           AISkillRunRepository
 	settlementService *AISkillSettlementService
 	runtimeGateway    AISkillRuntimeGateway
+	apiKeyRepo        AISkillBillingAPIKeyLookup
 	now               func() time.Time
 }
 
@@ -33,6 +40,16 @@ func NewAISkillRunService(
 		runtimeGateway:    runtimeGateway,
 		now:               time.Now,
 	}
+}
+
+// WithAPIKeyRepository enables server-side resolution of Trace.APIKeyID for
+// gateway token billing attribution. Optional — without it skill runs still
+// execute and settle marketplace fees.
+func (s *AISkillRunService) WithAPIKeyRepository(repo AISkillBillingAPIKeyLookup) *AISkillRunService {
+	if s != nil {
+		s.apiKeyRepo = repo
+	}
+	return s
 }
 
 func (s *AISkillRunService) Prepare(ctx context.Context, userID int64, input *AISkillRunInput) (*AISkillPreparedRun, error) {
@@ -62,6 +79,13 @@ func (s *AISkillRunService) Prepare(ctx context.Context, userID int64, input *AI
 	}
 	if !canAISkillVersionTestUseOrPublish(version.Status) {
 		return nil, ErrAISkillVersionNotApproved
+	}
+	// After skill/version authorization: use mode requires a buyer API key id so
+	// upstream tokens can be attributed. Lookup is best-effort when repo is wired.
+	if mode == AISkillRunModeUse {
+		if input.Trace.APIKeyID == nil || *input.Trace.APIKeyID <= 0 {
+			return nil, infraerrors.BadRequest("AI_SKILL_API_KEY_REQUIRED", "use mode requires trace.api_key_id for token billing")
+		}
 	}
 	now := s.nowOrDefault()
 	runMetadata := cloneAIMap(input.Metadata)
@@ -96,7 +120,7 @@ func (s *AISkillRunService) Prepare(ctx context.Context, userID int64, input *AI
 	}
 
 	settlement := buildAISkillSettlementPreview(run, skill, version, quote, runMetadata, run.Trace, s.nowOrDefault())
-	execution, err := s.buildExecutionRequest(run, skill, version, settlement)
+	execution, err := s.buildExecutionRequest(ctx, run, skill, version, settlement)
 	if err != nil {
 		run.Status = AISkillRunStatusFailed
 		run.ErrorMessage = err.Error()
@@ -232,7 +256,40 @@ func (s *AISkillRunService) resolveVersion(ctx context.Context, skillID int64, v
 	return s.versionRepo.GetLatestApprovedVersionBySkillID(ctx, skillID)
 }
 
-func (s *AISkillRunService) buildExecutionRequest(run *AISkillRun, skill *AISkill, version *AISkillVersion, settlement *AISkillSettlement) (*AISkillExecutionRequest, error) {
+// resolveBillingAPIKey loads the buyer's API key referenced by Trace.APIKeyID.
+// Ownership is enforced: key.UserID must match the run user.
+//
+// Returns (nil, nil) when no API key was requested, or when lookup is not wired
+// (caller decides fail-closed for use mode). Explicit ids with a wired repo that
+// fail ownership / missing checks always return an error.
+func (s *AISkillRunService) resolveBillingAPIKey(ctx context.Context, userID int64, trace AIWriteTrace) (*APIKey, error) {
+	if userID <= 0 {
+		return nil, nil
+	}
+	if trace.APIKeyID == nil || *trace.APIKeyID <= 0 {
+		return nil, nil
+	}
+	if s == nil || s.apiKeyRepo == nil {
+		return nil, nil
+	}
+	key, err := s.apiKeyRepo.GetByID(ctx, *trace.APIKeyID)
+	if err != nil {
+		return nil, err
+	}
+	if key == nil {
+		return nil, infraerrors.NotFound("AI_SKILL_API_KEY_NOT_FOUND", "api key not found for skill billing")
+	}
+	if key.UserID != userID {
+		return nil, infraerrors.Forbidden("AI_SKILL_API_KEY_FORBIDDEN", "api key does not belong to the skill runner")
+	}
+	if key.User == nil {
+		// Hydrate minimal user for RecordUsage; full balance checks happen inside billing.
+		key.User = &User{ID: userID}
+	}
+	return key, nil
+}
+
+func (s *AISkillRunService) buildExecutionRequest(ctx context.Context, run *AISkillRun, skill *AISkill, version *AISkillVersion, settlement *AISkillSettlement) (*AISkillExecutionRequest, error) {
 	if run == nil || skill == nil || version == nil {
 		return nil, ErrAISkillExecutionSpecInvalid
 	}
@@ -251,6 +308,23 @@ func (s *AISkillRunService) buildExecutionRequest(run *AISkillRun, skill *AISkil
 		Version:    version,
 		Settlement: settlement,
 		Trace:      run.Trace,
+	}
+	key, err := s.resolveBillingAPIKey(ctx, run.UserID, run.Trace)
+	if err != nil {
+		return nil, err
+	}
+	req.BillingAPIKey = key
+	// use mode must resolve a real billing key; never proceed with nil and skip RecordUsage.
+	if normalizeAISkillRunMode(run.Mode) == AISkillRunModeUse {
+		if run.Trace.APIKeyID == nil || *run.Trace.APIKeyID <= 0 {
+			return nil, infraerrors.BadRequest("AI_SKILL_API_KEY_REQUIRED", "use mode requires trace.api_key_id for token billing")
+		}
+		if req.BillingAPIKey == nil {
+			if s.apiKeyRepo == nil {
+				return nil, infraerrors.InternalServer("AI_SKILL_API_KEY_LOOKUP_UNAVAILABLE", "api key lookup is not configured for skill billing")
+			}
+			return nil, infraerrors.BadRequest("AI_SKILL_API_KEY_REQUIRED", "use mode requires a valid owned api key for token billing")
+		}
 	}
 	switch version.Type {
 	case AISkillTypePromptChat:

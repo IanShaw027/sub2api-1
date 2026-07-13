@@ -858,17 +858,48 @@ export async function publishSkillVersion(versionId: number): Promise<SkillVersi
   }
 }
 
-export async function testSkill(skillId: number, versionId?: number | null): Promise<SkillRunActionResult> {
-  const { data } = await apiClient.post(`/user/skills/${skillId}/test`, null, {
-    params: typeof versionId === 'number' && versionId > 0 ? { version_id: versionId } : undefined
-  })
+export type SkillRunOptions = {
+  versionId?: number | null
+  apiKeyId?: number | null
+  parameters?: Record<string, unknown>
+}
+
+export async function testSkill(skillId: number, options?: SkillRunOptions | number | null): Promise<SkillRunActionResult> {
+  const normalized = typeof options === 'number' || options == null
+    ? { versionId: options ?? null }
+    : options
+  const versionId = normalized.versionId
+  const { data } = await apiClient.post(
+    `/user/skills/${skillId}/test`,
+    {
+      parameters: normalized.parameters ?? {},
+      trace: normalized.apiKeyId && normalized.apiKeyId > 0 ? { api_key_id: normalized.apiKeyId } : undefined
+    },
+    {
+      params: typeof versionId === 'number' && versionId > 0 ? { version_id: versionId } : undefined
+    }
+  )
   return normalizeRunActionResult(data, 'test', skillId, versionId)
 }
 
-export async function useSkill(skillId: number, versionId?: number | null): Promise<SkillRunActionResult> {
-  const { data } = await apiClient.post(`/user/skills/${skillId}/use`, null, {
-    params: typeof versionId === 'number' && versionId > 0 ? { version_id: versionId } : undefined
-  })
+export async function useSkill(skillId: number, options?: SkillRunOptions | number | null): Promise<SkillRunActionResult> {
+  const normalized = typeof options === 'number' || options == null
+    ? { versionId: options ?? null }
+    : options
+  const versionId = normalized.versionId
+  if (!(normalized.apiKeyId && normalized.apiKeyId > 0)) {
+    throw new Error('use skill requires an API key for token billing')
+  }
+  const { data } = await apiClient.post(
+    `/user/skills/${skillId}/use`,
+    {
+      parameters: normalized.parameters ?? {},
+      trace: { api_key_id: normalized.apiKeyId }
+    },
+    {
+      params: typeof versionId === 'number' && versionId > 0 ? { version_id: versionId } : undefined
+    }
+  )
   return normalizeRunActionResult(data, 'use', skillId, versionId)
 }
 

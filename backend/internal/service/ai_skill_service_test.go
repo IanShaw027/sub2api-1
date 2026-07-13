@@ -363,12 +363,13 @@ func TestAISkillRunServiceRejectsNonApprovedVersion(t *testing.T) {
 	store.versions[version.ID] = cloneAISkillVersionEntity(version)
 
 	settlementSvc := NewAISkillSettlementService(store, &aiSkillBalanceChargerStub{}, &aiSkillCreatorCreditorStub{})
-	runSvc := NewAISkillRunService(store, store, store, settlementSvc, nil)
+	runSvc := NewAISkillRunService(store, store, store, settlementSvc, nil).WithAPIKeyRepository(&skillBillingAPIKeyRepoStub{ownerUserID: 300})
 
 	_, err := runSvc.Prepare(ctx, 300, &AISkillRunInput{
 		SkillID:   skill.ID,
 		VersionID: int64Ptr(version.ID),
 		Mode:      AISkillRunModeUse,
+		Trace:     AIWriteTrace{APIKeyID: int64Ptr(99)},
 	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrAISkillVersionNotApproved)
@@ -421,12 +422,13 @@ func TestAISkillRunServiceExecutePerRunSettlesAndDispatches(t *testing.T) {
 			Output:        map[string]any{"answer": "done"},
 		},
 	}
-	runSvc := NewAISkillRunService(store, store, store, settlementSvc, runtime)
+	runSvc := NewAISkillRunService(store, store, store, settlementSvc, runtime).WithAPIKeyRepository(&skillBillingAPIKeyRepoStub{ownerUserID: 900})
 
 	result, err := runSvc.Execute(ctx, 900, &AISkillRunInput{
 		SkillID:    skill.ID,
 		VersionID:  int64Ptr(version.ID),
 		Mode:       AISkillRunModeUse,
+			Trace:      AIWriteTrace{APIKeyID: int64Ptr(99)},
 		Parameters: map[string]any{"topic": "golang"},
 		Metadata:   map[string]any{"scene": "unit"},
 	})
@@ -491,12 +493,13 @@ func TestAISkillRunServiceExecuteFailedDispatchDoesNotCharge(t *testing.T) {
 			ExternalJobID: "resp_failed",
 		},
 	}
-	runSvc := NewAISkillRunService(store, store, store, settlementSvc, runtime)
+	runSvc := NewAISkillRunService(store, store, store, settlementSvc, runtime).WithAPIKeyRepository(&skillBillingAPIKeyRepoStub{ownerUserID: 901})
 
 	result, err := runSvc.Execute(ctx, 901, &AISkillRunInput{
 		SkillID:    skill.ID,
 		VersionID:  int64Ptr(version.ID),
 		Mode:       AISkillRunModeUse,
+			Trace:      AIWriteTrace{APIKeyID: int64Ptr(99)},
 		Parameters: map[string]any{"topic": "golang"},
 	})
 	require.Error(t, err)
@@ -851,7 +854,7 @@ func TestAISkillRunServicePrepareBuildsPromptImageAndFreeSettlement(t *testing.T
 
 	balance := &aiSkillBalanceChargerStub{}
 	settlementSvc := NewAISkillSettlementService(store, balance, &aiSkillCreatorCreditorStub{})
-	runSvc := NewAISkillRunService(store, store, store, settlementSvc, nil)
+	runSvc := NewAISkillRunService(store, store, store, settlementSvc, nil).WithAPIKeyRepository(&skillBillingAPIKeyRepoStub{ownerUserID: 99})
 
 	prepared, err := runSvc.Prepare(ctx, 99, &AISkillRunInput{
 		SkillID:    skill.ID,
@@ -920,7 +923,7 @@ func TestAISkillRunServicePrepareBuildsScriptArchiveFromSourceContent(t *testing
 	store.versions[version.ID] = cloneAISkillVersionEntity(version)
 
 	settlementSvc := NewAISkillSettlementService(store, &aiSkillBalanceChargerStub{}, &aiSkillCreatorCreditorStub{})
-	runSvc := NewAISkillRunService(store, store, store, settlementSvc, nil)
+	runSvc := NewAISkillRunService(store, store, store, settlementSvc, nil).WithAPIKeyRepository(&skillBillingAPIKeyRepoStub{ownerUserID: 99})
 
 	prepared, err := runSvc.Prepare(ctx, 99, &AISkillRunInput{
 		SkillID:   skill.ID,

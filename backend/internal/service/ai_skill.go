@@ -292,6 +292,8 @@ type AISkillExecutionRequest struct {
 	PromptImage *AISkillPromptImageExecution `json:"prompt_image,omitempty"`
 	Script      *AISkillScriptExecution      `json:"script,omitempty"`
 	Trace       AITraceRef                   `json:"trace"`
+	// BillingAPIKey is server-resolved from Trace.APIKeyID (never client-forged).
+	BillingAPIKey *APIKey `json:"-"`
 }
 
 type AISkillPreparedRun struct {
@@ -490,6 +492,9 @@ type AISkillOpenAIChatRuntimeInput struct {
 	PromptCacheKey string
 	Model          string
 	Body           []byte
+	// BillingAPIKey, when set, attributes gateway token usage to the buyer key.
+	// Marketplace settlement remains separate (per-run skill fee).
+	BillingAPIKey *APIKey
 }
 
 type AISkillOpenAIChatRuntimeResult struct {
@@ -508,6 +513,7 @@ type AISkillOpenAIImageRuntimeInput struct {
 	Path        string
 	ContentType string
 	Body        []byte
+	BillingAPIKey *APIKey
 }
 
 type AISkillOpenAIImageRuntimeResult struct {

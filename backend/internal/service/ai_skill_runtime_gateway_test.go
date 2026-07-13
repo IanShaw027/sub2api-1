@@ -128,7 +128,8 @@ func TestAISkillRuntimeGatewayExecutesPromptChatThroughCompatRuntime(t *testing.
 		UserID:    41,
 		Mode:      AISkillRunModeUse,
 		Type:      AISkillTypePromptChat,
-		Trace:     AITraceRef{GroupID: &groupID},
+		// Group scheduling must come from trusted skill metadata, not client Trace.
+		Skill: &AISkill{Trace: AITraceRef{GroupID: &groupID}},
 		PromptChat: &AISkillPromptChatExecution{
 			SystemPrompt:       "You are helping with {{topic}}",
 			UserPromptTemplate: "Summarize {{topic}}",
@@ -856,4 +857,25 @@ func TestAISkillScriptApprovalDigestBindsRunExecution(t *testing.T) {
 	})
 	require.ErrorIs(t, err, ErrAISkillScriptArtifactMismatch,
 		"tampered source must not match the approved digest")
+}
+
+func TestResolveAISkillGroupIDIgnoresClientTraceGroupID(t *testing.T) {
+	t.Parallel()
+	clientGroup := int64(999)
+	skillGroup := int64(42)
+	got := resolveAISkillGroupID(AISkillExecutionRequest{
+		Trace: AITraceRef{GroupID: &clientGroup},
+		Skill: &AISkill{Trace: AITraceRef{GroupID: &skillGroup}},
+	})
+	require.NotNil(t, got)
+	require.Equal(t, skillGroup, *got, "client-provided trace.group_id must not drive account scheduling")
+}
+
+func TestResolveAISkillGroupIDFallsBackWhenNoTrustedGroup(t *testing.T) {
+	t.Parallel()
+	clientGroup := int64(999)
+	got := resolveAISkillGroupID(AISkillExecutionRequest{
+		Trace: AITraceRef{GroupID: &clientGroup},
+	})
+	require.Nil(t, got)
 }

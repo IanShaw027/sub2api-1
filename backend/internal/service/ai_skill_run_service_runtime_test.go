@@ -212,12 +212,13 @@ func TestAISkillRunServiceExecuteFailedDispatchDoesNotChargeRuntimeStore(t *test
 			ExternalJobID: "resp_failed",
 		},
 	}
-	runSvc := NewAISkillRunService(store, store, store, settlementSvc, runtime)
+	runSvc := NewAISkillRunService(store, store, store, settlementSvc, runtime).WithAPIKeyRepository(&skillBillingAPIKeyRepoStub{ownerUserID: 901})
 
 	result, err := runSvc.Execute(ctx, 901, &AISkillRunInput{
 		SkillID:   skill.ID,
 		VersionID: aiSkillRunServiceTestInt64Ptr(version.ID),
 		Mode:      AISkillRunModeUse,
+		Trace:     AIWriteTrace{APIKeyID: int64PtrForTest(99)},
 		Parameters: map[string]any{
 			"topic": "golang",
 		},
@@ -268,12 +269,13 @@ func TestAISkillRunServicePrepareAppliesPromptVariableDefaults(t *testing.T) {
 	require.NoError(t, store.CreateVersion(ctx, version))
 
 	settlementSvc := NewAISkillSettlementService(&aiSkillRunServiceTestSettlementRepo{}, nil, nil)
-	runSvc := NewAISkillRunService(store, store, store, settlementSvc, nil)
+	runSvc := NewAISkillRunService(store, store, store, settlementSvc, nil).WithAPIKeyRepository(&skillBillingAPIKeyRepoStub{ownerUserID: 702})
 
 	prepared, err := runSvc.Prepare(ctx, 702, &AISkillRunInput{
 		SkillID:   skill.ID,
 		VersionID: aiSkillRunServiceTestInt64Ptr(version.ID),
 		Mode:      AISkillRunModeUse,
+		Trace:     AIWriteTrace{APIKeyID: int64PtrForTest(99)},
 		Parameters: map[string]any{
 			"topic": "golang",
 			"tone":  "casual",
@@ -329,12 +331,13 @@ func TestAISkillRunServicePrepareAppliesScriptVariableDefaultsFromMetadata(t *te
 	require.NoError(t, store.CreateVersion(ctx, version))
 
 	settlementSvc := NewAISkillSettlementService(&aiSkillRunServiceTestSettlementRepo{}, nil, nil)
-	runSvc := NewAISkillRunService(store, store, store, settlementSvc, nil)
+	runSvc := NewAISkillRunService(store, store, store, settlementSvc, nil).WithAPIKeyRepository(&skillBillingAPIKeyRepoStub{ownerUserID: 704})
 
 	prepared, err := runSvc.Prepare(ctx, 704, &AISkillRunInput{
 		SkillID:   skill.ID,
 		VersionID: aiSkillRunServiceTestInt64Ptr(version.ID),
 		Mode:      AISkillRunModeUse,
+		Trace:     AIWriteTrace{APIKeyID: int64PtrForTest(99)},
 		Parameters: map[string]any{
 			"mode": "interactive",
 		},
@@ -395,12 +398,13 @@ func TestAISkillRunServiceExecuteScriptDispatchAckReturnsDispatchedRun(t *testin
 			Output:        map[string]any{"plan": map[string]any{"mode": "dispatch"}},
 		},
 	}
-	runSvc := NewAISkillRunService(store, store, store, settlementSvc, runtime)
+	runSvc := NewAISkillRunService(store, store, store, settlementSvc, runtime).WithAPIKeyRepository(&skillBillingAPIKeyRepoStub{ownerUserID: 903})
 
 	result, err := runSvc.Execute(ctx, 903, &AISkillRunInput{
 		SkillID:   skill.ID,
 		VersionID: aiSkillRunServiceTestInt64Ptr(version.ID),
 		Mode:      AISkillRunModeUse,
+		Trace:     AIWriteTrace{APIKeyID: int64PtrForTest(99)},
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -462,12 +466,13 @@ func TestAISkillRunServiceExecuteSuccessRecoversWhenFinalUpdateFailsAfterSettlem
 			Output:        map[string]any{"text": "summary"},
 		},
 	}
-	runSvc := NewAISkillRunService(store, store, store, settlementSvc, runtime)
+	runSvc := NewAISkillRunService(store, store, store, settlementSvc, runtime).WithAPIKeyRepository(&skillBillingAPIKeyRepoStub{ownerUserID: 904})
 
 	result, err := runSvc.Execute(ctx, 904, &AISkillRunInput{
 		SkillID:   skill.ID,
 		VersionID: aiSkillRunServiceTestInt64Ptr(version.ID),
 		Mode:      AISkillRunModeUse,
+		Trace:     AIWriteTrace{APIKeyID: int64PtrForTest(99)},
 		Parameters: map[string]any{
 			"topic": "golang",
 		},

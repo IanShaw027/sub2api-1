@@ -90,7 +90,18 @@ func (s *AISkillSettlementService) Settle(ctx context.Context, input AISkillSett
 			return existing, nil
 		}
 		if status == AISkillSettlementStatusPending {
-			return nil, ErrAISkillSettlementInProgress
+			// Fresh concurrent settle — reject. Stale pending (crash after charge /
+			// before status flip) can be reclaimed; ChargeUserBalance is keyed by
+			// run reference and must be idempotent.
+			if time.Since(existing.UpdatedAt) < 2*time.Minute {
+				return nil, ErrAISkillSettlementInProgress
+			}
+			settlement = cloneAISkillSettlement(existing)
+			settlement.FailureReason = ""
+			settlement.UpdatedAt = now
+			if err := s.repo.UpdateSettlement(ctx, settlement); err != nil {
+				return nil, err
+			}
 		}
 		if status == AISkillSettlementStatusFailed {
 			if !canReplayFailedAISkillSettlement(existing) {
@@ -230,7 +241,17 @@ func (s *AISkillSettlementService) Settle(ctx context.Context, input AISkillSett
 	settlement.Status = AISkillSettlementStatusSettled
 	settlement.UpdatedAt = s.nowOrDefault()
 	if err := s.repo.UpdateSettlement(ctx, settlement); err != nil {
-		return nil, err
+		// Buyer has already been charged. Retry status flip so the settlement
+		// does not remain permanently stuck in pending (Replay used to reject that).
+		var lastErr error = err
+		for attempt := 0; attempt < 3; attempt++ {
+			time.Sleep(time.Duration(attempt+1) * 50 * time.Millisecond)
+			settlement.UpdatedAt = s.nowOrDefault()
+			if lastErr = s.repo.UpdateSettlement(ctx, settlement); lastErr == nil {
+				return settlement, nil
+			}
+		}
+		return nil, fmt.Errorf("ai skill settlement charged but finalize failed: %w", lastErr)
 	}
 	return settlement, nil
 }

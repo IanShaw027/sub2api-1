@@ -112,6 +112,18 @@ func (*aiSkillHandlerMediaStore) PresignGetObject(_ context.Context, _ service.M
 	return "https://media.example.com/presigned/" + objectKey, nil
 }
 
+type handlerSkillBillingAPIKeyRepoStub struct {
+	userID int64
+}
+
+func (s *handlerSkillBillingAPIKeyRepoStub) GetByID(_ context.Context, id int64) (*service.APIKey, error) {
+	uid := int64(42)
+	if s != nil && s.userID > 0 {
+		uid = s.userID
+	}
+	return &service.APIKey{ID: id, UserID: uid, User: &service.User{ID: uid}}, nil
+}
+
 func TestAIHandlerBuildSkillMetadataStoresCoverImageURL(t *testing.T) {
 	t.Parallel()
 
@@ -377,7 +389,7 @@ func TestAIHandlerRunSkillCleansUpUploadedAttachmentsOnExecutionFailure(t *testi
 		&aiSkillHandlerRunRepo{createErr: errors.New("run persistence failed")},
 		service.NewAISkillSettlementService(nil, nil, nil),
 		nil,
-	)
+	).WithAPIKeyRepository(&handlerSkillBillingAPIKeyRepoStub{userID: 42})
 	handler.skillModule = &skillkit.Module{
 		DomainRepo: &aiSkillHandlerViewerRepo{
 			skill: &domain.AISkill{
@@ -398,7 +410,7 @@ func TestAIHandlerRunSkillCleansUpUploadedAttachmentsOnExecutionFailure(t *testi
 	}))
 	defer srv.Close()
 
-	ctx, _ := newAISkillHandlerJSONContext(t, http.MethodPost, "/api/v1/ai/skills/7/runs", `{"mode":"use","attachments":[{"url":"`+srv.URL+`/input.png","purpose":"input","file_name":"input.png"},{"media_id":321,"purpose":"reference","file_name":"managed.png"}]}`)
+	ctx, _ := newAISkillHandlerJSONContext(t, http.MethodPost, "/api/v1/ai/skills/7/runs", `{"mode":"use","trace":{"api_key_id":99},"attachments":[{"url":"`+srv.URL+`/input.png","purpose":"input","file_name":"input.png"},{"media_id":321,"purpose":"reference","file_name":"managed.png"}]}`)
 	ctx.Params = gin.Params{{Key: "id", Value: "7"}}
 
 	handler.RunSkill(ctx)
@@ -441,7 +453,7 @@ func TestAIHandlerRunSkillRejectsPrivateSkillBeforeUploadingAttachments(t *testi
 		&aiSkillHandlerRunRepo{},
 		service.NewAISkillSettlementService(nil, nil, nil),
 		nil,
-	)
+	).WithAPIKeyRepository(&handlerSkillBillingAPIKeyRepoStub{userID: 42})
 	handler.skillModule = &skillkit.Module{
 		DomainRepo: &aiSkillHandlerViewerRepo{
 			skill: &domain.AISkill{
@@ -461,7 +473,7 @@ func TestAIHandlerRunSkillRejectsPrivateSkillBeforeUploadingAttachments(t *testi
 	}))
 	defer srv.Close()
 
-	ctx, recorder := newAISkillHandlerJSONContext(t, http.MethodPost, "/api/v1/ai/skills/7/runs", `{"mode":"use","attachments":[{"url":"`+srv.URL+`/input.png","purpose":"input","file_name":"input.png"}]}`)
+	ctx, recorder := newAISkillHandlerJSONContext(t, http.MethodPost, "/api/v1/ai/skills/7/runs", `{"mode":"use","trace":{"api_key_id":99},"attachments":[{"url":"`+srv.URL+`/input.png","purpose":"input","file_name":"input.png"}]}`)
 	ctx.Params = gin.Params{{Key: "id", Value: "7"}}
 
 	handler.RunSkill(ctx)
@@ -526,7 +538,7 @@ func TestAIHandlerRunSkillWithModeForwardsRequestParametersAndAttachments(t *tes
 				runRepo,
 				service.NewAISkillSettlementService(nil, nil, nil),
 				nil,
-			)
+			).WithAPIKeyRepository(&handlerSkillBillingAPIKeyRepoStub{userID: 42})
 			handler.skillModule = &skillkit.Module{
 				DomainRepo: &aiSkillHandlerViewerRepo{
 					skill: &domain.AISkill{
@@ -540,7 +552,7 @@ func TestAIHandlerRunSkillWithModeForwardsRequestParametersAndAttachments(t *tes
 				RunService: runSvc,
 			}
 
-			ctx, recorder := newAISkillHandlerJSONContext(t, http.MethodPost, tc.path+"?version_id=8", `{"parameters":{"subject":"sunrise","count":2,"nested":{"enabled":true}},"attachments":[{"url":"https://example.invalid/input.png","purpose":"input","file_name":"input.png"},{"media_id":321,"purpose":"reference","file_name":"managed.png"}]}`)
+			ctx, recorder := newAISkillHandlerJSONContext(t, http.MethodPost, tc.path+"?version_id=8", `{"parameters":{"subject":"sunrise","count":2,"nested":{"enabled":true}},"trace":{"api_key_id":99},"attachments":[{"url":"https://example.invalid/input.png","purpose":"input","file_name":"input.png"},{"media_id":321,"purpose":"reference","file_name":"managed.png"}]}`)
 			ctx.Params = gin.Params{{Key: "id", Value: "7"}}
 
 			tc.invoke(handler, ctx)
@@ -637,7 +649,7 @@ func TestAIHandlerRunSkillWithModeCleansUpUploadedAttachmentsOnExecutionFailure(
 			}))
 			defer srv.Close()
 
-			ctx, _ := newAISkillHandlerJSONContext(t, http.MethodPost, tc.path+"?version_id=8", `{"attachments":[{"url":"`+srv.URL+`/input.png","purpose":"input","file_name":"input.png"}]}`)
+			ctx, _ := newAISkillHandlerJSONContext(t, http.MethodPost, tc.path+"?version_id=8", `{"attachments":[{"url":"`+srv.URL+`/input.png","purpose":"input","file_name":"input.png"}],"trace":{"api_key_id":99}}`)
 			ctx.Params = gin.Params{{Key: "id", Value: "7"}}
 
 			tc.invoke(handler, ctx)
@@ -685,7 +697,7 @@ func TestAIHandlerRunSkill_UsesBodyIdempotencyKeyForGenericReplay(t *testing.T) 
 		runRepo,
 		service.NewAISkillSettlementService(nil, nil, nil),
 		nil,
-	)
+	).WithAPIKeyRepository(&handlerSkillBillingAPIKeyRepoStub{userID: 42})
 	handler.skillModule = &skillkit.Module{
 		DomainRepo: &aiSkillHandlerViewerRepo{
 			skill: &domain.AISkill{
@@ -707,7 +719,7 @@ func TestAIHandlerRunSkill_UsesBodyIdempotencyKeyForGenericReplay(t *testing.T) 
 		handler.RunSkill(c)
 	})
 
-	body := `{"mode":"use","idempotency_key":"body-run-key","parameters":{"subject":"sunrise"}}`
+	body := `{"mode":"use","idempotency_key":"body-run-key","parameters":{"subject":"sunrise"},"trace":{"api_key_id":99}}`
 	call := func() *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/ai/skills/7/runs", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -726,6 +738,81 @@ func TestAIHandlerRunSkill_UsesBodyIdempotencyKeyForGenericReplay(t *testing.T) 
 	require.Equal(t, "true", second.Header().Get("X-Idempotency-Replayed"))
 	require.Len(t, runRepo.created, 1, "body idempotency key should prevent duplicate run creation")
 	require.Equal(t, int32(2), executed.Load(), "handler still runs twice, but side effect must replay from generic idempotency")
+}
+
+func TestAIHandlerUseSkillIdempotencyBindsTraceAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := newUserMemoryIdempotencyRepoStub()
+	cfg := service.DefaultIdempotencyConfig()
+	cfg.ObserveOnly = false
+	service.SetDefaultIdempotencyCoordinator(service.NewIdempotencyCoordinator(repo, cfg))
+	t.Cleanup(func() {
+		service.SetDefaultIdempotencyCoordinator(nil)
+	})
+
+	versionID := int64(8)
+	runRepo := &aiSkillHandlerRunRepo{}
+	runSvc := service.NewAISkillRunService(
+		&aiSkillHandlerRunSkillRepo{
+			skill: &service.AISkill{ID: 7, CreatorUserID: 42, Type: service.AISkillTypePromptChat},
+		},
+		&aiSkillHandlerRunVersionRepo{
+			version: &service.AISkillVersion{
+				ID:            versionID,
+				SkillID:       7,
+				CreatorUserID: 42,
+				Type:          service.AISkillTypePromptChat,
+				Status:        service.AISkillVersionStatusApproved,
+				ExecutionSpec: service.AISkillExecutionSpec{
+					Type: service.AISkillTypePromptChat,
+					PromptChat: &service.AISkillPromptChatSpec{
+						UserPromptTemplate: "Write about {{subject}}",
+					},
+				},
+				BillingPolicy: service.AISkillBillingPolicy{Mode: service.AISkillBillingModeFree},
+			},
+		},
+		runRepo,
+		service.NewAISkillSettlementService(nil, nil, nil),
+		nil,
+	).WithAPIKeyRepository(&handlerSkillBillingAPIKeyRepoStub{userID: 42})
+
+	handler := &AIHandler{
+		skillModule: &skillkit.Module{
+			DomainRepo: &aiSkillHandlerViewerRepo{
+				skill: &domain.AISkill{
+					ID:                 7,
+					UserID:             42,
+					Type:               domain.AISkillTypePromptChat,
+					Visibility:         domain.AIVisibilityPublic,
+					PublishedVersionID: &versionID,
+				},
+			},
+			RunService: runSvc,
+		},
+	}
+
+	router := gin.New()
+	router.Use(withUserSubject(42))
+	router.POST("/api/v1/ai/skills/:id/use", handler.UseSkill)
+
+	call := func(apiKeyID int64) *httptest.ResponseRecorder {
+		body := fmt.Sprintf(`{"parameters":{"subject":"sunrise"},"trace":{"api_key_id":%d}}`, apiKeyID)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/ai/skills/7/use?version_id=8", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", "same-use-key")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	first := call(99)
+	require.Equal(t, http.StatusOK, first.Code, first.Body.String())
+
+	second := call(100)
+	require.Equal(t, http.StatusConflict, second.Code, second.Body.String())
+	require.Empty(t, second.Header().Get("X-Idempotency-Replayed"))
+	require.Len(t, runRepo.created, 1, "changed billing api key must not replay the prior use run")
 }
 
 func TestResolveSkillRunVersionForViewerKeepsOwnerDraftAndViewerPublished(t *testing.T) {

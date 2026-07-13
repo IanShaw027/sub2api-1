@@ -523,6 +523,18 @@ export const useSkillsCenterStore = defineStore('skillsCenter', () => {
     }
   }
 
+  async function resolveDefaultApiKeyId(): Promise<number | null> {
+    try {
+      const { data } = await apiClient.get('/keys', { params: { page: 1, page_size: 50 } })
+      const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : []
+      const active = items.find((item: any) => item && (item.status === 'active' || item.status === 1 || item.status == null) && Number(item.id) > 0)
+      const first = active || items.find((item: any) => Number(item?.id) > 0)
+      return first ? Number(first.id) : null
+    } catch {
+      return null
+    }
+  }
+
   async function runSkillAction(
     mode: SkillRunMode,
     skillId: number,
@@ -532,11 +544,16 @@ export const useSkillsCenterStore = defineStore('skillsCenter', () => {
     runningVersionId.value = versionId ?? 0
     runningMode.value = mode
     try {
+      const apiKeyId = await resolveDefaultApiKeyId()
+      if (mode === 'use' && !(apiKeyId && apiKeyId > 0)) {
+        throw new Error('请先创建 API Key，再使用 Skill（用于上游 token 计费）')
+      }
       const config = typeof versionId === 'number' && versionId > 0 ? { params: { version_id: versionId } } : undefined
       const { data } = await apiClient.post(
         mode === 'test' ? `/user/skills/${skillId}/test` : `/user/skills/${skillId}/use`,
         {
-          parameters: cloneOptions(parameters)
+          parameters: cloneOptions(parameters),
+          trace: apiKeyId && apiKeyId > 0 ? { api_key_id: apiKeyId } : undefined
         },
         config
       )

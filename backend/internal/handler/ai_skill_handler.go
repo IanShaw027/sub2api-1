@@ -596,14 +596,19 @@ func (h *AIHandler) RunSkill(c *gin.Context) {
 		if err != nil {
 			return nil, err
 		}
+		mode := strings.TrimSpace(req.Mode)
+		trace := buildUserAITrace(req.Trace)
+		if mode == service.AISkillRunModeUse && (trace.APIKeyID == nil || *trace.APIKeyID <= 0) {
+			return nil, infraerrors.BadRequest("AI_SKILL_API_KEY_REQUIRED", "use mode requires trace.api_key_id for token billing")
+		}
 		result, err := module.RunService.Execute(ctx, subject.UserID, &service.AISkillRunInput{
 			SkillID:        skillID,
 			VersionID:      versionID,
-			Mode:           strings.TrimSpace(req.Mode),
+			Mode:           mode,
 			Parameters:     req.Parameters,
 			Attachments:    attachments,
 			IdempotencyKey: idempotencyKey,
-			Trace:          buildUserAITrace(req.Trace),
+			Trace:          trace,
 		})
 		if err != nil {
 			h.cleanupSkillMedia(ctx, subject.UserID, cleanupIDs)
@@ -658,6 +663,7 @@ func (h *AIHandler) runSkillWithMode(c *gin.Context, mode string) {
 		"mode":        mode,
 		"parameters":  parameters,
 		"attachments": req.Attachments,
+		"trace":       req.Trace,
 	}, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
 		skill, _, err := loadSkillForViewer(ctx, module, skillID, subject.UserID)
 		if err != nil {
@@ -671,6 +677,11 @@ func (h *AIHandler) runSkillWithMode(c *gin.Context, mode string) {
 		if err != nil {
 			return nil, err
 		}
+		trace := buildUserAITrace(req.Trace)
+		// use mode requires a buyer API key so upstream tokens are billed to the user.
+		if mode == service.AISkillRunModeUse && (trace.APIKeyID == nil || *trace.APIKeyID <= 0) {
+			return nil, infraerrors.BadRequest("AI_SKILL_API_KEY_REQUIRED", "use mode requires trace.api_key_id for token billing")
+		}
 		result, err := module.RunService.Execute(ctx, subject.UserID, &service.AISkillRunInput{
 			SkillID:        skillID,
 			VersionID:      versionID,
@@ -678,7 +689,7 @@ func (h *AIHandler) runSkillWithMode(c *gin.Context, mode string) {
 			Parameters:     parameters,
 			Attachments:    attachments,
 			IdempotencyKey: idempotencyKey,
-			Trace:          buildUserAITrace(aiTraceRequest{}),
+			Trace:          trace,
 		})
 		if err != nil {
 			h.cleanupSkillMedia(ctx, subject.UserID, cleanupIDs)
