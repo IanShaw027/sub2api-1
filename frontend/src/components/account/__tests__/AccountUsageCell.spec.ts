@@ -417,6 +417,7 @@ describe('AccountUsageCell', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('7d|42|2026-07-16T00:00:00Z|7req|700tok|A1.23|U2.34')
+    expect(wrapper.text()).not.toContain('A $1.11')
     expect(wrapper.text()).not.toContain('supergrok')
     expect(wrapper.text()).not.toContain('active')
     expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokRequests')
@@ -1717,7 +1718,7 @@ describe('AccountUsageCell', () => {
 		expect(badges.some(node => node.attributes('title') === 'usage.userBilled')).toBe(true)
   })
 
-  it('Grok OAuth 会展示本地 user billed 用量并保留超限百分比', async () => {
+  it('Grok OAuth 无官方窗口时不重复展示独立本地行并保留超限百分比', async () => {
     getUsage.mockResolvedValue({
       grok_local_usage: {
         requests: 4,
@@ -1758,10 +1759,10 @@ describe('AccountUsageCell', () => {
     await flushPromises()
 
     expect(getUsage).toHaveBeenCalledWith(3861)
-    expect(wrapper.text()).toContain('4 req')
-    expect(wrapper.text()).toContain('1.2K')
-    expect(wrapper.text()).toContain('A $0.12')
-    expect(wrapper.text()).toContain('U $0.34')
+    expect(wrapper.text()).not.toContain('4 req')
+    expect(wrapper.text()).not.toContain('1.2K')
+    expect(wrapper.text()).not.toContain('A $0.12')
+    expect(wrapper.text()).not.toContain('U $0.34')
     // Without official seven_day/thirty_day, fallback header req bar is shown.
     expect(wrapper.text()).toContain('admin.accounts.usageWindow.grokRequests|120|2026-07-09T16:00:00Z')
   })
@@ -1783,7 +1784,14 @@ describe('AccountUsageCell', () => {
       thirty_day: {
         utilization: 14.6,
         resets_at: '2026-08-01T00:00:00Z',
-        remaining_seconds: 2000
+        remaining_seconds: 2000,
+        window_stats: {
+          requests: 30,
+          tokens: 3000,
+          cost: 3.3,
+          standard_cost: 3.1,
+          user_cost: 4.4
+        }
       },
       grok_billing: {
         prepaid_balance: 0,
@@ -1807,8 +1815,8 @@ describe('AccountUsageCell', () => {
       global: {
         stubs: {
           UsageProgressBar: {
-            props: ['label', 'utilization', 'resetsAt', 'color'],
-            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}</div>'
+            props: ['label', 'utilization', 'resetsAt', 'windowStats', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}|{{ windowStats?.requests }}req|{{ windowStats?.tokens }}tok|A{{ windowStats?.cost }}|U{{ windowStats?.user_cost }}</div>'
           },
           AccountQuotaInfo: true,
           GrokQuotaProbeCell: true
@@ -1818,11 +1826,9 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('9 req')
-    expect(wrapper.text()).toContain('A $1.10')
-    expect(wrapper.text()).toContain('U $2.20')
-    expect(wrapper.text()).toContain('7d|55|2026-07-20T08:44:35Z')
-    expect(wrapper.text()).toContain('30d|14.6|2026-08-01T00:00:00Z')
+    expect(wrapper.text()).toContain('7d|55|2026-07-20T08:44:35Z|9req|900tok|A1.1|U2.2')
+    expect(wrapper.text()).toContain('30d|14.6|2026-08-01T00:00:00Z|30req|3000tok|A3.3|U4.4')
+    expect(wrapper.text()).not.toContain('A $1.10')
     expect(wrapper.text()).toContain('2.2K/15.0K')
   })
 

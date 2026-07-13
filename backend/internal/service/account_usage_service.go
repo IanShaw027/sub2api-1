@@ -223,15 +223,15 @@ type UsageInfo struct {
 	AntigravityQuota map[string]*AntigravityModelQuota `json:"antigravity_quota,omitempty"`
 
 	// Grok / xAI 被动额度快照 + 官方 billing
-	GrokRequestQuota       *xai.QuotaWindow    `json:"grok_request_quota,omitempty"`
-	GrokTokenQuota         *xai.QuotaWindow    `json:"grok_token_quota,omitempty"`
-	GrokRetryAfterSeconds  *int                `json:"grok_retry_after_seconds,omitempty"`
-	GrokEntitlementStatus  string              `json:"grok_entitlement_status,omitempty"`
-	GrokQuotaSnapshotState string              `json:"grok_quota_snapshot_state,omitempty"`
-	GrokLastQuotaProbeAt   string              `json:"grok_last_quota_probe_at,omitempty"`
-	GrokLastHeadersSeenAt  string              `json:"grok_last_headers_seen_at,omitempty"`
-	GrokLastStatusCode     int                 `json:"grok_last_status_code,omitempty"`
-	GrokLocalUsage         *WindowStats        `json:"grok_local_usage,omitempty"`
+	GrokRequestQuota       *xai.QuotaWindow `json:"grok_request_quota,omitempty"`
+	GrokTokenQuota         *xai.QuotaWindow `json:"grok_token_quota,omitempty"`
+	GrokRetryAfterSeconds  *int             `json:"grok_retry_after_seconds,omitempty"`
+	GrokEntitlementStatus  string           `json:"grok_entitlement_status,omitempty"`
+	GrokQuotaSnapshotState string           `json:"grok_quota_snapshot_state,omitempty"`
+	GrokLastQuotaProbeAt   string           `json:"grok_last_quota_probe_at,omitempty"`
+	GrokLastHeadersSeenAt  string           `json:"grok_last_headers_seen_at,omitempty"`
+	GrokLastStatusCode     int              `json:"grok_last_status_code,omitempty"`
+	GrokLocalUsage         *WindowStats     `json:"grok_local_usage,omitempty"`
 	// ThirtyDay is the official monthly billing window (Grok /billing used/monthlyLimit).
 	ThirtyDay *UsageProgress `json:"thirty_day,omitempty"`
 	// GrokBilling holds absolute balance/limit/overage numbers from cli-chat-proxy.
@@ -1774,22 +1774,34 @@ func (s *AccountUsageService) buildGrokUsageInfo(ctx context.Context, account *A
 
 	applyGrokBillingSnapshot(usage, billingSnap, now)
 
-	// Local Sub2API stats aligned to official weekly period when known; else rolling 7d.
-	windowStart := now.Add(-7 * 24 * time.Hour)
+	// Local Sub2API stats aligned to the official weekly/monthly billing periods.
+	weeklyStart := now.Add(-7 * 24 * time.Hour)
 	if usage.GrokBilling != nil && usage.GrokBilling.WeeklyPeriodStart != nil {
-		windowStart = *usage.GrokBilling.WeeklyPeriodStart
+		weeklyStart = *usage.GrokBilling.WeeklyPeriodStart
 	} else if usage.SevenDay != nil && usage.SevenDay.ResetsAt != nil {
 		// If we only know end, approximate start as end-7d for local aggregation.
-		windowStart = usage.SevenDay.ResetsAt.Add(-7 * 24 * time.Hour)
+		weeklyStart = usage.SevenDay.ResetsAt.Add(-7 * 24 * time.Hour)
 	}
 	if s.usageLogRepo != nil {
-		if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, windowStart); err == nil && stats != nil {
+		if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, weeklyStart); err == nil && stats != nil {
 			ws := windowStatsFromAccountStats(stats)
 			usage.GrokLocalUsage = ws
 			if usage.SevenDay == nil {
 				usage.SevenDay = &UsageProgress{Utilization: 0}
 			}
 			usage.SevenDay.WindowStats = ws
+		}
+
+		if usage.ThirtyDay != nil {
+			monthlyStart := now.Add(-30 * 24 * time.Hour)
+			if usage.GrokBilling != nil && usage.GrokBilling.MonthlyPeriodStart != nil {
+				monthlyStart = *usage.GrokBilling.MonthlyPeriodStart
+			} else if usage.ThirtyDay.ResetsAt != nil {
+				monthlyStart = usage.ThirtyDay.ResetsAt.Add(-30 * 24 * time.Hour)
+			}
+			if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, monthlyStart); err == nil && stats != nil {
+				usage.ThirtyDay.WindowStats = windowStatsFromAccountStats(stats)
+			}
 		}
 	}
 

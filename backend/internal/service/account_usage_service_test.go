@@ -40,12 +40,18 @@ type grokSevenDayUsageRepoStub struct {
 	geminiUsageLogRepoStub
 	requestedAccountID int64
 	requestedStart     time.Time
+	requestedStarts    []time.Time
 	windowStats        *usagestats.AccountStats
+	windowStatsByCall  []*usagestats.AccountStats
 }
 
 func (r *grokSevenDayUsageRepoStub) GetAccountWindowStats(_ context.Context, accountID int64, startTime time.Time) (*usagestats.AccountStats, error) {
 	r.requestedAccountID = accountID
 	r.requestedStart = startTime
+	r.requestedStarts = append(r.requestedStarts, startTime)
+	if index := len(r.requestedStarts) - 1; index < len(r.windowStatsByCall) {
+		return r.windowStatsByCall[index], nil
+	}
 	return r.windowStats, nil
 }
 
@@ -180,7 +186,10 @@ func TestAccountUsageService_GetGrokUsageAppliesOfficialBillingSnapshot(t *testi
 		},
 	}
 	repo := &grokSevenDayUsageRepoStub{
-		windowStats: &usagestats.AccountStats{Requests: 9, Tokens: 900, UserCost: 1.5},
+		windowStatsByCall: []*usagestats.AccountStats{
+			{Requests: 9, Tokens: 900, Cost: 1.1, StandardCost: 1.0, UserCost: 1.5},
+			{Requests: 30, Tokens: 3000, Cost: 3.1, StandardCost: 3.0, UserCost: 3.5},
+		},
 	}
 	svc := &AccountUsageService{usageLogRepo: repo, grokQuotaFetcher: NewGrokQuotaFetcher(), cache: NewUsageCache()}
 
@@ -197,6 +206,12 @@ func TestAccountUsageService_GetGrokUsageAppliesOfficialBillingSnapshot(t *testi
 	if usage.ThirtyDay == nil || usage.ThirtyDay.Utilization < 14 || usage.ThirtyDay.Utilization > 15 {
 		t.Fatalf("thirty_day = %+v, want ~14.6%%", usage.ThirtyDay)
 	}
+	if usage.ThirtyDay.WindowStats == nil || usage.ThirtyDay.WindowStats.Requests != 30 || usage.ThirtyDay.WindowStats.Tokens != 3000 {
+		t.Fatalf("thirty_day window stats = %+v, want requests=30 tokens=3000", usage.ThirtyDay.WindowStats)
+	}
+	if usage.ThirtyDay.WindowStats.Cost != 3.1 || usage.ThirtyDay.WindowStats.UserCost != 3.5 {
+		t.Fatalf("thirty_day billing stats = %+v, want account=3.1 user=3.5", usage.ThirtyDay.WindowStats)
+	}
 	if usage.GrokBilling == nil || usage.GrokBilling.MonthlyUsed != 2192 || usage.GrokBilling.MonthlyLimit != 15000 {
 		t.Fatalf("grok_billing = %+v", usage.GrokBilling)
 	}
@@ -207,8 +222,15 @@ func TestAccountUsageService_GetGrokUsageAppliesOfficialBillingSnapshot(t *testi
 		t.Fatalf("subscription_tier = %q, want GrokPro", usage.SubscriptionTier)
 	}
 	// Local stats window must align to official weekly period start.
-	if !repo.requestedStart.Equal(weekStart) && repo.requestedStart.Sub(weekStart).Abs() > time.Second {
-		t.Fatalf("window start = %v, want official weekly start %v", repo.requestedStart, weekStart)
+	if len(repo.requestedStarts) != 2 {
+		t.Fatalf("window stats query count = %d, want weekly and monthly", len(repo.requestedStarts))
+	}
+	if !repo.requestedStarts[0].Equal(weekStart) && repo.requestedStarts[0].Sub(weekStart).Abs() > time.Second {
+		t.Fatalf("weekly window start = %v, want %v", repo.requestedStarts[0], weekStart)
+	}
+	monthStart := time.Date(weekStart.Year(), weekStart.Month(), 1, 0, 0, 0, 0, time.UTC)
+	if !repo.requestedStarts[1].Equal(monthStart) {
+		t.Fatalf("monthly window start = %v, want %v", repo.requestedStarts[1], monthStart)
 	}
 	if usage.GrokLocalUsage == nil || usage.GrokLocalUsage.Requests != 9 {
 		t.Fatalf("grok_local_usage = %+v, want requests=9", usage.GrokLocalUsage)

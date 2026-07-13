@@ -340,7 +340,7 @@
     </template>
 
     <!-- Gemini platform: align with Antigravity-style family windows -->
-    <!-- Grok OAuth: local stats (aligned to official 7d) + 7d/30d credit + balance -->
+    <!-- Grok OAuth: 7d/30d credit with aligned local stats + balance -->
     <template v-else-if="account.platform === 'grok' && account.type === 'oauth'">
       <div v-if="loading" class="space-y-1.5">
         <div class="flex items-center gap-1">
@@ -353,18 +353,7 @@
         {{ error }}
       </div>
       <div v-else-if="hasGrokUsageContent" class="space-y-1">
-        <!-- Row 1: local Sub2API stats for the same window as official 7d -->
-        <div
-          v-if="grokLocalUsageSummary"
-          class="flex flex-wrap items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400"
-          :title="t('admin.accounts.usageWindow.grokLocalHint')"
-        >
-          <span>{{ grokLocalUsageSummary.requests }} req</span>
-          <span>{{ grokLocalUsageSummary.tokens }}</span>
-          <span :title="t('usage.accountBilled')">A ${{ grokLocalUsageSummary.accountCost }}</span>
-          <span :title="t('usage.userBilled')">U ${{ grokLocalUsageSummary.userCost }}</span>
-        </div>
-        <!-- Row 2: official weekly credit % -->
+        <!-- Row 1: official weekly credit % + aligned local stats -->
         <UsageProgressBar
           v-if="usageInfo?.seven_day"
           label="7d"
@@ -373,15 +362,16 @@
           :window-stats="usageInfo.seven_day.window_stats"
           color="emerald"
         />
-        <!-- Row 3: official monthly used/limit % -->
+        <!-- Row 2: official monthly used/limit % + aligned local stats -->
         <UsageProgressBar
           v-if="usageInfo?.thirty_day"
           label="30d"
           :utilization="usageInfo.thirty_day.utilization"
           :resets-at="usageInfo.thirty_day.resets_at"
+          :window-stats="usageInfo.thirty_day.window_stats"
           color="indigo"
         />
-        <!-- Row 4: prepaid / monthly used-limit / overage -->
+        <!-- Row 3: prepaid / monthly used-limit / overage -->
         <div
           v-if="grokBillingSummary"
           class="flex flex-wrap items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400"
@@ -743,18 +733,6 @@ const grokTokenQuotaProgress = computed(() => quotaWindowToProgress(usageInfo.va
 // Header-based req/token bars only when official 7d/30d billing is absent.
 const showGrokQuotaBars = computed(() => !usageInfo.value?.seven_day && !usageInfo.value?.thirty_day)
 
-const grokLocalUsageSummary = computed(() => {
-  // Prefer seven_day.window_stats (aligned to official weekly period) then grok_local_usage.
-  const stats = usageInfo.value?.seven_day?.window_stats ?? usageInfo.value?.grok_local_usage
-  if (!stats) return null
-  return {
-    requests: formatCompactNumber(stats.requests ?? 0, { allowBillions: false }),
-    tokens: formatCompactNumber(stats.tokens ?? 0),
-    accountCost: (stats.standard_cost ?? stats.cost ?? 0).toFixed(2),
-    userCost: (stats.user_cost ?? stats.cost ?? 0).toFixed(2)
-  }
-})
-
 const formatGrokMoney = (value?: number | null) => {
   if (value == null || Number.isNaN(value)) return '0'
   if (value >= 1000) return formatCompactNumber(value)
@@ -792,7 +770,7 @@ const hasGrokUsageContent = computed(() => {
     grokBillingSummary.value ||
     grokRequestQuotaProgress.value ||
     grokTokenQuotaProgress.value ||
-    grokLocalUsageSummary.value
+    info.grok_local_usage
   )
 })
 
