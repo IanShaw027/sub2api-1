@@ -42,6 +42,7 @@ type AdminHandlers struct {
 	ChannelMonitor         *admin.ChannelMonitorHandler
 	ChannelMonitorTemplate *admin.ChannelMonitorRequestTemplateHandler
 	ContentModeration      *admin.ContentModerationHandler
+	IPSecurity             *admin.IPSecurityHandler
 	Payment                *admin.PaymentHandler
 	CodexInviteReset       *admin.CodexInviteResetHandler
 }

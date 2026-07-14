@@ -144,21 +144,25 @@ type SystemSettings struct {
 	CustomMenuItems             string // JSON array of custom menu items
 	CustomEndpoints             string // JSON array of custom endpoints
 
-	DefaultConcurrency           int
-	DefaultBalance               float64
-	RiskControlEnabled           bool
-	CyberSessionBlockEnabled     bool
-	CyberSessionBlockTTLSeconds  int
-	AffiliateEnabled             bool
-	AffiliateRebateRate          float64
-	AffiliateRebateCap           float64
-	AffiliateRebateInviteeLimit  int
-	AffiliateSignupBonus         float64
-	AffiliateRebateFreezeHours   int
-	AffiliateRebateDurationDays  int
-	AffiliateRebatePerInviteeCap float64
-	DefaultUserRPMLimit          int
-	DefaultSubscriptions         []DefaultSubscriptionSetting
+	DefaultConcurrency             int
+	DefaultBalance                 float64
+	RiskControlEnabled             bool
+	CyberSessionBlockEnabled       bool
+	CyberSessionBlockTTLSeconds    int
+	IPMultiAccountBanEnabled       bool
+	IPMultiAccountBanWindowMinutes int
+	IPMultiAccountBanThreshold     int
+	IPMultiAccountBanLearningUntil string
+	AffiliateEnabled               bool
+	AffiliateRebateRate            float64
+	AffiliateRebateCap             float64
+	AffiliateRebateInviteeLimit    int
+	AffiliateSignupBonus           float64
+	AffiliateRebateFreezeHours     int
+	AffiliateRebateDurationDays    int
+	AffiliateRebatePerInviteeCap   float64
+	DefaultUserRPMLimit            int
+	DefaultSubscriptions           []DefaultSubscriptionSetting
 
 	// Model fallback configuration
 	EnableModelFallback      bool   `json:"enable_model_fallback"`
@@ -201,11 +205,11 @@ type SystemSettings struct {
 	BackendModeEnabled bool
 
 	// Gateway forwarding behavior
-	EnableFingerprintUnification           bool   // 是否统一 OAuth 账号的指纹头（默认 true）
-	EnableMetadataPassthrough              bool   // 是否透传客户端原始 metadata（默认 false）
-	ClaudeTelemetryMode                    string // Claude Code 遥测处理：drop/forward
+	EnableFingerprintUnification bool   // 是否统一 OAuth 账号的指纹头（默认 true）
+	EnableMetadataPassthrough    bool   // 是否透传客户端原始 metadata（默认 false）
+	ClaudeTelemetryMode          string // Claude Code 遥测处理：drop/forward
 	// GrokDefaultBaseURLMode 控制 Grok 未配置 credentials.base_url 时的默认上游：api | cli
-	GrokDefaultBaseURLMode string
+	GrokDefaultBaseURLMode                 string
 	GatewayDebugTimelineEnabled            bool
 	GatewayDebugTimelineDirectory          string
 	GatewayDebugTimelineRetentionDays      int

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -22,6 +23,8 @@ type jwtUserReader interface {
 // jwtAuth JWT认证中间件实现
 func jwtAuth(authService *service.AuthService, userService jwtUserReader) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		security := service.GlobalIPSecurityService()
+		clientIP := ip.GetTrustedClientIP(c)
 		// 从Authorization header中提取token
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -78,6 +81,9 @@ func jwtAuth(authService *service.AuthService, userService jwtUserReader) gin.Ha
 			Concurrency: user.Concurrency,
 		})
 		c.Set(string(ContextKeyUserRole), user.Role)
+		if security != nil {
+			security.Observe(c.Request.Context(), service.IPSecurityActivity{IPAddress: clientIP, PeerIP: ip.GetPeerIP(c), ForwardedFor: c.GetHeader("X-Forwarded-For"), UserID: user.ID, Source: service.IPSecuritySourceWeb, Method: c.Request.Method, Path: c.Request.URL.Path, RequestID: c.GetString("request_id")})
+		}
 
 		c.Next()
 	}

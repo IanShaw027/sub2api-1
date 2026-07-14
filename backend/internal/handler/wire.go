@@ -51,6 +51,7 @@ func ProvideAdminHandlers(
 	channelMonitorHandler *admin.ChannelMonitorHandler,
 	channelMonitorTemplateHandler *admin.ChannelMonitorRequestTemplateHandler,
 	contentModerationHandler *admin.ContentModerationHandler,
+	ipSecurityHandler *admin.IPSecurityHandler,
 	paymentHandler *admin.PaymentHandler,
 	codexInviteResetHandler *admin.CodexInviteResetHandler,
 ) *AdminHandlers {
@@ -91,6 +92,7 @@ func ProvideAdminHandlers(
 		ChannelMonitor:         channelMonitorHandler,
 		ChannelMonitorTemplate: channelMonitorTemplateHandler,
 		ContentModeration:      contentModerationHandler,
+		IPSecurity:             ipSecurityHandler,
 		Payment:                paymentHandler,
 		CodexInviteReset:       codexInviteResetHandler,
 	}
@@ -316,6 +318,7 @@ var ProviderSet = wire.NewSet(
 	ProvideChannelMonitorHandler,
 	admin.NewChannelMonitorRequestTemplateHandler,
 	admin.NewContentModerationHandler,
+	admin.NewIPSecurityHandler,
 	admin.NewPaymentHandler,
 	admin.NewCodexInviteResetHandler,
 

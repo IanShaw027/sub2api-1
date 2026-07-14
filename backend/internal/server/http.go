@@ -57,6 +57,7 @@ func ProvideRouter(
 			log.Printf("Warning: server.trusted_proxies is empty in release mode; client IP trust chain is disabled")
 		}
 	}
+	r.Use(middleware2.IPSecurityBlock())
 
 	// Wire up websearch Manager builder so it initializes on startup and rebuilds on config save.
 	settingService.SetWebSearchManagerBuilder(context.Background(), func(cfg *service.WebSearchEmulationConfig, proxyURLs map[int64]string) {

@@ -20,6 +20,10 @@ server:
   # Mode: "debug" for development, "release" for production
   # 运行模式："debug" 用于开发，"release" 用于生产环境
   mode: "release"
+  # Only the local nginx process may supply forwarded client IP headers.
+  trusted_proxies:
+    - "127.0.0.1/32"
+    - "::1/128"
   # Return Server-Timing for authenticated requests made by the Admin web UI
   # 为管理端 Web 页面发出的已认证请求返回 Server-Timing
   enable_server_timing: false

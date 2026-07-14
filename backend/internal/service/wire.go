@@ -19,6 +19,15 @@ func ProvideBatchImageModelPricingResolver(resolver *ModelPricingResolver) *Batc
 	return &BatchImageModelPricingResolver{Resolver: resolver}
 }
 
+func ProvideIPSecurityService(repo IPSecurityRepository, settings SettingRepository, rdb *redis.Client) *IPSecurityService {
+	svc := NewIPSecurityService(repo, settings, rdb)
+	if err := svc.WarmCache(context.Background()); err != nil {
+		logger.LegacyPrintf("service.ip_security", "failed to warm IP security cache: %v", err)
+	}
+	SetGlobalIPSecurityService(svc)
+	return svc
+}
+
 func ProvideBatchImageCleanupService(repo BatchImageRepository, accountRepo AccountRepository, cfg *config.Config) *BatchImageCleanupService {
 	svc := NewBatchImageCleanupService(repo, accountRepo, cfg)
 	svc.Start()
@@ -885,6 +894,7 @@ func ProvideGatewayService(
 
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
+	ProvideIPSecurityService,
 	// Core services
 	NewAuthService,
 	ProvideUserService,

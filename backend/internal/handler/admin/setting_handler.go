@@ -616,6 +616,10 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		DefaultBalance:                         settings.DefaultBalance,
 		AffiliateEnabled:                       settings.AffiliateEnabled,
 		RiskControlEnabled:                     settings.RiskControlEnabled,
+		IPMultiAccountBanEnabled:               settings.IPMultiAccountBanEnabled,
+		IPMultiAccountBanWindowMinutes:         settings.IPMultiAccountBanWindowMinutes,
+		IPMultiAccountBanThreshold:             settings.IPMultiAccountBanThreshold,
+		IPMultiAccountBanLearningUntil:         settings.IPMultiAccountBanLearningUntil,
 		CyberSessionBlockEnabled:               settings.CyberSessionBlockEnabled,
 		CyberSessionBlockTTLSeconds:            settings.CyberSessionBlockTTLSeconds,
 		AffiliateRebateRate:                    settings.AffiliateRebateRate,
@@ -1161,7 +1165,11 @@ type UpdateSettingsRequest struct {
 	AvailableChannelsEnabled *bool `json:"available_channels_enabled"`
 
 	// 风控中心功能开关
-	RiskControlEnabled *bool `json:"risk_control_enabled"`
+	RiskControlEnabled             *bool   `json:"risk_control_enabled"`
+	IPMultiAccountBanEnabled       *bool   `json:"ip_multi_account_ban_enabled"`
+	IPMultiAccountBanWindowMinutes *int    `json:"ip_multi_account_ban_window_minutes"`
+	IPMultiAccountBanThreshold     *int    `json:"ip_multi_account_ban_threshold"`
+	IPMultiAccountBanLearningUntil *string `json:"ip_multi_account_ban_learning_until"`
 
 	// cyber 会话屏蔽开关 + TTL
 	CyberSessionBlockEnabled    *bool `json:"cyber_session_block_enabled"`
@@ -2317,6 +2325,20 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		response.BadRequest(c, "cyber_session_block_ttl_seconds must be > 0")
 		return
 	}
+	if req.IPMultiAccountBanWindowMinutes != nil && (*req.IPMultiAccountBanWindowMinutes < 1 || *req.IPMultiAccountBanWindowMinutes > 1440) {
+		response.BadRequest(c, "ip_multi_account_ban_window_minutes must be between 1 and 1440")
+		return
+	}
+	if req.IPMultiAccountBanThreshold != nil && (*req.IPMultiAccountBanThreshold < 2 || *req.IPMultiAccountBanThreshold > 100) {
+		response.BadRequest(c, "ip_multi_account_ban_threshold must be between 2 and 100")
+		return
+	}
+	if req.IPMultiAccountBanLearningUntil != nil && strings.TrimSpace(*req.IPMultiAccountBanLearningUntil) != "" {
+		if _, err := time.Parse(time.RFC3339, strings.TrimSpace(*req.IPMultiAccountBanLearningUntil)); err != nil {
+			response.BadRequest(c, "ip_multi_account_ban_learning_until must be RFC3339 or empty")
+			return
+		}
+	}
 
 	settings := &service.SystemSettings{
 		// 系统全局 platform quota 默认值（整体替换语义）
@@ -2930,6 +2952,30 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.RiskControlEnabled
 		}(),
+		IPMultiAccountBanEnabled: func() bool {
+			if req.IPMultiAccountBanEnabled != nil {
+				return *req.IPMultiAccountBanEnabled
+			}
+			return previousSettings.IPMultiAccountBanEnabled
+		}(),
+		IPMultiAccountBanWindowMinutes: func() int {
+			if req.IPMultiAccountBanWindowMinutes != nil {
+				return *req.IPMultiAccountBanWindowMinutes
+			}
+			return previousSettings.IPMultiAccountBanWindowMinutes
+		}(),
+		IPMultiAccountBanThreshold: func() int {
+			if req.IPMultiAccountBanThreshold != nil {
+				return *req.IPMultiAccountBanThreshold
+			}
+			return previousSettings.IPMultiAccountBanThreshold
+		}(),
+		IPMultiAccountBanLearningUntil: func() string {
+			if req.IPMultiAccountBanLearningUntil != nil {
+				return strings.TrimSpace(*req.IPMultiAccountBanLearningUntil)
+			}
+			return previousSettings.IPMultiAccountBanLearningUntil
+		}(),
 		CyberSessionBlockEnabled: func() bool {
 			if req.CyberSessionBlockEnabled != nil {
 				return *req.CyberSessionBlockEnabled
@@ -3336,12 +3382,16 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ChannelMonitorEnabled:                updatedSettings.ChannelMonitorEnabled,
 		ChannelMonitorDefaultIntervalSeconds: updatedSettings.ChannelMonitorDefaultIntervalSeconds,
 
-		AvailableChannelsEnabled:    updatedSettings.AvailableChannelsEnabled,
-		RiskControlEnabled:          updatedSettings.RiskControlEnabled,
-		CyberSessionBlockEnabled:    updatedSettings.CyberSessionBlockEnabled,
-		CyberSessionBlockTTLSeconds: updatedSettings.CyberSessionBlockTTLSeconds,
-		AccountSchedulingThresholds: updatedSettings.AccountSchedulingThresholds,
-		AllowUserViewErrorRequests:  updatedSettings.AllowUserViewErrorRequests,
+		AvailableChannelsEnabled:       updatedSettings.AvailableChannelsEnabled,
+		RiskControlEnabled:             updatedSettings.RiskControlEnabled,
+		IPMultiAccountBanEnabled:       updatedSettings.IPMultiAccountBanEnabled,
+		IPMultiAccountBanWindowMinutes: updatedSettings.IPMultiAccountBanWindowMinutes,
+		IPMultiAccountBanThreshold:     updatedSettings.IPMultiAccountBanThreshold,
+		IPMultiAccountBanLearningUntil: updatedSettings.IPMultiAccountBanLearningUntil,
+		CyberSessionBlockEnabled:       updatedSettings.CyberSessionBlockEnabled,
+		CyberSessionBlockTTLSeconds:    updatedSettings.CyberSessionBlockTTLSeconds,
+		AccountSchedulingThresholds:    updatedSettings.AccountSchedulingThresholds,
+		AllowUserViewErrorRequests:     updatedSettings.AllowUserViewErrorRequests,
 	}
 	if fastPolicy, err := h.settingService.GetOpenAIFastPolicySettings(c.Request.Context()); err != nil {
 		slog.Error("openai_fast_policy_settings_get_failed", "error", err)
@@ -3970,6 +4020,18 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.RiskControlEnabled != after.RiskControlEnabled {
 		changed = append(changed, "risk_control_enabled")
+	}
+	if before.IPMultiAccountBanEnabled != after.IPMultiAccountBanEnabled {
+		changed = append(changed, "ip_multi_account_ban_enabled")
+	}
+	if before.IPMultiAccountBanWindowMinutes != after.IPMultiAccountBanWindowMinutes {
+		changed = append(changed, "ip_multi_account_ban_window_minutes")
+	}
+	if before.IPMultiAccountBanThreshold != after.IPMultiAccountBanThreshold {
+		changed = append(changed, "ip_multi_account_ban_threshold")
+	}
+	if before.IPMultiAccountBanLearningUntil != after.IPMultiAccountBanLearningUntil {
+		changed = append(changed, "ip_multi_account_ban_learning_until")
 	}
 	if before.CyberSessionBlockEnabled != after.CyberSessionBlockEnabled {
 		changed = append(changed, "cyber_session_block_enabled")

@@ -28,6 +28,8 @@ func NewAPIKeyAuthMiddleware(apiKeyService *service.APIKeyService, subscriptionS
 // /v1/usage 端点只需鉴权，不需要计费执行（允许过期/配额耗尽的 Key 查询自身用量）。
 func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		security := service.GlobalIPSecurityService()
+		clientIP := ip.GetTrustedClientIP(c)
 		// ── 1. 提取 API Key ──────────────────────────────────────────
 
 		queryKey := strings.TrimSpace(c.Query("key"))
@@ -140,6 +142,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			c.Set(string(ContextKeyUserRole), apiKey.User.Role)
 			setGroupContext(c, apiKey.Group)
 			_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
+			if security != nil {
+				security.Observe(c.Request.Context(), service.IPSecurityActivity{IPAddress: clientIP, PeerIP: ip.GetPeerIP(c), ForwardedFor: c.GetHeader("X-Forwarded-For"), UserID: apiKey.User.ID, Source: service.IPSecuritySourceAPIKey, APIKeyID: apiKey.ID, Method: c.Request.Method, Path: c.Request.URL.Path, RequestID: c.GetString("request_id")})
+			}
 			c.Next()
 			return
 		}
@@ -232,6 +237,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		c.Set(string(ContextKeyUserRole), apiKey.User.Role)
 		setGroupContext(c, apiKey.Group)
 		_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
+		if security != nil {
+			security.Observe(c.Request.Context(), service.IPSecurityActivity{IPAddress: clientIP, PeerIP: ip.GetPeerIP(c), ForwardedFor: c.GetHeader("X-Forwarded-For"), UserID: apiKey.User.ID, Source: service.IPSecuritySourceAPIKey, APIKeyID: apiKey.ID, Method: c.Request.Method, Path: c.Request.URL.Path, RequestID: c.GetString("request_id")})
+		}
 
 		c.Next()
 	}

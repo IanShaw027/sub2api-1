@@ -111,9 +111,21 @@ func RegisterAdminRoutes(
 
 		// 风控中心
 		registerContentModerationRoutes(admin, h)
+		registerIPSecurityRoutes(admin, h)
 
 		// AI 创作中心治理
 		registerAdminAIRoutes(admin, h, settingService)
+	}
+}
+
+func registerIPSecurityRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	security := admin.Group("/ip-security")
+	{
+		security.GET("/config", h.Admin.IPSecurity.GetConfig)
+		security.GET("/bans", h.Admin.IPSecurity.ListBans)
+		security.GET("/bans/:id", h.Admin.IPSecurity.GetBan)
+		security.POST("/bans/:id/release", h.Admin.IPSecurity.ReleaseBan)
+		security.POST("/bans/:id/remove-whitelist", h.Admin.IPSecurity.RemoveWhitelist)
 	}
 }
 

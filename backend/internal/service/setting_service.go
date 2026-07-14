@@ -1143,6 +1143,20 @@ func parseChannelMonitorInterval(raw string) int {
 	return clampChannelMonitorInterval(v)
 }
 
+func parseBoundedSettingInt(raw string, fallback, min, max int) int {
+	v, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return fallback
+	}
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
 // clampChannelMonitorInterval clamps v to the allowed range. 0 means "not provided".
 func clampChannelMonitorInterval(v int) int {
 	if v <= 0 {
@@ -2213,6 +2227,9 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	err = s.settingRepo.SetMultiple(ctx, updates)
 	if err == nil {
 		s.refreshCachedSettings(settings)
+		if ipSecurity := GlobalIPSecurityService(); ipSecurity != nil {
+			ipSecurity.InvalidateConfig()
+		}
 		triggerOpenAIWSPoolReconcileIfRuntimeSettingsChanged(settings, prevPoolSettings)
 		// Hot-apply anti-ban platform toggles
 		SetRuntimeAntiBanPlatforms(settings.AntiBanPlatforms)
@@ -2269,6 +2286,9 @@ func (s *SettingService) UpdateSettingsWithAuthSourceDefaults(ctx context.Contex
 	err = s.settingRepo.SetMultiple(ctx, updates)
 	if err == nil {
 		s.refreshCachedSettings(settings)
+		if ipSecurity := GlobalIPSecurityService(); ipSecurity != nil {
+			ipSecurity.InvalidateConfig()
+		}
 		triggerOpenAIWSPoolReconcileIfRuntimeSettingsChanged(settings, prevPoolSettings)
 		// Hot-apply anti-ban platform toggles
 		SetRuntimeAntiBanPlatforms(settings.AntiBanPlatforms)
@@ -2687,6 +2707,14 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 
 	// 风控中心功能开关
 	updates[SettingKeyRiskControlEnabled] = strconv.FormatBool(settings.RiskControlEnabled)
+	ipSecurityCfg := normalizeIPSecurityConfig(IPSecurityConfig{
+		WindowMinutes:    settings.IPMultiAccountBanWindowMinutes,
+		AccountThreshold: settings.IPMultiAccountBanThreshold,
+	})
+	updates[SettingKeyIPMultiAccountBanEnabled] = strconv.FormatBool(settings.IPMultiAccountBanEnabled)
+	updates[SettingKeyIPMultiAccountBanWindowMinutes] = strconv.Itoa(ipSecurityCfg.WindowMinutes)
+	updates[SettingKeyIPMultiAccountBanThreshold] = strconv.Itoa(ipSecurityCfg.AccountThreshold)
+	updates[SettingKeyIPMultiAccountBanLearningUntil] = strings.TrimSpace(settings.IPMultiAccountBanLearningUntil)
 
 	// cyber 会话屏蔽开关 + TTL
 	updates[SettingKeyCyberSessionBlockEnabled] = strconv.FormatBool(settings.CyberSessionBlockEnabled)
@@ -4208,7 +4236,11 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyAvailableChannelsEnabled: "false",
 
 		// 风控中心功能（默认关闭，显式启用）
-		SettingKeyRiskControlEnabled: "false",
+		SettingKeyRiskControlEnabled:             "false",
+		SettingKeyIPMultiAccountBanEnabled:       "false",
+		SettingKeyIPMultiAccountBanWindowMinutes: "10",
+		SettingKeyIPMultiAccountBanThreshold:     "4",
+		SettingKeyIPMultiAccountBanLearningUntil: "",
 
 		// cyber 会话屏蔽（默认关闭，TTL 默认 3600s）
 		SettingKeyCyberSessionBlockEnabled:    "false",
@@ -4672,6 +4704,10 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 
 	// 风控中心功能（默认关闭，严格 true 才启用）
 	result.RiskControlEnabled = settings[SettingKeyRiskControlEnabled] == "true"
+	result.IPMultiAccountBanEnabled = settings[SettingKeyIPMultiAccountBanEnabled] == "true"
+	result.IPMultiAccountBanWindowMinutes = parseBoundedSettingInt(settings[SettingKeyIPMultiAccountBanWindowMinutes], 10, 1, 1440)
+	result.IPMultiAccountBanThreshold = parseBoundedSettingInt(settings[SettingKeyIPMultiAccountBanThreshold], 4, 2, 100)
+	result.IPMultiAccountBanLearningUntil = strings.TrimSpace(settings[SettingKeyIPMultiAccountBanLearningUntil])
 
 	// cyber 会话屏蔽（默认关闭，TTL 默认 3600s）
 	result.CyberSessionBlockEnabled = settings[SettingKeyCyberSessionBlockEnabled] == "true"

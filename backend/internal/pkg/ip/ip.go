@@ -54,6 +54,14 @@ func GetTrustedClientIP(c *gin.Context) string {
 	return normalizeIP(c.ClientIP())
 }
 
+// GetPeerIP returns the direct TCP peer without consulting forwarding headers.
+func GetPeerIP(c *gin.Context) string {
+	if c == nil || c.Request == nil {
+		return ""
+	}
+	return normalizeIP(c.Request.RemoteAddr)
+}
+
 // normalizeIP 规范化 IP 地址，去除端口号和空格。
 func normalizeIP(ip string) string {
 	ip = strings.TrimSpace(ip)

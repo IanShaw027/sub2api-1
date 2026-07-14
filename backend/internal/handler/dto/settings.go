@@ -190,9 +190,9 @@ type SystemSettings struct {
 	BackendModeEnabled bool `json:"backend_mode_enabled"`
 
 	// Gateway forwarding behavior
-	EnableFingerprintUnification           bool   `json:"enable_fingerprint_unification"`
-	EnableMetadataPassthrough              bool   `json:"enable_metadata_passthrough"`
-	ClaudeTelemetryMode                    string `json:"claude_telemetry_mode"`
+	EnableFingerprintUnification bool   `json:"enable_fingerprint_unification"`
+	EnableMetadataPassthrough    bool   `json:"enable_metadata_passthrough"`
+	ClaudeTelemetryMode          string `json:"claude_telemetry_mode"`
 	// GrokDefaultBaseURLMode: api | cli — default upstream for Grok accounts without credentials.base_url
 	GrokDefaultBaseURLMode                 string `json:"grok_default_base_url_mode"`
 	GatewayDebugTimelineEnabled            bool   `json:"gateway_debug_timeline_enabled"`
@@ -326,7 +326,11 @@ type SystemSettings struct {
 	TicketEnabled bool `json:"ticket_enabled"`
 
 	// 风控中心功能开关
-	RiskControlEnabled bool `json:"risk_control_enabled"`
+	RiskControlEnabled             bool   `json:"risk_control_enabled"`
+	IPMultiAccountBanEnabled       bool   `json:"ip_multi_account_ban_enabled"`
+	IPMultiAccountBanWindowMinutes int    `json:"ip_multi_account_ban_window_minutes"`
+	IPMultiAccountBanThreshold     int    `json:"ip_multi_account_ban_threshold"`
+	IPMultiAccountBanLearningUntil string `json:"ip_multi_account_ban_learning_until"`
 
 	// cyber 会话屏蔽开关 + TTL
 	CyberSessionBlockEnabled    bool `json:"cyber_session_block_enabled"`

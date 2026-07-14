@@ -304,6 +304,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	if lastLoginAt := h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID); lastLoginAt != nil {
 		user.LastLoginAt = lastLoginAt
 	}
+	if security := service.GlobalIPSecurityService(); security != nil {
+		security.Observe(c.Request.Context(), service.IPSecurityActivity{IPAddress: ip.GetTrustedClientIP(c), PeerIP: ip.GetPeerIP(c), ForwardedFor: c.GetHeader("X-Forwarded-For"), UserID: user.ID, Source: service.IPSecuritySourceWeb, Method: c.Request.Method, Path: c.Request.URL.Path, RequestID: c.GetString("request_id")})
+	}
 
 	h.respondWithTokenPair(c, user)
 }
@@ -443,6 +446,9 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 		}
 	}
 
+	if security := service.GlobalIPSecurityService(); security != nil {
+		security.Observe(c.Request.Context(), service.IPSecurityActivity{IPAddress: ip.GetTrustedClientIP(c), PeerIP: ip.GetPeerIP(c), ForwardedFor: c.GetHeader("X-Forwarded-For"), UserID: user.ID, Source: service.IPSecuritySourceWeb, Method: c.Request.Method, Path: c.Request.URL.Path, RequestID: c.GetString("request_id")})
+	}
 	h.respondWithTokenPair(c, user)
 }
 

@@ -185,6 +185,12 @@ const (
 	// API Key IP 访问控制设置
 	SettingKeyAPIKeyACLTrustForwardedIP = "api_key_acl_trust_forwarded_ip" // API Key IP 白/黑名单是否信任转发 IP
 
+	// 异常 IP 多账号封禁设置
+	SettingKeyIPMultiAccountBanEnabled       = "ip_multi_account_ban_enabled"
+	SettingKeyIPMultiAccountBanWindowMinutes = "ip_multi_account_ban_window_minutes"
+	SettingKeyIPMultiAccountBanThreshold     = "ip_multi_account_ban_threshold"
+	SettingKeyIPMultiAccountBanLearningUntil = "ip_multi_account_ban_learning_until"
+
 	// TOTP 双因素认证设置
 	SettingKeyTotpEnabled = "totp_enabled" // 是否启用 TOTP 2FA 功能
 
