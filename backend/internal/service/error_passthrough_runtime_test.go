@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/model"
@@ -542,6 +543,27 @@ func TestOpenAIHandleErrorResponse_SetsResponseCommitted(t *testing.T) {
 	_, err := svc.handleErrorResponse(context.Background(), resp, c, account, nil)
 	require.Error(t, err)
 	assert.True(t, IsResponseCommitted(c), "OpenAI non-failover path must mark response committed")
+}
+
+func TestOpenAIHandleErrorResponse_ClientVisibleErrorSetsResponseCommitted(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	svc := &OpenAIGatewayService{}
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body:       io.NopCloser(bytes.NewReader([]byte(`{"error":{"message":"Invalid 'input[18].id': 'fc_ctc_bad'. Expected an ID that begins with 'ctc'."}}`))),
+		Header:     http.Header{},
+	}
+	account := &Account{ID: 102, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	_, err := svc.handleErrorResponse(context.Background(), resp, c, account, nil)
+
+	require.Error(t, err)
+	assert.True(t, IsResponseCommitted(c), "client-visible upstream errors must not receive a second fallback body")
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, 1, strings.Count(rec.Body.String(), `"error"`))
 }
 
 func TestGeminiWriteGeminiMappedError_SetsResponseCommitted(t *testing.T) {
