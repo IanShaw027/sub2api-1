@@ -488,9 +488,7 @@ func (r *proxyRepository) ListAllForFallback(ctx context.Context) ([]service.Pro
 
 // SweepExpiredProxies 扫描到期 active 代理，标记 expired 并按 fallback 策略改写绑定账号的 proxy_id，
 // 最终触发 scheduler outbox 使 Redis 快照缓存失效。返回受影响的账号行数。
-// 原子性边界：每个过期代理的「标记 expired + 改投账号」在各自子事务内原子执行（见 sweepOneExpiredProxy）；
-// 全部代理处理完后若有账号被改投，再统一 enqueue 一次 account_bulk_changed 事件——该 enqueue 在子事务之外
-// （走 r.sql、失败仅记日志、由调度器周期性 full rebuild 兜底），故「改投 → 失效」整体并非原子。
+// 代理状态、账号改投与 account_bulk_changed outbox 在同一事务内提交。
 func (r *proxyRepository) SweepExpiredProxies(ctx context.Context, now time.Time) (int64, error) {
 	// 快照读（事务前）：允许脏读不影响正确性，事务内已加锁写。
 	all, err := r.ListAllForFallback(ctx)
@@ -504,6 +502,16 @@ func (r *proxyRepository) SweepExpiredProxies(ctx context.Context, now time.Time
 
 	var totalChanged int64
 	allChangedAccountIDs := make([]int64, 0)
+	exec := r.sql
+	var tx *sql.Tx
+	if db, ok := r.sql.(*sql.DB); ok {
+		tx, err = db.BeginTx(ctx, nil)
+		if err != nil {
+			return 0, err
+		}
+		defer func() { _ = tx.Rollback() }()
+		exec = tx
+	}
 
 	for _, p := range all {
 		if p.Status != service.StatusActive || !p.IsExpired(now) {
@@ -516,9 +524,9 @@ func (r *proxyRepository) SweepExpiredProxies(ctx context.Context, now time.Time
 			logger.LegacyPrintf("repository.proxy", "[ProxyExpiry] proxy %d expired but fallback chain unresolved (cycle/all-expired); accounts kept", p.ID)
 		}
 
-		changedAccountIDs, sweepErr := r.sweepOneExpiredProxy(ctx, p.ID, target, change)
+		changedAccountIDs, sweepErr := r.sweepOneExpiredProxyOnExec(ctx, exec, p.ID, target, change)
 		if sweepErr != nil {
-			return totalChanged, sweepErr
+			return 0, sweepErr
 		}
 		totalChanged += int64(len(changedAccountIDs))
 		allChangedAccountIDs = append(allChangedAccountIDs, changedAccountIDs...)
@@ -529,8 +537,13 @@ func (r *proxyRepository) SweepExpiredProxies(ctx context.Context, now time.Time
 		// 各代理的改投事务已经提交；这里仅汇总真实被 UPDATE 命中的账号，
 		// 避免代理到期时用全量重建刷新所有调度分桶。
 		payload := map[string]any{"account_ids": changedAccountIDs}
-		if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountBulkChanged, nil, nil, payload); err != nil {
-			logger.LegacyPrintf("repository.proxy", "[SchedulerOutbox] enqueue proxy expiry account changes failed: err=%v", err)
+		if err := enqueueSchedulerOutbox(ctx, exec, service.SchedulerOutboxEventAccountBulkChanged, nil, nil, payload); err != nil {
+			return 0, err
+		}
+	}
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return 0, err
 		}
 	}
 	return totalChanged, nil
@@ -550,33 +563,6 @@ func sortedUniqueAccountIDs(accountIDs []int64) []int64 {
 		write++
 	}
 	return accountIDs[:write]
-}
-
-// sweepOneExpiredProxy 在单事务内原子执行：标记代理 expired + 改投绑定账号。
-// 若 r.client 已绑定事务（测试注入场景），直接在 r.sql 上执行，由外层事务保证原子性。
-func (r *proxyRepository) sweepOneExpiredProxy(ctx context.Context, proxyID int64, target *int64, change bool) ([]int64, error) {
-	// 尝试开启子事务；若 r.client 已是事务 client，则返回 ErrTxStarted，退回使用 r.sql。
-	tx, txErr := r.client.Tx(ctx)
-	if txErr != nil {
-		if txErr != dbent.ErrTxStarted {
-			return nil, txErr
-		}
-		// 已在外层事务中（集成测试场景），直接用 r.sql 执行
-		return r.sweepOneExpiredProxyOnExec(ctx, r.sql, proxyID, target, change)
-	}
-
-	// 使用新事务执行
-	var accountIDs []int64
-	var err error
-	accountIDs, err = r.sweepOneExpiredProxyOnExec(ctx, tx, proxyID, target, change)
-	if err != nil {
-		_ = tx.Rollback()
-		return nil, err
-	}
-	if commitErr := tx.Commit(); commitErr != nil {
-		return nil, commitErr
-	}
-	return accountIDs, nil
 }
 
 // sweepOneExpiredProxyOnExec 在给定的 sqlExecutor 上执行：标记 expired + 改投账号。

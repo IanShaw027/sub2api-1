@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"regexp"
 	"testing"
@@ -38,12 +39,14 @@ func TestAutoPauseExpiredAccountsEnqueuesAffectedAccounts(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	now := time.Now()
+	mock.ExpectBegin()
 	mock.ExpectQuery(`(?s)UPDATE accounts.*RETURNING id`).
 		WithArgs(now).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(11)).AddRow(int64(29)))
-	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO scheduler_outbox (event_type, account_id, group_id, payload)")).
-		WithArgs(service.SchedulerOutboxEventAccountBulkChanged, nil, nil, accountIDsPayloadMatcher{want: []int64{11, 29}}).
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO scheduler_outbox (event_type, account_id, group_id, payload, dedup_key)")).
+		WithArgs(service.SchedulerOutboxEventAccountBulkChanged, nil, nil, accountIDsPayloadMatcher{want: []int64{11, 29}}, sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
 
 	repo := newAccountRepositoryWithSQL(nil, db, nil)
 	updated, err := repo.AutoPauseExpiredAccounts(context.Background(), now)
@@ -59,14 +62,39 @@ func TestAutoPauseExpiredAccountsSkipsOutboxWithoutChanges(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	now := time.Now()
+	mock.ExpectBegin()
 	mock.ExpectQuery(`(?s)UPDATE accounts.*RETURNING id`).
 		WithArgs(now).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectCommit()
 
 	repo := newAccountRepositoryWithSQL(nil, db, nil)
 	updated, err := repo.AutoPauseExpiredAccounts(context.Background(), now)
 
 	require.NoError(t, err)
+	require.Zero(t, updated)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAutoPauseExpiredAccountsRollsBackWhenOutboxEnqueueFails(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	now := time.Now()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`(?s)UPDATE accounts.*RETURNING id`).
+		WithArgs(now).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(11)))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO scheduler_outbox (event_type, account_id, group_id, payload, dedup_key)")).
+		WithArgs(service.SchedulerOutboxEventAccountBulkChanged, nil, nil, accountIDsPayloadMatcher{want: []int64{11}}, sqlmock.AnyArg()).
+		WillReturnError(errors.New("outbox unavailable"))
+	mock.ExpectRollback()
+
+	repo := newAccountRepositoryWithSQL(nil, db, nil)
+	updated, err := repo.AutoPauseExpiredAccounts(context.Background(), now)
+
+	require.ErrorContains(t, err, "outbox unavailable")
 	require.Zero(t, updated)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

@@ -12,21 +12,20 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
+const opsSystemLogHostMaxLength = 255
+
 func (s *OpsService) ListSystemLogs(ctx context.Context, filter *OpsSystemLogFilter) (*OpsSystemLogList, error) {
 	if err := s.RequireMonitoringEnabled(ctx); err != nil {
 		return nil, err
 	}
-	if s.opsRepo == nil {
-		return &OpsSystemLogList{
-			Logs:     []*OpsSystemLog{},
-			Total:    0,
-			Page:     1,
-			PageSize: 50,
-		}, nil
-	}
 	if filter == nil {
 		filter = &OpsSystemLogFilter{}
 	}
+	host, err := normalizeOpsSystemLogHost(filter.Host)
+	if err != nil {
+		return nil, err
+	}
+	filter.Host = host
 	if filter.Page <= 0 {
 		filter.Page = 1
 	}
@@ -35,6 +34,14 @@ func (s *OpsService) ListSystemLogs(ctx context.Context, filter *OpsSystemLogFil
 	}
 	if filter.PageSize > 200 {
 		filter.PageSize = 200
+	}
+	if s.opsRepo == nil {
+		return &OpsSystemLogList{
+			Logs:     []*OpsSystemLog{},
+			Total:    0,
+			Page:     filter.Page,
+			PageSize: filter.PageSize,
+		}, nil
 	}
 
 	result, err := s.opsRepo.ListSystemLogs(ctx, filter)
@@ -57,6 +64,11 @@ func (s *OpsService) CleanupSystemLogs(ctx context.Context, filter *OpsSystemLog
 	if filter == nil {
 		filter = &OpsSystemLogCleanupFilter{}
 	}
+	host, err := normalizeOpsSystemLogHost(filter.Host)
+	if err != nil {
+		return 0, err
+	}
+	filter.Host = host
 	if filter.EndTime != nil && filter.StartTime != nil && filter.StartTime.After(*filter.EndTime) {
 		return 0, infraerrors.BadRequest("OPS_SYSTEM_LOG_CLEANUP_INVALID_RANGE", "invalid time range")
 	}
@@ -82,6 +94,17 @@ func (s *OpsService) CleanupSystemLogs(ctx context.Context, filter *OpsSystemLog
 		log.Printf("[OpsSystemLog] cleanup audit failed: %v", auditErr)
 	}
 	return deletedRows, nil
+}
+
+func normalizeOpsSystemLogHost(raw string) (string, error) {
+	host := strings.TrimSpace(raw)
+	if len(host) > opsSystemLogHostMaxLength {
+		return "", infraerrors.BadRequest(
+			"OPS_SYSTEM_LOG_HOST_TOO_LONG",
+			"host must not exceed 255 bytes",
+		)
+	}
+	return host, nil
 }
 
 func marshalSystemLogCleanupConditions(filter *OpsSystemLogCleanupFilter) string {

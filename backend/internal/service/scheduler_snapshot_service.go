@@ -16,11 +16,14 @@ import (
 var (
 	ErrSchedulerCacheNotReady   = errors.New("scheduler cache not ready")
 	ErrSchedulerFallbackLimited = errors.New("scheduler db fallback limited")
+	ErrSchedulerBucketLocked    = errors.New("scheduler bucket rebuild already in progress")
+	ErrSchedulerOutboxClaimLost = errors.New("scheduler outbox claim lost before acknowledgement")
 )
 
 const (
-	outboxEventTimeout          = 2 * time.Minute
-	schedulerOutboxCleanupBatch = 5000
+	outboxEventTimeout = 2 * time.Minute
+	outboxClaimLease   = outboxEventTimeout + 30*time.Second
+	outboxPollBatch    = 200
 )
 
 type schedulerBucketLockTokenContextKey struct{}
@@ -357,88 +360,52 @@ func (s *SchedulerSnapshotService) pollOutbox() {
 	if s.outboxRepo == nil || s.cache == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	watermark, err := s.cache.GetOutboxWatermark(ctx)
-	if err != nil {
-		logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] outbox watermark read failed: %v", err)
-		return
-	}
-
-	events, err := s.outboxRepo.ListAfterAndReleaseDedup(ctx, watermark, 200)
-	if err != nil {
-		logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] outbox poll failed: %v", err)
-		return
-	}
-	if len(events) == 0 {
-		return
-	}
 
 	seen := make(map[batchSeenKey]struct{})
-	for _, event := range events {
+	for range outboxPollBatch {
+		claimCtx, claimCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		event, err := s.outboxRepo.ClaimPending(claimCtx, outboxClaimLease)
+		claimCancel()
+		if err != nil {
+			logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] outbox claim failed: %v", err)
+			return
+		}
+		if event == nil {
+			break
+		}
+
 		eventCtx, cancel := context.WithTimeout(context.Background(), outboxEventTimeout)
-		err := s.handleOutboxEvent(eventCtx, event, seen)
+		err = s.handleOutboxEvent(eventCtx, *event, seen)
 		cancel()
 		if err != nil {
+			s.releaseOutboxClaim(*event)
 			logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] outbox handle failed: id=%d type=%s err=%v", event.ID, event.EventType, err)
 			return
 		}
-	}
 
-	lastID := events[len(events)-1].ID
-	var wmErr error
-	for i := range 3 {
-		wmCtx, wmCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		wmErr = s.cache.SetOutboxWatermark(wmCtx, lastID)
-		wmCancel()
-		if wmErr == nil {
-			break
+		ackCtx, ackCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		acked, ackErr := s.outboxRepo.AckClaim(ackCtx, event.ID, event.ClaimToken)
+		ackCancel()
+		if ackErr != nil {
+			logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] outbox ack failed: id=%d type=%s err=%v", event.ID, event.EventType, ackErr)
+			return
 		}
-		if i < 2 {
-			time.Sleep(200 * time.Millisecond)
+		if !acked {
+			logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] outbox ack failed: id=%d type=%s err=%v", event.ID, event.EventType, ErrSchedulerOutboxClaimLost)
+			return
 		}
 	}
-	if wmErr != nil {
-		logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] outbox watermark write failed: %v", wmErr)
-		return
-	}
-	s.cleanupConsumedOutbox(lastID)
 
-	// 只有 watermark 成功推进后，当前批次才算已消费。延迟必须按下一条待消费事件计算，
-	// 否则本批次处理越慢，越容易误触发一次更慢的全量重建，形成正反馈。
 	lagCtx, lagCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	s.checkOutboxLag(lagCtx, lastID)
+	s.checkOutboxLag(lagCtx)
 	lagCancel()
 }
 
-func (s *SchedulerSnapshotService) cleanupConsumedOutbox(watermark int64) {
-	if s == nil || s.outboxRepo == nil || watermark <= 0 {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func (s *SchedulerSnapshotService) releaseOutboxClaim(event SchedulerOutboxEvent) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
-	lease, acquired, err := s.outboxRepo.TryAcquireCleanupLock(ctx)
-	if err != nil {
-		logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] outbox cleanup lock failed: %v", err)
-		return
-	}
-	if !acquired {
-		return
-	}
-	defer lease.Release()
-
-	for {
-		deleted, err := s.outboxRepo.DeleteConsumedUpTo(ctx, watermark, schedulerOutboxCleanupBatch)
-		if err != nil {
-			logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] outbox cleanup failed: watermark=%d err=%v", watermark, err)
-			return
-		}
-		if deleted == 0 || deleted < schedulerOutboxCleanupBatch {
-			return
-		}
+	if err := s.outboxRepo.ReleaseClaim(ctx, event.ID, event.ClaimToken); err != nil {
+		logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] outbox claim release failed: id=%d type=%s err=%v", event.ID, event.EventType, err)
 	}
 }
 
@@ -700,7 +667,7 @@ func (s *SchedulerSnapshotService) rebuildBucket(ctx context.Context, bucket Sch
 		return err
 	}
 	if !ok {
-		return nil
+		return ErrSchedulerBucketLocked
 	}
 	defer func() {
 		_ = s.cache.UnlockBucket(lockCtx, bucket)
@@ -775,11 +742,11 @@ func (s *SchedulerSnapshotService) coalesceFullRebuild(run func() error) error {
 	return err
 }
 
-func (s *SchedulerSnapshotService) checkOutboxLag(ctx context.Context, watermark int64) {
+func (s *SchedulerSnapshotService) checkOutboxLag(ctx context.Context) {
 	if s.cfg == nil || s.outboxRepo == nil {
 		return
 	}
-	oldestCreatedAt, ok, err := s.outboxRepo.FirstCreatedAtAfter(ctx, watermark)
+	oldestCreatedAt, ok, err := s.outboxRepo.OldestPendingCreatedAt(ctx)
 	if err != nil {
 		logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] outbox pending event read failed: %v", err)
 		return
@@ -821,12 +788,12 @@ func (s *SchedulerSnapshotService) checkOutboxLag(ctx context.Context, watermark
 	if threshold <= 0 {
 		return
 	}
-	maxID, err := s.outboxRepo.MaxID(ctx)
+	pending, err := s.outboxRepo.PendingCount(ctx)
 	if err != nil {
 		return
 	}
-	if maxID-watermark >= int64(threshold) {
-		logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] outbox backlog rebuild triggered: backlog=%d", maxID-watermark)
+	if pending >= int64(threshold) {
+		logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] outbox backlog rebuild triggered: backlog=%d", pending)
 		if err := s.triggerFullRebuild("outbox_backlog"); err != nil {
 			logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] outbox backlog rebuild failed: %v", err)
 		}

@@ -59,26 +59,26 @@ func TestEnqueueSchedulerOutbox_DeduplicatesIdempotentEvents(t *testing.T) {
 
 	var firstID int64
 	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT id FROM scheduler_outbox WHERE event_type = $1", service.SchedulerOutboxEventAccountChanged).Scan(&firstID))
-	events, err := NewSchedulerOutboxRepository(integrationDB).ListAfterAndReleaseDedup(ctx, 0, 100)
+	event, err := NewSchedulerOutboxRepository(integrationDB).ClaimPending(ctx, time.Minute)
 	require.NoError(t, err)
-	require.Len(t, events, 1)
-	require.Equal(t, firstID, events[0].ID)
+	require.NotNil(t, event)
+	require.Equal(t, firstID, event.ID)
 
 	require.NoError(t, enqueueSchedulerOutbox(ctx, integrationDB, service.SchedulerOutboxEventAccountChanged, &accountID, nil, nil))
 	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM scheduler_outbox WHERE event_type = $1", service.SchedulerOutboxEventAccountChanged).Scan(&count))
 	require.Equal(t, 2, count)
 }
 
-func TestSchedulerOutbox_ListAfterAndReleaseDedup_AllowsSameKeyWhileEventInFlight(t *testing.T) {
+func TestSchedulerOutbox_ClaimPendingAllowsSameKeyWhileEventInFlight(t *testing.T) {
 	ctx := context.Background()
 	_, _ = integrationDB.ExecContext(ctx, "TRUNCATE scheduler_outbox RESTART IDENTITY")
 
 	accountID := int64(17345)
 	require.NoError(t, enqueueSchedulerOutbox(ctx, integrationDB, service.SchedulerOutboxEventAccountChanged, &accountID, nil, nil))
 
-	events, err := NewSchedulerOutboxRepository(integrationDB).ListAfterAndReleaseDedup(ctx, 0, 100)
+	event, err := NewSchedulerOutboxRepository(integrationDB).ClaimPending(ctx, time.Minute)
 	require.NoError(t, err)
-	require.Len(t, events, 1)
+	require.NotNil(t, event)
 
 	require.NoError(t, enqueueSchedulerOutbox(ctx, integrationDB, service.SchedulerOutboxEventAccountChanged, &accountID, nil, nil))
 
@@ -89,6 +89,75 @@ func TestSchedulerOutbox_ListAfterAndReleaseDedup_AllowsSameKeyWhileEventInFligh
 	var pendingKeys int
 	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM scheduler_outbox WHERE dedup_key IS NOT NULL").Scan(&pendingKeys))
 	require.Equal(t, 1, pendingKeys)
+}
+
+func TestSchedulerOutbox_ClaimPendingDoesNotSkipLateCommitWithLowerSequenceID(t *testing.T) {
+	ctx := context.Background()
+	_, _ = integrationDB.ExecContext(ctx, "TRUNCATE scheduler_outbox RESTART IDENTITY")
+
+	slowTx, err := integrationDB.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = slowTx.Rollback() })
+
+	var slowID int64
+	require.NoError(t, slowTx.QueryRowContext(ctx, `
+		INSERT INTO scheduler_outbox (event_type) VALUES ($1) RETURNING id
+	`, service.SchedulerOutboxEventAccountLastUsed).Scan(&slowID))
+
+	var fastID int64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `
+		INSERT INTO scheduler_outbox (event_type) VALUES ($1) RETURNING id
+	`, service.SchedulerOutboxEventAccountLastUsed).Scan(&fastID))
+	require.Greater(t, fastID, slowID)
+
+	repo := NewSchedulerOutboxRepository(integrationDB)
+	fastEvent, err := repo.ClaimPending(ctx, time.Minute)
+	require.NoError(t, err)
+	require.NotNil(t, fastEvent)
+	require.Equal(t, fastID, fastEvent.ID)
+	acked, err := repo.AckClaim(ctx, fastEvent.ID, fastEvent.ClaimToken)
+	require.NoError(t, err)
+	require.True(t, acked)
+
+	require.NoError(t, slowTx.Commit())
+	slowEvent, err := repo.ClaimPending(ctx, time.Minute)
+	require.NoError(t, err)
+	require.NotNil(t, slowEvent, "late committed row must remain claimable after a higher ID is acknowledged")
+	require.Equal(t, slowID, slowEvent.ID)
+}
+
+func TestSchedulerOutbox_ClaimPendingSkipsActiveClaimAndReclaimsExpiredLease(t *testing.T) {
+	ctx := context.Background()
+	_, _ = integrationDB.ExecContext(ctx, "TRUNCATE scheduler_outbox RESTART IDENTITY")
+
+	for range 2 {
+		require.NoError(t, enqueueSchedulerOutbox(
+			ctx, integrationDB, service.SchedulerOutboxEventAccountLastUsed, nil, nil, nil,
+		))
+	}
+
+	repo := NewSchedulerOutboxRepository(integrationDB)
+	first, err := repo.ClaimPending(ctx, time.Minute)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	second, err := repo.ClaimPending(ctx, time.Minute)
+	require.NoError(t, err)
+	require.NotNil(t, second)
+	require.NotEqual(t, first.ID, second.ID, "active claims must be exclusive across workers")
+
+	_, err = integrationDB.ExecContext(ctx, `
+		UPDATE scheduler_outbox SET claimed_at = NOW() - INTERVAL '2 minutes' WHERE id = $1
+	`, first.ID)
+	require.NoError(t, err)
+	reclaimed, err := repo.ClaimPending(ctx, time.Minute)
+	require.NoError(t, err)
+	require.NotNil(t, reclaimed)
+	require.Equal(t, first.ID, reclaimed.ID)
+	require.NotEqual(t, first.ClaimToken, reclaimed.ClaimToken)
+
+	acked, err := repo.AckClaim(ctx, first.ID, first.ClaimToken)
+	require.NoError(t, err)
+	require.False(t, acked, "an expired owner must not acknowledge a newer claim")
 }
 
 func TestEnqueueSchedulerOutbox_CoalescesAccountStateBurst(t *testing.T) {

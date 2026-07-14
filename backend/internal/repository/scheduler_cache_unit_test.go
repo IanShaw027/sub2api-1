@@ -75,6 +75,36 @@ func TestSchedulerCacheUpdateLastUsedClearsUnencodablePayload(t *testing.T) {
 	require.Nil(t, cached)
 }
 
+func TestSchedulerCacheSetOutboxWatermarkIsMonotonic(t *testing.T) {
+	ctx := context.Background()
+	cache := newSchedulerCacheUnit(t)
+
+	require.NoError(t, cache.SetOutboxWatermark(ctx, 20))
+	require.NoError(t, cache.SetOutboxWatermark(ctx, 10))
+
+	watermark, err := cache.GetOutboxWatermark(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 20, watermark)
+}
+
+func TestSchedulerCacheGetSnapshotSkipsSingleMissingAccountMetadata(t *testing.T) {
+	ctx := context.Background()
+	cache := newSchedulerCacheUnit(t)
+	bucket := service.SchedulerBucket{GroupID: 7, Platform: service.PlatformOpenAI, Mode: service.SchedulerModeSingle}
+	require.NoError(t, cache.SetSnapshot(ctx, bucket, []service.Account{
+		{ID: 101, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth},
+		{ID: 102, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth},
+	}))
+	require.NoError(t, cache.rdb.Del(ctx, schedulerAccountMetaKey("102")).Err())
+
+	accounts, hit, err := cache.GetSnapshot(ctx, bucket)
+
+	require.NoError(t, err)
+	require.True(t, hit)
+	require.Len(t, accounts, 1)
+	require.EqualValues(t, 101, accounts[0].ID)
+}
+
 func TestBuildSchedulerMetadataAccount_KeepsOpenAIWSFlags(t *testing.T) {
 	account := service.Account{
 		ID:       42,

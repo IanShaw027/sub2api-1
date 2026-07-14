@@ -1,0 +1,3 @@
+ALTER TABLE scheduler_outbox
+    ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS claim_token TEXT;

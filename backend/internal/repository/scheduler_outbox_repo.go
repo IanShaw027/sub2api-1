@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -17,165 +18,120 @@ type schedulerOutboxRepository struct {
 	db *sql.DB
 }
 
-type schedulerOutboxCleanupLease struct {
-	conn *sql.Conn
-}
-
-const schedulerOutboxDefaultCleanSize = 5000
-
 func NewSchedulerOutboxRepository(db *sql.DB) service.SchedulerOutboxRepository {
 	return &schedulerOutboxRepository{db: db}
 }
 
-func (r *schedulerOutboxRepository) ListAfterAndReleaseDedup(ctx context.Context, afterID int64, limit int) ([]service.SchedulerOutboxEvent, error) {
-	if limit <= 0 {
-		limit = 100
+func (r *schedulerOutboxRepository) ClaimPending(ctx context.Context, leaseDuration time.Duration) (*service.SchedulerOutboxEvent, error) {
+	if leaseDuration <= 0 {
+		return nil, fmt.Errorf("scheduler outbox lease duration must be positive")
 	}
-	rows, err := r.db.QueryContext(ctx, `
-		WITH selected AS MATERIALIZED (
-			SELECT id, event_type, account_id, group_id, payload, created_at
-			FROM scheduler_outbox
-			WHERE id > $1
-			ORDER BY id ASC
-			LIMIT $2
-			FOR UPDATE
-		), released AS (
-			UPDATE scheduler_outbox AS o
-			SET dedup_key = NULL
-			FROM selected AS s
-			WHERE o.id = s.id
-				AND o.dedup_key IS NOT NULL
-			RETURNING o.id
-		)
-		SELECT s.id, s.event_type, s.account_id, s.group_id, s.payload, s.created_at
-		FROM selected AS s
-		CROSS JOIN (SELECT COUNT(*) FROM released) AS release_barrier
-		ORDER BY s.id ASC
-	`, afterID, limit)
+	claimToken, err := newSchedulerOutboxClaimToken()
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		_ = rows.Close()
-	}()
 
-	events := make([]service.SchedulerOutboxEvent, 0, limit)
-	for rows.Next() {
-		var (
-			payloadRaw []byte
-			accountID  sql.NullInt64
-			groupID    sql.NullInt64
-			event      service.SchedulerOutboxEvent
+	row := r.db.QueryRowContext(ctx, `
+		WITH selected AS MATERIALIZED (
+			SELECT id
+			FROM scheduler_outbox
+			WHERE claimed_at IS NULL
+				OR claimed_at < NOW() - make_interval(secs => $1::double precision)
+			ORDER BY created_at ASC, id ASC
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		), claimed AS (
+			UPDATE scheduler_outbox AS o
+			SET claimed_at = NOW(),
+				claim_token = $2,
+				dedup_key = NULL
+			FROM selected AS s
+			WHERE o.id = s.id
+			RETURNING o.id, o.event_type, o.account_id, o.group_id, o.payload, o.created_at, o.claim_token
 		)
-		if err := rows.Scan(&event.ID, &event.EventType, &accountID, &groupID, &payloadRaw, &event.CreatedAt); err != nil {
-			return nil, err
+		SELECT id, event_type, account_id, group_id, payload, created_at, claim_token
+		FROM claimed
+	`, int64(leaseDuration/time.Second), claimToken)
+
+	var (
+		payloadRaw []byte
+		accountID  sql.NullInt64
+		groupID    sql.NullInt64
+		event      service.SchedulerOutboxEvent
+	)
+	if err := row.Scan(&event.ID, &event.EventType, &accountID, &groupID, &payloadRaw, &event.CreatedAt, &event.ClaimToken); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
 		}
-		if accountID.Valid {
-			v := accountID.Int64
-			event.AccountID = &v
-		}
-		if groupID.Valid {
-			v := groupID.Int64
-			event.GroupID = &v
-		}
-		if len(payloadRaw) > 0 {
-			var payload map[string]any
-			if err := json.Unmarshal(payloadRaw, &payload); err != nil {
-				return nil, err
-			}
-			event.Payload = payload
-		}
-		events = append(events, event)
-	}
-	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return events, nil
+	if accountID.Valid {
+		v := accountID.Int64
+		event.AccountID = &v
+	}
+	if groupID.Valid {
+		v := groupID.Int64
+		event.GroupID = &v
+	}
+	if len(payloadRaw) > 0 {
+		var payload map[string]any
+		if err := json.Unmarshal(payloadRaw, &payload); err != nil {
+			return nil, err
+		}
+		event.Payload = payload
+	}
+	return &event, nil
 }
 
-func (r *schedulerOutboxRepository) FirstCreatedAtAfter(ctx context.Context, afterID int64) (time.Time, bool, error) {
-	var createdAt time.Time
-	err := r.db.QueryRowContext(ctx, `
-		SELECT created_at
-		FROM scheduler_outbox
-		WHERE id > $1
-		ORDER BY id ASC
-		LIMIT 1
-	`, afterID).Scan(&createdAt)
-	if err == sql.ErrNoRows {
-		return time.Time{}, false, nil
+func (r *schedulerOutboxRepository) AckClaim(ctx context.Context, eventID int64, claimToken string) (bool, error) {
+	result, err := r.db.ExecContext(ctx, `
+		DELETE FROM scheduler_outbox
+		WHERE id = $1 AND claim_token = $2
+	`, eventID, claimToken)
+	if err != nil {
+		return false, err
 	}
+	deleted, err := result.RowsAffected()
+	return deleted == 1, err
+}
+
+func (r *schedulerOutboxRepository) ReleaseClaim(ctx context.Context, eventID int64, claimToken string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE scheduler_outbox
+		SET claimed_at = NULL, claim_token = NULL
+		WHERE id = $1 AND claim_token = $2
+	`, eventID, claimToken)
+	return err
+}
+
+func (r *schedulerOutboxRepository) OldestPendingCreatedAt(ctx context.Context) (time.Time, bool, error) {
+	var createdAt sql.NullTime
+	err := r.db.QueryRowContext(ctx, `
+		SELECT MIN(created_at) FROM scheduler_outbox
+	`).Scan(&createdAt)
 	if err != nil {
 		return time.Time{}, false, err
 	}
-	return createdAt, true, nil
+	if !createdAt.Valid {
+		return time.Time{}, false, nil
+	}
+	return createdAt.Time, true, nil
 }
 
-func (r *schedulerOutboxRepository) MaxID(ctx context.Context) (int64, error) {
-	var maxID int64
-	if err := r.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(id), 0) FROM scheduler_outbox").Scan(&maxID); err != nil {
+func (r *schedulerOutboxRepository) PendingCount(ctx context.Context) (int64, error) {
+	var count int64
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM scheduler_outbox").Scan(&count); err != nil {
 		return 0, err
 	}
-	return maxID, nil
+	return count, nil
 }
 
-func (r *schedulerOutboxRepository) DeleteConsumedUpTo(ctx context.Context, watermark int64, limit int) (int64, error) {
-	if watermark <= 0 {
-		return 0, nil
+func newSchedulerOutboxClaimToken() (string, error) {
+	var token [16]byte
+	if _, err := rand.Read(token[:]); err != nil {
+		return "", fmt.Errorf("generate scheduler outbox claim token: %w", err)
 	}
-	if limit <= 0 {
-		limit = schedulerOutboxDefaultCleanSize
-	}
-	// created_at < NOW() - INTERVAL '10 seconds' 防御 PG 序列号在事务内提前分配但
-	// 提交延迟的竞争：若某 Tx 在 watermark 推进前持有 id=N（未提交），watermark
-	// 跨过 N 后该 Tx 才提交，此时 row N 已经"低于 watermark"但从未被 poll；10s
-	// 宽限期让此类慢事务有机会提交后被消费，再被 cleanup 删除。
-	result, err := r.db.ExecContext(ctx, `
-		WITH doomed AS (
-			SELECT id
-			FROM scheduler_outbox
-			WHERE id <= $1
-				AND created_at < NOW() - INTERVAL '10 seconds'
-			ORDER BY id ASC
-			LIMIT $2
-		)
-		DELETE FROM scheduler_outbox o
-		USING doomed d
-		WHERE o.id = d.id
-	`, watermark, limit)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
-func (r *schedulerOutboxRepository) TryAcquireCleanupLock(ctx context.Context) (service.SchedulerOutboxCleanupLease, bool, error) {
-	conn, err := r.db.Conn(ctx)
-	if err != nil {
-		return nil, false, err
-	}
-
-	var acquired bool
-	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock(hashtext('scheduler_outbox_cleanup'))").Scan(&acquired); err != nil {
-		_ = conn.Close()
-		return nil, false, err
-	}
-	if !acquired {
-		_ = conn.Close()
-		return nil, false, nil
-	}
-	return &schedulerOutboxCleanupLease{conn: conn}, true, nil
-}
-
-func (l *schedulerOutboxCleanupLease) Release() {
-	if l == nil || l.conn == nil {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_, _ = l.conn.ExecContext(ctx, "SELECT pg_advisory_unlock(hashtext('scheduler_outbox_cleanup'))")
-	_ = l.conn.Close()
-	l.conn = nil
+	return hex.EncodeToString(token[:]), nil
 }
 
 func enqueueSchedulerOutbox(ctx context.Context, exec sqlExecutor, eventType string, accountID *int64, groupID *int64, payload any) error {
@@ -229,6 +185,7 @@ func schedulerOutboxDedupKey(eventType string, accountID *int64, groupID *int64,
 func schedulerOutboxEventSupportsDedup(eventType string) bool {
 	switch eventType {
 	case service.SchedulerOutboxEventAccountChanged,
+		service.SchedulerOutboxEventAccountBulkChanged,
 		service.SchedulerOutboxEventGroupChanged,
 		service.SchedulerOutboxEventFullRebuild:
 		return true

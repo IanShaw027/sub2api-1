@@ -90,6 +90,8 @@ const (
 	openAIWSIngressLeaseTTL             = 60 * time.Second
 	openAIWSIngressLeaseRefreshInterval = 20 * time.Second
 	openAIWSIngressLeaseOperationTO     = 2 * time.Second
+	concurrencyReleaseRetryAttempts     = 3
+	concurrencyReleaseRetryBaseDelay    = 25 * time.Millisecond
 )
 
 var ErrOpenAIWSIngressLeaseLost = errors.New("openai websocket ingress lease lost")
@@ -126,10 +128,52 @@ func (l *OpenAIWSIngressLease) Release() {
 		}
 		releaseCtx, cancel := context.WithTimeout(context.Background(), openAIWSIngressLeaseOperationTO)
 		defer cancel()
-		if err := l.cache.ReleaseOpenAIWSIngressLease(releaseCtx, l.apiKeyID, l.leaseID); err != nil {
+		if err := retryConcurrencyRelease(releaseCtx, func(ctx context.Context) error {
+			return l.cache.ReleaseOpenAIWSIngressLease(ctx, l.apiKeyID, l.leaseID)
+		}); err != nil {
 			logger.L().Warn("openai_ws_ingress_lease_release_failed", zap.Int64("api_key_id", l.apiKeyID), zap.Error(err))
 		}
 	})
+}
+
+func retryConcurrencyRelease(ctx context.Context, release func(context.Context) error) error {
+	if release == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var lastErr error
+	for attempt := 0; attempt < concurrencyReleaseRetryAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			if lastErr != nil {
+				return fmt.Errorf("%w (release retry stopped: %v)", lastErr, err)
+			}
+			return err
+		}
+		if err := release(ctx); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		if attempt == concurrencyReleaseRetryAttempts-1 {
+			break
+		}
+		delay := concurrencyReleaseRetryBaseDelay << attempt
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return fmt.Errorf("%w (release retry stopped: %v)", lastErr, ctx.Err())
+		case <-timer.C:
+		}
+	}
+	return lastErr
 }
 
 func (l *OpenAIWSIngressLease) refreshLoop() {
@@ -375,22 +419,30 @@ func (s *ConcurrencyService) AcquireAccountSlotForGroup(ctx context.Context, acc
 		}
 		if groupID != nil && *groupID > 0 {
 			if releaser, ok := s.cache.(accountGroupSlotReleaser); ok && releaser != nil {
-				if err := releaser.ReleaseAccountSlotForGroup(ctx, accountID, *groupID, requestID); err != nil {
+				if err := retryConcurrencyRelease(ctx, func(releaseCtx context.Context) error {
+					return releaser.ReleaseAccountSlotForGroup(releaseCtx, accountID, *groupID, requestID)
+				}); err != nil {
 					logger.LegacyPrintf("service.concurrency", "Warning: failed to release account/group slot for %d/%d (req=%s): %v", accountID, *groupID, requestID, err)
 				}
 				return
 			}
-			if err := s.cache.ReleaseAccountSlot(ctx, accountID, requestID); err != nil {
+			if err := retryConcurrencyRelease(ctx, func(releaseCtx context.Context) error {
+				return s.cache.ReleaseAccountSlot(releaseCtx, accountID, requestID)
+			}); err != nil {
 				logger.LegacyPrintf("service.concurrency", "Warning: failed to release account slot for %d (req=%s): %v", accountID, requestID, err)
 			}
 			if groupTracker, ok := s.cache.(groupConcurrencyCache); ok && groupTracker != nil {
-				if err := groupTracker.ReleaseGroupSlot(ctx, *groupID, requestID); err != nil {
+				if err := retryConcurrencyRelease(ctx, func(releaseCtx context.Context) error {
+					return groupTracker.ReleaseGroupSlot(releaseCtx, *groupID, requestID)
+				}); err != nil {
 					logger.LegacyPrintf("service.concurrency", "Warning: failed to release group slot for %d (req=%s): %v", *groupID, requestID, err)
 				}
 			}
 			return
 		}
-		if err := s.cache.ReleaseAccountSlot(ctx, accountID, requestID); err != nil {
+		if err := retryConcurrencyRelease(ctx, func(releaseCtx context.Context) error {
+			return s.cache.ReleaseAccountSlot(releaseCtx, accountID, requestID)
+		}); err != nil {
 			logger.LegacyPrintf("service.concurrency", "Warning: failed to release account slot for %d (req=%s): %v", accountID, requestID, err)
 		}
 	}
@@ -433,7 +485,9 @@ func (s *ConcurrencyService) AcquireAccountSlotForGroup(ctx context.Context, acc
 		if err := trackGroupSlot(ctx); err != nil {
 			bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if releaseErr := s.cache.ReleaseAccountSlot(bgCtx, accountID, requestID); releaseErr != nil {
+			if releaseErr := retryConcurrencyRelease(bgCtx, func(releaseCtx context.Context) error {
+				return s.cache.ReleaseAccountSlot(releaseCtx, accountID, requestID)
+			}); releaseErr != nil {
 				logger.LegacyPrintf("service.concurrency", "Warning: failed to release account slot for %d (req=%s) after group tracking failure: %v", accountID, requestID, releaseErr)
 			}
 			return nil, err
@@ -509,7 +563,9 @@ func (s *ConcurrencyService) AcquireUserSlot(ctx context.Context, userID int64, 
 				stopHeartbeat()
 				bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-				if err := s.cache.ReleaseUserSlot(bgCtx, userID, requestID); err != nil {
+				if err := retryConcurrencyRelease(bgCtx, func(releaseCtx context.Context) error {
+					return s.cache.ReleaseUserSlot(releaseCtx, userID, requestID)
+				}); err != nil {
 					logger.LegacyPrintf("service.concurrency", "Warning: failed to release user slot for %d (req=%s): %v", userID, requestID, err)
 				}
 			},
@@ -787,7 +843,9 @@ func (s *ConcurrencyService) TrackAPIKeySlot(ctx context.Context, apiKeyID int64
 	return func() {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := cache.ReleaseAPIKeySlot(bgCtx, apiKeyID, requestID); err != nil {
+		if err := retryConcurrencyRelease(bgCtx, func(releaseCtx context.Context) error {
+			return cache.ReleaseAPIKeySlot(releaseCtx, apiKeyID, requestID)
+		}); err != nil {
 			logger.LegacyPrintf("service.concurrency", "Warning: failed to release api key slot for %d (req=%s): %v", apiKeyID, requestID, err)
 		}
 	}

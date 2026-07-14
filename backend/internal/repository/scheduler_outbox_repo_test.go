@@ -2,33 +2,117 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"regexp"
 	"testing"
 	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
 
-func TestSchedulerOutboxRepositoryFirstCreatedAtAfter(t *testing.T) {
+func TestSchedulerOutboxRepositoryClaimPendingLeasesOldestAvailableEvent(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
 	repo := &schedulerOutboxRepository{db: db}
 	createdAt := time.Now().UTC().Truncate(time.Microsecond)
-	const expectedSQL = `
-		SELECT created_at
-		FROM scheduler_outbox
-		WHERE id > $1
-		ORDER BY id ASC
-		LIMIT 1
-	`
-	mock.ExpectQuery(regexp.QuoteMeta(expectedSQL)).
-		WithArgs(int64(42)).
-		WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(createdAt))
+	mock.ExpectQuery("WITH selected AS MATERIALIZED").
+		WithArgs(int64(150), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "event_type", "account_id", "group_id", "payload", "created_at", "claim_token",
+		}).AddRow(int64(9), "account_changed", int64(42), nil, []byte(`{"group_ids":[7]}`), createdAt, "db-claim-token"))
 
-	got, ok, err := repo.FirstCreatedAtAfter(context.Background(), 42)
+	event, err := repo.ClaimPending(context.Background(), 150*time.Second)
+
+	require.NoError(t, err)
+	require.NotNil(t, event)
+	require.EqualValues(t, 9, event.ID)
+	require.Equal(t, "db-claim-token", event.ClaimToken)
+	require.EqualValues(t, 42, *event.AccountID)
+	require.Equal(t, []any{float64(7)}, event.Payload["group_ids"])
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSchedulerOutboxRepositoryClaimPendingReturnsNilWhenEmpty(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := &schedulerOutboxRepository{db: db}
+	mock.ExpectQuery("WITH selected AS MATERIALIZED").
+		WithArgs(int64(150), sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "event_type", "account_id", "group_id", "payload", "created_at", "claim_token",
+		}))
+
+	event, err := repo.ClaimPending(context.Background(), 150*time.Second)
+
+	require.NoError(t, err)
+	require.Nil(t, event)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSchedulerOutboxRepositoryClaimPendingRejectsInvalidLease(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := &schedulerOutboxRepository{db: db}
+	event, err := repo.ClaimPending(context.Background(), 0)
+
+	require.Error(t, err)
+	require.Nil(t, event)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSchedulerOutboxRepositoryAckClaimChecksOwnership(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := &schedulerOutboxRepository{db: db}
+	mock.ExpectExec(regexp.QuoteMeta(`
+		DELETE FROM scheduler_outbox
+		WHERE id = $1 AND claim_token = $2
+	`)).WithArgs(int64(9), "owner-token").WillReturnResult(sqlmock.NewResult(0, 0))
+
+	acked, err := repo.AckClaim(context.Background(), 9, "owner-token")
+
+	require.NoError(t, err)
+	require.False(t, acked)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSchedulerOutboxRepositoryReleaseClaimChecksOwnership(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := &schedulerOutboxRepository{db: db}
+	mock.ExpectExec(regexp.QuoteMeta(`
+		UPDATE scheduler_outbox
+		SET claimed_at = NULL, claim_token = NULL
+		WHERE id = $1 AND claim_token = $2
+	`)).WithArgs(int64(9), "owner-token").WillReturnResult(sqlmock.NewResult(0, 1))
+
+	require.NoError(t, repo.ReleaseClaim(context.Background(), 9, "owner-token"))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSchedulerOutboxRepositoryOldestPendingCreatedAt(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := &schedulerOutboxRepository{db: db}
+	createdAt := time.Now().UTC().Truncate(time.Microsecond)
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT MIN(created_at) FROM scheduler_outbox")).
+		WillReturnRows(sqlmock.NewRows([]string{"min"}).AddRow(createdAt))
+
+	got, ok, err := repo.OldestPendingCreatedAt(context.Background())
 
 	require.NoError(t, err)
 	require.True(t, ok)
@@ -36,24 +120,16 @@ func TestSchedulerOutboxRepositoryFirstCreatedAtAfter(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestSchedulerOutboxRepositoryFirstCreatedAtAfterReturnsNotFound(t *testing.T) {
+func TestSchedulerOutboxRepositoryOldestPendingCreatedAtReturnsNotFound(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
 	repo := &schedulerOutboxRepository{db: db}
-	const expectedSQL = `
-		SELECT created_at
-		FROM scheduler_outbox
-		WHERE id > $1
-		ORDER BY id ASC
-		LIMIT 1
-	`
-	mock.ExpectQuery(regexp.QuoteMeta(expectedSQL)).
-		WithArgs(int64(42)).
-		WillReturnRows(sqlmock.NewRows([]string{"created_at"}))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT MIN(created_at) FROM scheduler_outbox")).
+		WillReturnRows(sqlmock.NewRows([]string{"min"}).AddRow(nil))
 
-	got, ok, err := repo.FirstCreatedAtAfter(context.Background(), 42)
+	got, ok, err := repo.OldestPendingCreatedAt(context.Background())
 
 	require.NoError(t, err)
 	require.False(t, ok)
@@ -61,110 +137,29 @@ func TestSchedulerOutboxRepositoryFirstCreatedAtAfterReturnsNotFound(t *testing.
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestSchedulerOutboxRepositoryDeleteConsumedUpToUsesBoundedCTE(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-
-	repo := &schedulerOutboxRepository{db: db}
-	const expectedSQL = `
-		WITH doomed AS (
-			SELECT id
-			FROM scheduler_outbox
-			WHERE id <= $1
-				AND created_at < NOW() - INTERVAL '10 seconds'
-			ORDER BY id ASC
-			LIMIT $2
-		)
-		DELETE FROM scheduler_outbox o
-		USING doomed d
-		WHERE o.id = d.id
-	`
-	mock.ExpectExec(regexp.QuoteMeta(expectedSQL)).
-		WithArgs(int64(42), 5000).
-		WillReturnResult(sqlmock.NewResult(0, 17))
-
-	deleted, err := repo.DeleteConsumedUpTo(context.Background(), 42, 5000)
-
-	require.NoError(t, err)
-	require.EqualValues(t, 17, deleted)
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestSchedulerOutboxRepositoryDeleteConsumedUpToSkipsNonPositiveWatermark(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-
-	repo := &schedulerOutboxRepository{db: db}
-
-	deleted, err := repo.DeleteConsumedUpTo(context.Background(), 0, 5000)
-
-	require.NoError(t, err)
-	require.EqualValues(t, 0, deleted)
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestSchedulerOutboxRepositoryTryAcquireCleanupLock(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-
-	repo := &schedulerOutboxRepository{db: db}
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT pg_try_advisory_lock(hashtext('scheduler_outbox_cleanup'))")).
-		WillReturnRows(sqlmock.NewRows([]string{"pg_try_advisory_lock"}).AddRow(true))
-	mock.ExpectExec(regexp.QuoteMeta("SELECT pg_advisory_unlock(hashtext('scheduler_outbox_cleanup'))")).
-		WillReturnResult(sqlmock.NewResult(0, 1))
-
-	lease, acquired, err := repo.TryAcquireCleanupLock(context.Background())
-	require.NoError(t, err)
-	require.True(t, acquired)
-	require.NotNil(t, lease)
-
-	lease.Release()
-
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestSchedulerOutboxRepositoryTryAcquireCleanupLockUnavailable(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer func() { _ = db.Close() }()
-
-	repo := &schedulerOutboxRepository{db: db}
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT pg_try_advisory_lock(hashtext('scheduler_outbox_cleanup'))")).
-		WillReturnRows(sqlmock.NewRows([]string{"pg_try_advisory_lock"}).AddRow(false))
-
-	lease, acquired, err := repo.TryAcquireCleanupLock(context.Background())
-	require.NoError(t, err)
-	require.False(t, acquired)
-	require.Nil(t, lease)
-
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
 // buildSchedulerGroupPayload 在 groupIDs 为空时必须返回 untyped nil（any），
-// 否则 enqueueSchedulerOutbox 的 "payload != nil" 接口判空会被 typed-nil 欺骗，
-// 把 payload marshal 成 "null" 写入 dedup_key 哈希，破坏与其他 nil-payload
-// 调用的去重一致性。本测试用 ungrouped 账号场景验证两条路径的 dedup_key 一致。
+// 否则 enqueueSchedulerOutbox 的 "payload != nil" 接口判空会被 typed-nil 欺骗。
 func TestEnqueueSchedulerOutbox_UngroupedAccountDedupesWithLiteralNilPayload(t *testing.T) {
 	accountID := int64(42)
-
-	// Path A: 显式 nil payload（如 SetError、SetStatus 等调用模式）
 	keyLiteralNil := schedulerOutboxDedupKey("account_changed", &accountID, nil, nil)
 
-	// Path B: buildSchedulerGroupPayload(account.GroupIDs) 当账号没有任何分组
 	emptyGroupsPayload := buildSchedulerGroupPayload(nil)
-	require.Nil(t, emptyGroupsPayload,
-		"buildSchedulerGroupPayload(empty) must return untyped-nil any to avoid typed-nil marshal")
+	require.Nil(t, emptyGroupsPayload)
 
-	// 模拟 enqueueSchedulerOutbox 内部的判空逻辑
 	var payloadJSON []byte
 	if emptyGroupsPayload != nil {
-		t.Fatalf("typed-nil regression: buildSchedulerGroupPayload(empty) interface should be nil")
+		t.Fatal("typed-nil regression: empty groups payload interface should be nil")
 	}
 	keyEmptyGroups := schedulerOutboxDedupKey("account_changed", &accountID, nil, payloadJSON)
+	require.Equal(t, keyLiteralNil, keyEmptyGroups)
+}
 
-	require.Equal(t, keyLiteralNil, keyEmptyGroups,
-		"ungrouped-account account_changed must share dedup_key with other nil-payload variants")
+func TestSchedulerOutboxAccountBulkChangedSupportsPendingDedup(t *testing.T) {
+	require.True(t, schedulerOutboxEventSupportsDedup(service.SchedulerOutboxEventAccountBulkChanged))
+	payload, err := json.Marshal(map[string]any{"account_ids": []int64{7, 11}})
+	require.NoError(t, err)
+	require.Equal(t,
+		schedulerOutboxDedupKey(service.SchedulerOutboxEventAccountBulkChanged, nil, nil, payload),
+		schedulerOutboxDedupKey(service.SchedulerOutboxEventAccountBulkChanged, nil, nil, payload),
+	)
 }

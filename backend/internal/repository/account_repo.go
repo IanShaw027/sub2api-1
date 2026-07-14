@@ -1655,7 +1655,19 @@ func (r *accountRepository) SetSchedulable(ctx context.Context, id int64, schedu
 }
 
 func (r *accountRepository) AutoPauseExpiredAccounts(ctx context.Context, now time.Time) (int64, error) {
-	rows, err := r.sql.QueryContext(ctx, `
+	exec := r.sql
+	var tx *sql.Tx
+	if db, ok := r.sql.(*sql.DB); ok {
+		var err error
+		tx, err = db.BeginTx(ctx, nil)
+		if err != nil {
+			return 0, err
+		}
+		defer func() { _ = tx.Rollback() }()
+		exec = tx
+	}
+
+	rows, err := exec.QueryContext(ctx, `
 		UPDATE accounts
 		SET schedulable = FALSE,
 			updated_at = NOW()
@@ -1684,16 +1696,25 @@ func (r *accountRepository) AutoPauseExpiredAccounts(ctx context.Context, now ti
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
 
 	if len(accountIDs) > 0 {
-		// Match single-account schedulable updates: remove expired accounts from
-		// Redis immediately instead of waiting for the outbox poll interval.
-		r.syncSchedulerAccountSnapshots(ctx, accountIDs)
 		// 只刷新本次暂停的账号及其所属分组，避免少量账号到期触发所有调度桶重建。
 		payload := map[string]any{"account_ids": accountIDs}
-		if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountBulkChanged, nil, nil, payload); err != nil {
-			logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue auto pause account changes failed: err=%v", err)
+		if err := enqueueSchedulerOutbox(ctx, exec, service.SchedulerOutboxEventAccountBulkChanged, nil, nil, payload); err != nil {
+			return 0, err
 		}
+	}
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return 0, err
+		}
+	}
+	if len(accountIDs) > 0 {
+		// Redis is derived state. Refresh it only after the durable state and outbox commit.
+		r.syncSchedulerAccountSnapshots(ctx, accountIDs)
 	}
 	return int64(len(accountIDs)), nil
 }

@@ -550,6 +550,31 @@ func TestIncrementAccountWaitCount_NilCache(t *testing.T) {
 	require.True(t, allowed)
 }
 
+func TestRetryConcurrencyReleaseRetriesTransientFailure(t *testing.T) {
+	attempts := 0
+	err := retryConcurrencyRelease(context.Background(), func(context.Context) error {
+		attempts++
+		if attempts < concurrencyReleaseRetryAttempts {
+			return errors.New("redis temporarily unavailable")
+		}
+		return nil
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, concurrencyReleaseRetryAttempts, attempts)
+}
+
+func TestRetryConcurrencyReleaseStopsAfterBoundedAttempts(t *testing.T) {
+	attempts := 0
+	err := retryConcurrencyRelease(context.Background(), func(context.Context) error {
+		attempts++
+		return errors.New("redis unavailable")
+	})
+
+	require.ErrorContains(t, err, "redis unavailable")
+	require.Equal(t, concurrencyReleaseRetryAttempts, attempts)
+}
+
 func TestAcquireAccountSlot_ReleaseStopsHeartbeatRenewals(t *testing.T) {
 	t.Parallel()
 	cache := &stubConcurrencyCacheForTest{acquireResult: true}

@@ -84,6 +84,33 @@ func TestOpsServiceListSystemLogs_RepoErrorMapped(t *testing.T) {
 	}
 }
 
+func TestOpsServiceListSystemLogs_RejectsOversizedHost(t *testing.T) {
+	svc := NewOpsService(&opsRepoMock{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	_, err := svc.ListSystemLogs(context.Background(), &OpsSystemLogFilter{
+		Host: strings.Repeat("h", opsSystemLogHostMaxLength+1),
+	})
+	if err == nil || !strings.Contains(err.Error(), "OPS_SYSTEM_LOG_HOST_TOO_LONG") {
+		t.Fatalf("expected host length error, got %v", err)
+	}
+}
+
+func TestOpsServiceListSystemLogs_AcceptsHostAtLimit(t *testing.T) {
+	want := strings.Repeat("h", opsSystemLogHostMaxLength)
+	var got string
+	repo := &opsRepoMock{ListSystemLogsFn: func(_ context.Context, filter *OpsSystemLogFilter) (*OpsSystemLogList, error) {
+		got = filter.Host
+		return &OpsSystemLogList{}, nil
+	}}
+	svc := NewOpsService(repo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	_, err := svc.ListSystemLogs(context.Background(), &OpsSystemLogFilter{Host: want})
+	if err != nil {
+		t.Fatalf("ListSystemLogs() error: %v", err)
+	}
+	if got != want {
+		t.Fatalf("host length = %d, want %d", len(got), len(want))
+	}
+}
+
 func TestOpsServiceCleanupSystemLogs_SuccessAndAudit(t *testing.T) {
 	var audit *OpsSystemLogCleanupAudit
 	repo := &opsRepoMock{
@@ -131,6 +158,16 @@ func TestOpsServiceCleanupSystemLogs_SuccessAndAudit(t *testing.T) {
 	}
 	if !strings.Contains(audit.Conditions, `"api_key_id":8`) {
 		t.Fatalf("audit conditions should include api_key_id: %s", audit.Conditions)
+	}
+}
+
+func TestOpsServiceCleanupSystemLogs_RejectsOversizedHost(t *testing.T) {
+	svc := NewOpsService(&opsRepoMock{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	_, err := svc.CleanupSystemLogs(context.Background(), &OpsSystemLogCleanupFilter{
+		Host: strings.Repeat("h", opsSystemLogHostMaxLength+1),
+	}, 1)
+	if err == nil || !strings.Contains(err.Error(), "OPS_SYSTEM_LOG_HOST_TOO_LONG") {
+		t.Fatalf("expected host length error, got %v", err)
 	}
 }
 

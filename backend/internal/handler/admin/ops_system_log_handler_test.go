@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -159,6 +160,23 @@ func TestOpsSystemLogHandler_ListAcceptsHost(t *testing.T) {
 	}
 }
 
+func TestOpsSystemLogHandler_ListRejectsOversizedHost(t *testing.T) {
+	repo := &opsSystemLogCaptureRepo{}
+	svc := service.NewOpsService(repo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	h := NewOpsHandler(svc)
+	r := newOpsSystemLogTestRouter(h, false)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/logs?host="+strings.Repeat("h", 256), nil)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d, want 400", w.Code)
+	}
+	if repo.listFilter != nil {
+		t.Fatalf("repository must not receive oversized host: %+v", repo.listFilter)
+	}
+}
+
 func TestOpsSystemLogHandler_CleanupUnauthorized(t *testing.T) {
 	svc := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	h := NewOpsHandler(svc)
@@ -258,6 +276,28 @@ func TestOpsSystemLogHandler_CleanupAcceptsHost(t *testing.T) {
 	}
 	if repo.cleanupFilter == nil || repo.cleanupFilter.Host != "api-node-1" {
 		t.Fatalf("host filter = %+v, want api-node-1", repo.cleanupFilter)
+	}
+}
+
+func TestOpsSystemLogHandler_CleanupRejectsOversizedHost(t *testing.T) {
+	repo := &opsSystemLogCaptureRepo{}
+	svc := service.NewOpsService(repo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	h := NewOpsHandler(svc)
+	r := newOpsSystemLogTestRouter(h, true)
+
+	w := httptest.NewRecorder()
+	body, err := json.Marshal(map[string]string{"host": strings.Repeat("h", 256)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/logs/cleanup", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d, want 400", w.Code)
+	}
+	if repo.cleanupFilter != nil {
+		t.Fatalf("repository must not receive oversized host: %+v", repo.cleanupFilter)
 	}
 }
 

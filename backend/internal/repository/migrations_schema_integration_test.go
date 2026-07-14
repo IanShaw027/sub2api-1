@@ -79,7 +79,11 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 
 	// scheduler_outbox pending dedup support
 	requireColumn(t, tx, "scheduler_outbox", "dedup_key", "text", 0, true)
+	requireColumn(t, tx, "scheduler_outbox", "claimed_at", "timestamp with time zone", 0, true)
+	requireColumn(t, tx, "scheduler_outbox", "claim_token", "text", 0, true)
 	requireIndex(t, tx, "scheduler_outbox", "idx_scheduler_outbox_pending_dedup_key")
+	requireIndex(t, tx, "scheduler_outbox", "idx_scheduler_outbox_claimable")
+	requireIndex(t, tx, "scheduler_outbox", "idx_scheduler_outbox_claim_expiry")
 
 	// ops_system_logs: API key id index for operational log triage
 	requireColumn(t, tx, "ops_system_logs", "api_key_id", "bigint", 0, true)

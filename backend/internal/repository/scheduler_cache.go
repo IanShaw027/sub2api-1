@@ -106,6 +106,17 @@ end
 return updated
 `)
 
+	setOutboxWatermarkMonotonicScript = redis.NewScript(`
+local current = redis.call('GET', KEYS[1])
+local nextValue = ARGV[1]
+if current == false or string.len(nextValue) > string.len(current) or
+	(string.len(nextValue) == string.len(current) and nextValue > current) then
+	redis.call('SET', KEYS[1], nextValue)
+	return 1
+end
+return 0
+`)
+
 	schedulerLockTokenCounter uint64
 	// schedulerBeforeAccountChunkWriteHook is a narrow test seam used by scheduler
 	// cache integration tests to deterministically reproduce the race window
@@ -182,13 +193,19 @@ func (c *schedulerCache) GetSnapshot(ctx context.Context, bucket service.Schedul
 	accounts := make([]*service.Account, 0, len(values))
 	for _, val := range values {
 		if val == nil {
-			return nil, false, nil
+			// A single evicted metadata key must not fan out into a full DB bucket
+			// reload. Omitting that account is safe (capacity reduction only); its
+			// account_changed event or the next rebuild will restore the metadata.
+			continue
 		}
 		account, err := decodeCachedAccount(val)
 		if err != nil {
 			return nil, false, err
 		}
 		accounts = append(accounts, account)
+	}
+	if len(accounts) == 0 {
+		return nil, false, nil
 	}
 	if err := c.overlayLastUsed(ctx, accounts); err != nil {
 		return nil, false, err
@@ -493,7 +510,13 @@ func (c *schedulerCache) GetOutboxWatermark(ctx context.Context) (int64, error) 
 }
 
 func (c *schedulerCache) SetOutboxWatermark(ctx context.Context, id int64) error {
-	return c.rdb.Set(ctx, schedulerOutboxWatermarkKey, strconv.FormatInt(id, 10), 0).Err()
+	_, err := setOutboxWatermarkMonotonicScript.Run(
+		ctx,
+		c.rdb,
+		[]string{schedulerOutboxWatermarkKey},
+		strconv.FormatInt(id, 10),
+	).Result()
+	return err
 }
 
 func schedulerBucketKey(prefix string, bucket service.SchedulerBucket) string {
