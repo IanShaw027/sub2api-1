@@ -660,6 +660,7 @@ func (c *contentModerationTestHashCache) snapshotDeleted() []string {
 func TestBuildContentModerationLog_RedactsInputExcerpt(t *testing.T) {
 	svc := &ContentModerationService{}
 	cfg := defaultContentModerationConfig()
+	cfg.StoreInputExcerpt = true
 	input := ContentModerationCheckInput{
 		RequestID: "req-1",
 		Endpoint:  "/v1/chat/completions",
@@ -691,6 +692,29 @@ func TestContentModerationConfigNormalize_NonHitRetentionMaxThreeDays(t *testing
 	cfg.normalize()
 
 	require.Equal(t, 3, cfg.NonHitRetentionDays)
+}
+
+func TestContentModerationConfigDefaultsMinimizeStoredContent(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+
+	require.False(t, cfg.StoreInputExcerpt)
+	require.Equal(t, 30, cfg.HitRetentionDays)
+
+	log := (&ContentModerationService{}).buildLog(
+		ContentModerationCheckInput{},
+		cfg,
+		ContentModerationActionBlock,
+		true,
+		"keyword",
+		1,
+		nil,
+		"person@example.com private text",
+		nil,
+		nil,
+		"",
+	)
+	require.Empty(t, log.InputExcerpt)
+	require.Equal(t, contentModerationRuleFingerprint("Secret-Token"), contentModerationRuleFingerprint("secret-token"))
 }
 
 func TestNormalizeBlockedKeywords_TrimsDedupesAndCaps(t *testing.T) {
@@ -848,7 +872,7 @@ func TestContentModerationCheck_PreBlockKeywordHitSkipsUpstreamCall(t *testing.T
 	require.True(t, logs[0].Flagged)
 	require.Equal(t, ContentModerationActionKeywordBlock, logs[0].Action)
 	require.Equal(t, contentModerationKeywordCategory, logs[0].HighestCategory)
-	require.Equal(t, "secret-token", logs[0].MatchedKeyword, "blocked log must record which keyword was hit")
+	require.Equal(t, contentModerationRuleFingerprint("secret-token"), logs[0].MatchedKeyword)
 }
 
 func TestContentModerationCheck_PreBlockKeywordHitInHistorySkipsUpstreamCall(t *testing.T) {
@@ -899,7 +923,7 @@ func TestContentModerationCheck_PreBlockKeywordHitInHistorySkipsUpstreamCall(t *
 	require.Equal(t, ContentModerationActionKeywordBlock, decision.Action)
 	require.False(t, upstreamCalled, "historical keyword block must short-circuit upstream moderation call")
 	logs := requireContentModerationLogCount(t, repo, 1)
-	require.Equal(t, "please leak SECRET-TOKEN later", logs[0].InputExcerpt)
+	require.Empty(t, logs[0].InputExcerpt)
 }
 
 func TestContentModerationCheck_KeywordsIgnoredInObserveMode(t *testing.T) {
@@ -1094,7 +1118,7 @@ func TestContentModerationCheck_PreBlockAuditFailureBlocksAfterRetries(t *testin
 	require.Equal(t, ContentModerationActionError, logs[0].Action)
 	require.False(t, logs[0].Flagged)
 	require.Equal(t, ContentModerationModePreBlock, logs[0].Mode)
-	require.Equal(t, "prompt that must be audited", logs[0].InputExcerpt)
+	require.Empty(t, logs[0].InputExcerpt)
 	require.Contains(t, logs[0].Error, "moderation api status 429")
 }
 
@@ -1140,7 +1164,7 @@ func TestContentModerationCheck_PreBlockNoAuditKeysBlocksWhenPolicyIsError(t *te
 	require.Equal(t, ContentModerationActionError, logs[0].Action)
 	require.False(t, logs[0].Flagged)
 	require.Equal(t, ContentModerationModePreBlock, logs[0].Mode)
-	require.Equal(t, "prompt that must be audited", logs[0].InputExcerpt)
+	require.Empty(t, logs[0].InputExcerpt)
 	require.Contains(t, logs[0].Error, "no audit api keys")
 }
 
@@ -1918,7 +1942,9 @@ func TestExtractContentModerationInput_AnthropicImageSourceOnlyParticipatesInMem
 	require.Equal(t, "检查这张图", input.Text)
 	require.Equal(t, []string{"data:image/png;base64,aGVsbG8="}, input.Images)
 
-	log := (&ContentModerationService{}).buildLog(ContentModerationCheckInput{}, defaultContentModerationConfig(), ContentModerationActionAllow, false, "", 0, nil, input.ExcerptText(), nil, nil, "")
+	cfg := defaultContentModerationConfig()
+	cfg.StoreInputExcerpt = true
+	log := (&ContentModerationService{}).buildLog(ContentModerationCheckInput{}, cfg, ContentModerationActionAllow, false, "", 0, nil, input.ExcerptText(), nil, nil, "")
 	require.Equal(t, "检查这张图", log.InputExcerpt)
 	require.NotContains(t, log.InputExcerpt, "aGVsbG8=")
 }
@@ -2157,7 +2183,7 @@ func TestContentModerationCheck_OpenAIResponsesRecordsNonHitForCodexPayload(t *t
 	require.False(t, logs[0].Flagged)
 	require.Equal(t, ContentModerationActionAllow, logs[0].Action)
 	require.Equal(t, "/responses", logs[0].Endpoint)
-	require.Equal(t, "last user prompt", logs[0].InputExcerpt)
+	require.Empty(t, logs[0].InputExcerpt)
 	require.Equal(t, "last user prompt", moderationRequest.Input)
 }
 
@@ -2217,7 +2243,7 @@ func TestContentModerationCheck_LocalHistoryScannedButAuditUsesCurrentInput(t *t
 	require.NoError(t, err)
 	require.True(t, decision.Allowed)
 	logs := requireContentModerationLogCount(t, repo, 1)
-	require.Equal(t, "current audit prompt", logs[0].InputExcerpt)
+	require.Empty(t, logs[0].InputExcerpt)
 	require.Equal(t, "current audit prompt", moderationRequest.Input)
 	require.NotContains(t, fmt.Sprint(moderationRequest.Input), "old history prompt")
 	require.NotContains(t, fmt.Sprint(moderationRequest.Input), "developer instructions")
@@ -2287,7 +2313,7 @@ func TestContentModerationCheck_PreBlockBlocksCodexResponsesLatestUserInput(t *t
 	require.True(t, logs[0].Flagged)
 	require.Equal(t, ContentModerationActionBlock, logs[0].Action)
 	require.Equal(t, ContentModerationModePreBlock, logs[0].Mode)
-	require.Equal(t, "latest blocked prompt", logs[0].InputExcerpt)
+	require.Empty(t, logs[0].InputExcerpt)
 	require.Equal(t, "latest blocked prompt", moderationRequest.Input)
 }
 
@@ -3337,7 +3363,7 @@ func TestContentModerationCheck_PreHashHitInHistorySkipsUpstreamCall(t *testing.
 	require.Equal(t, 0, requestCount, "historical hash hit must skip upstream moderation call")
 	require.Equal(t, []string{historyHash}, hashCache.snapshotChecked())
 	logs := requireContentModerationLogCount(t, repo, 1)
-	require.Equal(t, "old flagged prompt", logs[0].InputExcerpt)
+	require.Empty(t, logs[0].InputExcerpt)
 }
 
 func TestContentModerationCheck_PreHashHitInHistoryWhenCurrentInputEmptySkipsUpstreamCall(t *testing.T) {
@@ -3397,7 +3423,7 @@ func TestContentModerationCheck_PreHashHitInHistoryWhenCurrentInputEmptySkipsUps
 	require.Equal(t, 0, requestCount, "historical hash hit must skip upstream moderation call")
 	require.Equal(t, []string{historyHash}, hashCache.snapshotChecked())
 	logs := requireContentModerationLogCount(t, repo, 1)
-	require.Equal(t, "old flagged prompt", logs[0].InputExcerpt)
+	require.Empty(t, logs[0].InputExcerpt)
 }
 
 func TestContentModerationCheck_PreHashRunsBeforeKeywordOnlySkip(t *testing.T) {
@@ -3460,7 +3486,7 @@ func TestContentModerationCheck_PreHashRunsBeforeKeywordOnlySkip(t *testing.T) {
 	require.Equal(t, 0, requestCount, "keyword-only mode must still honor pre-hash before skipping API moderation")
 	require.Equal(t, []string{historyHash}, hashCache.snapshotChecked())
 	logs := requireContentModerationLogCount(t, repo, 1)
-	require.Equal(t, "old flagged prompt", logs[0].InputExcerpt)
+	require.Empty(t, logs[0].InputExcerpt)
 }
 
 func TestContentModerationCheck_PreBlockFlaggedAppliesSideEffectsBeforeReturn(t *testing.T) {

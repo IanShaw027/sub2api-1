@@ -3555,6 +3555,8 @@ export default {
       violationWindowHours: 'Count Window (hours)',
       hitRetentionDays: 'Hit Record Retention (days)',
       nonHitRetentionDays: 'Non-Hit Record Retention (days, max 3)',
+      storeInputExcerpt: 'Store Input Excerpts',
+      storeInputExcerptHint: 'Off by default. When enabled, stores a redacted excerpt of up to 240 characters for appeals or manual review.',
       violationCount: '{count} hits',
       emailSent: 'Email sent',
       emailNotSent: 'No email',

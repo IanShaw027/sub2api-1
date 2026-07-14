@@ -407,6 +407,12 @@ gateway:
   grok:
     http_active_delta_enabled: true
     http_active_delta_require_store_on_create: false
+    # Explicit FREE OAuth accounts are skipped at 95% of the local rolling allowance.
+    free_quota_soft_gate_enabled: true
+    free_quota_token_limit: 2000000
+    free_quota_soft_gate_percent: 95
+    free_quota_window_hours: 24
+    free_quota_stats_cache_seconds: 5
   # HTTP upstream connection pool settings (HTTP/2 + multi-proxy scenario defaults)
   # HTTP 上游连接池配置（HTTP/2 + 多代理场景默认值）
   # Max idle connections across all hosts

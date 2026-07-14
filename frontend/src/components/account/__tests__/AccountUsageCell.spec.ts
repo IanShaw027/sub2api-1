@@ -1880,7 +1880,7 @@ describe('AccountUsageCell', () => {
     { tokens: 1_000_000, expected: 50, compact: '1.0M' },
     { tokens: 2_000_000, expected: 100, compact: '2.0M' },
     { tokens: 2_200_000, expected: 100, compact: '2.2M' }
-  ])('Grok Free derives its 2M quota from local tokens: $tokens -> $expected%', async ({ tokens, expected, compact }) => {
+  ])('Grok Free falls back to the observed 2M token quota: $tokens -> $expected%', async ({ tokens, expected, compact }) => {
     getUsage.mockResolvedValue({
       grok_billing: {
         period_type: 'weekly',
@@ -1923,9 +1923,55 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokTokens|')
   })
 
+  it('Grok Free uses backend policy for limit, soft gate, and rolling-window label', async () => {
+    getUsage.mockResolvedValue({
+      grok_billing: { period_type: 'weekly', usage_percent: null, plan: '' },
+      grok_free_quota_policy: {
+        enabled: true,
+        token_limit: 4_000_000,
+        soft_gate_percent: 80,
+        soft_gate_tokens: 3_200_000,
+        window_hours: 12
+      },
+      grok_free_quota_usage: {
+        requests: 8,
+        tokens: 3_200_000,
+        cost: 0,
+        standard_cost: 0
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({ id: 4397, platform: 'grok', type: 'oauth', extra: {} })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ color }}</div>'
+          },
+          AccountQuotaInfo: true,
+          GrokQuotaProbeCell: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('12h|80|amber')
+  })
+
   it('Grok Free uses rolling 24h usage instead of today-only usage', async () => {
     getUsage.mockResolvedValue({
       grok_billing: { period_type: 'weekly', usage_percent: null, plan: '' },
+      grok_free_quota_policy: {
+        enabled: true,
+        token_limit: 2_000_000,
+        soft_gate_percent: 95,
+        soft_gate_tokens: 1_900_000,
+        window_hours: 24
+      },
       grok_local_usage: {
         requests: 2,
         tokens: 250_000,
@@ -2093,9 +2139,16 @@ describe('AccountUsageCell', () => {
     expect(wrapper.text()).not.toContain('2M|')
   })
 
-  it('Grok credential Free tier keeps the 2M fallback when billing is unavailable', async () => {
+  it('Grok credential Free tier uses the backend policy when billing is unavailable', async () => {
     getUsage.mockResolvedValue({
       subscription_tier: 'FREE',
+      grok_free_quota_policy: {
+        enabled: true,
+        token_limit: 2_000_000,
+        soft_gate_percent: 95,
+        soft_gate_tokens: 1_900_000,
+        window_hours: 24
+      },
       grok_local_usage_24h: {
         requests: 3,
         tokens: 1_000_000,
@@ -2180,6 +2233,13 @@ describe('AccountUsageCell', () => {
   it('Grok Free manual probes merge rolling 24h usage', async () => {
     getUsage.mockResolvedValue({
       subscription_tier: 'FREE',
+      grok_free_quota_policy: {
+        enabled: true,
+        token_limit: 2_000_000,
+        soft_gate_percent: 95,
+        soft_gate_tokens: 1_900_000,
+        window_hours: 24
+      },
       grok_quota_snapshot_state: 'no_headers'
     })
 

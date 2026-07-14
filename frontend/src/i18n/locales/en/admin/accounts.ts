@@ -1151,7 +1151,7 @@ export default {
       geminiAccount: 'Gemini Account',
       antigravityAccount: 'Antigravity Account',
       grokAccount: 'Grok Account',
-      grokOAuthConcurrencyHint: 'Grok OAuth concurrency is limited to 1 by default',
+      grokOAuthConcurrencyHint: 'Grok OAuth uses the account concurrency setting',
       inputMethod: 'Input Method',
       reAuthorizedSuccess: 'Account re-authorized successfully',
       // Test Modal
@@ -1228,7 +1228,7 @@ export default {
         claude: 'Claude',
         grokRequests: 'Req',
         grokTokens: 'Tok',
-        grokFreeQuota24hHint: 'Estimated from local token usage over the rolling 24-hour window (2M limit)',
+        grokFreeQuota24hHint: 'Estimated from local token usage over the rolling {hours}-hour window ({limit} limit)',
         grokWeeklyUsage: 'Weekly {percent}%',
         grokUnknown: 'Grok quota is unknown until the first upstream response includes xAI rate-limit headers.',
         grokRetryAfter: 'Retry after {time}',

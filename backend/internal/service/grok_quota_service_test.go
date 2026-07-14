@@ -465,6 +465,43 @@ func TestGrokQuotaServiceFetchBillingRetainsFailedWindowAndSubscription(t *testi
 	require.Same(t, snapshot, repo.updates[account.ID][grokBillingSnapshotExtraKey])
 }
 
+func TestGrokQuotaServiceFetchBillingDoesNotRefreshTimestampWhenAllWindowsFail(t *testing.T) {
+	t.Parallel()
+
+	previousUpdatedAt := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	account := newGrokBillingTestAccount(51)
+	account.Extra = map[string]any{
+		grokBillingSnapshotExtraKey: &xai.BillingSnapshot{
+			UpdatedAt: previousUpdatedAt,
+			Credits:   &xai.CreditsBillingConfig{CreditUsagePercent: 10},
+			Monthly: &xai.MonthlyBillingConfig{
+				MonthlyLimit: &xai.MoneyVal{Val: 100},
+				Used:         &xai.MoneyVal{Val: 30},
+			},
+		},
+	}
+	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
+		accountsByID: map[int64]*Account{account.ID: account},
+	}}
+	upstream := &grokBillingRouteUpstream{routes: map[string]grokBillingRouteResponse{
+		"/v1/billing?format=credits": {status: http.StatusBadGateway, body: `{"error":"temporary"}`},
+		"/v1/billing":                {status: http.StatusBadGateway, body: `{"error":"temporary"}`},
+		"/v1/user?include=subscription": {
+			status: http.StatusBadGateway,
+			body:   `{"error":"temporary"}`,
+		},
+	}}
+	svc := NewGrokQuotaService(repo, nil, NewGrokTokenProvider(repo, nil), upstream, nil)
+
+	snapshot, err := svc.FetchBilling(context.Background(), account.ID)
+
+	require.Error(t, err)
+	require.Equal(t, previousUpdatedAt, snapshot.UpdatedAt)
+	require.NotNil(t, snapshot.Credits)
+	require.NotNil(t, snapshot.Monthly)
+	require.Same(t, snapshot, repo.updates[account.ID][grokBillingSnapshotExtraKey])
+}
+
 func TestGrokQuotaServiceFetchBillingSingleflight(t *testing.T) {
 	account := newGrokBillingTestAccount(50)
 	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{

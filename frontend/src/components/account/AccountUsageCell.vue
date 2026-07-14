@@ -431,11 +431,11 @@
         />
 		<UsageProgressBar
 		  v-if="grokFreeTokenBar"
-		  label="24h"
-		  :title="t('admin.accounts.usageWindow.grokFreeQuota24hHint')"
+		  :label="grokFreeQuotaWindowLabel"
+		  :title="grokFreeQuotaHint"
           :utilization="grokFreeTokenBar.utilization"
           :show-now-when-idle="true"
-          color="emerald"
+          :color="grokFreeTokenBar.softGateReached ? 'amber' : 'emerald'"
         />
         <GrokQuotaProbeCell v-if="showGrokQuotaBars" :account="account" @probed="handleGrokProbed" />
       </div>
@@ -611,7 +611,6 @@ import CodexInviteResetModal from './CodexInviteResetModal.vue'
 // Module-level cache shared across all AccountUsageCell instances
 const _usageCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
 const USAGE_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
-const GROK_FREE_TOKEN_LIMIT = 2_000_000
 
 const props = withDefaults(
   defineProps<{
@@ -794,11 +793,40 @@ const grokIsFree = computed(() => {
   if (grokPlanLabelIsPaid(plan) || grokPlanLabelIsPaid(tier)) return false
   return grokPlanLabelIsFree(plan) || grokPlanLabelIsFree(tier) || grokPlanLabelIsFree(entitlement) || billing != null
 })
-const grokFreeQuotaUsage = computed(() => usageInfo.value?.grok_local_usage_24h || null)
+const grokFreeQuotaUsage = computed(() => (
+  usageInfo.value?.grok_free_quota_usage || usageInfo.value?.grok_local_usage_24h || null
+))
+const grokFreeQuotaPolicy = computed(() => usageInfo.value?.grok_free_quota_policy || null)
+const grokFreeTokenLimit = computed(() => {
+  const configured = grokFreeQuotaPolicy.value?.token_limit
+  if (configured != null && Number.isFinite(configured) && configured > 0) return configured
+  const observed = usageInfo.value?.grok_token_quota?.limit
+  return observed != null && Number.isFinite(observed) && observed > 0 ? observed : null
+})
+const grokFreeQuotaWindowHours = computed(() => {
+  const configured = grokFreeQuotaPolicy.value?.window_hours
+  return configured != null && Number.isFinite(configured) && configured > 0 ? configured : 24
+})
+const grokFreeQuotaWindowLabel = computed(() => {
+  return `${grokFreeQuotaWindowHours.value}h`
+})
+const grokFreeQuotaHint = computed(() => t('admin.accounts.usageWindow.grokFreeQuota24hHint', {
+  hours: grokFreeQuotaWindowHours.value,
+  limit: formatCompactNumber(grokFreeTokenLimit.value || 0)
+}))
 const grokFreeTokenBar = computed(() => {
   if (!grokIsFree.value || !grokFreeQuotaUsage.value) return null
+  const limit = grokFreeTokenLimit.value
+  if (limit == null) return null
   const used = Math.max(0, grokFreeQuotaUsage.value.tokens || 0)
-  return { utilization: Math.min(100, (used / GROK_FREE_TOKEN_LIMIT) * 100) }
+  const configuredGate = grokFreeQuotaPolicy.value?.soft_gate_tokens
+  const gateTokens = configuredGate != null && Number.isFinite(configuredGate) && configuredGate > 0
+    ? configuredGate
+    : limit
+  return {
+    utilization: Math.min(100, (used / limit) * 100),
+    softGateReached: grokFreeQuotaPolicy.value?.enabled === true && used >= gateTokens
+  }
 })
 const grokLocalUsage = computed(() => {
 	if (grokIsFree.value) return grokFreeQuotaUsage.value

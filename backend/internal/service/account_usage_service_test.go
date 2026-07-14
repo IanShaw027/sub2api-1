@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
@@ -179,11 +180,66 @@ func TestAccountUsageService_GetGrokFreeUsageUsesRolling24HourWindow(t *testing.
 	if usage.GrokLocalUsage24h == nil || usage.GrokLocalUsage24h.Tokens != 800000 {
 		t.Fatalf("grok_local_usage_24h = %+v, want tokens=800000", usage.GrokLocalUsage24h)
 	}
+	if usage.GrokFreeQuotaUsage == nil || usage.GrokFreeQuotaUsage.Tokens != 800000 {
+		t.Fatalf("grok_free_quota_usage = %+v, want tokens=800000", usage.GrokFreeQuotaUsage)
+	}
+	if usage.GrokFreeQuotaPolicy == nil {
+		t.Fatal("expected Grok free quota policy")
+	}
+	if usage.GrokFreeQuotaPolicy.TokenLimit != 2_000_000 ||
+		usage.GrokFreeQuotaPolicy.SoftGatePercent != 95 ||
+		usage.GrokFreeQuotaPolicy.SoftGateTokens != 1_900_000 ||
+		usage.GrokFreeQuotaPolicy.WindowHours != 24 {
+		t.Fatalf("grok_free_quota_policy = %+v, want default policy", usage.GrokFreeQuotaPolicy)
+	}
 	if usage.GrokLocalUsage != nil || usage.SevenDay != nil || usage.ThirtyDay != nil {
 		t.Fatalf("free usage must not synthesize paid windows: %+v", usage)
 	}
 	if repo.requestedStart.Before(before.Add(-time.Second)) || repo.requestedStart.After(after.Add(time.Second)) {
 		t.Fatalf("rolling window start = %v, want between %v and %v", repo.requestedStart, before, after)
+	}
+}
+
+func TestAccountUsageService_GrokFreeQuotaPolicyUsesRuntimeConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{}
+	cfg.Gateway.Grok.FreeQuotaSoftGateEnabled = true
+	cfg.Gateway.Grok.FreeQuotaTokenLimit = 4_000_000
+	cfg.Gateway.Grok.FreeQuotaSoftGatePercent = 80
+	cfg.Gateway.Grok.FreeQuotaWindowHours = 12
+	account := &Account{
+		ID:       7046,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			grokBillingSnapshotExtraKey: &xai.BillingSnapshot{
+				UpdatedAt:        time.Now().UTC().Format(time.RFC3339),
+				SubscriptionTier: "free",
+			},
+		},
+	}
+	repo := &grokSevenDayUsageRepoStub{
+		windowStats: &usagestats.AccountStats{Requests: 5, Tokens: 3_200_000},
+	}
+	svc := &AccountUsageService{
+		usageLogRepo:   repo,
+		settingService: &SettingService{cfg: cfg},
+	}
+
+	before := time.Now().UTC().Add(-12 * time.Hour)
+	usage := svc.buildGrokUsageInfo(context.Background(), account, false)
+	after := time.Now().UTC().Add(-12 * time.Hour)
+	policy := usage.GrokFreeQuotaPolicy
+	if policy == nil || !policy.Enabled || policy.TokenLimit != 4_000_000 ||
+		policy.SoftGatePercent != 80 || policy.SoftGateTokens != 3_200_000 || policy.WindowHours != 12 {
+		t.Fatalf("grok free quota policy = %+v", policy)
+	}
+	if usage.GrokFreeQuotaUsage == nil || usage.GrokFreeQuotaUsage.Tokens != 3_200_000 {
+		t.Fatalf("grok free quota usage = %+v, want tokens=3200000", usage.GrokFreeQuotaUsage)
+	}
+	if repo.requestedStart.Before(before.Add(-time.Second)) || repo.requestedStart.After(after.Add(time.Second)) {
+		t.Fatalf("configured rolling window start = %v, want between %v and %v", repo.requestedStart, before, after)
 	}
 }
 

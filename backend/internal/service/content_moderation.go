@@ -97,7 +97,7 @@ const (
 	defaultContentModerationAuditFailureMessage  = "内容审计服务暂不可用，请稍后重试"
 	defaultContentModerationRetryCount           = 2
 	maxContentModerationRetryCount               = 5
-	defaultContentModerationHitRetentionDays     = 180
+	defaultContentModerationHitRetentionDays     = 30
 	defaultContentModerationNonHitRetentionDays  = 3
 	maxContentModerationRetentionDays            = 3650
 	maxContentModerationNonHitRetentionDays      = 3
@@ -204,6 +204,7 @@ type ContentModerationConfig struct {
 	RetryCount              int                               `json:"retry_count"`
 	HitRetentionDays        int                               `json:"hit_retention_days"`
 	NonHitRetentionDays     int                               `json:"non_hit_retention_days"`
+	StoreInputExcerpt       bool                              `json:"store_input_excerpt"`
 	PreHashCheckEnabled     bool                              `json:"pre_hash_check_enabled"`
 	BlockedKeywords         []string                          `json:"blocked_keywords"`
 	KeywordExceptions       []string                          `json:"keyword_exceptions"`
@@ -254,6 +255,7 @@ type ContentModerationConfigView struct {
 	RetryCount                     int                             `json:"retry_count"`
 	HitRetentionDays               int                             `json:"hit_retention_days"`
 	NonHitRetentionDays            int                             `json:"non_hit_retention_days"`
+	StoreInputExcerpt              bool                            `json:"store_input_excerpt"`
 	PreHashCheckEnabled            bool                            `json:"pre_hash_check_enabled"`
 	BlockedKeywords                []string                        `json:"blocked_keywords"`
 	KeywordExceptions              []string                        `json:"keyword_exceptions"`
@@ -376,6 +378,7 @@ type UpdateContentModerationConfigInput struct {
 	RetryCount                     *int                                   `json:"retry_count"`
 	HitRetentionDays               *int                                   `json:"hit_retention_days"`
 	NonHitRetentionDays            *int                                   `json:"non_hit_retention_days"`
+	StoreInputExcerpt              *bool                                  `json:"store_input_excerpt"`
 	PreHashCheckEnabled            *bool                                  `json:"pre_hash_check_enabled"`
 	BlockedKeywords                *[]string                              `json:"blocked_keywords"`
 	KeywordExceptions              *[]string                              `json:"keyword_exceptions"`
@@ -865,6 +868,9 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if input.NonHitRetentionDays != nil {
 		cfg.NonHitRetentionDays = *input.NonHitRetentionDays
 	}
+	if input.StoreInputExcerpt != nil {
+		cfg.StoreInputExcerpt = *input.StoreInputExcerpt
+	}
 	if input.PreHashCheckEnabled != nil {
 		cfg.PreHashCheckEnabled = *input.PreHashCheckEnabled
 	}
@@ -1207,6 +1213,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 				if keyword, hit := matchBlockedKeyword(localContent.KeywordScanText(), cfg.BlockedKeywords, cfg.KeywordExceptions, cfg.DefaultProximityWindow); hit {
 					localHash := localContent.Hash()
 					s.recordPreBlockSyncMetric(0, ContentModerationActionKeywordBlock)
+					matchedRule := contentModerationRuleFingerprint(keyword)
 					slog.Info("content_moderation.keyword_block",
 						"user_id", input.UserID,
 						"api_key_id", input.APIKeyID,
@@ -1214,11 +1221,11 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 						"endpoint", input.Endpoint,
 						"protocol", input.Protocol,
 						"keyword_blocking_mode", cfg.KeywordBlockingMode,
-						"keyword", keyword,
+						"matched_rule", matchedRule,
 						"input_hash", localHash)
 					scores := map[string]float64{contentModerationKeywordCategory: 1.0}
 					log := s.buildLog(input, cfg, ContentModerationActionKeywordBlock, true, contentModerationKeywordCategory, 1.0, scores, localContent.ExcerptText(), nil, nil, "")
-					log.MatchedKeyword = keyword
+					log.MatchedKeyword = matchedRule
 					s.enqueueRecord(ctx, input, cfg, log, localHash, false, true)
 					return &ContentModerationDecision{
 						Allowed:         false,
@@ -2181,6 +2188,11 @@ func contentModerationExcerpt(text string) string {
 	return trimRunes(redactContentModerationSecrets(text), maxModerationExcerptRunes)
 }
 
+func contentModerationRuleFingerprint(keyword string) string {
+	digest := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(keyword))))
+	return "rule_sha256:" + hex.EncodeToString(digest[:8])
+}
+
 func (s *ContentModerationService) buildLog(input ContentModerationCheckInput, cfg *ContentModerationConfig, action string, flagged bool, highestCategory string, highestScore float64, scores map[string]float64, text string, latency *int, queueDelay *int, errText string) *ContentModerationLog {
 	var userID *int64
 	if input.UserID > 0 {
@@ -2190,7 +2202,7 @@ func (s *ContentModerationService) buildLog(input ContentModerationCheckInput, c
 	if input.APIKeyID > 0 {
 		apiKeyID = &input.APIKeyID
 	}
-	return &ContentModerationLog{
+	log := &ContentModerationLog{
 		RequestID:         input.RequestID,
 		UserID:            userID,
 		UserEmail:         input.UserEmail,
@@ -2208,11 +2220,15 @@ func (s *ContentModerationService) buildLog(input ContentModerationCheckInput, c
 		HighestScore:      highestScore,
 		CategoryScores:    cloneFloatMap(scores),
 		ThresholdSnapshot: cloneFloatMap(cfg.Thresholds),
-		InputExcerpt:      trimRunes(redactContentModerationSecrets(text), maxModerationExcerptRunes),
+		InputExcerpt:      "",
 		UpstreamLatencyMS: latency,
 		QueueDelayMS:      queueDelay,
 		Error:             errText,
 	}
+	if cfg.StoreInputExcerpt {
+		log.InputExcerpt = trimRunes(redactContentModerationSecrets(text), maxModerationExcerptRunes)
+	}
+	return log
 }
 
 func (s *ContentModerationService) persistContentModerationLog(ctx context.Context, cfg *ContentModerationConfig, log *ContentModerationLog, hashText string, recordHash bool, applySideEffects bool) {
@@ -3190,6 +3206,7 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		RetryCount:                     cfg.RetryCount,
 		HitRetentionDays:               cfg.HitRetentionDays,
 		NonHitRetentionDays:            cfg.NonHitRetentionDays,
+		StoreInputExcerpt:              cfg.StoreInputExcerpt,
 		PreHashCheckEnabled:            cfg.PreHashCheckEnabled,
 		BlockedKeywords:                append([]string(nil), cfg.BlockedKeywords...),
 		KeywordExceptions:              append([]string(nil), cfg.KeywordExceptions...),
@@ -4657,7 +4674,10 @@ func (s *ContentModerationService) RecordCyberPolicyFlaggedHashes(ctx context.Co
 		return
 	}
 	meta := base
-	meta.Excerpt = contentModerationExcerpt(localInput.ExcerptText())
+	meta.Excerpt = ""
+	if cfg, err := s.loadConfig(ctx); err == nil && cfg.StoreInputExcerpt {
+		meta.Excerpt = contentModerationExcerpt(localInput.ExcerptText())
+	}
 	if err := s.hashCache.RecordFlaggedInputHash(ctx, inputHash, meta); err != nil {
 		slog.Warn("content_moderation.cyber_record_hash_failed", "input_hash", inputHash, "error", err)
 	}

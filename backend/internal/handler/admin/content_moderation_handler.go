@@ -56,6 +56,7 @@ type contentModerationConfigRequest struct {
 	RetryCount              *int                                           `json:"retry_count"`
 	HitRetentionDays        *int                                           `json:"hit_retention_days"`
 	NonHitRetentionDays     *int                                           `json:"non_hit_retention_days"`
+	StoreInputExcerpt       *bool                                          `json:"store_input_excerpt"`
 	PreHashCheckEnabled     *bool                                          `json:"pre_hash_check_enabled"`
 	BlockedKeywords         *[]string                                      `json:"blocked_keywords"`
 	KeywordExceptions       *[]string                                      `json:"keyword_exceptions"`
@@ -136,6 +137,7 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		RetryCount:                     req.RetryCount,
 		HitRetentionDays:               req.HitRetentionDays,
 		NonHitRetentionDays:            req.NonHitRetentionDays,
+		StoreInputExcerpt:              req.StoreInputExcerpt,
 		PreHashCheckEnabled:            req.PreHashCheckEnabled,
 		BlockedKeywords:                req.BlockedKeywords,
 		KeywordExceptions:              req.KeywordExceptions,

@@ -3626,6 +3626,8 @@ export default {
       violationWindowHours: '累计窗口（小时）',
       hitRetentionDays: '命中记录保留（天）',
       nonHitRetentionDays: '未命中记录保留（天，最多 3 天）',
+      storeInputExcerpt: '保存输入摘要',
+      storeInputExcerptHint: '默认关闭。开启后会保存最多 240 字符的脱敏摘要，用于申诉或人工复核。',
       violationCount: '{count} 次',
       emailSent: '已发邮件',
       emailNotSent: '未发邮件',

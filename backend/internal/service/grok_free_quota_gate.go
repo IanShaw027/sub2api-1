@@ -1,0 +1,211 @@
+package service
+
+import (
+	"context"
+	"log/slog"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
+)
+
+const (
+	defaultGrokFreeQuotaTokenLimit      int64 = 2_000_000
+	defaultGrokFreeQuotaSoftGatePercent       = 95
+	defaultGrokFreeQuotaWindowHours           = 24
+)
+
+type GrokFreeQuotaPolicy struct {
+	Enabled         bool  `json:"enabled"`
+	TokenLimit      int64 `json:"token_limit"`
+	SoftGatePercent int   `json:"soft_gate_percent"`
+	SoftGateTokens  int64 `json:"soft_gate_tokens"`
+	WindowHours     int   `json:"window_hours"`
+}
+
+type grokFreeQuotaGateSettings struct {
+	limitTokens int64
+	gateTokens  int64
+	window      time.Duration
+	cacheTTL    time.Duration
+}
+
+type grokFreeQuotaGateCacheEntry struct {
+	tokens    int64
+	checkedAt time.Time
+	known     bool
+}
+
+var grokFreeQuotaGateQueryFailureTotal atomic.Int64
+var grokFreeQuotaGateBlockedTotal atomic.Int64
+
+func resolveGrokFreeQuotaGateSettings(cfg *config.Config) (grokFreeQuotaGateSettings, bool) {
+	if cfg == nil || !cfg.Gateway.Grok.FreeQuotaSoftGateEnabled {
+		return grokFreeQuotaGateSettings{}, false
+	}
+	limit := cfg.Gateway.Grok.FreeQuotaTokenLimit
+	percent := cfg.Gateway.Grok.FreeQuotaSoftGatePercent
+	windowHours := cfg.Gateway.Grok.FreeQuotaWindowHours
+	cacheSeconds := cfg.Gateway.Grok.FreeQuotaStatsCacheSeconds
+	if limit <= 0 || percent < 1 || percent > 100 || windowHours <= 0 || cacheSeconds < 0 {
+		return grokFreeQuotaGateSettings{}, false
+	}
+	gate := calculateGrokFreeQuotaSoftGateTokens(limit, percent)
+	if gate <= 0 {
+		return grokFreeQuotaGateSettings{}, false
+	}
+	return grokFreeQuotaGateSettings{
+		limitTokens: limit,
+		gateTokens:  gate,
+		window:      time.Duration(windowHours) * time.Hour,
+		cacheTTL:    time.Duration(cacheSeconds) * time.Second,
+	}, true
+}
+
+func calculateGrokFreeQuotaSoftGateTokens(limit int64, percent int) int64 {
+	if limit <= 0 || percent <= 0 {
+		return 0
+	}
+	return (limit/100)*int64(percent) + (limit%100)*int64(percent)/100
+}
+
+func (s *AccountUsageService) grokFreeQuotaPolicy() *GrokFreeQuotaPolicy {
+	policy := &GrokFreeQuotaPolicy{
+		Enabled:         true,
+		TokenLimit:      defaultGrokFreeQuotaTokenLimit,
+		SoftGatePercent: defaultGrokFreeQuotaSoftGatePercent,
+		WindowHours:     defaultGrokFreeQuotaWindowHours,
+	}
+	if s != nil && s.settingService != nil && s.settingService.cfg != nil {
+		grokCfg := s.settingService.cfg.Gateway.Grok
+		policy.Enabled = grokCfg.FreeQuotaSoftGateEnabled
+		if grokCfg.FreeQuotaTokenLimit > 0 {
+			policy.TokenLimit = grokCfg.FreeQuotaTokenLimit
+		}
+		if grokCfg.FreeQuotaSoftGatePercent >= 1 && grokCfg.FreeQuotaSoftGatePercent <= 100 {
+			policy.SoftGatePercent = grokCfg.FreeQuotaSoftGatePercent
+		}
+		if grokCfg.FreeQuotaWindowHours > 0 {
+			policy.WindowHours = grokCfg.FreeQuotaWindowHours
+		}
+	}
+	policy.SoftGateTokens = calculateGrokFreeQuotaSoftGateTokens(policy.TokenLimit, policy.SoftGatePercent)
+	return policy
+}
+
+func isExplicitGrokFreeOAuthAccount(account *Account) bool {
+	if account == nil || !account.IsGrokOAuth() {
+		return false
+	}
+	for _, tier := range []string{
+		account.GetCredential("subscription_tier"),
+		account.GetCredential("plan_type"),
+		account.GetExtraString("subscription_tier"),
+		account.GetExtraString("plan_type"),
+	} {
+		if strings.EqualFold(strings.TrimSpace(tier), "free") {
+			return true
+		}
+	}
+	return false
+}
+
+// filterGrokFreeQuotaAccounts applies a local, rolling soft gate only to
+// explicitly FREE Grok OAuth accounts. Missing or failed statistics always
+// fail open; upstream quota/rate-limit handling remains authoritative.
+func (s *defaultOpenAIAccountScheduler) filterGrokFreeQuotaAccounts(ctx context.Context, accounts []Account) []Account {
+	if s == nil || s.service == nil {
+		return accounts
+	}
+	settings, enabled := resolveGrokFreeQuotaGateSettings(s.service.cfg)
+	if !enabled || len(accounts) == 0 || s.service.usageLogRepo == nil {
+		return accounts
+	}
+	now := time.Now().UTC()
+	tokensByID := make(map[int64]int64)
+	missingIDs := make([]int64, 0, len(accounts))
+	seenMissing := make(map[int64]struct{})
+	for i := range accounts {
+		account := &accounts[i]
+		if !isExplicitGrokFreeOAuthAccount(account) || account.ID <= 0 {
+			continue
+		}
+		if cached, ok := s.grokFreeQuotaGateCache.Load(account.ID); ok {
+			entry, valid := cached.(grokFreeQuotaGateCacheEntry)
+			age := now.Sub(entry.checkedAt)
+			if valid && settings.cacheTTL > 0 && age >= 0 && age < settings.cacheTTL {
+				if entry.known {
+					tokensByID[account.ID] = entry.tokens
+				}
+				continue
+			}
+		}
+		if _, exists := seenMissing[account.ID]; !exists {
+			seenMissing[account.ID] = struct{}{}
+			missingIDs = append(missingIDs, account.ID)
+		}
+	}
+
+	if len(missingIDs) > 0 {
+		statsByID, err := s.queryGrokFreeQuotaWindowStats(ctx, missingIDs, now.Add(-settings.window))
+		if err != nil {
+			grokFreeQuotaGateQueryFailureTotal.Add(1)
+			if settings.cacheTTL > 0 {
+				for _, accountID := range missingIDs {
+					s.grokFreeQuotaGateCache.Store(accountID, grokFreeQuotaGateCacheEntry{checkedAt: now})
+				}
+			}
+			slog.Warn("grok_free_quota_soft_gate_stats_failed",
+				"account_count", len(missingIDs),
+				"window_hours", settings.window.Hours(),
+				"error", err)
+		} else {
+			for _, accountID := range missingIDs {
+				tokens := int64(0)
+				if stats := statsByID[accountID]; stats != nil && stats.Tokens > 0 {
+					tokens = stats.Tokens
+				}
+				tokensByID[accountID] = tokens
+				s.grokFreeQuotaGateCache.Store(accountID, grokFreeQuotaGateCacheEntry{tokens: tokens, checkedAt: now, known: true})
+				if tokens >= settings.gateTokens {
+					grokFreeQuotaGateBlockedTotal.Add(1)
+					slog.Info("grok_free_quota_soft_gate_blocked",
+						"account_id", accountID,
+						"tokens", tokens,
+						"gate_tokens", settings.gateTokens,
+						"limit_tokens", settings.limitTokens,
+						"window_hours", settings.window.Hours())
+				}
+			}
+		}
+	}
+
+	filtered := make([]Account, 0, len(accounts))
+	for i := range accounts {
+		account := &accounts[i]
+		if isExplicitGrokFreeOAuthAccount(account) {
+			if tokens, known := tokensByID[account.ID]; known && tokens >= settings.gateTokens {
+				continue
+			}
+		}
+		filtered = append(filtered, *account)
+	}
+	return filtered
+}
+
+func (s *defaultOpenAIAccountScheduler) queryGrokFreeQuotaWindowStats(ctx context.Context, accountIDs []int64, start time.Time) (map[int64]*usagestats.AccountStats, error) {
+	if batch, ok := s.service.usageLogRepo.(accountWindowStatsBatchReader); ok {
+		return batch.GetAccountWindowStatsBatch(ctx, accountIDs, start)
+	}
+	statsByID := make(map[int64]*usagestats.AccountStats, len(accountIDs))
+	for _, accountID := range accountIDs {
+		stats, err := s.service.usageLogRepo.GetAccountWindowStats(ctx, accountID, start)
+		if err != nil {
+			return nil, err
+		}
+		statsByID[accountID] = stats
+	}
+	return statsByID, nil
+}

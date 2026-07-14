@@ -1312,6 +1312,13 @@
               <label class="input-label">{{ t('admin.riskControl.nonHitRetentionDays') }}</label>
               <input v-model.number="configForm.non_hit_retention_days" type="number" min="1" max="3" class="input" />
             </div>
+            <div class="flex items-center justify-between rounded-lg border border-gray-100 p-4 dark:border-dark-700 lg:col-span-2">
+              <div>
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.riskControl.storeInputExcerpt') }}</p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.storeInputExcerptHint') }}</p>
+              </div>
+              <Toggle v-model="configForm.store_input_excerpt" />
+            </div>
             <div class="rounded-lg border border-gray-100 p-4 text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400 lg:col-span-2">
               <div class="flex flex-wrap items-center gap-3">
                 <Icon name="database" size="md" class="text-gray-400" />
@@ -1548,8 +1555,9 @@ const configForm = reactive({
   auto_ban_exempt_users: [] as { id: number; email: string }[],
   auto_ban_exempt_users_text: '',
   violation_window_hours: 720,
-  hit_retention_days: 180,
+  hit_retention_days: 30,
   non_hit_retention_days: 3,
+  store_input_excerpt: false,
   pre_hash_check_enabled: false,
   thresholds: { ...riskThresholdDefaults } as Record<string, number>,
   blocked_keywords_text: '',
@@ -2129,8 +2137,9 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.auto_ban_exempt_users = formatAutoBanExemptUsers(config.auto_ban_exempt_user_ids, config.auto_ban_exempt_user_emails)
   configForm.auto_ban_exempt_users_text = formatAutoBanExemptText(config.auto_ban_exempt_user_emails)
   configForm.violation_window_hours = config.violation_window_hours || 720
-  configForm.hit_retention_days = config.hit_retention_days || 180
+  configForm.hit_retention_days = config.hit_retention_days || 30
   configForm.non_hit_retention_days = Math.min(Math.max(config.non_hit_retention_days || 3, 1), 3)
+  configForm.store_input_excerpt = config.store_input_excerpt ?? false
   configForm.pre_hash_check_enabled = config.pre_hash_check_enabled ?? false
   configForm.thresholds = riskThresholdsFromConfig(config.thresholds)
   configForm.blocked_keywords_text = Array.isArray(config.blocked_keywords) ? config.blocked_keywords.join('\n') : ''
@@ -2278,8 +2287,9 @@ async function saveConfig() {
       ban_threshold: Number(configForm.ban_threshold) || 10,
       ...buildAutoBanExemptUsersPayload(configForm.auto_ban_exempt_users, configForm.auto_ban_exempt_users_text),
       violation_window_hours: Number(configForm.violation_window_hours) || 720,
-      hit_retention_days: Number(configForm.hit_retention_days) || 180,
+      hit_retention_days: Number(configForm.hit_retention_days) || 30,
       non_hit_retention_days: Math.min(Math.max(Number(configForm.non_hit_retention_days) || 3, 1), 3),
+      store_input_excerpt: configForm.store_input_excerpt,
       pre_hash_check_enabled: configForm.pre_hash_check_enabled,
       thresholds: buildRiskThresholdPayload(),
       blocked_keywords: blockedKeywordList.value,

@@ -224,16 +224,18 @@ type UsageInfo struct {
 	AntigravityQuota map[string]*AntigravityModelQuota `json:"antigravity_quota,omitempty"`
 
 	// Grok / xAI 被动额度快照 + 官方 billing
-	GrokRequestQuota       *xai.QuotaWindow `json:"grok_request_quota,omitempty"`
-	GrokTokenQuota         *xai.QuotaWindow `json:"grok_token_quota,omitempty"`
-	GrokRetryAfterSeconds  *int             `json:"grok_retry_after_seconds,omitempty"`
-	GrokEntitlementStatus  string           `json:"grok_entitlement_status,omitempty"`
-	GrokQuotaSnapshotState string           `json:"grok_quota_snapshot_state,omitempty"`
-	GrokLastQuotaProbeAt   string           `json:"grok_last_quota_probe_at,omitempty"`
-	GrokLastHeadersSeenAt  string           `json:"grok_last_headers_seen_at,omitempty"`
-	GrokLastStatusCode     int              `json:"grok_last_status_code,omitempty"`
-	GrokLocalUsage         *WindowStats     `json:"grok_local_usage,omitempty"`
-	GrokLocalUsage24h      *WindowStats     `json:"grok_local_usage_24h,omitempty"`
+	GrokRequestQuota       *xai.QuotaWindow     `json:"grok_request_quota,omitempty"`
+	GrokTokenQuota         *xai.QuotaWindow     `json:"grok_token_quota,omitempty"`
+	GrokRetryAfterSeconds  *int                 `json:"grok_retry_after_seconds,omitempty"`
+	GrokEntitlementStatus  string               `json:"grok_entitlement_status,omitempty"`
+	GrokQuotaSnapshotState string               `json:"grok_quota_snapshot_state,omitempty"`
+	GrokLastQuotaProbeAt   string               `json:"grok_last_quota_probe_at,omitempty"`
+	GrokLastHeadersSeenAt  string               `json:"grok_last_headers_seen_at,omitempty"`
+	GrokLastStatusCode     int                  `json:"grok_last_status_code,omitempty"`
+	GrokLocalUsage         *WindowStats         `json:"grok_local_usage,omitempty"`
+	GrokLocalUsage24h      *WindowStats         `json:"grok_local_usage_24h,omitempty"`
+	GrokFreeQuotaUsage     *WindowStats         `json:"grok_free_quota_usage,omitempty"`
+	GrokFreeQuotaPolicy    *GrokFreeQuotaPolicy `json:"grok_free_quota_policy,omitempty"`
 	// ThirtyDay is the official monthly billing window (Grok /billing used/monthlyLimit).
 	ThirtyDay *UsageProgress `json:"thirty_day,omitempty"`
 	// GrokBilling holds absolute balance/limit/overage numbers from cli-chat-proxy.
@@ -1778,6 +1780,7 @@ func (s *AccountUsageService) buildGrokUsageInfo(ctx context.Context, account *A
 
 	applyGrokBillingSnapshot(usage, billingSnap, now)
 	useFreeQuotaEstimate := grokUsageUsesFreeQuotaEstimate(usage)
+	usage.GrokFreeQuotaPolicy = s.grokFreeQuotaPolicy()
 
 	// Local Sub2API stats aligned to the official weekly/monthly billing periods.
 	weeklyStart := now.Add(-7 * 24 * time.Hour)
@@ -1829,7 +1832,16 @@ func (s *AccountUsageService) buildGrokUsageInfo(ctx context.Context, account *A
 		}
 	}
 	if s.usageLogRepo != nil && useFreeQuotaEstimate {
-		usage.GrokLocalUsage24h = grokLocalUsage24h(ctx, s.usageLogRepo, account.ID, now)
+		window := grokFreeQuotaWindow
+		if usage.GrokFreeQuotaPolicy != nil && usage.GrokFreeQuotaPolicy.WindowHours > 0 {
+			window = time.Duration(usage.GrokFreeQuotaPolicy.WindowHours) * time.Hour
+		}
+		usage.GrokLocalUsage24h = grokLocalUsageWindow(ctx, s.usageLogRepo, account.ID, now, grokFreeQuotaWindow)
+		if window == grokFreeQuotaWindow {
+			usage.GrokFreeQuotaUsage = usage.GrokLocalUsage24h
+		} else {
+			usage.GrokFreeQuotaUsage = grokLocalUsageWindow(ctx, s.usageLogRepo, account.ID, now, window)
+		}
 	}
 
 	enrichUsageWithAccountError(usage, account)
@@ -1849,14 +1861,17 @@ func grokUsageUsesFreeQuotaEstimate(usage *UsageInfo) bool {
 	return false
 }
 
-func grokLocalUsage24h(ctx context.Context, repo UsageLogRepository, accountID int64, now time.Time) *WindowStats {
+func grokLocalUsageWindow(ctx context.Context, repo UsageLogRepository, accountID int64, now time.Time, window time.Duration) *WindowStats {
 	if repo == nil || accountID <= 0 {
 		return nil
 	}
-	start := now.UTC().Add(-grokFreeQuotaWindow)
+	if window <= 0 {
+		window = grokFreeQuotaWindow
+	}
+	start := now.UTC().Add(-window)
 	stats, err := repo.GetAccountWindowStats(ctx, accountID, start)
 	if err != nil {
-		slog.Warn("grok_rolling_24h_usage_query_failed", "account_id", accountID, "window_start", start, "error", err)
+		slog.Warn("grok_rolling_usage_query_failed", "account_id", accountID, "window_start", start, "error", err)
 		return nil
 	}
 	return windowStatsFromAccountStats(stats)
@@ -2032,6 +2047,14 @@ func cloneGrokUsageInfo(src *UsageInfo) *UsageInfo {
 	if src.GrokLocalUsage24h != nil {
 		local := *src.GrokLocalUsage24h
 		cp.GrokLocalUsage24h = &local
+	}
+	if src.GrokFreeQuotaUsage != nil {
+		local := *src.GrokFreeQuotaUsage
+		cp.GrokFreeQuotaUsage = &local
+	}
+	if src.GrokFreeQuotaPolicy != nil {
+		policy := *src.GrokFreeQuotaPolicy
+		cp.GrokFreeQuotaPolicy = &policy
 	}
 	return &cp
 }

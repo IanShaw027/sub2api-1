@@ -384,9 +384,10 @@ func (s *openAIAccountRuntimeStats) size() int {
 }
 
 type defaultOpenAIAccountScheduler struct {
-	service *OpenAIGatewayService
-	metrics openAIAccountSchedulerMetrics
-	stats   *openAIAccountRuntimeStats
+	service                *OpenAIGatewayService
+	metrics                openAIAccountSchedulerMetrics
+	stats                  *openAIAccountRuntimeStats
+	grokFreeQuotaGateCache sync.Map // key: int64(accountID), value: grokFreeQuotaGateCacheEntry
 }
 
 type openAIStickyEscapeConfig struct {
@@ -585,6 +586,10 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		return result, nil
 	}
 	account = s.service.recheckSelectedStickyOpenAIAccountFromDB(ctx, account, req.Platform, req.RequestedModel, req.RequireCompact, req.RequiredCapability, req.RequiredImageRoute, req.RequireOAuthAccount, req.RequireImageEnabled)
+	if account != nil && len(s.filterGrokFreeQuotaAccounts(ctx, []Account{*account})) == 0 {
+		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
+		return result, nil
+	}
 	if account == nil ||
 		!s.isStickyAccountWithinSchedulingScope(ctx, account.ID, req) ||
 		account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) ||
@@ -1144,6 +1149,10 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 	if err != nil {
 		return nil, 0, 0, 0, err
 	}
+	if len(accounts) == 0 {
+		return nil, 0, 0, 0, noAvailableOpenAICompatibleSelectionErrorWithRouting(ctx, s.service.settingService, req.Platform, req.RequestedModel, false, req.RequireCompact, accounts)
+	}
+	accounts = s.filterGrokFreeQuotaAccounts(ctx, accounts)
 	if len(accounts) == 0 {
 		return nil, 0, 0, 0, noAvailableOpenAICompatibleSelectionErrorWithRouting(ctx, s.service.settingService, req.Platform, req.RequestedModel, false, req.RequireCompact, accounts)
 	}

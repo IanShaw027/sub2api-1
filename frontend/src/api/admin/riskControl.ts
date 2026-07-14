@@ -46,6 +46,7 @@ export interface ContentModerationConfig {
   retry_count: number
   hit_retention_days: number
   non_hit_retention_days: number
+  store_input_excerpt: boolean
   pre_hash_check_enabled: boolean
   blocked_keywords: string[]
   keyword_exceptions: string[]
@@ -146,6 +147,7 @@ export interface UpdateContentModerationConfig {
   retry_count?: number
   hit_retention_days?: number
   non_hit_retention_days?: number
+  store_input_excerpt?: boolean
   pre_hash_check_enabled?: boolean
   blocked_keywords?: string[]
   keyword_exceptions?: string[]

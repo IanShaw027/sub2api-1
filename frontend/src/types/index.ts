@@ -1475,6 +1475,14 @@ export interface AccountUsageInfo {
 	grok_last_status_code?: number
 	grok_local_usage?: WindowStats | null
 	grok_local_usage_24h?: WindowStats | null
+  grok_free_quota_usage?: WindowStats | null
+  grok_free_quota_policy?: {
+    enabled: boolean
+    token_limit: number
+    soft_gate_percent: number
+    soft_gate_tokens: number
+    window_hours: number
+  } | null
   /** Official Grok monthly billing window (used / monthlyLimit). */
   thirty_day?: UsageProgress | null
   grok_local_usage_7d?: WindowStats | null

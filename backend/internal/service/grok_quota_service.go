@@ -232,6 +232,8 @@ func (s *GrokQuotaService) fetchBilling(ctx context.Context, accountID int64) (*
 		Source:    "active_billing",
 	}
 	previous := grokBillingSnapshotFromExtra(account.Extra)
+	creditsFresh := false
+	monthlyFresh := false
 
 	// Parallel-ish sequential is fine; keep simple and share auth headers.
 	creditsBody, creditsErr := s.doGrokBillingGET(callCtx, account, token, proxyURL, tlsProfile, baseURL, xai.BillingPathCredits)
@@ -252,6 +254,7 @@ func (s *GrokQuotaService) fetchBilling(ctx context.Context, accountID int64) (*
 		}
 	} else {
 		snapshot.Credits = parsed.Config
+		creditsFresh = true
 	}
 
 	monthlyBody, monthlyErr := s.doGrokBillingGET(callCtx, account, token, proxyURL, tlsProfile, baseURL, xai.BillingPathMonthly)
@@ -276,6 +279,7 @@ func (s *GrokQuotaService) fetchBilling(ctx context.Context, accountID int64) (*
 		}
 	} else {
 		snapshot.Monthly = parsed.Config
+		monthlyFresh = true
 	}
 
 	userBody, userErr := s.doGrokBillingGET(callCtx, account, token, proxyURL, tlsProfile, baseURL, xai.UserPathSubscription)
@@ -295,6 +299,12 @@ func (s *GrokQuotaService) fetchBilling(ctx context.Context, accountID int64) (*
 		snapshot.HasGrokCodeAccess = previous.HasGrokCodeAccess
 	}
 
+	if !creditsFresh && !monthlyFresh && previous != nil {
+		// Retained values keep their original freshness. A failed refresh must not
+		// make an old authoritative snapshot appear newly observed.
+		snapshot.UpdatedAt = previous.UpdatedAt
+	}
+
 	// Persist even partial results so list/passive can show last known state.
 	if s.accountRepo != nil {
 		if err := s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{
@@ -304,7 +314,7 @@ func (s *GrokQuotaService) fetchBilling(ctx context.Context, accountID int64) (*
 		}
 	}
 
-	if snapshot.Credits == nil && snapshot.Monthly == nil {
+	if !creditsFresh && !monthlyFresh {
 		if snapshot.FetchError != "" {
 			return snapshot, infraerrors.Newf(http.StatusBadGateway, "GROK_BILLING_FETCH_FAILED", "failed to fetch grok billing: %s", snapshot.FetchError)
 		}
