@@ -254,30 +254,19 @@ func (s *OpenAIGatewayService) forwardGrokChatCompletionsViaResponses(
 		return nil, policyErr
 	}
 	responsesBody = updatedBody
-
-	token, _, err := s.GetAccessToken(ctx, account)
-	if err != nil {
-		return nil, fmt.Errorf("get grok access token: %w", err)
-	}
-	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
-	defer releaseUpstreamCtx()
-	upstreamReq, err := buildGrokResponsesRequest(upstreamCtx, c, account, responsesBody, token, s.settingService)
-	if err != nil {
-		return nil, fmt.Errorf("build grok responses bridge request: %w", err)
-	}
 	SetActualOpenAIUpstreamEndpoint(c, grokChatResponsesEndpoint)
 
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
-	}
-	tlsRuntime := s.resolveGrokTLSFingerprintRuntime(ctx, c, account, "http")
-	applyGrokRuntimeHeaders(upstreamReq, tlsRuntime)
-	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
+	call, err := s.callGrokResponsesHTTP(ctx, c, account, responsesBody, cacheIdentity)
 	if err != nil {
-		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer call.Release()
+	resp := call.Resp
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		respBody := s.readUpstreamErrorBody(resp)
@@ -321,6 +310,16 @@ func (s *OpenAIGatewayService) forwardGrokChatCompletionsViaResponses(
 			result.RequestID = firstNonEmpty(resp.Header.Get("x-request-id"), resp.Header.Get("xai-request-id"))
 		}
 		result.ReasoningEffort = extractOpenAIReasoningEffortFromBody(body, upstreamModel, billingModel, originalModel)
+		result.OpenAIWSDeltaActive = call.ActiveDeltaApplied
+		result.OpenAIWSPayloadBytes = len(call.UpstreamBody)
+		result.OpenAIWSDeltaItems = call.ActiveDeltaLog.DeltaItems
+		result.OpenAIWSDeltaBytes = call.ActiveDeltaLog.DeltaBytes
+		result.OpenAIWSFullItems = call.ActiveDeltaLog.FullItems
+		result.OpenAIWSFullBytes = call.ActiveDeltaLog.FullBytes
+		if responseID := strings.TrimSpace(result.ResponseID); responseID != "" {
+			s.bindHTTPResponseAccount(ctx, c, account, responseID)
+			s.bindGrokHTTPResponseSessionContext(ctx, c, account, call.CanonicalBody, call.CacheIdentity, responseID)
+		}
 	}
 	return result, err
 }

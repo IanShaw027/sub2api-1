@@ -381,6 +381,64 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			return nil, patchErr
 		}
 		responsesBody = patchedBody
+		// Grok text Responses use the shared active-delta HTTP egress (P2).
+		// Response translation to Anthropic remains on this path.
+		cacheIdentity := resolveGrokCacheIdentity(c, responsesBody, promptCacheKey, upstreamModel)
+		var applyErr error
+		responsesBody, applyErr = applyGrokResponsesCacheIdentity(responsesBody, body, cacheIdentity, false)
+		if applyErr != nil {
+			return nil, applyErr
+		}
+		call, callErr := s.callGrokResponsesHTTP(ctx, c, account, responsesBody, cacheIdentity)
+		if callErr != nil {
+			return nil, callErr
+		}
+		defer call.Release()
+		resp := call.Resp
+		defer func() {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+		}()
+		if resp.StatusCode >= 400 {
+			recordOpenAICompatUpstreamStatus(upstreamModel, resp.StatusCode)
+			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+			_ = resp.Body.Close()
+			resp.Body = io.NopCloser(bytes.NewReader(respBody))
+			s.handleGrokAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+			upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
+			upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+			if s.shouldFailoverUpstreamError(resp.StatusCode) {
+				return nil, &UpstreamFailoverError{
+					StatusCode:             resp.StatusCode,
+					ResponseBody:           respBody,
+					RetryableOnSameAccount: account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
+				}
+			}
+			writeAnthropicError(c, resp.StatusCode, "api_error", firstNonEmpty(upstreamMsg, fmt.Sprintf("xAI upstream returned status %d", resp.StatusCode)))
+			return nil, fmt.Errorf("grok anthropic bridge upstream status %d", resp.StatusCode)
+		}
+		s.updateGrokUsageSnapshot(ctx, account, xai.ParseQuotaHeaders(resp.Header, resp.StatusCode))
+		var handleErr error
+		var result *OpenAIForwardResult
+		if clientStream {
+			result, handleErr = s.handleAnthropicStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, toolNameMap, startTime)
+		} else {
+			result, handleErr = s.handleAnthropicBufferedStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, toolNameMap, startTime)
+		}
+		if result != nil {
+			result.OpenAIWSDeltaActive = call.ActiveDeltaApplied
+			result.OpenAIWSPayloadBytes = len(call.UpstreamBody)
+			result.OpenAIWSDeltaItems = call.ActiveDeltaLog.DeltaItems
+			result.OpenAIWSDeltaBytes = call.ActiveDeltaLog.DeltaBytes
+			result.OpenAIWSFullItems = call.ActiveDeltaLog.FullItems
+			result.OpenAIWSFullBytes = call.ActiveDeltaLog.FullBytes
+			if responseID := strings.TrimSpace(result.ResponseID); responseID != "" {
+				s.bindHTTPResponseAccount(ctx, c, account, responseID)
+				s.bindGrokHTTPResponseSessionContext(ctx, c, account, call.CanonicalBody, call.CacheIdentity, responseID)
+			}
+		}
+		return result, handleErr
 	}
 
 	// 5. Get access token
@@ -399,35 +457,22 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		// Responses request.
 		setOpenAICompatMessagesBridgeContext(c, true)
 	}
-	var upstreamReq *http.Request
-	if account.Platform == PlatformGrok {
-		upstreamReq, err = buildGrokResponsesRequest(upstreamCtx, c, account, responsesBody, token, s.settingService)
-	} else {
-		upstreamReq, err = s.buildUpstreamRequest(upstreamCtx, c, account, responsesBody, token, isStream, promptCacheKey, isOpenAICodexOfficialClientRequest(c))
-	}
+	upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, responsesBody, token, isStream, promptCacheKey, isOpenAICodexOfficialClientRequest(c))
 	if err != nil {
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
 
 	// Override session_id with a deterministic UUID derived from the isolated
 	// session key, ensuring different API keys produce different upstream sessions.
-	// Grok OAuth Claude Code traffic also needs isolation so concurrent keys do
-	// not share xAI session state (session_id and x-grok-conv-id must stay in sync).
-	if (account.Type == AccountTypeAPIKey || account.Platform == PlatformGrok) && promptCacheKey != "" {
+	if account.Type == AccountTypeAPIKey && promptCacheKey != "" {
 		apiKeyID := getAPIKeyIDFromContext(c)
 		sessionID := generateSessionUUID(isolateOpenAISessionID(apiKeyID, promptCacheKey))
 		upstreamReq.Header.Set("session_id", sessionID)
-		if account.Platform == PlatformGrok {
-			upstreamReq.Header.Set("x-grok-conv-id", sessionID)
-		}
 	}
 	if (oauthTurnStateBridge || oauthDerivedSessionBridge) && promptCacheKey != "" {
 		apiKeyID := getAPIKeyIDFromContext(c)
 		sessionID := generateSessionUUID(isolateOpenAISessionID(apiKeyID, promptCacheKey))
 		upstreamReq.Header.Set("session_id", sessionID)
-		if account.Platform == PlatformGrok {
-			upstreamReq.Header.Set("x-grok-conv-id", sessionID)
-		}
 	}
 	if account.Type == AccountTypeOAuth && account.Platform != PlatformGrok {
 		// Anthropic Messages compatibility uses the ChatGPT Codex SSE endpoint.

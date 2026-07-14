@@ -429,9 +429,10 @@
           :remaining-capacity="true"
           color="indigo"
         />
-        <UsageProgressBar
-          v-if="grokFreeTokenBar"
-          label="2M"
+		<UsageProgressBar
+		  v-if="grokFreeTokenBar"
+		  label="24h"
+		  :title="t('admin.accounts.usageWindow.grokFreeQuota24hHint')"
           :utilization="grokFreeTokenBar.utilization"
           :show-now-when-idle="true"
           color="emerald"
@@ -793,21 +794,20 @@ const grokIsFree = computed(() => {
   if (grokPlanLabelIsPaid(plan) || grokPlanLabelIsPaid(tier)) return false
   return grokPlanLabelIsFree(plan) || grokPlanLabelIsFree(tier) || grokPlanLabelIsFree(entitlement) || billing != null
 })
-const grokFreeQuotaUsage = computed(() =>
-  usageInfo.value?.grok_local_usage_7d || props.todayStats || usageInfo.value?.grok_local_usage || null
-)
+const grokFreeQuotaUsage = computed(() => usageInfo.value?.grok_local_usage_24h || null)
 const grokFreeTokenBar = computed(() => {
   if (!grokIsFree.value || !grokFreeQuotaUsage.value) return null
   const used = Math.max(0, grokFreeQuotaUsage.value.tokens || 0)
   return { utilization: Math.min(100, (used / GROK_FREE_TOKEN_LIMIT) * 100) }
 })
-const grokLocalUsage = computed(() =>
-  props.todayStats ||
-  usageInfo.value?.grok_local_usage ||
-  usageInfo.value?.grok_local_usage_7d ||
-  usageInfo.value?.grok_local_usage_monthly ||
-  null
-)
+const grokLocalUsage = computed(() => {
+	if (grokIsFree.value) return grokFreeQuotaUsage.value
+	return props.todayStats ||
+	  usageInfo.value?.grok_local_usage ||
+	  usageInfo.value?.grok_local_usage_7d ||
+	  usageInfo.value?.grok_local_usage_monthly ||
+	  null
+})
 const grokEntitlementLabel = computed(() => {
   const status = (usageInfo.value?.grok_entitlement_status || '').trim()
   return status || null
@@ -1396,9 +1396,10 @@ const handleGrokProbed = (result: GrokQuotaProbeResult) => {
   const current = usageInfo.value
   if (!current) return
   const snapshot = result.snapshot
-  const merged: AccountUsageInfo = {
-    ...current,
-    grok_billing: result.billing ?? current.grok_billing,
+	const merged: AccountUsageInfo = {
+	  ...current,
+	  grok_billing: result.billing ?? current.grok_billing,
+	  grok_local_usage_24h: result.local_usage_24h ?? current.grok_local_usage_24h,
     grok_local_usage_7d: result.local_usage_7d ?? current.grok_local_usage_7d,
     grok_local_usage_monthly: result.local_usage_monthly ?? current.grok_local_usage_monthly,
     grok_request_quota: snapshot?.requests ?? current.grok_request_quota,

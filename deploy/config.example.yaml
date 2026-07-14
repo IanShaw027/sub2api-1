@@ -396,6 +396,11 @@ gateway:
     fallback_error_threshold: 2
     fallback_window_seconds: 60
     fallback_ttl_seconds: 600
+  # Grok OAuth HTTP safe active-delta (only-new input + previous_response_id when prefix-safe)
+  # Grok OAuth HTTP 安全增量：前缀可证明时只发 only-new，否则全量；与 openai_ws.http_incremental_* 解耦
+  grok:
+    http_active_delta_enabled: true
+    http_active_delta_require_store_on_create: false
   # HTTP upstream connection pool settings (HTTP/2 + multi-proxy scenario defaults)
   # HTTP 上游连接池配置（HTTP/2 + 多代理场景默认值）
   # Max idle connections across all hosts
@@ -433,6 +438,9 @@ gateway:
   # Image stream keepalive interval (seconds), 0=disable; independent from ordinary text streams
   # 图片流式 keepalive 间隔（秒），0=禁用；独立于普通文本流式
   image_stream_keepalive_interval: 10
+  # Non-streaming Images JSON keepalive interval (seconds), 0=disable; commits HTTP 200 after the first heartbeat
+  # 图片非流式 JSON keepalive 间隔（秒），0=禁用；首个心跳后 HTTP 状态会固化为 200
+  image_nonstream_keepalive_interval: 0
   # Image generation independent concurrency limiter (process-local, default disabled)
   # 图片生成独立并发限制（进程级，默认关闭；多实例总上限约为实例数×该值）
   image_concurrency:

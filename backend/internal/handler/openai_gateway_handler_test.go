@@ -367,6 +367,27 @@ func TestOpenAIEnsureForwardErrorResponse_WritesFallbackWhenNotWritten(t *testin
 	assert.Equal(t, "Upstream request failed", errorObj["message"])
 }
 
+func TestOpenAIEnsureForwardErrorResponse_AppendsJSONAfterImagesKeepalive(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil)
+	stop := service.StartOpenAIImagesJSONKeepalive(c, time.Millisecond)
+	defer stop()
+	require.Eventually(t, c.Writer.Written, time.Second, time.Millisecond)
+
+	h := &OpenAIGatewayHandler{}
+	wrote := h.ensureForwardErrorResponse(c, false, errors.New("dial tcp: connection refused"))
+
+	require.True(t, wrote)
+	require.Equal(t, http.StatusOK, w.Code, "the heartbeat has already committed the documented 200 status")
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &parsed), "leading keepalive whitespace must be followed by valid JSON")
+	errorObj, ok := parsed["error"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "upstream_connect_error", errorObj["type"])
+}
+
 func TestOpenAIWSIngressFallbackSessionSeedIsConnectionScoped(t *testing.T) {
 	groupID := int64(7)
 

@@ -150,6 +150,43 @@ func TestAccountUsageService_GetGrokUsageWithoutQuotaSnapshotDoesNotPanic(t *tes
 	}
 }
 
+func TestAccountUsageService_GetGrokFreeUsageUsesRolling24HourWindow(t *testing.T) {
+	t.Parallel()
+
+	account := &Account{
+		ID:       7045,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			grokBillingSnapshotExtraKey: &xai.BillingSnapshot{
+				UpdatedAt:        time.Now().UTC().Format(time.RFC3339),
+				SubscriptionTier: "free",
+			},
+		},
+	}
+	repo := &grokSevenDayUsageRepoStub{
+		windowStats: &usagestats.AccountStats{Requests: 4, Tokens: 800000},
+	}
+	svc := &AccountUsageService{usageLogRepo: repo, grokQuotaFetcher: NewGrokQuotaFetcher(), cache: NewUsageCache()}
+
+	before := time.Now().UTC().Add(-24 * time.Hour)
+	usage, err := svc.getGrokUsage(context.Background(), account, false)
+	after := time.Now().UTC().Add(-24 * time.Hour)
+
+	if err != nil {
+		t.Fatalf("getGrokUsage() error = %v", err)
+	}
+	if usage.GrokLocalUsage24h == nil || usage.GrokLocalUsage24h.Tokens != 800000 {
+		t.Fatalf("grok_local_usage_24h = %+v, want tokens=800000", usage.GrokLocalUsage24h)
+	}
+	if usage.GrokLocalUsage != nil || usage.SevenDay != nil || usage.ThirtyDay != nil {
+		t.Fatalf("free usage must not synthesize paid windows: %+v", usage)
+	}
+	if repo.requestedStart.Before(before.Add(-time.Second)) || repo.requestedStart.After(after.Add(time.Second)) {
+		t.Fatalf("rolling window start = %v, want between %v and %v", repo.requestedStart, before, after)
+	}
+}
+
 func TestAccountUsageService_GetGrokUsageAppliesOfficialBillingSnapshot(t *testing.T) {
 	t.Parallel()
 

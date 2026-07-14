@@ -1472,8 +1472,9 @@ export interface AccountUsageInfo {
   grok_quota_snapshot_state?: string
   grok_last_quota_probe_at?: string
   grok_last_headers_seen_at?: string
-  grok_last_status_code?: number
-  grok_local_usage?: WindowStats | null
+	grok_last_status_code?: number
+	grok_local_usage?: WindowStats | null
+	grok_local_usage_24h?: WindowStats | null
   /** Official Grok monthly billing window (used / monthlyLimit). */
   thirty_day?: UsageProgress | null
   grok_local_usage_7d?: WindowStats | null

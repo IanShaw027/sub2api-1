@@ -656,17 +656,17 @@ type OpenAIGatewayService struct {
 	openaiWSURLBuilder            func(*Account) (string, error)
 	openaiAccountStats            *openAIAccountRuntimeStats
 
-	openaiWSFallbackUntil             sync.Map // key: int64(accountID), value: time.Time
-	openaiWSRetryMetrics              openAIWSRetryMetrics
-	openaiWSSessionPreemptions        openAIWSSessionPreemptRegistry
-	responseHeaderFilter              *responseheaders.CompiledHeaderFilter
-	codexSnapshotThrottle             *accountWriteThrottle
-	codexModelsManifestCache          codexModelsManifestCache
-	openaiCompatSessionResponses      sync.Map
+	openaiWSFallbackUntil               sync.Map // key: int64(accountID), value: time.Time
+	openaiWSRetryMetrics                openAIWSRetryMetrics
+	openaiWSSessionPreemptions          openAIWSSessionPreemptRegistry
+	responseHeaderFilter                *responseheaders.CompiledHeaderFilter
+	codexSnapshotThrottle               *accountWriteThrottle
+	codexModelsManifestCache            codexModelsManifestCache
+	openaiCompatSessionResponses        sync.Map
 	openaiCompatAnthropicDigestSessions sync.Map
-	openaiAccountRuntimeBlockUntil    sync.Map // key: int64(accountID), value: time.Time
-	openaiOAuth429WindowStartUnixNano atomic.Int64
-	openaiOAuth429WindowCount         atomic.Int64
+	openaiAccountRuntimeBlockUntil      sync.Map // key: int64(accountID), value: time.Time
+	openaiOAuth429WindowStartUnixNano   atomic.Int64
+	openaiOAuth429WindowCount           atomic.Int64
 
 	opsUpstreamFailureSinkMu sync.RWMutex
 	opsUpstreamFailureSink   OpsUpstreamFailureSink
@@ -8397,6 +8397,11 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				eventType, data = openAIStreamFrameEventTypeAndData(frame)
 				dataBytes = []byte(data)
 			}
+			if normalizedData, normalized := normalizeCompletedImageGenerationStatus(dataBytes); normalized {
+				openAICompatSetSSEFrameData(&frame, string(normalizedData))
+				eventType, data = openAIStreamFrameEventTypeAndData(frame)
+				dataBytes = []byte(data)
+			}
 			trimmedData := strings.TrimSpace(data)
 			if trimmedData == "[DONE]" {
 				sawDone = true
@@ -10185,6 +10190,12 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				forceFlushFailedEvent = true
 				sawFailedEvent = true
 			}
+			if normalizedData, normalized := normalizeCompletedImageGenerationStatus(dataBytes); normalized {
+				openAICompatSetSSEFrameData(&frame, string(normalizedData))
+				dataBytes = normalizedData
+				data = string(normalizedData)
+				eventType = strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String())
+			}
 
 			if correctedData, corrected := s.toolCorrector.CorrectToolCallsInSSEBytes(dataBytes); corrected {
 				openAICompatSetSSEFrameData(&frame, string(correctedData))
@@ -11275,6 +11286,9 @@ func extractOpenAISSETerminalEvent(body string) (string, []byte, bool) {
 		if data == "" || data == "[DONE]" {
 			continue
 		}
+		if normalized, changed := normalizeCompletedImageGenerationStatus([]byte(data)); changed {
+			data = string(normalized)
+		}
 		eventType := strings.TrimSpace(gjson.Get(data, "type").String())
 		if eventType == "error" {
 			terminalType = "response.failed"
@@ -11473,6 +11487,9 @@ func extractCodexFinalResponse(body string) ([]byte, bool) {
 		if data == "" || data == "[DONE]" {
 			continue
 		}
+		if normalized, changed := normalizeCompletedImageGenerationStatus([]byte(data)); changed {
+			data = string(normalized)
+		}
 		eventType := strings.TrimSpace(gjson.Get(data, "type").String())
 		if isOpenAIFinalResponseEnvelopeEventType(eventType) {
 			if response := gjson.Get(data, "response"); response.Exists() && response.Type == gjson.JSON && response.Raw != "" {
@@ -11486,6 +11503,59 @@ func extractCodexFinalResponse(body string) ([]byte, bool) {
 		return nil, false
 	}
 	return finalResponse, true
+}
+
+func normalizeCompletedImageGenerationStatus(data []byte) ([]byte, bool) {
+	if len(data) == 0 || !gjson.ValidBytes(data) {
+		return data, false
+	}
+
+	shouldNormalize := func(item gjson.Result) bool {
+		if !item.Exists() || !item.IsObject() ||
+			strings.TrimSpace(item.Get("type").String()) != "image_generation_call" {
+			return false
+		}
+		switch strings.TrimSpace(item.Get("status").String()) {
+		case "generating", "in_progress":
+			return strings.TrimSpace(item.Get("result").String()) != ""
+		default:
+			return false
+		}
+	}
+
+	eventType := strings.TrimSpace(gjson.GetBytes(data, "type").String())
+	switch eventType {
+	case "response.output_item.done":
+		if !shouldNormalize(gjson.GetBytes(data, "item")) {
+			return data, false
+		}
+		updated, err := sjson.SetBytes(data, "item.status", "completed")
+		if err != nil {
+			return data, false
+		}
+		return updated, true
+	case "response.completed", "response.done":
+		output := gjson.GetBytes(data, "response.output")
+		if !output.Exists() || !output.IsArray() {
+			return data, false
+		}
+		updated := data
+		changed := false
+		for i, item := range output.Array() {
+			if !shouldNormalize(item) {
+				continue
+			}
+			next, err := sjson.SetBytes(updated, "response.output."+strconv.Itoa(i)+".status", "completed")
+			if err != nil {
+				return data, false
+			}
+			updated = next
+			changed = true
+		}
+		return updated, changed
+	default:
+		return data, false
+	}
 }
 
 func isOpenAIUsageTerminalEventType(eventType string) bool {
@@ -11625,6 +11695,9 @@ func collectRawResponsesOutputItemsFromSSE(bodyText string) ([]byte, bool) {
 		items = append(items, json.RawMessage(item.Raw))
 	}
 	forEachOpenAISSEDataPayload(bodyText, func(data []byte) {
+		if normalized, changed := normalizeCompletedImageGenerationStatus(data); changed {
+			data = normalized
+		}
 		if strings.TrimSpace(gjson.GetBytes(data, "type").String()) == "response.output_item.done" {
 			appendItem(gjson.GetBytes(data, "item"))
 		}
@@ -12783,7 +12856,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		}
 		searchCost := s.billingService.CalculateSearchCost(result.SearchCount, groupPrice, multiplier)
 		if hasUsageTokens(tokens) {
-				tokenCost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier, applyLongContextBilling)
+			tokenCost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier, applyLongContextBilling)
 			if err != nil {
 				return nil, err
 			}
@@ -12795,7 +12868,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		if s.resolver != nil && apiKey != nil && apiKey.Group != nil && !apiKeyHasConfiguredVideoPrice(apiKey, firstNonEmptyString(result.VideoResolution, result.VideoSize)) {
 			gid := apiKey.Group.ID
 			if resolved := s.resolver.Resolve(ctx, PricingInput{Model: billingModel, GroupID: &gid}); resolved != nil && resolved.Source == PricingSourceChannel && resolved.Mode == BillingModeToken {
-					return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier, applyLongContextBilling)
+				return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier, applyLongContextBilling)
 			}
 		}
 		return s.calculateOpenAIVideoRequestCost(result, apiKey, videoRateMultiplier), nil
@@ -12811,7 +12884,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		}
 		audioCost := s.billingService.CalculateAudioCost(result.AudioUsage.Mode, result.AudioUsage.DurationOrUnits, groupConfig, 1)
 		if hasUsageTokens(tokens) {
-				tokenCost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier, applyLongContextBilling)
+			tokenCost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier, applyLongContextBilling)
 			if err != nil {
 				return nil, err
 			}
@@ -12823,7 +12896,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		if !apiKeyHasConfiguredImagePrice(apiKey, result.ImageSize) && s.resolver != nil && apiKey != nil && apiKey.Group != nil {
 			gid := apiKey.Group.ID
 			if resolved := s.resolver.Resolve(ctx, PricingInput{Model: billingModel, GroupID: &gid}); resolved != nil && resolved.Source == PricingSourceChannel && resolved.Mode == BillingModeToken {
-					return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier, applyLongContextBilling)
+				return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier, applyLongContextBilling)
 			}
 		}
 		return s.calculateOpenAIImageRequestCost(ctx, result, apiKey, billingModel, multiplier, imageRateMultiplier, tokens, serviceTier, requestType, applyLongContextBilling)
@@ -12980,13 +13053,13 @@ func (s *OpenAIGatewayService) calculateOpenAITokenUsageCost(
 	if s.resolver != nil && apiKey != nil && apiKey.Group != nil {
 		gid := apiKey.Group.ID
 		return s.billingService.CalculateCostUnified(CostInput{
-			Ctx:            ctx,
-			Model:          billingModel,
-			GroupID:        &gid,
-			Tokens:         tokens,
-			RequestCount:   1,
-			RateMultiplier: multiplier,
-			ServiceTier:    serviceTier,
+			Ctx:                       ctx,
+			Model:                     billingModel,
+			GroupID:                   &gid,
+			Tokens:                    tokens,
+			RequestCount:              1,
+			RateMultiplier:            multiplier,
+			ServiceTier:               serviceTier,
 			Resolver:                  s.resolver,
 			LongContextBillingEnabled: &applyLongContextBilling,
 		})
