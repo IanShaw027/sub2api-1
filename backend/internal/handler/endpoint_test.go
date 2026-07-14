@@ -341,18 +341,28 @@ func TestGetUpstreamEndpoint_FullFlow(t *testing.T) {
 	require.Equal(t, "/v1/responses/compact", got)
 }
 
-func TestResolveOpenAIUpstreamEndpoint_GrokChatUsesRawChat(t *testing.T) {
-	rec := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, EndpointChatCompletions, nil)
-	c.Set(ctxKeyInboundEndpoint, EndpointChatCompletions)
-
-	account := &service.Account{
-		Platform: service.PlatformGrok,
-		Type:     service.AccountTypeOAuth,
+func TestResolveOpenAIUpstreamEndpoint_GrokPreservesNativeProtocols(t *testing.T) {
+	account := &service.Account{Platform: service.PlatformGrok, Type: service.AccountTypeOAuth}
+	tests := []struct {
+		name     string
+		inbound  string
+		upstream string
+	}{
+		{name: "responses stays responses", inbound: EndpointResponses, upstream: EndpointResponses},
+		{name: "chat completions stays chat completions", inbound: EndpointChatCompletions, upstream: EndpointChatCompletions},
+		{name: "messages bridges to responses", inbound: EndpointMessages, upstream: EndpointResponses},
 	}
 
-	require.Equal(t, EndpointChatCompletions, resolveOpenAIUpstreamEndpoint(c, account))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, tt.inbound, nil)
+			c.Set(ctxKeyInboundEndpoint, tt.inbound)
+
+			require.Equal(t, tt.upstream, resolveOpenAIUpstreamEndpoint(c, account))
+		})
+	}
 }
 
 func TestResolveOpenAIMessagesUpstreamEndpoint_TextAutoRouteForceChat(t *testing.T) {
