@@ -41,7 +41,7 @@ jobs:
 
       - name: Update VERSION file
         run: |
-          VERSION=${{ env.RELEASE_TAG }}
+          VERSION="$RELEASE_TAG"
           VERSION=${VERSION#v}
           echo "$VERSION" > backend/cmd/server/VERSION
           echo "Updated VERSION file to: $VERSION"
@@ -152,7 +152,7 @@ jobs:
       - name: Get tag message
         id: tag_message
         run: |
-          TAG_NAME=${{ env.RELEASE_TAG }}
+          TAG_NAME="$RELEASE_TAG"
           echo "Processing tag: $TAG_NAME"
 
           # 获取完整的 tag message（跳过第一行标题）
@@ -217,6 +217,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          TAG_MESSAGE_VALUE: ${{ steps.tag_message.outputs.message }}
         continue-on-error: true
         run: |
           # 检查必要的环境变量
@@ -225,13 +226,13 @@ jobs:
             exit 0
           fi
 
-          TAG_NAME=${{ env.RELEASE_TAG }}
+          TAG_NAME="$RELEASE_TAG"
           VERSION=${TAG_NAME#v}
           REPO="${{ github.repository }}"
           GHCR_IMAGE="ghcr.io/${REPO,,}"  # ${,,} converts to lowercase
 
           # 获取 tag message 内容并转义 Markdown 特殊字符
-          TAG_MESSAGE='${{ steps.tag_message.outputs.message }}'
+          TAG_MESSAGE="$TAG_MESSAGE_VALUE"
           TAG_MESSAGE=$(echo "$TAG_MESSAGE" | sed 's/\([_*`\[]\)/\\\1/g')
 
           # 限制消息长度（Telegram 消息限制 4096 字符，预留空间给头尾固定内容）
@@ -292,7 +293,7 @@ jobs:
 
       - name: Sync VERSION file to released tag
         run: |
-          VERSION=${{ env.RELEASE_TAG }}
+          VERSION="$RELEASE_TAG"
           VERSION=${VERSION#v}
 
           CURRENT_VERSION=$(tr -d '\r\n' < backend/cmd/server/VERSION || true)
