@@ -46,6 +46,12 @@ const (
 	kiroProfileResolutionCacheMax       = 1024
 	kiroProfileResolutionSuccessTTL     = time.Hour
 	kiroProfileResolutionFailureTTL     = 5 * time.Minute
+	kiroFirstEventTimeoutThresholdCount = 3
+	kiroFirstEventTimeoutWindowMinutes  = 2
+	kiroFirstEventTimeoutCooldown       = 30 * time.Second
+	kiroFirstEventTimeoutResetTimeout   = 250 * time.Millisecond
+	kiroFirstEventTimeoutReasonKeyword  = "kiro_first_event_timeout"
+	kiroFirstEventTimeoutFingerprint    = "kiro:first_forwardable_event_timeout"
 
 	// kiroTransportFailureCooldown：transport 层故障（非客户端取消）短期冷却时长，
 	// 让调度层在该窗口内跳过出错账号，避免重复打到不可达上游。命中后会一并触发 failover。
@@ -63,7 +69,7 @@ const (
 	kiroRepeatedWordMaxRunes                    = 24
 )
 
-var kiroFirstForwardableEventTimeout = 30 * time.Second
+var kiroFirstForwardableEventTimeout = 60 * time.Second
 
 var (
 	kiroShadowWebSearchExecutor = doWebSearch
@@ -219,9 +225,10 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 		s.recordOpsHTTPError(c, account, req.URL.String(), resp.StatusCode, resp.Header, body)
 		if shouldKiroFailover(effectiveStatusCode) {
 			failoverErr := &UpstreamFailoverError{
-				StatusCode:      effectiveStatusCode,
-				ResponseBody:    body,
-				ResponseHeaders: resp.Header.Clone(),
+				StatusCode:         effectiveStatusCode,
+				ResponseBody:       body,
+				ResponseHeaders:    resp.Header.Clone(),
+				ExcludedAccountIDs: s.kiroFailoverExcludedAccountIDs(ctx, account),
 			}
 			if effectiveStatusCode == http.StatusTooManyRequests && shouldKiroRetrySameAccount(resp.StatusCode, resp.Header, body) {
 				failoverErr.RetryableOnSameAccount = true
@@ -435,6 +442,100 @@ func accountCredential(account *Account, key string) string {
 		return ""
 	}
 	return account.GetCredential(key)
+}
+
+func (s *KiroGatewayService) kiroFailoverExcludedAccountIDs(ctx context.Context, account *Account) []int64 {
+	profileARN := strings.TrimSpace(accountCredential(account, "profile_arn"))
+	if profileARN == "" || s == nil || s.rateLimitService == nil || s.rateLimitService.accountRepo == nil {
+		return nil
+	}
+
+	base := context.Background()
+	if ctx != nil {
+		base = context.WithoutCancel(ctx)
+	}
+	lookupCtx, cancel := context.WithTimeout(base, kiroAccountStateUpdateTimeout)
+	defer cancel()
+	accounts, err := s.rateLimitService.accountRepo.ListByPlatform(lookupCtx, PlatformKiro)
+	if err != nil {
+		slog.Warn("kiro_failover_profile_exclusion_lookup_failed", "account_id", account.ID, "profile_arn", profileARN, "error", err)
+		return nil
+	}
+
+	excluded := make([]int64, 0, len(accounts))
+	seen := make(map[int64]struct{}, len(accounts))
+	for i := range accounts {
+		candidate := &accounts[i]
+		if candidate.ID <= 0 || strings.TrimSpace(accountCredential(candidate, "profile_arn")) != profileARN {
+			continue
+		}
+		if _, ok := seen[candidate.ID]; ok {
+			continue
+		}
+		seen[candidate.ID] = struct{}{}
+		excluded = append(excluded, candidate.ID)
+	}
+	sort.Slice(excluded, func(i, j int) bool { return excluded[i] < excluded[j] })
+	return excluded
+}
+
+func (s *KiroGatewayService) maybeMarkKiroFirstEventTimeout(ctx context.Context, account *Account, message string) {
+	accountID := int64(0)
+	if account != nil {
+		accountID = account.ID
+	}
+	if s == nil || s.rateLimitService == nil || s.rateLimitService.tempUnschedCounter == nil || account == nil || account.ID <= 0 {
+		slog.Warn("kiro_first_event_timeout_threshold_unavailable", "account_id", accountID)
+		return
+	}
+
+	count, reached, err := s.rateLimitService.tempUnschedCounter.IncrementTempUnschedThreshold(
+		ctx,
+		account.ID,
+		kiroFirstEventTimeoutFingerprint,
+		kiroFirstEventTimeoutWindowMinutes,
+		kiroFirstEventTimeoutThresholdCount,
+	)
+	if err != nil {
+		slog.Warn("kiro_first_event_timeout_threshold_increment_failed", "account_id", account.ID, "error", err)
+		return
+	}
+	if !reached {
+		slog.Warn("kiro_first_event_timeout_threshold_observed",
+			"account_id", account.ID,
+			"count", count,
+			"threshold", kiroFirstEventTimeoutThresholdCount,
+			"window_minutes", kiroFirstEventTimeoutWindowMinutes)
+		return
+	}
+
+	s.markKiroFailureUnschedulable(
+		ctx,
+		account,
+		http.StatusGatewayTimeout,
+		kiroFirstEventTimeoutReasonKeyword,
+		message,
+		kiroFirstEventTimeoutCooldown,
+	)
+}
+
+func (s *KiroGatewayService) resetKiroFirstEventTimeoutCount(ctx context.Context, account *Account) {
+	if s == nil || s.rateLimitService == nil || account == nil || account.ID <= 0 {
+		return
+	}
+	resetter, ok := s.rateLimitService.tempUnschedCounter.(TempUnschedCounterExactResetter)
+	if !ok || resetter == nil {
+		return
+	}
+	base := context.Background()
+	if ctx != nil {
+		base = context.WithoutCancel(ctx)
+	}
+	resetCtx, cancel := context.WithTimeout(base, kiroFirstEventTimeoutResetTimeout)
+	defer cancel()
+	if err := resetter.ResetTempUnschedFingerprint(resetCtx, account.ID, kiroFirstEventTimeoutFingerprint); err != nil {
+		slog.Warn("kiro_first_event_timeout_threshold_reset_failed", "account_id", account.ID, "error", err)
+	}
 }
 
 func patchKiroThinkingForModel(forwardBody []byte, requestedModel string, outputEffort string) []byte {
@@ -1259,6 +1360,11 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 	var firstForwardableStarted atomic.Bool
 	var firstForwardableTimeoutTriggered atomic.Bool
 	var firstForwardableWatchdog *time.Timer
+	defer func() {
+		if firstForwardableStarted.Load() {
+			s.resetKiroFirstEventTimeoutCount(ctx, account)
+		}
+	}()
 	stopFirstForwardableWatchdog := func() {
 		if firstForwardableWatchdog == nil {
 			return
@@ -2155,7 +2261,7 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 			}
 			if !streamStarted && firstForwardableTimeoutTriggered.Load() {
 				timeoutErr := fmt.Errorf("kiro upstream did not emit a forwardable event within %s", kiroFirstForwardableEventTimeout)
-				return nil, s.newKiroPreStartStreamFailoverError(ctx, c, account, resp.Header.Get("x-amzn-requestid"), resp.Header.Clone(), http.StatusGatewayTimeout, kiroTransportFailureReasonKeyword, timeoutErr.Error(), readErr.Error())
+				return nil, s.newKiroPreStartStreamFailoverError(ctx, c, account, resp.Header.Get("x-amzn-requestid"), resp.Header.Clone(), http.StatusGatewayTimeout, kiroFirstEventTimeoutReasonKeyword, timeoutErr.Error(), readErr.Error())
 			}
 			if readErr == io.EOF {
 				if len(buffer) > 0 {
@@ -4340,7 +4446,11 @@ func (s *KiroGatewayService) newKiroPreStartStreamFailoverError(ctx context.Cont
 	}
 	stateCtx, cancel := kiroAccountStateContext(ctx)
 	defer cancel()
-	s.markKiroFailureUnschedulable(stateCtx, account, statusCode, reasonKeyword, message, kiroTransportFailureCooldown)
+	if reasonKeyword == kiroFirstEventTimeoutReasonKeyword {
+		s.maybeMarkKiroFirstEventTimeout(stateCtx, account, message)
+	} else {
+		s.markKiroFailureUnschedulable(stateCtx, account, statusCode, reasonKeyword, message, kiroTransportFailureCooldown)
+	}
 	if c != nil {
 		s.recordOpsErrorEvent(c, account, statusCode, upstreamRequestID, "", "failover", message, detail)
 	}
@@ -4357,9 +4467,10 @@ func (s *KiroGatewayService) newKiroPreStartStreamFailoverError(ctx context.Cont
 		respHeaders = http.Header{}
 	}
 	return &UpstreamFailoverError{
-		StatusCode:      statusCode,
-		ResponseBody:    body,
-		ResponseHeaders: respHeaders,
+		StatusCode:         statusCode,
+		ResponseBody:       body,
+		ResponseHeaders:    respHeaders,
+		ExcludedAccountIDs: s.kiroFailoverExcludedAccountIDs(ctx, account),
 	}
 }
 
@@ -4401,9 +4512,10 @@ func (s *KiroGatewayService) handleFrameFailureWithCooldown(ctx context.Context,
 			cancel()
 		}
 		return &UpstreamFailoverError{
-			StatusCode:      statusCode,
-			ResponseBody:    body,
-			ResponseHeaders: kiroFrameFailureHeaders(upstreamRequestID),
+			StatusCode:         statusCode,
+			ResponseBody:       body,
+			ResponseHeaders:    kiroFrameFailureHeaders(upstreamRequestID),
+			ExcludedAccountIDs: s.kiroFailoverExcludedAccountIDs(ctx, account),
 		}
 	}
 	if writeClientError && c != nil {

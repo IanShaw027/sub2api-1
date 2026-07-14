@@ -261,6 +261,20 @@ func TestHandleFailoverError_BasicSwitch(t *testing.T) {
 	})
 }
 
+func TestHandleFailoverError_AddsRelatedAccountExclusions(t *testing.T) {
+	mock := &mockTempUnscheduler{}
+	fs := NewFailoverState(3, false)
+	err := &service.UpstreamFailoverError{
+		StatusCode:         http.StatusGatewayTimeout,
+		ExcludedAccountIDs: []int64{100, 101, 102, 0, -1, 101},
+	}
+
+	action := fs.HandleFailoverError(context.Background(), mock, 100, service.PlatformKiro, err)
+
+	require.Equal(t, FailoverContinue, action)
+	require.Equal(t, map[int64]struct{}{100: {}, 101: {}, 102: {}}, fs.FailedAccountIDs)
+}
+
 // ---------------------------------------------------------------------------
 // HandleFailoverError — 缓存计费 (ForceCacheBilling)
 // ---------------------------------------------------------------------------

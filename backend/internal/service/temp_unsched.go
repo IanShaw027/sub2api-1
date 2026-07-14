@@ -37,6 +37,12 @@ type TempUnschedCounterCache interface {
 	ResetTempUnschedCount(ctx context.Context, accountID int64, ruleFingerprint string) error
 }
 
+// TempUnschedCounterExactResetter 只清理当前 fingerprint 的计数 key，不扫描旧版规则 key。
+// 高频成功路径应优先使用该接口，避免 ResetTempUnschedCount 的兼容性 SCAN。
+type TempUnschedCounterExactResetter interface {
+	ResetTempUnschedFingerprint(ctx context.Context, accountID int64, ruleFingerprint string) error
+}
+
 func tempUnschedRuleFingerprint(rule TempUnschedulableRule) string {
 	keywords := make([]string, 0, len(rule.Keywords))
 	for _, keyword := range rule.Keywords {

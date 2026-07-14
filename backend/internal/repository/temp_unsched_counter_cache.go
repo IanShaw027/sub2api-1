@@ -105,9 +105,13 @@ func (c *tempUnschedCounterCache) IncrementTempUnschedThreshold(ctx context.Cont
 	return count, reached == 1, nil
 }
 
+func (c *tempUnschedCounterCache) ResetTempUnschedFingerprint(ctx context.Context, accountID int64, ruleFingerprint string) error {
+	return c.rdb.Del(ctx, c.counterKey(accountID, ruleFingerprint)).Err()
+}
+
 // ResetTempUnschedCount 重置某账户某条规则的命中计数。
 func (c *tempUnschedCounterCache) ResetTempUnschedCount(ctx context.Context, accountID int64, ruleFingerprint string) error {
-	if err := c.rdb.Del(ctx, c.counterKey(accountID, ruleFingerprint)).Err(); err != nil {
+	if err := c.ResetTempUnschedFingerprint(ctx, accountID, ruleFingerprint); err != nil {
 		return err
 	}
 

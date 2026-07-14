@@ -176,6 +176,28 @@ func TestTempUnschedCounterCache_ResetAlsoDeletesLegacyIndexKey(t *testing.T) {
 	require.EqualValues(t, 0, exists)
 }
 
+func TestTempUnschedCounterCache_ExactResetDoesNotScanLegacyKeys(t *testing.T) {
+	cache, rdb := newTempUnschedCounterCacheTest(t)
+	ctx := context.Background()
+	recorder := &redisCommandRecorder{}
+	rdb.AddHook(recorder)
+
+	legacyKey := "temp_unsched_count:account:42:rule:3"
+	newKey := cache.counterKey(42, "kiro:first_forwardable_event_timeout")
+	require.NoError(t, rdb.Set(ctx, legacyKey, 1, time.Minute).Err())
+	require.NoError(t, rdb.Set(ctx, newKey, 1, time.Minute).Err())
+
+	require.NoError(t, cache.ResetTempUnschedFingerprint(ctx, 42, "kiro:first_forwardable_event_timeout"))
+
+	require.False(t, recorder.saw("scan"))
+	newExists, err := rdb.Exists(ctx, newKey).Result()
+	require.NoError(t, err)
+	require.Zero(t, newExists)
+	legacyExists, err := rdb.Exists(ctx, legacyKey).Result()
+	require.NoError(t, err)
+	require.EqualValues(t, 1, legacyExists)
+}
+
 func TestTempUnschedCounterCache_ResetUsesScanForLegacyKeys(t *testing.T) {
 	cache, rdb := newTempUnschedCounterCacheTest(t)
 	ctx := context.Background()

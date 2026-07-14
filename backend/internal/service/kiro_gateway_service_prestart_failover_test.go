@@ -23,8 +23,9 @@ type kiroPreStartTempUnschedCall struct {
 
 type kiroPreStartAccountRepoStub struct {
 	kiroDefaultAccountRepoStub
-	mu    sync.Mutex
-	calls []kiroPreStartTempUnschedCall
+	mu       sync.Mutex
+	calls    []kiroPreStartTempUnschedCall
+	accounts []Account
 }
 
 func (r *kiroPreStartAccountRepoStub) SetTempUnschedulable(ctx context.Context, id int64, until time.Time, reason string) error {
@@ -36,6 +37,46 @@ func (r *kiroPreStartAccountRepoStub) SetTempUnschedulable(ctx context.Context, 
 		reason:    reason,
 	})
 	return nil
+}
+
+func (r *kiroPreStartAccountRepoStub) ListByPlatform(context.Context, string) ([]Account, error) {
+	return append([]Account(nil), r.accounts...), nil
+}
+
+type kiroFirstEventCounterStub struct {
+	mu     sync.Mutex
+	counts map[int64]int
+}
+
+func newKiroFirstEventCounterStub() *kiroFirstEventCounterStub {
+	return &kiroFirstEventCounterStub{counts: make(map[int64]int)}
+}
+
+func (c *kiroFirstEventCounterStub) IncrementTempUnschedCount(context.Context, int64, string, int) (int64, error) {
+	return 0, nil
+}
+
+func (c *kiroFirstEventCounterStub) IncrementTempUnschedThreshold(_ context.Context, accountID int64, _ string, _ int, thresholdCount int) (int64, bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.counts[accountID]++
+	count := c.counts[accountID]
+	if count >= thresholdCount {
+		c.counts[accountID] = 0
+		return int64(count), true, nil
+	}
+	return int64(count), false, nil
+}
+
+func (c *kiroFirstEventCounterStub) ResetTempUnschedCount(_ context.Context, accountID int64, _ string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.counts[accountID] = 0
+	return nil
+}
+
+func (c *kiroFirstEventCounterStub) ResetTempUnschedFingerprint(ctx context.Context, accountID int64, fingerprint string) error {
+	return c.ResetTempUnschedCount(ctx, accountID, fingerprint)
 }
 
 type kiroBlockingReadCloser struct {
@@ -190,7 +231,7 @@ func TestKiroGatewayService_HandleTransportError_ClientCanceledDoesNotRecordOpsO
 	require.False(t, ok)
 }
 
-func TestKiroGatewayService_ForwardStream_PreFirstForwardableTimeoutReturnsFailoverAndTempUnsched(t *testing.T) {
+func TestKiroGatewayService_ForwardStream_PreFirstForwardableTimeoutUsesThresholdAndProfileExclusions(t *testing.T) {
 	setGinTestMode()
 
 	prevTimeout := kiroFirstForwardableEventTimeout
@@ -201,36 +242,44 @@ func TestKiroGatewayService_ForwardStream_PreFirstForwardableTimeoutReturnsFailo
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	repo := &kiroPreStartAccountRepoStub{}
+	profileARN := "arn:aws:codewhisperer:eu-central-1:123:profile/shared"
+	repo := &kiroPreStartAccountRepoStub{accounts: []Account{
+		{ID: 78, Platform: PlatformKiro, Credentials: map[string]any{"profile_arn": profileARN}},
+		{ID: 79, Platform: PlatformKiro, Credentials: map[string]any{"profile_arn": profileARN}},
+		{ID: 80, Platform: PlatformKiro, Credentials: map[string]any{"profile_arn": "arn:other"}},
+	}}
+	counter := newKiroFirstEventCounterStub()
 	svc := &KiroGatewayService{
 		rateLimitService: &RateLimitService{
-			accountRepo: repo,
+			accountRepo:        repo,
+			tempUnschedCounter: counter,
 		},
 	}
+	account := &Account{ID: 78, Platform: PlatformKiro, Type: AccountTypeOAuth, Credentials: map[string]any{"profile_arn": profileARN}}
 
-	result, err := svc.forwardStream(
-		context.Background(),
-		c,
-		&Account{ID: 78, Platform: PlatformKiro, Type: AccountTypeOAuth},
-		&http.Response{Body: newKiroBlockingReadCloser(), Header: http.Header{}},
-		&ParsedRequest{Model: "claude-sonnet-4", Stream: true},
-		&kiropkg.ConvertResult{Model: "claude-sonnet-4.5"},
-		32,
-		time.Now(),
-		nil,
-		kiropkg.FakeCacheHitState{},
-		nil,
-		"",
-	)
+	for attempt := 1; attempt <= kiroFirstEventTimeoutThresholdCount; attempt++ {
+		rec = httptest.NewRecorder()
+		c, _ = gin.CreateTestContext(rec)
+		result, err := svc.forwardStream(
+			context.Background(), c, account,
+			&http.Response{Body: newKiroBlockingReadCloser(), Header: http.Header{}},
+			&ParsedRequest{Model: "claude-sonnet-4", Stream: true},
+			&kiropkg.ConvertResult{Model: "claude-sonnet-4.5"},
+			32, time.Now(), nil, kiropkg.FakeCacheHitState{}, nil, "",
+		)
 
-	require.Error(t, err)
-	require.Nil(t, result)
-	var failoverErr *UpstreamFailoverError
-	require.ErrorAs(t, err, &failoverErr)
-	require.Equal(t, http.StatusGatewayTimeout, failoverErr.StatusCode)
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.Empty(t, rec.Body.String())
+		require.Error(t, err)
+		require.Nil(t, result)
+		var failoverErr *UpstreamFailoverError
+		require.ErrorAs(t, err, &failoverErr)
+		require.Equal(t, http.StatusGatewayTimeout, failoverErr.StatusCode)
+		require.Equal(t, []int64{78, 79}, failoverErr.ExcludedAccountIDs)
+		require.Len(t, repo.calls, attempt/kiroFirstEventTimeoutThresholdCount)
+	}
+
 	require.Len(t, repo.calls, 1)
+	require.WithinDuration(t, time.Now().Add(kiroFirstEventTimeoutCooldown), repo.calls[0].until, 2*time.Second)
+	require.Contains(t, repo.calls[0].reason, kiroFirstEventTimeoutReasonKeyword)
 	v, ok := c.Get(OpsUpstreamErrorsKey)
 	require.True(t, ok)
 	events, ok := v.([]*OpsUpstreamErrorEvent)
@@ -239,4 +288,25 @@ func TestKiroGatewayService_ForwardStream_PreFirstForwardableTimeoutReturnsFailo
 	require.Equal(t, "failover", events[0].Kind)
 	require.Equal(t, http.StatusGatewayTimeout, events[0].UpstreamStatusCode)
 	require.Contains(t, events[0].Message, "did not emit a forwardable event")
+}
+
+func TestKiroGatewayService_FirstForwardableEventResetsConsecutiveTimeouts(t *testing.T) {
+	repo := &kiroPreStartAccountRepoStub{}
+	counter := newKiroFirstEventCounterStub()
+	svc := &KiroGatewayService{rateLimitService: &RateLimitService{
+		accountRepo:        repo,
+		tempUnschedCounter: counter,
+	}}
+	account := &Account{ID: 81, Platform: PlatformKiro}
+
+	svc.maybeMarkKiroFirstEventTimeout(context.Background(), account, "timeout 1")
+	svc.maybeMarkKiroFirstEventTimeout(context.Background(), account, "timeout 2")
+	svc.resetKiroFirstEventTimeoutCount(context.Background(), account)
+	svc.maybeMarkKiroFirstEventTimeout(context.Background(), account, "timeout after success")
+
+	require.Empty(t, repo.calls)
+	counter.mu.Lock()
+	count := counter.counts[account.ID]
+	counter.mu.Unlock()
+	require.Equal(t, 1, count)
 }

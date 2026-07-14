@@ -144,6 +144,11 @@ func (s *FailoverState) HandleFailoverError(
 
 	// 加入失败列表
 	s.FailedAccountIDs[accountID] = struct{}{}
+	for _, excludedAccountID := range failoverErr.ExcludedAccountIDs {
+		if excludedAccountID > 0 {
+			s.FailedAccountIDs[excludedAccountID] = struct{}{}
+		}
+	}
 
 	// 检查是否耗尽
 	if s.SwitchCount >= s.MaxSwitches {
@@ -155,6 +160,7 @@ func (s *FailoverState) HandleFailoverError(
 	logger.FromContext(ctx).Warn("gateway.failover_switch_account",
 		zap.Int64("account_id", accountID),
 		zap.Int("upstream_status", failoverErr.StatusCode),
+		zap.Int("excluded_account_count", len(s.FailedAccountIDs)),
 		zap.Int("switch_count", s.SwitchCount),
 		zap.Int("max_switches", s.MaxSwitches),
 	)
