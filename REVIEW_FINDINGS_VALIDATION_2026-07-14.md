@@ -42,7 +42,7 @@
 | 敏感凭证 update merge 清单 | 旧 P1-A6 | 已修复：更新合并复用统一脱敏 secret 清单，并有集合一致性测试。 |
 | Stripe secret 与 Airwallex 恢复 | 旧 P1-B5、P1-F1 | 已修复：Stripe client secret 只从本地恢复快照读取；URL query 被拒绝；Airwallex launch kind 可持久化恢复。 |
 | Kiro/Grok 前端异步生命周期 | 新 P1-8/P1-9、P2-6/P2-8 | 已修复：OAuth base URL 不再误 pin；modal close/unmount 取消轮询；loading 覆盖验证加写库；重授权使用最新账号且移除第二次 clear-error。 |
-| Migration 重号 | 新 P1-10 | 已修复：迁移重排到 210/211，新 ledger/scheduler 迁移使用 207-209；完整 migrations unit 通过。 |
+| Migration 重号 | 新 P1-10 | 已修复：合并远端 `207` 后迁移重排到 208-212，保留唯一前缀；完整 migrations unit 通过。 |
 | Codex 工具名与 WS 图片 usage | 新 P1-11/P1-12 | 已修复：归一化碰撞 fail closed，请求级反向映射恢复结构化 name；弱终态 replacement 回滚 ImageOutputTokens；定向 race 通过。 |
 | 协议终态与 namespace tools | 旧 P1-O4/O5/O6/O7/O9、P2-7/P2-9 | 已修复：incomplete event、safety stop reason、namespace 展平碰撞检测、非流图片终态、native image instructions、流 finalize stop reason 均有 contract tests。 |
 | Grok 配额陈旧时间戳 | 新 P2-5 | 已修复：所有权威窗口刷新失败时保留旧 UpdatedAt 并返回错误，不再伪装成新快照。 |
