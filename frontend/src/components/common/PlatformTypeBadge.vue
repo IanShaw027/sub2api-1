@@ -39,6 +39,17 @@
     <!-- Row 2: Plan type + Privacy mode (only if either exists) -->
     <div v-if="planLabel || privacyBadge" class="inline-flex items-center overflow-hidden rounded-md">
       <span v-if="planLabel" :class="['inline-flex items-center gap-1 px-1.5 py-1', planBadgeClass]">
+        <GrokFreeIcon
+          v-if="isGrokFreePlan"
+          data-testid="grok-free-plan-icon"
+        />
+        <Icon
+          v-else-if="grokPlanIconName"
+          :name="grokPlanIconName"
+          size="xs"
+          data-testid="grok-plan-icon"
+          aria-hidden="true"
+        />
         <span>{{ planLabel }}</span>
       </span>
       <span
@@ -63,6 +74,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { AccountPlatform, AccountType } from '@/types'
+import GrokFreeIcon from './GrokFreeIcon.vue'
 import PlatformIcon from './PlatformIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
 
@@ -129,6 +141,12 @@ const geminiTier = computed(() => (
   props.platform === 'gemini' ? normalizeGeminiTier(props.planType) : ''
 ))
 
+const normalizedGrokPlan = computed(() => (
+  props.platform === 'grok'
+    ? (props.planType || '').trim().toLowerCase().replace(/[\s_-]+/g, '')
+    : ''
+))
+
 const platformLabel = computed(() => {
   if (props.platform === 'anthropic') return 'Anthropic'
   if (props.platform === 'kiro') return 'Kiro'
@@ -183,7 +201,7 @@ const planLabel = computed(() => {
   }
   const lower = props.planType.toLowerCase()
   if (props.platform === 'grok') {
-    switch (lower.replace(/[\s_-]+/g, '')) {
+    switch (normalizedGrokPlan.value) {
       case 'supergrok':
         return 'SuperGrok'
       case 'supergrokheavy':
@@ -191,7 +209,8 @@ const planLabel = computed(() => {
       case 'heavy':
         return 'Heavy'
       case 'free':
-        return 'Free'
+      case 'basic':
+        return 'Grok Free'
       default:
         return props.planType
     }
@@ -211,6 +230,17 @@ const planLabel = computed(() => {
     default:
       return props.planType
   }
+})
+
+const isGrokFreePlan = computed(() => (
+  normalizedGrokPlan.value === 'free' || normalizedGrokPlan.value === 'basic'
+))
+
+const grokPlanIconName = computed<'bolt' | null>(() => {
+  if (normalizedGrokPlan.value === 'supergrok' || normalizedGrokPlan.value === 'supergrokheavy') {
+    return 'bolt'
+  }
+  return null
 })
 
 const platformClass = computed(() => {
@@ -263,7 +293,7 @@ const planBadgeClass = computed(() => {
   }
   if (props.platform === 'grok' && props.planType) {
     const normalized = props.planType.trim().toLowerCase().replace(/[\s_-]+/g, '')
-    if (normalized === 'free') {
+    if (normalized === 'free' || normalized === 'basic') {
       return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
     }
     if (normalized.includes('heavy')) {
@@ -308,6 +338,8 @@ const expiresLabel = computed(() => {
   if (!props.subscriptionExpiresAt || !props.planType) return ''
   if (props.platform === 'gemini') {
     if (geminiTier.value === 'google_one_free' || geminiTier.value === 'aistudio_free') return ''
+  } else if (props.platform === 'grok' && isGrokFreePlan.value) {
+    return ''
   } else if (props.planType.toLowerCase() === 'free') {
     return ''
   }

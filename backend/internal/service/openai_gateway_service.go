@@ -268,6 +268,7 @@ var openaiAllowedHeaders = map[string]bool{
 	"x-codex-window-id":        true,
 	"x-codex-parent-thread-id": true,
 	"x-openai-subagent":        true,
+	responsesLiteHeaderKey:     true,
 }
 
 // OpenAI passthrough allowed headers whitelist.
@@ -289,6 +290,7 @@ var openaiPassthroughAllowedHeaders = map[string]bool{
 	"x-codex-window-id":        true,
 	"x-codex-parent-thread-id": true,
 	"x-openai-subagent":        true,
+	responsesLiteHeaderKey:     true,
 }
 
 var openaiOAuthOnlyHeaders = map[string]bool{
@@ -4811,6 +4813,22 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		s.shouldPreferOpenAIHTTPIncrementalForHTTPIngress(account, clientTransport) {
 		wsDecision = openAIWSHTTPDecision("http_incremental_preferred_non_ctx_pool")
 	}
+	passthroughEnabled := account.IsOpenAIPassthroughEnabled()
+	if shouldFlattenOpenAIResponsesNamespaces(account, wsDecision.Transport, passthroughEnabled) {
+		flattenedBody, flattenErr := flattenOpenAIResponsesNamespaces(c, body)
+		if flattenErr != nil {
+			setOpsUpstreamError(c, http.StatusBadRequest, flattenErr.Error(), "")
+			c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+				"type": "invalid_request_error", "message": flattenErr.Error(), "param": "tools",
+			}})
+			return nil, flattenErr
+		}
+		body = flattenedBody
+		originalBody = append(originalBody[:0], body...)
+		requestView = newOpenAIRequestView(body)
+		reqModel, reqStream, promptCacheKey = requestView.Model, requestView.Stream, requestView.PromptCacheKey
+		setOpenAIRoutingPromptCacheKey(c, promptCacheKey)
+	}
 	if c != nil {
 		c.Set("openai_ws_transport_decision", string(wsDecision.Transport))
 		c.Set("openai_ws_transport_reason", wsDecision.Reason)
@@ -4834,7 +4852,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 		return nil, errors.New("openai ws v1 is temporarily unsupported; use ws v2")
 	}
-	passthroughEnabled := account.IsOpenAIPassthroughEnabled()
 	if passthroughEnabled {
 		// 透传分支只需要轻量提取字段，避免热路径全量 Unmarshal。
 		mappedModel := account.GetMappedModel(reqModel)
@@ -4910,7 +4927,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	clientStream := reqStream
 	var upstreamStream bool
 	imageGenerationAllowed := allowImageGeneration
-	codexImageGenerationBridgeEnabled := isCodexCLI && imageGenerationAllowed && s.isCodexImageGenerationBridgeEnabled(ctx, account, apiKey)
+	codexImageGenerationBridgeEnabled := isCodexCLI &&
+		!isOpenAIResponsesLiteHeader(c.GetHeader(responsesLiteHeader)) &&
+		imageGenerationAllowed &&
+		account.CodexImageGenerationExplicitToolPolicy() != codexImageGenerationExplicitToolPolicyStrip &&
+		s.isCodexImageGenerationBridgeEnabled(ctx, account, apiKey)
 	imageIntent := IsImageGenerationIntent(openAIResponsesEndpoint, reqModel, body)
 	if imageIntent && !imageGenerationAllowed {
 		MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalFeatureGate)
@@ -8421,6 +8442,17 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				eventType, data = openAIStreamFrameEventTypeAndData(frame)
 				dataBytes = []byte(data)
 			}
+			if strings.TrimSpace(data) != "[DONE]" {
+				restoredData, restoreErr := restoreOpenAIResponsesNamespacePayload(c, dataBytes)
+				if restoreErr != nil {
+					return fmt.Errorf("restore OpenAI passthrough namespace response: %w", restoreErr)
+				}
+				if !bytes.Equal(restoredData, dataBytes) {
+					openAICompatSetSSEFrameData(&frame, string(restoredData))
+					eventType, data = openAIStreamFrameEventTypeAndData(frame)
+					dataBytes = restoredData
+				}
+			}
 			trimmedData := strings.TrimSpace(data)
 			if trimmedData == "[DONE]" {
 				sawDone = true
@@ -8766,6 +8798,10 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 		body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
 	}
 	body = restoreCodexToolNamesInJSON(body, codexToolNameReverseFromContext(c))
+	body, err = restoreOpenAIResponsesNamespacePayload(c, body)
+	if err != nil {
+		return nil, fmt.Errorf("restore OpenAI passthrough namespace response: %w", err)
+	}
 	if writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		return &openaiNonStreamingResultPassthrough{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount, searchCount: searchCount}, nil
 	}
@@ -8839,6 +8875,11 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		}
 		// Correct tool calls in final response
 		body = s.correctToolCallsInResponseBody(body)
+		restoredBody, restoreErr := restoreOpenAIResponsesNamespacePayload(c, body)
+		if restoreErr != nil {
+			return nil, fmt.Errorf("restore OpenAI passthrough namespace response: %w", restoreErr)
+		}
+		body = restoredBody
 		imageCount = countOpenAIResponseImageOutputsFromJSONBytes(body)
 	} else {
 		terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
@@ -10158,6 +10199,18 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		flushForFirstToken := false
 		if hasData {
 			dataBytes := []byte(data)
+			if strings.TrimSpace(data) != "[DONE]" {
+				restoredData, restoreErr := restoreOpenAIResponsesNamespacePayload(c, dataBytes)
+				if restoreErr != nil {
+					streamFailoverErr = fmt.Errorf("restore OpenAI namespace response: %w", restoreErr)
+					return
+				}
+				if !bytes.Equal(restoredData, dataBytes) {
+					openAICompatSetSSEFrameData(&frame, string(restoredData))
+					eventType, data = openAIStreamFrameEventTypeAndData(frame)
+					dataBytes = restoredData
+				}
+			}
 			if strings.TrimSpace(data) == "[DONE]" && !sawFailedEvent {
 				sawSuccessfulTerminal = true
 			}
@@ -11194,6 +11247,10 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	}
 
 	body = restoreCodexToolNamesInJSON(body, codexToolNameReverseFromContext(c))
+	body, err = restoreOpenAIResponsesNamespacePayload(c, body)
+	if err != nil {
+		return nil, fmt.Errorf("restore OpenAI namespace response: %w", err)
+	}
 	if writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		return &openaiNonStreamingResult{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount, searchCount: searchCount}, nil
 	}
@@ -11274,6 +11331,11 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 		}
 		// Correct tool calls in final response
 		body = s.correctToolCallsInResponseBody(body)
+		restoredBody, restoreErr := restoreOpenAIResponsesNamespacePayload(c, body)
+		if restoreErr != nil {
+			return nil, fmt.Errorf("restore OpenAI namespace response: %w", restoreErr)
+		}
+		body = restoredBody
 		imageCount = countOpenAIResponseImageOutputsFromJSONBytes(body)
 		searchCount = countOpenAISearchCallsInResponsesJSONBytes(body)
 	} else {
@@ -12140,10 +12202,17 @@ func sanitizeEncryptedReasoningInputItem(item any) (next any, changed bool, keep
 		}
 		return filtered, true, true
 	case map[string]any:
-		if _, hasEncryptedContent := typed["encrypted_content"]; hasEncryptedContent {
-			return nil, true, false
-		}
 		changed := false
+		if _, hasEncryptedContent := typed["encrypted_content"]; hasEncryptedContent {
+			delete(typed, "encrypted_content")
+			changed = true
+		}
+		if itemType, _ := typed["type"].(string); strings.TrimSpace(itemType) == "reasoning" {
+			if content, exists := typed["content"]; exists && content == nil {
+				delete(typed, "content")
+				changed = true
+			}
+		}
 		for key, child := range typed {
 			nextChild, childChanged, keep := sanitizeEncryptedReasoningInputItem(child)
 			if childChanged {

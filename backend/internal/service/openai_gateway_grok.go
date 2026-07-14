@@ -274,11 +274,41 @@ func patchGrokResponsesBody(body []byte, upstreamModel string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	out, err = sanitizeGrokReasoningNullContent(out)
+	if err != nil {
+		return nil, err
+	}
 	out, err = sanitizeGrokResponsesTools(out)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// sanitizeGrokReasoningNullContent removes only the null content field from
+// reasoning items. xAI rejects this OpenAI-compatible shape with HTTP 422, but
+// the remaining summary and reasoning metadata must be preserved.
+func sanitizeGrokReasoningNullContent(body []byte) ([]byte, error) {
+	input := gjson.GetBytes(body, "input")
+	if !input.Exists() || !input.IsArray() {
+		return body, nil
+	}
+	for i := len(input.Array()) - 1; i >= 0; i-- {
+		item := gjson.GetBytes(body, fmt.Sprintf("input.%d", i))
+		if strings.TrimSpace(item.Get("type").String()) != "reasoning" {
+			continue
+		}
+		content := item.Get("content")
+		if !content.Exists() || content.Type != gjson.Null {
+			continue
+		}
+		var err error
+		body, err = sjson.DeleteBytes(body, fmt.Sprintf("input.%d.content", i))
+		if err != nil {
+			return nil, err
+		}
+	}
+	return body, nil
 }
 
 func sanitizeGrokModelUnsupportedFields(body []byte, upstreamModel string) ([]byte, error) {

@@ -1619,6 +1619,9 @@ function getPlatformBadgePlanType(row: any): string | undefined {
   }
   if (row?.platform === 'grok') {
     const candidates = [
+      row?.extra?.grok_billing_snapshot?.subscription_tier,
+      row?.extra?.grok_billing_snapshot?.plan,
+      row?.extra?.grok_quota_snapshot?.subscription_tier,
       row?.extra?.grok_usage_snapshot?.subscription_tier,
       row?.credentials?.subscription_tier,
       row?.extra?.subscription_tier,

@@ -67,6 +67,10 @@ const (
 	MonitorProviderKiro      = "kiro"
 	MonitorProviderGrok      = "grok"
 
+	// MonitorDefaultGrokModel is used when a Grok monitor does not explicitly
+	// provide a model. Keep Kiro support while adopting the upstream Grok default.
+	MonitorDefaultGrokModel = "grok-4.5"
+
 	// MonitorStatusOperational 等监控状态字符串常量（与 ent enum 一致）。
 	MonitorStatusOperational = "operational"
 	MonitorStatusDegraded    = "degraded"
