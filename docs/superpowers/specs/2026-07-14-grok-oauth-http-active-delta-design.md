@@ -16,7 +16,7 @@
 
 | # | Principle | Rule |
 |---|-----------|------|
-| P1 | Fail closed | 任一安全条件不满足 → Full，禁止启发式裁剪 |
+| P1 | Fail closed on **history** | 无法证明前缀安全时，禁止裁切**对话历史/语义 input**；走 Full。**不是**禁止一切字段裁切（见 P11） |
 | P2 | Single egress | 所有 Grok OAuth Responses 上游流量只经 `doGrokResponsesUpstream` |
 | P3 | One body view | bind 与 evaluate 使用 **同一** `canonicalBody`（patch + cache identity 之后、delta 之前） |
 | P4 | Session key homology | active-delta 的 `sessionHash` 与 Grok cache identity **同源**，禁止两套 seed |
@@ -26,6 +26,7 @@
 | P8 | Probe before assuming store | `store` 语义以 Task 0 探针结果写入 Decision Log；禁止未验证就假设与 OpenAI 完全一致 |
 | P9 | Best-effort multi-instance | 进程内/非共享 state 时命中率下降只导致更多 Full，不得导致错误增量 |
 | P10 | No second hash dialect | 不修改 OpenAI strict-delta 哈希语义；Grok 字段不兼容时 Full，另开评审再扩 denylist |
+| P11 | Effect-preserving trim OK | **不影响模型实际效果**的裁切允许且推荐；与「安全增量」互补，不是对立 |
 
 ## Scope
 
@@ -77,7 +78,29 @@ Grok OAuth 应 **复用同一安全内核**，并用 **单一出口** 挂载，�
 | Safe incremental | `input = only-new-items`，`previous_response_id = cached.lastResponseID`，`store` 按探针策略 |
 | Full | 完整 `input`，**删除** `previous_response_id`（见 P5 例外），`store` 按探针策略 |
 
-本地判定失败只产生 Full，禁止「猜最后 N 条」。
+本地判定失败只产生 Full，禁止「猜最后 N 条历史」。
+
+### What may be trimmed vs what must not
+
+**核心区分：禁止的是无证据的历史裁切，不是禁止一切裁切。**
+
+| 类别 | 是否可裁 | 示例 | 依据 |
+|------|----------|------|------|
+| **A. 已证明的增量历史** | ✅ 必须裁 | 前缀已 materialize 的旧 turns；只保留 only-new input items | strict prefix 证明 + previous_response_id |
+| **B. 纯回放的上游 output** | ✅ 可裁 | 客户端回放的 assistant message / reasoning / tool_call 等，且已由 previous 链覆盖 | 对齐 `openAIWSSkipReplayedOutputItems`；裁掉不改变模型可见新信息 |
+| **C. 信封/易变元数据** | ✅ 可裁（hash 与/或 wire） | item 的服务端 `id`/`status`、空 null 字段、Grok patch 已剥离的不支持字段 | 不参与语义；现有 canonical hash 已 drop volatile envelope |
+| **D. 网关已规范化的冗余** | ✅ 可裁 | 空 content block、unsupported tools（patch 阶段）、与 previous 重复的 store 载荷 | `patchGrokResponsesBody` / sanitize；效果不变或上游本就不接受 |
+| **E. 未证明前缀的对话历史** | ❌ 不可裁 | 「只留最后一条 user」、按 token 预算砍中间 turns、无 hash 证明的摘要替换 | 会改变模型上下文 → Full |
+| **F. 仍影响效果的 non-input** | ❌ 不可当「无害」裁掉后仍声称增量 | tools / instructions / tool_choice 相对缓存指纹漂移时硬裁 history | non-input mismatch → Full，保留完整 input |
+
+**判定标准（效果不变）：**
+
+1. 裁切后，上游在 `previous_response_id`（或 Full 无 previous）语义下看到的 **有效上下文** 与裁切前一致；或  
+2. 所裁字段本就不被 xAI/Grok 用于生成（envelope、已拒绝参数、空块）；或  
+3. 所裁内容已由 previous 链在服务端 materialize，客户端再次附带仅为回放。
+
+**不确定是否影响效果 → 不裁 history，走 Full（P1）。**  
+允许裁的 A–D 类应优先做，以提高增量命中率与减小 body，这是预期优化而非违规。
 
 ## Architecture
 
@@ -221,13 +244,20 @@ if has unsafe/stale previous and NOT (tool-output continuation that restore refu
 12. delta 非空；`cached.lastResponseID` 非空
 13. evaluate 的 payload 与 bind 时 **同一 canonicalBody 归一化规则**
 
-**禁止**：
+**禁止（历史/语义）**：
 
-- 无前缀证明时裁剪到「最后 N 条」
+- 无前缀证明时裁对话历史（「最后 N 条」、token 预算砍中间轮等）
 - 跨账号 previous 续聊
 - 客户端已收流后 full-replay
 - 绕过 `doGrokResponsesUpstream` 的 Grok OAuth 文本上游调用
 - 在 raw vs patched 混用哈希
+
+**允许且推荐（效果不变，P11）**：
+
+- only-new input items（A）
+- skip 纯回放 output items（B，对齐 OpenAI `openAIWSSkipReplayedOutputItems`）
+- volatile envelope / 空块 / patch 已证明无害字段（C/D）
+- Full 路径 strip 不可信 previous（P5，避免错误续链，不改变「全量 input」语义）
 
 ## Store Semantics（P8）
 
@@ -354,6 +384,8 @@ Full-replay 后：
 16. **Written 后**不 full-replay
 17. Stream 成功取 responseID 并 bind
 18. 绕过出口的回归：静态检查或测试保证 Grok OAuth 无第二处 DoWithTLS Responses
+19. **P11 B 类**：客户端回放 assistant/reasoning 时，增量 body 跳过回放项，仅保留 new user/tool output
+20. **P11 E 类负例**：无前缀证明时不得只留最后一条 user
 
 ### Concurrency
 
@@ -382,7 +414,8 @@ session bind / in-flight 相关测试 `-count` 加压（项目规范）。
 | 半流式后重放污染客户端 | P6 unwritten only |
 | 多实例 state 不共享 | P9 Full 降级正确 |
 | OpenAI 关 active 误伤 Grok | P7 独立开关 |
-| 误裁语义 | P1 strict prefix only |
+| 误裁语义历史 | P1：无证明不裁 history；P11：仅效果不变可裁 |
+| 该裁的回放项没裁导致 body 过大/难匹配 | 对齐 skip replayed output；单测覆盖 B 类 |
 
 ## Success Criteria
 
@@ -402,6 +435,7 @@ session bind / in-flight 相关测试 `-count` 加压（项目规范）。
 |----------|--------|-----|
 | Scope | 仅 Grok OAuth | 用户指定；降风险 |
 | Fallback | 对齐 OpenAI HTTP + P5 strip | 安全优先 |
+| Trim policy | 禁无证明的历史裁切；允许效果不变裁切（P11） | 用户澄清：不是一切都不能裁 |
 | Kernel | 复用 OpenAI strict-delta | 避免第二套哈希 |
 | Egress | 强制 `doGrokResponsesUpstream` | 评审 I1；Claude/Chat 主流量 |
 | Session key | 与 Grok cache identity 同源 | 评审 I2 |
@@ -429,7 +463,7 @@ session bind / in-flight 相关测试 `-count` 加压（项目规范）。
 
 | Gate | Status |
 |------|--------|
-| Design principles P1–P10 | Locked |
+| Design principles P1–P11 | Locked |
 | Path matrix | Locked |
 | Task 0 probe | **Required before default-on** |
 | Implementation plan | Next after this spec approval |
