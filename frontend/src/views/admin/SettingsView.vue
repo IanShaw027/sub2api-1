@@ -205,6 +205,80 @@
 
             </div>
           </div>
+
+          <!-- Multi-account IP security -->
+          <div class="card">
+            <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ localText("异常 IP 多账号封禁", "Suspicious IP multi-account blocking") }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{ localText("短时间内从未使用过该 IP 的多个账号集中访问时自动封禁，并可查看明细或手动解除。", "Automatically blocks an IP when multiple accounts with no prior history on that IP access within a short window.") }}
+              </p>
+            </div>
+            <div class="space-y-5 p-6">
+              <div class="flex items-center justify-between">
+                <div>
+                  <label class="font-medium text-gray-900 dark:text-white">{{ localText("启用异常 IP 封禁", "Enable suspicious IP blocking") }}</label>
+                  <p class="text-sm text-gray-500 dark:text-gray-400">{{ localText("关闭后停止新增封禁，现有封禁仍继续生效。", "When disabled, new detections stop while existing bans remain enforced.") }}</p>
+                </div>
+                <Toggle v-model="form.ip_multi_account_ban_enabled" />
+              </div>
+              <div v-if="form.ip_multi_account_ban_enabled" class="grid gap-4 border-t border-gray-100 pt-4 dark:border-dark-700 md:grid-cols-2">
+                <div>
+                  <label class="input-label">{{ localText("检测窗口（分钟）", "Detection window (minutes)") }}</label>
+                  <input v-model.number="form.ip_multi_account_ban_window_minutes" type="number" min="1" max="1440" class="input" />
+                </div>
+                <div>
+                  <label class="input-label">{{ localText("账号数阈值", "Account threshold") }}</label>
+                  <input v-model.number="form.ip_multi_account_ban_threshold" type="number" min="2" max="100" class="input" />
+                </div>
+                <div class="md:col-span-2">
+                  <label class="input-label">{{ localText("学习期截止时间（RFC3339，可留空）", "Learning period end (RFC3339, optional)") }}</label>
+                  <input v-model="form.ip_multi_account_ban_learning_until" type="text" placeholder="2026-07-17T00:00:00Z" class="input" />
+                </div>
+              </div>
+              <div class="flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4 dark:border-dark-700">
+                <select v-model="ipSecurityStatus" class="input w-auto" @change="loadIPSecurityBans(1)">
+                  <option value="active">{{ localText("封禁中", "Blocked") }}</option>
+                  <option value="whitelisted">{{ localText("白名单", "Whitelisted") }}</option>
+                  <option value="released">{{ localText("已恢复检测", "Detection restored") }}</option>
+                  <option value="">{{ localText("全部", "All") }}</option>
+                </select>
+                <button type="button" class="btn btn-secondary btn-sm" :disabled="ipSecurityLoading" @click="loadIPSecurityBans(ipSecurityPage)">
+                  <Icon name="search" size="sm" />
+                  {{ localText("刷新", "Refresh") }}
+                </button>
+                <span class="text-xs text-gray-500 dark:text-gray-400">{{ localText("详情包含账号、来源类型、路径和调用次数。", "Details include accounts, source type, paths, and call counts.") }}</span>
+              </div>
+              <div v-if="ipSecurityBans.length" class="overflow-x-auto rounded border border-gray-200 dark:border-dark-700">
+                <table class="min-w-full text-left text-sm">
+                  <thead class="bg-gray-50 dark:bg-dark-800"><tr><th class="px-3 py-2">IP</th><th class="px-3 py-2">{{ localText("状态", "Status") }}</th><th class="px-3 py-2">{{ localText("账号数", "Accounts") }}</th><th class="px-3 py-2">{{ localText("创建时间", "Created") }}</th><th class="px-3 py-2"></th></tr></thead>
+                  <tbody>
+                    <tr v-for="ban in ipSecurityBans" :key="ban.id" class="border-t border-gray-100 dark:border-dark-700">
+                      <td class="px-3 py-2 font-mono">{{ ban.ip_address }}</td>
+                      <td class="px-3 py-2">{{ formatIPSecurityStatus(ban.status) }}</td>
+                      <td class="px-3 py-2">{{ ban.detected_account_count }} / {{ ban.account_threshold }}</td>
+                      <td class="px-3 py-2 text-xs">{{ formatIPSecurityTime(ban.created_at) }}</td>
+                      <td class="px-3 py-2 text-right"><button type="button" class="btn btn-secondary btn-xs" @click="openIPSecurityBan(ban.id)">{{ localText("详情", "Details") }}</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div v-if="ipSecurityTotal" class="flex items-center justify-between text-sm text-gray-500">
+                <span>{{ localText(`共 ${ipSecurityTotal} 条`, `${ipSecurityTotal} total`) }}</span>
+                <div class="flex items-center gap-2">
+                  <button type="button" class="btn btn-secondary btn-xs" :disabled="ipSecurityPage <= 1 || ipSecurityLoading" @click="loadIPSecurityBans(ipSecurityPage - 1)"><Icon name="chevronLeft" size="sm" /></button>
+                  <span>{{ ipSecurityPage }} / {{ ipSecurityPages }}</span>
+                  <button type="button" class="btn btn-secondary btn-xs" :disabled="ipSecurityPage >= ipSecurityPages || ipSecurityLoading" @click="loadIPSecurityBans(ipSecurityPage + 1)"><Icon name="chevronRight" size="sm" /></button>
+                </div>
+              </div>
+              <div v-if="ipSecurityDetail" class="rounded border border-gray-200 p-4 dark:border-dark-700">
+                <div class="flex flex-wrap items-center justify-between gap-3"><div><div class="font-mono font-semibold">{{ ipSecurityDetail.ban.ip_address }}</div><div class="text-xs text-gray-500">{{ formatIPSecurityStatus(ipSecurityDetail.ban.status) }} · {{ ipSecurityDetail.ban.reason }}</div></div><button v-if="ipSecurityDetail.ban.status === 'active'" type="button" class="btn btn-danger btn-sm" @click="releaseIPSecurityBan(ipSecurityDetail.ban.id)">{{ localText("解除并加入白名单", "Release and whitelist") }}</button><button v-else-if="ipSecurityDetail.ban.status === 'whitelisted'" type="button" class="btn btn-secondary btn-sm" @click="removeIPSecurityWhitelist(ipSecurityDetail.ban.id)">{{ localText("恢复检测", "Restore detection") }}</button></div>
+                <div class="mt-3 space-y-2 text-sm"><div v-for="activity in ipSecurityDetail.activities" :key="`${activity.user_id}-${activity.source}-${activity.api_key_id}-${activity.request_id}-${activity.path}`" class="rounded bg-gray-50 p-2 dark:bg-dark-800"><div class="flex flex-wrap justify-between gap-2"><span>{{ activity.user_email || activity.user_username || `#${activity.user_id}` }}</span><span class="font-mono text-xs">{{ activity.source }}<span v-if="activity.api_key_id"> · key #{{ activity.api_key_id }}</span></span></div><div class="mt-1 break-all font-mono text-xs text-gray-500">{{ activity.method }} {{ activity.path }}</div><div class="mt-1 text-[11px] text-gray-400">{{ localText("调用", "Calls") }}: {{ activity.request_count }} · {{ formatIPSecurityTime(activity.first_seen_at) }} - {{ formatIPSecurityTime(activity.last_seen_at) }}</div><div class="mt-1 break-all text-[11px] text-gray-400">peer: {{ activity.peer_ip || '-' }}<span v-if="activity.forwarded_for"> · forwarded: {{ activity.forwarded_for }}</span></div><div v-if="activity.request_id" class="mt-1 break-all text-[11px] text-gray-400">request: {{ activity.request_id }}</div></div><div v-if="ipSecurityDetail.pages > 1" class="flex items-center justify-end gap-2 pt-2"><button type="button" class="btn btn-secondary btn-xs" :disabled="ipSecurityDetail.page <= 1" @click="loadIPSecurityDetailPage(ipSecurityDetail.page - 1)"><Icon name="chevronLeft" size="sm" /></button><span class="text-xs text-gray-500">{{ ipSecurityDetail.page }} / {{ ipSecurityDetail.pages }}</span><button type="button" class="btn btn-secondary btn-xs" :disabled="ipSecurityDetail.page >= ipSecurityDetail.pages" @click="loadIPSecurityDetailPage(ipSecurityDetail.page + 1)"><Icon name="chevronRight" size="sm" /></button></div></div>
+              </div>
+            </div>
+          </div>
         <!-- Tab: Security — Registration, Turnstile, LinuxDo -->
           <!-- Registration Settings -->
           <div class="card">
@@ -8754,6 +8828,7 @@ import PlatformDefaultAccountModelConfigForm from "@/components/admin/PlatformDe
 import ImageUpload from "@/components/common/ImageUpload.vue";
 import { useClipboard } from "@/composables/useClipboard";
 import { affiliatesAPI, type AffiliateAdminEntry, type SimpleUser as AffiliateSimpleUser } from "@/api/admin/affiliates";
+import type { IPSecurityBan, IPSecurityActivityDetail } from "@/api/admin/ipSecurity";
 import { extractApiErrorMessage, extractI18nErrorMessage } from "@/utils/apiError";
 import { useAppStore } from "@/stores";
 import { useAdminSettingsStore } from "@/stores/adminSettings";
@@ -9155,6 +9230,14 @@ const adminApiKeyExists = ref(false);
 const adminApiKeyMasked = ref("");
 const adminApiKeyOperating = ref(false);
 const newAdminApiKey = ref("");
+const ipSecurityLoading = ref(false);
+const ipSecurityBans = ref<IPSecurityBan[]>([]);
+const ipSecurityDetail = ref<{ ban: IPSecurityBan; activities: IPSecurityActivityDetail[]; page: number; page_size: number; total: number; pages: number } | null>(null);
+const ipSecurityDetailId = ref<number | null>(null);
+const ipSecurityStatus = ref("active");
+const ipSecurityPage = ref(1);
+const ipSecurityPages = ref(1);
+const ipSecurityTotal = ref(0);
 const subscriptionGroups = ref<AdminGroup[]>([]);
 
 // Overload Cooldown (529) 状态
@@ -9768,6 +9851,10 @@ const form = reactive<SettingsForm>({
   hide_ccs_import_button: false,
   payment_enabled: false,
   risk_control_enabled: false,
+  ip_multi_account_ban_enabled: false,
+  ip_multi_account_ban_window_minutes: 10,
+  ip_multi_account_ban_threshold: 4,
+  ip_multi_account_ban_learning_until: "",
   cyber_session_block_enabled: false,
   cyber_session_block_ttl_seconds: 3600,
   payment_min_amount: 1,
@@ -11061,8 +11148,75 @@ async function loadSubscriptionGroups() {
 
 async function ensureSecurityTabLoaded() {
   if (securityTabLoaded.value) return;
-  await loadAdminApiKey();
+  await Promise.all([loadAdminApiKey(), loadIPSecurityBans(1)]);
   securityTabLoaded.value = true;
+}
+
+function formatIPSecurityTime(value: string): string {
+  if (!value) return "-";
+  return new Date(value).toLocaleString();
+}
+
+function formatIPSecurityStatus(value: string): string {
+  if (value === "active") return localText("封禁中", "Blocked");
+  if (value === "whitelisted") return localText("白名单", "Whitelisted");
+  return localText("已恢复检测", "Detection restored");
+}
+
+async function loadIPSecurityBans(page = 1) {
+  ipSecurityLoading.value = true;
+  try {
+    const result = await adminAPI.ipSecurity.listBans({ status: ipSecurityStatus.value, page, page_size: 20 });
+    ipSecurityBans.value = result.items || [];
+    ipSecurityPage.value = result.page || page;
+    ipSecurityPages.value = result.pages || 1;
+    ipSecurityTotal.value = result.total || 0;
+    ipSecurityDetail.value = null;
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error));
+  } finally {
+    ipSecurityLoading.value = false;
+  }
+}
+
+async function openIPSecurityBan(id: number) {
+  try {
+    ipSecurityDetailId.value = id;
+    ipSecurityDetail.value = await adminAPI.ipSecurity.getBan(id, { page: 1, page_size: 20 });
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error));
+  }
+}
+
+async function loadIPSecurityDetailPage(page: number) {
+  if (!ipSecurityDetailId.value) return;
+  try {
+    ipSecurityDetail.value = await adminAPI.ipSecurity.getBan(ipSecurityDetailId.value, { page, page_size: 20 });
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error));
+  }
+}
+
+async function releaseIPSecurityBan(id: number) {
+  if (!window.confirm(localText("确认清除这个 IP 的封禁？", "Release this IP ban?"))) return;
+  try {
+    await adminAPI.ipSecurity.releaseBan(id);
+    await loadIPSecurityBans(ipSecurityPage.value);
+    appStore.showSuccess(localText("IP 已解除封禁并加入白名单", "IP released and whitelisted"));
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error));
+  }
+}
+
+async function removeIPSecurityWhitelist(id: number) {
+  if (!window.confirm(localText("确认将这个 IP 移出白名单并恢复自动检测？", "Remove this IP from the whitelist and restore detection?"))) return;
+  try {
+    await adminAPI.ipSecurity.removeWhitelist(id);
+    await loadIPSecurityBans(ipSecurityPage.value);
+    appStore.showSuccess(localText("IP 已恢复自动检测", "Automatic detection restored"));
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error));
+  }
 }
 
 async function ensureGatewayTabLoaded() {
@@ -11655,6 +11809,10 @@ async function saveSettings() {
       // Payment configuration
       payment_enabled: form.payment_enabled,
       risk_control_enabled: form.risk_control_enabled,
+      ip_multi_account_ban_enabled: form.ip_multi_account_ban_enabled,
+      ip_multi_account_ban_window_minutes: Number(form.ip_multi_account_ban_window_minutes) || 10,
+      ip_multi_account_ban_threshold: Number(form.ip_multi_account_ban_threshold) || 4,
+      ip_multi_account_ban_learning_until: form.ip_multi_account_ban_learning_until || "",
       cyber_session_block_enabled: form.cyber_session_block_enabled,
       cyber_session_block_ttl_seconds:
         Number(form.cyber_session_block_ttl_seconds) || 3600,

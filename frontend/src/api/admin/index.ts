@@ -38,6 +38,7 @@ import adminSkillsAPI from './skills'
 import affiliatesAPI from './affiliates'
 import riskControlAPI from './riskControl'
 import adminComplianceAPI from './compliance'
+import ipSecurityAPI from './ipSecurity'
 
 /**
  * Unified admin API object for convenient access
@@ -77,7 +78,8 @@ export const adminAPI = {
   ai: adminAIAPI,
   skills: adminSkillsAPI,
   riskControl: riskControlAPI,
-  compliance: adminComplianceAPI
+  compliance: adminComplianceAPI,
+  ipSecurity: ipSecurityAPI
 }
 
 export {
@@ -115,7 +117,8 @@ export {
   adminAIAPI,
   adminSkillsAPI,
   riskControlAPI,
-  adminComplianceAPI
+  adminComplianceAPI,
+  ipSecurityAPI
 }
 
 export default adminAPI
