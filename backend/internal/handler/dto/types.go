@@ -512,6 +512,7 @@ type UsageLog struct {
 	TotalCost                    float64 `json:"total_cost"`
 	ActualCost                   float64 `json:"actual_cost"`
 	RateMultiplier               float64 `json:"rate_multiplier"`
+	LongContextBillingApplied    bool    `json:"long_context_billing_applied"`
 	BilledByHigherPricedUpstream bool    `json:"billed_by_higher_priced_upstream"`
 
 	BillingType  int8   `json:"billing_type"`

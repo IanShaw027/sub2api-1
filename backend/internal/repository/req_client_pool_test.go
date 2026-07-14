@@ -1,12 +1,17 @@
 package repository
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 	"unsafe"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/reqclientpool"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
 	"github.com/imroc/req/v3"
 	"github.com/stretchr/testify/require"
 )
@@ -119,4 +124,23 @@ func TestCreateGeminiReqClient_ForceHTTP2Disabled(t *testing.T) {
 	client, err := createGeminiReqClient("http://proxy.local:8080")
 	require.NoError(t, err)
 	require.Equal(t, "", forceHTTPVersion(t, client))
+}
+
+func TestGetSharedReqClientRecordsDependency(t *testing.T) {
+	reqclientpool.ResetForTest()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	collector := servertiming.New(time.Now())
+	ctx := servertiming.WithCollector(context.Background(), collector)
+	client, err := getSharedReqClient(ReqClientOptions{Timeout: time.Second})
+	require.NoError(t, err)
+	response, err := client.R().SetContext(ctx).Get(server.URL)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNoContent, response.StatusCode)
+
+	header := collector.HeaderValue(time.Now(), "bypass")
+	require.True(t, strings.Contains(header, "dep_http;dur="), header)
 }

@@ -61,7 +61,7 @@
             {{ methodLabel }}
           </label>
           <div class="flex flex-wrap gap-4">
-            <label class="flex cursor-pointer items-center gap-2">
+            <label v-if="showManualOption" class="flex cursor-pointer items-center gap-2">
               <input
                 v-model="inputMethod"
                 type="radio"
@@ -1039,6 +1039,8 @@ interface Props {
   showCodexPatOption?: boolean
   showSSOTokenOption?: boolean
   showEmailPasswordOption?: boolean
+  showManualOption?: boolean
+  initialInputMethod?: AuthInputMethod
   platform?: AccountPlatform // Platform type for different UI/text
   showProjectId?: boolean // New prop to control project ID visibility
   showProjectIdRecovery?: boolean
@@ -1064,6 +1066,8 @@ const props = withDefaults(defineProps<Props>(), {
   showCodexPatOption: false,
   showSSOTokenOption: false,
   showEmailPasswordOption: false,
+  showManualOption: true,
+  initialInputMethod: 'manual',
   platform: 'anthropic',
   showProjectId: true,
   showProjectIdRecovery: false,
@@ -1165,7 +1169,7 @@ const shouldShowGeminiProjectGuidance = computed(
 )
 
 // Local state
-const inputMethod = ref<AuthInputMethod>(props.showCookieOption ? 'manual' : 'manual')
+const inputMethod = ref<AuthInputMethod>(props.initialInputMethod)
 const authCodeInput = ref('')
 const sessionKeyInput = ref('')
 const refreshTokenInput = ref('')
@@ -1187,8 +1191,20 @@ const showGeminiProjectRegenerateWarning = computed(
     normalizedGeminiProjectId.value !== generatedGeminiProjectId.value
 )
 
-// Computed: show method selection when either cookie or refresh token option is enabled
-const showMethodSelection = computed(() => props.showCookieOption || props.showRefreshTokenOption || props.showMobileRefreshTokenOption || props.showSessionTokenOption || props.showAccessTokenOption || props.showCodexSessionImportOption || props.showCodexPatOption || props.showSSOTokenOption || props.showEmailPasswordOption)
+// Computed: show method selection only when there is something to choose.
+const methodOptionCount = computed(() => [
+  props.showManualOption,
+  props.showCookieOption,
+  props.showRefreshTokenOption,
+  props.showMobileRefreshTokenOption,
+  props.showSessionTokenOption,
+  props.showAccessTokenOption,
+  props.showCodexSessionImportOption,
+  props.showCodexPatOption,
+  props.showSSOTokenOption,
+  props.showEmailPasswordOption
+].filter(Boolean).length)
+const showMethodSelection = computed(() => methodOptionCount.value > 1)
 
 // Clipboard
 const { copied, copyToClipboard } = useClipboard()
@@ -1227,6 +1243,10 @@ const parsedCodexSessionCount = computed(() => {
 })
 
 // Watchers
+watch(() => props.initialInputMethod, (newVal) => {
+  inputMethod.value = newVal
+})
+
 watch(inputMethod, (newVal) => {
   emit('update:inputMethod', newVal)
 })
@@ -1372,7 +1392,7 @@ defineExpose({
     sessionTokenInput.value = ''
     codexSessionInput.value = ''
     codexPATInput.value = ''
-    inputMethod.value = 'manual'
+    inputMethod.value = props.initialInputMethod
     showHelpDialog.value = false
   }
 })

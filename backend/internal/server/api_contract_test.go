@@ -654,6 +654,7 @@ func TestAPIContracts(t *testing.T) {
 								"total_cost": 0.5,
 								"actual_cost": 0.5,
 								"rate_multiplier": 1,
+								"long_context_billing_applied": false,
 								"billed_by_higher_priced_upstream": false,
 								"billing_type": 0,
 								"stream": true,

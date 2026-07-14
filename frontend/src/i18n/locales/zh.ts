@@ -6312,6 +6312,7 @@ export default {
           startTime: '开始时间（可选）',
           endTime: '结束时间（可选）',
           level: '级别',
+          host: '主机',
           component: '组件',
           componentPlaceholder: '如 http.access',
           platform: '平台',
@@ -6326,6 +6327,7 @@ export default {
         },
         table: {
           time: '时间',
+          host: '主机',
           level: '级别',
           details: '日志详细信息',
         },

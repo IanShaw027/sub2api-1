@@ -7,12 +7,14 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -24,13 +26,14 @@ const (
 )
 
 type GrokQuotaProbeResult struct {
-	Source          string             `json:"source"`
-	Model           string             `json:"model"`
-	Snapshot        *xai.QuotaSnapshot `json:"snapshot,omitempty"`
-	StatusCode      int                `json:"status_code,omitempty"`
-	HeadersObserved bool               `json:"headers_observed"`
-	ResetSupported  bool               `json:"reset_supported"`
-	FetchedAt       int64              `json:"fetched_at"`
+	Source          string               `json:"source"`
+	Model           string               `json:"model,omitempty"`
+	Snapshot        *xai.QuotaSnapshot   `json:"snapshot,omitempty"`
+	StatusCode      int                  `json:"status_code,omitempty"`
+	HeadersObserved bool                 `json:"headers_observed"`
+	ResetSupported  bool                 `json:"reset_supported"`
+	FetchedAt       int64                `json:"fetched_at"`
+	Billing         *xai.BillingSnapshot `json:"billing,omitempty"`
 }
 
 type GrokQuotaResetResult struct {
@@ -46,6 +49,7 @@ type GrokQuotaService struct {
 	httpUpstream    HTTPUpstream
 	tlsFPProfileSvc *TLSFingerprintProfileService
 	settingService  *SettingService
+	probeFlight     singleflight.Group
 }
 
 func NewGrokQuotaService(
@@ -78,6 +82,12 @@ func (s *GrokQuotaService) SetTLSFingerprintProfileService(profileService *TLSFi
 }
 
 func (s *GrokQuotaService) ProbeUsage(ctx context.Context, accountID int64) (*GrokQuotaProbeResult, error) {
+	return s.runProbeFlight(ctx, "active:"+strconv.FormatInt(accountID, 10), func(sharedCtx context.Context) (*GrokQuotaProbeResult, error) {
+		return s.probeUsage(sharedCtx, accountID)
+	})
+}
+
+func (s *GrokQuotaService) probeUsage(ctx context.Context, accountID int64) (*GrokQuotaProbeResult, error) {
 	account, token, proxyURL, err := s.prepareProbe(ctx, accountID)
 	if err != nil {
 		return nil, err
@@ -149,6 +159,36 @@ func (s *GrokQuotaService) ProbeUsage(ctx context.Context, accountID int64) (*Gr
 	return result, nil
 }
 
+// QueryQuota prefers billing endpoints and only sends a real inference probe
+// when billing did not return an authoritative usage window.
+func (s *GrokQuotaService) QueryQuota(ctx context.Context, accountID int64) (*GrokQuotaProbeResult, error) {
+	billing, billingErr := s.FetchBilling(ctx, accountID)
+	if billing != nil && (billing.Credits != nil || billing.Monthly != nil) {
+		return &GrokQuotaProbeResult{
+			Source:    "active_billing",
+			Billing:   billing,
+			FetchedAt: time.Now().Unix(),
+		}, nil
+	}
+	result, probeErr := s.ProbeUsage(ctx, accountID)
+	if probeErr != nil {
+		if billing != nil {
+			return &GrokQuotaProbeResult{Source: "active_billing", Billing: billing, FetchedAt: time.Now().Unix()}, nil
+		}
+		if billingErr != nil {
+			return nil, billingErr
+		}
+		return nil, probeErr
+	}
+	if result != nil {
+		result.Billing = billing
+		if billing != nil {
+			result.Source = "hybrid_probe"
+		}
+	}
+	return result, nil
+}
+
 func (s *GrokQuotaService) ResetQuota(ctx context.Context, accountID int64) (*GrokQuotaResetResult, error) {
 	if _, err := s.loadGrokOAuthAccount(ctx, accountID); err != nil {
 		return nil, err
@@ -159,6 +199,12 @@ func (s *GrokQuotaService) ResetQuota(ctx context.Context, accountID int64) (*Gr
 // FetchBilling actively pulls Grok CLI /usage billing endpoints and persists a snapshot
 // into account.Extra[grok_billing_snapshot]. Endpoints live on cli-chat-proxy, not api.x.ai.
 func (s *GrokQuotaService) FetchBilling(ctx context.Context, accountID int64) (*xai.BillingSnapshot, error) {
+	return s.runBillingFlight(ctx, "billing:"+strconv.FormatInt(accountID, 10), func(sharedCtx context.Context) (*xai.BillingSnapshot, error) {
+		return s.fetchBilling(sharedCtx, accountID)
+	})
+}
+
+func (s *GrokQuotaService) fetchBilling(ctx context.Context, accountID int64) (*xai.BillingSnapshot, error) {
 	account, token, proxyURL, err := s.prepareProbe(ctx, accountID)
 	if err != nil {
 		return nil, err
@@ -177,29 +223,50 @@ func (s *GrokQuotaService) FetchBilling(ctx context.Context, accountID int64) (*
 		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 		Source:    "active_billing",
 	}
+	previous := grokBillingSnapshotFromExtra(account.Extra)
 
 	// Parallel-ish sequential is fine; keep simple and share auth headers.
 	creditsBody, creditsErr := s.doGrokBillingGET(callCtx, account, token, proxyURL, tlsProfile, baseURL, xai.BillingPathCredits)
 	if creditsErr != nil {
+		if previous != nil {
+			snapshot.Credits = previous.Credits
+		}
 		snapshot.FetchError = creditsErr.Error()
 		slog.Warn("grok_billing_credits_failed", "account_id", account.ID, "err", creditsErr)
-	} else if parsed, parseErr := xai.ParseCreditsBilling(creditsBody); parseErr != nil {
-		snapshot.FetchError = "parse credits billing: " + parseErr.Error()
-	} else if parsed != nil {
+	} else if parsed, parseErr := xai.ParseCreditsBilling(creditsBody); parseErr != nil || parsed == nil || parsed.Config == nil {
+		if previous != nil {
+			snapshot.Credits = previous.Credits
+		}
+		if parseErr != nil {
+			snapshot.FetchError = "parse credits billing: " + parseErr.Error()
+		} else {
+			snapshot.FetchError = "parse credits billing: missing config"
+		}
+	} else {
 		snapshot.Credits = parsed.Config
 	}
 
 	monthlyBody, monthlyErr := s.doGrokBillingGET(callCtx, account, token, proxyURL, tlsProfile, baseURL, xai.BillingPathMonthly)
 	if monthlyErr != nil {
+		if previous != nil {
+			snapshot.Monthly = previous.Monthly
+		}
 		if snapshot.FetchError == "" {
 			snapshot.FetchError = monthlyErr.Error()
 		}
 		slog.Warn("grok_billing_monthly_failed", "account_id", account.ID, "err", monthlyErr)
-	} else if parsed, parseErr := xai.ParseMonthlyBilling(monthlyBody); parseErr != nil {
-		if snapshot.FetchError == "" {
-			snapshot.FetchError = "parse monthly billing: " + parseErr.Error()
+	} else if parsed, parseErr := xai.ParseMonthlyBilling(monthlyBody); parseErr != nil || parsed == nil || parsed.Config == nil {
+		if previous != nil {
+			snapshot.Monthly = previous.Monthly
 		}
-	} else if parsed != nil {
+		if snapshot.FetchError == "" {
+			if parseErr != nil {
+				snapshot.FetchError = "parse monthly billing: " + parseErr.Error()
+			} else {
+				snapshot.FetchError = "parse monthly billing: missing config"
+			}
+		}
+	} else {
 		snapshot.Monthly = parsed.Config
 	}
 
@@ -209,7 +276,15 @@ func (s *GrokQuotaService) FetchBilling(ctx context.Context, accountID int64) (*
 			snapshot.SubscriptionTier = parsed.SubscriptionTier
 			snapshot.Email = parsed.Email
 			snapshot.HasGrokCodeAccess = parsed.HasGrokCodeAccess
+		} else if previous != nil {
+			snapshot.SubscriptionTier = previous.SubscriptionTier
+			snapshot.Email = previous.Email
+			snapshot.HasGrokCodeAccess = previous.HasGrokCodeAccess
 		}
+	} else if previous != nil {
+		snapshot.SubscriptionTier = previous.SubscriptionTier
+		snapshot.Email = previous.Email
+		snapshot.HasGrokCodeAccess = previous.HasGrokCodeAccess
 	}
 
 	// Persist even partial results so list/passive can show last known state.
@@ -235,12 +310,41 @@ func (s *GrokQuotaService) RefreshAccountUsage(ctx context.Context, accountID in
 	if s == nil {
 		return
 	}
-	if _, err := s.FetchBilling(ctx, accountID); err != nil {
-		slog.Warn("grok_billing_refresh_failed", "account_id", accountID, "err", err)
+	if _, err := s.QueryQuota(ctx, accountID); err != nil {
+		slog.Warn("grok_usage_refresh_failed", "account_id", accountID, "err", err)
 	}
-	// Probe is optional and may fail on free-tier / missing responses access; never block billing.
-	if _, err := s.ProbeUsage(ctx, accountID); err != nil {
-		slog.Debug("grok_quota_probe_after_billing_failed", "account_id", accountID, "err", err)
+}
+
+func (s *GrokQuotaService) runProbeFlight(ctx context.Context, key string, fn func(context.Context) (*GrokQuotaProbeResult, error)) (*GrokQuotaProbeResult, error) {
+	resultCh := s.probeFlight.DoChan(key, func() (any, error) {
+		return fn(context.WithoutCancel(ctx))
+	})
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case result := <-resultCh:
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		value, _ := result.Val.(*GrokQuotaProbeResult)
+		return value, nil
+	}
+}
+
+func (s *GrokQuotaService) runBillingFlight(ctx context.Context, key string, fn func(context.Context) (*xai.BillingSnapshot, error)) (*xai.BillingSnapshot, error) {
+	resultCh := s.probeFlight.DoChan(key, func() (any, error) {
+		return fn(context.WithoutCancel(ctx))
+	})
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case result := <-resultCh:
+		if result.Err != nil {
+			value, _ := result.Val.(*xai.BillingSnapshot)
+			return value, result.Err
+		}
+		value, _ := result.Val.(*xai.BillingSnapshot)
+		return value, nil
 	}
 }
 

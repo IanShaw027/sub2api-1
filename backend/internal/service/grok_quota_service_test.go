@@ -7,11 +7,13 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/model"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -66,6 +68,73 @@ type grokQuotaProxyRepo struct {
 	proxyRepoStub
 	proxies map[int64]*Proxy
 	calls   int
+}
+
+type grokBillingRouteResponse struct {
+	status int
+	body   string
+}
+
+type grokBillingRouteUpstream struct {
+	mu        sync.Mutex
+	routes    map[string]grokBillingRouteResponse
+	calls     map[string]int
+	started   chan struct{}
+	release   chan struct{}
+	startOnce sync.Once
+}
+
+func (u *grokBillingRouteUpstream) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
+	return u.DoWithTLS(req, proxyURL, accountID, accountConcurrency, nil)
+}
+
+func (u *grokBillingRouteUpstream) DoWithTLS(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	key := req.URL.RequestURI()
+	u.mu.Lock()
+	if u.calls == nil {
+		u.calls = make(map[string]int)
+	}
+	u.calls[key]++
+	route, ok := u.routes[key]
+	u.mu.Unlock()
+
+	if u.started != nil && strings.HasSuffix(key, xai.BillingPathCredits) {
+		u.startOnce.Do(func() { close(u.started) })
+		<-u.release
+	}
+	if !ok {
+		route = grokBillingRouteResponse{status: http.StatusNotFound, body: `{"error":"not found"}`}
+	}
+	return &http.Response{
+		StatusCode: route.status,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(route.body)),
+	}, nil
+}
+
+func (u *grokBillingRouteUpstream) callCount(suffix string) int {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	total := 0
+	for path, count := range u.calls {
+		if strings.HasSuffix(path, suffix) {
+			total += count
+		}
+	}
+	return total
+}
+
+func newGrokBillingTestAccount(id int64) *Account {
+	return &Account{
+		ID:          id,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "access-token",
+			"expires_at":   time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+		},
+	}
 }
 
 func (r *grokQuotaProxyRepo) GetByID(_ context.Context, id int64) (*Proxy, error) {
@@ -323,6 +392,128 @@ func TestGrokQuotaServiceResetQuotaUnsupported(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, http.StatusNotImplemented, infraerrors.Code(err))
 	require.Equal(t, "GROK_QUOTA_RESET_UNSUPPORTED", infraerrors.Reason(err))
+}
+
+func TestGrokQuotaServiceQueryQuotaUsesBillingWithoutInference(t *testing.T) {
+	t.Parallel()
+
+	account := newGrokBillingTestAccount(48)
+	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
+		accountsByID: map[int64]*Account{account.ID: account},
+	}}
+	upstream := &grokBillingRouteUpstream{routes: map[string]grokBillingRouteResponse{
+		"/v1/billing?format=credits": {status: http.StatusOK, body: `{"config":{"creditUsagePercent":25}}`},
+		"/v1/billing":                {status: http.StatusOK, body: `{"config":{"monthlyLimit":{"val":100},"used":{"val":20}}}`},
+		"/v1/user?include=subscription": {
+			status: http.StatusOK,
+			body:   `{"email":"user@example.com","subscriptionTier":"supergrok","hasGrokCodeAccess":true}`,
+		},
+	}}
+	svc := NewGrokQuotaService(repo, nil, NewGrokTokenProvider(repo, nil), upstream, nil)
+
+	result, err := svc.QueryQuota(context.Background(), account.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, "active_billing", result.Source)
+	require.NotNil(t, result.Billing)
+	require.InDelta(t, 25, result.Billing.Credits.CreditUsagePercent, 0.001)
+	require.InDelta(t, 20, xai.Money(result.Billing.Monthly.Used), 0.001)
+	require.Equal(t, "supergrok", result.Billing.SubscriptionTier)
+	require.Zero(t, upstream.callCount("/responses"), "authoritative billing must not consume inference quota")
+}
+
+func TestGrokQuotaServiceFetchBillingRetainsFailedWindowAndSubscription(t *testing.T) {
+	t.Parallel()
+
+	account := newGrokBillingTestAccount(49)
+	account.Extra = map[string]any{
+		grokBillingSnapshotExtraKey: &xai.BillingSnapshot{
+			UpdatedAt: time.Now().Add(-time.Hour).UTC().Format(time.RFC3339),
+			Credits:   &xai.CreditsBillingConfig{CreditUsagePercent: 10},
+			Monthly: &xai.MonthlyBillingConfig{
+				MonthlyLimit: &xai.MoneyVal{Val: 100},
+				Used:         &xai.MoneyVal{Val: 30},
+			},
+			SubscriptionTier:  "previous-tier",
+			Email:             "previous@example.com",
+			HasGrokCodeAccess: true,
+		},
+	}
+	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
+		accountsByID: map[int64]*Account{account.ID: account},
+	}}
+	upstream := &grokBillingRouteUpstream{routes: map[string]grokBillingRouteResponse{
+		"/v1/billing?format=credits": {status: http.StatusOK, body: `{"config":{"creditUsagePercent":45}}`},
+		"/v1/billing":                {status: http.StatusBadGateway, body: `{"error":"temporary"}`},
+		"/v1/user?include=subscription": {
+			status: http.StatusOK,
+			body:   `{invalid`,
+		},
+	}}
+	svc := NewGrokQuotaService(repo, nil, NewGrokTokenProvider(repo, nil), upstream, nil)
+
+	snapshot, err := svc.FetchBilling(context.Background(), account.ID)
+
+	require.NoError(t, err, "a retained authoritative window keeps the partial snapshot usable")
+	require.InDelta(t, 45, snapshot.Credits.CreditUsagePercent, 0.001)
+	require.Same(t, account.Extra[grokBillingSnapshotExtraKey].(*xai.BillingSnapshot).Monthly, snapshot.Monthly)
+	require.InDelta(t, 30, xai.Money(snapshot.Monthly.Used), 0.001)
+	require.Equal(t, "previous-tier", snapshot.SubscriptionTier)
+	require.Equal(t, "previous@example.com", snapshot.Email)
+	require.True(t, snapshot.HasGrokCodeAccess)
+	require.NotEmpty(t, snapshot.FetchError)
+	require.Same(t, snapshot, repo.updates[account.ID][grokBillingSnapshotExtraKey])
+}
+
+func TestGrokQuotaServiceFetchBillingSingleflight(t *testing.T) {
+	account := newGrokBillingTestAccount(50)
+	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
+		accountsByID: map[int64]*Account{account.ID: account},
+	}}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	upstream := &grokBillingRouteUpstream{
+		started: started,
+		release: release,
+		routes: map[string]grokBillingRouteResponse{
+			"/v1/billing?format=credits": {status: http.StatusOK, body: `{"config":{"creditUsagePercent":25}}`},
+			"/v1/billing":                {status: http.StatusOK, body: `{"config":{"monthlyLimit":{"val":100},"used":{"val":20}}}`},
+			"/v1/user?include=subscription": {
+				status: http.StatusOK,
+				body:   `{}`,
+			},
+		},
+	}
+	svc := NewGrokQuotaService(repo, nil, NewGrokTokenProvider(repo, nil), upstream, nil)
+
+	type fetchResult struct {
+		snapshot *xai.BillingSnapshot
+		err      error
+	}
+	results := make(chan fetchResult, 2)
+	go func() {
+		snapshot, err := svc.FetchBilling(context.Background(), account.ID)
+		results <- fetchResult{snapshot: snapshot, err: err}
+	}()
+	<-started
+	secondStarted := make(chan struct{})
+	go func() {
+		close(secondStarted)
+		snapshot, err := svc.FetchBilling(context.Background(), account.ID)
+		results <- fetchResult{snapshot: snapshot, err: err}
+	}()
+	<-secondStarted
+	time.Sleep(20 * time.Millisecond)
+	close(release)
+
+	first := <-results
+	second := <-results
+	require.NoError(t, first.err)
+	require.NoError(t, second.err)
+	require.Same(t, first.snapshot, second.snapshot)
+	require.Equal(t, 1, upstream.callCount(xai.BillingPathCredits))
+	require.Equal(t, 1, upstream.callCount(xai.BillingPathMonthly))
+	require.Equal(t, 1, upstream.callCount(xai.UserPathSubscription))
 }
 
 func TestShouldAutoPauseGrokAccountByQuota(t *testing.T) {

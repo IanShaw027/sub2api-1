@@ -2424,4 +2424,45 @@ describe('EditAccountModal', () => {
       'antigravity_project_id'
     )
   })
+
+  it('loads and submits the per-account OpenAI long-context billing toggle', async () => {
+    resetCommonMocks()
+    const account = buildAccount()
+    account.extra = { openai_long_context_billing_enabled: true }
+    updateAccountMock.mockResolvedValue(account)
+    const wrapper = mountModal(account, true)
+    const toggle = wrapper.get('[data-testid="openai-long-context-billing-toggle"]')
+    expect(toggle.attributes('aria-checked')).toBe('true')
+
+    await toggle.trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_long_context_billing_enabled).toBe(false)
+  })
+
+  it.each([
+    [{}, false],
+    [{ openai_long_context_billing_enabled: false }, false],
+    [{ openai_long_context_billing_enabled: 'false' }, false]
+  ])('fails closed for legacy, explicit opt-out, and malformed long-context values', async (extra, expected) => {
+    resetCommonMocks()
+    const account = buildAccount()
+    account.extra = extra
+    updateAccountMock.mockResolvedValue(account)
+    const wrapper = mountModal(account, true)
+    expect(wrapper.get('[data-testid="openai-long-context-billing-toggle"]').attributes('aria-checked')).toBe(String(expected))
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_long_context_billing_enabled).toBe(expected)
+  })
+
+  it('does not render or submit long-context billing for Spark shadow accounts', async () => {
+    resetCommonMocks()
+    const account = { ...buildAccount(), parent_account_id: 9, extra: { openai_long_context_billing_enabled: false } }
+    updateAccountMock.mockResolvedValue(account)
+    const wrapper = mountModal(account, true)
+    expect(wrapper.find('[data-testid="openai-long-context-billing-toggle"]').exists()).toBe(false)
+
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('openai_long_context_billing_enabled')
+  })
 })

@@ -166,13 +166,14 @@ type UsageLog struct {
 	ImageOutputTokens int
 	ImageOutputCost   float64
 
-	InputCost         float64
-	OutputCost        float64
-	CacheCreationCost float64
-	CacheReadCost     float64
-	TotalCost         float64
-	ActualCost        float64
-	RateMultiplier    float64
+	InputCost                 float64
+	OutputCost                float64
+	CacheCreationCost         float64
+	CacheReadCost             float64
+	TotalCost                 float64
+	ActualCost                float64
+	RateMultiplier            float64
+	LongContextBillingApplied bool
 	// BilledByHigherPricedUpstream marks records where billing compared requested
 	// and upstream models and charged using the more expensive upstream price.
 	BilledByHigherPricedUpstream bool

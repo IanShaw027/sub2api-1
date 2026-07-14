@@ -1385,19 +1385,47 @@ export interface KiroQuotaBreakdown {
 }
 
 export interface GrokQuotaWindow {
-  limit?: number
-  remaining?: number
-  reset_unix?: number
-  reset_at?: string
+  limit?: number | null
+  remaining?: number | null
+  reset_unix?: number | null
+  reset_at?: string | null
+}
+
+export interface GrokBillingProductUsage {
+  product: string
+  usage_percent?: number | null
+}
+
+export interface GrokBillingSummary {
+  period_type?: string
+  usage_percent?: number | null
+  period_start?: string
+  period_end?: string
+  product_usage?: GrokBillingProductUsage[]
+  monthly_limit_cents?: number | null
+  used_cents?: number | null
+  included_used_cents?: number | null
+  billing_period_start?: string
+  billing_period_end?: string
+  used_percent?: number | null
+  plan?: string
+  status_code?: number
+  source?: string
+  fetched_at?: string
+  updated_at?: string
+  weekly_updated_at?: string
+  monthly_updated_at?: string
+  partial?: boolean
+  failed_windows?: string[]
 }
 
 /** Absolute balance / limit / overage from Grok CLI billing APIs. */
-export interface GrokBillingInfo {
-  prepaid_balance: number
-  monthly_limit: number
-  monthly_used: number
-  on_demand_cap: number
-  on_demand_used: number
+export interface GrokBillingInfo extends GrokBillingSummary {
+  prepaid_balance?: number
+  monthly_limit?: number
+  monthly_used?: number
+  on_demand_cap?: number
+  on_demand_used?: number
   top_up_method?: string
   is_unified_billing_user?: boolean
   weekly_period_start?: string | null
@@ -1448,7 +1476,9 @@ export interface AccountUsageInfo {
   grok_local_usage?: WindowStats | null
   /** Official Grok monthly billing window (used / monthlyLimit). */
   thirty_day?: UsageProgress | null
-  /** Absolute balance / limit / overage from cli-chat-proxy billing APIs. */
+  grok_local_usage_7d?: WindowStats | null
+  grok_local_usage_monthly?: WindowStats | null
+  /** Billing-first summary plus absolute balance / limit / overage fields when available. */
   grok_billing?: GrokBillingInfo | null
   ai_credits?: Array<{
     credit_type?: string
@@ -1801,7 +1831,8 @@ export interface UsageLog {
   total_cost: number
   actual_cost: number
   rate_multiplier: number
-  billed_by_higher_priced_upstream: boolean
+  billed_by_higher_priced_upstream?: boolean
+  long_context_billing_applied?: boolean
   billing_type: number
 
   request_type?: UsageRequestType

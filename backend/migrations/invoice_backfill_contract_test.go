@@ -162,6 +162,7 @@ func TestMigrationFilenameNumericPrefixesStayDeliberate(t *testing.T) {
 		"193": {"193_add_usage_log_video_billing_details.sql", "193_add_usage_log_video_billing_details_index_notx.sql", "193_create_usage_user_daily_cost.sql"},
 		"195": {"195_add_invoice_order_active_unique_guard.sql", "195a_add_invoice_order_active_unique_guard_notx.sql"},
 		"199": {"199_batch_image_idempotency_unique.sql", "199a_batch_image_idempotency_unique_notx.sql"},
+		"206": {"206_add_ops_system_logs_host.sql", "206a_add_ops_system_logs_host_index_notx.sql"},
 	}
 
 	byPrefix := make(map[string][]string)

@@ -87,7 +87,7 @@ describe('useGrokOAuth.exchangeAuthCode', () => {
     })
   })
 
-  it('persists the SSO token returned by the real credential builder', () => {
+  it('drops the raw SSO token returned by legacy conversion responses', () => {
     const oauth = useGrokOAuth()
 
     expect(oauth.buildCredentials({
@@ -96,8 +96,7 @@ describe('useGrokOAuth.exchangeAuthCode', () => {
       sso_token: 'sso-token'
     })).toEqual({
       access_token: 'access',
-      refresh_token: 'refresh',
-      sso_token: 'sso-token'
+      refresh_token: 'refresh'
     })
   })
 })

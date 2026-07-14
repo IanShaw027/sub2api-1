@@ -29,6 +29,7 @@ type GrokOAuthClient interface {
 	AutoAuthorizeDeviceCode(ctx context.Context, ssoToken, userCode, proxyURL string) error
 	PollDeviceToken(ctx context.Context, deviceCode string, interval, expiresIn int, proxyURL, clientID string) (*xai.TokenResponse, error)
 	LoginWithPassword(ctx context.Context, email, password, proxyURL string) (*GrokPasswordLoginResult, error)
+	ConvertSSOToBuild(ctx context.Context, ssoToken, proxyURL string) (*xai.TokenResponse, error)
 }
 
 // GrokOAuthTokenService is the narrow refresh port used by Grok token providers.

@@ -3,8 +3,6 @@ package service
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/base64"
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -119,6 +117,8 @@ type GrokTokenInfo struct {
 	ClientID          string `json:"client_id,omitempty"`
 	Scope             string `json:"scope,omitempty"`
 	Email             string `json:"email,omitempty"`
+	Subject           string `json:"sub,omitempty"`
+	TeamID            string `json:"team_id,omitempty"`
 	SubscriptionTier  string `json:"subscription_tier,omitempty"`
 	EntitlementStatus string `json:"entitlement_status,omitempty"`
 }
@@ -238,26 +238,18 @@ func (s *GrokOAuthService) ValidateSSOToken(ctx context.Context, ssoToken string
 	if err != nil {
 		return nil, err
 	}
-	device, err := oauthClient.RequestDeviceCode(ctx, proxyURL, xai.EffectiveClientID())
-	if err != nil {
-		return nil, err
-	}
-	if device == nil || strings.TrimSpace(device.DeviceCode) == "" || strings.TrimSpace(device.UserCode) == "" {
-		return nil, infraerrors.New(http.StatusBadGateway, "GROK_OAUTH_INVALID_DEVICE_CODE", "grok oauth device code response is invalid")
-	}
-	if err := oauthClient.AutoAuthorizeDeviceCode(ctx, ssoToken, device.UserCode, proxyURL); err != nil {
-		return nil, err
-	}
-	tokenResp, err := oauthClient.PollDeviceToken(ctx, device.DeviceCode, device.Interval, device.ExpiresIn, proxyURL, xai.EffectiveClientID())
+	tokenResp, err := oauthClient.ConvertSSOToBuild(ctx, ssoToken, proxyURL)
 	if err != nil {
 		return nil, err
 	}
 	if err := validateGrokTokenResponse(tokenResp); err != nil {
 		return nil, err
 	}
-	info := s.tokenInfoFromResponse(tokenResp, xai.EffectiveClientID(), nil)
-	info.SSOToken = ssoToken
-	return info, nil
+	return s.tokenInfoFromResponse(tokenResp, xai.DefaultClientID, nil), nil
+}
+
+func (s *GrokOAuthService) ConvertFromSSO(ctx context.Context, ssoToken string, proxyID *int64) (*GrokTokenInfo, error) {
+	return s.ValidateSSOToken(ctx, ssoToken, proxyID)
 }
 
 func (s *GrokOAuthService) AuthorizePassword(ctx context.Context, email, password string, proxyID *int64) (*GrokTokenInfo, error) {
@@ -332,9 +324,6 @@ func (s *GrokOAuthService) BuildAccountCredentials(tokenInfo *GrokTokenInfo) map
 	if tokenInfo.RefreshToken != "" {
 		creds["refresh_token"] = tokenInfo.RefreshToken
 	}
-	if tokenInfo.SSOToken != "" {
-		creds["sso_token"] = tokenInfo.SSOToken
-	}
 	if tokenInfo.TokenType != "" {
 		creds["token_type"] = tokenInfo.TokenType
 	}
@@ -350,6 +339,12 @@ func (s *GrokOAuthService) BuildAccountCredentials(tokenInfo *GrokTokenInfo) map
 	if tokenInfo.Email != "" {
 		creds["email"] = tokenInfo.Email
 	}
+	if tokenInfo.Subject != "" {
+		creds["sub"] = tokenInfo.Subject
+	}
+	if tokenInfo.TeamID != "" {
+		creds["team_id"] = tokenInfo.TeamID
+	}
 	if tokenInfo.SubscriptionTier != "" {
 		creds["subscription_tier"] = tokenInfo.SubscriptionTier
 	}
@@ -360,6 +355,14 @@ func (s *GrokOAuthService) BuildAccountCredentials(tokenInfo *GrokTokenInfo) map
 	// (grok_default_base_url_mode: api|cli) controls the default upstream.
 	// Operators can still pin an explicit base_url per account.
 	return creds
+}
+
+// MergeGrokAccountCredentials preserves non-token account settings while
+// removing legacy raw SSO cookies from persistent credentials.
+func MergeGrokAccountCredentials(oldCreds, newCreds map[string]any) map[string]any {
+	merged := MergeCredentials(oldCreds, newCreds)
+	delete(merged, "sso_token")
+	return merged
 }
 
 func (s *GrokOAuthService) Stop() {
@@ -395,12 +398,23 @@ func (s *GrokOAuthService) tokenInfoFromResponse(tokenResp *xai.TokenResponse, c
 	if info.TokenType == "" {
 		info.TokenType = "Bearer"
 	}
-	if email := parseJWTEmailClaim(tokenResp.IDToken); email != "" {
-		info.Email = email
-	}
-	if info.Email == "" && existing != nil {
-		if email, _ := existing["email"].(string); email != "" {
-			info.Email = email
+	applyGrokTokenClaims(info, tokenResp.IDToken)
+	applyGrokTokenClaims(info, tokenResp.AccessToken)
+	if existing != nil {
+		if info.Email == "" {
+			if email, _ := existing["email"].(string); email != "" {
+				info.Email = email
+			}
+		}
+		if info.Subject == "" {
+			if subject, _ := existing["sub"].(string); subject != "" {
+				info.Subject = subject
+			}
+		}
+		if info.TeamID == "" {
+			if teamID, _ := existing["team_id"].(string); teamID != "" {
+				info.TeamID = teamID
+			}
 		}
 	}
 	return info
@@ -423,20 +437,21 @@ func (s *GrokOAuthService) proxyURL(ctx context.Context, proxyID *int64) (string
 	return proxy.URL(), nil
 }
 
-func parseJWTEmailClaim(token string) string {
-	parts := strings.Split(token, ".")
-	if len(parts) < 2 {
-		return ""
+func applyGrokTokenClaims(info *GrokTokenInfo, token string) {
+	if info == nil || strings.TrimSpace(token) == "" {
+		return
 	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return ""
+	claims := xai.DecodeJWTClaims(token)
+	if claims == nil {
+		return
 	}
-	var claims struct {
-		Email string `json:"email"`
+	if info.Email == "" {
+		info.Email = xai.JWTClaimString(claims, "email")
 	}
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return ""
+	if info.Subject == "" {
+		info.Subject = xai.JWTClaimString(claims, "sub")
 	}
-	return strings.TrimSpace(claims.Email)
+	if info.TeamID == "" {
+		info.TeamID = xai.JWTClaimString(claims, "team_id")
+	}
 }

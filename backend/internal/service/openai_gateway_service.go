@@ -661,7 +661,9 @@ type OpenAIGatewayService struct {
 	openaiWSSessionPreemptions        openAIWSSessionPreemptRegistry
 	responseHeaderFilter              *responseheaders.CompiledHeaderFilter
 	codexSnapshotThrottle             *accountWriteThrottle
+	codexModelsManifestCache          codexModelsManifestCache
 	openaiCompatSessionResponses      sync.Map
+	openaiCompatAnthropicDigestSessions sync.Map
 	openaiAccountRuntimeBlockUntil    sync.Map // key: int64(accountID), value: time.Time
 	openaiOAuth429WindowStartUnixNano atomic.Int64
 	openaiOAuth429WindowCount         atomic.Int64
@@ -12477,6 +12479,14 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if result.ServiceTier != nil {
 		serviceTier = strings.TrimSpace(*result.ServiceTier)
 	}
+	billingAccount := account
+	if account.IsShadow() {
+		billingAccount, err = resolveCredentialAccount(ctx, s.accountRepo, account)
+		if err != nil {
+			return err
+		}
+	}
+	longContextBillingEnabled := billingAccount.IsOpenAILongContextBillingEnabled()
 	seenBillingCandidates := make(map[string]struct{}, len(modelView.BillingModelCandidates))
 	for _, billingModelCandidate := range modelView.BillingModelCandidates {
 		if _, seen := seenBillingCandidates[billingModelCandidate]; seen {
@@ -12496,6 +12506,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			tokens,
 			serviceTier,
 			requestType,
+			longContextBillingEnabled,
 		)
 		if candidateErr == nil {
 			if firstSuccessfulCost == nil {
@@ -12623,6 +12634,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		usageLog.CacheReadCost = cost.CacheReadCost
 		usageLog.TotalCost = cost.TotalCost
 		usageLog.ActualCost = cost.ActualCost
+		usageLog.LongContextBillingApplied = cost.LongContextBillingApplied
 	}
 	usageLog.RateMultiplier = effectiveRateMultiplier
 	usageLog.AccountRateMultiplier = &accountRateMultiplier
@@ -12754,7 +12766,9 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 	tokens UsageTokens,
 	serviceTier string,
 	requestType RequestType,
+	longContextBillingEnabled ...bool,
 ) (*CostBreakdown, error) {
+	applyLongContextBilling := firstOptionalBool(true, longContextBillingEnabled)
 	if result != nil && result.WebSearchCalls > 0 {
 		var groupPrice *float64
 		if apiKey != nil && apiKey.Group != nil {
@@ -12769,7 +12783,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		}
 		searchCost := s.billingService.CalculateSearchCost(result.SearchCount, groupPrice, multiplier)
 		if hasUsageTokens(tokens) {
-			tokenCost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier)
+				tokenCost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier, applyLongContextBilling)
 			if err != nil {
 				return nil, err
 			}
@@ -12781,7 +12795,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		if s.resolver != nil && apiKey != nil && apiKey.Group != nil && !apiKeyHasConfiguredVideoPrice(apiKey, firstNonEmptyString(result.VideoResolution, result.VideoSize)) {
 			gid := apiKey.Group.ID
 			if resolved := s.resolver.Resolve(ctx, PricingInput{Model: billingModel, GroupID: &gid}); resolved != nil && resolved.Source == PricingSourceChannel && resolved.Mode == BillingModeToken {
-				return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier)
+					return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier, applyLongContextBilling)
 			}
 		}
 		return s.calculateOpenAIVideoRequestCost(result, apiKey, videoRateMultiplier), nil
@@ -12797,7 +12811,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		}
 		audioCost := s.billingService.CalculateAudioCost(result.AudioUsage.Mode, result.AudioUsage.DurationOrUnits, groupConfig, 1)
 		if hasUsageTokens(tokens) {
-			tokenCost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier)
+				tokenCost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier, applyLongContextBilling)
 			if err != nil {
 				return nil, err
 			}
@@ -12809,12 +12823,19 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageCost(
 		if !apiKeyHasConfiguredImagePrice(apiKey, result.ImageSize) && s.resolver != nil && apiKey != nil && apiKey.Group != nil {
 			gid := apiKey.Group.ID
 			if resolved := s.resolver.Resolve(ctx, PricingInput{Model: billingModel, GroupID: &gid}); resolved != nil && resolved.Source == PricingSourceChannel && resolved.Mode == BillingModeToken {
-				return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier)
+					return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier, applyLongContextBilling)
 			}
 		}
-		return s.calculateOpenAIImageRequestCost(ctx, result, apiKey, billingModel, multiplier, imageRateMultiplier, tokens, serviceTier, requestType)
+		return s.calculateOpenAIImageRequestCost(ctx, result, apiKey, billingModel, multiplier, imageRateMultiplier, tokens, serviceTier, requestType, applyLongContextBilling)
 	}
-	return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier)
+	return s.calculateOpenAITokenUsageCost(ctx, apiKey, billingModel, multiplier, tokens, serviceTier, applyLongContextBilling)
+}
+
+func firstOptionalBool(fallback bool, values []bool) bool {
+	if len(values) == 0 {
+		return fallback
+	}
+	return values[0]
 }
 
 func hasUsageTokens(tokens UsageTokens) bool {
@@ -12953,7 +12974,9 @@ func (s *OpenAIGatewayService) calculateOpenAITokenUsageCost(
 	multiplier float64,
 	tokens UsageTokens,
 	serviceTier string,
+	longContextBillingEnabled ...bool,
 ) (*CostBreakdown, error) {
+	applyLongContextBilling := firstOptionalBool(true, longContextBillingEnabled)
 	if s.resolver != nil && apiKey != nil && apiKey.Group != nil {
 		gid := apiKey.Group.ID
 		return s.billingService.CalculateCostUnified(CostInput{
@@ -12964,10 +12987,11 @@ func (s *OpenAIGatewayService) calculateOpenAITokenUsageCost(
 			RequestCount:   1,
 			RateMultiplier: multiplier,
 			ServiceTier:    serviceTier,
-			Resolver:       s.resolver,
+			Resolver:                  s.resolver,
+			LongContextBillingEnabled: &applyLongContextBilling,
 		})
 	}
-	return s.billingService.CalculateCostWithServiceTier(billingModel, tokens, multiplier, serviceTier)
+	return s.billingService.calculateCostWithServiceTierPolicy(billingModel, tokens, multiplier, serviceTier, applyLongContextBilling)
 }
 
 func (s *OpenAIGatewayService) calculateOpenAIImageRequestCost(
@@ -12980,6 +13004,7 @@ func (s *OpenAIGatewayService) calculateOpenAIImageRequestCost(
 	tokens UsageTokens,
 	serviceTier string,
 	requestType RequestType,
+	longContextBillingEnabled ...bool,
 ) (*CostBreakdown, error) {
 	imageCost := s.calculateOpenAIImageCost(ctx, billingModel, apiKey, result, requestType, imageRateMultiplier)
 	if requestType == RequestTypeImageWebBridge {
@@ -12993,7 +13018,7 @@ func (s *OpenAIGatewayService) calculateOpenAIImageRequestCost(
 
 	tokenUsage := tokens
 	tokenUsage.ImageOutputTokens = 0
-	tokenCost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, tokenBillingModel, multiplier, tokenUsage, serviceTier)
+	tokenCost, err := s.calculateOpenAITokenUsageCost(ctx, apiKey, tokenBillingModel, multiplier, tokenUsage, serviceTier, firstOptionalBool(true, longContextBillingEnabled))
 	if err != nil {
 		logger.LegacyPrintf("service.openai_gateway", "Calculate image response token cost failed: %v", err)
 		return imageCost, nil
@@ -13014,6 +13039,7 @@ func mergeCostBreakdowns(billingMode string, parts ...*CostBreakdown) *CostBreak
 		out.CacheReadCost += part.CacheReadCost
 		out.TotalCost += part.TotalCost
 		out.ActualCost += part.ActualCost
+		out.LongContextBillingApplied = out.LongContextBillingApplied || part.LongContextBillingApplied
 	}
 	return out
 }
@@ -13501,15 +13527,57 @@ func newOpenAIRequestView(body []byte) openAIRequestView {
 	if len(body) == 0 {
 		return openAIRequestView{}
 	}
-	return openAIRequestView{
-		body:               body,
-		Model:              strings.TrimSpace(gjson.GetBytes(body, "model").String()),
-		Stream:             gjson.GetBytes(body, "stream").Bool(),
-		PromptCacheKey:     strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()),
-		PreviousResponseID: strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String()),
-		ServiceTier:        strings.TrimSpace(gjson.GetBytes(body, "service_tier").String()),
-		ReasoningEffort:    strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String()),
-	}
+
+	const (
+		modelField uint8 = 1 << iota
+		streamField
+		promptCacheKeyField
+		previousResponseIDField
+		serviceTierField
+		reasoningField
+		allRequestViewFields = modelField | streamField | promptCacheKeyField |
+			previousResponseIDField | serviceTierField | reasoningField
+	)
+
+	view := openAIRequestView{body: body}
+	var seen uint8
+	// parseRawJSONView reads body without copying; view keeps body alive for extracted strings.
+	parseRawJSONView(body).ForEach(func(key, value gjson.Result) bool {
+		switch key.Str {
+		case "model":
+			if seen&modelField == 0 {
+				view.Model = strings.TrimSpace(value.String())
+				seen |= modelField
+			}
+		case "stream":
+			if seen&streamField == 0 {
+				view.Stream = value.Bool()
+				seen |= streamField
+			}
+		case "prompt_cache_key":
+			if seen&promptCacheKeyField == 0 {
+				view.PromptCacheKey = strings.TrimSpace(value.String())
+				seen |= promptCacheKeyField
+			}
+		case "previous_response_id":
+			if seen&previousResponseIDField == 0 {
+				view.PreviousResponseID = strings.TrimSpace(value.String())
+				seen |= previousResponseIDField
+			}
+		case "service_tier":
+			if seen&serviceTierField == 0 {
+				view.ServiceTier = strings.TrimSpace(value.String())
+				seen |= serviceTierField
+			}
+		case "reasoning":
+			if seen&reasoningField == 0 {
+				view.ReasoningEffort = strings.TrimSpace(value.Get("effort").String())
+				seen |= reasoningField
+			}
+		}
+		return seen != allRequestViewFields
+	})
+	return view
 }
 
 // Decode 保留阶段一既有 full-map 行为；后续阶段会把调用点下沉到复杂分支。

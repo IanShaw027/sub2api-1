@@ -57,6 +57,10 @@ func (c *grokOAuthHandlerClient) LoginWithPassword(_ context.Context, email, _ s
 	}, nil
 }
 
+func (c *grokOAuthHandlerClient) ConvertSSOToBuild(context.Context, string, string) (*xai.TokenResponse, error) {
+	return &xai.TokenResponse{AccessToken: "access-token", RefreshToken: "refresh-token", ExpiresIn: 3600}, nil
+}
+
 type grokQuotaHandlerAccountRepo struct {
 	service.AccountRepository
 	account *service.Account
@@ -195,6 +199,7 @@ func TestGrokOAuthHandlerRefreshAccountTokenProbesQuota(t *testing.T) {
 		Credentials: map[string]any{
 			"access_token":  "old-access-token",
 			"refresh_token": "refresh-token",
+			"sso_token":     "legacy-cookie",
 			"expires_at":    time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
 		},
 	}}
@@ -229,6 +234,8 @@ func TestGrokOAuthHandlerRefreshAccountTokenProbesQuota(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
+	require.Len(t, adminSvc.updatedAccounts, 1)
+	require.NotContains(t, adminSvc.updatedAccounts[0].Credentials, "sso_token")
 	require.Eventually(t, func() bool { return upstream.lastReq != nil }, 2*time.Second, 10*time.Millisecond)
 	require.Equal(t, "Bearer access-token", upstream.lastReq.Header.Get("Authorization"))
 	require.NotNil(t, quotaRepo.updates[44])
@@ -293,7 +300,7 @@ func TestGrokOAuthHandlerValidateSSOTokenReturnsTokenInfo(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), `"access_token":"access-token"`)
-	require.Contains(t, rec.Body.String(), `"sso_token":"sso-token"`)
+	require.NotContains(t, rec.Body.String(), `"sso_token"`)
 }
 
 func TestGrokOAuthHandlerAuthorizePasswordReturnsTokenInfoWithoutPassword(t *testing.T) {
@@ -313,6 +320,6 @@ func TestGrokOAuthHandlerAuthorizePasswordReturnsTokenInfoWithoutPassword(t *tes
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), `"email":"user@example.com"`)
-	require.Contains(t, rec.Body.String(), `"sso_token":"sso-from-password"`)
+	require.NotContains(t, rec.Body.String(), `"sso_token"`)
 	require.NotContains(t, rec.Body.String(), "super-secret")
 }

@@ -6,8 +6,8 @@ import (
 )
 
 // resolveOpenAIForwardModel 解析 OpenAI 兼容转发使用的模型。
-// defaultMappedModel 只服务于 /v1/messages 的 Claude 系列显式调度映射，
-// 不作为普通 OpenAI 请求的未知模型兜底。
+// defaultMappedModel 是调用方已为 /v1/messages 解析的显式调度结果；
+// 普通 OpenAI 请求必须传空，避免将分组配置作为通用模型兜底。
 func resolveOpenAIForwardModel(account *Account, requestedModel, defaultMappedModel string) string {
 	return resolveOpenAIForwardModelWithSelectedFallback(account, requestedModel, defaultMappedModel, "")
 }
@@ -27,9 +27,9 @@ func resolveOpenAIForwardModelWithSettingsAndSelectedFallback(ctx context.Contex
 		}
 		return ResolveEffectiveMappedModel(ctx, settingService, account, selectedFallbackModel, false)
 	}
-
+	defaultMappedModel = strings.TrimSpace(defaultMappedModel)
 	if account == nil {
-		if defaultMappedModel != "" && claudeMessagesDispatchFamily(requestedModel) != "" {
+		if defaultMappedModel != "" {
 			return defaultMappedModel
 		}
 		return requestedModel
@@ -38,7 +38,7 @@ func resolveOpenAIForwardModelWithSettingsAndSelectedFallback(ctx context.Contex
 	routing := ResolveEffectiveModelRouting(ctx, settingService, account, requestedModel, false)
 	mappedModel := routing.Model
 	matched := routing.Matched
-	if !matched && defaultMappedModel != "" && claudeMessagesDispatchFamily(requestedModel) != "" {
+	if !matched && defaultMappedModel != "" {
 		return defaultMappedModel
 	}
 	return mappedModel

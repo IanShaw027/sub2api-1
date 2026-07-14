@@ -4,7 +4,9 @@
  */
 
 import { apiClient } from '../client'
-import type { Account } from '@/types'
+import type { Account, GrokBillingSummary, GrokQuotaWindow, WindowStats } from '@/types'
+
+export type { GrokBillingSummary, GrokQuotaWindow } from '@/types'
 
 export interface GrokAuthUrlResponse {
   auth_url: string
@@ -36,16 +38,11 @@ export interface GrokTokenInfo {
   scope?: string
   client_id?: string
   email?: string
+  sub?: string
+  team_id?: string
   subscription_tier?: string
   entitlement_status?: string
   [key: string]: unknown
-}
-
-export interface GrokQuotaWindow {
-  limit?: number | null
-  remaining?: number | null
-  reset_unix?: number | null
-  reset_at?: string | null
 }
 
 export interface GrokQuotaSnapshot {
@@ -64,13 +61,18 @@ export interface GrokQuotaSnapshot {
 }
 
 export interface GrokQuotaProbeResult {
-  source: 'active_probe'
-  model: string
+  source: 'active_probe' | 'billing_probe' | 'hybrid_probe'
+  model?: string
+  billing?: GrokBillingSummary | null
   snapshot?: GrokQuotaSnapshot | null
+  local_usage_7d?: WindowStats | null
+  local_usage_monthly?: WindowStats | null
   status_code?: number
   headers_observed: boolean
   reset_supported: boolean
   fetched_at: number
+  persisted?: boolean
+  probe_error?: string
 }
 
 export interface GrokQuotaResetResult {

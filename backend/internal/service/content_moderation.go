@@ -25,6 +25,7 @@ import (
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"golang.org/x/text/unicode/norm"
 )
@@ -779,16 +780,16 @@ func NewContentModerationService(
 		userRepo:             userRepo,
 		authCacheInvalidator: authCacheInvalidator,
 		emailService:         emailService,
-		httpClient: &http.Client{
+		httpClient: servertiming.InstrumentClient(&http.Client{
 			// Never follow redirects: base_url is admin-controlled and could
 			// otherwise bounce the moderation API key toward an internal host.
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
-		},
-		workerCount:          maxContentModerationWorkerCount,
-		asyncQueue:           make(chan contentModerationTask, maxContentModerationQueueSize),
-		keyHealth:            make(map[string]*contentModerationKeyHealth),
+		}),
+		workerCount: maxContentModerationWorkerCount,
+		asyncQueue:  make(chan contentModerationTask, maxContentModerationQueueSize),
+		keyHealth:   make(map[string]*contentModerationKeyHealth),
 	}
 	if settingRepo != nil && repo != nil {
 		for i := 0; i < svc.workerCount; i++ {

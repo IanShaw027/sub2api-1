@@ -4,6 +4,8 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"sync"
 	"testing"
 
@@ -18,6 +20,7 @@ type grokOAuthClientStub struct {
 	loginResult     *GrokPasswordLoginResult
 	loginEmail      string
 	loginPassword   string
+	ssoResponse     *xai.TokenResponse
 	exchangeCalls   int
 	mu              sync.Mutex
 	exchangeStarted chan struct{}
@@ -59,6 +62,10 @@ func (s *grokOAuthClientStub) LoginWithPassword(_ context.Context, email, passwo
 	s.loginEmail = email
 	s.loginPassword = password
 	return s.loginResult, nil
+}
+
+func (s *grokOAuthClientStub) ConvertSSOToBuild(context.Context, string, string) (*xai.TokenResponse, error) {
+	return s.ssoResponse, nil
 }
 
 func TestGrokOAuthServiceRefreshTokenPreservesOriginalRefreshTokenWhenNotRotated(t *testing.T) {
@@ -163,15 +170,9 @@ func TestGrokOAuthServiceExchangeCodeRejectsConcurrentSessionReuse(t *testing.T)
 	require.NoError(t, <-firstErr)
 }
 
-func TestGrokOAuthServiceValidateSSOTokenReturnsOAuthTokensAndPersistsSSO(t *testing.T) {
+func TestGrokOAuthServiceValidateSSOTokenReturnsOAuthTokensWithoutPersistingSSO(t *testing.T) {
 	svc := NewGrokOAuthService(nil, &grokOAuthClientStub{
-		deviceCode: &GrokDeviceCodeResponse{
-			DeviceCode: "device-code",
-			UserCode:   "user-code",
-			ExpiresIn:  900,
-			Interval:   5,
-		},
-		deviceToken: &xai.TokenResponse{
+		ssoResponse: &xai.TokenResponse{
 			AccessToken:  "access-from-sso",
 			RefreshToken: "refresh-from-sso",
 			TokenType:    "Bearer",
@@ -184,10 +185,10 @@ func TestGrokOAuthServiceValidateSSOTokenReturnsOAuthTokensAndPersistsSSO(t *tes
 	require.NoError(t, err)
 	require.Equal(t, "access-from-sso", info.AccessToken)
 	require.Equal(t, "refresh-from-sso", info.RefreshToken)
-	require.Equal(t, "sso-token", info.SSOToken)
+	require.Empty(t, info.SSOToken)
 
 	creds := svc.BuildAccountCredentials(info)
-	require.Equal(t, "sso-token", creds["sso_token"])
+	require.NotContains(t, creds, "sso_token")
 }
 
 func TestGrokOAuthServiceAuthorizePasswordUsesLoginThenSSOAuthorize(t *testing.T) {
@@ -196,13 +197,7 @@ func TestGrokOAuthServiceAuthorizePasswordUsesLoginThenSSOAuthorize(t *testing.T
 			Email:    "user@example.com",
 			SSOToken: "password-derived-sso",
 		},
-		deviceCode: &GrokDeviceCodeResponse{
-			DeviceCode: "device-code",
-			UserCode:   "user-code",
-			ExpiresIn:  900,
-			Interval:   5,
-		},
-		deviceToken: &xai.TokenResponse{
+		ssoResponse: &xai.TokenResponse{
 			AccessToken:  "access-from-password",
 			RefreshToken: "refresh-from-password",
 			ExpiresIn:    3600,
@@ -214,11 +209,50 @@ func TestGrokOAuthServiceAuthorizePasswordUsesLoginThenSSOAuthorize(t *testing.T
 	info, err := svc.AuthorizePassword(context.Background(), " user@example.com ", "  super-secret  ", nil)
 	require.NoError(t, err)
 	require.Equal(t, "user@example.com", info.Email)
-	require.Equal(t, "password-derived-sso", info.SSOToken)
+	require.Empty(t, info.SSOToken)
 
 	creds := svc.BuildAccountCredentials(info)
 	require.NotContains(t, creds, "password")
-	require.Equal(t, "password-derived-sso", creds["sso_token"])
+	require.NotContains(t, creds, "sso_token")
 	require.Equal(t, "user@example.com", client.loginEmail)
 	require.Equal(t, "  super-secret  ", client.loginPassword, "password bytes must be preserved")
+}
+
+func TestGrokOAuthServiceConvertFromSSOExtractsBuildClaims(t *testing.T) {
+	svc := NewGrokOAuthService(nil, &grokOAuthClientStub{
+		ssoResponse: &xai.TokenResponse{
+			AccessToken:  makeGrokOAuthJWT(map[string]any{"sub": "user-sub", "team_id": "team-1"}),
+			RefreshToken: "refresh-token",
+			IDToken:      makeGrokOAuthJWT(map[string]any{"email": "user@example.com"}),
+			ExpiresIn:    3600,
+		},
+	})
+	defer svc.Stop()
+
+	info, err := svc.ConvertFromSSO(context.Background(), "sso-token", nil)
+	require.NoError(t, err)
+	require.Equal(t, "user@example.com", info.Email)
+	require.Equal(t, "user-sub", info.Subject)
+	require.Equal(t, "team-1", info.TeamID)
+
+	credentials := svc.BuildAccountCredentials(info)
+	require.Equal(t, "user@example.com", credentials["email"])
+	require.Equal(t, "user-sub", credentials["sub"])
+	require.Equal(t, "team-1", credentials["team_id"])
+}
+
+func TestMergeGrokAccountCredentialsRemovesLegacySSOCookie(t *testing.T) {
+	merged := MergeGrokAccountCredentials(
+		map[string]any{"sso_token": "legacy-cookie", "base_url": "https://api.x.ai/v1"},
+		map[string]any{"access_token": "new-access-token"},
+	)
+
+	require.NotContains(t, merged, "sso_token")
+	require.Equal(t, "https://api.x.ai/v1", merged["base_url"])
+	require.Equal(t, "new-access-token", merged["access_token"])
+}
+
+func makeGrokOAuthJWT(claims map[string]any) string {
+	payload, _ := json.Marshal(claims)
+	return "header." + base64.RawURLEncoding.EncodeToString(payload) + ".signature"
 }

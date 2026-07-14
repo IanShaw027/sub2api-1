@@ -21,6 +21,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
 )
 
 // --- Refund Flow ---
@@ -577,6 +578,7 @@ func (s *PaymentService) gwRefund(ctx context.Context, p *RefundPlan) (*payment.
 		})
 		return nil, err
 	}
+	finishProviderCall := servertiming.ObserveDependency(ctx, "payment")
 	refundResp, err := prov.Refund(ctx, payment.RefundRequest{
 		TradeNo:   p.Order.PaymentTradeNo,
 		OrderID:   p.Order.OutTradeNo,
@@ -584,6 +586,7 @@ func (s *PaymentService) gwRefund(ctx context.Context, p *RefundPlan) (*payment.
 		Reason:    p.Reason,
 		RequestID: refundProviderRequestID(p),
 	})
+	finishProviderCall()
 	if err != nil {
 		if refundResp != nil && strings.TrimSpace(refundResp.Status) == payment.ProviderStatusPending {
 			return refundResp, nil
@@ -681,6 +684,7 @@ func (s *PaymentService) QueryAndFinalizeRefund(ctx context.Context, oid int64) 
 	if err := s.claimPendingRefundFinalization(ctx, o); err != nil {
 		return nil, err
 	}
+	finishProviderCall := servertiming.ObserveDependency(ctx, "payment")
 	resp, err := queryProvider.QueryRefund(ctx, payment.RefundQueryRequest{
 		TradeNo:   o.PaymentTradeNo,
 		OrderID:   o.OutTradeNo,
@@ -688,6 +692,7 @@ func (s *PaymentService) QueryAndFinalizeRefund(ctx context.Context, oid int64) 
 		Amount:    formatGatewayRefundAmount(plan.GatewayAmount, o),
 		RequestID: refundProviderRequestID(plan),
 	})
+	finishProviderCall()
 	if err != nil {
 		s.restorePendingRefundFinalization(ctx, o)
 		return nil, fmt.Errorf("query refund: %w", err)

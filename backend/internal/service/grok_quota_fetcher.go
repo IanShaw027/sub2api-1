@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
@@ -24,27 +25,34 @@ func (f *GrokQuotaFetcher) BuildUsageInfo(account *Account) *UsageInfo {
 	}
 	if account == nil {
 		usage.ErrorCode = "quota_unknown"
-		usage.Error = "Grok quota is unknown until the first upstream response includes xAI rate-limit headers"
+		usage.Error = "Grok quota is unknown until billing is probed or an upstream response includes xAI rate-limit headers"
 		return usage
 	}
 
 	snapshot, err := grokQuotaSnapshotFromExtra(account.Extra)
 	if err != nil || snapshot == nil {
+		applyGrokCredentialUsageFallback(usage, account)
 		usage.ErrorCode = "quota_unknown"
-		usage.Error = "Grok quota is unknown until the first upstream response includes xAI rate-limit headers"
+		usage.Error = "Grok quota is unknown until billing is probed or an upstream response includes xAI rate-limit headers"
 		return usage
 	}
 
-	if parsedAt, err := time.Parse(time.RFC3339, snapshot.UpdatedAt); err == nil {
+	if parsedAt, parseErr := time.Parse(time.RFC3339, snapshot.UpdatedAt); parseErr == nil {
 		usage.UpdatedAt = &parsedAt
 	}
 	usage.GrokRequestQuota = snapshot.Requests
 	usage.GrokTokenQuota = snapshot.Tokens
 	usage.GrokRetryAfterSeconds = snapshot.RetryAfterSeconds
-	usage.SubscriptionTier = snapshot.SubscriptionTier
-	usage.SubscriptionTierRaw = snapshot.SubscriptionTier
-	usage.GrokEntitlementStatus = snapshot.EntitlementStatus
-	usage.GrokLastQuotaProbeAt = snapshot.LastProbeAt
+	if usage.SubscriptionTier == "" {
+		usage.SubscriptionTier = snapshot.SubscriptionTier
+		usage.SubscriptionTierRaw = snapshot.SubscriptionTier
+	}
+	if usage.GrokEntitlementStatus == "" {
+		usage.GrokEntitlementStatus = snapshot.EntitlementStatus
+	}
+	if usage.GrokLastQuotaProbeAt == "" {
+		usage.GrokLastQuotaProbeAt = snapshot.LastProbeAt
+	}
 	usage.GrokLastHeadersSeenAt = snapshot.LastHeadersSeenAt
 	usage.GrokLastStatusCode = snapshot.StatusCode
 	if snapshot.HasObservedHeaders() {
@@ -55,21 +63,38 @@ func (f *GrokQuotaFetcher) BuildUsageInfo(account *Account) *UsageInfo {
 		usage.Error = "No xAI quota headers observed on the latest Grok probe"
 	}
 
-	switch snapshot.StatusCode {
-	case 401:
-		usage.NeedsReauth = true
-		usage.ErrorCode = "unauthenticated"
-	case 403:
-		usage.IsForbidden = true
-		usage.ForbiddenType = "forbidden"
-		usage.ErrorCode = "forbidden"
-		if usage.GrokEntitlementStatus == "" {
-			usage.GrokEntitlementStatus = "forbidden"
+	if usage.ErrorCode == "" {
+		switch snapshot.StatusCode {
+		case 401:
+			usage.NeedsReauth = true
+			usage.ErrorCode = "unauthenticated"
+		case 403:
+			usage.IsForbidden = true
+			usage.ForbiddenType = "forbidden"
+			usage.ErrorCode = "forbidden"
+			if usage.GrokEntitlementStatus == "" {
+				usage.GrokEntitlementStatus = "forbidden"
+			}
+		case 429:
+			usage.ErrorCode = "rate_limited"
 		}
-	case 429:
-		usage.ErrorCode = "rate_limited"
 	}
+	applyGrokCredentialUsageFallback(usage, account)
 	return usage
+}
+
+func applyGrokCredentialUsageFallback(usage *UsageInfo, account *Account) {
+	if usage == nil || account == nil {
+		return
+	}
+	if usage.SubscriptionTier == "" {
+		tier := strings.TrimSpace(account.GetCredential("subscription_tier"))
+		usage.SubscriptionTier = tier
+		usage.SubscriptionTierRaw = tier
+	}
+	if usage.GrokEntitlementStatus == "" {
+		usage.GrokEntitlementStatus = strings.TrimSpace(account.GetCredential("entitlement_status"))
+	}
 }
 
 func grokQuotaSnapshotFromExtra(extra map[string]any) (*xai.QuotaSnapshot, error) {

@@ -2,11 +2,13 @@ package reqclientpool
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/proxyurl"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
 	"github.com/imroc/req/v3"
 )
 
@@ -45,12 +47,24 @@ func Get(opts Options) (*req.Client, error) {
 	if trimmed != "" {
 		client.SetProxyURL(trimmed)
 	}
+	client = instrument(client)
 
 	actual, _ := sharedClients.LoadOrStore(key, client)
 	if c, ok := actual.(*req.Client); ok {
 		return c, nil
 	}
 	return client, nil
+}
+
+func instrument(client *req.Client) *req.Client {
+	if client == nil {
+		return nil
+	}
+	client.GetTransport().WrapRoundTripFunc(func(rt http.RoundTripper) req.HttpRoundTripFunc {
+		timed := servertiming.WrapRoundTripper(rt)
+		return timed.RoundTrip
+	})
+	return client
 }
 
 func Key(opts Options) string {

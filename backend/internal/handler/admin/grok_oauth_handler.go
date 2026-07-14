@@ -184,7 +184,7 @@ func (h *GrokOAuthHandler) RefreshAccountToken(c *gin.Context) {
 		return
 	}
 	newCredentials := h.grokOAuthService.BuildAccountCredentials(tokenInfo)
-	newCredentials = service.MergeCredentials(account.Credentials, newCredentials)
+	newCredentials = service.MergeGrokAccountCredentials(account.Credentials, newCredentials)
 	if baseURL := strings.TrimSpace(account.GetCredential("base_url")); baseURL != "" {
 		newCredentials["base_url"] = baseURL
 	}
@@ -271,7 +271,7 @@ func (h *GrokOAuthHandler) probeQuotaAsync(accountID int64) {
 				slog.Error("grok_oauth_bind_quota_probe_panic", "recover", r, "account_id", accountID)
 			}
 		}()
-		if _, err := quotaService.ProbeUsage(context.Background(), accountID); err != nil {
+		if _, err := quotaService.QueryQuota(context.Background(), accountID); err != nil {
 			slog.Debug("grok_oauth_bind_quota_probe_failed", "account_id", accountID, "error", err.Error())
 		}
 	}()
@@ -287,7 +287,7 @@ func (h *GrokOAuthHandler) QueryQuota(c *gin.Context) {
 		response.BadRequest(c, "grok quota service is not enabled")
 		return
 	}
-	result, err := h.quotaService.ProbeUsage(c.Request.Context(), accountID)
+	result, err := h.quotaService.QueryQuota(c.Request.Context(), accountID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

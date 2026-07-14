@@ -17,7 +17,9 @@ const {
   grokGenerateAuthUrlMock,
   grokValidateRefreshTokenMock,
   grokValidateSSOTokenMock,
-  grokAuthorizePasswordMock
+  grokAuthorizePasswordMock,
+  importCodexSessionMock,
+  createOpenAICodexPATMock
 } = vi.hoisted(() => ({
   showErrorMock: vi.fn(),
   showSuccessMock: vi.fn(),
@@ -33,7 +35,9 @@ const {
   grokGenerateAuthUrlMock: vi.fn(),
   grokValidateRefreshTokenMock: vi.fn(),
   grokValidateSSOTokenMock: vi.fn(),
-  grokAuthorizePasswordMock: vi.fn()
+  grokAuthorizePasswordMock: vi.fn(),
+  importCodexSessionMock: vi.fn(),
+  createOpenAICodexPATMock: vi.fn()
 }))
 
 vi.mock('@/stores/app', () => ({
@@ -64,7 +68,9 @@ vi.mock('@/api/admin', () => ({
     accounts: {
       create: createMock,
       exchangeCode: exchangeCodeMock,
-      checkMixedChannelRisk: checkMixedChannelRiskMock
+      checkMixedChannelRisk: checkMixedChannelRiskMock,
+      importCodexSession: importCodexSessionMock,
+      createOpenAICodexPAT: createOpenAICodexPATMock
     }
   }
 }))
@@ -199,7 +205,6 @@ vi.mock('@/composables/useGrokOAuth', () => ({
       const credentials: Record<string, unknown> = {
         access_token: tokenInfo?.access_token,
         refresh_token: tokenInfo?.refresh_token,
-        sso_token: tokenInfo?.sso_token,
         email: tokenInfo?.email
       }
       return Object.fromEntries(Object.entries(credentials).filter(([, value]) => value !== undefined && value !== ''))
@@ -396,6 +401,8 @@ describe('CreateAccountModal', () => {
     grokValidateRefreshTokenMock.mockReset()
     grokValidateSSOTokenMock.mockReset()
     grokAuthorizePasswordMock.mockReset()
+    importCodexSessionMock.mockReset()
+    createOpenAICodexPATMock.mockReset()
 
     createMock.mockResolvedValue(undefined)
     checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
@@ -433,6 +440,8 @@ describe('CreateAccountModal', () => {
       sso_token: 'grok-password-sso',
       email: 'grok-owner@example.com'
     })
+    importCodexSessionMock.mockResolvedValue({ created: 1, updated: 0, skipped: 0, failed: 0, errors: [], warnings: [] })
+    createOpenAICodexPATMock.mockResolvedValue({})
   })
 
   it('renders Grok as a separate platform option and switches to it', async () => {
@@ -988,7 +997,7 @@ describe('CreateAccountModal', () => {
     }))
   })
 
-  it('creates a Grok OAuth account from manual SSO token and persists sso_token', async () => {
+  it('creates a Grok OAuth account from manual SSO token without persisting the raw SSO token', async () => {
     const wrapper = mountModal()
     await flushPromises()
 
@@ -1003,11 +1012,9 @@ describe('CreateAccountModal', () => {
     expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
       platform: 'grok',
       type: 'oauth',
-      credentials: expect.objectContaining({
-        sso_token: 'grok-sso-test',
-        refresh_token: 'grok-rt-test'
-      })
+      credentials: expect.objectContaining({ refresh_token: 'grok-rt-test' })
     }))
+    expect(createMock.mock.calls[0]?.[0]?.credentials).not.toHaveProperty('sso_token')
   })
 
   it('creates a Grok OAuth account from manual email-password auth without persisting password', async () => {
@@ -1025,11 +1032,9 @@ describe('CreateAccountModal', () => {
     expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
       platform: 'grok',
       type: 'oauth',
-      credentials: expect.objectContaining({
-        sso_token: 'grok-password-sso',
-        refresh_token: 'grok-rt-test'
-      })
+      credentials: expect.objectContaining({ refresh_token: 'grok-rt-test' })
     }))
+    expect(createMock.mock.calls[0]?.[0]?.credentials).not.toHaveProperty('sso_token')
     expect(JSON.stringify(createMock.mock.calls[0][0])).not.toContain('super-secret')
   })
 
@@ -1423,5 +1428,66 @@ describe('CreateAccountModal', () => {
 
     expect(wrapper.text()).toContain('__OAUTH__')
     expect(wrapper.text()).toContain('__API_KEY__')
+  })
+
+  it.each([
+    [false, false],
+    [true, true]
+  ])('submits OpenAI long-context billing=%s for normal account creation', async (toggle, expected) => {
+    const wrapper = mountModal()
+    await flushPromises()
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+    await findAccountTypeButton(wrapper, 1).trigger('click')
+    await nextTick()
+    if (toggle) await wrapper.get('[data-testid="openai-long-context-billing-toggle"]').trigger('click')
+    await wrapper.get('[data-tour="account-form-name"]').setValue('OpenAI account')
+    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(expected)
+  })
+
+  it('omits OpenAI long-context billing for non-OpenAI account creation', async () => {
+    const wrapper = mountModal()
+    await flushPromises()
+    await findAccountTypeButton(wrapper, 1).trigger('click')
+    await nextTick()
+    await wrapper.get('[data-tour="account-form-name"]').setValue('Anthropic account')
+    await wrapper.get('input[placeholder="sk-ant-..."]').setValue('sk-ant-test')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBeUndefined()
+  })
+
+  it.each([
+    ['session', 0, undefined],
+    ['pat', 0, undefined],
+    ['session', 1, true],
+    ['session', 2, false],
+    ['pat', 1, true],
+    ['pat', 2, false]
+  ] as const)('preserves backend ownership for Codex %s imports after %i toggle clicks', async (kind, clicks, expected) => {
+    const wrapper = mountModal()
+    await flushPromises()
+    await findButtonByText(wrapper, 'OpenAI').trigger('click')
+    await nextTick()
+    for (let click = 0; click < clicks; click += 1) {
+      await wrapper.get('[data-testid="openai-long-context-billing-toggle"]').trigger('click')
+    }
+    const vm = wrapper.vm as any
+    vm.form.name = 'Codex import'
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    if (kind === 'session') {
+      await (wrapper.vm as any).handleOpenAIImportCodexSession('session-json')
+      expect(importCodexSessionMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(expected)
+    } else {
+      await (wrapper.vm as any).handleOpenAIImportCodexPAT('pat-token')
+      expect(createOpenAICodexPATMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(expected)
+    }
   })
 })

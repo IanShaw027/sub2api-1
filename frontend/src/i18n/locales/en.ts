@@ -6160,6 +6160,7 @@ export default {
           startTime: 'Start Time (Optional)',
           endTime: 'End Time (Optional)',
           level: 'Level',
+          host: 'Host',
           component: 'Component',
           componentPlaceholder: 'e.g. http.access',
           platform: 'Platform',
@@ -6174,6 +6175,7 @@ export default {
         },
         table: {
           time: 'Time',
+          host: 'Host',
           level: 'Level',
           details: 'Log Details',
         },
