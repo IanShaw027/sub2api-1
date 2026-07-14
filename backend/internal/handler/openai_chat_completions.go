@@ -394,10 +394,12 @@ func openAIChatCompletionsRequiredCapability(body []byte) service.OpenAIEndpoint
 }
 
 // resolveOpenAIUpstreamEndpoint returns the actual upstream endpoint for an
-// OpenAI account, used by every OpenAI usage-recording site. APIKey accounts
+// OpenAI-compatible account, used by OpenAI-compatible usage-recording paths.
+// Grok preserves native Responses and Chat Completions ingress protocols, while
+// Anthropic Messages ingress is bridged to Responses. OpenAI APIKey accounts
 // whose upstream is forced or probed to not support the Responses API are
 // served directly via /v1/chat/completions (the raw chat path) regardless of
-// the inbound endpoint; everything else goes through the Responses API.
+// the inbound endpoint; other OpenAI accounts go through the Responses API.
 func resolveOpenAIUpstreamEndpoint(c *gin.Context, account *service.Account, result *service.OpenAIForwardResult) string {
 	if result != nil {
 		if endpoint := strings.TrimSpace(result.UpstreamEndpoint); endpoint != "" {
@@ -406,6 +408,9 @@ func resolveOpenAIUpstreamEndpoint(c *gin.Context, account *service.Account, res
 	}
 	if endpoint := service.GetActualOpenAIUpstreamEndpoint(c); endpoint != "" {
 		return endpoint
+	}
+	if account != nil && account.Platform == service.PlatformGrok && GetInboundEndpoint(c) == EndpointChatCompletions {
+		return EndpointChatCompletions
 	}
 	if account != nil && account.Type == service.AccountTypeAPIKey &&
 		!openai_compat.ShouldUseResponsesAPI(account.Extra) {

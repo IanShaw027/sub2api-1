@@ -3480,6 +3480,22 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_OAuthWSStickySuppresses
 	}
 }
 
+func TestShouldSuppressOpenAIStickyEscape_GrokSessionSuppressesOnlyTTFT(t *testing.T) {
+	req := OpenAIAccountScheduleRequest{
+		Platform:    PlatformGrok,
+		SessionHash: "grok-session-hash",
+	}
+	account := &Account{
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+	}
+
+	require.True(t, shouldSuppressOpenAIStickyEscape(req, account, "ttft"))
+	require.False(t, shouldSuppressOpenAIStickyEscape(req, account, "error_rate"))
+	req.SessionHash = ""
+	require.False(t, shouldSuppressOpenAIStickyEscape(req, account, "ttft"))
+}
+
 func TestOpenAIGatewayService_SelectAccountWithScheduler_OAuthWSBoundSessionSuppressesErrorRateEscape(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 

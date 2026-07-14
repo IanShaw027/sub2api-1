@@ -66,6 +66,61 @@ func TestFilterCodexInput_KeepsFcID_WhenPreservingReferences(t *testing.T) {
 	require.Equal(t, "fc_validID123", fc["id"], "valid fc* id must be preserved")
 }
 
+func TestFilterCodexInput_KeepsCustomToolCallCTCID(t *testing.T) {
+	const customToolCallID = "ctc_00b7a518d1e203a9016a559897416c81988a636fee2ceb5672"
+	input := []any{
+		map[string]any{
+			"type":    "custom_tool_call",
+			"id":      customToolCallID,
+			"call_id": customToolCallID,
+			"name":    "apply_patch",
+			"input":   "*** Begin Patch",
+		},
+		map[string]any{
+			"type":    "custom_tool_call_output",
+			"call_id": customToolCallID,
+			"output":  "Done!",
+		},
+	}
+
+	filtered, _ := filterCodexInputWithOptions(input, codexInputFilterOptions{
+		rewriteToolContinuationIDs: true,
+	})
+
+	call := filtered[0].(map[string]any)
+	require.Equal(t, customToolCallID, call["id"])
+	require.Equal(t, customToolCallID, call["call_id"])
+	output := filtered[1].(map[string]any)
+	require.Equal(t, customToolCallID, output["call_id"])
+}
+
+func TestFilterCodexInput_KeepsToolSearchCallTSCID(t *testing.T) {
+	const toolSearchCallID = "tsc_00b7a518d1e203a9016a559897416c81988a636fee2ceb5672"
+	input := []any{
+		map[string]any{
+			"type":      "tool_search_call",
+			"id":        toolSearchCallID,
+			"call_id":   toolSearchCallID,
+			"arguments": map[string]any{"query": "OpenAI Responses API"},
+		},
+		map[string]any{
+			"type":    "tool_search_output",
+			"call_id": toolSearchCallID,
+			"output":  "result",
+		},
+	}
+
+	filtered, _ := filterCodexInputWithOptions(input, codexInputFilterOptions{
+		rewriteToolContinuationIDs: true,
+	})
+
+	call := filtered[0].(map[string]any)
+	require.Equal(t, toolSearchCallID, call["id"])
+	require.Equal(t, toolSearchCallID, call["call_id"])
+	output := filtered[1].(map[string]any)
+	require.Equal(t, toolSearchCallID, output["call_id"])
+}
+
 // TestFilterCodexInput_StripsItemIDFromAllToolCallInputTypes verifies that
 // item_* ids are stripped from all call-input types (not output types).
 func TestFilterCodexInput_StripsItemIDFromAllToolCallInputTypes(t *testing.T) {

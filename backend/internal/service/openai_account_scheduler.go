@@ -600,23 +600,23 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		result.EscapeReason = reason
 		result.EscapeErrorRate = errorRate
 		result.EscapeTTFT = ttft
-		if shouldSuppressOpenAIStickyEscapeForOAuthWS(req, account, reason) {
+		if shouldSuppressOpenAIStickyEscape(req, account, reason) {
 			result.EscapeSuppressed = true
-			logOpenAIWSModeInfo(
-				"sticky_escape_suppressed_ws_session group_id=%d api_key_id=%d account_id=%d account_type=%s transport=%s session=%s sticky_source=%s sticky_session_context_bound=%v sticky_session_context_account_id=%d sticky_session_context_conn_id=%s reason=%s err_rate=%.6f ttft=%.0f",
-				derefGroupID(req.GroupID),
-				req.APIKeyID,
-				accountID,
-				normalizeOpenAIWSLogValue(account.Type),
-				normalizeOpenAIWSLogValue(openAIUpstreamTransportLogValue(req.RequiredTransport)),
-				shortSessionHash(sessionHash),
-				normalizeOpenAIWSLogValue(req.StickySource),
-				req.StickySessionContextBound,
-				req.StickySessionContextAccountID,
-				truncateOpenAIWSLogValue(req.StickySessionContextConnID, openAIWSIDValueMaxLen),
-				normalizeOpenAIWSLogValue(reason),
-				errorRate,
-				ttft,
+			slog.Info("sticky_escape_suppressed",
+				"platform", account.Platform,
+				"group_id", derefGroupID(req.GroupID),
+				"api_key_id", req.APIKeyID,
+				"account_id", accountID,
+				"account_type", account.Type,
+				"transport", openAIUpstreamTransportLogValue(req.RequiredTransport),
+				"session", shortSessionHash(sessionHash),
+				"sticky_source", req.StickySource,
+				"sticky_session_context_bound", req.StickySessionContextBound,
+				"sticky_session_context_account_id", req.StickySessionContextAccountID,
+				"sticky_session_context_conn_id", strings.TrimSpace(req.StickySessionContextConnID),
+				"reason", reason,
+				"error_rate", errorRate,
+				"ttft", ttft,
 			)
 		} else {
 			result.EscapeTriggered = true
@@ -730,10 +730,18 @@ func (s *defaultOpenAIAccountScheduler) shouldEscapeStickyAccount(accountID int6
 	return "", errorRate, ttft, false
 }
 
-func shouldSuppressOpenAIStickyEscapeForOAuthWS(req OpenAIAccountScheduleRequest, account *Account, reason string) bool {
+func shouldSuppressOpenAIStickyEscape(req OpenAIAccountScheduleRequest, account *Account, reason string) bool {
 	if account == nil ||
-		account.Type != AccountTypeOAuth ||
 		strings.TrimSpace(req.SessionHash) == "" {
+		return false
+	}
+	if account.Platform == PlatformGrok {
+		// A Grok cache miss raises account-level TTFT. Escaping a healthy sticky
+		// session at that point moves it to another cold account and perpetuates
+		// the miss. Hard availability checks and error-rate escape still apply.
+		return strings.TrimSpace(reason) == "ttft"
+	}
+	if account.Type != AccountTypeOAuth {
 		return false
 	}
 	wsTransport := req.RequiredTransport == OpenAIUpstreamTransportResponsesWebsocketV2 ||

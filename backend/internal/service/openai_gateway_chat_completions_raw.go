@@ -194,6 +194,26 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 		}
 	}
 
+	grokSessionID := ""
+	if account.Platform == PlatformGrok {
+		sessionSeed := strings.TrimSpace(c.Request.Header.Get("x-grok-conv-id"))
+		if sessionSeed == "" {
+			sessionSeed = strings.TrimSpace(promptCacheKey)
+		}
+		if sessionSeed == "" {
+			sessionSeed = strings.TrimSpace(gjson.GetBytes(upstreamBody, "prompt_cache_key").String())
+		}
+		if sessionSeed != "" {
+			apiKeyID := getAPIKeyIDFromContext(c)
+			grokSessionID = generateSessionUUID(isolateOpenAISessionID(apiKeyID, sessionSeed))
+			updatedBody, setErr := sjson.SetBytes(upstreamBody, "prompt_cache_key", grokSessionID)
+			if setErr != nil {
+				return nil, fmt.Errorf("set isolated Grok prompt_cache_key: %w", setErr)
+			}
+			upstreamBody = updatedBody
+		}
+	}
+
 	targetURL, err := s.rawChatCompletionsURL(account)
 	if err != nil {
 		return nil, err
@@ -236,23 +256,11 @@ func (s *OpenAIGatewayService) forwardAsRawChatCompletions(
 	tlsRuntime := s.resolveOpenAICompatibleTLSFingerprintRuntime(ctx, c, account, "http")
 	if account.Platform == PlatformGrok {
 		applyGrokRuntimeHeaders(upstreamReq, tlsRuntime)
-		// Isolate session_id / x-grok-conv-id so multi-tenant Grok traffic does
-		// not share xAI conversation state (parity with Responses / Messages).
-		// Never forward a raw client x-grok-conv-id: openaiCCRawAllowedHeaders
-		// already blocks it, and we overwrite both headers from an isolated seed.
-		sessionSeed := strings.TrimSpace(c.Request.Header.Get("x-grok-conv-id"))
-		if sessionSeed == "" {
-			sessionSeed = strings.TrimSpace(promptCacheKey)
-		}
-		if sessionSeed == "" {
-			sessionSeed = strings.TrimSpace(gjson.GetBytes(upstreamBody, "prompt_cache_key").String())
-		}
-		if sessionSeed != "" {
-			apiKeyID := getAPIKeyIDFromContext(c)
-			isolatedConvID := isolateOpenAISessionID(apiKeyID, sessionSeed)
-			sessionID := generateSessionUUID(isolatedConvID)
-			upstreamReq.Header.Set("session_id", sessionID)
-			upstreamReq.Header.Set("x-grok-conv-id", isolatedConvID)
+		// xAI uses these values as one cache/session identity. Keep them equal
+		// and API-key isolated so a sticky conversation remains cacheable.
+		if grokSessionID != "" {
+			upstreamReq.Header.Set("session_id", grokSessionID)
+			upstreamReq.Header.Set("x-grok-conv-id", grokSessionID)
 		}
 	} else {
 		applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)

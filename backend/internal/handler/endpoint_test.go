@@ -341,6 +341,56 @@ func TestGetUpstreamEndpoint_FullFlow(t *testing.T) {
 	require.Equal(t, "/v1/responses/compact", got)
 }
 
+func TestResolveOpenAIUpstreamEndpoint_GrokPreservesNativeProtocols(t *testing.T) {
+	account := &service.Account{Platform: service.PlatformGrok, Type: service.AccountTypeOAuth}
+	tests := []struct {
+		name     string
+		inbound  string
+		upstream string
+	}{
+		{name: "responses stays responses", inbound: EndpointResponses, upstream: EndpointResponses},
+		{name: "chat completions stays chat completions", inbound: EndpointChatCompletions, upstream: EndpointChatCompletions},
+		{name: "messages bridges to responses", inbound: EndpointMessages, upstream: EndpointResponses},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, tt.inbound, nil)
+			c.Set(ctxKeyInboundEndpoint, tt.inbound)
+
+			require.Equal(t, tt.upstream, resolveOpenAIUpstreamEndpoint(c, account, nil))
+		})
+	}
+}
+
+func TestResolveOpenAIUpstreamEndpoint_RuntimeEndpointOverridesGrokFallback(t *testing.T) {
+	account := &service.Account{Platform: service.PlatformGrok, Type: service.AccountTypeOAuth}
+	newContext := func(t *testing.T) *gin.Context {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, EndpointChatCompletions, nil)
+		c.Set(ctxKeyInboundEndpoint, EndpointChatCompletions)
+		return c
+	}
+
+	t.Run("forward result", func(t *testing.T) {
+		c := newContext(t)
+		result := &service.OpenAIForwardResult{UpstreamEndpoint: EndpointResponses}
+
+		require.Equal(t, EndpointResponses, resolveOpenAIUpstreamEndpoint(c, account, result))
+	})
+
+	t.Run("request context", func(t *testing.T) {
+		c := newContext(t)
+		service.SetActualOpenAIUpstreamEndpoint(c, EndpointResponses)
+
+		require.Equal(t, EndpointResponses, resolveOpenAIUpstreamEndpoint(c, account, nil))
+	})
+}
+
 func TestResolveOpenAIMessagesUpstreamEndpoint_TextAutoRouteForceChat(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)

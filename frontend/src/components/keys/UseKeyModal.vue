@@ -798,6 +798,8 @@ $env:XAI_API_KEY="${apiKey}"`
 [endpoints]
 models_base_url = "${baseUrl}"
 
+# IMPORTANT: Keep api_backend = "responses" on every model entry.
+# Without it, Grok CLI uses Chat Completions and sends requests to /v1/chat/completions.
 # Example: Configure multiple Grok models with the same base URL
 # API key can be set via:
 #   1. env_key = "XAI_API_KEY" (use environment variable)

@@ -84,13 +84,15 @@ const (
 
 // cacheWriteTask 缓存写入任务
 type cacheWriteTask struct {
-	kind             cacheWriteKind
-	userID           int64
-	groupID          int64
-	apiKeyID         int64
-	balance          float64
-	amount           float64
-	subscriptionData *subscriptionCacheData
+	kind                    cacheWriteKind
+	userID                  int64
+	groupID                 int64
+	apiKeyID                int64
+	balance                 float64
+	balanceGeneration       int64
+	balanceGenerationFenced bool
+	amount                  float64
+	subscriptionData        *subscriptionCacheData
 	// subscriptionGeneration fences a DB snapshot against a later cache
 	// invalidation. It is only used when the cache supports the generation API.
 	subscriptionGeneration       int64
@@ -114,6 +116,21 @@ type subscriptionCacheGenerationFence interface {
 	SetSubscriptionCacheIfGeneration(ctx context.Context, userID, groupID int64, data *SubscriptionCacheData, expectedGeneration int64) (bool, error)
 }
 
+type balanceCacheGenerationFence interface {
+	GetBalanceCacheGeneration(ctx context.Context, userID int64) (int64, error)
+	SetUserBalanceIfGeneration(ctx context.Context, userID int64, balance float64, expectedGeneration int64) (bool, error)
+}
+
+type apiKeyRateLimitGenerationFence interface {
+	GetAPIKeyRateLimitGeneration(ctx context.Context, keyID int64) (int64, error)
+	SetAPIKeyRateLimitIfGeneration(ctx context.Context, keyID int64, data *APIKeyRateLimitCacheData, expectedGeneration int64) (bool, error)
+}
+
+type userPlatformQuotaGenerationFence interface {
+	GetUserPlatformQuotaCacheGeneration(ctx context.Context, userID int64, platform string) (int64, error)
+	SetUserPlatformQuotaCacheIfGeneration(ctx context.Context, userID int64, platform string, entry *UserPlatformQuotaCacheEntry, ttl time.Duration, expectedGeneration int64) (bool, error)
+}
+
 // BillingCacheService 计费缓存服务
 // 负责余额和订阅数据的缓存管理，提供高性能的计费资格检查
 type BillingCacheService struct {
@@ -134,6 +151,10 @@ type BillingCacheService struct {
 	stopped            atomic.Bool
 	balanceLoadSF      singleflight.Group
 	quotaLoadSF        singleflight.Group
+	balanceOutboxRepo  BalanceCacheOutboxRepository
+	balanceOutboxStop  chan struct{}
+	balanceOutboxWg    sync.WaitGroup
+	balanceOutboxOnce  sync.Once
 	// 丢弃日志节流计数器（减少高负载下日志噪音）
 	cacheWriteDropFullCount     uint64
 	cacheWriteDropFullLastLog   int64
@@ -174,6 +195,9 @@ func NewBillingCacheService(
 func (s *BillingCacheService) Stop() {
 	s.cacheWriteStopOnce.Do(func() {
 		s.stopped.Store(true)
+		if s.balanceOutboxStop != nil {
+			close(s.balanceOutboxStop)
+		}
 
 		s.cacheWriteMu.Lock()
 		ch := s.cacheWriteChan
@@ -182,10 +206,10 @@ func (s *BillingCacheService) Stop() {
 		}
 		s.cacheWriteMu.Unlock()
 
-		if ch == nil {
-			return
+		if ch != nil {
+			s.cacheWriteWg.Wait()
 		}
-		s.cacheWriteWg.Wait()
+		s.balanceOutboxWg.Wait()
 
 		s.cacheWriteMu.Lock()
 		if s.cacheWriteChan == ch {
@@ -193,6 +217,65 @@ func (s *BillingCacheService) Stop() {
 		}
 		s.cacheWriteMu.Unlock()
 	})
+}
+
+func (s *BillingCacheService) SetBalanceCacheOutboxRepository(repo BalanceCacheOutboxRepository) {
+	if s == nil || repo == nil {
+		return
+	}
+	s.balanceOutboxOnce.Do(func() {
+		s.balanceOutboxRepo = repo
+		s.balanceOutboxStop = make(chan struct{})
+		s.balanceOutboxWg.Add(1)
+		go s.runBalanceCacheOutbox()
+	})
+}
+
+func (s *BillingCacheService) runBalanceCacheOutbox() {
+	defer s.balanceOutboxWg.Done()
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		s.consumeBalanceCacheOutbox()
+		select {
+		case <-s.balanceOutboxStop:
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *BillingCacheService) consumeBalanceCacheOutbox() {
+	if s == nil || s.balanceOutboxRepo == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	events, err := s.balanceOutboxRepo.Claim(ctx, 200, 30*time.Second)
+	if err != nil || len(events) == 0 {
+		if err != nil {
+			logger.LegacyPrintf("service.billing_cache", "Warning: claim balance cache outbox failed: %v", err)
+		}
+		return
+	}
+	ids := make([]int64, 0, len(events))
+	for _, event := range events {
+		ids = append(ids, event.ID)
+	}
+	seenUsers := make(map[int64]struct{}, len(events))
+	for _, event := range events {
+		if _, exists := seenUsers[event.UserID]; exists {
+			continue
+		}
+		seenUsers[event.UserID] = struct{}{}
+		if err := s.InvalidateUserBalance(ctx, event.UserID); err != nil {
+			_ = s.balanceOutboxRepo.Nack(ctx, ids, time.Second, err.Error())
+			return
+		}
+	}
+	if err := s.balanceOutboxRepo.Ack(ctx, ids); err != nil {
+		logger.LegacyPrintf("service.billing_cache", "Warning: ack balance cache outbox failed: %v", err)
+	}
 }
 
 func (s *BillingCacheService) startCacheWriteWorkers() {
@@ -235,6 +318,17 @@ func (s *BillingCacheService) cacheWriteWorker(ch <-chan cacheWriteTask) {
 		ctx, cancel := context.WithTimeout(context.Background(), cacheWriteTimeout)
 		switch task.kind {
 		case cacheWriteSetBalance:
+			if task.balanceGenerationFenced {
+				fence, ok := s.cache.(balanceCacheGenerationFence)
+				if !ok {
+					logger.LegacyPrintf("service.billing_cache", "Warning: balance cache generation fence disappeared for user %d", task.userID)
+					break
+				}
+				if _, err := fence.SetUserBalanceIfGeneration(ctx, task.userID, task.balance, task.balanceGeneration); err != nil {
+					logger.LegacyPrintf("service.billing_cache", "Warning: fenced balance cache set failed for user %d: %v", task.userID, err)
+				}
+				break
+			}
 			s.setBalanceCache(ctx, task.userID, task.balance)
 		case cacheWriteSetSubscription:
 			if task.subscriptionGenerationFenced {
@@ -359,17 +453,56 @@ func (s *BillingCacheService) GetUserBalance(ctx context.Context, userID int64) 
 		loadCtx, cancel := context.WithTimeout(context.Background(), balanceLoadTimeout)
 		defer cancel()
 
-		balance, err := s.getUserBalanceFromDB(loadCtx, userID)
-		if err != nil {
-			return nil, err
+		var (
+			generation       int64
+			generationFence  balanceCacheGenerationFence
+			generationFenced bool
+			cacheWriteSafe   = true
+		)
+		if fence, ok := s.cache.(balanceCacheGenerationFence); ok {
+			generationFence = fence
+			cacheWriteSafe = false
+			var generationErr error
+			generation, generationErr = fence.GetBalanceCacheGeneration(loadCtx, userID)
+			if generationErr == nil {
+				generationFenced = true
+				cacheWriteSafe = true
+			} else {
+				logger.LegacyPrintf("service.billing_cache", "Warning: get balance cache generation failed for user %d: %v", userID, generationErr)
+			}
 		}
 
-		// 异步建立缓存
-		_ = s.enqueueCacheWrite(cacheWriteTask{
-			kind:    cacheWriteSetBalance,
-			userID:  userID,
-			balance: balance,
-		})
+		var balance float64
+		for attempt := 0; attempt < 2; attempt++ {
+			var err error
+			balance, err = s.getUserBalanceFromDB(loadCtx, userID)
+			if err != nil {
+				return nil, err
+			}
+			if !generationFenced || attempt == 1 {
+				break
+			}
+			currentGeneration, generationErr := generationFence.GetBalanceCacheGeneration(loadCtx, userID)
+			if generationErr != nil {
+				cacheWriteSafe = false
+				logger.LegacyPrintf("service.billing_cache", "Warning: recheck balance cache generation failed for user %d: %v", userID, generationErr)
+				break
+			}
+			if currentGeneration == generation {
+				break
+			}
+			generation = currentGeneration
+		}
+
+		if cacheWriteSafe {
+			_ = s.enqueueCacheWrite(cacheWriteTask{
+				kind:                    cacheWriteSetBalance,
+				userID:                  userID,
+				balance:                 balance,
+				balanceGeneration:       generation,
+				balanceGenerationFenced: generationFenced,
+			})
+		}
 		return balance, nil
 	})
 	if err != nil {
@@ -675,9 +808,42 @@ func (s *BillingCacheService) checkAPIKeyRateLimits(ctx context.Context, apiKey 
 		if s.apiKeyRateLimitLoader == nil {
 			return nil
 		}
-		dbData, dbErr := s.apiKeyRateLimitLoader.GetRateLimitData(ctx, apiKey.ID)
-		if dbErr != nil {
-			return nil // Don't block requests on DB errors
+		var (
+			generation       int64
+			generationFence  apiKeyRateLimitGenerationFence
+			generationFenced bool
+			cacheWriteSafe   = true
+		)
+		if fence, ok := s.cache.(apiKeyRateLimitGenerationFence); ok {
+			generationFence = fence
+			cacheWriteSafe = false
+			var generationErr error
+			generation, generationErr = fence.GetAPIKeyRateLimitGeneration(ctx, apiKey.ID)
+			if generationErr == nil {
+				generationFenced = true
+				cacheWriteSafe = true
+			}
+		}
+
+		var dbData *APIKeyRateLimitData
+		for attempt := 0; attempt < 2; attempt++ {
+			var dbErr error
+			dbData, dbErr = s.apiKeyRateLimitLoader.GetRateLimitData(ctx, apiKey.ID)
+			if dbErr != nil {
+				return nil // Don't block requests on DB errors
+			}
+			if !generationFenced || attempt == 1 {
+				break
+			}
+			currentGeneration, generationErr := generationFence.GetAPIKeyRateLimitGeneration(ctx, apiKey.ID)
+			if generationErr != nil {
+				cacheWriteSafe = false
+				break
+			}
+			if currentGeneration == generation {
+				break
+			}
+			generation = currentGeneration
 		}
 		// Build cache entry from DB data
 		cacheEntry := &APIKeyRateLimitCacheData{
@@ -694,7 +860,13 @@ func (s *BillingCacheService) checkAPIKeyRateLimits(ctx context.Context, apiKey 
 		if dbData.Window7dStart != nil {
 			cacheEntry.Window7d = dbData.Window7dStart.Unix()
 		}
-		_ = s.cache.SetAPIKeyRateLimit(ctx, apiKey.ID, cacheEntry)
+		if cacheWriteSafe {
+			if generationFenced {
+				_, _ = generationFence.SetAPIKeyRateLimitIfGeneration(ctx, apiKey.ID, cacheEntry, generation)
+			} else {
+				_ = s.cache.SetAPIKeyRateLimit(ctx, apiKey.ID, cacheEntry)
+			}
+		}
 		cacheData = cacheEntry
 	}
 
@@ -1032,10 +1204,58 @@ func (s *BillingCacheService) checkBalanceEligibility(ctx context.Context, userI
 		s.circuitBreaker.OnSuccess()
 	}
 
-	if s.balanceBelowEligibilityThreshold(balance) {
-		return ErrInsufficientBalance
+	if !s.balanceBelowEligibilityThreshold(balance) {
+		return nil
 	}
 
+	// A cached exhausted balance is never authoritative. A recharge may have
+	// committed while cache invalidation was delayed or lost, so confirm against
+	// PostgreSQL before rejecting the request. The generation CAS prevents this
+	// repair from overwriting a newer invalidation.
+	var (
+		generation       int64
+		generationFence  balanceCacheGenerationFence
+		generationFenced bool
+	)
+	if fence, ok := s.cache.(balanceCacheGenerationFence); ok {
+		generationFence = fence
+		var generationErr error
+		generation, generationErr = fence.GetBalanceCacheGeneration(ctx, userID)
+		generationFenced = generationErr == nil
+	}
+	freshBalance, freshErr := s.getUserBalanceFromDB(ctx, userID)
+	if freshErr != nil {
+		if s.circuitBreaker != nil {
+			s.circuitBreaker.OnFailure(freshErr)
+		}
+		return ErrBillingServiceUnavailable.WithCause(freshErr)
+	}
+	if generationFenced {
+		currentGeneration, generationErr := generationFence.GetBalanceCacheGeneration(ctx, userID)
+		if generationErr != nil {
+			generationFenced = false
+		} else if currentGeneration != generation {
+			generation = currentGeneration
+			freshBalance, freshErr = s.getUserBalanceFromDB(ctx, userID)
+			if freshErr != nil {
+				return ErrBillingServiceUnavailable.WithCause(freshErr)
+			}
+		}
+	}
+	if s.cache != nil {
+		if generationFenced {
+			_, _ = generationFence.SetUserBalanceIfGeneration(ctx, userID, freshBalance, generation)
+		} else {
+			// When a production generation fence is present but unavailable, skip
+			// cache repair rather than risk publishing an unfenced stale value.
+			if _, supportsFence := s.cache.(balanceCacheGenerationFence); !supportsFence {
+				_ = s.cache.SetUserBalance(ctx, userID, freshBalance)
+			}
+		}
+	}
+	if s.balanceBelowEligibilityThreshold(freshBalance) {
+		return ErrInsufficientBalance
+	}
 	return nil
 }
 
@@ -1232,11 +1452,25 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 	// cache 未配置（如简化部署 / 单测路径）→ 直接走 DB 查询，避免 nil panic。
 	// 其他 check* 方法（balance/subscription/rate-limit）也有类似守卫。
 	var (
-		entry    *UserPlatformQuotaCacheEntry
-		ok       bool
-		cacheErr error
+		entry            *UserPlatformQuotaCacheEntry
+		ok               bool
+		cacheErr         error
+		generation       int64
+		generationFence  userPlatformQuotaGenerationFence
+		generationFenced bool
+		cacheWriteSafe   = true
 	)
 	if s.cache != nil {
+		if fence, supported := s.cache.(userPlatformQuotaGenerationFence); supported {
+			generationFence = fence
+			cacheWriteSafe = false
+			var generationErr error
+			generation, generationErr = fence.GetUserPlatformQuotaCacheGeneration(ctx, userID, platform)
+			if generationErr == nil {
+				generationFenced = true
+				cacheWriteSafe = true
+			}
+		}
 		entry, ok, cacheErr = s.cache.GetUserPlatformQuotaCache(ctx, userID, platform)
 	} else {
 		// 标记为"cache 故障"分支：跳过 HIT 路径、不回填、走 DB 一次性检查
@@ -1302,7 +1536,13 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 			}
 			ttl := time.Duration(s.cfg.Billing.UserPlatformQuotaCacheTTLSeconds) * time.Second
 			setCtx, setCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-			if setErr := s.cache.SetUserPlatformQuotaCache(setCtx, userID, platform, refreshed, ttl); setErr != nil {
+			var setErr error
+			if generationFenced {
+				_, setErr = generationFence.SetUserPlatformQuotaCacheIfGeneration(setCtx, userID, platform, refreshed, ttl, generation)
+			} else if cacheWriteSafe {
+				setErr = s.cache.SetUserPlatformQuotaCache(setCtx, userID, platform, refreshed, ttl)
+			}
+			if setErr != nil {
 				logger.LegacyPrintf("service.billing_cache",
 					"Warning: refresh expired user platform quota cache failed user=%d platform=%s: %v",
 					userID, platform, setErr)
@@ -1349,11 +1589,24 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 		return nil
 	}
 	rec, _ := v.(*UserPlatformQuotaRecord)
+	if generationFenced {
+		currentGeneration, generationErr := generationFence.GetUserPlatformQuotaCacheGeneration(ctx, userID, platform)
+		if generationErr != nil {
+			cacheWriteSafe = false
+		} else if currentGeneration != generation {
+			generation = currentGeneration
+			rec, dbErr = s.userPlatformQuotaRepo.GetByUserPlatform(ctx, userID, platform)
+			if dbErr != nil {
+				logger.LegacyPrintf("service.billing_cache", "Warning: reload user platform quota after invalidation failed user=%d platform=%s: %v (fail-open)", userID, platform, dbErr)
+				return nil
+			}
+		}
+	}
 	if rec == nil {
 		// 仅在 cache 可用且本次 GET 未出错时回填 sentinel:Redis GET 故障(cacheErr!=nil)
 		// 时不回填,与下方 line ~1201 "Redis 故障时 fail-open:不回填" 保持一致,
 		// 避免在 Redis 异常期做一次注定失败的 SET。
-		if s.cache != nil && cacheErr == nil {
+		if s.cache != nil && cacheErr == nil && cacheWriteSafe {
 			now := time.Now()
 			startOfDay := timezone.StartOfDay(now)
 			startOfWeek := timezone.StartOfWeek(now)
@@ -1371,7 +1624,13 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 				sentinelTTL = time.Hour
 			}
 			setCtx, setCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-			if setErr := s.cache.SetUserPlatformQuotaCache(setCtx, userID, platform, sentinel, sentinelTTL); setErr != nil {
+			var setErr error
+			if generationFenced {
+				_, setErr = generationFence.SetUserPlatformQuotaCacheIfGeneration(setCtx, userID, platform, sentinel, sentinelTTL, generation)
+			} else {
+				setErr = s.cache.SetUserPlatformQuotaCache(setCtx, userID, platform, sentinel, sentinelTTL)
+			}
+			if setErr != nil {
 				userPlatformQuotaSentinelSetCacheErrorTotal.Add(1)
 				logger.LegacyPrintf("service.billing_cache", "Warning: set sentinel quota cache failed user=%d platform=%s: %v", userID, platform, setErr)
 			}
@@ -1429,13 +1688,19 @@ func (s *BillingCacheService) checkUserPlatformQuotaEligibility(
 		WeeklyWindowStart:  weeklyWindowStart,
 		MonthlyWindowStart: monthlyWindowStart,
 	}
-	if s.cache != nil {
+	if s.cache != nil && cacheWriteSafe {
 		ttl := time.Duration(s.cfg.Billing.UserPlatformQuotaCacheTTLSeconds) * time.Second
 		// 与 HIT 过期回填路径（上文 SetCache 调用）保持一致：用 context.Background()+50ms,
 		// 避免请求 ctx 提前取消（客户端断连/上游超时）导致 cache 回填失败,
 		// 让下一次 preflight 仍然 MISS 并击穿到 DB（高并发下增大 DB 压力）。
 		setCtx, setCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-		if setErr := s.cache.SetUserPlatformQuotaCache(setCtx, userID, platform, newEntry, ttl); setErr != nil {
+		var setErr error
+		if generationFenced {
+			_, setErr = generationFence.SetUserPlatformQuotaCacheIfGeneration(setCtx, userID, platform, newEntry, ttl, generation)
+		} else {
+			setErr = s.cache.SetUserPlatformQuotaCache(setCtx, userID, platform, newEntry, ttl)
+		}
+		if setErr != nil {
 			logger.LegacyPrintf("service.billing_cache", "Warning: set user platform quota cache failed user=%d platform=%s: %v", userID, platform, setErr)
 		}
 		setCancel()
