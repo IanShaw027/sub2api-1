@@ -665,7 +665,7 @@ func IsMigrationChecksumCompatible(name, dbChecksum, fileChecksum string) bool {
 
 func validateMigrationExecutionMode(name, content string) (bool, error) {
 	normalizedName := strings.ToLower(strings.TrimSpace(name))
-	upperContent := strings.ToUpper(content)
+	upperContent := strings.ToUpper(stripSQLFullLineComments(content))
 	nonTx := strings.HasSuffix(normalizedName, nonTransactionalMigrationSuffix)
 
 	if !nonTx {
@@ -724,6 +724,16 @@ func stripSQLLineComment(s string) string {
 	for i, line := range lines {
 		if idx := strings.Index(line, "--"); idx >= 0 {
 			lines[i] = line[:idx]
+		}
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func stripSQLFullLineComments(s string) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			lines[i] = ""
 		}
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n"))

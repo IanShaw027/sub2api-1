@@ -682,8 +682,8 @@ func (s *ConcurrencyCacheSuite) TestCleanupExpiredAccountSlotKeys() {
 		redis.Z{Score: float64(expiredTime), Member: "unindexed-expired"},
 	).Err())
 	require.NoError(s.T(), s.rdb.ZAdd(s.ctx, accountActiveIndexKey,
-		redis.Z{Score: float64(now), Member: "301"},
-		redis.Z{Score: float64(now), Member: "302"},
+		redis.Z{Score: float64(now - 1), Member: "301"},
+		redis.Z{Score: float64(now - 1), Member: "302"},
 	).Err())
 
 	require.NoError(s.T(), s.cache.CleanupExpiredAccountSlotKeys(s.ctx))

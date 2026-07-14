@@ -17,6 +17,33 @@ func TestValidateMigrationExecutionMode(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("事务迁移注释中的CONCURRENTLY不会被误判", func(t *testing.T) {
+		nonTx, err := validateMigrationExecutionMode("001_backfill.sql", `
+-- The matching index is created CONCURRENTLY in 001a_backfill_notx.sql.
+UPDATE t SET a = 1;
+`)
+		require.False(t, nonTx)
+		require.NoError(t, err)
+	})
+
+	t.Run("行内字符串不能掩盖真实的CONCURRENTLY语句", func(t *testing.T) {
+		nonTx, err := validateMigrationExecutionMode(
+			"001_add_idx.sql",
+			"SELECT '--'; CREATE INDEX CONCURRENTLY idx_a ON t(a);",
+		)
+		require.False(t, nonTx)
+		require.Error(t, err)
+	})
+
+	t.Run("notx迁移注释中的事务关键字不会被误判", func(t *testing.T) {
+		nonTx, err := validateMigrationExecutionMode("001_add_idx_notx.sql", `
+-- This index replaces the old one after COMMIT without an explicit BEGIN.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_a ON t(a);
+`)
+		require.True(t, nonTx)
+		require.NoError(t, err)
+	})
+
 	t.Run("notx迁移要求CREATE使用IF NOT EXISTS", func(t *testing.T) {
 		nonTx, err := validateMigrationExecutionMode("001_add_idx_notx.sql", "CREATE INDEX CONCURRENTLY idx_a ON t(a);")
 		require.False(t, nonTx)
