@@ -269,7 +269,7 @@ func TestHandleFailoverError_AddsRelatedAccountExclusions(t *testing.T) {
 		ExcludedAccountIDs: []int64{100, 101, 102, 0, -1, 101},
 	}
 
-	action := fs.HandleFailoverError(context.Background(), mock, 100, service.PlatformKiro, err)
+	action := fs.HandleFailoverError(context.Background(), mock, 100, service.PlatformKiro, 0, err)
 
 	require.Equal(t, FailoverContinue, action)
 	require.Equal(t, map[int64]struct{}{100: {}, 101: {}, 102: {}}, fs.FailedAccountIDs)
