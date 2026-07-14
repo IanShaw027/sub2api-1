@@ -254,7 +254,7 @@ func TestApplyCodexOAuthTransform_ToolSearchOutputPreservesCallID(t *testing.T) 
 	first, ok := input[0].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "tool_search_output", first["type"])
-	require.Equal(t, "fc_1", first["call_id"])
+	require.Equal(t, "tsc_1", first["call_id"])
 }
 
 func TestApplyCodexOAuthTransform_CustomAndMCPToolOutputsPreserveCallID(t *testing.T) {
@@ -274,7 +274,7 @@ func TestApplyCodexOAuthTransform_CustomAndMCPToolOutputsPreserveCallID(t *testi
 
 	first, ok := input[0].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "fc_custom", first["call_id"])
+	require.Equal(t, "ctc_custom", first["call_id"])
 
 	second, ok := input[1].(map[string]any)
 	require.True(t, ok)
@@ -734,7 +734,7 @@ func TestApplyCodexOAuthTransform_PreservesFunctionCallInputName(t *testing.T) {
 	item, ok := input[0].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "shell", item["name"])
-	require.Equal(t, "fc_1", item["call_id"])
+	require.Equal(t, "ctc_1", item["call_id"])
 }
 
 func TestApplyCodexOAuthTransform_PreservesMCPToolCallIDAndName(t *testing.T) {

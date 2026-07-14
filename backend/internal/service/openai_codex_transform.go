@@ -2090,13 +2090,14 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 		// 仅修正真正的 tool/function call 标识，避免误改普通 message/reasoning id；
 		// 若 item_reference 指向 legacy call_* 标识，则仅修正该引用本身。
 		fixCallIDPrefix := func(id string) string {
-			if id == "" || strings.HasPrefix(id, "fc") {
+			if id == "" || isCodexToolCallIDPrefixValid(typ, id) {
 				return id
 			}
+			prefix := codexToolCallIDPrefix(typ)
 			if strings.HasPrefix(id, "call_") {
-				return "fc_" + strings.TrimPrefix(id, "call_")
+				return prefix + "_" + strings.TrimPrefix(id, "call_")
 			}
-			return "fc_" + id
+			return prefix + "_" + id
 		}
 
 		if typ == "item_reference" {
@@ -2153,7 +2154,7 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 			}
 
 			if isCodexToolCallContextItemType(typ) {
-				if id, ok := m["id"].(string); ok && strings.TrimSpace(id) != "" && !strings.HasPrefix(strings.TrimSpace(id), "fc") {
+				if id, ok := m["id"].(string); ok && strings.TrimSpace(id) != "" && !isCodexToolCallIDPrefixValid(typ, strings.TrimSpace(id)) {
 					if opts.PreserveReferences {
 						ensureCopy()
 						delete(newItem, "id")
@@ -2250,6 +2251,25 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 		return input, false
 	}
 	return filtered, true
+}
+
+func isCodexToolCallIDPrefixValid(itemType, id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return false
+	}
+	return strings.HasPrefix(id, codexToolCallIDPrefix(itemType))
+}
+
+func codexToolCallIDPrefix(itemType string) string {
+	switch strings.TrimSpace(itemType) {
+	case "custom_tool_call", "custom_tool_call_output":
+		return "ctc"
+	case "tool_search_call", "tool_search_output":
+		return "tsc"
+	default:
+		return "fc"
+	}
 }
 
 func normalizeCodexStructuredToolCallArguments(typ string, raw any) (any, bool) {
