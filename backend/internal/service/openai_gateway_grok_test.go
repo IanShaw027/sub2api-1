@@ -1348,6 +1348,7 @@ func TestForwardGrokResponsesDoesNotInjectImageBridgeForTextOnlyRequests(t *test
 			"base_url":     xai.DefaultCLIBaseURL,
 		},
 	}
+	c.Set("api_key", &APIKey{ID: 5401, Group: &Group{Platform: PlatformGrok}})
 	repo := &grokQuotaAccountRepo{
 		mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
 			accountsByID: map[int64]*Account{54: account},
@@ -1374,7 +1375,10 @@ func TestForwardGrokResponsesDoesNotInjectImageBridgeForTextOnlyRequests(t *test
 	_, err := svc.forwardGrokResponses(context.Background(), c, account, body, "grok", false, time.Now())
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastBody)
-	require.False(t, gjson.GetBytes(upstream.lastBody, "tools").Exists(), "text-only Grok responses request should not get image_generation tool injected")
+	require.Equal(t, "web_search", gjson.GetBytes(upstream.lastBody, "tools.0.type").String())
+	require.Equal(t, "x_search", gjson.GetBytes(upstream.lastBody, "tools.1.type").String())
+	require.Equal(t, grokFreeCacheDisabledToolChoice, gjson.GetBytes(upstream.lastBody, "tool_choice").String())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "tools.#(type==\"image_generation\")").Exists())
 	require.False(t, strings.Contains(string(upstream.lastBody), "sub2api-codex-image-generation"), "text-only Grok responses request should not get bridge instructions")
 }
 
@@ -1766,6 +1770,7 @@ func TestForwardAsAnthropicForGrokUsesXAIResponses(t *testing.T) {
 			"base_url":     xai.DefaultCLIBaseURL,
 		},
 	}
+	c.Set("api_key", &APIKey{ID: 5402, Group: &Group{Platform: PlatformGrok}})
 	repo := &grokQuotaAccountRepo{
 		mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
 			accountsByID: map[int64]*Account{54: account},
@@ -1785,6 +1790,9 @@ func TestForwardAsAnthropicForGrokUsesXAIResponses(t *testing.T) {
 	require.Equal(t, defaultGrokUpstreamUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, xai.DefaultTextModel, gjson.GetBytes(upstream.lastBody, "model").String())
 	require.True(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
+	require.Equal(t, "web_search", gjson.GetBytes(upstream.lastBody, "tools.0.type").String())
+	require.Equal(t, "x_search", gjson.GetBytes(upstream.lastBody, "tools.1.type").String())
+	require.Equal(t, grokFreeCacheDisabledToolChoice, gjson.GetBytes(upstream.lastBody, "tool_choice").String())
 	require.NotContains(t, string(upstream.lastBody), "chatgpt.com")
 	require.Equal(t, "grok", result.Model)
 	require.Equal(t, xai.DefaultTextModel, result.UpstreamModel)

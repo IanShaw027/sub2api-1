@@ -1247,7 +1247,11 @@ func FinalizeChatCompletionsResponsesStream(state *ChatCompletionsToResponsesStr
 	}
 
 	state.CompletedSent = true
-	events = append(events, chatToResponsesEvent(state, "response.completed", &ResponsesStreamEvent{
+	terminalEventType := "response.completed"
+	if status == "incomplete" {
+		terminalEventType = "response.incomplete"
+	}
+	events = append(events, chatToResponsesEvent(state, terminalEventType, &ResponsesStreamEvent{
 		Response: &ResponsesResponse{
 			ID:                state.ResponseID,
 			Object:            "response",

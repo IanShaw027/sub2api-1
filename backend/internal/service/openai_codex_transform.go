@@ -103,6 +103,8 @@ type codexTransformResult struct {
 	Modified        bool
 	NormalizedModel string
 	PromptCacheKey  string
+	ToolNameReverse map[string]string
+	Error           error
 	Observability   codexTransformObservability
 }
 
@@ -209,6 +211,9 @@ func applyCodexOAuthTransformWithInputModeAndOptions(
 
 func applyCodexOAuthTransformWithOptions(reqBody map[string]any, opts codexOAuthTransformOptions) codexTransformResult {
 	result := applyCodexOAuthTransformWithInputModeAndOptions(reqBody, false, false, codexTransformInputModeStrict, opts)
+	if result.Error != nil {
+		return result
+	}
 	if opts.SkipDefaultInstructions {
 		if removeEmbeddedDefaultInstructions(reqBody) {
 			result.Modified = true
@@ -249,7 +254,11 @@ func applyCodexOAuthTransformWithInputModeAndFallbackReasonOptions(
 	opts codexOAuthTransformOptions,
 ) codexTransformResult {
 	opts.IsCompact = isCompact
-	result := codexTransformResult{}
+	toolNameReverse, err := collectCodexToolNameReverse(reqBody)
+	if err != nil {
+		return codexTransformResult{Error: err}
+	}
+	result := codexTransformResult{ToolNameReverse: toolNameReverse}
 	// 工具续链需求会影响存储策略与 input 过滤逻辑。
 	needsToolContinuation := NeedsToolContinuation(reqBody)
 	result.Observability.NeedsToolContinuation = needsToolContinuation
@@ -968,6 +977,36 @@ func hasOpenAIImageGenerationTool(reqBody map[string]any) bool {
 	return inputContainsImageGenerationTool(reqBody["input"])
 }
 
+func hasNativeOpenAIImageGenerationTool(reqBody map[string]any) bool {
+	if reqBody == nil {
+		return false
+	}
+	containsNative := func(rawTools any) bool {
+		tools, ok := rawTools.([]any)
+		if !ok {
+			return false
+		}
+		for _, rawTool := range tools {
+			tool, ok := rawTool.(map[string]any)
+			if ok && isOpenAIImageGenerationType(firstNonEmptyString(tool["type"])) {
+				return true
+			}
+		}
+		return false
+	}
+	if containsNative(reqBody["tools"]) {
+		return true
+	}
+	input, _ := reqBody["input"].([]any)
+	for _, rawItem := range input {
+		item, ok := rawItem.(map[string]any)
+		if ok && strings.TrimSpace(firstNonEmptyString(item["type"])) == "additional_tools" && containsNative(item["tools"]) {
+			return true
+		}
+	}
+	return false
+}
+
 func toolsContainImageGeneration(rawTools any) bool {
 	tools, ok := rawTools.([]any)
 	if !ok {
@@ -1276,7 +1315,7 @@ func ensureOpenAIResponsesImageGenerationToolChoiceAuto(reqBody map[string]any) 
 }
 
 func applyCodexImageGenerationBridgeInstructions(reqBody map[string]any) bool {
-	if len(reqBody) == 0 || !hasOpenAIImageGenerationTool(reqBody) {
+	if len(reqBody) == 0 || !hasNativeOpenAIImageGenerationTool(reqBody) {
 		return false
 	}
 	if isCodexSparkModel(firstNonEmptyString(reqBody["model"])) {

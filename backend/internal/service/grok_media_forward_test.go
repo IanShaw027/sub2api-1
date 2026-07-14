@@ -19,6 +19,31 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+type repeatingUploadReader struct{}
+
+func (repeatingUploadReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 'x'
+	}
+	return len(p), nil
+}
+
+func TestParseGrokMediaMultipartRequestRejectsOversizedPart(t *testing.T) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("image", "oversized.png")
+	require.NoError(t, err)
+	_, err = io.CopyN(part, repeatingUploadReader{}, int64(openAIImageMaxUploadPartSize)+1)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	info := ParseGrokMediaRequest(writer.FormDataContentType(), body.Bytes())
+
+	require.Error(t, info.ParseError)
+	require.Contains(t, info.ParseError.Error(), "payload exceeds")
+	require.Empty(t, info.Uploads)
+}
+
 func TestForwardVideos_NormalizesVideoAliasOnUpstreamBody(t *testing.T) {
 	setGinTestMode()
 	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")

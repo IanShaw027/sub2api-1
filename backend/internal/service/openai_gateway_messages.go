@@ -226,10 +226,11 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	}
 
 	// 2. Convert Anthropic → Responses
-	responsesReq, err := apicompat.AnthropicToResponses(&anthropicReq)
+	responsesReq, err := apicompat.AnthropicToResponsesForModel(&anthropicReq, upstreamModel)
 	if err != nil {
 		return nil, fmt.Errorf("convert anthropic to responses: %w", err)
 	}
+	recordOpenAICompatDroppedFields(responsesReq)
 	if claudeCodeClient {
 		apicompat.AugmentClaudeToolDescriptions(responsesReq.Tools)
 	}
@@ -389,7 +390,12 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			cacheIdentity = resolveGrokCacheIdentity(c, responsesBody, promptCacheKey, upstreamModel)
 		}
 		var applyErr error
-		responsesBody, applyErr = applyGrokResponsesCacheIdentity(responsesBody, body, cacheIdentity, false)
+		responsesBody, applyErr = applyGrokResponsesCacheIdentity(
+			responsesBody,
+			body,
+			cacheIdentity,
+			account.Type == AccountTypeOAuth,
+		)
 		if applyErr != nil {
 			return nil, applyErr
 		}
@@ -573,10 +579,11 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 				applyOpenAICompatModelNormalization(&replayReq)
 				stripAnthropicBillingHeaderFromSystem(&replayReq)
 				applyAnthropicCompatFullReplayGuard(&replayReq)
-				replayResponsesReq, convErr := apicompat.AnthropicToResponses(&replayReq)
+				replayResponsesReq, convErr := apicompat.AnthropicToResponsesForModel(&replayReq, upstreamModel)
 				if convErr != nil {
 					return nil, fmt.Errorf("rebuild anthropic compat replay request: %w", convErr)
 				}
+				recordOpenAICompatDroppedFields(replayResponsesReq)
 				replayResponsesReq.Model = upstreamModel
 				replayResponsesReq.Stream = true
 				appendOpenAICompatClaudeCodeTodoGuard(replayResponsesReq)

@@ -10,6 +10,7 @@ type OpenAICompatRuntimeMetricsSnapshot struct {
 	StrippedVerbosityTotal        int64            `json:"stripped_verbosity_total"`
 	StrippedTemperatureTotal      int64            `json:"stripped_temperature_total"`
 	StrippedTopPTotal             int64            `json:"stripped_top_p_total"`
+	StrippedCacheControlTotal     int64            `json:"stripped_cache_control_total"`
 	PromptCacheInjectedTotal      int64            `json:"prompt_cache_injected_total"`
 	ToolContinuationDetectedTotal int64            `json:"tool_continuation_detected_total"`
 	Upstream4xxByModel            map[string]int64 `json:"upstream_4xx_by_model"`
@@ -28,6 +29,7 @@ var (
 	openAICompatStrippedVerbosityTotal        atomic.Int64
 	openAICompatStrippedTemperatureTotal      atomic.Int64
 	openAICompatStrippedTopPTotal             atomic.Int64
+	openAICompatStrippedCacheControlTotal     atomic.Int64
 	openAICompatPromptCacheInjectedTotal      atomic.Int64
 	openAICompatToolContinuationDetectedTotal atomic.Int64
 
@@ -58,6 +60,8 @@ func recordOpenAICompatStrippedField(field string) {
 		openAICompatStrippedTemperatureTotal.Add(1)
 	case "top_p":
 		openAICompatStrippedTopPTotal.Add(1)
+	case "cache_control":
+		openAICompatStrippedCacheControlTotal.Add(1)
 	}
 }
 
@@ -104,6 +108,7 @@ func SnapshotOpenAICompatRuntimeMetrics() OpenAICompatRuntimeMetricsSnapshot {
 		StrippedVerbosityTotal:        openAICompatStrippedVerbosityTotal.Load(),
 		StrippedTemperatureTotal:      openAICompatStrippedTemperatureTotal.Load(),
 		StrippedTopPTotal:             openAICompatStrippedTopPTotal.Load(),
+		StrippedCacheControlTotal:     openAICompatStrippedCacheControlTotal.Load(),
 		PromptCacheInjectedTotal:      openAICompatPromptCacheInjectedTotal.Load(),
 		ToolContinuationDetectedTotal: openAICompatToolContinuationDetectedTotal.Load(),
 		Upstream4xxByModel:            upstream4xx,

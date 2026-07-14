@@ -6,15 +6,18 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
 type usageBillingRepoApplyStub struct {
 	result *UsageBillingApplyResult
 	err    error
+	cmd    *UsageBillingCommand
 }
 
-func (s *usageBillingRepoApplyStub) Apply(_ context.Context, _ *UsageBillingCommand) (*UsageBillingApplyResult, error) {
+func (s *usageBillingRepoApplyStub) Apply(_ context.Context, cmd *UsageBillingCommand) (*UsageBillingApplyResult, error) {
+	s.cmd = cmd
 	return s.result, s.err
 }
 
@@ -44,6 +47,24 @@ func TestApplyUsageBilling_NotAppliedWithoutDeferredServiceDoesNotPanic(t *testi
 		require.NoError(t, err)
 		require.False(t, applied)
 	})
+}
+
+func TestApplyUsageBillingPassesMinimumBalanceReserveToRepository(t *testing.T) {
+	repo := &usageBillingRepoApplyStub{result: &UsageBillingApplyResult{Applied: false}}
+	cfg := &config.Config{}
+	cfg.Billing.MinimumBalanceReserve = 0.01
+	p := &postUsageBillingParams{
+		Cost:    &CostBreakdown{ActualCost: 0.5},
+		User:    &User{ID: 1},
+		APIKey:  &APIKey{ID: 2},
+		Account: &Account{ID: 3},
+	}
+
+	_, err := applyUsageBilling(context.Background(), "req-reserve", nil, p, &billingDeps{cfg: cfg}, repo)
+
+	require.NoError(t, err)
+	require.NotNil(t, repo.cmd)
+	require.Equal(t, 0.01, repo.cmd.MinimumBalanceReserve)
 }
 
 func TestFinalizePostUsageBilling_WithoutDeferredServiceDoesNotPanic(t *testing.T) {

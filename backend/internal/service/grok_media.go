@@ -78,6 +78,7 @@ type GrokMediaRequestInfo struct {
 	MaskImageURL   string
 	Uploads        []OpenAIImagesUpload
 	MaskUpload     *OpenAIImagesUpload
+	ParseError     error
 }
 
 func (r GrokMediaRequestInfo) ModerationBody() []byte {
@@ -136,7 +137,7 @@ func ParseGrokMediaRequest(contentType string, body []byte) GrokMediaRequestInfo
 	if gjson.ValidBytes(body) {
 		parseGrokMediaJSONRequest(body, &info)
 	} else {
-		parseGrokMediaMultipartRequest(contentType, body, &info)
+		info.ParseError = parseGrokMediaMultipartRequest(contentType, body, &info)
 	}
 	info.Model = strings.TrimSpace(info.Model)
 	info.Prompt = strings.TrimSpace(info.Prompt)
@@ -222,36 +223,36 @@ func grokMediaImageObject(imageURL string) map[string]string {
 	}
 }
 
-func parseGrokMediaMultipartRequest(contentType string, body []byte, info *GrokMediaRequestInfo) {
+func parseGrokMediaMultipartRequest(contentType string, body []byte, info *GrokMediaRequestInfo) error {
 	if info == nil {
-		return
+		return nil
 	}
 	mediaType, params, err := mime.ParseMediaType(strings.TrimSpace(contentType))
 	if err != nil || !strings.EqualFold(mediaType, "multipart/form-data") {
-		return
+		return nil
 	}
 	boundary := strings.TrimSpace(params["boundary"])
 	if boundary == "" {
-		return
+		return nil
 	}
 	reader := multipart.NewReader(bytes.NewReader(body), boundary)
 	for {
 		part, err := reader.NextPart()
 		if err == io.EOF {
-			return
+			return nil
 		}
 		if err != nil {
-			return
+			return nil
 		}
 		name := strings.TrimSpace(part.FormName())
 		if name == "" {
 			_ = part.Close()
 			continue
 		}
-		data, err := io.ReadAll(io.LimitReader(part, openAIImageMaxUploadPartSize))
+		data, err := readAllWithLimitDetection(part, int64(openAIImageMaxUploadPartSize))
 		_ = part.Close()
 		if err != nil {
-			return
+			return fmt.Errorf("multipart field %s: %w", name, err)
 		}
 		fileName := strings.TrimSpace(part.FileName())
 		partContentType := strings.TrimSpace(part.Header.Get("Content-Type"))

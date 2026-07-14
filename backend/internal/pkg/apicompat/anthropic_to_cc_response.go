@@ -212,6 +212,8 @@ func anthropicStopReasonToCC(reason string) string {
 		return "tool_calls"
 	case "stop_sequence":
 		return "stop"
+	case "refusal", "content_filter":
+		return "content_filter"
 	default:
 		return "stop"
 	}

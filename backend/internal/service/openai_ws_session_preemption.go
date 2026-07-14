@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var errOpenAIWSSessionPreempted = errors.New("openai ws session preempted by newer request")
@@ -45,6 +47,19 @@ func openAIWSSessionPreemptCacheHash(apiKeyID int64, sessionHash string) string 
 // for atomic WS preemption owner release. Implemented by the Redis gateway cache.
 type compareAndDeleteSessionWindowCache interface {
 	CompareAndDeleteOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, expected []byte) (bool, error)
+}
+
+// claimSessionWindowCache atomically replaces a WS preemption owner while
+// returning the previous owner. Production Redis cache implements this with
+// one Lua script; basic cache stubs may use the compatibility fallback.
+type claimSessionWindowCache interface {
+	ClaimOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, owner []byte, ttl time.Duration) ([]byte, error)
+}
+
+// compareAndRefreshSessionWindowCache verifies ownership and renews its lease
+// in one operation so a stale turn cannot keep a replacement owner's key alive.
+type compareAndRefreshSessionWindowCache interface {
+	CompareAndRefreshOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, expected []byte, ttl time.Duration) (bool, error)
 }
 
 type openAIWSSessionPreemptEntry struct {
@@ -114,9 +129,9 @@ func (s *OpenAIGatewayService) beginOpenAIWSSessionPreemptContext(
 	}
 
 	preemptCtx, cancel := context.WithCancelCause(ctx)
-	ownerToken := strings.TrimSpace(requestID)
-	if ownerToken == "" {
-		ownerToken = fmt.Sprintf("gen-%d-%d", time.Now().UnixNano(), apiKeyID)
+	ownerToken := uuid.NewString()
+	if requestLabel := strings.TrimSpace(requestID); requestLabel != "" {
+		ownerToken = requestLabel + ":" + ownerToken
 	}
 
 	// Multi-instance: claim Redis ownership first. Previous owners (any pod)
@@ -151,11 +166,25 @@ func (s *OpenAIGatewayService) claimOpenAIWSSessionPreemptOwner(ctx context.Cont
 	cacheHash := openAIWSSessionPreemptCacheHash(key.apiKeyID, key.sessionHash)
 	cacheCtx, cancel := context.WithTimeout(ctx, openAIWSStateStoreRedisTimeout)
 	defer cancel()
+	owner := []byte(strings.TrimSpace(ownerToken))
+	if claimer, atomicOK := s.cache.(claimSessionWindowCache); atomicOK && claimer != nil {
+		payload, err := claimer.ClaimOpenAIResponsesSessionWindow(
+			cacheCtx,
+			key.groupID,
+			cacheHash,
+			owner,
+			openAIWSSessionPreemptOwnerTTL,
+		)
+		if err != nil {
+			return "", false
+		}
+		return strings.TrimSpace(string(payload)), true
+	}
 
 	if payload, err := s.cache.GetOpenAIResponsesSessionWindow(cacheCtx, key.groupID, cacheHash); err == nil {
 		previous = strings.TrimSpace(string(payload))
 	}
-	if err := s.cache.SetOpenAIResponsesSessionWindow(cacheCtx, key.groupID, cacheHash, []byte(ownerToken), openAIWSSessionPreemptOwnerTTL); err != nil {
+	if err := s.cache.SetOpenAIResponsesSessionWindow(cacheCtx, key.groupID, cacheHash, owner, openAIWSSessionPreemptOwnerTTL); err != nil {
 		return previous, false
 	}
 	return previous, true
@@ -191,6 +220,8 @@ func (s *OpenAIGatewayService) watchOpenAIWSSessionPreemptOwner(ctx context.Cont
 	}
 	stopCh := make(chan struct{})
 	var once sync.Once
+	cacheHash := openAIWSSessionPreemptCacheHash(key.apiKeyID, key.sessionHash)
+	expected := []byte(strings.TrimSpace(ownerToken))
 	go func() {
 		ticker := time.NewTicker(openAIWSSessionPreemptWatchInterval)
 		defer ticker.Stop()
@@ -202,7 +233,25 @@ func (s *OpenAIGatewayService) watchOpenAIWSSessionPreemptOwner(ctx context.Cont
 				return
 			case <-ticker.C:
 				cacheCtx, cancel := context.WithTimeout(context.Background(), openAIWSStateStoreRedisTimeout)
-				payload, err := s.cache.GetOpenAIResponsesSessionWindow(cacheCtx, key.groupID, openAIWSSessionPreemptCacheHash(key.apiKeyID, key.sessionHash))
+				if refresher, ok := s.cache.(compareAndRefreshSessionWindowCache); ok && refresher != nil {
+					owned, err := refresher.CompareAndRefreshOpenAIResponsesSessionWindow(
+						cacheCtx,
+						key.groupID,
+						cacheHash,
+						expected,
+						openAIWSSessionPreemptOwnerTTL,
+					)
+					cancel()
+					if err != nil {
+						continue
+					}
+					if !owned {
+						onLost()
+						return
+					}
+					continue
+				}
+				payload, err := s.cache.GetOpenAIResponsesSessionWindow(cacheCtx, key.groupID, cacheHash)
 				cancel()
 				if err != nil {
 					continue

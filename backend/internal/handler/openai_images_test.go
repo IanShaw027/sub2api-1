@@ -13,6 +13,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestHasOpenAIImagesPartialResult_IncludesTokenOnlyResult(t *testing.T) {
+	require.False(t, hasOpenAIImagesPartialResult(nil))
+	require.True(t, hasOpenAIImagesPartialResult(&service.OpenAIForwardResult{
+		ImageCount: 0,
+		Usage: service.OpenAIUsage{
+			InputTokens:  11,
+			OutputTokens: 3,
+		},
+	}))
+}
+
 func TestOpenAIImages_SelectionFailure_PreservesCompatibleAccountsMessage(t *testing.T) {
 	c, rec := newOpenAISelectionErrorTestContext("/v1/images/generations", `{"model":"gpt-image-1","prompt":"cat"}`)
 	h := newOpenAISelectionErrorTestHandler(t, nil)

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -20,6 +21,7 @@ func TestSnapshotOpenAICompatRuntimeMetrics(t *testing.T) {
 
 	recordOpenAICompatStrippedField("temperature")
 	recordOpenAICompatStrippedField("top_p")
+	recordOpenAICompatDroppedFields(&apicompat.ResponsesRequest{DroppedCompatibilityFields: []string{"cache_control"}})
 	recordOpenAICompatToolContinuationDetected()
 	recordOpenAICompatPromptCacheInjected()
 	recordOpenAICompatUpstreamStatus("gpt-5.4", http.StatusTooManyRequests)
@@ -28,6 +30,7 @@ func TestSnapshotOpenAICompatRuntimeMetrics(t *testing.T) {
 	after := SnapshotOpenAICompatRuntimeMetrics()
 	require.GreaterOrEqual(t, after.StrippedTemperatureTotal, before.StrippedTemperatureTotal+1)
 	require.GreaterOrEqual(t, after.StrippedTopPTotal, before.StrippedTopPTotal+1)
+	require.GreaterOrEqual(t, after.StrippedCacheControlTotal, before.StrippedCacheControlTotal+1)
 	require.GreaterOrEqual(t, after.ToolContinuationDetectedTotal, before.ToolContinuationDetectedTotal+1)
 	require.GreaterOrEqual(t, after.PromptCacheInjectedTotal, before.PromptCacheInjectedTotal+1)
 	require.GreaterOrEqual(t, after.Upstream4xxByModel["gpt-5.4"], before.Upstream4xxByModel["gpt-5.4"]+1)

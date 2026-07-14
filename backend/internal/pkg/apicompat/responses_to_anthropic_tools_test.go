@@ -62,12 +62,13 @@ func TestResponsesToAnthropic_CustomGrammarToolUsesObjectSchema(t *testing.T) {
 }
 
 func TestResponsesToAnthropic_CustomToolPreservesSchemaParameters(t *testing.T) {
-	tools := convertResponsesToAnthropicTools([]ResponsesTool{{
+	tools, err := convertResponsesToAnthropicTools([]ResponsesTool{{
 		Type:        "custom",
 		Name:        "edit_file",
 		Description: "Edit a file",
 		Parameters:  json.RawMessage(`{"type":"object","properties":{"patch":{"type":"string"}},"required":["patch"]}`),
 	}})
+	require.NoError(t, err)
 
 	require.Len(t, tools, 1)
 	assert.Empty(t, tools[0].Type)
@@ -80,12 +81,13 @@ func TestResponsesToAnthropic_CustomToolPreservesSchemaParameters(t *testing.T) 
 
 func TestResponsesToAnthropic_FunctionToolSchemaUnchanged(t *testing.T) {
 	parameters := json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}`)
-	tools := convertResponsesToAnthropicTools([]ResponsesTool{{
+	tools, err := convertResponsesToAnthropicTools([]ResponsesTool{{
 		Type:        "function",
 		Name:        "get_weather",
 		Description: "Get weather",
 		Parameters:  parameters,
 	}})
+	require.NoError(t, err)
 
 	require.Len(t, tools, 1)
 	assert.Empty(t, tools[0].Type)
@@ -95,7 +97,7 @@ func TestResponsesToAnthropic_FunctionToolSchemaUnchanged(t *testing.T) {
 }
 
 func TestResponsesToAnthropic_MixedToolsProduceValidAnthropicTools(t *testing.T) {
-	tools := convertResponsesToAnthropicTools([]ResponsesTool{
+	tools, err := convertResponsesToAnthropicTools([]ResponsesTool{
 		{
 			Type:       "function",
 			Name:       "read_file",
@@ -109,6 +111,7 @@ func TestResponsesToAnthropic_MixedToolsProduceValidAnthropicTools(t *testing.T)
 			Type: "web_search",
 		},
 	})
+	require.NoError(t, err)
 
 	require.Len(t, tools, 3)
 	assert.Empty(t, tools[0].Type)
@@ -125,13 +128,41 @@ func TestResponsesToAnthropic_MixedToolsProduceValidAnthropicTools(t *testing.T)
 }
 
 func TestResponsesToAnthropic_DefaultToolNormalizesInputSchema(t *testing.T) {
-	tools := convertResponsesToAnthropicTools([]ResponsesTool{{
+	tools, err := convertResponsesToAnthropicTools([]ResponsesTool{{
 		Type: "local_shell",
 		Name: "shell",
 	}})
+	require.NoError(t, err)
 
 	require.Len(t, tools, 1)
 	assert.Equal(t, "local_shell", tools[0].Type)
 	assert.Equal(t, "shell", tools[0].Name)
 	assert.JSONEq(t, `{"type":"object","properties":{}}`, string(tools[0].InputSchema))
+}
+
+func TestResponsesToAnthropic_NamespaceToolsFlattenChildren(t *testing.T) {
+	tools, err := convertResponsesToAnthropicTools([]ResponsesTool{{
+		Type: "namespace",
+		Name: "gmail",
+		Tools: []ResponsesTool{{
+			Type:        "function",
+			Name:        "send",
+			Description: "Send mail",
+			Parameters:  json.RawMessage(`{"type":"object","properties":{"to":{"type":"string"}}}`),
+		}},
+	}})
+	require.NoError(t, err)
+	require.Len(t, tools, 1)
+	assert.Equal(t, "gmail__send", tools[0].Name)
+	assert.Equal(t, "Send mail", tools[0].Description)
+	assert.JSONEq(t, `{"type":"object","properties":{"to":{"type":"string"}}}`, string(tools[0].InputSchema))
+}
+
+func TestResponsesToAnthropic_NamespaceFlattenCollisionRejected(t *testing.T) {
+	_, err := convertResponsesToAnthropicTools([]ResponsesTool{
+		{Type: "namespace", Name: "a", Tools: []ResponsesTool{{Type: "function", Name: "b__c"}}},
+		{Type: "namespace", Name: "a__b", Tools: []ResponsesTool{{Type: "function", Name: "c"}}},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `both map to "a__b__c"`)
 }

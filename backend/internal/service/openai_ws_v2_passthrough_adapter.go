@@ -71,6 +71,27 @@ type openAIWSClientFrameConn struct {
 	conn *coderws.Conn
 }
 
+type openAIWSCodexToolNameRestoringFrameConn struct {
+	inner   openaiwsv2.FrameConn
+	reverse map[string]string
+}
+
+func (c *openAIWSCodexToolNameRestoringFrameConn) ReadFrame(ctx context.Context) (coderws.MessageType, []byte, error) {
+	msgType, payload, err := c.inner.ReadFrame(ctx)
+	if err != nil || msgType != coderws.MessageText {
+		return msgType, payload, err
+	}
+	return msgType, restoreCodexToolNamesInJSON(payload, c.reverse), nil
+}
+
+func (c *openAIWSCodexToolNameRestoringFrameConn) WriteFrame(ctx context.Context, msgType coderws.MessageType, payload []byte) error {
+	return c.inner.WriteFrame(ctx, msgType, payload)
+}
+
+func (c *openAIWSCodexToolNameRestoringFrameConn) Close() error {
+	return c.inner.Close()
+}
+
 // openAIWSPolicyEnforcingFrameConn wraps a client-side FrameConn and runs
 // every client→upstream frame through the OpenAI Fast Policy. It is the
 // passthrough-relay equivalent of the parseClientPayload integration in the
@@ -477,6 +498,9 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	upstreamFrameConn, ok := upstreamConn.(openaiwsv2.FrameConn)
 	if !ok {
 		return errors.New("openai ws passthrough upstream connection does not support frame relay")
+	}
+	if reverse := codexToolNameReverseFromContext(c); len(reverse) > 0 {
+		upstreamFrameConn = &openAIWSCodexToolNameRestoringFrameConn{inner: upstreamFrameConn, reverse: reverse}
 	}
 
 	completedTurns := atomic.Int32{}

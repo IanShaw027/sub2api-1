@@ -945,6 +945,7 @@ func openAIWSRelayApplyUsageDelta(state *relayState, previous Usage, next Usage)
 	state.usage.OutputTokens += next.OutputTokens - previous.OutputTokens
 	state.usage.CacheReadInputTokens += next.CacheReadInputTokens - previous.CacheReadInputTokens
 	state.usage.CacheCreationInputTokens += next.CacheCreationInputTokens - previous.CacheCreationInputTokens
+	state.usage.ImageOutputTokens += next.ImageOutputTokens - previous.ImageOutputTokens
 }
 
 func openAIWSRelayHasSeenTerminal(state *relayState, responseID string) bool {

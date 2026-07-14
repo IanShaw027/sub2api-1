@@ -833,7 +833,12 @@ func TestApplyCodexOAuthTransform_SanitizesInvalidToolNamesAcrossTooling(t *test
 		},
 	}
 
-	applyCodexOAuthTransform(reqBody, true, false)
+	result := applyCodexOAuthTransform(reqBody, true, false)
+	require.NoError(t, result.Error)
+	require.Equal(t, map[string]string{
+		"read_file": "read.file",
+		"net_fetch": "net:fetch",
+	}, result.ToolNameReverse)
 
 	tools, ok := reqBody["tools"].([]any)
 	require.True(t, ok)
@@ -867,6 +872,31 @@ func TestApplyCodexOAuthTransform_SanitizesInvalidToolNamesAcrossTooling(t *test
 	require.True(t, ok)
 	require.Equal(t, "mcp_tool_call", mcpCall["type"])
 	require.Equal(t, "namespace_sub_tool_v2", mcpCall["name"])
+}
+
+func TestApplyCodexOAuthTransformRejectsToolNameNormalizationCollision(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"tools": []any{
+			map[string]any{"type": "function", "name": "foo.bar"},
+			map[string]any{"type": "function", "name": "foo/bar"},
+		},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, true, false)
+	require.Error(t, result.Error)
+	require.Contains(t, result.Error.Error(), `both normalize to "foo_bar"`)
+
+	tools := reqBody["tools"].([]any)
+	require.Equal(t, "foo.bar", tools[0].(map[string]any)["name"], "collision must fail before mutation")
+	require.Equal(t, "foo/bar", tools[1].(map[string]any)["name"])
+}
+
+func TestRestoreCodexToolNamesInJSONOnlyRestoresNameFields(t *testing.T) {
+	data := []byte(`{"type":"response.completed","response":{"output":[{"type":"function_call","name":"read_file","arguments":"{}"},{"type":"message","content":[{"type":"output_text","text":"read_file stays in prose"}]}]}}`)
+	restored := restoreCodexToolNamesInJSON(data, map[string]string{"read_file": "read.file"})
+
+	require.JSONEq(t, `{"type":"response.completed","response":{"output":[{"type":"function_call","name":"read.file","arguments":"{}"},{"type":"message","content":[{"type":"output_text","text":"read_file stays in prose"}]}]}}`, string(restored))
 }
 
 func TestApplyCodexOAuthTransform_DropsToolChoiceWhenSanitizedNameMissing(t *testing.T) {
@@ -1509,6 +1539,24 @@ func TestStripOpenAIImageGenerationTools_KeepsNonImageNamespaces(t *testing.T) {
 	require.False(t, hasOpenAIImageGenerationTool(reqBody))
 }
 
+func TestApplyCodexImageGenerationBridgeInstructionsIgnoresImageNamespace(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.4",
+		"tools": []any{
+			map[string]any{
+				"type":  "namespace",
+				"name":  "image_gen",
+				"tools": []any{map[string]any{"type": "function", "name": "imagegen"}},
+			},
+		},
+	}
+
+	require.True(t, hasOpenAIImageGenerationTool(reqBody), "namespace remains an image capability for filtering")
+	require.False(t, hasNativeOpenAIImageGenerationTool(reqBody))
+	require.False(t, applyCodexImageGenerationBridgeInstructions(reqBody))
+	require.NotContains(t, reqBody, "instructions")
+}
+
 func TestStripOpenAIImageGenerationTools_KeepsCustomImagegenFunctionChoice(t *testing.T) {
 	reqBody := map[string]any{
 		"tool_choice": map[string]any{
@@ -1710,15 +1758,15 @@ func TestApplyCodexOAuthTransform_StripsInputNamespaceField(t *testing.T) {
 
 func TestNormalizeCodexModel_Gpt53(t *testing.T) {
 	cases := map[string]string{
-		"gpt-5.6-sol":                "gpt-5.6-sol",
-		"gpt5.6-sol":                 "gpt-5.6-sol",
-		"gpt 5.6 sol":                "gpt-5.6-sol",
-		"gpt-5.6-terra":              "gpt-5.6-terra",
-		"gpt5.6-terra":               "gpt-5.6-terra",
-		"gpt 5.6 terra":              "gpt-5.6-terra",
-		"gpt-5.6-luna":               "gpt-5.6-luna",
-		"gpt5.6-luna":                "gpt-5.6-luna",
-		"gpt 5.6 luna":               "gpt-5.6-luna",
+		"gpt-5.6-sol":               "gpt-5.6-sol",
+		"gpt5.6-sol":                "gpt-5.6-sol",
+		"gpt 5.6 sol":               "gpt-5.6-sol",
+		"gpt-5.6-terra":             "gpt-5.6-terra",
+		"gpt5.6-terra":              "gpt-5.6-terra",
+		"gpt 5.6 terra":             "gpt-5.6-terra",
+		"gpt-5.6-luna":              "gpt-5.6-luna",
+		"gpt5.6-luna":               "gpt-5.6-luna",
+		"gpt 5.6 luna":              "gpt-5.6-luna",
 		"gpt-5.4":                   "gpt-5.4",
 		"gpt5.5":                    "gpt-5.5",
 		"openai/gpt5.5":             "gpt-5.5",

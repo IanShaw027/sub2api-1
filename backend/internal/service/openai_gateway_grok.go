@@ -97,7 +97,12 @@ func (s *OpenAIGatewayService) forwardGrokResponsesWithPromptCacheKey(
 		return nil, err
 	}
 	cacheIdentity := resolveGrokCacheIdentity(c, body, promptCacheKey, upstreamModel)
-	patchedBody, err = applyGrokResponsesCacheIdentity(patchedBody, body, cacheIdentity, false)
+	patchedBody, err = applyGrokResponsesCacheIdentity(
+		patchedBody,
+		body,
+		cacheIdentity,
+		account.Type == AccountTypeOAuth,
+	)
 	if err != nil {
 		return nil, err
 	}

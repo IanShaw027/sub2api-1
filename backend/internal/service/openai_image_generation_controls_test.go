@@ -622,6 +622,12 @@ func TestNormalizeCompletedImageGenerationStatus(t *testing.T) {
 			wantChanged: true,
 		},
 		{
+			name:        "non-streaming response object normalizes terminal image result",
+			input:       `{"id":"resp_1","object":"response","status":"completed","output":[{"type":"image_generation_call","status":"generating","result":"image-data"}]}`,
+			want:        `{"id":"resp_1","object":"response","status":"completed","output":[{"type":"image_generation_call","status":"completed","result":"image-data"}]}`,
+			wantChanged: true,
+		},
+		{
 			name:        "done item without result",
 			input:       `{"type":"response.output_item.done","item":{"type":"image_generation_call","status":"generating"}}`,
 			want:        `{"type":"response.output_item.done","item":{"type":"image_generation_call","status":"generating"}}`,

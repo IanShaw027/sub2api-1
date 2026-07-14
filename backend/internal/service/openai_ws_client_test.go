@@ -326,6 +326,216 @@ func TestDialOpenAIWSH2WithConn_CloseFrameClosesClient(t *testing.T) {
 	<-serverDone
 }
 
+func TestDialOpenAIWSH2WithConn_WriteHonorsConnectionAndStreamFlowControl(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer func() { _ = listener.Close() }()
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, acceptErr := listener.Accept()
+		require.NoError(t, acceptErr)
+		accepted <- conn
+	}()
+	clientConn, err := net.Dial("tcp", listener.Addr().String())
+	require.NoError(t, err)
+	serverConn := <-accepted
+	defer func() { _ = clientConn.Close() }()
+	defer func() { _ = serverConn.Close() }()
+
+	profile := &tlsfingerprint.Profile{
+		Name:             "ws-h2-flow-control",
+		ALPNProtocols:    []string{"h2"},
+		HTTP2Fingerprint: "1:4096|ph::method,:protocol,:scheme,:authority,:path",
+	}
+	serverDone := make(chan struct{})
+	flowControlReady := make(chan struct{})
+	go func() {
+		defer close(serverDone)
+		fr := acceptOpenAIWSH2Handshake(t, serverConn, []http2.Setting{
+			{ID: http2.SettingHeaderTableSize, Val: 4096},
+		})
+		require.NoError(t, fr.WriteSettings(http2.Setting{ID: http2.SettingInitialWindowSize, Val: 32768}))
+		for {
+			frame, err := fr.ReadFrame()
+			require.NoError(t, err)
+			settings, ok := frame.(*http2.SettingsFrame)
+			if ok && settings.IsAck() {
+				close(flowControlReady)
+				break
+			}
+		}
+		var encoded []byte
+		var received int
+		updatedConnectionWindow := false
+		updatedMaxFrameSize := false
+		for {
+			frame, err := fr.ReadFrame()
+			require.NoError(t, err)
+			switch f := frame.(type) {
+			case *http2.DataFrame:
+				encoded = append(encoded, f.Data()...)
+				received += len(f.Data())
+				require.NoError(t, fr.WriteWindowUpdate(1, uint32(len(f.Data()))))
+				if !updatedMaxFrameSize {
+					updatedMaxFrameSize = true
+					require.NoError(t, fr.WriteSettings(http2.Setting{ID: http2.SettingMaxFrameSize, Val: 32768}))
+				}
+				if !updatedConnectionWindow && received == openAIWSH2InitialWindowSize {
+					updatedConnectionWindow = true
+					require.NoError(t, fr.WriteWindowUpdate(0, openAIWSH2InitialWindowSize))
+				}
+				opcode, fin, payload, remaining, ok, decodeErr := decodeTLSCaptureWebSocketClientFrame(encoded)
+				require.NoError(t, decodeErr)
+				if !ok {
+					continue
+				}
+				require.Equal(t, byte(0x1), opcode)
+				require.True(t, fin)
+				require.Empty(t, remaining)
+				var value map[string]string
+				require.NoError(t, json.Unmarshal(payload, &value))
+				require.Len(t, value["input"], 100000)
+				require.True(t, updatedConnectionWindow, "write must wait for connection-level credit")
+				return
+			}
+		}
+	}()
+
+	conn, status, _, err := dialOpenAIWSH2WithConn(
+		context.Background(),
+		"wss://api.openai.com/v1/realtime?model=gpt-5",
+		http.Header{
+			"Authorization":          []string{"Bearer test-token"},
+			"OpenAI-Beta":            []string{"responses_websockets=2026-02-06"},
+			"Sec-WebSocket-Protocol": []string{"realtime"},
+		},
+		profile,
+		clientConn,
+	)
+	require.NoError(t, err)
+	require.Equal(t, 0, status)
+	<-flowControlReady
+
+	writeCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	require.NoError(t, conn.WriteJSON(writeCtx, map[string]string{"input": strings.Repeat("x", 100000)}))
+	<-serverDone
+}
+
+func TestDialOpenAIWSH2WithConn_PingWaitsForMatchingPong(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer func() { _ = clientConn.Close() }()
+	defer func() { _ = serverConn.Close() }()
+
+	profile := &tlsfingerprint.Profile{
+		Name:             "ws-h2-ping",
+		ALPNProtocols:    []string{"h2"},
+		HTTP2Fingerprint: "1:4096|ph::method,:protocol,:scheme,:authority,:path",
+	}
+	serverDone := make(chan struct{})
+	go func() {
+		defer close(serverDone)
+		fr := acceptOpenAIWSH2Handshake(t, serverConn, nil)
+		for {
+			frame, err := fr.ReadFrame()
+			require.NoError(t, err)
+			data, ok := frame.(*http2.DataFrame)
+			if !ok {
+				continue
+			}
+			opcode, fin, payload, remaining, complete, decodeErr := decodeTLSCaptureWebSocketClientFrame(data.Data())
+			require.NoError(t, decodeErr)
+			if !complete || opcode != 0x9 {
+				continue
+			}
+			require.True(t, fin)
+			require.Empty(t, remaining)
+			require.NoError(t, fr.WriteData(1, false, encodeTLSCaptureWebSocketServerFrame(0xA, []byte("not-the-token"))))
+			drainOpenAIWSH2WindowUpdates(t, fr, 2)
+			time.Sleep(50 * time.Millisecond)
+			require.NoError(t, fr.WriteData(1, false, encodeTLSCaptureWebSocketServerFrame(0xA, payload)))
+			drainOpenAIWSH2WindowUpdates(t, fr, 2)
+			return
+		}
+	}()
+
+	conn, _, _, err := dialOpenAIWSH2WithConn(
+		context.Background(),
+		"wss://api.openai.com/v1/realtime?model=gpt-5",
+		http.Header{
+			"Authorization":          []string{"Bearer test-token"},
+			"OpenAI-Beta":            []string{"responses_websockets=2026-02-06"},
+			"Sec-WebSocket-Protocol": []string{"realtime"},
+		},
+		profile,
+		clientConn,
+	)
+	require.NoError(t, err)
+	capable, ok := conn.(openAIWSIdlePingCapable)
+	require.True(t, ok)
+	require.True(t, capable.SupportsIdlePingWithoutReader())
+
+	start := time.Now()
+	pingCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	require.NoError(t, conn.Ping(pingCtx))
+	require.GreaterOrEqual(t, time.Since(start), 40*time.Millisecond, "an unrelated pong must not satisfy the probe")
+	<-serverDone
+}
+
+func drainOpenAIWSH2WindowUpdates(t *testing.T, fr *http2.Framer, count int) {
+	t.Helper()
+	for count > 0 {
+		frame, err := fr.ReadFrame()
+		require.NoError(t, err)
+		if _, ok := frame.(*http2.WindowUpdateFrame); ok {
+			count--
+		}
+	}
+}
+
+func TestDialOpenAIWSH2WithConn_CloseHasDeadline(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer func() { _ = clientConn.Close() }()
+	defer func() { _ = serverConn.Close() }()
+
+	profile := &tlsfingerprint.Profile{
+		Name:             "ws-h2-close-deadline",
+		ALPNProtocols:    []string{"h2"},
+		HTTP2Fingerprint: "1:4096|ph::method,:protocol,:scheme,:authority,:path",
+	}
+	handshakeDone := make(chan struct{})
+	allowServerExit := make(chan struct{})
+	serverDone := make(chan struct{})
+	go func() {
+		defer close(serverDone)
+		_ = acceptOpenAIWSH2Handshake(t, serverConn, nil)
+		close(handshakeDone)
+		// Deliberately stop reading so the client's close DATA write blocks.
+		<-allowServerExit
+	}()
+
+	conn, _, _, err := dialOpenAIWSH2WithConn(
+		context.Background(),
+		"wss://api.openai.com/v1/realtime?model=gpt-5",
+		http.Header{
+			"Authorization":          []string{"Bearer test-token"},
+			"OpenAI-Beta":            []string{"responses_websockets=2026-02-06"},
+			"Sec-WebSocket-Protocol": []string{"realtime"},
+		},
+		profile,
+		clientConn,
+	)
+	require.NoError(t, err)
+	<-handshakeDone
+
+	start := time.Now()
+	require.NoError(t, conn.Close())
+	require.Less(t, time.Since(start), openAIWSH2CloseTimeout+500*time.Millisecond)
+	close(allowServerExit)
+	<-serverDone
+}
+
 func TestBuildOpenAIWSH2RequestHeaders_AllowsNilHeaders(t *testing.T) {
 	fields, err := buildOpenAIWSH2RequestHeaders(
 		mustParseOpenAIWSURL(t, "wss://api.openai.com/v1/realtime?model=gpt-5"),

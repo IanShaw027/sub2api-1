@@ -47,6 +47,35 @@ type openAIImagesOAuthFanOutAttempt struct {
 	Context  *gin.Context
 }
 
+const openAIImagesOutputSizesContextKey = "openai_images_output_sizes"
+
+func setOpenAIImagesOutputSizes(c *gin.Context, results []openAIResponsesImageResult) {
+	if c == nil {
+		return
+	}
+	sizes := make([]string, 0, len(results))
+	for _, result := range results {
+		if size := strings.TrimSpace(result.Size); size != "" {
+			sizes = append(sizes, size)
+		}
+	}
+	if len(sizes) > 0 {
+		c.Set(openAIImagesOutputSizesContextKey, sizes)
+	}
+}
+
+func getOpenAIImagesOutputSizes(c *gin.Context) []string {
+	if c == nil {
+		return nil
+	}
+	raw, ok := c.Get(openAIImagesOutputSizesContextKey)
+	if !ok {
+		return nil
+	}
+	sizes, _ := raw.([]string)
+	return append([]string(nil), sizes...)
+}
+
 // openAIImagesOAuthDispatchHookKey carries an optional callback invoked right
 // before the upstream image request is handed to the transport. The OAuth
 // fan-out uses it to release the next attempt's dispatch gate at the precise
@@ -1157,6 +1186,7 @@ func (s *OpenAIGatewayService) collectOpenAIImagesOAuthNonStreamingResponse(
 	responseFormat string,
 	fallbackModel string,
 	upstreamURL string,
+	writeClientError bool,
 ) (*openAIImagesOAuthResponse, error) {
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
@@ -1177,7 +1207,9 @@ func (s *OpenAIGatewayService) collectOpenAIImagesOAuthNonStreamingResponse(
 				if strings.TrimSpace(upstreamErr.UpstreamRequestID) == "" {
 					upstreamErr.UpstreamRequestID = strings.TrimSpace(resp.Header.Get("x-request-id"))
 				}
-				writeOpenAIImagesUpstreamErrorResponse(c, upstreamErr)
+				if writeClientError {
+					writeOpenAIImagesUpstreamErrorResponse(c, upstreamErr)
+				}
 				return nil, upstreamErr
 			}
 			msg := "Request blocked by upstream content policy"
@@ -1191,7 +1223,9 @@ func (s *OpenAIGatewayService) collectOpenAIImagesOAuthNonStreamingResponse(
 				Message:           sanitizeUpstreamErrorMessage(msg),
 				UpstreamRequestID: strings.TrimSpace(resp.Header.Get("x-request-id")),
 			}
-			writeOpenAIImagesUpstreamErrorResponse(c, upstreamErr)
+			if writeClientError {
+				writeOpenAIImagesUpstreamErrorResponse(c, upstreamErr)
+			}
 			return nil, upstreamErr
 		}
 		return nil, s.newOpenAIImagesOAuthUpstreamFailover(c, account, parsed, resp, upstreamURL, fallbackModel, err.Error(), "response_error", "response_error", body, resp.Header.Get("Content-Type"))
@@ -1224,7 +1258,9 @@ func (s *OpenAIGatewayService) collectOpenAIImagesOAuthNonStreamingResponse(
 				Message:    sanitizeUpstreamErrorMessage(refusal),
 			}
 			setOpsUpstreamError(c, http.StatusBadRequest, refusalErr.clientMessage(), summarizeOpenAIImagesNoOutputBody(body))
-			writeOpenAIImagesUpstreamErrorResponse(c, refusalErr)
+			if writeClientError {
+				writeOpenAIImagesUpstreamErrorResponse(c, refusalErr)
+			}
 			return nil, refusalErr
 		}
 		// (B) 真空响应：记录上游诊断摘要到 ops（last_event/status/model/body 片段）便于
@@ -1262,7 +1298,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthNonStreamingResponse(
 	fallbackModel string,
 	upstreamURL string,
 ) (OpenAIUsage, int, error) {
-	collected, err := s.collectOpenAIImagesOAuthNonStreamingResponse(ctx, resp, c, account, parsed, responseFormat, fallbackModel, upstreamURL)
+	collected, err := s.collectOpenAIImagesOAuthNonStreamingResponse(ctx, resp, c, account, parsed, responseFormat, fallbackModel, upstreamURL, true)
 	if err != nil {
 		return OpenAIUsage{}, 0, err
 	}
@@ -1272,6 +1308,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthNonStreamingResponse(
 	}
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	c.Data(resp.StatusCode, "application/json; charset=utf-8", responseBody)
+	setOpenAIImagesOutputSizes(c, collected.Results)
 	return collected.Usage, len(collected.Results), nil
 }
 
@@ -1440,6 +1477,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 				_ = tryWriteEvent("error", buildOpenAIImagesStreamErrorBody(processErr.Error()))
 				return
 			}
+			setOpenAIImagesOutputSizes(c, finalResults)
 			eventName := streamPrefix + ".completed"
 			for _, img := range finalResults {
 				key := openAIResponsesImageResultKey("", img)
@@ -1549,6 +1587,7 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 		return usage, imageCount, firstTokenMs, nil
 	}
 	if len(pendingResults) > 0 {
+		setOpenAIImagesOutputSizes(c, pendingResults)
 		eventName := streamPrefix + ".completed"
 		for _, img := range pendingResults {
 			mergeOpenAIResponsesImageMeta(&img, streamMeta)
@@ -1592,6 +1631,7 @@ func (s *OpenAIGatewayService) doOpenAIImagesOAuthRequest(
 	requestModel string,
 	mainModel string,
 	imageRoute string,
+	writeClientError bool,
 ) (*http.Response, string, error) {
 	token, _, err := s.GetAccessToken(ctx, account)
 	if err != nil {
@@ -1677,8 +1717,42 @@ func (s *OpenAIGatewayService) doOpenAIImagesOAuthRequest(
 				RetryableOnSameAccount: account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 			}
 		}
-		_, err := s.handleErrorResponse(ctx, resp, c, account, responsesBody, requestModel)
-		return nil, upstreamURL, err
+		if writeClientError {
+			_, err := s.handleErrorResponse(ctx, resp, c, account, responsesBody, requestModel)
+			return nil, upstreamURL, err
+		}
+		upstreamErr := extractOpenAIImagesUpstreamError(respBody)
+		if upstreamErr == nil && gjson.ValidBytes(respBody) {
+			upstreamErr = openAIImagesUpstreamErrorFromGJSON(gjson.GetBytes(respBody, "error"), resp.Header.Get("x-request-id"))
+		}
+		if upstreamErr == nil {
+			upstreamErr = &OpenAIImagesUpstreamError{
+				StatusCode: resp.StatusCode,
+				ErrorType:  openAIImagesErrorTypeForStatus(resp.StatusCode),
+				Message:    upstreamMsg,
+			}
+		}
+		upstreamErr.StatusCode = resp.StatusCode
+		if strings.TrimSpace(upstreamErr.ErrorType) == "" {
+			upstreamErr.ErrorType = openAIImagesErrorTypeForStatus(resp.StatusCode)
+		}
+		if strings.TrimSpace(upstreamErr.Message) == "" {
+			upstreamErr.Message = firstNonEmptyString(upstreamMsg, http.StatusText(resp.StatusCode))
+		}
+		if strings.TrimSpace(upstreamErr.UpstreamRequestID) == "" {
+			upstreamErr.UpstreamRequestID = strings.TrimSpace(resp.Header.Get("x-request-id"))
+		}
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: resp.StatusCode,
+			UpstreamRequestID:  upstreamErr.UpstreamRequestID,
+			UpstreamURL:        safeUpstreamURL(upstreamURL),
+			Kind:               "http_error",
+			Message:            upstreamErr.clientMessage(),
+		})
+		return nil, upstreamURL, upstreamErr
 	}
 	return resp, upstreamURL, nil
 }
@@ -1693,7 +1767,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuthSingle(
 	imageRoute string,
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
-	resp, upstreamURL, err := s.doOpenAIImagesOAuthRequest(ctx, c, account, parsed, requestModel, mainModel, imageRoute)
+	resp, upstreamURL, err := s.doOpenAIImagesOAuthRequest(ctx, c, account, parsed, requestModel, mainModel, imageRoute, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1752,16 +1826,17 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuthSingle(
 		imageCount = openAIImagesResponsesEffectiveN(parsed)
 	}
 	return &OpenAIForwardResult{
-		RequestID:       resp.Header.Get("x-request-id"),
-		Usage:           usage,
-		Model:           requestModel,
-		UpstreamModel:   requestModel,
-		Stream:          parsed.Stream,
-		ResponseHeaders: resp.Header.Clone(),
-		Duration:        time.Since(startTime),
-		FirstTokenMs:    firstTokenMs,
-		ImageCount:      imageCount,
-		ImageSize:       parsed.SizeTier,
+		RequestID:        resp.Header.Get("x-request-id"),
+		Usage:            usage,
+		Model:            requestModel,
+		UpstreamModel:    requestModel,
+		Stream:           parsed.Stream,
+		ResponseHeaders:  resp.Header.Clone(),
+		Duration:         time.Since(startTime),
+		FirstTokenMs:     firstTokenMs,
+		ImageCount:       imageCount,
+		ImageSize:        parsed.SizeTier,
+		ImageOutputSizes: getOpenAIImagesOutputSizes(c),
 	}, nil
 }
 
@@ -1808,7 +1883,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuthFanOut(
 					close(dispatchGates[i+1])
 				}
 			})
-			resp, upstreamURL, err := s.doOpenAIImagesOAuthRequest(dispatchCtx, attemptCtx, account, &attempt, requestModel, mainModel, imageRoute)
+			resp, upstreamURL, err := s.doOpenAIImagesOAuthRequest(dispatchCtx, attemptCtx, account, &attempt, requestModel, mainModel, imageRoute, false)
 			if !released {
 				released = true
 				close(dispatchGates[i+1])
@@ -1817,7 +1892,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuthFanOut(
 				attempts[i] = openAIImagesOAuthFanOutAttempt{Err: err, Context: attemptCtx}
 				return
 			}
-			collected, err := s.collectOpenAIImagesOAuthNonStreamingResponse(ctx, resp, attemptCtx, account, &attempt, attempt.ResponseFormat, requestModel, upstreamURL)
+			collected, err := s.collectOpenAIImagesOAuthNonStreamingResponse(ctx, resp, attemptCtx, account, &attempt, attempt.ResponseFormat, requestModel, upstreamURL, false)
 			_ = resp.Body.Close()
 			attempts[i] = openAIImagesOAuthFanOutAttempt{
 				Response: collected,
@@ -1864,6 +1939,10 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuthFanOut(
 	}
 	if len(aggregatedResults) == 0 {
 		if partialErr != nil {
+			var upstreamErr *OpenAIImagesUpstreamError
+			if errors.As(partialErr, &upstreamErr) {
+				writeOpenAIImagesUpstreamErrorResponse(c, upstreamErr)
+			}
 			return nil, partialErr
 		}
 		return nil, fmt.Errorf("upstream did not return image output")
@@ -1905,6 +1984,15 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuthFanOut(
 		Duration:        time.Since(startTime),
 		ImageCount:      len(aggregatedResults),
 		ImageSize:       parsed.SizeTier,
+		ImageOutputSizes: func() []string {
+			sizes := make([]string, 0, len(aggregatedResults))
+			for _, result := range aggregatedResults {
+				if size := strings.TrimSpace(result.Size); size != "" {
+					sizes = append(sizes, size)
+				}
+			}
+			return sizes
+		}(),
 	}, nil
 }
 

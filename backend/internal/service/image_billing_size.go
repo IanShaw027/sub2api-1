@@ -226,3 +226,28 @@ func SortedImageBillingBreakdownKeys(breakdown map[string]int) []string {
 	})
 	return keys
 }
+
+// ResolveImageBillingCounts returns an exact per-tier allocation for billing.
+// Incomplete output metadata falls back only for the missing images. Invalid
+// over-counted metadata fails closed to the legacy single-tier allocation.
+func ResolveImageBillingCounts(imageCount int, fallbackSize string, breakdown map[string]int) map[string]int {
+	if imageCount <= 0 {
+		return nil
+	}
+	fallbackTier := NormalizeImageBillingTierOrDefault(fallbackSize)
+	counts := normalizeImageSizeBreakdown(breakdown)
+	total := 0
+	for _, count := range counts {
+		total += count
+	}
+	if total > imageCount {
+		return map[string]int{fallbackTier: imageCount}
+	}
+	if counts == nil {
+		counts = make(map[string]int, 1)
+	}
+	if total < imageCount {
+		counts[fallbackTier] += imageCount - total
+	}
+	return counts
+}

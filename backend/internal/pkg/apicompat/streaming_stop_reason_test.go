@@ -74,6 +74,14 @@ func TestAnthropicStreamingEndTurn_MapsToCompleted(t *testing.T) {
 	assert.Nil(t, completed.Response.IncompleteDetails)
 }
 
+func TestAnthropicStopReasonToChatPreservesSafetyTermination(t *testing.T) {
+	for _, reason := range []string{"refusal", "content_filter"} {
+		t.Run(reason, func(t *testing.T) {
+			assert.Equal(t, "content_filter", anthropicStopReasonToCC(reason))
+		})
+	}
+}
+
 func TestResponsesToChatCompletions_ContentFilter(t *testing.T) {
 	resp := &ResponsesResponse{
 		ID:     "resp_cf",

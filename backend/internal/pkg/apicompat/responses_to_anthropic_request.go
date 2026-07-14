@@ -39,7 +39,10 @@ func ResponsesToAnthropicRequest(req *ResponsesRequest) (*AnthropicRequest, erro
 
 	// Convert tools
 	if len(req.Tools) > 0 {
-		out.Tools = convertResponsesToAnthropicTools(req.Tools)
+		out.Tools, err = convertResponsesToAnthropicTools(req.Tools)
+		if err != nil {
+			return nil, fmt.Errorf("convert tools: %w", err)
+		}
 	}
 
 	// Convert tool_choice (reverse of convertAnthropicToolChoiceToResponses)
@@ -647,44 +650,87 @@ func parseContentBlocks(raw json.RawMessage) []AnthropicContentBlock {
 
 // convertResponsesToAnthropicTools maps Responses API tools to Anthropic format.
 // Reverse of convertAnthropicToolsToResponses.
-func convertResponsesToAnthropicTools(tools []ResponsesTool) []AnthropicTool {
+func convertResponsesToAnthropicTools(tools []ResponsesTool) ([]AnthropicTool, error) {
 	var out []AnthropicTool
-	for _, t := range tools {
-		switch t.Type {
-		case "web_search", "google_search", "web_search_20250305":
-			out = append(out, AnthropicTool{
-				Type: "web_search_20250305",
-				Name: "web_search",
-			})
-		case "web_fetch", "web_fetch_20250910":
-			out = append(out, AnthropicTool{
-				Type: "web_fetch_20250910",
-				Name: "web_fetch",
-			})
-		case "function":
-			out = append(out, AnthropicTool{
-				Name:        t.Name,
-				Description: t.Description,
-				InputSchema: normalizeAnthropicInputSchema(t.Parameters),
-				Strict:      t.Strict,
-			})
-		case "custom":
-			out = append(out, AnthropicTool{
-				Name:        t.Name,
-				Description: t.Description,
-				InputSchema: normalizeAnthropicInputSchema(t.Parameters),
-			})
-		default:
-			// Pass through unknown tool types
-			out = append(out, AnthropicTool{
-				Type:        t.Type,
-				Name:        t.Name,
-				Description: t.Description,
-				InputSchema: normalizeAnthropicInputSchema(t.Parameters),
-			})
+	owners := make(map[string]string, len(tools))
+	var appendTools func([]ResponsesTool, string) error
+	appendTools = func(items []ResponsesTool, namespace string) error {
+		for _, t := range items {
+			if strings.EqualFold(strings.TrimSpace(t.Type), "namespace") {
+				nextNamespace := joinNamespace(namespace, t.Name)
+				children := append(append([]ResponsesTool(nil), t.Tools...), t.Children...)
+				if err := appendTools(children, nextNamespace); err != nil {
+					return err
+				}
+				continue
+			}
+
+			originalName := strings.TrimSpace(t.Name)
+			mappedName := originalName
+			if namespace != "" {
+				mappedName = flattenNamespaceToolName(namespace, originalName)
+			}
+			owner := joinNamespace(namespace, originalName)
+			trackName := mappedName != "" || namespace != ""
+			if trackName {
+				if previous, exists := owners[mappedName]; exists {
+					if previous == owner {
+						continue
+					}
+					return fmt.Errorf("tools %q and %q both map to %q", previous, owner, mappedName)
+				}
+				owners[mappedName] = owner
+			}
+
+			switch t.Type {
+			case "web_search", "google_search", "web_search_20250305":
+				if namespace != "" {
+					return fmt.Errorf("server tool %q cannot be nested in namespace %q", originalName, namespace)
+				}
+				out = append(out, AnthropicTool{
+					Type: "web_search_20250305",
+					Name: "web_search",
+				})
+			case "web_fetch", "web_fetch_20250910":
+				if namespace != "" {
+					return fmt.Errorf("server tool %q cannot be nested in namespace %q", originalName, namespace)
+				}
+				out = append(out, AnthropicTool{
+					Type: "web_fetch_20250910",
+					Name: "web_fetch",
+				})
+			case "function":
+				out = append(out, AnthropicTool{
+					Name:        mappedName,
+					Description: t.Description,
+					InputSchema: normalizeAnthropicInputSchema(t.Parameters),
+					Strict:      t.Strict,
+				})
+			case "custom":
+				out = append(out, AnthropicTool{
+					Name:        mappedName,
+					Description: t.Description,
+					InputSchema: normalizeAnthropicInputSchema(t.Parameters),
+				})
+			default:
+				if namespace != "" {
+					return fmt.Errorf("unsupported namespace child tool type %q for %q", t.Type, owner)
+				}
+				// Pass through unknown tool types
+				out = append(out, AnthropicTool{
+					Type:        t.Type,
+					Name:        mappedName,
+					Description: t.Description,
+					InputSchema: normalizeAnthropicInputSchema(t.Parameters),
+				})
+			}
 		}
+		return nil
 	}
-	return out
+	if err := appendTools(tools, ""); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // normalizeAnthropicInputSchema ensures input_schema is a valid object schema.

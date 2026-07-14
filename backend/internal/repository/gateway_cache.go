@@ -119,6 +119,78 @@ end
 return 0
 `)
 
+// claimSessionWindowScript atomically returns the previous value and installs
+// the new owner with a bounded lease. GET followed by SET is not sufficient:
+// two contenders can otherwise overwrite each other in the opposite order.
+var claimSessionWindowScript = redis.NewScript(`
+local previous = redis.call('GET', KEYS[1])
+redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+return previous
+`)
+
+// compareAndRefreshSessionWindowScript refreshes the lease only while the
+// caller still owns it. A stale turn must never extend a replacement owner's
+// lease.
+var compareAndRefreshSessionWindowScript = redis.NewScript(`
+local current = redis.call('GET', KEYS[1])
+if current == false or current ~= ARGV[1] then
+  return 0
+end
+redis.call('PEXPIRE', KEYS[1], ARGV[2])
+return 1
+`)
+
+// ClaimOpenAIResponsesSessionWindow atomically replaces the current WS
+// preemption owner, returns the previous owner, and starts a fresh lease.
+func (c *gatewayCache) ClaimOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, owner []byte, ttl time.Duration) ([]byte, error) {
+	if c == nil || c.rdb == nil {
+		return nil, fmt.Errorf("gateway cache is unavailable")
+	}
+	if len(owner) == 0 {
+		return nil, fmt.Errorf("session window claim owner is required")
+	}
+	ttlMillis := ttl.Milliseconds()
+	if ttlMillis <= 0 {
+		return nil, fmt.Errorf("session window claim ttl must be positive")
+	}
+	key := buildOpenAIResponsesSessionWindowKey(groupID, sessionHash)
+	result, err := claimSessionWindowScript.Run(ctx, c.rdb, []string{key}, owner, ttlMillis).Result()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	switch value := result.(type) {
+	case nil:
+		return nil, nil
+	case string:
+		return []byte(value), nil
+	case []byte:
+		return append([]byte(nil), value...), nil
+	default:
+		return nil, fmt.Errorf("unexpected session window claim result %T", result)
+	}
+}
+
+// CompareAndRefreshOpenAIResponsesSessionWindow extends a WS preemption lease
+// only when expected is still the current owner.
+func (c *gatewayCache) CompareAndRefreshOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, expected []byte, ttl time.Duration) (bool, error) {
+	if c == nil || c.rdb == nil {
+		return false, fmt.Errorf("gateway cache is unavailable")
+	}
+	ttlMillis := ttl.Milliseconds()
+	if ttlMillis <= 0 {
+		return false, fmt.Errorf("session window refresh ttl must be positive")
+	}
+	key := buildOpenAIResponsesSessionWindowKey(groupID, sessionHash)
+	n, err := compareAndRefreshSessionWindowScript.Run(ctx, c.rdb, []string{key}, expected, ttlMillis).Int()
+	if err != nil {
+		return false, err
+	}
+	return n == 1, nil
+}
+
 // CompareAndDeleteOpenAIResponsesSessionWindow atomically releases a WS
 // preemption owner token without racing a newer claim.
 func (c *gatewayCache) CompareAndDeleteOpenAIResponsesSessionWindow(ctx context.Context, groupID int64, sessionHash string, expected []byte) (bool, error) {

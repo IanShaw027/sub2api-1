@@ -70,6 +70,9 @@ func (s *OpenAIGatewayService) buildGrokHTTPActiveDeltaPayload(
 	if !s.grokHTTPActiveDeltaEnabled() {
 		return result, nil
 	}
+	if !hasExplicitGrokSessionIdentity(c) {
+		return result, nil
+	}
 	if isOpenAIResponsesCompactPath(c) {
 		return result, nil
 	}
@@ -226,6 +229,9 @@ func (s *OpenAIGatewayService) bindGrokHTTPResponseSessionContext(
 		return
 	}
 	if !s.grokHTTPActiveDeltaEnabled() {
+		return
+	}
+	if !hasExplicitGrokSessionIdentity(c) {
 		return
 	}
 	responseID = strings.TrimSpace(responseID)

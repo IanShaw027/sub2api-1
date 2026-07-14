@@ -352,6 +352,24 @@ func TestOpenAICacheCreationTokensFromUsageNestedZeroWins(t *testing.T) {
 	require.Zero(t, openAICacheCreationTokensFromUsage(usage))
 }
 
+func TestOpenAIWSRelayApplyUsageDeltaReplacesImageOutputTokens(t *testing.T) {
+	t.Parallel()
+
+	state := &relayState{usage: Usage{
+		InputTokens:       10,
+		OutputTokens:      5,
+		ImageOutputTokens: 7,
+	}}
+	openAIWSRelayApplyUsageDelta(state,
+		Usage{InputTokens: 10, OutputTokens: 5, ImageOutputTokens: 7},
+		Usage{InputTokens: 12, OutputTokens: 6, ImageOutputTokens: 9},
+	)
+
+	require.Equal(t, 12, state.usage.InputTokens)
+	require.Equal(t, 6, state.usage.OutputTokens)
+	require.Equal(t, 9, state.usage.ImageOutputTokens)
+}
+
 func TestEmitTurnCompleteCoverage(t *testing.T) {
 	t.Parallel()
 

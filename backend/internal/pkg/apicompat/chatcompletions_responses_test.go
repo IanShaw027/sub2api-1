@@ -1411,7 +1411,7 @@ func TestFinalizeChatCompletionsResponsesStream_ContentFilterMapsToIncomplete(t 
 
 	finalEvents := FinalizeChatCompletionsResponsesStream(state)
 	require.Len(t, finalEvents, 1)
-	require.Equal(t, "response.completed", finalEvents[0].Type)
+	require.Equal(t, "response.incomplete", finalEvents[0].Type)
 	require.NotNil(t, finalEvents[0].Response)
 	assert.Equal(t, "incomplete", finalEvents[0].Response.Status)
 	require.NotNil(t, finalEvents[0].Response.IncompleteDetails)

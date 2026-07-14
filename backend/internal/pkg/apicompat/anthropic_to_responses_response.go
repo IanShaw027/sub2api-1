@@ -246,7 +246,7 @@ func anthropicWebSearchSources(raw json.RawMessage) []ResponsesWebSearchSource {
 // anthropicStopReasonToResponsesStatus maps Anthropic stop_reason to Responses status.
 func anthropicStopReasonToResponsesStatus(stopReason string, blocks []AnthropicContentBlock) string {
 	switch stopReason {
-	case "max_tokens", "model_context_window_exceeded":
+	case "max_tokens", "model_context_window_exceeded", "pause_turn":
 		return "incomplete"
 	case "end_turn", "tool_use", "stop_sequence":
 		return "completed"
@@ -261,6 +261,8 @@ func anthropicStopReasonToResponsesIncompleteReason(stopReason string) string {
 	switch stopReason {
 	case "model_context_window_exceeded":
 		return "model_context_window_exceeded"
+	case "pause_turn":
+		return "pause_turn"
 	default:
 		return "max_output_tokens"
 	}
@@ -354,8 +356,12 @@ func FinalizeAnthropicResponsesStream(state *AnthropicEventToResponsesState) []R
 	// Close any open item
 	events = append(events, closeCurrentResponsesItem(state)...)
 
-	// Emit response.completed
-	events = append(events, makeResponsesCompletedEvent(state, "completed", nil))
+	status := anthropicStopReasonToResponsesStatus(state.StopReason, nil)
+	var incompleteDetails *ResponsesIncompleteDetails
+	if status == "incomplete" {
+		incompleteDetails = &ResponsesIncompleteDetails{Reason: anthropicStopReasonToResponsesIncompleteReason(state.StopReason)}
+	}
+	events = append(events, makeResponsesCompletedEvent(state, status, incompleteDetails))
 	state.CompletedSent = true
 	return events
 }

@@ -851,7 +851,13 @@ func (r *handlerCyberSettingRepoStub) Set(ctx context.Context, key, value string
 }
 
 func (r *handlerCyberSettingRepoStub) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
-	panic("handlerCyberSettingRepoStub.GetMultiple not implemented")
+	out := make(map[string]string, len(keys))
+	for _, key := range keys {
+		if value, ok := r.vals[key]; ok {
+			out[key] = value
+		}
+	}
+	return out, nil
 }
 
 func (r *handlerCyberSettingRepoStub) SetMultiple(ctx context.Context, settings map[string]string) error {

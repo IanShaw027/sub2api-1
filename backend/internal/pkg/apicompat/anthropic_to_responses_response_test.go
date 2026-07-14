@@ -31,7 +31,9 @@ func TestAnthropicToResponsesResponse_MapsWebSearchServerToolBlocksToWebSearchCa
 
 	out := AnthropicToResponsesResponse(resp)
 	require.Len(t, out.Output, 1)
-	assert.Equal(t, "completed", out.Status)
+	assert.Equal(t, "incomplete", out.Status)
+	require.NotNil(t, out.IncompleteDetails)
+	assert.Equal(t, "pause_turn", out.IncompleteDetails.Reason)
 	assert.Equal(t, "web_search_call", out.Output[0].Type)
 	require.NotNil(t, out.Output[0].Action)
 	assert.Equal(t, "search", out.Output[0].Action.Type)
@@ -95,7 +97,9 @@ func TestAnthropicToResponsesResponse_MapsWebFetchServerToolBlocksToFunctionCall
 
 	out := AnthropicToResponsesResponse(resp)
 	require.Len(t, out.Output, 1)
-	assert.Equal(t, "completed", out.Status)
+	assert.Equal(t, "incomplete", out.Status)
+	require.NotNil(t, out.IncompleteDetails)
+	assert.Equal(t, "pause_turn", out.IncompleteDetails.Reason)
 	assert.Equal(t, "function_call", out.Output[0].Type)
 	assert.Equal(t, "webfetch", out.Output[0].Name)
 	assert.JSONEq(t, `{
@@ -479,9 +483,11 @@ func TestAnthropicEventToResponsesEvents_WebSearchServerToolStreamCompletesWithP
 		Type: "message_stop",
 	}, state)
 	require.Len(t, events, 1)
-	assert.Equal(t, "response.completed", events[0].Type)
+	assert.Equal(t, "response.incomplete", events[0].Type)
 	require.NotNil(t, events[0].Response)
-	assert.Equal(t, "completed", events[0].Response.Status)
+	assert.Equal(t, "incomplete", events[0].Response.Status)
+	require.NotNil(t, events[0].Response.IncompleteDetails)
+	assert.Equal(t, "pause_turn", events[0].Response.IncompleteDetails.Reason)
 	require.Len(t, events[0].Response.Output, 1)
 	assert.Equal(t, "web_search_call", events[0].Response.Output[0].Type)
 	assert.Equal(t, "golang", events[0].Response.Output[0].Action.Query)
@@ -575,8 +581,11 @@ func TestAnthropicEventToResponsesEvents_WebFetchServerToolStreamPreservesResult
 		Type: "message_stop",
 	}, state)
 	require.Len(t, events, 1)
-	assert.Equal(t, "response.completed", events[0].Type)
+	assert.Equal(t, "response.incomplete", events[0].Type)
 	require.NotNil(t, events[0].Response)
+	assert.Equal(t, "incomplete", events[0].Response.Status)
+	require.NotNil(t, events[0].Response.IncompleteDetails)
+	assert.Equal(t, "pause_turn", events[0].Response.IncompleteDetails.Reason)
 	require.Len(t, events[0].Response.Output, 1)
 	assert.Equal(t, "function_call", events[0].Response.Output[0].Type)
 	assert.Equal(t, "srvtoolu_fetch_1", events[0].Response.Output[0].CallID)
@@ -622,4 +631,27 @@ func TestAnthropicEventToResponsesEvents_MessageStopUsesStopReasonForIncompleteS
 	assert.Equal(t, "incomplete", events[0].Response.Status)
 	require.NotNil(t, events[0].Response.IncompleteDetails)
 	assert.Equal(t, "model_context_window_exceeded", events[0].Response.IncompleteDetails.Reason)
+}
+
+func TestFinalizeAnthropicResponsesStreamUsesParsedStopReason(t *testing.T) {
+	state := NewAnthropicEventToResponsesState()
+	AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_start",
+		Message: &AnthropicResponse{
+			ID:    "msg_truncated",
+			Model: "claude-opus-4-6",
+		},
+	}, state)
+	AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type:  "message_delta",
+		Delta: &AnthropicDelta{StopReason: "max_tokens"},
+	}, state)
+
+	events := FinalizeAnthropicResponsesStream(state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "response.incomplete", events[0].Type)
+	require.NotNil(t, events[0].Response)
+	assert.Equal(t, "incomplete", events[0].Response.Status)
+	require.NotNil(t, events[0].Response.IncompleteDetails)
+	assert.Equal(t, "max_output_tokens", events[0].Response.IncompleteDetails.Reason)
 }

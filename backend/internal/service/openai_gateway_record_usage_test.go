@@ -2250,6 +2250,31 @@ func TestOpenAIGatewayServiceRecordUsage_OutputImageSizeWinsBeforeBillingAndPers
 	require.InDelta(t, 0.44, usageRepo.lastLog.ActualCost, 1e-12)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_MixedOutputSizesBillPerImageTier(t *testing.T) {
+	imagePrice1K, imagePrice4K := 0.11, 0.44
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:        "resp_image_mixed_sizes",
+			Model:            "gpt-image-2",
+			ImageCount:       2,
+			ImageOutputSizes: []string{"1024x1024", "3840x2160"},
+			Duration:         time.Second,
+		},
+		APIKey: &APIKey{ID: 11203, GroupID: i64p(1203), Group: &Group{
+			ID: 1203, RateMultiplier: 1, ImagePrice1K: &imagePrice1K, ImagePrice4K: &imagePrice4K,
+		}},
+		User: &User{ID: 21203}, Account: &Account{ID: 31203},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, map[string]int{ImageBillingSize1K: 1, ImageBillingSize4K: 1}, usageRepo.lastLog.ImageSizeBreakdown)
+	require.InDelta(t, 0.55, usageRepo.lastLog.TotalCost, 1e-12)
+	require.InDelta(t, 0.55, usageRepo.lastLog.ActualCost, 1e-12)
+}
+
 func TestOpenAIGatewayServiceRecordUsage_ImageUsesPerImageBillingEvenWithUsageTokens(t *testing.T) {
 	imagePrice := 0.02
 	groupID := int64(12)

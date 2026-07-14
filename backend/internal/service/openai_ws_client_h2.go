@@ -24,7 +24,13 @@ import (
 	"golang.org/x/net/http2/hpack"
 )
 
-const openAIWSH2DefaultMaxFrameSize = 16384
+const (
+	openAIWSH2DefaultMaxFrameSize = 16384
+	openAIWSH2InitialWindowSize   = 65535
+	openAIWSH2MaxWindowSize       = 1<<31 - 1
+	openAIWSH2ControlWriteTimeout = 5 * time.Second
+	openAIWSH2CloseTimeout        = time.Second
+)
 
 func openAIWSTLSProfileWantsWebSocketH2(profile *tlsfingerprint.Profile) bool {
 	if profile == nil {
@@ -159,6 +165,9 @@ func dialOpenAIWSH2WithConn(ctx context.Context, wsURL string, headers http.Head
 	statusCode := 0
 	respHeaders := make(http.Header)
 	peerMaxFrameSize := openAIWSH2DefaultMaxFrameSize
+	peerInitialWindowSize := int64(openAIWSH2InitialWindowSize)
+	connSendWindow := int64(openAIWSH2InitialWindowSize)
+	streamSendWindow := int64(openAIWSH2InitialWindowSize)
 	for {
 		if err := setConnReadDeadlineFromContext(ctx, conn); err != nil {
 			return nil, 0, nil, err
@@ -172,10 +181,18 @@ func dialOpenAIWSH2WithConn(ctx context.Context, wsURL string, headers http.Head
 		case *http2.SettingsFrame:
 			if !f.IsAck() {
 				err := f.ForeachSetting(func(s http2.Setting) error {
-					if s.ID == http2.SettingMaxFrameSize {
+					switch s.ID {
+					case http2.SettingMaxFrameSize:
 						if v := int(s.Val); v >= openAIWSH2DefaultMaxFrameSize && v <= 16777215 {
 							peerMaxFrameSize = v
 						}
+					case http2.SettingInitialWindowSize:
+						next := int64(s.Val)
+						streamSendWindow += next - peerInitialWindowSize
+						if streamSendWindow > openAIWSH2MaxWindowSize {
+							return fmt.Errorf("websocket h2 stream send window overflow during handshake")
+						}
+						peerInitialWindowSize = next
 					}
 					return nil
 				})
@@ -198,13 +215,31 @@ func dialOpenAIWSH2WithConn(ctx context.Context, wsURL string, headers http.Head
 			if statusCode < 200 || statusCode >= 300 {
 				return nil, statusCode, respHeaders, fmt.Errorf("websocket h2 handshake failed with status %d", statusCode)
 			}
-			return &openAIWSH2ClientConn{
-				conn:             conn,
-				readFr:           readFr,
-				writeFr:          writeFr,
-				streamID:         1,
-				peerMaxFrameSize: peerMaxFrameSize,
-			}, 0, respHeaders, nil
+			clientConn := &openAIWSH2ClientConn{
+				conn:                  conn,
+				readFr:                readFr,
+				writeFr:               writeFr,
+				streamID:              1,
+				peerMaxFrameSize:      peerMaxFrameSize,
+				peerInitialWindowSize: peerInitialWindowSize,
+				connSendWindow:        connSendWindow,
+				streamSendWindow:      streamSendWindow,
+				stateChanged:          make(chan struct{}),
+				pendingPings:          make(map[string]chan error),
+				messageWriteToken:     make(chan struct{}, 1),
+			}
+			clientConn.messageWriteToken <- struct{}{}
+			go clientConn.readLoop()
+			return clientConn, 0, respHeaders, nil
+		case *http2.WindowUpdateFrame:
+			if f.StreamID == 0 {
+				connSendWindow += int64(f.Increment)
+			} else if f.StreamID == 1 {
+				streamSendWindow += int64(f.Increment)
+			}
+			if connSendWindow > openAIWSH2MaxWindowSize || streamSendWindow > openAIWSH2MaxWindowSize {
+				return nil, 0, nil, fmt.Errorf("websocket h2 send window overflow during handshake")
+			}
 		case *http2.GoAwayFrame:
 			return nil, 0, nil, fmt.Errorf("websocket h2 received GOAWAY during handshake")
 		}
@@ -218,14 +253,22 @@ type openAIWSH2ClientConn struct {
 	streamID uint32
 
 	writeMu sync.Mutex
-	readMu  sync.Mutex
 	closeMu sync.Mutex
-	closed  bool
+	stateMu sync.Mutex
 
-	peerMaxFrameSize int
-	readBuffer       []byte
-	fragmentOpcode   byte
-	messageBuffer    []byte
+	closed                bool
+	readErr               error
+	peerMaxFrameSize      int
+	peerInitialWindowSize int64
+	connSendWindow        int64
+	streamSendWindow      int64
+	stateChanged          chan struct{}
+	pendingPings          map[string]chan error
+	messages              [][]byte
+	messageWriteToken     chan struct{}
+	readBuffer            []byte
+	fragmentOpcode        byte
+	messageBuffer         []byte
 }
 
 func (c *openAIWSH2ClientConn) WriteJSON(ctx context.Context, value any) error {
@@ -246,95 +289,26 @@ func (c *openAIWSH2ClientConn) ReadMessage(ctx context.Context) ([]byte, error) 
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	c.readMu.Lock()
-	defer c.readMu.Unlock()
-
 	for {
-		opcode, fin, payload, remaining, ok, err := decodeOpenAIWSWebSocketServerFrame(c.readBuffer)
-		if err != nil {
+		c.stateMu.Lock()
+		if len(c.messages) > 0 {
+			message := c.messages[0]
+			c.messages[0] = nil
+			c.messages = c.messages[1:]
+			c.stateMu.Unlock()
+			return message, nil
+		}
+		if c.readErr != nil {
+			err := c.readErr
+			c.stateMu.Unlock()
 			return nil, err
 		}
-		if ok {
-			c.readBuffer = remaining
-			switch opcode {
-			case 0x1, 0x2:
-				if fin {
-					return payload, nil
-				}
-				c.fragmentOpcode = opcode
-				c.messageBuffer = append(c.messageBuffer[:0], payload...)
-			case 0x0:
-				if c.fragmentOpcode == 0 {
-					continue
-				}
-				c.messageBuffer = append(c.messageBuffer, payload...)
-				if fin {
-					out := append([]byte(nil), c.messageBuffer...)
-					c.fragmentOpcode = 0
-					c.messageBuffer = nil
-					return out, nil
-				}
-			case 0x8:
-				_ = c.Close()
-				return nil, errOpenAIWSConnClosed
-			case 0x9:
-				if err := c.writeWebSocketFrame(ctx, 0xA, payload); err != nil {
-					return nil, err
-				}
-			case 0xA:
-			}
-			continue
-		}
-
-		if err := setConnReadDeadlineFromContext(ctx, c.conn); err != nil {
-			return nil, err
-		}
-		frame, err := c.readFr.ReadFrame()
-		clearConnReadDeadline(c.conn)
-		if err != nil {
-			return nil, err
-		}
-		switch f := frame.(type) {
-		case *http2.DataFrame:
-			if f.StreamID != c.streamID {
-				continue
-			}
-			if err := c.writeWindowUpdates(uint32(len(f.Data()))); err != nil {
-				return nil, err
-			}
-			c.readBuffer = append(c.readBuffer, f.Data()...)
-		case *http2.SettingsFrame:
-			if !f.IsAck() {
-				err := f.ForeachSetting(func(s http2.Setting) error {
-					if s.ID == http2.SettingMaxFrameSize {
-						if v := int(s.Val); v >= openAIWSH2DefaultMaxFrameSize && v <= 16777215 {
-							c.peerMaxFrameSize = v
-						}
-					}
-					return nil
-				})
-				if err != nil {
-					return nil, err
-				}
-				c.writeMu.Lock()
-				err = c.writeFr.WriteSettingsAck()
-				c.writeMu.Unlock()
-				if err != nil {
-					return nil, err
-				}
-			}
-		case *http2.PingFrame:
-			if !f.Flags.Has(http2.FlagPingAck) {
-				c.writeMu.Lock()
-				err := c.writeFr.WritePing(true, f.Data)
-				c.writeMu.Unlock()
-				if err != nil {
-					return nil, err
-				}
-			}
-		case *http2.RSTStreamFrame, *http2.GoAwayFrame:
-			_ = c.Close()
-			return nil, errOpenAIWSConnClosed
+		changed := c.stateChanged
+		c.stateMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-changed:
 		}
 	}
 }
@@ -343,23 +317,60 @@ func (c *openAIWSH2ClientConn) Ping(ctx context.Context) error {
 	if c == nil || c.conn == nil {
 		return errOpenAIWSConnClosed
 	}
-	return c.writeWebSocketFrame(ctx, 0x9, nil)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var payload [8]byte
+	if _, err := rand.Read(payload[:]); err != nil {
+		return err
+	}
+	key := string(payload[:])
+	result := make(chan error, 1)
+	c.stateMu.Lock()
+	if c.readErr != nil {
+		err := c.readErr
+		c.stateMu.Unlock()
+		return err
+	}
+	c.pendingPings[key] = result
+	c.stateMu.Unlock()
+	if err := c.writeWebSocketFrame(ctx, 0x9, payload[:]); err != nil {
+		c.removePendingPing(key, result)
+		return err
+	}
+	select {
+	case err := <-result:
+		return err
+	case <-ctx.Done():
+		c.removePendingPing(key, result)
+		return ctx.Err()
+	}
 }
+
+func (*openAIWSH2ClientConn) SupportsIdlePingWithoutReader() bool { return true }
 
 func (c *openAIWSH2ClientConn) Close() error {
 	if c == nil || c.conn == nil {
 		return nil
 	}
 	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
+	c.stateMu.Lock()
 	if c.closed {
-		c.closeMu.Unlock()
+		c.stateMu.Unlock()
 		return nil
 	}
-	c.closed = true
-	c.closeMu.Unlock()
+	c.stateMu.Unlock()
 
-	_ = c.writeWebSocketFrame(context.Background(), 0x8, openAIWSWebSocketClosePayload(coderws.StatusNormalClosure, ""))
-	return c.conn.Close()
+	closeCtx, cancel := context.WithTimeout(context.Background(), openAIWSH2CloseTimeout)
+	_ = c.writeWebSocketFrame(closeCtx, 0x8, openAIWSWebSocketClosePayload(coderws.StatusNormalClosure, ""))
+	cancel()
+	c.stateMu.Lock()
+	c.closed = true
+	c.failLocked(errOpenAIWSConnClosed)
+	c.stateMu.Unlock()
+	_ = c.conn.Close()
+	return nil
 }
 
 func (c *openAIWSH2ClientConn) writeWebSocketFrame(ctx context.Context, opcode byte, payload []byte) error {
@@ -370,26 +381,34 @@ func (c *openAIWSH2ClientConn) writeWebSocketFrame(ctx context.Context, opcode b
 	if err != nil {
 		return err
 	}
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
-	if err := setConnWriteDeadlineFromContext(ctx, c.conn); err != nil {
-		return err
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	defer clearConnWriteDeadline(c.conn)
-	maxFrameSize := c.peerMaxFrameSize
-	if maxFrameSize < openAIWSH2DefaultMaxFrameSize || maxFrameSize > 16777215 {
-		maxFrameSize = openAIWSH2DefaultMaxFrameSize
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.messageWriteToken:
 	}
+	defer func() { c.messageWriteToken <- struct{}{} }()
 	for len(frame) > 0 {
-		chunkSize := maxFrameSize
-		if len(frame) < chunkSize {
-			chunkSize = len(frame)
+		chunkSize, err := c.reserveSendWindow(ctx, len(frame))
+		if err != nil {
+			return err
 		}
 		chunk := frame[:chunkSize]
 		frame = frame[chunkSize:]
-		if err := c.writeFr.WriteData(c.streamID, false, chunk); err != nil {
+		c.writeMu.Lock()
+		if err := setConnWriteDeadlineFromContext(ctx, c.conn); err != nil {
+			c.writeMu.Unlock()
 			return err
 		}
+		if err := c.writeFr.WriteData(c.streamID, false, chunk); err != nil {
+			clearConnWriteDeadline(c.conn)
+			c.writeMu.Unlock()
+			return err
+		}
+		clearConnWriteDeadline(c.conn)
+		c.writeMu.Unlock()
 	}
 	return nil
 }
@@ -398,12 +417,246 @@ func (c *openAIWSH2ClientConn) writeWindowUpdates(size uint32) error {
 	if c == nil || size == 0 {
 		return nil
 	}
+	return c.writeControlFrames(func() error {
+		if err := c.writeFr.WriteWindowUpdate(0, size); err != nil {
+			return err
+		}
+		return c.writeFr.WriteWindowUpdate(c.streamID, size)
+	})
+}
+
+func (c *openAIWSH2ClientConn) readLoop() {
+	defer func() { _ = c.conn.Close() }()
+	for {
+		frame, err := c.readFr.ReadFrame()
+		if err != nil {
+			c.fail(err)
+			return
+		}
+		if err := c.handleH2Frame(frame); err != nil {
+			c.fail(err)
+			return
+		}
+	}
+}
+
+func (c *openAIWSH2ClientConn) handleH2Frame(frame http2.Frame) error {
+	switch f := frame.(type) {
+	case *http2.DataFrame:
+		if f.StreamID != c.streamID {
+			return nil
+		}
+		if err := c.writeWindowUpdates(uint32(len(f.Data()))); err != nil {
+			return err
+		}
+		if err := c.handleWebSocketBytes(f.Data()); err != nil {
+			return err
+		}
+		if f.StreamEnded() {
+			return errOpenAIWSConnClosed
+		}
+	case *http2.SettingsFrame:
+		if f.IsAck() {
+			return nil
+		}
+		c.stateMu.Lock()
+		err := f.ForeachSetting(func(s http2.Setting) error {
+			switch s.ID {
+			case http2.SettingMaxFrameSize:
+				if v := int(s.Val); v >= openAIWSH2DefaultMaxFrameSize && v <= 16777215 {
+					c.peerMaxFrameSize = v
+				}
+			case http2.SettingInitialWindowSize:
+				next := int64(s.Val)
+				c.streamSendWindow += next - c.peerInitialWindowSize
+				if c.streamSendWindow > openAIWSH2MaxWindowSize {
+					return fmt.Errorf("websocket h2 stream send window overflow")
+				}
+				c.peerInitialWindowSize = next
+			}
+			return nil
+		})
+		c.notifyStateLocked()
+		c.stateMu.Unlock()
+		if err != nil {
+			return err
+		}
+		return c.writeControlFrames(c.writeFr.WriteSettingsAck)
+	case *http2.WindowUpdateFrame:
+		c.stateMu.Lock()
+		var window *int64
+		if f.StreamID == 0 {
+			window = &c.connSendWindow
+		} else if f.StreamID == c.streamID {
+			window = &c.streamSendWindow
+		}
+		if window != nil {
+			if *window+int64(f.Increment) > openAIWSH2MaxWindowSize {
+				c.stateMu.Unlock()
+				return fmt.Errorf("websocket h2 send window overflow")
+			}
+			*window += int64(f.Increment)
+			c.notifyStateLocked()
+		}
+		c.stateMu.Unlock()
+	case *http2.PingFrame:
+		if !f.Flags.Has(http2.FlagPingAck) {
+			return c.writeControlFrames(func() error { return c.writeFr.WritePing(true, f.Data) })
+		}
+	case *http2.RSTStreamFrame:
+		if f.StreamID == c.streamID {
+			return fmt.Errorf("websocket h2 stream reset: %v", f.ErrCode)
+		}
+	case *http2.GoAwayFrame:
+		return fmt.Errorf("websocket h2 received GOAWAY: %v", f.ErrCode)
+	}
+	return nil
+}
+
+func (c *openAIWSH2ClientConn) handleWebSocketBytes(data []byte) error {
+	c.readBuffer = append(c.readBuffer, data...)
+	for {
+		opcode, fin, payload, remaining, ok, err := decodeOpenAIWSWebSocketServerFrame(c.readBuffer)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return nil
+		}
+		c.readBuffer = remaining
+		switch opcode {
+		case 0x1, 0x2:
+			if fin {
+				c.enqueueMessage(payload)
+				continue
+			}
+			c.fragmentOpcode = opcode
+			c.messageBuffer = append(c.messageBuffer[:0], payload...)
+		case 0x0:
+			if c.fragmentOpcode == 0 {
+				continue
+			}
+			c.messageBuffer = append(c.messageBuffer, payload...)
+			if fin {
+				c.enqueueMessage(append([]byte(nil), c.messageBuffer...))
+				c.fragmentOpcode = 0
+				c.messageBuffer = nil
+			}
+		case 0x8:
+			return errOpenAIWSConnClosed
+		case 0x9:
+			pongCtx, cancel := context.WithTimeout(context.Background(), openAIWSH2ControlWriteTimeout)
+			err := c.writeWebSocketFrame(pongCtx, 0xA, payload)
+			cancel()
+			if err != nil {
+				return err
+			}
+		case 0xA:
+			c.resolvePendingPing(string(payload), nil)
+		}
+	}
+}
+
+func (c *openAIWSH2ClientConn) enqueueMessage(message []byte) {
+	c.stateMu.Lock()
+	c.messages = append(c.messages, append([]byte(nil), message...))
+	c.notifyStateLocked()
+	c.stateMu.Unlock()
+}
+
+func (c *openAIWSH2ClientConn) reserveSendWindow(ctx context.Context, remaining int) (int, error) {
+	for {
+		c.stateMu.Lock()
+		if c.readErr != nil {
+			err := c.readErr
+			c.stateMu.Unlock()
+			return 0, err
+		}
+		available := c.connSendWindow
+		if c.streamSendWindow < available {
+			available = c.streamSendWindow
+		}
+		maxFrameSize := c.peerMaxFrameSize
+		if maxFrameSize < openAIWSH2DefaultMaxFrameSize || maxFrameSize > 16777215 {
+			maxFrameSize = openAIWSH2DefaultMaxFrameSize
+		}
+		if available > 0 {
+			chunkSize := int(available)
+			if chunkSize > maxFrameSize {
+				chunkSize = maxFrameSize
+			}
+			if chunkSize > remaining {
+				chunkSize = remaining
+			}
+			c.connSendWindow -= int64(chunkSize)
+			c.streamSendWindow -= int64(chunkSize)
+			c.stateMu.Unlock()
+			return chunkSize, nil
+		}
+		changed := c.stateChanged
+		c.stateMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case <-changed:
+		}
+	}
+}
+
+func (c *openAIWSH2ClientConn) writeControlFrames(write func() error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), openAIWSH2ControlWriteTimeout)
+	defer cancel()
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	if err := c.writeFr.WriteWindowUpdate(0, size); err != nil {
+	if err := setConnWriteDeadlineFromContext(ctx, c.conn); err != nil {
 		return err
 	}
-	return c.writeFr.WriteWindowUpdate(c.streamID, size)
+	defer clearConnWriteDeadline(c.conn)
+	return write()
+}
+
+func (c *openAIWSH2ClientConn) notifyStateLocked() {
+	close(c.stateChanged)
+	c.stateChanged = make(chan struct{})
+}
+
+func (c *openAIWSH2ClientConn) fail(err error) {
+	if err == nil {
+		err = errOpenAIWSConnClosed
+	}
+	c.stateMu.Lock()
+	c.failLocked(err)
+	c.stateMu.Unlock()
+}
+
+func (c *openAIWSH2ClientConn) failLocked(err error) {
+	if c.readErr != nil {
+		return
+	}
+	c.readErr = err
+	for key, result := range c.pendingPings {
+		result <- err
+		delete(c.pendingPings, key)
+	}
+	c.notifyStateLocked()
+}
+
+func (c *openAIWSH2ClientConn) resolvePendingPing(key string, err error) {
+	c.stateMu.Lock()
+	result := c.pendingPings[key]
+	if result != nil {
+		delete(c.pendingPings, key)
+		result <- err
+	}
+	c.stateMu.Unlock()
+}
+
+func (c *openAIWSH2ClientConn) removePendingPing(key string, result chan error) {
+	c.stateMu.Lock()
+	if c.pendingPings[key] == result {
+		delete(c.pendingPings, key)
+	}
+	c.stateMu.Unlock()
 }
 
 func buildOpenAIWSH2RequestHeaders(parsedURL *url.URL, headers http.Header, pseudoHeaderOrder []string) ([]hpack.HeaderField, error) {

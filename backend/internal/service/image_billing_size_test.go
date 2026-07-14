@@ -110,3 +110,10 @@ func TestResolveImageBillingSize(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveImageBillingCounts(t *testing.T) {
+	require.Equal(t, map[string]int{"1K": 1, "4K": 1}, ResolveImageBillingCounts(2, "4K", map[string]int{"1K": 1, "4K": 1}))
+	require.Equal(t, map[string]int{"1K": 1, "2K": 1}, ResolveImageBillingCounts(2, "2K", map[string]int{"1K": 1}))
+	require.Equal(t, map[string]int{"4K": 2}, ResolveImageBillingCounts(2, "4K", map[string]int{"1K": 2, "4K": 1}), "over-counted metadata must not bill more images than produced")
+	require.Nil(t, ResolveImageBillingCounts(0, "2K", map[string]int{"2K": 1}))
+}

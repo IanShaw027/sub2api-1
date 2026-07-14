@@ -2071,6 +2071,9 @@ func shouldOpenAIWSSessionPrewritePing(account *Account, connProfile openAIWSCon
 	if lease == nil || !lease.Reused() {
 		return false
 	}
+	if !lease.SupportsIdlePingWithoutReader() {
+		return false
+	}
 	if httpIngressWSOneShot || connProfile != openAIWSConnProfileSessionBound || threshold <= 0 {
 		return false
 	}

@@ -648,7 +648,13 @@ func TestOpenAIImagesRequestModerationBody_MultipartEditIncludesUploadsInMemory(
 		"data:image/png;base64,ZmFrZS1tYXNrLWJ5dGVz",
 	}, input.Images)
 
-	log := (&ContentModerationService{}).buildLog(ContentModerationCheckInput{}, defaultContentModerationConfig(), ContentModerationActionAllow, false, "", 0, nil, input.ExcerptText(), nil, nil, "")
+	moderationService := &ContentModerationService{}
+	cfg := defaultContentModerationConfig()
+	defaultLog := moderationService.buildLog(ContentModerationCheckInput{}, cfg, ContentModerationActionAllow, false, "", 0, nil, input.ExcerptText(), nil, nil, "")
+	require.Empty(t, defaultLog.InputExcerpt)
+
+	cfg.StoreInputExcerpt = true
+	log := moderationService.buildLog(ContentModerationCheckInput{}, cfg, ContentModerationActionAllow, false, "", 0, nil, input.ExcerptText(), nil, nil, "")
 	require.Equal(t, "replace background", log.InputExcerpt)
 	require.NotContains(t, log.InputExcerpt, "ZmFrZS")
 }
@@ -1588,6 +1594,7 @@ func TestOpenAIGatewayServiceForwardImages_OAuthUsesResponsesAPI(t *testing.T) {
 	require.Equal(t, "gpt-image-2", result.Model)
 	require.Equal(t, "gpt-image-2", result.UpstreamModel)
 	require.Equal(t, 1, result.ImageCount)
+	require.Equal(t, []string{"1024x1024"}, result.ImageOutputSizes)
 	require.Equal(t, 11, result.Usage.InputTokens)
 	require.Equal(t, 22, result.Usage.OutputTokens)
 	require.Equal(t, 7, result.Usage.ImageOutputTokens)
@@ -2239,6 +2246,64 @@ func TestOpenAIGatewayServiceForwardImages_OAuthFanOutReturnsPartialSuccessOnLat
 	require.NotEmpty(t, events)
 	require.Equal(t, "failover", events[len(events)-1].Kind)
 	require.Equal(t, "req_img_partial_2", events[len(events)-1].UpstreamRequestID)
+}
+
+func TestOpenAIGatewayServiceForwardImages_OAuthFanOutDefersClientErrorWritesToParent(t *testing.T) {
+	setGinTestMode()
+	body := []byte(`{"model":"gpt-image-2","prompt":"draw a cat","n":2}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	upstream := &openAIImagesHTTPUpstreamRecorder{
+		responses: []*http.Response{
+			{
+				StatusCode: http.StatusOK,
+				Header: http.Header{
+					"Content-Type": []string{"text/event-stream"},
+					"X-Request-Id": []string{"req_img_worker_ok"},
+				},
+				Body: io.NopCloser(strings.NewReader(
+					"data: {\"type\":\"response.completed\",\"response\":{\"created_at\":1710000300,\"usage\":{\"input_tokens\":3,\"output_tokens\":5,\"output_tokens_details\":{\"image_tokens\":2}},\"output\":[{\"type\":\"image_generation_call\",\"result\":\"cGFydGlhbA==\",\"output_format\":\"png\"}]}}\n\n" +
+						"data: [DONE]\n\n",
+				)),
+			},
+			{
+				StatusCode: http.StatusBadRequest,
+				Header: http.Header{
+					"Content-Type": []string{"application/json"},
+					"X-Request-Id": []string{"req_img_worker_rejected"},
+				},
+				Body: io.NopCloser(strings.NewReader(`{"error":{"message":"prompt rejected","type":"image_generation_user_error","code":"content_policy_violation"}}`)),
+			},
+		},
+	}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+
+	account := &Account{
+		ID:       10,
+		Name:     "openai-oauth",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "token-123",
+		},
+	}
+
+	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, result.ImageCount)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "cGFydGlhbA==", gjson.Get(rec.Body.String(), "data.0.b64_json").String())
+	require.Equal(t, int64(1), gjson.Get(rec.Body.String(), "partial_count").Int())
+	require.Equal(t, int64(2), gjson.Get(rec.Body.String(), "requested_count").Int())
+	require.Contains(t, gjson.Get(rec.Body.String(), "partial_error").String(), "content_policy_violation")
 }
 
 func TestOpenAIGatewayServiceForwardImages_OAuthNonStreamServerErrorReturnsFailoverBeforeFlush(t *testing.T) {

@@ -222,15 +222,44 @@ func (s *OpenAIGatewayService) isOpenAIOAuth429Storm() bool {
 	return s.openaiOAuth429WindowCount.Load() >= openAIOAuth429StormThreshold
 }
 
+func (s *OpenAIGatewayService) recordGrokOAuth429() {
+	if s == nil {
+		return
+	}
+	now := time.Now()
+	windowStart := s.grokOAuth429WindowStartUnixNano.Load()
+	if windowStart == 0 || now.Sub(time.Unix(0, windowStart)) >= openAIOAuth429StormWindow {
+		if s.grokOAuth429WindowStartUnixNano.CompareAndSwap(windowStart, now.UnixNano()) {
+			s.grokOAuth429WindowCount.Store(1)
+			return
+		}
+	}
+	s.grokOAuth429WindowCount.Add(1)
+}
+
+func (s *OpenAIGatewayService) isGrokOAuth429Storm() bool {
+	if s == nil {
+		return false
+	}
+	windowStart := s.grokOAuth429WindowStartUnixNano.Load()
+	if windowStart == 0 || time.Since(time.Unix(0, windowStart)) >= openAIOAuth429StormWindow {
+		return false
+	}
+	return s.grokOAuth429WindowCount.Load() >= openAIOAuth429StormThreshold
+}
+
 func (s *OpenAIGatewayService) ShouldStopOpenAIOAuth429Failover(account *Account, statusCode int, failedSwitches int) bool {
 	if statusCode != http.StatusTooManyRequests || failedSwitches < openAIOAuth429StormMaxAccountSwitches {
 		return false
 	}
-	if isGrokOAuthAccount(account) {
-		return true
-	}
-	if !isOpenAIOAuthAccount(account) {
+	if !isOpenAIOAuthAccount(account) && !isGrokOAuthAccount(account) {
 		return false
+	}
+	// OpenAI records at state reconciliation time. Grok records here so every
+	// handler failover path is covered, using a separate platform storm window.
+	if isGrokOAuthAccount(account) {
+		s.recordGrokOAuth429()
+		return s.isGrokOAuth429Storm()
 	}
 	return s.isOpenAIOAuth429Storm()
 }

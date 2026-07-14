@@ -298,6 +298,10 @@ type ResponsesRequest struct {
 	ServiceTier        string              `json:"service_tier,omitempty"`
 	PromptCacheKey     string              `json:"prompt_cache_key,omitempty"`
 	PreviousResponseID string              `json:"previous_response_id,omitempty"`
+	// DroppedCompatibilityFields records source-protocol fields that have no
+	// standard Responses wire representation. It is an internal observability
+	// sidecar and must never be serialized upstream.
+	DroppedCompatibilityFields []string `json:"-"`
 }
 
 // ResponsesReasoning configures reasoning effort in the Responses API.
@@ -335,15 +339,23 @@ type ResponsesInputItem struct {
 
 // ResponsesContentPart is a typed content part in a Responses message.
 type ResponsesContentPart struct {
-	Type        string                `json:"type"` // "input_text" | "output_text" | "input_image"
-	Text        string                `json:"text,omitempty"`
-	Refusal     string                `json:"refusal,omitempty"`
-	ImageURL    string                `json:"image_url,omitempty"` // data URI for input_image
-	FileData    string                `json:"file_data,omitempty"`
-	FileURL     string                `json:"file_url,omitempty"`
-	FileID      string                `json:"file_id,omitempty"`
-	Filename    string                `json:"filename,omitempty"`
-	Annotations []ResponsesAnnotation `json:"annotations,omitempty"`
+	Type                  string                          `json:"type"` // "input_text" | "output_text" | "input_image"
+	Text                  string                          `json:"text,omitempty"`
+	Refusal               string                          `json:"refusal,omitempty"`
+	ImageURL              string                          `json:"image_url,omitempty"` // data URI for input_image
+	FileData              string                          `json:"file_data,omitempty"`
+	FileURL               string                          `json:"file_url,omitempty"`
+	FileID                string                          `json:"file_id,omitempty"`
+	Filename              string                          `json:"filename,omitempty"`
+	Annotations           []ResponsesAnnotation           `json:"annotations,omitempty"`
+	PromptCacheBreakpoint *ResponsesPromptCacheBreakpoint `json:"prompt_cache_breakpoint,omitempty"`
+}
+
+// ResponsesPromptCacheBreakpoint marks the end of an explicit reusable prompt
+// prefix. It is supported by GPT-5.6 and later model families on input content
+// blocks; older models reject the field.
+type ResponsesPromptCacheBreakpoint struct {
+	Mode string `json:"mode"`
 }
 
 // ResponsesAnnotation describes an annotation attached to an output_text part.

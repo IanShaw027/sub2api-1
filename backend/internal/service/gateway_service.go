@@ -10053,6 +10053,9 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 		postUsageBilling(ctx, p, deps)
 		return true, nil
 	}
+	if cmd.BalanceCost > 0 && deps.cfg != nil {
+		cmd.MinimumBalanceReserve = deps.cfg.Billing.MinimumBalanceReserve
+	}
 
 	billingCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
@@ -10675,7 +10678,23 @@ func (s *GatewayService) calculateImageCost(
 	billingModel string,
 	multiplier float64,
 ) *CostBreakdown {
-	sizeTier := NormalizeImageBillingTierOrDefault(result.ImageSize)
+	counts := ResolveImageBillingCounts(result.ImageCount, result.ImageSize, result.ImageSizeBreakdown)
+	parts := make([]*CostBreakdown, 0, len(counts))
+	for _, sizeTier := range SortedImageBillingBreakdownKeys(counts) {
+		parts = append(parts, s.calculateImageCostForTier(ctx, result, apiKey, billingModel, multiplier, sizeTier, counts[sizeTier]))
+	}
+	return mergeCostBreakdowns(string(BillingModeImage), parts...)
+}
+
+func (s *GatewayService) calculateImageCostForTier(
+	ctx context.Context,
+	result *ForwardResult,
+	apiKey *APIKey,
+	billingModel string,
+	multiplier float64,
+	sizeTier string,
+	imageCount int,
+) *CostBreakdown {
 	if !apiKeyHasConfiguredImagePrice(apiKey, sizeTier) {
 		if resolved := s.resolveChannelPricing(ctx, billingModel, apiKey); resolved != nil {
 			tokens := UsageTokens{
@@ -10689,7 +10708,7 @@ func (s *GatewayService) calculateImageCost(
 				Model:          billingModel,
 				GroupID:        &gid,
 				Tokens:         tokens,
-				RequestCount:   result.ImageCount,
+				RequestCount:   imageCount,
 				SizeTier:       sizeTier,
 				RateMultiplier: multiplier,
 				Resolver:       s.resolver,
@@ -10711,7 +10730,7 @@ func (s *GatewayService) calculateImageCost(
 			Price4K: apiKey.Group.ImagePrice4K,
 		}
 	}
-	return s.billingService.CalculateImageCost(billingModel, sizeTier, result.ImageCount, groupConfig, multiplier)
+	return s.billingService.CalculateImageCost(billingModel, sizeTier, imageCount, groupConfig, multiplier)
 }
 
 // calculateTokenCost 计算 Token 计费：根据 opts 决定走普通/长上下文/渠道统一计费。

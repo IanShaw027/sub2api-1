@@ -940,6 +940,21 @@ func TestOpenAIWSSessionPrewritePingIdleThresholdUsesSessionTTL(t *testing.T) {
 	require.Equal(t, time.Duration(0), openAIWSSessionPrewritePingIdleThreshold(0))
 }
 
+func TestShouldOpenAIWSSessionPrewritePingRequiresIdlePingCapability(t *testing.T) {
+	conn := newOpenAIWSConn("coder-no-idle-reader", 1, &coderOpenAIWSClientConn{}, nil)
+	conn.lastUsedNano.Store(time.Now().Add(-2 * time.Minute).UnixNano())
+	lease := &openAIWSConnLease{conn: conn, reused: true}
+	account := &Account{Type: AccountTypeOAuth}
+
+	require.False(t, shouldOpenAIWSSessionPrewritePing(
+		account,
+		openAIWSConnProfileSessionBound,
+		lease,
+		false,
+		time.Minute,
+	))
+}
+
 func TestOpenAIWSPrewritePingLogMessageIncludesReuseRisk(t *testing.T) {
 	msg := openAIWSPrewritePingLogMessage(openAIWSPrewritePingLog{
 		RequestID:                "req-ping",

@@ -3,15 +3,28 @@ package apicompat
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
-// AnthropicToResponses converts an Anthropic Messages request directly into
-// a Responses API request. This preserves fields that would be lost in a
-// Chat Completions intermediary round-trip (e.g. thinking, cache_control,
-// structured system prompts).
+// AnthropicToResponses converts using the request model as the target model.
 func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
-	input, err := convertAnthropicToResponsesInput(req.System, req.Messages)
+	if req == nil {
+		return nil, fmt.Errorf("anthropic request is required")
+	}
+	return AnthropicToResponsesForModel(req, req.Model)
+}
+
+// AnthropicToResponsesForModel converts an Anthropic Messages request directly
+// into a Responses API request for targetModel. GPT-5.6 and later model
+// families support explicit prompt cache breakpoints on input content blocks;
+// unsupported cache_control locations remain observable as dropped fields.
+func AnthropicToResponsesForModel(req *AnthropicRequest, targetModel string) (*ResponsesRequest, error) {
+	if req == nil {
+		return nil, fmt.Errorf("anthropic request is required")
+	}
+	supportsBreakpoints := supportsResponsesPromptCacheBreakpoints(targetModel)
+	input, cacheControlDropped, err := convertAnthropicToResponsesInput(req.System, req.Messages, supportsBreakpoints)
 	if err != nil {
 		return nil, err
 	}
@@ -22,13 +35,16 @@ func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
 	}
 
 	out := &ResponsesRequest{
-		Model:   req.Model,
+		Model:   targetModel,
 		Input:   inputJSON,
 		Stream:  req.Stream,
 		Include: responsesIncludeForAnthropicTools(req.Tools),
 	}
+	if anthropicRequestHasCacheControl(req) && (!supportsBreakpoints || cacheControlDropped || anthropicToolsHaveCacheControl(req.Tools)) {
+		out.DroppedCompatibilityFields = []string{"cache_control"}
+	}
 
-	if !isReasoningModel(req.Model) {
+	if !isReasoningModel(targetModel) {
 		out.Temperature = req.Temperature
 		out.TopP = req.TopP
 	}
@@ -72,6 +88,73 @@ func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
 	}
 
 	return out, nil
+}
+
+func supportsResponsesPromptCacheBreakpoints(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	model = strings.TrimPrefix(model, "openai/")
+	if !strings.HasPrefix(model, "gpt-") {
+		return false
+	}
+	version := strings.SplitN(strings.TrimPrefix(model, "gpt-"), "-", 2)[0]
+	parts := strings.Split(version, ".")
+	major, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return false
+	}
+	if major > 5 {
+		return true
+	}
+	if major < 5 || len(parts) < 2 {
+		return false
+	}
+	minor, err := strconv.Atoi(parts[1])
+	return err == nil && minor >= 6
+}
+
+func anthropicToolsHaveCacheControl(tools []AnthropicTool) bool {
+	for _, tool := range tools {
+		if tool.CacheControl != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func anthropicRequestHasCacheControl(req *AnthropicRequest) bool {
+	if req == nil {
+		return false
+	}
+	if anthropicRawBlocksHaveCacheControl(req.System) {
+		return true
+	}
+	for _, message := range req.Messages {
+		if anthropicRawBlocksHaveCacheControl(message.Content) {
+			return true
+		}
+	}
+	for _, tool := range req.Tools {
+		if tool.CacheControl != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func anthropicRawBlocksHaveCacheControl(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var blocks []AnthropicContentBlock
+	if err := json.Unmarshal(raw, &blocks); err != nil {
+		return false
+	}
+	for _, block := range blocks {
+		if block.CacheControl != nil || anthropicRawBlocksHaveCacheControl(block.Content) {
+			return true
+		}
+	}
+	return false
 }
 
 // convertAnthropicToolChoiceToResponses maps Anthropic tool_choice to Responses format.
@@ -131,32 +214,87 @@ func convertAnthropicToolChoiceToResponses(raw json.RawMessage) (json.RawMessage
 
 // convertAnthropicToResponsesInput builds the Responses API input items array
 // from the Anthropic system field and message list.
-func convertAnthropicToResponsesInput(system json.RawMessage, msgs []AnthropicMessage) ([]ResponsesInputItem, error) {
+func convertAnthropicToResponsesInput(system json.RawMessage, msgs []AnthropicMessage, supportsBreakpoints bool) ([]ResponsesInputItem, bool, error) {
 	var out []ResponsesInputItem
+	cacheControlDropped := false
 
 	// System prompt → system role input item.
 	if len(system) > 0 {
-		sysText, err := parseAnthropicSystemPrompt(system)
+		item, ok, dropped, err := anthropicSystemToResponsesItem(system, supportsBreakpoints)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		if sysText != "" {
-			content, _ := json.Marshal(sysText)
-			out = append(out, ResponsesInputItem{
-				Role:    "system",
-				Content: content,
-			})
+		cacheControlDropped = cacheControlDropped || dropped
+		if ok {
+			out = append(out, item)
 		}
 	}
 
 	for _, m := range msgs {
-		items, err := anthropicMsgToResponsesItems(m)
+		items, dropped, err := anthropicMsgToResponsesItems(m, supportsBreakpoints)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
+		cacheControlDropped = cacheControlDropped || dropped
 		out = append(out, items...)
 	}
-	return out, nil
+	return out, cacheControlDropped, nil
+}
+
+func anthropicSystemToResponsesItem(raw json.RawMessage, supportsBreakpoints bool) (ResponsesInputItem, bool, bool, error) {
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		if s == "" {
+			return ResponsesInputItem{}, false, false, nil
+		}
+		content, err := json.Marshal(s)
+		return ResponsesInputItem{Role: "system", Content: content}, true, false, err
+	}
+
+	var blocks []AnthropicContentBlock
+	if err := json.Unmarshal(raw, &blocks); err != nil {
+		return ResponsesInputItem{}, false, false, err
+	}
+	if !supportsBreakpoints || !anthropicRawBlocksHaveCacheControl(raw) {
+		text, err := parseAnthropicSystemPrompt(raw)
+		if err != nil || text == "" {
+			return ResponsesInputItem{}, false, anthropicRawBlocksHaveCacheControl(raw), err
+		}
+		content, err := json.Marshal(text)
+		return ResponsesInputItem{Role: "system", Content: content}, true, anthropicRawBlocksHaveCacheControl(raw), err
+	}
+
+	parts := make([]ResponsesContentPart, 0, len(blocks))
+	dropped := false
+	for _, block := range blocks {
+		if block.Type != "text" || block.Text == "" {
+			dropped = dropped || block.CacheControl != nil
+			continue
+		}
+		part := ResponsesContentPart{Type: "input_text", Text: block.Text}
+		if block.CacheControl != nil {
+			if canMapAnthropicCacheControlToResponses(block.CacheControl) {
+				part.PromptCacheBreakpoint = explicitResponsesPromptCacheBreakpoint()
+				dropped = dropped || strings.TrimSpace(block.CacheControl.TTL) != ""
+			} else {
+				dropped = true
+			}
+		}
+		parts = append(parts, part)
+	}
+	if len(parts) == 0 {
+		return ResponsesInputItem{}, false, dropped, nil
+	}
+	content, err := json.Marshal(parts)
+	return ResponsesInputItem{Type: "message", Role: "system", Content: content}, true, dropped, err
+}
+
+func explicitResponsesPromptCacheBreakpoint() *ResponsesPromptCacheBreakpoint {
+	return &ResponsesPromptCacheBreakpoint{Mode: "explicit"}
+}
+
+func canMapAnthropicCacheControlToResponses(cacheControl *AnthropicCacheControl) bool {
+	return cacheControl != nil && strings.EqualFold(strings.TrimSpace(cacheControl.Type), "ephemeral")
 }
 
 // parseAnthropicSystemPrompt handles the Anthropic system field which can be
@@ -181,39 +319,41 @@ func parseAnthropicSystemPrompt(raw json.RawMessage) (string, error) {
 
 // anthropicMsgToResponsesItems converts a single Anthropic message into one
 // or more Responses API input items.
-func anthropicMsgToResponsesItems(m AnthropicMessage) ([]ResponsesInputItem, error) {
+func anthropicMsgToResponsesItems(m AnthropicMessage, supportsBreakpoints bool) ([]ResponsesInputItem, bool, error) {
 	switch m.Role {
 	case "user":
-		return anthropicUserToResponses(m.Content)
+		return anthropicUserToResponses(m.Content, supportsBreakpoints)
 	case "assistant":
-		return anthropicAssistantToResponses(m.Content)
+		items, err := anthropicAssistantToResponses(m.Content)
+		return items, anthropicRawBlocksHaveCacheControl(m.Content), err
 	default:
-		return anthropicUserToResponses(m.Content)
+		return anthropicUserToResponses(m.Content, supportsBreakpoints)
 	}
 }
 
 // anthropicUserToResponses handles an Anthropic user message. Content can be a
 // plain string or an array of blocks. tool_result blocks are extracted into
 // function_call_output items. Image blocks are converted to input_image parts.
-func anthropicUserToResponses(raw json.RawMessage) ([]ResponsesInputItem, error) {
+func anthropicUserToResponses(raw json.RawMessage, supportsBreakpoints bool) ([]ResponsesInputItem, bool, error) {
 	// Try plain string.
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
 		parts := []ResponsesContentPart{{Type: "input_text", Text: s}}
 		partsJSON, err := json.Marshal(parts)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		return []ResponsesInputItem{{Type: "message", Role: "user", Content: partsJSON}}, nil
+		return []ResponsesInputItem{{Type: "message", Role: "user", Content: partsJSON}}, false, nil
 	}
 
 	var blocks []AnthropicContentBlock
 	if err := json.Unmarshal(raw, &blocks); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	var out []ResponsesInputItem
 	var toolResultImageParts []ResponsesContentPart
+	cacheControlDropped := false
 
 	// Extract tool_result blocks → function_call_output items.
 	// Images inside tool_results are extracted separately because the
@@ -222,6 +362,7 @@ func anthropicUserToResponses(raw json.RawMessage) ([]ResponsesInputItem, error)
 		if b.Type != "tool_result" {
 			continue
 		}
+		cacheControlDropped = cacheControlDropped || b.CacheControl != nil || anthropicRawBlocksHaveCacheControl(b.Content)
 		outputText, imageParts := convertToolResultOutput(b)
 		out = append(out, ResponsesInputItem{
 			Type:   "function_call_output",
@@ -238,16 +379,44 @@ func anthropicUserToResponses(raw json.RawMessage) ([]ResponsesInputItem, error)
 		switch b.Type {
 		case "text":
 			if b.Text != "" {
-				parts = append(parts, ResponsesContentPart{Type: "input_text", Text: b.Text})
+				part := ResponsesContentPart{Type: "input_text", Text: b.Text}
+				if b.CacheControl != nil {
+					if supportsBreakpoints && canMapAnthropicCacheControlToResponses(b.CacheControl) {
+						part.PromptCacheBreakpoint = explicitResponsesPromptCacheBreakpoint()
+						cacheControlDropped = cacheControlDropped || strings.TrimSpace(b.CacheControl.TTL) != ""
+					} else {
+						cacheControlDropped = true
+					}
+				}
+				parts = append(parts, part)
 			}
 		case "document":
 			if part := anthropicDocumentToResponsesPart(b); part != nil {
+				if b.CacheControl != nil {
+					if supportsBreakpoints && canMapAnthropicCacheControlToResponses(b.CacheControl) {
+						part.PromptCacheBreakpoint = explicitResponsesPromptCacheBreakpoint()
+						cacheControlDropped = cacheControlDropped || strings.TrimSpace(b.CacheControl.TTL) != ""
+					} else {
+						cacheControlDropped = true
+					}
+				}
 				parts = append(parts, *part)
 			}
 		case "image":
 			if uri := anthropicImageToDataURI(b.Source); uri != "" {
-				parts = append(parts, ResponsesContentPart{Type: "input_image", ImageURL: uri})
+				part := ResponsesContentPart{Type: "input_image", ImageURL: uri}
+				if b.CacheControl != nil {
+					if supportsBreakpoints && canMapAnthropicCacheControlToResponses(b.CacheControl) {
+						part.PromptCacheBreakpoint = explicitResponsesPromptCacheBreakpoint()
+						cacheControlDropped = cacheControlDropped || strings.TrimSpace(b.CacheControl.TTL) != ""
+					} else {
+						cacheControlDropped = true
+					}
+				}
+				parts = append(parts, part)
 			}
+		default:
+			cacheControlDropped = cacheControlDropped || b.CacheControl != nil
 		}
 	}
 	parts = append(parts, toolResultImageParts...)
@@ -255,12 +424,12 @@ func anthropicUserToResponses(raw json.RawMessage) ([]ResponsesInputItem, error)
 	if len(parts) > 0 {
 		content, err := json.Marshal(parts)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		out = append(out, ResponsesInputItem{Type: "message", Role: "user", Content: content})
 	}
 
-	return out, nil
+	return out, cacheControlDropped, nil
 }
 
 // GPT-5 family models are reasoning-only on the Responses API and reject

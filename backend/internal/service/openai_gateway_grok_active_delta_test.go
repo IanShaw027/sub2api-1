@@ -423,6 +423,53 @@ func TestGrokHTTPActiveDelta_NoIdentityDoesNotBind(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestGrokHTTPActiveDelta_ContentDerivedIdentityDoesNotBind(t *testing.T) {
+	setGinTestMode()
+	upstream := &httpUpstreamRecorder{
+		responses: []*http.Response{
+			grokActiveDeltaSSE("resp_content_identity_1"),
+			grokActiveDeltaSSE("resp_content_identity_2"),
+		},
+	}
+	svc := newGrokActiveDeltaTestService(upstream)
+	account := newGrokActiveDeltaTestAccount(920081)
+	groupID := int64(920082)
+	apiKeyID := int64(920083)
+	body := []byte(`{"model":"grok-4.5","stream":true,"store":false,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"same opening turn"}]}]}`)
+
+	newContext := func() *gin.Context {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+		c.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID, Group: &Group{ID: groupID, Platform: PlatformGrok}})
+		return c
+	}
+
+	firstCtx := newContext()
+	identity := resolveGrokCacheIdentity(firstCtx, body, "", "grok-4.5")
+	require.NotEmpty(t, identity, "content identity remains available for stateless prompt caching")
+	require.False(t, hasExplicitGrokSessionIdentity(firstCtx))
+	canonical, err := applyGrokResponsesCacheIdentity(body, body, identity, false)
+	require.NoError(t, err)
+	first, err := svc.doGrokResponsesUpstream(context.Background(), firstCtx, account, canonical, "grok-4.5", "grok-4.5", identity, true, time.Now())
+	require.NoError(t, err)
+	require.False(t, first.OpenAIWSDeltaActive)
+
+	sessionHash := resolveGrokActiveDeltaSessionHash(firstCtx, identity)
+	_, bound := svc.getOpenAIWSStateStore().GetSessionContext(groupID, apiKeyID, sessionHash)
+	require.False(t, bound, "content-derived identity must not create stateful session context")
+
+	secondCtx := newContext()
+	secondIdentity := resolveGrokCacheIdentity(secondCtx, body, "", "grok-4.5")
+	require.Equal(t, identity, secondIdentity)
+	second, err := svc.doGrokResponsesUpstream(context.Background(), secondCtx, account, canonical, "grok-4.5", "grok-4.5", secondIdentity, true, time.Now())
+	require.NoError(t, err)
+	require.False(t, second.OpenAIWSDeltaActive)
+	require.Len(t, upstream.bodies, 2)
+	require.False(t, gjson.GetBytes(upstream.bodies[0], "previous_response_id").Exists())
+	require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())
+}
+
 func TestGrokHTTPActiveDelta_AccountMismatchFallsBackToFull(t *testing.T) {
 	setGinTestMode()
 	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")

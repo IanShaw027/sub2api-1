@@ -359,8 +359,17 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
 		if err != nil {
-			if result != nil && result.ImageCount > 0 {
-				reqLog.Warn("openai.images.forward_partial_error_with_image_result",
+			if hasOpenAIImagesPartialResult(result) {
+				// Cyber usage is already recorded by recordCyberPolicyIfMarked above.
+				if service.GetOpsCyberPolicy(c) != nil {
+					reqLog.Warn("openai.images.forward_partial_error_cyber_billed",
+						zap.Int64("account_id", account.ID),
+						zap.Int("image_count", result.ImageCount),
+						zap.Error(err),
+					)
+					return
+				}
+				reqLog.Warn("openai.images.forward_partial_error_result",
 					zap.Int64("account_id", account.ID),
 					zap.Int("image_count", result.ImageCount),
 					zap.Error(err),
@@ -579,6 +588,13 @@ func (h *OpenAIGatewayHandler) openAIImagesJSONKeepaliveInterval() time.Duration
 		return 0
 	}
 	return time.Duration(h.cfg.Gateway.ImageNonstreamKeepaliveInterval) * time.Second
+}
+
+// A non-nil result means the forwarder observed billable upstream work, even
+// when a terminal error arrived before any image was emitted. This keeps
+// token-only partial results aligned with the Responses and Chat handlers.
+func hasOpenAIImagesPartialResult(result *service.OpenAIForwardResult) bool {
+	return result != nil
 }
 
 func isMultipartImagesContentType(contentType string) bool {

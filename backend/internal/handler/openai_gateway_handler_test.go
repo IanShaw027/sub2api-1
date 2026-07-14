@@ -2381,7 +2381,7 @@ func TestOpenAIResponsesWebSocket_ContentModerationBlocksFirstFrame(t *testing.T
 	}, time.Second, 10*time.Millisecond)
 	require.True(t, logs[0].Flagged)
 	require.Equal(t, service.ContentModerationActionBlock, logs[0].Action)
-	require.Equal(t, "bad prompt", logs[0].InputExcerpt)
+	require.Empty(t, logs[0].InputExcerpt)
 }
 
 func TestOpenAIResponsesWebSocket_RejectsCyberSessionBlockBeforeContentModeration(t *testing.T) {

@@ -148,15 +148,32 @@ func TestShouldStopOpenAIOAuth429Failover_OnlyDuringStorm(t *testing.T) {
 	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusTooManyRequests, 0))
 }
 
-func TestShouldStopOpenAIOAuth429Failover_StopsGrokAfterFirst429Switch(t *testing.T) {
+func TestShouldStopOpenAIOAuth429Failover_GrokUsesGeneralBudgetUntilStorm(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	account := &Account{ID: 44, Platform: PlatformGrok, Type: AccountTypeOAuth}
 	apiKeyAccount := &Account{ID: 45, Platform: PlatformGrok, Type: AccountTypeAPIKey}
 
-	require.True(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusTooManyRequests, 1))
+	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusTooManyRequests, 1))
 	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusTooManyRequests, 0))
 	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(apiKeyAccount, http.StatusTooManyRequests, 1))
 	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusInternalServerError, 1))
+
+	for i := 0; i < openAIOAuth429StormThreshold; i++ {
+		svc.recordGrokOAuth429()
+	}
+	require.True(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusTooManyRequests, 1))
+}
+
+func TestShouldStopOpenAIOAuth429Failover_StormsAreIsolatedByPlatform(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	openAIAccount := &Account{ID: 46, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	grokAccount := &Account{ID: 47, Platform: PlatformGrok, Type: AccountTypeOAuth}
+
+	for i := 0; i < openAIOAuth429StormThreshold; i++ {
+		svc.recordOpenAIOAuth429()
+	}
+	require.True(t, svc.ShouldStopOpenAIOAuth429Failover(openAIAccount, http.StatusTooManyRequests, 1))
+	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(grokAccount, http.StatusTooManyRequests, 1))
 }
 
 func TestMarkOpenAICloudflareChallenge_RuntimeBlocksAPIKeyAccount(t *testing.T) {

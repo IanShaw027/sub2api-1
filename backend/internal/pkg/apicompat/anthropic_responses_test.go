@@ -35,6 +35,129 @@ func TestAnthropicToResponses_BasicText(t *testing.T) {
 	assert.Equal(t, "user", items[0].Role)
 }
 
+func TestAnthropicToResponses_ReportsDroppedCacheControlWithoutSerializingSidecar(t *testing.T) {
+	req := &AnthropicRequest{
+		Model:     "gpt-5.2",
+		MaxTokens: 128,
+		System: json.RawMessage(`[
+			{"type":"text","text":"system","cache_control":{"type":"ephemeral","ttl":"1h"}}
+		]`),
+		Messages: []AnthropicMessage{{
+			Role: "user",
+			Content: json.RawMessage(`[
+				{"type":"tool_result","tool_use_id":"toolu_1","content":[
+					{"type":"text","text":"nested","cache_control":{"type":"ephemeral"}}
+				]}
+			]`),
+		}},
+		Tools: []AnthropicTool{{
+			Name:         "lookup",
+			InputSchema:  json.RawMessage(`{"type":"object"}`),
+			CacheControl: &AnthropicCacheControl{Type: "ephemeral"},
+		}},
+	}
+
+	resp, err := AnthropicToResponses(req)
+	require.NoError(t, err)
+	require.Equal(t, []string{"cache_control"}, resp.DroppedCompatibilityFields)
+
+	wire, err := json.Marshal(resp)
+	require.NoError(t, err)
+	require.NotContains(t, string(wire), "DroppedCompatibilityFields")
+	require.NotContains(t, string(wire), "cache_control")
+	require.NotContains(t, string(wire), "prompt_cache_breakpoint")
+}
+
+func TestAnthropicToResponsesForModel_MapsSupportedCacheControlBreakpoints(t *testing.T) {
+	req := &AnthropicRequest{
+		Model:     "claude-sonnet-4-6",
+		MaxTokens: 128,
+		System: json.RawMessage(`[
+			{"type":"text","text":"stable system","cache_control":{"type":"ephemeral"}},
+			{"type":"text","text":"dynamic system"}
+		]`),
+		Messages: []AnthropicMessage{{
+			Role: "user",
+			Content: json.RawMessage(`[
+				{"type":"text","text":"stable user","cache_control":{"type":"ephemeral"}},
+				{"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGVsbG8="},"cache_control":{"type":"ephemeral"}}
+			]`),
+		}},
+	}
+
+	resp, err := AnthropicToResponsesForModel(req, "gpt-5.6-sol")
+	require.NoError(t, err)
+	require.Equal(t, "gpt-5.6-sol", resp.Model)
+	require.Empty(t, resp.DroppedCompatibilityFields)
+
+	var items []ResponsesInputItem
+	require.NoError(t, json.Unmarshal(resp.Input, &items))
+	require.Len(t, items, 2)
+
+	var systemParts []ResponsesContentPart
+	require.NoError(t, json.Unmarshal(items[0].Content, &systemParts))
+	require.Len(t, systemParts, 2)
+	require.Equal(t, "explicit", systemParts[0].PromptCacheBreakpoint.Mode)
+	require.Nil(t, systemParts[1].PromptCacheBreakpoint)
+
+	var userParts []ResponsesContentPart
+	require.NoError(t, json.Unmarshal(items[1].Content, &userParts))
+	require.Len(t, userParts, 2)
+	require.Equal(t, "explicit", userParts[0].PromptCacheBreakpoint.Mode)
+	require.Equal(t, "explicit", userParts[1].PromptCacheBreakpoint.Mode)
+
+	wire, err := json.Marshal(resp)
+	require.NoError(t, err)
+	require.Contains(t, string(wire), `"prompt_cache_breakpoint":{"mode":"explicit"}`)
+	require.NotContains(t, string(wire), "cache_control")
+}
+
+func TestAnthropicToResponsesForModel_ReportsUnmappedCacheControlSemantics(t *testing.T) {
+	req := &AnthropicRequest{
+		Model:     "claude-sonnet-4-6",
+		MaxTokens: 128,
+		Messages: []AnthropicMessage{{
+			Role: "user",
+			Content: json.RawMessage(`[
+				{"type":"text","text":"ttl differs","cache_control":{"type":"ephemeral","ttl":"1h"}},
+				{"type":"tool_result","tool_use_id":"toolu_1","content":"ok","cache_control":{"type":"ephemeral"}}
+			]`),
+		}},
+		Tools: []AnthropicTool{{
+			Name:         "lookup",
+			InputSchema:  json.RawMessage(`{"type":"object"}`),
+			CacheControl: &AnthropicCacheControl{Type: "ephemeral"},
+		}},
+	}
+
+	resp, err := AnthropicToResponsesForModel(req, "openai/gpt-5.6")
+	require.NoError(t, err)
+	require.Equal(t, []string{"cache_control"}, resp.DroppedCompatibilityFields)
+
+	wire, err := json.Marshal(resp)
+	require.NoError(t, err)
+	require.Contains(t, string(wire), `"prompt_cache_breakpoint":{"mode":"explicit"}`)
+	require.NotContains(t, string(wire), "cache_control")
+}
+
+func TestSupportsResponsesPromptCacheBreakpoints(t *testing.T) {
+	tests := map[string]bool{
+		"gpt-5.5":           false,
+		"gpt-5.6":           true,
+		"gpt-5.6-sol":       true,
+		"openai/gpt-5.6":    true,
+		"gpt-6":             true,
+		"gpt-6.1-latest":    true,
+		"gpt-oss-120b":      false,
+		"claude-sonnet-4-6": false,
+	}
+	for model, want := range tests {
+		t.Run(model, func(t *testing.T) {
+			require.Equal(t, want, supportsResponsesPromptCacheBreakpoints(model))
+		})
+	}
+}
+
 func TestAnthropicToResponses_UserPlainTextCanonicalizesAcrossAnthropicShapes(t *testing.T) {
 	stringReq := &AnthropicRequest{
 		Model:     "gpt-5.2",

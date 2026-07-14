@@ -667,6 +667,8 @@ type OpenAIGatewayService struct {
 	openaiAccountRuntimeBlockUntil      sync.Map // key: int64(accountID), value: time.Time
 	openaiOAuth429WindowStartUnixNano   atomic.Int64
 	openaiOAuth429WindowCount           atomic.Int64
+	grokOAuth429WindowStartUnixNano     atomic.Int64
+	grokOAuth429WindowCount             atomic.Int64
 
 	opsUpstreamFailureSinkMu sync.RWMutex
 	opsUpstreamFailureSink   OpsUpstreamFailureSink
@@ -2251,6 +2253,9 @@ func remarshalOpenAIOAuthCompatFallbackBody(
 		codexTransformInputModeStrict,
 		fallbackReason,
 	)
+	if codexResult.Error != nil {
+		return nil, codexResult, strings.TrimSpace(promptCacheKey), codexResult.Error
+	}
 	if strings.TrimSpace(fallbackReason) == "call_id" && !HasFunctionCallOutput(reqBody) {
 		if _, present := reqBody["previous_response_id"]; present {
 			delete(reqBody, "previous_response_id")
@@ -2282,6 +2287,9 @@ func applyOpenAIWSCodexCompatFallback(
 		codexTransformInputModeStrict,
 		fallbackReason,
 	)
+	if codexResult.Error != nil {
+		return codexResult
+	}
 	if strings.TrimSpace(fallbackReason) == "call_id" && !HasFunctionCallOutput(reqBody) {
 		if _, present := reqBody["previous_response_id"]; present {
 			delete(reqBody, "previous_response_id")
@@ -2290,6 +2298,7 @@ func applyOpenAIWSCodexCompatFallback(
 	}
 	if c != nil {
 		c.Set(openAICodexTransformObsKey, codexResult.Observability)
+		setCodexToolNameReverse(c, codexResult.ToolNameReverse)
 		if codexResult.Modified {
 			c.Set(openAICodexCompatFallbackKey, true)
 			c.Set(openAICodexCompatFallbackReasonKey, fallbackReason)
@@ -5247,8 +5256,14 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				SkipDefaultInstructions: isMessagesBridgeRequest && !shouldInjectDefaultInstructionsForOpenAIMessagesBridge(c),
 			},
 		)
+		if codexResult.Error != nil {
+			setOpsUpstreamError(c, http.StatusBadRequest, codexResult.Error.Error(), "")
+			writeOpenAICompactAwareJSONError(c, http.StatusBadRequest, "invalid_request_error", codexResult.Error.Error())
+			return nil, codexResult.Error
+		}
 		if c != nil {
 			c.Set(openAICodexTransformObsKey, codexResult.Observability)
+			setCodexToolNameReverse(c, codexResult.ToolNameReverse)
 		}
 		if codexResult.Modified {
 			markDecodedModified()
@@ -8344,6 +8359,10 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	pendingFrames := make([]openAICompatSSEFrame, 0, 8)
 
 	writeFrame := func(frame openAICompatSSEFrame) bool {
+		if _, data := openAIStreamFrameEventTypeAndData(frame); strings.TrimSpace(data) != "" && strings.TrimSpace(data) != "[DONE]" {
+			restored := restoreCodexToolNamesInJSON([]byte(data), codexToolNameReverseFromContext(c))
+			openAICompatSetSSEFrameData(&frame, string(restored))
+		}
 		frame, emit := replayAttempt.filterFrame(frame)
 		if !emit {
 			return true
@@ -8718,6 +8737,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(body); matched {
 		return nil, s.newOpenAISoftRateLimitFailoverError(ctx, c, account, true, resp.Header.Get("x-request-id"), body, advisoryMsg)
 	}
+	if normalized, changed := normalizeCompletedImageGenerationStatus(body); changed {
+		body = normalized
+	}
 
 	usage := &OpenAIUsage{}
 	usageParsed := false
@@ -8743,6 +8765,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if originalModel != "" && mappedModel != "" && originalModel != mappedModel {
 		body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
 	}
+	body = restoreCodexToolNamesInJSON(body, codexToolNameReverseFromContext(c))
 	if writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		return &openaiNonStreamingResultPassthrough{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount, searchCount: searchCount}, nil
 	}
@@ -8844,6 +8867,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		}
 	}
 	searchCount := countOpenAISearchCallsInResponsesJSONBytes(body)
+	body = restoreCodexToolNamesInJSON(body, codexToolNameReverseFromContext(c))
 	if writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		return &openaiNonStreamingResultPassthrough{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount, searchCount: searchCount}, nil
 	}
@@ -9994,6 +10018,10 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 		return &openaiStreamingResult{usage: usage, firstTokenMs: firstTokenMs, responseID: responseID, imageCount: imageCounter.Count(), searchCount: searchCount}
 	}
 	writeFrame := func(frame openAICompatSSEFrame, shouldFlush bool) bool {
+		if _, data := openAIStreamFrameEventTypeAndData(frame); strings.TrimSpace(data) != "" && strings.TrimSpace(data) != "[DONE]" {
+			restored := restoreCodexToolNamesInJSON([]byte(data), codexToolNameReverseFromContext(c))
+			openAICompatSetSSEFrameData(&frame, string(restored))
+		}
 		frame, emit := replayAttempt.filterFrame(frame)
 		if !emit {
 			return true
@@ -11133,6 +11161,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if account != nil && account.Platform == PlatformGrok {
 		body = normalizeGrokReasoningResponseBody(body)
 	}
+	if normalized, changed := normalizeCompletedImageGenerationStatus(body); changed {
+		body = normalized
+	}
 
 	usageValue, usageOK := extractOpenAIUsageFromJSONBytes(body)
 	if !gjson.ValidBytes(body) {
@@ -11162,6 +11193,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		}
 	}
 
+	body = restoreCodexToolNamesInJSON(body, codexToolNameReverseFromContext(c))
 	if writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		return &openaiNonStreamingResult{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount, searchCount: searchCount}, nil
 	}
@@ -11270,6 +11302,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			contentType = "text/event-stream"
 		}
 	}
+	body = restoreCodexToolNamesInJSON(body, codexToolNameReverseFromContext(c))
 	if writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		return &openaiNonStreamingResult{usage: usage, responseID: extractOpenAIResponseIDFromJSONBytes(body), imageCount: imageCount, searchCount: searchCount}, nil
 	}
@@ -11525,6 +11558,25 @@ func normalizeCompletedImageGenerationStatus(data []byte) ([]byte, bool) {
 	}
 
 	eventType := strings.TrimSpace(gjson.GetBytes(data, "type").String())
+	normalizeOutput := func(updated []byte, path string) ([]byte, bool) {
+		output := gjson.GetBytes(updated, path)
+		if !output.Exists() || !output.IsArray() {
+			return data, false
+		}
+		changed := false
+		for i, item := range output.Array() {
+			if !shouldNormalize(item) {
+				continue
+			}
+			next, err := sjson.SetBytes(updated, path+"."+strconv.Itoa(i)+".status", "completed")
+			if err != nil {
+				return data, false
+			}
+			updated = next
+			changed = true
+		}
+		return updated, changed
+	}
 	switch eventType {
 	case "response.output_item.done":
 		if !shouldNormalize(gjson.GetBytes(data, "item")) {
@@ -11536,25 +11588,13 @@ func normalizeCompletedImageGenerationStatus(data []byte) ([]byte, bool) {
 		}
 		return updated, true
 	case "response.completed", "response.done":
-		output := gjson.GetBytes(data, "response.output")
-		if !output.Exists() || !output.IsArray() {
-			return data, false
-		}
-		updated := data
-		changed := false
-		for i, item := range output.Array() {
-			if !shouldNormalize(item) {
-				continue
-			}
-			next, err := sjson.SetBytes(updated, "response.output."+strconv.Itoa(i)+".status", "completed")
-			if err != nil {
-				return data, false
-			}
-			updated = next
-			changed = true
-		}
-		return updated, changed
+		return normalizeOutput(data, "response.output")
 	default:
+		// A non-streaming Responses payload is the response object itself rather
+		// than an event envelope. Apply the same terminal invariant there.
+		if eventType == "" && strings.TrimSpace(gjson.GetBytes(data, "object").String()) == "response" {
+			return normalizeOutput(data, "output")
+		}
 		return data, false
 	}
 }
@@ -13126,7 +13166,24 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCost(
 	requestType RequestType,
 	rateMultiplier float64,
 ) *CostBreakdown {
-	if !apiKeyHasConfiguredImagePrice(apiKey, result.ImageSize) && s.resolver != nil && apiKey != nil && apiKey.Group != nil {
+	counts := ResolveImageBillingCounts(result.ImageCount, result.ImageSize, result.ImageSizeBreakdown)
+	parts := make([]*CostBreakdown, 0, len(counts))
+	for _, sizeTier := range SortedImageBillingBreakdownKeys(counts) {
+		parts = append(parts, s.calculateOpenAIImageCostForTier(ctx, billingModel, apiKey, requestType, rateMultiplier, sizeTier, counts[sizeTier]))
+	}
+	return mergeCostBreakdowns(string(BillingModeImage), parts...)
+}
+
+func (s *OpenAIGatewayService) calculateOpenAIImageCostForTier(
+	ctx context.Context,
+	billingModel string,
+	apiKey *APIKey,
+	requestType RequestType,
+	rateMultiplier float64,
+	sizeTier string,
+	imageCount int,
+) *CostBreakdown {
+	if !apiKeyHasConfiguredImagePrice(apiKey, sizeTier) && s.resolver != nil && apiKey != nil && apiKey.Group != nil {
 		gid := apiKey.Group.ID
 		resolved := s.resolver.Resolve(ctx, PricingInput{Model: billingModel, GroupID: &gid})
 		if resolved != nil && resolved.Source == PricingSourceChannel && (resolved.Mode == BillingModeImage || resolved.Mode == BillingModePerRequest) {
@@ -13134,8 +13191,8 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCost(
 				Ctx:            ctx,
 				Model:          billingModel,
 				GroupID:        &gid,
-				RequestCount:   result.ImageCount,
-				SizeTier:       result.ImageSize,
+				RequestCount:   imageCount,
+				SizeTier:       sizeTier,
 				RateMultiplier: rateMultiplier,
 				Resolver:       s.resolver,
 				Resolved:       resolved,
@@ -13151,7 +13208,7 @@ func (s *OpenAIGatewayService) calculateOpenAIImageCost(
 	if apiKey != nil && apiKey.Group != nil {
 		groupConfig = apiKey.Group.GetImagePriceConfigForRequestType(requestType.Normalize())
 	}
-	return s.billingService.CalculateImageCost(billingModel, result.ImageSize, result.ImageCount, groupConfig, rateMultiplier)
+	return s.billingService.CalculateImageCost(billingModel, sizeTier, imageCount, groupConfig, rateMultiplier)
 }
 
 // ParseCodexRateLimitHeaders extracts Codex usage limits from response headers.

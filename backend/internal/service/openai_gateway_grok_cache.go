@@ -14,6 +14,7 @@ const (
 	grokConversationIDHeader        = "X-Grok-Conv-Id"
 	grokFreeCacheNativeToolsJSON    = `[{"type":"web_search"},{"type":"x_search"}]`
 	grokFreeCacheDisabledToolChoice = "none"
+	grokExplicitSessionContextKey   = "grok_explicit_session_identity"
 )
 
 // resolveGrokCacheIdentity derives one stable, tenant-isolated routing identity
@@ -41,6 +42,9 @@ func resolveGrokCacheIdentity(c *gin.Context, body []byte, explicitKey, upstream
 	}
 
 	seed := explicitGrokCacheSeed(c, body, explicitKey)
+	if seed != "" && c != nil {
+		c.Set(grokExplicitSessionContextKey, true)
+	}
 	if seed == "" {
 		seed = deriveOpenAIContentSessionSeed(body)
 	}
@@ -53,6 +57,22 @@ func resolveGrokCacheIdentity(c *gin.Context, body []byte, explicitKey, upstream
 	// upstream session identifiers derived by sub2api.
 	isolatedSeed := fmt.Sprintf("grok-prompt-cache:v1:%d:%s:%s", apiKeyID, model, seed)
 	return generateSessionUUID(isolatedSeed)
+}
+
+// hasExplicitGrokSessionIdentity reports whether the cache identity is bound
+// to a client-provided conversation identifier. Content-derived identities are
+// useful for prompt caching, but are not safe for stateful active-delta reuse:
+// independent conversations can begin with identical content.
+func hasExplicitGrokSessionIdentity(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	if explicitGrokCacheSeed(c, nil, "") != "" {
+		return true
+	}
+	value, exists := c.Get(grokExplicitSessionContextKey)
+	explicit, _ := value.(bool)
+	return exists && explicit
 }
 
 func explicitGrokCacheSeed(c *gin.Context, body []byte, explicitKey string) string {
