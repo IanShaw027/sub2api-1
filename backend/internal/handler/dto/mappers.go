@@ -52,7 +52,7 @@ func UserFromService(u *service.User) *User {
 		out.APIKeys = make([]APIKey, 0, len(u.APIKeys))
 		for i := range u.APIKeys {
 			k := u.APIKeys[i]
-			out.APIKeys = append(out.APIKeys, *APIKeyFromService(&k))
+			out.APIKeys = append(out.APIKeys, *APIKeyFromServiceMasked(&k))
 		}
 	}
 	if len(u.Subscriptions) > 0 {
@@ -74,6 +74,9 @@ func UserFromServiceAdmin(u *service.User) *AdminUser {
 	base := UserFromService(u)
 	if base == nil {
 		return nil
+	}
+	for i := range base.APIKeys {
+		base.APIKeys[i].Key = MaskAPIKey(base.APIKeys[i].Key)
 	}
 	return &AdminUser{
 		User:                        *base,
@@ -133,6 +136,28 @@ func APIKeyFromService(k *service.APIKey) *APIKey {
 		out.Reset7dAt = &t
 	}
 	return out
+}
+
+// APIKeyFromServiceMasked converts an API key for every non-create response.
+// Full key material is only returned by the one-time create response.
+func APIKeyFromServiceMasked(k *service.APIKey) *APIKey {
+	out := APIKeyFromService(k)
+	if out == nil {
+		return nil
+	}
+	out.Key = MaskAPIKey(out.Key)
+	return out
+}
+
+func MaskAPIKey(key string) string {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return ""
+	}
+	if len(key) <= 8 {
+		return strings.Repeat("*", len(key))
+	}
+	return key[:4] + strings.Repeat("*", len(key)-8) + key[len(key)-4:]
 }
 
 func GroupFromServiceShallow(g *service.Group) *Group {
@@ -781,7 +806,7 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		BillingMode:                  l.BillingMode,
 		CreatedAt:                    l.CreatedAt,
 		User:                         UserFromServiceShallow(l.User),
-		APIKey:                       APIKeyFromService(l.APIKey),
+		APIKey:                       APIKeyFromServiceMasked(l.APIKey),
 		Group:                        GroupFromServiceShallow(l.Group),
 		Subscription:                 UserSubscriptionFromService(l.Subscription),
 	}

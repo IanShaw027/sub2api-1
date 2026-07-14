@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -643,16 +644,27 @@ func (h *GroupHandler) GetGroupAPIKeys(c *gin.Context) {
 	}
 
 	page, pageSize := response.ParsePagination(c)
+	if pageSize > 100 {
+		pageSize = 100
+	}
 
 	keys, total, err := h.adminService.GetGroupAPIKeys(c.Request.Context(), groupID, page, pageSize)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
+	slog.Info("admin.api_keys.group_list",
+		"actor_admin_id", getAdminIDFromContext(c),
+		"target_group_id", groupID,
+		"auth_method", c.GetString("auth_method"),
+		"source_ip", c.ClientIP(),
+		"page", page,
+		"page_size", pageSize,
+	)
 
 	outKeys := make([]dto.APIKey, 0, len(keys))
 	for i := range keys {
-		outKeys = append(outKeys, *dto.APIKeyFromService(&keys[i]))
+		outKeys = append(outKeys, *dto.APIKeyFromServiceMasked(&keys[i]))
 	}
 	response.Paginated(c, outKeys, total, page, pageSize)
 }

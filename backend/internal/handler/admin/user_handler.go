@@ -421,6 +421,9 @@ func (h *UserHandler) GetUserAPIKeys(c *gin.Context) {
 	}
 
 	page, pageSize := response.ParsePagination(c)
+	if pageSize > 100 {
+		pageSize = 100
+	}
 	sortBy := c.DefaultQuery("sort_by", "created_at")
 	sortOrder := c.DefaultQuery("sort_order", "desc")
 
@@ -429,10 +432,18 @@ func (h *UserHandler) GetUserAPIKeys(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	slog.Info("admin.api_keys.list",
+		"actor_admin_id", getAdminIDFromContext(c),
+		"target_user_id", userID,
+		"auth_method", c.GetString("auth_method"),
+		"source_ip", c.ClientIP(),
+		"page", page,
+		"page_size", pageSize,
+	)
 
 	out := make([]dto.APIKey, 0, len(keys))
 	for i := range keys {
-		out = append(out, *dto.APIKeyFromService(&keys[i]))
+		out = append(out, *dto.APIKeyFromServiceMasked(&keys[i]))
 	}
 	response.Paginated(c, out, total, page, pageSize)
 }
