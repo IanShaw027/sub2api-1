@@ -171,6 +171,7 @@ func (s *OpenAIGatewayService) buildGrokHTTPActiveDeltaPayload(
 		return result, nil
 	}
 
+	stickyAccountHit := !found || cached.accountID == account.ID
 	shadowInput := openAIWSDeltaShadowInput{
 		GroupID:               groupID,
 		APIKeyID:              apiKeyID,
@@ -182,7 +183,8 @@ func (s *OpenAIGatewayService) buildGrokHTTPActiveDeltaPayload(
 		AllowConnReanchor:     true,
 		AllowHTTPContext:      true,
 		StickyAccountID:       account.ID,
-		StickyAccountHit:      true,
+		StickyAccountHit:      stickyAccountHit,
+		StickyAccountMismatch: found && cached.accountID != account.ID,
 		ConnAffinityHit:       true,
 		StoreFallbackReason:   "grok_http_active_delta",
 		Cached:                cached,

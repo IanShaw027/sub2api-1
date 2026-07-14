@@ -1161,6 +1161,7 @@ func (s *OpenAIGatewayService) handleChatBufferedStreamingResponse(
 
 	return &OpenAIForwardResult{
 		RequestID:     requestID,
+		ResponseID:    strings.TrimSpace(finalResponse.ID),
 		Usage:         usage,
 		Model:         originalModel,
 		BillingModel:  billingModel,
@@ -1205,6 +1206,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 
 	var usage OpenAIUsage
 	var firstTokenMs *int
+	responseID := ""
 	firstChunk := true
 	sawTerminalEvent := false
 	clientDisconnected := false
@@ -1223,6 +1225,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	resultWithUsage := func() *OpenAIForwardResult {
 		return &OpenAIForwardResult{
 			RequestID:     requestID,
+			ResponseID:    strings.TrimSpace(responseID),
 			Usage:         usage,
 			Model:         originalModel,
 			BillingModel:  billingModel,
@@ -1355,10 +1358,20 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			if event.Usage != nil {
 				usage = copyOpenAIUsageFromResponsesUsage(event.Usage)
 			}
-			if event.Response != nil && event.Response.Usage != nil {
-				usage = copyOpenAIUsageFromResponsesUsage(event.Response.Usage)
+			if event.Response != nil {
+				if id := strings.TrimSpace(event.Response.ID); id != "" {
+					responseID = id
+				}
+				if event.Response.Usage != nil {
+					usage = copyOpenAIUsageFromResponsesUsage(event.Response.Usage)
+				}
 			}
 			sawTerminalEvent = true
+		} else if responseID == "" && event.Response != nil {
+			// response.created / intermediate envelopes may carry the id early.
+			if id := strings.TrimSpace(event.Response.ID); id != "" {
+				responseID = id
+			}
 		}
 		chunks := apicompat.ResponsesEventToChatChunks(&event, state)
 		wroteChunk := false

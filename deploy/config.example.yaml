@@ -398,6 +398,8 @@ gateway:
     fallback_ttl_seconds: 600
   # Grok OAuth HTTP safe active-delta (only-new input + previous_response_id when prefix-safe)
   # Grok OAuth HTTP 安全增量：前缀可证明时只发 only-new，否则全量；与 openai_ws.http_incremental_* 解耦
+  # If full_replay_retry is high, try require_store_on_create=true or disable active delta.
+  # 若 full_replay_retry 偏高，可试 require_store_on_create=true，或临时关闭 active delta。
   grok:
     http_active_delta_enabled: true
     http_active_delta_require_store_on_create: false

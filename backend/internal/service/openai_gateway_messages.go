@@ -382,8 +382,12 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		}
 		responsesBody = patchedBody
 		// Grok text Responses use the shared active-delta HTTP egress (P2).
-		// Response translation to Anthropic remains on this path.
-		cacheIdentity := resolveGrokCacheIdentity(c, responsesBody, promptCacheKey, upstreamModel)
+		// Prefer header/explicit promptCacheKey for session homology (I5): do not
+		// re-seed from a post-patch body whose prompt_cache_key may be rewritten.
+		cacheIdentity := resolveGrokCacheIdentity(c, nil, promptCacheKey, upstreamModel)
+		if cacheIdentity == "" {
+			cacheIdentity = resolveGrokCacheIdentity(c, responsesBody, promptCacheKey, upstreamModel)
+		}
 		var applyErr error
 		responsesBody, applyErr = applyGrokResponsesCacheIdentity(responsesBody, body, cacheIdentity, false)
 		if applyErr != nil {
@@ -402,21 +406,40 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		}()
 		if resp.StatusCode >= 400 {
 			recordOpenAICompatUpstreamStatus(upstreamModel, resp.StatusCode)
+			upstreamHeaders := resp.Header.Clone()
 			respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 			_ = resp.Body.Close()
 			resp.Body = io.NopCloser(bytes.NewReader(respBody))
-			s.handleGrokAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+			s.handleGrokAccountUpstreamError(ctx, account, resp.StatusCode, upstreamHeaders, respBody)
 			upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 			upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+			if upstreamMsg == "" {
+				upstreamMsg = fmt.Sprintf("xAI upstream returned status %d", resp.StatusCode)
+			}
+			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+				Platform:           account.Platform,
+				AccountID:          account.ID,
+				AccountName:        account.Name,
+				UpstreamStatusCode: resp.StatusCode,
+				UpstreamRequestID:  firstNonEmpty(upstreamHeaders.Get("x-request-id"), upstreamHeaders.Get("xai-request-id")),
+				Kind:               "failover",
+				Message:            upstreamMsg,
+			})
 			if s.shouldFailoverUpstreamError(resp.StatusCode) {
 				return nil, &UpstreamFailoverError{
 					StatusCode:             resp.StatusCode,
 					ResponseBody:           respBody,
+					ResponseHeaders:        upstreamHeaders,
 					RetryableOnSameAccount: account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
 				}
 			}
-			writeAnthropicError(c, resp.StatusCode, "api_error", firstNonEmpty(upstreamMsg, fmt.Sprintf("xAI upstream returned status %d", resp.StatusCode)))
-			return nil, fmt.Errorf("grok anthropic bridge upstream status %d", resp.StatusCode)
+			// Preserve non-failover upstream status for client (same as pre-egress path).
+			errType := "api_error"
+			if resp.StatusCode == http.StatusBadRequest {
+				errType = "invalid_request_error"
+			}
+			writeAnthropicError(c, resp.StatusCode, errType, upstreamMsg)
+			return nil, fmt.Errorf("grok anthropic bridge upstream status %d: %s", resp.StatusCode, upstreamMsg)
 		}
 		s.updateGrokUsageSnapshot(ctx, account, xai.ParseQuotaHeaders(resp.Header, resp.StatusCode))
 		var handleErr error

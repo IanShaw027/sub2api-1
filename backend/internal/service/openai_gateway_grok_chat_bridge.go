@@ -211,7 +211,12 @@ func (s *OpenAIGatewayService) forwardGrokChatCompletionsViaResponses(
 	clientStream := chatReq.Stream
 	billingModel := resolveOpenAIForwardModel(account, originalModel, defaultMappedModel)
 	upstreamModel := normalizeOpenAIModelForUpstream(account, billingModel)
-	cacheIdentity := resolveGrokCacheIdentity(c, body, promptCacheKey, upstreamModel)
+	// Prefer header/explicit session seed before body rewrite so multi-turn
+	// active-delta keeps a stable cache identity (I5).
+	cacheIdentity := resolveGrokCacheIdentity(c, nil, promptCacheKey, upstreamModel)
+	if cacheIdentity == "" {
+		cacheIdentity = resolveGrokCacheIdentity(c, body, promptCacheKey, upstreamModel)
+	}
 	if !grokChatResponsesRuntimeEligible(upstreamModel, cacheIdentity) {
 		return s.forwardAsRawChatCompletions(ctx, c, account, body, promptCacheKey, defaultMappedModel)
 	}
@@ -238,6 +243,9 @@ func (s *OpenAIGatewayService) forwardGrokChatCompletionsViaResponses(
 	intentBody, err := grokChatCacheIntentBody(body)
 	if err != nil {
 		return nil, fmt.Errorf("normalize grok responses bridge tool intent: %w", err)
+	}
+	if cacheIdentity == "" {
+		cacheIdentity = resolveGrokCacheIdentity(c, responsesBody, promptCacheKey, upstreamModel)
 	}
 	responsesBody, err = applyGrokResponsesCacheIdentity(responsesBody, intentBody, cacheIdentity, true)
 	if err != nil {

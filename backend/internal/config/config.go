@@ -904,8 +904,11 @@ type GatewayConfig struct {
 type GatewayGrokConfig struct {
 	// HTTPActiveDeltaEnabled: Grok OAuth Responses 安全增量（only-new input + previous_response_id）。
 	// 与 openai_ws.http_incremental_continuation_enabled 解耦；默认开启，不可证明安全时全量。
+	// 若观测到 high full_replay_retry（xAI store=false 不支持 previous），可临时关闭或开启
+	// HTTPActiveDeltaRequireStoreOnCreate。
 	HTTPActiveDeltaEnabled bool `mapstructure:"http_active_delta_enabled"`
 	// HTTPActiveDeltaRequireStoreOnCreate: 首轮/全量 create 是否强制 store=true。
+	// 当上游要求服务端存历史才能 previous 续聊时开启；默认 false（对齐 store=false/ZDR 模型）。
 	HTTPActiveDeltaRequireStoreOnCreate bool `mapstructure:"http_active_delta_require_store_on_create"`
 }
 
