@@ -658,9 +658,10 @@ func collectResponsesNamespaceFunctionNames(tool ResponsesTool, namespace string
 		original := strings.TrimSpace(tool.Name)
 		mapped := responseFunctionChatName(original, namespace)
 		if original != "" && mapped != "" {
-			out[original] = mapped
 			if namespace != "" {
 				out[namespace+"."+original] = mapped
+			} else {
+				out[original] = mapped
 			}
 		}
 	}
@@ -670,10 +671,7 @@ func responseFunctionChatName(name string, namespace string) string {
 	name = strings.TrimSpace(name)
 	namespace = strings.TrimSpace(namespace)
 	if namespace != "" {
-		if !strings.Contains(namespace, ".") && !strings.Contains(name, ".") {
-			return flattenNamespaceToolName(namespace, name)
-		}
-		name = namespace + "." + name
+		return flattenNamespaceToolName(namespace, name)
 	}
 	return sanitizeChatFunctionName(name)
 }
@@ -689,7 +687,7 @@ func remapResponsesInputFunctionNames(input json.RawMessage, nameMap map[string]
 	modified := false
 	for _, item := range items {
 		itemType, _ := item["type"].(string)
-		if itemType != "function_call" && itemType != "custom_tool_call" && itemType != "mcp_tool_call" {
+		if itemType != "function_call" {
 			continue
 		}
 		if namespace, _ := item["namespace"].(string); strings.TrimSpace(namespace) != "" {
@@ -797,7 +795,11 @@ func responsesToolChoiceToChatToolChoice(raw json.RawMessage, functionNameMap ma
 	if name == "" {
 		return raw, nil
 	}
-	if mapped := functionNameMap[strings.TrimSpace(name)]; mapped != "" {
+	lookupName := strings.TrimSpace(name)
+	if namespace := rawString(choice["namespace"]); namespace != "" {
+		lookupName = strings.TrimSpace(namespace) + "." + lookupName
+	}
+	if mapped := functionNameMap[lookupName]; mapped != "" {
 		name = mapped
 	} else {
 		return nil, nil

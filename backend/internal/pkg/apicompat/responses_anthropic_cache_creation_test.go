@@ -1,6 +1,7 @@
 package apicompat
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -96,4 +97,24 @@ func TestAnthropicToResponsesResponse_CacheCreation(t *testing.T) {
 	require.NotNil(t, out.Usage)
 	assert.Equal(t, 20, out.Usage.InputTokens, "total = input(10) + cache_read(4) + cache_creation(6)")
 	assert.Equal(t, 6, out.Usage.CacheCreationInputTokens, "cache creation must round-trip")
+}
+
+func TestResponsesUsageUnmarshal_CacheCreationPriority(t *testing.T) {
+	var usage ResponsesUsage
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"input_tokens":100,
+		"output_tokens":20,
+		"cache_creation_input_tokens":19,
+		"cache_write_tokens":11,
+		"input_tokens_details":{"cache_write_tokens":0,"cache_creation_tokens":7}
+	}`), &usage))
+	assert.Equal(t, 19, usage.CacheCreationInputTokens, "explicit aggregate must win over aliases")
+
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"input_tokens":100,
+		"output_tokens":20,
+		"cache_creation_input_tokens":0,
+		"input_tokens_details":{"cache_write_tokens":13}
+	}`), &usage))
+	assert.Equal(t, 13, usage.CacheCreationInputTokens, "zero aggregate should fall back to nested aliases")
 }

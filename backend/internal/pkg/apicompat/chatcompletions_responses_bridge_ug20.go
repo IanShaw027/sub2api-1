@@ -147,7 +147,13 @@ func joinNamespace(parent, child string) string {
 }
 
 func flattenNamespaceToolName(namespace, name string) string {
+	namespace = strings.TrimSpace(namespace)
+	name = strings.TrimSpace(name)
 	full := namespace + "__" + name
+	if strings.Contains(namespace, ".") || strings.Contains(name, ".") {
+		full = joinNamespace(namespace, name)
+	}
+	full = sanitizeChatFunctionName(full)
 	if len(full) <= chatToolNameMaxLen {
 		return full
 	}

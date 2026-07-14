@@ -416,12 +416,23 @@ func TestResponsesToolsParsing_StringToolBecomesCustom(t *testing.T) {
 
 func TestFlattenNamespaceToolName_CapsAt64WithHashSuffix(t *testing.T) {
 	assert.Equal(t, "gmail__send", flattenNamespaceToolName("gmail", "send"))
+	assert.Equal(t, "gmail_tools__send_mail", flattenNamespaceToolName("gmail/tools", "send mail"))
 
 	long := flattenNamespaceToolName("very_long_namespace_prefix_for_testing_purposes", "and_a_rather_long_tool_name_too")
 	assert.LessOrEqual(t, len(long), 64)
 	assert.Contains(t, long, "__")
 	// 同输入结果稳定
 	assert.Equal(t, long, flattenNamespaceToolName("very_long_namespace_prefix_for_testing_purposes", "and_a_rather_long_tool_name_too"))
+
+	nestedLong := flattenNamespaceToolName(
+		"very.long.namespace.prefix.that.previously.bypassed.the.length.limit",
+		"and.an.equally.long.tool.name",
+	)
+	assert.LessOrEqual(t, len(nestedLong), 64)
+	assert.Equal(t, nestedLong, flattenNamespaceToolName(
+		"very.long.namespace.prefix.that.previously.bypassed.the.length.limit",
+		"and.an.equally.long.tool.name",
+	))
 }
 
 func TestResponsesInputToChatMessages_ToolSearchCallHistory(t *testing.T) {
@@ -734,6 +745,20 @@ func TestResponsesToChatCompletionsRequest_DedupesIdenticalNamespaceChildren(t *
 	require.NoError(t, err)
 	require.Len(t, out.Tools, 1, "重复声明的同一子工具只声明一次")
 	assert.Equal(t, "gmail__send", out.Tools[0].Function.Name)
+}
+
+func TestResponsesToChatCompletionsRequest_NamespacedToolChoiceUsesNamespace(t *testing.T) {
+	out, err := ResponsesToChatCompletionsRequest(&ResponsesRequest{
+		Model: "glm-5.2",
+		Input: json.RawMessage(`"hi"`),
+		Tools: []ResponsesTool{
+			{Type: "namespace", Name: "gmail", Tools: []ResponsesTool{{Type: "function", Name: "send"}}},
+			{Type: "namespace", Name: "crm", Tools: []ResponsesTool{{Type: "function", Name: "send"}}},
+		},
+		ToolChoice: json.RawMessage(`{"type":"function","name":"send","namespace":"crm"}`),
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"type":"function","function":{"name":"crm__send"}}`, string(out.ToolChoice))
 }
 
 // codex 按 namespace+name 路由 namespace 子工具的调用：回程必须把摊平名还原为
