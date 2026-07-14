@@ -310,7 +310,7 @@ describe('admin AccountsView bulk edit scope', () => {
     expect(wrapper.get('[data-test="bulk-edit-modal"]').attributes('data-target-mode')).toBe('filtered')
   })
 
-  it('uses all filtered pages to derive bulk edit platform/type scope', async () => {
+  it('does not scan every filtered page for platform/type capability hints', async () => {
     listAccounts
       .mockResolvedValueOnce({
         items: [],
@@ -331,18 +331,6 @@ describe('admin AccountsView bulk edit scope', () => {
         page_size: 100,
         pages: 2
       })
-      .mockResolvedValueOnce({
-        items: Array.from({ length: 5 }, (_, index) => ({
-          id: 101 + index,
-          name: `Anthropic ${101 + index}`,
-          platform: 'anthropic',
-          type: 'apikey'
-        })),
-        total: 105,
-        page: 2,
-        page_size: 100,
-        pages: 2
-      })
 
     const wrapper = mountAccountsView()
 
@@ -352,9 +340,9 @@ describe('admin AccountsView bulk edit scope', () => {
 
     const modal = wrapper.get('[data-test="bulk-edit-modal"]')
     expect(modal.attributes('data-preview-count')).toBe('105')
-    expect(modal.attributes('data-selected-platforms')).toBe('openai,anthropic')
-    expect(modal.attributes('data-selected-types')).toBe('oauth,apikey')
-    expect(listAccounts).toHaveBeenCalledTimes(3)
+    expect(modal.attributes('data-selected-platforms')).toBe('')
+    expect(modal.attributes('data-selected-types')).toBe('')
+    expect(listAccounts).toHaveBeenCalledTimes(2)
   })
 
   it('renders the created_at column by default', async () => {
@@ -635,7 +623,7 @@ describe('admin AccountsView bulk edit scope', () => {
     expect(badges[0].attributes('data-plan-type')).toBe('google_ai_pro')
   })
 
-  it('shows an error and aborts when filtered preview pagination fails', async () => {
+  it('shows an error and aborts when the filtered preview request fails', async () => {
     listAccounts
       .mockResolvedValueOnce({
         items: [],

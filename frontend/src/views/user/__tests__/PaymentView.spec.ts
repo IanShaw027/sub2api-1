@@ -323,6 +323,16 @@ describe('PaymentView recharge confirmation amounts', () => {
 })
 
 describe('PaymentView subscription confirmation amounts', () => {
+  it('rechecks method availability inside the subscription submit handler', async () => {
+    const wrapper = await mountSubscriptionConfirm({
+      method: { available: false },
+    })
+
+    await (wrapper.vm as unknown as { confirmSubscribe: () => Promise<void> }).confirmSubscribe()
+
+    expect(createOrder).not.toHaveBeenCalled()
+  })
+
   it('keeps subscription plan price independent from balance recharge multiplier', async () => {
     const wrapper = await mountSubscriptionConfirm({
       checkout: {

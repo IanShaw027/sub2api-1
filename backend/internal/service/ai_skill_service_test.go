@@ -190,6 +190,43 @@ type aiSkillUniqueSettlementStoreStub struct {
 	*aiSkillStoreStub
 }
 
+type aiSkillFinalizeFailingStoreStub struct {
+	*aiSkillStoreStub
+	failSettled bool
+}
+
+func (s *aiSkillFinalizeFailingStoreStub) UpdateSettlement(ctx context.Context, settlement *AISkillSettlement) error {
+	if s.failSettled && settlement.Status == AISkillSettlementStatusSettled {
+		return errors.New("settlement finalize unavailable")
+	}
+	return s.aiSkillStoreStub.UpdateSettlement(ctx, settlement)
+}
+
+type aiSkillIdempotentBalanceChargerStub struct {
+	chargeCalls    int
+	balanceChanges int
+	balance        float64
+	charges        map[string]*AISkillBalanceChargeResult
+}
+
+func (s *aiSkillIdempotentBalanceChargerStub) ChargeUserBalance(_ context.Context, input AISkillBalanceChargeInput) (*AISkillBalanceChargeResult, error) {
+	s.chargeCalls++
+	if result := s.charges[input.Reference]; result != nil {
+		copy := *result
+		return &copy, nil
+	}
+	s.balance -= input.Amount
+	s.balanceChanges++
+	result := &AISkillBalanceChargeResult{ChargedAmount: input.Amount, BalanceAfter: s.balance}
+	s.charges[input.Reference] = result
+	copy := *result
+	return &copy, nil
+}
+
+func (s *aiSkillIdempotentBalanceChargerStub) RefundUserBalance(_ context.Context, input AISkillBalanceRefundInput) (*AISkillBalanceRefundResult, error) {
+	return &AISkillBalanceRefundResult{RefundedAmount: input.Amount, BalanceAfter: s.balance + input.Amount}, nil
+}
+
 func newAISkillUniqueSettlementStoreStub() *aiSkillUniqueSettlementStoreStub {
 	return &aiSkillUniqueSettlementStoreStub{aiSkillStoreStub: newAISkillStoreStub()}
 }
@@ -428,7 +465,7 @@ func TestAISkillRunServiceExecutePerRunSettlesAndDispatches(t *testing.T) {
 		SkillID:    skill.ID,
 		VersionID:  int64Ptr(version.ID),
 		Mode:       AISkillRunModeUse,
-			Trace:      AIWriteTrace{APIKeyID: int64Ptr(99)},
+		Trace:      AIWriteTrace{APIKeyID: int64Ptr(99)},
 		Parameters: map[string]any{"topic": "golang"},
 		Metadata:   map[string]any{"scene": "unit"},
 	})
@@ -444,10 +481,82 @@ func TestAISkillRunServiceExecutePerRunSettlesAndDispatches(t *testing.T) {
 	require.Len(t, creator.inputs, 1)
 	require.Equal(t, 10.0, creator.inputs[0].Amount)
 	require.Len(t, runtime.requests, 1)
+	require.NotNil(t, runtime.requests[0].Settlement)
+	require.Positive(t, runtime.requests[0].Settlement.ID)
+	require.Equal(t, AISkillSettlementStatusPending, runtime.requests[0].Settlement.Status)
+	require.Equal(t, aiSkillSettlementDispatchStateAwaiting, aiSkillSettlementDispatchState(runtime.requests[0].Settlement))
 	require.NotNil(t, runtime.requests[0].PromptChat)
 	require.Equal(t, "Summarize {{topic}}", runtime.requests[0].PromptChat.UserPromptTemplate)
 	require.Equal(t, "openai", result.Prepared.Run.Provider)
 	require.Equal(t, "resp_123", result.Prepared.Run.ExternalJobID)
+	require.Len(t, store.settlements, 1, "the owning Execute call must settle its existing intent, not create a second row")
+}
+
+func TestAISkillRunServiceExecuteSuccessDefersMarketplaceSettlementFailure(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newAISkillStoreStub()
+	skill := &AISkill{ID: 1, CreatorUserID: 700, Name: "Deferred Settlement Skill", Type: AISkillTypePromptChat}
+	version := &AISkillVersion{
+		ID:            1,
+		SkillID:       skill.ID,
+		CreatorUserID: skill.CreatorUserID,
+		Version:       1,
+		Type:          skill.Type,
+		Status:        AISkillVersionStatusApproved,
+		ExecutionSpec: AISkillExecutionSpec{
+			Type:       AISkillTypePromptChat,
+			PromptChat: &AISkillPromptChatSpec{UserPromptTemplate: "Summarize {{topic}}"},
+		},
+		BillingPolicy: AISkillBillingPolicy{
+			Mode:                   AISkillBillingModePerRun,
+			PricePerRun:            12.5,
+			PlatformCommissionRate: 0.2,
+		},
+	}
+	store.skills[skill.ID] = cloneAISkillEntity(skill)
+	store.versions[version.ID] = cloneAISkillVersionEntity(version)
+
+	balance := &aiSkillBalanceChargerStub{err: errors.New("balance temporarily unavailable")}
+	settlementSvc := NewAISkillSettlementService(store, balance, &aiSkillCreatorCreditorStub{})
+	runtime := &aiSkillRuntimeGatewayStub{result: &AISkillDispatchResult{
+		Status:        AISkillRunStatusSucceeded,
+		Provider:      "openai",
+		ExternalJobID: "resp_deferred",
+		Output:        map[string]any{"answer": "delivered"},
+	}}
+	runSvc := NewAISkillRunService(store, store, store, settlementSvc, runtime).
+		WithAPIKeyRepository(&skillBillingAPIKeyRepoStub{ownerUserID: 900})
+
+	result, err := runSvc.Execute(ctx, 900, &AISkillRunInput{
+		SkillID:    skill.ID,
+		VersionID:  int64Ptr(version.ID),
+		Mode:       AISkillRunModeUse,
+		Trace:      AIWriteTrace{APIKeyID: int64Ptr(99)},
+		Parameters: map[string]any{"topic": "golang"},
+		Metadata:   map[string]any{aiSkillSettlementDispatchStateMetadataKey: aiSkillSettlementDispatchStateFailed},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.SettlementDeferred)
+	require.Equal(t, AISkillSettlementStatusFailed, result.SettlementStatus)
+	require.Equal(t, "delivered", result.Dispatch.Output["answer"])
+	require.Equal(t, AISkillRunStatusDispatched, result.Prepared.Run.Status)
+	require.Empty(t, result.Prepared.Run.ErrorMessage)
+	require.NotNil(t, result.Prepared.Run.SettlementID)
+	require.NotNil(t, result.Prepared.Settlement)
+	require.Equal(t, AISkillSettlementStatusFailed, result.Prepared.Settlement.Status)
+	require.Equal(t, aiSkillSettlementDispatchStateConfirmed, aiSkillSettlementDispatchState(result.Prepared.Settlement), "caller metadata must not spoof the internal dispatch state")
+	require.Len(t, store.settlements, 1, "failed settlement must remain durable for replay")
+
+	balance.err = nil
+	replayed, replayErr := settlementSvc.ReplaySettlement(ctx, result.Prepared.Run.ID)
+	require.NoError(t, replayErr)
+	require.Equal(t, AISkillSettlementStatusSettled, replayed.Status)
+	require.Len(t, store.settlements, 1, "deferred replay must reuse the durable intent")
+	require.Len(t, balance.charges, 2, "replay should retry after the original pre-charge failure")
 }
 
 func TestAISkillRunServiceExecuteFailedDispatchDoesNotCharge(t *testing.T) {
@@ -499,7 +608,7 @@ func TestAISkillRunServiceExecuteFailedDispatchDoesNotCharge(t *testing.T) {
 		SkillID:    skill.ID,
 		VersionID:  int64Ptr(version.ID),
 		Mode:       AISkillRunModeUse,
-			Trace:      AIWriteTrace{APIKeyID: int64Ptr(99)},
+		Trace:      AIWriteTrace{APIKeyID: int64Ptr(99)},
 		Parameters: map[string]any{"topic": "golang"},
 	})
 	require.Error(t, err)
@@ -507,15 +616,23 @@ func TestAISkillRunServiceExecuteFailedDispatchDoesNotCharge(t *testing.T) {
 	require.Len(t, runtime.requests, 1)
 	require.Empty(t, balance.charges)
 	require.Empty(t, creator.inputs)
-	require.Empty(t, store.settlements)
+	require.Len(t, store.settlements, 1)
+	for _, settlement := range store.settlements {
+		require.Equal(t, AISkillSettlementStatusFailed, settlement.Status)
+		require.Equal(t, aiSkillSettlementDispatchStateFailed, aiSkillSettlementDispatchState(settlement))
+		require.Contains(t, settlement.FailureReason, aiSkillSettlementDispatchFailureReason)
+	}
 
 	run := store.runs[1]
 	require.NotNil(t, run)
 	require.Equal(t, AISkillRunStatusFailed, run.Status)
-	require.Nil(t, run.SettlementID)
+	require.NotNil(t, run.SettlementID)
 	require.Equal(t, 0.0, run.ChargeAmount)
 	require.Equal(t, "openai", run.Provider)
 	require.Equal(t, "resp_failed", run.ExternalJobID)
+	replayed, replayErr := settlementSvc.ReplaySettlement(ctx, run.ID)
+	require.ErrorIs(t, replayErr, ErrAISkillSettlementReplayUnsafe)
+	require.Nil(t, replayed)
 }
 
 func TestAISkillSettlementRefundsBuyerWhenCreatorCreditFails(t *testing.T) {
@@ -650,6 +767,47 @@ func TestAISkillSettlementSettle_ReplaysExistingSettledRun(t *testing.T) {
 	require.Len(t, balance.charges, 1, "replayed settle must not charge buyer twice")
 	require.Len(t, creator.inputs, 1, "replayed settle must not credit creator twice")
 	require.Len(t, store.settlements, 1, "replayed settle must not create duplicate settlement rows")
+}
+
+func TestAISkillSettlementSettle_StaleReplayAfterFinalizeFailureChargesOnce(t *testing.T) {
+	ctx := context.Background()
+	store := &aiSkillFinalizeFailingStoreStub{aiSkillStoreStub: newAISkillStoreStub(), failSettled: true}
+	balance := &aiSkillIdempotentBalanceChargerStub{
+		balance: 100,
+		charges: map[string]*AISkillBalanceChargeResult{},
+	}
+	creator := &aiSkillCreatorCreditorStub{}
+	settlementSvc := NewAISkillSettlementService(store, balance, creator)
+
+	input := AISkillSettleInput{
+		RunID:         3303,
+		SkillID:       1303,
+		VersionID:     2303,
+		BuyerUserID:   903,
+		CreatorUserID: 703,
+		BillingPolicy: AISkillBillingPolicy{
+			Mode:                   AISkillBillingModePerRun,
+			PricePerRun:            12.5,
+			PlatformCommissionRate: 0.2,
+		},
+	}
+
+	first, err := settlementSvc.Settle(ctx, input)
+	require.ErrorContains(t, err, "charged but finalize failed")
+	require.Nil(t, first)
+	require.Equal(t, 1, balance.balanceChanges)
+	require.InDelta(t, 87.5, balance.balance, 1e-9)
+
+	for _, stored := range store.settlements {
+		stored.UpdatedAt = time.Now().Add(-3 * time.Minute)
+	}
+	store.failSettled = false
+	replayed, err := settlementSvc.Settle(ctx, input)
+	require.NoError(t, err)
+	require.Equal(t, AISkillSettlementStatusSettled, replayed.Status)
+	require.Equal(t, 2, balance.chargeCalls, "stale replay should consult the idempotency ledger")
+	require.Equal(t, 1, balance.balanceChanges, "the reference may mutate the buyer balance only once")
+	require.InDelta(t, 87.5, balance.balance, 1e-9)
 }
 
 func TestAISkillSettlementSettle_RetriesExistingFailedRunWhenCompensationCompleted(t *testing.T) {

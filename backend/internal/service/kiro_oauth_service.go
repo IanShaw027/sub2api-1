@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -88,15 +89,18 @@ func (s *KiroOAuthSession) tryConsume() bool {
 type KiroOAuthSessionStore struct {
 	mu       sync.RWMutex
 	sessions map[string]*KiroOAuthSession
-	stopOnce sync.Once
-	stopCh   chan struct{}
-	remote   *redissession.Store
+	// localOnly prevents a remote miss from reviving a stale local session.
+	localOnly map[string]struct{}
+	stopOnce  sync.Once
+	stopCh    chan struct{}
+	remote    *redissession.Store
 }
 
 func NewKiroOAuthSessionStore() *KiroOAuthSessionStore {
 	store := &KiroOAuthSessionStore{
-		sessions: make(map[string]*KiroOAuthSession),
-		stopCh:   make(chan struct{}),
+		sessions:  make(map[string]*KiroOAuthSession),
+		localOnly: make(map[string]struct{}),
+		stopCh:    make(chan struct{}),
 	}
 	go store.cleanup()
 	return store
@@ -111,20 +115,31 @@ func NewKiroRedisOAuthSessionStore(rdb *redis.Client) *KiroOAuthSessionStore {
 	return store
 }
 
-func (s *KiroOAuthSessionStore) Set(sessionID string, session *KiroOAuthSession) {
+func (s *KiroOAuthSessionStore) Set(sessionID string, session *KiroOAuthSession) error {
 	if session == nil {
-		return
+		return nil
 	}
+	var remoteErr error
 	if s != nil && s.remote != nil {
 		// Marshal without mutex: only exported fields have json tags.
-		_ = s.remote.Set(context.Background(), sessionID, session)
+		remoteErr = s.remote.Set(context.Background(), sessionID, session)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions[sessionID] = session
+	if remoteErr != nil {
+		s.localOnly[sessionID] = struct{}{}
+		log.Printf("kiro oauth session Redis write failed; using process-local fallback: %v", remoteErr)
+	} else {
+		delete(s.localOnly, sessionID)
+	}
+	return remoteErr
 }
 
 func (s *KiroOAuthSessionStore) Get(sessionID string) (*KiroOAuthSession, bool) {
+	if s.isLocalOnly(sessionID) {
+		return s.getMemory(sessionID)
+	}
 	if s != nil && s.remote != nil {
 		var session KiroOAuthSession
 		ok, err := s.remote.Get(context.Background(), sessionID, &session)
@@ -144,6 +159,10 @@ func (s *KiroOAuthSessionStore) Get(sessionID string) (*KiroOAuthSession, bool) 
 		s.mu.Unlock()
 		return &session, true
 	}
+	return s.getMemory(sessionID)
+}
+
+func (s *KiroOAuthSessionStore) getMemory(sessionID string) (*KiroOAuthSession, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	session, ok := s.sessions[sessionID]
@@ -163,17 +182,32 @@ func (s *KiroOAuthSessionStore) Delete(sessionID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.sessions, sessionID)
+	delete(s.localOnly, sessionID)
 }
 
 func (s *KiroOAuthSessionStore) TryConsumeSession(sessionID string) bool {
 	if s == nil {
 		return false
 	}
+	if s.isLocalOnly(sessionID) {
+		return s.tryConsumeMemory(sessionID)
+	}
 	if s.remote != nil {
 		ok, err := s.remote.TryConsume(context.Background(), sessionID)
 		return err == nil && ok
 	}
-	session, ok := s.Get(sessionID)
+	return s.tryConsumeMemory(sessionID)
+}
+
+func (s *KiroOAuthSessionStore) isLocalOnly(sessionID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.localOnly[sessionID]
+	return ok
+}
+
+func (s *KiroOAuthSessionStore) tryConsumeMemory(sessionID string) bool {
+	session, ok := s.getMemory(sessionID)
 	if !ok {
 		return false
 	}
@@ -198,6 +232,7 @@ func (s *KiroOAuthSessionStore) cleanup() {
 			for id, session := range s.sessions {
 				if time.Since(session.CreatedAt) > kiroOAuthSessionTTL {
 					delete(s.sessions, id)
+					delete(s.localOnly, id)
 				}
 			}
 			s.mu.Unlock()

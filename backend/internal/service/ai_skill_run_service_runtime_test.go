@@ -132,9 +132,13 @@ func (s *aiSkillRunServiceTestStore) UpdateRun(_ context.Context, run *AISkillRu
 type aiSkillRunServiceTestSettlementRepo struct {
 	created          []*AISkillSettlement
 	nextSettlementID int64
+	createErr        error
 }
 
 func (r *aiSkillRunServiceTestSettlementRepo) CreateSettlement(_ context.Context, settlement *AISkillSettlement) error {
+	if r.createErr != nil {
+		return r.createErr
+	}
 	if r.nextSettlementID <= 0 {
 		r.nextSettlementID = 1
 	}
@@ -146,12 +150,23 @@ func (r *aiSkillRunServiceTestSettlementRepo) CreateSettlement(_ context.Context
 	return nil
 }
 
-func (r *aiSkillRunServiceTestSettlementRepo) GetSettlementByRunID(context.Context, int64) (*AISkillSettlement, error) {
+func (r *aiSkillRunServiceTestSettlementRepo) GetSettlementByRunID(_ context.Context, runID int64) (*AISkillSettlement, error) {
+	for _, settlement := range r.created {
+		if settlement.RunID == runID {
+			return cloneAISkillSettlement(settlement), nil
+		}
+	}
 	return nil, ErrAISkillSettlementNotFound
 }
 
-func (r *aiSkillRunServiceTestSettlementRepo) UpdateSettlement(context.Context, *AISkillSettlement) error {
-	return nil
+func (r *aiSkillRunServiceTestSettlementRepo) UpdateSettlement(_ context.Context, settlement *AISkillSettlement) error {
+	for i, existing := range r.created {
+		if existing.ID == settlement.ID {
+			r.created[i] = cloneAISkillSettlement(settlement)
+			return nil
+		}
+	}
+	return ErrAISkillSettlementNotFound
 }
 
 type aiSkillRunServiceTestRuntime struct {
@@ -204,7 +219,8 @@ func TestAISkillRunServiceExecuteFailedDispatchDoesNotChargeRuntimeStore(t *test
 	}
 	require.NoError(t, store.CreateVersion(ctx, version))
 
-	settlementSvc := NewAISkillSettlementService(&aiSkillRunServiceTestSettlementRepo{}, nil, nil)
+	settlementRepo := &aiSkillRunServiceTestSettlementRepo{}
+	settlementSvc := NewAISkillSettlementService(settlementRepo, nil, nil)
 	runtime := &aiSkillRunServiceTestRuntime{
 		result: &AISkillDispatchResult{
 			Status:        AISkillRunStatusFailed,
@@ -229,7 +245,12 @@ func TestAISkillRunServiceExecuteFailedDispatchDoesNotChargeRuntimeStore(t *test
 	run := store.runs[1]
 	require.NotNil(t, run)
 	require.Equal(t, AISkillRunStatusFailed, run.Status)
-	require.Nil(t, run.SettlementID)
+	require.NotNil(t, run.SettlementID)
+	require.Len(t, settlementRepo.created, 1)
+	require.Equal(t, AISkillSettlementStatusFailed, settlementRepo.created[0].Status)
+	require.Equal(t, aiSkillSettlementDispatchStateFailed, aiSkillSettlementDispatchState(settlementRepo.created[0]))
+	_, replayErr := settlementSvc.ReplaySettlement(ctx, run.ID)
+	require.ErrorIs(t, replayErr, ErrAISkillSettlementReplayUnsafe)
 	require.Zero(t, run.ChargeAmount)
 	require.Empty(t, run.BillingMode)
 	require.Empty(t, run.Currency)
@@ -418,11 +439,100 @@ func TestAISkillRunServiceExecuteScriptDispatchAckReturnsDispatchedRun(t *testin
 	require.Equal(t, map[string]any{"plan": map[string]any{"mode": "dispatch"}}, run.Output)
 	settlementRepo, ok := settlementSvc.repo.(*aiSkillRunServiceTestSettlementRepo)
 	require.True(t, ok)
-	require.Len(t, settlementRepo.created, 0)
+	require.Len(t, settlementRepo.created, 1)
+	require.Equal(t, AISkillSettlementStatusPending, settlementRepo.created[0].Status)
+	require.Equal(t, aiSkillSettlementDispatchStateConfirmed, aiSkillSettlementDispatchState(settlementRepo.created[0]))
 	require.Equal(t, 0.0, run.ChargeAmount)
 	require.Empty(t, run.BillingMode)
 	require.Empty(t, run.Currency)
-	require.Nil(t, run.SettlementID)
+	require.NotNil(t, run.SettlementID)
+}
+
+func TestAISkillRunServiceExecuteDoesNotDispatchWhenSettlementIntentCreationFails(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newAISkillRunServiceTestStore()
+	skill := &AISkill{CreatorUserID: 705, Name: "Intent Failure Skill", Type: AISkillTypePromptChat}
+	require.NoError(t, store.CreateSkill(ctx, skill))
+	version := &AISkillVersion{
+		SkillID:       skill.ID,
+		CreatorUserID: skill.CreatorUserID,
+		Version:       1,
+		Type:          skill.Type,
+		Status:        AISkillVersionStatusApproved,
+		ExecutionSpec: AISkillExecutionSpec{
+			Type:       AISkillTypePromptChat,
+			PromptChat: &AISkillPromptChatSpec{UserPromptTemplate: "Summarize {{topic}}"},
+		},
+		BillingPolicy: AISkillBillingPolicy{Mode: AISkillBillingModePerRun, PricePerRun: 4.5},
+	}
+	require.NoError(t, store.CreateVersion(ctx, version))
+
+	createErr := context.DeadlineExceeded
+	settlementRepo := &aiSkillRunServiceTestSettlementRepo{createErr: createErr}
+	settlementSvc := NewAISkillSettlementService(settlementRepo, nil, nil)
+	runtime := &aiSkillRunServiceTestRuntime{result: &AISkillDispatchResult{Status: AISkillRunStatusSucceeded}}
+	runSvc := NewAISkillRunService(store, store, store, settlementSvc, runtime).
+		WithAPIKeyRepository(&skillBillingAPIKeyRepoStub{ownerUserID: 905})
+
+	result, err := runSvc.Execute(ctx, 905, &AISkillRunInput{
+		SkillID:    skill.ID,
+		VersionID:  aiSkillRunServiceTestInt64Ptr(version.ID),
+		Mode:       AISkillRunModeUse,
+		Trace:      AIWriteTrace{APIKeyID: int64PtrForTest(99)},
+		Parameters: map[string]any{"topic": "golang"},
+	})
+	require.ErrorIs(t, err, createErr)
+	require.Nil(t, result)
+	require.Empty(t, runtime.requests, "runtime must not execute without a durable settlement intent")
+	require.Empty(t, settlementRepo.created)
+	require.Equal(t, AISkillRunStatusFailed, store.runs[1].Status)
+}
+
+func TestAISkillRunServiceExecuteRuntimeErrorTerminalizesSettlementIntent(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store := newAISkillRunServiceTestStore()
+	skill := &AISkill{CreatorUserID: 706, Name: "Runtime Error Skill", Type: AISkillTypePromptChat}
+	require.NoError(t, store.CreateSkill(ctx, skill))
+	version := &AISkillVersion{
+		SkillID:       skill.ID,
+		CreatorUserID: skill.CreatorUserID,
+		Version:       1,
+		Type:          skill.Type,
+		Status:        AISkillVersionStatusApproved,
+		ExecutionSpec: AISkillExecutionSpec{
+			Type:       AISkillTypePromptChat,
+			PromptChat: &AISkillPromptChatSpec{UserPromptTemplate: "Summarize {{topic}}"},
+		},
+		BillingPolicy: AISkillBillingPolicy{Mode: AISkillBillingModePerRun, PricePerRun: 5.5},
+	}
+	require.NoError(t, store.CreateVersion(ctx, version))
+
+	settlementRepo := &aiSkillRunServiceTestSettlementRepo{}
+	settlementSvc := NewAISkillSettlementService(settlementRepo, nil, nil)
+	runtimeErr := context.Canceled
+	runtime := &aiSkillRunServiceTestRuntime{err: runtimeErr}
+	runSvc := NewAISkillRunService(store, store, store, settlementSvc, runtime).
+		WithAPIKeyRepository(&skillBillingAPIKeyRepoStub{ownerUserID: 906})
+
+	result, err := runSvc.Execute(ctx, 906, &AISkillRunInput{
+		SkillID:    skill.ID,
+		VersionID:  aiSkillRunServiceTestInt64Ptr(version.ID),
+		Mode:       AISkillRunModeUse,
+		Trace:      AIWriteTrace{APIKeyID: int64PtrForTest(99)},
+		Parameters: map[string]any{"topic": "golang"},
+	})
+	require.ErrorIs(t, err, runtimeErr)
+	require.Nil(t, result)
+	require.Len(t, runtime.requests, 1)
+	require.Len(t, settlementRepo.created, 1)
+	require.Equal(t, AISkillSettlementStatusFailed, settlementRepo.created[0].Status)
+	require.Equal(t, aiSkillSettlementDispatchStateFailed, aiSkillSettlementDispatchState(settlementRepo.created[0]))
+	_, replayErr := settlementSvc.ReplaySettlement(ctx, store.runs[1].ID)
+	require.ErrorIs(t, replayErr, ErrAISkillSettlementReplayUnsafe)
 }
 
 func TestAISkillRunServiceExecuteSuccessRecoversWhenFinalUpdateFailsAfterSettlement(t *testing.T) {

@@ -99,11 +99,10 @@ func (s *GrokOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64, 
 }
 
 type GrokExchangeCodeInput struct {
-	SessionID   string
-	Code        string
-	State       string
-	RedirectURI string
-	ProxyID     *int64
+	SessionID string
+	Code      string
+	State     string
+	ProxyID   *int64
 }
 
 type GrokTokenInfo struct {
@@ -145,7 +144,6 @@ func (s *GrokOAuthService) ExchangeCode(ctx context.Context, input *GrokExchange
 	if !ok {
 		return nil, infraerrors.New(http.StatusBadRequest, "GROK_OAUTH_SESSION_NOT_FOUND", "session not found or expired")
 	}
-	defer s.sessionStore.Delete(input.SessionID)
 
 	parsed := xai.ParseAuthorizationInput(input.Code)
 	code := strings.TrimSpace(parsed.Code)
@@ -156,10 +154,10 @@ func (s *GrokOAuthService) ExchangeCode(ctx context.Context, input *GrokExchange
 	if state == "" {
 		state = strings.TrimSpace(parsed.State)
 	}
-	if parsed.RequiresState && state == "" {
-		return nil, infraerrors.New(http.StatusBadRequest, "GROK_OAUTH_STATE_REQUIRED", "oauth state is required for callback URLs")
+	if state == "" {
+		return nil, infraerrors.New(http.StatusBadRequest, "GROK_OAUTH_STATE_REQUIRED", "oauth state is required")
 	}
-	if state != "" && subtle.ConstantTimeCompare([]byte(state), []byte(session.State)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(state), []byte(session.State)) != 1 {
 		return nil, infraerrors.New(http.StatusBadRequest, "GROK_OAUTH_INVALID_STATE", "invalid oauth state")
 	}
 
@@ -171,20 +169,18 @@ func (s *GrokOAuthService) ExchangeCode(ctx context.Context, input *GrokExchange
 			return nil, err
 		}
 	}
-	redirectURI := session.RedirectURI
-	if strings.TrimSpace(input.RedirectURI) != "" {
-		redirectURI = input.RedirectURI
-	}
-
-	// Multi-instance safe consume (Redis SET NX when configured; local mutex otherwise).
-	if !s.sessionStore.TryConsumeSession(input.SessionID) {
-		return nil, infraerrors.New(http.StatusBadRequest, "GROK_OAUTH_SESSION_ALREADY_USED", "oauth session has already been used")
-	}
 	oauthClient, err := s.requireOAuthClient()
 	if err != nil {
 		return nil, err
 	}
-	tokenResp, err := oauthClient.ExchangeCode(ctx, code, session.CodeVerifier, redirectURI, proxyURL, session.ClientID)
+
+	// Claim only after all retryable input and configuration checks have passed.
+	if !s.sessionStore.TryConsumeSession(input.SessionID) {
+		return nil, infraerrors.New(http.StatusBadRequest, "GROK_OAUTH_SESSION_ALREADY_USED", "oauth session has already been used")
+	}
+	defer s.sessionStore.Delete(input.SessionID)
+
+	tokenResp, err := oauthClient.ExchangeCode(ctx, code, session.CodeVerifier, session.RedirectURI, proxyURL, session.ClientID)
 	if err != nil {
 		return nil, err
 	}

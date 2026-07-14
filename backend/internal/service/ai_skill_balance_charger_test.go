@@ -16,6 +16,26 @@ type aiSkillRefundUserRepo struct {
 	updateBalanceCalls []float64
 }
 
+type aiSkillBalanceLedgerStub struct {
+	chargeCalls int
+	refundCalls int
+	balance     float64
+}
+
+func (s *aiSkillBalanceLedgerStub) ApplyAISkillBalanceCharge(_ context.Context, input AISkillBalanceChargeInput) (*AISkillBalanceLedgerResult, error) {
+	s.chargeCalls++
+	before := s.balance
+	s.balance -= input.Amount
+	return &AISkillBalanceLedgerResult{Amount: input.Amount, BalanceBefore: before, BalanceAfter: s.balance}, nil
+}
+
+func (s *aiSkillBalanceLedgerStub) ApplyAISkillBalanceRefund(_ context.Context, input AISkillBalanceRefundInput) (*AISkillBalanceLedgerResult, error) {
+	s.refundCalls++
+	before := s.balance
+	s.balance += input.Amount
+	return &AISkillBalanceLedgerResult{Amount: input.Amount, BalanceBefore: before, BalanceAfter: s.balance}, nil
+}
+
 func (r *aiSkillRefundUserRepo) AddBalanceWithoutRecharge(_ context.Context, _ int64, amount float64) error {
 	r.refundCalls = append(r.refundCalls, amount)
 	r.balance += amount
@@ -33,16 +53,19 @@ func (r *aiSkillRefundUserRepo) GetByID(_ context.Context, id int64) (*User, err
 
 func TestAISkillBalanceChargerRefundDoesNotUseRechargeBalancePath(t *testing.T) {
 	repo := &aiSkillRefundUserRepo{balance: 10}
-	charger := &aiSkillBalanceCharger{userRepo: repo}
+	ledger := &aiSkillBalanceLedgerStub{balance: 10}
+	charger := &aiSkillBalanceCharger{ledgerRepo: ledger, userRepo: repo}
 
 	result, err := charger.RefundUserBalance(t.Context(), AISkillBalanceRefundInput{
-		UserID: 7,
-		Amount: 3.5,
+		UserID:    7,
+		Amount:    3.5,
+		Reference: "ai_skill_run:7",
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, []float64{3.5}, repo.refundCalls)
+	require.Empty(t, repo.refundCalls)
 	require.Empty(t, repo.updateBalanceCalls)
+	require.Equal(t, 1, ledger.refundCalls)
 	require.InDelta(t, 3.5, result.RefundedAmount, 1e-9)
 	require.InDelta(t, 13.5, result.BalanceAfter, 1e-9)
 }

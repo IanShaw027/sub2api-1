@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -186,6 +187,9 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 		}
 		result.NewBalance = &newBalance
 		result.BalanceOverdrafted = !sufficient
+		if err := enqueueBalanceInvalidationOnReserveCrossing(ctx, tx, cmd, newBalance); err != nil {
+			return err
+		}
 	}
 
 	if cmd.APIKeyQuotaCost > 0 {
@@ -210,6 +214,20 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 		result.QuotaState = quotaState
 	}
 
+	return nil
+}
+
+func enqueueBalanceInvalidationOnReserveCrossing(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand, newBalance float64) error {
+	if tx == nil || cmd == nil || cmd.MinimumBalanceReserve <= 0 || newBalance <= 0 || newBalance >= cmd.MinimumBalanceReserve {
+		return nil
+	}
+	oldBalance := newBalance + cmd.BalanceCost
+	if oldBalance < cmd.MinimumBalanceReserve {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO balance_cache_outbox (user_id) VALUES ($1)`, cmd.UserID); err != nil {
+		return fmt.Errorf("enqueue reserve-crossing balance cache invalidation: %w", err)
+	}
 	return nil
 }
 

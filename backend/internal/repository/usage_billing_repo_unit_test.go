@@ -5,6 +5,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -93,6 +94,100 @@ func TestApplyUsageBillingEffects_FlagsBalanceOverdraft(t *testing.T) {
 	require.True(t, result.BalanceOverdrafted)
 	require.NoError(t, tx.Commit())
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestApplyUsageBillingEffects_EnqueuesInvalidationWhenBalanceCrossesReserve(t *testing.T) {
+	ctx := context.Background()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectBegin()
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	mock.ExpectQuery(conditionalBalanceDeductSQL).
+		WithArgs(0.01, int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(0.005))
+	mock.ExpectExec(`INSERT INTO balance_cache_outbox \(user_id\) VALUES \(\$1\)`).
+		WithArgs(int64(42)).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	result := &service.UsageBillingApplyResult{Applied: true}
+	err = (&usageBillingRepository{}).applyUsageBillingEffects(ctx, tx, &service.UsageBillingCommand{
+		UserID:                42,
+		BalanceCost:           0.01,
+		MinimumBalanceReserve: 0.01,
+	}, result)
+	require.NoError(t, err)
+	require.NotNil(t, result.NewBalance)
+	require.InDelta(t, 0.005, *result.NewBalance, 0.000001)
+	require.NoError(t, tx.Commit())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestApplyUsageBillingEffects_RollsBackWhenReserveInvalidationCannotBeEnqueued(t *testing.T) {
+	ctx := context.Background()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectBegin()
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	mock.ExpectQuery(conditionalBalanceDeductSQL).
+		WithArgs(0.01, int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"balance"}).AddRow(0.005))
+	mock.ExpectExec(`INSERT INTO balance_cache_outbox \(user_id\) VALUES \(\$1\)`).
+		WithArgs(int64(42)).
+		WillReturnError(errors.New("outbox unavailable"))
+	mock.ExpectRollback()
+
+	err = (&usageBillingRepository{}).applyUsageBillingEffects(ctx, tx, &service.UsageBillingCommand{
+		UserID:                42,
+		BalanceCost:           0.01,
+		MinimumBalanceReserve: 0.01,
+	}, &service.UsageBillingApplyResult{Applied: true})
+
+	require.ErrorContains(t, err, "enqueue reserve-crossing balance cache invalidation")
+	require.NoError(t, tx.Rollback())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestEnqueueBalanceInvalidationOnReserveCrossingSkipsNonCrossings(t *testing.T) {
+	tests := []struct {
+		name       string
+		newBalance float64
+		cost       float64
+		reserve    float64
+	}{
+		{name: "still eligible", newBalance: 0.02, cost: 0.01, reserve: 0.01},
+		{name: "already below reserve", newBalance: 0.005, cost: 0.001, reserve: 0.01},
+		{name: "exhausted covered by trigger", newBalance: 0, cost: 0.01, reserve: 0.01},
+		{name: "reserve disabled", newBalance: 0.005, cost: 0.01, reserve: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer func() { _ = db.Close() }()
+			mock.ExpectBegin()
+			tx, err := db.BeginTx(context.Background(), nil)
+			require.NoError(t, err)
+			mock.ExpectRollback()
+
+			err = enqueueBalanceInvalidationOnReserveCrossing(context.Background(), tx, &service.UsageBillingCommand{
+				UserID:                42,
+				BalanceCost:           tt.cost,
+				MinimumBalanceReserve: tt.reserve,
+			}, tt.newBalance)
+
+			require.NoError(t, err)
+			require.NoError(t, tx.Rollback())
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
 }
 
 func TestDeductUsageBillingBalance_ReturnsUserNotFoundWhenNoUserUpdated(t *testing.T) {

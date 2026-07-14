@@ -214,7 +214,8 @@ export function useKiroOAuth() {
   const validateRefreshToken = async (
     credentials: Partial<KiroCredentials> & Record<string, unknown>,
     extra?: KiroAccountExtra & Record<string, unknown>,
-    proxyId?: number | null
+    proxyId?: number | null,
+    manageLoading = true
   ): Promise<Record<string, unknown> | null> => {
     const refreshToken = String(credentials.refresh_token || '').trim()
     if (!refreshToken) {
@@ -222,7 +223,7 @@ export function useKiroOAuth() {
       return null
     }
 
-    loading.value = true
+    if (manageLoading) loading.value = true
     error.value = ''
 
     try {
@@ -239,7 +240,7 @@ export function useKiroOAuth() {
       error.value = err?.response?.data?.detail || err?.message || t('admin.accounts.kiro.failedToValidateRT')
       return null
     } finally {
-      loading.value = false
+      if (manageLoading) loading.value = false
     }
   }
 

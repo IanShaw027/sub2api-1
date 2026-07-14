@@ -3813,7 +3813,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import {
@@ -5233,10 +5233,15 @@ const resetForm = () => {
 }
 
 const handleClose = () => {
+  kiroOAuth.cancelDeviceAuthorization()
   antigravityMixedChannelConfirmed.value = false
   clearMixedChannelDialog()
   emit('close')
 }
+
+onUnmounted(() => {
+  kiroOAuth.cancelDeviceAuthorization()
+})
 
 const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknown> | undefined => {
   if (form.platform !== 'openai') {
@@ -5799,7 +5804,8 @@ const handleKiroValidateRT = async (payload: {
         const validatedCredentials = await kiroOAuth.validateRefreshToken(
           manualCredentials,
           payload.extra,
-          form.proxy_id
+          form.proxy_id,
+          false
         )
         if (!validatedCredentials) {
           failedCount++
@@ -5930,7 +5936,7 @@ const createAccountAndFinish = async (
     }
   }
   if (platform === 'grok') {
-    if (!credentials.base_url) {
+    if (type === 'apikey' && !credentials.base_url) {
       credentials.base_url = apiKeyBaseUrl.value.trim() || 'https://api.x.ai/v1'
     }
     const modelMapping = buildModelMappingObject(modelRestrictionMode.value, allowedModels.value, modelMappings.value)
@@ -6021,7 +6027,7 @@ const handleGrokValidateRT = async (refreshTokenInput: string) => {
   try {
     for (let i = 0; i < refreshTokens.length; i++) {
       try {
-        const tokenInfo = await grokOAuth.validateRefreshToken(refreshTokens[i], form.proxy_id)
+        const tokenInfo = await grokOAuth.validateRefreshToken(refreshTokens[i], form.proxy_id, false)
         if (!tokenInfo) {
           failedCount++
           errors.push(`#${i + 1}: ${grokOAuth.error.value || 'Validation failed'}`)
@@ -6085,7 +6091,7 @@ const handleGrokValidateSSO = async (ssoTokenInput: string) => {
   try {
     for (let i = 0; i < ssoTokens.length; i++) {
       try {
-        const tokenInfo = await grokOAuth.validateSSOToken(ssoTokens[i], form.proxy_id)
+        const tokenInfo = await grokOAuth.validateSSOToken(ssoTokens[i], form.proxy_id, false)
         if (!tokenInfo) {
           failedCount++
           errors.push(`#${i + 1}: ${grokOAuth.error.value || 'Validation failed'}`)
@@ -6148,7 +6154,7 @@ const handleGrokAuthorizePassword = async (emailPasswordInput: string) => {
   try {
     for (let i = 0; i < lines.length; i++) {
       try {
-        const tokenInfo = await grokOAuth.authorizePassword(lines[i], form.proxy_id)
+        const tokenInfo = await grokOAuth.authorizePassword(lines[i], form.proxy_id, false)
         if (!tokenInfo) {
           failedCount++
           errors.push(`#${i + 1}: ${grokOAuth.error.value || 'Authorization failed'}`)
@@ -6770,6 +6776,12 @@ const handleAnthropicExchange = async (authCode: string) => {
   oauth.error.value = ''
 
   try {
+    const stateToUse = (oauthFlowRef.value?.oauthState || oauth.oauthState.value || '').trim()
+    if (!stateToUse) {
+      oauth.error.value = t('admin.accounts.oauth.authFailed')
+      appStore.showError(oauth.error.value)
+      return
+    }
     const proxyConfig = form.proxy_id ? { proxy_id: form.proxy_id } : {}
     const endpoint =
       addMethod.value === 'oauth'
@@ -6779,6 +6791,7 @@ const handleAnthropicExchange = async (authCode: string) => {
     const tokenInfo = await adminAPI.accounts.exchangeCode(endpoint, {
       session_id: oauth.sessionId.value,
       code: authCode.trim(),
+      state: stateToUse,
       ...proxyConfig
     })
 

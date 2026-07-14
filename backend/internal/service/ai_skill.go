@@ -78,6 +78,9 @@ var (
 	ErrAISkillRunModeInvalid             = infraerrors.BadRequest("AI_SKILL_RUN_MODE_INVALID", "ai skill run mode is invalid")
 	ErrAISkillSettlementUnavailable      = infraerrors.ServiceUnavailable("AI_SKILL_SETTLEMENT_UNAVAILABLE", "ai skill settlement service unavailable")
 	ErrAISkillBalanceServiceUnavailable  = infraerrors.ServiceUnavailable("AI_SKILL_BALANCE_UNAVAILABLE", "ai skill balance service unavailable")
+	ErrAISkillBalanceReferenceInvalid    = infraerrors.BadRequest("AI_SKILL_BALANCE_REFERENCE_INVALID", "ai skill balance reference is required")
+	ErrAISkillBalanceReferenceConflict   = infraerrors.Conflict("AI_SKILL_BALANCE_REFERENCE_CONFLICT", "ai skill balance reference was already used with different attributes")
+	ErrAISkillBalanceChargeRefunded      = infraerrors.Conflict("AI_SKILL_BALANCE_CHARGE_REFUNDED", "ai skill balance charge was already refunded and cannot be replayed")
 	ErrAISkillCreatorEarningsUnavailable = infraerrors.ServiceUnavailable("AI_SKILL_CREATOR_EARNINGS_UNAVAILABLE", "ai skill creator earnings service unavailable")
 	ErrAISkillCreatorEarningsMismatch    = infraerrors.Conflict("AI_SKILL_CREATOR_EARNINGS_MISMATCH", "creator earnings amount mismatch")
 	ErrAISkillSettlementInProgress       = infraerrors.Conflict("AI_SKILL_SETTLEMENT_IN_PROGRESS", "ai skill settlement is already pending")
@@ -313,8 +316,10 @@ type AISkillDispatchResult struct {
 }
 
 type AISkillRunResult struct {
-	Prepared *AISkillPreparedRun    `json:"prepared,omitempty"`
-	Dispatch *AISkillDispatchResult `json:"dispatch,omitempty"`
+	Prepared           *AISkillPreparedRun    `json:"prepared,omitempty"`
+	Dispatch           *AISkillDispatchResult `json:"dispatch,omitempty"`
+	SettlementDeferred bool                   `json:"settlement_deferred,omitempty"`
+	SettlementStatus   string                 `json:"settlement_status,omitempty"`
 }
 
 type AISkillSettlementQuote struct {
@@ -417,6 +422,14 @@ type AISkillBalanceRefundResult struct {
 	BalanceAfter   float64 `json:"balance_after"`
 }
 
+type AISkillBalanceLedgerResult struct {
+	Amount        float64
+	BalanceBefore float64
+	BalanceAfter  float64
+	Duplicate     bool
+	Refunded      bool
+}
+
 type AISkillCreatorEarningsInput struct {
 	CreatorUserID int64
 	BuyerUserID   int64
@@ -477,6 +490,14 @@ type AISkillBalanceCharger interface {
 	RefundUserBalance(ctx context.Context, input AISkillBalanceRefundInput) (*AISkillBalanceRefundResult, error)
 }
 
+// AISkillBalanceLedgerRepository atomically claims a reference and applies the
+// matching wallet mutation. Implementations must return the original result for
+// duplicate calls with the same reference and attributes.
+type AISkillBalanceLedgerRepository interface {
+	ApplyAISkillBalanceCharge(ctx context.Context, input AISkillBalanceChargeInput) (*AISkillBalanceLedgerResult, error)
+	ApplyAISkillBalanceRefund(ctx context.Context, input AISkillBalanceRefundInput) (*AISkillBalanceLedgerResult, error)
+}
+
 type AISkillCreatorEarningsCreditor interface {
 	CreditCreatorEarnings(ctx context.Context, input AISkillCreatorEarningsInput) (float64, error)
 	ReverseCreatorEarnings(ctx context.Context, input AISkillCreatorEarningsReversalInput) (float64, error)
@@ -507,12 +528,12 @@ type AISkillOpenAIChatRuntime interface {
 }
 
 type AISkillOpenAIImageRuntimeInput struct {
-	GroupID     *int64
-	SessionHash string
-	Model       string
-	Path        string
-	ContentType string
-	Body        []byte
+	GroupID       *int64
+	SessionHash   string
+	Model         string
+	Path          string
+	ContentType   string
+	Body          []byte
 	BillingAPIKey *APIKey
 }
 

@@ -2307,6 +2307,7 @@ func (h *OAuthHandler) GenerateSetupTokenURL(c *gin.Context) {
 type ExchangeCodeRequest struct {
 	SessionID string `json:"session_id" binding:"required"`
 	Code      string `json:"code" binding:"required"`
+	State     string `json:"state" binding:"required"`
 	ProxyID   *int64 `json:"proxy_id"`
 }
 
@@ -2322,6 +2323,7 @@ func (h *OAuthHandler) ExchangeCode(c *gin.Context) {
 	tokenInfo, err := h.oauthService.ExchangeCode(c.Request.Context(), &service.ExchangeCodeInput{
 		SessionID: req.SessionID,
 		Code:      req.Code,
+		State:     req.State,
 		ProxyID:   req.ProxyID,
 	})
 	if err != nil {
@@ -2344,6 +2346,7 @@ func (h *OAuthHandler) ExchangeSetupTokenCode(c *gin.Context) {
 	tokenInfo, err := h.oauthService.ExchangeCode(c.Request.Context(), &service.ExchangeCodeInput{
 		SessionID: req.SessionID,
 		Code:      req.Code,
+		State:     req.State,
 		ProxyID:   req.ProxyID,
 	})
 	if err != nil {

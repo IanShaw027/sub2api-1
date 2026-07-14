@@ -66,7 +66,9 @@ type racingBalanceUserRepo struct {
 type balanceOutboxRepoStub struct {
 	mu      sync.Mutex
 	claimed bool
+	events  []BalanceCacheOutboxEvent
 	acked   []int64
+	nacked  []int64
 }
 
 func (r *balanceOutboxRepoStub) Claim(context.Context, int, time.Duration) ([]BalanceCacheOutboxEvent, error) {
@@ -76,6 +78,9 @@ func (r *balanceOutboxRepoStub) Claim(context.Context, int, time.Duration) ([]Ba
 		return nil, nil
 	}
 	r.claimed = true
+	if r.events != nil {
+		return append([]BalanceCacheOutboxEvent(nil), r.events...), nil
+	}
 	return []BalanceCacheOutboxEvent{{ID: 11, UserID: 7}}, nil
 }
 
@@ -86,7 +91,10 @@ func (r *balanceOutboxRepoStub) Ack(_ context.Context, ids []int64) error {
 	return nil
 }
 
-func (r *balanceOutboxRepoStub) Nack(context.Context, []int64, time.Duration, string) error {
+func (r *balanceOutboxRepoStub) Nack(_ context.Context, ids []int64, _ time.Duration, _ string) error {
+	r.mu.Lock()
+	r.nacked = append(r.nacked, ids...)
+	r.mu.Unlock()
 	return nil
 }
 
@@ -94,6 +102,29 @@ func (r *balanceOutboxRepoStub) ackedCount() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.acked)
+}
+
+func (r *balanceOutboxRepoStub) results() (acked, nacked []int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]int64(nil), r.acked...), append([]int64(nil), r.nacked...)
+}
+
+type selectiveBalanceInvalidationCache struct {
+	*balanceEligibilityCacheStub
+	failUserID int64
+	mu         sync.Mutex
+	users      []int64
+}
+
+func (s *selectiveBalanceInvalidationCache) InvalidateUserBalance(_ context.Context, userID int64) error {
+	s.mu.Lock()
+	s.users = append(s.users, userID)
+	s.mu.Unlock()
+	if userID == s.failUserID {
+		return errors.New("redis unavailable")
+	}
+	return nil
 }
 
 func (r *racingBalanceUserRepo) GetByID(ctx context.Context, id int64) (*User, error) {
@@ -224,6 +255,27 @@ func TestBalanceCacheOutboxConsumerInvalidatesAndAcknowledges(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return cache.invalidateCalls.Load() == 1 && outbox.ackedCount() == 1
 	}, time.Second, 10*time.Millisecond)
+}
+
+func TestBalanceCacheOutboxConsumerRetriesOnlyFailedUsers(t *testing.T) {
+	cache := &selectiveBalanceInvalidationCache{
+		balanceEligibilityCacheStub: &balanceEligibilityCacheStub{balance: 1},
+		failUserID:                  8,
+	}
+	outbox := &balanceOutboxRepoStub{events: []BalanceCacheOutboxEvent{
+		{ID: 11, UserID: 7},
+		{ID: 12, UserID: 8},
+		{ID: 13, UserID: 7},
+	}}
+	svc := NewBillingCacheService(cache, nil, nil, nil, nil, nil, &config.Config{}, nil)
+	t.Cleanup(svc.Stop)
+	svc.balanceOutboxRepo = outbox
+
+	svc.consumeBalanceCacheOutbox()
+
+	acked, nacked := outbox.results()
+	require.ElementsMatch(t, []int64{11, 13}, acked)
+	require.Equal(t, []int64{12}, nacked)
 }
 
 func TestSyncBalanceCacheAfterDeduction_InvalidatesExhaustedBalance(t *testing.T) {

@@ -14,23 +14,25 @@ import (
 )
 
 type grokOAuthClientStub struct {
-	refreshResponse *xai.TokenResponse
-	deviceCode      *GrokDeviceCodeResponse
-	deviceToken     *xai.TokenResponse
-	loginResult     *GrokPasswordLoginResult
-	loginEmail      string
-	loginPassword   string
-	ssoResponse     *xai.TokenResponse
-	exchangeCalls   int
-	mu              sync.Mutex
-	exchangeStarted chan struct{}
-	releaseExchange chan struct{}
-	onExchangeOnce  sync.Once
+	refreshResponse     *xai.TokenResponse
+	deviceCode          *GrokDeviceCodeResponse
+	deviceToken         *xai.TokenResponse
+	loginResult         *GrokPasswordLoginResult
+	loginEmail          string
+	loginPassword       string
+	ssoResponse         *xai.TokenResponse
+	exchangeCalls       int
+	exchangeRedirectURI string
+	mu                  sync.Mutex
+	exchangeStarted     chan struct{}
+	releaseExchange     chan struct{}
+	onExchangeOnce      sync.Once
 }
 
-func (s *grokOAuthClientStub) ExchangeCode(context.Context, string, string, string, string, string) (*xai.TokenResponse, error) {
+func (s *grokOAuthClientStub) ExchangeCode(_ context.Context, _, _, redirectURI, _, _ string) (*xai.TokenResponse, error) {
 	s.mu.Lock()
 	s.exchangeCalls++
+	s.exchangeRedirectURI = redirectURI
 	callNumber := s.exchangeCalls
 	s.mu.Unlock()
 	if callNumber == 1 && s.exchangeStarted != nil {
@@ -102,7 +104,7 @@ func TestGrokOAuthServiceRefreshTokenRejectsResponseWithoutAccessToken(t *testin
 	require.Contains(t, err.Error(), "GROK_OAUTH_INVALID_TOKEN_RESPONSE")
 }
 
-func TestGrokOAuthServiceExchangeCodeRequiresStateForCallbackURLAndConsumesSession(t *testing.T) {
+func TestGrokOAuthServiceExchangeCodeRequiresStateWithoutBurningSession(t *testing.T) {
 	client := &grokOAuthClientStub{}
 	svc := NewGrokOAuthService(nil, client)
 	defer svc.Stop()
@@ -112,7 +114,7 @@ func TestGrokOAuthServiceExchangeCodeRequiresStateForCallbackURLAndConsumesSessi
 
 	_, err = svc.ExchangeCode(context.Background(), &GrokExchangeCodeInput{
 		SessionID: auth.SessionID,
-		Code:      "http://127.0.0.1:56121/callback?code=code-without-state",
+		Code:      "code-without-state",
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "GROK_OAUTH_STATE_REQUIRED")
@@ -123,9 +125,34 @@ func TestGrokOAuthServiceExchangeCodeRequiresStateForCallbackURLAndConsumesSessi
 		Code:      "code-with-state",
 		State:     auth.State,
 	})
+	require.NoError(t, err)
+	require.Equal(t, 1, client.exchangeCalls)
+}
+
+func TestGrokOAuthServiceExchangeCodeRejectsWrongStateWithoutBurningSessionAndBindsRedirectURI(t *testing.T) {
+	client := &grokOAuthClientStub{}
+	svc := NewGrokOAuthService(nil, client)
+	defer svc.Stop()
+
+	auth, err := svc.GenerateAuthURL(context.Background(), nil, "https://accounts.x.ai/auth/callback")
+	require.NoError(t, err)
+
+	_, err = svc.ExchangeCode(context.Background(), &GrokExchangeCodeInput{
+		SessionID: auth.SessionID,
+		Code:      "code",
+		State:     "wrong-state",
+	})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "GROK_OAUTH_SESSION_NOT_FOUND")
+	require.Contains(t, err.Error(), "GROK_OAUTH_INVALID_STATE")
 	require.Zero(t, client.exchangeCalls)
+
+	_, err = svc.ExchangeCode(context.Background(), &GrokExchangeCodeInput{
+		SessionID: auth.SessionID,
+		Code:      "code",
+		State:     auth.State,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "https://accounts.x.ai/auth/callback", client.exchangeRedirectURI)
 }
 
 func TestGrokOAuthServiceExchangeCodeRejectsConcurrentSessionReuse(t *testing.T) {

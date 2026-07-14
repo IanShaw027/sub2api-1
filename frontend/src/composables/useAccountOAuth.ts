@@ -10,6 +10,7 @@ export interface OAuthState {
   authUrl: string
   authCode: string
   sessionId: string
+  oauthState: string
   sessionKey: string
   loading: boolean
   error: string
@@ -29,6 +30,7 @@ export function useAccountOAuth() {
   const authUrl = ref('')
   const authCode = ref('')
   const sessionId = ref('')
+  const oauthState = ref('')
   const sessionKey = ref('')
   const loading = ref(false)
   const error = ref('')
@@ -38,6 +40,7 @@ export function useAccountOAuth() {
     authUrl.value = ''
     authCode.value = ''
     sessionId.value = ''
+    oauthState.value = ''
     sessionKey.value = ''
     loading.value = false
     error.value = ''
@@ -51,6 +54,7 @@ export function useAccountOAuth() {
     loading.value = true
     authUrl.value = ''
     sessionId.value = ''
+    oauthState.value = ''
     error.value = ''
 
     try {
@@ -63,6 +67,7 @@ export function useAccountOAuth() {
       const response = await adminAPI.accounts.generateAuthUrl(endpoint, proxyConfig)
       authUrl.value = response.auth_url
       sessionId.value = response.session_id
+      oauthState.value = response.state
       return true
     } catch (err: any) {
       error.value = err.response?.data?.detail || 'Failed to generate auth URL'
@@ -78,8 +83,8 @@ export function useAccountOAuth() {
     addMethod: AddMethod,
     proxyId?: number | null
   ): Promise<TokenInfo | null> => {
-    if (!authCode.value.trim() || !sessionId.value) {
-      error.value = 'Missing auth code or session ID'
+    if (!authCode.value.trim() || !sessionId.value || !oauthState.value) {
+      error.value = 'Missing auth code, state, or session ID'
       return null
     }
 
@@ -96,6 +101,7 @@ export function useAccountOAuth() {
       const tokenInfo = await adminAPI.accounts.exchangeCode(endpoint, {
         session_id: sessionId.value,
         code: authCode.value.trim(),
+        state: oauthState.value,
         ...proxyConfig
       })
 
@@ -183,6 +189,7 @@ export function useAccountOAuth() {
     authUrl,
     authCode,
     sessionId,
+    oauthState,
     sessionKey,
     loading,
     error,

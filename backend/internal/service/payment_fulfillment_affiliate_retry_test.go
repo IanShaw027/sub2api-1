@@ -439,6 +439,35 @@ func TestRetryFulfillmentCompletedSubscriptionDoesNotDuplicateAffiliateRebate(t 
 	require.Zero(t, affiliateRepo.accrueHits)
 }
 
+func TestExecuteSubscriptionFulfillmentCompletedOrderBackfillsMissingAffiliateRebate(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentFulfillmentTestClient(t)
+	order := createPaymentFulfillmentOrder(t, client, OrderStatusCompleted, payment.OrderTypeSubscription)
+
+	inviterID := int64(7790)
+	affiliateRepo := &paymentFulfillmentAffiliateRepoStub{
+		summary: &AffiliateSummary{UserID: order.UserID, InviterID: &inviterID},
+	}
+	svc := &PaymentService{
+		entClient: client,
+		affiliateService: &AffiliateService{
+			repo: affiliateRepo,
+			settingRepo: &paymentFulfillmentAffiliateSettingRepoStub{values: map[string]string{
+				SettingKeyAffiliateEnabled:    "true",
+				SettingKeyAffiliateRebateRate: "20",
+			}},
+		},
+	}
+
+	require.NoError(t, svc.ExecuteSubscriptionFulfillment(ctx, order.ID))
+	require.Equal(t, 1, affiliateRepo.accrueHits)
+	require.True(t, svc.hasAuditLog(ctx, order.ID, "AFFILIATE_REBATE_APPLIED"))
+
+	// Provider retries remain safe because the audit claim is idempotent.
+	require.NoError(t, svc.ExecuteSubscriptionFulfillment(ctx, order.ID))
+	require.Equal(t, 1, affiliateRepo.accrueHits)
+}
+
 func TestRetryFulfillment_CompletedOrderBackfillsMissingAffiliateRebate(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentFulfillmentTestClient(t)

@@ -92,6 +92,34 @@ func TestSessionStore_Stop_Idempotent(t *testing.T) {
 	store.Stop()
 }
 
+func TestSessionStore_TryConsumeSessionMemoryIsSingleUse(t *testing.T) {
+	store := NewSessionStore()
+	defer store.Stop()
+	store.Set("single-use", &OAuthSession{CreatedAt: time.Now()})
+
+	results := make(chan bool, 32)
+	var wg sync.WaitGroup
+	for range 32 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results <- store.TryConsumeSession("single-use")
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	winners := 0
+	for consumed := range results {
+		if consumed {
+			winners++
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("successful consumers = %d, want 1", winners)
+	}
+}
+
 func TestSessionStore_ConcurrentAccess(t *testing.T) {
 	store := NewSessionStore()
 	defer store.Stop()

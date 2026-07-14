@@ -46,19 +46,19 @@ func TestParseOrderIDs(t *testing.T) {
 	}
 }
 
-func TestBuildAffectedOrdersQueryTargetsAffiliateFailureAuditInsteadOfSpecificErrorText(t *testing.T) {
+func TestBuildAffectedOrdersQueryTargetsAllCompletedOrdersMissingRebateTerminalAudit(t *testing.T) {
 	t.Parallel()
 
 	query, args := buildAffectedOrdersQuery(nil)
 
-	if !strings.Contains(query, "pal.action = 'AFFILIATE_REBATE_FAILED'") {
-		t.Fatalf("expected query to require AFFILIATE_REBATE_FAILED action, got:\n%s", query)
+	if !strings.Contains(query, "po.order_type IN ('balance', 'subscription')") {
+		t.Fatalf("expected query to include balance and subscription orders, got:\n%s", query)
 	}
-	if strings.Contains(strings.ToLower(query), "inconsistent types deduced for parameter") {
-		t.Fatalf("query should not depend on a specific SQL error string, got:\n%s", query)
+	if strings.Contains(query, "AFFILIATE_REBATE_FAILED") {
+		t.Fatalf("repair must not require a failure audit because a crash can happen before one is written, got:\n%s", query)
 	}
-	if strings.Contains(strings.ToLower(query), "pal.detail like") {
-		t.Fatalf("query should not filter by pal.detail LIKE anymore, got:\n%s", query)
+	if !strings.Contains(query, "AFFILIATE_REBATE_APPLIED', 'AFFILIATE_REBATE_SKIPPED") {
+		t.Fatalf("expected query to exclude orders with a terminal rebate audit, got:\n%s", query)
 	}
 	if len(args) != 0 {
 		t.Fatalf("expected no args without order ids, got %v", args)

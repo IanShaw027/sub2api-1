@@ -24,7 +24,6 @@ export interface GrokExchangeCodeRequest {
   state: string
   code: string
   proxy_id?: number
-  redirect_uri?: string
 }
 
 export interface GrokTokenInfo {
@@ -157,15 +156,14 @@ export async function resetQuota(id: number): Promise<GrokQuotaResetResult> {
 
 /**
  * Create a Grok OAuth account by exchanging the OAuth code server-side.
- * Backend requires session_id + code; optionally accepts state, redirect_uri,
- * proxy_id, name, concurrency, priority, group_ids.
+ * Backend requires session_id + code + state; optionally accepts proxy_id,
+ * name, concurrency, priority, group_ids.
  * Returns the full Account DTO after create.
  */
 export interface GrokCreateFromOAuthRequest {
   session_id: string
   code: string
-  state?: string
-  redirect_uri?: string
+  state: string
   proxy_id?: number | null
   name?: string
   concurrency?: number

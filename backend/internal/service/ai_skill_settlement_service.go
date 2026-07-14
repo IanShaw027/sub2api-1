@@ -17,6 +17,14 @@ type AISkillSettlementService struct {
 	now             func() time.Time
 }
 
+const (
+	aiSkillSettlementDispatchStateMetadataKey = "_sub2api_dispatch_state"
+	aiSkillSettlementDispatchStateAwaiting    = "awaiting"
+	aiSkillSettlementDispatchStateConfirmed   = "confirmed"
+	aiSkillSettlementDispatchStateFailed      = "failed"
+	aiSkillSettlementDispatchFailureReason    = "upstream dispatch did not succeed; settlement must not be replayed"
+)
+
 func NewAISkillSettlementService(repo AISkillSettlementRepository, balanceCharger AISkillBalanceCharger, creatorCreditor AISkillCreatorEarningsCreditor) *AISkillSettlementService {
 	return &AISkillSettlementService{
 		repo:            repo,
@@ -76,11 +84,135 @@ func (s *AISkillSettlementService) ReplaySettlement(ctx context.Context, runID i
 }
 
 func (s *AISkillSettlementService) Settle(ctx context.Context, input AISkillSettleInput) (*AISkillSettlement, error) {
+	return s.settle(ctx, input, 0)
+}
+
+// CreateIntent persists a settlement before the upstream request is dispatched.
+// The awaiting marker makes the row non-replayable until the owning Execute call
+// confirms that dispatch succeeded.
+func (s *AISkillSettlementService) CreateIntent(ctx context.Context, input AISkillSettleInput) (*AISkillSettlement, error) {
+	if err := s.validateSettleInput(input); err != nil {
+		return nil, err
+	}
+	quote, err := s.Quote(input.BillingPolicy)
+	if err != nil {
+		return nil, err
+	}
+	now := s.nowOrDefault()
+	metadata := cloneAIMap(input.Metadata)
+	metadata[aiSkillSettlementDispatchStateMetadataKey] = aiSkillSettlementDispatchStateAwaiting
+	settlement := &AISkillSettlement{
+		RunID:                  input.RunID,
+		SkillID:                input.SkillID,
+		VersionID:              input.VersionID,
+		BuyerUserID:            input.BuyerUserID,
+		CreatorUserID:          input.CreatorUserID,
+		BillingMode:            quote.BillingMode,
+		Currency:               quote.Currency,
+		TotalAmount:            quote.TotalAmount,
+		PlatformAmount:         quote.PlatformAmount,
+		CreatorAmount:          quote.CreatorAmount,
+		PlatformCommissionRate: quote.PlatformCommissionRate,
+		Status:                 AISkillSettlementStatusPending,
+		Metadata:               metadata,
+		Trace:                  normalizeAIWriteTrace(ctx, input.Trace),
+		CreatedAt:              now,
+		UpdatedAt:              now,
+	}
+	if quote.TotalAmount == 0 {
+		settlement.Status = AISkillSettlementStatusSkipped
+	}
+	if err := s.repo.CreateSettlement(ctx, settlement); err != nil {
+		return nil, err
+	}
+	return settlement, nil
+}
+
+// SettleIntent lets only the Execute call that created intentID claim a fresh
+// pending row. Public Settle and ReplaySettlement retain the pending-row guard.
+func (s *AISkillSettlementService) SettleIntent(ctx context.Context, input AISkillSettleInput, intentID int64) (*AISkillSettlement, error) {
+	if err := s.validateSettleInput(input); err != nil {
+		return nil, err
+	}
+	if _, err := s.ConfirmIntent(ctx, input.RunID, intentID); err != nil {
+		return nil, err
+	}
+	return s.settle(ctx, input, intentID)
+}
+
+// ConfirmIntent records that the upstream accepted the execution before the
+// intent becomes eligible for immediate settlement or later replay.
+func (s *AISkillSettlementService) ConfirmIntent(ctx context.Context, runID, intentID int64) (*AISkillSettlement, error) {
 	if s == nil || s.repo == nil {
 		return nil, ErrAISkillSettlementUnavailable
 	}
-	if input.RunID <= 0 || input.SkillID <= 0 || input.VersionID <= 0 || input.BuyerUserID <= 0 || input.CreatorUserID <= 0 {
+	if runID <= 0 || intentID <= 0 {
 		return nil, infraerrors.BadRequest("AI_SKILL_SETTLEMENT_INPUT_INVALID", "ai skill settlement input is invalid")
+	}
+	intent, err := s.repo.GetSettlementByRunID(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	if intent == nil || intent.ID != intentID {
+		return nil, ErrAISkillSettlementNotFound
+	}
+	if aiSkillSettlementDispatchState(intent) == aiSkillSettlementDispatchStateConfirmed {
+		return intent, nil
+	}
+	metadata := cloneAIMap(intent.Metadata)
+	metadata[aiSkillSettlementDispatchStateMetadataKey] = aiSkillSettlementDispatchStateConfirmed
+	intent.Metadata = metadata
+	intent.UpdatedAt = s.nowOrDefault()
+	if err := s.repo.UpdateSettlement(ctx, intent); err != nil {
+		return nil, err
+	}
+	return intent, nil
+}
+
+// FailIntentForDispatch terminalizes a pre-dispatch intent. The failure marker
+// is also checked by replay, so a failed upstream request can never charge later.
+func (s *AISkillSettlementService) FailIntentForDispatch(ctx context.Context, runID, intentID int64, cause error) (*AISkillSettlement, error) {
+	if s == nil || s.repo == nil {
+		return nil, ErrAISkillSettlementUnavailable
+	}
+	if runID <= 0 || intentID <= 0 {
+		return nil, infraerrors.BadRequest("AI_SKILL_SETTLEMENT_INPUT_INVALID", "ai skill settlement input is invalid")
+	}
+	settlement, err := s.repo.GetSettlementByRunID(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	if settlement == nil || settlement.ID != intentID {
+		return nil, ErrAISkillSettlementNotFound
+	}
+	settlement.Status = AISkillSettlementStatusFailed
+	settlement.FailureReason = aiSkillSettlementDispatchFailureReason
+	if cause != nil {
+		settlement.FailureReason = appendAISkillSettlementFailure(settlement.FailureReason, cause)
+	}
+	metadata := cloneAIMap(settlement.Metadata)
+	metadata[aiSkillSettlementDispatchStateMetadataKey] = aiSkillSettlementDispatchStateFailed
+	settlement.Metadata = metadata
+	settlement.UpdatedAt = s.nowOrDefault()
+	if err := s.repo.UpdateSettlement(ctx, settlement); err != nil {
+		return nil, err
+	}
+	return settlement, nil
+}
+
+func (s *AISkillSettlementService) validateSettleInput(input AISkillSettleInput) error {
+	if s == nil || s.repo == nil {
+		return ErrAISkillSettlementUnavailable
+	}
+	if input.RunID <= 0 || input.SkillID <= 0 || input.VersionID <= 0 || input.BuyerUserID <= 0 || input.CreatorUserID <= 0 {
+		return infraerrors.BadRequest("AI_SKILL_SETTLEMENT_INPUT_INVALID", "ai skill settlement input is invalid")
+	}
+	return nil
+}
+
+func (s *AISkillSettlementService) settle(ctx context.Context, input AISkillSettleInput, ownedIntentID int64) (*AISkillSettlement, error) {
+	if err := s.validateSettleInput(input); err != nil {
+		return nil, err
 	}
 	now := s.nowOrDefault()
 	var settlement *AISkillSettlement
@@ -90,13 +222,20 @@ func (s *AISkillSettlementService) Settle(ctx context.Context, input AISkillSett
 			return existing, nil
 		}
 		if status == AISkillSettlementStatusPending {
+			if ownedIntentID > 0 && existing.ID == ownedIntentID {
+				settlement = cloneAISkillSettlement(existing)
+			} else if aiSkillSettlementDispatchState(existing) == aiSkillSettlementDispatchStateAwaiting {
+				return nil, ErrAISkillSettlementReplayUnsafe
+			}
 			// Fresh concurrent settle — reject. Stale pending (crash after charge /
 			// before status flip) can be reclaimed; ChargeUserBalance is keyed by
 			// run reference and must be idempotent.
-			if time.Since(existing.UpdatedAt) < 2*time.Minute {
+			if settlement == nil && time.Since(existing.UpdatedAt) < 2*time.Minute {
 				return nil, ErrAISkillSettlementInProgress
 			}
-			settlement = cloneAISkillSettlement(existing)
+			if settlement == nil {
+				settlement = cloneAISkillSettlement(existing)
+			}
 			settlement.FailureReason = ""
 			settlement.UpdatedAt = now
 			if err := s.repo.UpdateSettlement(ctx, settlement); err != nil {
@@ -117,11 +256,15 @@ func (s *AISkillSettlementService) Settle(ctx context.Context, input AISkillSett
 		}
 	} else if err != nil && !errorsIsAISkillSettlementNotFound(err) {
 		return nil, err
+	} else if ownedIntentID > 0 {
+		return nil, ErrAISkillSettlementNotFound
 	}
 	quote, err := s.Quote(input.BillingPolicy)
 	if err != nil {
 		return nil, err
 	}
+	inputMetadata := cloneAIMap(input.Metadata)
+	delete(inputMetadata, aiSkillSettlementDispatchStateMetadataKey)
 	if settlement == nil {
 		settlement = &AISkillSettlement{
 			RunID:                  input.RunID,
@@ -136,7 +279,7 @@ func (s *AISkillSettlementService) Settle(ctx context.Context, input AISkillSett
 			CreatorAmount:          quote.CreatorAmount,
 			PlatformCommissionRate: quote.PlatformCommissionRate,
 			Status:                 AISkillSettlementStatusPending,
-			Metadata:               cloneAIMap(input.Metadata),
+			Metadata:               inputMetadata,
 			Trace:                  normalizeAIWriteTrace(ctx, input.Trace),
 			CreatedAt:              now,
 			UpdatedAt:              now,
@@ -148,7 +291,11 @@ func (s *AISkillSettlementService) Settle(ctx context.Context, input AISkillSett
 			return nil, err
 		}
 	} else {
-		settlement.Metadata = cloneAIMap(input.Metadata)
+		dispatchState := aiSkillSettlementDispatchState(settlement)
+		settlement.Metadata = inputMetadata
+		if dispatchState != "" {
+			settlement.Metadata[aiSkillSettlementDispatchStateMetadataKey] = dispatchState
+		}
 		settlement.Trace = normalizeAIWriteTrace(ctx, input.Trace)
 		settlement.BillingMode = quote.BillingMode
 		settlement.Currency = quote.Currency
@@ -330,11 +477,22 @@ func canReplayFailedAISkillSettlement(settlement *AISkillSettlement) bool {
 	if settlement.CreatorCreditedAmount > 0 {
 		return false
 	}
+	if aiSkillSettlementDispatchState(settlement) == aiSkillSettlementDispatchStateFailed {
+		return false
+	}
 	reason := strings.ToLower(strings.TrimSpace(settlement.FailureReason))
-	if strings.Contains(reason, "buyer refund failed") || strings.Contains(reason, "creator reversal failed") {
+	if strings.Contains(reason, strings.ToLower(aiSkillSettlementDispatchFailureReason)) || strings.Contains(reason, "buyer refund failed") || strings.Contains(reason, "creator reversal failed") {
 		return false
 	}
 	return true
+}
+
+func aiSkillSettlementDispatchState(settlement *AISkillSettlement) string {
+	if settlement == nil || settlement.Metadata == nil {
+		return ""
+	}
+	state, _ := settlement.Metadata[aiSkillSettlementDispatchStateMetadataKey].(string)
+	return strings.ToLower(strings.TrimSpace(state))
 }
 
 func cloneAISkillSettlement(settlement *AISkillSettlement) *AISkillSettlement {

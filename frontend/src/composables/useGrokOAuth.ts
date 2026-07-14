@@ -88,14 +88,15 @@ export function useGrokOAuth() {
 
   const validateRefreshToken = async (
     refreshToken: string,
-    proxyId?: number | null
+    proxyId?: number | null,
+    manageLoading = true
   ): Promise<GrokTokenInfo | null> => {
     if (!refreshToken.trim()) {
       error.value = t('admin.accounts.oauth.grok.pleaseEnterRefreshToken')
       return null
     }
 
-    loading.value = true
+    if (manageLoading) loading.value = true
     error.value = ''
 
     try {
@@ -109,20 +110,21 @@ export function useGrokOAuth() {
       )
       return null
     } finally {
-      loading.value = false
+      if (manageLoading) loading.value = false
     }
   }
 
   const validateSSOToken = async (
     ssoToken: string,
-    proxyId?: number | null
+    proxyId?: number | null,
+    manageLoading = true
   ): Promise<GrokTokenInfo | null> => {
     if (!ssoToken.trim()) {
       error.value = t('admin.accounts.oauth.grok.pleaseEnterSSOToken')
       return null
     }
 
-    loading.value = true
+    if (manageLoading) loading.value = true
     error.value = ''
 
     try {
@@ -136,20 +138,21 @@ export function useGrokOAuth() {
       )
       return null
     } finally {
-      loading.value = false
+      if (manageLoading) loading.value = false
     }
   }
 
   const authorizePassword = async (
     emailPasswordInput: string,
-    proxyId?: number | null
+    proxyId?: number | null,
+    manageLoading = true
   ): Promise<GrokTokenInfo | null> => {
     if (!emailPasswordInput.trim()) {
       error.value = t('admin.accounts.oauth.grok.pleaseEnterEmailPassword')
       return null
     }
 
-    loading.value = true
+    if (manageLoading) loading.value = true
     error.value = ''
 
     try {
@@ -163,7 +166,7 @@ export function useGrokOAuth() {
       )
       return null
     } finally {
-      loading.value = false
+      if (manageLoading) loading.value = false
     }
   }
 

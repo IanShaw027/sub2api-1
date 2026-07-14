@@ -3975,10 +3975,10 @@ func (s *adminServiceImpl) finishBulkUpdateGroupBindings(ctx context.Context, in
 }
 
 func validateBulkModelRoutingUpdatePlatforms(input *BulkUpdateAccountsInput, accountByID map[int64]*Account) error {
-	// Any credentials payload is platform-sensitive (model routing, concurrency
-	// knobs, capability flags). Mixing platforms in one bulk edit can corrupt
-	// account-specific credential shapes — reject regardless of which keys are set.
-	if input == nil || len(input.Credentials) == 0 {
+	// Credentials and extra both carry platform-specific routing/runtime keys.
+	// Resolve filter targets first, then validate the final account set so a
+	// preview-to-submit membership change cannot apply those keys cross-platform.
+	if input == nil || (len(input.Credentials) == 0 && len(input.Extra) == 0) {
 		return nil
 	}
 	platforms := make(map[string]struct{}, len(input.AccountIDs))
@@ -3998,7 +3998,7 @@ func validateBulkModelRoutingUpdatePlatforms(input *BulkUpdateAccountsInput, acc
 	}
 	return infraerrors.BadRequest(
 		"BULK_MODEL_ROUTING_MIXED_PLATFORMS",
-		"bulk updates for model routing credentials must target accounts from a single platform",
+		"bulk updates for platform-specific credentials or extra settings must target accounts from a single platform",
 	)
 }
 

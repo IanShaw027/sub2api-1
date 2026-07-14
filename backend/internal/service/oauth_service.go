@@ -2,11 +2,15 @@ package service
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
+	"strings"
 	"time"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/oauth"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
@@ -102,6 +106,7 @@ func (s *OAuthService) requireOAuthClient() (ClaudeOAuthClient, error) {
 type GenerateAuthURLResult struct {
 	AuthURL   string `json:"auth_url"`
 	SessionID string `json:"session_id"`
+	State     string `json:"state"`
 }
 
 // GenerateAuthURL generates an OAuth authorization URL with full scope
@@ -157,6 +162,7 @@ func (s *OAuthService) generateAuthURLWithScope(ctx context.Context, scope strin
 	return &GenerateAuthURLResult{
 		AuthURL:   authURL,
 		SessionID: sessionID,
+		State:     state,
 	}, nil
 }
 
@@ -164,6 +170,7 @@ func (s *OAuthService) generateAuthURLWithScope(ctx context.Context, scope strin
 type ExchangeCodeInput struct {
 	SessionID string
 	Code      string
+	State     string
 	ProxyID   *int64
 }
 
@@ -190,11 +197,13 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, input *ExchangeCodeInpu
 	if !ok {
 		return nil, fmt.Errorf("session not found or expired")
 	}
-	// Multi-instance single-use claim before token exchange.
-	if !s.sessionStore.TryConsumeSession(input.SessionID) {
-		return nil, fmt.Errorf("oauth session has already been used")
+	state := strings.TrimSpace(input.State)
+	if state == "" {
+		return nil, infraerrors.New(http.StatusBadRequest, "CLAUDE_OAUTH_STATE_REQUIRED", "oauth state is required")
 	}
-	defer s.sessionStore.Delete(input.SessionID)
+	if subtle.ConstantTimeCompare([]byte(state), []byte(session.State)) != 1 {
+		return nil, infraerrors.New(http.StatusBadRequest, "CLAUDE_OAUTH_INVALID_STATE", "invalid oauth state")
+	}
 
 	// Get proxy URL
 	proxyURL := session.ProxyURL
@@ -208,6 +217,15 @@ func (s *OAuthService) ExchangeCode(ctx context.Context, input *ExchangeCodeInpu
 
 	// Determine if this is a setup token (scope is inference only)
 	isSetupToken := session.Scope == oauth.ScopeInference
+	if _, err := s.requireOAuthClient(); err != nil {
+		return nil, err
+	}
+
+	// Multi-instance single-use claim after retryable validation has completed.
+	if !s.sessionStore.TryConsumeSession(input.SessionID) {
+		return nil, fmt.Errorf("oauth session has already been used")
+	}
+	defer s.sessionStore.Delete(input.SessionID)
 
 	// Exchange code for token
 	tokenInfo, err := s.exchangeCodeForToken(ctx, input.Code, session.CodeVerifier, session.State, proxyURL, isSetupToken)

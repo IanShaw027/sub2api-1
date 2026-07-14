@@ -170,7 +170,11 @@ export function decidePaymentLaunch(
     if (!context.airwallexRouteUrl) {
       return { kind: 'unhandled', paymentState: baseState, recovery: baseState }
     }
-    const paymentState = { ...baseState, payUrl: context.airwallexRouteUrl || '' }
+    const paymentState = {
+      ...baseState,
+      payUrl: context.airwallexRouteUrl || '',
+      launchKind: 'airwallex_route' as PaymentLaunchKind,
+    }
     return { kind: 'airwallex_route', paymentState, recovery: paymentState }
   }
 
@@ -332,6 +336,7 @@ function isPaymentLaunchKind(value: unknown): value is PaymentLaunchKind {
     || value === 'redirect_waiting'
     || value === 'stripe_popup'
     || value === 'stripe_route'
+    || value === 'airwallex_route'
     || value === 'wechat_oauth'
     || value === 'wechat_jsapi'
     || value === 'unhandled'

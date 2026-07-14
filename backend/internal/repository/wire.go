@@ -1290,6 +1290,7 @@ var ProviderSet = wire.NewSet(
 	NewAnnouncementReadRepository,
 	NewAICenterRepository,
 	NewAISkillRepository,
+	NewAISkillBalanceLedgerRepository,
 	ProvideAISkillServiceRepositoryAdapter,
 	wire.Bind(new(service.AISkillRepository), new(*aiSkillServiceRepositoryAdapter)),
 	wire.Bind(new(service.AISkillVersionRepository), new(*aiSkillServiceRepositoryAdapter)),

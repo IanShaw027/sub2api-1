@@ -126,8 +126,8 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { buildApiUrl } from '@/api/client'
 import { buildEmbeddedUrl, detectTheme } from '@/utils/embedded-url'
+import { sanitizeHtml } from '@/utils/sanitize'
 import { marked } from 'marked'
-import DOMPurify from 'dompurify'
 
 interface TocItem {
   id: string
@@ -179,7 +179,6 @@ const embeddedUrl = computed(() => {
   return buildEmbeddedUrl(
     menuItem.value.url,
     authStore.user?.id,
-    authStore.token,
     pageTheme.value,
     locale.value,
   )
@@ -275,10 +274,7 @@ async function fetchAndRenderMarkdown(slug: string) {
     )
 
     const html = marked.parse(raw) as string
-    const sanitized = DOMPurify.sanitize(html, {
-      ADD_TAGS: ['iframe'],
-      ADD_ATTR: ['allowfullscreen', 'frameborder', 'src'],
-    })
+    const sanitized = sanitizeHtml(html)
 
     // Inject IDs into headings and build TOC
     const toc: TocItem[] = []

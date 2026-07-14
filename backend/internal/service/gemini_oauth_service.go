@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -49,6 +50,19 @@ type GeminiOAuthService struct {
 	oauthClient  GeminiOAuthClient
 	codeAssist   GeminiCliCodeAssistClient
 	cfg          *config.Config
+}
+
+func ProvideGeminiOAuthService(
+	proxyRepo ProxyRepository,
+	oauthClient GeminiOAuthClient,
+	codeAssist GeminiCliCodeAssistClient,
+	cfg *config.Config,
+	rdb *redis.Client,
+) *GeminiOAuthService {
+	service := NewGeminiOAuthService(proxyRepo, oauthClient, codeAssist, cfg)
+	service.sessionStore.Stop()
+	service.sessionStore = geminicli.NewRedisSessionStore(rdb)
+	return service
 }
 
 type GeminiOAuthCapabilities struct {
@@ -548,6 +562,10 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 		logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] ERROR: Invalid state")
 		return nil, fmt.Errorf("invalid state")
 	}
+	if !s.sessionStore.TryConsumeSession(input.SessionID) {
+		return nil, fmt.Errorf("oauth session has already been used")
+	}
+	defer s.sessionStore.Delete(input.SessionID)
 
 	proxyURL := session.ProxyURL
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] ProxyURL: %s", proxyURL)
@@ -591,8 +609,6 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 	logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Token expires_in: %d seconds", tokenResp.ExpiresIn)
 
 	sessionProjectIDHint := strings.TrimSpace(session.ProjectIDHint)
-	s.sessionStore.Delete(input.SessionID)
-
 	profile := s.extractProfileFromTokenResponse(ctx, tokenResp, proxyURL)
 	email := profile.Email
 

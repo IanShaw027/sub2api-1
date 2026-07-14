@@ -336,6 +336,7 @@ func (s *PaymentService) ExecuteBalanceFulfillment(ctx context.Context, oid int6
 		// Retry invalidation on every COMPLETED encounter without turning cache
 		// availability into fulfillment failure — mirrors subscription recovery.
 		s.invalidateBalanceCacheBestEffort(ctx, o.UserID)
+		s.applyAffiliateRebateBestEffort(ctx, o)
 		return nil
 	}
 	if psIsRefundStatus(o.Status) {
@@ -352,6 +353,7 @@ func (s *PaymentService) ExecuteBalanceFulfillment(ctx context.Context, oid int6
 		// Concurrent worker finished first; still best-effort re-invalidate in
 		// case that worker crashed after commit before cache invalidation.
 		s.invalidateBalanceCacheBestEffort(ctx, o.UserID)
+		s.applyAffiliateRebateBestEffort(ctx, o)
 		return nil
 	}
 	if err := s.doBalance(ctx, o, lease); err != nil {
@@ -760,6 +762,10 @@ func (s *PaymentService) ExecuteSubscriptionFulfillment(ctx context.Context, oid
 		return infraerrors.NotFound("NOT_FOUND", "order not found")
 	}
 	if o.Status == OrderStatusCompleted {
+		// Entitlement is already durable. Re-run idempotent post-commit work so
+		// a crash after completion but before rebate accrual is recoverable from
+		// the next provider notification or explicit fulfillment replay.
+		s.applyAffiliateRebateBestEffort(ctx, o)
 		return nil
 	}
 	if psIsRefundStatus(o.Status) {
@@ -776,6 +782,9 @@ func (s *PaymentService) ExecuteSubscriptionFulfillment(ctx context.Context, oid
 		return err
 	}
 	if lease == nil {
+		// acquirePaymentFulfillmentLease only returns a nil lease when a
+		// concurrent worker has already completed the order.
+		s.applyAffiliateRebateBestEffort(ctx, o)
 		return nil
 	}
 	if err := s.doSub(ctx, o, lease); err != nil {

@@ -465,7 +465,7 @@ describe('admin ReAuthAccountModal', () => {
     })
     buildAccountNameMock.mockReturnValue('Kiro OAuth')
     updateAccountMock.mockResolvedValue({})
-    reauthorizeKiroOAuthMock.mockResolvedValue({})
+    reauthorizeKiroOAuthMock.mockResolvedValue(buildKiroAccount('oauth'))
     clearErrorMock.mockResolvedValue(buildKiroAccount('oauth'))
     grokExchangeAuthCodeMock.mockResolvedValue({
       access_token: 'grok-at-new',
@@ -593,7 +593,7 @@ describe('admin ReAuthAccountModal', () => {
         keep_flag: true
       }
     }))
-    expect(clearErrorMock).toHaveBeenCalledWith(42)
+    expect(clearErrorMock).not.toHaveBeenCalled()
   })
 
   it('reauthorizes Kiro OAuth accounts from manual refresh token submission with merged sanitized data', async () => {
@@ -614,7 +614,8 @@ describe('admin ReAuthAccountModal', () => {
         custom_note: 'manual',
         system_version: 'runtime-only'
       },
-      null
+      null,
+      false
     )
     expect(reauthorizeKiroOAuthMock).toHaveBeenCalledWith(42, {
       name: 'Kiro OAuth',
@@ -635,7 +636,7 @@ describe('admin ReAuthAccountModal', () => {
         subscription_type: 'Kiro Pro'
       }
     })
-    expect(clearErrorMock).toHaveBeenCalledWith(42)
+    expect(clearErrorMock).not.toHaveBeenCalled()
   })
 
   it('reauthorizes Kiro OAuth accounts from multiline refresh tokens by updating one account and creating the rest', async () => {
@@ -674,7 +675,8 @@ describe('admin ReAuthAccountModal', () => {
       {
         custom_note: 'manual'
       },
-      null
+      null,
+      false
     )
     expect(validateRefreshTokenMock).toHaveBeenNthCalledWith(
       2,
@@ -687,7 +689,8 @@ describe('admin ReAuthAccountModal', () => {
       {
         custom_note: 'manual'
       },
-      null
+      null,
+      false
     )
     expect(reauthorizeKiroOAuthMock).toHaveBeenCalledWith(42, expect.objectContaining({
       name: 'Kiro rt-one@example.com #1',
@@ -705,7 +708,7 @@ describe('admin ReAuthAccountModal', () => {
         access_token: 'access-rt-two'
       })
     }))
-    expect(clearErrorMock).toHaveBeenCalledWith(42)
+    expect(clearErrorMock).not.toHaveBeenCalled()
     expect(wrapper.emitted('refresh')).toHaveLength(1)
   })
 
@@ -864,7 +867,8 @@ describe('admin ReAuthAccountModal', () => {
         token_endpoint: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token'
       }),
       {},
-      null
+      null,
+      false
     )
     const credentials = reauthorizeKiroOAuthMock.mock.calls[0]?.[1]?.credentials
     expect(credentials).toEqual(expect.objectContaining({

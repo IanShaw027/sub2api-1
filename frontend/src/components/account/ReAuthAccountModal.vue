@@ -529,6 +529,12 @@ const handleExchangeCode = async () => {
     claudeOAuth.error.value = ''
 
     try {
+      const stateToUse = (oauthFlowRef.value?.oauthState || claudeOAuth.oauthState.value || '').trim()
+      if (!stateToUse) {
+        claudeOAuth.error.value = t('admin.accounts.oauth.authFailed')
+        appStore.showError(claudeOAuth.error.value)
+        return
+      }
       const proxyConfig = props.account.proxy_id ? { proxy_id: props.account.proxy_id } : {}
       const endpoint =
         addMethod.value === 'oauth'
@@ -538,6 +544,7 @@ const handleExchangeCode = async () => {
       const tokenInfo = await adminAPI.accounts.exchangeCode(endpoint, {
         session_id: sessionId,
         code: authCode.trim(),
+        state: stateToUse,
         ...proxyConfig
       })
 

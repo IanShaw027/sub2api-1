@@ -102,3 +102,9 @@ func TestAccountUpdatePreservesMissingSSOToken(t *testing.T) {
 	require.Equal(t, "https://new.example.com", out["base_url"])
 	require.True(t, isSensitiveCredentialKey("sso_token"))
 }
+
+func TestAccountUpdateSensitiveKeysIncludeEveryRedactedSecret(t *testing.T) {
+	for _, key := range SensitiveCredentialKeys {
+		require.Truef(t, isSensitiveCredentialKey(key), "redacted credential %q must also be protected during update merge", key)
+	}
+}

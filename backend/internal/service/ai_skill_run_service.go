@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -145,7 +146,17 @@ func (s *AISkillRunService) Execute(ctx context.Context, userID int64, input *AI
 	if s.runtimeGateway == nil {
 		return &AISkillRunResult{Prepared: prepared}, nil
 	}
-	dispatch, err := s.runtimeGateway.Execute(ctx, *prepared.Execution)
+	settleInput := AISkillSettleInput{
+		RunID:         prepared.Run.ID,
+		SkillID:       prepared.Skill.ID,
+		VersionID:     prepared.Version.ID,
+		BuyerUserID:   prepared.Run.UserID,
+		CreatorUserID: prepared.Skill.CreatorUserID,
+		BillingPolicy: prepared.Version.BillingPolicy,
+		Metadata:      cloneAIMap(prepared.Run.Metadata),
+		Trace:         prepared.Run.Trace,
+	}
+	intent, err := s.settlementService.CreateIntent(ctx, settleInput)
 	if err != nil {
 		prepared.Run.Status = AISkillRunStatusFailed
 		prepared.Run.ErrorMessage = err.Error()
@@ -153,22 +164,38 @@ func (s *AISkillRunService) Execute(ctx context.Context, userID int64, input *AI
 		_ = s.runRepo.UpdateRun(ctx, prepared.Run)
 		return nil, err
 	}
-	if dispatch == nil {
+	prepared.Settlement = intent
+	prepared.Execution.Settlement = intent
+	prepared.Run.SettlementID = &intent.ID
+	dispatch, err := s.runtimeGateway.Execute(ctx, *prepared.Execution)
+	if err != nil {
+		s.failSettlementIntentAfterDispatch(ctx, prepared, err)
 		prepared.Run.Status = AISkillRunStatusFailed
-		prepared.Run.ErrorMessage = skillExecutionDispatchFailedError().Error()
+		prepared.Run.ErrorMessage = err.Error()
 		prepared.Run.UpdatedAt = s.nowOrDefault()
 		_ = s.runRepo.UpdateRun(ctx, prepared.Run)
-		return nil, skillExecutionDispatchFailedError()
+		return nil, err
+	}
+	if dispatch == nil {
+		dispatchErr := skillExecutionDispatchFailedError()
+		s.failSettlementIntentAfterDispatch(ctx, prepared, dispatchErr)
+		prepared.Run.Status = AISkillRunStatusFailed
+		prepared.Run.ErrorMessage = dispatchErr.Error()
+		prepared.Run.UpdatedAt = s.nowOrDefault()
+		_ = s.runRepo.UpdateRun(ctx, prepared.Run)
+		return nil, dispatchErr
 	}
 	if !isAISkillDispatchSuccess(dispatch.Status) {
+		dispatchErr := skillExecutionDispatchFailedError()
 		prepared.Run.Status = AISkillRunStatusFailed
 		prepared.Run.Provider = strings.TrimSpace(dispatch.Provider)
 		prepared.Run.ExternalJobID = strings.TrimSpace(dispatch.ExternalJobID)
 		prepared.Run.Output = cloneAIMap(dispatch.Output)
-		prepared.Run.ErrorMessage = skillExecutionDispatchFailedError().Error()
+		prepared.Run.ErrorMessage = dispatchErr.Error()
+		s.failSettlementIntentAfterDispatch(ctx, prepared, dispatchErr)
 		prepared.Run.UpdatedAt = s.nowOrDefault()
 		_ = s.runRepo.UpdateRun(ctx, prepared.Run)
-		return nil, skillExecutionDispatchFailedError()
+		return nil, dispatchErr
 	}
 	dispatchStatus := normalizeAISkillDispatchStatus(dispatch.Status)
 	prepared.Run.Status = dispatchStatus
@@ -179,31 +206,62 @@ func (s *AISkillRunService) Execute(ctx context.Context, userID int64, input *AI
 	if dispatchStatus == AISkillRunStatusSucceeded {
 		prepared.Run.Status = AISkillRunStatusDispatched
 	}
+	confirmed, confirmErr := s.confirmSettlementIntentAfterDispatch(ctx, prepared.Run.ID, intent.ID)
+	if confirmErr != nil {
+		prepared.Run.UpdatedAt = s.nowOrDefault()
+		_ = s.runRepo.UpdateRun(ctx, prepared.Run)
+		slog.Error("ai_skill.settlement_intent_confirmation_deferred", "run_id", prepared.Run.ID, "settlement_id", intent.ID, "error", confirmErr)
+		return &AISkillRunResult{
+			Prepared:           prepared,
+			Dispatch:           dispatch,
+			SettlementDeferred: true,
+			SettlementStatus:   intent.Status,
+		}, nil
+	}
+	prepared.Settlement = confirmed
+	prepared.Execution.Settlement = confirmed
 	if err := s.runRepo.UpdateRun(ctx, prepared.Run); err != nil {
 		return nil, err
 	}
 	if dispatchStatus != AISkillRunStatusSucceeded {
 		return &AISkillRunResult{
-			Prepared: prepared,
-			Dispatch: dispatch,
+			Prepared:         prepared,
+			Dispatch:         dispatch,
+			SettlementStatus: confirmed.Status,
 		}, nil
 	}
-	settlement, err := s.settlementService.Settle(ctx, AISkillSettleInput{
-		RunID:         prepared.Run.ID,
-		SkillID:       prepared.Skill.ID,
-		VersionID:     prepared.Version.ID,
-		BuyerUserID:   prepared.Run.UserID,
-		CreatorUserID: prepared.Skill.CreatorUserID,
-		BillingPolicy: prepared.Version.BillingPolicy,
-		Metadata:      cloneAIMap(prepared.Run.Metadata),
-		Trace:         prepared.Run.Trace,
-	})
+	settlement, err := s.settlementService.SettleIntent(ctx, settleInput, intent.ID)
 	if err != nil {
-		prepared.Run.Status = AISkillRunStatusFailed
-		prepared.Run.ErrorMessage = err.Error()
+		// Upstream execution has already succeeded and its actual token usage has
+		// been recorded. Marketplace settlement is an independent, durable state
+		// machine: keep the run deliverable and let the persisted settlement be
+		// replayed instead of turning an internal accounting outage into a failed
+		// execution or refunding real provider consumption.
+		deferredStatus := AISkillSettlementStatusPending
+		if persisted, getErr := s.settlementService.repo.GetSettlementByRunID(ctx, prepared.Run.ID); getErr == nil && persisted != nil {
+			prepared.Settlement = persisted
+			deferredStatus = strings.TrimSpace(persisted.Status)
+			if prepared.Execution != nil {
+				prepared.Execution.Settlement = persisted
+			}
+			if persisted.ID > 0 {
+				prepared.Run.SettlementID = &persisted.ID
+			}
+		}
+		prepared.Run.Status = AISkillRunStatusDispatched
+		prepared.Run.ErrorMessage = ""
 		prepared.Run.UpdatedAt = s.nowOrDefault()
 		_ = s.runRepo.UpdateRun(ctx, prepared.Run)
-		return nil, err
+		slog.Error("ai_skill.marketplace_settlement_deferred",
+			"run_id", prepared.Run.ID,
+			"settlement_status", deferredStatus,
+			"error", err)
+		return &AISkillRunResult{
+			Prepared:           prepared,
+			Dispatch:           dispatch,
+			SettlementDeferred: true,
+			SettlementStatus:   deferredStatus,
+		}, nil
 	}
 	prepared.Settlement = settlement
 	if prepared.Execution != nil {
@@ -217,9 +275,54 @@ func (s *AISkillRunService) Execute(ctx context.Context, userID int64, input *AI
 	prepared.Run.UpdatedAt = s.nowOrDefault()
 	s.persistSettledRunBestEffort(ctx, prepared.Run, settlement)
 	return &AISkillRunResult{
-		Prepared: prepared,
-		Dispatch: dispatch,
+		Prepared:         prepared,
+		Dispatch:         dispatch,
+		SettlementStatus: settlement.Status,
 	}, nil
+}
+
+func (s *AISkillRunService) failSettlementIntentAfterDispatch(ctx context.Context, prepared *AISkillPreparedRun, cause error) {
+	if s == nil || s.settlementService == nil || prepared == nil || prepared.Run == nil || prepared.Settlement == nil {
+		return
+	}
+	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	var settlement *AISkillSettlement
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		settlement, err = s.settlementService.FailIntentForDispatch(persistCtx, prepared.Run.ID, prepared.Settlement.ID, cause)
+		if err == nil {
+			break
+		}
+		if attempt < 2 {
+			time.Sleep(time.Duration(attempt+1) * 25 * time.Millisecond)
+		}
+	}
+	if err != nil {
+		slog.Error("ai_skill.settlement_intent_terminalize_failed", "run_id", prepared.Run.ID, "settlement_id", prepared.Settlement.ID, "error", err)
+		return
+	}
+	prepared.Settlement = settlement
+	if prepared.Execution != nil {
+		prepared.Execution.Settlement = settlement
+	}
+}
+
+func (s *AISkillRunService) confirmSettlementIntentAfterDispatch(ctx context.Context, runID, intentID int64) (*AISkillSettlement, error) {
+	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	var settlement *AISkillSettlement
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		settlement, err = s.settlementService.ConfirmIntent(persistCtx, runID, intentID)
+		if err == nil {
+			return settlement, nil
+		}
+		if attempt < 2 {
+			time.Sleep(time.Duration(attempt+1) * 25 * time.Millisecond)
+		}
+	}
+	return nil, err
 }
 
 func (s *AISkillRunService) persistSettledRunBestEffort(ctx context.Context, run *AISkillRun, settlement *AISkillSettlement) {

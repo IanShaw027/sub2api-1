@@ -494,3 +494,24 @@ func TestAdminService_BulkUpdateAccounts_RejectsCredentialsAcrossMixedPlatforms(
 	require.Contains(t, err.Error(), "single platform")
 	require.False(t, repo.bulkUpdateCalled)
 }
+
+func TestAdminService_BulkUpdateAccounts_RejectsExtraAcrossMixedFilteredPlatforms(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		listData:   []Account{{ID: 1}, {ID: 2}},
+		listResult: &pagination.PaginationResult{Total: 2},
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+			{ID: 2, Platform: PlatformAnthropic, Type: AccountTypeOAuth},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		Filters: &BulkUpdateAccountFilters{Status: StatusActive},
+		Extra:   map[string]any{"openai_passthrough": true},
+	})
+
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "single platform")
+	require.False(t, repo.bulkUpdateCalled)
+}

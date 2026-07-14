@@ -152,18 +152,6 @@ export interface SubscriptionPlan {
   sort_order: number
 }
 
-export interface PaymentChannel {
-  id: number
-  group_id?: number
-  name: string
-  platform: string
-  rate_multiplier: number
-  description: string
-  models: string[]
-  features: string[]
-  enabled: boolean
-}
-
 // ==================== Providers ====================
 
 export interface ProviderInstance {

@@ -63,6 +63,7 @@ vi.mock('@stripe/stripe-js', () => ({
 }))
 
 import StripePaymentView from '../StripePaymentView.vue'
+import { PAYMENT_RECOVERY_STORAGE_KEY, type PaymentRecoverySnapshot } from '@/components/payment/paymentFlow'
 import { formatPaymentAmount } from '@/components/payment/currency'
 import type { PaymentOrder } from '@/types/payment'
 
@@ -96,11 +97,33 @@ function mountView() {
   })
 }
 
+function stripeRecoverySnapshot(): PaymentRecoverySnapshot {
+  return {
+    orderId: 42,
+    amount: 100,
+    qrCode: '',
+    expiresAt: '2099-01-01T00:10:00.000Z',
+    paymentType: 'stripe',
+    payUrl: '/payment/stripe?order_id=42&resume_token=resume-42',
+    outTradeNo: 'sub2_stripe_42',
+    clientSecret: 'pi_secret_42',
+    intentId: '',
+    currency: 'CNY',
+    countryCode: '',
+    paymentEnv: '',
+    payAmount: 103,
+    orderType: 'balance',
+    paymentMode: '',
+    resumeToken: 'resume-42',
+    launchKind: 'stripe_route',
+    createdAt: Date.UTC(2099, 0, 1),
+  }
+}
+
 describe('StripePaymentView', () => {
   beforeEach(() => {
     routeState.query = {
       order_id: '42',
-      client_secret: 'pi_secret_42',
     }
     routerPush.mockReset()
     getOrder.mockReset()
@@ -119,6 +142,10 @@ describe('StripePaymentView', () => {
     stripeInstance.confirmAlipayPayment.mockReset()
     stripeInstance.confirmWechatPayPayment.mockReset()
     window.localStorage.clear()
+    window.localStorage.setItem(
+      PAYMENT_RECOVERY_STORAGE_KEY,
+      JSON.stringify(stripeRecoverySnapshot()),
+    )
   })
 
   it('本地恢复快照缺失时使用订单接口返回的 Stripe 币种展示金额', async () => {
@@ -139,7 +166,6 @@ describe('StripePaymentView', () => {
     vi.useFakeTimers()
     routeState.query = {
       order_id: '42',
-      client_secret: 'pi_secret_42',
       method: 'wechat_pay',
     }
     getOrder.mockResolvedValue({
@@ -178,7 +204,6 @@ describe('StripePaymentView', () => {
   it('falls back to public resume-token order resolution when authenticated order lookup fails', async () => {
     routeState.query = {
       order_id: '42',
-      client_secret: 'pi_secret_42',
       resume_token: 'resume-42',
     }
     getOrder.mockRejectedValueOnce(new Error('auth required'))
@@ -200,7 +225,6 @@ describe('StripePaymentView', () => {
   it('does not fall back to public resume-token order resolution for non-auth order lookup failures', async () => {
     routeState.query = {
       order_id: '42',
-      client_secret: 'pi_secret_42',
       resume_token: 'resume-42',
     }
     getOrder.mockRejectedValueOnce({ status: 500, message: 'server exploded' })
@@ -219,7 +243,6 @@ describe('StripePaymentView', () => {
     vi.useFakeTimers()
     routeState.query = {
       order_id: '42',
-      client_secret: 'pi_secret_42',
       method: 'alipay',
       resume_token: 'resume-42',
       out_trade_no: 'sub2_stripe_42',
@@ -244,7 +267,6 @@ describe('StripePaymentView', () => {
   it('uses publishable_key from route query when payment config lookup is unavailable', async () => {
     routeState.query = {
       order_id: '42',
-      client_secret: 'pi_secret_42',
       publishable_key: 'pk_live_from_query',
     }
     getOrder.mockResolvedValue({
@@ -259,5 +281,20 @@ describe('StripePaymentView', () => {
 
     expect(loadStripe).toHaveBeenCalledWith('pk_live_from_query')
     expect(wrapper.text()).not.toContain('payment.stripeLoadFailed')
+  })
+
+  it('rejects a Stripe client secret supplied only through the URL query', async () => {
+    window.localStorage.clear()
+    routeState.query = {
+      order_id: '42',
+      client_secret: 'secret_from_query',
+    }
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(getOrder).not.toHaveBeenCalled()
+    expect(loadStripe).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('payment.stripeMissingParams')
   })
 })

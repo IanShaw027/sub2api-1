@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/url"
 	"strings"
 	"sync"
@@ -57,9 +58,11 @@ type OAuthSession struct {
 type SessionStore struct {
 	mu       sync.RWMutex
 	sessions map[string]*OAuthSession
-	stopOnce sync.Once
-	stopCh   chan struct{}
-	remote   *redissession.Store
+	// localOnly prevents a remote miss from reviving a stale local session.
+	localOnly map[string]struct{}
+	stopOnce  sync.Once
+	stopCh    chan struct{}
+	remote    *redissession.Store
 }
 
 type oauthSessionDTO struct {
@@ -74,8 +77,9 @@ type oauthSessionDTO struct {
 // NewSessionStore creates a new session store
 func NewSessionStore() *SessionStore {
 	store := &SessionStore{
-		sessions: make(map[string]*OAuthSession),
-		stopCh:   make(chan struct{}),
+		sessions:  make(map[string]*OAuthSession),
+		localOnly: make(map[string]struct{}),
+		stopCh:    make(chan struct{}),
 	}
 	go store.cleanup()
 	return store
@@ -90,26 +94,37 @@ func NewRedisSessionStore(rdb *redis.Client) *SessionStore {
 	return store
 }
 
-func (s *SessionStore) Set(sessionID string, session *OAuthSession) {
+func (s *SessionStore) Set(sessionID string, session *OAuthSession) error {
 	if session == nil {
-		return
+		return nil
 	}
+	var remoteErr error
 	if s != nil && s.remote != nil {
-		_ = s.remote.Set(context.Background(), sessionID, oauthSessionDTO{
-			State: session.State,
+		remoteErr = s.remote.Set(context.Background(), sessionID, oauthSessionDTO{
+			State:        session.State,
 			CodeVerifier: session.CodeVerifier,
-			ClientID: session.ClientID,
-			ProxyURL: session.ProxyURL,
-			RedirectURI: session.RedirectURI,
-			CreatedAt: session.CreatedAt,
+			ClientID:     session.ClientID,
+			ProxyURL:     session.ProxyURL,
+			RedirectURI:  session.RedirectURI,
+			CreatedAt:    session.CreatedAt,
 		})
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions[sessionID] = session
+	if remoteErr != nil {
+		s.localOnly[sessionID] = struct{}{}
+		log.Printf("openai oauth session Redis write failed; using process-local fallback: %v", remoteErr)
+	} else {
+		delete(s.localOnly, sessionID)
+	}
+	return remoteErr
 }
 
 func (s *SessionStore) Get(sessionID string) (*OAuthSession, bool) {
+	if s.isLocalOnly(sessionID) {
+		return s.getMemory(sessionID)
+	}
 	if s != nil && s.remote != nil {
 		var dto oauthSessionDTO
 		ok, err := s.remote.Get(context.Background(), sessionID, &dto)
@@ -121,18 +136,22 @@ func (s *SessionStore) Get(sessionID string) (*OAuthSession, bool) {
 			return nil, false
 		}
 		session := &OAuthSession{
-			State: dto.State,
+			State:        dto.State,
 			CodeVerifier: dto.CodeVerifier,
-			ClientID: dto.ClientID,
-			ProxyURL: dto.ProxyURL,
-			RedirectURI: dto.RedirectURI,
-			CreatedAt: dto.CreatedAt,
+			ClientID:     dto.ClientID,
+			ProxyURL:     dto.ProxyURL,
+			RedirectURI:  dto.RedirectURI,
+			CreatedAt:    dto.CreatedAt,
 		}
 		s.mu.Lock()
 		s.sessions[sessionID] = session
 		s.mu.Unlock()
 		return session, true
 	}
+	return s.getMemory(sessionID)
+}
+
+func (s *SessionStore) getMemory(sessionID string) (*OAuthSession, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	session, ok := s.sessions[sessionID]
@@ -152,6 +171,7 @@ func (s *SessionStore) Delete(sessionID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.sessions, sessionID)
+	delete(s.localOnly, sessionID)
 }
 
 // TryConsumeSession marks the session used once (Redis SET NX when configured).
@@ -159,15 +179,38 @@ func (s *SessionStore) TryConsumeSession(sessionID string) bool {
 	if s == nil {
 		return false
 	}
+	if s.isLocalOnly(sessionID) {
+		return s.tryConsumeMemory(sessionID)
+	}
 	if s.remote != nil {
 		ok, err := s.remote.TryConsume(context.Background(), sessionID)
 		return err == nil && ok
 	}
-	// Memory-only stores without per-session consume: treat delete as consume no-op success.
-	_, ok := s.Get(sessionID)
+	return s.tryConsumeMemory(sessionID)
+}
+
+func (s *SessionStore) isLocalOnly(sessionID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.localOnly[sessionID]
 	return ok
 }
 
+func (s *SessionStore) tryConsumeMemory(sessionID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	session, ok := s.sessions[sessionID]
+	if !ok {
+		return false
+	}
+	if time.Since(session.CreatedAt) > SessionTTL {
+		delete(s.sessions, sessionID)
+		delete(s.localOnly, sessionID)
+		return false
+	}
+	delete(s.sessions, sessionID)
+	return true
+}
 
 // Stop stops the cleanup goroutine
 func (s *SessionStore) Stop() {
@@ -189,6 +232,7 @@ func (s *SessionStore) cleanup() {
 			for id, session := range s.sessions {
 				if time.Since(session.CreatedAt) > SessionTTL {
 					delete(s.sessions, id)
+					delete(s.localOnly, id)
 				}
 			}
 			s.mu.Unlock()

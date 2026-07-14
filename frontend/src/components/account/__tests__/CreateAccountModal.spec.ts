@@ -539,6 +539,7 @@ describe('CreateAccountModal', () => {
         email: 'grok-owner@example.com'
       })
     }))
+    expect(createMock.mock.calls[0]?.[0]?.credentials).not.toHaveProperty('base_url')
     expect(createMock.mock.calls[0]?.[0]?.extra).not.toHaveProperty('openai_image_generation_enabled')
   })
 
@@ -1008,7 +1009,7 @@ describe('CreateAccountModal', () => {
     await (wrapper.vm as any).handleGrokValidateSSO('grok-sso-test')
     await flushPromises()
 
-    expect(grokValidateSSOTokenMock).toHaveBeenCalledWith('grok-sso-test', null)
+    expect(grokValidateSSOTokenMock).toHaveBeenCalledWith('grok-sso-test', null, false)
     expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
       platform: 'grok',
       type: 'oauth',
@@ -1028,7 +1029,7 @@ describe('CreateAccountModal', () => {
     await (wrapper.vm as any).handleGrokAuthorizePassword(' grok-owner@example.com---- super-secret  ')
     await flushPromises()
 
-    expect(grokAuthorizePasswordMock).toHaveBeenCalledWith(' grok-owner@example.com---- super-secret  ', null)
+    expect(grokAuthorizePasswordMock).toHaveBeenCalledWith(' grok-owner@example.com---- super-secret  ', null, false)
     expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
       platform: 'grok',
       type: 'oauth',
@@ -1359,7 +1360,8 @@ describe('CreateAccountModal', () => {
         region: 'us-east-1'
       }),
       {},
-      null
+      null,
+      false
     )
     expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
       name: 'manual@example.com',

@@ -787,7 +787,7 @@ async function handleSubmitRecharge() {
 }
 
 async function confirmSubscribe() {
-  if (!selectedPlan.value || submitting.value) return
+  if (!canSubmitSubscription.value || !selectedPlan.value || submitting.value) return
   await createOrder(selectedPlan.value.price, 'subscription', selectedPlan.value.id)
 }
 
@@ -832,10 +832,10 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
         path: '/payment/stripe',
         query: {
           order_id: String(result.order_id),
-          client_secret: result.client_secret,
           method: stripeMethod || undefined,
           publishable_key: paymentStore.config?.stripe_publishable_key || undefined,
           resume_token: result.resume_token || undefined,
+          out_trade_no: result.out_trade_no || undefined,
         },
       }).href
       : ''
@@ -1048,10 +1048,10 @@ async function attemptMobileQrFallback(err: unknown, context: MobileQrFallbackCo
         path: '/payment/stripe',
         query: {
           order_id: String(result.order_id),
-          client_secret: result.client_secret,
           method: stripeMethod,
           publishable_key: paymentStore.config?.stripe_publishable_key || undefined,
           resume_token: result.resume_token || undefined,
+          out_trade_no: result.out_trade_no || undefined,
         },
       }).href
       : ''

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/oauth"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 )
@@ -187,6 +188,9 @@ func TestOAuthService_GenerateAuthURL(t *testing.T) {
 	if result.SessionID == "" {
 		t.Fatal("SessionID 为空")
 	}
+	if result.State == "" {
+		t.Fatal("State 为空")
+	}
 
 	// 验证 session 已存储
 	session, ok := svc.sessionStore.Get(result.SessionID)
@@ -335,6 +339,7 @@ func TestOAuthService_ExchangeCode_Success(t *testing.T) {
 	tokenInfo, err := svc.ExchangeCode(context.Background(), &ExchangeCodeInput{
 		SessionID: result.SessionID,
 		Code:      "auth-code-123",
+		State:     result.State,
 	})
 	if err != nil {
 		t.Fatalf("ExchangeCode 返回错误: %v", err)
@@ -375,6 +380,66 @@ func TestOAuthService_ExchangeCode_Success(t *testing.T) {
 	}
 }
 
+func TestOAuthService_ExchangeCodeValidatesStateWithoutBurningSession(t *testing.T) {
+	t.Parallel()
+
+	exchangeCalls := 0
+	client := &mockClaudeOAuthClient{
+		exchangeCodeFunc: func(context.Context, string, string, string, string, bool) (*oauth.TokenResponse, error) {
+			exchangeCalls++
+			return &oauth.TokenResponse{AccessToken: "access-token", ExpiresIn: 3600}, nil
+		},
+	}
+	svc := NewOAuthService(&mockProxyRepoForOAuth{}, client)
+	defer svc.Stop()
+
+	result, err := svc.GenerateAuthURL(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("GenerateAuthURL: %v", err)
+	}
+
+	_, err = svc.ExchangeCode(context.Background(), &ExchangeCodeInput{
+		SessionID: result.SessionID,
+		Code:      "auth-code",
+	})
+	if err == nil || infraerrors.Reason(err) != "CLAUDE_OAUTH_STATE_REQUIRED" {
+		t.Fatalf("missing state error = %v", err)
+	}
+
+	_, err = svc.ExchangeCode(context.Background(), &ExchangeCodeInput{
+		SessionID: result.SessionID,
+		Code:      "auth-code",
+		State:     "wrong-state",
+	})
+	if err == nil || infraerrors.Reason(err) != "CLAUDE_OAUTH_INVALID_STATE" {
+		t.Fatalf("invalid state error = %v", err)
+	}
+	if exchangeCalls != 0 {
+		t.Fatalf("exchange calls before valid state = %d", exchangeCalls)
+	}
+
+	_, err = svc.ExchangeCode(context.Background(), &ExchangeCodeInput{
+		SessionID: result.SessionID,
+		Code:      "auth-code",
+		State:     result.State,
+	})
+	if err != nil {
+		t.Fatalf("valid retry failed: %v", err)
+	}
+	if exchangeCalls != 1 {
+		t.Fatalf("exchange calls = %d, want 1", exchangeCalls)
+	}
+
+	_, err = svc.ExchangeCode(context.Background(), &ExchangeCodeInput{
+		SessionID: result.SessionID,
+		Code:      "auth-code",
+		State:     result.State,
+	})
+	if err == nil {
+		t.Fatal("consumed session replay must fail")
+	}
+}
+
 func TestOAuthService_ExchangeCode_SetupToken(t *testing.T) {
 	t.Parallel()
 
@@ -404,6 +469,7 @@ func TestOAuthService_ExchangeCode_SetupToken(t *testing.T) {
 	tokenInfo, err := svc.ExchangeCode(context.Background(), &ExchangeCodeInput{
 		SessionID: result.SessionID,
 		Code:      "setup-code",
+		State:     result.State,
 	})
 	if err != nil {
 		t.Fatalf("ExchangeCode 返回错误: %v", err)
@@ -429,6 +495,7 @@ func TestOAuthService_ExchangeCode_ClientError(t *testing.T) {
 	_, err := svc.ExchangeCode(context.Background(), &ExchangeCodeInput{
 		SessionID: result.SessionID,
 		Code:      "bad-code",
+		State:     result.State,
 	})
 	if err == nil {
 		t.Fatal("ExchangeCode 应返回错误")
@@ -706,6 +773,7 @@ func TestOAuthService_ExchangeCode_NilOrg(t *testing.T) {
 	tokenInfo, err := svc.ExchangeCode(context.Background(), &ExchangeCodeInput{
 		SessionID: result.SessionID,
 		Code:      "code",
+		State:     result.State,
 	})
 	if err != nil {
 		t.Fatalf("ExchangeCode 返回错误: %v", err)

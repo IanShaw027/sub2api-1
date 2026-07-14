@@ -161,12 +161,9 @@ func buildAffectedOrdersQuery(orderIDs []int64) (string, []any) {
 	return `
 SELECT po.id, COALESCE(u.email, '')
 FROM payment_orders po
-JOIN payment_audit_logs pal
-  ON pal.order_id = po.id::text
- AND pal.action = 'AFFILIATE_REBATE_FAILED'
 JOIN users u
   ON u.id = po.user_id
-WHERE po.order_type = 'balance'
+WHERE po.order_type IN ('balance', 'subscription')
   AND po.status = 'COMPLETED'
   AND NOT EXISTS (
     SELECT 1

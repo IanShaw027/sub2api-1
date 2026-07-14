@@ -246,7 +246,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
@@ -453,8 +453,13 @@ const resetState = () => {
 }
 
 const handleClose = () => {
+  kiroOAuth.cancelDeviceAuthorization()
   emit('close')
 }
+
+onUnmounted(() => {
+  kiroOAuth.cancelDeviceAuthorization()
+})
 
 const handleOpenEditor = () => {
   if (!props.account) return
@@ -517,12 +522,11 @@ const finishKiroReauthorization = async (
   if (!props.account) return
 
   try {
-    await adminAPI.accounts.reauthorizeKiroOAuth(props.account.id, {
+    const updatedAccount = await adminAPI.accounts.reauthorizeKiroOAuth(props.account.id, {
       name,
       credentials,
       extra
     })
-    const updatedAccount = await adminAPI.accounts.clearError(props.account.id)
     appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
     emit('reauthorized', updatedAccount)
     handleClose()
@@ -634,7 +638,8 @@ const handleKiroValidateRT = async (payload: {
         const validatedCredentials = await kiroOAuth.validateRefreshToken(
           manualCredentials,
           payload.extra,
-          props.account.proxy_id
+          props.account.proxy_id,
+          false
         )
         if (!validatedCredentials) {
           failedCount++
@@ -657,12 +662,11 @@ const handleKiroValidateRT = async (payload: {
         const name = refreshTokens.length > 1 ? `${baseName} #${i + 1}` : baseName
 
         if (successCount === 0) {
-          await adminAPI.accounts.reauthorizeKiroOAuth(props.account.id, {
+          updatedAccount = await adminAPI.accounts.reauthorizeKiroOAuth(props.account.id, {
             name,
             credentials,
             extra
           })
-          updatedAccount = await adminAPI.accounts.clearError(props.account.id)
         } else {
           await adminAPI.accounts.create({
             name,
@@ -961,6 +965,12 @@ const handleExchangeCode = async () => {
     claudeOAuth.error.value = ''
 
     try {
+      const stateToUse = (oauthFlowRef.value?.oauthState || claudeOAuth.oauthState.value || '').trim()
+      if (!stateToUse) {
+        claudeOAuth.error.value = t('admin.accounts.oauth.authFailed')
+        appStore.showError(claudeOAuth.error.value)
+        return
+      }
       const proxyConfig = props.account.proxy_id ? { proxy_id: props.account.proxy_id } : {}
       const endpoint =
         addMethod.value === 'oauth'
@@ -970,6 +980,7 @@ const handleExchangeCode = async () => {
       const tokenInfo = await adminAPI.accounts.exchangeCode(endpoint, {
         session_id: sessionId,
         code: authCode.trim(),
+        state: stateToUse,
         ...proxyConfig
       })
 

@@ -33,6 +33,7 @@ func TestOAuthService_ExchangeCode_NilOAuthClientReturnsError(t *testing.T) {
 	_, err = svc.ExchangeCode(context.Background(), &ExchangeCodeInput{
 		SessionID: result.SessionID,
 		Code:      "auth-code",
+		State:     result.State,
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "oauth client is not configured")

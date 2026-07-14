@@ -1,11 +1,13 @@
 package geminicli
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,6 +16,8 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/redissession"
+	"github.com/redis/go-redis/v9"
 )
 
 type OAuthConfig struct {
@@ -39,26 +43,74 @@ type OAuthSession struct {
 type SessionStore struct {
 	mu       sync.RWMutex
 	sessions map[string]*OAuthSession
-	stopCh   chan struct{}
-	stopOnce sync.Once
+	// localOnly prevents a remote miss from reviving a stale local session.
+	localOnly map[string]struct{}
+	stopCh    chan struct{}
+	stopOnce  sync.Once
+	remote    *redissession.Store
+}
+
+func NewRedisSessionStore(rdb *redis.Client) *SessionStore {
+	store := NewSessionStore()
+	if rdb != nil {
+		store.remote = redissession.New(rdb, "oauth:session:gemini", SessionTTL)
+	}
+	return store
 }
 
 func NewSessionStore() *SessionStore {
 	store := &SessionStore{
-		sessions: make(map[string]*OAuthSession),
-		stopCh:   make(chan struct{}),
+		sessions:  make(map[string]*OAuthSession),
+		localOnly: make(map[string]struct{}),
+		stopCh:    make(chan struct{}),
 	}
 	go store.cleanup()
 	return store
 }
 
-func (s *SessionStore) Set(sessionID string, session *OAuthSession) {
+func (s *SessionStore) Set(sessionID string, session *OAuthSession) error {
+	if session == nil {
+		return nil
+	}
+	var remoteErr error
+	if s != nil && s.remote != nil {
+		remoteErr = s.remote.Set(context.Background(), sessionID, session)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions[sessionID] = session
+	if remoteErr != nil {
+		s.localOnly[sessionID] = struct{}{}
+		log.Printf("gemini oauth session Redis write failed; using process-local fallback: %v", remoteErr)
+	} else {
+		delete(s.localOnly, sessionID)
+	}
+	return remoteErr
 }
 
 func (s *SessionStore) Get(sessionID string) (*OAuthSession, bool) {
+	if s.isLocalOnly(sessionID) {
+		return s.getMemory(sessionID)
+	}
+	if s != nil && s.remote != nil {
+		var session OAuthSession
+		ok, err := s.remote.Get(context.Background(), sessionID, &session)
+		if err != nil || !ok {
+			return nil, false
+		}
+		if time.Since(session.CreatedAt) > SessionTTL {
+			_ = s.remote.Delete(context.Background(), sessionID)
+			return nil, false
+		}
+		s.mu.Lock()
+		s.sessions[sessionID] = &session
+		s.mu.Unlock()
+		return &session, true
+	}
+	return s.getMemory(sessionID)
+}
+
+func (s *SessionStore) getMemory(sessionID string) (*OAuthSession, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	session, ok := s.sessions[sessionID]
@@ -72,9 +124,50 @@ func (s *SessionStore) Get(sessionID string) (*OAuthSession, bool) {
 }
 
 func (s *SessionStore) Delete(sessionID string) {
+	if s != nil && s.remote != nil {
+		_ = s.remote.Delete(context.Background(), sessionID)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.sessions, sessionID)
+	delete(s.localOnly, sessionID)
+}
+
+func (s *SessionStore) TryConsumeSession(sessionID string) bool {
+	if s == nil {
+		return false
+	}
+	if s.isLocalOnly(sessionID) {
+		return s.tryConsumeMemory(sessionID)
+	}
+	if s.remote != nil {
+		ok, err := s.remote.TryConsume(context.Background(), sessionID)
+		return err == nil && ok
+	}
+	return s.tryConsumeMemory(sessionID)
+}
+
+func (s *SessionStore) isLocalOnly(sessionID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.localOnly[sessionID]
+	return ok
+}
+
+func (s *SessionStore) tryConsumeMemory(sessionID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	session, ok := s.sessions[sessionID]
+	if !ok {
+		return false
+	}
+	if time.Since(session.CreatedAt) > SessionTTL {
+		delete(s.sessions, sessionID)
+		delete(s.localOnly, sessionID)
+		return false
+	}
+	delete(s.sessions, sessionID)
+	return true
 }
 
 func (s *SessionStore) Stop() {
@@ -95,6 +188,7 @@ func (s *SessionStore) cleanup() {
 			for id, session := range s.sessions {
 				if time.Since(session.CreatedAt) > SessionTTL {
 					delete(s.sessions, id)
+					delete(s.localOnly, id)
 				}
 			}
 			s.mu.Unlock()

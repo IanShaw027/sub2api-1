@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -333,82 +334,79 @@ func ProvideDeferredService(accountRepo AccountRepository, timingWheel *TimingWh
 }
 
 type aiSkillBalanceCharger struct {
+	ledgerRepo           AISkillBalanceLedgerRepository
 	userRepo             UserRepository
 	billingCacheService  *BillingCacheService
 	balanceNotifyService *BalanceNotifyService
 }
 
-type aiSkillBalanceRefundRepository interface {
-	AddBalanceWithoutRecharge(ctx context.Context, id int64, amount float64) error
-}
-
 func (c *aiSkillBalanceCharger) ChargeUserBalance(ctx context.Context, input AISkillBalanceChargeInput) (*AISkillBalanceChargeResult, error) {
-	if c == nil || c.userRepo == nil {
+	if c == nil || c.ledgerRepo == nil {
 		return nil, ErrAISkillBalanceServiceUnavailable
 	}
 	if input.UserID <= 0 || input.Amount <= 0 {
 		return nil, ErrAISkillBalanceServiceUnavailable
 	}
+	if strings.TrimSpace(input.Reference) == "" {
+		return nil, ErrAISkillBalanceReferenceInvalid
+	}
 
-	user, err := c.userRepo.GetByID(ctx, input.UserID)
+	ledger, err := c.ledgerRepo.ApplyAISkillBalanceCharge(ctx, input)
 	if err != nil {
 		return nil, err
 	}
-
-	oldBalance := user.Balance
-	if err := c.userRepo.DeductBalance(ctx, input.UserID, input.Amount); err != nil {
-		return nil, err
+	if ledger == nil {
+		return nil, ErrAISkillBalanceServiceUnavailable
 	}
-	if c.billingCacheService != nil {
+	if ledger.Refunded {
+		return nil, ErrAISkillBalanceChargeRefunded
+	}
+	if !ledger.Duplicate && c.billingCacheService != nil {
 		_ = c.billingCacheService.DeductBalanceCache(ctx, input.UserID, input.Amount)
 	}
-	if c.balanceNotifyService != nil {
-		c.balanceNotifyService.CheckBalanceAfterDeduction(ctx, user, oldBalance, input.Amount)
-	}
-
-	balanceAfter := oldBalance - input.Amount
-	if updated, err := c.userRepo.GetByID(ctx, input.UserID); err == nil {
-		balanceAfter = updated.Balance
+	if !ledger.Duplicate && c.balanceNotifyService != nil && c.userRepo != nil {
+		if user, getErr := c.userRepo.GetByID(ctx, input.UserID); getErr == nil {
+			c.balanceNotifyService.CheckBalanceAfterDeduction(ctx, user, ledger.BalanceBefore, input.Amount)
+		}
 	}
 
 	return &AISkillBalanceChargeResult{
-		ChargedAmount: input.Amount,
-		BalanceAfter:  balanceAfter,
+		ChargedAmount: ledger.Amount,
+		BalanceAfter:  ledger.BalanceAfter,
 	}, nil
 }
 
 func (c *aiSkillBalanceCharger) RefundUserBalance(ctx context.Context, input AISkillBalanceRefundInput) (*AISkillBalanceRefundResult, error) {
-	if c == nil || c.userRepo == nil {
+	if c == nil || c.ledgerRepo == nil {
 		return nil, ErrAISkillBalanceServiceUnavailable
 	}
 	if input.UserID <= 0 || input.Amount <= 0 {
 		return nil, ErrAISkillBalanceServiceUnavailable
 	}
 
-	refundRepo, ok := c.userRepo.(aiSkillBalanceRefundRepository)
-	if !ok {
-		return nil, ErrAISkillBalanceServiceUnavailable
+	if strings.TrimSpace(input.Reference) == "" {
+		return nil, ErrAISkillBalanceReferenceInvalid
 	}
-	if err := refundRepo.AddBalanceWithoutRecharge(ctx, input.UserID, input.Amount); err != nil {
+	ledger, err := c.ledgerRepo.ApplyAISkillBalanceRefund(ctx, input)
+	if err != nil {
 		return nil, err
 	}
-	if c.billingCacheService != nil {
+	if ledger == nil {
+		return nil, ErrAISkillBalanceServiceUnavailable
+	}
+	if !ledger.Duplicate && c.billingCacheService != nil {
 		_ = c.billingCacheService.InvalidateUserBalance(ctx, input.UserID)
 	}
-
-	balanceAfter := 0.0
-	if updated, err := c.userRepo.GetByID(ctx, input.UserID); err == nil {
-		balanceAfter = updated.Balance
-	}
 	return &AISkillBalanceRefundResult{
-		RefundedAmount: input.Amount,
-		BalanceAfter:   balanceAfter,
+		RefundedAmount: ledger.Amount,
+		BalanceAfter:   ledger.BalanceAfter,
 	}, nil
 }
 
 // ProvideAISkillBalanceCharger wires the current balance stack into skill settlements.
-func ProvideAISkillBalanceCharger(userRepo UserRepository, billingCacheService *BillingCacheService, balanceNotifyService *BalanceNotifyService) AISkillBalanceCharger {
+func ProvideAISkillBalanceCharger(ledgerRepo AISkillBalanceLedgerRepository, userRepo UserRepository, billingCacheService *BillingCacheService, balanceNotifyService *BalanceNotifyService) AISkillBalanceCharger {
 	return &aiSkillBalanceCharger{
+		ledgerRepo:           ledgerRepo,
 		userRepo:             userRepo,
 		billingCacheService:  billingCacheService,
 		balanceNotifyService: balanceNotifyService,
@@ -922,7 +920,7 @@ var ProviderSet = wire.NewSet(
 	ProvideOpenAIOAuthService,
 	ProvideGrokOAuthService,
 	wire.Bind(new(GrokOAuthTokenService), new(*GrokOAuthService)),
-	NewGeminiOAuthService,
+	ProvideGeminiOAuthService,
 	NewGeminiQuotaService,
 	NewCompositeTokenCacheInvalidator,
 	wire.Bind(new(TokenCacheInvalidator), new(*CompositeTokenCacheInvalidator)),

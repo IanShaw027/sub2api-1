@@ -2103,12 +2103,20 @@ const BULK_EDIT_FILTERED_PREVIEW_PAGE_SIZE = 100
 const collectFilteredSelectionMetadata = async (filters: Record<string, unknown>) => {
   try {
     const firstPage = await adminAPI.accounts.list(1, BULK_EDIT_FILTERED_PREVIEW_PAGE_SIZE, filters)
-    const rows = [...firstPage.items]
-    for (let page = 2; page <= firstPage.pages; page++) {
-      const result = await adminAPI.accounts.list(page, BULK_EDIT_FILTERED_PREVIEW_PAGE_SIZE, filters)
-      rows.push(...result.items)
+    if (firstPage.total <= firstPage.items.length) {
+      const metadata = collectSelectionMetadata(firstPage.items)
+      return { previewCount: firstPage.total, ...metadata }
     }
-    const { selectedPlatforms, selectedTypes, textEndpointAutoRouteConfigurable } = collectSelectionMetadata(rows)
+
+    // Large filtered sets use only facts guaranteed by the filter. The backend
+    // validates the final matching set again when the update is submitted.
+    const platform = typeof filters.platform === 'string' ? filters.platform.trim() : ''
+    const accountType = typeof filters.type === 'string' ? filters.type.trim() : ''
+    const selectedPlatforms = platform ? [platform as AccountPlatform] : []
+    const selectedTypes = accountType ? [accountType as AccountType] : []
+    const textEndpointAutoRouteConfigurable = selectedPlatforms.length === 1 && selectedTypes.length === 1
+      ? supportsTextEndpointAutoRoute(selectedPlatforms[0], selectedTypes[0])
+      : false
     return {
       previewCount: firstPage.total,
       selectedPlatforms,

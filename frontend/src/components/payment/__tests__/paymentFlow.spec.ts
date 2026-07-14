@@ -141,6 +141,23 @@ describe('decidePaymentLaunch', () => {
     expect(decision.paymentState.paymentEnv).toBe('demo')
   })
 
+  it('restores the Airwallex launch kind from a persisted snapshot', () => {
+    const raw = JSON.stringify({
+      ...decidePaymentLaunch(createOrderResult({
+        client_secret: 'awx_cs',
+        intent_id: 'int_awx',
+      }), {
+        visibleMethod: 'airwallex',
+        orderType: 'balance',
+        isMobile: false,
+        airwallexRouteUrl: '/payment/airwallex?order_id=101',
+      }).recovery,
+      expiresAt: '2099-01-01T00:10:00.000Z',
+    })
+
+    expect(readPaymentRecoverySnapshot(raw)?.launchKind).toBe('airwallex_route')
+  })
+
   it('keeps hosted redirect metadata for recovery flows', () => {
     const decision = decidePaymentLaunch(createOrderResult({
       pay_url: 'https://pay.example.com/session/abc',

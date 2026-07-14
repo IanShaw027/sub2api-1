@@ -137,7 +137,6 @@ let redirectTimer: ReturnType<typeof setTimeout> | null = null
 
 onMounted(async () => {
   const orderId = Number(route.query.order_id)
-  const clientSecret = String(route.query.client_secret || '')
   const method = String(route.query.method || '')
   const resumeToken = typeof route.query.resume_token === 'string' ? route.query.resume_token : undefined
   const routeOutTradeNo = typeof route.query.out_trade_no === 'string' ? route.query.out_trade_no : ''
@@ -145,7 +144,7 @@ onMounted(async () => {
     ? route.query.publishable_key.trim()
     : ''
 
-  if (!orderId || !clientSecret) {
+  if (!orderId) {
     loading.value = false
     initError.value = t('payment.stripeMissingParams')
     return
@@ -158,6 +157,14 @@ onMounted(async () => {
         { resumeToken },
       )
       : null
+    const clientSecret = restored?.orderId === orderId
+      && restored.paymentType !== 'airwallex'
+      ? restored.clientSecret
+      : ''
+    if (!clientSecret) {
+      initError.value = t('payment.stripeMissingParams')
+      return
+    }
     recoveryResumeToken.value = resumeToken || restored?.resumeToken || ''
     recoveryOutTradeNo.value = routeOutTradeNo || restored?.outTradeNo || ''
     if (typeof window !== 'undefined') {

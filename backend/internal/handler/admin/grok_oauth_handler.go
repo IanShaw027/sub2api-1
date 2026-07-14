@@ -50,11 +50,10 @@ func (h *GrokOAuthHandler) GenerateAuthURL(c *gin.Context) {
 }
 
 type GrokExchangeCodeRequest struct {
-	SessionID   string `json:"session_id" binding:"required"`
-	Code        string `json:"code" binding:"required"`
-	State       string `json:"state"`
-	RedirectURI string `json:"redirect_uri"`
-	ProxyID     *int64 `json:"proxy_id"`
+	SessionID string `json:"session_id" binding:"required"`
+	Code      string `json:"code" binding:"required"`
+	State     string `json:"state" binding:"required"`
+	ProxyID   *int64 `json:"proxy_id"`
 }
 
 func (h *GrokOAuthHandler) ExchangeCode(c *gin.Context) {
@@ -64,11 +63,10 @@ func (h *GrokOAuthHandler) ExchangeCode(c *gin.Context) {
 		return
 	}
 	tokenInfo, err := h.grokOAuthService.ExchangeCode(c.Request.Context(), &service.GrokExchangeCodeInput{
-		SessionID:   req.SessionID,
-		Code:        req.Code,
-		State:       req.State,
-		RedirectURI: req.RedirectURI,
-		ProxyID:     req.ProxyID,
+		SessionID: req.SessionID,
+		Code:      req.Code,
+		State:     req.State,
+		ProxyID:   req.ProxyID,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -203,8 +201,7 @@ func (h *GrokOAuthHandler) CreateAccountFromOAuth(c *gin.Context) {
 	var req struct {
 		SessionID   string  `json:"session_id" binding:"required"`
 		Code        string  `json:"code" binding:"required"`
-		State       string  `json:"state"`
-		RedirectURI string  `json:"redirect_uri"`
+		State       string  `json:"state" binding:"required"`
 		ProxyID     *int64  `json:"proxy_id"`
 		Name        string  `json:"name"`
 		Concurrency int     `json:"concurrency"`
@@ -216,11 +213,10 @@ func (h *GrokOAuthHandler) CreateAccountFromOAuth(c *gin.Context) {
 		return
 	}
 	tokenInfo, err := h.grokOAuthService.ExchangeCode(c.Request.Context(), &service.GrokExchangeCodeInput{
-		SessionID:   req.SessionID,
-		Code:        req.Code,
-		State:       req.State,
-		RedirectURI: req.RedirectURI,
-		ProxyID:     req.ProxyID,
+		SessionID: req.SessionID,
+		Code:      req.Code,
+		State:     req.State,
+		ProxyID:   req.ProxyID,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)

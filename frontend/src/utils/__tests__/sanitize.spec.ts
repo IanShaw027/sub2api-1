@@ -3,11 +3,12 @@ import { sanitizeHtml, sanitizeRedirectPath } from '@/utils/sanitize'
 
 describe('sanitize utils', () => {
   it('removes scriptable content from custom HTML', () => {
-    const sanitized = sanitizeHtml('<h1>Hello</h1><img src=x onerror="alert(1)"><script>alert(2)</script>')
+    const sanitized = sanitizeHtml('<h1>Hello</h1><img src=x onerror="alert(1)"><script>alert(2)</script><iframe src="https://untrusted.example"></iframe>')
 
     expect(sanitized).toContain('<h1>Hello</h1>')
     expect(sanitized).not.toContain('onerror')
     expect(sanitized).not.toContain('<script')
+    expect(sanitized).not.toContain('<iframe')
   })
 
   it('allows only same-site redirect paths', () => {

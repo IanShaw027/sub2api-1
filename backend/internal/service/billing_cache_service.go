@@ -258,22 +258,24 @@ func (s *BillingCacheService) consumeBalanceCacheOutbox() {
 		}
 		return
 	}
-	ids := make([]int64, 0, len(events))
+	eventIDsByUser := make(map[int64][]int64, len(events))
 	for _, event := range events {
-		ids = append(ids, event.ID)
+		eventIDsByUser[event.UserID] = append(eventIDsByUser[event.UserID], event.ID)
 	}
-	seenUsers := make(map[int64]struct{}, len(events))
-	for _, event := range events {
-		if _, exists := seenUsers[event.UserID]; exists {
+	ackedIDs := make([]int64, 0, len(events))
+	for userID, ids := range eventIDsByUser {
+		if err := s.InvalidateUserBalance(ctx, userID); err != nil {
+			if nackErr := s.balanceOutboxRepo.Nack(ctx, ids, time.Second, err.Error()); nackErr != nil {
+				logger.LegacyPrintf("service.billing_cache", "Warning: nack balance cache outbox failed: %v", nackErr)
+			}
 			continue
 		}
-		seenUsers[event.UserID] = struct{}{}
-		if err := s.InvalidateUserBalance(ctx, event.UserID); err != nil {
-			_ = s.balanceOutboxRepo.Nack(ctx, ids, time.Second, err.Error())
-			return
-		}
+		ackedIDs = append(ackedIDs, ids...)
 	}
-	if err := s.balanceOutboxRepo.Ack(ctx, ids); err != nil {
+	if len(ackedIDs) == 0 {
+		return
+	}
+	if err := s.balanceOutboxRepo.Ack(ctx, ackedIDs); err != nil {
 		logger.LegacyPrintf("service.billing_cache", "Warning: ack balance cache outbox failed: %v", err)
 	}
 }
