@@ -181,11 +181,11 @@ func TestTLSFingerprintRouterServiceCanonicalTransportValuesValidateAndMatchSupp
 
 	result, ok := svc.MatchRequest(context.Background(), 12, "Codex/1.2.3", model.TLSFingerprintRouterTransportHTTP)
 	require.True(t, ok)
-	require.Equal(t, int64(17), result.ProfileID, "coarse HTTP runtime should skip h2-only rules and match http1")
+	require.Equal(t, int64(15), result.ProfileID, "coarse HTTP runtime should allow an ordered h2 rule")
 
 	result, ok = svc.MatchRequest(context.Background(), 12, "Codex/1.2.3", model.TLSFingerprintRouterTransportWebSocket)
 	require.True(t, ok)
-	require.Equal(t, int64(18), result.ProfileID, "coarse websocket runtime should skip websocket-h2 and match websocket-http1")
+	require.Equal(t, int64(16), result.ProfileID, "coarse websocket runtime should allow an ordered websocket-h2 rule")
 }
 
 func TestTLSFingerprintRouterServiceLegacyCoarseTransportValuesStillValidate(t *testing.T) {

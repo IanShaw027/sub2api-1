@@ -81,8 +81,8 @@ func (TLSFingerprintProfile) Fields() []ent.Field {
 			MaxLen(50).
 			Default(""),
 
-		// http2_fingerprint: optional captured HTTP/2 fingerprint preserved with the template.
-		// Currently stored for fidelity/deduplication; outbound replay still uses the h1 safety fallback.
+		// http2_fingerprint: captured/replayable HTTP/2 fingerprint (settings|wu|p|ph).
+		// Required for h2 / websocket-h2 transports; consumed by DoWithTLS H2 replay path.
 		field.Text("http2_fingerprint").
 			Default(""),
 

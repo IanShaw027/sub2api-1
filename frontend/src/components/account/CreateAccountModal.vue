@@ -2678,6 +2678,13 @@
               <option v-if="hasSelectableTLSFingerprintProfiles" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
               <option v-for="p in selectableTLSFingerprintProfiles" :key="p.id" :value="p.id">{{ tlsFingerprintProfileOptionLabel(p) }}</option>
             </select>
+            <select v-model="tlsFingerprintRouterId" class="input mt-2" data-testid="anthropic-tls-fingerprint-router">
+              <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.noRouter') }}</option>
+              <option v-for="router in selectableTLSFingerprintRouters" :key="router.id" :value="router.id">{{ tlsFingerprintRouterOptionLabel(router) }}</option>
+            </select>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.quotaControl.tlsFingerprint.routerHint') }}
+            </p>
             <label class="input-label mb-0 mt-2">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOS') }}</label>
             <select v-model="tlsFingerprintDefaultOS" class="input mt-1" data-testid="anthropic-tls-fingerprint-default-os">
               <option value="">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOSNone') }}</option>
@@ -2688,6 +2695,14 @@
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOSHint') }}
             </p>
+            <div class="mt-3 border-t border-gray-100 pt-3 dark:border-dark-700">
+              <TLSFingerprintBindingMatrix
+                v-model="tlsFingerprintBindings"
+                :profiles="tlsFingerprintProfiles"
+                platform="anthropic"
+                :with-client-type="true"
+              />
+            </div>
           </div>
         </div>
 
@@ -2986,6 +3001,14 @@
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
               {{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOSHint') }}
             </p>
+            <div class="mt-3 border-t border-gray-100 pt-3 dark:border-dark-700">
+              <TLSFingerprintBindingMatrix
+                v-model="tlsFingerprintBindings"
+                :profiles="tlsFingerprintProfiles"
+                platform="grok"
+                :with-client-type="true"
+              />
+            </div>
           </template>
         </div>
       </div>
@@ -3025,6 +3048,13 @@
             <option v-if="hasSelectableTLSFingerprintProfiles" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
             <option v-for="p in selectableTLSFingerprintProfiles" :key="p.id" :value="p.id">{{ tlsFingerprintProfileOptionLabel(p) }}</option>
           </select>
+          <select v-model="tlsFingerprintRouterId" class="input mt-2" data-testid="kiro-tls-fingerprint-router">
+            <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.noRouter') }}</option>
+            <option v-for="router in selectableTLSFingerprintRouters" :key="router.id" :value="router.id">{{ tlsFingerprintRouterOptionLabel(router) }}</option>
+          </select>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.quotaControl.tlsFingerprint.routerHint') }}
+          </p>
           <label class="input-label mb-0 mt-2">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOS') }}</label>
           <select v-model="tlsFingerprintDefaultOS" class="input mt-1" data-testid="kiro-tls-fingerprint-default-os">
             <option value="">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOSNone') }}</option>
@@ -3035,6 +3065,14 @@
           <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
             {{ t('admin.accounts.quotaControl.tlsFingerprint.defaultOSHint') }}
           </p>
+          <div class="mt-3 border-t border-gray-100 pt-3 dark:border-dark-700">
+            <TLSFingerprintBindingMatrix
+              v-model="tlsFingerprintBindings"
+              :profiles="tlsFingerprintProfiles"
+              platform="kiro"
+              :with-client-type="true"
+            />
+          </div>
         </div>
       </div>
 
@@ -5724,7 +5762,7 @@ const handleKiroAuthorize = async (payload: {
   }
   const credentials = kiroOAuth.buildCredentials(tokenInfo, payload.credentials)
   const extra = kiroOAuth.buildExtraInfo(tokenInfo, payload.extra)
-  applyTLSFingerprintExtra(extra, false, 'defaultOS')
+  applyTLSFingerprintExtra(extra, true, 'defaultOS')
   applyKiroModelRestriction(credentials)
   applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
   await createAccountAndFinish('kiro', 'oauth', credentials, extra, kiroOAuth.buildAccountName(tokenInfo, form.name))
@@ -5773,7 +5811,7 @@ const handleKiroValidateRT = async (payload: {
         const tokenInfo = validatedCredentials as KiroTokenInfo
         const credentials = { ...validatedCredentials }
         const extra = kiroOAuth.buildExtraInfo(tokenInfo, payload.extra)
-        applyTLSFingerprintExtra(extra, false, 'defaultOS')
+        applyTLSFingerprintExtra(extra, true, 'defaultOS')
         applyKiroModelRestriction(credentials)
         applyInterceptWarmup(credentials, interceptWarmupRequests.value, 'create')
         if (!applyCredentialRuleConfigs(credentials)) {
@@ -6777,7 +6815,7 @@ const handleAnthropicExchange = async (authCode: string) => {
       extra.user_msg_queue_mode = userMsgQueueMode.value
     }
 
-    applyTLSFingerprintExtra(extra, false, 'defaultOS')
+    applyTLSFingerprintExtra(extra, true, 'defaultOS')
 
     // Add session ID masking settings
     if (sessionIdMaskingEnabled.value) {
@@ -6903,7 +6941,7 @@ const handleCookieAuth = async (sessionKey: string) => {
           extra.user_msg_queue_mode = userMsgQueueMode.value
         }
 
-        applyTLSFingerprintExtra(extra, false, 'defaultOS')
+        applyTLSFingerprintExtra(extra, true, 'defaultOS')
 
         // Add session ID masking settings
         if (sessionIdMaskingEnabled.value) {

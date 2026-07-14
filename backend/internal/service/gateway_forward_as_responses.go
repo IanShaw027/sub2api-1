@@ -166,7 +166,7 @@ func (s *GatewayService) ForwardAsResponses(
 		setOpsUpstreamRequestBody(c, upstreamWireBody)
 
 		upstreamStart := time.Now()
-		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
+		resp, err = s.doGatewayRequestWithTLS(ctx, c, upstreamReq, account, proxyURL)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		if err != nil {
 			if resp != nil && resp.Body != nil {

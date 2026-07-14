@@ -114,8 +114,8 @@ func TestPrepareUsageLogInsert_PreservesVideoBillingMetadata(t *testing.T) {
 	require.Equal(t, 2, prepared.args[40])
 	require.Equal(t, sql.NullString{String: resolution, Valid: true}, prepared.args[41])
 	require.Equal(t, sql.NullInt64{Int64: int64(videoDurationSeconds), Valid: true}, prepared.args[42])
-	require.Equal(t, sql.NullInt64{Int64: int64(videoSeconds), Valid: true}, prepared.args[52])
-	require.Equal(t, sql.NullFloat64{Float64: videoUnitPrice, Valid: true}, prepared.args[53])
+	require.Equal(t, sql.NullInt64{Int64: int64(videoSeconds), Valid: true}, prepared.args[53])
+	require.Equal(t, sql.NullFloat64{Float64: videoUnitPrice, Valid: true}, prepared.args[54])
 }
 
 func assertNoDuplicateUsageLogInsertColumns(t *testing.T, query string) {

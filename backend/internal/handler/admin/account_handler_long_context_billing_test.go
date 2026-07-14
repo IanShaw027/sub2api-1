@@ -78,7 +78,7 @@ func TestAccountAdminBoundariesRejectMalformedOpenAILongContextBillingValue(t *t
 			if tt.setup != nil {
 				tt.setup(stub)
 			}
-			handler := NewAccountHandler(stub, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+			handler := newLongContextAccountHandler(stub)
 			router := gin.New()
 			tt.mount(router, handler)
 			recorder := httptest.NewRecorder()
@@ -99,7 +99,7 @@ func TestAccountAdminBoundariesRejectMalformedOpenAILongContextBillingValue(t *t
 
 func TestAccountCreateBoundaryDoesNotApplyOpenAIValidationToOtherPlatforms(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := NewAccountHandler(newStubAdminService(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := newLongContextAccountHandler(newStubAdminService())
 	router := gin.New()
 	router.POST("/accounts", handler.Create)
 	recorder := httptest.NewRecorder()
@@ -121,7 +121,7 @@ func TestApplyOAuthCredentialsRejectsMalformedOpenAILongContextBillingBeforeMuta
 		Platform: service.PlatformOpenAI,
 		Type:     service.AccountTypeOAuth,
 	}
-	handler := NewAccountHandler(stub, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler := newLongContextAccountHandler(stub)
 	router := gin.New()
 	router.POST("/accounts/:id/apply-oauth-credentials", handler.ApplyOAuthCredentials)
 	recorder := httptest.NewRecorder()
@@ -140,6 +140,10 @@ func TestApplyOAuthCredentialsRejectsMalformedOpenAILongContextBillingBeforeMuta
 	require.Equal(t, "OPENAI_LONG_CONTEXT_BILLING_INVALID", responseBody.Reason)
 	require.Zero(t, stub.updateAccountCalls)
 	require.Zero(t, stub.updateAccountExtraCalls)
+}
+
+func newLongContextAccountHandler(adminService service.AdminService) *AccountHandler {
+	return NewAccountHandler(adminService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 }
 
 func TestOpenAIOAuthCodexPATBoundaryRejectsMalformedOpenAILongContextBillingValueBeforeTokenValidation(t *testing.T) {

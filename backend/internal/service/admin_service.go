@@ -3366,6 +3366,12 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 			return nil, err
 		}
 	}
+	input.Extra = NormalizeOpenAICodexIdentityExtra(input.Platform, input.Type, input.Credentials, input.Extra)
+	normalizedExtra, err := normalizeOpenAILongContextBillingExtra(input.Platform, input.Extra)
+	if err != nil {
+		return nil, err
+	}
+	input.Extra = normalizedExtra
 
 	// 绑定分组
 	groupIDs := input.GroupIDs
@@ -3398,13 +3404,6 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 			return nil, err
 		}
 	}
-
-	input.Extra = NormalizeOpenAICodexIdentityExtra(input.Platform, input.Type, input.Credentials, input.Extra)
-	normalizedExtra, err := normalizeOpenAILongContextBillingExtra(input.Platform, input.Extra)
-	if err != nil {
-		return nil, err
-	}
-	input.Extra = normalizedExtra
 
 	account := &Account{
 		Name:        input.Name,

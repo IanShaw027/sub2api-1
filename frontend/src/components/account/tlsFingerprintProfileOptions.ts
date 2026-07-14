@@ -20,30 +20,23 @@ function normalizeDimensionValue(value: unknown): string {
   return typeof value === 'string' ? value.trim().toLowerCase() : ''
 }
 
-function isReplayUnsupportedTransport(value: unknown): boolean {
-  const normalized = normalizeDimensionValue(value)
-  return normalized === 'h2' || normalized === 'websocket-h2'
-}
-
+// Matches backend tlsFingerprintProfileTransportMatches:
+// empty profile/context = agnostic; coarse http/websocket include H1 and H2 variants.
+// Backend DoWithTLS can replay h2 / websocket-h2 when http2_fingerprint is present.
 function tlsFingerprintTransportMatchesContext(profileTransport: unknown, contextTransport: unknown): boolean {
   const profile = normalizeDimensionValue(profileTransport)
   const context = normalizeDimensionValue(contextTransport)
-  if (!profile) {
+  if (!profile || !context) {
     return true
-  }
-  if (!context) {
-    // Account/profile bindings without an explicit transport dimension should not
-    // offer capture-only templates that the current outbound runtime never replays.
-    return !isReplayUnsupportedTransport(profile)
   }
   if (profile === context) {
     return true
   }
   if (context === 'http') {
-    return profile === 'http1'
+    return profile === 'http1' || profile === 'h2'
   }
   if (context === 'websocket') {
-    return profile === 'websocket-http1'
+    return profile === 'websocket-http1' || profile === 'websocket-h2'
   }
   return false
 }

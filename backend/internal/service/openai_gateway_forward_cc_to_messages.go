@@ -94,7 +94,9 @@ func (s *OpenAIGatewayService) forwardCCToAnthropicMessages(
 	if account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
+	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "http")
+	applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{

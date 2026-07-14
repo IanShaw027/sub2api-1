@@ -20,6 +20,7 @@ export interface TLSFingerprintProfile {
   name: string
   user_agent: string
   originator: string
+  http2_fingerprint: string
   description: string | null
   enable_grease: boolean
   cipher_suites: number[]
@@ -51,6 +52,7 @@ export interface CreateProfileRequest {
   name: string
   user_agent?: string
   originator?: string
+  http2_fingerprint?: string
   description?: string | null
   enable_grease?: boolean
   cipher_suites?: number[]
@@ -80,6 +82,7 @@ export interface UpdateProfileRequest {
   name?: string
   user_agent?: string
   originator?: string
+  http2_fingerprint?: string
   description?: string | null
   enable_grease?: boolean
   cipher_suites?: number[]
@@ -130,6 +133,9 @@ export interface StartCaptureTaskRequest {
   name?: string
   targets: Record<string, number>
   ua_keywords?: string[]
+  capture_filters?: {
+    store_body?: boolean
+  }
 }
 
 export interface ImportCaptureTaskSamplesRequest {

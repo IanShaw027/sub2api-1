@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -183,14 +182,15 @@ func (s *GatewayService) sendOpenAICompatCCChatRequest(
 		}
 	}
 	setOpsUpstreamRequestBody(c, body)
-	tlsProfile := s.resolveGatewayTLSProfile(account)
-	upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsProfile)
+	tlsRuntime := s.resolveGatewayTLSFingerprintRuntime(ctx, c, account, "http")
+	applyGatewayTLSFingerprintRuntime(upstreamReq, tlsRuntime)
+	upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsRuntime.Profile)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsProfile)
+	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
 		detail := recordDetailedUpstreamTransportError(c, err)
@@ -215,11 +215,72 @@ func (s *GatewayService) sendOpenAICompatCCChatRequest(
 	return resp, upstreamReq, nil
 }
 
-func (s *GatewayService) resolveGatewayTLSProfile(account *Account) *tlsfingerprint.Profile {
-	if s == nil || s.tlsFPProfileService == nil {
-		return nil
+const gatewayTLSFingerprintRuntimeCacheKey = "gateway_tls_fingerprint_runtime_cache"
+
+type gatewayTLSFingerprintRuntimeAccountKey struct {
+	AccountID int64
+	Platform  string
+	Transport string
+}
+
+// resolveGatewayTLSProfileForRequest uses router + bindings when inbound UA is available
+// (Claude/OpenAI-compat CC paths), otherwise falls back to static profile/default_os.
+func (s *GatewayService) resolveGatewayTLSFingerprintRuntime(ctx context.Context, c *gin.Context, account *Account, transport string) accountTLSFingerprintRuntime {
+	if s == nil || s.tlsFPProfileService == nil || account == nil || !account.IsTLSFingerprintEnabled() {
+		return accountTLSFingerprintRuntime{}
 	}
-	return s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http")
+	key := gatewayTLSFingerprintRuntimeAccountKey{AccountID: account.ID, Platform: account.Platform, Transport: transport}
+	if c != nil {
+		if value, ok := c.Get(gatewayTLSFingerprintRuntimeCacheKey); ok {
+			if cache, valid := value.(map[gatewayTLSFingerprintRuntimeAccountKey]accountTLSFingerprintRuntime); valid {
+				if runtime, found := cache[key]; found {
+					return runtime
+				}
+			}
+		}
+	}
+	inboundUA := inboundUserAgentFromGin(c)
+	if inboundUA == "" {
+		inboundUA = tlsFingerprintInboundUserAgentFromContext(ctx)
+	}
+	runtime := resolveAccountTLSFingerprintRuntime(
+		ctx, account, s.tlsFPProfileService, s.tlsFPRouterService, inboundUA, transport,
+	)
+	if c != nil {
+		cache := map[gatewayTLSFingerprintRuntimeAccountKey]accountTLSFingerprintRuntime{}
+		if value, ok := c.Get(gatewayTLSFingerprintRuntimeCacheKey); ok {
+			if existing, valid := value.(map[gatewayTLSFingerprintRuntimeAccountKey]accountTLSFingerprintRuntime); valid {
+				cache = existing
+			}
+		}
+		cache[key] = runtime
+		c.Set(gatewayTLSFingerprintRuntimeCacheKey, cache)
+	}
+	return runtime
+}
+
+func applyGatewayTLSFingerprintRuntime(req *http.Request, runtime accountTLSFingerprintRuntime) {
+	if req == nil {
+		return
+	}
+	if runtime.UpstreamUserAgent != "" {
+		req.Header.Set("User-Agent", runtime.UpstreamUserAgent)
+	}
+	if runtime.UpstreamOriginator != "" {
+		req.Header.Set("Originator", runtime.UpstreamOriginator)
+	}
+}
+
+func (s *GatewayService) doGatewayRequestWithTLS(
+	ctx context.Context,
+	c *gin.Context,
+	req *http.Request,
+	account *Account,
+	proxyURL string,
+) (*http.Response, error) {
+	runtime := s.resolveGatewayTLSFingerprintRuntime(ctx, c, account, "http")
+	applyGatewayTLSFingerprintRuntime(req, runtime)
+	return s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, runtime.Profile)
 }
 
 func (s *GatewayService) handleOpenAICompatCCChatError(

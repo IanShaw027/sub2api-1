@@ -271,7 +271,9 @@ func (s *OpenAIGatewayService) forwardGrokChatCompletionsViaResponses(
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	tlsRuntime := s.resolveGrokTLSFingerprintRuntime(ctx, c, account, "http")
+	applyGrokRuntimeHeaders(upstreamReq, tlsRuntime)
+	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 	}

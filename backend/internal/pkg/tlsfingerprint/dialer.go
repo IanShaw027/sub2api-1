@@ -23,7 +23,7 @@ type Profile struct {
 	Name                           string // Profile name for identification
 	UserAgent                      string // Optional upstream User-Agent carried alongside the fingerprint; unused by the dialer
 	Originator                     string // Optional upstream Originator carried alongside the fingerprint; unused by the dialer
-	HTTP2Fingerprint               string // Optional captured HTTP/2 fingerprint carried with the profile; currently unused by the dialer
+	HTTP2Fingerprint               string // Optional HTTP/2 fingerprint; consumed by upstream H2 replay RoundTripper (not by Dialer itself)
 	CipherSuites                   []uint16
 	Curves                         []uint16
 	PointFormats                   []uint16

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/model"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -58,14 +59,16 @@ type claudeTelemetryHTTPUpstreamRecorder struct {
 	lastBody     []byte
 	lastDeadline time.Time
 	hasDeadline  bool
+	lastProfile  *tlsfingerprint.Profile
 }
 
 func (u *claudeTelemetryHTTPUpstreamRecorder) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
 	return u.DoWithTLS(req, proxyURL, accountID, accountConcurrency, nil)
 }
 
-func (u *claudeTelemetryHTTPUpstreamRecorder) DoWithTLS(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+func (u *claudeTelemetryHTTPUpstreamRecorder) DoWithTLS(req *http.Request, _ string, _ int64, _ int, profile *tlsfingerprint.Profile) (*http.Response, error) {
 	u.lastReq = req
+	u.lastProfile = profile
 	if req != nil {
 		u.lastDeadline, u.hasDeadline = req.Context().Deadline()
 	}
@@ -76,6 +79,42 @@ func (u *claudeTelemetryHTTPUpstreamRecorder) DoWithTLS(req *http.Request, _ str
 		req.Body = io.NopCloser(bytes.NewReader(b))
 	}
 	return &http.Response{StatusCode: http.StatusAccepted, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(bytes.NewReader([]byte(`{"ok":true}`)))}, nil
+}
+
+func TestForwardClaudeTelemetryBatch_AppliesRequestAwareTLSRuntime(t *testing.T) {
+	groupID := int64(12)
+	repo := &claudeTelemetryAccountRepoStub{byGroup: []Account{{
+		ID: 22, Platform: PlatformAnthropic, Type: AccountTypeOAuth,
+		Credentials: map[string]any{"access_token": "oauth-token"}, Status: StatusActive, Schedulable: true, Concurrency: 1,
+		Extra: map[string]any{"enable_tls_fingerprint": true, "tls_fingerprint_router_id": float64(41)},
+	}}}
+	upstream := &claudeTelemetryHTTPUpstreamRecorder{}
+	router := &model.TLSFingerprintRouter{
+		ID: 41, Name: "telemetry", Enabled: true,
+		Rules: []model.TLSFingerprintRouterRule{{
+			Name: "claude", Enabled: true, MatchType: model.TLSFingerprintRouterMatchContains,
+			Pattern: "claude-cli", TLSFingerprintProfileID: 91,
+			UpstreamUserAgent: "claude-cli/telemetry", UpstreamOriginator: "claude-code",
+		}},
+	}
+	svc := &GatewayService{
+		accountRepo: repo, httpUpstream: upstream,
+		tlsFPProfileService: &TLSFingerprintProfileService{localCache: map[int64]*model.TLSFingerprintProfile{
+			91: {ID: 91, Name: "Telemetry Routed", Platform: PlatformAnthropic},
+		}},
+		tlsFPRouterService: &TLSFingerprintRouterService{localCache: map[int64]*model.TLSFingerprintRouter{41: router}},
+	}
+	ctx := WithTLSFingerprintInboundUserAgent(context.Background(), "claude-cli/2.0")
+
+	status, err := svc.ForwardClaudeTelemetryBatch(ctx, &groupID, []byte(`{"events":[]}`))
+
+	require.NoError(t, err)
+	require.Equal(t, http.StatusAccepted, status)
+	require.NotNil(t, upstream.lastProfile)
+	require.Equal(t, "Telemetry Routed", upstream.lastProfile.Name)
+	require.Equal(t, "claude-cli/telemetry", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "claude-code", upstream.lastReq.Header.Get("Originator"))
+	require.Equal(t, "Bearer oauth-token", getHeaderRaw(upstream.lastReq.Header, "authorization"))
 }
 
 func TestForwardClaudeTelemetryBatch_UsesOnlyAnthropicOAuthAndSanitizes(t *testing.T) {

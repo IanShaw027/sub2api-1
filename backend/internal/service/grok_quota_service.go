@@ -181,12 +181,20 @@ func (s *GrokQuotaService) QueryQuota(ctx context.Context, accountID int64) (*Gr
 		return nil, probeErr
 	}
 	if result != nil {
-		result.Billing = billing
-		if billing != nil {
+		if grokBillingSnapshotHasUsefulData(billing) {
+			result.Billing = billing
 			result.Source = "hybrid_probe"
 		}
 	}
 	return result, nil
+}
+
+func grokBillingSnapshotHasUsefulData(snapshot *xai.BillingSnapshot) bool {
+	return snapshot != nil && (snapshot.Credits != nil ||
+		snapshot.Monthly != nil ||
+		strings.TrimSpace(snapshot.SubscriptionTier) != "" ||
+		strings.TrimSpace(snapshot.Email) != "" ||
+		snapshot.HasGrokCodeAccess)
 }
 
 func (s *GrokQuotaService) ResetQuota(ctx context.Context, accountID int64) (*GrokQuotaResetResult, error) {

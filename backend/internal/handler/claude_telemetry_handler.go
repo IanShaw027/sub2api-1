@@ -51,7 +51,7 @@ func (h *GatewayHandler) ClaudeTelemetryBatch(c *gin.Context) {
 	}
 
 	groupID := cloneInt64Ptr(apiKey.GroupID)
-	forwardCtx := contextWithoutCancel(c.Request.Context())
+	forwardCtx := service.WithTLSFingerprintInboundUserAgent(contextWithoutCancel(c.Request.Context()), c.GetHeader("User-Agent"))
 	forwardBody := append([]byte(nil), body...)
 	go func() {
 		status, err := h.gatewayService.ForwardClaudeTelemetryBatch(forwardCtx, groupID, forwardBody)

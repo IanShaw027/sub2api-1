@@ -68,16 +68,22 @@ func (rt *http2FingerprintReplayRoundTripper) getOrCreateTransport() (*http2.Tra
 	if fallbackProxy {
 		return nil, fmt.Errorf("unsupported proxy scheme for http2 fingerprint replay: %s", rt.proxyURL.Scheme)
 	}
-	rt.transport = &http2.Transport{
-		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
-			conn, err := dialTLS(ctx, network, addr)
-			if err != nil {
-				return nil, err
-			}
-			return newHTTP2FingerprintReplayConn(conn, rt.parsedFingerprint), nil
-		},
-		IdleConnTimeout: rt.settings.idleConnTimeout,
+	// The frame wrapper rewrites the connection preface and first request HEADERS.
+	// Use one request per H2 connection so every request, including later calls on
+	// this cached RoundTripper, receives the configured pseudo-header ordering.
+	transport, err := http2.ConfigureTransports(&http.Transport{DisableKeepAlives: true})
+	if err != nil {
+		return nil, fmt.Errorf("configure http2 fingerprint transport: %w", err)
 	}
+	transport.DialTLSContext = func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+		conn, err := dialTLS(ctx, network, addr)
+		if err != nil {
+			return nil, err
+		}
+		return newHTTP2FingerprintReplayConn(conn, rt.parsedFingerprint), nil
+	}
+	transport.IdleConnTimeout = rt.settings.idleConnTimeout
+	rt.transport = transport
 	return rt.transport, nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintcapturesessionevent"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -14,6 +15,13 @@ type tlsFingerprintCaptureSessionEventRepo struct {
 
 func NewTLSFingerprintCaptureSessionEventRepo(client *ent.Client) *tlsFingerprintCaptureSessionEventRepo {
 	return &tlsFingerprintCaptureSessionEventRepo{client: client}
+}
+
+func (r *tlsFingerprintCaptureSessionEventRepo) DeleteSessionEventsByTask(ctx context.Context, taskID int64) error {
+	_, err := clientFromContext(ctx, r.client).TLSFingerprintCaptureSessionEvent.Delete().
+		Where(tlsfingerprintcapturesessionevent.TaskID(taskID)).
+		Exec(ctx)
+	return err
 }
 
 func (r *tlsFingerprintCaptureSessionEventRepo) CreateSessionEvent(ctx context.Context, event *service.TLSFingerprintCaptureSessionEvent) (*service.TLSFingerprintCaptureSessionEvent, error) {

@@ -1317,9 +1317,9 @@ describe('EditAccountModal', () => {
       keep_flag: true,
       enable_tls_fingerprint: true,
       tls_fingerprint_profile_id: 18,
+      tls_fingerprint_router_id: 9,
       tls_fingerprint_bindings: { windows: 18 }
     }))
-    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('tls_fingerprint_router_id')
   })
 
   it('submits empty extra when Kiro OAuth only has old runtime overrides', async () => {

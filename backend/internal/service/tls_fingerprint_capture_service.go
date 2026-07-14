@@ -134,6 +134,7 @@ type TLSFingerprintCaptureStartRequest struct {
 	Name             string         `json:"name"`
 	Targets          map[string]int `json:"targets"`
 	TransportTargets map[string]int `json:"transport_targets"`
+	CaptureFilters   map[string]any `json:"capture_filters"`
 	UAKeywords       []string       `json:"ua_keywords"`
 }
 
@@ -201,7 +202,7 @@ type TLSFingerprintCaptureRepository interface {
 	WithTaskSubmissionLock(ctx context.Context, taskID int64, fn func(context.Context) error) error
 	UpdateTask(ctx context.Context, task *TLSFingerprintCaptureTask) (*TLSFingerprintCaptureTask, error)
 	DeleteTask(ctx context.Context, id int64) error
-	DeleteSamplesByTask(ctx context.Context, taskID int64) error
+	DeleteTaskCaptureData(ctx context.Context, taskID int64) error
 	CreateSampleIfAbsent(ctx context.Context, sample *TLSFingerprintCaptureSample) (*TLSFingerprintCaptureSample, bool, error)
 	GetSampleByTaskHash(ctx context.Context, taskID int64, fingerprintHash string) (*TLSFingerprintCaptureSample, error)
 	ListSamplesByTask(ctx context.Context, taskID int64) ([]*TLSFingerprintCaptureSample, error)
@@ -268,7 +269,7 @@ func (s *TLSFingerprintCaptureService) StartTask(ctx context.Context, req TLSFin
 		Counts:              make(map[string]int, len(targets)),
 		TransportTargets:    normalizeTLSCaptureTargets(req.TransportTargets),
 		TransportCounts:     make(map[string]int, len(req.TransportTargets)),
-		CaptureFilters:      map[string]any{},
+		CaptureFilters:      copyStringAnyMap(req.CaptureFilters),
 		SampleSchemaVersion: 2,
 		TaskStats:           map[string]any{},
 		UAKeywords:          normalizeTLSCaptureKeywords(req.UAKeywords),
@@ -295,7 +296,9 @@ func (s *TLSFingerprintCaptureService) ListTasks(ctx context.Context) ([]*TLSFin
 		return nil, err
 	}
 	for i := range tasks {
-		tasks[i] = s.decorateCaptureTask(tasks[i])
+		// List responses must not expose capture tokens by default (ops safety).
+		// Operators fetch a single task (GetTaskByID / Start / Restart) when they need the token.
+		tasks[i] = s.decorateCaptureTask(redactTLSCaptureTaskToken(tasks[i]))
 	}
 	return tasks, nil
 }
@@ -322,14 +325,27 @@ func (s *TLSFingerprintCaptureService) StopTask(ctx context.Context, id int64) (
 	if task == nil {
 		return nil, &model.ValidationError{Field: "id", Message: "capture task not found"}
 	}
-	if task.Status != TLSFingerprintCaptureStatusRunning {
-		return task, nil
-	}
-	now := time.Now().UTC()
-	task.Status = TLSFingerprintCaptureStatusStopped
-	task.CompletedAt = &now
-	updated, err := s.repo.UpdateTask(ctx, task)
-	if err != nil {
+	var updated *TLSFingerprintCaptureTask
+	unlock := s.lockTaskSubmission(id)
+	defer unlock()
+	if err := s.repo.WithTaskSubmissionLock(ctx, id, func(lockCtx context.Context) error {
+		lockedTask, err := s.repo.GetTaskByID(lockCtx, id)
+		if err != nil {
+			return err
+		}
+		if lockedTask == nil {
+			return &model.ValidationError{Field: "id", Message: "capture task not found"}
+		}
+		if lockedTask.Status != TLSFingerprintCaptureStatusRunning {
+			updated = lockedTask
+			return nil
+		}
+		now := time.Now().UTC()
+		lockedTask.Status = TLSFingerprintCaptureStatusStopped
+		lockedTask.CompletedAt = &now
+		updated, err = s.repo.UpdateTask(lockCtx, lockedTask)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	return s.decorateCaptureTask(updated), nil
@@ -343,13 +359,26 @@ func (s *TLSFingerprintCaptureService) DeleteTask(ctx context.Context, id int64)
 	if task == nil {
 		return &model.ValidationError{Field: "id", Message: "capture task not found"}
 	}
-	if task.Status == TLSFingerprintCaptureStatusRunning {
-		return &model.ValidationError{Field: "status", Message: "cannot delete a running task; stop it first"}
-	}
-	if err := s.repo.DeleteSamplesByTask(ctx, id); err != nil {
-		return err
-	}
-	return s.repo.DeleteTask(ctx, id)
+	unlock := s.lockTaskSubmission(id)
+	defer unlock()
+	return s.repo.WithTaskSubmissionLock(ctx, id, func(lockCtx context.Context) error {
+		// Re-read under the row lock so a concurrent stop/restart cannot invalidate
+		// the status checked before entering the transaction.
+		lockedTask, err := s.repo.GetTaskByID(lockCtx, id)
+		if err != nil {
+			return err
+		}
+		if lockedTask == nil {
+			return &model.ValidationError{Field: "id", Message: "capture task not found"}
+		}
+		if lockedTask.Status == TLSFingerprintCaptureStatusRunning {
+			return &model.ValidationError{Field: "status", Message: "cannot delete a running task; stop it first"}
+		}
+		if err := s.repo.DeleteTaskCaptureData(lockCtx, id); err != nil {
+			return err
+		}
+		return s.repo.DeleteTask(lockCtx, id)
+	})
 }
 
 func (s *TLSFingerprintCaptureService) RestartTask(ctx context.Context, id int64) (*TLSFingerprintCaptureTask, error) {
@@ -360,24 +389,47 @@ func (s *TLSFingerprintCaptureService) RestartTask(ctx context.Context, id int64
 	if task == nil {
 		return nil, &model.ValidationError{Field: "id", Message: "capture task not found"}
 	}
-	if task.Status == TLSFingerprintCaptureStatusRunning {
-		return nil, &model.ValidationError{Field: "status", Message: "task is already running"}
-	}
 	token, err := newTLSFingerprintCaptureToken()
 	if err != nil {
 		return nil, err
 	}
-	task.Status = TLSFingerprintCaptureStatusRunning
-	task.Token = token
-	task.CompletedAt = nil
-	for platform := range task.Counts {
-		task.Counts[platform] = 0
-	}
-	for transport := range task.TransportCounts {
-		task.TransportCounts[transport] = 0
-	}
-	updated, err := s.repo.UpdateTask(ctx, task)
-	if err != nil {
+	var updated *TLSFingerprintCaptureTask
+	unlock := s.lockTaskSubmission(id)
+	defer unlock()
+	if err := s.repo.WithTaskSubmissionLock(ctx, id, func(lockCtx context.Context) error {
+		// The task can change while waiting for the row lock. Use only the locked
+		// copy when deciding whether and how to start the next generation.
+		lockedTask, err := s.repo.GetTaskByID(lockCtx, id)
+		if err != nil {
+			return err
+		}
+		if lockedTask == nil {
+			return &model.ValidationError{Field: "id", Message: "capture task not found"}
+		}
+		if lockedTask.Status == TLSFingerprintCaptureStatusRunning {
+			return &model.ValidationError{Field: "status", Message: "task is already running"}
+		}
+
+		// All generation-owned rows and the task update share this transaction.
+		// If any step fails, the repository rolls the complete restart back.
+		if err := s.repo.DeleteTaskCaptureData(lockCtx, id); err != nil {
+			return err
+		}
+		lockedTask.Status = TLSFingerprintCaptureStatusRunning
+		lockedTask.Token = token
+		lockedTask.CompletedAt = nil
+		lockedTask.TaskStats = map[string]any{}
+		lockedTask.Counts = make(map[string]int, len(lockedTask.Targets))
+		for platform := range lockedTask.Targets {
+			lockedTask.Counts[platform] = 0
+		}
+		lockedTask.TransportCounts = make(map[string]int, len(lockedTask.TransportTargets))
+		for transport := range lockedTask.TransportTargets {
+			lockedTask.TransportCounts[transport] = 0
+		}
+		updated, err = s.repo.UpdateTask(lockCtx, lockedTask)
+		return err
+	}); err != nil {
 		return nil, err
 	}
 	return s.decorateCaptureTask(updated), nil
@@ -502,28 +554,42 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 		strings.TrimSpace(req.Originator),
 		strings.TrimSpace(req.HTTP2Fingerprint),
 	)
+	unlock := s.lockTaskSubmission(task.ID)
+	defer unlock()
 	if err != nil {
 		req.SessionEventType = defaultString(strings.TrimSpace(req.SessionEventType), "client_hello_parse_failed")
 		req.SessionEventError = defaultString(strings.TrimSpace(req.SessionEventError), err.Error())
-		session, sessionErr := s.ensureCaptureSession(ctx, task, req, platform, nil, err.Error(), "parse_failed")
-		if sessionErr != nil {
-			return nil, sessionErr
+		parseErr := err
+		if lockErr := s.repo.WithTaskSubmissionLock(ctx, task.ID, func(lockCtx context.Context) error {
+			lockedTask, lockErr := s.revalidateCaptureTaskUnderLock(lockCtx, task.ID, req.Token)
+			if lockErr != nil {
+				return lockErr
+			}
+			task = lockedTask
+			session, sessionErr := s.ensureCaptureSession(lockCtx, task, req, platform, nil, parseErr.Error(), "parse_failed")
+			if sessionErr != nil {
+				return sessionErr
+			}
+			_, eventErr := s.createCaptureSessionEvent(lockCtx, session, task, req, platform, transport, "", nil, false, false)
+			return eventErr
+		}); lockErr != nil {
+			return nil, lockErr
 		}
-		if _, eventErr := s.createCaptureSessionEvent(ctx, session, task, req, platform, transport, "", nil, false, false); eventErr != nil {
-			return nil, eventErr
-		}
-		return nil, &model.ValidationError{Field: "client_hello", Message: err.Error()}
+		return nil, &model.ValidationError{Field: "client_hello", Message: parseErr.Error()}
 	}
 
-	session, sessionErr := s.ensureCaptureSession(ctx, task, req, platform, parsed, "", "observed")
-	if sessionErr != nil {
-		return nil, sessionErr
-	}
-
+	var session *TLSFingerprintCaptureSession
 	var result *TLSFingerprintCaptureSubmitResult
 	if err := s.repo.WithTaskSubmissionLock(ctx, task.ID, func(lockCtx context.Context) error {
-		unlock := s.lockTaskSubmission(task.ID)
-		defer unlock()
+		lockedTask, err := s.revalidateCaptureTaskUnderLock(lockCtx, task.ID, req.Token)
+		if err != nil {
+			return err
+		}
+		task = lockedTask
+		session, err = s.ensureCaptureSession(lockCtx, task, req, platform, parsed, "", "observed")
+		if err != nil {
+			return err
+		}
 
 		counts, transportCounts, err := s.countSamples(lockCtx, task)
 		if err != nil {
@@ -583,7 +649,12 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 
 		rawClientHello := append([]byte(nil), req.ClientHello...)
 		sampleProfile := cloneTLSFingerprintCaptureProfile(profile)
-		mergeTLSCaptureSampleDimensionsIntoProfile(sampleProfile, strings.TrimSpace(req.ClientType), req.StainlessMetadata)
+		mergeTLSCaptureSampleDimensionsIntoProfile(sampleProfile, strings.TrimSpace(req.ClientType), req.UserAgent, req.StainlessMetadata)
+		// Body storage is opt-in (capture_filters.store_body=true). Default keeps summary only.
+		storedPayload := ""
+		if tlsCaptureTaskStoreBodyEnabled(task) {
+			storedPayload = req.RawPayload
+		}
 		sample := &TLSFingerprintCaptureSample{
 			TaskID:            task.ID,
 			Platform:          platform,
@@ -608,7 +679,7 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 			HTTP2Fingerprint:  defaultString(strings.TrimSpace(req.HTTP2Fingerprint), strings.TrimSpace(parsed.Derived.Http2Fingerprint)),
 			StainlessMetadata: copyStringAnyMap(req.StainlessMetadata),
 			Profile:           sampleProfile,
-			RawPayload:        req.RawPayload,
+			RawPayload:        storedPayload,
 			RawClientHello:    rawClientHello,
 			CapturedAt:        time.Now().UTC(),
 		}
@@ -645,6 +716,18 @@ func (s *TLSFingerprintCaptureService) SubmitNativeCapture(ctx context.Context, 
 		return nil, err
 	}
 	return result, nil
+}
+
+func (s *TLSFingerprintCaptureService) revalidateCaptureTaskUnderLock(ctx context.Context, taskID int64, token string) (*TLSFingerprintCaptureTask, error) {
+	task, err := s.repo.GetTaskByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if task == nil || task.Token != strings.TrimSpace(token) ||
+		(task.Status != TLSFingerprintCaptureStatusRunning && task.Status != TLSFingerprintCaptureStatusCompleted) {
+		return nil, &model.ValidationError{Field: "token", Message: "running capture task not found"}
+	}
+	return task, nil
 }
 
 func (s *TLSFingerprintCaptureService) lockTaskSubmission(taskID int64) func() {
@@ -747,6 +830,56 @@ func (s *TLSFingerprintCaptureService) decorateCaptureTask(task *TLSFingerprintC
 		task.CaptureURL = baseURL + "/capture"
 	}
 	return task
+}
+
+func redactTLSCaptureTaskToken(task *TLSFingerprintCaptureTask) *TLSFingerprintCaptureTask {
+	if task == nil {
+		return nil
+	}
+	// decorateCaptureTask mutates in place; clone first so repo-owned objects stay intact.
+	clone := *task
+	clone.Targets = copyStringIntMap(task.Targets)
+	clone.Counts = copyStringIntMap(task.Counts)
+	clone.TransportTargets = copyStringIntMap(task.TransportTargets)
+	clone.TransportCounts = copyStringIntMap(task.TransportCounts)
+	clone.CaptureFilters = copyStringAnyMap(task.CaptureFilters)
+	clone.TaskStats = copyStringAnyMap(task.TaskStats)
+	if task.UAKeywords != nil {
+		clone.UAKeywords = append([]string(nil), task.UAKeywords...)
+	}
+	if task.CompletedAt != nil {
+		completed := *task.CompletedAt
+		clone.CompletedAt = &completed
+	}
+	clone.Token = ""
+	return &clone
+}
+
+func tlsCaptureTaskStoreBodyEnabled(task *TLSFingerprintCaptureTask) bool {
+	if task == nil || len(task.CaptureFilters) == 0 {
+		return false
+	}
+	raw, ok := task.CaptureFilters["store_body"]
+	if !ok {
+		return false
+	}
+	switch v := raw.(type) {
+	case bool:
+		return v
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "on":
+			return true
+		}
+	}
+	return false
+}
+
+func tlsCaptureStoredRawPayload(task *TLSFingerprintCaptureTask, raw string) string {
+	if !tlsCaptureTaskStoreBodyEnabled(task) {
+		return ""
+	}
+	return raw
 }
 
 func (s *TLSFingerprintCaptureService) countSamples(ctx context.Context, task *TLSFingerprintCaptureTask) (map[string]int, map[string]int, error) {
@@ -969,7 +1102,7 @@ func (s *TLSFingerprintCaptureService) createCaptureSessionEvent(
 		StainlessMetadata: copyStringAnyMap(req.StainlessMetadata),
 		HeadersSnapshot:   copyStringAnyMap(req.HeadersSnapshot),
 		BodySummary:       req.BodySummary,
-		RawPayload:        req.RawPayload,
+		RawPayload:        tlsCaptureStoredRawPayload(task, req.RawPayload),
 		EventStatus:       defaultTLSCaptureEventStatus(req, sampleRecorded, replayable),
 		Error:             strings.TrimSpace(req.SessionEventError),
 		Replayable:        replayable,
@@ -1095,7 +1228,7 @@ func tlsCaptureSamplePayload(sample *TLSFingerprintCaptureSample) (string, error
 		return "", &model.ValidationError{Field: "replay_profile", Message: "captured sample replay profile is required"}
 	}
 	profile := cloneTLSFingerprintCaptureProfile(sample.Profile)
-	mergeTLSCaptureSampleDimensionsIntoProfile(profile, strings.TrimSpace(sample.ClientType), sample.StainlessMetadata)
+	mergeTLSCaptureSampleDimensionsIntoProfile(profile, strings.TrimSpace(sample.ClientType), sample.UserAgent, sample.StainlessMetadata)
 	if profile != nil && strings.TrimSpace(profile.HTTP2Fingerprint) == "" {
 		profile.HTTP2Fingerprint = strings.TrimSpace(sample.HTTP2Fingerprint)
 	}
@@ -1132,15 +1265,18 @@ func cloneTLSFingerprintCaptureProfile(profile *model.TLSFingerprintProfile) *mo
 	return &clone
 }
 
-func mergeTLSCaptureSampleDimensionsIntoProfile(profile *model.TLSFingerprintProfile, clientType string, stainlessMetadata map[string]any) {
+func mergeTLSCaptureSampleDimensionsIntoProfile(profile *model.TLSFingerprintProfile, clientType, userAgent string, stainlessMetadata map[string]any) {
 	if profile == nil {
 		return
 	}
 	if strings.TrimSpace(profile.ClientType) == "" {
-		profile.ClientType = strings.TrimSpace(clientType)
+		profile.ClientType = normalizeTLSCaptureClientType(clientType)
 	}
 	if strings.TrimSpace(profile.OS) == "" {
 		profile.OS = normalizeTLSCaptureProfileOS(stringFromAny(stainlessMetadata["os"]))
+		if profile.OS == "" {
+			profile.OS = inferTLSFingerprintOS(userAgent)
+		}
 	}
 }
 

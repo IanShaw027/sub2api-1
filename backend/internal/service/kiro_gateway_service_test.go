@@ -49,6 +49,60 @@ func TestKiroGatewayService_ResolveTLSProfile_UsesKiroResolver(t *testing.T) {
 	require.Equal(t, "Kiro Gateway Profile", profile.Name)
 }
 
+func TestKiroGatewayService_TLSRouterAppliesPairedRuntimeHeaders(t *testing.T) {
+	const routedUA = "aws-sdk-js/1.0.27 ua/2.1 os/linux#6.8.0 lang/js md/nodejs#22.22.0 api/codewhispererstreaming#1.0.27 m/E KiroIDE-0.11.0-routed"
+	router := &model.TLSFingerprintRouter{
+		ID: 18, Name: "kiro", Enabled: true,
+		Rules: []model.TLSFingerprintRouterRule{{
+			Name: "kiro ide", Enabled: true, MatchType: model.TLSFingerprintRouterMatchContains,
+			Pattern: "KiroIDE", OS: "linux", ClientType: "kiro-ide",
+			UpstreamUserAgent: routedUA, UpstreamOriginator: "kiro-ide",
+		}},
+	}
+	svc := &KiroGatewayService{
+		tlsFPProfileSvc: &TLSFingerprintProfileService{localCache: map[int64]*model.TLSFingerprintProfile{
+			71: {ID: 71, Name: "Kiro Routed", Platform: PlatformKiro, OS: "linux", ClientType: "kiro-ide"},
+		}},
+		tlsFPRouterSvc: &TLSFingerprintRouterService{localCache: map[int64]*model.TLSFingerprintRouter{18: router}},
+	}
+	account := &Account{
+		ID: 91, Platform: PlatformKiro, Type: AccountTypeOAuth,
+		Credentials: map[string]any{"machine_id": "machine-id", "refresh_token": "refresh-token"},
+		Extra: map[string]any{
+			"enable_tls_fingerprint": true, "tls_fingerprint_router_id": float64(18),
+			"tls_fingerprint_bindings": map[string]any{"linux/kiro-ide": float64(71)},
+		},
+	}
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	c.Request.Header.Set("User-Agent", "KiroIDE/0.11.0 (linux)")
+
+	runtime := svc.resolveTLSFingerprintRuntime(context.Background(), c, account)
+	require.True(t, runtime.Matched)
+	require.NotNil(t, runtime.Profile)
+	require.Equal(t, "Kiro Routed", runtime.Profile.Name)
+
+	ctx := context.WithValue(context.Background(), kiroTLSFingerprintRuntimeContextKey{}, runtime)
+	req, err := svc.buildRequest(ctx, account, []byte(`{}`), "access-token", &KiroRuntimeSettings{
+		KiroVersion: "0.11.0", SystemVersion: "linux#6.8.0", NodeVersion: "22.22.0",
+	})
+	require.NoError(t, err)
+	require.Equal(t, routedUA, req.Header.Get("User-Agent"))
+	require.Equal(t, "aws-sdk-js/1.0.27 KiroIDE-0.11.0-routed", req.Header.Get("x-amz-user-agent"))
+	require.Equal(t, "kiro-ide", req.Header.Get("Originator"))
+	require.Equal(t, "Bearer access-token", req.Header.Get("Authorization"))
+}
+
+func TestApplyKiroTLSFingerprintRuntimePreservesValidXAmzUAForNonKiroOverride(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "https://q.us-east-1.amazonaws.com/", nil)
+	req.Header.Set("x-amz-user-agent", "aws-sdk-js/1.0.27 KiroIDE-0.11.0-machine")
+
+	applyKiroTLSFingerprintRuntime(req, accountTLSFingerprintRuntime{UpstreamUserAgent: "custom-client/1.0"})
+
+	require.Equal(t, "custom-client/1.0", req.Header.Get("User-Agent"))
+	require.Equal(t, "aws-sdk-js/1.0.27 KiroIDE-0.11.0-machine", req.Header.Get("x-amz-user-agent"))
+}
+
 func TestKiroFakeCachePlanBodyPrefersForwardBody(t *testing.T) {
 	parsed := &ParsedRequest{Body: NewRequestBodyRef([]byte(`{"metadata":{"user_id":"original"}}`))}
 	meta := &kiroPreparedRequestMeta{ForwardBody: []byte(`{"metadata":{"user_id":"compacted"}}`)}

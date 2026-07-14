@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"testing"
 	"time"
@@ -566,6 +567,7 @@ func TestTLSFingerprintCaptureServiceSerializesQuotaCheckAgainstConcurrentDiffer
 		tlsFingerprintCaptureRepoStub: newTLSFingerprintCaptureRepoStub(),
 		createEntered:                 make(chan struct{}, 4),
 		releaseCreate:                 make(chan struct{}),
+		tokenValidated:                make(chan struct{}, 2),
 	}
 	svc := NewTLSFingerprintCaptureService(repo, nil)
 
@@ -596,6 +598,14 @@ func TestTLSFingerprintCaptureServiceSerializesQuotaCheckAgainstConcurrentDiffer
 	case <-time.After(2 * time.Second):
 		t.Fatal("first submission did not reach CreateSampleIfAbsent")
 	}
+	// Consume the first submission's validation notification. The second
+	// submission must independently pass the initial token lookup before the
+	// first one is released and completes the task.
+	select {
+	case <-repo.tokenValidated:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first submission did not validate the running task token")
+	}
 
 	secondDone := make(chan submitOutcome, 1)
 	go func() {
@@ -608,6 +618,12 @@ func TestTLSFingerprintCaptureServiceSerializesQuotaCheckAgainstConcurrentDiffer
 		})
 		secondDone <- submitOutcome{result: result, err: err}
 	}()
+
+	select {
+	case <-repo.tokenValidated:
+	case <-time.After(2 * time.Second):
+		t.Fatal("second submission did not validate the running task token")
+	}
 
 	select {
 	case <-repo.createEntered:
@@ -762,12 +778,19 @@ func TestTLSFingerprintCaptureServiceListsAndStopsTask(t *testing.T) {
 		Targets: map[string]int{"openai": 1},
 	})
 	require.NoError(t, err)
+	require.NotEmpty(t, task.Token)
 
 	tasks, err := svc.ListTasks(context.Background())
 	require.NoError(t, err)
 	require.Len(t, tasks, 1)
 	require.Equal(t, task.ID, tasks[0].ID)
 	require.Equal(t, TLSFingerprintCaptureStatusRunning, tasks[0].Status)
+	require.Empty(t, tasks[0].Token, "list responses must redact capture tokens")
+
+	// Single-task fetch still returns the token for operator workflows.
+	running, err := svc.GetTaskByID(context.Background(), task.ID)
+	require.NoError(t, err)
+	require.Equal(t, task.Token, running.Token)
 
 	stopped, err := svc.StopTask(context.Background(), task.ID)
 	require.NoError(t, err)
@@ -777,6 +800,244 @@ func TestTLSFingerprintCaptureServiceListsAndStopsTask(t *testing.T) {
 	fetched, err := svc.GetTaskByID(context.Background(), task.ID)
 	require.NoError(t, err)
 	require.Equal(t, TLSFingerprintCaptureStatusStopped, fetched.Status)
+}
+
+func TestTLSFingerprintCaptureServiceRestartClearsStaleSamplesFromQuota(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	// Target > 1 so the first sample does not auto-complete the task; we stop explicitly.
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Name:    "codex capture",
+		Targets: map[string]int{"openai": 2},
+	})
+	require.NoError(t, err)
+
+	accepted, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		SessionID:   "generation-session",
+		UserAgent:   "codex-cli/1.0",
+		Originator:  "codex_cli_rs",
+		ClientHello: captureServiceTestClientHello(t, 0),
+	})
+	require.NoError(t, err)
+	require.True(t, accepted.Accepted)
+	require.Equal(t, 1, accepted.Task.Counts["openai"])
+	require.Equal(t, TLSFingerprintCaptureStatusRunning, accepted.Task.Status)
+	require.Len(t, repo.sessions, 1)
+	require.Len(t, repo.sessionEvents, 1)
+
+	stopped, err := svc.StopTask(context.Background(), task.ID)
+	require.NoError(t, err)
+	require.Equal(t, TLSFingerprintCaptureStatusStopped, stopped.Status)
+	stopped.TaskStats = map[string]any{"generation": "old"}
+	stopped.Counts = map[string]int{"stale-target": 9}
+	_, err = repo.UpdateTask(context.Background(), stopped)
+	require.NoError(t, err)
+
+	restarted, err := svc.RestartTask(context.Background(), task.ID)
+	require.NoError(t, err)
+	require.Equal(t, TLSFingerprintCaptureStatusRunning, restarted.Status)
+	require.NotEmpty(t, restarted.Token)
+	require.NotEqual(t, task.Token, restarted.Token)
+	require.Equal(t, map[string]int{"openai": 0}, restarted.Counts)
+	require.Empty(t, restarted.TaskStats)
+
+	samples, err := svc.ListSamplesByTask(context.Background(), task.ID)
+	require.NoError(t, err)
+	require.Empty(t, samples, "restart must drop prior samples so quota starts clean")
+	require.Empty(t, repo.sessions, "restart must drop prior sessions so session IDs can be reused")
+	require.Empty(t, repo.sessionEvents, "restart must drop events that reference prior samples and sessions")
+
+	// Same ClientHello can be accepted again under the new generation.
+	again, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       restarted.Token,
+		Platform:    "openai",
+		SessionID:   "generation-session",
+		UserAgent:   "codex-cli/1.0",
+		Originator:  "codex_cli_rs",
+		ClientHello: captureServiceTestClientHello(t, 0),
+	})
+	require.NoError(t, err)
+	require.True(t, again.Accepted)
+	require.Equal(t, 1, again.Task.Counts["openai"])
+	require.Len(t, repo.sessions, 1)
+	require.Len(t, repo.sessionEvents, 1)
+}
+
+func TestTLSFingerprintCaptureServiceRestartRollsBackGenerationCleanupWhenUpdateFails(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets: map[string]int{"openai": 2},
+	})
+	require.NoError(t, err)
+	result, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		SessionID:   "rollback-session",
+		UserAgent:   "codex-cli/1.0",
+		Originator:  "codex_cli_rs",
+		ClientHello: captureServiceTestClientHello(t, 0),
+	})
+	require.NoError(t, err)
+	require.True(t, result.Accepted)
+	stopped, err := svc.StopTask(context.Background(), task.ID)
+	require.NoError(t, err)
+
+	repo.updateTaskErr = errors.New("update task failed")
+	_, err = svc.RestartTask(context.Background(), task.ID)
+	require.EqualError(t, err, "update task failed")
+
+	stored, err := repo.GetTaskByID(context.Background(), task.ID)
+	require.NoError(t, err)
+	require.Equal(t, stopped.Status, stored.Status)
+	require.Equal(t, stopped.Token, stored.Token)
+	require.Equal(t, stopped.Counts, stored.Counts)
+	require.Len(t, repo.samples, 1)
+	require.Len(t, repo.sessions, 1)
+	require.Len(t, repo.sessionEvents, 1)
+}
+
+func TestTLSFingerprintCaptureServiceDeleteIsAtomicAndCleansGenerationData(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets: map[string]int{"openai": 2},
+	})
+	require.NoError(t, err)
+	result, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		SessionID:   "delete-session",
+		UserAgent:   "codex-cli/1.0",
+		Originator:  "codex_cli_rs",
+		ClientHello: captureServiceTestClientHello(t, 0),
+	})
+	require.NoError(t, err)
+	require.True(t, result.Accepted)
+	_, err = svc.StopTask(context.Background(), task.ID)
+	require.NoError(t, err)
+
+	repo.deleteTaskErr = errors.New("delete task failed")
+	err = svc.DeleteTask(context.Background(), task.ID)
+	require.EqualError(t, err, "delete task failed")
+	require.Len(t, repo.tasks, 1)
+	require.Len(t, repo.samples, 1)
+	require.Len(t, repo.sessions, 1)
+	require.Len(t, repo.sessionEvents, 1)
+
+	repo.deleteTaskErr = nil
+	require.NoError(t, svc.DeleteTask(context.Background(), task.ID))
+	require.Empty(t, repo.tasks)
+	require.Empty(t, repo.samples)
+	require.Empty(t, repo.sessions)
+	require.Empty(t, repo.sessionEvents)
+}
+
+func TestTLSFingerprintCaptureServiceRejectsOldTokenAfterWaitingForTaskLock(t *testing.T) {
+	repo := &tlsFingerprintCaptureBlockingLockRepoStub{
+		tlsFingerprintCaptureRepoStub: newTLSFingerprintCaptureRepoStub(),
+		lockEntered:                   make(chan struct{}, 1),
+		releaseLock:                   make(chan struct{}),
+	}
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets: map[string]int{"openai": 2},
+	})
+	require.NoError(t, err)
+	clientHello := captureServiceTestClientHello(t, 0)
+
+	done := make(chan error, 1)
+	go func() {
+		_, submitErr := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+			Token:       task.Token,
+			Platform:    "openai",
+			SessionID:   "stale-token-session",
+			UserAgent:   "codex-cli/1.0",
+			Originator:  "codex_cli_rs",
+			ClientHello: clientHello,
+		})
+		done <- submitErr
+	}()
+
+	select {
+	case <-repo.lockEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("submission did not reach the task lock")
+	}
+	// Simulate another process committing a restart while this process waits for
+	// the database row lock. The locked re-read must reject the old generation.
+	repo.mu.Lock()
+	repo.tasks[0].Token = "new-generation-token"
+	repo.mu.Unlock()
+	close(repo.releaseLock)
+
+	err = <-done
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "running capture task not found")
+	require.Empty(t, repo.samples)
+	require.Empty(t, repo.sessions)
+	require.Empty(t, repo.sessionEvents)
+}
+
+func TestTLSFingerprintCaptureServiceDoesNotStoreBodyByDefault(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Name:    "codex capture",
+		Targets: map[string]int{"openai": 2},
+	})
+	require.NoError(t, err)
+
+	result, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		UserAgent:   "codex-cli/1.0",
+		Originator:  "codex_cli_rs",
+		RawPayload:  `{"secret":"should-not-persist"}`,
+		BodySummary: "summary-only",
+		ClientHello: captureServiceTestClientHello(t, 0),
+	})
+	require.NoError(t, err)
+	require.True(t, result.Accepted)
+	require.NotNil(t, result.Sample)
+	require.Empty(t, result.Sample.RawPayload)
+	require.NotNil(t, result.SessionEvent)
+	require.Empty(t, result.SessionEvent.RawPayload)
+
+	// Opt-in store_body keeps the payload for debugging.
+	task.CaptureFilters = map[string]any{"store_body": true}
+	_, err = repo.UpdateTask(context.Background(), task)
+	require.NoError(t, err)
+
+	stored, err := svc.SubmitNativeCapture(context.Background(), TLSFingerprintCaptureNativeSubmitRequest{
+		Token:       task.Token,
+		Platform:    "openai",
+		UserAgent:   "codex-cli/1.1",
+		Originator:  "codex_cli_rs",
+		RawPayload:  `{"ok":true}`,
+		ClientHello: captureServiceTestClientHello(t, 1),
+	})
+	require.NoError(t, err)
+	require.True(t, stored.Accepted)
+	require.Equal(t, `{"ok":true}`, stored.Sample.RawPayload)
+}
+
+func TestTLSFingerprintCaptureServiceStartTaskPersistsCaptureFilters(t *testing.T) {
+	repo := newTLSFingerprintCaptureRepoStub()
+	svc := NewTLSFingerprintCaptureService(repo, nil)
+
+	task, err := svc.StartTask(context.Background(), TLSFingerprintCaptureStartRequest{
+		Targets:        map[string]int{"openai": 1},
+		CaptureFilters: map[string]any{"store_body": true},
+	})
+	require.NoError(t, err)
+	require.Equal(t, true, task.CaptureFilters["store_body"])
 }
 
 func TestTLSFingerprintCaptureServiceImportsTaskSamplesToProfiles(t *testing.T) {
@@ -884,8 +1145,37 @@ func (r *tlsFingerprintCaptureDuplicateCreateRepoStub) CreateSampleIfAbsent(_ co
 
 type tlsFingerprintCaptureBlockingCreateRepoStub struct {
 	*tlsFingerprintCaptureRepoStub
-	createEntered chan struct{}
-	releaseCreate chan struct{}
+	createEntered  chan struct{}
+	releaseCreate  chan struct{}
+	tokenValidated chan struct{}
+}
+
+type tlsFingerprintCaptureBlockingLockRepoStub struct {
+	*tlsFingerprintCaptureRepoStub
+	lockEntered chan struct{}
+	releaseLock chan struct{}
+}
+
+func (r *tlsFingerprintCaptureBlockingLockRepoStub) WithTaskSubmissionLock(ctx context.Context, taskID int64, fn func(context.Context) error) error {
+	if r.lockEntered != nil {
+		r.lockEntered <- struct{}{}
+	}
+	if r.releaseLock != nil {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-r.releaseLock:
+		}
+	}
+	return r.tlsFingerprintCaptureRepoStub.WithTaskSubmissionLock(ctx, taskID, fn)
+}
+
+func (r *tlsFingerprintCaptureBlockingCreateRepoStub) GetRunningTaskByToken(ctx context.Context, token string) (*TLSFingerprintCaptureTask, error) {
+	task, err := r.tlsFingerprintCaptureRepoStub.GetRunningTaskByToken(ctx, token)
+	if err == nil && task != nil && r.tokenValidated != nil {
+		r.tokenValidated <- struct{}{}
+	}
+	return task, err
 }
 
 func (r *tlsFingerprintCaptureBlockingCreateRepoStub) CreateSampleIfAbsent(ctx context.Context, sample *TLSFingerprintCaptureSample) (*TLSFingerprintCaptureSample, bool, error) {

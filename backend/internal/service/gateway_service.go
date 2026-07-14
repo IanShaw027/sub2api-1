@@ -766,6 +766,7 @@ type GatewayService struct {
 	resolver              *ModelPricingResolver
 	debugGatewayBodyFile  atomic.Pointer[os.File] // non-nil when SUB2API_DEBUG_GATEWAY_BODY is set
 	tlsFPProfileService   *TLSFingerprintProfileService
+	tlsFPRouterService    *TLSFingerprintRouterService
 	balanceNotifyService  *BalanceNotifyService
 	kiroTokenProvider     *KiroTokenProvider
 	kiroGatewayService    *KiroGatewayService
@@ -841,6 +842,7 @@ func NewGatewayService(
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
 		fingerprintNormalizer: fingerprintNormalizer,
 	}
+	// tlsFPRouterService is optional; set via SetTLSFingerprintRouterService for UA-based routing.
 	svc.userGroupRateResolver = newUserGroupRateResolver(
 		userGroupRateRepo,
 		svc.userGroupRateCache,
@@ -871,6 +873,15 @@ func (s *GatewayService) SetGrokTokenProvider(provider *GrokTokenProvider) {
 		return
 	}
 	s.grokTokenProvider = provider
+}
+
+// SetTLSFingerprintRouterService enables UA-based TLS profile routing for Claude
+// and other GatewayService-owned paths that have inbound request context.
+func (s *GatewayService) SetTLSFingerprintRouterService(routerService *TLSFingerprintRouterService) {
+	if s == nil {
+		return
+	}
+	s.tlsFPRouterService = routerService
 }
 
 // GenerateSessionHash 从预解析请求计算粘性会话 hash
@@ -4438,12 +4449,14 @@ func (s *GatewayService) DoGrokNativeResponsesJSON(ctx context.Context, c *gin.C
 			upstreamReq.Header.Set("OpenAI-Beta", v)
 		}
 	}
+	tlsRuntime := s.resolveGatewayTLSFingerprintRuntime(ctx, c, account, "http")
+	applyGatewayTLSFingerprintRuntime(upstreamReq, tlsRuntime)
 	resp, err := s.httpUpstream.DoWithTLS(
 		upstreamReq,
 		accountProxyURL(account),
 		account.ID,
 		account.Concurrency,
-		s.resolveGatewayTLSProfile(account),
+		tlsRuntime.Profile,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("grok native search upstream: %w", err)
@@ -5544,8 +5557,10 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		}
 	}
 
-	// 解析 TLS 指纹 profile（同一请求生命周期内不变，避免重试循环中重复解析）
-	tlsProfile := s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http")
+	// 解析 TLS 指纹 profile（同一请求生命周期内不变，避免重试循环中重复解析）。
+	// 有入站 UA 时走 router + bindings；否则 default_os / 单 profile。
+	tlsRuntime := s.resolveGatewayTLSFingerprintRuntime(ctx, c, account, "http")
+	tlsProfile := tlsRuntime.Profile
 
 	// 调试日志：记录即将转发的账号信息
 	logger.LegacyPrintf("service.gateway", "[Forward] Using account: ID=%d Name=%s Platform=%s Type=%s TLSFingerprint=%v Proxy=%s",
@@ -5598,6 +5613,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		if err != nil {
 			return nil, err
 		}
+		applyGatewayTLSFingerprintRuntime(upstreamReq, tlsRuntime)
 		// 记录本次实际发送的 wire body；只有请求成功后才写回 ParsedRequest，避免 400 retry 基于已签名 CCH 再改写。
 		lastWireBody = wireBody
 
@@ -5686,6 +5702,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 					retryReq, retryWireBody, buildErr := s.buildUpstreamRequest(retryCtx, c, account, filteredBody, token, tokenType, reqModel, reqStream, shouldMimicClaudeCode)
 					releaseRetryCtx()
 					if buildErr == nil {
+						applyGatewayTLSFingerprintRuntime(retryReq, tlsRuntime)
 						retryResp, retryErr := s.httpUpstream.DoWithTLS(retryReq, proxyURL, account.ID, account.Concurrency, tlsProfile)
 						if retryErr == nil {
 							if retryResp.StatusCode < 400 {
@@ -5728,6 +5745,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 									retryReq2, retryWireBody2, buildErr2 := s.buildUpstreamRequest(retryCtx2, c, account, filteredBody2, token, tokenType, reqModel, reqStream, shouldMimicClaudeCode)
 									releaseRetryCtx2()
 									if buildErr2 == nil {
+										applyGatewayTLSFingerprintRuntime(retryReq2, tlsRuntime)
 										retryResp2, retryErr2 := s.httpUpstream.DoWithTLS(retryReq2, proxyURL, account.ID, account.Concurrency, tlsProfile)
 										if retryErr2 == nil {
 											lastWireBody = retryWireBody2
@@ -5814,6 +5832,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 						budgetRetryReq, budgetWireBody, buildErr := s.buildUpstreamRequest(budgetRetryCtx, c, account, rectifiedBody, token, tokenType, reqModel, reqStream, shouldMimicClaudeCode)
 						releaseBudgetRetryCtx()
 						if buildErr == nil {
+							applyGatewayTLSFingerprintRuntime(budgetRetryReq, tlsRuntime)
 							budgetRetryResp, retryErr := s.httpUpstream.DoWithTLS(budgetRetryReq, proxyURL, account.ID, account.Concurrency, tlsProfile)
 							if retryErr == nil {
 								if budgetRetryResp.StatusCode < 400 {
@@ -5906,6 +5925,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		req, wireBody, buildErr := s.buildUpstreamRequest(upstreamCtx, c, account, fallbackBody, token, tokenType, fallbackModel, reqStream, shouldMimicClaudeCode)
 		releaseUpstreamCtx()
 		if buildErr == nil {
+			applyGatewayTLSFingerprintRuntime(req, tlsRuntime)
 			fallbackWireBody = wireBody
 		}
 		return req, buildErr
@@ -6223,7 +6243,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 		}
 
 		attemptStart := time.Now()
-		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
+		resp, err = s.doGatewayRequestWithTLS(ctx, c, upstreamReq, account, proxyURL)
 		accumulatedUpstreamLatency += time.Since(attemptStart)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, accumulatedUpstreamLatency.Milliseconds())
 		if err != nil {
@@ -6309,7 +6329,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 		return req, buildErr
 	}
 	doFallbackReq := func(req *http.Request) (*http.Response, error) {
-		return s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
+		return s.doGatewayRequestWithTLS(ctx, c, req, account, proxyURL)
 	}
 	if fallbackResp, fallbackBody, fallbackReqModel, _, applied := s.maybeRetryAnthropicModelFallback(
 		ctx,
@@ -11119,7 +11139,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 
 	// 发送请求
 	upstreamStart := time.Now()
-	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
+	resp, err := s.doGatewayRequestWithTLS(ctx, c, upstreamReq, account, proxyURL)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
 		detail := recordDetailedUpstreamTransportError(c, err)
@@ -11157,7 +11177,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		retryReq, retryWireBody, buildErr := s.buildCountTokensRequest(ctx, c, account, filteredBody, token, tokenType, reqModel, shouldMimicClaudeCode)
 		if buildErr == nil {
 			retryStart := time.Now()
-			retryResp, retryErr := s.httpUpstream.DoWithTLS(retryReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
+			retryResp, retryErr := s.doGatewayRequestWithTLS(ctx, c, retryReq, account, proxyURL)
 			SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds()+time.Since(retryStart).Milliseconds())
 			if retryErr == nil {
 				if retryResp.StatusCode < 400 {
@@ -11275,7 +11295,7 @@ func (s *GatewayService) forwardCountTokensAnthropicAPIKeyPassthrough(ctx contex
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http"))
+	resp, err := s.doGatewayRequestWithTLS(ctx, c, upstreamReq, account, proxyURL)
 	if err != nil {
 		detail := recordDetailedUpstreamTransportError(c, err)
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{

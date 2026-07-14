@@ -249,7 +249,7 @@ func TestNativeTLSCaptureListenerPersistsRequestMetadata(t *testing.T) {
 	require.True(t, sample.Streaming)
 	require.Equal(t, "stream", sample.ResponseMode)
 	require.Equal(t, "gpt-5.4", sample.Model)
-	require.Equal(t, "codex", sample.ClientType)
+	require.Equal(t, "codex-cli", sample.ClientType)
 	require.Equal(t, "session-123", sample.SessionID)
 	require.Equal(t, "js", sample.StainlessMetadata["lang"])
 	require.Equal(t, "Linux", sample.StainlessMetadata["os"])
@@ -268,7 +268,9 @@ func TestNativeTLSCaptureListenerPersistsRequestMetadata(t *testing.T) {
 	require.Equal(t, "Linux", event.StainlessMetadata["os"])
 	require.Equal(t, []string{"[REDACTED]"}, event.HeadersSnapshot["authorization"])
 	require.Contains(t, event.BodySummary, "\"model\":\"gpt-5.4\"")
-	require.JSONEq(t, payload, event.RawPayload)
+	// Raw request bodies are not persisted by default (ops safety); BodySummary remains.
+	require.Empty(t, event.RawPayload)
+	_ = payload
 }
 
 func TestNativeTLSCaptureListenerRejectsOversizedHTTPRequestBody(t *testing.T) {

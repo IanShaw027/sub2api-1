@@ -78,8 +78,9 @@ func TestTLSCaptureWebSocketHTTP1MultiTurnCreatesReplayableSamplePerTurn(t *test
 	require.Equal(t, "websocket", repo.samples[1].ResponseMode)
 	require.Equal(t, "gpt-5.4", repo.samples[0].Model)
 	require.Equal(t, "gpt-5.4", repo.samples[1].Model)
-	require.JSONEq(t, firstPayload, repo.samples[0].RawPayload)
-	require.JSONEq(t, secondPayload, repo.samples[1].RawPayload)
+	// Default capture path does not store raw bodies (summary/hash only).
+	require.Empty(t, repo.samples[0].RawPayload)
+	require.Empty(t, repo.samples[1].RawPayload)
 	require.Equal(t, "ws-session-123", repo.samples[0].SessionID)
 	require.Equal(t, "ws-session-123", repo.samples[1].SessionID)
 
@@ -94,9 +95,11 @@ func TestTLSCaptureWebSocketHTTP1MultiTurnCreatesReplayableSamplePerTurn(t *test
 	require.True(t, repo.sessionEvents[1].IsWebsocket)
 	require.Equal(t, "websocket", repo.sessionEvents[0].ResponseMode)
 	require.Equal(t, "websocket", repo.sessionEvents[1].ResponseMode)
-	require.JSONEq(t, firstPayload, repo.sessionEvents[0].RawPayload)
-	require.JSONEq(t, secondPayload, repo.sessionEvents[1].RawPayload)
+	require.Empty(t, repo.sessionEvents[0].RawPayload)
+	require.Empty(t, repo.sessionEvents[1].RawPayload)
 	require.Contains(t, repo.sessionEvents[1].BodySummary, `"capture-2"`)
+	_ = firstPayload
+	_ = secondPayload
 }
 
 func TestTLSCaptureWebSocketHTTP1RejectsOversizedMessage(t *testing.T) {

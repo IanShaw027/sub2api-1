@@ -93,6 +93,23 @@ describe('TLSFingerprintCollectorView', () => {
     expect(text).not.toContain('tlsCollector.guides.codexCli.title')
   })
 
+  it('uses the platform base URL exactly once in Kiro curl commands', async () => {
+    routeQuery.value = {
+      capture_url: 'https://localhost:8444/capture',
+      token: 'capture-token',
+      platform: 'kiro'
+    }
+    const wrapper = mount(TLSFingerprintCollectorView)
+
+    expect(wrapper.text()).toContain('https://localhost:8444/capture/kiro/v1/messages')
+    expect(wrapper.text()).not.toContain('/capture/kiro/v1/v1/messages')
+    await wrapper.find('button.collector-button').trigger('click')
+
+    const copiedText = String(copyToClipboardMock.mock.calls[0][0])
+    expect(copiedText).toContain('https://localhost:8444/capture/kiro/v1/messages')
+    expect(copiedText).not.toContain('/capture/kiro/v1/v1/messages')
+  })
+
   it('offers custom collector platform and falls back to platform-scoped curl', async () => {
     routeQuery.value = {
       capture_url: 'https://localhost:8444/capture',

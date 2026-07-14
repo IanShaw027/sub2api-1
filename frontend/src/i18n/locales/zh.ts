@@ -2176,6 +2176,22 @@ export default {
         title: 'claude -p',
         body: 'print mode 使用同样的环境变量；这里单独列出是为了明确非交互式采集方式。'
       },
+      grokCurl: {
+        title: 'Grok / xAI curl 探针',
+        body: '向 Grok 采集路径发送一次 OpenAI 兼容 chat/completions 请求。优先使用 X-TLS-Fingerprint-Token，避免把 token 放进 URL query。'
+      },
+      grokBase: {
+        title: 'Grok 客户端 Base URL',
+        body: '把真实 Grok/xAI 或 OpenAI 兼容客户端指向采集 base URL，用真实客户端 TLS 栈发送一次短请求。'
+      },
+      kiroCurl: {
+        title: 'Kiro curl 探针',
+        body: '用 messages 风格 body 探测 Kiro 采集路径。优先 header token；自签证书需在客户端信任。'
+      },
+      kiroBase: {
+        title: 'Kiro 客户端 Base URL',
+        body: '把真实 Kiro / CodeWhisperer 兼容客户端指向采集 listener，以记录 ClientHello 与 H2 帧。'
+      },
       node: {
         title: 'Node OpenAI SDK',
         body: '从你要采集的同一个 Node 版本和运行环境里执行。'
@@ -2186,7 +2202,7 @@ export default {
       },
       curl: {
         title: 'curl 原始探针',
-        body: 'curl 只用于检查连通性和证书，不应替代 CLI 或 SDK 指纹。'
+        body: 'curl 只用于检查连通性和证书，不应替代 CLI 或 SDK 指纹。优先 header token，避免 query 传 token。'
       }
     }
   },
@@ -8317,9 +8333,9 @@ export default {
         platformPlaceholder: '例如 openai / anthropic / gemini',
         transport: '传输类型',
         transportAny: '不限',
-        transportH2CaptureOnly: 'HTTP/2（仅采集，当前不支持 replay）',
-        transportWebsocketH2CaptureOnly: 'WebSocket HTTP/2（仅采集，当前不支持 replay）',
-        transportReplayHint: 'canonical h2 传输值仍用于导入/采集，但当前实际出站只会回放 HTTP/1.1 与基于 HTTP/1.1 的 WebSocket。',
+        transportH2: 'HTTP/2（可回放，需 http2_fingerprint）',
+        transportWebsocketH2: 'WebSocket HTTP/2（可回放，需 http2_fingerprint）',
+        transportReplayHint: 'h2 / websocket-h2 模板在出站 DoWithTLS 路径可回放（需有效 http2_fingerprint）。HTTP 粗粒度会匹配 http1 与 h2。',
         os: '操作系统',
         osAny: '不限 / 通用',
         clientType: '客户端类型',
@@ -8341,6 +8357,9 @@ export default {
         originator: '上游 Originator',
         originatorPlaceholder: '例如 codex_cli_rs',
         originatorHint: '可选。启用该模板时用此 Originator 头；留空则使用内置默认兜底。',
+        http2Fingerprint: 'HTTP/2 指纹',
+        http2FingerprintPlaceholder: '采集到的 HTTP/2 SETTINGS、流控及伪头顺序指纹',
+        http2FingerprintHint: 'h2 和 websocket-h2 必填。请粘贴采集器输出的完整 http2_fingerprint。',
         enableGrease: '启用 GREASE',
         enableGreaseHint: '在 TLS ClientHello 扩展中插入 GREASE 值',
         cipherSuites: '密码套件',
@@ -8370,6 +8389,8 @@ export default {
         uaKeywords: 'User-Agent 关键词',
         uaKeywordsPlaceholder: 'codex, Codex Desktop, codex-tui',
         uaKeywordsHint: '逗号分隔；为空时接收所有 UA。关键词只用于过滤，不参与去重。',
+        storeBody: '存储请求正文',
+        storeBodyHint: '可选。请求正文可能包含敏感提示词或凭据；仅在需要正文级采集时开启。',
         targets: '各平台目标数',
         targetsHint: '0 表示不采集该平台',
         customPlatform: '自定义平台',
@@ -8468,9 +8489,9 @@ export default {
         ruleNamePlaceholder: '规则名称',
         transport: '传输类型',
         transportAny: '不限',
-        transportH2CaptureOnly: 'HTTP/2（仅采集，当前不支持 replay）',
-        transportWebsocketH2CaptureOnly: 'WebSocket HTTP/2（仅采集，当前不支持 replay）',
-        transportReplayHint: '路由规则仍可指向 canonical h2 模板以保留采集/导入语义，但当前实际出站只回放 HTTP/1.1 家族。',
+        transportH2: 'HTTP/2（可回放，需 http2_fingerprint）',
+        transportWebsocketH2: 'WebSocket HTTP/2（可回放，需 http2_fingerprint）',
+        transportReplayHint: '路由规则可按 transport 匹配 h2 / websocket-h2；出站在具备 http2_fingerprint 时会回放 H2 指纹。',
         matchType: '匹配类型',
         pattern: '匹配内容',
         patternPlaceholder: '例如 Chrome 或 ^Mozilla/',

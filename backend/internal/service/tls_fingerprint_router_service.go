@@ -218,14 +218,17 @@ func tlsFingerprintRouterRuleTransportAllowed(rule model.TLSFingerprintRouterRul
 	if ruleTransport == "" {
 		return true
 	}
-	// Router rules are ordered first-match-wins. When runtime only knows the
-	// coarse family, prefer the HTTP/1 variants; h2/ws-h2 require explicit
-	// runtime support and must not shadow the compatible rule that follows.
+	// Coarse runtime families include both replayable variants. Rule order remains
+	// first-match-wins, so operators can explicitly prefer H2 or HTTP/1.
 	switch transport {
 	case model.TLSFingerprintRouterTransportHTTP:
-		return ruleTransport == model.TLSFingerprintRouterTransportHTTP || ruleTransport == model.TLSFingerprintRouterTransportHTTP1
+		return ruleTransport == model.TLSFingerprintRouterTransportHTTP ||
+			ruleTransport == model.TLSFingerprintRouterTransportHTTP1 ||
+			ruleTransport == model.TLSFingerprintRouterTransportH2
 	case model.TLSFingerprintRouterTransportWebSocket:
-		return ruleTransport == model.TLSFingerprintRouterTransportWebSocket || ruleTransport == model.TLSFingerprintRouterTransportWSHTTP1
+		return ruleTransport == model.TLSFingerprintRouterTransportWebSocket ||
+			ruleTransport == model.TLSFingerprintRouterTransportWSHTTP1 ||
+			ruleTransport == model.TLSFingerprintRouterTransportWSH2
 	}
 	return tlsFingerprintProfileTransportMatches(ruleTransport, transport)
 }

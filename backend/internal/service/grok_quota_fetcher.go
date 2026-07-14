@@ -63,21 +63,19 @@ func (f *GrokQuotaFetcher) BuildUsageInfo(account *Account) *UsageInfo {
 		usage.Error = "No xAI quota headers observed on the latest Grok probe"
 	}
 
-	if usage.ErrorCode == "" {
-		switch snapshot.StatusCode {
-		case 401:
-			usage.NeedsReauth = true
-			usage.ErrorCode = "unauthenticated"
-		case 403:
-			usage.IsForbidden = true
-			usage.ForbiddenType = "forbidden"
-			usage.ErrorCode = "forbidden"
-			if usage.GrokEntitlementStatus == "" {
-				usage.GrokEntitlementStatus = "forbidden"
-			}
-		case 429:
-			usage.ErrorCode = "rate_limited"
+	switch snapshot.StatusCode {
+	case 401:
+		usage.NeedsReauth = true
+		usage.ErrorCode = "unauthenticated"
+	case 403:
+		usage.IsForbidden = true
+		usage.ForbiddenType = "forbidden"
+		usage.ErrorCode = "forbidden"
+		if usage.GrokEntitlementStatus == "" {
+			usage.GrokEntitlementStatus = "forbidden"
 		}
+	case 429:
+		usage.ErrorCode = "rate_limited"
 	}
 	applyGrokCredentialUsageFallback(usage, account)
 	return usage

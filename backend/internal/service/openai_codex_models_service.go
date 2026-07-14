@@ -138,7 +138,6 @@ type codexModelsManifestRequest struct {
 	accountConcurrency  int
 	useAPIKeyUpstream   bool
 	tlsRuntime          openAITLSFingerprintRuntime
-	identityAccount     *Account
 }
 
 type codexModelsManifestCacheEntry struct {
@@ -306,7 +305,6 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 		accountConcurrency:  account.Concurrency,
 		useAPIKeyUpstream:   useAPIKeyUpstream,
 		tlsRuntime:          tlsRuntime,
-		identityAccount:     credAccount,
 	}
 	if useAPIKeyUpstream {
 		return s.fetchCachedAPIKeyCodexModelsManifest(ctx, request, ifNoneMatch)
@@ -372,7 +370,9 @@ func (s *OpenAIGatewayService) fetchCodexModelsManifestUpstream(ctx context.Cont
 		return nil, infraerrors.Newf(http.StatusInternalServerError, "OPENAI_CODEX_MODELS_REQUEST_FAILED", "create codex models request: %v", err)
 	}
 	req.Header = request.headers.Clone()
-	applyOpenAICodexTLSFingerprintRuntime(req, request.tlsRuntime, request.identityAccount, false)
+	applyOpenAITLSFingerprintRuntime(req, request.tlsRuntime)
+	ensureCodexIdentityHeaders(req.Header)
+	enforceCodexIdentityHeaders(req.Header)
 	if ifNoneMatch = strings.TrimSpace(ifNoneMatch); ifNoneMatch != "" {
 		req.Header.Set("If-None-Match", ifNoneMatch)
 	}

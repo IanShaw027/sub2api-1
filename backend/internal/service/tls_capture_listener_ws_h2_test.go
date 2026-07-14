@@ -86,8 +86,9 @@ func TestTLSCaptureWebSocketH2MultiTurnCreatesReplayableSamplePerTurn(t *testing
 	require.Equal(t, "websocket", repo.samples[1].ResponseMode)
 	require.Equal(t, "1:4096,3:100,4:65535|ph::method,:scheme,:authority,:path,:protocol", repo.samples[0].HTTP2Fingerprint)
 	require.Equal(t, "1:4096,3:100,4:65535|ph::method,:scheme,:authority,:path,:protocol", repo.samples[1].HTTP2Fingerprint)
-	require.JSONEq(t, firstPayload, repo.samples[0].RawPayload)
-	require.JSONEq(t, secondPayload, repo.samples[1].RawPayload)
+	// Default capture path does not store raw bodies (summary/hash only).
+	require.Empty(t, repo.samples[0].RawPayload)
+	require.Empty(t, repo.samples[1].RawPayload)
 	require.Equal(t, "ws-h2-session-123", repo.samples[0].SessionID)
 	require.Equal(t, "ws-h2-session-123", repo.samples[1].SessionID)
 	require.Equal(t, http.MethodConnect, repo.samples[0].HTTPMethod)
@@ -104,8 +105,8 @@ func TestTLSCaptureWebSocketH2MultiTurnCreatesReplayableSamplePerTurn(t *testing
 	require.True(t, repo.sessionEvents[1].IsWebsocket)
 	require.Equal(t, "websocket", repo.sessionEvents[0].ResponseMode)
 	require.Equal(t, "websocket", repo.sessionEvents[1].ResponseMode)
-	require.JSONEq(t, firstPayload, repo.sessionEvents[0].RawPayload)
-	require.JSONEq(t, secondPayload, repo.sessionEvents[1].RawPayload)
+	require.Empty(t, repo.sessionEvents[0].RawPayload)
+	require.Empty(t, repo.sessionEvents[1].RawPayload)
 	require.Contains(t, repo.sessionEvents[1].BodySummary, `"capture-2"`)
 	require.Equal(t, "1", repo.sessionEvents[0].StreamID)
 	require.Equal(t, "1", repo.sessionEvents[1].StreamID)
@@ -202,9 +203,10 @@ func TestTLSCaptureWebSocketH2FragmentedTextMessageCreatesSingleReplayableSample
 	require.Contains(t, completed, `"type":"response.completed"`)
 
 	require.Len(t, repo.samples, 1)
-	require.JSONEq(t, payload, repo.samples[0].RawPayload)
+	require.Empty(t, repo.samples[0].RawPayload)
 	require.Len(t, repo.sessionEvents, 1)
-	require.JSONEq(t, payload, repo.sessionEvents[0].RawPayload)
+	require.Empty(t, repo.sessionEvents[0].RawPayload)
+	_ = payload
 }
 
 func TestTLSCaptureWebSocketH2RejectsOversizedFragmentedMessage(t *testing.T) {

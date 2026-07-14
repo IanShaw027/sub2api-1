@@ -99,7 +99,8 @@ func (s *KiroGatewayService) invokeKiroMCP(
 		return "", err
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, s.resolveTLSProfile(account))
+	tlsRuntime := s.resolveTLSFingerprintRuntime(ctx, nil, account)
+	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, tlsRuntime.Profile)
 	if err != nil {
 		return "", fmt.Errorf("kiro mcp: upstream request: %w", err)
 	}
@@ -118,7 +119,7 @@ func (s *KiroGatewayService) invokeKiroMCP(
 				if buildErr != nil {
 					return "", buildErr
 				}
-				retryResp, retryErr := s.httpUpstream.DoWithTLS(retryReq, accountProxyURL(refreshedAccount), refreshedAccount.ID, refreshedAccount.Concurrency, s.resolveTLSProfile(refreshedAccount))
+				retryResp, retryErr := s.httpUpstream.DoWithTLS(retryReq, accountProxyURL(refreshedAccount), refreshedAccount.ID, refreshedAccount.Concurrency, s.resolveTLSFingerprintRuntime(ctx, nil, refreshedAccount).Profile)
 				if retryErr != nil {
 					return "", fmt.Errorf("kiro mcp: retry upstream request: %w", retryErr)
 				}
@@ -231,6 +232,7 @@ func (s *KiroGatewayService) buildKiroMCPRequest(
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("amz-sdk-invocation-id", uuid.NewString())
 	req.Header.Set("amz-sdk-request", "attempt=1; max=3")
+	applyKiroTLSFingerprintRuntime(req, s.resolveTLSFingerprintRuntime(ctx, nil, account))
 	return req, nil
 }
 

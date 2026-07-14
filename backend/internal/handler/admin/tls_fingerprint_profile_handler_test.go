@@ -252,7 +252,7 @@ func TestTLSFingerprintProfileHandlerCaptureTaskLifecycle(t *testing.T) {
 	router.GET("/api/v1/admin/tls-fingerprint-profiles/capture-tasks/:id/samples", handler.ListCaptureSamples)
 	router.POST("/api/v1/admin/tls-fingerprint-profiles/capture-tasks/:id/import", handler.ImportCaptureTaskSamples)
 
-	startBody := `{"name":"Codex live","targets":{"openai":2},"ua_keywords":["codex"]}`
+	startBody := `{"name":"Codex live","targets":{"openai":2},"ua_keywords":["codex"],"capture_filters":{"store_body":true}}`
 	startRec := httptest.NewRecorder()
 	startReq := httptest.NewRequest(http.MethodPost, "/api/v1/admin/tls-fingerprint-profiles/capture-tasks", strings.NewReader(startBody))
 	startReq.Header.Set("Content-Type", "application/json")
@@ -269,6 +269,7 @@ func TestTLSFingerprintProfileHandlerCaptureTaskLifecycle(t *testing.T) {
 	require.NoError(t, json.Unmarshal(startRec.Body.Bytes(), &started))
 	require.NotEmpty(t, started.Data.Token)
 	require.Equal(t, service.TLSFingerprintCaptureStatusRunning, started.Data.Status)
+	require.Equal(t, true, captureRepo.tasks[0].CaptureFilters["store_body"])
 
 	_, err := captureSvc.SubmitNativeCapture(context.Background(), service.TLSFingerprintCaptureNativeSubmitRequest{
 		Token:       started.Data.Token,
@@ -411,7 +412,7 @@ func (r *tlsFingerprintCaptureHandlerRepoStub) DeleteTask(_ context.Context, id 
 	return nil
 }
 
-func (r *tlsFingerprintCaptureHandlerRepoStub) DeleteSamplesByTask(_ context.Context, taskID int64) error {
+func (r *tlsFingerprintCaptureHandlerRepoStub) DeleteTaskCaptureData(_ context.Context, taskID int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	next := r.samples[:0]
@@ -421,6 +422,20 @@ func (r *tlsFingerprintCaptureHandlerRepoStub) DeleteSamplesByTask(_ context.Con
 		}
 	}
 	r.samples = next
+	nextSessions := r.sessions[:0]
+	for _, session := range r.sessions {
+		if session.TaskID != taskID {
+			nextSessions = append(nextSessions, session)
+		}
+	}
+	r.sessions = nextSessions
+	nextEvents := r.sessionEvents[:0]
+	for _, event := range r.sessionEvents {
+		if event.TaskID != taskID {
+			nextEvents = append(nextEvents, event)
+		}
+	}
+	r.sessionEvents = nextEvents
 	return nil
 }
 

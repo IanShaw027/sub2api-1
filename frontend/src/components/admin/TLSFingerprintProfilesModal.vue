@@ -132,6 +132,23 @@
             <p class="input-hint text-xs">{{ t('admin.tlsFingerprintProfiles.capture.uaKeywordsHint') }}</p>
           </div>
 
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-dark-600 dark:bg-dark-800">
+            <input
+              v-model="captureForm.storeBody"
+              type="checkbox"
+              class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              data-testid="capture-store-body"
+            />
+            <span>
+              <span class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                {{ t('admin.tlsFingerprintProfiles.capture.storeBody') }}
+              </span>
+              <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.tlsFingerprintProfiles.capture.storeBodyHint') }}
+              </span>
+            </span>
+          </label>
+
           <div>
             <div class="mb-2 flex items-center justify-between">
               <label class="input-label text-xs">{{ t('admin.tlsFingerprintProfiles.capture.targets') }}</label>
@@ -556,9 +573,9 @@
             <select v-model="form.transport" class="input">
               <option value="">{{ t('admin.tlsFingerprintProfiles.form.transportAny') }}</option>
               <option value="http1">HTTP/1.1</option>
-              <option value="h2">{{ t('admin.tlsFingerprintProfiles.form.transportH2CaptureOnly') }}</option>
+              <option value="h2">{{ t('admin.tlsFingerprintProfiles.form.transportH2') }}</option>
               <option value="websocket-http1">WebSocket HTTP/1.1</option>
-              <option value="websocket-h2">{{ t('admin.tlsFingerprintProfiles.form.transportWebsocketH2CaptureOnly') }}</option>
+              <option value="websocket-h2">{{ t('admin.tlsFingerprintProfiles.form.transportWebsocketH2') }}</option>
             </select>
             <p class="input-hint text-xs">{{ t('admin.tlsFingerprintProfiles.form.transportReplayHint') }}</p>
           </div>
@@ -618,6 +635,18 @@
               :placeholder="t('admin.tlsFingerprintProfiles.form.originatorPlaceholder')"
             />
             <p class="input-hint text-xs">{{ t('admin.tlsFingerprintProfiles.form.originatorHint') }}</p>
+          </div>
+          <div v-if="form.transport === 'h2' || form.transport === 'websocket-h2'" class="col-span-2">
+            <label class="input-label">{{ t('admin.tlsFingerprintProfiles.form.http2Fingerprint') }}</label>
+            <textarea
+              v-model="form.http2_fingerprint"
+              rows="3"
+              required
+              class="input font-mono text-xs"
+              data-testid="http2-fingerprint"
+              :placeholder="t('admin.tlsFingerprintProfiles.form.http2FingerprintPlaceholder')"
+            />
+            <p class="input-hint text-xs">{{ t('admin.tlsFingerprintProfiles.form.http2FingerprintHint') }}</p>
           </div>
         </div>
 
@@ -814,7 +843,8 @@ let capturePollTimer: ReturnType<typeof setInterval> | null = null
 
 const captureForm = reactive({
   name: 'Codex TLS fingerprint capture',
-  uaKeywords: 'codex, Codex Desktop, codex-tui, codex_exec'
+  uaKeywords: 'codex, Codex Desktop, codex-tui, codex_exec',
+  storeBody: false
 })
 
 const captureTargets = reactive([
@@ -856,6 +886,7 @@ const form = reactive({
   name: '',
   user_agent: '',
   originator: '',
+  http2_fingerprint: '',
   description: null as string | null,
   enable_grease: false
 })
@@ -975,7 +1006,12 @@ const loadCaptureTasks = async (options: { silent?: boolean } = {}) => {
     captureLoading.value = true
   }
   try {
-    captureTasks.value = await adminAPI.tlsFingerprintProfiles.listCaptureTasks()
+    const previousTasks = new Map(captureTasks.value.map(task => [task.id, task]))
+    const listedTasks = await adminAPI.tlsFingerprintProfiles.listCaptureTasks()
+    captureTasks.value = listedTasks.map(task => {
+      const previousToken = previousTasks.get(task.id)?.token
+      return task.token || !previousToken ? task : { ...task, token: previousToken }
+    })
     if (!selectedTaskID.value && captureTasks.value.length > 0) {
       selectedTaskID.value = captureTasks.value[0].id
       await loadSelectedTaskSamples({ silent })
@@ -983,6 +1019,9 @@ const loadCaptureTasks = async (options: { silent?: boolean } = {}) => {
     if (selectedTaskID.value && !captureTasks.value.some(task => task.id === selectedTaskID.value)) {
       selectedTaskID.value = captureTasks.value[0]?.id || null
       await loadSelectedTaskSamples({ silent })
+    }
+    if (selectedTaskID.value) {
+      await loadSelectedTaskDetail(selectedTaskID.value)
     }
     updateCapturePollingState()
   } catch (error: any) {
@@ -992,6 +1031,20 @@ const loadCaptureTasks = async (options: { silent?: boolean } = {}) => {
     if (!silent) {
       captureLoading.value = false
     }
+  }
+}
+
+const loadSelectedTaskDetail = async (taskID: number) => {
+  try {
+    const detail = await adminAPI.tlsFingerprintProfiles.getCaptureTask(taskID)
+    captureTasks.value = captureTasks.value.map(task => {
+      if (task.id !== detail.id) return task
+      const token = detail.token || task.token
+      return token ? { ...task, ...detail, token } : { ...task, ...detail }
+    })
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.tlsFingerprintProfiles.capture.loadFailed'))
+    console.error('Error loading TLS fingerprint capture task details:', error)
   }
 }
 
@@ -1024,7 +1077,7 @@ const loadSelectedTaskSamples = async (options: { silent?: boolean } = {}) => {
 const selectTask = async (taskID: number) => {
   selectedTaskID.value = taskID
   selectedSampleIDs.value = []
-  await loadSelectedTaskSamples()
+  await Promise.all([loadSelectedTaskDetail(taskID), loadSelectedTaskSamples()])
 }
 
 const startCapturePolling = () => {
@@ -1107,7 +1160,8 @@ const startCaptureTask = async () => {
     const task = await adminAPI.tlsFingerprintProfiles.startCaptureTask({
       name: captureForm.name.trim() || undefined,
       targets,
-      ua_keywords: parseStringArray(captureForm.uaKeywords)
+      ua_keywords: parseStringArray(captureForm.uaKeywords),
+      capture_filters: captureForm.storeBody ? { store_body: true } : undefined
     })
     captureTasks.value = [task, ...captureTasks.value.filter(item => item.id !== task.id)]
     selectedTaskID.value = task.id
@@ -1289,6 +1343,7 @@ const resetForm = () => {
   form.name = ''
   form.user_agent = ''
   form.originator = ''
+  form.http2_fingerprint = ''
   form.description = null
   form.enable_grease = false
   fieldInputs.cipher_suites = ''
@@ -1343,6 +1398,9 @@ const parseYamlInput = () => {
         break
       case 'originator':
         form.originator = value.replace(/^["']|["']$/g, '')
+        break
+      case 'http2_fingerprint':
+        form.http2_fingerprint = value.replace(/^["']|["']$/g, '')
         break
       case 'name': {
         const unquoted = value.replace(/^["']|["']$/g, '')
@@ -1469,6 +1527,7 @@ const handleEdit = (profile: TLSFingerprintProfile) => {
   form.name = profile.name
   form.user_agent = profile.user_agent || ''
   form.originator = profile.originator || ''
+  form.http2_fingerprint = profile.http2_fingerprint || ''
   form.description = profile.description
   form.enable_grease = profile.enable_grease
   fieldInputs.cipher_suites = formatNumericArray(profile.cipher_suites)
@@ -1509,6 +1568,9 @@ const handleSubmit = async () => {
       name: form.name.trim(),
       user_agent: form.user_agent.trim(),
       originator: form.originator.trim(),
+      http2_fingerprint: form.transport === 'h2' || form.transport === 'websocket-h2'
+        ? form.http2_fingerprint.trim()
+        : '',
       description: form.description?.trim() || null,
       enable_grease: form.enable_grease,
       cipher_suites: parseNumericArray(fieldInputs.cipher_suites),

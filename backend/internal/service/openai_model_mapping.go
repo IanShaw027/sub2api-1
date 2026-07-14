@@ -29,7 +29,7 @@ func resolveOpenAIForwardModelWithSettingsAndSelectedFallback(ctx context.Contex
 	}
 	defaultMappedModel = strings.TrimSpace(defaultMappedModel)
 	if account == nil {
-		if defaultMappedModel != "" {
+		if defaultMappedModel != "" && normalizeKnownOpenAICodexModel(requestedModel) == "" {
 			return defaultMappedModel
 		}
 		return requestedModel
@@ -38,7 +38,7 @@ func resolveOpenAIForwardModelWithSettingsAndSelectedFallback(ctx context.Contex
 	routing := ResolveEffectiveModelRouting(ctx, settingService, account, requestedModel, false)
 	mappedModel := routing.Model
 	matched := routing.Matched
-	if !matched && defaultMappedModel != "" {
+	if !matched && defaultMappedModel != "" && normalizeKnownOpenAICodexModel(requestedModel) == "" {
 		return defaultMappedModel
 	}
 	return mappedModel

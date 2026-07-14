@@ -51,6 +51,10 @@ func (s *openAIRecordUsageAccountRepoStub) GetByID(_ context.Context, _ int64) (
 	return s.account, nil
 }
 
+func (s *openAIRecordUsageAccountRepoStub) ListSchedulableByPlatform(context.Context, string) ([]Account, error) {
+	return nil, nil
+}
+
 func (s *openAIRecordUsageBillingRepoStub) Apply(ctx context.Context, cmd *UsageBillingCommand) (*UsageBillingApplyResult, error) {
 	s.calls++
 	s.lastCmd = cmd

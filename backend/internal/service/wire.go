@@ -831,6 +831,7 @@ func ProvideGatewayService(
 	digestStore *DigestSessionStore,
 	settingService *SettingService,
 	tlsFPProfileService *TLSFingerprintProfileService,
+	tlsFPRouterService *TLSFingerprintRouterService,
 	channelService *ChannelService,
 	resolver *ModelPricingResolver,
 	balanceNotifyService *BalanceNotifyService,
@@ -870,6 +871,7 @@ func ProvideGatewayService(
 		userPlatformQuotaRepo,
 		fingerprintNormalizer,
 	)
+	svc.SetTLSFingerprintRouterService(tlsFPRouterService)
 	svc.SetKiroDeps(kiroTokenProvider, kiroGatewayService)
 	svc.SetGrokTokenProvider(grokTokenProvider)
 	if openAIGatewayService != nil {
@@ -1128,11 +1130,12 @@ func ProvideKiroGatewayService(
 	tokenProvider *KiroTokenProvider,
 	rateLimitService *RateLimitService,
 	tlsFPProfileSvc *TLSFingerprintProfileService,
+	tlsFPRouterSvc *TLSFingerprintRouterService,
 	settingService *SettingService,
 	channelService *ChannelService,
 	fingerprintNormalizer *FingerprintNormalizer,
 ) *KiroGatewayService {
-	return NewKiroGatewayService(
+	svc := NewKiroGatewayService(
 		httpUpstream,
 		tokenProvider,
 		rateLimitService,
@@ -1141,6 +1144,8 @@ func ProvideKiroGatewayService(
 		channelService,
 		fingerprintNormalizer,
 	)
+	svc.SetTLSFingerprintRouterService(tlsFPRouterSvc)
+	return svc
 }
 
 // ProvideGeminiAccountAccessTokenProvider adapts GeminiTokenProvider to the

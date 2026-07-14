@@ -77,6 +77,7 @@ type KiroGatewayService struct {
 	tokenProvider         *KiroTokenProvider
 	rateLimitService      *RateLimitService
 	tlsFPProfileSvc       *TLSFingerprintProfileService
+	tlsFPRouterSvc        *TLSFingerprintRouterService
 	settingService        *SettingService
 	channelService        *ChannelService
 	fingerprintNormalizer *FingerprintNormalizer
@@ -87,6 +88,8 @@ type KiroGatewayService struct {
 	profileResolutionMu   sync.Mutex
 	profileResolution     map[int64]kiroProfileResolutionCacheEntry
 }
+
+type kiroTLSFingerprintRuntimeContextKey struct{}
 
 type kiroProfileResolutionCacheEntry struct {
 	profileARN string
@@ -134,10 +137,19 @@ func NewKiroGatewayService(
 	}
 }
 
+func (s *KiroGatewayService) SetTLSFingerprintRouterService(routerService *TLSFingerprintRouterService) {
+	if s == nil {
+		return
+	}
+	s.tlsFPRouterSvc = routerService
+}
+
 func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) (*ForwardResult, error) {
 	if account == nil {
 		return nil, errors.New("account is required")
 	}
+	tlsRuntime := s.resolveTLSFingerprintRuntime(ctx, c, account)
+	ctx = context.WithValue(ctx, kiroTLSFingerprintRuntimeContextKey{}, tlsRuntime)
 	if s.shouldEmulateWebSearch(ctx, account, parsed) {
 		return s.handleWebSearchEmulation(ctx, c, account, parsed)
 	}
@@ -177,7 +189,7 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 	s.emitGatewayDebugUpstreamRequest(c, account, req, converted.Body, 1)
 
 	start := time.Now()
-	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, s.resolveTLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, tlsRuntime.Profile)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(start).Milliseconds())
 	if err != nil {
 		return nil, s.handleKiroTransportError(ctx, c, account, req.URL.String(), err)
@@ -829,7 +841,12 @@ func (s *KiroGatewayService) buildRequest(ctx context.Context, account *Account,
 			}
 		}
 	}
-	return buildKiroGenerateAssistantRequest(ctx, account, body, accessToken, runtimeSettings)
+	req, err := buildKiroGenerateAssistantRequest(ctx, account, body, accessToken, runtimeSettings)
+	if err != nil {
+		return nil, err
+	}
+	applyKiroTLSFingerprintRuntime(req, s.resolveTLSFingerprintRuntime(ctx, nil, account))
+	return req, nil
 }
 
 func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, body []byte, accessToken string, runtimeSettings *KiroRuntimeSettings) (*http.Request, error) {
@@ -939,7 +956,7 @@ func (s *KiroGatewayService) retryInvalidTokenResponse(
 		kiroLogger(ctx, refreshedAccount).Warn("kiro.invalid_token_retry_failed", zap.Int("status_code", statusCode), zap.Error(err))
 		return nil, err
 	}
-	retryResp, err := s.httpUpstream.DoWithTLS(retryReq, accountProxyURL(refreshedAccount), refreshedAccount.ID, refreshedAccount.Concurrency, s.resolveTLSProfile(refreshedAccount))
+	retryResp, err := s.httpUpstream.DoWithTLS(retryReq, accountProxyURL(refreshedAccount), refreshedAccount.ID, refreshedAccount.Concurrency, s.resolveTLSFingerprintRuntime(ctx, nil, refreshedAccount).Profile)
 	if err != nil {
 		kiroLogger(ctx, refreshedAccount).Warn("kiro.invalid_token_retry_failed", zap.Int("status_code", statusCode), zap.Error(err))
 		return nil, err
@@ -2510,7 +2527,7 @@ func (s *KiroGatewayService) startKiroNativeWebToolContinuation(
 	}
 	s.emitGatewayDebugUpstreamRequest(c, account, req, converted.Body, 2)
 
-	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, s.resolveTLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, s.resolveTLSFingerprintRuntime(ctx, c, account).Profile)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -4187,10 +4204,7 @@ func accountProxyURL(account *Account) string {
 }
 
 func (s *KiroGatewayService) resolveTLSProfile(account *Account) *tlsfingerprint.Profile {
-	if s == nil || s.tlsFPProfileSvc == nil {
-		return nil
-	}
-	return resolveKiroTLSProfile(account, s.tlsFPProfileSvc)
+	return s.resolveTLSFingerprintRuntime(context.Background(), nil, account).Profile
 }
 
 func (s *KiroGatewayService) handleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, body []byte) bool {

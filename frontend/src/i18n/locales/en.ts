@@ -2175,6 +2175,22 @@ export default {
         title: 'claude -p',
         body: 'Print mode uses the same environment variables; the separate example makes non-interactive capture explicit.'
       },
+      grokCurl: {
+        title: 'Grok / xAI curl probe',
+        body: 'Send one OpenAI-compatible chat/completions request to the Grok capture path. Prefer X-TLS-Fingerprint-Token over query tokens.'
+      },
+      grokBase: {
+        title: 'Grok client base URL',
+        body: 'Point a real Grok/xAI or OpenAI-compatible client at the capture base URL and send one short request with the real client TLS stack.'
+      },
+      kiroCurl: {
+        title: 'Kiro curl probe',
+        body: 'Probe the Kiro capture path with a messages-style body. Prefer header tokens; trust the capture listener certificate if self-signed.'
+      },
+      kiroBase: {
+        title: 'Kiro client base URL',
+        body: 'Point the real Kiro / CodeWhisperer-compatible client at the capture listener so ClientHello and H2 frames are recorded.'
+      },
       node: {
         title: 'Node OpenAI SDK',
         body: 'Run this from the same Node version and runtime environment you want to capture.'
@@ -2185,7 +2201,7 @@ export default {
       },
       curl: {
         title: 'curl raw probe',
-        body: 'Use curl only as a connectivity/certificate sanity check, not as a replacement for CLI or SDK fingerprints.'
+        body: 'Use curl only as a connectivity/certificate sanity check, not as a replacement for CLI or SDK fingerprints. Prefer header tokens over query strings.'
       }
     }
   },
@@ -8162,9 +8178,9 @@ export default {
         platformPlaceholder: 'e.g. openai / anthropic / gemini',
         transport: 'Transport',
         transportAny: 'Any',
-        transportH2CaptureOnly: 'HTTP/2 (capture only, replay unsupported)',
-        transportWebsocketH2CaptureOnly: 'WebSocket HTTP/2 (capture only, replay unsupported)',
-        transportReplayHint: 'Canonical h2 transports remain import/capture values. The current outbound runtime only replays HTTP/1.1 and WebSocket over HTTP/1.1.',
+        transportH2: 'HTTP/2 (replayable with http2_fingerprint)',
+        transportWebsocketH2: 'WebSocket HTTP/2 (replayable with http2_fingerprint)',
+        transportReplayHint: 'h2 / websocket-h2 profiles are replayed on the outbound DoWithTLS path when http2_fingerprint is set. Coarse HTTP matches both http1 and h2.',
         os: 'Operating System',
         osAny: 'Any / Shared',
         clientType: 'Client Type',
@@ -8186,6 +8202,9 @@ export default {
         originator: 'Upstream Originator',
         originatorPlaceholder: 'e.g. codex_cli_rs',
         originatorHint: 'Optional. Sent as the upstream Originator header when this template is applied; empty falls back to the built-in default.',
+        http2Fingerprint: 'HTTP/2 Fingerprint',
+        http2FingerprintPlaceholder: 'Captured HTTP/2 SETTINGS, flow-control and pseudo-header fingerprint',
+        http2FingerprintHint: 'Required for h2 and websocket-h2. Paste the exact http2_fingerprint emitted by the collector.',
         enableGrease: 'Enable GREASE',
         enableGreaseHint: 'Insert GREASE values in TLS ClientHello extensions',
         cipherSuites: 'Cipher Suites',
@@ -8215,6 +8234,8 @@ export default {
         uaKeywords: 'User-Agent keywords',
         uaKeywordsPlaceholder: 'codex, Codex Desktop, codex-tui',
         uaKeywordsHint: 'Comma-separated. Empty accepts all UAs. Keywords filter capture only and are not part of dedupe.',
+        storeBody: 'Store request bodies',
+        storeBodyHint: 'Optional. Request bodies may contain sensitive prompts or credentials; leave disabled unless body-level capture is required.',
         targets: 'Per-platform targets',
         targetsHint: '0 disables a platform',
         customPlatform: 'Custom platform',
@@ -8313,9 +8334,9 @@ export default {
         ruleNamePlaceholder: 'Rule name',
         transport: 'Transport',
         transportAny: 'Any',
-        transportH2CaptureOnly: 'HTTP/2 (capture only, replay unsupported)',
-        transportWebsocketH2CaptureOnly: 'WebSocket HTTP/2 (capture only, replay unsupported)',
-        transportReplayHint: 'Router rules may still target canonical h2 profiles for capture/import fidelity, but the current outbound runtime only replays HTTP/1.1 families.',
+        transportH2: 'HTTP/2 (replayable with http2_fingerprint)',
+        transportWebsocketH2: 'WebSocket HTTP/2 (replayable with http2_fingerprint)',
+        transportReplayHint: 'Router rules can match h2 / websocket-h2; outbound replay applies when http2_fingerprint is present.',
         matchType: 'Match Type',
         pattern: 'Pattern',
         patternPlaceholder: 'e.g. Chrome or ^Mozilla/',

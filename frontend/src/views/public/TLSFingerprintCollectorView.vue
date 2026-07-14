@@ -179,11 +179,16 @@ const platformBaseURL = computed(() => platformURL(normalizedPlatform.value))
 const probeURL = computed(() => `${platformBaseURL.value}/responses`)
 const openAIPlatformBaseURL = computed(() => platformURL(platformOrDefault('openai')))
 const anthropicPlatformBaseURL = computed(() => platformURL(platformOrDefault('anthropic')))
+const grokPlatformBaseURL = computed(() => platformURL(platformOrDefault('grok')))
+const kiroPlatformBaseURL = computed(() => platformURL(platformOrDefault('kiro')))
 
 const shellToken = computed(() => shellQuote(form.token.trim() || '<capture-token>'))
 const shellProbeURL = computed(() => shellQuote(probeURL.value))
 const shellAnthropicPlatformBaseURL = computed(() => shellQuote(anthropicPlatformBaseURL.value))
+const shellGrokPlatformBaseURL = computed(() => shellQuote(grokPlatformBaseURL.value))
+const shellKiroPlatformBaseURL = computed(() => shellQuote(kiroPlatformBaseURL.value))
 const shellAuthorizationHeader = computed(() => shellQuote(`Authorization: Bearer ${form.token.trim() || '<capture-token>'}`))
+const shellTLSTokenHeader = computed(() => shellQuote(`X-TLS-Fingerprint-Token: ${form.token.trim() || '<capture-token>'}`))
 const jsPlatformBaseURL = computed(() => jsString(openAIPlatformBaseURL.value))
 const jsToken = computed(() => jsString(form.token.trim() || '<capture-token>'))
 const pyPlatformBaseURL = computed(() => pyString(openAIPlatformBaseURL.value))
@@ -257,6 +262,59 @@ const guides = computed(() => [
     ].join('\n')
   },
   {
+    key: 'grok-curl',
+    title: t('tlsCollector.guides.grokCurl.title'),
+    body: t('tlsCollector.guides.grokCurl.body'),
+    command: [
+      `curl -vk ${shellQuote(`${grokPlatformBaseURL.value}/chat/completions`)} \\`,
+      `  -H ${shellTLSTokenHeader.value} \\`,
+      `  -H ${shellAuthorizationHeader.value} \\`,
+      '  -H "Content-Type: application/json" \\',
+      '  -H "User-Agent: GrokDesktop/1.0 tls-capture" \\',
+      '  -H "originator: grok_tls_capture" \\',
+      '  -d \'{"model":"grok-3","messages":[{"role":"user","content":"TLS fingerprint capture probe"}]}\''
+    ].join('\n')
+  },
+  {
+    key: 'grok-base-url',
+    title: t('tlsCollector.guides.grokBase.title'),
+    body: t('tlsCollector.guides.grokBase.body'),
+    command: [
+      '# Point any OpenAI-compatible Grok/xAI client at the capture base URL.',
+      `export OPENAI_BASE_URL=${shellGrokPlatformBaseURL.value}`,
+      `export OPENAI_API_KEY=${shellToken.value}`,
+      '# Prefer header auth for the capture token (avoids query-string logs):',
+      `export SUB2API_TLS_CAPTURE_TOKEN=${shellToken.value}`,
+      '# Then send one short chat/completions or responses request from the real client.'
+    ].join('\n')
+  },
+  {
+    key: 'kiro-curl',
+    title: t('tlsCollector.guides.kiroCurl.title'),
+    body: t('tlsCollector.guides.kiroCurl.body'),
+    command: [
+      `curl -vk ${shellQuote(`${kiroPlatformBaseURL.value}/messages`)} \\`,
+      `  -H ${shellTLSTokenHeader.value} \\`,
+      `  -H ${shellAuthorizationHeader.value} \\`,
+      '  -H "Content-Type: application/json" \\',
+      '  -H "User-Agent: KiroIDE/1.0 tls-capture" \\',
+      '  -H "x-amz-user-agent: aws-sdk-js/3 tls-capture" \\',
+      '  -d \'{"model":"claude-sonnet-4","max_tokens":16,"messages":[{"role":"user","content":"TLS fingerprint capture probe"}]}\''
+    ].join('\n')
+  },
+  {
+    key: 'kiro-base-url',
+    title: t('tlsCollector.guides.kiroBase.title'),
+    body: t('tlsCollector.guides.kiroBase.body'),
+    command: [
+      '# Point Kiro / CodeWhisperer-compatible traffic at the capture listener.',
+      `export KIRO_BASE_URL=${shellKiroPlatformBaseURL.value}`,
+      `export SUB2API_TLS_CAPTURE_TOKEN=${shellToken.value}`,
+      '# Use header X-TLS-Fingerprint-Token (or Authorization Bearer) — do not put the token in the URL query.',
+      '# Send one short request from the real Kiro client so ClientHello + H2 frames are captured.'
+    ].join('\n')
+  },
+  {
     key: 'node',
     title: t('tlsCollector.guides.node.title'),
     body: t('tlsCollector.guides.node.body'),
@@ -298,16 +356,17 @@ const guides = computed(() => [
       'PY'
     ].join('\n')
   },
-	  {
-	    key: 'curl',
-	    title: t('tlsCollector.guides.curl.title'),
-	    body: t('tlsCollector.guides.curl.body'),
-	    command: [
-	      `curl -v ${shellProbeURL.value} \\`,
-	      `  -H ${shellAuthorizationHeader.value} \\`,
-	      '  -H "Content-Type: application/json" \\',
-	      '  -H "User-Agent: curl-tls-capture/1.0" \\',
-	      '  -H "originator: curl_tls_capture" \\',
+  {
+    key: 'curl',
+    title: t('tlsCollector.guides.curl.title'),
+    body: t('tlsCollector.guides.curl.body'),
+    command: [
+      `curl -v ${shellProbeURL.value} \\`,
+      `  -H ${shellTLSTokenHeader.value} \\`,
+      `  -H ${shellAuthorizationHeader.value} \\`,
+      '  -H "Content-Type: application/json" \\',
+      '  -H "User-Agent: curl-tls-capture/1.0" \\',
+      '  -H "originator: curl_tls_capture" \\',
       '  -d \'{"model":"gpt-5","input":"TLS fingerprint capture probe"}\''
     ].join('\n')
   }
@@ -322,6 +381,10 @@ const guidePlatform: Record<string, string> = {
   'codex-desktop': 'openai',
   'claude-code': 'anthropic',
   'claude-print': 'anthropic',
+  'grok-curl': 'grok',
+  'grok-base-url': 'grok',
+  'kiro-curl': 'kiro',
+  'kiro-base-url': 'kiro',
   'node': 'openai',
   'python': 'openai',
   'curl': 'openai'

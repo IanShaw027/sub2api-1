@@ -516,8 +516,9 @@ func TestTLSCaptureH2SSEAdditionalStreamCreatesReplayableSamplePerStream(t *test
 	require.Equal(t, string(tlsfpTransport.H2), repo.samples[1].Transport)
 	require.Equal(t, repo.sessions[0].SessionID, repo.samples[0].SessionID)
 	require.Equal(t, repo.sessions[0].SessionID, repo.samples[1].SessionID)
-	require.JSONEq(t, `{"model":"gpt-5.4","stream":true,"input":"capture"}`, repo.samples[0].RawPayload)
-	require.JSONEq(t, `{"model":"gpt-5.4","stream":true,"input":"capture-2"}`, repo.samples[1].RawPayload)
+	// Default capture path does not store raw bodies (summary/hash only).
+	require.Empty(t, repo.samples[0].RawPayload)
+	require.Empty(t, repo.samples[1].RawPayload)
 	require.Equal(t, repo.sessions[0].SessionID, repo.sessionEvents[0].SessionID)
 	require.Equal(t, repo.sessions[0].SessionID, repo.sessionEvents[1].SessionID)
 	require.Equal(t, string(tlsfpTransport.H2), repo.sessionEvents[0].Transport)

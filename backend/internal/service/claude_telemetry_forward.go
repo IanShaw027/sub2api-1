@@ -71,7 +71,9 @@ func (s *GatewayService) ForwardClaudeTelemetryBatch(ctx context.Context, groupI
 	if s == nil || s.httpUpstream == nil {
 		return http.StatusOK, errors.New("http upstream not configured")
 	}
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.resolveGatewayTLSProfile(account))
+	tlsRuntime := s.resolveGatewayTLSFingerprintRuntime(forwardCtx, nil, account, "http")
+	applyGatewayTLSFingerprintRuntime(req, tlsRuntime)
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 	if err != nil {
 		return http.StatusOK, err
 	}

@@ -92,15 +92,16 @@ func (s *GatewayService) forwardMessagesToChatCompletions(
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Authorization", "Bearer "+token)
 	upstreamReq.Header.Set("Accept", "text/event-stream")
-	tlsProfile := s.tlsFPProfileService.ResolveTLSProfileForTransport(account, "http")
-	upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsProfile)
+	tlsRuntime := s.resolveGatewayTLSFingerprintRuntime(ctx, c, account, "http")
+	applyGatewayTLSFingerprintRuntime(upstreamReq, tlsRuntime)
+	upstreamReq = withOpenAIHTTP1RawHeaderReplay(upstreamReq, account, tlsRuntime.Profile)
 
 	// 5. Send request
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsProfile)
+	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{

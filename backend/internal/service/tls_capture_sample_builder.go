@@ -29,10 +29,13 @@ func nativeCaptureRequestToken(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
-	if token := strings.TrimSpace(r.URL.Query().Get("token")); token != "" {
+	// Prefer headers over query string so capture tokens are less likely to land in access logs.
+	if token := strings.TrimSpace(r.Header.Get("X-TLS-Fingerprint-Token")); token != "" {
 		return token
 	}
-	if token := strings.TrimSpace(r.Header.Get("X-TLS-Fingerprint-Token")); token != "" {
+	// Keep legacy capture URLs working when the real client also sends its
+	// ordinary upstream API key in Authorization or X-API-Key.
+	if token := strings.TrimSpace(r.URL.Query().Get("token")); token != "" {
 		return token
 	}
 	if token := strings.TrimSpace(r.Header.Get("X-API-Key")); token != "" {
@@ -122,17 +125,36 @@ func nativeCaptureRequestClientType(r *http.Request) string {
 		return ""
 	}
 	if clientType := strings.TrimSpace(firstNonEmptyHeader(r.Header, "X-TLS-Fingerprint-Client-Type", "X-Client-Type")); clientType != "" {
-		return clientType
+		return normalizeTLSCaptureClientType(clientType)
 	}
-	originator := strings.ToLower(strings.TrimSpace(firstNonEmptyHeader(r.Header, "Originator", "originator")))
-	userAgent := strings.ToLower(strings.TrimSpace(r.Header.Get("User-Agent")))
-	switch {
-	case strings.Contains(originator, "codex") || strings.Contains(userAgent, "codex"):
-		return "codex"
-	case strings.Contains(originator, "claude") || strings.Contains(userAgent, "claude"):
-		return "claude"
+	return inferTLSFingerprintClientType(
+		nativeCaptureRequestPlatform(r),
+		r.Header.Get("User-Agent"),
+		firstNonEmptyHeader(r.Header, "Originator", "originator"),
+	)
+}
+
+func normalizeTLSCaptureClientType(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	switch normalized {
+	case "codex", "codex_cli", "codex-cli", "codex_cli_rs", "codex-tui":
+		return "codex-cli"
+	case "claude", "claude-cli", "claude-code":
+		return "claude-code"
+	case "chatgpt", "chatgpt-desktop", "codex-desktop":
+		return "chatgpt-desktop"
+	case "grokdesktop":
+		return "grok-desktop"
+	case "kiroide":
+		return "kiro-ide"
+	case "openai":
+		return "openai-sdk"
+	case "grok-desktop", "grok-web", "kiro-ide", "kiro-cli", "openai-sdk":
+		return normalized
+	case "unknown":
+		return ""
 	default:
-		return "unknown"
+		return normalized
 	}
 }
 

@@ -18,6 +18,13 @@ func NewTLSFingerprintCaptureSessionRepo(client *ent.Client) *tlsFingerprintCapt
 	return &tlsFingerprintCaptureSessionRepo{client: client}
 }
 
+func (r *tlsFingerprintCaptureSessionRepo) DeleteSessionsByTask(ctx context.Context, taskID int64) error {
+	_, err := clientFromContext(ctx, r.client).TLSFingerprintCaptureSession.Delete().
+		Where(tlsfingerprintcapturesession.TaskID(taskID)).
+		Exec(ctx)
+	return err
+}
+
 func (r *tlsFingerprintCaptureSessionRepo) CreateSessionIfAbsent(ctx context.Context, session *service.TLSFingerprintCaptureSession) (*service.TLSFingerprintCaptureSession, bool, error) {
 	sessionID := strings.TrimSpace(session.SessionID)
 	existing, err := clientFromContext(ctx, r.client).TLSFingerprintCaptureSession.Query().

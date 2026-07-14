@@ -42,12 +42,25 @@ const requiredMessagePaths = [
   'tlsCollector.guides.claudeCode.body',
   'tlsCollector.guides.claudePrint.title',
   'tlsCollector.guides.claudePrint.body',
+  'tlsCollector.guides.grokCurl.title',
+  'tlsCollector.guides.grokCurl.body',
+  'tlsCollector.guides.grokBase.title',
+  'tlsCollector.guides.grokBase.body',
+  'tlsCollector.guides.kiroCurl.title',
+  'tlsCollector.guides.kiroCurl.body',
+  'tlsCollector.guides.kiroBase.title',
+  'tlsCollector.guides.kiroBase.body',
   'tlsCollector.guides.node.title',
   'tlsCollector.guides.node.body',
   'tlsCollector.guides.python.title',
   'tlsCollector.guides.python.body',
   'tlsCollector.guides.curl.title',
-  'tlsCollector.guides.curl.body'
+  'tlsCollector.guides.curl.body',
+  'admin.tlsFingerprintProfiles.form.http2Fingerprint',
+  'admin.tlsFingerprintProfiles.form.http2FingerprintPlaceholder',
+  'admin.tlsFingerprintProfiles.form.http2FingerprintHint',
+  'admin.tlsFingerprintProfiles.capture.storeBody',
+  'admin.tlsFingerprintProfiles.capture.storeBodyHint'
 ]
 
 const resolvePath = (messages: unknown, path: string): unknown => {

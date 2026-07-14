@@ -82,8 +82,16 @@ func (r *tlsFingerprintCaptureRepository) DeleteTask(ctx context.Context, id int
 	return r.taskRepo.DeleteTask(ctx, id)
 }
 
-func (r *tlsFingerprintCaptureRepository) DeleteSamplesByTask(ctx context.Context, taskID int64) error {
-	return r.sampleRepo.DeleteSamplesByTask(ctx, taskID)
+func (r *tlsFingerprintCaptureRepository) DeleteTaskCaptureData(ctx context.Context, taskID int64) error {
+	// Events may reference both sessions and samples. Delete dependents first,
+	// then the generation-owned samples and sessions.
+	if err := r.sessionEventRepo.DeleteSessionEventsByTask(ctx, taskID); err != nil {
+		return err
+	}
+	if err := r.sampleRepo.DeleteSamplesByTask(ctx, taskID); err != nil {
+		return err
+	}
+	return r.sessionRepo.DeleteSessionsByTask(ctx, taskID)
 }
 
 func (r *tlsFingerprintCaptureRepository) CreateSampleIfAbsent(ctx context.Context, sample *service.TLSFingerprintCaptureSample) (*service.TLSFingerprintCaptureSample, bool, error) {

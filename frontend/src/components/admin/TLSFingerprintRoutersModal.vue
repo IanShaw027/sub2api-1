@@ -222,9 +222,9 @@
                     {{ rule.transport }} (legacy)
                   </option>
                   <option value="http1">HTTP/1.1</option>
-                  <option value="h2">{{ t('admin.tlsFingerprintRouters.form.transportH2CaptureOnly') }}</option>
+                  <option value="h2">{{ t('admin.tlsFingerprintRouters.form.transportH2') }}</option>
                   <option value="websocket-http1">WebSocket HTTP/1.1</option>
-                  <option value="websocket-h2">{{ t('admin.tlsFingerprintRouters.form.transportWebsocketH2CaptureOnly') }}</option>
+                  <option value="websocket-h2">{{ t('admin.tlsFingerprintRouters.form.transportWebsocketH2') }}</option>
                 </select>
                 <p class="mt-1 text-[11px] text-amber-700 dark:text-amber-300">{{ t('admin.tlsFingerprintRouters.form.transportReplayHint') }}</p>
               </div>
