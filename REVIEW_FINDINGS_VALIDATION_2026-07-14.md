@@ -80,6 +80,39 @@
 - `git diff --check` 与 release workflow YAML 解析：通过。
 - PostgreSQL testcontainers 集成用例已补充；当前机器 Docker 不可用，容器测试由 harness 跳过，不能把该项写成已执行通过。
 
+### 1.3 第二轮十区审查的核验与修复（2026-07-15）
+
+第二轮汇总中的同类项再次按调用链和回归测试核验。原两份报告仍保持不变；本节只记录新增结论与当前修复状态。
+
+| 问题 | 结论与处理 |
+|---|---|
+| migration 重号导致 CI 失败 | 真实，但已在前一批修复中重排为 208-212；新增 213 也保持唯一前缀，`migrations` unit 通过。 |
+| OAuth service 直连 Redis | 真实，已修复：六个平台 service 只接收 typed session store，Redis 构造集中到 service Wire composition root。 |
+| Skill handler 绕过 service | 真实，已修复：删除 handler 内 repository adapter 和自建数据库 fallback；handler 经 `AISkillDomainService` 调用 repository port，并移除 depguard 豁免。 |
+| Images fan-out goroutine panic | 真实，已在前一批修复：worker 不再写 Gin response，主 goroutine 统一提交响应。 |
+| WS `error` 终态漏计费 | 真实，已修复：下游已写入时返回 partial result，解析 error usage，并保留 token/image 计费元数据。 |
+| WS 多轮复用计费 RequestID | 原风险真实，当前已关闭：每轮使用上游 `responseID` 形成独立结果并逐轮触发 `AfterTurn` 计费。 |
+| Skill Runner 只生成计划却结算 | 真实，已修复：实际执行受限 Docker CLI sandbox，只有进程成功且产出有界 JSON object 才标记 succeeded；缺 Docker、超时、非零退出、非法输出均 fail closed。结算 reference 幂等已由前一批 ledger 修复覆盖。 |
+| Responses 新工具回程还原失效 | 真实，已修复：fallback 使用 `EffectiveResponsesTools`，覆盖 exec/custom、tool_search 和 namespace。 |
+| Bedrock beta token 丢失 | 真实，已恢复 `fine-grained-tool-streaming-2025-05-14` 并增加最终请求体测试。 |
+| Kiro fake-cache TOCTOU | 真实，已用 session progress version 做乐观并发提交，陈旧响应不再覆盖新进度。 |
+| 媒体签名复用 JWT secret | 真实，已取消 fallback；媒体启用时要求独立且至少 32 字节的 signing secret，缺失时签发和校验均 fail closed。 |
+| secret scan 覆盖不足 | 真实，已补 AWS key、JWT、带密码数据库 URL 和项目配置 secret 规则及测试。 |
+| namespace 工具撞名、H2 ping/close | 真实，但均已在前一批修复并有 contract/race 测试，本轮未重复改动。 |
+| JSON keepalive 提交 200 后无法改状态 | 行为存在但不是新的 body 损坏缺陷：heartbeat 是合法 JSON whitespace，提交后通过 JSON/SSE error 表达 late failure。HTTP status 不可逆属于已记录协议折中，不重复改写状态码。 |
+| Skill 财务表进入普通 retention | 真实，已从通用审计清理中移除 run/settlement；后续只能由专门财务保留策略处理。 |
+| “最后活跃”写库频率提升十倍 | 当前不成立：当前仅显式获取当前用户的路径调用 `RecordLastActiveForUser`，JWT middleware 测试明确禁止隐式写入。 |
+| `PreserveToolCallIDs` 与 continuation planner 死代码 | 真实，已删除字段、planner 和对应失效测试。 |
+| reasoning sanitizer 无调用方 | 无调用方属实，但旧实现把不透明 token 误判为 Fernet，重新接入会删除合法上下文；已删除误导实现，并在实际透传路径明确 opaque-token 契约。 |
+| `video_duration_seconds` / `video_seconds` 并存 | 真实，已新增迁移回填 canonical `video_seconds`，停止生产写旧字段；旧列暂保留只读以支持滚动升级，待所有 pre-213 节点退出后再删。 |
+| OAuth 图片流缺空闲超时 | 真实，已接入 `image_stream_data_interval_timeout`，超时关闭 body，已提交响应时发送协议内 error。 |
+| affiliate repair 缺 DISTINCT | 报告结论不成立：现有幂等终态保证正确性，重复候选不构成重复返利；未做无收益改动。 |
+| 示例死配置、continuation 死代码、scratch 0777 | 已删除 Sora 死配置与 continuation planner；scratch 准备权限收紧到 0733。TLS/反指纹命名属于文档语义问题，不改运行时契约。 |
+
+本轮没有为“当前不成立”或明确协议折中的项目制造代码变更；其余可复现问题均已修复或确认由前一批修复覆盖。
+
+本轮修复后再次执行 `cd backend && go test -tags=unit ./... -count=1`，完整后端 unit 通过；secret scan 自测与全仓扫描、`git diff --check` 也通过。当前环境未安装 `golangci-lint`，因此分层约束以移除豁免、静态 import 检查和完整编译测试交叉验证。
+
 ## 2. 判定方法
 
 - **确认**：当前基线存在报告描述的控制流或数据流，且可从源码、测试或实际命令直接证明。
