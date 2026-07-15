@@ -95,7 +95,7 @@ func (h *AIHandler) ListSkills(c *gin.Context) {
 		filter.PriceMode = strings.ToLower(priceMode)
 	}
 
-	items, result, err := module.DomainRepo.ListSkills(c.Request.Context(), subject.UserID, false, params, filter)
+	items, result, err := module.DomainService.ListSkills(c.Request.Context(), subject.UserID, false, params, filter)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -190,7 +190,7 @@ func (h *AIHandler) CreateSkill(c *gin.Context) {
 			h.cleanupSkillMedia(ctx, subject.UserID, cleanupIDs)
 			return nil, err
 		}
-		skill, loadErr := module.DomainRepo.GetSkillByUserAndID(ctx, subject.UserID, created.ID)
+		skill, loadErr := module.DomainService.GetSkillByUserAndID(ctx, subject.UserID, created.ID)
 		if loadErr != nil {
 			return nil, loadErr
 		}
@@ -226,7 +226,7 @@ func (h *AIHandler) UpdateSkill(c *gin.Context) {
 		return
 	}
 	executeUserIdempotentJSON(c, "skills:update", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		current, err := module.DomainRepo.GetSkillByUserAndID(ctx, subject.UserID, skillID)
+		current, err := module.DomainService.GetSkillByUserAndID(ctx, subject.UserID, skillID)
 		if err != nil {
 			return nil, err
 		}
@@ -244,7 +244,7 @@ func (h *AIHandler) UpdateSkill(c *gin.Context) {
 			h.cleanupSkillMedia(ctx, subject.UserID, cleanupIDs)
 			return nil, err
 		}
-		skill, loadErr := module.DomainRepo.GetSkillByUserAndID(ctx, subject.UserID, updated.ID)
+		skill, loadErr := module.DomainService.GetSkillByUserAndID(ctx, subject.UserID, updated.ID)
 		if loadErr != nil {
 			return nil, loadErr
 		}
@@ -275,11 +275,11 @@ func (h *AIHandler) InstallSkill(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	if err := module.DomainRepo.SetSkillInstall(c.Request.Context(), skillID, subject.UserID, true); err != nil {
+	if err := module.DomainService.SetSkillInstall(c.Request.Context(), skillID, subject.UserID, true); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	counts, err := module.DomainRepo.GetSkillInstallCounts(c.Request.Context(), []int64{skillID})
+	counts, err := module.DomainService.GetSkillInstallCounts(c.Request.Context(), []int64{skillID})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -311,11 +311,11 @@ func (h *AIHandler) UninstallSkill(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	if err := module.DomainRepo.SetSkillInstall(c.Request.Context(), skillID, subject.UserID, false); err != nil {
+	if err := module.DomainService.SetSkillInstall(c.Request.Context(), skillID, subject.UserID, false); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	counts, err := module.DomainRepo.GetSkillInstallCounts(c.Request.Context(), []int64{skillID})
+	counts, err := module.DomainService.GetSkillInstallCounts(c.Request.Context(), []int64{skillID})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -348,7 +348,7 @@ func (h *AIHandler) ListSkillVersions(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	versions, err := module.DomainRepo.ListSkillVersions(c.Request.Context(), skill.ID)
+	versions, err := module.DomainService.ListSkillVersions(c.Request.Context(), skill.ID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -390,7 +390,7 @@ func (h *AIHandler) CreateSkillVersion(c *gin.Context) {
 		response.BadRequest(c, "Invalid skill ID")
 		return
 	}
-	skill, err := module.DomainRepo.GetSkillByUserAndID(c.Request.Context(), subject.UserID, skillID)
+	skill, err := module.DomainService.GetSkillByUserAndID(c.Request.Context(), subject.UserID, skillID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -414,7 +414,7 @@ func (h *AIHandler) CreateSkillVersion(c *gin.Context) {
 				return nil, err
 			}
 		}
-		version, loadErr := module.DomainRepo.GetSkillVersionByID(ctx, created.ID)
+		version, loadErr := module.DomainService.GetSkillVersionByID(ctx, created.ID)
 		if loadErr != nil {
 			return nil, loadErr
 		}
@@ -442,7 +442,7 @@ func (h *AIHandler) UpdateSkillVersion(c *gin.Context) {
 		response.BadRequest(c, "Invalid version ID")
 		return
 	}
-	skill, err := module.DomainRepo.GetSkillByUserAndID(c.Request.Context(), subject.UserID, skillID)
+	skill, err := module.DomainService.GetSkillByUserAndID(c.Request.Context(), subject.UserID, skillID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -453,7 +453,7 @@ func (h *AIHandler) UpdateSkillVersion(c *gin.Context) {
 		return
 	}
 	executeUserIdempotentJSON(c, "skills:versions:update", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		currentVersion, err := module.DomainRepo.GetSkillVersionByID(ctx, versionID)
+		currentVersion, err := module.DomainService.GetSkillVersionByID(ctx, versionID)
 		if err != nil {
 			return nil, err
 		}
@@ -474,7 +474,7 @@ func (h *AIHandler) UpdateSkillVersion(c *gin.Context) {
 				return nil, err
 			}
 		}
-		version, loadErr := module.DomainRepo.GetSkillVersionByID(ctx, updated.ID)
+		version, loadErr := module.DomainService.GetSkillVersionByID(ctx, updated.ID)
 		if loadErr != nil {
 			return nil, loadErr
 		}
@@ -503,7 +503,7 @@ func (h *AIHandler) SubmitSkillVersion(c *gin.Context) {
 		return
 	}
 	executeUserIdempotentJSON(c, "skills:versions:submit", map[string]any{"id": versionID}, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		currentVersion, err := module.DomainRepo.GetSkillVersionByID(ctx, versionID)
+		currentVersion, err := module.DomainService.GetSkillVersionByID(ctx, versionID)
 		if err != nil {
 			return nil, err
 		}
@@ -514,11 +514,11 @@ func (h *AIHandler) SubmitSkillVersion(c *gin.Context) {
 		if err != nil {
 			return nil, err
 		}
-		entity, err := module.DomainRepo.GetSkillVersionByID(ctx, version.ID)
+		entity, err := module.DomainService.GetSkillVersionByID(ctx, version.ID)
 		if err != nil {
 			return nil, err
 		}
-		skill, err := module.DomainRepo.GetSkillByUserAndID(ctx, subject.UserID, version.SkillID)
+		skill, err := module.DomainService.GetSkillByUserAndID(ctx, subject.UserID, version.SkillID)
 		if err != nil {
 			return nil, err
 		}
@@ -541,7 +541,7 @@ func (h *AIHandler) ListSkillRuns(c *gin.Context) {
 		response.BadRequest(c, "Invalid skill ID")
 		return
 	}
-	if _, err := module.DomainRepo.GetSkillByUserAndID(c.Request.Context(), subject.UserID, skillID); err != nil {
+	if _, err := module.DomainService.GetSkillByUserAndID(c.Request.Context(), subject.UserID, skillID); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -723,7 +723,7 @@ func (h *AIHandler) PublishSkillVersion(c *gin.Context) {
 		return
 	}
 	executeUserIdempotentJSON(c, "skills:versions:publish", map[string]any{"version_id": versionID}, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		version, err := module.DomainRepo.GetSkillVersionByID(ctx, versionID)
+		version, err := module.DomainService.GetSkillVersionByID(ctx, versionID)
 		if err != nil {
 			return nil, err
 		}
@@ -733,7 +733,7 @@ func (h *AIHandler) PublishSkillVersion(c *gin.Context) {
 		if !domain.CanPublishAISkillVersion(version.ReviewStatus) {
 			return nil, domain.ErrAISkillVersionNotApproved
 		}
-		skill, err := module.DomainRepo.GetSkillByUserAndID(ctx, subject.UserID, version.SkillID)
+		skill, err := module.DomainService.GetSkillByUserAndID(ctx, subject.UserID, version.SkillID)
 		if err != nil {
 			return nil, err
 		}
@@ -741,7 +741,7 @@ func (h *AIHandler) PublishSkillVersion(c *gin.Context) {
 		skill.CurrentVersionID = &currentVersionID
 		skill.PublishedVersionID = &currentVersionID
 		skill.LatestApprovedVersionID = &currentVersionID
-		if err := module.DomainRepo.UpdateSkill(ctx, skill); err != nil {
+		if err := module.DomainService.UpdateSkill(ctx, skill); err != nil {
 			return nil, err
 		}
 		return dto.SkillVersionRecordFromDomain(version, skill.CurrentVersionID, true), nil
@@ -763,7 +763,7 @@ func (h *AIHandler) GetSkillRevenue(c *gin.Context) {
 		response.BadRequest(c, "Invalid skill ID")
 		return
 	}
-	if _, err := module.DomainRepo.GetSkillByUserAndID(c.Request.Context(), subject.UserID, skillID); err != nil {
+	if _, err := module.DomainService.GetSkillByUserAndID(c.Request.Context(), subject.UserID, skillID); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -776,7 +776,7 @@ func (h *AIHandler) GetSkillRevenue(c *gin.Context) {
 }
 
 func loadSkillForViewer(ctx context.Context, module *skillkit.Module, skillID, viewerUserID int64) (*domain.AISkill, bool, error) {
-	skill, err := module.DomainRepo.GetSkillByID(ctx, skillID)
+	skill, err := module.DomainService.GetSkillByID(ctx, skillID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -795,11 +795,11 @@ func loadSkillInstallMaps(ctx context.Context, module *skillkit.Module, viewerUs
 			skillIDs = append(skillIDs, skills[i].ID)
 		}
 	}
-	installStates, err := module.DomainRepo.GetSkillInstallStates(ctx, viewerUserID, skillIDs)
+	installStates, err := module.DomainService.GetSkillInstallStates(ctx, viewerUserID, skillIDs)
 	if err != nil {
 		return nil, nil, err
 	}
-	installCounts, err := module.DomainRepo.GetSkillInstallCounts(ctx, skillIDs)
+	installCounts, err := module.DomainService.GetSkillInstallCounts(ctx, skillIDs)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -810,11 +810,11 @@ func applySkillInstallMetadataForViewer(ctx context.Context, module *skillkit.Mo
 	if skill == nil {
 		return nil
 	}
-	installed, err := module.DomainRepo.HasSkillInstall(ctx, skill.ID, viewerUserID)
+	installed, err := module.DomainService.HasSkillInstall(ctx, skill.ID, viewerUserID)
 	if err != nil {
 		return err
 	}
-	counts, err := module.DomainRepo.GetSkillInstallCounts(ctx, []int64{skill.ID})
+	counts, err := module.DomainService.GetSkillInstallCounts(ctx, []int64{skill.ID})
 	if err != nil {
 		return err
 	}
@@ -837,7 +837,7 @@ func loadSkillVersionPointers(ctx context.Context, module *skillkit.Module, skil
 	if skill == nil {
 		return nil, nil, nil
 	}
-	versions, err := module.DomainRepo.ListSkillVersions(ctx, skill.ID)
+	versions, err := module.DomainService.ListSkillVersions(ctx, skill.ID)
 	if err != nil {
 		return nil, nil, err
 	}

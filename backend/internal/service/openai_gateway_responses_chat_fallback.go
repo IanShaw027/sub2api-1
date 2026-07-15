@@ -75,7 +75,17 @@ func (s *OpenAIGatewayService) forwardResponsesViaRawChatCompletions(
 
 	clientStream := responsesReq.Stream
 	serviceTier := extractOpenAIServiceTierFromBody(body)
-	toolCompatibility := newResponsesChatToolCompatibility(responsesReq.Tools)
+	effectiveTools, err := apicompat.EffectiveResponsesTools(&responsesReq)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"type":    "invalid_request_error",
+				"message": err.Error(),
+			},
+		})
+		return nil, fmt.Errorf("resolve effective responses tools: %w", err)
+	}
+	toolCompatibility := newResponsesChatToolCompatibility(effectiveTools)
 
 	chatReq, err := apicompat.ResponsesToChatCompletionsRequest(&responsesReq)
 	if err != nil {

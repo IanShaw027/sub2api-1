@@ -6,7 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/domain"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 )
 
 const (
@@ -459,6 +461,31 @@ type AISkillRepository interface {
 	GetSkillByID(ctx context.Context, id int64) (*AISkill, error)
 	GetSkillByCreatorAndID(ctx context.Context, creatorUserID, id int64) (*AISkill, error)
 	UpdateSkill(ctx context.Context, skill *AISkill) error
+}
+
+// AISkillDomainRepository exposes the domain-shaped operations still needed by
+// the HTTP presentation layer. Its implementation belongs to the repository
+// layer; defining the port here keeps handlers independent from infrastructure.
+type AISkillDomainRepository interface {
+	GetSkillByID(ctx context.Context, id int64) (*domain.AISkill, error)
+	GetSkillByUserAndID(ctx context.Context, userID, id int64) (*domain.AISkill, error)
+	ListSkills(ctx context.Context, viewerUserID int64, isAdmin bool, params pagination.PaginationParams, filter domain.AISkillListFilter) ([]domain.AISkill, *pagination.PaginationResult, error)
+	SetSkillInstall(ctx context.Context, skillID, userID int64, installed bool) error
+	HasSkillInstall(ctx context.Context, skillID, userID int64) (bool, error)
+	GetSkillInstallStates(ctx context.Context, userID int64, skillIDs []int64) (map[int64]bool, error)
+	GetSkillInstallCounts(ctx context.Context, skillIDs []int64) (map[int64]int, error)
+	UpdateSkill(ctx context.Context, skill *domain.AISkill) error
+	GetSkillVersionByID(ctx context.Context, id int64) (*domain.AISkillVersion, error)
+	ListSkillVersions(ctx context.Context, skillID int64) ([]domain.AISkillVersion, error)
+	GetSkillReviewByID(ctx context.Context, id int64) (*domain.AISkillReview, error)
+	GetSkillSettlementByID(ctx context.Context, id int64) (*domain.AISkillSettlement, error)
+}
+
+// AISkillDomainOperations is the handler-facing contract implemented by
+// AISkillDomainService. Keeping it separate from the repository port makes the
+// production dependency explicit while allowing focused handler test doubles.
+type AISkillDomainOperations interface {
+	AISkillDomainRepository
 }
 
 type AISkillVersionRepository interface {

@@ -26,7 +26,9 @@ for target in "${targets[@]}"; do
 
   mkdir -p "${input_dir}" "${output_dir}"
   chmod 0755 "${RUNTIME_DIR}/${target}" "${input_dir}"
-  chmod 0777 "${output_dir}"
+  # The fixed container uid needs create access, but it does not need to list or
+  # read other host files in this directory.
+  chmod 0733 "${output_dir}"
 
   if [ -f "${request_file}" ]; then
     chmod 0644 "${request_file}"

@@ -23,6 +23,19 @@ def load_module(path: pathlib.Path, module_name: str):
 
 
 class SecurityScanToolsTest(unittest.TestCase):
+    def assert_secret_finding(self, content, expected):
+        module = load_module(SECRET_SCAN_SCRIPT, "secret_scan_test_module")
+        with tempfile.TemporaryDirectory() as tmp:
+            original_root = module.ROOT
+            try:
+                module.ROOT = pathlib.Path(tmp)
+                path = module.ROOT / "secret.txt"
+                path.write_text(content, encoding="utf-8")
+                findings = module.scan_file(pathlib.Path("secret.txt"))
+            finally:
+                module.ROOT = original_root
+        self.assertEqual([f"secret.txt:1: possible {expected}"], findings)
+
     def test_pnpm_audit_top_level_error_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = pathlib.Path(tmp)
@@ -68,6 +81,25 @@ class SecurityScanToolsTest(unittest.TestCase):
                 module.ROOT = original_root
 
         self.assertEqual(["secret.txt:1: possible GitHub fine-grained PAT"], findings)
+
+    def test_secret_scan_detects_aws_access_key(self):
+        self.assert_secret_finding("key=AKIA1234567890ABCDEF\n", "AWS access key ID")
+
+    def test_secret_scan_detects_jwt(self):
+        token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0." + ("a" * 32)
+        self.assert_secret_finding(f"token={token}\n", "JWT")
+
+    def test_secret_scan_detects_database_url_password(self):
+        self.assert_secret_finding(
+            "DATABASE_URL=postgres://sub2api:CorrectHorseBattery42@db.example/app\n",
+            "database URL password",
+        )
+
+    def test_secret_scan_detects_configured_signing_secret(self):
+        self.assert_secret_finding(
+            "download_signing_secret: HighlySensitiveSigningKey42\n",
+            "configured secret",
+        )
 
 
 if __name__ == "__main__":

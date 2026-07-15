@@ -94,7 +94,6 @@ func TestApplyCodexOAuthTransform_MessagesBridgePromptCacheKeyIsHeaderOnly(t *te
 
 	result := applyCodexOAuthTransformWithOptions(reqBody, codexOAuthTransformOptions{
 		SkipDefaultInstructions: true,
-		PreserveToolCallIDs:     true,
 	})
 
 	require.Equal(t, "anthropic-metadata-session-1", result.PromptCacheKey)

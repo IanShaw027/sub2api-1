@@ -6206,6 +6206,13 @@ oauthTransformDone:
 			wsResult.UpstreamModel = upstreamModel
 			return wsResult, nil
 		}
+		// forwardOpenAIWSV2 returns a non-nil result only when downstream has
+		// already received a terminal partial stream. Preserve it so the caller
+		// can record consumed token/image usage while still observing wsErr.
+		if wsResult != nil {
+			wsResult.UpstreamModel = upstreamModel
+			return wsResult, wsErr
+		}
 		if suppressFailover := s.prepareOpenAIWSContinuationFailoverBody(c, account, wsErr, wsReqBody); suppressFailover {
 			s.writeOpenAIWSFallbackErrorResponse(c, account, wsErr)
 			return nil, wsErr
@@ -7429,6 +7436,15 @@ func buildOpenAIWSPartialForwardResult(in openAIWSPartialForwardInput) *OpenAIFo
 	if in.reqBody != nil {
 		result.ServiceTier = extractOpenAIServiceTier(in.reqBody)
 		result.ReasoningEffort = extractOpenAIReasoningEffort(in.reqBody, in.mappedModel, in.originalModel)
+		if in.imageCount > 0 {
+			if imageModel, imageSizeTier, err := resolveOpenAIResponsesImageBillingConfig(in.reqBody, in.originalModel); err == nil {
+				result.BillingModel = imageModel
+				result.ImageSize = imageSizeTier
+			}
+			if requestModel, _ := in.reqBody["model"].(string); strings.TrimSpace(requestModel) != "" && !isOpenAIImageGenerationModel(requestModel) {
+				result.TokenBillingModel = strings.TrimSpace(requestModel)
+			}
+		}
 	}
 	return result
 }
@@ -12801,7 +12817,6 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		usageLog.ImageSize = nil
 		usageLog.VideoResolution = optionalTrimmedStringPtr(videoMeta.resolution)
 		usageLog.VideoSeconds = &videoMeta.seconds
-		usageLog.VideoDurationSeconds = &videoMeta.seconds
 		usageLog.VideoCount = videoMeta.count
 		usageLog.VideoUnitPrice = &videoMeta.unitPrice
 	}

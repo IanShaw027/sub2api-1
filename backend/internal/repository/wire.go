@@ -99,6 +99,10 @@ func ProvideAISkillServiceRepositoryAdapter(domainRepo AISkillRepository, db *sq
 	}
 }
 
+func ProvideAISkillDomainRepository(domainRepo AISkillRepository) service.AISkillDomainRepository {
+	return domainRepo
+}
+
 func (a *aiSkillServiceRepositoryAdapter) CreateSkill(ctx context.Context, skill *service.AISkill) error {
 	if a == nil || a.domainRepo == nil {
 		return service.ErrAISkillServiceUnavailable
@@ -1290,6 +1294,7 @@ var ProviderSet = wire.NewSet(
 	NewAnnouncementReadRepository,
 	NewAICenterRepository,
 	NewAISkillRepository,
+	ProvideAISkillDomainRepository,
 	NewAISkillBalanceLedgerRepository,
 	ProvideAISkillServiceRepositoryAdapter,
 	wire.Bind(new(service.AISkillRepository), new(*aiSkillServiceRepositoryAdapter)),

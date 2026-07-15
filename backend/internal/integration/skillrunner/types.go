@@ -214,14 +214,26 @@ type DispatchRequest struct {
 	HostScratchDir string         `json:"hostScratchDir,omitempty"`
 	Input          any            `json:"input,omitempty"`
 	Environment    map[string]any `json:"environment,omitempty"`
+	Timeout        time.Duration  `json:"timeout,omitempty"`
+}
+
+type ExecutionResult struct {
+	Stdout string `json:"stdout,omitempty"`
+	Stderr string `json:"stderr,omitempty"`
+}
+
+type SandboxExecutor interface {
+	Execute(ctx context.Context, plan *SandboxPlan) (*ExecutionResult, error)
 }
 
 type DispatchResult struct {
-	Plan           *SandboxPlan `json:"plan,omitempty"`
-	HostSkillDir   string       `json:"hostSkillDir,omitempty"`
-	HostScratchDir string       `json:"hostScratchDir,omitempty"`
-	InputPath      string       `json:"inputPath,omitempty"`
-	OutputPath     string       `json:"outputPath,omitempty"`
+	Plan           *SandboxPlan     `json:"plan,omitempty"`
+	HostSkillDir   string           `json:"hostSkillDir,omitempty"`
+	HostScratchDir string           `json:"hostScratchDir,omitempty"`
+	InputPath      string           `json:"inputPath,omitempty"`
+	OutputPath     string           `json:"outputPath,omitempty"`
+	Output         map[string]any   `json:"output,omitempty"`
+	Execution      *ExecutionResult `json:"execution,omitempty"`
 	cleanup        func() error
 	cleanupOnce    sync.Once
 	cleanupErr     error

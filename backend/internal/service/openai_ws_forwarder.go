@@ -462,7 +462,7 @@ func openAIWSEventMayContainToolCalls(eventType string) bool {
 
 func openAIWSEventShouldParseUsage(eventType string) bool {
 	switch strings.TrimSpace(eventType) {
-	case "response.completed", "response.done", "response.failed", "response.incomplete", "response.cancelled", "response.canceled":
+	case "error", "response.completed", "response.done", "response.failed", "response.incomplete", "response.cancelled", "response.canceled":
 		return true
 	default:
 		return false
@@ -5033,7 +5033,19 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				return nil, wrapOpenAIWSFallback("upstream_rate_limited", errors.New(advisoryMsg))
 			}
 			setOpsUpstreamError(c, http.StatusTooManyRequests, advisoryMsg, "")
-			return nil, fmt.Errorf("openai ws soft rate limit advisory: %s", advisoryMsg)
+			return buildOpenAIWSPartialForwardResult(openAIWSPartialForwardInput{
+				responseID:    responseID,
+				usage:         usage,
+				originalModel: originalModel,
+				mappedModel:   mappedModel,
+				reqStream:     reqStream,
+				duration:      time.Since(startTime),
+				firstTokenMs:  firstTokenMs,
+				imageCount:    imageCounter.Count(),
+				clientDisc:    clientDisconnected,
+				reqBody:       reqBody,
+				headers:       lease.HandshakeHeaders(),
+			}), fmt.Errorf("openai ws soft rate limit advisory: %s", advisoryMsg)
 		}
 
 		if eventType == "response.failed" {
@@ -5205,7 +5217,23 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 					},
 				})
 			}
-			return nil, fmt.Errorf("openai ws error event: %s", errMsg)
+			errorEventErr := fmt.Errorf("openai ws error event: %s", errMsg)
+			if wroteDownstream {
+				return buildOpenAIWSPartialForwardResult(openAIWSPartialForwardInput{
+					responseID:    responseID,
+					usage:         usage,
+					originalModel: originalModel,
+					mappedModel:   mappedModel,
+					reqStream:     reqStream,
+					duration:      time.Since(startTime),
+					firstTokenMs:  firstTokenMs,
+					imageCount:    imageCounter.Count(),
+					clientDisc:    clientDisconnected,
+					reqBody:       reqBody,
+					headers:       lease.HandshakeHeaders(),
+				}), errorEventErr
+			}
+			return nil, errorEventErr
 		}
 		if eventType == "response.failed" {
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSResponseFailedErrorFields(message)

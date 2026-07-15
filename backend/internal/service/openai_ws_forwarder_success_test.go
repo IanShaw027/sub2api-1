@@ -2883,7 +2883,9 @@ func TestOpenAIGatewayService_Forward_WSv2ResponseFailedStreamUsesNormalizedEnve
 	body := []byte(`{"model":"gpt-5.1","stream":true,"input":[{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
 	require.Error(t, err)
-	require.Nil(t, result)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_failed_stream", result.RequestID)
+	require.True(t, result.Stream)
 	require.Nil(t, upstream.lastReq, "response.failed stream path should still preserve fallback signal behavior")
 	require.Contains(t, err.Error(), "temporary upstream failure")
 

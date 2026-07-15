@@ -11,7 +11,12 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/integration/skillrunner"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/oauth"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/redissession"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/google/wire"
 	"github.com/redis/go-redis/v9"
 )
@@ -73,21 +78,50 @@ func ProvideOpenAIOAuthService(
 	privacyClientFactory PrivacyClientFactory,
 	rdb *redis.Client,
 ) *OpenAIOAuthService {
-	svc := NewOpenAIOAuthService(proxyRepo, oauthClient).WithRedisSessionStore(rdb)
+	svc := NewOpenAIOAuthService(proxyRepo, oauthClient)
+	if rdb != nil {
+		svc.WithSessionStore(openai.NewRedisSessionStore(rdb))
+	}
 	svc.SetPrivacyClientFactory(privacyClientFactory)
 	return svc
 }
 
 func ProvideOAuthService(proxyRepo ProxyRepository, oauthClient ClaudeOAuthClient, rdb *redis.Client) *OAuthService {
-	return NewOAuthService(proxyRepo, oauthClient).WithRedisSessionStore(rdb)
+	svc := NewOAuthService(proxyRepo, oauthClient)
+	if rdb != nil {
+		svc.WithSessionStore(oauth.NewRedisSessionStore(rdb))
+	}
+	return svc
 }
 
 func ProvideGrokOAuthService(proxyRepo ProxyRepository, oauthClient GrokOAuthClient, rdb *redis.Client) *GrokOAuthService {
-	return NewGrokOAuthService(proxyRepo, oauthClient).WithRedisSessionStore(rdb)
+	svc := NewGrokOAuthService(proxyRepo, oauthClient)
+	if rdb != nil {
+		svc.WithSessionStore(xai.NewRedisSessionStore(rdb))
+	}
+	return svc
 }
 
 func ProvideAntigravityOAuthService(proxyRepo ProxyRepository, rdb *redis.Client) *AntigravityOAuthService {
-	return NewAntigravityOAuthService(proxyRepo).WithRedisSessionStore(rdb)
+	svc := NewAntigravityOAuthService(proxyRepo)
+	if rdb != nil {
+		svc.WithSessionStore(antigravity.NewRedisSessionStore(rdb))
+	}
+	return svc
+}
+
+func ProvideGeminiOAuthService(
+	proxyRepo ProxyRepository,
+	oauthClient GeminiOAuthClient,
+	codeAssist GeminiCliCodeAssistClient,
+	cfg *config.Config,
+	rdb *redis.Client,
+) *GeminiOAuthService {
+	svc := NewGeminiOAuthService(proxyRepo, oauthClient, codeAssist, cfg)
+	if rdb != nil {
+		svc.WithSessionStore(geminicli.NewRedisSessionStore(rdb))
+	}
+	return svc
 }
 
 func ProvideKiroOAuthService(
@@ -97,7 +131,12 @@ func ProvideKiroOAuthService(
 	settingService *SettingService,
 	rdb *redis.Client,
 ) *KiroOAuthService {
-	return NewKiroOAuthService(proxyRepo, httpUpstream, tlsFPProfileService, settingService).WithRedisSessionStore(rdb)
+	svc := NewKiroOAuthService(proxyRepo, httpUpstream, tlsFPProfileService, settingService)
+	if rdb != nil {
+		remote := redissession.New(rdb, "oauth:session:kiro", kiroOAuthSessionTTL)
+		svc.WithSessionStore(NewKiroRemoteOAuthSessionStore(remote))
+	}
+	return svc
 }
 
 // ProvideTokenRefreshService creates and starts TokenRefreshService
@@ -429,6 +468,10 @@ func ProvideAISkillRuntimeGateway(openAIGateway *OpenAIGatewayService) AISkillRu
 
 func ProvideAISkillService(repo AISkillRepository) *AISkillService {
 	return NewAISkillService(repo)
+}
+
+func ProvideAISkillDomainService(repo AISkillDomainRepository) *AISkillDomainService {
+	return NewAISkillDomainService(repo)
 }
 
 func ProvideAISkillVersionService(skillRepo AISkillRepository, versionRepo AISkillVersionRepository, reviewRepo AISkillReviewRepository) *AISkillVersionService {
@@ -967,6 +1010,7 @@ var ProviderSet = wire.NewSet(
 	ProvideAISkillCreatorEarningsCreditor,
 	ProvideAISkillRuntimeGateway,
 	ProvideAISkillService,
+	ProvideAISkillDomainService,
 	ProvideAISkillVersionService,
 	ProvideAISkillReviewService,
 	ProvideAISkillSettlementService,

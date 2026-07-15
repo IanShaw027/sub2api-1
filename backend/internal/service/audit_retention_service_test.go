@@ -50,7 +50,7 @@ func (f *fakeAuditRetentionRepo) DeleteDeletedAPIKeyAuditsOlderThan(_ context.Co
 	return f.record("deleted_api_key_audits", c, l)
 }
 
-// TestAuditRetentionCleanupOnceCoversAllTables cleanupOnce 覆盖全部 5 表、cutoff≈now-retention、batch 透传。
+// TestAuditRetentionCleanupOnceCoversAllTables cleanupOnce 只覆盖非财务审计表。
 func TestAuditRetentionCleanupOnceCoversAllTables(t *testing.T) {
 	repo := newFakeAuditRetentionRepo()
 	s := &AuditRetentionService{repo: repo, enabled: true, retention: 180 * 24 * time.Hour, interval: time.Hour, batch: 777, stopCh: make(chan struct{})}
@@ -59,11 +59,13 @@ func TestAuditRetentionCleanupOnceCoversAllTables(t *testing.T) {
 	s.cleanupOnce()
 	after := time.Now().Add(-180 * 24 * time.Hour)
 
-	for _, table := range []string{"ai_audit_logs", "ai_skill_runs", "ai_skill_settlements", "codex_invite_reset_history", "deleted_api_key_audits"} {
+	for _, table := range []string{"ai_audit_logs", "codex_invite_reset_history", "deleted_api_key_audits"} {
 		require.Equal(t, 1, repo.calls[table], "table %s should be cleaned once", table)
 	}
+	require.Zero(t, repo.calls["ai_skill_runs"], "skill runs retain the parent records for financial settlements")
+	require.Zero(t, repo.calls["ai_skill_settlements"], "financial settlements require a dedicated retention policy")
 	require.Equal(t, 777, repo.lastBatch)
-	require.Len(t, repo.cutoffs, 5)
+	require.Len(t, repo.cutoffs, 3)
 	for _, c := range repo.cutoffs {
 		require.False(t, c.Before(before.Add(-time.Second)))
 		require.False(t, c.After(after.Add(time.Second)))
@@ -73,12 +75,12 @@ func TestAuditRetentionCleanupOnceCoversAllTables(t *testing.T) {
 // TestAuditRetentionCleanupContinuesOnTableError 单表出错不中断其余表清理。
 func TestAuditRetentionCleanupContinuesOnTableError(t *testing.T) {
 	repo := newFakeAuditRetentionRepo()
-	repo.failFor = "ai_skill_runs"
+	repo.failFor = "ai_audit_logs"
 	s := &AuditRetentionService{repo: repo, enabled: true, retention: 24 * time.Hour, interval: time.Hour, batch: 100, stopCh: make(chan struct{})}
 
 	s.cleanupOnce()
 
-	require.Equal(t, 5, len(repo.calls), "全部 5 表都应被尝试")
+	require.Equal(t, 3, len(repo.calls), "全部非财务审计表都应被尝试")
 }
 
 // drainRepo 模拟单表 backlog：前若干批返回满批(=batch)，随后返回不足一批表示删空。

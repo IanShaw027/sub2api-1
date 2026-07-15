@@ -2975,9 +2975,10 @@ func (s *KiroGatewayService) prepareFakeCachePlan(account *Account, parsed *Pars
 		}
 		if plan.SessionProgressKey != "" {
 			if value, ok := s.fakeCache.Get(plan.SessionProgressKey); ok {
-				if tokens, ok := value.(int); ok && tokens >= 0 {
+				if tokens, version, ok := decodeKiroFakeCacheProgress(value); ok {
 					hit.EffectiveCachedTokens = tokens
 					hit.HasEffectiveCachedTokens = true
+					plan.SessionProgressVersion = version
 				}
 			}
 		}
@@ -3041,8 +3042,50 @@ func (s *KiroGatewayService) commitFakeCachePlan(plan *kiropkg.FakeCachePlan, ru
 		// Persist only the cache span actually read or written this turn. Cache-write
 		// scaling moves the remainder to input, so it must not enter the next turn's
 		// read basis.
+		currentVersion := uint64(0)
+		if current, ok := s.fakeCache.Get(plan.SessionProgressKey); ok {
+			_, version, valid := decodeKiroFakeCacheProgress(current)
+			if !valid {
+				return
+			}
+			currentVersion = version
+		}
+		if currentVersion != plan.SessionProgressVersion {
+			return
+		}
 		effectiveTokens := plan.RecordedEffectiveCachedTokens
-		s.fakeCache.Set(plan.SessionProgressKey, effectiveTokens, time.Duration(runtimeSettings.CachePrefixTTLSecs)*time.Second)
+		s.fakeCache.Set(plan.SessionProgressKey, kiroFakeCacheProgress{
+			Tokens:  effectiveTokens,
+			Version: currentVersion + 1,
+		}, time.Duration(runtimeSettings.CachePrefixTTLSecs)*time.Second)
+		// Progress participates in an optimistic concurrency check on the next
+		// request, so unlike ordinary fake-cache hints this write must be visible
+		// before releasing fakeCacheMu.
+		s.fakeCache.wait()
+	}
+}
+
+type kiroFakeCacheProgress struct {
+	Tokens  int
+	Version uint64
+}
+
+func decodeKiroFakeCacheProgress(value any) (tokens int, version uint64, ok bool) {
+	switch progress := value.(type) {
+	case kiroFakeCacheProgress:
+		if progress.Tokens < 0 {
+			return 0, 0, false
+		}
+		return progress.Tokens, progress.Version, true
+	case int:
+		// Compatibility for process-local entries written before versioning and
+		// tests that seed the cache directly.
+		if progress < 0 {
+			return 0, 0, false
+		}
+		return progress, 0, true
+	default:
+		return 0, 0, false
 	}
 }
 

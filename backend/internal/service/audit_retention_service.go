@@ -12,8 +12,6 @@ import (
 // AuditRetentionRepository 定义审计表按 created_at 批量删除旧行的仓储能力。
 type AuditRetentionRepository interface {
 	DeleteAIAuditLogsOlderThan(ctx context.Context, cutoff time.Time, limit int) (int64, error)
-	DeleteAISkillRunsOlderThan(ctx context.Context, cutoff time.Time, limit int) (int64, error)
-	DeleteAISkillSettlementsOlderThan(ctx context.Context, cutoff time.Time, limit int) (int64, error)
 	DeleteCodexInviteResetHistoryOlderThan(ctx context.Context, cutoff time.Time, limit int) (int64, error)
 	DeleteDeletedAPIKeyAuditsOlderThan(ctx context.Context, cutoff time.Time, limit int) (int64, error)
 }
@@ -111,8 +109,6 @@ func (s *AuditRetentionService) cleanupOnce() {
 		fn   func(context.Context, time.Time, int) (int64, error)
 	}{
 		{"ai_audit_logs", s.repo.DeleteAIAuditLogsOlderThan},
-		{"ai_skill_runs", s.repo.DeleteAISkillRunsOlderThan},
-		{"ai_skill_settlements", s.repo.DeleteAISkillSettlementsOlderThan},
 		{"codex_invite_reset_history", s.repo.DeleteCodexInviteResetHistoryOlderThan},
 		{"deleted_api_key_audits", s.repo.DeleteDeletedAPIKeyAuditsOlderThan},
 	}

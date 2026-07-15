@@ -556,6 +556,17 @@ func TestOpenSignedDownloadRejectsDeletedAsset(t *testing.T) {
 	}
 }
 
+func TestMediaDownloadSigningDoesNotFallbackToJWTSecret(t *testing.T) {
+	cfg := newMediaIngestTestConfig()
+	cfg.Media.DownloadSigningSecret = ""
+	cfg.JWT.Secret = strings.Repeat("j", 32)
+	svc := NewMediaService(nil, nil, cfg)
+
+	if signature := svc.downloadSignature(42, time.Now().Add(time.Hour).Unix(), false); signature != "" {
+		t.Fatalf("download signature must fail closed without an independent media key, got %q", signature)
+	}
+}
+
 func TestManagedPublicMediaURLs_UseDirectObjectKeyAndRoundTripManagedID(t *testing.T) {
 	cfg := newMediaIngestTestConfig()
 	asset := &MediaAsset{
@@ -638,6 +649,7 @@ func newMediaIngestTestConfig() *config.Config {
 	cfg.Media.AccessKeyID = "test-ak"
 	cfg.Media.SecretAccessKey = "test-sk"
 	cfg.Media.PublicBaseURL = "https://media.example"
+	cfg.Media.DownloadSigningSecret = strings.Repeat("m", 32)
 	cfg.Media.MaxUploadSizeBytes = 1024 * 1024
 	cfg.Security.URLAllowlist.Enabled = true
 	cfg.Security.URLAllowlist.AllowInsecureHTTP = true

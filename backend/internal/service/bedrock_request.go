@@ -474,14 +474,15 @@ func parseAnthropicBetaHeader(header string) []string {
 // 参考: AWS Bedrock 官方文档 + litellm anthropic_beta_headers_config.json
 // 更新策略: 当 AWS Bedrock 新增支持的 beta token 时需同步更新此白名单
 var bedrockSupportedBetaTokens = map[string]bool{
-	"computer-use-2025-01-24":         true,
-	"computer-use-2025-11-24":         true,
-	"context-1m-2025-08-07":           true,
-	"context-management-2025-06-27":   true,
-	"compact-2026-01-12":              true, // 官方支持，仅 InvokeModel API（Opus 4.6+）
-	"interleaved-thinking-2025-05-14": true,
-	"tool-search-tool-2025-10-19":     true,
-	"tool-examples-2025-10-29":        true,
+	"computer-use-2025-01-24":                true,
+	"computer-use-2025-11-24":                true,
+	"context-1m-2025-08-07":                  true,
+	"context-management-2025-06-27":          true,
+	"compact-2026-01-12":                     true, // 官方支持，仅 InvokeModel API（Opus 4.6+）
+	"fine-grained-tool-streaming-2025-05-14": true,
+	"interleaved-thinking-2025-05-14":        true,
+	"tool-search-tool-2025-10-19":            true,
+	"tool-examples-2025-10-29":               true,
 }
 
 const bedrockContextManagementBetaToken = "context-management-2025-06-27"

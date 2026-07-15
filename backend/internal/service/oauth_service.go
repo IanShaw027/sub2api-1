@@ -14,8 +14,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/oauth"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // OpenAIOAuthClient interface for OpenAI OAuth operations
@@ -66,12 +64,12 @@ func NewOAuthService(proxyRepo ProxyRepository, oauthClient ClaudeOAuthClient) *
 	}
 }
 
-// WithRedisSessionStore enables multi-instance OAuth session sharing via Redis.
-func (s *OAuthService) WithRedisSessionStore(rdb *redis.Client) *OAuthService {
-	if s == nil || rdb == nil {
+// WithSessionStore enables an injected multi-instance OAuth session store.
+func (s *OAuthService) WithSessionStore(store *oauth.SessionStore) *OAuthService {
+	if s == nil || store == nil {
 		return s
 	}
-	s.sessionStore = oauth.NewRedisSessionStore(rdb)
+	s.sessionStore = store
 	return s
 }
 

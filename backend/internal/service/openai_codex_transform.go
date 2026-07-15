@@ -152,7 +152,6 @@ type codexInputFilterOptions struct {
 
 type codexOAuthTransformOptions struct {
 	SkipDefaultInstructions bool
-	PreserveToolCallIDs     bool
 	IsCompact               bool
 }
 
@@ -2101,6 +2100,9 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) ([]a
 		}
 		typ, _ := m["type"].(string)
 		if typ == "reasoning" {
+			// encrypted_content is an opaque upstream continuation token. Preserve
+			// it verbatim; local Fernet/base64 shape checks have rejected valid
+			// Codex tokens in the past and cannot establish authenticity.
 			_, hasEncryptedContent := m["encrypted_content"]
 			if opts.dropReasoningItems || (opts.dropReasoningItemsWithoutEncryptedContent && !hasEncryptedContent) {
 				modified = true

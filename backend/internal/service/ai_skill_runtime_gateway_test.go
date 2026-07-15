@@ -8,8 +8,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -65,6 +67,23 @@ type aiSkillScriptRunnerStub struct {
 	dispatchErr       error
 }
 
+type aiSkillSandboxExecutorStub struct{}
+
+func (aiSkillSandboxExecutorStub) Execute(_ context.Context, plan *skillrunner.SandboxPlan) (*skillrunner.ExecutionResult, error) {
+	for _, mount := range plan.Mounts {
+		if mount.Target != plan.Layout.ScratchDir {
+			continue
+		}
+		rel := strings.TrimPrefix(plan.Layout.OutputPath, plan.Layout.ScratchDir+"/")
+		outputPath := filepath.Join(mount.Source, filepath.FromSlash(rel))
+		if err := os.WriteFile(outputPath, []byte(`{"ok":true,"runtime":"test"}`), 0o644); err != nil {
+			return nil, err
+		}
+		return &skillrunner.ExecutionResult{}, nil
+	}
+	return nil, errors.New("scratch mount not found")
+}
+
 func (s *aiSkillScriptRunnerStub) InspectArchive(_ context.Context, raw []byte) (*skillrunner.Bundle, error) {
 	s.inspectArchiveRaw = append([]byte(nil), raw...)
 	if s.inspectErr != nil {
@@ -98,6 +117,8 @@ func (s *aiSkillScriptRunnerStub) Dispatch(_ context.Context, req skillrunner.Di
 		HostScratchDir: s.dispatchResult.HostScratchDir,
 		InputPath:      s.dispatchResult.InputPath,
 		OutputPath:     s.dispatchResult.OutputPath,
+		Output:         cloneAIMap(s.dispatchResult.Output),
+		Execution:      s.dispatchResult.Execution,
 	}, nil
 }
 
@@ -246,6 +267,7 @@ func TestAISkillRuntimeGatewayExecutesScriptThroughScriptRuntime(t *testing.T) {
 					"SUB2API_SKILL_INPUT": "/sandbox/input/request.json",
 				},
 			},
+			Output: map[string]any{"ok": true},
 		},
 	}
 	gateway := NewAISkillRuntimeGateway(nil, nil, NewAISkillScriptRunnerRuntime(runner))
@@ -269,7 +291,7 @@ func TestAISkillRuntimeGatewayExecutesScriptThroughScriptRuntime(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, dispatch)
-	require.Equal(t, AISkillRunStatusDispatched, dispatch.Status)
+	require.Equal(t, AISkillRunStatusSucceeded, dispatch.Status)
 	require.Equal(t, "skillrunner", dispatch.Provider)
 	require.Equal(t, "sha256:script-test", dispatch.ExternalJobID)
 	require.NotNil(t, runner.dispatchRequest, "script runtime should receive the dispatch request")
@@ -328,6 +350,7 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 			HostScratchDir: hostScratchDir,
 			InputPath:      inputPath,
 			OutputPath:     outputPath,
+			Output:         map[string]any{"ok": true, "echo": "sunrise", "runtime": "python3.11"},
 		},
 	}
 	runtime := NewAISkillScriptRunnerRuntime(runner)
@@ -359,14 +382,11 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, AISkillRunStatusDispatched, result.Status)
+	require.Equal(t, AISkillRunStatusSucceeded, result.Status)
 	require.Equal(t, "sha256:script-test", result.ExternalJobID)
 
-	outputBundle, ok := result.Output["bundle"].(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "sha256:script-test", outputBundle["digest"])
-
-	outputPlan, ok := result.Output["plan"].(map[string]any)
+	require.Equal(t, "sunrise", result.Output["echo"])
+	outputPlan, ok := result.Metadata["sandbox_plan"].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "/workspace/skill", outputPlan["workingDir"])
 	outputPlanEnv, ok := outputPlan["environment"].(map[string]any)
@@ -387,7 +407,7 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 		require.True(t, ok)
 		require.Empty(t, mount["source"], "plan mount source must be scrubbed")
 	}
-	planJSON := mustJSON(t, result.Output["plan"])
+	planJSON := mustJSON(t, outputPlan)
 	require.NotContains(t, string(planJSON), hostSkillDir)
 	require.NotContains(t, string(planJSON), hostScratchDir)
 	outputJSON := mustJSON(t, result.Output)
@@ -395,11 +415,11 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 	require.NotContains(t, string(outputJSON), inputPath)
 	require.NotContains(t, string(outputJSON), outputPath)
 
-	outputEnvironment, ok := result.Output["environment"].(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, "sunrise", outputEnvironment["SUBJECT"])
+	require.NotContains(t, result.Output, "environment")
+	require.NotContains(t, result.Output, "dispatch_input")
 
-	dispatchInput, ok := result.Output["dispatch_input"].(map[string]any)
+	require.NotNil(t, runner.dispatchRequest)
+	dispatchInput, ok := runner.dispatchRequest.Input.(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, int64(51), dispatchInput["run_id"])
 	require.Equal(t, int64(61), dispatchInput["skill_id"])
@@ -418,7 +438,6 @@ func TestAISkillScriptRunnerRuntimeDispatchesBundle(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "sunrise", dispatchEnvironment["SUBJECT"])
 
-	require.NotNil(t, runner.dispatchRequest)
 	require.Equal(t, archive, runner.dispatchRequest.Archive)
 	require.Equal(t, "script_python_echo", runner.dispatchRequest.Bundle.Manifest.Metadata.Name)
 	require.Equal(t, skillrunner.ReviewStatusApproved, runner.dispatchRequest.Review.Status)
@@ -812,7 +831,9 @@ func TestAISkillScriptApprovalDigestBindsRunExecution(t *testing.T) {
 	resolved, err := resolveAISkillScriptArtifact(runSkill, stored, spec.Script)
 	require.NoError(t, err)
 
-	runtime := NewAISkillScriptRunnerRuntime(skillrunner.NewScriptRunner())
+	productionRunner := skillrunner.NewScriptRunner()
+	productionRunner.Dispatcher.Executor = aiSkillSandboxExecutorStub{}
+	runtime := NewAISkillScriptRunnerRuntime(productionRunner)
 	result, err := runtime.ExecuteScript(ctx, AISkillScriptRuntimeInput{
 		RunID:                  1,
 		SkillID:                skill.ID,

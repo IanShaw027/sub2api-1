@@ -2384,7 +2384,25 @@ func TestOpenAIGatewayService_Forward_WSv2StreamErrorEventAfterCreatedEmitsUpstr
 			return
 		}
 		if err := conn.WriteJSON(map[string]any{
+			"type": "response.output_item.done",
+			"item": map[string]any{
+				"id":     "img_partial_before_error",
+				"type":   "image_generation_call",
+				"result": "base64-image-output",
+			},
+		}); err != nil {
+			t.Errorf("write image output item failed: %v", err)
+			return
+		}
+		if err := conn.WriteJSON(map[string]any{
 			"type": "error",
+			"response": map[string]any{
+				"id": "resp_ws_invalid_image",
+				"usage": map[string]any{
+					"input_tokens":  11,
+					"output_tokens": 7,
+				},
+			},
 			"error": map[string]any{
 				"code":    "invalid_value",
 				"type":    "invalid_request_err",
@@ -2445,10 +2463,17 @@ func TestOpenAIGatewayService_Forward_WSv2StreamErrorEventAfterCreatedEmitsUpstr
 		},
 	}
 
-	body := []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"input_text","text":"describe this image"}]}`)
+	body := []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"input_text","text":"draw an image"}],"tools":[{"type":"image_generation","model":"gpt-image-2","size":"1024x1024"}],"tool_choice":{"type":"image_generation"}}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
 	require.Error(t, err)
-	require.Nil(t, result)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_ws_invalid_image", result.RequestID)
+	require.Equal(t, 11, result.Usage.InputTokens)
+	require.Equal(t, 7, result.Usage.OutputTokens)
+	require.Equal(t, 1, result.ImageCount)
+	require.Equal(t, "gpt-image-2", result.BillingModel)
+	require.Equal(t, "gpt-5.4", result.TokenBillingModel)
+	require.Equal(t, "1K", result.ImageSize)
 	require.Nil(t, upstream.lastReq, "WS error event 已经是终态客户端错误，不应再透明回退 HTTP")
 
 	responseBody := rec.Body.String()
@@ -2560,7 +2585,9 @@ func TestOpenAIGatewayService_Forward_WSv2StreamEOFAfterDeltaEmitsFailedTerminal
 	body := []byte(`{"model":"gpt-5.3-codex","stream":true,"input":[{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
 	require.Error(t, err)
-	require.Nil(t, result)
+	require.NotNil(t, result)
+	require.Equal(t, "resp_ws_partial_eof", result.RequestID)
+	require.True(t, result.Stream)
 	require.Nil(t, upstream.lastReq, "已向下游输出后不能再透明回退 HTTP")
 
 	responseBody := rec.Body.String()

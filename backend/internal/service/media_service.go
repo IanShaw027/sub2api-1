@@ -325,7 +325,8 @@ func (s *MediaService) OpenSignedDownload(ctx context.Context, id int64, expires
 	if time.Now().After(expiresAt) {
 		return nil, nil, ErrMediaSignatureExpired
 	}
-	if !hmac.Equal([]byte(signature), []byte(s.downloadSignature(id, expiresAtUnix, thumbnail))) {
+	expectedSignature := s.downloadSignature(id, expiresAtUnix, thumbnail)
+	if expectedSignature == "" || !hmac.Equal([]byte(signature), []byte(expectedSignature)) {
 		return nil, nil, ErrMediaSignatureInvalid
 	}
 	asset, err := s.repo.GetByID(ctx, id)
@@ -437,7 +438,11 @@ func (s *MediaService) buildSignedDownloadURL(ctx context.Context, asset *MediaA
 		pathSuffix = "/thumbnail"
 	}
 	base := s.signedDownloadBaseURL(ctx, storageCfg)
-	downloadURL := fmt.Sprintf("%s/api/v1/media/download/%d%s?expires=%d&sig=%s", base, asset.ID, pathSuffix, expiresAtUnix, url.QueryEscape(s.downloadSignature(asset.ID, expiresAtUnix, thumbnail)))
+	signature := s.downloadSignature(asset.ID, expiresAtUnix, thumbnail)
+	if signature == "" {
+		return nil, ErrMediaSignatureInvalid
+	}
+	downloadURL := fmt.Sprintf("%s/api/v1/media/download/%d%s?expires=%d&sig=%s", base, asset.ID, pathSuffix, expiresAtUnix, url.QueryEscape(signature))
 	return &MediaDownloadURL{
 		URL:       downloadURL,
 		ExpiresAt: expiresAt,
@@ -558,8 +563,12 @@ func (s *MediaService) openObject(ctx context.Context, asset *MediaAsset, thumbn
 }
 
 func (s *MediaService) downloadSignature(id int64, expiresAtUnix int64, thumbnail bool) string {
+	secret := s.downloadSigningSecret()
+	if secret == "" {
+		return ""
+	}
 	payload := fmt.Sprintf("%d:%d:%t", id, expiresAtUnix, thumbnail)
-	mac := hmac.New(sha256.New, []byte(s.downloadSigningSecret()))
+	mac := hmac.New(sha256.New, []byte(secret))
 	_, _ = mac.Write([]byte(payload))
 	return hex.EncodeToString(mac.Sum(nil))
 }
@@ -701,9 +710,6 @@ func (s *MediaService) downloadSigningSecret() string {
 	secret := strings.TrimSpace(storageCfg.DownloadSigningSecret)
 	if secret != "" {
 		return secret
-	}
-	if s != nil && s.cfg != nil {
-		return strings.TrimSpace(s.cfg.JWT.Secret)
 	}
 	return ""
 }

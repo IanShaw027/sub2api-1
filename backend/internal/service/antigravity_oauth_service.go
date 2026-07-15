@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
-
-	"github.com/redis/go-redis/v9"
 )
 
 type AntigravityOAuthService struct {
@@ -24,12 +22,12 @@ func NewAntigravityOAuthService(proxyRepo ProxyRepository) *AntigravityOAuthServ
 	}
 }
 
-// WithRedisSessionStore enables multi-instance OAuth session sharing via Redis.
-func (s *AntigravityOAuthService) WithRedisSessionStore(rdb *redis.Client) *AntigravityOAuthService {
-	if s == nil || rdb == nil {
+// WithSessionStore enables an injected multi-instance OAuth session store.
+func (s *AntigravityOAuthService) WithSessionStore(store *antigravity.SessionStore) *AntigravityOAuthService {
+	if s == nil || store == nil {
 		return s
 	}
-	s.sessionStore = antigravity.NewRedisSessionStore(rdb)
+	s.sessionStore = store
 	return s
 }
 

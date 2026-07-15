@@ -17,7 +17,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
-	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -52,22 +51,20 @@ type GeminiOAuthService struct {
 	cfg          *config.Config
 }
 
-func ProvideGeminiOAuthService(
-	proxyRepo ProxyRepository,
-	oauthClient GeminiOAuthClient,
-	codeAssist GeminiCliCodeAssistClient,
-	cfg *config.Config,
-	rdb *redis.Client,
-) *GeminiOAuthService {
-	service := NewGeminiOAuthService(proxyRepo, oauthClient, codeAssist, cfg)
-	service.sessionStore.Stop()
-	service.sessionStore = geminicli.NewRedisSessionStore(rdb)
-	return service
-}
-
 type GeminiOAuthCapabilities struct {
 	AIStudioOAuthEnabled bool     `json:"ai_studio_oauth_enabled"`
 	RequiredRedirectURIs []string `json:"required_redirect_uris"`
+}
+
+func (s *GeminiOAuthService) WithSessionStore(store *geminicli.SessionStore) *GeminiOAuthService {
+	if s == nil || store == nil {
+		return s
+	}
+	if s.sessionStore != nil {
+		s.sessionStore.Stop()
+	}
+	s.sessionStore = store
+	return s
 }
 
 func NewGeminiOAuthService(
