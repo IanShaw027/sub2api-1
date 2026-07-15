@@ -302,7 +302,7 @@ func TestParseAnthropicBetaHeader(t *testing.T) {
 
 func TestFilterBedrockBetaTokens(t *testing.T) {
 	t.Run("supported tokens pass through", func(t *testing.T) {
-		tokens := []string{"context-1m-2025-08-07", "compact-2026-01-12", "computer-use-2025-11-24"}
+		tokens := []string{"context-1m-2025-08-07", "compact-2026-01-12", "computer-use-2025-11-24", "fine-grained-tool-streaming-2025-05-14"}
 		result := filterBedrockBetaTokens(tokens)
 		assert.Equal(t, tokens, result)
 	})
@@ -359,6 +359,15 @@ func TestFilterBedrockBetaTokens(t *testing.T) {
 
 func TestPrepareBedrockRequestBody_BetaFiltering(t *testing.T) {
 	input := `{"messages":[{"role":"user","content":"hi"}],"max_tokens":100}`
+
+	t.Run("fine-grained tool streaming is preserved", func(t *testing.T) {
+		result, err := PrepareBedrockRequestBody([]byte(input), "us.anthropic.claude-opus-4-6-v1",
+			"fine-grained-tool-streaming-2025-05-14")
+		require.NoError(t, err)
+		arr := gjson.GetBytes(result, "anthropic_beta").Array()
+		require.Len(t, arr, 1)
+		assert.Equal(t, "fine-grained-tool-streaming-2025-05-14", arr[0].String())
+	})
 
 	t.Run("unsupported beta tokens are filtered", func(t *testing.T) {
 		result, err := PrepareBedrockRequestBody([]byte(input), "us.anthropic.claude-opus-4-6-v1",

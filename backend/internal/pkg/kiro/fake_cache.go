@@ -21,9 +21,12 @@ const (
 )
 
 type FakeCachePlan struct {
-	CacheStrategy                 string
-	CacheStrategyGeneration       uint64
-	SessionProgressKey            string
+	CacheStrategy           string
+	CacheStrategyGeneration uint64
+	SessionProgressKey      string
+	// SessionProgressVersion is the optimistic-concurrency version observed when
+	// the gateway prepared this plan. It is internal state and never sent upstream.
+	SessionProgressVersion        uint64 `json:"-"`
 	PreviousKey                   string
 	CurrentKey                    string
 	PreviousCacheableTokens       int

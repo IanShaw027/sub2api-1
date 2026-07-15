@@ -1555,15 +1555,81 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 		}
 	}
 	var sseData openAISSEDataAccumulator
-	for scanner.Scan() {
-		sseData.AddLine(scanner.Text(), processPayload)
-		if processErr != nil {
-			return OpenAIUsage{}, imageCount, firstTokenMs, processErr
+	streamInterval := s.openAIImageStreamDataInterval()
+	var scanErr error
+	if streamInterval <= 0 {
+		for scanner.Scan() {
+			sseData.AddLine(scanner.Text(), processPayload)
+			if processErr != nil {
+				return OpenAIUsage{}, imageCount, firstTokenMs, processErr
+			}
+			if streamCompleted {
+				return usage, imageCount, firstTokenMs, nil
+			}
 		}
-		if streamCompleted {
-			return usage, imageCount, firstTokenMs, nil
+		scanErr = scanner.Err()
+	} else {
+		type scanEvent struct {
+			line string
+			err  error
+		}
+		events := make(chan scanEvent, 16)
+		done := make(chan struct{})
+		go func() {
+			defer close(events)
+			for scanner.Scan() {
+				select {
+				case events <- scanEvent{line: scanner.Text()}:
+				case <-done:
+					return
+				}
+			}
+			if err := scanner.Err(); err != nil {
+				select {
+				case events <- scanEvent{err: err}:
+				case <-done:
+				}
+			}
+		}()
+		defer close(done)
+		idleTimer := time.NewTimer(streamInterval)
+		defer idleTimer.Stop()
+		for {
+			select {
+			case event, ok := <-events:
+				if !ok {
+					goto scanComplete
+				}
+				if !idleTimer.Stop() {
+					select {
+					case <-idleTimer.C:
+					default:
+					}
+				}
+				idleTimer.Reset(streamInterval)
+				if event.err != nil {
+					scanErr = event.err
+					goto scanComplete
+				}
+				sseData.AddLine(event.line, processPayload)
+				if processErr != nil {
+					return OpenAIUsage{}, imageCount, firstTokenMs, processErr
+				}
+				if streamCompleted {
+					return usage, imageCount, firstTokenMs, nil
+				}
+			case <-idleTimer.C:
+				_ = resp.Body.Close()
+				message := fmt.Sprintf("upstream image stream idle for %s", streamInterval)
+				if responseCommitted && !clientDisconnected {
+					_ = tryWriteEvent("error", buildOpenAIImagesStreamErrorBody(message))
+				}
+				return OpenAIUsage{}, imageCount, firstTokenMs, fmt.Errorf("image stream data interval timeout")
+			}
 		}
 	}
+
+scanComplete:
 	sseData.Flush(processPayload)
 	if processErr != nil {
 		return OpenAIUsage{}, imageCount, firstTokenMs, processErr
@@ -1571,9 +1637,9 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 	if streamCompleted {
 		return usage, imageCount, firstTokenMs, nil
 	}
-	if err := scanner.Err(); err != nil {
-		streamErr := err
-		if errors.Is(err, bufio.ErrTooLong) {
+	if scanErr != nil {
+		streamErr := scanErr
+		if errors.Is(scanErr, bufio.ErrTooLong) {
 			streamErr = fmt.Errorf("upstream image stream exceeded maximum token size of %d bytes", maxLineSize)
 		}
 		if !responseCommitted && imageCount == 0 && len(emitted) == 0 && len(pendingResults) == 0 {

@@ -43,6 +43,7 @@ func TestOpenAIWSEventShouldParseUsageTerminalEvents(t *testing.T) {
 	t.Parallel()
 
 	for _, eventType := range []string{
+		"error",
 		"response.completed",
 		"response.done",
 		"response.failed",

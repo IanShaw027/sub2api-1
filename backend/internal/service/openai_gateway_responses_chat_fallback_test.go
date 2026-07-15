@@ -53,6 +53,69 @@ func TestForwardResponses_ForceChatCompletionsRoutesNonStreamingToChatCompletion
 	require.False(t, result.Stream)
 }
 
+func TestForwardResponses_ForceChatCompletionsRestoresAdditionalToolCalls(t *testing.T) {
+	setGinTestMode()
+
+	body := []byte(`{
+		"model":"gpt-5.4",
+		"stream":false,
+		"input":[
+			{"type":"additional_tools","role":"developer","tools":[
+				{"type":"custom","name":"exec","description":"Run a command"},
+				{"type":"tool_search"},
+				{"type":"namespace","name":"mcp__files","tools":[
+					{"type":"function","name":"read","parameters":{"type":"object","properties":{"path":{"type":"string"}}}}
+				]}
+			]},
+			{"type":"message","role":"user","content":[{"type":"input_text","text":"inspect the repository"}]}
+		]
+	}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(`{
+			"id":"chatcmpl_tools",
+			"object":"chat.completion",
+			"model":"gpt-5.4",
+			"choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[
+				{"id":"call_exec","type":"function","function":{"name":"exec","arguments":"{\"input\":\"ls -la\"}"}},
+				{"id":"call_search","type":"function","function":{"name":"tool_search","arguments":"{\"query\":\"Codex docs\"}"}},
+				{"id":"call_read","type":"function","function":{"name":"mcp__files__read","arguments":"{\"path\":\"README.md\"}"}}
+			]},"finish_reason":"tool_calls"}],
+			"usage":{"prompt_tokens":8,"completion_tokens":5,"total_tokens":13}
+		}`)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          rawChatCompletionsTestConfig(),
+		httpUpstream: upstream,
+	}
+
+	result, err := svc.Forward(context.Background(), c, forceChatResponsesFallbackAccount(), body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	toolNames := make(map[string]bool)
+	for _, name := range gjson.GetBytes(upstream.lastBody, "tools.#.function.name").Array() {
+		toolNames[name.String()] = true
+	}
+	require.True(t, toolNames["exec"], "additional custom tool must reach chat upstream")
+	require.True(t, toolNames["tool_search"], "additional tool_search must reach chat upstream")
+	require.True(t, toolNames["mcp__files__read"], "additional namespace child must reach chat upstream")
+
+	responseBody := rec.Body.String()
+	require.Equal(t, "custom_tool_call", gjson.Get(responseBody, `output.#(call_id=="call_exec").type`).String())
+	require.Equal(t, "ls -la", gjson.Get(responseBody, `output.#(call_id=="call_exec").input`).String())
+	require.Equal(t, "tool_search_call", gjson.Get(responseBody, `output.#(call_id=="call_search").type`).String())
+	require.Equal(t, "function_call", gjson.Get(responseBody, `output.#(call_id=="call_read").type`).String())
+	require.Equal(t, "mcp__files", gjson.Get(responseBody, `output.#(call_id=="call_read").namespace`).String())
+	require.Equal(t, "read", gjson.Get(responseBody, `output.#(call_id=="call_read").name`).String())
+}
+
 func TestForwardResponses_ForceChatCompletionsNonStreamingCyberPolicyMarksUsage(t *testing.T) {
 	setGinTestMode()
 

@@ -1946,6 +1946,39 @@ func TestOpenAIGatewayServiceForwardImages_OAuthStreamingUnexpectedEOFFailoversB
 	require.Contains(t, content, "unexpected EOF")
 }
 
+func TestOpenAIImagesOAuthStreamingResponseEnforcesIdleTimeout(t *testing.T) {
+	setGinTestMode()
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil)
+
+	reader, writer := io.Pipe()
+	defer func() { _ = writer.Close() }()
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       reader,
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.ImageStreamDataIntervalTimeout = 1
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	started := time.Now()
+	_, _, _, err := svc.handleOpenAIImagesOAuthStreamingResponse(
+		resp,
+		c,
+		&Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+		&OpenAIImagesRequest{Stream: true},
+		"https://example.invalid/v1/responses",
+		time.Now(),
+		"b64_json",
+		"image_generation",
+		"gpt-image-1",
+	)
+	require.ErrorContains(t, err, "data interval timeout")
+	require.Less(t, time.Since(started), 3*time.Second)
+}
+
 func TestOpenAIGatewayServiceForwardImages_OAuthAppliesUpstreamTransportExperimentFlags(t *testing.T) {
 	resetOpenAIOAuthImageBridgeTransportSettingsTestCache(t)
 	setGinTestMode()
