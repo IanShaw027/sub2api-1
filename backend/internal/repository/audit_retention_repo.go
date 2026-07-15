@@ -45,14 +45,6 @@ func (r *auditRetentionRepository) DeleteAIAuditLogsOlderThan(ctx context.Contex
 	return r.deleteOlderThan(ctx, "ai_audit_logs", cutoff, limit)
 }
 
-func (r *auditRetentionRepository) DeleteAISkillRunsOlderThan(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
-	return r.deleteOlderThan(ctx, "ai_skill_runs", cutoff, limit)
-}
-
-func (r *auditRetentionRepository) DeleteAISkillSettlementsOlderThan(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
-	return r.deleteOlderThan(ctx, "ai_skill_settlements", cutoff, limit)
-}
-
 func (r *auditRetentionRepository) DeleteCodexInviteResetHistoryOlderThan(ctx context.Context, cutoff time.Time, limit int) (int64, error) {
 	return r.deleteOlderThan(ctx, "codex_invite_reset_history", cutoff, limit)
 }

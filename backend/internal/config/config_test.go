@@ -1339,6 +1339,31 @@ func TestValidateJWTSecret_UTF8Bytes(t *testing.T) {
 	}
 }
 
+func TestValidateMediaDownloadSigningSecretStrength(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	cfg.Media.Enabled = true
+	cfg.Media.Endpoint = "https://storage.example.com"
+	cfg.Media.PublicBaseURL = "https://media.example.com"
+	cfg.Media.AccessKeyID = "access-key"
+	cfg.Media.SecretAccessKey = "secret-key"
+	cfg.Media.Bucket = "media"
+
+	cfg.Media.DownloadSigningSecret = strings.Repeat("m", 31)
+	err = cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "media.download_signing_secret must be at least 32 bytes") {
+		t.Fatalf("Validate() error = %v, want media signing key strength error", err)
+	}
+
+	cfg.Media.DownloadSigningSecret = strings.Repeat("m", 32)
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() should accept 32-byte media signing key: %v", err)
+	}
+}
+
 func TestValidateConfigErrors(t *testing.T) {
 	buildValid := func(t *testing.T) *Config {
 		t.Helper()

@@ -38,6 +38,28 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("Stripe webhook secret", re.compile(r"\bwhsec_[A-Za-z0-9]{24,}\b")),
     ("OpenAI-style API key", re.compile(r"\bsk-(?:proj-|ant-api03-)?[A-Za-z0-9_-]{24,}\b")),
     ("Google API key", re.compile(r"\bAIza[0-9A-Za-z_-]{32,}\b")),
+    ("AWS access key ID", re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b")),
+    (
+        "JWT",
+        re.compile(
+            r"\b(?P<secret>eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{20,})\b"
+        ),
+    ),
+    (
+        "database URL password",
+        re.compile(
+            r"\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?)://"
+            r"[^\s:/@]+:(?P<secret>[^\s/@]{12,})@"
+        ),
+    ),
+    (
+        "configured secret",
+        re.compile(
+            r"(?i)\b(?:(?:aws_)?secret_access_key|(?:database|db|jwt)_?(?:password|secret)|"
+            r"download_signing_secret)"
+            r"\s*[=:]\s*[\"']?(?P<secret>[A-Za-z0-9_./+!=-]{16,})[\"']?\s*[,}]?\s*(?:#.*)?$"
+        ),
+    ),
 )
 
 
@@ -101,6 +123,8 @@ def is_probably_placeholder(value: str) -> bool:
         return True
     if compact in ALLOW_VALUE_FRAGMENTS:
         return True
+    if any(compact.startswith(fragment) for fragment in ALLOW_VALUE_FRAGMENTS):
+        return True
     if any(compact == fragment * (len(compact) // len(fragment)) for fragment in ALLOW_VALUE_FRAGMENTS if len(compact) % len(fragment) == 0):
         return True
     if set(compact) <= {"x"} or set(compact) <= {"0"}:
@@ -127,7 +151,7 @@ def scan_file(rel: Path) -> list[str]:
     for lineno, line in enumerate(text.splitlines(), 1):
         for name, pattern in PATTERNS:
             for match in pattern.finditer(line):
-                value = match.group(0)
+                value = match.groupdict().get("secret") or match.group(0)
                 if is_probably_placeholder(value):
                     continue
                 findings.append(f"{rel}:{lineno}: possible {name}")

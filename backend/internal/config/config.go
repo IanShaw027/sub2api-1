@@ -2438,6 +2438,9 @@ func (c *Config) Validate() error {
 		if strings.TrimSpace(c.Media.Bucket) == "" {
 			return fmt.Errorf("media.bucket is required when media.enabled=true")
 		}
+		if len([]byte(strings.TrimSpace(c.Media.DownloadSigningSecret))) < 32 {
+			return fmt.Errorf("media.download_signing_secret must be at least 32 bytes when media.enabled=true")
+		}
 		if c.Media.PresignExpiryMinutes <= 0 {
 			return fmt.Errorf("media.presign_expiry_minutes must be positive")
 		}
