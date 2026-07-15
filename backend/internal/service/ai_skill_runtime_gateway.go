@@ -429,6 +429,7 @@ func (r *AISkillScriptRunnerRuntime) ExecuteScript(ctx context.Context, input AI
 		Archive:     archive,
 		Input:       dispatchInput,
 		Environment: stringMapToAnyMap(environment),
+		Timeout:     time.Duration(input.TimeoutSeconds) * time.Second,
 	})
 	if err != nil {
 		return nil, err
@@ -458,12 +459,10 @@ func (r *AISkillScriptRunnerRuntime) ExecuteScript(ctx context.Context, input AI
 	// Intentionally omit host infrastructure paths (host skill/scratch dirs and
 	// host input/output file paths) from the output: they describe the server's
 	// filesystem layout and must not be surfaced to API clients.
-	output := map[string]any{
-		"bundle":         marshalAISkillValue(bundle),
-		"plan":           planValue,
-		"environment":    stringMapToAnyMap(environment),
-		"dispatch_input": dispatchInput,
+	if dispatch == nil || dispatch.Output == nil {
+		return nil, fmt.Errorf("skillrunner completed without a valid output")
 	}
+	output := cloneAIMap(dispatch.Output)
 
 	externalJobID := strings.TrimSpace(bundle.Digest)
 	if externalJobID == "" {
@@ -471,13 +470,14 @@ func (r *AISkillScriptRunnerRuntime) ExecuteScript(ctx context.Context, input AI
 	}
 
 	return &AISkillScriptRuntimeResult{
-		Status:        AISkillRunStatusDispatched,
+		Status:        AISkillRunStatusSucceeded,
 		ExternalJobID: externalJobID,
 		Output:        output,
 		Metadata: map[string]any{
 			"provider":       "skillrunner",
 			"bundle_digest":  strings.TrimSpace(bundle.Digest),
 			"archive_source": source,
+			"sandbox_plan":   planValue,
 		},
 	}, nil
 }

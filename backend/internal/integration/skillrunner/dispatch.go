@@ -15,12 +15,14 @@ import (
 )
 
 type LocalDispatcher struct {
-	Planner *DockerPlanner
+	Planner  *DockerPlanner
+	Executor SandboxExecutor
 }
 
 func NewLocalDispatcher(policy SandboxPolicy, runtimes map[string]RuntimeSpec) *LocalDispatcher {
 	return &LocalDispatcher{
-		Planner: NewDockerPlanner(policy, runtimes),
+		Planner:  NewDockerPlanner(policy, runtimes),
+		Executor: NewDockerCLIExecutor(""),
 	}
 }
 
@@ -30,6 +32,9 @@ func (d *LocalDispatcher) Dispatch(ctx context.Context, req DispatchRequest) (*D
 	}
 	if d == nil || d.Planner == nil {
 		return nil, fmt.Errorf("dispatcher is not configured")
+	}
+	if d.Executor == nil {
+		return nil, fmt.Errorf("sandbox executor is not configured")
 	}
 	if req.Bundle == nil {
 		return nil, fmt.Errorf("bundle is required")
@@ -102,6 +107,9 @@ func (d *LocalDispatcher) Dispatch(ctx context.Context, req DispatchRequest) (*D
 		}
 		plan.Environment[key] = fmt.Sprint(value)
 	}
+	if req.Timeout > 0 {
+		plan.ResourceLimits.Timeout = req.Timeout
+	}
 
 	inputPath, err := scratchHostPath(plan.Layout, hostScratchDir, plan.Layout.InputPath)
 	if err != nil {
@@ -130,6 +138,18 @@ func (d *LocalDispatcher) Dispatch(ctx context.Context, req DispatchRequest) (*D
 	if err := os.WriteFile(inputPath, raw, 0o644); err != nil {
 		return nil, fmt.Errorf("write dispatch input: %w", err)
 	}
+	if err := prepareScratchPermissions(hostScratchDir, inputPath, outputPath); err != nil {
+		return nil, err
+	}
+
+	execution, err := d.Executor.Execute(ctx, plan)
+	if err != nil {
+		return nil, err
+	}
+	output, err := readDispatchOutput(outputPath, plan.ResourceLimits.StdoutKB)
+	if err != nil {
+		return nil, err
+	}
 
 	result := &DispatchResult{
 		Plan:           plan,
@@ -137,6 +157,8 @@ func (d *LocalDispatcher) Dispatch(ctx context.Context, req DispatchRequest) (*D
 		HostScratchDir: hostScratchDir,
 		InputPath:      inputPath,
 		OutputPath:     outputPath,
+		Output:         output,
+		Execution:      execution,
 		cleanup:        cleanupCreatedDirs,
 	}
 	success = true

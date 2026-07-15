@@ -9,7 +9,6 @@ import (
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
-	"github.com/redis/go-redis/v9"
 )
 
 const grokDefaultAccessTokenTTL = 6 * time.Hour
@@ -28,12 +27,12 @@ func NewGrokOAuthService(proxyRepo ProxyRepository, oauthClient GrokOAuthClient)
 	}
 }
 
-// WithRedisSessionStore enables multi-instance OAuth session sharing via Redis.
-func (s *GrokOAuthService) WithRedisSessionStore(rdb *redis.Client) *GrokOAuthService {
-	if s == nil || rdb == nil {
+// WithSessionStore enables an injected multi-instance OAuth session store.
+func (s *GrokOAuthService) WithSessionStore(store *xai.SessionStore) *GrokOAuthService {
+	if s == nil || store == nil {
 		return s
 	}
-	s.sessionStore = xai.NewRedisSessionStore(rdb)
+	s.sessionStore = store
 	return s
 }
 

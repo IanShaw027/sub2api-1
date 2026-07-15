@@ -37,8 +37,6 @@ linters:
           files:
             - "**/internal/handler/**"
             - "!**/internal/handler/wire.go"
-            - "!**/internal/handler/skillkit/adapter.go"
-            - "!**/internal/handler/skillkit/module.go"
           deny:
             - pkg: github.com/Wei-Shaw/sub2api/internal/repository
               desc: "handler must not import repository"

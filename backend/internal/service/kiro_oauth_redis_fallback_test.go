@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/redissession"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
 )
@@ -14,7 +15,7 @@ import (
 func TestKiroOAuthSessionStoreRedisFallbackIsLimitedToFailedWrites(t *testing.T) {
 	mr := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr(), MaxRetries: -1})
-	store := NewKiroRedisOAuthSessionStore(client)
+	store := NewKiroRemoteOAuthSessionStore(redissession.New(client, "oauth:session:kiro", kiroOAuthSessionTTL))
 	defer store.Stop()
 	session := func(state string) *KiroOAuthSession { return &KiroOAuthSession{State: state, CreatedAt: time.Now()} }
 

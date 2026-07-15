@@ -12,6 +12,23 @@ import (
 	"testing"
 )
 
+type writingSandboxExecutor struct{}
+
+func (writingSandboxExecutor) Execute(_ context.Context, plan *SandboxPlan) (*ExecutionResult, error) {
+	for _, mount := range plan.Mounts {
+		if mount.Target != plan.Layout.ScratchDir {
+			continue
+		}
+		rel := strings.TrimPrefix(plan.Layout.OutputPath, plan.Layout.ScratchDir+"/")
+		outputPath := filepath.Join(mount.Source, filepath.FromSlash(rel))
+		if err := os.WriteFile(outputPath, []byte(`{"ok":true}`), 0o644); err != nil {
+			return nil, err
+		}
+		return &ExecutionResult{Stdout: "done"}, nil
+	}
+	return nil, errors.New("scratch mount not found")
+}
+
 func TestInspectArchiveAcceptsPythonSample(t *testing.T) {
 	t.Parallel()
 
@@ -163,6 +180,7 @@ func TestDispatchReturnsCreatedTempDirsUntilCleanup(t *testing.T) {
 	}
 
 	dispatcher := NewLocalDispatcher(SandboxPolicy{}, nil)
+	dispatcher.Executor = writingSandboxExecutor{}
 	result, err := dispatcher.Dispatch(context.Background(), DispatchRequest{
 		Bundle: bundle,
 		Review: ReviewGate{
@@ -210,6 +228,7 @@ func TestDispatchPreservesCallerSuppliedDirs(t *testing.T) {
 	}
 
 	dispatcher := NewLocalDispatcher(SandboxPolicy{}, nil)
+	dispatcher.Executor = writingSandboxExecutor{}
 	result, err := dispatcher.Dispatch(context.Background(), DispatchRequest{
 		Bundle: bundle,
 		Review: ReviewGate{

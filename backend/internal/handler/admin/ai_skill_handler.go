@@ -71,7 +71,7 @@ func (h *AIHandler) ApproveSkillReview(c *gin.Context) {
 		return
 	}
 	executeAdminIdempotentJSON(c, "skills:reviews:approve", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		review, err := module.DomainRepo.GetSkillReviewByID(ctx, reviewID)
+		review, err := module.DomainService.GetSkillReviewByID(ctx, reviewID)
 		if err != nil {
 			return nil, err
 		}
@@ -111,7 +111,7 @@ func (h *AIHandler) RejectSkillReview(c *gin.Context) {
 		return
 	}
 	executeAdminIdempotentJSON(c, "skills:reviews:reject", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		review, err := module.DomainRepo.GetSkillReviewByID(ctx, reviewID)
+		review, err := module.DomainService.GetSkillReviewByID(ctx, reviewID)
 		if err != nil {
 			return nil, err
 		}
@@ -180,7 +180,7 @@ func (h *AIHandler) DisableSkill(c *gin.Context) {
 		return
 	}
 	executeAdminIdempotentJSON(c, "skills:disable", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		skill, err := module.DomainRepo.GetSkillByID(ctx, skillID)
+		skill, err := module.DomainService.GetSkillByID(ctx, skillID)
 		if err != nil {
 			return nil, err
 		}
@@ -197,7 +197,7 @@ func (h *AIHandler) DisableSkill(c *gin.Context) {
 		meta["governance_status"] = "disabled"
 		skill.Visibility = domain.AIVisibilityPrivate
 		skill.Metadata = meta
-		if err := module.DomainRepo.UpdateSkill(ctx, skill); err != nil {
+		if err := module.DomainService.UpdateSkill(ctx, skill); err != nil {
 			return nil, err
 		}
 		return gin.H{
@@ -228,7 +228,7 @@ func (h *AIHandler) ForcePrivateSkill(c *gin.Context) {
 		return
 	}
 	executeAdminIdempotentJSON(c, "skills:force-private", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		skill, err := module.DomainRepo.GetSkillByID(ctx, skillID)
+		skill, err := module.DomainService.GetSkillByID(ctx, skillID)
 		if err != nil {
 			return nil, err
 		}
@@ -236,7 +236,7 @@ func (h *AIHandler) ForcePrivateSkill(c *gin.Context) {
 		meta["governance_status"] = "force_private"
 		skill.Visibility = domain.AIVisibilityPrivate
 		skill.Metadata = meta
-		if err := module.DomainRepo.UpdateSkill(ctx, skill); err != nil {
+		if err := module.DomainService.UpdateSkill(ctx, skill); err != nil {
 			return nil, err
 		}
 		return gin.H{
@@ -340,7 +340,7 @@ func (h *AIHandler) ReplaySkillSettlement(c *gin.Context) {
 		"note":   strings.TrimSpace(req.Note),
 		"trace":  req.Trace,
 	}, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		settlement, err := module.DomainRepo.GetSkillSettlementByID(ctx, settlementID)
+		settlement, err := module.DomainService.GetSkillSettlementByID(ctx, settlementID)
 		if err != nil {
 			return nil, err
 		}

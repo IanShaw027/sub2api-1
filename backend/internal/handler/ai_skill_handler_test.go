@@ -20,7 +20,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/handler/skillkit"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-	"github.com/Wei-Shaw/sub2api/internal/repository"
 	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -323,7 +322,7 @@ func TestAIHandlerCreateSkillCleansUpUploadedCoverImageOnPersistenceFailure(t *t
 
 	handler, repo, store := newAIHandlerMediaTestHarness(t)
 	handler.skillModule = &skillkit.Module{
-		DomainRepo: &aiSkillHandlerViewerRepo{
+		DomainService: &aiSkillHandlerViewerRepo{
 			skill: &domain.AISkill{
 				ID:     1,
 				UserID: 42,
@@ -391,7 +390,7 @@ func TestAIHandlerRunSkillCleansUpUploadedAttachmentsOnExecutionFailure(t *testi
 		nil,
 	).WithAPIKeyRepository(&handlerSkillBillingAPIKeyRepoStub{userID: 42})
 	handler.skillModule = &skillkit.Module{
-		DomainRepo: &aiSkillHandlerViewerRepo{
+		DomainService: &aiSkillHandlerViewerRepo{
 			skill: &domain.AISkill{
 				ID:               7,
 				UserID:           42,
@@ -455,7 +454,7 @@ func TestAIHandlerRunSkillRejectsPrivateSkillBeforeUploadingAttachments(t *testi
 		nil,
 	).WithAPIKeyRepository(&handlerSkillBillingAPIKeyRepoStub{userID: 42})
 	handler.skillModule = &skillkit.Module{
-		DomainRepo: &aiSkillHandlerViewerRepo{
+		DomainService: &aiSkillHandlerViewerRepo{
 			skill: &domain.AISkill{
 				ID:         7,
 				UserID:     1001,
@@ -540,7 +539,7 @@ func TestAIHandlerRunSkillWithModeForwardsRequestParametersAndAttachments(t *tes
 				nil,
 			).WithAPIKeyRepository(&handlerSkillBillingAPIKeyRepoStub{userID: 42})
 			handler.skillModule = &skillkit.Module{
-				DomainRepo: &aiSkillHandlerViewerRepo{
+				DomainService: &aiSkillHandlerViewerRepo{
 					skill: &domain.AISkill{
 						ID:               7,
 						UserID:           42,
@@ -630,7 +629,7 @@ func TestAIHandlerRunSkillWithModeCleansUpUploadedAttachmentsOnExecutionFailure(
 				nil,
 			)
 			handler.skillModule = &skillkit.Module{
-				DomainRepo: &aiSkillHandlerViewerRepo{
+				DomainService: &aiSkillHandlerViewerRepo{
 					skill: &domain.AISkill{
 						ID:               7,
 						UserID:           42,
@@ -699,7 +698,7 @@ func TestAIHandlerRunSkill_UsesBodyIdempotencyKeyForGenericReplay(t *testing.T) 
 		nil,
 	).WithAPIKeyRepository(&handlerSkillBillingAPIKeyRepoStub{userID: 42})
 	handler.skillModule = &skillkit.Module{
-		DomainRepo: &aiSkillHandlerViewerRepo{
+		DomainService: &aiSkillHandlerViewerRepo{
 			skill: &domain.AISkill{
 				ID:               7,
 				UserID:           42,
@@ -779,7 +778,7 @@ func TestAIHandlerUseSkillIdempotencyBindsTraceAPIKey(t *testing.T) {
 
 	handler := &AIHandler{
 		skillModule: &skillkit.Module{
-			DomainRepo: &aiSkillHandlerViewerRepo{
+			DomainService: &aiSkillHandlerViewerRepo{
 				skill: &domain.AISkill{
 					ID:                 7,
 					UserID:             42,
@@ -999,7 +998,7 @@ func (*aiSkillHandlerRunRepo) UpdateRun(context.Context, *service.AISkillRun) er
 }
 
 type aiSkillHandlerViewerRepo struct {
-	repository.AISkillRepository
+	service.AISkillDomainRepository
 
 	skill *domain.AISkill
 }

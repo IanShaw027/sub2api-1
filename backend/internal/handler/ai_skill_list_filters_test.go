@@ -11,14 +11,14 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/handler/skillkit"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-	"github.com/Wei-Shaw/sub2api/internal/repository"
 	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
 type aiSkillListFilterRepoStub struct {
-	repository.AISkillRepository
+	service.AISkillDomainRepository
 
 	viewerUserID int64
 	isAdmin      bool
@@ -53,7 +53,7 @@ func TestAIHandlerListSkillsMapsInstalledCategoryAndStatusFilters(t *testing.T) 
 	repo := &aiSkillListFilterRepoStub{}
 	handler := &AIHandler{
 		skillModule: &skillkit.Module{
-			DomainRepo: repo,
+			DomainService: service.NewAISkillDomainService(repo),
 		},
 	}
 
@@ -85,7 +85,7 @@ func TestAIHandlerListSkillsMapsPriceModeFilter(t *testing.T) {
 	repo := &aiSkillListFilterRepoStub{}
 	handler := &AIHandler{
 		skillModule: &skillkit.Module{
-			DomainRepo: repo,
+			DomainService: service.NewAISkillDomainService(repo),
 		},
 	}
 

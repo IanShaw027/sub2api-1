@@ -20,9 +20,6 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"go.uber.org/zap"
-
-	"github.com/Wei-Shaw/sub2api/internal/pkg/redissession"
-	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -70,6 +67,14 @@ type KiroOAuthSession struct {
 	consumed bool
 }
 
+type KiroOAuthRemoteSessionStore interface {
+	Set(ctx context.Context, sessionID string, value any) error
+	Get(ctx context.Context, sessionID string, value any) (bool, error)
+	Delete(ctx context.Context, sessionID string) error
+	TryConsume(ctx context.Context, sessionID string) (bool, error)
+	IsUsed(ctx context.Context, sessionID string) (bool, error)
+}
+
 // tryConsume atomically marks the session as consumed. It returns true only
 // for the first caller; every subsequent caller (concurrent or sequential)
 // gets false and must be rejected.
@@ -93,7 +98,7 @@ type KiroOAuthSessionStore struct {
 	localOnly map[string]struct{}
 	stopOnce  sync.Once
 	stopCh    chan struct{}
-	remote    *redissession.Store
+	remote    KiroOAuthRemoteSessionStore
 }
 
 func NewKiroOAuthSessionStore() *KiroOAuthSessionStore {
@@ -106,12 +111,11 @@ func NewKiroOAuthSessionStore() *KiroOAuthSessionStore {
 	return store
 }
 
-// NewKiroRedisOAuthSessionStore shares OAuth sessions across replicas via Redis.
-func NewKiroRedisOAuthSessionStore(rdb *redis.Client) *KiroOAuthSessionStore {
+// NewKiroRemoteOAuthSessionStore shares OAuth sessions across replicas through
+// the injected session port.
+func NewKiroRemoteOAuthSessionStore(remote KiroOAuthRemoteSessionStore) *KiroOAuthSessionStore {
 	store := NewKiroOAuthSessionStore()
-	if rdb != nil {
-		store.remote = redissession.New(rdb, "oauth:session:kiro", kiroOAuthSessionTTL)
-	}
+	store.remote = remote
 	return store
 }
 
@@ -259,12 +263,15 @@ func NewKiroOAuthService(
 	}
 }
 
-// WithRedisSessionStore enables multi-instance OAuth session sharing via Redis.
-func (s *KiroOAuthService) WithRedisSessionStore(rdb *redis.Client) *KiroOAuthService {
-	if s == nil || rdb == nil {
+// WithSessionStore enables an injected multi-instance OAuth session store.
+func (s *KiroOAuthService) WithSessionStore(store *KiroOAuthSessionStore) *KiroOAuthService {
+	if s == nil || store == nil {
 		return s
 	}
-	s.sessionStore = NewKiroRedisOAuthSessionStore(rdb)
+	if s.sessionStore != nil {
+		s.sessionStore.Stop()
+	}
+	s.sessionStore = store
 	return s
 }
 

@@ -11,8 +11,6 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/google/uuid"
-
-	"github.com/redis/go-redis/v9"
 )
 
 // OpenAIOAuthService handles OpenAI OAuth authentication flows
@@ -32,12 +30,12 @@ func NewOpenAIOAuthService(proxyRepo ProxyRepository, oauthClient OpenAIOAuthCli
 	}
 }
 
-// WithRedisSessionStore enables multi-instance OAuth session sharing via Redis.
-func (s *OpenAIOAuthService) WithRedisSessionStore(rdb *redis.Client) *OpenAIOAuthService {
-	if s == nil || rdb == nil {
+// WithSessionStore enables an injected multi-instance OAuth session store.
+func (s *OpenAIOAuthService) WithSessionStore(store *openai.SessionStore) *OpenAIOAuthService {
+	if s == nil || store == nil {
 		return s
 	}
-	s.sessionStore = openai.NewRedisSessionStore(rdb)
+	s.sessionStore = store
 	return s
 }
 

@@ -955,3 +955,19 @@ func runtimeHealthCondition(alias, healthStatus string) string {
 		return "1 = 1"
 	}
 }
+
+func nullTimePtr(value sql.NullTime) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	out := value.Time
+	return &out
+}
+
+func nullInt64Ptr(value sql.NullInt64) *int64 {
+	if !value.Valid {
+		return nil
+	}
+	out := value.Int64
+	return &out
+}

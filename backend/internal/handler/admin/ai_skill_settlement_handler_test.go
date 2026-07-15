@@ -13,7 +13,6 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/handler/skillkit"
-	"github.com/Wei-Shaw/sub2api/internal/repository"
 	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -21,7 +20,7 @@ import (
 )
 
 type adminAISkillSettlementDomainRepoStub struct {
-	repository.AISkillRepository
+	service.AISkillDomainRepository
 	settlement *domain.AISkillSettlement
 }
 
@@ -131,9 +130,9 @@ func TestReplaySkillSettlement_ReplaysSafeFailedSettlement(t *testing.T) {
 	creator := &adminAISkillSettlementCreatorStub{}
 	handler := &AIHandler{
 		skillModule: &skillkit.Module{
-			DomainRepo: &adminAISkillSettlementDomainRepoStub{
+			DomainService: service.NewAISkillDomainService(&adminAISkillSettlementDomainRepoStub{
 				settlement: &domain.AISkillSettlement{ID: 55, RunID: 3007},
-			},
+			}),
 			SettlementService: service.NewAISkillSettlementService(repo, balance, creator),
 		},
 	}
@@ -179,9 +178,9 @@ func TestReplaySkillSettlement_RejectsUnsafeFailedSettlement(t *testing.T) {
 	creator := &adminAISkillSettlementCreatorStub{}
 	handler := &AIHandler{
 		skillModule: &skillkit.Module{
-			DomainRepo: &adminAISkillSettlementDomainRepoStub{
+			DomainService: service.NewAISkillDomainService(&adminAISkillSettlementDomainRepoStub{
 				settlement: &domain.AISkillSettlement{ID: 55, RunID: 3008},
-			},
+			}),
 			SettlementService: service.NewAISkillSettlementService(repo, balance, creator),
 		},
 	}
