@@ -175,6 +175,11 @@ func TestClassifyOpenAIWSReconnectReason(t *testing.T) {
 	reason, retryable = classifyOpenAIWSReconnectReason(wrapOpenAIWSFallback("session_preempted", errOpenAIWSSessionPreempted))
 	require.Equal(t, "session_preempted", reason)
 	require.False(t, retryable)
+
+	responseFailed := &openAIWSResponseFailedError{code: "server_error", errType: "server_error", message: "temporary", retryable: true}
+	reason, retryable = classifyOpenAIWSReconnectReason(wrapOpenAIWSFallback("prewarm_response_failed", responseFailed))
+	require.Equal(t, "prewarm_response_failed", reason)
+	require.True(t, retryable)
 }
 
 func TestShouldFallbackOpenAIWSToHTTP_AuthFailed(t *testing.T) {
@@ -184,6 +189,18 @@ func TestShouldFallbackOpenAIWSToHTTP_AuthFailed(t *testing.T) {
 	})
 
 	require.True(t, shouldFallbackOpenAIWSToHTTP(err))
+}
+
+func TestOpenAIWSPaymentRequiredEventFallsBackWith402(t *testing.T) {
+	reason, recoverable := classifyOpenAIWSErrorEvent([]byte(`{"type":"error","error":{"code":"deactivated_workspace","message":"workspace deactivated"}}`))
+	require.True(t, recoverable)
+	require.Equal(t, "payment_required", reason)
+
+	err := wrapOpenAIWSFallback(reason, errors.New("workspace deactivated"))
+	require.True(t, shouldFallbackOpenAIWSToHTTP(err))
+	statusCode, _, _, _, ok := resolveOpenAIWSFallbackErrorResponse(err)
+	require.True(t, ok)
+	require.Equal(t, http.StatusPaymentRequired, statusCode)
 }
 
 func TestOpenAIWSHTTPFallbackBlockerRequiresReplayablePayloadAndNoOutput(t *testing.T) {
@@ -217,6 +234,9 @@ func TestIsOpenAIWSSessionPreemptedError(t *testing.T) {
 func TestOpenAIWSErrorHTTPStatus(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, openAIWSErrorHTTPStatus([]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_request","message":"invalid input"}}`)))
 	require.Equal(t, http.StatusUnauthorized, openAIWSErrorHTTPStatus([]byte(`{"type":"error","error":{"type":"authentication_error","code":"invalid_api_key","message":"auth failed"}}`)))
+	require.Equal(t, http.StatusUnauthorized, openAIWSErrorHTTPStatus([]byte(`{"type":"error","error":{"code":"token_invalidated","message":"token invalidated"}}`)))
+	require.Equal(t, http.StatusUnauthorized, openAIWSErrorHTTPStatus([]byte(`{"type":"error","error":{"code":"token_revoked","message":"token revoked"}}`)))
+	require.Equal(t, http.StatusPaymentRequired, openAIWSErrorHTTPStatus([]byte(`{"type":"error","error":{"code":"deactivated_workspace","message":"workspace deactivated"}}`)))
 	require.Equal(t, http.StatusForbidden, openAIWSErrorHTTPStatus([]byte(`{"type":"error","error":{"type":"permission_error","code":"forbidden","message":"forbidden"}}`)))
 	require.Equal(t, http.StatusTooManyRequests, openAIWSErrorHTTPStatus([]byte(`{"type":"error","error":{"type":"rate_limit_error","code":"rate_limit_exceeded","message":"rate limited"}}`)))
 	require.Equal(t, http.StatusBadGateway, openAIWSErrorHTTPStatus([]byte(`{"type":"error","error":{"type":"server_error","code":"server_error","message":"server"}}`)))
@@ -443,6 +463,149 @@ func TestShouldForceNewConnOnHTTPIngressWSOneShotRetry(t *testing.T) {
 	require.True(t, shouldForceNewConnOnHTTPIngressWSOneShotRetry("read_event"))
 	require.True(t, shouldForceNewConnOnHTTPIngressWSOneShotRetry("write_request"))
 	require.True(t, shouldForceNewConnOnHTTPIngressWSOneShotRetry("write"))
+}
+
+func TestShouldUseOpenAIHTTPIngressWSOneShotRespectsBodyStickySeeds(t *testing.T) {
+	setGinTestMode()
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.HttpIngressUpstreamWSEnabled = true
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
+
+	// Truly cold HTTP body → one-shot OK.
+	require.True(t, svc.shouldUseOpenAIHTTPIngressWSOneShot(c, map[string]any{
+		"model": "gpt-5.1",
+		"input": []any{},
+	}, "", ""))
+
+	// Body prompt_cache_key should disable one-shot (multi-turn sticky possible).
+	require.False(t, svc.shouldUseOpenAIHTTPIngressWSOneShot(c, map[string]any{
+		"model":            "gpt-5.1",
+		"prompt_cache_key": "sess-body",
+		"input":            []any{},
+	}, "", ""))
+
+	// Client previous disables one-shot.
+	require.False(t, svc.shouldUseOpenAIHTTPIngressWSOneShot(c, map[string]any{
+		"model": "gpt-5.1",
+		"input": []any{},
+	}, "resp_prev", ""))
+}
+
+func TestOpenAIWSClientPreviousMatchesSessionContext(t *testing.T) {
+	store := NewOpenAIWSStateStore(nil)
+	store.BindSessionContext(7, 11, "sess", openAIWSSessionContextValue{
+		accountID:      101,
+		connID:         "oa_ws_1",
+		lastResponseID: "resp_a",
+	}, time.Minute)
+
+	require.True(t, openAIWSClientPreviousMatchesSessionContext(store, 7, 11, "sess", 101, ""))
+	require.True(t, openAIWSClientPreviousMatchesSessionContext(store, 7, 11, "sess", 101, "resp_a"))
+	require.False(t, openAIWSClientPreviousMatchesSessionContext(store, 7, 11, "sess", 101, "resp_other"))
+	require.False(t, openAIWSClientPreviousMatchesSessionContext(store, 7, 11, "sess", 202, "resp_a"))
+}
+
+func TestOpenAIWSV2PassthroughFailoverStatus(t *testing.T) {
+	tests := []struct {
+		name      string
+		eventType string
+		payload   string
+		code      string
+		errType   string
+		wantCode  int
+		want      bool
+	}{
+		{name: "revoked token", eventType: "error", code: "token_revoked", wantCode: http.StatusUnauthorized, want: true},
+		{name: "deactivated workspace", eventType: "response.failed", code: "deactivated_workspace", wantCode: http.StatusPaymentRequired, want: true},
+		{name: "transient failed", eventType: "response.failed", payload: `{"type":"response.failed","response":{"error":{"code":"server_error","message":"temporary upstream failure"}}}`, code: "server_error", errType: "server_error", wantCode: http.StatusBadGateway, want: true},
+		{name: "invalid request", eventType: "response.failed", payload: `{"type":"response.failed","response":{"error":{"code":"invalid_request_error","message":"bad input"}}}`, code: "invalid_request_error", errType: "invalid_request_error", wantCode: http.StatusBadRequest, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			statusCode, got := openAIWSV2PassthroughFailoverStatus(tt.eventType, []byte(tt.payload), tt.code, tt.errType, "temporary upstream failure")
+			require.Equal(t, tt.wantCode, statusCode)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestShouldForceOpenAIWSPreferredConnEvenWhenLeased(t *testing.T) {
+	account := &Account{Type: AccountTypeOAuth}
+	snap := openAIWSConnAcquireSnapshot{
+		Exists:         true,
+		MatchesAcquire: true,
+		Leased:         true,
+		Waiters:        2,
+	}
+	require.True(t, shouldForceOpenAIWSPreferredConn(
+		account, "oa_ws_1", snap, openAIWSConnProfileSessionBound, false, false,
+	), "busy preferred conn must still be forced so acquire queues instead of dialing a new session_bound")
+	require.False(t, shouldForceOpenAIWSPreferredConn(
+		account, "oa_ws_1", snap, openAIWSConnProfileSessionBound, false, true,
+	), "one-shot must not force preferred")
+}
+
+func TestOpenAIWSLastFailureAllowsDeltaConnReanchor(t *testing.T) {
+	require.True(t, openAIWSLastFailureAllowsDeltaConnReanchor(""))
+	require.True(t, openAIWSLastFailureAllowsDeltaConnReanchor("write_request"))
+	require.True(t, openAIWSLastFailureAllowsDeltaConnReanchor("prewrite_ping_fail"))
+	require.True(t, openAIWSLastFailureAllowsDeltaConnReanchor("preferred_conn_unavailable"))
+	require.False(t, openAIWSLastFailureAllowsDeltaConnReanchor("previous_response_not_found"))
+	require.False(t, openAIWSLastFailureAllowsDeltaConnReanchor("policy_violation"))
+}
+
+func TestOpenAIWSShouldSkipActiveDeltaForExpectedFull(t *testing.T) {
+	store := NewOpenAIWSStateStore(nil)
+
+	skip, reason := openAIWSShouldSkipActiveDeltaForExpectedFull("previous_response_not_found", false, false, "sess", store)
+	require.True(t, skip)
+	require.Equal(t, "expected_full_after_prev_miss", reason)
+
+	skip, reason = openAIWSShouldSkipActiveDeltaForExpectedFull("prewarm_previous_response_not_found", false, false, "sess", store)
+	require.True(t, skip)
+	require.Equal(t, "expected_full_after_prev_miss", reason)
+
+	skip, reason = openAIWSShouldSkipActiveDeltaForExpectedFull("", true, false, "sess", store)
+	require.True(t, skip)
+	require.Equal(t, "expected_full_session_preempted", reason)
+
+	skip, reason = openAIWSShouldSkipActiveDeltaForExpectedFull("", false, true, "sess", store)
+	require.True(t, skip)
+	require.Equal(t, "expected_full_http_one_shot", reason)
+
+	skip, reason = openAIWSShouldSkipActiveDeltaForExpectedFull("", false, false, "", store)
+	require.True(t, skip)
+	require.Equal(t, "expected_full_missing_session_hash", reason)
+
+	// Clean multi-turn attempt must still evaluate delta.
+	skip, reason = openAIWSShouldSkipActiveDeltaForExpectedFull("", false, false, "sess", store)
+	require.False(t, skip)
+	require.Empty(t, reason)
+
+	// Transport write failure is retriable with delta still allowed.
+	skip, _ = openAIWSShouldSkipActiveDeltaForExpectedFull("write_request", false, false, "sess", store)
+	require.False(t, skip)
+}
+
+func TestOpenAIWSClassifyExpectedFullDeltaReason(t *testing.T) {
+	require.Equal(t, "expected_full_no_session_context",
+		openAIWSClassifyExpectedFullDeltaReason("no_session_context", false, "", "missing_previous_response_id"))
+	require.Equal(t, "expected_full_first_turn",
+		openAIWSClassifyExpectedFullDeltaReason("not_candidate", false, "", "missing_previous_response_id"))
+	require.Equal(t, "expected_full_session_oversized",
+		openAIWSClassifyExpectedFullDeltaReason("session_context_oversized", true, "resp_x", ""))
+	// True regressions keep original reason.
+	require.Equal(t, "conn_mismatch",
+		openAIWSClassifyExpectedFullDeltaReason("conn_mismatch", true, "resp_x", "active_delta"))
+	require.Equal(t, "prefix_break_output",
+		openAIWSClassifyExpectedFullDeltaReason("prefix_break_output", true, "", ""))
+	require.Equal(t, "expected_full_http_one_shot",
+		openAIWSClassifyExpectedFullDeltaReason("expected_full_http_one_shot", false, "", ""))
 }
 
 func TestShouldUseOpenAIWSNeutralForColdSessionToolContinuationContext(t *testing.T) {
@@ -934,10 +1097,12 @@ func TestOpenAIWSWriteRequestFailLogMessageIncludesRequestAndReanchorContext(t *
 }
 
 func TestOpenAIWSSessionPrewritePingIdleThresholdUsesSessionTTL(t *testing.T) {
-	require.Equal(t, 60*time.Second, openAIWSSessionPrewritePingIdleThreshold(80*time.Second))
-	require.Equal(t, 45*time.Second, openAIWSSessionPrewritePingIdleThreshold(60*time.Second))
-	require.Equal(t, 60*time.Second, openAIWSSessionPrewritePingIdleThreshold(1000*time.Second))
-	require.Equal(t, time.Duration(0), openAIWSSessionPrewritePingIdleThreshold(0))
+	// Clamped to [20s, 30s]: production data needed earlier dead-conn detection.
+	require.Equal(t, 20*time.Second, openAIWSSessionPrewritePingIdleThreshold(0))
+	require.Equal(t, 20*time.Second, openAIWSSessionPrewritePingIdleThreshold(60*time.Second))  // 6s → min 20s
+	require.Equal(t, 30*time.Second, openAIWSSessionPrewritePingIdleThreshold(600*time.Second)) // 60s → max 30s
+	require.Equal(t, 30*time.Second, openAIWSSessionPrewritePingIdleThreshold(1000*time.Second))
+	require.Equal(t, 25*time.Second, openAIWSSessionPrewritePingIdleThreshold(250*time.Second)) // 25s in band
 }
 
 func TestShouldOpenAIWSSessionPrewritePingRequiresIdlePingCapability(t *testing.T) {
@@ -946,6 +1111,7 @@ func TestShouldOpenAIWSSessionPrewritePingRequiresIdlePingCapability(t *testing.
 	lease := &openAIWSConnLease{conn: conn, reused: true}
 	account := &Account{Type: AccountTypeOAuth}
 
+	// coder conn does not support idle ping without a reader → still skip.
 	require.False(t, shouldOpenAIWSSessionPrewritePing(
 		account,
 		openAIWSConnProfileSessionBound,
@@ -953,6 +1119,43 @@ func TestShouldOpenAIWSSessionPrewritePingRequiresIdlePingCapability(t *testing.
 		false,
 		time.Minute,
 	))
+}
+
+// idlePingCapableFakeConn is an openAIWSClientConn that also opts into idle ping.
+type idlePingCapableFakeConn struct {
+	openAIWSFakeConn
+}
+
+func (*idlePingCapableFakeConn) SupportsIdlePingWithoutReader() bool { return true }
+
+func TestShouldOpenAIWSSessionPrewritePingCoversNeutralAndShortIdle(t *testing.T) {
+	conn := newOpenAIWSConnWithProfile("oa_ws_neutral_ping", &idlePingCapableFakeConn{}, nil, openAIWSConnProfileNeutral)
+	conn.lastUsedNano.Store(time.Now().Add(-25 * time.Second).UnixNano())
+	lease := &openAIWSConnLease{conn: conn, reused: true}
+	account := &Account{Type: AccountTypeOAuth}
+
+	require.True(t, shouldOpenAIWSSessionPrewritePing(
+		account,
+		openAIWSConnProfileNeutral,
+		lease,
+		false,
+		20*time.Second,
+	), "neutral reused conns idle past threshold must prewrite-ping")
+
+	require.False(t, shouldOpenAIWSSessionPrewritePing(
+		account,
+		openAIWSConnProfileNeutral,
+		lease,
+		true, // one-shot
+		20*time.Second,
+	), "http one-shot skips prewrite ping")
+}
+
+func TestOpenAIWSConnEvictReasonPrewritePingDropsSessionContext(t *testing.T) {
+	require.True(t, openAIWSConnEvictReasonInvalidatesSessionContext("prewrite_ping_fail"))
+	require.True(t, openAIWSConnEvictReasonDeletesDurableSessionContext("prewrite_ping_fail"))
+	require.True(t, openAIWSConnEvictReasonInvalidatesSessionContext("background_ping_fail"))
+	require.True(t, openAIWSConnEvictReasonDeletesDurableSessionContext("keepalive_ping_timeout"))
 }
 
 func TestOpenAIWSPrewritePingLogMessageIncludesReuseRisk(t *testing.T) {

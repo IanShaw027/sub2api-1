@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 type openAIWSRateLimitSignalRepo struct {
@@ -270,6 +271,165 @@ func TestOpenAIGatewayService_PersistSoftRateLimitAdvisoryUsesExceededWindowRese
 	require.WithinDuration(t, exceededResetAt, repo.tempUnsched[0].until, time.Second)
 }
 
+func TestOpenAIGatewayService_PersistOpenAIWSUpstreamErrorSignalMatchesHTTPStatePolicy(t *testing.T) {
+	newAccount := func(id int64) *Account {
+		return &Account{
+			ID:          id,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeOAuth,
+			Status:      StatusActive,
+			Schedulable: true,
+			Credentials: map[string]any{
+				"access_token":  "access-token",
+				"refresh_token": "refresh-token",
+			},
+		}
+	}
+
+	t.Run("top-level token revoked sets permanent error", func(t *testing.T) {
+		repo := &rateLimitAccountRepoStub{}
+		svc := &OpenAIGatewayService{rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, nil)}
+		account := newAccount(92001)
+		payload := []byte(`{"type":"error","error":{"code":"token_revoked","message":"token revoked"}}`)
+
+		svc.persistOpenAIWSUpstreamErrorSignal(context.Background(), account, nil, payload, "token_revoked", "", "token revoked")
+
+		require.Equal(t, 1, repo.setErrorCalls)
+		require.Contains(t, repo.lastErrorMsg, "Token revoked (401)")
+	})
+
+	t.Run("nested deactivated workspace sets permanent error", func(t *testing.T) {
+		repo := &rateLimitAccountRepoStub{}
+		svc := &OpenAIGatewayService{rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, nil)}
+		account := newAccount(92002)
+		payload := []byte(`{"type":"response.failed","response":{"error":{"code":"deactivated_workspace","message":"workspace deactivated"}}}`)
+
+		svc.persistOpenAIWSUpstreamErrorSignal(context.Background(), account, nil, payload, "deactivated_workspace", "", "workspace deactivated")
+
+		require.Equal(t, 1, repo.setErrorCalls)
+		require.Contains(t, repo.lastErrorMsg, "Workspace deactivated (402)")
+	})
+
+	t.Run("permission error uses the OpenAI 403 cooldown", func(t *testing.T) {
+		repo := &rateLimitAccountRepoStub{}
+		rateSvc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+		rateSvc.SetOpenAI403CounterCache(&openAIWSAuth403CounterStub{counts: []int64{1}})
+		svc := &OpenAIGatewayService{rateLimitService: rateSvc}
+		account := newAccount(92003)
+		payload := []byte(`{"type":"error","error":{"type":"permission_error","code":"forbidden","message":"forbidden"}}`)
+
+		svc.persistOpenAIWSUpstreamErrorSignal(context.Background(), account, nil, payload, "forbidden", "permission_error", "forbidden")
+
+		require.Equal(t, 0, repo.setErrorCalls)
+		require.Equal(t, 1, repo.tempCalls)
+		require.Contains(t, repo.lastTempReason, "OpenAI 403 temporary cooldown (1/3)")
+	})
+
+	t.Run("nested usage limit preserves reset time", func(t *testing.T) {
+		repo := &rateLimitAccountRepoStub{}
+		svc := &OpenAIGatewayService{rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, nil)}
+		account := newAccount(92004)
+		resetAt := time.Now().Add(2 * time.Hour).Truncate(time.Second)
+		payload := []byte(`{"type":"response.failed","response":{"error":{"type":"usage_limit_reached","code":"rate_limit_exceeded","message":"limit reached","resets_at":` + strconv.FormatInt(resetAt.Unix(), 10) + `}}}`)
+
+		svc.persistOpenAIWSUpstreamErrorSignal(context.Background(), account, nil, payload, "rate_limit_exceeded", "usage_limit_reached", "limit reached")
+
+		require.GreaterOrEqual(t, repo.rateLimitedCalls, 1)
+		require.WithinDuration(t, resetAt, repo.lastRateLimitedAt, time.Second)
+	})
+}
+
+func TestOpenAIGatewayService_ResponseFailedSignalDefersAndFlushesOnce(t *testing.T) {
+	setGinTestMode()
+
+	repo := &rateLimitAccountRepoStub{}
+	rateSvc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{rateLimitService: rateSvc}
+	account := &Account{
+		ID:          92005,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Extra: map[string]any{
+			"custom_error_codes_enabled": true,
+			"custom_error_codes":         []any{float64(http.StatusBadGateway)},
+		},
+	}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	payload := []byte(`{"type":"response.failed","response":{"error":{"code":"server_error","type":"server_error","message":"temporary upstream failure"}}}`)
+
+	for range 3 {
+		svc.persistOrDeferOpenAIWSResponseFailedSignal(
+			context.Background(), c, account, nil, payload,
+			"server_error", "server_error", "temporary upstream failure", true,
+		)
+	}
+
+	require.Equal(t, 0, repo.setErrorCalls, "internal retries must not advance account error policy")
+	_, pending := pendingOpenAIWSAccountStateSignal(c)
+	require.True(t, pending)
+
+	svc.FlushOpenAIWSPendingAccountStateSignal(context.Background(), c, account)
+	require.Equal(t, 1, repo.setErrorCalls)
+	_, pending = pendingOpenAIWSAccountStateSignal(c)
+	require.False(t, pending)
+
+	svc.FlushOpenAIWSPendingAccountStateSignal(context.Background(), c, account)
+	require.Equal(t, 1, repo.setErrorCalls, "flush must be idempotent")
+}
+
+func TestOpenAIGatewayService_ResponseFailedImmediateSignalsBypassDeferral(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		code    string
+		errType string
+	}{
+		{name: "revoked token", code: "token_revoked"},
+		{name: "deactivated workspace", code: "deactivated_workspace"},
+		{name: "forbidden", code: "forbidden", errType: "permission_error"},
+		{name: "rate limit", code: "rate_limit_exceeded", errType: "rate_limit_error"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			require.True(t, shouldPersistOpenAIWSAccountStateSignalImmediately(tt.code, tt.errType))
+		})
+	}
+	require.False(t, shouldPersistOpenAIWSAccountStateSignalImmediately("server_error", "server_error"))
+
+	repo := &rateLimitAccountRepoStub{}
+	svc := &OpenAIGatewayService{rateLimitService: NewRateLimitService(repo, nil, &config.Config{}, nil, nil)}
+	account := &Account{
+		ID:          92006,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	payload := []byte(`{"type":"response.failed","response":{"error":{"code":"deactivated_workspace","message":"workspace deactivated"}}}`)
+
+	for range 2 {
+		svc.persistOrDeferOpenAIWSResponseFailedSignal(
+			context.Background(), c, account, nil, payload,
+			"deactivated_workspace", "", "workspace deactivated", true,
+		)
+	}
+
+	require.Equal(t, 1, repo.setErrorCalls, "immediate signal must apply on the first event but remain request-deduplicated")
+	svc.persistOrDeferOpenAIWSResponseFailedSignal(
+		context.Background(), c, account, nil,
+		[]byte(`{"type":"response.failed","response":{"error":{"code":"server_error","type":"server_error","message":"later transient"}}}`),
+		"server_error", "server_error", "later transient", false,
+	)
+	require.Equal(t, 1, repo.setErrorCalls, "a later response.failed must not advance account state twice in one request")
+	_, pending := pendingOpenAIWSAccountStateSignal(c)
+	require.False(t, pending)
+}
+
 func TestOpenAIGatewayService_Forward_WSv2ErrorEventUsageLimitPersistsRateLimit(t *testing.T) {
 	setGinTestMode()
 
@@ -512,6 +672,35 @@ func TestOpenAIGatewayService_Forward_WSv2Handshake403AppliesOpenAI403Cooldown(t
 	require.Contains(t, repo.lastTempReason, "OpenAI 403 temporary cooldown (1/3)")
 }
 
+func TestOpenAIGatewayService_Forward_WSv2Handshake402DeactivatedWorkspaceSetsError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &rateLimitAccountRepoStub{}
+	svc, account := newOpenAIWSAuthFailureTestGateway(
+		t,
+		repo,
+		http.StatusPaymentRequired,
+		[]byte(`{"detail":{"code":"deactivated_workspace"}}`),
+	)
+
+	_, _ = svc.Forward(context.Background(), newOpenAIWSAuthFailureTestContext(), account, []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"input_text","text":"hello"}]}`))
+
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Contains(t, repo.lastErrorMsg, "Workspace deactivated (402)")
+}
+
+func TestOpenAIGatewayService_Forward_WSv2Handshake529PersistsOverload(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &rateLimitAccountRepoStub{}
+	svc, account := newOpenAIWSAuthFailureTestGateway(t, repo, 529, []byte(`{"error":{"message":"overloaded"}}`))
+
+	_, _ = svc.Forward(context.Background(), newOpenAIWSAuthFailureTestContext(), account, []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"input_text","text":"hello"}]}`))
+
+	require.Equal(t, 1, repo.overloadedCalls)
+	require.True(t, repo.lastOverloadedUntil.After(time.Now()))
+}
+
 func newOpenAIWSAuthFailureTestContext() *gin.Context {
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -679,6 +868,131 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ErrorEventUsageL
 		require.WithinDuration(t, time.Unix(resetAt, 0), repo.rateLimitCalls[0], 2*time.Second)
 	case <-time.After(5 * time.Second):
 		t.Fatal("等待 ingress websocket 结束超时")
+	}
+}
+
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ResponseFailedMarksTurnFailedAndKeepsClientConnection(t *testing.T) {
+	setGinTestMode()
+
+	cfg := newOpenAIWSV2TestConfig()
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Security.URLAllowlist.AllowPrivateHosts = true
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+
+	failedConn := &openAIWSCaptureConn{events: [][]byte{
+		[]byte(`{"type":"response.failed","response":{"id":"resp_failed","status":"failed","error":{"code":"server_error","type":"server_error","message":"temporary upstream failure"},"usage":{"input_tokens":3,"output_tokens":0,"total_tokens":3}}}`),
+	}}
+	successConn := &openAIWSCaptureConn{events: [][]byte{
+		[]byte(`{"type":"response.completed","response":{"id":"resp_ok","status":"completed","output":[],"usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}}`),
+	}}
+	dialer := &openAIWSSequentialCaptureDialer{conns: []*openAIWSCaptureConn{failedConn, successConn}}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(dialer)
+
+	account := Account{
+		ID:          504,
+		Name:        "openai-ingress-response-failed",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":  "access-token",
+			"refresh_token": "refresh-token",
+		},
+		Extra: map[string]any{"responses_websockets_v2_enabled": true},
+	}
+	repo := &rateLimitAccountRepoStub{}
+	rateSvc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{
+		accountRepo:      repo,
+		rateLimitService: rateSvc,
+		httpUpstream:     &httpUpstreamRecorder{},
+		cache:            &stubGatewayCache{},
+		cfg:              cfg,
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+		openaiWSPool:     pool,
+	}
+	rateSvc.SetAccountRuntimeBlocker(svc)
+
+	serverErrCh := make(chan error, 1)
+	turnErrCh := make(chan error, 2)
+	hooks := &OpenAIWSIngressHooks{AfterTurn: func(_ int, _ []byte, _ *OpenAIForwardResult, turnErr error) {
+		turnErrCh <- turnErr
+	}}
+	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
+		if err != nil {
+			serverErrCh <- err
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+
+		rec := httptest.NewRecorder()
+		ginCtx, _ := gin.CreateTestContext(rec)
+		ginCtx.Request = r.Clone(r.Context())
+		ginCtx.Request.Header = r.Header.Clone()
+		ginCtx.Request.Header.Set("User-Agent", "unit-test-agent/1.0")
+
+		readCtx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		_, firstMessage, readErr := conn.Read(readCtx)
+		cancel()
+		if readErr != nil {
+			serverErrCh <- readErr
+			return
+		}
+		serverErrCh <- svc.ProxyResponsesWebSocketFromClient(r.Context(), ginCtx, conn, &account, "access-token", firstMessage, hooks)
+	}))
+	defer wsServer.Close()
+
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+	clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(wsServer.URL, "http"), nil)
+	cancelDial()
+	require.NoError(t, err)
+	defer func() { _ = clientConn.CloseNow() }()
+
+	writeTurn := func(payload string) {
+		writeCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		require.NoError(t, clientConn.Write(writeCtx, coderws.MessageText, []byte(payload)))
+		cancel()
+	}
+	readTurn := func() []byte {
+		readCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_, payload, readErr := clientConn.Read(readCtx)
+		cancel()
+		require.NoError(t, readErr)
+		return payload
+	}
+
+	writeTurn(`{"type":"response.create","model":"gpt-5.4","stream":true,"input":[{"type":"input_text","text":"first"}]}`)
+	require.Equal(t, "response.failed", gjson.GetBytes(readTurn(), "type").String())
+	writeTurn(`{"type":"response.create","model":"gpt-5.4","stream":true,"input":[{"type":"input_text","text":"second"}]}`)
+	require.Equal(t, "response.completed", gjson.GetBytes(readTurn(), "type").String())
+
+	require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
+
+	firstTurnErr := <-turnErrCh
+	secondTurnErr := <-turnErrCh
+	require.Error(t, firstTurnErr)
+	require.Contains(t, firstTurnErr.Error(), "temporary upstream failure")
+	require.NoError(t, secondTurnErr)
+	require.Equal(t, 0, repo.setErrorCalls)
+	require.GreaterOrEqual(t, dialer.DialCount(), 2)
+
+	select {
+	case serverErr := <-serverErrCh:
+		require.NoError(t, serverErr)
+	case <-time.After(5 * time.Second):
+		t.Fatal("等待 ingress websocket 正常结束超时")
 	}
 }
 

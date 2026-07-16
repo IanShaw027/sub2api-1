@@ -19,6 +19,19 @@ import (
 
 const openAIWSLiveRelayResponseIDLimit = 32
 
+func openAIWSV2PassthroughFailoverStatus(eventType string, payload []byte, codeRaw, errTypeRaw, msgRaw string) (int, bool) {
+	statusCode := openAIWSErrorHTTPStatusFromRaw(codeRaw, errTypeRaw)
+	switch statusCode {
+	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden, http.StatusTooManyRequests:
+		return statusCode, true
+	}
+	if eventType == "response.failed" {
+		return statusCode, openAIStreamFailedEventShouldFailover(payload, msgRaw)
+	}
+	reason, retryable := classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw)
+	return statusCode, retryable && reason == "upstream_error_event"
+}
+
 type openAIWSLiveRelayResponseSet struct {
 	mu    sync.Mutex
 	ids   map[string]struct{}
@@ -376,7 +389,24 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		initialRequestModel = hooks.InitialRequestModel
 	}
 	usageMeta := newOpenAIWSPassthroughUsageMeta(initialRequestModel, firstClientMessage)
-	updatedFirst, blocked, policyErr := s.applyOpenAIFastPolicyToWSResponseCreate(ctx, account, capturedSessionModel, firstClientMessage)
+	updatedFirst, reasoningModeChanged, reasoningModeErr := normalizeOpenAIResponsesReasoningMode(firstClientMessage)
+	if reasoningModeErr != nil {
+		return fmt.Errorf("normalize reasoning.mode on first ws frame: %w", reasoningModeErr)
+	}
+	if reasoningModeChanged {
+		firstClientMessage = updatedFirst
+		capturedSessionModel = openAIWSPassthroughPolicyModelForFrame(account, firstClientMessage)
+	}
+	if shouldNormalizeOpenAIResponsesTruncation(account) {
+		if truncationNormalized, truncationChanged, normalizeErr := normalizeOpenAIResponsesTruncation(firstClientMessage); normalizeErr != nil {
+			return fmt.Errorf("normalize truncation on first ws frame: %w", normalizeErr)
+		} else if truncationChanged {
+			firstClientMessage = truncationNormalized
+		}
+	}
+	var blocked *OpenAIFastBlockedError
+	var policyErr error
+	updatedFirst, blocked, policyErr = s.applyOpenAIFastPolicyToWSResponseCreate(ctx, account, capturedSessionModel, firstClientMessage)
 	if policyErr != nil {
 		return fmt.Errorf("apply openai fast policy on first ws frame: %w", policyErr)
 	}
@@ -546,6 +576,18 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			usageMeta.updateSessionRequestModel(payload)
 			if !isResponseCreate {
 				return payload, nil, nil
+			}
+			if normalized, reasoningModeChanged, normalizeErr := normalizeOpenAIResponsesReasoningMode(payload); normalizeErr != nil {
+				return payload, nil, fmt.Errorf("normalize reasoning.mode on ws frame: %w", normalizeErr)
+			} else if reasoningModeChanged {
+				payload = normalized
+			}
+			if shouldNormalizeOpenAIResponsesTruncation(account) {
+				if normalized, truncationChanged, normalizeErr := normalizeOpenAIResponsesTruncation(payload); normalizeErr != nil {
+					return payload, nil, fmt.Errorf("normalize truncation on ws frame: %w", normalizeErr)
+				} else if truncationChanged {
+					payload = normalized
+				}
 			}
 			requestModelForThisFrame := usageMeta.requestModelForFrame(payload)
 			// Per-frame model first; if the client omits "model" on a
@@ -717,7 +759,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				)
 				liveRelayResponseIDs.Remember(turnResult.RequestID)
 				if hooks != nil && hooks.AfterTurn != nil {
-					hooks.AfterTurn(turnNo, dequeueTurnPayload(), turnResult, nil)
+					var turnErr error
+					if turn.TerminalEventType == "response.failed" {
+						turnErr = errors.New("upstream response failed")
+					}
+					hooks.AfterTurn(turnNo, dequeueTurnPayload(), turnResult, turnErr)
 				}
 			},
 			BeforeWriteClient: func(msgType coderws.MessageType, payload []byte, wroteDownstream bool) error {
@@ -728,26 +774,34 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				if eventType == "error" || eventType == "response.failed" {
 					_ = markOpenAIWSPassthroughCyberPolicy(c, payload)
 				}
+				var errCodeRaw, errTypeRaw, errMsgRaw string
+				switch eventType {
+				case "error":
+					errCodeRaw, errTypeRaw, errMsgRaw = parseOpenAIWSErrorEventFields(payload)
+				case "response.failed":
+					errCodeRaw, errTypeRaw, errMsgRaw = parseOpenAIWSResponseFailedErrorFields(payload)
+				default:
+					return nil
+				}
+				s.persistOpenAIWSUpstreamErrorSignal(ctx, account, handshakeHeaders, payload, errCodeRaw, errTypeRaw, errMsgRaw)
 				if wroteDownstream {
 					return nil
 				}
-				if eventType != "error" {
+				statusCode, shouldFailover := openAIWSV2PassthroughFailoverStatus(eventType, payload, errCodeRaw, errTypeRaw, errMsgRaw)
+				if !shouldFailover {
 					return nil
 				}
-				errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(payload)
-				if !isOpenAIWSRateLimitError(errCodeRaw, errTypeRaw, errMsgRaw) {
-					return nil
-				}
-				s.persistOpenAIWSRateLimitSignal(ctx, account, handshakeHeaders, payload, errCodeRaw, errTypeRaw, errMsgRaw)
 				logOpenAIWSV2Passthrough(
-					"relay_rate_limit_failover account_id=%d err_code=%s err_type=%s err_message=%s",
+					"relay_account_failover account_id=%d event_type=%s status=%d err_code=%s err_type=%s err_message=%s",
 					account.ID,
+					eventType,
+					statusCode,
 					truncateOpenAIWSLogValue(errCodeRaw, openAIWSLogValueMaxLen),
 					truncateOpenAIWSLogValue(errTypeRaw, openAIWSLogValueMaxLen),
 					truncateOpenAIWSLogValue(errMsgRaw, openAIWSLogValueMaxLen),
 				)
 				return &UpstreamFailoverError{
-					StatusCode:      http.StatusTooManyRequests,
+					StatusCode:      statusCode,
 					ResponseBody:    append([]byte(nil), payload...),
 					ResponseHeaders: cloneHeader(handshakeHeaders),
 				}

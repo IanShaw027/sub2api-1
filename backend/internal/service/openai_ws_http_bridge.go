@@ -248,6 +248,16 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		if upstreamMsg == "" {
 			upstreamMsg = http.StatusText(resp.StatusCode)
 		}
+		if account.Platform == PlatformOpenAI {
+			s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+			if s.shouldFailoverUpstreamError(resp.StatusCode) {
+				return nil, &UpstreamFailoverError{
+					StatusCode:      resp.StatusCode,
+					ResponseBody:    respBody,
+					ResponseHeaders: resp.Header.Clone(),
+				}
+			}
+		}
 		if account.Platform == PlatformGrok {
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 				Platform:           account.Platform,
@@ -285,6 +295,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	eventCount := 0
 	tokenEventCount := 0
 	terminalEventCount := 0
+	var terminalError error
 	replayCollector := &openAIWSToolCallReplayCollector{}
 	firstEventType := ""
 	lastEventType := ""
@@ -316,6 +327,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			ResponseHeaders: cloneHeader(resp.Header),
 			Duration:        time.Since(turnStart),
 			FirstTokenMs:    firstTokenMs,
+			wsTerminalError: terminalError,
 		}
 		if replayInput := replayCollector.Items(); len(replayInput) > 0 {
 			result.wsReplayInput = replayInput
@@ -431,12 +443,21 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 
 			if eventType == "error" {
 				errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(upstreamMessage)
-				s.persistOpenAIWSRateLimitSignal(ctx, account, resp.Header, upstreamMessage, errCodeRaw, errTypeRaw, errMsgRaw)
+				s.persistOpenAIWSUpstreamErrorSignal(ctx, account, resp.Header, upstreamMessage, errCodeRaw, errTypeRaw, errMsgRaw)
 				errMessage := strings.TrimSpace(errMsgRaw)
 				if errMessage == "" {
 					errMessage = "upstream error event"
 				}
 				return resultWithUsage(), errors.New(errMessage)
+			}
+			if eventType == "response.failed" {
+				errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSResponseFailedErrorFields(upstreamMessage)
+				s.persistOpenAIWSUpstreamErrorSignal(ctx, account, resp.Header, upstreamMessage, errCodeRaw, errTypeRaw, errMsgRaw)
+				failedMessage := sanitizeUpstreamErrorMessage(strings.TrimSpace(errMsgRaw))
+				if failedMessage == "" {
+					failedMessage = "Upstream response failed"
+				}
+				terminalError = fmt.Errorf("upstream response failed: %s", failedMessage)
 			}
 			if isOpenAIWSTerminalEvent(eventType) {
 				terminalEventCount++

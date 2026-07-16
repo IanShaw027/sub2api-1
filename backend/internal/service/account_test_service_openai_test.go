@@ -460,6 +460,33 @@ func TestAccountTestService_OpenAI401SetsPermanentErrorOnly(t *testing.T) {
 	require.Nil(t, account.RateLimitResetAt)
 }
 
+func TestAccountTestService_OpenAI402DeactivatedWorkspaceSetsPermanentError(t *testing.T) {
+	setGinTestMode()
+	ctx, _ := newTestContext()
+
+	resp := newJSONResponse(http.StatusPaymentRequired, `{"detail":{"code":"deactivated_workspace"}}`)
+
+	repo := &openAIAccountTestRepo{}
+	upstream := &queuedHTTPUpstream{responses: []*http.Response{resp}}
+	svc := &AccountTestService{accountRepo: repo, httpUpstream: upstream}
+	account := &Account{
+		ID:          82,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Concurrency: 1,
+		Credentials: map[string]any{"access_token": "test-token"},
+	}
+
+	err := svc.testOpenAIAccountConnection(ctx, account, "gpt-5.4", "", "")
+	require.Error(t, err)
+	require.Equal(t, account.ID, repo.setErrorID)
+	require.Equal(t, "Workspace deactivated (402): workspace has been deactivated", repo.setErrorMsg)
+	require.Zero(t, repo.rateLimitedID)
+	require.Zero(t, repo.clearedErrorID)
+	require.Nil(t, account.RateLimitResetAt)
+}
+
 func TestAccountTestService_OpenAIAPIKeyResponsesUnsupportedUsesChatCompletionsPath(t *testing.T) {
 	setGinTestMode()
 	ctx, recorder := newTestContext()

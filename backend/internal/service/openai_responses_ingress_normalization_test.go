@@ -7,6 +7,81 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+func TestNormalizeOpenAIResponsesReasoningModeMapsProToMax(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","reasoning":{"mode":"pro"},"input":"hello"}`)
+
+	normalized, changed, err := normalizeOpenAIResponsesReasoningMode(body)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "max", gjson.GetBytes(normalized, "reasoning.effort").String())
+	require.False(t, gjson.GetBytes(normalized, "reasoning.mode").Exists())
+}
+
+func TestNormalizeOpenAIResponsesReasoningModePreservesExplicitEffort(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","reasoning":{"mode":"pro","effort":"high"},"input":"hello"}`)
+
+	normalized, changed, err := normalizeOpenAIResponsesReasoningMode(body)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "high", gjson.GetBytes(normalized, "reasoning.effort").String())
+	require.False(t, gjson.GetBytes(normalized, "reasoning.mode").Exists())
+}
+
+func TestNormalizeOpenAIResponsesReasoningModeDropsUnsupportedMode(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","reasoning":{"mode":"standard"},"input":"hello"}`)
+
+	normalized, changed, err := normalizeOpenAIResponsesReasoningMode(body)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, gjson.GetBytes(normalized, "reasoning").Exists())
+}
+
+func TestShouldNormalizeOpenAIResponsesReasoningMode(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, shouldNormalizeOpenAIResponsesReasoningMode(&Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}))
+	require.True(t, shouldNormalizeOpenAIResponsesReasoningMode(&Account{Platform: PlatformOpenAI, Type: AccountTypeSetupToken}))
+	require.False(t, shouldNormalizeOpenAIResponsesReasoningMode(&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}))
+	require.False(t, shouldNormalizeOpenAIResponsesReasoningMode(&Account{Platform: PlatformGrok, Type: AccountTypeOAuth}))
+	require.False(t, shouldNormalizeOpenAIResponsesReasoningMode(nil))
+}
+
+func TestNormalizeOpenAIResponsesTruncationDropsUnsupportedField(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","truncation":"auto","input":"hello"}`)
+
+	normalized, changed, err := normalizeOpenAIResponsesTruncation(body)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, gjson.GetBytes(normalized, "truncation").Exists())
+	require.Equal(t, "hello", gjson.GetBytes(normalized, "input").String())
+}
+
+func TestShouldNormalizeOpenAIResponsesTruncation(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, shouldNormalizeOpenAIResponsesTruncation(&Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+	}))
+	require.True(t, shouldNormalizeOpenAIResponsesTruncation(&Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeSetupToken,
+	}))
+	require.False(t, shouldNormalizeOpenAIResponsesTruncation(&Account{
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeSetupToken,
+	}))
+	require.False(t, shouldNormalizeOpenAIResponsesTruncation(nil))
+	require.False(t, shouldNormalizeOpenAIResponsesTruncation(&Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+	}))
+}
+
 func assertNormalizeOpenAIResponsesIngress_MergesLegacyMessagesWhenInputExists(t *testing.T) {
 	body := []byte(`{"model":"claude-sonnet-4.5","input":[{"type":"function_call_output","call_id":"call_1","output":"ok"}],"messages":[{"role":"developer","content":"ignore me"}],"previous_response_id":"resp_stale"}`)
 

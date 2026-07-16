@@ -33,6 +33,7 @@ import (
 // with the list in openai_gateway_service.go:2034 used by the /v1/responses
 // passthrough path.
 var cursorResponsesUnsupportedFields = []string{
+	"chat_template_kwargs",
 	"prompt_cache_retention",
 	"reasoningSummary",
 	"safety_identifier",

@@ -114,6 +114,50 @@ func TestOpenAIWSHTTPBridgeStopsOnBareErrorPayloadLikeCPA(t *testing.T) {
 	require.Equal(t, "api_error", gjson.Get(messages[0], "error.type").String())
 }
 
+func TestOpenAIWSHTTPBridgeOpenAI402DeactivatedWorkspaceSetsErrorAndFailsOver(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusPaymentRequired,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{"detail":{"code":"deactivated_workspace"}}`)),
+	}}
+	repo := &rateLimitAccountRepoStub{}
+	rateSvc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{
+		cfg:              &config.Config{Gateway: config.GatewayConfig{MaxLineSize: defaultMaxLineSize}},
+		httpUpstream:     upstream,
+		rateLimitService: rateSvc,
+	}
+	account := &Account{
+		ID:          75,
+		Name:        "openai-deactivated",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{"access_token": "access-token", "refresh_token": "refresh-token"},
+	}
+	rec := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(rec)
+	ginCtx.Request = httptest.NewRequest(http.MethodGet, "/v1/realtime", nil)
+
+	result, err := svc.proxyOpenAIWSHTTPBridgeTurn(
+		context.Background(), ginCtx, account, "access-token",
+		[]byte(`{"type":"response.create","model":"gpt-5.4","stream":true,"input":"hi"}`),
+		80, "gpt-5.4", "", "", "", 1,
+		func([]byte) error { return nil },
+	)
+
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusPaymentRequired, failoverErr.StatusCode)
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Contains(t, repo.lastErrorMsg, "Workspace deactivated (402)")
+}
+
 func TestOpenAIWSHTTPBridgeDecisionKeepsSmallFramesOnWS(t *testing.T) {
 	svc := &OpenAIGatewayService{
 		cfg: &config.Config{

@@ -2251,6 +2251,8 @@ func TestOpenAIGatewayService_PrewarmReadHonorsParentContext(t *testing.T) {
 	start := time.Now()
 	err := svc.performOpenAIWSGeneratePrewarm(
 		ctx,
+		nil,
+		1,
 		lease,
 		OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportResponsesWebsocketV2},
 		payload,
@@ -2265,6 +2267,64 @@ func TestOpenAIGatewayService_PrewarmReadHonorsParentContext(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "prewarm_read_event")
 	require.Less(t, elapsed, 180*time.Millisecond, "预热读取应受父 context 取消控制，不应阻塞到 read_timeout")
+}
+
+func TestOpenAIGatewayService_PrewarmResponseFailedDoesNotMarkPrewarmed(t *testing.T) {
+	setGinTestMode()
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.PrewarmGenerateEnabled = true
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+
+	repo := &rateLimitAccountRepoStub{}
+	rateSvc := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{cfg: cfg, rateLimitService: rateSvc}
+	account := &Account{
+		ID:          602,
+		Name:        "openai-prewarm-failed",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Extra: map[string]any{
+			"custom_error_codes_enabled": true,
+			"custom_error_codes":         []any{float64(http.StatusBadGateway)},
+		},
+	}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	conn := newOpenAIWSConn("prewarm_failed_conn", account.ID, &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.failed","response":{"id":"resp_prewarm_failed","status":"failed","error":{"code":"server_error","type":"server_error","message":"temporary upstream failure"}}}`),
+		},
+	}, nil)
+	lease := &openAIWSConnLease{accountID: account.ID, conn: conn}
+
+	err := svc.performOpenAIWSGeneratePrewarm(
+		context.Background(),
+		c,
+		1,
+		lease,
+		OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportResponsesWebsocketV2},
+		map[string]any{"type": "response.create", "model": "gpt-5.4"},
+		"",
+		map[string]any{"model": "gpt-5.4"},
+		account,
+		nil,
+		0,
+		0,
+	)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "temporary upstream failure")
+	require.False(t, lease.IsPrewarmed())
+	require.Equal(t, 0, repo.setErrorCalls, "retryable prewarm failure must stay pending")
+	_, pending := pendingOpenAIWSAccountStateSignal(c)
+	require.True(t, pending)
+
+	svc.FlushOpenAIWSPendingAccountStateSignal(context.Background(), c, account)
+	require.Equal(t, 1, repo.setErrorCalls)
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_TurnMetadataInPayloadOnConnReuse(t *testing.T) {

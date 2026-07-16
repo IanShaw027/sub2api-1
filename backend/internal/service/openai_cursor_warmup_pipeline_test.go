@@ -164,6 +164,7 @@ func TestCursorMixedShape_StripsUnsupportedFields(t *testing.T) {
 	cursorBody := []byte(`{
 		"model": "gpt-5.4",
 		"stream": true,
+		"chat_template_kwargs": {"enable_thinking": true},
 		"temperature": 0.2,
 		"max_tokens": 64,
 		"max_tool_calls": 8,

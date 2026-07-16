@@ -62,6 +62,9 @@ const (
 	openAIWSMaxPrevResponseIDDeletePasses        = 8
 
 	openAIWSSoftRateLimitAdvisoryThreshold = 90.0
+
+	openAIWSPendingAccountStateSignalKey   = "openai_ws_pending_account_state_signal"
+	openAIWSPersistedAccountStateSignalKey = "openai_ws_persisted_account_state_signal"
 )
 
 var openAIWSLogValueReplacer = strings.NewReplacer(
@@ -145,6 +148,15 @@ type openAIWSResponseFailedError struct {
 	errType   string
 	message   string
 	retryable bool
+}
+
+type openAIWSPendingAccountStateSignal struct {
+	accountID    int64
+	headers      http.Header
+	responseBody []byte
+	code         string
+	errType      string
+	message      string
 }
 
 func (e *openAIWSResponseFailedError) Error() string {
@@ -1094,6 +1106,9 @@ type openAIWSDiagnosticStartLog struct {
 }
 
 func shouldForceOpenAIWSPreferredConn(account *Account, preferredConnID string, snapshot openAIWSConnAcquireSnapshot, connProfile openAIWSConnProfile, forceNewConn, httpIngressWSOneShot bool) bool {
+	// When preferred exists and matches, force it even if currently leased: the
+	// acquire path will queue on that conn (affinity-only). Skipping force when
+	// busy previously caused dial-of-new session_bound conn → conn_mismatch.
 	return account != nil &&
 		account.Type == AccountTypeOAuth &&
 		strings.TrimSpace(preferredConnID) != "" &&
@@ -1101,9 +1116,7 @@ func shouldForceOpenAIWSPreferredConn(account *Account, preferredConnID string, 
 		!forceNewConn &&
 		!httpIngressWSOneShot &&
 		snapshot.Exists &&
-		snapshot.MatchesAcquire &&
-		!snapshot.Leased &&
-		snapshot.Waiters == 0
+		snapshot.MatchesAcquire
 }
 
 func canFallbackOpenAIWSPreferredConnUnavailable(storeDisabled bool, previousResponseID string) bool {
@@ -2052,12 +2065,24 @@ func (s *OpenAIGatewayService) openAIWSWriteTimeout() time.Duration {
 	return s.openAIWSTransportTimeouts().Write
 }
 
+// openAIWSSessionPrewritePingIdleThreshold is the idle age above which a reused
+// WS connection must be pinged before write. Production data showed keepalive
+// dead-conns being reused while prewrite stayed "not_required" because the old
+// threshold was min(sessionTTL*3/4, 60s) — with session idle 600s that meant
+// 60s, so many mid-idle corpses slipped through. Keep a tight 20–30s band.
 func openAIWSSessionPrewritePingIdleThreshold(sessionTTL time.Duration) time.Duration {
+	const (
+		minThreshold = 20 * time.Second
+		maxThreshold = 30 * time.Second
+	)
 	if sessionTTL <= 0 {
-		return 0
+		return minThreshold
 	}
-	threshold := sessionTTL * 3 / 4
-	maxThreshold := 60 * time.Second
+	// ~10% of session idle TTL, clamped to [20s, 30s].
+	threshold := sessionTTL / 10
+	if threshold < minThreshold {
+		return minThreshold
+	}
 	if threshold > maxThreshold {
 		return maxThreshold
 	}
@@ -2074,9 +2099,13 @@ func shouldOpenAIWSSessionPrewritePing(account *Account, connProfile openAIWSCon
 	if !lease.SupportsIdlePingWithoutReader() {
 		return false
 	}
-	if httpIngressWSOneShot || connProfile != openAIWSConnProfileSessionBound || threshold <= 0 {
+	// One-shot HTTP→WS has no multi-turn reuse risk worth the RTT.
+	if httpIngressWSOneShot || threshold <= 0 {
 		return false
 	}
+	// Ping both session_bound and neutral stock: neutral reuses also hit
+	// keepalive timeouts in production and previously skipped prewrite entirely.
+	_ = connProfile
 	return lease.ConnIdleDuration() >= threshold
 }
 
@@ -2781,11 +2810,19 @@ func (s *OpenAIGatewayService) shouldUseOpenAIHTTPIngressWSOneShot(c *gin.Contex
 		return false
 	}
 	if c != nil && c.Request != nil {
-		if strings.TrimSpace(c.GetHeader("session_id")) != "" || strings.TrimSpace(c.GetHeader("conversation_id")) != "" {
+		if strings.TrimSpace(c.GetHeader("session_id")) != "" ||
+			strings.TrimSpace(c.GetHeader("conversation_id")) != "" ||
+			strings.TrimSpace(c.GetHeader("x-session-id")) != "" {
 			return false
 		}
 	}
 	if strings.TrimSpace(previousResponseID) != "" || strings.TrimSpace(promptCacheKey) != "" {
+		return false
+	}
+	// Body-level sticky seeds: clients often put continuity only in the JSON body.
+	if strings.TrimSpace(openAIWSPayloadString(payload, "prompt_cache_key")) != "" ||
+		strings.TrimSpace(openAIWSPayloadString(payload, "previous_response_id")) != "" ||
+		strings.TrimSpace(openAIWSPayloadString(payload, "conversation_id")) != "" {
 		return false
 	}
 	return strings.TrimSpace(openAIWSPayloadString(payload, "response_id")) == ""
@@ -2903,6 +2940,130 @@ func openAIWSHasDeltaReanchorTarget(
 	return cached.accountID == accountID && strings.TrimSpace(cached.lastResponseID) != ""
 }
 
+// openAIWSClientPreviousMatchesSessionContext reports whether a client-supplied
+// previous_response_id is the same anchor stored in session context (or absent).
+// When they match, active-delta may reanchor onto a different leased conn using
+// that response id; when the client previous is foreign, reanchor stays closed.
+func openAIWSClientPreviousMatchesSessionContext(
+	stateStore OpenAIWSStateStore,
+	groupID, apiKeyID int64,
+	sessionHash string,
+	accountID int64,
+	clientPreviousResponseID string,
+) bool {
+	clientPreviousResponseID = strings.TrimSpace(clientPreviousResponseID)
+	if clientPreviousResponseID == "" {
+		return true
+	}
+	if stateStore == nil || sessionHash == "" {
+		return false
+	}
+	cached, ok := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
+	if !ok || cached.accountID != accountID {
+		return false
+	}
+	return strings.TrimSpace(cached.lastResponseID) == clientPreviousResponseID
+}
+
+func openAIWSLastFailureAllowsDeltaConnReanchor(lastFailureReason string) bool {
+	reason := strings.TrimPrefix(strings.TrimSpace(lastFailureReason), "prewarm_")
+	switch reason {
+	case "", "write_request", "write", "prewrite_ping_fail", "preferred_conn_unavailable":
+		return true
+	default:
+		return false
+	}
+}
+
+// openAIWSNormalizeLastFailureReason strips prewarm_ prefix for comparisons.
+func openAIWSNormalizeLastFailureReason(lastFailureReason string) string {
+	return strings.TrimPrefix(strings.TrimSpace(lastFailureReason), "prewarm_")
+}
+
+// openAIWSShouldSkipActiveDeltaForExpectedFull reports retries/paths that must
+// never attempt active-delta (payload stays full). Callers still log a clear
+// expected_full_* reason so ops can separate these from true delta failures.
+func openAIWSShouldSkipActiveDeltaForExpectedFull(
+	lastFailureReason string,
+	sessionPreemptedPrevious bool,
+	httpIngressWSOneShot bool,
+	sessionHash string,
+	stateStore OpenAIWSStateStore,
+) (skip bool, reason string) {
+	if sessionPreemptedPrevious {
+		return true, "expected_full_session_preempted"
+	}
+	if httpIngressWSOneShot {
+		return true, "expected_full_http_one_shot"
+	}
+	if stateStore == nil {
+		return true, "expected_full_state_store_unavailable"
+	}
+	if strings.TrimSpace(sessionHash) == "" {
+		return true, "expected_full_missing_session_hash"
+	}
+	switch openAIWSNormalizeLastFailureReason(lastFailureReason) {
+	case "previous_response_not_found":
+		// Upstream already rejected the previous anchor; retry is a clean full
+		// create. Re-evaluating delta would only burn CPU and risk re-anchoring
+		// to a dead id.
+		return true, "expected_full_after_prev_miss"
+	case "invalid_encrypted_content", "unsafe_tool_continuation":
+		return true, "expected_full_after_" + openAIWSNormalizeLastFailureReason(lastFailureReason)
+	default:
+		return false, ""
+	}
+}
+
+// openAIWSClassifyExpectedFullDeltaReason remaps evaluate/skip reasons that are
+// normal full-path outcomes (not sticky/delta regressions) onto expected_full_*.
+func openAIWSClassifyExpectedFullDeltaReason(
+	fallbackReason string,
+	cachedFound bool,
+	clientPreviousResponseID string,
+	storeFallbackReason string,
+) string {
+	reason := strings.TrimSpace(fallbackReason)
+	if reason == "" {
+		return ""
+	}
+	// Already tagged.
+	if strings.HasPrefix(reason, "expected_full_") {
+		return reason
+	}
+	switch reason {
+	case "no_session_context":
+		// Cold multi-turn seed or first bind: full create is correct.
+		return "expected_full_no_session_context"
+	case "session_context_oversized":
+		return "expected_full_session_oversized"
+	case "http_ingress_ws_one_shot":
+		return "expected_full_http_one_shot"
+	case "session_preempted_previous":
+		return "expected_full_session_preempted"
+	case "missing_session_hash":
+		return "expected_full_missing_session_hash"
+	case "state_store_unavailable":
+		return "expected_full_state_store_unavailable"
+	case "delta_shadow_disabled", "active_delta_disabled":
+		return "expected_full_" + reason
+	case "same_session_in_flight":
+		// Concurrent same-session: fail-closed to full for this request.
+		return "expected_full_same_session_in_flight"
+	case "not_candidate":
+		// First turn often lands here with missing_previous and no cache.
+		if !cachedFound && strings.TrimSpace(clientPreviousResponseID) == "" {
+			return "expected_full_first_turn"
+		}
+		if strings.TrimSpace(storeFallbackReason) == "missing_previous_response_id" && !cachedFound {
+			return "expected_full_first_turn"
+		}
+		return reason
+	default:
+		return reason
+	}
+}
+
 func openAIWSDeltaConnReanchorBlockers(
 	sessionPreemptedPrevious bool,
 	attempt int,
@@ -2915,6 +3076,7 @@ func openAIWSDeltaConnReanchorBlockers(
 	sessionHash string,
 	hasFunctionCallOutput bool,
 	hasReanchorTarget bool,
+	clientPreviousAllowsReanchor bool,
 ) string {
 	blockers := make([]string, 0, 8)
 	if sessionPreemptedPrevious {
@@ -2923,8 +3085,11 @@ func openAIWSDeltaConnReanchorBlockers(
 	if attempt > 2 {
 		blockers = append(blockers, "attempt_gt_2")
 	}
-	reason := strings.TrimSpace(lastFailureReason)
-	if reason != "" && reason != "write_request" && reason != "write" {
+	if !openAIWSLastFailureAllowsDeltaConnReanchor(lastFailureReason) {
+		reason := strings.TrimSpace(lastFailureReason)
+		if reason == "" {
+			reason = "unknown"
+		}
 		blockers = append(blockers, "last_failure_"+sanitizeOpenAIWSLogToken(reason))
 	}
 	if httpIngressWSOneShot {
@@ -2939,8 +3104,8 @@ func openAIWSDeltaConnReanchorBlockers(
 	if !storeDisabled {
 		blockers = append(blockers, "store_not_disabled")
 	}
-	if strings.TrimSpace(previousResponseID) != "" {
-		blockers = append(blockers, "has_previous_response_id")
+	if strings.TrimSpace(previousResponseID) != "" && !clientPreviousAllowsReanchor {
+		blockers = append(blockers, "foreign_previous_response_id")
 	}
 	if strings.TrimSpace(sessionHash) == "" {
 		blockers = append(blockers, "missing_session_hash")
@@ -3819,10 +3984,25 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 	}
 	forceNewConnForRecoveredFullReplay := shouldForceNewConnOnRecoveredFullReplay(lastFailureReason) && !preferNeutralForSafeFullReplay
+	// Populate preferred conn for store=false multi-turn without client previous:
+	// 1) session→conn map  2) session context.connID fallback (map can expire first).
+	// Production: missing preferred was a top driver of force_new + conn_mismatch.
 	if !bypassSessionConnForColdToolReplay && !preferNeutralForSafeFullReplay && !sessionPreemptedPrevious && !forceNewConnForRecoveredFullReplay && !httpIngressWSOneShot && stateStore != nil && storeDisabled && previousResponseID == "" && sessionHash != "" {
 		if connID, ok := stateStore.GetSessionConn(groupID, apiKeyID, account.ID, sessionHash); ok {
 			preferredConnID = connID
 			connAffinityHit = true
+		} else if cached, ok := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash); ok &&
+			cached.accountID == account.ID &&
+			strings.TrimSpace(cached.connID) != "" &&
+			strings.TrimSpace(cached.lastResponseID) != "" {
+			preferredConnID = strings.TrimSpace(cached.connID)
+			connAffinityHit = true
+			storeDecision.PreferredConnID = preferredConnID
+			storeDecision.ConnAffinityHit = true
+			if strings.TrimSpace(storeDecision.FallbackReason) == "" ||
+				strings.TrimSpace(storeDecision.FallbackReason) == "missing_previous_response_id" {
+				storeDecision.FallbackReason = "session_context_conn_prefer"
+			}
 		}
 	}
 	storeDisabledConnMode := s.openAIWSStoreDisabledConnMode()
@@ -3834,8 +4014,19 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		!storeDecision.ConnAffinityHit &&
 		strings.TrimSpace(storeDecision.FallbackReason) == "conn_affinity_miss"
 	sameAccountContinuationReanchoredSessionConn := false
-	if sameAccountContinuationWithoutConn && stateStore != nil && sessionHash != "" {
-		if cached, ok := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash); ok &&
+	continuationPreviousMatchesSession := openAIWSClientPreviousMatchesSessionContext(
+		stateStore, groupID, apiKeyID, sessionHash, account.ID, previousResponseID,
+	)
+	if sameAccountContinuationWithoutConn && stateStore != nil && sessionHash != "" && continuationPreviousMatchesSession {
+		// Prefer live session→conn, then context.connID (may be stale but better than none).
+		if connID, ok := stateStore.GetSessionConn(groupID, apiKeyID, account.ID, sessionHash); ok {
+			preferredConnID = connID
+			connAffinityHit = true
+			storeDecision.PreferredConnID = preferredConnID
+			storeDecision.ConnAffinityHit = true
+			storeDecision.FallbackReason = "session_conn_reanchor"
+			sameAccountContinuationReanchoredSessionConn = true
+		} else if cached, ok := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash); ok &&
 			cached.accountID == account.ID &&
 			strings.TrimSpace(cached.lastResponseID) == previousResponseID &&
 			strings.TrimSpace(cached.connID) != "" {
@@ -3875,11 +4066,17 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			forceNewConn = true
 		}
 	}
-	lastFailureAllowsDeltaConnReanchor := strings.TrimSpace(lastFailureReason) == "" ||
-		strings.TrimSpace(lastFailureReason) == "write_request" ||
-		strings.TrimSpace(lastFailureReason) == "write"
+	// Reanchor is safe on clean first attempts and after pure transport write failures.
+	// Also allow after preferred-conn miss recovery: the pool dials a new conn and
+	// active-delta can still chain from session-context lastResponseID (OAuth store=false
+	// path relies on this; production conn_mismatch was dominated by reanchor=false).
+	lastFailureAllowsDeltaConnReanchor := openAIWSLastFailureAllowsDeltaConnReanchor(lastFailureReason)
 	hasFunctionCallOutputForReanchor := HasFunctionCallOutput(payload)
 	fullPayloadFunctionOutputIsReanchorBlocker := false
+	// Client previous that matches session-context lastResponseID still allows reanchor
+	// when the leased conn differs (response→conn map miss / dead preferred).
+	clientPreviousAllowsDeltaReanchor := previousResponseID == "" ||
+		openAIWSClientPreviousMatchesSessionContext(stateStore, groupID, apiKeyID, sessionHash, account.ID, previousResponseID)
 	deltaConnReanchorTarget := false
 	if !preferNeutralForSafeFullReplay &&
 		!sessionPreemptedPrevious &&
@@ -3889,7 +4086,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		account.Type == AccountTypeOAuth &&
 		stateStore != nil &&
 		storeDisabled &&
-		previousResponseID == "" &&
+		clientPreviousAllowsDeltaReanchor &&
 		sessionHash != "" {
 		deltaConnReanchorTarget = openAIWSHasDeltaReanchorTarget(stateStore, groupID, apiKeyID, sessionHash, account.ID)
 	}
@@ -3905,6 +4102,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		sessionHash,
 		fullPayloadFunctionOutputIsReanchorBlocker,
 		deltaConnReanchorTarget,
+		clientPreviousAllowsDeltaReanchor,
 	)
 	allowDeltaConnReanchor := !preferNeutralForSafeFullReplay &&
 		!sessionPreemptedPrevious &&
@@ -3914,7 +4112,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		account.Type == AccountTypeOAuth &&
 		stateStore != nil &&
 		storeDisabled &&
-		previousResponseID == "" &&
+		clientPreviousAllowsDeltaReanchor &&
 		sessionHash != "" &&
 		deltaConnReanchorTarget
 	if sessionPreemptedPrevious {
@@ -4205,19 +4403,32 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	contextPayloadRaw := openAIWSActiveDeltaContextPayloadRaw(payload, storeDecision)
 	deltaShadowEnabled := openAIWSDeltaShadowEnabled()
 	activeDeltaRuntimeEnabled := openAIWSActiveDeltaEnabled()
-	activeDeltaLog := openAIWSDeltaShadowLog{}
+	activeDeltaLog := openAIWSDeltaShadowLog{
+		RequestID: requestID,
+		AccountID: account.ID,
+		ConnID:    connID,
+	}
 	activeDeltaApplied := false
 	shadowOwner := false
-	if deltaShadowEnabled && !sessionPreemptedPrevious && !httpIngressWSOneShot && stateStore != nil && sessionHash != "" {
+	skipDeltaForExpectedFull, expectedFullReason := openAIWSShouldSkipActiveDeltaForExpectedFull(
+		lastFailureReason,
+		sessionPreemptedPrevious,
+		httpIngressWSOneShot,
+		sessionHash,
+		stateStore,
+	)
+	if skipDeltaForExpectedFull {
+		// Clean full path: do not take in-flight lock or run prefix hashing.
+		activeDeltaLog.Candidate = false
+		activeDeltaLog.FallbackReason = expectedFullReason
+		activeDeltaLog.StoreFallbackReason = storeDecision.FallbackReason
+		logOpenAIWSDeltaShadow(activeDeltaLog)
+	} else if deltaShadowEnabled && stateStore != nil && sessionHash != "" {
 		shadowOwner = stateStore.TrySessionInFlight(groupID, apiKeyID, sessionHash)
 		if !shadowOwner {
-			activeDeltaLog = openAIWSDeltaShadowLog{
-				RequestID:      requestID,
-				AccountID:      account.ID,
-				ConnID:         connID,
-				Candidate:      false,
-				FallbackReason: "same_session_in_flight",
-			}
+			activeDeltaLog.Candidate = false
+			activeDeltaLog.FallbackReason = "expected_full_same_session_in_flight"
+			logOpenAIWSDeltaShadow(activeDeltaLog)
 		} else {
 			cached, found := stateStore.GetSessionContext(groupID, apiKeyID, sessionHash)
 			connMostRecent, _ := stateStore.GetConnLastResponse(connID)
@@ -4269,26 +4480,42 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			} else {
 				activeDeltaLog = evaluateOpenAIWSDeltaShadowCandidate(shadowInput)
 			}
+			// Remap normal full-path outcomes so ops can filter true regressions
+			// (conn_mismatch, prefix_break_*) from expected full creates.
+			if !activeDeltaApplied {
+				activeDeltaLog.FallbackReason = openAIWSClassifyExpectedFullDeltaReason(
+					activeDeltaLog.FallbackReason,
+					found,
+					storeDecision.OriginalPreviousResponseID,
+					storeDecision.FallbackReason,
+				)
+			}
+			logOpenAIWSDeltaShadow(activeDeltaLog)
 		}
-		logOpenAIWSDeltaShadow(activeDeltaLog)
 	}
 	if !activeDeltaApplied && strings.TrimSpace(activeDeltaLog.FallbackReason) == "" {
 		switch {
 		case !deltaShadowEnabled:
-			activeDeltaLog.FallbackReason = "delta_shadow_disabled"
+			activeDeltaLog.FallbackReason = "expected_full_delta_shadow_disabled"
 		case sessionPreemptedPrevious:
-			activeDeltaLog.FallbackReason = "session_preempted_previous"
+			activeDeltaLog.FallbackReason = "expected_full_session_preempted"
 		case httpIngressWSOneShot:
-			activeDeltaLog.FallbackReason = "http_ingress_ws_one_shot"
+			activeDeltaLog.FallbackReason = "expected_full_http_one_shot"
 		case stateStore == nil:
-			activeDeltaLog.FallbackReason = "state_store_unavailable"
+			activeDeltaLog.FallbackReason = "expected_full_state_store_unavailable"
 		case sessionHash == "":
-			activeDeltaLog.FallbackReason = "missing_session_hash"
+			activeDeltaLog.FallbackReason = "expected_full_missing_session_hash"
 		case !activeDeltaRuntimeEnabled && activeDeltaLog.Candidate:
-			activeDeltaLog.FallbackReason = "active_delta_disabled"
+			activeDeltaLog.FallbackReason = "expected_full_active_delta_disabled"
 		default:
-			activeDeltaLog.FallbackReason = "not_candidate"
+			activeDeltaLog.FallbackReason = openAIWSClassifyExpectedFullDeltaReason(
+				"not_candidate",
+				false,
+				storeDecision.OriginalPreviousResponseID,
+				storeDecision.FallbackReason,
+			)
 		}
+		logOpenAIWSDeltaShadow(activeDeltaLog)
 	}
 	defer func() {
 		if shadowOwner {
@@ -4490,6 +4717,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	if !httpIngressWSOneShot {
 		if err := s.performOpenAIWSGeneratePrewarm(
 			ctx,
+			c,
+			attempt,
 			lease,
 			decision,
 			payload,
@@ -5064,7 +5293,6 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		if eventType == "error" {
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(message)
 			_ = markOpsCyberPolicyIfDetected(c, message, http.StatusOK, usage.InputTokens, usage.OutputTokens)
-			s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), message, errCodeRaw, errTypeRaw, errMsgRaw)
 			errMsg := strings.TrimSpace(errMsgRaw)
 			if errMsg == "" {
 				errMsg = "Upstream websocket error"
@@ -5199,8 +5427,15 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			// error 事件后连接不再可复用，避免回池后污染下一请求。
 			lease.MarkBrokenFor("error_event")
 			if !wroteDownstream && canFallback {
+				// Rate limits must immediately remove this account from scheduling.
+				// Other retryable WS errors defer account-state persistence to the
+				// final HTTP/account attempt so one client request is not counted twice.
+				if fallbackReason == "upstream_rate_limited" {
+					s.persistOpenAIWSUpstreamErrorSignal(ctx, account, lease.HandshakeHeaders(), message, errCodeRaw, errTypeRaw, errMsgRaw)
+				}
 				return nil, wrapOpenAIWSFallbackWithPayloadState(fallbackReason, errors.New(errMsg), previousResponseID, activeDeltaApplied)
 			}
+			s.persistOpenAIWSUpstreamErrorSignal(ctx, account, lease.HandshakeHeaders(), message, errCodeRaw, errTypeRaw, errMsgRaw)
 			statusCode := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
 			clientErrType := openAIWSErrorClientTypeFromRaw(statusCode, errTypeRaw)
 			clientErrCode := openAIWSErrorClientCodeFromRaw(statusCode, errCodeRaw, clientErrType)
@@ -5247,6 +5482,17 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				message:   errMsg,
 				retryable: openAIStreamFailedEventShouldFailover(message, errMsg),
 			}
+			s.persistOrDeferOpenAIWSResponseFailedSignal(
+				ctx,
+				c,
+				account,
+				lease.HandshakeHeaders(),
+				message,
+				errCodeRaw,
+				errTypeRaw,
+				errMsgRaw,
+				failedErr.retryable && !wroteDownstream && attempt < openAIWSReconnectRetryLimit+1,
+			)
 			lease.MarkBrokenFor("response_failed")
 			if !wroteDownstream {
 				return nil, wrapOpenAIWSFallback("response_failed", failedErr)
@@ -5371,6 +5617,12 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		if !httpIngressWSOneShot {
 			boundConnID = lease.ConnID()
 			stateStore.BindResponseConn(groupID, apiKeyID, responseID, boundConnID, ttl)
+			// Always stamp conn→last_response, even when this turn is not the
+			// session-context owner. Delta most_recent_match depends on it; missing
+			// stamps were a major source of conn_mismatch in production.
+			if connID != "" {
+				stateStore.BindConnLastResponse(connID, responseID, ttl)
+			}
 		}
 	}
 	if !httpIngressWSOneShot && stateStore != nil && storeDisabled && sessionHash != "" && !clientDisconnected && !recoveredUpstreamTransportEOF {
@@ -5394,6 +5646,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				materialized = append(materialized, deltaShadowRawOutputHashes...)
 				nonInputHash, _, nonInputFields := openAIWSNonInputFingerprint(contextPayloadRaw)
 				ttl := s.openAIWSSessionStickyTTL()
+				// Redundant with the unconditional stamp above when both run; keeps
+				// session-context owner path self-contained if response bind is skipped.
 				stateStore.BindConnLastResponse(connID, responseID, ttl)
 				sessionContextValue := openAIWSSessionContextValue{
 					accountID:               account.ID,
@@ -5528,6 +5782,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			imageSizeTier = resolvedSizeTier
 		}
 	}
+	clearOpenAIWSPendingAccountStateSignal(c)
+	clearOpenAIWSPersistedAccountStateSignals(c)
 
 	return &OpenAIForwardResult{
 		RequestID:            responseID,
@@ -5836,6 +6092,18 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 			normalized = next
 		}
+		if reasoningModeNormalized, reasoningModeChanged, normalizeErr := normalizeOpenAIResponsesReasoningMode(normalized); normalizeErr != nil {
+			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", normalizeErr)
+		} else if reasoningModeChanged {
+			normalized = reasoningModeNormalized
+		}
+		if shouldNormalizeOpenAIResponsesTruncation(account) {
+			if truncationNormalized, truncationChanged, normalizeErr := normalizeOpenAIResponsesTruncation(normalized); normalizeErr != nil {
+				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", normalizeErr)
+			} else if truncationChanged {
+				normalized = truncationNormalized
+			}
+		}
 		var normalizedReqBody map[string]any
 		if err := json.Unmarshal(normalized, &normalizedReqBody); err == nil {
 			if normalizeOpenAIResponsesInputToolRolesWithOptions(normalizedReqBody, false) {
@@ -6115,7 +6383,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				writeClientMessage,
 			)
 			if hooks != nil && hooks.AfterTurn != nil {
-				hooks.AfterTurn(turn, cloneOpenAIWSPayloadBytes(bridgePayloadRaw), result, bridgeErr)
+				turnErr := bridgeErr
+				if turnErr == nil && result != nil {
+					turnErr = result.wsTerminalError
+				}
+				hooks.AfterTurn(turn, cloneOpenAIWSPayloadBytes(bridgePayloadRaw), result, turnErr)
 			}
 			if bridgeErr != nil {
 				return bridgeErr
@@ -6123,34 +6395,46 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if err := requireOpenAIWSHTTPBridgeTurnResult(result); err != nil {
 				return err
 			}
-			bridgeReplayInput = cloneOpenAIWSRawMessages(turnReplayInput)
-			bridgeReplayInputExists = turnReplayInputExists
-			if result.wsReplayInputExists {
-				bridgeReplayInput = append(bridgeReplayInput, cloneOpenAIWSRawMessages(result.wsReplayInput)...)
-				bridgeReplayInputExists = true
-			}
-			if bridgeTurnState := strings.TrimSpace(result.ResponseHeaders.Get(openAIWSTurnStateHeader)); bridgeTurnState != "" {
-				turnState = bridgeTurnState
-				if stateStore != nil && sessionHash != "" {
-					stateStore.BindSessionTurnState(groupID, sessionHash, bridgeTurnState, s.openAIWSSessionStickyTTL())
+			if result.wsTerminalError == nil {
+				bridgeReplayInput = cloneOpenAIWSRawMessages(turnReplayInput)
+				bridgeReplayInputExists = turnReplayInputExists
+				if result.wsReplayInputExists {
+					bridgeReplayInput = append(bridgeReplayInput, cloneOpenAIWSRawMessages(result.wsReplayInput)...)
+					bridgeReplayInputExists = true
 				}
+				if bridgeTurnState := strings.TrimSpace(result.ResponseHeaders.Get(openAIWSTurnStateHeader)); bridgeTurnState != "" {
+					turnState = bridgeTurnState
+					if stateStore != nil && sessionHash != "" {
+						stateStore.BindSessionTurnState(groupID, sessionHash, bridgeTurnState, s.openAIWSSessionStickyTTL())
+					}
+				}
+			} else {
+				bridgeReplayInput = nil
+				bridgeReplayInputExists = false
+				turnState = ""
 			}
 			responseID := strings.TrimSpace(result.RequestID)
-			bridgeLastResponseID = responseID
-			bridgeLastPayload = cloneOpenAIWSPayloadBytes(currentBridgePayload.payloadRaw)
-			nextStrictState, strictStateErr := buildOpenAIWSIngressPreviousTurnStrictState(currentBridgePayload.payloadRaw)
-			if strictStateErr != nil {
-				bridgeLastStrictState = nil
-				logOpenAIWSModeInfo(
-					"ingress_ws_http_bridge_strict_state_skip account_id=%d turn=%d reason=build_error cause=%s",
-					account.ID,
-					turn,
-					truncateOpenAIWSLogValue(strictStateErr.Error(), openAIWSLogValueMaxLen),
-				)
+			if result.wsTerminalError == nil {
+				bridgeLastResponseID = responseID
+				bridgeLastPayload = cloneOpenAIWSPayloadBytes(currentBridgePayload.payloadRaw)
+				nextStrictState, strictStateErr := buildOpenAIWSIngressPreviousTurnStrictState(currentBridgePayload.payloadRaw)
+				if strictStateErr != nil {
+					bridgeLastStrictState = nil
+					logOpenAIWSModeInfo(
+						"ingress_ws_http_bridge_strict_state_skip account_id=%d turn=%d reason=build_error cause=%s",
+						account.ID,
+						turn,
+						truncateOpenAIWSLogValue(strictStateErr.Error(), openAIWSLogValueMaxLen),
+					)
+				} else {
+					bridgeLastStrictState = nextStrictState
+				}
 			} else {
-				bridgeLastStrictState = nextStrictState
+				bridgeLastResponseID = ""
+				bridgeLastPayload = nil
+				bridgeLastStrictState = nil
 			}
-			if responseID != "" && stateStore != nil {
+			if result.wsTerminalError == nil && responseID != "" && stateStore != nil {
 				ttl := s.openAIWSResponseStickyTTL()
 				logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, stateStore.BindResponseAccount(ctx, groupID, apiKeyID, responseID, account.ID, ttl))
 			}
@@ -6417,6 +6701,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		eventCount := 0
 		tokenEventCount := 0
 		terminalEventCount := 0
+		var terminalError error
 		replayCollector := &openAIWSToolCallReplayCollector{}
 		firstEventType := ""
 		lastEventType := ""
@@ -6482,7 +6767,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if eventType == "error" {
 				errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(upstreamMessage)
 				_ = markOpsCyberPolicyIfDetected(c, upstreamMessage, http.StatusOK, usage.InputTokens, usage.OutputTokens)
-				s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), upstreamMessage, errCodeRaw, errTypeRaw, errMsgRaw)
+				s.persistOpenAIWSUpstreamErrorSignal(ctx, account, lease.HandshakeHeaders(), upstreamMessage, errCodeRaw, errTypeRaw, errMsgRaw)
 				fallbackReason, _ := classifyOpenAIWSErrorEventFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
 				errCode, errType, errMessage := summarizeOpenAIWSErrorEventFieldsFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
 				snapshotDecision := openAIWSContinuationStoreDecision{
@@ -6637,6 +6922,14 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			imageCounter.AddSSEData(upstreamMessage)
 
 			if eventType == "response.failed" {
+				errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSResponseFailedErrorFields(upstreamMessage)
+				s.persistOpenAIWSUpstreamErrorSignal(ctx, account, lease.HandshakeHeaders(), upstreamMessage, errCodeRaw, errTypeRaw, errMsgRaw)
+				failedMessage := sanitizeUpstreamErrorMessage(strings.TrimSpace(errMsgRaw))
+				if failedMessage == "" {
+					failedMessage = "Upstream response failed"
+				}
+				terminalError = fmt.Errorf("upstream response failed: %s", failedMessage)
+				lease.MarkBrokenFor("ingress_response_failed")
 				if hit, code, msg := detectOpenAICyberPolicy(upstreamMessage); hit {
 					MarkOpsCyberPolicy(c, CyberPolicyMark{
 						Code:           code,
@@ -6769,6 +7062,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					Duration:           time.Since(turnStart),
 					FirstTokenMs:       firstTokenMs,
 					ClientDisconnected: clientDisconnected,
+					wsTerminalError:    terminalError,
 
 					DeltaShadowOutputHashes:   deltaShadowRawOutputHashes,
 					DeltaShadowOutputShapes:   deltaShadowRawOutputShapes,
@@ -7432,46 +7726,70 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		turnRetry = 0
 		turnPrevRecoveryTried = false
-		lastTurnFinishedAt = time.Now()
-		lastTurnClean = !result.ClientDisconnected
+		if result.wsTerminalError == nil {
+			lastTurnFinishedAt = time.Now()
+		} else {
+			lastTurnFinishedAt = time.Time{}
+		}
+		lastTurnClean = !result.ClientDisconnected && result.wsTerminalError == nil
 		if hooks != nil && hooks.AfterTurn != nil {
-			hooks.AfterTurn(turn, cloneOpenAIWSPayloadBytes(currentPayload), result, nil)
+			hooks.AfterTurn(turn, cloneOpenAIWSPayloadBytes(currentPayload), result, result.wsTerminalError)
 		}
 		responseID := strings.TrimSpace(result.RequestID)
-		lastTurnResponseID = responseID
-		lastTurnPayload = cloneOpenAIWSPayloadBytes(currentPayload)
-		lastTurnReplayInput = cloneOpenAIWSRawMessages(currentTurnReplayInput)
-		lastTurnReplayInputExists = currentTurnReplayInputExists
-		if result.wsReplayInputExists {
-			lastTurnReplayInput = append(lastTurnReplayInput, cloneOpenAIWSRawMessages(result.wsReplayInput)...)
-			lastTurnReplayInputExists = true
-		}
-		nextStrictState, strictStateErr := buildOpenAIWSIngressPreviousTurnStrictState(currentPayload)
-		if strictStateErr != nil {
-			lastTurnStrictState = nil
-			logOpenAIWSModeInfo(
-				"ingress_ws_prev_response_strict_state_skip account_id=%d turn=%d conn_id=%s reason=build_error cause=%s",
-				account.ID,
-				turn,
-				truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
-				truncateOpenAIWSLogValue(strictStateErr.Error(), openAIWSLogValueMaxLen),
-			)
+		if result.wsTerminalError == nil {
+			lastTurnResponseID = responseID
+			lastTurnPayload = cloneOpenAIWSPayloadBytes(currentPayload)
+			lastTurnReplayInput = cloneOpenAIWSRawMessages(currentTurnReplayInput)
+			lastTurnReplayInputExists = currentTurnReplayInputExists
+			if result.wsReplayInputExists {
+				lastTurnReplayInput = append(lastTurnReplayInput, cloneOpenAIWSRawMessages(result.wsReplayInput)...)
+				lastTurnReplayInputExists = true
+			}
 		} else {
-			lastTurnStrictState = nextStrictState
+			lastTurnResponseID = ""
+			lastTurnPayload = nil
+			lastTurnStrictState = nil
+			lastTurnReplayInput = nil
+			lastTurnReplayInputExists = false
+		}
+		if result.wsTerminalError == nil {
+			nextStrictState, strictStateErr := buildOpenAIWSIngressPreviousTurnStrictState(currentPayload)
+			if strictStateErr != nil {
+				lastTurnStrictState = nil
+				logOpenAIWSModeInfo(
+					"ingress_ws_prev_response_strict_state_skip account_id=%d turn=%d conn_id=%s reason=build_error cause=%s",
+					account.ID,
+					turn,
+					truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
+					truncateOpenAIWSLogValue(strictStateErr.Error(), openAIWSLogValueMaxLen),
+				)
+			} else {
+				lastTurnStrictState = nextStrictState
+			}
 		}
 
 		bindCleanTurnResponseAccount := func(boundConnID string) {
-			if responseID != "" && stateStore != nil && !result.ClientDisconnected {
+			if result.wsTerminalError == nil && responseID != "" && stateStore != nil && !result.ClientDisconnected {
 				ttl := s.openAIWSResponseStickyTTL()
 				bindAccountErr := stateStore.BindResponseAccount(ctx, groupID, apiKeyID, responseID, account.ID, ttl)
 				logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, bindAccountErr)
 			}
 		}
 		bindCleanTurnState := func() {
+			if result.wsTerminalError != nil {
+				releaseShadowOwner()
+				return
+			}
 			boundConnID := ""
 			if responseID != "" && stateStore != nil && !result.ClientDisconnected {
 				boundConnID = connID
-				stateStore.BindResponseConn(groupID, apiKeyID, responseID, boundConnID, s.openAIWSResponseStickyTTL())
+				ttl := s.openAIWSResponseStickyTTL()
+				stateStore.BindResponseConn(groupID, apiKeyID, responseID, boundConnID, ttl)
+				// Always stamp conn→last_response for delta most_recent matching,
+				// independent of whether this turn owns session-context fingerprints.
+				if connID != "" {
+					stateStore.BindConnLastResponse(connID, responseID, ttl)
+				}
 			}
 			bindCleanTurnResponseAccount(boundConnID)
 			if stateStore != nil && storeDisabled && sessionHash != "" && !result.ClientDisconnected {
@@ -7558,6 +7876,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 
 		bindCleanTurnState()
+		if result.wsTerminalError != nil {
+			resetSessionLease(true)
+			preferredConnID = ""
+			turnState = ""
+		}
 		nextPayload, parseErr := parseClientPayload(turn+1, nextClientMessage)
 		if parseErr != nil {
 			return parseErr
@@ -7613,7 +7936,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			currentTurnReplayInput = nil
 			currentTurnReplayInputExists = false
 		}
-		if !shouldBranchTurn && connID != "" {
+		if !shouldBranchTurn && result.wsTerminalError == nil && connID != "" {
 			preferredConnID = connID
 		}
 		if nextPayload.promptCacheKey != "" {
@@ -7680,6 +8003,8 @@ func (s *OpenAIGatewayService) isOpenAIWSGeneratePrewarmEnabled() bool {
 // 预热默认关闭，仅在配置开启后生效；失败时按可恢复错误回退到 HTTP。
 func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 	ctx context.Context,
+	c *gin.Context,
+	attempt int,
 	lease *openAIWSConnLease,
 	decision OpenAIWSProtocolDecision,
 	payload map[string]any,
@@ -7790,7 +8115,7 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 
 		if eventType == "error" {
 			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSErrorEventFields(message)
-			s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), message, errCodeRaw, errTypeRaw, errMsgRaw)
+			s.persistOpenAIWSUpstreamErrorSignal(ctx, account, lease.HandshakeHeaders(), message, errCodeRaw, errTypeRaw, errMsgRaw)
 			errMsg := strings.TrimSpace(errMsgRaw)
 			if errMsg == "" {
 				errMsg = "OpenAI websocket prewarm error"
@@ -7816,6 +8141,32 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 				return wrapOpenAIWSFallback("prewarm_"+fallbackReason, errors.New(errMsg))
 			}
 			return wrapOpenAIWSFallback("prewarm_error_event", errors.New(errMsg))
+		}
+		if eventType == "response.failed" {
+			errCodeRaw, errTypeRaw, errMsgRaw := parseOpenAIWSResponseFailedErrorFields(message)
+			errMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(errMsgRaw))
+			if errMsg == "" {
+				errMsg = "OpenAI websocket prewarm response failed"
+			}
+			failedErr := &openAIWSResponseFailedError{
+				code:      errCodeRaw,
+				errType:   errTypeRaw,
+				message:   errMsg,
+				retryable: openAIStreamFailedEventShouldFailover(message, errMsg),
+			}
+			s.persistOrDeferOpenAIWSResponseFailedSignal(
+				ctx,
+				c,
+				account,
+				lease.HandshakeHeaders(),
+				message,
+				errCodeRaw,
+				errTypeRaw,
+				errMsgRaw,
+				failedErr.retryable && attempt < openAIWSReconnectRetryLimit+1,
+			)
+			lease.MarkBrokenFor("prewarm_response_failed")
+			return wrapOpenAIWSFallback("prewarm_response_failed", failedErr)
 		}
 
 		if isOpenAIWSTerminalEvent(eventType) {
@@ -8245,6 +8596,154 @@ func (s *OpenAIGatewayService) persistOpenAIWSRateLimitSignal(ctx context.Contex
 	s.handleOpenAIAccountUpstreamError(ctx, account, http.StatusTooManyRequests, headers, responseBody)
 }
 
+func normalizeOpenAIWSAccountStateResponseBody(responseBody []byte, codeRaw, errTypeRaw, msgRaw string) []byte {
+	code := strings.TrimSpace(codeRaw)
+	if strings.EqualFold(code, "deactivated_workspace") {
+		return []byte(`{"detail":{"code":"deactivated_workspace"}}`)
+	}
+	if len(responseBody) > 0 && gjson.GetBytes(responseBody, "error").Exists() {
+		return responseBody
+	}
+	if len(responseBody) > 0 {
+		if nested := gjson.GetBytes(responseBody, "response.error"); nested.Exists() && nested.Raw != "" {
+			wrapped, err := json.Marshal(map[string]json.RawMessage{"error": json.RawMessage(nested.Raw)})
+			if err == nil {
+				return wrapped
+			}
+		}
+	}
+	body, err := json.Marshal(map[string]any{
+		"error": map[string]any{
+			"code":    code,
+			"type":    strings.TrimSpace(errTypeRaw),
+			"message": strings.TrimSpace(msgRaw),
+		},
+	})
+	if err != nil {
+		return responseBody
+	}
+	return body
+}
+
+func shouldPersistOpenAIWSAccountStateSignalImmediately(codeRaw, errTypeRaw string) bool {
+	switch openAIWSErrorHTTPStatusFromRaw(codeRaw, errTypeRaw) {
+	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden, http.StatusTooManyRequests:
+		return true
+	default:
+		return false
+	}
+}
+
+func clearOpenAIWSPendingAccountStateSignal(c *gin.Context) {
+	if c != nil {
+		c.Set(openAIWSPendingAccountStateSignalKey, nil)
+	}
+}
+
+func clearOpenAIWSPersistedAccountStateSignals(c *gin.Context) {
+	if c != nil {
+		c.Set(openAIWSPersistedAccountStateSignalKey, nil)
+	}
+}
+
+func hasOpenAIWSAccountStateSignalPersisted(c *gin.Context, accountID int64) bool {
+	if c == nil || accountID <= 0 {
+		return false
+	}
+	value, _ := c.Get(openAIWSPersistedAccountStateSignalKey)
+	persisted, _ := value.(map[int64]struct{})
+	_, exists := persisted[accountID]
+	return exists
+}
+
+func markOpenAIWSAccountStateSignalPersisted(c *gin.Context, accountID int64) bool {
+	if c == nil || accountID <= 0 {
+		return true
+	}
+	value, _ := c.Get(openAIWSPersistedAccountStateSignalKey)
+	persisted, _ := value.(map[int64]struct{})
+	if persisted == nil {
+		persisted = make(map[int64]struct{})
+	}
+	if _, exists := persisted[accountID]; exists {
+		return false
+	}
+	persisted[accountID] = struct{}{}
+	c.Set(openAIWSPersistedAccountStateSignalKey, persisted)
+	return true
+}
+
+func pendingOpenAIWSAccountStateSignal(c *gin.Context) (*openAIWSPendingAccountStateSignal, bool) {
+	if c == nil {
+		return nil, false
+	}
+	value, ok := c.Get(openAIWSPendingAccountStateSignalKey)
+	if !ok || value == nil {
+		return nil, false
+	}
+	signal, ok := value.(*openAIWSPendingAccountStateSignal)
+	return signal, ok && signal != nil
+}
+
+func (s *OpenAIGatewayService) persistOrDeferOpenAIWSResponseFailedSignal(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	headers http.Header,
+	responseBody []byte,
+	codeRaw, errTypeRaw, msgRaw string,
+	retryableWithoutDownstream bool,
+) {
+	if account == nil {
+		return
+	}
+	immediate := shouldPersistOpenAIWSAccountStateSignalImmediately(codeRaw, errTypeRaw)
+	if !retryableWithoutDownstream || immediate || c == nil {
+		clearOpenAIWSPendingAccountStateSignal(c)
+		if !markOpenAIWSAccountStateSignalPersisted(c, account.ID) {
+			return
+		}
+		s.persistOpenAIWSUpstreamErrorSignal(ctx, account, headers, responseBody, codeRaw, errTypeRaw, msgRaw)
+		return
+	}
+	if hasOpenAIWSAccountStateSignalPersisted(c, account.ID) {
+		return
+	}
+	c.Set(openAIWSPendingAccountStateSignalKey, &openAIWSPendingAccountStateSignal{
+		accountID:    account.ID,
+		headers:      cloneHeader(headers),
+		responseBody: append([]byte(nil), responseBody...),
+		code:         strings.TrimSpace(codeRaw),
+		errType:      strings.TrimSpace(errTypeRaw),
+		message:      strings.TrimSpace(msgRaw),
+	})
+}
+
+// FlushOpenAIWSPendingAccountStateSignal commits at most one transient
+// response.failed signal after the internal WS retry loop gives up. It is
+// exported for the gateway retry coordinator, which owns the final fallback
+// decision outside this file.
+func (s *OpenAIGatewayService) FlushOpenAIWSPendingAccountStateSignal(ctx context.Context, c *gin.Context, account *Account) {
+	signal, ok := pendingOpenAIWSAccountStateSignal(c)
+	clearOpenAIWSPendingAccountStateSignal(c)
+	if !ok || account == nil || signal.accountID != account.ID {
+		return
+	}
+	if !markOpenAIWSAccountStateSignalPersisted(c, account.ID) {
+		return
+	}
+	s.persistOpenAIWSUpstreamErrorSignal(ctx, account, signal.headers, signal.responseBody, signal.code, signal.errType, signal.message)
+}
+
+func (s *OpenAIGatewayService) persistOpenAIWSUpstreamErrorSignal(ctx context.Context, account *Account, headers http.Header, responseBody []byte, codeRaw, errTypeRaw, msgRaw string) {
+	if s == nil || s.rateLimitService == nil || account == nil || account.Platform != PlatformOpenAI {
+		return
+	}
+	statusCode := openAIWSErrorHTTPStatusFromRaw(codeRaw, errTypeRaw)
+	normalizedBody := normalizeOpenAIWSAccountStateResponseBody(responseBody, codeRaw, errTypeRaw, msgRaw)
+	s.handleOpenAIAccountUpstreamError(ctx, account, statusCode, headers, normalizedBody)
+}
+
 func (s *OpenAIGatewayService) persistOpenAIWSDialFailureSignal(ctx context.Context, account *Account, err error) {
 	if s == nil || s.rateLimitService == nil || account == nil || account.Platform != PlatformOpenAI || err == nil {
 		return
@@ -8260,10 +8759,14 @@ func (s *OpenAIGatewayService) persistOpenAIWSDialFailureSignal(ctx context.Cont
 		responseBody = openAIWSHandshakeBodyFromError(dialErr.Err)
 	}
 	switch dialErr.StatusCode {
-	case http.StatusUnauthorized, http.StatusForbidden:
+	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden, 529:
 		s.handleOpenAIAccountUpstreamError(ctx, account, dialErr.StatusCode, dialErr.ResponseHeaders, responseBody)
 	case http.StatusTooManyRequests:
 		s.persistOpenAIWSRateLimitSignal(ctx, account, dialErr.ResponseHeaders, responseBody, "rate_limit_exceeded", "rate_limit_error", strings.TrimSpace(err.Error()))
+	default:
+		if dialErr.StatusCode >= http.StatusInternalServerError {
+			s.handleOpenAIAccountUpstreamError(ctx, account, dialErr.StatusCode, dialErr.ResponseHeaders, responseBody)
+		}
 	}
 }
 
@@ -8319,6 +8822,12 @@ func classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw string) (stri
 	}
 	if isOpenAIWSRateLimitError(codeRaw, errTypeRaw, msgRaw) {
 		return "upstream_rate_limited", true
+	}
+	switch openAIWSErrorHTTPStatusFromRaw(codeRaw, errTypeRaw) {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return "auth_failed", true
+	case http.StatusPaymentRequired:
+		return "payment_required", true
 	}
 	if isOpenAIWSModelUnavailableEvent(code, errType, msg) {
 		return "model_unavailable", true
@@ -8387,8 +8896,14 @@ func openAIWSErrorHTTPStatusFromRaw(codeRaw, errTypeRaw string) int {
 		return http.StatusBadRequest
 	case strings.Contains(errType, "authentication"),
 		strings.Contains(code, "invalid_api_key"),
-		strings.Contains(code, "unauthorized"):
+		strings.Contains(code, "unauthorized"),
+		code == "token_invalidated",
+		code == "token_revoked":
 		return http.StatusUnauthorized
+	case code == "deactivated_workspace",
+		strings.Contains(errType, "payment_required"),
+		strings.Contains(code, "payment_required"):
+		return http.StatusPaymentRequired
 	case strings.Contains(errType, "permission"),
 		strings.Contains(code, "forbidden"):
 		return http.StatusForbidden

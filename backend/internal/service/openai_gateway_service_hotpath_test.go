@@ -628,7 +628,7 @@ func TestOpenAIGatewayService_Forward_APIKeyResponsesStripsUnsupportedFieldsOnPa
 	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
 	SetOpenAIClientTransport(c, OpenAIClientTransportHTTP)
 
-	body := []byte(`{"model":"gpt-5.4","stream":false,"temperature":0.2,"verbosity":"low","enable_thinking":true,"stop_sequences":["END"],"promptCacheKey":"legacy-cache","prompt_cache_retention":"24h","reasoningSummary":"auto","safety_identifier":"cursor-user-xyz","metadata":{"trace_id":"abc"},"stream_options":{"include_usage":true},"input":[{"type":"message","content":"hi"}]}`)
+	body := []byte(`{"model":"gpt-5.4","stream":false,"chat_template_kwargs":{"enable_thinking":true},"temperature":0.2,"verbosity":"low","enable_thinking":true,"stop_sequences":["END"],"promptCacheKey":"legacy-cache","prompt_cache_retention":"24h","reasoningSummary":"auto","safety_identifier":"cursor-user-xyz","metadata":{"trace_id":"abc"},"stream_options":{"include_usage":true},"input":[{"type":"message","content":"hi"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)
 	require.NoError(t, err)
 	require.NotNil(t, result)

@@ -101,6 +101,74 @@ func normalizeOpenAIResponsesIngress(body []byte) (openAIResponsesIngressNormali
 	return normalized, nil
 }
 
+// normalizeOpenAIResponsesReasoningMode converts the GPT-5.6 Pro mode shape
+// used by some clients into the Responses reasoning shape accepted by the
+// current OAuth upstream. The upstream rejects reasoning.mode even when the
+// requested model is gpt-5.6-sol. Preserve an explicit effort; otherwise map
+// mode=pro to the closest supported effort value before dropping mode.
+func normalizeOpenAIResponsesReasoningMode(body []byte) ([]byte, bool, error) {
+	if len(body) == 0 {
+		return body, false, nil
+	}
+	mode := gjson.GetBytes(body, "reasoning.mode")
+	if !mode.Exists() || mode.Type != gjson.String {
+		return body, false, nil
+	}
+
+	updated := body
+	effort := gjson.GetBytes(body, "reasoning.effort")
+	if (!effort.Exists() || effort.Type == gjson.Null || strings.TrimSpace(effort.String()) == "") &&
+		strings.EqualFold(strings.TrimSpace(mode.String()), "pro") {
+		var err error
+		updated, err = sjson.SetBytes(updated, "reasoning.effort", "max")
+		if err != nil {
+			return body, false, fmt.Errorf("set reasoning effort for mode=pro: %w", err)
+		}
+	}
+
+	var err error
+	updated, err = sjson.DeleteBytes(updated, "reasoning.mode")
+	if err != nil {
+		return body, false, fmt.Errorf("delete unsupported reasoning.mode: %w", err)
+	}
+	if reasoning := gjson.GetBytes(updated, "reasoning"); reasoning.Exists() && reasoning.IsObject() && len(reasoning.Map()) == 0 {
+		updated, err = sjson.DeleteBytes(updated, "reasoning")
+		if err != nil {
+			return body, false, fmt.Errorf("delete empty reasoning object: %w", err)
+		}
+	}
+	return updated, true, nil
+}
+
+func shouldNormalizeOpenAIResponsesReasoningMode(account *Account) bool {
+	if account == nil || account.Platform != PlatformOpenAI {
+		return false
+	}
+	return account.Type == AccountTypeOAuth || account.Type == AccountTypeSetupToken
+}
+
+// normalizeOpenAIResponsesTruncation removes the client-side Responses
+// truncation option for OAuth upstreams that reject the field. The gateway
+// cannot emulate the provider's truncation policy, but dropping the optional
+// field preserves the request's default behavior instead of returning 400.
+func normalizeOpenAIResponsesTruncation(body []byte) ([]byte, bool, error) {
+	if len(body) == 0 || !gjson.GetBytes(body, "truncation").Exists() {
+		return body, false, nil
+	}
+	updated, err := sjson.DeleteBytes(body, "truncation")
+	if err != nil {
+		return body, false, fmt.Errorf("delete unsupported truncation: %w", err)
+	}
+	return updated, true, nil
+}
+
+func shouldNormalizeOpenAIResponsesTruncation(account *Account) bool {
+	if account == nil || account.Platform != PlatformOpenAI {
+		return false
+	}
+	return account.Type == AccountTypeOAuth || account.Type == AccountTypeSetupToken
+}
+
 func normalizeLegacyResponsesMessages(body []byte) (normalizedLegacyResponsesMessages, error) {
 	var normalized normalizedLegacyResponsesMessages
 	var chatReq apicompat.ChatCompletionsRequest

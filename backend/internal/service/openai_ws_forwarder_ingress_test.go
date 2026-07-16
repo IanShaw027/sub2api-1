@@ -565,9 +565,17 @@ func TestOpenAIWSDeltaConnReanchorBlockersSafetyGates(t *testing.T) {
 			"sess",
 			false,
 			openAIWSHasDeltaReanchorTarget(store, 7, 11, "sess", account.ID),
+			true,
 		)
 	}
 	require.Equal(t, "-", baseline())
+
+	// Matching client previous still allows reanchor (no foreign_previous blocker).
+	require.Equal(t, "-", openAIWSDeltaConnReanchorBlockers(
+		false, 1, "", false, account, store, true, "resp_cached", "sess", false,
+		openAIWSHasDeltaReanchorTarget(store, 7, 11, "sess", account.ID),
+		true,
+	))
 
 	tests := []struct {
 		name string
@@ -579,6 +587,7 @@ func TestOpenAIWSDeltaConnReanchorBlockersSafetyGates(t *testing.T) {
 			got: openAIWSDeltaConnReanchorBlockers(
 				false, 1, "", false, account, store, true, "", "sess", true,
 				openAIWSHasDeltaReanchorTarget(store, 7, 11, "sess", account.ID),
+				true,
 			),
 			want: "has_function_call_output",
 		},
@@ -587,6 +596,7 @@ func TestOpenAIWSDeltaConnReanchorBlockersSafetyGates(t *testing.T) {
 			got: openAIWSDeltaConnReanchorBlockers(
 				false, 1, "", true, account, store, true, "", "sess", false,
 				openAIWSHasDeltaReanchorTarget(store, 7, 11, "sess", account.ID),
+				true,
 			),
 			want: "http_ingress_one_shot",
 		},
@@ -595,15 +605,25 @@ func TestOpenAIWSDeltaConnReanchorBlockersSafetyGates(t *testing.T) {
 			got: openAIWSDeltaConnReanchorBlockers(
 				false, 1, "", false, &Account{ID: 101, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, store, true, "", "sess", false,
 				openAIWSHasDeltaReanchorTarget(store, 7, 11, "sess", account.ID),
+				true,
 			),
 			want: "account_not_oauth",
 		},
 		{
 			name: "missing session hash",
 			got: openAIWSDeltaConnReanchorBlockers(
-				false, 1, "", false, account, store, true, "", "", false, false,
+				false, 1, "", false, account, store, true, "", "", false, false, true,
 			),
 			want: "missing_session_hash",
+		},
+		{
+			name: "foreign previous response id",
+			got: openAIWSDeltaConnReanchorBlockers(
+				false, 1, "", false, account, store, true, "resp_other", "sess", false,
+				openAIWSHasDeltaReanchorTarget(store, 7, 11, "sess", account.ID),
+				false,
+			),
+			want: "foreign_previous_response_id",
 		},
 		{
 			name: "sticky account mismatch",
@@ -618,6 +638,7 @@ func TestOpenAIWSDeltaConnReanchorBlockersSafetyGates(t *testing.T) {
 				return openAIWSDeltaConnReanchorBlockers(
 					false, 1, "", false, account, mismatchStore, true, "", "sess", false,
 					openAIWSHasDeltaReanchorTarget(mismatchStore, 7, 11, "sess", account.ID),
+					true,
 				)
 			}(),
 			want: "missing_reanchor_target",

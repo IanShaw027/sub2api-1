@@ -947,7 +947,10 @@ func openAIWSConnEvictReasonInvalidatesSessionContext(reason string) bool {
 	switch reason {
 	case "write_request_fail", "prewarm_write_fail":
 		return false
-	case "closed", "evict", "conn_max_age", "session_idle_ttl", "neutral_idle_ttl", "neutral_acquire_stale_idle", "neutral_over_target", "idle_over_max", "nil_conn":
+	case "closed", "evict", "conn_max_age", "session_idle_ttl", "neutral_idle_ttl", "neutral_acquire_stale_idle", "neutral_over_target", "idle_over_max", "nil_conn",
+		// Explicit transport health failures: drop local affinity so the next turn
+		// does not re-select a dead preferred conn (conn_mismatch / keepalive loop).
+		"prewrite_ping_fail", "background_ping_fail", "keepalive_ping_timeout":
 		return true
 	default:
 		return strings.HasSuffix(reason, "_fail") ||
@@ -963,7 +966,8 @@ func openAIWSConnEvictReasonInvalidatesSessionContext(reason string) bool {
 			strings.HasPrefix(reason, "unclean_exit") ||
 			strings.HasPrefix(reason, "ingress_") ||
 			strings.HasPrefix(reason, "prewarm_") ||
-			strings.HasPrefix(reason, "soft_rate_limit")
+			strings.HasPrefix(reason, "soft_rate_limit") ||
+			strings.Contains(reason, "keepalive")
 	}
 }
 
@@ -974,6 +978,10 @@ func openAIWSConnEvictReasonDeletesDurableSessionContext(reason string) bool {
 		return false
 	case "write_request_fail", "prewarm_write_fail":
 		return false
+	case "prewrite_ping_fail", "background_ping_fail", "keepalive_ping_timeout":
+		// Transport-dead conns: drop Redis session context so multi-instance
+		// readers do not keep preferring the dead conn id.
+		return true
 	}
 	return strings.HasSuffix(reason, "_fail") ||
 		strings.HasSuffix(reason, "_failed") ||
@@ -988,7 +996,8 @@ func openAIWSConnEvictReasonDeletesDurableSessionContext(reason string) bool {
 		strings.HasPrefix(reason, "unclean_exit") ||
 		strings.HasPrefix(reason, "ingress_") ||
 		strings.HasPrefix(reason, "prewarm_") ||
-		strings.HasPrefix(reason, "soft_rate_limit")
+		strings.HasPrefix(reason, "soft_rate_limit") ||
+		strings.Contains(reason, "keepalive")
 }
 
 func (s *defaultOpenAIWSStateStore) TrySessionInFlight(groupID int64, apiKeyID int64, sessionHash string) bool {

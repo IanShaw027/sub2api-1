@@ -1098,6 +1098,10 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 			errMsg := fmt.Sprintf("Authentication failed (401): %s", string(body))
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
+		if resp.StatusCode == http.StatusPaymentRequired && s.accountRepo != nil &&
+			gjson.GetBytes(body, "detail.code").String() == "deactivated_workspace" {
+			_ = s.accountRepo.SetError(ctx, account.ID, "Workspace deactivated (402): workspace has been deactivated")
+		}
 		return s.sendErrorAndEnd(c, fmt.Sprintf("API returned %d: %s", resp.StatusCode, string(body)))
 	}
 

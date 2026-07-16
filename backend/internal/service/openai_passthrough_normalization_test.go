@@ -12,7 +12,7 @@ import (
 )
 
 func TestNormalizeOpenAIPassthroughOAuthBody_RemovesUnsupportedUser(t *testing.T) {
-	body := []byte(`{"model":"gpt-5.4","input":"hello","name":"request-name","temperature":0.2,"user":"user_123","metadata":{"user_id":"user_123"},"prompt_cache_retention":"24h","safety_identifier":"sid","stream_options":{"include_usage":true}}`)
+	body := []byte(`{"model":"gpt-5.4","input":"hello","name":"request-name","chat_template_kwargs":{"enable_thinking":true},"temperature":0.2,"user":"user_123","metadata":{"user_id":"user_123"},"prompt_cache_retention":"24h","safety_identifier":"sid","stream_options":{"include_usage":true}}`)
 
 	normalized, changed, err := normalizeOpenAIPassthroughOAuthBody(body, false)
 	require.NoError(t, err)
@@ -22,6 +22,28 @@ func TestNormalizeOpenAIPassthroughOAuthBody_RemovesUnsupportedUser(t *testing.T
 	}
 	require.True(t, gjson.GetBytes(normalized, "stream").Bool())
 	require.False(t, gjson.GetBytes(normalized, "store").Bool())
+}
+
+func TestNormalizeOpenAIPassthroughOAuthBody_ConvertsReasoningMode(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","input":"hello","reasoning":{"mode":"pro"}}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughOAuthBody(body, false)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "max", gjson.GetBytes(normalized, "reasoning.effort").String())
+	require.False(t, gjson.GetBytes(normalized, "reasoning.mode").Exists())
+}
+
+func TestNormalizeOpenAIPassthroughOAuthBody_RemovesUnsupportedTruncation(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-sol","input":"hello","truncation":"auto"}`)
+
+	normalized, changed, err := normalizeOpenAIPassthroughOAuthBody(body, false)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, gjson.GetBytes(normalized, "truncation").Exists())
+	require.Equal(t, "hello", gjson.GetBytes(normalized, "input.0.content").String())
 }
 
 func TestNormalizeOpenAIPassthroughOAuthBody_CompactRemovesUnsupportedUser(t *testing.T) {

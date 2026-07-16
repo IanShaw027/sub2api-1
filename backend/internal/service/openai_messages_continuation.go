@@ -142,6 +142,7 @@ func isOpenAICompatPreviousResponseNotFound(statusCode int, upstreamMsg string, 
 		lower := strings.ToLower(strings.TrimSpace(s))
 		return strings.Contains(lower, "previous_response_not_found") ||
 			(strings.Contains(lower, "previous response") && strings.Contains(lower, "not found")) ||
+			(strings.Contains(lower, "response with id") && strings.Contains(lower, "not found")) ||
 			(strings.Contains(lower, "unsupported parameter") && strings.Contains(lower, "previous_response_id"))
 	}
 	if check(upstreamMsg) || check(string(upstreamBody)) {

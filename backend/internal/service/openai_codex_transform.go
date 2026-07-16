@@ -157,6 +157,7 @@ type codexOAuthTransformOptions struct {
 
 var openAIChatGPTInternalUnsupportedFields = []string{
 	"name",
+	"chat_template_kwargs",
 	"user",
 	"metadata",
 	"prompt_cache_retention",
@@ -170,6 +171,7 @@ var openAIChatGPTInternalUnsupportedFields = []string{
 	"web_search",
 	"temperature",
 	"top_p",
+	"truncation",
 }
 
 const (

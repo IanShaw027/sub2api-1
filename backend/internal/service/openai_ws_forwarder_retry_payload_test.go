@@ -6,6 +6,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestBuildOpenAIWSCreatePayload_StripsChatTemplateKwargs(t *testing.T) {
+	reqBody := map[string]any{
+		"model":                "gpt-5.5",
+		"chat_template_kwargs": map[string]any{"enable_thinking": true},
+		"input":                []any{map[string]any{"role": "user", "content": "hello"}},
+	}
+
+	payload := (&OpenAIGatewayService{}).buildOpenAIWSCreatePayload(reqBody, nil)
+
+	require.NotContains(t, payload, "chat_template_kwargs")
+	require.Equal(t, "response.create", payload["type"])
+	require.Contains(t, payload, "input")
+}
+
 func TestApplyOpenAIWSRetryPayloadStrategy_KeepPromptCacheKey(t *testing.T) {
 	payload := map[string]any{
 		"model":            "gpt-5.3-codex",

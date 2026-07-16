@@ -62,19 +62,20 @@ const (
 	// 上游错误体只需要提取错误 JSON/日志摘要，默认 512KiB 避免错误风暴叠加大请求体。
 	openAIUpstreamErrorBodyReadLimit int64 = 512 << 10
 	// OpenAI WS Mode 重连退避默认值（可由配置覆盖）。
-	openAIWSRetryBackoffInitialDefault   = 120 * time.Millisecond
-	openAIWSRetryBackoffMaxDefault       = 2 * time.Second
-	openAIWSRetryJitterRatioDefault      = 0.2
-	openAICompactSessionSeedKey          = "openai_compact_session_seed"
-	openAIUpstreamEndpointContextKey     = "openai_actual_upstream_endpoint"
-	openAICodexTransformObsKey           = "openai_codex_transform_observability"
-	openAICodexCompatFallbackKey         = "openai_codex_compat_fallback"
-	openAICodexCompatFallbackReasonKey   = "openai_codex_compat_fallback_reason"
-	openAIRoutingPromptCacheKeyKey       = "openai_routing_prompt_cache_key"
-	openAIMessagesDispatchForcedModelKey = "openai_messages_dispatch_forced_model"
-	openAIFailoverRequestBodyKey         = "openai_failover_request_body"
-	openAITTFTWatchdogBypassKey          = "openai_ttft_watchdog_bypass"
-	codexCLIVersion                      = "0.144.1"
+	openAIWSRetryBackoffInitialDefault           = 120 * time.Millisecond
+	openAIWSRetryBackoffMaxDefault               = 2 * time.Second
+	openAIWSRetryJitterRatioDefault              = 0.2
+	openAICompactSessionSeedKey                  = "openai_compact_session_seed"
+	openAIUpstreamEndpointContextKey             = "openai_actual_upstream_endpoint"
+	openAICodexTransformObsKey                   = "openai_codex_transform_observability"
+	openAICodexCompatFallbackKey                 = "openai_codex_compat_fallback"
+	openAICodexCompatFallbackReasonKey           = "openai_codex_compat_fallback_reason"
+	openAIRoutingPromptCacheKeyKey               = "openai_routing_prompt_cache_key"
+	openAIMessagesDispatchForcedModelKey         = "openai_messages_dispatch_forced_model"
+	openAIFailoverRequestBodyKey                 = "openai_failover_request_body"
+	openAIResponsesUpstreamPathSuffixOverrideKey = "openai_responses_upstream_path_suffix_override"
+	openAITTFTWatchdogBypassKey                  = "openai_ttft_watchdog_bypass"
+	codexCLIVersion                              = "0.144.1"
 	// Codex 限额快照仅用于后台展示/诊断，不需要每个成功请求都立即落库。
 	openAICodexSnapshotPersistMinInterval = 30 * time.Second
 	// 配额自动暂停时，超过该时长仍未刷新的 used% 快照视为陈旧，不再据此暂停账号。
@@ -128,6 +129,7 @@ func (s *OpenAIGatewayService) readUpstreamErrorBodyWithError(resp *http.Respons
 
 var openAIResponsesUnsupportedFields = []string{
 	"name",
+	"chat_template_kwargs",
 	"prompt_cache_retention",
 	"reasoningSummary",
 	"safety_identifier",
@@ -191,6 +193,17 @@ func getOpenAIFailoverRequestBody(c *gin.Context, fallback []byte) ([]byte, bool
 		return fallback, false
 	}
 	return append([]byte(nil), body...), true
+}
+
+func setOpenAIResponsesUpstreamPathSuffixOverride(c *gin.Context, suffix string) {
+	if c == nil {
+		return
+	}
+	suffix = strings.TrimSpace(suffix)
+	if suffix == "" {
+		return
+	}
+	c.Set(openAIResponsesUpstreamPathSuffixOverrideKey, suffix)
 }
 
 func setOpenAIRoutingPromptCacheKey(c *gin.Context, promptCacheKey string) {
@@ -475,6 +488,7 @@ type OpenAIForwardResult struct {
 	FirstTokenMs         *int
 	ClientDisconnected   bool
 	ClientDisconnect     bool
+	wsTerminalError      error
 	ImageCount           int
 	ImageSize            string
 	ImageInputSize       string
@@ -1016,6 +1030,10 @@ func classifyOpenAIWSReconnectReason(err error) (string, bool) {
 	baseReason := strings.TrimPrefix(reason, "prewarm_")
 
 	if baseReason == "response_failed" {
+		var failedErr *openAIWSResponseFailedError
+		if errors.As(fallbackErr.Err, &failedErr) && failedErr != nil && failedErr.retryable {
+			return reason, true
+		}
 		return reason, false
 	}
 
@@ -1125,13 +1143,17 @@ func resolveOpenAIWSFallbackErrorResponse(err error) (statusCode int, errType st
 		if statusCode == 0 {
 			statusCode = http.StatusUnauthorized
 		}
+	case "payment_required":
+		if statusCode == 0 {
+			statusCode = http.StatusPaymentRequired
+		}
 	case "upstream_rate_limited", "ws_connection_limit_reached":
 		if statusCode == 0 {
 			statusCode = http.StatusTooManyRequests
 		}
 	case "response_failed":
 		var failedErr *openAIWSResponseFailedError
-		if !errors.As(fallbackErr.Err, &failedErr) || failedErr == nil || failedErr.retryable {
+		if !errors.As(fallbackErr.Err, &failedErr) || failedErr == nil {
 			return 0, "", "", "", false
 		}
 		statusCode = openAIWSErrorHTTPStatusFromRaw(failedErr.code, failedErr.errType)
@@ -1192,7 +1214,13 @@ func (s *OpenAIGatewayService) newOpenAIWSFailoverError(c *gin.Context, account 
 	}
 	reason := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(fallbackErr.Reason), "prewarm_"))
 	if reason != "upstream_rate_limited" && reason != "ws_connection_limit_reached" {
-		return nil
+		if reason != "response_failed" {
+			return nil
+		}
+		var failedErr *openAIWSResponseFailedError
+		if !errors.As(fallbackErr.Err, &failedErr) || failedErr == nil || !failedErr.retryable {
+			return nil
+		}
 	}
 	if strings.TrimSpace(clientMessage) == "" {
 		clientMessage = "Upstream request failed"
@@ -4747,6 +4775,22 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		body = normalizedBody
 		clearOpenAIRequestBodyCache(c)
 	}
+	if shouldNormalizeOpenAIResponsesReasoningMode(account) {
+		if normalizedBody, normalized, err = normalizeOpenAIResponsesReasoningMode(body); err != nil {
+			return nil, err
+		} else if normalized {
+			body = normalizedBody
+			clearOpenAIRequestBodyCache(c)
+		}
+	}
+	if shouldNormalizeOpenAIResponsesTruncation(account) {
+		if normalizedBody, normalized, err = normalizeOpenAIResponsesTruncation(body); err != nil {
+			return nil, err
+		} else if normalized {
+			body = normalizedBody
+			clearOpenAIRequestBodyCache(c)
+		}
+	}
 
 	isCodexCLI := isOpenAICodexOfficialOrForcedClientRequest(c, s.cfg)
 	if isCodexCLI && account.CodexImageGenerationExplicitToolPolicy() == codexImageGenerationExplicitToolPolicyStrip {
@@ -6218,6 +6262,10 @@ oauthTransformDone:
 			return nil, wsErr
 		}
 		if failoverErr := s.newOpenAIWSFailoverError(c, account, wsErr); failoverErr != nil {
+			// A retry budget can end before the fixed attempt limit. Persist the
+			// last deferred transient signal only when the final decision is an
+			// account failover; same-account HTTP fallback must not double-count it.
+			s.FlushOpenAIWSPendingAccountStateSignal(ctx, c, account)
 			return nil, failoverErr
 		}
 		fallbackBlocker := openAIWSHTTPFallbackBlocker(c, wsErr, wsHTTPFallbackBody, body)
@@ -7039,6 +7087,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	invalidEncryptedContentRetryTried := false
 	previousResponseIDRetryTried := false
 	reasoningEnabledRetryTried := false
+	contextCompactionRetried := false
 	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "http")
 	var upstreamReq *http.Request
 	var resp *http.Response
@@ -7105,6 +7154,45 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		upstreamCode := extractUpstreamErrorCode(respBody)
 		isCompact := isOpenAIResponsesCompactPath(c)
 		isMessagesBridge := shouldUseOpenAIMessagesBridgeHeaders(c, body, promptCacheKey)
+		if !contextCompactionRetried && !isCompact && reqStream &&
+			isOpenAIContextCompactionStatus(resp.StatusCode) &&
+			isOpenAIContextWindowError(upstreamMsg, respBody) &&
+			isOpenAIContextRemoteCompactionV2Request(c, body) && account.AllowsOpenAICompact() {
+			if compactBody, triggerErr := buildOpenAIContextCompactionTriggerBody(originalBody); triggerErr == nil {
+				compactBody, _, triggerErr = normalizeOpenAICompactRequestBody(compactBody)
+				if triggerErr == nil {
+					if account.Type == AccountTypeOAuth {
+						compactBody, _, triggerErr = normalizeOpenAIPassthroughOAuthBody(compactBody, true)
+						if triggerErr == nil {
+							compactBody, _, triggerErr = ensureOpenAIPassthroughInstructions(c, reqModel, compactBody)
+						}
+					} else {
+						compactBody, _, triggerErr = normalizeOpenAIPassthroughBaseBody(compactBody, true, shouldStripTopPForResponsesUpstream(account))
+					}
+				}
+				if triggerErr == nil {
+					if upstreamModel := resolveOpenAIAccountUpstreamModelForRequest(ctx, s.settingService, account, reqModel, true); upstreamModel != "" {
+						compactBody = ReplaceModelInBody(compactBody, upstreamModel)
+					}
+					body = compactBody
+					setOpsUpstreamRequestBody(c, body)
+					// Keep the inbound request URL immutable across account retries. The
+					// handler reuses this gin context on failover, so mutating URL.Path
+					// would make the original body look like an explicit compact request.
+					setOpenAIResponsesUpstreamPathSuffixOverride(c, "/compact")
+					setOpenAIFailoverRequestBody(c, body)
+					MarkOpenAICompactClientStream(c)
+					reqStream = false
+					contextCompactionRetried = true
+					logger.FromContext(ctx).Info("openai.context_overflow_remote_compaction_retry",
+						zap.Int64("account_id", account.ID),
+						zap.String("model", reqModel),
+						zap.String("upstream_code", upstreamCode),
+					)
+					continue
+				}
+			}
+		}
 		if !previousResponseIDRetryTried &&
 			resp.StatusCode == http.StatusBadRequest &&
 			isOpenAIUnsupportedPreviousResponseIDError(upstreamCode, upstreamMsg) {
@@ -12405,6 +12493,13 @@ func resolveOpenAICompactSessionID(c *gin.Context, body []byte) string {
 }
 
 func openAIResponsesRequestPathSuffix(c *gin.Context) string {
+	if c != nil {
+		if value, ok := c.Get(openAIResponsesUpstreamPathSuffixOverrideKey); ok {
+			if suffix, ok := value.(string); ok && strings.TrimSpace(suffix) != "" {
+				return strings.TrimSpace(suffix)
+			}
+		}
+	}
 	if c == nil || c.Request == nil || c.Request.URL == nil {
 		return ""
 	}
@@ -13947,6 +14042,15 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 	var reqBody map[string]any
 	if err := json.Unmarshal(body, &reqBody); err != nil {
 		return body, false, fmt.Errorf("normalize passthrough body parse: %w", err)
+	}
+	if normalizedBody, reasoningModeChanged, err := normalizeOpenAIResponsesReasoningMode(body); err != nil {
+		return body, false, err
+	} else if reasoningModeChanged {
+		body = normalizedBody
+		if err := json.Unmarshal(body, &reqBody); err != nil {
+			return body, false, fmt.Errorf("normalize passthrough reasoning mode parse: %w", err)
+		}
+		changed = true
 	}
 
 	for _, field := range openAIChatGPTInternalUnsupportedFields {
