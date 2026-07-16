@@ -2336,7 +2336,15 @@ func (s *KiroGatewayService) forwardStream(ctx context.Context, c *gin.Context, 
 					}
 					debugAggregator.Append(frame, rawStringField(frame.Payload, "content"))
 					if failureErr := kiroFrameFailure(frame); failureErr != nil {
-						return nil, s.handleFrameFailure(ctx, c, account, continuationResp.Header.Get("x-amzn-requestid"), frame, failureErr, false)
+						// Main stream already wrote client output (streamStarted).
+						// Always return a partial billable result and a non-failover
+						// error so handler RecordUsage runs; failover would skip billing.
+						handledErr := s.handleFrameFailure(ctx, c, account, continuationResp.Header.Get("x-amzn-requestid"), frame, failureErr, false)
+						var failoverErr *UpstreamFailoverError
+						if errors.As(handledErr, &failoverErr) {
+							handledErr = failureErr
+						}
+						return buildKiroPartialStreamResult(), handledErr
 					}
 					switch frame.EventType {
 					case "reasoningContentEvent":

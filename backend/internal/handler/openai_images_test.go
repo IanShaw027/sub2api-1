@@ -1,15 +1,19 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,6 +26,90 @@ func TestHasOpenAIImagesPartialResult_IncludesTokenOnlyResult(t *testing.T) {
 			OutputTokens: 3,
 		},
 	}))
+}
+
+func TestOpenAIImages_PartialStreamBillsImageAndTokensExactlyOnceThenTerminates(t *testing.T) {
+	payload := "event: image_generation.completed\n" +
+		"data: {\"type\":\"image_generation.completed\",\"b64_json\":\"ZmluYWw=\",\"usage\":{\"input_tokens\":12,\"output_tokens\":8,\"output_tokens_details\":{\"image_tokens\":8}}}\n\n"
+	h, apiKey, _, billingRepo := newOpenAIPartialErrorTestHandler(t, openAIPartialErrorHTTPUpstreamStub{
+		response: func(req *http.Request) *http.Response {
+			require.Equal(t, "/v1/images/generations", req.URL.Path)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"img_partial"}},
+				Body:       newOpenAIPartialErrorBody(payload),
+				Request:    req,
+			}
+		},
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	body := []byte(`{"model":"gpt-image-1","prompt":"draw a cat","stream":true,"response_format":"b64_json"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set(string(middleware2.ContextKeyAPIKey), apiKey)
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: apiKey.User.ID, Concurrency: 1})
+
+	h.Images(c)
+
+	var cmd *service.UsageBillingCommand
+	select {
+	case cmd = <-billingRepo.applied:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for partial image billing")
+	}
+	require.Equal(t, 12, cmd.InputTokens)
+	require.Equal(t, 8, cmd.OutputTokens)
+	require.Equal(t, 1, cmd.ImageCount)
+	select {
+	case <-billingRepo.applied:
+		t.Fatal("partial image usage was billed more than once")
+	case <-time.After(100 * time.Millisecond):
+	}
+	require.Contains(t, w.Body.String(), "image_generation.completed")
+	require.Contains(t, w.Body.String(), `"error"`, "partial image stream must receive a terminal error")
+}
+
+func TestOpenAIImages_CyberPartialStreamBillsOnceAndDoesNotFallThrough(t *testing.T) {
+	payload := "event: image_generation.completed\n" +
+		"data: {\"type\":\"image_generation.completed\",\"b64_json\":\"ZmluYWw=\",\"error\":{\"code\":\"cyber_policy\",\"message\":\"blocked by policy\"},\"usage\":{\"input_tokens\":7,\"output_tokens\":2}}\n\n"
+	h, apiKey, _, billingRepo := newOpenAIPartialErrorTestHandler(t, openAIPartialErrorHTTPUpstreamStub{
+		response: func(req *http.Request) *http.Response {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"img_cyber_partial"}},
+				Body:       newOpenAIPartialErrorBody(payload),
+				Request:    req,
+			}
+		},
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	body := []byte(`{"model":"gpt-image-1","prompt":"blocked image","stream":true,"response_format":"b64_json"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set(string(middleware2.ContextKeyAPIKey), apiKey)
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: apiKey.User.ID, Concurrency: 1})
+
+	h.Images(c)
+
+	require.NotNil(t, service.GetOpsCyberPolicy(c))
+	var cmd *service.UsageBillingCommand
+	select {
+	case cmd = <-billingRepo.applied:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for cyber partial billing")
+	}
+	require.Equal(t, 7, cmd.InputTokens)
+	require.Equal(t, 2, cmd.OutputTokens)
+	select {
+	case <-billingRepo.applied:
+		t.Fatal("cyber partial usage was billed more than once")
+	case <-time.After(100 * time.Millisecond):
+	}
+	require.NotContains(t, strings.ToLower(w.Body.String()), "upstream transport error")
 }
 
 func TestOpenAIImages_SelectionFailure_PreservesCompatibleAccountsMessage(t *testing.T) {

@@ -19,7 +19,12 @@ type OAuthRefreshExecutor interface {
 	CacheKey(account *Account) string
 }
 
-const defaultRefreshLockTTL = 60 * time.Second
+const (
+	defaultRefreshLockTTL          = 60 * time.Second
+	defaultRefreshLockWaitTimeout  = 300 * time.Millisecond
+	defaultRefreshLockPollInterval = 25 * time.Millisecond
+	defaultRefreshLockErrorRetries = 3
+)
 
 // OAuthRefreshResult 统一刷新结果
 type OAuthRefreshResult struct {
@@ -40,6 +45,9 @@ type OAuthRefreshAPI struct {
 	accountRepo  AccountRepository
 	tokenCache   GeminiTokenCache // 可选，nil = 无分布式锁
 	lockTTL      time.Duration
+	lockWait     time.Duration
+	lockPoll     time.Duration
+	lockRetries  int
 	localLocksMu sync.Mutex
 	localLocks   map[string]*oauthRefreshLocalLock
 }
@@ -55,6 +63,9 @@ func NewOAuthRefreshAPI(accountRepo AccountRepository, tokenCache GeminiTokenCac
 		accountRepo: accountRepo,
 		tokenCache:  tokenCache,
 		lockTTL:     ttl,
+		lockWait:    defaultRefreshLockWaitTimeout,
+		lockPoll:    defaultRefreshLockPollInterval,
+		lockRetries: defaultRefreshLockErrorRetries,
 		localLocks:  make(map[string]*oauthRefreshLocalLock),
 	}
 }
@@ -116,23 +127,24 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 	defer api.releaseLocalLock(cacheKey, localLock)
 
 	// 1. 获取分布式锁
-	lockAcquired := false
 	if api.tokenCache != nil {
-		leaseToken, acquired, lockErr := api.tokenCache.AcquireRefreshLock(ctx, cacheKey, api.lockTTL)
+		leaseToken, acquired, recoveredAccount, lockErr := api.acquireRefreshLockWithRecovery(
+			ctx,
+			cacheKey,
+			account,
+			executor,
+			refreshWindow,
+		)
 		if lockErr != nil {
-			// Redis 错误，降级为无锁刷新（进程内互斥锁仍生效）
-			slog.Warn("oauth_refresh_lock_failed_degraded",
-				"account_id", account.ID,
-				"cache_key", cacheKey,
-				"error", lockErr,
-			)
-		} else if !acquired {
-			// 锁被其他 worker 持有
-			return &OAuthRefreshResult{LockHeld: true}, nil
-		} else {
-			lockAcquired = true
-			defer func() { _ = api.tokenCache.ReleaseRefreshLock(ctx, cacheKey, leaseToken) }()
+			return nil, lockErr
 		}
+		if recoveredAccount != nil {
+			return &OAuthRefreshResult{Account: recoveredAccount}, nil
+		}
+		if !acquired {
+			return &OAuthRefreshResult{Account: account, LockHeld: true}, nil
+		}
+		defer api.releaseRefreshLock(cacheKey, leaseToken, account)
 	}
 
 	// 2. 从 DB 重读最新 account（锁保护下，确保使用最新的 refresh_token）
@@ -186,8 +198,6 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 		}
 	}
 
-	_ = lockAcquired // suppress unused warning when tokenCache is nil
-
 	return &OAuthRefreshResult{
 		Refreshed:      true,
 		NewCredentials: newCredentials,
@@ -195,13 +205,159 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 	}, nil
 }
 
+func (api *OAuthRefreshAPI) acquireRefreshLockWithRecovery(
+	ctx context.Context,
+	cacheKey string,
+	account *Account,
+	executor OAuthRefreshExecutor,
+	refreshWindow time.Duration,
+) (string, bool, *Account, error) {
+	waitTimeout := api.lockWait
+	if waitTimeout <= 0 {
+		waitTimeout = defaultRefreshLockWaitTimeout
+	}
+	pollInterval := api.lockPoll
+	if pollInterval <= 0 {
+		pollInterval = defaultRefreshLockPollInterval
+	}
+	errorRetries := api.lockRetries
+	if errorRetries <= 0 {
+		errorRetries = defaultRefreshLockErrorRetries
+	}
+
+	deadline := time.Now().Add(waitTimeout)
+	lockErrors := 0
+	for attempt := 1; ; attempt++ {
+		leaseToken, acquired, lockErr := api.tokenCache.AcquireRefreshLock(ctx, cacheKey, api.lockTTL)
+		if lockErr == nil && acquired {
+			if attempt > 1 {
+				slog.Info("oauth_refresh_lock_acquired_after_wait",
+					"account_id", account.ID,
+					"cache_key", cacheKey,
+					"attempt", attempt,
+				)
+			}
+			return leaseToken, true, nil, nil
+		}
+
+		if recoveredAccount, source := api.recoverRefreshProgress(ctx, cacheKey, account, executor, refreshWindow); recoveredAccount != nil {
+			slog.Info("oauth_refresh_lock_wait_recovered",
+				"account_id", account.ID,
+				"cache_key", cacheKey,
+				"source", source,
+				"attempt", attempt,
+			)
+			return "", false, recoveredAccount, nil
+		}
+
+		if lockErr != nil {
+			lockErrors++
+			slog.Warn("oauth_refresh_lock_acquire_error",
+				"account_id", account.ID,
+				"cache_key", cacheKey,
+				"attempt", attempt,
+				"max_error_attempts", errorRetries,
+				"error", lockErr,
+			)
+			if lockErrors >= errorRetries {
+				slog.Error("oauth_refresh_lock_unavailable_fail_closed",
+					"account_id", account.ID,
+					"cache_key", cacheKey,
+					"attempts", lockErrors,
+					"error", lockErr,
+				)
+				return "", false, nil, ErrServiceUnavailable
+			}
+		} else if time.Now().After(deadline) {
+			slog.Debug("oauth_refresh_lock_busy_timeout",
+				"account_id", account.ID,
+				"cache_key", cacheKey,
+				"attempts", attempt,
+			)
+			return "", false, nil, nil
+		}
+
+		timer := time.NewTimer(pollInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return "", false, nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func (api *OAuthRefreshAPI) recoverRefreshProgress(
+	ctx context.Context,
+	cacheKey string,
+	usedAccount *Account,
+	executor OAuthRefreshExecutor,
+	refreshWindow time.Duration,
+) (*Account, string) {
+	if api.accountRepo != nil {
+		freshAccount, err := api.accountRepo.GetByID(ctx, usedAccount.ID)
+		if err == nil && freshAccount != nil {
+			if !executor.NeedsRefresh(freshAccount, refreshWindow) || oauthRefreshCredentialsChanged(usedAccount, freshAccount) {
+				return freshAccount, "database"
+			}
+		}
+	}
+
+	cachedToken, err := api.tokenCache.GetAccessToken(ctx, cacheKey)
+	if err != nil || strings.TrimSpace(cachedToken) == "" || cachedToken == usedAccount.GetCredential("access_token") {
+		return nil, ""
+	}
+	recovered := cloneAccountForOAuthRefresh(usedAccount)
+	if recovered.Credentials == nil {
+		recovered.Credentials = make(map[string]any)
+	}
+	recovered.Credentials["access_token"] = cachedToken
+	return recovered, "cache"
+}
+
+func oauthRefreshCredentialsChanged(before, after *Account) bool {
+	if before == nil || after == nil {
+		return false
+	}
+	for _, key := range []string{"_token_version", "refresh_token", "access_token"} {
+		beforeValue := before.GetCredential(key)
+		afterValue := after.GetCredential(key)
+		if afterValue != "" && afterValue != beforeValue {
+			return true
+		}
+	}
+	return false
+}
+
+func cloneAccountForOAuthRefresh(account *Account) *Account {
+	if account == nil {
+		return nil
+	}
+	cloned := *account
+	cloned.Credentials = cloneCredentials(account.Credentials)
+	cloned.Extra = cloneCredentials(account.Extra)
+	return &cloned
+}
+
+func (api *OAuthRefreshAPI) releaseRefreshLock(cacheKey, leaseToken string, account *Account) {
+	releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := api.tokenCache.ReleaseRefreshLock(releaseCtx, cacheKey, leaseToken); err != nil {
+		slog.Warn("oauth_refresh_lock_release_failed",
+			"account_id", account.ID,
+			"cache_key", cacheKey,
+			"error", err,
+		)
+	}
+}
+
 // isInvalidGrantError 检查错误是否为 invalid_grant
 func isInvalidGrantError(err error) bool {
 	return err != nil && strings.Contains(strings.ToLower(err.Error()), "invalid_grant")
 }
 
-// tryRecoverFromRefreshRace 在 invalid_grant 错误后尝试竞争恢复
-// 重新读取 DB，如果 refresh_token 已改变（说明另一个 worker 成功刷新），则返回更新后的 account
+// tryRecoverFromRefreshRace 在 invalid_grant 错误后尝试竞争恢复。
+// 重新读取 DB；若任一 OAuth token/version 已变化，则说明另一个 worker 已成功刷新。
 func (api *OAuthRefreshAPI) tryRecoverFromRefreshRace(ctx context.Context, usedAccount *Account) (*Account, bool) {
 	if api.accountRepo == nil {
 		return nil, false
@@ -210,13 +366,9 @@ func (api *OAuthRefreshAPI) tryRecoverFromRefreshRace(ctx context.Context, usedA
 	if err != nil || reReadAccount == nil {
 		return nil, false
 	}
-	usedRT := usedAccount.GetCredential("refresh_token")
-	currentRT := reReadAccount.GetCredential("refresh_token")
-	if usedRT == "" || currentRT == "" {
-		return nil, false
-	}
-	// refresh_token 不同 → 另一个 worker 已成功刷新
-	if usedRT != currentRT {
+	// Refresh token rotation, access token replacement, or a newer token
+	// version all prove another worker committed refresh progress.
+	if oauthRefreshCredentialsChanged(usedAccount, reReadAccount) {
 		return reReadAccount, true
 	}
 	return nil, false

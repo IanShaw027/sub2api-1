@@ -259,9 +259,29 @@ func clearOpenAIRequestBodyCache(c *gin.Context) {
 }
 
 // ClearOpenAICompatRequestState clears per-request OpenAI compat replay/cache state.
+// Note: compact failover overrides (body/path suffix) intentionally stick across
+// same-request account switches when the next account AllowsOpenAICompact; use
+// clearOpenAICompactFailoverState when the next account cannot run compact.
 func ClearOpenAICompatRequestState(c *gin.Context) {
 	clearOpenAIRequestBodyCache(c)
 	ClearOpenAIStreamRetryReplayState(c)
+}
+
+// clearOpenAICompactFailoverState removes context-overflow compact overrides that
+// would otherwise force /compact on an account that does not support it.
+func clearOpenAICompactFailoverState(c *gin.Context) {
+	if c == nil || c.Keys == nil {
+		return
+	}
+	delete(c.Keys, openAIFailoverRequestBodyKey)
+	delete(c.Keys, openAIResponsesUpstreamPathSuffixOverrideKey)
+	delete(c.Keys, openAICompactClientStreamKey)
+}
+
+func clearOpenAICompactFailoverStateIfUnsupported(c *gin.Context, account *Account) {
+	if openAIResponsesRequestPathSuffix(c) == "/compact" && !account.AllowsOpenAICompact() {
+		clearOpenAICompactFailoverState(c)
+	}
 }
 
 // OpenAI allowed headers whitelist (for non-passthrough).
@@ -1043,6 +1063,8 @@ func classifyOpenAIWSReconnectReason(err error) (string, bool) {
 		"upgrade_required",
 		"ws_unsupported",
 		"auth_failed",
+		"payment_required",
+		"upstream_overloaded",
 		"model_unavailable",
 		"invalid_encrypted_content",
 		"previous_response_not_found",
@@ -1147,6 +1169,10 @@ func resolveOpenAIWSFallbackErrorResponse(err error) (statusCode int, errType st
 		if statusCode == 0 {
 			statusCode = http.StatusPaymentRequired
 		}
+	case "upstream_overloaded":
+		if statusCode == 0 {
+			statusCode = 529
+		}
 	case "upstream_rate_limited", "ws_connection_limit_reached":
 		if statusCode == 0 {
 			statusCode = http.StatusTooManyRequests
@@ -1213,7 +1239,10 @@ func (s *OpenAIGatewayService) newOpenAIWSFailoverError(c *gin.Context, account 
 		return nil
 	}
 	reason := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(fallbackErr.Reason), "prewarm_"))
-	if reason != "upstream_rate_limited" && reason != "ws_connection_limit_reached" {
+	if reason != "upstream_rate_limited" &&
+		reason != "ws_connection_limit_reached" &&
+		reason != "payment_required" &&
+		reason != "upstream_overloaded" {
 		if reason != "response_failed" {
 			return nil
 		}
@@ -1263,6 +1292,8 @@ func shouldFallbackOpenAIWSToHTTP(wsErr error) bool {
 	case "":
 		return false
 	case "upstream_rate_limited",
+		"payment_required",
+		"upstream_overloaded",
 		"call_id",
 		"invalid_encrypted_content",
 		"model_unavailable",
@@ -4761,12 +4792,17 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	startTime := time.Now()
 	clearOpenAICodexCompatContext(c)
 	codexCompatFallbackState := openAICodexCompatFallbackState{}
+	if account == nil {
+		return nil, errors.New("account is required")
+	}
+	// Compact overflow sticky state: only inherit on accounts that support compact.
+	// The failover-body key is also used by ordinary retry recovery, so the
+	// /compact path marker—not merely the presence of an override body—must gate
+	// cleanup here.
+	clearOpenAICompactFailoverStateIfUnsupported(c, account)
 	if failoverBody, ok := getOpenAIFailoverRequestBody(c, body); ok {
 		body = failoverBody
 		clearOpenAIRequestBodyCache(c)
-	}
-	if account == nil {
-		return nil, errors.New("account is required")
 	}
 
 	restrictionResult := s.detectCodexClientRestriction(c, account, body)
@@ -5933,7 +5969,7 @@ oauthTransformDone:
 			if wsInvalidEncryptedContentRecoveryTried {
 				return false
 			}
-			removedReasoningItems := trimOpenAIEncryptedReasoningItems(wsReqBody)
+			removedReasoningItems := dropOpenAIWSInvalidEncryptedInputItems(wsReqBody)
 			if !removedReasoningItems {
 				logOpenAIWSModeInfo(
 					"reconnect_invalid_encrypted_content_recovery_skip account_id=%d attempt=%d reason=missing_encrypted_reasoning_items",
@@ -6538,7 +6574,7 @@ oauthTransformDone:
 				if err != nil {
 					return nil, fmt.Errorf("parse invalid_encrypted_content retry body: %w", err)
 				}
-				removedReasoningItems := trimOpenAIEncryptedReasoningItems(reqBody)
+				removedReasoningItems := dropOpenAIEncryptedInputItems(reqBody)
 				previousResponseID := openAIWSPayloadString(reqBody, "previous_response_id")
 				hasFunctionCallOutput := HasFunctionCallOutput(reqBody)
 				droppedPreviousResponseID := false
@@ -7295,7 +7331,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			if err := json.Unmarshal(body, &reqBody); err != nil {
 				return nil, fmt.Errorf("unmarshal passthrough invalid_encrypted_content retry body: %w", err)
 			}
-			removedReasoningItems := trimOpenAIEncryptedReasoningItems(reqBody)
+			removedReasoningItems := dropOpenAIEncryptedInputItems(reqBody)
 			previousResponseID := openAIWSPayloadString(reqBody, "previous_response_id")
 			hasFunctionCallOutput := HasFunctionCallOutput(reqBody)
 			droppedPreviousResponseID := false
@@ -8351,58 +8387,6 @@ func (s *OpenAIGatewayService) newOpenAIRetryableOverloadFailoverError(
 	}
 }
 
-func (s *OpenAIGatewayService) newOpenAISoftRateLimitFailoverError(
-	ctx context.Context,
-	c *gin.Context,
-	account *Account,
-	passthrough bool,
-	upstreamRequestID string,
-	payload []byte,
-	message string,
-) *UpstreamFailoverError {
-	message = sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
-	if message == "" {
-		message = "Approaching upstream rate limits; switch account and retry"
-	}
-	s.persistOpenAIWSSoftRateLimitAdvisory(ctx, account, payload)
-	detail := ""
-	if len(payload) > 0 && s != nil && s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
-		maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
-		if maxBytes <= 0 {
-			maxBytes = 2048
-		}
-		detail = truncateString(string(payload), maxBytes)
-	}
-	if c != nil {
-		setOpsUpstreamError(c, http.StatusTooManyRequests, message, detail)
-		event := OpsUpstreamErrorEvent{
-			Platform:           PlatformOpenAI,
-			UpstreamStatusCode: http.StatusTooManyRequests,
-			UpstreamRequestID:  strings.TrimSpace(upstreamRequestID),
-			Passthrough:        passthrough,
-			Kind:               "failover",
-			Message:            message,
-			Detail:             detail,
-		}
-		if account != nil {
-			event.Platform = account.Platform
-			event.AccountID = account.ID
-			event.AccountName = account.Name
-		}
-		appendOpsUpstreamError(c, event)
-	}
-	body, _ := json.Marshal(gin.H{
-		"error": gin.H{
-			"type":    "rate_limit_error",
-			"message": message,
-		},
-	})
-	return &UpstreamFailoverError{
-		StatusCode:   http.StatusTooManyRequests,
-		ResponseBody: body,
-	}
-}
-
 func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	ctx context.Context,
 	resp *http.Response,
@@ -8614,13 +8598,6 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				}
 				return s.newOpenAIRetryableOverloadFailoverError(ctx, c, account, true, upstreamRequestID, dataBytes, overloadMsg)
 			}
-			if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(dataBytes); matched {
-				if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
-					return s.newOpenAISoftRateLimitFailoverError(ctx, c, account, true, upstreamRequestID, dataBytes, advisoryMsg)
-				}
-				return fmt.Errorf("openai passthrough soft rate limit advisory: %s", advisoryMsg)
-			}
-
 			forceFlushFailedEvent := false
 			if eventType == "response.failed" || strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String()) == "response.failed" {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
@@ -8896,6 +8873,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 		return nil, err
 	}
 	_ = markOpsCyberPolicyIfDetectedWithUsage(c, body, resp.StatusCode)
+	s.recordOpenAIWSCodexRateLimitSnapshot(ctx, account, body)
 
 	// Detect SSE responses from upstream and convert to JSON.
 	// Some upstreams (e.g. other sub2api instances) may return SSE even when
@@ -8903,9 +8881,6 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	// receive raw SSE text or a terminal event with empty output.
 	if isEventStreamResponse(resp.Header) {
 		return s.handlePassthroughSSEToJSON(resp, c, account, body, originalModel, mappedModel)
-	}
-	if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(body); matched {
-		return nil, s.newOpenAISoftRateLimitFailoverError(ctx, c, account, true, resp.Header.Get("x-request-id"), body, advisoryMsg)
 	}
 	if normalized, changed := normalizeCompletedImageGenerationStatus(body); changed {
 		body = normalized
@@ -8953,9 +8928,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 // rewrite model fields back to the original requested model.
 func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel string, mappedModel string) (*openaiNonStreamingResultPassthrough, error) {
 	bodyText := string(body)
-	if advisoryMsg, matched := extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(bodyText); matched {
-		return nil, s.newOpenAISoftRateLimitFailoverError(c.Request.Context(), c, account, true, resp.Header.Get("x-request-id"), body, advisoryMsg)
-	}
+	s.recordOpenAIWSCodexRateLimitSnapshotsFromSSEBody(c.Request.Context(), account, bodyText)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
 	if terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText); terminalOK {
 		if overloadMsg, matched := classifyOpenAIRetryableOverload(terminalPayload, ""); matched || strings.TrimSpace(terminalType) == "error" {
@@ -10369,15 +10342,6 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				streamFailoverErr = s.newOpenAIRetryableOverloadFailoverError(ctx, c, account, false, upstreamRequestID, dataBytes, overloadMsg)
 				return
 			}
-			if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(dataBytes); matched {
-				if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
-					streamFailoverErr = s.newOpenAISoftRateLimitFailoverError(ctx, c, account, false, upstreamRequestID, dataBytes, advisoryMsg)
-				} else {
-					streamFailoverErr = fmt.Errorf("openai soft rate limit advisory: %s", advisoryMsg)
-				}
-				return
-			}
-
 			if eventType == "response.failed" || strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String()) == "response.failed" {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
 				failedPayload = append(failedPayload[:0], dataBytes...)
@@ -11329,6 +11293,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		return nil, err
 	}
 	_ = markOpsCyberPolicyIfDetectedWithUsage(c, body, resp.StatusCode)
+	s.recordOpenAIWSCodexRateLimitSnapshot(ctx, account, body)
 
 	// Detect SSE responses for ALL account types via Content-Type header.
 	// Some OpenAI-compatible upstreams (including other sub2api instances)
@@ -11345,9 +11310,6 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	// "event:" in their text content.
 	if account.Type == AccountTypeOAuth && bodyLooksLikeSSE {
 		return s.handleSSEToJSON(resp, c, account, body, originalModel, mappedModel)
-	}
-	if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory(body); matched {
-		return nil, s.newOpenAISoftRateLimitFailoverError(ctx, c, account, false, resp.Header.Get("x-request-id"), body, advisoryMsg)
 	}
 	if account != nil && account.Platform == PlatformGrok {
 		body = normalizeGrokReasoningResponseBody(body)
@@ -11404,9 +11366,7 @@ func isEventStreamResponse(header http.Header) bool {
 
 func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
 	bodyText := string(body)
-	if advisoryMsg, matched := extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(bodyText); matched {
-		return nil, s.newOpenAISoftRateLimitFailoverError(c.Request.Context(), c, account, false, resp.Header.Get("x-request-id"), body, advisoryMsg)
-	}
+	s.recordOpenAIWSCodexRateLimitSnapshotsFromSSEBody(c.Request.Context(), account, bodyText)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
 	if terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText); terminalOK {
 		if overloadMsg, matched := classifyOpenAIRetryableOverload(terminalPayload, ""); matched || strings.TrimSpace(terminalType) == "error" {
@@ -11576,18 +11536,14 @@ func extractOpenAISSETerminalResponse(terminalPayload []byte) []byte {
 	return []byte(trimmed)
 }
 
-func extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(body string) (string, bool) {
-	lines := strings.Split(body, "\n")
-	for _, line := range lines {
+func (s *OpenAIGatewayService) recordOpenAIWSCodexRateLimitSnapshotsFromSSEBody(ctx context.Context, account *Account, body string) {
+	for _, line := range strings.Split(body, "\n") {
 		data, ok := extractOpenAISSEDataLine(line)
 		if !ok || data == "" || data == "[DONE]" {
 			continue
 		}
-		if advisoryMsg, matched := classifyOpenAIWSSoftRateLimitAdvisory([]byte(data)); matched {
-			return advisoryMsg, true
-		}
+		s.recordOpenAIWSCodexRateLimitSnapshot(ctx, account, []byte(data))
 	}
-	return "", false
 }
 
 func extractOpenAISSEErrorMessage(payload []byte) string {
@@ -12290,6 +12246,71 @@ func trimOpenAIStoreFalseReasoningItems(reqBody map[string]any) bool {
 	}
 	reqBody["input"] = filtered
 	return true
+}
+
+// dropOpenAIEncryptedInputItems removes complete replay items that carry
+// encrypted_content after upstream explicitly rejects that ciphertext. Merely
+// stripping the field can leave an invalid summary-only reasoning item (or a
+// malformed assistant item) and make the retry fail again.
+func dropOpenAIEncryptedInputItems(reqBody map[string]any) bool {
+	if len(reqBody) == 0 {
+		return false
+	}
+	input, ok := reqBody["input"]
+	if !ok {
+		return false
+	}
+
+	switch typed := input.(type) {
+	case []any:
+		filtered := make([]any, 0, len(typed))
+		changed := false
+		for _, item := range typed {
+			if itemMap, ok := item.(map[string]any); ok {
+				if _, hasEncryptedContent := itemMap["encrypted_content"]; hasEncryptedContent {
+					changed = true
+					continue
+				}
+			}
+			filtered = append(filtered, item)
+		}
+		if !changed {
+			return false
+		}
+		if len(filtered) == 0 {
+			delete(reqBody, "input")
+		} else {
+			reqBody["input"] = filtered
+		}
+		return true
+	case []map[string]any:
+		filtered := make([]map[string]any, 0, len(typed))
+		changed := false
+		for _, item := range typed {
+			if _, hasEncryptedContent := item["encrypted_content"]; hasEncryptedContent {
+				changed = true
+				continue
+			}
+			filtered = append(filtered, item)
+		}
+		if !changed {
+			return false
+		}
+		if len(filtered) == 0 {
+			delete(reqBody, "input")
+		} else {
+			reqBody["input"] = filtered
+		}
+		return true
+	case map[string]any:
+		if _, hasEncryptedContent := typed["encrypted_content"]; !hasEncryptedContent {
+			return false
+		}
+		delete(reqBody, "input")
+		return true
+	default:
+		return false
+	}
 }
 
 func sanitizeEncryptedReasoningInputItem(item any) (next any, changed bool, keep bool) {
@@ -13678,82 +13699,6 @@ func (s *OpenAIGatewayService) recordOpenAIWSCodexRateLimitSnapshot(ctx context.
 		return
 	}
 	s.updateCodexUsageSnapshot(ctx, account.ID, snapshot)
-}
-
-func openAIWSSoftRateLimitTempUnschedUntil(updates map[string]any, now time.Time) *time.Time {
-	var until *time.Time
-	for _, window := range []string{"5h", "7d"} {
-		if schedulingPercentValue(updates["codex_"+window+"_used_percent"]) < openAIWSSoftRateLimitAdvisoryThreshold {
-			continue
-		}
-		parsed := parseSchedulingResetAt(updates["codex_"+window+"_reset_at"])
-		if parsed == nil || !parsed.After(now) {
-			continue
-		}
-		if until == nil || parsed.After(*until) {
-			until = parsed
-		}
-	}
-	return until
-}
-
-func openAIWSSoftRateLimitMaxUsedPercent(updates map[string]any) float64 {
-	maxUsed := 0.0
-	for _, key := range []string{"codex_5h_used_percent", "codex_7d_used_percent"} {
-		if used := schedulingPercentValue(updates[key]); used > maxUsed {
-			maxUsed = used
-		}
-	}
-	return maxUsed
-}
-
-func (s *OpenAIGatewayService) persistOpenAIWSSoftRateLimitAdvisory(ctx context.Context, account *Account, payload []byte) {
-	if s == nil || s.accountRepo == nil || account == nil || account.ID <= 0 || account.Platform != PlatformOpenAI {
-		return
-	}
-	now := currentOpenAICodexSnapshotTime()
-	snapshot := parseOpenAIWSCodexRateLimitSnapshot(payload, now)
-	updates := buildCodexUsageExtraUpdates(snapshot, now)
-	if len(updates) == 0 {
-		return
-	}
-
-	until := openAIWSSoftRateLimitTempUnschedUntil(updates, now)
-	maxUsed := openAIWSSoftRateLimitMaxUsedPercent(updates)
-	reason := ""
-	if until != nil {
-		reason = BuildDetailedAccountSchedulingThresholdReason(AccountSchedulingThresholdReasonInput{
-			Platform:         PlatformOpenAI,
-			Window:           "codex",
-			ThresholdPercent: int(openAIWSSoftRateLimitAdvisoryThreshold),
-			UsedPercent:      maxUsed,
-			Until:            *until,
-			Now:              now,
-		})
-	}
-
-	go func() {
-		updateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
-		defer cancel()
-		if err := s.accountRepo.UpdateExtra(updateCtx, account.ID, updates); err != nil {
-			slog.Warn("openai_ws_soft_rate_limit_snapshot_persist_failed", "account_id", account.ID, "error", err)
-		}
-		if until == nil {
-			return
-		}
-		if err := s.accountRepo.SetTempUnschedulable(updateCtx, account.ID, *until, reason); err != nil {
-			slog.Warn("openai_ws_soft_rate_limit_temp_unsched_failed", "account_id", account.ID, "until", until.UTC(), "error", err)
-			return
-		}
-		if s.rateLimitService != nil && s.rateLimitService.tempUnschedCache != nil {
-			if state := tempUnschedStateFromStoredReason(reason, until.Unix()); state != nil {
-				if err := s.rateLimitService.tempUnschedCache.SetTempUnsched(updateCtx, account.ID, state); err != nil {
-					slog.Warn("openai_ws_soft_rate_limit_temp_unsched_cache_failed", "account_id", account.ID, "error", err)
-				}
-			}
-		}
-		slog.Info("openai_ws_soft_rate_limit_temp_unschedulable", "account_id", account.ID, "used_percent", maxUsed, "until", until.UTC())
-	}()
 }
 
 // updateCodexUsageSnapshot saves the Codex usage snapshot to account's Extra field

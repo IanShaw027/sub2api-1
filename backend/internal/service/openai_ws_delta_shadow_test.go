@@ -1322,7 +1322,7 @@ func TestOpenAIWSActiveDelta_ResponseConnMissUsesSessionConnAndStillSendsDelta(t
 		msg := event.Message
 		if strings.Contains(msg, "openai_ws_delta_shadow") &&
 			strings.Contains(msg, "active=true") &&
-			strings.Contains(msg, "store_fallback_reason=session_context_conn_reanchor") &&
+			strings.Contains(msg, "store_fallback_reason=session_conn_reanchor") &&
 			strings.Contains(msg, "preferred_conn_id="+cached.connID) {
 			foundSessionContextReanchorLog = true
 			break

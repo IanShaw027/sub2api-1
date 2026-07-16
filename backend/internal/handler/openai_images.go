@@ -367,13 +367,59 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						zap.Int("image_count", result.ImageCount),
 						zap.Error(err),
 					)
+					h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+					if !shouldSuppressForwardErrorResponse(c, err) &&
+						!openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err) {
+						h.ensureForwardErrorResponse(c, streamStarted, err)
+					}
 					return
+				}
+				userAgent := c.GetHeader("User-Agent")
+				clientIP := ip.GetClientIP(c)
+				inboundEndpoint := GetInboundEndpoint(c)
+				upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+				quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+				h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
+					if recErr := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+						Result:             result,
+						APIKey:             apiKey,
+						User:               apiKey.User,
+						Account:            account,
+						Subscription:       subscription,
+						InboundEndpoint:    inboundEndpoint,
+						UpstreamEndpoint:   upstreamEndpoint,
+						UserAgent:          userAgent,
+						IPAddress:          clientIP,
+						RequestPayloadHash: requestPayloadHash,
+						APIKeyService:      h.apiKeyService,
+						QuotaPlatform:      quotaPlatform,
+						ChannelUsageFields: channelMapping.ToUsageFields(requestModel, upstreamModel),
+						CyberBlocked:       false,
+					}); recErr != nil {
+						logger.L().With(
+							zap.String("component", "handler.openai_gateway.images"),
+							zap.Int64("user_id", subject.UserID),
+							zap.Int64("api_key_id", apiKey.ID),
+							zap.Any("group_id", apiKey.GroupID),
+							zap.String("model", requestModel),
+							zap.Int64("account_id", account.ID),
+						).Error("openai.images.record_partial_usage_failed", zap.Error(recErr))
+					}
+				})
+				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
+				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
+				wroteFallback := false
+				if !shouldSuppressForwardErrorResponse(c, err) && !upstreamErrorAlreadyCommunicated {
+					wroteFallback = h.ensureForwardErrorResponse(c, streamStarted, err)
 				}
 				reqLog.Warn("openai.images.forward_partial_error_result",
 					zap.Int64("account_id", account.ID),
 					zap.Int("image_count", result.ImageCount),
+					zap.Bool("fallback_error_response_written", wroteFallback),
+					zap.Bool("upstream_error_response_already_written", upstreamErrorAlreadyCommunicated),
 					zap.Error(err),
 				)
+				return
 			} else {
 				var failoverErr *service.UpstreamFailoverError
 				if errors.As(err, &failoverErr) {

@@ -606,6 +606,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						zap.Int("search_count", result.SearchCount),
 						zap.Error(err),
 					)
+					// Still report schedule failure + ensure terminal if needed.
+					h.reportOpenAIAccountScheduleFailure(c, account.ID, err)
+					if !shouldSuppressForwardErrorResponse(c, err) &&
+						!openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err) {
+						h.ensureForwardErrorResponse(c, streamStarted, err)
+					}
 					return
 				}
 				userAgent := c.GetHeader("User-Agent")
@@ -641,12 +647,32 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						).Error("openai.record_partial_usage_failed", zap.Error(err))
 					}
 				})
-				reqLog.Warn("openai.forward_partial_error_result",
-					zap.Int64("account_id", account.ID),
-					zap.Int("image_count", result.ImageCount),
-					zap.Int("search_count", result.SearchCount),
-					zap.Error(err),
-				)
+				// Partial usage is still a failed turn for scheduling.
+				h.reportOpenAIAccountScheduleFailure(c, account.ID, err)
+				// Service may return billable partial without writing response.failed
+				// (e.g. missing terminal after client output started). Close the stream.
+				if !shouldSuppressForwardErrorResponse(c, err) {
+					upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
+					wroteFallback := false
+					if !upstreamErrorAlreadyCommunicated {
+						wroteFallback = h.ensureForwardErrorResponse(c, streamStarted, err)
+					}
+					reqLog.Warn("openai.forward_partial_error_result",
+						zap.Int64("account_id", account.ID),
+						zap.Int("image_count", result.ImageCount),
+						zap.Int("search_count", result.SearchCount),
+						zap.Bool("fallback_error_response_written", wroteFallback),
+						zap.Bool("upstream_error_response_already_written", upstreamErrorAlreadyCommunicated),
+						zap.Error(err),
+					)
+				} else {
+					reqLog.Warn("openai.forward_partial_error_result",
+						zap.Int64("account_id", account.ID),
+						zap.Int("image_count", result.ImageCount),
+						zap.Int("search_count", result.SearchCount),
+						zap.Error(err),
+					)
+				}
 				return
 			} else {
 				var failoverErr *service.UpstreamFailoverError
@@ -1215,71 +1241,111 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						zap.Int("image_count", result.ImageCount),
 						zap.Error(err),
 					)
+					h.reportOpenAIAccountScheduleFailure(c, account.ID, err)
+					h.ensureAnthropicErrorResponse(c, streamStarted)
 					return
 				}
-				// Bill any partial result (token and/or image), not only ImageCount>0.
+				// Align with Responses partial path: bill once, report schedule
+				// failure, ensure terminal error frame, then return (never fall
+				// through to success ReportOpenAIAccountScheduleResult(true)).
+				userAgent := c.GetHeader("User-Agent")
+				clientIP := ip.GetClientIP(c)
+				requestPayloadHash := service.HashUsageRequestPayload(body)
+				inboundEndpoint := GetInboundEndpoint(c)
+				upstreamEndpoint := resolveOpenAIMessagesUpstreamEndpoint(c, account)
+				quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+				h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
+					if recErr := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+						Result:             result,
+						APIKey:             apiKey,
+						User:               apiKey.User,
+						Account:            account,
+						Subscription:       subscription,
+						InboundEndpoint:    inboundEndpoint,
+						UpstreamEndpoint:   upstreamEndpoint,
+						UserAgent:          userAgent,
+						IPAddress:          clientIP,
+						RequestPayloadHash: requestPayloadHash,
+						APIKeyService:      h.apiKeyService,
+						QuotaPlatform:      quotaPlatform,
+						ChannelUsageFields: channelMappingMsg.ToUsageFields(reqModel, result.UpstreamModel),
+						CyberBlocked:       false,
+					}); recErr != nil {
+						logger.L().With(
+							zap.String("component", "handler.openai_gateway.messages"),
+							zap.Int64("user_id", subject.UserID),
+							zap.Int64("api_key_id", apiKey.ID),
+							zap.Any("group_id", apiKey.GroupID),
+							zap.String("model", reqModel),
+							zap.Int64("account_id", account.ID),
+						).Error("openai_messages.record_partial_usage_failed", zap.Error(recErr))
+					}
+				})
+				h.reportOpenAIAccountScheduleFailure(c, account.ID, err)
+				wroteFallback := h.ensureAnthropicErrorResponse(c, streamStarted)
 				reqLog.Warn("openai_messages.forward_partial_error_result",
 					zap.Int64("account_id", account.ID),
 					zap.Int("image_count", result.ImageCount),
-					zap.Error(err),
-				)
-			} else {
-				var failoverErr *service.UpstreamFailoverError
-				if errors.As(err, &failoverErr) {
-					if c.Writer.Size() != writerSizeBeforeForward {
-						h.handleAnthropicFailoverExhausted(c, failoverErr, true)
-						return
-					}
-					h.reportOpenAIAccountScheduleFailure(c, account.ID, err)
-					// 池模式：同账号重试
-					if failoverErr.RetryableOnSameAccount {
-						retryLimit := account.GetPoolModeRetryCount()
-						if sameAccountRetryCount[account.ID] < retryLimit {
-							sameAccountRetryCount[account.ID]++
-							reqLog.Warn("openai_messages.pool_mode_same_account_retry",
-								zap.Int64("account_id", account.ID),
-								zap.Int("upstream_status", failoverErr.StatusCode),
-								zap.Int("retry_limit", retryLimit),
-								zap.Int("retry_count", sameAccountRetryCount[account.ID]),
-							)
-							select {
-							case <-c.Request.Context().Done():
-								return
-							case <-time.After(sameAccountRetryDelay):
-							}
-							continue
-						}
-					}
-					h.gatewayService.RecordOpenAIAccountSwitch()
-					failedAccountIDs[account.ID] = struct{}{}
-					lastFailoverErr = failoverErr
-					if switchCount >= maxAccountSwitches {
-						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
-						return
-					}
-					service.ClearOpenAICompatRequestState(c)
-					switchCount++
-					if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount) {
-						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
-						return
-					}
-					reqLog.Warn("openai_messages.upstream_failover_switching",
-						zap.Int64("account_id", account.ID),
-						zap.Int("upstream_status", failoverErr.StatusCode),
-						zap.Int("switch_count", switchCount),
-						zap.Int("max_switches", maxAccountSwitches),
-					)
-					continue
-				}
-				h.reportOpenAIAccountScheduleFailure(c, account.ID, err)
-				wroteFallback := h.ensureAnthropicErrorResponse(c, streamStarted)
-				reqLog.Warn("openai_messages.forward_failed",
-					zap.Int64("account_id", account.ID),
 					zap.Bool("fallback_error_response_written", wroteFallback),
 					zap.Error(err),
 				)
 				return
 			}
+			var failoverErr *service.UpstreamFailoverError
+			if errors.As(err, &failoverErr) {
+				if c.Writer.Size() != writerSizeBeforeForward {
+					h.handleAnthropicFailoverExhausted(c, failoverErr, true)
+					return
+				}
+				h.reportOpenAIAccountScheduleFailure(c, account.ID, err)
+				// 池模式：同账号重试
+				if failoverErr.RetryableOnSameAccount {
+					retryLimit := account.GetPoolModeRetryCount()
+					if sameAccountRetryCount[account.ID] < retryLimit {
+						sameAccountRetryCount[account.ID]++
+						reqLog.Warn("openai_messages.pool_mode_same_account_retry",
+							zap.Int64("account_id", account.ID),
+							zap.Int("upstream_status", failoverErr.StatusCode),
+							zap.Int("retry_limit", retryLimit),
+							zap.Int("retry_count", sameAccountRetryCount[account.ID]),
+						)
+						select {
+						case <-c.Request.Context().Done():
+							return
+						case <-time.After(sameAccountRetryDelay):
+						}
+						continue
+					}
+				}
+				h.gatewayService.RecordOpenAIAccountSwitch()
+				failedAccountIDs[account.ID] = struct{}{}
+				lastFailoverErr = failoverErr
+				if switchCount >= maxAccountSwitches {
+					h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
+					return
+				}
+				service.ClearOpenAICompatRequestState(c)
+				switchCount++
+				if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount) {
+					h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
+					return
+				}
+				reqLog.Warn("openai_messages.upstream_failover_switching",
+					zap.Int64("account_id", account.ID),
+					zap.Int("upstream_status", failoverErr.StatusCode),
+					zap.Int("switch_count", switchCount),
+					zap.Int("max_switches", maxAccountSwitches),
+				)
+				continue
+			}
+			h.reportOpenAIAccountScheduleFailure(c, account.ID, err)
+			wroteFallback := h.ensureAnthropicErrorResponse(c, streamStarted)
+			reqLog.Warn("openai_messages.forward_failed",
+				zap.Int64("account_id", account.ID),
+				zap.Bool("fallback_error_response_written", wroteFallback),
+				zap.Error(err),
+			)
+			return
 		}
 		if result != nil {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, result.FirstTokenMs)
@@ -1383,10 +1449,19 @@ func (h *OpenAIGatewayHandler) handleAnthropicFailoverExhausted(c *gin.Context, 
 	h.anthropicStreamingAwareError(c, status, errType, errMsg, streamStarted)
 }
 
-// ensureAnthropicErrorResponse writes a fallback Anthropic error if no response was written.
+// ensureAnthropicErrorResponse writes a fallback Anthropic error. If a stream
+// is already committed, it appends a terminal Anthropic SSE error event.
 func (h *OpenAIGatewayHandler) ensureAnthropicErrorResponse(c *gin.Context, streamStarted bool) bool {
-	if c == nil || c.Writer == nil || c.Writer.Written() {
+	if c == nil || c.Writer == nil {
 		return false
+	}
+	if c.Writer.Written() {
+		contentType := strings.ToLower(c.Writer.Header().Get("Content-Type"))
+		if !streamStarted && !strings.Contains(contentType, "text/event-stream") {
+			return false
+		}
+		h.anthropicStreamingAwareError(c, http.StatusBadGateway, "api_error", "Upstream request failed", true)
+		return true
 	}
 	h.anthropicStreamingAwareError(c, http.StatusBadGateway, "api_error", "Upstream request failed", streamStarted)
 	return true

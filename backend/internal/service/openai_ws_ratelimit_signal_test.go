@@ -25,24 +25,12 @@ type openAIWSRateLimitSignalRepo struct {
 	stubOpenAIAccountRepo
 	rateLimitCalls []time.Time
 	updateExtra    []map[string]any
-	updateExtraErr error
-	tempUnsched    []openAIWSTempUnschedCall
-}
-
-type openAIWSTempUnschedCacheRecorder struct {
-	states []*TempUnschedState
 }
 
 type openAICodexSnapshotAsyncRepo struct {
 	stubOpenAIAccountRepo
 	updateExtraCh chan map[string]any
 	rateLimitCh   chan time.Time
-}
-
-type openAIWSTempUnschedCall struct {
-	id     int64
-	until  time.Time
-	reason string
 }
 
 type openAICodexExtraListRepo struct {
@@ -138,32 +126,6 @@ func (r *openAIWSRateLimitSignalRepo) UpdateExtra(_ context.Context, _ int64, up
 		copied[k] = v
 	}
 	r.updateExtra = append(r.updateExtra, copied)
-	if r.updateExtraErr != nil {
-		return r.updateExtraErr
-	}
-	return nil
-}
-
-func (r *openAIWSRateLimitSignalRepo) SetTempUnschedulable(_ context.Context, id int64, until time.Time, reason string) error {
-	r.tempUnsched = append(r.tempUnsched, openAIWSTempUnschedCall{id: id, until: until, reason: reason})
-	return nil
-}
-
-func (c *openAIWSTempUnschedCacheRecorder) SetTempUnsched(_ context.Context, _ int64, state *TempUnschedState) error {
-	if state == nil {
-		c.states = append(c.states, nil)
-		return nil
-	}
-	cloned := *state
-	c.states = append(c.states, &cloned)
-	return nil
-}
-
-func (c *openAIWSTempUnschedCacheRecorder) GetTempUnsched(_ context.Context, _ int64) (*TempUnschedState, error) {
-	return nil, nil
-}
-
-func (c *openAIWSTempUnschedCacheRecorder) DeleteTempUnsched(_ context.Context, _ int64) error {
 	return nil
 }
 
@@ -200,75 +162,6 @@ func (r *openAICodexExtraListRepo) ListWithFilters(_ context.Context, params pag
 	_ = groupID
 	_ = privacyMode
 	return r.accounts, &pagination.PaginationResult{Total: int64(len(r.accounts)), Page: params.Page, PageSize: params.PageSize}, nil
-}
-
-func TestOpenAIGatewayService_PersistSoftRateLimitAdvisorySnapshotTempUnschedulesUntilReset(t *testing.T) {
-	now := time.Now().UTC().Truncate(time.Second)
-	resetAt := now.Add(7 * time.Hour)
-	repo := &openAIWSRateLimitSignalRepo{}
-	cache := &openAIWSTempUnschedCacheRecorder{}
-	svc := &OpenAIGatewayService{
-		accountRepo: repo,
-		rateLimitService: &RateLimitService{
-			tempUnschedCache: cache,
-		},
-	}
-	account := &Account{
-		ID:          67230,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeOAuth,
-		Status:      StatusActive,
-		Schedulable: true,
-		Name:        "soft-limit@example.com",
-	}
-	payload := []byte(`{"type":"codex.rate_limits","metered_limit_name":"codex","rate_limits":{"allowed":true,"limit_reached":false,"primary":{"used_percent":94,"window_minutes":10080,"reset_at":` + strconv.FormatInt(resetAt.Unix(), 10) + `},"secondary":{"used_percent":1,"window_minutes":300,"reset_at":` + strconv.FormatInt(now.Add(3*time.Hour).Unix(), 10) + `}},"credits":{"has_credits":false,"unlimited":false,"balance":null}}`)
-
-	svc.persistOpenAIWSSoftRateLimitAdvisory(context.Background(), account, payload)
-
-	require.Eventually(t, func() bool {
-		return len(repo.updateExtra) == 1 && len(repo.tempUnsched) == 1 && len(cache.states) == 1
-	}, 2*time.Second, 10*time.Millisecond)
-	require.Equal(t, 94.0, repo.updateExtra[0]["codex_7d_used_percent"])
-	persistedResetAt, err := time.Parse(time.RFC3339, firstNonEmptyString(repo.updateExtra[0]["codex_7d_reset_at"]))
-	require.NoError(t, err)
-	require.WithinDuration(t, resetAt, persistedResetAt, 2*time.Second)
-	require.Equal(t, 1.0, repo.updateExtra[0]["codex_5h_used_percent"])
-	require.Equal(t, int64(67230), repo.tempUnsched[0].id)
-	require.WithinDuration(t, resetAt, repo.tempUnsched[0].until, time.Second)
-	reasonPayload, ok := parseTempUnschedReasonPayload(repo.tempUnsched[0].reason)
-	require.True(t, ok)
-	require.Equal(t, AccountSchedulingThresholdReasonSource, reasonPayload.Source)
-	require.Equal(t, 94.0, reasonPayload.UsedPercent)
-	require.Equal(t, 90, reasonPayload.ThresholdPercent)
-	require.Equal(t, resetAt.Unix(), reasonPayload.UntilUnix)
-	require.Equal(t, resetAt.Unix(), cache.states[0].UntilUnix)
-	require.Contains(t, cache.states[0].ErrorMessage, "94.0% used")
-}
-
-func TestOpenAIGatewayService_PersistSoftRateLimitAdvisoryUsesExceededWindowReset(t *testing.T) {
-	now := time.Now().UTC().Truncate(time.Second)
-	exceededResetAt := now.Add(4 * time.Hour)
-	laterBelowThresholdResetAt := now.Add(7 * 24 * time.Hour)
-	repo := &openAIWSRateLimitSignalRepo{}
-	svc := &OpenAIGatewayService{accountRepo: repo}
-	account := &Account{
-		ID:          73955,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeOAuth,
-		Status:      StatusActive,
-		Schedulable: true,
-		Name:        "soft-limit-5h@example.com",
-	}
-	payload := []byte(`{"type":"codex.rate_limits","metered_limit_name":"codex","rate_limits":{"allowed":true,"limit_reached":false,"primary":{"used_percent":4,"window_minutes":10080,"reset_at":` + strconv.FormatInt(laterBelowThresholdResetAt.Unix(), 10) + `},"secondary":{"used_percent":95,"window_minutes":300,"reset_at":` + strconv.FormatInt(exceededResetAt.Unix(), 10) + `}},"credits":{"has_credits":false,"unlimited":false,"balance":null}}`)
-
-	svc.persistOpenAIWSSoftRateLimitAdvisory(context.Background(), account, payload)
-
-	require.Eventually(t, func() bool {
-		return len(repo.updateExtra) == 1 && len(repo.tempUnsched) == 1
-	}, 2*time.Second, 10*time.Millisecond)
-	require.Equal(t, 4.0, repo.updateExtra[0]["codex_7d_used_percent"])
-	require.Equal(t, 95.0, repo.updateExtra[0]["codex_5h_used_percent"])
-	require.WithinDuration(t, exceededResetAt, repo.tempUnsched[0].until, time.Second)
 }
 
 func TestOpenAIGatewayService_PersistOpenAIWSUpstreamErrorSignalMatchesHTTPStatePolicy(t *testing.T) {
@@ -518,37 +411,6 @@ func TestOpenAIGatewayService_Forward_WSv2ErrorEventUsageLimitPersistsRateLimit(
 	require.WithinDuration(t, time.Unix(resetAt, 0), repo.rateLimitCalls[0], 2*time.Second)
 }
 
-func TestOpenAIGatewayService_PersistSoftRateLimitAdvisoryContinuesTempUnschedWhenSnapshotPersistFails(t *testing.T) {
-	now := time.Now().UTC().Truncate(time.Second)
-	resetAt := now.Add(7 * time.Hour)
-	repo := &openAIWSRateLimitSignalRepo{updateExtraErr: errors.New("update extra failed")}
-	cache := &openAIWSTempUnschedCacheRecorder{}
-	svc := &OpenAIGatewayService{
-		accountRepo: repo,
-		rateLimitService: &RateLimitService{
-			tempUnschedCache: cache,
-		},
-	}
-	account := &Account{
-		ID:          84211,
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeOAuth,
-		Status:      StatusActive,
-		Schedulable: true,
-		Name:        "soft-limit-failed-extra@example.com",
-	}
-	payload := []byte(`{"type":"codex.rate_limits","metered_limit_name":"codex","rate_limits":{"allowed":true,"limit_reached":false,"primary":{"used_percent":94,"window_minutes":10080,"reset_at":` + strconv.FormatInt(resetAt.Unix(), 10) + `},"secondary":{"used_percent":1,"window_minutes":300,"reset_at":` + strconv.FormatInt(now.Add(3*time.Hour).Unix(), 10) + `}},"credits":{"has_credits":false,"unlimited":false,"balance":null}}`)
-
-	svc.persistOpenAIWSSoftRateLimitAdvisory(context.Background(), account, payload)
-
-	require.Eventually(t, func() bool {
-		return len(repo.updateExtra) == 1 && len(repo.tempUnsched) == 1 && len(cache.states) == 1
-	}, 2*time.Second, 10*time.Millisecond)
-	require.Equal(t, int64(84211), repo.tempUnsched[0].id)
-	require.WithinDuration(t, resetAt, repo.tempUnsched[0].until, time.Second)
-	require.Equal(t, resetAt.Unix(), cache.states[0].UntilUnix)
-}
-
 func TestOpenAIGatewayService_Forward_WSv2Handshake429PersistsRateLimit(t *testing.T) {
 	setGinTestMode()
 
@@ -683,8 +545,13 @@ func TestOpenAIGatewayService_Forward_WSv2Handshake402DeactivatedWorkspaceSetsEr
 		[]byte(`{"detail":{"code":"deactivated_workspace"}}`),
 	)
 
-	_, _ = svc.Forward(context.Background(), newOpenAIWSAuthFailureTestContext(), account, []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"input_text","text":"hello"}]}`))
+	result, err := svc.Forward(context.Background(), newOpenAIWSAuthFailureTestContext(), account, []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"input_text","text":"hello"}]}`))
 
+	require.Error(t, err)
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusPaymentRequired, failoverErr.StatusCode)
 	require.Equal(t, 1, repo.setErrorCalls)
 	require.Contains(t, repo.lastErrorMsg, "Workspace deactivated (402)")
 }
@@ -695,8 +562,13 @@ func TestOpenAIGatewayService_Forward_WSv2Handshake529PersistsOverload(t *testin
 	repo := &rateLimitAccountRepoStub{}
 	svc, account := newOpenAIWSAuthFailureTestGateway(t, repo, 529, []byte(`{"error":{"message":"overloaded"}}`))
 
-	_, _ = svc.Forward(context.Background(), newOpenAIWSAuthFailureTestContext(), account, []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"input_text","text":"hello"}]}`))
+	result, err := svc.Forward(context.Background(), newOpenAIWSAuthFailureTestContext(), account, []byte(`{"model":"gpt-5.4","stream":true,"input":[{"type":"input_text","text":"hello"}]}`))
 
+	require.Error(t, err)
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, 529, failoverErr.StatusCode)
 	require.Equal(t, 1, repo.overloadedCalls)
 	require.True(t, repo.lastOverloadedUntil.After(time.Now()))
 }
@@ -1077,6 +949,38 @@ func TestOpenAIGatewayService_RecordCodexRateLimitEventUpdatesSnapshotWithoutRat
 	select {
 	case resetAt := <-repo.rateLimitCh:
 		t.Fatalf("advisory 快照不应写入运行时限流: %v", resetAt)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestOpenAIGatewayService_RecordCodexRateLimitSnapshotFromSSEBodyIsTelemetryOnly(t *testing.T) {
+	repo := &openAICodexSnapshotAsyncRepo{
+		updateExtraCh: make(chan map[string]any, 1),
+		rateLimitCh:   make(chan time.Time, 1),
+	}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	account := &Account{ID: 604, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	resetAt := time.Now().Add(2 * time.Hour).Unix()
+	body := strings.Join([]string{
+		"event: codex.rate_limits",
+		`data: {"type":"codex.rate_limits","metered_limit_name":"codex","rate_limits":{"allowed":true,"limit_reached":false,"primary":{"used_percent":96,"window_minutes":300,"reset_at":` + strconv.FormatInt(resetAt, 10) + `},"secondary":null}`,
+		"",
+		"event: response.completed",
+		`data: {"type":"response.completed","response":{"id":"resp_telemetry","status":"completed","usage":{"input_tokens":1,"output_tokens":1},"output":[]}}`,
+		"",
+	}, "\n")
+
+	svc.recordOpenAIWSCodexRateLimitSnapshotsFromSSEBody(context.Background(), account, body)
+
+	select {
+	case updates := <-repo.updateExtraCh:
+		require.Equal(t, 96.0, updates["codex_5h_used_percent"])
+	case <-time.After(2 * time.Second):
+		t.Fatal("等待 SSE codex.rate_limits 快照落库超时")
+	}
+	select {
+	case resetAt := <-repo.rateLimitCh:
+		t.Fatalf("SSE telemetry 不应写入运行时限流: %v", resetAt)
 	case <-time.After(200 * time.Millisecond):
 	}
 }

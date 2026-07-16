@@ -7,8 +7,8 @@ import (
 )
 
 func TestShouldFlattenOpenAIResponsesNamespaces(t *testing.T) {
-	oauth := &Account{Type: AccountTypeOAuth}
-	apiKey := &Account{Type: AccountTypeAPIKey}
+	oauth := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	apiKey := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
 	tests := []struct {
 		name               string

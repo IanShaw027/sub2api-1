@@ -471,6 +471,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 				// Slot acquired: no longer waiting in queue.
 				releaseWait()
+				if !h.gatewayService.RegisterSessionAfterAcquire(c.Request.Context(), account, sessionKey) {
+					if accountReleaseFunc != nil {
+						accountReleaseFunc()
+					}
+					reqLog.Warn("gateway.session_limit_exceeded_after_wait", zap.Int64("account_id", account.ID))
+					h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Account session limit exceeded", streamStarted)
+					return
+				}
 				if err := h.gatewayService.BindStickySession(c.Request.Context(), apiKey.GroupID, sessionKey, account.ID); err != nil {
 					reqLog.Warn("gateway.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 				}
@@ -538,48 +546,53 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					}
 				}
 				h.emitGatewayDebugTimelineAttemptFinished(c, platform, "messages", "error", requestStart, apiKey, account, reqModel, reqStream, fs.SwitchCount, forwardDurationMs, result, err)
-				// 终态错误但已产生部分输出（流式中途断开 / 读错误 / 生成失败帧等）：
-				// 上游已消耗账号配额且不会 failover（failover 错误在上面的分支已 return），
-				// 补记这部分用量，避免客户端主动中断流来逃避计费。
+				// 终态错误但已产生部分输出：补记 partial，但 cyber 已记账则跳过。
 				if result != nil {
-					userAgent := c.GetHeader("User-Agent")
-					clientIP := ip.GetClientIP(c)
-					requestPayloadHash := service.HashUsageRequestPayload(body)
-					inboundEndpoint := GetInboundEndpoint(c)
-					upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
-					forceCacheBilling := fs.ForceCacheBilling
-					quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-					h.submitUsageRecordTask(c.Request.Context(), wrapUsageRecordTaskWithRequestContext(c, func(ctx context.Context) {
-						if recErr := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-							Result:             result,
-							QuotaPlatform:      quotaPlatform,
-							APIKey:             apiKey,
-							User:               apiKey.User,
-							Account:            account,
-							Subscription:       subscription,
-							InboundEndpoint:    inboundEndpoint,
-							UpstreamEndpoint:   upstreamEndpoint,
-							UserAgent:          userAgent,
-							IPAddress:          clientIP,
-							RequestPayloadHash: requestPayloadHash,
-							ForceCacheBilling:  forceCacheBilling,
-							APIKeyService:      h.apiKeyService,
-							ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
-						}); recErr != nil {
-							logger.L().With(
-								zap.String("component", "handler.gateway.messages"),
-								zap.Int64("user_id", subject.UserID),
-								zap.Int64("api_key_id", apiKey.ID),
-								zap.Any("group_id", apiKey.GroupID),
-								zap.String("model", reqModel),
-								zap.Int64("account_id", account.ID),
-							).Error("gateway.record_partial_usage_failed", zap.Error(recErr))
-						}
-					}))
-					reqLog.Warn("gateway.forward_partial_error_result",
-						zap.Int64("account_id", account.ID),
-						zap.Error(err),
-					)
+					if service.GetOpsCyberPolicy(c) != nil {
+						reqLog.Warn("gateway.forward_partial_error_result_cyber_billed",
+							zap.Int64("account_id", account.ID),
+							zap.Error(err),
+						)
+					} else {
+						userAgent := c.GetHeader("User-Agent")
+						clientIP := ip.GetClientIP(c)
+						requestPayloadHash := service.HashUsageRequestPayload(body)
+						inboundEndpoint := GetInboundEndpoint(c)
+						upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+						forceCacheBilling := fs.ForceCacheBilling
+						quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+						h.submitUsageRecordTask(c.Request.Context(), wrapUsageRecordTaskWithRequestContext(c, func(ctx context.Context) {
+							if recErr := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
+								Result:             result,
+								QuotaPlatform:      quotaPlatform,
+								APIKey:             apiKey,
+								User:               apiKey.User,
+								Account:            account,
+								Subscription:       subscription,
+								InboundEndpoint:    inboundEndpoint,
+								UpstreamEndpoint:   upstreamEndpoint,
+								UserAgent:          userAgent,
+								IPAddress:          clientIP,
+								RequestPayloadHash: requestPayloadHash,
+								ForceCacheBilling:  forceCacheBilling,
+								APIKeyService:      h.apiKeyService,
+								ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+							}); recErr != nil {
+								logger.L().With(
+									zap.String("component", "handler.gateway.messages"),
+									zap.Int64("user_id", subject.UserID),
+									zap.Int64("api_key_id", apiKey.ID),
+									zap.Any("group_id", apiKey.GroupID),
+									zap.String("model", reqModel),
+									zap.Int64("account_id", account.ID),
+								).Error("gateway.record_partial_usage_failed", zap.Error(recErr))
+							}
+						}))
+						reqLog.Warn("gateway.forward_partial_error_result",
+							zap.Int64("account_id", account.ID),
+							zap.Error(err),
+						)
+					}
 				}
 				if shouldSuppressForwardErrorResponse(c, err) {
 					return
@@ -815,6 +828,15 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 				// Slot acquired: no longer waiting in queue.
 				releaseWait()
+				// Register session only after a real slot is held (WaitPlan no longer pre-registers).
+				if !h.gatewayService.RegisterSessionAfterAcquire(c.Request.Context(), account, sessionKey) {
+					if accountReleaseFunc != nil {
+						accountReleaseFunc()
+					}
+					reqLog.Warn("gateway.session_limit_exceeded_after_wait", zap.Int64("account_id", account.ID))
+					h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Account session limit exceeded", streamStarted)
+					return
+				}
 				if err := h.gatewayService.BindStickySession(c.Request.Context(), currentAPIKey.GroupID, sessionKey, account.ID); err != nil {
 					reqLog.Warn("gateway.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 				}
@@ -1012,45 +1034,54 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				// 补记这部分用量，避免客户端主动中断流来逃避计费。这是 Kiro/Claude 等走
 				// gatewayService.Forward 的主路径，Kiro forwardStream 会在终态错误时返回
 				// buildKiroPartialStreamResult() 作为非 nil result。
+				// Cyber hits already billed via recordGatewayCyberPolicyIfMarked(forwardErrored=true);
+				// do not also RecordUsage or the same request is double-charged (align OpenAI path).
 				if result != nil {
-					userAgent := c.GetHeader("User-Agent")
-					clientIP := ip.GetClientIP(c)
-					requestPayloadHash := service.HashUsageRequestPayload(attemptParsedReq.Body.Bytes())
-					inboundEndpoint := GetInboundEndpoint(c)
-					upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
-					forceCacheBilling := fs.ForceCacheBilling
-					quotaPlatform := service.QuotaPlatform(c.Request.Context(), currentAPIKey)
-					h.submitUsageRecordTask(c.Request.Context(), wrapUsageRecordTaskWithRequestContext(c, func(ctx context.Context) {
-						if recErr := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-							Result:             result,
-							QuotaPlatform:      quotaPlatform,
-							APIKey:             currentAPIKey,
-							User:               currentAPIKey.User,
-							Account:            account,
-							Subscription:       currentSubscription,
-							InboundEndpoint:    inboundEndpoint,
-							UpstreamEndpoint:   upstreamEndpoint,
-							UserAgent:          userAgent,
-							IPAddress:          clientIP,
-							RequestPayloadHash: requestPayloadHash,
-							ForceCacheBilling:  forceCacheBilling,
-							APIKeyService:      h.apiKeyService,
-							ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
-						}); recErr != nil {
-							logger.L().With(
-								zap.String("component", "handler.gateway.messages"),
-								zap.Int64("user_id", subject.UserID),
-								zap.Int64("api_key_id", currentAPIKey.ID),
-								zap.Any("group_id", currentAPIKey.GroupID),
-								zap.String("model", reqModel),
-								zap.Int64("account_id", account.ID),
-							).Error("gateway.record_partial_usage_failed", zap.Error(recErr))
-						}
-					}))
-					reqLog.Warn("gateway.forward_partial_error_result",
-						zap.Int64("account_id", account.ID),
-						zap.Error(err),
-					)
+					if service.GetOpsCyberPolicy(c) != nil {
+						reqLog.Warn("gateway.forward_partial_error_result_cyber_billed",
+							zap.Int64("account_id", account.ID),
+							zap.Error(err),
+						)
+					} else {
+						userAgent := c.GetHeader("User-Agent")
+						clientIP := ip.GetClientIP(c)
+						requestPayloadHash := service.HashUsageRequestPayload(attemptParsedReq.Body.Bytes())
+						inboundEndpoint := GetInboundEndpoint(c)
+						upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
+						forceCacheBilling := fs.ForceCacheBilling
+						quotaPlatform := service.QuotaPlatform(c.Request.Context(), currentAPIKey)
+						h.submitUsageRecordTask(c.Request.Context(), wrapUsageRecordTaskWithRequestContext(c, func(ctx context.Context) {
+							if recErr := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
+								Result:             result,
+								QuotaPlatform:      quotaPlatform,
+								APIKey:             currentAPIKey,
+								User:               currentAPIKey.User,
+								Account:            account,
+								Subscription:       currentSubscription,
+								InboundEndpoint:    inboundEndpoint,
+								UpstreamEndpoint:   upstreamEndpoint,
+								UserAgent:          userAgent,
+								IPAddress:          clientIP,
+								RequestPayloadHash: requestPayloadHash,
+								ForceCacheBilling:  forceCacheBilling,
+								APIKeyService:      h.apiKeyService,
+								ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+							}); recErr != nil {
+								logger.L().With(
+									zap.String("component", "handler.gateway.messages"),
+									zap.Int64("user_id", subject.UserID),
+									zap.Int64("api_key_id", currentAPIKey.ID),
+									zap.Any("group_id", currentAPIKey.GroupID),
+									zap.String("model", reqModel),
+									zap.Int64("account_id", account.ID),
+								).Error("gateway.record_partial_usage_failed", zap.Error(recErr))
+							}
+						}))
+						reqLog.Warn("gateway.forward_partial_error_result",
+							zap.Int64("account_id", account.ID),
+							zap.Error(err),
+						)
+					}
 				}
 				if shouldSuppressForwardErrorResponse(c, err) {
 					return

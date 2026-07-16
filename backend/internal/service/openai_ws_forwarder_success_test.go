@@ -2814,14 +2814,20 @@ func TestOpenAIGatewayService_Forward_WSv2ResponseFailedRetryableKeepsFallbackSi
 	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
 	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 5
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.RetryBackoffInitialMS = 1
+	cfg.Gateway.OpenAIWS.RetryBackoffMaxMS = 1
+	cfg.Gateway.OpenAIWS.RetryJitterRatio = 0
 
-	captureConn := &openAIWSCaptureConn{
-		events: [][]byte{
-			[]byte(`{"type":"response.created","response":{"id":"resp_failed_retryable","model":"gpt-5.1"}}`),
-			[]byte(`{"type":"response.failed","response":{"id":"resp_failed_retryable","status":"failed","error":{"code":"server_error","type":"server_error","message":"temporary upstream failure"}}}`),
-		},
+	conns := make([]openAIWSClientConn, 0, openAIWSReconnectRetryLimit+1)
+	for range openAIWSReconnectRetryLimit + 1 {
+		conns = append(conns, &openAIWSCaptureConn{
+			events: [][]byte{
+				[]byte(`{"type":"response.created","response":{"id":"resp_failed_retryable","model":"gpt-5.1"}}`),
+				[]byte(`{"type":"response.failed","response":{"id":"resp_failed_retryable","status":"failed","error":{"code":"server_error","type":"server_error","message":"temporary upstream failure"}}}`),
+			},
+		})
 	}
-	captureDialer := &openAIWSCaptureDialer{conn: captureConn}
+	captureDialer := &openAIWSQueueDialer{conns: conns}
 	pool := newOpenAIWSConnPool(cfg)
 	pool.setClientDialerForTest(captureDialer)
 
@@ -2864,11 +2870,12 @@ func TestOpenAIGatewayService_Forward_WSv2ResponseFailedRetryableKeepsFallbackSi
 	result, err := svc.Forward(context.Background(), c, account, body)
 	require.Error(t, err)
 	require.Nil(t, result)
-	require.Nil(t, upstream.lastReq, "应保留 response.failed 的 fallback signal 语义，由上层决定是否转 HTTP")
-	var fallbackErr *openAIWSFallbackError
-	require.ErrorAs(t, err, &fallbackErr)
-	require.Equal(t, "response_failed", fallbackErr.Reason)
-	require.Contains(t, fallbackErr.Error(), "temporary upstream failure")
+	require.Nil(t, upstream.lastReq, "retryable response.failed 耗尽 WS 重试后应切换账号，不应回退同账号 HTTP")
+	require.Equal(t, openAIWSReconnectRetryLimit+1, captureDialer.DialCount())
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	require.Contains(t, string(failoverErr.ResponseBody), "temporary upstream failure")
 }
 
 func TestOpenAIGatewayService_Forward_WSv2ResponseFailedStreamUsesNormalizedEnvelope(t *testing.T) {

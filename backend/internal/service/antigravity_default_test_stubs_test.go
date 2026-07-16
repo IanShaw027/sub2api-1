@@ -28,6 +28,7 @@ type stubAntigravityAccountRepo struct {
 	rateCalls           []defaultRateLimitCall
 	modelRateLimitCalls []defaultModelRateLimitCall
 	extraUpdateCalls    []defaultExtraUpdateCall
+	schedulableAccounts []Account
 }
 
 func (s *stubAntigravityAccountRepo) SetRateLimited(_ context.Context, id int64, resetAt time.Time) error {
@@ -43,6 +44,10 @@ func (s *stubAntigravityAccountRepo) SetModelRateLimit(_ context.Context, id int
 func (s *stubAntigravityAccountRepo) UpdateExtra(_ context.Context, id int64, updates map[string]any) error {
 	s.extraUpdateCalls = append(s.extraUpdateCalls, defaultExtraUpdateCall{accountID: id, updates: updates})
 	return nil
+}
+
+func (s *stubAntigravityAccountRepo) ListSchedulableByPlatform(_ context.Context, _ string) ([]Account, error) {
+	return append([]Account(nil), s.schedulableAccounts...), nil
 }
 
 type defaultDeleteSessionCall struct {

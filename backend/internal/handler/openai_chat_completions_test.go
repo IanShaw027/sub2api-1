@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -41,6 +43,41 @@ func (openAIChatCompletionsHTTPUpstreamStub) Do(req *http.Request, proxyURL stri
 
 func (openAIChatCompletionsHTTPUpstreamStub) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
 	return http.DefaultClient.Do(req)
+}
+
+type openAIPartialErrorHTTPUpstreamStub struct {
+	response func(*http.Request) *http.Response
+}
+
+func (s openAIPartialErrorHTTPUpstreamStub) Do(req *http.Request, _ string, _ int64, _ int) (*http.Response, error) {
+	return s.response(req), nil
+}
+
+func (s openAIPartialErrorHTTPUpstreamStub) DoWithTLS(req *http.Request, _ string, _ int64, _ int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	return s.response(req), nil
+}
+
+type openAIPartialErrorBody struct {
+	reader *bytes.Reader
+	err    error
+}
+
+func newOpenAIPartialErrorBody(payload string) io.ReadCloser {
+	return &openAIPartialErrorBody{
+		reader: bytes.NewReader([]byte(payload)),
+		err:    errors.New("upstream stream reset after partial output"),
+	}
+}
+
+func (b *openAIPartialErrorBody) Read(p []byte) (int, error) {
+	if b.reader.Len() > 0 {
+		return b.reader.Read(p)
+	}
+	return 0, b.err
+}
+
+func (*openAIPartialErrorBody) Close() error {
+	return nil
 }
 
 func TestOpenAIChatCompletions_RejectsInvalidStreamType(t *testing.T) {
@@ -246,4 +283,147 @@ func TestOpenAIChatCompletions_RecordUsageIncludesRequestPayloadHash(t *testing.
 		t.Fatal("timed out waiting for billing command")
 	}
 	require.Equal(t, service.HashUsageRequestPayload(body), cmd.RequestPayloadHash)
+}
+
+func TestOpenAIChatCompletions_PartialStreamBillsOnceReportsFailureAndTerminates(t *testing.T) {
+	payload := "event: response.created\n" +
+		"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_partial\",\"status\":\"in_progress\"}}\n\n" +
+		"event: response.output_text.delta\n" +
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\"}\n\n"
+	h, apiKey, _, billingRepo := newOpenAIPartialErrorTestHandler(t, openAIPartialErrorHTTPUpstreamStub{
+		response: func(req *http.Request) *http.Response {
+			require.Equal(t, "/v1/responses", req.URL.Path)
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body:       newOpenAIPartialErrorBody(payload),
+				Request:    req,
+			}
+		},
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	body := []byte(`{"model":"gpt-5.1","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set(string(middleware.ContextKeyAPIKey), apiKey)
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: apiKey.User.ID, Concurrency: 1})
+
+	h.ChatCompletions(c)
+
+	require.Contains(t, w.Body.String(), "hello")
+	require.Contains(t, w.Body.String(), `"error"`, "partial stream must end with an in-band error")
+	var cmd *service.UsageBillingCommand
+	select {
+	case cmd = <-billingRepo.applied:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for partial usage record")
+	}
+	require.Zero(t, cmd.InputTokens)
+	require.Zero(t, cmd.OutputTokens)
+	select {
+	case <-billingRepo.applied:
+		t.Fatal("partial result was recorded more than once")
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func newOpenAIPartialErrorTestHandler(
+	t *testing.T,
+	httpUpstream service.HTTPUpstream,
+) (*OpenAIGatewayHandler, *service.APIKey, service.Account, *openAIWSUsageHandlerBillingRepoStub) {
+	t.Helper()
+
+	groupID := int64(2)
+	apiKey := &service.APIKey{
+		ID:      101,
+		GroupID: &groupID,
+		User:    &service.User{ID: 1, Balance: 100, Status: service.StatusActive},
+		Group: &service.Group{
+			ID:                   groupID,
+			Platform:             service.PlatformOpenAI,
+			Status:               service.StatusActive,
+			RateMultiplier:       1,
+			AllowImageGeneration: true,
+		},
+	}
+	account := service.Account{
+		ID:          501,
+		Name:        "openai-partial-error-test",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": "https://upstream.invalid",
+		},
+		Extra: map[string]any{
+			openai_compat.ExtraKeyResponsesSupported: true,
+		},
+	}
+	cfg := &config.Config{}
+	cfg.RunMode = config.RunModeStandard
+	cfg.Default.RateMultiplier = 1
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+
+	accountRepo := openAISelectionErrorAccountRepoStub{accounts: []service.Account{account}}
+	usageRepo := &openAIWSUsageHandlerUsageLogRepoStub{created: make(chan *service.UsageLog, 4)}
+	billingRepo := &openAIWSUsageHandlerBillingRepoStub{applied: make(chan *service.UsageBillingCommand, 4)}
+	gatewaySvc := service.NewOpenAIGatewayService(
+		accountRepo,
+		usageRepo,
+		billingRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		cfg,
+		nil,
+		nil,
+		service.NewBillingService(cfg, nil),
+		nil,
+		service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil),
+		httpUpstream,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	billingCacheSvc := service.NewBillingCacheService(
+		nil,
+		openAIChatCompletionsBalanceUserRepoStub{user: *apiKey.User},
+		nil,
+		nil,
+		nil,
+		nil,
+		cfg,
+		nil,
+	)
+	t.Cleanup(billingCacheSvc.Stop)
+	concurrencySvc := service.NewConcurrencyService(&concurrencyCacheMock{
+		acquireUserSlotFn: func(context.Context, int64, int, string) (bool, error) {
+			return true, nil
+		},
+		acquireAccountSlotFn: func(context.Context, int64, int, string) (bool, error) {
+			return true, nil
+		},
+	})
+	h := &OpenAIGatewayHandler{
+		gatewayService:      gatewaySvc,
+		billingCacheService: billingCacheSvc,
+		apiKeyService:       &service.APIKeyService{},
+		concurrencyHelper:   NewConcurrencyHelper(concurrencySvc, SSEPingFormatNone, time.Second),
+		cfg:                 cfg,
+	}
+	return h, apiKey, account, billingRepo
 }

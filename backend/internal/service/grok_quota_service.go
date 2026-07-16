@@ -134,10 +134,6 @@ func (s *GrokQuotaService) probeUsage(ctx context.Context, accountID int64) (*Gr
 	defer func() { _ = resp.Body.Close() }()
 
 	snapshot := xai.ObserveQuotaHeaders(resp.Header, resp.StatusCode, "active_probe")
-	_ = s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{
-		grokQuotaSnapshotExtraKey: snapshot,
-	})
-
 	result := &GrokQuotaProbeResult{
 		Source:          "active_probe",
 		Model:           probeModel,
@@ -146,6 +142,15 @@ func (s *GrokQuotaService) probeUsage(ctx context.Context, accountID int64) (*Gr
 		HeadersObserved: snapshot.HeadersObserved,
 		ResetSupported:  false,
 		FetchedAt:       time.Now().Unix(),
+	}
+	// Persist only successful probes or 429 (which often carries rate-limit headers).
+	// 401/403/5xx empty/noisy headers must not overwrite a previously good snapshot.
+	if resp.StatusCode < 400 || resp.StatusCode == http.StatusTooManyRequests {
+		if snapshot.HeadersObserved || resp.StatusCode == http.StatusOK {
+			_ = s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{
+				grokQuotaSnapshotExtraKey: snapshot,
+			})
+		}
 	}
 	if resp.StatusCode == http.StatusTooManyRequests {
 		return result, nil

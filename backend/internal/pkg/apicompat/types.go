@@ -4,7 +4,11 @@
 // formats can be served through a unified gateway.
 package apicompat
 
-import "encoding/json"
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+)
 
 const (
 	anthropicToolResultEnvelopeFormat = "anthropic_tool_result_v1"
@@ -330,11 +334,81 @@ type ResponsesInputItem struct {
 	CallID    string           `json:"call_id,omitempty"`
 	Name      string           `json:"name,omitempty"`
 	Arguments string           `json:"arguments,omitempty"`
+	Input     string           `json:"input,omitempty"`
 	ID        string           `json:"id,omitempty"`
 	Action    *WebSearchAction `json:"action,omitempty"`
 
 	// type=function_call_output
-	Output string `json:"output,omitempty"`
+	Output       string `json:"output,omitempty"`
+	OutputIsJSON bool   `json:"-"`
+}
+
+// UnmarshalJSON accepts the distinct wire shapes used by Responses input
+// items. function_call.arguments is normally a JSON string, while
+// tool_search_call.arguments and some tool outputs are JSON values.
+func (i *ResponsesInputItem) UnmarshalJSON(data []byte) error {
+	if i == nil {
+		return nil
+	}
+	var wire struct {
+		Type      string           `json:"type,omitempty"`
+		Role      string           `json:"role,omitempty"`
+		Content   json.RawMessage  `json:"content,omitempty"`
+		CallID    string           `json:"call_id,omitempty"`
+		Name      string           `json:"name,omitempty"`
+		Arguments json.RawMessage  `json:"arguments,omitempty"`
+		Input     string           `json:"input,omitempty"`
+		ID        string           `json:"id,omitempty"`
+		Action    *WebSearchAction `json:"action,omitempty"`
+		Output    json.RawMessage  `json:"output,omitempty"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	arguments, _, err := responsesInputItemJSONValue(wire.Arguments)
+	if err != nil {
+		return fmt.Errorf("decode responses input arguments: %w", err)
+	}
+	output, outputIsJSON, err := responsesInputItemJSONValue(wire.Output)
+	if err != nil {
+		return fmt.Errorf("decode responses input output: %w", err)
+	}
+	*i = ResponsesInputItem{
+		Type:         wire.Type,
+		Role:         wire.Role,
+		Content:      wire.Content,
+		CallID:       wire.CallID,
+		Name:         wire.Name,
+		Arguments:    arguments,
+		Input:        wire.Input,
+		ID:           wire.ID,
+		Action:       wire.Action,
+		Output:       output,
+		OutputIsJSON: outputIsJSON,
+	}
+	return nil
+}
+
+func responsesInputItemJSONValue(raw json.RawMessage) (string, bool, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return "", false, nil
+	}
+	if trimmed[0] == '"' {
+		var value string
+		if err := json.Unmarshal(trimmed, &value); err != nil {
+			return "", false, err
+		}
+		return value, false, nil
+	}
+	if !json.Valid(trimmed) {
+		return "", false, fmt.Errorf("invalid JSON value")
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, trimmed); err != nil {
+		return "", false, err
+	}
+	return compact.String(), true, nil
 }
 
 // ResponsesContentPart is a typed content part in a Responses message.

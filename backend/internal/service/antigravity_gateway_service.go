@@ -79,7 +79,9 @@ var antigravityPassthroughErrorMessages = []string{
 	"prompt is too long",
 }
 
-// MODEL_CAPACITY_EXHAUSTED 全局去重：避免多个并发请求同时对同一模型进行容量耗尽重试
+// MODEL_CAPACITY_EXHAUSTED 全局去重：避免多个并发请求同时对同一模型进行容量耗尽重试。
+// Process-local map is a fast path; multi-instance deployments also set a short
+// model rate limit so other replicas skip the expensive retry storm.
 var (
 	modelCapacityExhaustedMu    sync.RWMutex
 	modelCapacityExhaustedUntil = make(map[string]time.Time) // modelName -> cooldown until
@@ -394,13 +396,29 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 		}
 
 		// MODEL_CAPACITY_EXHAUSTED：模型容量不足，切换账号无意义
-		// 直接返回上游错误响应，不设置模型限流，不切换账号
+		// 直接返回上游错误响应，不切换账号；短 cooldown 跨实例共享（model rate limit）。
 		if isModelCapacityExhausted {
 			// 设置 cooldown，让后续请求快速失败，避免重复重试
 			if modelName != "" {
+				until := time.Now().Add(antigravityModelCapacityCooldown)
 				modelCapacityExhaustedMu.Lock()
-				modelCapacityExhaustedUntil[modelName] = time.Now().Add(antigravityModelCapacityCooldown)
+				modelCapacityExhaustedUntil[modelName] = until
 				modelCapacityExhaustedMu.Unlock()
+				// Persist the short model cooldown across every schedulable
+				// Antigravity account. MODEL_CAPACITY_EXHAUSTED is model-global;
+				// limiting only the current account lets another replica select
+				// a different account and repeat the full retry storm.
+				if p.accountRepo != nil && p.account != nil {
+					_ = s.setAntigravityGlobalModelCapacityCooldown(
+						p.ctx,
+						p.accountRepo,
+						p.account,
+						modelName,
+						p.prefix,
+						resp.StatusCode,
+						until,
+					)
+				}
 			}
 			log.Printf("%s status=%d smart_retry_exhausted_model_capacity attempts=%d model=%s account=%d body=%s (model capacity exhausted, not switching account)",
 				p.prefix, resp.StatusCode, maxAttempts, modelName, p.account.ID, truncateForLog(retryBody, 200))
@@ -2833,6 +2851,50 @@ func (s *AntigravityGatewayService) setAntigravityModelRateLimits(ctx context.Co
 	for _, key := range keys {
 		if setModelRateLimitByModelName(ctx, repo, account.ID, key, prefix, statusCode, resetAt, afterSmartRetry) {
 			s.updateAccountModelRateLimitInCache(ctx, account, key, resetAt)
+			success = true
+		}
+	}
+	return success
+}
+
+func (s *AntigravityGatewayService) setAntigravityGlobalModelCapacityCooldown(
+	ctx context.Context,
+	repo AccountRepository,
+	current *Account,
+	modelName string,
+	prefix string,
+	statusCode int,
+	resetAt time.Time,
+) bool {
+	if repo == nil || current == nil || strings.TrimSpace(modelName) == "" {
+		return false
+	}
+
+	accounts, err := repo.ListSchedulableByPlatform(ctx, PlatformAntigravity)
+	if err != nil {
+		logger.LegacyPrintf(
+			"service.antigravity_gateway",
+			"%s status=%d global_model_capacity_accounts_failed model=%s error=%v",
+			prefix,
+			statusCode,
+			modelName,
+			err,
+		)
+	}
+
+	byID := make(map[int64]*Account, len(accounts)+1)
+	for i := range accounts {
+		if accounts[i].ID > 0 {
+			byID[accounts[i].ID] = &accounts[i]
+		}
+	}
+	// Always persist the account that observed the error, including when the
+	// list query fails or it became unschedulable concurrently.
+	byID[current.ID] = current
+
+	success := false
+	for _, account := range byID {
+		if s.setAntigravityModelRateLimits(ctx, repo, account, modelName, prefix, statusCode, resetAt, true) {
 			success = true
 		}
 	}

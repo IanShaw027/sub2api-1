@@ -1557,7 +1557,8 @@ func (state *ChatCompletionsToResponsesStreamState) chatOutput() []ResponsesOutp
 	if state.Reasoning.Len() > 0 {
 		outputs = append(outputs, ResponsesOutput{
 			Type: "reasoning",
-			ID:   generateItemID(),
+			// Reuse stream lifecycle ID so clients can correlate deltas with final output.
+			ID: nonEmpty(state.ReasoningItemID, generateItemID()),
 			Summary: []ResponsesSummary{{
 				Type: "summary_text",
 				Text: state.Reasoning.String(),

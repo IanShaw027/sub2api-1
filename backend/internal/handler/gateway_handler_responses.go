@@ -227,6 +227,20 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 				h.handleConcurrencyError(c, err, "account", streamStarted)
 				return
 			}
+			if !h.gatewayService.RegisterSessionAfterAcquire(c.Request.Context(), account, sessionHash) {
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
+				}
+				reqLog.Warn("gateway.responses.session_limit_exceeded_after_wait",
+					zap.Int64("account_id", account.ID),
+				)
+				_ = h.gatewayService.ClearStickySession(c.Request.Context(), apiKey.GroupID, sessionHash)
+				fs.FailedAccountIDs[account.ID] = struct{}{}
+				continue
+			}
+			if err := h.gatewayService.BindStickySession(c.Request.Context(), apiKey.GroupID, sessionHash, account.ID); err != nil {
+				reqLog.Warn("gateway.responses.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+			}
 		}
 		accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
 		h.emitGatewayDebugTimelineSlotAcquired(c, account.Platform, "responses", requestStart, apiKey, account, reqModel, reqStream, userSlotWaitMs, accountSlotWaitMs)

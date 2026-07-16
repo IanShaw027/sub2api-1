@@ -4480,7 +4480,10 @@ func (r *usageLogRepository) loadAPIKeys(ctx context.Context, ids []int64) (map[
 	if len(ids) == 0 {
 		return out, nil
 	}
-	models, err := r.client.APIKey.Query().Where(dbapikey.IDIn(ids...)).All(ctx)
+	models, err := r.client.APIKey.Query().
+		Where(dbapikey.IDIn(ids...)).
+		Select(apiKeyPublicFields...).
+		All(ctx)
 	if err != nil {
 		return nil, err
 	}

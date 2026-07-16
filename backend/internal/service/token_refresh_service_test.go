@@ -828,6 +828,27 @@ func TestPathA_LockHeld(t *testing.T) {
 	require.Equal(t, 0, invalidator.calls) // 不应触发缓存失效
 }
 
+func TestPathA_LockErrorFailsClosedAsRetryableServiceUnavailable(t *testing.T) {
+	account := &Account{
+		ID:       106,
+		Platform: PlatformGemini,
+		Type:     AccountTypeOAuth,
+	}
+	repo := &tokenRefreshAccountRepo{}
+	repo.accountsByID = map[int64]*Account{account.ID: account}
+	invalidator := &tokenCacheInvalidatorStub{}
+	cache := &mockTokenCacheForRefreshAPI{lockErr: errors.New("redis lock unavailable")}
+
+	service, refresher := buildPathAService(repo, cache, invalidator)
+	service.refreshAPI.lockPoll = time.Millisecond
+	err := service.refreshWithRetry(context.Background(), account, refresher, refresher, time.Hour)
+
+	require.ErrorIs(t, err, ErrServiceUnavailable)
+	require.Equal(t, 0, repo.updateCalls)
+	require.Equal(t, 0, repo.setErrorCalls, "service unavailable is retryable and must not disable the account")
+	require.Equal(t, 0, invalidator.calls)
+}
+
 // TestPathA_AlreadyRefreshed 二次检查发现已被其他路径刷新 → 返回 errRefreshSkipped
 func TestPathA_AlreadyRefreshed(t *testing.T) {
 	// NeedsRefresh 返回 false → RefreshIfNeeded 返回 {Refreshed: false}

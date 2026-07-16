@@ -7,7 +7,13 @@ import (
 	"time"
 )
 
-const grokTokenRefreshSkew = time.Hour
+const (
+	// Background / unified refresher: refresh early so tokens stay warm.
+	grokTokenRefreshSkew = time.Hour
+	// Request path: only force-refresh when the token is about to expire.
+	// Must stay close to grokTokenCacheSkew so we do not thrash OAuth on every request.
+	grokRequestTokenRefreshSkew = 6 * time.Minute
+)
 
 type GrokTokenRefresher struct {
 	grokOAuthService GrokOAuthTokenService

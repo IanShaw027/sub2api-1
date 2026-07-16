@@ -61,8 +61,6 @@ const (
 	openAIWSIngressStagePreviousResponseNotFound = "previous_response_not_found"
 	openAIWSMaxPrevResponseIDDeletePasses        = 8
 
-	openAIWSSoftRateLimitAdvisoryThreshold = 90.0
-
 	openAIWSPendingAccountStateSignalKey   = "openai_ws_pending_account_state_signal"
 	openAIWSPersistedAccountStateSignalKey = "openai_ws_persisted_account_state_signal"
 )
@@ -2912,6 +2910,58 @@ func shouldPreferOpenAIWSNeutralForRecoveredFullReplay(
 	}
 }
 
+// dropOpenAIWSInvalidEncryptedInputItems removes the complete input item that
+// carried encrypted_content after upstream has explicitly rejected that
+// ciphertext. Keeping the surrounding reasoning or malformed message shell can
+// make the recovery request invalid again; unrelated input items are preserved.
+func dropOpenAIWSInvalidEncryptedInputItems(reqBody map[string]any) bool {
+	if len(reqBody) == 0 {
+		return false
+	}
+	input, ok := reqBody["input"]
+	if !ok {
+		return false
+	}
+	next, changed, keep := dropOpenAIWSInvalidEncryptedInputItem(input)
+	if !changed {
+		return false
+	}
+	if !keep {
+		delete(reqBody, "input")
+		return true
+	}
+	reqBody["input"] = next
+	return true
+}
+
+func dropOpenAIWSInvalidEncryptedInputItem(item any) (next any, changed bool, keep bool) {
+	switch typed := item.(type) {
+	case []any:
+		filtered := make([]any, 0, len(typed))
+		for _, child := range typed {
+			nextChild, childChanged, childKeep := dropOpenAIWSInvalidEncryptedInputItem(child)
+			changed = changed || childChanged
+			if childKeep {
+				filtered = append(filtered, nextChild)
+			}
+		}
+		if !changed {
+			return item, false, true
+		}
+		if len(filtered) == 0 {
+			return nil, true, false
+		}
+		return filtered, true, true
+	case map[string]any:
+		if _, hasEncryptedContent := typed["encrypted_content"]; hasEncryptedContent {
+			return nil, true, false
+		}
+		return item, false, true
+	default:
+		return item, false, true
+	}
+}
+
 func canDropOpenAIWSContinuationForNeutralFullReplay(payload map[string]any) bool {
 	signals := AnalyzeToolContinuationSignals(payload)
 	return signals.HasFunctionCallOutput && signals.HasToolCallContext
@@ -5246,36 +5296,10 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			parseOpenAIWSResponseUsageFromCompletedEvent(message, usage)
 		}
 		imageCounter.AddSSEData(message)
+		// codex.rate_limits is quota telemetry only. Persist the snapshot for
+		// observability, but never evict the connection, fail over, or interrupt
+		// a response merely because a usage window crossed a percentage.
 		s.recordOpenAIWSCodexRateLimitSnapshot(ctx, account, message)
-		if advisoryMsg, ok := classifyOpenAIWSSoftRateLimitAdvisory(message); ok {
-			s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), nil, "rate_limit_exceeded", "rate_limit_error", advisoryMsg)
-			logOpenAIWSModeInfo(
-				"soft_rate_limit_advisory account_id=%d conn_id=%s idx=%d event_type=%s message=%s",
-				account.ID,
-				connID,
-				eventCount,
-				truncateOpenAIWSLogValue(eventType, openAIWSLogValueMaxLen),
-				truncateOpenAIWSLogValue(advisoryMsg, openAIWSLogValueMaxLen),
-			)
-			lease.MarkBrokenFor("soft_rate_limit_advisory")
-			if !wroteDownstream {
-				return nil, wrapOpenAIWSFallback("upstream_rate_limited", errors.New(advisoryMsg))
-			}
-			setOpsUpstreamError(c, http.StatusTooManyRequests, advisoryMsg, "")
-			return buildOpenAIWSPartialForwardResult(openAIWSPartialForwardInput{
-				responseID:    responseID,
-				usage:         usage,
-				originalModel: originalModel,
-				mappedModel:   mappedModel,
-				reqStream:     reqStream,
-				duration:      time.Since(startTime),
-				firstTokenMs:  firstTokenMs,
-				imageCount:    imageCounter.Count(),
-				clientDisc:    clientDisconnected,
-				reqBody:       reqBody,
-				headers:       lease.HandshakeHeaders(),
-			}), fmt.Errorf("openai ws soft rate limit advisory: %s", advisoryMsg)
-		}
 
 		if eventType == "response.failed" {
 			if hit, code, msg := detectOpenAICyberPolicy(message); hit {
@@ -5631,7 +5655,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}
 	bindSessionContextAfterPreemptFullReplay := sessionPreemptedPrevious &&
 		strings.TrimSpace(storeDecision.FallbackReason) == "session_preempted_full_replay"
-	if (shadowOwner || bindSessionContextAfterPreemptFullReplay) && deltaShadowEnabled && stateStore != nil && responseID != "" && connID != "" &&
+	bindSessionContextAfterRecoveredFullReplay := preferNeutralForRecoveredFullReplay
+	if (shadowOwner || bindSessionContextAfterPreemptFullReplay || bindSessionContextAfterRecoveredFullReplay) && deltaShadowEnabled && stateStore != nil && responseID != "" && connID != "" &&
 		!clientDisconnected && !recoveredUpstreamTransportEOF {
 		if inputItems, _, ierr := openAIWSExtractNormalizedInputSequence(contextPayloadRaw); ierr == nil {
 			if inputHashes, hok := openAIWSCanonicalItemHashes(inputItems); hok {
@@ -8524,8 +8549,12 @@ func classifyOpenAIWSAcquireError(err error) string {
 			return "upgrade_required"
 		case 401, 403:
 			return "auth_failed"
+		case 402:
+			return "payment_required"
 		case 429:
 			return "upstream_rate_limited"
+		case 529:
+			return "upstream_overloaded"
 		}
 		if dialErr.StatusCode >= 500 {
 			return "upstream_5xx"
@@ -8568,22 +8597,6 @@ func isOpenAIWSRateLimitError(codeRaw, errTypeRaw, msgRaw string) bool {
 		return true
 	}
 	return false
-}
-
-func classifyOpenAIWSSoftRateLimitAdvisory(message []byte) (string, bool) {
-	if len(message) == 0 {
-		return "", false
-	}
-	eventType := strings.TrimSpace(gjson.GetBytes(message, "type").String())
-	if eventType == "codex.rate_limits" {
-		// `codex.rate_limits` is upstream quota telemetry. A 90% window with
-		// allowed=true and limit_reached=false is advisory-only, not an
-		// upstream 429. Let the normal response continue; hard rate-limit
-		// failures are still handled through upstream HTTP 429 / error /
-		// response.failed events.
-		return "", false
-	}
-	return "", false
 }
 
 func (s *OpenAIGatewayService) persistOpenAIWSRateLimitSignal(ctx context.Context, account *Account, headers http.Header, responseBody []byte, codeRaw, errTypeRaw, msgRaw string) {

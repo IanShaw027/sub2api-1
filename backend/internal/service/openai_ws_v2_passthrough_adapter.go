@@ -535,6 +535,35 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 
 	completedTurns := atomic.Int32{}
 	startedTurns := atomic.Int32{}
+	var completedUsageMu sync.Mutex
+	completedUsage := OpenAIUsage{}
+	lastCompletedRequestID := ""
+	recordCompletedUsage := func(result *OpenAIForwardResult) {
+		if result == nil {
+			return
+		}
+		completedUsageMu.Lock()
+		completedUsage.InputTokens += result.Usage.InputTokens
+		completedUsage.OutputTokens += result.Usage.OutputTokens
+		completedUsage.CacheCreationInputTokens += result.Usage.CacheCreationInputTokens
+		completedUsage.CacheReadInputTokens += result.Usage.CacheReadInputTokens
+		completedUsage.ImageOutputTokens += result.Usage.ImageOutputTokens
+		lastCompletedRequestID = result.RequestID
+		completedUsageMu.Unlock()
+	}
+	currentTurnPartialResult := func(cumulative *OpenAIForwardResult) *OpenAIForwardResult {
+		if cumulative == nil {
+			return nil
+		}
+		partial := *cumulative
+		completedUsageMu.Lock()
+		partial.Usage = subtractOpenAIUsage(cumulative.Usage, completedUsage)
+		if partial.RequestID == lastCompletedRequestID {
+			partial.RequestID = ""
+		}
+		completedUsageMu.Unlock()
+		return &partial
+	}
 	var turnPayloadQueueMu sync.Mutex
 	turnPayloadQueue := make([][]byte, 0, 4)
 	enqueueTurnPayload := func(payload []byte) {
@@ -758,6 +787,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 					turnResult.Usage.CacheReadInputTokens,
 				)
 				liveRelayResponseIDs.Remember(turnResult.RequestID)
+				recordCompletedUsage(turnResult)
 				if hooks != nil && hooks.AfterTurn != nil {
 					var turnErr error
 					if turn.TerminalEventType == "response.failed" {
@@ -888,10 +918,22 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	)
 	if hooks != nil && hooks.AfterTurn != nil {
 		if hooks.BeforeTurn == nil || int(startedTurns.Load()) > turnCount {
-			hooks.AfterTurn(turnCount+1, nil, nil, turnErr)
+			// RelayResult usage is connection-cumulative. Bill only the
+			// unfinished turn's delta and bind it to that turn's request.
+			hooks.AfterTurn(turnCount+1, dequeueTurnPayload(), currentTurnPartialResult(result), turnErr)
 		}
 	}
 	return turnErr
+}
+
+func subtractOpenAIUsage(total OpenAIUsage, completed OpenAIUsage) OpenAIUsage {
+	return OpenAIUsage{
+		InputTokens:              max(total.InputTokens-completed.InputTokens, 0),
+		OutputTokens:             max(total.OutputTokens-completed.OutputTokens, 0),
+		CacheCreationInputTokens: max(total.CacheCreationInputTokens-completed.CacheCreationInputTokens, 0),
+		CacheReadInputTokens:     max(total.CacheReadInputTokens-completed.CacheReadInputTokens, 0),
+		ImageOutputTokens:        max(total.ImageOutputTokens-completed.ImageOutputTokens, 0),
+	}
 }
 
 func (s *OpenAIGatewayService) mapOpenAIWSPassthroughDialError(

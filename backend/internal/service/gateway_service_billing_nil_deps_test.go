@@ -67,6 +67,30 @@ func TestApplyUsageBillingPassesMinimumBalanceReserveToRepository(t *testing.T) 
 	require.Equal(t, 0.01, repo.cmd.MinimumBalanceReserve)
 }
 
+func TestApplyUsageBillingBuildsAPIKeyQuotaWithoutLegacyUpdater(t *testing.T) {
+	repo := &usageBillingRepoApplyStub{result: &UsageBillingApplyResult{Applied: false}}
+	p := &postUsageBillingParams{
+		Cost: &CostBreakdown{ActualCost: 0.5},
+		User: &User{ID: 1},
+		APIKey: &APIKey{
+			ID:          2,
+			Quota:       10,
+			RateLimit5h: 5,
+		},
+		Account:  &Account{ID: 3},
+		UsageLog: &UsageLog{RequestType: RequestTypeStream},
+		// APIKeyService intentionally nil: the unified repository owns these
+		// atomic counters; this is the AI Skill/internal-runtime path.
+	}
+
+	_, err := applyUsageBilling(context.Background(), "req-key-quota", p.UsageLog, p, &billingDeps{}, repo)
+
+	require.NoError(t, err)
+	require.NotNil(t, repo.cmd)
+	require.Equal(t, 0.5, repo.cmd.APIKeyQuotaCost)
+	require.Equal(t, 0.5, repo.cmd.APIKeyRateLimitCost)
+}
+
 func TestFinalizePostUsageBilling_WithoutDeferredServiceDoesNotPanic(t *testing.T) {
 	p := &postUsageBillingParams{
 		Cost:    &CostBreakdown{},

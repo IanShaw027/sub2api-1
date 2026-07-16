@@ -960,6 +960,14 @@ func (s *GatewayService) BindStickySession(ctx context.Context, groupID *int64, 
 	return s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), sessionHash, accountID, stickySessionTTL)
 }
 
+// ClearStickySession removes a stale session -> account binding.
+func (s *GatewayService) ClearStickySession(ctx context.Context, groupID *int64, sessionHash string) error {
+	if sessionHash == "" || s.cache == nil {
+		return nil
+	}
+	return s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), sessionHash)
+}
+
 // GetCachedSessionAccountID retrieves the account ID bound to a sticky session.
 // Returns 0 if no binding exists or on error.
 func (s *GatewayService) GetCachedSessionAccountID(ctx context.Context, groupID *int64, sessionHash string) (int64, error) {
@@ -1878,8 +1886,9 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 				return s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
 			}
 
-			// 对于等待计划的情况，也需要先检查会话限制
-			if !s.checkAndRegisterSession(ctx, account, sessionHash) {
+			// WaitPlan must not RegisterSession: a failed/timeout wait would
+			// otherwise occupy max_sessions until idle expiry.
+			if !s.sessionQuotaAllows(ctx, account, sessionHash) {
 				localExcluded[account.ID] = struct{}{}
 				continue
 			}
@@ -2069,8 +2078,9 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 							if stickyCacheMissReason == "" {
 								waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, stickyAccountID)
 								if waitingCount < cfg.StickySessionMaxWaiting {
-									// 会话数量限制检查（等待计划也需要占用会话配额）
-									if !s.checkAndRegisterSession(ctx, stickyAccount, sessionHash) {
+									// WaitPlan only checks quota. Register after the
+									// caller acquires a real concurrency slot.
+									if !s.sessionQuotaAllows(ctx, stickyAccount, sessionHash) {
 										stickyCacheMissReason = "session_limit"
 										// 会话限制已满，继续到负载感知选择
 									} else {
@@ -2118,11 +2128,13 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 
 			// 2. 批量获取负载信息
+			// Load denominator must match tryAcquireAccountSlot (Concurrency), not
+			// EffectiveLoadFactor, or accounts look free while slots are exhausted.
 			routingLoads := make([]AccountWithConcurrency, 0, len(routingCandidates))
 			for _, acc := range routingCandidates {
 				routingLoads = append(routingLoads, AccountWithConcurrency{
 					ID:             acc.ID,
-					MaxConcurrency: acc.EffectiveLoadFactor(),
+					MaxConcurrency: accountSlotConcurrency(acc),
 				})
 			}
 			routingLoadMap, _ := s.concurrencyService.GetAccountsLoadBatch(ctx, routingLoads)
@@ -2182,9 +2194,9 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 				}
 
 				// 5. 所有路由账号槽位满，尝试返回等待计划（选择负载最低的）
-				// 遍历找到第一个满足会话限制的账号
+				// 遍历找到第一个满足会话限制的账号（只检查、不注册）
 				for _, item := range routingAvailable {
-					if !s.checkAndRegisterSession(ctx, item.account, sessionHash) {
+					if !s.sessionQuotaAllows(ctx, item.account, sessionHash) {
 						continue // 会话限制已满，尝试下一个
 					}
 					if s.debugModelRoutingEnabled() {
@@ -2278,8 +2290,9 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 
 					waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
 					if waitingCount < cfg.StickySessionMaxWaiting {
-						// 会话数量限制检查（等待计划也需要占用会话配额）
-						if !s.checkAndRegisterSession(ctx, account, sessionHash) {
+						// WaitPlan only checks quota. Register after the caller
+						// acquires a real concurrency slot.
+						if !s.sessionQuotaAllows(ctx, account, sessionHash) {
 							// 会话限制已满，继续到 Layer 2
 						} else {
 							slog.Debug("sticky.layer1_5_no_routing_hit",
@@ -2378,7 +2391,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 	for _, acc := range candidates {
 		accountLoads = append(accountLoads, AccountWithConcurrency{
 			ID:             acc.ID,
-			MaxConcurrency: acc.EffectiveLoadFactor(),
+			MaxConcurrency: accountSlotConcurrency(acc),
 		})
 	}
 
@@ -2448,8 +2461,8 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 	// ============ Layer 3: 兜底排队 ============
 	s.sortCandidatesForFallback(candidates, preferOAuth, cfg.FallbackSelectionMode)
 	for _, acc := range candidates {
-		// 会话数量限制检查（等待计划也需要占用会话配额）
-		if !s.checkAndRegisterSession(ctx, acc, sessionHash) {
+		// WaitPlan: check quota without registering (register only after slot acquire).
+		if !s.sessionQuotaAllows(ctx, acc, sessionHash) {
 			continue // 会话限制已满，尝试下一个账号
 		}
 		return s.newSelectionResult(ctx, acc, false, nil, &AccountWaitPlan{
@@ -2518,6 +2531,7 @@ func (s *GatewayService) schedulingConfig() config.GatewaySchedulingConfig {
 	cfg.LoadBatchCacheTTLMS = runtimeCfg.LoadBatchCacheTTLMS
 	cfg.SnapshotMGetChunkSize = runtimeCfg.SnapshotMGetChunkSize
 	cfg.SnapshotWriteChunkSize = runtimeCfg.SnapshotWriteChunkSize
+	cfg.PreferSoonestReset = runtimeCfg.PreferSoonestReset
 	cfg.SlotCleanupInterval = runtimeCfg.SlotCleanupInterval
 	if cfg.SlotCleanupInterval <= 0 {
 		cfg.SlotCleanupInterval = 30 * time.Second
@@ -3161,6 +3175,18 @@ func (s *GatewayService) IncrementAccountRPM(ctx context.Context, accountID int6
 	return err
 }
 
+// accountSlotConcurrency is the hard slot ceiling used by tryAcquireAccountSlot.
+// Load-rate scoring must use the same denominator.
+func accountSlotConcurrency(account *Account) int {
+	if account == nil {
+		return 1
+	}
+	if account.Concurrency > 0 {
+		return account.Concurrency
+	}
+	return account.EffectiveLoadFactor()
+}
+
 // checkAndRegisterSession 检查并注册会话，用于会话数量限制
 // 仅适用于 Anthropic OAuth/SetupToken 账号
 // sessionID: 会话标识符（使用粘性会话的 hash）
@@ -3188,6 +3214,41 @@ func (s *GatewayService) checkAndRegisterSession(ctx context.Context, account *A
 		return true
 	}
 	return allowed
+}
+
+// sessionQuotaAllows reports whether a session could be accepted without
+// registering it. Used for WaitPlan paths so failed waits do not occupy
+// max_sessions slots until a real slot is acquired.
+func (s *GatewayService) sessionQuotaAllows(ctx context.Context, account *Account, sessionID string) bool {
+	if account == nil || !account.IsAnthropicOAuthOrSetupToken() {
+		return true
+	}
+	maxSessions := account.GetMaxSessions()
+	if maxSessions <= 0 || sessionID == "" {
+		return true
+	}
+	if s.sessionLimitCache == nil {
+		return true
+	}
+	active, err := s.sessionLimitCache.IsSessionActive(ctx, account.ID, sessionID)
+	if err != nil {
+		return true
+	}
+	if active {
+		return true
+	}
+	count, err := s.sessionLimitCache.GetActiveSessionCount(ctx, account.ID)
+	if err != nil {
+		return true
+	}
+	return count < maxSessions
+}
+
+// RegisterSessionAfterAcquire registers the session after a WaitPlan path has
+// successfully acquired a concurrency slot. Returns false if the session limit
+// is exceeded (caller should release the slot and fail the request).
+func (s *GatewayService) RegisterSessionAfterAcquire(ctx context.Context, account *Account, sessionID string) bool {
+	return s.checkAndRegisterSession(ctx, account, sessionID)
 }
 
 func (s *GatewayService) getSchedulableAccount(ctx context.Context, accountID int64) (*Account, error) {
@@ -9877,11 +9938,11 @@ func QuotaPlatform(ctx context.Context, apiKey *APIKey) string {
 }
 
 func (p *postUsageBillingParams) shouldDeductAPIKeyQuota() bool {
-	return p.Cost.ActualCost > 0 && p.APIKey.Quota > 0 && p.APIKeyService != nil && !isImageUsageBillingRequestType(usageBillingRequestType(p))
+	return p.Cost.ActualCost > 0 && p.APIKey.Quota > 0 && !isImageUsageBillingRequestType(usageBillingRequestType(p))
 }
 
 func (p *postUsageBillingParams) shouldUpdateRateLimits() bool {
-	return p.Cost.ActualCost > 0 && p.APIKey.HasRateLimits() && p.APIKeyService != nil && !isImageUsageBillingRequestType(usageBillingRequestType(p))
+	return p.Cost.ActualCost > 0 && p.APIKey.HasRateLimits() && !isImageUsageBillingRequestType(usageBillingRequestType(p))
 }
 
 func (p *postUsageBillingParams) shouldUpdateAccountQuota() bool {
@@ -9917,13 +9978,13 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 		}
 	}
 
-	if p.shouldDeductAPIKeyQuota() {
+	if p.shouldDeductAPIKeyQuota() && p.APIKeyService != nil {
 		if err := p.APIKeyService.UpdateQuotaUsed(billingCtx, p.APIKey.ID, cost.ActualCost); err != nil {
 			slog.Error("update api key quota failed", "api_key_id", p.APIKey.ID, "error", err)
 		}
 	}
 
-	if p.shouldUpdateRateLimits() {
+	if p.shouldUpdateRateLimits() && p.APIKeyService != nil {
 		if err := p.APIKeyService.UpdateRateLimitUsage(billingCtx, p.APIKey.ID, cost.ActualCost); err != nil {
 			slog.Error("update api key rate limit usage failed", "api_key_id", p.APIKey.ID, "error", err)
 		}

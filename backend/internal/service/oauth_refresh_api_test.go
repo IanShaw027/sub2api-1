@@ -97,13 +97,25 @@ func (e *refreshAPIExecutorStub) CacheKey(account *Account) string {
 
 // refreshAPICacheStub implements GeminiTokenCache for OAuthRefreshAPI tests.
 type refreshAPICacheStub struct {
-	lockResult   bool
-	lockErr      error
-	releaseCalls int
+	mu             sync.Mutex
+	lockResult     bool
+	lockErr        error
+	lockAttempts   []refreshAPILockAttempt
+	acquireCalls   int
+	accessToken    string
+	accessTokenErr error
+	releaseCalls   int
+}
+
+type refreshAPILockAttempt struct {
+	acquired bool
+	err      error
 }
 
 func (c *refreshAPICacheStub) GetAccessToken(context.Context, string) (string, error) {
-	return "", nil
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.accessToken, c.accessTokenErr
 }
 
 func (c *refreshAPICacheStub) SetAccessToken(context.Context, string, string, time.Duration) error {
@@ -113,12 +125,56 @@ func (c *refreshAPICacheStub) SetAccessToken(context.Context, string, string, ti
 func (c *refreshAPICacheStub) DeleteAccessToken(context.Context, string) error { return nil }
 
 func (c *refreshAPICacheStub) AcquireRefreshLock(context.Context, string, time.Duration) (string, bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.acquireCalls++
+	if len(c.lockAttempts) > 0 {
+		index := c.acquireCalls - 1
+		if index >= len(c.lockAttempts) {
+			index = len(c.lockAttempts) - 1
+		}
+		attempt := c.lockAttempts[index]
+		return "lease", attempt.acquired, attempt.err
+	}
 	return "lease", c.lockResult, c.lockErr
 }
 
 func (c *refreshAPICacheStub) ReleaseRefreshLock(_ context.Context, _ string, _ string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.releaseCalls++
 	return nil
+}
+
+type refreshAPISequencedRepo struct {
+	*refreshAPIAccountRepo
+	mu       sync.Mutex
+	accounts []*Account
+	errors   []error
+	calls    int
+}
+
+func (r *refreshAPISequencedRepo) GetByID(context.Context, int64) (*Account, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	index := r.calls
+	r.calls++
+	if len(r.errors) > 0 {
+		errIndex := index
+		if errIndex >= len(r.errors) {
+			errIndex = len(r.errors) - 1
+		}
+		if r.errors[errIndex] != nil {
+			return nil, r.errors[errIndex]
+		}
+	}
+	if len(r.accounts) == 0 {
+		return r.refreshAPIAccountRepo.GetByID(context.Background(), 0)
+	}
+	if index >= len(r.accounts) {
+		index = len(r.accounts) - 1
+	}
+	return cloneAccountForRefreshAPITest(r.accounts[index]), nil
 }
 
 // ========== RefreshIfNeeded tests ==========
@@ -178,6 +234,8 @@ func TestRefreshIfNeeded_LockHeld(t *testing.T) {
 	executor := &refreshAPIExecutorStub{needsRefresh: true}
 
 	api := NewOAuthRefreshAPI(repo, cache)
+	api.lockWait = 5 * time.Millisecond
+	api.lockPoll = time.Millisecond
 	result, err := api.RefreshIfNeeded(context.Background(), account, executor, 3*time.Minute)
 
 	require.NoError(t, err)
@@ -187,7 +245,7 @@ func TestRefreshIfNeeded_LockHeld(t *testing.T) {
 	require.Equal(t, 0, executor.refreshCalls)
 }
 
-func TestRefreshIfNeeded_LockErrorDegrades(t *testing.T) {
+func TestRefreshIfNeeded_LockErrorFailsClosed(t *testing.T) {
 	account := &Account{ID: 3, Platform: PlatformGemini, Type: AccountTypeOAuth}
 	repo := &refreshAPIAccountRepo{account: account}
 	cache := &refreshAPICacheStub{lockErr: errors.New("redis down")} // lock error
@@ -197,13 +255,151 @@ func TestRefreshIfNeeded_LockErrorDegrades(t *testing.T) {
 	}
 
 	api := NewOAuthRefreshAPI(repo, cache)
+	api.lockPoll = time.Millisecond
+	result, err := api.RefreshIfNeeded(context.Background(), account, executor, 3*time.Minute)
+
+	require.ErrorIs(t, err, ErrServiceUnavailable)
+	require.Nil(t, result)
+	require.Equal(t, 0, repo.updateCalls)
+	require.Equal(t, 0, cache.releaseCalls)
+	require.Equal(t, 0, executor.refreshCalls)
+	require.Equal(t, defaultRefreshLockErrorRetries, cache.acquireCalls)
+}
+
+func TestRefreshIfNeeded_LockErrorRecoversFromDatabaseRefresh(t *testing.T) {
+	oldAccount := &Account{
+		ID:          31,
+		Platform:    PlatformGemini,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"access_token": "old-at", "refresh_token": "old-rt"},
+	}
+	newAccount := cloneAccountForRefreshAPITest(oldAccount)
+	newAccount.Credentials = map[string]any{
+		"access_token":  "new-at",
+		"refresh_token": "new-rt",
+		"expires_at":    time.Now().Add(time.Hour).UnixMilli(),
+	}
+	repo := &refreshAPISequencedRepo{
+		refreshAPIAccountRepo: &refreshAPIAccountRepo{account: newAccount},
+		accounts:              []*Account{oldAccount, newAccount},
+	}
+	cache := &refreshAPICacheStub{lockErr: errors.New("redis temporarily unavailable")}
+	executor := &refreshAPIExecutorStub{needsRefresh: true}
+	api := NewOAuthRefreshAPI(repo, cache)
+	api.lockPoll = time.Millisecond
+
+	result, err := api.RefreshIfNeeded(context.Background(), oldAccount, executor, 3*time.Minute)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Refreshed)
+	require.Equal(t, "new-rt", result.Account.GetCredential("refresh_token"))
+	require.Equal(t, 0, executor.refreshCalls)
+	require.Equal(t, 2, cache.acquireCalls)
+}
+
+func TestRefreshIfNeeded_LockErrorRecoversFromTokenCache(t *testing.T) {
+	account := &Account{
+		ID:          35,
+		Platform:    PlatformGemini,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"access_token": "old-at", "refresh_token": "old-rt"},
+	}
+	repo := &refreshAPIAccountRepo{account: account}
+	cache := &refreshAPICacheStub{
+		lockErr:     errors.New("redis lock command failed"),
+		accessToken: "new-at-from-cache",
+	}
+	executor := &refreshAPIExecutorStub{needsRefresh: true}
+	api := NewOAuthRefreshAPI(repo, cache)
+
 	result, err := api.RefreshIfNeeded(context.Background(), account, executor, 3*time.Minute)
 
 	require.NoError(t, err)
-	require.True(t, result.Refreshed)       // still refreshed (degraded mode)
-	require.Equal(t, 1, repo.updateCalls)   // DB updated
-	require.Equal(t, 0, cache.releaseCalls) // no lock to release
+	require.NotNil(t, result)
+	require.False(t, result.Refreshed)
+	require.Equal(t, "new-at-from-cache", result.Account.GetCredential("access_token"))
+	require.Equal(t, 0, executor.refreshCalls)
+	require.Equal(t, 1, cache.acquireCalls)
+}
+
+func TestRefreshIfNeeded_LockBusyWaitsForDatabaseRefresh(t *testing.T) {
+	oldAccount := &Account{
+		ID:          32,
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"access_token": "old-at", "refresh_token": "old-rt"},
+	}
+	newAccount := cloneAccountForRefreshAPITest(oldAccount)
+	newAccount.Credentials = map[string]any{
+		"access_token":  "new-at",
+		"refresh_token": "new-rt",
+	}
+	repo := &refreshAPISequencedRepo{
+		refreshAPIAccountRepo: &refreshAPIAccountRepo{account: newAccount},
+		accounts:              []*Account{oldAccount, newAccount},
+	}
+	cache := &refreshAPICacheStub{lockResult: false}
+	executor := &refreshAPIExecutorStub{
+		needsRefresh: true,
+		err:          errors.New("invalid_grant should not be reached"),
+	}
+	api := NewOAuthRefreshAPI(repo, cache)
+	api.lockWait = 50 * time.Millisecond
+	api.lockPoll = time.Millisecond
+
+	result, err := api.RefreshIfNeeded(context.Background(), oldAccount, executor, 3*time.Minute)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.LockHeld)
+	require.False(t, result.Refreshed)
+	require.Equal(t, "new-at", result.Account.GetCredential("access_token"))
+	require.Equal(t, 0, executor.refreshCalls)
+	require.Equal(t, 2, cache.acquireCalls)
+}
+
+func TestRefreshIfNeeded_LockBusyEventuallyAcquires(t *testing.T) {
+	account := &Account{ID: 33, Platform: PlatformGemini, Type: AccountTypeOAuth}
+	repo := &refreshAPIAccountRepo{account: account}
+	cache := &refreshAPICacheStub{lockAttempts: []refreshAPILockAttempt{
+		{acquired: false},
+		{acquired: false},
+		{acquired: true},
+	}}
+	executor := &refreshAPIExecutorStub{
+		needsRefresh: true,
+		credentials:  map[string]any{"access_token": "new-token"},
+	}
+	api := NewOAuthRefreshAPI(repo, cache)
+	api.lockWait = 50 * time.Millisecond
+	api.lockPoll = time.Millisecond
+
+	result, err := api.RefreshIfNeeded(context.Background(), account, executor, 3*time.Minute)
+
+	require.NoError(t, err)
+	require.True(t, result.Refreshed)
+	require.Equal(t, 3, cache.acquireCalls)
 	require.Equal(t, 1, executor.refreshCalls)
+	require.Equal(t, 1, cache.releaseCalls)
+}
+
+func TestRefreshIfNeeded_LockWaitHonorsContextCancellation(t *testing.T) {
+	account := &Account{ID: 34, Platform: PlatformGemini, Type: AccountTypeOAuth}
+	repo := &refreshAPIAccountRepo{account: account}
+	cache := &refreshAPICacheStub{lockResult: false}
+	executor := &refreshAPIExecutorStub{needsRefresh: true}
+	api := NewOAuthRefreshAPI(repo, cache)
+	api.lockWait = time.Second
+	api.lockPoll = 5 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result, err := api.RefreshIfNeeded(ctx, account, executor, 3*time.Minute)
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.Nil(t, result)
+	require.Equal(t, 0, executor.refreshCalls)
 }
 
 func TestRefreshIfNeeded_NoCacheNoLock(t *testing.T) {

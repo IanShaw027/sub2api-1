@@ -69,7 +69,9 @@ func (p *GrokTokenProvider) GetAccessToken(ctx context.Context, account *Account
 	}
 
 	expiresAt := account.GetCredentialAsTime("expires_at")
-	needsRefresh := expiresAt == nil || time.Until(*expiresAt) <= grokTokenRefreshSkew
+	// Request path uses a tight skew so still-valid tokens are served without
+	// synchronous OAuth. Background refresher keeps the long (1h) warm window.
+	needsRefresh := expiresAt == nil || time.Until(*expiresAt) <= grokRequestTokenRefreshSkew
 	if needsRefresh && strings.TrimSpace(account.GetGrokRefreshToken()) == "" {
 		if expiresAt == nil || !time.Now().Before(*expiresAt) {
 			return "", errors.New("grok access_token expired and refresh_token is missing")
@@ -79,11 +81,17 @@ func (p *GrokTokenProvider) GetAccessToken(ctx context.Context, account *Account
 	if needsRefresh && p.refreshAPI != nil && p.executor != nil {
 		refreshCtx, cancel := context.WithTimeout(ctx, grokRequestRefreshTimeout)
 		defer cancel()
-		result, err := p.refreshAPI.RefreshIfNeeded(refreshCtx, account, p.executor, grokTokenRefreshSkew)
+		result, err := p.refreshAPI.RefreshIfNeeded(refreshCtx, account, p.executor, grokRequestTokenRefreshSkew)
 		if err != nil {
-			p.markTempUnschedulable(account, err)
-			if p.refreshPolicy.OnRefreshError == ProviderRefreshErrorReturn {
-				return "", err
+			// Prefer still-valid access tokens over hard-fail + temp-unsched when
+			// the refresh window is soft (token not yet expired).
+			if expiresAt != nil && time.Now().Before(*expiresAt) {
+				needsRefresh = false
+			} else {
+				p.markTempUnschedulable(account, err)
+				if p.refreshPolicy.OnRefreshError == ProviderRefreshErrorReturn {
+					return "", err
+				}
 			}
 		} else if !result.LockHeld && result.Account != nil {
 			account = result.Account

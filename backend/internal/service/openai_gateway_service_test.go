@@ -4105,7 +4105,7 @@ func TestOpenAITTFTWatchdogDisabledForResponsesExplicitImageToolChoice(t *testin
 	require.False(t, svc.shouldEnableOpenAITTFTWatchdog(c, account))
 }
 
-func TestOpenAINonStreamingSoftRateLimitAdvisoryDoesNotFailover(t *testing.T) {
+func TestOpenAINonStreamingRateLimitPromptTextIsOrdinaryContent(t *testing.T) {
 	setGinTestMode()
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
 
@@ -4426,7 +4426,7 @@ func TestForwardGrokResponsesNonStreamingSearchCountUsesActualOutputCalls(t *tes
 	require.Equal(t, 2, result.SearchCount)
 }
 
-func TestOpenAINonStreamingPassthroughSoftRateLimitAdvisoryDoesNotFailover(t *testing.T) {
+func TestOpenAINonStreamingPassthroughRateLimitPromptTextIsOrdinaryContent(t *testing.T) {
 	setGinTestMode()
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
 
@@ -4447,31 +4447,6 @@ func TestOpenAINonStreamingPassthroughSoftRateLimitAdvisoryDoesNotFailover(t *te
 	require.Equal(t, 1, result.usage.InputTokens)
 	require.Equal(t, 1, result.usage.OutputTokens)
 	require.Contains(t, rec.Body.String(), "Approaching rate limits")
-}
-
-func TestExtractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(t *testing.T) {
-	body := strings.Join([]string{
-		"event: response.created",
-		`data: {"type":"response.created","response":{"id":"resp_1"}}`,
-		"",
-		"event: codex.rate_limits",
-		`data: {"type":"codex.rate_limits","metered_limit_name":"codex","rate_limits":{"allowed":true,"limit_reached":false,"primary":{"used_percent":95}},"credits":{"has_credits":false,"unlimited":false}}`,
-		"",
-	}, "\n")
-
-	msg, matched := extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(body)
-	require.False(t, matched)
-	require.Empty(t, msg)
-
-	body = strings.Join([]string{
-		"event: response.completed",
-		`data: {"type":"response.completed","response":{"id":"resp_2","output":[{"type":"message","content":[{"type":"output_text","text":"Approaching rate limits\nSwitch to o4-mini for lower credit usage?\n1. Switch to o4-mini\n2. Keep current model\n3. Keep current model (never show again)"}]}]}}`,
-		"",
-	}, "\n")
-
-	msg, matched = extractOpenAIWSSoftRateLimitAdvisoryFromSSEBody(body)
-	require.False(t, matched)
-	require.Empty(t, msg)
 }
 
 func TestOpenAIStreamingPassthroughResponseDoneWithoutDoneMarkerStillSucceeds(t *testing.T) {

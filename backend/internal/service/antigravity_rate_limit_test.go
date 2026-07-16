@@ -87,6 +87,7 @@ type stubAntigravityAccountRepo struct {
 	rateCalls           []rateLimitCall
 	modelRateLimitCalls []modelRateLimitCall
 	extraUpdateCalls    []extraUpdateCall
+	schedulableAccounts []Account
 }
 
 func (s *stubAntigravityAccountRepo) SetRateLimited(ctx context.Context, id int64, resetAt time.Time) error {
@@ -102,6 +103,41 @@ func (s *stubAntigravityAccountRepo) SetModelRateLimit(ctx context.Context, id i
 func (s *stubAntigravityAccountRepo) UpdateExtra(ctx context.Context, id int64, updates map[string]any) error {
 	s.extraUpdateCalls = append(s.extraUpdateCalls, extraUpdateCall{accountID: id, updates: updates})
 	return nil
+}
+
+func (s *stubAntigravityAccountRepo) ListSchedulableByPlatform(_ context.Context, _ string) ([]Account, error) {
+	return append([]Account(nil), s.schedulableAccounts...), nil
+}
+
+func TestSetAntigravityGlobalModelCapacityCooldownLimitsAllAccounts(t *testing.T) {
+	repo := &stubAntigravityAccountRepo{
+		schedulableAccounts: []Account{
+			{ID: 101, Platform: PlatformAntigravity},
+			{ID: 102, Platform: PlatformAntigravity},
+		},
+	}
+	current := &Account{ID: 101, Platform: PlatformAntigravity}
+	resetAt := time.Now().Add(time.Minute)
+
+	svc := &AntigravityGatewayService{}
+	ok := svc.setAntigravityGlobalModelCapacityCooldown(
+		context.Background(),
+		repo,
+		current,
+		"gemini-3-pro-high",
+		"[test]",
+		http.StatusServiceUnavailable,
+		resetAt,
+	)
+
+	require.True(t, ok)
+	require.Len(t, repo.modelRateLimitCalls, 4)
+	accountKeys := make(map[int64][]string)
+	for _, call := range repo.modelRateLimitCalls {
+		accountKeys[call.accountID] = append(accountKeys[call.accountID], call.modelKey)
+	}
+	require.ElementsMatch(t, []string{"gemini-3-pro-high", antigravityGeminiModelRateLimitKey}, accountKeys[101])
+	require.ElementsMatch(t, []string{"gemini-3-pro-high", antigravityGeminiModelRateLimitKey}, accountKeys[102])
 }
 
 func TestAntigravityRetryLoop_NoURLFallback_UsesConfiguredBaseURL(t *testing.T) {

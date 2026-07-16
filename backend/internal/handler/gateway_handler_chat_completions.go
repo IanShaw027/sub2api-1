@@ -225,6 +225,20 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 				h.handleConcurrencyError(c, err, "account", streamStarted)
 				return
 			}
+			if !h.gatewayService.RegisterSessionAfterAcquire(c.Request.Context(), account, selectionSessionHash) {
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
+				}
+				reqLog.Warn("gateway.cc.session_limit_exceeded_after_wait",
+					zap.Int64("account_id", account.ID),
+				)
+				_ = h.gatewayService.ClearStickySession(c.Request.Context(), apiKey.GroupID, selectionSessionHash)
+				fs.FailedAccountIDs[account.ID] = struct{}{}
+				continue
+			}
+			if err := h.gatewayService.BindStickySession(c.Request.Context(), apiKey.GroupID, selectionSessionHash, account.ID); err != nil {
+				reqLog.Warn("gateway.cc.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+			}
 		}
 		accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
 

@@ -966,7 +966,6 @@ func openAIWSConnEvictReasonInvalidatesSessionContext(reason string) bool {
 			strings.HasPrefix(reason, "unclean_exit") ||
 			strings.HasPrefix(reason, "ingress_") ||
 			strings.HasPrefix(reason, "prewarm_") ||
-			strings.HasPrefix(reason, "soft_rate_limit") ||
 			strings.Contains(reason, "keepalive")
 	}
 }
@@ -996,7 +995,6 @@ func openAIWSConnEvictReasonDeletesDurableSessionContext(reason string) bool {
 		strings.HasPrefix(reason, "unclean_exit") ||
 		strings.HasPrefix(reason, "ingress_") ||
 		strings.HasPrefix(reason, "prewarm_") ||
-		strings.HasPrefix(reason, "soft_rate_limit") ||
 		strings.Contains(reason, "keepalive")
 }
 

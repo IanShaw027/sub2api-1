@@ -135,8 +135,8 @@ func convertResponsesInputToAnthropic(instructions string, inputRaw json.RawMess
 				systemParts = append(systemParts, text)
 			}
 
-		case item.Type == "function_call":
-			if strings.TrimSpace(item.Name) == "webfetch" {
+		case item.Type == "function_call", item.Type == "custom_tool_call", item.Type == "tool_search_call":
+			if item.Type == "function_call" && strings.TrimSpace(item.Name) == "webfetch" {
 				if assistantMsg, userMsg, hasResult, ok := webFetchHistoryMessagesFromFunctionCall(item); ok {
 					messages = append(messages, assistantMsg)
 					if hasResult {
@@ -145,15 +145,25 @@ func convertResponsesInputToAnthropic(instructions string, inputRaw json.RawMess
 					continue
 				}
 			}
-			// function_call → assistant message with tool_use block
-			input, err := responsesRequestFunctionCallInput(item.Arguments)
-			if err != nil {
-				return nil, nil, err
+			// function_call / custom_tool_call / tool_search_call → assistant tool_use
+			name := item.Name
+			if item.Type == "tool_search_call" && strings.TrimSpace(name) == "" {
+				name = "tool_search"
+			}
+			var input json.RawMessage
+			if item.Type == "custom_tool_call" {
+				input, _ = json.Marshal(item.Input)
+			} else {
+				var err error
+				input, err = responsesRequestFunctionCallInput(item.Arguments)
+				if err != nil {
+					return nil, nil, err
+				}
 			}
 			block := AnthropicContentBlock{
 				Type:  "tool_use",
 				ID:    fromResponsesCallIDToAnthropic(item.CallID),
-				Name:  item.Name,
+				Name:  name,
 				Input: input,
 			}
 			blockJSON, _ := json.Marshal([]AnthropicContentBlock{block})
@@ -169,13 +179,16 @@ func convertResponsesInputToAnthropic(instructions string, inputRaw json.RawMess
 				messages = append(messages, userMsg)
 			}
 
-		case item.Type == "function_call_output":
-			// function_call_output → user message with tool_result block
+		case item.Type == "function_call_output", item.Type == "custom_tool_call_output", item.Type == "tool_search_output":
+			// tool outputs → user message with tool_result block
 			outputContent := item.Output
 			if outputContent == "" {
 				outputContent = "(empty)"
 			}
 			contentJSON, isError := marshalAnthropicToolResultContent(outputContent)
+			if item.OutputIsJSON {
+				contentJSON = json.RawMessage(outputContent)
+			}
 			block := AnthropicContentBlock{
 				Type:      "tool_result",
 				ToolUseID: fromResponsesCallIDToAnthropic(item.CallID),

@@ -445,17 +445,25 @@ func CcUsageToAnthropic(u *ChatUsage) *AnthropicUsage {
 		return nil
 	}
 	cacheReadTokens := 0
+	cacheWriteTokens := 0
 	if u.PromptTokensDetails != nil {
 		cacheReadTokens = u.PromptTokensDetails.CachedTokens
+		cacheWriteTokens = u.PromptTokensDetails.CacheWriteTokens
+		if cacheWriteTokens == 0 {
+			cacheWriteTokens = u.PromptTokensDetails.CacheCreationTokens
+		}
 	}
-	inputTokens := u.PromptTokens - cacheReadTokens
+	// PromptTokens is usually total billed prompt (input + cache_read [+ cache_write]).
+	// Anthropic reports uncached input separately from cache_read/cache_creation.
+	inputTokens := u.PromptTokens - cacheReadTokens - cacheWriteTokens
 	if inputTokens < 0 {
 		inputTokens = 0
 	}
 	au := &AnthropicUsage{
-		InputTokens:          inputTokens,
-		OutputTokens:         u.CompletionTokens,
-		CacheReadInputTokens: cacheReadTokens,
+		InputTokens:              inputTokens,
+		OutputTokens:             u.CompletionTokens,
+		CacheReadInputTokens:     cacheReadTokens,
+		CacheCreationInputTokens: cacheWriteTokens,
 	}
 	return au
 }

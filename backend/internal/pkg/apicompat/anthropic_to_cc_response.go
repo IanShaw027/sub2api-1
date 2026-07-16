@@ -144,16 +144,7 @@ func (s *AnthropicToCCChunkState) BuildUsageChunk() ChatCompletionsChunk {
 	chunk := s.newChunk()
 	chunk.Choices = nil
 	if s.Usage != nil {
-		chunk.Usage = &ChatUsage{
-			PromptTokens:     s.Usage.InputTokens,
-			CompletionTokens: s.Usage.OutputTokens,
-			TotalTokens:      s.Usage.InputTokens + s.Usage.OutputTokens,
-		}
-		if s.Usage.CacheReadInputTokens > 0 {
-			chunk.Usage.PromptTokensDetails = &ChatTokenDetails{
-				CachedTokens: s.Usage.CacheReadInputTokens,
-			}
-		}
+		chunk.Usage = anthropicUsageToChatUsage(s.Usage)
 	}
 	return chunk
 }
@@ -184,13 +175,31 @@ func (s *AnthropicToCCChunkState) BuildNonStreamingResponse(chunks []ChatComplet
 	}}
 
 	if s.Usage != nil {
-		resp.Usage = &ChatUsage{
-			PromptTokens:     s.Usage.InputTokens,
-			CompletionTokens: s.Usage.OutputTokens,
-			TotalTokens:      s.Usage.InputTokens + s.Usage.OutputTokens,
-		}
+		resp.Usage = anthropicUsageToChatUsage(s.Usage)
 	}
 	return resp
+}
+
+// anthropicUsageToChatUsage maps Anthropic usage (uncached input + cache_read +
+// cache_creation) onto Chat Completions PromptTokens totals and details.
+func anthropicUsageToChatUsage(u *AnthropicUsage) *ChatUsage {
+	if u == nil {
+		return nil
+	}
+	prompt := u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens
+	usage := &ChatUsage{
+		PromptTokens:     prompt,
+		CompletionTokens: u.OutputTokens,
+		TotalTokens:      prompt + u.OutputTokens,
+	}
+	if u.CacheReadInputTokens > 0 || u.CacheCreationInputTokens > 0 {
+		usage.PromptTokensDetails = &ChatTokenDetails{
+			CachedTokens:        u.CacheReadInputTokens,
+			CacheWriteTokens:    u.CacheCreationInputTokens,
+			CacheCreationTokens: u.CacheCreationInputTokens,
+		}
+	}
+	return usage
 }
 
 func (s *AnthropicToCCChunkState) newChunk() ChatCompletionsChunk {

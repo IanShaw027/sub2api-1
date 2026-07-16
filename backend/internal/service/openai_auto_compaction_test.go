@@ -60,3 +60,38 @@ func TestOpenAIContextCompactionPathOverrideKeepsInboundURLAndFailoverBody(t *te
 	require.True(t, ok)
 	require.Equal(t, compactBody, got)
 }
+
+func TestClearOpenAICompactFailoverStateIfUnsupported(t *testing.T) {
+	t.Run("clears compact override for unsupported account", func(t *testing.T) {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		setOpenAIResponsesUpstreamPathSuffixOverride(c, "/compact")
+		setOpenAIFailoverRequestBody(c, []byte(`{"input":"compacted"}`))
+		MarkOpenAICompactClientStream(c)
+
+		clearOpenAICompactFailoverStateIfUnsupported(c, &Account{
+			Platform: PlatformOpenAI,
+			Extra:    map[string]any{"openai_compact_supported": false},
+		})
+
+		require.Empty(t, openAIResponsesRequestPathSuffix(c))
+		_, ok := getOpenAIFailoverRequestBody(c, nil)
+		require.False(t, ok)
+		require.False(t, openAICompactClientWantsStream(c))
+	})
+
+	t.Run("preserves ordinary retry body", func(t *testing.T) {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+		retryBody := []byte(`{"input":"retry"}`)
+		setOpenAIFailoverRequestBody(c, retryBody)
+
+		clearOpenAICompactFailoverStateIfUnsupported(c, &Account{
+			Platform: PlatformOpenAI,
+			Extra:    map[string]any{"openai_compact_supported": false},
+		})
+
+		got, ok := getOpenAIFailoverRequestBody(c, nil)
+		require.True(t, ok)
+		require.JSONEq(t, string(retryBody), string(got))
+	})
+}

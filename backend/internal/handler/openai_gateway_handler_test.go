@@ -423,6 +423,38 @@ func TestOpenAIEnsureForwardErrorResponse_AppendsSSEAfterWritten(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "event: error\n")
 }
 
+func TestOpenAIEnsureAnthropicErrorResponse_AppendsTerminalSSEAfterPartialStream(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	_, _ = c.Writer.WriteString("event: content_block_delta\ndata: {\"type\":\"content_block_delta\"}\n\n")
+
+	h := &OpenAIGatewayHandler{}
+	wrote := h.ensureAnthropicErrorResponse(c, false)
+
+	require.True(t, wrote)
+	require.Contains(t, w.Body.String(), "event: content_block_delta")
+	require.Contains(t, w.Body.String(), "event: error\n")
+	require.Contains(t, w.Body.String(), `"type":"api_error"`)
+}
+
+func TestOpenAIEnsureAnthropicErrorResponse_DoesNotAppendSSEAfterJSONResponse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	c.Writer.Header().Set("Content-Type", "application/json")
+	_, _ = c.Writer.WriteString(`{"type":"error"}`)
+
+	h := &OpenAIGatewayHandler{}
+	wrote := h.ensureAnthropicErrorResponse(c, false)
+
+	require.False(t, wrote)
+	require.Equal(t, `{"type":"error"}`, w.Body.String())
+}
+
 func TestOpenAIEnsureForwardErrorResponse_DoesNotAppendAfterJSONWritten(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
