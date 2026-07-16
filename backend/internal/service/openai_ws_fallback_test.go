@@ -127,6 +127,17 @@ func TestClassifyOpenAIWSErrorEvent(t *testing.T) {
 	reason, recoverable = classifyOpenAIWSErrorEvent([]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_request","message":"The field model.metadata does not exist on this request."}}`))
 	require.Equal(t, "event_error", reason)
 	require.False(t, recoverable)
+
+	// Context-window overflow must be fallback-eligible so the turn can replay over
+	// the HTTP path (where remote compaction runs). Match on the explicit code and on
+	// the free-text "exceeds the context window" message seen from production upstreams.
+	reason, recoverable = classifyOpenAIWSErrorEvent([]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"This model's maximum context length is 400000 tokens."}}`))
+	require.Equal(t, "context_overflow", reason)
+	require.True(t, recoverable)
+
+	reason, recoverable = classifyOpenAIWSErrorEvent([]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"invalid_request","message":"Your input exceeds the context window of this model. Please adjust your input and try again."}}`))
+	require.Equal(t, "context_overflow", reason)
+	require.True(t, recoverable)
 }
 
 func TestClassifyOpenAIWSReconnectReason(t *testing.T) {
@@ -150,6 +161,24 @@ func TestClassifyOpenAIWSReconnectReason(t *testing.T) {
 	reason, retryable = classifyOpenAIWSReconnectReason(wrapOpenAIWSFallback("prewarm_response_failed", responseFailed))
 	require.Equal(t, "prewarm_response_failed", reason)
 	require.True(t, retryable)
+}
+
+func TestOpenAIWSContextOverflowRoutesToHTTPFallback(t *testing.T) {
+	// The overflow error event classifies as context_overflow / fallback-eligible.
+	reason, recoverable := classifyOpenAIWSErrorEvent([]byte(`{"type":"error","error":{"type":"invalid_request_error","code":"context_length_exceeded","message":"Your input exceeds the context window of this model."}}`))
+	require.Equal(t, "context_overflow", reason)
+	require.True(t, recoverable)
+
+	err := wrapOpenAIWSFallbackWithPayloadState(reason, errors.New("context window"), "", false)
+
+	// It must NOT be retried on the same WS connection (that would loop against the
+	// same overflow); reconnect classification is non-retryable for this reason.
+	gotReason, retryable := classifyOpenAIWSReconnectReason(err)
+	require.Equal(t, "context_overflow", gotReason)
+	require.False(t, retryable)
+
+	// It MUST be eligible to replay over the HTTP path, where remote compaction runs.
+	require.True(t, shouldFallbackOpenAIWSToHTTP(err))
 }
 
 func TestShouldFallbackOpenAIWSToHTTP_AuthFailed(t *testing.T) {

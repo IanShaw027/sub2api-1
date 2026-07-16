@@ -95,3 +95,72 @@ func TestClearOpenAICompactFailoverStateIfUnsupported(t *testing.T) {
 		require.JSONEq(t, string(retryBody), string(got))
 	})
 }
+
+// httpForwardCompactionGate mirrors the precondition composed inline in the
+// non-passthrough Forward HTTP loop (openai_gateway_service.go). It is factored
+// out here only to lock the gating behavior with a table test: the rung must fire
+// ONLY for a streaming, non-compact-path, 400 context-window error where the
+// client opted into remote_compaction_v2 and the account allows compact. Any
+// other traffic (non-codex, missing header, non-streaming, wrong status) must be
+// left untouched.
+func httpForwardCompactionGate(c *gin.Context, account *Account, alreadyRetried, isCompactRequest, reqStream bool, status int, upstreamMsg string, respBody, body []byte) bool {
+	return !alreadyRetried && !isCompactRequest && reqStream &&
+		isOpenAIContextCompactionStatus(status) &&
+		isOpenAIContextWindowError(upstreamMsg, respBody) &&
+		isOpenAIContextRemoteCompactionV2Request(c, body) && account.AllowsOpenAICompact()
+}
+
+func TestHTTPForwardCompactionGate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	newCtx := func(header string) *gin.Context {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+		if header != "" {
+			c.Request.Header.Set("x-codex-beta-features", header)
+		}
+		return c
+	}
+	compactAccount := &Account{Platform: PlatformOpenAI, Extra: map[string]any{"openai_compact_supported": true}}
+	noCompactAccount := &Account{Platform: PlatformOpenAI, Extra: map[string]any{"openai_compact_supported": false}}
+	body := []byte(`{"stream":true}`)
+	overflowBody := []byte(`{"error":{"code":"context_length_exceeded","message":"Your input exceeds the context window of this model."}}`)
+	overflowMsg := "Your input exceeds the context window of this model."
+
+	require.True(t, compactAccount.AllowsOpenAICompact(), "fixture account must allow compact")
+
+	// Eligible: streaming codex request with remote_compaction_v2 + overflow 400.
+	require.True(t, httpForwardCompactionGate(
+		newCtx("remote_compaction_v2"), compactAccount,
+		false, false, true, http.StatusBadRequest, overflowMsg, overflowBody, body))
+
+	// Not eligible — each guard flipped independently must block the rung:
+	// already retried once
+	require.False(t, httpForwardCompactionGate(
+		newCtx("remote_compaction_v2"), compactAccount,
+		true, false, true, http.StatusBadRequest, overflowMsg, overflowBody, body))
+	// already on the compact path
+	require.False(t, httpForwardCompactionGate(
+		newCtx("remote_compaction_v2"), compactAccount,
+		false, true, true, http.StatusBadRequest, overflowMsg, overflowBody, body))
+	// non-streaming
+	require.False(t, httpForwardCompactionGate(
+		newCtx("remote_compaction_v2"), compactAccount,
+		false, false, false, http.StatusBadRequest, overflowMsg, overflowBody, body))
+	// not a 400
+	require.False(t, httpForwardCompactionGate(
+		newCtx("remote_compaction_v2"), compactAccount,
+		false, false, true, http.StatusInternalServerError, overflowMsg, overflowBody, body))
+	// not a context-window error
+	require.False(t, httpForwardCompactionGate(
+		newCtx("remote_compaction_v2"), compactAccount,
+		false, false, true, http.StatusBadRequest, "bad request", []byte(`{"error":{"message":"bad request"}}`), body))
+	// client did NOT opt into remote_compaction_v2 (e.g. non-codex client)
+	require.False(t, httpForwardCompactionGate(
+		newCtx(""), compactAccount,
+		false, false, true, http.StatusBadRequest, overflowMsg, overflowBody, body))
+	// account does not allow compact
+	require.False(t, httpForwardCompactionGate(
+		newCtx("remote_compaction_v2"), noCompactAccount,
+		false, false, true, http.StatusBadRequest, overflowMsg, overflowBody, body))
+}

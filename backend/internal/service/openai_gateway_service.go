@@ -6442,6 +6442,7 @@ oauthTransformDone:
 	httpInstructionsRetryTried := false
 	httpUnsupportedPreviousResponseIDRetryTried := false
 	httpReasoningEnabledRetryTried := false
+	httpContextCompactionRetried := false
 	tlsRuntime := s.resolveOpenAITLSFingerprintRuntime(ctx, c, account, "http")
 	for {
 		// Build upstream request
@@ -6493,6 +6494,55 @@ oauthTransformDone:
 			upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 			upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
 			upstreamCode := extractUpstreamErrorCode(respBody)
+			// Context-window overflow → remote compaction retry. The passthrough path
+			// (forwardOpenAIPassthrough) has this; the non-passthrough Forward loop is
+			// also reachable by streaming Codex traffic (directly, or after a WS→HTTP
+			// fallback), so mirror the same gated retry here. Same preconditions as the
+			// passthrough path: streaming, not already on the compact path, a 400 that is
+			// a context-window error, the client opted into remote_compaction_v2, and the
+			// account allows compact. Anything else is untouched.
+			if !httpContextCompactionRetried && !isCompactRequest && reqStream &&
+				isOpenAIContextCompactionStatus(resp.StatusCode) &&
+				isOpenAIContextWindowError(upstreamMsg, respBody) &&
+				isOpenAIContextRemoteCompactionV2Request(c, body) && account.AllowsOpenAICompact() {
+				if compactBody, triggerErr := buildOpenAIContextCompactionTriggerBody(originalBody); triggerErr == nil {
+					compactBody, _, triggerErr = normalizeOpenAICompactRequestBody(compactBody)
+					if triggerErr == nil {
+						if account.Type == AccountTypeOAuth {
+							compactBody, _, triggerErr = normalizeOpenAIPassthroughOAuthBody(compactBody, true)
+							if triggerErr == nil {
+								compactBody, _, triggerErr = ensureOpenAIPassthroughInstructions(c, reqModel, compactBody)
+							}
+						} else {
+							compactBody, _, triggerErr = normalizeOpenAIPassthroughBaseBody(compactBody, true, shouldStripTopPForResponsesUpstream(account))
+						}
+					}
+					if triggerErr == nil {
+						compactUpstreamModel := resolveOpenAIAccountUpstreamModelForRequest(ctx, s.settingService, account, reqModel, true, s.openAICompactModel())
+						if compactUpstreamModel != "" {
+							compactBody = ReplaceModelInBody(compactBody, compactUpstreamModel)
+						}
+						resetRawBodyView(compactBody)
+						setOpsUpstreamRequestBody(c, body)
+						// Keep the inbound request URL immutable across account retries; the
+						// /compact suffix rides on the gin context, not the request path.
+						setOpenAIResponsesUpstreamPathSuffixOverride(c, "/compact")
+						setOpenAIFailoverRequestBody(c, body)
+						MarkOpenAICompactClientStream(c)
+						reqStream = false
+						upstreamStream = false
+						httpContextCompactionRetried = true
+						logger.FromContext(ctx).Info("openai.context_overflow_remote_compaction_retry",
+							zap.Int64("account_id", account.ID),
+							zap.String("original_model", reqModel),
+							zap.String("compact_model", compactUpstreamModel),
+							zap.String("upstream_code", upstreamCode),
+							zap.String("transport", "http_forward"),
+						)
+						continue
+					}
+				}
+			}
 			if !httpModelFallbackRetryTried {
 				currentModel := strings.TrimSpace(upstreamModel)
 				if currentModel == "" {

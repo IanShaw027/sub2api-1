@@ -8883,6 +8883,14 @@ func classifyOpenAIWSErrorEventFromRaw(codeRaw, errTypeRaw, msgRaw string) (stri
 			return fallbackReason, true
 		}
 	}
+	// Context-window overflow is reported by xAI/OpenAI as an invalid_request-class
+	// error event (code=context_length_exceeded or "exceeds the context window").
+	// The WS path has no compaction; classify it as fallback-eligible so that, when
+	// nothing was streamed downstream yet, the turn replays over the HTTP path where
+	// remote compaction can run. Match against both the raw message and code.
+	if code == "context_length_exceeded" || isOpenAIContextWindowError(msgRaw, nil) {
+		return "context_overflow", true
+	}
 	if strings.Contains(errType, "server_error") || strings.Contains(code, "server_error") {
 		return "upstream_error_event", true
 	}
