@@ -362,7 +362,8 @@
             {{ grokEntitlementLabel }}
           </span>
         </div>
-        <div v-if="grokLocalUsage && grokBilling" class="mb-0.5 flex items-center">
+        <!-- Local stats only when official 7d/30d bars are absent (those bars already embed window_stats). -->
+        <div v-if="showGrokStandaloneLocalStats && grokLocalUsage" class="mb-0.5 flex items-center">
           <div class="flex items-center gap-1.5 text-[9px] text-gray-500 dark:text-gray-400">
             <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">{{ formatWindowRequests(grokLocalUsage) }} req</span>
             <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-gray-800">{{ formatWindowTokens(grokLocalUsage) }}</span>
@@ -392,6 +393,7 @@
           label="7d"
           :utilization="grokWeeklyBillingBar.utilization"
           :resets-at="grokWeeklyBillingBar.resetsAt"
+          :window-stats="grokLocalUsage"
           :show-now-when-idle="true"
           color="indigo"
         />
@@ -830,11 +832,22 @@ const grokFreeTokenBar = computed(() => {
 })
 const grokLocalUsage = computed(() => {
 	if (grokIsFree.value) return grokFreeQuotaUsage.value
-	return props.todayStats ||
-	  usageInfo.value?.grok_local_usage ||
+	// Prefer period-aligned local stats over todayStats so standalone/fallback
+	// rows match the official weekly/monthly windows.
+	return usageInfo.value?.grok_local_usage ||
 	  usageInfo.value?.grok_local_usage_7d ||
 	  usageInfo.value?.grok_local_usage_monthly ||
+	  props.todayStats ||
 	  null
+})
+// Standalone unlabeled req/token/cost row only when there is no official 7d/30d
+// progress bar already rendering the same window_stats chips.
+const showGrokStandaloneLocalStats = computed(() => {
+  if (!grokLocalUsage.value || !grokBilling.value) return false
+  if (usageInfo.value?.seven_day) return false
+  if (usageInfo.value?.thirty_day) return false
+  if (grokWeeklyBillingBar.value) return false
+  return true
 })
 const grokEntitlementLabel = computed(() => {
   const status = (usageInfo.value?.grok_entitlement_status || '').trim()

@@ -1800,6 +1800,14 @@ describe('AccountUsageCell', () => {
         on_demand_cap: 0,
         on_demand_used: 0
       },
+      // Extra local/today stats must not render a third unlabeled stats row.
+      grok_local_usage: {
+        requests: 99,
+        tokens: 9900,
+        cost: 9.9,
+        standard_cost: 9.9,
+        user_cost: 8.8
+      },
       grok_quota_snapshot_state: 'observed'
     })
 
@@ -1810,7 +1818,14 @@ describe('AccountUsageCell', () => {
           platform: 'grok',
           type: 'oauth',
           extra: {}
-        })
+        }),
+        todayStats: {
+          requests: 270,
+          tokens: 36_000_000,
+          cost: 25.63,
+          standard_cost: 25.63,
+          user_cost: 2.31
+        }
       },
       global: {
         stubs: {
@@ -1828,6 +1843,11 @@ describe('AccountUsageCell', () => {
 
     expect(wrapper.text()).toContain('7d|55|2026-07-20T08:44:35Z|9req|900tok|A1.1|U2.2')
     expect(wrapper.text()).toContain('30d|14.6|2026-08-01T00:00:00Z|30req|3000tok|A3.3|U4.4')
+    // Standalone unlabeled chips (todayStats / grok_local_usage) must not duplicate.
+    expect(wrapper.text()).not.toContain('270 req')
+    expect(wrapper.text()).not.toContain('99 req')
+    expect(wrapper.text()).not.toContain('A $25.63')
+    expect(wrapper.text()).not.toContain('A $9.90')
     expect(wrapper.text()).not.toContain('A $1.10')
     expect(wrapper.text()).toContain('2.2K/15.0K')
   })
@@ -1858,8 +1878,8 @@ describe('AccountUsageCell', () => {
       global: {
         stubs: {
           UsageProgressBar: {
-            props: ['label', 'utilization', 'resetsAt', 'remainingCapacity'],
-            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}|{{ remainingCapacity }}</div>'
+            props: ['label', 'utilization', 'resetsAt', 'windowStats', 'remainingCapacity'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}|{{ windowStats?.requests }}req|{{ remainingCapacity }}</div>'
           },
           AccountQuotaInfo: true,
           GrokQuotaProbeCell: true
@@ -1869,7 +1889,9 @@ describe('AccountUsageCell', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('7d|37|2026-07-16T03:25:00Z')
+    // Local stats ride on the weekly bar only — no unlabeled duplicate row.
+    expect(wrapper.text()).toContain('7d|37|2026-07-16T03:25:00Z|5req')
+    expect(wrapper.text()).not.toContain('A $4.42')
     expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokRequests|')
     expect(wrapper.text()).not.toContain('admin.accounts.usageWindow.grokTokens|')
     expect(wrapper.text()).not.toContain('2M|')
@@ -2192,8 +2214,8 @@ describe('AccountUsageCell', () => {
       global: {
         stubs: {
           UsageProgressBar: {
-            props: ['label', 'utilization', 'resetsAt'],
-            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}</div>'
+            props: ['label', 'utilization', 'resetsAt', 'windowStats'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}|{{ windowStats?.tokens }}tok</div>'
           },
           AccountQuotaInfo: true,
           GrokQuotaProbeCell: {
@@ -2223,8 +2245,9 @@ describe('AccountUsageCell', () => {
     await flushPromises()
     await wrapper.get('.probe').trigger('click')
 
-    expect(wrapper.text()).toContain('7d|42|2026-07-17T00:00:00Z')
-    expect(wrapper.text()).toContain('1.0M')
+    // Weekly bar carries 7d local stats; 24h probe payload must not surface as a free bar.
+    expect(wrapper.text()).toContain('7d|42|2026-07-17T00:00:00Z|1000000tok')
+    expect(wrapper.text()).not.toContain('750000tok')
     expect(wrapper.text()).not.toContain('750.0K')
     expect(wrapper.text()).toContain('ACTIVE')
     expect(wrapper.text()).not.toContain('stale error')
