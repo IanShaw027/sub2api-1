@@ -308,6 +308,10 @@ func patchGrokResponsesBody(body []byte, upstreamModel string) ([]byte, error) {
 			return nil, err
 		}
 	}
+	out, err = normalizeGrokResponsesReasoningEffort(out, upstreamModel)
+	if err != nil {
+		return nil, err
+	}
 	if !grokSupportsReasoningEffort(upstreamModel) && gjson.GetBytes(out, "reasoning.effort").Exists() {
 		out, err = sjson.DeleteBytes(out, "reasoning.effort")
 		if err != nil {
@@ -407,7 +411,10 @@ func sanitizeGrokReasoningNullContent(body []byte) ([]byte, error) {
 }
 
 func sanitizeGrokModelUnsupportedFields(body []byte, upstreamModel string) ([]byte, error) {
-	updated := body
+	updated, err := normalizeGrokChatReasoningEffort(body, upstreamModel)
+	if err != nil {
+		return nil, err
+	}
 	fields := make([]string, 0, len(grok45UnsupportedSamplingFields)+2)
 	if strings.EqualFold(strings.TrimSpace(upstreamModel), "grok-4.5") {
 		fields = append(fields, grok45UnsupportedSamplingFields...)
@@ -426,6 +433,100 @@ func sanitizeGrokModelUnsupportedFields(body []byte, upstreamModel string) ([]by
 		updated = next
 	}
 	return updated, nil
+}
+
+func normalizeGrokResponsesReasoningEffort(body []byte, upstreamModel string) ([]byte, error) {
+	updated := body
+	var err error
+	supportsEffort := grokSupportsReasoningEffort(upstreamModel)
+	for _, field := range []string{"reasoning.effort", "reasoning_effort"} {
+		value := gjson.GetBytes(updated, field)
+		if !value.Exists() {
+			continue
+		}
+		normalized, keep := normalizeGrokReasoningEffortValue(value.String())
+		if !supportsEffort || !keep {
+			updated, err = sjson.DeleteBytes(updated, field)
+		} else {
+			updated, err = sjson.SetBytes(updated, field, normalized)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("normalize Grok Responses reasoning field %s: %w", field, err)
+		}
+	}
+
+	camel := gjson.GetBytes(updated, "reasoningEffort")
+	if camel.Exists() {
+		normalized, keep := normalizeGrokReasoningEffortValue(camel.String())
+		updated, err = sjson.DeleteBytes(updated, "reasoningEffort")
+		if err != nil {
+			return nil, fmt.Errorf("delete Grok Responses reasoningEffort: %w", err)
+		}
+		if supportsEffort && keep && !gjson.GetBytes(updated, "reasoning_effort").Exists() {
+			updated, err = sjson.SetBytes(updated, "reasoning_effort", normalized)
+			if err != nil {
+				return nil, fmt.Errorf("set normalized Grok Responses reasoning_effort: %w", err)
+			}
+		}
+	}
+
+	if reasoning := gjson.GetBytes(updated, "reasoning"); reasoning.Exists() && reasoning.IsObject() && len(reasoning.Map()) == 0 {
+		updated, err = sjson.DeleteBytes(updated, "reasoning")
+		if err != nil {
+			return nil, fmt.Errorf("delete empty Grok Responses reasoning object: %w", err)
+		}
+	}
+	return updated, nil
+}
+
+func normalizeGrokChatReasoningEffort(body []byte, upstreamModel string) ([]byte, error) {
+	raw := strings.TrimSpace(gjson.GetBytes(body, "reasoning_effort").String())
+	if raw == "" {
+		raw = strings.TrimSpace(gjson.GetBytes(body, "reasoningEffort").String())
+	}
+	normalized, keep := normalizeGrokReasoningEffortValue(raw)
+	if !grokSupportsReasoningEffort(upstreamModel) {
+		keep = false
+	}
+
+	updated := body
+	var err error
+	if gjson.GetBytes(updated, "reasoningEffort").Exists() {
+		updated, err = sjson.DeleteBytes(updated, "reasoningEffort")
+		if err != nil {
+			return nil, fmt.Errorf("delete Grok Chat reasoningEffort: %w", err)
+		}
+	}
+	if !keep {
+		if gjson.GetBytes(updated, "reasoning_effort").Exists() {
+			updated, err = sjson.DeleteBytes(updated, "reasoning_effort")
+			if err != nil {
+				return nil, fmt.Errorf("delete invalid Grok Chat reasoning_effort: %w", err)
+			}
+		}
+		return updated, nil
+	}
+
+	updated, err = sjson.SetBytes(updated, "reasoning_effort", normalized)
+	if err != nil {
+		return nil, fmt.Errorf("set normalized Grok Chat reasoning_effort: %w", err)
+	}
+	return updated, nil
+}
+
+func normalizeGrokReasoningEffortValue(raw string) (string, bool) {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	value = strings.NewReplacer("-", "", "_", "", " ", "").Replace(value)
+	switch value {
+	case "none", "low", "medium", "high":
+		return value, true
+	case "minimal":
+		return "low", true
+	case "xhigh", "extrahigh", "max", "ultra":
+		return "high", true
+	default:
+		return "", false
+	}
 }
 
 func sanitizeGrokResponsesInput(body []byte) ([]byte, error) {
@@ -1170,6 +1271,12 @@ func normalizeGrokResponsesToolPayload(tool gjson.Result, toolType string, index
 		}
 		if strings.TrimSpace(grokStringValue(payload["name"])) == "" {
 			return nil, &grokInvalidRequestError{message: fmt.Sprintf("tools[%d].name is required for function tools", index)}
+		}
+		if parameters, exists := payload["parameters"]; !exists || parameters == nil {
+			payload["parameters"] = map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+			}
 		}
 	}
 	raw, err := json.Marshal(payload)

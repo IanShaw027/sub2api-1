@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -238,12 +239,16 @@ func TestForwardAsChatCompletions_Grok45DropsUnsupportedSamplingFields(t *testin
 	}
 }
 
-func TestSanitizeGrokModelUnsupportedFieldsPreservesOtherModels(t *testing.T) {
+func TestSanitizeGrokModelUnsupportedFieldsPreservesOtherModelSamplingFields(t *testing.T) {
 	body := []byte(`{"model":"grok-4.3","frequency_penalty":0.4,"presence_penalty":0.6,"stop":["done"],"reasoningEffort":"high"}`)
 
 	patched, err := sanitizeGrokModelUnsupportedFields(body, "xai/grok-4.3(high)")
 	require.NoError(t, err)
-	require.JSONEq(t, string(body), string(patched))
+	require.Equal(t, 0.4, gjson.GetBytes(patched, "frequency_penalty").Float())
+	require.Equal(t, 0.6, gjson.GetBytes(patched, "presence_penalty").Float())
+	require.Equal(t, "done", gjson.GetBytes(patched, "stop.0").String())
+	require.Equal(t, "high", gjson.GetBytes(patched, "reasoning_effort").String())
+	require.False(t, gjson.GetBytes(patched, "reasoningEffort").Exists())
 }
 
 func TestSanitizeGrokModelUnsupportedFieldsDropsReasoningEffortForUnsupportedModel(t *testing.T) {
@@ -253,6 +258,39 @@ func TestSanitizeGrokModelUnsupportedFieldsDropsReasoningEffortForUnsupportedMod
 	require.NoError(t, err)
 	require.False(t, gjson.GetBytes(patched, "reasoning_effort").Exists())
 	require.False(t, gjson.GetBytes(patched, "reasoningEffort").Exists())
+}
+
+func TestSanitizeGrokModelUnsupportedFieldsNormalizesReasoningEffort(t *testing.T) {
+	tests := []struct {
+		name      string
+		raw       string
+		want      string
+		wantField bool
+	}{
+		{name: "minimal", raw: "minimal", want: "low", wantField: true},
+		{name: "xhigh", raw: "xhigh", want: "high", wantField: true},
+		{name: "max camel case", raw: "max", want: "high", wantField: true},
+		{name: "none", raw: "none", want: "none", wantField: true},
+		{name: "auto falls back", raw: "auto"},
+		{name: "unknown falls back", raw: "turbo"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			field := "reasoning_effort"
+			if tt.name == "max camel case" {
+				field = "reasoningEffort"
+			}
+			body := []byte(fmt.Sprintf(`{"model":"grok-4.5","%s":%q}`, field, tt.raw))
+			patched, err := sanitizeGrokModelUnsupportedFields(body, "grok-4.5")
+			require.NoError(t, err)
+			require.Equal(t, tt.wantField, gjson.GetBytes(patched, "reasoning_effort").Exists(), string(patched))
+			if tt.wantField {
+				require.Equal(t, tt.want, gjson.GetBytes(patched, "reasoning_effort").String(), string(patched))
+			}
+			require.False(t, gjson.GetBytes(patched, "reasoningEffort").Exists(), string(patched))
+		})
+	}
 }
 
 func TestForwardAsRawChatCompletions_ForcesStreamUsageUpstreamAndPassesUsageDownstream(t *testing.T) {

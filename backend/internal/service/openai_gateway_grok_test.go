@@ -163,6 +163,38 @@ func TestPatchGrokResponsesBodyKeepsExplicitReasoningEffortOverSuffix(t *testing
 	require.Equal(t, "high", gjson.GetBytes(patched, "reasoning.effort").String())
 }
 
+func TestPatchGrokResponsesBodyNormalizesReasoningEffortAliases(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		body      string
+		wantPath  string
+		want      string
+		wantField bool
+	}{
+		{name: "minimal nested", body: `{"model":"grok-4.5","input":"hi","reasoning":{"effort":"minimal"}}`, wantPath: "reasoning.effort", want: "low", wantField: true},
+		{name: "xhigh snake case", body: `{"model":"grok-4.5","input":"hi","reasoning_effort":"xhigh"}`, wantPath: "reasoning_effort", want: "high", wantField: true},
+		{name: "max camel case", body: `{"model":"grok-4.5","input":"hi","reasoningEffort":"max"}`, wantPath: "reasoning_effort", want: "high", wantField: true},
+		{name: "none", body: `{"model":"grok-4.5","input":"hi","reasoning":{"effort":"none"}}`, wantPath: "reasoning.effort", want: "none", wantField: true},
+		{name: "auto falls back", body: `{"model":"grok-4.5","input":"hi","reasoning":{"effort":"auto"}}`, wantPath: "reasoning.effort"},
+		{name: "unknown falls back", body: `{"model":"grok-4.5","input":"hi","reasoning_effort":"turbo"}`, wantPath: "reasoning_effort"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			patched, err := patchGrokResponsesBody([]byte(tt.body), "grok-4.5")
+			require.NoError(t, err)
+			require.Equal(t, tt.wantField, gjson.GetBytes(patched, tt.wantPath).Exists(), string(patched))
+			if tt.wantField {
+				require.Equal(t, tt.want, gjson.GetBytes(patched, tt.wantPath).String(), string(patched))
+			}
+			require.False(t, gjson.GetBytes(patched, "reasoningEffort").Exists(), string(patched))
+		})
+	}
+}
+
 func TestPatchGrokResponsesBodyDropsReasoningEffortForModelsWithoutCPAThinking(t *testing.T) {
 	t.Parallel()
 
@@ -253,7 +285,7 @@ func TestPatchGrokResponsesBodyPromotesAdditionalToolsToTopLevel(t *testing.T) {
 				"type": "additional_tools",
 				"role": "developer",
 				"tools": [
-					{"type": "custom", "name": "exec", "description": "Run JS", "parameters": {"type": "object"}},
+					{"type": "custom", "name": "exec", "description": "Run JS"},
 					{"type": "function", "name": "wait", "parameters": {"type": "object", "properties": {"seconds": {"type": "number"}}}},
 					{"type": "web_search"},
 					{"type": "namespace", "name": "collaboration"}
@@ -287,6 +319,8 @@ func TestPatchGrokResponsesBodyPromotesAdditionalToolsToTopLevel(t *testing.T) {
 	}
 	require.Equal(t, "function", names["exec"], "custom must map to function: %s", string(patched))
 	require.Equal(t, "function", names["wait"], string(patched))
+	require.Equal(t, "object", gjson.GetBytes(patched, `tools.#(name=="exec").parameters.type`).String(), string(patched))
+	require.True(t, gjson.GetBytes(patched, `tools.#(name=="exec").parameters.properties`).IsObject(), string(patched))
 	// web_search has no name; check by type count.
 	require.True(t, gjson.GetBytes(patched, `tools.#(type=="web_search")`).Exists(), string(patched))
 	require.False(t, gjson.GetBytes(patched, `tools.#(type=="namespace")`).Exists(), string(patched))
@@ -350,6 +384,20 @@ func TestPatchGrokResponsesBodyFlattensChatStyleFunctionTool(t *testing.T) {
 	require.False(t, gjson.GetBytes(patched, "tools.0.function").Exists(), string(patched))
 	require.Equal(t, "lookup", gjson.GetBytes(patched, "tool_choice.name").String(), string(patched))
 	require.False(t, gjson.GetBytes(patched, "tool_choice.function").Exists(), string(patched))
+}
+
+func TestPatchGrokResponsesBodyAddsDefaultFunctionParameters(t *testing.T) {
+	t.Parallel()
+
+	patched, err := patchGrokResponsesBody(
+		[]byte(`{"model":"grok-4.5","input":"hello","tools":[{"type":"function","name":"lookup"},{"type":"function","name":"wait","parameters":null}]}`),
+		"grok-4.5",
+	)
+	require.NoError(t, err)
+	for _, tool := range gjson.GetBytes(patched, "tools").Array() {
+		require.Equal(t, "object", tool.Get("parameters.type").String(), string(patched))
+		require.True(t, tool.Get("parameters.properties").IsObject(), string(patched))
+	}
 }
 
 func TestPatchGrokResponsesBodyRejectsFunctionToolWithoutName(t *testing.T) {
