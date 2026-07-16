@@ -2542,6 +2542,123 @@ func TestOpenAIGatewayService_ContextCompactionFailoverKeepsCompactBodyAndInboun
 	require.Equal(t, "compaction_trigger", gjson.GetBytes(upstream.bodies[2], "input.1.type").String())
 }
 
+func TestOpenAIGatewayService_ContextCompactionSupportsNonStreamingCodexClient(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "python-httpx/0.28.1")
+	c.Request.Header.Set("x-codex-beta-features", "responses_websockets_v2, remote_compaction_v2")
+	originalBody := []byte(`{"model":"gpt-5.5","stream":false,"input":[{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"ok"},{"type":"message","role":"user","content":"long context"}]}`)
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body: io.NopCloser(strings.NewReader(
+				"event: error\ndata: {\"type\":\"error\",\"error\":{\"code\":\"context_length_exceeded\",\"message\":\"Your input exceeds the context window of this model.\"}}\n\n" +
+					"event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_failed\",\"status\":\"failed\",\"error\":{\"code\":\"context_length_exceeded\",\"message\":\"Your input exceeds the context window of this model.\"},\"output\":[]}}\n\n",
+			)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid-compact-sync"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"id":"resp_compact_sync","output":[{"type":"compaction","encrypted_content":"summary"}],"usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}`,
+			)),
+		},
+	}}
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{Gateway: config.GatewayConfig{
+			ForceCodexCLI:      false,
+			OpenAICompactModel: "gpt-5.4",
+		}},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          789,
+		Name:        "compact-account",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
+		Extra:       map[string]any{"openai_compact_supported": true},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Stream)
+	require.Len(t, upstream.requests, 2)
+	require.Equal(t, "/backend-api/codex/responses", upstream.requests[0].URL.Path)
+	require.Equal(t, "/backend-api/codex/responses/compact", upstream.requests[1].URL.Path)
+	require.Equal(t, "function_call", gjson.GetBytes(upstream.bodies[1], "input.0.type").String())
+	require.Equal(t, "function_call_output", gjson.GetBytes(upstream.bodies[1], "input.1.type").String())
+	require.Equal(t, "compaction_trigger", gjson.GetBytes(upstream.bodies[1], "input.3.type").String())
+	require.Equal(t, "compaction", gjson.GetBytes(rec.Body.Bytes(), "output.0.type").String())
+	_, streamMarkerExists := c.Get(OpenAICompactClientStreamKeyForTest())
+	require.False(t, streamMarkerExists)
+}
+
+func TestOpenAIGatewayService_ContextCompactionInterceptsStreamingSSEErrorBeforeClientWrite(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Request.Header.Set("User-Agent", "Go-http-client/2.0")
+	c.Request.Header.Set("x-codex-beta-features", "remote_compaction_v2")
+	originalBody := []byte(`{"model":"gpt-5.5","stream":true,"input":[{"type":"message","role":"user","content":"long context"}]}`)
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body: io.NopCloser(strings.NewReader(
+				"event: error\ndata: {\"type\":\"error\",\"error\":{\"code\":\"context_length_exceeded\",\"message\":\"Your input exceeds the context window of this model.\"}}\n\n" +
+					"event: response.failed\ndata: {\"type\":\"response.failed\",\"response\":{\"id\":\"resp_failed\",\"status\":\"failed\",\"error\":{\"code\":\"context_length_exceeded\",\"message\":\"Your input exceeds the context window of this model.\"},\"output\":[]}}\n\n",
+			)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"id":"resp_compact_stream","output":[{"type":"compaction","encrypted_content":"summary"}],"usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}`,
+			)),
+		},
+	}}
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{Gateway: config.GatewayConfig{
+			OpenAICompactModel: "gpt-5.4",
+		}},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          790,
+		Name:        "compact-account",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
+		Extra:       map[string]any{"openai_compact_supported": true},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.requests, 2)
+	require.Equal(t, "/backend-api/codex/responses/compact", upstream.requests[1].URL.Path)
+	require.Contains(t, rec.Header().Get("Content-Type"), "text/event-stream")
+	require.Contains(t, rec.Body.String(), "event: response.output_item.done")
+	require.Contains(t, rec.Body.String(), `"type":"compaction"`)
+	require.NotContains(t, rec.Body.String(), "context_length_exceeded")
+}
+
 func TestOpenAIGatewayService_ContextCompactionSecondOverflowStopsAndLogs(t *testing.T) {
 	setGinTestMode()
 	logSink, restore := captureStructuredLog(t)

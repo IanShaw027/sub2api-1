@@ -23,11 +23,22 @@ func TestBuildOpenAIContextCompactionTriggerBodyPreservesHistoryAndDropsAnchor(t
 	require.Equal(t, "compaction_trigger", gjson.GetBytes(got, "input.2.type").String())
 }
 
+func TestBuildOpenAIContextCompactionTriggerBodyPreservesToolHistory(t *testing.T) {
+	body := []byte(`{"input":[{"type":"function_call","call_id":"call_1","name":"shell","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"ok"},{"type":"message","role":"user","content":"continue"}]}`)
+
+	got, err := buildOpenAIContextCompactionTriggerBody(body)
+	require.NoError(t, err)
+	require.Equal(t, "function_call", gjson.GetBytes(got, "input.0.type").String())
+	require.Equal(t, "function_call_output", gjson.GetBytes(got, "input.1.type").String())
+	require.Equal(t, "compaction_trigger", gjson.GetBytes(got, "input.3.type").String())
+}
+
 func TestBuildOpenAIContextCompactionTriggerBodyRejectsUnsafeInput(t *testing.T) {
 	for name, body := range map[string][]byte{
-		"function output": []byte(`{"input":[{"type":"function_call_output","call_id":"c","output":"ok"}]}`),
-		"image":           []byte(`{"input":[{"type":"message","role":"user","content":[{"type":"input_image","image_url":"https://example.test/a.png"}]}]}`),
-		"tool call":       []byte(`{"input":[{"type":"function_call","name":"f"}]}`),
+		"nested image":     []byte(`{"input":[{"type":"message","role":"user","content":[{"type":"input_image","image_url":"https://example.test/a.png"}]}]}`),
+		"top-level file":   []byte(`{"input":[{"type":"input_file","file_id":"file_1"}]}`),
+		"non-object item":  []byte(`{"input":["plain text"]}`),
+		"existing trigger": []byte(`{"input":[{"type":"compaction_trigger"}]}`),
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := buildOpenAIContextCompactionTriggerBody(body)
@@ -36,13 +47,22 @@ func TestBuildOpenAIContextCompactionTriggerBodyRejectsUnsafeInput(t *testing.T)
 	}
 }
 
-func TestIsOpenAIContextRemoteCompactionV2RequestRequiresStreamingHeader(t *testing.T) {
+func TestIsOpenAIContextRemoteCompactionV2RequestUsesCapabilityHeader(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader([]byte(`{"stream":true}`)))
 	c.Request.Header.Set("x-codex-beta-features", "responses_websockets_v2, remote_compaction_v2")
 	require.True(t, isOpenAIContextRemoteCompactionV2Request(c, []byte(`{"stream":true}`)))
-	require.False(t, isOpenAIContextRemoteCompactionV2Request(c, []byte(`{"stream":false}`)))
+	require.True(t, isOpenAIContextRemoteCompactionV2Request(c, []byte(`{"stream":false}`)))
+	require.True(t, isOpenAIContextRemoteCompactionV2Request(c, []byte(`{}`)))
+
+	for _, userAgent := range []string{"Go-http-client/2.0", "python-httpx/0.28.1"} {
+		c.Request.Header.Set("User-Agent", userAgent)
+		require.True(t, isOpenAIContextRemoteCompactionV2Request(c, []byte(`{"stream":false}`)), userAgent)
+	}
+
+	c.Request.Header.Del("x-codex-beta-features")
+	require.False(t, isOpenAIContextRemoteCompactionV2Request(c, []byte(`{"stream":true}`)))
 }
 
 func TestOpenAIContextCompactionPathOverrideKeepsInboundURLAndFailoverBody(t *testing.T) {
@@ -99,12 +119,12 @@ func TestClearOpenAICompactFailoverStateIfUnsupported(t *testing.T) {
 // httpForwardCompactionGate mirrors the precondition composed inline in the
 // non-passthrough Forward HTTP loop (openai_gateway_service.go). It is factored
 // out here only to lock the gating behavior with a table test: the rung must fire
-// ONLY for a streaming, non-compact-path, 400 context-window error where the
+// ONLY for a non-compact-path, 400 context-window error where the
 // client opted into remote_compaction_v2 and the account allows compact. Any
-// other traffic (non-codex, missing header, non-streaming, wrong status) must be
+// other traffic (non-codex, missing header, wrong status) must be
 // left untouched.
-func httpForwardCompactionGate(c *gin.Context, account *Account, alreadyRetried, isCompactRequest, reqStream bool, status int, upstreamMsg string, respBody, body []byte) bool {
-	return !alreadyRetried && !isCompactRequest && reqStream &&
+func httpForwardCompactionGate(c *gin.Context, account *Account, alreadyRetried, isCompactRequest bool, status int, upstreamMsg string, respBody, body []byte) bool {
+	return !alreadyRetried && !isCompactRequest &&
 		isOpenAIContextCompactionStatus(status) &&
 		isOpenAIContextWindowError(upstreamMsg, respBody) &&
 		isOpenAIContextRemoteCompactionV2Request(c, body) && account.AllowsOpenAICompact()
@@ -129,38 +149,38 @@ func TestHTTPForwardCompactionGate(t *testing.T) {
 
 	require.True(t, compactAccount.AllowsOpenAICompact(), "fixture account must allow compact")
 
-	// Eligible: streaming codex request with remote_compaction_v2 + overflow 400.
+	// Eligible: streaming Codex request with remote_compaction_v2 + overflow 400.
 	require.True(t, httpForwardCompactionGate(
 		newCtx("remote_compaction_v2"), compactAccount,
-		false, false, true, http.StatusBadRequest, overflowMsg, overflowBody, body))
+		false, false, http.StatusBadRequest, overflowMsg, overflowBody, body))
+	// Sync Codex requests use the same compact capability and receive unary JSON.
+	require.True(t, httpForwardCompactionGate(
+		newCtx("remote_compaction_v2"), compactAccount,
+		false, false, http.StatusBadRequest, overflowMsg, overflowBody, []byte(`{"stream":false}`)))
 
 	// Not eligible — each guard flipped independently must block the rung:
 	// already retried once
 	require.False(t, httpForwardCompactionGate(
 		newCtx("remote_compaction_v2"), compactAccount,
-		true, false, true, http.StatusBadRequest, overflowMsg, overflowBody, body))
+		true, false, http.StatusBadRequest, overflowMsg, overflowBody, body))
 	// already on the compact path
 	require.False(t, httpForwardCompactionGate(
 		newCtx("remote_compaction_v2"), compactAccount,
-		false, true, true, http.StatusBadRequest, overflowMsg, overflowBody, body))
-	// non-streaming
-	require.False(t, httpForwardCompactionGate(
-		newCtx("remote_compaction_v2"), compactAccount,
-		false, false, false, http.StatusBadRequest, overflowMsg, overflowBody, body))
+		false, true, http.StatusBadRequest, overflowMsg, overflowBody, body))
 	// not a 400
 	require.False(t, httpForwardCompactionGate(
 		newCtx("remote_compaction_v2"), compactAccount,
-		false, false, true, http.StatusInternalServerError, overflowMsg, overflowBody, body))
+		false, false, http.StatusInternalServerError, overflowMsg, overflowBody, body))
 	// not a context-window error
 	require.False(t, httpForwardCompactionGate(
 		newCtx("remote_compaction_v2"), compactAccount,
-		false, false, true, http.StatusBadRequest, "bad request", []byte(`{"error":{"message":"bad request"}}`), body))
+		false, false, http.StatusBadRequest, "bad request", []byte(`{"error":{"message":"bad request"}}`), body))
 	// client did NOT opt into remote_compaction_v2 (e.g. non-codex client)
 	require.False(t, httpForwardCompactionGate(
 		newCtx(""), compactAccount,
-		false, false, true, http.StatusBadRequest, overflowMsg, overflowBody, body))
+		false, false, http.StatusBadRequest, overflowMsg, overflowBody, body))
 	// account does not allow compact
 	require.False(t, httpForwardCompactionGate(
 		newCtx("remote_compaction_v2"), noCompactAccount,
-		false, false, true, http.StatusBadRequest, overflowMsg, overflowBody, body))
+		false, false, http.StatusBadRequest, overflowMsg, overflowBody, body))
 }

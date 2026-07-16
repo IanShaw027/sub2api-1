@@ -6498,10 +6498,10 @@ oauthTransformDone:
 			// (forwardOpenAIPassthrough) has this; the non-passthrough Forward loop is
 			// also reachable by streaming Codex traffic (directly, or after a WS→HTTP
 			// fallback), so mirror the same gated retry here. Same preconditions as the
-			// passthrough path: streaming, not already on the compact path, a 400 that is
+			// passthrough path: not already on the compact path, a 400 that is
 			// a context-window error, the client opted into remote_compaction_v2, and the
 			// account allows compact. Anything else is untouched.
-			if !httpContextCompactionRetried && !isCompactRequest && reqStream &&
+			if !httpContextCompactionRetried && !isCompactRequest &&
 				isOpenAIContextCompactionStatus(resp.StatusCode) &&
 				isOpenAIContextWindowError(upstreamMsg, respBody) &&
 				isOpenAIContextRemoteCompactionV2Request(c, body) && account.AllowsOpenAICompact() {
@@ -6528,7 +6528,9 @@ oauthTransformDone:
 						// /compact suffix rides on the gin context, not the request path.
 						setOpenAIResponsesUpstreamPathSuffixOverride(c, "/compact")
 						setOpenAIFailoverRequestBody(c, body)
-						MarkOpenAICompactClientStream(c)
+						if clientStream {
+							MarkOpenAICompactClientStream(c)
+						}
 						reqStream = false
 						upstreamStream = false
 						httpContextCompactionRetried = true
@@ -6906,6 +6908,12 @@ oauthTransformDone:
 		if reqStream {
 			streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, upstreamModel)
 			if err != nil {
+				if retryResult, retryErr, retried := s.retryOpenAIContextCompactionSSE(ctx, c, account, resp, originalBody, reqModel, clientStream, err); retried {
+					return retryResult, retryErr
+				}
+				if overflow, ok := asOpenAIContextCompactionSSEError(err); ok {
+					err = s.writeOpenAIResponseFailedProtocolError(resp, c, account, overflow.payload, overflow.message)
+				}
 				// Terminal streaming errors (client disconnect / mid-stream read
 				// error) already consumed upstream quota and cannot be retried, so
 				// bill the partial usage. Failover errors return nil to allow retry.
@@ -6922,6 +6930,12 @@ oauthTransformDone:
 		} else {
 			result, err := s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, upstreamModel)
 			if err != nil {
+				if retryResult, retryErr, retried := s.retryOpenAIContextCompactionSSE(ctx, c, account, resp, originalBody, reqModel, clientStream, err); retried {
+					return retryResult, retryErr
+				}
+				if overflow, ok := asOpenAIContextCompactionSSEError(err); ok {
+					err = s.writeOpenAIResponseFailedProtocolError(resp, c, account, overflow.payload, overflow.message)
+				}
 				if result != nil {
 					partial := buildOpenAIPartialForwardResult(resp, body, originalModel, upstreamModel, result.usage, result.responseID, result.imageCount, result.searchCount, time.Since(startTime))
 					partial.OpenAIWSDeltaActive = httpActiveDeltaApplied
@@ -7012,6 +7026,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
 	originalBody := body
+	clientStream := gjson.GetBytes(originalBody, "stream").Bool()
 	promptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
 	allowImageGeneration := GroupAllowsImageGeneration(apiKeyGroup(getAPIKeyFromContext(c)))
 	if isOpenAIResponsesCompactPath(c) {
@@ -7257,7 +7272,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		upstreamCode := extractUpstreamErrorCode(respBody)
 		isCompact := isOpenAIResponsesCompactPath(c)
 		isMessagesBridge := shouldUseOpenAIMessagesBridgeHeaders(c, body, promptCacheKey)
-		if !contextCompactionRetried && !isCompact && reqStream &&
+		if !contextCompactionRetried && !isCompact &&
 			isOpenAIContextCompactionStatus(resp.StatusCode) &&
 			isOpenAIContextWindowError(upstreamMsg, respBody) &&
 			isOpenAIContextRemoteCompactionV2Request(c, body) && account.AllowsOpenAICompact() {
@@ -7285,7 +7300,9 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 					// would make the original body look like an explicit compact request.
 					setOpenAIResponsesUpstreamPathSuffixOverride(c, "/compact")
 					setOpenAIFailoverRequestBody(c, body)
-					MarkOpenAICompactClientStream(c)
+					if clientStream {
+						MarkOpenAICompactClientStream(c)
+					}
 					reqStream = false
 					contextCompactionRetried = true
 					logger.FromContext(ctx).Info("openai.context_overflow_remote_compaction_retry",
@@ -7456,6 +7473,12 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	if reqStream {
 		result, err := s.handleStreamingResponsePassthrough(ctx, resp, c, account, startTime, reqModel, upstreamPassthroughModel)
 		if err != nil {
+			if retryResult, retryErr, retried := s.retryOpenAIContextCompactionSSE(ctx, c, account, resp, originalBody, reqModel, clientStream, err); retried {
+				return retryResult, retryErr
+			}
+			if overflow, ok := asOpenAIContextCompactionSSEError(err); ok {
+				err = s.writeOpenAIResponseFailedProtocolError(resp, c, account, overflow.payload, overflow.message)
+			}
 			// Align with non-passthrough streaming: terminal errors already consumed
 			// upstream quota and cannot be retried, so bill partial usage. Failover
 			// errors return nil so the caller can switch accounts without double-billing.
@@ -7479,6 +7502,12 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	} else {
 		result, err := s.handleNonStreamingResponsePassthrough(ctx, resp, c, account, reqModel, upstreamPassthroughModel)
 		if err != nil {
+			if retryResult, retryErr, retried := s.retryOpenAIContextCompactionSSE(ctx, c, account, resp, originalBody, reqModel, clientStream, err); retried {
+				return retryResult, retryErr
+			}
+			if overflow, ok := asOpenAIContextCompactionSSEError(err); ok {
+				err = s.writeOpenAIResponseFailedProtocolError(resp, c, account, overflow.payload, overflow.message)
+			}
 			if result != nil {
 				return buildOpenAIPartialForwardResult(resp, body, reqModel, upstreamPassthroughModel, result.usage, result.responseID, result.imageCount, result.searchCount, time.Since(startTime)), err
 			}
@@ -8649,7 +8678,13 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				return s.newOpenAIRetryableOverloadFailoverError(ctx, c, account, true, upstreamRequestID, dataBytes, overloadMsg)
 			}
 			forceFlushFailedEvent := false
-			if eventType == "response.failed" || strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String()) == "response.failed" {
+			isFailedEvent := eventType == "response.failed" || strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String()) == "response.failed"
+			if !isFailedEvent && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+				if compactErr := newOpenAIContextCompactionSSEError(dataBytes, extractOpenAISSEErrorMessage(dataBytes)); compactErr != nil {
+					return compactErr
+				}
+			}
+			if isFailedEvent {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
 				failedPayload = append(failedPayload[:0], dataBytes...)
 				// response.failed 自带上游已消耗的 usage（input token 通常已扣）；必须先解析
@@ -8668,6 +8703,12 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						UpstreamInTok:  usage.InputTokens,
 						UpstreamOutTok: usage.OutputTokens,
 					})
+				}
+				if !cyberHit && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+					if compactErr := newOpenAIContextCompactionSSEError(dataBytes, failedMessage); compactErr != nil {
+						sawFailedEvent = true
+						return compactErr
+					}
 				}
 				if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 					if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, dataBytes, failedMessage); matched {
@@ -8995,11 +9036,15 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 			if msg == "" {
 				msg = "Upstream compact response failed"
 			}
-			return &openaiNonStreamingResultPassthrough{
+			result := &openaiNonStreamingResultPassthrough{
 				usage:       extractOpenAIUsagePointerFromSSEEventBytes(terminalPayload),
 				responseID:  strings.TrimSpace(gjson.GetBytes(terminalPayload, "response.id").String()),
 				searchCount: countOpenAISearchCallsInResponsesSSEBody(bodyText),
-			}, s.writeOpenAIResponseFailedProtocolError(resp, c, account, terminalPayload, msg)
+			}
+			if compactErr := newOpenAIContextCompactionSSEError(terminalPayload, msg); compactErr != nil {
+				return result, compactErr
+			}
+			return result, s.writeOpenAIResponseFailedProtocolError(resp, c, account, terminalPayload, msg)
 		}
 		if !ok {
 			if response := extractOpenAISSETerminalResponse(terminalPayload); len(response) > 0 {
@@ -9049,6 +9094,9 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 			msg := extractOpenAISSEErrorMessage(terminalPayload)
 			if msg == "" {
 				msg = "Upstream compact response failed"
+			}
+			if compactErr := newOpenAIContextCompactionSSEError(terminalPayload, msg); compactErr != nil {
+				return nil, compactErr
 			}
 			return nil, s.writeOpenAIResponseFailedProtocolError(resp, c, account, terminalPayload, msg)
 		}
@@ -10392,7 +10440,14 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				streamFailoverErr = s.newOpenAIRetryableOverloadFailoverError(ctx, c, account, false, upstreamRequestID, dataBytes, overloadMsg)
 				return
 			}
-			if eventType == "response.failed" || strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String()) == "response.failed" {
+			isFailedEvent := eventType == "response.failed" || strings.TrimSpace(gjson.GetBytes(dataBytes, "type").String()) == "response.failed"
+			if !isFailedEvent && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+				if compactErr := newOpenAIContextCompactionSSEError(dataBytes, extractOpenAISSEErrorMessage(dataBytes)); compactErr != nil {
+					streamFailoverErr = compactErr
+					return
+				}
+			}
+			if isFailedEvent {
 				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
 				failedPayload = append(failedPayload[:0], dataBytes...)
 				// response.failed 自带上游已消耗的 usage（input token 通常已扣）；必须先解析
@@ -10409,6 +10464,13 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 						UpstreamInTok:  usage.InputTokens,
 						UpstreamOutTok: usage.OutputTokens,
 					})
+				}
+				if !cyberHit && !openAIStreamClientOutputStarted(c, clientOutputStarted) {
+					if compactErr := newOpenAIContextCompactionSSEError(dataBytes, failedMessage); compactErr != nil {
+						sawFailedEvent = true
+						streamFailoverErr = compactErr
+						return
+					}
 				}
 				if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 					if err, matched := s.tryWriteOpenAIResponseFailedPassthrough(resp, c, account, dataBytes, failedMessage); matched {
@@ -11433,11 +11495,15 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			if msg == "" {
 				msg = "Upstream compact response failed"
 			}
-			return &openaiNonStreamingResult{
+			result := &openaiNonStreamingResult{
 				usage:       extractOpenAIUsagePointerFromSSEEventBytes(terminalPayload),
 				responseID:  strings.TrimSpace(gjson.GetBytes(terminalPayload, "response.id").String()),
 				searchCount: countOpenAISearchCallsInResponsesSSEBody(bodyText),
-			}, s.writeOpenAIResponseFailedProtocolError(resp, c, account, terminalPayload, msg)
+			}
+			if compactErr := newOpenAIContextCompactionSSEError(terminalPayload, msg); compactErr != nil {
+				return result, compactErr
+			}
+			return result, s.writeOpenAIResponseFailedProtocolError(resp, c, account, terminalPayload, msg)
 		}
 		if !ok {
 			if response := extractOpenAISSETerminalResponse(terminalPayload); len(response) > 0 {
@@ -11493,6 +11559,9 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			msg := extractOpenAISSEErrorMessage(terminalPayload)
 			if msg == "" {
 				msg = "Upstream compact response failed"
+			}
+			if compactErr := newOpenAIContextCompactionSSEError(terminalPayload, msg); compactErr != nil {
+				return nil, compactErr
 			}
 			return nil, s.writeOpenAIResponseFailedProtocolError(resp, c, account, terminalPayload, msg)
 		}

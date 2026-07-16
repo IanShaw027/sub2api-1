@@ -1,14 +1,18 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"go.uber.org/zap"
 )
 
 // buildOpenAIContextCompactionTriggerBody prepares the client-compatible
@@ -23,11 +27,7 @@ func buildOpenAIContextCompactionTriggerBody(body []byte) ([]byte, error) {
 	if !input.IsArray() || len(input.Array()) == 0 {
 		return nil, fmt.Errorf("input must be a non-empty array")
 	}
-	var requestObject map[string]any
-	if err := json.Unmarshal(body, &requestObject); err != nil {
-		return nil, fmt.Errorf("decode OpenAI request body: %w", err)
-	}
-	if HasFunctionCallOutput(requestObject) || containsOpenAIContextCompactionTrigger(input) {
+	if containsOpenAIContextCompactionTrigger(input) {
 		return nil, fmt.Errorf("request is not safe for automatic compaction")
 	}
 	for _, item := range input.Array() {
@@ -62,8 +62,8 @@ func buildOpenAIContextCompactionTriggerBody(body []byte) ([]byte, error) {
 	return sjson.DeleteBytes(updated, "previous_response_id")
 }
 
-func isOpenAIContextRemoteCompactionV2Request(c *gin.Context, body []byte) bool {
-	if c == nil || c.Request == nil || !gjson.GetBytes(body, "stream").Bool() {
+func isOpenAIContextRemoteCompactionV2Request(c *gin.Context, _ []byte) bool {
+	if c == nil || c.Request == nil {
 		return false
 	}
 	for _, header := range c.Request.Header.Values("x-codex-beta-features") {
@@ -94,10 +94,7 @@ func openAIContextCompactionInputItemSafe(item gjson.Result) bool {
 		return false
 	}
 	typeName := strings.ToLower(strings.TrimSpace(item.Get("type").String()))
-	if typeName == "" {
-		typeName = "message"
-	}
-	if typeName != "message" && typeName != "reasoning" {
+	if strings.Contains(typeName, "image") || strings.Contains(typeName, "file") {
 		return false
 	}
 	content := item.Get("content")
@@ -110,4 +107,98 @@ func openAIContextCompactionInputItemSafe(item gjson.Result) bool {
 		}
 	}
 	return true
+}
+
+type openAIContextCompactionSSEError struct {
+	payload []byte
+	message string
+}
+
+func (e *openAIContextCompactionSSEError) Error() string {
+	if e == nil || strings.TrimSpace(e.message) == "" {
+		return "OpenAI upstream SSE context window exceeded"
+	}
+	return e.message
+}
+
+func newOpenAIContextCompactionSSEError(payload []byte, message string) error {
+	if !isOpenAIContextWindowError(message, payload) {
+		return nil
+	}
+	return &openAIContextCompactionSSEError{
+		payload: append([]byte(nil), payload...),
+		message: sanitizeUpstreamErrorMessage(strings.TrimSpace(message)),
+	}
+}
+
+func asOpenAIContextCompactionSSEError(err error) (*openAIContextCompactionSSEError, bool) {
+	var target *openAIContextCompactionSSEError
+	if !errors.As(err, &target) || target == nil {
+		return nil, false
+	}
+	return target, true
+}
+
+func (s *OpenAIGatewayService) retryOpenAIContextCompactionSSE(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	resp *http.Response,
+	originalBody []byte,
+	reqModel string,
+	clientStream bool,
+	failure error,
+) (*OpenAIForwardResult, error, bool) {
+	overflow, ok := asOpenAIContextCompactionSSEError(failure)
+	if !ok || isOpenAIResponsesCompactPath(c) ||
+		!isOpenAIContextRemoteCompactionV2Request(c, originalBody) ||
+		account == nil || !account.AllowsOpenAICompact() {
+		return nil, nil, false
+	}
+
+	compactBody, triggerErr := buildOpenAIContextCompactionTriggerBody(originalBody)
+	if triggerErr == nil {
+		compactBody, _, triggerErr = normalizeOpenAICompactRequestBody(compactBody)
+	}
+	if triggerErr == nil {
+		if account.Type == AccountTypeOAuth {
+			compactBody, _, triggerErr = normalizeOpenAIPassthroughOAuthBody(compactBody, true)
+			if triggerErr == nil {
+				compactBody, _, triggerErr = ensureOpenAIPassthroughInstructions(c, reqModel, compactBody)
+			}
+		} else {
+			compactBody, _, triggerErr = normalizeOpenAIPassthroughBaseBody(compactBody, true, shouldStripTopPForResponsesUpstream(account))
+		}
+	}
+	if triggerErr != nil {
+		logger.FromContext(ctx).Info("openai.context_overflow_remote_compaction_skipped",
+			zap.Int64("account_id", account.ID),
+			zap.String("reason", triggerErr.Error()),
+			zap.String("transport", "http_sse"),
+		)
+		return nil, nil, false
+	}
+
+	compactUpstreamModel := resolveOpenAIAccountUpstreamModelForRequest(ctx, s.settingService, account, reqModel, true, s.openAICompactModel())
+	if compactUpstreamModel != "" {
+		compactBody = ReplaceModelInBody(compactBody, compactUpstreamModel)
+	}
+	setOpenAIResponsesUpstreamPathSuffixOverride(c, "/compact")
+	setOpenAIFailoverRequestBody(c, compactBody)
+	setOpsUpstreamRequestBody(c, compactBody)
+	if clientStream {
+		MarkOpenAICompactClientStream(c)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	logger.FromContext(ctx).Info("openai.context_overflow_remote_compaction_retry",
+		zap.Int64("account_id", account.ID),
+		zap.String("original_model", reqModel),
+		zap.String("compact_model", compactUpstreamModel),
+		zap.String("upstream_code", extractUpstreamErrorCode(overflow.payload)),
+		zap.String("transport", "http_sse"),
+	)
+	result, err := s.Forward(ctx, c, account, compactBody)
+	return result, err, true
 }
