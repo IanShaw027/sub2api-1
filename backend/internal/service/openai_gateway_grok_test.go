@@ -238,6 +238,102 @@ func TestPatchGrokResponsesBodyDropsUnsupportedNamespaceTools(t *testing.T) {
 	require.Equal(t, "kept_fn", gjson.GetBytes(patched, "tool_choice.name").String())
 }
 
+// Codex 0.144+ puts runtime tools under input[].additional_tools with an empty
+// top-level tools array. Grok must promote them so xAI actually sees tools;
+// otherwise the model invents text <tool_call> blocks and the client loops.
+func TestPatchGrokResponsesBodyPromotesAdditionalToolsToTopLevel(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{
+		"model": "gpt-5.6-sol",
+		"tools": [],
+		"tool_choice": "auto",
+		"input": [
+			{
+				"type": "additional_tools",
+				"role": "developer",
+				"tools": [
+					{"type": "custom", "name": "exec", "description": "Run JS", "parameters": {"type": "object"}},
+					{"type": "function", "name": "wait", "parameters": {"type": "object", "properties": {"seconds": {"type": "number"}}}},
+					{"type": "web_search"},
+					{"type": "namespace", "name": "collaboration"}
+				]
+			},
+			{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "给我搜索下最近1天的ai新闻"}]}
+		]
+	}`)
+
+	// upstreamModel is already resolved by the caller (account/platform mapping).
+	// patchGrokResponsesBody only sets that resolved id, it does not re-run mapping.
+	patched, err := patchGrokResponsesBody(body, "grok-4.5")
+	require.NoError(t, err)
+	require.True(t, json.Valid(patched), string(patched))
+	require.Equal(t, "grok-4.5", gjson.GetBytes(patched, "model").String())
+
+	// additional_tools input item must be gone (not a model message).
+	for _, item := range gjson.GetBytes(patched, "input").Array() {
+		require.NotEqual(t, "additional_tools", item.Get("type").String(), "additional_tools must not remain in input")
+	}
+	require.True(t, gjson.GetBytes(patched, `input.#(type=="message")`).Exists(), "user message must remain")
+
+	// Promoted tools: custom→function (exec), function (wait), web_search kept;
+	// namespace dropped as unsupported on Grok.
+	tools := gjson.GetBytes(patched, "tools").Array()
+	require.Len(t, tools, 3, string(patched))
+
+	names := map[string]string{}
+	for _, tool := range tools {
+		names[tool.Get("name").String()] = tool.Get("type").String()
+	}
+	require.Equal(t, "function", names["exec"], "custom must map to function: %s", string(patched))
+	require.Equal(t, "function", names["wait"], string(patched))
+	// web_search has no name; check by type count.
+	require.True(t, gjson.GetBytes(patched, `tools.#(type=="web_search")`).Exists(), string(patched))
+	require.False(t, gjson.GetBytes(patched, `tools.#(type=="namespace")`).Exists(), string(patched))
+	require.False(t, gjson.GetBytes(patched, `tools.#(type=="custom")`).Exists(), string(patched))
+}
+
+func TestPatchGrokResponsesBodyKeepsTopLevelToolsWhenPromotingAdditional(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{
+		"model": "grok-4.5",
+		"tools": [{"type": "function", "name": "get_weather", "parameters": {"type": "object"}}],
+		"input": [
+			{"type": "additional_tools", "tools": [{"type": "function", "name": "wait", "parameters": {"type": "object"}}]},
+			{"type": "message", "role": "user", "content": "hi"}
+		]
+	}`)
+	patched, err := patchGrokResponsesBody(body, "grok-4.5")
+	require.NoError(t, err)
+	// Top-level tools preserved first, then promoted.
+	require.Equal(t, "get_weather", gjson.GetBytes(patched, "tools.0.name").String(), string(patched))
+	require.Equal(t, "wait", gjson.GetBytes(patched, "tools.1.name").String(), string(patched))
+	require.Len(t, gjson.GetBytes(patched, "tools").Array(), 2)
+}
+
+func TestPromoteGrokAdditionalToolsNoOpWithoutAdditional(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"model":"grok-4.5","tools":[{"type":"web_search"}],"input":[{"type":"message","role":"user","content":"hi"}]}`)
+	out, err := promoteGrokAdditionalTools(body)
+	require.NoError(t, err)
+	require.Equal(t, string(body), string(out), "body without additional_tools must be unchanged")
+}
+
+func TestRejectGrokUnsupportedImageGenerationToolsInAdditionalTools(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{
+		"model":"gpt-5.6-sol",
+		"tools":[],
+		"input":[{"type":"additional_tools","tools":[{"type":"image_generation"}]}]
+	}`)
+	err := rejectGrokUnsupportedImageGenerationTools(body)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "image_generation")
+}
+
 func TestPatchGrokResponsesBodyFlattensChatStyleFunctionTool(t *testing.T) {
 	t.Parallel()
 

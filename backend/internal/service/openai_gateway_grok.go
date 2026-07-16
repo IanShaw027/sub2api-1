@@ -113,13 +113,102 @@ func rejectGrokUnsupportedImageGenerationTools(body []byte) error {
 	if len(body) == 0 {
 		return nil
 	}
-	for _, tool := range gjson.GetBytes(body, "tools").Array() {
+	check := func(tool gjson.Result) error {
 		t := strings.TrimSpace(tool.Get("type").String())
 		if t == "image_generation" || t == "image_generation_call" {
 			return fmt.Errorf("tool type %q is not supported on Grok Responses; use POST /v1/images/generations or /v1/images/edits instead", t)
 		}
+		return nil
+	}
+	for _, tool := range gjson.GetBytes(body, "tools").Array() {
+		if err := check(tool); err != nil {
+			return err
+		}
+	}
+	// Newer Codex clients put runtime tools under input[].additional_tools.
+	// Fail closed for image_generation there too, before promotion/forward.
+	for _, item := range gjson.GetBytes(body, "input").Array() {
+		if strings.TrimSpace(item.Get("type").String()) != "additional_tools" {
+			continue
+		}
+		for _, tool := range item.Get("tools").Array() {
+			if err := check(tool); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+// promoteGrokAdditionalTools lifts tools declared on input items of type
+// "additional_tools" into the top-level tools array, then removes those input
+// items. Newer Codex clients (e.g. 0.144.x) put runtime tools only under
+// additional_tools and leave top-level tools empty; xAI Responses only executes
+// top-level tools. Without this lift the model sees no tools and invents text
+// <tool_call> blocks (visible in the client as a search loop with no results).
+// Existing top-level tools are preserved and listed first. Scope is Grok-only
+// (called from patchGrokResponsesBody).
+func promoteGrokAdditionalTools(body []byte) ([]byte, error) {
+	if len(body) == 0 || !bytes.Contains(body, []byte(`"additional_tools"`)) {
+		return body, nil
+	}
+	input := gjson.GetBytes(body, "input")
+	if !input.Exists() || !input.IsArray() {
+		return body, nil
+	}
+
+	existingTools := gjson.GetBytes(body, "tools")
+	keptInput := make([]string, 0, len(input.Array()))
+	promoted := make([]string, 0, 8)
+	anyAdditional := false
+	for _, item := range input.Array() {
+		if item.IsObject() && strings.TrimSpace(item.Get("type").String()) == "additional_tools" {
+			anyAdditional = true
+			for _, tool := range item.Get("tools").Array() {
+				if !tool.Exists() || strings.TrimSpace(tool.Raw) == "" {
+					continue
+				}
+				promoted = append(promoted, tool.Raw)
+			}
+			// Drop the additional_tools input item — it is not a model message and
+			// would be an unknown item type for xAI after tools are lifted.
+			continue
+		}
+		keptInput = append(keptInput, item.Raw)
+	}
+	if !anyAdditional {
+		return body, nil
+	}
+
+	out := body
+	if len(promoted) > 0 {
+		merged := make([]string, 0, len(promoted)+8)
+		if existingTools.IsArray() {
+			for _, tool := range existingTools.Array() {
+				if tool.Exists() && strings.TrimSpace(tool.Raw) != "" {
+					merged = append(merged, tool.Raw)
+				}
+			}
+		}
+		merged = append(merged, promoted...)
+		next, err := sjson.SetRawBytes(out, "tools", []byte("["+strings.Join(merged, ",")+"]"))
+		if err != nil {
+			return body, fmt.Errorf("promote Grok additional_tools: set tools: %w", err)
+		}
+		out = next
+	}
+
+	// Only rewrite input when we actually dropped items and something remains.
+	// If input was solely additional_tools (unlikely for real Codex turns), leave
+	// input untouched so later empty-input validation still applies cleanly.
+	if len(keptInput) > 0 && len(keptInput) != len(input.Array()) {
+		next, err := sjson.SetRawBytes(out, "input", []byte("["+strings.Join(keptInput, ",")+"]"))
+		if err != nil {
+			return body, fmt.Errorf("promote Grok additional_tools: set input: %w", err)
+		}
+		out = next
+	}
+	return out, nil
 }
 
 func isGrokCompactionBlobDecodeError(statusCode int, body []byte) bool {
@@ -199,6 +288,13 @@ func patchGrokResponsesBody(body []byte, upstreamModel string) ([]byte, error) {
 	if !json.Valid(body) {
 		return nil, fmt.Errorf("invalid json request body")
 	}
+	// Lift Codex additional_tools into top-level tools before any tool sanitize.
+	// Must run first so sanitizeGrokResponsesTools sees the full tool set.
+	promoted, promoteErr := promoteGrokAdditionalTools(body)
+	if promoteErr != nil {
+		return nil, promoteErr
+	}
+	body = promoted
 	upstreamModel = xai.ResolveDefaultTextModel(upstreamModel)
 	baseModel, suffixEffort := parseGrokThinkingSuffix(upstreamModel)
 	upstreamModel = xai.StripGrokProviderPrefix(baseModel)
@@ -966,6 +1062,11 @@ func normalizeGrokResponsesToolType(toolType string) string {
 	// Codex CLI historically advertises local_shell; xAI Responses uses shell.
 	case trimmed == "local_shell":
 		return "shell"
+	// Codex 0.144+ puts runtime tools under additional_tools as type "custom"
+	// (e.g. exec). xAI Responses has no custom tool type; treat as function so
+	// the model can actually call them after promotion to top-level tools.
+	case trimmed == "custom":
+		return "function"
 	default:
 		return trimmed
 	}
