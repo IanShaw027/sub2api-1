@@ -4667,7 +4667,7 @@
                 </select>
               </div>
 
-              <!-- Grok default base URL (api.x.ai vs cli-chat-proxy) -->
+              <!-- Grok default base URL (official/regional API vs cli-chat-proxy) -->
               <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div class="max-w-2xl">
                   <label
@@ -4684,11 +4684,20 @@
                   class="input w-full sm:w-72"
                   data-testid="grok-default-base-url-mode"
                 >
+                  <option value="cli">
+                    {{ t("admin.settings.gatewayForwarding.grokDefaultBaseURLModeCLI") }}
+                  </option>
                   <option value="api">
                     {{ t("admin.settings.gatewayForwarding.grokDefaultBaseURLModeAPI") }}
                   </option>
-                  <option value="cli">
-                    {{ t("admin.settings.gatewayForwarding.grokDefaultBaseURLModeCLI") }}
+                  <option value="us-east-1">
+                    {{ t("admin.settings.gatewayForwarding.grokDefaultBaseURLModeUSEast1") }}
+                  </option>
+                  <option value="us-west-2">
+                    {{ t("admin.settings.gatewayForwarding.grokDefaultBaseURLModeUSWest2") }}
+                  </option>
+                  <option value="eu-west-1">
+                    {{ t("admin.settings.gatewayForwarding.grokDefaultBaseURLModeEUWest1") }}
                   </option>
                 </select>
               </div>
@@ -11758,7 +11767,11 @@ async function saveSettings() {
       claude_telemetry_mode:
         form.claude_telemetry_mode === "forward" ? "forward" : "drop",
       grok_default_base_url_mode:
-        form.grok_default_base_url_mode === "api" ? "api" : "cli",
+        ["api", "us-east-1", "us-west-2", "eu-west-1"].includes(
+          form.grok_default_base_url_mode,
+        )
+          ? form.grok_default_base_url_mode
+          : "cli",
       gateway_debug_timeline_enabled: form.gateway_debug_timeline_enabled,
       gateway_debug_timeline_directory:
         form.gateway_debug_timeline_directory || "logs/gateway-debug",

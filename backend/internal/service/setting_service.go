@@ -387,6 +387,12 @@ const (
 	GrokDefaultBaseURLModeAPI = "api"
 	// GrokDefaultBaseURLModeCLI uses the Grok Build CLI chat-proxy host.
 	GrokDefaultBaseURLModeCLI = "cli"
+	// GrokDefaultBaseURLModeUSEast1 uses the us-east-1 regional Public API host.
+	GrokDefaultBaseURLModeUSEast1 = "us-east-1"
+	// GrokDefaultBaseURLModeUSWest2 uses the us-west-2 regional Public API host.
+	GrokDefaultBaseURLModeUSWest2 = "us-west-2"
+	// GrokDefaultBaseURLModeEUWest1 uses the eu-west-1 regional Public API host.
+	GrokDefaultBaseURLModeEUWest1 = "eu-west-1"
 
 	defaultAuthSourceBalance     = 0
 	defaultAuthSourceConcurrency = 5
@@ -3449,6 +3455,14 @@ func normalizeGrokDefaultBaseURLMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case GrokDefaultBaseURLModeAPI:
 		return GrokDefaultBaseURLModeAPI
+	case GrokDefaultBaseURLModeUSEast1:
+		return GrokDefaultBaseURLModeUSEast1
+	case GrokDefaultBaseURLModeUSWest2:
+		return GrokDefaultBaseURLModeUSWest2
+	case GrokDefaultBaseURLModeEUWest1:
+		return GrokDefaultBaseURLModeEUWest1
+	case GrokDefaultBaseURLModeCLI:
+		return GrokDefaultBaseURLModeCLI
 	default:
 		return GrokDefaultBaseURLModeCLI
 	}
@@ -3456,13 +3470,21 @@ func normalizeGrokDefaultBaseURLMode(mode string) string {
 
 // GrokBaseURLForMode maps a mode id to the absolute Grok upstream base URL.
 func GrokBaseURLForMode(mode string) string {
-	if normalizeGrokDefaultBaseURLMode(mode) == GrokDefaultBaseURLModeCLI {
+	switch normalizeGrokDefaultBaseURLMode(mode) {
+	case GrokDefaultBaseURLModeAPI:
+		return xai.DefaultBaseURL
+	case GrokDefaultBaseURLModeUSEast1:
+		return xai.DefaultUSEast1BaseURL
+	case GrokDefaultBaseURLModeUSWest2:
+		return xai.DefaultUSWest2BaseURL
+	case GrokDefaultBaseURLModeEUWest1:
+		return xai.DefaultEUWest1BaseURL
+	default:
 		return xai.DefaultCLIBaseURL
 	}
-	return xai.DefaultBaseURL
 }
 
-// GetGrokDefaultBaseURLMode returns api|cli for Grok accounts without credentials.base_url.
+// GetGrokDefaultBaseURLMode returns the configured default mode for Grok accounts without credentials.base_url.
 func (s *SettingService) GetGrokDefaultBaseURLMode(ctx context.Context) string {
 	if s == nil || s.settingRepo == nil {
 		return GrokDefaultBaseURLModeCLI
@@ -3496,8 +3518,9 @@ func (s *SettingService) ResolveGrokBaseURL(ctx context.Context, account *Accoun
 }
 
 // ResolveGrokMediaBaseURL returns the upstream base for Grok Imagine images/videos.
-// Official media APIs live on api.x.ai; cli-chat-proxy is chat/Build-quota only.
-// System grok_default_base_url_mode=cli must NOT redirect media. Explicit account
+// Official media APIs live on api.x.ai; regional chat endpoints and cli-chat-proxy
+// are not selected by the system media default.
+// System grok_default_base_url_mode must NOT redirect media. Explicit account
 // base_url is honored only when it is not the CLI chat-proxy host.
 func (s *SettingService) ResolveGrokMediaBaseURL(_ context.Context, account *Account) string {
 	if account != nil {
@@ -3505,7 +3528,7 @@ func (s *SettingService) ResolveGrokMediaBaseURL(_ context.Context, account *Acc
 			pinned = strings.TrimRight(pinned, "/")
 			if !isGrokCLIChatProxyBaseURL(pinned) {
 				// Media paths must honor the same host allowlist as text inference
-				// (api.x.ai / cli-chat-proxy). Reject arbitrary account base_url so
+				// (api.x.ai regional hosts / cli-chat-proxy). Reject arbitrary account base_url so
 				// OAuth bearer tokens are never sent to untrusted hosts.
 				validate := xai.ValidateBaseURL
 				if account.IsGrokOAuth() {

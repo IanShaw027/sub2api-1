@@ -107,6 +107,16 @@ func TestValidateXAIURLsAllowOfficialOAuthAndGatewayHosts(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, DefaultCLIBaseURL, cliBaseURL)
 
+	for _, regionalBaseURL := range []string{
+		DefaultUSEast1BaseURL,
+		DefaultUSWest2BaseURL,
+		DefaultEUWest1BaseURL,
+	} {
+		trustedBaseURL, err := ValidateTrustedBaseURL(regionalBaseURL)
+		require.NoError(t, err)
+		require.Equal(t, regionalBaseURL, trustedBaseURL)
+	}
+
 	baseURLNoPath, err := ValidateBaseURL("https://api.x.ai")
 	require.NoError(t, err)
 	require.Equal(t, DefaultBaseURL, baseURLNoPath)

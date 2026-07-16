@@ -1585,7 +1585,8 @@ func (a *Account) GetGrokBaseURL() string {
 // GetGrokBaseURLOr returns credentials.base_url when set; otherwise defaultBaseURL
 // (falling back to the official Public API host when defaultBaseURL is empty).
 // System gateway setting "grok_default_base_url_mode" should be passed as defaultBaseURL
-// via SettingService.ResolveGrokBaseURL so operators can switch api.x.ai vs cli-chat-proxy.
+// via SettingService.ResolveGrokBaseURL so operators can switch between official/regional
+// api.x.ai endpoints and cli-chat-proxy.
 func (a *Account) GetGrokBaseURLOr(defaultBaseURL string) string {
 	if a == nil || !a.IsGrok() {
 		return ""
@@ -1607,10 +1608,10 @@ func (a *Account) GetGrokBaseURLOr(defaultBaseURL string) string {
 		return baseURL
 	}
 	// Older OAuth accounts stored api.x.ai as a generated default. When the
-	// selected system mode is CLI, treat that value as legacy rather than as an
-	// explicit pin. Selecting API mode still routes those accounts to api.x.ai.
-	if isOfficialGrokAPIBaseURL(baseURL) && isOfficialGrokCLIBaseURL(defaultBaseURL) {
-		return xai.DefaultCLIBaseURL
+	// selected system mode is not the generic API mode, treat that value as
+	// legacy rather than as an explicit pin so regional modes can take effect.
+	if isOfficialGrokAPIBaseURL(baseURL) && !isOfficialGrokAPIBaseURL(defaultBaseURL) {
+		return defaultBaseURL
 	}
 	if validated, err := xai.ValidateTrustedBaseURL(baseURL); err == nil {
 		return validated

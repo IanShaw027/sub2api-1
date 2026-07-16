@@ -21,16 +21,19 @@ import (
 )
 
 const (
-	OAuthIssuer         = "https://auth.x.ai"
-	DiscoveryURL        = OAuthIssuer + "/.well-known/openid-configuration"
-	DefaultAuthorizeURL = OAuthIssuer + "/oauth2/authorize"
-	DefaultTokenURL     = OAuthIssuer + "/oauth2/token"
-	DefaultBaseURL      = "https://api.x.ai/v1"
-	DefaultCLIBaseURL   = "https://cli-chat-proxy.grok.com/v1"
-	DefaultClientID     = "b1a00492-073a-47ea-816f-4c329264a828"
-	DefaultScope        = "openid profile email offline_access grok-cli:access api:access"
-	DefaultRedirectURI  = "http://127.0.0.1:56121/callback"
-	SessionTTL          = 30 * time.Minute
+	OAuthIssuer           = "https://auth.x.ai"
+	DiscoveryURL          = OAuthIssuer + "/.well-known/openid-configuration"
+	DefaultAuthorizeURL   = OAuthIssuer + "/oauth2/authorize"
+	DefaultTokenURL       = OAuthIssuer + "/oauth2/token"
+	DefaultBaseURL        = "https://api.x.ai/v1"
+	DefaultCLIBaseURL     = "https://cli-chat-proxy.grok.com/v1"
+	DefaultUSEast1BaseURL = "https://us-east-1.api.x.ai/v1"
+	DefaultUSWest2BaseURL = "https://us-west-2.api.x.ai/v1"
+	DefaultEUWest1BaseURL = "https://eu-west-1.api.x.ai/v1"
+	DefaultClientID       = "b1a00492-073a-47ea-816f-4c329264a828"
+	DefaultScope          = "openid profile email offline_access grok-cli:access api:access"
+	DefaultRedirectURI    = "http://127.0.0.1:56121/callback"
+	SessionTTL            = 30 * time.Minute
 
 	EnvAuthorizeURL            = "XAI_OAUTH_AUTHORIZE_URL"
 	EnvTokenURL                = "XAI_OAUTH_TOKEN_URL"
@@ -43,7 +46,13 @@ const (
 
 var (
 	oauthEndpointAllowedHosts = []string{"x.ai", "*.x.ai"}
-	baseURLAllowedHosts       = []string{"api.x.ai", "cli-chat-proxy.grok.com"}
+	baseURLAllowedHosts       = []string{
+		"api.x.ai",
+		"us-east-1.api.x.ai",
+		"us-west-2.api.x.ai",
+		"eu-west-1.api.x.ai",
+		"cli-chat-proxy.grok.com",
+	}
 )
 
 // OAuthSession stores one PKCE OAuth flow.

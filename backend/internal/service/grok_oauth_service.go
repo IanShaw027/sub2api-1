@@ -347,7 +347,8 @@ func (s *GrokOAuthService) BuildAccountCredentials(tokenInfo *GrokTokenInfo) map
 		creds["entitlement_status"] = tokenInfo.EntitlementStatus
 	}
 	// Leave base_url unset so the system gateway setting
-	// (grok_default_base_url_mode: api|cli) controls the default upstream.
+	// (grok_default_base_url_mode: api|us-east-1|us-west-2|eu-west-1|cli)
+	// controls the default upstream.
 	// Operators can still pin an explicit base_url per account.
 	return creds
 }

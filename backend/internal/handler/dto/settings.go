@@ -193,7 +193,7 @@ type SystemSettings struct {
 	EnableFingerprintUnification bool   `json:"enable_fingerprint_unification"`
 	EnableMetadataPassthrough    bool   `json:"enable_metadata_passthrough"`
 	ClaudeTelemetryMode          string `json:"claude_telemetry_mode"`
-	// GrokDefaultBaseURLMode: api | cli — default upstream for Grok accounts without credentials.base_url
+	// GrokDefaultBaseURLMode: api | us-east-1 | us-west-2 | eu-west-1 | cli — default upstream for Grok accounts without credentials.base_url
 	GrokDefaultBaseURLMode                 string `json:"grok_default_base_url_mode"`
 	GatewayDebugTimelineEnabled            bool   `json:"gateway_debug_timeline_enabled"`
 	GatewayDebugTimelineDirectory          string `json:"gateway_debug_timeline_directory"`
