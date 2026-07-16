@@ -5108,6 +5108,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	routingCompact := isOpenAIResponsesCompactPath(c)
 	modelRouting := ResolveEffectiveModelRouting(ctx, s.settingService, account, reqModel, routingCompact)
 	billingModel := modelRouting.Model
+	if routingCompact && !modelRouting.CompactMatched {
+		if defaultCompactModel := s.openAICompactModel(); defaultCompactModel != "" {
+			billingModel = defaultCompactModel
+		}
+	}
 	compactRoutingApplied := false
 	if routingCompact {
 		nonCompactModel := ResolveEffectiveMappedModel(ctx, s.settingService, account, reqModel, false)
@@ -7207,7 +7212,11 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 				}
 			}
 		}
-		if contextCompactionRetried && isCompact &&
+		// The compaction retry keeps the inbound URL immutable (the /compact suffix
+		// rides on the gin context, not the request path), so isCompact stays false
+		// on the retried turn. Gate this "still overflowing after compaction" warning
+		// on the retry flag alone, otherwise it could never fire.
+		if contextCompactionRetried &&
 			isOpenAIContextCompactionStatus(resp.StatusCode) &&
 			isOpenAIContextWindowError(upstreamMsg, respBody) {
 			logger.FromContext(ctx).Warn("openai.context_overflow_remote_compaction_failed",
