@@ -7,27 +7,34 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 )
 
+// defaultBrowserLikeUpstreamUserAgent remains available for non-Grok OpenAI-like
+// fingerprint templates that historically shared this constant.
 const defaultBrowserLikeUpstreamUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-const defaultGrokUpstreamUserAgent = defaultBrowserLikeUpstreamUserAgent
 
+// Fixed CLI identity aliases — single source of truth is internal/pkg/xai.
 const (
-	grokClientVersionHeader    = "0.2.99"
-	grokClientIdentifierHeader = "grok-shell"
-	grokClientModeHeader       = "cli"
+	grokClientVersionHeader    = xai.CLIStableVersion
+	grokClientIdentifierHeader = xai.CLIClientIdentifier
+	grokClientModeHeader       = xai.CLIClientMode
 )
+
+// defaultGrokUpstreamUserAgent is the pinned Grok CLI / workspace UA.
+// Grok upstream must not forward Claude Code / Codex / browser client UAs.
+func defaultGrokUpstreamUserAgent() string {
+	return xai.CLIUserAgent(xai.ResolveCLIVersion())
+}
 
 func applyDefaultGrokUpstreamHeaders(req *http.Request) {
 	if req == nil {
 		return
 	}
-	if strings.TrimSpace(req.Header.Get("User-Agent")) == "" {
-		req.Header.Set("User-Agent", defaultGrokUpstreamUserAgent)
-	}
-	// cli-chat-proxy validates the CLI version from this dedicated header,
-	// not from the version embedded in User-Agent.
-	req.Header.Set("x-grok-client-version", grokClientVersionHeader)
+	// Always stamp CLI identity. Do not preserve inbound client UA (Claude Code,
+	// Codex, curl, etc.) — xAI chat/CLI surfaces fingerprint the client string.
+	req.Header.Set("User-Agent", defaultGrokUpstreamUserAgent())
+	req.Header.Set("x-grok-client-version", xai.ResolveCLIVersion())
 	req.Header.Set("x-grok-client-identifier", grokClientIdentifierHeader)
 }
 
@@ -36,9 +43,8 @@ func applyGrokTLSProfileHeaders(req *http.Request, profile *tlsfingerprint.Profi
 	if req == nil || profile == nil {
 		return
 	}
-	if ua := strings.TrimSpace(profile.UserAgent); ua != "" {
-		req.Header.Set("User-Agent", ua)
-	}
+	// TLS profile may still supply Originator for JA3-bound routes, but never
+	// replace the CLI User-Agent with a non-Grok client string.
 	if originator := strings.TrimSpace(profile.Originator); originator != "" {
 		req.Header.Set("Originator", originator)
 	}
@@ -46,30 +52,19 @@ func applyGrokTLSProfileHeaders(req *http.Request, profile *tlsfingerprint.Profi
 
 func applyGrokRuntimeHeaders(req *http.Request, runtime openAITLSFingerprintRuntime) {
 	applyDefaultGrokUpstreamHeaders(req)
-	applyOpenAITLSFingerprintRuntime(req, runtime)
+	if req == nil {
+		return
+	}
+	// Apply Originator only; force CLI UA after so router overrides cannot
+	// leak Codex/Claude Code identity onto Grok upstream.
+	if originator := strings.TrimSpace(runtime.UpstreamOriginator); originator != "" {
+		req.Header.Set("Originator", originator)
+	}
+	req.Header.Set("User-Agent", defaultGrokUpstreamUserAgent())
 }
 
-func resolveGrokUpstreamUserAgent(c *gin.Context) string {
-	fallback := defaultGrokUpstreamUserAgent
-	if c == nil {
-		return fallback
-	}
-	ua := strings.TrimSpace(c.GetHeader("User-Agent"))
-	if ua == "" {
-		return fallback
-	}
-	lower := strings.ToLower(ua)
-	// Keep a stable browser-like identity for generic library agents; pass through
-	// real clients (Claude Code / Codex / Grok CLI) so upstream fingerprinting stays coherent.
-	switch {
-	case strings.HasPrefix(lower, "go-http-client"),
-		strings.HasPrefix(lower, "python-"),
-		strings.HasPrefix(lower, "axios/"),
-		strings.HasPrefix(lower, "node-fetch"),
-		strings.HasPrefix(lower, "curl/"),
-		strings.HasPrefix(lower, "wget/"):
-		return fallback
-	default:
-		return ua
-	}
+// resolveGrokUpstreamUserAgent always returns the pinned Grok CLI User-Agent.
+// Inbound client UAs (Claude Code, Codex, browsers, libraries) are never forwarded.
+func resolveGrokUpstreamUserAgent(_ *gin.Context) string {
+	return defaultGrokUpstreamUserAgent()
 }

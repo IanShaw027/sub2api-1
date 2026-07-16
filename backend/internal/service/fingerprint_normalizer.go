@@ -1224,7 +1224,7 @@ func NewPlatformFingerprintManager(cfg *config.Config) *PlatformFingerprintManag
 				BodyStripKeys: []string{"user", "session"},
 			},
 			"grok": {
-				CanonicalUA:   defaultBrowserLikeUpstreamUserAgent,
+				CanonicalUA:   defaultGrokUpstreamUserAgent(),
 				SpoofMemoryMB: 8192,
 				SpoofHeapMB:   4096,
 				CPUInfo:       "AMD Ryzen",

@@ -255,7 +255,7 @@ func TestGrokQuotaServiceProbeUsageUsesProfileHeadersWhenTLSEnabled(t *testing.T
 	_, err := svc.ProbeUsage(context.Background(), 47)
 	require.NoError(t, err)
 	require.True(t, upstream.tlsCalled)
-	require.Equal(t, "grok-native/1.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, defaultGrokUpstreamUserAgent(), upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, "grok_desktop", upstream.lastReq.Header.Get("Originator"))
 }
 

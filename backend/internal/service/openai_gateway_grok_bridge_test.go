@@ -193,7 +193,7 @@ func TestForwardAsChatCompletionsForGrokUsesCompatibleTLSRouter(t *testing.T) {
 	require.True(t, upstream.tlsCalled)
 	require.NotNil(t, upstream.lastTLSProfile)
 	require.Equal(t, "Grok Chat Routed", upstream.lastTLSProfile.Name)
-	require.Equal(t, "grok-chat-native/1.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, defaultGrokUpstreamUserAgent(), upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, "grok_chat", upstream.lastReq.Header.Get("Originator"))
 }
 
@@ -259,7 +259,7 @@ func TestForwardAsChatCompletionsForGrokUsesH2ProfileAndKeepsRouterHeaders(t *te
 	require.True(t, upstream.tlsCalled)
 	require.NotNil(t, upstream.lastTLSProfile)
 	require.Equal(t, "Grok Chat Routed", upstream.lastTLSProfile.Name)
-	require.Equal(t, "grok-chat-native/1.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, defaultGrokUpstreamUserAgent(), upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, "grok_chat", upstream.lastReq.Header.Get("Originator"))
 }
 
@@ -340,7 +340,7 @@ func TestProxyOpenAIWSHTTPBridgeForGrokUsesTLSAndStoresQuotaHeaders(t *testing.T
 	require.True(t, upstream.tlsCalled)
 	require.NotNil(t, upstream.lastTLSProfile)
 	require.Equal(t, "Grok WS Routed", upstream.lastTLSProfile.Name)
-	require.Equal(t, "grok-ws-native/1.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, defaultGrokUpstreamUserAgent(), upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, "grok_ws", upstream.lastReq.Header.Get("Originator"))
 	require.NotEmpty(t, downstream)
 	require.NotNil(t, repo.updates[58][grokQuotaSnapshotExtraKey])

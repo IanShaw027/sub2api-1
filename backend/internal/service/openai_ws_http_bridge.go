@@ -230,7 +230,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	var resp *http.Response
 	if account.Platform == PlatformGrok {
 		tlsRuntime := s.resolveOpenAICompatibleTLSFingerprintRuntime(ctx, c, account, "http")
-		applyOpenAITLSFingerprintRuntime(upstreamReq, tlsRuntime)
+		applyGrokRuntimeHeaders(upstreamReq, tlsRuntime)
 		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
 	} else {
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)

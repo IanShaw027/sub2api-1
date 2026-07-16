@@ -16,7 +16,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,9 +31,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/servertiming"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	tlsfpHTTP2 "github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint/http2"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
-	"golang.org/x/mod/semver"
 )
 
 // 默认配置常量
@@ -70,9 +69,6 @@ const (
 	openAIHTTP2ReadIdleTimeout = 15 * time.Second
 	openAIHTTP2PingTimeout     = 15 * time.Second
 
-	grokCLIProxyHost       = "cli-chat-proxy.grok.com"
-	grokCLIStableVersion   = "0.2.93"
-	grokCLIVersionOverride = "XAI_GROK_CLI_VERSION"
 	// Upstream TCP dialer defaults. Keep these explicit so upstream connection
 	// behavior is controlled by this layer instead of net/http zero-value drift.
 	defaultUpstreamDialTimeout       = 10 * time.Second
@@ -398,28 +394,10 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	return resp, nil
 }
 
+// applyGrokCLIProxyHeaders stamps the fixed Grok Build CLI identity for
+// cli-chat-proxy.grok.com. Values are pinned in internal/pkg/xai (not scraped).
 func applyGrokCLIProxyHeaders(req *http.Request) {
-	if req == nil || req.URL == nil || !strings.EqualFold(strings.TrimSpace(req.URL.Hostname()), grokCLIProxyHost) {
-		return
-	}
-	if req.Header == nil {
-		req.Header = make(http.Header)
-	}
-	version := strings.TrimSpace(os.Getenv(grokCLIVersionOverride))
-	if !isSupportedGrokCLIVersion(version) {
-		version = grokCLIStableVersion
-	}
-	req.Header.Set("X-XAI-Token-Auth", "xai-grok-cli")
-	req.Header.Set("x-grok-client-version", version)
-	req.Header.Set("User-Agent", "xai-grok-workspace/"+version)
-}
-
-func isSupportedGrokCLIVersion(version string) bool {
-	canonical := "v" + version
-	minimum := "v" + grokCLIStableVersion
-	return semver.IsValid(canonical) &&
-		semver.Canonical(canonical) == canonical &&
-		semver.Compare(canonical, minimum) >= 0
+	xai.ApplyCLIProxyHeaders(req)
 }
 
 func (s *httpUpstreamService) doWithRequestOverrides(

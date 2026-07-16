@@ -145,7 +145,7 @@ func TestAccountTestService_TestAccountConnection_GrokOAuthUsesXAIResponses(t *t
 	require.Equal(t, xai.DefaultCLIBaseURL+"/responses", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer grok-access-token", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "application/json, text/event-stream", upstream.lastReq.Header.Get("Accept"))
-	require.Equal(t, defaultGrokUpstreamUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, defaultGrokUpstreamUserAgent(), upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(upstream.lastReq.Context()))
 	require.Equal(t, "grok-4.3", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, "hello grok", gjson.GetBytes(upstream.lastBody, "input.0.content.0.text").String())
@@ -245,7 +245,7 @@ func TestAccountTestService_TestAccountConnection_GrokOAuthUsesProfileUserAgentW
 
 	require.True(t, upstream.tlsCalled)
 	require.NotNil(t, upstream.lastTLSProfile)
-	require.Equal(t, "grok-native/1.0", upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, defaultGrokUpstreamUserAgent(), upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, "grok_desktop", upstream.lastReq.Header.Get("Originator"))
 }
 
@@ -325,7 +325,7 @@ func TestAccountTestService_TestAccountConnection_GrokImagineUsesNativeImagesAPI
 	require.Equal(t, xai.DefaultBaseURL+"/images/generations", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer grok-access-token", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Accept"))
-	require.Equal(t, defaultGrokUpstreamUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, defaultGrokUpstreamUserAgent(), upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, "grok-imagine-image-quality", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, "draw a cat", gjson.GetBytes(upstream.lastBody, "prompt").String())
 	require.NotContains(t, upstream.lastReq.URL.String(), "/responses")
@@ -410,7 +410,7 @@ func TestAccountTestService_TestAccountConnection_GrokImagineVideoUsesNativeVide
 	require.Equal(t, xai.DefaultBaseURL+"/videos/generations", upstream.lastReq.URL.String())
 	require.Equal(t, "Bearer grok-access-token", upstream.lastReq.Header.Get("Authorization"))
 	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Accept"))
-	require.Equal(t, defaultGrokUpstreamUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, defaultGrokUpstreamUserAgent(), upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, "grok-imagine-video", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, "make a cat video", gjson.GetBytes(upstream.lastBody, "prompt").String())
 	require.NotContains(t, upstream.lastReq.URL.String(), "/responses")
