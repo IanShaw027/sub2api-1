@@ -182,7 +182,8 @@ func TestGrokImportProbeSchedulerDeduplicatesPendingAndInFlightAccounts(t *testi
 func TestGrokImportProbeSchedulerBoundsPendingQueue(t *testing.T) {
 	scheduler := newGrokImportProbeScheduler(1, time.Second)
 	prober := newGrokImportProbeStub(grokImportProbeQueueLimit + 1)
-	prober.block = make(chan struct{})
+	release := make(chan struct{})
+	prober.block = release
 	scheduler.schedule(prober, &service.Account{ID: 100, Platform: service.PlatformGrok, Type: service.AccountTypeOAuth})
 	require.Equal(t, int64(100), awaitGrokProbeSignal(t, prober.started))
 	for id := int64(101); id < 101+grokImportProbeQueueLimit+10; id++ {
@@ -191,7 +192,7 @@ func TestGrokImportProbeSchedulerBoundsPendingQueue(t *testing.T) {
 	scheduler.mu.Lock()
 	require.Len(t, scheduler.queue, grokImportProbeQueueLimit)
 	scheduler.mu.Unlock()
-	close(prober.block)
+	close(release)
 	for i := 0; i < grokImportProbeQueueLimit+1; i++ {
 		awaitGrokProbeSignal(t, prober.done)
 	}
