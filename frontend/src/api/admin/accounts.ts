@@ -322,6 +322,213 @@ export async function getBatchUsage(accountIds: number[], force?: boolean): Prom
   return data
 }
 
+export interface OpenAIOAuthPlanCount {
+  plan_type: string
+  total: number
+  schedulable: number
+  errors: number
+  rate_limited: number
+}
+
+export interface OpenAIOAuthRateLimitBuckets {
+  total: number
+  up_to_10m: number
+  from_10m_to_30m: number
+  from_30m_to_1h: number
+  from_1h_to_3h: number
+  from_3h_to_5h: number
+  from_5h_to_1d: number
+  from_1d_to_3d: number
+  over_3d: number
+}
+
+export interface OpenAIOAuthCapacityWindow {
+  window: '5h' | '7d'
+  current_spend_usd: number
+  /** null when capacity could not be measured */
+  estimated_capacity_usd: number | null
+  available_usd: number | null
+  estimated_used_percent: number | null
+  forecast_remaining_usd: number
+  projected_cycle_spend_usd: number
+  projected_shortfall_usd: number | null
+  measured_accounts: number
+  capacity_accounts: number
+  confidence: 'high' | 'medium' | 'low'
+}
+
+export interface OpenAIOAuthForecastInputs {
+  recent_three_hour_usd: number
+  previous_day_same_period_usd: number
+  blended_hourly_rate_usd: number
+}
+
+export interface OpenAIOAuthPlanCapacity {
+  plan_type: string
+  accounts: OpenAIOAuthPlanCount
+  windows: OpenAIOAuthCapacityWindow[]
+}
+
+export interface OpenAIOAuthCapacityRecommendation {
+  plan_type: string
+  /** "alternative" = mutually exclusive plan paths; do not sum across plans */
+  mode?: string
+  five_hour_accounts?: number
+  seven_day_accounts?: number
+  five_hour_unit_usd?: number
+  seven_day_unit_usd?: number
+  baseline_source: string
+  baseline_samples: number
+}
+
+export interface OpenAIOAuthCapacityScope {
+  group_id?: number
+  group_name: string
+  accounts: OpenAIOAuthPlanCount
+  plan_counts: OpenAIOAuthPlanCount[]
+  rate_limits: OpenAIOAuthRateLimitBuckets
+  forecast: OpenAIOAuthForecastInputs
+  windows: OpenAIOAuthCapacityWindow[]
+  plans: OpenAIOAuthPlanCapacity[]
+  recommendations: OpenAIOAuthCapacityRecommendation[]
+}
+
+export interface OpenAIOAuthCapacityBaseline {
+  plan_type: string
+  window: '5h' | '7d'
+  median_capacity_usd: number
+  samples: number
+  source: string
+}
+
+export interface OpenAIOAuthCapacityOverview {
+  generated_at: string
+  method: {
+    currency: 'USD'
+    recent_hours: number
+    recent_weight: number
+    previous_day_weight: number
+    minimum_inference_percent: number
+    group_allocation: string
+  }
+  total: OpenAIOAuthCapacityScope
+  groups: OpenAIOAuthCapacityScope[]
+  baselines: OpenAIOAuthCapacityBaseline[]
+}
+
+export async function getOpenAIOAuthCapacity(force = false): Promise<OpenAIOAuthCapacityOverview> {
+  const { data } = await apiClient.get<OpenAIOAuthCapacityOverview>(
+    '/admin/accounts/openai-oauth-capacity',
+    { params: force ? { force: 'true' } : undefined }
+  )
+  return data
+}
+
+export type OpenAIOAuthCapacityRange = '12h' | '24h' | '48h' | '7d' | 'custom'
+export type OpenAIOAuthCapacityWindowKind = '5h' | '7d' | 'both'
+export type OpenAIOAuthCapacitySegment = 'past' | 'current' | 'future'
+
+export interface OpenAIOAuthCapacityTimeseriesMethod {
+  currency: 'USD'
+  window: OpenAIOAuthCapacityWindowKind | string
+  recent_weight: number
+  previous_day_weight: number
+  rpm_weight: number
+  rpm_window_minutes: number
+  minimum_inference_percent: number
+  curve: string
+  group_allocation: string
+  past_hours: number
+  future_hours: number
+}
+
+export interface OpenAIOAuthCapacityTimeseriesPoint {
+  bucket_start: string
+  segment: OpenAIOAuthCapacitySegment
+  /** null = no durable fact; UI must not invent a value */
+  spent_usd: number | null
+  forecast_usd: number | null
+  /** chart y-value; null means skip plotting this hour */
+  display_spend_usd: number | null
+  available_usd: number | null
+  capacity_usd: number | null
+  used_percent: number | null
+  available_7d_usd?: number | null
+  capacity_7d_usd?: number | null
+  used_percent_7d?: number | null
+  shortfall_risk_usd: number | null
+  sealed?: boolean
+  source?: string
+}
+
+export interface OpenAIOAuthCapacityTimeseriesSummary {
+  spent_usd: number
+  /** null when capacity could not be measured */
+  available_usd: number | null
+  capacity_usd: number | null
+  used_percent: number | null
+  forecast_remaining_usd: number
+  projected_cycle_spend_usd: number
+  /** null when capacity unmeasured (do not invent a zero gap) */
+  projected_shortfall_usd: number | null
+  confidence: 'high' | 'medium' | 'low'
+  measured_accounts: number
+  capacity_accounts: number
+}
+
+export interface OpenAIOAuthCapacityTimeseriesForecast {
+  recent_three_hour_usd: number
+  previous_day_same_period_usd: number
+  recent_rpm_window_usd: number
+  blended_hourly_rate_usd: number
+  rpm_hourly_rate_usd: number
+}
+
+export interface OpenAIOAuthCapacityTimeseries {
+  generated_at: string
+  now: string
+  method: OpenAIOAuthCapacityTimeseriesMethod
+  group_id?: number
+  group_name: string
+  health: OpenAIOAuthPlanCount
+  rate_limits: OpenAIOAuthRateLimitBuckets
+  plan_counts: OpenAIOAuthPlanCount[]
+  forecast: OpenAIOAuthCapacityTimeseriesForecast
+  summary: OpenAIOAuthCapacityTimeseriesSummary
+  windows: OpenAIOAuthCapacityWindow[]
+  points: OpenAIOAuthCapacityTimeseriesPoint[]
+  recommendations: OpenAIOAuthCapacityRecommendation[]
+  baselines: OpenAIOAuthCapacityBaseline[]
+}
+
+export interface OpenAIOAuthCapacityTimeseriesParams {
+  range?: OpenAIOAuthCapacityRange
+  window?: OpenAIOAuthCapacityWindowKind
+  group_id?: number
+  plan_type?: string
+  from?: string
+  to?: string
+  force?: boolean
+}
+
+export async function getOpenAIOAuthCapacityTimeseries(
+  params: OpenAIOAuthCapacityTimeseriesParams = {}
+): Promise<OpenAIOAuthCapacityTimeseries> {
+  const query: Record<string, string> = {}
+  if (params.range) query.range = params.range
+  if (params.window) query.window = params.window
+  if (typeof params.group_id === 'number') query.group_id = String(params.group_id)
+  if (params.plan_type) query.plan_type = params.plan_type
+  if (params.from) query.from = params.from
+  if (params.to) query.to = params.to
+  if (params.force) query.force = 'true'
+  const { data } = await apiClient.get<OpenAIOAuthCapacityTimeseries>(
+    '/admin/accounts/openai-oauth-capacity/timeseries',
+    { params: query }
+  )
+  return data
+}
+
 /**
  * Clear account rate limit status
  * @param id - Account ID
@@ -993,6 +1200,8 @@ export const accountsAPI = {
   clearError,
   getUsage,
   getBatchUsage,
+  getOpenAIOAuthCapacity,
+  getOpenAIOAuthCapacityTimeseries,
   getTodayStats,
   getBatchTodayStats,
   clearRateLimit,

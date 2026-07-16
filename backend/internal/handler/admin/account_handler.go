@@ -1486,23 +1486,10 @@ func (h *AccountHandler) scheduleGrokQuotaProbe(account *service.Account) {
 	if account.Platform != service.PlatformGrok || account.Type != service.AccountTypeOAuth {
 		return
 	}
-	accountID := account.ID
 	if h.accountUsageService != nil {
-		h.accountUsageService.InvalidateGrokUsageCache(accountID)
+		h.accountUsageService.InvalidateGrokUsageCache(account.ID)
 	}
-	quotaService := h.grokQuotaService
-	if quotaService == nil {
-		return
-	}
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				slog.Error("grok_usage_refresh_async_panic", "account_id", accountID, "recover", r)
-			}
-		}()
-		// Active pull of official billing (/usage) + best-effort rate-limit probe.
-		quotaService.RefreshAccountUsage(context.Background(), accountID)
-	}()
+	h.scheduleGrokImportProbe(account)
 }
 
 func (h *AccountHandler) invalidateRefreshedOAuthTokenCache(ctx context.Context, account *service.Account) {
@@ -2431,6 +2418,78 @@ func (h *AccountHandler) GetUsage(c *gin.Context) {
 	}
 
 	response.Success(c, usage)
+}
+
+// GetOpenAIOAuthCapacity returns group-scoped OAuth capacity, forecast, and rate-limit counts.
+// GET /api/v1/admin/accounts/openai-oauth-capacity
+func (h *AccountHandler) GetOpenAIOAuthCapacity(c *gin.Context) {
+	if h.accountUsageService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Account usage service is not configured")
+		return
+	}
+	// Bound heavy usage_logs aggregation so the request cannot hang indefinitely.
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+	overview, err := h.accountUsageService.GetOpenAIOAuthCapacity(ctx, c.Query("force") == "true")
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, overview)
+}
+
+// GetOpenAIOAuthCapacityTimeseries returns hourly spend/forecast/available series for the capacity chart.
+// GET /api/v1/admin/accounts/openai-oauth-capacity/timeseries
+func (h *AccountHandler) GetOpenAIOAuthCapacityTimeseries(c *gin.Context) {
+	if h.accountUsageService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Account usage service is not configured")
+		return
+	}
+
+	query := service.OpenAIOAuthCapacityTimeseriesQuery{
+		Range:  c.DefaultQuery("range", "24h"),
+		Window: c.DefaultQuery("window", "5h"),
+		Force:  c.Query("force") == "true",
+	}
+	if planType := strings.TrimSpace(c.Query("plan_type")); planType != "" {
+		query.PlanType = planType
+	}
+	if groupRaw := strings.TrimSpace(c.Query("group_id")); groupRaw != "" {
+		groupID, err := strconv.ParseInt(groupRaw, 10, 64)
+		if err != nil {
+			response.BadRequest(c, "Invalid group_id")
+			return
+		}
+		query.GroupID = &groupID
+	}
+	if fromRaw := strings.TrimSpace(c.Query("from")); fromRaw != "" {
+		from, err := time.Parse(time.RFC3339, fromRaw)
+		if err != nil {
+			response.BadRequest(c, "Invalid from (expected RFC3339)")
+			return
+		}
+		from = from.UTC()
+		query.From = &from
+	}
+	if toRaw := strings.TrimSpace(c.Query("to")); toRaw != "" {
+		to, err := time.Parse(time.RFC3339, toRaw)
+		if err != nil {
+			response.BadRequest(c, "Invalid to (expected RFC3339)")
+			return
+		}
+		to = to.UTC()
+		query.To = &to
+	}
+
+	// Timeseries scans more usage_logs history than the snapshot endpoint.
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 25*time.Second)
+	defer cancel()
+	series, err := h.accountUsageService.GetOpenAIOAuthCapacityTimeseries(ctx, query)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, series)
 }
 
 // ClearRateLimit handles clearing account rate limit status

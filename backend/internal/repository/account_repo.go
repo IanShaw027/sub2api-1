@@ -1748,6 +1748,13 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
 	if affected == 0 {
 		return service.ErrAccountNotFound
 	}
+	if hasOpenAIOAuthQuotaSnapshotUpdates(updates) {
+		if err := r.persistOpenAIOAuthQuotaSnapshot(ctx, id); err != nil {
+			// Quota history is an analytics side effect. Do not turn a successful
+			// account-state update into a gateway failure if history persistence fails.
+			logger.LegacyPrintf("repository.account", "[OpenAIOAuthCapacity] persist snapshot failed: account=%d err=%v", id, err)
+		}
+	}
 	if shouldEnqueueSchedulerOutboxForExtraUpdates(updates) {
 		if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
 			logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue extra update failed: account=%d err=%v", id, err)

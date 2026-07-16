@@ -19,6 +19,14 @@
             <template #beforeCreate>
               <button
                 class="btn btn-secondary"
+                @click="showOpenAIOAuthCapacity = true"
+              >
+                <Icon name="chartBar" size="sm" class="mr-1.5" />
+                <span>{{ t('admin.accounts.oauthCapacity.action') }}</span>
+              </button>
+              <button
+                v-if="bulkKiroOverageActionVisible"
+                class="btn btn-secondary"
                 :disabled="loading || enablingAllKiroOverage"
                 @click="openEnableAllKiroOverageDialog"
               >
@@ -147,7 +155,11 @@
                       </span>
                       <span class="flex-1 text-left">{{ t('admin.tlsFingerprintRouters.title') }}</span>
                     </button>
-                    <button class="account-tools-menu-item" @click="openEnableAllKiroOverageDialog">
+                    <button
+                      v-if="bulkKiroOverageActionVisible"
+                      class="account-tools-menu-item"
+                      @click="openEnableAllKiroOverageDialog"
+                    >
                       <span class="account-tools-menu-icon bg-fuchsia-50 text-fuchsia-600 dark:bg-fuchsia-900/30 dark:text-fuchsia-300">
                         <Icon name="sparkles" size="sm" />
                       </span>
@@ -535,6 +547,11 @@
       :show="showTLSFingerprintRouters"
       @close="showTLSFingerprintRouters = false"
     />
+    <OpenAIOAuthCapacityDialog
+      v-if="showOpenAIOAuthCapacity"
+      :show="showOpenAIOAuthCapacity"
+      @close="showOpenAIOAuthCapacity = false"
+    />
   </AppLayout>
 </template>
 
@@ -590,6 +607,7 @@ const ScheduledTestsPanel = defineAsyncComponent(() => import('@/components/admi
 const ErrorPassthroughRulesModal = defineAsyncComponent(() => import('@/components/admin/ErrorPassthroughRulesModal.vue'))
 const TLSFingerprintProfilesModal = defineAsyncComponent(() => import('@/components/admin/TLSFingerprintProfilesModal.vue'))
 const TLSFingerprintRoutersModal = defineAsyncComponent(() => import('@/components/admin/TLSFingerprintRoutersModal.vue'))
+const OpenAIOAuthCapacityDialog = defineAsyncComponent(() => import('@/components/admin/account/OpenAIOAuthCapacityDialog.vue'))
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -653,6 +671,9 @@ const showStats = ref(false)
 const showErrorPassthrough = ref(false)
 const showTLSFingerprintProfiles = ref(false)
 const showTLSFingerprintRouters = ref(false)
+const showOpenAIOAuthCapacity = ref(false)
+// Temporary kill-switch: intentionally hides bulk Kiro overage actions until product re-enables them.
+const bulkKiroOverageActionVisible = false
 const edAcc = ref<Account | null>(null)
 let editDetailRequestSeq = 0
 const tempUnschedAcc = ref<Account | null>(null)
@@ -1307,7 +1328,8 @@ const isAnyModalOpen = computed(() => {
     showSchedulePanel.value ||
     showErrorPassthrough.value ||
     showTLSFingerprintProfiles.value ||
-    showTLSFingerprintRouters.value
+    showTLSFingerprintRouters.value ||
+    showOpenAIOAuthCapacity.value
   )
 })
 

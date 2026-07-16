@@ -155,6 +155,7 @@ docs/*
 !docs/OPENAI_IMAGE_COMPAT_PLAYBOOK_CN.md
 !docs/MINIO_SOURCE_QAZWC_RESOURCE_SPEC_CN.md
 !docs/AI_STUDIO_USAGE_API_CN.md
+!docs/OPENAI_OAUTH_CAPACITY_PLANNING_CN.md
 !docs/legal/
 !docs/legal/*.md
 .serena/
