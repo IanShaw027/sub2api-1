@@ -833,6 +833,11 @@ func normalizeAISkillExecutionSpec(skillType string, spec AISkillExecutionSpec) 
 		if spec.Script.TimeoutSeconds <= 0 {
 			spec.Script.TimeoutSeconds = 30
 		}
+		// Hard cap to limit multi-tenant resource exhaustion via long-lived containers.
+		const aiSkillScriptTimeoutHardCap = 60
+		if spec.Script.TimeoutSeconds > aiSkillScriptTimeoutHardCap {
+			spec.Script.TimeoutSeconds = aiSkillScriptTimeoutHardCap
+		}
 	default:
 		return AISkillExecutionSpec{}, ErrAISkillExecutionSpecInvalid
 	}

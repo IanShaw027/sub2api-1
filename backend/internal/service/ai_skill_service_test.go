@@ -857,6 +857,8 @@ func TestAISkillSettlementSettle_RetriesExistingFailedRunWhenCompensationComplet
 	require.Equal(t, AISkillSettlementStatusSettled, replayed.Status)
 	require.Len(t, store.settlements, 1, "retry should reuse the failed settlement row instead of inserting a duplicate")
 	require.Len(t, balance.charges, 2, "retry should attempt a fresh buyer charge after prior refund completed")
+	require.Equal(t, "ai_skill_run:3004", balance.charges[0].Reference)
+	require.Equal(t, "ai_skill_run:3004:attempt:2", balance.charges[1].Reference)
 	require.Len(t, balance.refunds, 1, "successful retry should not emit an extra refund")
 	require.Len(t, creator.inputs, 2, "retry should re-attempt creator credit")
 }
@@ -897,6 +899,8 @@ func TestAISkillSettlementReplaySettlement_RetriesSafeFailedRunByRunID(t *testin
 	require.Equal(t, int64(3005), replayed.RunID)
 	require.Len(t, store.settlements, 1)
 	require.Len(t, balance.charges, 2, "replay should issue a fresh buyer charge after prior refund completed")
+	require.Equal(t, "ai_skill_run:3005", balance.charges[0].Reference)
+	require.Equal(t, "ai_skill_run:3005:attempt:2", balance.charges[1].Reference)
 	require.Len(t, balance.refunds, 1)
 	require.Len(t, creator.inputs, 2)
 }
@@ -975,6 +979,8 @@ func TestAISkillSettlementReplaySettlement_AllowsReplayAfterSuccessfulCreatorRev
 	require.Equal(t, AISkillSettlementStatusSettled, replayed.Status)
 	require.Len(t, store.settlements, 1)
 	require.Len(t, balance.charges, 2, "safe replay should issue a fresh buyer charge after prior refund completed")
+	require.Equal(t, "ai_skill_run:3007", balance.charges[0].Reference)
+	require.Equal(t, "ai_skill_run:3007:attempt:2", balance.charges[1].Reference)
 	require.Len(t, balance.refunds, 1)
 	require.Len(t, creator.inputs, 2)
 }
@@ -1014,6 +1020,8 @@ func TestAISkillRunServicePrepareBuildsPromptImageAndFreeSettlement(t *testing.T
 	settlementSvc := NewAISkillSettlementService(store, balance, &aiSkillCreatorCreditorStub{})
 	runSvc := NewAISkillRunService(store, store, store, settlementSvc, nil).WithAPIKeyRepository(&skillBillingAPIKeyRepoStub{ownerUserID: 99})
 
+	// Prompt image test mode requires a buyer API key for token attribution.
+	keyID := int64(99)
 	prepared, err := runSvc.Prepare(ctx, 99, &AISkillRunInput{
 		SkillID:    skill.ID,
 		Mode:       AISkillRunModeTest,
@@ -1021,6 +1029,7 @@ func TestAISkillRunServicePrepareBuildsPromptImageAndFreeSettlement(t *testing.T
 		Attachments: []AISkillRunAttachment{
 			{URL: "https://example.invalid/ref.png", Purpose: "reference"},
 		},
+		Trace: AIWriteTrace{APIKeyID: &keyID},
 	})
 	require.NoError(t, err)
 	require.Equal(t, AISkillSettlementStatusSkipped, prepared.Settlement.Status)
@@ -1031,6 +1040,34 @@ func TestAISkillRunServicePrepareBuildsPromptImageAndFreeSettlement(t *testing.T
 	require.Equal(t, 2, prepared.Execution.PromptImage.ImageCount)
 	require.Equal(t, "draw {{subject}}", prepared.Execution.PromptImage.PromptTemplate)
 	require.Len(t, prepared.Execution.PromptImage.Attachments, 1)
+	require.NotNil(t, prepared.Execution.BillingAPIKey)
+	require.Equal(t, keyID, prepared.Execution.BillingAPIKey.ID)
+}
+
+func TestAISkillRunServicePreparePromptTestWithoutAPIKeyRejected(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := newAISkillStoreStub()
+	skill := &AISkill{ID: 22, CreatorUserID: 99, Name: "Chat Skill", Type: AISkillTypePromptChat}
+	version := &AISkillVersion{
+		ID: 22, SkillID: skill.ID, CreatorUserID: skill.CreatorUserID, Version: 1,
+		Type: skill.Type, Status: AISkillVersionStatusApproved,
+		ExecutionSpec: AISkillExecutionSpec{
+			Type:       AISkillTypePromptChat,
+			PromptChat: &AISkillPromptChatSpec{UserPromptTemplate: "hi"},
+		},
+		BillingPolicy: AISkillBillingPolicy{Mode: AISkillBillingModeFree},
+	}
+	store.skills[skill.ID] = cloneAISkillEntity(skill)
+	store.versions[version.ID] = cloneAISkillVersionEntity(version)
+	runSvc := NewAISkillRunService(store, store, store, NewAISkillSettlementService(store, &aiSkillBalanceChargerStub{}, &aiSkillCreatorCreditorStub{}), nil)
+
+	_, err := runSvc.Prepare(ctx, 99, &AISkillRunInput{
+		SkillID: skill.ID,
+		Mode:    AISkillRunModeTest,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "AI_SKILL_API_KEY_REQUIRED")
 }
 
 func TestAISkillRunServicePrepareBuildsScriptArchiveFromSourceContent(t *testing.T) {

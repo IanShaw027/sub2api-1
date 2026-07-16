@@ -156,15 +156,12 @@ func TestAIHandlerBuildRunAttachmentsWithMediaPromotesManagedIDsToURLs(t *testin
 	require.True(t, strings.HasPrefix(attachments[0].URL, "https://media.example/"), "expected direct URL, got %s", attachments[0].URL)
 }
 
-func TestAIHandlerBuildRunAttachmentsWithMediaKeepsRawURLWhenAdoptionFails(t *testing.T) {
+func TestAIHandlerBuildRunAttachmentsWithMediaRejectsInvalidDataURL(t *testing.T) {
 	h := &AIHandler{mediaService: newAISkillMediaService()}
-	attachments, err := h.buildRunAttachmentsWithMedia(context.Background(), 99, []map[string]any{
+	_, err := h.buildRunAttachmentsWithMedia(context.Background(), 99, []map[string]any{
 		{"url": "data:image/png;base64,%%%invalid%%%", "purpose": "input", "file_name": "input.png"},
 	})
-	require.NoError(t, err)
-	require.Len(t, attachments, 1)
-	require.Equal(t, "data:image/png;base64,%%%invalid%%%", attachments[0].URL)
-	require.Nil(t, attachments[0].MediaID)
+	require.Error(t, err)
 }
 
 func stringPtr(value string) *string {

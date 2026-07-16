@@ -598,6 +598,8 @@ func (h *AIHandler) RunSkill(c *gin.Context) {
 		}
 		mode := strings.TrimSpace(req.Mode)
 		trace := buildUserAITrace(req.Trace)
+		// Fast-path for use mode; test+prompt also enforced in service after version load
+		// (script test does not need a buyer API key).
 		if mode == service.AISkillRunModeUse && (trace.APIKeyID == nil || *trace.APIKeyID <= 0) {
 			return nil, infraerrors.BadRequest("AI_SKILL_API_KEY_REQUIRED", "use mode requires trace.api_key_id for token billing")
 		}
@@ -1190,12 +1192,12 @@ func (h *AIHandler) storeSkillMediaReferenceWithIDBestEffort(ctx context.Context
 	if source == "" {
 		return skillMediaReference{}, nil
 	}
+	// Fail closed: do not fall back to the raw remote URL when ingest fails —
+	// that bypasses SSRF/allowlist checks and reintroduces untrusted image_url
+	// into skill runs and upstream requests.
 	storedMedia, err := h.storeSkillMediaReferenceWithID(ctx, userID, bizType, source, fileName)
 	if err != nil {
-		return skillMediaReference{URL: source}, nil
-	}
-	if strings.TrimSpace(storedMedia.URL) == "" {
-		storedMedia.URL = source
+		return skillMediaReference{}, err
 	}
 	return storedMedia, nil
 }
@@ -1212,7 +1214,16 @@ func (h *AIHandler) storeSkillMediaReferenceWithID(ctx context.Context, userID i
 		return skillMediaReference{}, nil
 	}
 	if h == nil || h.mediaService == nil || !h.mediaService.RuntimeInfo().Enabled {
-		return skillMediaReference{URL: source}, nil
+		// Media storage disabled: only allow already-managed media IDs or data URLs.
+		if h != nil && h.mediaService != nil {
+			if mediaID, ok := service.ParseManagedMediaID(h.mediaService, source); ok {
+				return skillMediaReference{URL: source, MediaID: &mediaID}, nil
+			}
+		}
+		if strings.HasPrefix(strings.ToLower(source), "data:image/") {
+			return skillMediaReference{URL: source}, nil
+		}
+		return skillMediaReference{}, infraerrors.BadRequest("AI_SKILL_MEDIA_STORAGE_DISABLED", "remote media URLs require media storage to be enabled")
 	}
 	if mediaID, ok := service.ParseManagedMediaID(h.mediaService, source); ok {
 		return skillMediaReference{URL: source, MediaID: &mediaID}, nil
@@ -1237,7 +1248,13 @@ func (h *AIHandler) storeSkillMediaReferenceWithID(ctx context.Context, userID i
 	}
 	storedURL := h.mediaService.PublicURL(asset)
 	if strings.TrimSpace(storedURL) == "" {
-		storedURL = source
+		if ownerUserID != nil {
+			_ = h.mediaService.DeleteForUser(ctx, *ownerUserID, asset.ID)
+		}
+		return skillMediaReference{}, infraerrors.InternalServer(
+			"AI_SKILL_MEDIA_PUBLIC_URL_UNAVAILABLE",
+			"stored media does not have a public URL",
+		)
 	}
 	return skillMediaReference{URL: storedURL, MediaID: &asset.ID, Created: true}, nil
 }

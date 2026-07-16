@@ -71,10 +71,20 @@ SELECT EXISTS (
 	err = tx.QueryRowContext(ctx, `
 UPDATE users
 SET balance = balance - $1, updated_at = NOW()
-WHERE id = $2 AND deleted_at IS NULL
+WHERE id = $2 AND deleted_at IS NULL AND balance >= $1
 RETURNING balance::double precision`, input.Amount, input.UserID).Scan(&balanceAfter)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, service.ErrUserNotFound
+		var exists bool
+		if existsErr := tx.QueryRowContext(ctx, `
+SELECT EXISTS (
+    SELECT 1 FROM users WHERE id = $1 AND deleted_at IS NULL
+)`, input.UserID).Scan(&exists); existsErr != nil {
+			return nil, fmt.Errorf("check ai skill buyer balance owner: %w", existsErr)
+		}
+		if !exists {
+			return nil, service.ErrUserNotFound
+		}
+		return nil, service.ErrInsufficientBalance
 	}
 	if err != nil {
 		return nil, fmt.Errorf("deduct ai skill buyer balance: %w", err)

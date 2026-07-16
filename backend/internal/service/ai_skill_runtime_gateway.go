@@ -200,6 +200,10 @@ func (r *AISkillOpenAIRuntime) ExecuteChatCompat(ctx context.Context, input AISk
 	if r == nil || r.gateway == nil {
 		return nil, ErrAISkillServiceUnavailable
 	}
+	subscription, err := r.preflightAISkillBilling(ctx, input.BillingAPIKey)
+	if err != nil {
+		return nil, err
+	}
 
 	model := firstNonEmptyString(strings.TrimSpace(input.Model), defaultAISkillChatModel)
 	account, err := r.gateway.SelectAccountForModel(ctx, input.GroupID, strings.TrimSpace(input.SessionHash), model)
@@ -229,7 +233,7 @@ func (r *AISkillOpenAIRuntime) ExecuteChatCompat(ctx context.Context, input AISk
 	// Bill partial/success results when a billing key is present. Failures must
 	// surface so use-mode runs cannot complete without token attribution.
 	if forward != nil {
-		if billErr := r.recordAISkillOpenAIUsage(ctx, ginCtx, input.BillingAPIKey, account, model, forward); billErr != nil {
+		if billErr := r.recordAISkillOpenAIUsage(ctx, ginCtx, input.BillingAPIKey, subscription, account, model, forward); billErr != nil {
 			if err == nil {
 				return nil, billErr
 			}
@@ -249,6 +253,10 @@ func (r *AISkillOpenAIRuntime) ExecuteChatCompat(ctx context.Context, input AISk
 func (r *AISkillOpenAIRuntime) ExecuteImages(ctx context.Context, input AISkillOpenAIImageRuntimeInput) (*AISkillOpenAIImageRuntimeResult, error) {
 	if r == nil || r.gateway == nil {
 		return nil, ErrAISkillServiceUnavailable
+	}
+	subscription, err := r.preflightAISkillBilling(ctx, input.BillingAPIKey)
+	if err != nil {
+		return nil, err
 	}
 
 	model := firstNonEmptyString(strings.TrimSpace(input.Model), defaultAISkillImageModel)
@@ -291,7 +299,7 @@ func (r *AISkillOpenAIRuntime) ExecuteImages(ctx context.Context, input AISkillO
 		model,
 	)
 	if forward != nil {
-		if billErr := r.recordAISkillOpenAIUsage(ctx, ginCtx, input.BillingAPIKey, account, model, forward); billErr != nil {
+		if billErr := r.recordAISkillOpenAIUsage(ctx, ginCtx, input.BillingAPIKey, subscription, account, model, forward); billErr != nil {
 			if err == nil {
 				return nil, billErr
 			}
@@ -320,13 +328,14 @@ func (r *AISkillOpenAIRuntime) recordAISkillOpenAIUsage(
 	ctx context.Context,
 	c *gin.Context,
 	apiKey *APIKey,
+	subscription *UserSubscription,
 	account *Account,
 	model string,
 	result *OpenAIForwardResult,
 ) error {
-	// No billing key means test-mode / free attribution path — skip intentionally.
+	// Fail closed: upstream-consuming runs must never skip token attribution.
 	if apiKey == nil {
-		return nil
+		return fmt.Errorf("skill token billing requires a buyer api key")
 	}
 	if r == nil || r.gateway == nil || apiKey.User == nil || account == nil || result == nil {
 		return fmt.Errorf("skill token billing is incomplete: missing gateway context")
@@ -347,6 +356,7 @@ func (r *AISkillOpenAIRuntime) recordAISkillOpenAIUsage(
 		APIKey:          apiKey,
 		User:            apiKey.User,
 		Account:         account,
+		Subscription:    subscription,
 		InboundEndpoint: inboundEndpoint,
 		UserAgent:       userAgent,
 		QuotaPlatform:   PlatformOpenAI,
@@ -358,6 +368,56 @@ func (r *AISkillOpenAIRuntime) recordAISkillOpenAIUsage(
 		return fmt.Errorf("record skill token usage: %w", err)
 	}
 	return nil
+}
+
+func (r *AISkillOpenAIRuntime) preflightAISkillBilling(ctx context.Context, apiKey *APIKey) (*UserSubscription, error) {
+	if apiKey == nil {
+		return nil, fmt.Errorf("skill token billing requires a buyer api key")
+	}
+	if err := validateAISkillBillingAPIKey(apiKey); err != nil {
+		return nil, err
+	}
+	if r == nil || r.gateway == nil {
+		return nil, ErrAISkillServiceUnavailable
+	}
+	if r.gateway.userRepo != nil {
+		user, err := r.gateway.userRepo.GetByID(ctx, apiKey.UserID)
+		if err != nil {
+			return nil, err
+		}
+		if user == nil || !user.IsActive() {
+			return nil, ErrUserNotActive
+		}
+		apiKey.User = user
+	}
+	if apiKey.User == nil {
+		apiKey.User = &User{ID: apiKey.UserID}
+	}
+
+	var subscription *UserSubscription
+	if apiKey.Group != nil && apiKey.Group.IsSubscriptionType() {
+		if r.gateway.userSubRepo == nil {
+			return nil, ErrSubscriptionNotFound
+		}
+		resolved, err := r.gateway.userSubRepo.GetActiveByUserIDAndGroupID(ctx, apiKey.UserID, apiKey.Group.ID)
+		if err != nil {
+			return nil, err
+		}
+		subscription = resolved
+	}
+	if r.gateway.billingCacheService != nil {
+		if err := r.gateway.billingCacheService.CheckBillingEligibility(
+			ctx,
+			apiKey.User,
+			apiKey,
+			apiKey.Group,
+			subscription,
+			PlatformFromAPIKey(apiKey),
+		); err != nil {
+			return nil, err
+		}
+	}
+	return subscription, nil
 }
 
 type AISkillScriptRunnerRuntime struct {
@@ -634,6 +694,10 @@ func buildAISkillChatUserContent(prompt string, attachments []AISkillRunAttachme
 	return imageParts
 }
 
+// aiSkillChatMaxTokensHardCap bounds caller-supplied completion budgets so a
+// single skill run cannot request unbounded output.
+const aiSkillChatMaxTokensHardCap = 8192
+
 func applyAISkillChatRuntimeParameters(body map[string]any, params map[string]any) {
 	if body == nil {
 		return
@@ -641,6 +705,8 @@ func applyAISkillChatRuntimeParameters(body map[string]any, params map[string]an
 	if params == nil {
 		params = map[string]any{}
 	}
+	// Allowlist sampling / format knobs only. Never accept tools/functions or
+	// other control-plane fields from run parameters (capability escalation).
 	if temperature, ok := intOrFloatAISkillParameter(params, "temperature"); ok {
 		body["temperature"] = temperature
 	}
@@ -648,10 +714,20 @@ func applyAISkillChatRuntimeParameters(body map[string]any, params map[string]an
 		body["top_p"] = topP
 	}
 	if maxTokens, ok := intAISkillParameter(params, "max_tokens"); ok {
-		body["max_tokens"] = maxTokens
+		if maxTokens > aiSkillChatMaxTokensHardCap {
+			maxTokens = aiSkillChatMaxTokensHardCap
+		}
+		if maxTokens > 0 {
+			body["max_tokens"] = maxTokens
+		}
 	}
 	if maxCompletionTokens, ok := intAISkillParameter(params, "max_completion_tokens"); ok {
-		body["max_completion_tokens"] = maxCompletionTokens
+		if maxCompletionTokens > aiSkillChatMaxTokensHardCap {
+			maxCompletionTokens = aiSkillChatMaxTokensHardCap
+		}
+		if maxCompletionTokens > 0 {
+			body["max_completion_tokens"] = maxCompletionTokens
+		}
 	}
 	if reasoningEffort, ok := stringAISkillParameter(params, "reasoning_effort"); ok {
 		body["reasoning_effort"] = reasoningEffort
@@ -662,10 +738,8 @@ func applyAISkillChatRuntimeParameters(body map[string]any, params map[string]an
 	if responseFormat, ok := mapAISkillParameter(params, "response_format"); ok && len(responseFormat) > 0 {
 		body["response_format"] = responseFormat
 	}
-	for _, key := range []string{"stop", "tools", "tool_choice", "functions", "function_call"} {
-		if value, ok := params[key]; ok && value != nil {
-			body[key] = value
-		}
+	if stop, ok := params["stop"]; ok && stop != nil {
+		body["stop"] = stop
 	}
 }
 

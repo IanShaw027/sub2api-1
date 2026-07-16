@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -197,6 +198,68 @@ type PaymentConfigService struct {
 // NewPaymentConfigService creates a new PaymentConfigService.
 func NewPaymentConfigService(entClient *dbent.Client, settingRepo SettingRepository, encryptionKey []byte) *PaymentConfigService {
 	return &PaymentConfigService{entClient: entClient, settingRepo: settingRepo, encryptionKey: encryptionKey}
+}
+
+// MigrateProviderConfigEncryption encrypts plaintext provider configs left by
+// releases that stored the JSON directly. Existing AES-GCM rows are authenticated
+// before startup continues. A missing key is tolerated only when there are no
+// provider instances, preserving fresh/non-payment deployments.
+func (s *PaymentConfigService) MigrateProviderConfigEncryption(ctx context.Context) error {
+	if s == nil || s.entClient == nil {
+		return nil
+	}
+	instances, err := s.entClient.PaymentProviderInstance.Query().All(ctx)
+	if err != nil {
+		return fmt.Errorf("query payment provider configs for encryption migration: %w", err)
+	}
+	if len(instances) == 0 {
+		return nil
+	}
+	if len(s.encryptionKey) != payment.AES256KeySize {
+		return fmt.Errorf("payment provider config encryption key must be %d bytes when provider instances exist", payment.AES256KeySize)
+	}
+
+	type configMigration struct {
+		id        int64
+		encrypted string
+	}
+	migrations := make([]configMigration, 0, len(instances))
+	for _, instance := range instances {
+		var cfg map[string]string
+		if err := json.Unmarshal([]byte(instance.Config), &cfg); err == nil {
+			encrypted, err := s.encryptConfig(cfg)
+			if err != nil {
+				return fmt.Errorf("encrypt plaintext provider config %d: %w", instance.ID, err)
+			}
+			migrations = append(migrations, configMigration{id: instance.ID, encrypted: encrypted})
+			continue
+		}
+		if _, err := s.decryptConfig(instance.Config); err != nil {
+			return fmt.Errorf("validate encrypted provider config %d: %w", instance.ID, err)
+		}
+	}
+	if len(migrations) == 0 {
+		return nil
+	}
+
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin payment provider config encryption migration: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+	for _, migration := range migrations {
+		if _, err := tx.PaymentProviderInstance.UpdateOneID(migration.id).
+			SetConfig(migration.encrypted).
+			Save(ctx); err != nil {
+			return fmt.Errorf("persist encrypted provider config %d: %w", migration.id, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit payment provider config encryption migration: %w", err)
+	}
+	return nil
 }
 
 // IsPaymentEnabled returns whether the payment system is enabled.

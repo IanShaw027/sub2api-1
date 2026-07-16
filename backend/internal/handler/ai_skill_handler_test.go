@@ -120,7 +120,7 @@ func (s *handlerSkillBillingAPIKeyRepoStub) GetByID(_ context.Context, id int64)
 	if s != nil && s.userID > 0 {
 		uid = s.userID
 	}
-	return &service.APIKey{ID: id, UserID: uid, User: &service.User{ID: uid}}, nil
+	return &service.APIKey{ID: id, UserID: uid, Status: service.StatusActive, User: &service.User{ID: uid}}, nil
 }
 
 func TestAIHandlerBuildSkillMetadataStoresCoverImageURL(t *testing.T) {
@@ -166,18 +166,17 @@ func TestAIHandlerBuildSkillMetadataPreservesExistingCoverImageWhenOmitted(t *te
 	require.Empty(t, cleanupIDs)
 }
 
-func TestAIHandlerBuildSkillMetadataKeepsRawCoverImageWhenAdoptionFails(t *testing.T) {
+func TestAIHandlerBuildSkillMetadataRejectsCoverImageWhenAdoptionFails(t *testing.T) {
 	t.Parallel()
 
 	handler, _, _ := newAIHandlerMediaTestHarness(t)
 	raw := "data:image/png;base64,%%%invalid%%%"
-	metadata, cleanupIDs, err := handler.buildSkillMetadata(context.Background(), 42, skillUpsertRequest{
+	_, cleanupIDs, err := handler.buildSkillMetadata(context.Background(), 42, skillUpsertRequest{
 		Name:          "Example Skill",
 		Type:          service.AISkillTypePromptChat,
 		CoverImageURL: skillMediaPtrString(raw),
 	}, nil)
-	require.NoError(t, err)
-	require.Equal(t, raw, metadata["cover_image_url"])
+	require.Error(t, err)
 	require.Empty(t, cleanupIDs)
 }
 
@@ -231,25 +230,24 @@ func TestAIHandlerBuildRunAttachmentsStoresURLsAndPreservesExistingIDs(t *testin
 	require.Equal(t, []int64{1, 2}, cleanupIDs)
 }
 
-func TestAIHandlerBuildSkillMetadataWithoutMediaPreservesRawCoverImageURL(t *testing.T) {
+func TestAIHandlerBuildSkillMetadataWithoutMediaRejectsRemoteCoverImageURL(t *testing.T) {
 	t.Parallel()
 
 	handler := &AIHandler{}
-	metadata, cleanupIDs, err := handler.buildSkillMetadata(context.Background(), 42, skillUpsertRequest{
+	_, cleanupIDs, err := handler.buildSkillMetadata(context.Background(), 42, skillUpsertRequest{
 		Name:          "Example Skill",
 		Type:          service.AISkillTypePromptChat,
 		CoverImageURL: skillMediaPtrString("https://example.invalid/cover.png"),
 	}, nil)
-	require.NoError(t, err)
-	require.Equal(t, "https://example.invalid/cover.png", metadata["cover_image_url"])
+	require.Error(t, err)
 	require.Empty(t, cleanupIDs)
 }
 
-func TestAIHandlerBuildRunAttachmentsWithoutMediaPreservesRawURLs(t *testing.T) {
+func TestAIHandlerBuildRunAttachmentsWithoutMediaRejectsRemoteURLs(t *testing.T) {
 	t.Parallel()
 
 	handler := &AIHandler{}
-	attachments, cleanupIDs, err := handler.buildRunAttachments(context.Background(), 42, []map[string]any{
+	_, cleanupIDs, err := handler.buildRunAttachments(context.Background(), 42, []map[string]any{
 		{
 			"url":       "data:image/png;base64,QUJD",
 			"purpose":   "input",
@@ -261,12 +259,7 @@ func TestAIHandlerBuildRunAttachmentsWithoutMediaPreservesRawURLs(t *testing.T) 
 			"file_name": "remote.png",
 		},
 	})
-	require.NoError(t, err)
-	require.Len(t, attachments, 2)
-	require.Equal(t, "data:image/png;base64,QUJD", attachments[0].URL)
-	require.Equal(t, "https://example.invalid/remote.png", attachments[1].URL)
-	require.Nil(t, attachments[0].MediaID)
-	require.Nil(t, attachments[1].MediaID)
+	require.Error(t, err)
 	require.Empty(t, cleanupIDs)
 }
 
@@ -298,7 +291,7 @@ func TestAIHandlerBuildRunAttachmentsDoesNotResolveOtherUsersPublicMedia(t *test
 	require.Empty(t, cleanupIDs)
 }
 
-func TestAIHandlerBuildSkillMetadataWithDisabledMediaPreservesRawCoverImageURL(t *testing.T) {
+func TestAIHandlerBuildSkillMetadataWithDisabledMediaRejectsRemoteCoverImageURL(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config.Config{}
@@ -307,13 +300,12 @@ func TestAIHandlerBuildSkillMetadataWithDisabledMediaPreservesRawCoverImageURL(t
 	handler := &AIHandler{
 		mediaService: service.NewMediaService(&aiSkillHandlerMediaRepo{}, &aiSkillHandlerMediaStore{}, cfg),
 	}
-	metadata, cleanupIDs, err := handler.buildSkillMetadata(context.Background(), 42, skillUpsertRequest{
+	_, cleanupIDs, err := handler.buildSkillMetadata(context.Background(), 42, skillUpsertRequest{
 		Name:          "Example Skill",
 		Type:          service.AISkillTypePromptChat,
 		CoverImageURL: skillMediaPtrString("https://example.invalid/cover.png"),
 	}, nil)
-	require.NoError(t, err)
-	require.Equal(t, "https://example.invalid/cover.png", metadata["cover_image_url"])
+	require.Error(t, err)
 	require.Empty(t, cleanupIDs)
 }
 
@@ -551,7 +543,7 @@ func TestAIHandlerRunSkillWithModeForwardsRequestParametersAndAttachments(t *tes
 				RunService: runSvc,
 			}
 
-			ctx, recorder := newAISkillHandlerJSONContext(t, http.MethodPost, tc.path+"?version_id=8", `{"parameters":{"subject":"sunrise","count":2,"nested":{"enabled":true}},"trace":{"api_key_id":99},"attachments":[{"url":"https://example.invalid/input.png","purpose":"input","file_name":"input.png"},{"media_id":321,"purpose":"reference","file_name":"managed.png"}]}`)
+			ctx, recorder := newAISkillHandlerJSONContext(t, http.MethodPost, tc.path+"?version_id=8", `{"parameters":{"subject":"sunrise","count":2,"nested":{"enabled":true}},"trace":{"api_key_id":99},"attachments":[{"url":"data:image/png;base64,QUJD","purpose":"input","file_name":"input.png"},{"media_id":321,"purpose":"reference","file_name":"managed.png"}]}`)
 			ctx.Params = gin.Params{{Key: "id", Value: "7"}}
 
 			tc.invoke(handler, ctx)
@@ -566,7 +558,7 @@ func TestAIHandlerRunSkillWithModeForwardsRequestParametersAndAttachments(t *tes
 				},
 			}, runRepo.created[0].Parameters)
 			require.Len(t, runRepo.created[0].Attachments, 2)
-			require.Equal(t, "https://example.invalid/input.png", runRepo.created[0].Attachments[0].URL)
+			require.Equal(t, "data:image/png;base64,QUJD", runRepo.created[0].Attachments[0].URL)
 			require.Equal(t, "input", runRepo.created[0].Attachments[0].Purpose)
 			require.Equal(t, "input.png", runRepo.created[0].Attachments[0].FileName)
 			require.NotNil(t, runRepo.created[0].Attachments[1].MediaID)

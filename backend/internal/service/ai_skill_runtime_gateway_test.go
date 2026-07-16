@@ -45,6 +45,52 @@ type aiSkillOpenAIImageRuntimeStub struct {
 	err    error
 }
 
+type aiSkillRuntimeUserRepoStub struct {
+	UserRepository
+	user *User
+}
+
+func (s *aiSkillRuntimeUserRepoStub) GetByID(context.Context, int64) (*User, error) {
+	return s.user, nil
+}
+
+type aiSkillRuntimeSubscriptionRepoStub struct {
+	UserSubscriptionRepository
+	sub   *UserSubscription
+	calls int
+}
+
+func (s *aiSkillRuntimeSubscriptionRepoStub) GetActiveByUserIDAndGroupID(context.Context, int64, int64) (*UserSubscription, error) {
+	s.calls++
+	return s.sub, nil
+}
+
+func TestAISkillOpenAIRuntimePreflightResolvesSubscription(t *testing.T) {
+	group := &Group{ID: 7, Platform: PlatformOpenAI, SubscriptionType: SubscriptionTypeSubscription}
+	sub := &UserSubscription{ID: 9, UserID: 1, GroupID: group.ID, Status: SubscriptionStatusActive}
+	subRepo := &aiSkillRuntimeSubscriptionRepoStub{sub: sub}
+	runtime := &AISkillOpenAIRuntime{gateway: &OpenAIGatewayService{
+		userRepo:    &aiSkillRuntimeUserRepoStub{user: &User{ID: 1, Status: StatusActive}},
+		userSubRepo: subRepo,
+	}}
+	key := &APIKey{ID: 3, UserID: 1, Status: StatusActive, GroupID: &group.ID, Group: group}
+
+	resolved, err := runtime.preflightAISkillBilling(context.Background(), key)
+
+	require.NoError(t, err)
+	require.Same(t, sub, resolved)
+	require.Equal(t, 1, subRepo.calls)
+	require.Equal(t, StatusActive, key.User.Status)
+}
+
+func TestAISkillOpenAIRuntimePreflightRejectsDisabledKeyBeforeUpstream(t *testing.T) {
+	runtime := &AISkillOpenAIRuntime{gateway: &OpenAIGatewayService{}}
+	_, err := runtime.preflightAISkillBilling(context.Background(), &APIKey{
+		ID: 3, UserID: 1, Status: StatusDisabled,
+	})
+	require.Error(t, err)
+}
+
 func (s *aiSkillOpenAIImageRuntimeStub) ExecuteImages(_ context.Context, input AISkillOpenAIImageRuntimeInput) (*AISkillOpenAIImageRuntimeResult, error) {
 	s.inputs = append(s.inputs, input)
 	if s.err != nil {

@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"strconv"
 	"testing"
@@ -19,59 +20,177 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPaymentConfigServiceDecryptConfigPlaintextAndLegacyGate(t *testing.T) {
+func TestPaymentConfigServiceEncryptConfigRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	key := []byte("0123456789abcdef0123456789abcdef")
+	svc := &PaymentConfigService{encryptionKey: key}
+	want := map[string]string{"appId": "app-123", "secret": "sec-xyz"}
+
+	stored, err := svc.encryptConfig(want)
+	require.NoError(t, err)
+	require.NotContains(t, stored, "sec-xyz")
+	require.False(t, json.Valid([]byte(stored)))
+
+	got, err := svc.decryptConfig(stored)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestPaymentConfigServiceEncryptConfigRejectsInvalidKey(t *testing.T) {
+	t.Parallel()
+
+	for _, key := range [][]byte{nil, []byte("short"), make([]byte, payment.AES256KeySize-1), make([]byte, payment.AES256KeySize+1)} {
+		svc := &PaymentConfigService{encryptionKey: key}
+		_, err := svc.encryptConfig(map[string]string{"secret": "value"})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "encryption key must be 32 bytes")
+	}
+}
+
+func TestPaymentConfigServiceDecryptConfigPlaintextAndCiphertext(t *testing.T) {
+	key := []byte("0123456789abcdef0123456789abcdef")
+	wrongKey := []byte("fedcba9876543210fedcba9876543210")
 	plaintextJSON := `{"appId":"app-123","secret":"sec-xyz"}`
-	legacyEncrypted, err := payment.Encrypt(plaintextJSON, key)
+	encrypted, err := payment.Encrypt(plaintextJSON, key)
 	require.NoError(t, err)
 
 	tests := []struct {
-		name          string
-		stored        string
-		fallbackValue string
-		want          map[string]string
+		name    string
+		stored  string
+		key     []byte
+		want    map[string]string
+		wantErr bool
 	}{
 		{
 			name:   "plaintext JSON parses without fallback",
 			stored: plaintextJSON,
+			key:    nil,
 			want:   map[string]string{"appId": "app-123", "secret": "sec-xyz"},
 		},
 		{
-			name:   "legacy ciphertext decrypts by default",
-			stored: legacyEncrypted,
+			name:   "existing ciphertext decrypts",
+			stored: encrypted,
+			key:    key,
 			want:   map[string]string{"appId": "app-123", "secret": "sec-xyz"},
 		},
 		{
-			name:          "legacy ciphertext is empty when fallback disabled",
-			stored:        legacyEncrypted,
-			fallbackValue: "false",
-			want:          nil,
+			name:    "ciphertext without key fails closed",
+			stored:  encrypted,
+			key:     nil,
+			wantErr: true,
 		},
 		{
-			name:          "plaintext JSON still parses when fallback disabled",
-			stored:        plaintextJSON,
-			fallbackValue: "false",
-			want:          map[string]string{"appId": "app-123", "secret": "sec-xyz"},
+			name:    "ciphertext with wrong key fails closed",
+			stored:  encrypted,
+			key:     wrongKey,
+			wantErr: true,
 		},
 		{
-			name:          "garbage remains empty when fallback disabled",
-			stored:        "not-json-and-not-ciphertext",
-			fallbackValue: "false",
-			want:          nil,
+			name:    "garbage fails closed",
+			stored:  "not-json-and-not-ciphertext",
+			key:     key,
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.fallbackValue != "" {
-				t.Setenv(payment.LegacyConfigCiphertextFallbackEnv, tt.fallbackValue)
-			}
-			svc := &PaymentConfigService{encryptionKey: key}
+			svc := &PaymentConfigService{encryptionKey: tt.key}
 			got, err := svc.decryptConfig(tt.stored)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestPaymentConfigServiceMigrateProviderConfigEncryption(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	key := []byte("0123456789abcdef0123456789abcdef")
+	plaintext := `{"secretKey":"sk-live","publishableKey":"pk-live"}`
+	legacyCiphertext, err := payment.Encrypt(`{"apiKey":"legacy-secret"}`, key)
+	require.NoError(t, err)
+
+	plaintextInstance, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("plaintext").
+		SetConfig(plaintext).
+		Save(ctx)
+	require.NoError(t, err)
+	ciphertextInstance, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeAirwallex).
+		SetName("ciphertext").
+		SetConfig(legacyCiphertext).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := NewPaymentConfigService(client, nil, key)
+	require.NoError(t, svc.MigrateProviderConfigEncryption(ctx))
+
+	migrated, err := client.PaymentProviderInstance.Get(ctx, plaintextInstance.ID)
+	require.NoError(t, err)
+	require.False(t, json.Valid([]byte(migrated.Config)))
+	require.NotContains(t, migrated.Config, "sk-live")
+	got, err := svc.decryptConfig(migrated.Config)
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"secretKey": "sk-live", "publishableKey": "pk-live"}, got)
+
+	unchanged, err := client.PaymentProviderInstance.Get(ctx, ciphertextInstance.ID)
+	require.NoError(t, err)
+	require.Equal(t, legacyCiphertext, unchanged.Config)
+}
+
+func TestPaymentConfigServiceMigrateProviderConfigEncryptionAllowsNoRowsWithoutKey(t *testing.T) {
+	t.Parallel()
+
+	svc := NewPaymentConfigService(newPaymentConfigServiceTestClient(t), nil, nil)
+	require.NoError(t, svc.MigrateProviderConfigEncryption(context.Background()))
+}
+
+func TestPaymentConfigServiceMigrateProviderConfigEncryptionRejectsMissingOrWrongKey(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	plaintextInstance, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("plaintext").
+		SetConfig(`{"secretKey":"sk-live"}`).
+		Save(ctx)
+	require.NoError(t, err)
+
+	missingKeyService := NewPaymentConfigService(client, nil, nil)
+	err = missingKeyService.MigrateProviderConfigEncryption(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "encryption key must be 32 bytes")
+
+	key := []byte("0123456789abcdef0123456789abcdef")
+	encrypted, err := payment.Encrypt(`{"secretKey":"sk-live"}`, key)
+	require.NoError(t, err)
+	instance, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("ciphertext").
+		SetConfig(encrypted).
+		Save(ctx)
+	require.NoError(t, err)
+	err = client.PaymentProviderInstance.DeleteOneID(plaintextInstance.ID).Exec(ctx)
+	require.NoError(t, err)
+
+	wrongKeyService := NewPaymentConfigService(client, nil, []byte("fedcba9876543210fedcba9876543210"))
+	err = wrongKeyService.MigrateProviderConfigEncryption(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "validate encrypted provider config")
+
+	saved, err := client.PaymentProviderInstance.Get(ctx, instance.ID)
+	require.NoError(t, err)
+	require.Equal(t, encrypted, saved.Config)
 }
 
 func TestValidateProviderRequest(t *testing.T) {

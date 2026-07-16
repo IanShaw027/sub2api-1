@@ -23,6 +23,7 @@ const (
 	aiSkillSettlementDispatchStateConfirmed   = "confirmed"
 	aiSkillSettlementDispatchStateFailed      = "failed"
 	aiSkillSettlementDispatchFailureReason    = "upstream dispatch did not succeed; settlement must not be replayed"
+	aiSkillSettlementChargeAttemptMetadataKey = "_sub2api_charge_attempt"
 )
 
 func NewAISkillSettlementService(repo AISkillSettlementRepository, balanceCharger AISkillBalanceCharger, creatorCreditor AISkillCreatorEarningsCreditor) *AISkillSettlementService {
@@ -216,7 +217,9 @@ func (s *AISkillSettlementService) settle(ctx context.Context, input AISkillSett
 	}
 	now := s.nowOrDefault()
 	var settlement *AISkillSettlement
+	chargeAttempt := 1
 	if existing, err := s.repo.GetSettlementByRunID(ctx, input.RunID); err == nil && existing != nil {
+		chargeAttempt = aiSkillSettlementChargeAttempt(existing)
 		status := strings.ToLower(strings.TrimSpace(existing.Status))
 		if status == AISkillSettlementStatusSettled || status == AISkillSettlementStatusSkipped {
 			return existing, nil
@@ -246,6 +249,10 @@ func (s *AISkillSettlementService) settle(ctx context.Context, input AISkillSett
 			if !canReplayFailedAISkillSettlement(existing) {
 				return nil, ErrAISkillSettlementReplayUnsafe
 			}
+			// A fully compensated failure must use a fresh ledger reference.
+			// Reusing the original reference would resolve to the historical
+			// charge+refund pair and production correctly rejects it as refunded.
+			chargeAttempt++
 			settlement = cloneAISkillSettlement(existing)
 			settlement.Status = AISkillSettlementStatusPending
 			settlement.FailureReason = ""
@@ -265,6 +272,8 @@ func (s *AISkillSettlementService) settle(ctx context.Context, input AISkillSett
 	}
 	inputMetadata := cloneAIMap(input.Metadata)
 	delete(inputMetadata, aiSkillSettlementDispatchStateMetadataKey)
+	delete(inputMetadata, aiSkillSettlementChargeAttemptMetadataKey)
+	inputMetadata[aiSkillSettlementChargeAttemptMetadataKey] = chargeAttempt
 	if settlement == nil {
 		settlement = &AISkillSettlement{
 			RunID:                  input.RunID,
@@ -322,7 +331,7 @@ func (s *AISkillSettlementService) settle(ctx context.Context, input AISkillSett
 		return nil, ErrAISkillCreatorEarningsUnavailable
 	}
 
-	chargeRef := fmt.Sprintf("ai_skill_run:%d", input.RunID)
+	chargeRef := aiSkillSettlementChargeReference(input.RunID, chargeAttempt)
 	charge, err := s.balanceCharger.ChargeUserBalance(ctx, AISkillBalanceChargeInput{
 		UserID:    input.BuyerUserID,
 		Amount:    quote.TotalAmount,
@@ -493,6 +502,34 @@ func aiSkillSettlementDispatchState(settlement *AISkillSettlement) string {
 	}
 	state, _ := settlement.Metadata[aiSkillSettlementDispatchStateMetadataKey].(string)
 	return strings.ToLower(strings.TrimSpace(state))
+}
+
+func aiSkillSettlementChargeAttempt(settlement *AISkillSettlement) int {
+	if settlement == nil || settlement.Metadata == nil {
+		return 1
+	}
+	switch value := settlement.Metadata[aiSkillSettlementChargeAttemptMetadataKey].(type) {
+	case int:
+		if value > 0 {
+			return value
+		}
+	case int64:
+		if value > 0 {
+			return int(value)
+		}
+	case float64:
+		if value >= 1 && value == float64(int(value)) {
+			return int(value)
+		}
+	}
+	return 1
+}
+
+func aiSkillSettlementChargeReference(runID int64, attempt int) string {
+	if attempt <= 1 {
+		return fmt.Sprintf("ai_skill_run:%d", runID)
+	}
+	return fmt.Sprintf("ai_skill_run:%d:attempt:%d", runID, attempt)
 }
 
 func cloneAISkillSettlement(settlement *AISkillSettlement) *AISkillSettlement {

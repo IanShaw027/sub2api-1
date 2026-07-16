@@ -5,6 +5,7 @@ package payment
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -475,7 +476,7 @@ func TestStartOfDay(t *testing.T) {
 	}
 }
 
-func TestDecryptConfig_PlaintextAndLegacyCompat(t *testing.T) {
+func TestDecryptConfig_PlaintextAndCiphertextCompat(t *testing.T) {
 	key := make([]byte, AES256KeySize)
 	for i := range key {
 		key[i] = byte(i + 1)
@@ -493,11 +494,11 @@ func TestDecryptConfig_PlaintextAndLegacyCompat(t *testing.T) {
 	}
 
 	tests := []struct {
-		name          string
-		stored        string
-		key           []byte
-		fallbackValue string
-		want          map[string]string
+		name    string
+		stored  string
+		key     []byte
+		want    map[string]string
+		wantErr bool
 	}{
 		{
 			name:   "empty stored returns nil map",
@@ -518,52 +519,50 @@ func TestDecryptConfig_PlaintextAndLegacyCompat(t *testing.T) {
 			want:   map[string]string{"appId": "app-123", "secret": "sec-xyz"},
 		},
 		{
-			name:   "legacy ciphertext with correct key decrypts",
+			name:   "ciphertext with correct key decrypts",
 			stored: legacyEncrypted,
 			key:    key,
 			want:   map[string]string{"appId": "app-123", "secret": "sec-xyz"},
 		},
 		{
-			name:          "legacy ciphertext with correct key treated as empty when fallback disabled",
-			stored:        legacyEncrypted,
-			key:           key,
-			fallbackValue: "false",
-			want:          nil,
-		},
-		{
-			name:          "plaintext JSON still parses when fallback disabled",
-			stored:        plaintextJSON,
-			key:           key,
-			fallbackValue: "false",
-			want:          map[string]string{"appId": "app-123", "secret": "sec-xyz"},
-		},
-		{
-			name:   "legacy ciphertext with no key treated as empty",
+			name:   "ciphertext remains readable when old fallback switch is disabled",
 			stored: legacyEncrypted,
-			key:    nil,
-			want:   nil,
-		},
-		{
-			name:   "legacy ciphertext with wrong key treated as empty",
-			stored: legacyEncrypted,
-			key:    wrongKey,
-			want:   nil,
-		},
-		{
-			name:   "garbage data treated as empty",
-			stored: "not-json-and-not-ciphertext",
 			key:    key,
-			want:   nil,
+			want:   map[string]string{"appId": "app-123", "secret": "sec-xyz"},
+		},
+		{
+			name:    "ciphertext with no key fails closed",
+			stored:  legacyEncrypted,
+			key:     nil,
+			wantErr: true,
+		},
+		{
+			name:    "ciphertext with wrong key fails closed",
+			stored:  legacyEncrypted,
+			key:     wrongKey,
+			wantErr: true,
+		},
+		{
+			name:    "garbage data fails closed",
+			stored:  "not-json-and-not-ciphertext",
+			key:     key,
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.fallbackValue != "" {
-				t.Setenv(LegacyConfigCiphertextFallbackEnv, tt.fallbackValue)
+			if strings.Contains(tt.name, "fallback switch") {
+				t.Setenv(LegacyConfigCiphertextFallbackEnv, "false")
 			}
 			lb := NewDefaultLoadBalancer(nil, tt.key)
 			got, err := lb.decryptConfig(tt.stored)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("decryptConfig expected error")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("decryptConfig unexpected error: %v", err)
 			}

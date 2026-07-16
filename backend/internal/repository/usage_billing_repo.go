@@ -275,6 +275,10 @@ func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, am
 		return 0, false, err
 	}
 
+	// Post-usage billing cannot reject an upstream request that has already
+	// completed. If concurrent requests exhausted the guarded balance, retain
+	// the debt instead of rolling the whole billing transaction back and
+	// granting unlogged free usage.
 	err = tx.QueryRowContext(ctx, `
 		UPDATE users
 		SET balance = balance - $1,

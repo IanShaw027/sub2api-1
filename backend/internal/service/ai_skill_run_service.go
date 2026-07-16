@@ -81,11 +81,12 @@ func (s *AISkillRunService) Prepare(ctx context.Context, userID int64, input *AI
 	if !canAISkillVersionTestUseOrPublish(version.Status) {
 		return nil, ErrAISkillVersionNotApproved
 	}
-	// After skill/version authorization: use mode requires a buyer API key id so
-	// upstream tokens can be attributed. Lookup is best-effort when repo is wired.
-	if mode == AISkillRunModeUse {
+	// Upstream-consuming skill types must always bind a buyer API key so tokens
+	// are attributed. Test mode used to skip this and could free-ride platform
+	// accounts; both test and use now require billing attribution for prompt_* .
+	if aiSkillModeRequiresBillingAPIKey(mode, version.Type) {
 		if input.Trace.APIKeyID == nil || *input.Trace.APIKeyID <= 0 {
-			return nil, infraerrors.BadRequest("AI_SKILL_API_KEY_REQUIRED", "use mode requires trace.api_key_id for token billing")
+			return nil, infraerrors.BadRequest("AI_SKILL_API_KEY_REQUIRED", "skill runs that call upstream models require trace.api_key_id for token billing")
 		}
 	}
 	now := s.nowOrDefault()
@@ -385,11 +386,48 @@ func (s *AISkillRunService) resolveBillingAPIKey(ctx context.Context, userID int
 	if key.UserID != userID {
 		return nil, infraerrors.Forbidden("AI_SKILL_API_KEY_FORBIDDEN", "api key does not belong to the skill runner")
 	}
+	if err := validateAISkillBillingAPIKey(key); err != nil {
+		return nil, err
+	}
 	if key.User == nil {
 		// Hydrate minimal user for RecordUsage; full balance checks happen inside billing.
 		key.User = &User{ID: userID}
 	}
 	return key, nil
+}
+
+func validateAISkillBillingAPIKey(key *APIKey) error {
+	if key == nil {
+		return infraerrors.NotFound("AI_SKILL_API_KEY_NOT_FOUND", "api key not found for skill billing")
+	}
+	switch key.Status {
+	case "", StatusActive:
+	case StatusAPIKeyExpired:
+		return ErrAPIKeyExpired
+	case StatusAPIKeyQuotaExhausted:
+		return ErrAPIKeyQuotaExhausted
+	default:
+		return infraerrors.Unauthorized("API_KEY_INACTIVE", "api key is not active")
+	}
+	if key.IsExpired() {
+		return ErrAPIKeyExpired
+	}
+	if key.IsQuotaExhausted() {
+		return ErrAPIKeyQuotaExhausted
+	}
+	if key.RateLimit5h > 0 && key.EffectiveUsage5h() >= key.RateLimit5h {
+		return ErrAPIKeyRateLimit5hExceeded
+	}
+	if key.RateLimit1d > 0 && key.EffectiveUsage1d() >= key.RateLimit1d {
+		return ErrAPIKeyRateLimit1dExceeded
+	}
+	if key.RateLimit7d > 0 && key.EffectiveUsage7d() >= key.RateLimit7d {
+		return ErrAPIKeyRateLimit7dExceeded
+	}
+	if key.User != nil && strings.TrimSpace(key.User.Status) != "" && !key.User.IsActive() {
+		return ErrUserNotActive
+	}
+	return nil
 }
 
 func (s *AISkillRunService) buildExecutionRequest(ctx context.Context, run *AISkillRun, skill *AISkill, version *AISkillVersion, settlement *AISkillSettlement) (*AISkillExecutionRequest, error) {
@@ -417,16 +455,16 @@ func (s *AISkillRunService) buildExecutionRequest(ctx context.Context, run *AISk
 		return nil, err
 	}
 	req.BillingAPIKey = key
-	// use mode must resolve a real billing key; never proceed with nil and skip RecordUsage.
-	if normalizeAISkillRunMode(run.Mode) == AISkillRunModeUse {
+	// Fail closed: any mode that hits upstream must have a resolved owned key.
+	if aiSkillModeRequiresBillingAPIKey(run.Mode, version.Type) {
 		if run.Trace.APIKeyID == nil || *run.Trace.APIKeyID <= 0 {
-			return nil, infraerrors.BadRequest("AI_SKILL_API_KEY_REQUIRED", "use mode requires trace.api_key_id for token billing")
+			return nil, infraerrors.BadRequest("AI_SKILL_API_KEY_REQUIRED", "skill runs that call upstream models require trace.api_key_id for token billing")
 		}
 		if req.BillingAPIKey == nil {
 			if s.apiKeyRepo == nil {
 				return nil, infraerrors.InternalServer("AI_SKILL_API_KEY_LOOKUP_UNAVAILABLE", "api key lookup is not configured for skill billing")
 			}
-			return nil, infraerrors.BadRequest("AI_SKILL_API_KEY_REQUIRED", "use mode requires a valid owned api key for token billing")
+			return nil, infraerrors.BadRequest("AI_SKILL_API_KEY_REQUIRED", "skill runs that call upstream models require a valid owned api key for token billing")
 		}
 	}
 	switch version.Type {
@@ -571,6 +609,20 @@ func computeAISkillVersionApprovedDigest(skill *AISkill, version *AISkillVersion
 		return "", nil
 	}
 	return computeAISkillScriptArtifactDigest(resolved.ArchiveBase64)
+}
+
+// aiSkillModeRequiresBillingAPIKey reports whether this run will invoke an
+// upstream model gateway and therefore must attribute usage to a buyer key.
+// Script skills bill via settlement only (no OpenAI gateway path here).
+func aiSkillModeRequiresBillingAPIKey(mode, skillType string) bool {
+	switch normalizeAISkillType(skillType) {
+	case AISkillTypePromptChat, AISkillTypePromptImage:
+		switch normalizeAISkillRunMode(mode) {
+		case AISkillRunModeTest, AISkillRunModeUse:
+			return true
+		}
+	}
+	return false
 }
 
 func mergeAISkillExecutionParameters(parameters map[string]any, schemas ...[]map[string]any) map[string]any {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
@@ -508,16 +507,10 @@ func (s *PaymentConfigService) mergeConfig(ctx context.Context, id int64, newCon
 	return existing, nil
 }
 
-// decryptConfig parses a stored provider config.
-// New records are plaintext JSON; legacy records may be AES-256-GCM ciphertext
-// ("iv:authTag:ciphertext"). Values that cannot be parsed as either — including
-// legacy ciphertext with no/invalid TOTP_ENCRYPTION_KEY — are treated as empty,
-// letting the admin re-enter the config via the UI to complete the migration.
-//
-// Deprecated legacy ciphertext support remains default-on because there is no
-// schema marker proving all existing rows have been re-saved as plaintext JSON.
-// Operators can set PAYMENT_LEGACY_CONFIG_CIPHERTEXT_FALLBACK=false after
-// migration to make unreadable ciphertext behave like any other malformed value.
+// decryptConfig parses an AES-256-GCM provider config. Plaintext JSON remains
+// readable only for rolling-upgrade compatibility and is encrypted by the
+// startup migration. Missing keys, authentication failures, and malformed data
+// fail closed instead of silently turning provider credentials into an empty map.
 func (s *PaymentConfigService) decryptConfig(stored string) (map[string]string, error) {
 	if stored == "" {
 		return nil, nil
@@ -526,18 +519,14 @@ func (s *PaymentConfigService) decryptConfig(stored string) (map[string]string, 
 	if err := json.Unmarshal([]byte(stored), &cfg); err == nil {
 		return cfg, nil
 	}
-	// Deprecated: legacy AES-256-GCM ciphertext fallback — scheduled for removal.
-	if payment.LegacyConfigCiphertextFallbackEnabled() && len(s.encryptionKey) == payment.AES256KeySize {
-		//nolint:staticcheck // SA1019: intentional legacy fallback, scheduled for removal
-		if plaintext, err := payment.Decrypt(stored, s.encryptionKey); err == nil {
-			if err := json.Unmarshal([]byte(plaintext), &cfg); err == nil {
-				return cfg, nil
-			}
-		}
+	plaintext, err := payment.Decrypt(stored, s.encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt payment provider config: %w", err)
 	}
-	slog.Warn("payment provider config unreadable, treating as empty for re-entry",
-		"stored_len", len(stored))
-	return nil, nil
+	if err := json.Unmarshal([]byte(plaintext), &cfg); err != nil {
+		return nil, fmt.Errorf("decode decrypted payment provider config: %w", err)
+	}
+	return cfg, nil
 }
 
 func (s *PaymentConfigService) DeleteProviderInstance(ctx context.Context, id int64) error {
@@ -552,13 +541,17 @@ func (s *PaymentConfigService) DeleteProviderInstance(ctx context.Context, id in
 	return s.entClient.PaymentProviderInstance.DeleteOneID(id).Exec(ctx)
 }
 
-// encryptConfig serialises a provider config for storage.
-// New records are written as plaintext JSON; the historical AES-GCM wrapping
-// has been dropped but decryptConfig still accepts old ciphertext during migration.
+// encryptConfig serialises and encrypts a provider config for storage.
+// payment.Encrypt enforces a 32-byte key, so writes fail closed when the
+// deployment has not explicitly configured a stable encryption key.
 func (s *PaymentConfigService) encryptConfig(cfg map[string]string) (string, error) {
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return "", fmt.Errorf("marshal config: %w", err)
 	}
-	return string(data), nil
+	encrypted, err := payment.Encrypt(string(data), s.encryptionKey)
+	if err != nil {
+		return "", fmt.Errorf("encrypt config: %w", err)
+	}
+	return encrypted, nil
 }
