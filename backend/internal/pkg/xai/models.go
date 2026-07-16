@@ -66,22 +66,54 @@ func DefaultModelIDs() []string {
 // DefaultTextModel so Grok groups accept Codex CLI / Claude Code defaults without
 // forcing users to rename models first. IsModelSupported uses this mapping as the
 // account whitelist when credentials leave model_mapping empty.
+// grokTextResponsesModelAliases is the SINGLE source of truth for Grok text
+// models that may be sent to the xAI Responses API: every client-facing /
+// un-dated alias mapped to its canonical upstream ID. It backs BOTH the
+// Responses model whitelist (DefaultModelMapping, which grok accounts fall back
+// to when model_mapping is empty) AND IsGrokTextResponsesModelID, so adding a
+// model here makes it simultaneously accepted (not rejected as
+// group-model-unsupported) and forwarded to the correct upstream ID.
+//
+// Un-dated aliases matter because official clients send them: Grok CLI uses
+// "grok-build" (main) and "grok-4.20-multi-agent" (its built-in web_search
+// sub-call); Codex/opencode may request "grok-code-fast". See grok-build
+// crates/codegen/xai-grok-models/default_models.json.
+var grokTextResponsesModelAliases = map[string]string{
+	"grok":                         DefaultTextModel,
+	"grok-latest":                  DefaultTextModel,
+	"grok-4.5":                     DefaultTextModel,
+	"grok-4.5-latest":              DefaultTextModel,
+	"grok-4.3":                     "grok-4.3",
+	"grok-4.3-latest":              "grok-4.3",
+	"grok-3-mini":                  "grok-3-mini",
+	"grok-3-mini-fast":             "grok-3-mini-fast",
+	"grok-build":                   "grok-build-0.1",
+	"grok-build-latest":            "grok-build-0.1",
+	"grok-build-0.1":               "grok-build-0.1",
+	"grok-composer-2.5-fast":       "grok-composer-2.5-fast",
+	"grok-composer":                "grok-composer-2.5-fast",
+	"composer-2.5":                 "grok-composer-2.5-fast",
+	"grok-code-fast":               "grok-code-fast-1-0825",
+	"grok-code-fast-1":             "grok-code-fast-1-0825",
+	"grok-code-fast-1-0825":        "grok-code-fast-1-0825",
+	"grok-4.20-reasoning":          "grok-4.20-0309-reasoning",
+	"grok-4.20-0309-reasoning":     "grok-4.20-0309-reasoning",
+	"grok-4.20-non-reasoning":      "grok-4.20-0309-non-reasoning",
+	"grok-4.20-0309-non-reasoning": "grok-4.20-0309-non-reasoning",
+	"grok-4.20-multi-agent":        "grok-4.20-multi-agent-0309",
+	"grok-4.20-multi-agent-latest": "grok-4.20-multi-agent-0309",
+	"grok-4.20-multi-agent-0309":   "grok-4.20-multi-agent-0309",
+}
+
 func DefaultModelMapping() map[string]string {
-	mapping := make(map[string]string, len(defaultModels)+40)
+	mapping := make(map[string]string, len(defaultModels)+len(grokTextResponsesModelAliases)+40)
 	for _, model := range defaultModels {
 		mapping[model.ID] = model.ID
 	}
-	// Generic text aliases resolve to the current default text model.
-	mapping["grok"] = DefaultTextModel
-	mapping["grok-latest"] = DefaultTextModel
-	mapping["grok-4.5-latest"] = DefaultTextModel
-	mapping["grok-build"] = "grok-build-0.1"
-	mapping["grok-build-latest"] = "grok-build-0.1"
-	mapping["grok-4.20-reasoning"] = "grok-4.20-0309-reasoning"
-	mapping["grok-4.20-non-reasoning"] = "grok-4.20-0309-non-reasoning"
-	mapping["grok-composer-2.5-fast"] = "grok-composer-2.5-fast"
-	mapping["grok-composer"] = "grok-composer-2.5-fast"
-	mapping["composer-2.5"] = "grok-composer-2.5-fast"
+	// Grok text models + un-dated client aliases (shared source of truth).
+	for alias, canonical := range grokTextResponsesModelAliases {
+		mapping[alias] = canonical
+	}
 	// Imagine aliases / legacy IDs → official catalog.
 	mapping["grok-imagine"] = DefaultImagineImageQualityModel
 	mapping["grok-imagine-1"] = DefaultImagineImageQualityModel
@@ -159,36 +191,13 @@ func IsGrokModelID(model string) bool {
 
 // IsGrokTextResponsesModelID reports whether model is a known Grok text model
 // that can be sent to the xAI Responses API. Imagine image/video models and
-// unknown custom grok-* IDs return false.
+// unknown custom grok-* IDs return false. Backed by the same
+// grokTextResponsesModelAliases table as DefaultModelMapping so the whitelist
+// and this helper never drift.
 func IsGrokTextResponsesModelID(model string) bool {
 	normalized := strings.ToLower(StripGrokProviderPrefix(model))
-	switch normalized {
-	case DefaultTextModel,
-		"grok",
-		"grok-latest",
-		"grok-4.5-latest",
-		"grok-4.3",
-		"grok-4.3-latest",
-		"grok-3-mini",
-		"grok-3-mini-fast",
-		"grok-build",
-		"grok-build-latest",
-		"grok-build-0.1",
-		"grok-composer-2.5-fast",
-		"grok-composer",
-		"composer-2.5",
-		"grok-code-fast",
-		"grok-code-fast-1",
-		"grok-code-fast-1-0825",
-		"grok-4.20-0309-reasoning",
-		"grok-4.20-reasoning",
-		"grok-4.20-0309-non-reasoning",
-		"grok-4.20-non-reasoning",
-		"grok-4.20-multi-agent-0309":
-		return true
-	default:
-		return false
-	}
+	_, ok := grokTextResponsesModelAliases[normalized]
+	return ok
 }
 
 // ResolveDefaultTextModel returns DefaultTextModel when model is empty.

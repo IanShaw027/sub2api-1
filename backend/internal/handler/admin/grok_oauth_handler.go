@@ -1,8 +1,6 @@
 package admin
 
 import (
-	"context"
-	"log/slog"
 	"strconv"
 	"strings"
 
@@ -193,7 +191,7 @@ func (h *GrokOAuthHandler) RefreshAccountToken(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	h.probeQuotaAsync(updatedAccount.ID)
+	h.scheduleGrokImportProbe(updatedAccount)
 	response.Success(c, dto.AccountFromService(updatedAccount))
 }
 
@@ -247,30 +245,11 @@ func (h *GrokOAuthHandler) CreateAccountFromOAuth(c *gin.Context) {
 		return
 	}
 
-	// 绑定成功后异步主动探测一次，best-effort 抓取 xAI 响应头里的
-	// 配额 / 订阅 tier / entitlement 快照（若上游返回相关头），不阻塞建号响应。
-	h.probeQuotaAsync(account.ID)
+	// 绑定成功后异步刷新官方 billing / 配额快照；无权威 billing 时再回退主动探测，
+	// 整个过程 best-effort 且不阻塞建号响应。
+	h.scheduleGrokImportProbe(account)
 
 	response.Success(c, dto.AccountFromService(account))
-}
-
-// probeQuotaAsync 在后台 best-effort 触发一次 Grok 配额探测。
-// 探测会发起一次最小推理请求以读取 xAI 返回的配额 / 订阅头，失败仅记录日志。
-func (h *GrokOAuthHandler) probeQuotaAsync(accountID int64) {
-	if h.quotaService == nil || accountID <= 0 {
-		return
-	}
-	quotaService := h.quotaService
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				slog.Error("grok_oauth_bind_quota_probe_panic", "recover", r, "account_id", accountID)
-			}
-		}()
-		if _, err := quotaService.QueryQuota(context.Background(), accountID); err != nil {
-			slog.Debug("grok_oauth_bind_quota_probe_failed", "account_id", accountID, "error", err.Error())
-		}
-	}()
 }
 
 func (h *GrokOAuthHandler) QueryQuota(c *gin.Context) {

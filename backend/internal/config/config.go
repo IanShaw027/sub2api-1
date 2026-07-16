@@ -904,11 +904,12 @@ type GatewayConfig struct {
 type GatewayGrokConfig struct {
 	// HTTPActiveDeltaEnabled: Grok OAuth Responses 安全增量（only-new input + previous_response_id）。
 	// 与 openai_ws.http_incremental_continuation_enabled 解耦；默认开启，不可证明安全时全量。
-	// 若观测到 high full_replay_retry（xAI store=false 不支持 previous），可临时关闭或开启
-	// HTTPActiveDeltaRequireStoreOnCreate。
+	// 若 full_replay_retry 仍高（session 漂移 / prefix break），可临时关闭。
 	HTTPActiveDeltaEnabled bool `mapstructure:"http_active_delta_enabled"`
-	// HTTPActiveDeltaRequireStoreOnCreate: 首轮/全量 create 是否强制 store=true。
-	// 当上游要求服务端存历史才能 previous 续聊时开启；默认 false（对齐 store=false/ZDR 模型）。
+	// HTTPActiveDeltaRequireStoreOnCreate: 当客户端未指定 store 时，首轮/全量 create 以及
+	// Grok delta 续聊是否强制 store=true。xAI 的 previous_response_id 依赖服务端存历史；
+	// 默认 true，避免 bind 了本地 lastResponseID 但上游 404 not found。客户端显式
+	// store=false 始终优先：不强制存储、不启用 active delta、不绑定增量会话。
 	HTTPActiveDeltaRequireStoreOnCreate bool `mapstructure:"http_active_delta_require_store_on_create"`
 	// FreeQuotaSoftGateEnabled enables a local rolling-window scheduling guard
 	// for accounts whose OAuth subscription tier is explicitly FREE.
@@ -2133,8 +2134,11 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_http2.fallback_window_seconds", 60)
 	viper.SetDefault("gateway.openai_http2.fallback_ttl_seconds", 600)
 	// Grok OAuth HTTP active-delta (safe only-new continuation); independent of OpenAI WS flags.
+	// require_store_on_create defaults true when store is omitted: xAI rejects previous_response_id
+	// when the prior turn was not stored. An explicit client store=false always takes precedence and
+	// disables forced storage plus active-delta/session binding for that request.
 	viper.SetDefault("gateway.grok.http_active_delta_enabled", true)
-	viper.SetDefault("gateway.grok.http_active_delta_require_store_on_create", false)
+	viper.SetDefault("gateway.grok.http_active_delta_require_store_on_create", true)
 	viper.SetDefault("gateway.grok.free_quota_soft_gate_enabled", true)
 	viper.SetDefault("gateway.grok.free_quota_token_limit", int64(2_000_000))
 	viper.SetDefault("gateway.grok.free_quota_soft_gate_percent", 95)

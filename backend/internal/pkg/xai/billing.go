@@ -13,8 +13,8 @@ import (
 // Monthly used/limit   → GET {CLIBase}/billing
 
 const (
-	BillingPathCredits = "/billing?format=credits"
-	BillingPathMonthly = "/billing"
+	BillingPathCredits   = "/billing?format=credits"
+	BillingPathMonthly   = "/billing"
 	UserPathSubscription = "/user?include=subscription"
 )
 
@@ -32,22 +32,22 @@ type UsagePeriod struct {
 
 // ProductUsageEntry is per-product utilization within the credit window.
 type ProductUsageEntry struct {
-	Product       string  `json:"product"`
-	UsagePercent  float64 `json:"usagePercent"`
+	Product      string  `json:"product"`
+	UsagePercent float64 `json:"usagePercent"`
 }
 
 // CreditsBillingConfig is the body of GET /billing?format=credits → config.
 type CreditsBillingConfig struct {
-	CurrentPeriod         *UsagePeriod        `json:"currentPeriod,omitempty"`
-	CreditUsagePercent    float64             `json:"creditUsagePercent"`
-	OnDemandCap           *MoneyVal           `json:"onDemandCap,omitempty"`
-	OnDemandUsed          *MoneyVal           `json:"onDemandUsed,omitempty"`
-	ProductUsage          []ProductUsageEntry `json:"productUsage,omitempty"`
-	IsUnifiedBillingUser  bool                `json:"isUnifiedBillingUser"`
-	PrepaidBalance        *MoneyVal           `json:"prepaidBalance,omitempty"`
-	TopUpMethod           string              `json:"topUpMethod,omitempty"`
-	BillingPeriodStart    string              `json:"billingPeriodStart,omitempty"`
-	BillingPeriodEnd      string              `json:"billingPeriodEnd,omitempty"`
+	CurrentPeriod        *UsagePeriod        `json:"currentPeriod,omitempty"`
+	CreditUsagePercent   float64             `json:"creditUsagePercent"`
+	OnDemandCap          *MoneyVal           `json:"onDemandCap,omitempty"`
+	OnDemandUsed         *MoneyVal           `json:"onDemandUsed,omitempty"`
+	ProductUsage         []ProductUsageEntry `json:"productUsage,omitempty"`
+	IsUnifiedBillingUser bool                `json:"isUnifiedBillingUser"`
+	PrepaidBalance       *MoneyVal           `json:"prepaidBalance,omitempty"`
+	TopUpMethod          string              `json:"topUpMethod,omitempty"`
+	BillingPeriodStart   string              `json:"billingPeriodStart,omitempty"`
+	BillingPeriodEnd     string              `json:"billingPeriodEnd,omitempty"`
 }
 
 // CreditsBillingResponse is GET /billing?format=credits.
@@ -83,23 +83,23 @@ type MonthlyBillingResponse struct {
 
 // UserSubscriptionResponse is GET /user?include=subscription.
 type UserSubscriptionResponse struct {
-	UserID              string `json:"userId,omitempty"`
-	Email               string `json:"email,omitempty"`
-	SubscriptionTier    string `json:"subscriptionTier,omitempty"`
-	HasGrokCodeAccess   bool   `json:"hasGrokCodeAccess,omitempty"`
-	UserBlockedReason   string `json:"userBlockedReason,omitempty"`
+	UserID            string `json:"userId,omitempty"`
+	Email             string `json:"email,omitempty"`
+	SubscriptionTier  string `json:"subscriptionTier,omitempty"`
+	HasGrokCodeAccess bool   `json:"hasGrokCodeAccess,omitempty"`
+	UserBlockedReason string `json:"userBlockedReason,omitempty"`
 }
 
 // BillingSnapshot is the persisted aggregate for passive UI + cache.
 type BillingSnapshot struct {
-	UpdatedAt          string                 `json:"updated_at"`
-	Source             string                 `json:"source,omitempty"`
-	Credits            *CreditsBillingConfig  `json:"credits,omitempty"`
-	Monthly            *MonthlyBillingConfig  `json:"monthly,omitempty"`
-	SubscriptionTier   string                 `json:"subscription_tier,omitempty"`
-	Email              string                 `json:"email,omitempty"`
-	HasGrokCodeAccess  bool                   `json:"has_grok_code_access,omitempty"`
-	FetchError         string                 `json:"fetch_error,omitempty"`
+	UpdatedAt         string                `json:"updated_at"`
+	Source            string                `json:"source,omitempty"`
+	Credits           *CreditsBillingConfig `json:"credits,omitempty"`
+	Monthly           *MonthlyBillingConfig `json:"monthly,omitempty"`
+	SubscriptionTier  string                `json:"subscription_tier,omitempty"`
+	Email             string                `json:"email,omitempty"`
+	HasGrokCodeAccess bool                  `json:"has_grok_code_access,omitempty"`
+	FetchError        string                `json:"fetch_error,omitempty"`
 }
 
 // CLIBillingBaseURL returns the host used for /usage billing APIs.

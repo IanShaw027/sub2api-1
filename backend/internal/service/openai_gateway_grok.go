@@ -88,6 +88,7 @@ func (s *OpenAIGatewayService) forwardGrokResponsesWithPromptCacheKey(
 		}
 		return nil, err
 	}
+	markGrokClientStorePreference(c, body)
 
 	patchedBody, err := patchGrokResponsesBody(body, upstreamModel)
 	if err != nil {

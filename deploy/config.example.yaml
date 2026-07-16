@@ -396,11 +396,17 @@ gateway:
     fallback_ttl_seconds: 600
   # Grok OAuth HTTP safe active-delta (only-new input + previous_response_id when prefix-safe)
   # Grok OAuth HTTP 安全增量：前缀可证明时只发 only-new，否则全量；与 openai_ws.http_incremental_* 解耦
-  # If full_replay_retry is high, try require_store_on_create=true or disable active delta.
-  # 若 full_replay_retry 偏高，可试 require_store_on_create=true，或临时关闭 active delta。
+  # When store is omitted, require_store_on_create defaults true for full create and delta turns.
+  # 客户端未指定 store 时，默认 full+delta 使用 store=true，保证多轮 previous 链不断。
+  # Explicit client store=false always wins: no forced storage, active delta, or session binding.
+  # 客户端显式 store=false 始终优先：不强制存储，不启用增量，不绑定增量会话。
+  # To make omitted store ZDR by default, disable both require_store_on_create and active_delta.
+  # 如需让未指定 store 的请求也默认 ZDR，同时关闭 require_store 与 active_delta。
+  # If full_replay_retry stays high after store=true, check instructions strip / prefix breaks.
+  # 若 store=true 后 full_replay_retry 仍高，检查 instructions 剥离或客户端改历史。
   grok:
     http_active_delta_enabled: true
-    http_active_delta_require_store_on_create: false
+    http_active_delta_require_store_on_create: true
     # Explicit FREE OAuth accounts are skipped at 95% of the local rolling allowance.
     free_quota_soft_gate_enabled: true
     free_quota_token_limit: 2000000

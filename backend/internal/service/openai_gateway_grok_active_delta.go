@@ -33,6 +33,68 @@ func (s *OpenAIGatewayService) grokHTTPActiveDeltaRequireStoreOnCreate() bool {
 	return s != nil && s.cfg != nil && s.cfg.Gateway.Grok.HTTPActiveDeltaRequireStoreOnCreate
 }
 
+// grokActiveDeltaIncompatibleWithPrevious lists top-level Responses fields that xAI
+// rejects when previous_response_id is set (e.g. "instructions and previous_response_id
+// together"). Only applied on the delta path; full replay keeps the original body.
+var grokActiveDeltaIncompatibleWithPrevious = []string{
+	"instructions",
+}
+
+const grokClientExplicitStoreFalseContextKey = "grok_client_explicit_store_false"
+
+func markGrokClientStorePreference(c *gin.Context, body []byte) {
+	if c == nil {
+		return
+	}
+	store := gjson.GetBytes(body, "store")
+	c.Set(grokClientExplicitStoreFalseContextKey, store.Exists() && store.Type == gjson.False)
+}
+
+func grokClientExplicitlyDisablesStore(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	value, exists := c.Get(grokClientExplicitStoreFalseContextKey)
+	disabled, ok := value.(bool)
+	return exists && ok && disabled
+}
+
+// sanitizeGrokActiveDeltaUpstreamBody strips fields that cannot coexist with
+// previous_response_id on xAI. Returns the body and the list of removed keys.
+func sanitizeGrokActiveDeltaUpstreamBody(body []byte) ([]byte, []string, error) {
+	if len(body) == 0 {
+		return body, nil, nil
+	}
+	out := body
+	stripped := make([]string, 0, len(grokActiveDeltaIncompatibleWithPrevious))
+	for _, field := range grokActiveDeltaIncompatibleWithPrevious {
+		if !gjson.GetBytes(out, field).Exists() {
+			continue
+		}
+		next, err := sjson.DeleteBytes(out, field)
+		if err != nil {
+			return nil, nil, fmt.Errorf("strip grok active-delta field %s: %w", field, err)
+		}
+		out = next
+		stripped = append(stripped, field)
+	}
+	return out, stripped, nil
+}
+
+// isGrokActiveDeltaInstructionsConflict reports the xAI validation error that
+// rejects instructions together with previous_response_id.
+func isGrokActiveDeltaInstructionsConflict(upstreamMsg string) bool {
+	msg := strings.ToLower(strings.TrimSpace(upstreamMsg))
+	if msg == "" {
+		return false
+	}
+	return strings.Contains(msg, "previous_response_id") &&
+		strings.Contains(msg, "instructions") &&
+		(strings.Contains(msg, "not supported") ||
+			strings.Contains(msg, "unsupported") ||
+			strings.Contains(msg, "together"))
+}
+
 // resolveGrokActiveDeltaSessionHash derives the session key used for active-delta
 // context. It is homologous with Grok cache identity (P4): empty identity means
 // no bind and no incremental mutation.
@@ -55,6 +117,65 @@ func resolveGrokActiveDeltaSessionHash(c *gin.Context, cacheIdentity string) str
 	return current
 }
 
+// grokHTTPActiveDeltaSkipResult fills a non-applied result with a classified
+// reason (expected_full_* for normal full paths, raw reason for regressions).
+// body is always the original canonical payload for the full path.
+func grokHTTPActiveDeltaSkipResult(
+	canonicalBody []byte,
+	accountID, groupID, apiKeyID int64,
+	sessionHash, requestID, reason string,
+	cached openAIWSSessionContextValue,
+	cachedFound bool,
+	clientPrevious string,
+	sessionOwner bool,
+) grokHTTPActiveDeltaResult {
+	classified := openAIWSClassifyExpectedFullDeltaReason(
+		reason,
+		cachedFound,
+		clientPrevious,
+		"grok_http_active_delta",
+	)
+	if classified == "" {
+		classified = reason
+	}
+	// Grok-specific early gates not covered by the OpenAI classifier.
+	switch reason {
+	case "disabled", "not_oauth_or_not_grok", "no_explicit_session", "compact_path", "tool_continuation", "missing_session_hash", "state_store_unavailable":
+		classified = "expected_full_" + reason
+	case "same_session_in_flight":
+		classified = "expected_full_same_session_in_flight"
+	case "transport_context_mismatch":
+		// Keep as regression signal: HTTP path saw a non-http session context.
+		classified = reason
+	case "previous_response_mismatch":
+		if !cachedFound {
+			classified = "expected_full_no_session_context"
+		}
+	case "account_mismatch":
+		// True sticky regression — keep raw reason.
+		classified = reason
+	}
+	return grokHTTPActiveDeltaResult{
+		body:         canonicalBody,
+		sessionHash:  sessionHash,
+		sessionOwner: sessionOwner,
+		log: openAIWSDeltaShadowLog{
+			GroupID:              groupID,
+			APIKeyID:             apiKeyID,
+			SessionHash:          sessionHash,
+			RequestID:            requestID,
+			AccountID:            accountID,
+			CachedFound:          cachedFound,
+			CachedAccountID:      cached.accountID,
+			CachedConnID:         cached.connID,
+			CachedLastResponseID: cached.lastResponseID,
+			Candidate:            false,
+			FallbackReason:       classified,
+			StoreFallbackReason:  "grok_http_active_delta",
+		},
+	}
+}
+
 func (s *OpenAIGatewayService) buildGrokHTTPActiveDeltaPayload(
 	ctx context.Context,
 	c *gin.Context,
@@ -64,50 +185,57 @@ func (s *OpenAIGatewayService) buildGrokHTTPActiveDeltaPayload(
 	clientPreviousResponseID string,
 ) (result grokHTTPActiveDeltaResult, err error) {
 	result = grokHTTPActiveDeltaResult{body: canonicalBody}
+	requestID, _ := openAIWSRequestLogIDs(c)
+	groupID := getOpenAIGroupIDFromContext(c)
+	apiKeyID := getAPIKeyIDFromContext(c)
+	clientPreviousResponseID = strings.TrimSpace(clientPreviousResponseID)
+	if clientPreviousResponseID == "" {
+		clientPreviousResponseID = strings.TrimSpace(gjsonGetBytesString(canonicalBody, "previous_response_id"))
+	}
+
+	// --- Early expected-full gates: no in-flight lock, no prefix hashing. ---
 	if s == nil || c == nil || account == nil || !account.IsGrok() || account.Type != AccountTypeOAuth {
-		return result, nil
+		return grokHTTPActiveDeltaSkipResult(canonicalBody, 0, groupID, apiKeyID, "", requestID, "not_oauth_or_not_grok", openAIWSSessionContextValue{}, false, clientPreviousResponseID, false), nil
 	}
 	if !s.grokHTTPActiveDeltaEnabled() {
-		return result, nil
+		return grokHTTPActiveDeltaSkipResult(canonicalBody, account.ID, groupID, apiKeyID, "", requestID, "disabled", openAIWSSessionContextValue{}, false, clientPreviousResponseID, false), nil
 	}
 	if !hasExplicitGrokSessionIdentity(c) {
-		return result, nil
+		out := grokHTTPActiveDeltaSkipResult(canonicalBody, account.ID, groupID, apiKeyID, "", requestID, "no_explicit_session", openAIWSSessionContextValue{}, false, clientPreviousResponseID, false)
+		logOpenAIWSDeltaShadow(out.log)
+		return out, nil
 	}
 	if isOpenAIResponsesCompactPath(c) {
-		return result, nil
+		out := grokHTTPActiveDeltaSkipResult(canonicalBody, account.ID, groupID, apiKeyID, "", requestID, "compact_path", openAIWSSessionContextValue{}, false, clientPreviousResponseID, false)
+		logOpenAIWSDeltaShadow(out.log)
+		return out, nil
 	}
 	if HasToolContinuationOutputInRawPayload(canonicalBody) {
-		return result, nil
+		out := grokHTTPActiveDeltaSkipResult(canonicalBody, account.ID, groupID, apiKeyID, "", requestID, "tool_continuation", openAIWSSessionContextValue{}, false, clientPreviousResponseID, false)
+		logOpenAIWSDeltaShadow(out.log)
+		return out, nil
 	}
 
 	sessionHash := resolveGrokActiveDeltaSessionHash(c, cacheIdentity)
 	if sessionHash == "" {
-		return result, nil
+		out := grokHTTPActiveDeltaSkipResult(canonicalBody, account.ID, groupID, apiKeyID, "", requestID, "missing_session_hash", openAIWSSessionContextValue{}, false, clientPreviousResponseID, false)
+		logOpenAIWSDeltaShadow(out.log)
+		return out, nil
 	}
 	store := s.getOpenAIWSStateStore()
 	if store == nil {
-		return result, nil
+		out := grokHTTPActiveDeltaSkipResult(canonicalBody, account.ID, groupID, apiKeyID, sessionHash, requestID, "state_store_unavailable", openAIWSSessionContextValue{}, false, clientPreviousResponseID, false)
+		logOpenAIWSDeltaShadow(out.log)
+		return out, nil
 	}
-
-	groupID := getOpenAIGroupIDFromContext(c)
-	apiKeyID := getAPIKeyIDFromContext(c)
-	requestID, _ := openAIWSRequestLogIDs(c)
-	result.sessionHash = sessionHash
 
 	if !store.TrySessionInFlight(groupID, apiKeyID, sessionHash) {
-		result.log = openAIWSDeltaShadowLog{
-			GroupID:        groupID,
-			APIKeyID:       apiKeyID,
-			SessionHash:    sessionHash,
-			RequestID:      requestID,
-			AccountID:      account.ID,
-			Candidate:      false,
-			FallbackReason: "same_session_in_flight",
-		}
-		logOpenAIWSDeltaShadow(result.log)
-		return result, nil
+		out := grokHTTPActiveDeltaSkipResult(canonicalBody, account.ID, groupID, apiKeyID, sessionHash, requestID, "same_session_in_flight", openAIWSSessionContextValue{}, false, clientPreviousResponseID, false)
+		logOpenAIWSDeltaShadow(out.log)
+		return out, nil
 	}
 	result.sessionOwner = true
+	result.sessionHash = sessionHash
 	defer func() {
 		if result.sessionOwner && !result.applied {
 			store.EndSessionInFlight(groupID, apiKeyID, sessionHash)
@@ -117,60 +245,28 @@ func (s *OpenAIGatewayService) buildGrokHTTPActiveDeltaPayload(
 
 	cached, found := store.GetSessionContext(groupID, apiKeyID, sessionHash)
 	if found && strings.TrimSpace(cached.connID) != "http" {
-		result.log = openAIWSDeltaShadowLog{
-			GroupID:              groupID,
-			APIKeyID:             apiKeyID,
-			SessionHash:          sessionHash,
-			RequestID:            requestID,
-			AccountID:            account.ID,
-			CachedFound:          found,
-			CachedAccountID:      cached.accountID,
-			CachedConnID:         cached.connID,
-			CachedLastResponseID: cached.lastResponseID,
-			Candidate:            false,
-			FallbackReason:       "transport_context_mismatch",
-		}
-		logOpenAIWSDeltaShadow(result.log)
+		out := grokHTTPActiveDeltaSkipResult(canonicalBody, account.ID, groupID, apiKeyID, sessionHash, requestID, "transport_context_mismatch", cached, found, clientPreviousResponseID, true)
+		logOpenAIWSDeltaShadow(out.log)
+		result = out
 		return result, nil
 	}
 
-	clientPreviousResponseID = strings.TrimSpace(clientPreviousResponseID)
-	if clientPreviousResponseID == "" {
-		clientPreviousResponseID = strings.TrimSpace(gjsonGetBytesString(canonicalBody, "previous_response_id"))
-	}
 	if clientPreviousResponseID != "" {
 		if boundAccountID, accountErr := store.GetResponseAccount(ctx, groupID, apiKeyID, clientPreviousResponseID); accountErr == nil && boundAccountID > 0 && boundAccountID != account.ID {
-			result.log = openAIWSDeltaShadowLog{
-				GroupID:               groupID,
-				APIKeyID:              apiKeyID,
-				SessionHash:           sessionHash,
-				RequestID:             requestID,
-				AccountID:             account.ID,
-				CachedFound:           found,
-				CachedAccountID:       cached.accountID,
-				CachedLastResponseID:  cached.lastResponseID,
-				Candidate:             false,
-				FallbackReason:        "account_mismatch",
-				AccountMismatchReason: "response_account_mismatch",
-			}
-			logOpenAIWSDeltaShadow(result.log)
+			out := grokHTTPActiveDeltaSkipResult(canonicalBody, account.ID, groupID, apiKeyID, sessionHash, requestID, "account_mismatch", cached, found, clientPreviousResponseID, true)
+			out.log.AccountMismatchReason = "response_account_mismatch"
+			logOpenAIWSDeltaShadow(out.log)
+			result = out
 			return result, nil
 		}
 	}
-	if clientPreviousResponseID != "" && clientPreviousResponseID != strings.TrimSpace(cached.lastResponseID) {
-		result.log = openAIWSDeltaShadowLog{
-			GroupID:              groupID,
-			APIKeyID:             apiKeyID,
-			SessionHash:          sessionHash,
-			RequestID:            requestID,
-			AccountID:            account.ID,
-			CachedFound:          found,
-			CachedAccountID:      cached.accountID,
-			CachedLastResponseID: cached.lastResponseID,
-			Candidate:            false,
-			FallbackReason:       "previous_response_mismatch",
-		}
-		logOpenAIWSDeltaShadow(result.log)
+	// Only enforce previous==cached.last when we actually have session context.
+	// Without context, fall through to evaluate → expected_full_no_session_context
+	// instead of a misleading previous_response_mismatch.
+	if found && clientPreviousResponseID != "" && clientPreviousResponseID != strings.TrimSpace(cached.lastResponseID) {
+		out := grokHTTPActiveDeltaSkipResult(canonicalBody, account.ID, groupID, apiKeyID, sessionHash, requestID, "previous_response_mismatch", cached, found, clientPreviousResponseID, true)
+		logOpenAIWSDeltaShadow(out.log)
+		result = out
 		return result, nil
 	}
 
@@ -194,6 +290,15 @@ func (s *OpenAIGatewayService) buildGrokHTTPActiveDeltaPayload(
 		CachedFound:           found,
 	}
 	deltaPayload, deltaLog, applied, err := buildOpenAIWSActiveDeltaPayload(shadowInput)
+	if !applied && err == nil {
+		// Align with OpenAI WS: normal full outcomes get expected_full_* tags.
+		deltaLog.FallbackReason = openAIWSClassifyExpectedFullDeltaReason(
+			deltaLog.FallbackReason,
+			found,
+			clientPreviousResponseID,
+			"grok_http_active_delta",
+		)
+	}
 	result.log = deltaLog
 	logOpenAIWSDeltaShadow(deltaLog)
 	if err != nil || !applied {
@@ -203,9 +308,41 @@ func (s *OpenAIGatewayService) buildGrokHTTPActiveDeltaPayload(
 	if err != nil {
 		return result, err
 	}
+	// xAI rejects certain top-level fields together with previous_response_id.
+	// Strip them after delta construction so full-path semantics stay intact.
+	body, strippedFields, sanitizeErr := sanitizeGrokActiveDeltaUpstreamBody(body)
+	if sanitizeErr != nil {
+		return result, sanitizeErr
+	}
+	if len(strippedFields) > 0 {
+		slog.Info("grok_http_active_delta_sanitized",
+			"account_id", account.ID,
+			"session", truncateOpenAIWSLogValue(sessionHash, 12),
+			"stripped_fields", strings.Join(strippedFields, ","),
+		)
+	}
+	// Shared OpenAI builder forces store=false (ZDR). For Grok, previous_response_id
+	// only works when the prior turn was stored — keep store=true on the delta body
+	// when require_store_on_create is on so T2's response remains a usable T3 anchor.
+	body, storeErr := applyGrokActiveDeltaStorePolicy(body, s.grokHTTPActiveDeltaRequireStoreOnCreate())
+	if storeErr != nil {
+		return result, storeErr
+	}
 	result.body = body
 	result.applied = true
 	return result, nil
+}
+
+// applyGrokActiveDeltaStorePolicy overrides the shared active-delta store=false
+// default when Grok requires stored responses for multi-turn previous anchors.
+func applyGrokActiveDeltaStorePolicy(body []byte, requireStore bool) ([]byte, error) {
+	if len(body) == 0 || !requireStore {
+		return body, nil
+	}
+	if gjson.GetBytes(body, "store").Bool() {
+		return body, nil
+	}
+	return sjson.SetBytes(body, "store", true)
 }
 
 func (s *OpenAIGatewayService) releaseGrokHTTPActiveDeltaSession(c *gin.Context, sessionHash string) {
@@ -215,6 +352,36 @@ func (s *OpenAIGatewayService) releaseGrokHTTPActiveDeltaSession(c *gin.Context,
 	if store := s.getOpenAIWSStateStore(); store != nil {
 		store.EndSessionInFlight(getOpenAIGroupIDFromContext(c), getAPIKeyIDFromContext(c), sessionHash)
 	}
+}
+
+// invalidateGrokHTTPActiveDeltaSession drops a dead session context so the next
+// turn falls back to full create (with store=true) instead of re-applying a
+// previous_response_id that upstream already rejected.
+func (s *OpenAIGatewayService) invalidateGrokHTTPActiveDeltaSession(
+	c *gin.Context,
+	accountID int64,
+	sessionHash string,
+	previousResponseID string,
+	reason string,
+) {
+	if s == nil || sessionHash == "" {
+		return
+	}
+	groupID := int64(0)
+	apiKeyID := int64(0)
+	if c != nil {
+		groupID = getOpenAIGroupIDFromContext(c)
+		apiKeyID = getAPIKeyIDFromContext(c)
+	}
+	if store := s.getOpenAIWSStateStore(); store != nil {
+		store.DeleteSessionContext(groupID, apiKeyID, sessionHash)
+	}
+	slog.Info("grok_http_active_delta_session_invalidated",
+		"account_id", accountID,
+		"reason", reason,
+		"session", truncateOpenAIWSLogValue(sessionHash, 12),
+		"previous_response_id", truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
+	)
 }
 
 func (s *OpenAIGatewayService) bindGrokHTTPResponseSessionContext(
@@ -322,7 +489,25 @@ func isGrokPreviousResponseRecoveryError(statusCode int, upstreamCode, upstreamM
 	if statusCode == http.StatusBadRequest && isOpenAIUnsupportedPreviousResponseIDError(upstreamCode, upstreamMsg) {
 		return true
 	}
+	// xAI: "Argument not supported: instructions and previous_response_id together"
+	if statusCode == http.StatusBadRequest && isGrokActiveDeltaInstructionsConflict(upstreamMsg) {
+		return true
+	}
 	return false
+}
+
+// grokActiveDeltaReplayReason classifies why an applied delta had to full-replay.
+func grokActiveDeltaReplayReason(statusCode int, upstreamCode, upstreamMsg string, upstreamBody []byte) string {
+	if isOpenAICompatPreviousResponseNotFound(statusCode, upstreamMsg, upstreamBody) {
+		return "previous_response_not_found"
+	}
+	if isGrokActiveDeltaInstructionsConflict(upstreamMsg) {
+		return "instructions_previous_conflict"
+	}
+	if isOpenAIUnsupportedPreviousResponseIDError(upstreamCode, upstreamMsg) {
+		return "previous_response_unsupported"
+	}
+	return "previous_response_recovery"
 }
 
 func clientResponseAlreadyWritten(c *gin.Context) bool {
@@ -368,8 +553,12 @@ func (s *OpenAIGatewayService) callGrokResponsesHTTP(
 	activeDeltaSessionHash := ""
 	activeDeltaSessionOwner := false
 	activeDeltaLog := openAIWSDeltaShadowLog{}
+	activeDeltaPreviousResponseID := ""
+	clientStoreDisabled := grokClientExplicitlyDisablesStore(c)
+	requireStoreOnCreate := s.grokHTTPActiveDeltaRequireStoreOnCreate() && !clientStoreDisabled
+	activeDeltaEnabled := s.grokHTTPActiveDeltaEnabled() && !clientStoreDisabled
 
-	if account.Type == AccountTypeOAuth && s.grokHTTPActiveDeltaEnabled() {
+	if account.Type == AccountTypeOAuth && activeDeltaEnabled {
 		deltaResult, buildErr := s.buildGrokHTTPActiveDeltaPayload(ctx, c, account, canonicalBody, cacheIdentity, clientPreviousResponseID)
 		if buildErr != nil {
 			logger.LegacyPrintf(
@@ -384,11 +573,12 @@ func (s *OpenAIGatewayService) callGrokResponsesHTTP(
 			activeDeltaSessionHash = deltaResult.sessionHash
 			activeDeltaSessionOwner = deltaResult.sessionOwner
 			activeDeltaLog = deltaResult.log
+			activeDeltaPreviousResponseID = strings.TrimSpace(gjson.GetBytes(upstreamBody, "previous_response_id").String())
 			setOpsUpstreamRequestBody(c, upstreamBody)
 			slog.Info("grok_http_active_delta_applied",
 				"account_id", account.ID,
 				"session", truncateOpenAIWSLogValue(activeDeltaSessionHash, 12),
-				"previous_response_id", truncateOpenAIWSLogValue(gjson.GetBytes(upstreamBody, "previous_response_id").String(), openAIWSIDValueMaxLen),
+				"previous_response_id", truncateOpenAIWSLogValue(activeDeltaPreviousResponseID, openAIWSIDValueMaxLen),
 				"delta_items", activeDeltaLog.DeltaItems,
 				"delta_bytes", activeDeltaLog.DeltaBytes,
 				"full_items", activeDeltaLog.FullItems,
@@ -398,7 +588,7 @@ func (s *OpenAIGatewayService) callGrokResponsesHTTP(
 			activeDeltaSessionHash = deltaResult.sessionHash
 			activeDeltaSessionOwner = deltaResult.sessionOwner
 			activeDeltaLog = deltaResult.log
-			prepared, prepErr := prepareGrokFullUpstreamBody(canonicalBody, s.grokHTTPActiveDeltaRequireStoreOnCreate())
+			prepared, prepErr := prepareGrokFullUpstreamBody(canonicalBody, requireStoreOnCreate)
 			if prepErr != nil {
 				if activeDeltaSessionOwner {
 					s.releaseGrokHTTPActiveDeltaSession(c, activeDeltaSessionHash)
@@ -407,14 +597,25 @@ func (s *OpenAIGatewayService) callGrokResponsesHTTP(
 			}
 			upstreamBody = prepared
 			if activeDeltaLog.FallbackReason != "" {
-				slog.Info("grok_http_active_delta_skipped",
+				// expected_full_* = normal full create; other reasons = regressions to watch.
+				level := "info"
+				if !strings.HasPrefix(activeDeltaLog.FallbackReason, "expected_full_") {
+					level = "warn"
+				}
+				attrs := []any{
 					"account_id", account.ID,
 					"reason", activeDeltaLog.FallbackReason,
 					"session", truncateOpenAIWSLogValue(activeDeltaSessionHash, 12),
-				)
+					"expected_full", strings.HasPrefix(activeDeltaLog.FallbackReason, "expected_full_"),
+				}
+				if level == "warn" {
+					slog.Warn("grok_http_active_delta_skipped", attrs...)
+				} else {
+					slog.Info("grok_http_active_delta_skipped", attrs...)
+				}
 			}
 		}
-	} else if account.Type == AccountTypeOAuth && s.grokHTTPActiveDeltaRequireStoreOnCreate() {
+	} else if account.Type == AccountTypeOAuth && requireStoreOnCreate {
 		prepared, prepErr := prepareGrokFullUpstreamBody(canonicalBody, true)
 		if prepErr != nil {
 			return nil, prepErr
@@ -481,6 +682,18 @@ func (s *OpenAIGatewayService) callGrokResponsesHTTP(
 		}
 
 		if resp.StatusCode < 400 {
+			if activeDeltaApplied {
+				slog.Info("grok_http_active_delta_success",
+					"account_id", account.ID,
+					"session", truncateOpenAIWSLogValue(activeDeltaSessionHash, 12),
+					"previous_response_id", truncateOpenAIWSLogValue(activeDeltaPreviousResponseID, openAIWSIDValueMaxLen),
+					"delta_items", activeDeltaLog.DeltaItems,
+					"delta_bytes", activeDeltaLog.DeltaBytes,
+					"full_items", activeDeltaLog.FullItems,
+					"full_bytes", activeDeltaLog.FullBytes,
+					"upstream_status", resp.StatusCode,
+				)
+			}
 			break
 		}
 
@@ -538,13 +751,13 @@ func (s *OpenAIGatewayService) callGrokResponsesHTTP(
 				if !restored {
 					restoredBody = append([]byte(nil), replaySource...)
 					var prepErr error
-					restoredBody, prepErr = prepareGrokFullUpstreamBody(restoredBody, s.grokHTTPActiveDeltaRequireStoreOnCreate())
+					restoredBody, prepErr = prepareGrokFullUpstreamBody(restoredBody, requireStoreOnCreate)
 					if prepErr != nil {
 						_ = resp.Body.Close()
 						release()
 						return nil, prepErr
 					}
-				} else if s.grokHTTPActiveDeltaRequireStoreOnCreate() {
+				} else if requireStoreOnCreate {
 					var prepErr error
 					restoredBody, prepErr = sjson.SetBytes(restoredBody, "store", true)
 					if prepErr != nil {
@@ -553,8 +766,25 @@ func (s *OpenAIGatewayService) callGrokResponsesHTTP(
 						return nil, prepErr
 					}
 				}
+				// Any previous_response recovery full-replay drops the session context so a
+				// dead anchor (applied delta OR stale session/client previous) is not re-used.
+				replayReason := grokActiveDeltaReplayReason(resp.StatusCode, upstreamCode, upstreamMsg, respBody)
+				failedPreviousID := activeDeltaPreviousResponseID
+				if failedPreviousID == "" {
+					failedPreviousID = strings.TrimSpace(gjson.GetBytes(upstreamBody, "previous_response_id").String())
+				}
+				if activeDeltaSessionHash != "" {
+					s.invalidateGrokHTTPActiveDeltaSession(
+						c,
+						account.ID,
+						activeDeltaSessionHash,
+						failedPreviousID,
+						replayReason,
+					)
+				}
 				_ = resp.Body.Close()
 				previousFullReplayTried = true
+				wasDeltaApplied := activeDeltaApplied
 				activeDeltaApplied = false
 				upstreamBody = restoredBody
 				setOpsUpstreamRequestBody(c, upstreamBody)
@@ -567,6 +797,10 @@ func (s *OpenAIGatewayService) callGrokResponsesHTTP(
 				slog.Info("grok_http_active_delta_full_replay_retry",
 					"account_id", account.ID,
 					"status", resp.StatusCode,
+					"was_delta_applied", wasDeltaApplied,
+					"reason", replayReason,
+					"session", truncateOpenAIWSLogValue(activeDeltaSessionHash, 12),
+					"previous_response_id", truncateOpenAIWSLogValue(failedPreviousID, openAIWSIDValueMaxLen),
 					"upstream_msg", truncateOpenAIWSLogValue(upstreamMsg, 120),
 				)
 				continue
@@ -705,7 +939,9 @@ func (s *OpenAIGatewayService) doGrokResponsesUpstream(
 	}
 	if responseID != "" {
 		s.bindHTTPResponseAccount(ctx, c, account, responseID)
-		s.bindGrokHTTPResponseSessionContext(ctx, c, account, call.CanonicalBody, call.CacheIdentity, responseID)
+		if !grokClientExplicitlyDisablesStore(c) {
+			s.bindGrokHTTPResponseSessionContext(ctx, c, account, call.CanonicalBody, call.CacheIdentity, responseID)
+		}
 	}
 
 	return &OpenAIForwardResult{
