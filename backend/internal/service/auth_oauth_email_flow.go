@@ -114,6 +114,9 @@ func (s *AuthService) RegisterOAuthEmailAccount(
 	if s.settingService == nil || (!s.settingService.IsRegistrationEnabled(ctx) && !s.canBypassRegistrationDisabledForOAuth(ctx, signupSource)) {
 		return nil, nil, ErrRegDisabled
 	}
+	if err := validateNewPassword(password); err != nil {
+		return nil, nil, err
+	}
 
 	email = strings.TrimSpace(strings.ToLower(email))
 	if isReservedEmail(email) {
@@ -207,6 +210,9 @@ func (s *AuthService) RegisterVerifiedOAuthEmailAccount(
 	}
 	if strings.TrimSpace(password) == "" {
 		return nil, nil, infraerrors.BadRequest("PASSWORD_REQUIRED", "password is required")
+	}
+	if err := validateNewPassword(password); err != nil {
+		return nil, nil, err
 	}
 	if _, err := s.validateOAuthRegistrationInvitation(ctx, invitationCode); err != nil {
 		return nil, nil, err

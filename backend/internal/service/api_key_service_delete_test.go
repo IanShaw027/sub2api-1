@@ -37,6 +37,10 @@ type apiKeyRepoStub struct {
 	listByUserIDCalls      []int64
 	listByUserIDParams     []pagination.PaginationParams
 	listByUserIDFilters    []APIKeyListFilters
+	allowListKeysByUserID  bool
+	listKeysByUserID       []string
+	listKeysByUserIDErr    error
+	listKeysByUserIDCalls  []int64
 	allowListAllByUserID   bool
 	listAllByUserIDKeys    []APIKey
 	listAllByUserIDErr     error
@@ -69,7 +73,11 @@ func (s *apiKeyRepoStub) GetKeyAndOwnerID(ctx context.Context, id int64) (string
 		return "", 0, s.getByIDErr
 	}
 	if s.apiKey != nil {
-		return s.apiKey.Key, s.apiKey.UserID, nil
+		lookupHash := s.apiKey.LookupHash
+		if lookupHash == "" && s.apiKey.Key != "" {
+			lookupHash = HashAPIKeyLookup(s.apiKey.Key)
+		}
+		return lookupHash, s.apiKey.UserID, nil
 	}
 	return "", 0, ErrAPIKeyNotFound
 }
@@ -203,7 +211,14 @@ func (s *apiKeyRepoStub) CountActiveByGroupID(ctx context.Context, groupID int64
 }
 
 func (s *apiKeyRepoStub) ListKeysByUserID(ctx context.Context, userID int64) ([]string, error) {
-	panic("unexpected ListKeysByUserID call")
+	if !s.allowListKeysByUserID {
+		panic("unexpected ListKeysByUserID call")
+	}
+	s.listKeysByUserIDCalls = append(s.listKeysByUserIDCalls, userID)
+	if s.listKeysByUserIDErr != nil {
+		return nil, s.listKeysByUserIDErr
+	}
+	return append([]string(nil), s.listKeysByUserID...), nil
 }
 
 func (s *apiKeyRepoStub) ListKeysByGroupID(ctx context.Context, groupID int64) ([]string, error) {

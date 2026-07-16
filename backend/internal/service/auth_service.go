@@ -35,6 +35,7 @@ var (
 	ErrTokenRevoked            = infraerrors.Unauthorized("TOKEN_REVOKED", "token has been revoked")
 	ErrRefreshTokenInvalid     = infraerrors.Unauthorized("REFRESH_TOKEN_INVALID", "invalid refresh token")
 	ErrRefreshTokenExpired     = infraerrors.Unauthorized("REFRESH_TOKEN_EXPIRED", "refresh token has expired")
+	ErrRefreshTokenConcurrent  = infraerrors.Unauthorized("REFRESH_TOKEN_CONCURRENT_RETRY", "refresh token was already rotated by a concurrent request")
 	ErrRefreshTokenReused      = infraerrors.Unauthorized("REFRESH_TOKEN_REUSED", "refresh token has been reused")
 	ErrEmailVerifyRequired     = infraerrors.BadRequest("EMAIL_VERIFY_REQUIRED", "email verification is required")
 	ErrEmailSuffixNotAllowed   = infraerrors.BadRequest("EMAIL_SUFFIX_NOT_ALLOWED", "email suffix is not allowed")
@@ -43,10 +44,20 @@ var (
 	ErrInvitationCodeRequired  = infraerrors.BadRequest("INVITATION_CODE_REQUIRED", "invitation code is required")
 	ErrInvitationCodeInvalid   = infraerrors.BadRequest("INVITATION_CODE_INVALID", "invalid or used invitation code")
 	ErrOAuthInvitationRequired = infraerrors.Forbidden("OAUTH_INVITATION_REQUIRED", "invitation code required to complete oauth registration")
+	ErrPasswordTooShort        = infraerrors.BadRequest("PASSWORD_TOO_SHORT", "password must be at least 8 characters")
 )
 
 // maxTokenLength 限制 token 大小，避免超长 header 触发解析时的异常内存分配。
 const maxTokenLength = 8192
+const minPasswordLength = 8
+
+type refreshTokenReuseDisposition uint8
+
+const (
+	refreshTokenReuseNone refreshTokenReuseDisposition = iota
+	refreshTokenReuseConcurrent
+	refreshTokenReuseReplay
+)
 
 // refreshTokenPrefix is the prefix for refresh tokens to distinguish them from access tokens.
 const refreshTokenPrefix = "rt_"
@@ -79,6 +90,12 @@ type AuthService struct {
 
 type DefaultSubscriptionAssigner interface {
 	AssignOrExtendSubscription(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, bool, error)
+}
+
+// InvitationRegistrationRepository atomically creates a user and consumes the
+// invitation code. Implementations must roll back both mutations on failure.
+type InvitationRegistrationRepository interface {
+	CreateWithInvitation(ctx context.Context, user *User, invitationID int64) error
 }
 
 type signupGrantPlan struct {
@@ -153,6 +170,9 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
 		return "", nil, ErrRegDisabled
 	}
+	if err := validateNewPassword(password); err != nil {
+		return "", nil, err
+	}
 
 	// 防止用户注册 LinuxDo OAuth 合成邮箱，避免第三方登录与本地账号发生碰撞。
 	if isReservedEmail(email) {
@@ -167,6 +187,9 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	if s.settingService != nil && s.settingService.IsInvitationCodeEnabled(ctx) {
 		if invitationCode == "" {
 			return "", nil, ErrInvitationCodeRequired
+		}
+		if s.redeemRepo == nil {
+			return "", nil, ErrServiceUnavailable
 		}
 		// 验证邀请码
 		redeemCode, err := s.redeemRepo.GetByCode(ctx, invitationCode)
@@ -234,12 +257,26 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		Status:       StatusActive,
 	}
 
-	if err := s.userRepo.Create(ctx, user); err != nil {
+	var createErr error
+	if invitationRedeemCode != nil {
+		invitationCreator, ok := s.userRepo.(InvitationRegistrationRepository)
+		if !ok {
+			logger.LegacyPrintf("service.auth", "%s", "[Auth] Invitation registration repository does not support atomic creation")
+			return "", nil, ErrServiceUnavailable
+		}
+		createErr = invitationCreator.CreateWithInvitation(ctx, user, invitationRedeemCode.ID)
+	} else {
+		createErr = s.userRepo.Create(ctx, user)
+	}
+	if createErr != nil {
 		// 优先检查邮箱冲突错误（竞态条件下可能发生）
-		if errors.Is(err, ErrEmailExists) {
+		if errors.Is(createErr, ErrEmailExists) {
 			return "", nil, ErrEmailExists
 		}
-		logger.LegacyPrintf("service.auth", "[Auth] Database error creating user: %v", err)
+		if invitationRedeemCode != nil && (errors.Is(createErr, ErrRedeemCodeUsed) || errors.Is(createErr, ErrRedeemCodeExpired) || errors.Is(createErr, ErrRedeemCodeNotFound)) {
+			return "", nil, ErrInvitationCodeInvalid
+		}
+		logger.LegacyPrintf("service.auth", "[Auth] Database error creating user: %v", createErr)
 		return "", nil, ErrServiceUnavailable
 	}
 	s.postAuthUserBootstrap(ctx, user, "email", true)
@@ -265,13 +302,6 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		}
 	}
 
-	// 标记邀请码为已使用（如果使用了邀请码）
-	if invitationRedeemCode != nil {
-		if err := s.redeemRepo.Use(ctx, invitationRedeemCode.ID, user.ID); err != nil {
-			// 邀请码标记失败不影响注册，只记录日志
-			logger.LegacyPrintf("service.auth", "[Auth] Failed to mark invitation code as used for user %d: %v", user.ID, err)
-		}
-	}
 	// 应用优惠码（如果提供且功能已启用）
 	if promoCode != "" && s.promoService != nil && s.settingService != nil && s.settingService.IsPromoCodeEnabled(ctx) {
 		if err := s.promoService.ApplyPromoCode(ctx, user.ID, promoCode); err != nil {
@@ -1342,6 +1372,13 @@ func (s *AuthService) HashPassword(password string) (string, error) {
 	return string(hashedBytes), nil
 }
 
+func validateNewPassword(password string) error {
+	if len([]rune(password)) < minPasswordLength {
+		return ErrPasswordTooShort
+	}
+	return nil
+}
+
 // CheckPassword 验证密码是否匹配
 func (s *AuthService) CheckPassword(password, hashedPassword string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
@@ -1487,9 +1524,7 @@ func (s *AuthService) ResetPassword(ctx context.Context, email, token, newPasswo
 	if s.emailService == nil {
 		return ErrServiceUnavailable
 	}
-
-	// Verify and consume the reset token (one-time use)
-	if err := s.emailService.ConsumePasswordResetToken(ctx, email, token); err != nil {
+	if err := validateNewPassword(newPassword); err != nil {
 		return err
 	}
 
@@ -1514,6 +1549,22 @@ func (s *AuthService) ResetPassword(ctx context.Context, email, token, newPasswo
 		return fmt.Errorf("hash password: %w", err)
 	}
 
+	// Atomically reserve the token only after all non-mutating validation and
+	// expensive password hashing have succeeded. Concurrent requests cannot
+	// both hold a claim.
+	resetClaimID, err := s.emailService.ClaimPasswordResetToken(ctx, email, token)
+	if err != nil {
+		return err
+	}
+	restoreResetClaim := true
+	defer func() {
+		if restoreResetClaim {
+			if restoreErr := s.emailService.RestorePasswordResetToken(context.WithoutCancel(ctx), email, resetClaimID); restoreErr != nil {
+				logger.LegacyPrintf("service.auth", "[Auth] Failed to restore password reset token claim for %s: %v", email, restoreErr)
+			}
+		}
+	}()
+
 	// Update password and increment TokenVersion
 	user.PasswordHash = hashedPassword
 	user.TokenVersion++ // Invalidate all existing tokens
@@ -1521,6 +1572,13 @@ func (s *AuthService) ResetPassword(ctx context.Context, email, token, newPasswo
 	if err := s.userRepo.Update(ctx, user); err != nil {
 		logger.LegacyPrintf("service.auth", "[Auth] Database error updating password for user %d: %v", user.ID, err)
 		return ErrServiceUnavailable
+	}
+
+	// The password mutation has committed. From this point the token must stay
+	// consumed even if Redis cleanup is temporarily unavailable.
+	restoreResetClaim = false
+	if err := s.emailService.CompletePasswordResetToken(context.WithoutCancel(ctx), email, resetClaimID); err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to finalize password reset token claim for %s: %v", email, err)
 	}
 
 	// Also revoke all refresh tokens for this user
@@ -1649,8 +1707,21 @@ func (s *AuthService) RefreshTokenPair(ctx context.Context, refreshToken string)
 	data, err := s.refreshTokenCache.GetRefreshToken(ctx, tokenHash)
 	if err != nil {
 		if errors.Is(err, ErrRefreshTokenNotFound) {
-			// Token不存在，可能是已被使用（Token轮转）或已过期
-			logger.LegacyPrintf("service.auth", "[Auth] Refresh token not found, possible reuse attack")
+			// A retry inside the short rotation race window is ambiguous: it may
+			// be a concurrent request that lost the atomic consume. Reject it,
+			// but do not revoke the successor minted by the winning request.
+			disposition, reuseErr := s.handleUsedRefreshToken(ctx, tokenHash)
+			if reuseErr != nil {
+				logger.LegacyPrintf("service.auth", "[Auth] Error checking refresh token reuse marker: %v", reuseErr)
+				return nil, ErrServiceUnavailable
+			}
+			switch disposition {
+			case refreshTokenReuseConcurrent:
+				return nil, ErrRefreshTokenConcurrent
+			case refreshTokenReuseReplay:
+				return nil, ErrRefreshTokenReused
+			}
+			logger.LegacyPrintf("service.auth", "[Auth] Refresh token not found (expired or unknown)")
 			return nil, ErrRefreshTokenInvalid
 		}
 		logger.LegacyPrintf("service.auth", "[Auth] Error getting refresh token: %v", err)
@@ -1690,11 +1761,35 @@ func (s *AuthService) RefreshTokenPair(ctx context.Context, refreshToken string)
 		return nil, ErrTokenRevoked
 	}
 
-	// Token轮转：立即使旧Token失效
-	if err := s.refreshTokenCache.DeleteRefreshToken(ctx, tokenHash); err != nil {
-		logger.LegacyPrintf("service.auth", "[Auth] Failed to delete old refresh token: %v", err)
-		// 继续处理，不影响主流程
+	usedTTL := time.Until(data.ExpiresAt)
+	if usedTTL < time.Hour {
+		usedTTL = time.Hour
 	}
+	// The final read, delete, and used-marker write are one Redis operation.
+	// Concurrent refreshes can pass the checks above, but only one can consume
+	// the token and mint a successor.
+	consumed, err := s.refreshTokenCache.ConsumeRefreshToken(ctx, tokenHash, data.FamilyID, usedTTL)
+	if err != nil {
+		if errors.Is(err, ErrRefreshTokenNotFound) {
+			disposition, reuseErr := s.handleUsedRefreshToken(ctx, tokenHash)
+			if reuseErr != nil {
+				logger.LegacyPrintf("service.auth", "[Auth] Error checking concurrent refresh token reuse marker: %v", reuseErr)
+				return nil, ErrServiceUnavailable
+			}
+			switch disposition {
+			case refreshTokenReuseConcurrent:
+				return nil, ErrRefreshTokenConcurrent
+			case refreshTokenReuseReplay:
+				return nil, ErrRefreshTokenReused
+			default:
+				logger.LegacyPrintf("service.auth", "[Auth] Refresh token disappeared without a used marker")
+				return nil, ErrRefreshTokenReused
+			}
+		}
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to atomically consume refresh token: %v", err)
+		return nil, ErrServiceUnavailable
+	}
+	data = consumed
 
 	// 生成新的Token对，保持同一个家族ID
 	pair, err := s.GenerateTokenPair(ctx, user, data.FamilyID)
@@ -1705,6 +1800,49 @@ func (s *AuthService) RefreshTokenPair(ctx context.Context, refreshToken string)
 		TokenPair: *pair,
 		UserRole:  user.Role,
 	}, nil
+}
+
+func (s *AuthService) handleUsedRefreshToken(ctx context.Context, tokenHash string) (refreshTokenReuseDisposition, error) {
+	var marker *UsedRefreshTokenMarker
+	graceActive := false
+	if markerCache, ok := s.refreshTokenCache.(RefreshTokenReuseMarkerCache); ok {
+		detailedMarker, err := markerCache.GetUsedRefreshTokenMarker(ctx, tokenHash)
+		if err != nil {
+			if errors.Is(err, ErrRefreshTokenNotFound) {
+				return refreshTokenReuseNone, nil
+			}
+			return refreshTokenReuseNone, err
+		}
+		marker = detailedMarker
+		graceActive, err = markerCache.IsRefreshTokenReuseGraceActive(ctx, tokenHash)
+		if err != nil {
+			return refreshTokenReuseNone, err
+		}
+	} else {
+		familyID, err := s.refreshTokenCache.GetUsedRefreshTokenFamily(ctx, tokenHash)
+		if err != nil {
+			if errors.Is(err, ErrRefreshTokenNotFound) {
+				return refreshTokenReuseNone, nil
+			}
+			return refreshTokenReuseNone, err
+		}
+		marker = &UsedRefreshTokenMarker{FamilyID: familyID}
+		graceActive = !marker.ConsumedAt.IsZero() && time.Since(marker.ConsumedAt) < RefreshTokenConcurrentReuseGrace
+	}
+	if marker == nil || strings.TrimSpace(marker.FamilyID) == "" {
+		return refreshTokenReuseNone, nil
+	}
+
+	if graceActive {
+		logger.LegacyPrintf("service.auth", "[Auth] Concurrent refresh retry detected inside grace window, preserving family=%s", marker.FamilyID)
+		return refreshTokenReuseConcurrent, nil
+	}
+
+	logger.LegacyPrintf("service.auth", "[Auth] Refresh token replay detected outside grace window, revoking family=%s", marker.FamilyID)
+	if err := s.refreshTokenCache.DeleteTokenFamily(ctx, marker.FamilyID); err != nil {
+		return refreshTokenReuseReplay, err
+	}
+	return refreshTokenReuseReplay, nil
 }
 
 // RevokeRefreshToken 撤销单个Refresh Token

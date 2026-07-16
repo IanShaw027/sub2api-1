@@ -127,8 +127,16 @@ func (s *refreshTokenCacheStub) GetRefreshToken(context.Context, string) (*Refre
 	return nil, ErrRefreshTokenNotFound
 }
 
+func (s *refreshTokenCacheStub) ConsumeRefreshToken(context.Context, string, string, time.Duration) (*RefreshTokenData, error) {
+	return nil, ErrRefreshTokenNotFound
+}
+
 func (s *refreshTokenCacheStub) DeleteRefreshToken(context.Context, string) error {
 	return nil
+}
+
+func (s *refreshTokenCacheStub) GetUsedRefreshTokenFamily(context.Context, string) (string, error) {
+	return "", ErrRefreshTokenNotFound
 }
 
 func (s *refreshTokenCacheStub) DeleteUserRefreshTokens(context.Context, int64) error {
@@ -195,6 +203,18 @@ func (s *emailCacheStub) SetPasswordResetToken(ctx context.Context, email string
 }
 
 func (s *emailCacheStub) DeletePasswordResetToken(ctx context.Context, email string) error {
+	return nil
+}
+
+func (s *emailCacheStub) ClaimPasswordResetToken(context.Context, string, string, string) error {
+	return ErrInvalidResetToken
+}
+
+func (s *emailCacheStub) CompletePasswordResetToken(context.Context, string, string) error {
+	return nil
+}
+
+func (s *emailCacheStub) RestorePasswordResetToken(context.Context, string, string) error {
 	return nil
 }
 

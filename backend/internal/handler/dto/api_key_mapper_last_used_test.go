@@ -45,3 +45,15 @@ func TestAPIKeyFromService_MapsNilLastUsedAt(t *testing.T) {
 	require.Nil(t, out.LastUsedAt)
 	require.Nil(t, out.LastUsedIP)
 }
+
+func TestAPIKeyFromServiceMaskedUsesStoredPrefixWithoutRawKey(t *testing.T) {
+	out := APIKeyFromServiceMasked(&service.APIKey{
+		ID:        1,
+		UserID:    2,
+		KeyPrefix: "sk-abcd1",
+		Name:      "Prefix only",
+		Status:    service.StatusActive,
+	})
+	require.NotNil(t, out)
+	require.Equal(t, "sk-abcd1…", out.Key)
+}

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -57,7 +58,7 @@ func (h *AuthHandler) SetUserAttributeService(userAttributeService *service.User
 // RegisterRequest represents the registration request payload
 type RegisterRequest struct {
 	Email          string `json:"email" binding:"required,email"`
-	Password       string `json:"password" binding:"required,min=6"`
+	Password       string `json:"password" binding:"required,min=8"`
 	VerifyCode     string `json:"verify_code"`
 	TurnstileToken string `json:"turnstile_token"`
 	PromoCode      string `json:"promo_code"`      // 注册优惠码
@@ -136,14 +137,18 @@ func (h *AuthHandler) respondWithTokenPair(c *gin.Context, user *service.User, m
 		})
 		return
 	}
-	response.Success(c, AuthResponse{
-		AccessToken:  tokenPair.AccessToken,
-		RefreshToken: tokenPair.RefreshToken,
-		ExpiresIn:    tokenPair.ExpiresIn,
-		TokenType:    "Bearer",
-		User:         dto.UserFromService(user),
-		Messages:     compactMessages(messages),
-	})
+	h.setRefreshTokenCookie(c, tokenPair.RefreshToken)
+	authResponse := AuthResponse{
+		AccessToken: tokenPair.AccessToken,
+		ExpiresIn:   tokenPair.ExpiresIn,
+		TokenType:   "Bearer",
+		User:        dto.UserFromService(user),
+		Messages:    compactMessages(messages),
+	}
+	if !usesRefreshCookieMode(c) {
+		authResponse.RefreshToken = tokenPair.RefreshToken
+	}
+	response.Success(c, authResponse)
 }
 
 func compactMessages(messages []string) []string {
@@ -407,6 +412,11 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 			response.ErrorFrom(c, err)
 			return
 		}
+		// Existing-identity OAuth login (intent=login) must not force-bind or re-apply
+		// first-bind grants. Bind-login / adopt flows keep forceBind + first-bind defaults.
+		intent := strings.TrimSpace(pendingSession.Intent)
+		forceBind := !strings.EqualFold(intent, oauthIntentLogin)
+		applyFirstBindDefaults := forceBind || strings.EqualFold(intent, "bind_current_user")
 		if err := applyPendingOAuthBindingAndConsumeSession(
 			c.Request.Context(),
 			h.entClient(),
@@ -416,8 +426,8 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 			pendingSession,
 			decision,
 			user.ID,
-			true,
-			true,
+			forceBind,
+			applyFirstBindDefaults,
 		); err != nil {
 			response.ErrorFrom(c, infraerrors.InternalServer("PENDING_AUTH_BIND_APPLY_FAILED", "failed to bind pending oauth identity").WithCause(err))
 			return
@@ -674,7 +684,7 @@ func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 type ResetPasswordRequest struct {
 	Email       string `json:"email" binding:"required,email"`
 	Token       string `json:"token" binding:"required"`
-	NewPassword string `json:"new_password" binding:"required,min=6"`
+	NewPassword string `json:"new_password" binding:"required,min=8"`
 }
 
 // ResetPasswordResponse 重置密码响应
@@ -706,13 +716,13 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 
 // RefreshTokenRequest 刷新Token请求
 type RefreshTokenRequest struct {
-	RefreshToken string `json:"refresh_token" binding:"required"`
+	RefreshToken string `json:"refresh_token"`
 }
 
 // RefreshTokenResponse 刷新Token响应
 type RefreshTokenResponse struct {
 	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	RefreshToken string `json:"refresh_token,omitempty"`
 	ExpiresIn    int    `json:"expires_in"` // Access Token有效期（秒）
 	TokenType    string `json:"token_type"`
 }
@@ -721,29 +731,61 @@ type RefreshTokenResponse struct {
 // POST /api/v1/auth/refresh
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	var req RefreshTokenRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid request: "+err.Error())
+	bindErr := c.ShouldBindJSON(&req)
+	cookieToken := readRefreshTokenCookie(c)
+	legacyBodyToken := strings.TrimSpace(req.RefreshToken)
+	// An explicit legacy bearer must win over a possibly stale cookie during
+	// one-time localStorage migration. Success rotates and overwrites the cookie.
+	refreshToken := legacyBodyToken
+	if refreshToken == "" {
+		refreshToken = cookieToken
+	}
+	if refreshToken == "" {
+		if bindErr != nil {
+			response.BadRequest(c, "Invalid request: "+bindErr.Error())
+			return
+		}
+		response.BadRequest(c, "Refresh token is required")
+		return
+	}
+	// A legacy JSON bearer is itself unguessable CSRF proof. Cookie-only
+	// refreshes require the custom header plus same-origin/allowed-origin check.
+	if legacyBodyToken == "" && cookieToken != "" && !h.validateRefreshCookieRequest(c) {
+		response.Forbidden(c, "Invalid refresh request origin")
+		return
+	}
+	if bindErr != nil && cookieToken == "" {
+		response.BadRequest(c, "Invalid request: "+bindErr.Error())
 		return
 	}
 
-	result, err := h.authService.RefreshTokenPair(c.Request.Context(), req.RefreshToken)
+	result, err := h.authService.RefreshTokenPair(c.Request.Context(), refreshToken)
 	if err != nil {
+		if !errors.Is(err, service.ErrRefreshTokenConcurrent) {
+			h.clearRefreshTokenCookie(c)
+		}
 		response.ErrorFrom(c, err)
 		return
 	}
 
 	// Backend mode: block non-admin token refresh
 	if h.isBackendModeEnabled(c.Request.Context()) && result.UserRole != "admin" {
+		_ = h.authService.RevokeRefreshToken(c.Request.Context(), result.RefreshToken)
+		h.clearRefreshTokenCookie(c)
 		response.Forbidden(c, "Backend mode is active. Only admin login is allowed.")
 		return
 	}
 
-	response.Success(c, RefreshTokenResponse{
-		AccessToken:  result.AccessToken,
-		RefreshToken: result.RefreshToken,
-		ExpiresIn:    result.ExpiresIn,
-		TokenType:    "Bearer",
-	})
+	h.setRefreshTokenCookie(c, result.RefreshToken)
+	refreshResponse := RefreshTokenResponse{
+		AccessToken: result.AccessToken,
+		ExpiresIn:   result.ExpiresIn,
+		TokenType:   "Bearer",
+	}
+	if !usesRefreshCookieMode(c) {
+		refreshResponse.RefreshToken = result.RefreshToken
+	}
+	response.Success(c, refreshResponse)
 }
 
 // LogoutRequest 登出请求
@@ -763,13 +805,25 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	// 允许空请求体（向后兼容）
 	_ = c.ShouldBindJSON(&req)
 
+	cookieToken := readRefreshTokenCookie(c)
+	legacyBodyToken := strings.TrimSpace(req.RefreshToken)
+	refreshToken := legacyBodyToken
+	if refreshToken == "" {
+		refreshToken = cookieToken
+	}
+	if legacyBodyToken == "" && cookieToken != "" && !h.validateRefreshCookieRequest(c) {
+		response.Forbidden(c, "Invalid logout request origin")
+		return
+	}
+
 	// 如果提供了Refresh Token，撤销它
-	if req.RefreshToken != "" {
-		if err := h.authService.RevokeRefreshToken(c.Request.Context(), req.RefreshToken); err != nil {
+	if refreshToken != "" {
+		if err := h.authService.RevokeRefreshToken(c.Request.Context(), refreshToken); err != nil {
 			slog.Debug("failed to revoke refresh token", "error", err)
 			// 不影响登出流程
 		}
 	}
+	h.clearRefreshTokenCookie(c)
 	h.consumePendingOAuthSessionOnLogout(c)
 	clearOAuthLogoutCookies(c)
 
@@ -798,6 +852,7 @@ func (h *AuthHandler) RevokeAllSessions(c *gin.Context) {
 		return
 	}
 
+	h.clearRefreshTokenCookie(c)
 	response.Success(c, RevokeAllSessionsResponse{
 		Message: "All sessions have been revoked. Please log in again.",
 	})

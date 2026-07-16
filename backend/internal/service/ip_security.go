@@ -31,11 +31,24 @@ if not state then return -1 end
 if state == 'saturated' then return 2 end
 if redis.call('SISMEMBER', KEYS[2], ARGV[1]) == 1 then return 1 end
 return 0`)
+	ipSecurityStateScript = redis.NewScript(`
+if not redis.call('GET', KEYS[1]) then return -1 end
+if redis.call('SISMEMBER', KEYS[2], ARGV[1]) == 1 then return 2 end
+if redis.call('SISMEMBER', KEYS[3], ARGV[1]) == 1 then return 1 end
+return 0`)
 	newAccountWindowScript = redis.NewScript(`
 redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[1])
 redis.call('ZADD', KEYS[1], 'NX', ARGV[2], ARGV[3])
 redis.call('EXPIRE', KEYS[1], ARGV[4])
 return redis.call('ZCARD', KEYS[1])`)
+)
+
+type ipSecurityStatus uint8
+
+const (
+	ipSecurityStatusNone ipSecurityStatus = iota
+	ipSecurityStatusBanned
+	ipSecurityStatusWhitelisted
 )
 
 type IPSecurityConfig struct {
@@ -116,10 +129,8 @@ type IPSecurityService struct {
 	config            atomic.Pointer[ipSecurityConfigCache]
 	configMu          sync.Mutex
 	stateMu           sync.RWMutex
-	fallbackAt        time.Time
 	fallback          map[string]struct{}
 	whitelist         map[string]struct{}
-	stateLoaded       bool
 	userMu            sync.RWMutex
 	userIPs           map[int64]userIPLocalState
 	redisFailureUntil atomic.Int64
@@ -215,21 +226,114 @@ func (s *IPSecurityService) IsBlocked(ctx context.Context, rawIP string) bool {
 	if ip == "" || s == nil {
 		return false
 	}
+	return s.resolveIPStatus(ctx, ip) == ipSecurityStatusBanned
+}
+
+// resolveIPStatus treats Redis as authoritative only when the loaded marker is
+// present. A missing marker (for example after FLUSHDB/restart) or Redis error
+// forces a DB lookup instead of trusting a possibly stale process-local miss.
+// Local state is retained solely as a last-resort snapshot when both shared
+// stores are unavailable.
+func (s *IPSecurityService) resolveIPStatus(ctx context.Context, ip string) ipSecurityStatus {
+	if status, ok := s.sharedIPStatus(ctx, ip); ok {
+		s.rememberIPStatus(ip, status)
+		return status
+	}
+	if status, ok := s.databaseIPStatus(ctx, ip); ok {
+		s.rememberIPStatus(ip, status)
+		return status
+	}
+	return s.localIPStatus(ip)
+}
+
+func (s *IPSecurityService) sharedIPStatus(ctx context.Context, ip string) (ipSecurityStatus, bool) {
+	if s == nil || s.rdb == nil {
+		return ipSecurityStatusNone, false
+	}
+	redisCtx, cancel, ready := s.redisContext(ctx)
+	if !ready {
+		return ipSecurityStatusNone, false
+	}
+	defer cancel()
+
+	result, err := ipSecurityStateScript.Run(redisCtx, s.rdb, []string{
+		"ipsec:{state}:loaded",
+		"ipsec:{state}:whitelisted",
+		"ipsec:{state}:banned",
+	}, ip).Int()
+	if err != nil {
+		s.noteRedisFailure(err)
+		return ipSecurityStatusNone, false
+	}
+	switch result {
+	case int(ipSecurityStatusBanned):
+		return ipSecurityStatusBanned, true
+	case int(ipSecurityStatusWhitelisted):
+		return ipSecurityStatusWhitelisted, true
+	case int(ipSecurityStatusNone):
+		return ipSecurityStatusNone, true
+	default:
+		// -1 means the shared snapshot has not been loaded.
+		return ipSecurityStatusNone, false
+	}
+}
+
+func (s *IPSecurityService) databaseIPStatus(ctx context.Context, ip string) (ipSecurityStatus, bool) {
+	if s == nil || s.repo == nil {
+		return ipSecurityStatusNone, false
+	}
+	whitelisted, err := s.repo.IsIPStatus(ctx, ip, "whitelisted")
+	if err != nil {
+		return ipSecurityStatusNone, false
+	}
+	if whitelisted {
+		return ipSecurityStatusWhitelisted, true
+	}
+	banned, err := s.repo.IsIPStatus(ctx, ip, "active")
+	if err != nil {
+		return ipSecurityStatusNone, false
+	}
+	if banned {
+		return ipSecurityStatusBanned, true
+	}
+	return ipSecurityStatusNone, true
+}
+
+func (s *IPSecurityService) localIPStatus(ip string) ipSecurityStatus {
+	if s == nil {
+		return ipSecurityStatusNone
+	}
 	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	if _, ok := s.whitelist[ip]; ok {
-		s.stateMu.RUnlock()
-		return false
+		return ipSecurityStatusWhitelisted
 	}
 	if _, ok := s.fallback[ip]; ok {
-		s.stateMu.RUnlock()
-		return true
+		return ipSecurityStatusBanned
 	}
-	loaded := s.stateLoaded
-	s.stateMu.RUnlock()
-	if loaded {
-		return false
+	return ipSecurityStatusNone
+}
+
+func (s *IPSecurityService) rememberIPStatus(ip string, status ipSecurityStatus) {
+	if s == nil || ip == "" {
+		return
 	}
-	return s.fallbackBlocked(ctx, ip)
+	s.stateMu.Lock()
+	if s.fallback == nil {
+		s.fallback = make(map[string]struct{})
+	}
+	if s.whitelist == nil {
+		s.whitelist = make(map[string]struct{})
+	}
+	delete(s.fallback, ip)
+	delete(s.whitelist, ip)
+	switch status {
+	case ipSecurityStatusBanned:
+		s.fallback[ip] = struct{}{}
+	case ipSecurityStatusWhitelisted:
+		s.whitelist[ip] = struct{}{}
+	}
+	s.stateMu.Unlock()
 }
 
 // Observe records only a user's first-ever use of an IP. The normal hot path is one Redis lookup.
@@ -291,7 +395,6 @@ func (s *IPSecurityService) Observe(ctx context.Context, activity IPSecurityActi
 		s.fallback = make(map[string]struct{})
 	}
 	s.fallback[activity.IPAddress] = struct{}{}
-	s.stateLoaded = true
 	s.stateMu.Unlock()
 	if s.rdb != nil {
 		if redisCtx, cancel, ok := s.redisContext(ctx); ok {
@@ -470,28 +573,7 @@ func (s *IPSecurityService) addNewAccountToWindow(ctx context.Context, ip string
 }
 
 func (s *IPSecurityService) isWhitelisted(ctx context.Context, ip string) bool {
-	s.stateMu.RLock()
-	_, ok := s.whitelist[ip]
-	loaded := s.stateLoaded
-	s.stateMu.RUnlock()
-	if loaded {
-		return ok
-	}
-	_, whitelisted, err := s.repo.LoadIPStatuses(ctx)
-	if err != nil {
-		return false
-	}
-	s.stateMu.Lock()
-	if s.whitelist == nil {
-		s.whitelist = make(map[string]struct{})
-	}
-	for _, candidate := range whitelisted {
-		s.whitelist[candidate] = struct{}{}
-	}
-	s.stateLoaded = true
-	_, ok = s.whitelist[ip]
-	s.stateMu.Unlock()
-	return ok
+	return s.resolveIPStatus(ctx, ip) == ipSecurityStatusWhitelisted
 }
 
 func (s *IPSecurityService) WarmCache(ctx context.Context) error {
@@ -512,7 +594,6 @@ func (s *IPSecurityService) WarmCache(ctx context.Context) error {
 	for _, ip := range whitelisted {
 		s.whitelist[ip] = struct{}{}
 	}
-	s.stateLoaded = true
 	if s.rdb == nil {
 		return nil
 	}
@@ -537,33 +618,6 @@ func (s *IPSecurityService) WarmCache(ctx context.Context) error {
 	return err
 }
 
-func (s *IPSecurityService) fallbackBlocked(ctx context.Context, ip string) bool {
-	s.stateMu.RLock()
-	if s.stateLoaded {
-		_, ok := s.fallback[ip]
-		s.stateMu.RUnlock()
-		return ok
-	}
-	s.stateMu.RUnlock()
-	active, whitelisted, err := s.repo.LoadIPStatuses(ctx)
-	if err != nil {
-		return false
-	}
-	s.stateMu.Lock()
-	s.fallback = make(map[string]struct{}, len(active))
-	s.whitelist = make(map[string]struct{}, len(whitelisted))
-	for _, candidate := range active {
-		s.fallback[candidate] = struct{}{}
-	}
-	for _, candidate := range whitelisted {
-		s.whitelist[candidate] = struct{}{}
-	}
-	s.stateLoaded = true
-	_, ok := s.fallback[ip]
-	s.stateMu.Unlock()
-	return ok
-}
-
 func (s *IPSecurityService) WhitelistBan(ctx context.Context, id, releasedBy int64) error {
 	ban, err := s.repo.WhitelistBan(ctx, id, releasedBy, time.Now())
 	if err != nil {
@@ -577,7 +631,6 @@ func (s *IPSecurityService) WhitelistBan(ctx context.Context, id, releasedBy int
 		s.whitelist = make(map[string]struct{})
 	}
 	s.whitelist[ban.IPAddress] = struct{}{}
-	s.stateLoaded = true
 	s.stateMu.Unlock()
 	if s.rdb != nil {
 		if redisCtx, cancel, ok := s.redisContext(ctx); ok {
@@ -603,7 +656,6 @@ func (s *IPSecurityService) RemoveWhitelist(ctx context.Context, id, removedBy i
 	if s.whitelist != nil {
 		delete(s.whitelist, ban.IPAddress)
 	}
-	s.stateLoaded = true
 	s.stateMu.Unlock()
 	if s.rdb != nil {
 		if redisCtx, cancel, ok := s.redisContext(ctx); ok {

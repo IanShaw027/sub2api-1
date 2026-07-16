@@ -760,6 +760,18 @@ func (s *emailBindCacheStub) DeletePasswordResetToken(context.Context, string) e
 	return nil
 }
 
+func (s *emailBindCacheStub) ClaimPasswordResetToken(context.Context, string, string, string) error {
+	return service.ErrInvalidResetToken
+}
+
+func (s *emailBindCacheStub) CompletePasswordResetToken(context.Context, string, string) error {
+	return nil
+}
+
+func (s *emailBindCacheStub) RestorePasswordResetToken(context.Context, string, string) error {
+	return nil
+}
+
 func (s *emailBindCacheStub) IsPasswordResetEmailInCooldown(context.Context, string) bool {
 	return false
 }
@@ -810,6 +822,18 @@ func (s *emailBindRefreshTokenCacheStub) GetRefreshToken(_ context.Context, toke
 	return &cloned, nil
 }
 
+func (s *emailBindRefreshTokenCacheStub) ConsumeRefreshToken(_ context.Context, tokenHash, _ string, _ time.Duration) (*service.RefreshTokenData, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, ok := s.tokens[tokenHash]
+	if !ok {
+		return nil, service.ErrRefreshTokenNotFound
+	}
+	cloned := *data
+	delete(s.tokens, tokenHash)
+	return &cloned, nil
+}
+
 func (s *emailBindRefreshTokenCacheStub) DeleteRefreshToken(_ context.Context, tokenHash string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -821,6 +845,10 @@ func (s *emailBindRefreshTokenCacheStub) DeleteRefreshToken(_ context.Context, t
 		delete(tokenSet, tokenHash)
 	}
 	return nil
+}
+
+func (s *emailBindRefreshTokenCacheStub) GetUsedRefreshTokenFamily(context.Context, string) (string, error) {
+	return "", service.ErrRefreshTokenNotFound
 }
 
 func (s *emailBindRefreshTokenCacheStub) DeleteUserRefreshTokens(_ context.Context, userID int64) error {

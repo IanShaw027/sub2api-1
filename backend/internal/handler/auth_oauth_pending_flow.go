@@ -68,7 +68,7 @@ type bindPendingOAuthLoginRequest struct {
 type createPendingOAuthAccountRequest struct {
 	Email            string `json:"email" binding:"required,email"`
 	VerifyCode       string `json:"verify_code,omitempty"`
-	Password         string `json:"password" binding:"required,min=6"`
+	Password         string `json:"password" binding:"required,min=8"`
 	InvitationCode   string `json:"invitation_code,omitempty"`
 	AffCode          string `json:"aff_code,omitempty"`
 	AdoptDisplayName *bool  `json:"adopt_display_name,omitempty"`
@@ -1819,13 +1819,19 @@ func (h *AuthHandler) transitionPendingOAuthAccountToChoiceState(
 	return session, nil
 }
 
-func writeOAuthTokenPairResponse(c *gin.Context, tokenPair *service.TokenPair) {
-	c.JSON(http.StatusOK, gin.H{
-		"access_token":  tokenPair.AccessToken,
-		"refresh_token": tokenPair.RefreshToken,
-		"expires_in":    tokenPair.ExpiresIn,
-		"token_type":    "Bearer",
-	})
+func (h *AuthHandler) writeOAuthTokenPairResponse(c *gin.Context, tokenPair *service.TokenPair) {
+	if tokenPair != nil {
+		h.setRefreshTokenCookie(c, tokenPair.RefreshToken)
+	}
+	payload := gin.H{
+		"access_token": tokenPair.AccessToken,
+		"expires_in":   tokenPair.ExpiresIn,
+		"token_type":   "Bearer",
+	}
+	if !usesRefreshCookieMode(c) {
+		payload["refresh_token"] = tokenPair.RefreshToken
+	}
+	c.JSON(http.StatusOK, payload)
 }
 
 func (h *AuthHandler) bindPendingOAuthLogin(c *gin.Context, provider string) {
@@ -1903,7 +1909,7 @@ func (h *AuthHandler) bindPendingOAuthLogin(c *gin.Context, provider string) {
 	// bindPendingOAuthLogin = 绑定已有账户登录，不动 users.username（用户已有自己的名字）
 	h.maybeSyncDingTalkAfterLogin(c.Request.Context(), session, user.ID)
 	clearCookies()
-	writeOAuthTokenPairResponse(c, tokenPair)
+	h.writeOAuthTokenPairResponse(c, tokenPair)
 }
 
 func respondPendingOAuthBindingApplyError(c *gin.Context, err error) {
@@ -2098,7 +2104,7 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 	// createPendingOAuthAccount = 注册新账户，需要把钉钉昵称同步到 users.username 作为初始值
 	h.maybeSyncDingTalkAfterRegistration(c.Request.Context(), session, user.ID)
 	clearCookies()
-	writeOAuthTokenPairResponse(c, tokenPair)
+	h.writeOAuthTokenPairResponse(c, tokenPair)
 }
 
 // ExchangePendingOAuthCompletion redeems a pending OAuth browser session into a frontend-safe payload.
@@ -2242,6 +2248,34 @@ func (h *AuthHandler) ExchangePendingOAuthCompletion(c *gin.Context) {
 			return
 		}
 	}
+
+	// Existing-identity OAuth login must enforce TOTP the same way as password
+	// login and bind-login. Challenge 2FA before applying adoption / issuing
+	// tokens; Login2FA finalizes via PendingOAuthBind.
+	if canIssueTokenPair && loginUser != nil &&
+		h.totpService != nil && h.settingSvc != nil &&
+		h.settingSvc.IsTotpEnabled(c.Request.Context()) && loginUser.TotpEnabled {
+		tempToken, err := h.totpService.CreatePendingOAuthBindLoginSession(
+			c.Request.Context(),
+			loginUser.ID,
+			loginUser.Email,
+			session.SessionToken,
+			session.BrowserSessionKey,
+			service.ResolveUserTokenVersion(loginUser),
+		)
+		if err != nil {
+			response.InternalError(c, "Failed to create 2FA session")
+			return
+		}
+		// Keep pending session + cookies so Login2FA can finish the flow.
+		response.Success(c, TotpLoginResponse{
+			Requires2FA:     true,
+			TempToken:       tempToken,
+			UserEmailMasked: service.MaskEmail(loginUser.Email),
+		})
+		return
+	}
+
 	adoptedAvatarURL, err := applyPendingOAuthAdoption(c.Request.Context(), h.entClient(), h.authService, h.userService, h, session, decision, targetUserID)
 	if err != nil {
 		respondPendingOAuthBindingApplyError(c, err)
@@ -2257,9 +2291,12 @@ func (h *AuthHandler) ExchangePendingOAuthCompletion(c *gin.Context) {
 		}
 		h.authService.RecordSuccessfulLogin(c.Request.Context(), loginUser.ID)
 		payload["access_token"] = tokenPair.AccessToken
-		payload["refresh_token"] = tokenPair.RefreshToken
 		payload["expires_in"] = tokenPair.ExpiresIn
 		payload["token_type"] = "Bearer"
+		h.setRefreshTokenCookie(c, tokenPair.RefreshToken)
+		if !usesRefreshCookieMode(c) {
+			payload["refresh_token"] = tokenPair.RefreshToken
+		}
 	}
 	if err := consumePendingOAuthBrowserSession(c.Request.Context(), h.entClient(), session); err != nil {
 		clearCookies()

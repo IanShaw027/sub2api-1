@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -1616,7 +1617,8 @@ func newContractDeps(t *testing.T) *contractDeps {
 	}
 
 	userService := service.NewUserService(userRepo, nil, nil, nil)
-	apiKeyService := service.NewAPIKeyService(apiKeyRepo, userRepo, groupRepo, userSubRepo, nil, apiKeyCache, cfg)
+	apiKeyService := service.NewAPIKeyService(apiKeyRepo, userRepo, groupRepo, userSubRepo, nil, apiKeyCache, cfg).
+		WithAPIKeySecretProtection(contractSecretEncryptor{}, true)
 
 	usageRepo := newStubUsageLogRepo()
 	usageService := service.NewUsageService(usageRepo, userRepo, nil, nil)
@@ -1629,10 +1631,11 @@ func newContractDeps(t *testing.T) *contractDeps {
 
 	settingRepo := newStubSettingRepo()
 	settingService := service.NewSettingService(settingRepo, cfg)
+	totpService := service.NewTotpService(userRepo, contractSecretEncryptor{}, nil, settingService, nil, nil)
 
 	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil)
-	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
+	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService).WithRevealStepUp(userService, totpService, settingService)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService, nil, nil)
 	adminSettingHandler := adminhandler.NewSettingHandler(settingService, nil, nil, nil, nil, nil)
 	adminAccountHandler := adminhandler.NewAccountHandler(adminService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
@@ -2481,6 +2484,20 @@ type stubApiKeyRepo struct {
 	byKey  map[string]*service.APIKey
 }
 
+type contractSecretEncryptor struct{}
+
+func (contractSecretEncryptor) Encrypt(plaintext string) (string, error) {
+	return "contract:" + plaintext, nil
+}
+
+func (contractSecretEncryptor) Decrypt(ciphertext string) (string, error) {
+	plaintext, ok := strings.CutPrefix(ciphertext, "contract:")
+	if !ok {
+		return "", errors.New("invalid contract ciphertext")
+	}
+	return plaintext, nil
+}
+
 func newStubApiKeyRepo(now time.Time) *stubApiKeyRepo {
 	return &stubApiKeyRepo{
 		now:    now,
@@ -2497,6 +2514,55 @@ func (r *stubApiKeyRepo) MustSeed(key *service.APIKey) {
 	clone := *key
 	r.byID[clone.ID] = &clone
 	r.byKey[clone.Key] = &clone
+}
+
+func (r *stubApiKeyRepo) ListAPIKeySecretMaterials(context.Context) ([]service.APIKeySecretMaterial, error) {
+	out := make([]service.APIKeySecretMaterial, 0, len(r.byID))
+	for _, key := range r.byID {
+		out = append(out, service.APIKeySecretMaterial{
+			ID:            key.ID,
+			LegacyKey:     key.Key,
+			LookupHash:    key.LookupHash,
+			KeyCiphertext: key.KeyCiphertext,
+			KeyPrefix:     key.KeyPrefix,
+		})
+	}
+	return out, nil
+}
+
+func (r *stubApiKeyRepo) ProtectAPIKeySecret(_ context.Context, id int64, expectedLegacyKey, lookupHash, ciphertext, prefix string) error {
+	key, ok := r.byID[id]
+	if !ok {
+		return service.ErrAPIKeyNotFound
+	}
+	if key.Key != expectedLegacyKey {
+		return errors.New("api key secret changed")
+	}
+	delete(r.byKey, key.Key)
+	key.Key = lookupHash
+	key.LookupHash = lookupHash
+	key.KeyCiphertext = ciphertext
+	key.KeyPrefix = prefix
+	r.byKey[lookupHash] = key
+	return nil
+}
+
+func (r *stubApiKeyRepo) GetAPIKeySecretForOwner(_ context.Context, id, userID int64) (*service.APIKeySecretMaterial, error) {
+	key, ok := r.byID[id]
+	if !ok || key.UserID != userID {
+		return nil, service.ErrAPIKeyNotFound
+	}
+	return &service.APIKeySecretMaterial{
+		ID:            key.ID,
+		LegacyKey:     key.Key,
+		LookupHash:    key.LookupHash,
+		KeyCiphertext: key.KeyCiphertext,
+		KeyPrefix:     key.KeyPrefix,
+	}, nil
+}
+
+func (r *stubApiKeyRepo) MigrateDeletedAPIKeyAuditHashes(context.Context) error {
+	return nil
 }
 
 func (r *stubApiKeyRepo) Create(ctx context.Context, key *service.APIKey) error {

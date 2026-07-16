@@ -1008,6 +1008,93 @@ func TestExchangePendingOAuthCompletionLoginWithoutDecisionStillBindsIdentity(t 
 	require.NotNil(t, storedSession.ConsumedAt)
 }
 
+func TestExchangePendingOAuthCompletionExistingLoginWithTotpRequires2FA(t *testing.T) {
+	totpCache := &oauthPendingFlowTotpCacheStub{}
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		settingValues: map[string]string{
+			service.SettingKeyTotpEnabled: "true",
+		},
+		totpCache:     totpCache,
+		totpEncryptor: oauthPendingFlowTotpEncryptorStub{},
+	})
+	ctx := context.Background()
+
+	totpEnabledAt := time.Now().UTC().Add(-time.Hour)
+	secret := "JBSWY3DPEHPK3PXP"
+	userEntity, err := client.User.Create().
+		SetEmail("existing-login-2fa@example.com").
+		SetUsername("existing-login-2fa-user").
+		SetPasswordHash("hash").
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusActive).
+		SetTotpEnabled(true).
+		SetTotpSecretEncrypted(secret).
+		SetTotpEnabledAt(totpEnabledAt).
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.AuthIdentity.Create().
+		SetUserID(userEntity.ID).
+		SetProviderType("linuxdo").
+		SetProviderKey("linuxdo").
+		SetProviderSubject("existing-login-2fa-123").
+		SetMetadata(map[string]any{"username": "existing-login-2fa-user"}).
+		Save(ctx)
+	require.NoError(t, err)
+
+	session, err := client.PendingAuthSession.Create().
+		SetSessionToken("existing-login-2fa-session-token").
+		SetIntent("login").
+		SetProviderType("linuxdo").
+		SetProviderKey("linuxdo").
+		SetProviderSubject("existing-login-2fa-123").
+		SetTargetUserID(userEntity.ID).
+		SetResolvedEmail(userEntity.Email).
+		SetBrowserSessionKey("existing-login-2fa-browser-session-key").
+		SetUpstreamIdentityClaims(map[string]any{
+			"suggested_display_name": "Existing Login 2FA",
+			"suggested_avatar_url":   "https://cdn.example/existing-login-2fa.png",
+		}).
+		SetLocalFlowState(map[string]any{
+			oauthCompletionResponseKey: map[string]any{
+				"redirect": "/dashboard",
+			},
+		}).
+		SetExpiresAt(time.Now().UTC().Add(10 * time.Minute)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/pending/exchange", nil)
+	req.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue(session.SessionToken)})
+	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("existing-login-2fa-browser-session-key")})
+	ginCtx.Request = req
+
+	handler.ExchangePendingOAuthCompletion(ginCtx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	payload := decodeJSONResponseData(t, recorder)
+	require.Equal(t, true, payload["requires_2fa"])
+	require.NotContains(t, payload, "access_token")
+	require.NotContains(t, payload, "refresh_token")
+	tempToken, ok := payload["temp_token"].(string)
+	require.True(t, ok)
+	require.NotEmpty(t, tempToken)
+
+	loginSession, err := totpCache.GetLoginSession(ctx, tempToken)
+	require.NoError(t, err)
+	require.NotNil(t, loginSession)
+	require.NotNil(t, loginSession.PendingOAuthBind)
+	require.Equal(t, session.SessionToken, loginSession.PendingOAuthBind.PendingSessionToken)
+	require.Equal(t, session.BrowserSessionKey, loginSession.PendingOAuthBind.BrowserSessionKey)
+
+	// Pending session must remain unconsumed so Login2FA can finish.
+	storedSession, err := client.PendingAuthSession.Get(ctx, session.ID)
+	require.NoError(t, err)
+	require.Nil(t, storedSession.ConsumedAt)
+}
+
 func TestExchangePendingOAuthCompletionExistingLoginWithSuggestedProfileSkipsAdoptionPrompt(t *testing.T) {
 	handler, client := newOAuthPendingFlowTestHandler(t, false)
 	ctx := context.Background()
@@ -3292,6 +3379,18 @@ func (s *oauthPendingFlowEmailCacheStub) DeletePasswordResetToken(context.Contex
 	return nil
 }
 
+func (s *oauthPendingFlowEmailCacheStub) ClaimPasswordResetToken(context.Context, string, string, string) error {
+	return service.ErrInvalidResetToken
+}
+
+func (s *oauthPendingFlowEmailCacheStub) CompletePasswordResetToken(context.Context, string, string) error {
+	return nil
+}
+
+func (s *oauthPendingFlowEmailCacheStub) RestorePasswordResetToken(context.Context, string, string) error {
+	return nil
+}
+
 func (s *oauthPendingFlowEmailCacheStub) IsPasswordResetEmailInCooldown(context.Context, string) bool {
 	return false
 }
@@ -3316,8 +3415,16 @@ func (s *oauthPendingFlowRefreshTokenCacheStub) GetRefreshToken(context.Context,
 	return nil, service.ErrRefreshTokenNotFound
 }
 
+func (s *oauthPendingFlowRefreshTokenCacheStub) ConsumeRefreshToken(context.Context, string, string, time.Duration) (*service.RefreshTokenData, error) {
+	return nil, service.ErrRefreshTokenNotFound
+}
+
 func (s *oauthPendingFlowRefreshTokenCacheStub) DeleteRefreshToken(context.Context, string) error {
 	return nil
+}
+
+func (s *oauthPendingFlowRefreshTokenCacheStub) GetUsedRefreshTokenFamily(context.Context, string) (string, error) {
+	return "", service.ErrRefreshTokenNotFound
 }
 
 func (s *oauthPendingFlowRefreshTokenCacheStub) DeleteUserRefreshTokens(context.Context, int64) error {

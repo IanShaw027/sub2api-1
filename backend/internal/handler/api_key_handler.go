@@ -2,13 +2,15 @@
 package handler
 
 import (
-	"context"
+	"encoding/json"
+	"io"
 	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -20,6 +22,9 @@ import (
 // APIKeyHandler handles API key-related requests
 type APIKeyHandler struct {
 	apiKeyService *service.APIKeyService
+	userService   *service.UserService
+	totpService   *service.TotpService
+	settingSvc    *service.SettingService
 }
 
 // NewAPIKeyHandler creates a new APIKeyHandler
@@ -27,6 +32,67 @@ func NewAPIKeyHandler(apiKeyService *service.APIKeyService) *APIKeyHandler {
 	return &APIKeyHandler{
 		apiKeyService: apiKeyService,
 	}
+}
+
+// WithRevealStepUp wires the TOTP step-up guard required by Reveal.
+func (h *APIKeyHandler) WithRevealStepUp(userService *service.UserService, totpService *service.TotpService, settingSvc *service.SettingService) *APIKeyHandler {
+	if h == nil {
+		return h
+	}
+	h.userService = userService
+	h.totpService = totpService
+	h.settingSvc = settingSvc
+	return h
+}
+
+func (h *APIKeyHandler) requireAPIKeyRevealStepUp(c *gin.Context, userID int64) error {
+	if h == nil || h.totpService == nil || h.settingSvc == nil || h.userService == nil {
+		return infraerrors.InternalServer(
+			"TOTP_GUARD_NOT_CONFIGURED",
+			"API key reveal TOTP guard is not configured",
+		)
+	}
+	if !h.settingSvc.IsTotpEnabled(c.Request.Context()) {
+		return nil
+	}
+	user, err := h.userService.GetByID(c.Request.Context(), userID)
+	if err != nil {
+		return err
+	}
+	if user == nil || !user.TotpEnabled {
+		return nil
+	}
+	code := apiKeyRevealTOTPCode(c)
+	if code == "" {
+		return infraerrors.Unauthorized("TOTP_REQUIRED", "TOTP code required to reveal API key")
+	}
+	if err := h.totpService.VerifyCode(c.Request.Context(), userID, code); err != nil {
+		return err
+	}
+	return nil
+}
+
+func apiKeyRevealTOTPCode(c *gin.Context) string {
+	if c == nil || c.Request == nil {
+		return ""
+	}
+	// Prefer the header because intermediaries may drop GET request bodies.
+	if code := strings.TrimSpace(c.GetHeader("X-TOTP-Code")); code != "" {
+		return code
+	}
+	if c.Request.Body == nil {
+		return ""
+	}
+	var payload struct {
+		TOTPCode string `json:"totp_code"`
+	}
+	if err := json.NewDecoder(io.LimitReader(c.Request.Body, 4096)).Decode(&payload); err != nil {
+		slog.DebugContext(c.Request.Context(), "api_key.reveal_totp_body_decode_failed",
+			"error", err,
+		)
+		return ""
+	}
+	return strings.TrimSpace(payload.TOTPCode)
 }
 
 // CreateAPIKeyRequest represents the create API key request payload
@@ -142,6 +208,10 @@ func (h *APIKeyHandler) GetByID(c *gin.Context) {
 // Reveal returns the full API key only to its owning user. List/detail
 // responses stay masked so the secret is not unnecessarily retained in the
 // page payload or browser state.
+//
+// Step-up: when the user has TOTP enabled and platform TOTP is on, require a
+// valid X-TOTP-Code header. A JSON body field is accepted only as a fallback
+// because proxies may strip GET request bodies.
 func (h *APIKeyHandler) Reveal(c *gin.Context) {
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {
@@ -165,6 +235,16 @@ func (h *APIKeyHandler) Reveal(c *gin.Context) {
 		return
 	}
 
+	if err := h.requireAPIKeyRevealStepUp(c, subject.UserID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	rawKey, err := h.apiKeyService.Reveal(c.Request.Context(), keyID, subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
 	slog.Info("api_key.reveal",
 		"user_id", subject.UserID,
 		"key_id", key.ID,
@@ -176,7 +256,7 @@ func (h *APIKeyHandler) Reveal(c *gin.Context) {
 	c.Header("Pragma", "no-cache")
 	c.Header("Expires", "0")
 
-	response.Success(c, gin.H{"key": key.Key})
+	response.Success(c, gin.H{"key": rawKey})
 }
 
 // Create handles creating a new API key
@@ -215,13 +295,15 @@ func (h *APIKeyHandler) Create(c *gin.Context) {
 		svcReq.RateLimit7d = *req.RateLimit7d
 	}
 
-	executeUserIdempotentJSON(c, "user.api_keys.create", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		key, err := h.apiKeyService.Create(ctx, subject.UserID, svcReq)
-		if err != nil {
-			return nil, err
-		}
-		return dto.APIKeyFromService(key), nil
-	})
+	// API key creation intentionally bypasses the generic idempotency response
+	// store: replayable response bodies would persist the newly generated raw
+	// secret in idempotency_records. The raw key is returned exactly once here.
+	key, err := h.apiKeyService.Create(c.Request.Context(), subject.UserID, svcReq)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.APIKeyFromService(key))
 }
 
 // Update handles updating an API key

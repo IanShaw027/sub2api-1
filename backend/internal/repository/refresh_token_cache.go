@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -11,10 +12,20 @@ import (
 )
 
 const (
-	refreshTokenKeyPrefix   = "refresh_token:"
-	userRefreshTokensPrefix = "user_refresh_tokens:"
-	tokenFamilyPrefix       = "token_family:"
+	refreshTokenKeyPrefix      = "refresh_token:"
+	refreshTokenUsedKeyPrefix  = "refresh_token_used:"
+	refreshTokenGraceKeyPrefix = "refresh_token_used_grace:"
+	userRefreshTokensPrefix    = "user_refresh_tokens:"
+	tokenFamilyPrefix          = "token_family:"
 )
+
+var consumeRefreshTokenScript = redis.NewScript(`
+local value = redis.call('GET', KEYS[1])
+if not value then return false end
+redis.call('DEL', KEYS[1])
+redis.call('PSETEX', KEYS[2], ARGV[1], ARGV[2])
+redis.call('PSETEX', KEYS[3], ARGV[3], '1')
+return value`)
 
 // refreshTokenKey generates the Redis key for a refresh token.
 func refreshTokenKey(tokenHash string) string {
@@ -65,9 +76,89 @@ func (c *refreshTokenCache) GetRefreshToken(ctx context.Context, tokenHash strin
 	return &data, nil
 }
 
+func (c *refreshTokenCache) ConsumeRefreshToken(ctx context.Context, tokenHash, familyID string, usedTTL time.Duration) (*service.RefreshTokenData, error) {
+	if strings.TrimSpace(tokenHash) == "" || strings.TrimSpace(familyID) == "" {
+		return nil, service.ErrRefreshTokenNotFound
+	}
+	if usedTTL <= 0 {
+		usedTTL = time.Hour
+	}
+	marker, err := json.Marshal(service.UsedRefreshTokenMarker{
+		FamilyID:   familyID,
+		ConsumedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal used refresh token marker: %w", err)
+	}
+	value, err := consumeRefreshTokenScript.Run(
+		ctx,
+		c.rdb,
+		[]string{refreshTokenKey(tokenHash), refreshTokenUsedKey(tokenHash), refreshTokenGraceKey(tokenHash)},
+		usedTTL.Milliseconds(),
+		string(marker),
+		service.RefreshTokenConcurrentReuseGrace.Milliseconds(),
+	).Text()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, service.ErrRefreshTokenNotFound
+		}
+		return nil, err
+	}
+	var data service.RefreshTokenData
+	if err := json.Unmarshal([]byte(value), &data); err != nil {
+		return nil, fmt.Errorf("unmarshal consumed refresh token data: %w", err)
+	}
+	return &data, nil
+}
+
 func (c *refreshTokenCache) DeleteRefreshToken(ctx context.Context, tokenHash string) error {
 	key := refreshTokenKey(tokenHash)
 	return c.rdb.Del(ctx, key).Err()
+}
+
+func refreshTokenUsedKey(tokenHash string) string {
+	return refreshTokenUsedKeyPrefix + tokenHash
+}
+
+func refreshTokenGraceKey(tokenHash string) string {
+	return refreshTokenGraceKeyPrefix + tokenHash
+}
+
+func (c *refreshTokenCache) GetUsedRefreshTokenFamily(ctx context.Context, tokenHash string) (string, error) {
+	marker, err := c.GetUsedRefreshTokenMarker(ctx, tokenHash)
+	if err != nil {
+		return "", err
+	}
+	return marker.FamilyID, nil
+}
+
+func (c *refreshTokenCache) GetUsedRefreshTokenMarker(ctx context.Context, tokenHash string) (*service.UsedRefreshTokenMarker, error) {
+	val, err := c.rdb.Get(ctx, refreshTokenUsedKey(tokenHash)).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, service.ErrRefreshTokenNotFound
+		}
+		return nil, err
+	}
+	if strings.TrimSpace(val) == "" {
+		return nil, service.ErrRefreshTokenNotFound
+	}
+	var marker service.UsedRefreshTokenMarker
+	if err := json.Unmarshal([]byte(val), &marker); err == nil && strings.TrimSpace(marker.FamilyID) != "" {
+		return &marker, nil
+	}
+	// Markers written by the first rotation implementation contained only the
+	// family ID. Treat them as outside the concurrency grace window so a real
+	// replay retains the previous fail-closed behavior during rolling upgrades.
+	return &service.UsedRefreshTokenMarker{FamilyID: val}, nil
+}
+
+func (c *refreshTokenCache) IsRefreshTokenReuseGraceActive(ctx context.Context, tokenHash string) (bool, error) {
+	count, err := c.rdb.Exists(ctx, refreshTokenGraceKey(tokenHash)).Result()
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 func (c *refreshTokenCache) DeleteUserRefreshTokens(ctx context.Context, userID int64) error {

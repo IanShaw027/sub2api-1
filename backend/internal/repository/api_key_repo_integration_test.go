@@ -51,7 +51,9 @@ func (s *APIKeyRepoSuite) TestCreate() {
 
 	got, err := s.repo.GetByID(s.ctx, key.ID)
 	s.Require().NoError(err, "GetByID")
-	s.Require().Equal("sk-create-test", got.Key)
+	s.Require().Empty(got.Key)
+	s.Require().Equal(service.HashAPIKeyLookup("sk-create-test"), got.LookupHash)
+	s.Require().Equal(service.APIKeyDisplayPrefix("sk-create-test"), got.KeyPrefix)
 }
 
 func (s *APIKeyRepoSuite) TestGetByID_NotFound() {
@@ -144,7 +146,8 @@ func (s *APIKeyRepoSuite) TestUpdate() {
 
 	got, err := s.repo.GetByID(s.ctx, key.ID)
 	s.Require().NoError(err, "GetByID after update")
-	s.Require().Equal("sk-update", got.Key, "Update should not change key")
+	s.Require().Empty(got.Key, "detail reads must not return raw key material")
+	s.Require().Equal(service.HashAPIKeyLookup("sk-update"), got.LookupHash)
 	s.Require().Equal(user.ID, got.UserID, "Update should not change user_id")
 	s.Require().Equal("Renamed", got.Name)
 	s.Require().Equal(service.StatusDisabled, got.Status)
@@ -372,7 +375,8 @@ func (s *APIKeyRepoSuite) TestCRUD_Search_ClearGroupID() {
 
 	got2, err := s.repo.GetByID(s.ctx, key.ID)
 	s.Require().NoError(err, "GetByID")
-	s.Require().Equal("sk-test-1", got2.Key, "Update should not change key")
+	s.Require().Empty(got2.Key, "detail reads must not return raw key material")
+	s.Require().Equal(service.HashAPIKeyLookup("sk-test-1"), got2.LookupHash)
 	s.Require().Equal(user.ID, got2.UserID, "Update should not change user_id")
 	s.Require().Equal("Renamed", got2.Name)
 	s.Require().Equal(service.StatusDisabled, got2.Status)
@@ -494,7 +498,7 @@ func (s *APIKeyRepoSuite) TestIncrementQuotaUsedAndGetState() {
 	s.Require().Equal(3.5, state.QuotaUsed)
 	s.Require().Equal(3.0, state.Quota)
 	s.Require().Equal(service.StatusAPIKeyQuotaExhausted, state.Status)
-	s.Require().Equal(key.Key, state.Key)
+	s.Require().Equal(service.HashAPIKeyLookup(key.Key), state.LookupHash)
 
 	got, err := s.repo.GetByID(s.ctx, key.ID)
 	s.Require().NoError(err, "GetByID")
@@ -579,7 +583,7 @@ func (s *APIKeyRepoSuite) TestDeleteWithAudit_WritesAuditAndSoftDeletes() {
 	var auditKey, auditName string
 	var auditUserID, auditAPIKeyID int64
 	s.Require().NoError(rows.Scan(&auditKey, &auditName, &auditUserID, &auditAPIKeyID))
-	s.Require().Equal("sk-del-audit-1", auditKey)
+	s.Require().Equal(hashDeletedAPIKeyAudit("sk-del-audit-1"), auditKey)
 	s.Require().Equal("Audit Me", auditName)
 	s.Require().Equal(user.ID, auditUserID)
 	s.Require().Equal(key.ID, auditAPIKeyID)

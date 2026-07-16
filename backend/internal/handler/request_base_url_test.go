@@ -44,3 +44,15 @@ func TestRequestBaseURLUsesForwardedProtoWithRequestHost(t *testing.T) {
 
 	require.Equal(t, "https://api.good.example", requestBaseURL(c))
 }
+
+func TestRequestBaseURLUsesFirstForwardedProtoValue(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "http://api.good.example/path", nil)
+	c.Request.Header.Set("X-Forwarded-Proto", "https, http")
+
+	require.Equal(t, "https://api.good.example", requestBaseURL(c))
+	require.True(t, isRequestHTTPS(c))
+}

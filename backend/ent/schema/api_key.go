@@ -34,10 +34,30 @@ func (APIKey) Mixin() []ent.Mixin {
 func (APIKey) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("user_id"),
+		// key is the historical compatibility column. New writes store the
+		// non-reversible lookup hash here so the old NOT NULL/unique constraint
+		// remains satisfied without retaining usable API key material.
 		field.String("key").
 			MaxLen(128).
 			NotEmpty().
-			Unique(),
+			Unique().
+			Sensitive(),
+		field.String("lookup_hash").
+			MaxLen(64).
+			Optional().
+			Nillable().
+			Unique().
+			Sensitive().
+			Comment("SHA-256 fingerprint used for API key authentication lookup"),
+		field.String("key_ciphertext").
+			SchemaType(map[string]string{dialect.Postgres: "text"}).
+			Optional().
+			Sensitive().
+			Comment("AES-256-GCM encrypted API key for owner-authorized reveal"),
+		field.String("key_prefix").
+			MaxLen(32).
+			Default("").
+			Comment("Non-sensitive API key prefix used for display and search"),
 		field.String("name").
 			MaxLen(100).
 			NotEmpty(),
@@ -135,7 +155,7 @@ func (APIKey) Edges() []ent.Edge {
 
 func (APIKey) Indexes() []ent.Index {
 	return []ent.Index{
-		// key 字段已在 Fields() 中声明 Unique()，无需重复索引
+		// key and lookup_hash are unique fields and need no duplicate index.
 		index.Fields("user_id"),
 		index.Fields("group_id"),
 		index.Fields("status"),

@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -106,8 +104,7 @@ func (s *APIKeyService) StartAuthCacheInvalidationSubscriber(ctx context.Context
 }
 
 func (s *APIKeyService) authCacheKey(key string) string {
-	sum := sha256.Sum256([]byte(key))
-	return hex.EncodeToString(sum[:])
+	return HashAPIKeyLookup(key)
 }
 
 func (s *APIKeyService) getAuthCacheEntry(ctx context.Context, cacheKey string) (*APIKeyAuthCacheEntry, bool) {
@@ -179,6 +176,13 @@ func (s *APIKeyService) loadAuthCacheEntry(ctx context.Context, key, cacheKey st
 			return entry, nil
 		}
 		return nil, fmt.Errorf("get api key: %w", err)
+	}
+	if apiKey.LookupHash == "" {
+		if err := s.protectLegacyAPIKeySecret(ctx, apiKey.ID, key); err != nil {
+			return nil, fmt.Errorf("migrate legacy api key: %w", err)
+		}
+		apiKey.LookupHash = HashAPIKeyLookup(key)
+		apiKey.KeyPrefix = APIKeyDisplayPrefix(key)
 	}
 	apiKey.Key = key
 	snapshot := s.snapshotFromAPIKey(ctx, apiKey)

@@ -15,7 +15,7 @@ import (
 func resetViperWithJWTSecret(t *testing.T) {
 	t.Helper()
 	viper.Reset()
-	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
+	t.Setenv("JWT_SECRET", "test-only-jwt-secret-32-bytes-long")
 }
 
 func TestLoadServerTimingConfig(t *testing.T) {
@@ -59,6 +59,14 @@ func TestLoadRequiresJWTSecretAtRuntime(t *testing.T) {
 	if !strings.Contains(err.Error(), "jwt.secret is required") {
 		t.Fatalf("Load() error = %v, want jwt.secret is required", err)
 	}
+}
+
+func TestLoadRejectsKnownJWTPlaceholderAtRuntime(t *testing.T) {
+	viper.Reset()
+	t.Setenv("JWT_SECRET", "change-this-to-a-secure-random-string")
+
+	_, err := Load()
+	require.ErrorContains(t, err, "known placeholder or repeated value")
 }
 
 func TestNormalizeRunMode(t *testing.T) {
@@ -1256,12 +1264,28 @@ func TestValidateConfigWithLinuxDoEnabled(t *testing.T) {
 }
 
 func TestValidateJWTSecretStrength(t *testing.T) {
-	if !isWeakJWTSecret("change-me-in-production") {
-		t.Fatalf("isWeakJWTSecret should detect weak secret")
+	for _, secret := range []string{
+		"change-me-in-production",
+		"change-this-to-a-secure-random-string",
+		strings.Repeat("x", 32),
+	} {
+		if !isWeakJWTSecret(secret) {
+			t.Fatalf("isWeakJWTSecret(%q) should detect weak secret", secret)
+		}
 	}
 	if isWeakJWTSecret("StrongSecretValue") {
 		t.Fatalf("isWeakJWTSecret should accept strong secret")
 	}
+}
+
+func TestValidateRejectsKnownJWTPlaceholder(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+
+	cfg.JWT.Secret = "change-this-to-a-secure-random-string"
+	err = cfg.Validate()
+	require.ErrorContains(t, err, "known placeholder or repeated value")
 }
 
 func TestGenerateJWTSecretWithLength(t *testing.T) {
@@ -1331,8 +1355,8 @@ func TestValidateJWTSecret_UTF8Bytes(t *testing.T) {
 		t.Fatalf("Validate() error = %v", err)
 	}
 
-	// 32 bytes OK.
-	cfg.JWT.Secret = strings.Repeat("a", 32)
+	// 32 non-placeholder bytes OK.
+	cfg.JWT.Secret = strings.Repeat("ab", 16)
 	err = cfg.Validate()
 	if err != nil {
 		t.Fatalf("Validate() should accept 32-byte secret: %v", err)

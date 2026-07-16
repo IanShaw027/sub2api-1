@@ -1389,6 +1389,13 @@ type JWTConfig struct {
 	RefreshTokenExpireDays int `mapstructure:"refresh_token_expire_days"`
 	// RefreshWindowMinutes: 刷新窗口（分钟），在Access Token过期前多久开始允许刷新
 	RefreshWindowMinutes int `mapstructure:"refresh_window_minutes"`
+	// RefreshCookieSameSite controls browser refresh-token cookie delivery.
+	// Supported values: lax (default), strict, none. "none" is intended for
+	// explicitly configured cross-site frontend/API deployments.
+	RefreshCookieSameSite string `mapstructure:"refresh_cookie_same_site"`
+	// RefreshCookiePath scopes the refresh-token cookie. Deployments that expose
+	// the API below a custom external path prefix should set the matching path.
+	RefreshCookiePath string `mapstructure:"refresh_cookie_path"`
 }
 
 // TotpConfig TOTP 双因素认证配置
@@ -1603,6 +1610,8 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.TLSFingerprintCapture.KeyFile = strings.TrimSpace(cfg.TLSFingerprintCapture.KeyFile)
 	cfg.TLSFingerprintCapture.PublicBaseURL = strings.TrimRight(strings.TrimSpace(cfg.TLSFingerprintCapture.PublicBaseURL), "/")
 	cfg.JWT.Secret = strings.TrimSpace(cfg.JWT.Secret)
+	cfg.JWT.RefreshCookieSameSite = strings.ToLower(strings.TrimSpace(cfg.JWT.RefreshCookieSameSite))
+	cfg.JWT.RefreshCookiePath = strings.TrimSpace(cfg.JWT.RefreshCookiePath)
 	cfg.LinuxDo.ClientID = strings.TrimSpace(cfg.LinuxDo.ClientID)
 	cfg.LinuxDo.ClientSecret = strings.TrimSpace(cfg.LinuxDo.ClientSecret)
 	cfg.LinuxDo.AuthorizeURL = strings.TrimSpace(cfg.LinuxDo.AuthorizeURL)
@@ -1704,7 +1713,12 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	originalJWTSecret := cfg.JWT.Secret
 	if allowMissingJWTSecret && originalJWTSecret == "" {
 		// 启动阶段允许先无 JWT 密钥，后续在数据库初始化后补齐。
-		cfg.JWT.Secret = strings.Repeat("0", 32)
+		// 使用一次性随机值完成其余配置校验，避免为 bootstrap 放宽弱密钥校验。
+		bootstrapSecret, err := generateJWTSecret(32)
+		if err != nil {
+			return nil, fmt.Errorf("generate temporary bootstrap jwt secret: %w", err)
+		}
+		cfg.JWT.Secret = bootstrapSecret
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -1722,9 +1736,6 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 		slog.Warn("security.response_headers.enabled=false; configurable header filtering disabled (default allowlist only).")
 	}
 
-	if cfg.JWT.Secret != "" && isWeakJWTSecret(cfg.JWT.Secret) {
-		slog.Warn("JWT secret appears weak; use a 32+ character random secret in production.")
-	}
 	if len(cfg.Security.ResponseHeaders.AdditionalAllowed) > 0 || len(cfg.Security.ResponseHeaders.ForceRemove) > 0 {
 		slog.Info("response header policy configured",
 			"additional_allowed", cfg.Security.ResponseHeaders.AdditionalAllowed,
@@ -1957,6 +1968,8 @@ func setDefaults() {
 	viper.SetDefault("jwt.access_token_expire_minutes", 0) // 0 表示回退到 expire_hour
 	viper.SetDefault("jwt.refresh_token_expire_days", 30)  // 30天Refresh Token有效期
 	viper.SetDefault("jwt.refresh_window_minutes", 2)      // 过期前2分钟开始允许刷新
+	viper.SetDefault("jwt.refresh_cookie_same_site", "lax")
+	viper.SetDefault("jwt.refresh_cookie_path", "/api/v1/auth")
 
 	// TOTP
 	viper.SetDefault("totp.encryption_key", "")
@@ -2320,6 +2333,9 @@ func (c *Config) Validate() error {
 	if len([]byte(jwtSecret)) < 32 {
 		return fmt.Errorf("jwt.secret must be at least 32 bytes")
 	}
+	if isWeakJWTSecret(jwtSecret) {
+		return fmt.Errorf("jwt.secret must not use a known placeholder or repeated value")
+	}
 	switch c.Log.Level {
 	case "debug", "info", "warn", "error":
 	case "":
@@ -2478,6 +2494,26 @@ func (c *Config) Validate() error {
 	}
 	if c.JWT.RefreshWindowMinutes < 0 {
 		return fmt.Errorf("jwt.refresh_window_minutes must be non-negative")
+	}
+	switch strings.ToLower(strings.TrimSpace(c.JWT.RefreshCookieSameSite)) {
+	case "", "lax", "strict":
+	case "none":
+		if !c.CORS.AllowCredentials {
+			return fmt.Errorf("jwt.refresh_cookie_same_site=none requires cors.allow_credentials=true")
+		}
+		if len(c.CORS.AllowedOrigins) == 0 {
+			return fmt.Errorf("jwt.refresh_cookie_same_site=none requires explicit cors.allowed_origins")
+		}
+		for _, origin := range c.CORS.AllowedOrigins {
+			if strings.TrimSpace(origin) == "*" {
+				return fmt.Errorf("jwt.refresh_cookie_same_site=none does not allow wildcard cors.allowed_origins")
+			}
+		}
+	default:
+		return fmt.Errorf("jwt.refresh_cookie_same_site must be one of lax, strict, none")
+	}
+	if c.JWT.RefreshCookiePath != "" && !strings.HasPrefix(c.JWT.RefreshCookiePath, "/") {
+		return fmt.Errorf("jwt.refresh_cookie_path must start with /")
 	}
 	if c.Security.CSP.Enabled && strings.TrimSpace(c.Security.CSP.Policy) == "" {
 		return fmt.Errorf("security.csp.policy is required when CSP is enabled")
@@ -3314,15 +3350,28 @@ func isWeakJWTSecret(secret string) bool {
 	if lower == "" {
 		return true
 	}
+	if len(lower) >= 16 {
+		allSame := true
+		for i := 1; i < len(lower); i++ {
+			if lower[i] != lower[0] {
+				allSame = false
+				break
+			}
+		}
+		if allSame {
+			return true
+		}
+	}
 	weak := map[string]struct{}{
-		"change-me-in-production": {},
-		"changeme":                {},
-		"secret":                  {},
-		"password":                {},
-		"123456":                  {},
-		"12345678":                {},
-		"admin":                   {},
-		"jwt-secret":              {},
+		"change-me-in-production":               {},
+		"change-this-to-a-secure-random-string": {},
+		"changeme":                              {},
+		"secret":                                {},
+		"password":                              {},
+		"123456":                                {},
+		"12345678":                              {},
+		"admin":                                 {},
+		"jwt-secret":                            {},
 	}
 	_, exists := weak[lower]
 	return exists

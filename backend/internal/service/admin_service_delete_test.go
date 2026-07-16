@@ -19,6 +19,7 @@ type userRepoStub struct {
 	avatarLookups []int64
 	getErr        error
 	createErr     error
+	updateErr     error
 	deleteErr     error
 	exists        bool
 	existsErr     error
@@ -87,6 +88,9 @@ func (s *userRepoStub) GetFirstAdmin(ctx context.Context) (*User, error) {
 }
 
 func (s *userRepoStub) Update(ctx context.Context, user *User) error {
+	if s.updateErr != nil {
+		return s.updateErr
+	}
 	s.updated = append(s.updated, user)
 	if s.usersByEmail == nil {
 		s.usersByEmail = make(map[string]*User)
@@ -646,9 +650,10 @@ func (s *billingCacheStub) InvalidateAPIKeyRateLimit(ctx context.Context, keyID 
 }
 
 type authCacheInvalidatorDeleteStub struct {
-	userIDs  []int64
-	groupIDs []int64
-	keys     []string
+	userIDs      []int64
+	groupIDs     []int64
+	keys         []string
+	lookupHashes []string
 }
 
 func (s *authCacheInvalidatorDeleteStub) InvalidateAuthCacheByKey(ctx context.Context, key string) {
@@ -661,6 +666,10 @@ func (s *authCacheInvalidatorDeleteStub) InvalidateAuthCacheByUserID(ctx context
 
 func (s *authCacheInvalidatorDeleteStub) InvalidateAuthCacheByGroupID(ctx context.Context, groupID int64) {
 	s.groupIDs = append(s.groupIDs, groupID)
+}
+
+func (s *authCacheInvalidatorDeleteStub) InvalidateAuthCacheByLookupHash(ctx context.Context, lookupHash string) {
+	s.lookupHashes = append(s.lookupHashes, lookupHash)
 }
 
 func (s *billingCacheStub) GetUserPlatformQuotaCache(ctx context.Context, userID int64, platform string) (*UserPlatformQuotaCacheEntry, bool, error) {
@@ -718,13 +727,15 @@ func TestAdminService_DeleteUser_Success(t *testing.T) {
 func TestAdminService_DeleteUser_DeletesOwnedAPIKeys(t *testing.T) {
 	repo := &userRepoStub{user: &User{ID: 7, Role: RoleUser}}
 	apiKeyRepo := &apiKeyRepoStub{
-		allowListByUserID: true,
+		allowListByUserID:     true,
+		allowListKeysByUserID: true,
 		listByUserIDKeys: []APIKey{
-			{ID: 11, UserID: 7, Key: "sk-user-1"},
-			{ID: 12, UserID: 7, Key: "sk-user-2"},
+			{ID: 11, UserID: 7},
+			{ID: 12, UserID: 7},
 		},
+		listKeysByUserID: []string{"hash-user-1", "hash-user-2"},
 	}
-	invalidator := &authCacheInvalidatorStub{}
+	invalidator := &authCacheInvalidatorDeleteStub{}
 	svc := &adminServiceImpl{
 		userRepo:             repo,
 		apiKeyRepo:           apiKeyRepo,
@@ -735,8 +746,10 @@ func TestAdminService_DeleteUser_DeletesOwnedAPIKeys(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []int64{7}, repo.deletedIDs)
 	require.Equal(t, []int64{7}, apiKeyRepo.listByUserIDCalls)
+	require.Equal(t, []int64{7}, apiKeyRepo.listKeysByUserIDCalls)
 	require.Equal(t, []int64{11, 12}, apiKeyRepo.deletedIDs)
-	require.ElementsMatch(t, []string{"sk-user-1", "sk-user-2"}, invalidator.keys)
+	require.ElementsMatch(t, []string{"hash-user-1", "hash-user-2"}, invalidator.lookupHashes)
+	require.Empty(t, invalidator.keys)
 	require.Equal(t, []int64{7}, invalidator.userIDs)
 }
 
@@ -849,7 +862,8 @@ func TestAdminService_DeleteGroup_InvalidatesAuthCacheForBoundKeys(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, []int64{5}, repo.deleteCalls)
 	require.Equal(t, []int64{5}, apiKeyRepo.listGroupIDs)
-	require.Equal(t, []string{"k1", "k2"}, invalidator.keys)
+	require.Equal(t, []string{"k1", "k2"}, invalidator.lookupHashes)
+	require.Empty(t, invalidator.keys)
 }
 
 func TestAdminService_DeleteGroup_NotFound(t *testing.T) {

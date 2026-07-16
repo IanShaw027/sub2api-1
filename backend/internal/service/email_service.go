@@ -46,6 +46,9 @@ type EmailCache interface {
 	GetPasswordResetToken(ctx context.Context, email string) (*PasswordResetTokenData, error)
 	SetPasswordResetToken(ctx context.Context, email string, data *PasswordResetTokenData, ttl time.Duration) error
 	DeletePasswordResetToken(ctx context.Context, email string) error
+	ClaimPasswordResetToken(ctx context.Context, email, token, claimID string) error
+	CompletePasswordResetToken(ctx context.Context, email, claimID string) error
+	RestorePasswordResetToken(ctx context.Context, email, claimID string) error
 
 	// Password reset email cooldown methods
 	// Returns true if in cooldown period (email was sent recently)
@@ -646,16 +649,57 @@ func (s *EmailService) ConsumePasswordResetToken(ctx context.Context, email, tok
 	if err := s.requireCache(); err != nil {
 		return err
 	}
-	// Verify first
-	if err := s.VerifyPasswordResetToken(ctx, email, token); err != nil {
+	claimID, err := randomEmailTokenClaimID()
+	if err != nil {
+		return fmt.Errorf("generate password reset claim: %w", err)
+	}
+	if err := s.cache.ClaimPasswordResetToken(ctx, email, token, claimID); err != nil {
+		return ErrInvalidResetToken
+	}
+	if err := s.cache.CompletePasswordResetToken(ctx, email, claimID); err != nil {
+		_ = s.cache.RestorePasswordResetToken(ctx, email, claimID)
 		return err
 	}
-
-	// Delete after verification (one-time use)
-	if err := s.cache.DeletePasswordResetToken(ctx, email); err != nil {
-		slog.Error("failed to delete password reset token after consumption", "email", email, "error", err)
-	}
 	return nil
+}
+
+// ClaimPasswordResetToken atomically reserves a valid token for the caller.
+// The returned claim must be completed after the password update or restored
+// when the update fails.
+func (s *EmailService) ClaimPasswordResetToken(ctx context.Context, email, token string) (string, error) {
+	if err := s.requireCache(); err != nil {
+		return "", err
+	}
+	claimID, err := randomEmailTokenClaimID()
+	if err != nil {
+		return "", fmt.Errorf("generate password reset claim: %w", err)
+	}
+	if err := s.cache.ClaimPasswordResetToken(ctx, email, token, claimID); err != nil {
+		return "", ErrInvalidResetToken
+	}
+	return claimID, nil
+}
+
+func (s *EmailService) CompletePasswordResetToken(ctx context.Context, email, claimID string) error {
+	if err := s.requireCache(); err != nil {
+		return err
+	}
+	return s.cache.CompletePasswordResetToken(ctx, email, claimID)
+}
+
+func (s *EmailService) RestorePasswordResetToken(ctx context.Context, email, claimID string) error {
+	if err := s.requireCache(); err != nil {
+		return err
+	}
+	return s.cache.RestorePasswordResetToken(ctx, email, claimID)
+}
+
+func randomEmailTokenClaimID() (string, error) {
+	bytes := make([]byte, 16)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
 }
 
 // buildPasswordResetEmailBody builds the HTML content for password reset email

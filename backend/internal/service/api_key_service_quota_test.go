@@ -159,10 +159,10 @@ func (s *quotaBaseAPIKeyRepoStub) GetRateLimitData(context.Context, int64) (*API
 func TestAPIKeyService_UpdateQuotaUsed_UsesAtomicStatePath(t *testing.T) {
 	repo := &quotaStateRepoStub{
 		state: &APIKeyQuotaUsageState{
-			QuotaUsed: 12,
-			Quota:     10,
-			Key:       "sk-test-quota",
-			Status:    StatusAPIKeyQuotaExhausted,
+			QuotaUsed:  12,
+			Quota:      10,
+			LookupHash: HashAPIKeyLookup("sk-test-quota"),
+			Status:     StatusAPIKeyQuotaExhausted,
 		},
 	}
 	cache := &quotaStateCacheStub{}
@@ -175,7 +175,7 @@ func TestAPIKeyService_UpdateQuotaUsed_UsesAtomicStatePath(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, repo.stateCalls)
 	require.Equal(t, 0, repo.getByIDCalls, "fast path should not re-read API key by id")
-	require.Equal(t, []string{svc.authCacheKey("sk-test-quota")}, cache.deleteAuthKeys)
+	require.Equal(t, []string{HashAPIKeyLookup("sk-test-quota")}, cache.deleteAuthKeys)
 }
 
 func TestAPIKeyService_Update_ReactivatesQuotaExhaustedWhenQuotaUnlimited(t *testing.T) {

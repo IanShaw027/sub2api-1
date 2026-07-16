@@ -10,6 +10,10 @@ import (
 // This is used to abstract away the underlying cache implementation (e.g., redis.Nil).
 var ErrRefreshTokenNotFound = errors.New("refresh token not found")
 
+// RefreshTokenConcurrentReuseGrace is the short period in which a duplicate
+// request may be a legitimate concurrent loser rather than a confirmed replay.
+const RefreshTokenConcurrentReuseGrace = 5 * time.Second
+
 // RefreshTokenData 存储在Redis中的Refresh Token数据
 type RefreshTokenData struct {
 	UserID       int64     `json:"user_id"`
@@ -19,11 +23,28 @@ type RefreshTokenData struct {
 	ExpiresAt    time.Time `json:"expires_at"`
 }
 
+// UsedRefreshTokenMarker records when a refresh token was atomically consumed.
+// The timestamp lets the service distinguish an ambiguous concurrent retry from
+// a replay that occurs after the normal request race window.
+type UsedRefreshTokenMarker struct {
+	FamilyID   string    `json:"family_id"`
+	ConsumedAt time.Time `json:"consumed_at"`
+}
+
+// RefreshTokenReuseMarkerCache is an optional extension implemented by caches
+// that persist detailed rotation markers. Keeping it separate preserves
+// compatibility with lightweight test and alternate cache implementations.
+type RefreshTokenReuseMarkerCache interface {
+	GetUsedRefreshTokenMarker(ctx context.Context, tokenHash string) (*UsedRefreshTokenMarker, error)
+	IsRefreshTokenReuseGraceActive(ctx context.Context, tokenHash string) (bool, error)
+}
+
 // RefreshTokenCache 管理Refresh Token的Redis缓存
 // 用于JWT Token刷新机制，支持Token轮转和防重放攻击
 //
 // Key 格式:
 //   - refresh_token:{token_hash}     -> RefreshTokenData (JSON)
+//   - refresh_token_used:{token_hash} -> family_id
 //   - user_refresh_tokens:{user_id}  -> Set<token_hash>
 //   - token_family:{family_id}       -> Set<token_hash>
 type RefreshTokenCache interface {
@@ -39,9 +60,18 @@ type RefreshTokenCache interface {
 	// 返回 (nil, err) 如果发生其他错误
 	GetRefreshToken(ctx context.Context, tokenHash string) (*RefreshTokenData, error)
 
+	// ConsumeRefreshToken atomically reads and deletes an active token and writes
+	// its used marker. Exactly one concurrent caller can consume a token.
+	// Returns ErrRefreshTokenNotFound if another caller already consumed it.
+	ConsumeRefreshToken(ctx context.Context, tokenHash, familyID string, usedTTL time.Duration) (*RefreshTokenData, error)
+
 	// DeleteRefreshToken 删除单个Refresh Token
 	// 用于Token轮转时使旧Token失效
 	DeleteRefreshToken(ctx context.Context, tokenHash string) error
+
+	// GetUsedRefreshTokenFamily returns the family ID if this hash was previously rotated.
+	// Returns ("", ErrRefreshTokenNotFound) when no used marker exists.
+	GetUsedRefreshTokenFamily(ctx context.Context, tokenHash string) (familyID string, err error)
 
 	// DeleteUserRefreshTokens 删除用户的所有Refresh Token
 	// 用于密码更改或用户主动登出所有设备

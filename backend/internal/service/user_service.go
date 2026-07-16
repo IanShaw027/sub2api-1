@@ -1219,6 +1219,9 @@ func maskOpaqueIdentity(value string) string {
 // ChangePassword 修改密码
 // Security: Increments TokenVersion to invalidate all existing JWT tokens
 func (s *UserService) ChangePassword(ctx context.Context, userID int64, req ChangePasswordRequest) error {
+	if err := validateNewPassword(req.NewPassword); err != nil {
+		return err
+	}
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("get user: %w", err)

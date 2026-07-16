@@ -786,6 +786,14 @@ func TestAPIKeyService_InvalidateAuthCacheByKey(t *testing.T) {
 	require.Len(t, cache.deleteAuthKeys, 1)
 }
 
+func TestInvalidateAuthCacheByLookupHashDoesNotDoubleHashForLegacyInvalidator(t *testing.T) {
+	invalidator := &authCacheInvalidatorStub{}
+
+	invalidateAuthCacheByLookupHash(invalidator, context.Background(), HashAPIKeyLookup("sk-test"))
+
+	require.Empty(t, invalidator.keys)
+}
+
 func TestAPIKeyService_GetByKey_CachesNegativeOnRepoMiss(t *testing.T) {
 	cache := &authCacheStub{}
 	repo := &authRepoStub{

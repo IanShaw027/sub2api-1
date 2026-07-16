@@ -1115,6 +1115,9 @@ func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInpu
 	if input == nil {
 		return nil, fmt.Errorf("user input is required")
 	}
+	if err := validateNewPassword(input.Password); err != nil {
+		return nil, err
+	}
 	if input.RPMLimit < 0 {
 		return nil, infraerrors.BadRequest("INVALID_RPM_LIMIT", "rpm_limit must be >= 0")
 	}
@@ -1221,6 +1224,9 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 		user.Email = input.Email
 	}
 	if input.Password != "" {
+		if err := validateNewPassword(input.Password); err != nil {
+			return nil, err
+		}
 		if err := user.SetPassword(input.Password); err != nil {
 			return nil, err
 		}
@@ -1352,6 +1358,13 @@ func (s *adminServiceImpl) DeleteUser(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
+	var apiKeyLookupHashes []string
+	if s.authCacheInvalidator != nil && s.apiKeyRepo != nil {
+		apiKeyLookupHashes, err = s.apiKeyRepo.ListKeysByUserID(ctx, id)
+		if err != nil {
+			return fmt.Errorf("list user api key lookup hashes: %w", err)
+		}
+	}
 
 	if s.entClient != nil {
 		tx, err := s.entClient.Tx(ctx)
@@ -1374,10 +1387,8 @@ func (s *adminServiceImpl) DeleteUser(ctx context.Context, id int64) error {
 	}
 
 	if s.authCacheInvalidator != nil {
-		for _, key := range apiKeys {
-			if keyValue := strings.TrimSpace(key.Key); keyValue != "" {
-				s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, keyValue)
-			}
+		for _, lookupHash := range apiKeyLookupHashes {
+			invalidateAuthCacheByLookupHash(s.authCacheInvalidator, ctx, strings.TrimSpace(lookupHash))
 		}
 		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, id)
 	}
@@ -2974,8 +2985,8 @@ func (s *adminServiceImpl) DeleteGroup(ctx context.Context, id int64) error {
 		}()
 	}
 	if s.authCacheInvalidator != nil {
-		for _, key := range groupKeys {
-			s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, key)
+		for _, lookupHash := range groupKeys {
+			invalidateAuthCacheByLookupHash(s.authCacheInvalidator, ctx, lookupHash)
 		}
 	}
 
@@ -3146,7 +3157,7 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 
 			// 失效认证缓存（在事务提交后执行）
 			if s.authCacheInvalidator != nil {
-				s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, apiKey.Key)
+				invalidateAuthCacheForAPIKey(s.authCacheInvalidator, ctx, apiKey)
 			}
 
 			result.APIKey = apiKey
@@ -3161,7 +3172,7 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 
 	// 失效认证缓存
 	if s.authCacheInvalidator != nil {
-		s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, apiKey.Key)
+		invalidateAuthCacheForAPIKey(s.authCacheInvalidator, ctx, apiKey)
 	}
 
 	result.APIKey = apiKey
@@ -3184,7 +3195,7 @@ func (s *adminServiceImpl) AdminResetAPIKeyRateLimitUsage(ctx context.Context, k
 		return nil, fmt.Errorf("reset api key rate limit usage: %w", err)
 	}
 	if s.authCacheInvalidator != nil {
-		s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, apiKey.Key)
+		invalidateAuthCacheForAPIKey(s.authCacheInvalidator, ctx, apiKey)
 	}
 	if s.billingCacheService != nil {
 		_ = s.billingCacheService.InvalidateAPIKeyRateLimit(ctx, apiKey.ID)
@@ -3248,8 +3259,8 @@ func (s *adminServiceImpl) ReplaceUserGroup(ctx context.Context, userID, oldGrou
 	if s.authCacheInvalidator != nil {
 		keys, keyErr := s.apiKeyRepo.ListKeysByUserID(ctx, userID)
 		if keyErr == nil {
-			for _, k := range keys {
-				s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, k)
+			for _, lookupHash := range keys {
+				invalidateAuthCacheByLookupHash(s.authCacheInvalidator, ctx, lookupHash)
 			}
 		}
 	}
@@ -3787,7 +3798,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 				"spark shadow account proxy is inherited from its parent and cannot be changed directly")
 		}
 	}
-	if err := validateBulkModelRoutingUpdatePlatforms(input, accountByID); err != nil {
+	if err := validateBulkUpdateTargetPlatform(input, accountByID); err != nil {
 		return nil, err
 	}
 
@@ -3974,31 +3985,38 @@ func (s *adminServiceImpl) finishBulkUpdateGroupBindings(ctx context.Context, in
 	return result, nil
 }
 
-func validateBulkModelRoutingUpdatePlatforms(input *BulkUpdateAccountsInput, accountByID map[int64]*Account) error {
-	// Credentials and extra both carry platform-specific routing/runtime keys.
-	// Resolve filter targets first, then validate the final account set so a
-	// preview-to-submit membership change cannot apply those keys cross-platform.
-	if input == nil || (len(input.Credentials) == 0 && len(input.Extra) == 0) {
+func validateBulkUpdateTargetPlatform(input *BulkUpdateAccountsInput, accountByID map[int64]*Account) error {
+	// Every bulk operation is platform-scoped. Resolve filter targets first and
+	// validate the final ID set immediately before any write so preview drift,
+	// status-only edits, group binding and other generic-looking fields cannot
+	// accidentally mix accounts whose platform-specific semantics differ.
+	if input == nil || len(input.AccountIDs) == 0 {
 		return nil
 	}
 	platforms := make(map[string]struct{}, len(input.AccountIDs))
 	for _, accountID := range input.AccountIDs {
 		account := accountByID[accountID]
 		if account == nil {
-			continue
+			return infraerrors.BadRequest(
+				"BULK_TARGET_PLATFORM_UNKNOWN",
+				fmt.Sprintf("account %d has no resolvable platform", accountID),
+			)
 		}
 		platform := strings.ToLower(strings.TrimSpace(account.Platform))
 		if platform == "" {
-			continue
+			return infraerrors.BadRequest(
+				"BULK_TARGET_PLATFORM_UNKNOWN",
+				fmt.Sprintf("account %d has no resolvable platform", accountID),
+			)
 		}
 		platforms[platform] = struct{}{}
 	}
-	if len(platforms) <= 1 {
+	if len(platforms) == 1 {
 		return nil
 	}
 	return infraerrors.BadRequest(
-		"BULK_MODEL_ROUTING_MIXED_PLATFORMS",
-		"bulk updates for platform-specific credentials or extra settings must target accounts from a single platform",
+		"BULK_TARGET_MIXED_PLATFORMS",
+		"bulk updates must target accounts from a single platform",
 	)
 }
 

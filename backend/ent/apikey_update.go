@@ -86,6 +86,60 @@ func (_u *APIKeyUpdate) SetNillableKey(v *string) *APIKeyUpdate {
 	return _u
 }
 
+// SetLookupHash sets the "lookup_hash" field.
+func (_u *APIKeyUpdate) SetLookupHash(v string) *APIKeyUpdate {
+	_u.mutation.SetLookupHash(v)
+	return _u
+}
+
+// SetNillableLookupHash sets the "lookup_hash" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableLookupHash(v *string) *APIKeyUpdate {
+	if v != nil {
+		_u.SetLookupHash(*v)
+	}
+	return _u
+}
+
+// ClearLookupHash clears the value of the "lookup_hash" field.
+func (_u *APIKeyUpdate) ClearLookupHash() *APIKeyUpdate {
+	_u.mutation.ClearLookupHash()
+	return _u
+}
+
+// SetKeyCiphertext sets the "key_ciphertext" field.
+func (_u *APIKeyUpdate) SetKeyCiphertext(v string) *APIKeyUpdate {
+	_u.mutation.SetKeyCiphertext(v)
+	return _u
+}
+
+// SetNillableKeyCiphertext sets the "key_ciphertext" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableKeyCiphertext(v *string) *APIKeyUpdate {
+	if v != nil {
+		_u.SetKeyCiphertext(*v)
+	}
+	return _u
+}
+
+// ClearKeyCiphertext clears the value of the "key_ciphertext" field.
+func (_u *APIKeyUpdate) ClearKeyCiphertext() *APIKeyUpdate {
+	_u.mutation.ClearKeyCiphertext()
+	return _u
+}
+
+// SetKeyPrefix sets the "key_prefix" field.
+func (_u *APIKeyUpdate) SetKeyPrefix(v string) *APIKeyUpdate {
+	_u.mutation.SetKeyPrefix(v)
+	return _u
+}
+
+// SetNillableKeyPrefix sets the "key_prefix" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableKeyPrefix(v *string) *APIKeyUpdate {
+	if v != nil {
+		_u.SetKeyPrefix(*v)
+	}
+	return _u
+}
+
 // SetName sets the "name" field.
 func (_u *APIKeyUpdate) SetName(v string) *APIKeyUpdate {
 	_u.mutation.SetName(v)
@@ -550,6 +604,16 @@ func (_u *APIKeyUpdate) check() error {
 			return &ValidationError{Name: "key", err: fmt.Errorf(`ent: validator failed for field "APIKey.key": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.LookupHash(); ok {
+		if err := apikey.LookupHashValidator(v); err != nil {
+			return &ValidationError{Name: "lookup_hash", err: fmt.Errorf(`ent: validator failed for field "APIKey.lookup_hash": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.KeyPrefix(); ok {
+		if err := apikey.KeyPrefixValidator(v); err != nil {
+			return &ValidationError{Name: "key_prefix", err: fmt.Errorf(`ent: validator failed for field "APIKey.key_prefix": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Name(); ok {
 		if err := apikey.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "APIKey.name": %w`, err)}
@@ -589,6 +653,21 @@ func (_u *APIKeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Key(); ok {
 		_spec.SetField(apikey.FieldKey, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.LookupHash(); ok {
+		_spec.SetField(apikey.FieldLookupHash, field.TypeString, value)
+	}
+	if _u.mutation.LookupHashCleared() {
+		_spec.ClearField(apikey.FieldLookupHash, field.TypeString)
+	}
+	if value, ok := _u.mutation.KeyCiphertext(); ok {
+		_spec.SetField(apikey.FieldKeyCiphertext, field.TypeString, value)
+	}
+	if _u.mutation.KeyCiphertextCleared() {
+		_spec.ClearField(apikey.FieldKeyCiphertext, field.TypeString)
+	}
+	if value, ok := _u.mutation.KeyPrefix(); ok {
+		_spec.SetField(apikey.FieldKeyPrefix, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
@@ -869,6 +948,60 @@ func (_u *APIKeyUpdateOne) SetKey(v string) *APIKeyUpdateOne {
 func (_u *APIKeyUpdateOne) SetNillableKey(v *string) *APIKeyUpdateOne {
 	if v != nil {
 		_u.SetKey(*v)
+	}
+	return _u
+}
+
+// SetLookupHash sets the "lookup_hash" field.
+func (_u *APIKeyUpdateOne) SetLookupHash(v string) *APIKeyUpdateOne {
+	_u.mutation.SetLookupHash(v)
+	return _u
+}
+
+// SetNillableLookupHash sets the "lookup_hash" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableLookupHash(v *string) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetLookupHash(*v)
+	}
+	return _u
+}
+
+// ClearLookupHash clears the value of the "lookup_hash" field.
+func (_u *APIKeyUpdateOne) ClearLookupHash() *APIKeyUpdateOne {
+	_u.mutation.ClearLookupHash()
+	return _u
+}
+
+// SetKeyCiphertext sets the "key_ciphertext" field.
+func (_u *APIKeyUpdateOne) SetKeyCiphertext(v string) *APIKeyUpdateOne {
+	_u.mutation.SetKeyCiphertext(v)
+	return _u
+}
+
+// SetNillableKeyCiphertext sets the "key_ciphertext" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableKeyCiphertext(v *string) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetKeyCiphertext(*v)
+	}
+	return _u
+}
+
+// ClearKeyCiphertext clears the value of the "key_ciphertext" field.
+func (_u *APIKeyUpdateOne) ClearKeyCiphertext() *APIKeyUpdateOne {
+	_u.mutation.ClearKeyCiphertext()
+	return _u
+}
+
+// SetKeyPrefix sets the "key_prefix" field.
+func (_u *APIKeyUpdateOne) SetKeyPrefix(v string) *APIKeyUpdateOne {
+	_u.mutation.SetKeyPrefix(v)
+	return _u
+}
+
+// SetNillableKeyPrefix sets the "key_prefix" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableKeyPrefix(v *string) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetKeyPrefix(*v)
 	}
 	return _u
 }
@@ -1350,6 +1483,16 @@ func (_u *APIKeyUpdateOne) check() error {
 			return &ValidationError{Name: "key", err: fmt.Errorf(`ent: validator failed for field "APIKey.key": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.LookupHash(); ok {
+		if err := apikey.LookupHashValidator(v); err != nil {
+			return &ValidationError{Name: "lookup_hash", err: fmt.Errorf(`ent: validator failed for field "APIKey.lookup_hash": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.KeyPrefix(); ok {
+		if err := apikey.KeyPrefixValidator(v); err != nil {
+			return &ValidationError{Name: "key_prefix", err: fmt.Errorf(`ent: validator failed for field "APIKey.key_prefix": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Name(); ok {
 		if err := apikey.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "APIKey.name": %w`, err)}
@@ -1406,6 +1549,21 @@ func (_u *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err erro
 	}
 	if value, ok := _u.mutation.Key(); ok {
 		_spec.SetField(apikey.FieldKey, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.LookupHash(); ok {
+		_spec.SetField(apikey.FieldLookupHash, field.TypeString, value)
+	}
+	if _u.mutation.LookupHashCleared() {
+		_spec.ClearField(apikey.FieldLookupHash, field.TypeString)
+	}
+	if value, ok := _u.mutation.KeyCiphertext(); ok {
+		_spec.SetField(apikey.FieldKeyCiphertext, field.TypeString, value)
+	}
+	if _u.mutation.KeyCiphertextCleared() {
+		_spec.ClearField(apikey.FieldKeyCiphertext, field.TypeString)
+	}
+	if value, ok := _u.mutation.KeyPrefix(); ok {
+		_spec.SetField(apikey.FieldKeyPrefix, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)

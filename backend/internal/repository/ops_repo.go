@@ -648,20 +648,23 @@ LIMIT 1`
 	return &out, nil
 }
 
-// LookupDeletedKeyAudit 按明文 key 反查最近一条已删除 key 审计。
-// 同一 key 可能有多条历史，取 deleted_at 最近一条，id 作同毫秒 tiebreaker。
-// 未命中返回 (nil, nil)。
+// LookupDeletedKeyAudit 按 key 反查最近一条已删除 key 审计。
+// 新写入存 SHA-256 哈希；历史行可能仍是明文。同一 key 可能有多条历史，
+// 取 deleted_at 最近一条，id 作同毫秒 tiebreaker。未命中返回 (nil, nil)。
 func (r *opsRepository) LookupDeletedKeyAudit(ctx context.Context, key string) (*service.DeletedKeyAuditResult, error) {
 	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("nil ops repository")
 	}
+	keyHash := hashDeletedAPIKeyAudit(key)
+	bareHash := service.HashAPIKeyLookup(key)
+	migratedBareHash := hashDeletedAPIKeyAudit(bareHash)
 	var res service.DeletedKeyAuditResult
 	err := r.db.QueryRowContext(ctx, `
 		SELECT user_id, key_name
 		FROM deleted_api_key_audits
-		WHERE key = $1
+		WHERE key = $1 OR key = $2 OR key = $3 OR key = $4
 		ORDER BY deleted_at DESC, id DESC
-		LIMIT 1`, key).Scan(&res.UserID, &res.KeyName)
+		LIMIT 1`, keyHash, bareHash, key, migratedBareHash).Scan(&res.UserID, &res.KeyName)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil

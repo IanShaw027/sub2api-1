@@ -17,6 +17,7 @@ import (
 	dbgroup "github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
 	dbuser "github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
@@ -52,24 +53,20 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 
 	// 统一使用 ent 的事务：保证用户与允许分组的更新原子化，
 	// 并避免基于 *sql.Tx 手动构造 ent client 导致的 ExecQuerier 断言错误。
-	tx, err := r.client.Tx(ctx)
-	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
-		return err
-	}
-
+	var tx *dbent.Tx
 	var txClient *dbent.Client
 	txCtx := ctx
-	if err == nil {
+	if existingTx := dbent.TxFromContext(ctx); existingTx != nil {
+		txClient = existingTx.Client()
+	} else {
+		var err error
+		tx, err = r.client.Tx(ctx)
+		if err != nil {
+			return err
+		}
 		defer func() { _ = tx.Rollback() }()
 		txClient = tx.Client()
 		txCtx = dbent.NewTxContext(ctx, tx)
-	} else {
-		// 已处于外部事务中（ErrTxStarted），复用当前事务 client 并由调用方负责提交/回滚。
-		if existingTx := dbent.TxFromContext(ctx); existingTx != nil {
-			txClient = existingTx.Client()
-		} else {
-			txClient = r.client
-		}
 	}
 
 	releaseEmailLock, err := lockRepositoryScopedKeys(
@@ -120,6 +117,60 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 	}
 
 	applyUserEntityToService(userIn, created)
+	return nil
+}
+
+// CreateWithInvitation commits user creation and one-time invitation
+// consumption in the same database transaction. The guarded update is the
+// concurrency authority; prior GetByCode checks are informational only.
+func (r *userRepository) CreateWithInvitation(ctx context.Context, userIn *service.User, invitationID int64) error {
+	if userIn == nil || invitationID <= 0 {
+		return service.ErrRedeemCodeNotFound
+	}
+	var tx *dbent.Tx
+	txCtx := ctx
+	txClient := r.client
+	ownsTx := false
+	if existingTx := dbent.TxFromContext(ctx); existingTx != nil {
+		txClient = existingTx.Client()
+	} else {
+		var err error
+		tx, err = r.client.Tx(ctx)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		txCtx = dbent.NewTxContext(ctx, tx)
+		txClient = tx.Client()
+		ownsTx = true
+	}
+
+	if err := r.Create(txCtx, userIn); err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	affected, err := txClient.RedeemCode.Update().
+		Where(
+			redeemcode.IDEQ(invitationID),
+			redeemcode.TypeEQ(service.RedeemTypeInvitation),
+			redeemcode.StatusEQ(service.StatusUnused),
+			redeemcode.Or(redeemcode.ExpiresAtIsNil(), redeemcode.ExpiresAtGT(now)),
+		).
+		SetStatus(service.StatusUsed).
+		SetUsedBy(userIn.ID).
+		SetUsedAt(now).
+		Save(txCtx)
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return service.ErrRedeemCodeUsed
+	}
+	if ownsTx {
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -649,7 +700,7 @@ func (r *userRepository) ListWithFilters(ctx context.Context, params pagination.
 				dbuser.EmailContainsFold(filters.Search),
 				dbuser.UsernameContainsFold(filters.Search),
 				dbuser.NotesContainsFold(filters.Search),
-				dbuser.HasAPIKeysWith(apikey.KeyContainsFold(filters.Search)),
+				dbuser.HasAPIKeysWith(apikey.KeyPrefixContainsFold(filters.Search)),
 			),
 		)
 	}

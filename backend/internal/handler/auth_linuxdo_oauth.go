@@ -366,6 +366,7 @@ func (h *AuthHandler) LinuxDoOAuthCallback(c *gin.Context) {
 			h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
 			clearOAuthPendingSessionCookie(c, secureCookie)
 			clearOAuthPendingBrowserCookie(c, secureCookie)
+			h.setRefreshTokenCookie(c, tokenPair.RefreshToken)
 			redirectOAuthTokenPair(c, frontendCallback, tokenPair, redirectTo)
 			return
 		}
@@ -607,12 +608,7 @@ func (h *AuthHandler) CompleteLinuxDoOAuthRegistration(c *gin.Context) {
 	clearOAuthPendingSessionCookie(c, secureCookie)
 	clearOAuthPendingBrowserCookie(c, secureCookie)
 
-	c.JSON(http.StatusOK, gin.H{
-		"access_token":  tokenPair.AccessToken,
-		"refresh_token": tokenPair.RefreshToken,
-		"expires_in":    tokenPair.ExpiresIn,
-		"token_type":    "Bearer",
-	})
+	h.writeOAuthTokenPairResponse(c, tokenPair)
 }
 
 func (h *AuthHandler) getLinuxDoOAuthConfig(ctx context.Context) (config.LinuxDoConnectConfig, error) {
@@ -818,7 +814,6 @@ func redirectOAuthTokenPair(c *gin.Context, frontendCallback string, tokenPair *
 	fragment := url.Values{}
 	if tokenPair != nil {
 		fragment.Set("access_token", truncateFragmentValue(tokenPair.AccessToken))
-		fragment.Set("refresh_token", truncateFragmentValue(tokenPair.RefreshToken))
 		fragment.Set("expires_in", strconv.Itoa(tokenPair.ExpiresIn))
 		fragment.Set("token_type", "Bearer")
 	}
@@ -1005,10 +1000,14 @@ func sanitizeFrontendRedirectPath(path string) string {
 }
 
 func isRequestHTTPS(c *gin.Context) bool {
+	if c == nil || c.Request == nil {
+		return false
+	}
 	if c.Request.TLS != nil {
 		return true
 	}
-	proto := strings.ToLower(strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")))
+	proto := firstForwardedValue(c.GetHeader("X-Forwarded-Proto"))
+	proto = strings.ToLower(strings.TrimSpace(proto))
 	return proto == "https"
 }
 

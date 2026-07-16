@@ -52,7 +52,8 @@ const (
 type APIKeyRepository interface {
 	Create(ctx context.Context, key *APIKey) error
 	GetByID(ctx context.Context, id int64) (*APIKey, error)
-	// GetKeyAndOwnerID 仅获取 API Key 的 key 与所有者 ID，用于删除等轻量场景
+	// GetKeyAndOwnerID returns the persisted lookup hash and owner ID. The
+	// historical name is retained for compatibility; it must not return raw key material.
 	GetKeyAndOwnerID(ctx context.Context, id int64) (string, int64, error)
 	GetByKey(ctx context.Context, key string) (*APIKey, error)
 	// GetByKeyForAuth 认证专用查询，返回最小字段集
@@ -73,6 +74,7 @@ type APIKeyRepository interface {
 	UpdateGroupIDByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error)
 	CountByGroupID(ctx context.Context, groupID int64) (int64, error)
 	CountActiveByGroupID(ctx context.Context, groupID int64) (int64, error)
+	// ListKeysBy* return lookup hashes for bulk auth-cache invalidation.
 	ListKeysByUserID(ctx context.Context, userID int64) ([]string, error)
 	ListKeysByGroupID(ctx context.Context, groupID int64) ([]string, error)
 
@@ -123,10 +125,10 @@ func (d *APIKeyRateLimitData) EffectiveUsage7d() float64 {
 // APIKeyQuotaUsageState captures the latest quota fields after an atomic quota update.
 // It is intentionally small so repositories can return it from a single SQL statement.
 type APIKeyQuotaUsageState struct {
-	QuotaUsed float64
-	Quota     float64
-	Key       string
-	Status    string
+	QuotaUsed  float64
+	Quota      float64
+	LookupHash string
+	Status     string
 }
 
 // APIKeyCache defines cache operations for API key service
@@ -214,6 +216,8 @@ type APIKeyService struct {
 	authGroup             singleflight.Group
 	lastUsedTouchL1       sync.Map // keyID -> nextAllowedAt(time.Time)
 	lastUsedTouchSF       singleflight.Group
+	keyEncryptor          SecretEncryptor
+	keyEncryptionStable   bool
 }
 
 type apiKeyListAllByUserIDRepository interface {
@@ -241,6 +245,18 @@ func NewAPIKeyService(
 	}
 	svc.initAuthCache(cfg)
 	return svc
+}
+
+// WithAPIKeySecretProtection enables encrypted owner-authorized reveal and
+// plaintext-to-ciphertext migration. stable must only be true for an explicitly
+// configured key shared across restarts and instances.
+func (s *APIKeyService) WithAPIKeySecretProtection(encryptor SecretEncryptor, stable bool) *APIKeyService {
+	if s == nil {
+		return s
+	}
+	s.keyEncryptor = encryptor
+	s.keyEncryptionStable = stable
+	return s
 }
 
 // SetRateLimitCacheInvalidator sets the optional rate limit cache invalidator.
@@ -470,6 +486,9 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 		RateLimit1d: req.RateLimit1d,
 		RateLimit7d: req.RateLimit7d,
 	}
+	if err := s.protectNewAPIKeySecret(apiKey, key); err != nil {
+		return nil, err
+	}
 
 	// Set expiration time if specified
 	if req.ExpiresInDays != nil && *req.ExpiresInDays > 0 {
@@ -484,8 +503,11 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 	if err := apiKeyRepo.Create(ctx, apiKey); err != nil {
 		return nil, fmt.Errorf("create api key: %w", err)
 	}
+	// Ciphertext is persistence-only; the create response needs the raw key but
+	// must not carry an additional recoverable copy through handler DTOs/logging.
+	apiKey.KeyCiphertext = ""
 
-	s.InvalidateAuthCacheByKey(ctx, apiKey.Key)
+	invalidateAuthCacheForAPIKey(s, ctx, apiKey)
 	s.compileAPIKeyIPRules(apiKey)
 
 	return apiKey, nil
@@ -678,6 +700,13 @@ func (s *APIKeyService) GetByKey(ctx context.Context, key string) (*APIKey, erro
 	if err != nil {
 		return nil, fmt.Errorf("get api key: %w", err)
 	}
+	if apiKey.LookupHash == "" {
+		if err := s.protectLegacyAPIKeySecret(ctx, apiKey.ID, key); err != nil {
+			return nil, fmt.Errorf("migrate legacy api key: %w", err)
+		}
+		apiKey.LookupHash = HashAPIKeyLookup(key)
+		apiKey.KeyPrefix = APIKeyDisplayPrefix(key)
+	}
 	apiKey.Key = key
 	s.compileAPIKeyIPRules(apiKey)
 	return apiKey, nil
@@ -810,7 +839,7 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 		return nil, fmt.Errorf("update api key: %w", err)
 	}
 
-	s.InvalidateAuthCacheByKey(ctx, apiKey.Key)
+	invalidateAuthCacheForAPIKey(s, ctx, apiKey)
 	s.compileAPIKeyIPRules(apiKey)
 
 	// Invalidate Redis rate limit cache so reset takes effect immediately
@@ -827,7 +856,7 @@ func (s *APIKeyService) Delete(ctx context.Context, id int64, userID int64) erro
 	if err != nil {
 		return err
 	}
-	key, ownerID, err := apiKeyRepo.GetKeyAndOwnerID(ctx, id)
+	lookupHash, ownerID, err := apiKeyRepo.GetKeyAndOwnerID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("get api key: %w", err)
 	}
@@ -846,7 +875,7 @@ func (s *APIKeyService) Delete(ctx context.Context, id int64, userID int64) erro
 	if s.cache != nil {
 		_ = s.cache.DeleteCreateAttemptCount(ctx, userID)
 	}
-	s.InvalidateAuthCacheByKey(ctx, key)
+	s.InvalidateAuthCacheByLookupHash(ctx, lookupHash)
 	s.lastUsedTouchL1.Delete(id)
 
 	return nil
@@ -1108,8 +1137,8 @@ func (s *APIKeyService) UpdateQuotaUsed(ctx context.Context, apiKeyID int64, cos
 		if err != nil {
 			return fmt.Errorf("increment quota used: %w", err)
 		}
-		if state != nil && state.Status == StatusAPIKeyQuotaExhausted && strings.TrimSpace(state.Key) != "" {
-			s.InvalidateAuthCacheByKey(ctx, state.Key)
+		if state != nil && state.Status == StatusAPIKeyQuotaExhausted && strings.TrimSpace(state.LookupHash) != "" {
+			s.InvalidateAuthCacheByLookupHash(ctx, state.LookupHash)
 		}
 		return nil
 	}
@@ -1133,7 +1162,7 @@ func (s *APIKeyService) UpdateQuotaUsed(ctx context.Context, apiKeyID int64, cos
 			return nil // Don't fail the request
 		}
 		// Invalidate cache so next request sees the new status
-		s.InvalidateAuthCacheByKey(ctx, apiKey.Key)
+		invalidateAuthCacheForAPIKey(s, ctx, apiKey)
 	}
 
 	return nil

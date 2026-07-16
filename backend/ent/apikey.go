@@ -29,7 +29,13 @@ type APIKey struct {
 	// UserID holds the value of the "user_id" field.
 	UserID int64 `json:"user_id,omitempty"`
 	// Key holds the value of the "key" field.
-	Key string `json:"key,omitempty"`
+	Key string `json:"-"`
+	// SHA-256 fingerprint used for API key authentication lookup
+	LookupHash *string `json:"-"`
+	// AES-256-GCM encrypted API key for owner-authorized reveal
+	KeyCiphertext string `json:"-"`
+	// Non-sensitive API key prefix used for display and search
+	KeyPrefix string `json:"key_prefix,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// GroupID holds the value of the "group_id" field.
@@ -127,7 +133,7 @@ func (*APIKey) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case apikey.FieldID, apikey.FieldUserID, apikey.FieldGroupID:
 			values[i] = new(sql.NullInt64)
-		case apikey.FieldKey, apikey.FieldName, apikey.FieldStatus:
+		case apikey.FieldKey, apikey.FieldLookupHash, apikey.FieldKeyCiphertext, apikey.FieldKeyPrefix, apikey.FieldName, apikey.FieldStatus:
 			values[i] = new(sql.NullString)
 		case apikey.FieldCreatedAt, apikey.FieldUpdatedAt, apikey.FieldDeletedAt, apikey.FieldLastUsedAt, apikey.FieldExpiresAt, apikey.FieldWindow5hStart, apikey.FieldWindow1dStart, apikey.FieldWindow7dStart:
 			values[i] = new(sql.NullTime)
@@ -182,6 +188,25 @@ func (_m *APIKey) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field key", values[i])
 			} else if value.Valid {
 				_m.Key = value.String
+			}
+		case apikey.FieldLookupHash:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field lookup_hash", values[i])
+			} else if value.Valid {
+				_m.LookupHash = new(string)
+				*_m.LookupHash = value.String
+			}
+		case apikey.FieldKeyCiphertext:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field key_ciphertext", values[i])
+			} else if value.Valid {
+				_m.KeyCiphertext = value.String
+			}
+		case apikey.FieldKeyPrefix:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field key_prefix", values[i])
+			} else if value.Valid {
+				_m.KeyPrefix = value.String
 			}
 		case apikey.FieldName:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -366,8 +391,14 @@ func (_m *APIKey) String() string {
 	builder.WriteString("user_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.UserID))
 	builder.WriteString(", ")
-	builder.WriteString("key=")
-	builder.WriteString(_m.Key)
+	builder.WriteString("key=<sensitive>")
+	builder.WriteString(", ")
+	builder.WriteString("lookup_hash=<sensitive>")
+	builder.WriteString(", ")
+	builder.WriteString("key_ciphertext=<sensitive>")
+	builder.WriteString(", ")
+	builder.WriteString("key_prefix=")
+	builder.WriteString(_m.KeyPrefix)
 	builder.WriteString(", ")
 	builder.WriteString("name=")
 	builder.WriteString(_m.Name)

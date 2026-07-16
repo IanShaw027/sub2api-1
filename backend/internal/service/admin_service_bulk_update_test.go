@@ -416,7 +416,7 @@ func TestAdminService_BulkUpdateAccounts_AllowsGrokOAuthHighConcurrency(t *testi
 	require.Equal(t, 1, result.Success)
 }
 
-func TestAdminService_BulkUpdateAccounts_AllowsNonGrokHighConcurrency(t *testing.T) {
+func TestAdminService_BulkUpdateAccounts_RejectsMixedPlatformHighConcurrency(t *testing.T) {
 	repo := &accountRepoStubForBulkUpdate{
 		getByIDsAccounts: []*Account{
 			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1},
@@ -431,15 +431,12 @@ func TestAdminService_BulkUpdateAccounts_AllowsNonGrokHighConcurrency(t *testing
 		Concurrency: &concurrency,
 	})
 
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.True(t, repo.bulkUpdateCalled)
-	require.NotNil(t, repo.lastBulkUpdate.Concurrency)
-	require.Equal(t, 10, *repo.lastBulkUpdate.Concurrency)
-	require.Equal(t, 2, result.Success)
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "single platform")
+	require.False(t, repo.bulkUpdateCalled)
 }
 
-func TestAdminService_BulkUpdateAccounts_AllowsMixedBulkWithGrokOAuthHighConcurrency(t *testing.T) {
+func TestAdminService_BulkUpdateAccounts_RejectsMixedBulkWithGrokOAuthHighConcurrency(t *testing.T) {
 	repo := &accountRepoStubForBulkUpdate{
 		getByIDsAccounts: []*Account{
 			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1},
@@ -454,13 +451,49 @@ func TestAdminService_BulkUpdateAccounts_AllowsMixedBulkWithGrokOAuthHighConcurr
 		Concurrency: &concurrency,
 	})
 
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.True(t, repo.bulkUpdateCalled)
-	require.NotNil(t, repo.lastBulkUpdate.Concurrency)
-	require.Equal(t, 10, *repo.lastBulkUpdate.Concurrency)
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "single platform")
+	require.False(t, repo.bulkUpdateCalled)
 	require.False(t, repo.updateCalled)
-	require.Equal(t, 2, result.Success)
+}
+
+func TestAdminService_BulkUpdateAccounts_RejectsStatusUpdateAcrossMixedFilteredPlatforms(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		listData:   []Account{{ID: 1}, {ID: 2}},
+		listResult: &pagination.PaginationResult{Total: 2},
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+			{ID: 2, Platform: PlatformAnthropic, Type: AccountTypeOAuth},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		Filters: &BulkUpdateAccountFilters{Status: StatusActive},
+		Status:  StatusDisabled,
+	})
+
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "single platform")
+	require.False(t, repo.bulkUpdateCalled)
+}
+
+func TestAdminService_BulkUpdateAccounts_RejectsUnknownTargetPlatform(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: "", Type: AccountTypeOAuth},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1},
+		Status:     StatusDisabled,
+	})
+
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "no resolvable platform")
+	require.False(t, repo.bulkUpdateCalled)
 }
 
 func TestApplyBulkUpdateInputToAccount_UsesGrokOAuthConcurrencyUnchanged(t *testing.T) {

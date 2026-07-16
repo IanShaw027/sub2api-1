@@ -112,7 +112,7 @@ func TestAdminService_CreateUser_RejectsNegativeRPMLimit(t *testing.T) {
 
 	_, err := svc.CreateUser(context.Background(), &CreateUserInput{
 		Email:       "u@example.com",
-		Password:    "pass",
+		Password:    "password8",
 		RPMLimit:    -1,
 		Concurrency: 1,
 	})

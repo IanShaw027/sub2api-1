@@ -104,6 +104,109 @@ func TestIPSecurityActiveSnapshotSurvivesRedisFailure(t *testing.T) {
 	}
 }
 
+func TestIPSecurityIsBlockedReadsSharedRedisBanAcrossInstances(t *testing.T) {
+	// Two service instances share Redis + repo, but each has its own process-local maps.
+	mr := miniredis.RunT(t)
+	rdbA := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	rdbB := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() {
+		_ = rdbA.Close()
+		_ = rdbB.Close()
+	})
+	repo := &ipSecurityRepoStub{ips: map[int64][]string{}, bans: map[string]IPSecurityBan{}, saturated: map[int64]bool{}}
+	settings := ipSecuritySettingsStub{values: map[string]string{
+		SettingKeyIPMultiAccountBanEnabled:       "true",
+		SettingKeyIPMultiAccountBanWindowMinutes: "10",
+		SettingKeyIPMultiAccountBanThreshold:     "4",
+	}}
+	svcA := NewIPSecurityService(repo, settings, rdbA)
+	svcB := NewIPSecurityService(repo, settings, rdbB)
+
+	// Warm both so stateLoaded=true with empty local ban maps (the multi-instance bug path).
+	if err := svcA.WarmCache(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := svcB.WarmCache(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	for userID := int64(1); userID <= 4; userID++ {
+		svcA.Observe(context.Background(), IPSecurityActivity{
+			IPAddress: "203.0.113.50", UserID: userID, Source: IPSecuritySourceAPIKey,
+		})
+	}
+	if !svcA.IsBlocked(context.Background(), "203.0.113.50") {
+		t.Fatal("instance A should block after creating ban")
+	}
+	// Instance B never saw CreateBan locally; must still block via Redis.
+	if !svcB.IsBlocked(context.Background(), "203.0.113.50") {
+		t.Fatal("instance B must observe shared Redis ban without restart")
+	}
+	// Repeated calls must continue checking shared authoritative state.
+	if !svcB.IsBlocked(context.Background(), "203.0.113.50") {
+		t.Fatal("instance B should continue enforcing shared ban")
+	}
+}
+
+func TestIPSecurityRedisFlushFallsBackToDatabaseBan(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	repo := &ipSecurityRepoStub{ips: map[int64][]string{}, bans: map[string]IPSecurityBan{}, saturated: map[int64]bool{}}
+	svc := NewIPSecurityService(repo, ipSecuritySettingsStub{values: map[string]string{}}, rdb)
+
+	if err := svc.WarmCache(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	repo.bans["203.0.113.51"] = IPSecurityBan{ID: 51, IPAddress: "203.0.113.51", Status: "active"}
+	mr.FlushAll()
+
+	if !svc.IsBlocked(context.Background(), "203.0.113.51") {
+		t.Fatal("missing Redis loaded marker must force DB fallback for active bans")
+	}
+}
+
+func TestIPSecuritySharedStatusOverridesStaleLocalState(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdbA := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	rdbB := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() {
+		_ = rdbA.Close()
+		_ = rdbB.Close()
+	})
+	repo := &ipSecurityRepoStub{
+		ips:       map[int64][]string{},
+		bans:      map[string]IPSecurityBan{"203.0.113.52": {ID: 52, IPAddress: "203.0.113.52", Status: "active"}},
+		saturated: map[int64]bool{},
+	}
+	settings := ipSecuritySettingsStub{values: map[string]string{}}
+	svcA := NewIPSecurityService(repo, settings, rdbA)
+	svcB := NewIPSecurityService(repo, settings, rdbB)
+	if err := svcA.WarmCache(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := svcB.WarmCache(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !svcB.IsBlocked(context.Background(), "203.0.113.52") {
+		t.Fatal("expected initial active ban")
+	}
+
+	if err := svcA.WhitelistBan(context.Background(), 52, 99); err != nil {
+		t.Fatal(err)
+	}
+	if svcB.IsBlocked(context.Background(), "203.0.113.52") {
+		t.Fatal("remote whitelist change must override stale local ban")
+	}
+
+	if err := svcA.RemoveWhitelist(context.Background(), 52, 99); err != nil {
+		t.Fatal(err)
+	}
+	if svcB.isWhitelisted(context.Background(), "203.0.113.52") {
+		t.Fatal("remote whitelist removal must override stale local whitelist")
+	}
+}
+
 func TestIPSecurityLearningPeriodOnlyRecordsHistory(t *testing.T) {
 	svc, repo := newTestIPSecurityService(t, true)
 	svc.settings.(ipSecuritySettingsStub).values[SettingKeyIPMultiAccountBanLearningUntil] = time.Now().Add(time.Hour).UTC().Format(time.RFC3339)

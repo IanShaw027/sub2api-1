@@ -25,6 +25,12 @@ const (
 	FieldUserID = "user_id"
 	// FieldKey holds the string denoting the key field in the database.
 	FieldKey = "key"
+	// FieldLookupHash holds the string denoting the lookup_hash field in the database.
+	FieldLookupHash = "lookup_hash"
+	// FieldKeyCiphertext holds the string denoting the key_ciphertext field in the database.
+	FieldKeyCiphertext = "key_ciphertext"
+	// FieldKeyPrefix holds the string denoting the key_prefix field in the database.
+	FieldKeyPrefix = "key_prefix"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
 	// FieldGroupID holds the string denoting the group_id field in the database.
@@ -100,6 +106,9 @@ var Columns = []string{
 	FieldDeletedAt,
 	FieldUserID,
 	FieldKey,
+	FieldLookupHash,
+	FieldKeyCiphertext,
+	FieldKeyPrefix,
 	FieldName,
 	FieldGroupID,
 	FieldStatus,
@@ -146,6 +155,12 @@ var (
 	UpdateDefaultUpdatedAt func() time.Time
 	// KeyValidator is a validator for the "key" field. It is called by the builders before save.
 	KeyValidator func(string) error
+	// LookupHashValidator is a validator for the "lookup_hash" field. It is called by the builders before save.
+	LookupHashValidator func(string) error
+	// DefaultKeyPrefix holds the default value on creation for the "key_prefix" field.
+	DefaultKeyPrefix string
+	// KeyPrefixValidator is a validator for the "key_prefix" field. It is called by the builders before save.
+	KeyPrefixValidator func(string) error
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
 	// DefaultStatus holds the default value on creation for the "status" field.
@@ -201,6 +216,21 @@ func ByUserID(opts ...sql.OrderTermOption) OrderOption {
 // ByKey orders the results by the key field.
 func ByKey(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldKey, opts...).ToFunc()
+}
+
+// ByLookupHash orders the results by the lookup_hash field.
+func ByLookupHash(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLookupHash, opts...).ToFunc()
+}
+
+// ByKeyCiphertext orders the results by the key_ciphertext field.
+func ByKeyCiphertext(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldKeyCiphertext, opts...).ToFunc()
+}
+
+// ByKeyPrefix orders the results by the key_prefix field.
+func ByKeyPrefix(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldKeyPrefix, opts...).ToFunc()
 }
 
 // ByName orders the results by the name field.

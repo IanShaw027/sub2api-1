@@ -503,8 +503,16 @@ func (s *userHandlerRefreshTokenCacheStub) GetRefreshToken(context.Context, stri
 	return nil, service.ErrRefreshTokenNotFound
 }
 
+func (s *userHandlerRefreshTokenCacheStub) ConsumeRefreshToken(context.Context, string, string, time.Duration) (*service.RefreshTokenData, error) {
+	return nil, service.ErrRefreshTokenNotFound
+}
+
 func (s *userHandlerRefreshTokenCacheStub) DeleteRefreshToken(context.Context, string) error {
 	return nil
+}
+
+func (s *userHandlerRefreshTokenCacheStub) GetUsedRefreshTokenFamily(context.Context, string) (string, error) {
+	return "", service.ErrRefreshTokenNotFound
 }
 
 func (s *userHandlerRefreshTokenCacheStub) DeleteUserRefreshTokens(_ context.Context, userID int64) error {
@@ -569,6 +577,18 @@ func (s *userHandlerEmailCacheStub) SetPasswordResetToken(context.Context, strin
 }
 
 func (s *userHandlerEmailCacheStub) DeletePasswordResetToken(context.Context, string) error {
+	return nil
+}
+
+func (s *userHandlerEmailCacheStub) ClaimPasswordResetToken(context.Context, string, string, string) error {
+	return service.ErrInvalidResetToken
+}
+
+func (s *userHandlerEmailCacheStub) CompletePasswordResetToken(context.Context, string, string) error {
+	return nil
+}
+
+func (s *userHandlerEmailCacheStub) RestorePasswordResetToken(context.Context, string, string) error {
 	return nil
 }
 

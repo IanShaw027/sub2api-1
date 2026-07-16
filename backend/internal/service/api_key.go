@@ -28,14 +28,21 @@ func IsWindowExpired(windowStart *time.Time, duration time.Duration) bool {
 }
 
 type APIKey struct {
-	ID          int64
-	UserID      int64
-	Key         string
-	Name        string
-	GroupID     *int64
-	Status      string
-	IPWhitelist []string
-	IPBlacklist []string
+	ID     int64
+	UserID int64
+	// Key contains raw secret material only during create responses and
+	// authenticated request handling. Repository list/detail paths leave it empty.
+	Key        string
+	LookupHash string
+	KeyPrefix  string
+	// KeyCiphertext is persistence-only material and must never be serialized
+	// by handlers or included in list/search DTOs.
+	KeyCiphertext string
+	Name          string
+	GroupID       *int64
+	Status        string
+	IPWhitelist   []string
+	IPBlacklist   []string
 	// 预编译的 IP 规则，用于认证热路径避免重复 ParseIP/ParseCIDR。
 	CompiledIPWhitelist *ip.CompiledIPRules `json:"-"`
 	CompiledIPBlacklist *ip.CompiledIPRules `json:"-"`

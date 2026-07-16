@@ -75,9 +75,6 @@ func UserFromServiceAdmin(u *service.User) *AdminUser {
 	if base == nil {
 		return nil
 	}
-	for i := range base.APIKeys {
-		base.APIKeys[i].Key = MaskAPIKey(base.APIKeys[i].Key)
-	}
 	return &AdminUser{
 		User:                        *base,
 		Notes:                       u.Notes,
@@ -145,7 +142,13 @@ func APIKeyFromServiceMasked(k *service.APIKey) *APIKey {
 	if out == nil {
 		return nil
 	}
-	out.Key = MaskAPIKey(out.Key)
+	if strings.TrimSpace(k.Key) != "" {
+		out.Key = MaskAPIKey(k.Key)
+	} else if strings.TrimSpace(k.KeyPrefix) != "" {
+		out.Key = strings.TrimSpace(k.KeyPrefix) + "…"
+	} else {
+		out.Key = ""
+	}
 	return out
 }
 

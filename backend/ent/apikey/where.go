@@ -80,6 +80,21 @@ func Key(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldKey, v))
 }
 
+// LookupHash applies equality check predicate on the "lookup_hash" field. It's identical to LookupHashEQ.
+func LookupHash(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLookupHash, v))
+}
+
+// KeyCiphertext applies equality check predicate on the "key_ciphertext" field. It's identical to KeyCiphertextEQ.
+func KeyCiphertext(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldKeyCiphertext, v))
+}
+
+// KeyPrefix applies equality check predicate on the "key_prefix" field. It's identical to KeyPrefixEQ.
+func KeyPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldKeyPrefix, v))
+}
+
 // Name applies equality check predicate on the "name" field. It's identical to NameEQ.
 func Name(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldName, v))
@@ -373,6 +388,221 @@ func KeyEqualFold(v string) predicate.APIKey {
 // KeyContainsFold applies the ContainsFold predicate on the "key" field.
 func KeyContainsFold(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldContainsFold(FieldKey, v))
+}
+
+// LookupHashEQ applies the EQ predicate on the "lookup_hash" field.
+func LookupHashEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldLookupHash, v))
+}
+
+// LookupHashNEQ applies the NEQ predicate on the "lookup_hash" field.
+func LookupHashNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldLookupHash, v))
+}
+
+// LookupHashIn applies the In predicate on the "lookup_hash" field.
+func LookupHashIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldLookupHash, vs...))
+}
+
+// LookupHashNotIn applies the NotIn predicate on the "lookup_hash" field.
+func LookupHashNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldLookupHash, vs...))
+}
+
+// LookupHashGT applies the GT predicate on the "lookup_hash" field.
+func LookupHashGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldLookupHash, v))
+}
+
+// LookupHashGTE applies the GTE predicate on the "lookup_hash" field.
+func LookupHashGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldLookupHash, v))
+}
+
+// LookupHashLT applies the LT predicate on the "lookup_hash" field.
+func LookupHashLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldLookupHash, v))
+}
+
+// LookupHashLTE applies the LTE predicate on the "lookup_hash" field.
+func LookupHashLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldLookupHash, v))
+}
+
+// LookupHashContains applies the Contains predicate on the "lookup_hash" field.
+func LookupHashContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldLookupHash, v))
+}
+
+// LookupHashHasPrefix applies the HasPrefix predicate on the "lookup_hash" field.
+func LookupHashHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldLookupHash, v))
+}
+
+// LookupHashHasSuffix applies the HasSuffix predicate on the "lookup_hash" field.
+func LookupHashHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldLookupHash, v))
+}
+
+// LookupHashIsNil applies the IsNil predicate on the "lookup_hash" field.
+func LookupHashIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldLookupHash))
+}
+
+// LookupHashNotNil applies the NotNil predicate on the "lookup_hash" field.
+func LookupHashNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldLookupHash))
+}
+
+// LookupHashEqualFold applies the EqualFold predicate on the "lookup_hash" field.
+func LookupHashEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldLookupHash, v))
+}
+
+// LookupHashContainsFold applies the ContainsFold predicate on the "lookup_hash" field.
+func LookupHashContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldLookupHash, v))
+}
+
+// KeyCiphertextEQ applies the EQ predicate on the "key_ciphertext" field.
+func KeyCiphertextEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldKeyCiphertext, v))
+}
+
+// KeyCiphertextNEQ applies the NEQ predicate on the "key_ciphertext" field.
+func KeyCiphertextNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldKeyCiphertext, v))
+}
+
+// KeyCiphertextIn applies the In predicate on the "key_ciphertext" field.
+func KeyCiphertextIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldKeyCiphertext, vs...))
+}
+
+// KeyCiphertextNotIn applies the NotIn predicate on the "key_ciphertext" field.
+func KeyCiphertextNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldKeyCiphertext, vs...))
+}
+
+// KeyCiphertextGT applies the GT predicate on the "key_ciphertext" field.
+func KeyCiphertextGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldKeyCiphertext, v))
+}
+
+// KeyCiphertextGTE applies the GTE predicate on the "key_ciphertext" field.
+func KeyCiphertextGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldKeyCiphertext, v))
+}
+
+// KeyCiphertextLT applies the LT predicate on the "key_ciphertext" field.
+func KeyCiphertextLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldKeyCiphertext, v))
+}
+
+// KeyCiphertextLTE applies the LTE predicate on the "key_ciphertext" field.
+func KeyCiphertextLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldKeyCiphertext, v))
+}
+
+// KeyCiphertextContains applies the Contains predicate on the "key_ciphertext" field.
+func KeyCiphertextContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldKeyCiphertext, v))
+}
+
+// KeyCiphertextHasPrefix applies the HasPrefix predicate on the "key_ciphertext" field.
+func KeyCiphertextHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldKeyCiphertext, v))
+}
+
+// KeyCiphertextHasSuffix applies the HasSuffix predicate on the "key_ciphertext" field.
+func KeyCiphertextHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldKeyCiphertext, v))
+}
+
+// KeyCiphertextIsNil applies the IsNil predicate on the "key_ciphertext" field.
+func KeyCiphertextIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldKeyCiphertext))
+}
+
+// KeyCiphertextNotNil applies the NotNil predicate on the "key_ciphertext" field.
+func KeyCiphertextNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldKeyCiphertext))
+}
+
+// KeyCiphertextEqualFold applies the EqualFold predicate on the "key_ciphertext" field.
+func KeyCiphertextEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldKeyCiphertext, v))
+}
+
+// KeyCiphertextContainsFold applies the ContainsFold predicate on the "key_ciphertext" field.
+func KeyCiphertextContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldKeyCiphertext, v))
+}
+
+// KeyPrefixEQ applies the EQ predicate on the "key_prefix" field.
+func KeyPrefixEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldKeyPrefix, v))
+}
+
+// KeyPrefixNEQ applies the NEQ predicate on the "key_prefix" field.
+func KeyPrefixNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldKeyPrefix, v))
+}
+
+// KeyPrefixIn applies the In predicate on the "key_prefix" field.
+func KeyPrefixIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldKeyPrefix, vs...))
+}
+
+// KeyPrefixNotIn applies the NotIn predicate on the "key_prefix" field.
+func KeyPrefixNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldKeyPrefix, vs...))
+}
+
+// KeyPrefixGT applies the GT predicate on the "key_prefix" field.
+func KeyPrefixGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldKeyPrefix, v))
+}
+
+// KeyPrefixGTE applies the GTE predicate on the "key_prefix" field.
+func KeyPrefixGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldKeyPrefix, v))
+}
+
+// KeyPrefixLT applies the LT predicate on the "key_prefix" field.
+func KeyPrefixLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldKeyPrefix, v))
+}
+
+// KeyPrefixLTE applies the LTE predicate on the "key_prefix" field.
+func KeyPrefixLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldKeyPrefix, v))
+}
+
+// KeyPrefixContains applies the Contains predicate on the "key_prefix" field.
+func KeyPrefixContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldKeyPrefix, v))
+}
+
+// KeyPrefixHasPrefix applies the HasPrefix predicate on the "key_prefix" field.
+func KeyPrefixHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldKeyPrefix, v))
+}
+
+// KeyPrefixHasSuffix applies the HasSuffix predicate on the "key_prefix" field.
+func KeyPrefixHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldKeyPrefix, v))
+}
+
+// KeyPrefixEqualFold applies the EqualFold predicate on the "key_prefix" field.
+func KeyPrefixEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldKeyPrefix, v))
+}
+
+// KeyPrefixContainsFold applies the ContainsFold predicate on the "key_prefix" field.
+func KeyPrefixContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldKeyPrefix, v))
 }
 
 // NameEQ applies the EQ predicate on the "name" field.
