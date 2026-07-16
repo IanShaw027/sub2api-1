@@ -5575,6 +5575,10 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	if err := replaceBody(StripEmptyTextBlocks(body)); err != nil {
 		return nil, err
 	}
+	// Remove locally emulated web-search history and blocks unsupported by the mapped upstream.
+	if err := replaceBody(FilterWebSearchHistoryBlocks(body, reqModel)); err != nil {
+		return nil, err
+	}
 	// Pre-filter: remove thinking blocks with missing/invalid signatures before forwarding.
 	// Clients (e.g. Claude Code) sometimes send multi-turn conversations where a historical
 	// assistant message contains a thinking block that is missing the required "signature" field,
@@ -5698,6 +5702,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 					//    also downgrade tool_use/tool_result blocks to text.
 
 					filteredBody := FilterThinkingBlocksForRetry(preFilterBody, reqModel)
+					filteredBody = FilterWebSearchHistoryBlocks(filteredBody, reqModel)
 					setOpsUpstreamRequestBody(c, filteredBody)
 					retryCtx, releaseRetryCtx := detachStreamUpstreamContext(ctx, reqStream)
 					retryReq, retryWireBody, buildErr := s.buildUpstreamRequest(retryCtx, c, account, filteredBody, token, tokenType, reqModel, reqStream, shouldMimicClaudeCode)
@@ -5741,6 +5746,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 								if looksLikeToolSignatureError(msg2) && time.Since(retryStart) < maxRetryElapsed {
 									logger.LegacyPrintf("service.gateway", "Account %d: signature retry still failing and looks tool-related, retrying with tool blocks downgraded", account.ID)
 									filteredBody2 := FilterSignatureSensitiveBlocksForRetry(preFilterBody, reqModel)
+									filteredBody2 = FilterWebSearchHistoryBlocks(filteredBody2, reqModel)
 									setOpsUpstreamRequestBody(c, filteredBody2)
 									retryCtx2, releaseRetryCtx2 := detachStreamUpstreamContext(ctx, reqStream)
 									retryReq2, retryWireBody2, buildErr2 := s.buildUpstreamRequest(retryCtx2, c, account, filteredBody2, token, tokenType, reqModel, reqStream, shouldMimicClaudeCode)
@@ -6216,6 +6222,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 	}
 	// Pre-filter: strip empty text blocks (including nested in tool_result) to prevent upstream 400.
 	input.Body = StripEmptyTextBlocks(input.Body)
+	input.Body = FilterWebSearchHistoryBlocks(input.Body, input.RequestModel)
 	if input.Parsed != nil {
 		// 透传分支也会改写实际 wire body，成功 usage hash 依赖这里同步当前 body。
 		if err := input.Parsed.ReplaceBody(input.Body); err != nil {
