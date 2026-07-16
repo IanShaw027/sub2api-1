@@ -2035,6 +2035,27 @@ func TestHandleGrokAccountUpstreamError_403SpendingLimitUsesRateLimitedState(t *
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
 }
 
+func TestHandleGrokAccountUpstreamError_402MarksAccountError(t *testing.T) {
+	account := &Account{ID: 68, Platform: PlatformGrok, Type: AccountTypeOAuth}
+	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{accountsByID: map[int64]*Account{68: account}}}
+	svc := newGrokErrorTestService(repo)
+
+	svc.handleGrokAccountUpstreamError(
+		context.Background(),
+		account,
+		http.StatusPaymentRequired,
+		nil,
+		[]byte(`{"error":"You have run out of credits or need a Grok subscription."}`),
+	)
+
+	require.Equal(t, 1, repo.setErrorCalls)
+	require.Contains(t, repo.lastSetErrorMsg, "Payment required (402)")
+	require.Contains(t, repo.lastSetErrorMsg, "run out of credits")
+	require.Zero(t, repo.rateLimitedCalls)
+	require.Zero(t, repo.tempUnschedCalls)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
 func TestIsGrokSpendingLimitError(t *testing.T) {
 	require.True(t, isGrokSpendingLimitError([]byte(`{"code":"personal-team-blocked:spending-limit"}`)))
 	require.True(t, isGrokSpendingLimitError([]byte(`{"error":{"code":"PERSONAL-TEAM-BLOCKED:SPENDING-LIMIT"}}`)))

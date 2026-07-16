@@ -1840,12 +1840,12 @@ func (s *OpenAIGatewayService) handleGrokAccountUpstreamError(ctx context.Contex
 	s.updateGrokUsageSnapshot(ctx, account, snapshot)
 
 	switch statusCode {
-	case http.StatusUnauthorized, http.StatusTooManyRequests:
-		// Route 401/429 through the unified pipeline so Grok gets the same
+	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusTooManyRequests:
+		// Route 401/402/429 through the unified pipeline so Grok gets the same
 		// treatment as every other platform: 401 invalidates the token cache,
-		// permanently disables accounts missing a refresh_token, and honors
-		// OAuth401CooldownMinutes; 429 uses the parsed x-ratelimit-reset-* window
-		// (capped) and respects pool-mode / custom-error-code rules.
+		// 402 marks accounts without credits or a subscription as error, and 429
+		// uses the parsed x-ratelimit-reset-* window (capped) while respecting
+		// pool-mode / custom-error-code rules.
 		if s.rateLimitService != nil {
 			if s.rateLimitService.HandleUpstreamError(ctx, account, statusCode, headers, responseBody) {
 				s.BlockAccountScheduling(account, time.Time{}, "upstream_disable")
