@@ -2,9 +2,8 @@ package service
 
 import (
 	"bytes"
-	"encoding/json"
+	"strconv"
 	"strings"
-	"unsafe"
 
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -22,84 +21,76 @@ var (
 
 // FilterWebSearchHistoryBlocks removes locally emulated web-search blocks and
 // web-search blocks that passback-required upstreams cannot accept.
+//
+// Blocks are dropped surgically via sjson so that every kept block retains its
+// exact original JSON bytes. A full json.Unmarshal into []any would decode all
+// numbers as float64 and re-encode them on marshal, silently corrupting large
+// integer IDs (> 2^53) anywhere in the otherwise-untouched history.
 func FilterWebSearchHistoryBlocks(body []byte, mappedModel string) []byte {
 	if !bytes.Contains(body, patternServerToolUse) && !bytes.Contains(body, patternWebSearchToolResult) {
 		return body
 	}
 
+	messages := gjson.GetBytes(body, "messages")
+	if !messages.Exists() || !messages.IsArray() {
+		return body
+	}
+
 	stripAll := ResolveThinkingProtocol(mappedModel) == ThinkingProtocolPassbackRequired
-	jsonStr := *(*string)(unsafe.Pointer(&body))
-	msgsRes := gjson.Get(jsonStr, "messages")
-	if !msgsRes.Exists() || !msgsRes.IsArray() {
-		return body
-	}
 
-	var messages []any
-	if err := json.Unmarshal(sliceRawFromBody(body, msgsRes), &messages); err != nil {
-		return body
-	}
-
+	out := body
 	modified := false
-	for _, msg := range messages {
-		msgMap, ok := msg.(map[string]any)
-		if !ok {
-			continue
-		}
-		content, ok := msgMap["content"].([]any)
-		if !ok {
+	for msgIdx, msg := range messages.Array() {
+		content := msg.Get("content")
+		if !content.IsArray() {
 			continue
 		}
 
-		var newContent []any
-		for i, block := range content {
-			blockMap, isMap := block.(map[string]any)
-			if isMap && shouldStripWebSearchBlock(blockMap, stripAll) {
-				if newContent == nil {
-					newContent = make([]any, 0, len(content))
-					newContent = append(newContent, content[:i]...)
-				}
+		blocks := content.Array()
+		kept := make([]string, 0, len(blocks))
+		stripped := false
+		for _, block := range blocks {
+			if block.IsObject() && shouldStripWebSearchBlock(block, stripAll) {
+				stripped = true
 				continue
 			}
-			if newContent != nil {
-				newContent = append(newContent, block)
-			}
+			// Preserve the block's raw bytes verbatim (objects and non-objects alike).
+			kept = append(kept, block.Raw)
 		}
-		if newContent == nil {
+		if !stripped {
 			continue
 		}
 
-		modified = true
-		if len(newContent) == 0 {
-			role, _ := msgMap["role"].(string)
-			placeholder := "(content removed)"
-			if role == "assistant" {
-				placeholder = "(assistant content removed)"
+		var newContent string
+		if len(kept) == 0 {
+			// Anthropic rejects an empty content array; keep a minimal placeholder.
+			if msg.Get("role").String() == "assistant" {
+				newContent = `[{"type":"text","text":"(assistant content removed)"}]`
+			} else {
+				newContent = `[{"type":"text","text":"(content removed)"}]`
 			}
-			newContent = []any{map[string]any{"type": "text", "text": placeholder}}
+		} else {
+			newContent = "[" + strings.Join(kept, ",") + "]"
 		}
-		msgMap["content"] = newContent
+
+		next, err := sjson.SetRawBytes(out, "messages."+strconv.Itoa(msgIdx)+".content", []byte(newContent))
+		if err != nil {
+			return body
+		}
+		out = next
+		modified = true
 	}
 
 	if !modified {
 		return body
 	}
-	msgsBytes, err := json.Marshal(messages)
-	if err != nil {
-		return body
-	}
-	out, err := sjson.SetRawBytes(body, "messages", msgsBytes)
-	if err != nil {
-		return body
-	}
 	return out
 }
 
-func shouldStripWebSearchBlock(block map[string]any, stripAll bool) bool {
-	blockType, _ := block["type"].(string)
-	switch blockType {
+func shouldStripWebSearchBlock(block gjson.Result, stripAll bool) bool {
+	switch block.Get("type").String() {
 	case blockTypeServerToolUse:
-		id, _ := block["id"].(string)
-		if strings.HasPrefix(id, webSearchToolUseIDPrefix) {
+		if strings.HasPrefix(block.Get("id").String(), webSearchToolUseIDPrefix) {
 			return true
 		}
 		return stripAll && isWebSearchServerToolUse(block)
@@ -107,19 +98,17 @@ func shouldStripWebSearchBlock(block map[string]any, stripAll bool) bool {
 		if stripAll {
 			return true
 		}
-		id, _ := block["tool_use_id"].(string)
-		return strings.HasPrefix(id, webSearchToolUseIDPrefix)
+		return strings.HasPrefix(block.Get("tool_use_id").String(), webSearchToolUseIDPrefix)
 	default:
 		return false
 	}
 }
 
-func isWebSearchServerToolUse(block map[string]any) bool {
-	name, _ := block["name"].(string)
-	name = strings.ToLower(strings.TrimSpace(name))
+func isWebSearchServerToolUse(block gjson.Result) bool {
+	name := strings.ToLower(strings.TrimSpace(block.Get("name").String()))
 	if name == toolNameWebSearch || name == toolNameGoogleSearch || name == toolNameWebSearch2025 {
 		return true
 	}
-	blockType, _ := block["type"].(string)
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(blockType)), toolTypeWebSearchPrefix)
+	blockType := strings.ToLower(strings.TrimSpace(block.Get("type").String()))
+	return strings.HasPrefix(blockType, toolTypeWebSearchPrefix)
 }
