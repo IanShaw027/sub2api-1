@@ -283,6 +283,18 @@ restore_checksum_snapshot() {
         return 1
     fi
 
+    # Schema migrations are forward-only. Restoring a pre-deploy checksum snapshot
+    # after ApplyMigrations has advanced schema creates a three-way split
+    # (schema new / binary old / checksum old) that is harder to recover from
+    # than a checksum mismatch. Refuse by default; operators may opt in only
+    # when they have confirmed no new migration rows were applied.
+    if [ "${ALLOW_CHECKSUM_RESTORE_ON_ROLLBACK:-0}" != "1" ]; then
+        echo "⚠️  已跳过 checksum 快照回滚（schema 前进后回写旧 checksum 不安全）。" >&2
+        echo "    若确认本次部署未 Apply 任何新迁移，可设置 ALLOW_CHECKSUM_RESTORE_ON_ROLLBACK=1 后重试。" >&2
+        echo "    快照保留于: $CHECKSUM_BACKUP_PATH" >&2
+        return 0
+    fi
+
     SUB2API_DATABASE_DSN="$DATABASE_DSN" go run ./cmd/sync_checksums --restore-file "$CHECKSUM_BACKUP_PATH"
 }
 

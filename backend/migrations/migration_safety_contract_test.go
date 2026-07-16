@@ -2,6 +2,7 @@ package migrations
 
 import (
 	"io/fs"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -81,6 +82,49 @@ func TestUsageLogsRequestTypeCheckValidationRunsAfterNotValidAdd(t *testing.T) {
 			validateSQL := normalizeMigrationSQLForSafetyTest(string(validateContent))
 			require.Contains(t, validateSQL, "ALTER TABLE USAGE_LOGS VALIDATE CONSTRAINT USAGE_LOGS_REQUEST_TYPE_CHECK")
 		})
+	}
+}
+
+func TestNoNewTransactionalHotTableBackfills(t *testing.T) {
+	// Guardrail for future migrations only. 207/213 already shipped and are
+	// documented as operational hazards; rewrite via offline jobs instead of
+	// editing applied SQL.
+	files, err := fs.Glob(FS, "*.sql")
+	require.NoError(t, err)
+
+	legacyHotTableBackfills := map[string]struct{}{
+		"207_ip_multi_account_security.sql":          {},
+		"213_backfill_usage_log_video_seconds.sql":   {},
+		"191_restore_usage_request_type_cyber_value.sql": {},
+	}
+
+	for _, file := range files {
+		if strings.HasSuffix(file, "_notx.sql") {
+			continue
+		}
+		if _, ok := legacyHotTableBackfills[file]; ok {
+			continue
+		}
+		// Only enforce on migrations numbered >= 216 (post-review policy).
+		base := strings.TrimSuffix(file, ".sql")
+		numPart := strings.SplitN(base, "_", 2)[0]
+		numPart = strings.TrimRight(numPart, "abcdefghijklmnopqrstuvwxyz")
+		n, err := strconv.Atoi(numPart)
+		if err != nil || n < 216 {
+			continue
+		}
+		content, err := FS.ReadFile(file)
+		require.NoError(t, err)
+		upper := strings.ToUpper(string(content))
+		if strings.Contains(upper, "UPDATE USAGE_LOGS") {
+			require.Failf(t, "hot table backfill",
+				"%s performs UPDATE usage_logs in a transactional startup migration; use an offline batched job or _notx path", file)
+		}
+		if strings.Contains(upper, "CREATE INDEX") && strings.Contains(upper, "ON USAGE_LOGS") &&
+			!strings.Contains(upper, "CONCURRENTLY") {
+			require.Failf(t, "hot table index",
+				"%s creates a non-CONCURRENT index on usage_logs in a transactional migration; use *_notx.sql", file)
+		}
 	}
 }
 

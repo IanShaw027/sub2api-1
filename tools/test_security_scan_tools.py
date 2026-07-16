@@ -29,12 +29,25 @@ class SecurityScanToolsTest(unittest.TestCase):
             original_root = module.ROOT
             try:
                 module.ROOT = pathlib.Path(tmp)
-                path = module.ROOT / "secret.txt"
+                path = module.ROOT / "secret.yaml"
                 path.write_text(content, encoding="utf-8")
-                findings = module.scan_file(pathlib.Path("secret.txt"))
+                findings = module.scan_file(pathlib.Path("secret.yaml"))
             finally:
                 module.ROOT = original_root
-        self.assertEqual([f"secret.txt:1: possible {expected}"], findings)
+        self.assertEqual([f"secret.yaml:1: possible {expected}"], findings)
+
+    def assert_no_secret_finding(self, content):
+        module = load_module(SECRET_SCAN_SCRIPT, "secret_scan_no_finding_test_module")
+        with tempfile.TemporaryDirectory() as tmp:
+            original_root = module.ROOT
+            try:
+                module.ROOT = pathlib.Path(tmp)
+                path = module.ROOT / "config.example.env"
+                path.write_text(content, encoding="utf-8")
+                findings = module.scan_file(pathlib.Path("config.example.env"))
+            finally:
+                module.ROOT = original_root
+        self.assertEqual([], findings)
 
     def test_pnpm_audit_top_level_error_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -85,6 +98,9 @@ class SecurityScanToolsTest(unittest.TestCase):
     def test_secret_scan_detects_aws_access_key(self):
         self.assert_secret_finding("key=AKIA1234567890ABCDEF\n", "AWS access key ID")
 
+    def test_secret_scan_detects_private_key_block(self):
+        self.assert_secret_finding("-----BEGIN PRIVATE KEY-----\n", "private key block")
+
     def test_secret_scan_detects_jwt(self):
         token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0." + ("a" * 32)
         self.assert_secret_finding(f"token={token}\n", "JWT")
@@ -97,9 +113,74 @@ class SecurityScanToolsTest(unittest.TestCase):
 
     def test_secret_scan_detects_configured_signing_secret(self):
         self.assert_secret_finding(
-            "download_signing_secret: HighlySensitiveSigningKey42\n",
+            'download_signing_secret: "HighlySensitiveSigningKey42"\n',
             "configured secret",
         )
+        self.assert_secret_finding(
+            "download_signing_secret: HighlySensitiveSigningKey42 # rotate regularly\n",
+            "configured secret",
+        )
+
+    def test_secret_scan_detects_redis_url_password(self):
+        self.assert_secret_finding(
+            "REDIS_URL=rediss://default:CorrectHorseBattery42@cache.example:6379/0\n",
+            "Redis URL password",
+        )
+
+    def test_secret_scan_detects_configured_redis_password(self):
+        self.assert_secret_finding(
+            "REDIS_PASSWORD=CorrectHorseBattery42\n",
+            "configured secret",
+        )
+        self.assert_secret_finding(
+            "redis_password: CorrectHorseBattery42, # migrated config\n",
+            "configured secret",
+        )
+
+    def test_secret_scan_detects_payment_and_webhook_secrets(self):
+        self.assert_secret_finding(
+            'stripe_webhook_secret: "whsec_RealisticProductionSecret123456"\n',
+            "Stripe webhook secret",
+        )
+        self.assert_secret_finding(
+            "MERCHANT_PRIVATE_KEY=ProductionMerchantPrivateKeyMaterial42\n",
+            "configured secret",
+        )
+
+    def test_secret_scan_detects_additional_provider_tokens(self):
+        self.assert_secret_finding(
+            "token=hf_" + ("A" * 32) + "\n",
+            "Hugging Face token",
+        )
+        self.assert_secret_finding(
+            "token=xoxb-" + ("1" * 12) + "-" + ("A" * 24) + "\n",
+            "Slack token",
+        )
+
+    def test_secret_scan_allows_placeholders_and_variable_references(self):
+        self.assert_no_secret_finding("REDIS_PASSWORD=change_me_for_production\n")
+        self.assert_no_secret_finding("webhook_secret: your_webhook_secret_placeholder\n")
+        self.assert_no_secret_finding("REDIS_PASSWORD=${REDIS_PASSWORD:?required}\n")
+        self.assert_no_secret_finding("redis_password: ${REDIS_PASSWORD:?required}\n")
+
+    def test_secret_scan_ignores_code_field_references(self):
+        module = load_module(SECRET_SCAN_SCRIPT, "secret_scan_code_reference_test_module")
+        with tempfile.TemporaryDirectory() as tmp:
+            original_root = module.ROOT
+            try:
+                module.ROOT = pathlib.Path(tmp)
+                path = module.ROOT / "oauth.go"
+                path.write_text('"client_secret": cfg.ClientSecret,\n', encoding="utf-8")
+                findings = module.scan_file(pathlib.Path("oauth.go"))
+            finally:
+                module.ROOT = original_root
+        self.assertEqual([], findings)
+
+    def test_secret_scan_skips_test_fixture_paths(self):
+        module = load_module(SECRET_SCAN_SCRIPT, "secret_scan_fixture_test_module")
+        self.assertTrue(module.is_test_fixture_path(pathlib.Path("testdata/production.env")))
+        self.assertTrue(module.is_test_fixture_path(pathlib.Path("fixtures/payment.json")))
+        self.assertTrue(module.is_test_fixture_path(pathlib.Path("sample_test.py")))
 
 
 if __name__ == "__main__":

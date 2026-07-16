@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -179,5 +180,17 @@ func TestMigrationFilenameNumericPrefixesStayDeliberate(t *testing.T) {
 		}
 		sort.Strings(got)
 		require.Equal(t, knownDuplicatePrefixes[prefix], got, "unexpected duplicate migration prefix %s", prefix)
+	}
+
+	// From 216 onward, numeric prefixes must be globally unique. Historical
+	// collisions are frozen in knownDuplicatePrefixes; never open a new shared
+	// number when merging with upstream.
+	const uniquePrefixFrom = 216
+	for prefix, got := range byPrefix {
+		n, err := strconv.Atoi(prefix)
+		if err != nil || n < uniquePrefixFrom {
+			continue
+		}
+		require.Len(t, got, 1, "migration prefix %s must be unique (got %v); pick the next free number", prefix, got)
 	}
 }

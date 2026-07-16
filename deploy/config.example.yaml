@@ -11,16 +11,17 @@
 # 服务器配置
 # =============================================================================
 server:
-  # Bind address (0.0.0.0 for all interfaces)
-  # 绑定地址（0.0.0.0 表示监听所有网络接口）
-  host: "0.0.0.0"
+  # Bind to localhost by default. Use 0.0.0.0 only with intentional network exposure.
+  # 默认仅监听本机。仅在明确需要网络暴露时改为 0.0.0.0。
+  host: "127.0.0.1"
   # Port to listen on
   # 监听端口
   port: 8080
   # Mode: "debug" for development, "release" for production
   # 运行模式："debug" 用于开发，"release" 用于生产环境
   mode: "release"
-  # Only the local nginx process may supply forwarded client IP headers.
+  # Only a reverse proxy on the same host may supply forwarded client IP headers.
+  # Remove these entries if the application is not behind a local reverse proxy.
   trusted_proxies:
     - "127.0.0.1/32"
     - "::1/128"
@@ -31,9 +32,6 @@ server:
   # 用于生成邮件中的外部链接（例如：重置密码链接）的前端基础地址
   # Example: "https://example.com"
   frontend_url: ""
-  # Trusted proxies for X-Forwarded-For parsing (CIDR/IP). Empty disables trusted proxies.
-  # 信任的代理地址（CIDR/IP 格式），用于解析 X-Forwarded-For 头。留空则禁用代理信任。
-  trusted_proxies: []
   # Global max request body size in bytes (default: 256MB)
   # 全局最大请求体大小（字节，默认 256MB）
   # Applies to all requests, especially important for h2c first request memory protection
@@ -974,10 +972,12 @@ ops:
 # JWT 配置
 # =============================================================================
 jwt:
-  # IMPORTANT: Change this to a random string in production!
-  # 重要：生产环境中请更改为随机字符串！
+  # Leave empty during setup to auto-generate and persist a random secret.
+  # Set an explicit value only when it is a stable, randomly generated secret.
+  # 安装阶段可留空，系统会自动生成并持久化随机密钥。
+  # 仅在使用稳定、随机生成的密钥时显式填写。
   # Generate with / 生成命令: openssl rand -hex 32
-  secret: "change-this-to-a-secure-random-string"
+  secret: ""
   # Token expiration time in hours (max 168)
   # 令牌过期时间（小时，最大 168）
   expire_hour: 24
@@ -986,6 +986,17 @@ jwt:
   # - >0: 按分钟生效（优先于 expire_hour）
   # - =0: 回退使用 expire_hour
   access_token_expire_minutes: 0
+  # Refresh Token cookie SameSite policy: lax | strict | none.
+  # Keep lax for the default same-origin or same-site-subdomain deployment.
+  # Use none only for a truly cross-site frontend/API split; HTTPS, exact
+  # cors.allowed_origins, and cors.allow_credentials=true are then required.
+  # Refresh Token Cookie 的 SameSite 策略。默认同源/同站部署保持 lax；
+  # 真正跨站部署才使用 none，并必须启用 HTTPS 与精确 CORS 来源。
+  refresh_cookie_same_site: "lax"
+  # Browser-visible API auth path. Change this when a reverse proxy publishes
+  # the API below a custom external prefix such as /edge/api/v1/auth.
+  # 浏览器可见的认证 API 路径；反代增加外部路径前缀时需同步修改。
+  refresh_cookie_path: "/api/v1/auth"
 
 # =============================================================================
 # TOTP (2FA) Configuration
@@ -1072,10 +1083,12 @@ oidc_connect:
 # 默认设置
 # =============================================================================
 default:
-  # Initial admin account (created on first run)
-  # 初始管理员账户（首次运行时创建）
+  # Legacy compatibility fields. They do not create the initial administrator.
+  # Use ADMIN_EMAIL / ADMIN_PASSWORD or the setup wizard for bootstrap.
+  # 历史兼容字段，不会用于创建初始管理员。
+  # 请通过 ADMIN_EMAIL / ADMIN_PASSWORD 或安装向导创建管理员。
   admin_email: "admin@example.com"
-  admin_password: "admin123"
+  admin_password: ""
 
   # Default settings for new users
   # 新用户默认设置

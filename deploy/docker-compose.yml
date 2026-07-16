@@ -24,7 +24,7 @@ services:
         soft: 100000
         hard: 100000
     ports:
-      - "${BIND_HOST:-0.0.0.0}:${SERVER_PORT:-8080}:8080"
+      - "${BIND_HOST:-127.0.0.1}:${SERVER_PORT:-8080}:8080"
     volumes:
       # Data persistence (config.yaml will be auto-generated here)
       - sub2api_data:/app/data
@@ -69,7 +69,7 @@ services:
       # =======================================================================
       - REDIS_HOST=redis
       - REDIS_PORT=${REDIS_PORT:-6379}
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       - REDIS_DB=${REDIS_DB:-0}
       - REDIS_POOL_SIZE=${REDIS_POOL_SIZE:-1024}
       - REDIS_MIN_IDLE_CONNS=${REDIS_MIN_IDLE_CONNS:-10}
@@ -85,9 +85,8 @@ services:
       # =======================================================================
       # JWT Configuration
       # =======================================================================
-      # IMPORTANT: Set a fixed JWT_SECRET to prevent login sessions from being
-      # invalidated after container restarts. If left empty, a random secret
-      # will be generated on each startup.
+      # Leave empty during setup to auto-generate and persist a stable random
+      # secret in PostgreSQL. Set explicitly for externally managed secrets.
       # Generate a secure secret: openssl rand -hex 32
       - JWT_SECRET=${JWT_SECRET:-}
       - JWT_EXPIRE_HOUR=${JWT_EXPIRE_HOUR:-24}
@@ -258,6 +257,7 @@ services:
     image: redis:8-alpine
     container_name: sub2api-redis
     restart: unless-stopped
+    # Production compose requires authentication even on the private network.
     ulimits:
       nofile:
         soft: 100000
@@ -272,11 +272,12 @@ services:
         --appendonly yes
         --appendfsync everysec
         --maxclients "${REDIS_MAXCLIENTS:-50000}"
-        ${REDIS_PASSWORD:+--requirepass "$REDIS_PASSWORD"}'
+        --requirepass "$${REDIS_PASSWORD}"'
     environment:
       - TZ=${TZ:-Asia/Shanghai}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       # REDISCLI_AUTH is used by redis-cli for authentication (safer than -a flag)
-      - REDISCLI_AUTH=${REDIS_PASSWORD:-}
+      - REDISCLI_AUTH=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     networks:
       - sub2api-network
     healthcheck:

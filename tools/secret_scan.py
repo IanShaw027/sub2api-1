@@ -22,12 +22,32 @@ SKIP_PARTS = {
 }
 
 ALLOW_VALUE_FRAGMENTS = (
+    "change",
+    "development",
     "example",
     "placeholder",
     "dummy",
+    "local",
     "mock",
     "fake",
+    "replace",
+    "sample",
+    "test",
     "your",
+)
+
+YAML_CONFIGURED_SECRET_PATTERN = re.compile(
+    r"(?i)^\s*(?:-\s*)?[\"']?(?:(?:aws_)?secret_access_key|"
+    r"(?:database|db|jwt|redis)_?(?:password|secret)|"
+    r"download_signing_secret|client_secret|access_token|refresh_token|"
+    r"webhook_secret|merchant_private_key|payment_(?:secret|api_key|private_key)|"
+    r"(?:stripe|airwallex|paypal|wechat|alipay)_"
+    r"(?:api_key|secret(?:_key)?|client_secret|webhook_secret|private_key))"
+    r"[\"']?"
+    r"\s*:\s*(?:"
+    r"(?P<quote>[\"'])(?P<secret_quoted>[A-Za-z0-9_./+!=-]{16,})(?P=quote)"
+    r"|(?P<secret_unquoted>[A-Za-z0-9_./+!=-]{16,})"
+    r")\s*[,}]?\s*(?:#.*)?$"
 )
 
 PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -39,6 +59,16 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("OpenAI-style API key", re.compile(r"\bsk-(?:proj-|ant-api03-)?[A-Za-z0-9_-]{24,}\b")),
     ("Google API key", re.compile(r"\bAIza[0-9A-Za-z_-]{32,}\b")),
     ("AWS access key ID", re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b")),
+    ("GitLab token", re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}\b")),
+    ("Hugging Face token", re.compile(r"\bhf_[A-Za-z0-9]{30,}\b")),
+    ("Slack token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b")),
+    ("Google OAuth access token", re.compile(r"\bya29\.[A-Za-z0-9_-]{30,}\b")),
+    ("Google OAuth refresh token", re.compile(r"\b1//[A-Za-z0-9_-]{30,}\b")),
+    ("npm token", re.compile(r"\bnpm_[A-Za-z0-9]{30,}\b")),
+    (
+        "SendGrid API key",
+        re.compile(r"\bSG\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b"),
+    ),
     (
         "JWT",
         re.compile(
@@ -53,11 +83,25 @@ PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
     (
+        "Redis URL password",
+        re.compile(
+            r"\brediss?://[^/\s:@]*:(?P<secret>[^/\s@]{12,})@"
+        ),
+    ),
+    (
+        "configured secret",
+        YAML_CONFIGURED_SECRET_PATTERN,
+    ),
+    (
         "configured secret",
         re.compile(
-            r"(?i)\b(?:(?:aws_)?secret_access_key|(?:database|db|jwt)_?(?:password|secret)|"
-            r"download_signing_secret)"
-            r"\s*[=:]\s*[\"']?(?P<secret>[A-Za-z0-9_./+!=-]{16,})[\"']?\s*[,}]?\s*(?:#.*)?$"
+            r"^\s*(?:export\s+)?(?:(?:AWS_)?SECRET_ACCESS_KEY|"
+            r"(?:DATABASE|DB|JWT|REDIS)_(?:PASSWORD|SECRET)|"
+            r"DOWNLOAD_SIGNING_SECRET|CLIENT_SECRET|ACCESS_TOKEN|REFRESH_TOKEN|"
+            r"WEBHOOK_SECRET|MERCHANT_PRIVATE_KEY|PAYMENT_(?:SECRET|API_KEY|PRIVATE_KEY)|"
+            r"(?:STRIPE|AIRWALLEX|PAYPAL|WECHAT|ALIPAY)_"
+            r"(?:API_KEY|SECRET(?:_KEY)?|CLIENT_SECRET|WEBHOOK_SECRET|PRIVATE_KEY))"
+            r"\s*=\s*[\"']?(?P<secret>[A-Za-z0-9_./+!=-]{16,})[\"']?\s*(?:#.*)?$"
         ),
     ),
 )
@@ -149,9 +193,24 @@ def scan_file(rel: Path) -> list[str]:
 
     findings: list[str] = []
     for lineno, line in enumerate(text.splitlines(), 1):
+        seen_values: set[str] = set()
         for name, pattern in PATTERNS:
+            if (
+                pattern is YAML_CONFIGURED_SECRET_PATTERN
+                and rel.suffix.lower() not in {".yaml", ".yml", ".json", ".conf", ".config"}
+            ):
+                continue
             for match in pattern.finditer(line):
-                value = match.groupdict().get("secret") or match.group(0)
+                groups = match.groupdict()
+                value = (
+                    groups.get("secret")
+                    or groups.get("secret_quoted")
+                    or groups.get("secret_unquoted")
+                    or match.group(0)
+                )
+                if value in seen_values:
+                    continue
+                seen_values.add(value)
                 if is_probably_placeholder(value):
                     continue
                 findings.append(f"{rel}:{lineno}: possible {name}")

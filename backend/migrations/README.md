@@ -26,6 +26,16 @@ Format: `NNN_description.sql`
 
 Example: `017_add_gemini_tier_id.sql`
 
+### Prefix uniqueness (mandatory for new files)
+
+- Historical migrations through **215** contain known shared numeric prefixes
+  (frozen in `TestMigrationFilenameNumericPrefixesStayDeliberate`).
+- **From 216 onward, each numeric prefix must be unique** across the tree.
+  When merging `upstream/main`, if both sides add the same number, remap one
+  side to the next free number before merge — do not ship two `216_*.sql` files.
+- Prefer `NNNa_` / `NNNb_` only for same-change follow-ups (validate, notx), not
+  for unrelated features.
+
 ### `_notx.sql` 命名与执行语义（并发索引专用）
 
 当迁移包含 `CREATE INDEX CONCURRENTLY` 或 `DROP INDEX CONCURRENTLY` 时，必须使用 `_notx.sql` 后缀，例如：
