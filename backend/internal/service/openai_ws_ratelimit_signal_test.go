@@ -348,10 +348,10 @@ func TestOpenAIGatewayService_ResponseFailedSignalDefersAndFlushesOnce(t *testin
 	account := &Account{
 		ID:          92005,
 		Platform:    PlatformOpenAI,
-		Type:        AccountTypeOAuth,
+		Type:        AccountTypeAPIKey,
 		Status:      StatusActive,
 		Schedulable: true,
-		Extra: map[string]any{
+		Credentials: map[string]any{
 			"custom_error_codes_enabled": true,
 			"custom_error_codes":         []any{float64(http.StatusBadGateway)},
 		},
@@ -368,17 +368,17 @@ func TestOpenAIGatewayService_ResponseFailedSignalDefersAndFlushesOnce(t *testin
 		)
 	}
 
-	require.Equal(t, 0, repo.tempCalls, "internal retries must not advance account error policy")
+	require.Equal(t, 0, repo.setErrorCalls, "internal retries must not advance account error policy")
 	_, pending := pendingOpenAIWSAccountStateSignal(c)
 	require.True(t, pending)
 
 	svc.FlushOpenAIWSPendingAccountStateSignal(context.Background(), c, account)
-	require.Equal(t, 1, repo.tempCalls)
+	require.Equal(t, 1, repo.setErrorCalls)
 	_, pending = pendingOpenAIWSAccountStateSignal(c)
 	require.False(t, pending)
 
 	svc.FlushOpenAIWSPendingAccountStateSignal(context.Background(), c, account)
-	require.Equal(t, 1, repo.tempCalls, "flush must be idempotent")
+	require.Equal(t, 1, repo.setErrorCalls, "flush must be idempotent")
 }
 
 func TestOpenAIGatewayService_ResponseFailedImmediateSignalsBypassDeferral(t *testing.T) {

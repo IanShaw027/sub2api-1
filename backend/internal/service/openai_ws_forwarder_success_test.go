@@ -2283,10 +2283,10 @@ func TestOpenAIGatewayService_PrewarmResponseFailedDoesNotMarkPrewarmed(t *testi
 		ID:          602,
 		Name:        "openai-prewarm-failed",
 		Platform:    PlatformOpenAI,
-		Type:        AccountTypeOAuth,
+		Type:        AccountTypeAPIKey,
 		Status:      StatusActive,
 		Schedulable: true,
-		Extra: map[string]any{
+		Credentials: map[string]any{
 			"custom_error_codes_enabled": true,
 			"custom_error_codes":         []any{float64(http.StatusBadGateway)},
 		},
