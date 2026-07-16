@@ -192,6 +192,32 @@ func TestResolveEffectiveModelRouting_CompactMappingIsSeparate(t *testing.T) {
 	require.Equal(t, "gpt-5.4-mini", compact.Model)
 	require.True(t, compact.Matched)
 	require.Equal(t, "platform_default", compact.Source)
+	require.True(t, compact.CompactMatched)
+}
+
+func TestResolveEffectiveModelRouting_PlatformCompactMappingAppliesAfterAccountBaseMapping(t *testing.T) {
+	resetPlatformModelRoutingConfigCacheForTest()
+	svc := NewSettingService(&kiroRuntimeSettingRepoStub{
+		values: map[string]string{
+			SettingKeyPlatformDefaultAccountModelConfig: `{
+				"openai": {
+					"compact_model_mapping": {"gpt-5.6-terra": "gpt-5.4"}
+				}
+			}`,
+		},
+	}, &config.Config{})
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"gpt-5.6-terra": "gpt-5.6-terra"},
+		},
+	}
+
+	compact := ResolveEffectiveModelRouting(context.Background(), svc, account, "gpt-5.6-terra", true)
+
+	require.Equal(t, "gpt-5.4", compact.Model)
+	require.True(t, compact.CompactMatched)
+	require.Equal(t, "platform_default", compact.Source)
 }
 
 func TestResolveGatewayAnthropicForwardModel_UsesPlatformDefaultWhenAccountHasNoRules(t *testing.T) {

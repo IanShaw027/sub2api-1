@@ -830,7 +830,7 @@ func (s *OpenAIGatewayService) isUpstreamModelRestrictedByChannel(ctx context.Co
 	if s.channelService == nil {
 		return false
 	}
-	upstreamModel := resolveOpenAIAccountUpstreamModelForRequest(ctx, s.settingService, account, requestedModel, requireCompact)
+	upstreamModel := resolveOpenAIAccountUpstreamModelForRequest(ctx, s.settingService, account, requestedModel, requireCompact, s.openAICompactModel())
 	if upstreamModel == "" {
 		return false
 	}
@@ -3559,12 +3559,24 @@ func prioritizeOpenAICompactAccounts(accounts []*Account) []*Account {
 // resolveOpenAIAccountUpstreamModelForRequest resolves the upstream model that
 // would be sent for a given request, honouring compact-only mappings when the
 // caller is on the /responses/compact path.
-func resolveOpenAIAccountUpstreamModelForRequest(ctx context.Context, settingService *SettingService, account *Account, requestedModel string, requireCompact bool) string {
+func resolveOpenAIAccountUpstreamModelForRequest(ctx context.Context, settingService *SettingService, account *Account, requestedModel string, requireCompact bool, defaultCompactModel string) string {
 	routing := ResolveEffectiveModelRouting(ctx, settingService, account, requestedModel, requireCompact)
+	if requireCompact && !routing.CompactMatched {
+		if compactModel := strings.TrimSpace(defaultCompactModel); compactModel != "" {
+			return compactModel
+		}
+	}
 	if strings.TrimSpace(routing.Model) == "" {
 		return ""
 	}
 	return strings.TrimSpace(routing.Model)
+}
+
+func (s *OpenAIGatewayService) openAICompactModel() string {
+	if s == nil || s.cfg == nil {
+		return ""
+	}
+	return strings.TrimSpace(s.cfg.Gateway.OpenAICompactModel)
 }
 
 func (s *OpenAIGatewayService) selectAccountForModelWithExclusions(ctx context.Context, groupID *int64, platform string, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, stickyAccountID int64, requiredCapability OpenAIEndpointCapability, requiredImageRoute string, requireOAuthAccount bool, requireImageEnabled bool) (*Account, error) {
@@ -7016,7 +7028,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	body = updatedBody
 	reqStream := gjson.GetBytes(body, "stream").Bool()
 	apiKey := getAPIKeyFromContext(c)
-	if upstreamModel := resolveOpenAIAccountUpstreamModelForRequest(c.Request.Context(), s.settingService, account, reqModel, isOpenAIResponsesCompactPath(c)); upstreamModel != "" {
+	if upstreamModel := resolveOpenAIAccountUpstreamModelForRequest(c.Request.Context(), s.settingService, account, reqModel, isOpenAIResponsesCompactPath(c), s.openAICompactModel()); upstreamModel != "" {
 		currentModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
 		if !strings.EqualFold(currentModel, upstreamModel) {
 			body = ReplaceModelInBody(body, upstreamModel)
@@ -7171,8 +7183,9 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 					}
 				}
 				if triggerErr == nil {
-					if upstreamModel := resolveOpenAIAccountUpstreamModelForRequest(ctx, s.settingService, account, reqModel, true); upstreamModel != "" {
-						compactBody = ReplaceModelInBody(compactBody, upstreamModel)
+					compactUpstreamModel := resolveOpenAIAccountUpstreamModelForRequest(ctx, s.settingService, account, reqModel, true, s.openAICompactModel())
+					if compactUpstreamModel != "" {
+						compactBody = ReplaceModelInBody(compactBody, compactUpstreamModel)
 					}
 					body = compactBody
 					setOpsUpstreamRequestBody(c, body)
@@ -7186,12 +7199,24 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 					contextCompactionRetried = true
 					logger.FromContext(ctx).Info("openai.context_overflow_remote_compaction_retry",
 						zap.Int64("account_id", account.ID),
-						zap.String("model", reqModel),
+						zap.String("original_model", reqModel),
+						zap.String("compact_model", compactUpstreamModel),
 						zap.String("upstream_code", upstreamCode),
 					)
 					continue
 				}
 			}
+		}
+		if contextCompactionRetried && isCompact &&
+			isOpenAIContextCompactionStatus(resp.StatusCode) &&
+			isOpenAIContextWindowError(upstreamMsg, respBody) {
+			logger.FromContext(ctx).Warn("openai.context_overflow_remote_compaction_failed",
+				zap.Int64("account_id", account.ID),
+				zap.String("original_model", reqModel),
+				zap.String("compact_model", currentModel),
+				zap.String("upstream_code", upstreamCode),
+				zap.String("upstream_message", upstreamMsg),
+			)
 		}
 		if !previousResponseIDRetryTried &&
 			resp.StatusCode == http.StatusBadRequest &&

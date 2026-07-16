@@ -6,10 +6,11 @@ import (
 )
 
 type EffectiveModelRoutingResult struct {
-	Model     string
-	Supported bool
-	Matched   bool
-	Source    string
+	Model          string
+	Supported      bool
+	Matched        bool
+	CompactMatched bool
+	Source         string
 }
 
 func ResolveEffectiveModelRouting(ctx context.Context, settingService *SettingService, account *Account, requestedModel string, compact bool) EffectiveModelRoutingResult {
@@ -35,6 +36,16 @@ func ResolveEffectiveModelRouting(ctx context.Context, settingService *SettingSe
 					result.Model = trimmed
 				}
 				result.Matched = true
+				result.CompactMatched = true
+			} else if cfg, hasPlatformDefault := platformDefaultModelRoutingConfigForAccount(ctx, settingService, account); hasPlatformDefault {
+				if compactModel, platformCompactMatched := resolveRequestedModelInMapping(cfg.CompactModelMapping, result.Model); platformCompactMatched {
+					if trimmed := strings.TrimSpace(compactModel); trimmed != "" {
+						result.Model = trimmed
+					}
+					result.Matched = true
+					result.CompactMatched = true
+					result.Source = "platform_default"
+				}
 			}
 		}
 		if result.Model == "" {
@@ -66,6 +77,7 @@ func ResolveEffectiveModelRouting(ctx context.Context, settingService *SettingSe
 					result.Model = trimmed
 				}
 				result.Matched = true
+				result.CompactMatched = true
 				result.Source = "platform_default"
 			}
 		}
@@ -84,6 +96,7 @@ func ResolveEffectiveModelRouting(ctx context.Context, settingService *SettingSe
 					result.Model = trimmed
 				}
 				result.Matched = true
+				result.CompactMatched = true
 				result.Source = "account"
 			}
 		}

@@ -194,11 +194,44 @@ func TestResolveOpenAIAccountUpstreamModelForRequest_UsesPlatformDefaultRoutingC
 	}, &config.Config{})
 	account := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
-	if got := resolveOpenAIAccountUpstreamModelForRequest(context.Background(), svc, account, "gpt-4o-mini", false); got != "gpt-5.4" {
+	if got := resolveOpenAIAccountUpstreamModelForRequest(context.Background(), svc, account, "gpt-4o-mini", false, "gpt-5.4-global"); got != "gpt-5.4" {
 		t.Fatalf("normal upstream model = %q, want %q", got, "gpt-5.4")
 	}
-	if got := resolveOpenAIAccountUpstreamModelForRequest(context.Background(), svc, account, "gpt-4o-mini", true); got != "gpt-5.4-mini" {
+	if got := resolveOpenAIAccountUpstreamModelForRequest(context.Background(), svc, account, "gpt-4o-mini", true, "gpt-5.4-global"); got != "gpt-5.4-mini" {
 		t.Fatalf("compact upstream model = %q, want %q", got, "gpt-5.4-mini")
+	}
+}
+
+func TestResolveOpenAIAccountUpstreamModelForRequest_UsesGlobalCompactFallback(t *testing.T) {
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"gpt-5.6-terra": "gpt-5.6-terra"},
+		},
+	}
+
+	got := resolveOpenAIAccountUpstreamModelForRequest(context.Background(), nil, account, "gpt-5.6-terra", true, "gpt-5.4")
+
+	if got != "gpt-5.4" {
+		t.Fatalf("compact upstream model = %q, want %q", got, "gpt-5.4")
+	}
+}
+
+func TestResolveOpenAIAccountUpstreamModelForRequest_AccountCompactMappingOverridesGlobal(t *testing.T) {
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"model_mapping":         map[string]any{"gpt-5.6-terra": "gpt-5.6-terra"},
+			"compact_model_mapping": map[string]any{"gpt-5.6-terra": "gpt-5.5-compact"},
+		},
+	}
+
+	got := resolveOpenAIAccountUpstreamModelForRequest(context.Background(), nil, account, "gpt-5.6-terra", true, "gpt-5.4")
+
+	if got != "gpt-5.5-compact" {
+		t.Fatalf("compact upstream model = %q, want %q", got, "gpt-5.5-compact")
 	}
 }
 
@@ -368,9 +401,9 @@ func TestResolveOpenAICompactUpstreamModel(t *testing.T) {
 
 func TestNormalizeCodexModel(t *testing.T) {
 	cases := map[string]string{
-		"gpt-5.6-sol":                "gpt-5.6-sol",
-		"gpt-5.6-terra":              "gpt-5.6-terra",
-		"gpt-5.6-luna":               "gpt-5.6-luna",
+		"gpt-5.6-sol":               "gpt-5.6-sol",
+		"gpt-5.6-terra":             "gpt-5.6-terra",
+		"gpt-5.6-luna":              "gpt-5.6-luna",
 		"gpt-5.3-codex-spark":       "gpt-5.3-codex-spark",
 		"gpt-5.3-codex-spark-high":  "gpt-5.3-codex-spark",
 		"gpt-5.3-codex-spark-xhigh": "gpt-5.3-codex-spark",

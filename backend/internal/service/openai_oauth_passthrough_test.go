@@ -740,7 +740,10 @@ func TestOpenAIGatewayService_OAuthPassthrough_CompactUsesJSONAndKeepsNonStreami
 	upstream := &httpUpstreamRecorder{resp: resp}
 
 	svc := &OpenAIGatewayService{
-		cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+		cfg: &config.Config{Gateway: config.GatewayConfig{
+			ForceCodexCLI:      false,
+			OpenAICompactModel: "gpt-5.4",
+		}},
 		httpUpstream: upstream,
 	}
 
@@ -2425,7 +2428,7 @@ func TestOpenAIGatewayService_APIKeyPassthrough_PreservesBodyAndUsesResponsesEnd
 	c.Request.Header.Set("X-Test", "keep")
 	c.Request.Header.Set("x-codex-beta-features", "remote_compaction_v2")
 
-	originalBody := []byte(`{"model":"gpt-5.2","stream":false,"service_tier":"flex","max_output_tokens":128,"input":[{"type":"text","text":"hi"}]}`)
+	originalBody := []byte(`{"model":"gpt-5.2","stream":false,"service_tier":"flex","max_output_tokens":128,"reasoning":{"mode":"pro"},"input":[{"type":"text","text":"hi"}]}`)
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid"}},
@@ -2461,6 +2464,8 @@ func TestOpenAIGatewayService_APIKeyPassthrough_PreservesBodyAndUsesResponsesEnd
 	require.False(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
 	require.Equal(t, "flex", gjson.GetBytes(upstream.lastBody, "service_tier").String())
 	require.Equal(t, int64(128), gjson.GetBytes(upstream.lastBody, "max_output_tokens").Int())
+	require.Equal(t, "pro", gjson.GetBytes(upstream.lastBody, "reasoning.mode").String())
+	require.False(t, gjson.GetBytes(upstream.lastBody, "reasoning.effort").Exists())
 	require.Equal(t, "hi", gjson.GetBytes(upstream.lastBody, "input.0.text").String())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "instructions").Exists())
 	require.Equal(t, "https://api.openai.com/v1/responses", upstream.lastReq.URL.String())
@@ -2468,6 +2473,126 @@ func TestOpenAIGatewayService_APIKeyPassthrough_PreservesBodyAndUsesResponsesEnd
 	require.Equal(t, "curl/8.0", upstream.lastReq.Header.Get("User-Agent"))
 	require.Equal(t, "remote_compaction_v2", upstream.lastReq.Header.Get("x-codex-beta-features"))
 	require.Empty(t, upstream.lastReq.Header.Get("X-Test"))
+}
+
+func TestOpenAIGatewayService_ContextCompactionFailoverKeepsCompactBodyAndInboundPath(t *testing.T) {
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Request.Header.Set("x-codex-beta-features", "remote_compaction_v2")
+	originalBody := []byte(`{"model":"gpt-5.6-terra","stream":true,"instructions":"compact safely","input":[{"type":"message","role":"user","content":"long context"}]}`)
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		{
+			StatusCode: http.StatusBadRequest,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"context_length_exceeded","message":"maximum context length exceeded"}}`)),
+		},
+		{
+			StatusCode: http.StatusTooManyRequests,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"code":"rate_limit_exceeded","message":"retry another account"}}`)),
+		},
+		{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}, "x-request-id": []string{"rid-compact-ok"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"id":"resp_compact","output":[{"type":"compaction","encrypted_content":"summary"}],"usage":{"input_tokens":2,"output_tokens":1}}`,
+			)),
+		},
+	}}
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{Gateway: config.GatewayConfig{
+			ForceCodexCLI:      false,
+			OpenAICompactModel: "gpt-5.4",
+		}},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          789,
+		Name:        "compact-account",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
+		Extra:       map[string]any{"openai_passthrough": true, "openai_compact_supported": true},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, "/v1/responses", c.Request.URL.Path)
+	require.Len(t, upstream.requests, 2)
+	require.Equal(t, "/backend-api/codex/responses", upstream.requests[0].URL.Path)
+	require.Equal(t, "/backend-api/codex/responses/compact", upstream.requests[1].URL.Path)
+	require.Equal(t, "gpt-5.4", gjson.GetBytes(upstream.bodies[1], "model").String())
+	require.Equal(t, "compaction_trigger", gjson.GetBytes(upstream.bodies[1], "input.1.type").String())
+
+	result, err = svc.Forward(context.Background(), c, account, originalBody)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "/v1/responses", c.Request.URL.Path)
+	require.Len(t, upstream.requests, 3)
+	require.Equal(t, "/backend-api/codex/responses/compact", upstream.requests[2].URL.Path)
+	require.Equal(t, "gpt-5.4", gjson.GetBytes(upstream.bodies[2], "model").String())
+	require.Equal(t, "compaction_trigger", gjson.GetBytes(upstream.bodies[2], "input.1.type").String())
+}
+
+func TestOpenAIGatewayService_ContextCompactionSecondOverflowStopsAndLogs(t *testing.T) {
+	setGinTestMode()
+	logSink, restore := captureStructuredLog(t)
+	defer restore()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Request.Header.Set("x-codex-beta-features", "remote_compaction_v2")
+	originalBody := []byte(`{"model":"gpt-5.6-terra","stream":true,"instructions":"compact safely","input":[{"type":"message","role":"user","content":"long context"}]}`)
+	contextOverflow := func(message string) *http.Response {
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"error":{"code":"context_length_exceeded","message":"` + message + `"}}`,
+			)),
+		}
+	}
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		contextOverflow("normal request overflow"),
+		contextOverflow("compact request overflow"),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{Gateway: config.GatewayConfig{
+			OpenAICompactModel: "gpt-5.4",
+		}},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          790,
+		Name:        "compact-account",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
+		Extra:       map[string]any{"openai_passthrough": true, "openai_compact_supported": true},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Len(t, upstream.requests, 2)
+	require.Equal(t, "/backend-api/codex/responses/compact", upstream.requests[1].URL.Path)
+	require.Equal(t, "gpt-5.4", gjson.GetBytes(upstream.bodies[1], "model").String())
+	require.True(t, logSink.ContainsMessage("openai.context_overflow_remote_compaction_failed"))
+	require.True(t, logSink.ContainsFieldValue("compact_model", "gpt-5.4"))
+	require.True(t, logSink.ContainsFieldValue("upstream_code", "context_length_exceeded"))
 }
 
 func TestOpenAIGatewayService_OAuthPassthrough_WarnOnTimeoutHeadersForStream(t *testing.T) {
