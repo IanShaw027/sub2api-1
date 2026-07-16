@@ -47,18 +47,49 @@ func FilterWebSearchHistoryBlocks(body []byte, mappedModel string) []byte {
 		}
 
 		blocks := content.Array()
-		kept := make([]string, 0, len(blocks))
-		stripped := false
-		for _, block := range blocks {
+		drop := make([]bool, len(blocks))
+		strippedResultToolUseIDs := make(map[string]struct{})
+		anyDrop := false
+		for i, block := range blocks {
 			if block.IsObject() && shouldStripWebSearchBlock(block, stripAll) {
-				stripped = true
+				drop[i] = true
+				anyDrop = true
+				if block.Get("type").String() == blockTypeWebSearchToolResult {
+					if id := block.Get("tool_use_id").String(); id != "" {
+						strippedResultToolUseIDs[id] = struct{}{}
+					}
+				}
+			}
+		}
+		// A stripped web_search_tool_result leaves its paired server_tool_use orphaned
+		// (a tool call with no result), which passback-required upstreams reject. Drop
+		// the matching server_tool_use even if its name/type wasn't independently
+		// recognized as web search.
+		if len(strippedResultToolUseIDs) > 0 {
+			for i, block := range blocks {
+				if drop[i] || !block.IsObject() {
+					continue
+				}
+				if block.Get("type").String() != blockTypeServerToolUse {
+					continue
+				}
+				if _, ok := strippedResultToolUseIDs[block.Get("id").String()]; ok {
+					drop[i] = true
+					anyDrop = true
+				}
+			}
+		}
+		if !anyDrop {
+			continue
+		}
+
+		kept := make([]string, 0, len(blocks))
+		for i, block := range blocks {
+			if drop[i] {
 				continue
 			}
 			// Preserve the block's raw bytes verbatim (objects and non-objects alike).
 			kept = append(kept, block.Raw)
-		}
-		if !stripped {
-			continue
 		}
 
 		var newContent string

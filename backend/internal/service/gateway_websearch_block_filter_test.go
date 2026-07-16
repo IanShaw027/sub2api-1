@@ -85,3 +85,16 @@ func TestFilterWebSearchHistoryBlocks_PassbackPreservesNonWebSearchServerToolUse
 	require.Contains(t, string(out), "srvtoolu_code_1")
 	require.NotContains(t, string(out), "srvtoolu_01ABCDEF")
 }
+
+func TestFilterWebSearchHistoryBlocks_PassbackStripsOrphanedWebSearchToolUse(t *testing.T) {
+	// The server_tool_use name is not recognized as web search, but its paired
+	// web_search_tool_result is stripped in passback mode, so the tool_use must be
+	// dropped too — otherwise it is left orphaned (a tool call with no result).
+	body := []byte(`{"messages":[{"role":"assistant","content":[` +
+		`{"type":"server_tool_use","id":"srvtoolu_01UNRECOG","name":"brave_search","input":{"query":"x"}},` +
+		`{"type":"web_search_tool_result","tool_use_id":"srvtoolu_01UNRECOG","content":[]},` +
+		`{"type":"text","text":"summary"}]}]}`)
+	out := FilterWebSearchHistoryBlocks(body, "glm-4.7")
+	require.Equal(t, []string{"text"}, webSearchContentTypes(out))
+	require.NotContains(t, string(out), "srvtoolu_01UNRECOG")
+}
