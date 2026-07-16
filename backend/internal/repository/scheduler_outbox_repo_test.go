@@ -19,7 +19,7 @@ func TestSchedulerOutboxRepositoryClaimPendingLeasesOldestAvailableEvent(t *test
 
 	repo := &schedulerOutboxRepository{db: db}
 	createdAt := time.Now().UTC().Truncate(time.Microsecond)
-	mock.ExpectQuery("WITH selected AS MATERIALIZED").
+	mock.ExpectQuery(`(?s)WITH selected AS MATERIALIZED.*dedup_key = NULL`).
 		WithArgs(int64(150), sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "event_type", "account_id", "group_id", "payload", "created_at", "claim_token",
@@ -109,7 +109,7 @@ func TestSchedulerOutboxRepositoryOldestPendingCreatedAt(t *testing.T) {
 
 	repo := &schedulerOutboxRepository{db: db}
 	createdAt := time.Now().UTC().Truncate(time.Microsecond)
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT MIN(created_at) FROM scheduler_outbox")).
+	mock.ExpectQuery("SELECT MIN\\(created_at\\) FROM scheduler_outbox").
 		WillReturnRows(sqlmock.NewRows([]string{"min"}).AddRow(createdAt))
 
 	got, ok, err := repo.OldestPendingCreatedAt(context.Background())
@@ -126,7 +126,7 @@ func TestSchedulerOutboxRepositoryOldestPendingCreatedAtReturnsNotFound(t *testi
 	defer func() { _ = db.Close() }()
 
 	repo := &schedulerOutboxRepository{db: db}
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT MIN(created_at) FROM scheduler_outbox")).
+	mock.ExpectQuery("SELECT MIN\\(created_at\\) FROM scheduler_outbox").
 		WillReturnRows(sqlmock.NewRows([]string{"min"}).AddRow(nil))
 
 	got, ok, err := repo.OldestPendingCreatedAt(context.Background())
@@ -134,6 +134,21 @@ func TestSchedulerOutboxRepositoryOldestPendingCreatedAtReturnsNotFound(t *testi
 	require.NoError(t, err)
 	require.False(t, ok)
 	require.True(t, got.IsZero())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSchedulerOutboxRepositoryPendingCountIgnoresInFlightClaims(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	repo := &schedulerOutboxRepository{db: db}
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM scheduler_outbox").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(2)))
+
+	got, err := repo.PendingCount(context.Background())
+	require.NoError(t, err)
+	require.EqualValues(t, 2, got)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

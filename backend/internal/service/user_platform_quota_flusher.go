@@ -21,7 +21,7 @@ type quotaDirtyCache interface {
 // 使用 service 层的 UserPlatformQuotaSnapshot，避免与 repository 包形成循环依赖；
 // 实际实现由 repository adapter 在 B7 注入。
 type quotaSnapshotWriter interface {
-	BatchSnapshotUsage(ctx context.Context, snapshots []UserPlatformQuotaSnapshot, now time.Time) error
+	BatchSnapshotUsage(ctx context.Context, snapshots []UserPlatformQuotaSnapshot, snapshotFence time.Time) error
 }
 
 // FlusherMetrics 记录 flusher 运行时指标（原子量，零值可用）。
@@ -137,7 +137,10 @@ func (s *UserPlatformQuotaUsageFlusher) flushOneBatch(parentCtx context.Context)
 		return false
 	}
 
-	// 2. 批量读 Redis 快照
+	// 2. 批量读 Redis 快照。时间栅栏必须在读取前取得：若 admin 在 Redis
+	// 快照被读出后更新 DB，其 updated_at 必然晚于该栅栏，repository 的条件
+	// UPSERT 会拒绝用这份旧快照覆盖 admin 写入。
+	snapshotFence := time.Now().UTC()
 	entries, err := s.cache.BatchGetUserPlatformQuotaCache(ctx, keys)
 	if err != nil {
 		s.metrics.FlushErrorTotal.Add(1)
@@ -178,20 +181,13 @@ func (s *UserPlatformQuotaUsageFlusher) flushOneBatch(parentCtx context.Context)
 		return true
 	}
 
-	// 已知竞态(admin 写 × flusher 刷,仅 flusher_enabled=true 时存在):
-	// admin ResetExpiredWindow/UpsertForUser 是"先写 DB 再 DeleteCache"。若本批已 SPOP + BatchGet
-	// 读到旧 usage 快照(此刻 member 已离开脏集),而 admin 随后写 DB、本行 UPSERT 又在 admin 写之后落库,
-	// 则旧快照会覆盖 admin 刚写入的值;DeleteCache 后 Redis MISS,下次 preflight 从 DB 重载被覆盖的旧值。
-	// 因 member 已被 SPOP,admin 侧 SREM/清脏标记无法拦截本批(故未做)。影响有限,暂列为已知取舍:
-	//   - UpsertForUser 改 limit,而本 UPSERT 不写 limit 列 → limit 配置不受影响;
-	//   - ResetExpiredWindow 改 usage,但 preflight windowExpired 会在窗口真正过期时自愈重置,
-	//     仅"强制重置未过期窗口"且与本批精确交错时短暂失效;
-	//   - 低频 admin 操作 + 默认 flusher_enabled=false。彻底消除需 version OCC(DB 加 version 列条件 UPSERT),
-	//     成本高;启用 flusher 后如需强一致再评估。
+	// Admin 写 × flusher 竞态保护：BatchSnapshotUsage 仅覆盖 updated_at
+	// 严格早于 snapshotFence 的行。栅栏取自 Redis BatchGet 之前，不能使用
+	// 写库时的 time.Now，否则读取后发生的 admin 更新仍会被更晚的 flusher 时间覆盖。
 
 	// 5. 写入 DB
 	start := time.Now()
-	writeErr := s.quotaRepo.BatchSnapshotUsage(ctx, snaps, time.Now().UTC())
+	writeErr := s.quotaRepo.BatchSnapshotUsage(ctx, snaps, snapshotFence)
 	s.updateLatencyMax(time.Since(start).Milliseconds())
 
 	if writeErr != nil {

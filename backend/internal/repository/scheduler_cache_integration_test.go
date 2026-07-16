@@ -90,7 +90,7 @@ func TestSchedulerCacheSetSnapshotLosingCASDoesNotPolluteSharedAccountCache(t *t
 	got, err := cache.GetAccount(ctx, account.ID)
 	require.NoError(t, err)
 	require.NotNil(t, got)
-	require.Equal(t, "current-key", got.GetCredential("api_key"))
+	require.Empty(t, got.GetCredential("api_key"), "scheduler cache must not retain plaintext api_key")
 
 	version, err := rdb.Get(ctx, activeKey).Result()
 	require.NoError(t, err)
@@ -201,12 +201,12 @@ func TestSchedulerCacheSetSnapshotChunkCASWindowDoesNotOverwriteNewerSharedAccou
 	first, err := cache.GetAccount(ctx, staleAccounts[0].ID)
 	require.NoError(t, err)
 	require.NotNil(t, first)
-	require.Equal(t, "current-first-key", first.GetCredential("api_key"))
+	require.Empty(t, first.GetCredential("api_key"), "scheduler cache must not retain plaintext api_key")
 
 	second, err := cache.GetAccount(ctx, staleAccounts[1].ID)
 	require.NoError(t, err)
 	require.NotNil(t, second)
-	require.Equal(t, "current-second-key", second.GetCredential("api_key"))
+	require.Empty(t, second.GetCredential("api_key"), "scheduler cache must not retain plaintext api_key")
 }
 
 func TestSchedulerCacheGetSnapshotReflectsUpdateLastUsedHotPath(t *testing.T) {
@@ -323,7 +323,7 @@ func TestSchedulerCacheUpdateLastUsedUsesOverlayWithoutRewritingAccountState(t *
 	require.NotNil(t, got)
 	require.Equal(t, service.StatusDisabled, got.Status)
 	require.False(t, got.Schedulable)
-	require.Equal(t, "changed-key", got.GetCredential("api_key"))
+	require.Empty(t, got.GetCredential("api_key"), "scheduler cache must not retain plaintext api_key")
 	require.NotNil(t, got.LastUsedAt)
 	require.Equal(t, usedAt.UnixNano(), got.LastUsedAt.UnixNano())
 }
@@ -444,7 +444,7 @@ func TestSchedulerCacheSnapshotUsesSlimMetadataButKeepsFullAccount(t *testing.T)
 
 	got := snapshot[0]
 	require.NotNil(t, got)
-	require.Equal(t, "gemini-api-key", got.GetCredential("api_key"))
+	require.Empty(t, got.GetCredential("api_key"), "scheduler cache must not retain plaintext api_key")
 	require.Equal(t, "proj-1", got.GetCredential("project_id"))
 	require.Equal(t, "ai_studio", got.GetCredential("oauth_type"))
 	require.NotEmpty(t, got.GetModelMapping())

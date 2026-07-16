@@ -197,21 +197,47 @@ func (s *SchedulerSnapshotService) GetAccount(ctx context.Context, accountID int
 	if accountID <= 0 {
 		return nil, nil
 	}
+	var cached *Account
 	if s.cache != nil {
 		account, err := s.cache.GetAccount(ctx, accountID)
 		if err != nil {
 			logger.LegacyPrintf("service.scheduler_snapshot", "[Scheduler] account cache read failed: id=%d err=%v", accountID, err)
 		} else if account != nil {
-			return account, nil
+			cached = account
+			// Tests and deliberately cache-only embeddings may not wire a
+			// repository. Production always hydrates credential material from DB.
+			if s.accountRepo == nil {
+				return account, nil
+			}
 		}
 	}
 
+	if s.accountRepo == nil {
+		return cached, nil
+	}
+	if cached != nil {
+		// Credential hydration is the normal cache-hit path now, not a scheduler
+		// DB fallback. Do not consume the fallback QPS budget or cached scheduler
+		// hits would be throttled under ordinary traffic.
+		account, err := s.accountRepo.GetByID(ctx, accountID)
+		if err != nil || account == nil {
+			return account, err
+		}
+		if cached.LastUsedAt != nil {
+			applyAccountLastUsedIfNewer(account, *cached.LastUsedAt)
+		}
+		return account, nil
+	}
 	if err := s.guardFallback(ctx); err != nil {
 		return nil, err
 	}
 	fallbackCtx, cancel := s.withFallbackTimeout(ctx)
 	defer cancel()
-	return s.accountRepo.GetByID(fallbackCtx, accountID)
+	account, err := s.accountRepo.GetByID(fallbackCtx, accountID)
+	if err != nil || account == nil {
+		return account, err
+	}
+	return account, nil
 }
 
 // GetGroupByID 获取分组信息（供调度器使用）

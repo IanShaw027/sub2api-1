@@ -25,6 +25,10 @@ type mockQuotaDirtyCache struct {
 	// readdCalled: 记录 Readd 收到的 keys（累积所有次调用）
 	readdCalled [][]UserPlatformQuotaKey
 	readdErr    error
+
+	// snapshotRead/snapshotRelease 用于稳定编排“Redis 快照已读取、尚未返回 flusher”的竞态。
+	snapshotRead    chan struct{}
+	snapshotRelease chan struct{}
 }
 
 func (m *mockQuotaDirtyCache) PopDirtyUserPlatformQuotaKeys(_ context.Context, _ int) ([]UserPlatformQuotaKey, error) {
@@ -46,6 +50,12 @@ func (m *mockQuotaDirtyCache) BatchGetUserPlatformQuotaCache(_ context.Context, 
 	if m.getErr != nil {
 		return nil, m.getErr
 	}
+	if m.snapshotRead != nil {
+		close(m.snapshotRead)
+	}
+	if m.snapshotRelease != nil {
+		<-m.snapshotRelease
+	}
 	return m.getEntries, nil
 }
 
@@ -55,11 +65,13 @@ func (m *mockQuotaDirtyCache) BatchGetUserPlatformQuotaCache(_ context.Context, 
 
 type mockQuotaSnapshotWriter struct {
 	receivedSnaps []UserPlatformQuotaSnapshot
+	receivedFence time.Time
 	returnErr     error
 }
 
-func (m *mockQuotaSnapshotWriter) BatchSnapshotUsage(_ context.Context, snaps []UserPlatformQuotaSnapshot, _ time.Time) error {
+func (m *mockQuotaSnapshotWriter) BatchSnapshotUsage(_ context.Context, snaps []UserPlatformQuotaSnapshot, snapshotFence time.Time) error {
 	m.receivedSnaps = append(m.receivedSnaps, snaps...)
+	m.receivedFence = snapshotFence
 	return m.returnErr
 }
 
@@ -129,6 +141,49 @@ func TestFlusher_PopSnapshotUpsert(t *testing.T) {
 	}
 	if f.metrics.FlushErrorTotal.Load() != 0 {
 		t.Errorf("FlushErrorTotal = %d, want 0", f.metrics.FlushErrorTotal.Load())
+	}
+}
+
+func TestFlusher_SnapshotFencePrecedesRedisReadAndAdminUpdate(t *testing.T) {
+	keys := []UserPlatformQuotaKey{{UserID: 1, Platform: "anthropic"}}
+	snapshotRead := make(chan struct{})
+	snapshotRelease := make(chan struct{})
+	cache := &mockQuotaDirtyCache{
+		popSequence:     [][]UserPlatformQuotaKey{keys},
+		getEntries:      []*UserPlatformQuotaCacheEntry{makeEntry(1, 2, 3)},
+		snapshotRead:    snapshotRead,
+		snapshotRelease: snapshotRelease,
+	}
+	writer := &mockQuotaSnapshotWriter{}
+	f := newTestFlusher(cache, writer)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f.flush()
+	}()
+
+	select {
+	case <-snapshotRead:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for Redis snapshot read")
+	}
+
+	// 模拟 Redis 快照已经取到后，admin 更新 DB 的 updated_at。
+	adminUpdatedAt := time.Now().UTC()
+	close(snapshotRelease)
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for flusher")
+	}
+
+	if writer.receivedFence.IsZero() {
+		t.Fatal("writer did not receive a snapshot fence")
+	}
+	if !writer.receivedFence.Before(adminUpdatedAt) {
+		t.Fatalf("snapshot fence %s must precede admin update %s", writer.receivedFence, adminUpdatedAt)
 	}
 }
 

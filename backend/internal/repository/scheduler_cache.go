@@ -700,14 +700,14 @@ func (c *schedulerCache) writeAccountsIfActiveVersion(ctx context.Context, activ
 }
 
 func marshalSchedulerCacheAccount(account service.Account) ([]byte, []byte, error) {
-	fullPayload, err := json.Marshal(account)
-	if err != nil {
-		return nil, nil, fmt.Errorf("marshal account: %w", err)
-	}
-	metaPayload, err := json.Marshal(buildSchedulerMetadataAccount(account))
+	// Redis contains scheduler identity/routing metadata only. Forwarding paths
+	// hydrate the selected account from the repository before using credentials.
+	safeAccount := buildSchedulerMetadataAccount(account)
+	metaPayload, err := json.Marshal(safeAccount)
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal account metadata: %w", err)
 	}
+	fullPayload := append([]byte(nil), metaPayload...)
 	return fullPayload, metaPayload, nil
 }
 
@@ -849,7 +849,9 @@ func filterSchedulerCredentials(credentials map[string]any) map[string]any {
 		// 影子账号的紧凑模型路由，见 service.sparkShadowAllowedCredentialKeys）。
 		// 调度器缓存视图必须保留它，否则影子账号在调度侧丢失紧凑路由映射。
 		"compact_model_mapping",
-		"api_key",
+		// Never cache raw api_key / secrets in the scheduler Redis snapshot.
+		// Hot-path selection uses account id + non-secret routing metadata only;
+		// credential material is loaded from DB when a request is actually forwarded.
 		"project_id",
 		"oauth_type",
 		"tier_id",

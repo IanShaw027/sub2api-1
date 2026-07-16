@@ -8,6 +8,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	dbaccount "github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -19,12 +20,13 @@ import (
 // sqlQuerier 已替换为 sqlExecutor（定义在 group_repo.go），
 // proxyRepository 使用同一接口以支持 ExecContext。
 type proxyRepository struct {
-	client *dbent.Client
-	sql    sqlExecutor
+	client         *dbent.Client
+	sql            sqlExecutor
+	schedulerCache service.SchedulerCache
 }
 
-func NewProxyRepository(client *dbent.Client, sqlDB *sql.DB) service.ProxyRepository {
-	return newProxyRepositoryWithSQL(client, sqlDB)
+func NewProxyRepository(client *dbent.Client, sqlDB *sql.DB, schedulerCache service.SchedulerCache) service.ProxyRepository {
+	return &proxyRepository{client: client, sql: sqlDB, schedulerCache: schedulerCache}
 }
 
 func newProxyRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor) *proxyRepository {
@@ -546,7 +548,29 @@ func (r *proxyRepository) SweepExpiredProxies(ctx context.Context, now time.Time
 			return 0, err
 		}
 	}
+	// The outbox remains the multi-replica durability mechanism, but refresh the
+	// local/shared account snapshots immediately after commit so requests do not
+	// continue observing the expired proxy while waiting for the outbox poller.
+	r.syncSchedulerAccountSnapshots(ctx, changedAccountIDs)
 	return totalChanged, nil
+}
+
+func (r *proxyRepository) syncSchedulerAccountSnapshots(ctx context.Context, accountIDs []int64) {
+	if r == nil || r.client == nil || r.schedulerCache == nil || len(accountIDs) == 0 {
+		return
+	}
+	accounts, err := r.client.Account.Query().
+		Where(dbaccount.IDIn(accountIDs...)).
+		All(ctx)
+	if err != nil {
+		logger.LegacyPrintf("repository.proxy", "[ProxyExpiry] scheduler snapshot read failed: count=%d err=%v", len(accountIDs), err)
+		return
+	}
+	for _, account := range accounts {
+		if err := r.schedulerCache.SetAccount(ctx, accountEntityToService(account)); err != nil {
+			logger.LegacyPrintf("repository.proxy", "[ProxyExpiry] scheduler snapshot write failed: account=%d err=%v", account.ID, err)
+		}
+	}
 }
 
 func sortedUniqueAccountIDs(accountIDs []int64) []int64 {

@@ -72,9 +72,10 @@ type UserPlatformQuotaRepository interface {
 	// UpsertForUser 全量替换该用户所有平台限额配置（详见 service.UserPlatformQuotaRepository.UpsertForUser）。
 	UpsertForUser(ctx context.Context, userID int64, records []UserPlatformQuotaRecord) error
 	// BatchSnapshotUsage 用一条多行 UPSERT 把整批 usage 以绝对值覆盖写入(非累加)。
-	// usage/window_start 直接取 EXCLUDED(Redis 当前窗口快照),无 CASE。整批共用 now 作 created/updated_at。
+	// usage/window_start 直接取 EXCLUDED(Redis 当前窗口快照),无 CASE。snapshotFence
+	// 必须在 Redis 快照读取前/读取时取得，并共用于 created/updated_at 与条件更新。
 	// 要求 snapshots 内 (user,platform) 不重复。FK 违反返回 ErrUserPlatformQuotaFKViolation。
-	BatchSnapshotUsage(ctx context.Context, snapshots []UserPlatformQuotaSnapshot, now time.Time) error
+	BatchSnapshotUsage(ctx context.Context, snapshots []UserPlatformQuotaSnapshot, snapshotFence time.Time) error
 	// BatchIncrementUsageWithReset 用一条多行 UPSERT 把整批“当前窗口增量”追加到 DB。
 	// 语义需与逐条 IncrementUsageWithReset 保持一致：日/周按窗口起点 reset-or-add，
 	// 月窗按 30 天滚动 reset-or-add。要求 deltas 内 (user,platform) 不重复。
@@ -573,15 +574,16 @@ func (r *userPlatformQuotaRepository) BatchIncrementUsageWithReset(ctx context.C
 const batchRows = 6000
 
 // BatchSnapshotUsage 用一条多行 UPSERT 把整批 usage 以绝对值覆盖写入（非累加）。
-// 每批最多 batchRows 行；$1=now 共用；每行 8 个 per-row 参（user_id, platform, 3×usage, 3×window_start）。
+// 每批最多 batchRows 行；$1=snapshotFence 共用；每行 8 个 per-row 参
+// （user_id, platform, 3×usage, 3×window_start）。
 // FK 违反（user_id 不存在）返回 ErrUserPlatformQuotaFKViolation。
 //
 // 注意:snapshots 超过 batchRows 会分多条 SQL 执行且【非单事务】——若某子批 FK 失败,
 // 先前子批已写入无法回滚。调用方(flusher)应保证单次 batchSize ≤ batchRows
 // (默认 flush_batch_size=1000 < 6000,安全)。
-// 另注:启用 flusher 后,本绝对值覆盖与 admin 直写 DB(ResetExpiredWindow/UpsertForUser)存在覆盖竞态,
-// 详见 service/user_platform_quota_flusher.go 中 flushOneBatch 的"已知竞态"注释。
-func (r *userPlatformQuotaRepository) BatchSnapshotUsage(ctx context.Context, snapshots []UserPlatformQuotaSnapshot, now time.Time) error {
+// Admin 直写 DB(ResetExpiredWindow/UpsertForUser)与 flusher 的覆盖顺序由
+// snapshotFence 条件保护，详见 service/user_platform_quota_flusher.go。
+func (r *userPlatformQuotaRepository) BatchSnapshotUsage(ctx context.Context, snapshots []UserPlatformQuotaSnapshot, snapshotFence time.Time) error {
 	if len(snapshots) == 0 {
 		return nil
 	}
@@ -602,8 +604,8 @@ func (r *userPlatformQuotaRepository) BatchSnapshotUsage(ctx context.Context, sn
 				" daily_window_start, weekly_window_start, monthly_window_start, created_at, updated_at)" +
 				" VALUES ")
 
-		// $1 = now（共用）；每行 8 个 per-row 参，从 $2 起连续编号。
-		args := []any{now}
+		// $1 = snapshotFence（共用）；每行 8 个 per-row 参，从 $2 起连续编号。
+		args := []any{snapshotFence}
 		for i, s := range batch {
 			if i > 0 {
 				_, _ = sb.WriteString(",")
@@ -618,6 +620,10 @@ func (r *userPlatformQuotaRepository) BatchSnapshotUsage(ctx context.Context, sn
 			)
 		}
 
+		// OCC guard without a DB version column: snapshotFence is captured before
+		// Redis BatchGet, so any admin Reset/Upsert after the snapshot read has an
+		// updated_at >= the fence and wins. Strict '<' also fails closed when DB
+		// timestamp precision collapses two operations onto the same instant.
 		_, _ = sb.WriteString(
 			" ON CONFLICT (user_id, platform) WHERE deleted_at IS NULL DO UPDATE SET" +
 				"  daily_usage_usd      = EXCLUDED.daily_usage_usd," +
@@ -626,7 +632,8 @@ func (r *userPlatformQuotaRepository) BatchSnapshotUsage(ctx context.Context, sn
 				"  daily_window_start   = EXCLUDED.daily_window_start," +
 				"  weekly_window_start  = EXCLUDED.weekly_window_start," +
 				"  monthly_window_start = EXCLUDED.monthly_window_start," +
-				"  updated_at           = EXCLUDED.updated_at")
+				"  updated_at           = EXCLUDED.updated_at" +
+				" WHERE user_platform_quotas.updated_at < EXCLUDED.updated_at")
 
 		if _, err := client.ExecContext(ctx, sb.String(), args...); err != nil {
 			var pqErr *pq.Error

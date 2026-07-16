@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 
@@ -852,11 +853,17 @@ func ProvideAPIKeyService(
 	cfg *config.Config,
 	billingCacheService *BillingCacheService,
 	concurrencyService *ConcurrencyService,
-) *APIKeyService {
+	encryptor SecretEncryptor,
+) (*APIKeyService, error) {
 	svc := NewAPIKeyService(apiKeyRepo, userRepo, groupRepo, userSubRepo, userGroupRateRepo, cache, cfg)
+	stableEncryption := cfg != nil && cfg.Totp.EncryptionKeyConfigured
+	svc.WithAPIKeySecretProtection(encryptor, stableEncryption)
+	if err := svc.MigrateAPIKeySecrets(context.Background()); err != nil {
+		return nil, fmt.Errorf("migrate api key secrets: %w", err)
+	}
 	svc.SetRateLimitCacheInvalidator(billingCacheService)
 	svc.concurrencyService = concurrencyService
-	return svc
+	return svc, nil
 }
 
 func ProvideGatewayService(
@@ -1081,8 +1088,12 @@ func ProvideUserPlatformQuotaUsageFlusher(cfg *config.Config, cache BillingCache
 
 // ProvidePaymentConfigService wraps NewPaymentConfigService to accept the named
 // payment.EncryptionKey type instead of raw []byte, avoiding Wire ambiguity.
-func ProvidePaymentConfigService(entClient *dbent.Client, settingRepo SettingRepository, key payment.EncryptionKey) *PaymentConfigService {
-	return NewPaymentConfigService(entClient, settingRepo, []byte(key))
+func ProvidePaymentConfigService(entClient *dbent.Client, settingRepo SettingRepository, key payment.EncryptionKey) (*PaymentConfigService, error) {
+	svc := NewPaymentConfigService(entClient, settingRepo, []byte(key))
+	if err := svc.MigrateProviderConfigEncryption(context.Background()); err != nil {
+		return nil, fmt.Errorf("migrate payment provider config encryption: %w", err)
+	}
+	return svc, nil
 }
 
 // ProvideUserService wires the optional media service parameter explicitly so

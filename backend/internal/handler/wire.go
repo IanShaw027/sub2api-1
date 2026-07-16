@@ -252,13 +252,22 @@ func ProvideAdminAccountHandler(
 	)
 }
 
+func ProvideAPIKeyHandler(
+	apiKeyService *service.APIKeyService,
+	userService *service.UserService,
+	totpService *service.TotpService,
+	settingService *service.SettingService,
+) *APIKeyHandler {
+	return NewAPIKeyHandler(apiKeyService).WithRevealStepUp(userService, totpService, settingService)
+}
+
 // ProviderSet is the Wire provider set for all handlers
 var ProviderSet = wire.NewSet(
 	// Top-level handlers
 	ProvideAuthHandler,
 	NewAIHandler,
 	NewUserHandler,
-	NewAPIKeyHandler,
+	ProvideAPIKeyHandler,
 	NewUsageHandler,
 	NewRedeemHandler,
 	NewSubscriptionHandler,

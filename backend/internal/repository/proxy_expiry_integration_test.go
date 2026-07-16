@@ -106,6 +106,24 @@ func (s *ProxyExpirySuite) TestSweep_EnqueuesChangedAccountIDsWithoutFullRebuild
 	s.Require().Zero(fullRebuildCount)
 }
 
+func (s *ProxyExpirySuite) TestSweep_HotSyncsChangedAccountSnapshotAfterReroute() {
+	past := time.Now().Add(-time.Hour)
+	future := time.Now().Add(time.Hour)
+	backupProxyID := s.mkProxy("p-hot-sync-backup", service.FallbackModeDirect, &future, nil)
+	expiredProxyID := s.mkProxy("p-hot-sync-expired", service.FallbackModeProxy, &past, &backupProxyID)
+	accountID := s.mkAccountWithProxy(expiredProxyID)
+	cache := &schedulerCacheRecorder{}
+	s.repo.schedulerCache = cache
+
+	changed, err := s.repo.SweepExpiredProxies(s.ctx, time.Now())
+	s.Require().NoError(err)
+	s.Require().EqualValues(1, changed)
+	s.Require().Len(cache.setAccounts, 1)
+	s.Require().Equal(accountID, cache.setAccounts[0].ID)
+	s.Require().NotNil(cache.setAccounts[0].ProxyID)
+	s.Require().Equal(backupProxyID, *cache.setAccounts[0].ProxyID)
+}
+
 func (s *ProxyExpirySuite) TestSweep_ProxyMode_Healthy() {
 	future := time.Now().Add(24 * time.Hour)
 	past := time.Now().Add(-time.Hour)

@@ -10,6 +10,59 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 )
 
+type schedulerCredentialHydrationRepo struct {
+	AccountRepository
+	account *Account
+	calls   int
+}
+
+func (r *schedulerCredentialHydrationRepo) GetByID(_ context.Context, id int64) (*Account, error) {
+	r.calls++
+	if r.account == nil || r.account.ID != id {
+		return nil, ErrAccountNotFound
+	}
+	cloned := *r.account
+	return &cloned, nil
+}
+
+func TestSchedulerSnapshotGetAccountHydratesCredentialsFromRepository(t *testing.T) {
+	lastUsed := time.Now().UTC()
+	cache := &snapshotHydrationCache{accounts: map[int64]*Account{
+		42: {
+			ID:          42,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			LastUsedAt:  &lastUsed,
+			Credentials: map[string]any{"model_mapping": map[string]any{"gpt-4": "gpt-4"}},
+		},
+	}}
+	repo := &schedulerCredentialHydrationRepo{account: &Account{
+		ID:          42,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{"api_key": "sk-db"},
+	}}
+	svc := NewSchedulerSnapshotService(cache, nil, repo, nil, nil)
+
+	account, err := svc.GetAccount(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("GetAccount error: %v", err)
+	}
+	if repo.calls != 1 {
+		t.Fatalf("repository calls = %d, want 1", repo.calls)
+	}
+	if got := account.GetCredential("api_key"); got != "sk-db" {
+		t.Fatalf("api key = %q, want repository credential", got)
+	}
+	if account.LastUsedAt == nil || account.LastUsedAt.UnixNano() != lastUsed.UnixNano() {
+		t.Fatalf("cached last_used_at was not overlaid: %#v", account.LastUsedAt)
+	}
+}
+
 func TestOpenAISelectAccountWithLoadAwareness_HydratesSelectedAccountFromSchedulerSnapshot(t *testing.T) {
 	cache := &snapshotHydrationCache{
 		snapshot: []*Account{

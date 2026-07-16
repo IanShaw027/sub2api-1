@@ -44,6 +44,9 @@ func (r *schedulerOutboxRepository) ClaimPending(ctx context.Context, leaseDurat
 			UPDATE scheduler_outbox AS o
 			SET claimed_at = NOW(),
 				claim_token = $2,
+				-- Release the producer dedup slot as soon as processing begins.
+				-- A same-key mutation after the worker's DB read must enqueue a
+				-- follow-up event instead of being swallowed by the in-flight row.
 				dedup_key = NULL
 			FROM selected AS s
 			WHERE o.id = s.id
@@ -105,9 +108,14 @@ func (r *schedulerOutboxRepository) ReleaseClaim(ctx context.Context, eventID in
 }
 
 func (r *schedulerOutboxRepository) OldestPendingCreatedAt(ctx context.Context) (time.Time, bool, error) {
+	// Only claimable rows count toward lag: unclaimed, or lease expired.
+	// In-flight claims must not inflate lag and trigger full rebuilds.
+	// 150s matches outboxClaimLease (outboxEventTimeout 2m + 30s) in scheduler_snapshot_service.
 	var createdAt sql.NullTime
 	err := r.db.QueryRowContext(ctx, `
 		SELECT MIN(created_at) FROM scheduler_outbox
+		WHERE claimed_at IS NULL
+			OR claimed_at < NOW() - INTERVAL '150 seconds'
 	`).Scan(&createdAt)
 	if err != nil {
 		return time.Time{}, false, err
@@ -120,7 +128,11 @@ func (r *schedulerOutboxRepository) OldestPendingCreatedAt(ctx context.Context) 
 
 func (r *schedulerOutboxRepository) PendingCount(ctx context.Context) (int64, error) {
 	var count int64
-	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM scheduler_outbox").Scan(&count); err != nil {
+	if err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM scheduler_outbox
+		WHERE claimed_at IS NULL
+			OR claimed_at < NOW() - INTERVAL '150 seconds'
+	`).Scan(&count); err != nil {
 		return 0, err
 	}
 	return count, nil
