@@ -147,6 +147,9 @@ const DataTableStub = {
     <div>
       <div data-test="columns">{{ columns.map((col) => col.key).join(',') }}</div>
       <div data-test="rows">{{ data.map((row) => row.name).join(',') }}</div>
+      <div v-for="row in data" :key="row.id" :data-test="'billing-' + row.id">
+        <slot name="cell-billing_type" :row="row" />
+      </div>
     </div>
   `,
 }
@@ -327,5 +330,30 @@ describe('admin GroupsView column settings', () => {
     await clickColumnToggle(wrapper, 'Capacity')
     expect(getUsageSummary).toHaveBeenCalledTimes(1)
     expect(getCapacitySummary).toHaveBeenCalledTimes(1)
+  })
+
+  it('loads usage for the billing column and highlights an 80% daily quota', async () => {
+    listGroups.mockResolvedValueOnce({
+      items: [createGroup({
+        subscription_type: 'subscription',
+        daily_limit_usd: 10,
+      })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+    getUsageSummary.mockResolvedValueOnce([
+      { group_id: 1, today_cost: 8, total_cost: 25 },
+    ])
+
+    const wrapper = await mountView()
+    await flushPromises()
+
+    expect(getUsageSummary).toHaveBeenCalledTimes(1)
+    const billing = wrapper.get('[data-test="billing-1"]')
+    expect(billing.text()).toContain('$8.00 / $10.00')
+    expect(billing.text()).toContain('$25.00')
+    expect(billing.find('.text-amber-600').exists()).toBe(true)
   })
 })

@@ -190,63 +190,19 @@ describe('admin AccountsView — 外审 F2:spark 影子创建接线', () => {
     wrapper.unmount()
   })
 
-  it('顶部工具区的批量开启 Kiro 超额会先确认再调用 enableAllKiroOverage API', async () => {
+  it('顶部工具区和更多操作都隐藏批量开启 Kiro 超额入口', async () => {
     const wrapper = mountView()
     await flushPromises()
 
-    const enableAllButton = wrapper.findAll('button').find(candidate => candidate.text().includes('admin.accounts.kiro.enableAllOverageAction'))
-    expect(enableAllButton).toBeTruthy()
-    await enableAllButton!.trigger('click')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.enableAllOverageAction')
+
+    const moreButton = wrapper.findAll('button').find(candidate => candidate.text().includes('admin.accounts.moreActions'))
+    expect(moreButton).toBeTruthy()
+    await moreButton!.trigger('click')
     await flushPromises()
 
-    const dialog = wrapper.findAllComponents(ConfirmDialog).find(d => d.props('show'))
-    expect(dialog).toBeTruthy()
-    dialog?.vm.$emit('confirm')
-    await flushPromises()
-
-    expect(enableAllKiroOverage).toHaveBeenCalledTimes(1)
-    expect(showSuccess).toHaveBeenCalledWith('admin.accounts.kiro.enableAllOverageSuccess')
-    wrapper.unmount()
-  })
-
-  it('批量开启 Kiro 超额部分失败时展示失败摘要而不是成功', async () => {
-    enableAllKiroOverage.mockResolvedValueOnce({
-      enabled_count: 2,
-      results: [
-        { id: 1, status: 'enabled' },
-        { id: 2, status: 'set_error', error: 'upstream rejected' }
-      ]
-    })
-    const wrapper = mountView()
-    await flushPromises()
-
-    const enableAllButton = wrapper.findAll('button').find(candidate => candidate.text().includes('admin.accounts.kiro.enableAllOverageAction'))
-    await enableAllButton!.trigger('click')
-    await flushPromises()
-    wrapper.findAllComponents(ConfirmDialog).find(d => d.props('show'))?.vm.$emit('confirm')
-    await flushPromises()
-
-    expect(showError).toHaveBeenCalledWith('admin.accounts.kiro.enableAllOveragePartial')
-    expect(showSuccess).not.toHaveBeenCalledWith('admin.accounts.kiro.enableAllOverageSuccess')
-    wrapper.unmount()
-  })
-
-  it('批量开启 Kiro 超额全部失败时展示失败摘要', async () => {
-    enableAllKiroOverage.mockResolvedValueOnce({
-      enabled_count: 0,
-      results: [{ id: 1, status: 'usage_error', error: 'usage unavailable' }]
-    })
-    const wrapper = mountView()
-    await flushPromises()
-
-    const enableAllButton = wrapper.findAll('button').find(candidate => candidate.text().includes('admin.accounts.kiro.enableAllOverageAction'))
-    await enableAllButton!.trigger('click')
-    await flushPromises()
-    wrapper.findAllComponents(ConfirmDialog).find(d => d.props('show'))?.vm.$emit('confirm')
-    await flushPromises()
-
-    expect(showError).toHaveBeenCalledWith('admin.accounts.kiro.enableAllOverageResultFailed')
-    expect(showSuccess).not.toHaveBeenCalledWith('admin.accounts.kiro.enableAllOverageSuccess')
+    expect(wrapper.text()).not.toContain('admin.accounts.kiro.enableAllOverageAction')
+    expect(enableAllKiroOverage).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })
