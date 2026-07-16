@@ -7,6 +7,7 @@ import KeysView from '../KeysView.vue'
 
 const {
   listKeys,
+  revealKey,
   getPublicSettings,
   getDashboardApiKeysUsage,
   getAvailableGroups,
@@ -18,6 +19,7 @@ const {
   nextStep,
 } = vi.hoisted(() => ({
   listKeys: vi.fn(),
+  revealKey: vi.fn(),
   getPublicSettings: vi.fn(),
   getDashboardApiKeysUsage: vi.fn(),
   getAvailableGroups: vi.fn(),
@@ -57,6 +59,7 @@ const messages: Record<string, string> = {
 vi.mock('@/api', () => ({
   keysAPI: {
     list: listKeys,
+    reveal: revealKey,
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
@@ -163,6 +166,7 @@ const DataTableStub = {
       </button>
       <div v-for="row in data" :key="row.id">
         <slot name="cell-name" :value="row.name" :row="row" />
+        <slot name="cell-key" :value="row.key" :row="row" />
         <div data-test="current-concurrency">
           <slot name="cell-current_concurrency" :value="row.current_concurrency" :row="row" />
         </div>
@@ -172,10 +176,27 @@ const DataTableStub = {
         >
           <slot name="cell-last_used_ip" :value="row.last_used_ip" :row="row" />
         </div>
+        <slot name="cell-actions" :value="row.id" :row="row" />
       </div>
       <slot name="empty" />
     </div>
   `,
+}
+
+const UseKeyModalStub = {
+  name: 'UseKeyModal',
+  props: ['show', 'apiKey'],
+  template: '<div v-if="show" data-test="use-key-value">{{ apiKey }}</div>',
+}
+
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
 }
 
 const SelectStub = {
@@ -222,7 +243,7 @@ const mountView = async () => {
         Select: SelectStub,
         SearchInput: SearchInputStub,
         Icon: IconStub,
-        UseKeyModal: true,
+        UseKeyModal: UseKeyModalStub,
         EndpointPopover: true,
         GroupBadge: true,
         GroupOptionItem: true,
@@ -254,6 +275,7 @@ describe('user KeysView column settings', () => {
     localStorage.clear()
 
     listKeys.mockReset()
+    revealKey.mockReset()
     getPublicSettings.mockReset()
     getDashboardApiKeysUsage.mockReset()
     getAvailableGroups.mockReset()
@@ -271,6 +293,7 @@ describe('user KeysView column settings', () => {
       page_size: 20,
       pages: 1,
     })
+    revealKey.mockResolvedValue('sk-test-key')
     getPublicSettings.mockResolvedValue({})
     getDashboardApiKeysUsage.mockResolvedValue({ stats: {} })
     getAvailableGroups.mockResolvedValue([])
@@ -416,5 +439,77 @@ describe('user KeysView column settings', () => {
       },
       expect.objectContaining({ signal: expect.any(AbortSignal) })
     )
+  })
+
+  it('ignores a stale reveal response when a newer Use Key action finishes first', async () => {
+    listKeys.mockResolvedValueOnce({
+      items: [createApiKey(), { ...createApiKey(), id: 2, name: 'second-key' }],
+      total: 2,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+    const first = deferred<string>()
+    const second = deferred<string>()
+    revealKey.mockImplementation((id: number) => (id === 1 ? first.promise : second.promise))
+    const wrapper = await mountView()
+    const useButtons = wrapper.findAll('button').filter((button) => button.text().includes('keys.useKey'))
+    expect(useButtons).toHaveLength(2)
+
+    await useButtons[0].trigger('click')
+    await useButtons[1].trigger('click')
+    second.resolve('sk-second')
+    await flushPromises()
+    expect(wrapper.get('[data-test="use-key-value"]').text()).toBe('sk-second')
+
+    first.resolve('sk-first')
+    await flushPromises()
+    expect(wrapper.get('[data-test="use-key-value"]').text()).toBe('sk-second')
+  })
+
+  it('starts deferred clipboard write before the reveal request resolves', async () => {
+    const pendingReveal = deferred<string>()
+    revealKey.mockReturnValueOnce(pendingReveal.promise)
+    let clipboardPayload: Record<string, Promise<Blob>> | undefined
+    class ClipboardItemStub {
+      constructor(payload: Record<string, Promise<Blob>>) {
+        clipboardPayload = payload
+      }
+    }
+    const write = vi.fn(async () => {
+      await clipboardPayload?.['text/plain']
+    })
+    const secureContextDescriptor = Object.getOwnPropertyDescriptor(window, 'isSecureContext')
+    const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+    const previousClipboardItem = globalThis.ClipboardItem
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true })
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { write } })
+    vi.stubGlobal('ClipboardItem', ClipboardItemStub)
+
+    try {
+      const wrapper = await mountView()
+      await wrapper.get('button[title="keys.copyToClipboard"]').trigger('click')
+
+      expect(revealKey).toHaveBeenCalledWith(1, { signal: expect.any(AbortSignal) })
+      expect(write).toHaveBeenCalledTimes(1)
+      expect(showSuccess).not.toHaveBeenCalled()
+
+      pendingReveal.resolve('sk-deferred-copy')
+      await flushPromises()
+      expect(clipboardPayload?.['text/plain']).toBeInstanceOf(Promise)
+      expect(showSuccess).toHaveBeenCalledWith('keys.copied')
+    } finally {
+      if (secureContextDescriptor) {
+        Object.defineProperty(window, 'isSecureContext', secureContextDescriptor)
+      } else {
+        Reflect.deleteProperty(window, 'isSecureContext')
+      }
+      if (clipboardDescriptor) {
+        Object.defineProperty(navigator, 'clipboard', clipboardDescriptor)
+      } else {
+        Reflect.deleteProperty(navigator, 'clipboard')
+      }
+      vi.stubGlobal('ClipboardItem', previousClipboardItem)
+    }
   })
 })

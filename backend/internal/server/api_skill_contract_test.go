@@ -173,7 +173,7 @@ func runSkillContractCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			status, body := doRequest(t, newSkillContractRouter(), tt.method, tt.path, "", tt.headers)
+			status, body, _ := doRequest(t, newSkillContractRouter(), tt.method, tt.path, "", tt.headers)
 			require.Equal(t, tt.wantStatus, status)
 			require.JSONEq(t, tt.wantJSON, body)
 		})

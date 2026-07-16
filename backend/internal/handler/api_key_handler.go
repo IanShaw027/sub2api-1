@@ -3,6 +3,7 @@ package handler
 
 import (
 	"context"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -136,6 +137,46 @@ func (h *APIKeyHandler) GetByID(c *gin.Context) {
 	}
 
 	response.Success(c, dto.APIKeyFromServiceMasked(key))
+}
+
+// Reveal returns the full API key only to its owning user. List/detail
+// responses stay masked so the secret is not unnecessarily retained in the
+// page payload or browser state.
+func (h *APIKeyHandler) Reveal(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	keyID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid key ID")
+		return
+	}
+
+	key, err := h.apiKeyService.GetByID(c.Request.Context(), keyID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if key.UserID != subject.UserID {
+		response.NotFound(c, "API key not found")
+		return
+	}
+
+	slog.Info("api_key.reveal",
+		"user_id", subject.UserID,
+		"key_id", key.ID,
+		"ip", c.ClientIP(),
+		"user_agent", c.GetHeader("User-Agent"),
+	)
+
+	c.Header("Cache-Control", "private, no-store, max-age=0, must-revalidate")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
+
+	response.Success(c, gin.H{"key": key.Key})
 }
 
 // Create handles creating a new API key

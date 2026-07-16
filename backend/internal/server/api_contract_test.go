@@ -30,14 +30,15 @@ func TestAPIContracts(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
-		name       string
-		setup      func(t *testing.T, deps *contractDeps)
-		method     string
-		path       string
-		body       string
-		headers    map[string]string
-		wantStatus int
-		wantJSON   string
+		name        string
+		setup       func(t *testing.T, deps *contractDeps)
+		method      string
+		path        string
+		body        string
+		headers     map[string]string
+		wantHeaders map[string]string
+		wantStatus  int
+		wantJSON    string
 	}{
 		{
 			name:       "GET /api/v1/auth/me",
@@ -357,7 +358,33 @@ func TestAPIContracts(t *testing.T) {
 					"page_size": 10,
 					"pages": 1
 				}
-			}`,
+				}`,
+		},
+		{
+			name: "GET /api/v1/keys/:id/value reveals only the owner key",
+			setup: func(t *testing.T, deps *contractDeps) {
+				t.Helper()
+				deps.apiKeyRepo.MustSeed(&service.APIKey{ID: 101, UserID: 1, Key: "sk_owner_secret", Name: "Owner"})
+			},
+			method:     http.MethodGet,
+			path:       "/api/v1/keys/101/value",
+			wantStatus: http.StatusOK,
+			wantHeaders: map[string]string{
+				"Cache-Control": "private, no-store, max-age=0, must-revalidate",
+				"Pragma":        "no-cache",
+			},
+			wantJSON: `{"code":0,"message":"success","data":{"key":"sk_owner_secret"}}`,
+		},
+		{
+			name: "GET /api/v1/keys/:id/value hides a foreign key",
+			setup: func(t *testing.T, deps *contractDeps) {
+				t.Helper()
+				deps.apiKeyRepo.MustSeed(&service.APIKey{ID: 102, UserID: 2, Key: "sk_foreign_secret", Name: "Foreign"})
+			},
+			method:     http.MethodGet,
+			path:       "/api/v1/keys/102/value",
+			wantStatus: http.StatusNotFound,
+			wantJSON:   `{"code":404,"message":"API key not found"}`,
 		},
 		{
 			name: "GET /api/v1/groups/available",
@@ -1499,9 +1526,12 @@ func TestAPIContracts(t *testing.T) {
 				tt.setup(t, deps)
 			}
 
-			status, body := doRequest(t, deps.router, tt.method, tt.path, tt.body, tt.headers)
+			status, body, responseHeaders := doRequest(t, deps.router, tt.method, tt.path, tt.body, tt.headers)
 			require.Equal(t, tt.wantStatus, status)
 			require.JSONEq(t, tt.wantJSON, body)
+			for key, value := range tt.wantHeaders {
+				require.Equal(t, value, responseHeaders.Get(key), key)
+			}
 		})
 	}
 }
@@ -1637,6 +1667,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	v1Keys := v1.Group("")
 	v1Keys.Use(jwtAuth)
 	v1Keys.GET("/keys", apiKeyHandler.List)
+	v1Keys.GET("/keys/:id/value", apiKeyHandler.Reveal)
 	v1Keys.POST("/keys", apiKeyHandler.Create)
 	v1Keys.GET("/groups/available", apiKeyHandler.GetAvailableGroups)
 
@@ -1675,7 +1706,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	}
 }
 
-func doRequest(t *testing.T, router http.Handler, method, path, body string, headers map[string]string) (int, string) {
+func doRequest(t *testing.T, router http.Handler, method, path, body string, headers map[string]string) (int, string, http.Header) {
 	t.Helper()
 
 	req := httptest.NewRequest(method, path, bytes.NewBufferString(body))
@@ -1689,7 +1720,7 @@ func doRequest(t *testing.T, router http.Handler, method, path, body string, hea
 	respBody, err := io.ReadAll(w.Result().Body)
 	require.NoError(t, err)
 
-	return w.Result().StatusCode, string(respBody)
+	return w.Result().StatusCode, string(respBody), w.Result().Header
 }
 
 func ptr[T any](v T) *T { return &v }

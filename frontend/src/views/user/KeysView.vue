@@ -96,7 +96,7 @@
                 {{ maskApiKey(value) }}
               </code>
               <button
-                @click="copyToClipboard(value, row.id)"
+                @click="copyToClipboard(row)"
                 class="rounded-lg p-1 transition-colors hover:bg-gray-100 dark:hover:bg-dark-700"
                 :class="
                   copiedKeyId === row.id
@@ -1429,13 +1429,86 @@ const filteredGroupOptions = computed(() => {
   })
 })
 
-const copyToClipboard = async (text: string, keyId: number) => {
-  const success = await clipboardCopy(text, t('keys.copied'))
-  if (success) {
-    copiedKeyId.value = keyId
-    setTimeout(() => {
-      copiedKeyId.value = null
-    }, 800)
+let copyRevealSeq = 0
+let useKeyRevealSeq = 0
+let ccsRevealSeq = 0
+let copyFeedbackTimer: ReturnType<typeof setTimeout> | null = null
+let copyRevealController: AbortController | null = null
+
+const revealKeyValue = async (key: ApiKey, signal?: AbortSignal): Promise<string> => {
+  const value = signal
+    ? await keysAPI.reveal(key.id, { signal })
+    : await keysAPI.reveal(key.id)
+  if (!value) throw new Error('API key value is empty')
+  return value
+}
+
+const revealKey = async (key: ApiKey, shouldReportError: () => boolean): Promise<string | null> => {
+  try {
+    return await revealKeyValue(key)
+  } catch (error) {
+    console.error('Failed to reveal API key:', error)
+    if (shouldReportError()) appStore.showError(t('keys.failedToLoad'))
+    return null
+  }
+}
+
+const markKeyCopied = (keyId: number, seq: number) => {
+  if (seq !== copyRevealSeq) return
+  copiedKeyId.value = keyId
+  if (copyFeedbackTimer) clearTimeout(copyFeedbackTimer)
+  copyFeedbackTimer = setTimeout(() => {
+    if (seq === copyRevealSeq && copiedKeyId.value === keyId) copiedKeyId.value = null
+  }, 800)
+}
+
+const copyToClipboard = async (key: ApiKey) => {
+  const seq = ++copyRevealSeq
+  copyRevealController?.abort()
+  const controller = new AbortController()
+  copyRevealController = controller
+  let revealFailed = false
+  const valuePromise = revealKeyValue(key, controller.signal).catch((error) => {
+    revealFailed = true
+    throw error
+  })
+
+  // ClipboardItem accepts a Promise<Blob>. Calling clipboard.write before the
+  // reveal request settles preserves the click's transient user activation in
+  // Safari/Chromium while the secret still remains reveal-on-demand.
+  if (
+    window.isSecureContext &&
+    typeof ClipboardItem !== 'undefined' &&
+    typeof navigator.clipboard?.write === 'function'
+  ) {
+    try {
+      const item = new ClipboardItem({
+        'text/plain': valuePromise.then((value) => new Blob([value], { type: 'text/plain' }))
+      })
+      await navigator.clipboard.write([item])
+      if (seq === copyRevealSeq) {
+        appStore.showSuccess(t('keys.copied'))
+        markKeyCopied(key.id, seq)
+      }
+    } catch (error) {
+      if (seq !== copyRevealSeq || isAbortError(error)) return
+      controller.abort()
+      void valuePromise.catch(() => undefined)
+      console.error('Failed to copy revealed API key:', error)
+      appStore.showError(t(revealFailed ? 'keys.failedToLoad' : 'common.copyFailed'))
+    }
+    return
+  }
+
+  try {
+    const text = await valuePromise
+    if (seq !== copyRevealSeq) return
+    const success = await clipboardCopy(text, t('keys.copied'))
+    if (success) markKeyCopied(key.id, seq)
+  } catch (error) {
+    if (seq !== copyRevealSeq || isAbortError(error)) return
+    console.error('Failed to reveal API key:', error)
+    appStore.showError(t('keys.failedToLoad'))
   }
 }
 
@@ -1523,8 +1596,11 @@ const loadPublicSettings = async () => {
   }
 }
 
-const openUseKeyModal = (key: ApiKey) => {
-  selectedKey.value = key
+const openUseKeyModal = async (key: ApiKey) => {
+	const seq = ++useKeyRevealSeq
+	const value = await revealKey(key, () => seq === useKeyRevealSeq)
+	if (!value || seq !== useKeyRevealSeq) return
+	selectedKey.value = { ...key, key: value }
   showUseKeyModal.value = true
 }
 
@@ -1860,18 +1936,22 @@ const resetRateLimitUsage = async () => {
   }
 }
 
-const importToCcswitch = (row: ApiKey) => {
+const importToCcswitch = async (row: ApiKey) => {
+	const seq = ++ccsRevealSeq
+	const value = await revealKey(row, () => seq === ccsRevealSeq)
+	if (!value || seq !== ccsRevealSeq) return
+  const revealedRow = { ...row, key: value }
   const platform = row.group?.platform || 'anthropic'
 
   // For antigravity platform, show client selection dialog
   if (platform === 'antigravity') {
-    pendingCcsRow.value = row
+    pendingCcsRow.value = revealedRow
     showCcsClientSelect.value = true
     return
   }
 
   // For other platforms, execute directly
-  executeCcsImport(row, platform === 'gemini' ? 'gemini' : 'claude')
+  executeCcsImport(revealedRow, platform === 'gemini' ? 'gemini' : 'claude')
 }
 
 const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
@@ -1957,5 +2037,10 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('click', closeGroupSelector)
   if (resetTimer) clearInterval(resetTimer)
+  if (copyFeedbackTimer) clearTimeout(copyFeedbackTimer)
+  copyRevealController?.abort()
+  copyRevealSeq++
+  useKeyRevealSeq++
+  ccsRevealSeq++
 })
 </script>

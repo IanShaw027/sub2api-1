@@ -46,6 +46,16 @@ export async function getById(id: number): Promise<ApiKey> {
 }
 
 /**
+ * Reveal an API key on demand for copy/configuration actions.
+ */
+export async function reveal(id: number, options?: { signal?: AbortSignal }): Promise<string> {
+  const { data } = await apiClient.get<{ key: string }>(`/keys/${id}/value`, {
+    signal: options?.signal
+  })
+  return data.key
+}
+
+/**
  * Create new API key
  * @param name - Key name
  * @param groupId - Optional group ID
@@ -134,6 +144,7 @@ export async function toggleStatus(id: number, status: 'active' | 'inactive'): P
 export const keysAPI = {
   list,
   getById,
+  reveal,
   create,
   update,
   delete: deleteKey,
