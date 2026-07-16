@@ -1,5 +1,13 @@
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-white dark:bg-dark-900">
+  <div
+    class="flex h-full min-h-0 flex-col"
+    :class="flat ? '' : 'card bg-white dark:bg-dark-900'"
+  >
+    <IpGeoBatchToolbar
+      v-if="isColumnVisible('client_ip')"
+      :ips="rows.map((row) => row.client_ip)"
+      @failed="emit('ipGeoBatchFailed')"
+    />
     <!-- Loading State -->
     <div v-if="loading" class="flex flex-1 items-center justify-center py-10">
       <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-primary-600"></div>
@@ -11,47 +19,29 @@
         <table class="w-full border-separate border-spacing-0">
           <thead class="sticky top-0 z-10 bg-gray-50 dark:bg-dark-800">
             <tr>
-              <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
-                {{ t('admin.ops.errorLog.time') }}
-              </th>
-              <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
-                {{ t('admin.ops.errorLog.type') }}
-              </th>
-              <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
-                {{ t('admin.ops.errorLog.endpoint') }}
-              </th>
-              <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
-                {{ t('admin.ops.errorLog.platform') }}
-              </th>
-              <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
-                {{ t('admin.ops.errorLog.model') }}
-              </th>
-              <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
-                {{ t('admin.ops.errorLog.group') }}
-              </th>
-              <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
-                {{ `${t('admin.ops.errorLog.user')}/${t('admin.ops.errorLog.account')}` }}
-              </th>
-              <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
-                {{ t('admin.ops.errorLog.apiKey') }}
-              </th>
-              <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
-                {{ t('admin.ops.errorLog.account') }}
-              </th>
-              <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
-                {{ t('admin.ops.errorLog.status') }}
-              </th>
-              <th class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
-                {{ t('admin.ops.errorLog.message') }}
-              </th>
-              <th class="border-b border-gray-200 px-4 py-2.5 text-right text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400">
-                {{ t('admin.ops.errorLog.action') }}
+              <th
+                v-for="column in columns"
+                :key="column.key"
+                class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400"
+                :class="{
+                  'cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-dark-700': column.sortable,
+                  'text-right': column.key === 'actions'
+                }"
+                :aria-sort="column.sortable ? columnAriaSort(column.key) : undefined"
+                @click="column.sortable && onSort(column.key)"
+              >
+                <span class="inline-flex items-center gap-1">
+                  {{ column.label }}
+                  <span v-if="column.sortable && sortKey === column.key" aria-hidden="true">
+                    {{ sortOrder === 'asc' ? '▲' : '▼' }}
+                  </span>
+                </span>
               </th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
             <tr v-if="rows.length === 0">
-              <td colspan="12" class="py-12 text-center text-sm text-gray-400 dark:text-dark-500">
+              <td :colspan="columns.length" class="py-12 text-center text-sm text-gray-400 dark:text-dark-500">
                 {{ t('admin.ops.errorLog.noErrors') }}
               </td>
             </tr>
@@ -63,7 +53,7 @@
               @click="emit('openErrorDetail', log.id)"
             >
               <!-- Time -->
-              <td class="whitespace-nowrap px-4 py-2">
+              <td v-if="isColumnVisible('created_at')" class="whitespace-nowrap px-4 py-2">
                 <el-tooltip :content="log.request_id || log.client_request_id" placement="top" :show-after="500">
                   <span class="font-mono text-xs font-medium text-gray-900 dark:text-gray-200">
                     {{ formatDateTime(log.created_at).split(' ')[1] }}
@@ -72,7 +62,7 @@
               </td>
 
               <!-- Type -->
-              <td class="whitespace-nowrap px-4 py-2">
+              <td v-if="isColumnVisible('type')" class="whitespace-nowrap px-4 py-2">
                 <span
                   :class="[
                     'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold ring-1 ring-inset',
@@ -83,8 +73,13 @@
                 </span>
               </td>
 
+              <!-- Category -->
+              <td v-if="isColumnVisible('category')" class="whitespace-nowrap px-4 py-2 text-xs text-gray-700 dark:text-gray-300">
+                {{ t(`usage.errors.categories.${mapErrorCategory(log.phase, log.type)}`) }}
+              </td>
+
               <!-- Endpoint -->
-              <td class="px-4 py-2">
+              <td v-if="isColumnVisible('endpoint')" class="px-4 py-2">
                 <div class="max-w-[160px]">
                   <el-tooltip v-if="log.inbound_endpoint" :content="formatEndpointTooltip(log)" placement="top" :show-after="500">
                     <span class="truncate font-mono text-[11px] text-gray-700 dark:text-gray-300">
@@ -96,14 +91,14 @@
               </td>
 
               <!-- Platform -->
-              <td class="whitespace-nowrap px-4 py-2">
+              <td v-if="isColumnVisible('platform')" class="whitespace-nowrap px-4 py-2">
                 <span class="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-gray-600 dark:bg-dark-700 dark:text-gray-300">
                   {{ log.platform || '-' }}
                 </span>
               </td>
 
               <!-- Model -->
-              <td class="px-4 py-2">
+              <td v-if="isColumnVisible('model')" class="px-4 py-2">
                 <div class="max-w-[160px]">
                   <template v-if="hasModelMapping(log)">
                     <el-tooltip :content="modelMappingTooltip(log)" placement="top" :show-after="500">
@@ -124,7 +119,7 @@
               </td>
 
               <!-- Group -->
-              <td class="px-4 py-2">
+              <td v-if="isColumnVisible('group')" class="px-4 py-2">
                  <el-tooltip v-if="log.group_id" :content="t('admin.ops.errorLog.id') + ' ' + log.group_id" placement="top" :show-after="500">
                   <span class="max-w-[100px] truncate text-xs font-medium text-gray-900 dark:text-gray-200">
                     {{ log.group_name || '-' }}
@@ -134,9 +129,17 @@
               </td>
 
               <!-- User -->
-              <td class="px-4 py-2">
+              <td v-if="isColumnVisible('user')" class="px-4 py-2">
                 <el-tooltip v-if="userTooltip(log)" :content="userTooltip(log)" placement="top" :show-after="500">
-                  <span class="max-w-[100px] truncate text-xs font-medium text-gray-900 dark:text-gray-200">
+                  <button
+                    v-if="userClickable && effectiveUserID(log) && effectiveUserEmail(log)"
+                    type="button"
+                    class="max-w-[140px] truncate text-xs font-medium text-primary-600 underline decoration-dashed underline-offset-2 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                    @click.stop="emit('userClick', effectiveUserID(log), effectiveUserEmail(log))"
+                  >
+                    {{ userLabel(log) }}
+                  </button>
+                  <span v-else class="max-w-[140px] truncate text-xs font-medium text-gray-900 dark:text-gray-200">
                     {{ userLabel(log) }}
                   </span>
                 </el-tooltip>
@@ -144,7 +147,7 @@
               </td>
 
               <!-- API Key -->
-              <td class="px-4 py-2">
+              <td v-if="isColumnVisible('api_key')" class="px-4 py-2">
                 <el-tooltip v-if="apiKeyTooltip(log)" :content="apiKeyTooltip(log)" placement="top" :show-after="500">
                   <span class="inline-flex max-w-[120px] items-center gap-1 truncate text-xs font-medium text-gray-900 dark:text-gray-200">
                     <span class="truncate">{{ apiKeyLabel(log) }}</span>
@@ -160,7 +163,7 @@
               </td>
 
               <!-- Account -->
-              <td class="px-4 py-2">
+              <td v-if="isColumnVisible('account')" class="px-4 py-2">
                 <el-tooltip v-if="accountTooltip(log)" :content="accountTooltip(log)" placement="top" :show-after="500">
                   <span class="max-w-[120px] truncate text-xs font-medium text-gray-900 dark:text-gray-200">
                     {{ accountLabel(log) }}
@@ -170,7 +173,7 @@
               </td>
 
               <!-- Status -->
-              <td class="whitespace-nowrap px-4 py-2">
+              <td v-if="isColumnVisible('status')" class="whitespace-nowrap px-4 py-2">
                 <div class="flex items-center gap-1.5">
                   <span
                     :class="[
@@ -196,7 +199,7 @@
               </td>
 
               <!-- Message (Response Content) -->
-              <td class="px-4 py-2">
+              <td v-if="isColumnVisible('message')" class="px-4 py-2">
                 <div class="max-w-[200px]">
                   <p class="truncate text-[11px] font-medium text-gray-600 dark:text-gray-400" :title="log.message">
                     {{ formatSmartMessage(log.message) || '-' }}
@@ -204,8 +207,24 @@
                 </div>
               </td>
 
+              <!-- User Agent -->
+              <td v-if="isColumnVisible('user_agent')" class="px-4 py-2">
+                <span class="block max-w-[240px] truncate text-[11px] text-gray-600 dark:text-gray-400" :title="log.user_agent">
+                  {{ log.user_agent || '-' }}
+                </span>
+              </td>
+
+              <!-- Client IP -->
+              <td v-if="isColumnVisible('client_ip')" class="whitespace-nowrap px-4 py-2" @click.stop>
+                <template v-if="log.client_ip">
+                  <span class="font-mono text-[11px] text-gray-600 dark:text-gray-400">{{ log.client_ip }}</span>
+                  <IpGeoCell :ip="log.client_ip" />
+                </template>
+                <span v-else class="text-xs text-gray-400">-</span>
+              </td>
+
               <!-- Actions -->
-              <td class="whitespace-nowrap px-4 py-2 text-right" @click.stop>
+              <td v-if="isColumnVisible('actions')" class="whitespace-nowrap px-4 py-2 text-right" @click.stop>
                 <div class="flex items-center justify-end gap-3">
                   <button type="button" class="text-primary-600 hover:text-primary-700 dark:text-primary-400 text-xs font-bold" @click="emit('openErrorDetail', log.id)">
                     {{ t('admin.ops.errorLog.details') }}
@@ -233,10 +252,15 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Pagination from '@/components/common/Pagination.vue'
+import IpGeoCell from '@/components/common/IpGeoCell.vue'
+import IpGeoBatchToolbar from '@/components/common/IpGeoBatchToolbar.vue'
 import type { OpsErrorLog } from '@/api/admin/ops'
 import { getSeverityClass, formatDateTime } from '../utils/opsFormatters'
+import { mapErrorCategory } from '@/utils/errorCategory'
+import { mapErrorSortKey } from '@/utils/errorBadges'
 
 const { t } = useI18n()
 
@@ -247,12 +271,21 @@ function isUpstreamRow(log: OpsErrorLog): boolean {
 }
 
 function userTooltip(log: OpsErrorLog): string {
-  if (!log.user_id) return ''
-  return `${t('admin.ops.errorLog.userId')} ${log.user_id}`
+  const userID = effectiveUserID(log)
+  if (!userID) return ''
+  return `${t('admin.ops.errorLog.userId')} ${userID}`
 }
 
 function userLabel(log: OpsErrorLog): string {
-  return log.user_email || (log.user_id ? String(log.user_id) : '-')
+  return effectiveUserEmail(log) || (effectiveUserID(log) ? String(effectiveUserID(log)) : '-')
+}
+
+function effectiveUserID(log: OpsErrorLog): number {
+  return log.user_id || log.deleted_key_owner_user_id || 0
+}
+
+function effectiveUserEmail(log: OpsErrorLog): string {
+  return log.user_email || log.deleted_key_owner_email || ''
 }
 
 function apiKeyTooltip(log: OpsErrorLog): string {
@@ -349,16 +382,67 @@ interface Props {
   loading: boolean
   page: number
   pageSize: number
+  userClickable?: boolean
+  visibleColumnKeys?: string[]
+  flat?: boolean
 }
 
 interface Emits {
   (e: 'openErrorDetail', id: number): void
   (e: 'update:page', value: number): void
   (e: 'update:pageSize', value: number): void
+  (e: 'ipGeoBatchFailed'): void
+  (e: 'sort', sortBy: string, sortOrder: 'asc' | 'desc'): void
+  (e: 'userClick', userId: number, email?: string): void
 }
 
-defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  userClickable: false,
+  flat: false
+})
 const emit = defineEmits<Emits>()
+
+const allColumns = computed(() => [
+  { key: 'created_at', label: t('admin.ops.errorLog.time'), sortable: true },
+  { key: 'type', label: t('admin.ops.errorLog.type'), sortable: false },
+  { key: 'category', label: t('usage.errors.category'), sortable: false },
+  { key: 'endpoint', label: t('admin.ops.errorLog.endpoint'), sortable: false },
+  { key: 'platform', label: t('admin.ops.errorLog.platform'), sortable: false },
+  { key: 'model', label: t('admin.ops.errorLog.model'), sortable: true },
+  { key: 'group', label: t('admin.ops.errorLog.group'), sortable: false },
+  { key: 'user', label: t('admin.ops.errorLog.user'), sortable: false },
+  { key: 'api_key', label: t('admin.ops.errorLog.apiKey'), sortable: false },
+  { key: 'account', label: t('admin.ops.errorLog.account'), sortable: false },
+  { key: 'status', label: t('admin.ops.errorLog.status'), sortable: true },
+  { key: 'message', label: t('admin.ops.errorLog.message'), sortable: false },
+  { key: 'user_agent', label: t('usage.userAgent'), sortable: false },
+  { key: 'client_ip', label: t('admin.ops.errorLog.ip'), sortable: false },
+  { key: 'actions', label: t('admin.ops.errorLog.action'), sortable: false }
+])
+
+const columns = computed(() =>
+  props.visibleColumnKeys
+    ? allColumns.value.filter((column) => props.visibleColumnKeys!.includes(column.key))
+    : allColumns.value
+)
+const isColumnVisible = (key: string) => columns.value.some((column) => column.key === key)
+const sortKey = ref('created_at')
+const sortOrder = ref<'asc' | 'desc'>('desc')
+
+function onSort(key: string) {
+  if (sortKey.value === key) {
+    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortKey.value = key
+    sortOrder.value = 'asc'
+  }
+  emit('sort', mapErrorSortKey(key), sortOrder.value)
+}
+
+function columnAriaSort(key: string): 'ascending' | 'descending' | 'none' {
+  if (sortKey.value !== key) return 'none'
+  return sortOrder.value === 'asc' ? 'ascending' : 'descending'
+}
 
 function getStatusClass(code: number): string {
   if (code >= 500) return 'bg-red-50 text-red-700 ring-red-600/20 dark:bg-red-900/30 dark:text-red-400 dark:ring-red-500/30'

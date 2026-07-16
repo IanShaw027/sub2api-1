@@ -1448,6 +1448,16 @@ func buildOpsErrorLogsWhere(filter *service.OpsErrorLogFilter) (string, []any) {
 		args = append(args, pq.Array(filter.ErrorTypesAny))
 		clauses = append(clauses, "e.error_type = ANY($"+itoa(len(args))+")")
 	}
+	if filter.ErrorCategoryOther {
+		args = append(args, pq.Array([]string{"auth", "routing", "upstream", "network", "internal"}))
+		knownPhasesArg := itoa(len(args))
+		args = append(args, pq.Array([]string{"rate_limit_error", "billing_error", "subscription_error", "invalid_request_error", "cyber_policy"}))
+		knownRequestTypesArg := itoa(len(args))
+		clauses = append(clauses,
+			"NOT (COALESCE(e.error_phase, '') = ANY($"+knownPhasesArg+") OR "+
+				"(COALESCE(e.error_phase, '') = 'request' AND COALESCE(e.error_type, '') = ANY($"+knownRequestTypesArg+")))",
+		)
+	}
 
 	return "WHERE " + strings.Join(clauses, " AND "), args
 }

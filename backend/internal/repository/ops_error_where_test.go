@@ -38,6 +38,23 @@ func TestBuildOpsErrorLogsWhere_UserScopedFilters(t *testing.T) {
 	}
 }
 
+func TestBuildOpsErrorLogsWhere_OtherCategoryUsesInverseMapping(t *testing.T) {
+	where, args := buildOpsErrorLogsWhere(&service.OpsErrorLogFilter{ErrorCategoryOther: true})
+
+	for _, want := range []string{
+		"NOT (COALESCE(e.error_phase, '') = ANY($",
+		"COALESCE(e.error_phase, '') = 'request'",
+		"COALESCE(e.error_type, '') = ANY($",
+	} {
+		if !strings.Contains(where, want) {
+			t.Fatalf("other category where missing %q\nfull: %s", want, where)
+		}
+	}
+	if len(args) != 2 {
+		t.Fatalf("expected phase and request-type arrays, got %d args", len(args))
+	}
+}
+
 func TestBuildOpsErrorLogsWhere_ModelFuzzy(t *testing.T) {
 	// 默认（ModelFuzzy=false）保持精确匹配
 	exact := &service.OpsErrorLogFilter{Model: "claude"}

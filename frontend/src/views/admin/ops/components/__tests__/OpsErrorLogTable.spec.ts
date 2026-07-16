@@ -16,7 +16,7 @@ vi.mock('vue-i18n', async (importOriginal) => {
 const TooltipStub = { template: '<div><slot /></div>' }
 const PaginationStub = { template: '<div class="pagination-stub" />' }
 
-function mountTable(row: Partial<OpsErrorLog>) {
+function mountTable(row: Partial<OpsErrorLog>, props: Record<string, unknown> = {}) {
   const base = {
     id: 1,
     created_at: '2026-06-05T23:59:50Z',
@@ -39,7 +39,7 @@ function mountTable(row: Partial<OpsErrorLog>) {
   } as OpsErrorLog
 
   return mount(OpsErrorLogTable, {
-    props: { rows: [base], total: 1, loading: false, page: 1, pageSize: 20 },
+    props: { rows: [base], total: 1, loading: false, page: 1, pageSize: 20, ...props },
     global: { stubs: { 'el-tooltip': TooltipStub, Pagination: PaginationStub } },
   })
 }
@@ -106,6 +106,30 @@ describe('OpsErrorLogTable user/api-key/account columns', () => {
     })
 
     expect(wrapper.text()).toContain('admin.ops.errorLog.requestTypeImage')
+  })
+
+  it('honors visible columns and emits mapped server-side sorting', async () => {
+    const wrapper = mountTable(
+      { user_id: 2, user_email: 'alice@test.com' },
+      { visibleColumnKeys: ['user', 'status', 'created_at', 'actions'] },
+    )
+
+    expect(wrapper.text()).not.toContain('admin.ops.errorLog.apiKey')
+    const statusHeader = wrapper.findAll('th').find((header) => header.text().includes('admin.ops.errorLog.status'))
+    expect(statusHeader).toBeTruthy()
+    await statusHeader!.trigger('click')
+    expect(wrapper.emitted('sort')).toEqual([['status_code', 'asc']])
+  })
+
+  it('emits userClick without opening the row detail', async () => {
+    const wrapper = mountTable(
+      { user_id: 2, user_email: 'alice@test.com' },
+      { userClickable: true },
+    )
+
+    await wrapper.get('button.underline').trigger('click')
+    expect(wrapper.emitted('userClick')).toEqual([[2, 'alice@test.com']])
+    expect(wrapper.emitted('openErrorDetail')).toBeUndefined()
   })
 })
 

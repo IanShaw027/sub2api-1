@@ -230,6 +230,8 @@ type OpsErrorLogFilter struct {
 	// Used to map user-facing coarse categories to backend conditions.
 	ErrorPhasesAny []string
 	ErrorTypesAny  []string
+	// ErrorCategoryOther selects rows that MapUserErrorCategory maps to "other".
+	ErrorCategoryOther bool
 
 	// View controls error categorization for list endpoints.
 	// - errors: show actionable errors (exclude business-limited + normal rate limits 429/529)

@@ -317,9 +317,10 @@ func (h *UsageHandler) ListErrors(c *gin.Context) {
 	}
 
 	if cat := strings.TrimSpace(c.Query("category")); cat != "" {
-		phases, types := service.CategoryToFilter(cat)
+		phases, types, other := service.CategoryToFilter(cat)
 		filter.ErrorPhasesAny = phases
 		filter.ErrorTypesAny = types
+		filter.ErrorCategoryOther = other
 	}
 
 	// 排序对齐用量明细:列白名单与方向归一在 repo 层,非法值回退 created_at DESC。

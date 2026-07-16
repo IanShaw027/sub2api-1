@@ -63,29 +63,31 @@ func MapUserErrorCategory(phase, errType string) string {
 	return "other"
 }
 
-// CategoryToFilter 把用户侧分类码反向映射为后端过滤条件（plain ANY）。
-// 未知分类返回两个空切片（即不施加分类过滤）。
-// 注意："other" 与未知分类都走 default 返回空切片——"other" 无对应的 phase/type 组合，无法精确反查，因此等价于不过滤。
-func CategoryToFilter(category string) (phases []string, errorTypes []string) {
+// CategoryToFilter 把用户侧分类码反向映射为后端过滤条件。
+// other 需要对 MapUserErrorCategory 的已知组合取反，因此使用独立标志；
+// 未知分类仍返回空条件，不施加过滤。
+func CategoryToFilter(category string) (phases []string, errorTypes []string, other bool) {
 	switch category {
 	case "auth":
-		return []string{"auth"}, nil
+		return []string{"auth"}, nil, false
 	case "service_unavailable":
-		return []string{"routing"}, nil
+		return []string{"routing"}, nil, false
 	case "upstream":
-		return []string{"upstream", "network"}, nil
+		return []string{"upstream", "network"}, nil, false
 	case "internal":
-		return []string{"internal"}, nil
+		return []string{"internal"}, nil, false
 	case "rate_limit":
-		return nil, []string{"rate_limit_error"}
+		return nil, []string{"rate_limit_error"}, false
 	case "quota":
-		return nil, []string{"billing_error", "subscription_error"}
+		return nil, []string{"billing_error", "subscription_error"}, false
 	case "invalid_request":
-		return nil, []string{"invalid_request_error"}
+		return nil, []string{"invalid_request_error"}, false
 	case "cyber":
-		return []string{"request"}, []string{"cyber_policy"}
+		return []string{"request"}, []string{"cyber_policy"}, false
+	case "other":
+		return nil, nil, true
 	default:
-		return nil, nil
+		return nil, nil, false
 	}
 }
 

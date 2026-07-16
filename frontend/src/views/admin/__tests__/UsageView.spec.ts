@@ -731,6 +731,9 @@ describe('admin UsageView errors tab filter forwarding', () => {
     vm.filters.model = 'gpt-5.3-codex'
     vm.filters.account_id = 7
     vm.filters.group_id = 3
+    vm.filters.error_phase = 'upstream'
+    vm.filters.error_category = 'rate_limit'
+    vm.filters.status_code = 429
     await flushPromises()
 
     // 切换到「错误请求」标签（第二个 tab 按钮）触发 loadAdminErrors
@@ -743,6 +746,19 @@ describe('admin UsageView errors tab filter forwarding', () => {
       model: 'gpt-5.3-codex',
       account_id: 7,
       group_id: 3,
+      phase: 'upstream',
+      category: 'rate_limit',
+      status_codes: '429',
+      sort_by: 'created_at',
+      sort_order: 'desc',
+    }))
+
+    listErrorLogs.mockClear()
+    vm.onErrSort('status_code', 'asc')
+    await flushPromises()
+    expect(listErrorLogs).toHaveBeenCalledWith(expect.objectContaining({
+      sort_by: 'status_code',
+      sort_order: 'asc',
     }))
   })
 })

@@ -8,7 +8,8 @@ import (
 
 func TestMapUserErrorCategoryCyber(t *testing.T) {
 	require.Equal(t, "cyber", MapUserErrorCategory("request", "cyber_policy"))
-	phases, types := CategoryToFilter("cyber")
+	phases, types, other := CategoryToFilter("cyber")
 	require.Equal(t, []string{"request"}, phases)
 	require.Equal(t, []string{"cyber_policy"}, types)
+	require.False(t, other)
 }

@@ -103,4 +103,29 @@ describe('admin UsageFilters', () => {
 
     expect(wrapper.text()).toContain('usage.video')
   })
+
+  it('shows error-specific filters and hides usage-only actions in errors mode', () => {
+    const wrapper = mount(UsageFilters, {
+      props: {
+        modelValue: {
+          start_date: '2026-04-01',
+          end_date: '2026-04-24',
+        },
+        exporting: false,
+        startDate: '2026-04-01',
+        endDate: '2026-04-24',
+        mode: 'errors',
+      },
+      global: { stubs: { Select: SelectStub } },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('admin.ops.errorLog.typeUpstream')
+    expect(text).toContain('usage.errors.categories.rate_limit')
+    expect(text).toContain('usage.errors.categories.other')
+    expect(text).toContain('429')
+    expect(text).not.toContain('usage.video')
+    expect(text).not.toContain('admin.usage.cleanup.button')
+    expect(text).not.toContain('usage.exportExcel')
+  })
 })

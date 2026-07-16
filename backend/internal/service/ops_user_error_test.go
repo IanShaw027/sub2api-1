@@ -30,37 +30,40 @@ func TestMapUserErrorCategory(t *testing.T) {
 }
 
 func TestCategoryToFilter(t *testing.T) {
-	phases, types := CategoryToFilter("rate_limit")
+	phases, types, other := CategoryToFilter("rate_limit")
 	if len(types) != 1 || types[0] != "rate_limit_error" || len(phases) != 0 {
 		t.Fatalf("rate_limit => phases=%v types=%v", phases, types)
 	}
-	phases, types = CategoryToFilter("auth")
+	if other {
+		t.Fatal("rate_limit must not select other")
+	}
+	phases, types, other = CategoryToFilter("auth")
 	if len(phases) != 1 || phases[0] != "auth" || len(types) != 0 {
 		t.Fatalf("auth => phases=%v types=%v", phases, types)
 	}
-	phases, types = CategoryToFilter("service_unavailable")
+	phases, types, other = CategoryToFilter("service_unavailable")
 	if len(phases) != 1 || phases[0] != "routing" || len(types) != 0 {
 		t.Fatalf("service_unavailable => phases=%v types=%v", phases, types)
 	}
-	phases, types = CategoryToFilter("upstream")
+	phases, types, other = CategoryToFilter("upstream")
 	if len(phases) != 2 || phases[0] != "upstream" || phases[1] != "network" || len(types) != 0 {
 		t.Fatalf("upstream => phases=%v types=%v", phases, types)
 	}
-	phases, types = CategoryToFilter("internal")
+	phases, types, other = CategoryToFilter("internal")
 	if len(phases) != 1 || phases[0] != "internal" || len(types) != 0 {
 		t.Fatalf("internal => phases=%v types=%v", phases, types)
 	}
-	phases, types = CategoryToFilter("quota")
+	phases, types, other = CategoryToFilter("quota")
 	if len(types) != 2 || types[0] != "billing_error" || types[1] != "subscription_error" || len(phases) != 0 {
 		t.Fatalf("quota => phases=%v types=%v", phases, types)
 	}
-	phases, types = CategoryToFilter("invalid_request")
+	phases, types, other = CategoryToFilter("invalid_request")
 	if len(types) != 1 || types[0] != "invalid_request_error" || len(phases) != 0 {
 		t.Fatalf("invalid_request => phases=%v types=%v", phases, types)
 	}
-	phases, types = CategoryToFilter("other")
-	if len(phases) != 0 || len(types) != 0 {
-		t.Fatalf("other => phases=%v types=%v", phases, types)
+	phases, types, other = CategoryToFilter("other")
+	if len(phases) != 0 || len(types) != 0 || !other {
+		t.Fatalf("other => phases=%v types=%v other=%v", phases, types, other)
 	}
 }
 

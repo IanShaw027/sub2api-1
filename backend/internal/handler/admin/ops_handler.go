@@ -196,9 +196,10 @@ func (h *OpsHandler) GetErrorLogs(c *gin.Context) {
 	// 分类(用户侧粗分类码)→ phase/type ANY 条件,与用户端 /usage/errors 同一映射;
 	// 未知分类返回空切片 = 不过滤。与 phase 参数可同时设置(AND 语义)。
 	if cat := strings.TrimSpace(c.Query("category")); cat != "" {
-		phases, types := service.CategoryToFilter(cat)
+		phases, types, other := service.CategoryToFilter(cat)
 		filter.ErrorPhasesAny = phases
 		filter.ErrorTypesAny = types
+		filter.ErrorCategoryOther = other
 	}
 
 	if platform := strings.TrimSpace(c.Query("platform")); platform != "" {
@@ -316,9 +317,10 @@ func (h *OpsHandler) ListRequestErrors(c *gin.Context) {
 	// 分类(用户侧粗分类码)→ phase/type ANY 条件,与用户端 /usage/errors 同一映射;
 	// 未知分类返回空切片 = 不过滤。与 phase 参数可同时设置(AND 语义)。
 	if cat := strings.TrimSpace(c.Query("category")); cat != "" {
-		phases, types := service.CategoryToFilter(cat)
+		phases, types, other := service.CategoryToFilter(cat)
 		filter.ErrorPhasesAny = phases
 		filter.ErrorTypesAny = types
+		filter.ErrorCategoryOther = other
 	}
 
 	if platform := strings.TrimSpace(c.Query("platform")); platform != "" {

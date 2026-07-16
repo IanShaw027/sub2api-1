@@ -25,6 +25,8 @@ const messages: Record<string, string> = {
   'usage.imageCount': 'Image count',
   'usage.imageUnit': ' images',
   'usage.video': 'Video',
+  'usage.latencyFirstToken': 'First',
+  'usage.latencyDuration': 'Total',
   'usage.imageUnitPrice': 'Per-image price',
   'usage.imageSubtotal': 'Image subtotal',
   'usage.tokenSubtotal': 'Token subtotal',
@@ -76,6 +78,7 @@ const DataTableStub = {
         <slot name="cell-billing_mode" :row="row" />
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-cost" :row="row" />
+        <slot name="cell-latency" :row="row" />
       </div>
     </div>
   `,
@@ -122,6 +125,61 @@ describe('admin UsageTable tooltip', () => {
       height: 20,
       toJSON: () => ({}),
     } as DOMRect)
+  })
+
+  it('renders first-token and total latency in one health cell', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          ...baseImageRow,
+          request_id: 'req-latency',
+          first_token_ms: 3120,
+          duration_ms: 11_390,
+        }],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('First3.12s')
+    expect(wrapper.text()).toContain('Total11.39s')
+    expect(wrapper.find('.from-emerald-500').exists()).toBe(true)
+    expect(wrapper.find('.to-emerald-500').exists()).toBe(true)
+  })
+
+  it('renders missing first-token latency and formats long total duration', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{
+          ...baseImageRow,
+          request_id: 'req-latency-no-first-token',
+          first_token_ms: null,
+          duration_ms: 185_000,
+        }],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('First-')
+    expect(wrapper.text()).toContain('Total3m 5s')
+    expect(wrapper.find('.bg-orange-500').exists()).toBe(true)
   })
 
   it('marks only usage rows that actually applied long-context billing', () => {
