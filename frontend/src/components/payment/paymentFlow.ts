@@ -8,6 +8,7 @@ import type {
 } from '@/types/payment'
 
 export const PAYMENT_RECOVERY_STORAGE_KEY = 'payment.recovery.current'
+export const PAYMENT_SESSION_RECOVERY_STORAGE_KEY = 'payment.recovery.session.current'
 
 const VISIBLE_METHOD_ALIASES = {
   alipay: 'alipay',
@@ -92,9 +93,52 @@ type CreateOrderFlowResult = CreateOrderResult & {
 
 type StorageWriter = Pick<Storage, 'removeItem' | 'setItem'>
 
+interface PaymentSessionRecoveryOptions {
+  orderId: number
+  resumeToken?: string
+  outTradeNo?: string
+  now?: number
+}
+
 export function normalizeVisibleMethod(method: string): VisiblePaymentMethod | '' {
   const normalized = VISIBLE_METHOD_ALIASES[method.trim() as keyof typeof VISIBLE_METHOD_ALIASES]
   return normalized ?? ''
+}
+
+/**
+ * Payment launch URLs may be absolute http(s) URLs or root-relative routes on
+ * the current origin. Reject javascript:/data:/, protocol-relative URLs and
+ * backslash-based browser parsing ambiguities before window.open/location.href.
+ */
+export function assertPaymentLaunchUrl(url: string): string {
+  const trimmed = (url || '').trim()
+  if (!trimmed) return ''
+  if (Array.from(trimmed).some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0
+    return codePoint < 32 || codePoint === 127
+  })) return ''
+
+  if (trimmed.startsWith('/')) {
+    if (trimmed.startsWith('//') || trimmed.startsWith('/\\') || trimmed.includes('\\')) return ''
+    try {
+      const baseOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+      const parsed = new URL(trimmed, baseOrigin)
+      if (parsed.origin !== baseOrigin) return ''
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`
+    } catch {
+      return ''
+    }
+  }
+
+  if (!/^https?:\/\//i.test(trimmed)) return ''
+  try {
+    const parsed = new URL(trimmed)
+    const protocol = parsed.protocol.toLowerCase()
+    if (protocol !== 'http:' && protocol !== 'https:') return ''
+    return parsed.toString()
+  } catch {
+    return ''
+  }
 }
 
 export function getVisibleMethods(methods: Record<string, MethodLimit>): Record<string, MethodLimit> {
@@ -153,7 +197,7 @@ export function decidePaymentLaunch(
     qrCode: result.qr_code || '',
     expiresAt: result.expires_at || '',
     paymentType: visibleMethod,
-    payUrl: result.pay_url || '',
+    payUrl: assertPaymentLaunchUrl(result.pay_url || ''),
     outTradeNo: result.out_trade_no || '',
     clientSecret: result.client_secret || '',
     intentId: result.intent_id || '',
@@ -257,7 +301,26 @@ export function writePaymentRecoverySnapshot(
   snapshot: PaymentRecoverySnapshot,
   key = PAYMENT_RECOVERY_STORAGE_KEY,
 ): void {
-  storage.setItem(key, JSON.stringify(snapshot))
+  // Never persist client secrets in localStorage (XSS / shared-device risk).
+  // Stripe/Airwallex secrets stay in memory or sessionStorage via caller if needed.
+  const safe: PaymentRecoverySnapshot = {
+    ...snapshot,
+    payUrl: assertPaymentLaunchUrl(snapshot.payUrl),
+    clientSecret: '',
+  }
+  storage.setItem(key, JSON.stringify(safe))
+}
+
+export function writePaymentSessionRecoverySnapshot(
+  storage: Pick<Storage, 'setItem'>,
+  snapshot: PaymentRecoverySnapshot,
+  key = PAYMENT_SESSION_RECOVERY_STORAGE_KEY,
+): void {
+  const sessionSnapshot: PaymentRecoverySnapshot = {
+    ...snapshot,
+    payUrl: assertPaymentLaunchUrl(snapshot.payUrl),
+  }
+  storage.setItem(key, JSON.stringify(sessionSnapshot))
 }
 
 export function clearPaymentRecoverySnapshot(
@@ -267,9 +330,41 @@ export function clearPaymentRecoverySnapshot(
   storage.removeItem(key)
 }
 
+export function readPaymentSessionRecoverySnapshot(
+  raw: string | null | undefined,
+  options: PaymentSessionRecoveryOptions,
+): PaymentRecoverySnapshot | null {
+  const parsed = parsePaymentRecoverySnapshot(raw, options.now ?? Date.now(), true)
+  if (!parsed || parsed.orderId !== options.orderId) {
+    return null
+  }
+  if (options.resumeToken && parsed.resumeToken !== options.resumeToken) {
+    return null
+  }
+  if (options.outTradeNo && parsed.outTradeNo !== options.outTradeNo) {
+    return null
+  }
+  return parsed
+}
+
 export function readPaymentRecoverySnapshot(
   raw: string | null | undefined,
   options: { now?: number; resumeToken?: string } = {},
+): PaymentRecoverySnapshot | null {
+  const parsed = parsePaymentRecoverySnapshot(raw, options.now ?? Date.now(), false)
+  if (!parsed) {
+    return null
+  }
+  if (options.resumeToken && parsed.resumeToken !== options.resumeToken) {
+    return null
+  }
+  return parsed
+}
+
+function parsePaymentRecoverySnapshot(
+  raw: string | null | undefined,
+  now: number,
+  preserveClientSecret: boolean,
 ): PaymentRecoverySnapshot | null {
   if (!raw) return null
 
@@ -296,12 +391,8 @@ export function readPaymentRecoverySnapshot(
       return null
     }
 
-    const now = options.now ?? Date.now()
     const expiresAt = Date.parse(parsed.expiresAt)
     if (Number.isFinite(expiresAt) && expiresAt <= now) {
-      return null
-    }
-    if (options.resumeToken && parsed.resumeToken !== options.resumeToken) {
       return null
     }
 
@@ -311,9 +402,10 @@ export function readPaymentRecoverySnapshot(
       qrCode: parsed.qrCode,
       expiresAt: parsed.expiresAt,
       paymentType: parsed.paymentType,
-      payUrl: parsed.payUrl,
+      payUrl: assertPaymentLaunchUrl(parsed.payUrl),
       outTradeNo: parsed.outTradeNo || '',
-      clientSecret: parsed.clientSecret,
+      // Long-lived recovery snapshots never expose historically stored secrets.
+      clientSecret: preserveClientSecret ? parsed.clientSecret : '',
       intentId: parsed.intentId || '',
       currency: parsed.currency || '',
       countryCode: parsed.countryCode || '',

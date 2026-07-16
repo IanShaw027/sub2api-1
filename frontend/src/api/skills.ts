@@ -101,18 +101,6 @@ function pickFirstValue(source: Record<string, unknown>, keys: string[]): unknow
   return undefined
 }
 
-function currentUserId(): number | null {
-  try {
-    const raw = localStorage.getItem('auth_user')
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    const value = isRecord(parsed) ? parsed.id : null
-    return asNullableNumber(value)
-  } catch {
-    return null
-  }
-}
-
 function normalizeSkillType(value: unknown): SkillType {
   const normalized = asString(value).trim().toLowerCase()
   switch (normalized) {
@@ -441,12 +429,15 @@ function normalizeSkillSummary(raw: unknown): SkillSummary {
   const status = normalizeSkillStatus(source.status ?? meta.status, visibility)
   const type = normalizeSkillType(source.type ?? meta.type)
   const author = normalizeAuthor(source.author ?? meta.author ?? source)
-  const ownerId = asNullableNumber(source.owner_id ?? source.user_id ?? author.id)
-  const owned = asBoolean(source.owned ?? source.is_owner, false) || (ownerId !== null && ownerId === currentUserId())
+  // Authorization flags must come from the API. Never synthesize owned/editable
+  // from localStorage.auth_user (UI privilege escalation via forged local user).
+  const owned = asBoolean(source.owned ?? source.is_owner, false)
   const installed = asBoolean(source.installed ?? source.is_installed, false)
   const explicitSourceLocked = source.source_locked ?? meta.source_locked
   const sourceLocked = explicitSourceLocked === undefined ? pricing.mode === 'paid' : asBoolean(explicitSourceLocked, pricing.mode === 'paid')
-  const canViewSource = asBoolean(source.can_view_source ?? meta.can_view_source, !sourceLocked || owned)
+  const canViewSource = Object.prototype.hasOwnProperty.call(source, 'can_view_source') || Object.prototype.hasOwnProperty.call(meta, 'can_view_source')
+    ? asBoolean(source.can_view_source ?? meta.can_view_source, false)
+    : !sourceLocked
   const skillId = asNumber(source.id, Date.now())
   const createdAt = asString(source.created_at, new Date().toISOString())
   const updatedAt = asString(source.updated_at, createdAt)
@@ -468,7 +459,7 @@ function normalizeSkillSummary(raw: unknown): SkillSummary {
     can_view_source: canViewSource,
     installed,
     owned,
-    editable: asBoolean(source.editable ?? source.can_edit, owned),
+    editable: asBoolean(source.editable ?? source.can_edit, false),
     author,
     stats: normalizeStats(source.stats ?? meta.stats ?? source.metrics),
     latest_version: normalizeVersionSummary(source.latest_version ?? meta.latest_version, skillId),

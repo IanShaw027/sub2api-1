@@ -1148,11 +1148,11 @@
     "passwordLabel": "密码",
     "passwordPlaceholder": "请输入密码",
     "createPasswordPlaceholder": "创建一个安全的密码",
-    "passwordHint": "至少 6 个字符",
+    "passwordHint": "至少 8 个字符",
     "emailRequired": "请输入邮箱",
     "invalidEmail": "请输入有效的邮箱地址",
     "passwordRequired": "请输入密码",
-    "passwordMinLength": "密码至少需要 6 个字符",
+    "passwordMinLength": "密码至少需要 8 个字符",
     "loginFailed": "登录失败，请检查您的凭据后重试。",
     "registrationFailed": "注册失败，请重试。",
     "emailSuffixNotAllowed": "该邮箱域名不在允许注册范围内。",
@@ -3832,7 +3832,8 @@
         "failedToLoadPreview": "加载批量编辑预览失败",
         "noSelection": "请选择要编辑的账号",
         "noFieldsSelected": "请至少选择一个要更新的字段",
-        "mixedPlatformWarning": "所选账号跨越多个平台（{platforms}）。显示的模型映射预设为合并结果——请确保映射对每个平台都适用。"
+        "mixedPlatformWarning": "所选账号跨越多个平台（{platforms}）。显示的模型映射预设为合并结果——请确保映射对每个平台都适用。",
+        "singlePlatformRequired": "批量编辑必须明确限定到单一平台，请缩小选择范围或添加平台筛选。"
       },
       "bulkDeleteTitle": "批量删除账号",
       "bulkDeleteConfirm": "确定要删除选中的 {count} 个账号吗？此操作无法撤销。",

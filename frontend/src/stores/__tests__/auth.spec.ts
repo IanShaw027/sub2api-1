@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
+import { clearAccessToken, setAccessTokenExpiresIn } from '@/utils/authSession'
 
 // Mock authAPI
 const mockLogin = vi.fn()
@@ -55,8 +56,10 @@ describe('useAuthStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
+    clearAccessToken()
     vi.useFakeTimers()
     vi.clearAllMocks()
+    mockRefreshToken.mockRejectedValue(new Error('No refresh cookie'))
   })
 
   afterEach(() => {
@@ -75,8 +78,8 @@ describe('useAuthStore', () => {
       expect(store.token).toBe('test-token-123')
       expect(store.user).toEqual(fakeUser)
       expect(store.isAuthenticated).toBe(true)
-      expect(localStorage.getItem('auth_token')).toBe('test-token-123')
-      expect(localStorage.getItem('auth_user')).toBe(JSON.stringify(fakeUser))
+      expect(localStorage.getItem('auth_token')).toBeNull()
+      expect(localStorage.getItem('auth_user')).toBeNull()
     })
 
     it('登录失败时清除状态并抛出错误', async () => {
@@ -133,6 +136,25 @@ describe('useAuthStore', () => {
     })
   })
 
+  describe('OAuth token setup', () => {
+    it('schedules proactive refresh from the in-memory OAuth expiry', async () => {
+      mockGetCurrentUser.mockResolvedValue({ data: fakeUser })
+      mockRefreshToken.mockResolvedValue({
+        access_token: 'oauth-rotated-access',
+        expires_in: 3600,
+        token_type: 'Bearer',
+      })
+      setAccessTokenExpiresIn(300)
+      const store = useAuthStore()
+
+      await store.setToken('oauth-access')
+      mockRefreshToken.mockClear()
+      await vi.advanceTimersByTimeAsync(180_000)
+
+      expect(mockRefreshToken).toHaveBeenCalledWith()
+    })
+  })
+
   // --- logout ---
 
   describe('logout', () => {
@@ -161,60 +183,91 @@ describe('useAuthStore', () => {
   // --- checkAuth ---
 
   describe('checkAuth', () => {
-    it('从 localStorage 恢复持久化状态', () => {
+    it('通过旧 refresh token 一次性迁移并从 cookie 会话恢复', async () => {
       localStorage.setItem('auth_token', 'saved-token')
       localStorage.setItem('auth_user', JSON.stringify(fakeUser))
+      localStorage.setItem('refresh_token', 'saved-refresh')
 
-      // Mock refreshUser (getCurrentUser) 防止后台刷新报错
+      mockRefreshToken.mockResolvedValue({
+        access_token: 'rotated-access',
+        expires_in: 3600,
+        token_type: 'Bearer',
+      })
       mockGetCurrentUser.mockResolvedValue({ data: fakeUser })
 
       const store = useAuthStore()
-      store.checkAuth()
+      await store.checkAuth()
 
-      expect(store.token).toBe('saved-token')
+      expect(mockRefreshToken).toHaveBeenCalledWith('saved-refresh')
+      expect(store.token).toBe('rotated-access')
       expect(store.user).toEqual(fakeUser)
       expect(store.isAuthenticated).toBe(true)
       expect(mockGetCurrentUser).toHaveBeenCalledWith({ touchActive: true })
+      expect(localStorage.getItem('auth_token')).toBeNull()
+      expect(localStorage.getItem('refresh_token')).toBeNull()
+      expect(localStorage.getItem('auth_user')).toBeNull()
     })
 
-    it('localStorage 无数据时保持未认证状态', () => {
+    it('无 cookie 会话时保持未认证状态', async () => {
       const store = useAuthStore()
-      store.checkAuth()
+      await store.checkAuth()
 
       expect(store.token).toBeNull()
       expect(store.user).toBeNull()
       expect(store.isAuthenticated).toBe(false)
     })
 
-    it('localStorage 中用户数据损坏时清除状态', () => {
+    it('刷新失败时清除所有旧凭证且不解析旧用户快照', async () => {
       localStorage.setItem('auth_token', 'saved-token')
       localStorage.setItem('auth_user', 'invalid-json{{{')
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      try {
-        const store = useAuthStore()
-        store.checkAuth()
+      const store = useAuthStore()
+      await store.checkAuth()
 
-        expect(store.token).toBeNull()
-        expect(store.user).toBeNull()
-        expect(localStorage.getItem('auth_token')).toBeNull()
-      } finally {
-        consoleErrorSpy.mockRestore()
-      }
+      expect(store.token).toBeNull()
+      expect(store.user).toBeNull()
+      expect(localStorage.getItem('auth_token')).toBeNull()
+      expect(localStorage.getItem('auth_user')).toBeNull()
     })
 
-    it('恢复 refresh token 和过期时间', () => {
-      const futureTs = String(Date.now() + 3600_000)
-      localStorage.setItem('auth_token', 'saved-token')
-      localStorage.setItem('auth_user', JSON.stringify(fakeUser))
+    it('cookie refresh 成功后恢复会话并只在内存保存过期时间', async () => {
       localStorage.setItem('refresh_token', 'saved-refresh')
-      localStorage.setItem('token_expires_at', futureTs)
-
+      mockRefreshToken.mockResolvedValue({
+        access_token: 'restored-access',
+        expires_in: 3600,
+        token_type: 'Bearer',
+      })
       mockGetCurrentUser.mockResolvedValue({ data: fakeUser })
 
       const store = useAuthStore()
-      store.checkAuth()
+      await store.checkAuth()
 
       expect(store.isAuthenticated).toBe(true)
+      expect(localStorage.getItem('token_expires_at')).toBeNull()
+    })
+
+    it('does not trust a persisted admin role until the server refresh succeeds', async () => {
+      let resolveCurrentUser!: (value: { data: typeof fakeAdminUser }) => void
+      mockGetCurrentUser.mockReturnValue(new Promise((resolve) => {
+        resolveCurrentUser = resolve
+      }))
+      mockRefreshToken.mockResolvedValue({
+        access_token: 'restored-admin-access',
+        expires_in: 3600,
+        token_type: 'Bearer',
+      })
+
+      const store = useAuthStore()
+      const checking = store.checkAuth()
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(store.isAdmin).toBe(false)
+
+      resolveCurrentUser({ data: fakeAdminUser })
+      await checking
+
+      expect(store.isAuthenticated).toBe(true)
+      expect(store.isAdmin).toBe(true)
     })
 
     it('恢复持久化 pending auth session', () => {
@@ -357,7 +410,7 @@ describe('useAuthStore', () => {
   // --- refreshUser ---
 
   describe('refreshUser', () => {
-    it('刷新用户数据并更新 localStorage', async () => {
+    it('刷新用户数据但不持久化用户会话快照', async () => {
       mockLogin.mockResolvedValue(fakeAuthResponse)
       const store = useAuthStore()
       await store.login({ email: 'test@example.com', password: '123456' })
@@ -374,7 +427,7 @@ describe('useAuthStore', () => {
       expect(result).toEqual(updatedUser)
       expect(mockGetCurrentUser).toHaveBeenLastCalledWith({})
       expect(store.user).toEqual(updatedUser)
-      expect(JSON.parse(localStorage.getItem('auth_user')!)).toEqual(updatedUser)
+      expect(localStorage.getItem('auth_user')).toBeNull()
     })
 
     it('显式 touchActive 时刷新当前用户并记录活跃', async () => {

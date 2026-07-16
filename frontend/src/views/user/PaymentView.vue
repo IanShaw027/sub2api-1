@@ -273,14 +273,17 @@ import PaymentMethodSelector from '@/components/payment/PaymentMethodSelector.vu
 import { METHOD_ORDER, getPaymentPopupFeatures } from '@/components/payment/providerConfig'
 import {
   PAYMENT_RECOVERY_STORAGE_KEY,
+  PAYMENT_SESSION_RECOVERY_STORAGE_KEY,
   buildCreateOrderPayload,
   clearPaymentRecoverySnapshot,
   decidePaymentLaunch,
   getVisibleMethods,
+  assertPaymentLaunchUrl,
   normalizeVisibleMethod,
   readPaymentRecoverySnapshot,
   type PaymentRecoverySnapshot,
   writePaymentRecoverySnapshot,
+  writePaymentSessionRecoverySnapshot,
 } from '@/components/payment/paymentFlow'
 import { platformAccentBarClass, platformBadgeLightClass, platformBadgeClass, platformTextClass, platformLabel } from '@/utils/platformColors'
 import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
@@ -407,6 +410,11 @@ const paymentState = ref<PaymentRecoverySnapshot>(emptyPaymentState())
 function persistRecoverySnapshot(snapshot: PaymentRecoverySnapshot) {
   if (typeof window === 'undefined' || !snapshot.orderId) return
   writePaymentRecoverySnapshot(window.localStorage, snapshot, PAYMENT_RECOVERY_STORAGE_KEY)
+  writePaymentSessionRecoverySnapshot(
+    window.sessionStorage,
+    snapshot,
+    PAYMENT_SESSION_RECOVERY_STORAGE_KEY,
+  )
 }
 
 function markRecoveryRedirected(snapshot: PaymentRecoverySnapshot) {
@@ -421,6 +429,7 @@ function markRecoveryRedirected(snapshot: PaymentRecoverySnapshot) {
 function removeRecoverySnapshot() {
   if (typeof window === 'undefined') return
   clearPaymentRecoverySnapshot(window.localStorage, PAYMENT_RECOVERY_STORAGE_KEY)
+  clearPaymentRecoverySnapshot(window.sessionStorage, PAYMENT_SESSION_RECOVERY_STORAGE_KEY)
 }
 
 function resetPayment() {
@@ -816,9 +825,11 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
 
     const result = await paymentStore.createOrder(payload) as CreateOrderResult & { resume_token?: string }
     const openWindow = (url: string) => {
-      const win = window.open(url, 'paymentPopup', getPaymentPopupFeatures())
+      const safe = assertPaymentLaunchUrl(url)
+      if (!safe) return
+      const win = window.open(safe, 'paymentPopup', getPaymentPopupFeatures())
       if (!win || win.closed) {
-        window.location.href = url
+        window.location.href = safe
       }
     }
     const visibleMethod = normalizeVisibleMethod(requestType) || requestType
@@ -1167,7 +1178,7 @@ onMounted(async () => {
           selectedMethod.value = restoredMethod
         }
       } else if (rawRecoverySnapshot) {
-        clearPaymentRecoverySnapshot(window.localStorage, PAYMENT_RECOVERY_STORAGE_KEY)
+        removeRecoverySnapshot()
       }
     }
     await resumeWechatPaymentFromQuery()

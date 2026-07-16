@@ -2156,6 +2156,10 @@ const collectFilteredSelectionMetadata = async (filters: Record<string, unknown>
 }
 
 const openBulkEditSelected = () => {
+  if (selPlatforms.value.length !== 1 || !String(selPlatforms.value[0] || '').trim()) {
+    appStore.showError(t('admin.accounts.bulkEdit.singlePlatformRequired'))
+    return
+  }
   // Prefer cached cross-page meta; fall back to current page rows.
   const selectedRows: Account[] = selIds.value.map((id) => {
     const live = accounts.value.find(a => a.id === id)
@@ -2185,6 +2189,10 @@ const openBulkEditFiltered = async () => {
   const result = await collectFilteredSelectionMetadata(filters)
   if (!result) return
   const { previewCount, selectedPlatforms, selectedTypes, textEndpointAutoRouteConfigurable } = result
+  if (selectedPlatforms.length !== 1 || !String(selectedPlatforms[0] || '').trim()) {
+    appStore.showError(t('admin.accounts.bulkEdit.singlePlatformRequired'))
+    return
+  }
   bulkEditTarget.value = {
     mode: 'filtered',
     filters,

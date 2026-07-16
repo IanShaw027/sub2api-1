@@ -171,9 +171,10 @@ async function handleLogout() {
 
 ## Persistence
 
-- **Auth Store**: Token and user data are automatically persisted to `localStorage`
-  - Keys: `auth_token`, `auth_user`
-  - Restored on `checkAuth()` call
+- **Auth Store**: Access token and user state are kept in page memory only.
+  - Refresh token is an `HttpOnly` cookie managed by the backend.
+  - `checkAuth()` restores the session through the refresh cookie.
+  - Legacy `auth_token` / `refresh_token` storage is read once for migration and then removed.
 - **App Store**: No persistence (UI state resets on page reload)
 
 ## TypeScript Support

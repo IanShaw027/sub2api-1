@@ -22,6 +22,7 @@ vi.mock('@/api/ai', () => ({
 }))
 
 import { useAiStudioStore } from '@/stores/aiStudio'
+import { setSessionUser } from '@/utils/authSession'
 
 describe('useAiStudioStore', () => {
   beforeEach(() => {
@@ -31,6 +32,7 @@ describe('useAiStudioStore', () => {
     getRuntimeInfo.mockReset()
     getRuntimeInfo.mockResolvedValue({ lines: [] })
     localStorage.clear()
+    setSessionUser(null)
   })
 
   it('creates a chat session and restores session messages from backend', async () => {
@@ -118,7 +120,7 @@ describe('useAiStudioStore', () => {
   })
 
   it('scopes persisted line and key selections per authenticated user', async () => {
-    localStorage.setItem('auth_user', JSON.stringify({ id: 1 }))
+    setSessionUser({ id: 1 } as any)
 
     let store = useAiStudioStore()
     store.lines = [
@@ -137,7 +139,7 @@ describe('useAiStudioStore', () => {
     store.setSelectedKey(111)
 
     setActivePinia(createPinia())
-    localStorage.setItem('auth_user', JSON.stringify({ id: 2 }))
+    setSessionUser({ id: 2 } as any)
     store = useAiStudioStore()
     store.runtimeInfo = {
       default_line: {
@@ -183,7 +185,7 @@ describe('useAiStudioStore', () => {
     store.setSelectedKey(222)
 
     setActivePinia(createPinia())
-    localStorage.setItem('auth_user', JSON.stringify({ id: 1 }))
+    setSessionUser({ id: 1 } as any)
     store = useAiStudioStore()
     store.lines = [
       {
@@ -204,7 +206,7 @@ describe('useAiStudioStore', () => {
   })
 
   it('clears in-memory session state when auth scope changes before loading the next user runtime', async () => {
-    localStorage.setItem('auth_user', JSON.stringify({ id: 1 }))
+    setSessionUser({ id: 1 } as any)
     const store = useAiStudioStore()
 
     store.lines = [
@@ -243,7 +245,7 @@ describe('useAiStudioStore', () => {
       },
     ]
 
-    localStorage.setItem('auth_user', JSON.stringify({ id: 2 }))
+    setSessionUser({ id: 2 } as any)
     localStorage.setItem('sub2api_ai_selected_line_v1:user_2', '22')
     localStorage.setItem('sub2api_ai_selected_key_by_line_v1:user_2', JSON.stringify({ 22: 222 }))
 

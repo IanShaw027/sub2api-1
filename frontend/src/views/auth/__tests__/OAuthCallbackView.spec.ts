@@ -269,4 +269,27 @@ describe('OAuthCallbackView', () => {
     expect(apiPostMock.mock.calls[0][1]).not.toHaveProperty('email')
     expect(setTokenMock).toHaveBeenCalledWith('token-2')
   })
+
+  it('requires at least eight characters for email oauth registration passwords', async () => {
+    routeState.path = '/auth/oauth/callback'
+    exchangePendingOAuthCompletionMock.mockResolvedValue({
+      error: 'registration_completion_required',
+      provider: 'github',
+      redirect: '/dashboard',
+      resolved_email: 'verified@example.com',
+      invitation_required: false,
+    })
+
+    const wrapper = mount(OAuthCallbackView)
+    await vi.dynamicImportSettled()
+
+    const passwordInputs = wrapper.findAll('input[type="password"]')
+    expect(passwordInputs[0].attributes('minlength')).toBe('8')
+    expect(passwordInputs[1].attributes('minlength')).toBe('8')
+    await passwordInputs[0].setValue('1234567')
+    await passwordInputs[1].setValue('1234567')
+
+    expect(wrapper.findAll('button').at(0)?.attributes('disabled')).toBeDefined()
+    expect(apiPostMock).not.toHaveBeenCalled()
+  })
 })

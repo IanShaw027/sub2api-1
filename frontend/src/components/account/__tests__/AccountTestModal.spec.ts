@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import AccountTestModal from '../AccountTestModal.vue'
+import { clearAccessToken, setAccessToken } from '@/utils/authSession'
 
 const { getAvailableModelsMock } = vi.hoisted(() => ({
   getAvailableModelsMock: vi.fn()
@@ -127,11 +128,12 @@ describe('AccountTestModal', () => {
         })
       }
     } as any)
-    localStorage.setItem('auth_token', 'test-token')
+    setAccessToken('test-token')
   })
 
   afterEach(() => {
     global.fetch = originalFetch
+    clearAccessToken()
     localStorage.clear()
   })
 

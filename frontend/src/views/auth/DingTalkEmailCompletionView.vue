@@ -86,8 +86,8 @@ async function handleCreateAccount(payload: PendingOAuthCreateAccountPayload) {
     const redirect = sanitizeRedirectPath(data.redirect || (route.query.redirect as string | undefined))
 
     if (data.access_token) {
-      persistOAuthTokenContext(data)
-      await authStore.setToken(data.access_token)
+      const effectiveTokens = (await persistOAuthTokenContext(data)) || data
+      await authStore.setToken(effectiveTokens.access_token || data.access_token)
       clearAllAffiliateReferralCodes()
       appStore.showSuccess(t('auth.loginSuccess'))
       await router.replace(redirect)

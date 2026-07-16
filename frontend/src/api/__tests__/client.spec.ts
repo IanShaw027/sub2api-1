@@ -9,6 +9,7 @@ vi.mock('@/i18n', () => ({
 
 describe('API Client', () => {
   let apiClient: AxiosInstance
+  let setAccessToken: (token: string | null) => void
 
   beforeEach(async () => {
     localStorage.clear()
@@ -16,7 +17,10 @@ describe('API Client', () => {
     // 每次测试重新导入以获取干净的模块状态
     vi.resetModules()
     const mod = await import('@/api/client')
+    const authSession = await import('@/utils/authSession')
     apiClient = mod.apiClient
+    setAccessToken = authSession.setAccessToken
+    authSession.clearAccessToken()
   })
 
   afterEach(() => {
@@ -49,7 +53,7 @@ describe('API Client', () => {
     })
 
     it('自动附加 Authorization 头', async () => {
-      localStorage.setItem('auth_token', 'my-jwt-token')
+      setAccessToken('my-jwt-token')
 
       // 拦截实际请求
       const adapter = vi.fn().mockResolvedValue({
@@ -65,6 +69,7 @@ describe('API Client', () => {
 
       const config = adapter.mock.calls[0][0]
       expect(config.headers.get('Authorization')).toBe('Bearer my-jwt-token')
+      expect(localStorage.getItem('auth_token')).toBeNull()
     })
 
     it('无 token 时不附加 Authorization 头', async () => {
@@ -147,6 +152,7 @@ describe('API Client', () => {
 
       const config = adapter.mock.calls[0][0]
       expect(config.withCredentials).toBe(true)
+      expect(config.headers.get('X-Sub2API-Refresh')).toBe('1')
     })
 
     it('FormData 请求不保留默认 JSON Content-Type', async () => {

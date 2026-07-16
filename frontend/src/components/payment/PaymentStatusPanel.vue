@@ -129,6 +129,7 @@ import { useAppStore } from '@/stores'
 import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { getPaymentPopupFeatures, isBuiltInAlipayMethod, isBuiltInWxpayMethod } from '@/components/payment/providerConfig'
+import { assertPaymentLaunchUrl } from '@/components/payment/paymentFlow'
 import { currencySymbol, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import type { PaymentOrder } from '@/types/payment'
 import Icon from '@/components/icons/Icon.vue'
@@ -231,11 +232,11 @@ function isSuccessStatus(status: string | null | undefined): boolean {
 }
 
 function reopenPopup() {
-  if (props.payUrl) {
-    const win = window.open(props.payUrl, 'paymentPopup', getPaymentPopupFeatures())
-    if (!win || win.closed) {
-      window.location.href = props.payUrl
-    }
+  const url = assertPaymentLaunchUrl(props.payUrl || '')
+  if (!url) return
+  const win = window.open(url, 'paymentPopup', getPaymentPopupFeatures())
+  if (!win || win.closed) {
+    window.location.href = url
   }
 }
 

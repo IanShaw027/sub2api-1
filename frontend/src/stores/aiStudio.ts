@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { apiClient } from '@/api/client'
 import { getRuntimeInfo, type AiRuntimeInfo } from '@/api/ai'
 import type { AiChatMessage, AiLineOption, BasePaginationResponse } from '@/types'
+import { getSessionUser } from '@/utils/authSession'
 
 const SELECTED_LINE_KEY = 'sub2api_ai_selected_line_v1'
 const SELECTED_KEY_BY_LINE_KEY = 'sub2api_ai_selected_key_by_line_v1'
@@ -227,15 +228,8 @@ function persistStoredKeyMap(map: Record<string, number>, userId: number | null)
 }
 
 function getCurrentUserId(): number | null {
-  try {
-    const raw = localStorage.getItem('auth_user')
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    const id = typeof parsed?.id === 'number' ? parsed.id : Number(parsed?.id)
-    return Number.isFinite(id) ? id : null
-  } catch {
-    return null
-  }
+  const id = getSessionUser()?.id
+  return typeof id === 'number' && Number.isFinite(id) ? id : null
 }
 
 export const useAiStudioStore = defineStore('aiStudio', () => {

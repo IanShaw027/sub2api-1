@@ -35,6 +35,7 @@
             <input
               v-model="password"
               type="password"
+              minlength="8"
               class="input w-full"
               :placeholder="t('auth.createPasswordPlaceholder')"
               :disabled="isSubmitting"
@@ -47,6 +48,7 @@
             <input
               v-model="confirmPassword"
               type="password"
+              minlength="8"
               class="input w-full"
               :placeholder="t('auth.confirmPasswordPlaceholder')"
               :disabled="isSubmitting"
@@ -215,7 +217,7 @@ const registrationHint = computed(() =>
 )
 const canSubmitRegistration = computed(() => {
   if (!registrationEmail.value.trim()) return false
-  if (password.value.length < 6) return false
+  if (password.value.length < 8) return false
   if (password.value !== confirmPassword.value) return false
   if (invitationRequired.value && !invitationCode.value.trim()) return false
   return true
@@ -266,8 +268,8 @@ function redirectProviderCallbackToBackend(provider: 'github' | 'google'): void 
 }
 
 async function finalizeTokenResponse(tokenResponse: OAuthTokenResponse, redirect: string) {
-  persistOAuthTokenContext(tokenResponse)
-  await authStore.setToken(tokenResponse.access_token)
+  const effectiveTokens = (await persistOAuthTokenContext(tokenResponse)) || tokenResponse
+  await authStore.setToken(effectiveTokens.access_token || tokenResponse.access_token)
   if (typeof window !== 'undefined') {
     window.sessionStorage.removeItem(EMAIL_OAUTH_PENDING_PROVIDER_KEY)
   }
@@ -336,7 +338,7 @@ async function handleSubmitRegistration() {
     registrationError.value = t('auth.emailRequired')
     return
   }
-  if (password.value.length < 6) {
+  if (password.value.length < 8) {
     registrationError.value = t('auth.passwordMinLength')
     return
   }
@@ -372,6 +374,13 @@ async function handleSubmitRegistration() {
 
 onMounted(async () => {
   const params = parseFragmentParams()
+  if (typeof window !== 'undefined' && window.location.hash) {
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${window.location.search}`
+    )
+  }
   const tokenResponse = readTokenResponse(params)
   const fragmentError = params.get('error') || ''
   const fragmentErrorDescription =

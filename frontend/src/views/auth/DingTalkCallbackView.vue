@@ -582,8 +582,8 @@ async function finalizeCompletion(completion: PendingOAuthExchangeResponse, redi
     throw new Error(t('auth.dingtalk.callbackMissingToken'))
   }
 
-  persistOAuthTokenContext(completion)
-  await authStore.setToken(completion.access_token)
+  const effectiveTokens = (await persistOAuthTokenContext(completion)) || completion
+  await authStore.setToken(effectiveTokens.access_token || completion.access_token)
   clearAllAffiliateReferralCodes()
   appStore.showSuccess(t('auth.loginSuccess'))
   await router.replace(redirect)
@@ -745,6 +745,13 @@ async function handleSubmitTotpChallenge() {
 
 onMounted(async () => {
   const params = parseFragmentParams()
+  if (typeof window !== 'undefined' && window.location.hash) {
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${window.location.search}`
+    )
+  }
   const legacyLogin = readLegacyFragmentLogin(params)
   const legacyPendingToken = params.get('pending_oauth_token')?.trim() || ''
   const error = params.get('error')
@@ -755,8 +762,8 @@ onMounted(async () => {
 
   try {
     if (legacyLogin) {
-      persistOAuthTokenContext(legacyLogin)
-      await authStore.setToken(legacyLogin.access_token)
+      const effectiveTokens = (await persistOAuthTokenContext(legacyLogin)) || legacyLogin
+      await authStore.setToken(effectiveTokens.access_token || legacyLogin.access_token)
       clearAllAffiliateReferralCodes()
       appStore.showSuccess(t('auth.loginSuccess'))
       await router.replace(redirect)

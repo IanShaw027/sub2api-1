@@ -1073,11 +1073,11 @@ export default {
     passwordLabel: 'Password',
     passwordPlaceholder: 'Enter your password',
     createPasswordPlaceholder: 'Create a strong password',
-    passwordHint: 'At least 6 characters',
+    passwordHint: 'At least 8 characters',
     emailRequired: 'Email is required',
     invalidEmail: 'Please enter a valid email address',
     passwordRequired: 'Password is required',
-    passwordMinLength: 'Password must be at least 6 characters',
+    passwordMinLength: 'Password must be at least 8 characters',
     loginFailed: 'Login failed. Please check your credentials and try again.',
     errors: {
       USER_NOT_ACTIVE: 'Account has been disabled.',
@@ -4357,7 +4357,8 @@ export default {
         failed: 'Bulk update failed',
         noSelection: 'Please select accounts to edit',
         noFieldsSelected: 'Select at least one field to update',
-        mixedPlatformWarning: 'Selected accounts span multiple platforms ({platforms}). Model mapping presets shown are combined — ensure mappings are appropriate for each platform.'
+        mixedPlatformWarning: 'Selected accounts span multiple platforms ({platforms}). Model mapping presets shown are combined — ensure mappings are appropriate for each platform.',
+        singlePlatformRequired: 'Bulk edits require a known, single target platform. Narrow the selection or add a platform filter.'
       },
       bulkDeleteTitle: 'Bulk Delete Accounts',
       bulkDeleteConfirm: 'Delete the selected {count} account(s)? This action cannot be undone.',

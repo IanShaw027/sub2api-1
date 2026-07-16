@@ -21,13 +21,13 @@
         </p>
       </div>
 
-      <!-- Mixed platform warning -->
-      <div v-if="isMixedPlatform" class="rounded-lg bg-amber-50 p-4 dark:bg-amber-900/20">
+      <!-- Unsafe platform scope warning -->
+      <div v-if="!hasSingleTargetPlatform" class="rounded-lg bg-amber-50 p-4 dark:bg-amber-900/20">
         <p class="text-sm text-amber-700 dark:text-amber-400">
           <svg class="mr-1.5 inline h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
-          {{ t('admin.accounts.bulkEdit.mixedPlatformWarning', { platforms: targetSelectedPlatforms.join(', ') }) }}
+          {{ t('admin.accounts.bulkEdit.singlePlatformRequired') }}
         </p>
       </div>
 
@@ -1285,7 +1285,7 @@
         <button
           type="submit"
           form="bulk-edit-account-form"
-          :disabled="submitting || isMixedPlatform"
+          :disabled="submitting || !hasSingleTargetPlatform"
           class="btn btn-primary"
         >
           <svg
@@ -1393,7 +1393,10 @@ const targetMode = computed(() => props.target?.mode ?? 'selected')
 const targetPreviewCount = computed(() => props.target?.previewCount ?? props.accountIds.length)
 const targetSelectedPlatforms = computed(() => props.target?.selectedPlatforms ?? props.selectedPlatforms)
 const targetSelectedTypes = computed(() => props.target?.selectedTypes ?? props.selectedTypes)
-const isMixedPlatform = computed(() => targetSelectedPlatforms.value.length > 1)
+const hasSingleTargetPlatform = computed(() =>
+  targetSelectedPlatforms.value.length === 1 &&
+  Boolean(String(targetSelectedPlatforms.value[0] || '').trim())
+)
 
 const allOpenAIPassthroughCapable = computed(() => {
   return (
@@ -2005,12 +2008,8 @@ const handleSubmit = async () => {
     appStore.showError(t('admin.accounts.bulkEdit.noSelection'))
     return
   }
-  if (isMixedPlatform.value) {
-    appStore.showError(
-      t('admin.accounts.bulkEdit.mixedPlatformWarning', {
-        platforms: targetSelectedPlatforms.value.join(', ')
-      })
-    )
+  if (!hasSingleTargetPlatform.value) {
+    appStore.showError(t('admin.accounts.bulkEdit.singlePlatformRequired'))
     return
   }
 

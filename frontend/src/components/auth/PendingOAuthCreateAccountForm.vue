@@ -12,6 +12,8 @@
       v-model="password"
       :data-testid="`${testIdPrefix}-create-account-password`"
       type="password"
+      minlength="8"
+      autocomplete="new-password"
       class="input w-full"
       :placeholder="t('auth.passwordPlaceholder')"
       :disabled="isSubmitting"
@@ -71,7 +73,7 @@
       :data-testid="`${testIdPrefix}-create-account-submit`"
       type="button"
       class="btn btn-primary w-full"
-      :disabled="isSubmitting || !email.trim() || password.length < 6 || (emailVerifyEnabled && !verifyCode.trim()) || (invitationCodeEnabled && !invitationCode.trim())"
+      :disabled="isSubmitting || !email.trim() || password.length < 8 || (emailVerifyEnabled && !verifyCode.trim()) || (invitationCodeEnabled && !invitationCode.trim())"
       @click="handleSubmit"
     >
       {{ isSubmitting ? t('common.processing') : t('auth.createAccount') }}
@@ -256,7 +258,7 @@ async function handleSendCode() {
 function handleSubmit() {
   const trimmedEmail = email.value.trim()
   const trimmedVerifyCode = verifyCode.value.trim()
-  if (!trimmedEmail || password.value.length < 6) {
+  if (!trimmedEmail || password.value.length < 8) {
     return
   }
   if (emailVerifyEnabled.value && !trimmedVerifyCode) {

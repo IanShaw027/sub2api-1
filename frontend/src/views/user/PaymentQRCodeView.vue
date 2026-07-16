@@ -42,6 +42,7 @@ import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { useAppStore } from '@/stores'
 import { isBuiltInAlipayMethod, isBuiltInWxpayMethod } from '@/components/payment/providerConfig'
+import { assertPaymentLaunchUrl } from '@/components/payment/paymentFlow'
 import QRCode from 'qrcode'
 import alipayIcon from '@/assets/icons/alipay.svg'
 import wxpayIcon from '@/assets/icons/wxpay.svg'
@@ -194,7 +195,7 @@ watch(qrUrl, () => renderQR())
 onMounted(() => {
   orderId.value = Number(route.query.order_id) || 0
   qrUrl.value = String(route.query.qr || '')
-  payUrl.value = String(route.query.pay_url || '')
+  payUrl.value = assertPaymentLaunchUrl(String(route.query.pay_url || ''))
   paymentType.value = String(route.query.payment_type || '')
 
   // Calculate countdown from expiresAt

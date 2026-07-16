@@ -103,6 +103,7 @@ import { useRoute, useRouter } from 'vue-router'
 import OrderStatusBadge from '@/components/payment/OrderStatusBadge.vue'
 import {
   PAYMENT_RECOVERY_STORAGE_KEY,
+  PAYMENT_SESSION_RECOVERY_STORAGE_KEY,
   clearPaymentRecoverySnapshot,
   readPaymentRecoverySnapshot,
 } from '@/components/payment/paymentFlow'
@@ -308,6 +309,7 @@ function clearStatusRefreshTimer(): void {
 function clearRecoverySnapshot(): void {
   if (typeof window === 'undefined') return
   clearPaymentRecoverySnapshot(window.localStorage, PAYMENT_RECOVERY_STORAGE_KEY)
+  clearPaymentRecoverySnapshot(window.sessionStorage, PAYMENT_SESSION_RECOVERY_STORAGE_KEY)
 }
 
 function clearRecoverySnapshotForTerminalStatus(status: string | null | undefined): void {

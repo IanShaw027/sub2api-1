@@ -296,6 +296,21 @@ describe('admin AccountsView bulk edit scope', () => {
   })
 
   it('opens bulk edit in filtered-results mode from the bulk actions dropdown', async () => {
+    listAccounts
+      .mockResolvedValueOnce({
+        items: [],
+        total: 0,
+        page: 1,
+        page_size: 20,
+        pages: 0
+      })
+      .mockResolvedValueOnce({
+        items: [{ id: 1, name: 'OpenAI', platform: 'openai', type: 'oauth' }],
+        total: 1,
+        page: 1,
+        page_size: 100,
+        pages: 1
+      })
     const wrapper = mountAccountsView()
 
     await flushPromises()
@@ -310,7 +325,7 @@ describe('admin AccountsView bulk edit scope', () => {
     expect(wrapper.get('[data-test="bulk-edit-modal"]').attributes('data-target-mode')).toBe('filtered')
   })
 
-  it('does not scan every filtered page for platform/type capability hints', async () => {
+  it('fails closed instead of guessing the platform for a large unscoped filtered set', async () => {
     listAccounts
       .mockResolvedValueOnce({
         items: [],
@@ -338,10 +353,8 @@ describe('admin AccountsView bulk edit scope', () => {
     await wrapper.get('[data-test="edit-filtered"]').trigger('click')
     await flushPromises()
 
-    const modal = wrapper.get('[data-test="bulk-edit-modal"]')
-    expect(modal.attributes('data-preview-count')).toBe('105')
-    expect(modal.attributes('data-selected-platforms')).toBe('')
-    expect(modal.attributes('data-selected-types')).toBe('')
+    expect(wrapper.find('[data-test="bulk-edit-modal"]').exists()).toBe(false)
+    expect(showError).toHaveBeenCalledWith('admin.accounts.bulkEdit.singlePlatformRequired')
     expect(listAccounts).toHaveBeenCalledTimes(2)
   })
 

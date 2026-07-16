@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import AirwallexPaymentView from '../AirwallexPaymentView.vue'
 import {
-  PAYMENT_RECOVERY_STORAGE_KEY,
+  PAYMENT_SESSION_RECOVERY_STORAGE_KEY,
   type PaymentRecoverySnapshot,
 } from '@/components/payment/paymentFlow'
 
@@ -82,6 +82,7 @@ describe('AirwallexPaymentView', () => {
     })
     redirectToCheckout.mockReset()
     window.localStorage.clear()
+    window.sessionStorage.clear()
   })
 
   it('从本地恢复快照读取支付参数，避免在 URL 中暴露 client_secret', async () => {
@@ -90,8 +91,8 @@ describe('AirwallexPaymentView', () => {
       out_trade_no: 'sub2_awx_101',
       resume_token: 'resume-awx',
     }
-    window.localStorage.setItem(
-      PAYMENT_RECOVERY_STORAGE_KEY,
+    window.sessionStorage.setItem(
+      PAYMENT_SESSION_RECOVERY_STORAGE_KEY,
       JSON.stringify(airwallexSnapshot()),
     )
 

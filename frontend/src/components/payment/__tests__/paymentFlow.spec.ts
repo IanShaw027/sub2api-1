@@ -4,8 +4,12 @@ import {
   buildCreateOrderPayload,
   decidePaymentLaunch,
   getVisibleMethods,
+  assertPaymentLaunchUrl,
   readPaymentRecoverySnapshot,
+  readPaymentSessionRecoverySnapshot,
   type PaymentRecoverySnapshot,
+  writePaymentRecoverySnapshot,
+  writePaymentSessionRecoverySnapshot,
 } from '@/components/payment/paymentFlow'
 
 function methodLimit(overrides: Partial<MethodLimit> = {}): MethodLimit {
@@ -82,11 +86,13 @@ describe('decidePaymentLaunch', () => {
       visibleMethod: 'alipay',
       orderType: 'balance',
       isMobile: false,
+      stripePopupUrl: '/payment/stripe?order_id=101&method=alipay',
     })
 
     expect(decision.kind).toBe('stripe_popup')
     expect(decision.paymentState.paymentType).toBe('alipay')
     expect(decision.stripeMethod).toBe('alipay')
+    expect(decision.paymentState.payUrl).toBe('/payment/stripe?order_id=101&method=alipay')
     expect(decision.recovery.resumeToken).toBe('resume-1')
     expect(decision.recovery.outTradeNo).toBe('')
   })
@@ -463,5 +469,93 @@ describe('readPaymentRecoverySnapshot', () => {
     expect(restored?.currency).toBe('')
     expect(restored?.countryCode).toBe('')
     expect(restored?.paymentEnv).toBe('')
+  })
+})
+
+describe('assertPaymentLaunchUrl', () => {
+  it('allows http(s) and safe same-origin relative routes while rejecting dangerous values', () => {
+    expect(assertPaymentLaunchUrl('https://pay.example.com/x')).toBe('https://pay.example.com/x')
+    expect(assertPaymentLaunchUrl('http://pay.example.com/x')).toMatch(/^http:\/\//)
+    expect(assertPaymentLaunchUrl('/payment/stripe?order_id=42')).toBe('/payment/stripe?order_id=42')
+    expect(assertPaymentLaunchUrl('javascript:alert(1)')).toBe('')
+    expect(assertPaymentLaunchUrl('data:text/html,hi')).toBe('')
+    expect(assertPaymentLaunchUrl('//evil.example')).toBe('')
+    expect(assertPaymentLaunchUrl('/\\evil.example')).toBe('')
+    expect(assertPaymentLaunchUrl('https:\\evil.example')).toBe('')
+  })
+})
+
+describe('payment recovery snapshot secret hygiene', () => {
+  it('strips clientSecret on write and read', () => {
+    const storage = {
+      store: '' as string,
+      setItem(_k: string, v: string) { this.store = v },
+      removeItem() { this.store = '' },
+    }
+    writePaymentRecoverySnapshot(storage, {
+      orderId: 1,
+      amount: 10,
+      qrCode: '',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      paymentType: 'stripe',
+      payUrl: 'https://pay.example.com',
+      outTradeNo: 'otn',
+      clientSecret: 'sk_live_should_not_persist',
+      intentId: 'pi_1',
+      currency: 'usd',
+      countryCode: 'US',
+      paymentEnv: '',
+      payAmount: 10,
+      orderType: 'balance',
+      paymentMode: '',
+      resumeToken: 'rt',
+      createdAt: Date.now(),
+    })
+    expect(storage.store).not.toContain('sk_live')
+    const parsed = readPaymentRecoverySnapshot(storage.store)
+    expect(parsed?.clientSecret).toBe('')
+    expect(parsed?.payUrl).toBe('https://pay.example.com/')
+  })
+
+  it('keeps a secret in session storage only when it matches the route order identity', () => {
+    const storage = {
+      store: '' as string,
+      setItem(_k: string, v: string) { this.store = v },
+    }
+    const snapshot: PaymentRecoverySnapshot = {
+      orderId: 42,
+      amount: 10,
+      qrCode: '',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      paymentType: 'stripe',
+      payUrl: '/payment/stripe?order_id=42',
+      outTradeNo: 'otn-42',
+      clientSecret: 'pi_secret_42',
+      intentId: 'pi_42',
+      currency: 'usd',
+      countryCode: 'US',
+      paymentEnv: '',
+      payAmount: 10,
+      orderType: 'balance',
+      paymentMode: '',
+      resumeToken: 'resume-42',
+      createdAt: Date.now(),
+    }
+
+    writePaymentSessionRecoverySnapshot(storage, snapshot)
+
+    expect(readPaymentSessionRecoverySnapshot(storage.store, {
+      orderId: 42,
+      resumeToken: 'resume-42',
+      outTradeNo: 'otn-42',
+    })?.clientSecret).toBe('pi_secret_42')
+    expect(readPaymentSessionRecoverySnapshot(storage.store, {
+      orderId: 41,
+      resumeToken: 'resume-42',
+    })).toBeNull()
+    expect(readPaymentSessionRecoverySnapshot(storage.store, {
+      orderId: 42,
+      resumeToken: 'forged',
+    })).toBeNull()
   })
 })

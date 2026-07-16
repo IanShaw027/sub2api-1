@@ -59,7 +59,12 @@ vi.mock('@/stores', () => ({
 vi.mock('@/api/client', () => ({
   apiClient: {
     post: (...args: any[]) => apiClientPost(...args)
-  }
+  },
+  refreshSession: vi.fn(async (refreshToken: string) => ({
+    access_token: refreshToken.replace('refresh', 'access'),
+    expires_in: 3600,
+    token_type: 'Bearer'
+  }))
 }))
 
 vi.mock('@/api/auth', async () => {
@@ -120,8 +125,9 @@ describe('OidcCallbackView', () => {
 
     expect(exchangePendingOAuthCompletion).not.toHaveBeenCalled()
     expect(setToken).toHaveBeenCalledWith('legacy-access-token')
-    expect(localStorage.getItem('refresh_token')).toBe('legacy-refresh-token')
-    expect(localStorage.getItem('token_expires_at')).not.toBeNull()
+    expect(localStorage.getItem('refresh_token')).toBeNull()
+    expect(localStorage.getItem('token_expires_at')).toBeNull()
+    expect(window.location.hash).toBe('')
     expect(showSuccess).toHaveBeenCalledWith('auth.loginSuccess')
     expect(replace).toHaveBeenCalledWith('/legacy-dashboard')
   })

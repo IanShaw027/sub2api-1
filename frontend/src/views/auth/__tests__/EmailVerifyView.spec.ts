@@ -125,6 +125,37 @@ describe('EmailVerifyView', () => {
     setTokenMock.mockResolvedValue({})
   })
 
+  it('restores only non-sensitive metadata and requires password re-entry after refresh', async () => {
+    sessionStorage.setItem(
+      'register_data',
+      JSON.stringify({
+        email: 'safe@example.com',
+        password: 'legacy-password-must-be-ignored',
+        turnstile_token: 'legacy-turnstile-must-be-ignored',
+        invitation_code: 'INVITE',
+        code_sent_at: Date.now(),
+        code_countdown: 60,
+      })
+    )
+
+    const wrapper = mount(EmailVerifyView, {
+      global: {
+        stubs: {
+          AuthLayout: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: true,
+          TurnstileWidget: true,
+          transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect((wrapper.get('#password').element as HTMLInputElement).value).toBe('')
+    expect((wrapper.get('#confirm-password').element as HTMLInputElement).value).toBe('')
+    expect(wrapper.text()).toContain('safe@example.com')
+    expect(sendVerifyCodeMock).not.toHaveBeenCalled()
+  })
+
   it('uses the pending oauth verify-code endpoint when register data carries a pending auth session', async () => {
     authStoreState.pendingAuthSession = {
       token: 'pending-token-1',
@@ -136,7 +167,6 @@ describe('EmailVerifyView', () => {
       'register_data',
       JSON.stringify({
         email: 'fresh@example.com',
-        password: 'secret-123',
       })
     )
 
@@ -177,7 +207,6 @@ describe('EmailVerifyView', () => {
       'register_data',
       JSON.stringify({
         email: 'fresh@example.com',
-        password: 'secret-123',
       })
     )
 
@@ -218,7 +247,6 @@ describe('EmailVerifyView', () => {
       'register_data',
       JSON.stringify({
         email: 'fresh@example.com',
-        password: 'secret-123',
       })
     )
 
@@ -265,7 +293,6 @@ describe('EmailVerifyView', () => {
       'register_data',
       JSON.stringify({
         email: 'fresh@example.com',
-        password: 'secret-123',
       })
     )
 
@@ -303,7 +330,6 @@ describe('EmailVerifyView', () => {
       'register_data',
       JSON.stringify({
         email: 'fresh@example.com',
-        password: 'secret-123',
         aff_code: 'AFF123',
       })
     )
@@ -328,6 +354,8 @@ describe('EmailVerifyView', () => {
     })
 
     await flushPromises()
+    await wrapper.get('#password').setValue('secret-123')
+    await wrapper.get('#confirm-password').setValue('secret-123')
     await wrapper.get('#code').setValue('123456')
     await wrapper.get('form').trigger('submit.prevent')
     await flushPromises()
@@ -367,7 +395,6 @@ describe('EmailVerifyView', () => {
       'register_data',
       JSON.stringify({
         email: 'fresh@example.com',
-        password: 'secret-123',
       })
     )
     apiClientPostMock.mockResolvedValue({
@@ -392,6 +419,8 @@ describe('EmailVerifyView', () => {
     })
 
     await flushPromises()
+    await wrapper.get('#password').setValue('secret-123')
+    await wrapper.get('#confirm-password').setValue('secret-123')
     await wrapper.get('#code').setValue('123456')
     await wrapper.get('form').trigger('submit.prevent')
     await flushPromises()
@@ -419,7 +448,6 @@ describe('EmailVerifyView', () => {
       'register_data',
       JSON.stringify({
         email: 'normal@example.com',
-        password: 'secret-456',
         promo_code: 'PROMO',
         invitation_code: 'INVITE',
       })
@@ -438,6 +466,8 @@ describe('EmailVerifyView', () => {
     })
 
     await flushPromises()
+    await wrapper.get('#password').setValue('secret-456')
+    await wrapper.get('#confirm-password').setValue('secret-456')
     await wrapper.get('#code').setValue('654321')
     await wrapper.get('form').trigger('submit.prevent')
     await flushPromises()
@@ -465,7 +495,6 @@ describe('EmailVerifyView', () => {
       'register_data',
       JSON.stringify({
         email: 'fresh@example.com',
-        password: 'secret-123',
         aff_code: 'ABCDEFGH2345',
       })
     )
@@ -490,6 +519,8 @@ describe('EmailVerifyView', () => {
     })
 
     await flushPromises()
+    await wrapper.get('#password').setValue('secret-123')
+    await wrapper.get('#confirm-password').setValue('secret-123')
     await wrapper.get('#code').setValue('123456')
     await wrapper.get('form').trigger('submit.prevent')
     await flushPromises()

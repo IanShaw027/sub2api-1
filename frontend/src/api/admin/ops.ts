@@ -7,6 +7,7 @@
 import { apiClient } from '../client'
 import { getAPIBaseURL } from '../url'
 import type { PaginatedResponse, UsageRequestType } from '@/types'
+import { getAccessToken } from '@/utils/authSession'
 
 export type OpsQueryMode = 'auto' | 'raw' | 'preagg'
 
@@ -672,7 +673,7 @@ export function subscribeQPS(onMessage: (data: any) => void, options: SubscribeQ
     // Do NOT put admin JWT in the URL query string (it can leak via access logs, proxies, etc).
     // Browsers cannot set Authorization headers for WebSockets, so we pass the token via
     // Sec-WebSocket-Protocol (subprotocol list): ["sub2api-admin", "jwt.<token>"].
-    const rawToken = String(options.token ?? localStorage.getItem('auth_token') ?? '').trim()
+    const rawToken = String(options.token ?? getAccessToken() ?? '').trim()
     const protocols: string[] = [OPS_WS_BASE_PROTOCOL]
     if (rawToken) protocols.push(`jwt.${rawToken}`)
 

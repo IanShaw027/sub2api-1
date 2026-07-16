@@ -312,6 +312,7 @@ import { buildApiUrl } from "@/api/client";
 import { ADMIN_UI_REQUEST_HEADER } from "@/api/adminUIRequest";
 import { adminAPI } from "@/api/admin";
 import type { Account, ClaudeModel } from "@/types";
+import { getAccessToken } from "@/utils/authSession";
 
 const { t } = useI18n();
 const { copyToClipboard } = useClipboard();
@@ -522,7 +523,7 @@ const startTest = async () => {
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${localStorage.getItem("auth_token")}`,
+        Authorization: `Bearer ${getAccessToken() || ""}`,
         "Content-Type": "application/json",
         [ADMIN_UI_REQUEST_HEADER]: "1",
       },

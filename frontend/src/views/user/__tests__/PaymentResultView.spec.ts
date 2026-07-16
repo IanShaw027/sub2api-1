@@ -45,7 +45,10 @@ vi.mock('@/api/payment', () => ({
 }))
 
 import PaymentResultView from '../PaymentResultView.vue'
-import { PAYMENT_RECOVERY_STORAGE_KEY } from '@/components/payment/paymentFlow'
+import {
+  PAYMENT_RECOVERY_STORAGE_KEY,
+  PAYMENT_SESSION_RECOVERY_STORAGE_KEY,
+} from '@/components/payment/paymentFlow'
 import { formatPaymentAmount } from '@/components/payment/currency'
 
 const orderFactory = (status: string) => ({
@@ -92,6 +95,7 @@ describe('PaymentResultView', () => {
     verifyOrderPublic.mockReset()
     resolveOrderPublicByResumeToken.mockReset()
     window.localStorage.clear()
+    window.sessionStorage.clear()
   })
 
   afterEach(() => {
@@ -123,6 +127,7 @@ describe('PaymentResultView', () => {
       resumeToken: 'resume-42',
       createdAt: Date.UTC(2099, 0, 1, 0, 0, 0),
     }))
+    window.sessionStorage.setItem(PAYMENT_SESSION_RECOVERY_STORAGE_KEY, 'session-secret')
     resolveOrderPublicByResumeToken.mockResolvedValue({
       data: orderFactory('PENDING'),
     })
@@ -142,6 +147,7 @@ describe('PaymentResultView', () => {
     expect(wrapper.text()).toContain('payment.result.processing')
     expect(wrapper.text()).not.toContain('payment.result.success')
     expect(wrapper.text()).not.toContain('payment.result.failed')
+    expect(window.sessionStorage.getItem(PAYMENT_SESSION_RECOVERY_STORAGE_KEY)).not.toBeNull()
   })
 
   it('prefers the public resume-token result over a stale restored DB snapshot', async () => {
@@ -169,6 +175,7 @@ describe('PaymentResultView', () => {
       resumeToken: 'resume-authoritative',
       createdAt: Date.UTC(2099, 0, 1, 0, 0, 0),
     }))
+    window.sessionStorage.setItem(PAYMENT_SESSION_RECOVERY_STORAGE_KEY, 'session-secret')
     resolveOrderPublicByResumeToken.mockResolvedValue({
       data: {
         ...orderFactory('PAID'),
@@ -194,6 +201,7 @@ describe('PaymentResultView', () => {
     expect(wrapper.text()).toContain('103.00')
     expect(wrapper.text()).toContain('100.00')
     expect(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)).toBeNull()
+    expect(window.sessionStorage.getItem(PAYMENT_SESSION_RECOVERY_STORAGE_KEY)).toBeNull()
   })
 
   it('refreshes a pending resume-token result until the order becomes paid', async () => {

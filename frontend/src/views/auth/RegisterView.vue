@@ -66,6 +66,7 @@
               v-model="formData.password"
               :type="showPassword ? 'text' : 'password'"
               required
+              minlength="8"
               autocomplete="new-password"
               :disabled="registrationActionDisabled"
               class="input pl-11 pr-11"
@@ -313,6 +314,7 @@ import { useAuthStore, useAppStore } from '@/stores'
 import {
   getPublicSettings,
   isWeChatWebOAuthEnabled,
+  sendVerifyCode,
   validatePromoCode,
   validateInvitationCode
 } from '@/api/auth'
@@ -782,7 +784,7 @@ function validateForm(): boolean {
   if (!formData.password) {
     errors.password = t('auth.passwordRequired')
     isValid = false
-  } else if (formData.password.length < 6) {
+  } else if (formData.password.length < 8) {
     errors.password = t('auth.passwordMinLength')
     isValid = false
   }
@@ -863,18 +865,28 @@ async function handleRegister(): Promise<void> {
 
     // If email verification is enabled, redirect to verification page
     if (emailVerifyEnabled.value) {
-      // Store registration data in sessionStorage
+      // Consume the one-time Turnstile token before navigation. Passwords and
+      // challenge tokens must never be persisted in browser storage.
+      const codeResponse = await sendVerifyCode({
+        email: formData.email,
+        turnstile_token: turnstileEnabled.value ? turnstileToken.value : undefined
+      })
+      turnstileToken.value = ''
+
+      // Persist only non-sensitive metadata so the verification page can be
+      // safely refreshed. The user re-enters their password there.
       sessionStorage.setItem(
         'register_data',
         JSON.stringify({
           email: formData.email,
-          password: formData.password,
-          turnstile_token: turnstileToken.value,
           promo_code: formData.promo_code || undefined,
           invitation_code: formData.invitation_code || undefined,
-          ...(affCode ? { aff_code: affCode } : {})
+          ...(affCode ? { aff_code: affCode } : {}),
+          code_sent_at: Date.now(),
+          code_countdown: codeResponse.countdown
         })
       )
+      formData.password = ''
 
       // Navigate to email verification page
       await router.push('/email-verify')

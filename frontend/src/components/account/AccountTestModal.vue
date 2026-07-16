@@ -311,6 +311,7 @@ import { useClipboard } from "@/composables/useClipboard";
 import { buildApiUrl } from "@/api/client";
 import { adminAPI } from "@/api/admin";
 import type { Account, ClaudeModel } from "@/types";
+import { getAccessToken } from "@/utils/authSession";
 
 const { t } = useI18n();
 const { copyToClipboard } = useClipboard();
@@ -521,7 +522,7 @@ const startTest = async () => {
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${localStorage.getItem("auth_token")}`,
+        Authorization: `Bearer ${getAccessToken() || ""}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

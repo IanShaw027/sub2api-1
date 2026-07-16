@@ -31,8 +31,8 @@ import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import {
-  PAYMENT_RECOVERY_STORAGE_KEY,
-  readPaymentRecoverySnapshot,
+  PAYMENT_SESSION_RECOVERY_STORAGE_KEY,
+  readPaymentSessionRecoverySnapshot,
   type PaymentRecoverySnapshot,
 } from '@/components/payment/paymentFlow'
 
@@ -69,9 +69,13 @@ function restoreAirwallexSnapshot(): PaymentRecoverySnapshot | null {
   const orderId = Number(queryString('order_id')) || 0
   const outTradeNo = queryString('out_trade_no')
   const resumeToken = queryString('resume_token')
-  const snapshot = readPaymentRecoverySnapshot(
-    window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY),
-    resumeToken ? { resumeToken } : {},
+  const snapshot = readPaymentSessionRecoverySnapshot(
+    window.sessionStorage.getItem(PAYMENT_SESSION_RECOVERY_STORAGE_KEY),
+    {
+      orderId,
+      resumeToken: resumeToken || undefined,
+      outTradeNo: outTradeNo || undefined,
+    },
   )
 
   if (!snapshot || snapshot.paymentType !== 'airwallex') {

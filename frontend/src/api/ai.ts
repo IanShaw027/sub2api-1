@@ -19,6 +19,7 @@ import type {
   UpdateAiPromptRequest,
   User
 } from '@/types'
+import { getSessionUser } from '@/utils/authSession'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -250,14 +251,7 @@ function normalizeRuntimeInfo(raw: unknown): AiRuntimeInfo {
 }
 
 function currentUser(): User | null {
-  try {
-    const raw = localStorage.getItem('auth_user')
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    return isRecord(parsed) ? (parsed as unknown as User) : null
-  } catch {
-    return null
-  }
+  return getSessionUser()
 }
 
 function normalizePagedResponse<T>(

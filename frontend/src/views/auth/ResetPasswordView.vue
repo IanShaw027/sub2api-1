@@ -104,6 +104,7 @@
               v-model="formData.password"
               :type="showPassword ? 'text' : 'password'"
               required
+              minlength="8"
               autocomplete="new-password"
               :disabled="isLoading"
               class="input pl-11 pr-11"
@@ -135,6 +136,7 @@
               v-model="formData.confirmPassword"
               :type="showConfirmPassword ? 'text' : 'password'"
               required
+              minlength="8"
               autocomplete="new-password"
               :disabled="isLoading"
               class="input pl-11 pr-11"
@@ -274,7 +276,7 @@ function validateForm(): boolean {
   if (!formData.password) {
     errors.password = t('auth.passwordRequired')
     isValid = false
-  } else if (formData.password.length < 6) {
+  } else if (formData.password.length < 8) {
     errors.password = t('auth.passwordMinLength')
     isValid = false
   }

@@ -63,7 +63,10 @@ vi.mock('@stripe/stripe-js', () => ({
 }))
 
 import StripePaymentView from '../StripePaymentView.vue'
-import { PAYMENT_RECOVERY_STORAGE_KEY, type PaymentRecoverySnapshot } from '@/components/payment/paymentFlow'
+import {
+  PAYMENT_SESSION_RECOVERY_STORAGE_KEY,
+  type PaymentRecoverySnapshot,
+} from '@/components/payment/paymentFlow'
 import { formatPaymentAmount } from '@/components/payment/currency'
 import type { PaymentOrder } from '@/types/payment'
 
@@ -142,8 +145,9 @@ describe('StripePaymentView', () => {
     stripeInstance.confirmAlipayPayment.mockReset()
     stripeInstance.confirmWechatPayPayment.mockReset()
     window.localStorage.clear()
-    window.localStorage.setItem(
-      PAYMENT_RECOVERY_STORAGE_KEY,
+    window.sessionStorage.clear()
+    window.sessionStorage.setItem(
+      PAYMENT_SESSION_RECOVERY_STORAGE_KEY,
       JSON.stringify(stripeRecoverySnapshot()),
     )
   })
@@ -284,7 +288,7 @@ describe('StripePaymentView', () => {
   })
 
   it('rejects a Stripe client secret supplied only through the URL query', async () => {
-    window.localStorage.clear()
+    window.sessionStorage.clear()
     routeState.query = {
       order_id: '42',
       client_secret: 'secret_from_query',

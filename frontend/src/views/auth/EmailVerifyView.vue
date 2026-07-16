@@ -30,6 +30,41 @@
 
       <!-- Verification Form -->
       <form v-else @submit.prevent="handleVerify" class="space-y-5">
+        <div>
+          <label for="password" class="input-label">
+            {{ t('auth.passwordLabel') }}
+          </label>
+          <input
+            id="password"
+            v-model="password"
+            type="password"
+            required
+            minlength="8"
+            autocomplete="new-password"
+            class="input"
+            :class="{ 'input-error': errors.password }"
+            :placeholder="t('auth.createPasswordPlaceholder')"
+          />
+          <p class="input-hint">{{ t('auth.passwordHint') }}</p>
+        </div>
+
+        <div>
+          <label for="confirm-password" class="input-label">
+            {{ t('auth.confirmPassword') }}
+          </label>
+          <input
+            id="confirm-password"
+            v-model="confirmPassword"
+            type="password"
+            required
+            minlength="8"
+            autocomplete="new-password"
+            class="input"
+            :class="{ 'input-error': errors.confirmPassword }"
+            :placeholder="t('auth.confirmPasswordPlaceholder')"
+          />
+        </div>
+
         <!-- Verification Code Input -->
         <div>
           <label for="code" class="input-label text-center">
@@ -78,7 +113,11 @@
         </div>
 
         <!-- Submit Button -->
-        <button type="submit" :disabled="isLoading || !verifyCode" class="btn btn-primary w-full">
+        <button
+          type="submit"
+          :disabled="isLoading || !verifyCode || password.length < 8 || password !== confirmPassword"
+          class="btn btn-primary w-full"
+        >
           <svg
             v-if="isLoading"
             class="-ml-1 mr-2 h-4 w-4 animate-spin text-white"
@@ -193,7 +232,7 @@ const verifyCode = ref<string>('')
 const countdown = ref<number>(0)
 let countdownTimer: ReturnType<typeof setInterval> | null = null
 
-// Registration data from sessionStorage
+// Non-sensitive registration metadata from sessionStorage.
 type PendingAuthTokenField = 'pending_auth_token' | 'pending_oauth_token'
 type PendingAuthSessionSummary = {
   token: string
@@ -213,7 +252,7 @@ type PendingOAuthCreateAccountResponse = {
 
 const email = ref<string>('')
 const password = ref<string>('')
-const initialTurnstileToken = ref<string>('')
+const confirmPassword = ref<string>('')
 const promoCode = ref<string>('')
 const invitationCode = ref<string>('')
 const affCode = ref<string>('')
@@ -240,11 +279,18 @@ const showResendTurnstile = ref<boolean>(false)
 
 const errors = ref({
   code: '',
+  password: '',
+  confirmPassword: '',
   turnstile: ''
 })
 
 const validationToastMessage = computed(
-  () => errors.value.code || errors.value.turnstile || ''
+  () =>
+    errors.value.code ||
+    errors.value.password ||
+    errors.value.confirmPassword ||
+    errors.value.turnstile ||
+    ''
 )
 
 watch(validationToastMessage, (value, previousValue) => {
@@ -264,13 +310,11 @@ onMounted(async () => {
     try {
       const registerData = JSON.parse(registerDataStr)
       email.value = registerData.email || ''
-      password.value = registerData.password || ''
-      initialTurnstileToken.value = registerData.turnstile_token || ''
       promoCode.value = registerData.promo_code || ''
       invitationCode.value = registerData.invitation_code || ''
       affCode.value = registerData.aff_code || loadAffiliateReferralCode()
-      pendingAuthToken.value = registerData.pending_auth_token || activePendingSession?.token || ''
-      pendingAuthTokenField.value = registerData.pending_auth_token_field || activePendingSession?.token_field || 'pending_auth_token'
+      pendingAuthToken.value = activePendingSession?.token || ''
+      pendingAuthTokenField.value = activePendingSession?.token_field || 'pending_auth_token'
       pendingProvider.value = registerData.pending_provider || activePendingSession?.provider || ''
       pendingRedirect.value = sanitizeRedirectPath(registerData.pending_redirect || activePendingSession?.redirect || '')
       pendingAdoptionDecision.value = registerData.pending_adoption_decision
@@ -279,7 +323,17 @@ onMounted(async () => {
             adoptAvatar: registerData.pending_adoption_decision.adopt_avatar === true
           }
         : null
-      hasRegisterData.value = !!(email.value && password.value)
+      hasRegisterData.value = !!email.value
+      const sentAt = Number(registerData.code_sent_at)
+      const originalCountdown = Number(registerData.code_countdown)
+      if (Number.isFinite(sentAt) && Number.isFinite(originalCountdown) && originalCountdown > 0) {
+        const elapsedSeconds = Math.floor((Date.now() - sentAt) / 1000)
+        const remaining = Math.max(0, Math.ceil(originalCountdown) - elapsedSeconds)
+        if (remaining > 0) {
+          codeSent.value = true
+          startCountdown(remaining)
+        }
+      }
     } catch {
       hasRegisterData.value = false
     }
@@ -303,8 +357,12 @@ onMounted(async () => {
     console.error('Failed to load public settings:', error)
   }
 
-  // Auto-send verification code if we have valid data
-  if (hasRegisterData.value) {
+  // RegisterView sends the initial code before navigation so no Turnstile token
+  // has to cross a storage boundary. Legacy/recovered flows can send here only
+  // when no challenge is required; otherwise the user completes a new widget.
+  if (hasRegisterData.value && !codeSent.value && turnstileEnabled.value) {
+    showResendTurnstile.value = true
+  } else if (hasRegisterData.value && !codeSent.value) {
     await sendCode()
   }
 })
@@ -415,8 +473,7 @@ async function sendCode(): Promise<void> {
     const requestPayload = {
       email: email.value,
       [pendingAuthTokenField.value]: pendingAuthToken.value || undefined,
-      // 优先使用重发时新获取的 token（因为初始 token 可能已被使用）
-      turnstile_token: resendTurnstileToken.value || initialTurnstileToken.value || undefined
+      turnstile_token: resendTurnstileToken.value || undefined
     } as Parameters<typeof sendVerifyCode>[0]
     const response = isPendingOAuthFlow()
       ? await sendPendingOAuthVerifyCode(requestPayload)
@@ -439,9 +496,9 @@ async function sendCode(): Promise<void> {
 
     codeSent.value = true
     startCountdown(response.countdown)
+    persistSafeRegistrationMetadata(response.countdown)
 
     // Reset turnstile state（token 已使用，清除以避免重复使用）
-    initialTurnstileToken.value = ''
     showResendTurnstile.value = false
     resendTurnstileToken.value = ''
   } catch (error: unknown) {
@@ -475,6 +532,25 @@ async function handleResendCode(): Promise<void> {
 
 function validateForm(): boolean {
   errors.value.code = ''
+  errors.value.password = ''
+  errors.value.confirmPassword = ''
+
+  if (!password.value) {
+    errors.value.password = t('auth.passwordRequired')
+    return false
+  }
+  if (password.value.length < 8) {
+    errors.value.password = t('auth.passwordMinLength')
+    return false
+  }
+  if (!confirmPassword.value) {
+    errors.value.confirmPassword = t('auth.confirmPasswordRequired')
+    return false
+  }
+  if (password.value !== confirmPassword.value) {
+    errors.value.confirmPassword = t('auth.passwordsDoNotMatch')
+    return false
+  }
 
   if (!verifyCode.value.trim()) {
     errors.value.code = t('auth.codeRequired')
@@ -536,8 +612,8 @@ async function handleVerify(): Promise<void> {
         throw new Error(t('auth.verifyFailed'))
       }
 
-      persistOAuthTokenContext(data)
-      await authStore.setToken(data.access_token)
+      const effectiveTokens = (await persistOAuthTokenContext(data)) || data
+      await authStore.setToken(effectiveTokens.access_token || data.access_token)
       authStore.clearPendingAuthSession?.()
     } else {
       // Register with verification code
@@ -545,7 +621,6 @@ async function handleVerify(): Promise<void> {
         email: email.value,
         password: password.value,
         verify_code: verifyCode.value.trim(),
-        turnstile_token: initialTurnstileToken.value || undefined,
         promo_code: promoCode.value || undefined,
         invitation_code: invitationCode.value || undefined,
         ...(affCode.value ? { aff_code: affCode.value } : {})
@@ -558,6 +633,8 @@ async function handleVerify(): Promise<void> {
 
     // Clear session data
     sessionStorage.removeItem('register_data')
+    password.value = ''
+    confirmPassword.value = ''
     clearAllAffiliateReferralCodes()
 
     // Redirect to dashboard
@@ -576,9 +653,33 @@ async function handleVerify(): Promise<void> {
 function handleBack(): void {
   // Clear session data
   sessionStorage.removeItem('register_data')
+  password.value = ''
+  confirmPassword.value = ''
 
   // Go back to registration
   router.push('/register')
+}
+
+function persistSafeRegistrationMetadata(codeCountdown: number): void {
+  sessionStorage.setItem(
+    'register_data',
+    JSON.stringify({
+      email: email.value,
+      promo_code: promoCode.value || undefined,
+      invitation_code: invitationCode.value || undefined,
+      aff_code: affCode.value || undefined,
+      pending_provider: pendingProvider.value || undefined,
+      pending_redirect: pendingRedirect.value || undefined,
+      pending_adoption_decision: pendingAdoptionDecision.value
+        ? {
+            adopt_display_name: pendingAdoptionDecision.value.adoptDisplayName === true,
+            adopt_avatar: pendingAdoptionDecision.value.adoptAvatar === true
+          }
+        : undefined,
+      code_sent_at: Date.now(),
+      code_countdown: codeCountdown
+    })
+  )
 }
 
 function buildEmailSuffixNotAllowedMessage(): string {

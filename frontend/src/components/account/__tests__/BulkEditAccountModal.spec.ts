@@ -676,4 +676,24 @@ describe('BulkEditAccountModal', () => {
       status: 'active'
     })
   })
+
+  it('filtered-results 目标平台未知时 fail-closed 且不提交', async () => {
+    const wrapper = mountModal({
+      accountIds: [],
+      selectedPlatforms: [],
+      target: {
+        mode: 'filtered',
+        filters: { status: 'active' },
+        previewCount: 120,
+        selectedPlatforms: [],
+        selectedTypes: []
+      }
+    })
+
+    ;(wrapper.vm as any).enableStatus = true
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).not.toHaveBeenCalled()
+  })
 })

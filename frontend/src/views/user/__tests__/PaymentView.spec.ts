@@ -218,6 +218,7 @@ async function mountSubscriptionConfirm(options: Parameters<typeof checkoutInfoW
   getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoWithPlansFixture(options))
   bridgeInvoke.mockReset()
   window.localStorage.clear()
+  window.sessionStorage.clear()
   ;(window as Window & { WeixinJSBridge?: { invoke: typeof bridgeInvoke } }).WeixinJSBridge = undefined
 
   const wrapper = shallowMount(PaymentView, {
@@ -264,6 +265,7 @@ async function mountRecharge(options: {
   }))
   bridgeInvoke.mockReset()
   window.localStorage.clear()
+  window.sessionStorage.clear()
   ;(window as Window & { WeixinJSBridge?: { invoke: typeof bridgeInvoke } }).WeixinJSBridge = undefined
 
   const wrapper = shallowMount(PaymentView, {
@@ -538,6 +540,7 @@ describe('PaymentView WeChat JSAPI flow', () => {
     getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture())
     bridgeInvoke.mockReset()
     window.localStorage.clear()
+    window.sessionStorage.clear()
     ;(window as Window & { WeixinJSBridge?: { invoke: typeof bridgeInvoke } }).WeixinJSBridge = {
       invoke: bridgeInvoke,
     }
