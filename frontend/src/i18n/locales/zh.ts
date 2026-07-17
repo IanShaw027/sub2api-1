@@ -3615,7 +3615,7 @@ export default {
       autoBan: '自动封禁用户',
       autoBanHint: '命中次数达到阈值后将禁用用户账号、刷新认证缓存并发送封禁通知邮件。',
       cyberPolicyExcludeBan: 'cyber_policy 不计入封号次数',
-      cyberPolicyExcludeBanHint: '开启后，cyber_policy 拦截不再计入自动封号的违规次数：当次不判定封号，历史累计亦排除。风控日志与通知邮件照常。',
+      cyberPolicyExcludeBanHint: '开启后，cyber_policy 拦截不再计入自动封号的违规次数：当次不判定封号，历史累计亦排除。风控日志照常记录；cyber_policy 当前不发送通知邮件。',
       violationNotCounted: '未计入封号',
       banThreshold: '封禁触发次数',
       autoBanExemptUsers: '自动封禁豁免用户',

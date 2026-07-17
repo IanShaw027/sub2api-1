@@ -59,7 +59,6 @@ func buildContentModerationViolationEmailBody(siteName string, log *ContentModer
 		html.EscapeString(siteName),
 	)
 }
-
 func buildContentModerationAccountDisabledEmailBody(siteName string, log *ContentModerationLog, cfg *ContentModerationConfig) string {
 	if log == nil {
 		return ""
@@ -118,6 +117,7 @@ func defaultContentModerationString(value string, fallback string) string {
 
 // buildCyberPolicyNoticeEmailBody 是 cyber_policy 通知邮件的内置兜底正文，
 // 当 notification email 模板渲染失败时使用（与 sendViolationEmail 的兜底同理）。
+// 注意：当前 cyberPolicyUserEmailEnabled=false，此函数不会被线上调用，但机制完整保留。
 func buildCyberPolicyNoticeEmailBody(siteName string, log *ContentModerationLog) string {
 	if log == nil {
 		return ""

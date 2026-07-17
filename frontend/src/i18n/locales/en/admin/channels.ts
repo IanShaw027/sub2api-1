@@ -310,7 +310,7 @@ export default {
       autoBan: 'Auto Ban User',
       autoBanHint: 'Disable the user, invalidate auth cache, and send a ban notice after the hit threshold is reached.',
       cyberPolicyExcludeBan: 'Exclude Cyber Policy Hits from Ban Count',
-      cyberPolicyExcludeBanHint: 'When enabled, cyber_policy hits no longer count toward auto-ban violations: no ban judgment on the hit itself, and history rows are excluded from the rolling count. Logs and notice emails are unaffected.',
+      cyberPolicyExcludeBanHint: 'When enabled, cyber_policy hits no longer count toward auto-ban violations: no ban judgment on the hit itself, and history rows are excluded from the rolling count. Logs are still written; cyber_policy notice emails are currently disabled.',
       violationNotCounted: 'Not counted',
       banThreshold: 'Ban Threshold',
       violationWindowHours: 'Count Window (hours)',

@@ -212,13 +212,10 @@ func TestRecordCyberPolicyEvent_RecordsLatestRequestUserSegmentHash(t *testing.T
 // log is persisted BEFORE email delivery, and EmailSent is patched afterwards —
 // SMTP hangs can no longer swallow the audit record.
 //
-// With emailService=nil the email task is skipped and UpdateLogEmailSent is not
-// called. The test therefore isolates these two ordering invariants:
+// With cyberPolicyUserEmailEnabled=false (or emailService=nil) the email task is
+// skipped and UpdateLogEmailSent is not called. The test therefore isolates:
 //  1. CreateLog runs first (calls[0]=="create").
 //  2. The log is stored with EmailSent=false (not pre-set to true).
-//
-// The successful update_email_sent path is covered below with the local SMTP
-// test server.
 func TestRecordCyberPolicyEvent_CreateLogBeforeEmail(t *testing.T) {
 	repo := &cyberOrderingTestRepo{}
 	svc := NewContentModerationService(
@@ -251,8 +248,7 @@ func TestRecordCyberPolicyEvent_CreateLogBeforeEmail(t *testing.T) {
 	require.NotEmpty(t, emailSents, "CreateLog must have captured EmailSent value")
 	require.False(t, emailSents[0], "log must be stored with EmailSent=false initially (F7)")
 
-	// With emailService=nil, no email is sent, so UpdateLogEmailSent must NOT
-	// be called because no delivery succeeded.
+	// With email disabled / emailService=nil, UpdateLogEmailSent must NOT be called.
 	require.NotContains(t, calls, "update_email_sent",
 		"UpdateLogEmailSent must not be called when no email was sent")
 }
@@ -292,7 +288,10 @@ func TestRecordCyberPolicyEvent_PersistenceFailureStopsSideEffects(t *testing.T)
 	require.Equal(t, int64(0), smtpServer.messageCount())
 }
 
-func TestRecordCyberPolicyEvent_EmailIsAsyncAndUpdatesPersistedLog(t *testing.T) {
+func TestRecordCyberPolicyEvent_DoesNotSendEmailWhenDisabled(t *testing.T) {
+	// 产品默认：cyberPolicyUserEmailEnabled=false，邮件机制保留但不投递。
+	require.False(t, cyberPolicyUserEmailEnabled, "cyber_policy user email must stay disabled by default")
+
 	settings := newNotificationEmailMemorySettingRepo()
 	smtpServer := startNotificationEmailTestSMTPServer(t)
 	require.NoError(t, settings.SetMultiple(context.Background(), smtpServer.settings()))
@@ -312,15 +311,13 @@ func TestRecordCyberPolicyEvent_EmailIsAsyncAndUpdatesPersistedLog(t *testing.T)
 		SkipHashRecord:  true,
 	})
 
-	require.Eventually(t, func() bool {
-		logs := repo.snapshotLogs()
-		return len(logs) == 1 && logs[0].EmailSent
-	}, 2*time.Second, 10*time.Millisecond)
-	require.Equal(t, int64(1), smtpServer.messageCount())
-	require.Contains(t, smtpServer.latestMessage(), "To: cyber@example.com")
-	require.Eventually(t, func() bool {
-		return len(contentModerationNotificationSlots) == 0
-	}, time.Second, 10*time.Millisecond)
+	// 给异步路径一点时间；开关关闭时不应入队/发信。
+	time.Sleep(100 * time.Millisecond)
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.False(t, logs[0].EmailSent, "cyber_policy must not mark EmailSent when email disabled")
+	require.Equal(t, int64(0), smtpServer.messageCount(), "cyber_policy must not send notice email when disabled")
+	require.Empty(t, contentModerationNotificationSlots, "no notification task should be queued when disabled")
 }
 
 // banCountArgsTestRepo 在 contentModerationTestRepo 基础上记录

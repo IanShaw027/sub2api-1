@@ -2399,7 +2399,15 @@ func (s *ContentModerationService) enqueueFlaggedNotification(cfg *ContentModera
 	})
 }
 
+// cyberPolicyUserEmailEnabled 控制 cyber_policy 命中后是否给用户发邮件。
+// 当前产品要求：风控中心 cyber_policy 只记日志/计数/封号，不发送通知邮件。
+// 发送链路（enqueue / side-effects / 模板 / 兜底正文）完整保留，便于日后重新开启。
+const cyberPolicyUserEmailEnabled = false
+
 func (s *ContentModerationService) enqueueCyberPolicyNotification(cfg *ContentModerationConfig, log *ContentModerationLog, autoBanJustApplied bool) {
+	if !cyberPolicyUserEmailEnabled {
+		return
+	}
 	if s == nil || cfg == nil || log == nil || s.emailService == nil || strings.TrimSpace(log.UserEmail) == "" {
 		return
 	}
@@ -4580,7 +4588,8 @@ type CyberPolicyRecordInput struct {
 }
 
 // RecordCyberPolicyEvent 把一次 cyber_policy 硬阻断写入风控中心日志、计入违规计数、
-// 并给用户发邮件。当前请求已由 gateway 透传给用户；本方法仅做事后记录/通知/计数。
+// 并走通知邮件链路（当前 cyberPolicyUserEmailEnabled=false，实际不投递）。
+// 当前请求已由 gateway 透传给用户；本方法仅做事后记录/通知/计数。
 // 仅受 risk_control_enabled 总开关约束（不受内容审核 Enabled/Mode/scope/sample 约束）。
 func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, in CyberPolicyRecordInput) {
 	if s == nil || s.repo == nil {
