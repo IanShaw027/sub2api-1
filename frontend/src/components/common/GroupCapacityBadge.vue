@@ -14,7 +14,7 @@
         </svg>
         <span class="font-mono">{{ concurrencyUsed }}</span>
         <template v-if="concurrencyMax > 0">
-          <span class="text-gray-400 dark:text-gray-500">/</span>
+          <span class="text-ink-faint dark:text-dark-500">/</span>
           <span class="font-mono">{{ concurrencyMax }}</span>
         </template>
       </span>
@@ -40,6 +40,6 @@ function capacityClass(used: number, max: number): string {
   if (used > 0) {
     return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
   }
-  return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+  return 'bg-line text-ink-body dark:bg-dark-800 dark:text-dark-400'
 }
 </script>

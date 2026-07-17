@@ -3,13 +3,13 @@
     <!-- Preview Box -->
     <div class="flex-shrink-0">
       <div
-        class="flex items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 dark:border-dark-600 dark:bg-dark-800"
+        class="flex items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-line bg-page dark:border-dark-600 dark:bg-dark-800"
         :class="[previewSizeClass, { 'border-solid': !!modelValue }]"
       >
         <!-- SVG mode: render inline -->
         <span
           v-if="mode === 'svg' && modelValue"
-          class="text-gray-600 dark:text-gray-300 [&>svg]:h-full [&>svg]:w-full"
+          class="text-ink-body dark:text-dark-300 [&>svg]:h-full [&>svg]:w-full"
           :class="innerSizeClass"
           v-html="sanitizedValue"
         ></span>
@@ -23,7 +23,7 @@
         <!-- Empty placeholder -->
         <svg
           v-else
-          class="text-gray-400 dark:text-dark-500"
+          class="text-ink-faint dark:text-dark-500"
           :class="placeholderSizeClass"
           fill="none"
           viewBox="0 0 24 24"
@@ -62,7 +62,7 @@
           {{ removeLabelText }}
         </button>
       </div>
-      <p v-if="hint" class="text-xs text-gray-500 dark:text-gray-400">{{ hint }}</p>
+      <p v-if="hint" class="text-xs text-ink-soft dark:text-dark-400">{{ hint }}</p>
       <p v-if="error" class="text-xs text-red-500">{{ error }}</p>
     </div>
   </div>

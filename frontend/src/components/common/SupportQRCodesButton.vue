@@ -2,7 +2,7 @@
   <div v-if="hasEntries || hasLegacyContactInfo">
     <button
       type="button"
-      class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
+      class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-ink-soft transition-colors hover:bg-page hover:text-ink dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white"
       :aria-label="t('common.contactSupport')"
       @click="showDialog = true"
     >
@@ -21,9 +21,9 @@
         <div
           v-for="(entry, index) in normalizedEntries"
           :key="`${entry.image_url}-${index}`"
-          class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 dark:border-dark-700 dark:bg-dark-900/60"
+          class="rounded-card border border-line bg-page/80 p-4 dark:border-dark-700 dark:bg-dark-900/60"
         >
-          <div class="overflow-hidden rounded-2xl bg-white p-3 shadow-sm ring-1 ring-gray-100 dark:bg-dark-800 dark:ring-dark-700">
+          <div class="overflow-hidden rounded-card bg-card p-3 shadow-xs ring-1 ring-line dark:bg-dark-800 dark:ring-dark-700">
             <img
               :src="entry.image_url"
               :alt="entry.note || t('common.contactSupport')"
@@ -32,7 +32,7 @@
           </div>
           <p
             v-if="entry.note"
-            class="mt-3 text-center text-sm text-gray-600 dark:text-gray-300"
+            class="mt-3 text-center text-sm text-ink-soft"
           >
             {{ entry.note }}
           </p>
@@ -40,7 +40,7 @@
       </div>
       <p
         v-else
-        class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 text-sm leading-6 text-gray-700 whitespace-pre-line break-words dark:border-dark-700 dark:bg-dark-900/60 dark:text-gray-200"
+        class="rounded-card border border-line bg-page/80 p-4 text-sm leading-6 text-ink-body whitespace-pre-line break-words dark:border-dark-700 dark:bg-dark-900/60 dark:text-dark-200"
       >
         {{ normalizedLegacyContactInfo }}
       </p>

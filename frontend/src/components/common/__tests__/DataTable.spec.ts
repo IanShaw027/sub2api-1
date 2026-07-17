@@ -52,7 +52,7 @@ describe('DataTable', () => {
     const nameHeader = wrapper.findAll('th')[0]
     expect(nameHeader.attributes('aria-sort')).toBe('ascending')
     expect(nameHeader.findAll('svg')).toHaveLength(2)
-    expect(nameHeader.findAll('svg')[0].classes()).toContain('text-primary-600')
+    expect(nameHeader.findAll('svg')[0].classes()).toContain('text-brand-600')
     expect(nameHeader.findAll('svg')[1].classes()).toContain('text-gray-300')
 
     await nameHeader.trigger('click')
@@ -60,7 +60,7 @@ describe('DataTable', () => {
 
     expect(nameHeader.attributes('aria-sort')).toBe('descending')
     expect(nameHeader.findAll('svg')[0].classes()).toContain('text-gray-300')
-    expect(nameHeader.findAll('svg')[1].classes()).toContain('text-primary-600')
+    expect(nameHeader.findAll('svg')[1].classes()).toContain('text-brand-600')
   })
 
   it('renders every row with no virtual padding spacer for small datasets (virtualization off)', async () => {

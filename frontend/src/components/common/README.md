@@ -269,3 +269,18 @@ All components include:
 - **TailwindCSS styling** for consistent design
 - **Vue 3 Composition API** with `<script setup>`
 - **Slot support** for customization
+
+## Clomio UI tokens
+
+When styling common components (or any frontend UI), follow these token rules:
+
+- **Adaptive tokens** (`ink` / `page` / `card` / `line` / `divider` and `text-ink*`): do **not** add `dark:` overrides — they flip via CSS variables.
+- **Brand colors**: new code uses `brand-*`, not `primary-*` (`primary` is a legacy alias).
+- **Interactive blue**: `accent-*` for links, focus rings, and admin emphasis.
+- **Focus rings**: use component recipes (`.btn` / `.input`) → `ring-accent/25`; do not hand-roll `ring-accent-100`.
+- **Fixed dark shells** (tooltips / code): `bg-ink dark:bg-dark-700` + `text-white` / `text-white/70` — never `text-ink*` on dark shells.
+- **Toggles**: OFF track `bg-line dark:bg-dark-600`; thumb always `bg-white`.
+- **Progress tracks**: `bg-line`, not `bg-page`.
+- **Radii**: prefer `rounded-control` / `rounded-card` / `rounded-hero` / `rounded-chip`.
+- **Brand gradient** (`.btn-brand`, `bg-brand-gradient`): only for 3–5 brand moments per surface.
+- **Charts**: import colors from `@/utils/chartPalette`.

@@ -3,8 +3,8 @@
     <!-- 铃铛按钮 -->
     <button
       @click="openModal"
-      class="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 transition-all hover:bg-gray-100 hover:scale-105 dark:text-gray-400 dark:hover:bg-dark-800"
-      :class="{ 'text-blue-600 dark:text-blue-400': unreadCount > 0 }"
+      class="relative flex h-9 w-9 items-center justify-center rounded-lg text-ink-soft transition-all hover:bg-page hover:scale-105 dark:hover:bg-dark-800"
+      :class="{ 'text-accent-600 dark:text-accent-400': unreadCount > 0 }"
       :aria-label="t('announcements.title')"
     >
       <Icon name="bell" size="md" />
@@ -27,23 +27,23 @@
           @click="closeModal"
         >
           <div
-            class="w-full max-w-[620px] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
+            class="w-full max-w-[620px] overflow-hidden rounded-3xl bg-card shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
             @click.stop
           >
             <!-- Header with Gradient -->
-            <div class="relative overflow-hidden border-b border-gray-100/80 bg-gradient-to-br from-blue-50/50 to-indigo-50/30 px-6 py-5 dark:border-dark-700/50 dark:from-blue-900/10 dark:to-indigo-900/5">
+            <div class="relative overflow-hidden border-b border-line/80 bg-gradient-to-br from-brand-50/50 to-accent-50/30 px-6 py-5 dark:border-dark-700/50 dark:from-brand-900/10 dark:to-accent-900/5">
               <div class="relative z-10 flex items-start justify-between">
                 <div>
                   <div class="flex items-center gap-2">
-                    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30">
+                    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-accent-600 text-white shadow-lg shadow-brand/30">
                       <Icon name="bell" size="sm" />
                     </div>
-                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                    <h2 class="text-lg font-semibold text-ink dark:text-white">
                       {{ t('announcements.title') }}
                     </h2>
                   </div>
-                  <p v-if="unreadCount > 0" class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                    <span class="font-medium text-blue-600 dark:text-blue-400">{{ unreadCount }}</span>
+                  <p v-if="unreadCount > 0" class="mt-2 text-sm text-ink-soft">
+                    <span class="font-medium text-accent-600 dark:text-accent-400">{{ unreadCount }}</span>
                     {{ t('announcements.unread') }}
                   </p>
                 </div>
@@ -52,13 +52,13 @@
                     v-if="unreadCount > 0"
                     @click="markAllAsRead"
                     :disabled="loading"
-                    class="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white shadow-lg shadow-blue-500/30 transition-all hover:bg-blue-700 hover:shadow-xl disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
+                    class="rounded-lg bg-brand-600 px-4 py-2 text-xs font-medium text-white shadow-lg shadow-brand/30 transition-all hover:bg-brand-700 hover:shadow-xl disabled:opacity-50 dark:bg-brand-500 dark:hover:bg-brand-600"
                   >
                     {{ t('announcements.markAllRead') }}
                   </button>
                   <button
                     @click="closeModal"
-                    class="flex h-9 w-9 items-center justify-center rounded-lg bg-white/50 text-gray-500 backdrop-blur-sm transition-all hover:bg-white hover:text-gray-700 dark:bg-dark-700/50 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-gray-300"
+                    class="flex h-9 w-9 items-center justify-center rounded-lg bg-card/50 text-ink-soft backdrop-blur-sm transition-all hover:bg-card hover:text-ink-body dark:bg-dark-700/50 dark:hover:bg-dark-700 dark:hover:text-ink-faint"
                     :aria-label="t('common.close')"
                   >
                     <Icon name="x" size="sm" />
@@ -66,21 +66,21 @@
                 </div>
               </div>
               <!-- Decorative gradient -->
-              <div class="absolute right-0 top-0 h-full w-48 bg-gradient-to-l from-indigo-100/20 to-transparent dark:from-indigo-900/10"></div>
+              <div class="absolute right-0 top-0 h-full w-48 bg-gradient-to-l from-accent-100/20 to-transparent dark:from-accent-900/10"></div>
             </div>
 
             <!-- Body -->
             <div class="max-h-[65vh] overflow-y-auto">
-              <div class="sticky top-0 z-10 border-b border-gray-100 bg-white/95 px-6 py-3 backdrop-blur dark:border-dark-700 dark:bg-dark-800/95">
-                <div class="inline-flex rounded-xl bg-gray-100 p-1 dark:bg-dark-700">
+              <div class="sticky top-0 z-10 border-b border-line bg-card/95 px-6 py-3 backdrop-blur dark:border-dark-700 dark:bg-dark-800/95">
+                <div class="inline-flex rounded-xl bg-page p-1 dark:bg-dark-700">
                   <button
                     v-for="option in readStatusOptions"
                     :key="option.value"
                     @click="changeReadStatus(option.value)"
                     class="rounded-lg px-3 py-1.5 text-sm font-medium transition-all"
                     :class="selectedReadStatus === option.value
-                      ? 'bg-white text-blue-600 shadow-sm dark:bg-dark-800 dark:text-blue-400'
-                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
+                      ? 'bg-card text-accent-600 shadow-xs dark:bg-dark-800 dark:text-accent-400'
+                      : 'text-ink-soft hover:text-ink-body dark:text-dark-400 dark:hover:text-dark-200'"
                   >
                     {{ option.label }}
                   </button>
@@ -90,8 +90,8 @@
               <!-- Loading -->
               <div v-if="loading" class="flex items-center justify-center py-16">
                 <div class="relative">
-                  <div class="h-12 w-12 animate-spin rounded-full border-4 border-gray-200 border-t-blue-600 dark:border-dark-600 dark:border-t-blue-400"></div>
-                  <div class="absolute inset-0 h-12 w-12 animate-pulse rounded-full border-4 border-blue-400/30"></div>
+                  <div class="h-12 w-12 animate-spin rounded-full border-4 border-line border-t-brand-600 dark:border-dark-600 dark:border-t-brand-400"></div>
+                  <div class="absolute inset-0 h-12 w-12 animate-pulse rounded-full border-4 border-brand-400/30"></div>
                 </div>
               </div>
 
@@ -100,8 +100,8 @@
                 <div
                   v-for="item in announcements"
                   :key="item.id"
-                  class="group relative flex items-center gap-4 border-b border-gray-100 px-6 py-4 transition-all hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/30"
-                  :class="{ 'bg-blue-50/30 dark:bg-blue-900/5': !item.read_at }"
+                  class="group relative flex items-center gap-4 border-b border-line px-6 py-4 transition-all hover:bg-page dark:border-dark-700 dark:hover:bg-dark-700/30"
+                  :class="{ 'bg-brand-50/30 dark:bg-brand-900/5': !item.read_at }"
                   style="min-height: 72px"
                   @click="openDetail(item)"
                 >
@@ -109,10 +109,10 @@
                   <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center">
                     <div
                       v-if="!item.read_at"
-                      class="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30"
+                      class="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-accent-600 text-white shadow-lg shadow-brand/30"
                     >
                       <!-- Pulse ring -->
-                      <span class="absolute inline-flex h-full w-full animate-ping rounded-xl bg-blue-400 opacity-75"></span>
+                      <span class="absolute inline-flex h-full w-full animate-ping rounded-xl bg-brand-400 opacity-75"></span>
                       <!-- Icon -->
                       <svg class="relative z-10 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -120,7 +120,7 @@
                     </div>
                     <div
                       v-else
-                      class="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100 text-gray-400 dark:bg-dark-700 dark:text-gray-600"
+                      class="flex h-10 w-10 items-center justify-center rounded-xl bg-page text-ink-faint dark:bg-dark-700 dark:text-ink-soft"
                     >
                       <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -131,20 +131,20 @@
                   <!-- Content -->
                   <div class="flex min-w-0 flex-1 items-center justify-between gap-4">
                     <div class="min-w-0 flex-1">
-                      <h3 class="truncate text-sm font-medium text-gray-900 dark:text-white">
+                      <h3 class="truncate text-sm font-medium text-ink dark:text-white">
                         {{ item.title }}
                       </h3>
                       <div class="mt-1 flex items-center gap-2">
-                        <time class="text-xs text-gray-500 dark:text-gray-400">
+                        <time class="text-xs text-ink-soft">
                           {{ formatRelativeTime(item.created_at) }}
                         </time>
                         <span
                           v-if="!item.read_at"
-                          class="inline-flex items-center gap-1 rounded-md bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                          class="inline-flex items-center gap-1 rounded-md bg-brand-100 px-1.5 py-0.5 text-xs font-medium text-brand-700 dark:bg-brand-900/40 dark:text-brand-300"
                         >
                           <span class="relative flex h-1.5 w-1.5">
-                            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-500 opacity-75"></span>
-                            <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue-600"></span>
+                            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-500 opacity-75"></span>
+                            <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-brand-600"></span>
                           </span>
                           {{ t('announcements.unread') }}
                         </span>
@@ -154,7 +154,7 @@
                     <!-- Arrow -->
                     <div class="flex-shrink-0">
                       <svg
-                        class="h-5 w-5 text-gray-400 transition-transform group-hover:translate-x-1 dark:text-gray-600"
+                        class="h-5 w-5 text-ink-faint transition-transform group-hover:translate-x-1 dark:text-ink-soft"
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
@@ -168,7 +168,7 @@
                   <!-- Unread indicator bar -->
                   <div
                     v-if="!item.read_at"
-                    class="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-blue-500 to-indigo-600"
+                    class="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-brand-500 to-accent-600"
                   ></div>
                 </div>
               </div>
@@ -176,8 +176,8 @@
               <!-- Empty State -->
               <div v-else class="flex flex-col items-center justify-center py-16">
                 <div class="relative mb-4">
-                  <div class="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-dark-700 dark:to-dark-600">
-                    <Icon name="inbox" size="xl" class="text-gray-400 dark:text-gray-500" />
+                  <div class="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-page to-line dark:from-dark-700 dark:to-dark-600">
+                    <Icon name="inbox" size="xl" class="text-ink-faint dark:text-ink-soft" />
                   </div>
                   <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-green-500 text-white">
                     <svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
@@ -185,8 +185,8 @@
                     </svg>
                   </div>
                 </div>
-                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ emptyTitle }}</p>
-                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ emptyDescription }}</p>
+                <p class="text-sm font-medium text-ink dark:text-white">{{ emptyTitle }}</p>
+                <p class="mt-1 text-xs text-ink-soft">{{ emptyDescription }}</p>
               </div>
             </div>
           </div>
@@ -203,32 +203,32 @@
           @click="closeDetail"
         >
           <div
-            class="w-full max-w-[780px] overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
+            class="w-full max-w-[780px] overflow-hidden rounded-3xl bg-card shadow-2xl ring-1 ring-black/5 dark:bg-dark-800 dark:ring-white/10"
             @click.stop
           >
             <!-- Header with Decorative Elements -->
-            <div class="relative overflow-hidden border-b border-gray-100 bg-gradient-to-br from-blue-50/80 via-indigo-50/50 to-purple-50/30 px-8 py-6 dark:border-dark-700 dark:from-blue-900/20 dark:via-indigo-900/10 dark:to-purple-900/5">
+            <div class="relative overflow-hidden border-b border-line bg-gradient-to-br from-brand-50/80 via-accent-50/50 to-accent-50/30 px-8 py-6 dark:border-dark-700 dark:from-brand-900/20 dark:via-accent-900/10 dark:to-accent-900/5">
               <!-- Decorative background elements -->
-              <div class="absolute right-0 top-0 h-full w-64 bg-gradient-to-l from-indigo-100/30 to-transparent dark:from-indigo-900/20"></div>
-              <div class="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-gradient-to-br from-blue-400/20 to-indigo-500/20 blur-3xl"></div>
-              <div class="absolute -left-4 -bottom-4 h-24 w-24 rounded-full bg-gradient-to-tr from-purple-400/20 to-pink-500/20 blur-2xl"></div>
+              <div class="absolute right-0 top-0 h-full w-64 bg-gradient-to-l from-accent-100/30 to-transparent dark:from-accent-900/20"></div>
+              <div class="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-gradient-to-br from-brand-400/20 to-accent-500/20 blur-3xl"></div>
+              <div class="absolute -left-4 -bottom-4 h-24 w-24 rounded-full bg-gradient-to-tr from-accent-400/20 to-brand-500/20 blur-2xl"></div>
 
               <div class="relative z-10 flex items-start justify-between gap-4">
                 <div class="flex-1 min-w-0">
                   <!-- Icon and Category -->
                   <div class="mb-3 flex items-center gap-2">
-                    <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30">
+                    <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-accent-600 text-white shadow-lg shadow-brand/30">
                       <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     </div>
                     <div class="flex items-center gap-2">
-                      <span class="rounded-lg bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                      <span class="rounded-lg bg-brand-100 px-2.5 py-1 text-xs font-medium text-brand-700 dark:bg-brand-900/40 dark:text-brand-300">
                         {{ t('announcements.title') }}
                       </span>
                       <span
                         v-if="!selectedAnnouncement.read_at"
-                        class="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-2.5 py-1 text-xs font-medium text-white shadow-lg shadow-blue-500/30"
+                        class="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-brand-500 to-accent-600 px-2.5 py-1 text-xs font-medium text-white shadow-lg shadow-brand/30"
                       >
                         <span class="relative flex h-2 w-2">
                           <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75"></span>
@@ -240,12 +240,12 @@
                   </div>
 
                   <!-- Title -->
-                  <h2 class="mb-3 text-2xl font-bold leading-tight text-gray-900 dark:text-white">
+                  <h2 class="mb-3 text-2xl font-bold leading-tight text-ink dark:text-white">
                     {{ selectedAnnouncement.title }}
                   </h2>
 
                   <!-- Meta Info -->
-                  <div class="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+                  <div class="flex items-center gap-4 text-sm text-ink-soft">
                     <div class="flex items-center gap-1.5">
                       <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -265,7 +265,7 @@
                 <!-- Close button -->
                 <button
                   @click="closeDetail"
-                  class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-white/50 text-gray-500 backdrop-blur-sm transition-all hover:bg-white hover:text-gray-700 hover:shadow-lg dark:bg-dark-700/50 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-gray-300"
+                  class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-card/50 text-ink-soft backdrop-blur-sm transition-all hover:bg-card hover:text-ink-body hover:shadow-lg dark:bg-dark-700/50 dark:hover:bg-dark-700 dark:hover:text-ink-faint"
                   :aria-label="t('common.close')"
                 >
                   <Icon name="x" size="md" />
@@ -274,11 +274,11 @@
             </div>
 
             <!-- Body with Enhanced Markdown -->
-            <div class="max-h-[60vh] overflow-y-auto bg-white px-8 py-8 dark:bg-dark-800">
+            <div class="max-h-[60vh] overflow-y-auto bg-card px-8 py-8 dark:bg-dark-800">
               <!-- Content with decorative border -->
               <div class="relative">
                 <!-- Decorative left border -->
-                <div class="absolute left-0 top-0 bottom-0 w-1 rounded-full bg-gradient-to-b from-blue-500 via-indigo-500 to-purple-500"></div>
+                <div class="absolute left-0 top-0 bottom-0 w-1 rounded-full bg-gradient-to-b from-brand-500 via-accent-500 to-accent-600"></div>
 
                 <div class="pl-6">
                   <div
@@ -290,9 +290,9 @@
             </div>
 
             <!-- Footer with Actions -->
-            <div class="border-t border-gray-100 bg-gray-50/50 px-8 py-5 dark:border-dark-700 dark:bg-dark-900/30">
+            <div class="border-t border-line bg-page/50 px-8 py-5 dark:border-dark-700 dark:bg-dark-900/30">
               <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                <div class="flex items-center gap-2 text-xs text-ink-soft">
                   <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
@@ -301,14 +301,14 @@
                 <div class="flex items-center gap-3">
                   <button
                     @click="closeDetail"
-                    class="rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition-all hover:bg-gray-50 hover:shadow dark:border-dark-600 dark:bg-dark-700 dark:text-gray-300 dark:hover:bg-dark-600"
+                    class="rounded-xl border border-line bg-card px-5 py-2.5 text-sm font-medium text-ink-body shadow-xs transition-all hover:bg-page hover:shadow dark:border-dark-600 dark:bg-dark-700 dark:hover:bg-dark-600"
                   >
                     {{ t('common.close') }}
                   </button>
                   <button
                     v-if="!selectedAnnouncement.read_at"
                     @click="markAsReadAndClose(selectedAnnouncement.id)"
-                    class="rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-blue-500/30 transition-all hover:shadow-xl hover:scale-105"
+                    class="rounded-xl bg-gradient-to-r from-brand-600 to-accent-600 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-brand/30 transition-all hover:shadow-xl hover:scale-105"
                   >
                     <span class="flex items-center gap-2">
                       <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -564,23 +564,23 @@ watch(
 /* Enhanced Markdown Styles */
 .markdown-body {
   @apply text-[15px] leading-[1.75];
-  @apply text-gray-700 dark:text-gray-300;
+  @apply text-ink-body;
 }
 
 .markdown-body h1 {
-  @apply mb-6 mt-8 border-b border-gray-200 pb-3 text-3xl font-bold text-gray-900 dark:border-dark-600 dark:text-white;
+  @apply mb-6 mt-8 border-b border-line pb-3 text-3xl font-bold text-ink dark:border-dark-600 dark:text-white;
 }
 
 .markdown-body h2 {
-  @apply mb-4 mt-7 border-b border-gray-100 pb-2 text-2xl font-bold text-gray-900 dark:border-dark-700 dark:text-white;
+  @apply mb-4 mt-7 border-b border-line pb-2 text-2xl font-bold text-ink dark:border-dark-700 dark:text-white;
 }
 
 .markdown-body h3 {
-  @apply mb-3 mt-6 text-xl font-semibold text-gray-900 dark:text-white;
+  @apply mb-3 mt-6 text-xl font-semibold text-ink dark:text-white;
 }
 
 .markdown-body h4 {
-  @apply mb-2 mt-5 text-lg font-semibold text-gray-900 dark:text-white;
+  @apply mb-2 mt-5 text-lg font-semibold text-ink dark:text-white;
 }
 
 .markdown-body p {
@@ -588,7 +588,7 @@ watch(
 }
 
 .markdown-body a {
-  @apply font-medium text-blue-600 underline decoration-blue-600/30 decoration-2 underline-offset-2 transition-all hover:decoration-blue-600 dark:text-blue-400 dark:decoration-blue-400/30 dark:hover:decoration-blue-400;
+  @apply font-medium text-accent-600 underline decoration-accent-600/30 decoration-2 underline-offset-2 transition-all hover:decoration-accent-600 dark:text-accent-400 dark:decoration-accent-400/30 dark:hover:decoration-accent-400;
 }
 
 .markdown-body ul,
@@ -610,41 +610,41 @@ watch(
 }
 
 .markdown-body li::marker {
-  @apply text-blue-600 dark:text-blue-400;
+  @apply text-accent-600 dark:text-accent-400;
 }
 
 .markdown-body blockquote {
-  @apply relative my-5 border-l-4 border-blue-500 bg-blue-50/50 py-3 pl-5 pr-4 italic text-gray-700 dark:border-blue-400 dark:bg-blue-900/10 dark:text-gray-300;
+  @apply relative my-5 border-l-4 border-brand-500 bg-brand-50/50 py-3 pl-5 pr-4 italic text-ink-body dark:border-brand-400 dark:bg-brand-900/10;
 }
 
 .markdown-body blockquote::before {
   content: '"';
-  @apply absolute -left-1 top-0 text-5xl font-serif text-blue-500/20 dark:text-blue-400/20;
+  @apply absolute -left-1 top-0 text-5xl font-serif text-brand-500/20 dark:text-brand-400/20;
 }
 
 .markdown-body code {
-  @apply rounded-lg bg-gray-100 px-2 py-1 text-[13px] font-mono text-pink-600 dark:bg-dark-700 dark:text-pink-400;
+  @apply rounded-lg bg-page px-2 py-1 text-[13px] font-mono text-pink-600 dark:bg-dark-700 dark:text-pink-400;
 }
 
 .markdown-body pre {
-  @apply my-5 overflow-x-auto rounded-xl border border-gray-200 bg-gray-50 p-5 dark:border-dark-600 dark:bg-dark-900/50;
+  @apply my-5 overflow-x-auto rounded-xl border border-line bg-page p-5 dark:border-dark-600 dark:bg-dark-900/50;
 }
 
 .markdown-body pre code {
-  @apply bg-transparent p-0 text-[13px] text-gray-800 dark:text-gray-200;
+  @apply bg-transparent p-0 text-[13px] text-ink dark:text-dark-200;
 }
 
 .markdown-body hr {
-  @apply my-8 border-0 border-t-2 border-gray-200 dark:border-dark-700;
+  @apply my-8 border-0 border-t-2 border-line dark:border-dark-700;
 }
 
 .markdown-body table {
-  @apply mb-5 w-full overflow-hidden rounded-lg border border-gray-200 dark:border-dark-600;
+  @apply mb-5 w-full overflow-hidden rounded-lg border border-line dark:border-dark-600;
 }
 
 .markdown-body th,
 .markdown-body td {
-  @apply border-r border-b border-gray-200 px-4 py-3 text-left dark:border-dark-600;
+  @apply border-r border-b border-line px-4 py-3 text-left dark:border-dark-600;
 }
 
 .markdown-body th:last-child,
@@ -657,22 +657,22 @@ watch(
 }
 
 .markdown-body th {
-  @apply bg-gradient-to-br from-blue-50 to-indigo-50 font-semibold text-gray-900 dark:from-blue-900/20 dark:to-indigo-900/10 dark:text-white;
+  @apply bg-gradient-to-br from-brand-50 to-accent-50 font-semibold text-ink dark:from-brand-900/20 dark:to-accent-900/10 dark:text-white;
 }
 
 .markdown-body tbody tr {
-  @apply transition-colors hover:bg-gray-50 dark:hover:bg-dark-700/30;
+  @apply transition-colors hover:bg-page dark:hover:bg-dark-700/30;
 }
 
 .markdown-body img {
-  @apply my-5 max-w-full rounded-xl border border-gray-200 shadow-md dark:border-dark-600;
+  @apply my-5 max-w-full rounded-xl border border-line shadow-md dark:border-dark-600;
 }
 
 .markdown-body strong {
-  @apply font-semibold text-gray-900 dark:text-white;
+  @apply font-semibold text-ink dark:text-white;
 }
 
 .markdown-body em {
-  @apply italic text-gray-600 dark:text-gray-400;
+  @apply italic text-ink-soft;
 }
 </style>

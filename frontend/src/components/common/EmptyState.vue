@@ -1,18 +1,24 @@
 <template>
   <div class="empty-state">
-    <!-- Icon -->
+    <!-- Icon: brand-50 soft circle (Clomio EmptyState recipe) -->
     <div
-      class="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-gray-100 dark:bg-dark-800"
+      class="mb-[18px] flex h-[76px] w-[76px] items-center justify-center rounded-full bg-gradient-to-br from-brand-50 to-accent-50 dark:from-brand-900/30 dark:to-accent-900/20"
     >
       <slot name="icon">
-        <component v-if="icon" :is="icon" class="empty-state-icon h-10 w-10" aria-hidden="true" />
+        <component
+          v-if="icon"
+          :is="icon"
+          class="h-9 w-9 text-brand-600 dark:text-brand-400"
+          aria-hidden="true"
+        />
         <svg
           v-else
-          class="empty-state-icon h-10 w-10"
+          class="h-9 w-9 text-brand-600 dark:text-brand-400"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
           stroke-width="1.5"
+          aria-hidden="true"
         >
           <path
             stroke-linecap="round"
@@ -29,12 +35,12 @@
     </h3>
 
     <!-- Description -->
-    <p class="empty-state-description">
+    <p v-if="description" class="empty-state-description">
       {{ description }}
     </p>
 
-    <!-- Action -->
-    <div v-if="actionText || $slots.action" class="mt-6">
+    <!-- Action / CTA slot -->
+    <div v-if="actionText || $slots.action" class="mt-[18px]">
       <slot name="action">
         <component
           :is="actionTo ? 'RouterLink' : 'button'"

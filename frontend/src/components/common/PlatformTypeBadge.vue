@@ -64,7 +64,7 @@
       </span>
     </div>
     <!-- Row 3: Subscription expiration (non-free paid accounts only) -->
-    <div v-if="expiresLabel" class="text-[10px] leading-tight text-gray-400 dark:text-gray-500 pl-0.5" :title="subscriptionExpiresAt">
+    <div v-if="expiresLabel" class="text-[10px] leading-tight text-ink-faint dark:text-dark-500 pl-0.5" :title="subscriptionExpiresAt">
       {{ expiresLabel }}
     </div>
   </div>
@@ -262,7 +262,7 @@ const platformClass = computed(() => {
   if (props.platform === 'grok') {
     return 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
   }
-  return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+  return 'bg-accent-100 text-accent-700 dark:bg-blue-900/30 dark:text-blue-400'
 })
 
 const typeClass = computed(() => {
@@ -284,7 +284,7 @@ const typeClass = computed(() => {
   if (props.platform === 'grok') {
     return 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
   }
-  return 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400'
+  return 'bg-accent-100 text-accent-600 dark:bg-blue-900/30 dark:text-blue-400'
 })
 
 const planBadgeClass = computed(() => {
@@ -294,7 +294,7 @@ const planBadgeClass = computed(() => {
   if (props.platform === 'grok' && props.planType) {
     const normalized = props.planType.trim().toLowerCase().replace(/[\s_-]+/g, '')
     if (normalized === 'free' || normalized === 'basic') {
-      return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+      return 'bg-page text-ink-body dark:bg-dark-700 dark:text-dark-300'
     }
     if (normalized.includes('heavy')) {
       return 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300'
@@ -307,11 +307,11 @@ const planBadgeClass = computed(() => {
     switch (geminiTier.value) {
       case 'google_one_free':
       case 'aistudio_free':
-        return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+        return 'bg-page text-ink-body dark:bg-dark-700 dark:text-dark-300'
       case 'google_ai_pro':
       case 'aistudio_paid':
       case 'gcp_standard':
-        return 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300'
+        return 'bg-accent-100 text-accent-600 dark:bg-blue-900/30 dark:text-blue-300'
       case 'google_ai_ultra':
       case 'gcp_enterprise':
         return 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-300'

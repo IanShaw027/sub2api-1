@@ -8,12 +8,21 @@
   >
     <!-- Logo/Brand -->
     <div class="sidebar-header" :class="{ 'sidebar-header-collapsed': sidebarCollapsed }">
-      <!-- Custom Logo or Default Logo -->
-      <div class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl shadow-glow">
-        <img v-if="settingsLoaded" :src="siteLogo || '/logo.png'" :alt="t('common.logoAlt')" class="h-full w-full object-contain" />
+      <!-- Custom siteLogo override, else BrandLogo cloud+sparkle -->
+      <div
+        class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl"
+        :class="siteLogo ? 'shadow-glow' : ''"
+      >
+        <img
+          v-if="settingsLoaded && siteLogo"
+          :src="siteLogo"
+          :alt="t('common.logoAlt')"
+          class="h-full w-full object-contain"
+        />
+        <BrandLogo v-else-if="settingsLoaded" :size="36" icon-only />
       </div>
       <div class="sidebar-brand" :class="{ 'sidebar-brand-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
-        <span class="sidebar-brand-title text-lg font-bold text-gray-900 dark:text-white">
+        <span class="sidebar-brand-title text-lg font-bold text-ink dark:text-white">
           {{ siteName }}
         </span>
         <!-- Version Badge -->
@@ -48,13 +57,13 @@
                 >
                   <span class="min-w-0 truncate">{{ item.label }}</span>
                   <ChevronDownIcon
-                    class="h-4 w-4 flex-shrink-0 transition-transform duration-200"
+                    class="h-4 w-4 flex-shrink-0 transition-transform duration-150"
                     :class="isGroupExpanded(item) ? 'rotate-180' : ''"
                   />
                 </span>
               </button>
               <!-- Children -->
-              <div v-if="!sidebarCollapsed && isGroupExpanded(item)" class="mb-1 ml-4 border-l border-gray-200 pl-2 dark:border-dark-600">
+              <div v-if="!sidebarCollapsed && isGroupExpanded(item)" class="mb-1 ml-4 border-l border-line pl-2 dark:border-dark-600">
                 <router-link
                   v-for="child in item.children"
                   :key="child.path"
@@ -121,12 +130,12 @@
                 >
                   <span class="min-w-0 truncate">{{ item.label }}</span>
                   <ChevronDownIcon
-                    class="h-4 w-4 flex-shrink-0 transition-transform duration-200"
+                    class="h-4 w-4 flex-shrink-0 transition-transform duration-150"
                     :class="isGroupExpanded(item) ? 'rotate-180' : ''"
                   />
                 </span>
               </button>
-              <div v-if="!sidebarCollapsed && isGroupExpanded(item)" class="mb-1 ml-4 border-l border-gray-200 pl-2 dark:border-dark-600">
+              <div v-if="!sidebarCollapsed && isGroupExpanded(item)" class="mb-1 ml-4 border-l border-line pl-2 dark:border-dark-600">
                 <router-link
                   v-for="child in item.children"
                   :key="child.path"
@@ -181,12 +190,12 @@
                 >
                   <span class="min-w-0 truncate">{{ item.label }}</span>
                   <ChevronDownIcon
-                    class="h-4 w-4 flex-shrink-0 transition-transform duration-200"
+                    class="h-4 w-4 flex-shrink-0 transition-transform duration-150"
                     :class="isGroupExpanded(item) ? 'rotate-180' : ''"
                   />
                 </span>
               </button>
-              <div v-if="!sidebarCollapsed && isGroupExpanded(item)" class="mb-1 ml-4 border-l border-gray-200 pl-2 dark:border-dark-600">
+              <div v-if="!sidebarCollapsed && isGroupExpanded(item)" class="mb-1 ml-4 border-l border-line pl-2 dark:border-dark-600">
                 <router-link
                   v-for="child in item.children"
                   :key="child.path"
@@ -220,7 +229,7 @@
     </nav>
 
     <!-- Bottom Section -->
-    <div class="mt-auto border-t border-gray-100 p-3 dark:border-dark-800">
+    <div class="mt-auto border-t border-divider p-3 dark:border-dark-800">
       <!-- Theme Toggle -->
       <button
         @click="toggleTheme"
@@ -265,6 +274,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import VersionBadge from '@/components/common/VersionBadge.vue'
+import { BrandLogo } from '@/components/brand'
 import { isSimpleModeRouteRestricted } from '@/navigation/simpleMode'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
