@@ -97,6 +97,40 @@ func TestOpenAIHandleFailoverExhausted_Generic503StillReturnsBadGateway(t *testi
 	require.Contains(t, strings.TrimSpace(w.Body.String()), "Upstream service temporarily unavailable")
 }
 
+func TestOpenAIHandleFailoverExhausted_ContextWindowIsClientVisible(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	h := &OpenAIGatewayHandler{}
+	h.handleFailoverExhausted(c, &service.UpstreamFailoverError{
+		StatusCode:   http.StatusBadRequest,
+		ResponseBody: []byte(`{"error":{"code":"context_length_exceeded","message":"Your input exceeds the context window of this model. Please adjust your input and try again."}}`),
+	}, nil, false)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "invalid_request_error")
+	require.Contains(t, w.Body.String(), "context window")
+	require.NotContains(t, w.Body.String(), "Upstream request failed")
+}
+
+func TestOpenAIHandleFailoverExhausted_DeactivatedWorkspaceIsClientVisible(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	h := &OpenAIGatewayHandler{}
+	h.handleFailoverExhausted(c, &service.UpstreamFailoverError{
+		StatusCode:   http.StatusPaymentRequired,
+		ResponseBody: []byte(`{"detail":{"code":"deactivated_workspace"}}`),
+	}, nil, false)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	require.Contains(t, w.Body.String(), "Upstream workspace is deactivated")
+}
+
 func TestClearOpenAIStreamRetryReplayState_RemovesPriorAccountReplayState(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

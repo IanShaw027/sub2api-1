@@ -39,3 +39,10 @@ func TestFormatUpstreamRequestFailedAfterRetries(t *testing.T) {
 
 	require.Equal(t, "Upstream request timed out after retries", msg)
 }
+
+func TestClassifyUpstreamTransportError_ContextWindowNotTransport(t *testing.T) {
+	detail := classifyUpstreamTransportError(errors.New("OpenAI upstream SSE context window exceeded"))
+	require.Equal(t, "invalid_request_error", detail.ErrorType)
+	require.Contains(t, detail.Message, "context window")
+	require.NotEqual(t, "upstream_transport_error", detail.ErrorType)
+}

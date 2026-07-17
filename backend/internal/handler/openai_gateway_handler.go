@@ -408,40 +408,36 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				zap.Error(err),
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
-			if lastFailoverErr == nil {
-				if len(failedAccountIDs) > 0 {
-					markOpsRoutingCapacityLimited(c)
-					msg := buildOpenAISelectionExhaustedMessage(err, "No available accounts", true)
-					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", msg, streamStarted)
-					return
-				}
-				if h.handleOpenAIGroupModelUnsupportedError(c, err, streamStarted) {
-					return
-				}
-				if len(failedAccountIDs) == 0 {
-					if errors.Is(err, service.ErrNoAvailableCompactAccounts) {
-						markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
-						h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "compact_not_supported", "No available OpenAI accounts support /responses/compact", streamStarted)
-						return
-					}
-					cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, requestPlatform)
-					if !cls.ModelNotFound {
-						markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
-					}
-					message := cls.Message
-					if !cls.ModelNotFound {
-						message = buildOpenAISelectionFailureMessage(err, "Service temporarily unavailable")
-					}
-					h.handleStreamingAwareError(c, cls.Status, cls.ErrType, message, streamStarted)
-					return
-				}
-				if lastFailoverErr != nil {
-					h.handleFailoverExhausted(c, lastFailoverErr, lastFailoverAccount, streamStarted)
-				} else {
-					h.handleFailoverExhaustedSimple(c, 502, streamStarted)
-				}
+			// Prefer the last concrete upstream failover cause over a generic
+			// "No available accounts" when every candidate has already failed.
+			if lastFailoverErr != nil {
+				h.handleFailoverExhausted(c, lastFailoverErr, lastFailoverAccount, streamStarted)
 				return
 			}
+			if len(failedAccountIDs) > 0 {
+				markOpsRoutingCapacityLimited(c)
+				msg := buildOpenAISelectionExhaustedMessage(err, "No available accounts", true)
+				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", msg, streamStarted)
+				return
+			}
+			if h.handleOpenAIGroupModelUnsupportedError(c, err, streamStarted) {
+				return
+			}
+			if errors.Is(err, service.ErrNoAvailableCompactAccounts) {
+				markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
+				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "compact_not_supported", "No available OpenAI accounts support /responses/compact", streamStarted)
+				return
+			}
+			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, requestPlatform)
+			if !cls.ModelNotFound {
+				markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
+			}
+			message := cls.Message
+			if !cls.ModelNotFound {
+				message = buildOpenAISelectionFailureMessage(err, "Service temporarily unavailable")
+			}
+			h.handleStreamingAwareError(c, cls.Status, cls.ErrType, message, streamStarted)
+			return
 		}
 		if selection == nil || selection.Account == nil {
 			cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, requestPlatform)
@@ -2628,6 +2624,14 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 	service.SetOpsUpstreamError(c, statusCode, upstreamMsg, "")
 	status, errType, errMsg := h.mapUpstreamError(statusCode)
 
+	// Prefer known business classifications (context window, usage limit,
+	// deactivated workspace) over opaque mapUpstreamError text.
+	if vis, ok := service.ClassifyClientVisibleUpstreamError(upstreamMsg, responseBody); ok {
+		service.SetOpsUpstreamErrorWithType(c, vis.ErrorType, vis.StatusCode, vis.Message, string(responseBody))
+		h.handleStreamingAwareError(c, vis.StatusCode, vis.ErrorType, vis.Message, streamStarted)
+		return
+	}
+
 	if rewritten, matched := h.rewriteOpenAIUpstreamErrorForAccount(account, statusCode, responseBody); matched {
 		h.handleStreamingAwareError(c, status, errType, rewritten, streamStarted)
 		return
@@ -2658,6 +2662,22 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 
 			h.handleStreamingAwareError(c, respCode, "upstream_error", msg, streamStarted)
 			return
+		}
+	}
+
+	// When mapUpstreamError produced a generic message but the upstream body
+	// still has a safe client-visible explanation, surface it.
+	if (errMsg == "Upstream request failed" || errMsg == "Upstream service temporarily unavailable") &&
+		strings.TrimSpace(upstreamMsg) != "" &&
+		service.SanitizeUpstreamErrorMessage(upstreamMsg) != "" {
+		// Keep status/type from mapUpstreamError; only improve the message when
+		// it looks like a user-actionable request problem.
+		if statusCode >= 400 && statusCode < 500 && statusCode != 401 && statusCode != 403 && statusCode != 429 {
+			errMsg = service.SanitizeUpstreamErrorMessage(upstreamMsg)
+			if statusCode == http.StatusBadRequest {
+				errType = "invalid_request_error"
+				status = http.StatusBadRequest
+			}
 		}
 	}
 
@@ -2810,8 +2830,12 @@ func (h *OpenAIGatewayHandler) ensureForwardErrorResponse(c *gin.Context, stream
 		return true
 	}
 	detail := resolveUpstreamForwardErrorDetail(c, forwardErr)
-	service.SetOpsUpstreamErrorWithType(c, detail.ErrorType, 0, detail.Message, detail.Detail)
-	h.handleStreamingAwareError(c, http.StatusBadGateway, detail.ErrorType, detail.Message, streamStarted)
+	statusCode := detail.StatusCode
+	if statusCode <= 0 {
+		statusCode = statusForUpstreamForwardErrorType(detail.ErrorType)
+	}
+	service.SetOpsUpstreamErrorWithType(c, detail.ErrorType, statusCode, detail.Message, detail.Detail)
+	h.handleStreamingAwareError(c, statusCode, detail.ErrorType, detail.Message, streamStarted)
 	return true
 }
 

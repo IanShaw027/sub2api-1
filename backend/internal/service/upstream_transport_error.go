@@ -31,6 +31,16 @@ func classifyUpstreamTransportError(err error) upstreamTransportErrorDetail {
 		}
 	}
 
+	// Business failures (context window, usage limit, deactivated workspace)
+	// must not be reported as transport errors.
+	if vis, ok := ClassifyClientVisibleUpstreamErrorFromErr(err); ok {
+		return upstreamTransportErrorDetail{
+			ErrorType: vis.ErrorType,
+			Message:   vis.Message,
+			Detail:    strings.TrimSpace(sanitizeUpstreamErrorMessage(err.Error())),
+		}
+	}
+
 	detail := strings.TrimSpace(sanitizeUpstreamErrorMessage(err.Error()))
 	lowerDetail := strings.ToLower(detail)
 

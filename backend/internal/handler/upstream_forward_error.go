@@ -16,16 +16,29 @@ var upstreamForwardSensitiveQueryParamPattern = regexp.MustCompile(`(?i)([?&](?:
 var upstreamForwardSensitiveBearerPattern = regexp.MustCompile(`(?i)(authorization:\s*bearer\s+)[^,"\s]+`)
 
 type upstreamForwardErrorDetail struct {
-	ErrorType string
-	Message   string
-	Detail    string
+	StatusCode int
+	ErrorType  string
+	Message    string
+	Detail     string
 }
 
 func classifyUpstreamForwardError(err error) upstreamForwardErrorDetail {
 	if err == nil {
 		return upstreamForwardErrorDetail{
-			ErrorType: "upstream_error",
-			Message:   "Upstream request failed",
+			StatusCode: 502,
+			ErrorType:  "upstream_error",
+			Message:    "Upstream request failed",
+		}
+	}
+
+	// Business / protocol failures first so they never fall into the opaque
+	// transport bucket (e.g. SSE context-window overflow).
+	if vis, ok := service.ClassifyClientVisibleUpstreamErrorFromErr(err); ok {
+		return upstreamForwardErrorDetail{
+			StatusCode: vis.StatusCode,
+			ErrorType:  vis.ErrorType,
+			Message:    vis.Message,
+			Detail:     sanitizeUpstreamForwardErrorDetail(strings.TrimSpace(err.Error())),
 		}
 	}
 
@@ -34,18 +47,20 @@ func classifyUpstreamForwardError(err error) upstreamForwardErrorDetail {
 
 	if errors.Is(err, context.DeadlineExceeded) {
 		return upstreamForwardErrorDetail{
-			ErrorType: "upstream_timeout_error",
-			Message:   "Upstream request timed out",
-			Detail:    detail,
+			StatusCode: 502,
+			ErrorType:  "upstream_timeout_error",
+			Message:    "Upstream request timed out",
+			Detail:     detail,
 		}
 	}
 
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return upstreamForwardErrorDetail{
-			ErrorType: "upstream_timeout_error",
-			Message:   "Upstream request timed out",
-			Detail:    detail,
+			StatusCode: 502,
+			ErrorType:  "upstream_timeout_error",
+			Message:    "Upstream request timed out",
+			Detail:     detail,
 		}
 	}
 
@@ -53,69 +68,131 @@ func classifyUpstreamForwardError(err error) upstreamForwardErrorDetail {
 		normalizedCode := strings.ToLower(code)
 		normalizedCode = strings.TrimSuffix(normalizedCode, "_error")
 		return upstreamForwardErrorDetail{
-			ErrorType: "upstream_http2_" + normalizedCode + "_error",
-			Message:   "Upstream HTTP/2 peer reset the stream with " + code,
-			Detail:    detail,
+			StatusCode: 502,
+			ErrorType:  "upstream_http2_" + normalizedCode + "_error",
+			Message:    "Upstream HTTP/2 peer reset the stream with " + code,
+			Detail:     detail,
 		}
 	}
 
 	switch {
 	case strings.Contains(lowerDetail, "context canceled"):
 		return upstreamForwardErrorDetail{
-			ErrorType: "upstream_canceled_error",
-			Message:   "Upstream request was canceled",
-			Detail:    detail,
+			StatusCode: 502,
+			ErrorType:  "upstream_canceled_error",
+			Message:    "Upstream request was canceled",
+			Detail:     detail,
 		}
 	case strings.Contains(lowerDetail, "no such host"),
 		strings.Contains(lowerDetail, "server misbehaving"):
 		return upstreamForwardErrorDetail{
-			ErrorType: "upstream_dns_error",
-			Message:   "Upstream DNS lookup failed",
-			Detail:    detail,
+			StatusCode: 502,
+			ErrorType:  "upstream_dns_error",
+			Message:    "Upstream DNS lookup failed",
+			Detail:     detail,
 		}
 	case strings.Contains(lowerDetail, "connection refused"),
 		strings.Contains(lowerDetail, "dial tcp"):
 		return upstreamForwardErrorDetail{
-			ErrorType: "upstream_connect_error",
-			Message:   "Failed to connect to upstream service",
-			Detail:    detail,
+			StatusCode: 502,
+			ErrorType:  "upstream_connect_error",
+			Message:    "Failed to connect to upstream service",
+			Detail:     detail,
 		}
 	case strings.Contains(lowerDetail, "tls:"),
 		strings.Contains(lowerDetail, "x509:"):
 		return upstreamForwardErrorDetail{
-			ErrorType: "upstream_tls_error",
-			Message:   "Upstream TLS handshake failed",
-			Detail:    detail,
+			StatusCode: 502,
+			ErrorType:  "upstream_tls_error",
+			Message:    "Upstream TLS handshake failed",
+			Detail:     detail,
 		}
 	case strings.Contains(lowerDetail, "connection reset by peer"),
 		strings.Contains(lowerDetail, "broken pipe"):
 		return upstreamForwardErrorDetail{
-			ErrorType: "upstream_connection_reset_error",
-			Message:   "Upstream connection was reset",
-			Detail:    detail,
+			StatusCode: 502,
+			ErrorType:  "upstream_connection_reset_error",
+			Message:    "Upstream connection was reset",
+			Detail:     detail,
 		}
 	case detail == "EOF",
 		strings.Contains(lowerDetail, "unexpected eof"),
 		strings.Contains(lowerDetail, "client connection lost"):
 		return upstreamForwardErrorDetail{
-			ErrorType: "upstream_connection_closed_error",
-			Message:   "Upstream connection closed unexpectedly",
-			Detail:    detail,
+			StatusCode: 502,
+			ErrorType:  "upstream_connection_closed_error",
+			Message:    "Upstream connection closed unexpectedly",
+			Detail:     detail,
 		}
 	default:
 		return upstreamForwardErrorDetail{
-			ErrorType: "upstream_transport_error",
-			Message:   "Upstream transport error",
-			Detail:    detail,
+			StatusCode: 502,
+			ErrorType:  "upstream_transport_error",
+			Message:    "Upstream transport error",
+			Detail:     detail,
 		}
 	}
 }
 
 func resolveUpstreamForwardErrorDetail(c *gin.Context, forwardErr error) upstreamForwardErrorDetail {
+	// Prefer typed/string business classification from the forward error itself.
+	// Context may still hold a stale generic "Upstream transport error" from an
+	// earlier transport path, which must not mask context-window / compact causes.
+	if vis, ok := service.ClassifyClientVisibleUpstreamErrorFromErr(forwardErr); ok {
+		detail := sanitizeUpstreamForwardErrorDetail(strings.TrimSpace(errString(forwardErr)))
+		return upstreamForwardErrorDetail{
+			StatusCode: vis.StatusCode,
+			ErrorType:  vis.ErrorType,
+			Message:    vis.Message,
+			Detail:     detail,
+		}
+	}
 	if detail, ok := upstreamForwardErrorDetailFromContext(c); ok {
+		// Re-classify generic transport fallbacks when ops detail already holds
+		// a more specific business cause (common for streamed Responses).
+		if vis, ok := service.PreferClientVisibleUpstreamError(forwardErr, detail.ErrorType, detail.Message, detail.Detail); ok {
+			return upstreamForwardErrorDetail{
+				StatusCode: vis.StatusCode,
+				ErrorType:  vis.ErrorType,
+				Message:    vis.Message,
+				Detail:     firstNonEmptyForwardDetail(detail.Detail, sanitizeUpstreamForwardErrorDetail(errString(forwardErr))),
+			}
+		}
+		if detail.StatusCode == 0 {
+			detail.StatusCode = statusForUpstreamForwardErrorType(detail.ErrorType)
+		}
 		return detail
 	}
 	return classifyUpstreamForwardError(forwardErr)
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func firstNonEmptyForwardDetail(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func statusForUpstreamForwardErrorType(errType string) int {
+	switch strings.TrimSpace(errType) {
+	case "invalid_request_error", "not_found_error":
+		return 400
+	case "rate_limit_error":
+		return 429
+	case "overloaded_error":
+		return 503
+	default:
+		return 502
+	}
 }
 
 func shouldSuppressForwardErrorResponse(c *gin.Context, forwardErr error) bool {
@@ -171,12 +248,27 @@ func upstreamForwardErrorDetailFromContext(c *gin.Context) (upstreamForwardError
 			}
 		}
 	}
+	if rawStatus, ok := c.Get(service.OpsUpstreamStatusCodeKey); ok {
+		switch v := rawStatus.(type) {
+		case int:
+			if v > 0 {
+				detail.StatusCode = v
+			}
+		case int64:
+			if v > 0 {
+				detail.StatusCode = int(v)
+			}
+		}
+	}
+	if detail.StatusCode == 0 {
+		detail.StatusCode = statusForUpstreamForwardErrorType(detail.ErrorType)
+	}
 	return detail, true
 }
 
 func isClientVisibleUpstreamForwardErrorType(errType string) bool {
 	switch strings.TrimSpace(errType) {
-	case "invalid_request_error", "not_found_error":
+	case "invalid_request_error", "not_found_error", "rate_limit_error", "overloaded_error":
 		return true
 	default:
 		return false

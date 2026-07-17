@@ -520,6 +520,52 @@ func TestOpenAIEnsureForwardErrorResponse_UsesDetailedForwardError(t *testing.T)
 	assert.Equal(t, "Upstream HTTP/2 peer reset the stream with INTERNAL_ERROR", errorObj["message"])
 }
 
+func TestOpenAIEnsureForwardErrorResponse_ContextWindowIsClientVisible(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, EndpointResponses, nil)
+
+	h := &OpenAIGatewayHandler{}
+	wrote := h.ensureForwardErrorResponse(c, false, errors.New("OpenAI upstream SSE context window exceeded"))
+
+	require.True(t, wrote)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+
+	var parsed map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &parsed)
+	require.NoError(t, err)
+	errorObj, ok := parsed["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "invalid_request_error", errorObj["type"])
+	assert.Contains(t, errorObj["message"], "context window")
+	assert.NotEqual(t, "upstream_transport_error", errorObj["type"])
+	assert.NotEqual(t, "Upstream transport error", errorObj["message"])
+}
+
+func TestOpenAIEnsureForwardErrorResponse_ContextWindowOverridesStaleTransportOps(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, EndpointResponses, nil)
+	service.SetOpsUpstreamErrorWithType(
+		c,
+		"upstream_transport_error",
+		0,
+		"Upstream transport error",
+		"OpenAI upstream SSE context window exceeded",
+	)
+
+	h := &OpenAIGatewayHandler{}
+	wrote := h.ensureForwardErrorResponse(c, false, errors.New("OpenAI upstream SSE context window exceeded"))
+
+	require.True(t, wrote)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "invalid_request_error")
+	require.Contains(t, w.Body.String(), "context window")
+	require.NotContains(t, w.Body.String(), "Upstream transport error")
+}
+
 func TestOpenAIEnsureForwardErrorResponse_UsesClientVisibleUpstreamError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -537,7 +583,7 @@ func TestOpenAIEnsureForwardErrorResponse_UsesClientVisibleUpstreamError(t *test
 	wrote := h.ensureForwardErrorResponse(c, false, errors.New("upstream error: 400"))
 
 	require.True(t, wrote)
-	require.Equal(t, http.StatusBadGateway, w.Code)
+	require.Equal(t, http.StatusBadRequest, w.Code)
 
 	var parsed map[string]any
 	err := json.Unmarshal(w.Body.Bytes(), &parsed)

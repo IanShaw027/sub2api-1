@@ -2194,6 +2194,12 @@ func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *se
 	upstreamMsg := service.ExtractUpstreamErrorMessage(responseBody)
 	service.SetOpsUpstreamError(c, statusCode, upstreamMsg, "")
 
+	if vis, ok := service.ClassifyClientVisibleUpstreamError(upstreamMsg, responseBody); ok {
+		service.SetOpsUpstreamErrorWithType(c, vis.ErrorType, vis.StatusCode, vis.Message, string(responseBody))
+		h.handleStreamingAwareError(c, vis.StatusCode, vis.ErrorType, vis.Message, streamStarted)
+		return
+	}
+
 	// 使用默认的错误映射
 	status, errType, errMsg := h.mapUpstreamError(statusCode)
 	h.handleStreamingAwareError(c, status, errType, errMsg, streamStarted)
@@ -2278,8 +2284,12 @@ func (h *GatewayHandler) ensureForwardErrorResponse(c *gin.Context, streamStarte
 		streamStarted = true
 	}
 	detail := resolveUpstreamForwardErrorDetail(c, forwardErr)
-	service.SetOpsUpstreamErrorWithType(c, detail.ErrorType, 0, detail.Message, detail.Detail)
-	h.handleStreamingAwareError(c, http.StatusBadGateway, detail.ErrorType, detail.Message, streamStarted)
+	statusCode := detail.StatusCode
+	if statusCode <= 0 {
+		statusCode = statusForUpstreamForwardErrorType(detail.ErrorType)
+	}
+	service.SetOpsUpstreamErrorWithType(c, detail.ErrorType, statusCode, detail.Message, detail.Detail)
+	h.handleStreamingAwareError(c, statusCode, detail.ErrorType, detail.Message, streamStarted)
 	return true
 }
 
