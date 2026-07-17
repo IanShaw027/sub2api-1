@@ -57,7 +57,7 @@
     <p v-if="emailVerifyEnabled && sendCodeSuccess" class="text-sm text-green-600 dark:text-green-400">
       {{ t('auth.codeSentSuccess') }}
     </p>
-    <p v-else-if="emailVerifyEnabled" class="text-xs text-gray-500 dark:text-dark-400">
+    <p v-else-if="emailVerifyEnabled" class="text-xs text-ink-soft dark:text-dark-400">
       {{ t('auth.verificationCodeHint') }}
     </p>
     <input
@@ -72,7 +72,7 @@
     <button
       :data-testid="`${testIdPrefix}-create-account-submit`"
       type="button"
-      class="btn btn-primary w-full"
+      class="btn btn-primary w-full shadow-xs shadow-brand/20"
       :disabled="isSubmitting || !email.trim() || password.length < 8 || (emailVerifyEnabled && !verifyCode.trim()) || (invitationCodeEnabled && !invitationCode.trim())"
       @click="handleSubmit"
     >

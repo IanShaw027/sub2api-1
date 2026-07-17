@@ -1,11 +1,22 @@
 <template>
-  <div class="min-h-screen bg-gray-50 px-4 py-10 dark:bg-dark-900">
-    <div class="mx-auto max-w-2xl">
-      <div class="card p-6">
-        <h1 class="text-lg font-semibold text-gray-900 dark:text-white">
+  <div class="relative min-h-screen overflow-hidden bg-page px-4 py-10 dark:bg-page">
+    <span
+      class="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand/10 blur-3xl"
+      aria-hidden="true"
+    />
+    <span
+      class="pointer-events-none absolute -bottom-32 -left-16 h-72 w-72 rounded-full bg-accent/10 blur-3xl"
+      aria-hidden="true"
+    />
+    <div class="relative z-10 mx-auto max-w-2xl">
+      <div class="mb-6 flex justify-center">
+        <BrandLogo :size="36" />
+      </div>
+      <div class="card rounded-hero border-line p-6 shadow-lg">
+        <h1 class="text-lg font-semibold tracking-tight text-ink dark:text-white">
           {{ callbackTitleText }}
         </h1>
-        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+        <p class="mt-2 text-sm text-ink-soft dark:text-ink-soft">
           {{ errorMessage || callbackProcessingText }}
         </p>
 
@@ -14,19 +25,19 @@
           class="mt-6 flex items-center justify-center py-10"
         >
           <div
-            class="h-8 w-8 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"
+            class="h-8 w-8 animate-spin rounded-full border-4 border-brand border-t-transparent"
           ></div>
         </div>
 
         <div
           v-else
-          class="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800/80"
+          class="mt-6 rounded-card border border-line bg-page p-4 dark:border-line dark:bg-page"
         >
-          <p class="text-sm text-gray-700 dark:text-gray-300">
+          <p class="text-sm text-ink-body dark:text-ink-body">
             {{ errorMessage }}
           </p>
           <button
-            class="btn btn-primary mt-4"
+            class="btn btn-primary mt-4 shadow-xs shadow-brand/20"
             type="button"
             @click="goBackToPayment"
           >
@@ -42,6 +53,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
+import { BrandLogo } from '@/components/brand'
 import { useAppStore } from '@/stores'
 
 const { t } = useI18n()

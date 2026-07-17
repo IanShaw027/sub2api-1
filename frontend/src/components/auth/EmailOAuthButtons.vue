@@ -1,11 +1,11 @@
 <template>
   <div v-if="hasProviders" class="space-y-4">
     <div v-if="showDivider" class="flex items-center gap-3">
-      <div class="h-px flex-1 bg-gray-200 dark:bg-dark-700"></div>
-      <span class="text-xs text-gray-500 dark:text-dark-400">
+      <div class="h-px flex-1 bg-line dark:bg-dark-700"></div>
+      <span class="text-xs font-medium uppercase tracking-wide text-ink-faint dark:text-dark-400">
         {{ t('auth.oauthOrContinue') }}
       </span>
-      <div class="h-px flex-1 bg-gray-200 dark:bg-dark-700"></div>
+      <div class="h-px flex-1 bg-line dark:bg-dark-700"></div>
     </div>
 
     <div :class="providerGridClass">
@@ -14,10 +14,10 @@
         :key="provider"
         type="button"
         :disabled="disabled"
-        class="btn btn-secondary h-12 w-full justify-center gap-2"
+        class="btn btn-secondary h-12 w-full justify-center gap-2 rounded-control"
         @click="startLogin(provider)"
       >
-        <GitHubMark v-if="provider === 'github'" class="h-5 w-5 text-gray-800 dark:text-gray-100" />
+        <GitHubMark v-if="provider === 'github'" class="h-5 w-5 text-ink " />
         <GoogleMark v-else class="h-5 w-5" />
         <span class="font-medium">{{ providerLabel(provider) }}</span>
       </button>

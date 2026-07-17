@@ -1,11 +1,11 @@
 <template>
   <AuthLayout>
     <div class="space-y-6">
-      <div class="text-center">
-        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
+      <div class="text-center lg:text-left">
+        <h2 class="text-2xl font-semibold tracking-tight text-ink dark:text-white">
           {{ t('auth.linuxdo.callbackTitle') }}
         </h2>
-        <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
+        <p class="mt-2 text-sm text-ink-soft dark:text-ink-soft">
           {{ isProcessing ? t('auth.linuxdo.callbackProcessing') : t('auth.linuxdo.callbackHint') }}
         </p>
       </div>
@@ -24,28 +24,28 @@
         >
           <div
             v-if="adoptionRequired && (suggestedDisplayName || suggestedAvatarUrl)"
-            class="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-800/60"
+            class="rounded-card border border-line bg-page p-4 dark:border-line dark:bg-page"
           >
             <div class="space-y-3">
               <div class="space-y-1">
-                <p class="text-sm font-medium text-gray-900 dark:text-white">
+                <p class="text-sm font-medium text-ink dark:text-white">
                   {{ t('auth.oauthFlow.profileDetailsTitle', { providerName }) }}
                 </p>
-                <p class="text-xs text-gray-500 dark:text-dark-400">
+                <p class="text-xs text-ink-soft dark:text-ink-soft">
                   {{ t('auth.oauthFlow.profileDetailsDescription', { providerName }) }}
                 </p>
               </div>
 
               <label
                 v-if="suggestedDisplayName"
-                class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3 text-sm dark:border-dark-600 dark:bg-dark-900/50"
+                class="flex items-start gap-3 rounded-xl border border-line bg-card p-3 text-sm dark:border-line dark:bg-card"
               >
                 <input v-model="adoptDisplayName" type="checkbox" class="mt-1 h-4 w-4" />
                 <span class="space-y-1">
-                  <span class="block font-medium text-gray-900 dark:text-white">
+                  <span class="block font-medium text-ink dark:text-white">
                     {{ t('auth.oauthFlow.useDisplayName') }}
                   </span>
-                  <span class="block text-gray-500 dark:text-dark-400">
+                  <span class="block text-ink-soft dark:text-ink-soft">
                     {{ suggestedDisplayName }}
                   </span>
                 </span>
@@ -53,19 +53,19 @@
 
               <label
                 v-if="suggestedAvatarUrl"
-                class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3 text-sm dark:border-dark-600 dark:bg-dark-900/50"
+                class="flex items-start gap-3 rounded-xl border border-line bg-card p-3 text-sm dark:border-line dark:bg-card"
               >
                 <input v-model="adoptAvatar" type="checkbox" class="mt-1 h-4 w-4" />
                 <img
                   :src="suggestedAvatarUrl"
                   :alt="t('auth.oauthFlow.avatarAlt', { providerName })"
-                  class="h-10 w-10 rounded-full border border-gray-200 object-cover dark:border-dark-600"
+                  class="h-10 w-10 rounded-full border border-line object-cover dark:border-line"
                 />
                 <span class="space-y-1">
-                  <span class="block font-medium text-gray-900 dark:text-white">
+                  <span class="block font-medium text-ink dark:text-white">
                     {{ t('auth.oauthFlow.useAvatar') }}
                   </span>
-                  <span class="block break-all text-gray-500 dark:text-dark-400">
+                  <span class="block break-all text-ink-soft dark:text-ink-soft">
                     {{ suggestedAvatarUrl }}
                   </span>
                 </span>
@@ -74,7 +74,7 @@
           </div>
 
           <template v-if="needsInvitation">
-            <p class="text-sm text-gray-700 dark:text-gray-300">
+            <p class="text-sm text-ink-body dark:text-ink-body">
               {{ t('auth.linuxdo.invitationRequired') }}
             </p>
             <div>
@@ -88,7 +88,7 @@
               />
             </div>
             <button
-              class="btn btn-primary w-full"
+              class="btn btn-primary w-full shadow-xs shadow-brand/20"
               :disabled="isSubmitting || !invitationCode.trim()"
               @click="handleSubmitInvitation"
             >
@@ -97,22 +97,22 @@
           </template>
 
           <template v-else-if="needsAdoptionConfirmation">
-            <p class="text-sm text-gray-700 dark:text-gray-300">
+            <p class="text-sm text-ink-body dark:text-ink-body">
               {{ t('auth.oauthFlow.reviewProfileBeforeContinue', { providerName }) }}
             </p>
-            <button class="btn btn-primary w-full" :disabled="isSubmitting" @click="handleContinueLogin">
+            <button class="btn btn-primary w-full shadow-xs shadow-brand/20" :disabled="isSubmitting" @click="handleContinueLogin">
               {{ isSubmitting ? t('common.processing') : t('auth.continue') }}
             </button>
           </template>
 
           <template v-else-if="needsChooser">
-            <div class="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-800/60">
+            <div class="rounded-card border border-line bg-page p-4 dark:border-line dark:bg-page">
               <div class="space-y-4">
                 <div class="space-y-1">
-                  <p class="text-sm font-medium text-gray-900 dark:text-white">
+                  <p class="text-sm font-medium text-ink dark:text-white">
                     {{ t('auth.oauthFlow.chooseHowToContinue') }}
                   </p>
-                  <p class="text-xs text-gray-500 dark:text-dark-400">
+                  <p class="text-xs text-ink-soft dark:text-ink-soft">
                     {{
                       pendingAccountEmail
                         ? t('auth.oauthFlow.suggestedEmail', { email: pendingAccountEmail })
@@ -130,7 +130,7 @@
                     {{ t('auth.oauthFlow.bindExistingAccount') }}
                   </button>
                   <button
-                    class="btn btn-primary w-full"
+                    class="btn btn-primary w-full shadow-xs shadow-brand/20"
                     :disabled="isSubmitting"
                     @click="switchToCreateAccountMode"
                   >
@@ -142,7 +142,7 @@
           </template>
 
           <template v-else-if="needsCreateAccount">
-            <p class="text-sm text-gray-700 dark:text-gray-300">
+            <p class="text-sm text-ink-body dark:text-ink-body">
               {{ t('auth.oauthFlow.createAccountHint') }}
             </p>
             <PendingOAuthCreateAccountForm
@@ -156,7 +156,7 @@
           </template>
 
           <template v-else-if="needsBindLogin">
-            <p class="text-sm text-gray-700 dark:text-gray-300">
+            <p class="text-sm text-ink-body dark:text-ink-body">
               {{ t('auth.oauthFlow.bindLoginHint', { providerName }) }}
             </p>
             <div class="space-y-3">
@@ -180,7 +180,7 @@
               />
               <button
                 data-testid="linuxdo-bind-login-submit"
-                class="btn btn-primary w-full"
+                class="btn btn-primary w-full shadow-xs shadow-brand/20"
                 :disabled="isSubmitting || !bindLoginEmail.trim() || !bindLoginPassword"
                 @click="handleBindLogin"
               >
@@ -198,7 +198,7 @@
           </template>
 
           <template v-else-if="needsTotpChallenge">
-            <p class="text-sm text-gray-700 dark:text-gray-300">
+            <p class="text-sm text-ink-body dark:text-ink-body">
               {{
                 t('auth.oauthFlow.totpHint', {
                   providerName,
@@ -220,7 +220,7 @@
               />
               <button
                 data-testid="linuxdo-bind-login-totp-submit"
-                class="btn btn-primary w-full"
+                class="btn btn-primary w-full shadow-xs shadow-brand/20"
                 :disabled="isSubmitting || totpCode.trim().length !== 6"
                 @click="handleSubmitTotpChallenge"
               >

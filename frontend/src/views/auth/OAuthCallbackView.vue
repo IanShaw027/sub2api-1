@@ -1,21 +1,33 @@
 <template>
-  <div class="min-h-screen bg-gray-50 px-4 py-10 dark:bg-dark-900">
-    <div class="mx-auto max-w-2xl">
-      <div v-if="isProcessing" class="card p-6 text-center">
-        <div class="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-primary-500 border-t-transparent"></div>
-        <h1 class="mt-4 text-lg font-semibold text-gray-900 dark:text-white">
+  <div class="relative min-h-screen overflow-hidden bg-page px-4 py-10 dark:bg-page">
+    <span
+      class="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-brand/10 blur-3xl"
+      aria-hidden="true"
+    />
+    <span
+      class="pointer-events-none absolute -bottom-32 -left-16 h-72 w-72 rounded-full bg-accent/10 blur-3xl"
+      aria-hidden="true"
+    />
+    <div class="relative z-10 mx-auto max-w-2xl">
+      <div class="mb-6 flex justify-center">
+        <BrandLogo :size="36" />
+      </div>
+
+      <div v-if="isProcessing" class="card rounded-hero border-line p-6 text-center shadow-lg">
+        <div class="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-brand border-t-transparent"></div>
+        <h1 class="mt-4 text-lg font-semibold tracking-tight text-ink dark:text-white">
           {{ t('auth.oauth.callbackTitle') }}
         </h1>
-        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+        <p class="mt-2 text-sm text-ink-soft dark:text-ink-soft">
           {{ t('auth.oauth.callbackHint') }}
         </p>
       </div>
 
-      <div v-else-if="needsRegistrationCompletion" class="card p-6">
-        <h1 class="text-lg font-semibold text-gray-900 dark:text-white">
+      <div v-else-if="needsRegistrationCompletion" class="card rounded-hero border-line p-6 shadow-lg">
+        <h1 class="text-lg font-semibold tracking-tight text-ink dark:text-white">
           {{ t('auth.oidc.callbackTitle', { providerName }) }}
         </h1>
-        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+        <p class="mt-2 text-sm text-ink-soft dark:text-ink-soft">
           {{ registrationHint }}
         </p>
 
@@ -67,11 +79,11 @@
               @keyup.enter="handleSubmitRegistration"
             />
           </div>
-          <p v-if="registrationError" class="text-sm text-red-600 dark:text-red-400">
+          <p v-if="registrationError" class="text-sm text-danger dark:text-danger">
             {{ registrationError }}
           </p>
           <button
-            class="btn btn-primary w-full"
+            class="btn btn-primary w-full shadow-xs shadow-brand/20"
             type="button"
             :disabled="isSubmitting || !canSubmitRegistration"
             @click="handleSubmitRegistration"
@@ -81,23 +93,23 @@
         </div>
       </div>
 
-      <div v-else-if="invalidCallback" class="card p-6 text-center">
-        <h1 class="text-lg font-semibold text-gray-900 dark:text-white">
+      <div v-else-if="invalidCallback" class="card rounded-hero border-line p-6 text-center shadow-lg">
+        <h1 class="text-lg font-semibold tracking-tight text-ink dark:text-white">
           {{ t('auth.oauth.invalidCallbackTitle') }}
         </h1>
-        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+        <p class="mt-2 text-sm text-ink-soft dark:text-ink-soft">
           {{ t('auth.oauth.invalidCallbackHint') }}
         </p>
-        <button class="btn btn-primary mt-6" type="button" @click="router.replace('/login')">
+        <button class="btn btn-primary mt-6 shadow-xs shadow-brand/20" type="button" @click="router.replace('/login')">
           {{ t('auth.backToLogin') }}
         </button>
       </div>
 
-      <div v-else class="card p-6">
-        <h1 class="text-lg font-semibold text-gray-900 dark:text-white">
+      <div v-else class="card rounded-hero border-line p-6 shadow-lg">
+        <h1 class="text-lg font-semibold tracking-tight text-ink dark:text-white">
           {{ t('auth.oauth.callbackTitle') }}
         </h1>
-        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+        <p class="mt-2 text-sm text-ink-soft dark:text-ink-soft">
           {{ t('auth.oauth.callbackHint') }}
         </p>
 
@@ -151,6 +163,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
+import { BrandLogo } from '@/components/brand'
 import { useClipboard } from '@/composables/useClipboard'
 import { useAppStore, useAuthStore } from '@/stores'
 import { apiClient } from '@/api/client'

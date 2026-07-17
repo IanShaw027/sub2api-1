@@ -58,7 +58,7 @@
           <ConfigTile :label="t('tlsCollector.probeURL')" :value="probeURL" :copy-label="t('common.copy')" @copy="copyText(probeURL)" />
         </div>
 
-        <div class="mt-6 rounded-2xl border border-amber-200/20 bg-amber-950/20 p-4 text-sm leading-6 text-amber-50">
+        <div class="mt-6 rounded-card border border-amber-200/20 bg-amber-950/20 p-4 text-sm leading-6 text-amber-50">
           <p class="font-bold">{{ t('tlsCollector.howItWorksTitle') }}</p>
           <p class="mt-1 text-amber-100/85">{{ t('tlsCollector.howItWorksBody') }}</p>
         </div>
@@ -464,7 +464,7 @@ const ConfigTile = defineComponent({
   },
   emits: ['copy'],
   setup(props, { emit }) {
-    return () => h('div', { class: 'rounded-2xl border border-white/10 bg-white/[0.04] p-4' }, [
+    return () => h('div', { class: 'rounded-card border border-white/10 bg-white/[0.04] p-4' }, [
       h('div', { class: 'mb-2 flex items-center justify-between gap-2' }, [
         h('span', { class: 'text-xs font-black uppercase tracking-[0.18em] text-stone-400' }, props.label),
         h('button', {
@@ -504,7 +504,7 @@ const GuideBlock = defineComponent({
     const expanded = ref(false)
 
     return () => h('details', {
-      class: 'group rounded-2xl border border-white/10 bg-white/[0.04] p-4',
+      class: 'group rounded-card border border-white/10 bg-white/[0.04] p-4',
       open: expanded.value,
       onToggle: (event: Event) => {
         expanded.value = (event.currentTarget as HTMLDetailsElement).open
@@ -525,7 +525,7 @@ const GuideBlock = defineComponent({
             onClick: () => emit('copy')
           }, props.copyLabel)
         ]),
-        h('pre', { class: 'max-h-80 overflow-auto rounded-2xl bg-black/55 p-4 text-xs leading-5 text-emerald-50' }, [
+        h('pre', { class: 'max-h-80 overflow-auto rounded-card bg-black/55 p-4 text-xs leading-5 text-emerald-50' }, [
           h('code', props.command)
         ])
       ])
@@ -536,7 +536,7 @@ const GuideBlock = defineComponent({
 
 <style scoped>
 .collector-card {
-  @apply block rounded-2xl border border-white/10 bg-white/[0.04] p-4;
+  @apply block rounded-card border border-white/10 bg-white/[0.04] p-4;
 }
 
 .collector-label {

@@ -2,26 +2,26 @@
   <AuthLayout>
     <div class="space-y-6">
       <!-- Title -->
-      <div class="text-center">
-        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
+      <div class="text-center lg:text-left">
+        <h2 class="text-2xl font-semibold tracking-tight text-ink dark:text-white">
           {{ t('auth.verifyYourEmail') }}
         </h2>
-        <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
+        <p class="mt-2 text-sm text-ink-soft dark:text-dark-400">
           {{ t('auth.sendCodeDesc') }}
-          <span class="font-medium text-gray-700 dark:text-gray-300">{{ email }}</span>
+          <span class="font-medium text-ink">{{ email }}</span>
         </p>
       </div>
 
       <!-- No Data Warning -->
       <div
         v-if="!hasRegisterData"
-        class="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-900/20"
+        class="rounded-xl border border-warning/25 bg-warning-soft p-4 dark:border-amber-800/50 dark:bg-amber-900/20"
       >
         <div class="flex items-start gap-3">
           <div class="flex-shrink-0">
-            <Icon name="exclamationCircle" size="md" class="text-amber-500" />
+            <Icon name="exclamationCircle" size="md" class="text-warning" />
           </div>
-          <div class="text-sm text-amber-700 dark:text-amber-400">
+          <div class="text-sm text-amber-800 dark:text-amber-400">
             <p class="font-medium">{{ t('auth.sessionExpired') }}</p>
             <p class="mt-1">{{ t('auth.sessionExpiredDesc') }}</p>
           </div>
@@ -89,13 +89,13 @@
         <!-- Code Status -->
         <div
           v-if="codeSent"
-          class="rounded-xl border border-green-200 bg-green-50 p-4 dark:border-green-800/50 dark:bg-green-900/20"
+          class="rounded-xl border border-success/20 bg-success-soft p-4 dark:border-green-800/50 dark:bg-green-900/20"
         >
           <div class="flex items-start gap-3">
             <div class="flex-shrink-0">
-              <Icon name="checkCircle" size="md" class="text-green-500" />
+              <Icon name="checkCircle" size="md" class="text-success" />
             </div>
-            <p class="text-sm text-green-700 dark:text-green-400">
+            <p class="text-sm text-green-800 dark:text-green-400">
               {{ t('auth.codeSentSuccess') }}
             </p>
           </div>
@@ -116,7 +116,7 @@
         <button
           type="submit"
           :disabled="isLoading || !verifyCode || password.length < 8 || password !== confirmPassword"
-          class="btn btn-primary w-full"
+          class="btn btn-primary w-full shadow-xs shadow-brand/20"
         >
           <svg
             v-if="isLoading"
@@ -148,7 +148,7 @@
             v-if="countdown > 0"
             type="button"
             disabled
-            class="cursor-not-allowed text-sm text-gray-400 dark:text-dark-500"
+            class="cursor-not-allowed text-sm text-ink-faint dark:text-dark-500"
           >
             {{ t('auth.resendCountdown', { countdown }) }}
           </button>
@@ -159,7 +159,7 @@
             :disabled="
               isSendingCode || (turnstileEnabled && showResendTurnstile && !resendTurnstileToken)
             "
-            class="text-sm text-primary-600 transition-colors hover:text-primary-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-400 dark:hover:text-primary-300"
+            class="text-sm font-medium text-accent transition-colors hover:text-accent-600 disabled:cursor-not-allowed disabled:opacity-50 dark:text-accent-300 dark:hover:text-accent-200"
           >
             <span v-if="isSendingCode">{{ t('auth.sendingCode') }}</span>
             <span v-else-if="turnstileEnabled && !showResendTurnstile">
@@ -175,7 +175,7 @@
     <template #footer>
       <button
         @click="handleBack"
-        class="flex items-center gap-2 text-gray-500 transition-colors hover:text-gray-700 dark:text-dark-400 dark:hover:text-gray-300"
+        class="flex items-center gap-2 text-ink-soft transition-colors hover:text-ink dark:text-dark-400"
       >
         <Icon name="arrowLeft" size="sm" />
         {{ t('auth.backToRegistration') }}
@@ -269,7 +269,7 @@ const hasRegisterData = ref<boolean>(false)
 // Public settings
 const turnstileEnabled = ref<boolean>(false)
 const turnstileSiteKey = ref<string>('')
-const siteName = ref<string>('Sub2API')
+const siteName = ref<string>('Clomio')
 const registrationEmailSuffixWhitelist = ref<string[]>([])
 
 // Turnstile for resend
@@ -349,7 +349,7 @@ onMounted(async () => {
     const settings = await getPublicSettings()
     turnstileEnabled.value = settings.turnstile_enabled
     turnstileSiteKey.value = settings.turnstile_site_key || ''
-    siteName.value = settings.site_name || 'Sub2API'
+    siteName.value = settings.site_name || 'Clomio'
     registrationEmailSuffixWhitelist.value = normalizeRegistrationEmailSuffixWhitelist(
       settings.registration_email_suffix_whitelist || []
     )

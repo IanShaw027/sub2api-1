@@ -1,88 +1,66 @@
 <template>
   <div
-    class="relative flex min-h-screen items-center justify-center overflow-hidden bg-gray-50 px-4 dark:bg-dark-950"
+    class="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-page px-4 text-ink-body ambient-canvas dark:bg-page"
   >
-    <!-- Background Decoration -->
-    <div class="pointer-events-none absolute inset-0 overflow-hidden">
-      <div
-        class="absolute -right-40 -top-40 h-80 w-80 rounded-full bg-primary-400/10 blur-3xl"
-      ></div>
-      <div
-        class="absolute -bottom-40 -left-40 h-80 w-80 rounded-full bg-primary-500/10 blur-3xl"
-      ></div>
-    </div>
-
     <div class="relative z-10 w-full max-w-md text-center">
-      <!-- 404 Display -->
-      <div class="mb-8">
-        <div class="relative inline-block">
-          <span class="text-[12rem] font-bold leading-none text-gray-100 dark:text-dark-800"
-            >404</span
-          >
-          <div class="absolute inset-0 flex items-center justify-center">
-            <div
-              class="flex h-24 w-24 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 shadow-lg shadow-primary-500/30"
-            >
-              <svg
-                class="h-12 w-12 text-white"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                stroke-width="1.5"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
-                />
-              </svg>
-            </div>
-          </div>
-        </div>
+      <!-- Brand -->
+      <div class="mb-10 flex justify-center">
+        <router-link to="/home" class="inline-flex no-underline" :aria-label="siteName">
+          <BrandLogo :size="36" :wordmark="siteName" />
+        </router-link>
       </div>
 
-      <!-- Text Content -->
+      <!-- Calm 404 mark -->
       <div class="mb-8">
-        <h1 class="mb-3 text-2xl font-bold text-gray-900 dark:text-white">
+        <div
+          class="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-card border border-line bg-card shadow-xs dark:border-line dark:bg-card"
+        >
+          <span
+            class="text-2xl font-[650] tracking-tight text-ink-soft dark:text-ink-soft"
+            aria-hidden="true"
+          >404</span>
+        </div>
+        <h1 class="mb-3 text-2xl font-semibold tracking-tight text-ink dark:text-ink">
           {{ t('errors.pageNotFound') }}
         </h1>
-        <p class="text-gray-500 dark:text-dark-400">
+        <p class="text-sm leading-relaxed text-ink-soft dark:text-ink-soft">
           {{ t('errors.pageNotFoundDescription') }}
         </p>
       </div>
 
-      <!-- Action Buttons -->
+      <!-- Actions: home + login -->
       <div class="flex flex-col justify-center gap-3 sm:flex-row">
-        <button @click="goBack" class="btn btn-secondary">
-          <Icon name="arrowLeft" size="md" class="mr-2" />
-          {{ t('common.back') }}
-        </button>
-        <router-link to="/dashboard" class="btn btn-primary">
+        <router-link to="/home" class="btn btn-primary">
           <Icon name="home" size="md" class="mr-2" />
-          {{ t('home.goToDashboard') }}
+          {{ t('home.getStarted') }}
+        </router-link>
+        <router-link to="/login" class="btn btn-secondary">
+          {{ t('home.login') }}
         </router-link>
       </div>
 
-      <!-- Help Link -->
-      <p class="mt-8 text-sm text-gray-400 dark:text-dark-500">
-        {{ t('errors.needHelp') }}
-        <a
-          href="#"
-          class="text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
-        >
-          {{ t('common.contactSupport') }}
-        </a>
-      </p>
+      <button
+        type="button"
+        class="mt-6 text-sm text-ink-faint transition-colors hover:text-ink-soft dark:hover:text-ink-soft"
+        @click="goBack"
+      >
+        ← {{ t('common.back') }}
+      </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useAppStore } from '@/stores'
 import { useRouter } from 'vue-router'
 import Icon from '@/components/icons/Icon.vue'
+import { BrandLogo } from '@/components/brand'
 
 const { t } = useI18n()
+const appStore = useAppStore()
+const siteName = computed(() => appStore.siteName || 'Clomio')
 const router = useRouter()
 
 function goBack(): void {
