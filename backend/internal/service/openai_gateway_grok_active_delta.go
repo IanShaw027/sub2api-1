@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,11 +27,21 @@ type grokHTTPActiveDeltaResult struct {
 }
 
 func (s *OpenAIGatewayService) grokHTTPActiveDeltaEnabled() bool {
-	return s != nil && s.cfg != nil && s.cfg.Gateway.Grok.HTTPActiveDeltaEnabled
+	if s == nil {
+		return false
+	}
+	if s.settingService != nil {
+		return s.settingService.GrokHTTPActiveDeltaEnabled()
+	}
+	return s.cfg != nil && s.cfg.Gateway.Grok.HTTPActiveDeltaEnabled
 }
 
 func (s *OpenAIGatewayService) grokHTTPActiveDeltaRequireStoreOnCreate() bool {
 	return s != nil && s.cfg != nil && s.cfg.Gateway.Grok.HTTPActiveDeltaRequireStoreOnCreate
+}
+
+func (s *OpenAIGatewayService) grokHTTPActiveDeltaStoreRequired() bool {
+	return s.grokHTTPActiveDeltaEnabled() || s.grokHTTPActiveDeltaRequireStoreOnCreate()
 }
 
 // grokActiveDeltaIncompatibleWithPrevious lists top-level Responses fields that xAI
@@ -97,24 +108,74 @@ func isGrokActiveDeltaInstructionsConflict(upstreamMsg string) bool {
 
 // resolveGrokActiveDeltaSessionHash derives the session key used for active-delta
 // context. It is homologous with Grok cache identity (P4): empty identity means
-// no bind and no incremental mutation.
-func resolveGrokActiveDeltaSessionHash(c *gin.Context, cacheIdentity string) string {
+// no bind and no incremental mutation. When a payload has a stable first-user
+// anchor, include it as a branch discriminator so clients that reuse one explicit
+// conversation key for unrelated prompts do not make the single context slot
+// oscillate between incompatible prefixes.
+func resolveGrokActiveDeltaSessionHash(c *gin.Context, cacheIdentity string, canonicalBody ...[]byte) string {
 	identity := strings.TrimSpace(cacheIdentity)
 	if identity == "" {
 		return ""
 	}
+	namespace := "grok-active-delta:v1:"
+	if len(canonicalBody) > 0 {
+		if branch := grokActiveDeltaBranchSeed(canonicalBody[0]); branch != "" {
+			identity += ":branch:" + branch
+			namespace = "grok-active-delta:v2:"
+		}
+	}
 	apiKeyID := getAPIKeyIDFromContext(c)
-	current, _ := deriveOpenAIRequestScopedSessionHashes(c, "grok-active-delta:v1:"+identity)
+	current, _ := deriveOpenAIRequestScopedSessionHashes(c, namespace+identity)
 	if current != "" {
 		return current
 	}
 	// Fallback when gin context lacks api key isolation seed helpers.
 	if apiKeyID > 0 {
-		current, _ = deriveOpenAISessionHashes(fmt.Sprintf("api_key:%d:grok-active-delta:v1:%s", apiKeyID, identity))
+		current, _ = deriveOpenAISessionHashes(fmt.Sprintf("api_key:%d:%s%s", apiKeyID, namespace, identity))
 		return current
 	}
-	current, _ = deriveOpenAISessionHashes("grok-active-delta:v1:" + identity)
+	current, _ = deriveOpenAISessionHashes(namespace + identity)
 	return current
+}
+
+// grokActiveDeltaBranchSeed isolates incompatible prompt branches without
+// including turn-scoped controls such as tools, which may safely change on a
+// later delta request. Exact item and non-input fingerprints remain the final
+// authority after this coarse branch lookup.
+func grokActiveDeltaBranchSeed(canonicalBody []byte) string {
+	items, exists, err := openAIWSExtractNormalizedInputSequence(canonicalBody)
+	if err != nil || !exists {
+		return ""
+	}
+	hasher := sha256.New()
+	if instructions := gjson.GetBytes(canonicalBody, "instructions"); instructions.Exists() {
+		if hash, ok := openAIWSCanonicalItemHash([]byte(instructions.Raw)); ok {
+			_, _ = hasher.Write(hash[:])
+		}
+	}
+	anchored := false
+	for _, item := range items {
+		parsed := gjson.ParseBytes(item)
+		role := strings.TrimSpace(parsed.Get("role").String())
+		itemType := strings.TrimSpace(parsed.Get("type").String())
+		include := role == "system" || role == "developer" || role == "user" || itemType == "input_text"
+		if include {
+			hash, ok := openAIWSCanonicalItemHash(item)
+			if !ok {
+				return ""
+			}
+			_, _ = hasher.Write(hash[:])
+		}
+		if role == "user" || itemType == "input_text" {
+			anchored = true
+			break
+		}
+	}
+	if !anchored {
+		return ""
+	}
+	digest := hasher.Sum(nil)
+	return fmt.Sprintf("%x", digest[:16])
 }
 
 // grokHTTPActiveDeltaSkipResult fills a non-applied result with a classified
@@ -140,7 +201,7 @@ func grokHTTPActiveDeltaSkipResult(
 	}
 	// Grok-specific early gates not covered by the OpenAI classifier.
 	switch reason {
-	case "disabled", "not_oauth_or_not_grok", "no_explicit_session", "compact_path", "tool_continuation", "missing_session_hash", "state_store_unavailable":
+	case "disabled", "not_oauth_or_not_grok", "no_explicit_session", "compact_path", "missing_session_hash", "state_store_unavailable":
 		classified = "expected_full_" + reason
 	case "same_session_in_flight":
 		classified = "expected_full_same_session_in_flight"
@@ -210,13 +271,7 @@ func (s *OpenAIGatewayService) buildGrokHTTPActiveDeltaPayload(
 		logOpenAIWSDeltaShadow(out.log)
 		return out, nil
 	}
-	if HasToolContinuationOutputInRawPayload(canonicalBody) {
-		out := grokHTTPActiveDeltaSkipResult(canonicalBody, account.ID, groupID, apiKeyID, "", requestID, "tool_continuation", openAIWSSessionContextValue{}, false, clientPreviousResponseID, false)
-		logOpenAIWSDeltaShadow(out.log)
-		return out, nil
-	}
-
-	sessionHash := resolveGrokActiveDeltaSessionHash(c, cacheIdentity)
+	sessionHash := resolveGrokActiveDeltaSessionHash(c, cacheIdentity, canonicalBody)
 	if sessionHash == "" {
 		out := grokHTTPActiveDeltaSkipResult(canonicalBody, account.ID, groupID, apiKeyID, "", requestID, "missing_session_hash", openAIWSSessionContextValue{}, false, clientPreviousResponseID, false)
 		logOpenAIWSDeltaShadow(out.log)
@@ -324,7 +379,7 @@ func (s *OpenAIGatewayService) buildGrokHTTPActiveDeltaPayload(
 	// Shared OpenAI builder forces store=false (ZDR). For Grok, previous_response_id
 	// only works when the prior turn was stored — keep store=true on the delta body
 	// when require_store_on_create is on so T2's response remains a usable T3 anchor.
-	body, storeErr := applyGrokActiveDeltaStorePolicy(body, s.grokHTTPActiveDeltaRequireStoreOnCreate())
+	body, storeErr := applyGrokActiveDeltaStorePolicy(body, s.grokHTTPActiveDeltaStoreRequired())
 	if storeErr != nil {
 		return result, storeErr
 	}
@@ -405,7 +460,7 @@ func (s *OpenAIGatewayService) bindGrokHTTPResponseSessionContext(
 	if responseID == "" {
 		return
 	}
-	sessionHash := resolveGrokActiveDeltaSessionHash(c, cacheIdentity)
+	sessionHash := resolveGrokActiveDeltaSessionHash(c, cacheIdentity, canonicalBody)
 	if sessionHash == "" {
 		return
 	}
@@ -554,9 +609,13 @@ func (s *OpenAIGatewayService) callGrokResponsesHTTP(
 	activeDeltaSessionOwner := false
 	activeDeltaLog := openAIWSDeltaShadowLog{}
 	activeDeltaPreviousResponseID := ""
-	clientStoreDisabled := grokClientExplicitlyDisablesStore(c)
-	requireStoreOnCreate := s.grokHTTPActiveDeltaRequireStoreOnCreate() && !clientStoreDisabled
-	activeDeltaEnabled := s.grokHTTPActiveDeltaEnabled() && !clientStoreDisabled
+	activeDeltaEnabled := s.grokHTTPActiveDeltaEnabled()
+	clientStoreDisabled := grokClientExplicitlyDisablesStore(c) && !activeDeltaEnabled
+	// Stateful HTTP delta is impossible when the preceding response was not
+	// stored upstream. Enabling active delta therefore takes ownership of the
+	// storage policy and overrides an inbound store=false on both full creates
+	// and incremental turns.
+	requireStoreOnCreate := activeDeltaEnabled || (s.grokHTTPActiveDeltaRequireStoreOnCreate() && !clientStoreDisabled)
 
 	if account.Type == AccountTypeOAuth && activeDeltaEnabled {
 		deltaResult, buildErr := s.buildGrokHTTPActiveDeltaPayload(ctx, c, account, canonicalBody, cacheIdentity, clientPreviousResponseID)
@@ -939,7 +998,7 @@ func (s *OpenAIGatewayService) doGrokResponsesUpstream(
 	}
 	if responseID != "" {
 		s.bindHTTPResponseAccount(ctx, c, account, responseID)
-		if !grokClientExplicitlyDisablesStore(c) {
+		if s.grokHTTPActiveDeltaEnabled() || !grokClientExplicitlyDisablesStore(c) {
 			s.bindGrokHTTPResponseSessionContext(ctx, c, account, call.CanonicalBody, call.CacheIdentity, responseID)
 		}
 	}

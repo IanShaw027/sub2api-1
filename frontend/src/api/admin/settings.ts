@@ -875,6 +875,7 @@ export interface SystemSettings {
   claude_telemetry_mode: string;
   /** Grok default upstream when account has no credentials.base_url: api | us-east-1 | us-west-2 | eu-west-1 | cli */
   grok_default_base_url_mode: string;
+  grok_http_active_delta_enabled: boolean;
   gateway_debug_timeline_enabled: boolean;
   gateway_debug_timeline_directory: string;
   gateway_debug_timeline_retention_days: number;
@@ -1205,6 +1206,7 @@ export interface UpdateSettingsRequest {
   enable_metadata_passthrough?: boolean;
   claude_telemetry_mode?: string;
   grok_default_base_url_mode?: string;
+  grok_http_active_delta_enabled?: boolean;
   gateway_debug_timeline_enabled?: boolean;
   gateway_debug_timeline_directory?: string;
   gateway_debug_timeline_retention_days?: number;

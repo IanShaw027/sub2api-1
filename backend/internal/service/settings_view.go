@@ -210,6 +210,7 @@ type SystemSettings struct {
 	ClaudeTelemetryMode          string // Claude Code 遥测处理：drop/forward
 	// GrokDefaultBaseURLMode 控制 Grok 未配置 credentials.base_url 时的默认上游：api | us-east-1 | us-west-2 | eu-west-1 | cli
 	GrokDefaultBaseURLMode                 string
+	GrokHTTPActiveDeltaEnabled             bool
 	GatewayDebugTimelineEnabled            bool
 	GatewayDebugTimelineDirectory          string
 	GatewayDebugTimelineRetentionDays      int

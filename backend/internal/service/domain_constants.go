@@ -562,6 +562,9 @@ const (
 	// api/区域=https://*.api.x.ai/v1（官方 Public API），cli=https://cli-chat-proxy.grok.com/v1（Grok Build CLI）。
 	// 账号 credentials.base_url 非空时始终优先账号配置。billing/usage 仍固定走 CLI proxy。
 	SettingKeyGrokDefaultBaseURLMode = "grok_default_base_url_mode"
+	// SettingKeyGrokHTTPActiveDeltaEnabled controls whether Grok OAuth text
+	// traffic is forced through stored Responses requests for HTTP delta reuse.
+	SettingKeyGrokHTTPActiveDeltaEnabled = "grok_http_active_delta_enabled"
 	// Gateway debug timeline settings are DB-backed runtime controls for
 	// detailed per-request trace logs. Defaults are disabled and bounded.
 	SettingKeyGatewayDebugTimelineEnabled       = "gateway_debug_timeline_enabled"

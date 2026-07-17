@@ -925,6 +925,34 @@ func TestSettingService_LoadOpenAIWSDeltaRuntimeSettingsInitializesCache(t *test
 	require.Equal(t, 15, openAIWSTemporaryDiagnosticLogsRPM())
 }
 
+func TestSettingService_UpdateSettings_GrokHTTPActiveDeltaHotApplies(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.Grok.HTTPActiveDeltaEnabled = true
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, cfg)
+	require.True(t, svc.GrokHTTPActiveDeltaEnabled())
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		GrokHTTPActiveDeltaEnabled: false,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "false", repo.updates[SettingKeyGrokHTTPActiveDeltaEnabled])
+	require.False(t, svc.GrokHTTPActiveDeltaEnabled())
+}
+
+func TestSettingService_LoadGrokHTTPActiveDeltaRuntimeSetting(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.Grok.HTTPActiveDeltaEnabled = true
+	repo := &kiroRuntimeSettingRepoStub{values: map[string]string{
+		SettingKeyGrokHTTPActiveDeltaEnabled: "false",
+	}}
+	svc := NewSettingService(repo, cfg)
+	require.True(t, svc.GrokHTTPActiveDeltaEnabled())
+
+	require.NoError(t, svc.LoadGrokHTTPActiveDeltaRuntimeSetting(context.Background()))
+	require.False(t, svc.GrokHTTPActiveDeltaEnabled())
+}
+
 func TestSettingService_UpdateSettings_AntigravityUserAgentVersion(t *testing.T) {
 	repo := &settingUpdateRepoStub{}
 	svc := NewSettingService(repo, &config.Config{})

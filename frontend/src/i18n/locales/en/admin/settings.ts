@@ -318,6 +318,8 @@ export default {
         grokDefaultBaseURLModeUSWest2: 'Regional API (us-west-2.api.x.ai/v1)',
         grokDefaultBaseURLModeEUWest1: 'Regional API (eu-west-1.api.x.ai/v1)',
         grokDefaultBaseURLModeCLI: 'Grok Build CLI (cli-chat-proxy.grok.com/v1)',
+        grokHTTPActiveDelta: 'Grok HTTP Active Delta',
+        grokHTTPActiveDeltaHint: 'When enabled, Grok OAuth text requests are routed through Responses with store=true so later turns can use previous_response_id deltas. Disabling restores compatibility-first raw Chat fallback.',
         cchSigning: 'CCH Signing',
         cchSigningHint: 'Sign the billing header in forwarded requests with CCH hash. When disabled, the placeholder is preserved.',
         claudeOAuthSystemPromptInjection: 'Claude OAuth System Blocks',

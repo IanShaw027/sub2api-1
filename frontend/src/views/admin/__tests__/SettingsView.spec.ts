@@ -1011,6 +1011,29 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
+  it("loads and submits the Grok HTTP active delta gateway setting", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      grok_http_active_delta_enabled: false,
+    });
+
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openGatewayTab(wrapper);
+    const toggle = wrapper.find('[data-testid="grok-http-active-delta-enabled"]');
+    expect(toggle.exists()).toBe(true);
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        grok_http_active_delta_enabled: false,
+      }),
+    );
+  });
+
   it("clamps temp-unschedulable threshold settings before saving", async () => {
     const wrapper = mountView();
 

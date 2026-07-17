@@ -250,6 +250,7 @@ type SettingService struct {
 	openAICodexUASF             singleflight.Group
 	codexRestrictionPolicyCache atomic.Value // *cachedCodexRestrictionPolicy
 	codexRestrictionPolicySF    singleflight.Group
+	grokHTTPActiveDeltaEnabled  atomic.Bool
 
 	cyberSessionBlockRuntimeCache atomic.Value // *cachedCyberSessionBlockRuntime
 	cyberSessionBlockRuntimeSF    singleflight.Group
@@ -734,8 +735,34 @@ func NewSettingService(settingRepo SettingRepository, cfg *config.Config) *Setti
 		settingRepo: settingRepo,
 		cfg:         cfg,
 	}
+	if cfg != nil {
+		svc.grokHTTPActiveDeltaEnabled.Store(cfg.Gateway.Grok.HTTPActiveDeltaEnabled)
+	}
 	registerKiroRuntimeSettingService(svc)
 	return svc
+}
+
+// GrokHTTPActiveDeltaEnabled returns the process-local DB-backed runtime switch.
+func (s *SettingService) GrokHTTPActiveDeltaEnabled() bool {
+	return s != nil && s.grokHTTPActiveDeltaEnabled.Load()
+}
+
+// LoadGrokHTTPActiveDeltaRuntimeSetting initializes the hot-path switch from
+// the settings table, falling back to the boot config when the key is absent.
+func (s *SettingService) LoadGrokHTTPActiveDeltaRuntimeSetting(ctx context.Context) error {
+	if s == nil || s.settingRepo == nil {
+		return nil
+	}
+	fallback := false
+	if s.cfg != nil {
+		fallback = s.cfg.Gateway.Grok.HTTPActiveDeltaEnabled
+	}
+	values, err := s.settingRepo.GetMultiple(ctx, []string{SettingKeyGrokHTTPActiveDeltaEnabled})
+	if err != nil {
+		return fmt.Errorf("get grok http active delta runtime setting: %w", err)
+	}
+	s.grokHTTPActiveDeltaEnabled.Store(parseBoolSettingOrDefault(values, SettingKeyGrokHTTPActiveDeltaEnabled, fallback))
+	return nil
 }
 
 func (s *SettingService) GetValue(ctx context.Context, key string) (string, error) {
@@ -2743,6 +2770,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyEnableMetadataPassthrough] = strconv.FormatBool(settings.EnableMetadataPassthrough)
 	updates[SettingKeyClaudeTelemetryMode] = normalizeClaudeTelemetryMode(settings.ClaudeTelemetryMode)
 	updates[SettingKeyGrokDefaultBaseURLMode] = normalizeGrokDefaultBaseURLMode(settings.GrokDefaultBaseURLMode)
+	updates[SettingKeyGrokHTTPActiveDeltaEnabled] = strconv.FormatBool(settings.GrokHTTPActiveDeltaEnabled)
 	gatewayDebugTimeline := normalizeGatewayDebugTimelineSettings(GatewayDebugTimelineSettings{
 		Enabled:       settings.GatewayDebugTimelineEnabled,
 		Directory:     settings.GatewayDebugTimelineDirectory,
@@ -3117,6 +3145,7 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 		settings.OpenAIWSTempDiagLogsEnabled,
 	)
 	StoreOpenAIWSTemporaryDiagnosticLogsRPM(settings.OpenAIWSTempDiagLogsRPM)
+	s.grokHTTPActiveDeltaEnabled.Store(settings.GrokHTTPActiveDeltaEnabled)
 	openAIOAuthImageBridgeTransportSettingsSF.Forget(openAIOAuthImageBridgeTransportSettingsKey)
 	openAIOAuthImageBridgeTransportSettingsCache.Store(&cachedOpenAIOAuthImageBridgeTransportSettings{
 		disableKeepAlives: settings.OpenAIOAuthImageBridgeDisableKeepAlives,
@@ -4238,6 +4267,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyOpenAIWSActiveDeltaEnabled:        "true",
 		SettingKeyOpenAIWSTempDiagLogsEnabled:       "false",
 		SettingKeyOpenAIWSTempDiagLogsRPM:           strconv.Itoa(defaultOpenAIWSTempDiagLogsRPM),
+		SettingKeyGrokHTTPActiveDeltaEnabled:        "true",
 		// Identity patch defaults
 		SettingKeyEnableIdentityPatch: "true",
 		SettingKeyIdentityPatchPrompt: "",
@@ -4757,6 +4787,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.EnableMetadataPassthrough = settings[SettingKeyEnableMetadataPassthrough] == "true"
 	result.ClaudeTelemetryMode = normalizeClaudeTelemetryMode(settings[SettingKeyClaudeTelemetryMode])
 	result.GrokDefaultBaseURLMode = normalizeGrokDefaultBaseURLMode(settings[SettingKeyGrokDefaultBaseURLMode])
+	result.GrokHTTPActiveDeltaEnabled = parseBoolSettingOrDefault(settings, SettingKeyGrokHTTPActiveDeltaEnabled, true)
 	gatewayDebugTimeline := parseGatewayDebugTimelineSettings(settings)
 	result.GatewayDebugTimelineEnabled = gatewayDebugTimeline.Enabled
 	result.GatewayDebugTimelineDirectory = gatewayDebugTimeline.Directory

@@ -7257,6 +7257,8 @@ export default {
         grokDefaultBaseURLModeUSWest2: 'Regional API (us-west-2.api.x.ai/v1)',
         grokDefaultBaseURLModeEUWest1: 'Regional API (eu-west-1.api.x.ai/v1)',
         grokDefaultBaseURLModeCLI: 'Grok Build CLI (cli-chat-proxy.grok.com/v1)',
+        grokHTTPActiveDelta: 'Grok HTTP Active Delta',
+        grokHTTPActiveDeltaHint: 'When enabled, Grok OAuth text requests are routed through Responses with store=true so later turns can use previous_response_id deltas. Disabling restores compatibility-first raw Chat fallback.',
         debugTimeline: 'Gateway Debug Timeline',
         debugTimelineHint: 'Writes detailed per-stage JSONL timing logs for all provider gateway requests. Use only for short debugging windows; logging stops automatically when the size cap is reached.',
         debugTimelineDirectory: 'Log Directory',

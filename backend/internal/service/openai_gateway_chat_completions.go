@@ -83,6 +83,13 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 
 	if account.Platform == PlatformGrok {
 		if account.IsGrokOAuth() {
+			// HTTP active delta requires every turn to share the Responses state
+			// model. When enabled, force all Grok OAuth Chat ingress through the
+			// Responses bridge instead of letting complex tool transcripts fall
+			// back to the stateless raw Chat endpoint.
+			if s.grokHTTPActiveDeltaEnabled() {
+				return s.forwardGrokChatCompletionsViaResponses(ctx, c, account, body, promptCacheKey, defaultMappedModel)
+			}
 			if eligible, reason := grokChatResponsesBridgeEligibility(body); eligible {
 				return s.forwardGrokChatCompletionsViaResponses(ctx, c, account, body, promptCacheKey, defaultMappedModel)
 			} else {

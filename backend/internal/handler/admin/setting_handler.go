@@ -653,6 +653,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		EnableMetadataPassthrough:              settings.EnableMetadataPassthrough,
 		ClaudeTelemetryMode:                    settings.ClaudeTelemetryMode,
 		GrokDefaultBaseURLMode:                 settings.GrokDefaultBaseURLMode,
+		GrokHTTPActiveDeltaEnabled:             settings.GrokHTTPActiveDeltaEnabled,
 		GatewayDebugTimelineEnabled:            settings.GatewayDebugTimelineEnabled,
 		GatewayDebugTimelineDirectory:          settings.GatewayDebugTimelineDirectory,
 		GatewayDebugTimelineRetentionDays:      settings.GatewayDebugTimelineRetentionDays,
@@ -1051,6 +1052,7 @@ type UpdateSettingsRequest struct {
 	EnableMetadataPassthrough              *bool   `json:"enable_metadata_passthrough"`
 	ClaudeTelemetryMode                    *string `json:"claude_telemetry_mode"`
 	GrokDefaultBaseURLMode                 *string `json:"grok_default_base_url_mode"`
+	GrokHTTPActiveDeltaEnabled             *bool   `json:"grok_http_active_delta_enabled"`
 	GatewayDebugTimelineEnabled            *bool   `json:"gateway_debug_timeline_enabled"`
 	GatewayDebugTimelineDirectory          *string `json:"gateway_debug_timeline_directory"`
 	GatewayDebugTimelineRetentionDays      *int    `json:"gateway_debug_timeline_retention_days"`
@@ -2538,6 +2540,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.GrokDefaultBaseURLMode
 		}(),
+		GrokHTTPActiveDeltaEnabled: func() bool {
+			if req.GrokHTTPActiveDeltaEnabled != nil {
+				return *req.GrokHTTPActiveDeltaEnabled
+			}
+			return previousSettings.GrokHTTPActiveDeltaEnabled
+		}(),
 		EnableClaudeOAuthSystemPromptInjection: func() bool {
 			if req.EnableClaudeOAuthSystemPromptInjection != nil {
 				return *req.EnableClaudeOAuthSystemPromptInjection
@@ -3293,6 +3301,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		EnableClientDatelineNormalization:                      updatedSettings.EnableClientDatelineNormalization,
 		ClaudeTelemetryMode:                                    updatedSettings.ClaudeTelemetryMode,
 		GrokDefaultBaseURLMode:                                 updatedSettings.GrokDefaultBaseURLMode,
+		GrokHTTPActiveDeltaEnabled:                             updatedSettings.GrokHTTPActiveDeltaEnabled,
 		AntigravityUserAgentVersion:                            updatedSettings.AntigravityUserAgentVersion,
 		OpenAICodexUserAgent:                                   updatedSettings.OpenAICodexUserAgent,
 		AntiBanPlatforms:                                       updatedSettings.AntiBanPlatforms,
@@ -3867,6 +3876,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.GrokDefaultBaseURLMode != after.GrokDefaultBaseURLMode {
 		changed = append(changed, "grok_default_base_url_mode")
+	}
+	if before.GrokHTTPActiveDeltaEnabled != after.GrokHTTPActiveDeltaEnabled {
+		changed = append(changed, "grok_http_active_delta_enabled")
 	}
 	if before.EnableClaudeOAuthSystemPromptInjection != after.EnableClaudeOAuthSystemPromptInjection {
 		changed = append(changed, "enable_claude_oauth_system_prompt_injection")

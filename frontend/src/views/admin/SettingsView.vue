@@ -4702,6 +4702,22 @@
                 </select>
               </div>
 
+              <!-- Grok HTTP active delta -->
+              <div class="flex items-center justify-between gap-4">
+                <div class="max-w-2xl">
+                  <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {{ t("admin.settings.gatewayForwarding.grokHTTPActiveDelta") }}
+                  </label>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.gatewayForwarding.grokHTTPActiveDeltaHint") }}
+                  </p>
+                </div>
+                <Toggle
+                  v-model="form.grok_http_active_delta_enabled"
+                  data-testid="grok-http-active-delta-enabled"
+                />
+              </div>
+
               <!-- Gateway Debug Timeline -->
               <div class="rounded-lg border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-900/50 dark:bg-amber-950/20">
                 <div class="flex items-center justify-between gap-4">
@@ -9810,6 +9826,7 @@ type SettingsForm = Omit<
   openai_ws_active_delta_enabled: boolean;
   openai_ws_temp_diag_logs_enabled: boolean;
   openai_ws_temp_diag_logs_rpm: number;
+  grok_http_active_delta_enabled: boolean;
   default_platform_quotas: DefaultPlatformQuotasMap;
   openai_oauth_image_bridge_disable_keepalives: boolean;
   openai_oauth_image_bridge_fresh_upstream_client: boolean;
@@ -10058,6 +10075,7 @@ const form = reactive<SettingsForm>({
   enable_metadata_passthrough: false,
   claude_telemetry_mode: "drop",
   grok_default_base_url_mode: "cli",
+  grok_http_active_delta_enabled: true,
   gateway_debug_timeline_enabled: false,
   gateway_debug_timeline_directory: "logs/gateway-debug",
   gateway_debug_timeline_retention_days: 7,
@@ -11772,6 +11790,7 @@ async function saveSettings() {
         )
           ? form.grok_default_base_url_mode
           : "cli",
+      grok_http_active_delta_enabled: form.grok_http_active_delta_enabled,
       gateway_debug_timeline_enabled: form.gateway_debug_timeline_enabled,
       gateway_debug_timeline_directory:
         form.gateway_debug_timeline_directory || "logs/gateway-debug",

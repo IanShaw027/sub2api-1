@@ -7411,6 +7411,8 @@ export default {
         grokDefaultBaseURLModeUSWest2: '区域 API（us-west-2.api.x.ai/v1）',
         grokDefaultBaseURLModeEUWest1: '区域 API（eu-west-1.api.x.ai/v1）',
         grokDefaultBaseURLModeCLI: 'Grok Build CLI（cli-chat-proxy.grok.com/v1）',
+        grokHTTPActiveDelta: 'Grok HTTP 增量',
+        grokHTTPActiveDeltaHint: '开启后，Grok OAuth 的文本请求统一转为 Responses，并强制 store=true 以便后续请求使用 previous_response_id 增量续接。关闭后恢复兼容性优先的原始 Chat 回退。',
         debugTimeline: '网关调试时间线',
         debugTimelineHint: '开启后对全平台请求写入详细阶段耗时 JSONL 日志。仅建议排查问题时短期开启，达到最大占用会自动停止。',
         debugTimelineDirectory: '日志目录',

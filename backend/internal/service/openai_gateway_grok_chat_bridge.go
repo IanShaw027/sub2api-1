@@ -179,8 +179,15 @@ func grokChatCacheIntentBody(body []byte) ([]byte, error) {
 	if err := json.Unmarshal(body, &root); err != nil {
 		return nil, err
 	}
-	for _, field := range []string{"tools", "tool_choice", "functions", "function_call"} {
-		delete(root, field)
+	for _, field := range []string{"tools", "functions"} {
+		if raw, exists := root[field]; exists && grokChatNullOrEmptyArray(raw) {
+			delete(root, field)
+		}
+	}
+	for _, field := range []string{"tool_choice", "function_call"} {
+		if raw, exists := root[field]; exists && grokChatNullOrNone(raw) {
+			delete(root, field)
+		}
 	}
 	return json.Marshal(root)
 }
@@ -217,7 +224,7 @@ func (s *OpenAIGatewayService) forwardGrokChatCompletionsViaResponses(
 	if cacheIdentity == "" {
 		cacheIdentity = resolveGrokCacheIdentity(c, body, promptCacheKey, upstreamModel)
 	}
-	if !grokChatResponsesRuntimeEligible(upstreamModel, cacheIdentity) {
+	if !s.grokHTTPActiveDeltaEnabled() && !grokChatResponsesRuntimeEligible(upstreamModel, cacheIdentity) {
 		return s.forwardAsRawChatCompletions(ctx, c, account, body, promptCacheKey, defaultMappedModel)
 	}
 

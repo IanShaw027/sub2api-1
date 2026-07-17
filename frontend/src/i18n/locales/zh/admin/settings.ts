@@ -312,6 +312,8 @@ export default {
         grokDefaultBaseURLModeUSWest2: '区域 API（us-west-2.api.x.ai/v1）',
         grokDefaultBaseURLModeEUWest1: '区域 API（eu-west-1.api.x.ai/v1）',
         grokDefaultBaseURLModeCLI: 'Grok Build CLI（cli-chat-proxy.grok.com/v1）',
+        grokHTTPActiveDelta: 'Grok HTTP 增量',
+        grokHTTPActiveDeltaHint: '开启后，Grok OAuth 的文本请求统一转为 Responses，并强制 store=true 以便后续请求使用 previous_response_id 增量续接。关闭后恢复兼容性优先的原始 Chat 回退。',
         cchSigning: 'CCH 签名',
         cchSigningHint: '对转发请求的 billing header 进行 CCH 哈希签名。关闭时保留原始占位符。',
         claudeOAuthSystemPromptInjection: 'Claude OAuth System 注入',

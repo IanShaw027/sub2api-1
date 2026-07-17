@@ -80,7 +80,7 @@ data: {"type":"response.completed","response":{"id":"` + responseID + `","model"
 
 func bindGrokActiveDeltaInputOnlyContext(t *testing.T, svc *OpenAIGatewayService, c *gin.Context, account *Account, payload []byte, cacheIdentity, lastResponseID string) string {
 	t.Helper()
-	sessionHash := resolveGrokActiveDeltaSessionHash(c, cacheIdentity)
+	sessionHash := resolveGrokActiveDeltaSessionHash(c, cacheIdentity, payload)
 	require.NotEmpty(t, sessionHash)
 
 	inputItems, exists, err := openAIWSExtractNormalizedInputSequence(payload)
@@ -161,6 +161,102 @@ func TestGrokHTTPActiveDelta_SecondTurnSendsOnlyNewInput(t *testing.T) {
 	require.True(t, gjson.GetBytes(upstream.bodies[0], "store").Bool(), "require_store_on_create forces store=true on delta too")
 	require.Len(t, gjson.GetBytes(upstream.bodies[0], "input").Array(), 1)
 	require.Equal(t, "again", gjson.GetBytes(upstream.bodies[0], "input.0.content.0.text").String())
+}
+
+func TestGrokHTTPActiveDelta_ToolContinuationSendsOnlyNewOutput(t *testing.T) {
+	setGinTestMode()
+	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")
+	t.Setenv("OPENAI_WS_ACTIVE_DELTA_DISABLED", "")
+
+	upstream := &httpUpstreamRecorder{resp: grokActiveDeltaSSE("resp_grok_tool_delta_ok")}
+	svc := newGrokActiveDeltaTestService(upstream)
+	account := newGrokActiveDeltaTestAccount(92021)
+	groupID := int64(92022)
+	apiKeyID := int64(92023)
+
+	input1 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"lookup"}]}`
+	call := `{"type":"function_call","call_id":"call_1","name":"lookup","arguments":"{}"}`
+	output := `{"type":"function_call_output","call_id":"call_1","output":"ok"}`
+	input2 := `{"type":"message","role":"user","content":[{"type":"input_text","text":"continue"}]}`
+	firstBody := []byte(`{"model":"grok-4.5","stream":true,"store":false,"input":[` + input1 + `,` + call + `]}`)
+	followupBody := []byte(`{"model":"grok-4.5","stream":true,"store":false,"input":[` + input1 + `,` + call + `,` + output + `,` + input2 + `]}`)
+
+	firstCtx, _ := newGrokActiveDeltaContext(groupID, apiKeyID, "sess-grok-tool")
+	cacheIdentity := resolveGrokCacheIdentity(firstCtx, firstBody, "", "grok-4.5")
+	firstCanonical, err := applyGrokResponsesCacheIdentity(firstBody, firstBody, cacheIdentity, false)
+	require.NoError(t, err)
+	bindGrokActiveDeltaInputOnlyContext(t, svc, firstCtx, account, firstCanonical, cacheIdentity, "resp_grok_tool_prev")
+
+	followupCtx, _ := newGrokActiveDeltaContext(groupID, apiKeyID, "sess-grok-tool")
+	followupCanonical, err := applyGrokResponsesCacheIdentity(followupBody, followupBody, cacheIdentity, false)
+	require.NoError(t, err)
+	result, err := svc.doGrokResponsesUpstream(
+		context.Background(), followupCtx, account, followupCanonical, "grok-4.5", "grok-4.5", cacheIdentity, true, time.Now(),
+	)
+	require.NoError(t, err)
+	require.True(t, result.OpenAIWSDeltaActive)
+	require.Equal(t, "resp_grok_tool_prev", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
+	require.True(t, gjson.GetBytes(upstream.bodies[0], "store").Bool())
+	require.Len(t, gjson.GetBytes(upstream.bodies[0], "input").Array(), 2)
+	require.Equal(t, "function_call_output", gjson.GetBytes(upstream.bodies[0], "input.0.type").String())
+	require.Equal(t, "call_1", gjson.GetBytes(upstream.bodies[0], "input.0.call_id").String())
+	require.Equal(t, "continue", gjson.GetBytes(upstream.bodies[0], "input.1.content.0.text").String())
+}
+
+func TestGrokHTTPActiveDelta_ReusedExplicitSessionKeepsPromptBranchesIndependent(t *testing.T) {
+	setGinTestMode()
+	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")
+	t.Setenv("OPENAI_WS_ACTIVE_DELTA_DISABLED", "")
+
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		grokActiveDeltaSSE("resp_branch_a_next"),
+		grokActiveDeltaSSE("resp_branch_b_next"),
+	}}
+	svc := newGrokActiveDeltaTestService(upstream)
+	account := newGrokActiveDeltaTestAccount(92031)
+	groupID := int64(92032)
+	apiKeyID := int64(92033)
+
+	firstA := []byte(`{"model":"grok-4.5","stream":true,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"alpha"}]}]}`)
+	firstB := []byte(`{"model":"grok-4.5","stream":true,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"beta"}]}]}`)
+	followA := []byte(`{"model":"grok-4.5","stream":true,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"alpha"}]},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"a1"}]},{"type":"message","role":"user","content":[{"type":"input_text","text":"a2"}]}]}`)
+	followB := []byte(`{"model":"grok-4.5","stream":true,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"beta"}]},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"b1"}]},{"type":"message","role":"user","content":[{"type":"input_text","text":"b2"}]}]}`)
+
+	ctxA, _ := newGrokActiveDeltaContext(groupID, apiKeyID, "reused-explicit-session")
+	ctxB, _ := newGrokActiveDeltaContext(groupID, apiKeyID, "reused-explicit-session")
+	cacheIdentityA := resolveGrokCacheIdentity(ctxA, firstA, "", "grok-4.5")
+	cacheIdentityB := resolveGrokCacheIdentity(ctxB, firstB, "", "grok-4.5")
+	require.Equal(t, cacheIdentityA, cacheIdentityB, "the upstream cache identity remains header-stable")
+
+	canonicalA, err := applyGrokResponsesCacheIdentity(firstA, firstA, cacheIdentityA, false)
+	require.NoError(t, err)
+	canonicalB, err := applyGrokResponsesCacheIdentity(firstB, firstB, cacheIdentityB, false)
+	require.NoError(t, err)
+	hashA := bindGrokActiveDeltaInputOnlyContext(t, svc, ctxA, account, canonicalA, cacheIdentityA, "resp_branch_a")
+	hashB := bindGrokActiveDeltaInputOnlyContext(t, svc, ctxB, account, canonicalB, cacheIdentityB, "resp_branch_b")
+	require.NotEqual(t, hashA, hashB, "different opening prompts need independent active-delta slots")
+
+	followCtxA, _ := newGrokActiveDeltaContext(groupID, apiKeyID, "reused-explicit-session")
+	followCanonicalA, err := applyGrokResponsesCacheIdentity(followA, followA, cacheIdentityA, false)
+	require.NoError(t, err)
+	resultA, err := svc.doGrokResponsesUpstream(
+		context.Background(), followCtxA, account, followCanonicalA, "grok-4.5", "grok-4.5", cacheIdentityA, true, time.Now(),
+	)
+	require.NoError(t, err)
+	require.True(t, resultA.OpenAIWSDeltaActive)
+	require.Equal(t, "resp_branch_a", gjson.GetBytes(upstream.bodies[0], "previous_response_id").String())
+	require.Equal(t, "a2", gjson.GetBytes(upstream.bodies[0], "input.0.content.0.text").String())
+
+	followCtxB, _ := newGrokActiveDeltaContext(groupID, apiKeyID, "reused-explicit-session")
+	followCanonicalB, err := applyGrokResponsesCacheIdentity(followB, followB, cacheIdentityB, false)
+	require.NoError(t, err)
+	resultB, err := svc.doGrokResponsesUpstream(
+		context.Background(), followCtxB, account, followCanonicalB, "grok-4.5", "grok-4.5", cacheIdentityB, true, time.Now(),
+	)
+	require.NoError(t, err)
+	require.True(t, resultB.OpenAIWSDeltaActive)
+	require.Equal(t, "resp_branch_b", gjson.GetBytes(upstream.bodies[1], "previous_response_id").String())
+	require.Equal(t, "b2", gjson.GetBytes(upstream.bodies[1], "input.0.content.0.text").String())
 }
 
 func TestGrokHTTPActiveDelta_PrefixRewriteFallsBackToFullWithoutPrevious(t *testing.T) {
@@ -271,7 +367,7 @@ func TestGrokHTTPActiveDelta_FirstTurnBindsAndSecondTurnDeltas(t *testing.T) {
 	require.False(t, gjson.GetBytes(upstream.bodies[0], "previous_response_id").Exists())
 	require.True(t, gjson.GetBytes(upstream.bodies[0], "store").Bool(), "first full create must store=true so previous anchors survive")
 
-	sessionHash := resolveGrokActiveDeltaSessionHash(firstCtx, cacheIdentity)
+	sessionHash := resolveGrokActiveDeltaSessionHash(firstCtx, cacheIdentity, firstCanonical)
 	cached, ok := svc.getOpenAIWSStateStore().GetSessionContext(groupID, apiKeyID, sessionHash)
 	require.True(t, ok, "first turn must bind session context for subsequent deltas")
 	require.Equal(t, "resp_grok_bind_1", cached.lastResponseID)
@@ -347,7 +443,7 @@ func TestGrokHTTPActiveDelta_ThreeTurnChainKeepsStoredAnchors(t *testing.T) {
 	require.Len(t, gjson.GetBytes(upstream.bodies[1], "input").Array(), 1)
 	require.Equal(t, "again", gjson.GetBytes(upstream.bodies[1], "input.0.content.0.text").String())
 
-	sessionHash := resolveGrokActiveDeltaSessionHash(t2Ctx, cacheIdentity)
+	sessionHash := resolveGrokActiveDeltaSessionHash(t2Ctx, cacheIdentity, t2Canonical)
 	cached, ok := svc.getOpenAIWSStateStore().GetSessionContext(groupID, apiKeyID, sessionHash)
 	require.True(t, ok)
 	require.Equal(t, "resp_chain_2", cached.lastResponseID)
@@ -366,7 +462,7 @@ func TestGrokHTTPActiveDelta_ThreeTurnChainKeepsStoredAnchors(t *testing.T) {
 	require.Equal(t, "third", gjson.GetBytes(upstream.bodies[2], "input.0.content.0.text").String())
 }
 
-func TestGrokHTTPActiveDelta_DeltaStoreFalseWhenRequireStoreDisabled(t *testing.T) {
+func TestGrokHTTPActiveDelta_EnabledOverridesDisabledStoreRequirement(t *testing.T) {
 	setGinTestMode()
 	t.Setenv("OPENAI_WS_DELTA_SHADOW_DISABLED", "")
 	t.Setenv("OPENAI_WS_ACTIVE_DELTA_DISABLED", "")
@@ -399,7 +495,7 @@ func TestGrokHTTPActiveDelta_DeltaStoreFalseWhenRequireStoreDisabled(t *testing.
 	)
 	require.NoError(t, err)
 	require.True(t, result.OpenAIWSDeltaActive)
-	require.False(t, gjson.GetBytes(upstream.bodies[0], "store").Bool(), "ZDR path keeps shared builder store=false on delta")
+	require.True(t, gjson.GetBytes(upstream.bodies[0], "store").Bool(), "active delta must keep the response usable as the next anchor")
 }
 
 func TestApplyGrokActiveDeltaStorePolicy(t *testing.T) {
@@ -454,7 +550,7 @@ func TestGrokHTTPActiveDelta_NoExplicitSessionIsExpectedFull(t *testing.T) {
 	require.True(t, gjson.GetBytes(upstream.bodies[0], "store").Bool())
 }
 
-func TestGrokHTTPActiveDelta_ExplicitStoreFalseDisablesStorageAndSessionBinding(t *testing.T) {
+func TestGrokHTTPActiveDelta_ExplicitStoreFalseIsOverriddenAndBindsSession(t *testing.T) {
 	setGinTestMode()
 	upstream := &httpUpstreamRecorder{resp: grokActiveDeltaSSE("resp_explicit_zdr")}
 	svc := newGrokActiveDeltaTestService(upstream)
@@ -471,11 +567,12 @@ func TestGrokHTTPActiveDelta_ExplicitStoreFalseDisablesStorageAndSessionBinding(
 	result, err := svc.doGrokResponsesUpstream(context.Background(), c, account, canonical, "grok-4.5", "grok-4.5", cacheIdentity, true, time.Now())
 	require.NoError(t, err)
 	require.False(t, result.OpenAIWSDeltaActive)
-	require.False(t, gjson.GetBytes(upstream.bodies[0], "store").Bool())
+	require.True(t, gjson.GetBytes(upstream.bodies[0], "store").Bool())
 
-	sessionHash := resolveGrokActiveDeltaSessionHash(c, cacheIdentity)
-	_, bound := svc.getOpenAIWSStateStore().GetSessionContext(groupID, apiKeyID, sessionHash)
-	require.False(t, bound)
+	sessionHash := resolveGrokActiveDeltaSessionHash(c, cacheIdentity, canonical)
+	cached, bound := svc.getOpenAIWSStateStore().GetSessionContext(groupID, apiKeyID, sessionHash)
+	require.True(t, bound)
+	require.Equal(t, "resp_explicit_zdr", cached.lastResponseID)
 }
 
 func TestGrokHTTPActiveDelta_FirstTurnNoContextIsExpectedFull(t *testing.T) {
@@ -499,7 +596,7 @@ func TestGrokHTTPActiveDelta_FirstTurnNoContextIsExpectedFull(t *testing.T) {
 	require.False(t, result.OpenAIWSDeltaActive)
 	require.True(t, gjson.GetBytes(upstream.bodies[0], "store").Bool())
 	// Session should bind after success for next-turn delta.
-	sessionHash := resolveGrokActiveDeltaSessionHash(c, cacheIdentity)
+	sessionHash := resolveGrokActiveDeltaSessionHash(c, cacheIdentity, canonical)
 	cached, ok := svc.getOpenAIWSStateStore().GetSessionContext(groupID, apiKeyID, sessionHash)
 	require.True(t, ok)
 	require.Equal(t, "resp_first_full", cached.lastResponseID)
@@ -614,7 +711,7 @@ func TestGrokHTTPActiveDelta_PreviousNotFoundFullReplay(t *testing.T) {
 	require.GreaterOrEqual(t, len(gjson.GetBytes(upstream.bodies[1], "input").Array()), 2)
 
 	// Invalidate drops the dead anchor; successful full-replay rebinds to the new response id.
-	sessionHash := resolveGrokActiveDeltaSessionHash(followupCtx, cacheIdentity)
+	sessionHash := resolveGrokActiveDeltaSessionHash(followupCtx, cacheIdentity, followupCanonical)
 	cached, ok := svc.getOpenAIWSStateStore().GetSessionContext(groupID, apiKeyID, sessionHash)
 	require.True(t, ok, "successful full-replay rebinds session for the next turn")
 	require.Equal(t, "resp_grok_replay_ok", cached.lastResponseID)
@@ -710,7 +807,7 @@ func TestGrokHTTPActiveDelta_PreviousConflictFullReplayInvalidatesThenRebinds(t 
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "previous_response_id").Exists())
 	require.True(t, gjson.GetBytes(upstream.bodies[1], "store").Bool())
 
-	sessionHash := resolveGrokActiveDeltaSessionHash(followupCtx, cacheIdentity)
+	sessionHash := resolveGrokActiveDeltaSessionHash(followupCtx, cacheIdentity, followupCanonical)
 	cached, ok := svc.getOpenAIWSStateStore().GetSessionContext(groupID, apiKeyID, sessionHash)
 	require.True(t, ok)
 	require.Equal(t, "resp_instr_replay_ok", cached.lastResponseID)
@@ -792,7 +889,7 @@ func TestGrokHTTPActiveDelta_ContentDerivedIdentityDoesNotBind(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, first.OpenAIWSDeltaActive)
 
-	sessionHash := resolveGrokActiveDeltaSessionHash(firstCtx, identity)
+	sessionHash := resolveGrokActiveDeltaSessionHash(firstCtx, identity, canonical)
 	_, bound := svc.getOpenAIWSStateStore().GetSessionContext(groupID, apiKeyID, sessionHash)
 	require.False(t, bound, "content-derived identity must not create stateful session context")
 
@@ -865,7 +962,7 @@ func TestGrokHTTPActiveDelta_SessionInflightFallsBackToFull(t *testing.T) {
 	require.NoError(t, err)
 	bindGrokActiveDeltaInputOnlyContext(t, svc, firstCtx, account, firstCanonical, cacheIdentity, "resp_prev")
 
-	sessionHash := resolveGrokActiveDeltaSessionHash(firstCtx, cacheIdentity)
+	sessionHash := resolveGrokActiveDeltaSessionHash(firstCtx, cacheIdentity, firstCanonical)
 	require.True(t, svc.getOpenAIWSStateStore().TrySessionInFlight(groupID, apiKeyID, sessionHash))
 	t.Cleanup(func() {
 		svc.getOpenAIWSStateStore().EndSessionInFlight(groupID, apiKeyID, sessionHash)
@@ -947,7 +1044,7 @@ func TestGrokHTTPActiveDelta_RequireStoreOnCreate(t *testing.T) {
 	require.True(t, gjson.GetBytes(upstream.bodies[0], "store").Bool())
 }
 
-func TestGrokHTTPActiveDelta_RequireStoreOnCreateCanDisable(t *testing.T) {
+func TestGrokHTTPActiveDelta_EnabledForcesStoreWhenRequireStoreSettingIsDisabled(t *testing.T) {
 	setGinTestMode()
 	upstream := &httpUpstreamRecorder{resp: grokActiveDeltaSSE("resp_store_false")}
 	svc := newGrokActiveDeltaTestService(upstream)
@@ -963,7 +1060,7 @@ func TestGrokHTTPActiveDelta_RequireStoreOnCreateCanDisable(t *testing.T) {
 
 	_, err = svc.doGrokResponsesUpstream(context.Background(), c, account, canonical, "grok-4.5", "grok-4.5", cacheIdentity, true, time.Now())
 	require.NoError(t, err)
-	require.False(t, gjson.GetBytes(upstream.bodies[0], "store").Bool())
+	require.True(t, gjson.GetBytes(upstream.bodies[0], "store").Bool())
 }
 
 func TestGrokHTTPActiveDelta_HeaderSessionIdentityStableAcrossTurns(t *testing.T) {
@@ -984,7 +1081,18 @@ func TestGrokHTTPActiveDelta_HeaderSessionIdentityStableAcrossTurns(t *testing.T
 	id2b := resolveGrokCacheIdentity(c2, body2, "", "grok-4.5")
 	require.Equal(t, id1, id1b)
 	require.Equal(t, id1, id2b)
-	require.Equal(t, resolveGrokActiveDeltaSessionHash(c1, id1), resolveGrokActiveDeltaSessionHash(c2, id2))
+	require.NotEqual(t,
+		resolveGrokActiveDeltaSessionHash(c1, id1, body1),
+		resolveGrokActiveDeltaSessionHash(c2, id2, body2),
+		"active-delta contexts must split when one explicit header is reused for different opening prompts",
+	)
+	toolBody1 := []byte(`{"model":"grok-4.5","tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}],"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"same"}]}]}`)
+	toolBody2 := []byte(`{"model":"grok-4.5","tools":[{"type":"function","name":"search","parameters":{"type":"object"}}],"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"same"}]}]}`)
+	require.Equal(t,
+		resolveGrokActiveDeltaSessionHash(c1, id1, toolBody1),
+		resolveGrokActiveDeltaSessionHash(c2, id2, toolBody2),
+		"tool changes are checked by the non-input fingerprint and must not fragment the prompt branch",
+	)
 }
 
 func TestForwardAsAnthropic_GrokUsesSharedActiveDeltaEgress(t *testing.T) {
@@ -1022,7 +1130,7 @@ func TestForwardAsAnthropic_GrokUsesSharedActiveDeltaEgress(t *testing.T) {
 		cacheIdentity = resolveGrokCacheIdentity(firstCtx, nil, "", sentModel)
 	}
 	if cacheIdentity != "" {
-		sessionHash := resolveGrokActiveDeltaSessionHash(firstCtx, cacheIdentity)
+		sessionHash := resolveGrokActiveDeltaSessionHash(firstCtx, cacheIdentity, upstream.bodies[0])
 		cached, ok := svc.getOpenAIWSStateStore().GetSessionContext(groupID, apiKeyID, sessionHash)
 		if ok {
 			require.Equal(t, "resp_claude_1", cached.lastResponseID)
