@@ -377,6 +377,10 @@ const platformNote = computed(() => {
       if (activeClientTab.value === 'codex') {
         return t('keys.useKeyModal.grok.codexNote')
       }
+      // Grok CLI: shell-specific path guidance (env + ~/.grok/config.toml).
+      if (activeClientTab.value === 'grok' && (activeTab.value === 'cmd' || activeTab.value === 'powershell')) {
+        return t('keys.useKeyModal.grok.noteWindows')
+      }
       return t('keys.useKeyModal.grok.note')
     default:
       return t('keys.useKeyModal.note')
@@ -728,8 +732,10 @@ function generateGrokCodexFiles(baseUrl: string, apiKey: string): FileConfig[] {
 
   // Grok Responses is HTTP/SSE. Codex WS is accepted by Sub2API but bridged to HTTP.
   const configContent = `# Codex CLI config for Sub2API Grok group access.
-# Default model is grok-4.5. You can switch to any grok-* model id
-# (e.g. grok-4.3, grok-build-0.1, grok-4.20-multi-agent-0309) without server rewrite.
+# Default model is grok-4.5 (text). You can switch to other text grok-* ids
+# (e.g. grok-4.3, grok-build-0.1, grok-4.20-multi-agent-0309 for multi-agent / web_search).
+# Image/video use Imagine models on media endpoints (grok-imagine-image / grok-imagine-video),
+# not the Codex Responses model field below.
 model_provider = "sub2api"
 model = "grok-4.5"
 # Optional personal preferences:
@@ -792,7 +798,8 @@ $env:XAI_API_KEY="${apiKey}"`
 
   // 生成 config.toml 配置（支持多个模型）
   const configContent = `# Grok CLI config for Sub2API API-key access.
-# You can configure multiple custom models here.
+# Text models only (Responses / Chat). Image and video use separate Imagine model IDs
+# on media endpoints (e.g. grok-imagine-image, grok-imagine-video) — not the models below.
 
 # Global endpoint configuration (applies to all models unless overridden)
 [endpoints]
@@ -800,7 +807,6 @@ models_base_url = "${baseUrl}"
 
 # IMPORTANT: Keep api_backend = "responses" on every model entry.
 # Without it, Grok CLI uses Chat Completions and sends requests to /v1/chat/completions.
-# Example: Configure multiple Grok models with the same base URL
 # API key can be set via:
 #   1. env_key = "XAI_API_KEY" (use environment variable)
 #   2. api_key = "sk-xxx..." (hardcode, not recommended for security)
@@ -817,12 +823,14 @@ env_key = "XAI_API_KEY"  # Recommended: use environment variable
 model = "grok-build-0.1"
 name = "Grok Build"
 api_backend = "responses"
-context_window = 512000
+context_window = 256000
 env_key = "XAI_API_KEY"
 
+# Text multi-agent model (Grok CLI web_search sub-agent may call grok-4.20-multi-agent).
+# NOT for image/video generation — use grok-imagine-image / grok-imagine-video instead.
 [model."grok-4.20-multi-agent-0309"]
 model = "grok-4.20-multi-agent-0309"
-name = "Grok 4.20 Multi Agent"
+name = "Grok 4.20 Multi Agent (text / web_search)"
 api_backend = "responses"
 context_window = 1000000
 env_key = "XAI_API_KEY"
@@ -834,7 +842,7 @@ api_backend = "responses"
 context_window = 1000000
 env_key = "XAI_API_KEY"
 
-# You can add more models as needed:
+# You can add more text models as needed:
 # [model.custom-model-name]
 # model = "model-id"
 # name = "Display Name"
@@ -842,7 +850,7 @@ env_key = "XAI_API_KEY"
 # env_key = "XAI_API_KEY"
 # # or: api_key = "your-api-key"
 
-# Set default model (optional)
+# Set default text model (optional)
 [models]
 default = "grok-4.5"`
 
@@ -1320,7 +1328,8 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
   }
 
   // Grok text models exposed via OpenAI-compatible gateway.
-  // Keep in sync with xaiModels whitelist (text only — not Imagine media).
+  // Keep context limits in sync with generateGrokFiles() (text only — not Imagine media).
+  // Image/video: grok-imagine-image / grok-imagine-video on media endpoints, not this list.
   const grokModels = {
     'grok-4.5': {
       name: 'Grok 4.5',
@@ -1337,7 +1346,8 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
       }
     },
     'grok-4.20-multi-agent-0309': {
-      name: 'Grok 4.20 Multi Agent',
+      // Text multi-agent / web_search sub-agent — not Imagine image/video.
+      name: 'Grok 4.20 Multi Agent (text / web_search)',
       limit: {
         context: 1000000,
         output: 64000
@@ -1368,7 +1378,9 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
   } else if (platform === 'openai') {
     provider[platform].models = openaiModels
   } else if (platform === 'grok') {
-    provider[platform].name = 'Grok (xAI)'
+    // Custom provider pointing at Sub2API's OpenAI-compatible Responses/Chat endpoints.
+    provider[platform].npm = '@ai-sdk/openai-compatible'
+    provider[platform].name = 'Grok via Sub2API'
     provider[platform].models = grokModels
   }
 

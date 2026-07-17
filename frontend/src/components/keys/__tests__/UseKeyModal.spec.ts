@@ -342,6 +342,12 @@ describe('UseKeyModal', () => {
     expect(grokCode).toContain('[model."grok-4.3"]')
     expect(grokCode).toContain('default = "grok-4.5"')
     expect(grokCode).toContain('Keep api_backend = "responses" on every model entry.')
+    // multi-agent is text / web_search, not Imagine media
+    expect(grokCode).toContain('Text multi-agent model')
+    expect(grokCode).toContain('NOT for image/video generation')
+    expect(grokCode).toContain('grok-imagine-image')
+    expect(grokCode).toContain('grok-imagine-video')
+    expect(grokCode).toContain('Grok 4.20 Multi Agent (text / web_search)')
 
     const modelBlocks = grokCode
       .split(/(?=^\[model\.)/m)
@@ -350,6 +356,13 @@ describe('UseKeyModal', () => {
     for (const block of modelBlocks) {
       expect(block).toContain('api_backend = "responses"')
     }
+    // context_window must stay aligned with OpenCode grokModels limits
+    expect(grokCode).toMatch(/\[model\."grok-4\.5"\][\s\S]*?context_window = 500000/)
+    expect(grokCode).toMatch(/\[model\."grok-build-0\.1"\][\s\S]*?context_window = 256000/)
+    expect(grokCode).toMatch(/\[model\."grok-4\.20-multi-agent-0309"\][\s\S]*?context_window = 1000000/)
+    expect(grokCode).toMatch(/\[model\."grok-4\.3"\][\s\S]*?context_window = 1000000/)
+    // Legacy alias must not appear in generated config
+    expect(grokCode).not.toContain('sub2api-grok')
 
     const clickTab = async (label: string) => {
       const tab = wrapper.findAll('button').find((button) => button.text().includes(label))
@@ -372,6 +385,9 @@ describe('UseKeyModal', () => {
     expect(codexCode).toContain('wire_api = "responses"')
     expect(codexCode).toContain('supports_websockets = false')
     expect(codexCode).toContain('experimental_bearer_token = "sk-grok"')
+    expect(codexCode).toContain('multi-agent / web_search')
+    expect(codexCode).toContain('grok-imagine-image')
+    expect(codexCode).toContain('grok-imagine-video')
 
     await clickTab('keys.useKeyModal.cliTabs.opencode')
     const openCode = wrapper.findAll('pre code').map((code) => code.text()).join('\n')
@@ -382,6 +398,17 @@ describe('UseKeyModal', () => {
     expect(openCode).toContain('"grok-4.3"')
     expect(openCode).toContain('"grok-build-0.1"')
     expect(openCode).toContain('"grok-4.20-multi-agent-0309"')
+    // Custom OpenCode provider must declare the OpenAI-compatible SDK package
+    expect(openCode).toContain('"npm": "@ai-sdk/openai-compatible"')
+    expect(openCode).toContain('"name": "Grok via Sub2API"')
+    const openCodeParsed = JSON.parse(openCode)
+    expect(openCodeParsed.provider.grok.models['grok-4.5'].limit.context).toBe(500000)
+    expect(openCodeParsed.provider.grok.models['grok-build-0.1'].limit.context).toBe(256000)
+    expect(openCodeParsed.provider.grok.models['grok-4.20-multi-agent-0309'].limit.context).toBe(1000000)
+    expect(openCodeParsed.provider.grok.models['grok-4.20-multi-agent-0309'].name).toBe(
+      'Grok 4.20 Multi Agent (text / web_search)'
+    )
+    expect(openCodeParsed.provider.grok.models['grok-4.3'].limit.context).toBe(1000000)
     // Must not reuse OpenAI GPT catalog for Grok OpenCode
     expect(openCode).not.toContain('"gpt-5.4"')
     expect(openCode).not.toContain('"gpt-5.2"')

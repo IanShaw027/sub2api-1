@@ -166,10 +166,14 @@ export default {
         note: '这些环境变量将在当前终端会话中生效。如需永久配置，请将其添加到 ~/.bashrc、~/.zshrc 或相应的配置文件中。'
       },
       grok: {
-        description: '配置 Grok Build 或 OpenCode，让 Responses API 请求通过当前 Sub2API Grok 分组发送。',
-        configTomlHint: '如已有 config.toml，请先备份再合并此模型配置。保存后运行 grok inspect 验证生效配置。',
-        note: '保存为 ~/.grok/config.toml，然后运行 grok inspect，并在 /model 中选择 sub2api-grok。',
-        noteWindows: '保存为 %USERPROFILE%\\.grok\\config.toml，然后运行 grok inspect，并在 /model 中选择 sub2api-grok。'
+        description:
+          '为 Sub2API Grok 分组配置客户端接入。请在下方选择 Grok CLI、Codex CLI、Claude Code 或 OpenCode。',
+        configTomlHint:
+          '推荐使用配置文件方式。支持多个模型；API Key 可通过 env_key 引用 XAI_API_KEY，或直接写入 api_key（不推荐）。每个模型需保持 api_backend = "responses"。',
+        note:
+          '将环境变量写入当前终端（或 shell profile），并把 config.toml 保存为 ~/.grok/config.toml。然后运行 grok inspect 验证，再在 /model 中选择 grok-4.5 等模型。',
+        noteWindows:
+          '将环境变量写入当前终端（或系统环境变量），并把 config.toml 保存为 %USERPROFILE%\\.grok\\config.toml。然后运行 grok inspect 验证，再在 /model 中选择 grok-4.5 等模型。'
       },
       opencode: {
         title: 'OpenCode 配置示例',

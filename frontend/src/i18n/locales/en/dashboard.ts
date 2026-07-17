@@ -162,10 +162,13 @@ export default {
         note: 'These environment variables will be active in the current terminal session. For permanent configuration, add them to ~/.bashrc, ~/.zshrc, or the appropriate configuration file.',
       },
       grok: {
-        description: 'Configure Grok Build or OpenCode to send Responses API traffic through your Sub2API Grok group.',
-        configTomlHint: 'Back up an existing config.toml before merging this model entry. Run grok inspect after saving to verify the effective configuration.',
-        note: 'Save the file as ~/.grok/config.toml, then run grok inspect and select sub2api-grok from /model.',
-        noteWindows: 'Save the file as %USERPROFILE%\\.grok\\config.toml, then run grok inspect and select sub2api-grok from /model.',
+        description: 'Configure Sub2API Grok group access. Use Grok CLI, Codex CLI, Claude Code, or OpenCode tabs below.',
+        configTomlHint:
+          'Config file approach is recommended. Supports multiple models. Reference XAI_API_KEY via env_key, or hardcode api_key (not recommended). Keep api_backend = "responses" on every model entry.',
+        note:
+          'Export the environment variables in your terminal (or shell profile), save config.toml as ~/.grok/config.toml, then run grok inspect and pick grok-4.5 (or another grok-* model) from /model.',
+        noteWindows:
+          'Set the environment variables in your terminal (or system env), save config.toml as %USERPROFILE%\\.grok\\config.toml, then run grok inspect and pick grok-4.5 (or another grok-* model) from /model.',
       },
       opencode: {
         title: 'OpenCode Example',

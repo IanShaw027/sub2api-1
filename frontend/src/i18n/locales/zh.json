@@ -1453,8 +1453,9 @@
       },
       "grok": {
         "description": "为 Sub2API Grok 分组配置客户端接入。请在下方选择 Grok CLI、Codex CLI、Claude Code 或 OpenCode。",
-        "note": "这些环境变量将在当前终端会话中生效。如需永久配置，请将其添加到 ~/.bashrc、~/.zshrc 或相应的配置文件中。",
-        "configTomlHint": "推荐使用配置文件方式。支持配置多个模型，API Key 可通过 env_key 引用环境变量或直接写入 api_key（不推荐）。",
+        "note": "将环境变量写入当前终端（或 shell profile），并把 config.toml 保存为 ~/.grok/config.toml。然后运行 grok inspect 验证，再在 /model 中选择 grok-4.5 等模型。",
+        "noteWindows": "将环境变量写入当前终端（或系统环境变量），并把 config.toml 保存为 %USERPROFILE%\\.grok\\config.toml。然后运行 grok inspect 验证，再在 /model 中选择 grok-4.5 等模型。",
+        "configTomlHint": "推荐使用配置文件方式。支持多个模型；API Key 可通过 env_key 引用 XAI_API_KEY，或直接写入 api_key（不推荐）。每个模型需保持 api_backend = \"responses\"。",
         "claudeDescription": "将 Claude Code 指向本 Grok 分组的 Anthropic 兼容 /v1/messages 接口。默认模型为 grok-4.5；可将 ANTHROPIC_MODEL 设为任意 grok-* 以直通（服务端不做改写）。",
         "claudeNote": "若客户端仍发送 claude-sonnet/opus/haiku 名称，服务端会映射到 grok-4.5；原生 grok-* 模型名不做映射。环境变量仅当前终端生效，永久配置请写入 shell profile。",
         "codexDescription": "将 Codex CLI 指向本 Grok 分组的 OpenAI 兼容 Responses 接口。默认模型为 grok-4.5，可在 config.toml 中改为任意 grok-*。",

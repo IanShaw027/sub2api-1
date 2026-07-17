@@ -1428,8 +1428,12 @@ export default {
       },
       grok: {
         description: 'Configure Sub2API Grok group access. Use Grok CLI, Codex CLI, Claude Code, or OpenCode tabs below.',
-        note: 'These environment variables will be active in the current terminal session. For permanent configuration, add them to ~/.bashrc, ~/.zshrc, or the appropriate configuration file.',
-        configTomlHint: 'Config file approach is recommended. Supports multiple models. API Key can be referenced via env_key (environment variable) or hardcoded in api_key (not recommended).',
+        note:
+          'Export the environment variables in your terminal (or shell profile), save config.toml as ~/.grok/config.toml, then run grok inspect and pick grok-4.5 (or another grok-* model) from /model.',
+        noteWindows:
+          'Set the environment variables in your terminal (or system env), save config.toml as %USERPROFILE%\\.grok\\config.toml, then run grok inspect and pick grok-4.5 (or another grok-* model) from /model.',
+        configTomlHint:
+          'Config file approach is recommended. Supports multiple models. Reference XAI_API_KEY via env_key, or hardcode api_key (not recommended). Keep api_backend = "responses" on every model entry.',
         claudeDescription: 'Configure Claude Code to use this Grok group via the Anthropic-compatible /v1/messages endpoint. Defaults to grok-4.5; set ANTHROPIC_MODEL to any grok-* id to override without server remapping.',
         claudeNote: 'Claude model names (claude-sonnet/opus/haiku) are mapped to grok-4.5 server-side. Native grok-* models pass through unchanged. These env vars apply to the current terminal session unless saved to your profile.',
         codexDescription: 'Configure Codex CLI to use this Grok group via OpenAI-compatible Responses. Default model is grok-4.5; you can set any grok-* model in config.toml.',
