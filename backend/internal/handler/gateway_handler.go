@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -38,7 +39,11 @@ import (
 	"go.uber.org/zap"
 )
 
-const gatewayCompatibilityMetricsLogInterval = 1024
+const (
+	gatewayCompatibilityMetricsLogInterval = 1024
+	defaultGrokWebSearchResults            = 5
+	maxGrokWebSearchResults                = 20
+)
 
 var gatewayCompatibilityMetricsLogCounter atomic.Uint64
 
@@ -1715,9 +1720,7 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 		}})
 		return
 	}
-	if req.MaxResults <= 0 {
-		req.MaxResults = 5
-	}
+	req.MaxResults = normalizeGrokWebSearchMaxResults(req.MaxResults)
 
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok || apiKey == nil {
@@ -1888,14 +1891,17 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 // doGrokNativeWebSearch executes web search using the Grok account's native capability
 // by calling the responses endpoint with web_search tool, then normalizes sources to unified format.
 func (h *GatewayHandler) doGrokNativeWebSearch(ctx context.Context, c *gin.Context, account *service.Account, query string, maxResults int) (*websearch.SearchResponse, string, error) {
+	maxResults = normalizeGrokWebSearchMaxResults(maxResults)
+
 	// Build a minimal responses request that triggers Grok web search tool.
-	// Grok will perform the search using its backend and return sources in web_search_call or annotations.
+	// Ask for structured metadata because xAI action.sources commonly contains URLs only.
 	searchBody := map[string]any{
-		"model":  xai.DefaultTextModel,
-		"input":  query,
-		"tools":  []map[string]any{{"type": "web_search"}},
-		"store":  false,
-		"stream": false,
+		"model":   xai.DefaultTextModel,
+		"input":   buildGrokWebSearchPrompt(query, maxResults),
+		"tools":   []map[string]any{{"type": "web_search"}},
+		"include": []string{"web_search_call.action.sources"},
+		"store":   false,
+		"stream":  false,
 	}
 	bodyBytes, _ := json.Marshal(searchBody)
 
@@ -1906,84 +1912,191 @@ func (h *GatewayHandler) doGrokNativeWebSearch(ctx context.Context, c *gin.Conte
 
 	// Extract sources from Grok responses output.
 	// Prefer web_search_call.action.sources (standardized), fallback to annotations or text links.
-	results := extractGrokWebSearchSources(respBytes)
-
-	providerName := "grok-native"
-	if account.Name != "" {
-		providerName = "grok:" + account.Name
-	}
+	results := extractGrokWebSearchSources(respBytes, maxResults)
 
 	return &websearch.SearchResponse{
 		Results: results,
 		Query:   query,
-	}, providerName, nil
+	}, "grok-native", nil
 }
 
-// extractGrokWebSearchSources pulls url/title (and optional snippet) from a Grok responses body.
-func extractGrokWebSearchSources(body []byte) []websearch.SearchResult {
+func normalizeGrokWebSearchMaxResults(maxResults int) int {
+	if maxResults <= 0 {
+		return defaultGrokWebSearchResults
+	}
+	if maxResults > maxGrokWebSearchResults {
+		return maxGrokWebSearchResults
+	}
+	return maxResults
+}
+
+func buildGrokWebSearchPrompt(query string, maxResults int) string {
+	return fmt.Sprintf(`Search the web for the user query below. Return ONLY valid JSON with this exact shape: {"results":[{"url":"https://...","title":"page title","snippet":"concise factual summary"}]}. Return at most %d unique results. Every URL must be an actual web_search source. Populate a non-empty title and snippet for every result. Do not wrap the JSON in markdown.
+
+User query:
+%s`, normalizeGrokWebSearchMaxResults(maxResults), query)
+}
+
+// extractGrokWebSearchSources returns model-enriched results only when their URLs
+// are present in the actual web_search sources, then falls back to raw sources.
+func extractGrokWebSearchSources(body []byte, maxResults int) []websearch.SearchResult {
 	if len(body) == 0 || !gjson.ValidBytes(body) {
 		return nil
 	}
-	var out []websearch.SearchResult
-	seen := map[string]bool{}
+	maxResults = normalizeGrokWebSearchMaxResults(maxResults)
 
-	// 1. Look for web_search_call items
+	sources := make(map[string]websearch.SearchResult)
+	var sourceOrder []string
+	addSource := func(rawURL, title, snippet string) {
+		key, ok := normalizeGrokWebSearchURL(rawURL)
+		if !ok {
+			return
+		}
+		result, exists := sources[key]
+		if !exists {
+			result.URL = strings.TrimSpace(rawURL)
+			sourceOrder = append(sourceOrder, key)
+		}
+		if result.Title == "" {
+			result.Title = usableGrokWebSearchTitle(title, result.URL)
+		}
+		if result.Snippet == "" {
+			result.Snippet = strings.TrimSpace(snippet)
+		}
+		sources[key] = result
+	}
+
 	output := gjson.GetBytes(body, "output")
 	output.ForEach(func(_, item gjson.Result) bool {
 		if item.Get("type").String() == "web_search_call" {
 			sources := item.Get("action.sources")
 			if sources.IsArray() {
 				sources.ForEach(func(_, src gjson.Result) bool {
-					u := strings.TrimSpace(src.Get("url").String())
-					if u == "" || seen[u] {
-						return true
-					}
-					seen[u] = true
-					out = append(out, websearch.SearchResult{
-						URL:     u,
-						Title:   strings.TrimSpace(src.Get("title").String()),
-						Snippet: "", // Grok sources typically provide url+title; snippet can be augmented later
-					})
+					addSource(src.Get("url").String(), src.Get("title").String(), src.Get("snippet").String())
 					return true
 				})
 			}
 		}
-		return true
-	})
-
-	// 2. Fallback: annotations on output_text (common in responses with web citations)
-	if len(out) == 0 {
-		gjson.GetBytes(body, "output").ForEach(func(_, item gjson.Result) bool {
-			if item.Get("type").String() == "message" {
-				item.Get("content").ForEach(func(_, part gjson.Result) bool {
-					if part.Get("type").String() == "output_text" {
-						part.Get("annotations").ForEach(func(_, ann gjson.Result) bool {
-							if ann.Get("type").String() == "url_citation" || ann.Get("type").String() == "web" {
-								u := strings.TrimSpace(ann.Get("url").String())
-								if u != "" && !seen[u] {
-									seen[u] = true
-									out = append(out, websearch.SearchResult{
-										URL:     u,
-										Title:   strings.TrimSpace(ann.Get("title").String()),
-										Snippet: "",
-									})
-								}
-							}
-							return true
-						})
+		if item.Get("type").String() == "message" {
+			item.Get("content").ForEach(func(_, part gjson.Result) bool {
+				if part.Get("type").String() != "output_text" {
+					return true
+				}
+				part.Get("annotations").ForEach(func(_, ann gjson.Result) bool {
+					if ann.Get("type").String() == "url_citation" || ann.Get("type").String() == "web" {
+						addSource(ann.Get("url").String(), ann.Get("title").String(), "")
 					}
 					return true
 				})
+				return true
+			})
+		}
+		return true
+	})
+
+	var out []websearch.SearchResult
+	seen := make(map[string]bool)
+	output.ForEach(func(_, item gjson.Result) bool {
+		if item.Get("type").String() != "message" {
+			return true
+		}
+		item.Get("content").ForEach(func(_, part gjson.Result) bool {
+			if part.Get("type").String() != "output_text" || len(out) >= maxResults {
+				return true
+			}
+			for _, result := range parseGrokWebSearchStructuredResults(part.Get("text").String()) {
+				key, ok := normalizeGrokWebSearchURL(result.URL)
+				if !ok || seen[key] {
+					continue
+				}
+				source, allowed := sources[key]
+				if !allowed {
+					continue
+				}
+				seen[key] = true
+				result.URL = source.URL
+				result.Title = usableGrokWebSearchTitle(result.Title, result.URL)
+				if result.Title == "" {
+					result.Title = source.Title
+				}
+				result.Snippet = strings.TrimSpace(result.Snippet)
+				if result.Snippet == "" {
+					result.Snippet = source.Snippet
+				}
+				out = append(out, result)
+				if len(out) >= maxResults {
+					break
+				}
 			}
 			return true
 		})
-	}
+		return len(out) < maxResults
+	})
 
-	// limit to max if needed is done by caller; return what Grok gave (usually top results)
-	if len(out) > 20 {
-		out = out[:20]
+	for _, key := range sourceOrder {
+		if len(out) >= maxResults {
+			break
+		}
+		if seen[key] {
+			continue
+		}
+		result := sources[key]
+		if result.Title == "" {
+			result.Title = grokWebSearchTitleFromURL(result.URL)
+		}
+		seen[key] = true
+		out = append(out, result)
 	}
 	return out
+}
+
+func parseGrokWebSearchStructuredResults(text string) []websearch.SearchResult {
+	text = strings.TrimSpace(text)
+	start := strings.IndexByte(text, '{')
+	end := strings.LastIndexByte(text, '}')
+	if start < 0 || end < start {
+		return nil
+	}
+	var payload struct {
+		Results []websearch.SearchResult `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(text[start:end+1]), &payload); err != nil {
+		return nil
+	}
+	return payload.Results
+}
+
+func normalizeGrokWebSearchURL(rawURL string) (string, bool) {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return "", false
+	}
+	u.Scheme = strings.ToLower(u.Scheme)
+	u.Host = strings.ToLower(u.Host)
+	u.Fragment = ""
+	if u.Path == "" {
+		u.Path = "/"
+	}
+	return u.String(), true
+}
+
+func usableGrokWebSearchTitle(title, rawURL string) string {
+	title = strings.TrimSpace(title)
+	if title == "" || title == rawURL {
+		return ""
+	}
+	if _, err := strconv.Atoi(title); err == nil {
+		return ""
+	}
+	return title
+}
+
+func grokWebSearchTitleFromURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return rawURL
+	}
+	return strings.TrimPrefix(strings.ToLower(u.Host), "www.")
 }
 
 // calculateSubscriptionRemaining 计算订阅剩余可用额度
