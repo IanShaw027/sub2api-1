@@ -145,7 +145,7 @@ export default {
       },
       linuxdo: {
         title: 'LinuxDo Connect 登录',
-        description: '配置 LinuxDo Connect OAuth，用于 Sub2API 用户登录',
+        description: '配置 LinuxDo Connect OAuth，用于 Clomio 用户登录',
         enable: '启用 LinuxDo 登录',
         enableHint: '在登录/注册页面显示 LinuxDo 登录入口',
         clientId: 'Client ID',
@@ -164,7 +164,7 @@ export default {
       },
       dingtalk: {
         title: '钉钉登录',
-        description: '配置钉钉 OAuth，用于 Sub2API 用户登录',
+        description: '配置钉钉 OAuth，用于 Clomio 用户登录',
         enable: '启用钉钉登录-企业内部应用',
         enableHint: '在登录/注册页面显示钉钉登录入口',
         clientId: 'Client ID（AppKey）',
@@ -430,7 +430,7 @@ export default {
           '禁用用户注册、公开页面和自助服务功能。仅管理员可以登录和管理平台。',
         siteName: '站点名称',
         siteNameHint: '显示在邮件和页面标题中',
-        siteNamePlaceholder: 'Sub2API',
+        siteNamePlaceholder: 'Clomio',
         siteSubtitle: '站点副标题',
         siteSubtitleHint: '显示在登录和注册页面',
         siteSubtitlePlaceholder: '订阅转 API 转换平台',
@@ -472,10 +472,11 @@ export default {
         logoTypeError: '请选择图片文件',
         logoReadError: '读取图片文件失败',
         homeContent: '首页内容',
+        homeContentDeprecated: '已弃用',
         homeContentPlaceholder:
           '在此输入首页内容，支持 Markdown & HTML 代码。如果输入的是一个链接，则会使用该链接作为 iframe 的 src 属性。',
         homeContentHint:
-          '自定义首页内容，支持 Markdown/HTML。如果输入的是链接（以 http:// 或 https:// 开头），则会使用该链接作为 iframe 的 src 属性，这允许你设置任意网页作为首页。设置后首页的状态信息将不再显示。',
+          '自定义首页内容，支持 Markdown/HTML。如果输入的是链接（以 http:// 或 https:// 开头），则会使用该链接作为 iframe 的 src 属性，这允许你设置任意网页作为首页。设置后首页的状态信息将不再显示。注意：首页现已使用原生 Vue 落地页，此字段将被忽略。',
         homeContentIframeWarning:
           '⚠️ iframe 模式提示：部分网站设置了 X-Frame-Options 或 CSP 安全策略，禁止被嵌入到 iframe 中。如果页面显示空白或报错，请确认目标网站允许被嵌入，或考虑使用 HTML 模式自行构建页面内容。',
         hideCcsImportButton: '隐藏 CCS 导入按钮',
@@ -621,7 +622,7 @@ export default {
         field_cidAlipay: '支付宝渠道 ID',
         field_cidWxpay: '微信渠道 ID',
         easypayCustomMethods: '易支付自定义支付方式',
-        easypayCustomMethodsHint: '添加当前易支付服务商额外支持的支付方式。支付方式会记录到 Sub2API 订单中，上游 type 会作为易支付 type 参数提交。',
+        easypayCustomMethodsHint: '添加当前易支付服务商额外支持的支付方式。支付方式会记录到 Clomio 订单中，上游 type 会作为易支付 type 参数提交。',
         addCustomMethod: '添加方式',
         customMethodType: '支付方式',
         customMethodUpstreamType: '上游 type',
@@ -737,7 +738,7 @@ export default {
         fromEmail: '发件人邮箱',
         fromEmailPlaceholder: "noreply{'@'}example.com",
         fromName: '发件人名称',
-        fromNamePlaceholder: 'Sub2API',
+        fromNamePlaceholder: 'Clomio',
         useTls: '使用 TLS',
         useTlsHint: '为 SMTP 连接启用 TLS 加密'
       },
@@ -1024,7 +1025,7 @@ export default {
         scopeAPIKey: '仅 API Key 账号',
         scopeBedrock: '仅 Bedrock 账号',
         userIds: '指定用户',
-        userIdsHint: '输入任意邮箱关键词进行模糊搜索。留空表示对全部 Sub2API 用户生效；选中用户的 API Key 请求优先匹配用户规则。',
+        userIdsHint: '输入任意邮箱关键词进行模糊搜索。留空表示对全部 Clomio 用户生效；选中用户的 API Key 请求优先匹配用户规则。',
         userSearchPlaceholder: '输入用户邮箱搜索',
         userSearchEmpty: '未找到匹配用户',
         userDeleted: '（已删除）',

@@ -3,7 +3,7 @@ export default {
     title: '图片批量生成',
     description: '一次提交多条提示词，任务完成后可统一下载图片结果'
   },
-  // Home Page
+  // Home Page — Clomio API Platform landing
   home: {
     viewOnGithub: '在 GitHub 上查看',
     viewDocs: '查看文档',
@@ -12,17 +12,66 @@ export default {
     switchToDark: '切换到深色模式',
     dashboard: '控制台',
     login: '登录',
-    getStarted: '立即开始',
+    getStarted: '开始使用',
     goToDashboard: '进入控制台',
-    // 新增：面向用户的价值主张
-    heroSubtitle: '一个密钥，畅用多个 AI 模型',
-    heroDescription: '无需管理多个订阅账号，一站式接入 Claude、GPT、Gemini 等主流 AI 服务',
+    // Hero
+    eyebrow: 'AI API Platform',
+    heroTitle: '用一套 Key 调用全球 AI 能力',
+    heroSubtitle: '一个密钥，统一计费，生产级 AI API',
+    heroDescription:
+      '统一网关接入多模型与多渠道。一套 Key、透明用量与计费，几分钟即可完成第一次调用。',
+    // Code card
+    codeCard: {
+      languages: '示例语言',
+      copy: '复制',
+      copied: '已复制',
+      hint: '将 base_url 指向本平台，使用你的 API Key 即可'
+    },
+    // Trust strip (facts, not fake logos)
+    trust: {
+      billing: '统一计费',
+      billingDesc: '余额与订阅一体管理',
+      keys: '密钥管理',
+      keysDesc: '创建、吊销、按端点接入',
+      usage: '用量透明',
+      usageDesc: '请求与成本实时可见',
+      routing: '渠道调度',
+      routingDesc: '多模型智能路由与容灾'
+    },
+    // Capability cards → real modules
+    capabilities: {
+      title: '平台能力',
+      subtitle: '覆盖接入、治理与商业闭环的真实模块',
+      gateway: '统一 API 网关',
+      gatewayDesc: '多账号池与渠道路由，OpenAI 兼容协议一站接入主流模型。',
+      apiKeys: 'API Key 与接入',
+      apiKeysDesc: '创建密钥、配置端点与权限，复制即可在客户端或 SDK 中使用。',
+      usageBilling: '用量与成本可见',
+      usageBillingDesc: '按请求、模型与时间维度查看用量，余额与账单清晰可追溯。',
+      subscriptions: '订阅与充值',
+      subscriptionsDesc: '订阅计划、在线充值与订单管理，按需扩展额度。',
+      reliability: '稳定性与渠道状态',
+      reliabilityDesc: '渠道健康与可用性监测，异常自动切换，保障调用连续。',
+      support: '工单与推广支持',
+      supportDesc: '工单沟通问题，推广返佣扩展业务，团队协作更省心。'
+    },
+    // How it works
+    howItWorks: {
+      title: '如何开始',
+      subtitle: '三步完成第一次成功调用',
+      step1Title: '注册账号',
+      step1Desc: '创建账户并登录控制台，几分钟完成开通。',
+      step2Title: '创建 API Key',
+      step2Desc: '在密钥页生成 Key，妥善保存一次性完整密钥。',
+      step3Title: '配置 base_url 调用',
+      step3Desc: '将客户端 base_url 指向本平台，使用 OpenAI 兼容接口发起请求。'
+    },
+    // Legacy keys retained for other views / compatibility
     tags: {
       subscriptionToApi: '订阅转 API',
       stickySession: '会话保持',
       realtimeBilling: '按量计费'
     },
-    // 用户痛点区块
     painPoints: {
       title: '你是否也遇到这些问题？',
       items: {
@@ -44,7 +93,6 @@ export default {
         }
       }
     },
-    // 解决方案区块
     solutions: {
       title: '我们帮你解决',
       subtitle: '简单三步，开始省心使用 AI'
@@ -57,7 +105,6 @@ export default {
       balanceQuota: '用多少付多少',
       balanceQuotaDesc: '按实际使用量计费，支持设置配额上限，团队用量一目了然。'
     },
-    // 优势对比
     comparison: {
       title: '为什么选择我们？',
       headers: {
@@ -103,10 +150,9 @@ export default {
       antigravity: 'Antigravity',
       more: '更多'
     },
-    // CTA 区块
     cta: {
       title: '准备好开始了吗？',
-      description: '注册即可获得免费试用额度，体验一站式 AI 服务',
+      description: '注册即可开始使用统一 AI API 平台',
       button: '免费注册'
     },
     footer: {
@@ -191,8 +237,8 @@ export default {
 
   // Setup Wizard
   setup: {
-    title: 'Sub2API 安装向导',
-    description: '配置您的 Sub2API 实例',
+    title: 'Clomio 安装向导',
+    description: '配置您的 Clomio 实例',
     database: {
       title: '数据库配置',
       description: '连接到您的 PostgreSQL 数据库',

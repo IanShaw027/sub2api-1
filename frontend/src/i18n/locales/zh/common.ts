@@ -202,6 +202,10 @@ export default {
   // Auth
   auth: {
     welcomeBack: '欢迎回来',
+    brandHeadline: '稳定可靠的 API 网关',
+    brandChipKeys: 'API 密钥',
+    brandChipBilling: '统一计费',
+    brandChipChannels: '多渠道路由',
     signInToAccount: '登录您的账户以继续',
     signIn: '登录',
     signingIn: '登录中...',

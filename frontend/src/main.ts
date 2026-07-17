@@ -4,6 +4,7 @@ import App from './App.vue'
 import router from './router'
 import i18n, { initI18n } from './i18n'
 import { useAppStore } from '@/stores/app'
+import '@fontsource-variable/inter/index.css'
 import './style.css'
 
 function initThemeClass() {
@@ -28,8 +29,8 @@ async function bootstrap() {
   appStore.initFromInjectedConfig()
 
   // Set document title immediately after config is loaded
-  if (appStore.siteName && appStore.siteName !== 'Sub2API') {
-    document.title = `${appStore.siteName} - AI API Gateway`
+  if (appStore.siteName && appStore.siteName !== 'Clomio') {
+    document.title = `${appStore.siteName} - AI API Platform`
   }
 
   await initI18n()

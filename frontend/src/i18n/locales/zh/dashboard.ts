@@ -167,7 +167,7 @@ export default {
       },
       grok: {
         description:
-          '为 Sub2API Grok 分组配置客户端接入。请在下方选择 Grok CLI、Codex CLI、Claude Code 或 OpenCode。',
+          '为 Clomio Grok 分组配置客户端接入。请在下方选择 Grok CLI、Codex CLI、Claude Code 或 OpenCode。',
         configTomlHint:
           '推荐使用配置文件方式。支持多个模型；API Key 可通过 env_key 引用 XAI_API_KEY，或直接写入 api_key（不推荐）。每个模型需保持 api_backend = "responses"。',
         note:

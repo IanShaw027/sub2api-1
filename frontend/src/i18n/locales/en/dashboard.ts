@@ -162,7 +162,7 @@ export default {
         note: 'These environment variables will be active in the current terminal session. For permanent configuration, add them to ~/.bashrc, ~/.zshrc, or the appropriate configuration file.',
       },
       grok: {
-        description: 'Configure Sub2API Grok group access. Use Grok CLI, Codex CLI, Claude Code, or OpenCode tabs below.',
+        description: 'Configure Clomio Grok group access. Use Grok CLI, Codex CLI, Claude Code, or OpenCode tabs below.',
         configTomlHint:
           'Config file approach is recommended. Supports multiple models. Reference XAI_API_KEY via env_key, or hardcode api_key (not recommended). Keep api_backend = "responses" on every model entry.',
         note:

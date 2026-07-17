@@ -1,0 +1,93 @@
+/**
+ * Clomio design tokens for sub2api (Vue).
+ * Source of visual truth: /opt/clomio docs/13 + packages/ui styles.
+ * Isolated copy — does NOT import or depend on the clomio monorepo.
+ *
+ * RGB channel variables keep Tailwind alpha utilities working:
+ *   bg-brand/10 → rgb(var(--c-brand) / 0.1)
+ */
+
+:root {
+  /* Brand teal */
+  --c-brand-50: 234 250 248;
+  --c-brand-100: 207 244 239;
+  --c-brand-200: 153 237 227;
+  --c-brand-300: 94 217 204;
+  --c-brand-400: 45 201 184;
+  --c-brand: 23 184 166;
+  --c-brand-600: 15 163 147;
+  --c-brand-700: 11 133 120;
+  --c-brand-800: 10 107 96;
+  --c-brand-900: 10 84 76;
+  --c-brand-950: 4 47 44;
+  --c-brand-cyan: 31 162 214;
+
+  /* Accent blue (links / admin CTA / focus) */
+  --c-accent-50: 237 244 254;
+  --c-accent-100: 219 234 253;
+  --c-accent-200: 191 219 254;
+  --c-accent-300: 127 179 250;
+  --c-accent-400: 96 165 250;
+  --c-accent: 47 123 246;
+  --c-accent-600: 31 99 219;
+  --c-accent-700: 26 82 184;
+  --c-accent-800: 30 64 175;
+  --c-accent-900: 30 58 138;
+  --c-accent-950: 23 37 84;
+
+  /* Brand gradient endpoints #34D9C3 → #1FA2D6 */
+  --c-grad-from: 52 217 195;
+  --c-grad-to: 31 162 214;
+
+  /* Gold sparkle (logo / AI accent) */
+  --c-gold: 245 185 63;
+
+  /* Semantic */
+  --c-success: 22 163 74;
+  --c-success-soft: 233 249 239;
+  --c-warning: 217 119 6;
+  --c-warning-soft: 253 243 227;
+  --c-danger: 220 38 38;
+  --c-danger-soft: 253 235 235;
+  --c-info: 47 123 246;
+
+  /* Neutrals (light first) */
+  --c-page: 247 249 252;
+  --c-card: 255 255 255;
+  --c-line: 230 235 242;
+  --c-divider: 239 243 248;
+  --c-ink: 22 49 79;
+  --c-ink-body: 51 74 102;
+  --c-ink-soft: 100 116 139;
+  --c-ink-faint: 148 163 184;
+
+  /* Ambient / glass */
+  --ambient-a: 0.1;
+  --bg-ambient: linear-gradient(135deg, #dceff7 0%, #e3eef9 40%, #dff3ef 100%);
+  --glass-bg: rgb(255 255 255 / 0.82);
+  --glass-border: rgb(255 255 255 / 0.95);
+  --bg-panel-main: linear-gradient(180deg, rgb(238 245 251 / 0.6), rgb(247 250 253 / 0.85));
+
+  /* Marketing code card (landing) */
+  --code-bg: 15 23 42;
+  --code-fg: 226 232 240;
+}
+
+/* Dark: only neutrals + ambient (brand/semantic stay) — html.dark matches sub2api class strategy */
+html.dark {
+  --c-page: 15 23 42;
+  --c-card: 30 41 59;
+  --c-line: 51 65 85;
+  --c-divider: 44 57 76;
+  --c-ink: 226 232 240;
+  --c-ink-body: 203 213 225;
+  --c-ink-soft: 148 163 184;
+  --c-ink-faint: 100 116 139;
+  --ambient-a: 0.05;
+  --bg-ambient: linear-gradient(135deg, #0b1526 0%, #0f1b30 40%, #0c1b28 100%);
+  --glass-bg: rgb(30 41 59 / 0.82);
+  --glass-border: rgb(51 65 85 / 0.6);
+  --bg-panel-main: linear-gradient(180deg, rgb(15 23 42 / 0.4), rgb(15 23 42 / 0.7));
+  --code-bg: 2 6 23;
+  --code-fg: 226 232 240;
+}

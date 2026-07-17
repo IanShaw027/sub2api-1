@@ -1,3 +1,6 @@
+/* Clomio tokens (isolated copy; does not touch /opt/clomio) */
+@import './styles/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -9,11 +12,25 @@
 
   html {
     @apply scroll-smooth antialiased;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
   body {
-    @apply bg-gray-50 text-gray-900 dark:bg-dark-950 dark:text-gray-100;
-    @apply min-h-screen;
+    @apply min-h-screen bg-page font-sans text-ink-body;
+    @apply dark:bg-page dark:text-ink-body;
+  }
+
+  /* Clomio ambient dual radial (brand + accent); fixed, non-interactive */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(circle 26rem at 0% 0%, rgb(var(--c-brand) / var(--ambient-a)), transparent 72%),
+      radial-gradient(circle 24rem at 100% 0%, rgb(var(--c-accent) / var(--ambient-a)), transparent 72%);
   }
 
   /* 自定义滚动条 - 仅针对 Firefox，避免 Chrome 取消 webkit 的全局定制 */
@@ -57,63 +74,60 @@
 
   /* 选中文本样式 */
   ::selection {
-    @apply bg-primary-500/20 text-primary-900 dark:text-primary-100;
+    @apply bg-brand-500/20 text-brand-900 dark:text-brand-100;
   }
 
 
 }
 
 @layer components {
-  /* ============ 按钮样式 ============ */
+  /* ============ 按钮样式（Clomio recipes; naming fork: primary=teal） ============ */
   .btn {
     @apply inline-flex items-center justify-center gap-2;
-    @apply rounded-xl px-4 py-2.5 text-sm font-medium;
-    @apply transition-all duration-200 ease-out;
-    @apply focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:ring-offset-2;
+    @apply rounded-control px-4 py-2.5 text-sm font-semibold;
+    @apply transition duration-150 ease-out;
+    @apply focus:outline-none focus-visible:ring-[3px] focus-visible:ring-accent/25;
     @apply disabled:transform-none disabled:cursor-not-allowed disabled:opacity-50;
     @apply active:scale-[0.98];
   }
 
+  /* Solid brand-teal — NOT accent blue (docs/13 primary-blue maps to future optional accent CTA) */
   .btn-primary {
-    @apply bg-gradient-to-r from-primary-500 to-primary-600;
-    @apply text-white shadow-md shadow-primary-500/25;
-    @apply hover:from-primary-600 hover:to-primary-700 hover:shadow-lg hover:shadow-primary-500/30;
-    @apply dark:shadow-primary-500/20;
+    @apply bg-brand-500 text-white shadow-xs;
+    @apply hover:bg-brand-600;
+    @apply dark:bg-brand-500 dark:hover:bg-brand-400;
   }
 
   .btn-secondary {
-    @apply bg-white dark:bg-dark-800;
-    @apply text-gray-700 dark:text-gray-200;
-    @apply border border-gray-200 dark:border-dark-600;
-    @apply shadow-sm hover:bg-gray-50 dark:hover:bg-dark-700;
-    @apply hover:border-gray-300 dark:hover:border-dark-500;
+    @apply bg-card text-ink;
+    @apply border border-line;
+    @apply shadow-xs hover:bg-page hover:border-divider;
+    @apply dark:bg-dark-800 dark:text-ink;
+    @apply dark:border-dark-600 dark:hover:bg-dark-700 dark:hover:border-dark-500;
   }
 
   .btn-ghost {
-    @apply bg-transparent text-gray-600 dark:text-gray-300;
-    @apply hover:bg-gray-100 dark:hover:bg-dark-800;
+    @apply bg-transparent text-ink-soft;
+    @apply hover:bg-page hover:text-ink;
+    @apply dark:text-ink-body dark:hover:bg-dark-800 dark:hover:text-white;
   }
 
   .btn-danger {
-    @apply bg-gradient-to-r from-red-500 to-red-600;
-    @apply text-white shadow-md shadow-red-500/25;
-    @apply hover:from-red-600 hover:to-red-700 hover:shadow-lg hover:shadow-red-500/30;
+    @apply bg-danger text-white shadow-xs;
+    @apply hover:opacity-90;
   }
 
   .btn-success {
-    @apply bg-gradient-to-r from-emerald-500 to-emerald-600;
-    @apply text-white shadow-md shadow-emerald-500/25;
-    @apply hover:from-emerald-600 hover:to-emerald-700 hover:shadow-lg hover:shadow-emerald-500/30;
-    @apply dark:shadow-emerald-500/20;
+    @apply bg-success text-white shadow-xs;
+    @apply hover:opacity-90;
   }
 
   .btn-warning {
-    @apply bg-gradient-to-r from-amber-500 to-amber-600;
-    @apply text-white shadow-md shadow-amber-500/25;
-    @apply hover:from-amber-600 hover:to-amber-700 hover:shadow-lg hover:shadow-amber-500/30;
-    @apply dark:shadow-amber-500/20;
+    @apply bg-warning text-white shadow-xs;
+    @apply hover:opacity-90;
   }
 
+  /* Payment brand colors — do not restyle (compliance / recognition) */
   .btn-stripe {
     @apply bg-[#635bff] text-white shadow-md shadow-[#635bff]/25;
     @apply hover:bg-[#5851ea] hover:shadow-lg hover:shadow-[#635bff]/30;
@@ -142,48 +156,54 @@
     @apply dark:shadow-[#2BB741]/20;
   }
 
+  /* Brand-moment CTA: teal→cyan gradient (Clomio brand button) */
+  .btn-brand {
+    @apply bg-brand-gradient text-white shadow-md;
+    @apply hover:opacity-95;
+  }
+
   .btn-sm {
-    @apply rounded-lg px-3 py-1.5 text-xs;
+    @apply rounded-control px-3 py-1.5 text-xs;
   }
 
   .btn-md {
-    @apply rounded-xl px-4 py-2 text-sm;
+    @apply rounded-control px-4 py-2 text-sm;
   }
 
   .btn-lg {
-    @apply rounded-2xl px-6 py-3 text-base;
+    @apply rounded-control px-6 py-3 text-base;
   }
 
   .btn-icon {
-    @apply rounded-xl p-2.5;
+    @apply rounded-control p-2.5;
   }
 
   /* ============ 输入框样式 ============ */
   .input {
-    @apply w-full rounded-xl px-4 py-2.5 text-sm;
-    @apply bg-white dark:bg-dark-800;
-    @apply border border-gray-200 dark:border-dark-600;
-    @apply text-gray-900 dark:text-gray-100;
-    @apply placeholder:text-gray-400 dark:placeholder:text-dark-400;
-    @apply transition-all duration-200;
-    @apply focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/30;
-    @apply disabled:cursor-not-allowed disabled:bg-gray-100 dark:disabled:bg-dark-900;
+    @apply w-full rounded-control px-3 py-2.5 text-sm;
+    @apply bg-card dark:bg-dark-800;
+    @apply border border-line dark:border-dark-600;
+    @apply text-ink;
+    @apply placeholder:text-ink-faint dark:placeholder:text-dark-400;
+    @apply transition duration-150 ease-out;
+    @apply focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent/25;
+    @apply disabled:cursor-not-allowed disabled:bg-page dark:disabled:bg-dark-900;
   }
 
   .input-error {
-    @apply border-red-500 focus:border-red-500 focus:ring-red-500/30;
+    @apply border-danger focus:border-danger focus:ring-danger/20;
   }
 
   .input-label {
-    @apply mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300;
+    @apply mb-1.5 block text-sm font-medium text-ink;
   }
 
   .input-hint {
-    @apply mt-1 text-xs text-gray-500 dark:text-dark-400;
+    @apply mt-1 text-xs text-ink-soft dark:text-dark-400;
   }
 
   .input-error-text {
-    @apply mt-1 text-xs text-red-500;
+    @apply mt-1 text-xs text-danger;
   }
 
   /* Hide number input spinner buttons for cleaner UI */
@@ -197,106 +217,167 @@
     -moz-appearance: textfield;
   }
 
-  /* ============ 玻璃效果 ============ */
+  /* ============ 玻璃效果（对齐 Clomio glass 变量，类名保持兼容） ============ */
   .glass {
-    @apply bg-white/80 backdrop-blur-xl dark:bg-dark-800/80;
+    background: var(--glass-bg);
+    @apply backdrop-blur-xl;
   }
 
   .glass-card {
-    @apply bg-white/70 dark:bg-dark-800/70;
+    background: var(--glass-bg);
     @apply backdrop-blur-xl;
-    @apply rounded-2xl;
-    @apply border border-white/20 dark:border-dark-700/50;
+    @apply rounded-card;
+    border: 1px solid var(--glass-border);
     @apply shadow-glass;
     @apply transition-all duration-300;
+  }
+
+  /* Clomio glass panel (marketing / optional shell) */
+  .glass-panel {
+    background: var(--glass-bg);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid var(--glass-border);
+    border-radius: 28px;
+    box-shadow: 0 24px 64px -16px rgba(22, 49, 79, 0.25);
+  }
+
+  .ambient-canvas {
+    position: relative;
+    background-image: var(--bg-ambient);
+    isolation: isolate;
+    overflow: hidden;
+  }
+
+  .ambient-canvas::before,
+  .ambient-canvas::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    width: 44rem;
+    height: 44rem;
+    border-radius: 9999px;
+    pointer-events: none;
+  }
+
+  .ambient-canvas::before {
+    top: -12rem;
+    right: -6rem;
+    background: radial-gradient(
+      circle,
+      rgb(var(--c-grad-from) / calc(var(--ambient-a) * 2.5)),
+      transparent 62%
+    );
+  }
+
+  .ambient-canvas::after {
+    bottom: -16rem;
+    left: -8rem;
+    background: radial-gradient(
+      circle,
+      rgb(var(--c-accent) / calc(var(--ambient-a) * 1.8)),
+      transparent 62%
+    );
+  }
+
+  .skeleton-shimmer {
+    background: linear-gradient(
+      90deg,
+      rgb(var(--c-line) / 0.55) 25%,
+      rgb(var(--c-line) / 0.95) 37%,
+      rgb(var(--c-line) / 0.55) 63%
+    );
+    background-size: 400% 100%;
+    animation: clomioShimmer 1.2s ease-in-out infinite;
   }
 
   /* ============ 卡片样式 ============ */
   .card {
-    @apply bg-white dark:bg-dark-800/50;
-    @apply rounded-2xl;
-    @apply border border-gray-100 dark:border-dark-700/50;
-    @apply shadow-card;
-    @apply transition-all duration-300;
+    @apply bg-card dark:bg-dark-800/50;
+    @apply rounded-card;
+    @apply border border-line dark:border-dark-700/50;
+    @apply shadow-xs;
+    @apply transition duration-150 ease-out;
   }
 
   .card-hover {
-    @apply hover:-translate-y-0.5 hover:shadow-card-hover;
-    @apply hover:border-gray-200 dark:hover:border-dark-600;
+    @apply hover:shadow-md;
+    @apply hover:border-divider dark:hover:border-dark-600;
   }
 
   .card-glass {
-    @apply bg-white/70 dark:bg-dark-800/70;
+    background: var(--glass-bg);
     @apply backdrop-blur-xl;
-    @apply border border-white/20 dark:border-dark-700/50;
+    border: 1px solid var(--glass-border);
     @apply shadow-glass;
   }
 
   .card-header {
-    @apply border-b border-gray-100 dark:border-dark-700;
-    @apply px-6 py-4;
+    @apply border-b border-line dark:border-dark-700;
+    @apply px-5 py-4;
   }
 
   .card-body {
-    @apply p-6;
+    @apply p-5;
   }
 
   .card-footer {
-    @apply border-t border-gray-100 dark:border-dark-700;
-    @apply px-6 py-4;
+    @apply border-t border-line dark:border-dark-700;
+    @apply px-5 py-4;
   }
 
   /* ============ 统计卡片 ============ */
   .stat-card {
-    @apply card p-5;
+    @apply card px-5 py-[18px];
     @apply flex items-start gap-4;
+    @apply hover:border-divider hover:shadow-md;
   }
 
   .stat-icon {
-    @apply h-12 w-12 rounded-xl;
+    @apply h-8 w-8 rounded-control;
     @apply flex items-center justify-center;
-    @apply text-xl;
+    @apply text-base shrink-0;
   }
 
   .stat-icon-primary {
-    @apply bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400;
+    @apply bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-400;
   }
 
   .stat-icon-success {
-    @apply bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400;
+    @apply bg-success-soft text-success dark:bg-emerald-900/30 dark:text-emerald-400;
   }
 
   .stat-icon-warning {
-    @apply bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400;
+    @apply bg-warning-soft text-warning dark:bg-amber-900/30 dark:text-amber-400;
   }
 
   .stat-icon-danger {
-    @apply bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400;
+    @apply bg-danger-soft text-danger dark:bg-red-900/30 dark:text-red-400;
   }
 
   .stat-value {
-    @apply text-2xl font-bold text-gray-900 dark:text-white truncate;
+    @apply text-[30px] font-semibold leading-9 tracking-[-0.01em] tabular-nums text-ink dark:text-white truncate;
   }
 
   .stat-label {
-    @apply text-sm text-gray-500 dark:text-dark-400;
+    @apply text-[13px] text-ink-soft dark:text-dark-400;
   }
 
   .stat-trend {
-    @apply mt-1 flex items-center gap-1 text-xs font-medium;
+    @apply mt-1 inline-flex items-center gap-0.5 rounded-chip px-2 py-0.5 text-[11px] font-semibold tabular-nums;
   }
 
   .stat-trend-up {
-    @apply text-emerald-600 dark:text-emerald-400;
+    @apply bg-success-soft text-success dark:bg-emerald-900/30 dark:text-emerald-400;
   }
 
   .stat-trend-down {
-    @apply text-red-600 dark:text-red-400;
+    @apply bg-danger-soft text-danger dark:bg-red-900/30 dark:text-red-400;
   }
 
   /* ============ 表格样式 ============ */
   .table-container {
-    @apply overflow-x-auto rounded-xl border border-gray-200 dark:border-dark-700;
+    @apply overflow-x-auto rounded-card border border-line dark:border-dark-700;
   }
 
   .table {
@@ -304,16 +385,16 @@
   }
 
   .table th {
-    @apply px-4 py-3 text-left font-medium;
-    @apply text-gray-600 dark:text-dark-300;
-    @apply bg-gray-50 dark:bg-dark-800/50;
-    @apply border-b border-gray-200 dark:border-dark-700;
+    @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider;
+    @apply text-ink-soft dark:text-dark-300;
+    @apply bg-page dark:bg-dark-800/50;
+    @apply border-b border-line dark:border-dark-700;
   }
 
   .table td {
-    @apply px-4 py-3;
-    @apply text-gray-700 dark:text-gray-300;
-    @apply border-b border-gray-100 dark:border-dark-800;
+    @apply px-4 py-3.5;
+    @apply text-ink-body;
+    @apply border-b border-divider dark:border-dark-800;
   }
 
   .table tr:last-child td {
@@ -322,33 +403,33 @@
 
   .table tbody tr {
     @apply transition-colors duration-150;
-    @apply hover:bg-gray-50 dark:hover:bg-dark-800/30;
+    @apply hover:bg-page dark:hover:bg-dark-800/30;
   }
 
   /* ============ 徽章样式 ============ */
   .badge {
-    @apply inline-flex items-center gap-1;
-    @apply rounded-full px-2.5 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-1.5;
+    @apply rounded-chip px-2.5 py-0.5 text-xs font-semibold;
   }
 
   .badge-primary {
-    @apply bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400;
+    @apply bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400;
   }
 
   .badge-success {
-    @apply bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400;
+    @apply bg-success-soft text-success dark:bg-emerald-900/30 dark:text-emerald-400;
   }
 
   .badge-warning {
-    @apply bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400;
+    @apply bg-warning-soft text-warning dark:bg-amber-900/30 dark:text-amber-400;
   }
 
   .badge-danger {
-    @apply bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400;
+    @apply bg-danger-soft text-danger dark:bg-red-900/30 dark:text-red-400;
   }
 
   .badge-gray {
-    @apply bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-dark-300;
+    @apply bg-ink-faint/10 text-ink-soft dark:bg-dark-700 dark:text-dark-300;
   }
 
   .badge-purple {
@@ -358,18 +439,18 @@
   /* ============ 下拉菜单 ============ */
   .dropdown {
     @apply absolute z-50;
-    @apply bg-white dark:bg-dark-800;
-    @apply rounded-xl;
-    @apply border border-gray-200 dark:border-dark-700;
-    @apply shadow-lg;
+    @apply bg-card dark:bg-dark-800;
+    @apply rounded-card;
+    @apply border border-line dark:border-dark-700;
+    @apply shadow-md;
     @apply py-1;
     @apply origin-top-right animate-scale-in;
   }
 
   .dropdown-item {
     @apply px-4 py-2 text-sm;
-    @apply text-gray-700 dark:text-gray-300;
-    @apply hover:bg-gray-100 dark:hover:bg-dark-700;
+    @apply text-ink-body;
+    @apply hover:bg-page dark:hover:bg-dark-700;
     @apply cursor-pointer transition-colors;
     @apply flex items-center gap-2;
   }
@@ -377,39 +458,39 @@
   /* ============ 模态框 ============ */
   .modal-overlay {
     @apply fixed inset-0 z-50;
-    @apply bg-black/50 backdrop-blur-sm;
+    @apply bg-ink/40 backdrop-blur-sm dark:bg-black/50;
     @apply flex items-center justify-center p-2 sm:p-4;
   }
 
   .modal-content {
     @apply w-full;
     @apply max-h-[95vh] sm:max-h-[90vh];
-    @apply bg-white dark:bg-dark-800;
-    @apply rounded-2xl shadow-2xl;
-    @apply border border-gray-200 dark:border-dark-700;
+    @apply bg-card dark:bg-dark-800;
+    @apply rounded-card shadow-overlay;
+    @apply border border-line dark:border-dark-700;
     @apply flex flex-col;
   }
 
   .modal-header {
-    @apply border-b border-gray-200 px-4 py-3 dark:border-dark-700;
-    @apply sm:px-6 sm:py-4;
+    @apply border-b border-line px-4 py-3 dark:border-dark-700;
+    @apply sm:px-5 sm:py-4;
     @apply flex items-center justify-between;
     @apply flex-shrink-0;
   }
 
   .modal-title {
-    @apply text-lg font-semibold text-gray-900 dark:text-white;
+    @apply text-lg font-semibold text-ink dark:text-white;
   }
 
   .modal-body {
     @apply px-4 py-3;
-    @apply sm:px-6 sm:py-4;
+    @apply sm:px-5 sm:py-4;
     @apply flex-1 overflow-y-auto;
   }
 
   .modal-footer {
-    @apply border-t border-gray-200 px-4 py-3 dark:border-dark-700;
-    @apply sm:px-6 sm:py-4;
+    @apply border-t border-line px-4 py-3 dark:border-dark-700;
+    @apply sm:px-5 sm:py-3;
     @apply flex items-center justify-end gap-3;
     @apply flex-shrink-0;
   }
@@ -470,64 +551,64 @@
   /* ============ Dialog ============ */
   .dialog-overlay {
     @apply fixed inset-0 z-50;
-    @apply bg-black/40 dark:bg-black/60;
+    @apply bg-ink/40 dark:bg-black/60;
     @apply flex items-center justify-center p-4;
   }
 
   .dialog-container {
     @apply flex w-full flex-col;
     @apply max-h-[90vh];
-    @apply rounded-2xl bg-white dark:bg-dark-800;
-    @apply shadow-xl;
+    @apply rounded-card bg-card dark:bg-dark-800;
+    @apply shadow-overlay;
   }
 
   .dialog-header {
-    @apply border-b border-gray-100 px-6 py-4 dark:border-dark-700;
+    @apply border-b border-line px-5 py-4 dark:border-dark-700;
     @apply flex items-center justify-between;
   }
 
   .dialog-body {
-    @apply overflow-y-auto px-6 py-4;
+    @apply overflow-y-auto px-5 py-4;
   }
 
   .dialog-footer {
-    @apply border-t border-gray-100 px-6 py-4 dark:border-dark-700;
-    @apply bg-gray-50/60 dark:bg-dark-900/40;
+    @apply border-t border-line px-5 py-3 dark:border-dark-700;
+    @apply bg-page/60 dark:bg-dark-900/40;
     @apply flex items-center justify-end gap-3;
   }
 
   /* ============ Toast 通知 ============ */
   .toast {
-    @apply fixed right-4 top-4 z-[100];
-    @apply min-w-[320px] max-w-md;
-    @apply bg-white dark:bg-dark-800;
-    @apply rounded-xl shadow-lg;
-    @apply border-l-4;
-    @apply p-4;
+    @apply fixed right-5 top-5 z-[100];
+    @apply min-w-[220px] max-w-md;
+    @apply bg-card dark:bg-dark-800;
+    @apply rounded-xl shadow-md;
+    @apply border border-line border-l-[3px] dark:border-dark-700;
+    @apply px-4 py-2.5 text-sm text-ink;
     @apply animate-slide-in-right;
   }
 
   .toast-success {
-    @apply border-l-emerald-500;
+    @apply border-l-success;
   }
 
   .toast-error {
-    @apply border-l-red-500;
+    @apply border-l-danger;
   }
 
   .toast-warning {
-    @apply border-l-amber-500;
+    @apply border-l-warning;
   }
 
   .toast-info {
-    @apply border-l-primary-500;
+    @apply border-l-info;
   }
 
   /* ============ 侧边栏 ============ */
   .sidebar {
     @apply fixed inset-y-0 left-0 z-40;
-    @apply w-64 bg-white dark:bg-dark-900;
-    @apply border-r border-gray-200 dark:border-dark-800;
+    @apply w-64 bg-card dark:bg-dark-900;
+    @apply border-r border-line dark:border-dark-800;
     @apply flex flex-col;
     @apply transition-transform duration-300;
     transition-property: width, transform;
@@ -536,7 +617,7 @@
   .sidebar-header {
     @apply h-16 px-6;
     @apply flex items-center gap-3;
-    @apply border-b border-gray-100 dark:border-dark-800;
+    @apply border-b border-line dark:border-dark-800;
     transition:
       padding 0.2s ease,
       gap 0.2s ease;
@@ -550,18 +631,25 @@
     @apply flex items-center gap-3 rounded-xl py-2.5;
     @apply overflow-hidden;
     @apply text-sm font-medium;
-    @apply text-gray-600 dark:text-dark-300;
-    @apply transition-all duration-200;
-    @apply hover:bg-gray-100 dark:hover:bg-dark-800;
-    @apply hover:text-gray-900 dark:hover:text-white;
+    @apply text-ink-soft dark:text-dark-300;
+    @apply transition duration-150 ease-out;
+    @apply hover:bg-page dark:hover:bg-dark-800;
+    @apply hover:text-ink dark:hover:text-white;
+    @apply focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-accent/25;
     padding-left: 1.0625rem;
     padding-right: 0.875rem;
   }
 
+  /* Active: brand teal soft surface + inset brand ring (class name stable for tests) */
   .sidebar-link-active {
-    @apply bg-primary-50 dark:bg-primary-900/20;
-    @apply text-primary-600 dark:text-primary-400;
-    @apply hover:bg-primary-100 dark:hover:bg-primary-900/30;
+    @apply bg-brand-50 font-semibold text-brand-700;
+    @apply dark:bg-brand-900/20 dark:text-brand-400;
+    @apply hover:bg-brand-100 dark:hover:bg-brand-900/30;
+    box-shadow: 0 2px 8px rgba(22, 49, 79, 0.06), inset 0 0 0 1px rgb(var(--c-brand) / 0.18);
+  }
+
+  .dark .sidebar-link-active {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgb(var(--c-brand) / 0.28);
   }
 
   .sidebar-section {
@@ -570,8 +658,8 @@
 
   .sidebar-section-title {
     @apply mb-2 px-3;
-    @apply text-xs font-semibold uppercase tracking-wider;
-    @apply text-gray-400 dark:text-dark-500;
+    @apply text-[11px] font-semibold uppercase tracking-[0.08em];
+    @apply text-ink-faint dark:text-dark-500;
   }
 
   /* ============ 页面头部 ============ */
@@ -580,11 +668,11 @@
   }
 
   .page-title {
-    @apply text-2xl font-bold text-gray-900 dark:text-white;
+    @apply text-2xl font-bold text-ink dark:text-white;
   }
 
   .page-description {
-    @apply mt-1 text-sm text-gray-500 dark:text-dark-400;
+    @apply mt-1 text-sm text-ink-soft dark:text-dark-400;
   }
 
   /* ============ 空状态 ============ */
@@ -595,15 +683,15 @@
 
   .empty-state-icon {
     @apply mb-4 h-16 w-16;
-    @apply text-gray-300 dark:text-dark-600;
+    @apply text-ink-faint dark:text-dark-600;
   }
 
   .empty-state-title {
-    @apply mb-1 text-lg font-medium text-gray-900 dark:text-white;
+    @apply mb-1 text-lg font-medium text-ink dark:text-white;
   }
 
   .empty-state-description {
-    @apply max-w-sm text-sm text-gray-500 dark:text-dark-400;
+    @apply max-w-sm text-sm text-ink-soft dark:text-dark-400;
   }
 
   /* ============ 加载状态 ============ */
@@ -613,58 +701,61 @@
   }
 
   .skeleton {
-    @apply animate-pulse rounded bg-gray-200 dark:bg-dark-700;
+    @apply animate-pulse rounded bg-line dark:bg-dark-700;
   }
 
   /* ============ 分隔线 ============ */
   .divider {
-    @apply my-4 h-px bg-gray-200 dark:bg-dark-700;
+    @apply my-4 h-px bg-line dark:bg-dark-700;
   }
 
   /* ============ 标签页 ============ */
+  /* Segmented control (product pattern); underline accent reserved for page chrome */
   .tabs {
     @apply flex gap-1 p-1;
-    @apply rounded-xl bg-gray-100 dark:bg-dark-800;
+    @apply rounded-control bg-page dark:bg-dark-800;
+    @apply border border-line dark:border-dark-700;
   }
 
   .tab {
-    @apply rounded-lg px-4 py-2 text-sm font-medium;
-    @apply text-gray-600 dark:text-dark-400;
-    @apply transition-all duration-200;
-    @apply hover:text-gray-900 dark:hover:text-white;
+    @apply rounded-control px-4 py-2 text-sm font-medium;
+    @apply text-ink-soft dark:text-dark-400;
+    @apply transition duration-150 ease-out;
+    @apply hover:text-ink dark:hover:text-white;
+    @apply focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-accent/25;
   }
 
   .tab-active {
-    @apply bg-white dark:bg-dark-700;
-    @apply text-gray-900 dark:text-white;
-    @apply shadow-sm;
+    @apply bg-card dark:bg-dark-700;
+    @apply text-ink dark:text-white;
+    @apply shadow-xs font-semibold;
   }
 
   /* ============ 进度条 ============ */
   .progress {
-    @apply h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700;
+    @apply h-2 overflow-hidden rounded-full bg-line dark:bg-dark-700;
   }
 
   .progress-bar {
-    @apply h-full bg-gradient-to-r from-primary-500 to-primary-400;
+    @apply h-full bg-brand-gradient;
     @apply transition-all duration-300;
   }
 
   /* ============ 开关 ============ */
   .switch {
     @apply relative h-6 w-11 cursor-pointer rounded-full;
-    @apply bg-gray-300 dark:bg-dark-600;
-    @apply transition-colors duration-200;
+    @apply bg-ink-faint/40 dark:bg-dark-600;
+    @apply transition-colors duration-150;
   }
 
   .switch-active {
-    @apply bg-primary-500;
+    @apply bg-brand-500;
   }
 
   .switch-thumb {
     @apply absolute left-0.5 top-0.5 h-5 w-5 rounded-full;
-    @apply bg-white shadow-sm;
-    @apply transition-transform duration-200;
+    @apply bg-white shadow-xs;
+    @apply transition-transform duration-150;
   }
 
   .switch-active .switch-thumb {
@@ -674,20 +765,21 @@
   /* ============ 代码块 ============ */
   .code {
     @apply font-mono text-sm;
-    @apply bg-gray-100 dark:bg-dark-800;
+    @apply bg-page dark:bg-dark-800;
     @apply rounded px-1.5 py-0.5;
-    @apply text-primary-600 dark:text-primary-400;
+    @apply text-brand-600 dark:text-brand-400;
   }
 
   .code-block {
     @apply font-mono text-sm;
-    @apply bg-gray-900 text-gray-100;
-    @apply overflow-x-auto rounded-xl p-4;
+    @apply overflow-x-auto rounded-card p-4;
+    background: rgb(var(--code-bg));
+    color: rgb(var(--code-fg));
   }
 
   /* ============ Tour Description ============ */
   .tour-step-description {
-    @apply space-y-3 text-sm leading-relaxed text-gray-700 dark:text-gray-200;
+    @apply space-y-3 text-sm leading-relaxed text-gray-700 dark:text-ink;
   }
 
   .tour-step-description ul {
@@ -736,8 +828,9 @@
 
 @layer utilities {
   /* 文字渐变 */
+  /* Brand gradient text (teal → cyan/blue endpoints) */
   .text-gradient {
-    @apply bg-gradient-to-r from-primary-500 to-accent-500 bg-clip-text text-transparent;
+    @apply bg-brand-gradient bg-clip-text text-transparent;
   }
 
   /* 玻璃效果 */

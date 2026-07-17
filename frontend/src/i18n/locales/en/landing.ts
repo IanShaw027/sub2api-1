@@ -3,7 +3,7 @@ export default {
     title: 'Batch Image Generation',
     description: 'Submit multiple prompts in one job and download the generated images when complete'
   },
-  // Home Page
+  // Home Page — Clomio API Platform landing
   home: {
     viewOnGithub: 'View on GitHub',
     viewDocs: 'View Documentation',
@@ -14,15 +14,66 @@ export default {
     login: 'Login',
     getStarted: 'Get Started',
     goToDashboard: 'Go to Dashboard',
-    // User-focused value proposition
-    heroSubtitle: 'One Key, All AI Models',
-    heroDescription: 'No need to manage multiple subscriptions. Access Claude, GPT, Gemini and more with a single API key',
+    // Hero
+    eyebrow: 'AI API Platform',
+    heroTitle: 'One key. Unified billing. Production-ready AI API',
+    heroSubtitle: 'One key for every model you need',
+    heroDescription:
+      'A unified gateway for multi-model, multi-channel AI access. One key, transparent usage and billing — first call in minutes.',
+    // Code card
+    codeCard: {
+      languages: 'Example languages',
+      copy: 'Copy',
+      copied: 'Copied',
+      hint: 'Point base_url at this platform and use your API key'
+    },
+    // Trust strip (facts, not fake logos)
+    trust: {
+      billing: 'Unified billing',
+      billingDesc: 'Balance and subscriptions in one place',
+      keys: 'Key management',
+      keysDesc: 'Create, revoke, and wire endpoints',
+      usage: 'Transparent usage',
+      usageDesc: 'Requests and cost in near real time',
+      routing: 'Channel routing',
+      routingDesc: 'Multi-model routing and failover'
+    },
+    // Capability cards → real modules
+    capabilities: {
+      title: 'Platform capabilities',
+      subtitle: 'Mapped to real gateway, keys, usage, and billing modules',
+      gateway: 'Unified API gateway',
+      gatewayDesc:
+        'Account pools and channel routing with OpenAI-compatible access to major models.',
+      apiKeys: 'API keys & access',
+      apiKeysDesc: 'Create keys, configure endpoints, and drop them into clients or SDKs.',
+      usageBilling: 'Usage & cost visibility',
+      usageBillingDesc: 'Track usage by request, model, and time — balance and invoices stay clear.',
+      subscriptions: 'Subscriptions & top-up',
+      subscriptionsDesc: 'Plans, online top-up, and order management to scale capacity on demand.',
+      reliability: 'Reliability & channel health',
+      reliabilityDesc: 'Channel health monitoring with automatic failover for continuous calls.',
+      support: 'Tickets & affiliate',
+      supportDesc: 'Support tickets for issues, affiliate rebates for growth — built for teams.'
+    },
+    // How it works
+    howItWorks: {
+      title: 'How it works',
+      subtitle: 'Three steps to your first successful call',
+      step1Title: 'Create an account',
+      step1Desc: 'Register and open the console — ready in minutes.',
+      step2Title: 'Create an API key',
+      step2Desc: 'Generate a key in the keys page and store the one-time full secret safely.',
+      step3Title: 'Call with base_url',
+      step3Desc:
+        'Point your client base_url at this platform and use OpenAI-compatible endpoints.'
+    },
+    // Legacy keys retained for other views / compatibility
     tags: {
       subscriptionToApi: 'Subscription to API',
       stickySession: 'Session Persistence',
       realtimeBilling: 'Pay As You Go'
     },
-    // Pain points section
     painPoints: {
       title: 'Sound Familiar?',
       items: {
@@ -44,20 +95,20 @@ export default {
         }
       }
     },
-    // Solutions section
     solutions: {
       title: 'We Solve These Problems',
       subtitle: 'Three simple steps to stress-free AI access'
     },
     features: {
       unifiedGateway: 'One-Click Access',
-      unifiedGatewayDesc: 'Get a single API key to call all connected AI models. No separate applications needed.',
+      unifiedGatewayDesc:
+        'Get a single API key to call all connected AI models. No separate applications needed.',
       multiAccount: 'Always Reliable',
-      multiAccountDesc: 'Smart routing across multiple upstream accounts with automatic failover. Say goodbye to errors.',
+      multiAccountDesc:
+        'Smart routing across multiple upstream accounts with automatic failover. Say goodbye to errors.',
       balanceQuota: 'Pay What You Use',
       balanceQuotaDesc: 'Usage-based billing with quota limits. Full visibility into team consumption.'
     },
-    // Comparison section
     comparison: {
       title: 'Why Choose Us?',
       headers: {
@@ -103,10 +154,9 @@ export default {
       antigravity: 'Antigravity',
       more: 'More'
     },
-    // CTA section
     cta: {
       title: 'Ready to Get Started?',
-      description: 'Sign up now and get free trial credits to experience seamless AI access',
+      description: 'Sign up and start using the unified AI API platform',
       button: 'Sign Up Free'
     },
     footer: {
@@ -191,8 +241,8 @@ export default {
 
   // Setup Wizard
   setup: {
-    title: 'Sub2API Setup',
-    description: 'Configure your Sub2API instance',
+    title: 'Clomio Setup',
+    description: 'Configure your Clomio instance',
     database: {
       title: 'Database Configuration',
       description: 'Connect to your PostgreSQL database',

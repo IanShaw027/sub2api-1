@@ -8,18 +8,66 @@ export default {
     switchToDark: '切换到深色模式',
     dashboard: '控制台',
     login: '登录',
-    getStarted: '立即开始',
+    getStarted: '开始使用',
     goToDashboard: '进入控制台',
-    siteSubtitleFallback: '统一 AI 网关',
-    // 新增：面向用户的价值主张
-    heroSubtitle: '一个密钥，畅用多个 AI 模型',
-    heroDescription: '无需管理多个订阅账号，一站式接入 Claude、GPT、Gemini 等主流 AI 服务',
+    // Hero
+    eyebrow: 'AI API Platform',
+    heroTitle: '用一套 Key 调用全球 AI 能力',
+    heroSubtitle: '一个密钥，统一计费，生产级 AI API',
+    heroDescription:
+      '统一网关接入多模型与多渠道。一套 Key、透明用量与计费，几分钟即可完成第一次调用。',
+    // Code card
+    codeCard: {
+      languages: '示例语言',
+      copy: '复制',
+      copied: '已复制',
+      hint: '将 base_url 指向本平台，使用你的 API Key 即可'
+    },
+    // Trust strip (facts, not fake logos)
+    trust: {
+      billing: '统一计费',
+      billingDesc: '余额与订阅一体管理',
+      keys: '密钥管理',
+      keysDesc: '创建、吊销、按端点接入',
+      usage: '用量透明',
+      usageDesc: '请求与成本实时可见',
+      routing: '渠道调度',
+      routingDesc: '多模型智能路由与容灾'
+    },
+    // Capability cards → real modules
+    capabilities: {
+      title: '平台能力',
+      subtitle: '覆盖接入、治理与商业闭环的真实模块',
+      gateway: '统一 API 网关',
+      gatewayDesc: '多账号池与渠道路由，OpenAI 兼容协议一站接入主流模型。',
+      apiKeys: 'API Key 与接入',
+      apiKeysDesc: '创建密钥、配置端点与权限，复制即可在客户端或 SDK 中使用。',
+      usageBilling: '用量与成本可见',
+      usageBillingDesc: '按请求、模型与时间维度查看用量，余额与账单清晰可追溯。',
+      subscriptions: '订阅与充值',
+      subscriptionsDesc: '订阅计划、在线充值与订单管理，按需扩展额度。',
+      reliability: '稳定性与渠道状态',
+      reliabilityDesc: '渠道健康与可用性监测，异常自动切换，保障调用连续。',
+      support: '工单与推广支持',
+      supportDesc: '工单沟通问题，推广返佣扩展业务，团队协作更省心。'
+    },
+    // How it works
+    howItWorks: {
+      title: '如何开始',
+      subtitle: '三步完成第一次成功调用',
+      step1Title: '注册账号',
+      step1Desc: '创建账户并登录控制台，几分钟完成开通。',
+      step2Title: '创建 API Key',
+      step2Desc: '在密钥页生成 Key，妥善保存一次性完整密钥。',
+      step3Title: '配置 base_url 调用',
+      step3Desc: '将客户端 base_url 指向本平台，使用 OpenAI 兼容接口发起请求。'
+    },
+    // Legacy keys retained for other views / compatibility
     tags: {
       subscriptionToApi: '订阅转 API',
       stickySession: '会话保持',
       realtimeBilling: '按量计费'
     },
-    // 用户痛点区块
     painPoints: {
       title: '你是否也遇到这些问题？',
       items: {
@@ -41,7 +89,6 @@ export default {
         }
       }
     },
-    // 解决方案区块
     solutions: {
       title: '我们帮你解决',
       subtitle: '简单三步，开始省心使用 AI'
@@ -54,7 +101,6 @@ export default {
       balanceQuota: '用多少付多少',
       balanceQuotaDesc: '按实际使用量计费，支持设置配额上限，团队用量一目了然。'
     },
-    // 优势对比
     comparison: {
       title: '为什么选择我们？',
       headers: {
@@ -100,10 +146,9 @@ export default {
       antigravity: 'Antigravity',
       more: '更多'
     },
-    // CTA 区块
     cta: {
       title: '准备好开始了吗？',
-      description: '注册即可获得免费试用额度，体验一站式 AI 服务',
+      description: '注册即可开始使用统一 AI API 平台',
       button: '免费注册'
     },
     footer: {
@@ -188,8 +233,8 @@ export default {
 
   // Setup Wizard
   setup: {
-    title: 'Sub2API 安装向导',
-    description: '配置您的 Sub2API 实例',
+    title: 'Clomio 安装向导',
+    description: '配置您的 Clomio 实例',
     database: {
       title: '数据库配置',
       description: '连接到您的 PostgreSQL 数据库',
@@ -1050,6 +1095,10 @@ export default {
   // Auth
   auth: {
     welcomeBack: '欢迎回来',
+    brandHeadline: '稳定可靠的 API 网关',
+    brandChipKeys: 'API 密钥',
+    brandChipBilling: '统一计费',
+    brandChipChannels: '多渠道路由',
     signInToAccount: '登录您的账户以继续',
     signIn: '登录',
     signingIn: '登录中...',
@@ -1423,7 +1472,7 @@ export default {
       },
       grok: {
         description:
-          '为 Sub2API Grok 分组配置客户端接入。请在下方选择 Grok CLI、Codex CLI、Claude Code 或 OpenCode。',
+          '为 Clomio Grok 分组配置客户端接入。请在下方选择 Grok CLI、Codex CLI、Claude Code 或 OpenCode。',
         note:
           '将环境变量写入当前终端（或 shell profile），并把 config.toml 保存为 ~/.grok/config.toml。然后运行 grok inspect 验证，再在 /model 中选择 grok-4.5 等模型。',
         noteWindows:
@@ -1437,7 +1486,7 @@ export default {
         codexDescription:
           '将 Codex CLI 指向本 Grok 分组的 OpenAI 兼容 Responses 接口。默认模型为 grok-4.5，可在 config.toml 中改为任意 grok-*。',
         codexNote:
-          'Grok 上游为 HTTP/SSE，建议保持 supports_websockets = false（若开启，Sub2API 会将 WS 桥接为 HTTP）。如 ~/.codex 不存在请先创建。',
+          'Grok 上游为 HTTP/SSE，建议保持 supports_websockets = false（若开启，Clomio 会将 WS 桥接为 HTTP）。如 ~/.codex 不存在请先创建。',
         codexConfigHint: '推荐复制到 ~/.codex/config.toml。可按需将 model 改为任意 grok-*。'
       },
       opencode: {
@@ -4104,7 +4153,7 @@ export default {
       dataImportErrors: '失败详情',
       dataImportSuccess: '导入完成：账号创建 {account_created}，更新 {account_updated}，跳过 {account_skipped}，失败 {account_failed}',
       dataImportCompletedWithErrors: '导入完成但有错误：账号失败 {account_failed}，代理失败 {proxy_failed}',
-      dataImportArchiveSummary: '压缩包格式: {format} | 总文件: {total} | Codex: {codex} | Sub2API: {sub2api} | 未识别: {unknown}',
+      dataImportArchiveSummary: '压缩包格式: {format} | 总文件: {total} | Codex: {codex} | Clomio: {sub2api} | 未识别: {unknown}',
       dataImportArchiveCodexSummary: 'Codex 账号: 创建 {created}，更新 {updated}，跳过 {skipped}，失败 {failed}',
       dataImportArchiveParseErrors: '解析错误',
       dataImportArchiveSuccess: '压缩包导入完成：共创建 {created} 个账号（格式: {format}）',
@@ -7284,7 +7333,7 @@ export default {
       },
       linuxdo: {
         title: 'LinuxDo Connect 登录',
-        description: '配置 LinuxDo Connect OAuth，用于 Sub2API 用户登录',
+        description: '配置 LinuxDo Connect OAuth，用于 Clomio 用户登录',
         enable: '启用 LinuxDo 登录',
         enableHint: '在登录/注册页面显示 LinuxDo 登录入口',
         clientId: 'Client ID',
@@ -7541,7 +7590,7 @@ export default {
           '禁用用户注册、公开页面和自助服务功能。仅管理员可以登录和管理平台。',
         siteName: '站点名称',
         siteNameHint: '显示在邮件和页面标题中',
-        siteNamePlaceholder: 'Sub2API',
+        siteNamePlaceholder: 'Clomio',
         siteSubtitle: '站点副标题',
         siteSubtitleHint: '显示在登录和注册页面',
         siteSubtitlePlaceholder: '订阅转 API 转换平台',
@@ -7586,10 +7635,11 @@ export default {
         logoTypeError: '请选择图片文件',
         logoReadError: '读取图片文件失败',
         homeContent: '首页内容',
+        homeContentDeprecated: '已弃用',
         homeContentPlaceholder:
           '在此输入首页内容，支持 Markdown & HTML 代码。如果输入的是一个链接，则会使用该链接作为 iframe 的 src 属性。',
         homeContentHint:
-          '自定义首页内容，支持 Markdown/HTML。如果输入的是链接（以 http:// 或 https:// 开头），则会使用该链接作为 iframe 的 src 属性，这允许你设置任意网页作为首页。设置后首页的状态信息将不再显示。',
+          '自定义首页内容，支持 Markdown/HTML。如果输入的是链接（以 http:// 或 https:// 开头），则会使用该链接作为 iframe 的 src 属性，这允许你设置任意网页作为首页。设置后首页的状态信息将不再显示。注意：首页现已使用原生 Vue 落地页，此字段将被忽略。',
         homeContentIframeWarning:
           '⚠️ iframe 模式提示：部分网站设置了 X-Frame-Options 或 CSP 安全策略，禁止被嵌入到 iframe 中。如果页面显示空白或报错，请确认目标网站允许被嵌入，或考虑使用 HTML 模式自行构建页面内容。',
         hideCcsImportButton: '隐藏 CCS 导入按钮',
@@ -7832,7 +7882,7 @@ export default {
         fromEmail: '发件人邮箱',
         fromEmailPlaceholder: "noreply{'@'}example.com",
         fromName: '发件人名称',
-        fromNamePlaceholder: 'Sub2API',
+        fromNamePlaceholder: 'Clomio',
         useTls: '使用 TLS',
         useTlsHint: '为 SMTP 连接启用 TLS 加密'
       },
@@ -8122,7 +8172,7 @@ export default {
         scopeAPIKey: '仅 API Key 账号',
         scopeBedrock: '仅 Bedrock 账号',
         userIds: '指定用户',
-        userIdsHint: '输入任意邮箱关键词进行模糊搜索。留空表示对全部 Sub2API 用户生效；选中用户的 API Key 请求优先匹配用户规则。',
+        userIdsHint: '输入任意邮箱关键词进行模糊搜索。留空表示对全部 Clomio 用户生效；选中用户的 API Key 请求优先匹配用户规则。',
         userSearchPlaceholder: '输入用户邮箱搜索',
         userSearchEmpty: '未找到匹配用户',
         userDeleted: '（已删除）',
@@ -8664,16 +8714,16 @@ export default {
     // Admin tour steps
     admin: {
       welcome: {
-        title: '👋 欢迎使用 Sub2API',
+        title: '👋 欢迎使用 Clomio',
         description:
-          '<div style="line-height: 1.8;"><p style="margin-bottom: 16px;">Sub2API 是一个强大的 AI 服务中转平台，让您轻松管理和分发 AI 服务。</p><p style="margin-bottom: 12px;"><b>🎯 核心功能：</b></p><ul style="margin-left: 20px; margin-bottom: 16px;"><li>📦 <b>分组管理</b> - 创建不同的服务套餐（VIP、免费试用等）</li><li>🔗 <b>账号池</b> - 连接多个上游 AI 服务商账号</li><li>🔑 <b>密钥分发</b> - 为用户生成独立的 API Key</li><li>💰 <b>计费管理</b> - 灵活的费率和配额控制</li></ul><p style="color: #10b981; font-weight: 600;">接下来，我们将用 3 分钟带您完成首次配置 →</p></div>',
+          '<div style="line-height: 1.8;"><p style="margin-bottom: 16px;">Clomio 是一个强大的 AI 服务中转平台，让您轻松管理和分发 AI 服务。</p><p style="margin-bottom: 12px;"><b>🎯 核心功能：</b></p><ul style="margin-left: 20px; margin-bottom: 16px;"><li>📦 <b>分组管理</b> - 创建不同的服务套餐（VIP、免费试用等）</li><li>🔗 <b>账号池</b> - 连接多个上游 AI 服务商账号</li><li>🔑 <b>密钥分发</b> - 为用户生成独立的 API Key</li><li>💰 <b>计费管理</b> - 灵活的费率和配额控制</li></ul><p style="color: #10b981; font-weight: 600;">接下来，我们将用 3 分钟带您完成首次配置 →</p></div>',
         nextBtn: '开始配置 🚀',
         prevBtn: '跳过'
       },
       groupManage: {
         title: '📦 第一步：分组管理',
         description:
-          '<div style="line-height: 1.7;"><p style="margin-bottom: 12px;"><b>什么是分组？</b></p><p style="margin-bottom: 12px;">分组是 Sub2API 的核心概念，它就像一个"服务套餐"：</p><ul style="margin-left: 20px; margin-bottom: 12px; font-size: 13px;"><li>🎯 每个分组可以包含多个上游账号</li><li>💰 每个分组有独立的计费倍率</li><li>👥 可以设置为公开或专属分组</li></ul><p style="margin-top: 12px; padding: 8px 12px; background: #f0fdf4; border-left: 3px solid #10b981; border-radius: 4px; font-size: 13px;"><b>💡 示例：</b>您可以创建"VIP专线"（高倍率）和"免费试用"（低倍率）两个分组</p><p style="margin-top: 16px; color: #10b981; font-weight: 600;">👉 点击左侧的"分组管理"开始</p></div>'
+          '<div style="line-height: 1.7;"><p style="margin-bottom: 12px;"><b>什么是分组？</b></p><p style="margin-bottom: 12px;">分组是 Clomio 的核心概念，它就像一个"服务套餐"：</p><ul style="margin-left: 20px; margin-bottom: 12px; font-size: 13px;"><li>🎯 每个分组可以包含多个上游账号</li><li>💰 每个分组有独立的计费倍率</li><li>👥 可以设置为公开或专属分组</li></ul><p style="margin-top: 12px; padding: 8px 12px; background: #f0fdf4; border-left: 3px solid #10b981; border-radius: 4px; font-size: 13px;"><b>💡 示例：</b>您可以创建"VIP专线"（高倍率）和"免费试用"（低倍率）两个分组</p><p style="margin-top: 16px; color: #10b981; font-weight: 600;">👉 点击左侧的"分组管理"开始</p></div>'
       },
       createGroup: {
         title: '➕ 创建新分组',
@@ -8785,9 +8835,9 @@ export default {
     // User tour steps
     user: {
       welcome: {
-        title: '👋 欢迎使用 Sub2API',
+        title: '👋 欢迎使用 Clomio',
         description:
-          '<div style="line-height: 1.8;"><p style="margin-bottom: 16px;">您好！欢迎来到 Sub2API AI 服务平台。</p><p style="margin-bottom: 12px;"><b>🎯 快速开始：</b></p><ul style="margin-left: 20px; margin-bottom: 16px;"><li>🔑 创建 API 密钥</li><li>📋 复制密钥到您的应用</li><li>🚀 开始使用 AI 服务</li></ul><p style="color: #10b981; font-weight: 600;">只需 1 分钟，让我们开始吧 →</p></div>',
+          '<div style="line-height: 1.8;"><p style="margin-bottom: 16px;">您好！欢迎来到 Clomio AI 服务平台。</p><p style="margin-bottom: 12px;"><b>🎯 快速开始：</b></p><ul style="margin-left: 20px; margin-bottom: 16px;"><li>🔑 创建 API 密钥</li><li>📋 复制密钥到您的应用</li><li>🚀 开始使用 AI 服务</li></ul><p style="color: #10b981; font-weight: 600;">只需 1 分钟，让我们开始吧 →</p></div>',
         nextBtn: '开始 🚀',
         prevBtn: '跳过'
       },
@@ -9046,6 +9096,7 @@ export default {
     selectPlan: '选择套餐',
     planFeatures: '功能特性',
     planCard: {
+      recommended: '推荐',
       rate: '倍率',
       peakRate: '高峰倍率',
       dailyLimit: '日限额',

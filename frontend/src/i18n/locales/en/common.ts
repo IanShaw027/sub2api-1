@@ -202,6 +202,10 @@ export default {
   // Auth
   auth: {
     welcomeBack: 'Welcome Back',
+    brandHeadline: 'Stable, production-ready API gateway',
+    brandChipKeys: 'API Keys',
+    brandChipBilling: 'Unified billing',
+    brandChipChannels: 'Multi-channel routing',
     signInToAccount: 'Sign in to your account to continue',
     signIn: 'Sign In',
     signingIn: 'Signing in...',

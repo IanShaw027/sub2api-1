@@ -10,16 +10,66 @@ export default {
     login: 'Login',
     getStarted: 'Get Started',
     goToDashboard: 'Go to Dashboard',
-    siteSubtitleFallback: 'Unified AI Gateway',
-    // User-focused value proposition
-    heroSubtitle: 'One Key, All AI Models',
-    heroDescription: 'No need to manage multiple subscriptions. Access Claude, GPT, Gemini and more with a single API key',
+    // Hero
+    eyebrow: 'AI API Platform',
+    heroTitle: 'One key. Unified billing. Production-ready AI API',
+    heroSubtitle: 'One key for every model you need',
+    heroDescription:
+      'A unified gateway for multi-model, multi-channel AI access. One key, transparent usage and billing — first call in minutes.',
+    // Code card
+    codeCard: {
+      languages: 'Example languages',
+      copy: 'Copy',
+      copied: 'Copied',
+      hint: 'Point base_url at this platform and use your API key'
+    },
+    // Trust strip (facts, not fake logos)
+    trust: {
+      billing: 'Unified billing',
+      billingDesc: 'Balance and subscriptions in one place',
+      keys: 'Key management',
+      keysDesc: 'Create, revoke, and wire endpoints',
+      usage: 'Transparent usage',
+      usageDesc: 'Requests and cost in near real time',
+      routing: 'Channel routing',
+      routingDesc: 'Multi-model routing and failover'
+    },
+    // Capability cards → real modules
+    capabilities: {
+      title: 'Platform capabilities',
+      subtitle: 'Mapped to real gateway, keys, usage, and billing modules',
+      gateway: 'Unified API gateway',
+      gatewayDesc:
+        'Account pools and channel routing with OpenAI-compatible access to major models.',
+      apiKeys: 'API keys & access',
+      apiKeysDesc: 'Create keys, configure endpoints, and drop them into clients or SDKs.',
+      usageBilling: 'Usage & cost visibility',
+      usageBillingDesc: 'Track usage by request, model, and time — balance and invoices stay clear.',
+      subscriptions: 'Subscriptions & top-up',
+      subscriptionsDesc: 'Plans, online top-up, and order management to scale capacity on demand.',
+      reliability: 'Reliability & channel health',
+      reliabilityDesc: 'Channel health monitoring with automatic failover for continuous calls.',
+      support: 'Tickets & affiliate',
+      supportDesc: 'Support tickets for issues, affiliate rebates for growth — built for teams.'
+    },
+    // How it works
+    howItWorks: {
+      title: 'How it works',
+      subtitle: 'Three steps to your first successful call',
+      step1Title: 'Create an account',
+      step1Desc: 'Register and open the console — ready in minutes.',
+      step2Title: 'Create an API key',
+      step2Desc: 'Generate a key in the keys page and store the one-time full secret safely.',
+      step3Title: 'Call with base_url',
+      step3Desc:
+        'Point your client base_url at this platform and use OpenAI-compatible endpoints.'
+    },
+    // Legacy keys retained for other views / compatibility
     tags: {
       subscriptionToApi: 'Subscription to API',
       stickySession: 'Session Persistence',
       realtimeBilling: 'Pay As You Go'
     },
-    // Pain points section
     painPoints: {
       title: 'Sound Familiar?',
       items: {
@@ -41,20 +91,20 @@ export default {
         }
       }
     },
-    // Solutions section
     solutions: {
       title: 'We Solve These Problems',
       subtitle: 'Three simple steps to stress-free AI access'
     },
     features: {
       unifiedGateway: 'One-Click Access',
-      unifiedGatewayDesc: 'Get a single API key to call all connected AI models. No separate applications needed.',
+      unifiedGatewayDesc:
+        'Get a single API key to call all connected AI models. No separate applications needed.',
       multiAccount: 'Always Reliable',
-      multiAccountDesc: 'Smart routing across multiple upstream accounts with automatic failover. Say goodbye to errors.',
+      multiAccountDesc:
+        'Smart routing across multiple upstream accounts with automatic failover. Say goodbye to errors.',
       balanceQuota: 'Pay What You Use',
       balanceQuotaDesc: 'Usage-based billing with quota limits. Full visibility into team consumption.'
     },
-    // Comparison section
     comparison: {
       title: 'Why Choose Us?',
       headers: {
@@ -100,10 +150,9 @@ export default {
       antigravity: 'Antigravity',
       more: 'More'
     },
-    // CTA section
     cta: {
       title: 'Ready to Get Started?',
-      description: 'Sign up now and get free trial credits to experience seamless AI access',
+      description: 'Sign up and start using the unified AI API platform',
       button: 'Sign Up Free'
     },
     footer: {
@@ -188,8 +237,8 @@ export default {
 
   // Setup Wizard
   setup: {
-    title: 'Sub2API Setup',
-    description: 'Configure your Sub2API instance',
+    title: 'Clomio Setup',
+    description: 'Configure your Clomio instance',
     database: {
       title: 'Database Configuration',
       description: 'Connect to your PostgreSQL database',
@@ -1056,6 +1105,10 @@ export default {
   // Auth
   auth: {
     welcomeBack: 'Welcome Back',
+    brandHeadline: 'Stable, production-ready API gateway',
+    brandChipKeys: 'API Keys',
+    brandChipBilling: 'Unified billing',
+    brandChipChannels: 'Multi-channel routing',
     signInToAccount: 'Sign in to your account to continue',
     signIn: 'Sign In',
     signingIn: 'Signing in...',
@@ -1427,7 +1480,7 @@ export default {
         note: 'These environment variables will be active in the current terminal session. For permanent configuration, add them to ~/.bashrc, ~/.zshrc, or the appropriate configuration file.',
       },
       grok: {
-        description: 'Configure Sub2API Grok group access. Use Grok CLI, Codex CLI, Claude Code, or OpenCode tabs below.',
+        description: 'Configure Clomio Grok group access. Use Grok CLI, Codex CLI, Claude Code, or OpenCode tabs below.',
         note:
           'Export the environment variables in your terminal (or shell profile), save config.toml as ~/.grok/config.toml, then run grok inspect and pick grok-4.5 (or another grok-* model) from /model.',
         noteWindows:
@@ -1437,7 +1490,7 @@ export default {
         claudeDescription: 'Configure Claude Code to use this Grok group via the Anthropic-compatible /v1/messages endpoint. Defaults to grok-4.5; set ANTHROPIC_MODEL to any grok-* id to override without server remapping.',
         claudeNote: 'Claude model names (claude-sonnet/opus/haiku) are mapped to grok-4.5 server-side. Native grok-* models pass through unchanged. These env vars apply to the current terminal session unless saved to your profile.',
         codexDescription: 'Configure Codex CLI to use this Grok group via OpenAI-compatible Responses. Default model is grok-4.5; you can set any grok-* model in config.toml.',
-        codexNote: 'Grok upstream is HTTP/SSE. Keep supports_websockets = false (Sub2API bridges WS to HTTP if enabled). Create ~/.codex if it does not exist.',
+        codexNote: 'Grok upstream is HTTP/SSE. Keep supports_websockets = false (Clomio bridges WS to HTTP if enabled). Create ~/.codex if it does not exist.',
         codexConfigHint: 'Recommended: copy into ~/.codex/config.toml. Change model to any grok-* id as needed.',
       },
       opencode: {
@@ -4035,7 +4088,7 @@ export default {
       dataImportErrors: 'Error Details',
       dataImportSuccess: 'Import completed: accounts created {account_created}, updated {account_updated}, skipped {account_skipped}, failed {account_failed}',
       dataImportCompletedWithErrors: 'Import completed with errors: account failed {account_failed}, proxy failed {proxy_failed}',
-      dataImportArchiveSummary: 'Archive format: {format} | Total files: {total} | Codex: {codex} | Sub2API: {sub2api} | Unknown: {unknown}',
+      dataImportArchiveSummary: 'Archive format: {format} | Total files: {total} | Codex: {codex} | Clomio: {sub2api} | Unknown: {unknown}',
       dataImportArchiveCodexSummary: 'Codex accounts: created {created}, updated {updated}, skipped {skipped}, failed {failed}',
       dataImportArchiveParseErrors: 'Parse Errors',
       dataImportArchiveSuccess: 'Archive import completed: {created} accounts created (format: {format})',
@@ -7125,7 +7178,7 @@ export default {
         secretKeyConfiguredHint: 'Secret key configured. Leave empty to keep the current value.'      },
       linuxdo: {
         title: 'LinuxDo Connect Login',
-        description: 'Configure LinuxDo Connect OAuth for Sub2API end-user login',
+        description: 'Configure LinuxDo Connect OAuth for Clomio end-user login',
         enable: 'Enable LinuxDo Login',
         enableHint: 'Show LinuxDo login on the login/register pages',
         clientId: 'Client ID',
@@ -7386,7 +7439,7 @@ export default {
         backendModeDescription:
           'Disables user registration, public site, and self-service features. Only admin can log in and manage the platform.',
         siteName: 'Site Name',
-        siteNamePlaceholder: 'Sub2API',
+        siteNamePlaceholder: 'Clomio',
         siteNameHint: 'Displayed in emails and page titles',
         siteSubtitle: 'Site Subtitle',
         siteSubtitlePlaceholder: 'Subscription to API Conversion Platform',
@@ -7433,8 +7486,9 @@ export default {
         logoTypeError: 'Please select an image file',
         logoReadError: 'Failed to read the image file',
         homeContent: 'Home Page Content',
+        homeContentDeprecated: 'Deprecated',
         homeContentPlaceholder: 'Enter custom content for the home page. Supports Markdown & HTML. If a URL is entered, it will be displayed as an iframe.',
-        homeContentHint: 'Customize the home page content. Supports Markdown/HTML. If you enter a URL (starting with http:// or https://), it will be used as an iframe src to embed an external page. When set, the default status information will no longer be displayed.',
+        homeContentHint: 'Customize the home page content. Supports Markdown/HTML. If you enter a URL (starting with http:// or https://), it will be used as an iframe src to embed an external page. When set, the default status information will no longer be displayed. Note: the landing page is now native Vue and ignores this field.',
         homeContentIframeWarning: '⚠️ iframe mode note: Some websites have X-Frame-Options or CSP security policies that prevent embedding in iframes. If the page appears blank or shows an error, please verify the target website allows embedding, or consider using HTML mode to build your own content.',
         hideCcsImportButton: 'Hide CCS Import Button',
         hideCcsImportButtonHint: 'When enabled, the "Import to CCS" button will be hidden on the API Keys page'
@@ -7676,7 +7730,7 @@ export default {
         fromEmail: 'From Email',
         fromEmailPlaceholder: "noreply{'@'}example.com",
         fromName: 'From Name',
-        fromNamePlaceholder: 'Sub2API',
+        fromNamePlaceholder: 'Clomio',
         useTls: 'Use TLS',
         useTlsHint: 'Enable TLS encryption for SMTP connection'
       },
@@ -7967,7 +8021,7 @@ export default {
         scopeAPIKey: 'API Key only',
         scopeBedrock: 'Bedrock only',
         userIds: 'Specific users',
-        userIdsHint: 'Type any part of a user email to search. Leave empty to apply to all Sub2API users. Selected users match requests from their API keys and take precedence over global rules.',
+        userIdsHint: 'Type any part of a user email to search. Leave empty to apply to all Clomio users. Selected users match requests from their API keys and take precedence over global rules.',
         userSearchPlaceholder: 'Search by user email',
         userSearchEmpty: 'No matching users found',
         userDeleted: '(deleted)',
@@ -8511,14 +8565,14 @@ export default {
     // Admin tour steps
     admin: {
       welcome: {
-        title: '👋 Welcome to Sub2API',
-        description: '<div style="line-height: 1.8;"><p style="margin-bottom: 16px;">Sub2API is a powerful AI service gateway platform that helps you easily manage and distribute AI services.</p><p style="margin-bottom: 12px;"><b>🎯 Core Features:</b></p><ul style="margin-left: 20px; margin-bottom: 16px;"><li>📦 <b>Group Management</b> - Create service tiers (VIP, Free Trial, etc.)</li><li>🔗 <b>Account Pool</b> - Connect multiple upstream AI service accounts</li><li>🔑 <b>Key Distribution</b> - Generate independent API Keys for users</li><li>💰 <b>Billing Control</b> - Flexible rate and quota management</li></ul><p style="color: #10b981; font-weight: 600;">Let\'s complete the initial setup in 3 minutes →</p></div>',
+        title: '👋 Welcome to Clomio',
+        description: '<div style="line-height: 1.8;"><p style="margin-bottom: 16px;">Clomio is a powerful AI service gateway platform that helps you easily manage and distribute AI services.</p><p style="margin-bottom: 12px;"><b>🎯 Core Features:</b></p><ul style="margin-left: 20px; margin-bottom: 16px;"><li>📦 <b>Group Management</b> - Create service tiers (VIP, Free Trial, etc.)</li><li>🔗 <b>Account Pool</b> - Connect multiple upstream AI service accounts</li><li>🔑 <b>Key Distribution</b> - Generate independent API Keys for users</li><li>💰 <b>Billing Control</b> - Flexible rate and quota management</li></ul><p style="color: #10b981; font-weight: 600;">Let\'s complete the initial setup in 3 minutes →</p></div>',
         nextBtn: 'Start Setup 🚀',
         prevBtn: 'Skip'
       },
       groupManage: {
         title: '📦 Step 1: Group Management',
-        description: '<div style="line-height: 1.7;"><p style="margin-bottom: 12px;"><b>What is a Group?</b></p><p style="margin-bottom: 12px;">Groups are the core concept of Sub2API, like a "service package":</p><ul style="margin-left: 20px; margin-bottom: 12px; font-size: 13px;"><li>🎯 Each group can contain multiple upstream accounts</li><li>💰 Each group has independent billing multiplier</li><li>👥 Can be set as public or exclusive</li></ul><p style="margin-top: 12px; padding: 8px 12px; background: #f0fdf4; border-left: 3px solid #10b981; border-radius: 4px; font-size: 13px;"><b>💡 Example:</b> You can create "VIP Premium" (high rate) and "Free Trial" (low rate) groups</p><p style="margin-top: 16px; color: #10b981; font-weight: 600;">👉 Click "Group Management" on the left sidebar</p></div>'
+        description: '<div style="line-height: 1.7;"><p style="margin-bottom: 12px;"><b>What is a Group?</b></p><p style="margin-bottom: 12px;">Groups are the core concept of Clomio, like a "service package":</p><ul style="margin-left: 20px; margin-bottom: 12px; font-size: 13px;"><li>🎯 Each group can contain multiple upstream accounts</li><li>💰 Each group has independent billing multiplier</li><li>👥 Can be set as public or exclusive</li></ul><p style="margin-top: 12px; padding: 8px 12px; background: #f0fdf4; border-left: 3px solid #10b981; border-radius: 4px; font-size: 13px;"><b>💡 Example:</b> You can create "VIP Premium" (high rate) and "Free Trial" (low rate) groups</p><p style="margin-top: 16px; color: #10b981; font-weight: 600;">👉 Click "Group Management" on the left sidebar</p></div>'
       },
       createGroup: {
         title: '➕ Create New Group',
@@ -8611,8 +8665,8 @@ export default {
     // User tour steps
     user: {
       welcome: {
-        title: '👋 Welcome to Sub2API',
-        description: '<div style="line-height: 1.8;"><p style="margin-bottom: 16px;">Hello! Welcome to the Sub2API AI service platform.</p><p style="margin-bottom: 12px;"><b>🎯 Quick Start:</b></p><ul style="margin-left: 20px; margin-bottom: 16px;"><li>🔑 Create API Key</li><li>📋 Copy key to your application</li><li>🚀 Start using AI services</li></ul><p style="color: #10b981; font-weight: 600;">Just 1 minute, let\'s get started →</p></div>',
+        title: '👋 Welcome to Clomio',
+        description: '<div style="line-height: 1.8;"><p style="margin-bottom: 16px;">Hello! Welcome to the Clomio AI service platform.</p><p style="margin-bottom: 12px;"><b>🎯 Quick Start:</b></p><ul style="margin-left: 20px; margin-bottom: 16px;"><li>🔑 Create API Key</li><li>📋 Copy key to your application</li><li>🚀 Start using AI services</li></ul><p style="color: #10b981; font-weight: 600;">Just 1 minute, let\'s get started →</p></div>',
         nextBtn: 'Start 🚀',
         prevBtn: 'Skip'
       },
@@ -8866,6 +8920,7 @@ export default {
     selectPlan: 'Select Plan',
     planFeatures: 'Features',
     planCard: {
+      recommended: 'Recommended',
       rate: 'Rate',
       peakRate: 'Peak Rate',
       dailyLimit: 'Daily',

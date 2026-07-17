@@ -1300,7 +1300,7 @@ export default {
         grokLastStatus: 'Status {status}',
         grokLastProbe: 'Probe {time}',
         grokLastHeadersSeen: 'Headers {time}',
-        grokLocalHint: 'Local Sub2API stats, window aligned to the official 7d credit period',
+        grokLocalHint: 'Local Clomio stats, window aligned to the official 7d credit period',
         grokBalance: 'Bal',
         grokPrepaid: 'Prepaid balance (prepaidBalance)',
         grokUsed: 'Used',
