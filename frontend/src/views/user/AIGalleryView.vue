@@ -4,9 +4,9 @@
       <div class="card p-6">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p class="text-xs uppercase tracking-[0.35em] text-gray-500 dark:text-gray-400">{{ t('ai.center.label', 'AI 创作中心') }}</p>
-            <h1 class="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{{ t('ai.gallery.title', '画廊') }}</h1>
-            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ t('ai.gallery.subtitle', '支持筛选和瀑布流浏览。') }}</p>
+            <p class="text-xs uppercase tracking-[0.35em] text-ink-soft dark:text-dark-400">{{ t('ai.center.label', 'AI 创作中心') }}</p>
+            <h1 class="mt-2 text-2xl font-bold text-ink dark:text-white">{{ t('ai.gallery.title', '画廊') }}</h1>
+            <p class="mt-1 text-sm text-ink-body dark:text-dark-400">{{ t('ai.gallery.subtitle', '支持筛选和瀑布流浏览。') }}</p>
           </div>
           <div class="flex gap-3">
             <button class="btn btn-secondary" :disabled="loading" @click="reloadGallery">
@@ -34,7 +34,7 @@
           </div>
         </div>
 
-        <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+        <p class="mt-3 text-xs text-ink-soft dark:text-dark-400">
           精选筛选已收口到管理员治理页，用户侧仅保留后端真实支持的公共筛选项。
         </p>
 
@@ -48,34 +48,34 @@
         <article
           v-for="artwork in gallery"
           :key="artwork.id"
-          class="mb-5 break-inside-avoid overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-transform hover:-translate-y-0.5 dark:border-dark-700 dark:bg-dark-900"
+          class="mb-5 break-inside-avoid overflow-hidden rounded-card border border-line bg-card shadow-xs transition-transform hover:-translate-y-0.5 dark:border-dark-700 dark:bg-dark-900"
         >
           <img :src="artwork.image_url" :alt="artwork.title" class="w-full object-cover" />
           <div class="space-y-3 p-4">
             <div class="flex items-start justify-between gap-3">
               <div>
-                <h2 class="line-clamp-2 text-sm font-semibold text-gray-900 dark:text-white">{{ artwork.title }}</h2>
-                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ resolveLineLabel(artwork.line_id, artwork.line_name) }}</p>
+                <h2 class="line-clamp-2 text-sm font-semibold text-ink dark:text-white">{{ artwork.title }}</h2>
+                <p class="mt-1 text-xs text-ink-soft dark:text-dark-400">{{ resolveLineLabel(artwork.line_id, artwork.line_name) }}</p>
               </div>
               <span class="rounded-full px-2.5 py-1 text-[11px] font-medium"
                 :class="artwork.visibility === 'private'
-                  ? 'bg-gray-100 text-gray-700 dark:bg-dark-800 dark:text-gray-200'
-                  : 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-200'"
+                  ? 'bg-page text-ink-body dark:bg-dark-800 dark:text-dark-200'
+                  : 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-200'"
               >
                 {{ artwork.visibility === 'private' ? t('ai.prompt.private', '私有') : t('ai.prompt.public', '公开') }}
               </span>
             </div>
-            <p class="line-clamp-4 whitespace-pre-wrap text-sm text-gray-600 dark:text-gray-400">{{ artwork.prompt }}</p>
+            <p class="line-clamp-4 whitespace-pre-wrap text-sm text-ink-body dark:text-dark-400">{{ artwork.prompt }}</p>
             <div class="flex flex-wrap gap-2">
               <span
                 v-for="tag in artwork.tags"
                 :key="tag"
-                class="rounded-full bg-gray-100 px-2 py-1 text-[11px] text-gray-600 dark:bg-dark-800 dark:text-gray-300"
+                class="rounded-full bg-line px-2 py-1 text-[11px] text-ink-body dark:bg-dark-800 dark:text-dark-300"
               >
                 #{{ tag }}
               </span>
             </div>
-            <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+            <div class="flex items-center justify-between text-xs text-ink-soft dark:text-dark-400">
               <span>{{ artwork.style || '-' }}</span>
               <span>{{ formatTime(artwork.created_at) }}</span>
             </div>

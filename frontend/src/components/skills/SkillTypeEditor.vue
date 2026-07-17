@@ -1,8 +1,8 @@
 <template>
-  <section class="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+  <section class="rounded-3xl border border-line bg-card p-5 shadow-xs dark:border-dark-700 dark:bg-dark-900">
     <div class="mb-5">
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('skills.editor.sourceConfig', '源内容配置') }}</h2>
-      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ typeHint }}</p>
+      <h2 class="text-lg font-semibold text-ink dark:text-white">{{ t('skills.editor.sourceConfig', '源内容配置') }}</h2>
+      <p class="mt-1 text-sm text-ink-soft dark:text-dark-400">{{ typeHint }}</p>
     </div>
 
     <div v-if="modelValue.type === 'prompt_chat'" class="space-y-4">

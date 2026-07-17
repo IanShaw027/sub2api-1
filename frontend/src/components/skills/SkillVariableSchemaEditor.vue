@@ -1,9 +1,9 @@
 <template>
-  <section class="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+  <section class="rounded-3xl border border-line bg-card p-5 shadow-xs dark:border-dark-700 dark:bg-dark-900">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('skills.editor.variableSchema', '变量 Schema') }}</h2>
-        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('skills.editor.variableSchemaHint', '收费技能默认只暴露这里定义的变量，不直接暴露源内容。') }}</p>
+        <h2 class="text-lg font-semibold text-ink dark:text-white">{{ t('skills.editor.variableSchema', '变量 Schema') }}</h2>
+        <p class="mt-1 text-sm text-ink-soft dark:text-dark-400">{{ t('skills.editor.variableSchemaHint', '收费技能默认只暴露这里定义的变量，不直接暴露源内容。') }}</p>
       </div>
       <button class="btn btn-primary btn-sm" type="button" @click="addField">
         <Icon name="plus" size="sm" class="mr-1" />
@@ -15,12 +15,12 @@
       <article
         v-for="(field, index) in modelValue"
         :key="`${field.key}-${index}`"
-        class="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-950"
+        class="rounded-card border border-line bg-page p-4 dark:border-dark-700 dark:bg-dark-950"
       >
         <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div class="flex items-center gap-2">
-            <span class="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-white">{{ index + 1 }}</span>
-            <span class="text-sm font-medium text-gray-900 dark:text-white">{{ field.label || field.key || t('skills.editor.untitledVariable', '未命名变量') }}</span>
+            <span class="rounded-full bg-ink dark:bg-dark-700 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-white">{{ index + 1 }}</span>
+            <span class="text-sm font-medium text-ink dark:text-white">{{ field.label || field.key || t('skills.editor.untitledVariable', '未命名变量') }}</span>
           </div>
           <div class="flex flex-wrap gap-2">
             <button class="btn btn-secondary btn-xs" type="button" :disabled="index === 0" @click="moveField(index, -1)">
@@ -58,11 +58,11 @@
           </div>
           <div>
             <label class="input-label mb-1.5 block">{{ t('skills.editor.requiredFlag', '是否必填') }}</label>
-            <label class="flex h-[44px] items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 text-sm text-gray-700 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-200">
+            <label class="flex h-[44px] items-center gap-3 rounded-xl border border-line bg-card px-4 text-sm text-ink-body dark:border-dark-700 dark:bg-dark-900 dark:text-dark-200">
               <input
                 :checked="field.required"
                 type="checkbox"
-                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                class="h-4 w-4 rounded border-line text-brand-600 focus:ring-accent/25"
                 @change="updateField(index, { required: ($event.target as HTMLInputElement).checked })"
               />
               {{ t('skills.editor.requiredFlagHint', '运行时必须提供这个变量') }}
@@ -86,14 +86,14 @@
           />
           <label
             v-else
-            class="flex h-[72px] flex-col justify-center rounded-2xl border border-gray-200 bg-white px-4 dark:border-dark-700 dark:bg-dark-900"
+            class="flex h-[72px] flex-col justify-center rounded-card border border-line bg-card px-4 dark:border-dark-700 dark:bg-dark-900"
           >
             <span class="input-label mb-2 block">{{ t('skills.editor.defaultValue', '默认值') }}</span>
-            <span class="inline-flex items-center gap-3 text-sm text-gray-700 dark:text-gray-200">
+            <span class="inline-flex items-center gap-3 text-sm text-ink-body dark:text-dark-200">
               <input
                 :checked="Boolean(field.default_value)"
                 type="checkbox"
-                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                class="h-4 w-4 rounded border-line text-brand-600 focus:ring-accent/25"
                 @change="updateField(index, { default_value: ($event.target as HTMLInputElement).checked })"
               />
               {{ t('skills.form.booleanToggle', '启用该变量') }}
@@ -111,11 +111,11 @@
           />
         </div>
 
-        <div v-if="field.type === 'select'" class="mt-4 rounded-2xl border border-dashed border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-900">
+        <div v-if="field.type === 'select'" class="mt-4 rounded-card border border-dashed border-line bg-card p-4 dark:border-dark-700 dark:bg-dark-900">
           <div class="mb-3 flex items-center justify-between gap-3">
             <div>
-              <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('skills.editor.selectOptions', '下拉选项') }}</h3>
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('skills.editor.selectOptionsHint', '定义显示给用户的选项标签和值。') }}</p>
+              <h3 class="text-sm font-semibold text-ink dark:text-white">{{ t('skills.editor.selectOptions', '下拉选项') }}</h3>
+              <p class="mt-1 text-xs text-ink-soft dark:text-dark-400">{{ t('skills.editor.selectOptionsHint', '定义显示给用户的选项标签和值。') }}</p>
             </div>
             <button class="btn btn-secondary btn-xs" type="button" @click="addOption(index)">
               <Icon name="plus" size="sm" class="mr-1" />
@@ -127,7 +127,7 @@
             <div
               v-for="(option, optionIndex) in field.options || []"
               :key="`${field.key}-option-${optionIndex}`"
-              class="grid gap-3 rounded-xl border border-gray-200 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] dark:border-dark-700"
+              class="grid gap-3 rounded-xl border border-line p-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] dark:border-dark-700"
             >
               <Input
                 :model-value="option.label"
@@ -152,7 +152,7 @@
 
       <div
         v-if="modelValue.length === 0"
-        class="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:bg-dark-950 dark:text-gray-400"
+        class="rounded-card border border-dashed border-line bg-page px-4 py-10 text-center text-sm text-ink-soft dark:border-dark-700 dark:bg-dark-950"
       >
         {{ t('skills.editor.noVariables', '还没有变量，适合直接包装成固定技能的场景。') }}
       </div>

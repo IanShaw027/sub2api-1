@@ -117,57 +117,57 @@ export function formatCurrency(amount: number, currency = 'CNY'): string {
 export function skillStatusBadgeClass(status: SkillStatus): string {
   switch (status) {
     case 'published':
-      return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+      return 'bg-success-soft text-success dark:bg-emerald-900/20 dark:text-emerald-300'
     case 'archived':
-      return 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-200'
+      return 'bg-warning-soft text-warning dark:bg-amber-900/20 dark:text-amber-200'
     case 'hidden':
-      return 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-200'
+      return 'bg-danger-soft text-danger dark:bg-rose-900/20 dark:text-rose-200'
     case 'draft':
     default:
-      return 'bg-slate-100 text-slate-700 dark:bg-dark-800 dark:text-slate-200'
+      return 'bg-page text-ink-soft dark:bg-dark-800 dark:text-dark-200'
   }
 }
 
 export function skillVersionBadgeClass(status: SkillVersionStatus): string {
   switch (status) {
     case 'published':
-      return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+      return 'bg-success-soft text-success dark:bg-emerald-900/20 dark:text-emerald-300'
     case 'deprecated':
-      return 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-200'
+      return 'bg-warning-soft text-warning dark:bg-amber-900/20 dark:text-amber-200'
     case 'archived':
-      return 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-200'
+      return 'bg-danger-soft text-danger dark:bg-rose-900/20 dark:text-rose-200'
     case 'draft':
     default:
-      return 'bg-slate-100 text-slate-700 dark:bg-dark-800 dark:text-slate-200'
+      return 'bg-page text-ink-soft dark:bg-dark-800 dark:text-dark-200'
   }
 }
 
 export function skillVersionReviewBadgeClass(status: SkillVersionReviewStatus): string {
   switch (status) {
     case 'approved':
-      return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+      return 'bg-success-soft text-success dark:bg-emerald-900/20 dark:text-emerald-300'
     case 'pending':
-      return 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-200'
+      return 'bg-warning-soft text-warning dark:bg-amber-900/20 dark:text-amber-200'
     case 'rejected':
-      return 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-200'
+      return 'bg-danger-soft text-danger dark:bg-rose-900/20 dark:text-rose-200'
     case 'draft':
     default:
-      return 'bg-slate-100 text-slate-700 dark:bg-dark-800 dark:text-slate-200'
+      return 'bg-page text-ink-soft dark:bg-dark-800 dark:text-dark-200'
   }
 }
 
 export function skillRunBadgeClass(status: SkillRunStatus): string {
   switch (status) {
     case 'succeeded':
-      return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+      return 'bg-success-soft text-success dark:bg-emerald-900/20 dark:text-emerald-300'
     case 'failed':
-      return 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-200'
+      return 'bg-danger-soft text-danger dark:bg-rose-900/20 dark:text-rose-200'
     case 'running':
-      return 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-200'
+      return 'bg-accent-50 text-accent-700 dark:bg-accent-900/20 dark:text-accent-200'
     case 'queued':
-      return 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-200'
+      return 'bg-warning-soft text-warning dark:bg-amber-900/20 dark:text-amber-200'
     case 'cancelled':
     default:
-      return 'bg-slate-100 text-slate-700 dark:bg-dark-800 dark:text-slate-200'
+      return 'bg-page text-ink-soft dark:bg-dark-800 dark:text-dark-200'
   }
 }

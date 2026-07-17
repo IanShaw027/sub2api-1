@@ -20,26 +20,26 @@
 
       <div class="card overflow-hidden">
         <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
-            <thead class="bg-gray-50 dark:bg-dark-800">
+          <table class="min-w-full divide-y divide-line dark:divide-dark-700">
+            <thead class="bg-page dark:bg-dark-800">
               <tr>
-                <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">#</th>
-                <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('payment.invoice.title') }}</th>
-                <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('payment.invoice.list.colOrderCount') }}</th>
-                <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('payment.invoice.amount') }}</th>
-                <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('payment.invoice.status') }}</th>
-                <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('payment.orders.createdAt') }}</th>
-                <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('common.actions') }}</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.06em] text-ink-soft dark:text-dark-400">#</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.06em] text-ink-soft dark:text-dark-400">{{ t('payment.invoice.title') }}</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.06em] text-ink-soft dark:text-dark-400">{{ t('payment.invoice.list.colOrderCount') }}</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.06em] text-ink-soft dark:text-dark-400">{{ t('payment.invoice.amount') }}</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.06em] text-ink-soft dark:text-dark-400">{{ t('payment.invoice.status') }}</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.06em] text-ink-soft dark:text-dark-400">{{ t('payment.orders.createdAt') }}</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-[0.06em] text-ink-soft dark:text-dark-400">{{ t('common.actions') }}</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-900">
-              <tr v-for="item in invoices" :key="item.id" class="cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-800" @click="openDetail(item.id)">
-                <td class="px-4 py-3 text-sm text-gray-900 dark:text-white">#{{ item.id }}</td>
-                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ item.title }}</td>
-                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ item.order_count }}</td>
-                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ formatPaymentAmount(item.invoice_amount, item.currency) }}</td>
-                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ statusLabel(item.status) }}</td>
-                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ formatDate(item.created_at) }}</td>
+            <tbody class="divide-y divide-line bg-card dark:divide-dark-700 dark:bg-dark-900">
+              <tr v-for="item in invoices" :key="item.id" class="cursor-pointer hover:bg-page dark:hover:bg-dark-800" @click="openDetail(item.id)">
+                <td class="px-4 py-3 text-sm text-ink dark:text-white">#{{ item.id }}</td>
+                <td class="px-4 py-3 text-sm text-ink-body dark:text-dark-300">{{ item.title }}</td>
+                <td class="px-4 py-3 text-sm text-ink-body dark:text-dark-300">{{ item.order_count }}</td>
+                <td class="px-4 py-3 text-sm text-ink-body dark:text-dark-300">{{ formatPaymentAmount(item.invoice_amount, item.currency) }}</td>
+                <td class="px-4 py-3 text-sm text-ink-body dark:text-dark-300">{{ statusLabel(item.status) }}</td>
+                <td class="px-4 py-3 text-sm text-ink-body dark:text-dark-300">{{ formatDate(item.created_at) }}</td>
                 <td class="px-4 py-3 text-right" @click.stop>
                   <button v-if="item.status === 'ISSUED'" class="btn btn-secondary btn-sm" :disabled="actionLoading" @click="downloadFile(item.id)">
                     <Icon name="download" size="sm" />
@@ -51,7 +51,7 @@
                 </td>
               </tr>
               <tr v-if="!loading && invoices.length === 0">
-                <td colspan="7" class="px-4 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+                <td colspan="7" class="px-4 py-10 text-center text-sm text-ink-soft dark:text-dark-400">
                   {{ t('payment.invoice.list.empty') }}
                 </td>
               </tr>

@@ -2,12 +2,12 @@
   <div class="space-y-6">
     <section
       data-testid="profile-overview-hero"
-      class="card overflow-hidden border border-primary-100/80 bg-gradient-to-br from-primary-50 via-white to-amber-50/70 dark:border-primary-900/40 dark:from-primary-950/40 dark:via-dark-900 dark:to-dark-950"
+      class="card overflow-hidden border border-brand-100/80 bg-gradient-to-br from-brand-50 via-white to-amber-50/70 dark:border-brand-900/40 dark:from-brand-950/40 dark:via-dark-900 dark:to-dark-950"
     >
       <div class="px-6 py-6 md:px-8">
         <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
           <div
-            class="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-primary-500 to-primary-600 text-2xl font-bold text-white shadow-lg shadow-primary-500/20"
+            class="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-brand-500 to-brand-600 text-2xl font-bold text-white shadow-lg shadow-brand-500/20"
           >
             <img
               v-if="avatarUrl"
@@ -23,7 +23,7 @@
           <div class="min-w-0 flex-1 space-y-5">
             <div class="space-y-3">
               <div class="flex flex-wrap items-center gap-2">
-                <h2 class="truncate text-2xl font-semibold text-gray-900 dark:text-white">
+                <h2 class="truncate text-2xl font-semibold text-ink dark:text-white">
                   {{ displayName }}
                 </h2>
                 <span :class="['badge', user?.role === 'admin' ? 'badge-primary' : 'badge-gray']">
@@ -41,14 +41,14 @@
               </div>
 
               <div class="space-y-1">
-                <p class="truncate text-sm text-gray-600 dark:text-gray-300">
+                <p class="truncate text-sm text-ink-body">
                   {{ primaryEmailDisplay }}
                 </p>
                 <div v-if="profileSourceHints.length" data-testid="profile-source-hints" class="flex flex-wrap gap-2 pt-1">
                   <span
                     v-for="hint in profileSourceHints"
                     :key="hint"
-                    class="rounded-full bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 ring-1 ring-primary-100 dark:bg-primary-950/40 dark:text-primary-300 dark:ring-primary-900/50"
+                    class="rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700 ring-1 ring-brand-100 dark:bg-brand-950/40 dark:text-brand-300 dark:ring-brand-900/50"
                   >
                     {{ hint }}
                   </span>
@@ -60,35 +60,35 @@
               <button
                 data-testid="profile-overview-metric-balance"
                 type="button"
-                class="rounded-2xl bg-white/85 px-4 py-3 text-left shadow-sm ring-1 ring-white/70 transition-colors hover:ring-primary-200 dark:bg-dark-900/60 dark:ring-dark-700 dark:hover:ring-primary-800/50"
+                class="rounded-card bg-white/85 px-4 py-3 text-left shadow-xs ring-1 ring-white/70 transition-colors hover:ring-brand-200 dark:bg-dark-900/60 dark:ring-dark-700 dark:hover:ring-brand-800/50"
                 @click="emit('balance-history')"
               >
-                <p class="text-xs font-medium uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500">
+                <p class="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">
                   {{ t('profile.accountBalance') }}
                 </p>
-                <p class="mt-1 text-lg font-semibold text-gray-900 underline decoration-dashed decoration-gray-300 underline-offset-4 transition-colors hover:text-primary-600 dark:text-white dark:decoration-dark-500 dark:hover:text-primary-400">
+                <p class="mt-1 text-lg font-semibold text-ink underline decoration-dashed decoration-line underline-offset-4 transition-colors hover:text-brand-600 dark:text-white dark:decoration-dark-500 dark:hover:text-brand-400">
                   {{ formatCurrency(user?.balance || 0) }}
                 </p>
               </button>
               <div
                 data-testid="profile-overview-metric-concurrency"
-                class="rounded-2xl bg-white/85 px-4 py-3 shadow-sm ring-1 ring-white/70 dark:bg-dark-900/60 dark:ring-dark-700"
+                class="rounded-card bg-white/85 px-4 py-3 shadow-xs ring-1 ring-white/70 dark:bg-dark-900/60 dark:ring-dark-700"
               >
-                <p class="text-xs font-medium uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500">
+                <p class="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">
                   {{ t('profile.concurrencyLimit') }}
                 </p>
-                <p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">
+                <p class="mt-1 text-lg font-semibold text-ink dark:text-white">
                   {{ user?.concurrency || 0 }}
                 </p>
               </div>
               <div
                 data-testid="profile-overview-metric-member-since"
-                class="rounded-2xl bg-white/85 px-4 py-3 shadow-sm ring-1 ring-white/70 dark:bg-dark-900/60 dark:ring-dark-700"
+                class="rounded-card bg-white/85 px-4 py-3 shadow-xs ring-1 ring-white/70 dark:bg-dark-900/60 dark:ring-dark-700"
               >
-                <p class="text-xs font-medium uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500">
+                <p class="text-xs font-medium uppercase tracking-[0.16em] text-ink-faint">
                   {{ t('profile.memberSince') }}
                 </p>
-                <p class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">
+                <p class="mt-1 text-lg font-semibold text-ink dark:text-white">
                   {{ memberSinceLabel }}
                 </p>
               </div>
@@ -101,28 +101,28 @@
     <div data-testid="profile-main-column" class="space-y-6">
       <section
         data-testid="profile-basics-panel"
-        class="card border border-gray-100 bg-white/90 p-6 dark:border-dark-700 dark:bg-dark-900/50"
+        class="card border border-line bg-white/90 p-6 dark:border-dark-700 dark:bg-dark-900/50"
       >
         <div class="mb-5 flex items-start justify-between gap-4">
           <div>
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+            <h3 class="text-lg font-semibold text-ink dark:text-white">
               {{ t('profile.basicsTitle') }}
             </h3>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            <p class="mt-1 text-sm text-ink-soft">
               {{ t('profile.basicsDescription') }}
             </p>
           </div>
         </div>
 
         <div class="grid gap-6 sm:grid-cols-1 md:grid-cols-2">
-          <div class="rounded-3xl border border-gray-100 bg-gray-50/80 p-5 dark:border-dark-700 dark:bg-dark-900/30">
+          <div class="rounded-3xl border border-line bg-page/80 p-5 dark:border-dark-700 dark:bg-dark-900/30">
             <ProfileAvatarCard
               :user="user"
               embedded
             />
           </div>
 
-          <div class="rounded-3xl border border-gray-100 bg-gray-50/80 p-5 dark:border-dark-700 dark:bg-dark-900/30">
+          <div class="rounded-3xl border border-line bg-page/80 p-5 dark:border-dark-700 dark:bg-dark-900/30">
             <ProfileEditForm
               :initial-username="user?.username || ''"
               embedded
@@ -133,7 +133,7 @@
 
       <section
         data-testid="profile-auth-bindings-panel"
-        class="card border border-gray-100 bg-white/90 p-6 dark:border-dark-700 dark:bg-dark-900/50"
+        class="card border border-line bg-white/90 p-6 dark:border-dark-700 dark:bg-dark-900/50"
       >
         <ProfileIdentityBindingsSection
           :user="user"
@@ -152,17 +152,17 @@
       <section
         v-if="contactInfoDisplay || supportQRCodeItems.length > 0"
         data-testid="profile-support-panel"
-        class="card border border-gray-100 bg-white/90 p-6 dark:border-dark-700 dark:bg-dark-900/50"
+        class="card border border-line bg-white/90 p-6 dark:border-dark-700 dark:bg-dark-900/50"
       >
         <div class="space-y-4">
           <div>
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+            <h3 class="text-lg font-semibold text-ink dark:text-white">
               {{ t('common.contactSupport') }}
             </h3>
             <p
               v-if="contactInfoDisplay"
               data-testid="profile-support-contact"
-              class="mt-1 whitespace-pre-wrap text-sm text-gray-600 dark:text-gray-300"
+              class="mt-1 whitespace-pre-wrap text-sm text-ink-body"
             >
               {{ contactInfoDisplay }}
             </p>
@@ -177,18 +177,18 @@
               v-for="(qrCode, index) in supportQRCodeItems"
               :key="`${qrCode.image_url}-${index}`"
               :aria-label="supportQRCodeAlt(qrCode)"
-              class="overflow-hidden rounded-3xl border border-gray-100 bg-gray-50/80 p-4 dark:border-dark-700 dark:bg-dark-900/30"
+              class="overflow-hidden rounded-3xl border border-line bg-page/80 p-4 dark:border-dark-700 dark:bg-dark-900/30"
               role="group"
             >
               <img
                 :src="qrCode.image_url"
                 :alt="supportQRCodeAlt(qrCode)"
                 :aria-label="supportQRCodeAlt(qrCode)"
-                class="aspect-square w-full rounded-2xl object-cover"
+                class="aspect-square w-full rounded-card object-cover"
               />
               <p
                 v-if="qrCode.note"
-                class="mt-2 text-xs text-gray-500 dark:text-gray-400"
+                class="mt-2 text-xs text-ink-soft"
               >
                 {{ qrCode.note }}
               </p>

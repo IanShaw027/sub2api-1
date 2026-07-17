@@ -1,15 +1,15 @@
 <template>
-  <component :is="isPopup ? 'div' : AppLayout" :class="isPopup ? 'min-h-screen bg-gray-50 dark:bg-dark-900' : ''">
+  <component :is="isPopup ? 'div' : AppLayout" :class="isPopup ? 'min-h-screen bg-page dark:bg-dark-900' : ''">
     <div class="mx-auto max-w-lg space-y-6 py-8" :class="isPopup ? 'px-4' : ''">
       <div v-if="loading" class="flex items-center justify-center py-20">
-        <div class="h-8 w-8 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"></div>
+        <div class="h-8 w-8 animate-spin rounded-full border-4 border-brand-500 border-t-transparent"></div>
       </div>
       <div v-else-if="initError" class="card p-8 text-center">
-        <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
-          <Icon name="exclamationCircle" size="xl" class="text-red-500" />
+        <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-danger-soft dark:bg-red-900/30">
+          <Icon name="exclamationCircle" size="xl" class="text-danger" />
         </div>
-        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('payment.stripeLoadFailed') }}</h3>
-        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ initError }}</p>
+        <h3 class="text-lg font-semibold text-ink dark:text-white">{{ t('payment.stripeLoadFailed') }}</h3>
+        <p class="mt-2 text-sm text-ink-soft dark:text-dark-400">{{ initError }}</p>
         <button class="btn btn-primary mt-6" @click="router.push('/purchase')">{{ t('payment.result.backToRecharge') }}</button>
       </div>
       <template v-else>
@@ -25,7 +25,7 @@
         <template v-if="wechatQrUrl">
           <div class="card p-6">
             <div class="flex flex-col items-center space-y-4">
-              <p class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('payment.qr.scanWxpay') }}</p>
+              <p class="text-lg font-semibold text-ink dark:text-white">{{ t('payment.qr.scanWxpay') }}</p>
               <div class="relative rounded-lg border-2 border-[#2BB741] bg-green-50 p-4 dark:border-[#2BB741]/70 dark:bg-green-950/20">
                 <img :src="wechatQrUrl" alt="WeChat Pay QR" class="h-56 w-56 rounded" />
                 <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -34,11 +34,11 @@
                   </span>
                 </div>
               </div>
-              <p class="text-center text-sm text-gray-500 dark:text-gray-400">{{ t('payment.qr.scanWxpayHint') }}</p>
+              <p class="text-center text-sm text-ink-soft dark:text-dark-400">{{ t('payment.qr.scanWxpayHint') }}</p>
             </div>
           </div>
           <div class="card p-4 text-center">
-            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('payment.qr.waitingPayment') }}</p>
+            <p class="text-sm text-ink-soft dark:text-dark-400">{{ t('payment.qr.waitingPayment') }}</p>
           </div>
         </template>
 
@@ -47,7 +47,7 @@
           <div class="card p-6">
             <div class="flex flex-col items-center space-y-4 py-4">
               <div class="h-10 w-10 animate-spin rounded-full border-4 border-[#00AEEF] border-t-transparent"></div>
-              <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('payment.qr.payInNewWindowHint') }}</p>
+              <p class="text-sm text-ink-soft dark:text-dark-400">{{ t('payment.qr.payInNewWindowHint') }}</p>
             </div>
           </div>
         </template>
@@ -56,11 +56,11 @@
         <template v-else-if="stripeSuccess">
           <div class="card p-6 text-center">
             <div class="flex flex-col items-center gap-3 py-4">
-              <div class="flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-                <Icon name="check" size="lg" class="text-green-500" />
+              <div class="flex h-16 w-16 items-center justify-center rounded-full bg-success-soft dark:bg-green-900/30">
+                <Icon name="check" size="lg" class="text-success" />
               </div>
-              <p class="text-lg font-bold text-gray-900 dark:text-white">{{ t('payment.result.success') }}</p>
-              <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('payment.stripeSuccessProcessing') }}</p>
+              <p class="text-lg font-bold text-ink dark:text-white">{{ t('payment.result.success') }}</p>
+              <p class="text-sm text-ink-soft dark:text-dark-400">{{ t('payment.stripeSuccessProcessing') }}</p>
             </div>
           </div>
         </template>

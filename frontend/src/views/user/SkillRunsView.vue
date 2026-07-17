@@ -57,31 +57,31 @@
             </template>
 
             <template #cell-trigger="{ row }">
-              <span class="text-sm font-medium text-gray-900 dark:text-white">{{ skillRunTriggerLabel(row.trigger, t) }}</span>
+              <span class="text-sm font-medium text-ink dark:text-white">{{ skillRunTriggerLabel(row.trigger, t) }}</span>
             </template>
 
             <template #cell-version="{ row }">
-              <span class="font-medium text-gray-900 dark:text-white">{{ row.version || '-' }}</span>
+              <span class="font-medium text-ink dark:text-white">{{ row.version || '-' }}</span>
             </template>
 
             <template #cell-duration_ms="{ row }">
-              <span class="text-sm text-gray-600 dark:text-gray-300">{{ formatDuration(row.duration_ms) }}</span>
+              <span class="text-sm text-ink-body dark:text-dark-300">{{ formatDuration(row.duration_ms) }}</span>
             </template>
 
             <template #cell-cost="{ row }">
-              <span class="text-sm font-medium text-gray-900 dark:text-white">
+              <span class="text-sm font-medium text-ink dark:text-white">
                 {{ row.cost !== null ? formatCurrency(row.cost, row.currency) : '-' }}
               </span>
             </template>
 
             <template #cell-input_preview="{ row }">
-              <div class="max-w-[24rem] whitespace-normal break-words text-sm text-gray-600 dark:text-gray-300">
+              <div class="max-w-[24rem] whitespace-normal break-words text-sm text-ink-body dark:text-dark-300">
                 {{ row.input_preview || '-' }}
               </div>
             </template>
 
             <template #cell-output_preview="{ row }">
-              <div class="max-w-[24rem] whitespace-normal break-words text-sm text-gray-600 dark:text-gray-300">
+              <div class="max-w-[24rem] whitespace-normal break-words text-sm text-ink-body dark:text-dark-300">
                 {{ row.output_preview || row.error_message || '-' }}
               </div>
             </template>

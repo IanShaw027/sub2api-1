@@ -2,12 +2,12 @@
   <div class="space-y-4">
     <div>
       <label class="input-label">{{ t('tickets.fields.targetGroups') }}</label>
-      <div class="space-y-2 rounded-xl border border-gray-200 p-3 dark:border-dark-700">
+      <div class="space-y-2 rounded-xl border border-line p-3 dark:border-dark-700">
         <label
           v-for="group in rateEligibleGroups"
           :key="group.id"
           class="flex items-start gap-3 rounded-lg px-3 py-2 transition-colors"
-          :class="readonly ? 'cursor-default' : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-700/40'"
+          :class="readonly ? 'cursor-default' : 'cursor-pointer hover:bg-page dark:hover:bg-dark-700/40'"
         >
           <input
             type="checkbox"
@@ -18,47 +18,47 @@
           />
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span class="font-medium text-gray-900 dark:text-white">{{ group.name }}</span>
-              <span class="text-xs text-gray-500 dark:text-gray-400">
+              <span class="font-medium text-ink dark:text-white">{{ group.name }}</span>
+              <span class="text-xs text-ink-soft dark:text-dark-400">
                 {{ t('tickets.fields.baseRate') }}: {{ formatMultiplier(group.rate_multiplier) }}
               </span>
-              <span class="text-xs text-gray-500 dark:text-gray-400">
+              <span class="text-xs text-ink-soft dark:text-dark-400">
                 {{ t('tickets.fields.specialRate') }}: {{ formatMultiplier(userGroupRates[group.id]) }}
               </span>
-              <span class="text-xs text-blue-600 dark:text-blue-300">
+              <span class="text-xs text-accent-600 dark:text-blue-300">
                 {{ t('tickets.fields.effectiveRate') }}: {{ formatMultiplier(effectiveRate(group.id, group.rate_multiplier)) }}
               </span>
             </div>
           </div>
         </label>
-        <p v-if="rateEligibleGroups.length === 0" class="text-sm text-gray-500 dark:text-gray-400">
+        <p v-if="rateEligibleGroups.length === 0" class="text-sm text-ink-soft dark:text-dark-400">
           {{ t('tickets.emptyAvailableGroups') }}
         </p>
       </div>
     </div>
 
-    <div v-if="selectedSummaries.length > 0" class="space-y-2 rounded-xl border border-gray-200 p-3 dark:border-dark-700">
-      <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('tickets.fields.currentRate') }}</p>
+    <div v-if="selectedSummaries.length > 0" class="space-y-2 rounded-xl border border-line p-3 dark:border-dark-700">
+      <p class="text-sm font-medium text-ink dark:text-white">{{ t('tickets.fields.currentRate') }}</p>
       <div
         v-for="summary in selectedSummaries"
         :key="summary.group_id"
-        class="grid gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm dark:bg-dark-700/40 md:grid-cols-[minmax(0,1.1fr)_repeat(3,minmax(0,0.7fr))]"
+        class="grid gap-2 rounded-lg bg-page px-3 py-2 text-sm dark:bg-dark-700/40 md:grid-cols-[minmax(0,1.1fr)_repeat(3,minmax(0,0.7fr))]"
       >
-        <div class="font-medium text-gray-900 dark:text-white">{{ summary.group_name }}</div>
-        <div class="text-gray-500 dark:text-gray-400">{{ t('tickets.fields.baseRate') }}: {{ formatMultiplier(summary.base_rate) }}</div>
-        <div class="text-gray-500 dark:text-gray-400">{{ t('tickets.fields.specialRate') }}: {{ formatMultiplier(summary.special_rate) }}</div>
-        <div class="text-blue-600 dark:text-blue-300">{{ t('tickets.fields.effectiveRate') }}: {{ formatMultiplier(summary.effective_rate) }}</div>
+        <div class="font-medium text-ink dark:text-white">{{ summary.group_name }}</div>
+        <div class="text-ink-soft dark:text-dark-400">{{ t('tickets.fields.baseRate') }}: {{ formatMultiplier(summary.base_rate) }}</div>
+        <div class="text-ink-soft dark:text-dark-400">{{ t('tickets.fields.specialRate') }}: {{ formatMultiplier(summary.special_rate) }}</div>
+        <div class="text-accent-600 dark:text-blue-300">{{ t('tickets.fields.effectiveRate') }}: {{ formatMultiplier(summary.effective_rate) }}</div>
       </div>
     </div>
 
-    <div v-if="legacyCurrentRate" class="rounded-xl border border-gray-200 p-3 text-sm dark:border-dark-700">
-      <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('tickets.fields.currentRate') }}</p>
-      <p class="mt-1 font-medium text-gray-900 dark:text-white">{{ legacyCurrentRate }}</p>
+    <div v-if="legacyCurrentRate" class="rounded-xl border border-line p-3 text-sm dark:border-dark-700">
+      <p class="text-xs font-medium uppercase tracking-wide text-ink-soft dark:text-dark-400">{{ t('tickets.fields.currentRate') }}</p>
+      <p class="mt-1 font-medium text-ink dark:text-white">{{ legacyCurrentRate }}</p>
     </div>
 
-    <div v-if="legacyTargetScope" class="rounded-xl border border-gray-200 p-3 text-sm dark:border-dark-700">
-      <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('tickets.fields.targetScope') }}</p>
-      <p class="mt-1 font-medium text-gray-900 dark:text-white">{{ legacyTargetScope }}</p>
+    <div v-if="legacyTargetScope" class="rounded-xl border border-line p-3 text-sm dark:border-dark-700">
+      <p class="text-xs font-medium uppercase tracking-wide text-ink-soft dark:text-dark-400">{{ t('tickets.fields.targetScope') }}</p>
+      <p class="mt-1 font-medium text-ink dark:text-white">{{ legacyTargetScope }}</p>
     </div>
 
     <div>

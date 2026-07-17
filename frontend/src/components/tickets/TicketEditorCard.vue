@@ -88,12 +88,12 @@ const categoryOptions = computed(() =>
 const containerClass = computed(() =>
   props.embedded
     ? 'space-y-5'
-    : 'flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border bg-white dark:border-dark-700 dark:bg-dark-800',
+    : 'flex h-full min-h-0 flex-col overflow-hidden rounded-card border border-line bg-card dark:border-dark-700 dark:bg-dark-800',
 )
 const headerClass = computed(() =>
   props.embedded
     ? 'space-y-4'
-    : 'border-b border-gray-100 px-5 py-5 dark:border-dark-700',
+    : 'border-b border-line px-5 py-5 dark:border-dark-700',
 )
 const bodyClass = computed(() =>
   props.embedded
@@ -103,7 +103,7 @@ const bodyClass = computed(() =>
 const footerClass = computed(() =>
   props.embedded
     ? 'pt-2'
-    : 'border-t border-gray-100 px-5 py-4 dark:border-dark-700',
+    : 'border-t border-line px-5 py-4 dark:border-dark-700',
 )
 
 watch(() => props.category, (value) => { localCategory.value = value })

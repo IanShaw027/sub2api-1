@@ -1,5 +1,5 @@
 <template>
-  <section class="overflow-hidden rounded-[28px] border border-gray-200 bg-gradient-to-r from-slate-900 via-cyan-950 to-emerald-950 text-white shadow-sm dark:border-dark-700">
+  <section class="overflow-hidden rounded-[28px] border border-line bg-gradient-to-r from-dark-900 via-brand-950 to-accent-950 text-white shadow-xs dark:border-dark-700">
     <div class="flex flex-col gap-6 px-6 py-6 lg:flex-row lg:items-end lg:justify-between">
       <div class="max-w-3xl">
         <p class="text-xs uppercase tracking-[0.35em] text-white/55">{{ t('skills.center.label', 'Skill Center') }}</p>
@@ -26,7 +26,7 @@
           :to="item.to"
           class="inline-flex items-center rounded-full border px-3 py-2 text-sm font-medium transition-colors"
           :class="item.key === active
-            ? 'border-white/20 bg-white text-slate-900'
+            ? 'border-white/20 bg-card text-ink'
             : 'border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white'"
         >
           <Icon :name="item.icon" size="sm" class="mr-2" />

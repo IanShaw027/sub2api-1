@@ -3,10 +3,10 @@
     <span
       ref="triggerEl"
       :class="[
-        'inline-flex cursor-help items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium transition-colors',
+        'inline-flex cursor-help items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium transition-colors duration-150',
         effectivePlatform
           ? platformBadgeClass(effectivePlatform)
-          : 'border-gray-200 bg-gray-50 text-gray-700 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300',
+          : 'border-line bg-page text-ink-body dark:border-dark-600 dark:bg-dark-800 dark:text-dark-300',
       ]"
       @mouseenter="onEnter"
       @mouseleave="onLeave"
@@ -21,7 +21,7 @@
       />
       <span
         v-if="showPlatform && model.platform"
-        class="rounded bg-gray-200/60 px-1 text-[10px] uppercase text-gray-600 dark:bg-dark-700 dark:text-gray-400"
+        class="rounded bg-line/60 px-1 text-[10px] uppercase text-ink-soft dark:bg-dark-700 dark:text-dark-400"
       >
         {{ model.platform }}
       </span>
@@ -36,13 +36,13 @@
         v-show="show"
         ref="popoverEl"
         role="tooltip"
-        class="pointer-events-none fixed z-[99999] w-80 max-w-[min(22rem,calc(100vw-1rem))] rounded-lg border bg-white text-xs shadow-xl dark:bg-dark-800"
+        class="pointer-events-none fixed z-[99999] w-80 max-w-[min(22rem,calc(100vw-1rem))] rounded-card border bg-card text-xs shadow-overlay dark:bg-dark-800"
         :class="[popoverBorderClass]"
         :style="popoverStyle"
       >
         <!-- Header：平台主题色背景，含模型名 + 平台徽章 -->
         <div
-          class="flex items-center justify-between gap-2 rounded-t-lg border-b px-3 py-2"
+          class="flex items-center justify-between gap-2 rounded-t-card border-b px-3 py-2"
           :class="[popoverHeaderClass, popoverBorderClass]"
         >
           <span class="truncate font-semibold">{{ model.name }}</span>
@@ -55,13 +55,13 @@
         </div>
 
         <div class="p-3">
-          <div v-if="!model.pricing" class="text-gray-500 dark:text-gray-400">
+          <div v-if="!model.pricing" class="text-ink-soft dark:text-dark-400">
             {{ noPricingLabel }}
           </div>
 
-          <div v-else class="space-y-2 text-gray-700 dark:text-gray-300">
+          <div v-else class="space-y-2 text-ink-body dark:text-dark-300">
             <div class="flex justify-between">
-              <span class="text-gray-500 dark:text-gray-400">{{ t(prefixKey('billingMode')) }}</span>
+              <span class="text-ink-soft dark:text-dark-400">{{ t(prefixKey('billingMode')) }}</span>
               <span>{{ billingModeLabel }}</span>
             </div>
 
@@ -126,7 +126,7 @@
               class="mt-2 border-t pt-2"
               :class="[popoverBorderClass]"
             >
-              <div class="mb-1 font-medium text-gray-600 dark:text-gray-400">
+              <div class="mb-1 font-medium text-ink-soft dark:text-dark-400">
                 {{ t(prefixKey('intervals')) }}
               </div>
               <div class="space-y-1">
@@ -135,11 +135,11 @@
                   :key="idx"
                   class="flex justify-between text-[11px]"
                 >
-                  <span class="text-gray-500 dark:text-gray-400">
+                  <span class="text-ink-soft dark:text-dark-400">
                     <template v-if="iv.tier_label">{{ iv.tier_label }}</template>
                     <template v-else>{{ formatRange(iv.min_tokens, iv.max_tokens) }}</template>
                   </span>
-                  <span>{{ formatInterval(iv, model.pricing.billing_mode) }}</span>
+                  <span class="font-mono tabular-nums">{{ formatInterval(iv, model.pricing.billing_mode) }}</span>
                 </div>
               </div>
             </div>
@@ -201,12 +201,12 @@ const perMillionScale = 1_000_000
 const popoverBorderClass = computed(() =>
   effectivePlatform.value
     ? platformBorderClass(effectivePlatform.value)
-    : 'border-gray-200 dark:border-dark-600',
+    : 'border-line dark:border-dark-600',
 )
 const popoverHeaderClass = computed(() =>
   effectivePlatform.value
     ? platformBadgeLightClass(effectivePlatform.value)
-    : 'bg-gray-50 text-gray-700 dark:bg-dark-700/60 dark:text-gray-300',
+    : 'bg-page text-ink-body dark:bg-dark-700/60 dark:text-dark-300',
 )
 
 function prefixKey(k: string): string {

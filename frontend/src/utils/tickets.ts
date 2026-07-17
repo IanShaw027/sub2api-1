@@ -31,11 +31,11 @@ export function getTicketStatusBadgeClass(status: TicketStatus): string {
     case 'resolved':
       return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
     case 'closed':
-      return 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300'
+      return 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-ink-body'
     case 'withdrawn':
       return 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
     default:
-      return 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300'
+      return 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-ink-body'
   }
 }
 

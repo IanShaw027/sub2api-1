@@ -12,8 +12,8 @@
       <div class="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
         <aside class="space-y-6">
           <section class="card p-5">
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('skills.versions.createVersion', '创建版本') }}</h2>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('skills.versions.createVersionHint', '默认基于当前技能内容与变量 schema 生成版本快照。') }}</p>
+            <h2 class="text-lg font-semibold text-ink dark:text-white">{{ t('skills.versions.createVersion', '创建版本') }}</h2>
+            <p class="mt-1 text-sm text-ink-soft dark:text-dark-400">{{ t('skills.versions.createVersionHint', '默认基于当前技能内容与变量 schema 生成版本快照。') }}</p>
             <div class="mt-4 space-y-4">
               <Input v-model="draft.version" :label="t('skills.versions.version', '版本号')" :placeholder="'v1.0.0'" />
               <div>
@@ -24,15 +24,15 @@
                   @update:model-value="(value) => (draft.status = normalizeStatus(value))"
                 />
               </div>
-              <label class="flex items-start gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-700 dark:border-dark-700 dark:bg-dark-950 dark:text-gray-200">
+              <label class="flex items-start gap-3 rounded-card border border-line bg-page px-4 py-4 text-sm text-ink-body dark:border-dark-700 dark:bg-dark-950 dark:text-dark-200">
                 <input
                   v-model="draft.source_locked"
                   type="checkbox"
-                  class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  class="mt-0.5 h-4 w-4 rounded border-line text-brand-600 focus:ring-accent/25"
                 />
                 <span>
                   <span class="block font-medium">{{ t('skills.editor.sourceLocked', '隐藏源内容') }}</span>
-                  <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">{{ t('skills.versions.sourceLockedHint', '版本级别也可以单独决定是否暴露源内容。') }}</span>
+                  <span class="mt-1 block text-xs text-ink-soft dark:text-dark-400">{{ t('skills.versions.sourceLockedHint', '版本级别也可以单独决定是否暴露源内容。') }}</span>
                 </span>
               </label>
               <TextArea
@@ -49,19 +49,19 @@
           </section>
 
           <section v-if="skill" class="card p-5">
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('skills.detail.meta', '元信息') }}</h2>
+            <h2 class="text-lg font-semibold text-ink dark:text-white">{{ t('skills.detail.meta', '元信息') }}</h2>
             <dl class="mt-4 space-y-3 text-sm">
               <div class="flex items-center justify-between gap-3">
-                <dt class="text-gray-500 dark:text-gray-400">{{ t('common.name', '名称') }}</dt>
-                <dd class="text-right font-medium text-gray-900 dark:text-white">{{ skill.name }}</dd>
+                <dt class="text-ink-soft dark:text-dark-400">{{ t('common.name', '名称') }}</dt>
+                <dd class="text-right font-medium text-ink dark:text-white">{{ skill.name }}</dd>
               </div>
               <div class="flex items-center justify-between gap-3">
-                <dt class="text-gray-500 dark:text-gray-400">{{ t('skills.editor.type', '类型') }}</dt>
-                <dd class="text-right font-medium text-gray-900 dark:text-white">{{ skill.type }}</dd>
+                <dt class="text-ink-soft dark:text-dark-400">{{ t('skills.editor.type', '类型') }}</dt>
+                <dd class="text-right font-medium text-ink dark:text-white">{{ skill.type }}</dd>
               </div>
               <div class="flex items-center justify-between gap-3">
-                <dt class="text-gray-500 dark:text-gray-400">{{ t('skills.versions.currentVersion', '当前版本') }}</dt>
-                <dd class="text-right font-medium text-gray-900 dark:text-white">{{ skill.latest_version?.version || '-' }}</dd>
+                <dt class="text-ink-soft dark:text-dark-400">{{ t('skills.versions.currentVersion', '当前版本') }}</dt>
+                <dd class="text-right font-medium text-ink dark:text-white">{{ skill.latest_version?.version || '-' }}</dd>
               </div>
             </dl>
           </section>
@@ -76,7 +76,7 @@
             <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
-                  <h2 class="text-xl font-semibold text-gray-900 dark:text-white">{{ version.version }}</h2>
+                  <h2 class="text-xl font-semibold text-ink dark:text-white">{{ version.version }}</h2>
                   <span class="rounded-full px-2.5 py-1 text-[11px] font-medium" :class="skillVersionReviewBadgeClass(version.review_status)">
                     {{ skillVersionReviewStatusLabel(version.review_status) }}
                   </span>
@@ -85,14 +85,14 @@
                   </span>
                   <span
                     v-if="version.is_current"
-                    class="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-medium text-white"
+                    class="rounded-full bg-ink dark:bg-dark-700 px-2.5 py-1 text-[11px] font-medium text-white"
                   >
                     {{ t('skills.versions.currentVersion', '当前版本') }}
                   </span>
                 </div>
-                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ version.created_at }}</p>
+                <p class="mt-2 text-sm text-ink-soft dark:text-dark-400">{{ version.created_at }}</p>
               </div>
-              <div class="text-sm text-gray-500 dark:text-gray-400">
+              <div class="text-sm text-ink-soft dark:text-dark-400">
                 {{ version.variable_schema.length }} {{ t('skills.editor.variableSchema', '变量 Schema') }}
               </div>
             </div>
@@ -115,11 +115,11 @@
             </div>
 
             <div class="mt-4 flex flex-wrap gap-3">
-              <label class="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-2 text-sm text-gray-700 dark:bg-dark-800 dark:text-gray-200">
+              <label class="inline-flex items-center gap-2 rounded-full bg-line px-3 py-2 text-sm text-ink-body dark:bg-dark-800 dark:text-dark-200">
                 <input
                   :checked="versionEdits[version.id]?.source_locked ?? version.source_locked"
                   type="checkbox"
-                  class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  class="h-4 w-4 rounded border-line text-brand-600 focus:ring-accent/25"
                   @change="ensureVersionEdit(version.id, version).source_locked = ($event.target as HTMLInputElement).checked"
                 />
                 {{ t('skills.editor.sourceLocked', '隐藏源内容') }}

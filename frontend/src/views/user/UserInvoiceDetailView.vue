@@ -1,14 +1,14 @@
 <template>
   <AppLayout>
     <OrdersTabBar />
-    <div v-if="loading" class="card p-8 text-center text-gray-500">{{ t('common.processing') }}</div>
+    <div v-if="loading" class="card p-8 text-center text-ink-soft">{{ t('common.processing') }}</div>
     <div v-else-if="invoice" class="space-y-4">
       <!-- 顶部摘要 -->
       <div class="card p-6">
         <div class="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">#{{ invoice.id }} · {{ invoice.title }}</h2>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            <h2 class="text-lg font-semibold text-ink dark:text-white">#{{ invoice.id }} · {{ invoice.title }}</h2>
+            <p class="mt-1 text-sm text-ink-soft dark:text-dark-400">
               {{ statusLabel(invoice.status) }} · {{ t('payment.invoice.list.colOrderCount') }} {{ invoice.order_count }} · {{ formatPaymentAmount(invoice.invoice_amount, invoice.currency) }}
             </p>
           </div>
@@ -27,28 +27,28 @@
       <!-- 开票信息 -->
       <div class="card p-6">
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div><p class="text-xs text-gray-500">{{ t('payment.invoice.taxNumber') }}</p><p class="text-sm">{{ invoice.tax_number }}</p></div>
-          <div><p class="text-xs text-gray-500">{{ t('payment.invoice.email') }}</p><p class="text-sm">{{ invoice.email }}</p></div>
-          <div><p class="text-xs text-gray-500">{{ t('payment.invoice.contactName') }}</p><p class="text-sm">{{ invoice.contact_name || '-' }}</p></div>
-          <div><p class="text-xs text-gray-500">{{ t('payment.invoice.contactPhone') }}</p><p class="text-sm">{{ invoice.contact_phone || '-' }}</p></div>
+          <div><p class="text-xs text-ink-soft">{{ t('payment.invoice.taxNumber') }}</p><p class="text-sm">{{ invoice.tax_number }}</p></div>
+          <div><p class="text-xs text-ink-soft">{{ t('payment.invoice.email') }}</p><p class="text-sm">{{ invoice.email }}</p></div>
+          <div><p class="text-xs text-ink-soft">{{ t('payment.invoice.contactName') }}</p><p class="text-sm">{{ invoice.contact_name || '-' }}</p></div>
+          <div><p class="text-xs text-ink-soft">{{ t('payment.invoice.contactPhone') }}</p><p class="text-sm">{{ invoice.contact_phone || '-' }}</p></div>
         </div>
       </div>
 
       <!-- 关联订单 -->
       <div class="card overflow-hidden">
-        <div class="border-b border-gray-200 px-6 py-3 text-sm font-medium text-gray-700 dark:border-dark-700 dark:text-gray-200">
+        <div class="border-b border-line px-6 py-3 text-sm font-medium text-ink-body dark:border-dark-700 dark:text-dark-200">
           {{ t('payment.invoice.detailPage.relatedOrders') }}
         </div>
-        <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
-          <thead class="bg-gray-50 dark:bg-dark-800">
+        <table class="min-w-full divide-y divide-line dark:divide-dark-700">
+          <thead class="bg-page dark:bg-dark-800">
             <tr>
-              <th class="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">{{ t('payment.orders.orderNo') }}</th>
-              <th class="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">{{ t('payment.orders.payAmount') }}</th>
-              <th class="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">{{ t('payment.orders.paymentMethod') }}</th>
-              <th class="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500">{{ t('payment.orders.createdAt') }}</th>
+              <th class="px-4 py-3 text-left text-xs font-medium uppercase text-ink-soft">{{ t('payment.orders.orderNo') }}</th>
+              <th class="px-4 py-3 text-left text-xs font-medium uppercase text-ink-soft">{{ t('payment.orders.payAmount') }}</th>
+              <th class="px-4 py-3 text-left text-xs font-medium uppercase text-ink-soft">{{ t('payment.orders.paymentMethod') }}</th>
+              <th class="px-4 py-3 text-left text-xs font-medium uppercase text-ink-soft">{{ t('payment.orders.createdAt') }}</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-900">
+          <tbody class="divide-y divide-line bg-card dark:divide-dark-700 dark:bg-dark-900">
             <tr v-for="o in invoice.orders" :key="o.order_id">
               <td class="px-4 py-3 text-sm font-mono">{{ o.out_trade_no }}</td>
               <td class="px-4 py-3 text-sm">{{ formatPaymentAmount(o.pay_amount_snapshot, invoice.currency) }}</td>
@@ -61,11 +61,11 @@
 
       <!-- 文件区 -->
       <div class="card p-6">
-        <p v-if="invoice.status === 'APPLIED'" class="text-sm text-gray-500">{{ t('payment.invoice.detailPage.fileWaiting') }}</p>
-        <p v-else-if="invoice.status === 'ISSUED'" class="text-sm text-gray-700 dark:text-gray-200">
+        <p v-if="invoice.status === 'APPLIED'" class="text-sm text-ink-soft">{{ t('payment.invoice.detailPage.fileWaiting') }}</p>
+        <p v-else-if="invoice.status === 'ISSUED'" class="text-sm text-ink-body dark:text-dark-200">
           {{ t('payment.invoice.fileName') }}: {{ invoice.file_name || '-' }}
         </p>
-        <p v-else class="text-sm text-gray-400">{{ statusLabel(invoice.status) }}</p>
+        <p v-else class="text-sm text-ink-faint">{{ statusLabel(invoice.status) }}</p>
       </div>
     </div>
   </AppLayout>

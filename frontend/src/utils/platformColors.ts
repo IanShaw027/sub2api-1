@@ -52,7 +52,7 @@ const ACCENT_BAR: Record<Platform, string> = {
   kiro: 'bg-gradient-to-r from-cyan-400 to-sky-500',
   grok: 'bg-gradient-to-r from-slate-500 to-cyan-500',
 }
-const ACCENT_BAR_DEFAULT = 'bg-gradient-to-r from-primary-400 to-primary-500'
+const ACCENT_BAR_DEFAULT = 'bg-gradient-to-r from-brand-400 to-brand-500'
 
 // ── Text (price, icon) ─────────────────────────────────────────────
 const TEXT: Record<Platform, string> = {
@@ -64,7 +64,7 @@ const TEXT: Record<Platform, string> = {
   kiro: 'text-cyan-600 dark:text-cyan-400',
   grok: 'text-slate-700 dark:text-slate-300',
 }
-const TEXT_DEFAULT = 'text-primary-600 dark:text-primary-400'
+const TEXT_DEFAULT = 'text-brand-600 dark:text-brand-400'
 
 // ── Icon (check mark etc.) ──────────────────────────────────────────
 const ICON: Record<Platform, string> = {
@@ -76,7 +76,7 @@ const ICON: Record<Platform, string> = {
   kiro: 'text-cyan-500 dark:text-cyan-400',
   grok: 'text-slate-500 dark:text-slate-300',
 }
-const ICON_DEFAULT = 'text-primary-500 dark:text-primary-400'
+const ICON_DEFAULT = 'text-brand-500 dark:text-brand-400'
 
 // ── Button (solid bg) ───────────────────────────────────────────────
 const BUTTON: Record<Platform, string> = {
@@ -88,7 +88,7 @@ const BUTTON: Record<Platform, string> = {
   kiro: 'bg-cyan-500 text-white hover:bg-cyan-600 active:bg-cyan-700 dark:bg-cyan-500/80 dark:hover:bg-cyan-500',
   grok: 'bg-slate-700 text-white hover:bg-slate-800 active:bg-slate-900 dark:bg-slate-600 dark:hover:bg-slate-500',
 }
-const BUTTON_DEFAULT = 'bg-primary-500 text-white hover:bg-primary-600 dark:bg-primary-600 dark:hover:bg-primary-500'
+const BUTTON_DEFAULT = 'bg-brand-500 text-white hover:bg-brand-600 dark:bg-brand-600 dark:hover:bg-brand-500'
 
 // ── Discount badge ──────────────────────────────────────────────────
 const DISCOUNT: Record<Platform, string> = {
@@ -112,7 +112,7 @@ const GRADIENT: Record<Platform, string> = {
   kiro: 'from-cyan-500 to-sky-600',
   grok: 'from-slate-600 to-cyan-600',
 }
-const GRADIENT_DEFAULT = 'from-primary-500 to-primary-600'
+const GRADIENT_DEFAULT = 'from-brand-500 to-brand-600'
 
 // ── Header text (light text on gradient bg) ────────────────────────
 const GRADIENT_TEXT: Record<Platform, string> = {
@@ -124,7 +124,7 @@ const GRADIENT_TEXT: Record<Platform, string> = {
   kiro: 'text-cyan-100',
   grok: 'text-slate-100',
 }
-const GRADIENT_TEXT_DEFAULT = 'text-primary-100'
+const GRADIENT_TEXT_DEFAULT = 'text-brand-100'
 
 const GRADIENT_SUBTEXT: Record<Platform, string> = {
   anthropic: 'text-orange-200',
@@ -135,7 +135,7 @@ const GRADIENT_SUBTEXT: Record<Platform, string> = {
   kiro: 'text-cyan-200',
   grok: 'text-slate-200',
 }
-const GRADIENT_SUBTEXT_DEFAULT = 'text-primary-200'
+const GRADIENT_SUBTEXT_DEFAULT = 'text-brand-200'
 
 // ── Public API ──────────────────────────────────────────────────────
 

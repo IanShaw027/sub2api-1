@@ -5,16 +5,16 @@
 
       <section class="grid gap-4 md:grid-cols-3">
         <div class="card p-5">
-          <p class="text-xs uppercase tracking-[0.3em] text-gray-400 dark:text-gray-500">{{ t('skills.my.total', '总技能') }}</p>
-          <p class="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{{ skillsStore.mySkillsPagination.total }}</p>
+          <p class="text-xs uppercase tracking-[0.3em] text-ink-faint dark:text-dark-500">{{ t('skills.my.total', '总技能') }}</p>
+          <p class="mt-2 text-3xl font-bold text-ink dark:text-white">{{ skillsStore.mySkillsPagination.total }}</p>
         </div>
         <div class="card p-5">
-          <p class="text-xs uppercase tracking-[0.3em] text-gray-400 dark:text-gray-500">{{ t('skills.my.publishedCount', '已发布') }}</p>
-          <p class="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{{ publishedCount }}</p>
+          <p class="text-xs uppercase tracking-[0.3em] text-ink-faint dark:text-dark-500">{{ t('skills.my.publishedCount', '已发布') }}</p>
+          <p class="mt-2 text-3xl font-bold text-ink dark:text-white">{{ publishedCount }}</p>
         </div>
         <div class="card p-5">
-          <p class="text-xs uppercase tracking-[0.3em] text-gray-400 dark:text-gray-500">{{ t('skills.my.paidCount', '付费技能') }}</p>
-          <p class="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{{ paidCount }}</p>
+          <p class="text-xs uppercase tracking-[0.3em] text-ink-faint dark:text-dark-500">{{ t('skills.my.paidCount', '付费技能') }}</p>
+          <p class="mt-2 text-3xl font-bold text-ink dark:text-white">{{ paidCount }}</p>
         </div>
       </section>
 
@@ -28,8 +28,8 @@
             :data-status-filter="option.value"
             :class="
               skillsStore.mySkillFilters.status === option.value
-                ? 'border-gray-900 bg-gray-900 text-white dark:border-gray-100 dark:bg-gray-100 dark:text-gray-900'
-                : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:text-gray-900 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:text-white'
+                ? 'border-ink bg-ink text-white dark:border-line dark:bg-card dark:text-ink'
+                : 'border-line text-ink-body hover:border-ink/40 hover:text-ink dark:border-dark-700 dark:text-dark-300 dark:hover:border-dark-500 dark:hover:text-white'
             "
             @click="void updateStatusFilter(option.value)"
           >

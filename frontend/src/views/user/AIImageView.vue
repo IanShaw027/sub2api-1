@@ -2,12 +2,12 @@
   <AppLayout>
     <div class="mx-auto flex w-full max-w-7xl flex-col gap-6">
       <div class="card overflow-hidden">
-        <div class="border-b border-gray-200 bg-gradient-to-r from-amber-100 via-orange-50 to-rose-100 px-6 py-5 dark:border-dark-700 dark:from-amber-900/20 dark:via-dark-900 dark:to-rose-900/20">
+        <div class="border-b border-line bg-gradient-to-r from-amber-100 via-orange-50 to-rose-100 px-6 py-5 dark:border-dark-700 dark:from-amber-900/20 dark:via-dark-900 dark:to-rose-900/20">
           <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p class="text-xs uppercase tracking-[0.35em] text-gray-500 dark:text-gray-400">{{ t('ai.center.label', 'AI 创作中心') }}</p>
-              <h1 class="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{{ t('ai.image.title', 'AI 生图') }}</h1>
-              <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ t('ai.image.subtitle', '支持生成和编辑，提交后进入画廊。') }}</p>
+              <p class="text-xs uppercase tracking-[0.35em] text-ink-soft dark:text-dark-400">{{ t('ai.center.label', 'AI 创作中心') }}</p>
+              <h1 class="mt-2 text-2xl font-bold text-ink dark:text-white">{{ t('ai.image.title', 'AI 生图') }}</h1>
+              <p class="mt-1 text-sm text-ink-body dark:text-dark-400">{{ t('ai.image.subtitle', '支持生成和编辑，提交后进入画廊。') }}</p>
             </div>
             <div class="flex gap-3">
               <button class="btn btn-secondary" :disabled="loading" @click="loadRecentArtworks">
@@ -48,11 +48,11 @@
 
             <div>
               <label class="input-label mb-1.5 block">{{ t('ai.image.mode', '模式') }}</label>
-              <div class="inline-flex w-full overflow-hidden rounded-xl border border-gray-200 bg-white p-1 dark:border-dark-700 dark:bg-dark-900">
+              <div class="inline-flex w-full overflow-hidden rounded-xl border border-line bg-card p-1 dark:border-dark-700 dark:bg-dark-900">
                 <button
                   type="button"
                   class="flex-1 rounded-lg px-3 py-2 text-sm font-medium transition"
-                  :class="mode === 'generate' ? 'bg-primary-500 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'"
+                  :class="mode === 'generate' ? 'bg-brand-500 text-white shadow-xs' : 'text-ink-body hover:text-ink dark:text-dark-300 dark:hover:text-white'"
                   @click="mode = 'generate'"
                 >
                   {{ t('ai.image.modeGenerate', '生成') }}
@@ -61,19 +61,19 @@
                   type="button"
                   :disabled="!editAvailable"
                   class="flex-1 rounded-lg px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50"
-                  :class="mode === 'edit' ? 'bg-primary-500 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'"
+                  :class="mode === 'edit' ? 'bg-brand-500 text-white shadow-xs' : 'text-ink-body hover:text-ink dark:text-dark-300 dark:hover:text-white'"
                   @click="mode = 'edit'"
                 >
                   {{ t('ai.image.modeEdit', '编辑') }}
                 </button>
               </div>
-              <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ modeHint }}</p>
-              <p class="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{{ editStatusLabel }}</p>
+              <p class="mt-2 text-xs text-ink-soft dark:text-dark-400">{{ modeHint }}</p>
+              <p class="mt-1 text-[11px] text-ink-faint dark:text-dark-500">{{ editStatusLabel }}</p>
             </div>
 
             <Input v-model="form.title" :label="t('ai.image.artworkTitle', '作品标题')" :placeholder="t('ai.image.artworkTitlePlaceholder', '可选，默认取提示词前缀')" />
 
-            <div v-if="mode === 'edit'" class="space-y-4 rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900/60">
+            <div v-if="mode === 'edit'" class="space-y-4 rounded-card border border-dashed border-line bg-page p-4 dark:border-dark-700 dark:bg-dark-900/60">
               <div>
                 <label class="input-label mb-2 block">{{ t('ai.image.sourceImage', '原图') }}</label>
                 <ImageUpload
@@ -142,24 +142,24 @@
           </div>
 
           <div class="space-y-6">
-            <div v-if="mode === 'edit'" class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+            <div v-if="mode === 'edit'" class="rounded-card border border-line bg-card p-4 shadow-xs dark:border-dark-700 dark:bg-dark-900">
               <div class="flex items-center justify-between gap-3">
                 <div>
-                  <h2 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('ai.image.assetRefs', '引用已有资产') }}</h2>
-                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('ai.image.assetRefsHint', '可直接把现有作品作为原图或遮罩。') }}</p>
+                  <h2 class="text-sm font-semibold text-ink dark:text-white">{{ t('ai.image.assetRefs', '引用已有资产') }}</h2>
+                  <p class="mt-1 text-xs text-ink-soft dark:text-dark-400">{{ t('ai.image.assetRefsHint', '可直接把现有作品作为原图或遮罩。') }}</p>
                 </div>
               </div>
               <div class="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 <article
                   v-for="artwork in recentArtworks.slice(0, 6)"
                   :key="`ref-${artwork.id}`"
-                  class="overflow-hidden rounded-2xl border border-gray-200 bg-gray-50 dark:border-dark-700 dark:bg-dark-950"
+                  class="overflow-hidden rounded-card border border-line bg-page dark:border-dark-700 dark:bg-dark-950"
                 >
                   <img :src="artwork.thumbnail_url || artwork.image_url" :alt="artwork.title" class="h-32 w-full object-cover" />
                   <div class="space-y-2 p-3">
                     <div class="min-w-0">
-                      <h3 class="line-clamp-1 text-sm font-semibold text-gray-900 dark:text-white">{{ artwork.title }}</h3>
-                      <p class="text-[11px] text-gray-500 dark:text-gray-400">{{ resolveLineLabel(artwork.line_id, artwork.line_name) }}</p>
+                      <h3 class="line-clamp-1 text-sm font-semibold text-ink dark:text-white">{{ artwork.title }}</h3>
+                      <p class="text-[11px] text-ink-soft dark:text-dark-400">{{ resolveLineLabel(artwork.line_id, artwork.line_name) }}</p>
                     </div>
                     <div class="flex flex-wrap gap-2">
                       <button class="btn btn-secondary btn-xs" type="button" @click="useArtworkAsSource(artwork)">{{ t('ai.image.useAsSource', '用作原图') }}</button>
@@ -175,26 +175,26 @@
               </div>
             </div>
 
-            <div v-if="featuredArtwork" class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+            <div v-if="featuredArtwork" class="rounded-card border border-line bg-card p-4 shadow-xs dark:border-dark-700 dark:bg-dark-900">
               <div class="mb-3 flex items-center justify-between">
                 <div>
-                  <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ featuredArtwork.title }}</h2>
-                  <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ resolveLineLabel(featuredArtwork.line_id, featuredArtwork.line_name) }} · {{ featuredArtwork.style || 'cinematic' }} · {{ featuredArtwork.size || '1024x1024' }}</p>
+                  <h2 class="text-lg font-semibold text-ink dark:text-white">{{ featuredArtwork.title }}</h2>
+                  <p class="mt-1 text-sm text-ink-soft dark:text-dark-400">{{ resolveLineLabel(featuredArtwork.line_id, featuredArtwork.line_name) }} · {{ featuredArtwork.style || 'cinematic' }} · {{ featuredArtwork.size || '1024x1024' }}</p>
                 </div>
-                <span class="rounded-full bg-primary-50 px-3 py-1 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-200">
+                <span class="rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700 dark:bg-brand-900/30 dark:text-brand-200">
                   {{ featuredArtwork.visibility === 'private' ? t('ai.prompt.private', '私有') : t('ai.prompt.public', '公开') }}
                 </span>
               </div>
-              <div class="overflow-hidden rounded-2xl bg-gray-100 dark:bg-dark-800">
+              <div class="overflow-hidden rounded-card bg-page dark:bg-dark-800">
                 <img :src="featuredArtwork.image_url" :alt="featuredArtwork.title" class="h-[420px] w-full object-cover" />
               </div>
-              <p class="mt-3 whitespace-pre-wrap text-sm text-gray-600 dark:text-gray-400">{{ featuredArtwork.prompt }}</p>
+              <p class="mt-3 whitespace-pre-wrap text-sm text-ink-body dark:text-dark-400">{{ featuredArtwork.prompt }}</p>
             </div>
 
-            <div class="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900">
+            <div class="rounded-card border border-line bg-page p-4 dark:border-dark-700 dark:bg-dark-900">
               <div class="mb-3 flex items-center justify-between">
-                <h2 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('ai.image.recent', '最近作品') }}</h2>
-                <RouterLink to="/ai/gallery" class="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400">
+                <h2 class="text-sm font-semibold text-ink dark:text-white">{{ t('ai.image.recent', '最近作品') }}</h2>
+                <RouterLink to="/ai/gallery" class="text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400">
                   {{ t('ai.gallery.open', '打开画廊') }}
                 </RouterLink>
               </div>
@@ -202,15 +202,15 @@
                 <article
                   v-for="artwork in recentArtworks"
                   :key="artwork.id"
-                  class="overflow-hidden rounded-2xl border border-gray-200 bg-white transition-transform hover:-translate-y-0.5 dark:border-dark-700 dark:bg-dark-950"
+                  class="overflow-hidden rounded-card border border-line bg-card transition-transform hover:-translate-y-0.5 dark:border-dark-700 dark:bg-dark-950"
                 >
                   <img :src="artwork.thumbnail_url || artwork.image_url" :alt="artwork.title" class="h-48 w-full object-cover" />
                   <div class="space-y-2 p-3">
                     <div class="flex items-start justify-between gap-3">
-                      <h3 class="line-clamp-1 text-sm font-semibold text-gray-900 dark:text-white">{{ artwork.title }}</h3>
-                      <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-600 dark:bg-dark-800 dark:text-gray-300">{{ artwork.style }}</span>
+                      <h3 class="line-clamp-1 text-sm font-semibold text-ink dark:text-white">{{ artwork.title }}</h3>
+                      <span class="rounded-full bg-line px-2 py-0.5 text-[11px] text-ink-body dark:bg-dark-800 dark:text-dark-300">{{ artwork.style }}</span>
                     </div>
-                    <p class="line-clamp-2 text-xs text-gray-500 dark:text-gray-400">{{ artwork.prompt }}</p>
+                    <p class="line-clamp-2 text-xs text-ink-soft dark:text-dark-400">{{ artwork.prompt }}</p>
                   </div>
                 </article>
                 <EmptyState

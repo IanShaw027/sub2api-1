@@ -2,7 +2,7 @@
   <div class="card overflow-hidden">
     <table class="w-full table-fixed border-collapse text-sm">
       <thead>
-        <tr class="border-b border-gray-100 bg-gray-50/50 text-xs font-medium uppercase tracking-wide text-gray-500 dark:border-dark-700 dark:bg-dark-800/50 dark:text-gray-400">
+        <tr class="border-b border-line bg-page/60 text-xs font-semibold uppercase tracking-wider text-ink-soft dark:border-dark-700 dark:bg-dark-800/50">
           <th class="w-[180px] px-4 py-3 text-center">{{ columns.name }}</th>
           <th class="w-[200px] px-4 py-3 text-left">{{ columns.description }}</th>
           <th class="w-[140px] px-4 py-3 text-left">{{ columns.platform }}</th>
@@ -13,15 +13,19 @@
       <tbody v-if="loading">
         <tr>
           <td colspan="5" class="py-10 text-center">
-            <Icon name="refresh" size="lg" class="inline-block animate-spin text-gray-400" />
+            <Icon name="refresh" size="lg" class="inline-block animate-spin text-ink-faint" />
           </td>
         </tr>
       </tbody>
       <tbody v-else-if="rows.length === 0">
         <tr>
           <td colspan="5" class="py-12 text-center">
-            <Icon name="inbox" size="xl" class="mx-auto mb-3 h-12 w-12 text-gray-400" />
-            <p class="text-sm text-gray-500 dark:text-gray-400">{{ emptyLabel }}</p>
+            <div
+              class="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-card bg-gradient-to-br from-brand-50 to-accent-50 dark:from-brand-900/30 dark:to-accent-900/20"
+            >
+              <Icon name="inbox" size="xl" class="h-7 w-7 text-ink-faint" />
+            </div>
+            <p class="text-sm text-ink-soft">{{ emptyLabel }}</p>
           </td>
         </tr>
       </tbody>
@@ -31,19 +35,19 @@
         v-else
         v-for="(channel, chIdx) in rows"
         :key="`${channel.name}-${chIdx}`"
-        class="border-b-2 border-gray-200 last:border-b-0 dark:border-dark-600"
+        class="border-b-2 border-line last:border-b-0 dark:border-dark-600"
       >
         <tr
           v-for="(section, secIdx) in channel.platforms"
           :key="`${channel.name}-${section.platform}`"
-          class="transition-colors hover:bg-gray-50/40 dark:hover:bg-dark-800/40"
-          :class="{ 'border-t border-gray-100/70 dark:border-dark-700/50': secIdx > 0 }"
+          class="transition-colors duration-150 hover:bg-page/50 dark:hover:bg-dark-800/40"
+          :class="{ 'border-t border-divider dark:border-dark-700/50': secIdx > 0 }"
         >
           <!-- 渠道名：只在第一行渲染并用 rowspan 纵向合并 -->
           <td
             v-if="secIdx === 0"
             :rowspan="channel.platforms.length"
-            class="px-4 py-3 text-center align-middle font-medium text-gray-900 dark:text-white"
+            class="px-4 py-3 text-center align-middle font-medium text-ink dark:text-white"
           >
             {{ channel.name }}
           </td>
@@ -52,10 +56,10 @@
           <td
             v-if="secIdx === 0"
             :rowspan="channel.platforms.length"
-            class="px-4 py-3 align-middle text-xs text-gray-500 dark:text-gray-400"
+            class="px-4 py-3 align-middle text-xs text-ink-soft"
           >
             <template v-if="channel.description">{{ channel.description }}</template>
-            <span v-else class="text-gray-400">-</span>
+            <span v-else class="text-ink-faint">-</span>
           </td>
 
           <!-- 平台徽章 -->
@@ -113,7 +117,7 @@
                 class="flex flex-wrap items-center gap-1.5"
               >
                 <span
-                  class="inline-flex items-center gap-0.5 text-[10px] font-medium uppercase text-gray-500 dark:text-gray-400"
+                  class="inline-flex items-center gap-0.5 text-[10px] font-medium uppercase text-ink-soft"
                   :title="t('availableChannels.publicTooltip')"
                 >
                   <Icon name="globe" size="xs" class="h-3 w-3" />
@@ -142,7 +146,7 @@
                   </span>
                 </div>
               </div>
-              <span v-if="section.groups.length === 0" class="text-xs text-gray-400">-</span>
+              <span v-if="section.groups.length === 0" class="text-xs text-ink-faint">-</span>
             </div>
           </td>
 
@@ -158,7 +162,7 @@
                 :show-platform="false"
                 :platform-hint="section.platform"
               />
-              <span v-if="section.supported_models.length === 0" class="text-xs text-gray-400">
+              <span v-if="section.supported_models.length === 0" class="text-xs text-ink-faint">
                 {{ noModelsLabel }}
               </span>
             </div>

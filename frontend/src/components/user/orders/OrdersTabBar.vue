@@ -30,8 +30,8 @@ function isActive(path: string): boolean {
 function tabClass(path: string): string {
   const base = 'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition'
   return isActive(path)
-    ? `${base} tab-active bg-blue-600 text-white shadow`
-    : `${base} text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-800`
+    ? `${base} tab-active bg-accent-600 text-white shadow`
+    : `${base} text-ink-body hover:bg-page dark:text-ink-body dark:hover:bg-dark-800`
 }
 
 function go(path: string) {

@@ -10,7 +10,7 @@
       />
 
       <section class="card overflow-hidden">
-        <div class="border-b border-gray-200 bg-gradient-to-r from-slate-900 via-slate-800 to-cyan-900 px-6 py-5 text-white dark:border-dark-700">
+        <div class="border-b border-line bg-gradient-to-r from-dark-900 via-brand-950 to-accent-950 px-6 py-5 text-white dark:border-dark-700">
           <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p class="text-xs uppercase tracking-[0.35em] text-white/60">{{ t('skills.center.label', 'Skill Center') }}</p>
@@ -31,7 +31,7 @@
 
         <div class="grid gap-6 p-6 xl:grid-cols-[minmax(0,1fr)_380px]">
           <div class="space-y-6">
-            <section class="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+            <section class="rounded-3xl border border-line bg-card p-5 shadow-xs dark:border-dark-700 dark:bg-dark-900">
               <div class="grid gap-4 lg:grid-cols-2">
                 <Input
                   v-model="skillsStore.editorDraft.name"
@@ -110,8 +110,8 @@
           </div>
 
           <aside class="space-y-6">
-            <section class="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-700 dark:bg-dark-900">
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('skills.editor.pricing', '定价与可见性') }}</h2>
+            <section class="rounded-3xl border border-line bg-card p-5 shadow-xs dark:border-dark-700 dark:bg-dark-900">
+              <h2 class="text-lg font-semibold text-ink dark:text-white">{{ t('skills.editor.pricing', '定价与可见性') }}</h2>
               <div class="mt-4 space-y-4">
                 <div>
                   <label class="input-label mb-1.5 block">{{ t('skills.market.priceMode', '收费方式') }}</label>
@@ -134,15 +134,15 @@
                     :placeholder="'CNY'"
                   />
                 </div>
-                <label class="flex items-start gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4 text-sm text-gray-700 dark:border-dark-700 dark:bg-dark-950 dark:text-gray-200">
+                <label class="flex items-start gap-3 rounded-card border border-line bg-page px-4 py-4 text-sm text-ink-body dark:border-dark-700 dark:bg-dark-950 dark:text-dark-200">
                   <input
                     v-model="skillsStore.editorDraft.source_locked"
                     type="checkbox"
-                    class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    class="mt-0.5 h-4 w-4 rounded border-line text-brand-600 focus:ring-accent/25"
                   />
                   <span>
                     <span class="block font-medium">{{ t('skills.editor.sourceLocked', '隐藏源内容') }}</span>
-                    <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">{{ t('skills.editor.sourceLockedHint', '付费技能切换到 paid 时会默认开启；详情页仅展示变量表单和元信息。') }}</span>
+                    <span class="mt-1 block text-xs text-ink-soft dark:text-dark-400">{{ t('skills.editor.sourceLockedHint', '付费技能切换到 paid 时会默认开启；详情页仅展示变量表单和元信息。') }}</span>
                   </span>
                 </label>
                 <Input
@@ -153,8 +153,8 @@
               </div>
             </section>
 
-            <section class="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-700 dark:bg-dark-900">
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('skills.editor.extra', '附加说明') }}</h2>
+            <section class="rounded-3xl border border-line bg-card p-5 shadow-xs dark:border-dark-700 dark:bg-dark-900">
+              <h2 class="text-lg font-semibold text-ink dark:text-white">{{ t('skills.editor.extra', '附加说明') }}</h2>
               <div class="mt-4 space-y-4">
                 <TextArea
                   v-model="skillsStore.editorDraft.readme"

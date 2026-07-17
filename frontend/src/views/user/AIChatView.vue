@@ -3,7 +3,7 @@
     <div class="mx-auto flex w-full max-w-7xl flex-col gap-6 lg:flex-row">
       <section class="flex-1 space-y-6">
         <div class="card overflow-hidden">
-          <div class="border-b border-gray-200 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-700 px-6 py-5 text-white dark:border-dark-700">
+          <div class="border-b border-line bg-gradient-to-r from-dark-900 via-brand-950 to-accent-950 px-6 py-5 text-white dark:border-dark-700">
             <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p class="text-xs uppercase tracking-[0.35em] text-white/60">{{ t('ai.center.label', 'AI 创作中心') }}</p>
@@ -24,7 +24,7 @@
 
           <div class="grid gap-6 p-6 xl:grid-cols-[280px_minmax(0,1fr)]">
             <div class="space-y-4">
-              <div class="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900">
+              <div class="rounded-card border border-line bg-page p-4 dark:border-dark-700 dark:bg-dark-900">
                 <label class="input-label mb-1.5 block">{{ t('ai.line.selector', '线路') }}</label>
                 <Select
                   :model-value="aiStore.selectedLineId"
@@ -39,7 +39,7 @@
                     @update:model-value="updateSelectedKey"
                   />
                 </div>
-                <div class="mt-3 space-y-1 text-sm text-gray-600 dark:text-gray-400">
+                <div class="mt-3 space-y-1 text-sm text-ink-body dark:text-dark-400">
                   <p>{{ t('ai.line.availableKeys', '可用 key') }}: {{ aiStore.selectedLine?.key_count ?? 0 }}</p>
                   <p>{{ t('ai.line.platform', '平台') }}: {{ aiStore.selectedLine?.platform ?? '-' }}</p>
                 </div>
@@ -51,21 +51,21 @@
                 </p>
               </div>
 
-              <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+              <div class="rounded-card border border-line bg-card p-4 shadow-xs dark:border-dark-700 dark:bg-dark-900">
                 <label class="input-label mb-1.5 block">{{ t('ai.chat.entry', '入口') }}</label>
                 <Select :model-value="entryMode" :options="entryOptions" @update:model-value="updateEntryMode" />
-                <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">{{ entryHint }}</p>
-                <div class="mt-3 flex flex-wrap gap-2 text-[11px] text-gray-500 dark:text-gray-400">
-                  <span class="rounded-full bg-gray-100 px-2 py-1 dark:bg-dark-800">{{ t('ai.chat.runtimeLabel', 'runtime') }}: {{ runtimeSourceDomain }}</span>
-                  <span class="rounded-full bg-gray-100 px-2 py-1 dark:bg-dark-800">{{ t('ai.chat.responsesLabel', 'responses') }}: {{ entryMode === 'responses' ? t('common.enabled', '启用') : t('common.disabled', '关闭') }}</span>
+                <p class="mt-3 text-xs text-ink-soft dark:text-dark-400">{{ entryHint }}</p>
+                <div class="mt-3 flex flex-wrap gap-2 text-[11px] text-ink-soft dark:text-dark-400">
+                  <span class="rounded-full bg-line px-2 py-1 dark:bg-dark-800">{{ t('ai.chat.runtimeLabel', 'runtime') }}: {{ runtimeSourceDomain }}</span>
+                  <span class="rounded-full bg-line px-2 py-1 dark:bg-dark-800">{{ t('ai.chat.responsesLabel', 'responses') }}: {{ entryMode === 'responses' ? t('common.enabled', '启用') : t('common.disabled', '关闭') }}</span>
                 </div>
               </div>
 
-              <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+              <div class="rounded-card border border-line bg-card p-4 shadow-xs dark:border-dark-700 dark:bg-dark-900">
                 <div class="flex items-center justify-between gap-3">
                   <div>
-                    <h2 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('ai.chat.recentSessions', '最近会话') }}</h2>
-                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('ai.chat.recentSessionsHint', '刷新或分享链接后，可按 session 恢复历史消息。') }}</p>
+                    <h2 class="text-sm font-semibold text-ink dark:text-white">{{ t('ai.chat.recentSessions', '最近会话') }}</h2>
+                    <p class="mt-1 text-xs text-ink-soft dark:text-dark-400">{{ t('ai.chat.recentSessionsHint', '刷新或分享链接后，可按 session 恢复历史消息。') }}</p>
                   </div>
                   <button class="btn btn-secondary btn-sm" type="button" @click="startNewSession">{{ t('ai.chat.newSession', '新会话') }}</button>
                 </div>
@@ -76,12 +76,12 @@
                     type="button"
                     class="w-full rounded-xl border px-3 py-2 text-left transition-colors"
                     :class="session.id === aiStore.activeSessionId
-                      ? 'border-primary-300 bg-primary-50 dark:border-primary-700 dark:bg-primary-900/20'
-                      : 'border-gray-200 hover:border-primary-300 hover:bg-primary-50 dark:border-dark-700 dark:hover:border-primary-700 dark:hover:bg-primary-900/20'"
+                      ? 'border-brand-300 bg-brand-50 dark:border-brand-700 dark:bg-brand-900/20'
+                      : 'border-line hover:border-brand-300 hover:bg-brand-50 dark:border-dark-700 dark:hover:border-brand-700 dark:hover:bg-brand-900/20'"
                     @click="selectSession(session.id)"
                   >
-                    <div class="truncate text-sm font-medium text-gray-900 dark:text-white">{{ session.title }}</div>
-                    <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    <div class="truncate text-sm font-medium text-ink dark:text-white">{{ session.title }}</div>
+                    <div class="mt-1 text-xs text-ink-soft dark:text-dark-400">
                       {{ formatSessionTime(session.last_message_at || session.updated_at) }}
                     </div>
                   </button>
@@ -93,20 +93,20 @@
                 </div>
               </div>
 
-              <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+              <div class="rounded-card border border-line bg-card p-4 shadow-xs dark:border-dark-700 dark:bg-dark-900">
                 <div class="flex items-center justify-between">
-                  <h2 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('ai.chat.quickPrompts', '快捷提示词') }}</h2>
-                  <span class="text-xs text-gray-500 dark:text-gray-400">{{ quickPrompts.length }}</span>
+                  <h2 class="text-sm font-semibold text-ink dark:text-white">{{ t('ai.chat.quickPrompts', '快捷提示词') }}</h2>
+                  <span class="text-xs text-ink-soft dark:text-dark-400">{{ quickPrompts.length }}</span>
                 </div>
                 <div class="mt-3 space-y-2">
                   <button
                     v-for="prompt in quickPrompts"
                     :key="prompt.id"
-                    class="w-full rounded-xl border border-gray-200 px-3 py-2 text-left text-sm transition-colors hover:border-primary-300 hover:bg-primary-50 dark:border-dark-700 dark:hover:border-primary-700 dark:hover:bg-primary-900/20"
+                    class="w-full rounded-xl border border-line px-3 py-2 text-left text-sm transition-colors hover:border-brand-300 hover:bg-brand-50 dark:border-dark-700 dark:hover:border-brand-700 dark:hover:bg-brand-900/20"
                     @click="draft = prompt.content"
                   >
-                    <div class="font-medium text-gray-900 dark:text-white">{{ prompt.title }}</div>
-                    <div class="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">{{ prompt.content }}</div>
+                    <div class="font-medium text-ink dark:text-white">{{ prompt.title }}</div>
+                    <div class="mt-1 line-clamp-2 text-xs text-ink-soft dark:text-dark-400">{{ prompt.content }}</div>
                   </button>
                   <EmptyState
                     v-if="!loading && quickPrompts.length === 0"
@@ -117,9 +117,9 @@
               </div>
             </div>
 
-            <div class="flex min-h-[560px] flex-col rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-900">
+            <div class="flex min-h-[560px] flex-col rounded-card border border-line bg-card shadow-xs dark:border-dark-700 dark:bg-dark-900">
               <div class="flex-1 space-y-4 overflow-y-auto p-4">
-                <div v-if="aiStore.activeSession" class="rounded-2xl border border-dashed border-gray-200 px-4 py-3 text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400">
+                <div v-if="aiStore.activeSession" class="rounded-card border border-dashed border-line px-4 py-3 text-xs text-ink-soft dark:border-dark-700">
                   {{ t('ai.chat.currentSession', '当前会话：') }}{{ aiStore.activeSession.title }}
                 </div>
                 <template v-if="messages.length > 0">
@@ -130,12 +130,12 @@
                     :class="message.role === 'user' ? 'justify-end' : 'justify-start'"
                   >
                     <div
-                      class="max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6"
+                      class="max-w-[85%] rounded-card px-4 py-3 text-sm leading-6"
                       :class="message.role === 'user'
-                        ? 'bg-primary-600 text-white'
+                        ? 'bg-brand-600 text-white'
                         : message.role === 'system'
                           ? 'bg-amber-50 text-amber-900 dark:bg-amber-900/20 dark:text-amber-100'
-                          : 'bg-gray-100 text-gray-900 dark:bg-dark-800 dark:text-gray-100'"
+                          : 'bg-page text-ink dark:bg-dark-800 dark:text-ink'"
                     >
                       <p class="whitespace-pre-wrap">{{ message.content }}</p>
                       <p class="mt-2 text-[11px] opacity-70">{{ formatTime(message.created_at) }}</p>
@@ -150,14 +150,14 @@
                 <div ref="chatEndRef" />
               </div>
 
-              <div class="border-t border-gray-200 p-4 dark:border-dark-700">
+              <div class="border-t border-line p-4 dark:border-dark-700">
                 <TextArea
                   v-model="draft"
                   :rows="5"
                   :placeholder="t('ai.chat.placeholder', '输入你的需求，比如：生成一段更像产品经理口吻的总结。')"
                 />
                 <div class="mt-3 flex items-center justify-between gap-3">
-                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                  <p class="text-xs text-ink-soft dark:text-dark-400">
                     {{ t('ai.chat.hint', '自动选取线路内第一个可用 key，不会在界面暴露 key 本身。') }}
                   </p>
                   <button class="btn btn-primary" :disabled="!canSend || sending" @click="sendMessage">

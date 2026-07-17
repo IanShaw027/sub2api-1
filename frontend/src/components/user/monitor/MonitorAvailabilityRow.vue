@@ -1,11 +1,11 @@
 <template>
   <div class="mt-3 flex items-end justify-between">
-    <div class="text-[11px] uppercase tracking-widest text-gray-400">
+    <div class="text-[11px] uppercase tracking-widest text-ink-faint">
       {{ windowLabel }}
     </div>
     <div class="flex items-baseline gap-0.5">
       <span
-        class="text-3xl font-bold tabular-nums leading-none"
+        class="text-3xl font-bold leading-none tabular-nums"
         :style="colorStyle"
       >
         {{ displayValue }}
@@ -18,7 +18,7 @@
   </div>
   <div
     v-if="samplesLabel"
-    class="mt-1 text-[11px] text-gray-400 text-right"
+    class="mt-1 text-right text-[11px] text-ink-faint"
   >
     {{ samplesLabel }}
   </div>

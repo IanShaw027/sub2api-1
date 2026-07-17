@@ -16,11 +16,11 @@
       </div>
 
       <!-- Batch Actions Bar -->
-      <div v-if="selectedCount > 0" class="card flex items-center gap-4 border-blue-200 bg-blue-50/80 p-3 dark:border-blue-900/40 dark:bg-blue-900/20">
-        <span class="text-sm font-medium text-blue-700 dark:text-blue-300">
+      <div v-if="selectedCount > 0" class="card flex items-center gap-4 border-accent-200 bg-accent-50/80 p-3 dark:border-blue-900/40 dark:bg-blue-900/20">
+        <span class="text-sm font-medium text-accent-700 dark:text-blue-300">
           {{ t('payment.invoice.create.selected', { count: selectedCount }) }}
         </span>
-        <span class="text-sm text-blue-600 dark:text-blue-400">
+        <span class="text-sm text-accent-600 dark:text-blue-400">
           {{ t('payment.invoice.create.totalAmount') }}: {{ selectedInvoiceTotalLabel }}
         </span>
         <div class="ml-auto flex items-center gap-2">
@@ -51,7 +51,7 @@
               <Icon name="x" size="sm" />
               <span>{{ t('payment.orders.cancel') }}</span>
             </button>
-            <button v-if="canApplyInvoice(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/20" @click="quickApply(row)">
+            <button v-if="canApplyInvoice(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-accent-600 hover:bg-accent-50 dark:text-blue-400 dark:hover:bg-blue-900/20" @click="quickApply(row)">
               <Icon name="document" size="sm" />
               <span>{{ t('payment.invoice.apply') }}</span>
             </button>
@@ -84,7 +84,7 @@
 
     <!-- Cancel Confirm Dialog -->
     <BaseDialog :show="!!cancelTargetId" :title="t('payment.orders.cancel')" width="narrow" @close="cancelTargetId = null">
-      <p class="text-sm text-gray-600 dark:text-gray-300">{{ t('payment.confirmCancel') }}</p>
+      <p class="text-sm text-ink-body dark:text-ink-body">{{ t('payment.confirmCancel') }}</p>
       <template #footer>
         <div class="flex justify-end gap-3">
           <button class="btn btn-secondary" @click="cancelTargetId = null">{{ t('common.cancel') }}</button>
@@ -96,19 +96,19 @@
     <!-- Refund Dialog -->
     <BaseDialog :show="!!refundTarget" :title="t('payment.orders.requestRefund')" @close="closeRefundDialog">
       <div v-if="refundTarget" class="space-y-4">
-        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-800">
+        <div class="rounded-xl bg-page p-4 dark:bg-dark-800">
           <div class="flex justify-between text-sm">
-            <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderId') }}</span>
-            <span class="font-mono text-gray-900 dark:text-white">#{{ refundTarget.id }}</span>
+            <span class="text-ink-soft dark:text-ink-soft">{{ t('payment.orders.orderId') }}</span>
+            <span class="font-mono text-ink dark:text-white">#{{ refundTarget.id }}</span>
           </div>
           <div class="mt-2 flex justify-between text-sm">
-            <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.amount') }}</span>
-            <span class="text-gray-900 dark:text-white">{{ formatRefundMoney(refundTarget.amount) }}</span>
+            <span class="text-ink-soft dark:text-ink-soft">{{ t('payment.orders.amount') }}</span>
+            <span class="text-ink dark:text-white">{{ formatRefundMoney(refundTarget.amount) }}</span>
           </div>
         </div>
-        <div class="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm dark:border-blue-900/60 dark:bg-blue-900/20">
-          <div v-if="refundPreviewLoading" class="text-blue-700 dark:text-blue-300">正在计算可退款金额...</div>
-          <div v-else-if="refundPreview" class="space-y-2 text-blue-800 dark:text-blue-200">
+        <div class="rounded-xl border border-accent-100 bg-accent-50 p-4 text-sm dark:border-blue-900/60 dark:bg-blue-900/20">
+          <div v-if="refundPreviewLoading" class="text-accent-700 dark:text-blue-300">正在计算可退款金额...</div>
+          <div v-else-if="refundPreview" class="space-y-2 text-accent-800 dark:text-blue-200">
             <div class="flex justify-between">
               <span>订单剩余可退</span>
               <span class="font-medium">{{ formatRefundMoney(refundPreview.order_amount - refundPreview.already_refunded) }}</span>
@@ -118,7 +118,7 @@
                 <span>当前可用余额</span>
                 <span class="font-medium">{{ formatRefundMoney(refundPreview.balance_available || 0) }}</span>
               </div>
-              <p class="text-xs text-blue-600 dark:text-blue-300">余额退款按订单剩余可退金额和当前可用余额取较小值。</p>
+              <p class="text-xs text-accent-600 dark:text-blue-300">余额退款按订单剩余可退金额和当前可用余额取较小值。</p>
             </template>
             <template v-else>
               <div class="flex justify-between">
@@ -133,16 +133,16 @@
                 <span>折算已使用金额</span>
                 <span class="font-medium">{{ formatRefundMoney(refundPreview.used_refund_value || 0) }}</span>
               </div>
-              <p class="text-xs text-blue-600 dark:text-blue-300">
+              <p class="text-xs text-accent-600 dark:text-blue-300">
                 订阅退款按 消耗总额度 / 订阅倍率 * 退款倍率 折算已使用金额，再从订单剩余可退金额中扣除。
               </p>
             </template>
-            <div class="border-t border-blue-200 pt-2 dark:border-blue-800">
+            <div class="border-t border-accent-200 pt-2 dark:border-blue-800">
               <div class="flex justify-between font-semibold">
                 <span>实际可退款额</span>
                 <span>{{ formatRefundMoney(refundPreview.max_refund_amount) }}</span>
               </div>
-              <p class="mt-1 text-xs text-blue-600 dark:text-blue-300">
+              <p class="mt-1 text-xs text-accent-600 dark:text-blue-300">
                 {{ refundPreview.auto_refund ? '该订单提交后会自动退款到账。' : '该订单提交后需等待管理员审批。' }}
               </p>
             </div>
@@ -159,7 +159,7 @@
             :max="refundPreview?.max_refund_amount || refundTarget.amount"
             class="input mt-1 w-full"
           />
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          <p class="mt-1 text-xs text-ink-soft dark:text-ink-soft">
             最大可退 {{ formatRefundMoney(refundPreview?.max_refund_amount || 0) }}
           </p>
         </div>
@@ -179,10 +179,10 @@
     <!-- Create Invoice Dialog -->
     <BaseDialog :show="showCreateInvoiceDialog" :title="t('payment.invoice.create.action')" @close="closeCreateInvoiceDialog">
       <div class="space-y-4">
-        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-800">
+        <div class="rounded-xl bg-page p-4 dark:bg-dark-800">
           <div class="flex justify-between text-sm">
-            <span class="text-gray-500 dark:text-gray-400">{{ t('payment.invoice.create.selected', { count: selectedCount }) }}</span>
-            <span class="font-medium text-gray-900 dark:text-white">{{ t('payment.invoice.create.totalAmount') }}: {{ selectedInvoiceTotalLabel }}</span>
+            <span class="text-ink-soft dark:text-ink-soft">{{ t('payment.invoice.create.selected', { count: selectedCount }) }}</span>
+            <span class="font-medium text-ink dark:text-white">{{ t('payment.invoice.create.totalAmount') }}: {{ selectedInvoiceTotalLabel }}</span>
           </div>
         </div>
         <div>

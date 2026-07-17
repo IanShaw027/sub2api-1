@@ -85,7 +85,7 @@ describe('TicketEditorCard', () => {
 
     const rootClasses = wrapper.classes()
     expect(rootClasses).toContain('space-y-5')
-    expect(rootClasses).not.toContain('rounded-2xl')
+    expect(rootClasses).not.toContain('rounded-card')
     expect(rootClasses).not.toContain('border')
   })
 })

@@ -1,7 +1,29 @@
 <template>
   <AppLayout>
     <div class="space-y-6">
-      <div v-if="loading" class="flex items-center justify-center py-12"><LoadingSpinner /></div>
+      <!-- Calm loading skeleton for KPI strip -->
+      <div v-if="loading" class="space-y-4">
+        <div class="grid grid-cols-2 gap-4 xl:grid-cols-4">
+          <div v-for="n in 4" :key="`s1-${n}`" class="stat-card min-w-0">
+            <Skeleton variant="rect" :width="32" :height="32" class="shrink-0 rounded-control" />
+            <div class="min-w-0 flex-1 space-y-2">
+              <Skeleton variant="text" width="45%" height="12px" />
+              <Skeleton variant="text" width="60%" height="22px" />
+              <Skeleton variant="text" width="35%" height="11px" />
+            </div>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-4 xl:grid-cols-4">
+          <div v-for="n in 4" :key="`s2-${n}`" class="stat-card min-w-0">
+            <Skeleton variant="rect" :width="32" :height="32" class="shrink-0 rounded-control" />
+            <div class="min-w-0 flex-1 space-y-2">
+              <Skeleton variant="text" width="45%" height="12px" />
+              <Skeleton variant="text" width="60%" height="22px" />
+              <Skeleton variant="text" width="50%" height="11px" />
+            </div>
+          </div>
+        </div>
+      </div>
       <template v-else-if="stats">
         <UserDashboardStats
           :stats="stats"
@@ -32,7 +54,7 @@ import { useAuthStore } from '@/stores/auth'
 import { usageAPI, type UserDashboardStats as UserStatsType } from '@/api/usage'
 import { getMyPlatformQuotas } from '@/api/user'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import Skeleton from '@/components/common/Skeleton.vue'
 import UserDashboardStats from '@/components/user/dashboard/UserDashboardStats.vue'
 import UserDashboardCharts from '@/components/user/dashboard/UserDashboardCharts.vue'
 import UserDashboardRecentUsage from '@/components/user/dashboard/UserDashboardRecentUsage.vue'

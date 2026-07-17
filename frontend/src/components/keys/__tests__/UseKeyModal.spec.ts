@@ -400,7 +400,7 @@ describe('UseKeyModal', () => {
     expect(openCode).toContain('"grok-4.20-multi-agent-0309"')
     // Custom OpenCode provider must declare the OpenAI-compatible SDK package
     expect(openCode).toContain('"npm": "@ai-sdk/openai-compatible"')
-    expect(openCode).toContain('"name": "Grok via Sub2API"')
+    expect(openCode).toContain('"name": "Grok via API platform"')
     const openCodeParsed = JSON.parse(openCode)
     expect(openCodeParsed.provider.grok.models['grok-4.5'].limit.context).toBe(500000)
     expect(openCodeParsed.provider.grok.models['grok-build-0.1'].limit.context).toBe(256000)

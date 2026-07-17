@@ -7,15 +7,15 @@
   >
     <div class="space-y-4">
       <!-- No Group Assigned Warning -->
-      <div v-if="!platform" class="flex items-start gap-3 p-4 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
-        <svg class="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+      <div v-if="!platform" class="flex items-start gap-3 rounded-card border border-warning/25 bg-warning-soft p-4 dark:border-yellow-800 dark:bg-yellow-900/20">
+        <svg class="mt-0.5 h-5 w-5 flex-shrink-0 text-warning" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
         </svg>
         <div>
-          <p class="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+          <p class="text-sm font-semibold text-warning dark:text-yellow-200">
             {{ t('keys.useKeyModal.noGroupTitle') }}
           </p>
-          <p class="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+          <p class="mt-1 text-sm text-warning/90 dark:text-yellow-300">
             {{ t('keys.useKeyModal.noGroupDescription') }}
           </p>
         </div>
@@ -24,22 +24,23 @@
       <!-- Platform-specific content -->
       <template v-else>
         <!-- Description -->
-        <p class="text-sm text-gray-600 dark:text-gray-400">
+        <p class="text-sm text-ink-body dark:text-dark-400">
           {{ platformDescription }}
         </p>
 
         <!-- Client Tabs -->
-        <div v-if="clientTabs.length" class="border-b border-gray-200 dark:border-dark-700">
+        <div v-if="clientTabs.length" class="border-b border-line dark:border-dark-700">
           <nav class="-mb-px flex space-x-6" aria-label="Client">
             <button
               v-for="tab in clientTabs"
               :key="tab.id"
+              type="button"
               @click="activeClientTab = tab.id"
               :class="[
-                'whitespace-nowrap py-2.5 px-1 border-b-2 font-medium text-sm transition-colors',
+                'whitespace-nowrap border-b-2 px-1 py-2.5 text-sm font-medium transition-colors duration-150 ease-out',
                 activeClientTab === tab.id
-                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+                  ? 'border-brand-500 text-brand-700 dark:border-brand-500 dark:text-brand-400'
+                  : 'border-transparent text-ink-soft hover:border-divider hover:text-ink dark:text-dark-400 dark:hover:text-dark-300'
               ]"
             >
               <span class="flex items-center gap-2">
@@ -51,17 +52,18 @@
         </div>
 
         <!-- OS/Shell Tabs -->
-        <div v-if="showShellTabs" class="border-b border-gray-200 dark:border-dark-700">
+        <div v-if="showShellTabs" class="border-b border-line dark:border-dark-700">
           <nav class="-mb-px flex space-x-4" aria-label="Tabs">
             <button
               v-for="tab in currentTabs"
               :key="tab.id"
+              type="button"
               @click="activeTab = tab.id"
               :class="[
-                'whitespace-nowrap py-2.5 px-1 border-b-2 font-medium text-sm transition-colors',
+                'whitespace-nowrap border-b-2 px-1 py-2.5 text-sm font-medium transition-colors duration-150 ease-out',
                 activeTab === tab.id
-                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+                  ? 'border-brand-500 text-brand-700 dark:border-brand-500 dark:text-brand-400'
+                  : 'border-transparent text-ink-soft hover:border-divider hover:text-ink dark:text-dark-400 dark:hover:text-dark-300'
               ]"
             >
               <span class="flex items-center gap-2">
@@ -80,20 +82,21 @@
             class="relative"
           >
             <!-- File Hint (if exists) -->
-            <p v-if="file.hint" class="text-xs text-amber-600 dark:text-amber-400 mb-1.5 flex items-center gap-1">
+            <p v-if="file.hint" class="mb-1.5 flex items-center gap-1.5 rounded-control border border-warning/20 bg-warning-soft px-2 py-1 text-xs font-medium text-warning dark:border-amber-800/40 dark:bg-amber-900/20 dark:text-amber-400">
               <Icon name="exclamationCircle" size="sm" class="flex-shrink-0" />
               {{ file.hint }}
             </p>
-            <div class="bg-gray-900 dark:bg-dark-900 rounded-xl overflow-hidden">
+            <div class="overflow-hidden rounded-card bg-ink dark:bg-dark-900">
               <!-- Code Header -->
-              <div class="flex items-center justify-between px-4 py-2 bg-gray-800 dark:bg-dark-800 border-b border-gray-700 dark:border-dark-700">
-                <span class="text-xs text-gray-400 font-mono">{{ file.path }}</span>
+              <div class="flex items-center justify-between border-b border-dark-700 bg-dark-800 px-4 py-2 dark:border-dark-700 dark:bg-dark-800">
+                <span class="font-mono text-xs text-white/50">{{ file.path }}</span>
                 <button
+                  type="button"
                   @click="copyContent(file.content, index)"
-                  class="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg transition-colors"
+                  class="flex items-center gap-1.5 rounded-control px-2.5 py-1 text-xs font-medium transition-colors duration-150 ease-out"
                   :class="copiedIndex === index
-                    ? 'bg-green-500/20 text-green-400'
-                    : 'bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white'"
+                    ? 'bg-success/20 text-success'
+                    : 'bg-dark-700 text-white/50 hover:bg-dark-600 hover:text-white'"
                 >
                   <svg v-if="copiedIndex === index" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
@@ -105,15 +108,15 @@
                 </button>
               </div>
               <!-- Code Content -->
-              <pre class="p-4 text-sm font-mono text-gray-100 overflow-x-auto"><code v-if="file.highlighted" v-html="file.highlighted"></code><code v-else v-text="file.content"></code></pre>
+              <pre class="p-4 text-sm font-mono text-white overflow-x-auto"><code v-if="file.highlighted" v-html="file.highlighted"></code><code v-else v-text="file.content"></code></pre>
             </div>
           </div>
         </div>
 
         <!-- Usage Note -->
-        <div v-if="showPlatformNote" class="flex items-start gap-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800">
-          <Icon name="infoCircle" size="md" class="text-blue-500 flex-shrink-0 mt-0.5" />
-          <p class="text-sm text-blue-700 dark:text-blue-300">
+        <div v-if="showPlatformNote" class="flex items-start gap-3 rounded-card border border-accent/20 bg-accent-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+          <Icon name="infoCircle" size="md" class="mt-0.5 flex-shrink-0 text-accent-500" />
+          <p class="text-sm text-accent-700 dark:text-blue-300">
             {{ platformNote }}
           </p>
         </div>
@@ -401,9 +404,9 @@ const wrapToken = (className: string, value: string) =>
 
 const keyword = (value: string) => wrapToken('text-emerald-300', value)
 const variable = (value: string) => wrapToken('text-sky-200', value)
-const operator = (value: string) => wrapToken('text-slate-400', value)
+const operator = (value: string) => wrapToken('text-ink-faint', value)
 const string = (value: string) => wrapToken('text-amber-200', value)
-const comment = (value: string) => wrapToken('text-slate-500', value)
+const comment = (value: string) => wrapToken('text-ink-soft', value)
 
 // Syntax highlighting helpers
 // Generate file configs based on platform and active tab
@@ -580,7 +583,7 @@ function generateOpenAIFiles(baseUrl: string, apiKey: string): FileConfig[] {
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
 
   // config.toml content
-  const configContent = `# Minimal Codex CLI config for Sub2API API-key access.
+  const configContent = `# Minimal Codex CLI config for API platform API-key access.
 # API keys can also be configured through other Codex auth methods, such as auth.json
 # or environment variables. This example intentionally uses experimental_bearer_token
 # so the copied config is self-contained.
@@ -619,7 +622,7 @@ function generateOpenAIWsFiles(baseUrl: string, apiKey: string): FileConfig[] {
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
 
   // config.toml content with WebSocket v2
-  const configContent = `# Minimal Codex CLI WebSocket config for Sub2API API-key access.
+  const configContent = `# Minimal Codex CLI WebSocket config for API platform API-key access.
 # API keys can also be configured through other Codex auth methods, such as auth.json
 # or environment variables. This example intentionally uses experimental_bearer_token
 # so the copied config is self-contained.
@@ -730,8 +733,8 @@ function generateGrokCodexFiles(baseUrl: string, apiKey: string): FileConfig[] {
   const isWindows = activeTab.value === 'cmd' || activeTab.value === 'powershell' || activeTab.value === 'windows'
   const configDir = isWindows ? '%userprofile%\\.codex' : '~/.codex'
 
-  // Grok Responses is HTTP/SSE. Codex WS is accepted by Sub2API but bridged to HTTP.
-  const configContent = `# Codex CLI config for Sub2API Grok group access.
+  // Grok Responses is HTTP/SSE. Codex WS is accepted by the API platform but bridged to HTTP.
+  const configContent = `# Codex CLI config for API platform Grok group access.
 # Default model is grok-4.5 (text). You can switch to other text grok-* ids
 # (e.g. grok-4.3, grok-build-0.1, grok-4.20-multi-agent-0309 for multi-agent / web_search).
 # Image/video use Imagine models on media endpoints (grok-imagine-image / grok-imagine-video),
@@ -751,7 +754,7 @@ base_url = "${baseUrl}"
 experimental_bearer_token = "${apiKey}"
 wire_api = "responses"
 requires_openai_auth = true
-# Grok upstream is HTTP/SSE; leave websockets disabled (Sub2API bridges WS→HTTP if enabled).
+# Grok upstream is HTTP/SSE; leave websockets disabled (platform bridges WS→HTTP if enabled).
 supports_websockets = false
 
 # Optional features:
@@ -797,7 +800,7 @@ $env:XAI_API_KEY="${apiKey}"`
   }
 
   // 生成 config.toml 配置（支持多个模型）
-  const configContent = `# Grok CLI config for Sub2API API-key access.
+  const configContent = `# Grok CLI config for API platform API-key access.
 # Text models only (Responses / Chat). Image and video use separate Imagine model IDs
 # on media endpoints (e.g. grok-imagine-image, grok-imagine-video) — not the models below.
 
@@ -1378,9 +1381,9 @@ function generateOpenCodeConfig(platform: string, baseUrl: string, apiKey: strin
   } else if (platform === 'openai') {
     provider[platform].models = openaiModels
   } else if (platform === 'grok') {
-    // Custom provider pointing at Sub2API's OpenAI-compatible Responses/Chat endpoints.
+    // Custom provider pointing at this platform's OpenAI-compatible Responses/Chat endpoints.
     provider[platform].npm = '@ai-sdk/openai-compatible'
-    provider[platform].name = 'Grok via Sub2API'
+    provider[platform].name = 'Grok via API platform'
     provider[platform].models = grokModels
   }
 

@@ -1,8 +1,8 @@
 <template>
-  <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border bg-white dark:border-dark-700 dark:bg-dark-800">
-    <div class="border-b border-gray-100 px-5 py-4 dark:border-dark-700">
-      <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ title }}</h2>
-      <p v-if="subtitle" class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ subtitle }}</p>
+  <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-card border border-line bg-card dark:border-dark-700 dark:bg-dark-800">
+    <div class="border-b border-line px-5 py-4 dark:border-dark-700">
+      <h2 class="text-base font-semibold text-ink dark:text-white">{{ title }}</h2>
+      <p v-if="subtitle" class="mt-1 text-sm text-ink-soft">{{ subtitle }}</p>
     </div>
 
     <div ref="messageContainerRef" class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
@@ -15,16 +15,16 @@
         >
           <template v-if="message.message_type === 'system'">
             <div class="w-full py-2">
-              <div class="mx-auto flex max-w-2xl flex-wrap items-center justify-center gap-2 rounded-full bg-gray-50 px-4 py-2 text-center text-xs text-gray-500 dark:bg-dark-700/50 dark:text-gray-400">
+              <div class="mx-auto flex max-w-2xl flex-wrap items-center justify-center gap-2 rounded-full bg-line px-4 py-2 text-center text-xs text-ink-soft dark:bg-dark-700/50">
                 <span class="break-words">{{ message.content }}</span>
-                <span class="text-gray-400 dark:text-gray-500">{{ formatDateTime(message.created_at) }}</span>
+                <span class="text-ink-faint">{{ formatDateTime(message.created_at) }}</span>
               </div>
             </div>
           </template>
 
           <template v-else>
           <template v-if="message.sender_role !== 'user'">
-            <div class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 text-sm font-semibold text-gray-600 dark:bg-dark-600 dark:text-gray-200">
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-line text-sm font-semibold text-ink-body dark:bg-dark-600 dark:text-ink-body">
               <img
                 v-if="safeImageUrl(message.sender_avatar_snapshot)"
                 :src="safeImageUrl(message.sender_avatar_snapshot)"
@@ -39,11 +39,11 @@
 
           <div class="max-w-[80%]">
             <div class="mb-1 flex items-center gap-2" :class="message.sender_role === 'user' ? 'justify-end' : 'justify-start'">
-              <span class="text-sm font-medium text-gray-900 dark:text-white">{{ message.sender_name_snapshot }}</span>
-              <span class="whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">{{ formatDateTime(message.created_at) }}</span>
+              <span class="text-sm font-medium text-ink dark:text-white">{{ message.sender_name_snapshot }}</span>
+              <span class="whitespace-nowrap text-xs text-ink-soft">{{ formatDateTime(message.created_at) }}</span>
             </div>
             <div
-              class="rounded-2xl px-4 py-3 text-sm leading-6"
+              class="rounded-card px-4 py-3 text-sm leading-6"
               :class="bubbleClass(message.sender_role)"
             >
               <div v-if="message.content" class="whitespace-pre-wrap break-words">{{ message.content }}</div>
@@ -53,7 +53,7 @@
                     v-if="att.content_type?.startsWith('image/')"
                     :href="att.url"
                     target="_blank"
-                    class="block overflow-hidden rounded-lg border border-gray-200/50 dark:border-dark-500/50"
+                    class="block overflow-hidden rounded-lg border border-line/50 dark:border-dark-500/50"
                   >
                     <img
                       :src="att.thumbnail_url || att.url"
@@ -65,10 +65,10 @@
                     v-else
                     :href="att.url"
                     target="_blank"
-                    class="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs transition-colors hover:bg-gray-50 dark:border-dark-600 dark:hover:bg-dark-700"
+                    class="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-xs transition-colors hover:bg-page dark:border-dark-600 dark:hover:bg-dark-700"
                   >
                     <span class="truncate max-w-[120px]">{{ att.file_name }}</span>
-                    <span class="text-gray-400">{{ formatFileSize(att.size_bytes) }}</span>
+                    <span class="text-ink-faint">{{ formatFileSize(att.size_bytes) }}</span>
                   </a>
                 </template>
               </div>
@@ -76,7 +76,7 @@
           </div>
 
           <template v-if="message.sender_role === 'user'">
-            <div class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 text-sm font-semibold text-gray-600 dark:bg-dark-600 dark:text-gray-200">
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-line text-sm font-semibold text-ink-body dark:bg-dark-600 dark:text-ink-body">
               <img
                 v-if="safeImageUrl(message.sender_avatar_snapshot)"
                 :src="safeImageUrl(message.sender_avatar_snapshot)"
@@ -91,12 +91,12 @@
           </template>
         </div>
       </template>
-      <div v-else class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+      <div v-else class="flex h-full items-center justify-center text-sm text-ink-soft">
         {{ emptyText }}
       </div>
     </div>
 
-    <div v-if="showComposer" class="border-t border-gray-100 px-5 py-4 dark:border-dark-700">
+    <div v-if="showComposer" class="border-t border-line px-5 py-4 dark:border-dark-700">
       <textarea
         v-model="composerValue"
         class="input min-h-[96px]"
@@ -110,7 +110,7 @@
         <div
           v-for="(att, idx) in pendingAttachments"
           :key="att.media_id"
-          class="group relative overflow-hidden rounded-lg border border-gray-200 dark:border-dark-600"
+          class="group relative overflow-hidden rounded-lg border border-line dark:border-dark-600"
         >
           <img
             v-if="att.content_type?.startsWith('image/')"
@@ -118,7 +118,7 @@
             :alt="att.file_name"
             class="h-16 w-16 object-cover"
           />
-          <div v-else class="flex h-16 w-16 items-center justify-center bg-gray-50 text-xs text-gray-500 dark:bg-dark-700">
+          <div v-else class="flex h-16 w-16 items-center justify-center bg-page text-xs text-ink-soft dark:bg-dark-700">
             {{ att.file_name?.split('.').pop() }}
           </div>
           <button
@@ -335,8 +335,8 @@ function handleComposerKeydown(event: KeyboardEvent) {
 
 function bubbleClass(role: TicketSenderRole) {
   if (role === 'user') {
-    return 'bg-blue-600 text-white'
+    return 'bg-accent-600 text-white'
   }
-  return 'bg-gray-100 text-gray-800 dark:bg-dark-700 dark:text-gray-100'
+  return 'bg-page text-ink dark:bg-dark-700 dark:text-ink'
 }
 </script>

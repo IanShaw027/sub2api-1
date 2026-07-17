@@ -1,19 +1,19 @@
 <template>
-  <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border bg-white p-5 dark:border-dark-700 dark:bg-dark-800">
+  <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-card border border-line bg-card p-5 dark:border-dark-700 dark:bg-dark-800">
     <div class="shrink-0 space-y-4">
       <div class="flex items-start justify-between gap-3">
         <div>
-          <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">{{ t('tickets.details.title') }}</p>
-          <h2 class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">{{ ticket.title }}</h2>
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">#{{ ticket.ticket_no }}</p>
+          <p class="text-xs font-medium uppercase tracking-wide text-ink-soft">{{ t('tickets.details.title') }}</p>
+          <h2 class="mt-1 text-lg font-semibold text-ink dark:text-white">{{ ticket.title }}</h2>
+          <p class="mt-1 text-xs text-ink-soft">#{{ ticket.ticket_no }}</p>
         </div>
         <span class="rounded-full px-2.5 py-1 text-xs font-medium" :class="getTicketStatusBadgeClass(ticket.status)">
           {{ t(`tickets.statuses.${ticket.status}`) }}
         </span>
       </div>
 
-      <div v-if="showUserMeta" class="flex items-center gap-3 rounded-xl bg-gray-50 px-3 py-3 dark:bg-dark-700/40">
-        <div class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 text-sm font-semibold text-gray-600 dark:bg-dark-600 dark:text-gray-200">
+      <div v-if="showUserMeta" class="flex items-center gap-3 rounded-xl bg-page px-3 py-3 dark:bg-dark-700/40">
+        <div class="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-line text-sm font-semibold text-ink-body dark:bg-dark-600 dark:text-ink-body">
           <img
             v-if="safeImageUrl(ticket.user_avatar_url)"
             :src="safeImageUrl(ticket.user_avatar_url)"
@@ -25,8 +25,8 @@
           <span v-else>{{ ticket.user_name.slice(0, 1).toUpperCase() }}</span>
         </div>
         <div class="min-w-0">
-          <p class="font-medium text-gray-900 dark:text-white">{{ ticket.user_name }}</p>
-          <p class="truncate text-sm text-gray-500 dark:text-gray-400">{{ ticket.user_email }}</p>
+          <p class="font-medium text-ink dark:text-white">{{ ticket.user_name }}</p>
+          <p class="truncate text-sm text-ink-soft">{{ ticket.user_email }}</p>
         </div>
       </div>
 
@@ -38,14 +38,14 @@
       </div>
     </div>
 
-    <div class="mt-4 min-h-0 flex-1 overflow-y-auto border-t border-gray-100 pt-4 dark:border-dark-700">
+    <div class="mt-4 min-h-0 flex-1 overflow-y-auto border-t border-line pt-4 dark:border-dark-700">
       <div class="space-y-3">
-        <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('tickets.details.formData') }}</p>
+        <p class="text-sm font-medium text-ink dark:text-white">{{ t('tickets.details.formData') }}</p>
         <TicketCategoryForm :category="ticket.category" :model-value="ticket.current_form_payload || {}" readonly />
       </div>
     </div>
 
-    <div v-if="$slots.actions" class="mt-4 space-y-3 border-t border-gray-100 pt-4 dark:border-dark-700">
+    <div v-if="$slots.actions" class="mt-4 space-y-3 border-t border-line pt-4 dark:border-dark-700">
       <slot name="actions" />
     </div>
   </div>

@@ -2,7 +2,7 @@
   <BaseDialog :show="show" :title="t('tickets.templates.manageTitle')" width="wide" @close="emit('close')">
     <div class="space-y-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('tickets.templates.manageDescription') }}</p>
+        <p class="text-sm text-ink-soft">{{ t('tickets.templates.manageDescription') }}</p>
         <div class="flex items-center gap-2">
           <button
             type="button"
@@ -18,7 +18,7 @@
         </div>
       </div>
 
-      <div v-if="localTemplates.length === 0" class="rounded-2xl border border-dashed p-6 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400">
+      <div v-if="localTemplates.length === 0" class="rounded-card border border-dashed p-6 text-center text-sm text-ink-soft dark:border-dark-700">
         {{ t('tickets.templates.empty') }}
       </div>
 
@@ -26,18 +26,18 @@
         <div
           v-for="(template, index) in localTemplates"
           :key="template.id"
-          class="rounded-2xl border border-gray-200 bg-gray-50/60 p-4 dark:border-dark-700 dark:bg-dark-900/40"
+          class="rounded-card border border-line bg-page/60 p-4 dark:border-dark-700 dark:bg-dark-900/40"
         >
           <div class="mb-3 flex items-start gap-3">
             <input
               v-model="selectedTemplateIds"
-              class="mt-1 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              class="mt-1 h-4 w-4 rounded border-line text-brand-600 focus:ring-accent/25"
               type="checkbox"
               :value="template.id"
             />
             <div class="grid flex-1 gap-3">
               <div>
-                <label class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('tickets.templates.title') }}</label>
+                <label class="mb-1 block text-xs font-medium text-ink-soft">{{ t('tickets.templates.title') }}</label>
                 <input
                   v-model="template.title"
                   class="input"
@@ -45,7 +45,7 @@
                 />
               </div>
               <div>
-                <label class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('tickets.templates.content') }}</label>
+                <label class="mb-1 block text-xs font-medium text-ink-soft">{{ t('tickets.templates.content') }}</label>
                 <textarea
                   v-model="template.content"
                   class="input min-h-[120px]"

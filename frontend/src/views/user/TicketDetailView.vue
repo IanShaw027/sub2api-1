@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div v-if="loading" class="rounded-2xl border bg-white p-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400">
+    <div v-if="loading" class="rounded-card border border-line bg-card p-10 text-center text-sm text-ink-soft dark:border-dark-700 dark:bg-dark-800">
       {{ t('common.loading') }}
     </div>
     <div v-else-if="ticket" class="grid h-[calc(100vh-10rem)] min-h-[calc(100vh-10rem)] min-w-0 gap-6 overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.95fr)]">

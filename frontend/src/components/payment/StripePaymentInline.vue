@@ -1,33 +1,33 @@
 <template>
   <div class="space-y-4">
     <div v-if="loading" class="flex items-center justify-center py-12">
-      <div class="h-8 w-8 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"></div>
+      <div class="h-8 w-8 animate-spin rounded-full border-4 border-brand-500 border-t-transparent"></div>
     </div>
     <div v-else-if="initError" class="card p-6 text-center">
-      <p class="text-sm text-red-600 dark:text-red-400">{{ initError }}</p>
+      <p class="text-sm text-danger dark:text-red-400">{{ initError }}</p>
       <button class="btn btn-secondary mt-4" @click="$emit('back')">{{ t('payment.result.backToRecharge') }}</button>
     </div>
     <!-- Success -->
     <template v-else-if="success">
       <div class="card p-6">
         <div class="flex flex-col items-center space-y-4 py-4">
-          <div class="flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-            <Icon name="check" size="lg" class="text-green-500" />
+          <div class="flex h-16 w-16 items-center justify-center rounded-full bg-success-soft dark:bg-green-900/30">
+            <Icon name="check" size="lg" class="text-success" />
           </div>
-          <p class="text-lg font-bold text-gray-900 dark:text-white">{{ t('payment.result.success') }}</p>
-          <div class="w-full rounded-xl bg-gray-50 p-4 dark:bg-dark-800">
+          <p class="text-lg font-semibold text-ink dark:text-white">{{ t('payment.result.success') }}</p>
+          <div class="w-full rounded-card border border-line bg-page p-4 dark:border-dark-700 dark:bg-dark-800">
             <div class="space-y-2 text-sm">
               <div class="flex justify-between">
-                <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderId') }}</span>
-                <span class="font-medium text-gray-900 dark:text-white">#{{ orderId }}</span>
+                <span class="text-ink-soft">{{ t('payment.orders.orderId') }}</span>
+                <span class="font-medium tabular-nums text-ink dark:text-white">#{{ orderId }}</span>
               </div>
               <div v-if="amount > 0" class="flex justify-between">
-                <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.amount') }}</span>
-                <span class="font-medium text-gray-900 dark:text-white">{{ creditedAmountSymbol }}{{ amount.toFixed(2) }}</span>
+                <span class="text-ink-soft">{{ t('payment.orders.amount') }}</span>
+                <span class="font-medium tabular-nums text-ink dark:text-white">{{ creditedAmountSymbol }}{{ amount.toFixed(2) }}</span>
               </div>
               <div class="flex justify-between">
-                <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.payAmount') }}</span>
-                <span class="font-medium text-gray-900 dark:text-white">{{ formattedPayAmount }}</span>
+                <span class="text-ink-soft">{{ t('payment.orders.payAmount') }}</span>
+                <span class="font-medium tabular-nums text-ink dark:text-white">{{ formattedPayAmount }}</span>
               </div>
             </div>
           </div>
@@ -36,17 +36,17 @@
       </div>
     </template>
     <template v-else>
-      <!-- Amount -->
+      <!-- Amount (Stripe brand purple kept for recognition) -->
       <div class="card overflow-hidden">
         <div class="bg-gradient-to-br from-[#635bff] to-[#4f46e5] px-6 py-5 text-center">
           <p class="text-sm font-medium text-indigo-200">{{ t('payment.actualPay') }}</p>
-          <p class="mt-1 text-3xl font-bold text-white">{{ formattedPayAmount }}</p>
+          <p class="mt-1 text-3xl font-semibold tabular-nums text-white">{{ formattedPayAmount }}</p>
         </div>
       </div>
       <!-- Stripe Payment Element -->
       <div class="card p-6">
         <div ref="stripeMount" class="min-h-[200px]"></div>
-        <p v-if="error" class="mt-4 text-sm text-red-600 dark:text-red-400">{{ error }}</p>
+        <p v-if="error" class="mt-4 text-sm text-danger dark:text-red-400">{{ error }}</p>
         <button class="btn btn-stripe mt-6 w-full py-3 text-base" :disabled="submitting || !ready" @click="handlePay">
           <span v-if="submitting" class="flex items-center justify-center gap-2">
             <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>

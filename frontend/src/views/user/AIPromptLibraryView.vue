@@ -4,9 +4,9 @@
       <div class="card p-6">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p class="text-xs uppercase tracking-[0.35em] text-gray-500 dark:text-gray-400">{{ t('ai.center.label', 'AI 创作中心') }}</p>
-            <h1 class="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{{ t('ai.promptLibrary.title', '提示词库') }}</h1>
-            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ t('ai.promptLibrary.subtitle', '支持公开/私有、克隆、编辑、删除。') }}</p>
+            <p class="text-xs uppercase tracking-[0.35em] text-ink-soft dark:text-dark-400">{{ t('ai.center.label', 'AI 创作中心') }}</p>
+            <h1 class="mt-2 text-2xl font-bold text-ink dark:text-white">{{ t('ai.promptLibrary.title', '提示词库') }}</h1>
+            <p class="mt-1 text-sm text-ink-body dark:text-dark-400">{{ t('ai.promptLibrary.subtitle', '支持公开/私有、克隆、编辑、删除。') }}</p>
           </div>
           <div class="flex gap-3">
             <button class="btn btn-secondary" :disabled="loading" @click="reloadPrompts">
@@ -38,7 +38,7 @@
           </div>
         </div>
 
-        <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+        <p class="mt-3 text-xs text-ink-soft dark:text-dark-400">
           公共模板和个人模板由后端分开查询，当前页面不会伪造“全部混合分页”；切换范围会直接切到对应契约。
         </p>
 
@@ -56,14 +56,14 @@
         >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <h2 class="line-clamp-2 text-lg font-semibold text-gray-900 dark:text-white">{{ prompt.title }}</h2>
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ resolveLineLabel(prompt.line_id, prompt.line_name) }}</p>
+              <h2 class="line-clamp-2 text-lg font-semibold text-ink dark:text-white">{{ prompt.title }}</h2>
+              <p class="mt-1 text-xs text-ink-soft dark:text-dark-400">{{ resolveLineLabel(prompt.line_id, prompt.line_name) }}</p>
             </div>
             <div class="flex flex-col items-end gap-2">
               <span class="rounded-full px-2.5 py-1 text-[11px] font-medium"
                 :class="prompt.visibility === 'private'
-                  ? 'bg-gray-100 text-gray-700 dark:bg-dark-800 dark:text-gray-200'
-                  : 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-200'"
+                  ? 'bg-page text-ink-body dark:bg-dark-800 dark:text-dark-200'
+                  : 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-200'"
               >
                 {{ prompt.visibility === 'private' ? t('ai.prompt.private', '私有') : t('ai.prompt.public', '公开') }}
               </span>
@@ -73,13 +73,13 @@
             </div>
           </div>
 
-          <p class="mt-4 line-clamp-5 flex-1 whitespace-pre-wrap text-sm text-gray-600 dark:text-gray-400">{{ prompt.content }}</p>
+          <p class="mt-4 line-clamp-5 flex-1 whitespace-pre-wrap text-sm text-ink-body dark:text-dark-400">{{ prompt.content }}</p>
 
           <div class="mt-4 flex flex-wrap gap-2">
             <span
               v-for="tag in prompt.tags"
               :key="tag"
-              class="rounded-full bg-gray-100 px-2 py-1 text-[11px] text-gray-600 dark:bg-dark-800 dark:text-gray-300"
+              class="rounded-full bg-line px-2 py-1 text-[11px] text-ink-body dark:bg-dark-800 dark:text-dark-300"
             >
               #{{ tag }}
             </span>
