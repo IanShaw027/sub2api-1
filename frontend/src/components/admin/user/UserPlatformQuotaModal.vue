@@ -8,18 +8,18 @@
     <div v-if="user" class="space-y-4">
       <div
         v-if="hasActiveSubscription"
-        class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+        class="rounded-card border border-warning/40 bg-warning-soft px-4 py-3 text-sm text-warning dark:border-warning/30 dark:bg-warning-soft dark:text-warning"
       >
         {{ t('admin.users.platformQuota.subscriptionWarning') }}
       </div>
-      <p class="text-sm text-gray-600 dark:text-gray-400">
+      <p class="text-sm text-ink-body dark:text-dark-400">
         {{ t('admin.users.platformQuota.subtitle', { email: user.email }) }}
       </p>
-      <div v-if="loading" class="py-10 text-center text-gray-500">{{ t('common.loading') }}</div>
+      <div v-if="loading" class="py-10 text-center text-ink-soft">{{ t('common.loading') }}</div>
       <div v-else class="overflow-x-auto">
         <table class="min-w-full text-sm">
           <thead>
-            <tr class="border-b border-gray-200 text-gray-700 dark:border-dark-700 dark:text-gray-300">
+            <tr class="border-b border-line text-ink-body dark:border-dark-700 dark:text-dark-200">
               <th class="px-3 py-2 text-left font-medium">{{ t('admin.users.platformQuota.columns.platform') }}</th>
               <th class="px-3 py-2 text-left font-medium">{{ t('admin.users.platformQuota.columns.daily') }}</th>
               <th class="px-3 py-2 text-left font-medium">{{ t('admin.users.platformQuota.columns.weekly') }}</th>
@@ -28,8 +28,8 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in quotas" :key="row.platform" class="border-b border-gray-100 dark:border-dark-800">
-              <td class="px-3 py-2 font-mono text-gray-900 dark:text-white">{{ row.platform }}</td>
+            <tr v-for="row in quotas" :key="row.platform" class="border-b border-divider dark:border-dark-800">
+              <td class="px-3 py-2 font-mono text-ink dark:text-white">{{ row.platform }}</td>
               <td class="px-3 py-2">
                 <div class="flex items-center gap-1">
                   <input
@@ -42,7 +42,7 @@
                   />
                   <button
                     type="button"
-                    class="text-xs text-gray-400 hover:text-amber-500 disabled:opacity-50"
+                    class="text-xs text-ink-faint hover:text-warning disabled:opacity-50"
                     :disabled="isResetting(`${row.platform}.daily`)"
                     :title="t('admin.users.platformQuota.reset.button')"
                     @click="onReset(row.platform, 'daily')"
@@ -61,7 +61,7 @@
                   />
                   <button
                     type="button"
-                    class="text-xs text-gray-400 hover:text-amber-500 disabled:opacity-50"
+                    class="text-xs text-ink-faint hover:text-warning disabled:opacity-50"
                     :disabled="isResetting(`${row.platform}.weekly`)"
                     :title="t('admin.users.platformQuota.reset.button')"
                     @click="onReset(row.platform, 'weekly')"
@@ -80,20 +80,20 @@
                   />
                   <button
                     type="button"
-                    class="text-xs text-gray-400 hover:text-amber-500 disabled:opacity-50"
+                    class="text-xs text-ink-faint hover:text-warning disabled:opacity-50"
                     :disabled="isResetting(`${row.platform}.monthly`)"
                     :title="t('admin.users.platformQuota.reset.button')"
                     @click="onReset(row.platform, 'monthly')"
                   >↻</button>
                 </div>
               </td>
-              <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+              <td class="px-3 py-2 text-xs text-ink-soft dark:text-dark-400">
                 {{ formatUsage(row.daily_usage_usd) }} / {{ formatUsage(row.weekly_usage_usd) }} / {{ formatUsage(row.monthly_usage_usd) }}
               </td>
             </tr>
           </tbody>
         </table>
-        <p class="mt-3 text-xs text-gray-500">{{ t('admin.users.platformQuota.hint') }}</p>
+        <p class="mt-3 text-xs text-ink-soft">{{ t('admin.users.platformQuota.hint') }}</p>
         <div class="mt-3">
           <button type="button" class="btn btn-secondary text-sm" @click="onClearAll">
             {{ t('admin.users.platformQuota.clearAll') }}

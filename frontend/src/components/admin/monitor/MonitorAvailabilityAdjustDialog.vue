@@ -6,9 +6,9 @@
     @close="handleClose"
   >
     <form class="space-y-4" @submit.prevent="submit">
-      <div v-if="monitor" class="rounded-xl bg-gray-50 p-3 text-sm dark:bg-dark-800">
-        <div class="font-medium text-gray-900 dark:text-white">{{ monitor.name }}</div>
-        <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+      <div v-if="monitor" class="rounded-xl bg-page p-3 text-sm dark:bg-dark-800">
+        <div class="font-medium text-ink dark:text-white">{{ monitor.name }}</div>
+        <div class="mt-1 text-xs text-ink-soft">
           {{ monitor.primary_model }} · {{ t('admin.channelMonitor.adjustAvailability.current', { value: formatPct(monitor.availability_7d) }) }}
         </div>
       </div>
@@ -27,9 +27,9 @@
             class="input"
             :placeholder="t('admin.channelMonitor.adjustAvailability.placeholder')"
           />
-          <span class="text-sm text-gray-500 dark:text-gray-400">%</span>
+          <span class="text-sm text-ink-soft">%</span>
         </div>
-        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+        <p class="mt-2 text-xs text-ink-soft">
           {{ t('admin.channelMonitor.adjustAvailability.hint') }}
         </p>
       </div>

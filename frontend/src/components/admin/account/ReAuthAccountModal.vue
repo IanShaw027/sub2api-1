@@ -8,23 +8,23 @@
     <div v-if="account" class="space-y-4">
       <!-- Account Info -->
       <div
-        class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700"
+        class="rounded-control border border-line bg-page p-4 dark:border-dark-600 dark:bg-dark-700"
       >
         <div class="flex items-center gap-3">
           <div
             :class="[
-              'flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br',
+              'flex h-10 w-10 items-center justify-center rounded-control bg-gradient-to-br',
               isOpenAILike
-                ? 'from-green-500 to-green-600'
+                ? 'from-success to-brand-600'
                 : isGemini
-                  ? 'from-blue-500 to-blue-600'
+                  ? 'from-accent-500 to-accent-600'
                   : isAntigravity
-                    ? 'from-purple-500 to-purple-600'
+                    ? 'from-brand-500 to-brand-600'
                     : isKiro
-                      ? 'from-cyan-500 to-sky-600'
+                      ? 'from-brand-500 to-brand-cyan'
                     : isGrok
-                      ? 'from-zinc-700 to-zinc-900'
-                      : 'from-orange-500 to-orange-600'
+                      ? 'from-ink to-ink-body'
+                      : 'from-warning to-brand-600'
             ]"
           >
             <PlatformIcon
@@ -35,10 +35,10 @@
             />
           </div>
           <div>
-            <span class="block font-semibold text-gray-900 dark:text-white">{{
+            <span class="block font-semibold text-ink dark:text-white">{{
               account.name
             }}</span>
-            <span class="text-sm text-gray-500 dark:text-gray-400">
+            <span class="text-sm text-ink-soft">
               {{
                 isOpenAI
                   ? t('admin.accounts.openaiAccount')
@@ -59,16 +59,16 @@
 
       <div
         v-if="isKiroOAuth && kiroDiagnosticItems.length"
-        class="rounded-lg border border-cyan-200 bg-cyan-50/60 p-4 dark:border-cyan-900/40 dark:bg-cyan-950/20"
+        class="rounded-control border border-brand-200 bg-brand-50/60 p-4 dark:border-brand-800/40 dark:bg-brand-950/20"
       >
-        <div class="mb-2 text-sm font-medium text-cyan-900 dark:text-cyan-100">
+        <div class="mb-2 text-sm font-medium text-brand-900 dark:text-brand-100">
           {{ t('admin.accounts.kiro.diagnosticSummaryTitle') }}
         </div>
         <KiroDiagnosticChips
           :credentials="account.credentials || {}"
           :extra="account.extra || {}"
           :usage-info="{}"
-          chip-class="inline-flex rounded bg-white/80 px-2 py-1 text-cyan-800 dark:bg-black/10 dark:text-cyan-200"
+          chip-class="inline-flex rounded bg-card/80 px-2 py-1 text-brand-800 dark:bg-black/10 dark:text-brand-200"
         />
       </div>
 
@@ -81,9 +81,9 @@
               v-model="addMethod"
               type="radio"
               value="oauth"
-              class="mr-2 text-primary-600 focus:ring-primary-500"
+              class="mr-2 text-brand-600 focus:ring-accent/25"
             />
-            <span class="text-sm text-gray-700 dark:text-gray-300">{{
+            <span class="text-sm text-ink-body">{{
               t('admin.accounts.types.oauth')
             }}</span>
           </label>
@@ -92,9 +92,9 @@
               v-model="addMethod"
               type="radio"
               value="setup-token"
-              class="mr-2 text-primary-600 focus:ring-primary-500"
+              class="mr-2 text-brand-600 focus:ring-accent/25"
             />
-            <span class="text-sm text-gray-700 dark:text-gray-300">{{
+            <span class="text-sm text-ink-body">{{
               t('admin.accounts.setupTokenLongLived')
             }}</span>
           </label>
@@ -102,19 +102,19 @@
       </fieldset>
 
       <!-- Gemini OAuth Type Display (read-only) -->
-      <div v-if="isGemini" class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700">
-        <div class="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+      <div v-if="isGemini" class="rounded-control border border-line bg-page p-4 dark:border-dark-600 dark:bg-dark-700">
+        <div class="mb-2 text-sm font-medium text-ink-body">
           {{ t('admin.accounts.oauth.gemini.oauthTypeLabel') }}
         </div>
         <div class="flex items-center gap-3">
           <div
             :class="[
-              'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-control',
               geminiOAuthType === 'google_one'
-                ? 'bg-purple-500 text-white'
+                ? 'bg-brand-500 text-white'
                 : geminiOAuthType === 'code_assist'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-400 text-white'
+                  ? 'bg-accent-500 text-white'
+                  : 'bg-ink dark:bg-dark-700 text-white'
             ]"
           >
             <Icon v-if="geminiOAuthType === 'google_one'" name="user" size="sm" />
@@ -122,7 +122,7 @@
             <Icon v-else name="shield" size="sm" />
           </div>
           <div>
-            <span class="block text-sm font-medium text-gray-900 dark:text-white">
+            <span class="block text-sm font-medium text-ink dark:text-white">
               {{
                 geminiOAuthType === 'google_one'
                   ? t('admin.accounts.oauth.gemini.googleOneTitle')
@@ -131,7 +131,7 @@
                     : t('common.unknown')
               }}
             </span>
-            <span class="text-xs text-gray-500 dark:text-gray-400">
+            <span class="text-xs text-ink-soft">
               {{
                 geminiOAuthType === 'google_one'
                   ? t('admin.accounts.oauth.gemini.googleOneDesc')

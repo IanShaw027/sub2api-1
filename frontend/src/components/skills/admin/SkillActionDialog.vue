@@ -1,10 +1,10 @@
 <template>
   <BaseDialog :show="show" :title="dialogTitle" width="normal" @close="handleClose">
     <div class="space-y-4">
-      <div class="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900/60">
-        <p class="text-xs font-medium uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.review.actionDialog.subjectLabel') }}</p>
-        <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white">{{ subject || t('skills.admin.review.actionDialog.noSubject') }}</p>
-        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">{{ dialogDescription }}</p>
+      <div class="rounded-card border border-line bg-page p-4 dark:border-dark-700 dark:bg-dark-900/60">
+        <p class="text-xs font-medium uppercase tracking-[0.16em] text-ink-soft dark:text-ink-soft">{{ t('skills.admin.review.actionDialog.subjectLabel') }}</p>
+        <p class="mt-2 text-sm font-medium text-ink dark:text-white">{{ subject || t('skills.admin.review.actionDialog.noSubject') }}</p>
+        <p class="mt-2 text-sm text-ink-body dark:text-ink-soft">{{ dialogDescription }}</p>
       </div>
 
       <TextArea

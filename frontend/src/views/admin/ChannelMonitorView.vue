@@ -25,15 +25,15 @@
             <DataTable :columns="columns" :data="monitors" :loading="loading">
               <template #cell-name="{ row, value }">
                 <div class="flex items-center gap-1.5">
-                  <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+                  <span class="font-medium text-ink dark:text-white">{{ value }}</span>
                   <HelpTooltip v-if="row.api_key_decrypt_failed" :content="t('admin.channelMonitor.apiKeyDecryptFailed')">
-                    <Icon name="exclamationTriangle" size="sm" class="text-red-500" />
+                    <Icon name="exclamationTriangle" size="sm" class="text-danger" />
                   </HelpTooltip>
                 </div>
               </template>
 
               <template #cell-provider="{ row }">
-                <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" :class="providerBadgeClass(row.provider)">
+                <span class="inline-flex items-center rounded-chip px-2 py-0.5 text-xs font-medium" :class="providerBadgeClass(row.provider)">
                   {{ providerLabel(row.provider) }}
                 </span>
               </template>
@@ -43,43 +43,43 @@
               </template>
 
               <template #cell-availability_7d="{ row }">
-                <span class="text-sm text-gray-900 dark:text-gray-100">{{ formatAvailability(row) }}</span>
+                <span class="text-sm text-ink dark:text-white">{{ formatAvailability(row) }}</span>
               </template>
 
               <template #cell-latency="{ row }">
-                <span class="text-sm text-gray-900 dark:text-gray-100">{{ formatLatency(row.primary_latency_ms) }}</span>
+                <span class="text-sm text-ink dark:text-white">{{ formatLatency(row.primary_latency_ms) }}</span>
               </template>
 
               <template #cell-image_usage="{ row }">
                 <div v-if="row.provider === 'openai'" class="min-w-[220px] whitespace-normal">
-                  <div v-if="imageUsageLoadingMap[row.id]" class="text-xs text-gray-400 dark:text-gray-500">
+                  <div v-if="imageUsageLoadingMap[row.id]" class="text-xs text-ink-faint dark:text-dark-500">
                     {{ t('common.loading') }}
                   </div>
                   <div v-else-if="openAIImageUsageByMonitorId[row.id]?.length" class="space-y-1">
                     <div
                       v-for="item in openAIImageUsageByMonitorId[row.id]"
                       :key="item.key"
-                      class="rounded-lg border border-gray-200/80 px-2 py-1 dark:border-dark-700"
+                      class="rounded-control border border-line/80 px-2 py-1 dark:border-dark-700"
                     >
-                      <div class="mb-1 flex flex-wrap items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400">
-                        <span class="rounded bg-gray-100 px-1.5 py-0.5 font-medium text-gray-700 dark:bg-dark-700 dark:text-gray-200">
+                      <div class="mb-1 flex flex-wrap items-center gap-1.5 text-[10px] text-ink-soft dark:text-dark-400">
+                        <span class="rounded-chip bg-page px-1.5 py-0.5 font-medium text-ink-body dark:bg-dark-700 dark:text-dark-200">
                           {{ item.label }}
                         </span>
-                        <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-dark-700">
+                        <span class="rounded-chip bg-page px-1.5 py-0.5 dark:bg-dark-700">
                           {{ item.requestsLabel }}
                         </span>
-                        <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-dark-700">
+                        <span class="rounded-chip bg-page px-1.5 py-0.5 dark:bg-dark-700">
                           {{ item.costLabel }}
                         </span>
                       </div>
-                      <div class="text-[10px] text-gray-400 dark:text-gray-500">
+                      <div class="text-[10px] text-ink-faint dark:text-dark-500">
                         {{ item.resetLabel }}
                       </div>
                     </div>
                   </div>
-                  <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+                  <span v-else class="text-sm text-ink-faint dark:text-dark-500">-</span>
                 </div>
-                <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+                <span v-else class="text-sm text-ink-faint dark:text-dark-500">-</span>
               </template>
 
               <template #cell-enabled="{ row }">
@@ -116,19 +116,19 @@
             >
               <button
                 type="button"
-                class="flex w-full items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2 text-left transition-colors hover:border-gray-300 hover:bg-gray-50 dark:border-dark-700 dark:bg-dark-900 dark:hover:border-dark-600 dark:hover:bg-dark-800"
+                class="flex w-full items-center justify-between gap-3 rounded-card border border-line bg-card px-3 py-2 text-left shadow-xs transition-colors hover:border-ink-faint hover:bg-page dark:border-dark-700 dark:bg-dark-900 dark:hover:border-dark-600 dark:hover:bg-dark-800"
                 @click="toggleProviderCollapse(group.provider)"
               >
                 <div class="flex items-center gap-2">
                   <Icon
                     :name="isProviderCollapsed(group.provider) ? 'chevronRight' : 'chevronDown'"
                     size="sm"
-                    class="text-gray-400 dark:text-gray-500"
+                    class="text-ink-faint dark:text-dark-500"
                   />
-                  <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" :class="providerBadgeClass(group.provider)">
+                  <span class="inline-flex items-center rounded-chip px-2 py-0.5 text-xs font-medium" :class="providerBadgeClass(group.provider)">
                     {{ providerLabel(group.provider) }}
                   </span>
-                  <span class="text-sm text-gray-500 dark:text-gray-400">{{ group.items.length }}</span>
+                  <span class="text-sm text-ink-soft dark:text-dark-400">{{ group.items.length }}</span>
                 </div>
               </button>
 
@@ -140,15 +140,15 @@
               >
                 <template #cell-name="{ row, value }">
                   <div class="flex items-center gap-1.5">
-                    <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+                    <span class="font-medium text-ink dark:text-white">{{ value }}</span>
                     <HelpTooltip v-if="row.api_key_decrypt_failed" :content="t('admin.channelMonitor.apiKeyDecryptFailed')">
-                      <Icon name="exclamationTriangle" size="sm" class="text-red-500" />
+                      <Icon name="exclamationTriangle" size="sm" class="text-danger" />
                     </HelpTooltip>
                   </div>
                 </template>
 
                 <template #cell-provider="{ row }">
-                  <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium" :class="providerBadgeClass(row.provider)">
+                  <span class="inline-flex items-center rounded-chip px-2 py-0.5 text-xs font-medium" :class="providerBadgeClass(row.provider)">
                     {{ providerLabel(row.provider) }}
                   </span>
                 </template>
@@ -158,43 +158,43 @@
                 </template>
 
                 <template #cell-availability_7d="{ row }">
-                  <span class="text-sm text-gray-900 dark:text-gray-100">{{ formatAvailability(row) }}</span>
+                  <span class="text-sm text-ink dark:text-white">{{ formatAvailability(row) }}</span>
                 </template>
 
                 <template #cell-latency="{ row }">
-                  <span class="text-sm text-gray-900 dark:text-gray-100">{{ formatLatency(row.primary_latency_ms) }}</span>
+                  <span class="text-sm text-ink dark:text-white">{{ formatLatency(row.primary_latency_ms) }}</span>
                 </template>
 
                 <template #cell-image_usage="{ row }">
                   <div v-if="row.provider === 'openai'" class="min-w-[220px] whitespace-normal">
-                    <div v-if="imageUsageLoadingMap[row.id]" class="text-xs text-gray-400 dark:text-gray-500">
+                    <div v-if="imageUsageLoadingMap[row.id]" class="text-xs text-ink-faint dark:text-dark-500">
                       {{ t('common.loading') }}
                     </div>
                     <div v-else-if="openAIImageUsageByMonitorId[row.id]?.length" class="space-y-1">
                       <div
                         v-for="item in openAIImageUsageByMonitorId[row.id]"
                         :key="item.key"
-                        class="rounded-lg border border-gray-200/80 px-2 py-1 dark:border-dark-700"
+                        class="rounded-control border border-line/80 px-2 py-1 dark:border-dark-700"
                       >
-                        <div class="mb-1 flex flex-wrap items-center gap-1.5 text-[10px] text-gray-500 dark:text-gray-400">
-                          <span class="rounded bg-gray-100 px-1.5 py-0.5 font-medium text-gray-700 dark:bg-dark-700 dark:text-gray-200">
+                        <div class="mb-1 flex flex-wrap items-center gap-1.5 text-[10px] text-ink-soft dark:text-dark-400">
+                          <span class="rounded-chip bg-page px-1.5 py-0.5 font-medium text-ink-body dark:bg-dark-700 dark:text-dark-200">
                             {{ item.label }}
                           </span>
-                          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-dark-700">
+                          <span class="rounded-chip bg-page px-1.5 py-0.5 dark:bg-dark-700">
                             {{ item.requestsLabel }}
                           </span>
-                          <span class="rounded bg-gray-100 px-1.5 py-0.5 dark:bg-dark-700">
+                          <span class="rounded-chip bg-page px-1.5 py-0.5 dark:bg-dark-700">
                             {{ item.costLabel }}
                           </span>
                         </div>
-                        <div class="text-[10px] text-gray-400 dark:text-gray-500">
+                        <div class="text-[10px] text-ink-faint dark:text-dark-500">
                           {{ item.resetLabel }}
                         </div>
                       </div>
                     </div>
-                    <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+                    <span v-else class="text-sm text-ink-faint dark:text-dark-500">-</span>
                   </div>
-                  <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+                  <span v-else class="text-sm text-ink-faint dark:text-dark-500">-</span>
                 </template>
 
                 <template #cell-enabled="{ row }">

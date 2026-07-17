@@ -42,44 +42,44 @@
             <div class="flex min-w-[260px] items-center gap-3">
               <img :src="row.thumbnail_url || row.image_url" :alt="row.title" class="h-14 w-14 rounded-xl object-cover" />
               <div class="min-w-0">
-                <div class="font-medium text-gray-900 dark:text-white">{{ row.title }}</div>
-                <div class="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">{{ row.prompt }}</div>
+                <div class="font-medium text-ink dark:text-white">{{ row.title }}</div>
+                <div class="mt-1 line-clamp-2 text-xs text-ink-soft dark:text-dark-400">{{ row.prompt }}</div>
               </div>
             </div>
           </template>
 
           <template #cell-line_name="{ row }">
-            <span class="text-sm text-gray-700 dark:text-gray-300">{{ resolveLineLabel(row.line_id, row.line_name) }}</span>
+            <span class="text-sm text-ink-body dark:text-dark-300">{{ resolveLineLabel(row.line_id, row.line_name) }}</span>
           </template>
 
           <template #cell-visibility="{ value }">
             <span class="rounded-full px-2.5 py-1 text-xs font-medium"
               :class="value === 'private'
-                ? 'bg-gray-100 text-gray-700 dark:bg-dark-800 dark:text-gray-200'
-                : 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-200'"
+                ? 'bg-page text-ink-soft dark:bg-dark-800 dark:text-dark-200'
+                : 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-200'"
             >
               {{ value === 'private' ? t('ai.prompt.private', '私有') : t('ai.prompt.public', '公开') }}
             </span>
           </template>
 
           <template #cell-status="{ value }">
-            <span class="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-100">
+            <span class="rounded-full bg-warning-soft px-2.5 py-1 text-xs font-medium text-warning dark:bg-amber-900/30 dark:text-amber-100">
               {{ statusLabel(value) }}
             </span>
           </template>
 
           <template #cell-owner_name="{ value }">
-            <span class="text-sm text-gray-700 dark:text-gray-300">{{ value || '-' }}</span>
+            <span class="text-sm text-ink-body dark:text-dark-300">{{ value || '-' }}</span>
           </template>
 
           <template #cell-featured="{ value }">
-            <span :class="value ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400 dark:text-gray-500'">
+            <span :class="value ? 'text-success dark:text-emerald-400' : 'text-ink-faint dark:text-dark-500'">
               {{ value ? t('common.yes', '是') : t('common.no', '否') }}
             </span>
           </template>
 
           <template #cell-created_at="{ value }">
-            <span class="text-sm text-gray-500 dark:text-gray-400">{{ formatTime(value) }}</span>
+            <span class="text-sm text-ink-soft dark:text-dark-400">{{ formatTime(value) }}</span>
           </template>
 
           <template #cell-actions="{ row }">

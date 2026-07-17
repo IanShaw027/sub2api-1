@@ -1,52 +1,69 @@
 <template>
   <AppLayout>
     <div class="space-y-6">
-      <!-- Loading State -->
-      <div v-if="loading" class="flex items-center justify-center py-12">
-        <LoadingSpinner />
+      <!-- Calm loading skeleton for KPI strip -->
+      <div v-if="loading" class="space-y-4">
+        <div class="grid grid-cols-2 gap-4 lg:grid-cols-5">
+          <div v-for="n in 5" :key="`kpi-${n}`" class="card min-w-0 p-4">
+            <div class="flex items-center gap-3">
+              <Skeleton variant="rect" :width="40" :height="40" class="shrink-0 rounded-control" />
+              <div class="min-w-0 flex-1 space-y-2">
+                <Skeleton variant="text" width="50%" height="12px" />
+                <Skeleton variant="text" width="40%" height="22px" />
+                <Skeleton variant="text" width="35%" height="11px" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div v-for="n in 2" :key="`chart-${n}`" class="card p-4">
+            <Skeleton variant="text" width="30%" height="14px" class="mb-4" />
+            <Skeleton variant="rect" width="100%" height="220px" />
+          </div>
+        </div>
       </div>
 
       <template v-else-if="stats">
-        <!-- Stats Cards -->
+        <!-- Stats Cards — brand / semantic soft icon wells -->
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-5">
-          <!-- Total API Keys -->
+          <!-- Total API Keys (accent — admin primary) -->
           <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
-              <div class="shrink-0 rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
-                <Icon name="key" size="md" class="text-blue-600 dark:text-blue-400" :stroke-width="2" />
+              <div class="stat-icon shrink-0 bg-accent-50 text-accent-600 dark:bg-accent-950/40 dark:text-accent-300">
+                <Icon name="key" size="md" :stroke-width="2" />
               </div>
               <div class="min-w-0 flex-1">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                <p class="text-xs font-medium text-ink-soft dark:text-dark-400">
                   {{ t('admin.dashboard.apiKeys') }}
                 </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
+                <p class="text-xl font-bold tabular-nums text-ink dark:text-white">
                   {{ stats.total_api_keys }}
                 </p>
-                <p class="text-xs text-green-600 dark:text-green-400">
+                <p class="text-xs text-success">
                   {{ stats.active_api_keys }} {{ t('common.active') }}
                 </p>
               </div>
             </div>
           </div>
 
-          <!-- Service Accounts -->
+          <!-- Service Accounts (brand teal) -->
           <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
-              <div class="shrink-0 rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30">
-                <Icon name="server" size="md" class="text-purple-600 dark:text-purple-400" :stroke-width="2" />
+              <div class="stat-icon shrink-0 bg-brand-50 text-brand-600 dark:bg-brand-950/40 dark:text-brand-300">
+                <Icon name="server" size="md" :stroke-width="2" />
               </div>
               <div class="min-w-0 flex-1">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                <p class="text-xs font-medium text-ink-soft dark:text-dark-400">
                   {{ t('admin.dashboard.accounts') }}
                 </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
+                <p class="text-xl font-bold tabular-nums text-ink dark:text-white">
                   {{ stats.total_accounts }}
                 </p>
                 <p class="text-xs">
-                  <span class="text-green-600 dark:text-green-400"
+                  <span class="text-success"
                     >{{ stats.normal_accounts }} {{ t('common.active') }}</span
                   >
-                  <span v-if="stats.error_accounts > 0" class="ml-1 text-red-500"
+                  <span v-if="stats.error_accounts > 0" class="ml-1 text-danger"
                     >{{ stats.error_accounts }} {{ t('common.error') }}</span
                   >
                 </p>
@@ -54,117 +71,117 @@
             </div>
           </div>
 
-          <!-- New Users Today -->
+          <!-- New Users Today (success) -->
           <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
-              <div class="shrink-0 rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
-                <Icon name="userPlus" size="md" class="text-emerald-600 dark:text-emerald-400" :stroke-width="2" />
+              <div class="stat-icon shrink-0 bg-success-soft text-success dark:bg-emerald-900/30 dark:text-emerald-400">
+                <Icon name="userPlus" size="md" :stroke-width="2" />
               </div>
               <div class="min-w-0 flex-1">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                <p class="text-xs font-medium text-ink-soft dark:text-dark-400">
                   {{ t('admin.dashboard.users') }}
                 </p>
-                <p class="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                <p class="text-xl font-bold tabular-nums text-success">
                   +{{ stats.today_new_users }}
                 </p>
-                <p class="text-xs text-gray-500 dark:text-gray-400">
+                <p class="text-xs text-ink-soft dark:text-dark-400">
                   {{ t('common.total') }}: {{ formatNumber(stats.total_users) }}
                 </p>
               </div>
             </div>
           </div>
 
-          <!-- Performance (RPM/TPM) -->
+          <!-- Performance (RPM/TPM) — brand cyan accent -->
           <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
-              <div class="shrink-0 rounded-lg bg-violet-100 p-2 dark:bg-violet-900/30">
-                <Icon name="bolt" size="md" class="text-violet-600 dark:text-violet-400" :stroke-width="2" />
+              <div class="stat-icon shrink-0 bg-brand-100 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
+                <Icon name="bolt" size="md" :stroke-width="2" />
               </div>
               <div class="min-w-0 flex-1">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                <p class="text-xs font-medium text-ink-soft dark:text-dark-400">
                   {{ t('admin.dashboard.performance') }}
                 </p>
                 <div class="flex items-baseline gap-2">
-                  <p class="text-xl font-bold text-gray-900 dark:text-white">
+                  <p class="text-xl font-bold tabular-nums text-ink dark:text-white">
                     {{ formatTokens(stats.rpm) }}
                   </p>
-                  <span class="text-xs text-gray-500 dark:text-gray-400">RPM</span>
+                  <span class="text-xs text-ink-soft dark:text-dark-400">RPM</span>
                 </div>
                 <div class="flex items-baseline gap-2">
-                  <p class="text-sm font-semibold text-violet-600 dark:text-violet-400">
+                  <p class="text-sm font-semibold tabular-nums text-brand-600 dark:text-brand-300">
                     {{ formatTokens(stats.tpm) }}
                   </p>
-                  <span class="text-xs text-gray-500 dark:text-gray-400">TPM</span>
+                  <span class="text-xs text-ink-soft dark:text-dark-400">TPM</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Avg Response Time -->
+          <!-- Avg Response Time (warning — latency) -->
           <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
-              <div class="shrink-0 rounded-lg bg-rose-100 p-2 dark:bg-rose-900/30">
-                <Icon name="clock" size="md" class="text-rose-600 dark:text-rose-400" :stroke-width="2" />
+              <div class="stat-icon shrink-0 bg-warning-soft text-warning dark:bg-amber-900/30 dark:text-amber-400">
+                <Icon name="clock" size="md" :stroke-width="2" />
               </div>
               <div class="min-w-0 flex-1">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                <p class="text-xs font-medium text-ink-soft dark:text-dark-400">
                   {{ t('admin.dashboard.avgResponse') }}
                 </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
+                <p class="text-xl font-bold tabular-nums text-ink dark:text-white">
                   {{ formatDuration(stats.average_duration_ms) }}
                 </p>
-                <p class="text-xs text-gray-500 dark:text-gray-400">
+                <p class="text-xs text-ink-soft dark:text-dark-400">
                   {{ stats.active_users }} {{ t('admin.dashboard.activeUsers') }}
                 </p>
               </div>
             </div>
           </div>
-          <!-- Today Requests -->
+          <!-- Today Requests (success) -->
           <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
-              <div class="shrink-0 rounded-lg bg-green-100 p-2 dark:bg-green-900/30">
-                <Icon name="chart" size="md" class="text-green-600 dark:text-green-400" :stroke-width="2" />
+              <div class="stat-icon shrink-0 bg-success-soft text-success dark:bg-emerald-900/30 dark:text-emerald-400">
+                <Icon name="chart" size="md" :stroke-width="2" />
               </div>
               <div class="min-w-0 flex-1">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                <p class="text-xs font-medium text-ink-soft dark:text-dark-400">
                   {{ t('admin.dashboard.todayRequests') }}
                 </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
+                <p class="text-xl font-bold tabular-nums text-ink dark:text-white">
                   {{ stats.today_requests }}
                 </p>
-                <p class="text-xs text-gray-500 dark:text-gray-400">
+                <p class="text-xs text-ink-soft dark:text-dark-400">
                   {{ t('common.total') }}: {{ formatNumber(stats.total_requests) }}
                 </p>
               </div>
             </div>
           </div>
 
-          <!-- Today Tokens -->
+          <!-- Today Tokens (warning) -->
           <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
-              <div class="shrink-0 rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
-                <Icon name="cube" size="md" class="text-amber-600 dark:text-amber-400" :stroke-width="2" />
+              <div class="stat-icon shrink-0 bg-warning-soft text-warning dark:bg-amber-900/30 dark:text-amber-400">
+                <Icon name="cube" size="md" :stroke-width="2" />
               </div>
               <div class="min-w-0 flex-1">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                <p class="text-xs font-medium text-ink-soft dark:text-dark-400">
                   {{ t('admin.dashboard.todayTokens') }}
                 </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
+                <p class="text-xl font-bold tabular-nums text-ink dark:text-white">
                   {{ formatTokens(stats.today_tokens) }}
                 </p>
                 <HelpTooltip width-class="w-56">
                   <template #trigger>
-                    <div class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-semibold">
+                    <div class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-semibold tabular-nums">
                       <template v-for="(item, index) in todayTokenBreakdownItems" :key="item.key">
                         <span :class="item.textClass">${{ formatCost(item.value) }}</span>
-                        <span v-if="index < todayTokenBreakdownItems.length - 1" class="text-gray-400 dark:text-gray-500">/</span>
+                        <span v-if="index < todayTokenBreakdownItems.length - 1" class="text-ink-faint dark:text-dark-500">/</span>
                       </template>
                     </div>
                   </template>
                   <div class="space-y-1.5">
                     <div v-for="item in todayTokenBreakdownItems" :key="item.key" class="flex items-center justify-between gap-4">
                       <span>{{ item.label }}</span>
-                      <span class="font-semibold">${{ formatCost(item.value) }}</span>
+                      <span class="font-semibold tabular-nums">${{ formatCost(item.value) }}</span>
                     </div>
                   </div>
                 </HelpTooltip>
@@ -172,32 +189,32 @@
             </div>
           </div>
 
-          <!-- Total Tokens -->
+          <!-- Total Tokens (accent) -->
           <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
-              <div class="shrink-0 rounded-lg bg-indigo-100 p-2 dark:bg-indigo-900/30">
-                <Icon name="database" size="md" class="text-indigo-600 dark:text-indigo-400" :stroke-width="2" />
+              <div class="stat-icon shrink-0 bg-accent-50 text-accent-600 dark:bg-accent-950/40 dark:text-accent-300">
+                <Icon name="database" size="md" :stroke-width="2" />
               </div>
               <div class="min-w-0 flex-1">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                <p class="text-xs font-medium text-ink-soft dark:text-dark-400">
                   {{ t('admin.dashboard.totalTokens') }}
                 </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
+                <p class="text-xl font-bold tabular-nums text-ink dark:text-white">
                   {{ formatTokens(stats.total_tokens) }}
                 </p>
                 <HelpTooltip width-class="w-56">
                   <template #trigger>
-                    <div class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-semibold">
+                    <div class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-semibold tabular-nums">
                       <template v-for="(item, index) in totalTokenBreakdownItems" :key="item.key">
                         <span :class="item.textClass">${{ formatCost(item.value) }}</span>
-                        <span v-if="index < totalTokenBreakdownItems.length - 1" class="text-gray-400 dark:text-gray-500">/</span>
+                        <span v-if="index < totalTokenBreakdownItems.length - 1" class="text-ink-faint dark:text-dark-500">/</span>
                       </template>
                     </div>
                   </template>
                   <div class="space-y-1.5">
                     <div v-for="item in totalTokenBreakdownItems" :key="item.key" class="flex items-center justify-between gap-4">
                       <span>{{ item.label }}</span>
-                      <span class="font-semibold">${{ formatCost(item.value) }}</span>
+                      <span class="font-semibold tabular-nums">${{ formatCost(item.value) }}</span>
                     </div>
                   </div>
                 </HelpTooltip>
@@ -205,32 +222,32 @@
             </div>
           </div>
 
-          <!-- Today Consumption -->
+          <!-- Today Consumption (brand) -->
           <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
-              <div class="shrink-0 rounded-lg bg-sky-100 p-2 dark:bg-sky-900/30">
-                <Icon name="dollar" size="md" class="text-sky-600 dark:text-sky-400" :stroke-width="2" />
+              <div class="stat-icon shrink-0 bg-brand-50 text-brand-600 dark:bg-brand-950/40 dark:text-brand-300">
+                <Icon name="dollar" size="md" :stroke-width="2" />
               </div>
               <div class="min-w-0 flex-1">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                <p class="text-xs font-medium text-ink-soft dark:text-dark-400">
                   {{ t('admin.dashboard.todayCost') }}
                 </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
+                <p class="text-xl font-bold tabular-nums text-ink dark:text-white">
                   ${{ formatCost(stats.today_actual_cost) }}
                 </p>
                 <HelpTooltip width-class="w-56">
                   <template #trigger>
-                    <div class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-semibold">
+                    <div class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-semibold tabular-nums">
                       <template v-for="(item, index) in todayFinancialBreakdownItems" :key="item.key">
                         <span :class="item.textClass">${{ formatCost(item.value) }}</span>
-                        <span v-if="index < todayFinancialBreakdownItems.length - 1" class="text-gray-400 dark:text-gray-500">/</span>
+                        <span v-if="index < todayFinancialBreakdownItems.length - 1" class="text-ink-faint dark:text-dark-500">/</span>
                       </template>
                     </div>
                   </template>
                   <div class="space-y-1.5">
                     <div v-for="item in todayFinancialBreakdownItems" :key="item.key" class="flex items-center justify-between gap-4">
                       <span>{{ item.label }}</span>
-                      <span class="font-semibold">${{ formatCost(item.value) }}</span>
+                      <span class="font-semibold tabular-nums">${{ formatCost(item.value) }}</span>
                     </div>
                   </div>
                 </HelpTooltip>
@@ -238,32 +255,32 @@
             </div>
           </div>
 
-          <!-- Total Consumption -->
+          <!-- Total Consumption (accent) -->
           <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
-              <div class="shrink-0 rounded-lg bg-cyan-100 p-2 dark:bg-cyan-900/30">
-                <Icon name="creditCard" size="md" class="text-cyan-600 dark:text-cyan-400" :stroke-width="2" />
+              <div class="stat-icon shrink-0 bg-accent-100 text-accent-700 dark:bg-accent-950/40 dark:text-accent-300">
+                <Icon name="creditCard" size="md" :stroke-width="2" />
               </div>
               <div class="min-w-0 flex-1">
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                <p class="text-xs font-medium text-ink-soft dark:text-dark-400">
                   {{ t('admin.dashboard.totalCost') }}
                 </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
+                <p class="text-xl font-bold tabular-nums text-ink dark:text-white">
                   ${{ formatCost(stats.total_actual_cost) }}
                 </p>
                 <HelpTooltip width-class="w-56">
                   <template #trigger>
-                    <div class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-semibold">
+                    <div class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-semibold tabular-nums">
                       <template v-for="(item, index) in totalFinancialBreakdownItems" :key="item.key">
                         <span :class="item.textClass">${{ formatCost(item.value) }}</span>
-                        <span v-if="index < totalFinancialBreakdownItems.length - 1" class="text-gray-400 dark:text-gray-500">/</span>
+                        <span v-if="index < totalFinancialBreakdownItems.length - 1" class="text-ink-faint dark:text-dark-500">/</span>
                       </template>
                     </div>
                   </template>
                   <div class="space-y-1.5">
                     <div v-for="item in totalFinancialBreakdownItems" :key="item.key" class="flex items-center justify-between gap-4">
                       <span>{{ item.label }}</span>
-                      <span class="font-semibold">${{ formatCost(item.value) }}</span>
+                      <span class="font-semibold tabular-nums">${{ formatCost(item.value) }}</span>
                     </div>
                   </div>
                 </HelpTooltip>
@@ -275,7 +292,7 @@
         <!-- Quick Actions -->
         <div class="card p-4">
           <div class="mb-3 flex items-center justify-between">
-            <h2 class="text-sm font-semibold text-gray-900 dark:text-white">
+            <h2 class="text-sm font-semibold text-ink dark:text-white">
               {{ t('admin.dashboard.quickActions') }}
             </h2>
           </div>
@@ -283,39 +300,39 @@
             <button
               v-if="canUseBatchImage"
               type="button"
-              class="group flex items-center gap-3 rounded-lg bg-gray-50 p-3 text-left transition-colors hover:bg-sky-50 dark:bg-dark-800/50 dark:hover:bg-sky-900/20"
+              class="group flex items-center gap-3 rounded-lg bg-page p-3 text-left transition-colors hover:bg-accent-50 dark:bg-dark-800/50 dark:hover:bg-accent-950/30"
               @click="router.push('/batch-image')"
             >
-              <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400">
+              <span class="stat-icon flex h-10 w-10 flex-shrink-0 bg-accent-50 text-accent-600 dark:bg-accent-950/40 dark:text-accent-300">
                 <Icon name="sparkles" size="md" :stroke-width="2" />
               </span>
               <span class="min-w-0 flex-1">
-                <span class="block text-sm font-medium text-gray-900 dark:text-white">
+                <span class="block text-sm font-medium text-ink dark:text-white">
                   {{ t('admin.dashboard.batchImage') }}
                 </span>
-                <span class="block text-xs text-gray-500 dark:text-gray-400">
+                <span class="block text-xs text-ink-soft dark:text-dark-400">
                   {{ t('admin.dashboard.batchImageDesc') }}
                 </span>
               </span>
-              <Icon name="chevronRight" size="sm" class="text-gray-400 group-hover:text-sky-500" />
+              <Icon name="chevronRight" size="sm" class="text-ink-faint group-hover:text-accent-500" />
             </button>
             <button
               type="button"
-              class="group flex items-center gap-3 rounded-lg bg-gray-50 p-3 text-left transition-colors hover:bg-emerald-50 dark:bg-dark-800/50 dark:hover:bg-emerald-900/20"
+              class="group flex items-center gap-3 rounded-lg bg-page p-3 text-left transition-colors hover:bg-brand-50 dark:bg-dark-800/50 dark:hover:bg-brand-950/30"
               @click="router.push('/admin/groups')"
             >
-              <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
+              <span class="stat-icon flex h-10 w-10 flex-shrink-0 bg-brand-50 text-brand-600 dark:bg-brand-950/40 dark:text-brand-300">
                 <Icon name="grid" size="md" :stroke-width="2" />
               </span>
               <span class="min-w-0 flex-1">
-                <span class="block text-sm font-medium text-gray-900 dark:text-white">
+                <span class="block text-sm font-medium text-ink dark:text-white">
                   {{ t('admin.dashboard.groupPricing') }}
                 </span>
-                <span class="block text-xs text-gray-500 dark:text-gray-400">
+                <span class="block text-xs text-ink-soft dark:text-dark-400">
                   {{ t('admin.dashboard.groupPricingDesc') }}
                 </span>
               </span>
-              <Icon name="chevronRight" size="sm" class="text-gray-400 group-hover:text-emerald-500" />
+              <Icon name="chevronRight" size="sm" class="text-ink-faint group-hover:text-brand-600" />
             </button>
           </div>
         </div>
@@ -326,7 +343,7 @@
           <div class="card p-4">
             <div class="flex flex-wrap items-center gap-4">
               <div class="flex items-center gap-2">
-                <span class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                <span class="text-sm font-medium text-ink-body dark:text-dark-300"
                   >{{ t('admin.dashboard.timeRange') }}:</span
                 >
                 <DateRangePicker
@@ -339,7 +356,7 @@
                 {{ t('common.refresh') }}
               </button>
               <div class="ml-auto flex items-center gap-2">
-                <span class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                <span class="text-sm font-medium text-ink-body dark:text-dark-300"
                   >{{ t('admin.dashboard.granularity') }}:</span
                 >
                 <div class="w-28">
@@ -374,7 +391,7 @@
 
           <!-- User Usage Trend (Full Width) -->
           <div class="card p-4">
-            <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+            <h3 class="mb-4 text-sm font-semibold text-ink dark:text-white">
               {{ t('admin.dashboard.recentUsage') }} (Top 12)
             </h3>
             <div class="h-64">
@@ -384,7 +401,7 @@
               <Line v-else-if="userTrendChartData" :data="userTrendChartData" :options="lineOptions" />
               <div
                 v-else
-                class="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+                class="flex h-full items-center justify-center text-sm text-ink-soft dark:text-dark-400"
               >
                 {{ t('admin.dashboard.noDataAvailable') }}
               </div>
@@ -413,6 +430,7 @@ import type {
 } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import Skeleton from '@/components/common/Skeleton.vue'
 import Icon from '@/components/icons/Icon.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import Select from '@/components/common/Select.vue'
@@ -420,6 +438,7 @@ import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import { chartColor } from '@/utils/chartPalette'
 
 import {
   Chart as ChartJS,
@@ -597,26 +616,12 @@ const userTrendChartData = computed(() => {
   })
 
   const sortedDates = Array.from(allDates).sort()
-  const colors = [
-    '#3b82f6',
-    '#10b981',
-    '#f59e0b',
-    '#ef4444',
-    '#8b5cf6',
-    '#ec4899',
-    '#14b8a6',
-    '#f97316',
-    '#6366f1',
-    '#84cc16',
-    '#06b6d4',
-    '#a855f7'
-  ]
 
   const datasets = Array.from(userGroups.values()).map((group, idx) => ({
     label: group.name,
     data: sortedDates.map((date) => group.data.get(date) || 0),
-    borderColor: colors[idx % colors.length],
-    backgroundColor: `${colors[idx % colors.length]}20`,
+    borderColor: chartColor(idx),
+    backgroundColor: `${chartColor(idx)}20`,
     fill: false,
     tension: 0.3
   }))
@@ -670,19 +675,19 @@ const todayTokenBreakdownItems = computed(() => [
     key: 'actual',
     label: t('admin.dashboard.actual'),
     value: asNumber(stats.value?.today_actual_cost),
-    textClass: 'text-green-600 dark:text-green-400'
+    textClass: 'text-success'
   },
   {
     key: 'account',
     label: t('admin.dashboard.accountCost'),
     value: asNumber(stats.value?.today_account_cost),
-    textClass: 'text-orange-500 dark:text-orange-400'
+    textClass: 'text-warning'
   },
   {
     key: 'standard',
     label: t('admin.dashboard.standard'),
     value: asNumber(stats.value?.today_cost),
-    textClass: 'text-gray-500 dark:text-gray-400'
+    textClass: 'text-ink-soft dark:text-dark-400'
   }
 ])
 
@@ -691,19 +696,19 @@ const totalTokenBreakdownItems = computed(() => [
     key: 'actual',
     label: t('admin.dashboard.actual'),
     value: asNumber(stats.value?.total_actual_cost),
-    textClass: 'text-green-600 dark:text-green-400'
+    textClass: 'text-success'
   },
   {
     key: 'account',
     label: t('admin.dashboard.accountCost'),
     value: asNumber(stats.value?.total_account_cost),
-    textClass: 'text-orange-500 dark:text-orange-400'
+    textClass: 'text-warning'
   },
   {
     key: 'standard',
     label: t('admin.dashboard.standard'),
     value: asNumber(stats.value?.total_cost),
-    textClass: 'text-gray-500 dark:text-gray-400'
+    textClass: 'text-ink-soft dark:text-dark-400'
   }
 ])
 
@@ -713,28 +718,28 @@ const financialBreakdownItems = computed(() => [
     label: t('admin.dashboard.balanceConsumption'),
     todayValue: asNumber(stats.value?.today_balance_actual_cost),
     totalValue: asNumber(stats.value?.total_balance_actual_cost),
-    textClass: 'text-emerald-600 dark:text-emerald-400'
+    textClass: 'text-success'
   },
   {
     key: 'subscription',
     label: t('admin.dashboard.subscriptionConsumption'),
     todayValue: asNumber(stats.value?.today_subscription_actual_cost),
     totalValue: asNumber(stats.value?.total_subscription_actual_cost),
-    textClass: 'text-indigo-600 dark:text-indigo-400'
+    textClass: 'text-accent-600 dark:text-accent-300'
   },
   {
     key: 'recharge',
     label: t('admin.dashboard.rechargeAmount'),
     todayValue: asNumber(stats.value?.today_recharge_amount),
     totalValue: asNumber(stats.value?.total_recharge_amount),
-    textClass: 'text-green-600 dark:text-green-400'
+    textClass: 'text-brand-600 dark:text-brand-300'
   },
   {
     key: 'refund',
     label: t('admin.dashboard.refundAmount'),
     todayValue: asNumber(stats.value?.today_refund_amount),
     totalValue: asNumber(stats.value?.total_refund_amount),
-    textClass: 'text-rose-600 dark:text-rose-400'
+    textClass: 'text-danger'
   }
 ])
 

@@ -3,7 +3,7 @@
     <div class="mb-3 flex items-center justify-between">
       <div>
         <label class="input-label mb-0">{{ t('admin.accounts.customErrorCodes') }}</label>
-        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        <p class="mt-1 text-xs text-ink-soft dark:text-ink-soft">
           {{ t('admin.accounts.customErrorCodesHint') }}
         </p>
       </div>
@@ -11,8 +11,8 @@
     </div>
 
     <div v-if="enabled" class="space-y-3">
-      <div class="rounded-lg bg-amber-50 p-3 dark:bg-amber-900/20">
-        <p class="text-xs text-amber-700 dark:text-amber-400">
+      <div class="rounded-control bg-warning-soft p-3 dark:bg-warning/10">
+        <p class="text-xs text-warning dark:text-warning">
           <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
           {{ t('admin.accounts.customErrorCodesWarning') }}
         </p>
@@ -25,10 +25,10 @@
           type="button"
           @click="toggleErrorCode(code.value)"
           :class="[
-            'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
+            'rounded-control px-3 py-1.5 text-sm font-medium transition-colors',
             codes.includes(code.value)
-              ? 'bg-red-100 text-red-700 ring-1 ring-red-500 dark:bg-red-900/30 dark:text-red-400'
-              : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+              ? 'bg-danger-soft text-danger ring-1 ring-danger dark:bg-danger/15 dark:text-danger'
+              : 'bg-page text-ink-body hover:bg-line dark:bg-dark-600 dark:text-ink-soft dark:hover:bg-dark-500'
           ]"
         >
           {{ code.value }} {{ code.label }}
@@ -56,18 +56,18 @@
         <span
           v-for="code in sortedCodes"
           :key="code"
-          class="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-sm font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400"
+          class="inline-flex items-center gap-1 rounded-full bg-danger-soft px-2.5 py-0.5 text-sm font-medium text-danger dark:bg-danger/15 dark:text-danger"
         >
           {{ code }}
           <button
             type="button"
             @click="removeErrorCode(code)"
-            class="hover:text-red-900 dark:hover:text-red-300"
+            class="hover:text-danger dark:hover:text-danger"
           >
             <Icon name="x" size="sm" :stroke-width="2" />
           </button>
         </span>
-        <span v-if="codes.length === 0" class="text-xs text-gray-400">
+        <span v-if="codes.length === 0" class="text-xs text-ink-faint">
           {{ t('admin.accounts.noneSelectedUsesDefault') }}
         </span>
       </div>

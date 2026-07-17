@@ -18,7 +18,7 @@
             </div>
 
           </div>
-          <p class="text-xs text-gray-500 dark:text-gray-400">
+          <p class="text-xs text-ink-soft dark:text-dark-400">
             {{ t('skills.admin.settlement.filterHint') }}
           </p>
         </template>
@@ -36,29 +36,29 @@
           <DataTable :columns="columns" :data="settlements" :loading="loading">
             <template #cell-skill_name="{ row }">
               <div class="min-w-[240px]">
-                <div class="font-medium text-gray-900 dark:text-white">{{ row.skill_name }}</div>
-                <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ row.skill_slug }}</div>
+                <div class="font-medium text-ink dark:text-white">{{ row.skill_name }}</div>
+                <div class="mt-1 text-xs text-ink-soft dark:text-dark-400">{{ row.skill_slug }}</div>
               </div>
             </template>
 
             <template #cell-author_name="{ value }">
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ value || '-' }}</span>
+              <span class="text-sm text-ink-body dark:text-dark-300">{{ value || '-' }}</span>
             </template>
 
             <template #cell-gross_amount="{ value, row }">
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatCurrency(Number(value), row.currency) }}</span>
+              <span class="text-sm text-ink-body dark:text-dark-300">{{ formatCurrency(Number(value), row.currency) }}</span>
             </template>
 
             <template #cell-platform_fee_amount="{ value, row }">
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatCurrency(Number(value), row.currency) }}</span>
+              <span class="text-sm text-ink-body dark:text-dark-300">{{ formatCurrency(Number(value), row.currency) }}</span>
             </template>
 
             <template #cell-payout_amount="{ value, row }">
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatCurrency(Number(value), row.currency) }}</span>
+              <span class="text-sm text-ink-body dark:text-dark-300">{{ formatCurrency(Number(value), row.currency) }}</span>
             </template>
 
             <template #cell-frozen_amount="{ value, row }">
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatCurrency(Number(value), row.currency) }}</span>
+              <span class="text-sm text-ink-body dark:text-dark-300">{{ formatCurrency(Number(value), row.currency) }}</span>
             </template>
 
             <template #cell-settlement_status="{ value }">
@@ -66,7 +66,7 @@
             </template>
 
             <template #cell-updated_at="{ value }">
-              <span class="text-sm text-gray-500 dark:text-gray-400">{{ formatTime(value) }}</span>
+              <span class="text-sm text-ink-soft dark:text-dark-400">{{ formatTime(value) }}</span>
             </template>
 
             <template #cell-actions="{ row }">
@@ -95,12 +95,12 @@
       </TablePageLayout>
 
       <div class="grid gap-6 xl:grid-cols-[1.25fr_0.95fr]">
-        <div class="card border border-gray-200 p-5 dark:border-dark-700">
+        <div class="card border border-line p-5 dark:border-dark-700">
           <template v-if="selectedSettlement">
             <div class="flex flex-wrap items-start justify-between gap-4">
               <div class="min-w-0">
-                <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ selectedSettlement.skill_name }}</h3>
-                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                <h3 class="text-base font-semibold text-ink dark:text-white">{{ selectedSettlement.skill_name }}</h3>
+                <p class="mt-2 text-sm text-ink-soft dark:text-dark-400">
                   {{ selectedSettlement.skill_slug }}
                   <span v-if="selectedSettlement.author_name"> · {{ t('skills.admin.settlement.authorLabel') }} {{ selectedSettlement.author_name }}</span>
                 </p>
@@ -113,48 +113,48 @@
             </div>
 
             <div class="mt-5 grid gap-4 md:grid-cols-2">
-              <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.settlement.periodTitle') }}</p>
-                <p class="mt-2 text-lg font-semibold text-gray-900 dark:text-white">{{ selectedSettlement.period_label }}</p>
+              <div class="rounded-card bg-page p-4 dark:bg-dark-900/60">
+                <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ t('skills.admin.settlement.periodTitle') }}</p>
+                <p class="mt-2 text-lg font-semibold text-ink dark:text-white">{{ selectedSettlement.period_label }}</p>
               </div>
-              <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.settlement.payoutTitle') }}</p>
-                <p class="mt-2 text-lg font-semibold text-gray-900 dark:text-white">
+              <div class="rounded-card bg-page p-4 dark:bg-dark-900/60">
+                <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ t('skills.admin.settlement.payoutTitle') }}</p>
+                <p class="mt-2 text-lg font-semibold text-ink dark:text-white">
                   {{ formatCurrency(selectedSettlement.payout_amount, selectedSettlement.currency) }}
                 </p>
               </div>
             </div>
 
-            <div class="mt-5 rounded-2xl border border-gray-200 p-4 dark:border-dark-700">
+            <div class="mt-5 rounded-card border border-line p-4 dark:border-dark-700">
               <div class="grid gap-4 md:grid-cols-2">
                 <div>
-                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.settlement.grossTitle') }}</p>
-                  <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white">
+                  <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ t('skills.admin.settlement.grossTitle') }}</p>
+                  <p class="mt-2 text-sm font-medium text-ink dark:text-white">
                     {{ formatCurrency(selectedSettlement.gross_amount, selectedSettlement.currency) }}
                   </p>
                 </div>
                 <div>
-                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.settlement.platformFeeTitle') }}</p>
-                  <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white">
+                  <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ t('skills.admin.settlement.platformFeeTitle') }}</p>
+                  <p class="mt-2 text-sm font-medium text-ink dark:text-white">
                     {{ formatCurrency(selectedSettlement.platform_fee_amount, selectedSettlement.currency) }}
                   </p>
                 </div>
                 <div>
-                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.settlement.frozenTitle') }}</p>
-                  <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white">
+                  <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ t('skills.admin.settlement.frozenTitle') }}</p>
+                  <p class="mt-2 text-sm font-medium text-ink dark:text-white">
                     {{ formatCurrency(selectedSettlement.frozen_amount, selectedSettlement.currency) }}
                   </p>
                 </div>
                 <div>
-                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.settlement.updatedTitle') }}</p>
-                  <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white">{{ formatTime(selectedSettlement.updated_at) }}</p>
+                  <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ t('skills.admin.settlement.updatedTitle') }}</p>
+                  <p class="mt-2 text-sm font-medium text-ink dark:text-white">{{ formatTime(selectedSettlement.updated_at) }}</p>
                 </div>
               </div>
             </div>
 
             <div class="mt-5">
-              <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('skills.admin.settlement.noteTitle') }}</p>
-              <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">
+              <p class="text-sm font-medium text-ink dark:text-white">{{ t('skills.admin.settlement.noteTitle') }}</p>
+              <p class="mt-2 text-sm leading-6 text-ink-soft dark:text-dark-400">
                 {{ selectedSettlement.note || t('skills.admin.settlement.noteEmpty') }}
               </p>
             </div>
@@ -173,7 +173,7 @@
           </template>
 
           <template v-else>
-            <div class="rounded-2xl border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400">
+            <div class="rounded-card border border-dashed border-line px-4 py-10 text-center text-sm text-ink-soft dark:border-dark-700 dark:text-dark-400">
               {{ t('skills.admin.settlement.detailEmpty') }}
             </div>
           </template>

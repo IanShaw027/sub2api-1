@@ -45,16 +45,16 @@
                 <div class="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    class="text-left font-medium text-gray-900 hover:text-primary-600 dark:text-white dark:hover:text-primary-300"
+                    class="text-left font-medium text-ink hover:text-brand-600 dark:text-white dark:hover:text-brand-300"
                     @click="selectReview(row)"
                   >
                     {{ row.skill_name }}
                   </button>
-                  <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+                  <span class="rounded-full bg-ink-faint/10 px-2 py-0.5 text-xs text-ink-body dark:bg-dark-700 dark:text-ink-body">
                     {{ row.version_name }}
                   </span>
                 </div>
-                <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                <div class="mt-1 text-xs text-ink-soft dark:text-ink-soft">
                   {{ row.skill_slug }}
                   <span v-if="row.latest_published_version"> · {{ t('skills.admin.review.previousPublishedVersion') }} {{ row.latest_published_version }}</span>
                 </div>
@@ -62,7 +62,7 @@
             </template>
 
             <template #cell-author_name="{ value }">
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ value || '-' }}</span>
+              <span class="text-sm text-ink-body dark:text-ink-body">{{ value || '-' }}</span>
             </template>
 
             <template #cell-review_status="{ value }">
@@ -80,11 +80,11 @@
             </template>
 
             <template #cell-submitted_at="{ value }">
-              <span class="text-sm text-gray-500 dark:text-gray-400">{{ formatTime(value) }}</span>
+              <span class="text-sm text-ink-soft dark:text-ink-soft">{{ formatTime(value) }}</span>
             </template>
 
             <template #cell-reviewed_at="{ value }">
-              <span class="text-sm text-gray-500 dark:text-gray-400">{{ formatTime(value) }}</span>
+              <span class="text-sm text-ink-soft dark:text-ink-soft">{{ formatTime(value) }}</span>
             </template>
 
             <template #cell-actions="{ row }">

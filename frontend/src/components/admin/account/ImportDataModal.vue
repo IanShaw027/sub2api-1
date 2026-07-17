@@ -7,11 +7,11 @@
     @close="handleClose"
   >
     <form id="import-data-form" class="space-y-4" @submit.prevent="handleImport">
-      <div class="text-sm text-gray-600 dark:text-dark-300">
+      <div class="text-sm text-ink-soft dark:text-dark-300">
         {{ t('admin.accounts.dataImportHint') }}
       </div>
       <div
-        class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-600 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400"
+        class="rounded-control border border-warning/25 bg-warning-soft p-3 text-xs text-warning dark:border-warning/30 dark:bg-warning/20 dark:text-warning"
       >
         {{ t('admin.accounts.dataImportWarning') }}
       </div>
@@ -29,20 +29,20 @@
       <div>
         <label class="input-label">{{ t('admin.accounts.dataImportFile') }}</label>
         <div
-          class="flex items-center justify-between gap-3 rounded-lg border border-dashed px-4 py-3 transition-colors"
+          class="flex items-center justify-between gap-3 rounded-control border border-dashed px-4 py-3 transition-colors"
           :class="dragActive
-            ? 'border-primary-400 bg-primary-50/70 dark:border-primary-500 dark:bg-primary-900/20'
-            : 'border-gray-300 bg-gray-50 dark:border-dark-600 dark:bg-dark-800'"
+            ? 'border-brand-400 bg-brand-50/70 dark:border-brand-500 dark:bg-brand-900/20'
+            : 'border-line bg-page dark:border-dark-600 dark:bg-dark-800'"
           @dragenter.prevent="handleDragEnter"
           @dragover.prevent
           @dragleave.prevent="handleDragLeave"
           @drop.prevent="handleDrop"
         >
           <div class="min-w-0">
-            <div class="truncate text-sm text-gray-700 dark:text-dark-200" :title="fileListTitle">
+            <div class="truncate text-sm text-ink-body dark:text-dark-200" :title="fileListTitle">
               {{ selectedFilesLabel || t('admin.accounts.dataImportSelectFile') }}
             </div>
-            <div class="text-xs text-gray-500 dark:text-dark-400">
+            <div class="text-xs text-ink-soft dark:text-dark-400">
               {{ t('admin.accounts.dataImportFileHint') }}
               <span v-if="files.length > 1"> · {{ fileListTitle }}</span>
             </div>
@@ -64,21 +64,21 @@
       <!-- JSON import result -->
       <div
         v-if="jsonResult"
-        class="space-y-2 rounded-xl border border-gray-200 p-4 dark:border-dark-700"
+        class="space-y-2 rounded-card border border-line p-4 dark:border-dark-700"
       >
-        <div class="text-sm font-medium text-gray-900 dark:text-white">
+        <div class="text-sm font-medium text-ink dark:text-white">
           {{ t('admin.accounts.dataImportResult') }}
         </div>
-        <div class="text-sm text-gray-700 dark:text-dark-300">
+        <div class="text-sm text-ink-body dark:text-dark-300">
           {{ t('admin.accounts.dataImportResultSummary', jsonResult) }}
         </div>
 
         <div v-if="jsonErrorItems.length" class="mt-2">
-          <div class="text-sm font-medium text-red-600 dark:text-red-400">
+          <div class="text-sm font-medium text-danger dark:text-danger">
             {{ t('admin.accounts.dataImportErrors') }}
           </div>
           <div
-            class="mt-2 max-h-48 overflow-auto rounded-lg bg-gray-50 p-3 font-mono text-xs dark:bg-dark-800"
+            class="mt-2 max-h-48 overflow-auto rounded-control bg-page p-3 font-mono text-xs dark:bg-dark-800"
           >
             <div v-for="(item, idx) in jsonErrorItems" :key="idx" class="whitespace-pre-wrap">
               {{ item.kind }} {{ item.name || item.proxy_key || t('common.notAvailable') }} — {{ item.message }}
@@ -90,32 +90,32 @@
       <!-- Archive import result -->
       <div
         v-if="archiveResult"
-        class="space-y-2 rounded-xl border border-gray-200 p-4 dark:border-dark-700"
+        class="space-y-2 rounded-card border border-line p-4 dark:border-dark-700"
       >
-        <div class="text-sm font-medium text-gray-900 dark:text-white">
+        <div class="text-sm font-medium text-ink dark:text-white">
           {{ t('admin.accounts.dataImportResult') }}
         </div>
-        <div class="text-sm text-gray-700 dark:text-dark-300">
+        <div class="text-sm text-ink-body dark:text-dark-300">
           {{ t('admin.accounts.dataImportArchiveSummary', { format: archiveResult.format, total: archiveResult.total_entries, codex: archiveResult.codex_entries, sub2api: archiveResult.sub2api_entries, unknown: archiveResult.unknown_entries }) }}
         </div>
 
         <!-- sub2api result -->
-        <div v-if="archiveResult.sub2api_result" class="text-sm text-gray-700 dark:text-dark-300">
+        <div v-if="archiveResult.sub2api_result" class="text-sm text-ink-body dark:text-dark-300">
           {{ t('admin.accounts.dataImportResultSummary', archiveResult.sub2api_result) }}
         </div>
 
         <!-- codex result -->
-        <div v-if="archiveResult.codex_result" class="text-sm text-gray-700 dark:text-dark-300">
+        <div v-if="archiveResult.codex_result" class="text-sm text-ink-body dark:text-dark-300">
           {{ t('admin.accounts.dataImportArchiveCodexSummary', archiveResult.codex_result) }}
         </div>
 
         <!-- parse errors -->
         <div v-if="archiveResult.parse_errors?.length" class="mt-2">
-          <div class="text-sm font-medium text-red-600 dark:text-red-400">
+          <div class="text-sm font-medium text-danger dark:text-danger">
             {{ t('admin.accounts.dataImportArchiveParseErrors') }}
           </div>
           <div
-            class="mt-2 max-h-48 overflow-auto rounded-lg bg-gray-50 p-3 font-mono text-xs dark:bg-dark-800"
+            class="mt-2 max-h-48 overflow-auto rounded-control bg-page p-3 font-mono text-xs dark:bg-dark-800"
           >
             <div v-for="(item, idx) in archiveResult.parse_errors" :key="idx" class="whitespace-pre-wrap">
               {{ item.entry }} — {{ item.message }}

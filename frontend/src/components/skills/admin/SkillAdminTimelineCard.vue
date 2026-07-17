@@ -1,11 +1,11 @@
 <template>
-  <div class="card border border-gray-200 p-5 dark:border-dark-700">
+  <div class="card border border-line p-5 dark:border-dark-700">
     <div class="mb-5 flex items-center justify-between gap-3">
       <div>
-        <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ title }}</h3>
-        <p v-if="description" class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ description }}</p>
+        <h3 class="text-base font-semibold text-ink dark:text-white">{{ title }}</h3>
+        <p v-if="description" class="mt-1 text-sm text-ink-soft dark:text-ink-soft">{{ description }}</p>
       </div>
-      <Icon name="clock" size="md" class="text-gray-400 dark:text-gray-500" />
+      <Icon name="clock" size="md" class="text-ink-faint" />
     </div>
 
     <div v-if="steps.length" class="space-y-4">
@@ -23,15 +23,15 @@
         </div>
         <div class="min-w-0 pb-2">
           <div class="flex flex-wrap items-center gap-2">
-            <p class="text-sm font-medium text-gray-900 dark:text-white">{{ step.title }}</p>
-            <span v-if="step.time" class="text-xs text-gray-500 dark:text-gray-400">{{ step.time }}</span>
+            <p class="text-sm font-medium text-ink dark:text-white">{{ step.title }}</p>
+            <span v-if="step.time" class="text-xs text-ink-soft dark:text-ink-soft">{{ step.time }}</span>
           </div>
-          <p v-if="step.description" class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ step.description }}</p>
+          <p v-if="step.description" class="mt-1 text-sm text-ink-body dark:text-ink-soft">{{ step.description }}</p>
         </div>
       </div>
     </div>
 
-    <div v-else class="rounded-2xl border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400">
+    <div v-else class="rounded-card border border-dashed border-line px-4 py-8 text-center text-sm text-ink-soft dark:border-dark-700 dark:text-ink-soft">
       {{ emptyText }}
     </div>
   </div>
@@ -58,8 +58,8 @@ defineProps<{
 function dotClass(status: TimelineStatus): string {
   return {
     done: 'bg-emerald-500',
-    current: 'bg-primary-500',
-    todo: 'bg-gray-300 dark:bg-dark-600',
+    current: 'bg-brand-500',
+    todo: 'bg-line dark:bg-dark-600',
     danger: 'bg-rose-500'
   }[status]
 }
@@ -67,8 +67,8 @@ function dotClass(status: TimelineStatus): string {
 function lineClass(status: TimelineStatus): string {
   return {
     done: 'bg-emerald-200 dark:bg-emerald-900/40',
-    current: 'bg-primary-200 dark:bg-primary-900/40',
-    todo: 'bg-gray-200 dark:bg-dark-700',
+    current: 'bg-brand-200 dark:bg-brand-900/40',
+    todo: 'bg-line dark:bg-dark-700',
     danger: 'bg-rose-200 dark:bg-rose-900/40'
   }[status]
 }

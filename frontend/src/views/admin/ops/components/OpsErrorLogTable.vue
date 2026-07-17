@@ -1,7 +1,7 @@
 <template>
   <div
     class="flex h-full min-h-0 flex-col"
-    :class="flat ? '' : 'card bg-white dark:bg-dark-900'"
+    :class="flat ? '' : 'card bg-card dark:bg-dark-900'"
   >
     <IpGeoBatchToolbar
       v-if="isColumnVisible('client_ip')"
@@ -10,21 +10,21 @@
     />
     <!-- Loading State -->
     <div v-if="loading" class="flex flex-1 items-center justify-center py-10">
-      <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-primary-600"></div>
+      <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-brand"></div>
     </div>
 
     <!-- Table Container -->
     <div v-else class="flex min-h-0 flex-1 flex-col">
-      <div class="min-h-0 flex-1 overflow-auto border-b border-gray-200 dark:border-dark-700">
+      <div class="min-h-0 flex-1 overflow-auto border-b border-line dark:border-dark-700">
         <table class="w-full border-separate border-spacing-0">
-          <thead class="sticky top-0 z-10 bg-gray-50 dark:bg-dark-800">
+          <thead class="sticky top-0 z-10 bg-page dark:bg-dark-800">
             <tr>
               <th
                 v-for="column in columns"
                 :key="column.key"
-                class="border-b border-gray-200 px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:border-dark-700 dark:text-dark-400"
+                class="border-b border-line px-4 py-2.5 text-left text-[11px] font-bold uppercase tracking-wider text-ink-soft dark:border-dark-700 dark:text-dark-400"
                 :class="{
-                  'cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-dark-700': column.sortable,
+                  'cursor-pointer select-none hover:bg-page dark:hover:bg-dark-700': column.sortable,
                   'text-right': column.key === 'actions'
                 }"
                 :aria-sort="column.sortable ? columnAriaSort(column.key) : undefined"
@@ -39,9 +39,9 @@
               </th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
+          <tbody class="divide-y divide-line dark:divide-dark-700">
             <tr v-if="rows.length === 0">
-              <td :colspan="columns.length" class="py-12 text-center text-sm text-gray-400 dark:text-dark-500">
+              <td :colspan="columns.length" class="py-12 text-center text-sm text-ink-faint dark:text-dark-500">
                 {{ t('admin.ops.errorLog.noErrors') }}
               </td>
             </tr>
@@ -49,13 +49,13 @@
             <tr
               v-for="log in rows"
               :key="log.id"
-              class="group cursor-pointer transition-colors hover:bg-gray-50/80 dark:hover:bg-dark-800/50"
+              class="group cursor-pointer transition-colors hover:bg-page/80 dark:hover:bg-dark-800/50"
               @click="emit('openErrorDetail', log.id)"
             >
               <!-- Time -->
               <td v-if="isColumnVisible('created_at')" class="whitespace-nowrap px-4 py-2">
                 <el-tooltip :content="log.request_id || log.client_request_id" placement="top" :show-after="500">
-                  <span class="font-mono text-xs font-medium text-gray-900 dark:text-gray-200">
+                  <span class="font-mono text-xs font-medium text-ink">
                     {{ formatDateTime(log.created_at).split(' ')[1] }}
                   </span>
                 </el-tooltip>
@@ -74,7 +74,7 @@
               </td>
 
               <!-- Category -->
-              <td v-if="isColumnVisible('category')" class="whitespace-nowrap px-4 py-2 text-xs text-gray-700 dark:text-gray-300">
+              <td v-if="isColumnVisible('category')" class="whitespace-nowrap px-4 py-2 text-xs text-ink-body">
                 {{ t(`usage.errors.categories.${mapErrorCategory(log.phase, log.type)}`) }}
               </td>
 
@@ -82,17 +82,17 @@
               <td v-if="isColumnVisible('endpoint')" class="px-4 py-2">
                 <div class="max-w-[160px]">
                   <el-tooltip v-if="log.inbound_endpoint" :content="formatEndpointTooltip(log)" placement="top" :show-after="500">
-                    <span class="truncate font-mono text-[11px] text-gray-700 dark:text-gray-300">
+                    <span class="truncate font-mono text-[11px] text-ink-body">
                       {{ log.inbound_endpoint }}
                     </span>
                   </el-tooltip>
-                  <span v-else class="text-xs text-gray-400">-</span>
+                  <span v-else class="text-xs text-ink-faint">-</span>
                 </div>
               </td>
 
               <!-- Platform -->
               <td v-if="isColumnVisible('platform')" class="whitespace-nowrap px-4 py-2">
-                <span class="inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+                <span class="inline-flex items-center rounded bg-page px-1.5 py-0.5 text-[10px] font-bold uppercase text-ink-soft dark:bg-dark-700">
                   {{ log.platform || '-' }}
                 </span>
               </td>
@@ -102,18 +102,18 @@
                 <div class="max-w-[160px]">
                   <template v-if="hasModelMapping(log)">
                     <el-tooltip :content="modelMappingTooltip(log)" placement="top" :show-after="500">
-                      <span class="flex items-center gap-1 truncate font-mono text-[11px] text-gray-700 dark:text-gray-300">
+                      <span class="flex items-center gap-1 truncate font-mono text-[11px] text-ink-body">
                         <span class="truncate">{{ log.requested_model }}</span>
-                        <span class="flex-shrink-0 text-gray-400">→</span>
-                        <span class="truncate text-primary-600 dark:text-primary-400">{{ log.upstream_model }}</span>
+                        <span class="flex-shrink-0 text-ink-faint">→</span>
+                        <span class="truncate text-brand-600 dark:text-brand-400">{{ log.upstream_model }}</span>
                       </span>
                     </el-tooltip>
                   </template>
                   <template v-else>
-                    <span v-if="displayModel(log)" class="truncate font-mono text-[11px] text-gray-700 dark:text-gray-300" :title="displayModel(log)">
+                    <span v-if="displayModel(log)" class="truncate font-mono text-[11px] text-ink-body" :title="displayModel(log)">
                       {{ displayModel(log) }}
                     </span>
-                    <span v-else class="text-xs text-gray-400">-</span>
+                    <span v-else class="text-xs text-ink-faint">-</span>
                   </template>
                 </div>
               </td>
@@ -121,11 +121,11 @@
               <!-- Group -->
               <td v-if="isColumnVisible('group')" class="px-4 py-2">
                  <el-tooltip v-if="log.group_id" :content="t('admin.ops.errorLog.id') + ' ' + log.group_id" placement="top" :show-after="500">
-                  <span class="max-w-[100px] truncate text-xs font-medium text-gray-900 dark:text-gray-200">
+                  <span class="max-w-[100px] truncate text-xs font-medium text-ink">
                     {{ log.group_name || '-' }}
                   </span>
                 </el-tooltip>
-                <span v-else class="text-xs text-gray-400">-</span>
+                <span v-else class="text-xs text-ink-faint">-</span>
               </td>
 
               <!-- User -->
@@ -134,42 +134,42 @@
                   <button
                     v-if="userClickable && effectiveUserID(log) && effectiveUserEmail(log)"
                     type="button"
-                    class="max-w-[140px] truncate text-xs font-medium text-primary-600 underline decoration-dashed underline-offset-2 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+                    class="max-w-[140px] truncate text-xs font-medium text-brand-600 underline decoration-dashed underline-offset-2 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300"
                     @click.stop="emit('userClick', effectiveUserID(log), effectiveUserEmail(log))"
                   >
                     {{ userLabel(log) }}
                   </button>
-                  <span v-else class="max-w-[140px] truncate text-xs font-medium text-gray-900 dark:text-gray-200">
+                  <span v-else class="max-w-[140px] truncate text-xs font-medium text-ink">
                     {{ userLabel(log) }}
                   </span>
                 </el-tooltip>
-                <span v-else class="text-xs text-gray-400">-</span>
+                <span v-else class="text-xs text-ink-faint">-</span>
               </td>
 
               <!-- API Key -->
               <td v-if="isColumnVisible('api_key')" class="px-4 py-2">
                 <el-tooltip v-if="apiKeyTooltip(log)" :content="apiKeyTooltip(log)" placement="top" :show-after="500">
-                  <span class="inline-flex max-w-[120px] items-center gap-1 truncate text-xs font-medium text-gray-900 dark:text-gray-200">
+                  <span class="inline-flex max-w-[120px] items-center gap-1 truncate text-xs font-medium text-ink">
                     <span class="truncate">{{ apiKeyLabel(log) }}</span>
                     <span
                       v-if="log.api_key_deleted"
-                      class="rounded bg-amber-100 px-1 py-px text-[10px] font-bold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                      class="rounded bg-warning-soft px-1 py-px text-[10px] font-bold text-warning dark:bg-amber-900/30 dark:text-amber-300"
                     >
                       {{ t('admin.ops.errorLog.keyDeletedBadge') }}
                     </span>
                   </span>
                 </el-tooltip>
-                <span v-else class="text-xs text-gray-400">-</span>
+                <span v-else class="text-xs text-ink-faint">-</span>
               </td>
 
               <!-- Account -->
               <td v-if="isColumnVisible('account')" class="px-4 py-2">
                 <el-tooltip v-if="accountTooltip(log)" :content="accountTooltip(log)" placement="top" :show-after="500">
-                  <span class="max-w-[120px] truncate text-xs font-medium text-gray-900 dark:text-gray-200">
+                  <span class="max-w-[120px] truncate text-xs font-medium text-ink">
                     {{ accountLabel(log) }}
                   </span>
                 </el-tooltip>
-                <span v-else class="text-xs text-gray-400">-</span>
+                <span v-else class="text-xs text-ink-faint">-</span>
               </td>
 
               <!-- Status -->
@@ -191,7 +191,7 @@
                   </span>
                   <span
                     v-if="log.request_type != null && log.request_type > 0"
-                    class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-600 dark:bg-dark-700 dark:text-gray-300"
+                    class="rounded bg-page px-1.5 py-0.5 text-[10px] font-bold text-ink-soft dark:bg-dark-700"
                   >
                     {{ formatRequestType(log.request_type) }}
                   </span>
@@ -201,7 +201,7 @@
               <!-- Message (Response Content) -->
               <td v-if="isColumnVisible('message')" class="px-4 py-2">
                 <div class="max-w-[200px]">
-                  <p class="truncate text-[11px] font-medium text-gray-600 dark:text-gray-400" :title="log.message">
+                  <p class="truncate text-[11px] font-medium text-ink-soft" :title="log.message">
                     {{ formatSmartMessage(log.message) || '-' }}
                   </p>
                 </div>
@@ -209,7 +209,7 @@
 
               <!-- User Agent -->
               <td v-if="isColumnVisible('user_agent')" class="px-4 py-2">
-                <span class="block max-w-[240px] truncate text-[11px] text-gray-600 dark:text-gray-400" :title="log.user_agent">
+                <span class="block max-w-[240px] truncate text-[11px] text-ink-soft" :title="log.user_agent">
                   {{ log.user_agent || '-' }}
                 </span>
               </td>
@@ -217,16 +217,16 @@
               <!-- Client IP -->
               <td v-if="isColumnVisible('client_ip')" class="whitespace-nowrap px-4 py-2" @click.stop>
                 <template v-if="log.client_ip">
-                  <span class="font-mono text-[11px] text-gray-600 dark:text-gray-400">{{ log.client_ip }}</span>
+                  <span class="font-mono text-[11px] text-ink-soft">{{ log.client_ip }}</span>
                   <IpGeoCell :ip="log.client_ip" />
                 </template>
-                <span v-else class="text-xs text-gray-400">-</span>
+                <span v-else class="text-xs text-ink-faint">-</span>
               </td>
 
               <!-- Actions -->
               <td v-if="isColumnVisible('actions')" class="whitespace-nowrap px-4 py-2 text-right" @click.stop>
                 <div class="flex items-center justify-end gap-3">
-                  <button type="button" class="text-primary-600 hover:text-primary-700 dark:text-primary-400 text-xs font-bold" @click="emit('openErrorDetail', log.id)">
+                  <button type="button" class="text-brand-600 hover:text-brand-700 dark:text-brand-400 text-xs font-bold" @click="emit('openErrorDetail', log.id)">
                     {{ t('admin.ops.errorLog.details') }}
                   </button>
                 </div>
@@ -237,7 +237,7 @@
       </div>
 
       <!-- Pagination -->
-      <div class="bg-gray-50/50 dark:bg-dark-800/50">
+      <div class="bg-page/50 dark:bg-dark-800/50">
         <Pagination
           v-if="total > 0"
           :total="total"
@@ -354,26 +354,26 @@ function getTypeBadge(log: OpsErrorLog): { label: string; className: string } {
   const owner = String(log.error_owner || '').toLowerCase()
 
   if (isUpstreamRow(log)) {
-    return { label: t('admin.ops.errorLog.typeUpstream'), className: 'bg-red-50 text-red-700 ring-red-600/20 dark:bg-red-900/30 dark:text-red-400 dark:ring-red-500/30' }
+    return { label: t('admin.ops.errorLog.typeUpstream'), className: 'bg-danger-soft text-danger ring-danger/20 dark:bg-red-900/30 dark:text-red-400 dark:ring-red-500/30' }
   }
   if (owner === 'account') {
     return { label: t('admin.ops.errorLog.typeAccount'), className: 'bg-cyan-50 text-cyan-700 ring-cyan-600/20 dark:bg-cyan-900/30 dark:text-cyan-300 dark:ring-cyan-500/30' }
   }
   if (phase === 'request' && owner === 'client') {
-    return { label: t('admin.ops.errorLog.typeRequest'), className: 'bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-900/30 dark:text-amber-400 dark:ring-amber-500/30' }
+    return { label: t('admin.ops.errorLog.typeRequest'), className: 'bg-warning-soft text-warning ring-warning/20 dark:bg-amber-900/30 dark:text-amber-400 dark:ring-amber-500/30' }
   }
   if (phase === 'auth' && owner === 'client') {
-    return { label: t('admin.ops.errorLog.typeAuth'), className: 'bg-blue-50 text-blue-700 ring-blue-600/20 dark:bg-blue-900/30 dark:text-blue-400 dark:ring-blue-500/30' }
+    return { label: t('admin.ops.errorLog.typeAuth'), className: 'bg-brand-50 text-brand-700 ring-brand/20 dark:bg-brand-900/30 dark:text-brand-300 dark:ring-brand-500/30' }
   }
   if (phase === 'routing' && owner === 'platform') {
-    return { label: t('admin.ops.errorLog.typeRouting'), className: 'bg-purple-50 text-purple-700 ring-purple-600/20 dark:bg-purple-900/30 dark:text-purple-400 dark:ring-purple-500/30' }
+    return { label: t('admin.ops.errorLog.typeRouting'), className: 'bg-accent-50 text-accent-700 ring-accent/20 dark:bg-accent-900/30 dark:text-accent-300 dark:ring-accent-500/30' }
   }
   if (phase === 'internal' && owner === 'platform') {
-    return { label: t('admin.ops.errorLog.typeInternal'), className: 'bg-gray-100 text-gray-800 ring-gray-600/20 dark:bg-dark-700 dark:text-gray-200 dark:ring-dark-500/40' }
+    return { label: t('admin.ops.errorLog.typeInternal'), className: 'bg-page text-ink ring-line dark:bg-dark-700 dark:text-dark-200 dark:ring-dark-500/40' }
   }
 
     const fallback = phase || owner || t('common.unknown')
-    return { label: fallback, className: 'bg-gray-50 text-gray-700 ring-gray-600/10 dark:bg-dark-900 dark:text-gray-300 dark:ring-dark-700' }
+    return { label: fallback, className: 'bg-page text-ink-body ring-line/60 dark:bg-dark-900 dark:text-dark-300 dark:ring-dark-700' }
 }
 
 interface Props {
@@ -445,10 +445,11 @@ function columnAriaSort(key: string): 'ascending' | 'descending' | 'none' {
 }
 
 function getStatusClass(code: number): string {
-  if (code >= 500) return 'bg-red-50 text-red-700 ring-red-600/20 dark:bg-red-900/30 dark:text-red-400 dark:ring-red-500/30'
-  if (code === 429) return 'bg-purple-50 text-purple-700 ring-purple-600/20 dark:bg-purple-900/30 dark:text-purple-400 dark:ring-purple-500/30'
-  if (code >= 400) return 'bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-900/30 dark:text-amber-400 dark:ring-amber-500/30'
-  return 'bg-gray-50 text-gray-700 ring-gray-600/20 dark:bg-gray-900/30 dark:text-gray-400 dark:ring-gray-500/30'
+  if (code >= 500) return 'bg-danger-soft text-danger ring-danger/20 dark:bg-red-900/30 dark:text-red-400 dark:ring-red-500/30'
+  // Rate-limit: warning (distinct from accent type badges / generic page chrome)
+  if (code === 429) return 'bg-warning-soft text-warning ring-warning/20 dark:bg-amber-900/30 dark:text-amber-400 dark:ring-amber-500/30'
+  if (code >= 400) return 'bg-warning-soft text-warning ring-warning/20 dark:bg-amber-900/30 dark:text-amber-400 dark:ring-amber-500/30'
+  return 'bg-page text-ink-body ring-line dark:bg-dark-900/30 dark:text-dark-400 dark:ring-dark-500/30'
 }
 
 function formatSmartMessage(msg: string): string {

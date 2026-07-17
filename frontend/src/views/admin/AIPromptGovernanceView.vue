@@ -37,24 +37,24 @@
         <DataTable :columns="columns" :data="prompts" :loading="loading">
           <template #cell-title="{ row }">
             <div class="min-w-[220px]">
-              <div class="font-medium text-gray-900 dark:text-white">{{ row.title }}</div>
-              <div class="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">{{ row.content }}</div>
+              <div class="font-medium text-ink dark:text-white">{{ row.title }}</div>
+              <div class="mt-1 line-clamp-2 text-xs text-ink-soft dark:text-ink-soft">{{ row.content }}</div>
             </div>
           </template>
 
           <template #cell-owner_name="{ value }">
-            <span class="text-sm text-gray-700 dark:text-gray-300">{{ value || '-' }}</span>
+            <span class="text-sm text-ink-body dark:text-ink-body">{{ value || '-' }}</span>
           </template>
 
           <template #cell-line_name="{ row }">
-            <span class="text-sm text-gray-700 dark:text-gray-300">{{ resolveLineLabel(row.line_id, row.line_name) }}</span>
+            <span class="text-sm text-ink-body dark:text-ink-body">{{ resolveLineLabel(row.line_id, row.line_name) }}</span>
           </template>
 
           <template #cell-visibility="{ value }">
             <span class="rounded-full px-2.5 py-1 text-xs font-medium"
               :class="value === 'private'
-                ? 'bg-gray-100 text-gray-700 dark:bg-dark-800 dark:text-gray-200'
-                : 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-200'"
+                ? 'bg-ink-faint/10 text-ink-body dark:bg-dark-800 dark:text-ink'
+                : 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-200'"
             >
               {{ value === 'private' ? t('ai.prompt.private', '私有') : t('ai.prompt.public', '公开') }}
             </span>
@@ -67,7 +67,7 @@
           </template>
 
           <template #cell-updated_at="{ value }">
-            <span class="text-sm text-gray-500 dark:text-gray-400">{{ formatTime(value) }}</span>
+            <span class="text-sm text-ink-soft dark:text-ink-soft">{{ formatTime(value) }}</span>
           </template>
 
           <template #cell-actions="{ row }">

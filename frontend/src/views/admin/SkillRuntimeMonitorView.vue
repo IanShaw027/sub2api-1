@@ -18,7 +18,7 @@
             </div>
 
           </div>
-          <p class="text-xs text-gray-500 dark:text-gray-400">
+          <p class="text-xs text-ink-soft dark:text-dark-400">
             {{ runtimeText.summaryNote }}
           </p>
         </template>
@@ -39,16 +39,16 @@
                 <div class="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    class="text-left font-medium text-gray-900 hover:text-primary-600 dark:text-white dark:hover:text-primary-300"
+                    class="text-left font-medium text-ink hover:text-brand-600 dark:text-white dark:hover:text-brand-300"
                     @click="selectRuntime(row)"
                   >
                     {{ row.skill_name }}
                   </button>
-                  <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+                  <span class="rounded-full bg-line px-2 py-0.5 text-xs text-ink-soft dark:bg-dark-700 dark:text-dark-300">
                     {{ row.current_version }}
                   </span>
                 </div>
-                <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ row.skill_slug }}</div>
+                <div class="mt-1 text-xs text-ink-soft dark:text-dark-400">{{ row.skill_slug }}</div>
               </div>
             </template>
 
@@ -57,31 +57,31 @@
             </template>
 
             <template #cell-requests_24h="{ value }">
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ Number(value).toLocaleString() }}</span>
+              <span class="text-sm text-ink-body dark:text-dark-300">{{ Number(value).toLocaleString() }}</span>
             </template>
 
             <template #cell-success_rate="{ value }">
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatPercent(Number(value)) }}</span>
+              <span class="text-sm text-ink-body dark:text-dark-300">{{ formatPercent(Number(value)) }}</span>
             </template>
 
             <template #cell-p95_latency_ms="{ value }">
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatMilliseconds(Number(value)) }}</span>
+              <span class="text-sm text-ink-body dark:text-dark-300">{{ formatMilliseconds(Number(value)) }}</span>
             </template>
 
             <template #cell-error_rate="{ value }">
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatPercent(Number(value)) }}</span>
+              <span class="text-sm text-ink-body dark:text-dark-300">{{ formatPercent(Number(value)) }}</span>
             </template>
 
             <template #cell-queue_depth="{ value }">
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ Number(value).toLocaleString() }}</span>
+              <span class="text-sm text-ink-body dark:text-dark-300">{{ Number(value).toLocaleString() }}</span>
             </template>
 
             <template #cell-last_run_at="{ value }">
-              <span class="text-sm text-gray-500 dark:text-gray-400">{{ formatTime(value) }}</span>
+              <span class="text-sm text-ink-soft dark:text-dark-400">{{ formatTime(value) }}</span>
             </template>
 
             <template #cell-last_error="{ value }">
-              <span class="block max-w-[260px] truncate text-sm text-gray-500 dark:text-gray-400">{{ value || '-' }}</span>
+              <span class="block max-w-[260px] truncate text-sm text-ink-soft dark:text-dark-400">{{ value || '-' }}</span>
             </template>
 
             <template #cell-actions="{ row }">
@@ -110,17 +110,17 @@
       </TablePageLayout>
 
       <div class="grid gap-6 xl:grid-cols-[1.25fr_0.95fr]">
-        <div class="card border border-gray-200 p-5 dark:border-dark-700">
+        <div class="card border border-line p-5 dark:border-dark-700">
           <template v-if="selectedRuntime">
             <div class="flex flex-wrap items-start justify-between gap-4">
               <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
-                  <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ selectedRuntime.skill_name }}</h3>
-                  <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+                  <h3 class="text-base font-semibold text-ink dark:text-white">{{ selectedRuntime.skill_name }}</h3>
+                  <span class="rounded-full bg-line px-2 py-0.5 text-xs text-ink-soft dark:bg-dark-700 dark:text-dark-300">
                     {{ selectedRuntime.current_version }}
                   </span>
                 </div>
-                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ selectedRuntime.skill_slug }}</p>
+                <p class="mt-2 text-sm text-ink-soft dark:text-dark-400">{{ selectedRuntime.skill_slug }}</p>
               </div>
               <SkillAdminStatusBadge
                 :status="selectedRuntime.health_status"
@@ -130,38 +130,38 @@
             </div>
 
             <div class="mt-5 grid gap-4 md:grid-cols-2">
-              <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ runtimeText.detail.successRate }}</p>
-                <p class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ formatPercent(selectedRuntime.success_rate) }}</p>
+              <div class="rounded-card bg-page p-4 dark:bg-dark-900/60">
+                <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ runtimeText.detail.successRate }}</p>
+                <p class="mt-2 text-xl font-semibold text-ink dark:text-white">{{ formatPercent(selectedRuntime.success_rate) }}</p>
               </div>
-              <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ runtimeText.detail.p95Latency }}</p>
-                <p class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ formatMilliseconds(selectedRuntime.p95_latency_ms) }}</p>
+              <div class="rounded-card bg-page p-4 dark:bg-dark-900/60">
+                <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ runtimeText.detail.p95Latency }}</p>
+                <p class="mt-2 text-xl font-semibold text-ink dark:text-white">{{ formatMilliseconds(selectedRuntime.p95_latency_ms) }}</p>
               </div>
-              <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ runtimeText.detail.errorRate }}</p>
-                <p class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ formatPercent(selectedRuntime.error_rate) }}</p>
+              <div class="rounded-card bg-page p-4 dark:bg-dark-900/60">
+                <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ runtimeText.detail.errorRate }}</p>
+                <p class="mt-2 text-xl font-semibold text-ink dark:text-white">{{ formatPercent(selectedRuntime.error_rate) }}</p>
               </div>
-              <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ runtimeText.detail.queueDepth }}</p>
-                <p class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ selectedRuntime.queue_depth.toLocaleString() }}</p>
+              <div class="rounded-card bg-page p-4 dark:bg-dark-900/60">
+                <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ runtimeText.detail.queueDepth }}</p>
+                <p class="mt-2 text-xl font-semibold text-ink dark:text-white">{{ selectedRuntime.queue_depth.toLocaleString() }}</p>
               </div>
             </div>
 
-            <div class="mt-5 rounded-2xl border border-gray-200 p-4 dark:border-dark-700">
+            <div class="mt-5 rounded-card border border-line p-4 dark:border-dark-700">
               <div class="grid gap-4 md:grid-cols-2">
                 <div>
-                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ runtimeText.detail.lastRunAt }}</p>
-                  <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white">{{ formatTime(selectedRuntime.last_run_at) }}</p>
+                  <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ runtimeText.detail.lastRunAt }}</p>
+                  <p class="mt-2 text-sm font-medium text-ink dark:text-white">{{ formatTime(selectedRuntime.last_run_at) }}</p>
                 </div>
                 <div>
-                  <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ runtimeText.detail.lastAlertAt }}</p>
-                  <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white">{{ formatTime(selectedRuntime.last_alert_at) }}</p>
+                  <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ runtimeText.detail.lastAlertAt }}</p>
+                  <p class="mt-2 text-sm font-medium text-ink dark:text-white">{{ formatTime(selectedRuntime.last_alert_at) }}</p>
                 </div>
               </div>
               <div class="mt-4">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ runtimeText.detail.lastError }}</p>
-                <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">
+                <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ runtimeText.detail.lastError }}</p>
+                <p class="mt-2 text-sm leading-6 text-ink-soft dark:text-dark-400">
                   {{ selectedRuntime.last_error || runtimeText.detail.noRecentError }}
                 </p>
               </div>
@@ -171,37 +171,37 @@
           <template v-else>
             <div
               data-test="runtime-detail-empty"
-              class="rounded-2xl border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400"
+              class="rounded-card border border-dashed border-line px-4 py-10 text-center text-sm text-ink-soft dark:border-dark-700 dark:text-dark-400"
             >
               {{ runtimeText.selectionPlaceholder }}
             </div>
           </template>
         </div>
 
-        <div class="card border border-gray-200 p-5 dark:border-dark-700">
+        <div class="card border border-line p-5 dark:border-dark-700">
           <div class="mb-5 flex items-center justify-between gap-3">
             <div>
-              <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ runtimeText.events.title }}</h3>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ runtimeText.events.description }}</p>
+              <h3 class="text-base font-semibold text-ink dark:text-white">{{ runtimeText.events.title }}</h3>
+              <p class="mt-1 text-sm text-ink-soft dark:text-dark-400">{{ runtimeText.events.description }}</p>
             </div>
-            <Icon name="bell" size="md" class="text-gray-400 dark:text-gray-500" />
+            <Icon name="bell" size="md" class="text-ink-faint dark:text-dark-500" />
           </div>
 
           <div v-if="filteredEvents.length" data-test="runtime-events-list" class="space-y-3">
             <div
               v-for="event in filteredEvents"
               :key="event.id"
-              class="rounded-2xl border border-gray-200 p-4 dark:border-dark-700"
+              class="rounded-card border border-line p-4 dark:border-dark-700"
             >
               <div class="flex flex-wrap items-center justify-between gap-3">
                 <div class="flex items-center gap-2">
                   <SkillAdminStatusBadge :status="event.level" :label="eventLevelLabel(event.level)" mode="runtime" />
-                  <p class="text-sm font-medium text-gray-900 dark:text-white">{{ event.skill_name || runtimeText.events.global }}</p>
+                  <p class="text-sm font-medium text-ink dark:text-white">{{ event.skill_name || runtimeText.events.global }}</p>
                 </div>
-                <span class="text-xs text-gray-500 dark:text-gray-400">{{ formatTime(event.created_at) }}</span>
+                <span class="text-xs text-ink-soft dark:text-dark-400">{{ formatTime(event.created_at) }}</span>
               </div>
-              <p class="mt-3 text-sm leading-6 text-gray-600 dark:text-gray-400">{{ event.message }}</p>
-              <p v-if="event.metric_name" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              <p class="mt-3 text-sm leading-6 text-ink-soft dark:text-dark-400">{{ event.message }}</p>
+              <p v-if="event.metric_name" class="mt-2 text-xs text-ink-soft dark:text-dark-400">
                 {{ event.metric_name }}<span v-if="event.metric_value !== null"> · {{ event.metric_value }}</span>
               </p>
             </div>
@@ -210,7 +210,7 @@
           <div
             v-else
             data-test="runtime-events-empty"
-            class="rounded-2xl border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400"
+            class="rounded-card border border-dashed border-line px-4 py-10 text-center text-sm text-ink-soft dark:border-dark-700 dark:text-dark-400"
           >
             {{ runtimeText.events.empty }}
           </div>

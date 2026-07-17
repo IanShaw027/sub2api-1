@@ -1,12 +1,12 @@
 <template>
   <div v-if="shouldShowQuota" class="space-y-1">
     <div class="flex items-center gap-1">
-      <span :class="['badge rounded px-1.5 py-0.5 text-[10px] font-medium', tierBadgeClass]">
+      <span :class="['badge rounded-control px-1.5 py-0.5 text-[10px] font-medium', tierBadgeClass]">
         {{ tierLabel }}
       </span>
       <span class="group relative cursor-help">
         <svg
-          class="h-3.5 w-3.5 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+          class="h-3.5 w-3.5 text-ink-faint hover:text-ink-soft"
           fill="currentColor"
           viewBox="0 0 20 20"
         >
@@ -17,10 +17,10 @@
           />
         </svg>
         <span
-          class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded bg-gray-900 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 dark:bg-gray-700"
+          class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded-control bg-ink dark:bg-dark-700 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-md transition-opacity group-hover:opacity-100"
         >
           <div class="mb-1 font-semibold">{{ t('admin.accounts.gemini.quotaPolicy.title') }}</div>
-          <div class="mb-2 text-gray-300">{{ t('admin.accounts.gemini.quotaPolicy.note') }}</div>
+          <div class="mb-2 text-white/80">{{ t('admin.accounts.gemini.quotaPolicy.note') }}</div>
           <div class="space-y-1">
             <div><strong>{{ quotaPolicyChannel }}:</strong></div>
             <div class="pl-2">• {{ quotaPolicyLimits }}</div>
@@ -29,7 +29,7 @@
                 :href="quotaPolicyDocsUrl"
                 target="_blank"
                 rel="noopener noreferrer"
-                class="text-blue-400 hover:text-blue-300 underline"
+                class="text-accent-300 hover:text-accent-100 underline"
               >
                 {{ t('admin.accounts.gemini.quotaPolicy.columns.docs') }} →
               </a>
@@ -39,7 +39,7 @@
       </span>
     </div>
 
-    <div class="text-xs text-gray-400 dark:text-gray-500">
+    <div class="text-xs text-ink-faint">
       <span v-if="!isRateLimited">
         {{ t('admin.accounts.gemini.rateLimit.ok') }}
       </span>
@@ -48,8 +48,8 @@
         :class="[
           'font-medium',
           isUrgent
-            ? 'text-red-600 dark:text-red-400 animate-pulse'
-            : 'text-amber-600 dark:text-amber-400'
+            ? 'text-danger animate-pulse'
+            : 'text-warning'
         ]"
       >
         {{ t('admin.accounts.gemini.rateLimit.limited', { time: resetCountdown }) }}
@@ -290,28 +290,28 @@ const tierLabel = computed(() => {
 
 const tierBadgeClass = computed(() => {
   if (isVertexServiceAccount.value) {
-    return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300'
+    return 'bg-brand-50 text-brand-700 dark:bg-brand-900/40 dark:text-brand-300'
   }
 
   if (isCodeAssist.value) {
     return codeAssistPlanBucket.value === 'standard'
-      ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
-      : 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
+      ? 'bg-accent-50 text-accent-600 dark:bg-accent-900/40 dark:text-accent-300'
+      : 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
   }
 
   if (isGoogleOne.value) {
     if (googleOnePlanBucket.value === 'ultra' || legacyTier.value === 'GOOGLE_ONE_UNLIMITED') {
-      return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
+      return 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
     }
     if (googleOnePlanBucket.value === 'pro' || legacyTier.value === 'AI_PREMIUM') {
-      return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
+      return 'bg-accent-50 text-accent-600 dark:bg-accent-900/40 dark:text-accent-300'
     }
-    return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+    return 'bg-page text-ink-soft dark:bg-dark-700 dark:text-dark-300'
   }
 
-  if (canonicalTier.value === 'aistudio_paid') return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
-  if (canonicalTier.value === 'aistudio_free') return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-  return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
+  if (canonicalTier.value === 'aistudio_paid') return 'bg-accent-50 text-accent-600 dark:bg-accent-900/40 dark:text-accent-300'
+  if (canonicalTier.value === 'aistudio_free') return 'bg-page text-ink-soft dark:bg-dark-700 dark:text-dark-300'
+  return 'bg-accent-50 text-accent-600 dark:bg-accent-900/40 dark:text-accent-300'
 })
 
 const quotaPolicyChannel = computed(() => {

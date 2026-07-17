@@ -40,11 +40,11 @@ const colors = computed(() => ({
   redAlpha: '#ef444420',
   purple: '#8b5cf6',
   purpleAlpha: '#8b5cf620',
-  blue: '#0ea5e9',
-  blueAlpha: '#0ea5e920',
+  blue: '#1fa2d6',
+  blueAlpha: '#1fa2d620',
   gray: '#9ca3af',
-  grid: isDarkMode.value ? '#374151' : '#f3f4f6',
-  text: isDarkMode.value ? '#9ca3af' : '#6b7280'
+  grid: isDarkMode.value ? '#334155' : '#e6ebf2',
+  text: isDarkMode.value ? '#94a3b8' : '#64748b'
 }))
 
 const totalRequestErrors = computed(() => sumNumbers(props.points.map((p) => p.error_count_sla ?? 0)))
@@ -132,9 +132,9 @@ const options = computed(() => {
         labels: { color: c.text, usePointStyle: true, boxWidth: 6, font: { size: 10 } }
       },
       tooltip: {
-        backgroundColor: isDarkMode.value ? '#1f2937' : '#ffffff',
-        titleColor: isDarkMode.value ? '#f3f4f6' : '#111827',
-        bodyColor: isDarkMode.value ? '#d1d5db' : '#4b5563',
+        backgroundColor: isDarkMode.value ? '#1e293b' : '#ffffff',
+        titleColor: isDarkMode.value ? '#e2e8f0' : '#16314f',
+        bodyColor: isDarkMode.value ? '#cbd5e1' : '#334a66',
         borderColor: c.grid,
         borderWidth: 1,
         padding: 10,
@@ -166,10 +166,10 @@ const options = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
+  <div class="flex h-full flex-col rounded-3xl bg-card p-6 shadow-xs ring-1 ring-line dark:bg-dark-800 dark:ring-dark-700">
     <div class="mb-4 flex shrink-0 items-center justify-between">
-      <h3 class="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white">
-        <svg class="h-4 w-4 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <h3 class="flex items-center gap-2 text-sm font-bold text-ink dark:text-white">
+        <svg class="h-4 w-4 text-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path
             stroke-linecap="round"
             stroke-linejoin="round"
@@ -183,13 +183,13 @@ const options = computed(() => {
       <div class="flex items-center gap-2">
         <span
           v-if="totalRecoveredTelemetry > 0"
-          class="rounded-full bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20"
+          class="rounded-full bg-accent-50 px-2 py-1 text-[11px] font-semibold text-accent-700 ring-1 ring-accent/20 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20"
         >
           {{ t('admin.ops.recoveredTelemetry') }}: {{ totalRecoveredTelemetry }}
         </span>
         <button
           type="button"
-          class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
+          class="inline-flex items-center rounded-lg border border-line bg-card px-2 py-1 text-[11px] font-semibold text-ink-soft hover:bg-page disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:hover:bg-dark-800"
           :disabled="!hasRequestErrors"
           @click="emit('openRequestErrors')"
         >
@@ -197,7 +197,7 @@ const options = computed(() => {
         </button>
         <button
           type="button"
-          class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
+          class="inline-flex items-center rounded-lg border border-line bg-card px-2 py-1 text-[11px] font-semibold text-ink-soft hover:bg-page disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:hover:bg-dark-800"
           :disabled="!hasUpstreamErrors"
           @click="emit('openUpstreamErrors')"
         >
@@ -209,7 +209,7 @@ const options = computed(() => {
     <div class="min-h-0 flex-1">
       <Line v-if="state === 'ready' && chartData" :data="chartData" :options="options" />
       <div v-else class="flex h-full items-center justify-center">
-        <div v-if="state === 'loading'" class="animate-pulse text-sm text-gray-400">{{ t('common.loading') }}</div>
+        <div v-if="state === 'loading'" class="animate-pulse text-sm text-ink-faint">{{ t('common.loading') }}</div>
         <EmptyState v-else :title="t('common.noData')" :description="t('admin.ops.charts.emptyError')" />
       </div>
     </div>

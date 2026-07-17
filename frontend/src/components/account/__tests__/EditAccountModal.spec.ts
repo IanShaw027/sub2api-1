@@ -2081,7 +2081,7 @@ describe('EditAccountModal', () => {
     await wrapper.setProps({ show: true })
 
     const toggle = wrapper.get('[data-testid="text-endpoint-auto-route-toggle"]')
-    expect(toggle.classes()).toContain('bg-primary-600')
+    expect(toggle.classes()).toContain('bg-brand-600')
 
     await toggle.trigger('click')
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')

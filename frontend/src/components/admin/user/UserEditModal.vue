@@ -6,8 +6,8 @@
     @close="$emit('close')"
   >
     <form v-if="user" id="edit-user-form" @submit.prevent="handleUpdateUser" class="space-y-5">
-      <div class="flex items-center gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800/60">
-        <div class="h-14 w-14 overflow-hidden rounded-full bg-primary-100 dark:bg-primary-900/30">
+      <div class="flex items-center gap-4 rounded-card border border-line bg-page p-4 dark:border-dark-700 dark:bg-dark-800/60">
+        <div class="h-14 w-14 overflow-hidden rounded-full bg-brand-100 dark:bg-brand-900/30">
           <img
             v-if="safeImageUrl(user.avatar_url)"
             data-test="user-avatar"
@@ -17,18 +17,18 @@
             referrerpolicy="no-referrer"
             loading="lazy"
           />
-          <div v-else class="flex h-full w-full items-center justify-center text-lg font-semibold text-primary-700 dark:text-primary-300">
+          <div v-else class="flex h-full w-full items-center justify-center text-lg font-semibold text-brand-700 dark:text-brand-300">
             {{ user.email.charAt(0).toUpperCase() }}
           </div>
         </div>
         <div class="min-w-0">
-          <div class="text-sm font-medium text-gray-900 dark:text-white">{{ user.email }}</div>
-          <div class="text-xs text-gray-500 dark:text-gray-400">{{ user.username || '-' }}</div>
+          <div class="text-sm font-medium text-ink dark:text-white">{{ user.email }}</div>
+          <div class="text-xs text-ink-soft dark:text-dark-400">{{ user.username || '-' }}</div>
           <div v-if="identityCards.length > 0" class="mt-2 flex flex-wrap gap-2">
             <div
               v-for="card in identityCards"
               :key="card.provider"
-              class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2 py-1 dark:border-dark-700 dark:bg-dark-900"
+              class="flex items-center gap-2 rounded-control border border-line bg-card px-2 py-1 dark:border-dark-700 dark:bg-dark-900"
             >
               <img
                 v-if="safeImageUrl(card.avatar_url)"
@@ -40,10 +40,10 @@
                 loading="lazy"
               />
               <div class="min-w-0">
-                <div class="truncate text-xs font-medium text-gray-700 dark:text-gray-200">
+                <div class="truncate text-xs font-medium text-ink-body dark:text-white">
                   {{ card.display_name || card.provider }}
                 </div>
-                <div class="truncate text-[11px] text-gray-500 dark:text-gray-400">
+                <div class="truncate text-[11px] text-ink-soft dark:text-dark-400">
                   {{ card.subject_hint || card.provider_key || '-' }}
                 </div>
               </div>
@@ -60,7 +60,7 @@
         <div class="flex gap-2">
           <div class="relative flex-1">
             <input v-model="form.password" type="text" class="input pr-10" :placeholder="t('admin.users.enterNewPassword')" />
-            <button v-if="form.password" type="button" @click="copyPassword" class="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg p-1 transition-colors hover:bg-gray-100 dark:hover:bg-dark-700" :class="passwordCopied ? 'text-green-500' : 'text-gray-400'">
+            <button v-if="form.password" type="button" @click="copyPassword" class="absolute right-2 top-1/2 -translate-y-1/2 rounded-control p-1 transition-colors hover:bg-page dark:hover:bg-dark-700" :class="passwordCopied ? 'text-success' : 'text-ink-faint'">
               <svg v-if="passwordCopied" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
               <svg v-else class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" /></svg>
             </button>

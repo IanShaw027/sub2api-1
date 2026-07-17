@@ -3,14 +3,17 @@
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-wrap-reverse items-start justify-between gap-3">
-          <AccountTableFilters
-            v-model:searchQuery="params.search"
-            :filters="params"
-            :groups="groups"
-            @update:filters="(newFilters) => Object.assign(params, newFilters)"
-            @change="debouncedReload"
-            @update:searchQuery="debouncedReload"
-          />
+          <div class="min-w-0 flex-1">
+            <AccountTableFilters
+              v-model:searchQuery="params.search"
+              :filters="params"
+              :groups="groups"
+              @update:filters="(newFilters) => Object.assign(params, newFilters)"
+              @change="debouncedReload"
+              @update:searchQuery="debouncedReload"
+            />
+          </div>
+          <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
           <AccountTableActions
             :loading="loading"
             @refresh="handleManualRefresh"
@@ -18,6 +21,7 @@
           >
             <template #beforeCreate>
               <button
+                type="button"
                 class="btn btn-secondary"
                 @click="showOpenAIOAuthCapacity = true"
               >
@@ -26,6 +30,7 @@
               </button>
               <button
                 v-if="bulkKiroOverageActionVisible"
+                type="button"
                 class="btn btn-secondary"
                 :disabled="loading || enablingAllKiroOverage"
                 @click="openEnableAllKiroOverageDialog"
@@ -38,6 +43,7 @@
               <!-- Auto Refresh Dropdown -->
               <div class="relative" ref="autoRefreshDropdownRef">
                 <button
+                  type="button"
                   @click="
                     showAutoRefreshDropdown = !showAutoRefreshDropdown;
                     showAccountToolsDropdown = false
@@ -56,25 +62,27 @@
                 </button>
                 <div
                   v-if="showAutoRefreshDropdown"
-                  class="absolute right-0 z-50 mt-2 w-56 origin-top-right rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800"
+                  class="absolute right-0 z-50 mt-2 w-56 origin-top-right rounded-card border border-line bg-card shadow-md dark:border-dark-700 dark:bg-dark-800"
                 >
-                  <div class="p-2">
+                  <div class="p-1.5">
                     <button
+                      type="button"
                       @click="setAutoRefreshEnabled(!autoRefreshEnabled)"
-                      class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                      class="flex w-full items-center justify-between rounded-control px-3 py-2 text-sm text-ink-body transition-colors hover:bg-page dark:text-dark-200 dark:hover:bg-dark-700"
                     >
                       <span>{{ t('admin.accounts.enableAutoRefresh') }}</span>
-                      <Icon v-if="autoRefreshEnabled" name="check" size="sm" class="text-primary-500" />
+                      <Icon v-if="autoRefreshEnabled" name="check" size="sm" class="text-brand-600 dark:text-brand-400" />
                     </button>
-                    <div class="my-1 border-t border-gray-100 dark:border-gray-700"></div>
+                    <div class="my-1 border-t border-line dark:border-dark-700"></div>
                     <button
                       v-for="sec in autoRefreshIntervals"
                       :key="sec"
+                      type="button"
                       @click="setAutoRefreshInterval(sec)"
-                      class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                      class="flex w-full items-center justify-between rounded-control px-3 py-2 text-sm text-ink-body transition-colors hover:bg-page dark:text-dark-200 dark:hover:bg-dark-700"
                     >
                       <span>{{ autoRefreshIntervalLabel(sec) }}</span>
-                      <Icon v-if="autoRefreshIntervalSeconds === sec" name="check" size="sm" class="text-primary-500" />
+                      <Icon v-if="autoRefreshIntervalSeconds === sec" name="check" size="sm" class="text-brand-600 dark:text-brand-400" />
                     </button>
                   </div>
                 </div>
@@ -83,6 +91,7 @@
               <!-- More Tools Dropdown -->
               <div class="relative" ref="accountToolsDropdownRef">
                 <button
+                  type="button"
                   @click="
                     showAccountToolsDropdown = !showAccountToolsDropdown;
                     showAutoRefreshDropdown = false
@@ -92,32 +101,32 @@
                 >
                   <Icon name="more" size="sm" class="md:mr-1.5" />
                   <span class="hidden md:inline">{{ t('admin.accounts.moreActions') }}</span>
-                  <Icon name="chevronDown" size="xs" class="ml-1 hidden md:inline" />
+                  <Icon name="chevronDown" size="xs" class="ml-1 hidden md:inline text-ink-faint" />
                 </button>
                 <div
                   v-if="showAccountToolsDropdown"
-                  class="absolute right-0 z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] origin-top-right overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
+                  class="absolute right-0 z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] origin-top-right overflow-hidden rounded-card border border-line bg-card shadow-md dark:border-dark-700 dark:bg-dark-800"
                 >
-                  <div class="max-h-[70vh] overflow-y-auto p-2">
+                  <div class="max-h-[70vh] overflow-y-auto p-1.5">
                     <div class="px-2 py-2">
-                      <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                      <div class="text-xs font-semibold uppercase tracking-[0.06em] text-ink-faint dark:text-dark-500">
                         {{ t('admin.accounts.dataActions') }}
                       </div>
                     </div>
-                    <button class="account-tools-menu-item" @click="openSyncFromCrs">
-                      <span class="account-tools-menu-icon bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">
+                    <button type="button" class="account-tools-menu-item" @click="openSyncFromCrs">
+                      <span class="account-tools-menu-icon bg-accent-50 text-accent-600 dark:bg-sky-900/30 dark:text-sky-300">
                         <Icon name="sync" size="sm" />
                       </span>
                       <span class="flex-1 text-left">{{ t('admin.accounts.syncFromCrs') }}</span>
                     </button>
-                    <button class="account-tools-menu-item" @click="openImportData">
-                      <span class="account-tools-menu-icon bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300">
+                    <button type="button" class="account-tools-menu-item" @click="openImportData">
+                      <span class="account-tools-menu-icon bg-success-soft text-success dark:bg-emerald-900/30 dark:text-emerald-300">
                         <Icon name="upload" size="sm" />
                       </span>
                       <span class="flex-1 text-left">{{ t('admin.accounts.dataImport') }}</span>
                     </button>
-                    <button class="account-tools-menu-item" @click="openExportDataDialogFromMenu">
-                      <span class="account-tools-menu-icon bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-300">
+                    <button type="button" class="account-tools-menu-item" @click="openExportDataDialogFromMenu">
+                      <span class="account-tools-menu-icon bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300">
                         <Icon name="download" size="sm" />
                       </span>
                       <span class="flex-1 text-left">
@@ -125,65 +134,67 @@
                       </span>
                       <span
                         v-if="selIds.length"
-                        class="rounded-full bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/40 dark:text-primary-300"
+                        class="rounded-chip bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 dark:bg-brand-900/40 dark:text-brand-300"
                       >
                         {{ t('admin.accounts.selectedCount', { count: selIds.length }) }}
                       </span>
                     </button>
 
-                    <div class="my-2 border-t border-gray-100 dark:border-gray-700"></div>
+                    <div class="my-2 border-t border-line dark:border-dark-700"></div>
                     <div class="px-2 py-2">
-                      <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                      <div class="text-xs font-semibold uppercase tracking-[0.06em] text-ink-faint dark:text-dark-500">
                         {{ t('admin.accounts.toolActions') }}
                       </div>
                     </div>
-                    <button class="account-tools-menu-item" @click="openErrorPassthrough">
-                      <span class="account-tools-menu-icon bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300">
+                    <button type="button" class="account-tools-menu-item" @click="openErrorPassthrough">
+                      <span class="account-tools-menu-icon bg-warning-soft text-warning dark:bg-amber-900/30 dark:text-amber-300">
                         <Icon name="shield" size="sm" />
                       </span>
                       <span class="flex-1 text-left">{{ t('admin.errorPassthrough.title') }}</span>
                     </button>
-                    <button class="account-tools-menu-item" @click="openTLSFingerprintProfiles">
-                      <span class="account-tools-menu-icon bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200">
+                    <button type="button" class="account-tools-menu-item" @click="openTLSFingerprintProfiles">
+                      <span class="account-tools-menu-icon bg-page text-ink-soft dark:bg-dark-700 dark:text-dark-200">
                         <Icon name="lock" size="sm" />
                       </span>
                       <span class="flex-1 text-left">{{ t('admin.tlsFingerprintProfiles.title') }}</span>
                     </button>
-                    <button class="account-tools-menu-item" @click="openTLSFingerprintRouters">
-                      <span class="account-tools-menu-icon bg-sky-50 text-sky-600 dark:bg-sky-900/30 dark:text-sky-300">
+                    <button type="button" class="account-tools-menu-item" @click="openTLSFingerprintRouters">
+                      <span class="account-tools-menu-icon bg-accent-50 text-accent-600 dark:bg-sky-900/30 dark:text-sky-300">
                         <Icon name="shield" size="sm" />
                       </span>
                       <span class="flex-1 text-left">{{ t('admin.tlsFingerprintRouters.title') }}</span>
                     </button>
                     <button
                       v-if="bulkKiroOverageActionVisible"
+                      type="button"
                       class="account-tools-menu-item"
                       @click="openEnableAllKiroOverageDialog"
                     >
-                      <span class="account-tools-menu-icon bg-fuchsia-50 text-fuchsia-600 dark:bg-fuchsia-900/30 dark:text-fuchsia-300">
+                      <span class="account-tools-menu-icon bg-brand-50 text-brand-600 dark:bg-fuchsia-900/30 dark:text-fuchsia-300">
                         <Icon name="sparkles" size="sm" />
                       </span>
                       <span class="flex-1 text-left">{{ t('admin.accounts.kiro.enableAllOverageAction') }}</span>
                     </button>
 
-                    <div class="my-2 border-t border-gray-100 dark:border-gray-700"></div>
+                    <div class="my-2 border-t border-line dark:border-dark-700"></div>
                     <div class="px-2 py-2">
                       <div class="flex items-center justify-between gap-3">
-                        <span class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                        <span class="text-xs font-semibold uppercase tracking-[0.06em] text-ink-faint dark:text-dark-500">
                           {{ t('admin.accounts.viewColumns') }}
                         </span>
-                        <Icon name="grid" size="sm" class="text-gray-400" />
+                        <Icon name="grid" size="sm" class="text-ink-faint" />
                       </div>
                     </div>
-                    <div class="grid grid-cols-1 gap-1">
+                    <div class="grid grid-cols-1 gap-0.5">
                       <button
                         v-for="col in toggleableColumns"
                         :key="col.key"
+                        type="button"
                         @click="toggleColumn(col.key)"
-                        class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                        class="flex w-full items-center justify-between rounded-control px-3 py-2 text-sm text-ink-body transition-colors hover:bg-page dark:text-dark-200 dark:hover:bg-dark-700"
                       >
                         <span class="truncate">{{ col.label }}</span>
-                        <Icon v-if="isColumnVisible(col.key)" name="check" size="sm" class="text-primary-500" />
+                        <Icon v-if="isColumnVisible(col.key)" name="check" size="sm" class="text-brand-600 dark:text-brand-400" />
                       </button>
                     </div>
                   </div>
@@ -191,14 +202,16 @@
               </div>
             </template>
           </AccountTableActions>
+          </div>
         </div>
         <div
           v-if="hasPendingListSync"
-          class="mt-2 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700/40 dark:bg-amber-900/20 dark:text-amber-200"
+          class="mt-2 flex items-center justify-between gap-3 rounded-control border border-warning/25 bg-warning-soft px-3 py-2 text-sm text-warning dark:border-amber-700/40 dark:bg-amber-900/20 dark:text-amber-200"
         >
           <span>{{ t('admin.accounts.listPendingSyncHint') }}</span>
           <button
-            class="btn btn-secondary px-2 py-1 text-xs"
+            type="button"
+            class="btn btn-secondary btn-sm shrink-0"
             @click="syncPendingListChanges"
           >
             {{ t('admin.accounts.listPendingSyncAction') }}
@@ -217,7 +230,7 @@
           @select-page="selectPage"
           @toggle-schedulable="handleBulkToggleSchedulable"
         />
-        <div ref="accountTableRef" class="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div ref="accountTableRef" class="accounts-table-shell flex min-h-0 flex-1 flex-col overflow-hidden">
         <DataTable
           ref="dataTableRef"
           :columns="cols"
@@ -236,34 +249,34 @@
           <template #header-select>
             <input
               type="checkbox"
-              class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              class="h-4 w-4 cursor-pointer rounded border-line text-brand-600 focus:ring-accent/25 dark:border-dark-600"
               :checked="allVisibleSelected"
               @click.stop
               @change="toggleSelectAllVisible($event)"
             />
           </template>
           <template #cell-select="{ row }">
-            <input type="checkbox" :checked="isSelected(row.id)" @change="toggleSel(row.id)" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+            <input type="checkbox" :checked="isSelected(row.id)" @change="toggleSel(row.id)" class="h-4 w-4 cursor-pointer rounded border-line text-brand-600 focus:ring-accent/25 dark:border-dark-600" />
           </template>
           <template #cell-id="{ value }">
-            <span class="font-mono text-xs text-gray-500 dark:text-gray-400">#{{ value }}</span>
+            <span class="font-mono text-xs text-ink-soft dark:text-dark-400">#{{ value }}</span>
           </template>
           <template #cell-name="{ row, value }">
             <div class="flex max-w-[400px] flex-col">
               <span
-                class="block max-w-[400px] truncate font-medium text-gray-900 dark:text-white"
+                class="block max-w-[400px] truncate font-medium text-ink dark:text-white"
                 :title="getDisplayAccountName(row, value)"
               >
                 {{ getDisplayAccountName(row, value) }}
               </span>
               <span
                 v-if="getAccountSecondaryEmail(row)"
-                class="max-w-[400px] truncate text-xs text-gray-500 dark:text-gray-400"
+                class="max-w-[400px] truncate text-xs text-ink-soft dark:text-dark-400"
                 :title="getAccountSecondaryEmail(row)"
               >
                 {{ getAccountSecondaryEmail(row) }}
               </span>
-              <div v-if="getKiroNameMetadata(row).length" class="mt-0.5 flex max-w-[400px] flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-gray-500 dark:text-gray-400">
+              <div v-if="getKiroNameMetadata(row).length" class="mt-0.5 flex max-w-[400px] flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-ink-soft dark:text-dark-400">
                 <span
                   v-for="item in getKiroNameMetadata(row)"
                   :key="item.key"
@@ -276,8 +289,8 @@
             </div>
           </template>
           <template #cell-notes="{ value }">
-            <span v-if="value" :title="value" class="block max-w-xs truncate text-sm text-gray-600 dark:text-gray-300">{{ value }}</span>
-            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+            <span v-if="value" :title="value" class="block max-w-xs truncate text-sm text-ink-body dark:text-dark-200">{{ value }}</span>
+            <span v-else class="text-sm text-ink-faint dark:text-dark-500">-</span>
           </template>
           <template #cell-platform_type="{ row }">
             <div class="flex min-w-0 flex-col gap-1">
@@ -328,8 +341,8 @@
             </div>
           </template>
           <template #cell-schedulable="{ row }">
-            <button @click="handleToggleSchedulable(row)" :disabled="togglingSchedulable === row.id" class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-dark-800" :class="[row.schedulable ? 'bg-primary-500 hover:bg-primary-600' : 'bg-gray-200 hover:bg-gray-300 dark:bg-dark-600 dark:hover:bg-dark-500']" :title="row.schedulable ? t('admin.accounts.schedulableEnabled') : t('admin.accounts.schedulableDisabled')">
-              <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out" :class="[row.schedulable ? 'translate-x-4' : 'translate-x-0']" />
+            <button @click="handleToggleSchedulable(row)" :disabled="togglingSchedulable === row.id" class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent/25 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:focus:ring-offset-dark-800" :class="[row.schedulable ? 'bg-brand-500 hover:bg-brand-600' : 'bg-line hover:bg-divider dark:bg-dark-600 dark:hover:bg-dark-500']" :title="row.schedulable ? t('admin.accounts.schedulableEnabled') : t('admin.accounts.schedulableDisabled')">
+              <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-150 ease-in-out" :class="[row.schedulable ? 'translate-x-4' : 'translate-x-0']" />
             </button>
           </template>
           <template #cell-today_stats="{ row }">
@@ -343,8 +356,8 @@
             <AccountGroupsCell :groups="row.groups" :max-display="4" />
           </template>
           <template #header-usage="{ column }">
-            <div class="flex items-center">
-              <span>{{ column.label }}</span>
+            <div class="flex items-center gap-1">
+              <span class="text-ink-soft dark:text-dark-400">{{ column.label }}</span>
               <HelpTooltip :content="t('admin.accounts.usageWindowsHint')" width-class="w-72" />
             </div>
           </template>
@@ -366,35 +379,35 @@
           <template #cell-proxy="{ row }">
             <div class="flex flex-col gap-1">
               <div v-if="row.proxy" class="flex items-center gap-2">
-                <span class="text-sm text-gray-700 dark:text-gray-300">{{ row.proxy.name }}</span>
-                <span v-if="row.proxy.country_code" class="text-xs text-gray-500 dark:text-gray-400">
+                <span class="text-sm text-ink-body dark:text-dark-200">{{ row.proxy.name }}</span>
+                <span v-if="row.proxy.country_code" class="text-xs text-ink-soft dark:text-dark-400">
                   ({{ row.proxy.country_code }})
                 </span>
               </div>
-              <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+              <span v-else class="text-sm text-ink-faint dark:text-dark-500">-</span>
               <div v-if="row.proxy && row.proxy.expires_at" class="flex items-center gap-2 text-xs">
-                <span class="text-gray-600 dark:text-gray-300">{{ formatDateTime(row.proxy.expires_at) }}</span>
+                <span class="text-ink-body dark:text-dark-200">{{ formatDateTime(row.proxy.expires_at) }}</span>
                 <span :class="proxyExpiryBadge(row.proxy)">{{ proxyExpiryText(row.proxy) }}</span>
               </div>
               <div v-if="row.proxy_fallback_origin_id" class="flex items-center gap-1">
                 <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" :title="t('admin.accounts.fallbackActiveTip', { origin: row.proxy_fallback_origin_name })">
                   {{ t('admin.accounts.fallbackActive') }}
                 </span>
-                <button class="text-xs px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" @click="onRevertFallback(row)">{{ t('admin.accounts.revertProxy') }}</button>
+                <button class="text-xs px-1.5 py-0.5 rounded border border-line dark:border-dark-600 text-ink-body dark:text-dark-200 hover:bg-page dark:hover:bg-dark-700" @click="onRevertFallback(row)">{{ t('admin.accounts.revertProxy') }}</button>
               </div>
             </div>
           </template>
           <template #cell-rate_multiplier="{ row }">
-            <span class="text-sm font-mono text-gray-700 dark:text-gray-300">
+            <span class="text-sm font-mono text-ink-body dark:text-dark-200">
               {{ (row.rate_multiplier ?? 1).toFixed(2) }}x
             </span>
           </template>
           <template #cell-priority="{ value }">
-            <span class="text-sm text-gray-700 dark:text-gray-300">{{ value }}</span>
+            <span class="text-sm text-ink-body dark:text-dark-200">{{ value }}</span>
           </template>
           <template #header-scheduler_score="{ column }">
-            <div class="flex items-center">
-              <span>{{ column.label }}</span>
+            <div class="flex items-center gap-1">
+              <span class="text-ink-soft dark:text-dark-400">{{ column.label }}</span>
               <HelpTooltip :content="t('admin.accounts.schedulerScore.hint')" width-class="w-80" />
             </div>
           </template>
@@ -403,27 +416,27 @@
               <div
                 v-for="score in getSchedulerScoreRows(row)"
                 :key="String(score.group_id)"
-                class="flex items-center gap-1 whitespace-nowrap text-gray-700 dark:text-gray-300"
+                class="flex items-center gap-1 whitespace-nowrap text-ink-body dark:text-dark-200"
                 :title="`${formatSchedulerScoreGroup(score)} / ${formatSchedulerScore(score.base_score)} / ${formatStickySchedulerScore(score)}`"
               >
-                <span class="max-w-[4.75rem] truncate text-gray-500 dark:text-dark-400">{{ formatSchedulerScoreGroup(score) }}</span>
-                <span class="text-gray-300 dark:text-gray-600">/</span>
+                <span class="max-w-[4.75rem] truncate text-ink-soft dark:text-dark-400">{{ formatSchedulerScoreGroup(score) }}</span>
+                <span class="text-ink-faint dark:text-dark-400">/</span>
                 <span>{{ formatSchedulerScore(score.base_score) }}</span>
-                <span class="text-gray-300 dark:text-gray-600">/</span>
-                <span class="text-primary-700 dark:text-primary-300">{{ formatStickySchedulerScore(score) }}</span>
+                <span class="text-ink-faint dark:text-dark-400">/</span>
+                <span class="text-brand-700 dark:text-brand-300">{{ formatStickySchedulerScore(score) }}</span>
               </div>
             </div>
-            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+            <span v-else class="text-sm text-ink-faint dark:text-dark-500">-</span>
           </template>
           <template #cell-last_used_at="{ value }">
-            <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatRelativeTime(value) }}</span>
+            <span class="text-sm text-ink-soft dark:text-dark-400">{{ formatRelativeTime(value) }}</span>
           </template>
           <template #cell-created_at="{ value }">
-            <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatDateTime(value) }}</span>
+            <span class="text-sm text-ink-soft dark:text-dark-400">{{ formatDateTime(value) }}</span>
           </template>
           <template #cell-expires_at="{ row, value }">
             <div class="flex flex-col items-start gap-1">
-              <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatExpiresAt(value) }}</span>
+              <span class="text-sm text-ink-soft dark:text-dark-400">{{ formatExpiresAt(value) }}</span>
               <div v-if="isExpired(value) || (row.auto_pause_on_expired && value)" class="flex items-center gap-1">
                 <span
                   v-if="isExpired(value)"
@@ -442,24 +455,41 @@
           </template>
           <template #cell-actions="{ row }">
             <div class="flex items-center gap-1">
-              <button @click="handleEdit(row)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400">
+              <button type="button" @click="handleEdit(row)" class="flex flex-col items-center gap-0.5 rounded-control p-1.5 text-ink-soft transition-colors hover:bg-page hover:text-brand-600 dark:text-dark-400 dark:hover:bg-dark-700 dark:hover:text-brand-400">
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
                 <span class="text-xs">{{ t('common.edit') }}</span>
               </button>
-              <button @click="handleDelete(row)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400">
+              <button type="button" @click="handleDelete(row)" class="flex flex-col items-center gap-0.5 rounded-control p-1.5 text-ink-soft transition-colors hover:bg-danger-soft hover:text-danger dark:text-dark-400 dark:hover:bg-red-900/20 dark:hover:text-red-400">
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
                 <span class="text-xs">{{ t('common.delete') }}</span>
               </button>
-              <button @click="openMenu(row, $event)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-dark-700 dark:hover:text-white">
+              <button type="button" @click="openMenu(row, $event)" class="flex flex-col items-center gap-0.5 rounded-control p-1.5 text-ink-soft transition-colors hover:bg-page hover:text-ink dark:text-dark-400 dark:hover:bg-dark-700 dark:hover:text-white">
                 <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM12.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM18.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" /></svg>
                 <span class="text-xs">{{ t('common.more') }}</span>
               </button>
             </div>
           </template>
+          <template #empty>
+            <EmptyState
+              :title="t('admin.accounts.noAccountsYet')"
+              :description="t('admin.accounts.createFirstAccount')"
+              :action-text="t('admin.accounts.createAccount')"
+              @action="openCreateModal"
+            />
+          </template>
         </DataTable>
         </div>
       </template>
-      <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
+      <template #pagination>
+        <Pagination
+          v-if="pagination.total > 0"
+          :page="pagination.page"
+          :total="pagination.total"
+          :page-size="pagination.page_size"
+          @update:page="handlePageChange"
+          @update:pageSize="handlePageSizeChange"
+        />
+      </template>
     </TablePageLayout>
     <CreateAccountModal
       v-if="showCreate"
@@ -527,8 +557,8 @@
     <ConfirmDialog :show="showCreateShadowDialog" :title="t('admin.accounts.createSparkShadow')" :message="t('admin.accounts.createSparkShadowConfirm', { name: creatingShadowAcc?.name })" @confirm="confirmCreateSparkShadow" @cancel="showCreateShadowDialog = false" />
     <ConfirmDialog :show="showEnableAllKiroOverageDialog" :title="t('admin.accounts.kiro.enableAllOverageAction')" :message="t('admin.accounts.kiro.enableAllOverageConfirm')" :confirm-text="t('common.confirm')" :cancel-text="t('common.cancel')" @confirm="confirmEnableAllKiroOverage" @cancel="showEnableAllKiroOverageDialog = false" />
     <ConfirmDialog :show="showExportDataDialog" :title="t('admin.accounts.dataExport')" :message="t('admin.accounts.dataExportConfirmMessage')" :confirm-text="t('admin.accounts.dataExportConfirm')" :cancel-text="t('common.cancel')" @confirm="handleExportData" @cancel="showExportDataDialog = false">
-      <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-        <input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" v-model="includeProxyOnExport" />
+      <label class="flex items-center gap-2 text-sm text-ink-body dark:text-dark-200">
+        <input type="checkbox" class="h-4 w-4 rounded border-line text-brand-600 focus:ring-accent/25 dark:border-dark-600" v-model="includeProxyOnExport" />
         <span>{{ t('admin.accounts.dataExportIncludeProxies') }}</span>
       </label>
     </ConfirmDialog>
@@ -567,6 +597,7 @@ import { useTableSelection } from '@/composables/useTableSelection'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -1793,8 +1824,8 @@ function getOpenAICompactMeta(row: any): { label: string; className: string; dot
     case 'auto':
       return {
         label: t('admin.accounts.openai.compactAuto'),
-        className: 'text-slate-500 dark:text-slate-400',
-        dotClass: 'bg-slate-300 dark:bg-slate-500'
+        className: 'text-ink-soft dark:text-dark-400',
+        dotClass: 'bg-line dark:bg-dark-500'
       }
   }
 }
@@ -1810,8 +1841,8 @@ function getOpenAICompactTitle(row: any): string {
 function getAntigravityTierClass(row: any): string {
   const tier = getAntigravityTierFromRow(row)
   switch (tier) {
-    case 'free-tier': return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-    case 'g1-pro-tier': return 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300'
+    case 'free-tier': return 'bg-page text-ink-body dark:bg-dark-700 dark:text-dark-200'
+    case 'g1-pro-tier': return 'bg-accent-100 text-accent-600 dark:bg-blue-900/40 dark:text-blue-300'
     case 'g1-ultra-tier': return 'bg-purple-100 text-purple-600 dark:bg-purple-900/40 dark:text-purple-300'
     default: return ''
   }
@@ -2698,10 +2729,15 @@ onUnmounted(() => {
 
 <style scoped>
 .account-tools-menu-item {
-  @apply flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700;
+  @apply flex w-full items-center gap-3 rounded-control px-3 py-2 text-sm text-ink-body transition-colors hover:bg-page dark:text-dark-200 dark:hover:bg-dark-700;
 }
 
 .account-tools-menu-icon {
-  @apply inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md;
+  @apply inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control;
+}
+
+/* List shell chrome only — DataTable already owns header/row tokens */
+.accounts-table-shell :deep(.table-wrapper) {
+  @apply rounded-card;
 }
 </style>

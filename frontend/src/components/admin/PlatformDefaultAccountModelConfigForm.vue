@@ -11,8 +11,8 @@
         :class="[
           'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
           activePlatform === platform
-            ? 'bg-primary-600 text-white'
-            : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500'
+            ? 'bg-brand-600 text-white'
+            : 'bg-ink-faint/10 text-ink-body hover:bg-ink-faint/20 dark:bg-dark-600 dark:text-ink-body dark:hover:bg-dark-500'
         ]"
       >
         {{ platformLabel(platform) }}
@@ -20,7 +20,7 @@
       </button>
     </div>
 
-    <div class="space-y-5 rounded-lg border border-gray-200 p-4 dark:border-dark-600">
+    <div class="space-y-5 rounded-lg border border-line p-4 dark:border-dark-600">
       <!-- Model whitelist -->
       <div>
         <label class="input-label">{{ t('admin.settings.platformDefaults.modelWhitelist') }}</label>
@@ -46,7 +46,7 @@
       />
 
       <!-- Kiro subscription type defaults -->
-      <div v-if="activePlatform === 'kiro'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <div v-if="activePlatform === 'kiro'" class="border-t border-line pt-4 dark:border-dark-600">
         <label class="input-label">{{ t('admin.settings.platformDefaults.kiroSubscriptionTypeConfig') }}</label>
         <textarea
           :value="kiroSubscriptionTypeConfigText"
@@ -64,7 +64,7 @@
       </div>
 
       <!-- Temp unschedulable rules -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <div class="border-t border-line pt-4 dark:border-dark-600">
         <TempUnschedRulesForm
           :enabled="current.temp_unschedulable_enabled"
           :rules="tempUnschedForms"
@@ -74,7 +74,7 @@
       </div>
 
       <!-- Custom error codes -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <div class="border-t border-line pt-4 dark:border-dark-600">
         <CustomErrorCodesForm
           :enabled="current.custom_error_codes_enabled"
           :codes="current.custom_error_codes"

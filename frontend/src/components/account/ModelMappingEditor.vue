@@ -14,7 +14,7 @@
           :placeholder="fromPlaceholder || t('admin.settings.modelMapping.fromPlaceholder')"
           @input="emitRows"
         />
-        <span class="text-gray-400">→</span>
+        <span class="text-ink-faint">→</span>
         <input
           v-model="row.to"
           type="text"
@@ -25,7 +25,7 @@
         <button
           type="button"
           @click="removeRow(index)"
-          class="rounded p-1 text-red-500 transition-colors hover:text-red-600"
+          class="rounded p-1 text-danger transition-colors hover:text-danger/80"
         >
           <Icon name="x" size="sm" :stroke-width="2" />
         </button>
@@ -35,7 +35,7 @@
     <button
       type="button"
       @click="addRow"
-      class="mt-2 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-sm text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+      class="mt-2 w-full rounded-control border-2 border-dashed border-line px-4 py-2 text-sm text-ink-body transition-colors hover:border-ink-faint hover:text-ink-body dark:border-dark-500 dark:text-ink-soft dark:hover:border-dark-400 dark:hover:text-ink-faint"
     >
       <svg class="mr-1 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />

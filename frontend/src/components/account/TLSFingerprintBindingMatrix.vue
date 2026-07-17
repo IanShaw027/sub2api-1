@@ -2,18 +2,18 @@
   <div class="space-y-2">
     <div class="flex items-center justify-between">
       <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.tlsFingerprint.bindingMatrix') }}</label>
-      <button type="button" class="text-xs text-primary-600 hover:underline dark:text-primary-400" @click="addRow">
+      <button type="button" class="text-xs text-accent hover:underline" @click="addRow">
         + {{ t('admin.accounts.quotaControl.tlsFingerprint.addBinding') }}
       </button>
     </div>
-    <p class="text-xs text-gray-500 dark:text-gray-400">
+    <p class="text-xs text-ink-soft">
       {{ t('admin.accounts.quotaControl.tlsFingerprint.bindingMatrixHint') }}
     </p>
-    <p v-if="hasDuplicateDimensions" class="text-xs text-red-500 dark:text-red-400">
+    <p v-if="hasDuplicateDimensions" class="text-xs text-danger">
       {{ duplicateBindingLabel }}
     </p>
 
-    <div v-if="rows.length === 0" class="rounded-md border border-dashed border-gray-300 px-3 py-2 text-xs text-gray-400 dark:border-dark-600">
+    <div v-if="rows.length === 0" class="rounded-control border border-dashed border-line px-3 py-2 text-xs text-ink-faint dark:border-dark-600">
       {{ t('admin.accounts.quotaControl.tlsFingerprint.noBindings') }}
     </div>
 
@@ -21,7 +21,7 @@
       v-for="(row, index) in rows"
       :key="row.key"
       class="flex items-center gap-2"
-      :class="isDuplicateRow(index) ? 'rounded-md border border-red-200 p-1 dark:border-red-800' : ''"
+      :class="isDuplicateRow(index) ? 'rounded-control border border-danger/30 p-1 dark:border-red-800' : ''"
     >
       <select v-model="row.os" class="input w-28 text-sm" @change="emitUpdate">
         <option value="windows">Windows</option>
@@ -47,7 +47,7 @@
       </select>
       <button
         type="button"
-        class="flex-shrink-0 rounded p-1 text-gray-400 hover:text-red-500"
+        class="flex-shrink-0 rounded-control p-1 text-ink-faint hover:text-danger"
         :title="t('common.delete')"
         @click="removeRow(index)"
       >

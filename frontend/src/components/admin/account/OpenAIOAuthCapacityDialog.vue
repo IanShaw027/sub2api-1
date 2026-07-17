@@ -8,23 +8,23 @@
     <div class="space-y-6">
       <!-- Toolbar -->
       <div
-        class="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-gray-100 bg-white p-3 shadow-sm dark:border-dark-700 dark:bg-dark-800"
+        class="flex flex-wrap items-end justify-between gap-3 rounded-card border border-line bg-card p-3 shadow-xs dark:border-dark-700 dark:bg-dark-800"
       >
         <div class="flex min-w-0 flex-1 flex-wrap items-end gap-3">
           <div class="flex flex-col gap-1">
-            <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
+            <span class="text-xs font-medium text-ink-soft">
               {{ t('admin.accounts.oauthCapacity.range') }}
             </span>
-            <div class="inline-flex rounded-lg border border-gray-200 p-0.5 dark:border-dark-600">
+            <div class="inline-flex rounded-control border border-line p-0.5 dark:border-dark-600">
               <button
                 v-for="option in rangeOptions"
                 :key="option.value"
                 type="button"
-                class="rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors"
+                class="rounded-control px-2.5 py-1.5 text-xs font-medium transition-colors"
                 :class="
                   selectedRange === option.value
-                    ? 'bg-primary-600 text-white shadow-sm'
-                    : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700'
+                    ? 'bg-brand-600 text-white shadow-xs'
+                    : 'text-ink-soft hover:bg-page dark:hover:bg-dark-700'
                 "
                 @click="selectedRange = option.value"
               >
@@ -34,19 +34,19 @@
           </div>
 
           <div class="flex flex-col gap-1">
-            <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
+            <span class="text-xs font-medium text-ink-soft">
               {{ t('admin.accounts.oauthCapacity.windowToggle') }}
             </span>
-            <div class="inline-flex rounded-lg border border-gray-200 p-0.5 dark:border-dark-600">
+            <div class="inline-flex rounded-control border border-line p-0.5 dark:border-dark-600">
               <button
                 v-for="option in windowOptions"
                 :key="option.value"
                 type="button"
-                class="rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors"
+                class="rounded-control px-2.5 py-1.5 text-xs font-medium transition-colors"
                 :class="
                   selectedWindow === option.value
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700'
+                    ? 'bg-success text-white shadow-xs'
+                    : 'text-ink-soft hover:bg-page dark:hover:bg-dark-700'
                 "
                 @click="selectedWindow = option.value"
               >
@@ -56,7 +56,7 @@
           </div>
 
           <div class="flex min-w-[14rem] flex-col gap-1">
-            <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
+            <span class="text-xs font-medium text-ink-soft">
               {{ t('admin.accounts.oauthCapacity.scope') }}
             </span>
             <Select
@@ -68,7 +68,7 @@
         </div>
 
         <div class="flex items-center gap-2">
-          <span v-if="series" class="text-xs text-gray-500 dark:text-gray-400">
+          <span v-if="series" class="text-xs text-ink-soft">
             {{ formatTime(series.generated_at) }}
           </span>
           <button
@@ -89,7 +89,7 @@
 
       <div
         v-else-if="error"
-        class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300"
+        class="rounded-card border border-danger/25 bg-danger-soft p-4 text-sm text-danger dark:border-danger/30 dark:bg-danger/20 dark:text-danger"
       >
         {{ error }}
       </div>
@@ -104,8 +104,8 @@
             :class="metric.cardClass"
           >
             <div class="mb-2 flex items-center justify-between">
-              <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ metric.label }}</span>
-              <div class="rounded-lg p-1.5" :class="metric.iconWrapClass">
+              <span class="text-xs font-medium text-ink-soft">{{ metric.label }}</span>
+              <div class="rounded-control p-1.5" :class="metric.iconWrapClass">
                 <Icon :name="metric.icon" size="sm" :class="metric.iconClass" />
               </div>
             </div>
@@ -115,19 +115,19 @@
 
         <!-- Rate-limit buckets -->
         <div class="card p-4">
-          <h4 class="mb-3 text-sm font-semibold text-gray-900 dark:text-white">
+          <h4 class="mb-3 text-sm font-semibold text-ink dark:text-white">
             {{ t('admin.accounts.oauthCapacity.rateLimitDistribution') }}
           </h4>
           <div class="grid grid-cols-4 gap-2 sm:grid-cols-8">
             <div
               v-for="bucket in rateLimitRows"
               :key="bucket.label"
-              class="rounded-lg border border-gray-100 bg-gray-50 px-2 py-2.5 text-center dark:border-dark-700 dark:bg-dark-900/40"
+              class="rounded-control border border-line bg-page px-2 py-2.5 text-center dark:border-dark-700 dark:bg-dark-900/40"
             >
-              <div class="text-[11px] text-gray-500 dark:text-gray-400">{{ bucket.label }}</div>
+              <div class="text-[11px] text-ink-soft">{{ bucket.label }}</div>
               <div
                 class="mt-1 text-base font-semibold"
-                :class="bucket.value ? 'text-amber-700 dark:text-amber-300' : 'text-gray-400 dark:text-gray-500'"
+                :class="bucket.value ? 'text-warning dark:text-warning' : 'text-ink-faint dark:text-ink-soft'"
               >
                 {{ bucket.value }}
               </div>
@@ -144,37 +144,37 @@
             :class="kpi.cardClass"
           >
             <div class="mb-2 flex items-center justify-between gap-2">
-              <span class="truncate text-xs font-medium text-gray-500 dark:text-gray-400">{{ kpi.label }}</span>
-              <div class="rounded-lg p-1.5" :class="kpi.iconWrapClass">
+              <span class="truncate text-xs font-medium text-ink-soft">{{ kpi.label }}</span>
+              <div class="rounded-control p-1.5" :class="kpi.iconWrapClass">
                 <Icon :name="kpi.icon" size="sm" :class="kpi.iconClass" />
               </div>
             </div>
             <p class="font-mono text-xl font-bold" :class="kpi.valueClass">{{ kpi.value }}</p>
-            <p v-if="kpi.sub" class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ kpi.sub }}</p>
+            <p v-if="kpi.sub" class="mt-1 text-xs text-ink-soft">{{ kpi.sub }}</p>
           </div>
         </div>
 
         <!-- Trend chart -->
         <div class="card p-4">
           <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
+            <h4 class="text-sm font-semibold text-ink dark:text-white">
               {{ t('admin.accounts.oauthCapacity.hourlyTrend') }}
             </h4>
-            <div class="flex flex-wrap items-center gap-3 text-[11px] text-gray-500 dark:text-gray-400">
+            <div class="flex flex-wrap items-center gap-3 text-[11px] text-ink-soft">
               <span class="inline-flex items-center gap-1.5">
-                <span class="inline-block h-0.5 w-4 rounded bg-blue-500" />
+                <span class="inline-block h-0.5 w-4 rounded bg-accent-500" />
                 {{ t('admin.accounts.oauthCapacity.legendSpendSolid') }}
               </span>
               <span class="inline-flex items-center gap-1.5">
-                <span class="inline-block h-0.5 w-4 border-t-2 border-dashed border-blue-500" />
+                <span class="inline-block h-0.5 w-4 border-t-2 border-dashed border-accent-500" />
                 {{ t('admin.accounts.oauthCapacity.legendSpendDashed') }}
               </span>
               <span class="inline-flex items-center gap-1.5">
-                <span class="inline-block h-0.5 w-4 rounded bg-emerald-500" />
+                <span class="inline-block h-0.5 w-4 rounded bg-success" />
                 {{ t('admin.accounts.oauthCapacity.legendAvailable') }}
               </span>
               <span v-if="selectedWindow === 'both'" class="inline-flex items-center gap-1.5">
-                <span class="inline-block h-0.5 w-4 rounded bg-cyan-500" />
+                <span class="inline-block h-0.5 w-4 rounded bg-brand-cyan" />
                 {{ t('admin.accounts.oauthCapacity.legendAvailable7d') }}
               </span>
             </div>
@@ -183,7 +183,7 @@
 		  <div class="relative min-h-48">
 		    <div
 		      v-if="loading && series"
-		      class="absolute inset-0 z-10 flex items-center justify-center bg-white/60 dark:bg-dark-800/60"
+		      class="absolute inset-0 z-10 flex items-center justify-center bg-card/60 dark:bg-dark-800/60"
 		    >
 		      <LoadingSpinner />
 		    </div>
@@ -192,12 +192,12 @@
 		    </div>
 		    <div
 		      v-else
-		      class="flex h-48 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+		      class="flex h-48 items-center justify-center text-sm text-ink-soft"
 		    >
 		      {{ t('admin.accounts.oauthCapacity.noTrendData') }}
 		    </div>
 		  </div>
-          <p class="mt-3 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+          <p class="mt-3 text-[11px] leading-relaxed text-ink-soft">
             {{ t('admin.accounts.oauthCapacity.persistenceNote') }}
           </p>
         </div>
@@ -205,17 +205,17 @@
         <!-- Plans + forecast -->
         <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,0.5fr)]">
           <div class="card overflow-hidden p-0">
-            <div class="border-b border-gray-100 px-4 py-3 dark:border-dark-700">
-              <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
+            <div class="border-b border-line px-4 py-3 dark:border-dark-700">
+              <h4 class="text-sm font-semibold text-ink dark:text-white">
                 {{ t('admin.accounts.oauthCapacity.planMix') }}
               </h4>
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              <p class="mt-1 text-xs text-ink-soft">
                 {{ t('admin.accounts.oauthCapacity.recommendationNote') }}
               </p>
             </div>
             <div class="overflow-x-auto">
               <table class="w-full min-w-[44rem] text-left text-sm">
-                <thead class="bg-gray-50 text-xs text-gray-500 dark:bg-dark-900 dark:text-gray-400">
+                <thead class="bg-page text-xs text-ink-soft dark:bg-dark-900">
                   <tr>
                     <th class="px-3 py-2.5">{{ t('admin.accounts.oauthCapacity.plan') }}</th>
                     <th class="px-3 py-2.5 text-right">{{ t('admin.accounts.oauthCapacity.accounts') }}</th>
@@ -228,16 +228,16 @@
                     <th class="px-3 py-2.5 text-right">{{ t('admin.accounts.oauthCapacity.add7d') }}</th>
                   </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
-                  <tr v-for="plan in planRows" :key="plan.plan_type" class="bg-white dark:bg-dark-800">
-                    <td class="px-3 py-2.5 font-semibold uppercase text-gray-900 dark:text-white">
+                <tbody class="divide-y divide-line dark:divide-dark-700">
+                  <tr v-for="plan in planRows" :key="plan.plan_type" class="bg-card dark:bg-dark-800">
+                    <td class="px-3 py-2.5 font-semibold uppercase text-ink dark:text-white">
                       {{ plan.plan_type }}
                     </td>
                     <td class="px-3 py-2.5 text-right">{{ plan.total }}</td>
                     <td class="px-3 py-2.5 text-right">{{ plan.schedulable }}</td>
                     <td
                       class="px-3 py-2.5 text-right"
-                      :class="plan.errors ? 'text-red-600 dark:text-red-300' : ''"
+                      :class="plan.errors ? 'text-danger dark:text-danger' : ''"
                     >
                       {{ plan.errors }}
                     </td>
@@ -253,39 +253,39 @@
           </div>
 
           <div class="card space-y-3 p-4">
-            <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
+            <h4 class="text-sm font-semibold text-ink dark:text-white">
               {{ t('admin.accounts.oauthCapacity.forecastInputs') }}
             </h4>
             <div class="space-y-2">
-              <div class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 dark:border-dark-700 dark:bg-dark-900/40">
-                <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.oauthCapacity.recent3h') }}</div>
-                <div class="mt-1 font-mono text-base font-semibold text-gray-900 dark:text-white">
+              <div class="rounded-control border border-line bg-page px-3 py-2 dark:border-dark-700 dark:bg-dark-900/40">
+                <div class="text-xs text-ink-soft">{{ t('admin.accounts.oauthCapacity.recent3h') }}</div>
+                <div class="mt-1 font-mono text-base font-semibold text-ink dark:text-white">
                   {{ usd(series.forecast.recent_three_hour_usd) }}
                 </div>
               </div>
-              <div class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 dark:border-dark-700 dark:bg-dark-900/40">
-                <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.oauthCapacity.previousDay3h') }}</div>
-                <div class="mt-1 font-mono text-base font-semibold text-gray-900 dark:text-white">
+              <div class="rounded-control border border-line bg-page px-3 py-2 dark:border-dark-700 dark:bg-dark-900/40">
+                <div class="text-xs text-ink-soft">{{ t('admin.accounts.oauthCapacity.previousDay3h') }}</div>
+                <div class="mt-1 font-mono text-base font-semibold text-ink dark:text-white">
                   {{ usd(series.forecast.previous_day_same_period_usd) }}
                 </div>
               </div>
-              <div class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 dark:border-dark-700 dark:bg-dark-900/40">
-                <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.oauthCapacity.rpmWindow') }}</div>
-                <div class="mt-1 font-mono text-base font-semibold text-gray-900 dark:text-white">
+              <div class="rounded-control border border-line bg-page px-3 py-2 dark:border-dark-700 dark:bg-dark-900/40">
+                <div class="text-xs text-ink-soft">{{ t('admin.accounts.oauthCapacity.rpmWindow') }}</div>
+                <div class="mt-1 font-mono text-base font-semibold text-ink dark:text-white">
                   {{ usd(series.forecast.recent_rpm_window_usd) }}
-                  <span class="text-xs font-normal text-gray-500">
+                  <span class="text-xs font-normal text-ink-soft">
                     ({{ usd(series.forecast.rpm_hourly_rate_usd) }}/h)
                   </span>
                 </div>
               </div>
-              <div class="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 dark:border-dark-700 dark:bg-dark-900/40">
-                <div class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.oauthCapacity.blendedRate') }}</div>
-                <div class="mt-1 font-mono text-base font-semibold text-gray-900 dark:text-white">
+              <div class="rounded-control border border-line bg-page px-3 py-2 dark:border-dark-700 dark:bg-dark-900/40">
+                <div class="text-xs text-ink-soft">{{ t('admin.accounts.oauthCapacity.blendedRate') }}</div>
+                <div class="mt-1 font-mono text-base font-semibold text-ink dark:text-white">
                   {{ usd(series.forecast.blended_hourly_rate_usd) }}/h
                 </div>
               </div>
             </div>
-            <p class="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+            <p class="text-[11px] leading-relaxed text-ink-soft">
               {{ t('admin.accounts.oauthCapacity.groupAllocationNote') }}
             </p>
           </div>
@@ -370,39 +370,39 @@ const accountMetrics = computed(() => {
       label: t('admin.accounts.oauthCapacity.accounts'),
       value: health.total,
       icon: 'users' as const,
-      cardClass: 'border-blue-200 bg-gradient-to-br from-blue-50 to-white dark:border-blue-800/30 dark:from-blue-900/10 dark:to-dark-700',
-      iconWrapClass: 'bg-blue-100 dark:bg-blue-900/30',
-      iconClass: 'text-blue-600 dark:text-blue-400',
-      valueClass: 'text-gray-900 dark:text-white'
+      cardClass: 'border-accent-200 bg-gradient-to-br from-accent-50 to-card dark:border-accent-800/30 dark:from-accent-900/10 dark:to-dark-700',
+      iconWrapClass: 'bg-accent-50 dark:bg-accent-900/30',
+      iconClass: 'text-accent-600 dark:text-accent-400',
+      valueClass: 'text-ink dark:text-white'
     },
     {
       label: t('admin.accounts.oauthCapacity.schedulable'),
       value: health.schedulable,
       icon: 'check' as const,
-      cardClass: 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-white dark:border-emerald-800/30 dark:from-emerald-900/10 dark:to-dark-700',
-      iconWrapClass: 'bg-emerald-100 dark:bg-emerald-900/30',
-      iconClass: 'text-emerald-600 dark:text-emerald-400',
-      valueClass: 'text-gray-900 dark:text-white'
+      cardClass: 'border-success/25 bg-gradient-to-br from-success-soft to-card dark:border-success/30 dark:from-success/10 dark:to-dark-700',
+      iconWrapClass: 'bg-success-soft dark:bg-success/20',
+      iconClass: 'text-success dark:text-success',
+      valueClass: 'text-ink dark:text-white'
     },
     {
       label: t('admin.accounts.oauthCapacity.errors'),
       value: health.errors,
       icon: 'exclamationTriangle' as const,
-      cardClass: 'border-red-200 bg-gradient-to-br from-red-50 to-white dark:border-red-800/30 dark:from-red-900/10 dark:to-dark-700',
-      iconWrapClass: 'bg-red-100 dark:bg-red-900/30',
-      iconClass: 'text-red-600 dark:text-red-400',
-      valueClass: health.errors ? 'text-red-600 dark:text-red-300' : 'text-gray-900 dark:text-white'
+      cardClass: 'border-danger/25 bg-gradient-to-br from-danger-soft to-card dark:border-danger/30 dark:from-danger/10 dark:to-dark-700',
+      iconWrapClass: 'bg-danger-soft dark:bg-danger/20',
+      iconClass: 'text-danger dark:text-danger',
+      valueClass: health.errors ? 'text-danger dark:text-danger' : 'text-ink dark:text-white'
     },
     {
       label: t('admin.accounts.oauthCapacity.rateLimited'),
       value: series.value.rate_limits.total,
       icon: 'clock' as const,
-      cardClass: 'border-amber-200 bg-gradient-to-br from-amber-50 to-white dark:border-amber-800/30 dark:from-amber-900/10 dark:to-dark-700',
-      iconWrapClass: 'bg-amber-100 dark:bg-amber-900/30',
-      iconClass: 'text-amber-600 dark:text-amber-400',
+      cardClass: 'border-warning/25 bg-gradient-to-br from-warning-soft to-card dark:border-warning/30 dark:from-warning/10 dark:to-dark-700',
+      iconWrapClass: 'bg-warning-soft dark:bg-warning/20',
+      iconClass: 'text-warning dark:text-warning',
       valueClass: series.value.rate_limits.total
-        ? 'text-amber-700 dark:text-amber-300'
-        : 'text-gray-900 dark:text-white'
+        ? 'text-warning dark:text-warning'
+        : 'text-ink dark:text-white'
     }
   ]
 })
@@ -436,10 +436,10 @@ const kpiCards = computed(() => {
       value: usd(summary.spent_usd),
       sub: '',
       icon: 'dollar' as const,
-      cardClass: 'border-blue-200 bg-gradient-to-br from-blue-50 to-white dark:border-blue-800/30 dark:from-blue-900/10 dark:to-dark-700',
-      iconWrapClass: 'bg-blue-100 dark:bg-blue-900/30',
-      iconClass: 'text-blue-600 dark:text-blue-400',
-      valueClass: 'text-gray-900 dark:text-white'
+      cardClass: 'border-accent-200 bg-gradient-to-br from-accent-50 to-card dark:border-accent-800/30 dark:from-accent-900/10 dark:to-dark-700',
+      iconWrapClass: 'bg-accent-50 dark:bg-accent-900/30',
+      iconClass: 'text-accent-600 dark:text-accent-400',
+      valueClass: 'text-ink dark:text-white'
     },
     {
       label: t('admin.accounts.oauthCapacity.available'),
@@ -448,20 +448,20 @@ const kpiCards = computed(() => {
         ? t('admin.accounts.oauthCapacity.usedPercent', { value: percent(summary.used_percent) })
         : t('admin.accounts.oauthCapacity.unmeasured'),
       icon: 'chartBar' as const,
-      cardClass: 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-white dark:border-emerald-800/30 dark:from-emerald-900/10 dark:to-dark-700',
-      iconWrapClass: 'bg-emerald-100 dark:bg-emerald-900/30',
-      iconClass: 'text-emerald-600 dark:text-emerald-400',
-      valueClass: hasCapacity ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-400'
+      cardClass: 'border-success/25 bg-gradient-to-br from-success-soft to-card dark:border-success/30 dark:from-success/10 dark:to-dark-700',
+      iconWrapClass: 'bg-success-soft dark:bg-success/20',
+      iconClass: 'text-success dark:text-success',
+      valueClass: hasCapacity ? 'text-success dark:text-success' : 'text-ink-faint'
     },
     {
       label: t('admin.accounts.oauthCapacity.forecastRemaining'),
       value: usd(summary.forecast_remaining_usd),
       sub: t('admin.accounts.oauthCapacity.untilReset'),
       icon: 'bolt' as const,
-      cardClass: 'border-purple-200 bg-gradient-to-br from-purple-50 to-white dark:border-purple-800/30 dark:from-purple-900/10 dark:to-dark-700',
-      iconWrapClass: 'bg-purple-100 dark:bg-purple-900/30',
-      iconClass: 'text-purple-600 dark:text-purple-400',
-      valueClass: 'text-gray-900 dark:text-white'
+      cardClass: 'border-brand-200 bg-gradient-to-br from-brand-50 to-card dark:border-brand-800/30 dark:from-brand-900/10 dark:to-dark-700',
+      iconWrapClass: 'bg-brand-50 dark:bg-brand-900/30',
+      iconClass: 'text-brand-600 dark:text-brand-400',
+      valueClass: 'text-ink dark:text-white'
     },
     {
       label: t('admin.accounts.oauthCapacity.projected'),
@@ -470,10 +470,10 @@ const kpiCards = computed(() => {
         ? usd(summary.capacity_usd) + ' cap'
         : t('admin.accounts.oauthCapacity.unmeasured'),
       icon: 'calculator' as const,
-      cardClass: 'border-cyan-200 bg-gradient-to-br from-cyan-50 to-white dark:border-cyan-800/30 dark:from-cyan-900/10 dark:to-dark-700',
-      iconWrapClass: 'bg-cyan-100 dark:bg-cyan-900/30',
-      iconClass: 'text-cyan-600 dark:text-cyan-400',
-      valueClass: 'text-gray-900 dark:text-white'
+      cardClass: 'border-brand-200 bg-gradient-to-br from-brand-50 to-card dark:border-brand-800/30 dark:from-brand-900/10 dark:to-dark-700',
+      iconWrapClass: 'bg-brand-50 dark:bg-brand-900/30',
+      iconClass: 'text-brand-600 dark:text-brand-cyan',
+      valueClass: 'text-ink dark:text-white'
     },
     {
       label: t('admin.accounts.oauthCapacity.shortfall'),
@@ -481,11 +481,11 @@ const kpiCards = computed(() => {
       sub: t(`admin.accounts.oauthCapacity.confidence_${summary.confidence}`),
       icon: 'exclamationTriangle' as const,
       cardClass: shortfall != null && shortfall > 0
-        ? 'border-red-200 bg-gradient-to-br from-red-50 to-white dark:border-red-800/30 dark:from-red-900/10 dark:to-dark-700'
-        : 'border-gray-200 bg-gradient-to-br from-gray-50 to-white dark:border-dark-700 dark:from-dark-900/40 dark:to-dark-700',
-      iconWrapClass: shortfall != null && shortfall > 0 ? 'bg-red-100 dark:bg-red-900/30' : 'bg-gray-100 dark:bg-dark-700',
-      iconClass: shortfall != null && shortfall > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-500',
-      valueClass: shortfall != null && shortfall > 0 ? 'text-red-600 dark:text-red-300' : 'text-gray-500'
+        ? 'border-danger/25 bg-gradient-to-br from-danger-soft to-card dark:border-danger/30 dark:from-danger/10 dark:to-dark-700'
+        : 'border-line bg-gradient-to-br from-page to-card dark:border-dark-700 dark:from-dark-900/40 dark:to-dark-700',
+      iconWrapClass: shortfall != null && shortfall > 0 ? 'bg-danger-soft dark:bg-danger/20' : 'bg-page dark:bg-dark-700',
+      iconClass: shortfall != null && shortfall > 0 ? 'text-danger dark:text-danger' : 'text-ink-soft',
+      valueClass: shortfall != null && shortfall > 0 ? 'text-danger dark:text-danger' : 'text-ink-soft'
     }
   ]
 })

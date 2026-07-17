@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div v-if="loading" class="rounded-2xl border bg-white p-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400">
+    <div v-if="loading" class="rounded-card border border-line bg-card p-10 text-center text-sm text-ink-soft dark:border-dark-700 dark:bg-dark-800">
       {{ t('common.loading') }}
     </div>
     <div v-else-if="ticket" class="grid h-[calc(100vh-10rem)] min-h-[calc(100vh-10rem)] min-w-0 gap-6 overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.95fr)]">
@@ -51,7 +51,7 @@
                 ref="templateMenuListRef"
                 role="menu"
                 tabindex="-1"
-                class="absolute bottom-full left-0 z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-dark-700 dark:bg-dark-800"
+                class="absolute bottom-full left-0 z-20 mb-2 w-72 overflow-hidden rounded-card border border-line bg-card shadow-xl dark:border-dark-700 dark:bg-dark-800"
                 @keydown.esc.prevent="closeTemplateMenuAndRestoreFocus"
               >
                 <div v-if="replyTemplates.length > 0" class="max-h-80 overflow-y-auto py-2">
@@ -60,18 +60,18 @@
                     :key="template.id"
                     type="button"
                     role="menuitem"
-                    class="flex w-full flex-col items-start px-4 py-3 text-left transition-colors hover:bg-gray-50 dark:hover:bg-dark-700"
+                    class="flex w-full flex-col items-start px-4 py-3 text-left transition-colors hover:bg-page dark:hover:bg-dark-700"
                     @mousedown.prevent
                     @click="applyTemplate(template.content)"
                   >
-                    <span class="text-sm font-medium text-gray-900 dark:text-white">{{ template.title }}</span>
-                    <span class="mt-1 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">{{ template.content }}</span>
+                    <span class="text-sm font-medium text-ink dark:text-white">{{ template.title }}</span>
+                    <span class="mt-1 line-clamp-2 text-xs text-ink-soft">{{ template.content }}</span>
                   </button>
                 </div>
-                <div v-else class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                <div v-else class="px-4 py-3 text-sm text-ink-soft">
                   {{ t('tickets.templates.empty') }}
                 </div>
-                <div class="border-t border-gray-100 p-2 dark:border-dark-700">
+                <div class="border-t border-line p-2 dark:border-dark-700">
                   <button
                     type="button"
                     role="menuitem"
@@ -92,7 +92,7 @@
         <TicketDetailPane :ticket="ticket" show-user-meta>
           <template #actions>
             <div v-if="canUpdateStatus" class="space-y-3">
-              <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('tickets.adminActions') }}</p>
+              <p class="text-sm font-medium text-ink dark:text-white">{{ t('tickets.adminActions') }}</p>
               <div class="flex flex-wrap gap-3">
                 <button v-for="status in availableAdminStatuses" :key="status" class="btn btn-secondary btn-sm" :disabled="actionLoading || ticket.status === status" @click="updateStatus(status)">
                   {{ t(`tickets.statuses.${status}`) }}

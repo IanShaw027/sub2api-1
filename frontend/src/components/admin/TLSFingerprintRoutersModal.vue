@@ -7,7 +7,7 @@
   >
     <div class="space-y-4">
       <div class="flex items-center justify-between">
-        <p class="text-sm text-gray-500 dark:text-gray-400">
+        <p class="text-sm text-ink-soft">
           {{ t('admin.tlsFingerprintRouters.description') }}
         </p>
         <button @click="openCreate" class="btn btn-primary btn-sm">
@@ -17,52 +17,52 @@
       </div>
 
       <div v-if="loading" class="flex items-center justify-center py-8">
-        <Icon name="refresh" size="lg" class="animate-spin text-gray-400" />
+        <Icon name="refresh" size="lg" class="animate-spin text-ink-faint" />
       </div>
 
       <div v-else-if="routers.length === 0" class="py-8 text-center">
-        <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-dark-700">
-          <Icon name="shield" size="lg" class="text-gray-400" />
+        <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-line dark:bg-dark-700">
+          <Icon name="shield" size="lg" class="text-ink-faint" />
         </div>
-        <h4 class="mb-1 text-sm font-medium text-gray-900 dark:text-white">
+        <h4 class="mb-1 text-sm font-medium text-ink dark:text-white">
           {{ t('admin.tlsFingerprintRouters.noRouters') }}
         </h4>
-        <p class="text-sm text-gray-500 dark:text-gray-400">
+        <p class="text-sm text-ink-soft">
           {{ t('admin.tlsFingerprintRouters.createFirstRouter') }}
         </p>
       </div>
 
-      <div v-else class="max-h-96 overflow-auto rounded-lg border border-gray-200 dark:border-dark-600">
-        <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
-          <thead class="sticky top-0 bg-gray-50 dark:bg-dark-700">
+      <div v-else class="max-h-96 overflow-auto rounded-card border border-line dark:border-dark-600">
+        <table class="min-w-full divide-y divide-line dark:divide-dark-700">
+          <thead class="sticky top-0 bg-page dark:bg-dark-700">
             <tr>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                 {{ t('admin.tlsFingerprintRouters.columns.name') }}
               </th>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                 {{ t('admin.tlsFingerprintRouters.columns.description') }}
               </th>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                 {{ t('admin.tlsFingerprintRouters.columns.enabled') }}
               </th>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                 {{ t('admin.tlsFingerprintRouters.columns.rules') }}
               </th>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                 {{ t('admin.tlsFingerprintRouters.columns.actions') }}
               </th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-800">
-            <tr v-for="router in routers" :key="router.id" class="hover:bg-gray-50 dark:hover:bg-dark-700">
+          <tbody class="divide-y divide-line bg-card dark:divide-dark-700 dark:bg-dark-800">
+            <tr v-for="router in routers" :key="router.id" class="hover:bg-page dark:hover:bg-dark-700">
               <td class="px-3 py-2">
-                <div class="font-medium text-gray-900 dark:text-white text-sm">{{ router.name }}</div>
+                <div class="font-medium text-ink dark:text-white text-sm">{{ router.name }}</div>
               </td>
               <td class="px-3 py-2">
-                <div v-if="router.description" class="text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
+                <div v-if="router.description" class="text-sm text-ink-soft max-w-xs truncate">
                   {{ router.description }}
                 </div>
-                <div v-else class="text-xs text-gray-400 dark:text-gray-600">—</div>
+                <div v-else class="text-xs text-ink-faint dark:text-ink-soft">—</div>
               </td>
               <td class="px-3 py-2">
                 <button
@@ -70,13 +70,13 @@
                   @click="toggleRouter(router)"
                   :disabled="togglingId === router.id"
                   :class="[
-                    'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-60',
-                    router.enabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                    'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent/25 focus:ring-offset-2 disabled:opacity-60',
+                    router.enabled ? 'bg-brand-600' : 'bg-line dark:bg-dark-600'
                   ]"
                 >
                   <span
                     :class="[
-                      'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                      'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-150 ease-in-out',
                       router.enabled ? 'translate-x-4' : 'translate-x-0'
                     ]"
                   />
@@ -91,14 +91,14 @@
                 <div class="flex items-center gap-1">
                   <button
                     @click="handleEdit(router)"
-                    class="p-1 text-gray-500 hover:text-primary-600 dark:hover:text-primary-400"
+                    class="p-1 text-ink-soft hover:text-brand-600 dark:hover:text-brand-400"
                     :title="t('common.edit')"
                   >
                     <Icon name="edit" size="sm" />
                   </button>
                   <button
                     @click="handleDelete(router)"
-                    class="p-1 text-gray-500 hover:text-red-600 dark:hover:text-red-400"
+                    class="p-1 text-ink-soft hover:text-danger dark:hover:text-danger"
                     :title="t('common.delete')"
                   >
                     <Icon name="trash" size="sm" />
@@ -143,22 +143,22 @@
             type="button"
             @click="form.enabled = !form.enabled"
             :class="[
-              'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              form.enabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent/25 focus:ring-offset-2',
+              form.enabled ? 'bg-brand-600' : 'bg-line dark:bg-dark-600'
             ]"
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-150 ease-in-out',
                 form.enabled ? 'translate-x-4' : 'translate-x-0'
               ]"
             />
           </button>
           <div>
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+            <span class="text-sm font-medium text-ink-body">
               {{ t('admin.tlsFingerprintRouters.form.enabled') }}
             </span>
-            <p class="text-xs text-gray-500 dark:text-gray-400">
+            <p class="text-xs text-ink-soft">
               {{ t('admin.tlsFingerprintRouters.form.enabledHint') }}
             </p>
           </div>
@@ -173,40 +173,40 @@
             </button>
           </div>
 
-          <div v-if="profiles.length === 0" class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300">
+          <div v-if="profiles.length === 0" class="rounded-control border border-warning/25 bg-warning-soft px-3 py-2 text-xs text-warning dark:border-warning/30 dark:bg-warning/20 dark:text-warning">
             {{ t('admin.tlsFingerprintRouters.form.noProfilesHint') }}
           </div>
 
           <div
             v-for="(rule, index) in form.rules"
             :key="index"
-            class="space-y-3 rounded-lg border border-gray-200 p-3 dark:border-dark-600"
+            class="space-y-3 rounded-control border border-line p-3 dark:border-dark-600"
           >
             <div class="flex items-center gap-3">
               <button
                 type="button"
                 @click="rule.enabled = !rule.enabled"
                 :class="[
-                  'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                  rule.enabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                  'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent/25 focus:ring-offset-2',
+                  rule.enabled ? 'bg-brand-600' : 'bg-line dark:bg-dark-600'
                 ]"
               >
                 <span
                   :class="[
-                    'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                    'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-150 ease-in-out',
                     rule.enabled ? 'translate-x-4' : 'translate-x-0'
                   ]"
                 />
               </button>
               <input v-model="rule.name" type="text" class="input min-w-0 flex-1" :placeholder="t('admin.tlsFingerprintRouters.form.ruleNamePlaceholder')" />
-              <label class="flex flex-shrink-0 items-center gap-1.5 text-xs text-gray-700 dark:text-gray-300">
-                <input v-model="rule.case_sensitive" type="checkbox" class="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
+              <label class="flex flex-shrink-0 items-center gap-1.5 text-xs text-ink-body">
+                <input v-model="rule.case_sensitive" type="checkbox" class="h-3.5 w-3.5 rounded border-line text-brand-600 focus:ring-accent/25" />
                 <span>{{ t('admin.tlsFingerprintRouters.form.caseSensitive') }}</span>
               </label>
               <button
                 type="button"
                 @click="removeRule(index)"
-                class="flex-shrink-0 p-1 text-gray-500 hover:text-red-600 dark:hover:text-red-400"
+                class="flex-shrink-0 p-1 text-ink-soft hover:text-danger dark:hover:text-danger"
                 :title="t('common.delete')"
               >
                 <Icon name="trash" size="sm" />
@@ -226,7 +226,7 @@
                   <option value="websocket-http1">WebSocket HTTP/1.1</option>
                   <option value="websocket-h2">{{ t('admin.tlsFingerprintRouters.form.transportWebsocketH2') }}</option>
                 </select>
-                <p class="mt-1 text-[11px] text-amber-700 dark:text-amber-300">{{ t('admin.tlsFingerprintRouters.form.transportReplayHint') }}</p>
+                <p class="mt-1 text-[11px] text-warning dark:text-warning">{{ t('admin.tlsFingerprintRouters.form.transportReplayHint') }}</p>
               </div>
               <div>
                 <label class="input-label text-xs">{{ t('admin.tlsFingerprintRouters.form.matchType') }}</label>

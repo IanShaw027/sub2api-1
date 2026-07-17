@@ -1,30 +1,34 @@
 <template>
   <div class="flex items-center gap-1">
     <button
+      type="button"
       @click="$emit('run', row)"
       :disabled="running"
-      class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
+      class="flex flex-col items-center gap-0.5 rounded-control p-1.5 text-ink-soft transition-colors hover:bg-page hover:text-brand-600 dark:hover:bg-dark-700 dark:hover:text-brand-400"
     >
       <Icon name="refresh" size="sm" :class="running ? 'animate-spin' : ''" />
       <span class="text-xs">{{ t('admin.channelMonitor.runNow') }}</span>
     </button>
     <button
+      type="button"
       @click="$emit('edit', row)"
-      class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
+      class="flex flex-col items-center gap-0.5 rounded-control p-1.5 text-ink-soft transition-colors hover:bg-page hover:text-brand-600 dark:hover:bg-dark-700 dark:hover:text-brand-400"
     >
       <Icon name="edit" size="sm" />
       <span class="text-xs">{{ t('common.edit') }}</span>
     </button>
     <button
+      type="button"
       @click="$emit('adjust-availability', row)"
-      class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
+      class="flex flex-col items-center gap-0.5 rounded-control p-1.5 text-ink-soft transition-colors hover:bg-page hover:text-brand-600 dark:hover:bg-dark-700 dark:hover:text-brand-400"
     >
       <Icon name="chartBar" size="sm" />
       <span class="text-xs">{{ t('admin.channelMonitor.adjustAvailability.action') }}</span>
     </button>
     <button
+      type="button"
       @click="$emit('delete', row)"
-      class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+      class="flex flex-col items-center gap-0.5 rounded-control p-1.5 text-ink-soft transition-colors hover:bg-danger-soft hover:text-danger dark:hover:bg-red-900/20 dark:hover:text-red-400"
     >
       <Icon name="trash" size="sm" />
       <span class="text-xs">{{ t('common.delete') }}</span>

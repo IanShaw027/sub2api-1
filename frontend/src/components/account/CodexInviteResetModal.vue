@@ -6,14 +6,14 @@
     @close="handleClose"
   >
     <div v-if="account" class="space-y-5">
-      <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex flex-col gap-3 rounded-control border border-line bg-page p-4 dark:border-dark-600 dark:bg-dark-700 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex items-center gap-3">
-          <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-emerald-500 text-white">
+          <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-control bg-success text-white">
             <Icon name="gift" size="md" :stroke-width="2" />
           </div>
           <div class="min-w-0">
-            <div class="truncate font-semibold text-gray-900 dark:text-white">{{ account.name }}</div>
-            <div class="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+            <div class="truncate font-semibold text-ink dark:text-white">{{ account.name }}</div>
+            <div class="mt-0.5 text-sm text-ink-soft dark:text-ink-soft">
               {{ t('admin.accounts.inviteResetSubtitle') }}
             </div>
           </div>
@@ -30,18 +30,18 @@
 
       <template v-else>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
-          <section class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-dark-600">
+          <section class="space-y-4 rounded-control border border-line p-4 dark:border-dark-600">
             <div class="flex items-center justify-between gap-3">
               <div>
-                <div class="text-sm font-medium text-gray-500 dark:text-gray-400">
+                <div class="text-sm font-medium text-ink-soft dark:text-ink-soft">
                   {{ t('admin.accounts.inviteResetAvailable') }}
                 </div>
                 <div class="mt-2 flex items-end gap-2">
-                  <span class="text-4xl font-bold text-gray-900 dark:text-white">{{ availableCount }}</span>
-                  <span class="pb-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.accounts.inviteResetAvailableUnit') }}</span>
+                  <span class="text-4xl font-bold text-ink dark:text-white">{{ availableCount }}</span>
+                  <span class="pb-1 text-sm text-ink-soft dark:text-ink-soft">{{ t('admin.accounts.inviteResetAvailableUnit') }}</span>
                 </div>
               </div>
-              <div class="flex h-12 w-12 items-center justify-center rounded-lg bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300">
+              <div class="flex h-12 w-12 items-center justify-center rounded-control bg-brand-100 text-brand-700 dark:bg-brand/15 dark:text-brand-300">
                 <Icon name="refresh" size="md" :stroke-width="2" />
               </div>
             </div>
@@ -50,26 +50,26 @@
               <div
                 v-for="(credit, index) in availableCredits"
                 :key="credit.id"
-                class="rounded-lg bg-gray-50 p-3 text-sm text-gray-600 dark:bg-dark-800 dark:text-gray-300"
+                class="rounded-control bg-page p-3 text-sm text-ink-body dark:bg-dark-800 dark:text-ink-body"
               >
-                <div class="font-medium text-gray-900 dark:text-white">{{ creditTitle(credit) }} #{{ index + 1 }}</div>
+                <div class="font-medium text-ink dark:text-white">{{ creditTitle(credit) }} #{{ index + 1 }}</div>
                 <div class="mt-1">{{ creditDescription(credit) }}</div>
               </div>
             </div>
 
-            <div v-else class="rounded-lg border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400">
+            <div v-else class="rounded-control border border-dashed border-line p-4 text-sm text-ink-soft dark:border-dark-600 dark:text-ink-soft">
               {{ t('admin.accounts.inviteResetNoCredits') }}
             </div>
 
             <button
               type="button"
-              class="flex w-full items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-dark-600 dark:text-gray-200 dark:hover:bg-dark-700"
+              class="flex w-full items-center justify-between rounded-control border border-line px-3 py-2 text-left text-sm font-medium text-ink-body hover:bg-page dark:border-dark-600 dark:text-ink dark:hover:bg-dark-700"
               @click="showRules = !showRules"
             >
               <span>{{ t('admin.accounts.inviteResetRules') }}</span>
               <Icon name="chevronDown" size="sm" :class="['transition-transform', showRules && 'rotate-180']" />
             </button>
-            <div v-if="showRules" class="rounded-lg bg-gray-50 p-3 text-sm text-gray-600 dark:bg-dark-800 dark:text-gray-300">
+            <div v-if="showRules" class="rounded-control bg-page p-3 text-sm text-ink-body dark:bg-dark-800 dark:text-ink-body">
               <ul v-if="rules.length > 0" class="list-disc space-y-1 pl-5">
                 <li v-for="rule in rules" :key="rule">{{ rule }}</li>
               </ul>
@@ -77,7 +77,7 @@
             </div>
           </section>
 
-          <section class="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-dark-600">
+          <section class="space-y-4 rounded-control border border-line p-4 dark:border-dark-600">
             <div>
               <label class="input-label" for="codex-invite-reset-emails">
                 {{ t('admin.accounts.inviteResetInviteEmails') }}
@@ -89,21 +89,21 @@
                 class="input mt-2 min-h-[180px] resize-y font-mono text-sm leading-6"
                 :placeholder="t('admin.accounts.inviteResetPlaceholder')"
               ></textarea>
-              <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              <p class="mt-2 text-xs text-ink-soft dark:text-ink-soft">
                 {{ t('admin.accounts.inviteResetEmailHint', { max: maxEmails }) }}
               </p>
             </div>
 
-            <label class="flex items-start gap-2 rounded-lg border border-gray-200 p-3 text-sm text-gray-700 dark:border-dark-600 dark:text-gray-300">
+            <label class="flex items-start gap-2 rounded-control border border-line p-3 text-sm text-ink-body dark:border-dark-600 dark:text-ink-body">
               <input
                 v-model="consentConfirmed"
                 type="checkbox"
-                class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                class="mt-0.5 h-4 w-4 rounded border-line text-brand-600 focus:ring-accent/25"
               />
               <span>{{ t('admin.accounts.inviteResetConsent') }}</span>
             </label>
 
-            <div v-if="message" :class="['rounded-lg p-3 text-sm', messageClass]">
+            <div v-if="message" :class="['rounded-control p-3 text-sm', messageClass]">
               {{ message }}
             </div>
 
@@ -119,10 +119,10 @@
           </section>
         </div>
 
-        <section class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
+        <section class="rounded-control border border-line p-4 dark:border-dark-600">
           <button
             type="button"
-            class="flex w-full items-center justify-between text-left text-sm font-medium text-gray-700 dark:text-gray-200"
+            class="flex w-full items-center justify-between text-left text-sm font-medium text-ink-body dark:text-ink-body"
             @click="toggleHistory"
           >
             <span>{{ t('admin.accounts.inviteResetHistoryTitle') }}</span>
@@ -133,21 +133,21 @@
             <div v-if="historyLoading" class="flex items-center justify-center py-6">
               <LoadingSpinner />
             </div>
-            <div v-else-if="history.length === 0" class="rounded-lg border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400">
+            <div v-else-if="history.length === 0" class="rounded-control border border-dashed border-line p-4 text-sm text-ink-soft dark:border-dark-600 dark:text-ink-soft">
               {{ t('admin.accounts.inviteResetHistoryEmpty') }}
             </div>
             <ul v-else class="space-y-2">
               <li
                 v-for="entry in history"
                 :key="entry.id"
-                class="flex items-start gap-3 rounded-lg bg-gray-50 p-3 text-sm dark:bg-dark-800"
+                class="flex items-start gap-3 rounded-control bg-page p-3 text-sm dark:bg-dark-800"
               >
                 <span
                   :class="[
                     'mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium',
                     entry.action_type === 'invite'
-                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
-                      : 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300'
+                      ? 'bg-accent-100 text-accent-700 dark:bg-accent-900/40 dark:text-accent-300'
+                      : 'bg-warning-soft text-warning dark:bg-warning/15 dark:text-warning'
                   ]"
                 >
                   {{ entry.action_type === 'invite' ? t('admin.accounts.inviteResetHistoryActionInvite') : t('admin.accounts.inviteResetHistoryActionConsume') }}
@@ -158,24 +158,24 @@
                       :class="[
                         'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium',
                         entry.success
-                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                          : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                          ? 'bg-success-soft text-success dark:bg-success/15 dark:text-success'
+                          : 'bg-danger-soft text-danger dark:bg-danger/15 dark:text-danger'
                       ]"
                     >
                       {{ entry.success ? t('admin.accounts.inviteResetHistorySuccess') : t('admin.accounts.inviteResetHistoryFailed') }}
                     </span>
-                    <span class="text-xs text-gray-400 dark:text-gray-500">{{ formatHistoryTime(entry.created_at) }}</span>
+                    <span class="text-xs text-ink-faint">{{ formatHistoryTime(entry.created_at) }}</span>
                   </div>
-                  <div v-if="entry.action_type === 'invite' && entry.emails?.length" class="mt-1 break-all text-gray-600 dark:text-gray-300">
+                  <div v-if="entry.action_type === 'invite' && entry.emails?.length" class="mt-1 break-all text-ink-body dark:text-ink-body">
                     {{ entry.emails.join(', ') }}
                   </div>
-                  <div v-if="entry.action_type === 'invite' && entry.failed_emails?.length" class="mt-0.5 break-all text-xs text-red-600 dark:text-red-400">
+                  <div v-if="entry.action_type === 'invite' && entry.failed_emails?.length" class="mt-0.5 break-all text-xs text-danger dark:text-danger">
                     {{ t('admin.accounts.inviteResetHistoryFailedEmails', { emails: entry.failed_emails.join(', ') }) }}
                   </div>
-                  <div v-if="entry.action_type === 'consume' && entry.credit_id" class="mt-1 break-all font-mono text-xs text-gray-500 dark:text-gray-400">
+                  <div v-if="entry.action_type === 'consume' && entry.credit_id" class="mt-1 break-all font-mono text-xs text-ink-soft dark:text-ink-soft">
                     {{ entry.credit_id }}
                   </div>
-                  <div v-if="entry.message" class="mt-0.5 break-all text-xs text-gray-500 dark:text-gray-400">
+                  <div v-if="entry.message" class="mt-0.5 break-all text-xs text-ink-soft dark:text-ink-soft">
                     {{ entry.message }}
                   </div>
                 </div>
@@ -253,12 +253,12 @@ const rules = computed(() => status.value?.eligibility_rules ?? [])
 
 const messageClass = computed(() => {
   if (messageType.value === 'success') {
-    return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300'
+    return 'bg-success-soft text-success dark:bg-success/10 dark:text-success'
   }
   if (messageType.value === 'error') {
-    return 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-300'
+    return 'bg-danger-soft text-danger dark:bg-danger/10 dark:text-danger'
   }
-  return 'bg-gray-50 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
+  return 'bg-page text-ink-body dark:bg-dark-700 dark:text-ink-body'
 })
 
 const creditTitle = (credit: CodexInviteResetCredit) => {

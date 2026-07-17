@@ -8,19 +8,19 @@
     <div v-if="account" class="space-y-4">
       <!-- Account Info -->
       <div
-        class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700"
+        class="rounded-control border border-line bg-page p-4 dark:border-dark-600 dark:bg-dark-700"
       >
         <div class="flex items-center gap-3">
           <div
             :class="[
-              'flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br',
+              'flex h-10 w-10 items-center justify-center rounded-control bg-gradient-to-br',
               isOpenAILike
-                ? 'from-green-500 to-green-600'
+                ? 'from-success to-brand-600'
                 : isGemini
-                  ? 'from-blue-500 to-blue-600'
+                  ? 'from-accent-500 to-accent-600'
                   : isAntigravity
-                    ? 'from-purple-500 to-purple-600'
-                    : 'from-orange-500 to-orange-600'
+                    ? 'from-brand-500 to-brand-600'
+                    : 'from-warning to-brand-600'
             ]"
           >
             <PlatformIcon
@@ -31,10 +31,10 @@
             />
           </div>
           <div>
-            <span class="block font-semibold text-gray-900 dark:text-white">{{
+            <span class="block font-semibold text-ink dark:text-white">{{
               account.name
             }}</span>
-            <span class="text-sm text-gray-500 dark:text-gray-400">
+            <span class="text-sm text-ink-soft dark:text-ink-soft">
               {{
                 isOpenAI
                   ? t('admin.accounts.openaiAccount')
@@ -58,9 +58,9 @@
               v-model="addMethod"
               type="radio"
               value="oauth"
-              class="mr-2 text-primary-600 focus:ring-primary-500"
+              class="mr-2 text-brand-600 focus:ring-accent/25"
             />
-            <span class="text-sm text-gray-700 dark:text-gray-300">{{
+            <span class="text-sm text-ink-body dark:text-ink-body">{{
               t('admin.accounts.types.oauth')
             }}</span>
           </label>
@@ -69,9 +69,9 @@
               v-model="addMethod"
               type="radio"
               value="setup-token"
-              class="mr-2 text-primary-600 focus:ring-primary-500"
+              class="mr-2 text-brand-600 focus:ring-accent/25"
             />
-            <span class="text-sm text-gray-700 dark:text-gray-300">{{
+            <span class="text-sm text-ink-body dark:text-ink-body">{{
               t('admin.accounts.setupTokenLongLived')
             }}</span>
           </label>
@@ -79,19 +79,19 @@
       </fieldset>
 
       <!-- Gemini OAuth Type Display (read-only) -->
-      <div v-if="isGemini" class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700">
-        <div class="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+      <div v-if="isGemini" class="rounded-control border border-line bg-page p-4 dark:border-dark-600 dark:bg-dark-700">
+        <div class="mb-2 text-sm font-medium text-ink-body dark:text-ink-body">
           {{ t('admin.accounts.oauth.gemini.oauthTypeLabel') }}
         </div>
         <div class="flex items-center gap-3">
           <div
             :class="[
-              'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-control',
               geminiOAuthType === 'google_one'
                 ? 'bg-purple-500 text-white'
                 : geminiOAuthType === 'code_assist'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-gray-400 text-white'
+                  ? 'bg-accent-500 text-white'
+                  : 'bg-ink dark:bg-dark-700 text-white'
             ]"
           >
             <Icon v-if="geminiOAuthType === 'google_one'" name="user" size="sm" />
@@ -99,7 +99,7 @@
             <Icon v-else name="shield" size="sm" />
           </div>
           <div>
-            <span class="block text-sm font-medium text-gray-900 dark:text-white">
+            <span class="block text-sm font-medium text-ink dark:text-white">
               {{
                 geminiOAuthType === 'google_one'
                   ? t('admin.accounts.oauth.gemini.googleOneTitle')
@@ -108,7 +108,7 @@
                     : t('common.unknown')
               }}
             </span>
-            <span class="text-xs text-gray-500 dark:text-gray-400">
+            <span class="text-xs text-ink-soft dark:text-ink-soft">
               {{
                 geminiOAuthType === 'google_one'
                   ? t('admin.accounts.oauth.gemini.googleOneDesc')

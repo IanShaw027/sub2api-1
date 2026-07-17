@@ -7,7 +7,7 @@
   >
     <div class="space-y-5">
       <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <p class="text-sm text-gray-500 dark:text-gray-400">
+        <p class="text-sm text-ink-soft">
           {{ t('admin.tlsFingerprintProfiles.description') }}
         </p>
         <div class="flex flex-wrap items-center gap-2">
@@ -26,14 +26,14 @@
         </div>
       </div>
 
-      <div class="border-b border-gray-200 dark:border-dark-600">
+      <div class="border-b border-line dark:border-dark-600">
         <nav class="-mb-px flex gap-6">
           <button
             type="button"
             class="border-b-2 px-1 pb-2 text-sm font-medium transition-colors"
             :class="activeTab === 'profiles'
-              ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-              : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
+              ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+              : 'border-transparent text-ink-soft hover:border-line hover:text-ink-body dark:hover:text-ink-body'"
             @click="activeTab = 'profiles'"
           >
             {{ t('admin.tlsFingerprintProfiles.tabs.profiles') }}
@@ -42,8 +42,8 @@
             type="button"
             class="border-b-2 px-1 pb-2 text-sm font-medium transition-colors"
             :class="activeTab === 'capture'
-              ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-              : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
+              ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+              : 'border-transparent text-ink-soft hover:border-line hover:text-ink-body dark:hover:text-ink-body'"
             @click="activeTab = 'capture'"
           >
             {{ t('admin.tlsFingerprintProfiles.tabs.capture') }}
@@ -51,13 +51,13 @@
         </nav>
       </div>
 
-      <section v-show="activeTab === 'capture'" class="rounded-xl border border-blue-200 bg-blue-50/70 p-4 dark:border-blue-900/60 dark:bg-blue-950/20">
+      <section v-show="activeTab === 'capture'" class="rounded-card border border-accent-200 bg-accent-50/70 p-4 shadow-xs dark:border-accent-900/60 dark:bg-accent-950/20">
         <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h4 class="text-sm font-semibold text-blue-950 dark:text-blue-100">
+            <h4 class="text-sm font-semibold text-accent-900 dark:text-accent-100">
               {{ t('admin.tlsFingerprintProfiles.capture.title') }}
             </h4>
-            <p class="mt-1 text-xs text-blue-700 dark:text-blue-300">
+            <p class="mt-1 text-xs text-accent-700 dark:text-accent-300">
               {{ t('admin.tlsFingerprintProfiles.capture.description') }}
             </p>
           </div>
@@ -132,18 +132,18 @@
             <p class="input-hint text-xs">{{ t('admin.tlsFingerprintProfiles.capture.uaKeywordsHint') }}</p>
           </div>
 
-          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-dark-600 dark:bg-dark-800">
+          <label class="flex items-start gap-3 rounded-control border border-line bg-card px-3 py-2 dark:border-dark-600 dark:bg-dark-800">
             <input
               v-model="captureForm.storeBody"
               type="checkbox"
-              class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              class="mt-0.5 h-4 w-4 rounded border-line text-brand-600 focus:ring-accent/25"
               data-testid="capture-store-body"
             />
             <span>
-              <span class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+              <span class="block text-xs font-medium text-ink-body">
                 {{ t('admin.tlsFingerprintProfiles.capture.storeBody') }}
               </span>
-              <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+              <span class="mt-0.5 block text-xs text-ink-soft">
                 {{ t('admin.tlsFingerprintProfiles.capture.storeBodyHint') }}
               </span>
             </span>
@@ -152,7 +152,7 @@
           <div>
             <div class="mb-2 flex items-center justify-between">
               <label class="input-label text-xs">{{ t('admin.tlsFingerprintProfiles.capture.targets') }}</label>
-              <span class="text-xs text-gray-500 dark:text-gray-400">
+              <span class="text-xs text-ink-soft">
                 {{ t('admin.tlsFingerprintProfiles.capture.targetsHint') }}
               </span>
             </div>
@@ -160,9 +160,9 @@
               <label
                 v-for="target in captureTargets"
                 :key="target.platform"
-                class="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 dark:border-dark-600 dark:bg-dark-800"
+                class="flex items-center justify-between gap-2 rounded-control border border-line bg-card px-3 py-2 dark:border-dark-600 dark:bg-dark-800"
               >
-                <span class="min-w-0 truncate text-xs font-medium text-gray-700 dark:text-gray-300">
+                <span class="min-w-0 truncate text-xs font-medium text-ink-body">
                   {{ target.label }}
                 </span>
                 <input
@@ -173,7 +173,7 @@
                   class="input w-16 flex-shrink-0 px-2 py-1 text-center text-sm"
                 />
               </label>
-              <label class="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-white px-3 py-2 dark:border-dark-600 dark:bg-dark-800">
+              <label class="flex items-center gap-2 rounded-control border border-dashed border-line bg-card px-3 py-2 dark:border-dark-600 dark:bg-dark-800">
                 <input
                   v-model="customCaptureTarget.platform"
                   type="text"
@@ -194,11 +194,11 @@
 
         <!-- Detail view: shown after a capture task is started/selected -->
         <div v-else class="space-y-3">
-          <div v-if="captureLoading" class="flex items-center justify-center rounded-lg bg-white py-8 dark:bg-dark-800">
-            <Icon name="refresh" size="lg" class="animate-spin text-gray-400" />
+          <div v-if="captureLoading" class="flex items-center justify-center rounded-control bg-card py-8 dark:bg-dark-800">
+            <Icon name="refresh" size="lg" class="animate-spin text-ink-faint" />
           </div>
 
-          <div v-else-if="captureTasks.length === 0" class="rounded-lg bg-white p-6 text-center text-sm text-gray-500 dark:bg-dark-800 dark:text-gray-400">
+          <div v-else-if="captureTasks.length === 0" class="rounded-control bg-card p-6 text-center text-sm text-ink-soft dark:bg-dark-800">
             {{ t('admin.tlsFingerprintProfiles.capture.noTasks') }}
           </div>
 
@@ -209,17 +209,17 @@
                 :key="task.id"
                 type="button"
                 :class="[
-                  'w-56 flex-shrink-0 rounded-lg border p-3 text-left transition',
+                  'w-56 flex-shrink-0 rounded-control border p-3 text-left transition',
                   selectedTask?.id === task.id
-                    ? 'border-primary-500 bg-primary-50 dark:border-primary-500 dark:bg-primary-900/20'
-                    : 'border-gray-200 bg-white hover:border-primary-300 dark:border-dark-600 dark:bg-dark-800'
+                    ? 'border-brand-500 bg-brand-50 dark:border-brand-500 dark:bg-brand-900/20'
+                    : 'border-line bg-card hover:border-brand-300 dark:border-dark-600 dark:bg-dark-800'
                 ]"
                 @click="selectTask(task.id)"
               >
                 <div class="flex items-start justify-between gap-2">
                   <div class="min-w-0">
-                    <div class="truncate text-sm font-semibold text-gray-900 dark:text-white">{{ task.name }}</div>
-                    <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ formatDateTime(task.created_at) }}</div>
+                    <div class="truncate text-sm font-semibold text-ink dark:text-white">{{ task.name }}</div>
+                    <div class="mt-1 text-xs text-ink-soft">{{ formatDateTime(task.created_at) }}</div>
                   </div>
                   <span :class="['badge flex-shrink-0 whitespace-nowrap text-xs', captureStatusClass(task.status)]">
                     {{ t(`admin.tlsFingerprintProfiles.capture.status.${task.status}`) }}
@@ -229,7 +229,7 @@
                   <div
                     v-for="platform in Object.keys(task.targets || {})"
                     :key="platform"
-                    class="flex items-center justify-between gap-3 text-xs text-gray-600 dark:text-gray-300"
+                    class="flex items-center justify-between gap-3 text-xs text-ink-body"
                   >
                     <span>{{ platform }}</span>
                     <span>{{ task.counts?.[platform] || 0 }} / {{ task.targets?.[platform] || 0 }}</span>
@@ -238,10 +238,10 @@
               </button>
             </div>
 
-            <div v-if="selectedTask" class="rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-600 dark:bg-dark-800">
+            <div v-if="selectedTask" class="rounded-control border border-line bg-card p-3 dark:border-dark-600 dark:bg-dark-800">
               <div class="mb-3">
-                <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ selectedTask.name }}</div>
-                <div class="text-xs text-gray-500 dark:text-gray-400">
+                <div class="text-sm font-semibold text-ink dark:text-white">{{ selectedTask.name }}</div>
+                <div class="text-xs text-ink-soft">
                   {{ t('admin.tlsFingerprintProfiles.capture.selectedTaskHint') }}
                 </div>
               </div>
@@ -275,18 +275,18 @@
                 </button>
               </div>
 
-              <div class="mb-3 space-y-1.5 rounded-md bg-gray-50 p-3 text-xs dark:bg-dark-700">
+              <div class="mb-3 space-y-1.5 rounded-control bg-page p-3 text-xs dark:bg-dark-700">
                 <div
                   v-for="row in captureInfoRows"
                   :key="row.label"
                   class="flex items-center gap-3"
                 >
-                  <span class="w-24 flex-shrink-0 font-medium text-gray-500 dark:text-gray-400">{{ row.label }}</span>
-                  <span class="min-w-0 flex-1 truncate font-mono text-gray-700 dark:text-gray-200">{{ row.value }}</span>
+                  <span class="w-24 flex-shrink-0 font-medium text-ink-soft">{{ row.label }}</span>
+                  <span class="min-w-0 flex-1 truncate font-mono text-ink-body dark:text-ink-body">{{ row.value }}</span>
                   <button
                     type="button"
                     @click="copyText(row.value)"
-                    class="flex-shrink-0 rounded p-1 text-gray-400 transition hover:bg-gray-200 hover:text-primary-600 dark:hover:bg-dark-600 dark:hover:text-primary-400"
+                    class="flex-shrink-0 rounded p-1 text-ink-faint transition hover:bg-page hover:text-brand-600 dark:hover:bg-dark-600 dark:hover:text-brand-400"
                     :title="t('common.copy')"
                   >
                     <Icon name="copy" size="sm" />
@@ -295,16 +295,16 @@
               </div>
 
               <div v-if="samplesLoading" class="flex items-center justify-center py-6">
-                <Icon name="refresh" size="lg" class="animate-spin text-gray-400" />
+                <Icon name="refresh" size="lg" class="animate-spin text-ink-faint" />
               </div>
 
-              <div v-else-if="captureSamples.length === 0" class="py-4 text-center text-sm text-gray-500 dark:text-gray-400">
+              <div v-else-if="captureSamples.length === 0" class="py-4 text-center text-sm text-ink-soft">
                 {{ t('admin.tlsFingerprintProfiles.capture.noSamples') }}
               </div>
 
-              <div v-else class="max-h-[28rem] overflow-auto rounded-lg border border-gray-200 dark:border-dark-600">
-                <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
-                  <thead class="sticky top-0 bg-gray-50 dark:bg-dark-700">
+              <div v-else class="max-h-[28rem] overflow-auto rounded-card border border-line dark:border-dark-600">
+                <table class="min-w-full divide-y divide-line dark:divide-dark-700">
+                  <thead class="sticky top-0 bg-page dark:bg-dark-700">
                     <tr>
                       <th class="w-8 px-2 py-2">
                         <input
@@ -313,44 +313,44 @@
                           @change="toggleAllSamples(($event.target as HTMLInputElement).checked)"
                         />
                       </th>
-                      <th class="px-2 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+                      <th class="px-2 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                         {{ t('admin.tlsFingerprintProfiles.columns.platform') }}
                       </th>
-                      <th class="px-2 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+                      <th class="px-2 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                         {{ t('admin.tlsFingerprintProfiles.capture.userAgent') }}
                       </th>
-                      <th class="px-2 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+                      <th class="px-2 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                         {{ t('admin.tlsFingerprintProfiles.capture.originator') }}
                       </th>
-                      <th class="px-2 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+                      <th class="px-2 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                         {{ t('admin.tlsFingerprintProfiles.capture.hash') }}
                       </th>
-                      <th class="px-2 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+                      <th class="px-2 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                         {{ t('admin.tlsFingerprintProfiles.capture.details') }}
                       </th>
                     </tr>
                   </thead>
-                  <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-800">
+                  <tbody class="divide-y divide-line bg-card dark:divide-dark-700 dark:bg-dark-800">
                     <tr v-for="sample in captureSamples" :key="sample.id">
                       <td class="px-2 py-2">
                         <input v-model="selectedSampleIDs" type="checkbox" :value="sample.id" />
                       </td>
-                      <td class="px-2 py-2 text-xs text-gray-700 dark:text-gray-300">{{ sample.platform || 'shared' }}</td>
+                      <td class="px-2 py-2 text-xs text-ink-body">{{ sample.platform || 'shared' }}</td>
                       <td class="px-2 py-2">
-                        <div class="max-w-sm truncate text-xs text-gray-700 dark:text-gray-300">{{ sample.user_agent || '—' }}</div>
+                        <div class="max-w-sm truncate text-xs text-ink-body">{{ sample.user_agent || '—' }}</div>
                       </td>
                       <td class="px-2 py-2">
-                        <div class="max-w-xs truncate text-xs text-gray-700 dark:text-gray-300">{{ sample.originator || '—' }}</div>
+                        <div class="max-w-xs truncate text-xs text-ink-body">{{ sample.originator || '—' }}</div>
                       </td>
                       <td class="px-2 py-2">
-                        <code class="text-xs text-gray-500 dark:text-gray-400">{{ sample.fingerprint_hash.slice(0, 12) }}</code>
+                        <code class="text-xs text-ink-soft">{{ sample.fingerprint_hash.slice(0, 12) }}</code>
                       </td>
                       <td class="px-2 py-2">
                         <details class="text-xs">
-                          <summary class="cursor-pointer text-primary-600 dark:text-primary-400">
+                          <summary class="cursor-pointer text-brand-600 dark:text-brand-400">
                             {{ t('admin.tlsFingerprintProfiles.capture.viewDetails') }}
                           </summary>
-                          <pre class="mt-2 max-h-56 overflow-auto rounded bg-gray-950 p-2 text-[11px] text-gray-100">{{ formatSampleDetail(sample) }}</pre>
+                          <pre class="mt-2 max-h-56 overflow-auto rounded bg-ink dark:bg-dark-700 p-2 text-[11px] text-white">{{ formatSampleDetail(sample) }}</pre>
                         </details>
                       </td>
                     </tr>
@@ -365,7 +365,7 @@
       <div v-show="activeTab === 'profiles'" class="space-y-5">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex flex-wrap items-center gap-2">
-          <label class="text-xs font-medium text-gray-600 dark:text-gray-300">
+          <label class="text-xs font-medium text-ink-body">
             {{ t('admin.tlsFingerprintProfiles.filterPlatform') }}
           </label>
           <select v-model="profilePlatformFilter" class="input w-36 text-sm">
@@ -393,91 +393,91 @@
             :placeholder="t('admin.tlsFingerprintProfiles.filterNamePlaceholder')"
           />
         </div>
-        <div class="text-xs text-gray-500 dark:text-gray-400">
+        <div class="text-xs text-ink-soft">
           {{ t('admin.tlsFingerprintProfiles.profileCount', { count: filteredProfiles.length }) }}
         </div>
       </div>
 
       <div v-if="loading" class="flex items-center justify-center py-8">
-        <Icon name="refresh" size="lg" class="animate-spin text-gray-400" />
+        <Icon name="refresh" size="lg" class="animate-spin text-ink-faint" />
       </div>
 
       <div v-else-if="filteredProfiles.length === 0" class="py-8 text-center">
-        <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 dark:bg-dark-700">
-          <Icon name="shield" size="lg" class="text-gray-400" />
+        <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-line dark:bg-dark-700">
+          <Icon name="shield" size="lg" class="text-ink-faint" />
         </div>
-        <h4 class="mb-1 text-sm font-medium text-gray-900 dark:text-white">
+        <h4 class="mb-1 text-sm font-medium text-ink dark:text-white">
           {{ t('admin.tlsFingerprintProfiles.noProfiles') }}
         </h4>
-        <p class="text-sm text-gray-500 dark:text-gray-400">
+        <p class="text-sm text-ink-soft">
           {{ t('admin.tlsFingerprintProfiles.createFirstProfile') }}
         </p>
       </div>
 
-      <div v-else class="max-h-96 overflow-auto rounded-lg border border-gray-200 dark:border-dark-600">
-        <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
-          <thead class="sticky top-0 bg-gray-50 dark:bg-dark-700">
+      <div v-else class="max-h-96 overflow-auto rounded-card border border-line dark:border-dark-600">
+        <table class="min-w-full divide-y divide-line dark:divide-dark-700">
+          <thead class="sticky top-0 bg-page dark:bg-dark-700">
             <tr>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                 {{ t('admin.tlsFingerprintProfiles.columns.platform') }}
               </th>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                 {{ t('admin.tlsFingerprintProfiles.columns.transport') }}
               </th>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                 {{ t('admin.tlsFingerprintProfiles.columns.os') }}
               </th>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                 {{ t('admin.tlsFingerprintProfiles.columns.clientType') }}
               </th>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                 {{ t('admin.tlsFingerprintProfiles.columns.name') }}
               </th>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                 {{ t('admin.tlsFingerprintProfiles.columns.description') }}
               </th>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                 {{ t('admin.tlsFingerprintProfiles.columns.grease') }}
               </th>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                 {{ t('admin.tlsFingerprintProfiles.columns.alpn') }}
               </th>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">
+              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-ink-soft">
                 {{ t('admin.tlsFingerprintProfiles.columns.actions') }}
               </th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700 dark:bg-dark-800">
-            <tr v-for="profile in filteredProfiles" :key="profile.id" class="hover:bg-gray-50 dark:hover:bg-dark-700">
+          <tbody class="divide-y divide-line bg-card dark:divide-dark-700 dark:bg-dark-800">
+            <tr v-for="profile in filteredProfiles" :key="profile.id" class="hover:bg-page dark:hover:bg-dark-700">
               <td class="px-3 py-2">
                 <span class="badge badge-gray text-xs">{{ profile.platform || 'shared' }}</span>
               </td>
               <td class="px-3 py-2">
                 <span v-if="profile.transport" class="badge badge-primary text-xs">{{ profile.transport }}</span>
-                <span v-else class="text-xs text-gray-400 dark:text-gray-600">—</span>
+                <span v-else class="text-xs text-ink-faint dark:text-ink-soft">—</span>
               </td>
               <td class="px-3 py-2">
                 <span v-if="profile.os" class="badge badge-gray text-xs">{{ profile.os }}</span>
-                <span v-else class="text-xs text-gray-400 dark:text-gray-600">—</span>
+                <span v-else class="text-xs text-ink-faint dark:text-ink-soft">—</span>
               </td>
               <td class="px-3 py-2">
                 <span v-if="profile.client_type" class="badge badge-gray text-xs">{{ profile.client_type }}</span>
-                <span v-else class="text-xs text-gray-400 dark:text-gray-600">—</span>
+                <span v-else class="text-xs text-ink-faint dark:text-ink-soft">—</span>
               </td>
               <td class="px-3 py-2">
-                <div class="text-sm font-medium text-gray-900 dark:text-white">{{ profile.name }}</div>
+                <div class="text-sm font-medium text-ink dark:text-white">{{ profile.name }}</div>
               </td>
               <td class="px-3 py-2">
-                <div v-if="profile.description" class="max-w-xs truncate text-sm text-gray-500 dark:text-gray-400">
+                <div v-if="profile.description" class="max-w-xs truncate text-sm text-ink-soft">
                   {{ profile.description }}
                 </div>
-                <div v-else class="text-xs text-gray-400 dark:text-gray-600">—</div>
+                <div v-else class="text-xs text-ink-faint dark:text-ink-soft">—</div>
               </td>
               <td class="px-3 py-2">
                 <Icon
                   :name="profile.enable_grease ? 'check' : 'lock'"
                   size="sm"
-                  :class="profile.enable_grease ? 'text-green-500' : 'text-gray-400'"
+                  :class="profile.enable_grease ? 'text-success' : 'text-ink-faint'"
                 />
               </td>
               <td class="px-3 py-2">
@@ -489,24 +489,24 @@
                   >
                     {{ proto }}
                   </span>
-                  <span v-if="profile.alpn_protocols.length > 3" class="text-xs text-gray-500">
+                  <span v-if="profile.alpn_protocols.length > 3" class="text-xs text-ink-soft">
                     +{{ profile.alpn_protocols.length - 3 }}
                   </span>
                 </div>
-                <div v-else class="text-xs text-gray-400 dark:text-gray-600">—</div>
+                <div v-else class="text-xs text-ink-faint dark:text-ink-soft">—</div>
               </td>
               <td class="px-3 py-2">
                 <div class="flex items-center gap-1">
                   <button
                     @click="handleEdit(profile)"
-                    class="p-1 text-gray-500 hover:text-primary-600 dark:hover:text-primary-400"
+                    class="p-1 text-ink-soft hover:text-brand-600 dark:hover:text-brand-400"
                     :title="t('common.edit')"
                   >
                     <Icon name="edit" size="sm" />
                   </button>
                   <button
                     @click="handleDelete(profile)"
-                    class="p-1 text-gray-500 hover:text-red-600 dark:hover:text-red-400"
+                    class="p-1 text-ink-soft hover:text-danger dark:hover:text-danger"
                     :title="t('common.delete')"
                   >
                     <Icon name="trash" size="sm" />
@@ -549,14 +549,14 @@
             <button type="button" @click="parseYamlInput" class="btn btn-secondary btn-sm">
               {{ t('admin.tlsFingerprintProfiles.form.parseYaml') }}
             </button>
-            <p class="text-xs text-gray-500 dark:text-gray-400">
+            <p class="text-xs text-ink-soft">
               {{ t('admin.tlsFingerprintProfiles.form.pasteYamlHint') }}
-              <a :href="collectorURL" target="_blank" rel="noopener noreferrer" class="text-primary-600 underline hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300">{{ t('admin.tlsFingerprintProfiles.form.openCollector') }}</a>
+              <a :href="collectorURL" target="_blank" rel="noopener noreferrer" class="text-brand-600 underline hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300">{{ t('admin.tlsFingerprintProfiles.form.openCollector') }}</a>
             </p>
           </div>
         </div>
 
-        <hr class="border-gray-200 dark:border-dark-600" />
+        <hr class="border-line dark:border-dark-600" />
 
         <div class="grid grid-cols-2 gap-4">
           <div>
@@ -655,22 +655,22 @@
             type="button"
             @click="form.enable_grease = !form.enable_grease"
             :class="[
-              'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-              form.enable_grease ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent/25 focus:ring-offset-2',
+              form.enable_grease ? 'bg-brand-600' : 'bg-line dark:bg-dark-600'
             ]"
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-150 ease-in-out',
                 form.enable_grease ? 'translate-x-4' : 'translate-x-0'
               ]"
             />
           </button>
           <div>
-            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+            <span class="text-sm font-medium text-ink-body">
               {{ t('admin.tlsFingerprintProfiles.form.enableGrease') }}
             </span>
-            <p class="text-xs text-gray-500 dark:text-gray-400">
+            <p class="text-xs text-ink-soft">
               {{ t('admin.tlsFingerprintProfiles.form.enableGreaseHint') }}
             </p>
           </div>

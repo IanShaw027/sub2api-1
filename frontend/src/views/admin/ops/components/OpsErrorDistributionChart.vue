@@ -23,11 +23,11 @@ const { t } = useI18n()
 
 const isDarkMode = computed(() => document.documentElement.classList.contains('dark'))
 const colors = computed(() => ({
-  blue: '#3b82f6',
+  blue: '#2f7bf6',
   red: '#ef4444',
   orange: '#f59e0b',
   gray: '#9ca3af',
-  text: isDarkMode.value ? '#9ca3af' : '#6b7280'
+  text: isDarkMode.value ? '#94a3b8' : '#64748b'
 }))
 
 const totalSlaErrors = computed(() =>
@@ -60,7 +60,7 @@ function buildOwnerCategories(): ErrorCategory[] {
     if (!owner || !Number.isFinite(count) || count <= 0) continue
 
     if (owner === 'provider') out.push({ label: t('admin.ops.errorDetails.owner.provider'), count, color: colors.value.orange })
-    else if (owner === 'account') out.push({ label: t('admin.ops.errorDetails.owner.account'), count, color: '#06b6d4' })
+    else if (owner === 'account') out.push({ label: t('admin.ops.errorDetails.owner.account'), count, color: '#1fa2d6' })
     else if (owner === 'client') out.push({ label: t('admin.ops.errorDetails.owner.client'), count, color: colors.value.blue })
     else if (owner === 'platform') out.push({ label: t('admin.ops.errorDetails.owner.platform'), count, color: colors.value.red })
     else out.push({ label: t('admin.ops.other'), count, color: colors.value.gray })
@@ -125,19 +125,19 @@ const options = computed(() => ({
   plugins: {
     legend: { display: false },
     tooltip: {
-      backgroundColor: isDarkMode.value ? '#1f2937' : '#ffffff',
-      titleColor: isDarkMode.value ? '#f3f4f6' : '#111827',
-      bodyColor: isDarkMode.value ? '#d1d5db' : '#4b5563'
+      backgroundColor: isDarkMode.value ? '#1e293b' : '#ffffff',
+      titleColor: isDarkMode.value ? '#e2e8f0' : '#16314f',
+      bodyColor: isDarkMode.value ? '#cbd5e1' : '#334a66'
     }
   }
 }))
 </script>
 
 <template>
-  <div class="flex h-full flex-col rounded-3xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-dark-800 dark:ring-dark-700">
+  <div class="flex h-full flex-col rounded-3xl bg-card p-6 shadow-xs ring-1 ring-line dark:bg-dark-800 dark:ring-dark-700">
     <div class="mb-4 flex items-center justify-between">
-      <h3 class="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white">
-        <svg class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <h3 class="flex items-center gap-2 text-sm font-bold text-ink dark:text-white">
+        <svg class="h-4 w-4 text-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path
             stroke-linecap="round"
             stroke-linejoin="round"
@@ -150,7 +150,7 @@ const options = computed(() => ({
       </h3>
       <button
         type="button"
-        class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-2 py-1 text-[11px] font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800"
+        class="inline-flex items-center rounded-lg border border-line bg-card px-2 py-1 text-[11px] font-semibold text-ink-soft hover:bg-page disabled:opacity-50 dark:border-dark-700 dark:bg-dark-900 dark:hover:bg-dark-800"
         :disabled="state !== 'ready'"
         :title="t('admin.ops.errorTrend')"
         @click="emit('openDetails')"
@@ -165,31 +165,31 @@ const options = computed(() => ({
           <Doughnut :data="chartData" :options="{ ...options, cutout: '65%' }" />
         </div>
         <div class="mt-4 flex flex-col items-center gap-2">
-          <div v-if="topReason" class="text-xs font-bold text-gray-900 dark:text-white">
+          <div v-if="topReason" class="text-xs font-bold text-ink dark:text-white">
             {{ t('admin.ops.top') }}: <span :style="{ color: topReason.color }">{{ topReason.label }}</span>
           </div>
           <div
             v-if="recoveredTelemetryTotal > 0"
-            class="rounded-full bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20"
+            class="rounded-full bg-accent-50 px-2 py-1 text-[11px] font-semibold text-accent-700 ring-1 ring-accent/20 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20"
           >
             {{ t('admin.ops.recoveredTelemetry') }}: {{ recoveredTelemetryTotal }}
           </div>
           <div class="flex flex-wrap justify-center gap-3">
             <div v-for="item in categories" :key="item.label" class="flex items-center gap-1.5 text-xs">
               <span class="h-2 w-2 rounded-full" :style="{ backgroundColor: item.color }"></span>
-              <span class="text-gray-500 dark:text-gray-400">{{ item.label }} {{ item.count }}</span>
+              <span class="text-ink-soft">{{ item.label }} {{ item.count }}</span>
             </div>
           </div>
         </div>
       </div>
 
       <div v-else class="flex h-full flex-col items-center justify-center gap-3">
-        <div v-if="state === 'loading'" class="animate-pulse text-sm text-gray-400">{{ t('common.loading') }}</div>
+        <div v-if="state === 'loading'" class="animate-pulse text-sm text-ink-faint">{{ t('common.loading') }}</div>
         <template v-else>
           <EmptyState :title="t('common.noData')" :description="t('admin.ops.charts.emptyError')" />
           <div
             v-if="recoveredTelemetryTotal > 0"
-            class="rounded-full bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700 ring-1 ring-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20"
+            class="rounded-full bg-accent-50 px-2 py-1 text-[11px] font-semibold text-accent-700 ring-1 ring-accent/20 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20"
           >
             {{ t('admin.ops.recoveredTelemetry') }}: {{ recoveredTelemetryTotal }}
           </div>

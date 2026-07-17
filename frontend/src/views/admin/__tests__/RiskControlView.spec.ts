@@ -399,7 +399,7 @@ describe('admin RiskControlView', () => {
     await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
     const activeTab = findButtonByText(wrapper, 'admin.riskControl.tabs.basic')
 
-    expect(activeTab.classes()).toContain('dark:bg-primary-600')
+    expect(activeTab.classes()).toContain('dark:bg-brand-600')
     expect(activeTab.classes()).toContain('dark:text-white')
   })
 

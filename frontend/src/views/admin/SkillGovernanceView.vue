@@ -45,16 +45,16 @@
                 <div class="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    class="text-left font-medium text-gray-900 hover:text-primary-600 dark:text-white dark:hover:text-primary-300"
+                    class="text-left font-medium text-ink hover:text-brand-600 dark:text-white dark:hover:text-brand-300"
                     @click="selectSkill(row)"
                   >
                     {{ row.skill_name }}
                   </button>
-                  <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+                  <span class="rounded-full bg-line px-2 py-0.5 text-xs text-ink-soft dark:bg-dark-700 dark:text-dark-300">
                     {{ row.current_version }}
                   </span>
                 </div>
-                <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                <div class="mt-1 text-xs text-ink-soft dark:text-dark-400">
                   {{ row.skill_slug }}
                   <span v-if="row.category"> · {{ row.category }}</span>
                 </div>
@@ -62,7 +62,7 @@
             </template>
 
             <template #cell-author_name="{ value }">
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ value || '-' }}</span>
+              <span class="text-sm text-ink-body dark:text-dark-300">{{ value || '-' }}</span>
             </template>
 
             <template #cell-latest_review_status="{ value }">
@@ -78,19 +78,19 @@
             </template>
 
             <template #cell-requests_24h="{ value }">
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ Number(value).toLocaleString() }}</span>
+              <span class="text-sm text-ink-body dark:text-dark-300">{{ Number(value).toLocaleString() }}</span>
             </template>
 
             <template #cell-success_rate="{ value }">
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatPercent(Number(value)) }}</span>
+              <span class="text-sm text-ink-body dark:text-dark-300">{{ formatPercent(Number(value)) }}</span>
             </template>
 
             <template #cell-revenue_30d="{ value }">
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ formatCurrency(Number(value)) }}</span>
+              <span class="text-sm text-ink-body dark:text-dark-300">{{ formatCurrency(Number(value)) }}</span>
             </template>
 
             <template #cell-updated_at="{ value }">
-              <span class="text-sm text-gray-500 dark:text-gray-400">{{ formatTime(value) }}</span>
+              <span class="text-sm text-ink-soft dark:text-dark-400">{{ formatTime(value) }}</span>
             </template>
 
             <template #cell-actions="{ row }">
@@ -135,17 +135,17 @@
       </TablePageLayout>
 
       <div class="grid gap-6 xl:grid-cols-[1.3fr_0.9fr]">
-        <div class="card border border-gray-200 p-5 dark:border-dark-700">
+        <div class="card border border-line p-5 dark:border-dark-700">
           <template v-if="selectedSkill">
             <div class="flex flex-wrap items-start justify-between gap-4">
               <div class="min-w-0">
                 <div class="flex flex-wrap items-center gap-2">
-                  <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ selectedSkill.skill_name }}</h3>
-                  <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300">
+                  <h3 class="text-base font-semibold text-ink dark:text-white">{{ selectedSkill.skill_name }}</h3>
+                  <span class="rounded-full bg-line px-2 py-0.5 text-xs text-ink-soft dark:bg-dark-700 dark:text-dark-300">
                     {{ selectedSkill.current_version }}
                   </span>
                 </div>
-                <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                <p class="mt-2 text-sm text-ink-soft dark:text-dark-400">
                   {{ selectedSkill.skill_slug }}
                   <span v-if="selectedSkill.author_name"> · {{ t('skills.admin.governance.authorLabel') }} {{ selectedSkill.author_name }}</span>
                 </p>
@@ -165,51 +165,51 @@
             </div>
 
             <div class="mt-5 grid gap-4 md:grid-cols-3">
-              <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.governance.latestReview') }}</p>
-                <p class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ reviewStatusLabel(selectedSkill.latest_review_status) }}</p>
+              <div class="rounded-card bg-page p-4 dark:bg-dark-900/60">
+                <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ t('skills.admin.governance.latestReview') }}</p>
+                <p class="mt-2 text-xl font-semibold text-ink dark:text-white">{{ reviewStatusLabel(selectedSkill.latest_review_status) }}</p>
               </div>
-              <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.governance.metrics.requests24h') }}</p>
-                <p class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ selectedSkill.requests_24h.toLocaleString() }}</p>
+              <div class="rounded-card bg-page p-4 dark:bg-dark-900/60">
+                <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ t('skills.admin.governance.metrics.requests24h') }}</p>
+                <p class="mt-2 text-xl font-semibold text-ink dark:text-white">{{ selectedSkill.requests_24h.toLocaleString() }}</p>
               </div>
-              <div class="rounded-2xl bg-gray-50 p-4 dark:bg-dark-900/60">
-                <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.governance.metrics.revenue30d') }}</p>
-                <p class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ formatCurrency(selectedSkill.revenue_30d) }}</p>
+              <div class="rounded-card bg-page p-4 dark:bg-dark-900/60">
+                <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ t('skills.admin.governance.metrics.revenue30d') }}</p>
+                <p class="mt-2 text-xl font-semibold text-ink dark:text-white">{{ formatCurrency(selectedSkill.revenue_30d) }}</p>
               </div>
             </div>
 
             <div class="mt-5 space-y-4">
               <div>
-                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('skills.admin.governance.noteTitle') }}</p>
-                <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-400">
+                <p class="text-sm font-medium text-ink dark:text-white">{{ t('skills.admin.governance.noteTitle') }}</p>
+                <p class="mt-2 text-sm leading-6 text-ink-soft dark:text-dark-400">
                   {{ selectedSkill.review_note || t('skills.admin.governance.noteEmpty') }}
                 </p>
               </div>
 
               <div>
-                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('skills.admin.governance.tagsTitle') }}</p>
+                <p class="text-sm font-medium text-ink dark:text-white">{{ t('skills.admin.governance.tagsTitle') }}</p>
                 <div v-if="selectedSkill.tags.length" class="mt-2 flex flex-wrap gap-2">
                   <span
                     v-for="tag in selectedSkill.tags"
                     :key="tag"
-                    class="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300"
+                    class="rounded-full bg-line px-2.5 py-1 text-xs text-ink-soft dark:bg-dark-700 dark:text-dark-300"
                   >
                     {{ tag }}
                   </span>
                 </div>
-                <p v-else class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ t('skills.admin.governance.tagsEmpty') }}</p>
+                <p v-else class="mt-2 text-sm text-ink-soft dark:text-dark-400">{{ t('skills.admin.governance.tagsEmpty') }}</p>
               </div>
 
-              <div class="rounded-2xl border border-gray-200 p-4 dark:border-dark-700">
+              <div class="rounded-card border border-line p-4 dark:border-dark-700">
                 <div class="grid gap-4 md:grid-cols-2">
                   <div>
-                    <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.governance.publishedVersionTitle') }}</p>
-                    <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white">{{ selectedSkill.latest_published_version || '-' }}</p>
+                    <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ t('skills.admin.governance.publishedVersionTitle') }}</p>
+                    <p class="mt-2 text-sm font-medium text-ink dark:text-white">{{ selectedSkill.latest_published_version || '-' }}</p>
                   </div>
                   <div>
-                    <p class="text-xs uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">{{ t('skills.admin.governance.successRateTitle') }}</p>
-                    <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white">{{ formatPercent(selectedSkill.success_rate) }}</p>
+                    <p class="text-xs uppercase tracking-[0.14em] text-ink-faint dark:text-dark-400">{{ t('skills.admin.governance.successRateTitle') }}</p>
+                    <p class="mt-2 text-sm font-medium text-ink dark:text-white">{{ formatPercent(selectedSkill.success_rate) }}</p>
                   </div>
                 </div>
               </div>
@@ -236,7 +236,7 @@
           </template>
 
           <template v-else>
-            <div class="rounded-2xl border border-dashed border-gray-200 px-4 py-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:text-gray-400">
+            <div class="rounded-card border border-dashed border-line px-4 py-10 text-center text-sm text-ink-soft dark:border-dark-700 dark:text-dark-400">
               {{ t('skills.admin.governance.detailEmpty') }}
             </div>
           </template>

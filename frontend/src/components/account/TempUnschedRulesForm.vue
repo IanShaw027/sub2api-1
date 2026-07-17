@@ -3,7 +3,7 @@
     <div class="mb-3 flex items-center justify-between">
       <div>
         <label class="input-label mb-0">{{ t('admin.accounts.tempUnschedulable.title') }}</label>
-        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        <p class="mt-1 text-xs text-ink-soft dark:text-ink-soft">
           {{ t('admin.accounts.tempUnschedulable.hint') }}
         </p>
       </div>
@@ -11,8 +11,8 @@
     </div>
 
     <div v-if="enabled" class="space-y-3">
-      <div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
-        <p class="text-xs text-blue-700 dark:text-blue-400">
+      <div class="rounded-control bg-accent-50 p-3 dark:bg-accent-900/20">
+        <p class="text-xs text-accent-700 dark:text-accent-400">
           <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
           {{ t('admin.accounts.tempUnschedulable.notice') }}
         </p>
@@ -24,7 +24,7 @@
           :key="preset.label"
           type="button"
           @click="addRule(preset.rule)"
-          class="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-dark-500"
+          class="rounded-control bg-page px-3 py-1.5 text-xs font-medium text-ink-body transition-colors hover:bg-line dark:bg-dark-600 dark:text-ink-body dark:hover:bg-dark-500"
         >
           + {{ preset.label }}
         </button>
@@ -34,10 +34,10 @@
         <div
           v-for="(rule, index) in rules"
           :key="getRuleKey(rule)"
-          class="rounded-lg border border-gray-200 p-3 dark:border-dark-600"
+          class="rounded-control border border-line p-3 dark:border-dark-600"
         >
           <div class="mb-2 flex items-center justify-between">
-            <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
+            <span class="text-xs font-medium text-ink-soft dark:text-ink-soft">
               {{ t('admin.accounts.tempUnschedulable.ruleIndex', { index: index + 1 }) }}
             </span>
             <div class="flex items-center gap-2">
@@ -45,7 +45,7 @@
                 type="button"
                 :disabled="index === 0"
                 @click="moveRule(index, -1)"
-                class="rounded p-1 text-gray-400 transition-colors hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-gray-200"
+                class="rounded p-1 text-ink-faint transition-colors hover:text-ink-body disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-ink"
               >
                 <Icon name="chevronUp" size="sm" :stroke-width="2" />
               </button>
@@ -53,7 +53,7 @@
                 type="button"
                 :disabled="index === rules.length - 1"
                 @click="moveRule(index, 1)"
-                class="rounded p-1 text-gray-400 transition-colors hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-gray-200"
+                class="rounded p-1 text-ink-faint transition-colors hover:text-ink-body disabled:cursor-not-allowed disabled:opacity-40 dark:hover:text-ink"
               >
                 <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -62,7 +62,7 @@
               <button
                 type="button"
                 @click="removeRule(index)"
-                class="rounded p-1 text-red-500 transition-colors hover:text-red-600"
+                class="rounded p-1 text-danger transition-colors hover:text-danger/80"
               >
                 <Icon name="x" size="sm" :stroke-width="2" />
               </button>
@@ -121,7 +121,7 @@
       <button
         type="button"
         @click="addRule()"
-        class="w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-sm text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+        class="w-full rounded-control border-2 border-dashed border-line px-4 py-2 text-sm text-ink-body transition-colors hover:border-ink-faint hover:text-ink-body dark:border-dark-500 dark:text-ink-soft dark:hover:border-dark-400 dark:hover:text-ink-faint"
       >
         <svg class="mr-1 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />

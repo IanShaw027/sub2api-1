@@ -1,11 +1,11 @@
 <template>
   <div class="card p-4">
-    <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+    <h3 class="mb-4 text-sm font-semibold text-ink dark:text-white">
       {{ t('payment.admin.topUsers') }}
     </h3>
     <div
       v-if="!users?.length"
-      class="flex h-32 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+      class="flex h-32 items-center justify-center text-sm text-ink-soft"
     >
       {{ t('payment.admin.noData') }}
     </div>
@@ -13,7 +13,7 @@
       <div
         v-for="(user, idx) in users"
         :key="user.user_id"
-        class="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-gray-50 dark:hover:bg-dark-700"
+        class="flex items-center justify-between rounded-control px-3 py-2 hover:bg-page dark:hover:bg-dark-700"
       >
         <div class="flex items-center gap-3">
           <span
@@ -24,9 +24,9 @@
           >
             {{ idx + 1 }}
           </span>
-          <span class="text-sm text-gray-700 dark:text-gray-300">{{ user.email }}</span>
+          <span class="text-sm text-ink-body">{{ user.email }}</span>
         </div>
-        <span class="text-sm font-medium text-gray-900 dark:text-white">
+        <span class="text-sm font-medium tabular-nums text-ink dark:text-white">
           {{ user.amount.toFixed(2) }}
         </span>
       </div>
@@ -44,9 +44,9 @@ defineProps<{
 }>()
 
 function rankClass(idx: number): string {
-  if (idx === 0) return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-  if (idx === 1) return 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-  if (idx === 2) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-  return 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-400'
+  if (idx === 0) return 'bg-warning-soft text-warning dark:bg-yellow-900/30 dark:text-yellow-400'
+  if (idx === 1) return 'bg-page text-ink-soft dark:bg-gray-700'
+  if (idx === 2) return 'bg-brand-50 text-brand-700 dark:bg-amber-900/30 dark:text-amber-400'
+  return 'bg-page text-ink-faint dark:bg-dark-700'
 }
 </script>

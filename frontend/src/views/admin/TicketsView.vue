@@ -2,7 +2,7 @@
   <AppLayout>
     <TablePageLayout>
       <template #filters>
-        <div class="flex flex-wrap items-center gap-3">
+        <div class="flex flex-wrap items-center gap-3 rounded-card border border-line bg-card p-3 shadow-xs dark:border-dark-700 dark:bg-dark-800/50">
           <SearchInput
             v-model="filters.search"
             :placeholder="t('tickets.filters.adminSearch')"
@@ -52,19 +52,19 @@
           :loading="showInitialLoading"
         >
           <template #cell-category="{ row }">
-            <span class="text-sm text-gray-900 dark:text-white">
+            <span class="text-sm text-ink dark:text-white">
               {{ t(`tickets.categories.${row.category}`) }}
             </span>
           </template>
 
           <template #cell-title="{ row }">
-            <div class="max-w-[28rem] whitespace-normal break-words text-sm text-gray-900 dark:text-white">
+            <div class="max-w-[28rem] whitespace-normal break-words text-sm text-ink dark:text-white">
               {{ row.title }}
             </div>
           </template>
 
           <template #cell-user_name="{ row }">
-            <div class="max-w-[14rem] whitespace-normal break-words text-sm text-gray-900 dark:text-white">
+            <div class="max-w-[14rem] whitespace-normal break-words text-sm text-ink dark:text-white">
               {{ row.user_name }}
             </div>
           </template>
@@ -76,13 +76,13 @@
           </template>
 
           <template #cell-created_at="{ value }">
-            <span class="text-sm text-gray-500 dark:text-dark-400">
+            <span class="text-sm text-ink-soft dark:text-dark-400">
               {{ formatRelativeWithDateTime(value) }}
             </span>
           </template>
 
           <template #cell-updated_at="{ value }">
-            <span class="text-sm text-gray-500 dark:text-dark-400">
+            <span class="text-sm text-ink-soft dark:text-dark-400">
               {{ formatRelativeWithDateTime(value) }}
             </span>
           </template>
@@ -98,9 +98,9 @@
               <Icon
                 name="inbox"
                 size="xl"
-                class="mb-4 h-12 w-12 text-gray-400 dark:text-dark-500"
+                class="mb-4 h-12 w-12 text-ink-faint dark:text-dark-500"
               />
-              <p class="text-lg font-medium text-gray-900 dark:text-gray-100">
+              <p class="text-lg font-medium text-ink">
                 {{ t('tickets.empty') }}
               </p>
             </div>

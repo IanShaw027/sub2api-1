@@ -1,12 +1,12 @@
 <template>
-  <div class="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+  <div class="flex flex-col justify-between gap-4 rounded-card border border-line bg-card p-3 shadow-xs dark:border-dark-700 dark:bg-dark-800/50 lg:flex-row lg:items-center">
     <!-- Left: Search + Filters -->
-    <div class="flex flex-1 flex-wrap items-center gap-3">
+    <div class="flex min-w-0 flex-1 flex-wrap items-center gap-3">
       <div class="relative w-full sm:w-64">
         <Icon
           name="search"
           size="md"
-          class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500"
+          class="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint dark:text-ink-soft"
         />
         <input
           v-model="search"
@@ -35,8 +35,9 @@
     </div>
 
     <!-- Right: Actions -->
-    <div class="flex w-full flex-shrink-0 flex-wrap items-center justify-end gap-3 lg:w-auto">
+    <div class="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 lg:w-auto">
       <button
+        type="button"
         @click="$emit('reload')"
         :disabled="loading"
         class="btn btn-secondary"
@@ -45,6 +46,7 @@
         <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
       </button>
       <button
+        type="button"
         @click="$emit('manage-templates')"
         class="btn btn-secondary"
         :title="t('admin.channelMonitor.template.manageButton')"
@@ -52,7 +54,7 @@
         <Icon name="cog" size="md" class="mr-2" />
         {{ t('admin.channelMonitor.template.manageButton') }}
       </button>
-      <button @click="$emit('create')" class="btn btn-primary">
+      <button type="button" @click="$emit('create')" class="btn btn-primary">
         <Icon name="plus" size="md" class="mr-2" />
         {{ t('admin.channelMonitor.createButton') }}
       </button>
