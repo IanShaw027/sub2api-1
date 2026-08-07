@@ -338,24 +338,62 @@ func TestRuntimeSanityReportsInvalidOverridesWithoutSecrets(t *testing.T) {
 }
 
 func TestDefaultModelMappingIncludesGrokAliases(t *testing.T) {
-	t.Parallel()
-
+	// Not parallel: mutates process-wide runtime mapping options.
+	SetRuntimeModelMappingOptions(ModelMappingOptions{})
+	t.Cleanup(func() { SetRuntimeModelMappingOptions(ModelMappingOptions{}) })
 	mapping := DefaultModelMapping()
-	require.Equal(t, "grok-4.5", mapping["grok"])
-	require.Equal(t, "grok-4.5", mapping["grok-latest"])
+	require.Equal(t, DefaultTextModel, mapping["grok"])
+	require.Equal(t, DefaultTextModel, mapping["grok-latest"])
 	require.Equal(t, "grok-4.5", mapping["grok-4.5"])
-	require.Equal(t, "grok-4.5", mapping["grok-4.5-latest"])
+	require.Equal(t, "grok-4.5", mapping["xai/grok-4.5"])
+	require.Equal(t, DefaultTextModel, mapping["grok-4.5-latest"])
+	require.Equal(t, "grok-4.3", mapping["grok-4.3"])
+	require.Equal(t, "grok-3-mini", mapping["grok-3-mini"])
+	require.Equal(t, "grok-3-mini-fast", mapping["grok-3-mini-fast"])
 	require.Equal(t, "grok-build-0.1", mapping["grok-build"])
-	require.Equal(t, "grok-4.5", mapping["grok-build-latest"])
+	require.Equal(t, "grok-build-0.1", mapping["grok-build-latest"])
+	require.Equal(t, "grok-composer-2.5-fast", mapping["grok-composer-2.5-fast"])
 	require.Equal(t, "grok-composer-2.5-fast", mapping["grok-composer"])
 	require.Equal(t, "grok-composer-2.5-fast", mapping["composer-2.5"])
 	require.Equal(t, "grok-4.20-0309-reasoning", mapping["grok-4.20-reasoning"])
 	require.Equal(t, "grok-4.20-0309-non-reasoning", mapping["grok-4.20-non-reasoning"])
 	require.Equal(t, "grok-4.20-multi-agent-0309", mapping["grok-4.20-multi-agent-0309"])
-	require.Equal(t, "grok-imagine", mapping["grok-imagine"])
-	require.Equal(t, "grok-imagine-image", mapping["grok-imagine-image"])
-	require.Equal(t, "grok-imagine-image-quality", mapping["grok-imagine-image-quality"])
+	// Imagine aliases resolve to official catalog IDs.
+	require.Equal(t, DefaultImagineImageQualityModel, mapping["grok-imagine"])
+	require.Equal(t, DefaultImagineImageQualityModel, mapping["grok-imagine-1"])
 	require.Equal(t, "grok-imagine-edit", mapping["grok-imagine-edit"])
-	require.Equal(t, "grok-imagine-video", mapping["grok-imagine-video"])
-	require.Equal(t, "grok-imagine-video-1.5", mapping["grok-imagine-video-1.5"])
+	require.Equal(t, DefaultImagineImageFastModel, mapping["grok-imagine-image"])
+	require.Equal(t, DefaultImagineImageQualityModel, mapping["grok-imagine-image-quality"])
+	require.Equal(t, DefaultImagineVideoModel, mapping["grok-imagine-video"])
+	require.Equal(t, DefaultImagineVideo15Model, mapping["grok-imagine-video-1.5"])
+	require.Equal(t, DefaultImagineVideo15Model, mapping["grok-imagine-video-1.5-preview"])
+	require.Equal(t, DefaultImagineVideo15Model, mapping["grok-video-1.5"])
+	// Cross-vendor wildcards are opt-in (default off).
+	_, hasGPT := mapping["gpt-*"]
+	_, hasClaude := mapping["claude-*"]
+	require.False(t, hasGPT)
+	require.False(t, hasClaude)
+	// Catalog contains official Imagine models.
+	ids := DefaultModelIDs()
+	require.Contains(t, ids, DefaultImagineImageQualityModel)
+	require.Contains(t, ids, DefaultImagineImageFastModel)
+	require.Contains(t, ids, DefaultImagineVideoModel)
+	require.Contains(t, ids, DefaultImagineVideo15Model)
+	require.Contains(t, ids, "grok-3-mini")
+	require.Contains(t, ids, "grok-3-mini-fast")
+	require.NotContains(t, ids, "grok-imagine-1")
+
+	require.True(t, IsGrokTextResponsesModelID("grok-3-mini"))
+	require.True(t, IsGrokTextResponsesModelID("grok-3-mini-fast"))
+	require.True(t, IsGrokTextResponsesModelID("xai/grok-4.5"))
+}
+
+func TestResolveGrokTextResponsesModelIDCanonicalizesExplicitAliases(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, DefaultTextModel, ResolveGrokTextResponsesModelID("grok"))
+	require.Equal(t, "grok-build-0.1", ResolveGrokTextResponsesModelID("grok-build"))
+	require.Equal(t, "grok-4.20-0309-reasoning", ResolveGrokTextResponsesModelID("xai/grok-4.20-reasoning"))
+	require.Equal(t, DefaultTextModel, ResolveGrokTextResponsesModelID(""))
+	require.Equal(t, "custom-model", ResolveGrokTextResponsesModelID("custom-model"))
 }
