@@ -122,6 +122,12 @@ func isGrokRequestContext(c *gin.Context) bool {
 // native tools with tool_choice=none: this selects the cache-capable tier
 // without allowing an actual search. Any explicit client tools or tool_choice
 // disable this augmentation so client function-calling semantics stay intact.
+//
+// Stage-6 safety note: personal-dev's applyGrokFreeMessagesFunctionToolCacheRoute
+// (inject native tools for Free accounts that already send client function tools)
+// is intentionally NOT ported here. Existing unit tests cover only the tool-free
+// inject path; the Free+function-tools mixed route needs account-tier fixtures
+// and bridge tests before it is safe to land.
 func applyGrokResponsesCacheIdentity(body, intentSourceBody []byte, identity string, injectFreeTierTools bool) ([]byte, error) {
 	identity = strings.TrimSpace(identity)
 	if identity == "" {

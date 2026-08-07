@@ -99,6 +99,20 @@ describe('useGrokOAuth.exchangeAuthCode', () => {
       refresh_token: 'refresh'
     })
   })
+
+  it('never keeps password or sso cookie fields in credentials', () => {
+    const oauth = useGrokOAuth()
+
+    expect(oauth.buildCredentials({
+      access_token: 'access',
+      password: 'super-secret',
+      sso_token: 'sso-cookie',
+      sso: 'sso-cookie',
+      'sso-rw': 'sso-cookie'
+    } as any)).toEqual({
+      access_token: 'access'
+    })
+  })
 })
 
 describe('useGrokOAuth.buildCredentials', () => {

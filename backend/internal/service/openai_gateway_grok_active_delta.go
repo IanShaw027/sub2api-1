@@ -26,6 +26,9 @@ type grokHTTPActiveDeltaResult struct {
 	applied      bool
 }
 
+// grokHTTPActiveDeltaEnabled reports whether the HTTP only-new continuation path
+// may run. Defaults are false (config + settings seed); unit tests that exercise
+// active-delta must set Gateway.Grok.HTTPActiveDeltaEnabled or the runtime switch.
 func (s *OpenAIGatewayService) grokHTTPActiveDeltaEnabled() bool {
 	if s == nil {
 		return false

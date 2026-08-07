@@ -29,10 +29,24 @@ describe('admin Grok API', () => {
     await authorizePassword('  owner@example.com  ---- secret----part  ', 7)
 
     const config = adapter.mock.calls[0][0]
+    expect(config.url).toBe('/admin/grok/oauth/password')
     expect(JSON.parse(config.data)).toEqual({
       email: 'owner@example.com',
       password: ' secret----part  ',
       proxy_id: 7
+    })
+  })
+
+  it('posts SSO token to the sso-token authorize endpoint', async () => {
+    const { validateSSOToken } = await import('../grok')
+
+    await validateSSOToken('sso-cookie-value', 3)
+
+    const config = adapter.mock.calls[0][0]
+    expect(config.url).toBe('/admin/grok/oauth/sso-token')
+    expect(JSON.parse(config.data)).toEqual({
+      sso_token: 'sso-cookie-value',
+      proxy_id: 3
     })
   })
 })

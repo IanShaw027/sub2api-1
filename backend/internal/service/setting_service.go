@@ -4267,7 +4267,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyOpenAIWSActiveDeltaEnabled:        "true",
 		SettingKeyOpenAIWSTempDiagLogsEnabled:       "false",
 		SettingKeyOpenAIWSTempDiagLogsRPM:           strconv.Itoa(defaultOpenAIWSTempDiagLogsRPM),
-		SettingKeyGrokHTTPActiveDeltaEnabled:        "true",
+		SettingKeyGrokHTTPActiveDeltaEnabled:        "false",
 		// Identity patch defaults
 		SettingKeyEnableIdentityPatch: "true",
 		SettingKeyIdentityPatchPrompt: "",
@@ -4787,7 +4787,8 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.EnableMetadataPassthrough = settings[SettingKeyEnableMetadataPassthrough] == "true"
 	result.ClaudeTelemetryMode = normalizeClaudeTelemetryMode(settings[SettingKeyClaudeTelemetryMode])
 	result.GrokDefaultBaseURLMode = normalizeGrokDefaultBaseURLMode(settings[SettingKeyGrokDefaultBaseURLMode])
-	result.GrokHTTPActiveDeltaEnabled = parseBoolSettingOrDefault(settings, SettingKeyGrokHTTPActiveDeltaEnabled, true)
+	// Active-delta stays opt-in: missing key or unset config default to false.
+	result.GrokHTTPActiveDeltaEnabled = parseBoolSettingOrDefault(settings, SettingKeyGrokHTTPActiveDeltaEnabled, false)
 	gatewayDebugTimeline := parseGatewayDebugTimelineSettings(settings)
 	result.GatewayDebugTimelineEnabled = gatewayDebugTimeline.Enabled
 	result.GatewayDebugTimelineDirectory = gatewayDebugTimeline.Directory

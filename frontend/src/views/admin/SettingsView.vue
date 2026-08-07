@@ -10080,7 +10080,7 @@ const form = reactive<SettingsForm>({
   enable_metadata_passthrough: false,
   claude_telemetry_mode: "drop",
   grok_default_base_url_mode: "cli",
-  grok_http_active_delta_enabled: true,
+  grok_http_active_delta_enabled: false,
   gateway_debug_timeline_enabled: false,
   gateway_debug_timeline_directory: "logs/gateway-debug",
   gateway_debug_timeline_retention_days: 7,

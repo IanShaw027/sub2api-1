@@ -170,6 +170,8 @@ export function useGrokOAuth() {
     }
   }
 
+  // Build account credentials for create/re-auth. Never persist raw SSO cookies
+  // or passwords: those exist only for the one-shot authorize API call.
   const buildCredentials = (tokenInfo: GrokTokenInfo): Record<string, unknown> => {
     const credentials: Record<string, unknown> = {
       access_token: tokenInfo.access_token,
@@ -185,7 +187,13 @@ export function useGrokOAuth() {
     }
     if (tokenInfo.refresh_token) credentials.refresh_token = tokenInfo.refresh_token
     if (tokenInfo.id_token) credentials.id_token = tokenInfo.id_token
-    return Object.fromEntries(Object.entries(credentials).filter(([, value]) => value !== undefined && value !== ''))
+    // Defense in depth: even if the token payload carries legacy fields, drop them.
+    const blocked = new Set(['sso_token', 'password', 'sso', 'sso-rw'])
+    return Object.fromEntries(
+      Object.entries(credentials).filter(
+        ([key, value]) => !blocked.has(key) && value !== undefined && value !== ''
+      )
+    )
   }
 
   const buildExtraInfo = (tokenInfo: GrokTokenInfo): Record<string, unknown> => {

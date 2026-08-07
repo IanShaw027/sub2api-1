@@ -903,13 +903,15 @@ type GatewayConfig struct {
 // GatewayGrokConfig Grok/xAI HTTP 上游行为配置。
 type GatewayGrokConfig struct {
 	// HTTPActiveDeltaEnabled: Grok OAuth Responses 安全增量（only-new input + previous_response_id）。
-	// 与 openai_ws.http_incremental_continuation_enabled 解耦；默认开启，不可证明安全时全量。
-	// 若 full_replay_retry 仍高（session 漂移 / prefix break），可临时关闭。
+	// 与 openai_ws.http_incremental_continuation_enabled 解耦。
+	// 默认关闭：实现体量大、依赖会话哈希/store 链，未显式开启时保持全量回放更安全。
+	// 运维确认前缀稳定、full_replay_retry 可控后再在配置或管理端开启。
 	HTTPActiveDeltaEnabled bool `mapstructure:"http_active_delta_enabled"`
 	// HTTPActiveDeltaRequireStoreOnCreate: 当客户端未指定 store 时，首轮/全量 create 以及
 	// Grok delta 续聊是否强制 store=true。xAI 的 previous_response_id 依赖服务端存历史；
 	// 默认 true，避免 bind 了本地 lastResponseID 但上游 404 not found。客户端显式
 	// store=false 始终优先：不强制存储、不启用 active delta、不绑定增量会话。
+	// 注意：require_store 与 active_delta 独立；仅开启 store 不会启用增量。
 	HTTPActiveDeltaRequireStoreOnCreate bool `mapstructure:"http_active_delta_require_store_on_create"`
 	// FreeQuotaSoftGateEnabled enables a local rolling-window scheduling guard
 	// for accounts whose OAuth subscription tier is explicitly FREE.
@@ -2147,10 +2149,11 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_http2.fallback_window_seconds", 60)
 	viper.SetDefault("gateway.openai_http2.fallback_ttl_seconds", 600)
 	// Grok OAuth HTTP active-delta (safe only-new continuation); independent of OpenAI WS flags.
-	// require_store_on_create defaults true when store is omitted: xAI rejects previous_response_id
-	// when the prior turn was not stored. An explicit client store=false always takes precedence and
-	// disables forced storage plus active-delta/session binding for that request.
-	viper.SetDefault("gateway.grok.http_active_delta_enabled", true)
+	// Default off: large continuation path stays opt-in until ops enable it. require_store_on_create
+	// still defaults true when store is omitted so multi-turn previous_response_id can work once
+	// active-delta is enabled. An explicit client store=false always takes precedence and disables
+	// forced storage plus active-delta/session binding for that request.
+	viper.SetDefault("gateway.grok.http_active_delta_enabled", false)
 	viper.SetDefault("gateway.grok.http_active_delta_require_store_on_create", true)
 	viper.SetDefault("gateway.grok.free_quota_soft_gate_enabled", true)
 	viper.SetDefault("gateway.grok.free_quota_token_limit", int64(2_000_000))
