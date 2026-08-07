@@ -3007,6 +3007,60 @@ func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_GrokGroupUsesG
 	}
 }
 
+func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_GrokAPIKeySkippedForImagine(t *testing.T) {
+	// Grok Imagine is subscription OAuth only; API-key accounts stay text-only
+	// even when they are the only schedulable accounts in the group.
+	ctx := context.Background()
+	groupID := int64(101029)
+	ctx = context.WithValue(ctx, ctxkey.Group, &Group{
+		ID:                   groupID,
+		Platform:             PlatformGrok,
+		Status:               StatusActive,
+		Hydrated:             true,
+		ImageGenerationRoute: GroupImageGenerationRouteNative,
+	})
+	accounts := []Account{
+		{
+			ID:          32071,
+			Platform:    PlatformGrok,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Concurrency: 1,
+			Priority:    0,
+			Credentials: map[string]any{"api_key": "xai-key"},
+		},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+
+	selection, _, err := svc.SelectAccountWithSchedulerForImages(
+		ctx,
+		&groupID,
+		"",
+		"grok-imagine",
+		nil,
+		OpenAIImagesCapabilityNative,
+		GroupImageGenerationRouteNative,
+		true, // Grok groups require OAuth for Imagine
+	)
+
+	require.Nil(t, selection)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "no available Grok accounts")
+
+	// Capability surface itself rejects API-key Imagine video as well.
+	apiKey := &accounts[0]
+	require.False(t, apiKey.SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityVideos))
+	require.False(t, apiKey.SupportsOpenAIImageCapability(OpenAIImagesCapabilityNative))
+}
+
 func TestOpenAIGatewayService_SelectAccountWithSchedulerForImages_AllImageDisabledPreservesNoAvailableSemantics(t *testing.T) {
 	for _, advancedSchedulerEnabled := range []bool{false, true} {
 		t.Run(fmt.Sprintf("advanced_scheduler_enabled=%t", advancedSchedulerEnabled), func(t *testing.T) {

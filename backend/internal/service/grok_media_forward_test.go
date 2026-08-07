@@ -830,12 +830,13 @@ func TestForwardGrokMedia_JSONEditImageRewriteAndTooManyImagesError(t *testing.T
 		upstream := &httpUpstreamRecorder{resp: &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
-			Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"data":[{"b64_json":"YQ=="}]}`)),
 		}}
 		svc := &OpenAIGatewayService{httpUpstream: upstream}
 
-		_, err := svc.ForwardGrokMedia(context.Background(), c, account, GrokMediaEndpointImagesEdits, "", body, "application/json")
+		result, err := svc.ForwardGrokMedia(context.Background(), c, account, GrokMediaEndpointImagesEdits, "", body, "application/json")
 		require.NoError(t, err)
+		require.Equal(t, 1, result.ImageCount)
 		require.Equal(t, "https://cdn.example/in.png", gjson.GetBytes(upstream.lastBody, "image.url").String())
 		require.Equal(t, "image_url", gjson.GetBytes(upstream.lastBody, "image.type").String())
 	}
@@ -888,4 +889,57 @@ func TestResolveGrokMediaVideoSeconds_Defaults(t *testing.T) {
 	require.Equal(t, 6, resolveGrokMediaVideoSeconds(0, 6, 8))
 	require.Equal(t, grokMediaDefaultVideoSeconds, resolveGrokMediaVideoSeconds(0, 0))
 	require.Equal(t, grokMediaDefaultVideoSeconds, resolveGrokMediaVideoSeconds())
+}
+
+func TestForwardGrokMedia_EmptyImageResponseFailsClosed(t *testing.T) {
+	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
+	gin.SetMode(gin.TestMode)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	body := []byte(`{"model":"grok-imagine","prompt":"draw a cat","n":2}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	account := &Account{
+		ID:          97,
+		Platform:    PlatformGrok,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "oauth-token",
+			"base_url":     "https://xai.test/v1",
+		},
+	}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		// Empty data array would previously invent ImageCount from request n=2.
+		Body: io.NopCloser(strings.NewReader(`{"data":[]}`)),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+
+	result, err := svc.ForwardGrokMedia(context.Background(), c, account, GrokMediaEndpointImagesGenerations, "", body, "application/json")
+	require.Error(t, err)
+	require.Nil(t, result)
+
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadGateway, failoverErr.StatusCode)
+	// Response must not have been committed as a successful generation.
+	require.False(t, c.Writer.Written())
+}
+
+func TestGrokMediaUsageFromResponse_CountsOnlyActualImageOutputs(t *testing.T) {
+	info := GrokMediaRequestInfo{Model: "grok-imagine", N: 3, Size: "1024x1024", SizeTier: "1K"}
+
+	empty := grokMediaUsageFromResponse(GrokMediaEndpointImagesGenerations, info, []byte(`{"data":[]}`))
+	require.Zero(t, empty.ImageCount, "empty payload must not invent billable image units from request n")
+
+	withImage := grokMediaUsageFromResponse(
+		GrokMediaEndpointImagesGenerations,
+		info,
+		[]byte(`{"data":[{"b64_json":"YQ=="},{"b64_json":"Yg=="}]}`),
+	)
+	require.Equal(t, 2, withImage.ImageCount)
 }

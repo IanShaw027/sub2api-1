@@ -462,6 +462,18 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	if err != nil {
 		return nil, err
 	}
+	// Empty HTTP 200 image payloads must not be treated as successful generations:
+	// inventing ImageCount from request n would mis-bill failed Imagine calls.
+	if endpoint == GrokMediaEndpointImagesGenerations || endpoint == GrokMediaEndpointImagesEdits {
+		if countOpenAIResponseImageOutputsFromJSONBytes(respBody) <= 0 {
+			setOpsUpstreamError(c, http.StatusBadGateway, "xAI upstream returned no image output", truncateString(string(respBody), 512))
+			return nil, &UpstreamFailoverError{
+				StatusCode:      http.StatusBadGateway,
+				ResponseBody:    respBody,
+				ResponseHeaders: resp.Header.Clone(),
+			}
+		}
+	}
 	if endpoint == GrokMediaEndpointVideoStatus {
 		if normalized, normalizeErr := buildOpenAIVideoRetrieveResponseFromGrok(requestID, respBody, requestModel); normalizeErr == nil {
 			respBody = normalized
@@ -983,14 +995,9 @@ func grokMediaUsageFromResponse(endpoint GrokMediaEndpoint, requestInfo GrokMedi
 	meta := grokMediaUsageMetadata{Usage: usage}
 	switch endpoint {
 	case GrokMediaEndpointImagesGenerations, GrokMediaEndpointImagesEdits:
-		imageCount := countOpenAIResponseImageOutputsFromJSONBytes(responseBody)
-		if imageCount <= 0 {
-			imageCount = requestInfo.N
-		}
-		if imageCount <= 0 {
-			imageCount = 1
-		}
-		meta.ImageCount = imageCount
+		// Count only actual image outputs. Callers fail closed on zero so usage
+		// never invents billable units for empty upstream payloads.
+		meta.ImageCount = countOpenAIResponseImageOutputsFromJSONBytes(responseBody)
 		meta.ImageSize = requestInfo.SizeTier
 		meta.ImageInputSize = requestInfo.Size
 		meta.ImageOutputSizes = collectOpenAIResponseImageOutputSizesFromJSONBytes(responseBody)

@@ -708,7 +708,7 @@ func TestForwardGrokMediaImagesGenerationNormalizesImagineAlias(t *testing.T) {
 			"Content-Type":   []string{"application/json"},
 			"Xai-Request-Id": []string{"xai-image-req"},
 		},
-		Body: io.NopCloser(strings.NewReader(`{"data":[]}`)),
+		Body: io.NopCloser(strings.NewReader(`{"data":[{"b64_json":"YQ=="}]}`)),
 	}}
 	svc := &OpenAIGatewayService{httpUpstream: upstream}
 
@@ -720,7 +720,7 @@ func TestForwardGrokMediaImagesGenerationNormalizesImagineAlias(t *testing.T) {
 	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Content-Type"))
 	require.JSONEq(t, `{"model":"grok-imagine-image-quality","prompt":"draw a cat"}`, string(upstream.lastBody))
 	require.Equal(t, http.StatusOK, recorder.Code)
-	require.JSONEq(t, `{"data":[]}`, recorder.Body.String())
+	require.JSONEq(t, `{"data":[{"b64_json":"YQ=="}]}`, recorder.Body.String())
 	require.Equal(t, "xai-image-req", result.RequestID)
 	require.Equal(t, "grok-imagine", result.Model)
 	require.Equal(t, "grok-imagine", result.BillingModel)
@@ -767,12 +767,13 @@ func TestForwardGrokMediaImagesEditMultipartConvertsToJSON(t *testing.T) {
 		Header: http.Header{
 			"Content-Type": []string{"application/json"},
 		},
-		Body: io.NopCloser(strings.NewReader(`{"data":[]}`)),
+		Body: io.NopCloser(strings.NewReader(`{"data":[{"b64_json":"YQ=="}]}`)),
 	}}
 	svc := &OpenAIGatewayService{httpUpstream: upstream}
 
-	_, err = svc.ForwardGrokMedia(context.Background(), c, account, GrokMediaEndpointImagesEdits, "", buf.Bytes(), writer.FormDataContentType())
+	result, err := svc.ForwardGrokMedia(context.Background(), c, account, GrokMediaEndpointImagesEdits, "", buf.Bytes(), writer.FormDataContentType())
 	require.NoError(t, err)
+	require.Equal(t, 1, result.ImageCount)
 	require.Equal(t, "https://xai.test/v1/images/edits", upstream.lastReq.URL.String())
 	require.Equal(t, "application/json", upstream.lastReq.Header.Get("Content-Type"))
 	require.True(t, json.Valid(upstream.lastBody))

@@ -299,7 +299,9 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				continue
 			}
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, false, nil)
-			if c.Writer.Size() == writerSizeBeforeForward {
+			// Terminal non-failover errors must surface a clear client error when
+			// the service layer has not already committed a response body.
+			if c.Writer.Size() == writerSizeBeforeForward && !c.Writer.Written() {
 				h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Upstream request failed")
 			}
 			reqLog.Warn("grok_media.forward_failed",
@@ -319,7 +321,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 				)
 			}
 		}
-		if shouldRecordGrokMediaUsage(endpoint, requestModel) {
+		if shouldRecordGrokMediaUsage(endpoint, requestModel, result) {
 			recordGrokMediaUsage(c, h, reqLog, apiKey, subject, subscription, account, result, requestModel, body, requestID)
 		}
 		reqLog.Debug("grok_media.request_completed",
@@ -330,8 +332,21 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 	}
 }
 
-func shouldRecordGrokMediaUsage(endpoint service.GrokMediaEndpoint, requestModel string) bool {
-	return endpoint.IsGenerationRequest() && strings.TrimSpace(requestModel) != ""
+// shouldRecordGrokMediaUsage gates usage writes for Grok media generation only.
+// Video status/content polls and empty-model status binds never bill; failed
+// generations that produced no image/video units are also skipped so clients
+// are not charged for terminal upstream failures.
+func shouldRecordGrokMediaUsage(endpoint service.GrokMediaEndpoint, requestModel string, result *service.OpenAIForwardResult) bool {
+	if !endpoint.IsGenerationRequest() || strings.TrimSpace(requestModel) == "" {
+		return false
+	}
+	if result == nil {
+		return false
+	}
+	if service.OpenAIForwardResultHasVideoBillingForUsage(result) {
+		return true
+	}
+	return result.ImageCount > 0
 }
 
 func recordGrokMediaUsage(
