@@ -3,6 +3,7 @@
 > 生成时间：2026-08-13。对比基准：`git diff upstream/main...personal-dev`（三点 diff，merge-base = upstream v0.1.173 `48eb3766`）。
 > 配套流程见 `PERSONAL_FORK_WORKFLOW.md` 第五节。旧历史存档：tag `archive/personal-dev-20260813`。
 > 由 4 个并发分析代理产出（后端服务层 / 后端数据接入层 / 前端 / 基础设施），本文档为汇总。
+> **文件级取舍明细**（全部 2894 个文件逐一列出、标注重要度 P0–P3、含取舍决策栏）见 `docs/migration-details/README.md`。
 
 ## 总览
 
