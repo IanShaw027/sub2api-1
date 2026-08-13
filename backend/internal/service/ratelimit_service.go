@@ -243,6 +243,9 @@ const (
 // 自定义错误码开启时覆盖后续所有逻辑（包括临时不可调度）。
 func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Account, statusCode int, responseBody []byte, requestedModel ...string) ErrorPolicyResult {
 	ctx = withTempUnschedulableModel(ctx, requestedModel)
+	if isAPIKeyBillingExhausted(account, statusCode, responseBody) {
+		return ErrorPolicyMatched
+	}
 	if account.IsCustomErrorCodesEnabled() {
 		if account.ShouldHandleErrorCode(statusCode) {
 			return ErrorPolicyMatched
@@ -269,6 +272,14 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
 	ctx = withTempUnschedulableModel(ctx, requestedModel)
 	customErrorCodesEnabled := account.IsCustomErrorCodesEnabled()
+
+	// Explicit API-key billing exhaustion cannot recover through pool-mode
+	// retries. Handle it before the pool/custom-code gates so a depleted
+	// upstream key cannot stay eligible and be called repeatedly.
+	if msg, ok := apiKeyBillingExhaustedMessage(account, statusCode, responseBody); ok {
+		s.handleAuthError(ctx, account, msg)
+		return true
+	}
 
 	// 池模式默认不标记本地账号状态；但管理员显式配置的临时不可调度规则优先。
 	// 401 保留现有认证错误语义，不在这里改变池模式的认证处理。
@@ -486,6 +497,70 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 	}
 
 	return shouldDisable
+}
+
+func isAPIKeyBillingExhausted(account *Account, statusCode int, responseBody []byte) bool {
+	if account == nil || !account.IsAPIKeyOrBedrock() {
+		return false
+	}
+	if statusCode == http.StatusPaymentRequired {
+		return true
+	}
+	if statusCode == http.StatusBadRequest && account.Platform == PlatformAnthropic {
+		message := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))
+		return strings.Contains(message, "credit balance")
+	}
+	if statusCode != http.StatusForbidden {
+		return false
+	}
+
+	code := strings.ToLower(strings.TrimSpace(extractUpstreamErrorCode(responseBody)))
+	for _, marker := range []string{
+		"insufficient_balance",
+		"insufficient_user_quota",
+		"insufficient_quota",
+		"billing_hard_limit",
+	} {
+		if strings.Contains(code, marker) {
+			return true
+		}
+	}
+
+	message := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))
+	if message == "" {
+		message = strings.ToLower(strings.TrimSpace(string(responseBody)))
+	}
+	for _, marker := range []string{
+		"insufficient account balance",
+		"insufficient balance",
+		"insufficient user quota",
+		"insufficient quota",
+		"billing hard limit",
+		"用户额度不足",
+		"余额不足",
+		"预扣费额度失败",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func apiKeyBillingExhaustedMessage(account *Account, statusCode int, responseBody []byte) (string, bool) {
+	if !isAPIKeyBillingExhausted(account, statusCode, responseBody) {
+		return "", false
+	}
+	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(responseBody))
+	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+	switch statusCode {
+	case http.StatusPaymentRequired:
+		return buildForbiddenErrorMessage("Payment required (402):", upstreamMsg, responseBody, "insufficient balance or billing issue"), true
+	case http.StatusBadRequest:
+		return buildForbiddenErrorMessage("Credit balance exhausted (400):", upstreamMsg, responseBody, "credit balance too low"), true
+	default:
+		return buildForbiddenErrorMessage("API key billing exhausted (403):", upstreamMsg, responseBody, "upstream account balance is insufficient"), true
+	}
 }
 
 // PreCheckUsage proactively checks local quota before dispatching a request.

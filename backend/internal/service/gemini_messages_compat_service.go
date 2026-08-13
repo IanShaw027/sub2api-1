@@ -2950,6 +2950,10 @@ func asInt(v any) (int, bool) {
 }
 
 func (s *GeminiMessagesCompatService) handleGeminiUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, body []byte) {
+	if s.rateLimitService != nil && isAPIKeyBillingExhausted(account, statusCode, body) {
+		s.rateLimitService.HandleUpstreamError(ctx, account, statusCode, headers, body)
+		return
+	}
 	// 遵守自定义错误码策略：未命中则跳过所有限流处理
 	if !account.ShouldHandleErrorCode(statusCode) {
 		return
