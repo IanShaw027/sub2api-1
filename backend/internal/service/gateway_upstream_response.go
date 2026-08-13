@@ -285,8 +285,12 @@ func ExtractUpstreamErrorMessage(body []byte) string {
 	return extractUpstreamErrorMessage(body)
 }
 
+func SanitizeUpstreamErrorMessage(msg string) string {
+	return sanitizeUpstreamErrorMessage(msg)
+}
+
 func extractUpstreamErrorMessage(body []byte) string {
-	// Claude 风格：{"type":"error","error":{"type":"...","message":"..."}}
+	// Claude / OpenAI JSON 风格：{"type":"error","error":{"type":"...","message":"..."}}
 	if m := gjson.GetBytes(body, "error.message").String(); strings.TrimSpace(m) != "" {
 		inner := strings.TrimSpace(m)
 		// 有些上游会把完整 JSON 作为字符串塞进 message
@@ -298,9 +302,33 @@ func extractUpstreamErrorMessage(body []byte) string {
 		return m
 	}
 
-	// ChatGPT 内部 API 风格：{"detail":"..."}
-	if d := gjson.GetBytes(body, "detail").String(); strings.TrimSpace(d) != "" {
-		return d
+	// OpenAI Responses SSE/JSON：{"response":{"error":{"message":"..."}}}
+	if m := gjson.GetBytes(body, "response.error.message").String(); strings.TrimSpace(m) != "" {
+		return m
+	}
+
+	// xAI style: {"code":"invalid-argument","error":"..."}.
+	// Only accept a string here so an arbitrary nested error object is never
+	// serialized into a client-visible message.
+	if errValue := gjson.GetBytes(body, "error"); errValue.Type == gjson.String {
+		if msg := strings.TrimSpace(errValue.String()); msg != "" {
+			return msg
+		}
+	}
+
+	// ChatGPT 内部 API 风格：{"detail":"..."} 或 {"detail":{"code":"..."}}
+	if d := gjson.GetBytes(body, "detail"); d.Exists() {
+		if d.Type == gjson.String {
+			if msg := strings.TrimSpace(d.String()); msg != "" {
+				return msg
+			}
+		}
+		if msg := strings.TrimSpace(d.Get("message").String()); msg != "" {
+			return msg
+		}
+		if code := strings.TrimSpace(d.Get("code").String()); code != "" {
+			return code
+		}
 	}
 
 	// 兜底：尝试顶层 message
@@ -308,8 +336,17 @@ func extractUpstreamErrorMessage(body []byte) string {
 }
 
 func extractUpstreamErrorCode(body []byte) string {
-	if code := strings.TrimSpace(gjson.GetBytes(body, "error.code").String()); code != "" {
-		return code
+	for _, path := range []string{
+		"error.code",
+		"response.error.code",
+		"detail.code",
+		"code",
+	} {
+		if codeValue := gjson.GetBytes(body, path); codeValue.Type == gjson.String {
+			if code := strings.TrimSpace(codeValue.String()); code != "" {
+				return code
+			}
+		}
 	}
 
 	inner := strings.TrimSpace(gjson.GetBytes(body, "error.message").String())

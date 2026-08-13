@@ -24,6 +24,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 
@@ -1745,7 +1746,9 @@ func sleepGeminiBackoff(attempt int) {
 }
 
 var (
-	sensitiveQueryParamRegex = regexp.MustCompile(`(?i)([?&](?:key|client_secret|access_token|refresh_token)=)[^&"\s]+`)
+	sensitiveQueryParamRegex = regexp.MustCompile(`(?i)(^|[?&\s])((?:key|client_secret|access_token|refresh_token)=)[^&"\s]+`)
+	sensitiveBearerRegex     = regexp.MustCompile(`(?i)(authorization:\s*bearer\s+)[^,"\s]+`)
+	standaloneBearerRegex    = regexp.MustCompile(`(?i)(^|[\s(])bearer[\s:]+[^,\s)"']+`)
 	retryInRegex             = regexp.MustCompile(`Please retry in ([0-9.]+)s`)
 )
 
@@ -1753,7 +1756,13 @@ func sanitizeUpstreamErrorMessage(msg string) string {
 	if msg == "" {
 		return msg
 	}
-	return sensitiveQueryParamRegex.ReplaceAllString(msg, `$1***`)
+	msg = sensitiveQueryParamRegex.ReplaceAllString(msg, `$1$2***`)
+	msg = sensitiveBearerRegex.ReplaceAllString(msg, `${1}[REDACTED]`)
+	msg = standaloneBearerRegex.ReplaceAllString(msg, `${1}Bearer [REDACTED]`)
+	if json.Valid([]byte(msg)) {
+		return logredact.RedactText(msg, "authorization", "api_key", "apikey", "api-key", "x-api-key")
+	}
+	return logredact.RedactText(msg, "api_key", "apikey", "api-key", "x-api-key")
 }
 
 func (s *GeminiMessagesCompatService) writeGeminiMappedError(c *gin.Context, account *Account, upstreamStatus int, upstreamRequestID string, body []byte) error {

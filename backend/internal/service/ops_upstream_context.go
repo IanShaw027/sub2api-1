@@ -12,6 +12,7 @@ import (
 // These keys are set by gateway services and consumed by handler/ops_error_logger.go.
 const (
 	OpsUpstreamStatusCodeKey   = "ops_upstream_status_code"
+	OpsUpstreamErrorTypeKey    = "ops_upstream_error_type"
 	OpsUpstreamErrorMessageKey = "ops_upstream_error_message"
 	OpsUpstreamErrorDetailKey  = "ops_upstream_error_detail"
 	OpsUpstreamErrorsKey       = "ops_upstream_errors"
@@ -187,12 +188,23 @@ func GetOpsStreamError(c *gin.Context) (OpsStreamError, bool) {
 // handler-layer code (e.g. failover-exhausted paths) that needs to record the
 // original upstream status code before mapping it to a client-facing code.
 func SetOpsUpstreamError(c *gin.Context, upstreamStatusCode int, upstreamMessage, upstreamDetail string) {
-	setOpsUpstreamError(c, upstreamStatusCode, upstreamMessage, upstreamDetail)
+	setOpsUpstreamErrorInternal(c, "upstream_error", upstreamStatusCode, upstreamMessage, upstreamDetail)
+}
+
+func SetOpsUpstreamErrorWithType(c *gin.Context, errType string, upstreamStatusCode int, upstreamMessage, upstreamDetail string) {
+	setOpsUpstreamErrorInternal(c, errType, upstreamStatusCode, upstreamMessage, upstreamDetail)
 }
 
 func setOpsUpstreamError(c *gin.Context, upstreamStatusCode int, upstreamMessage, upstreamDetail string) {
+	setOpsUpstreamErrorInternal(c, "upstream_error", upstreamStatusCode, upstreamMessage, upstreamDetail)
+}
+
+func setOpsUpstreamErrorInternal(c *gin.Context, errType string, upstreamStatusCode int, upstreamMessage, upstreamDetail string) {
 	if c == nil {
 		return
+	}
+	if normalizedType := strings.TrimSpace(errType); normalizedType != "" {
+		c.Set(OpsUpstreamErrorTypeKey, normalizedType)
 	}
 	if upstreamStatusCode > 0 {
 		c.Set(OpsUpstreamStatusCodeKey, upstreamStatusCode)

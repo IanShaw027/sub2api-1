@@ -32,6 +32,45 @@ func newMinimalGatewayService() *GatewayService {
 	}
 }
 
+func TestExtractUpstreamErrorMessageSupportsXAIStringError(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"code":"invalid-argument","error":"Empty content block"}`)
+	require.Equal(t, "Empty content block", ExtractUpstreamErrorMessage(body))
+	require.Equal(t, "invalid-argument", extractUpstreamErrorCode(body))
+}
+
+func TestExtractUpstreamErrorMessageSupportsResponsesError(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"response":{"error":{"code":"context_length_exceeded","message":"context window exceeded"}}}`)
+	require.Equal(t, "context window exceeded", ExtractUpstreamErrorMessage(body))
+	require.Equal(t, "context_length_exceeded", extractUpstreamErrorCode(body))
+}
+
+func TestExtractUpstreamErrorMessageDoesNotExposeErrorObject(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"error":{"code":"invalid-argument"}}`)
+	require.Empty(t, ExtractUpstreamErrorMessage(body))
+}
+
+func TestExtractUpstreamErrorCodeReadsDetailCode(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"detail":{"code":"deactivated_workspace"}}`)
+	require.Equal(t, "deactivated_workspace", extractUpstreamErrorCode(body))
+}
+
+func TestSanitizeUpstreamErrorMessageRedactsStructuredAndBearerCredentials(t *testing.T) {
+	msg := `{"error":{"refresh_token":"leaked-refresh","access_token":"leaked-access","api_key":"leaked-api"},"authorization":"Bearer leaked-bearer"}`
+	redacted := SanitizeUpstreamErrorMessage(msg)
+	require.NotContains(t, redacted, "leaked-refresh")
+	require.NotContains(t, redacted, "leaked-access")
+	require.NotContains(t, redacted, "leaked-bearer")
+	require.NotContains(t, redacted, "leaked-api")
+}
+
 func TestParseSSEUsage_MessageStart(t *testing.T) {
 	svc := newMinimalGatewayService()
 	usage := &ClaudeUsage{}

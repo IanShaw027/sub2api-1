@@ -32,6 +32,41 @@ func newGinContextForEndpoint(t *testing.T, endpoint string) (*gin.Context, *htt
 }
 
 // parseResponsesFailedSSE 抽出 SSE 中 data 行的 JSON，返回 (response 对象, error 对象)。
+func parseResponsesCancelledSSE(t *testing.T, body string) map[string]any {
+	t.Helper()
+	require.True(t, strings.HasPrefix(body, "event: response.cancelled\n"),
+		"expect event: response.cancelled prefix, got: %q", body)
+	require.True(t, strings.HasSuffix(body, "\n\n"))
+
+	lines := strings.SplitN(strings.TrimSuffix(body, "\n\n"), "\n", 2)
+	require.Len(t, lines, 2)
+	require.True(t, strings.HasPrefix(lines[1], "data: "))
+	jsonStr := strings.TrimPrefix(lines[1], "data: ")
+
+	var parsed map[string]any
+	require.NoError(t, json.Unmarshal([]byte(jsonStr), &parsed), "data must be valid JSON: %s", jsonStr)
+	assert.Equal(t, "response.cancelled", parsed["type"])
+
+	resp, ok := parsed["response"].(map[string]any)
+	require.True(t, ok, "response object missing")
+	assert.Equal(t, "response", resp["object"])
+	assert.Equal(t, "cancelled", resp["status"])
+	return resp
+}
+
+func TestWriteResponsesCancelledSSE(t *testing.T) {
+	c, w := newGinContextForEndpoint(t, EndpointResponses)
+	setOpsRequestContext(c, "gpt-5.5", true)
+
+	require.True(t, writeResponsesCancelledSSE(c))
+
+	resp := parseResponsesCancelledSSE(t, w.Body.String())
+	assert.Equal(t, "gpt-5.5", resp["model"])
+	_, hasError := resp["error"]
+	assert.False(t, hasError, "cancelled terminal must not look like upstream failure")
+	assert.Equal(t, "text/event-stream", w.Header().Get("Content-Type"))
+}
+
 func parseResponsesFailedSSE(t *testing.T, body string) (map[string]any, map[string]any) {
 	t.Helper()
 	require.True(t, strings.HasPrefix(body, "event: response.failed\n"),
@@ -151,6 +186,16 @@ func TestOpenAIHandleStreamingAwareError_ChatCompletionsStreamingKeepsLegacy(t *
 
 	body := w.Body.String()
 	assert.True(t, strings.HasPrefix(body, "event: error\n"), "got: %q", body)
+	assert.Contains(t, body, "data: [DONE]\n\n", "chat completions must append [DONE]: %q", body)
+}
+
+func TestOpenAIHandleStreamingAwareError_ResponsesStreamingOmitsDone(t *testing.T) {
+	c, w := newGinContextForEndpoint(t, EndpointResponses)
+	h := &OpenAIGatewayHandler{}
+	h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", "boom", true)
+
+	body := w.Body.String()
+	assert.NotContains(t, body, "[DONE]", "responses path must not emit [DONE]: %q", body)
 }
 
 // Gateway (Anthropic-backed) handler: /v1/responses path also must emit response.failed.
@@ -173,6 +218,16 @@ func TestGatewayHandleStreamingAwareError_MessagesStreamingKeepsLegacy(t *testin
 
 	body := w.Body.String()
 	assert.True(t, strings.HasPrefix(body, `data: {"type":"error"`), "got: %q", body)
+}
+
+func TestGatewayHandleStreamingAwareError_BareChatCompletionsStreamingAppendsDone(t *testing.T) {
+	c, w := newGinContextForEndpoint(t, "/chat/completions")
+	h := &GatewayHandler{}
+	h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", "boom", true)
+
+	body := w.Body.String()
+	assert.True(t, strings.HasPrefix(body, `data: {"type":"error"`), "got: %q", body)
+	assert.Contains(t, body, "data: [DONE]\n\n")
 }
 
 // 项目里 /responses 注册在多组路由：/v1/responses（gateway）、裸 /responses（top-level）、

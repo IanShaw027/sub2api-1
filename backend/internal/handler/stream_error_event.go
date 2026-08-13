@@ -35,6 +35,29 @@ type responsesFailedEvent struct {
 	Response responsesFailedBody `json:"response"`
 }
 
+type responsesCancelledBody struct {
+	ID     string `json:"id"`
+	Object string `json:"object"`
+	Model  string `json:"model,omitempty"`
+	Status string `json:"status"`
+	Output []any  `json:"output"`
+}
+
+type responsesCancelledEvent struct {
+	Type     string                 `json:"type"`
+	Response responsesCancelledBody `json:"response"`
+}
+
+func setResponsesSSEHeaders(c *gin.Context) {
+	if c == nil || c.Writer == nil {
+		return
+	}
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+}
+
 // writeResponsesFailedSSE emits a `response.failed` SSE event in the OpenAI
 // Responses API protocol after the stream has already started.
 //
@@ -57,6 +80,7 @@ func writeResponsesFailedSSE(c *gin.Context, errType, message string) bool {
 	if !ok {
 		return false
 	}
+	setResponsesSSEHeaders(c)
 
 	payload, err := json.Marshal(responsesFailedEvent{
 		Type: "response.failed",
@@ -83,6 +107,47 @@ func writeResponsesFailedSSE(c *gin.Context, errType, message string) bool {
 	}
 	flusher.Flush()
 	return true
+}
+
+func writeResponsesCancelledSSE(c *gin.Context) bool {
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		return false
+	}
+	setResponsesSSEHeaders(c)
+
+	payload, err := json.Marshal(responsesCancelledEvent{
+		Type: "response.cancelled",
+		Response: responsesCancelledBody{
+			ID:     synthesizeResponseID(c),
+			Object: "response",
+			Model:  requestModel(c),
+			Status: "cancelled",
+			Output: []any{},
+		},
+	})
+	if err != nil {
+		_ = c.Error(err)
+		return true
+	}
+
+	if _, err := fmt.Fprintf(c.Writer, "event: response.cancelled\ndata: %s\n\n", payload); err != nil {
+		_ = c.Error(err)
+		return true
+	}
+	flusher.Flush()
+	return true
+}
+
+func inboundIsChatCompletions(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	p := strings.TrimRight(c.FullPath(), "/")
+	if p == "" && c.Request != nil && c.Request.URL != nil {
+		p = strings.TrimRight(c.Request.URL.Path, "/")
+	}
+	return strings.HasSuffix(p, "/chat/completions")
 }
 
 // inboundIsResponses 判断当前请求是否落在任意 Responses 路由上

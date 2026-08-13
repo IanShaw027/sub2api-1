@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -21,7 +22,7 @@ func TestGatewayEnsureForwardErrorResponse_WritesFallbackWhenNotWritten(t *testi
 	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
 
 	h := &GatewayHandler{}
-	wrote := h.ensureForwardErrorResponse(c, false)
+	wrote := h.ensureForwardErrorResponse(c, false, nil)
 
 	require.True(t, wrote)
 	require.Equal(t, http.StatusBadGateway, w.Code)
@@ -46,7 +47,7 @@ func TestGatewayEnsureForwardErrorResponse_AppendsSSEAfterWritten(t *testing.T) 
 	c.String(http.StatusTeapot, "already written")
 
 	h := &GatewayHandler{}
-	wrote := h.ensureForwardErrorResponse(c, false)
+	wrote := h.ensureForwardErrorResponse(c, false, nil)
 
 	require.True(t, wrote)
 	require.Equal(t, http.StatusTeapot, w.Code)
@@ -64,7 +65,7 @@ func TestGatewayEnsureForwardErrorResponse_SkipsCommittedSSEError(t *testing.T) 
 	service.MarkResponseCommitted(c)
 
 	h := &GatewayHandler{}
-	wrote := h.ensureForwardErrorResponse(c, true)
+	wrote := h.ensureForwardErrorResponse(c, true, errors.New("stream read error"))
 
 	require.False(t, wrote)
 	require.Equal(t, 1, strings.Count(w.Body.String(), "event: error"))
@@ -80,13 +81,70 @@ func TestGatewayEnsureForwardErrorResponse_ResponsesRouteAfterWrittenEmitsRespon
 	_, _ = c.Writer.WriteString(":\n\n")
 
 	h := &GatewayHandler{}
-	wrote := h.ensureForwardErrorResponse(c, false)
+	wrote := h.ensureForwardErrorResponse(c, false, nil)
 
 	require.True(t, wrote)
 	body := w.Body.String()
 	assert.Contains(t, body, ":\n\n")
 	assert.Contains(t, body, "event: response.failed\n")
 	assert.Contains(t, body, `"type":"response.failed"`)
+}
+
+func TestGatewayEnsureForwardErrorResponse_UsesDetailedForwardError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+
+	h := &GatewayHandler{}
+	wrote := h.ensureForwardErrorResponse(c, false, errors.New("dial tcp 127.0.0.1:443: connect: connection refused"))
+
+	require.True(t, wrote)
+	require.Equal(t, http.StatusBadGateway, w.Code)
+
+	var parsed map[string]any
+	err := json.Unmarshal(w.Body.Bytes(), &parsed)
+	require.NoError(t, err)
+	assert.Equal(t, "error", parsed["type"])
+	errorObj, ok := parsed["error"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "upstream_connect_error", errorObj["type"])
+	assert.Equal(t, "Failed to connect to upstream service", errorObj["message"])
+}
+
+func TestGatewayEnsureForwardErrorResponse_ClientDisconnectSkipsFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	reqCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil).WithContext(reqCtx)
+
+	h := &GatewayHandler{}
+	wrote := h.ensureForwardErrorResponse(c, false, context.Canceled)
+
+	require.False(t, wrote)
+	require.False(t, c.Writer.Written())
+	require.Empty(t, w.Body.String())
+}
+
+func TestGatewayEnsureForwardErrorResponse_ResponsesCancelEmitsCancelled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	reqCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	c.Request = httptest.NewRequest(http.MethodPost, EndpointResponses, nil).WithContext(reqCtx)
+	_, _ = c.Writer.WriteString(":\n\n")
+
+	h := &GatewayHandler{}
+	wrote := h.ensureForwardErrorResponse(c, true, context.Canceled)
+
+	require.True(t, wrote)
+	body := w.Body.String()
+	assert.Contains(t, body, "event: response.cancelled\n")
+	assert.Contains(t, body, `"type":"response.cancelled"`)
+	assert.NotContains(t, body, "event: response.failed\n")
 }
 
 func TestGatewayForwardErrorAlreadyCommunicated(t *testing.T) {
