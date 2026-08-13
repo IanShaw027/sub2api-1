@@ -66,6 +66,7 @@ describe('AnnouncementReadStatusDialog', () => {
           BaseDialog: BaseDialogStub,
           DataTable: true,
           Pagination: true,
+          Select: true,
           Icon: true,
         },
       },

@@ -3,11 +3,11 @@
  */
 
 import { apiClient } from './client'
-import type { UserAnnouncement } from '@/types'
+import type { AnnouncementReadStatusFilter, UserAnnouncement } from '@/types'
 
-export async function list(unreadOnly: boolean = false): Promise<UserAnnouncement[]> {
+export async function list(readStatus: AnnouncementReadStatusFilter = 'all'): Promise<UserAnnouncement[]> {
   const { data } = await apiClient.get<UserAnnouncement[]>('/announcements', {
-    params: unreadOnly ? { unread_only: 1 } : {}
+    params: readStatus === 'all' ? {} : { read_status: readStatus }
   })
   return data
 }

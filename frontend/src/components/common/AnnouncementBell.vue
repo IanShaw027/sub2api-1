@@ -71,6 +71,22 @@
 
             <!-- Body -->
             <div class="max-h-[65vh] overflow-y-auto">
+              <div class="sticky top-0 z-10 border-b border-gray-100 bg-white/95 px-6 py-3 backdrop-blur dark:border-dark-700 dark:bg-dark-800/95">
+                <div class="inline-flex rounded-xl bg-gray-100 p-1 dark:bg-dark-700">
+                  <button
+                    v-for="option in readStatusOptions"
+                    :key="option.value"
+                    @click="changeReadStatus(option.value)"
+                    class="rounded-lg px-3 py-1.5 text-sm font-medium transition-all"
+                    :class="selectedReadStatus === option.value
+                      ? 'bg-white text-blue-600 shadow-sm dark:bg-dark-800 dark:text-blue-400'
+                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
+                  >
+                    {{ option.label }}
+                  </button>
+                </div>
+              </div>
+
               <!-- Loading -->
               <div v-if="loading" class="flex items-center justify-center py-16">
                 <div class="relative">
@@ -169,8 +185,8 @@
                     </svg>
                   </div>
                 </div>
-                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('announcements.empty') }}</p>
-                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('announcements.emptyDescription') }}</p>
+                <p class="text-sm font-medium text-gray-900 dark:text-white">{{ emptyTitle }}</p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ emptyDescription }}</p>
               </div>
             </div>
           </div>
@@ -320,7 +336,7 @@ import DOMPurify from 'dompurify'
 import { useAppStore } from '@/stores/app'
 import { useAnnouncementStore } from '@/stores/announcements'
 import { formatRelativeTime, formatRelativeWithDateTime } from '@/utils/format'
-import type { UserAnnouncement } from '@/types'
+import type { AnnouncementReadStatusFilter, UserAnnouncement } from '@/types'
 import Icon from '@/components/icons/Icon.vue'
 import '@/styles/announcement-markdown.css'
 
@@ -335,8 +351,34 @@ marked.setOptions({
 })
 
 // Use store state (storeToRefs for reactivity)
-const { announcements, loading } = storeToRefs(announcementStore)
+const { announcements, loading, readStatus } = storeToRefs(announcementStore)
 const unreadCount = computed(() => announcementStore.unreadCount)
+const selectedReadStatus = computed(() => readStatus.value)
+const readStatusOptions = computed(() => [
+  { value: 'all' as AnnouncementReadStatusFilter, label: t('announcements.filters.all') },
+  { value: 'unread' as AnnouncementReadStatusFilter, label: t('announcements.filters.unread') },
+  { value: 'read' as AnnouncementReadStatusFilter, label: t('announcements.filters.read') },
+])
+const emptyTitle = computed(() => {
+  switch (selectedReadStatus.value) {
+    case 'unread':
+      return t('announcements.emptyUnread')
+    case 'read':
+      return t('announcements.emptyRead')
+    default:
+      return t('announcements.empty')
+  }
+})
+const emptyDescription = computed(() => {
+  switch (selectedReadStatus.value) {
+    case 'unread':
+      return t('announcements.emptyUnreadDescription')
+    case 'read':
+      return t('announcements.emptyReadDescription')
+    default:
+      return t('announcements.emptyDescription')
+  }
+})
 
 // Local modal state
 const isModalOpen = ref(false)
@@ -352,6 +394,7 @@ function renderMarkdown(content: string): string {
 
 function openModal() {
   isModalOpen.value = true
+  announcementStore.fetchAnnouncements(true, selectedReadStatus.value)
 }
 
 function closeModal() {
@@ -389,6 +432,17 @@ async function markAllAsRead() {
   try {
     await announcementStore.markAllAsRead()
     appStore.showSuccess(t('announcements.allMarkedAsRead'))
+  } catch (err: any) {
+    appStore.showError(err?.message || t('common.unknownError'))
+  }
+}
+
+async function changeReadStatus(filter: AnnouncementReadStatusFilter) {
+  if (filter === selectedReadStatus.value && announcements.value.length > 0) {
+    return
+  }
+  try {
+    await announcementStore.fetchAnnouncements(true, filter)
   } catch (err: any) {
     appStore.showError(err?.message || t('common.unknownError'))
   }

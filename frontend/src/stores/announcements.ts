@@ -1,39 +1,43 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { announcementsAPI } from '@/api'
-import type { UserAnnouncement } from '@/types'
+import type { AnnouncementReadStatusFilter, UserAnnouncement } from '@/types'
 
 const THROTTLE_MS = 20 * 60 * 1000 // 20 minutes
 
 export const useAnnouncementStore = defineStore('announcements', () => {
   // State
   const announcements = ref<UserAnnouncement[]>([])
+  const unreadTotal = ref(0)
   const loading = ref(false)
   const lastFetchTime = ref(0)
   const popupQueue = ref<UserAnnouncement[]>([])
   const currentPopup = ref<UserAnnouncement | null>(null)
+  const readStatus = ref<AnnouncementReadStatusFilter>('all')
 
   // Session-scoped dedup set — not reactive, used as plain lookup only
   let shownPopupIds = new Set<number>()
 
   // Getters
-  const unreadCount = computed(() =>
-    announcements.value.filter((a) => !a.read_at).length
-  )
+  const unreadCount = computed(() => unreadTotal.value)
 
   // Actions
-  async function fetchAnnouncements(force = false) {
+  async function fetchAnnouncements(force = false, filter: AnnouncementReadStatusFilter = 'all') {
     const now = Date.now()
-    if (!force && lastFetchTime.value > 0 && now - lastFetchTime.value < THROTTLE_MS) {
+    if (!force && filter === readStatus.value && lastFetchTime.value > 0 && now - lastFetchTime.value < THROTTLE_MS) {
       return
     }
 
     // Set immediately to prevent concurrent duplicate requests
     lastFetchTime.value = now
+    readStatus.value = filter
 
     try {
       loading.value = true
-      const all = await announcementsAPI.list(false)
+      const all = await announcementsAPI.list(filter)
+      if (filter !== 'read') {
+        unreadTotal.value = all.filter((a) => !a.read_at).length
+      }
       announcements.value = all.slice(0, 20)
       enqueueNewPopups()
     } catch (err: any) {
@@ -89,8 +93,15 @@ export const useAnnouncementStore = defineStore('announcements', () => {
     try {
       await announcementsAPI.markRead(id)
       const ann = announcements.value.find((a) => a.id === id)
+      const wasUnread = ann ? !ann.read_at : false
       if (ann) {
         ann.read_at = new Date().toISOString()
+      }
+      if (wasUnread) {
+        unreadTotal.value = Math.max(0, unreadTotal.value - 1)
+      }
+      if (readStatus.value === 'unread') {
+        announcements.value = announcements.value.filter((a) => a.id !== id)
       }
     } catch (err: any) {
       console.error('Failed to mark announcement as read:', err)
@@ -109,6 +120,10 @@ export const useAnnouncementStore = defineStore('announcements', () => {
           a.read_at = new Date().toISOString()
         }
       })
+      unreadTotal.value = Math.max(0, unreadTotal.value - unread.length)
+      if (readStatus.value === 'unread') {
+        announcements.value = []
+      }
     } catch (err: any) {
       console.error('Failed to mark all as read:', err)
       throw err
@@ -119,7 +134,9 @@ export const useAnnouncementStore = defineStore('announcements', () => {
 
   function reset() {
     announcements.value = []
+    unreadTotal.value = 0
     lastFetchTime.value = 0
+    readStatus.value = 'all'
     shownPopupIds = new Set()
     popupQueue.value = []
     currentPopup.value = null
@@ -129,8 +146,10 @@ export const useAnnouncementStore = defineStore('announcements', () => {
   return {
     // State
     announcements,
+    unreadTotal,
     loading,
     currentPopup,
+    readStatus,
     // Getters
     unreadCount,
     // Actions

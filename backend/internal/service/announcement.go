@@ -34,6 +34,23 @@ const (
 	AnnouncementOperatorEQ  = domain.AnnouncementOperatorEQ
 )
 
+const (
+	AnnouncementReadStatusAll    = "all"
+	AnnouncementReadStatusRead   = "read"
+	AnnouncementReadStatusUnread = "unread"
+)
+
+func NormalizeAnnouncementReadStatus(v string) string {
+	switch v {
+	case AnnouncementReadStatusRead:
+		return AnnouncementReadStatusRead
+	case AnnouncementReadStatusUnread:
+		return AnnouncementReadStatusUnread
+	default:
+		return AnnouncementReadStatusAll
+	}
+}
+
 var (
 	ErrAnnouncementNotFound        = domain.ErrAnnouncementNotFound
 	ErrAnnouncementInvalidTarget   = domain.ErrAnnouncementInvalidTarget
@@ -82,4 +99,5 @@ type AnnouncementReadRepository interface {
 	GetReadMapByUser(ctx context.Context, userID int64, announcementIDs []int64) (map[int64]time.Time, error)
 	GetReadMapByUsers(ctx context.Context, announcementID int64, userIDs []int64) (map[int64]time.Time, error)
 	CountByAnnouncementID(ctx context.Context, announcementID int64) (int64, error)
+	ListUserReadStatus(ctx context.Context, announcementID int64, targeting AnnouncementTargeting, now time.Time, params pagination.PaginationParams, search, readStatus string) ([]AnnouncementUserReadStatus, *pagination.PaginationResult, error)
 }

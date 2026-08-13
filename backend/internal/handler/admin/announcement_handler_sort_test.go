@@ -56,21 +56,42 @@ func (r *announcementUserRepoCapture) ListWithFilters(ctx context.Context, param
 
 type announcementReadRepoCapture struct {
 	service.AnnouncementReadRepository
+	listParams pagination.PaginationParams
 }
 
-func (r *announcementReadRepoCapture) GetReadMapByUsers(ctx context.Context, announcementID int64, userIDs []int64) (map[int64]time.Time, error) {
-	return map[int64]time.Time{}, nil
+func (r *announcementReadRepoCapture) ListUserReadStatus(
+	ctx context.Context,
+	announcementID int64,
+	targeting service.AnnouncementTargeting,
+	now time.Time,
+	params pagination.PaginationParams,
+	search, readStatus string,
+) ([]service.AnnouncementUserReadStatus, *pagination.PaginationResult, error) {
+	r.listParams = params
+	return []service.AnnouncementUserReadStatus{}, &pagination.PaginationResult{
+		Total:    0,
+		Page:     params.Page,
+		PageSize: params.PageSize,
+		Pages:    0,
+	}, nil
 }
 
 type announcementUserSubRepoCapture struct {
 	service.UserSubscriptionRepository
 }
 
-func newAnnouncementSortTestRouter(announcementRepo *announcementRepoCapture, userRepo *announcementUserRepoCapture) *gin.Engine {
+func newAnnouncementSortTestRouter(
+	announcementRepo *announcementRepoCapture,
+	userRepo *announcementUserRepoCapture,
+	readRepo *announcementReadRepoCapture,
+) *gin.Engine {
 	gin.SetMode(gin.TestMode)
+	if readRepo == nil {
+		readRepo = &announcementReadRepoCapture{}
+	}
 	svc := service.NewAnnouncementService(
 		announcementRepo,
-		&announcementReadRepoCapture{},
+		readRepo,
 		userRepo,
 		&announcementUserSubRepoCapture{},
 	)
@@ -84,7 +105,7 @@ func newAnnouncementSortTestRouter(announcementRepo *announcementRepoCapture, us
 func TestAdminAnnouncementListSortParams(t *testing.T) {
 	announcementRepo := &announcementRepoCapture{}
 	userRepo := &announcementUserRepoCapture{}
-	router := newAnnouncementSortTestRouter(announcementRepo, userRepo)
+	router := newAnnouncementSortTestRouter(announcementRepo, userRepo, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/announcements?sort_by=title&sort_order=ASC", nil)
 	rec := httptest.NewRecorder()
@@ -98,7 +119,7 @@ func TestAdminAnnouncementListSortParams(t *testing.T) {
 func TestAdminAnnouncementListSortDefaults(t *testing.T) {
 	announcementRepo := &announcementRepoCapture{}
 	userRepo := &announcementUserRepoCapture{}
-	router := newAnnouncementSortTestRouter(announcementRepo, userRepo)
+	router := newAnnouncementSortTestRouter(announcementRepo, userRepo, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/announcements", nil)
 	rec := httptest.NewRecorder()
@@ -112,27 +133,29 @@ func TestAdminAnnouncementListSortDefaults(t *testing.T) {
 func TestAdminAnnouncementReadStatusSortParams(t *testing.T) {
 	announcementRepo := &announcementRepoCapture{}
 	userRepo := &announcementUserRepoCapture{}
-	router := newAnnouncementSortTestRouter(announcementRepo, userRepo)
+	readRepo := &announcementReadRepoCapture{}
+	router := newAnnouncementSortTestRouter(announcementRepo, userRepo, readRepo)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/announcements/1/read-status?sort_by=balance&sort_order=DESC", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.Equal(t, "balance", userRepo.listParams.SortBy)
-	require.Equal(t, "DESC", userRepo.listParams.SortOrder)
+	require.Equal(t, "balance", readRepo.listParams.SortBy)
+	require.Equal(t, "DESC", readRepo.listParams.SortOrder)
 }
 
 func TestAdminAnnouncementReadStatusSortDefaults(t *testing.T) {
 	announcementRepo := &announcementRepoCapture{}
 	userRepo := &announcementUserRepoCapture{}
-	router := newAnnouncementSortTestRouter(announcementRepo, userRepo)
+	readRepo := &announcementReadRepoCapture{}
+	router := newAnnouncementSortTestRouter(announcementRepo, userRepo, readRepo)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/announcements/1/read-status", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.Equal(t, "email", userRepo.listParams.SortBy)
-	require.Equal(t, "asc", userRepo.listParams.SortOrder)
+	require.Equal(t, "email", readRepo.listParams.SortBy)
+	require.Equal(t, "asc", readRepo.listParams.SortOrder)
 }

@@ -215,7 +215,7 @@ func (s *AnnouncementService) List(ctx context.Context, params pagination.Pagina
 	return s.announcementRepo.List(ctx, params, filters)
 }
 
-func (s *AnnouncementService) ListForUser(ctx context.Context, userID int64, unreadOnly bool) ([]UserAnnouncement, error) {
+func (s *AnnouncementService) ListForUser(ctx context.Context, userID int64, readStatus string) ([]UserAnnouncement, error) {
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
@@ -263,8 +263,15 @@ func (s *AnnouncementService) ListForUser(ctx context.Context, userID int64, unr
 	for i := range visible {
 		a := visible[i]
 		readAt, ok := readMap[a.ID]
-		if unreadOnly && ok {
-			continue
+		switch NormalizeAnnouncementReadStatus(readStatus) {
+		case AnnouncementReadStatusUnread:
+			if ok {
+				continue
+			}
+		case AnnouncementReadStatusRead:
+			if !ok {
+				continue
+			}
 		}
 		var ptr *time.Time
 		if ok {
@@ -329,62 +336,13 @@ func (s *AnnouncementService) ListUserReadStatus(
 	ctx context.Context,
 	announcementID int64,
 	params pagination.PaginationParams,
-	search string,
+	search, readStatus string,
 ) ([]AnnouncementUserReadStatus, *pagination.PaginationResult, error) {
 	ann, err := s.announcementRepo.GetByID(ctx, announcementID)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	filters := UserListFilters{
-		Search: strings.TrimSpace(search),
-	}
-
-	users, page, err := s.userRepo.ListWithFilters(ctx, params, filters)
-	if err != nil {
-		return nil, nil, fmt.Errorf("list users: %w", err)
-	}
-
-	userIDs := make([]int64, 0, len(users))
-	for i := range users {
-		userIDs = append(userIDs, users[i].ID)
-	}
-
-	readMap, err := s.readRepo.GetReadMapByUsers(ctx, announcementID, userIDs)
-	if err != nil {
-		return nil, nil, fmt.Errorf("get read map: %w", err)
-	}
-
-	out := make([]AnnouncementUserReadStatus, 0, len(users))
-	for i := range users {
-		u := users[i]
-		subs, err := s.userSubRepo.ListActiveByUserID(ctx, u.ID)
-		if err != nil {
-			return nil, nil, fmt.Errorf("list active subscriptions: %w", err)
-		}
-		activeGroupIDs := make(map[int64]struct{}, len(subs))
-		for j := range subs {
-			activeGroupIDs[subs[j].GroupID] = struct{}{}
-		}
-
-		readAt, ok := readMap[u.ID]
-		var ptr *time.Time
-		if ok {
-			t := readAt
-			ptr = &t
-		}
-
-		out = append(out, AnnouncementUserReadStatus{
-			UserID:   u.ID,
-			Email:    u.Email,
-			Username: u.Username,
-			Balance:  u.Balance,
-			Eligible: domain.AnnouncementTargeting(ann.Targeting).Matches(u.Balance, activeGroupIDs),
-			ReadAt:   ptr,
-		})
-	}
-
-	return out, page, nil
+	return s.readRepo.ListUserReadStatus(ctx, announcementID, ann.Targeting, time.Now(), params, search, NormalizeAnnouncementReadStatus(readStatus))
 }
 
 func isValidAnnouncementStatus(status string) bool {

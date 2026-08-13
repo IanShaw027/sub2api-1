@@ -33,9 +33,9 @@ func (h *AnnouncementHandler) List(c *gin.Context) {
 		return
 	}
 
-	unreadOnly := parseBoolQuery(c.Query("unread_only"))
+	readStatus := parseAnnouncementReadStatus(c.Query("read_status"), c.Query("unread_only"))
 
-	items, err := h.announcementService.ListForUser(c.Request.Context(), subject.UserID, unreadOnly)
+	items, err := h.announcementService.ListForUser(c.Request.Context(), subject.UserID, readStatus)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -78,4 +78,15 @@ func parseBoolQuery(v string) bool {
 	default:
 		return false
 	}
+}
+
+func parseAnnouncementReadStatus(readStatus, unreadOnly string) string {
+	switch strings.TrimSpace(strings.ToLower(readStatus)) {
+	case service.AnnouncementReadStatusRead, service.AnnouncementReadStatusUnread, service.AnnouncementReadStatusAll:
+		return strings.TrimSpace(strings.ToLower(readStatus))
+	}
+	if parseBoolQuery(unreadOnly) {
+		return service.AnnouncementReadStatusUnread
+	}
+	return service.AnnouncementReadStatusAll
 }

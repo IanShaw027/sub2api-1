@@ -5,6 +5,7 @@
 import { apiClient } from '../client'
 import type {
   Announcement,
+  AnnouncementReadStatusFilter,
   AnnouncementUserReadStatus,
   BasePaginationResponse,
   CreateAnnouncementRequest,
@@ -57,6 +58,7 @@ export async function getReadStatus(
   pageSize: number = 20,
   filters?: {
     search?: string
+    read_status?: AnnouncementReadStatusFilter
     sort_by?: string
     sort_order?: 'asc' | 'desc'
   },
