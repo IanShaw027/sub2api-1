@@ -21,6 +21,7 @@ func RegisterTicketRoutes(
 	userTickets := v1.Group("/tickets")
 	userTickets.Use(gin.HandlerFunc(jwtAuth))
 	userTickets.Use(middleware.BackendModeUserGuard(settingService))
+	userTickets.Use(middleware.TicketFeatureGuard(settingService))
 	userTickets.Use(panelRateLimiter.Global())
 	{
 		userTickets.POST("", ticketHandler.Create)
@@ -39,6 +40,7 @@ func RegisterTicketRoutes(
 
 	adminTickets := v1.Group("/admin/tickets")
 	adminTickets.Use(gin.HandlerFunc(adminAuth))
+	adminTickets.Use(middleware.TicketFeatureGuard(settingService))
 	adminTickets.Use(panelRateLimiter.Global())
 	adminTickets.Use(gin.HandlerFunc(auditLog))
 	{

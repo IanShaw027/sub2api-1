@@ -73,6 +73,18 @@ func backendModeAllowsAuthPath(path string) bool {
 	return strings.Contains(path, "/auth/oauth/pending/")
 }
 
+// TicketFeatureGuard blocks ticket routes when the module is disabled.
+func TicketFeatureGuard(settingService *service.SettingService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if settingService != nil && settingService.IsTicketEnabled(c.Request.Context()) {
+			c.Next()
+			return
+		}
+		response.ErrorFrom(c, service.ErrTicketDisabled)
+		c.Abort()
+	}
+}
+
 // BackendModeAuthGuard selectively blocks auth endpoints when backend mode is enabled.
 // Allows the minimal auth surface admins still need in backend mode, including
 // OAuth callbacks and pending continuations. Handler-level backend mode checks

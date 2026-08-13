@@ -183,14 +183,25 @@ func (s *TicketService) ListForAdmin(ctx context.Context, filters SupportTicketL
 
 func (s *TicketService) CountUnreadForUser(ctx context.Context, userID int64) (int, error) {
 	return s.entClient.SupportTicket.Query().
-		Where(supportticket.UserIDEQ(userID), supportticket.UnreadByUserEQ(true)).
+		Where(
+			supportticket.UserIDEQ(userID),
+			supportticket.UnreadByUserEQ(true),
+			supportticket.StatusNotIn(ticketReminderExcludedStatuses()...),
+		).
 		Count(ctx)
 }
 
 func (s *TicketService) CountUnreadForAdmin(ctx context.Context) (int, error) {
 	return s.entClient.SupportTicket.Query().
-		Where(supportticket.UnreadByAdminEQ(true)).
+		Where(
+			supportticket.UnreadByAdminEQ(true),
+			supportticket.StatusNotIn(ticketReminderExcludedStatuses()...),
+		).
 		Count(ctx)
+}
+
+func ticketReminderExcludedStatuses() []string {
+	return []string{SupportTicketStatusResolved, SupportTicketStatusClosed, SupportTicketStatusWithdrawn}
 }
 
 func (s *TicketService) ListMessagesForUser(ctx context.Context, userID, ticketID int64) ([]SupportTicketMessage, error) {
@@ -636,13 +647,14 @@ func (s *TicketService) addReply(ctx context.Context, ticket *SupportTicket, inp
 	now := time.Now()
 	senderID := input.UserID
 	message := &SupportTicketMessage{
-		SenderRole:         role,
-		SenderUserID:       &senderID,
-		SenderNameSnapshot: ticketSenderDisplayName(role, u.Username, u.Email),
-		MessageType:        SupportTicketMessageTypeMessage,
-		Content:            content,
-		Attachments:        attachments,
-		CreatedAt:          now,
+		SenderRole:           role,
+		SenderUserID:         &senderID,
+		SenderNameSnapshot:   ticketSenderDisplayName(role, u.Username, u.Email),
+		SenderAvatarSnapshot: s.loadTicketUserAvatarURLBestEffort(ctx, input.UserID),
+		MessageType:          SupportTicketMessageTypeMessage,
+		Content:              content,
+		Attachments:          attachments,
+		CreatedAt:            now,
 	}
 	tx, err := s.entClient.Tx(ctx)
 	if err != nil {
@@ -681,6 +693,7 @@ func (s *TicketService) addReply(ctx context.Context, ticket *SupportTicket, inp
 		SetSenderRole(role).
 		SetSenderUserID(input.UserID).
 		SetSenderNameSnapshot(message.SenderNameSnapshot).
+		SetSenderAvatarSnapshot(message.SenderAvatarSnapshot).
 		SetMessageType(SupportTicketMessageTypeMessage).
 		SetContent(content).
 		SetAttachments(raw).
@@ -921,6 +934,12 @@ func (s *TicketService) list(ctx context.Context, filters SupportTicketListFilte
 	if !admin && normalized.UnreadOnly {
 		q = q.Where(supportticket.UnreadByUserEQ(true))
 	}
+	if normalized.StartAt != nil {
+		q = q.Where(supportticket.CreatedAtGTE(*normalized.StartAt))
+	}
+	if normalized.EndAt != nil {
+		q = q.Where(supportticket.CreatedAtLT(*normalized.EndAt))
+	}
 	if kw := strings.TrimSpace(normalized.Search); kw != "" {
 		userIDs, _ := s.entClient.User.Query().
 			Where(user.Or(user.EmailContainsFold(kw), user.UsernameContainsFold(kw))).
@@ -1040,6 +1059,25 @@ func ticketTemplateToView(row *dbent.SupportTicketReplyTemplate) TicketReplyTemp
 		CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt,
 	}
+}
+
+func (s *TicketService) loadTicketUserAvatarURLBestEffort(ctx context.Context, userID int64) string {
+	if s == nil || s.entClient == nil || userID <= 0 {
+		return ""
+	}
+	rows, err := s.entClient.QueryContext(ctx, `SELECT url FROM user_avatars WHERE user_id = $1`, userID)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		return ""
+	}
+	var avatarURL string
+	if err := rows.Scan(&avatarURL); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(avatarURL)
 }
 
 func insertTicketSystemMessage(ctx context.Context, client *dbent.Client, ticketID int64, content string, at time.Time) error {

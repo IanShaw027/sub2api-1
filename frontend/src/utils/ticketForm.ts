@@ -10,6 +10,7 @@ export function emptyTicketForm(currentConcurrency = ''): Record<string, string>
     current_concurrency: currentConcurrency,
     target_concurrency: '',
     usage_scenario: '',
+    peak_window: '',
     target_rate: '',
     details: '',
   }
@@ -24,6 +25,9 @@ export function ticketFormFromPayload(
   for (const key of Object.keys(form)) {
     const value = src[key]
     if (value != null) form[key] = String(value)
+  }
+  if (!form.refund_amount && src.expected_amount != null) {
+    form.refund_amount = String(src.expected_amount)
   }
   const rawIds = src.group_ids
   const selectedGroupIds = Array.isArray(rawIds)
@@ -47,11 +51,13 @@ export function ticketPayloadFromForm(
     }
   }
   if (category === 'concurrency_apply') {
-    return {
+    const payload: Record<string, unknown> = {
       current_concurrency: form.current_concurrency,
       target_concurrency: form.target_concurrency,
       usage_scenario: form.usage_scenario,
     }
+    if (form.peak_window?.trim()) payload.peak_window = form.peak_window
+    return payload
   }
   if (category === 'rate_apply') {
     return {

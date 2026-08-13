@@ -6,6 +6,7 @@ import (
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
 
 const (
@@ -52,6 +53,7 @@ var (
 	ErrTicketAttachmentInvalid       = infraerrors.BadRequest("TICKET_ATTACHMENT_INVALID", "ticket attachment is not a valid private ticket media asset")
 	ErrTicketAttachmentLimit         = infraerrors.BadRequest("TICKET_ATTACHMENT_LIMIT", "ticket attachment count exceeds the limit")
 	ErrTicketTemplateInvalid         = infraerrors.BadRequest("TICKET_TEMPLATE_INVALID", "ticket reply template is invalid")
+	ErrTicketDisabled                = infraerrors.Forbidden("TICKET_DISABLED", "ticket module is disabled")
 )
 
 type TicketMessageAttachment struct {
@@ -130,6 +132,8 @@ type SupportTicketListFilters struct {
 	Category   string
 	Search     string
 	UnreadOnly bool
+	StartAt    *time.Time
+	EndAt      *time.Time
 	Page       int
 	PageSize   int
 }
@@ -171,4 +175,28 @@ func NormalizeSupportTicketStatus(v string) string {
 	default:
 		return ""
 	}
+}
+
+func ParseSupportTicketDateRange(startDate, endDate, userTZ string) (*time.Time, *time.Time, error) {
+	var startTime *time.Time
+	var endTime *time.Time
+	if strings.TrimSpace(startDate) != "" {
+		parsed, err := timezone.ParseInUserLocation("2006-01-02", strings.TrimSpace(startDate), userTZ)
+		if err != nil {
+			return nil, nil, infraerrors.BadRequest("TICKET_DATE_INVALID", "invalid start_date")
+		}
+		startTime = &parsed
+	}
+	if strings.TrimSpace(endDate) != "" {
+		parsed, err := timezone.ParseInUserLocation("2006-01-02", strings.TrimSpace(endDate), userTZ)
+		if err != nil {
+			return nil, nil, infraerrors.BadRequest("TICKET_DATE_INVALID", "invalid end_date")
+		}
+		upper := parsed.AddDate(0, 0, 1)
+		endTime = &upper
+	}
+	if startTime != nil && endTime != nil && !endTime.After(*startTime) {
+		return nil, nil, infraerrors.BadRequest("TICKET_DATE_INVALID", "invalid date range")
+	}
+	return startTime, endTime, nil
 }

@@ -124,6 +124,11 @@ export const FeatureFlags = {
     mode: 'opt-in',
     label: 'Affiliate',
   }),
+  ticket: defineFlag({
+    key: 'ticket_enabled',
+    mode: 'opt-out',
+    label: 'Tickets',
+  }),
 } as const
 
 export type RegisteredFeatureFlag = keyof typeof FeatureFlags

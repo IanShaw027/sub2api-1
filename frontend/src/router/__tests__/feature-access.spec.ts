@@ -25,6 +25,7 @@ const appStore = vi.hoisted(() => ({
   cachedPublicSettings: null as null | {
     payment_enabled?: boolean
     risk_control_enabled?: boolean
+    ticket_enabled?: boolean
     custom_menu_items?: []
   },
   fetchPublicSettings: vi.fn(),
@@ -142,6 +143,7 @@ describe('feature route guard', () => {
   it.each([
     ['payment', { requiresPayment: true }, '/purchase'],
     ['risk control', { requiresRiskControl: true }, '/admin/risk-control'],
+    ['tickets', { requiresTicket: true }, '/tickets'],
   ])('does not treat a failed %s settings load as explicitly disabled', async (_name, meta, path) => {
     authStore.isAdmin = meta.requiresRiskControl === true
     appStore.fetchPublicSettings.mockResolvedValue(null)
@@ -162,6 +164,7 @@ describe('feature route guard', () => {
       { risk_control_enabled: false },
       '/admin/settings',
     ],
+    ['tickets', { requiresTicket: true }, { ticket_enabled: false }, '/dashboard'],
   ])('redirects when loaded settings explicitly disable %s', async (_name, meta, settings, target) => {
     authStore.isAdmin = meta.requiresRiskControl === true
     appStore.cachedPublicSettings = settings

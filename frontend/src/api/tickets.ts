@@ -6,7 +6,7 @@ export const ticketsAPI = {
   create(data: { category: string; title: string; form_payload: Record<string, unknown> }) {
     return apiClient.post<SupportTicket>('/tickets', data)
   },
-  list(params?: { page?: number; page_size?: number; status?: string; category?: string; keyword?: string; unread_only?: boolean }) {
+  list(params?: { page?: number; page_size?: number; status?: string; category?: string; keyword?: string; unread_only?: boolean; start_date?: string; end_date?: string }) {
     return apiClient.get<BasePaginationResponse<SupportTicket>>('/tickets', { params })
   },
   unreadCount() {

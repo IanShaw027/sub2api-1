@@ -221,7 +221,7 @@ import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } 
 import VersionBadge from '@/components/common/VersionBadge.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
-import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
+import { FeatureFlags, isFeatureFlagEnabled, makeSidebarFlag } from '@/utils/featureFlags'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
 import { adminPaymentAPI } from '@/api/admin/payment'
 import { adminTicketsAPI } from '@/api/admin/tickets'
@@ -298,7 +298,7 @@ async function refreshInvoiceUnread() {
 }
 
 async function refreshTicketUnread() {
-  if (authStore.isSimpleMode) {
+  if (authStore.isSimpleMode || !isFeatureFlagEnabled(FeatureFlags.ticket)) {
     userTicketUnreadCount.value = 0
     adminTicketUnreadCount.value = 0
     return
@@ -755,6 +755,7 @@ const flagChannelMonitor = makeSidebarFlag(FeatureFlags.channelMonitor)
 const flagPayment = makeSidebarFlag(FeatureFlags.payment)
 const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
 const flagAffiliate = makeSidebarFlag(FeatureFlags.affiliate)
+const flagTicket = makeSidebarFlag(FeatureFlags.ticket)
 const flagRiskControl = makeSidebarFlag(FeatureFlags.riskControl)
 const flagOpsMonitoring = () => adminSettingsStore.opsMonitoringEnabled
 const flagAdminPayment = () => adminSettingsStore.paymentEnabled
@@ -780,7 +781,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/purchase', label: t('nav.buySubscription'), icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/orders', label: t('nav.myOrders'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/invoices', label: t('nav.myInvoices'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
-    { path: '/tickets', label: t('nav.myTickets'), icon: OrderListIcon, hideInSimpleMode: true, badge: userTicketUnreadCount.value || undefined },
+    { path: '/tickets', label: t('nav.myTickets'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagTicket, badge: userTicketUnreadCount.value || undefined },
     { path: '/redeem', label: t('nav.redeem'), icon: GiftIcon, hideInSimpleMode: true },
     { path: '/affiliate', label: t('nav.affiliate'), icon: UsersIcon, hideInSimpleMode: true, featureFlag: flagAffiliate },
     { path: '/profile', label: t('nav.profile'), icon: UserIcon },
@@ -884,7 +885,7 @@ const adminNavItems = computed((): NavItem[] => {
         { path: '/admin/orders/plans', label: t('nav.paymentPlans'), icon: CreditCardIcon },
       ],
     },
-    { path: '/admin/tickets', label: t('nav.ticketManagement'), icon: OrderIcon, hideInSimpleMode: true, badge: adminTicketUnreadCount.value || undefined },
+    { path: '/admin/tickets', label: t('nav.ticketManagement'), icon: OrderIcon, hideInSimpleMode: true, featureFlag: flagTicket, badge: adminTicketUnreadCount.value || undefined },
     { path: '/admin/usage', label: t('nav.usage'), icon: ChartIcon },
     { path: '/admin/audit-logs', label: t('nav.auditLogs'), icon: ShieldIcon, hideInSimpleMode: true }
   ]

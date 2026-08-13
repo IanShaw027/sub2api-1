@@ -3,7 +3,7 @@ import type { BasePaginationResponse } from '@/types'
 import type { SupportTicket, SupportTicketMessage, TicketReplyTemplate } from '@/types/ticket'
 
 export const adminTicketsAPI = {
-  list(params?: { page?: number; page_size?: number; status?: string; category?: string; keyword?: string; unread_only?: boolean }) {
+  list(params?: { page?: number; page_size?: number; status?: string; category?: string; keyword?: string; unread_only?: boolean; start_date?: string; end_date?: string }) {
     return apiClient.get<BasePaginationResponse<SupportTicket>>('/admin/tickets', { params })
   },
   unreadCount() {

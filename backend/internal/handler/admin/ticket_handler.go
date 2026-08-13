@@ -36,11 +36,18 @@ type ticketTemplateRequest struct {
 
 func (h *TicketHandler) List(c *gin.Context) {
 	page, pageSize := response.ParsePagination(c)
+	startAt, endAt, err := service.ParseSupportTicketDateRange(c.Query("start_date"), c.Query("end_date"), c.Query("timezone"))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	items, total, err := h.ticketService.ListForAdmin(c.Request.Context(), service.SupportTicketListFilters{
 		Status:     strings.TrimSpace(c.Query("status")),
 		Category:   strings.TrimSpace(c.Query("category")),
 		Search:     strings.TrimSpace(c.Query("keyword")),
 		UnreadOnly: c.Query("unread_only") == "1" || c.Query("unread_only") == "true",
+		StartAt:    startAt,
+		EndAt:      endAt,
 		Page:       page,
 		PageSize:   pageSize,
 	})

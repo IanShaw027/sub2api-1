@@ -1,195 +1,269 @@
 <template>
   <AppLayout>
-    <div v-if="ticket" class="mx-auto max-w-3xl space-y-4">
-      <div class="card space-y-3 p-6">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p class="font-mono text-xs text-gray-500">{{ ticket.ticket_no }}</p>
-            <h1 class="text-lg font-semibold">{{ ticket.title }}</h1>
-            <p class="text-sm text-gray-500">{{ t('tickets.category.' + ticket.category) }} · {{ t('tickets.status.' + ticket.status) }}</p>
-          </div>
-          <div class="flex gap-2">
-            <button v-if="canWithdraw" class="btn btn-secondary" :disabled="actionLoading" @click="withdraw">{{ t('tickets.withdraw') }}</button>
-            <button v-if="canClose" class="btn btn-danger" :disabled="actionLoading" @click="closeTicket">{{ t('tickets.close') }}</button>
-          </div>
-        </div>
-        <input v-if="ticket.status === 'withdrawn'" v-model="editTitle" class="input w-full" />
-        <TicketCategoryForm
-          v-model:form="editForm"
-          v-model:selected-group-ids="selectedGroupIds"
+    <div v-if="loading" class="rounded-2xl border bg-white p-10 text-center text-sm text-gray-500 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400">
+      {{ t('common.loading') }}
+    </div>
+    <div v-else-if="ticket" class="grid h-[calc(100vh-10rem)] min-h-[calc(100vh-10rem)] min-w-0 gap-6 overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.95fr)]">
+      <div v-if="editing" class="min-h-0 xl:col-span-2">
+        <TicketEditorCard
           :category="ticket.category"
+          :title="ticket.title"
+          :payload="ticket.current_form_payload || {}"
+          :disable-category="true"
+          :submit-label="t('tickets.resubmit')"
+          :submitting="submittingEdit"
+          :show-cancel="true"
+          :user-concurrency="authStore.user?.concurrency ?? null"
           :rate-groups="rateGroups"
-          :disabled="ticket.status !== 'withdrawn'"
+          @submit="saveAndSubmit"
+          @cancel="exitEditMode"
         />
-        <div v-if="ticket.status === 'withdrawn'" class="flex justify-end gap-2">
-          <button class="btn btn-secondary" :disabled="actionLoading" @click="saveEdit">{{ t('common.save') }}</button>
-          <button class="btn btn-primary" :disabled="actionLoading" @click="resubmit">{{ t('tickets.resubmit') }}</button>
-        </div>
       </div>
-      <div class="card space-y-3 p-6">
-        <div v-for="msg in messages" :key="msg.id" class="rounded border border-gray-100 p-3 text-sm dark:border-dark-700">
-          <p class="text-xs text-gray-500">{{ msg.sender_name_snapshot }} · {{ t('tickets.role.' + msg.sender_role) }} · {{ new Date(msg.created_at).toLocaleString() }}</p>
-          <p class="mt-1 whitespace-pre-wrap">{{ msg.content }}</p>
-          <div v-if="msg.attachments?.length" class="mt-2 space-y-1">
-            <button
-              v-for="file in msg.attachments"
-              :key="file.media_id"
-              class="block text-xs text-blue-600 hover:underline"
-              @click="download(file.media_id)"
-            >{{ file.file_name }} ({{ file.size_bytes }})</button>
-          </div>
+
+      <template v-else>
+        <div class="min-h-0">
+          <TicketConversationPane
+            :title="t('tickets.detailConversationTitle')"
+            :subtitle="ticket.ticket_no"
+            :messages="messages"
+            :empty-text="t('tickets.emptyConversation')"
+            :show-composer="canReply"
+            :sending="sendingReply"
+            :clear-composer-key="clearComposerKey"
+            :composer-placeholder="t('tickets.replyPlaceholder')"
+            :submit-text="t('tickets.reply')"
+            :sending-text="t('common.submitting')"
+            :ticket-id="ticketID"
+            :upload-fn="uploadTicketMedia"
+            :download-fn="downloadAttachment"
+            @reply="reply"
+            @upload-error="handleUploadError"
+          />
         </div>
-        <div v-if="canReply" class="space-y-2">
-          <textarea v-model="reply" rows="3" class="input w-full" :placeholder="t('tickets.replyPlaceholder')" />
-          <input type="file" multiple @change="onFiles" />
-          <button class="btn btn-primary" :disabled="actionLoading" @click="sendReply">{{ t('tickets.reply') }}</button>
+
+        <div class="min-h-0 h-full">
+          <TicketDetailPane :ticket="ticket">
+            <template #actions>
+              <div class="flex flex-wrap gap-3">
+                <button v-if="canWithdraw" class="btn btn-secondary" :disabled="actionLoading" @click="withdrawAndEdit">{{ t('tickets.actions.withdrawEdit') }}</button>
+                <button v-if="ticket.status === 'withdrawn'" class="btn btn-secondary" @click="enterEditMode">{{ t('tickets.actions.edit') }}</button>
+                <button v-if="canClose" class="btn btn-secondary" :disabled="actionLoading" @click="closeCurrentTicket">{{ t('tickets.actions.close') }}</button>
+              </div>
+            </template>
+          </TicketDetailPane>
         </div>
-      </div>
+      </template>
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
+import AppLayout from '@/components/layout/AppLayout.vue'
+import { useAppStore, useAuthStore } from '@/stores'
 import { ticketsAPI } from '@/api/tickets'
 import { mediaAPI } from '@/api/media'
+import TicketConversationPane from '@/components/tickets/TicketConversationPane.vue'
+import TicketDetailPane from '@/components/tickets/TicketDetailPane.vue'
+import TicketEditorCard from '@/components/tickets/TicketEditorCard.vue'
 import { extractI18nErrorMessage } from '@/utils/apiError'
-import { emptyTicketForm, notifyTicketUnreadChanged, ticketFormFromPayload, ticketPayloadFromForm } from '@/utils/ticketForm'
-import { useAppStore } from '@/stores'
-import type { SupportTicket, SupportTicketMessage, TicketRateGroupOption } from '@/types/ticket'
-import AppLayout from '@/components/layout/AppLayout.vue'
-import TicketCategoryForm from '@/components/ticket/TicketCategoryForm.vue'
+import { notifyTicketUnreadChanged } from '@/utils/ticketForm'
+import { validateTicketPayload } from '@/utils/tickets'
+import type { SupportTicket, SupportTicketMessage, TicketCategory, TicketRateGroupOption } from '@/types/ticket'
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 const appStore = useAppStore()
+const authStore = useAuthStore()
+
+const loading = ref(false)
+const actionLoading = ref(false)
+const sendingReply = ref(false)
+const submittingEdit = ref(false)
 const ticket = ref<SupportTicket | null>(null)
 const messages = ref<SupportTicketMessage[]>([])
-const reply = ref('')
-const files = ref<File[]>([])
-const editTitle = ref('')
-const editForm = ref(emptyTicketForm())
-const selectedGroupIds = ref<number[]>([])
 const rateGroups = ref<TicketRateGroupOption[]>([])
-const actionLoading = ref(false)
-const id = computed(() => Number(route.params.id))
+const clearComposerKey = ref(0)
+const editing = ref(false)
+
+const ticketID = computed(() => Number(route.params.id))
 const canWithdraw = computed(() => ['submitted', 'processing', 'waiting_admin'].includes(ticket.value?.status || ''))
-const canClose = computed(() => ticket.value != null && !['closed', 'withdrawn'].includes(ticket.value.status))
-const canReply = computed(() => ticket.value != null && !['closed', 'withdrawn', 'resolved'].includes(ticket.value.status))
+const canReply = computed(() => !['resolved', 'closed', 'withdrawn'].includes(ticket.value?.status || ''))
+const canClose = computed(() => !['closed', 'withdrawn'].includes(ticket.value?.status || ''))
+let loadDetailRequestID = 0
 
-async function load() {
-  const [detail, msgs] = await Promise.all([ticketsAPI.get(id.value), ticketsAPI.messages(id.value)])
-  ticket.value = detail.data
-  messages.value = msgs.data || []
-  editTitle.value = detail.data.title
-  const parsed = ticketFormFromPayload(detail.data.current_form_payload)
-  editForm.value = parsed.form
-  selectedGroupIds.value = parsed.selectedGroupIds
-  notifyTicketUnreadChanged()
+function ticketError(err: unknown) {
+  return extractI18nErrorMessage(err, t, 'tickets.errors', t('common.unknownError'))
 }
 
-function onFiles(event: Event) {
-  const input = event.target as HTMLInputElement
-  files.value = input.files ? Array.from(input.files) : []
+function syncEditingWithRoute() {
+  editing.value = route.query.edit === '1' && ticket.value?.status === 'withdrawn'
 }
 
-async function withdraw() {
-  actionLoading.value = true
-  try {
-    await ticketsAPI.withdraw(id.value)
-    await load()
-  } catch (err: unknown) {
-    appStore.showError(extractI18nErrorMessage(err, t, 'tickets.errors', t('common.error')))
-  } finally {
-    actionLoading.value = false
+async function replaceEditQuery(edit: boolean) {
+  const nextQuery = { ...route.query }
+  if (edit) {
+    nextQuery.edit = '1'
+  } else {
+    delete nextQuery.edit
+  }
+  await router.replace({
+    path: route.path,
+    query: nextQuery,
+  })
+}
+
+async function enterEditMode() {
+  if (ticket.value?.status !== 'withdrawn') {
+    return
+  }
+  editing.value = true
+  await replaceEditQuery(true)
+}
+
+async function exitEditMode() {
+  editing.value = false
+  if (route.query.edit === '1') {
+    await replaceEditQuery(false)
   }
 }
 
-async function closeTicket() {
-  actionLoading.value = true
+async function loadDetail() {
+  const requestID = ++loadDetailRequestID
   try {
-    await ticketsAPI.close(id.value)
-    await load()
-  } catch (err: unknown) {
-    appStore.showError(extractI18nErrorMessage(err, t, 'tickets.errors', t('common.error')))
-  } finally {
-    actionLoading.value = false
-  }
-}
-
-async function saveEdit() {
-  if (!ticket.value) return
-  actionLoading.value = true
-  try {
-    await ticketsAPI.update(id.value, {
-      title: editTitle.value,
-      form_payload: ticketPayloadFromForm(ticket.value.category, editForm.value, selectedGroupIds.value),
-      expected_revision_no: ticket.value.current_revision_no,
-    })
-    await load()
-  } catch (err: unknown) {
-    appStore.showError(extractI18nErrorMessage(err, t, 'tickets.errors', t('common.error')))
-  } finally {
-    actionLoading.value = false
-  }
-}
-
-async function resubmit() {
-  if (!ticket.value) return
-  actionLoading.value = true
-  try {
-    await ticketsAPI.resubmit(id.value, {
-      title: editTitle.value,
-      form_payload: ticketPayloadFromForm(ticket.value.category, editForm.value, selectedGroupIds.value),
-      expected_revision_no: ticket.value.current_revision_no,
-    })
-    await load()
-  } catch (err: unknown) {
-    appStore.showError(extractI18nErrorMessage(err, t, 'tickets.errors', t('common.error')))
-  } finally {
-    actionLoading.value = false
-  }
-}
-
-async function sendReply() {
-  actionLoading.value = true
-  try {
-    const mediaIds: number[] = []
-    for (const file of files.value) {
-      const uploaded = await mediaAPI.upload(file, { biz_type: 'ticket', biz_id: String(id.value) })
-      mediaIds.push(uploaded.data.id)
-    }
-    await ticketsAPI.reply(id.value, { content: reply.value, media_ids: mediaIds })
-    reply.value = ''
-    files.value = []
-    await load()
-  } catch (err: unknown) {
-    appStore.showError(extractI18nErrorMessage(err, t, 'tickets.errors', t('common.error')))
-  } finally {
-    actionLoading.value = false
-  }
-}
-
-async function download(mediaId: number) {
-  try {
-    const res = await ticketsAPI.downloadGrant(id.value, mediaId)
-    window.open(res.data.url, '_blank')
-  } catch (err: unknown) {
-    appStore.showError(extractI18nErrorMessage(err, t, 'tickets.errors', t('common.error')))
-  }
-}
-
-onMounted(async () => {
-  try {
-    const [_, groups] = await Promise.all([
-      load(),
-      ticketsAPI.rateGroups().catch(() => ({ data: [] as TicketRateGroupOption[] })),
+    loading.value = true
+    const [detail, messageData] = await Promise.all([
+      ticketsAPI.get(ticketID.value),
+      ticketsAPI.messages(ticketID.value),
     ])
-    rateGroups.value = groups.data || []
+    if (requestID !== loadDetailRequestID) {
+      return
+    }
+    ticket.value = detail.data
+    messages.value = messageData.data || []
+    notifyTicketUnreadChanged()
+    syncEditingWithRoute()
+    if (route.query.edit === '1' && detail.data.status !== 'withdrawn') {
+      void replaceEditQuery(false)
+    }
   } catch (err: unknown) {
-    appStore.showError(extractI18nErrorMessage(err, t, 'tickets.errors', t('common.error')))
+    if (requestID !== loadDetailRequestID) {
+      return
+    }
+    appStore.showError(ticketError(err))
+  } finally {
+    if (requestID === loadDetailRequestID) {
+      loading.value = false
+    }
   }
-})
+}
+
+async function loadTicketContext() {
+  try {
+    const res = await ticketsAPI.rateGroups()
+    rateGroups.value = res.data || []
+  } catch {
+    rateGroups.value = []
+  }
+}
+
+async function uploadTicketMedia(file: File, ticketId: number | string) {
+  const uploaded = await mediaAPI.upload(file, { biz_type: 'ticket', biz_id: String(ticketId), visibility: 'private' })
+  return uploaded.data
+}
+
+async function downloadAttachment(mediaId: number) {
+  const res = await ticketsAPI.downloadGrant(ticketID.value, mediaId)
+  return res.data.url
+}
+
+async function reply(content: string, attachments?: { media_id: number }[]) {
+  try {
+    sendingReply.value = true
+    await ticketsAPI.reply(ticketID.value, {
+      content,
+      media_ids: attachments?.map((item) => item.media_id),
+    })
+    clearComposerKey.value += 1
+    await loadDetail()
+  } catch (err: unknown) {
+    appStore.showError(ticketError(err))
+  } finally {
+    sendingReply.value = false
+  }
+}
+
+function handleUploadError() {
+  appStore.showError(t('tickets.uploadFailed'))
+}
+
+async function withdrawAndEdit() {
+  try {
+    actionLoading.value = true
+    await ticketsAPI.withdraw(ticketID.value)
+    await loadDetail()
+    await enterEditMode()
+    appStore.showSuccess(t('tickets.messages.withdrawn'))
+  } catch (err: unknown) {
+    appStore.showError(ticketError(err))
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+async function saveAndSubmit(form: { category: TicketCategory; title: string; form_payload: Record<string, unknown> }) {
+  if (!ticket.value) {
+    return
+  }
+  const validationKey = validateTicketPayload(form.category, form.title, form.form_payload)
+  if (validationKey) {
+    appStore.showError(t(validationKey))
+    return
+  }
+  try {
+    submittingEdit.value = true
+    await ticketsAPI.resubmit(ticketID.value, {
+      title: form.title,
+      form_payload: form.form_payload,
+      expected_revision_no: ticket.value.current_revision_no,
+    })
+    await exitEditMode()
+    await loadDetail()
+    appStore.showSuccess(t('tickets.messages.resubmitted'))
+  } catch (err: unknown) {
+    appStore.showError(ticketError(err))
+  } finally {
+    submittingEdit.value = false
+  }
+}
+
+async function closeCurrentTicket() {
+  try {
+    actionLoading.value = true
+    await ticketsAPI.close(ticketID.value)
+    await loadDetail()
+    appStore.showSuccess(t('tickets.messages.closed'))
+  } catch (err: unknown) {
+    appStore.showError(ticketError(err))
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+onMounted(loadTicketContext)
+
+watch(ticketID, () => {
+  loadDetail()
+}, { immediate: true })
+
+watch(
+  [() => route.query.edit, () => ticket.value?.status],
+  () => {
+    syncEditingWithRoute()
+  },
+  { immediate: true },
+)
 </script>
