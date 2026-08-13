@@ -121,8 +121,10 @@ type UsageCache struct {
 	apiCache          sync.Map           // accountID -> *apiUsageCache
 	windowStatsCache  sync.Map           // accountID -> *windowStatsCache
 	antigravityCache  sync.Map           // accountID -> *antigravityUsageCache
+	kiroCache         sync.Map           // accountID -> *kiroUsageCache
 	apiFlight         singleflight.Group // 防止同一账号的并发请求击穿缓存（Anthropic）
 	antigravityFlight singleflight.Group // 防止同一 Antigravity 账号的并发请求击穿缓存
+	kiroFlight        singleflight.Group // 防止同一 Kiro 账号的并发请求击穿缓存
 	openAIProbeCache  sync.Map           // accountID -> time.Time
 	grokProbeCache    sync.Map           // accountID -> last billing probe attempt
 }
@@ -188,6 +190,7 @@ type UsageInfo struct {
 	SevenDay           *UsageProgress `json:"seven_day,omitempty"`            // 7天窗口
 	SevenDaySonnet     *UsageProgress `json:"seven_day_sonnet,omitempty"`     // 7天Sonnet窗口
 	SevenDayFable      *UsageProgress `json:"seven_day_fable,omitempty"`      // 7天Fable窗口（响应头 7d_oi）
+	KiroQuota          *UsageProgress `json:"kiro_quota,omitempty"`           // Kiro 总额度进度
 	GeminiSharedDaily  *UsageProgress `json:"gemini_shared_daily,omitempty"`  // Gemini shared pool RPD (Google One / Code Assist)
 	GeminiProDaily     *UsageProgress `json:"gemini_pro_daily,omitempty"`     // Gemini Pro 日配额
 	GeminiFlashDaily   *UsageProgress `json:"gemini_flash_daily,omitempty"`   // Gemini Flash 日配额
@@ -215,6 +218,22 @@ type UsageInfo struct {
 	// ThirtyDay is the official monthly billing window (used/monthlyLimit %).
 	ThirtyDay   *UsageProgress      `json:"thirty_day,omitempty"`
 	GrokBilling *xai.BillingSummary `json:"grok_billing,omitempty"`
+
+	// Kiro 账号额度信息
+	KiroSubscriptionTitle string              `json:"kiro_subscription_title,omitempty"`
+	KiroCurrentUsage      float64             `json:"kiro_current_usage,omitempty"`
+	KiroUsageLimit        float64             `json:"kiro_usage_limit,omitempty"`
+	KiroRemaining         float64             `json:"kiro_remaining,omitempty"`
+	KiroEmail             string              `json:"kiro_email,omitempty"`
+	KiroOverageCapability string              `json:"kiro_overage_capability,omitempty"`
+	KiroOverageEnabled    *bool               `json:"kiro_overage_enabled,omitempty"`
+	KiroProfileID         string              `json:"kiro_profile_id,omitempty"`
+	KiroLoginProvider     string              `json:"kiro_login_provider,omitempty"`
+	KiroStatusReason      string              `json:"kiro_status_reason,omitempty"`
+	KiroMonthlyQuota      *KiroQuotaBreakdown `json:"kiro_monthly_quota,omitempty"`
+	KiroBonusQuota        *KiroQuotaBreakdown `json:"kiro_bonus_quota,omitempty"`
+	KiroFreeTrialQuota    *KiroQuotaBreakdown `json:"kiro_free_trial_quota,omitempty"`
+	KiroTotalQuota        *KiroQuotaBreakdown `json:"kiro_total_quota,omitempty"`
 
 	// Antigravity 账号级信息
 	SubscriptionTier    string `json:"subscription_tier,omitempty"`     // 归一化订阅等级: FREE/PRO/ULTRA/UNKNOWN
@@ -296,12 +315,16 @@ type AccountUsageService struct {
 	usageFetcher            ClaudeUsageFetcher
 	geminiQuotaService      *GeminiQuotaService
 	antigravityQuotaFetcher *AntigravityQuotaFetcher
+	kiroTokenProvider       *KiroTokenProvider
 	grokQuotaFetcher        *GrokQuotaFetcher
 	grokQuotaService        *GrokQuotaService
 	openAIQuotaService      *OpenAIQuotaService
 	cache                   *UsageCache
 	identityCache           IdentityCache
+	tokenCacheInvalidator   TokenCacheInvalidator
+	proxyRepo               ProxyRepository
 	tlsFPProfileService     *TLSFingerprintProfileService
+	settingService          *SettingService
 	agentIdentityTaskMu     sync.Mutex
 	agentIdentityWS         agentIdentityWSConnectionInvalidator
 }
@@ -313,12 +336,16 @@ func NewAccountUsageService(
 	usageFetcher ClaudeUsageFetcher,
 	geminiQuotaService *GeminiQuotaService,
 	antigravityQuotaFetcher *AntigravityQuotaFetcher,
+	kiroTokenProvider *KiroTokenProvider,
 	grokQuotaFetcher *GrokQuotaFetcher,
 	grokQuotaService *GrokQuotaService,
 	openAIQuotaService *OpenAIQuotaService,
 	cache *UsageCache,
 	identityCache IdentityCache,
+	tokenCacheInvalidator TokenCacheInvalidator,
+	proxyRepo ProxyRepository,
 	tlsFPProfileService *TLSFingerprintProfileService,
+	settingService *SettingService,
 ) *AccountUsageService {
 	return &AccountUsageService{
 		accountRepo:             accountRepo,
@@ -326,12 +353,16 @@ func NewAccountUsageService(
 		usageFetcher:            usageFetcher,
 		geminiQuotaService:      geminiQuotaService,
 		antigravityQuotaFetcher: antigravityQuotaFetcher,
+		kiroTokenProvider:       kiroTokenProvider,
 		grokQuotaFetcher:        grokQuotaFetcher,
 		grokQuotaService:        grokQuotaService,
 		openAIQuotaService:      openAIQuotaService,
 		cache:                   cache,
 		identityCache:           identityCache,
+		tokenCacheInvalidator:   tokenCacheInvalidator,
+		proxyRepo:               proxyRepo,
 		tlsFPProfileService:     tlsFPProfileService,
+		settingService:          settingService,
 	}
 }
 
@@ -379,6 +410,14 @@ func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *A
 	if account.Platform == PlatformAntigravity {
 		usage, err := s.getAntigravityUsage(ctx, account)
 		if err == nil {
+			s.tryClearRecoverableAccountError(ctx, account)
+		}
+		return usage, err
+	}
+
+	if account.Platform == PlatformKiro && account.Type == AccountTypeOAuth {
+		usage, err := s.getKiroUsage(ctx, account)
+		if err == nil && usage != nil && usage.Error == "" && usage.ErrorCode == "" && !usage.IsForbidden && !usage.NeedsReauth {
 			s.tryClearRecoverableAccountError(ctx, account)
 		}
 		return usage, err

@@ -46,10 +46,8 @@ const (
 	PlatformGemini      = domain.PlatformGemini
 	PlatformAntigravity = domain.PlatformAntigravity
 	PlatformGrok        = domain.PlatformGrok
+	PlatformKiro        = domain.PlatformKiro
 	PlatformComposite   = domain.PlatformComposite
-	// PlatformKiro is retained for unsupported-platform threshold tests and legacy
-	// account rows. Scheduling-threshold evaluation never pauses kiro accounts.
-	PlatformKiro = "kiro"
 )
 
 // AllowedQuotaPlatforms 是允许设置 user × platform quota 的平台列表（单一权威来源）。
@@ -61,6 +59,7 @@ var AllowedQuotaPlatforms = []string{
 	PlatformGemini,
 	PlatformAntigravity,
 	PlatformGrok,
+	PlatformKiro,
 }
 
 // AllowedSchedulingThresholdPlatforms 是允许设置账号自动停调阈值的平台列表。
@@ -162,6 +161,10 @@ const (
 	SettingKeyAffiliateSignupBonus                = "affiliate_signup_bonus"           // 被邀请人注册奖励（0=不发放）
 	SettingKeyAffiliateAdminRechargeEnabled       = "affiliate_admin_recharge_enabled" // 管理员充值是否产生返利
 	SettingKeyTicketEnabled                       = "ticket_enabled"                   // 工单功能总开关（默认开启）
+	SettingKeyIPMultiAccountBanEnabled            = "ip_multi_account_ban_enabled"     // 异常 IP 多账号封禁（默认关闭）
+	SettingKeyIPMultiAccountBanWindowMinutes      = "ip_multi_account_ban_window_minutes"
+	SettingKeyIPMultiAccountBanThreshold          = "ip_multi_account_ban_threshold"
+	SettingKeyIPMultiAccountBanLearningUntil      = "ip_multi_account_ban_learning_until"
 	SettingKeyRiskControlEnabled                  = "risk_control_enabled"             // 是否启用风控中心入口与审计链路
 	SettingKeyContentModerationConfig             = "content_moderation_config"        // 内容审计配置（JSON）
 	SettingKeyCyberSessionBlockEnabled            = "cyber_session_block_enabled"      // cyber 命中后会话级自动屏蔽总开关(默认关)
@@ -620,6 +623,18 @@ const (
 
 	// Web Search Emulation
 	SettingKeyWebSearchEmulationConfig = "web_search_emulation_config" // JSON 配置
+
+	SettingKeyPlatformDefaultAccountModelConfig = "platform_default_account_model_config"
+
+	SettingKeyKiroDefaultVersion              = "kiro_default_version"
+	SettingKeyKiroDefaultCommit               = "kiro_default_commit"
+	SettingKeyKiroDefaultSystemVersion        = "kiro_default_system_version"
+	SettingKeyKiroDefaultNodeVersion          = "kiro_default_node_version"
+	SettingKeyKiroCacheHitRateScale           = "kiro_cache_hit_rate_scale"
+	SettingKeyKiroCacheMinBlockTokens         = "kiro_cache_min_block_tokens"
+	SettingKeyKiroCacheIndependentTTLSeconds  = "kiro_cache_independent_ttl_seconds"
+	SettingKeyKiroCachePrefixTTLSeconds       = "kiro_cache_prefix_ttl_seconds"
+	SettingKeyKiroCodeExecutionSandboxCommand = "kiro_code_execution_sandbox_command"
 )
 
 // SettingKeyDefaultPlatformQuotas —— 系统全局：每用户 × 平台日/周/月 USD 上限（JSON）。

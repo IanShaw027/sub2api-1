@@ -408,6 +408,7 @@ type UpdateAccountInput struct {
 	ProbeEnabled          *bool
 	RateSyncEnabled       *bool
 	SkipMixedChannelCheck bool // 跳过混合渠道检查（用户已确认风险）
+	AllowSensitiveCredentials bool // 仅用于重新授权/导入覆盖等受信路径
 }
 
 // BulkUpdateAccountsInput describes the payload for bulk updating accounts.
@@ -416,6 +417,7 @@ type BulkUpdateAccountsInput struct {
 	Filters        *BulkUpdateAccountFilters
 	Name           string
 	ProxyID        *int64
+	ProxyIDs       []int64
 	Concurrency    *int
 	Priority       *int
 	RateMultiplier *float64 // 账号计费倍率（>=0，允许 0）

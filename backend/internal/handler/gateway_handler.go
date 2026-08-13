@@ -21,6 +21,7 @@ import (
 	pkgerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
@@ -251,6 +252,30 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 	// 设置请求所属分组 ID（用于渠道级功能判断，如 WebSearch 模拟）
 	parsedReq.GroupID = apiKey.GroupID
+	applyKiroRequestScope(apiKey, parsedReq)
+
+	// 获取平台：优先使用强制平台（/antigravity 路由），其次使用 composite 解析出的目标平台，否则使用分组平台
+	platform := resolveGatewayRequestPlatform(c, apiKey)
+	if platform == service.PlatformKiro {
+		hadMetadataUserID := strings.TrimSpace(parsedReq.MetadataUserID) != ""
+		sessionSeed := service.KiroExplicitSessionSeed(
+			body,
+			c.GetHeader("X-Claude-Code-Session-Id"),
+			c.GetHeader("session_id"),
+			c.GetHeader("conversation_id"),
+		)
+		if updatedBody, metadataUserID, changed := service.EnsureKiroMetadataUserIDForSession(parsedReq.Body.Bytes(), parsedReq.MetadataUserID, sessionSeed); changed {
+			body = updatedBody
+			parsedReq.Body.Replace(updatedBody)
+			parsedReq.MetadataUserID = metadataUserID
+		}
+		reqLog.Info("gateway.kiro_request_entry",
+			zap.Bool("session_seed_present", strings.TrimSpace(sessionSeed) != ""),
+			zap.Bool("metadata_user_id_present_before", hadMetadataUserID),
+			zap.Bool("metadata_user_id_present", strings.TrimSpace(parsedReq.MetadataUserID) != ""),
+			zap.Bool("thinking_enabled", parsedReq.ThinkingEnabled),
+		)
+	}
 
 	// 计算粘性会话hash
 	parsedReq.SessionContext = &service.SessionContext{
@@ -265,16 +290,6 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		zap.String("session_hash", sessionHash),
 		zap.String("metadata_user_id_raw", parsedReq.MetadataUserID),
 	)
-
-	// 获取平台：优先使用强制平台（/antigravity 路由），其次使用 composite 解析出的目标平台，否则使用分组平台
-	platform := ""
-	if forcePlatform, ok := middleware2.GetForcePlatformFromContext(c); ok {
-		platform = forcePlatform
-	} else if resolvedPlatform, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context()); ok {
-		platform = resolvedPlatform
-	} else if apiKey.Group != nil {
-		platform = apiKey.Group.Platform
-	}
 	sessionKey := sessionHash
 	if platform == service.PlatformGemini && sessionHash != "" {
 		sessionKey = "gemini:" + sessionHash
@@ -486,9 +501,13 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, service.PlatformGemini, true)
 						return
 					}
+					prevRetryCount := fs.SameAccountRetryCount[account.ID]
+					prevSwitchCount := fs.SwitchCount
 					action := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 					switch action {
 					case FailoverContinue:
+						ctx := pinSameAccountRetryContext(c.Request.Context(), fs, account.ID, apiKey.GroupID, failoverErr, prevRetryCount, prevSwitchCount, h.metadataBridgeEnabled())
+						c.Request = c.Request.WithContext(ctx)
 						continue
 					case FailoverExhausted:
 						h.handleFailoverExhausted(c, fs.LastFailoverErr, service.PlatformGemini, streamStarted)
@@ -992,9 +1011,13 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, account.Platform, true)
 						return
 					}
+					prevRetryCount := fs.SameAccountRetryCount[account.ID]
+					prevSwitchCount := fs.SwitchCount
 					action := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 					switch action {
 					case FailoverContinue:
+						ctx := pinSameAccountRetryContext(c.Request.Context(), fs, account.ID, currentAPIKey.GroupID, failoverErr, prevRetryCount, prevSwitchCount, h.metadataBridgeEnabled())
+						c.Request = c.Request.WithContext(ctx)
 						continue
 					case FailoverExhausted:
 						h.handleFailoverExhausted(c, fs.LastFailoverErr, account.Platform, streamStarted)
@@ -1129,6 +1152,13 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		})
 		return
 	}
+	if platform == service.PlatformKiro {
+		c.JSON(http.StatusOK, gin.H{
+			"object": "list",
+			"data":   kiro.DefaultModels,
+		})
+		return
+	}
 	if platform == service.PlatformGrok {
 		writeGrokModelsList(c, xai.DefaultModelIDs())
 		return
@@ -1147,7 +1177,7 @@ func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *
 	seen := make(map[string]struct{})
 	models := make([]string, 0)
 	schedulablePlatforms := h.gatewayService.GetSchedulablePlatforms(ctx, groupID)
-	for _, platform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok} {
+	for _, platform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok, service.PlatformKiro} {
 		platformModels := h.gatewayService.GetAvailableModels(ctx, groupID, platform)
 		if len(platformModels) == 0 {
 			if _, ok := schedulablePlatforms[platform]; ok {
@@ -1369,10 +1399,12 @@ func defaultModelIDsForPlatform(platform string) []string {
 		return mergeModelIDs(ids, nil)
 	case service.PlatformGrok:
 		return xai.DefaultModelIDs()
+	case service.PlatformKiro:
+		return kiro.DefaultModelIDs()
 	case service.PlatformComposite:
 		ids := make([]string, 0)
 		seen := make(map[string]struct{})
-		for _, concretePlatform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok} {
+		for _, concretePlatform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok, service.PlatformKiro} {
 			for _, id := range defaultModelIDsForPlatform(concretePlatform) {
 				if _, ok := seen[id]; ok {
 					continue
@@ -1417,6 +1449,35 @@ func (h *GatewayHandler) AntigravityModels(c *gin.Context) {
 		"object": "list",
 		"data":   antigravity.DefaultModels(),
 	})
+}
+
+func resolveGatewayRequestPlatform(c *gin.Context, apiKey *service.APIKey) string {
+	if forcePlatform, ok := middleware2.GetForcePlatformFromContext(c); ok && strings.TrimSpace(forcePlatform) != "" {
+		return forcePlatform
+	}
+	if c != nil && c.Request != nil {
+		if resolvedPlatform, ok := service.ResolvedTargetPlatformFromContext(c.Request.Context()); ok && strings.TrimSpace(resolvedPlatform) != "" {
+			return resolvedPlatform
+		}
+	}
+	if apiKey != nil && apiKey.Group != nil {
+		return apiKey.Group.Platform
+	}
+	return ""
+}
+
+func applyKiroRequestScope(apiKey *service.APIKey, parsedReq *service.ParsedRequest) {
+	if apiKey == nil || parsedReq == nil {
+		return
+	}
+	if apiKey.UserID > 0 {
+		parsedReq.UserID = apiKey.UserID
+	} else if apiKey.User != nil {
+		parsedReq.UserID = apiKey.User.ID
+	}
+	if apiKey.ID > 0 {
+		parsedReq.APIKeyID = apiKey.ID
+	}
 }
 
 func cloneAPIKeyWithGroup(apiKey *service.APIKey, group *service.Group) *service.APIKey {
@@ -2044,6 +2105,20 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 		}
 		h.errorResponse(c, status, code, message)
 		return
+	}
+
+	applyKiroRequestScope(apiKey, parsedReq)
+	if resolveGatewayRequestPlatform(c, apiKey) == service.PlatformKiro {
+		sessionSeed := service.KiroExplicitSessionSeed(
+			body,
+			c.GetHeader("X-Claude-Code-Session-Id"),
+			c.GetHeader("session_id"),
+			c.GetHeader("conversation_id"),
+		)
+		if updatedBody, metadataUserID, changed := service.EnsureKiroMetadataUserIDForSession(parsedReq.Body.Bytes(), parsedReq.MetadataUserID, sessionSeed); changed {
+			parsedReq.Body.Replace(updatedBody)
+			parsedReq.MetadataUserID = metadataUserID
+		}
 	}
 
 	// 计算粘性会话 hash

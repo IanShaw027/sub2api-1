@@ -40,6 +40,14 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		return nil
 	}
 
+	if account != nil && account.IsKiro() {
+		if s.kiroGatewayService == nil {
+			s.countTokensError(c, http.StatusBadGateway, "api_error", "Kiro gateway service is not configured")
+			return errors.New("kiro gateway service is not configured")
+		}
+		return s.kiroGatewayService.ForwardCountTokens(ctx, c, account, parsed)
+	}
+
 	body := parsed.Body.Bytes()
 	replaceBody := func(next []byte) error {
 		if err := parsed.ReplaceBody(next); err != nil {

@@ -15,6 +15,8 @@ const (
 	OpsUpstreamErrorMessageKey = "ops_upstream_error_message"
 	OpsUpstreamErrorDetailKey  = "ops_upstream_error_detail"
 	OpsUpstreamErrorsKey       = "ops_upstream_errors"
+	OpsUpstreamRequestBodyKey  = "ops_upstream_request_body"
+	OpsUpstreamModelKey        = "ops_upstream_model"
 
 	// Optional stage latencies (milliseconds) for troubleshooting and alerting.
 	OpsAuthLatencyMsKey      = "ops_auth_latency_ms"
@@ -62,6 +64,22 @@ func IsResponseCommitted(c *gin.Context) bool {
 	}
 	b, _ := v.(bool)
 	return b
+}
+
+func setOpsUpstreamRequestBody(c *gin.Context, body []byte) {
+	if c == nil || len(body) == 0 {
+		return
+	}
+	c.Set(OpsUpstreamRequestBodyKey, body)
+}
+
+func SetOpsUpstreamModel(c *gin.Context, model string) {
+	if c == nil {
+		return
+	}
+	if model = strings.TrimSpace(model); model != "" {
+		c.Set(OpsUpstreamModelKey, model)
+	}
 }
 
 func SetOpsLatencyMs(c *gin.Context, key string, value int64) {

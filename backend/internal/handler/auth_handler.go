@@ -120,6 +120,18 @@ func respondWithTokenPair(c *gin.Context, authService *service.AuthService, user
 		response.ErrorFrom(c, err)
 		return
 	}
+	if security := service.GlobalIPSecurityService(); security != nil {
+		security.Observe(c.Request.Context(), service.IPSecurityActivity{
+			IPAddress:    ip.GetTrustedClientIP(c),
+			PeerIP:       ip.GetPeerIP(c),
+			ForwardedFor: c.GetHeader("X-Forwarded-For"),
+			UserID:       user.ID,
+			Source:       service.IPSecuritySourceWeb,
+			Method:       c.Request.Method,
+			Path:         c.Request.URL.Path,
+			RequestID:    c.GetString("request_id"),
+		})
+	}
 
 	tokenPair, err := authService.GenerateTokenPair(c.Request.Context(), user, "")
 	if err != nil {

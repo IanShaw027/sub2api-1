@@ -316,6 +316,17 @@ type SystemSettings struct {
 	GrokCrossClientModelMapEnabled bool   `json:"grok_cross_client_model_map_enabled"`
 	GrokDefaultBaseURLMode         string `json:"grok_default_base_url_mode"`
 
+	// Kiro runtime defaults (admin-only; not exposed on PublicSettings).
+	KiroDefaultVersion              string `json:"kiro_version"`
+	KiroDefaultCommit               string `json:"kiro_commit"`
+	KiroDefaultSystemVersion        string `json:"system_version"`
+	KiroDefaultNodeVersion          string `json:"node_version"`
+	KiroCacheHitRateScale           int    `json:"cache_hit_rate_scale"`
+	KiroCacheMinBlockTokens         int    `json:"cache_min_block_tokens"`
+	KiroCacheIndependentTTLSeconds  int    `json:"cache_independent_ttl_seconds"`
+	KiroCachePrefixTTLSeconds       int    `json:"cache_prefix_ttl_seconds"`
+	KiroCodeExecutionSandboxCommand string `json:"kiro_code_execution_sandbox_command"`
+
 	// Available Channels feature switch (user-facing aggregate view)
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
 
@@ -336,6 +347,11 @@ type SystemSettings struct {
 
 	// Ticket feature switch (default enabled)
 	TicketEnabled bool `json:"ticket_enabled"`
+
+	IPMultiAccountBanEnabled       bool   `json:"ip_multi_account_ban_enabled"`
+	IPMultiAccountBanWindowMinutes int    `json:"ip_multi_account_ban_window_minutes"`
+	IPMultiAccountBanThreshold     int    `json:"ip_multi_account_ban_threshold"`
+	IPMultiAccountBanLearningUntil string `json:"ip_multi_account_ban_learning_until"`
 
 	// OpenAI fast/flex policy
 	OpenAIFastPolicySettings *OpenAIFastPolicySettings `json:"openai_fast_policy_settings,omitempty"`

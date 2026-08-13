@@ -179,3 +179,27 @@ type OpsErrorLogList struct {
 	Page     int            `json:"page"`
 	PageSize int            `json:"page_size"`
 }
+
+// AccountCyberSummary is a per-account count of deduplicated cyber_policy events.
+type AccountCyberSummary struct {
+	Count    int        `json:"count"`
+	LatestAt *time.Time `json:"latest_at,omitempty"`
+}
+
+// AccountCyberEvent is one deduplicated upstream cyber-policy hit.
+type AccountCyberEvent struct {
+	ErrorID    *int64    `json:"error_id,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	RequestID  string    `json:"request_id"`
+	Model      string    `json:"model"`
+	StatusCode *int      `json:"status_code,omitempty"`
+	Message    string    `json:"message"`
+}
+
+// AccountCyberEventList is a paged cyber event list for one OpenAI OAuth account.
+type AccountCyberEventList struct {
+	Events   []*AccountCyberEvent `json:"events"`
+	Total    int                  `json:"total"`
+	Page     int                  `json:"page"`
+	PageSize int                  `json:"page_size"`
+}

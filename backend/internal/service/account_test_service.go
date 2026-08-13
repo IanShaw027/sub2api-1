@@ -141,6 +141,7 @@ type AccountTestService struct {
 	geminiTokenProvider       *GeminiTokenProvider
 	claudeTokenProvider       *ClaudeTokenProvider
 	grokTokenProvider         *GrokTokenProvider
+	kiroTokenProvider         *KiroTokenProvider
 	antigravityGatewayService *AntigravityGatewayService
 	httpUpstream              HTTPUpstream
 	cfg                       *config.Config
@@ -151,6 +152,12 @@ type AccountTestService struct {
 	// grokWSDialer is optional; realtime account tests use the default OpenAI-style
 	// WS dialer when nil (supports proxy + coder/websocket handshake).
 	grokWSDialer openAIWSClientDialer
+}
+
+func (s *AccountTestService) SetKiroTokenProvider(provider *KiroTokenProvider) {
+	if s != nil {
+		s.kiroTokenProvider = provider
+	}
 }
 
 func (s *AccountTestService) SetSettingService(settingService *SettingService) {
@@ -267,7 +274,11 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	// Get account
 	account, err := s.accountRepo.GetByID(ctx, accountID)
 	if err != nil {
-		return s.sendErrorAndEnd(c, "Account not found")
+		sendErr := s.sendErrorAndEnd(c, "Account not found")
+		if errors.Is(err, ErrAccountNotFound) {
+			return fmt.Errorf("%w: %v", ErrAccountNotFound, sendErr)
+		}
+		return sendErr
 	}
 
 	// Synthetic UI load-test accounts exercise the real SSE parsing and modal
@@ -291,6 +302,10 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 
 	if account.IsGemini() {
 		return s.testGeminiAccountConnection(c, account, modelID, prompt)
+	}
+
+	if account.Platform == PlatformKiro {
+		return s.testKiroAccountConnection(c, account, modelID)
 	}
 
 	if account.Platform == PlatformGrok {
@@ -3058,7 +3073,7 @@ func (s *AccountTestService) RunTestBackground(ctx context.Context, accountID in
 		LatencyMs:    finishedAt.Sub(startedAt).Milliseconds(),
 		StartedAt:    startedAt,
 		FinishedAt:   finishedAt,
-	}, nil
+	}, testErr
 }
 
 // parseTestSSEOutput extracts response text and error message from captured SSE output.

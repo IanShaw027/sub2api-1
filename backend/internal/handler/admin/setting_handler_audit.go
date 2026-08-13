@@ -422,6 +422,33 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.MaxClaudeCodeVersion != after.MaxClaudeCodeVersion {
 		changed = append(changed, "max_claude_code_version")
 	}
+	if before.KiroDefaultVersion != after.KiroDefaultVersion {
+		changed = append(changed, "kiro_version")
+	}
+	if before.KiroDefaultCommit != after.KiroDefaultCommit {
+		changed = append(changed, "kiro_commit")
+	}
+	if before.KiroDefaultSystemVersion != after.KiroDefaultSystemVersion {
+		changed = append(changed, "system_version")
+	}
+	if before.KiroDefaultNodeVersion != after.KiroDefaultNodeVersion {
+		changed = append(changed, "node_version")
+	}
+	if before.KiroCacheHitRateScale != after.KiroCacheHitRateScale {
+		changed = append(changed, "cache_hit_rate_scale")
+	}
+	if before.KiroCacheMinBlockTokens != after.KiroCacheMinBlockTokens {
+		changed = append(changed, "cache_min_block_tokens")
+	}
+	if before.KiroCacheIndependentTTLSeconds != after.KiroCacheIndependentTTLSeconds {
+		changed = append(changed, "cache_independent_ttl_seconds")
+	}
+	if before.KiroCachePrefixTTLSeconds != after.KiroCachePrefixTTLSeconds {
+		changed = append(changed, "cache_prefix_ttl_seconds")
+	}
+	if before.KiroCodeExecutionSandboxCommand != after.KiroCodeExecutionSandboxCommand {
+		changed = append(changed, "kiro_code_execution_sandbox_command")
+	}
 	if before.MinCodexVersion != after.MinCodexVersion {
 		changed = append(changed, "min_codex_version")
 	}
@@ -602,6 +629,18 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.TicketEnabled != after.TicketEnabled {
 		changed = append(changed, "ticket_enabled")
+	}
+	if before.IPMultiAccountBanEnabled != after.IPMultiAccountBanEnabled {
+		changed = append(changed, "ip_multi_account_ban_enabled")
+	}
+	if before.IPMultiAccountBanWindowMinutes != after.IPMultiAccountBanWindowMinutes {
+		changed = append(changed, "ip_multi_account_ban_window_minutes")
+	}
+	if before.IPMultiAccountBanThreshold != after.IPMultiAccountBanThreshold {
+		changed = append(changed, "ip_multi_account_ban_threshold")
+	}
+	if before.IPMultiAccountBanLearningUntil != after.IPMultiAccountBanLearningUntil {
+		changed = append(changed, "ip_multi_account_ban_learning_until")
 	}
 	if before.AffiliateEnabled != after.AffiliateEnabled {
 		changed = append(changed, "affiliate_enabled")

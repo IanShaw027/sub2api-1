@@ -263,6 +263,10 @@ func (a *Account) IsGemini() bool {
 	return a.Platform == PlatformGemini
 }
 
+func (a *Account) IsKiro() bool {
+	return a != nil && a.Platform == PlatformKiro
+}
+
 func (a *Account) IsGrok() bool {
 	return a.Platform == PlatformGrok
 }
@@ -620,6 +624,11 @@ func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]stri
 		}
 	}
 	if len(result) > 0 {
+		if a.Platform == PlatformKiro {
+			if normalized := normalizeKiroModelMapping(result); len(normalized) > 0 {
+				return normalized
+			}
+		}
 		if a.Platform == domain.PlatformAntigravity {
 			ensureAntigravityDefaultPassthroughs(result, []string{
 				"gemini-3-flash",
@@ -758,6 +767,9 @@ func normalizeRequestedModelForLookup(platform, requestedModel string) string {
 	if trimmed == "" {
 		return ""
 	}
+	if platform == PlatformKiro {
+		return normalizeKiroModelName(trimmed)
+	}
 	if platform != PlatformGemini && platform != PlatformAntigravity {
 		return trimmed
 	}
@@ -836,10 +848,15 @@ func (a *Account) ResolveMappedModel(requestedModel string) (mappedModel string,
 	if len(mapping) == 0 {
 		return requestedModel, false
 	}
+	normalized := normalizeRequestedModelForLookup(a.Platform, requestedModel)
+	if a.Platform == PlatformKiro && normalized != "" && normalized != requestedModel {
+		if mappedModel, matched := resolveRequestedModelInMapping(mapping, normalized); matched {
+			return mappedModel, true
+		}
+	}
 	if mappedModel, matched := resolveRequestedModelInMapping(mapping, requestedModel); matched {
 		return mappedModel, true
 	}
-	normalized := normalizeRequestedModelForLookup(a.Platform, requestedModel)
 	if normalized != requestedModel {
 		if mappedModel, matched := resolveRequestedModelInMapping(mapping, normalized); matched {
 			return mappedModel, true

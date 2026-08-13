@@ -53,6 +53,7 @@ type AccountHandler struct {
 	geminiOAuthService      *service.GeminiOAuthService
 	antigravityOAuthService *service.AntigravityOAuthService
 	grokOAuthService        service.GrokOAuthTokenService
+	kiroTokenProvider       *service.KiroTokenProvider
 	rateLimitService        *service.RateLimitService
 	accountUsageService     *service.AccountUsageService
 	accountTestService      *service.AccountTestService
@@ -64,6 +65,7 @@ type AccountHandler struct {
 	grokImportProber        grokImportProber
 	upstreamBillingProbe    *service.UpstreamBillingProbeService
 	ollamaCloudUsage        *service.OllamaCloudUsageService
+	opsService              *service.OpsService
 }
 
 // SetUpstreamBillingProbeService attaches the optional remote billing probe service.
@@ -73,6 +75,10 @@ func (h *AccountHandler) SetUpstreamBillingProbeService(probe *service.UpstreamB
 
 func (h *AccountHandler) SetOllamaCloudUsageService(usage *service.OllamaCloudUsageService) {
 	h.ollamaCloudUsage = usage
+}
+
+func (h *AccountHandler) SetOpsService(opsService *service.OpsService) {
+	h.opsService = opsService
 }
 
 // NewAccountHandler creates a new admin account handler
@@ -158,6 +164,7 @@ type BulkUpdateAccountsRequest struct {
 	Filters                 *BulkUpdateAccountFilters `json:"filters"`
 	Name                    string                    `json:"name"`
 	ProxyID                 *int64                    `json:"proxy_id"`
+	ProxyIDs                []int64                   `json:"proxy_ids"`
 	Concurrency             *int                      `json:"concurrency"`
 	Priority                *int                      `json:"priority"`
 	RateMultiplier          *float64                  `json:"rate_multiplier"`
@@ -197,6 +204,9 @@ type AccountWithConcurrency struct {
 	CurrentWindowCost *float64 `json:"current_window_cost,omitempty"` // 当前窗口费用
 	ActiveSessions    *int     `json:"active_sessions,omitempty"`     // 当前活跃会话数
 	CurrentRPM        *int     `json:"current_rpm,omitempty"`         // 当前分钟 RPM 计数
+	// CyberCount / CyberLatestAt are only set for OpenAI OAuth accounts when include_cyber_summary=1.
+	CyberCount    *int       `json:"cyber_count,omitempty"`
+	CyberLatestAt *time.Time `json:"cyber_latest_at,omitempty"`
 }
 
 type AccountSchedulerScore struct {
@@ -514,6 +524,7 @@ func (h *AccountHandler) List(c *gin.Context) {
 	lite := parseBoolQueryWithDefault(c.Query("lite"), false)
 	// 调度分需要跨候选池批量打分并读取负载，默认列表不计算；只有前端列可见时才显式开启。
 	includeSchedulerScore := parseBoolQueryWithDefault(c.Query("include_scheduler_score"), false)
+	includeCyberSummary := parseBoolQueryWithDefault(c.Query("include_cyber_summary"), false)
 
 	var groupID int64
 	if groupIDStr := c.Query("group"); groupIDStr != "" {
@@ -562,11 +573,24 @@ func (h *AccountHandler) List(c *gin.Context) {
 	// 双重门控：用户要看该列，且当前页确实有 OpenAI 账号，才进入昂贵的候选池打分路径。
 	var schedulerScores map[int64]*AccountSchedulerScore
 	var schedulerGroupScores map[int64][]AccountSchedulerGroupScore
+	cyberSummaries := make(map[int64]service.AccountCyberSummary)
+	cyberSummariesLoaded := false
+	openAIOAuthAccountIDs := make([]int64, 0)
 	pageHasOpenAIAccounts := false
 	for i := range accounts {
 		if accounts[i].Platform == service.PlatformOpenAI {
 			pageHasOpenAIAccounts = true
-			break
+		}
+		if accounts[i].IsOpenAIOAuth() {
+			openAIOAuthAccountIDs = append(openAIOAuthAccountIDs, accounts[i].ID)
+		}
+	}
+	if includeCyberSummary && h.opsService != nil && len(openAIOAuthAccountIDs) > 0 {
+		if summaries, summaryErr := h.opsService.GetAccountCyberSummaries(c.Request.Context(), openAIOAuthAccountIDs); summaryErr != nil {
+			slog.Warn("account_cyber_summary_failed", "error", summaryErr)
+		} else {
+			cyberSummaries = summaries
+			cyberSummariesLoaded = true
 		}
 	}
 	if includeSchedulerScore && pageHasOpenAIAccounts {
@@ -655,6 +679,12 @@ func (h *AccountHandler) List(c *gin.Context) {
 			CurrentConcurrency: concurrencyCounts[acc.ID],
 			SchedulerScore:     schedulerScores[acc.ID],
 			SchedulerScores:    schedulerGroupScores[acc.ID],
+		}
+		if acc.IsOpenAIOAuth() && cyberSummariesLoaded {
+			summary := cyberSummaries[acc.ID]
+			count := summary.Count
+			item.CyberCount = &count
+			item.CyberLatestAt = summary.LatestAt
 		}
 
 		// 添加窗口费用（仅当启用时）
@@ -773,6 +803,36 @@ func (h *AccountHandler) GetByID(c *gin.Context) {
 	}
 
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+}
+
+// ListCyberEvents returns deduplicated upstream cyber-policy events for one OpenAI OAuth account.
+// GET /api/v1/admin/accounts/:id/cyber-events
+func (h *AccountHandler) ListCyberEvents(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || accountID <= 0 {
+		response.ErrorFrom(c, infraerrors.BadRequest("INVALID_ACCOUNT_ID", "invalid account id"))
+		return
+	}
+	account, err := h.adminService.GetAccount(c.Request.Context(), accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if account == nil || !account.IsOpenAIOAuth() {
+		response.ErrorFrom(c, infraerrors.BadRequest("ACCOUNT_CYBER_UNSUPPORTED", "cyber events are only available for OpenAI OAuth accounts"))
+		return
+	}
+	if h.opsService == nil {
+		response.ErrorFrom(c, infraerrors.ServiceUnavailable("OPS_SERVICE_UNAVAILABLE", "ops service is not available"))
+		return
+	}
+	page, pageSize := response.ParsePagination(c)
+	result, err := h.opsService.ListAccountCyberEvents(c.Request.Context(), accountID, page, pageSize)
+	if err != nil {
+		response.ErrorFrom(c, infraerrors.InternalServer("ACCOUNT_CYBER_LIST_FAILED", "failed to list account cyber events").WithCause(err))
+		return
+	}
+	response.Success(c, result)
 }
 
 // CheckMixedChannel handles checking mixed channel risk for account-group binding.
@@ -1213,6 +1273,7 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 	}
 
 	var newCredentials map[string]any
+	var updatedAccount *service.Account
 
 	if account.IsOpenAI() {
 		tokenInfo, err := h.openaiOAuthService.RefreshAccountToken(ctx, account)
@@ -1293,6 +1354,15 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 		if baseURL := strings.TrimSpace(account.GetCredential("base_url")); baseURL != "" {
 			newCredentials["base_url"] = baseURL
 		}
+	} else if account.Platform == service.PlatformKiro {
+		if h.kiroTokenProvider == nil {
+			return nil, "", fmt.Errorf("kiro token provider is not configured")
+		}
+		refreshedAccount, err := h.kiroTokenProvider.RefreshAccount(ctx, account)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to refresh credentials: %w", err)
+		}
+		updatedAccount = refreshedAccount
 	} else {
 		// Use Anthropic/Claude OAuth service to refresh token
 		tokenInfo, err := h.oauthService.RefreshAccountToken(ctx, account)
@@ -1319,11 +1389,14 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 		}
 	}
 
-	updatedAccount, err := h.adminService.UpdateAccount(ctx, account.ID, &service.UpdateAccountInput{
-		Credentials: newCredentials,
-	})
-	if err != nil {
-		return nil, "", err
+	if account.Platform != service.PlatformKiro {
+		var err error
+		updatedAccount, err = h.adminService.UpdateAccount(ctx, account.ID, &service.UpdateAccountInput{
+			Credentials: newCredentials,
+		})
+		if err != nil {
+			return nil, "", err
+		}
 	}
 
 	// 刷新成功后，清除 token 缓存，确保下次请求使用新 token
@@ -1331,6 +1404,15 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 		if invalidateErr := h.tokenCacheInvalidator.InvalidateToken(ctx, updatedAccount); invalidateErr != nil {
 			log.Printf("[WARN] Failed to invalidate token cache for account %d: %v", updatedAccount.ID, invalidateErr)
 		}
+	}
+
+	if account.Platform == service.PlatformKiro {
+		h.invalidateKiroUsageCache(updatedAccount)
+		clearedAccount, clearErr := h.adminService.ClearAccountError(ctx, updatedAccount.ID)
+		if clearErr != nil {
+			return nil, "", fmt.Errorf("failed to clear account error: %w", clearErr)
+		}
+		updatedAccount = clearedAccount
 	}
 
 	// OpenAI OAuth: 刷新成功后检查并设置 privacy_mode
@@ -1379,6 +1461,7 @@ type ApplyOAuthCredentialsRequest struct {
 	Type        string         `json:"type" binding:"required,oneof=oauth setup-token"`
 	Credentials map[string]any `json:"credentials" binding:"required"`
 	Extra       map[string]any `json:"extra"`
+	Name        string         `json:"name"`
 }
 
 // ApplyOAuthCredentials 将"重新授权"得到的新凭据原子落库。
@@ -1428,6 +1511,7 @@ func (h *AccountHandler) ApplyOAuthCredentials(c *gin.Context) {
 	req.Credentials = service.SanitizeStoredCredentials(existing.Platform, req.Credentials)
 
 	updatedAccount, err := h.adminService.UpdateAccount(ctx, accountID, &service.UpdateAccountInput{
+		Name:        req.Name,
 		Type:        req.Type,
 		Credentials: req.Credentials,
 	})
@@ -2096,6 +2180,7 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 
 	hasUpdates := req.Name != "" ||
 		req.ProxyID != nil ||
+		len(req.ProxyIDs) > 0 ||
 		req.Concurrency != nil ||
 		req.Priority != nil ||
 		req.RateMultiplier != nil ||
@@ -2117,6 +2202,7 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		Filters:               toServiceBulkUpdateAccountFilters(req.Filters),
 		Name:                  req.Name,
 		ProxyID:               req.ProxyID,
+		ProxyIDs:              req.ProxyIDs,
 		Concurrency:           req.Concurrency,
 		Priority:              req.Priority,
 		RateMultiplier:        req.RateMultiplier,
@@ -2646,6 +2732,10 @@ func (h *AccountHandler) GetAvailableModels(c *gin.Context) {
 			}
 		}
 		response.Success(c, models)
+		return
+	}
+
+	if respondWithKiroAvailableModels(c, account, h.kiroTokenProvider, h.accountUsageService) {
 		return
 	}
 

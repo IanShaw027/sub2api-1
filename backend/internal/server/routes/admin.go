@@ -58,6 +58,9 @@ func RegisterAdminRoutes(
 		// Grok OAuth
 		registerGrokOAuthRoutes(admin, h)
 
+		// Kiro OAuth
+		registerKiroOAuthRoutes(admin, h)
+
 		// 代理管理
 		registerProxyRoutes(admin, h, stepUpAuth)
 
@@ -69,6 +72,9 @@ func RegisterAdminRoutes(
 
 		// 系统设置
 		registerSettingsRoutes(admin, h)
+
+		// 异常 IP 多账号封禁
+		registerIPSecurityRoutes(admin, h)
 
 		// 数据管理
 		registerDataManagementRoutes(admin, h, stepUpAuth)
@@ -357,6 +363,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.GET("/ollama-cloud-usage/settings", h.Admin.Account.GetOllamaCloudUsageSettings)
 		accounts.PUT("/ollama-cloud-usage/settings", h.Admin.Account.UpdateOllamaCloudUsageSettings)
 		accounts.GET("/:id", h.Admin.Account.GetByID)
+		accounts.GET("/:id/cyber-events", h.Admin.Account.ListCyberEvents)
 		accounts.POST("", h.Admin.Account.Create)
 		accounts.POST("/:id/duplicate", h.Admin.Account.Duplicate)
 		accounts.POST("/check-mixed-channel", h.Admin.Account.CheckMixedChannel)
@@ -376,6 +383,10 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/:id/recover-state", h.Admin.Account.RecoverState)
 		accounts.POST("/:id/refresh", h.Admin.Account.Refresh)
 		accounts.POST("/:id/apply-oauth-credentials", h.Admin.Account.ApplyOAuthCredentials)
+		accounts.POST("/:id/kiro-reauthorize", h.Admin.Account.ReauthorizeKiroOAuth)
+		accounts.GET("/:id/profiles", h.Admin.Account.GetKiroProfiles)
+		accounts.POST("/:id/kiro/overage", h.Admin.Account.SetKiroOverage)
+		accounts.POST("/kiro/overage/enable-all", h.Admin.Account.EnableAllKiroOverage)
 		accounts.POST("/:id/set-privacy", h.Admin.Account.SetPrivacy)
 		accounts.POST("/:id/refresh-tier", h.Admin.Account.RefreshTier)
 		accounts.GET("/:id/stats", h.Admin.Account.GetStats)
@@ -484,6 +495,17 @@ func registerGrokOAuthRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	}
 }
 
+func registerKiroOAuthRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	kiro := admin.Group("/kiro")
+	{
+		kiro.POST("/oauth/auth-url", h.Admin.KiroOAuth.GenerateAuthURL)
+		kiro.POST("/oauth/exchange-callback", h.Admin.KiroOAuth.ExchangeCallback)
+		kiro.POST("/oauth/device-complete", h.Admin.KiroOAuth.DeviceComplete)
+		kiro.POST("/oauth/refresh-token", h.Admin.KiroOAuth.RefreshToken)
+		kiro.POST("/oauth/discover-profiles", h.Admin.KiroOAuth.DiscoverProfiles)
+	}
+}
+
 func registerProxyRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
 	proxies := admin.Group("/proxies")
 	{
@@ -572,6 +594,20 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		adminSettings.PUT("/web-search-emulation", h.Admin.Setting.UpdateWebSearchEmulationConfig)
 		adminSettings.POST("/web-search-emulation/test", h.Admin.Setting.TestWebSearchEmulation)
 		adminSettings.POST("/web-search-emulation/reset-usage", h.Admin.Setting.ResetWebSearchUsage)
+	}
+}
+
+func registerIPSecurityRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	if h.Admin.IPSecurity == nil {
+		return
+	}
+	ipSecurity := admin.Group("/ip-security")
+	{
+		ipSecurity.GET("/config", h.Admin.IPSecurity.GetConfig)
+		ipSecurity.GET("/bans", h.Admin.IPSecurity.ListBans)
+		ipSecurity.GET("/bans/:id", h.Admin.IPSecurity.GetBan)
+		ipSecurity.POST("/bans/:id/release", h.Admin.IPSecurity.ReleaseBan)
+		ipSecurity.POST("/bans/:id/remove-whitelist", h.Admin.IPSecurity.RemoveWhitelist)
 	}
 }
 

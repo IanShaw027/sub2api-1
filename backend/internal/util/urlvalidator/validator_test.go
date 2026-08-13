@@ -1,6 +1,10 @@
 package urlvalidator
 
-import "testing"
+import (
+	"net"
+	"net/netip"
+	"testing"
+)
 
 func TestValidateURLFormat(t *testing.T) {
 	if _, err := ValidateURLFormat("", false); err == nil {
@@ -71,5 +75,44 @@ func TestValidateHTTPURL(t *testing.T) {
 	}
 	if _, err := ValidateHTTPURL("https://localhost", false, ValidationOptions{AllowPrivate: false}); err == nil {
 		t.Fatalf("expected localhost to be blocked when allow_private_hosts is false")
+	}
+}
+
+func TestValidateResolvedIPBlocksSpecialUseNetworks(t *testing.T) {
+	tests := []string{
+		"100.64.0.1",
+		"198.18.0.1",
+		"224.0.0.1",
+		"240.0.0.1",
+		"255.255.255.255",
+	}
+	for _, host := range tests {
+		t.Run(host, func(t *testing.T) {
+			if err := ValidateResolvedIP(host); err == nil {
+				t.Fatalf("expected resolved special-use IP %s to be blocked", host)
+			}
+		})
+	}
+}
+
+func TestBlockedResolvedIPBlocksIPv6SpecialUseNetworks(t *testing.T) {
+	tests := []string{
+		"64:ff9b::0a00:1",
+		"64:ff9b:1::1",
+		"100:0:0:1::1",
+		"2001:2::1",
+		"3fff::1",
+		"5f00::1",
+	}
+	for _, raw := range tests {
+		t.Run(raw, func(t *testing.T) {
+			if !IsBlockedResolvedIP(net.ParseIP(raw)) {
+				t.Fatalf("expected %s to be blocked", raw)
+			}
+		})
+	}
+
+	if !IsBlockedResolvedAddr(netip.MustParseAddr("::ffff:93.184.216.34")) {
+		t.Fatal("expected IPv4-mapped literal address to be blocked")
 	}
 }

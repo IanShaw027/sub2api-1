@@ -81,9 +81,38 @@ func TestRedactCredentials_DoesNotMutateInput(t *testing.T) {
 	require.Equal(t, "x", in["base_url"])
 }
 
+func TestRedactCredentials_StripsNestedTokensAndClientSecret(t *testing.T) {
+	in := map[string]any{
+		"client_id":     "visible-client",
+		"client_secret": "nested-secret",
+		"raw_token": map[string]any{
+			"access_token":  "nested-at",
+			"refresh_token": "nested-rt",
+			"clientSecret":  "camel-secret",
+			"profile_id":    "EHGA3GRVQMUK",
+		},
+	}
+
+	out, status := RedactCredentials(in)
+
+	require.Equal(t, "visible-client", out["client_id"])
+	require.NotContains(t, out, "client_secret")
+	rawToken, ok := out["raw_token"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "EHGA3GRVQMUK", rawToken["profile_id"])
+	require.NotContains(t, rawToken, "access_token")
+	require.NotContains(t, rawToken, "refresh_token")
+	require.NotContains(t, rawToken, "clientSecret")
+	require.True(t, status["has_client_secret"])
+	require.True(t, status["has_access_token"])
+	require.True(t, status["has_refresh_token"])
+	require.True(t, status["has_clientSecret"])
+}
+
 func TestRedactCredentials_AllKnownSensitiveKeys(t *testing.T) {
 	keys := []string{
 		"access_token", "refresh_token", "id_token",
+		"client_secret", "clientSecret",
 		"api_key", "session_key", "cookie",
 		"aws_secret_access_key", "aws_session_token",
 		"service_account_json", "service_account", "private_key",

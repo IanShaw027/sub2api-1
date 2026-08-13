@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -278,6 +279,8 @@ type ParsedRequest struct {
 	Body            *RequestBodyRef // 原始请求体引用（保留用于转发）；替换内容请走 ReplaceBody
 	Model           string          // 请求的模型名称
 	Stream          bool            // 是否为流式请求
+	UserID          int64           // 当前认证用户 ID（用于 Kiro fake cache scope）
+	APIKeyID        int64           // 当前 API Key ID（用于 Kiro fake cache scope）
 	MetadataUserID  string          // metadata.user_id（用于会话亲和）
 	HasSystem       bool            // 是否包含 system 字段（包含 null 也视为显式传入）
 	ThinkingEnabled bool            // 是否开启 thinking（部分平台会影响最终模型名）
@@ -296,6 +299,40 @@ type ParsedRequest struct {
 	// OnUpstreamAccepted 上游接受请求后立即调用（用于提前释放串行锁）
 	// 流式请求在收到 2xx 响应头后调用，避免持锁等流完成
 	OnUpstreamAccepted func()
+}
+
+func KiroExplicitSessionSeed(body []byte, headerValues ...string) string {
+	for _, value := range headerValues {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+}
+
+func EnsureKiroMetadataUserIDForSession(body []byte, existingMetadataUserID, sessionSeed string) ([]byte, string, bool) {
+	sessionSeed = strings.TrimSpace(sessionSeed)
+	existingMetadataUserID = strings.TrimSpace(existingMetadataUserID)
+	existingParsed := ParseMetadataUserID(existingMetadataUserID)
+	if sessionSeed == "" {
+		return body, existingMetadataUserID, false
+	}
+
+	sessionID := GenerateSessionUUID("kiro:" + sessionSeed)
+	if existingParsed != nil && existingParsed.SessionID == sessionID {
+		return body, existingMetadataUserID, false
+	}
+	if len(body) == 0 {
+		return body, existingMetadataUserID, false
+	}
+
+	deviceHash := sha256.Sum256([]byte("kiro-device:" + sessionSeed))
+	metadataUserID := FormatMetadataUserID(fmt.Sprintf("%x", deviceHash[:]), "", sessionID, "")
+	updated, err := sjson.SetBytes(body, "metadata.user_id", metadataUserID)
+	if err != nil {
+		return body, existingMetadataUserID, false
+	}
+	return updated, metadataUserID, true
 }
 
 // NormalizeSessionUserAgent reduces UA noise for sticky-session and digest hashing.

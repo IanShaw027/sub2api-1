@@ -25,6 +25,18 @@ type TempUnschedCache interface {
 	DeleteTempUnsched(ctx context.Context, accountID int64) error
 }
 
+// TempUnschedCounterCache 按 (accountID, ruleFingerprint) 做窗口计数，用于连续命中阈值。
+type TempUnschedCounterCache interface {
+	IncrementTempUnschedCount(ctx context.Context, accountID int64, ruleFingerprint string, windowMinutes int) (int64, error)
+	IncrementTempUnschedThreshold(ctx context.Context, accountID int64, ruleFingerprint string, windowMinutes int, thresholdCount int) (int64, bool, error)
+	ResetTempUnschedCount(ctx context.Context, accountID int64, ruleFingerprint string) error
+}
+
+// TempUnschedCounterExactResetter 只清理当前 fingerprint 的计数 key。
+type TempUnschedCounterExactResetter interface {
+	ResetTempUnschedFingerprint(ctx context.Context, accountID int64, ruleFingerprint string) error
+}
+
 // TimeoutCounterCache 超时计数器缓存接口
 type TimeoutCounterCache interface {
 	// IncrementTimeoutCount 增加账户的超时计数，返回当前计数值

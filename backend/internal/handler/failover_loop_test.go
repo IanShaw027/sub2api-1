@@ -60,6 +60,47 @@ func TestSameAccountRetryDelayFor(t *testing.T) {
 	})
 }
 
+func TestPinSameAccountRetryContext(t *testing.T) {
+	t.Run("same-account retry pins sticky account and group", func(t *testing.T) {
+		baseCtx := context.Background()
+		fs := NewFailoverState(3, false)
+		accountID := int64(42)
+		groupID := int64(25)
+		prevRetryCount := 0
+		prevSwitchCount := 0
+		fs.SameAccountRetryCount[accountID] = 1
+		failoverErr := &service.UpstreamFailoverError{RetryableOnSameAccount: true}
+
+		ctx := pinSameAccountRetryContext(baseCtx, fs, accountID, &groupID, failoverErr, prevRetryCount, prevSwitchCount, false)
+
+		pinnedAccountID, ok := service.PrefetchedStickyAccountIDFromContext(ctx)
+		require.True(t, ok)
+		require.Equal(t, accountID, pinnedAccountID)
+		pinnedGroupID, ok := service.PrefetchedStickyGroupIDFromContext(ctx)
+		require.True(t, ok)
+		require.Equal(t, groupID, pinnedGroupID)
+	})
+
+	t.Run("switch path does not pin sticky account", func(t *testing.T) {
+		baseCtx := context.Background()
+		fs := NewFailoverState(3, false)
+		accountID := int64(42)
+		groupID := int64(25)
+		prevRetryCount := 0
+		prevSwitchCount := 0
+		fs.SameAccountRetryCount[accountID] = 1
+		fs.SwitchCount = 1
+		failoverErr := &service.UpstreamFailoverError{RetryableOnSameAccount: true}
+
+		ctx := pinSameAccountRetryContext(baseCtx, fs, accountID, &groupID, failoverErr, prevRetryCount, prevSwitchCount, false)
+
+		_, ok := service.PrefetchedStickyAccountIDFromContext(ctx)
+		require.False(t, ok)
+		_, ok = service.PrefetchedStickyGroupIDFromContext(ctx)
+		require.False(t, ok)
+	})
+}
+
 // ---------------------------------------------------------------------------
 // Helper
 // ---------------------------------------------------------------------------

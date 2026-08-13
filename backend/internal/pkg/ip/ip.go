@@ -157,6 +157,14 @@ func GetTrustedClientIP(c *gin.Context) string {
 	return normalizeIP(c.ClientIP())
 }
 
+// GetPeerIP returns the direct TCP peer without consulting forwarding headers.
+func GetPeerIP(c *gin.Context) string {
+	if c == nil || c.Request == nil {
+		return ""
+	}
+	return normalizeIP(c.Request.RemoteAddr)
+}
+
 // GetSecurityClientIP returns the address used by security-sensitive paths.
 // When legacy forwarded-IP trust is enabled, raw forwarding headers take over
 // client-IP resolution. When disabled, Gin's server.trusted_proxies chain is

@@ -656,8 +656,13 @@ type UpstreamFailoverError struct {
 	StatusCode               int
 	ResponseBody             []byte      // 上游响应体，用于错误透传规则匹配
 	ResponseHeaders          http.Header // 上游响应头，用于透传 cf-ray/cf-mitigated/content-type 等诊断信息
+	ExcludedAccountIDs       []int64     // 本次请求后续 failover 必须一并排除的账号（例如共享同一 Kiro profile）
 	ForceCacheBilling        bool        // Antigravity 粘性会话切换时设为 true
 	RetryableOnSameAccount   bool        // 临时性错误（如 Google 间歇性 400、空响应），应在同一账号上重试 N 次再切换
+	SameAccountRetryDelay    time.Duration
+	SameAccountRetryMax      int
+	RetryExhaustedCooldown   time.Duration // 同账号重试耗尽后，对该账号施加的短期冷却
+	RetryExhaustedReason     string        // 同账号重试耗尽后的冷却原因
 	RequestScopedTransient   bool        // 故障因素与账号无关（如上游按客户端身份/模型容量降载）：可同账号重试，但不得据此对账号做临时封禁
 	SafeToFailoverAfterWrite bool        // 仅写出 SSE 注释等非语义字节时，仍可在同一客户端流中切换账号
 	Stage                    GatewayFailureStage
@@ -715,12 +720,44 @@ func (s *GatewayService) TempUnscheduleRetryableError(ctx context.Context, accou
 	if failoverErr.RequestScopedTransient {
 		return
 	}
+	s.applyRetryExhaustedCooldown(ctx, accountID, failoverErr)
 	// 根据状态码选择封禁策略
 	switch failoverErr.StatusCode {
 	case http.StatusBadRequest:
 		tempUnscheduleGoogleConfigError(ctx, s.accountRepo, accountID, "[handler]")
 	case http.StatusBadGateway:
 		tempUnscheduleEmptyResponse(ctx, s.accountRepo, accountID, "[handler]")
+	}
+}
+
+func (s *GatewayService) applyRetryExhaustedCooldown(ctx context.Context, accountID int64, failoverErr *UpstreamFailoverError) {
+	if s == nil || s.accountRepo == nil || failoverErr == nil || failoverErr.RetryExhaustedCooldown <= 0 {
+		return
+	}
+
+	until := time.Now().Add(failoverErr.RetryExhaustedCooldown)
+	blockReason := strings.TrimSpace(failoverErr.RetryExhaustedReason)
+	if blockReason == "" {
+		blockReason = "retry_exhausted_temp_unschedulable"
+	}
+
+	if s.rateLimitService != nil {
+		account, err := s.accountRepo.GetByID(ctx, accountID)
+		if err != nil {
+			slog.Warn("retry_exhausted_get_account_failed", "account_id", accountID, "error", err)
+		} else if account != nil {
+			if s.rateLimitService.persistTempUnschedulableState(ctx, account, until, failoverErr.StatusCode, blockReason, -1, failoverErr.ResponseBody, blockReason) {
+				return
+			}
+		}
+	}
+
+	reason := strings.TrimSpace(kiroErrorDetailFromBody(failoverErr.ResponseBody))
+	if reason == "" {
+		reason = blockReason
+	}
+	if err := s.accountRepo.SetTempUnschedulable(ctx, accountID, until, reason); err != nil {
+		slog.Warn("retry_exhausted_temp_unsched_set_failed", "account_id", accountID, "error", err)
 	}
 }
 
@@ -763,6 +800,16 @@ type GatewayService struct {
 	tlsFPProfileService   *TLSFingerprintProfileService
 	balanceNotifyService  *BalanceNotifyService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
+	kiroTokenProvider     *KiroTokenProvider
+	kiroGatewayService    *KiroGatewayService
+}
+
+func (s *GatewayService) SetKiroDeps(kiroTokenProvider *KiroTokenProvider, kiroGatewayService *KiroGatewayService) {
+	if s == nil {
+		return
+	}
+	s.kiroTokenProvider = kiroTokenProvider
+	s.kiroGatewayService = kiroGatewayService
 }
 
 // NewGatewayService creates a new GatewayService
@@ -1240,6 +1287,14 @@ func (s *GatewayService) getOAuthToken(ctx context.Context, account *Account) (s
 	// 对于 Anthropic OAuth 账号，使用 ClaudeTokenProvider 获取缓存的 token
 	if account.Platform == PlatformAnthropic && account.Type == AccountTypeOAuth && s.claudeTokenProvider != nil {
 		accessToken, err := s.claudeTokenProvider.GetAccessToken(ctx, account)
+		if err != nil {
+			return "", "", err
+		}
+		return accessToken, "oauth", nil
+	}
+
+	if account.Platform == PlatformKiro && account.Type == AccountTypeOAuth && s.kiroTokenProvider != nil {
+		accessToken, err := s.kiroTokenProvider.GetAccessToken(ctx, account)
 		if err != nil {
 			return "", "", err
 		}

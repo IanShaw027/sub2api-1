@@ -25,6 +25,7 @@ type RateLimitService struct {
 	cfg                   *config.Config
 	geminiQuotaService    *GeminiQuotaService
 	tempUnschedCache      TempUnschedCache
+	tempUnschedCounter    TempUnschedCounterCache
 	timeoutCounterCache   TimeoutCounterCache
 	openAI403CounterCache OpenAI403CounterCache
 	settingService        *SettingService
@@ -95,6 +96,10 @@ func NewRateLimitService(accountRepo AccountRepository, usageRepo UsageLogReposi
 // SetTimeoutCounterCache 设置超时计数器缓存（可选依赖）
 func (s *RateLimitService) SetTimeoutCounterCache(cache TimeoutCounterCache) {
 	s.timeoutCounterCache = cache
+}
+
+func (s *RateLimitService) SetTempUnschedCounter(cache TempUnschedCounterCache) {
+	s.tempUnschedCounter = cache
 }
 
 // SetOpenAI403CounterCache 设置 OpenAI 403 连续失败计数器（可选依赖）
@@ -1190,6 +1195,15 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 				slog.Info("account_rate_limited", "account_id", account.ID, "platform", account.Platform, "reset_at", resetTime, "reset_in", time.Until(resetTime).Truncate(time.Second))
 				return
 			}
+		case PlatformKiro:
+			if resetAt := parseKiro429ResetAt(headers, responseBody); resetAt != nil {
+				s.applyKiro429ExplicitCooldown(ctx, account, *resetAt, responseBody, "explicit_reset")
+				return
+			}
+			if kiro429LooksQuotaExhausted(responseBody) {
+				s.apply429FallbackRateLimit(ctx, account, "kiro_quota_exhausted_no_reset")
+				return
+			}
 		}
 
 		// Anthropic 平台：没有限流重置时间的 429 可能是非真实限流（如 Extra usage required），
@@ -1197,11 +1211,13 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 		// 调度器让每个请求反复撞同一批持续 429 的账号（failover 预算被白白烧掉，
 		// 客户端稳定收到 429）。因此同样走可配置的秒级兜底回避，管理端可调大或关闭。
 		if account.Platform == PlatformAnthropic {
-			slog.Warn("rate_limit_429_no_reset_time",
-				"account_id", account.ID,
-				"platform", account.Platform,
-				"reason", "no rate limit reset time in headers, likely not a real rate limit")
 			s.apply429FallbackRateLimit(ctx, account, "anthropic_no_reset_time")
+			return
+		}
+		if account.Platform == PlatformKiro {
+			slog.Info("kiro_429_no_reset_time_retry_only",
+				"account_id", account.ID,
+				"platform", account.Platform)
 			return
 		}
 
@@ -2480,6 +2496,42 @@ func (s *RateLimitService) triggerTempUnschedulable(ctx context.Context, account
 	}
 
 	slog.Info("account_temp_unschedulable", "account_id", account.ID, "until", until, "rule_index", ruleIndex, "status_code", statusCode)
+	return true
+}
+
+func (s *RateLimitService) persistTempUnschedulableState(ctx context.Context, account *Account, until time.Time, statusCode int, matchedKeyword string, ruleIndex int, responseBody []byte, blockReason string) bool {
+	if s == nil || s.accountRepo == nil || account == nil || until.IsZero() {
+		return false
+	}
+	now := time.Now()
+	state := &TempUnschedState{
+		UntilUnix:       until.Unix(),
+		TriggeredAtUnix: now.Unix(),
+		StatusCode:      statusCode,
+		MatchedKeyword:  matchedKeyword,
+		RuleIndex:       ruleIndex,
+		ErrorMessage:    truncateTempUnschedMessage(responseBody, tempUnschedMessageMaxBytes),
+	}
+	reason := ""
+	if raw, err := json.Marshal(state); err == nil {
+		reason = string(raw)
+	}
+	if reason == "" {
+		reason = strings.TrimSpace(state.ErrorMessage)
+	}
+	if reason == "" {
+		reason = strings.TrimSpace(blockReason)
+	}
+	s.notifyAccountSchedulingBlocked(account, until, blockReason)
+	if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
+		slog.Warn("temp_unsched_set_failed", "account_id", account.ID, "error", err)
+		return false
+	}
+	if s.tempUnschedCache != nil {
+		if err := s.tempUnschedCache.SetTempUnsched(ctx, account.ID, state); err != nil {
+			slog.Warn("temp_unsched_cache_set_failed", "account_id", account.ID, "error", err)
+		}
+	}
 	return true
 }
 

@@ -677,6 +677,42 @@ func (s *OpsService) ListUserErrorRequests(ctx context.Context, userID int64, fi
 	}, nil
 }
 
+type accountCyberEventRepository interface {
+	GetAccountCyberSummaries(ctx context.Context, accountIDs []int64) (map[int64]AccountCyberSummary, error)
+	ListAccountCyberEvents(ctx context.Context, accountID int64, page, pageSize int) (*AccountCyberEventList, error)
+}
+
+func (s *OpsService) cyberEventRepo() accountCyberEventRepository {
+	if s == nil || s.opsRepo == nil {
+		return nil
+	}
+	repo, ok := s.opsRepo.(accountCyberEventRepository)
+	if !ok {
+		return nil
+	}
+	return repo
+}
+
+// GetAccountCyberSummaries returns per-account cyber event counts.
+// It does not require ops monitoring to be enabled: the source is usage_logs.
+func (s *OpsService) GetAccountCyberSummaries(ctx context.Context, accountIDs []int64) (map[int64]AccountCyberSummary, error) {
+	out := make(map[int64]AccountCyberSummary, len(accountIDs))
+	repo := s.cyberEventRepo()
+	if repo == nil {
+		return out, nil
+	}
+	return repo.GetAccountCyberSummaries(ctx, accountIDs)
+}
+
+// ListAccountCyberEvents returns a paged, request_id-deduplicated cyber event list.
+func (s *OpsService) ListAccountCyberEvents(ctx context.Context, accountID int64, page, pageSize int) (*AccountCyberEventList, error) {
+	repo := s.cyberEventRepo()
+	if repo == nil {
+		return &AccountCyberEventList{Events: []*AccountCyberEvent{}, Page: page, PageSize: pageSize}, nil
+	}
+	return repo.ListAccountCyberEvents(ctx, accountID, page, pageSize)
+}
+
 func (s *OpsService) GetErrorLogByID(ctx context.Context, id int64) (*OpsErrorLogDetail, error) {
 	if err := s.RequireMonitoringEnabled(ctx); err != nil {
 		return nil, err

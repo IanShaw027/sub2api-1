@@ -459,6 +459,26 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
+	if input == nil {
+		return nil, fmt.Errorf("account input is required")
+	}
+	if err := validatePlatformAccountType(input.Platform, input.Type); err != nil {
+		return nil, err
+	}
+	if input.Platform == PlatformKiro && input.Type == AccountTypeOAuth {
+		input.Credentials = NormalizeKiroOAuthCredentialShape(input.Credentials)
+	}
+	if s.settingService != nil {
+		defaults := s.settingService.GetPlatformDefaultAccountModelConfig(ctx)
+		if cfg, ok := defaults[strings.ToLower(strings.TrimSpace(input.Platform))]; ok {
+			input.Credentials = applyDefaultAccountModelConfigForPlatform(input.Platform, input.Credentials, cfg)
+		}
+	}
+	if input.Platform == PlatformKiro {
+		if err := validateKiroAccountCredentials(input.Type, input.Credentials); err != nil {
+			return nil, err
+		}
+	}
 	accountExtra, err := normalizeOpenAILongContextBillingExtra(input.Platform, input.Extra)
 	if err != nil {
 		return nil, err
@@ -600,15 +620,33 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if account.IsCredentialShadow() && input.Credentials != nil {
 		account.Credentials = sanitizeSparkShadowCredentials(input.Credentials)
 	} else if len(input.Credentials) > 0 {
-		// 敏感子键采用"incoming 没提供就保留"的合并语义：前端响应已脱敏，
-		// 全对象 PUT 编辑时不会再带回 token，避免覆盖时清空已有凭证。
-		account.Credentials = MergePreservingSensitiveCreds(account.Credentials, input.Credentials)
+		if account.Platform == PlatformKiro && account.Type == AccountTypeOAuth {
+			input.Credentials = NormalizeKiroOAuthCredentialShape(input.Credentials)
+		}
+		if account.Platform == PlatformKiro {
+			account.Credentials = mergeAccountCredentialsForAccountUpdate(
+				account.Platform,
+				account.Type,
+				account.Credentials,
+				input.Credentials,
+				input.AllowSensitiveCredentials,
+			)
+		} else {
+			// 敏感子键采用"incoming 没提供就保留"的合并语义：前端响应已脱敏，
+			// 全对象 PUT 编辑时不会再带回 token，避免覆盖时清空已有凭证。
+			account.Credentials = MergePreservingSensitiveCreds(account.Credentials, input.Credentials)
+		}
 		// 校验并规范化请求头覆写配置（header 名小写化、格式检查）
 		if err := NormalizeHeaderOverrideCredentials(account.Credentials); err != nil {
 			return nil, err
 		}
 		// Strip SSO/password residue that must never sit next to OAuth tokens.
 		account.Credentials = SanitizeStoredCredentials(account.Platform, account.Credentials)
+	}
+	if account.Platform == PlatformKiro {
+		if err := validateKiroAccountCredentials(account.Type, account.Credentials); err != nil {
+			return nil, err
+		}
 	}
 	// Extra 使用 map：需要区分“未提供(nil)”与“显式清空({})”。
 	// 关闭配额限制时前端会删除 quota_* 键并提交 extra:{}，此时也必须落库。
@@ -910,15 +948,22 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	needMixedChannelCheck := input.GroupIDs != nil && !input.SkipMixedChannelCheck
 	_, hasLongContextBillingUpdate := input.Extra[openAILongContextBillingEnabledKey]
 
-	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查共用，避免多次 DB 查询。
+	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查/Kiro 凭据校验共用。
 	var cachedTargets []*Account
-	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || hasLongContextBillingUpdate || input.ProbeEnabled != nil || input.RateMultiplier != nil {
-		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
-		if err != nil {
-			return nil, err
-		}
-		cachedTargets = loaded
+	if input.ProxyID != nil && len(input.ProxyIDs) > 0 {
+		return nil, fmt.Errorf("proxy_id and proxy_ids cannot be used together")
 	}
+	for _, proxyID := range input.ProxyIDs {
+		if proxyID <= 0 {
+			return nil, fmt.Errorf("proxy_ids must contain positive IDs")
+		}
+	}
+
+	loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
+	if err != nil {
+		return nil, err
+	}
+	cachedTargets = loaded
 	if input.ProbeEnabled != nil {
 		targetsByID := make(map[int64]*Account, len(cachedTargets))
 		for _, account := range cachedTargets {
@@ -962,7 +1007,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	// 影子账号 proxy 恒继承母账号(与单账号 UpdateAccount 守卫对齐——外审第4轮 P1):批量携带 proxy
 	// 时目标不得含影子,否则影子会获得独立 proxy、破坏继承不变量(网关按所选影子自身 proxy 出站,
 	// 要等母账号下次改 proxy 才覆盖→漂移)。含影子即整体拒绝,提示从选择中剔除影子。
-	if input.ProxyID != nil {
+	if input.ProxyID != nil || len(input.ProxyIDs) > 0 {
 		for _, acc := range cachedTargets {
 			if acc != nil && acc.IsCredentialShadow() {
 				return nil, infraerrors.Newf(http.StatusBadRequest, "SPARK_SHADOW_PROXY_INHERITED",
@@ -1015,6 +1060,78 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		}
 	}
 
+	accountByID := make(map[int64]*Account, len(cachedTargets))
+	for _, account := range cachedTargets {
+		if account != nil {
+			accountByID[account.ID] = account
+		}
+	}
+	for _, accountID := range input.AccountIDs {
+		if accountByID[accountID] == nil {
+			return nil, fmt.Errorf("account %d not found", accountID)
+		}
+	}
+
+	kiroCredentialUpdateIDs := make([]int64, 0)
+	if len(input.Credentials) > 0 {
+		for _, accountID := range input.AccountIDs {
+			account := accountByID[accountID]
+			if account == nil || account.Platform != PlatformKiro {
+				continue
+			}
+			mergedCredentials := mergeAccountCredentialsForAccountUpdate(account.Platform, account.Type, account.Credentials, input.Credentials, false)
+			if err := validateKiroAccountCredentials(account.Type, mergedCredentials); err != nil {
+				return nil, err
+			}
+			kiroCredentialUpdateIDs = append(kiroCredentialUpdateIDs, accountID)
+		}
+	}
+
+	if len(kiroCredentialUpdateIDs) > 0 {
+		for index, accountID := range input.AccountIDs {
+			account := accountByID[accountID]
+			if account == nil {
+				continue
+			}
+			applyBulkUpdateInputToAccount(account, input, index)
+			if err := s.accountRepo.Update(ctx, account); err != nil {
+				return nil, err
+			}
+		}
+		if input.ProxyID != nil || len(input.ProxyIDs) > 0 {
+			for index, accountID := range input.AccountIDs {
+				var effectiveProxyID *int64
+				if len(input.ProxyIDs) > 0 {
+					assigned := input.ProxyIDs[index%len(input.ProxyIDs)]
+					effectiveProxyID = &assigned
+				} else if *input.ProxyID != 0 {
+					effectiveProxyID = input.ProxyID
+				}
+				if err := s.propagateProxyToShadows(ctx, accountID, effectiveProxyID); err != nil {
+					return nil, err
+				}
+			}
+		}
+		for _, accountID := range input.AccountIDs {
+			entry := BulkUpdateAccountResult{AccountID: accountID}
+			if input.GroupIDs != nil {
+				if err := s.accountRepo.BindGroups(ctx, accountID, *input.GroupIDs); err != nil {
+					entry.Success = false
+					entry.Error = err.Error()
+					result.Failed++
+					result.FailedIDs = append(result.FailedIDs, accountID)
+					result.Results = append(result.Results, entry)
+					continue
+				}
+			}
+			entry.Success = true
+			result.Success++
+			result.SuccessIDs = append(result.SuccessIDs, accountID)
+			result.Results = append(result.Results, entry)
+		}
+		return result, nil
+	}
+
 	// 校验并规范化请求头覆写配置（批量路径为 JSONB 顶层 key 合并，直接校验增量即可）
 	if err := NormalizeHeaderOverrideCredentials(input.Credentials); err != nil {
 		return nil, err
@@ -1040,7 +1157,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 			repoUpdates.Extra[UpstreamBillingRateSyncEnabledExtraKey] = false
 		}
 	}
-	if updatesUpstreamBillingProbeIdentity(input.Credentials) || input.ProxyID != nil {
+	if updatesUpstreamBillingProbeIdentity(input.Credentials) || input.ProxyID != nil || len(input.ProxyIDs) > 0 {
 		if repoUpdates.Extra == nil {
 			repoUpdates.Extra = make(map[string]any)
 		}
@@ -1096,6 +1213,18 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 			}
 		}
 	}
+	if len(input.ProxyIDs) > 0 {
+		for index, accountID := range input.AccountIDs {
+			proxyID := input.ProxyIDs[index%len(input.ProxyIDs)]
+			assigned := proxyID
+			if _, err := s.accountRepo.BulkUpdate(ctx, []int64{accountID}, AccountBulkUpdate{ProxyID: &assigned}); err != nil {
+				return nil, err
+			}
+			if err := s.propagateProxyToShadows(ctx, accountID, &assigned); err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	// Handle group bindings per account (requires individual operations).
 	for _, accountID := range input.AccountIDs {
@@ -1119,6 +1248,62 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	return result, nil
+}
+
+func applyBulkUpdateInputToAccount(account *Account, input *BulkUpdateAccountsInput, index int) {
+	if account == nil || input == nil {
+		return
+	}
+	previousProbeIdentity := upstreamBillingProbeIdentity(account)
+	if input.Name != "" {
+		account.Name = input.Name
+	}
+	if len(input.ProxyIDs) > 0 {
+		assigned := input.ProxyIDs[index%len(input.ProxyIDs)]
+		account.ProxyID = &assigned
+		account.ProxyFallbackOriginID = nil
+	} else if input.ProxyID != nil {
+		if *input.ProxyID == 0 {
+			account.ProxyID = nil
+		} else {
+			account.ProxyID = input.ProxyID
+		}
+		account.ProxyFallbackOriginID = nil
+	}
+	if input.Concurrency != nil {
+		account.Concurrency = *input.Concurrency
+	}
+	if input.Priority != nil {
+		account.Priority = *input.Priority
+	}
+	if input.RateMultiplier != nil {
+		account.RateMultiplier = input.RateMultiplier
+	}
+	if input.LoadFactor != nil {
+		if *input.LoadFactor <= 0 {
+			account.LoadFactor = nil
+		} else {
+			account.LoadFactor = input.LoadFactor
+		}
+	}
+	if input.Status != "" {
+		account.Status = input.Status
+	}
+	if input.Schedulable != nil {
+		account.Schedulable = *input.Schedulable
+	}
+	if len(input.Credentials) > 0 {
+		account.Credentials = mergeAccountCredentialsForAccountUpdate(account.Platform, account.Type, account.Credentials, input.Credentials, false)
+	}
+	if len(input.Extra) > 0 {
+		account.Extra = MergeCredentials(account.Extra, input.Extra)
+	}
+	if !reflect.DeepEqual(previousProbeIdentity, upstreamBillingProbeIdentity(account)) && account.Extra != nil {
+		delete(account.Extra, UpstreamBillingProbeExtraKey)
+		if !isUpstreamBillingProbeAccount(account) {
+			delete(account.Extra, UpstreamBillingProbeEnabledExtraKey)
+		}
+	}
 }
 
 func updatesUpstreamBillingProbeIdentity(credentials map[string]any) bool {

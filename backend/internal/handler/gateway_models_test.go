@@ -69,6 +69,14 @@ func TestDefaultModelIDsForCompositeIncludesAntigravityDefaults(t *testing.T) {
 	require.Contains(t, compositeIDs, antigravityIDs[0])
 }
 
+func TestDefaultModelIDsForKiroAndComposite(t *testing.T) {
+	kiroIDs := defaultModelIDsForPlatform(service.PlatformKiro)
+	require.NotEmpty(t, kiroIDs)
+
+	compositeIDs := defaultModelIDsForPlatform(service.PlatformComposite)
+	require.Contains(t, compositeIDs, kiroIDs[0])
+}
+
 func TestGatewayModels_GeminiGroupFallsBackToGeminiModels(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

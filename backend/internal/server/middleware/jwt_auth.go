@@ -103,6 +103,7 @@ func jwtAuth(
 		if activityToucher != nil {
 			activityToucher.TouchLastActiveForUser(c.Request.Context(), user)
 		}
+		observeIPSecurity(c, user.ID, service.IPSecuritySourceWeb, 0)
 
 		c.Next()
 	}

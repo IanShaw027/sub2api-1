@@ -219,9 +219,24 @@ func NewAccountService(accountRepo AccountRepository, groupRepo GroupRepository)
 
 // Create 创建账号
 func (s *AccountService) Create(ctx context.Context, req CreateAccountRequest) (*Account, error) {
+	if err := validatePlatformAccountType(req.Platform, req.Type); err != nil {
+		return nil, err
+	}
+	if req.Platform == PlatformKiro && req.Type == AccountTypeOAuth {
+		req.Credentials = NormalizeKiroOAuthCredentialShape(req.Credentials)
+	}
+	if req.Platform == PlatformKiro {
+		if err := validateKiroAccountCredentials(req.Type, req.Credentials); err != nil {
+			return nil, err
+		}
+	}
+
 	// 验证分组是否存在（如果指定了分组）
 	if len(req.GroupIDs) > 0 {
 		if err := s.validateGroupIDsExist(ctx, req.GroupIDs); err != nil {
+			return nil, err
+		}
+		if err := s.validateOAuthOnlyGroups(ctx, req.Type, req.GroupIDs); err != nil {
 			return nil, err
 		}
 	}
@@ -257,7 +272,7 @@ func (s *AccountService) Create(ctx context.Context, req CreateAccountRequest) (
 			if err != nil {
 				return nil, err
 			}
-			if g.RequireOAuthOnly && (g.Platform == PlatformOpenAI || g.Platform == PlatformAntigravity || g.Platform == PlatformAnthropic || g.Platform == PlatformGemini || g.Platform == PlatformGrok) {
+			if g.RequireOAuthOnly && requiresOAuthOnlyAccount(g.Platform) {
 				return nil, fmt.Errorf("分组 [%s] 仅允许 OAuth 账号，apikey 类型账号无法加入", g.Name)
 			}
 		}
@@ -325,7 +340,11 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 	}
 
 	if req.Credentials != nil {
-		account.Credentials = SanitizeStoredCredentials(account.Platform, *req.Credentials)
+		nextCredentials := *req.Credentials
+		if account.Platform == PlatformKiro && account.Type == AccountTypeOAuth {
+			nextCredentials = NormalizeKiroOAuthCredentialShape(nextCredentials)
+		}
+		account.Credentials = mergeAccountCredentialsForAccountUpdate(account.Platform, account.Type, account.Credentials, nextCredentials, false)
 	}
 
 	if req.Extra != nil {
@@ -367,6 +386,19 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 			return nil, err
 		}
 	}
+	if err := validatePlatformAccountType(account.Platform, account.Type); err != nil {
+		return nil, err
+	}
+	if req.Credentials != nil && account.Platform == PlatformKiro {
+		if err := validateKiroAccountCredentials(account.Type, account.Credentials); err != nil {
+			return nil, err
+		}
+	}
+	if req.GroupIDs != nil {
+		if err := s.validateOAuthOnlyGroups(ctx, account.Type, *req.GroupIDs); err != nil {
+			return nil, err
+		}
+	}
 
 	// 执行更新
 	if err := s.accountRepo.Update(ctx, account); err != nil {
@@ -380,7 +412,7 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 			if err != nil {
 				return nil, err
 			}
-			if g.RequireOAuthOnly && (g.Platform == PlatformOpenAI || g.Platform == PlatformAntigravity || g.Platform == PlatformAnthropic || g.Platform == PlatformGemini || g.Platform == PlatformGrok) {
+			if g.RequireOAuthOnly && requiresOAuthOnlyAccount(g.Platform) {
 				return nil, fmt.Errorf("分组 [%s] 仅允许 OAuth 账号，apikey 类型账号无法加入", g.Name)
 			}
 		}
@@ -417,6 +449,22 @@ func (s *AccountService) Delete(ctx context.Context, id int64) error {
 		return fmt.Errorf("delete account: %w", err)
 	}
 
+	return nil
+}
+
+func (s *AccountService) validateOAuthOnlyGroups(ctx context.Context, accountType string, groupIDs []int64) error {
+	if accountType != AccountTypeAPIKey || len(groupIDs) == 0 {
+		return nil
+	}
+	for _, gid := range groupIDs {
+		g, err := s.groupRepo.GetByID(ctx, gid)
+		if err != nil {
+			return err
+		}
+		if g.RequireOAuthOnly && requiresOAuthOnlyAccount(g.Platform) {
+			return fmt.Errorf("分组 [%s] 仅允许 OAuth 账号，apikey 类型账号无法加入", g.Name)
+		}
+	}
 	return nil
 }
 

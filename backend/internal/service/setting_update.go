@@ -102,6 +102,9 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	if err := s.validateDefaultSubscriptionGroups(ctx, settings.DefaultSubscriptions); err != nil {
 		return nil, err
 	}
+	if err := validateKiroRuntimeSettingsForUpdate(settings); err != nil {
+		return nil, err
+	}
 	normalizedWhitelist, err := NormalizeRegistrationEmailSuffixWhitelist(settings.RegistrationEmailSuffixWhitelist)
 	if err != nil {
 		return nil, infraerrors.BadRequest("INVALID_REGISTRATION_EMAIL_SUFFIX_WHITELIST", err.Error())
@@ -452,6 +455,36 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	// Affiliate (邀请返利) feature switch
 	updates[SettingKeyAffiliateEnabled] = strconv.FormatBool(settings.AffiliateEnabled)
 	updates[SettingKeyTicketEnabled] = strconv.FormatBool(settings.TicketEnabled)
+	kiroRuntime := normalizeKiroRuntimeSettings(&KiroRuntimeSettings{
+		KiroVersion:                 settings.KiroDefaultVersion,
+		KiroCommit:                  settings.KiroDefaultCommit,
+		SystemVersion:               settings.KiroDefaultSystemVersion,
+		NodeVersion:                 settings.KiroDefaultNodeVersion,
+		CacheHitRateScale:           settings.KiroCacheHitRateScale,
+		CacheMinBlockTokens:         settings.KiroCacheMinBlockTokens,
+		CacheIndependentTTLSecs:     settings.KiroCacheIndependentTTLSeconds,
+		CachePrefixTTLSecs:          settings.KiroCachePrefixTTLSeconds,
+		CodeExecutionSandboxCommand: settings.KiroCodeExecutionSandboxCommand,
+	})
+	updates[SettingKeyKiroDefaultVersion] = kiroRuntime.KiroVersion
+	updates[SettingKeyKiroDefaultCommit] = kiroRuntime.KiroCommit
+	updates[SettingKeyKiroDefaultSystemVersion] = kiroRuntime.SystemVersion
+	updates[SettingKeyKiroDefaultNodeVersion] = kiroRuntime.NodeVersion
+	updates[SettingKeyKiroCacheHitRateScale] = strconv.Itoa(kiroRuntime.CacheHitRateScale)
+	updates[SettingKeyKiroCacheMinBlockTokens] = strconv.Itoa(kiroRuntime.CacheMinBlockTokens)
+	updates[SettingKeyKiroCacheIndependentTTLSeconds] = strconv.Itoa(kiroRuntime.CacheIndependentTTLSecs)
+	updates[SettingKeyKiroCachePrefixTTLSeconds] = strconv.Itoa(kiroRuntime.CachePrefixTTLSecs)
+	updates[SettingKeyKiroCodeExecutionSandboxCommand] = kiroRuntime.CodeExecutionSandboxCommand
+	kiroRuntimeSettingsCache.Store((*cachedKiroRuntimeSettings)(nil))
+	kiroRuntimeSettingsSF.Forget("kiro_runtime")
+	ipSecurityCfg := normalizeIPSecurityConfig(IPSecurityConfig{
+		WindowMinutes:    settings.IPMultiAccountBanWindowMinutes,
+		AccountThreshold: settings.IPMultiAccountBanThreshold,
+	})
+	updates[SettingKeyIPMultiAccountBanEnabled] = strconv.FormatBool(settings.IPMultiAccountBanEnabled)
+	updates[SettingKeyIPMultiAccountBanWindowMinutes] = strconv.Itoa(ipSecurityCfg.WindowMinutes)
+	updates[SettingKeyIPMultiAccountBanThreshold] = strconv.Itoa(ipSecurityCfg.AccountThreshold)
+	updates[SettingKeyIPMultiAccountBanLearningUntil] = strings.TrimSpace(settings.IPMultiAccountBanLearningUntil)
 
 	// 风控中心功能开关
 	updates[SettingKeyRiskControlEnabled] = strconv.FormatBool(settings.RiskControlEnabled)
@@ -795,6 +828,9 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	// codex_cli_only 加固策略缓存：设置更新后强制下次重载（涉及 4 个键 + JSON 解析，直接置过期）。
 	s.codexRestrictionPolicySF.Forget("codex_restriction_policy")
 	s.codexRestrictionPolicyCache.Store(&cachedCodexRestrictionPolicy{expiresAt: 0})
+	if ipSecurity := GlobalIPSecurityService(); ipSecurity != nil {
+		ipSecurity.InvalidateConfig()
+	}
 	if s.onUpdate != nil {
 		s.onUpdate() // Invalidate cache after settings update
 	}

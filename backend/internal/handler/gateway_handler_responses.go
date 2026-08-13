@@ -286,9 +286,14 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 					h.handleResponsesFailoverExhausted(c, failoverErr, true)
 					return
 				}
+				prevRetryCount := fs.SameAccountRetryCount[account.ID]
+				prevSwitchCount := fs.SwitchCount
 				action := fs.HandleFailoverError(requestCtx, h.gatewayService, account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 				switch action {
 				case FailoverContinue:
+					ctx := pinSameAccountRetryContext(requestCtx, fs, account.ID, apiKey.GroupID, failoverErr, prevRetryCount, prevSwitchCount, h.metadataBridgeEnabled())
+					requestCtx = ctx
+					c.Request = c.Request.WithContext(ctx)
 					continue
 				case FailoverExhausted:
 					h.handleResponsesFailoverExhausted(c, fs.LastFailoverErr, streamStarted)

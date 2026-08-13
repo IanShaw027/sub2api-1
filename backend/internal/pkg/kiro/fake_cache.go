@@ -1,0 +1,638 @@
+package kiro
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+)
+
+const (
+	DefaultFakeCacheTTL            = 5 * time.Minute
+	DefaultFakeCacheHitRateScale   = 85
+	DefaultFakeCacheMinBlockTokens = 1024
+	DefaultFakeCacheIndependentTTL = 3600
+	DefaultFakeCachePrefixTTL      = 300
+	// DefaultFakeCacheMaxEntries 是进程内 fake cache 的硬性条目上限。go-cache 只有 TTL、无淘汰，
+	// 稳态条目 = 到达率×TTL(最长 1h)，是无界内存足迹；改用有界 LRU 后由此常量封顶。
+	DefaultFakeCacheMaxEntries = 100000
+)
+
+type FakeCachePlan struct {
+	CacheStrategy           string
+	CacheStrategyGeneration uint64
+	SessionProgressKey      string
+	// SessionProgressVersion is the optimistic-concurrency version observed when
+	// the gateway prepared this plan. It is internal state and never sent upstream.
+	SessionProgressVersion        uint64 `json:"-"`
+	PreviousKey                   string
+	CurrentKey                    string
+	PreviousCacheableTokens       int
+	CurrentCacheableTokens        int
+	IndependentKey                string
+	IndependentCacheableTokens    int
+	PreviousPrefixKey             string
+	CurrentPrefixKey              string
+	PreviousPrefixCacheableTokens int
+	CurrentPrefixCacheableTokens  int
+	Checkpoints                   []FakeCacheCheckpoint
+	// RecordedEffectiveCachedTokens is the effective cached weight (cache read +
+	// cache creation) computed by the most recent ResolveUsageWithConfig call.
+	// commitFakeCachePlan persists it to SessionProgress so the next turn can
+	// use the last successfully written cache span as the read basis.
+	RecordedEffectiveCachedTokens int
+	// UsageResolved distinguishes an actual zero cached span from a plan that
+	// has not had ResolveUsageWithConfig called yet.
+	UsageResolved bool
+}
+
+type FakeCacheCheckpoint struct {
+	Key    string
+	Tokens int
+}
+
+type FakeCacheUsage struct {
+	InputTokens              int
+	CacheCreationInputTokens int
+	CacheReadInputTokens     int
+}
+
+type FakeCacheHitState struct {
+	Independent      bool
+	Prefix           bool
+	CheckpointTokens int
+	// EffectiveCachedTokens is the cacheable weight carried over from the
+	// previous turn (persisted under SessionProgressKey). When present, including
+	// an explicit zero, it replaces the hit-derived read basis so later turns do
+	// not read tokens that were never effectively written.
+	EffectiveCachedTokens    int
+	HasEffectiveCachedTokens bool
+}
+
+type FakeCacheUsageConfig struct {
+	HitRateScale   int
+	MinBlockTokens int
+}
+
+type FakeCacheScope struct {
+	AccountID int64
+	UserID    int64
+	APIKeyID  int64
+}
+
+func (s FakeCacheScope) keyScope(requestedModel, sessionID string) string {
+	model := strings.ToLower(strings.TrimSpace(requestedModel))
+	if s.UserID > 0 && s.APIKeyID > 0 {
+		return fmt.Sprintf(
+			"kiro:fakecache:v2:user:%d:key:%d:model:%s:session:%s",
+			s.UserID,
+			s.APIKeyID,
+			model,
+			sessionID,
+		)
+	}
+	return fmt.Sprintf(
+		"kiro:fakecache:v1:acct:%d:model:%s:session:%s",
+		s.AccountID,
+		model,
+		sessionID,
+	)
+}
+
+func BuildFakeCachePlan(body []byte, scope FakeCacheScope, requestedModel string) (*FakeCachePlan, error) {
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
+		return nil, err
+	}
+
+	sessionID := extractSessionID(req)
+	if sessionID == "" {
+		return nil, nil
+	}
+
+	rawMessages, _ := req["messages"].([]any)
+	rawMessages = trimTrailingNonUserMessages(rawMessages)
+	if len(rawMessages) == 0 {
+		return nil, nil
+	}
+
+	independentChain := buildFakeCacheIndependentChain(req)
+	currentPrefixChain := buildFakeCachePrefixChain(rawMessages, true)
+	if independentChain == "" && currentPrefixChain == "" {
+		return nil, nil
+	}
+
+	scopeKey := scope.keyScope(requestedModel, sessionID)
+
+	plan := &FakeCachePlan{
+		PreviousCacheableTokens: 0,
+		SessionProgressKey:      scopeKey + ":session_progress",
+	}
+	if independentChain != "" {
+		plan.IndependentKey = fakeCacheKey(scopeKey+":independent", independentChain)
+		plan.IndependentCacheableTokens = fakeCacheIndependentCalibratedTokens(req)
+	}
+	prefixScope := scopeKey + ":prefix:independent:" + fakeCacheDigest(independentChain)
+	if currentPrefixChain != "" {
+		plan.CurrentPrefixKey = fakeCacheKey(prefixScope, currentPrefixChain)
+		plan.CurrentPrefixCacheableTokens = fakeCacheContentCalibratedTokens(rawMessages)
+		plan.CurrentKey = plan.CurrentPrefixKey
+	}
+	plan.CurrentCacheableTokens = plan.IndependentCacheableTokens + plan.CurrentPrefixCacheableTokens
+
+	previousPrefixChain := buildFakeCachePrefixChain(rawMessages, false)
+	if previousPrefixChain != "" {
+		plan.PreviousPrefixKey = fakeCacheKey(prefixScope, previousPrefixChain)
+		plan.PreviousPrefixCacheableTokens = fakeCacheContentCalibratedTokens(rawMessages[:len(rawMessages)-1])
+		plan.PreviousKey = plan.PreviousPrefixKey
+	}
+	plan.PreviousCacheableTokens = plan.IndependentCacheableTokens + plan.PreviousPrefixCacheableTokens
+	plan.Checkpoints = buildFakeCacheCheckpoints(scopeKey, plan.IndependentKey, independentChain, plan.IndependentCacheableTokens, rawMessages)
+
+	return plan, nil
+}
+
+func (p *FakeCachePlan) CurrentCheckpointTokens() int {
+	if p == nil || len(p.Checkpoints) == 0 {
+		return 0
+	}
+	return p.Checkpoints[len(p.Checkpoints)-1].Tokens
+}
+
+func (p *FakeCachePlan) ResolveUsage(totalInputTokens int, hit bool) FakeCacheUsage {
+	return p.ResolveUsageWithConfig(totalInputTokens, FakeCacheHitState{Prefix: hit}, FakeCacheUsageConfig{
+		HitRateScale: 100,
+	})
+}
+
+func (p *FakeCachePlan) ResolveUsageWithConfig(totalInputTokens int, hit FakeCacheHitState, config FakeCacheUsageConfig) FakeCacheUsage {
+	if totalInputTokens < 0 {
+		totalInputTokens = 0
+	}
+	if p == nil {
+		return FakeCacheUsage{InputTokens: totalInputTokens}
+	}
+
+	if config.HitRateScale < 0 || config.HitRateScale > 100 {
+		config.HitRateScale = DefaultFakeCacheHitRateScale
+	}
+	// If all keys are empty (no session ID), don't simulate cache at all
+	// This prevents incorrect statistics where all input tokens are counted as cache creation
+	if p.IndependentKey == "" && p.CurrentPrefixKey == "" && p.PreviousPrefixKey == "" && len(p.Checkpoints) == 0 {
+		return FakeCacheUsage{InputTokens: totalInputTokens}
+	}
+
+	prefixCurrentTokens, prefixReadTokens := p.resolvePrefixUsageBounds(totalInputTokens, hit, config.MinBlockTokens)
+
+	currentTokens := prefixCurrentTokens
+	idealRead := prefixReadTokens
+	if len(p.Checkpoints) > 0 {
+		currentTokens = eligibleFakeCacheCheckpointTokens(p.Checkpoints[len(p.Checkpoints)-1].Tokens, config.MinBlockTokens, totalInputTokens)
+		idealRead = eligibleFakeCacheCheckpointTokens(hit.CheckpointTokens, config.MinBlockTokens, totalInputTokens)
+		if prefixCurrentTokens > currentTokens {
+			currentTokens = prefixCurrentTokens
+		}
+		if prefixReadTokens > idealRead {
+			idealRead = prefixReadTokens
+		}
+		if idealRead > currentTokens {
+			idealRead = currentTokens
+		}
+	}
+
+	return p.resolveFakeCacheUsage(totalInputTokens, currentTokens, idealRead, hit.EffectiveCachedTokens, hit.HasEffectiveCachedTokens, config.HitRateScale)
+}
+
+// resolveFakeCacheUsage splits the request into Anthropic-style non-cached
+// input, cache read, and cache creation:
+//
+//   - currentTokens is the cacheable prefix visible this turn. It is the upper
+//     bound for cache_read + cache_creation.
+//   - idealRead is the cacheable prefix known to have existed before this turn.
+//     SessionProgress replaces this hit-derived basis when available because
+//     it reflects the effective cache span actually written by prior turns.
+//   - hitRateScale applies only to cache creation for the current turn's growth.
+//     The scaled-away creation becomes non-cached input; previously cached
+//     progress is read in full and is never scaled again.
+//   - RecordedEffectiveCachedTokens stores read + creation so the next turn's
+//     cache read can continue from the effective written span.
+func (p *FakeCachePlan) resolveFakeCacheUsage(totalInputTokens, currentTokens, idealRead, effectiveCap int, hasEffectiveCap bool, hitRateScale int) FakeCacheUsage {
+	read := idealRead
+	if hasEffectiveCap {
+		read = effectiveCap
+	}
+	if read > currentTokens {
+		read = currentTokens
+	}
+	read = clampFakeCacheTokens(read, totalInputTokens)
+	currentTokens = clampFakeCacheTokens(currentTokens, totalInputTokens)
+
+	growth := currentTokens - read
+	if growth < 0 {
+		growth = 0
+	}
+	growth = clampFakeCacheTokens(growth, totalInputTokens-read)
+
+	created := growth * hitRateScale / 100
+	if created < 0 {
+		created = 0
+	}
+	if created > currentTokens-read {
+		created = currentTokens - read
+	}
+
+	inputTokens := totalInputTokens - read - created
+	if inputTokens < 0 {
+		inputTokens = 0
+	}
+
+	if p != nil {
+		p.RecordedEffectiveCachedTokens = read + created
+		p.UsageResolved = true
+	}
+
+	return FakeCacheUsage{
+		InputTokens:              inputTokens,
+		CacheCreationInputTokens: created,
+		CacheReadInputTokens:     read,
+	}
+}
+
+func (p *FakeCachePlan) resolvePrefixUsageBounds(totalInputTokens int, hit FakeCacheHitState, minBlockTokens int) (currentTokens, cacheRead int) {
+	if p == nil {
+		return 0, 0
+	}
+
+	independentCurrent := eligibleFakeCacheCheckpointTokens(p.IndependentCacheableTokens, minBlockTokens, totalInputTokens)
+	previousCumulative := eligibleFakeCacheCheckpointTokens(p.IndependentCacheableTokens+p.PreviousPrefixCacheableTokens, minBlockTokens, totalInputTokens)
+	currentCumulative := eligibleFakeCacheCheckpointTokens(p.IndependentCacheableTokens+p.CurrentPrefixCacheableTokens, minBlockTokens, totalInputTokens)
+
+	currentTokens = currentCumulative
+	if currentTokens == 0 {
+		currentTokens = independentCurrent
+	}
+
+	if hit.Prefix && previousCumulative > 0 {
+		cacheRead = previousCumulative
+	} else if hit.Independent && independentCurrent > 0 {
+		cacheRead = independentCurrent
+	}
+	if cacheRead > currentTokens {
+		cacheRead = currentTokens
+	}
+	return currentTokens, cacheRead
+}
+
+func buildFakeCacheIndependentChain(req map[string]any) string {
+	var parts []string
+
+	if systemText := joinSystem(req["system"]); systemText != "" {
+		parts = append(parts, "system:"+systemText+"\n"+systemChunkedPolicy)
+	}
+
+	if tools, _ := req["tools"].([]any); len(tools) > 0 {
+		for _, item := range tools {
+			tool, _ := item.(map[string]any)
+			name := stringField(tool, "name")
+			if name == "" {
+				continue
+			}
+			parts = append(parts,
+				"tool:"+name+
+					"\ndescription:"+stringField(tool, "description")+
+					"\ninput_schema:"+fakeCacheJSON(normalizeJSONSchema(jsonValue(tool["input_schema"]))),
+			)
+		}
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n"))
+}
+
+func buildFakeCachePrefixChain(messages []any, includeCurrent bool) string {
+	var parts []string
+	limit := len(messages)
+	if !includeCurrent && limit > 0 {
+		limit--
+	}
+	for idx := 0; idx < limit; idx++ {
+		msg, _ := messages[idx].(map[string]any)
+		role := strings.ToLower(strings.TrimSpace(stringField(msg, "role")))
+		switch role {
+		case "user":
+			if content := fakeCacheUserContent(msg["content"]); content != "" {
+				parts = append(parts, "user:"+content)
+			}
+		case "assistant":
+			if content := fakeCacheAssistantContent(msg["content"]); content != "" {
+				parts = append(parts, "assistant:"+content)
+			}
+		}
+	}
+
+	return strings.TrimSpace(strings.Join(parts, "\n"))
+}
+
+func buildFakeCacheCheckpoints(scope, independentKey, independentChain string, independentTokens int, messages []any) []FakeCacheCheckpoint {
+	checkpoints := make([]FakeCacheCheckpoint, 0)
+	base := strings.TrimSpace(independentChain)
+	if base != "" {
+		checkpoints = append(checkpoints, FakeCacheCheckpoint{
+			Key:    independentKey,
+			Tokens: independentTokens,
+		})
+	}
+
+	for _, chain := range buildFakeCacheControlPrefixChains(messages) {
+		cumulative := strings.TrimSpace(strings.Join([]string{base, chain}, "\n"))
+		if cumulative == "" {
+			continue
+		}
+		key := fakeCacheKey(scope+":checkpoint", cumulative)
+		if len(checkpoints) > 0 && checkpoints[len(checkpoints)-1].Key == key {
+			continue
+		}
+		checkpoints = append(checkpoints, FakeCacheCheckpoint{
+			Key:    key,
+			Tokens: independentTokens + AccurateTokenCount(chain)*kiroTokenEstimateContentScale100/100,
+		})
+	}
+	return checkpoints
+}
+
+// fakeCacheIndependentCalibratedTokens estimates the calibrated token weight of
+// the cacheable independent block (system prompt + tool definitions). It mirrors
+// the system/tool terms of calibrateKiroInputTokens so a cache hit offsets the
+// same scaled tokens EstimateInputTokens bills; the raw tiktoken count used
+// before left a content-proportional residual (plus the 493-token tool system
+// scaffold) permanently in input_tokens.
+func fakeCacheIndependentCalibratedTokens(req map[string]any) int {
+	var systemBuilder strings.Builder
+	if systemText := joinSystem(req["system"]); systemText != "" {
+		appendKiroTokenEstimateText(&systemBuilder, systemText)
+	}
+	systemTokens := AccurateTokenCount(systemBuilder.String())
+
+	toolCount := 0
+	toolSchemaTokens := 0
+	if tools, _ := req["tools"].([]any); len(tools) > 0 {
+		toolCount = len(tools)
+		var toolBuilder strings.Builder
+		for _, item := range tools {
+			tool, _ := item.(map[string]any)
+			appendKiroTokenEstimateText(&toolBuilder, stringField(tool, "name"))
+			appendKiroTokenEstimateText(&toolBuilder, stringField(tool, "description"))
+			appendKiroTokenEstimateJSON(&toolBuilder, tool["input_schema"])
+		}
+		toolSchemaTokens = AccurateTokenCount(toolBuilder.String())
+	}
+
+	total := systemTokens * kiroTokenEstimateContentScale100 / 100
+	if toolCount > 0 {
+		total += kiroTokenEstimateToolSystemBase
+		total += toolCount * kiroTokenEstimatePerTool
+		total += toolSchemaTokens * kiroTokenEstimateToolSchemaScale / 100
+	}
+	return total
+}
+
+// fakeCacheContentCalibratedTokens estimates the calibrated token weight of a
+// span of conversation messages (the cacheable prefix). It mirrors the content
+// scaling, per-message and per-tool-block overhead of calibrateKiroInputTokens
+// so a prefix cache hit offsets the billed tokens instead of the raw count.
+func fakeCacheContentCalibratedTokens(messages []any) int {
+	if len(messages) == 0 {
+		return 0
+	}
+	var contentBuilder strings.Builder
+	toolBlockCount := 0
+	for _, item := range messages {
+		msg, _ := item.(map[string]any)
+		appendKiroTokenEstimateContent(&contentBuilder, msg["content"])
+		toolBlockCount += countKiroToolBlocks(msg["content"])
+	}
+	contentTokens := AccurateTokenCount(contentBuilder.String())
+	return contentTokens*kiroTokenEstimateContentScale100/100 +
+		len(messages)*kiroTokenEstimatePerMessage +
+		toolBlockCount*kiroTokenEstimatePerToolBlock
+}
+
+func buildFakeCacheControlPrefixChains(messages []any) []string {
+	checkpoints := make([]string, 0)
+	parts := make([]string, 0, len(messages))
+	for _, item := range messages {
+		msg, _ := item.(map[string]any)
+		role := strings.ToLower(strings.TrimSpace(stringField(msg, "role")))
+		content := msg["content"]
+		switch role {
+		case "user":
+			for _, prefix := range fakeCacheUserContentPrefixes(content) {
+				checkpoints = append(checkpoints, strings.TrimSpace(strings.Join(append(append([]string{}, parts...), "user:"+prefix), "\n")))
+			}
+			if rendered := fakeCacheUserContent(content); rendered != "" {
+				parts = append(parts, "user:"+rendered)
+			}
+		case "assistant":
+			for _, prefix := range fakeCacheAssistantContentPrefixes(content) {
+				checkpoints = append(checkpoints, strings.TrimSpace(strings.Join(append(append([]string{}, parts...), "assistant:"+prefix), "\n")))
+			}
+			if rendered := fakeCacheAssistantContent(content); rendered != "" {
+				parts = append(parts, "assistant:"+rendered)
+			}
+		}
+	}
+	return checkpoints
+}
+
+func applyMinBlockTokens(tokens, minBlockTokens int) int {
+	if tokens <= 0 {
+		return 0
+	}
+	if minBlockTokens > 0 && tokens < minBlockTokens {
+		return 0
+	}
+	return tokens
+}
+
+func eligibleFakeCacheCheckpointTokens(tokens, minBlockTokens, totalInputTokens int) int {
+	return clampFakeCacheTokens(applyMinBlockTokens(tokens, minBlockTokens), totalInputTokens)
+}
+
+func fakeCacheUserContent(content any) string {
+	switch v := content.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case []any:
+		parts := make([]string, 0, len(v))
+		for _, item := range v {
+			block, _ := item.(map[string]any)
+			switch strings.TrimSpace(stringField(block, "type")) {
+			case "text":
+				if text := stringField(block, "text"); text != "" {
+					parts = append(parts, text)
+				}
+			case "tool_result", "web_search_tool_result", "web_fetch_tool_result", "code_execution_tool_result":
+				if rendered := fakeCacheToolResultBlock(block); rendered != "" {
+					parts = append(parts, rendered)
+				}
+			case "image":
+				parts = append(parts, "image:"+fakeCacheJSON(block))
+			}
+		}
+		return strings.TrimSpace(strings.Join(parts, "\n"))
+	default:
+		return ""
+	}
+}
+
+func fakeCacheUserContentPrefixes(content any) []string {
+	items, ok := content.([]any)
+	if !ok {
+		return nil
+	}
+	prefixes := make([]string, 0)
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		block, _ := item.(map[string]any)
+		if rendered := fakeCacheUserBlock(block); rendered != "" {
+			parts = append(parts, rendered)
+		}
+		if hasFakeCacheControl(block) {
+			if prefix := strings.TrimSpace(strings.Join(parts, "\n")); prefix != "" {
+				prefixes = append(prefixes, prefix)
+			}
+		}
+	}
+	return prefixes
+}
+
+func fakeCacheAssistantContent(content any) string {
+	switch v := content.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case []any:
+		parts := make([]string, 0, len(v))
+		for _, item := range v {
+			block, _ := item.(map[string]any)
+			switch strings.TrimSpace(stringField(block, "type")) {
+			case "text":
+				if text := stringField(block, "text"); text != "" {
+					parts = append(parts, text)
+				}
+			case "tool_use", "server_tool_use":
+				if rendered := fakeCacheToolUseBlock(block); rendered != "" {
+					parts = append(parts, rendered)
+				}
+			}
+		}
+		return strings.TrimSpace(strings.Join(parts, "\n"))
+	default:
+		return ""
+	}
+}
+
+func fakeCacheAssistantContentPrefixes(content any) []string {
+	items, ok := content.([]any)
+	if !ok {
+		return nil
+	}
+	prefixes := make([]string, 0)
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		block, _ := item.(map[string]any)
+		if rendered := fakeCacheAssistantBlock(block); rendered != "" {
+			parts = append(parts, rendered)
+		}
+		if hasFakeCacheControl(block) {
+			if prefix := strings.TrimSpace(strings.Join(parts, "\n")); prefix != "" {
+				prefixes = append(prefixes, prefix)
+			}
+		}
+	}
+	return prefixes
+}
+
+func fakeCacheUserBlock(block map[string]any) string {
+	switch strings.TrimSpace(stringField(block, "type")) {
+	case "text":
+		return stringField(block, "text")
+	case "tool_result", "web_search_tool_result", "web_fetch_tool_result", "code_execution_tool_result":
+		return fakeCacheToolResultBlock(block)
+	case "image":
+		return "image:" + fakeCacheJSON(block)
+	default:
+		return ""
+	}
+}
+
+func fakeCacheAssistantBlock(block map[string]any) string {
+	switch strings.TrimSpace(stringField(block, "type")) {
+	case "text":
+		return stringField(block, "text")
+	case "tool_use", "server_tool_use":
+		return fakeCacheToolUseBlock(block)
+	default:
+		return ""
+	}
+}
+
+func fakeCacheToolUseBlock(block map[string]any) string {
+	blockType := strings.TrimSpace(stringField(block, "type"))
+	if blockType == "" {
+		blockType = "tool_use"
+	}
+	return blockType + ":" +
+		"\nid:" + stringField(block, "id") +
+		"\nname:" + stringField(block, "name") +
+		"\ninput:" + fakeCacheJSON(jsonValue(block["input"]))
+}
+
+func fakeCacheToolResultBlock(block map[string]any) string {
+	blockType := strings.TrimSpace(stringField(block, "type"))
+	if blockType == "" {
+		blockType = "tool_result"
+	}
+	status := "success"
+	if isError, ok := block["is_error"].(bool); ok && isError {
+		status = "error"
+	}
+	return blockType + ":" +
+		"\ntool_use_id:" + stringField(block, "tool_use_id") +
+		"\nstatus:" + status +
+		"\ncontent:" + strings.TrimSpace(toolResultContent(block["content"]))
+}
+
+func hasFakeCacheControl(block map[string]any) bool {
+	if block == nil {
+		return false
+	}
+	_, ok := block["cache_control"]
+	return ok
+}
+
+func fakeCacheJSON(v any) string {
+	encoded, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprint(v)
+	}
+	return string(encoded)
+}
+
+func fakeCacheKey(scope, chain string) string {
+	return scope + ":chain:" + fakeCacheDigest(chain)
+}
+
+func fakeCacheDigest(chain string) string {
+	sum := sha256.Sum256([]byte(chain))
+	return hex.EncodeToString(sum[:])
+}
+
+func clampFakeCacheTokens(tokens, upper int) int {
+	if tokens < 0 {
+		return 0
+	}
+	if upper >= 0 && tokens > upper {
+		return upper
+	}
+	return tokens
+}

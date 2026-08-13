@@ -123,6 +123,19 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		return s.forwardBedrock(ctx, c, account, parsed, startTime)
 	}
 
+	if account != nil && account.IsKiro() {
+		if s.kiroGatewayService == nil {
+			if c != nil {
+				c.JSON(http.StatusBadGateway, gin.H{
+					"type":  "error",
+					"error": gin.H{"type": "api_error", "message": "Kiro gateway service is not configured"},
+				})
+			}
+			return nil, errors.New("kiro gateway service is not configured")
+		}
+		return s.kiroGatewayService.Forward(ctx, c, account, parsed)
+	}
+
 	// Beta policy: evaluate once; block check + cache filter set for buildUpstreamRequest.
 	// Always overwrite the cache to prevent stale values from a previous retry with a different account.
 	if account.Platform == PlatformAnthropic && c != nil {

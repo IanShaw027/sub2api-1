@@ -211,6 +211,19 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyAffiliateRebateInviteeLimit:   strconv.Itoa(AffiliateRebateInviteeLimitDefault),
 		SettingKeyAffiliateSignupBonus:          strconv.FormatFloat(AffiliateSignupBonusDefault, 'f', 2, 64),
 		SettingKeyTicketEnabled:                 "true",
+		SettingKeyKiroDefaultVersion:              defaultKiroVersion,
+		SettingKeyKiroDefaultCommit:               "",
+		SettingKeyKiroDefaultSystemVersion:        defaultKiroSystemVersion,
+		SettingKeyKiroDefaultNodeVersion:          defaultKiroNodeVersion,
+		SettingKeyKiroCacheHitRateScale:           strconv.Itoa(defaultKiroCacheHitRateScale),
+		SettingKeyKiroCacheMinBlockTokens:         strconv.Itoa(defaultKiroCacheMinBlockTokens),
+		SettingKeyKiroCacheIndependentTTLSeconds:  strconv.Itoa(defaultKiroCacheIndependentTTL),
+		SettingKeyKiroCachePrefixTTLSeconds:       strconv.Itoa(defaultKiroCachePrefixTTL),
+		SettingKeyKiroCodeExecutionSandboxCommand: "",
+		SettingKeyIPMultiAccountBanEnabled:       "false",
+		SettingKeyIPMultiAccountBanWindowMinutes: "10",
+		SettingKeyIPMultiAccountBanThreshold:     "4",
+		SettingKeyIPMultiAccountBanLearningUntil: "",
 		SettingKeySupportQRCodes:                "[]",
 		SettingKeyDownloadToolsURL:              "",
 
@@ -837,6 +850,31 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// Affiliate (邀请返利) feature (default: disabled; strict true)
 	result.AffiliateEnabled = settings[SettingKeyAffiliateEnabled] == "true"
 	result.TicketEnabled = settings[SettingKeyTicketEnabled] != "false"
+	kiroRuntime := parseKiroRuntimeSettingsMap(settings)
+	result.KiroDefaultVersion = kiroRuntime.KiroVersion
+	result.KiroDefaultCommit = kiroRuntime.KiroCommit
+	result.KiroDefaultSystemVersion = kiroRuntime.SystemVersion
+	result.KiroDefaultNodeVersion = kiroRuntime.NodeVersion
+	result.KiroCacheHitRateScale = kiroRuntime.CacheHitRateScale
+	result.KiroCacheMinBlockTokens = kiroRuntime.CacheMinBlockTokens
+	result.KiroCacheIndependentTTLSeconds = kiroRuntime.CacheIndependentTTLSecs
+	result.KiroCachePrefixTTLSeconds = kiroRuntime.CachePrefixTTLSecs
+	result.KiroCodeExecutionSandboxCommand = kiroRuntime.CodeExecutionSandboxCommand
+	ipSecurityCfg := normalizeIPSecurityConfig(IPSecurityConfig{
+		WindowMinutes:    10,
+		AccountThreshold: 4,
+	})
+	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyIPMultiAccountBanWindowMinutes])); err == nil {
+		ipSecurityCfg.WindowMinutes = v
+	}
+	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyIPMultiAccountBanThreshold])); err == nil {
+		ipSecurityCfg.AccountThreshold = v
+	}
+	ipSecurityCfg = normalizeIPSecurityConfig(ipSecurityCfg)
+	result.IPMultiAccountBanEnabled = settings[SettingKeyIPMultiAccountBanEnabled] == "true"
+	result.IPMultiAccountBanWindowMinutes = ipSecurityCfg.WindowMinutes
+	result.IPMultiAccountBanThreshold = ipSecurityCfg.AccountThreshold
+	result.IPMultiAccountBanLearningUntil = strings.TrimSpace(settings[SettingKeyIPMultiAccountBanLearningUntil])
 
 	// 风控中心功能（默认关闭，严格 true 才启用）
 	result.RiskControlEnabled = settings[SettingKeyRiskControlEnabled] == "true"

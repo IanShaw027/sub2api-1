@@ -391,6 +391,16 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		GrokCrossClientModelMapEnabled: settings.GrokCrossClientModelMapEnabled,
 		GrokDefaultBaseURLMode:         settings.GrokDefaultBaseURLMode,
 
+		KiroDefaultVersion:              settings.KiroDefaultVersion,
+		KiroDefaultCommit:               settings.KiroDefaultCommit,
+		KiroDefaultSystemVersion:        settings.KiroDefaultSystemVersion,
+		KiroDefaultNodeVersion:          settings.KiroDefaultNodeVersion,
+		KiroCacheHitRateScale:           settings.KiroCacheHitRateScale,
+		KiroCacheMinBlockTokens:         settings.KiroCacheMinBlockTokens,
+		KiroCacheIndependentTTLSeconds:  settings.KiroCacheIndependentTTLSeconds,
+		KiroCachePrefixTTLSeconds:       settings.KiroCachePrefixTTLSeconds,
+		KiroCodeExecutionSandboxCommand: settings.KiroCodeExecutionSandboxCommand,
+
 		AvailableChannelsEnabled: settings.AvailableChannelsEnabled,
 
 		ModelPlazaEnabled:     settings.ModelPlazaEnabled,
@@ -399,6 +409,10 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 
 		AffiliateEnabled: settings.AffiliateEnabled,
 		TicketEnabled:    settings.TicketEnabled,
+		IPMultiAccountBanEnabled:       settings.IPMultiAccountBanEnabled,
+		IPMultiAccountBanWindowMinutes: settings.IPMultiAccountBanWindowMinutes,
+		IPMultiAccountBanThreshold:     settings.IPMultiAccountBanThreshold,
+		IPMultiAccountBanLearningUntil: settings.IPMultiAccountBanLearningUntil,
 
 		AccountSchedulingThresholds: settings.AccountSchedulingThresholds,
 		AllowUserViewErrorRequests:  settings.AllowUserViewErrorRequests,

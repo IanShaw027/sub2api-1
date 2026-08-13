@@ -23,9 +23,31 @@ func RedactCredentials(in map[string]any) (out map[string]any, status map[string
 			}
 			continue
 		}
-		out[k] = v
+		out[k] = redactNestedCredentialValue(v, &status)
 	}
 	return out, status
+}
+
+func redactNestedCredentialValue(v any, status *map[string]bool) any {
+	switch x := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, child := range x {
+			if service.IsSensitiveCredentialKey(k) {
+				if isCredentialValuePresent(child) {
+					if *status == nil {
+						*status = make(map[string]bool, 4)
+					}
+					(*status)["has_"+k] = true
+				}
+				continue
+			}
+			out[k] = redactNestedCredentialValue(child, status)
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // isCredentialValuePresent 判断值是否"存在且非零"。空字符串、nil、false 均视为未配置；

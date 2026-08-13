@@ -11,11 +11,142 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/redissession"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/google/wire"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
+
+func ProvideKiroOAuthService(
+	proxyRepo ProxyRepository,
+	httpUpstream HTTPUpstream,
+	tlsFPProfileService *TLSFingerprintProfileService,
+	settingService *SettingService,
+	rdb *redis.Client,
+) *KiroOAuthService {
+	svc := NewKiroOAuthService(proxyRepo, httpUpstream, tlsFPProfileService, settingService)
+	if rdb != nil {
+		remote := redissession.New(rdb, "oauth:session:kiro", kiroOAuthSessionTTL)
+		svc = svc.WithSessionStore(NewKiroRemoteOAuthSessionStore(remote))
+	}
+	return svc
+}
+
+func ProvideKiroTokenProvider(
+	accountRepo AccountRepository,
+	proxyRepo ProxyRepository,
+	tokenCache GeminiTokenCache,
+	httpUpstream HTTPUpstream,
+	tlsFPProfileService *TLSFingerprintProfileService,
+	refreshAPI *OAuthRefreshAPI,
+	settingService *SettingService,
+) *KiroTokenProvider {
+	p := NewKiroTokenProvider(accountRepo, tokenCache)
+	executor := NewKiroTokenRefresher().
+		WithTransport(httpUpstream, tlsFPProfileService).
+		WithSettingService(settingService).
+		WithProxyRepo(proxyRepo)
+	p.SetRefreshAPI(refreshAPI, executor)
+	p.SetRefreshPolicy(KiroProviderRefreshPolicy())
+	return p
+}
+
+func ProvideKiroTokenRefresher(
+	proxyRepo ProxyRepository,
+	httpUpstream HTTPUpstream,
+	tlsFPProfileService *TLSFingerprintProfileService,
+	settingService *SettingService,
+) *KiroTokenRefresher {
+	return NewKiroTokenRefresher().
+		WithTransport(httpUpstream, tlsFPProfileService).
+		WithSettingService(settingService).
+		WithProxyRepo(proxyRepo)
+}
+
+func ProvideGatewayService(
+	accountRepo AccountRepository,
+	groupRepo GroupRepository,
+	usageLogRepo UsageLogRepository,
+	usageBillingRepo UsageBillingRepository,
+	userRepo UserRepository,
+	userSubRepo UserSubscriptionRepository,
+	userGroupRateRepo UserGroupRateRepository,
+	cache GatewayCache,
+	cfg *config.Config,
+	schedulerSnapshot *SchedulerSnapshotService,
+	concurrencyService *ConcurrencyService,
+	billingService *BillingService,
+	rateLimitService *RateLimitService,
+	billingCacheService *BillingCacheService,
+	identityService *IdentityService,
+	httpUpstream HTTPUpstream,
+	deferredService *DeferredService,
+	claudeTokenProvider *ClaudeTokenProvider,
+	sessionLimitCache SessionLimitCache,
+	rpmCache RPMCache,
+	digestStore *DigestSessionStore,
+	settingService *SettingService,
+	tlsFPProfileService *TLSFingerprintProfileService,
+	channelService *ChannelService,
+	resolver *ModelPricingResolver,
+	compositeResolver *CompositeRouteResolver,
+	balanceNotifyService *BalanceNotifyService,
+	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	kiroTokenProvider *KiroTokenProvider,
+	kiroGatewayService *KiroGatewayService,
+) *GatewayService {
+	svc := NewGatewayService(
+		accountRepo,
+		groupRepo,
+		usageLogRepo,
+		usageBillingRepo,
+		userRepo,
+		userSubRepo,
+		userGroupRateRepo,
+		cache,
+		cfg,
+		schedulerSnapshot,
+		concurrencyService,
+		billingService,
+		rateLimitService,
+		billingCacheService,
+		identityService,
+		httpUpstream,
+		deferredService,
+		claudeTokenProvider,
+		sessionLimitCache,
+		rpmCache,
+		digestStore,
+		settingService,
+		tlsFPProfileService,
+		channelService,
+		resolver,
+		compositeResolver,
+		balanceNotifyService,
+		userPlatformQuotaRepo,
+	)
+	svc.SetKiroDeps(kiroTokenProvider, kiroGatewayService)
+	return svc
+}
+
+func ProvideKiroGatewayService(
+	httpUpstream HTTPUpstream,
+	tokenProvider *KiroTokenProvider,
+	rateLimitService *RateLimitService,
+	tlsFPProfileSvc *TLSFingerprintProfileService,
+	settingService *SettingService,
+	channelService *ChannelService,
+) *KiroGatewayService {
+	return NewKiroGatewayService(
+		httpUpstream,
+		tokenProvider,
+		rateLimitService,
+		tlsFPProfileSvc,
+		settingService,
+		channelService,
+	)
+}
 
 func ProvideGrokOAuthService(proxyRepo ProxyRepository, oauthClient GrokOAuthClient, cfg *config.Config, redisClient *redis.Client) *GrokOAuthService {
 	svc := NewGrokOAuthService(proxyRepo, oauthClient, cfg)
@@ -133,6 +264,7 @@ func ProvideTokenRefreshService(
 	proxyRepo ProxyRepository,
 	refreshAPI *OAuthRefreshAPI,
 	runtimeBlocker AccountRuntimeBlocker,
+	kiroRefresher *KiroTokenRefresher,
 ) *TokenRefreshService {
 	svc := NewTokenRefreshService(accountRepo, oauthService, openaiOAuthService, geminiOAuthService, antigravityOAuthService, cacheInvalidator, schedulerCache, cfg, tempUnschedCache, grokOAuthService)
 	// 注入 OpenAI privacy opt-out 依赖
@@ -142,6 +274,7 @@ func ProvideTokenRefreshService(
 	// 调用侧显式注入后台刷新策略，避免策略漂移
 	svc.SetRefreshPolicy(DefaultBackgroundRefreshPolicy())
 	svc.SetAccountRuntimeBlocker(runtimeBlocker)
+	svc.SetKiroRefresher(kiroRefresher)
 	svc.Start()
 	return svc
 }
@@ -195,12 +328,16 @@ func ProvideAccountUsageService(
 	usageFetcher ClaudeUsageFetcher,
 	geminiQuotaService *GeminiQuotaService,
 	antigravityQuotaFetcher *AntigravityQuotaFetcher,
+	kiroTokenProvider *KiroTokenProvider,
 	grokQuotaFetcher *GrokQuotaFetcher,
 	grokQuotaService *GrokQuotaService,
 	openAIQuotaService *OpenAIQuotaService,
 	cache *UsageCache,
 	identityCache IdentityCache,
+	tokenCacheInvalidator TokenCacheInvalidator,
+	proxyRepo ProxyRepository,
 	tlsFPProfileService *TLSFingerprintProfileService,
+	settingService *SettingService,
 	openAIGatewayService *OpenAIGatewayService,
 ) *AccountUsageService {
 	service := NewAccountUsageService(
@@ -209,12 +346,16 @@ func ProvideAccountUsageService(
 		usageFetcher,
 		geminiQuotaService,
 		antigravityQuotaFetcher,
+		kiroTokenProvider,
 		grokQuotaFetcher,
 		grokQuotaService,
 		openAIQuotaService,
 		cache,
 		identityCache,
+		tokenCacheInvalidator,
+		proxyRepo,
 		tlsFPProfileService,
+		settingService,
 	)
 	service.agentIdentityWS = openAIGatewayService
 	return service
@@ -231,6 +372,7 @@ func ProvideAccountTestService(
 	tlsFPProfileService *TLSFingerprintProfileService,
 	openAIGatewayService *OpenAIGatewayService,
 	settingService *SettingService,
+	kiroTokenProvider *KiroTokenProvider,
 ) *AccountTestService {
 	service := NewAccountTestService(
 		accountRepo,
@@ -244,6 +386,7 @@ func ProvideAccountTestService(
 	)
 	service.agentIdentityWS = openAIGatewayService
 	service.SetSettingService(settingService)
+	service.SetKiroTokenProvider(kiroTokenProvider)
 	return service
 }
 
@@ -379,6 +522,15 @@ func ProvideCapacityForecastService(
 	svc := NewCapacityForecastService(repo, accountRepo, registry, redisClient)
 	svc.SetLeaderLock(lockCache, db)
 	svc.Start(timingWheel)
+	return svc
+}
+
+func ProvideIPSecurityService(repo IPSecurityRepository, settings SettingRepository, rdb *redis.Client) *IPSecurityService {
+	svc := NewIPSecurityService(repo, settings, rdb)
+	if err := svc.WarmCache(context.Background()); err != nil {
+		logger.LegacyPrintf("service.ip_security", "failed to warm IP security cache: %v", err)
+	}
+	SetGlobalIPSecurityService(svc)
 	return svc
 }
 
@@ -861,7 +1013,7 @@ var ProviderSet = wire.NewSet(
 	ProvideBillingCacheService,
 	NewAnnouncementService,
 	NewAdminService,
-	NewGatewayService,
+	ProvideGatewayService,
 	NewOpenAIGatewayService,
 	ProvideImageStorageSettingService,
 	ProvideImageTaskService,
@@ -874,6 +1026,7 @@ var ProviderSet = wire.NewSet(
 	NewOAuthService,
 	ProvideOpenAIOAuthService,
 	ProvideGrokOAuthService,
+	ProvideKiroOAuthService,
 	wire.Bind(new(GrokOAuthTokenService), new(*GrokOAuthService)),
 	NewGeminiOAuthService,
 	NewGeminiQuotaService,
@@ -885,6 +1038,10 @@ var ProviderSet = wire.NewSet(
 	NewGeminiMessagesCompatService,
 	ProvideAntigravityTokenProvider,
 	ProvideGrokTokenProvider,
+	ProvideKiroTokenProvider,
+	ProvideKiroTokenRefresher,
+	ProvideKiroGatewayService,
+	NewKiroUsageService,
 	ProvideOpenAITokenProvider,
 	ProvideOpenAIQuotaService,
 	ProvideGrokQuotaService,
@@ -940,6 +1097,7 @@ var ProviderSet = wire.NewSet(
 	ProvideGeminiCapacityProvider,
 	ProvideCapacityProviderRegistry,
 	ProvideCapacityForecastService,
+	ProvideIPSecurityService,
 	ProvideUsageCleanupService,
 	ProvideDeferredService,
 	NewAntigravityQuotaFetcher,

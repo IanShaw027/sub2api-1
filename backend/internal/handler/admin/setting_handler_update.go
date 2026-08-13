@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"reflect"
@@ -343,6 +344,17 @@ type UpdateSettingsRequest struct {
 	GrokCrossClientModelMapEnabled *bool   `json:"grok_cross_client_model_map_enabled"`
 	GrokDefaultBaseURLMode         *string `json:"grok_default_base_url_mode"`
 
+	// Kiro runtime defaults
+	KiroDefaultVersion              *string `json:"kiro_version"`
+	KiroDefaultCommit               *string `json:"kiro_commit"`
+	KiroDefaultSystemVersion        *string `json:"system_version"`
+	KiroDefaultNodeVersion          *string `json:"node_version"`
+	KiroCacheHitRateScale           *int    `json:"cache_hit_rate_scale"`
+	KiroCacheMinBlockTokens         *int    `json:"cache_min_block_tokens"`
+	KiroCacheIndependentTTLSeconds  *int    `json:"cache_independent_ttl_seconds"`
+	KiroCachePrefixTTLSeconds       *int    `json:"cache_prefix_ttl_seconds"`
+	KiroCodeExecutionSandboxCommand *string `json:"kiro_code_execution_sandbox_command"`
+
 	// Available Channels feature switch (user-facing)
 	AvailableChannelsEnabled *bool `json:"available_channels_enabled"`
 
@@ -356,6 +368,11 @@ type UpdateSettingsRequest struct {
 
 	// Ticket feature switch
 	TicketEnabled *bool `json:"ticket_enabled"`
+
+	IPMultiAccountBanEnabled       *bool   `json:"ip_multi_account_ban_enabled"`
+	IPMultiAccountBanWindowMinutes *int    `json:"ip_multi_account_ban_window_minutes"`
+	IPMultiAccountBanThreshold     *int    `json:"ip_multi_account_ban_threshold"`
+	IPMultiAccountBanLearningUntil *string `json:"ip_multi_account_ban_learning_until"`
 
 	// 风控中心功能开关
 	RiskControlEnabled *bool `json:"risk_control_enabled"`
@@ -531,6 +548,37 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			response.BadRequest(c, "Passkey sign-in requires a valid WebAuthn RP ID and allowed HTTPS origins in the deployment configuration")
 			return
 		}
+	}
+	if req.KiroCacheHitRateScale != nil && (*req.KiroCacheHitRateScale < 0 || *req.KiroCacheHitRateScale > 100) {
+		response.BadRequest(c, "Kiro cache hit rate scale must be between 0 and 100")
+		return
+	}
+	if req.KiroCacheMinBlockTokens != nil &&
+		(*req.KiroCacheMinBlockTokens < 0 || *req.KiroCacheMinBlockTokens > service.KiroCacheMinBlockTokensMax) {
+		response.BadRequest(c, fmt.Sprintf("Kiro cache min block tokens must be between 0 and %d", service.KiroCacheMinBlockTokensMax))
+		return
+	}
+	if req.KiroCacheIndependentTTLSeconds != nil &&
+		(*req.KiroCacheIndependentTTLSeconds < 60 || *req.KiroCacheIndependentTTLSeconds > 86400) {
+		response.BadRequest(c, "Kiro independent TTL must be between 60 and 86400 seconds")
+		return
+	}
+	if req.KiroCachePrefixTTLSeconds != nil &&
+		(*req.KiroCachePrefixTTLSeconds < 60 || *req.KiroCachePrefixTTLSeconds > 3600) {
+		response.BadRequest(c, "Kiro prefix TTL must be between 60 and 3600 seconds")
+		return
+	}
+	effectiveKiroIndependentTTLSeconds := previousSettings.KiroCacheIndependentTTLSeconds
+	if req.KiroCacheIndependentTTLSeconds != nil {
+		effectiveKiroIndependentTTLSeconds = *req.KiroCacheIndependentTTLSeconds
+	}
+	effectiveKiroPrefixTTLSeconds := previousSettings.KiroCachePrefixTTLSeconds
+	if req.KiroCachePrefixTTLSeconds != nil {
+		effectiveKiroPrefixTTLSeconds = *req.KiroCachePrefixTTLSeconds
+	}
+	if effectiveKiroPrefixTTLSeconds > effectiveKiroIndependentTTLSeconds {
+		response.BadRequest(c, "Kiro prefix TTL cannot exceed independent TTL")
+		return
 	}
 	forwardedClientIPHeaders := append([]string(nil), previousSettings.ForwardedClientIPHeaders...)
 	if req.ForwardedClientIPHeaders != nil {
@@ -1930,6 +1978,60 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.GrokDefaultBaseURLMode
 		}(),
+		KiroDefaultVersion: func() string {
+			if req.KiroDefaultVersion != nil {
+				return strings.TrimSpace(*req.KiroDefaultVersion)
+			}
+			return previousSettings.KiroDefaultVersion
+		}(),
+		KiroDefaultCommit: func() string {
+			if req.KiroDefaultCommit != nil {
+				return strings.TrimSpace(*req.KiroDefaultCommit)
+			}
+			return previousSettings.KiroDefaultCommit
+		}(),
+		KiroDefaultSystemVersion: func() string {
+			if req.KiroDefaultSystemVersion != nil {
+				return strings.TrimSpace(*req.KiroDefaultSystemVersion)
+			}
+			return previousSettings.KiroDefaultSystemVersion
+		}(),
+		KiroDefaultNodeVersion: func() string {
+			if req.KiroDefaultNodeVersion != nil {
+				return strings.TrimSpace(*req.KiroDefaultNodeVersion)
+			}
+			return previousSettings.KiroDefaultNodeVersion
+		}(),
+		KiroCacheHitRateScale: func() int {
+			if req.KiroCacheHitRateScale != nil {
+				return *req.KiroCacheHitRateScale
+			}
+			return previousSettings.KiroCacheHitRateScale
+		}(),
+		KiroCacheMinBlockTokens: func() int {
+			if req.KiroCacheMinBlockTokens != nil {
+				return *req.KiroCacheMinBlockTokens
+			}
+			return previousSettings.KiroCacheMinBlockTokens
+		}(),
+		KiroCacheIndependentTTLSeconds: func() int {
+			if req.KiroCacheIndependentTTLSeconds != nil {
+				return *req.KiroCacheIndependentTTLSeconds
+			}
+			return previousSettings.KiroCacheIndependentTTLSeconds
+		}(),
+		KiroCachePrefixTTLSeconds: func() int {
+			if req.KiroCachePrefixTTLSeconds != nil {
+				return *req.KiroCachePrefixTTLSeconds
+			}
+			return previousSettings.KiroCachePrefixTTLSeconds
+		}(),
+		KiroCodeExecutionSandboxCommand: func() string {
+			if req.KiroCodeExecutionSandboxCommand != nil {
+				return strings.TrimSpace(*req.KiroCodeExecutionSandboxCommand)
+			}
+			return previousSettings.KiroCodeExecutionSandboxCommand
+		}(),
 		AvailableChannelsEnabled: func() bool {
 			if req.AvailableChannelsEnabled != nil {
 				return *req.AvailableChannelsEnabled
@@ -1965,6 +2067,30 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				return *req.TicketEnabled
 			}
 			return previousSettings.TicketEnabled
+		}(),
+		IPMultiAccountBanEnabled: func() bool {
+			if req.IPMultiAccountBanEnabled != nil {
+				return *req.IPMultiAccountBanEnabled
+			}
+			return previousSettings.IPMultiAccountBanEnabled
+		}(),
+		IPMultiAccountBanWindowMinutes: func() int {
+			if req.IPMultiAccountBanWindowMinutes != nil {
+				return *req.IPMultiAccountBanWindowMinutes
+			}
+			return previousSettings.IPMultiAccountBanWindowMinutes
+		}(),
+		IPMultiAccountBanThreshold: func() int {
+			if req.IPMultiAccountBanThreshold != nil {
+				return *req.IPMultiAccountBanThreshold
+			}
+			return previousSettings.IPMultiAccountBanThreshold
+		}(),
+		IPMultiAccountBanLearningUntil: func() string {
+			if req.IPMultiAccountBanLearningUntil != nil {
+				return *req.IPMultiAccountBanLearningUntil
+			}
+			return previousSettings.IPMultiAccountBanLearningUntil
 		}(),
 		RiskControlEnabled: func() bool {
 			if req.RiskControlEnabled != nil {
@@ -2381,6 +2507,16 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		GrokCrossClientModelMapEnabled: updatedSettings.GrokCrossClientModelMapEnabled,
 		GrokDefaultBaseURLMode:         updatedSettings.GrokDefaultBaseURLMode,
 
+		KiroDefaultVersion:              updatedSettings.KiroDefaultVersion,
+		KiroDefaultCommit:               updatedSettings.KiroDefaultCommit,
+		KiroDefaultSystemVersion:        updatedSettings.KiroDefaultSystemVersion,
+		KiroDefaultNodeVersion:          updatedSettings.KiroDefaultNodeVersion,
+		KiroCacheHitRateScale:           updatedSettings.KiroCacheHitRateScale,
+		KiroCacheMinBlockTokens:         updatedSettings.KiroCacheMinBlockTokens,
+		KiroCacheIndependentTTLSeconds:  updatedSettings.KiroCacheIndependentTTLSeconds,
+		KiroCachePrefixTTLSeconds:       updatedSettings.KiroCachePrefixTTLSeconds,
+		KiroCodeExecutionSandboxCommand: updatedSettings.KiroCodeExecutionSandboxCommand,
+
 		AvailableChannelsEnabled: updatedSettings.AvailableChannelsEnabled,
 
 		ModelPlazaEnabled:     updatedSettings.ModelPlazaEnabled,
@@ -2389,6 +2525,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 		AffiliateEnabled: updatedSettings.AffiliateEnabled,
 		TicketEnabled:    updatedSettings.TicketEnabled,
+		IPMultiAccountBanEnabled:       updatedSettings.IPMultiAccountBanEnabled,
+		IPMultiAccountBanWindowMinutes: updatedSettings.IPMultiAccountBanWindowMinutes,
+		IPMultiAccountBanThreshold:     updatedSettings.IPMultiAccountBanThreshold,
+		IPMultiAccountBanLearningUntil: updatedSettings.IPMultiAccountBanLearningUntil,
 
 		RiskControlEnabled:          updatedSettings.RiskControlEnabled,
 		CyberSessionBlockEnabled:    updatedSettings.CyberSessionBlockEnabled,

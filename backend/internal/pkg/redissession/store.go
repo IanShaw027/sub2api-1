@@ -123,3 +123,18 @@ func (s *Store) TryConsume(ctx context.Context, id string) (bool, error) {
 	}
 	return true, nil
 }
+
+// IsUsed reports whether the session has already been consumed.
+func (s *Store) IsUsed(ctx context.Context, id string) (bool, error) {
+	if s == nil || s.rdb == nil {
+		return false, ErrNotConfigured
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	n, err := s.rdb.Exists(ctx, s.usedKey(id)).Result()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}

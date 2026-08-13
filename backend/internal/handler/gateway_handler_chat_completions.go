@@ -298,9 +298,13 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 					h.handleCCFailoverExhausted(c, failoverErr, true)
 					return
 				}
+				prevRetryCount := fs.SameAccountRetryCount[account.ID]
+				prevSwitchCount := fs.SwitchCount
 				action := fs.HandleFailoverError(c.Request.Context(), h.gatewayService, account.ID, account.Platform, account.GetPoolModeRetryCount(), failoverErr)
 				switch action {
 				case FailoverContinue:
+					ctx := pinSameAccountRetryContext(c.Request.Context(), fs, account.ID, apiKey.GroupID, failoverErr, prevRetryCount, prevSwitchCount, h.metadataBridgeEnabled())
+					c.Request = c.Request.WithContext(ctx)
 					continue
 				case FailoverExhausted:
 					h.handleCCFailoverExhausted(c, fs.LastFailoverErr, streamStarted)

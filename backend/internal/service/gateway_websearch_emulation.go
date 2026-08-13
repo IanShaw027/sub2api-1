@@ -43,6 +43,10 @@ func SetWebSearchManager(m *websearch.Manager) {
 	webSearchManagerPtr.Store(m)
 }
 
+func GetWebSearchManager() *websearch.Manager {
+	return getWebSearchManager()
+}
+
 func getWebSearchManager() *websearch.Manager {
 	return webSearchManagerPtr.Load()
 }

@@ -182,6 +182,19 @@ type SystemSettings struct {
 	AffiliateSignupBonus         float64
 	AdminRechargeRebateEnabled   bool
 	TicketEnabled                bool
+	KiroDefaultVersion              string
+	KiroDefaultCommit               string
+	KiroDefaultSystemVersion        string
+	KiroDefaultNodeVersion          string
+	KiroCacheHitRateScale           int
+	KiroCacheMinBlockTokens         int
+	KiroCacheIndependentTTLSeconds  int
+	KiroCachePrefixTTLSeconds       int
+	KiroCodeExecutionSandboxCommand string
+	IPMultiAccountBanEnabled       bool
+	IPMultiAccountBanWindowMinutes int
+	IPMultiAccountBanThreshold     int
+	IPMultiAccountBanLearningUntil string
 	DefaultUserRPMLimit          int
 	DefaultSubscriptions         []DefaultSubscriptionSetting
 
@@ -316,6 +329,18 @@ type SystemSettings struct {
 type DefaultSubscriptionSetting struct {
 	GroupID      int64 `json:"group_id"`
 	ValidityDays int   `json:"validity_days"`
+}
+
+type DefaultAccountModelConfig struct {
+	ModelWhitelist               []string                             `json:"model_whitelist,omitempty"`
+	ModelMapping                 map[string]string                    `json:"model_mapping,omitempty"`
+	CompactModelMapping          map[string]string                    `json:"compact_model_mapping,omitempty"`
+	KiroSubscriptionTypeModelMap map[string]DefaultAccountModelConfig `json:"kiro_subscription_type_model_config,omitempty"`
+
+	TempUnschedulableEnabled bool                    `json:"temp_unschedulable_enabled,omitempty"`
+	TempUnschedulableRules   []TempUnschedulableRule `json:"temp_unschedulable_rules,omitempty"`
+	CustomErrorCodesEnabled  bool                    `json:"custom_error_codes_enabled,omitempty"`
+	CustomErrorCodes         []int                   `json:"custom_error_codes,omitempty"`
 }
 
 type PublicSettings struct {
