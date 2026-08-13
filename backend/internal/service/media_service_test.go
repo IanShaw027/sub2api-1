@@ -99,6 +99,29 @@ func (r *memoryMediaRepo) GetByID(_ context.Context, id int64) (*MediaAsset, err
 	return &cloned, nil
 }
 
+func (r *memoryMediaRepo) UpdateVisibility(_ context.Context, id int64, visibility, publicBaseURL string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	asset, ok := r.byID[id]
+	if !ok {
+		return ErrMediaNotFound
+	}
+	asset.Visibility = visibility
+	asset.PublicBaseURL = publicBaseURL
+	return nil
+}
+
+func (r *memoryMediaRepo) MarkDeleted(_ context.Context, id int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	asset, ok := r.byID[id]
+	if !ok {
+		return ErrMediaNotFound
+	}
+	asset.Status = MediaStatusDeleted
+	return nil
+}
+
 func (r *memoryMediaRepo) ListByBiz(_ context.Context, ownerUserID int64, bizType, bizID string) ([]MediaAsset, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -177,8 +200,7 @@ func TestMediaPublicAccessUsesGatewayNotBucketACL(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, MediaVisibilityPublic, asset.Visibility)
-	require.Equal(t, MediaPublicPath(asset.ID), asset.AccessURL)
-	require.NotContains(t, asset.AccessURL, "cdn.example.test")
+	require.True(t, strings.HasPrefix(asset.AccessURL, "https://cdn.example.test/media/"))
 	require.NotContains(t, asset.AccessURL, "s3.example")
 	require.Empty(t, store.puts[0].ACL)
 
@@ -238,6 +260,51 @@ func TestMediaPrivateExpiredSignatureRejected(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.True(t, infraerrors.IsForbidden(err) || infraerrors.IsUnauthorized(err) || infraerrors.IsBadRequest(err))
+}
+
+func TestMediaInvoiceEmailGrantAllows24hAndOpenForActorDoesNotExpire(t *testing.T) {
+	svc, _, _ := newTestMediaService(t)
+	svc.now = func() time.Time { return time.Unix(1_700_000_000, 0) }
+	asset, err := svc.Upload(context.Background(), UploadMediaInput{
+		OwnerUserID:  8,
+		BizType:      MediaBizInvoice,
+		BizID:        "12",
+		Filename:     "invoice.pdf",
+		Visibility:   MediaVisibilityPrivate,
+		ActorIsAdmin: true,
+		Data:         []byte("%PDF-1.4 invoice"),
+	})
+	require.NoError(t, err)
+
+	clamped, err := svc.CreateDownloadGrant(context.Background(), CreateDownloadGrantInput{
+		AssetID:     asset.ID,
+		ActorUserID: 8,
+		TTLMinutes:  InvoiceEmailDownloadTTLMinutes,
+	})
+	require.NoError(t, err)
+	require.Equal(t, MaxMediaTTLMinutes, clamped.TTL)
+
+	grant, err := svc.CreateDownloadGrant(context.Background(), CreateDownloadGrantInput{
+		AssetID:       asset.ID,
+		ActorUserID:   8,
+		TTLMinutes:    InvoiceEmailDownloadTTLMinutes,
+		MaxTTLMinutes: InvoiceEmailDownloadTTLMinutes,
+	})
+	require.NoError(t, err)
+	require.Equal(t, InvoiceEmailDownloadTTLMinutes, grant.TTL)
+	require.Equal(t, "https://api.example.com/api/v1/media/download/1?expires=1&sig=x", AbsoluteMediaURL("https://api.example.com", "/api/v1/media/download/1?expires=1&sig=x"))
+
+	svc.now = func() time.Time { return time.Unix(1_700_000_000, 0).Add(48 * time.Hour) }
+	opened, rc, err := svc.OpenForActor(context.Background(), OpenForActorInput{
+		AssetID:     asset.ID,
+		ActorUserID: 8,
+	})
+	require.NoError(t, err)
+	defer func() { _ = rc.Close() }()
+	require.Equal(t, asset.ID, opened.ID)
+	body, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	require.Equal(t, []byte("%PDF-1.4 invoice"), body)
 }
 
 func TestMediaCrossUserDownloadForbidden(t *testing.T) {
@@ -391,6 +458,32 @@ func TestMediaUploadDeletesObjectWhenCreateFails(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.Empty(t, store.objects)
+}
+
+func TestMediaUploadAnnouncementRequiresAdminAndAllowsPublic(t *testing.T) {
+	svc, store, _ := newTestMediaService(t)
+	_, err := svc.Upload(context.Background(), UploadMediaInput{
+		OwnerUserID:  3,
+		BizType:      MediaBizAnnouncement,
+		Filename:     "notice.png",
+		Visibility:   MediaVisibilityPublic,
+		ActorIsAdmin: false,
+		Data:         []byte("\x89PNG\r\n\x1a\n"),
+	})
+	require.Error(t, err)
+	require.Equal(t, "MEDIA_ADMIN_ONLY", infraerrors.Reason(err))
+
+	asset, err := svc.Upload(context.Background(), UploadMediaInput{
+		OwnerUserID:  3,
+		BizType:      MediaBizAnnouncement,
+		Filename:     "notice.png",
+		Visibility:   MediaVisibilityPublic,
+		ActorIsAdmin: true,
+		Data:         []byte("\x89PNG\r\n\x1a\n"),
+	})
+	require.NoError(t, err)
+	require.Equal(t, MediaVisibilityPublic, asset.Visibility)
+	require.NotEmpty(t, store.puts)
 }
 
 func TestMediaUploadInvoiceRequiresAdmin(t *testing.T) {

@@ -187,6 +187,116 @@ func (h *MediaHandler) SignedDownload(c *gin.Context) {
 	c.DataFromReader(http.StatusOK, asset.Size, asset.MIME, rc, nil)
 }
 
+type mediaVisibilityRequest struct {
+	Visibility string `json:"visibility"`
+}
+
+func (h *MediaHandler) Get(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "Invalid media ID")
+		return
+	}
+	asset, err := h.mediaService.GetForUser(c.Request.Context(), subject.UserID, id)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, asset)
+}
+
+func (h *MediaHandler) AdminGet(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "Invalid media ID")
+		return
+	}
+	asset, err := h.mediaService.GetForAdmin(c.Request.Context(), id)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, asset)
+}
+
+func (h *MediaHandler) Delete(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "Invalid media ID")
+		return
+	}
+	if err := h.mediaService.Delete(c.Request.Context(), id, subject.UserID, false); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"ok": true})
+}
+
+func (h *MediaHandler) AdminDelete(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "Invalid media ID")
+		return
+	}
+	if err := h.mediaService.Delete(c.Request.Context(), id, subject.UserID, true); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"ok": true})
+}
+
+func (h *MediaHandler) UpdateVisibility(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	h.updateVisibilityForActor(c, subject.UserID, false)
+}
+
+func (h *MediaHandler) AdminUpdateVisibility(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	h.updateVisibilityForActor(c, subject.UserID, true)
+}
+
+func (h *MediaHandler) updateVisibilityForActor(c *gin.Context, actorUserID int64, isAdmin bool) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "Invalid media ID")
+		return
+	}
+	var req mediaVisibilityRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "invalid request")
+		return
+	}
+	asset, err := h.mediaService.UpdateVisibility(c.Request.Context(), id, actorUserID, isAdmin, req.Visibility)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, asset)
+}
+
 func mediaDownloadFilename(asset *service.MediaAsset) string {
 	if asset != nil && strings.TrimSpace(asset.Filename) != "" {
 		return asset.Filename

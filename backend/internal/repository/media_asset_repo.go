@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/mediaasset"
@@ -91,6 +92,41 @@ func mediaAssetEntityToService(dst *service.MediaAsset, src *dbent.MediaAsset) {
 	dst.PublicBaseURL = src.PublicBaseURL
 	dst.CreatedAt = src.CreatedAt
 	if dst.Visibility == service.MediaVisibilityPublic {
-		dst.AccessURL = service.MediaPublicPath(dst.ID)
+		if base := strings.TrimRight(strings.TrimSpace(dst.PublicBaseURL), "/"); base != "" && strings.TrimSpace(dst.StorageKey) != "" {
+			dst.AccessURL = base + "/" + dst.StorageKey
+		} else {
+			dst.AccessURL = service.MediaPublicPath(dst.ID)
+		}
 	}
+}
+
+func (r *mediaAssetRepository) UpdateVisibility(ctx context.Context, id int64, visibility, publicBaseURL string) error {
+	client := clientFromContext(ctx, r.client)
+	n, err := client.MediaAsset.Update().
+		Where(mediaasset.IDEQ(id), mediaasset.StatusEQ(service.MediaStatusReady)).
+		SetVisibility(visibility).
+		SetPublicBaseURL(publicBaseURL).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return service.ErrMediaNotFound
+	}
+	return nil
+}
+
+func (r *mediaAssetRepository) MarkDeleted(ctx context.Context, id int64) error {
+	client := clientFromContext(ctx, r.client)
+	n, err := client.MediaAsset.Update().
+		Where(mediaasset.IDEQ(id), mediaasset.StatusEQ(service.MediaStatusReady)).
+		SetStatus(service.MediaStatusDeleted).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return service.ErrMediaNotFound
+	}
+	return nil
 }

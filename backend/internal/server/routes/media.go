@@ -35,6 +35,9 @@ func RegisterMediaRoutes(
 	authenticated.Use(panelRateLimiter.Global())
 	{
 		authenticated.POST("/upload", h.Media.Upload)
+		authenticated.GET("/:id", h.Media.Get)
+		authenticated.DELETE("/:id", h.Media.Delete)
+		authenticated.POST("/:id/visibility", h.Media.UpdateVisibility)
 		authenticated.POST("/:id/presign-download", h.Media.PresignDownload)
 	}
 
@@ -45,6 +48,9 @@ func RegisterMediaRoutes(
 	admin.Use(middleware.AdminComplianceGuard(settingService))
 	{
 		admin.POST("/upload", h.Media.AdminUpload)
+		admin.GET("/:id", h.Media.AdminGet)
+		admin.DELETE("/:id", h.Media.AdminDelete)
+		admin.POST("/:id/visibility", h.Media.AdminUpdateVisibility)
 		admin.POST("/:id/presign-download", h.Media.AdminPresignDownload)
 	}
 }

@@ -13,23 +13,28 @@ const (
 	MediaVisibilityPublic  = domain.MediaVisibilityPublic
 	MediaVisibilityPrivate = domain.MediaVisibilityPrivate
 
-	MediaBizInvoice   = domain.MediaBizInvoice
-	MediaBizTicket    = domain.MediaBizTicket
-	MediaBizAvatar    = domain.MediaBizAvatar
-	MediaBizImageTask = domain.MediaBizImageTask
+	MediaBizInvoice      = domain.MediaBizInvoice
+	MediaBizTicket       = domain.MediaBizTicket
+	MediaBizAvatar       = domain.MediaBizAvatar
+	MediaBizSupportQR    = domain.MediaBizSupportQR
+	MediaBizAnnouncement = domain.MediaBizAnnouncement
+	MediaBizImageTask    = domain.MediaBizImageTask
 
 	MediaStatusReady   = domain.MediaStatusReady
 	MediaStatusDeleted = domain.MediaStatusDeleted
 
-	MaxMediaUploadBytes     = 64 << 20
-	DefaultMediaTTLMinutes  = 15
-	MaxMediaTTLMinutes      = 60
-	MinMediaTTLMinutes      = 1
-	MediaPublicCacheSeconds = 300
+	MaxMediaUploadBytes            = 64 << 20
+	DefaultMediaTTLMinutes         = 15
+	MaxMediaTTLMinutes             = 60
+	MinMediaTTLMinutes             = 1
+	InvoiceEmailDownloadTTLMinutes = 24 * 60
+	MediaPublicCacheSeconds        = 300
 )
 
 var (
 	ErrMediaStorageNotConfigured = infraerrors.ServiceUnavailable("MEDIA_STORAGE_NOT_CONFIGURED", "media object storage is not configured")
+	ErrMediaStorageDisabled      = infraerrors.ServiceUnavailable("MEDIA_STORAGE_DISABLED", "media storage is disabled")
+	ErrMediaInvalidVisibility    = infraerrors.BadRequest("MEDIA_VISIBILITY_INVALID", "visibility must be public or private")
 	ErrMediaNotFound             = infraerrors.NotFound("MEDIA_NOT_FOUND", "media asset not found")
 	ErrMediaForbidden            = infraerrors.Forbidden("MEDIA_FORBIDDEN", "not allowed to access this media asset")
 	ErrMediaDownloadExpired      = infraerrors.Forbidden("MEDIA_DOWNLOAD_EXPIRED", "download signature has expired")
@@ -80,6 +85,17 @@ type CreateDownloadGrantInput struct {
 	// the actor for this asset (for example a ticket attachment participant).
 	VerifiedAccess bool
 	TTLMinutes     int
+	// MaxTTLMinutes raises the clamp ceiling for trusted callers such as
+	// invoice-issued emails. It cannot exceed InvoiceEmailDownloadTTLMinutes.
+	MaxTTLMinutes int
+}
+
+// OpenForActorInput streams a stored object after an ownership or admin check.
+type OpenForActorInput struct {
+	AssetID        int64
+	ActorUserID    int64
+	ActorIsAdmin   bool
+	VerifiedAccess bool
 }
 
 // MediaDownloadGrant is a time-limited download URL that never exposes the S3 endpoint.
@@ -99,9 +115,10 @@ type OpenSignedDownloadInput struct {
 
 // MediaStorageBinding describes which configured S3 profile media uses.
 type MediaStorageBinding struct {
-	ProfileID     string
-	Prefix        string
-	PublicBaseURL string
+	ProfileID             string
+	Prefix                string
+	PublicBaseURL         string
+	DownloadSigningSecret string
 }
 
 // MediaObjectStore is the object-storage port. Implementations must keep the bucket private
@@ -121,6 +138,8 @@ type MediaAssetRepository interface {
 	Create(ctx context.Context, asset *MediaAsset) error
 	GetByID(ctx context.Context, id int64) (*MediaAsset, error)
 	ListByBiz(ctx context.Context, ownerUserID int64, bizType, bizID string) ([]MediaAsset, error)
+	UpdateVisibility(ctx context.Context, id int64, visibility, publicBaseURL string) error
+	MarkDeleted(ctx context.Context, id int64) error
 }
 
 // MediaStorageResolver selects the active S3 profile (backup by default).

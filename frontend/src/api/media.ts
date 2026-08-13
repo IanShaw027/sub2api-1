@@ -59,6 +59,18 @@ export const mediaAPI = {
       ttl_minutes: ttlMinutes,
     })
   },
+
+  get(id: number) {
+    return apiClient.get<MediaAsset>(`/media/${id}`)
+  },
+
+  remove(id: number) {
+    return apiClient.delete(`/media/${id}`)
+  },
+
+  updateVisibility(id: number, visibility: 'public' | 'private') {
+    return apiClient.post<MediaAsset>(`/media/${id}/visibility`, { visibility })
+  },
 }
 
 export const adminMediaAPI = {
@@ -77,5 +89,17 @@ export const adminMediaAPI = {
     return apiClient.post<MediaDownloadGrant>(`/admin/media/${id}/presign-download`, {
       ttl_minutes: ttlMinutes,
     })
+  },
+
+  get(id: number) {
+    return apiClient.get<MediaAsset>(`/admin/media/${id}`)
+  },
+
+  remove(id: number) {
+    return apiClient.delete(`/admin/media/${id}`)
+  },
+
+  updateVisibility(id: number, visibility: 'public' | 'private') {
+    return apiClient.post<MediaAsset>(`/admin/media/${id}/visibility`, { visibility })
   },
 }

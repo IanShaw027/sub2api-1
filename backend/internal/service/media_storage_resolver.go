@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"sync"
 )
 
@@ -31,6 +32,9 @@ func (r *BackupMediaResolver) Resolve(ctx context.Context) (*MediaStorageBinding
 	if cfg == nil || !cfg.IsConfigured() {
 		return nil, nil, ErrMediaStorageNotConfigured
 	}
+	if !cfg.MediaIsEnabled() {
+		return nil, nil, ErrMediaStorageDisabled
+	}
 
 	store, err := r.getOrCreateStore(ctx, cfg)
 	if err != nil {
@@ -38,9 +42,10 @@ func (r *BackupMediaResolver) Resolve(ctx context.Context) (*MediaStorageBinding
 	}
 
 	return &MediaStorageBinding{
-		ProfileID:     domainMediaProfileID(),
-		Prefix:        "media",
-		PublicBaseURL: "",
+		ProfileID:             domainMediaProfileID(),
+		Prefix:                cfg.ResolvedMediaPrefix(),
+		PublicBaseURL:         strings.TrimRight(strings.TrimSpace(cfg.MediaPublicBaseURL), "/"),
+		DownloadSigningSecret: strings.TrimSpace(cfg.MediaDownloadSigningSecret),
 	}, store, nil
 }
 

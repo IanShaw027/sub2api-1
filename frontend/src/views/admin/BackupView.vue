@@ -43,6 +43,28 @@
             <input v-model="s3Form.force_path_style" type="checkbox" />
             <span>{{ t('admin.backup.s3.forcePathStyle') }}</span>
           </label>
+          <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
+            <input v-model="s3Form.media_enabled" type="checkbox" />
+            <span>{{ t('admin.backup.s3.mediaEnabled') }}</span>
+          </label>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.mediaPublicBaseUrl') }}</label>
+            <input v-model="s3Form.media_public_base_url" class="input w-full" :placeholder="t('admin.backup.s3.mediaPublicBaseUrlPlaceholder')" :disabled="!s3Form.media_enabled" />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.mediaPrefix') }}</label>
+            <input v-model="s3Form.media_prefix" class="input w-full" placeholder="media/" :disabled="!s3Form.media_enabled" />
+          </div>
+          <div class="md:col-span-2">
+            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.mediaSigningSecret') }}</label>
+            <input
+              v-model="s3Form.media_download_signing_secret"
+              type="password"
+              class="input w-full"
+              :placeholder="s3Form.media_download_signing_secret_configured ? t('admin.backup.s3.secretConfigured') : t('admin.backup.s3.mediaSigningSecretPlaceholder')"
+              :disabled="!s3Form.media_enabled"
+            />
+          </div>
         </div>
         <div class="mt-4 flex flex-wrap gap-2">
           <button type="button" class="btn btn-secondary btn-sm" :disabled="testingS3" @click="testS3">
@@ -438,6 +460,11 @@ const s3Form = ref<BackupS3Config>({
   secret_access_key: '',
   prefix: 'backups/',
   force_path_style: false,
+  media_enabled: true,
+  media_public_base_url: '',
+  media_prefix: 'media/',
+  media_download_signing_secret: '',
+  media_download_signing_secret_configured: false,
 })
 const s3SecretConfigured = ref(false)
 const savingS3 = ref(false)
@@ -609,6 +636,11 @@ async function loadS3Config() {
       secret_access_key: '',
       prefix: cfg.prefix || 'backups/',
       force_path_style: cfg.force_path_style,
+      media_enabled: cfg.media_enabled !== false,
+      media_public_base_url: cfg.media_public_base_url || '',
+      media_prefix: cfg.media_prefix || 'media/',
+      media_download_signing_secret: '',
+      media_download_signing_secret_configured: Boolean(cfg.media_download_signing_secret_configured),
     }
     s3SecretConfigured.value = Boolean(cfg.access_key_id)
   } catch (error) {

@@ -85,6 +85,14 @@ func (r *handlerMediaRepo) ListByBiz(_ context.Context, _ int64, _, _ string) ([
 	return nil, nil
 }
 
+func (r *handlerMediaRepo) UpdateVisibility(_ context.Context, _ int64, _, _ string) error {
+	return nil
+}
+
+func (r *handlerMediaRepo) MarkDeleted(_ context.Context, _ int64) error {
+	return nil
+}
+
 type handlerMediaResolver struct {
 	store service.MediaObjectStore
 }
@@ -131,7 +139,7 @@ func TestMediaPresignDownloadForbiddenForOtherUser(t *testing.T) {
 
 	asset, err := svc.Upload(context.Background(), service.UploadMediaInput{
 		OwnerUserID: 3,
-		BizType:     service.MediaBizInvoice,
+		BizType:     service.MediaBizTicket,
 		Filename:    "a.pdf",
 		Visibility:  service.MediaVisibilityPrivate,
 		Data:        []byte("%PDF-1.4"),

@@ -8,6 +8,11 @@ export interface BackupS3Config {
   secret_access_key?: string
   prefix: string
   force_path_style: boolean
+  media_enabled?: boolean
+  media_public_base_url?: string
+  media_prefix?: string
+  media_download_signing_secret?: string
+  media_download_signing_secret_configured?: boolean
 }
 
 export interface BackupScheduleConfig {

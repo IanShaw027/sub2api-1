@@ -102,6 +102,34 @@ type BackupS3Config struct {
 	SecretAccessKey string `json:"secret_access_key,omitempty"` //nolint:revive // field name follows AWS convention
 	Prefix          string `json:"prefix"`                      // S3 key 前缀，如 "backups/"
 	ForcePathStyle  bool   `json:"force_path_style"`
+
+	// Media* 与备份共用同一套 S3 凭证，按公开基址 / 私有限时签名分流。
+	MediaEnabled                         *bool  `json:"media_enabled,omitempty"`
+	MediaPublicBaseURL                   string `json:"media_public_base_url,omitempty"`
+	MediaPrefix                          string `json:"media_prefix,omitempty"`
+	MediaDownloadSigningSecret           string `json:"media_download_signing_secret,omitempty"`
+	MediaDownloadSigningSecretConfigured bool   `json:"media_download_signing_secret_configured,omitempty"`
+}
+
+func (c *BackupS3Config) MediaIsEnabled() bool {
+	if c == nil || !c.IsConfigured() {
+		return false
+	}
+	if c.MediaEnabled == nil {
+		return true
+	}
+	return *c.MediaEnabled
+}
+
+func (c *BackupS3Config) ResolvedMediaPrefix() string {
+	if c == nil {
+		return "media"
+	}
+	prefix := strings.Trim(strings.TrimSpace(c.MediaPrefix), "/")
+	if prefix == "" {
+		return "media"
+	}
+	return prefix
 }
 
 // IsConfigured 检查必要字段是否已配置
@@ -359,13 +387,37 @@ func (s *BackupService) GetS3Config(ctx context.Context) (*BackupS3Config, error
 	}
 	// 脱敏返回
 	cfg.SecretAccessKey = ""
+	cfg.MediaDownloadSigningSecretConfigured = strings.TrimSpace(cfg.MediaDownloadSigningSecret) != ""
+	cfg.MediaDownloadSigningSecret = ""
 	return cfg, nil
 }
 
 func (s *BackupService) UpdateS3Config(ctx context.Context, cfg BackupS3Config) (*BackupS3Config, error) {
+	old, _ := s.loadS3Config(ctx)
+	if old != nil {
+		if cfg.MediaEnabled == nil {
+			cfg.MediaEnabled = old.MediaEnabled
+		}
+		if strings.TrimSpace(cfg.MediaPrefix) == "" {
+			cfg.MediaPrefix = old.MediaPrefix
+		}
+	}
+	cfg.MediaPublicBaseURL = strings.TrimRight(strings.TrimSpace(cfg.MediaPublicBaseURL), "/")
+	if strings.TrimSpace(cfg.MediaDownloadSigningSecret) == "" && old != nil {
+		cfg.MediaDownloadSigningSecret = old.MediaDownloadSigningSecret
+	} else if strings.TrimSpace(cfg.MediaDownloadSigningSecret) != "" {
+		if !s.encryptionKeyConfigured {
+			return nil, ErrSecretEncryptionKeyNotConfigured
+		}
+		encryptedMedia, err := s.encryptor.Encrypt(strings.TrimSpace(cfg.MediaDownloadSigningSecret))
+		if err != nil {
+			return nil, fmt.Errorf("encrypt media signing secret: %w", err)
+		}
+		cfg.MediaDownloadSigningSecret = encryptedMedia
+	}
+
 	// 如果没提供 secret，保留原有值
 	if cfg.SecretAccessKey == "" {
-		old, _ := s.loadS3Config(ctx)
 		if old != nil {
 			cfg.SecretAccessKey = old.SecretAccessKey
 		}
@@ -398,6 +450,8 @@ func (s *BackupService) UpdateS3Config(ctx context.Context, cfg BackupS3Config) 
 	s.storeMu.Unlock()
 
 	cfg.SecretAccessKey = ""
+	cfg.MediaDownloadSigningSecretConfigured = strings.TrimSpace(cfg.MediaDownloadSigningSecret) != ""
+	cfg.MediaDownloadSigningSecret = ""
 	return &cfg, nil
 }
 
@@ -1263,6 +1317,14 @@ func (s *BackupService) loadS3Config(ctx context.Context) (*BackupS3Config, erro
 			logger.LegacyPrintf("service.backup", "[Backup] S3 SecretAccessKey 解密失败（可能是旧的未加密数据）: %v", err)
 		} else {
 			cfg.SecretAccessKey = decrypted
+		}
+	}
+	if cfg.MediaDownloadSigningSecret != "" {
+		decrypted, err := s.encryptor.Decrypt(cfg.MediaDownloadSigningSecret)
+		if err != nil {
+			logger.LegacyPrintf("service.backup", "[Backup] media download signing secret 解密失败（可能是旧的未加密数据）: %v", err)
+		} else {
+			cfg.MediaDownloadSigningSecret = decrypted
 		}
 	}
 	return &cfg, nil
