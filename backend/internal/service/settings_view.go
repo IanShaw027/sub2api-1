@@ -154,6 +154,8 @@ type SystemSettings struct {
 	SiteSubtitle                string
 	APIBaseURL                  string
 	ContactInfo                 string
+	SupportQRCodes              string
+	DownloadToolsURL            string
 	DocURL                      string
 	HomeContent                 string
 	CompactHomeEnabled          bool
@@ -175,7 +177,11 @@ type SystemSettings struct {
 	AffiliateRebateFreezeHours   int
 	AffiliateRebateDurationDays  int
 	AffiliateRebatePerInviteeCap float64
+	AffiliateRebateCap           float64
+	AffiliateRebateInviteeLimit  int
+	AffiliateSignupBonus         float64
 	AdminRechargeRebateEnabled   bool
+	TicketEnabled                bool
 	DefaultUserRPMLimit          int
 	DefaultSubscriptions         []DefaultSubscriptionSetting
 
@@ -342,6 +348,8 @@ type PublicSettings struct {
 	SiteSubtitle                        string
 	APIBaseURL                          string
 	ContactInfo                         string
+	SupportQRCodes                      string
+	DownloadToolsURL                    string
 	DocURL                              string
 	HomeContent                         string
 	CompactHomeEnabled                  bool
@@ -393,6 +401,9 @@ type PublicSettings struct {
 
 	// Affiliate (邀请返利) feature toggle
 	AffiliateEnabled bool `json:"affiliate_enabled"`
+
+	// Ticket feature toggle (default enabled)
+	TicketEnabled bool `json:"ticket_enabled"`
 
 	// 风控中心功能开关
 	RiskControlEnabled bool `json:"risk_control_enabled"`

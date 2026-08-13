@@ -332,6 +332,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.ContactInfo != after.ContactInfo {
 		changed = append(changed, "contact_info")
 	}
+	if before.SupportQRCodes != after.SupportQRCodes {
+		changed = append(changed, "support_qr_codes")
+	}
+	if before.DownloadToolsURL != after.DownloadToolsURL {
+		changed = append(changed, "download_tools_url")
+	}
 	if before.DocURL != after.DocURL {
 		changed = append(changed, "doc_url")
 	}
@@ -361,6 +367,15 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.AffiliateRebatePerInviteeCap != after.AffiliateRebatePerInviteeCap {
 		changed = append(changed, "affiliate_rebate_per_invitee_cap")
+	}
+	if before.AffiliateRebateCap != after.AffiliateRebateCap {
+		changed = append(changed, "affiliate_rebate_cap")
+	}
+	if before.AffiliateRebateInviteeLimit != after.AffiliateRebateInviteeLimit {
+		changed = append(changed, "affiliate_rebate_invitee_limit")
+	}
+	if before.AffiliateSignupBonus != after.AffiliateSignupBonus {
+		changed = append(changed, "affiliate_signup_bonus")
 	}
 	if before.AdminRechargeRebateEnabled != after.AdminRechargeRebateEnabled {
 		changed = append(changed, "affiliate_admin_recharge_enabled")
@@ -584,6 +599,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.ModelPlazaDescription != after.ModelPlazaDescription {
 		changed = append(changed, "model_plaza_description")
+	}
+	if before.TicketEnabled != after.TicketEnabled {
+		changed = append(changed, "ticket_enabled")
 	}
 	if before.AffiliateEnabled != after.AffiliateEnabled {
 		changed = append(changed, "affiliate_enabled")

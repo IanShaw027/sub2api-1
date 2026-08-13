@@ -111,6 +111,7 @@ func provideCleanup(
 	paymentOrderExpiry *service.PaymentOrderExpiryService,
 	channelMonitorRunner *service.ChannelMonitorRunner,
 	channelMonitorV2Aggregator *service.ChannelMonitorV2Aggregator,
+	usageUserDailyCost *service.UsageUserDailyCostAggregator,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
@@ -326,6 +327,12 @@ func provideCleanup(
 			}
 			return nil
 		}},
+			{"UsageUserDailyCostAggregator", func() error {
+				if usageUserDailyCost != nil {
+					usageUserDailyCost.Stop()
+				}
+				return nil
+			}},
 		{"ChannelMonitorRunner", func() error {
 				if channelMonitorRunner != nil {
 					channelMonitorRunner.Stop()

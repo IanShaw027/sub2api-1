@@ -33,6 +33,9 @@ const (
 	AffiliateRebateDurationDaysDefault  = 0     // 0 = 永久有效
 	AffiliateRebateDurationDaysMax      = 3650  // ~10 年
 	AffiliateRebatePerInviteeCapDefault = 0.0   // 0 = 无上限
+	AffiliateRebateCapDefault           = 0.0   // 0 = 邀请人累计返利无上限
+	AffiliateRebateInviteeLimitDefault  = 0     // 0 = 不限制已返利消费人数
+	AffiliateSignupBonusDefault         = 0.0   // 0 = 不发放注册奖励
 	AdminRechargeRebateEnabledDefault   = false // 管理员充值默认不产生返利
 )
 
@@ -154,7 +157,11 @@ const (
 	SettingKeyAffiliateRebateFreezeHours          = "affiliate_rebate_freeze_hours"    // 返利冻结期（小时，0=不冻结）
 	SettingKeyAffiliateRebateDurationDays         = "affiliate_rebate_duration_days"   // 返利有效期（天，0=永久）
 	SettingKeyAffiliateRebatePerInviteeCap        = "affiliate_rebate_per_invitee_cap" // 单人返利上限（0=无上限）
+	SettingKeyAffiliateRebateCap                  = "affiliate_rebate_cap"             // 邀请人累计返利上限（0=无上限）
+	SettingKeyAffiliateRebateInviteeLimit         = "affiliate_rebate_invitee_limit"   // 已返利消费人数上限（0=不限制）
+	SettingKeyAffiliateSignupBonus                = "affiliate_signup_bonus"           // 被邀请人注册奖励（0=不发放）
 	SettingKeyAffiliateAdminRechargeEnabled       = "affiliate_admin_recharge_enabled" // 管理员充值是否产生返利
+	SettingKeyTicketEnabled                       = "ticket_enabled"                   // 工单功能总开关（默认开启）
 	SettingKeyRiskControlEnabled                  = "risk_control_enabled"             // 是否启用风控中心入口与审计链路
 	SettingKeyContentModerationConfig             = "content_moderation_config"        // 内容审计配置（JSON）
 	SettingKeyCyberSessionBlockEnabled            = "cyber_session_block_enabled"      // cyber 命中后会话级自动屏蔽总开关(默认关)
@@ -299,6 +306,8 @@ const (
 	SettingKeySiteSubtitle                = "site_subtitle"                 // 网站副标题
 	SettingKeyAPIBaseURL                  = "api_base_url"                  // API端点地址（用于客户端配置和导入）
 	SettingKeyContactInfo                 = "contact_info"                  // 客服联系方式
+	SettingKeySupportQRCodes              = "support_qr_codes"              // 客服二维码 JSON [{image_url, note}]
+	SettingKeyDownloadToolsURL            = "download_tools_url"            // 下载工具链接
 	SettingKeyDocURL                      = "doc_url"                       // 文档链接
 	SettingKeyHomeContent                 = "home_content"                  // 首页内容（支持 Markdown/HTML，或 URL 作为 iframe src）
 	SettingKeyCompactHomeEnabled          = "compact_home_enabled"          // 是否启用内置简洁首页

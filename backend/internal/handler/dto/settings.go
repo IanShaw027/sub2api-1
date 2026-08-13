@@ -152,8 +152,10 @@ type SystemSettings struct {
 	SiteLogo                    string           `json:"site_logo"`
 	SiteSubtitle                string           `json:"site_subtitle"`
 	APIBaseURL                  string           `json:"api_base_url"`
-	ContactInfo                 string           `json:"contact_info"`
-	DocURL                      string           `json:"doc_url"`
+	ContactInfo                 string              `json:"contact_info"`
+	SupportQRCodes              []service.SupportQRCodeEntry `json:"support_qr_codes"`
+	DownloadToolsURL            string              `json:"download_tools_url"`
+	DocURL                      string              `json:"doc_url"`
 	HomeContent                 string           `json:"home_content"`
 	CompactHomeEnabled          bool             `json:"compact_home_enabled"`
 	HideCcsImportButton         bool             `json:"hide_ccs_import_button"`
@@ -170,6 +172,9 @@ type SystemSettings struct {
 	AffiliateRebateFreezeHours   int                          `json:"affiliate_rebate_freeze_hours"`
 	AffiliateRebateDurationDays  int                          `json:"affiliate_rebate_duration_days"`
 	AffiliateRebatePerInviteeCap float64                      `json:"affiliate_rebate_per_invitee_cap"`
+	AffiliateRebateCap           float64                      `json:"affiliate_rebate_cap"`
+	AffiliateRebateInviteeLimit  int                          `json:"affiliate_rebate_invitee_limit"`
+	AffiliateSignupBonus         float64                      `json:"affiliate_signup_bonus"`
 	AdminRechargeRebateEnabled   bool                         `json:"affiliate_admin_recharge_enabled"`
 	DefaultUserRPMLimit          int                          `json:"default_user_rpm_limit"`
 	DefaultSubscriptions         []DefaultSubscriptionSetting `json:"default_subscriptions"`
@@ -329,6 +334,9 @@ type SystemSettings struct {
 	// Affiliate (邀请返利) feature switch
 	AffiliateEnabled bool `json:"affiliate_enabled"`
 
+	// Ticket feature switch (default enabled)
+	TicketEnabled bool `json:"ticket_enabled"`
+
 	// OpenAI fast/flex policy
 	OpenAIFastPolicySettings *OpenAIFastPolicySettings `json:"openai_fast_policy_settings,omitempty"`
 
@@ -376,8 +384,10 @@ type PublicSettings struct {
 	SiteLogo                            string                   `json:"site_logo"`
 	SiteSubtitle                        string                   `json:"site_subtitle"`
 	APIBaseURL                          string                   `json:"api_base_url"`
-	ContactInfo                         string                   `json:"contact_info"`
-	DocURL                              string                   `json:"doc_url"`
+	ContactInfo                         string                       `json:"contact_info"`
+	SupportQRCodes                      []service.SupportQRCodeEntry `json:"support_qr_codes"`
+	DownloadToolsURL                    string                       `json:"download_tools_url"`
+	DocURL                              string                       `json:"doc_url"`
 	HomeContent                         string                   `json:"home_content"`
 	CompactHomeEnabled                  bool                     `json:"compact_home_enabled"`
 	HideCcsImportButton                 bool                     `json:"hide_ccs_import_button"`
@@ -421,6 +431,7 @@ type PublicSettings struct {
 	ModelPlazaRequireAuth bool `json:"model_plaza_require_auth"`
 
 	AffiliateEnabled bool `json:"affiliate_enabled"`
+	TicketEnabled    bool `json:"ticket_enabled"`
 
 	RiskControlEnabled bool `json:"risk_control_enabled"`
 

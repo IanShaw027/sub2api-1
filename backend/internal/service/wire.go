@@ -315,6 +315,79 @@ func ProvideDashboardAggregationService(repo DashboardAggregationRepository, tim
 	return svc
 }
 
+// ProvideOpenAICapacityProvider wires the OpenAI CapacityProvider (generic
+// capacity forecasting engine).
+func ProvideOpenAICapacityProvider(accountRepo AccountRepository, quotaService *OpenAIQuotaService, quotaRepo CapacityRepository) *OpenAICapacityProvider {
+	return NewOpenAICapacityProvider(accountRepo, quotaService, quotaRepo)
+}
+
+// ProvideAnthropicCapacityProvider wires the Anthropic CapacityProvider
+// (generic capacity forecasting engine).
+func ProvideAnthropicCapacityProvider(usageService *AccountUsageService, quotaRepo CapacityRepository) *AnthropicCapacityProvider {
+	return NewAnthropicCapacityProvider(usageService, quotaRepo)
+}
+
+// ProvideGrokCapacityProvider wires the Grok CapacityProvider (generic
+// capacity forecasting engine).
+func ProvideGrokCapacityProvider(quotaService *GrokQuotaService, quotaRepo CapacityRepository) *GrokCapacityProvider {
+	return NewGrokCapacityProvider(quotaService, quotaRepo)
+}
+
+// ProvideAntigravityCapacityProvider wires the Antigravity CapacityProvider
+// (generic capacity forecasting engine).
+func ProvideAntigravityCapacityProvider(accountRepo AccountRepository, quotaFetcher *AntigravityQuotaFetcher, quotaRepo CapacityRepository) *AntigravityCapacityProvider {
+	return NewAntigravityCapacityProvider(accountRepo, quotaFetcher, quotaRepo)
+}
+
+// ProvideGeminiCapacityProvider wires the Gemini CapacityProvider (generic
+// capacity forecasting engine).
+func ProvideGeminiCapacityProvider(accountRepo AccountRepository, quotaService *GeminiQuotaService, usageLogRepo UsageLogRepository, quotaRepo CapacityRepository) *GeminiCapacityProvider {
+	return NewGeminiCapacityProvider(accountRepo, quotaService, usageLogRepo, quotaRepo)
+}
+
+// ProvideCapacityProviderRegistry builds the generic capacity engine's
+// platform registry and registers every known CapacityProvider. Only platforms
+// present in domain.constants.go are registered (no kiro on this branch).
+func ProvideCapacityProviderRegistry(
+	openaiProvider *OpenAICapacityProvider,
+	anthropicProvider *AnthropicCapacityProvider,
+	grokProvider *GrokCapacityProvider,
+	antigravityProvider *AntigravityCapacityProvider,
+	geminiProvider *GeminiCapacityProvider,
+) *CapacityProviderRegistry {
+	registry := NewCapacityProviderRegistry()
+	registry.Register(openaiProvider)
+	registry.Register(anthropicProvider)
+	registry.Register(grokProvider)
+	registry.Register(antigravityProvider)
+	registry.Register(geminiProvider)
+	return registry
+}
+
+// ProvideCapacityForecastService creates and starts the generic capacity
+// forecasting engine's periodic capacity_hourly sealer (timing wheel +
+// leader lock, matching dashboard aggregation).
+func ProvideCapacityForecastService(
+	repo CapacityRepository,
+	accountRepo AccountRepository,
+	registry *CapacityProviderRegistry,
+	redisClient *redis.Client,
+	timingWheel *TimingWheelService,
+	lockCache LeaderLockCache,
+	db *sql.DB,
+) *CapacityForecastService {
+	svc := NewCapacityForecastService(repo, accountRepo, registry, redisClient)
+	svc.SetLeaderLock(lockCache, db)
+	svc.Start(timingWheel)
+	return svc
+}
+
+func ProvideUsageUserDailyCostAggregator(repo UsageUserDailyCostRepository, cfg *config.Config) *UsageUserDailyCostAggregator {
+	svc := NewUsageUserDailyCostAggregator(repo, cfg)
+	svc.Start()
+	return svc
+}
+
 // ProvideUsageCleanupService 创建并启动使用记录清理任务服务
 func ProvideUsageCleanupService(repo UsageCleanupRepository, timingWheel *TimingWheelService, dashboardAgg *DashboardAggregationService, cfg *config.Config) *UsageCleanupService {
 	svc := NewUsageCleanupService(repo, timingWheel, dashboardAgg, cfg)
@@ -631,6 +704,12 @@ func ProvideMediaService(repo MediaAssetRepository, resolver MediaStorageResolve
 	return NewMediaService(repo, resolver, DeriveMediaSigningKey(key))
 }
 
+func ProvideUserService(userRepo UserRepository, settingRepo SettingRepository, authCacheInvalidator APIKeyAuthCacheInvalidator, billingCache BillingCache, mediaService *MediaService) *UserService {
+	svc := NewUserService(userRepo, settingRepo, authCacheInvalidator, billingCache)
+	svc.SetMediaService(mediaService)
+	return svc
+}
+
 // ProvideBackupService creates and starts BackupService
 func ProvideBackupService(
 	settingRepo SettingRepository,
@@ -765,7 +844,7 @@ var ProviderSet = wire.NewSet(
 	// Core services
 	ProvideAuthService,
 	NewPasskeyService,
-	NewUserService,
+	ProvideUserService,
 	ProvideAPIKeyService,
 	ProvideAPIKeyAuthCacheInvalidator,
 	ProvideAuthCacheInvalidationWorker,
@@ -853,6 +932,14 @@ var ProviderSet = wire.NewSet(
 	ProvideSubscriptionExpiryService,
 	ProvideTimingWheelService,
 	ProvideDashboardAggregationService,
+	ProvideUsageUserDailyCostAggregator,
+	ProvideOpenAICapacityProvider,
+	ProvideAnthropicCapacityProvider,
+	ProvideGrokCapacityProvider,
+	ProvideAntigravityCapacityProvider,
+	ProvideGeminiCapacityProvider,
+	ProvideCapacityProviderRegistry,
+	ProvideCapacityForecastService,
 	ProvideUsageCleanupService,
 	ProvideDeferredService,
 	NewAntigravityQuotaFetcher,
@@ -909,9 +996,10 @@ func ProvideBalanceNotifyService(emailService *EmailService, settingRepo Setting
 }
 
 // ProvidePaymentService creates PaymentService and attaches notification email delivery.
-func ProvideInvoiceService(entClient *dbent.Client, cfg *config.Config, notificationEmailService *NotificationEmailService) *InvoiceService {
+func ProvideInvoiceService(entClient *dbent.Client, cfg *config.Config, notificationEmailService *NotificationEmailService, mediaService *MediaService) *InvoiceService {
 	svc := NewInvoiceService(entClient, cfg)
 	svc.SetNotificationEmailService(notificationEmailService)
+	svc.SetMediaService(mediaService)
 	return svc
 }
 

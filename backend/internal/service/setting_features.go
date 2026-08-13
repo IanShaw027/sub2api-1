@@ -161,6 +161,55 @@ func (s *SettingService) GetAffiliateRebatePerInviteeCap(ctx context.Context) fl
 	return cap
 }
 
+// GetAffiliateRebateCap 返回邀请人累计返利上限。0 表示无上限。
+func (s *SettingService) GetAffiliateRebateCap(ctx context.Context) float64 {
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateRebateCap)
+	if err != nil {
+		return AffiliateRebateCapDefault
+	}
+	cap, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || cap < 0 || math.IsNaN(cap) || math.IsInf(cap, 0) {
+		return AffiliateRebateCapDefault
+	}
+	return cap
+}
+
+// GetAffiliateRebateInviteeLimit 返回已返利消费人数上限。0 表示不限制。
+func (s *SettingService) GetAffiliateRebateInviteeLimit(ctx context.Context) int {
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateRebateInviteeLimit)
+	if err != nil {
+		return AffiliateRebateInviteeLimitDefault
+	}
+	limit, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || limit < 0 {
+		return AffiliateRebateInviteeLimitDefault
+	}
+	return limit
+}
+
+// GetAffiliateSignupBonus 返回被邀请人注册奖励。0 表示不发放。
+func (s *SettingService) GetAffiliateSignupBonus(ctx context.Context) float64 {
+	raw, err := s.settingRepo.GetValue(ctx, SettingKeyAffiliateSignupBonus)
+	if err != nil {
+		return AffiliateSignupBonusDefault
+	}
+	bonus, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || bonus < 0 || math.IsNaN(bonus) || math.IsInf(bonus, 0) {
+		return AffiliateSignupBonusDefault
+	}
+	return bonus
+}
+
+// IsTicketEnabled reports whether the support-ticket module is on.
+// Missing or unreadable settings default to enabled so existing installs keep tickets.
+func (s *SettingService) IsTicketEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyTicketEnabled)
+	if err != nil {
+		return true
+	}
+	return value != "false"
+}
+
 // IsPasswordResetEnabled 检查是否启用密码重置功能
 // 要求：必须同时开启邮件验证
 func (s *SettingService) IsPasswordResetEnabled(ctx context.Context) bool {

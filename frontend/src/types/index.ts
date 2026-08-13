@@ -109,6 +109,7 @@ export interface AdminUser extends User {
   group_rates?: Record<number, number>
   // 当前并发数（仅管理员列表接口返回）
   current_concurrency?: number
+  current_rpm?: number
   today_actual_cost?: number
   total_actual_cost?: number
   today_balance_actual_cost?: number
@@ -278,6 +279,14 @@ export interface PublicSettings {
   service_quota_enabled: boolean
   affiliate_enabled: boolean
   allow_user_view_error_requests?: boolean
+  ticket_enabled?: boolean
+  support_qr_codes?: SupportQRCodeEntry[]
+  download_tools_url?: string
+}
+
+export interface SupportQRCodeEntry {
+  image_url: string
+  note?: string
 }
 
 export interface AuthResponse {

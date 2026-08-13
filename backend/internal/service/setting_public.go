@@ -185,6 +185,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeySiteSubtitle,
 		SettingKeyAPIBaseURL,
 		SettingKeyContactInfo,
+		SettingKeySupportQRCodes,
+		SettingKeyDownloadToolsURL,
 		SettingKeyDocURL,
 		SettingKeyHomeContent,
 		SettingKeyCompactHomeEnabled,
@@ -235,6 +237,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyModelPlazaEnabled,
 		SettingKeyModelPlazaRequireAuth,
 		SettingKeyAffiliateEnabled,
+		SettingKeyTicketEnabled,
 		SettingKeyRiskControlEnabled,
 		SettingKeyAllowUserViewErrorRequests,
 	}
@@ -324,6 +327,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SiteSubtitle:                        s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
 		APIBaseURL:                          settings[SettingKeyAPIBaseURL],
 		ContactInfo:                         settings[SettingKeyContactInfo],
+		SupportQRCodes:                      MarshalSupportQRCodes(ParseSupportQRCodes(settings[SettingKeySupportQRCodes])),
+		DownloadToolsURL:                    NormalizeDownloadToolsURL(settings[SettingKeyDownloadToolsURL]),
 		DocURL:                              settings[SettingKeyDocURL],
 		HomeContent:                         settings[SettingKeyHomeContent],
 		CompactHomeEnabled:                  settings[SettingKeyCompactHomeEnabled] == "true",
@@ -362,6 +367,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ModelPlazaRequireAuth: settings[SettingKeyModelPlazaRequireAuth] == "true",
 
 		AffiliateEnabled: settings[SettingKeyAffiliateEnabled] == "true",
+		TicketEnabled:    settings[SettingKeyTicketEnabled] != "false",
 
 		RiskControlEnabled: settings[SettingKeyRiskControlEnabled] == "true",
 
@@ -566,6 +572,8 @@ type PublicSettingsInjectionPayload struct {
 	SiteSubtitle                        string                   `json:"site_subtitle"`
 	APIBaseURL                          string                   `json:"api_base_url"`
 	ContactInfo                         string                   `json:"contact_info"`
+	SupportQRCodes                      json.RawMessage          `json:"support_qr_codes"`
+	DownloadToolsURL                    string                   `json:"download_tools_url"`
 	DocURL                              string                   `json:"doc_url"`
 	HomeContent                         string                   `json:"home_content"`
 	CompactHomeEnabled                  bool                     `json:"compact_home_enabled"`
@@ -610,6 +618,7 @@ type PublicSettingsInjectionPayload struct {
 	ModelPlazaEnabled            bool `json:"model_plaza_enabled"`
 	ModelPlazaRequireAuth        bool `json:"model_plaza_require_auth"`
 	AffiliateEnabled             bool `json:"affiliate_enabled"`
+	TicketEnabled                bool `json:"ticket_enabled"`
 	RiskControlEnabled           bool `json:"risk_control_enabled"`
 	AllowUserViewErrorRequests   bool `json:"allow_user_view_error_requests"`
 }
@@ -651,6 +660,8 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		SiteSubtitle:                        settings.SiteSubtitle,
 		APIBaseURL:                          settings.APIBaseURL,
 		ContactInfo:                         settings.ContactInfo,
+		SupportQRCodes:                      safeRawJSONArray(settings.SupportQRCodes),
+		DownloadToolsURL:                    settings.DownloadToolsURL,
 		DocURL:                              settings.DocURL,
 		HomeContent:                         settings.HomeContent,
 		CompactHomeEnabled:                  settings.CompactHomeEnabled,
@@ -689,6 +700,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ModelPlazaEnabled:                    settings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth:                settings.ModelPlazaRequireAuth,
 		AffiliateEnabled:                     settings.AffiliateEnabled,
+		TicketEnabled:                        settings.TicketEnabled,
 		RiskControlEnabled:                   settings.RiskControlEnabled,
 		AllowUserViewErrorRequests:           settings.AllowUserViewErrorRequests,
 	}, nil

@@ -341,6 +341,8 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeySiteSubtitle] = settings.SiteSubtitle
 	updates[SettingKeyAPIBaseURL] = settings.APIBaseURL
 	updates[SettingKeyContactInfo] = settings.ContactInfo
+	updates[SettingKeySupportQRCodes] = MarshalSupportQRCodes(ParseSupportQRCodes(settings.SupportQRCodes))
+	updates[SettingKeyDownloadToolsURL] = NormalizeDownloadToolsURL(settings.DownloadToolsURL)
 	updates[SettingKeyDocURL] = settings.DocURL
 	updates[SettingKeyHomeContent] = settings.HomeContent
 	updates[SettingKeyCompactHomeEnabled] = strconv.FormatBool(settings.CompactHomeEnabled)
@@ -383,6 +385,18 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 		settings.AffiliateRebatePerInviteeCap = AffiliateRebatePerInviteeCapDefault
 	}
 	updates[SettingKeyAffiliateRebatePerInviteeCap] = strconv.FormatFloat(settings.AffiliateRebatePerInviteeCap, 'f', 8, 64)
+	if settings.AffiliateRebateCap < 0 {
+		settings.AffiliateRebateCap = AffiliateRebateCapDefault
+	}
+	updates[SettingKeyAffiliateRebateCap] = strconv.FormatFloat(settings.AffiliateRebateCap, 'f', 8, 64)
+	if settings.AffiliateRebateInviteeLimit < 0 {
+		settings.AffiliateRebateInviteeLimit = AffiliateRebateInviteeLimitDefault
+	}
+	updates[SettingKeyAffiliateRebateInviteeLimit] = strconv.Itoa(settings.AffiliateRebateInviteeLimit)
+	if settings.AffiliateSignupBonus < 0 {
+		settings.AffiliateSignupBonus = AffiliateSignupBonusDefault
+	}
+	updates[SettingKeyAffiliateSignupBonus] = strconv.FormatFloat(settings.AffiliateSignupBonus, 'f', 8, 64)
 	updates[SettingKeyAffiliateAdminRechargeEnabled] = strconv.FormatBool(settings.AdminRechargeRebateEnabled)
 	updates[SettingKeyDefaultUserRPMLimit] = strconv.Itoa(settings.DefaultUserRPMLimit)
 	defaultSubsJSON, err := json.Marshal(settings.DefaultSubscriptions)
@@ -437,6 +451,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 
 	// Affiliate (邀请返利) feature switch
 	updates[SettingKeyAffiliateEnabled] = strconv.FormatBool(settings.AffiliateEnabled)
+	updates[SettingKeyTicketEnabled] = strconv.FormatBool(settings.TicketEnabled)
 
 	// 风控中心功能开关
 	updates[SettingKeyRiskControlEnabled] = strconv.FormatBool(settings.RiskControlEnabled)

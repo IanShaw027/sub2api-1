@@ -6454,6 +6454,71 @@
                 </p>
               </div>
 
+              <div>
+                <label
+                  class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  {{ t("admin.settings.site.supportQRCodes") }}
+                </label>
+                <div class="space-y-4">
+                  <div
+                    v-if="form.support_qr_codes.length > 0"
+                    class="grid grid-cols-1 gap-4"
+                    :class="form.support_qr_codes.length > 1 ? 'lg:grid-cols-2' : ''"
+                  >
+                    <div
+                      v-for="(item, index) in form.support_qr_codes"
+                      :key="`support-qr-${index}`"
+                      class="rounded-2xl border border-gray-200 bg-gray-50/80 p-4 dark:border-dark-700 dark:bg-dark-900/40"
+                    >
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0 flex-1 space-y-4">
+                          <ImageUpload
+                            v-model="item.image_url"
+                            mode="image"
+                            :upload-label="t('admin.settings.site.uploadQRCode')"
+                            :remove-label="t('admin.settings.site.remove')"
+                            :hint="t('admin.settings.site.supportQRCodeImageHint')"
+                            :max-size="500 * 1024"
+                          />
+                          <div>
+                            <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                              {{ t("admin.settings.site.supportQRCodeNote") }}
+                            </label>
+                            <input
+                              v-model="item.note"
+                              type="text"
+                              maxlength="80"
+                              class="input"
+                              :placeholder="t('admin.settings.site.supportQRCodeNotePlaceholder')"
+                            />
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          class="btn btn-secondary btn-sm shrink-0 text-red-600 hover:text-red-700 dark:text-red-400"
+                          @click="removeSupportQRCode(index)"
+                        >
+                          {{ t("admin.settings.site.remove") }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    v-if="form.support_qr_codes.length < 8"
+                    type="button"
+                    class="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-300 px-4 py-2.5 text-sm text-gray-500 transition-colors hover:border-primary-400 hover:text-primary-600 dark:border-dark-600 dark:text-gray-400 dark:hover:border-primary-500 dark:hover:text-primary-400"
+                    @click="addSupportQRCode"
+                  >
+                    {{ t("admin.settings.site.addSupportQRCode") }}
+                  </button>
+                </div>
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.settings.site.supportQRCodesHint") }}
+                </p>
+              </div>
+
               <!-- Doc URL -->
               <div>
                 <label
@@ -6469,6 +6534,23 @@
                 />
                 <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
                   {{ t("admin.settings.site.docUrlHint") }}
+                </p>
+              </div>
+
+              <div>
+                <label
+                  class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                >
+                  {{ t("admin.settings.site.downloadToolsUrl") }}
+                </label>
+                <input
+                  v-model="form.download_tools_url"
+                  type="url"
+                  class="input font-mono text-sm"
+                  :placeholder="t('admin.settings.site.downloadToolsUrlPlaceholder')"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.settings.site.downloadToolsUrlHint") }}
                 </p>
               </div>
 
@@ -6681,12 +6763,15 @@
                     </label>
                     <input
                       v-model="item.url"
-                      type="url"
+                      type="text"
                       class="input font-mono text-sm"
                       :placeholder="
                         t('admin.settings.customMenu.urlPlaceholder')
                       "
                     />
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.customMenu.urlHint") }}
+                    </p>
                   </div>
 
                   <!-- SVG Icon (full width) -->
@@ -6938,6 +7023,30 @@
 
 	        <!-- Tab: Features (功能开关) -->
         <div v-show="activeTab === 'features'" class="space-y-6">
+
+        <div class="card">
+          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.settings.features.ticket.title') }}
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.settings.features.ticket.description') }}
+            </p>
+          </div>
+          <div class="space-y-5 p-6">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.features.ticket.enabled') }}
+                </label>
+                <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.features.ticket.enabledHint') }}
+                </p>
+              </div>
+              <Toggle v-model="form.ticket_enabled" />
+            </div>
+          </div>
+        </div>
 
         <div class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
@@ -7290,6 +7399,54 @@
                 />
                 <p class="mt-1 text-xs text-gray-400">
                   {{ t('admin.settings.features.affiliate.perInviteeCapDesc') }}
+                </p>
+              </div>
+
+              <div>
+                <label class="input-label">
+                  {{ t('admin.settings.features.affiliate.lifetimeCap') }}
+                </label>
+                <input
+                  v-model.number="form.affiliate_rebate_cap"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  class="input"
+                />
+                <p class="mt-1 text-xs text-gray-400">
+                  {{ t('admin.settings.features.affiliate.lifetimeCapDesc') }}
+                </p>
+              </div>
+
+              <div>
+                <label class="input-label">
+                  {{ t('admin.settings.features.affiliate.inviteeLimit') }}
+                </label>
+                <input
+                  v-model.number="form.affiliate_rebate_invitee_limit"
+                  type="number"
+                  step="1"
+                  min="0"
+                  class="input"
+                />
+                <p class="mt-1 text-xs text-gray-400">
+                  {{ t('admin.settings.features.affiliate.inviteeLimitDesc') }}
+                </p>
+              </div>
+
+              <div>
+                <label class="input-label">
+                  {{ t('admin.settings.features.affiliate.signupBonus') }}
+                </label>
+                <input
+                  v-model.number="form.affiliate_signup_bonus"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  class="input"
+                />
+                <p class="mt-1 text-xs text-gray-400">
+                  {{ t('admin.settings.features.affiliate.signupBonusDesc') }}
                 </p>
               </div>
 
@@ -8687,7 +8844,10 @@ import type {
   LoginAgreementDocument,
   NotifyEmailEntry,
   Proxy,
+  SupportQRCodeEntry,
 } from "@/types";
+import { adminMediaAPI, mediaPublicUrl } from "@/api/media";
+import { sanitizeSupportQRUrl } from "@/utils/url";
 import type { ProviderInstance } from "@/types/payment";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import Icon from "@/components/icons/Icon.vue";
@@ -8713,7 +8873,7 @@ import {
 import TotpStepUpDialog from "@/components/auth/TotpStepUpDialog.vue";
 import { affiliatesAPI, type AffiliateAdminEntry, type SimpleUser as AffiliateSimpleUser } from "@/api/admin/affiliates";
 import { extractApiErrorMessage, extractI18nErrorMessage } from "@/utils/apiError";
-import { useAppStore } from "@/stores";
+import { useAppStore, useAuthStore } from "@/stores";
 import { useAdminSettingsStore } from "@/stores/adminSettings";
 import { normalizeVisibleMethod } from "@/components/payment/paymentFlow";
 import {
@@ -9442,6 +9602,9 @@ const form = reactive<SettingsForm>({
   affiliate_rebate_freeze_hours: 0,
   affiliate_rebate_duration_days: 0,
   affiliate_rebate_per_invitee_cap: 0,
+  affiliate_rebate_cap: 0,
+  affiliate_rebate_invitee_limit: 0,
+  affiliate_signup_bonus: 0,
   affiliate_admin_recharge_enabled: false,
   default_concurrency: 1,
   default_subscriptions: [],
@@ -9452,7 +9615,9 @@ const form = reactive<SettingsForm>({
   site_subtitle: "Subscription to API Conversion Platform",
   api_base_url: "",
   contact_info: "",
+  support_qr_codes: [],
   doc_url: "",
+  download_tools_url: "",
   home_content: "",
   compact_home_enabled: false,
   backend_mode_enabled: false,
@@ -9490,6 +9655,7 @@ const form = reactive<SettingsForm>({
     label: string;
     icon_svg: string;
     url: string;
+    page_slug?: string;
     visibility: "user" | "admin";
     sort_order: number;
   }>,
@@ -9692,6 +9858,7 @@ const form = reactive<SettingsForm>({
   model_plaza_description: '',
   // Affiliate (邀请返利) feature switch
   affiliate_enabled: false,
+  ticket_enabled: true,
   // Allow user view error requests
   allow_user_view_error_requests: false,
 });
@@ -10494,6 +10661,49 @@ function removeEndpoint(index: number) {
   form.custom_endpoints.splice(index, 1);
 }
 
+function addSupportQRCode() {
+  if (form.support_qr_codes.length >= 8) return;
+  form.support_qr_codes.push({ image_url: "", note: "" });
+}
+
+function removeSupportQRCode(index: number) {
+  form.support_qr_codes.splice(index, 1);
+}
+
+async function persistSupportQRCodes(): Promise<SupportQRCodeEntry[]> {
+  const out: SupportQRCodeEntry[] = [];
+  let ownerUserId: number | undefined;
+  for (const item of form.support_qr_codes) {
+    let imageURL = (item.image_url || "").trim();
+    if (imageURL.startsWith("data:image/")) {
+      if (ownerUserId == null) {
+        ownerUserId = useAuthStore().user?.id;
+      }
+      if (!ownerUserId) {
+        continue;
+      }
+      const blob = await (await fetch(imageURL)).blob();
+      const file = new File([blob], "support-qr.png", { type: blob.type || "image/png" });
+      const uploaded = await adminMediaAPI.upload(file, {
+        owner_user_id: ownerUserId,
+        biz_type: "support_qr",
+        visibility: "public",
+        filename: file.name,
+      });
+      imageURL = mediaPublicUrl(uploaded.data.id);
+    }
+    imageURL = sanitizeSupportQRUrl(imageURL);
+    if (!imageURL) continue;
+    const note = (item.note || "").trim();
+    out.push({
+      image_url: imageURL,
+      note: note.length > 80 ? note.slice(0, 80) : note,
+    });
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
 function addLoginAgreementDocument() {
   form.login_agreement_documents.push({
     id: `custom-${Date.now().toString(36)}`,
@@ -10658,6 +10868,9 @@ async function loadSettings() {
       if (value !== null && value !== undefined) {
         (form as Record<string, unknown>)[key] = value;
       }
+    }
+    if (!Array.isArray(form.support_qr_codes)) {
+      form.support_qr_codes = [];
     }
     syncCaptchaProviderSelection();
     if (!form.claude_oauth_system_prompt_blocks?.trim()) {
@@ -11020,6 +11233,7 @@ async function saveSettings() {
     // Optional URL fields: auto-clear invalid values so they don't cause backend 400 errors
     if (!isValidHttpUrl(form.frontend_url)) form.frontend_url = "";
     if (!isValidHttpUrl(form.doc_url)) form.doc_url = "";
+    if (!isValidHttpUrl(form.download_tools_url)) form.download_tools_url = "";
     syncWeChatConnectMode();
     const wechatStoredMode = deriveWeChatConnectStoredMode(
       form.wechat_connect_open_enabled,
@@ -11067,6 +11281,9 @@ async function saveSettings() {
       affiliate_rebate_freeze_hours: Math.max(0, Math.min(720, Number(form.affiliate_rebate_freeze_hours) || 0)),
       affiliate_rebate_duration_days: Math.max(0, Math.min(3650, Math.floor(Number(form.affiliate_rebate_duration_days) || 0))),
       affiliate_rebate_per_invitee_cap: Math.max(0, Number(form.affiliate_rebate_per_invitee_cap) || 0),
+      affiliate_rebate_cap: Math.max(0, Number(form.affiliate_rebate_cap) || 0),
+      affiliate_rebate_invitee_limit: Math.max(0, Math.floor(Number(form.affiliate_rebate_invitee_limit) || 0)),
+      affiliate_signup_bonus: Math.max(0, Number(form.affiliate_signup_bonus) || 0),
       affiliate_admin_recharge_enabled: form.affiliate_admin_recharge_enabled,
       default_concurrency: form.default_concurrency,
       default_subscriptions: normalizedDefaultSubscriptions,
@@ -11077,7 +11294,9 @@ async function saveSettings() {
       site_subtitle: form.site_subtitle,
       api_base_url: form.api_base_url,
       contact_info: form.contact_info,
+      support_qr_codes: await persistSupportQRCodes(),
       doc_url: form.doc_url,
+      download_tools_url: form.download_tools_url,
       home_content: form.home_content,
       compact_home_enabled: form.compact_home_enabled,
       backend_mode_enabled: form.backend_mode_enabled,
@@ -11344,6 +11563,7 @@ async function saveSettings() {
       model_plaza_description: form.model_plaza_description,
       // Affiliate (邀请返利) feature switch
       affiliate_enabled: form.affiliate_enabled,
+      ticket_enabled: form.ticket_enabled,
       allow_user_view_error_requests: form.allow_user_view_error_requests,
     };
 

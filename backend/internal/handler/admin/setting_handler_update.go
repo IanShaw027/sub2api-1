@@ -157,8 +157,10 @@ type UpdateSettingsRequest struct {
 	SiteLogo                    string                `json:"site_logo"`
 	SiteSubtitle                string                `json:"site_subtitle"`
 	APIBaseURL                  string                `json:"api_base_url"`
-	ContactInfo                 string                `json:"contact_info"`
-	DocURL                      string                `json:"doc_url"`
+	ContactInfo                 string                         `json:"contact_info"`
+	SupportQRCodes              []service.SupportQRCodeEntry   `json:"support_qr_codes"`
+	DownloadToolsURL            string                         `json:"download_tools_url"`
+	DocURL                      string                         `json:"doc_url"`
 	HomeContent                 string                `json:"home_content"`
 	CompactHomeEnabled          bool                  `json:"compact_home_enabled"`
 	HideCcsImportButton         bool                  `json:"hide_ccs_import_button"`
@@ -176,6 +178,9 @@ type UpdateSettingsRequest struct {
 	AffiliateRebateFreezeHours                *int                              `json:"affiliate_rebate_freeze_hours"`
 	AffiliateRebateDurationDays               *int                              `json:"affiliate_rebate_duration_days"`
 	AffiliateRebatePerInviteeCap              *float64                          `json:"affiliate_rebate_per_invitee_cap"`
+	AffiliateRebateCap                        *float64                          `json:"affiliate_rebate_cap"`
+	AffiliateRebateInviteeLimit               *int                              `json:"affiliate_rebate_invitee_limit"`
+	AffiliateSignupBonus                      *float64                          `json:"affiliate_signup_bonus"`
 	AdminRechargeRebateEnabled                *bool                             `json:"affiliate_admin_recharge_enabled"`
 	DefaultUserRPMLimit                       int                               `json:"default_user_rpm_limit"`
 	DefaultSubscriptions                      []dto.DefaultSubscriptionSetting  `json:"default_subscriptions"`
@@ -348,6 +353,9 @@ type UpdateSettingsRequest struct {
 
 	// Affiliate (邀请返利) feature switch
 	AffiliateEnabled *bool `json:"affiliate_enabled"`
+
+	// Ticket feature switch
+	TicketEnabled *bool `json:"ticket_enabled"`
 
 	// 风控中心功能开关
 	RiskControlEnabled *bool `json:"risk_control_enabled"`
@@ -589,6 +597,27 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 	if affiliateRebatePerInviteeCap < 0 {
 		affiliateRebatePerInviteeCap = service.AffiliateRebatePerInviteeCapDefault
+	}
+	affiliateRebateCap := previousSettings.AffiliateRebateCap
+	if req.AffiliateRebateCap != nil {
+		affiliateRebateCap = *req.AffiliateRebateCap
+	}
+	if affiliateRebateCap < 0 {
+		affiliateRebateCap = service.AffiliateRebateCapDefault
+	}
+	affiliateRebateInviteeLimit := previousSettings.AffiliateRebateInviteeLimit
+	if req.AffiliateRebateInviteeLimit != nil {
+		affiliateRebateInviteeLimit = *req.AffiliateRebateInviteeLimit
+	}
+	if affiliateRebateInviteeLimit < 0 {
+		affiliateRebateInviteeLimit = service.AffiliateRebateInviteeLimitDefault
+	}
+	affiliateSignupBonus := previousSettings.AffiliateSignupBonus
+	if req.AffiliateSignupBonus != nil {
+		affiliateSignupBonus = *req.AffiliateSignupBonus
+	}
+	if affiliateSignupBonus < 0 {
+		affiliateSignupBonus = service.AffiliateSignupBonusDefault
 	}
 	adminRechargeRebateEnabled := previousSettings.AdminRechargeRebateEnabled
 	if req.AdminRechargeRebateEnabled != nil {
@@ -1274,28 +1303,17 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				response.BadRequest(c, "Custom menu item label is too long (max 50 characters)")
 				return
 			}
-			urlTrimmed := strings.TrimSpace(item.URL)
-			if strings.HasPrefix(urlTrimmed, "md:") {
-				// Markdown page mode: URL = "md:<slug>"
-				slug := strings.TrimPrefix(urlTrimmed, "md:")
-				if slug == "" {
-					response.BadRequest(c, "Custom menu item markdown slug cannot be empty (use md:slug format)")
-					return
-				}
-			} else {
-				if urlTrimmed == "" {
-					response.BadRequest(c, "Custom menu item URL is required (use md:slug for markdown pages)")
-					return
-				}
-				if len(item.URL) > maxMenuItemURLLen {
-					response.BadRequest(c, "Custom menu item URL is too long (max 2048 characters)")
-					return
-				}
-				if err := config.ValidateAbsoluteHTTPURL(urlTrimmed); err != nil {
-					response.BadRequest(c, "Custom menu item URL must be an absolute http(s) URL or md:<slug>")
-					return
-				}
+			if len(strings.TrimSpace(item.URL)) > maxMenuItemURLLen {
+				response.BadRequest(c, "Custom menu item URL is too long (max 2048 characters)")
+				return
 			}
+			normalizedURL, normalizedSlug, errMsg := normalizeCustomMenuItemTarget(item.URL, item.PageSlug)
+			if errMsg != "" {
+				response.BadRequest(c, errMsg)
+				return
+			}
+			items[i].URL = normalizedURL
+			items[i].PageSlug = normalizedSlug
 			if item.Visibility != "user" && item.Visibility != "admin" {
 				response.BadRequest(c, "Custom menu item visibility must be 'user' or 'admin'")
 				return
@@ -1613,6 +1631,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		SiteSubtitle:                           req.SiteSubtitle,
 		APIBaseURL:                             req.APIBaseURL,
 		ContactInfo:                            req.ContactInfo,
+		SupportQRCodes:                         service.MarshalSupportQRCodes(req.SupportQRCodes),
+		DownloadToolsURL:                       service.NormalizeDownloadToolsURL(req.DownloadToolsURL),
 		DocURL:                                 req.DocURL,
 		HomeContent:                            req.HomeContent,
 		CompactHomeEnabled:                     req.CompactHomeEnabled,
@@ -1629,6 +1649,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebateFreezeHours:             affiliateRebateFreezeHours,
 		AffiliateRebateDurationDays:            affiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:           affiliateRebatePerInviteeCap,
+		AffiliateRebateCap:                     affiliateRebateCap,
+		AffiliateRebateInviteeLimit:            affiliateRebateInviteeLimit,
+		AffiliateSignupBonus:                   affiliateSignupBonus,
 		AdminRechargeRebateEnabled:             adminRechargeRebateEnabled,
 		DefaultUserRPMLimit:                    req.DefaultUserRPMLimit,
 		DefaultSubscriptions:                   defaultSubscriptions,
@@ -1937,6 +1960,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.AffiliateEnabled
 		}(),
+		TicketEnabled: func() bool {
+			if req.TicketEnabled != nil {
+				return *req.TicketEnabled
+			}
+			return previousSettings.TicketEnabled
+		}(),
 		RiskControlEnabled: func() bool {
 			if req.RiskControlEnabled != nil {
 				return *req.RiskControlEnabled
@@ -2223,6 +2252,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		SiteSubtitle:                                           updatedSettings.SiteSubtitle,
 		APIBaseURL:                                             updatedSettings.APIBaseURL,
 		ContactInfo:                                            updatedSettings.ContactInfo,
+		SupportQRCodes:                                         service.ParseSupportQRCodes(updatedSettings.SupportQRCodes),
+		DownloadToolsURL:                                       updatedSettings.DownloadToolsURL,
 		DocURL:                                                 updatedSettings.DocURL,
 		HomeContent:                                            updatedSettings.HomeContent,
 		CompactHomeEnabled:                                     updatedSettings.CompactHomeEnabled,
@@ -2239,6 +2270,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AffiliateRebateFreezeHours:                             updatedSettings.AffiliateRebateFreezeHours,
 		AffiliateRebateDurationDays:                            updatedSettings.AffiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:                           updatedSettings.AffiliateRebatePerInviteeCap,
+		AffiliateRebateCap:                                     updatedSettings.AffiliateRebateCap,
+		AffiliateRebateInviteeLimit:                            updatedSettings.AffiliateRebateInviteeLimit,
+		AffiliateSignupBonus:                                   updatedSettings.AffiliateSignupBonus,
 		AdminRechargeRebateEnabled:                             updatedSettings.AdminRechargeRebateEnabled,
 		DefaultUserRPMLimit:                                    updatedSettings.DefaultUserRPMLimit,
 		DefaultSubscriptions:                                   updatedDefaultSubscriptions,
@@ -2354,6 +2388,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ModelPlazaDescription: updatedSettings.ModelPlazaDescription,
 
 		AffiliateEnabled: updatedSettings.AffiliateEnabled,
+		TicketEnabled:    updatedSettings.TicketEnabled,
 
 		RiskControlEnabled:          updatedSettings.RiskControlEnabled,
 		CyberSessionBlockEnabled:    updatedSettings.CyberSessionBlockEnabled,

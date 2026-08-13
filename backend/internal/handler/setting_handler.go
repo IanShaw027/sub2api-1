@@ -73,6 +73,8 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		SiteSubtitle:                        settings.SiteSubtitle,
 		APIBaseURL:                          settings.APIBaseURL,
 		ContactInfo:                         settings.ContactInfo,
+		SupportQRCodes:                      service.ParseSupportQRCodes(settings.SupportQRCodes),
+		DownloadToolsURL:                    settings.DownloadToolsURL,
 		DocURL:                              settings.DocURL,
 		HomeContent:                         settings.HomeContent,
 		CompactHomeEnabled:                  settings.CompactHomeEnabled,
@@ -114,6 +116,7 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		ModelPlazaRequireAuth: settings.ModelPlazaRequireAuth,
 
 		AffiliateEnabled: settings.AffiliateEnabled,
+		TicketEnabled:    settings.TicketEnabled,
 
 		RiskControlEnabled: settings.RiskControlEnabled,
 

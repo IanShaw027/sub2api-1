@@ -207,6 +207,12 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		// Affiliate (邀请返利) feature (default disabled; opt-in)
 		SettingKeyAffiliateEnabled:              "false",
 		SettingKeyAffiliateAdminRechargeEnabled: strconv.FormatBool(AdminRechargeRebateEnabledDefault),
+		SettingKeyAffiliateRebateCap:            strconv.FormatFloat(AffiliateRebateCapDefault, 'f', 2, 64),
+		SettingKeyAffiliateRebateInviteeLimit:   strconv.Itoa(AffiliateRebateInviteeLimitDefault),
+		SettingKeyAffiliateSignupBonus:          strconv.FormatFloat(AffiliateSignupBonusDefault, 'f', 2, 64),
+		SettingKeyTicketEnabled:                 "true",
+		SettingKeySupportQRCodes:                "[]",
+		SettingKeyDownloadToolsURL:              "",
 
 		// 风控中心功能（默认关闭，显式启用）
 		SettingKeyRiskControlEnabled: "false",
@@ -353,6 +359,8 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		SiteSubtitle:                           s.getStringOrDefault(settings, SettingKeySiteSubtitle, "Subscription to API Conversion Platform"),
 		APIBaseURL:                             settings[SettingKeyAPIBaseURL],
 		ContactInfo:                            settings[SettingKeyContactInfo],
+		SupportQRCodes:                         settings[SettingKeySupportQRCodes],
+		DownloadToolsURL:                       NormalizeDownloadToolsURL(settings[SettingKeyDownloadToolsURL]),
 		DocURL:                                 settings[SettingKeyDocURL],
 		HomeContent:                            settings[SettingKeyHomeContent],
 		CompactHomeEnabled:                     settings[SettingKeyCompactHomeEnabled] == "true",
@@ -410,6 +418,15 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	if perInviteeCap, err := strconv.ParseFloat(settings[SettingKeyAffiliateRebatePerInviteeCap], 64); err == nil && perInviteeCap >= 0 {
 		result.AffiliateRebatePerInviteeCap = perInviteeCap
+	}
+	if rebateCap, err := strconv.ParseFloat(settings[SettingKeyAffiliateRebateCap], 64); err == nil && rebateCap >= 0 {
+		result.AffiliateRebateCap = rebateCap
+	}
+	if inviteeLimit, err := strconv.Atoi(settings[SettingKeyAffiliateRebateInviteeLimit]); err == nil && inviteeLimit >= 0 {
+		result.AffiliateRebateInviteeLimit = inviteeLimit
+	}
+	if signupBonus, err := strconv.ParseFloat(settings[SettingKeyAffiliateSignupBonus], 64); err == nil && signupBonus >= 0 {
+		result.AffiliateSignupBonus = signupBonus
 	}
 	result.AdminRechargeRebateEnabled = settings[SettingKeyAffiliateAdminRechargeEnabled] == "true"
 	result.DefaultSubscriptions = parseDefaultSubscriptions(settings[SettingKeyDefaultSubscriptions])
@@ -819,6 +836,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 
 	// Affiliate (邀请返利) feature (default: disabled; strict true)
 	result.AffiliateEnabled = settings[SettingKeyAffiliateEnabled] == "true"
+	result.TicketEnabled = settings[SettingKeyTicketEnabled] != "false"
 
 	// 风控中心功能（默认关闭，严格 true 才启用）
 	result.RiskControlEnabled = settings[SettingKeyRiskControlEnabled] == "true"

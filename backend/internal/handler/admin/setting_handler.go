@@ -22,6 +22,13 @@ var semverPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 // menuItemIDPattern validates custom menu item IDs: alphanumeric, hyphens, underscores only.
 var menuItemIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
+// customPageSlugPattern matches data/pages/{slug}.md names (same rule as page_handler).
+var customPageSlugPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+
+const maxCustomPageSlugLen = 64
+
+const errCustomMenuItemURL = "Custom menu item URL must be an absolute http(s) URL, a same-origin path, or md:<slug>"
+
 // generateMenuItemID generates a short random hex ID for a custom menu item.
 func generateMenuItemID() (string, error) {
 	b := make([]byte, 8)
@@ -251,6 +258,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		SiteSubtitle:                                           settings.SiteSubtitle,
 		APIBaseURL:                                             settings.APIBaseURL,
 		ContactInfo:                                            settings.ContactInfo,
+		SupportQRCodes:                                         service.ParseSupportQRCodes(settings.SupportQRCodes),
+		DownloadToolsURL:                                       settings.DownloadToolsURL,
 		DocURL:                                                 settings.DocURL,
 		HomeContent:                                            settings.HomeContent,
 		CompactHomeEnabled:                                     settings.CompactHomeEnabled,
@@ -270,6 +279,9 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		AffiliateRebateFreezeHours:                             settings.AffiliateRebateFreezeHours,
 		AffiliateRebateDurationDays:                            settings.AffiliateRebateDurationDays,
 		AffiliateRebatePerInviteeCap:                           settings.AffiliateRebatePerInviteeCap,
+		AffiliateRebateCap:                                     settings.AffiliateRebateCap,
+		AffiliateRebateInviteeLimit:                            settings.AffiliateRebateInviteeLimit,
+		AffiliateSignupBonus:                                   settings.AffiliateSignupBonus,
 		AdminRechargeRebateEnabled:                             settings.AdminRechargeRebateEnabled,
 		DefaultUserRPMLimit:                                    settings.DefaultUserRPMLimit,
 		DefaultSubscriptions:                                   defaultSubscriptions,
@@ -386,6 +398,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		ModelPlazaDescription: settings.ModelPlazaDescription,
 
 		AffiliateEnabled: settings.AffiliateEnabled,
+		TicketEnabled:    settings.TicketEnabled,
 
 		AccountSchedulingThresholds: settings.AccountSchedulingThresholds,
 		AllowUserViewErrorRequests:  settings.AllowUserViewErrorRequests,

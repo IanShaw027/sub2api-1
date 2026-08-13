@@ -9,6 +9,7 @@ import type {
   CustomMenuItem,
   LoginAgreementDocument,
   NotifyEmailEntry,
+  SupportQRCodeEntry,
 } from "@/types";
 
 export interface DefaultSubscriptionSetting {
@@ -416,6 +417,9 @@ export interface SystemSettings {
   affiliate_rebate_freeze_hours: number;
   affiliate_rebate_duration_days: number;
   affiliate_rebate_per_invitee_cap: number;
+  affiliate_rebate_cap: number;
+  affiliate_rebate_invitee_limit: number;
+  affiliate_signup_bonus: number;
   affiliate_admin_recharge_enabled: boolean;
   default_concurrency: number;
   default_user_rpm_limit: number;
@@ -471,7 +475,9 @@ export interface SystemSettings {
   site_subtitle: string;
   api_base_url: string;
   contact_info: string;
+  support_qr_codes: SupportQRCodeEntry[];
   doc_url: string;
+  download_tools_url: string;
   home_content: string;
   compact_home_enabled: boolean;
   hide_ccs_import_button: boolean;
@@ -723,6 +729,7 @@ export interface SystemSettings {
 
   // Affiliate (邀请返利) feature switch
   affiliate_enabled: boolean;
+  ticket_enabled: boolean;
 
   // OpenAI fast/flex policy
   openai_fast_policy_settings?: OpenAIFastPolicySettings;
@@ -754,6 +761,9 @@ export interface UpdateSettingsRequest {
   affiliate_rebate_freeze_hours?: number;
   affiliate_rebate_duration_days?: number;
   affiliate_rebate_per_invitee_cap?: number;
+  affiliate_rebate_cap?: number;
+  affiliate_rebate_invitee_limit?: number;
+  affiliate_signup_bonus?: number;
   affiliate_admin_recharge_enabled?: boolean;
   default_concurrency?: number;
   default_user_rpm_limit?: number;
@@ -808,7 +818,9 @@ export interface UpdateSettingsRequest {
   site_subtitle?: string;
   api_base_url?: string;
   contact_info?: string;
+  support_qr_codes?: SupportQRCodeEntry[];
   doc_url?: string;
+  download_tools_url?: string;
   home_content?: string;
   compact_home_enabled?: boolean;
   hide_ccs_import_button?: boolean;
@@ -1021,6 +1033,7 @@ export interface UpdateSettingsRequest {
 
   // Affiliate (邀请返利) feature switch
   affiliate_enabled?: boolean;
+  ticket_enabled?: boolean;
 
   // OpenAI fast/flex policy
   openai_fast_policy_settings?: OpenAIFastPolicySettings;
