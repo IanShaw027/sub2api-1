@@ -96,6 +96,14 @@ func (r *paymentFulfillmentAffiliateRepoStub) GetAccruedRebateFromInvitee(contex
 	return 0, nil
 }
 
+func (r *paymentFulfillmentAffiliateRepoStub) CountDistinctRebateInvitees(context.Context, int64) (int, error) {
+	return 0, nil
+}
+
+func (r *paymentFulfillmentAffiliateRepoStub) ApplySignupBonus(context.Context, int64, float64) (bool, error) {
+	return false, nil
+}
+
 func (r *paymentFulfillmentAffiliateRepoStub) ThawFrozenQuota(context.Context, int64) (float64, error) {
 	panic("unexpected ThawFrozenQuota call")
 }

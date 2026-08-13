@@ -96,8 +96,9 @@
           <input v-model="invoiceForm.title" class="input mt-1 w-full" />
         </div>
         <div>
-          <label class="input-label">{{ t('payment.invoices.taxNumber') }}</label>
-          <input v-model="invoiceForm.tax_number" class="input mt-1 w-full" />
+          <label class="input-label">{{ t('payment.invoices.taxNumber') }} <span class="text-red-500">*</span></label>
+          <input v-model="invoiceForm.tax_number" class="input mt-1 w-full" required />
+          <p class="mt-1 text-xs text-gray-500">{{ t('payment.invoices.taxNumberRequired') }}</p>
         </div>
         <div>
           <label class="input-label">{{ t('payment.invoices.email') }}</label>
@@ -119,7 +120,7 @@
       <template #footer>
         <div class="flex justify-end gap-3">
           <button class="btn btn-secondary" @click="showInvoiceDialog = false">{{ t('common.cancel') }}</button>
-          <button class="btn btn-primary" :disabled="actionLoading || !invoiceForm.title.trim() || !invoiceForm.email.trim()" @click="confirmInvoice">
+          <button class="btn btn-primary" :disabled="actionLoading || !invoiceForm.title.trim() || !invoiceForm.tax_number.trim() || !invoiceForm.email.trim()" @click="confirmInvoice">
             {{ actionLoading ? t('common.processing') : t('payment.invoices.apply') }}
           </button>
         </div>

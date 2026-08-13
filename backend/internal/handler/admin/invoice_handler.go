@@ -182,6 +182,39 @@ func (h *InvoiceHandler) DownloadGrant(c *gin.Context) {
 	response.Success(c, grant)
 }
 
+func (h *InvoiceHandler) DownloadFile(c *gin.Context) {
+	id, ok := parseAdminInvoiceID(c)
+	if !ok {
+		return
+	}
+	view, err := h.invoiceService.Get(c.Request.Context(), id, 0, true)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if view.FileMediaID == nil {
+		response.ErrorFrom(c, service.ErrInvoiceFileRequired)
+		return
+	}
+	asset, rc, err := h.mediaService.OpenForActor(c.Request.Context(), service.OpenForActorInput{
+		AssetID:      *view.FileMediaID,
+		ActorIsAdmin: true,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	defer func() { _ = rc.Close() }()
+	filename := view.FileName
+	if filename == "" {
+		filename = asset.Filename
+	}
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Content-Disposition", service.MediaContentDisposition(filename))
+	c.DataFromReader(http.StatusOK, asset.Size, asset.MIME, rc, nil)
+}
+
 func parseAdminInvoiceID(c *gin.Context) (int64, bool) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || id <= 0 {

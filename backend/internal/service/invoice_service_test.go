@@ -28,13 +28,20 @@ func TestInvoiceApplyRequiresCompletedInvoiceEnabledOrders(t *testing.T) {
 		Title: "Acme", Email: "billing@example.com",
 	})
 	require.Error(t, err)
+	require.Equal(t, "INVOICE_TAX_NUMBER_REQUIRED", infraerrors.Reason(err))
+
+	_, err = svc.Apply(ctx, ApplyInvoiceInput{
+		UserID: userID, UserEmail: "apply@example.com", OrderIDs: []int64{pending.ID},
+		Title: "Acme", TaxNumber: "91110000", Email: "billing@example.com",
+	})
+	require.Error(t, err)
 	require.Equal(t, "INVOICE_ORDER_NOT_ELIGIBLE", infraerrors.Reason(err))
 
 	disabled := createInvoiceTestProviderNamed(t, client, "disabled-inv", false)
 	completedDisabled := createInvoiceTestOrder(t, client, userID, disabled.ID, OrderStatusCompleted, 20)
 	_, err = svc.Apply(ctx, ApplyInvoiceInput{
 		UserID: userID, UserEmail: "apply@example.com", OrderIDs: []int64{completedDisabled.ID},
-		Title: "Acme", Email: "billing@example.com",
+		Title: "Acme", TaxNumber: "91110000", Email: "billing@example.com",
 	})
 	require.Error(t, err)
 	require.Equal(t, "INVOICE_CHANNEL_DISABLED", infraerrors.Reason(err))
@@ -67,7 +74,7 @@ func TestInvoiceApplyMergesOrdersAndBlocksOccupancy(t *testing.T) {
 	_, err = svc.Apply(ctx, ApplyInvoiceInput{
 		UserID: userID, UserEmail: "merge@example.com",
 		OrderIDs: []int64{o2.ID},
-		Title:    "Acme Ltd", Email: "billing@example.com",
+		Title:    "Acme Ltd", TaxNumber: "91110000", Email: "billing@example.com",
 	})
 	require.Error(t, err)
 	require.Equal(t, "INVOICE_ORDER_OCCUPIED", infraerrors.Reason(err))
@@ -84,7 +91,7 @@ func TestInvoiceApplyRejectsOtherUsersOrdersAndTooMany(t *testing.T) {
 
 	_, err := svc.Apply(ctx, ApplyInvoiceInput{
 		UserID: other, UserEmail: "other@example.com", OrderIDs: []int64{order.ID},
-		Title: "X", Email: "x@example.com",
+		Title: "X", TaxNumber: "91110000", Email: "x@example.com",
 	})
 	require.Error(t, err)
 	require.Equal(t, "INVOICE_ORDER_NOT_ELIGIBLE", infraerrors.Reason(err))
@@ -95,7 +102,7 @@ func TestInvoiceApplyRejectsOtherUsersOrdersAndTooMany(t *testing.T) {
 	}
 	_, err = svc.Apply(ctx, ApplyInvoiceInput{
 		UserID: owner, UserEmail: "owner@example.com", OrderIDs: ids,
-		Title: "X", Email: "x@example.com",
+		Title: "X", TaxNumber: "91110000", Email: "x@example.com",
 	})
 	require.Error(t, err)
 	require.Equal(t, "INVOICE_TOO_MANY_ORDERS", infraerrors.Reason(err))
@@ -111,7 +118,7 @@ func TestInvoiceUserCancelReleasesOrdersAdminCannotCancelIssued(t *testing.T) {
 
 	applied, err := svc.Apply(ctx, ApplyInvoiceInput{
 		UserID: userID, UserEmail: "cancel@example.com", OrderIDs: []int64{order.ID},
-		Title: "Acme", Email: "billing@example.com",
+		Title: "Acme", TaxNumber: "91110000", Email: "billing@example.com",
 	})
 	require.NoError(t, err)
 
@@ -122,7 +129,7 @@ func TestInvoiceUserCancelReleasesOrdersAdminCannotCancelIssued(t *testing.T) {
 
 	reapplied, err := svc.Apply(ctx, ApplyInvoiceInput{
 		UserID: userID, UserEmail: "cancel@example.com", OrderIDs: []int64{order.ID},
-		Title: "Acme", Email: "billing@example.com",
+		Title: "Acme", TaxNumber: "91110000", Email: "billing@example.com",
 	})
 	require.NoError(t, err)
 
@@ -150,7 +157,7 @@ func TestInvoiceIssueRequiresPrivateInvoiceMediaAndSendsDetailURLOnly(t *testing
 	order := createInvoiceTestOrder(t, client, userID, inst.ID, OrderStatusCompleted, 12)
 	applied, err := svc.Apply(ctx, ApplyInvoiceInput{
 		UserID: userID, UserEmail: "issue@example.com", OrderIDs: []int64{order.ID},
-		Title: "Acme", Email: "billing@example.com",
+		Title: "Acme", TaxNumber: "91110000", Email: "billing@example.com",
 	})
 	require.NoError(t, err)
 
@@ -185,6 +192,76 @@ func TestInvoiceIssueRequiresPrivateInvoiceMediaAndSendsDetailURLOnly(t *testing
 	require.Empty(t, relative.InvoiceDetailURL(ctx, issued.ID))
 }
 
+type captureInvoiceMailer struct {
+	baseURL string
+	last    NotificationEmailSendInput
+	sends   int
+}
+
+func (c *captureInvoiceMailer) Send(_ context.Context, in NotificationEmailSendInput) error {
+	c.last = in
+	c.sends++
+	return nil
+}
+
+func (c *captureInvoiceMailer) PublicBaseURL(context.Context) string {
+	return c.baseURL
+}
+
+func TestInvoiceIssuedEmailIncludesTimeLimitedDownloadAndResendBypassesDedup(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := NewInvoiceService(client, nil)
+	mediaSvc, store, repo := newTestMediaService(t)
+	mailer := &captureInvoiceMailer{baseURL: "https://api.example.com"}
+	svc.notificationEmailService = mailer
+	svc.mediaService = mediaSvc
+
+	userID := createInvoiceTestUser(t, client, "email-dl@example.com")
+	inst := createInvoiceTestProvider(t, client, true)
+	order := createInvoiceTestOrder(t, client, userID, inst.ID, OrderStatusCompleted, 12)
+	applied, err := svc.Apply(ctx, ApplyInvoiceInput{
+		UserID: userID, UserEmail: "email-dl@example.com", OrderIDs: []int64{order.ID},
+		Title: "Acme", TaxNumber: "91110000", Email: "billing@example.com",
+	})
+	require.NoError(t, err)
+
+	mediaID := createInvoiceTestMedia(t, client, userID, applied.ID)
+	repo.byID[mediaID] = &MediaAsset{
+		ID:          mediaID,
+		OwnerUserID: userID,
+		BizType:     MediaBizInvoice,
+		Status:      MediaStatusReady,
+		StorageKey:  "media/invoice-email.pdf",
+		MIME:        "application/pdf",
+		Filename:    "invoice.pdf",
+		Size:        12,
+	}
+	store.objects["media/invoice-email.pdf"] = []byte("%PDF-1.4")
+
+	issued, err := svc.Issue(ctx, applied.ID, mediaID)
+	require.NoError(t, err)
+	require.Equal(t, 1, mailer.sends)
+	require.Equal(t, "auto", mailer.last.ReminderKey)
+	require.Contains(t, mailer.last.Variables["invoice_download_url"], "https://api.example.com/api/v1/media/download/")
+	require.Contains(t, mailer.last.Variables["invoice_download_url"], "expires=")
+	require.Contains(t, mailer.last.Variables["invoice_download_url"], "sig=")
+	require.Equal(t, "https://api.example.com/invoices/"+strconv.FormatInt(issued.ID, 10), mailer.last.Variables["detail_url"])
+
+	grant, err := mediaSvc.CreateDownloadGrant(ctx, CreateDownloadGrantInput{
+		AssetID:       mediaID,
+		ActorUserID:   userID,
+		TTLMinutes:    InvoiceEmailDownloadTTLMinutes,
+		MaxTTLMinutes: InvoiceEmailDownloadTTLMinutes,
+	})
+	require.NoError(t, err)
+	require.Equal(t, InvoiceEmailDownloadTTLMinutes, grant.TTL)
+
+	require.NoError(t, svc.ResendIssuedEmail(ctx, applied.ID))
+	require.Equal(t, 2, mailer.sends)
+	require.True(t, strings.HasPrefix(mailer.last.ReminderKey, "resend:"))
+}
+
 func TestInvoiceIssueRejectsWhenLinkedOrderNoLongerCompleted(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
@@ -194,7 +271,7 @@ func TestInvoiceIssueRejectsWhenLinkedOrderNoLongerCompleted(t *testing.T) {
 	order := createInvoiceTestOrder(t, client, userID, inst.ID, OrderStatusCompleted, 18)
 	applied, err := svc.Apply(ctx, ApplyInvoiceInput{
 		UserID: userID, UserEmail: "", OrderIDs: []int64{order.ID},
-		Title: "Acme", Email: "billing@example.com",
+		Title: "Acme", TaxNumber: "91110000", Email: "billing@example.com",
 	})
 	require.NoError(t, err)
 	require.Equal(t, "user@example.com", applied.UserEmail)
@@ -216,12 +293,12 @@ func TestInvoiceRefundInterlockIssuedBlocksAppliedCancels(t *testing.T) {
 
 	applied, err := svc.Apply(ctx, ApplyInvoiceInput{
 		UserID: userID, UserEmail: "refund@example.com", OrderIDs: []int64{appliedOrder.ID},
-		Title: "Acme", Email: "billing@example.com",
+		Title: "Acme", TaxNumber: "91110000", Email: "billing@example.com",
 	})
 	require.NoError(t, err)
 	issuedApp, err := svc.Apply(ctx, ApplyInvoiceInput{
 		UserID: userID, UserEmail: "refund@example.com", OrderIDs: []int64{issuedOrder.ID},
-		Title: "Acme", Email: "billing@example.com",
+		Title: "Acme", TaxNumber: "91110000", Email: "billing@example.com",
 	})
 	require.NoError(t, err)
 	_, err = svc.Issue(ctx, issuedApp.ID, createInvoiceTestMedia(t, client, userID, issuedApp.ID))
@@ -250,7 +327,7 @@ func TestInvoiceAppliedCancelsOnRefundSuccess(t *testing.T) {
 	order := createInvoiceTestOrder(t, client, userID, inst.ID, OrderStatusCompleted, 22)
 	applied, err := invoiceSvc.Apply(ctx, ApplyInvoiceInput{
 		UserID: userID, UserEmail: "refund-cancel@example.com", OrderIDs: []int64{order.ID},
-		Title: "Acme", Email: "billing@example.com",
+		Title: "Acme", TaxNumber: "91110000", Email: "billing@example.com",
 	})
 	require.NoError(t, err)
 
@@ -282,7 +359,7 @@ func TestInvoiceIssuedBlocksRefundUnlessForced(t *testing.T) {
 	order := createInvoiceTestOrder(t, client, userID, inst.ID, OrderStatusCompleted, 40)
 	applied, err := invoiceSvc.Apply(ctx, ApplyInvoiceInput{
 		UserID: userID, UserEmail: "block-refund@example.com", OrderIDs: []int64{order.ID},
-		Title: "Acme", Email: "billing@example.com",
+		Title: "Acme", TaxNumber: "91110000", Email: "billing@example.com",
 	})
 	require.NoError(t, err)
 	_, err = invoiceSvc.Issue(ctx, applied.ID, createInvoiceTestMedia(t, client, userID, applied.ID))
@@ -291,8 +368,11 @@ func TestInvoiceIssuedBlocksRefundUnlessForced(t *testing.T) {
 	pay := &PaymentService{entClient: client, invoiceGuard: invoiceSvc}
 	_, err = pay.validateRefundRequest(ctx, order.ID, userID)
 	require.Equal(t, "INVOICE_ISSUED", infraerrors.Reason(err))
-	_, _, err = pay.PrepareRefund(ctx, order.ID, 40, "test", false, false)
-	require.Equal(t, "INVOICE_ISSUED", infraerrors.Reason(err))
+	_, result, err := pay.PrepareRefund(ctx, order.ID, 40, "test", false, false)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.RequireForce)
+	require.Contains(t, result.Warning, "issued invoice")
 	plan, result, err := pay.PrepareRefund(ctx, order.ID, 40, "force", true, false)
 	require.NoError(t, err)
 	require.Nil(t, result)
@@ -308,11 +388,11 @@ func TestInvoiceIssuedBlocksRefundUnlessForced(t *testing.T) {
 	require.NoError(t, err)
 	reloaded, err := invoiceSvc.Get(ctx, applied.ID, userID, true)
 	require.NoError(t, err)
-	require.Equal(t, InvoiceStatusCancelled, reloaded.Status)
-	require.False(t, reloaded.Orders[0].IsActive)
+	require.Equal(t, InvoiceStatusIssued, reloaded.Status)
+	require.True(t, reloaded.Orders[0].IsActive)
 	issued, err := invoiceSvc.HasActiveIssuedInvoiceForOrder(ctx, order.ID)
 	require.NoError(t, err)
-	require.False(t, issued)
+	require.True(t, issued)
 }
 
 func TestInvoiceGetHidesOtherUsersAndMarksAdminRead(t *testing.T) {
@@ -325,7 +405,7 @@ func TestInvoiceGetHidesOtherUsersAndMarksAdminRead(t *testing.T) {
 	order := createInvoiceTestOrder(t, client, userID, inst.ID, OrderStatusCompleted, 4)
 	applied, err := svc.Apply(ctx, ApplyInvoiceInput{
 		UserID: userID, UserEmail: "read@example.com", OrderIDs: []int64{order.ID},
-		Title: "Acme", Email: "billing@example.com",
+		Title: "Acme", TaxNumber: "91110000", Email: "billing@example.com",
 	})
 	require.NoError(t, err)
 	require.Equal(t, 1, mustInvoiceUnread(t, svc))
@@ -360,7 +440,7 @@ func TestInvoiceApplyRejectsMixedCurrency(t *testing.T) {
 	_, err = svc.Apply(ctx, ApplyInvoiceInput{
 		UserID: userID, UserEmail: "fx@example.com",
 		OrderIDs: []int64{cny.ID, usd.ID},
-		Title:    "Acme", Email: "billing@example.com",
+		Title:    "Acme", TaxNumber: "91110000", Email: "billing@example.com",
 	})
 	require.Error(t, err)
 	require.Equal(t, "INVOICE_MIXED_CURRENCY", infraerrors.Reason(err))

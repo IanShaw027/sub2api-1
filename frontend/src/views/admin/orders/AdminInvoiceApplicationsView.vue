@@ -42,10 +42,20 @@
 
     <BaseDialog :show="!!detail" :title="t('payment.invoices.detail')" @close="detail = null">
       <div v-if="detail" class="space-y-4">
-        <p class="text-sm">{{ detail.title }} · {{ detail.invoice_amount.toFixed(2) }}{{ detail.currency ? ' ' + detail.currency : '' }} · {{ t('payment.invoices.status.' + detail.status) }}</p>
-        <p class="text-xs text-gray-500">{{ detail.email }} / {{ detail.tax_number }}</p>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <p class="text-sm">{{ detail.title }} · {{ detail.invoice_amount.toFixed(2) }}{{ detail.currency ? ' ' + detail.currency : '' }}</p>
+          <p class="text-sm">{{ t('payment.invoices.status.' + detail.status) }}</p>
+          <p class="text-xs text-gray-500">{{ detail.email }} / {{ detail.tax_number || '-' }}</p>
+          <p class="text-xs text-gray-500">{{ detail.contact_name || '-' }} / {{ detail.contact_phone || '-' }}</p>
+          <p class="text-xs text-gray-500">{{ t('payment.invoices.fileName') }}: {{ detail.file_name || '-' }}</p>
+          <p class="text-xs text-gray-500">{{ t('payment.invoices.orderCount') }}: {{ detail.order_count }}</p>
+        </div>
+        <p v-if="detail.request_note" class="text-sm text-gray-600 dark:text-gray-300">{{ detail.request_note }}</p>
         <ul class="text-sm">
-          <li v-for="item in detail.orders || []" :key="item.order_id">#{{ item.order_id }} {{ item.out_trade_no }}</li>
+          <li v-for="item in detail.orders || []" :key="item.order_id" class="flex justify-between">
+            <span class="font-mono">#{{ item.order_id }} {{ item.out_trade_no }}</span>
+            <span>{{ item.pay_amount_snapshot.toFixed(2) }}{{ item.currency ? ' ' + item.currency : '' }}</span>
+          </li>
         </ul>
         <div v-if="detail.status === 'applied'">
           <label class="input-label">{{ t('payment.invoices.uploadFile') }}</label>
@@ -187,8 +197,13 @@ async function resend() {
 async function download() {
   if (!detail.value) return
   try {
-    const res = await adminPaymentAPI.getInvoiceDownloadGrant(detail.value.id)
-    window.open(res.data.url, '_blank', 'noopener')
+    const res = await adminPaymentAPI.downloadInvoiceFile(detail.value.id)
+    const url = URL.createObjectURL(res.data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = detail.value.file_name || `invoice-${detail.value.id}.pdf`
+    link.click()
+    URL.revokeObjectURL(url)
   } catch (err: unknown) {
     appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
   }

@@ -230,8 +230,10 @@ func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float
 	if !inst.RefundEnabled {
 		return nil, nil, infraerrors.Forbidden("REFUND_DISABLED", "refund is not enabled for this provider")
 	}
-	if err := s.rejectRefundIfInvoiceIssued(ctx, oid, force); err != nil {
+	if warning, err := s.invoiceIssuedRefundWarning(ctx, oid, force); err != nil {
 		return nil, nil, err
+	} else if warning != nil {
+		return nil, warning, nil
 	}
 	if math.IsNaN(amt) || math.IsInf(amt, 0) {
 		return nil, nil, infraerrors.BadRequest("INVALID_AMOUNT", "invalid refund amount")
@@ -749,6 +751,24 @@ func (s *PaymentService) rejectRefundIfInvoiceIssued(ctx context.Context, orderI
 		return ErrInvoiceIssuedRefundBlock
 	}
 	return nil
+}
+
+func (s *PaymentService) invoiceIssuedRefundWarning(ctx context.Context, orderID int64, force bool) (*RefundResult, error) {
+	if s == nil || s.invoiceGuard == nil {
+		return nil, nil
+	}
+	issued, err := s.invoiceGuard.HasActiveIssuedInvoiceForOrder(ctx, orderID)
+	if err != nil {
+		return nil, err
+	}
+	if issued && !force {
+		return &RefundResult{
+			Success:      false,
+			Warning:      "issued invoice requires a red-flush (红冲) before refund; use force to continue",
+			RequireForce: true,
+		}, nil
+	}
+	return nil, nil
 }
 
 func (s *PaymentService) cancelAppliedInvoicesAfterRefund(ctx context.Context, client *dbent.Client, orderID int64, force bool) error {

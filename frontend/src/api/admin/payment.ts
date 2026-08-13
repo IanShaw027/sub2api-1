@@ -231,6 +231,10 @@ export const adminPaymentAPI = {
   getInvoiceDownloadGrant(id: number) {
     return apiClient.post<{ url: string; expires_at: number; ttl_minutes: number }>(`/admin/payment/invoices/${id}/download-grant`)
   },
+
+  downloadInvoiceFile(id: number) {
+    return apiClient.get<Blob>(`/admin/payment/invoices/${id}/file`, { responseType: 'blob' })
+  },
 }
 
 export default adminPaymentAPI

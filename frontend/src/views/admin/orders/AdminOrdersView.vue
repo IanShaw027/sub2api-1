@@ -276,7 +276,9 @@ async function handleRefund(data: { amount: number; reason: string; deduct_balan
       // balance after requesting the refund). Keep the dialog open and surface
       // the force checkbox instead of dropping the admin back to the list.
       refundRequireForce.value = true
-      refundWarning.value = res.data.warning || ''
+      refundWarning.value = /issued invoice|红冲|INVOICE_ISSUED/i.test(res.data.warning || '')
+        ? t('payment.admin.invoiceRefundIssuedWarning')
+        : (res.data.warning || '')
       return
     }
     appStore.showError(res.data.warning || t('common.error'))

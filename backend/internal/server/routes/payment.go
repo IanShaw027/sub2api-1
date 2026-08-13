@@ -54,6 +54,7 @@ func RegisterPaymentRoutes(
 			invoices.GET("/eligible-providers", invoiceHandler.EligibleProviders)
 			invoices.GET("/:id", invoiceHandler.GetMine)
 			invoices.POST("/:id/cancel", invoiceHandler.CancelMine)
+			invoices.GET("/:id/file", invoiceHandler.DownloadFile)
 			invoices.POST("/:id/download-grant", invoiceHandler.DownloadGrant)
 		}
 	}
@@ -130,6 +131,7 @@ func RegisterPaymentRoutes(
 			adminInvoices.POST("/:id/cancel", adminInvoiceHandler.Cancel)
 			adminInvoices.POST("/:id/issue", adminInvoiceHandler.Issue)
 			adminInvoices.POST("/:id/resend-email", adminInvoiceHandler.ResendEmail)
+			adminInvoices.GET("/:id/file", adminInvoiceHandler.DownloadFile)
 			adminInvoices.POST("/:id/download-grant", adminInvoiceHandler.DownloadGrant)
 		}
 	}

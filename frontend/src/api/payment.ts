@@ -121,4 +121,8 @@ export const paymentAPI = {
   getInvoiceDownloadGrant(id: number) {
     return apiClient.post<{ url: string; expires_at: number; ttl_minutes: number }>(`/payment/invoices/${id}/download-grant`)
   },
+
+  downloadInvoiceFile(id: number) {
+    return apiClient.get<Blob>(`/payment/invoices/${id}/file`, { responseType: 'blob' })
+  },
 }

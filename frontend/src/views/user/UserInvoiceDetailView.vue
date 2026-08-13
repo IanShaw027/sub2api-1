@@ -39,6 +39,22 @@
             <p class="text-xs text-gray-500">{{ t('payment.invoices.email') }}</p>
             <p>{{ invoice.email }}</p>
           </div>
+          <div>
+            <p class="text-xs text-gray-500">{{ t('payment.invoices.contactName') }}</p>
+            <p>{{ invoice.contact_name || '-' }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-500">{{ t('payment.invoices.contactPhone') }}</p>
+            <p>{{ invoice.contact_phone || '-' }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-500">{{ t('payment.invoices.note') }}</p>
+            <p>{{ invoice.request_note || '-' }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-gray-500">{{ t('payment.invoices.fileName') }}</p>
+            <p>{{ invoice.file_name || '-' }}</p>
+          </div>
         </div>
 
         <div>
@@ -100,8 +116,13 @@ async function download() {
   if (!invoice.value) return
   actionLoading.value = true
   try {
-    const res = await paymentAPI.getInvoiceDownloadGrant(invoice.value.id)
-    window.open(res.data.url, '_blank', 'noopener')
+    const res = await paymentAPI.downloadInvoiceFile(invoice.value.id)
+    const url = URL.createObjectURL(res.data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = invoice.value.file_name || `invoice-${invoice.value.id}.pdf`
+    link.click()
+    URL.revokeObjectURL(url)
   } catch (err: unknown) {
     appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
   } finally {

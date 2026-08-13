@@ -904,97 +904,115 @@ func isSafeNotificationEmailURL(raw string) bool {
 func notificationEmailSampleVariables(locale string) map[string]string {
 	if normalizeNotificationLocale(locale) == notificationEmailLocaleChinese {
 		variables := map[string]string{
-			"site_name":           defaultSiteName,
-			"recipient_name":      "张三",
-			"recipient_email":     "user@example.com",
-			"verification_code":   "123456",
-			"expires_in_minutes":  "15",
-			"reset_url":           "https://example.com/reset-password?token=preview",
-			"subscription_group":  "Claude Pro",
-			"subscription_days":   "30",
-			"expiry_time":         "2026-06-18 12:00",
-			"days_remaining":      "3",
-			"current_balance":     "12.34",
-			"threshold":           "20.00",
-			"recharge_url":        "https://example.com/recharge",
-			"recharge_amount":     "50.00",
-			"order_id":            "1024",
-			"unsubscribe_url":     "https://example.com/unsubscribe",
-			"account_id":          "1001",
-			"account_name":        "openai-main",
-			"platform":            "openai",
-			"quota_dimension":     "每日额度",
-			"quota_used":          "80.00",
-			"quota_limit":         "100.00",
-			"quota_remaining":     "20.00",
-			"quota_threshold":     "20%",
-			"triggered_at":        "2026-05-20 12:00:00",
-			"group_name":          "默认分组",
-			"moderation_category": "violence",
-			"moderation_score":    "0.982",
-			"violation_count":     "2",
-			"ban_threshold":       "3",
-			"rule_name":           "错误率过高",
-			"severity":            "critical",
-			"alert_status":        "firing",
-			"metric_type":         "error_rate",
-			"operator":            ">=",
-			"metric_value":        "12.50",
-			"threshold_value":     "10.00",
-			"alert_description":   "最近 10 分钟错误率超过阈值",
-			"report_name":         "日报",
-			"report_type":         "daily_summary",
-			"report_start_time":   "2026-07-18T01:00:26Z",
-			"report_end_time":     "2026-07-19T01:00:26Z",
-			"report_html":         "<h2>日报</h2><p>请求量：2,374</p>",
+			"site_name":              defaultSiteName,
+			"recipient_name":         "张三",
+			"recipient_email":        "user@example.com",
+			"verification_code":      "123456",
+			"expires_in_minutes":     "15",
+			"reset_url":              "https://example.com/reset-password?token=preview",
+			"subscription_group":     "Claude Pro",
+			"subscription_days":      "30",
+			"expiry_time":            "2026-06-18 12:00",
+			"days_remaining":         "3",
+			"current_balance":        "12.34",
+			"threshold":              "20.00",
+			"recharge_url":           "https://example.com/recharge",
+			"recharge_amount":        "50.00",
+			"order_id":               "1024",
+			"unsubscribe_url":        "https://example.com/unsubscribe",
+			"account_id":             "1001",
+			"account_name":           "openai-main",
+			"platform":               "openai",
+			"quota_dimension":        "每日额度",
+			"quota_used":             "80.00",
+			"quota_limit":            "100.00",
+			"quota_remaining":        "20.00",
+			"quota_threshold":        "20%",
+			"triggered_at":           "2026-05-20 12:00:00",
+			"group_name":             "默认分组",
+			"moderation_category":    "violence",
+			"moderation_score":       "0.982",
+			"violation_count":        "2",
+			"ban_threshold":          "3",
+			"rule_name":              "错误率过高",
+			"severity":               "critical",
+			"alert_status":           "firing",
+			"metric_type":            "error_rate",
+			"operator":               ">=",
+			"metric_value":           "12.50",
+			"threshold_value":        "10.00",
+			"alert_description":      "最近 10 分钟错误率超过阈值",
+			"report_name":            "日报",
+			"report_type":            "daily_summary",
+			"report_start_time":      "2026-07-18T01:00:26Z",
+			"report_end_time":        "2026-07-19T01:00:26Z",
+			"report_html":            "<h2>日报</h2><p>请求量：2,374</p>",
+			"invoice_id":             "9",
+			"invoice_title":          "某某科技有限公司",
+			"tax_number":             "91110000MA01234567",
+			"invoice_amount":         "12.00",
+			"invoice_amount_display": "12.00 CNY",
+			"order_count":            "2",
+			"invoice_file_name":      "invoice.pdf",
+			"invoice_download_url":   "https://example.com/api/v1/media/download/1?expires=1&sig=preview",
+			"detail_url":             "https://example.com/invoices/9",
 		}
 		addNotificationEmailOpsSummarySampleVariables(variables)
 		return variables
 	}
 	variables := map[string]string{
-		"site_name":           defaultSiteName,
-		"recipient_name":      "Alex",
-		"recipient_email":     "user@example.com",
-		"verification_code":   "123456",
-		"expires_in_minutes":  "15",
-		"reset_url":           "https://example.com/reset-password?token=preview",
-		"subscription_group":  "Claude Pro",
-		"subscription_days":   "30",
-		"expiry_time":         "2026-06-18 12:00",
-		"days_remaining":      "3",
-		"current_balance":     "12.34",
-		"threshold":           "20.00",
-		"recharge_url":        "https://example.com/recharge",
-		"recharge_amount":     "50.00",
-		"order_id":            "1024",
-		"unsubscribe_url":     "https://example.com/unsubscribe",
-		"account_id":          "1001",
-		"account_name":        "openai-main",
-		"platform":            "openai",
-		"quota_dimension":     "Daily quota",
-		"quota_used":          "80.00",
-		"quota_limit":         "100.00",
-		"quota_remaining":     "20.00",
-		"quota_threshold":     "20%",
-		"triggered_at":        "2026-05-20 12:00:00",
-		"group_name":          "Default group",
-		"moderation_category": "violence",
-		"moderation_score":    "0.982",
-		"violation_count":     "2",
-		"ban_threshold":       "3",
-		"rule_name":           "High error rate",
-		"severity":            "critical",
-		"alert_status":        "firing",
-		"metric_type":         "error_rate",
-		"operator":            ">=",
-		"metric_value":        "12.50",
-		"threshold_value":     "10.00",
-		"alert_description":   "Error rate exceeded threshold in the last 10 minutes.",
-		"report_name":         "Daily summary",
-		"report_type":         "daily_summary",
-		"report_start_time":   "2026-07-18T01:00:26Z",
-		"report_end_time":     "2026-07-19T01:00:26Z",
-		"report_html":         "<h2>Daily summary</h2><p>Requests: 2,374</p>",
+		"site_name":              defaultSiteName,
+		"recipient_name":         "Alex",
+		"recipient_email":        "user@example.com",
+		"verification_code":      "123456",
+		"expires_in_minutes":     "15",
+		"reset_url":              "https://example.com/reset-password?token=preview",
+		"subscription_group":     "Claude Pro",
+		"subscription_days":      "30",
+		"expiry_time":            "2026-06-18 12:00",
+		"days_remaining":         "3",
+		"current_balance":        "12.34",
+		"threshold":              "20.00",
+		"recharge_url":           "https://example.com/recharge",
+		"recharge_amount":        "50.00",
+		"order_id":               "1024",
+		"unsubscribe_url":        "https://example.com/unsubscribe",
+		"account_id":             "1001",
+		"account_name":           "openai-main",
+		"platform":               "openai",
+		"quota_dimension":        "Daily quota",
+		"quota_used":             "80.00",
+		"quota_limit":            "100.00",
+		"quota_remaining":        "20.00",
+		"quota_threshold":        "20%",
+		"triggered_at":           "2026-05-20 12:00:00",
+		"group_name":             "Default group",
+		"moderation_category":    "violence",
+		"moderation_score":       "0.982",
+		"violation_count":        "2",
+		"ban_threshold":          "3",
+		"rule_name":              "High error rate",
+		"severity":               "critical",
+		"alert_status":           "firing",
+		"metric_type":            "error_rate",
+		"operator":               ">=",
+		"metric_value":           "12.50",
+		"threshold_value":        "10.00",
+		"alert_description":      "Error rate exceeded threshold in the last 10 minutes.",
+		"report_name":            "Daily summary",
+		"report_type":            "daily_summary",
+		"report_start_time":      "2026-07-18T01:00:26Z",
+		"report_end_time":        "2026-07-19T01:00:26Z",
+		"report_html":            "<h2>Daily summary</h2><p>Requests: 2,374</p>",
+		"invoice_id":             "9",
+		"invoice_title":          "Acme Ltd",
+		"tax_number":             "91110000MA01234567",
+		"invoice_amount":         "12.00",
+		"invoice_amount_display": "12.00 CNY",
+		"order_count":            "2",
+		"invoice_file_name":      "invoice.pdf",
+		"invoice_download_url":   "https://example.com/api/v1/media/download/1?expires=1&sig=preview",
+		"detail_url":             "https://example.com/invoices/9",
 	}
 	addNotificationEmailOpsSummarySampleVariables(variables)
 	return variables
@@ -1147,12 +1165,14 @@ var notificationEmailEventDefinitions = map[string]NotificationEmailEventInfo{
 			"rule_name", "severity", "alert_status", "metric_type", "operator", "metric_value", "threshold_value", "triggered_at", "alert_description"),
 	},
 	NotificationEmailEventInvoiceIssued: {
-		Event:        NotificationEmailEventInvoiceIssued,
-		Label:        "Invoice issued",
-		Description:  "Sent after an admin issues an invoice. Contains an in-app detail link only — never a file URL.",
-		Category:     "payment",
-		Optional:     true,
-		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...), "invoice_id", "invoice_title", "invoice_amount", "detail_url"),
+		Event:       NotificationEmailEventInvoiceIssued,
+		Label:       "Invoice issued",
+		Description: "Sent after an admin issues an invoice. Includes a 24-hour signed download link; the in-app copy can be regenerated anytime.",
+		Category:    "payment",
+		Optional:    true,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...),
+			"invoice_id", "invoice_title", "tax_number", "invoice_amount", "invoice_amount_display", "order_count",
+			"order_list_html", "invoice_download_url", "invoice_file_name", "detail_url"),
 	},
 	NotificationEmailEventTicketReply: {
 		Event:        NotificationEmailEventTicketReply,
@@ -1484,22 +1504,38 @@ var notificationEmailOfficialTemplates = map[string]map[string]notificationEmail
 	},
 	NotificationEmailEventInvoiceIssued: {
 		notificationEmailDefaultLocale: {
-			Subject: "[{{site_name}}] Invoice issued",
-			HTML: notificationEmailCard("#2563eb", "Invoice issued", `
+			Subject: "[{{site_name}}] Invoice issued - {{invoice_title}}",
+			HTML: notificationEmailCard("#16a34a", "Invoice issued", `
 <p>Hello {{recipient_name}},</p>
-<p>Your invoice <strong>{{invoice_title}}</strong> (amount {{invoice_amount}}) has been issued.</p>
-<p>Invoice ID: {{invoice_id}}</p>
-<p><a class="button" href="{{detail_url}}">View invoice</a></p>
-<p class="muted">Open the link above to download the file. This email does not include a direct file URL.</p>`),
+<p>The invoice you requested has been issued. Details:</p>
+<table style="width:100%;border-collapse:collapse;margin:12px 0;">
+  <tr><td style="padding:6px 0;color:#71717a;">Invoice No.</td><td style="padding:6px 0;">#{{invoice_id}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">Title</td><td style="padding:6px 0;">{{invoice_title}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">Tax No.</td><td style="padding:6px 0;">{{tax_number}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">Amount</td><td style="padding:6px 0;">{{invoice_amount_display}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">Orders</td><td style="padding:6px 0;">{{order_count}}</td></tr>
+</table>
+<div>{{order_list_html}}</div>
+<p style="margin-top:18px;"><a class="button" href="{{invoice_download_url}}">Download invoice ({{invoice_file_name}})</a></p>
+<p><a href="{{detail_url}}">View invoice in your account</a></p>
+<p class="muted">The download link is valid for 24 hours. You can also open "My Invoices" anytime — the system regenerates a fresh download and the file itself does not expire.</p>`),
 		},
 		notificationEmailLocaleChinese: {
-			Subject: "[{{site_name}}] 发票已开具",
-			HTML: notificationEmailCard("#2563eb", "发票已开具", `
+			Subject: "[{{site_name}}] 发票已开具 - {{invoice_title}}",
+			HTML: notificationEmailCard("#16a34a", "发票已开具", `
 <p>{{recipient_name}}，您好：</p>
-<p>您的发票 <strong>{{invoice_title}}</strong>（金额 {{invoice_amount}}）已开具。</p>
-<p>发票编号：{{invoice_id}}</p>
-<p><a class="button" href="{{detail_url}}">查看发票</a></p>
-<p class="muted">请点击上方链接进入站内详情后再下载文件，本邮件不包含文件直链。</p>`),
+<p>您申请的发票已开具完成，详情如下：</p>
+<table style="width:100%;border-collapse:collapse;margin:12px 0;">
+  <tr><td style="padding:6px 0;color:#71717a;">发票号</td><td style="padding:6px 0;">#{{invoice_id}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">抬头</td><td style="padding:6px 0;">{{invoice_title}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">税号</td><td style="padding:6px 0;">{{tax_number}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">金额</td><td style="padding:6px 0;">{{invoice_amount_display}}</td></tr>
+  <tr><td style="padding:6px 0;color:#71717a;">关联订单数</td><td style="padding:6px 0;">{{order_count}}</td></tr>
+</table>
+<div>{{order_list_html}}</div>
+<p style="margin-top:18px;"><a class="button" href="{{invoice_download_url}}">下载发票（{{invoice_file_name}}）</a></p>
+<p><a href="{{detail_url}}">在账户中查看发票</a></p>
+<p class="muted">邮件下载链接 24 小时内有效。您也可以随时登录「我的发票」重新下载：系统会由后端即时回源生成，文件本身不会过期。</p>`),
 		},
 	},
 }

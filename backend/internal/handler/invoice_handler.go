@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -151,6 +152,46 @@ func (h *InvoiceHandler) DownloadGrant(c *gin.Context) {
 		return
 	}
 	response.Success(c, grant)
+}
+
+func (h *InvoiceHandler) DownloadFile(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "invalid invoice id")
+		return
+	}
+	view, err := h.invoiceService.Get(c.Request.Context(), id, subject.UserID, false)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if view.Status != service.InvoiceStatusIssued || view.FileMediaID == nil {
+		response.ErrorFrom(c, service.ErrInvoiceInvalidStatus)
+		return
+	}
+	asset, rc, err := h.mediaService.OpenForActor(c.Request.Context(), service.OpenForActorInput{
+		AssetID:        *view.FileMediaID,
+		ActorUserID:    subject.UserID,
+		VerifiedAccess: true,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	defer func() { _ = rc.Close() }()
+	filename := view.FileName
+	if filename == "" {
+		filename = asset.Filename
+	}
+	c.Header("Cache-Control", "private, no-store")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Content-Disposition", service.MediaContentDisposition(filename))
+	c.DataFromReader(http.StatusOK, asset.Size, asset.MIME, rc, nil)
 }
 
 func (h *InvoiceHandler) EligibleProviders(c *gin.Context) {

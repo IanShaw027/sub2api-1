@@ -163,20 +163,24 @@ func TestNotificationEmailAdditionalEventsAreListedAndPreviewable(t *testing.T) 
 	invoiceInfo, ok := events[NotificationEmailEventInvoiceIssued]
 	require.True(t, ok)
 	require.True(t, invoiceInfo.Optional)
+	require.Contains(t, invoiceInfo.Placeholders, "invoice_download_url")
 	require.Contains(t, invoiceInfo.Placeholders, "detail_url")
 	invoicePreview, err := svc.PreviewTemplate(ctx, NotificationEmailPreviewInput{
 		Event:  NotificationEmailEventInvoiceIssued,
 		Locale: "zh",
 		Variables: map[string]string{
-			"detail_url":     "https://app.example.com/invoices/9",
-			"invoice_title":  "Acme",
-			"invoice_amount": "12.00",
-			"invoice_id":     "9",
+			"detail_url":           "https://app.example.com/invoices/9",
+			"invoice_download_url": "https://api.example.com/api/v1/media/download/1?expires=1700000000&sig=abc",
+			"invoice_title":        "Acme",
+			"invoice_amount":       "12.00",
+			"invoice_id":           "9",
+			"invoice_file_name":    "invoice.pdf",
 		},
 	})
 	require.NoError(t, err)
 	require.Contains(t, invoicePreview.HTML, "https://app.example.com/invoices/9")
-	require.NotContains(t, invoicePreview.HTML, "/media/")
+	require.Contains(t, invoicePreview.HTML, "https://api.example.com/api/v1/media/download/1?expires=1700000000&amp;sig=abc")
+	require.Contains(t, invoicePreview.HTML, "24 小时")
 	require.NotContains(t, strings.ToLower(invoicePreview.HTML), "presign")
 }
 

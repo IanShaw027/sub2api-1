@@ -18,11 +18,21 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
+type invoiceIssuedMailer interface {
+	Send(ctx context.Context, input NotificationEmailSendInput) error
+	PublicBaseURL(ctx context.Context) string
+}
+
+type invoiceMediaAccess interface {
+	CreateDownloadGrant(ctx context.Context, in CreateDownloadGrantInput) (*MediaDownloadGrant, error)
+}
+
 // InvoiceService handles invoice applications, issuance, and refund interlock.
 type InvoiceService struct {
 	entClient                *dbent.Client
 	frontendURL              string
-	notificationEmailService *NotificationEmailService
+	notificationEmailService invoiceIssuedMailer
+	mediaService             invoiceMediaAccess
 }
 
 func NewInvoiceService(entClient *dbent.Client, cfg *config.Config) *InvoiceService {
@@ -35,6 +45,10 @@ func NewInvoiceService(entClient *dbent.Client, cfg *config.Config) *InvoiceServ
 
 func (s *InvoiceService) SetNotificationEmailService(notificationEmailService *NotificationEmailService) {
 	s.notificationEmailService = notificationEmailService
+}
+
+func (s *InvoiceService) SetMediaService(mediaService *MediaService) {
+	s.mediaService = mediaService
 }
 
 func (s *InvoiceService) Apply(ctx context.Context, in ApplyInvoiceInput) (*InvoiceView, error) {
@@ -58,6 +72,9 @@ func (s *InvoiceService) Apply(ctx context.Context, in ApplyInvoiceInput) (*Invo
 	}
 	if _, err := mail.ParseAddress(email); err != nil {
 		return nil, infraerrors.BadRequest("INVOICE_EMAIL_INVALID", "invoice email is invalid")
+	}
+	if strings.TrimSpace(in.TaxNumber) == "" {
+		return nil, ErrInvoiceTaxNumberRequired
 	}
 
 	tx, err := s.entClient.Tx(ctx)
@@ -414,7 +431,7 @@ func (s *InvoiceService) ResendIssuedEmail(ctx context.Context, invoiceID int64)
 	if err != nil {
 		return err
 	}
-	return s.sendIssuedEmailErr(ctx, view)
+	return s.sendIssuedEmailErr(ctx, view, "resend:"+strconv.FormatInt(time.Now().UnixNano(), 10))
 }
 
 func (s *InvoiceService) HasActiveIssuedInvoiceForOrder(ctx context.Context, orderID int64) (bool, error) {
@@ -463,10 +480,9 @@ func (s *InvoiceService) CancelActiveInvoicesForRefund(ctx context.Context, clie
 }
 
 func (s *InvoiceService) cancelActiveInvoices(ctx context.Context, client *dbent.Client, orderID int64, includeIssued bool) error {
+	// ISSUED invoices must be credit-noted (红冲) by finance; never auto-cancel them.
+	_ = includeIssued
 	statuses := []string{InvoiceStatusApplied}
-	if includeIssued {
-		statuses = append(statuses, InvoiceStatusIssued)
-	}
 	links, err := client.InvoiceOrder.Query().
 		Where(
 			invoiceorder.OrderIDEQ(orderID),
@@ -529,16 +545,24 @@ func (s *InvoiceService) viewWithOrders(ctx context.Context, inv *dbent.Invoice,
 }
 
 func (s *InvoiceService) sendIssuedEmail(ctx context.Context, view *InvoiceView) {
-	if err := s.sendIssuedEmailErr(ctx, view); err != nil {
+	if err := s.sendIssuedEmailErr(ctx, view, "auto"); err != nil {
 		slog.Warn("invoice issued email failed", "invoice_id", view.ID, "err", err.Error())
 	}
 }
 
-func (s *InvoiceService) sendIssuedEmailErr(ctx context.Context, view *InvoiceView) error {
+func (s *InvoiceService) sendIssuedEmailErr(ctx context.Context, view *InvoiceView, reminderKey string) error {
 	if s.notificationEmailService == nil || view == nil {
 		return nil
 	}
+	downloadURL, err := s.issuedEmailDownloadURL(ctx, view)
+	if err != nil {
+		return err
+	}
 	detailURL := s.InvoiceDetailURL(ctx, view.ID)
+	amountDisplay := fmt.Sprintf("%.2f", view.InvoiceAmount)
+	if strings.TrimSpace(view.Currency) != "" {
+		amountDisplay = amountDisplay + " " + strings.TrimSpace(view.Currency)
+	}
 	return s.notificationEmailService.Send(ctx, NotificationEmailSendInput{
 		Event:          NotificationEmailEventInvoiceIssued,
 		RecipientEmail: view.Email,
@@ -546,13 +570,80 @@ func (s *InvoiceService) sendIssuedEmailErr(ctx context.Context, view *InvoiceVi
 		UserID:         view.UserID,
 		SourceType:     "invoice",
 		SourceID:       strconv.FormatInt(view.ID, 10),
+		ReminderKey:    reminderKey,
 		Variables: map[string]string{
-			"invoice_id":     strconv.FormatInt(view.ID, 10),
-			"invoice_title":  view.Title,
-			"invoice_amount": fmt.Sprintf("%.2f", view.InvoiceAmount),
-			"detail_url":     detailURL,
+			"invoice_id":             strconv.FormatInt(view.ID, 10),
+			"invoice_title":          view.Title,
+			"tax_number":             view.TaxNumber,
+			"invoice_amount":         fmt.Sprintf("%.2f", view.InvoiceAmount),
+			"invoice_amount_display": amountDisplay,
+			"order_count":            strconv.Itoa(view.OrderCount),
+			"invoice_file_name":      view.FileName,
+			"invoice_download_url":   downloadURL,
+			"detail_url":             detailURL,
+		},
+		RawHTMLVariables: map[string]string{
+			"order_list_html": renderInvoiceOrderListHTML(view.Orders),
 		},
 	})
+}
+
+func (s *InvoiceService) issuedEmailDownloadURL(ctx context.Context, view *InvoiceView) (string, error) {
+	if s.mediaService == nil || view == nil || view.FileMediaID == nil || *view.FileMediaID <= 0 {
+		return "", ErrInvoiceDownloadURLUnavailable
+	}
+	grant, err := s.mediaService.CreateDownloadGrant(ctx, CreateDownloadGrantInput{
+		AssetID:        *view.FileMediaID,
+		ActorUserID:    view.UserID,
+		VerifiedAccess: true,
+		TTLMinutes:     InvoiceEmailDownloadTTLMinutes,
+		MaxTTLMinutes:  InvoiceEmailDownloadTTLMinutes,
+	})
+	if err != nil {
+		return "", err
+	}
+	if grant == nil {
+		return "", ErrInvoiceDownloadURLUnavailable
+	}
+	url := AbsoluteMediaURL(s.apiBaseURL(ctx), grant.URL)
+	if url == "" {
+		return "", ErrInvoiceDownloadURLUnavailable
+	}
+	return url, nil
+}
+
+func (s *InvoiceService) apiBaseURL(ctx context.Context) string {
+	if s.notificationEmailService != nil {
+		if base := strings.TrimRight(strings.TrimSpace(s.notificationEmailService.PublicBaseURL(ctx)), "/"); base != "" {
+			return base
+		}
+	}
+	return strings.TrimRight(strings.TrimSpace(s.frontendURL), "/")
+}
+
+func renderInvoiceOrderListHTML(orders []InvoiceOrderItem) string {
+	if len(orders) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(`<table style="width:100%;border-collapse:collapse">`)
+	for _, order := range orders {
+		b.WriteString(`<tr><td style="padding:4px 0;font-family:monospace">#`)
+		b.WriteString(strconv.FormatInt(order.OrderID, 10))
+		if order.OutTradeNo != "" {
+			b.WriteString(" ")
+			b.WriteString(order.OutTradeNo)
+		}
+		b.WriteString(`</td><td style="padding:4px 0;text-align:right">`)
+		b.WriteString(fmt.Sprintf("%.2f", order.PayAmountSnapshot))
+		if order.Currency != "" {
+			b.WriteString(" ")
+			b.WriteString(order.Currency)
+		}
+		b.WriteString(`</td></tr>`)
+	}
+	b.WriteString(`</table>`)
+	return b.String()
 }
 
 func validateInvoiceMedia(asset *dbent.MediaAsset, inv *dbent.Invoice) error {
