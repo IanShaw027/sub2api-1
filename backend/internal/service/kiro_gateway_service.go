@@ -183,7 +183,7 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 	s.emitGatewayDebugUpstreamRequest(c, account, req, converted.Body, 1)
 
 	start := time.Now()
-	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, nil)
+	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, resolveKiroTLSProfile(account, s.tlsFPProfileSvc))
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(start).Milliseconds())
 	if err != nil {
 		return nil, s.handleKiroTransportError(ctx, c, account, req.URL.String(), err)
@@ -1032,7 +1032,7 @@ func (s *KiroGatewayService) retryInvalidTokenResponse(
 		kiroLogger(ctx, refreshedAccount).Warn("kiro.invalid_token_retry_failed", zap.Int("status_code", statusCode), zap.Error(err))
 		return nil, err
 	}
-	retryResp, err := s.httpUpstream.DoWithTLS(retryReq, accountProxyURL(refreshedAccount), refreshedAccount.ID, refreshedAccount.Concurrency, nil)
+	retryResp, err := s.httpUpstream.DoWithTLS(retryReq, accountProxyURL(refreshedAccount), refreshedAccount.ID, refreshedAccount.Concurrency, resolveKiroTLSProfile(refreshedAccount, s.tlsFPProfileSvc))
 	if err != nil {
 		kiroLogger(ctx, refreshedAccount).Warn("kiro.invalid_token_retry_failed", zap.Int("status_code", statusCode), zap.Error(err))
 		return nil, err
@@ -2621,7 +2621,7 @@ func (s *KiroGatewayService) startKiroNativeWebToolContinuation(
 	}
 	s.emitGatewayDebugUpstreamRequest(c, account, req, converted.Body, 2)
 
-	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, nil)
+	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, resolveKiroTLSProfile(account, s.tlsFPProfileSvc))
 	if err != nil {
 		return nil, nil, err
 	}

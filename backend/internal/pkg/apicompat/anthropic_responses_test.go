@@ -41,6 +41,30 @@ func TestAnthropicToResponses_BasicText(t *testing.T) {
 	assert.Equal(t, "Hello", parts[0].Text)
 }
 
+func TestAnthropicToResponses_RecordsDroppedCacheControl(t *testing.T) {
+	req := &AnthropicRequest{
+		Model:     "gpt-5.2",
+		MaxTokens: 128,
+		Messages: []AnthropicMessage{{
+			Role: "user",
+			Content: json.RawMessage(`[{"type":"text","text":"hello","cache_control":{"type":"ephemeral"}}]`),
+		}},
+		Tools: []AnthropicTool{{
+			Name:         "lookup",
+			InputSchema:  json.RawMessage(`{"type":"object"}`),
+			CacheControl: &AnthropicCacheControl{Type: "ephemeral"},
+		}},
+	}
+
+	resp, err := AnthropicToResponses(req)
+	require.NoError(t, err)
+	require.Equal(t, []string{"cache_control"}, resp.DroppedCompatibilityFields)
+
+	wire, err := json.Marshal(resp)
+	require.NoError(t, err)
+	require.NotContains(t, string(wire), "DroppedCompatibilityFields")
+}
+
 func TestAnthropicToResponses_SystemPrompt(t *testing.T) {
 	t.Run("string", func(t *testing.T) {
 		req := &AnthropicRequest{

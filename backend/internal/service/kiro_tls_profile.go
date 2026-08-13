@@ -19,7 +19,10 @@ type accountTLSFingerprintRuntime struct {
 }
 
 func resolveKiroTLSProfile(account *Account, tlsFPProfileService *TLSFingerprintProfileService) *tlsfingerprint.Profile {
-	return nil
+	if tlsFPProfileService == nil {
+		return nil
+	}
+	return tlsFPProfileService.ResolveTLSProfile(account)
 }
 
 func resolveKiroTLSProfileWithRouter(

@@ -1,6 +1,7 @@
 package apicompat
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -26,6 +27,9 @@ func AnthropicToResponses(req *AnthropicRequest) (*ResponsesRequest, error) {
 		Input:   inputJSON,
 		Stream:  req.Stream,
 		Include: []string{"reasoning.encrypted_content"},
+	}
+	if anthropicRequestHasCacheControl(req) {
+		out.DroppedCompatibilityFields = []string{"cache_control"}
 	}
 
 	// Reasoning models (gpt-5.x) served via the Responses API do not accept
@@ -504,4 +508,24 @@ func normalizeToolParameters(schema json.RawMessage) json.RawMessage {
 		return schema
 	}
 	return out
+}
+
+func anthropicRequestHasCacheControl(req *AnthropicRequest) bool {
+	if req == nil {
+		return false
+	}
+	for _, tool := range req.Tools {
+		if tool.CacheControl != nil {
+			return true
+		}
+	}
+	if bytes.Contains(req.System, []byte("cache_control")) {
+		return true
+	}
+	for _, msg := range req.Messages {
+		if bytes.Contains(msg.Content, []byte("cache_control")) {
+			return true
+		}
+	}
+	return false
 }
