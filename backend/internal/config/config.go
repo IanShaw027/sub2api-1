@@ -90,6 +90,7 @@ type Config struct {
 	Dashboard               DashboardCacheConfig          `mapstructure:"dashboard_cache"`
 	DashboardAgg            DashboardAggregationConfig    `mapstructure:"dashboard_aggregation"`
 	UsageCleanup            UsageCleanupConfig            `mapstructure:"usage_cleanup"`
+	UsageUserDailyCost      UsageUserDailyCostConfig      `mapstructure:"usage_user_daily_cost"`
 	Concurrency             ConcurrencyConfig             `mapstructure:"concurrency"`
 	TokenRefresh            TokenRefreshConfig            `mapstructure:"token_refresh"`
 	RunMode                 string                        `mapstructure:"run_mode" yaml:"run_mode"`
@@ -1657,6 +1658,14 @@ type DashboardAggregationRetentionConfig struct {
 	UsageBillingDedupDays int `mapstructure:"usage_billing_dedup_days"`
 	HourlyDays            int `mapstructure:"hourly_days"`
 	DailyDays             int `mapstructure:"daily_days"`
+}
+
+// UsageUserDailyCostConfig 管理端近 30 天用量排序用的日成本预聚合。
+type UsageUserDailyCostConfig struct {
+	Disabled        bool `mapstructure:"disabled"`
+	IntervalSeconds int  `mapstructure:"interval_seconds"`
+	BackfillDays    int  `mapstructure:"backfill_days"`
+	RetentionDays   int  `mapstructure:"retention_days"`
 }
 
 // UsageCleanupConfig 使用记录清理任务配置

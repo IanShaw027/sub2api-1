@@ -104,7 +104,13 @@ export default {
         testConnection: 'Test Connection',
         testSuccess: 'S3 connection test successful',
         testFailed: 'S3 connection test failed',
-        saved: 'S3 configuration saved'
+        saved: 'S3 configuration saved',
+        mediaEnabled: 'Enable media object storage (invoices/tickets/avatars reuse the S3 above)',
+        mediaPublicBaseUrl: 'Public media base URL',
+        mediaPublicBaseUrlPlaceholder: 'Public files use this CDN/origin; leave empty to use /api/v1/media/public/:id',
+        mediaPrefix: 'Media key prefix',
+        mediaSigningSecret: 'Private download signing secret',
+        mediaSigningSecretPlaceholder: 'Leave empty to use the system default; private files use time-limited HMAC downloads'
       },
       imageStorage: {
         title: 'Async image object storage',
@@ -549,6 +555,7 @@ export default {
       total: 'Last 30d',
       sortBy: 'Sort By',
       sortCurrentPageOnly: 'Sorts current page only',
+      sortLast30dServer: 'Sorts all users by last 30 days usage',
       noSubscription: 'No subscription',
       publicGroupCount: '+{count} public',
       exclusiveLabel: 'exclusive',
@@ -560,6 +567,7 @@ export default {
       disableUser: 'Disable User',
       enableUser: 'Enable User',
       viewApiKeys: 'View API Keys',
+      viewUserDashboard: 'Open this user\'s usage dashboard',
       groups: 'Groups',
       apiKeys: 'API Keys',
       userApiKeys: 'User API Keys',

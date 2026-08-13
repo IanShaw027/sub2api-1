@@ -2,7 +2,7 @@
   <!-- Row 1: Core Stats -->
   <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
     <!-- Balance -->
-    <div v-if="!isSimple" class="card p-4">
+    <div v-if="!isSimple" class="card cursor-pointer p-4 transition-colors hover:bg-gray-50 dark:hover:bg-dark-800" @click="emit('balance-history')">
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
           <svg class="h-5 w-5 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -255,6 +255,9 @@ const props = defineProps<{
   liveRpmUsed?: number
   liveRpmLimit?: number
   currentConcurrency?: number
+}>()
+const emit = defineEmits<{
+  'balance-history': []
 }>()
 const { t } = useI18n()
 

@@ -209,6 +209,10 @@ func (s *stubAdminService) GetUserUsageStats(ctx context.Context, userID int64, 
 	return map[string]any{"user_id": userID}, nil
 }
 
+func (s *stubAdminService) GetUsersRPMBatch(ctx context.Context, userIDs []int64) map[int64]int {
+	return map[int64]int{}
+}
+
 func (s *stubAdminService) GetUserRPMStatus(ctx context.Context, userID int64) (*service.UserRPMStatus, error) {
 	user, err := s.GetUser(ctx, userID)
 	if err != nil {

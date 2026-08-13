@@ -35,7 +35,7 @@
     </div>
 
     <!-- RPM -->
-    <div v-if="rpmMax > 0" class="flex items-center gap-1">
+    <div class="flex items-center gap-1">
       <span
         :class="[
           'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium',
@@ -47,7 +47,7 @@
         </svg>
         <span class="font-mono">{{ rpmUsed }}</span>
         <span class="text-gray-400 dark:text-gray-500">/</span>
-        <span class="font-mono">{{ rpmMax }}</span>
+        <span class="font-mono">{{ rpmMax > 0 ? rpmMax : '∞' }}</span>
       </span>
     </div>
   </div>

@@ -279,16 +279,29 @@
           @sort="handleSort"
           @update:selected-keys="handleSelectedKeysUpdate"
         >
-          <template #cell-email="{ value }">
+          <template #cell-email="{ value, row }">
             <div class="flex items-center gap-2">
               <div
-                class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 dark:bg-primary-900/30"
+                class="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-primary-100 dark:bg-primary-900/30"
               >
-                <span class="text-sm font-medium text-primary-700 dark:text-primary-300">
+                <img
+                  v-if="sanitizeAvatarUrl(row.avatar_url)"
+                  :src="sanitizeAvatarUrl(row.avatar_url)"
+                  :alt="value"
+                  class="h-full w-full object-cover"
+                >
+                <span v-else class="text-sm font-medium text-primary-700 dark:text-primary-300">
                   {{ value.charAt(0).toUpperCase() }}
                 </span>
               </div>
-              <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+              <button
+                type="button"
+                class="font-medium text-gray-900 underline decoration-dashed decoration-gray-300 underline-offset-4 transition-colors hover:text-primary-600 dark:text-white dark:decoration-dark-500 dark:hover:text-primary-400"
+                :title="t('admin.users.viewUserDashboard')"
+                @click.stop="handleUserDashboardJump(row)"
+              >
+                {{ value }}
+              </button>
             </div>
           </template>
 
@@ -531,7 +544,7 @@
                     </svg>
                   </button>
                   <div class="mt-1 border-t border-gray-100 px-3 py-1 text-[10px] normal-case tracking-normal text-gray-400 dark:border-dark-700 dark:text-dark-500">
-                    {{ t('admin.users.sortCurrentPageOnly') }}
+                    {{ usageKey === 'usage' ? t('admin.users.sortLast30dServer') : t('admin.users.sortCurrentPageOnly') }}
                   </div>
                 </div>
               </div>
@@ -581,6 +594,8 @@
             <UserConcurrencyCell
               :current="row.current_concurrency ?? 0"
               :max="row.concurrency"
+              :rpm-used="row.current_rpm ?? 0"
+              :rpm-max="row.rpm_limit ?? 0"
             />
           </template>
 
@@ -789,10 +804,12 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { useTableSelection } from '@/composables/useTableSelection'
-import { formatDateTime } from '@/utils/format'
+import { formatDateLocalInput, formatDateTime } from '@/utils/format'
+import { sanitizeSupportQRUrl, sanitizeUrl } from '@/utils/url'
 import Icon from '@/components/icons/Icon.vue'
 
 const { t } = useI18n()
@@ -826,6 +843,7 @@ import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryM
 import GroupReplaceModal from '@/components/admin/user/GroupReplaceModal.vue'
 
 const appStore = useAppStore()
+const router = useRouter()
 
 // Generate dynamic attribute columns from enabled definitions
 const attributeColumns = computed<Column[]>(() =>
@@ -917,7 +935,7 @@ const DEFAULT_HIDDEN_COLUMNS = [
 const REMOVED_COLUMNS = new Set(['last_login_at'])
 // 强制可见列：加载时会被强制移出 hiddenColumns，并在列设置 UI 上 disabled。
 // 当前没有列需要强制可见 —— last_active_at 已改为可被用户隐藏。
-const FORCED_VISIBLE_COLUMNS = new Set<string>()
+const FORCED_VISIBLE_COLUMNS = new Set<string>(['concurrency'])
 
 // localStorage keys for column settings
 const HIDDEN_COLUMNS_KEY = 'user-hidden-columns'
@@ -1039,7 +1057,7 @@ const searchQuery = ref('')
 const USER_SORT_STORAGE_KEY = 'admin-users-table-sort'
 const loadInitialSortState = (): { sort_by: string; sort_order: 'asc' | 'desc' } => {
   const fallback = { sort_by: 'created_at', sort_order: 'desc' as 'asc' | 'desc' }
-  const sortable = new Set(['email', 'id', 'username', 'role', 'balance', 'concurrency', 'current_concurrency', 'available_concurrency', 'status', 'last_used_at', 'last_active_at', 'created_at'])
+  const sortable = new Set(['email', 'id', 'username', 'role', 'balance', 'concurrency', 'current_concurrency', 'available_concurrency', 'status', 'last_used_at', 'last_active_at', 'created_at', 'last_30d_usage'])
   try {
     const raw = localStorage.getItem(USER_SORT_STORAGE_KEY)
     if (!raw) return fallback
@@ -1261,6 +1279,10 @@ const getUsageSortOrder = (key: string, metric: UsageMetric): 'asc' | 'desc' | n
 
 // 三态循环：desc → asc → off。选完即关闭菜单（用户大多希望"选中即应用"，
 // 想再切换 order 时重新打开菜单点同一项即可）。
+const isServerLast30dSort = computed(() =>
+  usageSort.value?.key === 'usage' && usageSort.value?.metric === 'total'
+)
+
 const toggleUsageSort = (key: string, metric: UsageMetric) => {
   const cur = usageSort.value
   if (cur && cur.key === key && cur.metric === metric) {
@@ -1270,6 +1292,10 @@ const toggleUsageSort = (key: string, metric: UsageMetric) => {
   }
   persistUsageSort()
   openUsageSortMenu.value = null
+  if (key === 'usage' && metric === 'total') {
+    pagination.page = 1
+    loadUsers()
+  }
 }
 
 // 点击图标本身不触发排序，仅开关菜单；首次排序由用户在菜单内选择 metric 触发（默认 desc，详见 toggleUsageSort）。
@@ -1291,9 +1317,14 @@ const getUsageValue = (userId: number, key: string, metric: UsageMetric): number
 
 // 在 server-side 排序结果之上叠加用量列的本地排序；无 usageSort 时直接透传原数组。
 // 稳定排序：等值按原 index 保序，避免拉取新用量数据时表行抖动。
+function sanitizeAvatarUrl(url?: string | null): string {
+  const raw = url?.trim() || ''
+  return sanitizeSupportQRUrl(raw) || sanitizeUrl(raw, { allowRelative: true, allowDataUrl: true })
+}
+
 const sortedUsers = computed(() => {
   const s = usageSort.value
-  if (!s) return users.value
+  if (!s || isServerLast30dSort.value) return users.value
   return [...users.value]
     .map((row, index) => ({ row, index }))
     .sort((a, b) => {
@@ -1601,8 +1632,10 @@ const loadUsers = async () => {
         // 始终请求 subscriptions：列隐藏时仍需用于 UserPlatformQuotaModal 的 active-subscription 警示 banner
         include_subscriptions: true,
         include_usage_stats: true,
-        sort_by: sortState.sort_by === 'concurrency' ? 'current_concurrency' : sortState.sort_by,
-        sort_order: sortState.sort_order
+        sort_by: isServerLast30dSort.value
+          ? 'last_30d_usage'
+          : (sortState.sort_by === 'concurrency' ? 'current_concurrency' : sortState.sort_by),
+        sort_order: isServerLast30dSort.value ? usageSort.value!.order : sortState.sort_order
       },
       { signal }
     )
@@ -1722,6 +1755,19 @@ const updateAttributeFilter = (attrId: number, value: string) => {
 const applyFilter = () => {
   saveFiltersToStorage()
   loadUsers()
+}
+
+const handleUserDashboardJump = (user: AdminUser) => {
+  const end = new Date()
+  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
+  void router.push({
+    path: '/admin/usage',
+    query: {
+      user_id: String(user.id),
+      start_date: formatDateLocalInput(start),
+      end_date: formatDateLocalInput(end)
+    }
+  })
 }
 
 const handleEdit = (user: AdminUser) => {

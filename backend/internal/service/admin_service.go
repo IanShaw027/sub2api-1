@@ -24,6 +24,7 @@ type AdminService interface {
 	GetUserAPIKeys(ctx context.Context, userID int64, page, pageSize int, sortBy, sortOrder string) ([]APIKey, int64, error)
 	GetUserUsageStats(ctx context.Context, userID int64, period string) (any, error)
 	GetUserRPMStatus(ctx context.Context, userID int64) (*UserRPMStatus, error)
+	GetUsersRPMBatch(ctx context.Context, userIDs []int64) map[int64]int
 	// GetUserBalanceHistory returns paginated balance/concurrency change records for a user.
 	// codeType is optional - pass empty string to return all types.
 	// Also returns totalRecharged (sum of all positive balance top-ups).

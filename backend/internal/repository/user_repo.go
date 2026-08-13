@@ -21,6 +21,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
 
@@ -642,6 +643,9 @@ func userListOrder(params pagination.PaginationParams) []func(*entsql.Selector) 
 	if sortBy == "last_used_at" {
 		return userLastUsedAtOrder(sortOrder)
 	}
+	if sortBy == "last_30d_usage" {
+		return userLast30dUsageOrder(sortOrder)
+	}
 
 	var field string
 	defaultField := true
@@ -745,6 +749,38 @@ func (r *userRepository) GetLatestUsedAtByUserID(ctx context.Context, userID int
 		return nil, err
 	}
 	return latestByUserID[userID], nil
+}
+
+func userLast30dUsageOrder(sortOrder string) []func(*entsql.Selector) {
+	direction := "DESC"
+	tieOrder := entsql.Desc
+	if sortOrder == pagination.SortOrderAsc {
+		direction = "ASC"
+		tieOrder = entsql.Asc
+	}
+	startDate := timezone.Today().AddDate(0, 0, -30).Format("2006-01-02")
+	startTime := time.Now().AddDate(0, 0, -30).UTC().Format(time.RFC3339)
+
+	return []func(*entsql.Selector){
+		func(s *entsql.Selector) {
+			var subquery string
+			if service.IsUsageUserDailyCostRollupReady() {
+				subquery = fmt.Sprintf(
+					"(SELECT COALESCE(SUM(actual_cost), 0) FROM usage_user_daily_cost WHERE user_id = %s AND bucket_date >= DATE '%s')",
+					s.C(dbuser.FieldID),
+					startDate,
+				)
+			} else {
+				subquery = fmt.Sprintf(
+					"(SELECT COALESCE(SUM(actual_cost), 0) FROM usage_logs WHERE user_id = %s AND created_at >= TIMESTAMPTZ '%s')",
+					s.C(dbuser.FieldID),
+					startTime,
+				)
+			}
+			s.OrderExpr(entsql.Expr(subquery + " " + direction))
+			s.OrderBy(tieOrder(s.C(dbuser.FieldID)))
+		},
+	}
 }
 
 func userLastUsedAtOrder(sortOrder string) []func(*entsql.Selector) {

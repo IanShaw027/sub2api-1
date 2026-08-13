@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -296,6 +297,7 @@ type UserService struct {
 	settingRepo          SettingRepository
 	authCacheInvalidator APIKeyAuthCacheInvalidator
 	billingCache         BillingCache
+	mediaService         *MediaService
 	lastActiveTouchL1    sync.Map
 	lastActiveTouchSF    singleflight.Group
 }
@@ -308,6 +310,13 @@ func NewUserService(userRepo UserRepository, settingRepo SettingRepository, auth
 		authCacheInvalidator: authCacheInvalidator,
 		billingCache:         billingCache,
 	}
+}
+
+func (s *UserService) SetMediaService(mediaService *MediaService) {
+	if s == nil {
+		return
+	}
+	s.mediaService = mediaService
 }
 
 // GetFirstAdmin 获取首个管理员用户（用于 Admin API Key 认证）
@@ -568,6 +577,18 @@ func (s *UserService) SetAvatar(ctx context.Context, userID int64, raw string) (
 		return nil, nil
 	}
 
+	if s.mediaService != nil && s.mediaService.Enabled(ctx) {
+		avatar, err := s.setAvatarViaMedia(ctx, userID, avatarValue)
+		if err == nil {
+			return avatar, nil
+		}
+		if !errors.Is(err, ErrAvatarInvalid) && !errors.Is(err, ErrAvatarTooLarge) && !errors.Is(err, ErrAvatarNotImage) {
+			slog.Warn("set avatar via media failed, falling back", "user_id", userID, "error", err)
+		} else if errors.Is(err, ErrAvatarInvalid) || errors.Is(err, ErrAvatarTooLarge) || errors.Is(err, ErrAvatarNotImage) {
+			return nil, err
+		}
+	}
+
 	avatarInput, err := normalizeUserAvatarInput(avatarValue)
 	if err != nil {
 		return nil, err
@@ -578,6 +599,70 @@ func (s *UserService) SetAvatar(ctx context.Context, userID int64, raw string) (
 		return nil, fmt.Errorf("upsert avatar: %w", err)
 	}
 	return avatar, nil
+}
+
+func (s *UserService) setAvatarViaMedia(ctx context.Context, userID int64, raw string) (*UserAvatar, error) {
+	if id, ok := ParseManagedMediaID(raw); ok {
+		asset, err := s.mediaService.GetForUser(ctx, userID, id)
+		if err != nil {
+			return nil, err
+		}
+		return s.userRepo.UpsertUserAvatar(ctx, userID, UpsertUserAvatarInput{
+			StorageProvider: "media",
+			StorageKey:      strconv.FormatInt(asset.ID, 10),
+			URL:             MediaPublicPath(asset.ID),
+			ContentType:     asset.MIME,
+			ByteSize:        int(asset.Size),
+			SHA256:          asset.SHA256,
+		})
+	}
+	if !strings.HasPrefix(raw, "data:") {
+		return nil, fmt.Errorf("remote avatar url is not ingested into media")
+	}
+	input, err := normalizeInlineUserAvatarInput(raw)
+	if err != nil {
+		return nil, err
+	}
+	decoded, err := decodeDataURLBytes(input.URL)
+	if err != nil {
+		return nil, err
+	}
+	filename := "avatar.jpg"
+	if strings.Contains(input.ContentType, "png") {
+		filename = "avatar.png"
+	}
+	asset, err := s.mediaService.Upload(ctx, UploadMediaInput{
+		OwnerUserID: userID,
+		BizType:     MediaBizAvatar,
+		BizID:       strconv.FormatInt(userID, 10),
+		Filename:    filename,
+		Visibility:  MediaVisibilityPublic,
+		Data:        decoded,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.userRepo.UpsertUserAvatar(ctx, userID, UpsertUserAvatarInput{
+		StorageProvider: "media",
+		StorageKey:      strconv.FormatInt(asset.ID, 10),
+		URL:             MediaPublicPath(asset.ID),
+		ContentType:     asset.MIME,
+		ByteSize:        int(asset.Size),
+		SHA256:          asset.SHA256,
+	})
+}
+
+func decodeDataURLBytes(raw string) ([]byte, error) {
+	body := strings.TrimPrefix(raw, "data:")
+	_, encoded, ok := strings.Cut(body, ",")
+	if !ok {
+		return nil, ErrAvatarInvalid
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+	if err != nil {
+		return nil, ErrAvatarInvalid
+	}
+	return decoded, nil
 }
 
 func applyUserAvatar(user *User, avatar *UserAvatar) {
@@ -607,6 +692,13 @@ func normalizeUserAvatarInput(raw string) (UpsertUserAvatarInput, error) {
 	}
 	if strings.HasPrefix(raw, "data:") {
 		return normalizeInlineUserAvatarInput(raw)
+	}
+	if id, ok := ParseManagedMediaID(raw); ok {
+		return UpsertUserAvatarInput{
+			StorageProvider: "media",
+			StorageKey:      strconv.FormatInt(id, 10),
+			URL:             MediaPublicPath(id),
+		}, nil
 	}
 
 	parsed, err := url.Parse(raw)

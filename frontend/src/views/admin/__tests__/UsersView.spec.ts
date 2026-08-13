@@ -9,13 +9,15 @@ const {
   getAllGroups,
   getBatchUsersUsage,
   listEnabledDefinitions,
-  getBatchUserAttributes
+  getBatchUserAttributes,
+  routerPush
 } = vi.hoisted(() => ({
   listUsers: vi.fn(),
   getAllGroups: vi.fn(),
   getBatchUsersUsage: vi.fn(),
   listEnabledDefinitions: vi.fn(),
-  getBatchUserAttributes: vi.fn()
+  getBatchUserAttributes: vi.fn(),
+  routerPush: vi.fn()
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -42,6 +44,12 @@ vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
     showError: vi.fn(),
     showSuccess: vi.fn()
+  })
+}))
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({
+    push: routerPush
   })
 }))
 
@@ -97,6 +105,7 @@ const DataTableStub = {
         <slot :name="'header-' + col.key" :column="col" />
       </template>
       <div v-for="row in data" :key="row.id">
+        <slot name="cell-email" :value="row.email" :row="row" />
         <slot name="cell-last_used_at" :value="row.last_used_at" :row="row" />
       </div>
     </div>
@@ -129,6 +138,7 @@ describe('admin UsersView', () => {
     getBatchUsersUsage.mockReset()
     listEnabledDefinitions.mockReset()
     getBatchUserAttributes.mockReset()
+    routerPush.mockReset()
 
     listUsers.mockResolvedValue({
       items: [createAdminUser()],
@@ -368,5 +378,49 @@ describe('admin UsersView', () => {
     expect(wrapper.get('[data-test="row-order"]').text()).toBe('refreshed-page-two@example.com')
     expect(wrapper.find('[data-test="bulk-edit-limits"]').exists()).toBe(false)
     expect(wrapper.get('[data-test="selected-keys"]').text()).toBe('')
+  })
+
+  it('opens the selected user usage dashboard from the email cell', async () => {
+    const wrapper = mount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
+          DataTable: DataTableStub,
+          Pagination: true,
+          ConfirmDialog: true,
+          EmptyState: true,
+          GroupBadge: true,
+          Select: true,
+          UserAttributesConfigModal: true,
+          UserConcurrencyCell: true,
+          UserCreateModal: true,
+          UserEditModal: true,
+          BulkEditUserModal: BulkEditUserModalStub,
+          UserPlatformQuotaModal: true,
+          UserApiKeysModal: true,
+          UserAllowedGroupsModal: true,
+          UserBalanceModal: true,
+          UserBalanceHistoryModal: true,
+          GroupReplaceModal: true,
+          Icon: true,
+          Teleport: true
+        }
+      }
+    })
+
+    await flushPromises()
+    await wrapper.get('button[title="admin.users.viewUserDashboard"]').trigger('click')
+
+    expect(routerPush).toHaveBeenCalledWith({
+      path: '/admin/usage',
+      query: expect.objectContaining({
+        user_id: '42',
+        start_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        end_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/)
+      })
+    })
   })
 })

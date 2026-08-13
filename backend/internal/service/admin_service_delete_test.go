@@ -136,7 +136,7 @@ func (s *userRepoStub) Delete(ctx context.Context, id int64) error {
 }
 
 func (s *userRepoStub) GetUserAvatar(ctx context.Context, userID int64) (*UserAvatar, error) {
-	panic("unexpected GetUserAvatar call")
+	return nil, nil
 }
 
 func (s *userRepoStub) UpsertUserAvatar(ctx context.Context, userID int64, input UpsertUserAvatarInput) (*UserAvatar, error) {

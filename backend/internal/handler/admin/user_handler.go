@@ -25,6 +25,7 @@ import (
 type UserWithConcurrency struct {
 	dto.AdminUser
 	CurrentConcurrency          int      `json:"current_concurrency"`
+	CurrentRPM                  int      `json:"current_rpm"`
 	TodayActualCost             *float64 `json:"today_actual_cost,omitempty"`
 	TotalActualCost             *float64 `json:"total_actual_cost,omitempty"`
 	TodayBalanceActualCost      *float64 `json:"today_balance_actual_cost,omitempty"`
@@ -200,13 +201,14 @@ func (h *UserHandler) List(c *gin.Context) {
 	}
 
 	var usageByUser map[int64]*usagestats.BatchUserUsageStats
-	if includeUsageStats && len(users) > 0 && h.usageStatsReader != nil {
-		ids := make([]int64, 0, len(users))
-		for i := range users {
-			ids = append(ids, users[i].ID)
-		}
-		usageByUser, _ = h.usageStatsReader.GetBatchUserUsageStats(c.Request.Context(), ids, time.Time{}, time.Time{})
+	userIDs := make([]int64, 0, len(users))
+	for i := range users {
+		userIDs = append(userIDs, users[i].ID)
 	}
+	if includeUsageStats && len(userIDs) > 0 && h.usageStatsReader != nil {
+		usageByUser, _ = h.usageStatsReader.GetBatchUserUsageStats(c.Request.Context(), userIDs, time.Time{}, time.Time{})
+	}
+	rpmByUser := h.adminService.GetUsersRPMBatch(c.Request.Context(), userIDs)
 
 	// Build response with concurrency info
 	out := make([]UserWithConcurrency, len(users))
@@ -217,6 +219,7 @@ func (h *UserHandler) List(c *gin.Context) {
 		if info := loadInfo[users[i].ID]; info != nil {
 			out[i].CurrentConcurrency = info.CurrentConcurrency
 		}
+		out[i].CurrentRPM = rpmByUser[users[i].ID]
 		if stats := usageByUser[users[i].ID]; stats != nil {
 			today := stats.TodayActualCost
 			totalCost := stats.TotalActualCost

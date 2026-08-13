@@ -104,7 +104,13 @@ export default {
         testConnection: '测试连接',
         testSuccess: 'S3 连接测试成功',
         testFailed: 'S3 连接测试失败',
-        saved: 'S3 配置已保存'
+        saved: 'S3 配置已保存',
+        mediaEnabled: '启用媒体对象存储（发票/工单/头像，复用上方 S3）',
+        mediaPublicBaseUrl: '公开资源访问域名',
+        mediaPublicBaseUrlPlaceholder: '公开文件走 CDN/源站；留空则走应用网关 /api/v1/media/public/:id',
+        mediaPrefix: '媒体 Key 前缀',
+        mediaSigningSecret: '私有下载签名密钥',
+        mediaSigningSecretPlaceholder: '留空则使用系统默认密钥；私有文件走限时 HMAC 下载'
       },
       imageStorage: {
         title: '异步生图对象存储',
@@ -529,6 +535,7 @@ export default {
       total: '近30天',
       sortBy: '排序方式',
       sortCurrentPageOnly: '仅对本页数据排序',
+      sortLast30dServer: '按近 30 天用量全量排序',
       noSubscription: '暂无订阅',
       publicGroupCount: '+{count} 公开',
       exclusiveLabel: '专属',
@@ -540,6 +547,7 @@ export default {
       disableUser: '禁用用户',
       enableUser: '启用用户',
       viewApiKeys: '查看 API 密钥',
+      viewUserDashboard: '查看该用户用量看板',
       groups: '分组',
       apiKeys: 'API密钥',
       userApiKeys: '用户 API 密钥',

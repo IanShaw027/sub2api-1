@@ -7,15 +7,13 @@
       </div>
 
       <template v-else-if="stats">
-        <!-- Row 1: Core Stats -->
-        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <!-- Total API Keys -->
-          <div class="card p-4">
+        <div class="grid grid-cols-2 gap-4 lg:grid-cols-5">
+          <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
+              <div class="shrink-0 rounded-lg bg-blue-100 p-2 dark:bg-blue-900/30">
                 <Icon name="key" size="md" class="text-blue-600 dark:text-blue-400" :stroke-width="2" />
               </div>
-              <div>
+              <div class="min-w-0 flex-1">
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t('admin.dashboard.apiKeys') }}
                 </p>
@@ -29,13 +27,12 @@
             </div>
           </div>
 
-          <!-- Service Accounts -->
-          <div class="card p-4">
+          <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30">
+              <div class="shrink-0 rounded-lg bg-purple-100 p-2 dark:bg-purple-900/30">
                 <Icon name="server" size="md" class="text-purple-600 dark:text-purple-400" :stroke-width="2" />
               </div>
-              <div>
+              <div class="min-w-0 flex-1">
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t('admin.dashboard.accounts') }}
                 </p>
@@ -54,33 +51,12 @@
             </div>
           </div>
 
-          <!-- Today Requests -->
-          <div class="card p-4">
+          <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-green-100 p-2 dark:bg-green-900/30">
-                <Icon name="chart" size="md" class="text-green-600 dark:text-green-400" :stroke-width="2" />
-              </div>
-              <div>
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t('admin.dashboard.todayRequests') }}
-                </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  {{ stats.today_requests }}
-                </p>
-                <p class="text-xs text-gray-500 dark:text-gray-400">
-                  {{ t('common.total') }}: {{ formatNumber(stats.total_requests) }}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <!-- New Users Today -->
-          <div class="card p-4">
-            <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
+              <div class="shrink-0 rounded-lg bg-emerald-100 p-2 dark:bg-emerald-900/30">
                 <Icon name="userPlus" size="md" class="text-emerald-600 dark:text-emerald-400" :stroke-width="2" />
               </div>
-              <div>
+              <div class="min-w-0 flex-1">
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t('admin.dashboard.users') }}
                 </p>
@@ -93,138 +69,13 @@
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Row 2: Token Stats -->
-        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <!-- Today Tokens -->
-          <div class="card p-4">
+          <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
-                <Icon name="cube" size="md" class="text-amber-600 dark:text-amber-400" :stroke-width="2" />
-              </div>
-              <div>
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t('admin.dashboard.todayTokens') }}
-                </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  {{ formatTokens(stats.today_tokens) }}
-                </p>
-                <p class="text-xs">
-                  <span
-                    class="text-green-600 dark:text-green-400"
-                    :title="t('admin.dashboard.actual')"
-                    >${{ formatCost(stats.today_actual_cost) }}</span
-                  >
-                  <span class="text-gray-400 dark:text-gray-500"> / </span>
-                  <span
-                    class="text-orange-500 dark:text-orange-400"
-                    :title="t('admin.dashboard.accountCost')"
-                    >${{ formatCost(stats.today_account_cost) }}</span
-                  >
-                  <span class="text-gray-400 dark:text-gray-500"> / </span>
-                  <span
-                    class="text-gray-400 dark:text-gray-500"
-                    :title="t('admin.dashboard.standard')"
-                    >${{ formatCost(stats.today_cost) }}</span
-                  >
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Total Tokens -->
-          <div class="card p-4">
-            <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-indigo-100 p-2 dark:bg-indigo-900/30">
-                <Icon name="database" size="md" class="text-indigo-600 dark:text-indigo-400" :stroke-width="2" />
-              </div>
-              <div>
-                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {{ t('admin.dashboard.totalTokens') }}
-                </p>
-                <p class="text-xl font-bold text-gray-900 dark:text-white">
-                  {{ formatTokens(stats.total_tokens) }}
-                </p>
-                <p class="text-xs">
-                  <span
-                    class="text-green-600 dark:text-green-400"
-                    :title="t('admin.dashboard.actual')"
-                    >${{ formatCost(stats.total_actual_cost) }}</span
-                  >
-                  <span class="text-gray-400 dark:text-gray-500"> / </span>
-                  <span
-                    class="text-orange-500 dark:text-orange-400"
-                    :title="t('admin.dashboard.accountCost')"
-                    >${{ formatCost(stats.total_account_cost) }}</span
-                  >
-                  <span class="text-gray-400 dark:text-gray-500"> / </span>
-                  <span
-                    class="text-gray-400 dark:text-gray-500"
-                    :title="t('admin.dashboard.standard')"
-                    >${{ formatCost(stats.total_cost) }}</span
-                  >
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <div class="card p-4">
-            <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              {{ t('admin.dashboard.balanceCost') }}
-            </p>
-            <p class="text-xl font-bold text-gray-900 dark:text-white">
-              ${{ formatCost(stats.today_balance_actual_cost) }}
-            </p>
-            <p class="text-xs text-gray-500 dark:text-gray-400">
-              {{ t('common.total') }}: ${{ formatCost(stats.total_balance_actual_cost) }}
-            </p>
-          </div>
-          <div class="card p-4">
-            <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              {{ t('admin.dashboard.subscriptionCost') }}
-            </p>
-            <p class="text-xl font-bold text-gray-900 dark:text-white">
-              ${{ formatCost(stats.today_subscription_actual_cost) }}
-            </p>
-            <p class="text-xs text-gray-500 dark:text-gray-400">
-              {{ t('common.total') }}: ${{ formatCost(stats.total_subscription_actual_cost) }}
-            </p>
-          </div>
-          <div class="card p-4">
-            <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              {{ t('admin.dashboard.rechargeAmount') }}
-            </p>
-            <p class="text-xl font-bold text-gray-900 dark:text-white">
-              ${{ formatCost(stats.today_recharge_amount) }}
-            </p>
-            <p class="text-xs text-gray-500 dark:text-gray-400">
-              {{ t('common.total') }}: ${{ formatCost(stats.total_recharge_amount) }}
-            </p>
-          </div>
-          <div class="card p-4">
-            <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
-              {{ t('admin.dashboard.refundAmount') }}
-            </p>
-            <p class="text-xl font-bold text-gray-900 dark:text-white">
-              ${{ formatCost(stats.today_refund_amount) }}
-            </p>
-            <p class="text-xs text-gray-500 dark:text-gray-400">
-              {{ t('common.total') }}: ${{ formatCost(stats.total_refund_amount) }}
-            </p>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <!-- Performance (RPM/TPM) -->
-          <div class="card p-4">
-            <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-violet-100 p-2 dark:bg-violet-900/30">
+              <div class="shrink-0 rounded-lg bg-violet-100 p-2 dark:bg-violet-900/30">
                 <Icon name="bolt" size="md" class="text-violet-600 dark:text-violet-400" :stroke-width="2" />
               </div>
-              <div class="flex-1">
+              <div class="min-w-0 flex-1">
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t('admin.dashboard.performance') }}
                 </p>
@@ -244,13 +95,12 @@
             </div>
           </div>
 
-          <!-- Avg Response Time -->
-          <div class="card p-4">
+          <div class="card min-w-0 p-4">
             <div class="flex items-center gap-3">
-              <div class="rounded-lg bg-rose-100 p-2 dark:bg-rose-900/30">
+              <div class="shrink-0 rounded-lg bg-rose-100 p-2 dark:bg-rose-900/30">
                 <Icon name="clock" size="md" class="text-rose-600 dark:text-rose-400" :stroke-width="2" />
               </div>
-              <div>
+              <div class="min-w-0 flex-1">
                 <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
                   {{ t('admin.dashboard.avgResponse') }}
                 </p>
@@ -260,6 +110,153 @@
                 <p class="text-xs text-gray-500 dark:text-gray-400">
                   {{ stats.active_users }} {{ t('admin.dashboard.activeUsers') }}
                 </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card min-w-0 p-4">
+            <div class="flex items-center gap-3">
+              <div class="shrink-0 rounded-lg bg-green-100 p-2 dark:bg-green-900/30">
+                <Icon name="chart" size="md" class="text-green-600 dark:text-green-400" :stroke-width="2" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {{ t('admin.dashboard.todayRequests') }}
+                </p>
+                <p class="text-xl font-bold text-gray-900 dark:text-white">
+                  {{ stats.today_requests }}
+                </p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('common.total') }}: {{ formatNumber(stats.total_requests) }}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="card min-w-0 p-4">
+            <div class="flex items-center gap-3">
+              <div class="shrink-0 rounded-lg bg-amber-100 p-2 dark:bg-amber-900/30">
+                <Icon name="cube" size="md" class="text-amber-600 dark:text-amber-400" :stroke-width="2" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {{ t('admin.dashboard.todayTokens') }}
+                </p>
+                <p class="text-xl font-bold text-gray-900 dark:text-white">
+                  {{ formatTokens(stats.today_tokens) }}
+                </p>
+                <HelpTooltip width-class="w-56">
+                  <template #trigger>
+                    <div class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-semibold">
+                      <template v-for="(item, index) in todayTokenBreakdownItems" :key="item.key">
+                        <span :class="item.textClass">${{ formatCost(item.value) }}</span>
+                        <span v-if="index < todayTokenBreakdownItems.length - 1" class="text-gray-400 dark:text-gray-500">/</span>
+                      </template>
+                    </div>
+                  </template>
+                  <div class="space-y-1.5">
+                    <div v-for="item in todayTokenBreakdownItems" :key="item.key" class="flex items-center justify-between gap-4">
+                      <span>{{ item.label }}</span>
+                      <span class="font-semibold">${{ formatCost(item.value) }}</span>
+                    </div>
+                  </div>
+                </HelpTooltip>
+              </div>
+            </div>
+          </div>
+
+          <div class="card min-w-0 p-4">
+            <div class="flex items-center gap-3">
+              <div class="shrink-0 rounded-lg bg-indigo-100 p-2 dark:bg-indigo-900/30">
+                <Icon name="database" size="md" class="text-indigo-600 dark:text-indigo-400" :stroke-width="2" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {{ t('admin.dashboard.totalTokens') }}
+                </p>
+                <p class="text-xl font-bold text-gray-900 dark:text-white">
+                  {{ formatTokens(stats.total_tokens) }}
+                </p>
+                <HelpTooltip width-class="w-56">
+                  <template #trigger>
+                    <div class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-semibold">
+                      <template v-for="(item, index) in totalTokenBreakdownItems" :key="item.key">
+                        <span :class="item.textClass">${{ formatCost(item.value) }}</span>
+                        <span v-if="index < totalTokenBreakdownItems.length - 1" class="text-gray-400 dark:text-gray-500">/</span>
+                      </template>
+                    </div>
+                  </template>
+                  <div class="space-y-1.5">
+                    <div v-for="item in totalTokenBreakdownItems" :key="item.key" class="flex items-center justify-between gap-4">
+                      <span>{{ item.label }}</span>
+                      <span class="font-semibold">${{ formatCost(item.value) }}</span>
+                    </div>
+                  </div>
+                </HelpTooltip>
+              </div>
+            </div>
+          </div>
+
+          <div class="card min-w-0 p-4">
+            <div class="flex items-center gap-3">
+              <div class="shrink-0 rounded-lg bg-sky-100 p-2 dark:bg-sky-900/30">
+                <Icon name="dollar" size="md" class="text-sky-600 dark:text-sky-400" :stroke-width="2" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {{ t('admin.dashboard.todayCost') }}
+                </p>
+                <p class="text-xl font-bold text-gray-900 dark:text-white">
+                  ${{ formatCost(stats.today_actual_cost) }}
+                </p>
+                <HelpTooltip width-class="w-56">
+                  <template #trigger>
+                    <div class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-semibold">
+                      <template v-for="(item, index) in todayFinancialBreakdownItems" :key="item.key">
+                        <span :class="item.textClass">${{ formatCost(item.value) }}</span>
+                        <span v-if="index < todayFinancialBreakdownItems.length - 1" class="text-gray-400 dark:text-gray-500">/</span>
+                      </template>
+                    </div>
+                  </template>
+                  <div class="space-y-1.5">
+                    <div v-for="item in todayFinancialBreakdownItems" :key="item.key" class="flex items-center justify-between gap-4">
+                      <span>{{ item.label }}</span>
+                      <span class="font-semibold">${{ formatCost(item.value) }}</span>
+                    </div>
+                  </div>
+                </HelpTooltip>
+              </div>
+            </div>
+          </div>
+
+          <div class="card min-w-0 p-4">
+            <div class="flex items-center gap-3">
+              <div class="shrink-0 rounded-lg bg-cyan-100 p-2 dark:bg-cyan-900/30">
+                <Icon name="creditCard" size="md" class="text-cyan-600 dark:text-cyan-400" :stroke-width="2" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+                  {{ t('admin.dashboard.totalCost') }}
+                </p>
+                <p class="text-xl font-bold text-gray-900 dark:text-white">
+                  ${{ formatCost(stats.total_actual_cost) }}
+                </p>
+                <HelpTooltip width-class="w-56">
+                  <template #trigger>
+                    <div class="mt-2 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-xs font-semibold">
+                      <template v-for="(item, index) in totalFinancialBreakdownItems" :key="item.key">
+                        <span :class="item.textClass">${{ formatCost(item.value) }}</span>
+                        <span v-if="index < totalFinancialBreakdownItems.length - 1" class="text-gray-400 dark:text-gray-500">/</span>
+                      </template>
+                    </div>
+                  </template>
+                  <div class="space-y-1.5">
+                    <div v-for="item in totalFinancialBreakdownItems" :key="item.key" class="flex items-center justify-between gap-4">
+                      <span>{{ item.label }}</span>
+                      <span class="font-semibold">${{ formatCost(item.value) }}</span>
+                    </div>
+                  </div>
+                </HelpTooltip>
               </div>
             </div>
           </div>
@@ -406,6 +403,7 @@ import type {
 } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Icon from '@/components/icons/Icon.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import Select from '@/components/common/Select.vue'
@@ -652,6 +650,101 @@ const formatCost = (value: number | null | undefined): string => {
   }
   return safeValue.toFixed(4)
 }
+
+const asNumber = (value: number | null | undefined): number => {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+const todayTokenBreakdownItems = computed(() => [
+  {
+    key: 'actual',
+    label: t('admin.dashboard.actual'),
+    value: asNumber(stats.value?.today_actual_cost),
+    textClass: 'text-green-600 dark:text-green-400'
+  },
+  {
+    key: 'account',
+    label: t('admin.dashboard.accountCost'),
+    value: asNumber(stats.value?.today_account_cost),
+    textClass: 'text-orange-500 dark:text-orange-400'
+  },
+  {
+    key: 'standard',
+    label: t('admin.dashboard.standard'),
+    value: asNumber(stats.value?.today_cost),
+    textClass: 'text-gray-500 dark:text-gray-400'
+  }
+])
+
+const totalTokenBreakdownItems = computed(() => [
+  {
+    key: 'actual',
+    label: t('admin.dashboard.actual'),
+    value: asNumber(stats.value?.total_actual_cost),
+    textClass: 'text-green-600 dark:text-green-400'
+  },
+  {
+    key: 'account',
+    label: t('admin.dashboard.accountCost'),
+    value: asNumber(stats.value?.total_account_cost),
+    textClass: 'text-orange-500 dark:text-orange-400'
+  },
+  {
+    key: 'standard',
+    label: t('admin.dashboard.standard'),
+    value: asNumber(stats.value?.total_cost),
+    textClass: 'text-gray-500 dark:text-gray-400'
+  }
+])
+
+const financialBreakdownItems = computed(() => [
+  {
+    key: 'balance',
+    label: t('admin.dashboard.balanceCost'),
+    todayValue: asNumber(stats.value?.today_balance_actual_cost),
+    totalValue: asNumber(stats.value?.total_balance_actual_cost),
+    textClass: 'text-emerald-600 dark:text-emerald-400'
+  },
+  {
+    key: 'subscription',
+    label: t('admin.dashboard.subscriptionCost'),
+    todayValue: asNumber(stats.value?.today_subscription_actual_cost),
+    totalValue: asNumber(stats.value?.total_subscription_actual_cost),
+    textClass: 'text-indigo-600 dark:text-indigo-400'
+  },
+  {
+    key: 'recharge',
+    label: t('admin.dashboard.rechargeAmount'),
+    todayValue: asNumber(stats.value?.today_recharge_amount),
+    totalValue: asNumber(stats.value?.total_recharge_amount),
+    textClass: 'text-green-600 dark:text-green-400'
+  },
+  {
+    key: 'refund',
+    label: t('admin.dashboard.refundAmount'),
+    todayValue: asNumber(stats.value?.today_refund_amount),
+    totalValue: asNumber(stats.value?.total_refund_amount),
+    textClass: 'text-rose-600 dark:text-rose-400'
+  }
+])
+
+const todayFinancialBreakdownItems = computed(() =>
+  financialBreakdownItems.value.map((item) => ({
+    key: item.key,
+    label: item.label,
+    value: item.todayValue,
+    textClass: item.textClass
+  }))
+)
+
+const totalFinancialBreakdownItems = computed(() =>
+  financialBreakdownItems.value.map((item) => ({
+    key: item.key,
+    label: item.label,
+    value: item.totalValue,
+    textClass: item.textClass
+  }))
+)
 
 const formatDuration = (ms: number): string => {
   if (ms >= 1000) {

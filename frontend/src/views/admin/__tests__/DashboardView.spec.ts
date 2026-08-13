@@ -132,6 +132,7 @@ describe('admin DashboardView', () => {
           AppLayout: { template: '<div><slot /></div>' },
           LoadingSpinner: true,
           Icon: true,
+          HelpTooltip: { template: '<div><slot name="trigger" /><slot /></div>' },
           DateRangePicker: true,
           Select: true,
           ModelDistributionChart: true,

@@ -38,6 +38,14 @@ func (s *adminServiceImpl) ListUsers(ctx context.Context, page, pageSize int, fi
 				users[i].LastUsedAt = lastUsedByUserID[users[i].ID]
 			}
 		}
+		for i := range users {
+			avatar, avatarErr := s.userRepo.GetUserAvatar(ctx, users[i].ID)
+			if avatarErr != nil {
+				logger.LegacyPrintf("service.admin", "failed to load user avatar: user_id=%d err=%v", users[i].ID, avatarErr)
+				continue
+			}
+			applyUserAvatar(&users[i], avatar)
+		}
 	}
 	// 批量加载用户专属分组倍率
 	if s.userGroupRateRepo != nil && len(users) > 0 {
@@ -97,6 +105,11 @@ func (s *adminServiceImpl) GetUser(ctx context.Context, id int64) (*User, error)
 		} else {
 			user.GroupRates = rates
 		}
+	}
+	if avatar, avatarErr := s.userRepo.GetUserAvatar(ctx, id); avatarErr != nil {
+		logger.LegacyPrintf("service.admin", "failed to load user avatar: user_id=%d err=%v", id, avatarErr)
+	} else {
+		applyUserAvatar(user, avatar)
 	}
 	return user, nil
 }
@@ -600,6 +613,24 @@ func (s *adminServiceImpl) GetUserAPIKeys(ctx context.Context, userID int64, pag
 		return nil, 0, err
 	}
 	return keys, result.Total, nil
+}
+
+func (s *adminServiceImpl) GetUsersRPMBatch(ctx context.Context, userIDs []int64) map[int64]int {
+	out := make(map[int64]int, len(userIDs))
+	if s == nil || s.userRPMCache == nil {
+		return out
+	}
+	for _, id := range userIDs {
+		if id <= 0 {
+			continue
+		}
+		n, err := s.userRPMCache.GetUserRPM(ctx, id)
+		if err != nil {
+			continue
+		}
+		out[id] = n
+	}
+	return out
 }
 
 func (s *adminServiceImpl) GetUserRPMStatus(ctx context.Context, userID int64) (*UserRPMStatus, error) {
