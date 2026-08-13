@@ -38,6 +38,102 @@ export const claudeModels = [
   'claude-fable-5'
 ]
 
+const kiroModels = [
+  'claude-haiku-4.5',
+  'claude-haiku-4.5-thinking',
+  'claude-haiku-4.5-1m',
+  'claude-haiku-4.5-thinking-1m',
+  'claude-haiku-4.6',
+  'claude-haiku-4.6-thinking',
+  'claude-haiku-4.6-1m',
+  'claude-haiku-4.6-thinking-1m',
+  'claude-haiku-4.7',
+  'claude-haiku-4.7-thinking',
+  'claude-haiku-4.7-1m',
+  'claude-haiku-4.7-thinking-1m',
+  'claude-sonnet-4.5',
+  'claude-sonnet-4.5-thinking',
+  'claude-sonnet-4.5-1m',
+  'claude-sonnet-4.5-thinking-1m',
+  'claude-sonnet-4.6',
+  'claude-sonnet-4.6-thinking',
+  'claude-sonnet-4.6-1m',
+  'claude-sonnet-4.6-thinking-1m',
+  'claude-sonnet-4.7',
+  'claude-sonnet-4.7-thinking',
+  'claude-sonnet-4.7-1m',
+  'claude-sonnet-4.7-thinking-1m',
+  'claude-opus-4.5',
+  'claude-opus-4.5-thinking',
+  'claude-opus-4.5-1m',
+  'claude-opus-4.5-thinking-1m',
+  'claude-opus-4.6',
+  'claude-opus-4.6-thinking',
+  'claude-opus-4.6-1m',
+  'claude-opus-4.6-thinking-1m',
+  'claude-opus-4.7',
+  'claude-opus-4.7-thinking',
+  'claude-opus-4.7-1m',
+  'claude-opus-4.7-thinking-1m',
+  'claude-opus-4.8',
+  'claude-opus-4.8-thinking',
+  'claude-opus-4.8-1m',
+  'claude-opus-4.8-thinking-1m',
+  'claude-sonnet-5',
+  'claude-sonnet-5-thinking',
+  'claude-sonnet-5-1m',
+  'claude-sonnet-5-thinking-1m',
+  'claude-opus-5',
+  'claude-opus-5-thinking',
+  'claude-opus-5-1m',
+  'claude-opus-5-thinking-1m',
+  'claude-haiku-4-5',
+  'claude-haiku-4-5-thinking',
+  'claude-haiku-4-5-20251001',
+  'claude-haiku-4-6',
+  'claude-haiku-4-6-thinking',
+  'claude-haiku-4-6-1m',
+  'claude-haiku-4-6-thinking-1m',
+  'claude-haiku-4-7',
+  'claude-haiku-4-7-thinking',
+  'claude-haiku-4-7-1m',
+  'claude-haiku-4-7-thinking-1m',
+  'claude-sonnet-4-5',
+  'claude-sonnet-4-5-thinking',
+  'claude-sonnet-4-5-20250929',
+  'claude-sonnet-4-6',
+  'claude-sonnet-4-6-thinking',
+  'claude-sonnet-4-6-1m',
+  'claude-sonnet-4-6-thinking-1m',
+  'claude-sonnet-4-7',
+  'claude-sonnet-4-7-thinking',
+  'claude-sonnet-4-7-1m',
+  'claude-sonnet-4-7-thinking-1m',
+  'claude-opus-4-5',
+  'claude-opus-4-5-thinking',
+  'claude-opus-4-5-20251101',
+  'claude-opus-4-6',
+  'claude-opus-4-6-thinking',
+  'claude-opus-4-6-1m',
+  'claude-opus-4-6-thinking-1m',
+  'claude-opus-4-7',
+  'claude-opus-4-7-thinking',
+  'claude-opus-4-7-1m',
+  'claude-opus-4-7-thinking-1m',
+  'claude-opus-4-8',
+  'claude-opus-4-8-thinking',
+  'claude-opus-4-8-1m',
+  'claude-opus-4-8-thinking-1m',
+  'claude-sonnet-5',
+  'claude-sonnet-5-thinking',
+  'claude-sonnet-5-1m',
+  'claude-sonnet-5-thinking-1m',
+  'claude-opus-5',
+  'claude-opus-5-thinking',
+  'claude-opus-5-1m',
+  'claude-opus-5-thinking-1m'
+]
+
 // Google Gemini
 const geminiModels = [
   // Keep in sync with backend curated Gemini lists.
@@ -235,6 +331,7 @@ const perplexityModels = [
 const allModelsList: string[] = [
   ...openaiModels,
   ...claudeModels,
+  ...kiroModels,
   ...geminiModels,
   ...zhipuModels,
   ...qwenModels,
@@ -274,6 +371,22 @@ const anthropicPresetMappings = [
   { label: 'Haiku 3.5', from: 'claude-3-5-haiku-20241022', to: 'claude-3-5-haiku-20241022', color: 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400' },
   { label: 'Haiku 4.5', from: 'claude-haiku-4-5-20251001', to: 'claude-haiku-4-5-20251001', color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400' },
   { label: 'Opus->Sonnet', from: 'claude-opus-4-6', to: 'claude-sonnet-4-5-20250929', color: 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400' }
+]
+
+const kiroPresetMappings = [
+  { label: 'Haiku→4.5', from: 'claude-haiku-*', to: 'claude-haiku-4.5', color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  { label: 'Sonnet→4.5', from: 'claude-sonnet-*', to: 'claude-sonnet-4.5', color: 'bg-cyan-100 text-cyan-700 hover:bg-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400' },
+  { label: 'Opus→4.5', from: 'claude-opus-*', to: 'claude-opus-4.5', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400' },
+  { label: 'Sonnet 4.5', from: 'claude-sonnet-4.5', to: 'claude-sonnet-4.5', color: 'bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400' },
+  { label: 'Sonnet 4.6', from: 'claude-sonnet-4.6', to: 'claude-sonnet-4.6', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400' },
+  { label: 'Sonnet 5', from: 'claude-sonnet-5', to: 'claude-sonnet-5', color: 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400' },
+  { label: 'Opus 4.8', from: 'claude-opus-4.8', to: 'claude-opus-4.8', color: 'bg-pink-100 text-pink-700 hover:bg-pink-200 dark:bg-pink-900/30 dark:text-pink-400' },
+  { label: 'Opus 5', from: 'claude-opus-5', to: 'claude-opus-5', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400' },
+  { label: 'Opus 4.7', from: 'claude-opus-4.7', to: 'claude-opus-4.7', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400' },
+  { label: 'Opus 4.6', from: 'claude-opus-4.6', to: 'claude-opus-4.6', color: 'bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-400' },
+  { label: 'Opus 4.7 Thinking', from: 'claude-opus-4.7-thinking', to: 'claude-opus-4.7-thinking', color: 'bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-400' },
+  { label: 'Opus 4.5', from: 'claude-opus-4.5', to: 'claude-opus-4.5', color: 'bg-fuchsia-100 text-fuchsia-700 hover:bg-fuchsia-200 dark:bg-fuchsia-900/30 dark:text-fuchsia-400' },
+  { label: 'Haiku 4.5', from: 'claude-haiku-4.5', to: 'claude-haiku-4.5', color: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400' }
 ]
 
 const openaiPresetMappings = [
@@ -414,6 +527,7 @@ export const commonErrorCodes = [
 // 按平台获取模型
 export function getModelsByPlatform(platform: string): string[] {
   switch (platform) {
+    case 'kiro': return kiroModels
     case 'openai': return openaiModels
     case 'anthropic':
     case 'claude': return claudeModels
@@ -441,6 +555,7 @@ export function getModelsByPlatform(platform: string): string[] {
 
 // 按平台获取预设映射
 export function getPresetMappingsByPlatform(platform: string) {
+  if (platform === 'kiro') return kiroPresetMappings
   if (platform === 'openai') return openaiPresetMappings
   if (platform === 'gemini') return geminiPresetMappings
   if (platform === 'grok' || platform === 'xai') return grokPresetMappings
@@ -495,12 +610,28 @@ export function splitModelMappingObject(
   return { allowedModels, modelMappings }
 }
 
+function kiroModelFamily(model: string): 'haiku' | 'sonnet' | 'opus' | '' {
+  const normalized = model.trim().toLowerCase()
+  if (normalized.startsWith('claude-haiku-')) return 'haiku'
+  if (normalized.startsWith('claude-sonnet-')) return 'sonnet'
+  if (normalized.startsWith('claude-opus-')) return 'opus'
+  return ''
+}
+
+export function isCompatibleKiroModelMappingPair(from: string, to: string): boolean {
+  const fromFamily = kiroModelFamily(from)
+  const toFamily = kiroModelFamily(to)
+  return fromFamily !== '' && fromFamily === toFamily
+}
+
 export function buildModelMappingObject(
   mode: ModelRestrictionMode,
   allowedModels: string[],
-  modelMappings: ModelMappingEntry[]
+  modelMappings: ModelMappingEntry[],
+  platform = ''
 ): Record<string, string> | null {
   const mapping: Record<string, string> = {}
+  const isKiro = platform.trim().toLowerCase() === 'kiro'
 
   if (mode === 'whitelist' || mode === 'combined') {
     for (const model of allowedModels) {
@@ -528,6 +659,10 @@ export function buildModelMappingObject(
       // to 不允许包含通配符
       if (to.includes('*')) {
         console.warn(`[buildModelMappingObject] Target model cannot contain a wildcard, skipped: ${from} -> ${to}`)
+        continue
+      }
+      if (isKiro && !isCompatibleKiroModelMappingPair(from, to)) {
+        console.warn(`[buildModelMappingObject] Kiro 模型映射不能跨模型族，跳过: ${from} -> ${to}`)
         continue
       }
       mapping[from] = to

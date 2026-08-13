@@ -103,8 +103,16 @@ export default {
     endsAt: 'Ends at',
     empty: 'No announcements',
     emptyUnread: 'No unread announcements',
+    emptyRead: 'No read announcements',
+    emptyUnreadDescription: 'There are no unread announcements',
+    emptyReadDescription: 'There are no read announcements',
     total: 'announcements',
     emptyDescription: 'There are no system announcements at this time',
+    filters: {
+      all: 'All',
+      unread: 'Unread',
+      read: 'Read'
+    },
     readStatus: 'You have read this announcement',
     markReadHint: 'Click "Mark as read" to mark this announcement'
   },

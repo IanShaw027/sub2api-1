@@ -4,6 +4,7 @@ import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
 import type { GrokTokenInfo } from '@/api/admin/grok'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
+import { formatOAuthAccountName } from '@/utils/oauthAccountName'
 
 export function useGrokOAuth() {
   const appStore = useAppStore()
@@ -147,6 +148,17 @@ export function useGrokOAuth() {
     return extra
   }
 
+  const buildAccountName = (tokenInfo: GrokTokenInfo, fallbackName?: string): string => {
+    return formatOAuthAccountName({
+      manualName: fallbackName,
+      primary: tokenInfo.email,
+      details: [tokenInfo.subscription_tier],
+      platformLabel: 'Grok',
+      fallbackDetail: tokenInfo.subscription_tier,
+      defaultName: 'Grok OAuth Account'
+    })
+  }
+
   const validateSSOToken = async (
     ssoToken: string,
     proxyId?: number | null
@@ -212,6 +224,7 @@ export function useGrokOAuth() {
     validateSSOToken,
     authorizePassword,
     buildCredentials,
-    buildExtraInfo
+    buildExtraInfo,
+    buildAccountName
   }
 }

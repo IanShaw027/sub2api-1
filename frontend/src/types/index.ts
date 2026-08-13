@@ -371,6 +371,8 @@ export interface Announcement {
   updated_at: string
 }
 
+export type AnnouncementReadStatusFilter = 'all' | 'read' | 'unread'
+
 export interface UserAnnouncement {
   id: number
   title: string
@@ -538,7 +540,7 @@ export interface PaginationConfig {
 
 // ==================== API Key & Group Types ====================
 
-export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'composite'
+export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kiro' | 'composite'
 
 export type VideoModelPrices = Record<string, Record<string, number>>
 
@@ -895,7 +897,7 @@ export interface UpdateGroupRequest {
 
 // ==================== Account & Proxy Types ====================
 
-export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok'
+export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kiro'
 export type AccountType = 'oauth' | 'setup-token' | 'apikey' | 'upstream' | 'bedrock' | 'service_account'
 export type OAuthAddMethod = 'oauth' | 'setup-token'
 export type ProxyProtocol = 'http' | 'https' | 'socks5' | 'socks5h'
@@ -999,6 +1001,37 @@ export interface GeminiCredentials {
   scope?: string
   expires_at?: string
   model_mapping?: Record<string, string>
+}
+
+export type KiroAuthMethod = 'social' | 'idc' | 'external_idp'
+
+export interface KiroCredentials {
+  access_token?: string
+  refresh_token?: string
+  expires_at?: string
+  auth_method?: KiroAuthMethod | string
+  client_id?: string
+  client_secret?: string
+  token_endpoint?: string
+  issuer_url?: string
+  scopes?: string
+  login_hint?: string
+  region?: string
+  auth_region?: string
+  api_region?: string
+  profile_arn?: string
+  profile_id?: string
+  machine_id?: string
+  model_mapping?: Record<string, string>
+  subscription_type?: string
+  plan_name?: string
+  plan_tier?: string
+}
+
+export interface KiroAccountExtra {
+  kiro_version?: string
+  system_version?: string
+  node_version?: string
 }
 
 export interface TempUnschedulableRule {
@@ -1158,6 +1191,8 @@ export interface Account {
     sticky_weighted_enabled: boolean
   } | null
   scheduler_scores?: AccountSchedulerGroupScore[] | null
+  cyber_count?: number | null
+  cyber_latest_at?: string | null
   priority: number
   rate_multiplier?: number // Account billing multiplier (>=0, 0 means free)
   status: 'active' | 'inactive' | 'error'
@@ -1258,6 +1293,15 @@ export interface AccountSchedulerGroupScore {
   sticky_weighted_enabled: boolean
 }
 
+export interface AccountCyberEvent {
+  error_id?: number | null
+  created_at: string
+  request_id: string
+  model: string
+  status_code?: number | null
+  message: string
+}
+
 // Account Usage types
 export interface WindowStats {
   requests: number
@@ -1280,6 +1324,14 @@ export interface UsageProgress {
 export interface AntigravityModelQuota {
   utilization: number // 使用率 0-100
   reset_time: string  // 重置时间 ISO8601
+}
+
+export interface KiroQuotaBreakdown {
+  current_usage: number
+  usage_limit: number
+  remaining: number
+  utilization: number
+  resets_at?: string | null
 }
 
 export interface GrokQuotaWindow {
@@ -1333,6 +1385,21 @@ export interface AccountUsageInfo {
   seven_day_sonnet: UsageProgress | null
   seven_day_fable?: UsageProgress | null
   thirty_day?: UsageProgress | null
+  kiro_quota?: UsageProgress | null
+  kiro_subscription_title?: string
+  kiro_current_usage?: number
+  kiro_usage_limit?: number
+  kiro_remaining?: number
+  kiro_email?: string
+  kiro_overage_capability?: string
+  kiro_overage_enabled?: boolean | null
+  kiro_profile_id?: string
+  kiro_login_provider?: string
+  kiro_status_reason?: string
+  kiro_monthly_quota?: KiroQuotaBreakdown | null
+  kiro_bonus_quota?: KiroQuotaBreakdown | null
+  kiro_free_trial_quota?: KiroQuotaBreakdown | null
+  kiro_total_quota?: KiroQuotaBreakdown | null
   gemini_shared_daily?: UsageProgress | null
   gemini_pro_daily?: UsageProgress | null
   gemini_flash_daily?: UsageProgress | null

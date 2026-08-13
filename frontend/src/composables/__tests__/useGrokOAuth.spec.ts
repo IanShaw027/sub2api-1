@@ -81,3 +81,17 @@ describe('useGrokOAuth.buildCredentials', () => {
     expect(credentials).not.toHaveProperty('sso-rw')
   })
 })
+
+describe('useGrokOAuth.buildAccountName', () => {
+  it('uses manual name first and otherwise email or Grok fallback', () => {
+    const oauth = useGrokOAuth()
+    expect(oauth.buildAccountName({ email: 'grok@example.com', subscription_tier: 'SuperGrok' }, ' Manual ')).toBe(
+      'Manual'
+    )
+    expect(oauth.buildAccountName({ email: 'grok@example.com', subscription_tier: 'SuperGrok' })).toBe(
+      'grok@example.com (SuperGrok)'
+    )
+    expect(oauth.buildAccountName({ subscription_tier: 'SuperGrok' })).toBe('Grok SuperGrok')
+    expect(oauth.buildAccountName({})).toBe('Grok OAuth Account')
+  })
+})

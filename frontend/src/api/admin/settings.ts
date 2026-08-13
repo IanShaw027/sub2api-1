@@ -18,7 +18,7 @@ export interface DefaultSubscriptionSetting {
 }
 
 // ── 平台限额类型 ──────────────────────────────────────────────────
-export type PlatformType = "anthropic" | "openai" | "gemini" | "antigravity" | "grok"
+export type PlatformType = "anthropic" | "openai" | "gemini" | "antigravity" | "grok" | "kiro"
 export type QuotaWindowType = "daily" | "weekly" | "monthly"
 
 /** 单平台三档限额；null = 不限制，undefined = 未填（等价 null） */
@@ -31,7 +31,7 @@ export interface PlatformQuotaLimits {
 /** 全平台默认限额 map（key = PlatformType） */
 export type DefaultPlatformQuotasMap = Partial<Record<PlatformType, PlatformQuotaLimits>>
 
-const PLATFORMS: PlatformType[] = ["anthropic", "openai", "gemini", "antigravity", "grok"]
+const PLATFORMS: PlatformType[] = ["anthropic", "openai", "gemini", "antigravity", "grok", "kiro"]
 
 export type SchedulingThresholdPlatformType =
   | "openai"
@@ -211,6 +211,31 @@ const WECHAT_CONNECT_MODE_OPTIONS: WeChatConnectModeOption[] = [
     labelEn: "Mobile App",
   },
 ];
+export type KiroRuntimeValidationError =
+  | "cache_hit_rate_scale_range"
+  | "cache_min_block_tokens_range"
+  | "cache_independent_ttl_seconds_range"
+  | "cache_prefix_ttl_seconds_range"
+  | "cache_prefix_ttl_seconds_exceeds_independent";
+
+export interface KiroRuntimeSettingsInput {
+  kiro_version?: string | null;
+  kiro_commit?: string | null;
+  system_version?: string | null;
+  node_version?: string | null;
+  kiro_code_execution_sandbox_command?: string | null;
+  cache_hit_rate_scale?: number | null;
+  cache_min_block_tokens?: number | null;
+  cache_independent_ttl_seconds?: number | null;
+  cache_prefix_ttl_seconds?: number | null;
+}
+
+export const KIRO_CACHE_HIT_RATE_SCALE_DEFAULT = 85;
+export const KIRO_CACHE_MIN_BLOCK_TOKENS_DEFAULT = 1024;
+export const KIRO_CACHE_MIN_BLOCK_TOKENS_MAX = 1 << 20;
+export const KIRO_CACHE_INDEPENDENT_TTL_SECONDS_DEFAULT = 3600;
+export const KIRO_CACHE_PREFIX_TTL_SECONDS_DEFAULT = 3600;
+
 const WECHAT_CONNECT_MODE_ALIASES: Record<string, WeChatConnectMode> = {
   open: "open",
   open_platform: "open",
@@ -616,6 +641,17 @@ export interface SystemSettings {
   min_claude_code_version: string;
   max_claude_code_version: string;
 
+  // Kiro runtime defaults (admin-only)
+  kiro_version: string;
+  kiro_commit: string;
+  system_version: string;
+  node_version: string;
+  kiro_code_execution_sandbox_command: string;
+  cache_hit_rate_scale: number | null;
+  cache_min_block_tokens: number | null;
+  cache_independent_ttl_seconds: number | null;
+  cache_prefix_ttl_seconds: number | null;
+
   // 分组隔离
   allow_ungrouped_key_scheduling: boolean;
 
@@ -730,6 +766,11 @@ export interface SystemSettings {
   // Affiliate (邀请返利) feature switch
   affiliate_enabled: boolean;
   ticket_enabled: boolean;
+
+  ip_multi_account_ban_enabled: boolean;
+  ip_multi_account_ban_window_minutes: number;
+  ip_multi_account_ban_threshold: number;
+  ip_multi_account_ban_learning_until: string;
 
   // OpenAI fast/flex policy
   openai_fast_policy_settings?: OpenAIFastPolicySettings;
@@ -938,6 +979,15 @@ export interface UpdateSettingsRequest {
   ops_metrics_interval_seconds?: number;
   min_claude_code_version?: string;
   max_claude_code_version?: string;
+  kiro_version?: string;
+  kiro_commit?: string;
+  system_version?: string;
+  node_version?: string;
+  kiro_code_execution_sandbox_command?: string;
+  cache_hit_rate_scale?: number;
+  cache_min_block_tokens?: number;
+  cache_independent_ttl_seconds?: number;
+  cache_prefix_ttl_seconds?: number;
   allow_ungrouped_key_scheduling?: boolean;
   enable_fingerprint_unification?: boolean;
   enable_metadata_passthrough?: boolean;
@@ -1035,10 +1085,181 @@ export interface UpdateSettingsRequest {
   affiliate_enabled?: boolean;
   ticket_enabled?: boolean;
 
+  ip_multi_account_ban_enabled?: boolean;
+  ip_multi_account_ban_window_minutes?: number;
+  ip_multi_account_ban_threshold?: number;
+  ip_multi_account_ban_learning_until?: string;
+
   // OpenAI fast/flex policy
   openai_fast_policy_settings?: OpenAIFastPolicySettings;
 
   allow_user_view_error_requests?: boolean;
+}
+
+function normalizeOptionalInteger(value: unknown): number | undefined {
+  if (value == null || value === "") return undefined;
+
+  const normalized = Math.floor(Number(value));
+  return Number.isFinite(normalized) ? normalized : undefined;
+}
+
+function normalizeOptionalIntegerForValidation(
+  value: unknown,
+  resetValue: number,
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return resetValue;
+
+  return normalizeOptionalInteger(value);
+}
+
+function normalizeOptionalIntegerForUpdate(
+  value: unknown,
+  resetValue: number,
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return resetValue;
+
+  return normalizeOptionalInteger(value);
+}
+
+export function validateKiroRuntimeSettings(
+  settings: KiroRuntimeSettingsInput,
+): KiroRuntimeValidationError | null {
+  const cacheHitRateScale = normalizeOptionalIntegerForValidation(
+    settings.cache_hit_rate_scale,
+    KIRO_CACHE_HIT_RATE_SCALE_DEFAULT,
+  );
+  if (
+    cacheHitRateScale != null &&
+    (cacheHitRateScale < 0 || cacheHitRateScale > 100)
+  ) {
+    return "cache_hit_rate_scale_range";
+  }
+
+  const cacheMinBlockTokens = normalizeOptionalIntegerForValidation(
+    settings.cache_min_block_tokens,
+    KIRO_CACHE_MIN_BLOCK_TOKENS_DEFAULT,
+  );
+  if (
+    cacheMinBlockTokens != null &&
+    (cacheMinBlockTokens < 0 ||
+      cacheMinBlockTokens > KIRO_CACHE_MIN_BLOCK_TOKENS_MAX)
+  ) {
+    return "cache_min_block_tokens_range";
+  }
+
+  const cacheIndependentTtlSeconds = normalizeOptionalIntegerForValidation(
+    settings.cache_independent_ttl_seconds,
+    KIRO_CACHE_INDEPENDENT_TTL_SECONDS_DEFAULT,
+  );
+  if (
+    cacheIndependentTtlSeconds != null &&
+    (cacheIndependentTtlSeconds < 60 || cacheIndependentTtlSeconds > 86400)
+  ) {
+    return "cache_independent_ttl_seconds_range";
+  }
+
+  const cachePrefixTtlSeconds = normalizeOptionalIntegerForValidation(
+    settings.cache_prefix_ttl_seconds,
+    KIRO_CACHE_PREFIX_TTL_SECONDS_DEFAULT,
+  );
+  if (
+    cachePrefixTtlSeconds != null &&
+    (cachePrefixTtlSeconds < 60 || cachePrefixTtlSeconds > 3600)
+  ) {
+    return "cache_prefix_ttl_seconds_range";
+  }
+
+  if (
+    cacheIndependentTtlSeconds != null &&
+    cachePrefixTtlSeconds != null &&
+    cachePrefixTtlSeconds > cacheIndependentTtlSeconds
+  ) {
+    return "cache_prefix_ttl_seconds_exceeds_independent";
+  }
+
+  return null;
+}
+
+export function normalizeKiroRuntimeSettingsForUpdate(
+  settings: KiroRuntimeSettingsInput,
+): Pick<
+  UpdateSettingsRequest,
+  | "kiro_version"
+  | "kiro_commit"
+  | "system_version"
+  | "node_version"
+  | "kiro_code_execution_sandbox_command"
+  | "cache_hit_rate_scale"
+  | "cache_min_block_tokens"
+  | "cache_independent_ttl_seconds"
+  | "cache_prefix_ttl_seconds"
+> {
+  const payload: Pick<
+    UpdateSettingsRequest,
+    | "kiro_version"
+    | "kiro_commit"
+    | "system_version"
+    | "node_version"
+    | "kiro_code_execution_sandbox_command"
+    | "cache_hit_rate_scale"
+    | "cache_min_block_tokens"
+    | "cache_independent_ttl_seconds"
+    | "cache_prefix_ttl_seconds"
+  > = {};
+
+  if (settings.kiro_version !== undefined) {
+    payload.kiro_version = String(settings.kiro_version ?? "").trim();
+  }
+  if (settings.kiro_commit !== undefined) {
+    payload.kiro_commit = String(settings.kiro_commit ?? "").trim();
+  }
+  if (settings.system_version !== undefined) {
+    payload.system_version = String(settings.system_version ?? "").trim();
+  }
+  if (settings.node_version !== undefined) {
+    payload.node_version = String(settings.node_version ?? "").trim();
+  }
+  if (settings.kiro_code_execution_sandbox_command !== undefined) {
+    payload.kiro_code_execution_sandbox_command = String(
+      settings.kiro_code_execution_sandbox_command ?? "",
+    ).trim();
+  }
+
+  const cacheHitRateScale = normalizeOptionalIntegerForUpdate(
+    settings.cache_hit_rate_scale,
+    KIRO_CACHE_HIT_RATE_SCALE_DEFAULT,
+  );
+  if (cacheHitRateScale !== undefined) {
+    payload.cache_hit_rate_scale = cacheHitRateScale;
+  }
+
+  const cacheMinBlockTokens = normalizeOptionalIntegerForUpdate(
+    settings.cache_min_block_tokens,
+    KIRO_CACHE_MIN_BLOCK_TOKENS_DEFAULT,
+  );
+  if (cacheMinBlockTokens !== undefined) {
+    payload.cache_min_block_tokens = cacheMinBlockTokens;
+  }
+
+  const cacheIndependentTtlSeconds = normalizeOptionalIntegerForUpdate(
+    settings.cache_independent_ttl_seconds,
+    KIRO_CACHE_INDEPENDENT_TTL_SECONDS_DEFAULT,
+  );
+  if (cacheIndependentTtlSeconds !== undefined) {
+    payload.cache_independent_ttl_seconds = cacheIndependentTtlSeconds;
+  }
+
+  const cachePrefixTtlSeconds = normalizeOptionalIntegerForUpdate(
+    settings.cache_prefix_ttl_seconds,
+    KIRO_CACHE_PREFIX_TTL_SECONDS_DEFAULT,
+  );
+  if (cachePrefixTtlSeconds !== undefined) {
+    payload.cache_prefix_ttl_seconds = cachePrefixTtlSeconds;
+  }
+
+  return payload;
 }
 
 /**

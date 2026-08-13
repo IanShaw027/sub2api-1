@@ -895,6 +895,7 @@ export default {
         openai: 'OpenAI',
         gemini: 'Gemini',
         antigravity: 'Antigravity',
+        kiro: 'Kiro',
         grok: 'Grok',
         composite: 'Composite',
       },

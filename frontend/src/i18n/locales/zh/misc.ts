@@ -101,8 +101,16 @@ export default {
     endsAt: '结束时间',
     empty: '暂无公告',
     emptyUnread: '暂无未读公告',
+    emptyRead: '暂无已读公告',
+    emptyUnreadDescription: '当前没有未读公告',
+    emptyReadDescription: '当前没有已读公告',
     total: '条公告',
     emptyDescription: '暂时没有任何系统公告',
+    filters: {
+      all: '全部',
+      unread: '未读',
+      read: '已读'
+    },
     readStatus: '您已阅读此公告',
     markReadHint: '点击"已读"标记此公告'
   },

@@ -24,7 +24,8 @@ import type {
   UpstreamBillingProbeResult,
   UpstreamBillingProbeSettings,
   OllamaCloudUsageSettings,
-  OllamaCloudUsageState
+  OllamaCloudUsageState,
+  AccountCyberEvent
 } from '@/types'
 
 /**
@@ -46,6 +47,7 @@ export async function list(
     privacy_mode?: string
     lite?: string
     include_scheduler_score?: string
+    include_cyber_summary?: string
     sort_by?: string
     sort_order?: 'asc' | 'desc'
   },
@@ -82,6 +84,7 @@ export async function listWithEtag(
     privacy_mode?: string
     lite?: string
     include_scheduler_score?: string
+    include_cyber_summary?: string
     sort_by?: string
     sort_order?: 'asc' | 'desc'
   },
@@ -127,6 +130,22 @@ export async function listWithEtag(
  * @param id - Account ID
  * @returns Account details
  */
+export async function getCyberEvents(
+  id: number,
+  page: number = 1,
+  pageSize: number = 20
+): Promise<{ events: AccountCyberEvent[]; total: number; page: number; page_size: number }> {
+  const { data } = await apiClient.get<{
+    events: AccountCyberEvent[]
+    total: number
+    page: number
+    page_size: number
+  }>(`/admin/accounts/${id}/cyber-events`, {
+    params: { page, page_size: pageSize }
+  })
+  return data
+}
+
 export async function getById(id: number): Promise<Account> {
   const { data } = await apiClient.get<Account>(`/admin/accounts/${id}`)
   return data
@@ -195,6 +214,27 @@ export async function duplicate(id: number): Promise<Account> {
 export async function update(id: number, updates: UpdateAccountRequest): Promise<Account> {
   const { data } = await apiClient.put<Account>(`/admin/accounts/${id}`, updates)
   return data
+}
+
+export async function reauthorizeKiroOAuth(
+  id: number,
+  updates: Pick<UpdateAccountRequest, 'name' | 'credentials' | 'extra'>
+): Promise<Account> {
+  const { data } = await apiClient.post<Account>(`/admin/accounts/${id}/kiro-reauthorize`, updates)
+  return data
+}
+
+export interface KiroDiscoveredProfile {
+  arn?: string
+  profileArn?: string
+  profileName?: string
+  profile_name?: string
+  region?: string
+}
+
+export async function getKiroProfiles(id: number): Promise<KiroDiscoveredProfile[]> {
+  const { data } = await apiClient.get<{ profiles: KiroDiscoveredProfile[] }>(`/admin/accounts/${id}/profiles`)
+  return data.profiles || []
 }
 
 /**
@@ -270,6 +310,7 @@ export async function applyOAuthCredentials(
     type: 'oauth' | 'setup-token'
     credentials: Record<string, unknown>
     extra?: Record<string, unknown>
+    name?: string
   }
 ): Promise<Account> {
   const { data } = await apiClient.post<Account>(
@@ -990,6 +1031,8 @@ export const accountsAPI = {
   create,
   duplicate,
   update,
+  reauthorizeKiroOAuth,
+  getKiroProfiles,
   checkMixedChannelRisk,
   delete: deleteAccount,
   toggleStatus,
@@ -1043,7 +1086,8 @@ export const accountsAPI = {
   saveOllamaCloudUsageSession,
   deleteOllamaCloudUsageSession,
   setOllamaCloudUsageAutoRefresh,
-  refreshOllamaCloudUsage
+  refreshOllamaCloudUsage,
+  getCyberEvents
 }
 
 export default accountsAPI

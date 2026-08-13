@@ -627,7 +627,14 @@
           <ProxySelector
             v-model="proxyId"
             :proxies="proxies"
+            allow-rotation
             aria-labelledby="bulk-edit-proxy-label"
+          />
+          <ProxyRotationSelector
+            v-if="proxyId === PROXY_ROTATION_VALUE"
+            v-model="proxyIds"
+            :proxies="proxies"
+            class="mt-3"
           />
         </div>
       </div>
@@ -1325,7 +1332,8 @@ import type { Proxy as ProxyConfig, AdminGroup, AccountPlatform, AccountType, Op
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
-import ProxySelector from '@/components/common/ProxySelector.vue'
+import ProxySelector, { PROXY_ROTATION_VALUE } from '@/components/common/ProxySelector.vue'
+import ProxyRotationSelector from '@/components/common/ProxyRotationSelector.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -1519,6 +1527,7 @@ const interceptWarmupRequests = ref(false)
 const headerOverrideEnabled = ref(false)
 const headerOverrideRows = ref<HeaderOverrideRow[]>([])
 const proxyId = ref<number | null>(null)
+const proxyIds = ref<number[]>([])
 const concurrency = ref(1)
 const loadFactor = ref<number | null>(null)
 const priority = ref(1)
@@ -1700,8 +1709,16 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
   }
 
   if (enableProxy.value) {
-    // 后端期望 proxy_id: 0 表示清除代理，而不是 null
-    updates.proxy_id = proxyId.value === null ? 0 : proxyId.value
+    if (proxyId.value === PROXY_ROTATION_VALUE) {
+      if (proxyIds.value.length === 0) {
+        appStore.showError(t('admin.accounts.bulkEdit.proxyRotationEmpty'))
+        return null
+      }
+      updates.proxy_ids = [...proxyIds.value]
+    } else {
+      // 后端期望 proxy_id: 0 表示清除代理，而不是 null
+      updates.proxy_id = proxyId.value === null ? 0 : proxyId.value
+    }
   }
 
   if (enableConcurrency.value) {
@@ -2100,6 +2117,7 @@ watch(
       headerOverrideEnabled.value = false
       headerOverrideRows.value = []
       proxyId.value = null
+      proxyIds.value = []
       concurrency.value = 1
       loadFactor.value = null
       priority.value = 1

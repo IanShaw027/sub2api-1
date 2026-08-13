@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
 import type { GeminiOAuthCapabilities } from '@/api/admin/gemini'
+import { formatOAuthAccountName } from '@/utils/oauthAccountName'
 
 export interface GeminiTokenInfo {
   access_token?: string
@@ -149,6 +150,32 @@ export function useGeminiOAuth() {
     }
   }
 
+  const buildAccountName = (tokenInfo: GeminiTokenInfo, fallbackName?: string): string => {
+    const cleanNamePart = (value?: string | null): string => value?.trim() || ''
+    const manualName = cleanNamePart(fallbackName)
+    if (manualName) return manualName
+
+    const email = cleanNamePart(typeof tokenInfo.email === 'string' ? tokenInfo.email : '')
+    const name = cleanNamePart(typeof tokenInfo.name === 'string' ? tokenInfo.name : '')
+    const projectID = cleanNamePart(tokenInfo.project_id)
+    const planName = typeof tokenInfo.plan_name === 'string' ? tokenInfo.plan_name : ''
+    const tierID = tokenInfo.tier_id
+
+    if (email && projectID) return `${email}(${projectID})`
+    if (email) return email
+    if (name && projectID) return `${name}(${projectID})`
+
+    const primary = name || projectID
+    return formatOAuthAccountName({
+      manualName: '',
+      primary,
+      details: [planName, tierID, tokenInfo.oauth_type],
+      platformLabel: 'Gemini',
+      fallbackDetail: planName || tierID || tokenInfo.oauth_type,
+      defaultName: 'Gemini OAuth Account'
+    })
+  }
+
   return {
     authUrl,
     sessionId,
@@ -160,6 +187,7 @@ export function useGeminiOAuth() {
     exchangeAuthCode,
     buildCredentials,
     buildExtraInfo,
-    getCapabilities
+    getCapabilities,
+    buildAccountName
   }
 }

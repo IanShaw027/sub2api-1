@@ -241,13 +241,36 @@
                     :href="accountHomepageUrl(row)"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="border-b border-dotted border-gray-300 font-medium text-gray-900 dark:border-dark-600 dark:text-white"
+                    :class="[
+                      'border-b border-dotted font-medium',
+                      hasCyberAlert(row)
+                        ? 'border-red-300 text-red-600 dark:border-red-700 dark:text-red-400'
+                        : 'border-gray-300 text-gray-900 dark:border-dark-600 dark:text-white'
+                    ]"
                   >
                     {{ value }}
                   </a>
                 </template>
               </HelpTooltip>
-              <span v-else class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+              <span
+                v-else
+                :class="hasCyberAlert(row) ? 'font-medium text-red-600 dark:text-red-400' : 'font-medium text-gray-900 dark:text-white'"
+              >{{ value }}</span>
+              <button
+                v-if="isOpenAIOAuthAccount(row) && row.cyber_count != null"
+                type="button"
+                :class="[
+                  'mt-0.5 inline-flex self-start items-center gap-1 text-xs font-medium transition-colors',
+                  hasCyberAlert(row)
+                    ? 'text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300'
+                    : 'text-gray-500 hover:text-primary-600 dark:text-gray-400 dark:hover:text-primary-400'
+                ]"
+                :title="row.cyber_latest_at ? t('admin.accounts.cyber.latest', { time: formatDateTime(row.cyber_latest_at) }) : t('admin.accounts.cyber.viewDetail')"
+                @click="openCyberEvents(row)"
+              >
+                <Icon name="shield" size="xs" />
+                <span>Cyber: {{ row.cyber_count }}</span>
+              </button>
               <span
                 v-if="accountDisplayEmail(row)"
                 class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[200px]"
@@ -458,7 +481,14 @@
     </TablePageLayout>
     <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="reload" />
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
-    <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
+    <ReAuthAccountModal
+      :show="showReAuth"
+      :account="reAuthAcc"
+      @close="closeReAuthModal"
+      @reauthorized="handleAccountUpdated"
+      @refresh="reload"
+      @open-editor="handleOpenEditorFromReAuth"
+    />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
@@ -492,12 +522,26 @@
       :show="showCapacityForecast"
       @close="showCapacityForecast = false"
     />
+    <AccountCyberEventsModal
+      v-if="showCyberEvents && cyberEventsAcc"
+      :show="showCyberEvents"
+      :account="cyberEventsAcc"
+      @close="closeCyberEvents"
+      @open-detail="openCyberErrorDetail"
+    />
+    <OpsErrorDetailModal
+      v-if="showCyberErrorDetail"
+      :show="showCyberErrorDetail"
+      :error-id="cyberErrorID"
+      error-type="request"
+      @update:show="showCyberErrorDetail = $event"
+    />
     <TotpStepUpDialog :controller="accountExportStepUp" />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, toRaw, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, toRaw, watch, defineAsyncComponent } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
@@ -536,6 +580,8 @@ import Icon from '@/components/icons/Icon.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
 import PlatformCapacityDialog from '@/components/admin/account/PlatformCapacityDialog.vue'
+const AccountCyberEventsModal = defineAsyncComponent(() => import('@/components/admin/account/AccountCyberEventsModal.vue'))
+const OpsErrorDetailModal = defineAsyncComponent(() => import('@/views/admin/ops/components/OpsErrorDetailModal.vue'))
 import { fetchAllAccountIds } from '@/utils/accountSelection'
 import { buildGrokUsageRefreshKey, buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { formatDateTime, formatRelativeTime } from '@/utils/format'
@@ -610,6 +656,10 @@ const showStats = ref(false)
 const showErrorPassthrough = ref(false)
 const showTLSFingerprintProfiles = ref(false)
 const showCapacityForecast = ref(false)
+const showCyberEvents = ref(false)
+const showCyberErrorDetail = ref(false)
+const cyberEventsAcc = ref<Account | null>(null)
+const cyberErrorID = ref<number | null>(null)
 const edAcc = ref<Account | null>(null)
 const tempUnschedAcc = ref<Account | null>(null)
 const deletingAcc = ref<Account | null>(null)
@@ -744,6 +794,7 @@ const accountSupportsBatchUsage = (account: Account) => {
   if (account.platform === 'antigravity') return account.type === 'oauth'
   if (account.platform === 'openai') return account.type === 'oauth'
   if (account.platform === 'grok') return account.type === 'oauth'
+  if (account.platform === 'kiro') return account.type === 'oauth'
   return false
 }
 
@@ -1069,6 +1120,7 @@ const syncAccountListDerivedParams = () => {
   // Keep every load path, including auto-refresh and sorting, aligned with the current column visibility.
   const requestParams = params as any
   requestParams.include_scheduler_score = shouldIncludeSchedulerScore() ? '1' : '0'
+  requestParams.include_cyber_summary = '1'
 }
 
 const {
@@ -1091,6 +1143,7 @@ const {
     group: '',
     search: '',
     include_scheduler_score: shouldIncludeSchedulerScore() ? '1' : '0',
+    include_cyber_summary: '1',
     sort_by: sortState.sort_by,
     sort_order: sortState.sort_order
   }
@@ -1374,7 +1427,8 @@ const refreshAccountsIncrementally = async () => {
         search?: string
         sort_by?: string
         sort_order?: AccountSortOrder
-
+        include_scheduler_score?: string
+        include_cyber_summary?: string
       },
       { etag: autoRefreshETag.value }
     )
@@ -1635,6 +1689,23 @@ function getAntigravityTierLabel(row: any): string | null {
 // 供名称单元格 v-if/标题/文本三处共用,避免同一回退链在模板里重复三次。
 function accountDisplayEmail(row: any): string {
   return row.extra?.email_address || row.extra?.email || row.credentials?.email || row.parent_email || ''
+}
+
+const isOpenAIOAuthAccount = (account: Account) => account.platform === 'openai' && account.type === 'oauth'
+const hasCyberAlert = (account: Account) => isOpenAIOAuthAccount(account) && (account.cyber_count ?? 0) > 3
+const openCyberEvents = (account: Account) => {
+  if (!isOpenAIOAuthAccount(account)) return
+  cyberEventsAcc.value = account
+  showCyberEvents.value = true
+}
+const closeCyberEvents = () => {
+  showCyberEvents.value = false
+  cyberEventsAcc.value = null
+}
+const openCyberErrorDetail = (errorID: number) => {
+  closeCyberEvents()
+  cyberErrorID.value = errorID
+  showCyberErrorDetail.value = true
 }
 
 function accountHomepageUrl(row: Account): string {
@@ -2256,6 +2327,10 @@ const accountExportStepUp = useStepUp()
 const closeTestModal = () => { showTest.value = false; testingAcc.value = null }
 const closeStatsModal = () => { showStats.value = false; statsAcc.value = null }
 const closeReAuthModal = () => { showReAuth.value = false; reAuthAcc.value = null }
+const handleOpenEditorFromReAuth = (a: Account) => {
+  closeReAuthModal()
+  void handleEdit(a)
+}
 const handleTest = (a: Account) => { testingAcc.value = a; showTest.value = true }
 const handleViewStats = (a: Account) => { statsAcc.value = a; showStats.value = true }
 const handleSchedule = async (a: Account) => {

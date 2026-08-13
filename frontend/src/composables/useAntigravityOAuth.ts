@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
 import type { AntigravityTokenInfo } from '@/api/admin/antigravity'
+import { formatOAuthAccountName } from '@/utils/oauthAccountName'
 
 export function useAntigravityOAuth() {
   const appStore = useAppStore()
@@ -136,6 +137,17 @@ export function useAntigravityOAuth() {
     }
   }
 
+  const buildAccountName = (tokenInfo: AntigravityTokenInfo, fallbackName?: string): string => {
+    return formatOAuthAccountName({
+      manualName: fallbackName,
+      primary: tokenInfo.email,
+      details: [tokenInfo.project_id, typeof tokenInfo.plan_type === 'string' ? tokenInfo.plan_type : ''],
+      platformLabel: 'Antigravity',
+      fallbackDetail: typeof tokenInfo.plan_type === 'string' ? tokenInfo.plan_type : '',
+      defaultName: 'Antigravity OAuth Account'
+    })
+  }
+
   return {
     authUrl,
     sessionId,
@@ -146,6 +158,7 @@ export function useAntigravityOAuth() {
     generateAuthUrl,
     exchangeAuthCode,
     validateRefreshToken,
-    buildCredentials
+    buildCredentials,
+    buildAccountName
   }
 }

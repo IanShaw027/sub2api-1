@@ -18,6 +18,7 @@ import usageAPI from './usage'
 import geminiAPI from './gemini'
 import antigravityAPI from './antigravity'
 import grokAPI from './grok'
+import kiroAPI from './kiro'
 import userAttributesAPI from './userAttributes'
 import opsAPI from './ops'
 import errorPassthroughAPI from './errorPassthrough'
@@ -35,6 +36,7 @@ import riskControlAPI from './riskControl'
 import adminComplianceAPI from './compliance'
 import auditAPI from './audit'
 import capacityAPI from './capacity'
+import ipSecurityAPI from './ipSecurity'
 
 /**
  * Unified admin API object for convenient access
@@ -55,6 +57,7 @@ export const adminAPI = {
   gemini: geminiAPI,
   antigravity: antigravityAPI,
   grok: grokAPI,
+  kiro: kiroAPI,
   userAttributes: userAttributesAPI,
   ops: opsAPI,
   errorPassthrough: errorPassthroughAPI,
@@ -71,7 +74,8 @@ export const adminAPI = {
   riskControl: riskControlAPI,
   compliance: adminComplianceAPI,
   audit: auditAPI,
-  capacity: capacityAPI
+  capacity: capacityAPI,
+  ipSecurity: ipSecurityAPI
 }
 
 export {
@@ -90,6 +94,7 @@ export {
   geminiAPI,
   antigravityAPI,
   grokAPI,
+  kiroAPI,
   userAttributesAPI,
   opsAPI,
   errorPassthroughAPI,
@@ -106,7 +111,8 @@ export {
   riskControlAPI,
   adminComplianceAPI,
   auditAPI,
-  capacityAPI
+  capacityAPI,
+  ipSecurityAPI
 }
 
 export default adminAPI

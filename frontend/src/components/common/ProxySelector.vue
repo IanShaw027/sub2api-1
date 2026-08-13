@@ -74,6 +74,14 @@
             <span class="select-option-label">{{ t('admin.accounts.noProxy') }}</span>
             <Icon v-if="modelValue === null" name="check" size="sm" class="text-primary-500" />
           </div>
+          <div
+            v-if="allowRotation"
+            @click="selectOption(PROXY_ROTATION_VALUE)"
+            :class="['select-option', modelValue === PROXY_ROTATION_VALUE && 'select-option-selected']"
+          >
+            <span class="select-option-label">{{ t('admin.accounts.bulkEdit.proxyRotation') }}</span>
+            <Icon v-if="modelValue === PROXY_ROTATION_VALUE" name="check" size="sm" class="text-primary-500" />
+          </div>
 
           <!-- Proxy options -->
           <div
@@ -167,6 +175,10 @@
   </div>
 </template>
 
+<script lang="ts">
+export const PROXY_ROTATION_VALUE = -1
+</script>
+
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -190,10 +202,12 @@ interface Props {
   modelValue: number | null
   proxies: Proxy[]
   disabled?: boolean
+  allowRotation?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  disabled: false
+  disabled: false,
+  allowRotation: false
 })
 
 const emit = defineEmits<{
@@ -216,6 +230,9 @@ const selectedProxy = computed(() => {
 })
 
 const selectedLabel = computed(() => {
+  if (props.allowRotation && props.modelValue === PROXY_ROTATION_VALUE) {
+    return t('admin.accounts.bulkEdit.proxyRotation')
+  }
   if (!selectedProxy.value) {
     return t('admin.accounts.noProxy')
   }

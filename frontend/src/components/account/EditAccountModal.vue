@@ -26,8 +26,192 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
+      <!-- Kiro API Key fields -->
+      <div
+        v-if="account.platform === 'kiro' && account.type === 'apikey'"
+        class="space-y-4 rounded-lg border border-cyan-200 bg-cyan-50/60 p-4 dark:border-cyan-900/40 dark:bg-cyan-950/20"
+      >
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div class="md:col-span-2">
+            <label class="input-label">{{ t('admin.accounts.apiKey') }}</label>
+            <input
+              v-model="editApiKey"
+              type="password"
+              class="input font-mono"
+              autocomplete="new-password"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore="true"
+              :placeholder="t('admin.accounts.kiro.apiKeyPlaceholder')"
+            />
+            <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-if="account.platform === 'kiro' && account.type === 'oauth'"
+        class="space-y-4 rounded-lg border border-violet-200 bg-violet-50/60 p-4 dark:border-violet-900/40 dark:bg-violet-950/20"
+      >
+        <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <label class="input-label">{{ t('admin.accounts.kiro.profileArnLabel') }}</label>
+            <p class="input-hint">{{ t('admin.accounts.kiro.runtimeManagedHint') }}</p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-secondary"
+            :disabled="discoveringKiroProfiles"
+            @click="discoverKiroProfilesForEdit"
+          >
+            {{ discoveringKiroProfiles ? t('admin.accounts.oauth.generating') : t('admin.accounts.kiro.discoverProfiles') }}
+          </button>
+        </div>
+        <select
+          v-if="kiroProfileSelectOptions.length > 0"
+          v-model="selectedKiroProfileArnChoice"
+          class="input"
+        >
+          <option :value="KIRO_PROFILE_CHOICE_KEEP">{{ t('admin.accounts.leaveEmptyToKeep') }}</option>
+          <option :value="KIRO_PROFILE_CHOICE_AUTO">{{ t('admin.accounts.kiro.profileStateAuto') }}</option>
+          <option
+            v-for="profile in kiroProfileSelectOptions"
+            :key="profile.arn"
+            :value="profile.arn"
+          >
+            {{ profile.name }}
+          </option>
+        </select>
+        <div class="flex flex-wrap items-center gap-2 text-xs">
+          <span
+            class="inline-flex rounded px-1.5 py-0.5 font-medium"
+            :class="kiroProfileStatusBadgeClass"
+          >
+            {{ kiroProfileStatusLabel }}
+          </span>
+          <span
+            v-if="kiroProfilePendingHint"
+            class="text-violet-700 dark:text-violet-300"
+          >
+            {{ kiroProfilePendingHint }}
+          </span>
+        </div>
+        <p v-if="currentKiroProfileArn" class="text-xs text-gray-500 dark:text-gray-400">
+          {{ t('admin.accounts.kiro.profileArnLabel') }}: {{ currentKiroProfileArn }}
+        </p>
+        <KiroDiagnosticChips
+          :credentials="account.credentials || {}"
+          :extra="account.extra || {}"
+          :include-profile-mode="false"
+          chip-class="inline-flex rounded bg-white/80 px-2 py-1 text-xs text-violet-800 dark:bg-black/10 dark:text-violet-200"
+        />
+      </div>
+
+      <div
+        v-if="account.platform === 'kiro'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
+
+        <div class="mb-4 flex gap-2">
+          <button
+            type="button"
+            @click="modelRestrictionMode = 'whitelist'"
+            :class="[
+              'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+              modelRestrictionMode === 'whitelist'
+                ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+            ]"
+          >
+            {{ t('admin.accounts.modelWhitelist') }}
+          </button>
+          <button
+            type="button"
+            @click="modelRestrictionMode = 'mapping'"
+            :class="[
+              'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
+              modelRestrictionMode === 'mapping'
+                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-dark-600 dark:text-gray-400 dark:hover:bg-dark-500'
+            ]"
+          >
+            {{ t('admin.accounts.modelMapping') }}
+          </button>
+        </div>
+
+        <div v-if="modelRestrictionMode === 'whitelist'">
+          <ModelWhitelistSelector v-model="allowedModels" platform="kiro" :account-id="account?.id" />
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
+            <span v-if="allowedModels.length === 0">{{ t('admin.accounts.supportsAllModels') }}</span>
+          </p>
+        </div>
+
+        <div v-else>
+          <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
+            <p class="text-xs text-purple-700 dark:text-purple-400">
+              {{ t('admin.accounts.mapRequestModels') }}
+            </p>
+          </div>
+
+          <div v-if="modelMappings.length > 0" class="mb-3 space-y-2">
+            <div
+              v-for="(mapping, index) in modelMappings"
+              :key="'kiro-' + getModelMappingKey(mapping)"
+              class="flex items-center gap-2"
+            >
+              <input
+                v-model="mapping.from"
+                type="text"
+                class="input flex-1"
+                :placeholder="t('admin.accounts.requestModel')"
+              />
+              <svg class="h-4 w-4 flex-shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+              </svg>
+              <input
+                v-model="mapping.to"
+                type="text"
+                class="input flex-1"
+                :placeholder="t('admin.accounts.actualModel')"
+              />
+              <button
+                type="button"
+                @click="removeModelMapping(index)"
+                class="rounded-lg p-2 text-red-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+              >
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            @click="addModelMapping"
+            class="mb-3 w-full rounded-lg border-2 border-dashed border-gray-300 px-4 py-2 text-gray-600 transition-colors hover:border-gray-400 hover:text-gray-700 dark:border-dark-500 dark:text-gray-400 dark:hover:border-dark-400 dark:hover:text-gray-300"
+          >
+            + {{ t('admin.accounts.addMapping') }}
+          </button>
+
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="preset in presetMappings"
+              :key="'kiro-preset-' + preset.from"
+              type="button"
+              @click="addPresetMapping(preset.from, preset.to)"
+              :class="['rounded-lg px-3 py-2 text-sm font-medium transition-colors', preset.color]"
+            >
+              + {{ preset.label }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- API Key fields (only for apikey type) -->
-      <div v-if="account.type === 'apikey'" class="space-y-4">
+      <div v-if="account.type === 'apikey' && account.platform !== 'kiro'" class="space-y-4">
         <div>
           <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
           <input
@@ -2715,6 +2899,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
+import type { KiroDiscoveredProfile } from '@/api/admin/accounts'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
 import type {
   Account,
@@ -2735,6 +2920,7 @@ import ProxySelector from '@/components/common/ProxySelector.vue'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
+import KiroDiagnosticChips from '@/components/account/KiroDiagnosticChips.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
@@ -2774,6 +2960,7 @@ import {
   splitModelMappingObject,
   isValidWildcardPattern
 } from '@/composables/useModelWhitelist'
+import { stripKiroRuntimeExtra } from '@/composables/useKiroOAuth'
 
 interface Props {
   show: boolean
@@ -2847,6 +3034,60 @@ const modelMappings = ref<ModelMapping[]>([])
 const openAICompactModelMappings = ref<ModelMapping[]>([])
 const modelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
 const allowedModels = ref<string[]>([])
+const KIRO_PROFILE_CHOICE_KEEP = '__keep__'
+const KIRO_PROFILE_CHOICE_AUTO = '__auto__'
+const discoveringKiroProfiles = ref(false)
+const discoveredKiroProfiles = ref<KiroDiscoveredProfile[]>([])
+const selectedKiroProfileArnChoice = ref<string>(KIRO_PROFILE_CHOICE_KEEP)
+const currentKiroProfileArn = computed(() => {
+  if (props.account?.platform !== 'kiro') return ''
+  const raw = (props.account.credentials as Record<string, unknown> | undefined)?.profile_arn
+  return typeof raw === 'string' ? raw : ''
+})
+const effectiveKiroProfileChoice = computed(() => {
+  if (selectedKiroProfileArnChoice.value === KIRO_PROFILE_CHOICE_KEEP) {
+    return currentKiroProfileArn.value
+  }
+  if (selectedKiroProfileArnChoice.value === KIRO_PROFILE_CHOICE_AUTO) {
+    return ''
+  }
+  return selectedKiroProfileArnChoice.value
+})
+const kiroProfileStatusLabel = computed(() => {
+  return effectiveKiroProfileChoice.value
+    ? t('admin.accounts.kiro.profileStateManual')
+    : t('admin.accounts.kiro.profileStateAuto')
+})
+const kiroProfileStatusBadgeClass = computed(() => {
+  return effectiveKiroProfileChoice.value
+    ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'
+    : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+})
+const kiroProfilePendingHint = computed(() => {
+  if (selectedKiroProfileArnChoice.value === KIRO_PROFILE_CHOICE_KEEP) return ''
+  return selectedKiroProfileArnChoice.value === KIRO_PROFILE_CHOICE_AUTO
+    ? t('admin.accounts.kiro.profileStatePendingAuto')
+    : t('admin.accounts.kiro.profileStatePendingManual')
+})
+const kiroProfileSelectOptions = computed(() => {
+  const seen = new Set<string>()
+  const options: Array<{ arn: string; name: string }> = []
+  for (const profile of discoveredKiroProfiles.value) {
+    const arn = typeof profile?.profileArn === 'string' && profile.profileArn
+      ? profile.profileArn
+      : typeof profile?.arn === 'string'
+        ? profile.arn
+        : ''
+    if (!arn || seen.has(arn)) continue
+    seen.add(arn)
+    const label = profile.profileName || profile.profile_name || arn.split('/').pop() || arn
+    options.push({ arn, name: label })
+  }
+  if (currentKiroProfileArn.value && !seen.has(currentKiroProfileArn.value)) {
+    options.unshift({ arn: currentKiroProfileArn.value, name: currentKiroProfileArn.value })
+  }
+  return options
+})
 const DEFAULT_POOL_MODE_RETRY_COUNT = 3
 const MAX_POOL_MODE_RETRY_COUNT = 10
 const DEFAULT_POOL_MODE_RETRY_STATUS_CODES = [401, 403, 429]
@@ -3619,7 +3860,22 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   }
 
   // Initialize API Key fields for apikey type
-  if (newAccount.type === 'apikey' && newAccount.credentials) {
+  if (newAccount.platform === 'kiro') {
+    loadModelRestrictionFromMapping(
+      ((newAccount.credentials || {}) as Record<string, unknown>).model_mapping as Record<string, unknown> | undefined
+    )
+    discoveredKiroProfiles.value = []
+    selectedKiroProfileArnChoice.value = KIRO_PROFILE_CHOICE_KEEP
+  }
+
+  if (newAccount.platform === 'kiro' && newAccount.type === 'apikey' && newAccount.credentials) {
+    editBaseUrl.value = ''
+    poolModeEnabled.value = false
+    poolModeRetryCount.value = DEFAULT_POOL_MODE_RETRY_COUNT
+    poolModeRetryStatusCodesInput.value = ''
+    customErrorCodesEnabled.value = false
+    selectedErrorCodes.value = []
+  } else if (newAccount.type === 'apikey' && newAccount.credentials) {
     const credentials = newAccount.credentials as Record<string, unknown>
     const platformDefaultUrl =
       newAccount.platform === 'openai'
@@ -3683,6 +3939,13 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   } else if (newAccount.type === 'upstream' && newAccount.credentials) {
     const credentials = newAccount.credentials as Record<string, unknown>
     editBaseUrl.value = (credentials.base_url as string) || ''
+  } else if (newAccount.platform === 'kiro') {
+    editBaseUrl.value = ''
+    poolModeEnabled.value = false
+    poolModeRetryCount.value = DEFAULT_POOL_MODE_RETRY_COUNT
+    poolModeRetryStatusCodesInput.value = ''
+    customErrorCodesEnabled.value = false
+    selectedErrorCodes.value = []
   } else if ((newAccount.platform === 'gemini' || newAccount.platform === 'anthropic') && newAccount.type === 'service_account' && newAccount.credentials) {
     const credentials = newAccount.credentials as Record<string, unknown>
     editVertexProjectId.value = (credentials.project_id as string) || ''
@@ -3759,6 +4022,38 @@ const addPresetMapping = (from: string, to: string) => {
     return
   }
   modelMappings.value.push({ from, to })
+}
+
+const applyKiroModelRestrictionPatch = (
+  newCredentials: Record<string, unknown>,
+  currentCredentials: Record<string, unknown>
+) => {
+  const modelMapping = buildModelMappingObject(
+    modelRestrictionMode.value,
+    allowedModels.value,
+    modelMappings.value,
+    'kiro'
+  )
+  if (modelMapping) {
+    newCredentials.model_mapping = modelMapping
+  } else if (
+    currentCredentials.model_mapping &&
+    Object.keys(currentCredentials.model_mapping as Record<string, unknown>).length > 0
+  ) {
+    newCredentials.model_mapping = {}
+  }
+}
+
+const discoverKiroProfilesForEdit = async () => {
+  if (!props.account || props.account.platform !== 'kiro' || props.account.type !== 'oauth') return
+  discoveringKiroProfiles.value = true
+  try {
+    discoveredKiroProfiles.value = await adminAPI.accounts.getKiroProfiles(props.account.id)
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.accounts.kiro.discoverProfilesFailed'))
+  } finally {
+    discoveringKiroProfiles.value = false
+  }
 }
 
 const addAntigravityModelMapping = () => {
@@ -4284,9 +4579,56 @@ const handleSubmit = async () => {
         delete updatePayload.rate_multiplier
       }
     }
+    if (props.account.platform === 'kiro' && props.account.type === 'oauth') {
+      const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
+      const newCredentials: Record<string, unknown> = {}
 
-    // For apikey type, handle credentials update
-    if (props.account.type === 'apikey') {
+      if (tempUnschedEnabled.value) {
+        if (!applyTempUnschedConfig(newCredentials)) {
+          return
+        }
+      } else if (currentCredentials.temp_unschedulable_enabled === true) {
+        newCredentials.temp_unschedulable_enabled = false
+        newCredentials.temp_unschedulable_rules = []
+      }
+
+      applyKiroModelRestrictionPatch(newCredentials, currentCredentials)
+
+      if (selectedKiroProfileArnChoice.value === KIRO_PROFILE_CHOICE_AUTO) {
+        newCredentials.profile_arn = ''
+      } else if (selectedKiroProfileArnChoice.value !== KIRO_PROFILE_CHOICE_KEEP) {
+        newCredentials.profile_arn = selectedKiroProfileArnChoice.value
+      }
+
+      if (Object.keys(newCredentials).length > 0) {
+        updatePayload.credentials = newCredentials
+      }
+
+      const currentExtra = (props.account.extra || {}) as Record<string, unknown>
+      updatePayload.extra = stripKiroRuntimeExtra(currentExtra)
+    } else if (props.account.platform === 'kiro' && props.account.type === 'apikey') {
+      const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
+      const newCredentials: Record<string, unknown> = {}
+
+      if (editApiKey.value.trim()) {
+        newCredentials.api_key = editApiKey.value.trim()
+      }
+
+      applyKiroModelRestrictionPatch(newCredentials, currentCredentials)
+
+      if (tempUnschedEnabled.value) {
+        if (!applyTempUnschedConfig(newCredentials)) {
+          return
+        }
+      } else if (currentCredentials.temp_unschedulable_enabled === true) {
+        newCredentials.temp_unschedulable_enabled = false
+        newCredentials.temp_unschedulable_rules = []
+      }
+
+      if (Object.keys(newCredentials).length > 0) {
+        updatePayload.credentials = newCredentials
+      }
+    } else if (props.account.type === 'apikey') {
       const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
       const newBaseUrl = editBaseUrl.value.trim() || defaultBaseUrl.value
       const shouldApplyModelMapping = !(props.account.platform === 'openai' && openaiPassthroughEnabled.value)
@@ -4913,6 +5255,13 @@ const handleSubmit = async () => {
       // Quota notify config
       writeQuotaNotifyToExtra(newExtra, 'update')
       updatePayload.extra = newExtra
+    }
+
+    if (props.account.platform === 'kiro') {
+      const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
+        (props.account.extra as Record<string, unknown>) ||
+        {}
+      updatePayload.extra = stripKiroRuntimeExtra(currentExtra)
     }
 
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {

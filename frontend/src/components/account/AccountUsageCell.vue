@@ -335,6 +335,46 @@
       <div v-else class="text-xs text-gray-400">-</div>
     </template>
 
+    <!-- Kiro OAuth accounts: 30-day subscription quota -->
+    <template v-else-if="account.platform === 'kiro' && account.type === 'oauth'">
+      <div v-if="loading" class="space-y-1.5">
+        <div class="flex items-center gap-1">
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-1.5 w-8 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700"></div>
+          <div class="h-3 w-[32px] animate-pulse rounded bg-gray-200 dark:bg-gray-700"></div>
+        </div>
+      </div>
+      <div v-else-if="error" class="text-xs text-red-500">
+        {{ error }}
+      </div>
+      <div v-else-if="usageInfo?.error" class="text-xs text-amber-600 dark:text-amber-400 truncate max-w-[220px]" :title="usageInfo.error">
+        {{ usageInfo.error }}
+      </div>
+      <div v-else-if="needsReauth" class="space-y-1">
+        <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300">
+          {{ t('admin.accounts.needsReauth') }}
+        </span>
+      </div>
+      <div v-else-if="usageInfo?.kiro_quota" class="space-y-1">
+        <UsageProgressBar
+          label="30d"
+          :utilization="usageInfo.kiro_quota.utilization"
+          :resets-at="usageInfo.kiro_quota.resets_at"
+          :window-stats="kiroQuotaStats"
+          :show-empty-window-stats="true"
+          color="cyan"
+        />
+        <div class="whitespace-nowrap text-[10px] text-gray-500 dark:text-gray-400">
+          {{ t('admin.accounts.kiro.quotaCompact', {
+            limit: formatKiroMoney(usageInfo.kiro_usage_limit),
+            overage: kiroOverageDisplay,
+            used: formatKiroMoney(usageInfo.kiro_current_usage)
+          }) }}
+        </div>
+      </div>
+      <div v-else class="text-xs text-gray-400">-</div>
+    </template>
+
     <!-- Grok OAuth accounts: passive xAI quota headers + local Sub2API usage -->
     <template v-else-if="account.platform === 'grok' && account.type === 'oauth'">
       <div v-if="loading" class="space-y-1.5">
@@ -700,6 +740,9 @@ const shouldFetchUsage = computed(() => {
   if (props.account.platform === 'gemini') {
     return true
   }
+  if (props.account.platform === 'kiro') {
+    return props.account.type === 'oauth'
+  }
   if (props.account.platform === 'antigravity') {
     return props.account.type === 'oauth'
   }
@@ -713,6 +756,27 @@ const shouldFetchUsage = computed(() => {
 })
 
 const isBatchManaged = computed(() => typeof props.requestBatchedUsage === 'function')
+
+const kiroQuotaStats = computed<WindowStats | null>(() => {
+  if (props.account.platform !== 'kiro') return null
+  if (usageInfo.value?.kiro_quota?.window_stats) return usageInfo.value.kiro_quota.window_stats
+  return { requests: 0, tokens: 0, cost: 0, standard_cost: 0, user_cost: 0 }
+})
+
+const kiroOverageCapabilityValue = computed(() => (usageInfo.value?.kiro_overage_capability || '').trim().toUpperCase())
+
+const kiroOverageDisplay = computed(() => {
+  if (usageInfo.value?.kiro_overage_enabled === true) return 'true'
+  if (usageInfo.value?.kiro_overage_enabled === false) return 'false'
+  const capability = kiroOverageCapabilityValue.value
+  if (['SUPPORTED', 'ENABLED', 'AVAILABLE', 'CAPABLE'].includes(capability)) return 'false'
+  return 'null'
+})
+
+const formatKiroMoney = (value?: number | null): string => {
+  if (value == null || Number.isNaN(value)) return '0.00'
+  return value.toFixed(2)
+}
 
 const showGeminiTodayStats = computed(() => {
   return props.account.platform === 'gemini' && props.account.type === 'service_account'

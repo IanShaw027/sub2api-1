@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
+import { formatOAuthAccountName } from '@/utils/oauthAccountName'
 
 export interface OpenAITokenInfo {
   access_token?: string
@@ -22,6 +23,7 @@ export interface OpenAITokenInfo {
   chatgpt_account_id?: string
   chatgpt_user_id?: string
   organization_id?: string
+  workspace_name?: string
   [key: string]: unknown
 }
 
@@ -223,6 +225,19 @@ export function useOpenAIOAuth() {
     return Object.keys(extra).length > 0 ? extra : undefined
   }
 
+  const buildAccountName = (tokenInfo: OpenAITokenInfo, fallbackName?: string): string => {
+    const planType = tokenInfo.plan_type?.trim().toLowerCase() || ''
+    const workspaceLabel = tokenInfo.workspace_name?.trim() || ''
+    return formatOAuthAccountName({
+      manualName: fallbackName,
+      primary: tokenInfo.email || tokenInfo.name,
+      details: planType === 'team' && workspaceLabel ? [workspaceLabel] : [],
+      platformLabel: 'OpenAI',
+      fallbackDetail: tokenInfo.plan_type,
+      defaultName: 'OpenAI OAuth Account'
+    })
+  }
+
   return {
     // State
     authUrl,
@@ -236,6 +251,7 @@ export function useOpenAIOAuth() {
     exchangeAuthCode,
     validateRefreshToken,
     buildCredentials,
-    buildExtraInfo
+    buildExtraInfo,
+    buildAccountName
   }
 }

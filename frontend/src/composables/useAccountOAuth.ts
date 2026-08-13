@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
+import { formatOAuthAccountName } from '@/utils/oauthAccountName'
 
 export type AddMethod = 'oauth' | 'setup-token'
 export type AuthInputMethod =
@@ -178,6 +179,16 @@ export function useAccountOAuth() {
     return Object.keys(extra).length > 0 ? extra : undefined
   }
 
+  const buildAccountName = (tokenInfo: TokenInfo, fallbackName?: string): string => {
+    return formatOAuthAccountName({
+      manualName: fallbackName,
+      primary: typeof tokenInfo.email_address === 'string' ? tokenInfo.email_address : '',
+      details: [],
+      platformLabel: 'Claude',
+      defaultName: 'Claude OAuth Account'
+    })
+  }
+
   return {
     // State
     authUrl,
@@ -192,6 +203,7 @@ export function useAccountOAuth() {
     exchangeAuthCode,
     cookieAuth,
     parseSessionKeys,
-    buildExtraInfo
+    buildExtraInfo,
+    buildAccountName
   }
 }

@@ -18,11 +18,13 @@
                 ? 'from-green-500 to-green-600'
                 : isGemini
                   ? 'from-blue-500 to-blue-600'
-                  : isAntigravity
-                    ? 'from-purple-500 to-purple-600'
-                    : isGrok
-                      ? 'from-zinc-700 to-zinc-900'
-                      : 'from-orange-500 to-orange-600'
+                  :               isAntigravity
+                ? 'from-purple-500 to-purple-600'
+                : isKiro
+                  ? 'from-cyan-500 to-sky-600'
+                  : isGrok
+                    ? 'from-zinc-700 to-zinc-900'
+                    : 'from-orange-500 to-orange-600'
             ]"
           >
             <Icon name="sparkles" size="md" class="text-white" />
@@ -39,13 +41,30 @@
                     ? t('admin.accounts.geminiAccount')
                     : isAntigravity
                       ? t('admin.accounts.antigravityAccount')
-                      : isGrok
-                        ? t('admin.accounts.grokAccount')
-                        : t('admin.accounts.claudeCodeAccount')
+                      : isKiro
+                        ? t('admin.accounts.kiroAccount')
+                        : isGrok
+                          ? t('admin.accounts.grokAccount')
+                          : t('admin.accounts.claudeCodeAccount')
               }}
             </span>
           </div>
         </div>
+      </div>
+
+      <div
+        v-if="isKiroOAuth && kiroDiagnosticItems.length"
+        class="rounded-lg border border-cyan-200 bg-cyan-50/60 p-4 dark:border-cyan-900/40 dark:bg-cyan-950/20"
+      >
+        <div class="mb-2 text-sm font-medium text-cyan-900 dark:text-cyan-100">
+          {{ t('admin.accounts.kiro.diagnosticSummaryTitle') }}
+        </div>
+        <KiroDiagnosticChips
+          :credentials="account.credentials || {}"
+          :extra="account.extra || {}"
+          :usage-info="{}"
+          chip-class="inline-flex rounded bg-white/80 px-2 py-1 text-cyan-800 dark:bg-black/10 dark:text-cyan-200"
+        />
       </div>
 
       <!-- Add Method Selection (Claude only) -->
@@ -120,7 +139,26 @@
         </div>
       </div>
 
+      <KiroAuthorizationFlow
+        v-if="isKiroOAuth"
+        mode="reauth"
+        :account-id="account?.id || null"
+        :proxy-id="account?.proxy_id || null"
+        :auth-url="kiroOAuth.authUrl.value"
+        :callback-base-url="kiroOAuth.callbackBaseUrl.value"
+        :loading="kiroReauthLoading"
+        :error="kiroOAuth.error.value"
+        :initial-credentials="kiroCredentials"
+        :initial-extra="kiroExtra"
+        :continuation="kiroOAuth.continuation.value"
+        :external-i-d-p-authorization="kiroOAuth.externalIDPAuthorization.value"
+        @generate-url="handleGenerateUrl"
+        @submit="handleKiroReauthorize"
+        @submit-refresh-token="handleKiroValidateRT"
+        @cancel-continuation="kiroOAuth.cancelDeviceAuthorization"
+      />
       <OAuthAuthorizationFlow
+        v-else-if="!isKiro"
         ref="oauthFlowRef"
         :add-method="addMethod"
         :auth-url="currentAuthUrl"
@@ -151,8 +189,17 @@
         <button type="button" class="btn btn-secondary" @click="handleClose">
           {{ t('common.cancel') }}
         </button>
+        <div v-if="isKiro" class="flex gap-3">
+          <button
+            type="button"
+            class="btn btn-secondary"
+            @click="handleOpenEditor"
+          >
+            {{ t('admin.accounts.kiro.openEditorAction') }}
+          </button>
+        </div>
         <button
-          v-if="isManualInputMethod"
+          v-if="!isKiro && isManualInputMethod"
           type="button"
           :disabled="!canExchangeCode"
           class="btn btn-primary"
@@ -190,7 +237,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
@@ -203,10 +250,14 @@ import { useOpenAIOAuth } from '@/composables/useOpenAIOAuth'
 import { useGeminiOAuth } from '@/composables/useGeminiOAuth'
 import { useAntigravityOAuth } from '@/composables/useAntigravityOAuth'
 import { useGrokOAuth } from '@/composables/useGrokOAuth'
-import type { Account } from '@/types'
+import { stripKiroRuntimeExtra, useKiroOAuth } from '@/composables/useKiroOAuth'
+import type { KiroTokenInfo } from '@/api/admin/kiro'
+import type { Account, KiroAccountExtra, KiroCredentials } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import OAuthAuthorizationFlow from '@/components/account/OAuthAuthorizationFlow.vue'
+import KiroDiagnosticChips from '@/components/account/KiroDiagnosticChips.vue'
+import KiroAuthorizationFlow from '@/components/account/KiroAuthorizationFlow.vue'
 
 // Type for exposed OAuthAuthorizationFlow component
 // Note: defineExpose automatically unwraps refs, so we use the unwrapped types
@@ -228,6 +279,8 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   close: []
   reauthorized: [account: Account]
+  refresh: []
+  openEditor: [account: Account]
 }>()
 
 const appStore = useAppStore()
@@ -239,6 +292,7 @@ const openaiOAuth = useOpenAIOAuth()
 const geminiOAuth = useGeminiOAuth()
 const antigravityOAuth = useAntigravityOAuth()
 const grokOAuth = useGrokOAuth()
+const kiroOAuth = useKiroOAuth()
 
 // Refs
 const oauthFlowRef = ref<OAuthFlowExposed | null>(null)
@@ -246,6 +300,7 @@ const oauthFlowRef = ref<OAuthFlowExposed | null>(null)
 // State
 const addMethod = ref<AddMethod>('oauth')
 const geminiOAuthType = ref<'code_assist' | 'google_one' | 'ai_studio'>('code_assist')
+const kiroBatchReauthLoading = ref(false)
 
 // Computed - check platform
 const isOpenAI = computed(() => props.account?.platform === 'openai')
@@ -253,6 +308,34 @@ const isOpenAILike = computed(() => isOpenAI.value)
 const isGemini = computed(() => props.account?.platform === 'gemini')
 const isAnthropic = computed(() => props.account?.platform === 'anthropic')
 const isAntigravity = computed(() => props.account?.platform === 'antigravity')
+const isKiro = computed(() => props.account?.platform === 'kiro')
+const isKiroOAuth = computed(() => props.account?.platform === 'kiro' && props.account?.type === 'oauth')
+const kiroCredentials = computed((): KiroCredentials & Record<string, unknown> => {
+  if (!isKiroOAuth.value) {
+    return {}
+  }
+  return (props.account?.credentials || {}) as KiroCredentials & Record<string, unknown>
+})
+const kiroExtra = computed((): KiroAccountExtra & Record<string, unknown> => {
+  if (!isKiroOAuth.value) {
+    return {}
+  }
+  return (props.account?.extra || {}) as KiroAccountExtra & Record<string, unknown>
+})
+const kiroDiagnosticItems = computed(() => {
+  if (!isKiroOAuth.value) return []
+  const credentials = (props.account?.credentials || {}) as Record<string, unknown>
+  const extra = (props.account?.extra || {}) as Record<string, unknown>
+  const hasProfileArn = typeof credentials.profile_arn === 'string' && credentials.profile_arn.trim() !== ''
+  const hasProfileID = (typeof credentials.profile_id === 'string' && credentials.profile_id.trim() !== '')
+    || (typeof extra.profile_id === 'string' && extra.profile_id.trim() !== '')
+  const hasLoginProvider = (typeof credentials.login_provider === 'string' && credentials.login_provider.trim() !== '')
+    || (typeof extra.login_provider === 'string' && extra.login_provider.trim() !== '')
+  const hasStatusReason = (typeof credentials.status_reason === 'string' && credentials.status_reason.trim() !== '')
+    || (typeof credentials.kiro_status_reason === 'string' && credentials.kiro_status_reason.trim() !== '')
+    || (typeof extra.kiro_status_reason === 'string' && extra.kiro_status_reason.trim() !== '')
+  return hasProfileArn || hasProfileID || hasLoginProvider || hasStatusReason ? [1] : []
+})
 const isGrok = computed(() => props.account?.platform === 'grok')
 
 /**
@@ -272,6 +355,7 @@ const grokInitialInputMethod = computed<AuthInputMethod>(() => {
 
 // Computed - current OAuth state based on platform
 const currentAuthUrl = computed(() => {
+  if (isKiro.value) return ''
   if (isOpenAILike.value) return openaiOAuth.authUrl.value
   if (isGemini.value) return geminiOAuth.authUrl.value
   if (isAntigravity.value) return antigravityOAuth.authUrl.value
@@ -279,6 +363,7 @@ const currentAuthUrl = computed(() => {
   return claudeOAuth.authUrl.value
 })
 const currentSessionId = computed(() => {
+  if (isKiro.value) return ''
   if (isOpenAILike.value) return openaiOAuth.sessionId.value
   if (isGemini.value) return geminiOAuth.sessionId.value
   if (isAntigravity.value) return antigravityOAuth.sessionId.value
@@ -286,13 +371,16 @@ const currentSessionId = computed(() => {
   return claudeOAuth.sessionId.value
 })
 const currentLoading = computed(() => {
+  if (isKiro.value) return false
   if (isOpenAILike.value) return openaiOAuth.loading.value
   if (isGemini.value) return geminiOAuth.loading.value
   if (isAntigravity.value) return antigravityOAuth.loading.value
   if (isGrok.value) return grokOAuth.loading.value
   return claudeOAuth.loading.value
 })
+const kiroReauthLoading = computed(() => kiroOAuth.loading.value || kiroBatchReauthLoading.value)
 const currentError = computed(() => {
+  if (isKiro.value) return ''
   if (isOpenAILike.value) return openaiOAuth.error.value
   if (isGemini.value) return geminiOAuth.error.value
   if (isAntigravity.value) return antigravityOAuth.error.value
@@ -358,12 +446,245 @@ const resetState = () => {
   openaiOAuth.resetState()
   geminiOAuth.resetState()
   antigravityOAuth.resetState()
+  kiroOAuth.resetState()
   grokOAuth.resetState()
   oauthFlowRef.value?.reset()
 }
 
 const handleClose = () => {
+  kiroOAuth.cancelDeviceAuthorization()
   emit('close')
+}
+
+onUnmounted(() => {
+  kiroOAuth.cancelDeviceAuthorization()
+})
+
+const handleOpenEditor = () => {
+  if (!props.account) return
+  emit('openEditor', props.account)
+  emit('close')
+}
+
+const mergeRecord = (
+  ...sources: Array<Record<string, unknown> | null | undefined>
+): Record<string, unknown> => {
+  return sources.reduce<Record<string, unknown>>((merged, source) => {
+    return {
+      ...merged,
+      ...(source || {})
+    }
+  }, {})
+}
+
+const stripEmptyRecordValues = (
+  record?: Record<string, unknown> | null
+): Record<string, unknown> => {
+  return Object.fromEntries(
+    Object.entries(record || {}).filter(([, value]) => {
+      if (value === null || value === undefined) {
+        return false
+      }
+      return typeof value !== 'string' || value.trim() !== ''
+    })
+  )
+}
+
+const emitKiroBatchRefresh = (refreshTokenCount: number, successCount: number) => {
+  if (refreshTokenCount > 1 && successCount > 1) {
+    emit('refresh')
+  }
+}
+
+const sanitizeKiroCredentialsForAuthMethod = (
+  credentials: Record<string, unknown>
+): Record<string, unknown> => {
+  const sanitized = { ...credentials }
+  if (sanitized.auth_method === 'external_idp') {
+    delete sanitized.client_secret
+    delete sanitized.idc_region
+    return sanitized
+  }
+  if (sanitized.auth_method !== 'idc') {
+    for (const key of ['client_id', 'client_secret', 'issuer_url', 'idc_region', 'scopes', 'login_hint', 'token_endpoint']) {
+      delete sanitized[key]
+    }
+  }
+  return sanitized
+}
+
+const finishKiroReauthorization = async (
+  name: string,
+  credentials: Record<string, unknown>,
+  extra: Record<string, unknown>
+) => {
+  if (!props.account) return
+
+  try {
+    const updatedAccount = await adminAPI.accounts.reauthorizeKiroOAuth(props.account.id, {
+      name,
+      credentials,
+      extra
+    })
+    appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
+    emit('reauthorized', updatedAccount)
+    handleClose()
+  } catch (error: any) {
+    const message =
+      error?.response?.data?.detail ||
+      error?.message ||
+      t('admin.accounts.oauth.authFailed')
+    appStore.showError(message)
+  }
+}
+
+const handleKiroReauthorize = async (payload: {
+  callbackUrl: string
+  credentials: Record<string, unknown>
+  extra: Record<string, unknown>
+}) => {
+  if (!props.account || !isKiroOAuth.value) return
+
+  const tokenInfo = await kiroOAuth.exchangeCallback(payload.callbackUrl, props.account.proxy_id)
+  if (!tokenInfo) {
+    return
+  }
+  const credentials = sanitizeKiroCredentialsForAuthMethod(mergeRecord(
+    (props.account.credentials || {}) as Record<string, unknown>,
+    kiroOAuth.buildCredentials(tokenInfo, payload.credentials)
+  ))
+  const extra = mergeRecord(
+    (props.account.extra || {}) as Record<string, unknown>,
+    kiroOAuth.buildExtraInfo(tokenInfo, payload.extra)
+  )
+  const sanitizedExtra = stripKiroRuntimeExtra(extra)
+  const name = kiroOAuth.buildAccountName(tokenInfo, props.account.name)
+
+  await finishKiroReauthorization(name, credentials, sanitizedExtra)
+}
+
+const handleKiroValidateRT = async (payload: {
+  credentials: Record<string, unknown>
+  extra: Record<string, unknown>
+}) => {
+  if (!props.account || !isKiroOAuth.value) return
+  if (kiroBatchReauthLoading.value) return
+
+  const refreshTokens = String(payload.credentials.refresh_token || '')
+    .split('\n')
+    .map((rt) => rt.trim())
+    .filter((rt) => rt)
+
+  if (refreshTokens.length === 0) {
+    kiroOAuth.error.value = t('admin.accounts.kiro.refreshTokenRequired')
+    return
+  }
+
+  kiroBatchReauthLoading.value = true
+  kiroOAuth.loading.value = true
+  kiroOAuth.error.value = ''
+
+  let successCount = 0
+  let failedCount = 0
+  let updatedAccount: Account | null = null
+  const errors: string[] = []
+
+  try {
+    for (let i = 0; i < refreshTokens.length; i++) {
+      try {
+        const manualCredentials = {
+          ...payload.credentials,
+          refresh_token: refreshTokens[i]
+        }
+        const validatedCredentials = await kiroOAuth.validateRefreshToken(
+          manualCredentials,
+          payload.extra,
+          props.account.proxy_id,
+          false
+        )
+        if (!validatedCredentials) {
+          failedCount++
+          errors.push(`#${i + 1}: ${kiroOAuth.error.value || t('admin.accounts.kiro.failedToValidateRT')}`)
+          kiroOAuth.error.value = ''
+          continue
+        }
+
+        const tokenInfo = validatedCredentials as KiroTokenInfo
+        const credentials = sanitizeKiroCredentialsForAuthMethod(stripEmptyRecordValues(mergeRecord(
+          (props.account.credentials || {}) as Record<string, unknown>,
+          manualCredentials,
+          validatedCredentials
+        )))
+        const extra = stripKiroRuntimeExtra(stripEmptyRecordValues(mergeRecord(
+          (props.account.extra || {}) as Record<string, unknown>,
+          kiroOAuth.buildExtraInfo(tokenInfo, payload.extra)
+        )))
+        const baseName = kiroOAuth.buildAccountName(tokenInfo, props.account.name)
+        const name = refreshTokens.length > 1 ? `${baseName} #${i + 1}` : baseName
+
+        if (successCount === 0) {
+          updatedAccount = await adminAPI.accounts.reauthorizeKiroOAuth(props.account.id, {
+            name,
+            credentials,
+            extra
+          })
+        } else {
+          await adminAPI.accounts.create({
+            name,
+            notes: props.account.notes,
+            platform: 'kiro',
+            type: 'oauth',
+            credentials,
+            extra,
+            proxy_id: props.account.proxy_id,
+            concurrency: props.account.concurrency,
+            load_factor: props.account.load_factor ?? undefined,
+            priority: props.account.priority,
+            rate_multiplier: props.account.rate_multiplier,
+            group_ids: props.account.group_ids,
+            expires_at: props.account.expires_at,
+            auto_pause_on_expired: props.account.auto_pause_on_expired
+          })
+        }
+        successCount++
+      } catch (error: any) {
+        failedCount++
+        const message =
+          error?.response?.data?.detail ||
+          error?.message ||
+          t('admin.accounts.oauth.authFailed')
+        errors.push(`#${i + 1}: ${message}`)
+      }
+    }
+
+    if (successCount > 0 && failedCount === 0) {
+      appStore.showSuccess(
+        refreshTokens.length > 1
+          ? t('admin.accounts.oauth.batchSuccess', { count: successCount })
+          : t('admin.accounts.reAuthorizedSuccess')
+      )
+      if (updatedAccount) {
+        emit('reauthorized', updatedAccount)
+      }
+      emitKiroBatchRefresh(refreshTokens.length, successCount)
+      handleClose()
+    } else if (successCount > 0 && failedCount > 0) {
+      appStore.showWarning(
+        t('admin.accounts.oauth.batchPartialSuccess', { success: successCount, failed: failedCount })
+      )
+      kiroOAuth.error.value = errors.join('\n')
+      if (updatedAccount) {
+        emit('reauthorized', updatedAccount)
+      }
+      emitKiroBatchRefresh(refreshTokens.length, successCount)
+    } else {
+      kiroOAuth.error.value = errors.join('\n')
+      appStore.showError(t('admin.accounts.oauth.batchFailed'))
+    }
+  } finally {
+    kiroBatchReauthLoading.value = false
+    kiroOAuth.loading.value = false
+  }
 }
 
 const handleGenerateUrl = async () => {
@@ -371,6 +692,10 @@ const handleGenerateUrl = async () => {
 
   if (isOpenAILike.value) {
     await openaiOAuth.generateAuthUrl(props.account.proxy_id)
+  } else if (isKiroOAuth.value) {
+    await kiroOAuth.generateAuthUrl(props.account.proxy_id)
+  } else if (isKiro.value) {
+    return
   } else if (isGemini.value) {
     const creds = (props.account.credentials || {}) as Record<string, unknown>
     const tierId = typeof creds.tier_id === 'string' ? creds.tier_id : undefined
@@ -419,7 +744,8 @@ const handleExchangeCode = async () => {
       const updatedAccount = await adminAPI.accounts.applyOAuthCredentials(props.account.id, {
         type: 'oauth',
         credentials,
-        extra
+        extra,
+        name: oauthClient.buildAccountName(tokenInfo, props.account.name)
       })
 
       appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
@@ -452,7 +778,8 @@ const handleExchangeCode = async () => {
     try {
       await adminAPI.accounts.update(props.account.id, {
         type: 'oauth',
-        credentials
+        credentials,
+        name: geminiOAuth.buildAccountName(tokenInfo, props.account.name)
       })
       const updatedAccount = await adminAPI.accounts.clearError(props.account.id)
       appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
@@ -484,7 +811,8 @@ const handleExchangeCode = async () => {
     try {
       await adminAPI.accounts.update(props.account.id, {
         type: 'oauth',
-        credentials
+        credentials,
+        name: antigravityOAuth.buildAccountName(tokenInfo, props.account.name)
       })
       const updatedAccount = await adminAPI.accounts.clearError(props.account.id)
       appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
@@ -517,7 +845,8 @@ const handleExchangeCode = async () => {
       const updatedAccount = await adminAPI.accounts.applyOAuthCredentials(props.account.id, {
         type: 'oauth',
         credentials,
-        extra
+        extra,
+        name: grokOAuth.buildAccountName(tokenInfo, props.account.name)
       })
 
       appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
@@ -553,7 +882,8 @@ const handleExchangeCode = async () => {
       const updatedAccount = await adminAPI.accounts.applyOAuthCredentials(props.account.id, {
         type: addMethod.value as 'oauth' | 'setup-token',
         credentials: tokenInfo as unknown as Record<string, unknown>,
-        extra
+        extra,
+        name: claudeOAuth.buildAccountName(tokenInfo, props.account.name)
       })
 
       appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
@@ -592,7 +922,8 @@ const handleCookieAuth = async (sessionKey: string) => {
     const updatedAccount = await adminAPI.accounts.applyOAuthCredentials(props.account.id, {
       type: addMethod.value as 'oauth' | 'setup-token',
       credentials: tokenInfo as unknown as Record<string, unknown>,
-      extra
+      extra,
+      name: claudeOAuth.buildAccountName(tokenInfo, props.account.name)
     })
 
     appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
@@ -619,7 +950,8 @@ const applyGrokReauthTokenInfo = async (tokenInfo: {
   const updatedAccount = await adminAPI.accounts.applyOAuthCredentials(props.account.id, {
     type: 'oauth',
     credentials,
-    extra
+    extra,
+    name: grokOAuth.buildAccountName(tokenInfo as any, props.account.name)
   })
   appStore.showSuccess(t('admin.accounts.reAuthorizedSuccess'))
   emit('reauthorized', updatedAccount)
