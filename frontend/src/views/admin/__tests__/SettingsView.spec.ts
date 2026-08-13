@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createPinia, setActivePinia } from "pinia";
 import { defineComponent, h } from "vue";
 import { flushPromises, mount } from "@vue/test-utils";
 
@@ -547,8 +548,11 @@ const baseSettingsResponse = {
 };
 
 function mountView() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
   return mount(SettingsView, {
     global: {
+      plugins: [pinia],
       stubs: {
         AppLayout: AppLayoutStub,
         Select: SelectStub,
@@ -562,6 +566,7 @@ function mountView() {
         ProxySelector: true,
         ImageUpload: ImageUploadStub,
         BackupSettings: true,
+        IPSecurityPanel: true,
       },
     },
   });
@@ -1246,6 +1251,7 @@ describe("admin SettingsView payment visible method controls", () => {
           ProxySelector: true,
           ImageUpload: ImageUploadStub,
           BackupSettings: true,
+          IPSecurityPanel: true,
         },
       },
     });
@@ -1487,6 +1493,7 @@ describe("admin SettingsView payment visible method controls", () => {
           ProxySelector: true,
           ImageUpload: ImageUploadStub,
           BackupSettings: true,
+          IPSecurityPanel: true,
         },
       },
     });

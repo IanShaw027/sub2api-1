@@ -16,18 +16,44 @@
       />
 
       <div
-        v-if="contactInfo"
+        v-if="contactInfo || supportQRCodes.length > 0"
+        data-testid="profile-support-panel"
         class="card border-primary-200 bg-primary-50 p-6 dark:bg-primary-900/20"
       >
-        <div class="flex items-center gap-4">
+        <div class="flex items-start gap-4">
           <div class="rounded-xl bg-primary-100 p-3 text-primary-600">
             <Icon name="chat" size="lg" />
           </div>
-          <div>
-            <h3 class="font-semibold text-primary-800 dark:text-primary-200">
-              {{ t('common.contactSupport') }}
-            </h3>
-            <p class="text-sm font-medium">{{ contactInfo }}</p>
+          <div class="min-w-0 flex-1 space-y-4">
+            <div>
+              <h3 class="font-semibold text-primary-800 dark:text-primary-200">
+                {{ t('common.contactSupport') }}
+              </h3>
+              <p v-if="contactInfo" class="text-sm font-medium">{{ contactInfo }}</p>
+            </div>
+            <div
+              v-if="supportQRCodes.length > 0"
+              data-testid="profile-support-qr-grid"
+              class="grid gap-4 sm:grid-cols-2"
+            >
+              <div
+                v-for="(qrCode, index) in supportQRCodes"
+                :key="`${qrCode.image_url}-${index}`"
+                class="overflow-hidden rounded-2xl bg-white p-3 dark:bg-dark-800"
+              >
+                <img
+                  :src="qrCode.image_url"
+                  :alt="qrCode.note || t('common.contactSupport')"
+                  class="aspect-square w-full object-contain"
+                >
+                <p
+                  v-if="qrCode.note"
+                  class="mt-2 text-center text-xs text-gray-500 dark:text-gray-400"
+                >
+                  {{ qrCode.note }}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -62,6 +88,8 @@ import ProfilePasskeyCard from '@/components/user/profile/ProfilePasskeyCard.vue
 import { isWeChatWebOAuthEnabled } from '@/api/auth'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
+import type { SupportQRCodeEntry } from '@/types'
+import { sanitizeSupportQRUrl } from '@/utils/url'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -69,6 +97,7 @@ const authStore = useAuthStore()
 const user = computed(() => authStore.user)
 
 const contactInfo = ref('')
+const supportQRCodes = ref<SupportQRCodeEntry[]>([])
 const balanceLowNotifyEnabled = ref(false)
 const systemDefaultThreshold = ref(0)
 const linuxdoOAuthEnabled = ref(false)
@@ -91,6 +120,14 @@ onMounted(async () => {
         return
       }
       contactInfo.value = settings.contact_info || ''
+      supportQRCodes.value = Array.isArray(settings.support_qr_codes)
+        ? settings.support_qr_codes
+          .map((entry) => ({
+            image_url: sanitizeSupportQRUrl(typeof entry?.image_url === 'string' ? entry.image_url : ''),
+            note: entry?.note?.trim() || '',
+          }))
+          .filter((entry) => entry.image_url)
+        : []
       balanceLowNotifyEnabled.value = settings.balance_low_notify_enabled ?? false
       systemDefaultThreshold.value = settings.balance_low_notify_threshold ?? 0
       linuxdoOAuthEnabled.value = settings.linuxdo_oauth_enabled ?? false
