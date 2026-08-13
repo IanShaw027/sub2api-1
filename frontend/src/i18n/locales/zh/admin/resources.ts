@@ -399,6 +399,9 @@ export default {
       form: {
         title: '标题',
         content: '内容（支持 Markdown）',
+        insertImage: '插入图片',
+        uploading: '正在上传…',
+        uploadFailed: '图片上传失败',
         status: '状态',
         notifyMode: '通知方式',
         notifyModeHint: '弹窗模式会自动弹出通知给用户',

@@ -402,6 +402,9 @@ export default {
       form: {
         title: 'Title',
         content: 'Content (Markdown supported)',
+        insertImage: 'Insert image',
+        uploading: 'Uploading…',
+        uploadFailed: 'Failed to upload image',
         status: 'Status',
         notifyMode: 'Notify Mode',
         notifyModeHint: 'Popup mode will show a popup notification to users',

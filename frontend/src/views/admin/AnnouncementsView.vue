@@ -183,7 +183,23 @@
 
         <div>
           <label class="input-label">{{ t('admin.announcements.form.content') }}</label>
-          <textarea v-model="form.content" rows="6" class="input" required></textarea>
+          <textarea ref="contentTextareaRef" v-model="form.content" rows="6" class="input" required></textarea>
+          <div class="mt-2 flex items-center gap-3">
+            <label class="btn btn-secondary cursor-pointer">
+              {{ t('admin.announcements.form.insertImage') }}
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                class="sr-only"
+                :disabled="uploading"
+                @change="handleImageUpload"
+              />
+            </label>
+            <span v-if="uploading" class="text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.announcements.form.uploading') }}
+            </span>
+          </div>
         </div>
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -257,9 +273,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
+import { adminMediaAPI, mediaPublicUrl } from '@/api/media'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { adminAPI } from '@/api/admin'
 import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
@@ -282,6 +300,9 @@ import AnnouncementPopup from '@/components/common/AnnouncementPopup.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const authStore = useAuthStore()
+const contentTextareaRef = ref<HTMLTextAreaElement | null>(null)
+const uploading = ref(false)
 
 const announcements = ref<Announcement[]>([])
 const loading = ref(false)
@@ -487,6 +508,52 @@ function openEditDialog(row: Announcement) {
 function closeEdit() {
   showEditDialog.value = false
   editingAnnouncement.value = null
+}
+
+async function handleImageUpload(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files || [])
+  if (files.length === 0) return
+
+  const ownerUserId = authStore.user?.id
+  if (!ownerUserId) {
+    appStore.showError(t('admin.announcements.form.uploadFailed'))
+    input.value = ''
+    return
+  }
+
+  const textarea = contentTextareaRef.value
+  const start = textarea?.selectionStart ?? form.content.length
+  const end = textarea?.selectionEnd ?? start
+
+  uploading.value = true
+  try {
+    const snippets: string[] = []
+    for (const file of files) {
+      const uploaded = await adminMediaAPI.upload(file, {
+        owner_user_id: ownerUserId,
+        biz_type: 'announcement',
+        visibility: 'public',
+        filename: file.name,
+      })
+      const url = mediaPublicUrl(uploaded.data.id)
+      if (!url) throw new Error('Media upload response missing id')
+      const alt = file.name.replace(/[\r\n[\]]/g, ' ').trim() || 'image'
+      snippets.push(`![${alt}](${url})`)
+    }
+
+    const insertion = snippets.join('\n')
+    form.content = `${form.content.slice(0, start)}${insertion}${form.content.slice(end)}`
+    await nextTick()
+    contentTextareaRef.value?.focus()
+    contentTextareaRef.value?.setSelectionRange(start + insertion.length, start + insertion.length)
+  } catch (error) {
+    console.error('Failed to upload announcement image:', error)
+    appStore.showError(t('admin.announcements.form.uploadFailed'))
+  } finally {
+    uploading.value = false
+    input.value = ''
+  }
 }
 
 function buildCreatePayload() {
