@@ -130,6 +130,8 @@ export default {
       errorTrend: 'Error Trend',
       errorDistribution: 'Error Distribution',
       switchRate: 'Avg switches',
+      upstreamFailoverRate: 'Upstream failovers / request',
+      stickyOriginalUnavailableRate: 'Sticky original unavailable rate',
       // Health Score & Diagnosis
       health: 'Health',
       healthCondition: 'Health Condition',
@@ -775,7 +777,7 @@ export default {
       tooltips: {
         totalRequests: 'Total number of requests (including both successful and failed requests) in the selected time window.',
         throughputTrend: 'Requests/QPS + Tokens/TPS in the selected window.',
-        switchRateTrend: 'Trend of account switches / total requests over the last 5 hours (avg switches).',
+        switchRateTrend: 'Trend of upstream failovers / request and sticky-session original-account unavailable rate in the current time window.',
         latencyHistogram: 'Request duration distribution (ms) for successful requests.',
         errorTrend: 'Error counts over time (SLA scope excludes business limits; upstream excludes 429/529).',
         errorDistribution: 'Error distribution by status code (SLA scope, excluding business limits).',

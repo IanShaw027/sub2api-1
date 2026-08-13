@@ -90,6 +90,7 @@ type OpenAIAccountScheduleDecision struct {
 	Layer               string
 	StickyPreviousHit   bool
 	StickySessionHit    bool
+	StickyAccountID     int64
 	CandidateCount      int
 	TopK                int
 	LatencyMs           int64
@@ -371,11 +372,14 @@ func (s *defaultOpenAIAccountScheduler) Select(
 	ctx context.Context,
 	req OpenAIAccountScheduleRequest,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
-	decision := OpenAIAccountScheduleDecision{}
+	decision := OpenAIAccountScheduleDecision{StickyAccountID: req.StickyAccountID}
 	start := time.Now()
 	defer func() {
 		decision.LatencyMs = time.Since(start).Milliseconds()
 		s.metrics.recordSelect(decision)
+		if s != nil && s.service != nil {
+			s.service.recordOpenAIStickyScheduleDecision(ctx, req, decision)
+		}
 	}()
 
 	previousResponseID := strings.TrimSpace(req.PreviousResponseID)
@@ -414,7 +418,7 @@ func (s *defaultOpenAIAccountScheduler) Select(
 	}
 
 	if !req.StickyWeighted {
-		selection, escapedSticky, err := s.selectBySessionHash(ctx, req)
+		selection, escapedSticky, err := s.selectBySessionHash(ctx, req, &decision)
 		if err != nil {
 			return nil, decision, err
 		}
@@ -456,6 +460,7 @@ func (s *defaultOpenAIAccountScheduler) Select(
 func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	ctx context.Context,
 	req OpenAIAccountScheduleRequest,
+	decision *OpenAIAccountScheduleDecision,
 ) (*AccountSelectionResult, bool, error) {
 	sessionHash := strings.TrimSpace(req.SessionHash)
 	if sessionHash == "" || s == nil || s.service == nil || s.service.cache == nil {
@@ -472,6 +477,9 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	}
 	if accountID <= 0 {
 		return nil, false, nil
+	}
+	if decision != nil && decision.StickyAccountID <= 0 {
+		decision.StickyAccountID = accountID
 	}
 	if req.ExcludedIDs != nil {
 		if _, excluded := req.ExcludedIDs[accountID]; excluded {

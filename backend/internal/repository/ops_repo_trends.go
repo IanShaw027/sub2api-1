@@ -33,7 +33,8 @@ func (r *opsRepository) GetThroughputTrend(ctx context.Context, filter *service.
 	end := filter.EndTime.UTC()
 
 	usageJoin, usageWhere, usageArgs, next := buildUsageWhere(filter, start, end, 1)
-	errorWhere, errorArgs, _ := buildErrorWhere(filter, start, end, next)
+	errorWhere, errorArgs, next := buildErrorWhere(filter, start, end, next)
+	stickyWhere, stickyArgs, _ := buildStickyScheduleWhere(filter, start, end, next)
 
 	usageBucketExpr := opsBucketExprForUsage(bucketSeconds)
 	errorBucketExpr := opsBucketExprForError(bucketSeconds)
@@ -70,22 +71,35 @@ switch_buckets AS (
     AND upstream_errors IS NOT NULL
   GROUP BY 1
 ),
+sticky_buckets AS (
+  SELECT ` + errorBucketExpr + ` AS bucket,
+         COUNT(*) AS sticky_original_bound_count,
+         COALESCE(SUM(CASE WHEN sticky_original_unavailable THEN 1 ELSE 0 END), 0) AS sticky_original_unavailable_count
+  FROM ops_sticky_schedule_events
+  ` + stickyWhere + `
+  GROUP BY 1
+),
 combined AS (
   SELECT
     bucket,
     SUM(success_count) AS success_count,
     SUM(error_count) AS error_count,
     SUM(token_consumed) AS token_consumed,
-    SUM(switch_count) AS switch_count
+    SUM(switch_count) AS switch_count,
+    SUM(sticky_original_bound_count) AS sticky_original_bound_count,
+    SUM(sticky_original_unavailable_count) AS sticky_original_unavailable_count
   FROM (
-    SELECT bucket, success_count, 0 AS error_count, token_consumed, 0 AS switch_count
+    SELECT bucket, success_count, 0 AS error_count, token_consumed, 0 AS switch_count, 0 AS sticky_original_bound_count, 0 AS sticky_original_unavailable_count
     FROM usage_buckets
     UNION ALL
-    SELECT bucket, 0, error_count, 0, 0
+    SELECT bucket, 0, error_count, 0, 0, 0, 0
     FROM error_buckets
     UNION ALL
-    SELECT bucket, 0, 0, 0, switch_count
+    SELECT bucket, 0, 0, 0, switch_count, 0, 0
     FROM switch_buckets
+    UNION ALL
+    SELECT bucket, 0, 0, 0, 0, sticky_original_bound_count, sticky_original_unavailable_count
+    FROM sticky_buckets
   ) t
   GROUP BY bucket
 )
@@ -93,11 +107,13 @@ SELECT
   bucket,
   (success_count + error_count) AS request_count,
   token_consumed,
-  switch_count
+  switch_count,
+  sticky_original_bound_count,
+  sticky_original_unavailable_count
 FROM combined
 ORDER BY bucket ASC`
 
-	args := append(usageArgs, errorArgs...)
+	args := append(append(usageArgs, errorArgs...), stickyArgs...)
 
 	rows, err := r.db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -111,7 +127,9 @@ ORDER BY bucket ASC`
 		var requests int64
 		var tokens sql.NullInt64
 		var switches sql.NullInt64
-		if err := rows.Scan(&bucket, &requests, &tokens, &switches); err != nil {
+		var stickyOriginalBound sql.NullInt64
+		var stickyOriginalUnavailable sql.NullInt64
+		if err := rows.Scan(&bucket, &requests, &tokens, &switches, &stickyOriginalBound, &stickyOriginalUnavailable); err != nil {
 			return nil, err
 		}
 		tokenConsumed := int64(0)
@@ -122,6 +140,14 @@ ORDER BY bucket ASC`
 		if switches.Valid {
 			switchCount = switches.Int64
 		}
+		stickyOriginalBoundCount := int64(0)
+		if stickyOriginalBound.Valid {
+			stickyOriginalBoundCount = stickyOriginalBound.Int64
+		}
+		stickyOriginalUnavailableCount := int64(0)
+		if stickyOriginalUnavailable.Valid {
+			stickyOriginalUnavailableCount = stickyOriginalUnavailable.Int64
+		}
 
 		denom := float64(bucketSeconds)
 		if denom <= 0 {
@@ -131,12 +157,14 @@ ORDER BY bucket ASC`
 		tps := roundTo1DP(float64(tokenConsumed) / denom)
 
 		points = append(points, &service.OpsThroughputTrendPoint{
-			BucketStart:   bucket.UTC(),
-			RequestCount:  requests,
-			TokenConsumed: tokenConsumed,
-			SwitchCount:   switchCount,
-			QPS:           qps,
-			TPS:           tps,
+			BucketStart:                    bucket.UTC(),
+			RequestCount:                   requests,
+			TokenConsumed:                  tokenConsumed,
+			SwitchCount:                    switchCount,
+			StickyOriginalBoundCount:       stickyOriginalBoundCount,
+			StickyOriginalUnavailableCount: stickyOriginalUnavailableCount,
+			QPS:                            qps,
+			TPS:                            tps,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -414,12 +442,14 @@ func fillOpsThroughputBuckets(start, end time.Time, bucketSeconds int, points []
 			continue
 		}
 		out = append(out, &service.OpsThroughputTrendPoint{
-			BucketStart:   cursor,
-			RequestCount:  0,
-			TokenConsumed: 0,
-			SwitchCount:   0,
-			QPS:           0,
-			TPS:           0,
+			BucketStart:                    cursor,
+			RequestCount:                   0,
+			TokenConsumed:                  0,
+			SwitchCount:                    0,
+			StickyOriginalBoundCount:       0,
+			StickyOriginalUnavailableCount: 0,
+			QPS:                            0,
+			TPS:                            0,
 		})
 	}
 	return out

@@ -35,19 +35,22 @@ const isDarkMode = computed(() => document.documentElement.classList.contains('d
 const colors = computed(() => ({
   teal: '#14b8a6',
   tealAlpha: '#14b8a620',
+  amber: '#f59e0b',
+  amberAlpha: '#f59e0b20',
   grid: isDarkMode.value ? '#374151' : '#f3f4f6',
   text: isDarkMode.value ? '#9ca3af' : '#6b7280'
 }))
 
 const totalRequests = computed(() => sumNumbers(props.points.map((p) => p.request_count)))
+const totalStickyOriginalBound = computed(() => sumNumbers(props.points.map((p) => p.sticky_original_bound_count)))
 
 const chartData = computed(() => {
-  if (!props.points.length || totalRequests.value <= 0) return null
+  if (!props.points.length || (totalRequests.value <= 0 && totalStickyOriginalBound.value <= 0)) return null
   return {
     labels: props.points.map((p) => formatHistoryLabel(p.bucket_start, props.timeRange)),
     datasets: [
       {
-        label: t('admin.ops.switchRate'),
+        label: t('admin.ops.upstreamFailoverRate'),
         data: props.points.map((p) => {
           const requests = p.request_count ?? 0
           const switches = p.switch_count ?? 0
@@ -57,6 +60,21 @@ const chartData = computed(() => {
         borderColor: colors.value.teal,
         backgroundColor: colors.value.tealAlpha,
         fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        pointHitRadius: 10
+      },
+      {
+        label: t('admin.ops.stickyOriginalUnavailableRate'),
+        data: props.points.map((p) => {
+          const bound = p.sticky_original_bound_count ?? 0
+          const unavailable = p.sticky_original_unavailable_count ?? 0
+          if (bound <= 0) return 0
+          return unavailable / bound
+        }),
+        borderColor: colors.value.amber,
+        backgroundColor: colors.value.amberAlpha,
+        fill: false,
         tension: 0.35,
         pointRadius: 0,
         pointHitRadius: 10
@@ -94,7 +112,8 @@ const options = computed(() => {
         callbacks: {
           label: (context: any) => {
             const value = typeof context?.parsed?.y === 'number' ? context.parsed.y : 0
-            return `${t('admin.ops.switchRate')}: ${value.toFixed(3)}`
+            const label = context?.dataset?.label || t('admin.ops.switchRate')
+            return `${label}: ${value.toFixed(3)}`
           }
         }
       }

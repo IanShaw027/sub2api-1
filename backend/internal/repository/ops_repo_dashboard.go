@@ -1045,6 +1045,40 @@ func buildErrorWhere(filter *service.OpsDashboardFilter, start, end time.Time, s
 	return where, args, idx
 }
 
+func buildStickyScheduleWhere(filter *service.OpsDashboardFilter, start, end time.Time, startIndex int) (where string, args []any, nextIndex int) {
+	platform := ""
+	groupID := (*int64)(nil)
+	if filter != nil {
+		platform = strings.TrimSpace(strings.ToLower(filter.Platform))
+		groupID = filter.GroupID
+	}
+
+	idx := startIndex
+	clauses := make([]string, 0, 4)
+	args = make([]any, 0, 4)
+
+	args = append(args, start)
+	clauses = append(clauses, fmt.Sprintf("created_at >= $%d", idx))
+	idx++
+	args = append(args, end)
+	clauses = append(clauses, fmt.Sprintf("created_at < $%d", idx))
+	idx++
+
+	if groupID != nil && *groupID > 0 {
+		args = append(args, *groupID)
+		clauses = append(clauses, fmt.Sprintf("group_id = $%d", idx))
+		idx++
+	}
+	if platform != "" {
+		args = append(args, platform)
+		clauses = append(clauses, fmt.Sprintf("platform = $%d", idx))
+		idx++
+	}
+
+	where = "WHERE " + strings.Join(clauses, " AND ")
+	return where, args, idx
+}
+
 func floatToIntPtr(v sql.NullFloat64) *int {
 	if !v.Valid {
 		return nil
