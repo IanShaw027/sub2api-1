@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -120,14 +121,32 @@ func (s *ScheduledTestRunnerService) runScheduled() {
 }
 
 func (s *ScheduledTestRunnerService) runOnePlan(ctx context.Context, plan *ScheduledTestPlan) {
+	if s.shouldSkipPlanForUnschedulableAccount(ctx, plan) {
+		s.advanceSkippedPlan(ctx, plan)
+		return
+	}
+
 	result, err := s.accountTestSvc.RunTestBackground(ctx, plan.AccountID, plan.ModelID)
-	if err != nil {
+	if err != nil && result == nil {
 		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d RunTestBackground error: %v", plan.ID, err)
+		return
+	}
+	if result == nil {
+		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d RunTestBackground returned nil result", plan.ID)
 		return
 	}
 
 	if err := s.scheduledSvc.SaveResult(ctx, plan.ID, plan.MaxResults, result); err != nil {
 		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d SaveResult error: %v", plan.ID, err)
+	}
+
+	if isScheduledTestAccountNotFound(result, err) {
+		if disableErr := s.planRepo.Disable(ctx, plan.ID); disableErr != nil {
+			logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d disable after account not found failed: %v", plan.ID, disableErr)
+		} else {
+			logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d disabled after account not found", plan.ID)
+		}
+		return
 	}
 
 	// Auto-recover account if test succeeded and auto_recover is enabled.
@@ -144,6 +163,60 @@ func (s *ScheduledTestRunnerService) runOnePlan(ctx context.Context, plan *Sched
 	if err := s.planRepo.UpdateAfterRun(ctx, plan.ID, time.Now(), nextRun); err != nil {
 		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d UpdateAfterRun error: %v", plan.ID, err)
 	}
+}
+
+func (s *ScheduledTestRunnerService) shouldSkipPlanForUnschedulableAccount(ctx context.Context, plan *ScheduledTestPlan) bool {
+	if s == nil || plan == nil || s.accountTestSvc == nil || s.accountTestSvc.accountRepo == nil {
+		return false
+	}
+	account, err := s.accountTestSvc.accountRepo.GetByID(ctx, plan.AccountID)
+	if err != nil || account == nil {
+		return false
+	}
+	if account.Status == StatusDisabled || account.Status == StatusExpired {
+		return true
+	}
+	if account.IsSchedulable() {
+		return false
+	}
+	if plan.AutoRecover {
+		if account.Status == StatusError {
+			return false
+		}
+		if account.Schedulable && hasRecoverableRuntimeState(account) {
+			return false
+		}
+	}
+	logger.LegacyPrintf(
+		"service.scheduled_test_runner",
+		"[ScheduledTestRunner] plan=%d skipped unschedulable account=%d status=%s schedulable=%v",
+		plan.ID,
+		plan.AccountID,
+		account.Status,
+		account.Schedulable,
+	)
+	return true
+}
+
+func (s *ScheduledTestRunnerService) advanceSkippedPlan(ctx context.Context, plan *ScheduledTestPlan) {
+	if s == nil || plan == nil || s.planRepo == nil {
+		return
+	}
+	nextRun, err := computeNextRun(plan.CronExpression, time.Now())
+	if err != nil {
+		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d computeNextRun after skip error: %v", plan.ID, err)
+		return
+	}
+	if err := s.planRepo.UpdateAfterRun(ctx, plan.ID, time.Now(), nextRun); err != nil {
+		logger.LegacyPrintf("service.scheduled_test_runner", "[ScheduledTestRunner] plan=%d UpdateAfterRun after skip error: %v", plan.ID, err)
+	}
+}
+
+func isScheduledTestAccountNotFound(result *ScheduledTestResult, testErr error) bool {
+	if result == nil || result.Status != "failed" {
+		return false
+	}
+	return errors.Is(testErr, ErrAccountNotFound)
 }
 
 // tryRecoverAccount attempts to recover an account from recoverable runtime state.

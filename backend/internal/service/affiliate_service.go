@@ -58,14 +58,14 @@ func isValidAffiliateCodeFormat(code string) bool {
 }
 
 type AffiliateSummary struct {
-	UserID               int64     `json:"user_id"`
-	AffCode              string    `json:"aff_code"`
-	AffCodeCustom        bool      `json:"aff_code_custom"`
-	AffRebateRatePercent *float64  `json:"aff_rebate_rate_percent,omitempty"`
-	InviterID            *int64    `json:"inviter_id,omitempty"`
-	AffCount             int       `json:"aff_count"`
-	AffQuota             float64   `json:"aff_quota"`
-	AffFrozenQuota       float64   `json:"aff_frozen_quota"`
+	UserID               int64      `json:"user_id"`
+	AffCode              string     `json:"aff_code"`
+	AffCodeCustom        bool       `json:"aff_code_custom"`
+	AffRebateRatePercent *float64   `json:"aff_rebate_rate_percent,omitempty"`
+	InviterID            *int64     `json:"inviter_id,omitempty"`
+	AffCount             int        `json:"aff_count"`
+	AffQuota             float64    `json:"aff_quota"`
+	AffFrozenQuota       float64    `json:"aff_frozen_quota"`
 	AffHistoryQuota      float64    `json:"aff_history_quota"`
 	InviterBoundAt       *time.Time `json:"-"`
 	CreatedAt            time.Time  `json:"created_at"`
@@ -313,8 +313,11 @@ func (s *AffiliateService) BindInviterByCode(ctx context.Context, userID int64, 
 	}
 	if s.settingService != nil {
 		if bonus := s.settingService.GetAffiliateSignupBonus(ctx); bonus > 0 {
-			if _, err := s.repo.ApplySignupBonus(ctx, userID, bonus); err != nil {
+			applied, err := s.repo.ApplySignupBonus(ctx, userID, bonus)
+			if err != nil {
 				logger.LegacyPrintf("service.affiliate", "apply signup bonus failed: user_id=%d err=%v", userID, err)
+			} else if applied {
+				s.invalidateAffiliateCaches(ctx, userID)
 			}
 		}
 	}
