@@ -69,7 +69,7 @@ const (
 )
 
 const (
-	openAIImageRateLimitDefaultCooldown = time.Minute
+	openAIImageRateLimitDefaultCooldown = 3 * time.Hour
 	openAIImageRateLimitReason          = "openai_image_rate_limited"
 )
 
@@ -253,6 +253,9 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 	}
 	if account.IsCustomErrorCodesEnabled() {
 		if account.ShouldHandleErrorCode(statusCode) {
+			if statusCode != http.StatusUnauthorized && s.tryTempUnschedulable(ctx, account, statusCode, responseBody, firstRequestedModel(requestedModel)) {
+				return ErrorPolicyTempUnscheduled
+			}
 			return ErrorPolicyMatched
 		}
 		slog.Info("account_error_code_skipped", "account_id", account.ID, "status_code", statusCode)
@@ -982,6 +985,41 @@ func (s *RateLimitService) handle403(ctx context.Context, account *Account, upst
 	if account.Platform == PlatformOpenAI {
 		return s.handleOpenAI403(ctx, account, upstreamMsg, responseBody)
 	}
+	if account.IsGeminiCodeAssist() {
+		if classifyForbiddenType(string(responseBody)) == forbiddenTypeValidation {
+			msg := buildForbiddenErrorMessage(
+				"Validation required (403):",
+				upstreamMsg,
+				responseBody,
+				"account needs Google verification",
+			)
+			if validationURL := extractValidationURL(string(responseBody)); validationURL != "" {
+				msg += " | validation_url: " + validationURL
+			}
+			s.handleAuthError(ctx, account, msg)
+			slog.Warn("gemini_code_assist_403_validation_required_disabled", "account_id", account.ID)
+			return true
+		}
+		msg := buildForbiddenErrorMessage(
+			"Gemini Code Assist forbidden (403):",
+			upstreamMsg,
+			responseBody,
+			"upstream activation, validation, or permission state may still be propagating",
+		)
+		cooldown := 10 * time.Minute
+		if s != nil {
+			if geminiCooldown := s.GeminiCooldown(ctx, account); geminiCooldown > 0 {
+				cooldown = geminiCooldown
+			}
+		}
+		until := time.Now().Add(cooldown)
+		if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, msg); err != nil {
+			slog.Warn("gemini_code_assist_403_set_temp_unschedulable_failed", "account_id", account.ID, "error", err)
+			return false
+		}
+		slog.Warn("gemini_code_assist_403_temp_unschedulable", "account_id", account.ID, "until", until)
+		return true
+	}
 	// 非 Antigravity 平台：保持原有行为
 	msg := buildForbiddenErrorMessage(
 		"Access forbidden (403):",
@@ -1127,6 +1165,13 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 	// QueryUsage→persistOpenAICodexProbeSnapshot 维护,枯竭由调度守卫处理。
 	if account.IsShadow() {
 		return
+	}
+	// OpenAI 账号级图片配额（input-images per min/day）：只冷却 image 能力，
+	// 不写全局 RateLimitedAt，避免误伤同账号的 chat/responses。
+	if account.Platform == PlatformOpenAI && isOpenAIImageRateLimitError(http.StatusTooManyRequests, responseBody) {
+		if s.HandleOpenAIImageRateLimit(ctx, account, http.StatusTooManyRequests, headers, responseBody) {
+			return
+		}
 	}
 	// 1. OpenAI 平台：优先尝试解析 x-codex-* 响应头（用于 rate_limit_exceeded）
 	if account.Platform == PlatformOpenAI {

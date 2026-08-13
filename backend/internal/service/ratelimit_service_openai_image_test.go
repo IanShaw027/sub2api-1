@@ -43,7 +43,7 @@ func TestRateLimitService_HandleOpenAIImageRateLimit_ParsesTryAgainCooldown(t *t
 	require.WithinDuration(t, before.Add(2*time.Second), call.resetAt, time.Second)
 }
 
-func TestRateLimitService_HandleOpenAIImageRateLimit_DefaultsToOneMinute(t *testing.T) {
+func TestRateLimitService_HandleOpenAIImageRateLimit_DefaultsToThreeHours(t *testing.T) {
 	repo := &modelNotFoundAccountRepoStub{}
 	svc := &RateLimitService{accountRepo: repo}
 	account := &Account{ID: 202, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
@@ -57,7 +57,20 @@ func TestRateLimitService_HandleOpenAIImageRateLimit_DefaultsToOneMinute(t *test
 	call := repo.modelRateLimitCalls[0]
 	require.Equal(t, openAIImageGenerationRateLimitKey, call.scope)
 	require.Equal(t, openAIImageRateLimitReason, call.reason)
-	require.WithinDuration(t, before.Add(time.Minute), call.resetAt, time.Second)
+	require.WithinDuration(t, before.Add(3*time.Hour), call.resetAt, time.Second)
+}
+
+func TestRateLimitService_Handle429_ImageQuotaDoesNotSetGlobalRateLimit(t *testing.T) {
+	repo := &modelNotFoundAccountRepoStub{}
+	svc := &RateLimitService{accountRepo: repo}
+	account := &Account{ID: 205, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	body := []byte(`{"error":{"type":"rate_limit_exceeded","message":"Rate limit reached for gpt-image-2-codex (for limit gpt-image) on input-images per min. Please try again in 2s."}}`)
+
+	svc.handle429(context.Background(), account, http.Header{}, body)
+
+	require.Len(t, repo.modelRateLimitCalls, 1)
+	require.Equal(t, openAIImageGenerationRateLimitKey, repo.modelRateLimitCalls[0].scope)
+	require.Zero(t, repo.rateLimitedCalls)
 }
 
 func TestOpenAIGatewayService_HandleOpenAIAccountUpstreamError_ImageRateLimitDoesNotBlockWholeAccount(t *testing.T) {
