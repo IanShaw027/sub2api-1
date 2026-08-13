@@ -16,6 +16,12 @@
             @refresh="handleManualRefresh"
             @create="showCreate = true"
           >
+            <template #beforeCreate>
+              <button class="btn btn-secondary" @click="showCapacityForecast = true">
+                <Icon name="chartBar" size="sm" class="mr-1.5" />
+                <span>{{ t('admin.accounts.capacityForecast.action') }}</span>
+              </button>
+            </template>
             <template #after>
               <!-- Auto Refresh Dropdown -->
               <div class="relative" ref="autoRefreshDropdownRef">
@@ -481,6 +487,11 @@
     </ConfirmDialog>
     <ErrorPassthroughRulesModal :show="showErrorPassthrough" @close="showErrorPassthrough = false" />
     <TLSFingerprintProfilesModal :show="showTLSFingerprintProfiles" @close="showTLSFingerprintProfiles = false" />
+    <PlatformCapacityDialog
+      v-if="showCapacityForecast"
+      :show="showCapacityForecast"
+      @close="showCapacityForecast = false"
+    />
     <TotpStepUpDialog :controller="accountExportStepUp" />
   </AppLayout>
 </template>
@@ -524,6 +535,7 @@ import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
+import PlatformCapacityDialog from '@/components/admin/account/PlatformCapacityDialog.vue'
 import { fetchAllAccountIds } from '@/utils/accountSelection'
 import { buildGrokUsageRefreshKey, buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { formatDateTime, formatRelativeTime } from '@/utils/format'
@@ -597,6 +609,7 @@ const showTest = ref(false)
 const showStats = ref(false)
 const showErrorPassthrough = ref(false)
 const showTLSFingerprintProfiles = ref(false)
+const showCapacityForecast = ref(false)
 const edAcc = ref<Account | null>(null)
 const tempUnschedAcc = ref<Account | null>(null)
 const deletingAcc = ref<Account | null>(null)
@@ -1276,7 +1289,8 @@ const isAnyModalOpen = computed(() => {
     showStats.value ||
     showSchedulePanel.value ||
     showErrorPassthrough.value ||
-    showTLSFingerprintProfiles.value
+    showTLSFingerprintProfiles.value ||
+    showCapacityForecast.value
   )
 })
 
