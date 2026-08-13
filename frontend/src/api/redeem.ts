@@ -5,6 +5,7 @@
 
 import { apiClient } from './client'
 import type { RedeemCodeRequest } from '@/types'
+import type { PaginatedResponse } from '@/types'
 
 export interface RedeemHistoryItem {
   id: number
@@ -59,9 +60,32 @@ export async function getHistory(): Promise<RedeemHistoryItem[]> {
   return data
 }
 
+export interface RedeemHistoryResponse extends PaginatedResponse<RedeemHistoryItem> {
+  total_recharged: number
+}
+
+export async function getHistoryPaginated(
+  page: number = 1,
+  pageSize: number = 15,
+  type?: string
+): Promise<RedeemHistoryResponse> {
+  const params: Record<string, string | number> = {
+    page,
+    page_size: pageSize
+  }
+  if (type) {
+    params.type = type
+  }
+  const { data } = await apiClient.get<RedeemHistoryResponse>('/redeem/history-page', {
+    params
+  })
+  return data
+}
+
 export const redeemAPI = {
   redeem,
-  getHistory
+  getHistory,
+  getHistoryPaginated
 }
 
 export default redeemAPI

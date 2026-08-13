@@ -662,6 +662,19 @@ func (s *RedeemService) GetUserHistory(ctx context.Context, userID int64, limit 
 	return codes, nil
 }
 
+func (s *RedeemService) GetUserHistoryPaginated(ctx context.Context, userID int64, page, pageSize int, codeType string) ([]RedeemCode, int64, float64, error) {
+	params := pagination.PaginationParams{Page: page, PageSize: pageSize}
+	codes, result, err := s.redeemRepo.ListByUserPaginated(ctx, userID, params, codeType)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("get user redeem history paginated: %w", err)
+	}
+	totalRecharged, err := s.redeemRepo.SumPositiveBalanceByUser(ctx, userID)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("sum user redeem history recharged total: %w", err)
+	}
+	return codes, result.Total, totalRecharged, nil
+}
+
 // reduceOrCancelSubscription 缩短订阅天数，剩余天数 <= 0 时取消订阅
 func (s *RedeemService) reduceOrCancelSubscription(ctx context.Context, userID, groupID int64, reduceDays int, code string) error {
 	sub, err := s.subscriptionService.userSubRepo.GetByUserIDAndGroupID(ctx, userID, groupID)

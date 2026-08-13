@@ -87,7 +87,7 @@ func (r *affiliateRepository) BindInviter(ctx context.Context, userID, inviterID
 		}
 
 		res, err := txClient.ExecContext(txCtx,
-			"UPDATE user_affiliates SET inviter_id = $1, updated_at = NOW() WHERE user_id = $2 AND inviter_id IS NULL",
+			"UPDATE user_affiliates SET inviter_id = $1, inviter_bound_at = NOW(), updated_at = NOW() WHERE user_id = $2 AND inviter_id IS NULL",
 			inviterID, userID,
 		)
 		if err != nil {
@@ -178,6 +178,52 @@ func (r *affiliateRepository) GetAccruedRebateFromInvitee(ctx context.Context, i
 		}
 	}
 	return total, rows.Close()
+}
+
+func (r *affiliateRepository) CountDistinctRebateInvitees(ctx context.Context, inviterID int64) (int, error) {
+	client := clientFromContext(ctx, r.client)
+	rows, err := client.QueryContext(ctx,
+		`SELECT COUNT(DISTINCT source_user_id) FROM user_affiliate_ledger WHERE user_id = $1 AND action = 'accrue' AND source_user_id IS NOT NULL`,
+		inviterID)
+	if err != nil {
+		return 0, fmt.Errorf("count rebate invitees: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var count int
+	if rows.Next() {
+		if err := rows.Scan(&count); err != nil {
+			return 0, err
+		}
+	}
+	return count, rows.Err()
+}
+
+func (r *affiliateRepository) ApplySignupBonus(ctx context.Context, inviteeUserID int64, amount float64) (bool, error) {
+	if inviteeUserID <= 0 || amount <= 0 {
+		return false, nil
+	}
+	var applied bool
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		res, err := txClient.ExecContext(txCtx, `
+INSERT INTO user_affiliate_ledger (user_id, action, amount, created_at, updated_at)
+VALUES ($1, 'signup_bonus', $2, NOW(), NOW())
+ON CONFLICT DO NOTHING`, inviteeUserID, amount)
+		if err != nil {
+			return fmt.Errorf("insert signup bonus ledger: %w", err)
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			return nil
+		}
+		if _, err := txClient.ExecContext(txCtx,
+			"UPDATE users SET balance = balance + $1, updated_at = NOW() WHERE id = $2",
+			amount, inviteeUserID); err != nil {
+			return fmt.Errorf("credit signup bonus: %w", err)
+		}
+		applied = true
+		return nil
+	})
+	return applied, err
 }
 
 func (r *affiliateRepository) ThawFrozenQuota(ctx context.Context, userID int64) (float64, error) {
@@ -789,6 +835,7 @@ SELECT user_id,
        aff_quota::double precision,
        aff_frozen_quota::double precision,
        aff_history_quota::double precision,
+       inviter_bound_at,
        created_at,
        updated_at
 FROM user_affiliates
@@ -807,6 +854,7 @@ WHERE user_id = $1`, userID)
 	var out service.AffiliateSummary
 	var inviterID sql.NullInt64
 	var rebateRate sql.NullFloat64
+	var boundAt sql.NullTime
 	if err := rows.Scan(
 		&out.UserID,
 		&out.AffCode,
@@ -817,6 +865,7 @@ WHERE user_id = $1`, userID)
 		&out.AffQuota,
 		&out.AffFrozenQuota,
 		&out.AffHistoryQuota,
+		&boundAt,
 		&out.CreatedAt,
 		&out.UpdatedAt,
 	); err != nil {
@@ -828,6 +877,10 @@ WHERE user_id = $1`, userID)
 	if rebateRate.Valid {
 		v := rebateRate.Float64
 		out.AffRebateRatePercent = &v
+	}
+	if boundAt.Valid {
+		t := boundAt.Time
+		out.InviterBoundAt = &t
 	}
 	return &out, nil
 }
@@ -843,6 +896,7 @@ SELECT user_id,
        aff_quota::double precision,
        aff_frozen_quota::double precision,
        aff_history_quota::double precision,
+       inviter_bound_at,
        created_at,
        updated_at
 FROM user_affiliates
@@ -863,6 +917,7 @@ LIMIT 1`, strings.ToUpper(strings.TrimSpace(code)))
 	var out service.AffiliateSummary
 	var inviterID sql.NullInt64
 	var rebateRate sql.NullFloat64
+	var boundAt sql.NullTime
 	if err := rows.Scan(
 		&out.UserID,
 		&out.AffCode,
@@ -873,6 +928,7 @@ LIMIT 1`, strings.ToUpper(strings.TrimSpace(code)))
 		&out.AffQuota,
 		&out.AffFrozenQuota,
 		&out.AffHistoryQuota,
+		&boundAt,
 		&out.CreatedAt,
 		&out.UpdatedAt,
 	); err != nil {
@@ -884,6 +940,10 @@ LIMIT 1`, strings.ToUpper(strings.TrimSpace(code)))
 	if rebateRate.Valid {
 		v := rebateRate.Float64
 		out.AffRebateRatePercent = &v
+	}
+	if boundAt.Valid {
+		t := boundAt.Time
+		out.InviterBoundAt = &t
 	}
 	return &out, nil
 }

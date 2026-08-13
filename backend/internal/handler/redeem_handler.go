@@ -83,3 +83,44 @@ func (h *RedeemHandler) GetHistory(c *gin.Context) {
 	}
 	response.Success(c, out)
 }
+
+// GetHistoryPaginated returns the user's paginated balance/concurrency change history.
+// GET /api/v1/redeem/history-page
+func (h *RedeemHandler) GetHistoryPaginated(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	page, pageSize := response.ParsePagination(c)
+	codes, total, totalRecharged, err := h.redeemService.GetUserHistoryPaginated(
+		c.Request.Context(),
+		subject.UserID,
+		page,
+		pageSize,
+		c.Query("type"),
+	)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	out := make([]dto.RedeemCode, 0, len(codes))
+	for i := range codes {
+		out = append(out, *dto.RedeemCodeFromService(&codes[i]))
+	}
+
+	pages := int((total + int64(pageSize) - 1) / int64(pageSize))
+	if pages < 1 {
+		pages = 1
+	}
+	response.Success(c, gin.H{
+		"items":           out,
+		"total":           total,
+		"page":            page,
+		"page_size":       pageSize,
+		"pages":           pages,
+		"total_recharged": totalRecharged,
+	})
+}

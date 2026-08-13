@@ -125,6 +125,7 @@ func RegisterUserRoutes(
 		{
 			redeem.POST("", h.Redeem.Redeem)
 			redeem.GET("/history", h.Redeem.GetHistory)
+			redeem.GET("/history-page", h.Redeem.GetHistoryPaginated)
 		}
 
 		// 用户订阅

@@ -66,9 +66,10 @@ type AffiliateSummary struct {
 	AffCount             int       `json:"aff_count"`
 	AffQuota             float64   `json:"aff_quota"`
 	AffFrozenQuota       float64   `json:"aff_frozen_quota"`
-	AffHistoryQuota      float64   `json:"aff_history_quota"`
-	CreatedAt            time.Time `json:"created_at"`
-	UpdatedAt            time.Time `json:"updated_at"`
+	AffHistoryQuota      float64    `json:"aff_history_quota"`
+	InviterBoundAt       *time.Time `json:"-"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 type AffiliateInvitee struct {
@@ -100,6 +101,8 @@ type AffiliateRepository interface {
 	BindInviter(ctx context.Context, userID, inviterID int64) (bool, error)
 	AccrueQuota(ctx context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int, sourceOrderID *int64) (bool, error)
 	GetAccruedRebateFromInvitee(ctx context.Context, inviterID, inviteeUserID int64) (float64, error)
+	CountDistinctRebateInvitees(ctx context.Context, inviterID int64) (int, error)
+	ApplySignupBonus(ctx context.Context, inviteeUserID int64, amount float64) (bool, error)
 	ThawFrozenQuota(ctx context.Context, userID int64) (float64, error)
 	TransferQuotaToBalance(ctx context.Context, userID int64) (float64, float64, error)
 	ListInvitees(ctx context.Context, inviterID int64, limit int) ([]AffiliateInvitee, error)
@@ -308,6 +311,13 @@ func (s *AffiliateService) BindInviterByCode(ctx context.Context, userID int64, 
 	if !bound {
 		return ErrAffiliateAlreadyBound
 	}
+	if s.settingService != nil {
+		if bonus := s.settingService.GetAffiliateSignupBonus(ctx); bonus > 0 {
+			if _, err := s.repo.ApplySignupBonus(ctx, userID, bonus); err != nil {
+				logger.LegacyPrintf("service.affiliate", "apply signup bonus failed: user_id=%d err=%v", userID, err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -340,10 +350,10 @@ func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, invit
 	if err != nil {
 		return 0, err
 	}
-	// 有效期检查：超过返利有效期后不再产生返利
+	// 有效期检查：从邀请绑定时刻起算，超过返利有效期后不再产生返利
 	if s.settingService != nil {
 		if durationDays := s.settingService.GetAffiliateRebateDurationDays(ctx); durationDays > 0 {
-			if time.Now().After(inviteeSummary.CreatedAt.AddDate(0, 0, durationDays)) {
+			if affiliateRebateWindowExpired(inviteeSummary.InviterBoundAt, durationDays, time.Now()) {
 				return 0, nil
 			}
 		}
@@ -355,8 +365,30 @@ func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, invit
 		return 0, nil
 	}
 
-	// 单人上限检查：精确截断到剩余额度
 	if s.settingService != nil {
+		if lifetimeCap := s.settingService.GetAffiliateRebateCap(ctx); lifetimeCap > 0 {
+			if inviterSummary.AffHistoryQuota >= lifetimeCap {
+				return 0, nil
+			}
+			if remaining := lifetimeCap - inviterSummary.AffHistoryQuota; rebate > remaining {
+				rebate = roundTo(remaining, 8)
+			}
+		}
+		if inviteeLimit := s.settingService.GetAffiliateRebateInviteeLimit(ctx); inviteeLimit > 0 {
+			existingFromInvitee, err := s.repo.GetAccruedRebateFromInvitee(ctx, *inviteeSummary.InviterID, inviteeUserID)
+			if err != nil {
+				return 0, err
+			}
+			if existingFromInvitee <= 0 {
+				claimed, err := s.repo.CountDistinctRebateInvitees(ctx, *inviteeSummary.InviterID)
+				if err != nil {
+					return 0, err
+				}
+				if claimed >= inviteeLimit {
+					return 0, nil
+				}
+			}
+		}
 		if perInviteeCap := s.settingService.GetAffiliateRebatePerInviteeCap(ctx); perInviteeCap > 0 {
 			existing, err := s.repo.GetAccruedRebateFromInvitee(ctx, *inviteeSummary.InviterID, inviteeUserID)
 			if err != nil {
@@ -397,6 +429,16 @@ func (s *AffiliateService) resolveRebateRatePercent(ctx context.Context, inviter
 		return clampAffiliateRebateRate(v)
 	}
 	return s.globalRebateRatePercent(ctx)
+}
+
+func affiliateRebateWindowExpired(boundAt *time.Time, durationDays int, now time.Time) bool {
+	if durationDays <= 0 {
+		return false
+	}
+	if boundAt == nil || boundAt.IsZero() {
+		return true
+	}
+	return !now.Before(boundAt.AddDate(0, 0, durationDays))
 }
 
 // globalRebateRatePercent reads the system-wide rebate rate via SettingService,
