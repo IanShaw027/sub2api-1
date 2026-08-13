@@ -61,6 +61,7 @@ export default {
     verifying: '验证中...',
     processing: '处理中...',
     contactSupport: '联系客服',
+    downloadTools: '下载工具',
     add: '添加',
     invalidEmail: '请输入有效的邮箱地址',
     optional: '可选',

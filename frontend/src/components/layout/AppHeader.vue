@@ -38,6 +38,22 @@
           <span class="hidden sm:inline">{{ t('nav.docs') }}</span>
         </a>
 
+        <a
+          v-if="downloadToolsUrl"
+          :href="downloadToolsUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white sm:flex"
+        >
+          <Icon name="download" size="sm" />
+          <span class="hidden sm:inline">{{ t('common.downloadTools') }}</span>
+        </a>
+
+        <SupportQRCodesButton
+          :entries="supportQRCodes"
+          :legacy-contact-info="contactInfo"
+        />
+
         <!-- Model Plaza Entry -->
         <router-link
           v-if="user && modelPlazaEnabled"
@@ -259,6 +275,7 @@ import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import Icon from '@/components/icons/Icon.vue'
+import SupportQRCodesButton from '@/components/common/SupportQRCodesButton.vue'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 
@@ -275,6 +292,8 @@ const dropdownOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
 const docUrl = computed(() => sanitizeUrl(appStore.docUrl))
+const downloadToolsUrl = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.download_tools_url || ''))
+const supportQRCodes = computed(() => appStore.cachedPublicSettings?.support_qr_codes || [])
 const modelPlazaEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.modelPlaza))
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const availableBalance = computed(() => Number(user.value?.balance || 0))

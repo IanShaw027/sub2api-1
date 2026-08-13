@@ -61,6 +61,7 @@ export default {
     verifying: 'Verifying...',
     processing: 'Processing...',
     contactSupport: 'Contact Support',
+    downloadTools: 'Download Tools',
     add: 'Add',
     invalidEmail: 'Please enter a valid email address',
     optional: 'optional',

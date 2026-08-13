@@ -41,3 +41,14 @@ export function sanitizeUrl(value: string, options: SanitizeOptions = {}): strin
     return ''
   }
 }
+
+const MANAGED_PUBLIC_MEDIA_PATH = /^\/api\/v1\/media\/public\/\d+$/
+
+/** Allow http(s) or public media-asset paths used by support QR codes. */
+export function sanitizeSupportQRUrl(value: string): string {
+  const trimmed = value.trim()
+  if (MANAGED_PUBLIC_MEDIA_PATH.test(trimmed)) {
+    return trimmed
+  }
+  return sanitizeUrl(trimmed)
+}
