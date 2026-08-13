@@ -60,6 +60,21 @@ describe('embedded-url', () => {
     expect(buildEmbeddedUrl('not a url', 1, 'token')).toBe('not a url')
   })
 
+  it('resolves same-origin relative paths against the current origin', () => {
+    const result = buildEmbeddedUrl('/docs/guide', 7, 'token-abc', 'light', 'en')
+    const url = new URL(result)
+    expect(url.origin).toBe('https://app.example.com')
+    expect(url.pathname).toBe('/docs/guide')
+    expect(url.searchParams.get('user_id')).toBe('7')
+    expect(url.searchParams.get('token')).toBe('token-abc')
+    expect(url.searchParams.get('ui_mode')).toBe('embedded')
+  })
+
+  it('does not treat protocol-relative urls as same-origin paths', () => {
+    const result = buildEmbeddedUrl('//evil.example/x', 1, 'token')
+    expect(result).toBe('//evil.example/x')
+  })
+
   it('detects dark mode from document root class', () => {
     document.documentElement.classList.add('dark')
     expect(detectTheme()).toBe('dark')

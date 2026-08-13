@@ -184,8 +184,17 @@ const embeddedUrl = computed(() => {
   )
 })
 
+function isSafeCustomPageUrl(raw: string): boolean {
+  const trimmed = raw.trim()
+  if (!trimmed) return false
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//')) return true
+  return trimmed.startsWith('http://') || trimmed.startsWith('https://')
+}
+
 const isValidUrl = computed(() => {
   if (isMarkdownMode.value) return false
+  const raw = menuItem.value?.url ?? ''
+  if (!isSafeCustomPageUrl(raw)) return false
   const url = embeddedUrl.value
   return url.startsWith('http://') || url.startsWith('https://')
 })
