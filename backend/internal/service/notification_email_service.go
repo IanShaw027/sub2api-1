@@ -33,6 +33,8 @@ const (
 	NotificationEmailEventCyberPolicyNotice           = "content_moderation.cyber_policy_notice"
 	NotificationEmailEventOpsAlert                    = "ops.alert"
 	NotificationEmailEventOpsScheduledReport          = "ops.scheduled_report"
+	NotificationEmailEventInvoiceIssued               = "invoice.issued"
+	NotificationEmailEventTicketReply                 = "ticket.reply"
 
 	notificationEmailTemplateKeyPrefix    = "notification_email_template:"
 	notificationEmailPreferenceKeyPrefix  = "notification_email_preference:"
@@ -581,6 +583,10 @@ func (s *NotificationEmailService) siteName(ctx context.Context) string {
 	return strings.TrimSpace(name)
 }
 
+func (s *NotificationEmailService) PublicBaseURL(ctx context.Context) string {
+	return s.baseURL(ctx)
+}
+
 func (s *NotificationEmailService) baseURL(ctx context.Context) string {
 	if s == nil || s.settingRepo == nil {
 		return ""
@@ -1034,6 +1040,8 @@ var notificationEmailEventOrder = []string{
 	NotificationEmailEventCyberPolicyNotice,
 	NotificationEmailEventOpsAlert,
 	NotificationEmailEventOpsScheduledReport,
+	NotificationEmailEventInvoiceIssued,
+	NotificationEmailEventTicketReply,
 }
 
 var notificationEmailEventDefinitions = map[string]NotificationEmailEventInfo{
@@ -1137,6 +1145,22 @@ var notificationEmailEventDefinitions = map[string]NotificationEmailEventInfo{
 		Optional:    false,
 		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...),
 			"rule_name", "severity", "alert_status", "metric_type", "operator", "metric_value", "threshold_value", "triggered_at", "alert_description"),
+	},
+	NotificationEmailEventInvoiceIssued: {
+		Event:        NotificationEmailEventInvoiceIssued,
+		Label:        "Invoice issued",
+		Description:  "Sent after an admin issues an invoice. Contains an in-app detail link only — never a file URL.",
+		Category:     "payment",
+		Optional:     true,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...), "invoice_id", "invoice_title", "invoice_amount", "detail_url"),
+	},
+	NotificationEmailEventTicketReply: {
+		Event:        NotificationEmailEventTicketReply,
+		Label:        "Ticket reply",
+		Description:  "Sent when a user or admin replies to a support ticket. Contains an in-app detail link only — never an attachment URL.",
+		Category:     "support",
+		Optional:     true,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...), "ticket_no", "ticket_title", "sender_name", "reply_preview", "attachment_count", "ticket_url"),
 	},
 	NotificationEmailEventOpsScheduledReport: {
 		Event:       NotificationEmailEventOpsScheduledReport,
@@ -1434,6 +1458,48 @@ var notificationEmailOfficialTemplates = map[string]map[string]notificationEmail
 		notificationEmailLocaleChinese: {
 			Subject: "[运维报表] {{report_name}}",
 			HTML:    notificationEmailOpsScheduledReportTemplate(notificationEmailLocaleChinese),
+		},
+	},
+	NotificationEmailEventTicketReply: {
+		notificationEmailDefaultLocale: {
+			Subject: "[{{site_name}}] New reply on ticket {{ticket_no}}",
+			HTML: notificationEmailCard("#2563eb", "Ticket reply", `
+<p>Hello {{recipient_name}},</p>
+<p>{{sender_name}} replied to ticket <strong>{{ticket_title}}</strong> ({{ticket_no}}).</p>
+<p>{{reply_preview}}</p>
+<p>Attachments: {{attachment_count}}</p>
+<p><a class="button" href="{{ticket_url}}">Open ticket</a></p>
+<p class="muted">This email does not include attachment download links.</p>`),
+		},
+		notificationEmailLocaleChinese: {
+			Subject: "[{{site_name}}] 工单 {{ticket_no}} 有新回复",
+			HTML: notificationEmailCard("#2563eb", "工单回复", `
+<p>{{recipient_name}}，您好：</p>
+<p>{{sender_name}} 回复了工单 <strong>{{ticket_title}}</strong>（{{ticket_no}}）。</p>
+<p>{{reply_preview}}</p>
+<p>附件数量：{{attachment_count}}</p>
+<p><a class="button" href="{{ticket_url}}">打开工单</a></p>
+<p class="muted">本邮件不包含附件下载链接。</p>`),
+		},
+	},
+	NotificationEmailEventInvoiceIssued: {
+		notificationEmailDefaultLocale: {
+			Subject: "[{{site_name}}] Invoice issued",
+			HTML: notificationEmailCard("#2563eb", "Invoice issued", `
+<p>Hello {{recipient_name}},</p>
+<p>Your invoice <strong>{{invoice_title}}</strong> (amount {{invoice_amount}}) has been issued.</p>
+<p>Invoice ID: {{invoice_id}}</p>
+<p><a class="button" href="{{detail_url}}">View invoice</a></p>
+<p class="muted">Open the link above to download the file. This email does not include a direct file URL.</p>`),
+		},
+		notificationEmailLocaleChinese: {
+			Subject: "[{{site_name}}] 发票已开具",
+			HTML: notificationEmailCard("#2563eb", "发票已开具", `
+<p>{{recipient_name}}，您好：</p>
+<p>您的发票 <strong>{{invoice_title}}</strong>（金额 {{invoice_amount}}）已开具。</p>
+<p>发票编号：{{invoice_id}}</p>
+<p><a class="button" href="{{detail_url}}">查看发票</a></p>
+<p class="muted">请点击上方链接进入站内详情后再下载文件，本邮件不包含文件直链。</p>`),
 		},
 	},
 }

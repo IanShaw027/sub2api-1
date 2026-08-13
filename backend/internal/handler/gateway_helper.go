@@ -227,7 +227,11 @@ func (h *ConcurrencyHelper) AcquireOpenAIWSIngressLease(ctx context.Context, api
 // TryAcquireAccountSlot 尝试立即获取账号并发槽位。
 // 返回值: (releaseFunc, acquired, error)
 func (h *ConcurrencyHelper) TryAcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int) (func(), bool, error) {
-	result, err := h.concurrencyService.AcquireAccountSlot(ctx, accountID, maxConcurrency)
+	return h.TryAcquireAccountSlotForGroup(ctx, accountID, nil, maxConcurrency)
+}
+
+func (h *ConcurrencyHelper) TryAcquireAccountSlotForGroup(ctx context.Context, accountID int64, groupID *int64, maxConcurrency int) (func(), bool, error) {
+	result, err := h.concurrencyService.AcquireAccountSlotForGroup(ctx, accountID, groupID, maxConcurrency)
 	if err != nil {
 		return nil, false, err
 	}
@@ -307,11 +311,22 @@ func (h *ConcurrencyHelper) withAPIKeySlot(ctx context.Context, apiKeyID int64, 
 // AcquireAccountSlotWithWait acquires an account concurrency slot, waiting if necessary.
 // For streaming requests, sends ping events during the wait.
 // streamStarted is updated if streaming response has begun.
+func (h *ConcurrencyHelper) accountGroupIDFromGin(c *gin.Context) *int64 {
+	if c == nil {
+		return nil
+	}
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok || apiKey == nil {
+		return nil
+	}
+	return apiKey.GroupID
+}
+
 func (h *ConcurrencyHelper) AcquireAccountSlotWithWait(c *gin.Context, accountID int64, maxConcurrency int, isStream bool, streamStarted *bool) (func(), error) {
 	ctx := c.Request.Context()
 
 	// Try to acquire immediately
-	releaseFunc, acquired, err := h.TryAcquireAccountSlot(ctx, accountID, maxConcurrency)
+	releaseFunc, acquired, err := h.TryAcquireAccountSlotForGroup(ctx, accountID, h.accountGroupIDFromGin(c), maxConcurrency)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +354,7 @@ func (h *ConcurrencyHelper) waitForSlotWithPingTimeout(c *gin.Context, slotType 
 		if slotType == "user" {
 			return h.concurrencyService.AcquireUserSlot(ctx, id, maxConcurrency)
 		}
-		return h.concurrencyService.AcquireAccountSlot(ctx, id, maxConcurrency)
+		return h.concurrencyService.AcquireAccountSlotForGroup(ctx, id, h.accountGroupIDFromGin(c), maxConcurrency)
 	}
 
 	if tryImmediate {

@@ -539,11 +539,26 @@
           </template>
 
           <template #cell-usage="{ row }">
-            <PlatformUsageBreakdown
-              :today="usageStats[row.id]?.today_actual_cost ?? 0"
-              :total="usageStats[row.id]?.total_actual_cost ?? 0"
-              :by-platform="usageStats[row.id]?.by_platform"
-            />
+            <div class="space-y-0.5 text-sm">
+              <div class="flex items-center gap-1.5">
+                <span class="text-gray-500 dark:text-gray-400">{{ t('admin.users.todayBalance') }}:</span>
+                <span class="font-medium tabular-nums text-gray-900 dark:text-white">
+                  ${{ (row.today_balance_actual_cost ?? usageStats[row.id]?.today_actual_cost ?? 0).toFixed(4) }}
+                </span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="text-gray-500 dark:text-gray-400">{{ t('admin.users.todaySubscription') }}:</span>
+                <span class="font-medium tabular-nums text-gray-900 dark:text-white">
+                  ${{ (row.today_subscription_actual_cost ?? 0).toFixed(4) }}
+                </span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="text-gray-500 dark:text-gray-400">{{ t('admin.users.total') }}:</span>
+                <span class="font-medium tabular-nums text-gray-900 dark:text-white">
+                  ${{ (row.total_actual_cost ?? usageStats[row.id]?.total_actual_cost ?? 0).toFixed(4) }}
+                </span>
+              </div>
+            </div>
           </template>
 
           <template #cell-usage_anthropic="{ row }">
@@ -798,7 +813,6 @@ import Select from '@/components/common/Select.vue'
 import { buildApiKeyGroupFilterOptions } from './apiKeyGroupFilterOptions'
 import UserAttributesConfigModal from '@/components/user/UserAttributesConfigModal.vue'
 import UserConcurrencyCell from '@/components/user/UserConcurrencyCell.vue'
-import PlatformUsageBreakdown from '@/components/user/PlatformUsageBreakdown.vue'
 import PlatformCostCell from '@/components/user/PlatformCostCell.vue'
 import UserPlatformQuotaCell from '@/components/user/UserPlatformQuotaCell.vue'
 import UserCreateModal from '@/components/admin/user/UserCreateModal.vue'
@@ -1025,7 +1039,7 @@ const searchQuery = ref('')
 const USER_SORT_STORAGE_KEY = 'admin-users-table-sort'
 const loadInitialSortState = (): { sort_by: string; sort_order: 'asc' | 'desc' } => {
   const fallback = { sort_by: 'created_at', sort_order: 'desc' as 'asc' | 'desc' }
-  const sortable = new Set(['email', 'id', 'username', 'role', 'balance', 'concurrency', 'status', 'last_used_at', 'last_active_at', 'created_at'])
+  const sortable = new Set(['email', 'id', 'username', 'role', 'balance', 'concurrency', 'current_concurrency', 'available_concurrency', 'status', 'last_used_at', 'last_active_at', 'created_at'])
   try {
     const raw = localStorage.getItem(USER_SORT_STORAGE_KEY)
     if (!raw) return fallback
@@ -1586,7 +1600,8 @@ const loadUsers = async () => {
         attributes: Object.keys(attrFilters).length > 0 ? attrFilters : undefined,
         // 始终请求 subscriptions：列隐藏时仍需用于 UserPlatformQuotaModal 的 active-subscription 警示 banner
         include_subscriptions: true,
-        sort_by: sortState.sort_by,
+        include_usage_stats: true,
+        sort_by: sortState.sort_by === 'concurrency' ? 'current_concurrency' : sortState.sort_by,
         sort_order: sortState.sort_order
       },
       { signal }

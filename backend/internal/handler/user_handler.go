@@ -22,6 +22,8 @@ type UserHandler struct {
 	emailCache            service.EmailCache
 	affiliateService      *service.AffiliateService
 	userPlatformQuotaRepo service.UserPlatformQuotaRepository
+	userRPMCache          service.UserRPMCache
+	concurrencyService    *service.ConcurrencyService
 }
 
 // NewUserHandler creates a new UserHandler
@@ -41,6 +43,55 @@ func NewUserHandler(
 		affiliateService:      affiliateService,
 		userPlatformQuotaRepo: userPlatformQuotaRepo,
 	}
+}
+
+// SetLiveStatus attaches Redis-backed RPM and concurrency readers for the current user.
+func (h *UserHandler) SetLiveStatus(rpmCache service.UserRPMCache, concurrencyService *service.ConcurrencyService) {
+	if h == nil {
+		return
+	}
+	h.userRPMCache = rpmCache
+	h.concurrencyService = concurrencyService
+}
+
+// GetMyRPMStatus GET /user/rpm-status
+func (h *UserHandler) GetMyRPMStatus(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	used := 0
+	if h.userRPMCache != nil {
+		if count, err := h.userRPMCache.GetUserRPM(c.Request.Context(), subject.UserID); err == nil {
+			used = count
+		}
+	}
+	limit := 0
+	maxConcurrency := subject.Concurrency
+	if h.userService != nil {
+		if user, err := h.userService.GetByID(c.Request.Context(), subject.UserID); err == nil && user != nil {
+			limit = user.RPMLimit
+			maxConcurrency = user.Concurrency
+		}
+	}
+	currentConcurrency := 0
+	if h.concurrencyService != nil {
+		load, err := h.concurrencyService.GetUsersLoadBatch(c.Request.Context(), []service.UserWithConcurrency{{
+			ID:             subject.UserID,
+			MaxConcurrency: maxConcurrency,
+		}})
+		if err == nil {
+			if info := load[subject.UserID]; info != nil {
+				currentConcurrency = info.CurrentConcurrency
+			}
+		}
+	}
+	response.Success(c, gin.H{
+		"user_rpm_used":       used,
+		"user_rpm_limit":      limit,
+		"current_concurrency": currentConcurrency,
+	})
 }
 
 // GetMyPlatformQuotas GET /user/platform-quotas

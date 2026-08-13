@@ -11,7 +11,8 @@ import type {
   CheckoutInfoResponse,
   CreateOrderRequest,
   CreateOrderResult,
-  PaymentOrder
+  PaymentOrder,
+  Invoice
 } from '@/types/payment'
 import type { BasePaginationResponse } from '@/types'
 
@@ -87,5 +88,37 @@ export const paymentAPI = {
   /** Get provider instance IDs that allow user refund */
   getRefundEligibleProviders() {
     return apiClient.get<{ provider_instance_ids: string[] }>('/payment/orders/refund-eligible-providers')
-  }
+  },
+
+  getInvoiceEligibleProviders() {
+    return apiClient.get<{ provider_instance_ids: string[] }>('/payment/invoices/eligible-providers')
+  },
+
+  applyInvoice(data: {
+    order_ids: number[]
+    title: string
+    tax_number?: string
+    email: string
+    contact_name?: string
+    contact_phone?: string
+    request_note?: string
+  }) {
+    return apiClient.post<Invoice>('/payment/invoices', data)
+  },
+
+  getMyInvoices(params?: { page?: number; page_size?: number; status?: string }) {
+    return apiClient.get<BasePaginationResponse<Invoice>>('/payment/invoices', { params })
+  },
+
+  getInvoice(id: number) {
+    return apiClient.get<Invoice>(`/payment/invoices/${id}`)
+  },
+
+  cancelInvoice(id: number) {
+    return apiClient.post<Invoice>(`/payment/invoices/${id}/cancel`)
+  },
+
+  getInvoiceDownloadGrant(id: number) {
+    return apiClient.post<{ url: string; expires_at: number; ttl_minutes: number }>(`/payment/invoices/${id}/download-grant`)
+  },
 }

@@ -12313,11 +12313,12 @@ async function handleSaveProvider(payload: Partial<ProviderInstance>) {
 
 async function handleToggleField(
   provider: ProviderInstance,
-  field: "enabled" | "refund_enabled" | "allow_user_refund",
+  field: "enabled" | "refund_enabled" | "allow_user_refund" | "invoice_enabled",
 ) {
   let newValue: boolean;
   if (field === "enabled") newValue = !provider.enabled;
   else if (field === "refund_enabled") newValue = !provider.refund_enabled;
+  else if (field === "invoice_enabled") newValue = !provider.invoice_enabled;
   else newValue = !provider.allow_user_refund;
 
   if (field === "enabled" && newValue) {

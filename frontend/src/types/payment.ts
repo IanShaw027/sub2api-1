@@ -160,8 +160,48 @@ export interface ProviderInstance {
   payment_mode: string
   refund_enabled: boolean
   allow_user_refund: boolean
+  invoice_enabled: boolean
   limits: string
   sort_order: number
+}
+
+export type InvoiceStatus = 'applied' | 'issued' | 'cancelled'
+
+export interface InvoiceOrderItem {
+  order_id: number
+  pay_amount_snapshot: number
+  currency?: string
+  out_trade_no: string
+  payment_type: string
+  is_active: boolean
+}
+
+export interface Invoice {
+  id: number
+  user_id: number
+  user_email: string
+  status: InvoiceStatus
+  unread_by_admin: boolean
+  invoice_amount: number
+  currency?: string
+  order_count: number
+  title: string
+  tax_number: string
+  email: string
+  contact_name: string
+  contact_phone: string
+  request_note: string
+  file_media_id?: number
+  file_name?: string
+  file_mime_type?: string
+  file_size_bytes?: number
+  has_file: boolean
+  applied_at: string
+  cancelled_at?: string
+  issued_at?: string
+  created_at: string
+  updated_at: string
+  orders?: InvoiceOrderItem[]
 }
 
 // ==================== Request / Response ====================

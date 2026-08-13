@@ -45,6 +45,15 @@ func (s *groupCapacityConcurrencyCacheStub) GetAccountConcurrencyBatch(_ context
 	return out, nil
 }
 
+func (s *groupCapacityConcurrencyCacheStub) GetGroupConcurrencyBatch(_ context.Context, groupIDs []int64) (map[int64]int, error) {
+	s.requested = append([]int64(nil), groupIDs...)
+	out := make(map[int64]int, len(groupIDs))
+	for _, id := range groupIDs {
+		out[id] = s.counts[id]
+	}
+	return out, nil
+}
+
 type groupCapacitySessionCacheStub struct {
 	SessionLimitCache
 	counts       map[int64]int
@@ -116,7 +125,7 @@ func TestGetAllGroupCapacityBatchAggregatesRuntimeAndLimits(t *testing.T) {
 		},
 	}
 	groupRepo := &groupCapacityGroupRepoStub{groupIDs: []int64{10, 20}}
-	concurrencyCache := &groupCapacityConcurrencyCacheStub{counts: map[int64]int{1: 1, 2: 2}}
+	concurrencyCache := &groupCapacityConcurrencyCacheStub{counts: map[int64]int{10: 1, 20: 3}}
 	sessionCache := &groupCapacitySessionCacheStub{counts: map[int64]int{1: 2, 2: 1}}
 	rpmCache := &groupCapacityRPMCacheStub{counts: map[int64]int{1: 5, 2: 7}}
 	svc := NewGroupCapacityService(
@@ -132,7 +141,7 @@ func TestGetAllGroupCapacityBatchAggregatesRuntimeAndLimits(t *testing.T) {
 
 	require.Equal(t, 1, groupRepo.listCalls)
 	require.Equal(t, []int64{10, 20}, accountRepo.requested)
-	require.Equal(t, []int64{1, 2}, concurrencyCache.requested)
+	require.Equal(t, []int64{10, 20}, concurrencyCache.requested)
 	require.ElementsMatch(t, []int64{1, 2}, sessionCache.requested)
 	require.ElementsMatch(t, []int64{1, 2}, rpmCache.requested)
 	require.Equal(t, 7*time.Minute, sessionCache.idleTimeouts[1])
@@ -158,6 +167,24 @@ func TestGetAllGroupCapacityBatchAggregatesRuntimeAndLimits(t *testing.T) {
 			RPMMax:          24,
 		},
 	}, results)
+}
+
+func TestGetAllGroupCapacityReadsGroupCounterWhenNoAccounts(t *testing.T) {
+	accountRepo := &groupCapacityAccountRepoStub{rows: nil}
+	groupRepo := &groupCapacityGroupRepoStub{groupIDs: []int64{10}}
+	concurrencyCache := &groupCapacityConcurrencyCacheStub{counts: map[int64]int{10: 7}}
+	svc := NewGroupCapacityService(
+		accountRepo,
+		groupRepo,
+		NewConcurrencyService(concurrencyCache),
+		nil,
+		nil,
+	)
+
+	results, err := svc.GetAllGroupCapacity(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []GroupCapacitySummary{{GroupID: 10, ConcurrencyUsed: 7}}, results)
+	require.Equal(t, []int64{10}, concurrencyCache.requested)
 }
 
 func TestGetAllGroupCapacityBatchKeepsEmptyGroupRows(t *testing.T) {

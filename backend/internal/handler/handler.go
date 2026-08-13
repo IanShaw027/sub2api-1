@@ -38,6 +38,8 @@ type AdminHandlers struct {
 	ContentModeration      *admin.ContentModerationHandler
 	PromptAudit            *securityaudit.PromptAdminHandler
 	Payment                *admin.PaymentHandler
+	Invoice                *admin.InvoiceHandler
+	Ticket                 *admin.TicketHandler
 	Affiliate              *admin.AffiliateHandler
 	Compliance             *admin.ComplianceHandler
 	AuditLog               *admin.AuditLogHandler
@@ -61,11 +63,14 @@ type Handlers struct {
 	Totp             *TotpHandler
 	Passkey          *PasskeyHandler
 	Payment          *PaymentHandler
+	Invoice          *InvoiceHandler
+	Ticket           *TicketHandler
 	PaymentWebhook   *PaymentWebhookHandler
 	AvailableChannel *AvailableChannelHandler
 	ModelPlaza       *ModelPlazaHandler
 	AsyncImage       *AsyncImageHandler
 	BatchImage       *BatchImageHandler
+	Media            *MediaHandler
 }
 
 // BuildInfo contains build-time information

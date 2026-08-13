@@ -109,6 +109,10 @@ export interface AdminUser extends User {
   group_rates?: Record<number, number>
   // 当前并发数（仅管理员列表接口返回）
   current_concurrency?: number
+  today_actual_cost?: number
+  total_actual_cost?: number
+  today_balance_actual_cost?: number
+  today_subscription_actual_cost?: number
 }
 
 export interface LoginRequest {
@@ -1823,6 +1827,14 @@ export interface DashboardStats {
   today_cost: number // 今日标准计费
   today_actual_cost: number // 今日实际扣除
   today_account_cost: number // 今日账号成本
+  total_balance_actual_cost: number
+  today_balance_actual_cost: number
+  total_subscription_actual_cost: number
+  today_subscription_actual_cost: number
+  total_recharge_amount: number
+  today_recharge_amount: number
+  total_refund_amount: number
+  today_refund_amount: number
 
   // 系统运行统计
   average_duration_ms: number // 平均响应时间
@@ -2083,6 +2095,7 @@ export interface UsageQueryParams {
   stream?: boolean
   billing_type?: number | null
   billing_mode?: string | null
+  exclude_admin?: boolean
   start_date?: string
   end_date?: string
   timezone?: string

@@ -71,6 +71,15 @@ type DashboardStats struct {
 	TodayActualCost          float64 `json:"today_actual_cost"`  // 今日实际扣除
 	TodayAccountCost         float64 `json:"today_account_cost"` // 今日账号成本
 
+	TotalBalanceActualCost      float64 `json:"total_balance_actual_cost"`
+	TodayBalanceActualCost      float64 `json:"today_balance_actual_cost"`
+	TotalSubscriptionActualCost float64 `json:"total_subscription_actual_cost"`
+	TodaySubscriptionActualCost float64 `json:"today_subscription_actual_cost"`
+	TotalRechargeAmount         float64 `json:"total_recharge_amount"`
+	TodayRechargeAmount         float64 `json:"today_recharge_amount"`
+	TotalRefundAmount           float64 `json:"total_refund_amount"`
+	TodayRefundAmount           float64 `json:"today_refund_amount"`
+
 	// 系统运行统计
 	AverageDurationMs float64 `json:"average_duration_ms"` // 平均响应时间
 
@@ -185,12 +194,14 @@ type UserBreakdownDimension struct {
 	Endpoint     string // filter by endpoint value (non-empty to enable)
 	EndpointType string // "inbound", "upstream", or "path"
 	// Additional filter conditions
-	UserID      int64  // filter by user_id (>0 to enable)
-	APIKeyID    int64  // filter by api_key_id (>0 to enable)
-	AccountID   int64  // filter by account_id (>0 to enable)
-	RequestType *int16 // filter by request_type (non-nil to enable)
-	Stream      *bool  // filter by stream flag (non-nil to enable)
-	BillingType *int8  // filter by billing_type (non-nil to enable)
+	UserID       int64  // filter by user_id (>0 to enable)
+	APIKeyID     int64  // filter by api_key_id (>0 to enable)
+	AccountID    int64  // filter by account_id (>0 to enable)
+	RequestType  *int16 // filter by request_type (non-nil to enable)
+	Stream       *bool  // filter by stream flag (non-nil to enable)
+	BillingType  *int8  // filter by billing_type (non-nil to enable)
+	BillingMode  string // extra filter; empty disables
+	ExcludeAdmin bool   // omit admin-role users from the breakdown
 	// SortBy 指定排序列(空 = 默认按 actual_cost)。合法值由 repo 层 allowlist 校验。
 	SortBy string
 }
@@ -314,10 +325,12 @@ type PlatformUsage struct {
 
 // BatchUserUsageStats represents usage stats for a single user
 type BatchUserUsageStats struct {
-	UserID          int64           `json:"user_id"`
-	TodayActualCost float64         `json:"today_actual_cost"`
-	TotalActualCost float64         `json:"total_actual_cost"`
-	ByPlatform      []PlatformUsage `json:"by_platform,omitempty"`
+	UserID                      int64           `json:"user_id"`
+	TodayActualCost             float64         `json:"today_actual_cost"`
+	TotalActualCost             float64         `json:"total_actual_cost"`
+	TodayBalanceActualCost      float64         `json:"today_balance_actual_cost"`
+	TodaySubscriptionActualCost float64         `json:"today_subscription_actual_cost"`
+	ByPlatform                  []PlatformUsage `json:"by_platform,omitempty"`
 }
 
 // BatchAPIKeyUsageStats represents usage stats for a single API key

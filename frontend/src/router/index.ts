@@ -326,6 +326,63 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/invoices',
+    name: 'UserInvoices',
+    component: () => import('@/views/user/UserInvoicesView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'My Invoices',
+      titleKey: 'nav.myInvoices',
+      requiresPayment: true
+    }
+  },
+  {
+    path: '/invoices/:id',
+    name: 'UserInvoiceDetail',
+    component: () => import('@/views/user/UserInvoiceDetailView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Invoice Detail',
+      titleKey: 'nav.myInvoices',
+      requiresPayment: true
+    }
+  },
+  {
+    path: '/tickets',
+    name: 'UserTickets',
+    component: () => import('@/views/user/TicketsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Tickets',
+      titleKey: 'nav.myTickets',
+    }
+  },
+  {
+    path: '/tickets/new',
+    name: 'UserTicketCreate',
+    component: () => import('@/views/user/TicketCreateView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'New Ticket',
+      titleKey: 'nav.myTickets',
+    }
+  },
+  {
+    path: '/tickets/:id',
+    name: 'UserTicketDetail',
+    component: () => import('@/views/user/TicketDetailView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Ticket Detail',
+      titleKey: 'nav.myTickets',
+    }
+  },
+  {
     path: '/payment/qrcode',
     name: 'PaymentQRCode',
     component: () => import('@/views/user/PaymentQRCodeView.vue'),
@@ -687,6 +744,40 @@ const routes: RouteRecordRaw[] = [
       title: 'Order Management',
       titleKey: 'nav.orderManagement',
       requiresPayment: true
+    }
+  },
+  {
+    path: '/admin/orders/invoices',
+    name: 'AdminInvoices',
+    component: () => import('@/views/admin/orders/AdminInvoiceApplicationsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Invoice Applications',
+      titleKey: 'nav.invoiceApplications',
+      requiresPayment: true
+    }
+  },
+  {
+    path: '/admin/tickets',
+    name: 'AdminTickets',
+    component: () => import('@/views/admin/TicketsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Tickets',
+      titleKey: 'nav.ticketManagement',
+    }
+  },
+  {
+    path: '/admin/tickets/:id',
+    name: 'AdminTicketDetail',
+    component: () => import('@/views/admin/TicketDetailView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Ticket Detail',
+      titleKey: 'nav.ticketManagement',
     }
   },
   {

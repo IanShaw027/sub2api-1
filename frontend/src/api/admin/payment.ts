@@ -9,7 +9,8 @@ import type {
   PaymentOrder,
   PaymentChannel,
   SubscriptionPlan,
-  ProviderInstance
+  ProviderInstance,
+  Invoice
 } from '@/types/payment'
 import type { BasePaginationResponse } from '@/types'
 
@@ -189,7 +190,47 @@ export const adminPaymentAPI = {
   /** Delete a provider instance */
   deleteProvider(id: number) {
     return apiClient.delete(`/admin/payment/providers/${id}`)
-  }
+  },
+
+  getInvoices(params?: { page?: number; page_size?: number; status?: string; keyword?: string; user_id?: number }) {
+    return apiClient.get<BasePaginationResponse<Invoice>>('/admin/payment/invoices', { params })
+  },
+
+  getInvoiceUnreadCount() {
+    return apiClient.get<{ count: number }>('/admin/payment/invoices/unread-count')
+  },
+
+  getInvoice(id: number) {
+    return apiClient.get<Invoice>(`/admin/payment/invoices/${id}`)
+  },
+
+  cancelInvoice(id: number) {
+    return apiClient.post<Invoice>(`/admin/payment/invoices/${id}/cancel`)
+  },
+
+  issueInvoice(id: number, file: File) {
+    const body = new FormData()
+    body.append('file', file)
+    return apiClient.post<Invoice>(`/admin/payment/invoices/${id}/issue`, body, {
+      transformRequest: [
+        (data, headers) => {
+          if (data instanceof FormData) {
+            delete headers['Content-Type']
+          }
+          return data
+        },
+      ],
+      timeout: 120000,
+    })
+  },
+
+  resendInvoiceEmail(id: number) {
+    return apiClient.post(`/admin/payment/invoices/${id}/resend-email`)
+  },
+
+  getInvoiceDownloadGrant(id: number) {
+    return apiClient.post<{ url: string; expires_at: number; ttl_minutes: number }>(`/admin/payment/invoices/${id}/download-grant`)
+  },
 }
 
 export default adminPaymentAPI

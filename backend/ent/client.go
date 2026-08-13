@@ -34,6 +34,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
+	"github.com/Wei-Shaw/sub2api/ent/invoice"
+	"github.com/Wei-Shaw/sub2api/ent/invoiceorder"
+	"github.com/Wei-Shaw/sub2api/ent/mediaasset"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
@@ -45,6 +48,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/supportticket"
+	"github.com/Wei-Shaw/sub2api/ent/supportticketmessage"
+	"github.com/Wei-Shaw/sub2api/ent/supportticketreplytemplate"
+	"github.com/Wei-Shaw/sub2api/ent/supportticketrevision"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -101,6 +108,12 @@ type Client struct {
 	IdempotencyRecord *IdempotencyRecordClient
 	// IdentityAdoptionDecision is the client for interacting with the IdentityAdoptionDecision builders.
 	IdentityAdoptionDecision *IdentityAdoptionDecisionClient
+	// Invoice is the client for interacting with the Invoice builders.
+	Invoice *InvoiceClient
+	// InvoiceOrder is the client for interacting with the InvoiceOrder builders.
+	InvoiceOrder *InvoiceOrderClient
+	// MediaAsset is the client for interacting with the MediaAsset builders.
+	MediaAsset *MediaAssetClient
 	// PaymentAuditLog is the client for interacting with the PaymentAuditLog builders.
 	PaymentAuditLog *PaymentAuditLogClient
 	// PaymentOrder is the client for interacting with the PaymentOrder builders.
@@ -123,6 +136,14 @@ type Client struct {
 	Setting *SettingClient
 	// SubscriptionPlan is the client for interacting with the SubscriptionPlan builders.
 	SubscriptionPlan *SubscriptionPlanClient
+	// SupportTicket is the client for interacting with the SupportTicket builders.
+	SupportTicket *SupportTicketClient
+	// SupportTicketMessage is the client for interacting with the SupportTicketMessage builders.
+	SupportTicketMessage *SupportTicketMessageClient
+	// SupportTicketReplyTemplate is the client for interacting with the SupportTicketReplyTemplate builders.
+	SupportTicketReplyTemplate *SupportTicketReplyTemplateClient
+	// SupportTicketRevision is the client for interacting with the SupportTicketRevision builders.
+	SupportTicketRevision *SupportTicketRevisionClient
 	// TLSFingerprintProfile is the client for interacting with the TLSFingerprintProfile builders.
 	TLSFingerprintProfile *TLSFingerprintProfileClient
 	// UsageCleanupTask is the client for interacting with the UsageCleanupTask builders.
@@ -171,6 +192,9 @@ func (c *Client) init() {
 	c.Group = NewGroupClient(c.config)
 	c.IdempotencyRecord = NewIdempotencyRecordClient(c.config)
 	c.IdentityAdoptionDecision = NewIdentityAdoptionDecisionClient(c.config)
+	c.Invoice = NewInvoiceClient(c.config)
+	c.InvoiceOrder = NewInvoiceOrderClient(c.config)
+	c.MediaAsset = NewMediaAssetClient(c.config)
 	c.PaymentAuditLog = NewPaymentAuditLogClient(c.config)
 	c.PaymentOrder = NewPaymentOrderClient(c.config)
 	c.PaymentProviderInstance = NewPaymentProviderInstanceClient(c.config)
@@ -182,6 +206,10 @@ func (c *Client) init() {
 	c.SecuritySecret = NewSecuritySecretClient(c.config)
 	c.Setting = NewSettingClient(c.config)
 	c.SubscriptionPlan = NewSubscriptionPlanClient(c.config)
+	c.SupportTicket = NewSupportTicketClient(c.config)
+	c.SupportTicketMessage = NewSupportTicketMessageClient(c.config)
+	c.SupportTicketReplyTemplate = NewSupportTicketReplyTemplateClient(c.config)
+	c.SupportTicketRevision = NewSupportTicketRevisionClient(c.config)
 	c.TLSFingerprintProfile = NewTLSFingerprintProfileClient(c.config)
 	c.UsageCleanupTask = NewUsageCleanupTaskClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
@@ -302,6 +330,9 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		Group:                         NewGroupClient(cfg),
 		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
 		IdentityAdoptionDecision:      NewIdentityAdoptionDecisionClient(cfg),
+		Invoice:                       NewInvoiceClient(cfg),
+		InvoiceOrder:                  NewInvoiceOrderClient(cfg),
+		MediaAsset:                    NewMediaAssetClient(cfg),
 		PaymentAuditLog:               NewPaymentAuditLogClient(cfg),
 		PaymentOrder:                  NewPaymentOrderClient(cfg),
 		PaymentProviderInstance:       NewPaymentProviderInstanceClient(cfg),
@@ -313,6 +344,10 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
+		SupportTicket:                 NewSupportTicketClient(cfg),
+		SupportTicketMessage:          NewSupportTicketMessageClient(cfg),
+		SupportTicketReplyTemplate:    NewSupportTicketReplyTemplateClient(cfg),
+		SupportTicketRevision:         NewSupportTicketRevisionClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
@@ -360,6 +395,9 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		Group:                         NewGroupClient(cfg),
 		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
 		IdentityAdoptionDecision:      NewIdentityAdoptionDecisionClient(cfg),
+		Invoice:                       NewInvoiceClient(cfg),
+		InvoiceOrder:                  NewInvoiceOrderClient(cfg),
+		MediaAsset:                    NewMediaAssetClient(cfg),
 		PaymentAuditLog:               NewPaymentAuditLogClient(cfg),
 		PaymentOrder:                  NewPaymentOrderClient(cfg),
 		PaymentProviderInstance:       NewPaymentProviderInstanceClient(cfg),
@@ -371,6 +409,10 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
+		SupportTicket:                 NewSupportTicketClient(cfg),
+		SupportTicketMessage:          NewSupportTicketMessageClient(cfg),
+		SupportTicketReplyTemplate:    NewSupportTicketReplyTemplateClient(cfg),
+		SupportTicketRevision:         NewSupportTicketRevisionClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
@@ -414,9 +456,11 @@ func (c *Client) Use(hooks ...Hook) {
 		c.BatchImageJob, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
 		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
 		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
+		c.IdentityAdoptionDecision, c.Invoice, c.InvoiceOrder, c.MediaAsset,
+		c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
+		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.Proxy, c.RedeemCode,
+		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.SupportTicket,
+		c.SupportTicketMessage, c.SupportTicketReplyTemplate, c.SupportTicketRevision,
 		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
 		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserPlatformQuota, c.UserSubscription,
@@ -434,9 +478,11 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.BatchImageJob, c.ChannelMonitor, c.ChannelMonitorDailyRollup,
 		c.ChannelMonitorHistory, c.ChannelMonitorRequestTemplate,
 		c.CompositeModelRoute, c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord,
-		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
+		c.IdentityAdoptionDecision, c.Invoice, c.InvoiceOrder, c.MediaAsset,
+		c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
+		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.Proxy, c.RedeemCode,
+		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.SupportTicket,
+		c.SupportTicketMessage, c.SupportTicketReplyTemplate, c.SupportTicketRevision,
 		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
 		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserPlatformQuota, c.UserSubscription,
@@ -486,6 +532,12 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.IdempotencyRecord.mutate(ctx, m)
 	case *IdentityAdoptionDecisionMutation:
 		return c.IdentityAdoptionDecision.mutate(ctx, m)
+	case *InvoiceMutation:
+		return c.Invoice.mutate(ctx, m)
+	case *InvoiceOrderMutation:
+		return c.InvoiceOrder.mutate(ctx, m)
+	case *MediaAssetMutation:
+		return c.MediaAsset.mutate(ctx, m)
 	case *PaymentAuditLogMutation:
 		return c.PaymentAuditLog.mutate(ctx, m)
 	case *PaymentOrderMutation:
@@ -508,6 +560,14 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Setting.mutate(ctx, m)
 	case *SubscriptionPlanMutation:
 		return c.SubscriptionPlan.mutate(ctx, m)
+	case *SupportTicketMutation:
+		return c.SupportTicket.mutate(ctx, m)
+	case *SupportTicketMessageMutation:
+		return c.SupportTicketMessage.mutate(ctx, m)
+	case *SupportTicketReplyTemplateMutation:
+		return c.SupportTicketReplyTemplate.mutate(ctx, m)
+	case *SupportTicketRevisionMutation:
+		return c.SupportTicketRevision.mutate(ctx, m)
 	case *TLSFingerprintProfileMutation:
 		return c.TLSFingerprintProfile.mutate(ctx, m)
 	case *UsageCleanupTaskMutation:
@@ -3577,6 +3637,437 @@ func (c *IdentityAdoptionDecisionClient) mutate(ctx context.Context, m *Identity
 	}
 }
 
+// InvoiceClient is a client for the Invoice schema.
+type InvoiceClient struct {
+	config
+}
+
+// NewInvoiceClient returns a client for the Invoice from the given config.
+func NewInvoiceClient(c config) *InvoiceClient {
+	return &InvoiceClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `invoice.Hooks(f(g(h())))`.
+func (c *InvoiceClient) Use(hooks ...Hook) {
+	c.hooks.Invoice = append(c.hooks.Invoice, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `invoice.Intercept(f(g(h())))`.
+func (c *InvoiceClient) Intercept(interceptors ...Interceptor) {
+	c.inters.Invoice = append(c.inters.Invoice, interceptors...)
+}
+
+// Create returns a builder for creating a Invoice entity.
+func (c *InvoiceClient) Create() *InvoiceCreate {
+	mutation := newInvoiceMutation(c.config, OpCreate)
+	return &InvoiceCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of Invoice entities.
+func (c *InvoiceClient) CreateBulk(builders ...*InvoiceCreate) *InvoiceCreateBulk {
+	return &InvoiceCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *InvoiceClient) MapCreateBulk(slice any, setFunc func(*InvoiceCreate, int)) *InvoiceCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &InvoiceCreateBulk{err: fmt.Errorf("calling to InvoiceClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*InvoiceCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &InvoiceCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for Invoice.
+func (c *InvoiceClient) Update() *InvoiceUpdate {
+	mutation := newInvoiceMutation(c.config, OpUpdate)
+	return &InvoiceUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *InvoiceClient) UpdateOne(_m *Invoice) *InvoiceUpdateOne {
+	mutation := newInvoiceMutation(c.config, OpUpdateOne, withInvoice(_m))
+	return &InvoiceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *InvoiceClient) UpdateOneID(id int64) *InvoiceUpdateOne {
+	mutation := newInvoiceMutation(c.config, OpUpdateOne, withInvoiceID(id))
+	return &InvoiceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for Invoice.
+func (c *InvoiceClient) Delete() *InvoiceDelete {
+	mutation := newInvoiceMutation(c.config, OpDelete)
+	return &InvoiceDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *InvoiceClient) DeleteOne(_m *Invoice) *InvoiceDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *InvoiceClient) DeleteOneID(id int64) *InvoiceDeleteOne {
+	builder := c.Delete().Where(invoice.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &InvoiceDeleteOne{builder}
+}
+
+// Query returns a query builder for Invoice.
+func (c *InvoiceClient) Query() *InvoiceQuery {
+	return &InvoiceQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeInvoice},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a Invoice entity by its id.
+func (c *InvoiceClient) Get(ctx context.Context, id int64) (*Invoice, error) {
+	return c.Query().Where(invoice.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *InvoiceClient) GetX(ctx context.Context, id int64) *Invoice {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryOrders queries the orders edge of a Invoice.
+func (c *InvoiceClient) QueryOrders(_m *Invoice) *InvoiceOrderQuery {
+	query := (&InvoiceOrderClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(invoice.Table, invoice.FieldID, id),
+			sqlgraph.To(invoiceorder.Table, invoiceorder.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, invoice.OrdersTable, invoice.OrdersColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *InvoiceClient) Hooks() []Hook {
+	return c.hooks.Invoice
+}
+
+// Interceptors returns the client interceptors.
+func (c *InvoiceClient) Interceptors() []Interceptor {
+	return c.inters.Invoice
+}
+
+func (c *InvoiceClient) mutate(ctx context.Context, m *InvoiceMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&InvoiceCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&InvoiceUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&InvoiceUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&InvoiceDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown Invoice mutation op: %q", m.Op())
+	}
+}
+
+// InvoiceOrderClient is a client for the InvoiceOrder schema.
+type InvoiceOrderClient struct {
+	config
+}
+
+// NewInvoiceOrderClient returns a client for the InvoiceOrder from the given config.
+func NewInvoiceOrderClient(c config) *InvoiceOrderClient {
+	return &InvoiceOrderClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `invoiceorder.Hooks(f(g(h())))`.
+func (c *InvoiceOrderClient) Use(hooks ...Hook) {
+	c.hooks.InvoiceOrder = append(c.hooks.InvoiceOrder, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `invoiceorder.Intercept(f(g(h())))`.
+func (c *InvoiceOrderClient) Intercept(interceptors ...Interceptor) {
+	c.inters.InvoiceOrder = append(c.inters.InvoiceOrder, interceptors...)
+}
+
+// Create returns a builder for creating a InvoiceOrder entity.
+func (c *InvoiceOrderClient) Create() *InvoiceOrderCreate {
+	mutation := newInvoiceOrderMutation(c.config, OpCreate)
+	return &InvoiceOrderCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of InvoiceOrder entities.
+func (c *InvoiceOrderClient) CreateBulk(builders ...*InvoiceOrderCreate) *InvoiceOrderCreateBulk {
+	return &InvoiceOrderCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *InvoiceOrderClient) MapCreateBulk(slice any, setFunc func(*InvoiceOrderCreate, int)) *InvoiceOrderCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &InvoiceOrderCreateBulk{err: fmt.Errorf("calling to InvoiceOrderClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*InvoiceOrderCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &InvoiceOrderCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for InvoiceOrder.
+func (c *InvoiceOrderClient) Update() *InvoiceOrderUpdate {
+	mutation := newInvoiceOrderMutation(c.config, OpUpdate)
+	return &InvoiceOrderUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *InvoiceOrderClient) UpdateOne(_m *InvoiceOrder) *InvoiceOrderUpdateOne {
+	mutation := newInvoiceOrderMutation(c.config, OpUpdateOne, withInvoiceOrder(_m))
+	return &InvoiceOrderUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *InvoiceOrderClient) UpdateOneID(id int64) *InvoiceOrderUpdateOne {
+	mutation := newInvoiceOrderMutation(c.config, OpUpdateOne, withInvoiceOrderID(id))
+	return &InvoiceOrderUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for InvoiceOrder.
+func (c *InvoiceOrderClient) Delete() *InvoiceOrderDelete {
+	mutation := newInvoiceOrderMutation(c.config, OpDelete)
+	return &InvoiceOrderDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *InvoiceOrderClient) DeleteOne(_m *InvoiceOrder) *InvoiceOrderDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *InvoiceOrderClient) DeleteOneID(id int64) *InvoiceOrderDeleteOne {
+	builder := c.Delete().Where(invoiceorder.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &InvoiceOrderDeleteOne{builder}
+}
+
+// Query returns a query builder for InvoiceOrder.
+func (c *InvoiceOrderClient) Query() *InvoiceOrderQuery {
+	return &InvoiceOrderQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeInvoiceOrder},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a InvoiceOrder entity by its id.
+func (c *InvoiceOrderClient) Get(ctx context.Context, id int64) (*InvoiceOrder, error) {
+	return c.Query().Where(invoiceorder.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *InvoiceOrderClient) GetX(ctx context.Context, id int64) *InvoiceOrder {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryInvoice queries the invoice edge of a InvoiceOrder.
+func (c *InvoiceOrderClient) QueryInvoice(_m *InvoiceOrder) *InvoiceQuery {
+	query := (&InvoiceClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(invoiceorder.Table, invoiceorder.FieldID, id),
+			sqlgraph.To(invoice.Table, invoice.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, invoiceorder.InvoiceTable, invoiceorder.InvoiceColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *InvoiceOrderClient) Hooks() []Hook {
+	return c.hooks.InvoiceOrder
+}
+
+// Interceptors returns the client interceptors.
+func (c *InvoiceOrderClient) Interceptors() []Interceptor {
+	return c.inters.InvoiceOrder
+}
+
+func (c *InvoiceOrderClient) mutate(ctx context.Context, m *InvoiceOrderMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&InvoiceOrderCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&InvoiceOrderUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&InvoiceOrderUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&InvoiceOrderDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown InvoiceOrder mutation op: %q", m.Op())
+	}
+}
+
+// MediaAssetClient is a client for the MediaAsset schema.
+type MediaAssetClient struct {
+	config
+}
+
+// NewMediaAssetClient returns a client for the MediaAsset from the given config.
+func NewMediaAssetClient(c config) *MediaAssetClient {
+	return &MediaAssetClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `mediaasset.Hooks(f(g(h())))`.
+func (c *MediaAssetClient) Use(hooks ...Hook) {
+	c.hooks.MediaAsset = append(c.hooks.MediaAsset, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `mediaasset.Intercept(f(g(h())))`.
+func (c *MediaAssetClient) Intercept(interceptors ...Interceptor) {
+	c.inters.MediaAsset = append(c.inters.MediaAsset, interceptors...)
+}
+
+// Create returns a builder for creating a MediaAsset entity.
+func (c *MediaAssetClient) Create() *MediaAssetCreate {
+	mutation := newMediaAssetMutation(c.config, OpCreate)
+	return &MediaAssetCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of MediaAsset entities.
+func (c *MediaAssetClient) CreateBulk(builders ...*MediaAssetCreate) *MediaAssetCreateBulk {
+	return &MediaAssetCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *MediaAssetClient) MapCreateBulk(slice any, setFunc func(*MediaAssetCreate, int)) *MediaAssetCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &MediaAssetCreateBulk{err: fmt.Errorf("calling to MediaAssetClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*MediaAssetCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &MediaAssetCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for MediaAsset.
+func (c *MediaAssetClient) Update() *MediaAssetUpdate {
+	mutation := newMediaAssetMutation(c.config, OpUpdate)
+	return &MediaAssetUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *MediaAssetClient) UpdateOne(_m *MediaAsset) *MediaAssetUpdateOne {
+	mutation := newMediaAssetMutation(c.config, OpUpdateOne, withMediaAsset(_m))
+	return &MediaAssetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *MediaAssetClient) UpdateOneID(id int64) *MediaAssetUpdateOne {
+	mutation := newMediaAssetMutation(c.config, OpUpdateOne, withMediaAssetID(id))
+	return &MediaAssetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for MediaAsset.
+func (c *MediaAssetClient) Delete() *MediaAssetDelete {
+	mutation := newMediaAssetMutation(c.config, OpDelete)
+	return &MediaAssetDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *MediaAssetClient) DeleteOne(_m *MediaAsset) *MediaAssetDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *MediaAssetClient) DeleteOneID(id int64) *MediaAssetDeleteOne {
+	builder := c.Delete().Where(mediaasset.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &MediaAssetDeleteOne{builder}
+}
+
+// Query returns a query builder for MediaAsset.
+func (c *MediaAssetClient) Query() *MediaAssetQuery {
+	return &MediaAssetQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeMediaAsset},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a MediaAsset entity by its id.
+func (c *MediaAssetClient) Get(ctx context.Context, id int64) (*MediaAsset, error) {
+	return c.Query().Where(mediaasset.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *MediaAssetClient) GetX(ctx context.Context, id int64) *MediaAsset {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *MediaAssetClient) Hooks() []Hook {
+	return c.hooks.MediaAsset
+}
+
+// Interceptors returns the client interceptors.
+func (c *MediaAssetClient) Interceptors() []Interceptor {
+	return c.inters.MediaAsset
+}
+
+func (c *MediaAssetClient) mutate(ctx context.Context, m *MediaAssetMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&MediaAssetCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&MediaAssetUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&MediaAssetUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&MediaAssetDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown MediaAsset mutation op: %q", m.Op())
+	}
+}
+
 // PaymentAuditLogClient is a client for the PaymentAuditLog schema.
 type PaymentAuditLogClient struct {
 	config
@@ -5199,6 +5690,602 @@ func (c *SubscriptionPlanClient) mutate(ctx context.Context, m *SubscriptionPlan
 		return (&SubscriptionPlanDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown SubscriptionPlan mutation op: %q", m.Op())
+	}
+}
+
+// SupportTicketClient is a client for the SupportTicket schema.
+type SupportTicketClient struct {
+	config
+}
+
+// NewSupportTicketClient returns a client for the SupportTicket from the given config.
+func NewSupportTicketClient(c config) *SupportTicketClient {
+	return &SupportTicketClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `supportticket.Hooks(f(g(h())))`.
+func (c *SupportTicketClient) Use(hooks ...Hook) {
+	c.hooks.SupportTicket = append(c.hooks.SupportTicket, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `supportticket.Intercept(f(g(h())))`.
+func (c *SupportTicketClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SupportTicket = append(c.inters.SupportTicket, interceptors...)
+}
+
+// Create returns a builder for creating a SupportTicket entity.
+func (c *SupportTicketClient) Create() *SupportTicketCreate {
+	mutation := newSupportTicketMutation(c.config, OpCreate)
+	return &SupportTicketCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SupportTicket entities.
+func (c *SupportTicketClient) CreateBulk(builders ...*SupportTicketCreate) *SupportTicketCreateBulk {
+	return &SupportTicketCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SupportTicketClient) MapCreateBulk(slice any, setFunc func(*SupportTicketCreate, int)) *SupportTicketCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SupportTicketCreateBulk{err: fmt.Errorf("calling to SupportTicketClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SupportTicketCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SupportTicketCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SupportTicket.
+func (c *SupportTicketClient) Update() *SupportTicketUpdate {
+	mutation := newSupportTicketMutation(c.config, OpUpdate)
+	return &SupportTicketUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SupportTicketClient) UpdateOne(_m *SupportTicket) *SupportTicketUpdateOne {
+	mutation := newSupportTicketMutation(c.config, OpUpdateOne, withSupportTicket(_m))
+	return &SupportTicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SupportTicketClient) UpdateOneID(id int64) *SupportTicketUpdateOne {
+	mutation := newSupportTicketMutation(c.config, OpUpdateOne, withSupportTicketID(id))
+	return &SupportTicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SupportTicket.
+func (c *SupportTicketClient) Delete() *SupportTicketDelete {
+	mutation := newSupportTicketMutation(c.config, OpDelete)
+	return &SupportTicketDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SupportTicketClient) DeleteOne(_m *SupportTicket) *SupportTicketDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SupportTicketClient) DeleteOneID(id int64) *SupportTicketDeleteOne {
+	builder := c.Delete().Where(supportticket.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SupportTicketDeleteOne{builder}
+}
+
+// Query returns a query builder for SupportTicket.
+func (c *SupportTicketClient) Query() *SupportTicketQuery {
+	return &SupportTicketQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSupportTicket},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SupportTicket entity by its id.
+func (c *SupportTicketClient) Get(ctx context.Context, id int64) (*SupportTicket, error) {
+	return c.Query().Where(supportticket.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SupportTicketClient) GetX(ctx context.Context, id int64) *SupportTicket {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryMessages queries the messages edge of a SupportTicket.
+func (c *SupportTicketClient) QueryMessages(_m *SupportTicket) *SupportTicketMessageQuery {
+	query := (&SupportTicketMessageClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(supportticket.Table, supportticket.FieldID, id),
+			sqlgraph.To(supportticketmessage.Table, supportticketmessage.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, supportticket.MessagesTable, supportticket.MessagesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRevisions queries the revisions edge of a SupportTicket.
+func (c *SupportTicketClient) QueryRevisions(_m *SupportTicket) *SupportTicketRevisionQuery {
+	query := (&SupportTicketRevisionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(supportticket.Table, supportticket.FieldID, id),
+			sqlgraph.To(supportticketrevision.Table, supportticketrevision.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, supportticket.RevisionsTable, supportticket.RevisionsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *SupportTicketClient) Hooks() []Hook {
+	return c.hooks.SupportTicket
+}
+
+// Interceptors returns the client interceptors.
+func (c *SupportTicketClient) Interceptors() []Interceptor {
+	return c.inters.SupportTicket
+}
+
+func (c *SupportTicketClient) mutate(ctx context.Context, m *SupportTicketMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SupportTicketCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SupportTicketUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SupportTicketUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SupportTicketDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SupportTicket mutation op: %q", m.Op())
+	}
+}
+
+// SupportTicketMessageClient is a client for the SupportTicketMessage schema.
+type SupportTicketMessageClient struct {
+	config
+}
+
+// NewSupportTicketMessageClient returns a client for the SupportTicketMessage from the given config.
+func NewSupportTicketMessageClient(c config) *SupportTicketMessageClient {
+	return &SupportTicketMessageClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `supportticketmessage.Hooks(f(g(h())))`.
+func (c *SupportTicketMessageClient) Use(hooks ...Hook) {
+	c.hooks.SupportTicketMessage = append(c.hooks.SupportTicketMessage, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `supportticketmessage.Intercept(f(g(h())))`.
+func (c *SupportTicketMessageClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SupportTicketMessage = append(c.inters.SupportTicketMessage, interceptors...)
+}
+
+// Create returns a builder for creating a SupportTicketMessage entity.
+func (c *SupportTicketMessageClient) Create() *SupportTicketMessageCreate {
+	mutation := newSupportTicketMessageMutation(c.config, OpCreate)
+	return &SupportTicketMessageCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SupportTicketMessage entities.
+func (c *SupportTicketMessageClient) CreateBulk(builders ...*SupportTicketMessageCreate) *SupportTicketMessageCreateBulk {
+	return &SupportTicketMessageCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SupportTicketMessageClient) MapCreateBulk(slice any, setFunc func(*SupportTicketMessageCreate, int)) *SupportTicketMessageCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SupportTicketMessageCreateBulk{err: fmt.Errorf("calling to SupportTicketMessageClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SupportTicketMessageCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SupportTicketMessageCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SupportTicketMessage.
+func (c *SupportTicketMessageClient) Update() *SupportTicketMessageUpdate {
+	mutation := newSupportTicketMessageMutation(c.config, OpUpdate)
+	return &SupportTicketMessageUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SupportTicketMessageClient) UpdateOne(_m *SupportTicketMessage) *SupportTicketMessageUpdateOne {
+	mutation := newSupportTicketMessageMutation(c.config, OpUpdateOne, withSupportTicketMessage(_m))
+	return &SupportTicketMessageUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SupportTicketMessageClient) UpdateOneID(id int64) *SupportTicketMessageUpdateOne {
+	mutation := newSupportTicketMessageMutation(c.config, OpUpdateOne, withSupportTicketMessageID(id))
+	return &SupportTicketMessageUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SupportTicketMessage.
+func (c *SupportTicketMessageClient) Delete() *SupportTicketMessageDelete {
+	mutation := newSupportTicketMessageMutation(c.config, OpDelete)
+	return &SupportTicketMessageDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SupportTicketMessageClient) DeleteOne(_m *SupportTicketMessage) *SupportTicketMessageDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SupportTicketMessageClient) DeleteOneID(id int64) *SupportTicketMessageDeleteOne {
+	builder := c.Delete().Where(supportticketmessage.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SupportTicketMessageDeleteOne{builder}
+}
+
+// Query returns a query builder for SupportTicketMessage.
+func (c *SupportTicketMessageClient) Query() *SupportTicketMessageQuery {
+	return &SupportTicketMessageQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSupportTicketMessage},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SupportTicketMessage entity by its id.
+func (c *SupportTicketMessageClient) Get(ctx context.Context, id int64) (*SupportTicketMessage, error) {
+	return c.Query().Where(supportticketmessage.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SupportTicketMessageClient) GetX(ctx context.Context, id int64) *SupportTicketMessage {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryTicket queries the ticket edge of a SupportTicketMessage.
+func (c *SupportTicketMessageClient) QueryTicket(_m *SupportTicketMessage) *SupportTicketQuery {
+	query := (&SupportTicketClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(supportticketmessage.Table, supportticketmessage.FieldID, id),
+			sqlgraph.To(supportticket.Table, supportticket.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, supportticketmessage.TicketTable, supportticketmessage.TicketColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *SupportTicketMessageClient) Hooks() []Hook {
+	return c.hooks.SupportTicketMessage
+}
+
+// Interceptors returns the client interceptors.
+func (c *SupportTicketMessageClient) Interceptors() []Interceptor {
+	return c.inters.SupportTicketMessage
+}
+
+func (c *SupportTicketMessageClient) mutate(ctx context.Context, m *SupportTicketMessageMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SupportTicketMessageCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SupportTicketMessageUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SupportTicketMessageUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SupportTicketMessageDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SupportTicketMessage mutation op: %q", m.Op())
+	}
+}
+
+// SupportTicketReplyTemplateClient is a client for the SupportTicketReplyTemplate schema.
+type SupportTicketReplyTemplateClient struct {
+	config
+}
+
+// NewSupportTicketReplyTemplateClient returns a client for the SupportTicketReplyTemplate from the given config.
+func NewSupportTicketReplyTemplateClient(c config) *SupportTicketReplyTemplateClient {
+	return &SupportTicketReplyTemplateClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `supportticketreplytemplate.Hooks(f(g(h())))`.
+func (c *SupportTicketReplyTemplateClient) Use(hooks ...Hook) {
+	c.hooks.SupportTicketReplyTemplate = append(c.hooks.SupportTicketReplyTemplate, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `supportticketreplytemplate.Intercept(f(g(h())))`.
+func (c *SupportTicketReplyTemplateClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SupportTicketReplyTemplate = append(c.inters.SupportTicketReplyTemplate, interceptors...)
+}
+
+// Create returns a builder for creating a SupportTicketReplyTemplate entity.
+func (c *SupportTicketReplyTemplateClient) Create() *SupportTicketReplyTemplateCreate {
+	mutation := newSupportTicketReplyTemplateMutation(c.config, OpCreate)
+	return &SupportTicketReplyTemplateCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SupportTicketReplyTemplate entities.
+func (c *SupportTicketReplyTemplateClient) CreateBulk(builders ...*SupportTicketReplyTemplateCreate) *SupportTicketReplyTemplateCreateBulk {
+	return &SupportTicketReplyTemplateCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SupportTicketReplyTemplateClient) MapCreateBulk(slice any, setFunc func(*SupportTicketReplyTemplateCreate, int)) *SupportTicketReplyTemplateCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SupportTicketReplyTemplateCreateBulk{err: fmt.Errorf("calling to SupportTicketReplyTemplateClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SupportTicketReplyTemplateCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SupportTicketReplyTemplateCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SupportTicketReplyTemplate.
+func (c *SupportTicketReplyTemplateClient) Update() *SupportTicketReplyTemplateUpdate {
+	mutation := newSupportTicketReplyTemplateMutation(c.config, OpUpdate)
+	return &SupportTicketReplyTemplateUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SupportTicketReplyTemplateClient) UpdateOne(_m *SupportTicketReplyTemplate) *SupportTicketReplyTemplateUpdateOne {
+	mutation := newSupportTicketReplyTemplateMutation(c.config, OpUpdateOne, withSupportTicketReplyTemplate(_m))
+	return &SupportTicketReplyTemplateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SupportTicketReplyTemplateClient) UpdateOneID(id int64) *SupportTicketReplyTemplateUpdateOne {
+	mutation := newSupportTicketReplyTemplateMutation(c.config, OpUpdateOne, withSupportTicketReplyTemplateID(id))
+	return &SupportTicketReplyTemplateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SupportTicketReplyTemplate.
+func (c *SupportTicketReplyTemplateClient) Delete() *SupportTicketReplyTemplateDelete {
+	mutation := newSupportTicketReplyTemplateMutation(c.config, OpDelete)
+	return &SupportTicketReplyTemplateDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SupportTicketReplyTemplateClient) DeleteOne(_m *SupportTicketReplyTemplate) *SupportTicketReplyTemplateDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SupportTicketReplyTemplateClient) DeleteOneID(id int64) *SupportTicketReplyTemplateDeleteOne {
+	builder := c.Delete().Where(supportticketreplytemplate.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SupportTicketReplyTemplateDeleteOne{builder}
+}
+
+// Query returns a query builder for SupportTicketReplyTemplate.
+func (c *SupportTicketReplyTemplateClient) Query() *SupportTicketReplyTemplateQuery {
+	return &SupportTicketReplyTemplateQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSupportTicketReplyTemplate},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SupportTicketReplyTemplate entity by its id.
+func (c *SupportTicketReplyTemplateClient) Get(ctx context.Context, id int64) (*SupportTicketReplyTemplate, error) {
+	return c.Query().Where(supportticketreplytemplate.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SupportTicketReplyTemplateClient) GetX(ctx context.Context, id int64) *SupportTicketReplyTemplate {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *SupportTicketReplyTemplateClient) Hooks() []Hook {
+	return c.hooks.SupportTicketReplyTemplate
+}
+
+// Interceptors returns the client interceptors.
+func (c *SupportTicketReplyTemplateClient) Interceptors() []Interceptor {
+	return c.inters.SupportTicketReplyTemplate
+}
+
+func (c *SupportTicketReplyTemplateClient) mutate(ctx context.Context, m *SupportTicketReplyTemplateMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SupportTicketReplyTemplateCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SupportTicketReplyTemplateUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SupportTicketReplyTemplateUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SupportTicketReplyTemplateDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SupportTicketReplyTemplate mutation op: %q", m.Op())
+	}
+}
+
+// SupportTicketRevisionClient is a client for the SupportTicketRevision schema.
+type SupportTicketRevisionClient struct {
+	config
+}
+
+// NewSupportTicketRevisionClient returns a client for the SupportTicketRevision from the given config.
+func NewSupportTicketRevisionClient(c config) *SupportTicketRevisionClient {
+	return &SupportTicketRevisionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `supportticketrevision.Hooks(f(g(h())))`.
+func (c *SupportTicketRevisionClient) Use(hooks ...Hook) {
+	c.hooks.SupportTicketRevision = append(c.hooks.SupportTicketRevision, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `supportticketrevision.Intercept(f(g(h())))`.
+func (c *SupportTicketRevisionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SupportTicketRevision = append(c.inters.SupportTicketRevision, interceptors...)
+}
+
+// Create returns a builder for creating a SupportTicketRevision entity.
+func (c *SupportTicketRevisionClient) Create() *SupportTicketRevisionCreate {
+	mutation := newSupportTicketRevisionMutation(c.config, OpCreate)
+	return &SupportTicketRevisionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SupportTicketRevision entities.
+func (c *SupportTicketRevisionClient) CreateBulk(builders ...*SupportTicketRevisionCreate) *SupportTicketRevisionCreateBulk {
+	return &SupportTicketRevisionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SupportTicketRevisionClient) MapCreateBulk(slice any, setFunc func(*SupportTicketRevisionCreate, int)) *SupportTicketRevisionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SupportTicketRevisionCreateBulk{err: fmt.Errorf("calling to SupportTicketRevisionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SupportTicketRevisionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SupportTicketRevisionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SupportTicketRevision.
+func (c *SupportTicketRevisionClient) Update() *SupportTicketRevisionUpdate {
+	mutation := newSupportTicketRevisionMutation(c.config, OpUpdate)
+	return &SupportTicketRevisionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SupportTicketRevisionClient) UpdateOne(_m *SupportTicketRevision) *SupportTicketRevisionUpdateOne {
+	mutation := newSupportTicketRevisionMutation(c.config, OpUpdateOne, withSupportTicketRevision(_m))
+	return &SupportTicketRevisionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SupportTicketRevisionClient) UpdateOneID(id int64) *SupportTicketRevisionUpdateOne {
+	mutation := newSupportTicketRevisionMutation(c.config, OpUpdateOne, withSupportTicketRevisionID(id))
+	return &SupportTicketRevisionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SupportTicketRevision.
+func (c *SupportTicketRevisionClient) Delete() *SupportTicketRevisionDelete {
+	mutation := newSupportTicketRevisionMutation(c.config, OpDelete)
+	return &SupportTicketRevisionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SupportTicketRevisionClient) DeleteOne(_m *SupportTicketRevision) *SupportTicketRevisionDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SupportTicketRevisionClient) DeleteOneID(id int64) *SupportTicketRevisionDeleteOne {
+	builder := c.Delete().Where(supportticketrevision.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SupportTicketRevisionDeleteOne{builder}
+}
+
+// Query returns a query builder for SupportTicketRevision.
+func (c *SupportTicketRevisionClient) Query() *SupportTicketRevisionQuery {
+	return &SupportTicketRevisionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSupportTicketRevision},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SupportTicketRevision entity by its id.
+func (c *SupportTicketRevisionClient) Get(ctx context.Context, id int64) (*SupportTicketRevision, error) {
+	return c.Query().Where(supportticketrevision.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SupportTicketRevisionClient) GetX(ctx context.Context, id int64) *SupportTicketRevision {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryTicket queries the ticket edge of a SupportTicketRevision.
+func (c *SupportTicketRevisionClient) QueryTicket(_m *SupportTicketRevision) *SupportTicketQuery {
+	query := (&SupportTicketClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(supportticketrevision.Table, supportticketrevision.FieldID, id),
+			sqlgraph.To(supportticket.Table, supportticket.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, supportticketrevision.TicketTable, supportticketrevision.TicketColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *SupportTicketRevisionClient) Hooks() []Hook {
+	return c.hooks.SupportTicketRevision
+}
+
+// Interceptors returns the client interceptors.
+func (c *SupportTicketRevisionClient) Interceptors() []Interceptor {
+	return c.inters.SupportTicketRevision
+}
+
+func (c *SupportTicketRevisionClient) mutate(ctx context.Context, m *SupportTicketRevisionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SupportTicketRevisionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SupportTicketRevisionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SupportTicketRevisionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SupportTicketRevisionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SupportTicketRevision mutation op: %q", m.Op())
 	}
 }
 
@@ -6829,24 +7916,26 @@ type (
 		AuthIdentityChannel, BatchImageEvent, BatchImageItem, BatchImageJob,
 		ChannelMonitor, ChannelMonitorDailyRollup, ChannelMonitorHistory,
 		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
-		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
-		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Hook
+		Group, IdempotencyRecord, IdentityAdoptionDecision, Invoice, InvoiceOrder,
+		MediaAsset, PaymentAuditLog, PaymentOrder, PaymentProviderInstance,
+		PendingAuthSession, PromoCode, PromoCodeUsage, Proxy, RedeemCode,
+		SecuritySecret, Setting, SubscriptionPlan, SupportTicket, SupportTicketMessage,
+		SupportTicketReplyTemplate, SupportTicketRevision, TLSFingerprintProfile,
+		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
+		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
 		AuthIdentityChannel, BatchImageEvent, BatchImageItem, BatchImageJob,
 		ChannelMonitor, ChannelMonitorDailyRollup, ChannelMonitorHistory,
 		ChannelMonitorRequestTemplate, CompositeModelRoute, ErrorPassthroughRule,
-		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
-		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
-		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Interceptor
+		Group, IdempotencyRecord, IdentityAdoptionDecision, Invoice, InvoiceOrder,
+		MediaAsset, PaymentAuditLog, PaymentOrder, PaymentProviderInstance,
+		PendingAuthSession, PromoCode, PromoCodeUsage, Proxy, RedeemCode,
+		SecuritySecret, Setting, SubscriptionPlan, SupportTicket, SupportTicketMessage,
+		SupportTicketReplyTemplate, SupportTicketRevision, TLSFingerprintProfile,
+		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
+		UserAttributeValue, UserPlatformQuota, UserSubscription []ent.Interceptor
 	}
 )
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/handler/quotaview"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -22,7 +24,15 @@ import (
 // UserWithConcurrency wraps AdminUser with current concurrency info
 type UserWithConcurrency struct {
 	dto.AdminUser
-	CurrentConcurrency int `json:"current_concurrency"`
+	CurrentConcurrency          int      `json:"current_concurrency"`
+	TodayActualCost             *float64 `json:"today_actual_cost,omitempty"`
+	TotalActualCost             *float64 `json:"total_actual_cost,omitempty"`
+	TodayBalanceActualCost      *float64 `json:"today_balance_actual_cost,omitempty"`
+	TodaySubscriptionActualCost *float64 `json:"today_subscription_actual_cost,omitempty"`
+}
+
+type userUsageStatsReader interface {
+	GetBatchUserUsageStats(ctx context.Context, userIDs []int64, startTime, endTime time.Time) (map[int64]*usagestats.BatchUserUsageStats, error)
 }
 
 // UserHandler handles admin user management
@@ -34,6 +44,7 @@ type UserHandler struct {
 	totpService           *service.TotpService                // 角色提升为管理员的 step-up 门控
 	userService           *service.UserService
 	settingService        *service.SettingService // step-up 功能开关
+	usageStatsReader      userUsageStatsReader
 }
 
 // NewUserHandler creates a new admin user handler
@@ -55,6 +66,14 @@ func NewUserHandler(
 		userService:           userService,
 		settingService:        settingService,
 	}
+}
+
+// SetUsageStatsReader attaches optional usage-stats population for include_usage_stats.
+func (h *UserHandler) SetUsageStatsReader(reader userUsageStatsReader) {
+	if h == nil {
+		return
+	}
+	h.usageStatsReader = reader
 }
 
 // CreateUserRequest represents admin create user request
@@ -148,8 +167,20 @@ func (h *UserHandler) List(c *gin.Context) {
 		includeSubscriptions := parseBoolQueryWithDefault(raw, true)
 		filters.IncludeSubscriptions = &includeSubscriptions
 	}
+	includeUsageStats := false
+	if raw, ok := c.GetQuery("include_usage_stats"); ok {
+		includeUsageStats = parseBoolQueryWithDefault(raw, true)
+		filters.IncludeUsageStats = &includeUsageStats
+	}
 
-	users, total, err := h.adminService.ListUsers(c.Request.Context(), page, pageSize, filters, sortBy, sortOrder)
+	var users []service.User
+	var total int64
+	var err error
+	if isLiveUserConcurrencySort(sortBy) {
+		users, total, err = h.listUsersByLiveConcurrency(c.Request.Context(), page, pageSize, filters, sortBy, sortOrder)
+	} else {
+		users, total, err = h.adminService.ListUsers(c.Request.Context(), page, pageSize, filters, sortBy, sortOrder)
+	}
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -168,6 +199,15 @@ func (h *UserHandler) List(c *gin.Context) {
 		loadInfo, _ = h.concurrencyService.GetUsersLoadBatch(c.Request.Context(), usersConcurrency)
 	}
 
+	var usageByUser map[int64]*usagestats.BatchUserUsageStats
+	if includeUsageStats && len(users) > 0 && h.usageStatsReader != nil {
+		ids := make([]int64, 0, len(users))
+		for i := range users {
+			ids = append(ids, users[i].ID)
+		}
+		usageByUser, _ = h.usageStatsReader.GetBatchUserUsageStats(c.Request.Context(), ids, time.Time{}, time.Time{})
+	}
+
 	// Build response with concurrency info
 	out := make([]UserWithConcurrency, len(users))
 	for i := range users {
@@ -176,6 +216,16 @@ func (h *UserHandler) List(c *gin.Context) {
 		}
 		if info := loadInfo[users[i].ID]; info != nil {
 			out[i].CurrentConcurrency = info.CurrentConcurrency
+		}
+		if stats := usageByUser[users[i].ID]; stats != nil {
+			today := stats.TodayActualCost
+			totalCost := stats.TotalActualCost
+			todayBalance := stats.TodayBalanceActualCost
+			todaySub := stats.TodaySubscriptionActualCost
+			out[i].TodayActualCost = &today
+			out[i].TotalActualCost = &totalCost
+			out[i].TodayBalanceActualCost = &todayBalance
+			out[i].TodaySubscriptionActualCost = &todaySub
 		}
 	}
 
@@ -965,4 +1015,119 @@ func (h *UserHandler) ResetUserPlatformQuotaWindow(c *gin.Context) {
 		out = append(out, quotaview.LazyZeroQuotaForResponse(records[i], now, true))
 	}
 	response.Success(c, map[string]any{"platform_quotas": out})
+}
+
+func isLiveUserConcurrencySort(sortBy string) bool {
+	switch strings.ToLower(strings.TrimSpace(sortBy)) {
+	case "current_concurrency", "available_concurrency":
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *UserHandler) listUsersByLiveConcurrency(ctx context.Context, page, pageSize int, filters service.UserListFilters, sortBy, sortOrder string) ([]service.User, int64, error) {
+	if h.concurrencyService == nil {
+		return h.adminService.ListUsers(ctx, page, pageSize, filters, "id", "asc")
+	}
+
+	const batchSize = 1000
+	bulkFilters := filters
+	includeUsage := false
+	bulkFilters.IncludeUsageStats = &includeUsage
+
+	users := make([]service.User, 0)
+	var total int64
+	for p := 1; ; p++ {
+		chunk, chunkTotal, err := h.adminService.ListUsers(ctx, p, batchSize, bulkFilters, "id", "asc")
+		if err != nil {
+			return nil, 0, err
+		}
+		total = chunkTotal
+		users = append(users, chunk...)
+		if len(chunk) < batchSize || int64(len(users)) >= total {
+			break
+		}
+	}
+	if len(users) == 0 {
+		return []service.User{}, total, nil
+	}
+
+	batch := make([]service.UserWithConcurrency, 0, len(users))
+	for i := range users {
+		batch = append(batch, service.UserWithConcurrency{ID: users[i].ID, MaxConcurrency: users[i].Concurrency})
+	}
+	loadMap, err := h.concurrencyService.GetUsersLoadBatch(ctx, batch)
+	if err != nil {
+		start, end := paginateSlice(page, pageSize, len(users))
+		if start >= end {
+			return []service.User{}, total, nil
+		}
+		return users[start:end], total, nil
+	}
+	sortUsersByLiveConcurrency(users, loadMap, sortBy, sortOrder)
+	start, end := paginateSlice(page, pageSize, len(users))
+	if start >= end {
+		return []service.User{}, total, nil
+	}
+	return users[start:end], total, nil
+}
+
+func sortUsersByLiveConcurrency(users []service.User, loadMap map[int64]*service.UserLoadInfo, sortBy, sortOrder string) {
+	desc := !strings.EqualFold(strings.TrimSpace(sortOrder), "asc")
+	byAvailable := strings.EqualFold(strings.TrimSpace(sortBy), "available_concurrency")
+	sort.SliceStable(users, func(i, j int) bool {
+		left := liveConcurrencySortValue(users[i], loadMap, byAvailable)
+		right := liveConcurrencySortValue(users[j], loadMap, byAvailable)
+		if left == right {
+			return users[i].ID < users[j].ID
+		}
+		if desc {
+			return left > right
+		}
+		return left < right
+	})
+}
+
+func liveConcurrencySortValue(user service.User, loadMap map[int64]*service.UserLoadInfo, byAvailable bool) int {
+	current := 0
+	if info := loadMap[user.ID]; info != nil {
+		current = info.CurrentConcurrency
+	}
+	if !byAvailable {
+		return current
+	}
+	if user.Concurrency <= 0 {
+		avail := math.MaxInt32 - current
+		if avail < 0 {
+			return 0
+		}
+		return avail
+	}
+	avail := user.Concurrency - current
+	if avail < 0 {
+		return 0
+	}
+	return avail
+}
+
+func paginateSlice(page, pageSize, n int) (int, int) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 1000 {
+		pageSize = 1000
+	}
+	start := (page - 1) * pageSize
+	if start > n {
+		start = n
+	}
+	end := start + pageSize
+	if end > n {
+		end = n
+	}
+	return start, end
 }

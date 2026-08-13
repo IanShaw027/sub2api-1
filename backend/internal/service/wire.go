@@ -383,6 +383,7 @@ func ProvideConcurrencyService(cache ConcurrencyCache, accountRepo AccountReposi
 	}
 	if cfg != nil {
 		svc.SetAccountLoadBatchCacheTTL(time.Duration(cfg.Gateway.Scheduling.LoadBatchCacheTTLMS) * time.Millisecond)
+		svc.SetSlotTTL(time.Duration(cfg.Gateway.ConcurrencySlotTTLMinutes) * time.Minute)
 		svc.StartSlotCleanupWorker(accountRepo, cfg.Gateway.Scheduling.SlotCleanupInterval)
 	}
 	return svc
@@ -618,6 +619,18 @@ func ProvideImageTaskService(store ImageTaskStore, settings *ImageStorageSetting
 	return NewImageTaskServiceWithResolver(store, settings.Resolver(), defaultImageTaskTTL, defaultImageTaskExecutionTimeout)
 }
 
+func ProvideMediaStorageResolver(backup *BackupService, factory MediaObjectStoreFactory) MediaStorageResolver {
+	return NewBackupMediaResolver(backup, factory)
+}
+
+func ProvideMediaService(repo MediaAssetRepository, resolver MediaStorageResolver, cfg *config.Config) *MediaService {
+	key := ""
+	if cfg != nil {
+		key = cfg.JWT.Secret
+	}
+	return NewMediaService(repo, resolver, DeriveMediaSigningKey(key))
+}
+
 // ProvideBackupService creates and starts BackupService
 func ProvideBackupService(
 	settingRepo SettingRepository,
@@ -806,6 +819,8 @@ var ProviderSet = wire.NewSet(
 	ProvideSettingService,
 	NewDataManagementService,
 	ProvideBackupService,
+	ProvideMediaStorageResolver,
+	ProvideMediaService,
 	ProvideOpsSystemLogSink,
 	ProvideOpsService,
 	ProvideOpsIngressRejectAggregator,
@@ -860,6 +875,8 @@ var ProviderSet = wire.NewSet(
 	NewContentModerationService,
 	NewAffiliateService,
 	ProvidePaymentConfigService,
+	ProvideInvoiceService,
+	ProvideTicketService,
 	ProvidePaymentService,
 	ProvidePaymentOrderExpiryService,
 	ProvideBalanceNotifyService,
@@ -892,9 +909,16 @@ func ProvideBalanceNotifyService(emailService *EmailService, settingRepo Setting
 }
 
 // ProvidePaymentService creates PaymentService and attaches notification email delivery.
-func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService) *PaymentService {
+func ProvideInvoiceService(entClient *dbent.Client, cfg *config.Config, notificationEmailService *NotificationEmailService) *InvoiceService {
+	svc := NewInvoiceService(entClient, cfg)
+	svc.SetNotificationEmailService(notificationEmailService)
+	return svc
+}
+
+func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService, invoiceService *InvoiceService) *PaymentService {
 	svc := NewPaymentService(entClient, registry, loadBalancer, redeemService, subscriptionSvc, configService, userRepo, groupRepo, affiliateService)
 	svc.SetNotificationEmailService(notificationEmailService)
+	svc.SetInvoiceGuard(invoiceService)
 	return svc
 }
 

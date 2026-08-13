@@ -28,6 +28,8 @@ const (
 	accountSlotKeyPrefix = "concurrency:account:"
 	// 格式: concurrency:user:{userID}
 	userSlotKeyPrefix = "concurrency:user:"
+	// 格式: concurrency:group:{groupID} — 真实分组并发（非账号槽位相加）
+	groupSlotKeyPrefix = "concurrency:group:"
 	// 格式: concurrency:api_key:{apiKeyID}
 	apiKeySlotKeyPrefix      = "concurrency:api_key:"
 	liveAccountSlotKeyPrefix = "concurrency:live:account:"
@@ -50,6 +52,7 @@ const (
 	// member 是账号/用户 ID，score 是“预计仍需关注到”的 Redis Unix 秒时间戳。
 	accountActiveIndexKey = "concurrency:account:active_index" // ZSET member=accountID, score=expireAtUnixSeconds
 	userActiveIndexKey    = "concurrency:user:active_index"    // ZSET member=userID, score=expireAtUnixSeconds
+	groupActiveIndexKey   = "concurrency:group:active_index"   // ZSET member=groupID, score=expireAtUnixSeconds
 
 	// 后台清理只按批处理索引候选，避免单次任务占用 Redis 太久。
 	activeIndexCleanupBatchSize  = 1000
@@ -386,6 +389,10 @@ func userSlotKey(userID int64) string {
 	return fmt.Sprintf("%s%d", userSlotKeyPrefix, userID)
 }
 
+func groupSlotKey(groupID int64) string {
+	return fmt.Sprintf("%s%d", groupSlotKeyPrefix, groupID)
+}
+
 func apiKeySlotKey(apiKeyID int64) string {
 	return fmt.Sprintf("%s%d", apiKeySlotKeyPrefix, apiKeyID)
 }
@@ -434,6 +441,7 @@ type slotIndexSpec struct {
 var (
 	accountSlotIndex = slotIndexSpec{indexKey: accountActiveIndexKey, slotKey: accountSlotKey, waitKey: accountWaitKey}
 	userSlotIndex    = slotIndexSpec{indexKey: userActiveIndexKey, slotKey: userSlotKey, waitKey: waitQueueKey}
+	groupSlotIndex   = slotIndexSpec{indexKey: groupActiveIndexKey, slotKey: groupSlotKey, waitKey: func(int64) string { return "" }}
 )
 
 // touchActiveIndexAt 是写路径上的轻量标记：主操作已成功时，尽力把 ID 放入活跃索引，
@@ -457,6 +465,10 @@ func (c *concurrencyCache) refreshAccountActiveIndex(ctx context.Context, accoun
 
 func (c *concurrencyCache) refreshUserActiveIndex(ctx context.Context, userID int64) {
 	c.refreshActiveIndex(ctx, userActiveIndexKey, userID, userSlotKey(userID), waitQueueKey(userID))
+}
+
+func (c *concurrencyCache) refreshGroupActiveIndex(ctx context.Context, groupID int64) {
+	c.refreshActiveIndex(ctx, groupActiveIndexKey, groupID, groupSlotKey(groupID), "")
 }
 
 // refreshActiveIndex 以 Redis 中的真实槽位/等待数为准重建索引状态。
@@ -518,14 +530,19 @@ func (c *concurrencyCache) readActiveLoadForKey(ctx context.Context, id int64, s
 	pipe := c.rdb.Pipeline()
 	pipe.ZRemRangeByScore(ctx, slotKey, "-inf", strconv.FormatInt(cutoffTime, 10))
 	zcardCmd := pipe.ZCard(ctx, slotKey)
-	getCmd := pipe.Get(ctx, waitKey)
+	var getCmd *redis.StringCmd
+	if waitKey != "" {
+		getCmd = pipe.Get(ctx, waitKey)
+	}
 	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
 		return activeIndexLoad{}, fmt.Errorf("pipeline exec: %w", err)
 	}
 
 	waitCount := 0
-	if v, err := getCmd.Int(); err == nil && v > 0 {
-		waitCount = v
+	if getCmd != nil {
+		if v, err := getCmd.Int(); err == nil && v > 0 {
+			waitCount = v
+		}
 	}
 	return activeIndexLoad{
 		id:        id,
@@ -567,21 +584,29 @@ func (c *concurrencyCache) readIndexLoads(ctx context.Context, spec slotIndexSpe
 		cmds := make([]loadCmd, 0, len(chunk))
 		for _, candidate := range chunk {
 			slotKey := spec.slotKey(candidate.id)
-			waitKey := spec.waitKey(candidate.id)
+			waitKey := ""
+			if spec.waitKey != nil {
+				waitKey = spec.waitKey(candidate.id)
+			}
 			pipe.ZRemRangeByScore(ctx, slotKey, "-inf", strconv.FormatInt(cutoffTime, 10))
-			cmds = append(cmds, loadCmd{
+			cmd := loadCmd{
 				activeIndexLoad: candidate,
 				zcardCmd:        pipe.ZCard(ctx, slotKey),
-				getCmd:          pipe.Get(ctx, waitKey),
-			})
+			}
+			if waitKey != "" {
+				cmd.getCmd = pipe.Get(ctx, waitKey)
+			}
+			cmds = append(cmds, cmd)
 		}
 		if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
 			return nil, nil, fmt.Errorf("pipeline exec: %w", err)
 		}
 		for _, cmd := range cmds {
 			waitCount := 0
-			if v, err := cmd.getCmd.Int(); err == nil && v > 0 {
-				waitCount = v
+			if cmd.getCmd != nil {
+				if v, err := cmd.getCmd.Int(); err == nil && v > 0 {
+					waitCount = v
+				}
 			}
 			loads = append(loads, activeIndexLoad{
 				id:        cmd.id,
@@ -650,6 +675,118 @@ func (c *concurrencyCache) ReleaseAccountSlot(ctx context.Context, accountID int
 	// 释放后用真实负载刷新索引；若没有槽位和等待计数，会移除索引 member。
 	c.refreshAccountActiveIndex(ctx, accountID)
 	return nil
+}
+
+func (c *concurrencyCache) AcquireGroupSlot(ctx context.Context, groupID int64, requestID string) error {
+	if groupID <= 0 {
+		return nil
+	}
+	if _, err := trackSlotScript.Run(ctx, c.rdb, []string{groupSlotKey(groupID)}, c.slotTTLSeconds, requestID).Result(); err != nil {
+		return err
+	}
+	if now, err := c.redisUnixSeconds(ctx); err == nil {
+		c.touchActiveIndexAt(ctx, groupActiveIndexKey, groupID, now+int64(c.slotTTLSeconds))
+	}
+	return nil
+}
+
+func (c *concurrencyCache) AcquireAccountSlotForGroup(ctx context.Context, accountID, groupID int64, maxConcurrency int, requestID string) (bool, error) {
+	if groupID <= 0 {
+		return c.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
+	}
+	acquired, err := c.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
+	if err != nil || !acquired {
+		return acquired, err
+	}
+	if err := c.AcquireGroupSlot(ctx, groupID, requestID); err != nil {
+		_ = c.ReleaseAccountSlot(ctx, accountID, requestID)
+		return false, err
+	}
+	return true, nil
+}
+
+func (c *concurrencyCache) ReleaseAccountSlotForGroup(ctx context.Context, accountID, groupID int64, requestID string) error {
+	if groupID <= 0 {
+		return c.ReleaseAccountSlot(ctx, accountID, requestID)
+	}
+	pipe := c.rdb.Pipeline()
+	pipe.ZRem(ctx, accountSlotKey(accountID), requestID)
+	pipe.ZRem(ctx, groupSlotKey(groupID), requestID)
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+		return fmt.Errorf("pipeline exec: %w", err)
+	}
+	c.refreshAccountActiveIndex(ctx, accountID)
+	c.refreshGroupActiveIndex(ctx, groupID)
+	return nil
+}
+
+func (c *concurrencyCache) ReleaseGroupSlot(ctx context.Context, groupID int64, requestID string) error {
+	if groupID <= 0 {
+		return nil
+	}
+	if err := c.rdb.ZRem(ctx, groupSlotKey(groupID), requestID).Err(); err != nil {
+		return err
+	}
+	c.refreshGroupActiveIndex(ctx, groupID)
+	return nil
+}
+
+func (c *concurrencyCache) GetGroupConcurrency(ctx context.Context, groupID int64) (int, error) {
+	if groupID <= 0 {
+		return 0, nil
+	}
+	now, err := c.rdb.Time(ctx).Result()
+	if err != nil {
+		return 0, fmt.Errorf("redis TIME: %w", err)
+	}
+	key := groupSlotKey(groupID)
+	cutoff := now.Unix() - int64(c.slotTTLSeconds)
+	if err := c.rdb.ZRemRangeByScore(ctx, key, "-inf", strconv.FormatInt(cutoff, 10)).Err(); err != nil {
+		return 0, err
+	}
+	n, err := c.rdb.ZCard(ctx, key).Result()
+	return int(n), err
+}
+
+func (c *concurrencyCache) GetGroupConcurrencyBatch(ctx context.Context, groupIDs []int64) (map[int64]int, error) {
+	if len(groupIDs) == 0 {
+		return map[int64]int{}, nil
+	}
+	now, err := c.rdb.Time(ctx).Result()
+	if err != nil {
+		return nil, fmt.Errorf("redis TIME: %w", err)
+	}
+	cutoffTime := now.Unix() - int64(c.slotTTLSeconds)
+	pipe := c.rdb.Pipeline()
+	type groupCmd struct {
+		groupID int64
+		zcard   *redis.IntCmd
+	}
+	cmds := make([]groupCmd, 0, len(groupIDs))
+	seen := make(map[int64]struct{}, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if groupID <= 0 {
+			continue
+		}
+		if _, ok := seen[groupID]; ok {
+			continue
+		}
+		seen[groupID] = struct{}{}
+		slotKey := groupSlotKey(groupID)
+		pipe.ZRemRangeByScore(ctx, slotKey, "-inf", strconv.FormatInt(cutoffTime, 10))
+		cmds = append(cmds, groupCmd{groupID: groupID, zcard: pipe.ZCard(ctx, slotKey)})
+	}
+	if len(cmds) == 0 {
+		return map[int64]int{}, nil
+	}
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+		return nil, fmt.Errorf("pipeline exec: %w", err)
+	}
+	result := make(map[int64]int, len(cmds))
+	for _, cmd := range cmds {
+		result[cmd.groupID] = int(cmd.zcard.Val())
+	}
+	return result, nil
 }
 
 func (c *concurrencyCache) GetAccountConcurrency(ctx context.Context, accountID int64) (int, error) {
@@ -1092,7 +1229,10 @@ func (c *concurrencyCache) CleanupExpiredAccountSlotKeys(ctx context.Context) er
 	if err := c.reconcileExpiredIndexCandidates(ctx, accountSlotIndex); err != nil {
 		return err
 	}
-	return c.reconcileExpiredIndexCandidates(ctx, userSlotIndex)
+	if err := c.reconcileExpiredIndexCandidates(ctx, userSlotIndex); err != nil {
+		return err
+	}
+	return c.reconcileExpiredIndexCandidates(ctx, groupSlotIndex)
 }
 
 // reconcileExpiredIndexCandidates 处理单个活跃索引中 score 已到期的候选：

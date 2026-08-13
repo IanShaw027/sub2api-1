@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
 // TrendDataPoint represents a single point in trend data
@@ -666,6 +667,13 @@ func (r *usageLogRepository) GetUserBreakdownStats(ctx context.Context, startTim
 	if dim.BillingType != nil {
 		query += fmt.Sprintf(" AND ul.billing_type = $%d", len(args)+1)
 		args = append(args, *dim.BillingType)
+	}
+	if dim.ExcludeAdmin {
+		query += fmt.Sprintf(" AND COALESCE(u.role, '') <> $%d", len(args)+1)
+		args = append(args, service.RoleAdmin)
+	}
+	if strings.TrimSpace(dim.BillingMode) != "" {
+		query, args = appendUsageLogBillingModeQueryFilter(query, args, dim.BillingMode, "ul")
 	}
 
 	// ORDER BY 列来自固定 allowlist(非用户原样字符串),避免 SQL 注入。

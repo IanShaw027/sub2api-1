@@ -31,6 +31,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
+	"github.com/Wei-Shaw/sub2api/ent/invoice"
+	"github.com/Wei-Shaw/sub2api/ent/invoiceorder"
+	"github.com/Wei-Shaw/sub2api/ent/mediaasset"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
@@ -42,6 +45,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/supportticket"
+	"github.com/Wei-Shaw/sub2api/ent/supportticketmessage"
+	"github.com/Wei-Shaw/sub2api/ent/supportticketreplytemplate"
+	"github.com/Wei-Shaw/sub2api/ent/supportticketrevision"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -130,6 +137,9 @@ func checkColumn(t, c string) error {
 			group.Table:                         group.ValidColumn,
 			idempotencyrecord.Table:             idempotencyrecord.ValidColumn,
 			identityadoptiondecision.Table:      identityadoptiondecision.ValidColumn,
+			invoice.Table:                       invoice.ValidColumn,
+			invoiceorder.Table:                  invoiceorder.ValidColumn,
+			mediaasset.Table:                    mediaasset.ValidColumn,
 			paymentauditlog.Table:               paymentauditlog.ValidColumn,
 			paymentorder.Table:                  paymentorder.ValidColumn,
 			paymentproviderinstance.Table:       paymentproviderinstance.ValidColumn,
@@ -141,6 +151,10 @@ func checkColumn(t, c string) error {
 			securitysecret.Table:                securitysecret.ValidColumn,
 			setting.Table:                       setting.ValidColumn,
 			subscriptionplan.Table:              subscriptionplan.ValidColumn,
+			supportticket.Table:                 supportticket.ValidColumn,
+			supportticketmessage.Table:          supportticketmessage.ValidColumn,
+			supportticketreplytemplate.Table:    supportticketreplytemplate.ValidColumn,
+			supportticketrevision.Table:         supportticketrevision.ValidColumn,
 			tlsfingerprintprofile.Table:         tlsfingerprintprofile.ValidColumn,
 			usagecleanuptask.Table:              usagecleanuptask.ValidColumn,
 			usagelog.Table:                      usagelog.ValidColumn,

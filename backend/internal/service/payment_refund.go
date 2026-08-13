@@ -202,6 +202,9 @@ func (s *PaymentService) validateRefundRequest(ctx context.Context, oid, uid int
 	if !inst.AllowUserRefund {
 		return nil, infraerrors.Forbidden("USER_REFUND_DISABLED", "user refund is not enabled for this provider")
 	}
+	if err := s.rejectRefundIfInvoiceIssued(ctx, oid, false); err != nil {
+		return nil, err
+	}
 	return o, nil
 }
 
@@ -226,6 +229,9 @@ func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float
 	}
 	if !inst.RefundEnabled {
 		return nil, nil, infraerrors.Forbidden("REFUND_DISABLED", "refund is not enabled for this provider")
+	}
+	if err := s.rejectRefundIfInvoiceIssued(ctx, oid, force); err != nil {
+		return nil, nil, err
 	}
 	if math.IsNaN(amt) || math.IsInf(amt, 0) {
 		return nil, nil, infraerrors.BadRequest("INVALID_AMOUNT", "invalid refund amount")
@@ -615,11 +621,20 @@ func (s *PaymentService) markRefundOk(ctx context.Context, p *RefundPlan) (*Refu
 	if err != nil {
 		return nil, fmt.Errorf("mark refund: %w", err)
 	}
+	if err := s.rejectRefundIfInvoiceIssued(ctx, p.OrderID, p.Force); err != nil {
+		return nil, err
+	}
 	s.writeAuditLog(ctx, p.OrderID, "REFUND_SUCCESS", "admin", map[string]any{"refundAmount": p.RefundAmount, "reason": p.Reason, "balanceDeducted": p.BalanceToDeduct, "force": p.Force})
+	if err := s.cancelAppliedInvoicesAfterRefund(ctx, s.entClient, p.OrderID, p.Force); err != nil {
+		return nil, err
+	}
 	return &RefundResult{Success: true, BalanceDeducted: p.BalanceToDeduct, SubDaysDeducted: p.SubDaysToDeduct}, nil
 }
 
 func (s *PaymentService) markRefundOkTx(ctx context.Context, client *dbent.Client, p *RefundPlan) (*RefundResult, error) {
+	if err := s.rejectRefundIfInvoiceIssued(ctx, p.OrderID, p.Force); err != nil {
+		return nil, err
+	}
 	fs := OrderStatusRefunded
 	if p.RefundAmount < p.Order.Amount {
 		fs = OrderStatusPartiallyRefunded
@@ -640,6 +655,9 @@ func (s *PaymentService) markRefundOkTx(ctx context.Context, client *dbent.Clien
 		SetOperator("admin").
 		Save(ctx); err != nil {
 		return nil, fmt.Errorf("write refund audit: %w", err)
+	}
+	if err := s.cancelAppliedInvoicesAfterRefund(ctx, client, p.OrderID, p.Force); err != nil {
+		return nil, fmt.Errorf("cancel applied invoices after refund: %w", err)
 	}
 	return &RefundResult{Success: true, BalanceDeducted: p.BalanceToDeduct, SubDaysDeducted: p.SubDaysToDeduct}, nil
 }
@@ -717,4 +735,29 @@ func (s *PaymentService) restoreStatus(ctx context.Context, p *RefundPlan) {
 		rs = OrderStatusRefundRequested
 	}
 	_, _ = s.entClient.PaymentOrder.UpdateOneID(p.OrderID).SetStatus(rs).Save(ctx)
+}
+
+func (s *PaymentService) rejectRefundIfInvoiceIssued(ctx context.Context, orderID int64, force bool) error {
+	if s == nil || s.invoiceGuard == nil {
+		return nil
+	}
+	issued, err := s.invoiceGuard.HasActiveIssuedInvoiceForOrder(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	if issued && !force {
+		return ErrInvoiceIssuedRefundBlock
+	}
+	return nil
+}
+
+func (s *PaymentService) cancelAppliedInvoicesAfterRefund(ctx context.Context, client *dbent.Client, orderID int64, force bool) error {
+	if s == nil || s.invoiceGuard == nil {
+		return nil
+	}
+	if err := s.invoiceGuard.CancelActiveInvoicesForRefund(ctx, client, orderID, force); err != nil {
+		slog.Warn("cancel invoices after refund failed", "order_id", orderID, "err", err.Error())
+		return err
+	}
+	return nil
 }

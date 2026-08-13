@@ -63,6 +63,15 @@ type IdempotencyRecord func(*sql.Selector)
 // IdentityAdoptionDecision is the predicate function for identityadoptiondecision builders.
 type IdentityAdoptionDecision func(*sql.Selector)
 
+// Invoice is the predicate function for invoice builders.
+type Invoice func(*sql.Selector)
+
+// InvoiceOrder is the predicate function for invoiceorder builders.
+type InvoiceOrder func(*sql.Selector)
+
+// MediaAsset is the predicate function for mediaasset builders.
+type MediaAsset func(*sql.Selector)
+
 // PaymentAuditLog is the predicate function for paymentauditlog builders.
 type PaymentAuditLog func(*sql.Selector)
 
@@ -95,6 +104,18 @@ type Setting func(*sql.Selector)
 
 // SubscriptionPlan is the predicate function for subscriptionplan builders.
 type SubscriptionPlan func(*sql.Selector)
+
+// SupportTicket is the predicate function for supportticket builders.
+type SupportTicket func(*sql.Selector)
+
+// SupportTicketMessage is the predicate function for supportticketmessage builders.
+type SupportTicketMessage func(*sql.Selector)
+
+// SupportTicketReplyTemplate is the predicate function for supportticketreplytemplate builders.
+type SupportTicketReplyTemplate func(*sql.Selector)
+
+// SupportTicketRevision is the predicate function for supportticketrevision builders.
+type SupportTicketRevision func(*sql.Selector)
 
 // TLSFingerprintProfile is the predicate function for tlsfingerprintprofile builders.
 type TLSFingerprintProfile func(*sql.Selector)

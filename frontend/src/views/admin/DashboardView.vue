@@ -168,7 +168,56 @@
               </div>
             </div>
           </div>
+        </div>
 
+        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div class="card p-4">
+            <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+              {{ t('admin.dashboard.balanceCost') }}
+            </p>
+            <p class="text-xl font-bold text-gray-900 dark:text-white">
+              ${{ formatCost(stats.today_balance_actual_cost) }}
+            </p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              {{ t('common.total') }}: ${{ formatCost(stats.total_balance_actual_cost) }}
+            </p>
+          </div>
+          <div class="card p-4">
+            <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+              {{ t('admin.dashboard.subscriptionCost') }}
+            </p>
+            <p class="text-xl font-bold text-gray-900 dark:text-white">
+              ${{ formatCost(stats.today_subscription_actual_cost) }}
+            </p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              {{ t('common.total') }}: ${{ formatCost(stats.total_subscription_actual_cost) }}
+            </p>
+          </div>
+          <div class="card p-4">
+            <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+              {{ t('admin.dashboard.rechargeAmount') }}
+            </p>
+            <p class="text-xl font-bold text-gray-900 dark:text-white">
+              ${{ formatCost(stats.today_recharge_amount) }}
+            </p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              {{ t('common.total') }}: ${{ formatCost(stats.total_recharge_amount) }}
+            </p>
+          </div>
+          <div class="card p-4">
+            <p class="text-xs font-medium text-gray-500 dark:text-gray-400">
+              {{ t('admin.dashboard.refundAmount') }}
+            </p>
+            <p class="text-xl font-bold text-gray-900 dark:text-white">
+              ${{ formatCost(stats.today_refund_amount) }}
+            </p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              {{ t('common.total') }}: ${{ formatCost(stats.total_refund_amount) }}
+            </p>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <!-- Performance (RPM/TPM) -->
           <div class="card p-4">
             <div class="flex items-center gap-3">

@@ -343,6 +343,12 @@ func (s *BackupService) EncryptionKeyConfigured() bool {
 	return s != nil && s.encryptionKeyConfigured
 }
 
+// ConfiguredS3 returns the decrypted backup S3 config for internal media/backup use.
+// Unlike GetS3Config it does not redact the secret.
+func (s *BackupService) ConfiguredS3(ctx context.Context) (*BackupS3Config, error) {
+	return s.loadS3Config(ctx)
+}
+
 func (s *BackupService) GetS3Config(ctx context.Context) (*BackupS3Config, error) {
 	cfg, err := s.loadS3Config(ctx)
 	if err != nil {

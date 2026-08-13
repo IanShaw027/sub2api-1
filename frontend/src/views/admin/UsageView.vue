@@ -245,6 +245,8 @@ const breakdownFilters = computed(() => {
   if (filters.value.group_id) f.group_id = filters.value.group_id
   if (filters.value.request_type != null) f.request_type = filters.value.request_type
   if (filters.value.billing_type != null) f.billing_type = filters.value.billing_type
+  if (filters.value.billing_mode) f.billing_mode = filters.value.billing_mode
+  if (filters.value.exclude_admin) f.exclude_admin = true
   return f
 })
 
@@ -450,6 +452,7 @@ const loadModelStats = async (source: ModelDistributionSource, force = false) =>
       request_type: requestType,
       stream: legacyStream === null ? undefined : legacyStream,
       billing_type: filters.value.billing_type,
+      billing_mode: filters.value.billing_mode,
 	  upstream_model_mismatch: filters.value.upstream_model_mismatch,
     }
 
@@ -500,6 +503,7 @@ const loadChartData = async () => {
       request_type: requestType,
       stream: legacyStream === null ? undefined : legacyStream,
       billing_type: filters.value.billing_type,
+      billing_mode: filters.value.billing_mode,
 	  upstream_model_mismatch: filters.value.upstream_model_mismatch,
       include_stats: false,
       include_trend: true,
@@ -539,7 +543,7 @@ const resetFilters = () => {
   const range = getLast24HoursRangeDates()
   startDate.value = range.start
   endDate.value = range.end
-  filters.value = { start_date: startDate.value, end_date: endDate.value, request_type: undefined, billing_type: null, billing_mode: undefined }
+  filters.value = { start_date: startDate.value, end_date: endDate.value, request_type: undefined, billing_type: null, billing_mode: undefined, exclude_admin: false }
   granularity.value = getGranularityForRange(startDate.value, endDate.value)
   applyFilters()
 }

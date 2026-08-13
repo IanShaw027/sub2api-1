@@ -251,3 +251,39 @@ func TestBillingCacheService_CheckRPM_NilUserIsNoop(t *testing.T) {
 	require.EqualValues(t, 0, atomic.LoadInt32(&cache.userCalls))
 	require.EqualValues(t, 0, atomic.LoadInt32(&repo.calls))
 }
+
+type userRPMAtomicAdmitStub struct {
+	userRPMCacheStub
+	groupLimitSeen int
+	userLimitSeen  int
+	incGroupSeen   bool
+	incUserSeen    bool
+	groupCount     int
+	userCount      int
+	admitted       bool
+	err            error
+	calls          int32
+}
+
+func (s *userRPMAtomicAdmitStub) TryIncrementUserAndGroupRPM(_ context.Context, _ int64, _ int64, groupLimit, userLimit int, incGroup, incUser bool) (int, int, bool, error) {
+	atomic.AddInt32(&s.calls, 1)
+	s.groupLimitSeen = groupLimit
+	s.userLimitSeen = userLimit
+	s.incGroupSeen = incGroup
+	s.incUserSeen = incUser
+	return s.groupCount, s.userCount, s.admitted, s.err
+}
+
+func TestBillingCacheService_CheckRPM_AtomicAdmitRejectsWithoutFallbackIncrement(t *testing.T) {
+	cache := &userRPMAtomicAdmitStub{groupCount: 2, userCount: 1, admitted: false}
+	svc := newBillingServiceForRPM(t, cache, nil)
+
+	err := svc.checkRPM(context.Background(), &User{ID: 1, RPMLimit: 5}, &Group{ID: 10, RPMLimit: 2})
+	require.ErrorIs(t, err, ErrGroupRPMExceeded)
+	require.EqualValues(t, 1, atomic.LoadInt32(&cache.calls))
+	require.True(t, cache.incGroupSeen)
+	require.True(t, cache.incUserSeen)
+	require.Equal(t, 2, cache.groupLimitSeen)
+	require.EqualValues(t, 0, atomic.LoadInt32(&cache.userGroupCalls))
+	require.EqualValues(t, 0, atomic.LoadInt32(&cache.userCalls))
+}

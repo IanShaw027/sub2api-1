@@ -3,6 +3,7 @@
 package runtime
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/ent/account"
@@ -24,6 +25,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
+	"github.com/Wei-Shaw/sub2api/ent/invoice"
+	"github.com/Wei-Shaw/sub2api/ent/invoiceorder"
+	"github.com/Wei-Shaw/sub2api/ent/mediaasset"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
@@ -36,6 +40,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/supportticket"
+	"github.com/Wei-Shaw/sub2api/ent/supportticketmessage"
+	"github.com/Wei-Shaw/sub2api/ent/supportticketreplytemplate"
+	"github.com/Wei-Shaw/sub2api/ent/supportticketrevision"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -1275,6 +1283,274 @@ func init() {
 	identityadoptiondecisionDescDecidedAt := identityadoptiondecisionFields[4].Descriptor()
 	// identityadoptiondecision.DefaultDecidedAt holds the default value on creation for the decided_at field.
 	identityadoptiondecision.DefaultDecidedAt = identityadoptiondecisionDescDecidedAt.Default.(func() time.Time)
+	invoiceFields := schema.Invoice{}.Fields()
+	_ = invoiceFields
+	// invoiceDescUserEmail is the schema descriptor for user_email field.
+	invoiceDescUserEmail := invoiceFields[1].Descriptor()
+	// invoice.DefaultUserEmail holds the default value on creation for the user_email field.
+	invoice.DefaultUserEmail = invoiceDescUserEmail.Default.(string)
+	// invoice.UserEmailValidator is a validator for the "user_email" field. It is called by the builders before save.
+	invoice.UserEmailValidator = invoiceDescUserEmail.Validators[0].(func(string) error)
+	// invoiceDescStatus is the schema descriptor for status field.
+	invoiceDescStatus := invoiceFields[2].Descriptor()
+	// invoice.DefaultStatus holds the default value on creation for the status field.
+	invoice.DefaultStatus = invoiceDescStatus.Default.(string)
+	// invoice.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	invoice.StatusValidator = invoiceDescStatus.Validators[0].(func(string) error)
+	// invoiceDescUnreadByAdmin is the schema descriptor for unread_by_admin field.
+	invoiceDescUnreadByAdmin := invoiceFields[3].Descriptor()
+	// invoice.DefaultUnreadByAdmin holds the default value on creation for the unread_by_admin field.
+	invoice.DefaultUnreadByAdmin = invoiceDescUnreadByAdmin.Default.(bool)
+	// invoiceDescInvoiceAmount is the schema descriptor for invoice_amount field.
+	invoiceDescInvoiceAmount := invoiceFields[4].Descriptor()
+	// invoice.DefaultInvoiceAmount holds the default value on creation for the invoice_amount field.
+	invoice.DefaultInvoiceAmount = invoiceDescInvoiceAmount.Default.(float64)
+	// invoiceDescCurrency is the schema descriptor for currency field.
+	invoiceDescCurrency := invoiceFields[5].Descriptor()
+	// invoice.DefaultCurrency holds the default value on creation for the currency field.
+	invoice.DefaultCurrency = invoiceDescCurrency.Default.(string)
+	// invoice.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
+	invoice.CurrencyValidator = invoiceDescCurrency.Validators[0].(func(string) error)
+	// invoiceDescOrderCount is the schema descriptor for order_count field.
+	invoiceDescOrderCount := invoiceFields[6].Descriptor()
+	// invoice.DefaultOrderCount holds the default value on creation for the order_count field.
+	invoice.DefaultOrderCount = invoiceDescOrderCount.Default.(int)
+	// invoiceDescTitle is the schema descriptor for title field.
+	invoiceDescTitle := invoiceFields[7].Descriptor()
+	// invoice.TitleValidator is a validator for the "title" field. It is called by the builders before save.
+	invoice.TitleValidator = func() func(string) error {
+		validators := invoiceDescTitle.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(title string) error {
+			for _, fn := range fns {
+				if err := fn(title); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// invoiceDescTaxNumber is the schema descriptor for tax_number field.
+	invoiceDescTaxNumber := invoiceFields[8].Descriptor()
+	// invoice.DefaultTaxNumber holds the default value on creation for the tax_number field.
+	invoice.DefaultTaxNumber = invoiceDescTaxNumber.Default.(string)
+	// invoice.TaxNumberValidator is a validator for the "tax_number" field. It is called by the builders before save.
+	invoice.TaxNumberValidator = invoiceDescTaxNumber.Validators[0].(func(string) error)
+	// invoiceDescEmail is the schema descriptor for email field.
+	invoiceDescEmail := invoiceFields[9].Descriptor()
+	// invoice.EmailValidator is a validator for the "email" field. It is called by the builders before save.
+	invoice.EmailValidator = func() func(string) error {
+		validators := invoiceDescEmail.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(email string) error {
+			for _, fn := range fns {
+				if err := fn(email); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// invoiceDescContactName is the schema descriptor for contact_name field.
+	invoiceDescContactName := invoiceFields[10].Descriptor()
+	// invoice.DefaultContactName holds the default value on creation for the contact_name field.
+	invoice.DefaultContactName = invoiceDescContactName.Default.(string)
+	// invoice.ContactNameValidator is a validator for the "contact_name" field. It is called by the builders before save.
+	invoice.ContactNameValidator = invoiceDescContactName.Validators[0].(func(string) error)
+	// invoiceDescContactPhone is the schema descriptor for contact_phone field.
+	invoiceDescContactPhone := invoiceFields[11].Descriptor()
+	// invoice.DefaultContactPhone holds the default value on creation for the contact_phone field.
+	invoice.DefaultContactPhone = invoiceDescContactPhone.Default.(string)
+	// invoice.ContactPhoneValidator is a validator for the "contact_phone" field. It is called by the builders before save.
+	invoice.ContactPhoneValidator = invoiceDescContactPhone.Validators[0].(func(string) error)
+	// invoiceDescRequestNote is the schema descriptor for request_note field.
+	invoiceDescRequestNote := invoiceFields[12].Descriptor()
+	// invoice.DefaultRequestNote holds the default value on creation for the request_note field.
+	invoice.DefaultRequestNote = invoiceDescRequestNote.Default.(string)
+	// invoiceDescFileName is the schema descriptor for file_name field.
+	invoiceDescFileName := invoiceFields[14].Descriptor()
+	// invoice.DefaultFileName holds the default value on creation for the file_name field.
+	invoice.DefaultFileName = invoiceDescFileName.Default.(string)
+	// invoice.FileNameValidator is a validator for the "file_name" field. It is called by the builders before save.
+	invoice.FileNameValidator = invoiceDescFileName.Validators[0].(func(string) error)
+	// invoiceDescFileMimeType is the schema descriptor for file_mime_type field.
+	invoiceDescFileMimeType := invoiceFields[15].Descriptor()
+	// invoice.DefaultFileMimeType holds the default value on creation for the file_mime_type field.
+	invoice.DefaultFileMimeType = invoiceDescFileMimeType.Default.(string)
+	// invoice.FileMimeTypeValidator is a validator for the "file_mime_type" field. It is called by the builders before save.
+	invoice.FileMimeTypeValidator = invoiceDescFileMimeType.Validators[0].(func(string) error)
+	// invoiceDescFileSizeBytes is the schema descriptor for file_size_bytes field.
+	invoiceDescFileSizeBytes := invoiceFields[16].Descriptor()
+	// invoice.DefaultFileSizeBytes holds the default value on creation for the file_size_bytes field.
+	invoice.DefaultFileSizeBytes = invoiceDescFileSizeBytes.Default.(int64)
+	// invoiceDescAppliedAt is the schema descriptor for applied_at field.
+	invoiceDescAppliedAt := invoiceFields[17].Descriptor()
+	// invoice.DefaultAppliedAt holds the default value on creation for the applied_at field.
+	invoice.DefaultAppliedAt = invoiceDescAppliedAt.Default.(func() time.Time)
+	// invoiceDescCreatedAt is the schema descriptor for created_at field.
+	invoiceDescCreatedAt := invoiceFields[20].Descriptor()
+	// invoice.DefaultCreatedAt holds the default value on creation for the created_at field.
+	invoice.DefaultCreatedAt = invoiceDescCreatedAt.Default.(func() time.Time)
+	// invoiceDescUpdatedAt is the schema descriptor for updated_at field.
+	invoiceDescUpdatedAt := invoiceFields[21].Descriptor()
+	// invoice.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	invoice.DefaultUpdatedAt = invoiceDescUpdatedAt.Default.(func() time.Time)
+	// invoice.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	invoice.UpdateDefaultUpdatedAt = invoiceDescUpdatedAt.UpdateDefault.(func() time.Time)
+	invoiceorderFields := schema.InvoiceOrder{}.Fields()
+	_ = invoiceorderFields
+	// invoiceorderDescPayAmountSnapshot is the schema descriptor for pay_amount_snapshot field.
+	invoiceorderDescPayAmountSnapshot := invoiceorderFields[2].Descriptor()
+	// invoiceorder.DefaultPayAmountSnapshot holds the default value on creation for the pay_amount_snapshot field.
+	invoiceorder.DefaultPayAmountSnapshot = invoiceorderDescPayAmountSnapshot.Default.(float64)
+	// invoiceorderDescCurrency is the schema descriptor for currency field.
+	invoiceorderDescCurrency := invoiceorderFields[3].Descriptor()
+	// invoiceorder.DefaultCurrency holds the default value on creation for the currency field.
+	invoiceorder.DefaultCurrency = invoiceorderDescCurrency.Default.(string)
+	// invoiceorder.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
+	invoiceorder.CurrencyValidator = invoiceorderDescCurrency.Validators[0].(func(string) error)
+	// invoiceorderDescOutTradeNo is the schema descriptor for out_trade_no field.
+	invoiceorderDescOutTradeNo := invoiceorderFields[4].Descriptor()
+	// invoiceorder.DefaultOutTradeNo holds the default value on creation for the out_trade_no field.
+	invoiceorder.DefaultOutTradeNo = invoiceorderDescOutTradeNo.Default.(string)
+	// invoiceorder.OutTradeNoValidator is a validator for the "out_trade_no" field. It is called by the builders before save.
+	invoiceorder.OutTradeNoValidator = invoiceorderDescOutTradeNo.Validators[0].(func(string) error)
+	// invoiceorderDescPaymentType is the schema descriptor for payment_type field.
+	invoiceorderDescPaymentType := invoiceorderFields[5].Descriptor()
+	// invoiceorder.DefaultPaymentType holds the default value on creation for the payment_type field.
+	invoiceorder.DefaultPaymentType = invoiceorderDescPaymentType.Default.(string)
+	// invoiceorder.PaymentTypeValidator is a validator for the "payment_type" field. It is called by the builders before save.
+	invoiceorder.PaymentTypeValidator = invoiceorderDescPaymentType.Validators[0].(func(string) error)
+	// invoiceorderDescIsActive is the schema descriptor for is_active field.
+	invoiceorderDescIsActive := invoiceorderFields[6].Descriptor()
+	// invoiceorder.DefaultIsActive holds the default value on creation for the is_active field.
+	invoiceorder.DefaultIsActive = invoiceorderDescIsActive.Default.(bool)
+	// invoiceorderDescCreatedAt is the schema descriptor for created_at field.
+	invoiceorderDescCreatedAt := invoiceorderFields[7].Descriptor()
+	// invoiceorder.DefaultCreatedAt holds the default value on creation for the created_at field.
+	invoiceorder.DefaultCreatedAt = invoiceorderDescCreatedAt.Default.(func() time.Time)
+	mediaassetFields := schema.MediaAsset{}.Fields()
+	_ = mediaassetFields
+	// mediaassetDescBizType is the schema descriptor for biz_type field.
+	mediaassetDescBizType := mediaassetFields[1].Descriptor()
+	// mediaasset.BizTypeValidator is a validator for the "biz_type" field. It is called by the builders before save.
+	mediaasset.BizTypeValidator = func() func(string) error {
+		validators := mediaassetDescBizType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(biz_type string) error {
+			for _, fn := range fns {
+				if err := fn(biz_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediaassetDescBizID is the schema descriptor for biz_id field.
+	mediaassetDescBizID := mediaassetFields[2].Descriptor()
+	// mediaasset.DefaultBizID holds the default value on creation for the biz_id field.
+	mediaasset.DefaultBizID = mediaassetDescBizID.Default.(string)
+	// mediaasset.BizIDValidator is a validator for the "biz_id" field. It is called by the builders before save.
+	mediaasset.BizIDValidator = mediaassetDescBizID.Validators[0].(func(string) error)
+	// mediaassetDescStorageKey is the schema descriptor for storage_key field.
+	mediaassetDescStorageKey := mediaassetFields[3].Descriptor()
+	// mediaasset.StorageKeyValidator is a validator for the "storage_key" field. It is called by the builders before save.
+	mediaasset.StorageKeyValidator = func() func(string) error {
+		validators := mediaassetDescStorageKey.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(storage_key string) error {
+			for _, fn := range fns {
+				if err := fn(storage_key); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediaassetDescSha256 is the schema descriptor for sha256 field.
+	mediaassetDescSha256 := mediaassetFields[4].Descriptor()
+	// mediaasset.Sha256Validator is a validator for the "sha256" field. It is called by the builders before save.
+	mediaasset.Sha256Validator = func() func(string) error {
+		validators := mediaassetDescSha256.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(sha256 string) error {
+			for _, fn := range fns {
+				if err := fn(sha256); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediaassetDescMime is the schema descriptor for mime field.
+	mediaassetDescMime := mediaassetFields[5].Descriptor()
+	// mediaasset.MimeValidator is a validator for the "mime" field. It is called by the builders before save.
+	mediaasset.MimeValidator = func() func(string) error {
+		validators := mediaassetDescMime.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(mime string) error {
+			for _, fn := range fns {
+				if err := fn(mime); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// mediaassetDescFilename is the schema descriptor for filename field.
+	mediaassetDescFilename := mediaassetFields[6].Descriptor()
+	// mediaasset.DefaultFilename holds the default value on creation for the filename field.
+	mediaasset.DefaultFilename = mediaassetDescFilename.Default.(string)
+	// mediaasset.FilenameValidator is a validator for the "filename" field. It is called by the builders before save.
+	mediaasset.FilenameValidator = mediaassetDescFilename.Validators[0].(func(string) error)
+	// mediaassetDescSize is the schema descriptor for size field.
+	mediaassetDescSize := mediaassetFields[7].Descriptor()
+	// mediaasset.SizeValidator is a validator for the "size" field. It is called by the builders before save.
+	mediaasset.SizeValidator = mediaassetDescSize.Validators[0].(func(int64) error)
+	// mediaassetDescVisibility is the schema descriptor for visibility field.
+	mediaassetDescVisibility := mediaassetFields[8].Descriptor()
+	// mediaasset.DefaultVisibility holds the default value on creation for the visibility field.
+	mediaasset.DefaultVisibility = mediaassetDescVisibility.Default.(string)
+	// mediaasset.VisibilityValidator is a validator for the "visibility" field. It is called by the builders before save.
+	mediaasset.VisibilityValidator = mediaassetDescVisibility.Validators[0].(func(string) error)
+	// mediaassetDescStatus is the schema descriptor for status field.
+	mediaassetDescStatus := mediaassetFields[9].Descriptor()
+	// mediaasset.DefaultStatus holds the default value on creation for the status field.
+	mediaasset.DefaultStatus = mediaassetDescStatus.Default.(string)
+	// mediaasset.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	mediaasset.StatusValidator = mediaassetDescStatus.Validators[0].(func(string) error)
+	// mediaassetDescStorageProfileID is the schema descriptor for storage_profile_id field.
+	mediaassetDescStorageProfileID := mediaassetFields[10].Descriptor()
+	// mediaasset.DefaultStorageProfileID holds the default value on creation for the storage_profile_id field.
+	mediaasset.DefaultStorageProfileID = mediaassetDescStorageProfileID.Default.(string)
+	// mediaasset.StorageProfileIDValidator is a validator for the "storage_profile_id" field. It is called by the builders before save.
+	mediaasset.StorageProfileIDValidator = mediaassetDescStorageProfileID.Validators[0].(func(string) error)
+	// mediaassetDescPublicBaseURL is the schema descriptor for public_base_url field.
+	mediaassetDescPublicBaseURL := mediaassetFields[11].Descriptor()
+	// mediaasset.DefaultPublicBaseURL holds the default value on creation for the public_base_url field.
+	mediaasset.DefaultPublicBaseURL = mediaassetDescPublicBaseURL.Default.(string)
+	// mediaassetDescCreatedAt is the schema descriptor for created_at field.
+	mediaassetDescCreatedAt := mediaassetFields[12].Descriptor()
+	// mediaasset.DefaultCreatedAt holds the default value on creation for the created_at field.
+	mediaasset.DefaultCreatedAt = mediaassetDescCreatedAt.Default.(func() time.Time)
 	paymentauditlogFields := schema.PaymentAuditLog{}.Fields()
 	_ = paymentauditlogFields
 	// paymentauditlogDescOrderID is the schema descriptor for order_id field.
@@ -1439,12 +1715,16 @@ func init() {
 	paymentproviderinstanceDescAllowUserRefund := paymentproviderinstanceFields[9].Descriptor()
 	// paymentproviderinstance.DefaultAllowUserRefund holds the default value on creation for the allow_user_refund field.
 	paymentproviderinstance.DefaultAllowUserRefund = paymentproviderinstanceDescAllowUserRefund.Default.(bool)
+	// paymentproviderinstanceDescInvoiceEnabled is the schema descriptor for invoice_enabled field.
+	paymentproviderinstanceDescInvoiceEnabled := paymentproviderinstanceFields[10].Descriptor()
+	// paymentproviderinstance.DefaultInvoiceEnabled holds the default value on creation for the invoice_enabled field.
+	paymentproviderinstance.DefaultInvoiceEnabled = paymentproviderinstanceDescInvoiceEnabled.Default.(bool)
 	// paymentproviderinstanceDescCreatedAt is the schema descriptor for created_at field.
-	paymentproviderinstanceDescCreatedAt := paymentproviderinstanceFields[10].Descriptor()
+	paymentproviderinstanceDescCreatedAt := paymentproviderinstanceFields[11].Descriptor()
 	// paymentproviderinstance.DefaultCreatedAt holds the default value on creation for the created_at field.
 	paymentproviderinstance.DefaultCreatedAt = paymentproviderinstanceDescCreatedAt.Default.(func() time.Time)
 	// paymentproviderinstanceDescUpdatedAt is the schema descriptor for updated_at field.
-	paymentproviderinstanceDescUpdatedAt := paymentproviderinstanceFields[11].Descriptor()
+	paymentproviderinstanceDescUpdatedAt := paymentproviderinstanceFields[12].Descriptor()
 	// paymentproviderinstance.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	paymentproviderinstance.DefaultUpdatedAt = paymentproviderinstanceDescUpdatedAt.Default.(func() time.Time)
 	// paymentproviderinstance.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -1882,6 +2162,222 @@ func init() {
 	subscriptionplan.DefaultUpdatedAt = subscriptionplanDescUpdatedAt.Default.(func() time.Time)
 	// subscriptionplan.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	subscriptionplan.UpdateDefaultUpdatedAt = subscriptionplanDescUpdatedAt.UpdateDefault.(func() time.Time)
+	supportticketFields := schema.SupportTicket{}.Fields()
+	_ = supportticketFields
+	// supportticketDescTicketNo is the schema descriptor for ticket_no field.
+	supportticketDescTicketNo := supportticketFields[0].Descriptor()
+	// supportticket.TicketNoValidator is a validator for the "ticket_no" field. It is called by the builders before save.
+	supportticket.TicketNoValidator = func() func(string) error {
+		validators := supportticketDescTicketNo.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(ticket_no string) error {
+			for _, fn := range fns {
+				if err := fn(ticket_no); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportticketDescCategory is the schema descriptor for category field.
+	supportticketDescCategory := supportticketFields[2].Descriptor()
+	// supportticket.CategoryValidator is a validator for the "category" field. It is called by the builders before save.
+	supportticket.CategoryValidator = func() func(string) error {
+		validators := supportticketDescCategory.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(category string) error {
+			for _, fn := range fns {
+				if err := fn(category); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportticketDescTitle is the schema descriptor for title field.
+	supportticketDescTitle := supportticketFields[3].Descriptor()
+	// supportticket.TitleValidator is a validator for the "title" field. It is called by the builders before save.
+	supportticket.TitleValidator = func() func(string) error {
+		validators := supportticketDescTitle.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(title string) error {
+			for _, fn := range fns {
+				if err := fn(title); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportticketDescStatus is the schema descriptor for status field.
+	supportticketDescStatus := supportticketFields[4].Descriptor()
+	// supportticket.DefaultStatus holds the default value on creation for the status field.
+	supportticket.DefaultStatus = supportticketDescStatus.Default.(string)
+	// supportticket.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	supportticket.StatusValidator = supportticketDescStatus.Validators[0].(func(string) error)
+	// supportticketDescCurrentFormPayload is the schema descriptor for current_form_payload field.
+	supportticketDescCurrentFormPayload := supportticketFields[5].Descriptor()
+	// supportticket.DefaultCurrentFormPayload holds the default value on creation for the current_form_payload field.
+	supportticket.DefaultCurrentFormPayload = supportticketDescCurrentFormPayload.Default.(json.RawMessage)
+	// supportticketDescCurrentRevisionNo is the schema descriptor for current_revision_no field.
+	supportticketDescCurrentRevisionNo := supportticketFields[6].Descriptor()
+	// supportticket.DefaultCurrentRevisionNo holds the default value on creation for the current_revision_no field.
+	supportticket.DefaultCurrentRevisionNo = supportticketDescCurrentRevisionNo.Default.(int)
+	// supportticketDescLatestMessageAt is the schema descriptor for latest_message_at field.
+	supportticketDescLatestMessageAt := supportticketFields[7].Descriptor()
+	// supportticket.DefaultLatestMessageAt holds the default value on creation for the latest_message_at field.
+	supportticket.DefaultLatestMessageAt = supportticketDescLatestMessageAt.Default.(func() time.Time)
+	// supportticketDescLastReplyRole is the schema descriptor for last_reply_role field.
+	supportticketDescLastReplyRole := supportticketFields[8].Descriptor()
+	// supportticket.DefaultLastReplyRole holds the default value on creation for the last_reply_role field.
+	supportticket.DefaultLastReplyRole = supportticketDescLastReplyRole.Default.(string)
+	// supportticket.LastReplyRoleValidator is a validator for the "last_reply_role" field. It is called by the builders before save.
+	supportticket.LastReplyRoleValidator = supportticketDescLastReplyRole.Validators[0].(func(string) error)
+	// supportticketDescUnreadByUser is the schema descriptor for unread_by_user field.
+	supportticketDescUnreadByUser := supportticketFields[9].Descriptor()
+	// supportticket.DefaultUnreadByUser holds the default value on creation for the unread_by_user field.
+	supportticket.DefaultUnreadByUser = supportticketDescUnreadByUser.Default.(bool)
+	// supportticketDescUnreadByAdmin is the schema descriptor for unread_by_admin field.
+	supportticketDescUnreadByAdmin := supportticketFields[10].Descriptor()
+	// supportticket.DefaultUnreadByAdmin holds the default value on creation for the unread_by_admin field.
+	supportticket.DefaultUnreadByAdmin = supportticketDescUnreadByAdmin.Default.(bool)
+	// supportticketDescCreatedAt is the schema descriptor for created_at field.
+	supportticketDescCreatedAt := supportticketFields[14].Descriptor()
+	// supportticket.DefaultCreatedAt holds the default value on creation for the created_at field.
+	supportticket.DefaultCreatedAt = supportticketDescCreatedAt.Default.(func() time.Time)
+	// supportticketDescUpdatedAt is the schema descriptor for updated_at field.
+	supportticketDescUpdatedAt := supportticketFields[15].Descriptor()
+	// supportticket.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	supportticket.DefaultUpdatedAt = supportticketDescUpdatedAt.Default.(func() time.Time)
+	// supportticket.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	supportticket.UpdateDefaultUpdatedAt = supportticketDescUpdatedAt.UpdateDefault.(func() time.Time)
+	supportticketmessageFields := schema.SupportTicketMessage{}.Fields()
+	_ = supportticketmessageFields
+	// supportticketmessageDescSenderRole is the schema descriptor for sender_role field.
+	supportticketmessageDescSenderRole := supportticketmessageFields[1].Descriptor()
+	// supportticketmessage.SenderRoleValidator is a validator for the "sender_role" field. It is called by the builders before save.
+	supportticketmessage.SenderRoleValidator = func() func(string) error {
+		validators := supportticketmessageDescSenderRole.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(sender_role string) error {
+			for _, fn := range fns {
+				if err := fn(sender_role); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportticketmessageDescSenderNameSnapshot is the schema descriptor for sender_name_snapshot field.
+	supportticketmessageDescSenderNameSnapshot := supportticketmessageFields[3].Descriptor()
+	// supportticketmessage.DefaultSenderNameSnapshot holds the default value on creation for the sender_name_snapshot field.
+	supportticketmessage.DefaultSenderNameSnapshot = supportticketmessageDescSenderNameSnapshot.Default.(string)
+	// supportticketmessage.SenderNameSnapshotValidator is a validator for the "sender_name_snapshot" field. It is called by the builders before save.
+	supportticketmessage.SenderNameSnapshotValidator = supportticketmessageDescSenderNameSnapshot.Validators[0].(func(string) error)
+	// supportticketmessageDescSenderAvatarSnapshot is the schema descriptor for sender_avatar_snapshot field.
+	supportticketmessageDescSenderAvatarSnapshot := supportticketmessageFields[4].Descriptor()
+	// supportticketmessage.DefaultSenderAvatarSnapshot holds the default value on creation for the sender_avatar_snapshot field.
+	supportticketmessage.DefaultSenderAvatarSnapshot = supportticketmessageDescSenderAvatarSnapshot.Default.(string)
+	// supportticketmessageDescMessageType is the schema descriptor for message_type field.
+	supportticketmessageDescMessageType := supportticketmessageFields[5].Descriptor()
+	// supportticketmessage.DefaultMessageType holds the default value on creation for the message_type field.
+	supportticketmessage.DefaultMessageType = supportticketmessageDescMessageType.Default.(string)
+	// supportticketmessage.MessageTypeValidator is a validator for the "message_type" field. It is called by the builders before save.
+	supportticketmessage.MessageTypeValidator = supportticketmessageDescMessageType.Validators[0].(func(string) error)
+	// supportticketmessageDescContent is the schema descriptor for content field.
+	supportticketmessageDescContent := supportticketmessageFields[6].Descriptor()
+	// supportticketmessage.DefaultContent holds the default value on creation for the content field.
+	supportticketmessage.DefaultContent = supportticketmessageDescContent.Default.(string)
+	// supportticketmessageDescAttachments is the schema descriptor for attachments field.
+	supportticketmessageDescAttachments := supportticketmessageFields[7].Descriptor()
+	// supportticketmessage.DefaultAttachments holds the default value on creation for the attachments field.
+	supportticketmessage.DefaultAttachments = supportticketmessageDescAttachments.Default.(json.RawMessage)
+	// supportticketmessageDescCreatedAt is the schema descriptor for created_at field.
+	supportticketmessageDescCreatedAt := supportticketmessageFields[8].Descriptor()
+	// supportticketmessage.DefaultCreatedAt holds the default value on creation for the created_at field.
+	supportticketmessage.DefaultCreatedAt = supportticketmessageDescCreatedAt.Default.(func() time.Time)
+	supportticketreplytemplateFields := schema.SupportTicketReplyTemplate{}.Fields()
+	_ = supportticketreplytemplateFields
+	// supportticketreplytemplateDescTitle is the schema descriptor for title field.
+	supportticketreplytemplateDescTitle := supportticketreplytemplateFields[0].Descriptor()
+	// supportticketreplytemplate.TitleValidator is a validator for the "title" field. It is called by the builders before save.
+	supportticketreplytemplate.TitleValidator = func() func(string) error {
+		validators := supportticketreplytemplateDescTitle.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(title string) error {
+			for _, fn := range fns {
+				if err := fn(title); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportticketreplytemplateDescContent is the schema descriptor for content field.
+	supportticketreplytemplateDescContent := supportticketreplytemplateFields[1].Descriptor()
+	// supportticketreplytemplate.ContentValidator is a validator for the "content" field. It is called by the builders before save.
+	supportticketreplytemplate.ContentValidator = supportticketreplytemplateDescContent.Validators[0].(func(string) error)
+	// supportticketreplytemplateDescSortOrder is the schema descriptor for sort_order field.
+	supportticketreplytemplateDescSortOrder := supportticketreplytemplateFields[2].Descriptor()
+	// supportticketreplytemplate.DefaultSortOrder holds the default value on creation for the sort_order field.
+	supportticketreplytemplate.DefaultSortOrder = supportticketreplytemplateDescSortOrder.Default.(int)
+	// supportticketreplytemplateDescCreatedAt is the schema descriptor for created_at field.
+	supportticketreplytemplateDescCreatedAt := supportticketreplytemplateFields[3].Descriptor()
+	// supportticketreplytemplate.DefaultCreatedAt holds the default value on creation for the created_at field.
+	supportticketreplytemplate.DefaultCreatedAt = supportticketreplytemplateDescCreatedAt.Default.(func() time.Time)
+	// supportticketreplytemplateDescUpdatedAt is the schema descriptor for updated_at field.
+	supportticketreplytemplateDescUpdatedAt := supportticketreplytemplateFields[4].Descriptor()
+	// supportticketreplytemplate.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	supportticketreplytemplate.DefaultUpdatedAt = supportticketreplytemplateDescUpdatedAt.Default.(func() time.Time)
+	// supportticketreplytemplate.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	supportticketreplytemplate.UpdateDefaultUpdatedAt = supportticketreplytemplateDescUpdatedAt.UpdateDefault.(func() time.Time)
+	supportticketrevisionFields := schema.SupportTicketRevision{}.Fields()
+	_ = supportticketrevisionFields
+	// supportticketrevisionDescTitle is the schema descriptor for title field.
+	supportticketrevisionDescTitle := supportticketrevisionFields[2].Descriptor()
+	// supportticketrevision.TitleValidator is a validator for the "title" field. It is called by the builders before save.
+	supportticketrevision.TitleValidator = func() func(string) error {
+		validators := supportticketrevisionDescTitle.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(title string) error {
+			for _, fn := range fns {
+				if err := fn(title); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportticketrevisionDescFormPayload is the schema descriptor for form_payload field.
+	supportticketrevisionDescFormPayload := supportticketrevisionFields[3].Descriptor()
+	// supportticketrevision.DefaultFormPayload holds the default value on creation for the form_payload field.
+	supportticketrevision.DefaultFormPayload = supportticketrevisionDescFormPayload.Default.(json.RawMessage)
+	// supportticketrevisionDescSubmittedAt is the schema descriptor for submitted_at field.
+	supportticketrevisionDescSubmittedAt := supportticketrevisionFields[5].Descriptor()
+	// supportticketrevision.DefaultSubmittedAt holds the default value on creation for the submitted_at field.
+	supportticketrevision.DefaultSubmittedAt = supportticketrevisionDescSubmittedAt.Default.(func() time.Time)
+	// supportticketrevisionDescCreatedAt is the schema descriptor for created_at field.
+	supportticketrevisionDescCreatedAt := supportticketrevisionFields[6].Descriptor()
+	// supportticketrevision.DefaultCreatedAt holds the default value on creation for the created_at field.
+	supportticketrevision.DefaultCreatedAt = supportticketrevisionDescCreatedAt.Default.(func() time.Time)
 	tlsfingerprintprofileMixin := schema.TLSFingerprintProfile{}.Mixin()
 	tlsfingerprintprofileMixinFields0 := tlsfingerprintprofileMixin[0].Fields()
 	_ = tlsfingerprintprofileMixinFields0

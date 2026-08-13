@@ -47,6 +47,7 @@ function providerFactory(overrides: Partial<ProviderInstance> = {}): ProviderIns
     payment_mode: '',
     refund_enabled: false,
     allow_user_refund: false,
+    invoice_enabled: false,
     limits: '',
     sort_order: 0,
     ...overrides,

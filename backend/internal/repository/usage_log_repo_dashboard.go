@@ -89,6 +89,9 @@ func (r *usageLogRepository) GetDashboardStats(ctx context.Context) (*DashboardS
 	if err := r.fillDashboardUsageStatsAggregated(ctx, stats, todayStart, now); err != nil {
 		return nil, err
 	}
+	if err := r.fillDashboardPaymentStats(ctx, stats, time.Time{}, time.Time{}, todayStart); err != nil {
+		return nil, err
+	}
 
 	rpm, tpm, err := r.getPerformanceStats(ctx, 0)
 	if err != nil {
@@ -115,6 +118,9 @@ func (r *usageLogRepository) GetDashboardStatsWithRange(ctx context.Context, sta
 		return nil, err
 	}
 	if err := r.fillDashboardUsageStatsFromUsageLogs(ctx, stats, startUTC, endUTC, todayStart, now); err != nil {
+		return nil, err
+	}
+	if err := r.fillDashboardPaymentStats(ctx, stats, startUTC, endUTC, todayStart); err != nil {
 		return nil, err
 	}
 
@@ -203,6 +209,8 @@ func (r *usageLogRepository) fillDashboardUsageStatsAggregated(ctx context.Conte
 			COALESCE(SUM(total_cost), 0) as total_cost,
 			COALESCE(SUM(actual_cost), 0) as total_actual_cost,
 			COALESCE(SUM(account_cost), 0) as total_account_cost,
+			COALESCE(SUM(balance_actual_cost), 0) as total_balance_actual_cost,
+			COALESCE(SUM(subscription_actual_cost), 0) as total_subscription_actual_cost,
 			COALESCE(SUM(total_duration_ms), 0) as total_duration_ms
 		FROM usage_dashboard_daily
 	`
@@ -220,6 +228,8 @@ func (r *usageLogRepository) fillDashboardUsageStatsAggregated(ctx context.Conte
 		&stats.TotalCost,
 		&stats.TotalActualCost,
 		&stats.TotalAccountCost,
+		&stats.TotalBalanceActualCost,
+		&stats.TotalSubscriptionActualCost,
 		&totalDurationMs,
 	); err != nil {
 		return err
@@ -239,6 +249,8 @@ func (r *usageLogRepository) fillDashboardUsageStatsAggregated(ctx context.Conte
 			total_cost as today_cost,
 			actual_cost as today_actual_cost,
 			account_cost as today_account_cost,
+			balance_actual_cost as today_balance_actual_cost,
+			subscription_actual_cost as today_subscription_actual_cost,
 			active_users as active_users
 		FROM usage_dashboard_daily
 		WHERE bucket_date = $1::date
@@ -256,6 +268,8 @@ func (r *usageLogRepository) fillDashboardUsageStatsAggregated(ctx context.Conte
 		&stats.TodayCost,
 		&stats.TodayActualCost,
 		&stats.TodayAccountCost,
+		&stats.TodayBalanceActualCost,
+		&stats.TodaySubscriptionActualCost,
 		&stats.ActiveUsers,
 	); err != nil {
 		if err != sql.ErrNoRows {
@@ -279,6 +293,63 @@ func (r *usageLogRepository) fillDashboardUsageStatsAggregated(ctx context.Conte
 	return nil
 }
 
+func (r *usageLogRepository) fillDashboardPaymentStats(ctx context.Context, stats *DashboardStats, startUTC, endUTC, todayStart time.Time) error {
+	todayEnd := todayStart.Add(24 * time.Hour)
+	totalStart := startUTC
+	totalEnd := endUTC
+	if totalStart.IsZero() || totalEnd.IsZero() || !totalEnd.After(totalStart) {
+		// GetDashboardStats: all-time totals, today window from app-local midnight.
+		totalStart = time.Unix(0, 0).UTC()
+		totalEnd = todayEnd
+	}
+
+	// Recharge: paid_at stays set after refunds, so gross collected amount is preserved.
+	// Refunds: each successful refund is an immutable audit event (partial refunds included).
+	query := `
+		SELECT
+			COALESCE((
+				SELECT SUM(pay_amount)
+				FROM payment_orders
+				WHERE order_type = 'balance'
+					AND paid_at >= $1::timestamptz AND paid_at < $2::timestamptz
+			), 0) AS total_recharge_amount,
+			COALESCE((
+				SELECT SUM(COALESCE(NULLIF(detail::jsonb ->> 'refundAmount', '')::numeric, 0))
+				FROM payment_audit_logs
+				WHERE action = 'REFUND_SUCCESS'
+					AND created_at >= $1::timestamptz AND created_at < $2::timestamptz
+			), 0) AS total_refund_amount,
+			COALESCE((
+				SELECT SUM(pay_amount)
+				FROM payment_orders
+				WHERE order_type = 'balance'
+					AND paid_at >= $3::timestamptz AND paid_at < $4::timestamptz
+			), 0) AS today_recharge_amount,
+			COALESCE((
+				SELECT SUM(COALESCE(NULLIF(detail::jsonb ->> 'refundAmount', '')::numeric, 0))
+				FROM payment_audit_logs
+				WHERE action = 'REFUND_SUCCESS'
+					AND created_at >= $3::timestamptz AND created_at < $4::timestamptz
+			), 0) AS today_refund_amount
+	`
+	if err := scanSingleRow(
+		ctx,
+		r.sql,
+		query,
+		[]any{totalStart, totalEnd, todayStart, todayEnd},
+		&stats.TotalRechargeAmount,
+		&stats.TotalRefundAmount,
+		&stats.TodayRechargeAmount,
+		&stats.TodayRefundAmount,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Context, stats *DashboardStats, startUTC, endUTC, todayUTC, now time.Time) error {
 	todayEnd := todayUTC.Add(24 * time.Hour)
 	combinedStatsQuery := `
@@ -292,6 +363,7 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 				total_cost,
 				actual_cost,
 				COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1) AS account_cost,
+				billing_type,
 				COALESCE(duration_ms, 0) AS duration_ms
 			FROM usage_logs
 			WHERE created_at >= LEAST($1::timestamptz, $3::timestamptz)
@@ -306,6 +378,8 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 			COALESCE(SUM(total_cost) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_cost,
 			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_actual_cost,
 			COALESCE(SUM(account_cost) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_account_cost,
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz AND billing_type = 0), 0) AS total_balance_actual_cost,
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz AND billing_type = 1), 0) AS total_subscription_actual_cost,
 			COALESCE(SUM(duration_ms) FILTER (WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz), 0) AS total_duration_ms,
 			COUNT(*) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz) AS today_requests,
 			COALESCE(SUM(input_tokens) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_input_tokens,
@@ -314,7 +388,9 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 			COALESCE(SUM(cache_read_tokens) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_cache_read_tokens,
 			COALESCE(SUM(total_cost) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_cost,
 			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_actual_cost,
-			COALESCE(SUM(account_cost) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_account_cost
+			COALESCE(SUM(account_cost) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz), 0) AS today_account_cost,
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz AND billing_type = 0), 0) AS today_balance_actual_cost,
+			COALESCE(SUM(actual_cost) FILTER (WHERE created_at >= $3::timestamptz AND created_at < $4::timestamptz AND billing_type = 1), 0) AS today_subscription_actual_cost
 		FROM scoped
 	`
 	var totalDurationMs int64
@@ -331,6 +407,8 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 		&stats.TotalCost,
 		&stats.TotalActualCost,
 		&stats.TotalAccountCost,
+		&stats.TotalBalanceActualCost,
+		&stats.TotalSubscriptionActualCost,
 		&totalDurationMs,
 		&stats.TodayRequests,
 		&stats.TodayInputTokens,
@@ -340,6 +418,8 @@ func (r *usageLogRepository) fillDashboardUsageStatsFromUsageLogs(ctx context.Co
 		&stats.TodayCost,
 		&stats.TodayActualCost,
 		&stats.TodayAccountCost,
+		&stats.TodayBalanceActualCost,
+		&stats.TodaySubscriptionActualCost,
 	); err != nil {
 		return err
 	}

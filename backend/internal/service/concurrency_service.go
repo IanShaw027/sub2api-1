@@ -235,6 +235,10 @@ type ConcurrencyService struct {
 	accountLoadCacheMu  sync.RWMutex
 	accountLoadCache    map[string]cachedAccountLoadBatch
 	accountLoadGroup    singleflight.Group
+
+	// slotHeartbeatInterval re-touches Redis scores so long streams outlive slot TTL.
+	slotHeartbeatInterval atomic.Int64
+	slotTTLNanos          atomic.Int64
 }
 
 type cachedAccountLoadBatch struct {
@@ -249,7 +253,125 @@ func NewConcurrencyService(cache ConcurrencyCache) *ConcurrencyService {
 		accountLoadCache: make(map[string]cachedAccountLoadBatch),
 	}
 	svc.SetAccountLoadBatchCacheTTL(defaultAccountLoadBatchCacheTTL)
+	svc.SetSlotHeartbeatInterval(defaultSlotHeartbeatInterval)
 	return svc
+}
+
+const (
+	defaultSlotHeartbeatInterval = 5 * time.Minute
+	minSlotHeartbeatInterval     = 30 * time.Second
+	maxSlotHeartbeatLifetime     = 2 * time.Hour
+	userLoadBatchChunkSize       = 500
+)
+
+type groupConcurrencyReader interface {
+	GetGroupConcurrencyBatch(ctx context.Context, groupIDs []int64) (map[int64]int, error)
+}
+
+type groupConcurrencyCache interface {
+	groupConcurrencyReader
+	AcquireGroupSlot(ctx context.Context, groupID int64, requestID string) error
+	ReleaseGroupSlot(ctx context.Context, groupID int64, requestID string) error
+}
+
+type accountGroupSlotCache interface {
+	AcquireAccountSlotForGroup(ctx context.Context, accountID, groupID int64, maxConcurrency int, requestID string) (bool, error)
+	ReleaseAccountSlotForGroup(ctx context.Context, accountID, groupID int64, requestID string) error
+}
+
+// SetSlotHeartbeatInterval sets how often acquired slots re-touch Redis.
+// Non-positive values disable heartbeat (tests / emergency).
+func (s *ConcurrencyService) SetSlotHeartbeatInterval(interval time.Duration) {
+	if s == nil {
+		return
+	}
+	s.slotHeartbeatInterval.Store(int64(interval))
+}
+
+func (s *ConcurrencyService) slotHeartbeatEvery() time.Duration {
+	if s == nil {
+		return 0
+	}
+	return time.Duration(s.slotHeartbeatInterval.Load())
+}
+
+func (s *ConcurrencyService) SetSlotTTL(ttl time.Duration) {
+	if s == nil {
+		return
+	}
+	if ttl <= 0 {
+		s.slotTTLNanos.Store(0)
+		return
+	}
+	s.slotTTLNanos.Store(int64(ttl))
+	interval := ttl / 3
+	if interval < minSlotHeartbeatInterval {
+		interval = minSlotHeartbeatInterval
+	}
+	if interval > defaultSlotHeartbeatInterval {
+		interval = defaultSlotHeartbeatInterval
+	}
+	if interval >= ttl {
+		interval = ttl / 2
+		if interval < time.Second {
+			interval = time.Second
+		}
+	}
+	s.SetSlotHeartbeatInterval(interval)
+}
+
+func (s *ConcurrencyService) slotHeartbeatMaxLife() time.Duration {
+	if s == nil {
+		return 0
+	}
+	ttl := time.Duration(s.slotTTLNanos.Load())
+	if ttl <= 0 {
+		return maxSlotHeartbeatLifetime
+	}
+	life := ttl * 4
+	if life > maxSlotHeartbeatLifetime {
+		return maxSlotHeartbeatLifetime
+	}
+	if life < ttl {
+		return ttl
+	}
+	return life
+}
+
+func (s *ConcurrencyService) startSlotHeartbeat(renew func(context.Context)) (stop func()) {
+	interval := s.slotHeartbeatEvery()
+	if interval <= 0 || renew == nil {
+		return func() {}
+	}
+	heartbeatCtx, cancelHeartbeat := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	var once sync.Once
+	deadline := time.Now().Add(s.slotHeartbeatMaxLife())
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-heartbeatCtx.Done():
+				return
+			case <-ticker.C:
+				if time.Now().After(deadline) {
+					return
+				}
+				ctx, cancel := context.WithTimeout(heartbeatCtx, 5*time.Second)
+				renew(ctx)
+				cancel()
+				if heartbeatCtx.Err() != nil {
+					return
+				}
+			}
+		}
+	}()
+	return func() {
+		once.Do(cancelHeartbeat)
+		<-done
+	}
 }
 
 // AcquireOpenAIWSIngressLease atomically reserves one live ingress connection
@@ -340,38 +462,109 @@ type UserLoadInfo struct {
 // If the account is at max concurrency, it waits until a slot is available or timeout.
 // Returns a release function that MUST be called when the request completes.
 func (s *ConcurrencyService) AcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int) (*AcquireResult, error) {
-	// If maxConcurrency is 0 or negative, no limit
-	if maxConcurrency <= 0 {
-		return &AcquireResult{
-			Acquired:    true,
-			ReleaseFunc: func() {}, // no-op
-		}, nil
+	return s.AcquireAccountSlotForGroup(ctx, accountID, nil, maxConcurrency)
+}
+
+// AcquireAccountSlotForGroup acquires an account slot and records the request
+// under the selected group for real-time group-capacity display.
+func (s *ConcurrencyService) AcquireAccountSlotForGroup(ctx context.Context, accountID int64, groupID *int64, maxConcurrency int) (*AcquireResult, error) {
+	requestID := generateRequestID()
+	gid := int64(0)
+	if groupID != nil {
+		gid = *groupID
 	}
 
-	// Generate unique request ID for this slot
-	requestID := generateRequestID()
+	release := func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if gid > 0 && maxConcurrency > 0 {
+			if paired, ok := s.cache.(accountGroupSlotCache); ok {
+				if err := paired.ReleaseAccountSlotForGroup(bgCtx, accountID, gid, requestID); err != nil {
+					logger.LegacyPrintf("service.concurrency", "Warning: failed to release account/group slot for %d/%d (req=%s): %v", accountID, gid, requestID, err)
+				}
+				return
+			}
+		}
+		if maxConcurrency > 0 {
+			if err := s.cache.ReleaseAccountSlot(bgCtx, accountID, requestID); err != nil {
+				logger.LegacyPrintf("service.concurrency", "Warning: failed to release account slot for %d (req=%s): %v", accountID, requestID, err)
+			}
+		}
+		if gid > 0 {
+			if tracker, ok := s.cache.(groupConcurrencyCache); ok {
+				if err := tracker.ReleaseGroupSlot(bgCtx, gid, requestID); err != nil {
+					logger.LegacyPrintf("service.concurrency", "Warning: failed to release group slot for %d (req=%s): %v", gid, requestID, err)
+				}
+			}
+		}
+	}
 
-	acquired, err := s.cache.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
+	renew := func(renewCtx context.Context) {
+		if gid > 0 {
+			if paired, ok := s.cache.(accountGroupSlotCache); ok && maxConcurrency > 0 {
+				_, _ = paired.AcquireAccountSlotForGroup(renewCtx, accountID, gid, maxConcurrency, requestID)
+				return
+			}
+			if tracker, ok := s.cache.(groupConcurrencyCache); ok {
+				_ = tracker.AcquireGroupSlot(renewCtx, gid, requestID)
+			}
+		}
+		if maxConcurrency > 0 {
+			_, _ = s.cache.AcquireAccountSlot(renewCtx, accountID, maxConcurrency, requestID)
+		}
+	}
+
+	if maxConcurrency <= 0 {
+		if gid > 0 {
+			if tracker, ok := s.cache.(groupConcurrencyCache); ok {
+				if err := tracker.AcquireGroupSlot(ctx, gid, requestID); err != nil {
+					logger.LegacyPrintf("service.concurrency", "Warning: failed to track group slot for account %d group %d (req=%s): %v", accountID, gid, requestID, err)
+				}
+			}
+			stopHeartbeat := s.startSlotHeartbeat(renew)
+			return &AcquireResult{
+				Acquired: true,
+				ReleaseFunc: func() {
+					stopHeartbeat()
+					release()
+				},
+			}, nil
+		}
+		return &AcquireResult{Acquired: true, ReleaseFunc: func() {}}, nil
+	}
+
+	var acquired bool
+	var err error
+	if gid > 0 {
+		if paired, ok := s.cache.(accountGroupSlotCache); ok {
+			acquired, err = paired.AcquireAccountSlotForGroup(ctx, accountID, gid, maxConcurrency, requestID)
+		} else {
+			acquired, err = s.cache.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
+			if err == nil && acquired {
+				if tracker, ok := s.cache.(groupConcurrencyCache); ok {
+					if trackErr := tracker.AcquireGroupSlot(ctx, gid, requestID); trackErr != nil {
+						_ = s.cache.ReleaseAccountSlot(ctx, accountID, requestID)
+						return nil, trackErr
+					}
+				}
+			}
+		}
+	} else {
+		acquired, err = s.cache.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
+	}
 	if err != nil {
 		return nil, err
 	}
-
-	if acquired {
-		return &AcquireResult{
-			Acquired: true,
-			ReleaseFunc: func() {
-				bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				if err := s.cache.ReleaseAccountSlot(bgCtx, accountID, requestID); err != nil {
-					logger.LegacyPrintf("service.concurrency", "Warning: failed to release account slot for %d (req=%s): %v", accountID, requestID, err)
-				}
-			},
-		}, nil
+	if !acquired {
+		return &AcquireResult{Acquired: false}, nil
 	}
-
+	stopHeartbeat := s.startSlotHeartbeat(renew)
 	return &AcquireResult{
-		Acquired:    false,
-		ReleaseFunc: nil,
+		Acquired: true,
+		ReleaseFunc: func() {
+			stopHeartbeat()
+			release()
+		},
 	}, nil
 }
 
@@ -706,10 +899,30 @@ func cloneAccountLoadMap(loadMap map[int64]*AccountLoadInfo) map[int64]*AccountL
 
 // GetUsersLoadBatch returns load info for multiple users.
 func (s *ConcurrencyService) GetUsersLoadBatch(ctx context.Context, users []UserWithConcurrency) (map[int64]*UserLoadInfo, error) {
+	_ = ctx
 	if s.cache == nil {
 		return map[int64]*UserLoadInfo{}, nil
 	}
-	return s.cache.GetUsersLoadBatch(ctx, users)
+	redisCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if len(users) <= userLoadBatchChunkSize {
+		return s.cache.GetUsersLoadBatch(redisCtx, users)
+	}
+	out := make(map[int64]*UserLoadInfo, len(users))
+	for i := 0; i < len(users); i += userLoadBatchChunkSize {
+		end := i + userLoadBatchChunkSize
+		if end > len(users) {
+			end = len(users)
+		}
+		part, err := s.cache.GetUsersLoadBatch(redisCtx, users[i:end])
+		if err != nil {
+			return out, err
+		}
+		for id, info := range part {
+			out[id] = info
+		}
+	}
+	return out, nil
 }
 
 // CleanupExpiredAccountSlots removes expired slots for one account (background task).
@@ -768,4 +981,31 @@ func (s *ConcurrencyService) GetAccountConcurrencyBatch(ctx context.Context, acc
 	defer cancel()
 
 	return s.cache.GetAccountConcurrencyBatch(redisCtx, accountIDs)
+}
+
+func (s *ConcurrencyService) GetGroupConcurrencyBatch(ctx context.Context, groupIDs []int64) (map[int64]int, error) {
+	result := make(map[int64]int, len(groupIDs))
+	for _, id := range groupIDs {
+		if id > 0 {
+			result[id] = 0
+		}
+	}
+	if len(groupIDs) == 0 || s.cache == nil {
+		return result, nil
+	}
+	tracker, ok := s.cache.(groupConcurrencyReader)
+	if !ok {
+		return result, nil
+	}
+	redisCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_ = ctx
+	got, err := tracker.GetGroupConcurrencyBatch(redisCtx, groupIDs)
+	if err != nil {
+		return result, err
+	}
+	for id, n := range got {
+		result[id] = n
+	}
+	return result, nil
 }

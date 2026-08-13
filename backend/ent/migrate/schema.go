@@ -1085,6 +1085,141 @@ var (
 			},
 		},
 	}
+	// InvoicesColumns holds the columns for the "invoices" table.
+	InvoicesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "user_email", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "status", Type: field.TypeString, Size: 16, Default: "applied"},
+		{Name: "unread_by_admin", Type: field.TypeBool, Default: true},
+		{Name: "invoice_amount", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,2)"}},
+		{Name: "currency", Type: field.TypeString, Size: 8, Default: ""},
+		{Name: "order_count", Type: field.TypeInt, Default: 0},
+		{Name: "title", Type: field.TypeString, Size: 200},
+		{Name: "tax_number", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "email", Type: field.TypeString, Size: 255},
+		{Name: "contact_name", Type: field.TypeString, Size: 100, Default: ""},
+		{Name: "contact_phone", Type: field.TypeString, Size: 40, Default: ""},
+		{Name: "request_note", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "file_media_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "file_name", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "file_mime_type", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "file_size_bytes", Type: field.TypeInt64, Default: 0},
+		{Name: "applied_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "cancelled_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "issued_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// InvoicesTable holds the schema information for the "invoices" table.
+	InvoicesTable = &schema.Table{
+		Name:       "invoices",
+		Columns:    InvoicesColumns,
+		PrimaryKey: []*schema.Column{InvoicesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "invoice_user_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{InvoicesColumns[1], InvoicesColumns[3]},
+			},
+			{
+				Name:    "invoice_status_unread_by_admin",
+				Unique:  false,
+				Columns: []*schema.Column{InvoicesColumns[3], InvoicesColumns[4]},
+			},
+			{
+				Name:    "invoice_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{InvoicesColumns[21]},
+			},
+		},
+	}
+	// InvoiceOrdersColumns holds the columns for the "invoice_orders" table.
+	InvoiceOrdersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "order_id", Type: field.TypeInt64},
+		{Name: "pay_amount_snapshot", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,2)"}},
+		{Name: "currency", Type: field.TypeString, Size: 8, Default: ""},
+		{Name: "out_trade_no", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "payment_type", Type: field.TypeString, Size: 30, Default: ""},
+		{Name: "is_active", Type: field.TypeBool, Default: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "invoice_id", Type: field.TypeInt64},
+	}
+	// InvoiceOrdersTable holds the schema information for the "invoice_orders" table.
+	InvoiceOrdersTable = &schema.Table{
+		Name:       "invoice_orders",
+		Columns:    InvoiceOrdersColumns,
+		PrimaryKey: []*schema.Column{InvoiceOrdersColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "invoice_orders_invoices_orders",
+				Columns:    []*schema.Column{InvoiceOrdersColumns[8]},
+				RefColumns: []*schema.Column{InvoicesColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "invoiceorder_invoice_id",
+				Unique:  false,
+				Columns: []*schema.Column{InvoiceOrdersColumns[8]},
+			},
+			{
+				Name:    "invoiceorder_order_id",
+				Unique:  false,
+				Columns: []*schema.Column{InvoiceOrdersColumns[1]},
+			},
+			{
+				Name:    "invoice_orders_order_id_active_unique",
+				Unique:  true,
+				Columns: []*schema.Column{InvoiceOrdersColumns[1]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "is_active = TRUE",
+				},
+			},
+		},
+	}
+	// MediaAssetsColumns holds the columns for the "media_assets" table.
+	MediaAssetsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "owner_user_id", Type: field.TypeInt64},
+		{Name: "biz_type", Type: field.TypeString, Size: 32},
+		{Name: "biz_id", Type: field.TypeString, Size: 128, Default: ""},
+		{Name: "storage_key", Type: field.TypeString, Size: 512},
+		{Name: "sha256", Type: field.TypeString, Size: 64},
+		{Name: "mime", Type: field.TypeString, Size: 128},
+		{Name: "filename", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "size", Type: field.TypeInt64},
+		{Name: "visibility", Type: field.TypeString, Size: 16, Default: "private"},
+		{Name: "status", Type: field.TypeString, Size: 16, Default: "ready"},
+		{Name: "storage_profile_id", Type: field.TypeString, Size: 64, Default: "backup"},
+		{Name: "public_base_url", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// MediaAssetsTable holds the schema information for the "media_assets" table.
+	MediaAssetsTable = &schema.Table{
+		Name:       "media_assets",
+		Columns:    MediaAssetsColumns,
+		PrimaryKey: []*schema.Column{MediaAssetsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "mediaasset_biz_type_biz_id",
+				Unique:  false,
+				Columns: []*schema.Column{MediaAssetsColumns[2], MediaAssetsColumns[3]},
+			},
+			{
+				Name:    "mediaasset_owner_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{MediaAssetsColumns[1]},
+			},
+			{
+				Name:    "mediaasset_storage_key",
+				Unique:  true,
+				Columns: []*schema.Column{MediaAssetsColumns[4]},
+			},
+		},
+	}
 	// PaymentAuditLogsColumns holds the columns for the "payment_audit_logs" table.
 	PaymentAuditLogsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -1222,6 +1357,7 @@ var (
 		{Name: "limits", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "refund_enabled", Type: field.TypeBool, Default: false},
 		{Name: "allow_user_refund", Type: field.TypeBool, Default: false},
+		{Name: "invoice_enabled", Type: field.TypeBool, Default: false},
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 	}
@@ -1556,6 +1692,167 @@ var (
 				Name:    "subscriptionplan_for_sale",
 				Unique:  false,
 				Columns: []*schema.Column{SubscriptionPlansColumns[11]},
+			},
+		},
+	}
+	// SupportTicketsColumns holds the columns for the "support_tickets" table.
+	SupportTicketsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "ticket_no", Type: field.TypeString, Unique: true, Size: 32},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "category", Type: field.TypeString, Size: 32},
+		{Name: "title", Type: field.TypeString, Size: 200},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "submitted"},
+		{Name: "current_form_payload", Type: field.TypeJSON},
+		{Name: "current_revision_no", Type: field.TypeInt, Default: 1},
+		{Name: "latest_message_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "last_reply_role", Type: field.TypeString, Size: 16, Default: "system"},
+		{Name: "unread_by_user", Type: field.TypeBool, Default: false},
+		{Name: "unread_by_admin", Type: field.TypeBool, Default: true},
+		{Name: "submitted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "closed_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "withdrawn_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// SupportTicketsTable holds the schema information for the "support_tickets" table.
+	SupportTicketsTable = &schema.Table{
+		Name:       "support_tickets",
+		Columns:    SupportTicketsColumns,
+		PrimaryKey: []*schema.Column{SupportTicketsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "supportticket_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{SupportTicketsColumns[2]},
+			},
+			{
+				Name:    "supportticket_status",
+				Unique:  false,
+				Columns: []*schema.Column{SupportTicketsColumns[5]},
+			},
+			{
+				Name:    "supportticket_category",
+				Unique:  false,
+				Columns: []*schema.Column{SupportTicketsColumns[3]},
+			},
+			{
+				Name:    "supportticket_unread_by_admin",
+				Unique:  false,
+				Columns: []*schema.Column{SupportTicketsColumns[11]},
+			},
+			{
+				Name:    "supportticket_unread_by_user",
+				Unique:  false,
+				Columns: []*schema.Column{SupportTicketsColumns[10]},
+			},
+			{
+				Name:    "supportticket_latest_message_at",
+				Unique:  false,
+				Columns: []*schema.Column{SupportTicketsColumns[8]},
+			},
+			{
+				Name:    "supportticket_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{SupportTicketsColumns[15]},
+			},
+		},
+	}
+	// SupportTicketMessagesColumns holds the columns for the "support_ticket_messages" table.
+	SupportTicketMessagesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "sender_role", Type: field.TypeString, Size: 16},
+		{Name: "sender_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "sender_name_snapshot", Type: field.TypeString, Size: 120, Default: ""},
+		{Name: "sender_avatar_snapshot", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "message_type", Type: field.TypeString, Size: 16, Default: "message"},
+		{Name: "content", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "attachments", Type: field.TypeJSON},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "ticket_id", Type: field.TypeInt64},
+	}
+	// SupportTicketMessagesTable holds the schema information for the "support_ticket_messages" table.
+	SupportTicketMessagesTable = &schema.Table{
+		Name:       "support_ticket_messages",
+		Columns:    SupportTicketMessagesColumns,
+		PrimaryKey: []*schema.Column{SupportTicketMessagesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "support_ticket_messages_support_tickets_messages",
+				Columns:    []*schema.Column{SupportTicketMessagesColumns[9]},
+				RefColumns: []*schema.Column{SupportTicketsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "supportticketmessage_ticket_id",
+				Unique:  false,
+				Columns: []*schema.Column{SupportTicketMessagesColumns[9]},
+			},
+			{
+				Name:    "supportticketmessage_ticket_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{SupportTicketMessagesColumns[9], SupportTicketMessagesColumns[8]},
+			},
+		},
+	}
+	// SupportTicketReplyTemplatesColumns holds the columns for the "support_ticket_reply_templates" table.
+	SupportTicketReplyTemplatesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "title", Type: field.TypeString, Size: 120},
+		{Name: "content", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// SupportTicketReplyTemplatesTable holds the schema information for the "support_ticket_reply_templates" table.
+	SupportTicketReplyTemplatesTable = &schema.Table{
+		Name:       "support_ticket_reply_templates",
+		Columns:    SupportTicketReplyTemplatesColumns,
+		PrimaryKey: []*schema.Column{SupportTicketReplyTemplatesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "supportticketreplytemplate_sort_order",
+				Unique:  false,
+				Columns: []*schema.Column{SupportTicketReplyTemplatesColumns[3]},
+			},
+		},
+	}
+	// SupportTicketRevisionsColumns holds the columns for the "support_ticket_revisions" table.
+	SupportTicketRevisionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "revision_no", Type: field.TypeInt},
+		{Name: "title", Type: field.TypeString, Size: 200},
+		{Name: "form_payload", Type: field.TypeJSON},
+		{Name: "submitted_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "submitted_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "ticket_id", Type: field.TypeInt64},
+	}
+	// SupportTicketRevisionsTable holds the schema information for the "support_ticket_revisions" table.
+	SupportTicketRevisionsTable = &schema.Table{
+		Name:       "support_ticket_revisions",
+		Columns:    SupportTicketRevisionsColumns,
+		PrimaryKey: []*schema.Column{SupportTicketRevisionsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "support_ticket_revisions_support_tickets_revisions",
+				Columns:    []*schema.Column{SupportTicketRevisionsColumns[7]},
+				RefColumns: []*schema.Column{SupportTicketsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "supportticketrevision_ticket_id",
+				Unique:  false,
+				Columns: []*schema.Column{SupportTicketRevisionsColumns[7]},
+			},
+			{
+				Name:    "supportticketrevision_ticket_id_revision_no",
+				Unique:  true,
+				Columns: []*schema.Column{SupportTicketRevisionsColumns[7], SupportTicketRevisionsColumns[1]},
 			},
 		},
 	}
@@ -2094,6 +2391,9 @@ var (
 		GroupsTable,
 		IdempotencyRecordsTable,
 		IdentityAdoptionDecisionsTable,
+		InvoicesTable,
+		InvoiceOrdersTable,
+		MediaAssetsTable,
 		PaymentAuditLogsTable,
 		PaymentOrdersTable,
 		PaymentProviderInstancesTable,
@@ -2105,6 +2405,10 @@ var (
 		SecuritySecretsTable,
 		SettingsTable,
 		SubscriptionPlansTable,
+		SupportTicketsTable,
+		SupportTicketMessagesTable,
+		SupportTicketReplyTemplatesTable,
+		SupportTicketRevisionsTable,
 		TLSFingerprintProfilesTable,
 		UsageCleanupTasksTable,
 		UsageLogsTable,
@@ -2191,6 +2495,16 @@ func init() {
 	IdentityAdoptionDecisionsTable.Annotation = &entsql.Annotation{
 		Table: "identity_adoption_decisions",
 	}
+	InvoicesTable.Annotation = &entsql.Annotation{
+		Table: "invoices",
+	}
+	InvoiceOrdersTable.ForeignKeys[0].RefTable = InvoicesTable
+	InvoiceOrdersTable.Annotation = &entsql.Annotation{
+		Table: "invoice_orders",
+	}
+	MediaAssetsTable.Annotation = &entsql.Annotation{
+		Table: "media_assets",
+	}
 	PaymentAuditLogsTable.Annotation = &entsql.Annotation{
 		Table: "payment_audit_logs",
 	}
@@ -2230,6 +2544,20 @@ func init() {
 	}
 	SubscriptionPlansTable.Annotation = &entsql.Annotation{
 		Table: "subscription_plans",
+	}
+	SupportTicketsTable.Annotation = &entsql.Annotation{
+		Table: "support_tickets",
+	}
+	SupportTicketMessagesTable.ForeignKeys[0].RefTable = SupportTicketsTable
+	SupportTicketMessagesTable.Annotation = &entsql.Annotation{
+		Table: "support_ticket_messages",
+	}
+	SupportTicketReplyTemplatesTable.Annotation = &entsql.Annotation{
+		Table: "support_ticket_reply_templates",
+	}
+	SupportTicketRevisionsTable.ForeignKeys[0].RefTable = SupportTicketsTable
+	SupportTicketRevisionsTable.Annotation = &entsql.Annotation{
+		Table: "support_ticket_revisions",
 	}
 	TLSFingerprintProfilesTable.Annotation = &entsql.Annotation{
 		Table: "tls_fingerprint_profiles",

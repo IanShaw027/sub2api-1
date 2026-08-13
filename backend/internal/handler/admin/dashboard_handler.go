@@ -76,6 +76,14 @@ func parseOptionalBoolDashboardFilter(c *gin.Context, name string) (*bool, error
 	return &value, nil
 }
 
+func parseDashboardBillingMode(c *gin.Context) (string, error) {
+	billingMode := strings.TrimSpace(c.Query("billing_mode"))
+	if billingMode != "" && !service.BillingMode(billingMode).IsValidUsageFilter() {
+		return "", errors.New("invalid billing_mode")
+	}
+	return billingMode, nil
+}
+
 // GetStats handles getting dashboard statistics
 // GET /api/v1/admin/dashboard/stats
 func (h *DashboardHandler) GetStats(c *gin.Context) {
@@ -106,24 +114,34 @@ func (h *DashboardHandler) GetStats(c *gin.Context) {
 		"overload_accounts":  stats.OverloadAccounts,
 
 		// 累计 Token 使用统计
-		"total_requests":              stats.TotalRequests,
-		"total_input_tokens":          stats.TotalInputTokens,
-		"total_output_tokens":         stats.TotalOutputTokens,
-		"total_cache_creation_tokens": stats.TotalCacheCreationTokens,
-		"total_cache_read_tokens":     stats.TotalCacheReadTokens,
-		"total_tokens":                stats.TotalTokens,
-		"total_cost":                  stats.TotalCost,       // 标准计费
-		"total_actual_cost":           stats.TotalActualCost, // 实际扣除
+		"total_requests":                 stats.TotalRequests,
+		"total_input_tokens":             stats.TotalInputTokens,
+		"total_output_tokens":            stats.TotalOutputTokens,
+		"total_cache_creation_tokens":    stats.TotalCacheCreationTokens,
+		"total_cache_read_tokens":        stats.TotalCacheReadTokens,
+		"total_tokens":                   stats.TotalTokens,
+		"total_cost":                     stats.TotalCost,       // 标准计费
+		"total_actual_cost":              stats.TotalActualCost, // 实际扣除
+		"total_account_cost":             stats.TotalAccountCost,
+		"total_balance_actual_cost":      stats.TotalBalanceActualCost,
+		"total_subscription_actual_cost": stats.TotalSubscriptionActualCost,
+		"total_recharge_amount":          stats.TotalRechargeAmount,
+		"total_refund_amount":            stats.TotalRefundAmount,
 
 		// 今日 Token 使用统计
-		"today_requests":              stats.TodayRequests,
-		"today_input_tokens":          stats.TodayInputTokens,
-		"today_output_tokens":         stats.TodayOutputTokens,
-		"today_cache_creation_tokens": stats.TodayCacheCreationTokens,
-		"today_cache_read_tokens":     stats.TodayCacheReadTokens,
-		"today_tokens":                stats.TodayTokens,
-		"today_cost":                  stats.TodayCost,       // 今日标准计费
-		"today_actual_cost":           stats.TodayActualCost, // 今日实际扣除
+		"today_requests":                 stats.TodayRequests,
+		"today_input_tokens":             stats.TodayInputTokens,
+		"today_output_tokens":            stats.TodayOutputTokens,
+		"today_cache_creation_tokens":    stats.TodayCacheCreationTokens,
+		"today_cache_read_tokens":        stats.TodayCacheReadTokens,
+		"today_tokens":                   stats.TodayTokens,
+		"today_cost":                     stats.TodayCost,       // 今日标准计费
+		"today_actual_cost":              stats.TodayActualCost, // 今日实际扣除
+		"today_account_cost":             stats.TodayAccountCost,
+		"today_balance_actual_cost":      stats.TodayBalanceActualCost,
+		"today_subscription_actual_cost": stats.TodaySubscriptionActualCost,
+		"today_recharge_amount":          stats.TodayRechargeAmount,
+		"today_refund_amount":            stats.TodayRefundAmount,
 
 		// 系统运行统计
 		"average_duration_ms": stats.AverageDurationMs,
@@ -267,8 +285,13 @@ func (h *DashboardHandler) GetUsageTrend(c *gin.Context) {
 		response.BadRequest(c, "Invalid upstream_model_mismatch value, use true or false")
 		return
 	}
+	billingMode, err := parseDashboardBillingMode(c)
+	if err != nil {
+		response.BadRequest(c, "Invalid billing_mode")
+		return
+	}
 
-	trend, hit, err := h.getUsageTrendCached(c.Request.Context(), startTime, endTime, granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType, upstreamModelMismatch)
+	trend, hit, err := h.getUsageTrendCached(c.Request.Context(), startTime, endTime, granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType, upstreamModelMismatch, billingMode)
 	if err != nil {
 		response.Error(c, 500, "Failed to get usage trend")
 		return
@@ -354,8 +377,13 @@ func (h *DashboardHandler) GetModelStats(c *gin.Context) {
 		response.BadRequest(c, "Invalid upstream_model_mismatch value, use true or false")
 		return
 	}
+	billingMode, err := parseDashboardBillingMode(c)
+	if err != nil {
+		response.BadRequest(c, "Invalid billing_mode")
+		return
+	}
 
-	stats, hit, err := h.getModelStatsCached(c.Request.Context(), startTime, endTime, userID, apiKeyID, accountID, groupID, modelSource, requestType, stream, billingType, upstreamModelMismatch)
+	stats, hit, err := h.getModelStatsCached(c.Request.Context(), startTime, endTime, userID, apiKeyID, accountID, groupID, modelSource, requestType, stream, billingType, upstreamModelMismatch, billingMode)
 	if err != nil {
 		response.Error(c, 500, "Failed to get model statistics")
 		return
@@ -431,8 +459,13 @@ func (h *DashboardHandler) GetGroupStats(c *gin.Context) {
 		response.BadRequest(c, "Invalid upstream_model_mismatch value, use true or false")
 		return
 	}
+	billingMode, err := parseDashboardBillingMode(c)
+	if err != nil {
+		response.BadRequest(c, "Invalid billing_mode")
+		return
+	}
 
-	stats, hit, err := h.getGroupStatsCached(c.Request.Context(), startTime, endTime, userID, apiKeyID, accountID, groupID, requestType, stream, billingType, upstreamModelMismatch)
+	stats, hit, err := h.getGroupStatsCached(c.Request.Context(), startTime, endTime, userID, apiKeyID, accountID, groupID, requestType, stream, billingType, upstreamModelMismatch, billingMode)
 	if err != nil {
 		response.Error(c, 500, "Failed to get group statistics")
 		return
@@ -582,7 +615,7 @@ func (h *DashboardHandler) GetBatchUsersUsage(c *gin.Context) {
 		Day     string  `json:"day"`
 		UserIDs []int64 `json:"user_ids"`
 	}{
-		V:       2, // bump 当响应结构变化（如加入 by_platform 时）
+		V:       3, // bump 当响应结构变化（如加入 billing split 时）
 		Day:     timezone.Today().Format("2006-01-02"),
 		UserIDs: userIDs,
 	})
@@ -706,6 +739,20 @@ func (h *DashboardHandler) GetUserBreakdown(c *gin.Context) {
 			btVal := int8(bt)
 			dim.BillingType = &btVal
 		}
+	}
+	billingMode, err := parseDashboardBillingMode(c)
+	if err != nil {
+		response.BadRequest(c, "Invalid billing_mode")
+		return
+	}
+	dim.BillingMode = billingMode
+	excludeAdmin, err := parseOptionalBoolDashboardFilter(c, "exclude_admin")
+	if err != nil {
+		response.BadRequest(c, "Invalid exclude_admin value, use true or false")
+		return
+	}
+	if excludeAdmin != nil {
+		dim.ExcludeAdmin = *excludeAdmin
 	}
 
 	// sort_by 由 repo 层 allowlist 校验;非法值静默回退默认排序(actual_cost)。

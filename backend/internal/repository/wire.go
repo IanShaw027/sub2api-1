@@ -78,6 +78,7 @@ var ProviderSet = wire.NewSet(
 	NewRedeemCodeRepository,
 	NewPromoCodeRepository,
 	NewAnnouncementRepository,
+	NewMediaAssetRepository,
 	NewAnnouncementReadRepository,
 	NewUsageLogRepository,
 	NewUsageBillingRepository,
@@ -144,6 +145,7 @@ var ProviderSet = wire.NewSet(
 	// Backup infrastructure
 	NewPgDumper,
 	NewS3BackupStoreFactory,
+	NewS3MediaStoreFactory,
 
 	// Image storage (async image task result offload)
 	ProvideImageStorageFactory,

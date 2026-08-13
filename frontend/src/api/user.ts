@@ -194,6 +194,17 @@ export async function getMyPlatformQuotas(): Promise<PlatformQuotasResponse> {
   return data
 }
 
+export interface UserRPMStatus {
+  user_rpm_used: number
+  user_rpm_limit: number
+  current_concurrency: number
+}
+
+export async function getMyRPMStatus(): Promise<UserRPMStatus> {
+  const { data } = await apiClient.get<UserRPMStatus>('/user/rpm-status')
+  return data
+}
+
 export const userAPI = {
   getProfile,
   updateProfile,
@@ -210,6 +221,7 @@ export const userAPI = {
   getAffiliateDetail,
   transferAffiliateQuota,
   getMyPlatformQuotas,
+  getMyRPMStatus,
 }
 
 export default userAPI

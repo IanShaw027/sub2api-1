@@ -33,6 +33,7 @@ type helperConcurrencyCacheStub struct {
 	apiKeyTrackCalls    int
 	apiKeyReleaseCalls  int
 	apiKeyTrackIDs      []int64
+	groupAcquireIDs     []int64
 }
 
 func (s *helperConcurrencyCacheStub) AcquireAccountSlot(ctx context.Context, accountID int64, maxConcurrency int, requestID string) (bool, error) {
@@ -173,6 +174,33 @@ func (s *helperConcurrencyCacheStub) CleanupExpiredAccountSlotKeys(ctx context.C
 
 func (s *helperConcurrencyCacheStub) CleanupStaleProcessSlots(ctx context.Context, activeRequestPrefix string) error {
 	return nil
+}
+
+func (s *helperConcurrencyCacheStub) AcquireAccountSlotForGroup(ctx context.Context, accountID, groupID int64, maxConcurrency int, requestID string) (bool, error) {
+	s.mu.Lock()
+	s.groupAcquireIDs = append(s.groupAcquireIDs, groupID)
+	s.mu.Unlock()
+	return s.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
+}
+
+func (s *helperConcurrencyCacheStub) ReleaseAccountSlotForGroup(ctx context.Context, accountID, groupID int64, requestID string) error {
+	return s.ReleaseAccountSlot(ctx, accountID, requestID)
+}
+
+func (s *helperConcurrencyCacheStub) AcquireGroupSlot(context.Context, int64, string) error {
+	return nil
+}
+
+func (s *helperConcurrencyCacheStub) ReleaseGroupSlot(context.Context, int64, string) error {
+	return nil
+}
+
+func (s *helperConcurrencyCacheStub) GetGroupConcurrencyBatch(_ context.Context, groupIDs []int64) (map[int64]int, error) {
+	out := make(map[int64]int, len(groupIDs))
+	for _, id := range groupIDs {
+		out[id] = 0
+	}
+	return out, nil
 }
 
 func newHelperTestContext(method, path string) (*gin.Context, *httptest.ResponseRecorder) {
@@ -473,6 +501,23 @@ func TestWaitForSlotWithPingTimeout_AcquireError(t *testing.T) {
 	require.Nil(t, release)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "redis unavailable")
+}
+
+func TestWaitForSlotTracksAPIKeyGroup(t *testing.T) {
+	cache := &helperConcurrencyCacheStub{accountSeq: []bool{true}}
+	concurrency := service.NewConcurrencyService(cache)
+	concurrency.SetSlotHeartbeatInterval(0)
+	helper := NewConcurrencyHelper(concurrency, SSEPingFormatNone, 5*time.Millisecond)
+	c, _ := newHelperTestContext(http.MethodPost, "/v1/messages")
+	gid := int64(42)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{ID: 9, GroupID: &gid})
+	streamStarted := false
+
+	release, err := helper.waitForSlotWithPingTimeout(c, "account", 101, 2, time.Second, false, &streamStarted, true)
+	require.NoError(t, err)
+	require.NotNil(t, release)
+	release()
+	require.Equal(t, []int64{42}, cache.groupAcquireIDs)
 }
 
 func TestAcquireAccountSlotWithWaitTimeout_ImmediateAttemptBeforeBackoff(t *testing.T) {

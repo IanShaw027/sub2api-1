@@ -106,8 +106,16 @@
         <div class="flex-1">
           <p class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('dashboard.performance') }}</p>
           <div class="flex items-baseline gap-2">
-            <p class="text-xl font-bold text-gray-900 dark:text-white">{{ formatTokens(stats?.rpm || 0) }}</p>
-            <span class="text-xs text-gray-500 dark:text-gray-400">RPM</span>
+            <p class="text-xl font-bold text-gray-900 dark:text-white">{{ liveRpmUsed }}</p>
+            <span class="text-xs text-gray-500 dark:text-gray-400">{{ liveRpmLabel }}</span>
+          </div>
+          <div class="flex items-baseline gap-2">
+            <p class="text-sm font-semibold text-violet-600 dark:text-violet-400">{{ formatTokens(stats?.rpm || 0) }}</p>
+            <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.avgRpm') }}</span>
+          </div>
+          <div class="flex items-baseline gap-2">
+            <p class="text-sm font-semibold text-gray-700 dark:text-gray-300">{{ currentConcurrency }}</p>
+            <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('dashboard.currentConcurrency') }}</span>
           </div>
           <div class="flex items-baseline gap-2">
             <p class="text-sm font-semibold text-violet-600 dark:text-violet-400">{{ formatTokens(stats?.tpm || 0) }}</p>
@@ -244,8 +252,18 @@ const props = defineProps<{
   balance: number
   isSimple: boolean
   platformQuotas?: PlatformQuotaItem[] | null
+  liveRpmUsed?: number
+  liveRpmLimit?: number
+  currentConcurrency?: number
 }>()
 const { t } = useI18n()
+
+const liveRpmUsed = computed(() => props.liveRpmUsed ?? 0)
+const currentConcurrency = computed(() => props.currentConcurrency ?? 0)
+const liveRpmLabel = computed(() => {
+  const limit = props.liveRpmLimit ?? 0
+  return limit > 0 ? `RPM ${liveRpmUsed.value}/${limit}` : t('dashboard.liveRpm')
+})
 
 const PLATFORM_LABELS: Record<string, string> = {
   anthropic: 'Claude',

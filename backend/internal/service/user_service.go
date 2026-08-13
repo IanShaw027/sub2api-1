@@ -82,6 +82,9 @@ type UserListFilters struct {
 	// IncludeDeleted 为 true 时绕过软删除过滤，返回含已删除（deleted_at 非空）的用户。
 	// 仅供 /admin/usage 的 SearchUsers 端点使用，其他列表调用方不要设置。
 	IncludeDeleted bool
+	// IncludeUsageStats 为 true 时，列表接口在返回页上附带今日余额/订阅实际扣费与近 30 天总额。
+	// nil 表示未指定（默认不附带）。
+	IncludeUsageStats *bool
 }
 
 // UserUpdateFields 声明 UserRepository.Update 允许写回的列。

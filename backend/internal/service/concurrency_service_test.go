@@ -616,3 +616,91 @@ func TestIncrementAccountWaitCount_NilCache(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, allowed)
 }
+
+type groupSlotCacheForTest struct {
+	stubConcurrencyCacheForTest
+	accountGroupAcquires int
+	accountGroupReleases int
+	groupAcquires        int
+	groupReleases        int
+	groupCounts          map[int64]int
+	failGroup            bool
+}
+
+func (c *groupSlotCacheForTest) AcquireAccountSlotForGroup(ctx context.Context, accountID, groupID int64, maxConcurrency int, requestID string) (bool, error) {
+	c.accountGroupAcquires++
+	if c.failGroup {
+		return false, errors.New("group slot failed")
+	}
+	return c.AcquireAccountSlot(ctx, accountID, maxConcurrency, requestID)
+}
+
+func (c *groupSlotCacheForTest) ReleaseAccountSlotForGroup(_ context.Context, _, _ int64, _ string) error {
+	c.accountGroupReleases++
+	return c.releaseErr
+}
+
+func (c *groupSlotCacheForTest) AcquireGroupSlot(context.Context, int64, string) error {
+	c.groupAcquires++
+	return nil
+}
+
+func (c *groupSlotCacheForTest) ReleaseGroupSlot(context.Context, int64, string) error {
+	c.groupReleases++
+	return nil
+}
+
+func (c *groupSlotCacheForTest) GetGroupConcurrencyBatch(_ context.Context, groupIDs []int64) (map[int64]int, error) {
+	out := make(map[int64]int, len(groupIDs))
+	for _, id := range groupIDs {
+		out[id] = c.groupCounts[id]
+	}
+	return out, nil
+}
+
+func TestAcquireAccountSlotForGroup_PairedRelease(t *testing.T) {
+	cache := &groupSlotCacheForTest{stubConcurrencyCacheForTest: stubConcurrencyCacheForTest{acquireResult: true}}
+	svc := NewConcurrencyService(cache)
+	svc.SetSlotHeartbeatInterval(0)
+	gid := int64(88)
+
+	result, err := svc.AcquireAccountSlotForGroup(context.Background(), 7, &gid, 5)
+	require.NoError(t, err)
+	require.True(t, result.Acquired)
+	require.Equal(t, 1, cache.accountGroupAcquires)
+
+	result.ReleaseFunc()
+	require.Equal(t, 1, cache.accountGroupReleases)
+}
+
+func TestAcquireAccountSlotForGroup_UnlimitedStillTracksGroup(t *testing.T) {
+	cache := &groupSlotCacheForTest{}
+	svc := NewConcurrencyService(cache)
+	svc.SetSlotHeartbeatInterval(0)
+	gid := int64(9)
+
+	result, err := svc.AcquireAccountSlotForGroup(context.Background(), 3, &gid, 0)
+	require.NoError(t, err)
+	require.True(t, result.Acquired)
+	require.Equal(t, 1, cache.groupAcquires)
+
+	result.ReleaseFunc()
+	require.Equal(t, 1, cache.groupReleases)
+}
+
+func TestSetSlotTTL_ShortensHeartbeatBelowDefault(t *testing.T) {
+	svc := NewConcurrencyService(&stubConcurrencyCacheForTest{})
+	svc.SetSlotTTL(2 * time.Minute)
+	require.Equal(t, 40*time.Second, svc.slotHeartbeatEvery())
+}
+
+func TestGetGroupConcurrencyBatch_UsesGroupCounter(t *testing.T) {
+	cache := &groupSlotCacheForTest{groupCounts: map[int64]int{10: 4, 20: 1}}
+	svc := NewConcurrencyService(cache)
+
+	got, err := svc.GetGroupConcurrencyBatch(context.Background(), []int64{10, 20, 30})
+	require.NoError(t, err)
+	require.Equal(t, 4, got[10])
+	require.Equal(t, 1, got[20])
+	require.Equal(t, 0, got[30])
+}

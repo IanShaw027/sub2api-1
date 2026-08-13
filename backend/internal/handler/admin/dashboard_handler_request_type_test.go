@@ -22,6 +22,9 @@ type dashboardUsageRepoCapture struct {
 	trendMismatch    *bool
 	modelMismatch    *bool
 	groupMismatch    *bool
+	trendBillingMode string
+	modelBillingMode string
+	groupBillingMode string
 	rankingLimit     int
 	ranking          []usagestats.UserSpendingRankingItem
 	rankingTotal     float64
@@ -36,6 +39,7 @@ func (s *dashboardUsageRepoCapture) GetUsageTrendWithUsageFilters(
 	s.trendRequestType = filters.RequestType
 	s.trendStream = filters.Stream
 	s.trendMismatch = filters.UpstreamModelMismatch
+	s.trendBillingMode = filters.BillingMode
 	return []usagestats.TrendDataPoint{}, nil
 }
 
@@ -63,6 +67,7 @@ func (s *dashboardUsageRepoCapture) GetModelStatsWithUsageFiltersBySource(
 	s.modelRequestType = filters.RequestType
 	s.modelStream = filters.Stream
 	s.modelMismatch = filters.UpstreamModelMismatch
+	s.modelBillingMode = filters.BillingMode
 	return []usagestats.ModelStat{}, nil
 }
 
@@ -72,6 +77,7 @@ func (s *dashboardUsageRepoCapture) GetGroupStatsWithUsageFilters(
 	filters usagestats.UsageLogFilters,
 ) ([]usagestats.GroupStat, error) {
 	s.groupMismatch = filters.UpstreamModelMismatch
+	s.groupBillingMode = filters.BillingMode
 	return []usagestats.GroupStat{}, nil
 }
 
@@ -275,4 +281,29 @@ func TestDashboardUsersRankingLimitAndCache(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec2.Code)
 	require.Equal(t, "hit", rec2.Header().Get("X-Snapshot-Cache"))
+}
+
+func TestDashboardTrendBillingModeFilter(t *testing.T) {
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard/trend?billing_mode=token&upstream_model_mismatch=true", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "token", repo.trendBillingMode)
+	require.NotNil(t, repo.trendMismatch)
+	require.True(t, *repo.trendMismatch)
+}
+
+func TestDashboardTrendInvalidBillingMode(t *testing.T) {
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard/trend?billing_mode=nope", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
 }

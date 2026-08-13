@@ -10,6 +10,8 @@ export default {
     totalTokens: 'Total Tokens',
     cacheToday: 'Cache (Today)',
     performance: 'Performance',
+    liveRpm: 'Live RPM',
+    avgRpm: '5-min RPM',
     avgResponse: 'Avg Response',
     averageTime: 'Average time',
     timeRange: 'Time Range',

@@ -74,6 +74,7 @@ export async function list(
     api_key_group_id?: number   // filter users by the group their API keys are bound to
     attributes?: Record<number, string>  // attributeId -> value
     include_subscriptions?: boolean
+    include_usage_stats?: boolean
     sort_by?: string
     sort_order?: 'asc' | 'desc'
   },
@@ -91,6 +92,7 @@ export async function list(
     group_name: filters?.group_name,
     api_key_group_id: filters?.api_key_group_id,
     include_subscriptions: filters?.include_subscriptions,
+    include_usage_stats: filters?.include_usage_stats,
     sort_by: filters?.sort_by,
     sort_order: filters?.sort_order
   }

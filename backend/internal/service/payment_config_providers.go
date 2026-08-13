@@ -46,6 +46,7 @@ type ProviderInstanceResponse struct {
 	Enabled         bool              `json:"enabled"`
 	RefundEnabled   bool              `json:"refund_enabled"`
 	AllowUserRefund bool              `json:"allow_user_refund"`
+	InvoiceEnabled  bool              `json:"invoice_enabled"`
 	SortOrder       int               `json:"sort_order"`
 	PaymentMode     string            `json:"payment_mode"`
 }
@@ -63,7 +64,7 @@ func (s *PaymentConfigService) ListProviderInstancesWithConfig(ctx context.Conte
 			ID: int64(inst.ID), ProviderKey: inst.ProviderKey, Name: inst.Name,
 			SupportedTypes: splitTypes(inst.SupportedTypes), Limits: inst.Limits,
 			Enabled: inst.Enabled, RefundEnabled: inst.RefundEnabled, AllowUserRefund: inst.AllowUserRefund,
-			SortOrder: inst.SortOrder, PaymentMode: inst.PaymentMode,
+			InvoiceEnabled: inst.InvoiceEnabled, SortOrder: inst.SortOrder, PaymentMode: inst.PaymentMode,
 		}
 		resp.Config, err = s.decryptAndMaskConfig(inst.ProviderKey, inst.Config)
 		if err != nil {
@@ -209,6 +210,7 @@ func (s *PaymentConfigService) CreateProviderInstance(ctx context.Context, req C
 		SetSupportedTypes(typesStr).SetEnabled(req.Enabled).SetPaymentMode(req.PaymentMode).
 		SetSortOrder(req.SortOrder).SetLimits(req.Limits).SetRefundEnabled(req.RefundEnabled).
 		SetAllowUserRefund(allowUserRefund).
+		SetInvoiceEnabled(req.InvoiceEnabled).
 		Save(ctx)
 }
 
@@ -446,6 +448,9 @@ func (s *PaymentConfigService) UpdateProviderInstance(ctx context.Context, id in
 	if req.PaymentMode != nil {
 		u.SetPaymentMode(*req.PaymentMode)
 	}
+	if req.InvoiceEnabled != nil {
+		u.SetInvoiceEnabled(*req.InvoiceEnabled)
+	}
 	return u.Save(ctx)
 }
 
@@ -456,6 +461,21 @@ func (s *PaymentConfigService) GetUserRefundEligibleInstanceIDs(ctx context.Cont
 			paymentproviderinstance.RefundEnabledEQ(true),
 			paymentproviderinstance.AllowUserRefundEQ(true),
 		).Select(paymentproviderinstance.FieldID).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(instances))
+	for _, inst := range instances {
+		ids = append(ids, strconv.FormatInt(int64(inst.ID), 10))
+	}
+	return ids, nil
+}
+
+// GetInvoiceEligibleInstanceIDs returns provider instance IDs that allow invoicing.
+func (s *PaymentConfigService) GetInvoiceEligibleInstanceIDs(ctx context.Context) ([]string, error) {
+	instances, err := s.entClient.PaymentProviderInstance.Query().
+		Where(paymentproviderinstance.InvoiceEnabledEQ(true)).
+		Select(paymentproviderinstance.FieldID).All(ctx)
 	if err != nil {
 		return nil, err
 	}

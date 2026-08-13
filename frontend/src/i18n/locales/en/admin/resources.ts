@@ -544,6 +544,7 @@ export default {
       billingModeImage: 'Image',
       billingModeVideo: 'Video',
       allBillingModes: 'All Billing Modes',
+      excludeAdmin: 'Exclude admins',
 	  upstreamModelAudit: 'Upstream model audit',
 	  allUpstreamModelAudit: 'All response model states',
 	  upstreamModelMismatchOnly: 'Mismatched only',

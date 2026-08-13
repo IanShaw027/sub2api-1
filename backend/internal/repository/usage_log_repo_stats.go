@@ -499,7 +499,9 @@ func (r *usageLogRepository) GetBatchUserUsageStats(ctx context.Context, userIDs
 			ul.user_id,
 			` + usageLogEffectivePlatformExpr + ` as platform,
 			COALESCE(SUM(ul.actual_cost) FILTER (WHERE ul.created_at >= $2 AND ul.created_at < $3), 0) as total_cost,
-			COALESCE(SUM(ul.actual_cost) FILTER (WHERE ul.created_at >= $4), 0) as today_cost
+			COALESCE(SUM(ul.actual_cost) FILTER (WHERE ul.created_at >= $4), 0) as today_cost,
+			COALESCE(SUM(ul.actual_cost) FILTER (WHERE ul.created_at >= $4 AND ul.billing_type = $5), 0) as today_balance_cost,
+			COALESCE(SUM(ul.actual_cost) FILTER (WHERE ul.created_at >= $4 AND ul.billing_type = $6), 0) as today_subscription_cost
 		FROM usage_logs ul
 		LEFT JOIN groups g ON g.id = ul.group_id
 		LEFT JOIN accounts a ON a.id = ul.account_id
@@ -509,7 +511,16 @@ func (r *usageLogRepository) GetBatchUserUsageStats(ctx context.Context, userIDs
 		GROUP BY ul.user_id, ` + usageLogEffectivePlatformExpr + `
 	`
 	today := timezone.Today()
-	rows, err := r.sql.QueryContext(ctx, query, pq.Array(normalizedUserIDs), startTime, endTime, today)
+	rows, err := r.sql.QueryContext(
+		ctx,
+		query,
+		pq.Array(normalizedUserIDs),
+		startTime,
+		endTime,
+		today,
+		service.BillingTypeBalance,
+		service.BillingTypeSubscription,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -518,7 +529,9 @@ func (r *usageLogRepository) GetBatchUserUsageStats(ctx context.Context, userIDs
 		var platform sql.NullString
 		var total float64
 		var todayTotal float64
-		if err := rows.Scan(&userID, &platform, &total, &todayTotal); err != nil {
+		var todayBalance float64
+		var todaySubscription float64
+		if err := rows.Scan(&userID, &platform, &total, &todayTotal, &todayBalance, &todaySubscription); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
@@ -528,6 +541,8 @@ func (r *usageLogRepository) GetBatchUserUsageStats(ctx context.Context, userIDs
 		}
 		stats.TotalActualCost += total
 		stats.TodayActualCost += todayTotal
+		stats.TodayBalanceActualCost += todayBalance
+		stats.TodaySubscriptionActualCost += todaySubscription
 		if platform.Valid && platform.String != "" {
 			stats.ByPlatform = append(stats.ByPlatform, PlatformUsage{
 				Platform:        platform.String,

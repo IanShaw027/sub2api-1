@@ -46,6 +46,7 @@ type dashboardSnapshotV2Filters struct {
 	Stream                *bool
 	BillingType           *int8
 	UpstreamModelMismatch *bool
+	BillingMode           string
 }
 
 type dashboardSnapshotV2CacheKey struct {
@@ -61,6 +62,7 @@ type dashboardSnapshotV2CacheKey struct {
 	Stream                *bool  `json:"stream"`
 	BillingType           *int8  `json:"billing_type"`
 	UpstreamModelMismatch *bool  `json:"upstream_model_mismatch"`
+	BillingMode           string `json:"billing_mode,omitempty"`
 	IncludeStats          bool   `json:"include_stats"`
 	IncludeTrend          bool   `json:"include_trend"`
 	IncludeModels         bool   `json:"include_models"`
@@ -107,6 +109,7 @@ func (h *DashboardHandler) GetSnapshotV2(c *gin.Context) {
 		Stream:                filters.Stream,
 		BillingType:           filters.BillingType,
 		UpstreamModelMismatch: filters.UpstreamModelMismatch,
+		BillingMode:           filters.BillingMode,
 		IncludeStats:          includeStats,
 		IncludeTrend:          includeTrend,
 		IncludeModels:         includeModels,
@@ -188,6 +191,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 			filters.Stream,
 			filters.BillingType,
 			filters.UpstreamModelMismatch,
+			filters.BillingMode,
 		)
 		if err != nil {
 			return nil, errors.New("failed to get usage trend")
@@ -209,6 +213,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 			filters.Stream,
 			filters.BillingType,
 			filters.UpstreamModelMismatch,
+			filters.BillingMode,
 		)
 		if err != nil {
 			return nil, errors.New("failed to get model statistics")
@@ -229,6 +234,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 			filters.Stream,
 			filters.BillingType,
 			filters.UpstreamModelMismatch,
+			filters.BillingMode,
 		)
 		if err != nil {
 			return nil, errors.New("failed to get group statistics")
@@ -312,6 +318,12 @@ func parseDashboardSnapshotV2Filters(c *gin.Context) (*dashboardSnapshotV2Filter
 		}
 		filters.UpstreamModelMismatch = &value
 	}
+
+	billingMode, err := parseDashboardBillingMode(c)
+	if err != nil {
+		return nil, err
+	}
+	filters.BillingMode = billingMode
 
 	return filters, nil
 }

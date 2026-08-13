@@ -14,8 +14,10 @@ import (
 func RegisterPaymentRoutes(
 	v1 *gin.RouterGroup,
 	paymentHandler *handler.PaymentHandler,
+	invoiceHandler *handler.InvoiceHandler,
 	webhookHandler *handler.PaymentWebhookHandler,
 	adminPaymentHandler *admin.PaymentHandler,
+	adminInvoiceHandler *admin.InvoiceHandler,
 	jwtAuth middleware.JWTAuthMiddleware,
 	adminAuth middleware.AdminAuthMiddleware,
 	auditLog middleware.AuditLogMiddleware,
@@ -43,6 +45,16 @@ func RegisterPaymentRoutes(
 			orders.POST("/:id/cancel", paymentHandler.CancelOrder)
 			orders.POST("/:id/refund-request", paymentHandler.RequestRefund)
 			orders.GET("/refund-eligible-providers", paymentHandler.GetRefundEligibleProviders)
+		}
+
+		invoices := authenticated.Group("/invoices")
+		{
+			invoices.POST("", invoiceHandler.Apply)
+			invoices.GET("", invoiceHandler.ListMine)
+			invoices.GET("/eligible-providers", invoiceHandler.EligibleProviders)
+			invoices.GET("/:id", invoiceHandler.GetMine)
+			invoices.POST("/:id/cancel", invoiceHandler.CancelMine)
+			invoices.POST("/:id/download-grant", invoiceHandler.DownloadGrant)
 		}
 	}
 
@@ -108,6 +120,17 @@ func RegisterPaymentRoutes(
 			providers.POST("", adminPaymentHandler.CreateProvider)
 			providers.PUT("/:id", adminPaymentHandler.UpdateProvider)
 			providers.DELETE("/:id", adminPaymentHandler.DeleteProvider)
+		}
+
+		adminInvoices := adminGroup.Group("/invoices")
+		{
+			adminInvoices.GET("", adminInvoiceHandler.List)
+			adminInvoices.GET("/unread-count", adminInvoiceHandler.UnreadCount)
+			adminInvoices.GET("/:id", adminInvoiceHandler.Get)
+			adminInvoices.POST("/:id/cancel", adminInvoiceHandler.Cancel)
+			adminInvoices.POST("/:id/issue", adminInvoiceHandler.Issue)
+			adminInvoices.POST("/:id/resend-email", adminInvoiceHandler.ResendEmail)
+			adminInvoices.POST("/:id/download-grant", adminInvoiceHandler.DownloadGrant)
 		}
 	}
 }

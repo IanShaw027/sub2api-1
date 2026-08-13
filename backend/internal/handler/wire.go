@@ -42,6 +42,8 @@ func ProvideAdminHandlers(
 	contentModerationHandler *admin.ContentModerationHandler,
 	promptAuditHandler *securityaudit.PromptAdminHandler,
 	paymentHandler *admin.PaymentHandler,
+	invoiceHandler *admin.InvoiceHandler,
+	ticketHandler *admin.TicketHandler,
 	affiliateHandler *admin.AffiliateHandler,
 	complianceHandler *admin.ComplianceHandler,
 	auditLogHandler *admin.AuditLogHandler,
@@ -82,6 +84,8 @@ func ProvideAdminHandlers(
 		ContentModeration:      contentModerationHandler,
 		PromptAudit:            promptAuditHandler,
 		Payment:                paymentHandler,
+		Invoice:                invoiceHandler,
+		Ticket:                 ticketHandler,
 		Affiliate:              affiliateHandler,
 		Compliance:             complianceHandler,
 		AuditLog:               auditLogHandler,
@@ -165,6 +169,36 @@ func ProvideAdminSettingHandler(settingService *service.SettingService, emailSer
 	return h
 }
 
+func ProvideUserHandler(
+	userService *service.UserService,
+	authService *service.AuthService,
+	emailService *service.EmailService,
+	emailCache service.EmailCache,
+	affiliateService *service.AffiliateService,
+	userPlatformQuotaRepo service.UserPlatformQuotaRepository,
+	userRPMCache service.UserRPMCache,
+	concurrencyService *service.ConcurrencyService,
+) *UserHandler {
+	h := NewUserHandler(userService, authService, emailService, emailCache, affiliateService, userPlatformQuotaRepo)
+	h.SetLiveStatus(userRPMCache, concurrencyService)
+	return h
+}
+
+func ProvideAdminUserHandler(
+	adminService service.AdminService,
+	concurrencyService *service.ConcurrencyService,
+	userPlatformQuotaRepo service.UserPlatformQuotaRepository,
+	billingCache service.BillingCache,
+	totpService *service.TotpService,
+	userService *service.UserService,
+	settingService *service.SettingService,
+	dashboardService *service.DashboardService,
+) *admin.UserHandler {
+	h := admin.NewUserHandler(adminService, concurrencyService, userPlatformQuotaRepo, billingCache, totpService, userService, settingService)
+	h.SetUsageStatsReader(dashboardService)
+	return h
+}
+
 // ProvideHandlers creates the Handlers struct
 func ProvideHandlers(
 	authHandler *AuthHandler,
@@ -183,11 +217,14 @@ func ProvideHandlers(
 	totpHandler *TotpHandler,
 	passkeyHandler *PasskeyHandler,
 	paymentHandler *PaymentHandler,
+	invoiceHandler *InvoiceHandler,
+	ticketHandler *TicketHandler,
 	paymentWebhookHandler *PaymentWebhookHandler,
 	availableChannelHandler *AvailableChannelHandler,
 	modelPlazaHandler *ModelPlazaHandler,
 	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
+	mediaHandler *MediaHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 ) *Handlers {
@@ -208,11 +245,14 @@ func ProvideHandlers(
 		Totp:             totpHandler,
 		Passkey:          passkeyHandler,
 		Payment:          paymentHandler,
+		Invoice:          invoiceHandler,
+		Ticket:           ticketHandler,
 		PaymentWebhook:   paymentWebhookHandler,
 		AvailableChannel: availableChannelHandler,
 		ModelPlaza:       modelPlazaHandler,
 		AsyncImage:       asyncImageHandler,
 		BatchImage:       batchImageHandler,
+		Media:            mediaHandler,
 	}
 }
 
@@ -220,7 +260,7 @@ func ProvideHandlers(
 var ProviderSet = wire.NewSet(
 	// Top-level handlers
 	NewAuthHandler,
-	NewUserHandler,
+	ProvideUserHandler,
 	NewAPIKeyHandler,
 	NewUsageHandler,
 	NewRedeemHandler,
@@ -234,15 +274,18 @@ var ProviderSet = wire.NewSet(
 	NewPasskeyHandler,
 	ProvideSettingHandler,
 	NewPaymentHandler,
+	NewInvoiceHandler,
+	NewTicketHandler,
 	NewPaymentWebhookHandler,
 	NewAvailableChannelHandler,
 	NewModelPlazaHandler,
 	NewAsyncImageHandler,
 	ProvideBatchImageHandler,
+	NewMediaHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,
-	admin.NewUserHandler,
+	ProvideAdminUserHandler,
 	admin.NewGroupHandler,
 	admin.ProvideAccountHandler,
 	admin.NewAnnouncementHandler,
@@ -271,6 +314,8 @@ var ProviderSet = wire.NewSet(
 	admin.NewChannelMonitorRequestTemplateHandler,
 	admin.NewContentModerationHandler,
 	admin.NewPaymentHandler,
+	admin.NewInvoiceHandler,
+	admin.NewTicketHandler,
 	admin.NewAffiliateHandler,
 	admin.NewComplianceHandler,
 	admin.NewAuditLogHandler,

@@ -55,6 +55,10 @@
                   :aria-hidden="sidebarCollapsed ? 'true' : 'false'"
                 >
                   <span class="min-w-0 truncate">{{ item.label }}</span>
+                  <span
+                    v-if="groupBadge(item) && !isGroupExpanded(item)"
+                    class="ml-1 inline-flex h-2 w-2 flex-shrink-0 rounded-full bg-red-500"
+                  />
                   <ChevronDownIcon
                     class="h-4 w-4 flex-shrink-0 transition-transform duration-200"
                     :class="isGroupExpanded(item) ? 'rotate-180' : ''"
@@ -72,7 +76,11 @@
                   @click="handleMenuItemClick(child.path)"
                 >
                   <component :is="child.icon" class="h-4 w-4 flex-shrink-0" />
-                  <span>{{ child.label }}</span>
+                  <span class="min-w-0 truncate">{{ child.label }}</span>
+                  <span
+                    v-if="child.badge"
+                    class="ml-auto inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-semibold leading-4 text-white"
+                  >{{ child.badge > 99 ? '99+' : child.badge }}</span>
                 </router-link>
               </div>
             </template>
@@ -96,7 +104,13 @@
             >
               <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
               <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
-              <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
+              <span class="sidebar-label sidebar-label-flex" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
+                <span class="min-w-0 truncate">{{ item.label }}</span>
+                <span
+                  v-if="item.badge"
+                  class="ml-auto inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-semibold leading-4 text-white"
+                >{{ item.badge > 99 ? '99+' : item.badge }}</span>
+              </span>
             </router-link>
           </template>
         </div>
@@ -121,7 +135,13 @@
           >
             <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
             <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
-            <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
+            <span class="sidebar-label sidebar-label-flex" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
+              <span class="min-w-0 truncate">{{ item.label }}</span>
+              <span
+                v-if="item.badge"
+                class="ml-auto inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-semibold leading-4 text-white"
+              >{{ item.badge > 99 ? '99+' : item.badge }}</span>
+            </span>
           </router-link>
         </div>
       </template>
@@ -141,7 +161,13 @@
           >
             <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
             <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
-            <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
+            <span class="sidebar-label sidebar-label-flex" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
+              <span class="min-w-0 truncate">{{ item.label }}</span>
+              <span
+                v-if="item.badge"
+                class="ml-auto inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-semibold leading-4 text-white"
+              >{{ item.badge > 99 ? '99+' : item.badge }}</span>
+            </span>
           </router-link>
         </div>
       </template>
@@ -197,6 +223,10 @@ import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
+import { adminPaymentAPI } from '@/api/admin/payment'
+import { adminTicketsAPI } from '@/api/admin/tickets'
+import { ticketsAPI } from '@/api/tickets'
+import { TICKET_UNREAD_CHANGED_EVENT } from '@/utils/ticketForm'
 
 interface NavItem {
   path: string
@@ -204,6 +234,7 @@ interface NavItem {
   icon: unknown
   iconSvg?: string
   hideInSimpleMode?: boolean
+  badge?: number
   children?: NavItem[]
   /**
    * When true, the parent item only toggles the expand/collapse state and
@@ -249,6 +280,46 @@ const mobileOpen = computed(() => appStore.mobileOpen)
 const isAdmin = computed(() => authStore.isAdmin)
 const sidebarNavRef = ref<HTMLElement | null>(null)
 const isDark = ref(document.documentElement.classList.contains('dark'))
+const invoiceUnreadCount = ref(0)
+const userTicketUnreadCount = ref(0)
+const adminTicketUnreadCount = ref(0)
+
+async function refreshInvoiceUnread() {
+  if (!isAdmin.value || authStore.isSimpleMode) {
+    invoiceUnreadCount.value = 0
+    return
+  }
+  try {
+    const res = await adminPaymentAPI.getInvoiceUnreadCount()
+    invoiceUnreadCount.value = Number(res.data?.count || 0)
+  } catch {
+    invoiceUnreadCount.value = 0
+  }
+}
+
+async function refreshTicketUnread() {
+  if (authStore.isSimpleMode) {
+    userTicketUnreadCount.value = 0
+    adminTicketUnreadCount.value = 0
+    return
+  }
+  try {
+    const res = await ticketsAPI.unreadCount()
+    userTicketUnreadCount.value = Number(res.data?.count || 0)
+  } catch {
+    userTicketUnreadCount.value = 0
+  }
+  if (!isAdmin.value) {
+    adminTicketUnreadCount.value = 0
+    return
+  }
+  try {
+    const res = await adminTicketsAPI.unreadCount()
+    adminTicketUnreadCount.value = Number(res.data?.count || 0)
+  } catch {
+    adminTicketUnreadCount.value = 0
+  }
+}
 
 const homePath = computed(() => (isAdmin.value ? '/admin/dashboard' : '/dashboard'))
 
@@ -708,6 +779,8 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     { path: '/purchase', label: t('nav.buySubscription'), icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/orders', label: t('nav.myOrders'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
+    { path: '/invoices', label: t('nav.myInvoices'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
+    { path: '/tickets', label: t('nav.myTickets'), icon: OrderListIcon, hideInSimpleMode: true, badge: userTicketUnreadCount.value || undefined },
     { path: '/redeem', label: t('nav.redeem'), icon: GiftIcon, hideInSimpleMode: true },
     { path: '/affiliate', label: t('nav.affiliate'), icon: UsersIcon, hideInSimpleMode: true, featureFlag: flagAffiliate },
     { path: '/profile', label: t('nav.profile'), icon: UserIcon },
@@ -807,9 +880,11 @@ const adminNavItems = computed((): NavItem[] => {
       children: [
         { path: '/admin/orders/dashboard', label: t('nav.paymentDashboard'), icon: ChartIcon },
         { path: '/admin/orders', label: t('nav.orderManagement'), icon: OrderIcon },
+        { path: '/admin/orders/invoices', label: t('nav.invoiceApplications'), icon: OrderIcon, badge: invoiceUnreadCount.value || undefined },
         { path: '/admin/orders/plans', label: t('nav.paymentPlans'), icon: CreditCardIcon },
       ],
     },
+    { path: '/admin/tickets', label: t('nav.ticketManagement'), icon: OrderIcon, hideInSimpleMode: true, badge: adminTicketUnreadCount.value || undefined },
     { path: '/admin/usage', label: t('nav.usage'), icon: ChartIcon },
     { path: '/admin/audit-logs', label: t('nav.auditLogs'), icon: ShieldIcon, hideInSimpleMode: true }
   ]
@@ -877,6 +952,11 @@ function isGroupActive(item: NavItem): boolean {
   return item.children.some(child => route.path === child.path)
 }
 
+function groupBadge(item: NavItem): number {
+  if (!item.children) return item.badge || 0
+  return item.children.reduce((sum, child) => sum + (child.badge || 0), 0)
+}
+
 function isGroupExpanded(item: NavItem): boolean {
   return expandedGroups.value.has(item.path) || isGroupActive(item)
 }
@@ -927,16 +1007,41 @@ watch(
   (v) => {
     if (v) {
       adminSettingsStore.fetch()
+      void refreshInvoiceUnread()
+      void refreshTicketUnread()
+    } else {
+      invoiceUnreadCount.value = 0
+      adminTicketUnreadCount.value = 0
+      void refreshTicketUnread()
     }
   },
   { immediate: true }
 )
 
+watch(
+  () => route.path,
+  (path, prev) => {
+    if (path === '/admin/orders/invoices' || prev === '/admin/orders/invoices') {
+      void refreshInvoiceUnread()
+    }
+    if (path.startsWith('/tickets') || path.startsWith('/admin/tickets') || prev?.startsWith('/tickets') || prev?.startsWith('/admin/tickets')) {
+      void refreshTicketUnread()
+    }
+  }
+)
+
+function onTicketUnreadChanged() {
+  void refreshTicketUnread()
+}
+
 onMounted(() => {
+  window.addEventListener(TICKET_UNREAD_CHANGED_EVENT, onTicketUnreadChanged)
   void refreshBatchImageAccess()
   if (isAdmin.value) {
     adminSettingsStore.fetch()
+    void refreshInvoiceUnread()
   }
+  void refreshTicketUnread()
   // Restore sidebar scroll position after route change re-mounts the component
   if (appStore.sidebarScrollTop > 0 && sidebarNavRef.value) {
     void nextTick(() => {
@@ -948,6 +1053,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener(TICKET_UNREAD_CHANGED_EVENT, onTicketUnreadChanged)
   if (sidebarNavRef.value) {
     appStore.sidebarScrollTop = sidebarNavRef.value.scrollTop
   }

@@ -852,6 +852,7 @@ export default {
         supportedTypesHint: 'Comma-separated, e.g. alipay,wxpay',
         refundEnabled: 'Allow Refund',
         allowUserRefund: 'Allow User Refund',
+        invoiceEnabled: 'Allow Invoices',
         enableConflict: '{method} already has an enabled provider instance: {provider}. Disable the existing instance before switching.',
       },
       balanceNotify: {

@@ -56,7 +56,8 @@ export interface TrendParams {
   request_type?: UsageRequestType
   stream?: boolean
   billing_type?: number | null
-	upstream_model_mismatch?: boolean
+  upstream_model_mismatch?: boolean
+  billing_mode?: string
 }
 
 export interface TrendResponse {
@@ -88,7 +89,8 @@ export interface ModelStatsParams {
   request_type?: UsageRequestType
   stream?: boolean
   billing_type?: number | null
-	upstream_model_mismatch?: boolean
+  upstream_model_mismatch?: boolean
+  billing_mode?: string
 }
 
 export interface ModelStatsResponse {
@@ -117,7 +119,8 @@ export interface GroupStatsParams {
   request_type?: UsageRequestType
   stream?: boolean
   billing_type?: number | null
-	upstream_model_mismatch?: boolean
+  upstream_model_mismatch?: boolean
+  billing_mode?: string
 }
 
 export interface GroupStatsResponse {
@@ -179,6 +182,8 @@ export interface UserBreakdownParams {
   request_type?: UsageRequestType
   stream?: boolean
   billing_type?: number | null
+  billing_mode?: string
+  exclude_admin?: boolean
 }
 
 export interface UserBreakdownResponse {
@@ -281,6 +286,8 @@ export interface BatchUserUsageStats {
   user_id: number
   today_actual_cost: number
   total_actual_cost: number
+  today_balance_actual_cost?: number
+  today_subscription_actual_cost?: number
   by_platform?: PlatformUsage[]
 }
 

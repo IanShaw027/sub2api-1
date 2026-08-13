@@ -280,3 +280,17 @@ func TestGetUserBreakdown_InvalidRequestType(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+func TestGetUserBreakdown_ExcludeAdminAndBillingMode(t *testing.T) {
+	repo := &userBreakdownRepoCapture{}
+	router := newUserBreakdownRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/admin/dashboard/user-breakdown?start_date=2026-03-01&end_date=2026-03-16&exclude_admin=true&billing_mode=image", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.True(t, repo.capturedDim.ExcludeAdmin)
+	require.Equal(t, "image", repo.capturedDim.BillingMode)
+}

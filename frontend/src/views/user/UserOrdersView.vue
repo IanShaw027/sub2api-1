@@ -6,6 +6,12 @@
         <div class="flex flex-wrap items-center gap-3">
           <Select v-model="currentFilter" :options="statusFilters" class="w-36" @change="fetchOrders" />
           <div class="flex flex-1 items-center justify-end gap-2">
+            <button
+              v-if="selectedIds.length > 0"
+              class="btn btn-secondary"
+              @click="showInvoiceDialog = true"
+            >{{ t('payment.invoices.applySelected', { count: selectedIds.length }) }}</button>
+            <button class="btn btn-secondary" @click="router.push('/invoices')">{{ t('payment.invoices.mine') }}</button>
             <button @click="fetchOrders" :disabled="loading" class="btn btn-secondary" :title="t('common.refresh')">
               <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
             </button>
@@ -18,6 +24,10 @@
       <OrderTable :orders="orders" :loading="loading">
         <template #actions="{ row }">
           <div class="flex items-center gap-2">
+            <label v-if="canInvoice(row)" class="inline-flex items-center gap-1 text-xs text-gray-600">
+              <input type="checkbox" :checked="selectedIds.includes(row.id)" @change="toggleSelect(row.id)" />
+              {{ t('payment.invoices.select') }}
+            </label>
             <button v-if="row.status === 'PENDING'" @click="handleCancel(row.id)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-yellow-600 hover:bg-yellow-50 dark:text-yellow-400 dark:hover:bg-yellow-900/20">
               <Icon name="x" size="sm" />
               <span>{{ t('payment.orders.cancel') }}</span>
@@ -77,6 +87,44 @@
         </div>
       </template>
     </BaseDialog>
+
+    <BaseDialog :show="showInvoiceDialog" :title="t('payment.invoices.apply')" @close="showInvoiceDialog = false">
+      <div class="space-y-3">
+        <p class="text-sm text-gray-500">{{ t('payment.invoices.applyHint', { count: selectedIds.length }) }}</p>
+        <div>
+          <label class="input-label">{{ t('payment.invoices.title') }}</label>
+          <input v-model="invoiceForm.title" class="input mt-1 w-full" />
+        </div>
+        <div>
+          <label class="input-label">{{ t('payment.invoices.taxNumber') }}</label>
+          <input v-model="invoiceForm.tax_number" class="input mt-1 w-full" />
+        </div>
+        <div>
+          <label class="input-label">{{ t('payment.invoices.email') }}</label>
+          <input v-model="invoiceForm.email" type="email" class="input mt-1 w-full" />
+        </div>
+        <div>
+          <label class="input-label">{{ t('payment.invoices.contactName') }}</label>
+          <input v-model="invoiceForm.contact_name" class="input mt-1 w-full" />
+        </div>
+        <div>
+          <label class="input-label">{{ t('payment.invoices.contactPhone') }}</label>
+          <input v-model="invoiceForm.contact_phone" class="input mt-1 w-full" />
+        </div>
+        <div>
+          <label class="input-label">{{ t('payment.invoices.note') }}</label>
+          <textarea v-model="invoiceForm.request_note" rows="2" class="input mt-1 w-full" />
+        </div>
+      </div>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <button class="btn btn-secondary" @click="showInvoiceDialog = false">{{ t('common.cancel') }}</button>
+          <button class="btn btn-primary" :disabled="actionLoading || !invoiceForm.title.trim() || !invoiceForm.email.trim()" @click="confirmInvoice">
+            {{ actionLoading ? t('common.processing') : t('payment.invoices.apply') }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
   </AppLayout>
 </template>
 
@@ -103,6 +151,17 @@ const loading = ref(false)
 const actionLoading = ref(false)
 const orders = ref<PaymentOrder[]>([])
 const refundEligibleProviders = ref<Set<string>>(new Set())
+const invoiceEligibleProviders = ref<Set<string>>(new Set())
+const selectedIds = ref<number[]>([])
+const showInvoiceDialog = ref(false)
+const invoiceForm = reactive({
+  title: '',
+  tax_number: '',
+  email: '',
+  contact_name: '',
+  contact_phone: '',
+  request_note: '',
+})
 const currentFilter = ref('')
 const cancelTargetId = ref<number | null>(null)
 const refundTarget = ref<PaymentOrder | null>(null)
@@ -178,6 +237,46 @@ function canRequestRefund(order: PaymentOrder): boolean {
   return refundEligibleProviders.value.has(order.provider_instance_id)
 }
 
+function canInvoice(order: PaymentOrder): boolean {
+  if (order.status !== 'COMPLETED') return false
+  if (!order.provider_instance_id) return false
+  return invoiceEligibleProviders.value.has(order.provider_instance_id)
+}
+
+function toggleSelect(id: number) {
+  if (selectedIds.value.includes(id)) {
+    selectedIds.value = selectedIds.value.filter((item) => item !== id)
+    return
+  }
+  if (selectedIds.value.length >= 100) return
+  selectedIds.value = [...selectedIds.value, id]
+}
+
+async function confirmInvoice() {
+  if (!invoiceForm.title.trim() || !invoiceForm.email.trim() || selectedIds.value.length === 0) return
+  actionLoading.value = true
+  try {
+    await paymentAPI.applyInvoice({
+      order_ids: selectedIds.value,
+      title: invoiceForm.title.trim(),
+      tax_number: invoiceForm.tax_number.trim(),
+      email: invoiceForm.email.trim(),
+      contact_name: invoiceForm.contact_name.trim(),
+      contact_phone: invoiceForm.contact_phone.trim(),
+      request_note: invoiceForm.request_note.trim(),
+    })
+    appStore.showSuccess(t('common.success'))
+    showInvoiceDialog.value = false
+    selectedIds.value = []
+    await fetchOrders()
+    router.push('/invoices')
+  } catch (err: unknown) {
+    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+  } finally {
+    actionLoading.value = false
+  }
+}
+
 async function loadRefundEligibility() {
   try {
     const res = await paymentAPI.getRefundEligibleProviders()
@@ -185,5 +284,12 @@ async function loadRefundEligibility() {
   } catch { /* ignore — default to hiding refund button */ }
 }
 
-onMounted(() => { fetchOrders(); loadRefundEligibility() })
+async function loadInvoiceEligibility() {
+  try {
+    const res = await paymentAPI.getInvoiceEligibleProviders()
+    invoiceEligibleProviders.value = new Set(res.data.provider_instance_ids || [])
+  } catch { /* ignore */ }
+}
+
+onMounted(() => { fetchOrders(); loadRefundEligibility(); loadInvoiceEligibility() })
 </script>

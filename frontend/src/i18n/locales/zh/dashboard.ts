@@ -10,6 +10,8 @@ export default {
     totalTokens: '累计 Token',
     cacheToday: '今日缓存',
     performance: '性能指标',
+    liveRpm: '实时 RPM',
+    avgRpm: '近5分钟 RPM',
     avgResponse: '平均响应',
     averageTime: '平均时间',
     timeRange: '时间范围',
