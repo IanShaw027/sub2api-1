@@ -33,6 +33,10 @@ func (s *GatewayService) ForwardAsChatCompletions(
 	body []byte,
 	parsed *ParsedRequest,
 ) (*ForwardResult, error) {
+	if shouldAutoRouteOpenAICompatCCUpstream(account) {
+		return s.forwardChatCompletionsToOpenAICompatCC(ctx, c, account, body)
+	}
+
 	startTime := time.Now()
 
 	// 1. Parse Chat Completions request

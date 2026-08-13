@@ -132,16 +132,28 @@ func convertResponsesInputToAnthropic(instructions string, inputRaw json.RawMess
 				systemParts = append(systemParts, text)
 			}
 
-		case item.Type == "function_call":
-			// function_call → assistant message with tool_use block
-			input := json.RawMessage("{}")
-			if item.Arguments != "" {
-				input = json.RawMessage(item.Arguments)
+		case item.Type == "function_call", item.Type == "custom_tool_call", item.Type == "tool_search_call":
+			// function_call / custom_tool_call / tool_search_call → assistant tool_use
+			name := item.Name
+			if ns := strings.TrimSpace(item.Namespace); ns != "" && strings.TrimSpace(name) != "" {
+				name = flattenNamespaceToolName(ns, name)
+			}
+			if item.Type == "tool_search_call" && strings.TrimSpace(name) == "" {
+				name = "tool_search"
+			}
+			var input json.RawMessage
+			if item.Type == "custom_tool_call" {
+				input, _ = json.Marshal(item.Input)
+			} else {
+				input = json.RawMessage("{}")
+				if item.Arguments != "" {
+					input = json.RawMessage(item.Arguments)
+				}
 			}
 			block := AnthropicContentBlock{
 				Type:  "tool_use",
 				ID:    fromResponsesCallIDToAnthropic(item.CallID),
-				Name:  item.Name,
+				Name:  name,
 				Input: input,
 			}
 			blockJSON, _ := json.Marshal([]AnthropicContentBlock{block})
@@ -150,8 +162,8 @@ func convertResponsesInputToAnthropic(instructions string, inputRaw json.RawMess
 				Content: blockJSON,
 			})
 
-		case item.Type == "function_call_output":
-			// function_call_output → user message with tool_result block
+		case item.Type == "function_call_output", item.Type == "custom_tool_call_output", item.Type == "tool_search_output":
+			// tool outputs → user message with tool_result block
 			contentJSON := responsesFunctionOutputToAnthropicContent(item)
 			block := AnthropicContentBlock{
 				Type:      "tool_result",
@@ -274,6 +286,10 @@ func responsesFunctionOutputToAnthropicContent(item ResponsesInputItem) json.Raw
 			content, _ := json.Marshal("(empty)")
 			return content
 		}
+	}
+
+	if item.OutputIsJSON {
+		return json.RawMessage(item.Output)
 	}
 
 	content, _ := json.Marshal(item.Output)

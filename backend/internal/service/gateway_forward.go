@@ -99,6 +99,15 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		return s.handleWebSearchEmulation(ctx, c, account, parsed)
 	}
 
+	// OpenAI 兼容 CC 上游：账号显式开启文本端点自动路由后，才将
+	// Messages 请求转换为 Chat Completions 格式转发。
+	if shouldAutoRouteOpenAICompatCCUpstream(account) {
+		return s.forwardMessagesToChatCompletions(ctx, c, account, parsed)
+	}
+	if account != nil && account.IsOpenAICompatCCUpstream() {
+		return nil, fmt.Errorf("openai_compat_cc_upstream requires text_endpoint_auto_route")
+	}
+
 	if account != nil && account.IsAnthropicAPIKeyPassthroughEnabled() {
 		passthroughBody := parsed.Body.Bytes()
 		passthroughModel := parsed.Model

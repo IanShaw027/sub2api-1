@@ -35,6 +35,10 @@ func (s *GatewayService) ForwardAsResponses(
 	body []byte,
 	parsed *ParsedRequest,
 ) (*ForwardResult, error) {
+	if shouldAutoRouteOpenAICompatCCUpstream(account) {
+		return s.forwardResponsesToOpenAICompatCC(ctx, c, account, body)
+	}
+
 	startTime := time.Now()
 
 	// 1. Lower Codex client-side tools to function tools understood by Anthropic.

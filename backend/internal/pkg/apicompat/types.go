@@ -229,6 +229,9 @@ type ResponsesRequest struct {
 	ServiceTier        string              `json:"service_tier,omitempty"`
 	PromptCacheKey     string              `json:"prompt_cache_key,omitempty"`
 	PreviousResponseID string              `json:"previous_response_id,omitempty"`
+	// DroppedCompatibilityFields records source-protocol fields that have no
+	// Responses equivalent. It is observability-only and must not be marshaled.
+	DroppedCompatibilityFields []string `json:"-"`
 }
 
 // ResponsesReasoning configures reasoning effort in the Responses API.
@@ -256,28 +259,43 @@ type ResponsesInputItem struct {
 	// type=reasoning (multi-turn replay of encrypted reasoning)
 	EncryptedContent string `json:"encrypted_content,omitempty"`
 
-	// type=function_call
+	// type=function_call / custom_tool_call / tool_search_call
 	CallID    string `json:"call_id,omitempty"`
 	Name      string `json:"name,omitempty"`
+	// Namespace is the Codex private namespace identity for function_call
+	// items (paired with Name). Flattened when converting history to Anthropic.
+	Namespace string `json:"namespace,omitempty"`
 	Arguments string `json:"arguments,omitempty"`
+	Input     string `json:"input,omitempty"`
 	ID        string `json:"id,omitempty"`
 
-	// type=function_call_output
-	Output    string `json:"output,omitempty"`
-	outputRaw json.RawMessage
+	// type=function_call_output / custom_tool_call_output / tool_search_output
+	Output       string `json:"output,omitempty"`
+	OutputIsJSON bool   `json:"-"`
+	outputRaw    json.RawMessage
 }
 
 func (i *ResponsesInputItem) UnmarshalJSON(data []byte) error {
 	type alias ResponsesInputItem
 	var wire struct {
 		*alias
-		Output json.RawMessage `json:"output"`
+		Arguments json.RawMessage `json:"arguments"`
+		Output    json.RawMessage `json:"output"`
 	}
 
 	*i = ResponsesInputItem{}
 	wire.alias = (*alias)(i)
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
+	}
+
+	if args := bytes.TrimSpace(wire.Arguments); len(args) > 0 && !bytes.Equal(args, []byte("null")) {
+		var argumentString string
+		if err := json.Unmarshal(args, &argumentString); err == nil {
+			i.Arguments = argumentString
+		} else {
+			i.Arguments = string(args)
+		}
 	}
 
 	output := bytes.TrimSpace(wire.Output)
@@ -290,6 +308,7 @@ func (i *ResponsesInputItem) UnmarshalJSON(data []byte) error {
 
 	i.outputRaw = append(i.outputRaw[:0], output...)
 	i.Output = string(output)
+	i.OutputIsJSON = json.Valid(output) && output[0] != '"'
 	return nil
 }
 

@@ -14,12 +14,16 @@ import (
 // ResponsesToAnthropic converts a Responses API response directly into an
 // Anthropic Messages response. Reasoning output items are mapped to thinking
 // blocks; function_call items become tool_use blocks.
-func ResponsesToAnthropic(resp *ResponsesResponse, model string) *AnthropicResponse {
+func ResponsesToAnthropic(resp *ResponsesResponse, model string, nameMaps ...map[string]string) *AnthropicResponse {
 	out := &AnthropicResponse{
 		ID:    resp.ID,
 		Type:  "message",
 		Role:  "assistant",
 		Model: model,
+	}
+	var toolNameMap map[string]string
+	if len(nameMaps) > 0 {
+		toolNameMap = nameMaps[0]
 	}
 
 	var blocks []AnthropicContentBlock
@@ -53,11 +57,26 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string) *AnthropicRespo
 				}
 			}
 		case "function_call":
+			name := MapClaudeToolName(item.Name, toolNameMap)
 			blocks = append(blocks, AnthropicContentBlock{
 				Type:  "tool_use",
 				ID:    fromResponsesCallID(item.CallID),
-				Name:  item.Name,
-				Input: sanitizeAnthropicToolUseInput(item.Name, item.Arguments),
+				Name:  name,
+				Input: sanitizeAnthropicToolUseInput(name, item.Arguments),
+			})
+		case "custom_tool_call":
+			blocks = append(blocks, AnthropicContentBlock{
+				Type:  "tool_use",
+				ID:    fromResponsesCallID(responsesCallIDOrItemID(item)),
+				Name:  MapClaudeToolName(item.Name, toolNameMap),
+				Input: anthropicToolUseInputFromText(item.Input),
+			})
+		case "tool_search_call":
+			blocks = append(blocks, AnthropicContentBlock{
+				Type:  "tool_use",
+				ID:    fromResponsesCallID(responsesCallIDOrItemID(item)),
+				Name:  toolSearchProxyName,
+				Input: toolSearchCallArgumentsJSON(item.Arguments),
 			})
 		case "web_search_call":
 			toolUseID := "srvtoolu_" + item.ID
@@ -93,6 +112,25 @@ func ResponsesToAnthropic(resp *ResponsesResponse, model string) *AnthropicRespo
 	}
 
 	return out
+}
+
+func responsesCallIDOrItemID(item ResponsesOutput) string {
+	if strings.TrimSpace(item.CallID) != "" {
+		return item.CallID
+	}
+	return item.ID
+}
+
+func anthropicToolUseInputFromText(input string) json.RawMessage {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return json.RawMessage("{}")
+	}
+	if json.Valid([]byte(input)) {
+		return json.RawMessage(input)
+	}
+	quoted, _ := json.Marshal(input)
+	return quoted
 }
 
 func anthropicUsageFromResponsesUsage(usage *ResponsesUsage) AnthropicUsage {
@@ -335,9 +373,9 @@ func resToAnthHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesE
 	}
 
 	switch evt.Item.Type {
-	// function_call 与 custom_tool_call（custom/freeform 工具，如新版 apply_patch）
-	// 同样映射为 Anthropic 的 tool_use 块。
-	case "function_call", "custom_tool_call":
+	// function_call、custom_tool_call（custom/freeform 工具，如新版 apply_patch）
+	// 与 tool_search_call 同样映射为 Anthropic 的 tool_use 块。
+	case "function_call", "custom_tool_call", "tool_search_call":
 		var events []AnthropicStreamEvent
 		events = append(events, closeCurrentBlock(state)...)
 
@@ -345,18 +383,28 @@ func resToAnthHandleOutputItemAdded(evt *ResponsesStreamEvent, state *ResponsesE
 		state.OutputIndexToBlockIdx[evt.OutputIndex] = idx
 		state.ContentBlockOpen = true
 		state.CurrentBlockType = "tool_use"
-		state.CurrentToolName = evt.Item.Name
 		state.CurrentToolArgs = ""
 		state.CurrentToolHadDelta = false
 		state.HasToolCall = true
+
+		callID := evt.Item.CallID
+		name := MapClaudeToolName(evt.Item.Name, nil)
+		switch evt.Item.Type {
+		case "tool_search_call":
+			callID = responsesCallIDOrItemID(*evt.Item)
+			name = toolSearchProxyName
+		case "custom_tool_call":
+			callID = responsesCallIDOrItemID(*evt.Item)
+		}
+		state.CurrentToolName = name
 
 		events = append(events, AnthropicStreamEvent{
 			Type:  "content_block_start",
 			Index: &idx,
 			ContentBlock: &AnthropicContentBlock{
 				Type:  "tool_use",
-				ID:    fromResponsesCallID(evt.Item.CallID),
-				Name:  evt.Item.Name,
+				ID:    fromResponsesCallID(callID),
+				Name:  name,
 				Input: json.RawMessage("{}"),
 			},
 		})
@@ -559,6 +607,34 @@ func resToAnthHandleOutputItemDone(evt *ResponsesStreamEvent, state *ResponsesEv
 		if sig := strings.TrimSpace(evt.Item.EncryptedContent); sig != "" {
 			state.PendingThinkingSignature = sig
 		}
+	}
+
+	// tool_search_call typically carries full arguments only on output_item.done
+	// (no function_call_arguments.delta/done). Synthesize input_json_delta then.
+	if evt.Item.Type == "tool_search_call" && !state.CurrentToolHadDelta {
+		var events []AnthropicStreamEvent
+		if strings.TrimSpace(evt.Item.Arguments) != "" {
+			blockIdx, ok := state.OutputIndexToBlockIdx[evt.OutputIndex]
+			if !ok && state.ContentBlockOpen && state.CurrentBlockType == "tool_use" {
+				blockIdx = state.ContentBlockIndex
+				ok = true
+			}
+			if ok {
+				events = append(events, AnthropicStreamEvent{
+					Type:  "content_block_delta",
+					Index: &blockIdx,
+					Delta: &AnthropicDelta{
+						Type:        "input_json_delta",
+						PartialJSON: string(toolSearchCallArgumentsJSON(evt.Item.Arguments)),
+					},
+				})
+				state.CurrentToolHadDelta = true
+			}
+		}
+		if state.ContentBlockOpen && state.CurrentBlockType == "tool_use" {
+			events = append(events, closeCurrentBlock(state)...)
+		}
+		return events
 	}
 
 	if state.ContentBlockOpen {

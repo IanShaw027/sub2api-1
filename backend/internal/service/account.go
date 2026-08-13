@@ -86,6 +86,7 @@ type Account struct {
 type OpenAIEndpointCapability string
 
 const openAILongContextBillingEnabledKey = "openai_long_context_billing_enabled"
+const textEndpointAutoRouteExtraKey = "text_endpoint_auto_route"
 
 const (
 	OpenAIEndpointCapabilityChatCompletions OpenAIEndpointCapability = "chat_completions"
@@ -1932,6 +1933,45 @@ func (a *Account) IsAnthropicAPIKeyPassthroughEnabled() bool {
 		return false
 	}
 	enabled, ok := a.Extra["anthropic_passthrough"].(bool)
+	return ok && enabled
+}
+
+// IsOpenAICompatCCUpstream 返回该 Anthropic APIKey 账号是否应将 Messages 请求
+// 转换为 Chat Completions 格式后转发到上游 /v1/chat/completions 端点。
+// 用于 GLM/Kimi/DeepSeek 等第三方 OpenAI 兼容上游在 Anthropic 分组中提供服务。
+// 字段：accounts.extra.openai_compat_cc_upstream。
+func (a *Account) IsOpenAICompatCCUpstream() bool {
+	if a == nil || a.Platform != PlatformAnthropic || a.Type != AccountTypeAPIKey || a.Extra == nil {
+		return false
+	}
+	enabled, ok := a.Extra["openai_compat_cc_upstream"].(bool)
+	return ok && enabled
+}
+
+// IsAnthropicMessagesUpstream 返回该 OpenAI APIKey 账号是否应将 CC 请求
+// 转换为 Anthropic Messages 格式后转发到上游 /v1/messages 端点。
+// 字段：accounts.extra.anthropic_messages_upstream。
+func (a *Account) IsAnthropicMessagesUpstream() bool {
+	if a == nil || a.Platform != PlatformOpenAI || a.Type != AccountTypeAPIKey || a.Extra == nil {
+		return false
+	}
+	enabled, ok := a.Extra["anthropic_messages_upstream"].(bool)
+	return ok && enabled
+}
+
+// TextEndpointAutoRouteEnabled 返回账号是否允许按 extra 标志在 Messages / CC /
+// Responses 文本端点之间自动改写协议。仅 APIKey + openai/anthropic 生效。
+func (a *Account) TextEndpointAutoRouteEnabled() bool {
+	if a == nil || a.Extra == nil {
+		return false
+	}
+	if a.Type != AccountTypeAPIKey {
+		return false
+	}
+	if a.Platform != PlatformOpenAI && a.Platform != PlatformAnthropic {
+		return false
+	}
+	enabled, ok := a.Extra[textEndpointAutoRouteExtraKey].(bool)
 	return ok && enabled
 }
 
