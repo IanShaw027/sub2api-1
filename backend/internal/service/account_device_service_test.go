@@ -725,3 +725,81 @@ func TestLearnIfOfficialRuntimeFamilyChangeDoesNotWrite(t *testing.T) {
 	require.Equal(t, service.LearnedFromBaseline, got.LearnedFrom)
 	require.Zero(t, repo.casWriteCount(account.ID))
 }
+
+func TestLearnIfOfficialMismatchedUAVersionDoesNotWrite(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	seedOldClaudeSoftware(t, client, account.ID, true)
+
+	inbound := officialClaudeInbound()
+	inbound.UserAgent = "claude-cli/0.1.0 (external, cli)"
+	inbound.Payload = oldClaudePayload()
+
+	got, err := svc.LearnIfOfficial(ctx, account, inbound)
+	require.NoError(t, err)
+	require.Equal(t, created.DeviceID, got.DeviceID)
+	require.Equal(t, "0.1.0", got.ClientVersion)
+	require.Equal(t, "claude-cli/0.1.0 (external, cli)", got.ProfilePayload["user_agent"])
+	require.Equal(t, service.LearnedFromBaseline, got.LearnedFrom)
+	require.Equal(t, int64(1), got.Revision)
+	require.Zero(t, repo.casWriteCount(account.ID))
+}
+
+func TestLearnIfOfficialDarwinX64InboundStillLearnsSoftware(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+
+	pinned := oldClaudePayload()
+	pinned["stainless_os"] = "Darwin"
+	pinned["stainless_arch"] = "x64"
+	n, err := client.AccountDeviceProfile.Update().
+		Where(accountdeviceprofile.AccountID(account.ID)).
+		SetClientVersion("0.1.0").
+		SetRuntimeVersion("v18.0.0").
+		SetOsFamily("macos").
+		SetArch("x64").
+		SetProfilePayload(pinned).
+		SetLearningEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	inbound := officialClaudeInbound()
+	payload := make(map[string]any, len(inbound.Payload)+2)
+	for key, value := range inbound.Payload {
+		payload[key] = value
+	}
+	payload["stainless_os"] = "Darwin"
+	payload["stainless_arch"] = "x64"
+	inbound.Payload = payload
+
+	got, err := svc.LearnIfOfficial(ctx, account, inbound)
+	require.NoError(t, err)
+	require.NoError(t, service.ValidateAccountDeviceProfile(got))
+	require.Equal(t, 1, repo.casWriteCount(account.ID))
+	require.Equal(t, claude.CLICurrentVersion, got.ClientVersion)
+	require.Equal(t, service.LearnedFromOfficial, got.LearnedFrom)
+	require.Equal(t, claude.DefaultHeaders["X-Stainless-Package-Version"], got.ProfilePayload["stainless_package_version"])
+	require.Equal(t, claude.DefaultHeaders["X-Stainless-Lang"], got.ProfilePayload["stainless_lang"])
+	require.Equal(t, claude.DefaultHeaders["X-Stainless-Runtime"], got.ProfilePayload["stainless_runtime"])
+	require.Equal(t, claude.DefaultHeaders["X-Stainless-Runtime-Version"], got.ProfilePayload["stainless_runtime_version"])
+	require.Equal(t, "Darwin", got.ProfilePayload["stainless_os"])
+	require.Equal(t, "x64", got.ProfilePayload["stainless_arch"])
+	require.Equal(t, "macos", got.OSFamily)
+	require.Equal(t, "x64", got.Arch)
+	require.Equal(t, created.DeviceID, got.DeviceID)
+	require.NotEqual(t, claude.DefaultHeaders["X-Stainless-OS"], got.ProfilePayload["stainless_os"])
+	require.NotEqual(t, claude.DefaultHeaders["X-Stainless-Arch"], got.ProfilePayload["stainless_arch"])
+}

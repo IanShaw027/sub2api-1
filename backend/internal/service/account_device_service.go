@@ -36,9 +36,11 @@ type AccountDeviceService struct {
 //
 // Expected Claude inbound Payload keys (mapped from X-Stainless-* headers):
 // stainless_lang, stainless_package_version, stainless_os, stainless_arch,
-// stainless_runtime, stainless_runtime_version. Learn requires every registry
-// stainless_* key to be present with an equal value. Extra inbound stainless_*
-// keys such as stainless_retry_count and stainless_timeout do not block learn.
+// stainless_runtime, stainless_runtime_version. Learn compares only software
+// keys (lang, package_version, runtime, runtime_version) against the registry.
+// stainless_os and stainless_arch are first-write-wins identity and are not
+// required to match the registry. Extra inbound stainless_* keys such as
+// stainless_retry_count and stainless_timeout do not block learn.
 // Runtime and RuntimeVersion are reserved/gate-only; written software values
 // come from the registry bundle, not from inbound.
 type OfficialInbound struct {
@@ -66,6 +68,12 @@ var (
 		"kiro_system_version":       {},
 		"kiro_node_version":         {},
 		"kiro_commit":               {},
+	}
+	stainlessSoftwareCompareKeys = []string{
+		"stainless_lang",
+		"stainless_package_version",
+		"stainless_runtime",
+		"stainless_runtime_version",
 	}
 )
 
@@ -146,6 +154,9 @@ func (s *AccountDeviceService) LearnIfOfficial(ctx context.Context, account *Acc
 	if candidate == "" {
 		return profile, nil
 	}
+	if uaVersion := softwareBundleVersionFromUA(inbound.UserAgent); uaVersion != "" && uaVersion != candidate {
+		return profile, nil
+	}
 	bundle, ok := NewSoftwareBundleRegistry().Lookup(profile.Platform, profile.ClientFamily, candidate)
 	if !ok {
 		return profile, nil
@@ -156,7 +167,7 @@ func (s *AccountDeviceService) LearnIfOfficial(ctx context.Context, account *Acc
 	if err := ValidateSoftwareBundle(bundle); err != nil {
 		return nil, fmt.Errorf("identity_reject: %w", err)
 	}
-	if profile.Platform == PlatformAnthropic && claudeUAChanged(profile, inbound) && !stainlessMatchesRegistry(inbound.Payload, bundle.Payload) {
+	if profile.Platform == PlatformAnthropic && claudeUAChanged(profile, bundle) && !stainlessMatchesRegistry(inbound.Payload, bundle.Payload) {
 		slog.Warn("identity_reject", "reason", "ua_changed_without_stainless", "account_id", profile.AccountID)
 		return profile, nil
 	}
@@ -264,17 +275,20 @@ func inboundCandidateVersion(inbound OfficialInbound) string {
 	return softwareBundleVersionFromUA(inbound.UserAgent)
 }
 
-func claudeUAChanged(profile *AccountDeviceProfile, inbound OfficialInbound) bool {
+func claudeUAChanged(profile *AccountDeviceProfile, bundle SoftwareBundle) bool {
 	profileUA, _ := profile.ProfilePayload["user_agent"].(string)
-	return strings.TrimSpace(inbound.UserAgent) != strings.TrimSpace(profileUA)
+	if strings.TrimSpace(bundle.UserAgent) != strings.TrimSpace(profileUA) {
+		return true
+	}
+	return strings.TrimSpace(bundle.ClientVersion) != strings.TrimSpace(profile.ClientVersion)
 }
 
 func stainlessMatchesRegistry(inbound, registry map[string]any) bool {
-	want := stainlessFields(registry)
+	want := stainlessSoftwareFields(registry)
 	if len(want) == 0 {
 		return true
 	}
-	got := stainlessFields(inbound)
+	got := stainlessSoftwareFields(inbound)
 	for key, value := range want {
 		if got[key] != value {
 			return false
@@ -283,13 +297,13 @@ func stainlessMatchesRegistry(inbound, registry map[string]any) bool {
 	return true
 }
 
-func stainlessFields(payload map[string]any) map[string]string {
-	out := make(map[string]string)
-	for key, value := range payload {
-		if !strings.HasPrefix(key, "stainless_") {
-			continue
-		}
-		if s, ok := value.(string); ok {
+func stainlessSoftwareFields(payload map[string]any) map[string]string {
+	out := make(map[string]string, len(stainlessSoftwareCompareKeys))
+	if payload == nil {
+		return out
+	}
+	for _, key := range stainlessSoftwareCompareKeys {
+		if s, ok := payload[key].(string); ok {
 			out[key] = s
 		}
 	}
