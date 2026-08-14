@@ -155,9 +155,12 @@ func validateCodexSoftwareBundle(b SoftwareBundle) error {
 	if CompareSemver(version, codexUpstreamMinVersion) < 0 {
 		return fmt.Errorf("software bundle codex-cli version %q is below the upstream floor %s", version, codexUpstreamMinVersion)
 	}
-	originator, _, ok := openai.PairCodexClientIdentity(b.UserAgent)
+	originator, pairedUA, ok := openai.PairCodexClientIdentity(b.UserAgent)
 	if !ok {
 		return fmt.Errorf("software bundle codex-cli user-agent is not an official paired identity")
+	}
+	if pairedUA != b.UserAgent {
+		return fmt.Errorf("software bundle codex-cli user-agent is not official as sent")
 	}
 	if b.Originator != originator {
 		return fmt.Errorf("software bundle codex-cli originator %q does not pair with user-agent", b.Originator)
@@ -236,7 +239,6 @@ func compileTimeSoftwareBundles() []SoftwareBundle {
 	claudeUA := claude.DefaultHeaders["User-Agent"]
 	codexVersion := NormalizeCodexClientVersion(codexCLIVersion)
 	geminiVersion := softwareBundleVersionFromUA(geminicli.GeminiCLIUserAgent)
-	antigravityUA := "antigravity/" + antigravity.DefaultUserAgentVersion + " windows/amd64"
 
 	return []SoftwareBundle{
 		{
@@ -283,7 +285,6 @@ func compileTimeSoftwareBundles() []SoftwareBundle {
 			Platform:       domain.PlatformKiro,
 			ClientFamily:   softwareFamilyKiroIDE,
 			ClientVersion:  defaultKiroVersion,
-			UserAgent:      "KiroIDE-" + defaultKiroVersion,
 			Runtime:        "node",
 			RuntimeVersion: defaultKiroNodeVersion,
 			Payload: map[string]any{
@@ -301,7 +302,7 @@ func compileTimeSoftwareBundles() []SoftwareBundle {
 			Platform:      domain.PlatformAntigravity,
 			ClientFamily:  softwareFamilyAntigravity,
 			ClientVersion: antigravity.DefaultUserAgentVersion,
-			UserAgent:     antigravityUA,
+			UserAgent:     antigravity.BuildUserAgent(antigravity.DefaultUserAgentVersion),
 		},
 	}
 }

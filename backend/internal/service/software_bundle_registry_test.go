@@ -109,6 +109,17 @@ func TestValidateSoftwareBundleRejectsCodexIdentityMismatch(t *testing.T) {
 		})
 		require.Error(t, err)
 	})
+
+	t.Run("trailer-official leading-unofficial user-agent is rewritten", func(t *testing.T) {
+		err := ValidateSoftwareBundle(SoftwareBundle{
+			Platform:      domain.PlatformOpenAI,
+			ClientFamily:  "codex-cli",
+			ClientVersion: "0.146.0",
+			UserAgent:     "cccc/0.146.0 (Ubuntu 22.4.0; x86_64) (codex-tui; 0.146.0)",
+			Originator:    "codex-tui",
+		})
+		require.Error(t, err)
+	})
 }
 
 func TestValidateSoftwareBundleAcceptsMatchedCodexIdentity(t *testing.T) {
@@ -139,5 +150,23 @@ func TestSoftwareBundleRegistryGrokBaselineUsesSupportedCLIVersion(t *testing.T)
 	bundle, ok := reg.Lookup(domain.PlatformGrok, "grok-cli", xai.CLIClientVersion)
 	require.True(t, ok)
 	require.Equal(t, xai.CLIUserAgent(xai.CLIClientVersion), bundle.UserAgent)
+	require.NoError(t, ValidateSoftwareBundle(bundle))
+}
+
+func TestSoftwareBundleRegistryKiroBaselineLeavesUserAgentEmpty(t *testing.T) {
+	reg := NewSoftwareBundleRegistry()
+	bundle, ok := reg.Lookup(domain.PlatformKiro, "kiro-ide", defaultKiroVersion)
+	require.True(t, ok)
+	require.Empty(t, bundle.UserAgent)
+	require.Equal(t, defaultKiroSystemVersion, bundle.Payload["kiro_system_version"])
+	require.Equal(t, defaultKiroNodeVersion, bundle.Payload["kiro_node_version"])
+	require.NoError(t, ValidateSoftwareBundle(bundle))
+}
+
+func TestSoftwareBundleRegistryAntigravityBaselineUsesBuildUserAgent(t *testing.T) {
+	reg := NewSoftwareBundleRegistry()
+	bundle, ok := reg.Lookup(domain.PlatformAntigravity, "antigravity", antigravity.DefaultUserAgentVersion)
+	require.True(t, ok)
+	require.Equal(t, antigravity.BuildUserAgent(antigravity.DefaultUserAgentVersion), bundle.UserAgent)
 	require.NoError(t, ValidateSoftwareBundle(bundle))
 }
