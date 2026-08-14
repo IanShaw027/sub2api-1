@@ -3,6 +3,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -28,4 +29,48 @@ func TestNormalizeAccountConcurrencyPreservesExplicitValues(t *testing.T) {
 func TestNormalizeAccountConcurrencyFallsBackForOutOfRangeValues(t *testing.T) {
 	require.Equal(t, 1, normalizeAccountConcurrency(PlatformGrok, AccountTypeOAuth, 50))
 	require.Equal(t, 12, normalizeAccountConcurrency(PlatformOpenAI, AccountTypeOAuth, 99))
+}
+
+func TestUpdateAccount_NormalizesOutOfRangeConcurrencyByPlatform(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		platform string
+		typ      string
+		input    int
+		want     int
+	}{
+		{name: "grok oauth zero falls back to one", platform: PlatformGrok, typ: AccountTypeOAuth, input: 0, want: 1},
+		{name: "anthropic oauth zero falls back to twelve", platform: PlatformAnthropic, typ: AccountTypeOAuth, input: 0, want: 12},
+		{name: "explicit in-range value is preserved", platform: PlatformAnthropic, typ: AccountTypeOAuth, input: 3, want: 3},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			repo := &accountRepoStubForOAuthOnlyGroup{
+				getByIDAccount: &Account{
+					ID:          55,
+					Name:        "before",
+					Platform:    tc.platform,
+					Type:        tc.typ,
+					Status:      StatusActive,
+					Concurrency: 7,
+				},
+			}
+			svc := &adminServiceImpl{accountRepo: repo}
+
+			updated, err := svc.UpdateAccount(context.Background(), 55, &UpdateAccountInput{
+				Concurrency: &tc.input,
+			})
+
+			require.NoError(t, err)
+			require.NotNil(t, updated)
+			require.NotNil(t, repo.updatedAccount)
+			require.Equal(t, tc.want, repo.updatedAccount.Concurrency)
+		})
+	}
 }

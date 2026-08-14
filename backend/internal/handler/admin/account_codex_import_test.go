@@ -883,6 +883,29 @@ func TestImportCodexSessionsWithRefreshTokenKeepsExistingDedup(t *testing.T) {
 	}
 }
 
+func TestImportCodexSessionsOmittedConcurrencyPassesZeroToCreateAccount(t *testing.T) {
+	svc := newCodexImportMemoryAdminService(nil)
+	handler := NewAccountHandler(svc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	req := CodexSessionImportRequest{SkipDefaultGroupBind: boolPtr(true)}
+	entries := []codexImportEntry{
+		{Index: 1, Value: buildCodexAccessOnlyImportValue(t, "workspace-1", "user-1")},
+	}
+
+	result, err := handler.importCodexSessions(context.Background(), req, entries)
+	if err != nil {
+		t.Fatalf("importCodexSessions error = %v", err)
+	}
+	if result.Created != 1 || result.Updated != 0 || result.Failed != 0 {
+		t.Fatalf("result = %+v, want one created account", result)
+	}
+	if len(svc.createdAccounts) != 1 {
+		t.Fatalf("created accounts = %d, want 1", len(svc.createdAccounts))
+	}
+	if got := svc.createdAccounts[0].Concurrency; got != 0 {
+		t.Fatalf("created account concurrency = %d, want omitted value to stay 0 for service defaulting", got)
+	}
+}
+
 type codexImportMemoryAdminService struct {
 	*stubAdminService
 	nextID          int64

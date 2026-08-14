@@ -18,10 +18,19 @@ import (
 
 // OpenAIOAuthHandler handles OpenAI OAuth-related operations
 type OpenAIOAuthHandler struct {
-	openaiOAuthService *service.OpenAIOAuthService
+	openaiOAuthService openAIOAuthService
 	adminService       service.AdminService
 	quotaService       openAIQuotaService
 	rateLimitService   openAIAccountStateRecoverer
+}
+
+type openAIOAuthService interface {
+	GenerateAuthURL(ctx context.Context, proxyID *int64, redirectURI, platform string) (*service.OpenAIAuthURLResult, error)
+	ExchangeCode(ctx context.Context, input *service.OpenAIExchangeCodeInput) (*service.OpenAITokenInfo, error)
+	RefreshTokenWithClientID(ctx context.Context, refreshToken, proxyURL, clientID string) (*service.OpenAITokenInfo, error)
+	RefreshAccountToken(ctx context.Context, account *service.Account) (*service.OpenAITokenInfo, error)
+	BuildAccountCredentials(tokenInfo *service.OpenAITokenInfo) map[string]any
+	ValidateCodexPersonalAccessToken(ctx context.Context, accessToken, proxyURL string) (*service.OpenAITokenInfo, error)
 }
 
 type openAIQuotaService interface {
@@ -421,7 +430,7 @@ func (h *OpenAIOAuthHandler) CreateAccountFromCodexPAT(c *gin.Context) {
 		"access_token_sha256": codexTokenFingerprint(req.AccessToken),
 	})
 
-	concurrency := 3
+	concurrency := 0
 	if req.Concurrency != nil {
 		concurrency = *req.Concurrency
 	}

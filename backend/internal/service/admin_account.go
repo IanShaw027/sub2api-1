@@ -763,7 +763,11 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	// 只在指针非 nil 时更新 Concurrency（支持设置为 0）
 	if input.Concurrency != nil {
-		account.Concurrency = *input.Concurrency
+		if *input.Concurrency <= 0 || *input.Concurrency > 32 {
+			account.Concurrency = applyCreateConcurrency(account.Platform, account.Type, *input.Concurrency)
+		} else {
+			account.Concurrency = *input.Concurrency
+		}
 	}
 	// 只在指针非 nil 时更新 Priority（支持设置为 0）
 	if input.Priority != nil {
