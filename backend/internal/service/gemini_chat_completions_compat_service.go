@@ -336,6 +336,9 @@ func (s *GeminiMessagesCompatService) buildGeminiChatCompletionsUpstreamRequestF
 			}
 			upstreamReq.Header.Set("Content-Type", "application/json")
 			upstreamReq.Header.Set("x-goog-api-key", apiKey)
+			if err := applyOutboundProfileUserAgent(ctx, account, upstreamReq); err != nil {
+				return nil, "", err
+			}
 			return upstreamReq, "x-request-id", nil
 		}, "x-request-id"
 
@@ -405,6 +408,9 @@ func (s *GeminiMessagesCompatService) buildGeminiChatCompletionsUpstreamRequestF
 			}
 			upstreamReq.Header.Set("Content-Type", "application/json")
 			upstreamReq.Header.Set("Authorization", "Bearer "+accessToken)
+			if err := applyOutboundProfileUserAgent(ctx, account, upstreamReq); err != nil {
+				return nil, "", err
+			}
 			return upstreamReq, "x-request-id", nil
 		}, "x-request-id"
 
@@ -434,6 +440,9 @@ func (s *GeminiMessagesCompatService) buildGeminiChatCompletionsUpstreamRequestF
 			}
 			upstreamReq.Header.Set("Content-Type", "application/json")
 			upstreamReq.Header.Set("Authorization", "Bearer "+accessToken)
+			if err := applyOutboundProfileUserAgent(ctx, account, upstreamReq); err != nil {
+				return nil, "", err
+			}
 			return upstreamReq, "x-request-id", nil
 		}, "x-request-id"
 
