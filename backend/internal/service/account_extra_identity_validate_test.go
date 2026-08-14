@@ -99,12 +99,35 @@ func TestValidateAccountCapacityExtraRejectsIllegalMaxSessionsIdleAndBuffer(t *t
 		{key: "max_sessions", value: 3.7, want: "integer"},
 		{key: "session_idle_timeout_minutes", value: 0, want: "session_idle_timeout_minutes"},
 		{key: "session_idle_timeout_minutes", value: 1441, want: "session_idle_timeout_minutes"},
-		{key: "rpm_sticky_buffer", value: 0, want: "rpm_sticky_buffer"},
+		{key: "rpm_sticky_buffer", value: -1, want: "rpm_sticky_buffer"},
 		{key: "rpm_sticky_buffer", value: 10001, want: "rpm_sticky_buffer"},
 		{key: "tls_fingerprint_profile_id", value: int64(-1), want: "tls_fingerprint_profile_id"},
 		{key: "tls_fingerprint_profile_id", value: 3.7, want: "integer"},
 		{key: "enable_tls_fingerprint", value: "yes", want: "enable_tls_fingerprint"},
 		{key: "codex_fingerprint_mode", value: "random", want: "codex_fingerprint_mode"},
+	}
+	for _, tc := range cases {
+		err := ValidateAccountCapacityExtra(map[string]any{tc.key: tc.value})
+		require.Error(t, err, "%s=%v", tc.key, tc.value)
+		require.ErrorContains(t, err, tc.want)
+	}
+}
+
+func TestValidateAccountCapacityExtraAcceptsRPMStickyBufferZero(t *testing.T) {
+	require.NoError(t, ValidateAccountCapacityExtra(map[string]any{"rpm_sticky_buffer": 0}))
+}
+
+func TestValidateAccountCapacityExtraRejectsPresentEmptyValues(t *testing.T) {
+	cases := []struct {
+		key   string
+		value any
+		want  string
+	}{
+		{key: "max_sessions", value: "", want: "max_sessions"},
+		{key: "session_idle_timeout_minutes", value: nil, want: "session_idle_timeout_minutes"},
+		{key: "enable_tls_fingerprint", value: nil, want: "enable_tls_fingerprint"},
+		{key: "codex_fingerprint_mode", value: "", want: "codex_fingerprint_mode"},
+		{key: "codex_fingerprint_mode", value: " device ", want: "codex_fingerprint_mode"},
 	}
 	for _, tc := range cases {
 		err := ValidateAccountCapacityExtra(map[string]any{tc.key: tc.value})
@@ -227,4 +250,75 @@ func TestAccountWritePathsRejectIllegalCapacityExtras(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
 		require.Zero(t, repo.updateExtraCalls)
 	})
+}
+
+func TestAdminBulkUpdateAcceptsRPMStickyBufferZero(t *testing.T) {
+	t.Parallel()
+
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{{ID: 1, Platform: PlatformAnthropic}},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1},
+		Extra:      map[string]any{"rpm_sticky_buffer": 0},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 0, repo.bulkUpdateInput.Extra["rpm_sticky_buffer"])
+}
+
+func TestAdminUpdateAccountClearsLegacyTLSFingerprintProfileID(t *testing.T) {
+	t.Parallel()
+
+	repo := &longContextBillingRepoStub{account: &Account{
+		ID:       1,
+		Platform: PlatformAnthropic,
+		Extra:    map[string]any{"tls_fingerprint_profile_id": int64(-1)},
+	}}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	account, err := svc.UpdateAccount(context.Background(), 1, &UpdateAccountInput{
+		Extra: map[string]any{
+			"tls_fingerprint_profile_id": int64(-1),
+			"mixed_scheduling":           true,
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Nil(t, repo.account.Extra["tls_fingerprint_profile_id"])
+	require.Equal(t, true, repo.account.Extra["mixed_scheduling"])
+}
+
+func TestAdminUpdateAccountExtraClearsLegacyTLSFingerprintProfileID(t *testing.T) {
+	t.Parallel()
+
+	repo := &capturingUpdateExtraRepoStub{
+		longContextBillingRepoStub: longContextBillingRepoStub{account: &Account{ID: 1, Platform: PlatformAnthropic}},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	err := svc.UpdateAccountExtra(context.Background(), 1, map[string]any{
+		"tls_fingerprint_profile_id": int64(-1),
+		"mixed_scheduling":           true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.updateExtraCalls)
+	require.Nil(t, repo.lastExtra["tls_fingerprint_profile_id"])
+	require.Equal(t, true, repo.lastExtra["mixed_scheduling"])
+}
+
+type capturingUpdateExtraRepoStub struct {
+	longContextBillingRepoStub
+	lastExtra map[string]any
+}
+
+func (r *capturingUpdateExtraRepoStub) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
+	r.updateExtraCalls++
+	r.lastExtra = updates
+	return nil
 }

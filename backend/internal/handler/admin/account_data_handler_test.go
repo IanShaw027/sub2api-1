@@ -2,6 +2,7 @@ package admin
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -316,4 +317,43 @@ func TestImportDataReusesProxyAndSkipsDefaultGroup(t *testing.T) {
 	require.Len(t, adminSvc.createdProxies, 0)
 	require.Len(t, adminSvc.createdAccounts, 1)
 	require.True(t, adminSvc.createdAccounts[0].SkipDefaultGroupBind)
+}
+
+func TestImportDataRejectsTLSFingerprintProfileIDMinusOne(t *testing.T) {
+	_, adminSvc := setupAccountDataRouter()
+	h := NewAccountHandler(
+		adminSvc,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	result, err := h.importData(context.Background(), DataImportRequest{
+		Data: DataPayload{
+			Accounts: []DataAccount{{
+				Name:        "bad-tls",
+				Platform:    service.PlatformAnthropic,
+				Type:        service.AccountTypeAPIKey,
+				Credentials: map[string]any{"api_key": "test"},
+				Extra:       map[string]any{"tls_fingerprint_profile_id": int64(-1)},
+			}},
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 0, result.AccountCreated)
+	require.Equal(t, 1, result.AccountFailed)
+	require.NotEmpty(t, result.Errors)
+	require.Contains(t, result.Errors[0].Message, "tls_fingerprint_profile_id")
+	require.Empty(t, adminSvc.createdAccounts)
 }
