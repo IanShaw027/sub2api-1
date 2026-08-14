@@ -1086,8 +1086,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		}
 	}
 
-	requiresPerAccountWrite := len(kiroCredentialUpdateIDs) > 0 ||
-		(input.Concurrency != nil && (*input.Concurrency <= 0 || *input.Concurrency > 32))
+	requiresPerAccountWrite := len(kiroCredentialUpdateIDs) > 0
+	needsPerAccountConcurrencyNormalization := input.Concurrency != nil &&
+		(*input.Concurrency <= 0 || *input.Concurrency > 32)
 
 	if requiresPerAccountWrite {
 		for index, accountID := range input.AccountIDs {
@@ -1223,6 +1224,20 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 				return nil, err
 			}
 			if err := s.propagateProxyToShadows(ctx, accountID, &assigned); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if needsPerAccountConcurrencyNormalization {
+		for _, accountID := range input.AccountIDs {
+			account := accountByID[accountID]
+			if account == nil {
+				continue
+			}
+			normalizedConcurrency := applyCreateConcurrency(account.Platform, account.Type, *input.Concurrency)
+			if _, err := s.accountRepo.BulkUpdate(ctx, []int64{accountID}, AccountBulkUpdate{
+				Concurrency: &normalizedConcurrency,
+			}); err != nil {
 				return nil, err
 			}
 		}
