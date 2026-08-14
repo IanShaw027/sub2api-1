@@ -718,6 +718,9 @@ func (s *PaymentService) tryClaimAffiliateRebateAudit(ctx context.Context, clien
 	query, args := buildAffiliateRebateAuditClaimQuery(client, oid, string(detail))
 	rows, err := client.QueryContext(ctx, query, args...)
 	if err != nil {
+		if isAffiliateRebateClaimConflict(err) {
+			return false, nil
+		}
 		return false, err
 	}
 	defer func() { _ = rows.Close() }()
@@ -746,7 +749,6 @@ WHERE NOT EXISTS (
 	WHERE order_id = $1::text
 	  AND action IN ('AFFILIATE_REBATE_APPLIED', 'AFFILIATE_REBATE_SKIPPED')
 )
-ON CONFLICT (order_id, action) DO NOTHING
 RETURNING id`, nowExpr), []any{orderID, detail}
 	}
 	return fmt.Sprintf(`
@@ -758,7 +760,6 @@ WHERE NOT EXISTS (
 	WHERE order_id = ?
 	  AND action IN ('AFFILIATE_REBATE_APPLIED', 'AFFILIATE_REBATE_SKIPPED')
 )
-ON CONFLICT (order_id, action) DO NOTHING
 RETURNING id`, nowExpr), []any{orderID, detail, orderID}
 }
 
@@ -774,6 +775,15 @@ func paymentAuditDialect(client *dbent.Client) string {
 		return ""
 	}
 	return client.Driver().Dialect()
+}
+
+func isAffiliateRebateClaimConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unique") &&
+		(strings.Contains(msg, "payment_audit_logs") || strings.Contains(msg, "idx_payment_audit_logs_order_action_uniq"))
 }
 
 func (s *PaymentService) updateClaimedAffiliateRebateAudit(ctx context.Context, client *dbent.Client, orderID int64, action string, detail map[string]any) error {
