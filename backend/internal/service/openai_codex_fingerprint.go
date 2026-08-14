@@ -6,8 +6,10 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -34,7 +36,28 @@ const (
 	codexFingerprintFull codexFingerprintMode = "full"
 )
 
-const codexFingerprintModeExtraKey = "codex_fingerprint_mode"
+const (
+	codexFingerprintModeExtraKey     = "codex_fingerprint_mode"
+	outboundDeviceProfileLoadTimeout = 2 * time.Second
+	codexIdentityRejectLogInterval   = 30 * time.Second
+)
+
+var (
+	codexIdentityRejectLogMu   sync.Mutex
+	codexIdentityRejectLastLog = map[int64]time.Time{}
+)
+
+func logCodexIdentityReject(accountID int64, err error) {
+	now := time.Now()
+	codexIdentityRejectLogMu.Lock()
+	if last, ok := codexIdentityRejectLastLog[accountID]; ok && now.Sub(last) < codexIdentityRejectLogInterval {
+		codexIdentityRejectLogMu.Unlock()
+		return
+	}
+	codexIdentityRejectLastLog[accountID] = now
+	codexIdentityRejectLogMu.Unlock()
+	slog.Warn("identity_reject: failed to load outbound device profile", "account_id", accountID, "error", err)
+}
 
 // GetCodexFingerprintMode 从账号 extra JSON 读取指纹收敛模式。
 // 未设置时默认 session（设备+会话收敛），显式设为 "off" 才关闭。
@@ -72,14 +95,14 @@ func resolveConvergedInstallationID(account *Account) string {
 	if account == nil {
 		return ""
 	}
-	profile, err := LoadOutboundDeviceProfile(context.Background(), account)
+	ctx, cancel := context.WithTimeout(context.Background(), outboundDeviceProfileLoadTimeout)
+	defer cancel()
+	profile, err := LoadOutboundDeviceProfile(ctx, account)
 	if err != nil || profile == nil {
+		logCodexIdentityReject(account.ID, err)
 		return ""
 	}
-	if id := strings.TrimSpace(profile.InstallationID); id != "" {
-		return id
-	}
-	return strings.TrimSpace(profile.DeviceID)
+	return strings.TrimSpace(profile.InstallationID)
 }
 
 // resolveConvergedSessionID 返回账号级恒定的 session_id。

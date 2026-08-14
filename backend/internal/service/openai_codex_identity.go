@@ -113,10 +113,31 @@ func codexIdentityCandidateUA(profile *AccountDeviceProfile, fallbackUA string) 
 	return fallbackUA
 }
 
+func applyCodexPayloadOriginator(ua, originator string) string {
+	originator = strings.ToLower(strings.TrimSpace(originator))
+	if originator == "" {
+		return ua
+	}
+	ua = strings.TrimSpace(ua)
+	slash := strings.IndexByte(ua, '/')
+	if slash <= 0 {
+		return ua
+	}
+	return originator + ua[slash:]
+}
+
 // resolveCodexOutboundIdentityFromProfile 用档案 payload 的 user_agent / originator
 // 作为候选，再走既有配对与最低版本收口，保证 UA / originator / version 同源自洽。
+// originator 一律小写后改写 UA 首段，再交给 PairCodexClientIdentity，避免只读 UA 前缀。
 func resolveCodexOutboundIdentityFromProfile(profile *AccountDeviceProfile, fallbackUA string) codexOutboundIdentity {
-	return resolveCodexOutboundIdentity(codexIdentityCandidateUA(profile, fallbackUA))
+	ua := codexIdentityCandidateUA(profile, fallbackUA)
+	if originator := profilePayloadString(profile, "originator"); originator != "" {
+		if strings.TrimSpace(ua) == "" {
+			ua = codexCanonicalUserAgent()
+		}
+		ua = applyCodexPayloadOriginator(ua, originator)
+	}
+	return resolveCodexOutboundIdentity(ua)
 }
 
 // resolveCodexOutboundIdentity 由候选 User-Agent 推导自洽的出站身份。

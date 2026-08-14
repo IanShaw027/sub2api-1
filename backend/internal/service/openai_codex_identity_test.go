@@ -84,6 +84,22 @@ func TestResolveCodexOutboundIdentityFromProfile_PrefersPayloadUserAgent(t *test
 	require.Equal(t, codexCLIVersion, identity.version)
 }
 
+func TestResolveCodexOutboundIdentityFromProfile_UsesPayloadOriginatorNotUAPrefix(t *testing.T) {
+	profile := validOpenAIDeviceProfile(1)
+	profile.ProfilePayload = map[string]any{
+		"user_agent": "codex-tui/0.150.0 (Ubuntu 22.4.0; x86_64) vscode",
+		"originator": "CODEX_VSCODE",
+	}
+
+	identity := resolveCodexOutboundIdentityFromProfile(profile, "")
+
+	require.Equal(t, "codex_vscode", identity.originator)
+	require.Equal(t, "codex_vscode", strings.ToLower(identity.originator))
+	require.True(t, strings.HasPrefix(identity.userAgent, "codex_vscode/"))
+	require.False(t, strings.HasPrefix(identity.userAgent, "codex-tui/"),
+		"payload originator must win over UA prefix; this fails if only the UA prefix is read")
+}
+
 func TestCodexIdentityFromProfile_OriginatorLowercaseNoXOriginator(t *testing.T) {
 	profile := validOpenAIDeviceProfile(1)
 	profile.ProfilePayload = map[string]any{
