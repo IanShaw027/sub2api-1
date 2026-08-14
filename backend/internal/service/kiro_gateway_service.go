@@ -929,11 +929,17 @@ func (s *KiroGatewayService) buildRequest(ctx context.Context, account *Account,
 	if err != nil {
 		return nil, err
 	}
-	applyKiroTLSFingerprintRuntime(req, s.resolveTLSFingerprintRuntime(ctx, nil, account))
+	profile, _ := LoadOutboundDeviceProfile(ctx, account)
+	applyKiroTLSFingerprintRuntimeWithProfile(req, s.resolveTLSFingerprintRuntime(ctx, nil, account), profile)
 	return req, nil
 }
 
 func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, body []byte, accessToken string, runtimeSettings *KiroRuntimeSettings) (*http.Request, error) {
+	profile, err := LoadOutboundDeviceProfile(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+
 	url := kiroAPIURL(account)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
@@ -943,8 +949,8 @@ func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, bo
 		return io.NopCloser(bytes.NewReader(body)), nil
 	}
 
-	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
-	machineID := kiropkg.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
+	runtimeSettings = applyKiroProfileRuntimeOverrides(runtimeSettings, profile)
+	machineID := profile.MachineID
 	host := req.URL.Host
 	kiroVersion := runtimeSettings.KiroVersion
 	req.Header.Set("Content-Type", "application/json")
@@ -966,6 +972,24 @@ func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, bo
 	req.Header.Set("amz-sdk-invocation-id", generateRequestID())
 	req.Header.Set("amz-sdk-request", "attempt=1; max=3")
 	return req, nil
+}
+
+func applyKiroProfileRuntimeOverrides(settings *KiroRuntimeSettings, profile *AccountDeviceProfile) *KiroRuntimeSettings {
+	settings = normalizeKiroRuntimeSettings(settings)
+	if profile == nil {
+		return settings
+	}
+	cloned := *settings
+	if v := kiroProfilePayloadString(profile, "kiro_system_version"); v != "" {
+		cloned.SystemVersion = v
+	}
+	if v := kiroProfilePayloadString(profile, "kiro_node_version"); v != "" {
+		cloned.NodeVersion = v
+	}
+	if v := kiroProfilePayloadString(profile, "kiro_commit"); v != "" {
+		cloned.KiroCommit = v
+	}
+	return normalizeKiroRuntimeSettings(&cloned)
 }
 
 func kiroEndpointName(account *Account) string {
