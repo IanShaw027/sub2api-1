@@ -220,6 +220,48 @@ var (
 			},
 		},
 	}
+	// AccountDeviceProfilesColumns holds the columns for the "account_device_profiles" table.
+	AccountDeviceProfilesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "revision", Type: field.TypeInt64, Default: 1},
+		{Name: "schema_version", Type: field.TypeInt, Default: 1},
+		{Name: "platform", Type: field.TypeString, Size: 32},
+		{Name: "client_family", Type: field.TypeString, Size: 32},
+		{Name: "installation_id", Type: field.TypeString, Size: 64},
+		{Name: "device_id", Type: field.TypeString, Size: 64},
+		{Name: "client_id", Type: field.TypeString, Size: 64, Default: ""},
+		{Name: "machine_id", Type: field.TypeString, Size: 64},
+		{Name: "gateway_account_uuid", Type: field.TypeString, Size: 64},
+		{Name: "session_namespace", Type: field.TypeString, Size: 64},
+		{Name: "os_family", Type: field.TypeString, Size: 32},
+		{Name: "arch", Type: field.TypeString, Size: 32},
+		{Name: "runtime", Type: field.TypeString, Size: 32},
+		{Name: "runtime_version", Type: field.TypeString, Size: 64},
+		{Name: "client_version", Type: field.TypeString, Size: 64},
+		{Name: "tls_profile_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "transport_family", Type: field.TypeString, Size: 8},
+		{Name: "profile_payload", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "learned_from", Type: field.TypeString, Size: 32},
+		{Name: "learning_enabled", Type: field.TypeBool, Default: false},
+		{Name: "version_upgraded_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "account_id", Type: field.TypeInt64, Unique: true},
+	}
+	// AccountDeviceProfilesTable holds the schema information for the "account_device_profiles" table.
+	AccountDeviceProfilesTable = &schema.Table{
+		Name:       "account_device_profiles",
+		Columns:    AccountDeviceProfilesColumns,
+		PrimaryKey: []*schema.Column{AccountDeviceProfilesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "account_device_profiles_accounts_device_profile",
+				Columns:    []*schema.Column{AccountDeviceProfilesColumns[24]},
+				RefColumns: []*schema.Column{AccountsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+	}
 	// AccountGroupsColumns holds the columns for the "account_groups" table.
 	AccountGroupsColumns = []*schema.Column{
 		{Name: "priority", Type: field.TypeInt, Default: 50},
@@ -2397,6 +2439,7 @@ var (
 	Tables = []*schema.Table{
 		APIKeysTable,
 		AccountsTable,
+		AccountDeviceProfilesTable,
 		AccountGroupsTable,
 		AnnouncementsTable,
 		AnnouncementReadsTable,
@@ -2455,6 +2498,24 @@ func init() {
 	AccountsTable.ForeignKeys[1].RefTable = AccountsTable
 	AccountsTable.Annotation = &entsql.Annotation{
 		Table: "accounts",
+	}
+	AccountDeviceProfilesTable.ForeignKeys[0].RefTable = AccountsTable
+	AccountDeviceProfilesTable.Annotation = &entsql.Annotation{
+		Table: "account_device_profiles",
+	}
+	AccountDeviceProfilesTable.Annotation.Checks = map[string]string{
+		"account_device_profiles_arch_check":              "char_length(arch) BETWEEN 1 AND 32",
+		"account_device_profiles_client_family_check":     "client_family IN ('claude-code', 'codex-cli', 'grok-cli', 'kiro-ide', 'gemini-cli', 'antigravity')",
+		"account_device_profiles_learned_from_check":      "learned_from IN ('baseline', 'official_traffic', 'baseline_floor')",
+		"account_device_profiles_os_family_check":         "char_length(os_family) BETWEEN 1 AND 32",
+		"account_device_profiles_platform_check":          "platform IN ('anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kiro')",
+		"account_device_profiles_profile_payload_check":   "jsonb_typeof(profile_payload) = 'object'",
+		"account_device_profiles_revision_check":          "revision >= 1",
+		"account_device_profiles_runtime_check":           "char_length(runtime) BETWEEN 1 AND 32",
+		"account_device_profiles_schema_version_check":    "schema_version BETWEEN 1 AND 100",
+		"account_device_profiles_session_namespace_check": "session_namespace ~ '^[0-9a-f]{32,64}$'",
+		"account_device_profiles_tls_profile_id_check":    "tls_profile_id IS NULL OR tls_profile_id > 0",
+		"account_device_profiles_transport_family_check":  "transport_family IN ('h1', 'h2')",
 	}
 	AccountGroupsTable.ForeignKeys[0].RefTable = AccountsTable
 	AccountGroupsTable.ForeignKeys[1].RefTable = GroupsTable

@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/account"
+	"github.com/Wei-Shaw/sub2api/ent/accountdeviceprofile"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -488,6 +489,25 @@ func (_c *AccountCreate) AddUsageLogs(v ...*UsageLog) *AccountCreate {
 	return _c.AddUsageLogIDs(ids...)
 }
 
+// SetDeviceProfileID sets the "device_profile" edge to the AccountDeviceProfile entity by ID.
+func (_c *AccountCreate) SetDeviceProfileID(id int64) *AccountCreate {
+	_c.mutation.SetDeviceProfileID(id)
+	return _c
+}
+
+// SetNillableDeviceProfileID sets the "device_profile" edge to the AccountDeviceProfile entity by ID if the given value is not nil.
+func (_c *AccountCreate) SetNillableDeviceProfileID(id *int64) *AccountCreate {
+	if id != nil {
+		_c = _c.SetDeviceProfileID(*id)
+	}
+	return _c
+}
+
+// SetDeviceProfile sets the "device_profile" edge to the AccountDeviceProfile entity.
+func (_c *AccountCreate) SetDeviceProfile(v *AccountDeviceProfile) *AccountCreate {
+	return _c.SetDeviceProfileID(v.ID)
+}
+
 // Mutation returns the AccountMutation object of the builder.
 func (_c *AccountCreate) Mutation() *AccountMutation {
 	return _c.mutation
@@ -880,6 +900,22 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(usagelog.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.DeviceProfileIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   account.DeviceProfileTable,
+			Columns: []string{account.DeviceProfileColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(accountdeviceprofile.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

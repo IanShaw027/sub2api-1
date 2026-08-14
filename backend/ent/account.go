@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent/account"
+	"github.com/Wei-Shaw/sub2api/ent/accountdeviceprofile"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
 )
 
@@ -99,11 +100,13 @@ type AccountEdges struct {
 	Children []*Account `json:"children,omitempty"`
 	// UsageLogs holds the value of the usage_logs edge.
 	UsageLogs []*UsageLog `json:"usage_logs,omitempty"`
+	// DeviceProfile holds the value of the device_profile edge.
+	DeviceProfile *AccountDeviceProfile `json:"device_profile,omitempty"`
 	// AccountGroups holds the value of the account_groups edge.
 	AccountGroups []*AccountGroup `json:"account_groups,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [6]bool
+	loadedTypes [7]bool
 }
 
 // GroupsOrErr returns the Groups value or an error if the edge
@@ -155,10 +158,21 @@ func (e AccountEdges) UsageLogsOrErr() ([]*UsageLog, error) {
 	return nil, &NotLoadedError{edge: "usage_logs"}
 }
 
+// DeviceProfileOrErr returns the DeviceProfile value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e AccountEdges) DeviceProfileOrErr() (*AccountDeviceProfile, error) {
+	if e.DeviceProfile != nil {
+		return e.DeviceProfile, nil
+	} else if e.loadedTypes[5] {
+		return nil, &NotFoundError{label: accountdeviceprofile.Label}
+	}
+	return nil, &NotLoadedError{edge: "device_profile"}
+}
+
 // AccountGroupsOrErr returns the AccountGroups value or an error if the edge
 // was not loaded in eager-loading.
 func (e AccountEdges) AccountGroupsOrErr() ([]*AccountGroup, error) {
-	if e.loadedTypes[5] {
+	if e.loadedTypes[6] {
 		return e.AccountGroups, nil
 	}
 	return nil, &NotLoadedError{edge: "account_groups"}
@@ -445,6 +459,11 @@ func (_m *Account) QueryChildren() *AccountQuery {
 // QueryUsageLogs queries the "usage_logs" edge of the Account entity.
 func (_m *Account) QueryUsageLogs() *UsageLogQuery {
 	return NewAccountClient(_m.config).QueryUsageLogs(_m)
+}
+
+// QueryDeviceProfile queries the "device_profile" edge of the Account entity.
+func (_m *Account) QueryDeviceProfile() *AccountDeviceProfileQuery {
+	return NewAccountClient(_m.config).QueryDeviceProfile(_m)
 }
 
 // QueryAccountGroups queries the "account_groups" edge of the Account entity.

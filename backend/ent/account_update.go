@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/account"
+	"github.com/Wei-Shaw/sub2api/ent/accountdeviceprofile"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
@@ -633,6 +634,25 @@ func (_u *AccountUpdate) AddUsageLogs(v ...*UsageLog) *AccountUpdate {
 	return _u.AddUsageLogIDs(ids...)
 }
 
+// SetDeviceProfileID sets the "device_profile" edge to the AccountDeviceProfile entity by ID.
+func (_u *AccountUpdate) SetDeviceProfileID(id int64) *AccountUpdate {
+	_u.mutation.SetDeviceProfileID(id)
+	return _u
+}
+
+// SetNillableDeviceProfileID sets the "device_profile" edge to the AccountDeviceProfile entity by ID if the given value is not nil.
+func (_u *AccountUpdate) SetNillableDeviceProfileID(id *int64) *AccountUpdate {
+	if id != nil {
+		_u = _u.SetDeviceProfileID(*id)
+	}
+	return _u
+}
+
+// SetDeviceProfile sets the "device_profile" edge to the AccountDeviceProfile entity.
+func (_u *AccountUpdate) SetDeviceProfile(v *AccountDeviceProfile) *AccountUpdate {
+	return _u.SetDeviceProfileID(v.ID)
+}
+
 // Mutation returns the AccountMutation object of the builder.
 func (_u *AccountUpdate) Mutation() *AccountMutation {
 	return _u.mutation
@@ -711,6 +731,12 @@ func (_u *AccountUpdate) RemoveUsageLogs(v ...*UsageLog) *AccountUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveUsageLogIDs(ids...)
+}
+
+// ClearDeviceProfile clears the "device_profile" edge to the AccountDeviceProfile entity.
+func (_u *AccountUpdate) ClearDeviceProfile() *AccountUpdate {
+	_u.mutation.ClearDeviceProfile()
+	return _u
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -1144,6 +1170,35 @@ func (_u *AccountUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(usagelog.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.DeviceProfileCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   account.DeviceProfileTable,
+			Columns: []string{account.DeviceProfileColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(accountdeviceprofile.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.DeviceProfileIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   account.DeviceProfileTable,
+			Columns: []string{account.DeviceProfileColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(accountdeviceprofile.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -1773,6 +1828,25 @@ func (_u *AccountUpdateOne) AddUsageLogs(v ...*UsageLog) *AccountUpdateOne {
 	return _u.AddUsageLogIDs(ids...)
 }
 
+// SetDeviceProfileID sets the "device_profile" edge to the AccountDeviceProfile entity by ID.
+func (_u *AccountUpdateOne) SetDeviceProfileID(id int64) *AccountUpdateOne {
+	_u.mutation.SetDeviceProfileID(id)
+	return _u
+}
+
+// SetNillableDeviceProfileID sets the "device_profile" edge to the AccountDeviceProfile entity by ID if the given value is not nil.
+func (_u *AccountUpdateOne) SetNillableDeviceProfileID(id *int64) *AccountUpdateOne {
+	if id != nil {
+		_u = _u.SetDeviceProfileID(*id)
+	}
+	return _u
+}
+
+// SetDeviceProfile sets the "device_profile" edge to the AccountDeviceProfile entity.
+func (_u *AccountUpdateOne) SetDeviceProfile(v *AccountDeviceProfile) *AccountUpdateOne {
+	return _u.SetDeviceProfileID(v.ID)
+}
+
 // Mutation returns the AccountMutation object of the builder.
 func (_u *AccountUpdateOne) Mutation() *AccountMutation {
 	return _u.mutation
@@ -1851,6 +1925,12 @@ func (_u *AccountUpdateOne) RemoveUsageLogs(v ...*UsageLog) *AccountUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveUsageLogIDs(ids...)
+}
+
+// ClearDeviceProfile clears the "device_profile" edge to the AccountDeviceProfile entity.
+func (_u *AccountUpdateOne) ClearDeviceProfile() *AccountUpdateOne {
+	_u.mutation.ClearDeviceProfile()
+	return _u
 }
 
 // Where appends a list predicates to the AccountUpdate builder.
@@ -2314,6 +2394,35 @@ func (_u *AccountUpdateOne) sqlSave(ctx context.Context) (_node *Account, err er
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(usagelog.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.DeviceProfileCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   account.DeviceProfileTable,
+			Columns: []string{account.DeviceProfileColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(accountdeviceprofile.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.DeviceProfileIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   account.DeviceProfileTable,
+			Columns: []string{account.DeviceProfileColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(accountdeviceprofile.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

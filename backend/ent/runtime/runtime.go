@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/ent/account"
+	"github.com/Wei-Shaw/sub2api/ent/accountdeviceprofile"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
@@ -265,6 +266,306 @@ func init() {
 	accountDescSessionWindowStatus := accountFields[25].Descriptor()
 	// account.SessionWindowStatusValidator is a validator for the "session_window_status" field. It is called by the builders before save.
 	account.SessionWindowStatusValidator = accountDescSessionWindowStatus.Validators[0].(func(string) error)
+	accountdeviceprofileMixin := schema.AccountDeviceProfile{}.Mixin()
+	accountdeviceprofileMixinFields0 := accountdeviceprofileMixin[0].Fields()
+	_ = accountdeviceprofileMixinFields0
+	accountdeviceprofileFields := schema.AccountDeviceProfile{}.Fields()
+	_ = accountdeviceprofileFields
+	// accountdeviceprofileDescCreatedAt is the schema descriptor for created_at field.
+	accountdeviceprofileDescCreatedAt := accountdeviceprofileMixinFields0[0].Descriptor()
+	// accountdeviceprofile.DefaultCreatedAt holds the default value on creation for the created_at field.
+	accountdeviceprofile.DefaultCreatedAt = accountdeviceprofileDescCreatedAt.Default.(func() time.Time)
+	// accountdeviceprofileDescUpdatedAt is the schema descriptor for updated_at field.
+	accountdeviceprofileDescUpdatedAt := accountdeviceprofileMixinFields0[1].Descriptor()
+	// accountdeviceprofile.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	accountdeviceprofile.DefaultUpdatedAt = accountdeviceprofileDescUpdatedAt.Default.(func() time.Time)
+	// accountdeviceprofile.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	accountdeviceprofile.UpdateDefaultUpdatedAt = accountdeviceprofileDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// accountdeviceprofileDescRevision is the schema descriptor for revision field.
+	accountdeviceprofileDescRevision := accountdeviceprofileFields[1].Descriptor()
+	// accountdeviceprofile.DefaultRevision holds the default value on creation for the revision field.
+	accountdeviceprofile.DefaultRevision = accountdeviceprofileDescRevision.Default.(int64)
+	// accountdeviceprofileDescSchemaVersion is the schema descriptor for schema_version field.
+	accountdeviceprofileDescSchemaVersion := accountdeviceprofileFields[2].Descriptor()
+	// accountdeviceprofile.DefaultSchemaVersion holds the default value on creation for the schema_version field.
+	accountdeviceprofile.DefaultSchemaVersion = accountdeviceprofileDescSchemaVersion.Default.(int)
+	// accountdeviceprofile.SchemaVersionValidator is a validator for the "schema_version" field. It is called by the builders before save.
+	accountdeviceprofile.SchemaVersionValidator = accountdeviceprofileDescSchemaVersion.Validators[0].(func(int) error)
+	// accountdeviceprofileDescPlatform is the schema descriptor for platform field.
+	accountdeviceprofileDescPlatform := accountdeviceprofileFields[3].Descriptor()
+	// accountdeviceprofile.PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
+	accountdeviceprofile.PlatformValidator = func() func(string) error {
+		validators := accountdeviceprofileDescPlatform.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(platform string) error {
+			for _, fn := range fns {
+				if err := fn(platform); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accountdeviceprofileDescClientFamily is the schema descriptor for client_family field.
+	accountdeviceprofileDescClientFamily := accountdeviceprofileFields[4].Descriptor()
+	// accountdeviceprofile.ClientFamilyValidator is a validator for the "client_family" field. It is called by the builders before save.
+	accountdeviceprofile.ClientFamilyValidator = func() func(string) error {
+		validators := accountdeviceprofileDescClientFamily.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(client_family string) error {
+			for _, fn := range fns {
+				if err := fn(client_family); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accountdeviceprofileDescInstallationID is the schema descriptor for installation_id field.
+	accountdeviceprofileDescInstallationID := accountdeviceprofileFields[5].Descriptor()
+	// accountdeviceprofile.InstallationIDValidator is a validator for the "installation_id" field. It is called by the builders before save.
+	accountdeviceprofile.InstallationIDValidator = func() func(string) error {
+		validators := accountdeviceprofileDescInstallationID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(installation_id string) error {
+			for _, fn := range fns {
+				if err := fn(installation_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accountdeviceprofileDescDeviceID is the schema descriptor for device_id field.
+	accountdeviceprofileDescDeviceID := accountdeviceprofileFields[6].Descriptor()
+	// accountdeviceprofile.DeviceIDValidator is a validator for the "device_id" field. It is called by the builders before save.
+	accountdeviceprofile.DeviceIDValidator = func() func(string) error {
+		validators := accountdeviceprofileDescDeviceID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(device_id string) error {
+			for _, fn := range fns {
+				if err := fn(device_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accountdeviceprofileDescClientID is the schema descriptor for client_id field.
+	accountdeviceprofileDescClientID := accountdeviceprofileFields[7].Descriptor()
+	// accountdeviceprofile.DefaultClientID holds the default value on creation for the client_id field.
+	accountdeviceprofile.DefaultClientID = accountdeviceprofileDescClientID.Default.(string)
+	// accountdeviceprofile.ClientIDValidator is a validator for the "client_id" field. It is called by the builders before save.
+	accountdeviceprofile.ClientIDValidator = accountdeviceprofileDescClientID.Validators[0].(func(string) error)
+	// accountdeviceprofileDescMachineID is the schema descriptor for machine_id field.
+	accountdeviceprofileDescMachineID := accountdeviceprofileFields[8].Descriptor()
+	// accountdeviceprofile.MachineIDValidator is a validator for the "machine_id" field. It is called by the builders before save.
+	accountdeviceprofile.MachineIDValidator = func() func(string) error {
+		validators := accountdeviceprofileDescMachineID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(machine_id string) error {
+			for _, fn := range fns {
+				if err := fn(machine_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accountdeviceprofileDescGatewayAccountUUID is the schema descriptor for gateway_account_uuid field.
+	accountdeviceprofileDescGatewayAccountUUID := accountdeviceprofileFields[9].Descriptor()
+	// accountdeviceprofile.GatewayAccountUUIDValidator is a validator for the "gateway_account_uuid" field. It is called by the builders before save.
+	accountdeviceprofile.GatewayAccountUUIDValidator = func() func(string) error {
+		validators := accountdeviceprofileDescGatewayAccountUUID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(gateway_account_uuid string) error {
+			for _, fn := range fns {
+				if err := fn(gateway_account_uuid); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accountdeviceprofileDescSessionNamespace is the schema descriptor for session_namespace field.
+	accountdeviceprofileDescSessionNamespace := accountdeviceprofileFields[10].Descriptor()
+	// accountdeviceprofile.SessionNamespaceValidator is a validator for the "session_namespace" field. It is called by the builders before save.
+	accountdeviceprofile.SessionNamespaceValidator = func() func(string) error {
+		validators := accountdeviceprofileDescSessionNamespace.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(session_namespace string) error {
+			for _, fn := range fns {
+				if err := fn(session_namespace); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accountdeviceprofileDescOsFamily is the schema descriptor for os_family field.
+	accountdeviceprofileDescOsFamily := accountdeviceprofileFields[11].Descriptor()
+	// accountdeviceprofile.OsFamilyValidator is a validator for the "os_family" field. It is called by the builders before save.
+	accountdeviceprofile.OsFamilyValidator = func() func(string) error {
+		validators := accountdeviceprofileDescOsFamily.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(os_family string) error {
+			for _, fn := range fns {
+				if err := fn(os_family); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accountdeviceprofileDescArch is the schema descriptor for arch field.
+	accountdeviceprofileDescArch := accountdeviceprofileFields[12].Descriptor()
+	// accountdeviceprofile.ArchValidator is a validator for the "arch" field. It is called by the builders before save.
+	accountdeviceprofile.ArchValidator = func() func(string) error {
+		validators := accountdeviceprofileDescArch.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(arch string) error {
+			for _, fn := range fns {
+				if err := fn(arch); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accountdeviceprofileDescRuntime is the schema descriptor for runtime field.
+	accountdeviceprofileDescRuntime := accountdeviceprofileFields[13].Descriptor()
+	// accountdeviceprofile.RuntimeValidator is a validator for the "runtime" field. It is called by the builders before save.
+	accountdeviceprofile.RuntimeValidator = func() func(string) error {
+		validators := accountdeviceprofileDescRuntime.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(runtime string) error {
+			for _, fn := range fns {
+				if err := fn(runtime); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accountdeviceprofileDescRuntimeVersion is the schema descriptor for runtime_version field.
+	accountdeviceprofileDescRuntimeVersion := accountdeviceprofileFields[14].Descriptor()
+	// accountdeviceprofile.RuntimeVersionValidator is a validator for the "runtime_version" field. It is called by the builders before save.
+	accountdeviceprofile.RuntimeVersionValidator = func() func(string) error {
+		validators := accountdeviceprofileDescRuntimeVersion.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(runtime_version string) error {
+			for _, fn := range fns {
+				if err := fn(runtime_version); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accountdeviceprofileDescClientVersion is the schema descriptor for client_version field.
+	accountdeviceprofileDescClientVersion := accountdeviceprofileFields[15].Descriptor()
+	// accountdeviceprofile.ClientVersionValidator is a validator for the "client_version" field. It is called by the builders before save.
+	accountdeviceprofile.ClientVersionValidator = func() func(string) error {
+		validators := accountdeviceprofileDescClientVersion.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(client_version string) error {
+			for _, fn := range fns {
+				if err := fn(client_version); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accountdeviceprofileDescTLSProfileID is the schema descriptor for tls_profile_id field.
+	accountdeviceprofileDescTLSProfileID := accountdeviceprofileFields[16].Descriptor()
+	// accountdeviceprofile.TLSProfileIDValidator is a validator for the "tls_profile_id" field. It is called by the builders before save.
+	accountdeviceprofile.TLSProfileIDValidator = accountdeviceprofileDescTLSProfileID.Validators[0].(func(int64) error)
+	// accountdeviceprofileDescTransportFamily is the schema descriptor for transport_family field.
+	accountdeviceprofileDescTransportFamily := accountdeviceprofileFields[17].Descriptor()
+	// accountdeviceprofile.TransportFamilyValidator is a validator for the "transport_family" field. It is called by the builders before save.
+	accountdeviceprofile.TransportFamilyValidator = func() func(string) error {
+		validators := accountdeviceprofileDescTransportFamily.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(transport_family string) error {
+			for _, fn := range fns {
+				if err := fn(transport_family); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accountdeviceprofileDescProfilePayload is the schema descriptor for profile_payload field.
+	accountdeviceprofileDescProfilePayload := accountdeviceprofileFields[18].Descriptor()
+	// accountdeviceprofile.DefaultProfilePayload holds the default value on creation for the profile_payload field.
+	accountdeviceprofile.DefaultProfilePayload = accountdeviceprofileDescProfilePayload.Default.(func() map[string]interface{})
+	// accountdeviceprofileDescLearnedFrom is the schema descriptor for learned_from field.
+	accountdeviceprofileDescLearnedFrom := accountdeviceprofileFields[19].Descriptor()
+	// accountdeviceprofile.LearnedFromValidator is a validator for the "learned_from" field. It is called by the builders before save.
+	accountdeviceprofile.LearnedFromValidator = func() func(string) error {
+		validators := accountdeviceprofileDescLearnedFrom.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+			validators[2].(func(string) error),
+		}
+		return func(learned_from string) error {
+			for _, fn := range fns {
+				if err := fn(learned_from); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// accountdeviceprofileDescLearningEnabled is the schema descriptor for learning_enabled field.
+	accountdeviceprofileDescLearningEnabled := accountdeviceprofileFields[20].Descriptor()
+	// accountdeviceprofile.DefaultLearningEnabled holds the default value on creation for the learning_enabled field.
+	accountdeviceprofile.DefaultLearningEnabled = accountdeviceprofileDescLearningEnabled.Default.(bool)
 	accountgroupFields := schema.AccountGroup{}.Fields()
 	_ = accountgroupFields
 	// accountgroupDescPriority is the schema descriptor for priority field.
