@@ -80,6 +80,19 @@ func IsCodexOfficialClientRequestStrict(userAgent string) bool {
 	return isCodexOfficialClientRequest(userAgent, true)
 }
 
+// IsCodexTUIOrCLIUserAgent reports whether UA is the Codex CLI or interactive
+// TUI (`codex_cli_rs/` or `codex-tui/` prefix only). LearnIfOfficial uses this
+// narrower proof because a learn CAS writes durable per-account software;
+// vscode/app/sdk/desktop/exec and originator-only inbound are excluded even
+// though they are official for passthrough / codex_cli_only.
+//
+// Prefixes are the first two entries of codexOfficialClientUAPrefixes. Keep
+// both lists in sync if those client names change.
+func IsCodexTUIOrCLIUserAgent(userAgent string) bool {
+	ua := normalizeCodexClientHeader(userAgent)
+	return strings.HasPrefix(ua, "codex_cli_rs/") || strings.HasPrefix(ua, "codex-tui/")
+}
+
 // isCodexOfficialClientRequest 匹配层级（优先级由高到低）：
 //  1. UA 前缀集 codexOfficialClientUAPrefixes（strict=仅 HasPrefix；否则含 Contains 子串兜底）
 //  2. `Codex ` 家族前缀（保留空格，避免退化为裸 codex）

@@ -266,7 +266,9 @@ func isOfficialInbound(platform string, inbound OfficialInbound) bool {
 	case PlatformAnthropic:
 		return claudeCodeUAPattern.MatchString(ua)
 	case PlatformOpenAI:
-		return openai.IsCodexOfficialClientByHeaders(ua, inbound.Originator)
+		// Learn writes durable software; only TUI/CLI UA prefixes count.
+		// Broader official-family / originator-only proof stays on passthrough.
+		return openai.IsCodexTUIOrCLIUserAgent(ua)
 	default:
 		family := DefaultClientFamily(platform)
 		if family == "" {
