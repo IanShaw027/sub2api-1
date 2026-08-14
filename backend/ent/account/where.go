@@ -1720,6 +1720,29 @@ func HasUsageLogsWith(preds ...predicate.UsageLog) predicate.Account {
 	})
 }
 
+// HasDeviceProfile applies the HasEdge predicate on the "device_profile" edge.
+func HasDeviceProfile() predicate.Account {
+	return predicate.Account(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, DeviceProfileTable, DeviceProfileColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasDeviceProfileWith applies the HasEdge predicate on the "device_profile" edge with a given conditions (other predicates).
+func HasDeviceProfileWith(preds ...predicate.AccountDeviceProfile) predicate.Account {
+	return predicate.Account(func(s *sql.Selector) {
+		step := newDeviceProfileStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasAccountGroups applies the HasEdge predicate on the "account_groups" edge.
 func HasAccountGroups() predicate.Account {
 	return predicate.Account(func(s *sql.Selector) {

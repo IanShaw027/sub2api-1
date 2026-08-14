@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent/account"
+	"github.com/Wei-Shaw/sub2api/ent/accountdeviceprofile"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
@@ -74,6 +75,7 @@ const (
 	// Node types.
 	TypeAPIKey                        = "APIKey"
 	TypeAccount                       = "Account"
+	TypeAccountDeviceProfile          = "AccountDeviceProfile"
 	TypeAccountGroup                  = "AccountGroup"
 	TypeAnnouncement                  = "Announcement"
 	TypeAnnouncementRead              = "AnnouncementRead"
@@ -2349,6 +2351,8 @@ type AccountMutation struct {
 	usage_logs                  map[int64]struct{}
 	removedusage_logs           map[int64]struct{}
 	clearedusage_logs           bool
+	device_profile              *int64
+	cleareddevice_profile       bool
 	done                        bool
 	oldValue                    func(context.Context) (*Account, error)
 	predicates                  []predicate.Account
@@ -4120,6 +4124,45 @@ func (m *AccountMutation) ResetUsageLogs() {
 	m.removedusage_logs = nil
 }
 
+// SetDeviceProfileID sets the "device_profile" edge to the AccountDeviceProfile entity by id.
+func (m *AccountMutation) SetDeviceProfileID(id int64) {
+	m.device_profile = &id
+}
+
+// ClearDeviceProfile clears the "device_profile" edge to the AccountDeviceProfile entity.
+func (m *AccountMutation) ClearDeviceProfile() {
+	m.cleareddevice_profile = true
+}
+
+// DeviceProfileCleared reports if the "device_profile" edge to the AccountDeviceProfile entity was cleared.
+func (m *AccountMutation) DeviceProfileCleared() bool {
+	return m.cleareddevice_profile
+}
+
+// DeviceProfileID returns the "device_profile" edge ID in the mutation.
+func (m *AccountMutation) DeviceProfileID() (id int64, exists bool) {
+	if m.device_profile != nil {
+		return *m.device_profile, true
+	}
+	return
+}
+
+// DeviceProfileIDs returns the "device_profile" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// DeviceProfileID instead. It exists only for internal usage by the builders.
+func (m *AccountMutation) DeviceProfileIDs() (ids []int64) {
+	if id := m.device_profile; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetDeviceProfile resets all changes to the "device_profile" edge.
+func (m *AccountMutation) ResetDeviceProfile() {
+	m.device_profile = nil
+	m.cleareddevice_profile = false
+}
+
 // Where appends a list predicates to the AccountMutation builder.
 func (m *AccountMutation) Where(ps ...predicate.Account) {
 	m.predicates = append(m.predicates, ps...)
@@ -4931,7 +4974,7 @@ func (m *AccountMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *AccountMutation) AddedEdges() []string {
-	edges := make([]string, 0, 5)
+	edges := make([]string, 0, 6)
 	if m.groups != nil {
 		edges = append(edges, account.EdgeGroups)
 	}
@@ -4946,6 +4989,9 @@ func (m *AccountMutation) AddedEdges() []string {
 	}
 	if m.usage_logs != nil {
 		edges = append(edges, account.EdgeUsageLogs)
+	}
+	if m.device_profile != nil {
+		edges = append(edges, account.EdgeDeviceProfile)
 	}
 	return edges
 }
@@ -4980,13 +5026,17 @@ func (m *AccountMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case account.EdgeDeviceProfile:
+		if id := m.device_profile; id != nil {
+			return []ent.Value{*id}
+		}
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *AccountMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 5)
+	edges := make([]string, 0, 6)
 	if m.removedgroups != nil {
 		edges = append(edges, account.EdgeGroups)
 	}
@@ -5027,7 +5077,7 @@ func (m *AccountMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *AccountMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 5)
+	edges := make([]string, 0, 6)
 	if m.clearedgroups {
 		edges = append(edges, account.EdgeGroups)
 	}
@@ -5042,6 +5092,9 @@ func (m *AccountMutation) ClearedEdges() []string {
 	}
 	if m.clearedusage_logs {
 		edges = append(edges, account.EdgeUsageLogs)
+	}
+	if m.cleareddevice_profile {
+		edges = append(edges, account.EdgeDeviceProfile)
 	}
 	return edges
 }
@@ -5060,6 +5113,8 @@ func (m *AccountMutation) EdgeCleared(name string) bool {
 		return m.clearedchildren
 	case account.EdgeUsageLogs:
 		return m.clearedusage_logs
+	case account.EdgeDeviceProfile:
+		return m.cleareddevice_profile
 	}
 	return false
 }
@@ -5073,6 +5128,9 @@ func (m *AccountMutation) ClearEdge(name string) error {
 		return nil
 	case account.EdgeParent:
 		m.ClearParent()
+		return nil
+	case account.EdgeDeviceProfile:
+		m.ClearDeviceProfile()
 		return nil
 	}
 	return fmt.Errorf("unknown Account unique edge %s", name)
@@ -5097,8 +5155,1789 @@ func (m *AccountMutation) ResetEdge(name string) error {
 	case account.EdgeUsageLogs:
 		m.ResetUsageLogs()
 		return nil
+	case account.EdgeDeviceProfile:
+		m.ResetDeviceProfile()
+		return nil
 	}
 	return fmt.Errorf("unknown Account edge %s", name)
+}
+
+// AccountDeviceProfileMutation represents an operation that mutates the AccountDeviceProfile nodes in the graph.
+type AccountDeviceProfileMutation struct {
+	config
+	op                   Op
+	typ                  string
+	id                   *int64
+	created_at           *time.Time
+	updated_at           *time.Time
+	revision             *int64
+	addrevision          *int64
+	schema_version       *int
+	addschema_version    *int
+	platform             *string
+	client_family        *string
+	installation_id      *string
+	device_id            *string
+	client_id            *string
+	machine_id           *string
+	gateway_account_uuid *string
+	session_namespace    *string
+	os_family            *string
+	arch                 *string
+	runtime              *string
+	runtime_version      *string
+	client_version       *string
+	transport_family     *string
+	profile_payload      *map[string]interface{}
+	learned_from         *string
+	learning_enabled     *bool
+	version_upgraded_at  *time.Time
+	clearedFields        map[string]struct{}
+	account              *int64
+	clearedaccount       bool
+	tls_profile          *int64
+	clearedtls_profile   bool
+	done                 bool
+	oldValue             func(context.Context) (*AccountDeviceProfile, error)
+	predicates           []predicate.AccountDeviceProfile
+}
+
+var _ ent.Mutation = (*AccountDeviceProfileMutation)(nil)
+
+// accountdeviceprofileOption allows management of the mutation configuration using functional options.
+type accountdeviceprofileOption func(*AccountDeviceProfileMutation)
+
+// newAccountDeviceProfileMutation creates new mutation for the AccountDeviceProfile entity.
+func newAccountDeviceProfileMutation(c config, op Op, opts ...accountdeviceprofileOption) *AccountDeviceProfileMutation {
+	m := &AccountDeviceProfileMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeAccountDeviceProfile,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withAccountDeviceProfileID sets the ID field of the mutation.
+func withAccountDeviceProfileID(id int64) accountdeviceprofileOption {
+	return func(m *AccountDeviceProfileMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *AccountDeviceProfile
+		)
+		m.oldValue = func(ctx context.Context) (*AccountDeviceProfile, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().AccountDeviceProfile.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withAccountDeviceProfile sets the old AccountDeviceProfile of the mutation.
+func withAccountDeviceProfile(node *AccountDeviceProfile) accountdeviceprofileOption {
+	return func(m *AccountDeviceProfileMutation) {
+		m.oldValue = func(context.Context) (*AccountDeviceProfile, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m AccountDeviceProfileMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m AccountDeviceProfileMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *AccountDeviceProfileMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *AccountDeviceProfileMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().AccountDeviceProfile.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *AccountDeviceProfileMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *AccountDeviceProfileMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *AccountDeviceProfileMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *AccountDeviceProfileMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *AccountDeviceProfileMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *AccountDeviceProfileMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetAccountID sets the "account_id" field.
+func (m *AccountDeviceProfileMutation) SetAccountID(i int64) {
+	m.account = &i
+}
+
+// AccountID returns the value of the "account_id" field in the mutation.
+func (m *AccountDeviceProfileMutation) AccountID() (r int64, exists bool) {
+	v := m.account
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccountID returns the old "account_id" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldAccountID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccountID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccountID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccountID: %w", err)
+	}
+	return oldValue.AccountID, nil
+}
+
+// ResetAccountID resets all changes to the "account_id" field.
+func (m *AccountDeviceProfileMutation) ResetAccountID() {
+	m.account = nil
+}
+
+// SetRevision sets the "revision" field.
+func (m *AccountDeviceProfileMutation) SetRevision(i int64) {
+	m.revision = &i
+	m.addrevision = nil
+}
+
+// Revision returns the value of the "revision" field in the mutation.
+func (m *AccountDeviceProfileMutation) Revision() (r int64, exists bool) {
+	v := m.revision
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRevision returns the old "revision" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldRevision(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRevision is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRevision requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRevision: %w", err)
+	}
+	return oldValue.Revision, nil
+}
+
+// AddRevision adds i to the "revision" field.
+func (m *AccountDeviceProfileMutation) AddRevision(i int64) {
+	if m.addrevision != nil {
+		*m.addrevision += i
+	} else {
+		m.addrevision = &i
+	}
+}
+
+// AddedRevision returns the value that was added to the "revision" field in this mutation.
+func (m *AccountDeviceProfileMutation) AddedRevision() (r int64, exists bool) {
+	v := m.addrevision
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRevision resets all changes to the "revision" field.
+func (m *AccountDeviceProfileMutation) ResetRevision() {
+	m.revision = nil
+	m.addrevision = nil
+}
+
+// SetSchemaVersion sets the "schema_version" field.
+func (m *AccountDeviceProfileMutation) SetSchemaVersion(i int) {
+	m.schema_version = &i
+	m.addschema_version = nil
+}
+
+// SchemaVersion returns the value of the "schema_version" field in the mutation.
+func (m *AccountDeviceProfileMutation) SchemaVersion() (r int, exists bool) {
+	v := m.schema_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSchemaVersion returns the old "schema_version" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldSchemaVersion(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSchemaVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSchemaVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSchemaVersion: %w", err)
+	}
+	return oldValue.SchemaVersion, nil
+}
+
+// AddSchemaVersion adds i to the "schema_version" field.
+func (m *AccountDeviceProfileMutation) AddSchemaVersion(i int) {
+	if m.addschema_version != nil {
+		*m.addschema_version += i
+	} else {
+		m.addschema_version = &i
+	}
+}
+
+// AddedSchemaVersion returns the value that was added to the "schema_version" field in this mutation.
+func (m *AccountDeviceProfileMutation) AddedSchemaVersion() (r int, exists bool) {
+	v := m.addschema_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSchemaVersion resets all changes to the "schema_version" field.
+func (m *AccountDeviceProfileMutation) ResetSchemaVersion() {
+	m.schema_version = nil
+	m.addschema_version = nil
+}
+
+// SetPlatform sets the "platform" field.
+func (m *AccountDeviceProfileMutation) SetPlatform(s string) {
+	m.platform = &s
+}
+
+// Platform returns the value of the "platform" field in the mutation.
+func (m *AccountDeviceProfileMutation) Platform() (r string, exists bool) {
+	v := m.platform
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlatform returns the old "platform" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldPlatform(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlatform is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlatform requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlatform: %w", err)
+	}
+	return oldValue.Platform, nil
+}
+
+// ResetPlatform resets all changes to the "platform" field.
+func (m *AccountDeviceProfileMutation) ResetPlatform() {
+	m.platform = nil
+}
+
+// SetClientFamily sets the "client_family" field.
+func (m *AccountDeviceProfileMutation) SetClientFamily(s string) {
+	m.client_family = &s
+}
+
+// ClientFamily returns the value of the "client_family" field in the mutation.
+func (m *AccountDeviceProfileMutation) ClientFamily() (r string, exists bool) {
+	v := m.client_family
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClientFamily returns the old "client_family" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldClientFamily(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClientFamily is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClientFamily requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClientFamily: %w", err)
+	}
+	return oldValue.ClientFamily, nil
+}
+
+// ResetClientFamily resets all changes to the "client_family" field.
+func (m *AccountDeviceProfileMutation) ResetClientFamily() {
+	m.client_family = nil
+}
+
+// SetInstallationID sets the "installation_id" field.
+func (m *AccountDeviceProfileMutation) SetInstallationID(s string) {
+	m.installation_id = &s
+}
+
+// InstallationID returns the value of the "installation_id" field in the mutation.
+func (m *AccountDeviceProfileMutation) InstallationID() (r string, exists bool) {
+	v := m.installation_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldInstallationID returns the old "installation_id" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldInstallationID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldInstallationID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldInstallationID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldInstallationID: %w", err)
+	}
+	return oldValue.InstallationID, nil
+}
+
+// ResetInstallationID resets all changes to the "installation_id" field.
+func (m *AccountDeviceProfileMutation) ResetInstallationID() {
+	m.installation_id = nil
+}
+
+// SetDeviceID sets the "device_id" field.
+func (m *AccountDeviceProfileMutation) SetDeviceID(s string) {
+	m.device_id = &s
+}
+
+// DeviceID returns the value of the "device_id" field in the mutation.
+func (m *AccountDeviceProfileMutation) DeviceID() (r string, exists bool) {
+	v := m.device_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDeviceID returns the old "device_id" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldDeviceID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDeviceID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDeviceID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDeviceID: %w", err)
+	}
+	return oldValue.DeviceID, nil
+}
+
+// ResetDeviceID resets all changes to the "device_id" field.
+func (m *AccountDeviceProfileMutation) ResetDeviceID() {
+	m.device_id = nil
+}
+
+// SetClientID sets the "client_id" field.
+func (m *AccountDeviceProfileMutation) SetClientID(s string) {
+	m.client_id = &s
+}
+
+// ClientID returns the value of the "client_id" field in the mutation.
+func (m *AccountDeviceProfileMutation) ClientID() (r string, exists bool) {
+	v := m.client_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClientID returns the old "client_id" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldClientID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClientID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClientID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClientID: %w", err)
+	}
+	return oldValue.ClientID, nil
+}
+
+// ResetClientID resets all changes to the "client_id" field.
+func (m *AccountDeviceProfileMutation) ResetClientID() {
+	m.client_id = nil
+}
+
+// SetMachineID sets the "machine_id" field.
+func (m *AccountDeviceProfileMutation) SetMachineID(s string) {
+	m.machine_id = &s
+}
+
+// MachineID returns the value of the "machine_id" field in the mutation.
+func (m *AccountDeviceProfileMutation) MachineID() (r string, exists bool) {
+	v := m.machine_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMachineID returns the old "machine_id" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldMachineID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMachineID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMachineID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMachineID: %w", err)
+	}
+	return oldValue.MachineID, nil
+}
+
+// ResetMachineID resets all changes to the "machine_id" field.
+func (m *AccountDeviceProfileMutation) ResetMachineID() {
+	m.machine_id = nil
+}
+
+// SetGatewayAccountUUID sets the "gateway_account_uuid" field.
+func (m *AccountDeviceProfileMutation) SetGatewayAccountUUID(s string) {
+	m.gateway_account_uuid = &s
+}
+
+// GatewayAccountUUID returns the value of the "gateway_account_uuid" field in the mutation.
+func (m *AccountDeviceProfileMutation) GatewayAccountUUID() (r string, exists bool) {
+	v := m.gateway_account_uuid
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldGatewayAccountUUID returns the old "gateway_account_uuid" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldGatewayAccountUUID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldGatewayAccountUUID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldGatewayAccountUUID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldGatewayAccountUUID: %w", err)
+	}
+	return oldValue.GatewayAccountUUID, nil
+}
+
+// ResetGatewayAccountUUID resets all changes to the "gateway_account_uuid" field.
+func (m *AccountDeviceProfileMutation) ResetGatewayAccountUUID() {
+	m.gateway_account_uuid = nil
+}
+
+// SetSessionNamespace sets the "session_namespace" field.
+func (m *AccountDeviceProfileMutation) SetSessionNamespace(s string) {
+	m.session_namespace = &s
+}
+
+// SessionNamespace returns the value of the "session_namespace" field in the mutation.
+func (m *AccountDeviceProfileMutation) SessionNamespace() (r string, exists bool) {
+	v := m.session_namespace
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSessionNamespace returns the old "session_namespace" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldSessionNamespace(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSessionNamespace is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSessionNamespace requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSessionNamespace: %w", err)
+	}
+	return oldValue.SessionNamespace, nil
+}
+
+// ResetSessionNamespace resets all changes to the "session_namespace" field.
+func (m *AccountDeviceProfileMutation) ResetSessionNamespace() {
+	m.session_namespace = nil
+}
+
+// SetOsFamily sets the "os_family" field.
+func (m *AccountDeviceProfileMutation) SetOsFamily(s string) {
+	m.os_family = &s
+}
+
+// OsFamily returns the value of the "os_family" field in the mutation.
+func (m *AccountDeviceProfileMutation) OsFamily() (r string, exists bool) {
+	v := m.os_family
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldOsFamily returns the old "os_family" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldOsFamily(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldOsFamily is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldOsFamily requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldOsFamily: %w", err)
+	}
+	return oldValue.OsFamily, nil
+}
+
+// ResetOsFamily resets all changes to the "os_family" field.
+func (m *AccountDeviceProfileMutation) ResetOsFamily() {
+	m.os_family = nil
+}
+
+// SetArch sets the "arch" field.
+func (m *AccountDeviceProfileMutation) SetArch(s string) {
+	m.arch = &s
+}
+
+// Arch returns the value of the "arch" field in the mutation.
+func (m *AccountDeviceProfileMutation) Arch() (r string, exists bool) {
+	v := m.arch
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldArch returns the old "arch" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldArch(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldArch is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldArch requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldArch: %w", err)
+	}
+	return oldValue.Arch, nil
+}
+
+// ResetArch resets all changes to the "arch" field.
+func (m *AccountDeviceProfileMutation) ResetArch() {
+	m.arch = nil
+}
+
+// SetRuntime sets the "runtime" field.
+func (m *AccountDeviceProfileMutation) SetRuntime(s string) {
+	m.runtime = &s
+}
+
+// Runtime returns the value of the "runtime" field in the mutation.
+func (m *AccountDeviceProfileMutation) Runtime() (r string, exists bool) {
+	v := m.runtime
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRuntime returns the old "runtime" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldRuntime(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRuntime is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRuntime requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRuntime: %w", err)
+	}
+	return oldValue.Runtime, nil
+}
+
+// ResetRuntime resets all changes to the "runtime" field.
+func (m *AccountDeviceProfileMutation) ResetRuntime() {
+	m.runtime = nil
+}
+
+// SetRuntimeVersion sets the "runtime_version" field.
+func (m *AccountDeviceProfileMutation) SetRuntimeVersion(s string) {
+	m.runtime_version = &s
+}
+
+// RuntimeVersion returns the value of the "runtime_version" field in the mutation.
+func (m *AccountDeviceProfileMutation) RuntimeVersion() (r string, exists bool) {
+	v := m.runtime_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRuntimeVersion returns the old "runtime_version" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldRuntimeVersion(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRuntimeVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRuntimeVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRuntimeVersion: %w", err)
+	}
+	return oldValue.RuntimeVersion, nil
+}
+
+// ResetRuntimeVersion resets all changes to the "runtime_version" field.
+func (m *AccountDeviceProfileMutation) ResetRuntimeVersion() {
+	m.runtime_version = nil
+}
+
+// SetClientVersion sets the "client_version" field.
+func (m *AccountDeviceProfileMutation) SetClientVersion(s string) {
+	m.client_version = &s
+}
+
+// ClientVersion returns the value of the "client_version" field in the mutation.
+func (m *AccountDeviceProfileMutation) ClientVersion() (r string, exists bool) {
+	v := m.client_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldClientVersion returns the old "client_version" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldClientVersion(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldClientVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldClientVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldClientVersion: %w", err)
+	}
+	return oldValue.ClientVersion, nil
+}
+
+// ResetClientVersion resets all changes to the "client_version" field.
+func (m *AccountDeviceProfileMutation) ResetClientVersion() {
+	m.client_version = nil
+}
+
+// SetTLSProfileID sets the "tls_profile_id" field.
+func (m *AccountDeviceProfileMutation) SetTLSProfileID(i int64) {
+	m.tls_profile = &i
+}
+
+// TLSProfileID returns the value of the "tls_profile_id" field in the mutation.
+func (m *AccountDeviceProfileMutation) TLSProfileID() (r int64, exists bool) {
+	v := m.tls_profile
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTLSProfileID returns the old "tls_profile_id" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldTLSProfileID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTLSProfileID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTLSProfileID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTLSProfileID: %w", err)
+	}
+	return oldValue.TLSProfileID, nil
+}
+
+// ClearTLSProfileID clears the value of the "tls_profile_id" field.
+func (m *AccountDeviceProfileMutation) ClearTLSProfileID() {
+	m.tls_profile = nil
+	m.clearedFields[accountdeviceprofile.FieldTLSProfileID] = struct{}{}
+}
+
+// TLSProfileIDCleared returns if the "tls_profile_id" field was cleared in this mutation.
+func (m *AccountDeviceProfileMutation) TLSProfileIDCleared() bool {
+	_, ok := m.clearedFields[accountdeviceprofile.FieldTLSProfileID]
+	return ok
+}
+
+// ResetTLSProfileID resets all changes to the "tls_profile_id" field.
+func (m *AccountDeviceProfileMutation) ResetTLSProfileID() {
+	m.tls_profile = nil
+	delete(m.clearedFields, accountdeviceprofile.FieldTLSProfileID)
+}
+
+// SetTransportFamily sets the "transport_family" field.
+func (m *AccountDeviceProfileMutation) SetTransportFamily(s string) {
+	m.transport_family = &s
+}
+
+// TransportFamily returns the value of the "transport_family" field in the mutation.
+func (m *AccountDeviceProfileMutation) TransportFamily() (r string, exists bool) {
+	v := m.transport_family
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTransportFamily returns the old "transport_family" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldTransportFamily(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTransportFamily is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTransportFamily requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTransportFamily: %w", err)
+	}
+	return oldValue.TransportFamily, nil
+}
+
+// ResetTransportFamily resets all changes to the "transport_family" field.
+func (m *AccountDeviceProfileMutation) ResetTransportFamily() {
+	m.transport_family = nil
+}
+
+// SetProfilePayload sets the "profile_payload" field.
+func (m *AccountDeviceProfileMutation) SetProfilePayload(value map[string]interface{}) {
+	m.profile_payload = &value
+}
+
+// ProfilePayload returns the value of the "profile_payload" field in the mutation.
+func (m *AccountDeviceProfileMutation) ProfilePayload() (r map[string]interface{}, exists bool) {
+	v := m.profile_payload
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProfilePayload returns the old "profile_payload" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldProfilePayload(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProfilePayload is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProfilePayload requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProfilePayload: %w", err)
+	}
+	return oldValue.ProfilePayload, nil
+}
+
+// ResetProfilePayload resets all changes to the "profile_payload" field.
+func (m *AccountDeviceProfileMutation) ResetProfilePayload() {
+	m.profile_payload = nil
+}
+
+// SetLearnedFrom sets the "learned_from" field.
+func (m *AccountDeviceProfileMutation) SetLearnedFrom(s string) {
+	m.learned_from = &s
+}
+
+// LearnedFrom returns the value of the "learned_from" field in the mutation.
+func (m *AccountDeviceProfileMutation) LearnedFrom() (r string, exists bool) {
+	v := m.learned_from
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLearnedFrom returns the old "learned_from" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldLearnedFrom(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLearnedFrom is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLearnedFrom requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLearnedFrom: %w", err)
+	}
+	return oldValue.LearnedFrom, nil
+}
+
+// ResetLearnedFrom resets all changes to the "learned_from" field.
+func (m *AccountDeviceProfileMutation) ResetLearnedFrom() {
+	m.learned_from = nil
+}
+
+// SetLearningEnabled sets the "learning_enabled" field.
+func (m *AccountDeviceProfileMutation) SetLearningEnabled(b bool) {
+	m.learning_enabled = &b
+}
+
+// LearningEnabled returns the value of the "learning_enabled" field in the mutation.
+func (m *AccountDeviceProfileMutation) LearningEnabled() (r bool, exists bool) {
+	v := m.learning_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLearningEnabled returns the old "learning_enabled" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldLearningEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLearningEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLearningEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLearningEnabled: %w", err)
+	}
+	return oldValue.LearningEnabled, nil
+}
+
+// ResetLearningEnabled resets all changes to the "learning_enabled" field.
+func (m *AccountDeviceProfileMutation) ResetLearningEnabled() {
+	m.learning_enabled = nil
+}
+
+// SetVersionUpgradedAt sets the "version_upgraded_at" field.
+func (m *AccountDeviceProfileMutation) SetVersionUpgradedAt(t time.Time) {
+	m.version_upgraded_at = &t
+}
+
+// VersionUpgradedAt returns the value of the "version_upgraded_at" field in the mutation.
+func (m *AccountDeviceProfileMutation) VersionUpgradedAt() (r time.Time, exists bool) {
+	v := m.version_upgraded_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldVersionUpgradedAt returns the old "version_upgraded_at" field's value of the AccountDeviceProfile entity.
+// If the AccountDeviceProfile object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *AccountDeviceProfileMutation) OldVersionUpgradedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldVersionUpgradedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldVersionUpgradedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldVersionUpgradedAt: %w", err)
+	}
+	return oldValue.VersionUpgradedAt, nil
+}
+
+// ClearVersionUpgradedAt clears the value of the "version_upgraded_at" field.
+func (m *AccountDeviceProfileMutation) ClearVersionUpgradedAt() {
+	m.version_upgraded_at = nil
+	m.clearedFields[accountdeviceprofile.FieldVersionUpgradedAt] = struct{}{}
+}
+
+// VersionUpgradedAtCleared returns if the "version_upgraded_at" field was cleared in this mutation.
+func (m *AccountDeviceProfileMutation) VersionUpgradedAtCleared() bool {
+	_, ok := m.clearedFields[accountdeviceprofile.FieldVersionUpgradedAt]
+	return ok
+}
+
+// ResetVersionUpgradedAt resets all changes to the "version_upgraded_at" field.
+func (m *AccountDeviceProfileMutation) ResetVersionUpgradedAt() {
+	m.version_upgraded_at = nil
+	delete(m.clearedFields, accountdeviceprofile.FieldVersionUpgradedAt)
+}
+
+// ClearAccount clears the "account" edge to the Account entity.
+func (m *AccountDeviceProfileMutation) ClearAccount() {
+	m.clearedaccount = true
+	m.clearedFields[accountdeviceprofile.FieldAccountID] = struct{}{}
+}
+
+// AccountCleared reports if the "account" edge to the Account entity was cleared.
+func (m *AccountDeviceProfileMutation) AccountCleared() bool {
+	return m.clearedaccount
+}
+
+// AccountIDs returns the "account" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// AccountID instead. It exists only for internal usage by the builders.
+func (m *AccountDeviceProfileMutation) AccountIDs() (ids []int64) {
+	if id := m.account; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetAccount resets all changes to the "account" edge.
+func (m *AccountDeviceProfileMutation) ResetAccount() {
+	m.account = nil
+	m.clearedaccount = false
+}
+
+// ClearTLSProfile clears the "tls_profile" edge to the TLSFingerprintProfile entity.
+func (m *AccountDeviceProfileMutation) ClearTLSProfile() {
+	m.clearedtls_profile = true
+	m.clearedFields[accountdeviceprofile.FieldTLSProfileID] = struct{}{}
+}
+
+// TLSProfileCleared reports if the "tls_profile" edge to the TLSFingerprintProfile entity was cleared.
+func (m *AccountDeviceProfileMutation) TLSProfileCleared() bool {
+	return m.TLSProfileIDCleared() || m.clearedtls_profile
+}
+
+// TLSProfileIDs returns the "tls_profile" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// TLSProfileID instead. It exists only for internal usage by the builders.
+func (m *AccountDeviceProfileMutation) TLSProfileIDs() (ids []int64) {
+	if id := m.tls_profile; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetTLSProfile resets all changes to the "tls_profile" edge.
+func (m *AccountDeviceProfileMutation) ResetTLSProfile() {
+	m.tls_profile = nil
+	m.clearedtls_profile = false
+}
+
+// Where appends a list predicates to the AccountDeviceProfileMutation builder.
+func (m *AccountDeviceProfileMutation) Where(ps ...predicate.AccountDeviceProfile) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the AccountDeviceProfileMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *AccountDeviceProfileMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.AccountDeviceProfile, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *AccountDeviceProfileMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *AccountDeviceProfileMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (AccountDeviceProfile).
+func (m *AccountDeviceProfileMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *AccountDeviceProfileMutation) Fields() []string {
+	fields := make([]string, 0, 24)
+	if m.created_at != nil {
+		fields = append(fields, accountdeviceprofile.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, accountdeviceprofile.FieldUpdatedAt)
+	}
+	if m.account != nil {
+		fields = append(fields, accountdeviceprofile.FieldAccountID)
+	}
+	if m.revision != nil {
+		fields = append(fields, accountdeviceprofile.FieldRevision)
+	}
+	if m.schema_version != nil {
+		fields = append(fields, accountdeviceprofile.FieldSchemaVersion)
+	}
+	if m.platform != nil {
+		fields = append(fields, accountdeviceprofile.FieldPlatform)
+	}
+	if m.client_family != nil {
+		fields = append(fields, accountdeviceprofile.FieldClientFamily)
+	}
+	if m.installation_id != nil {
+		fields = append(fields, accountdeviceprofile.FieldInstallationID)
+	}
+	if m.device_id != nil {
+		fields = append(fields, accountdeviceprofile.FieldDeviceID)
+	}
+	if m.client_id != nil {
+		fields = append(fields, accountdeviceprofile.FieldClientID)
+	}
+	if m.machine_id != nil {
+		fields = append(fields, accountdeviceprofile.FieldMachineID)
+	}
+	if m.gateway_account_uuid != nil {
+		fields = append(fields, accountdeviceprofile.FieldGatewayAccountUUID)
+	}
+	if m.session_namespace != nil {
+		fields = append(fields, accountdeviceprofile.FieldSessionNamespace)
+	}
+	if m.os_family != nil {
+		fields = append(fields, accountdeviceprofile.FieldOsFamily)
+	}
+	if m.arch != nil {
+		fields = append(fields, accountdeviceprofile.FieldArch)
+	}
+	if m.runtime != nil {
+		fields = append(fields, accountdeviceprofile.FieldRuntime)
+	}
+	if m.runtime_version != nil {
+		fields = append(fields, accountdeviceprofile.FieldRuntimeVersion)
+	}
+	if m.client_version != nil {
+		fields = append(fields, accountdeviceprofile.FieldClientVersion)
+	}
+	if m.tls_profile != nil {
+		fields = append(fields, accountdeviceprofile.FieldTLSProfileID)
+	}
+	if m.transport_family != nil {
+		fields = append(fields, accountdeviceprofile.FieldTransportFamily)
+	}
+	if m.profile_payload != nil {
+		fields = append(fields, accountdeviceprofile.FieldProfilePayload)
+	}
+	if m.learned_from != nil {
+		fields = append(fields, accountdeviceprofile.FieldLearnedFrom)
+	}
+	if m.learning_enabled != nil {
+		fields = append(fields, accountdeviceprofile.FieldLearningEnabled)
+	}
+	if m.version_upgraded_at != nil {
+		fields = append(fields, accountdeviceprofile.FieldVersionUpgradedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *AccountDeviceProfileMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case accountdeviceprofile.FieldCreatedAt:
+		return m.CreatedAt()
+	case accountdeviceprofile.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case accountdeviceprofile.FieldAccountID:
+		return m.AccountID()
+	case accountdeviceprofile.FieldRevision:
+		return m.Revision()
+	case accountdeviceprofile.FieldSchemaVersion:
+		return m.SchemaVersion()
+	case accountdeviceprofile.FieldPlatform:
+		return m.Platform()
+	case accountdeviceprofile.FieldClientFamily:
+		return m.ClientFamily()
+	case accountdeviceprofile.FieldInstallationID:
+		return m.InstallationID()
+	case accountdeviceprofile.FieldDeviceID:
+		return m.DeviceID()
+	case accountdeviceprofile.FieldClientID:
+		return m.ClientID()
+	case accountdeviceprofile.FieldMachineID:
+		return m.MachineID()
+	case accountdeviceprofile.FieldGatewayAccountUUID:
+		return m.GatewayAccountUUID()
+	case accountdeviceprofile.FieldSessionNamespace:
+		return m.SessionNamespace()
+	case accountdeviceprofile.FieldOsFamily:
+		return m.OsFamily()
+	case accountdeviceprofile.FieldArch:
+		return m.Arch()
+	case accountdeviceprofile.FieldRuntime:
+		return m.Runtime()
+	case accountdeviceprofile.FieldRuntimeVersion:
+		return m.RuntimeVersion()
+	case accountdeviceprofile.FieldClientVersion:
+		return m.ClientVersion()
+	case accountdeviceprofile.FieldTLSProfileID:
+		return m.TLSProfileID()
+	case accountdeviceprofile.FieldTransportFamily:
+		return m.TransportFamily()
+	case accountdeviceprofile.FieldProfilePayload:
+		return m.ProfilePayload()
+	case accountdeviceprofile.FieldLearnedFrom:
+		return m.LearnedFrom()
+	case accountdeviceprofile.FieldLearningEnabled:
+		return m.LearningEnabled()
+	case accountdeviceprofile.FieldVersionUpgradedAt:
+		return m.VersionUpgradedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *AccountDeviceProfileMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case accountdeviceprofile.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case accountdeviceprofile.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case accountdeviceprofile.FieldAccountID:
+		return m.OldAccountID(ctx)
+	case accountdeviceprofile.FieldRevision:
+		return m.OldRevision(ctx)
+	case accountdeviceprofile.FieldSchemaVersion:
+		return m.OldSchemaVersion(ctx)
+	case accountdeviceprofile.FieldPlatform:
+		return m.OldPlatform(ctx)
+	case accountdeviceprofile.FieldClientFamily:
+		return m.OldClientFamily(ctx)
+	case accountdeviceprofile.FieldInstallationID:
+		return m.OldInstallationID(ctx)
+	case accountdeviceprofile.FieldDeviceID:
+		return m.OldDeviceID(ctx)
+	case accountdeviceprofile.FieldClientID:
+		return m.OldClientID(ctx)
+	case accountdeviceprofile.FieldMachineID:
+		return m.OldMachineID(ctx)
+	case accountdeviceprofile.FieldGatewayAccountUUID:
+		return m.OldGatewayAccountUUID(ctx)
+	case accountdeviceprofile.FieldSessionNamespace:
+		return m.OldSessionNamespace(ctx)
+	case accountdeviceprofile.FieldOsFamily:
+		return m.OldOsFamily(ctx)
+	case accountdeviceprofile.FieldArch:
+		return m.OldArch(ctx)
+	case accountdeviceprofile.FieldRuntime:
+		return m.OldRuntime(ctx)
+	case accountdeviceprofile.FieldRuntimeVersion:
+		return m.OldRuntimeVersion(ctx)
+	case accountdeviceprofile.FieldClientVersion:
+		return m.OldClientVersion(ctx)
+	case accountdeviceprofile.FieldTLSProfileID:
+		return m.OldTLSProfileID(ctx)
+	case accountdeviceprofile.FieldTransportFamily:
+		return m.OldTransportFamily(ctx)
+	case accountdeviceprofile.FieldProfilePayload:
+		return m.OldProfilePayload(ctx)
+	case accountdeviceprofile.FieldLearnedFrom:
+		return m.OldLearnedFrom(ctx)
+	case accountdeviceprofile.FieldLearningEnabled:
+		return m.OldLearningEnabled(ctx)
+	case accountdeviceprofile.FieldVersionUpgradedAt:
+		return m.OldVersionUpgradedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown AccountDeviceProfile field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountDeviceProfileMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case accountdeviceprofile.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case accountdeviceprofile.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case accountdeviceprofile.FieldAccountID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccountID(v)
+		return nil
+	case accountdeviceprofile.FieldRevision:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRevision(v)
+		return nil
+	case accountdeviceprofile.FieldSchemaVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSchemaVersion(v)
+		return nil
+	case accountdeviceprofile.FieldPlatform:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlatform(v)
+		return nil
+	case accountdeviceprofile.FieldClientFamily:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClientFamily(v)
+		return nil
+	case accountdeviceprofile.FieldInstallationID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetInstallationID(v)
+		return nil
+	case accountdeviceprofile.FieldDeviceID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDeviceID(v)
+		return nil
+	case accountdeviceprofile.FieldClientID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClientID(v)
+		return nil
+	case accountdeviceprofile.FieldMachineID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMachineID(v)
+		return nil
+	case accountdeviceprofile.FieldGatewayAccountUUID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetGatewayAccountUUID(v)
+		return nil
+	case accountdeviceprofile.FieldSessionNamespace:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSessionNamespace(v)
+		return nil
+	case accountdeviceprofile.FieldOsFamily:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetOsFamily(v)
+		return nil
+	case accountdeviceprofile.FieldArch:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetArch(v)
+		return nil
+	case accountdeviceprofile.FieldRuntime:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRuntime(v)
+		return nil
+	case accountdeviceprofile.FieldRuntimeVersion:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRuntimeVersion(v)
+		return nil
+	case accountdeviceprofile.FieldClientVersion:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetClientVersion(v)
+		return nil
+	case accountdeviceprofile.FieldTLSProfileID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTLSProfileID(v)
+		return nil
+	case accountdeviceprofile.FieldTransportFamily:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTransportFamily(v)
+		return nil
+	case accountdeviceprofile.FieldProfilePayload:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProfilePayload(v)
+		return nil
+	case accountdeviceprofile.FieldLearnedFrom:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLearnedFrom(v)
+		return nil
+	case accountdeviceprofile.FieldLearningEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLearningEnabled(v)
+		return nil
+	case accountdeviceprofile.FieldVersionUpgradedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetVersionUpgradedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountDeviceProfile field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *AccountDeviceProfileMutation) AddedFields() []string {
+	var fields []string
+	if m.addrevision != nil {
+		fields = append(fields, accountdeviceprofile.FieldRevision)
+	}
+	if m.addschema_version != nil {
+		fields = append(fields, accountdeviceprofile.FieldSchemaVersion)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *AccountDeviceProfileMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case accountdeviceprofile.FieldRevision:
+		return m.AddedRevision()
+	case accountdeviceprofile.FieldSchemaVersion:
+		return m.AddedSchemaVersion()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *AccountDeviceProfileMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case accountdeviceprofile.FieldRevision:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRevision(v)
+		return nil
+	case accountdeviceprofile.FieldSchemaVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSchemaVersion(v)
+		return nil
+	}
+	return fmt.Errorf("unknown AccountDeviceProfile numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *AccountDeviceProfileMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(accountdeviceprofile.FieldTLSProfileID) {
+		fields = append(fields, accountdeviceprofile.FieldTLSProfileID)
+	}
+	if m.FieldCleared(accountdeviceprofile.FieldVersionUpgradedAt) {
+		fields = append(fields, accountdeviceprofile.FieldVersionUpgradedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *AccountDeviceProfileMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *AccountDeviceProfileMutation) ClearField(name string) error {
+	switch name {
+	case accountdeviceprofile.FieldTLSProfileID:
+		m.ClearTLSProfileID()
+		return nil
+	case accountdeviceprofile.FieldVersionUpgradedAt:
+		m.ClearVersionUpgradedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountDeviceProfile nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *AccountDeviceProfileMutation) ResetField(name string) error {
+	switch name {
+	case accountdeviceprofile.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case accountdeviceprofile.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case accountdeviceprofile.FieldAccountID:
+		m.ResetAccountID()
+		return nil
+	case accountdeviceprofile.FieldRevision:
+		m.ResetRevision()
+		return nil
+	case accountdeviceprofile.FieldSchemaVersion:
+		m.ResetSchemaVersion()
+		return nil
+	case accountdeviceprofile.FieldPlatform:
+		m.ResetPlatform()
+		return nil
+	case accountdeviceprofile.FieldClientFamily:
+		m.ResetClientFamily()
+		return nil
+	case accountdeviceprofile.FieldInstallationID:
+		m.ResetInstallationID()
+		return nil
+	case accountdeviceprofile.FieldDeviceID:
+		m.ResetDeviceID()
+		return nil
+	case accountdeviceprofile.FieldClientID:
+		m.ResetClientID()
+		return nil
+	case accountdeviceprofile.FieldMachineID:
+		m.ResetMachineID()
+		return nil
+	case accountdeviceprofile.FieldGatewayAccountUUID:
+		m.ResetGatewayAccountUUID()
+		return nil
+	case accountdeviceprofile.FieldSessionNamespace:
+		m.ResetSessionNamespace()
+		return nil
+	case accountdeviceprofile.FieldOsFamily:
+		m.ResetOsFamily()
+		return nil
+	case accountdeviceprofile.FieldArch:
+		m.ResetArch()
+		return nil
+	case accountdeviceprofile.FieldRuntime:
+		m.ResetRuntime()
+		return nil
+	case accountdeviceprofile.FieldRuntimeVersion:
+		m.ResetRuntimeVersion()
+		return nil
+	case accountdeviceprofile.FieldClientVersion:
+		m.ResetClientVersion()
+		return nil
+	case accountdeviceprofile.FieldTLSProfileID:
+		m.ResetTLSProfileID()
+		return nil
+	case accountdeviceprofile.FieldTransportFamily:
+		m.ResetTransportFamily()
+		return nil
+	case accountdeviceprofile.FieldProfilePayload:
+		m.ResetProfilePayload()
+		return nil
+	case accountdeviceprofile.FieldLearnedFrom:
+		m.ResetLearnedFrom()
+		return nil
+	case accountdeviceprofile.FieldLearningEnabled:
+		m.ResetLearningEnabled()
+		return nil
+	case accountdeviceprofile.FieldVersionUpgradedAt:
+		m.ResetVersionUpgradedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountDeviceProfile field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *AccountDeviceProfileMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.account != nil {
+		edges = append(edges, accountdeviceprofile.EdgeAccount)
+	}
+	if m.tls_profile != nil {
+		edges = append(edges, accountdeviceprofile.EdgeTLSProfile)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *AccountDeviceProfileMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case accountdeviceprofile.EdgeAccount:
+		if id := m.account; id != nil {
+			return []ent.Value{*id}
+		}
+	case accountdeviceprofile.EdgeTLSProfile:
+		if id := m.tls_profile; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *AccountDeviceProfileMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *AccountDeviceProfileMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *AccountDeviceProfileMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedaccount {
+		edges = append(edges, accountdeviceprofile.EdgeAccount)
+	}
+	if m.clearedtls_profile {
+		edges = append(edges, accountdeviceprofile.EdgeTLSProfile)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *AccountDeviceProfileMutation) EdgeCleared(name string) bool {
+	switch name {
+	case accountdeviceprofile.EdgeAccount:
+		return m.clearedaccount
+	case accountdeviceprofile.EdgeTLSProfile:
+		return m.clearedtls_profile
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *AccountDeviceProfileMutation) ClearEdge(name string) error {
+	switch name {
+	case accountdeviceprofile.EdgeAccount:
+		m.ClearAccount()
+		return nil
+	case accountdeviceprofile.EdgeTLSProfile:
+		m.ClearTLSProfile()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountDeviceProfile unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *AccountDeviceProfileMutation) ResetEdge(name string) error {
+	switch name {
+	case accountdeviceprofile.EdgeAccount:
+		m.ResetAccount()
+		return nil
+	case accountdeviceprofile.EdgeTLSProfile:
+		m.ResetTLSProfile()
+		return nil
+	}
+	return fmt.Errorf("unknown AccountDeviceProfile edge %s", name)
 }
 
 // AccountGroupMutation represents an operation that mutates the AccountGroup nodes in the graph.

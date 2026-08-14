@@ -18,6 +18,8 @@ type Tx struct {
 	APIKey *APIKeyClient
 	// Account is the client for interacting with the Account builders.
 	Account *AccountClient
+	// AccountDeviceProfile is the client for interacting with the AccountDeviceProfile builders.
+	AccountDeviceProfile *AccountDeviceProfileClient
 	// AccountGroup is the client for interacting with the AccountGroup builders.
 	AccountGroup *AccountGroupClient
 	// Announcement is the client for interacting with the Announcement builders.
@@ -241,6 +243,7 @@ func (tx *Tx) Client() *Client {
 func (tx *Tx) init() {
 	tx.APIKey = NewAPIKeyClient(tx.config)
 	tx.Account = NewAccountClient(tx.config)
+	tx.AccountDeviceProfile = NewAccountDeviceProfileClient(tx.config)
 	tx.AccountGroup = NewAccountGroupClient(tx.config)
 	tx.Announcement = NewAnnouncementClient(tx.config)
 	tx.AnnouncementRead = NewAnnouncementReadClient(tx.config)

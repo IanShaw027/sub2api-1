@@ -88,6 +88,8 @@ const (
 	EdgeChildren = "children"
 	// EdgeUsageLogs holds the string denoting the usage_logs edge name in mutations.
 	EdgeUsageLogs = "usage_logs"
+	// EdgeDeviceProfile holds the string denoting the device_profile edge name in mutations.
+	EdgeDeviceProfile = "device_profile"
 	// EdgeAccountGroups holds the string denoting the account_groups edge name in mutations.
 	EdgeAccountGroups = "account_groups"
 	// Table holds the table name of the account in the database.
@@ -119,6 +121,13 @@ const (
 	UsageLogsInverseTable = "usage_logs"
 	// UsageLogsColumn is the table column denoting the usage_logs relation/edge.
 	UsageLogsColumn = "account_id"
+	// DeviceProfileTable is the table that holds the device_profile relation/edge.
+	DeviceProfileTable = "account_device_profiles"
+	// DeviceProfileInverseTable is the table name for the AccountDeviceProfile entity.
+	// It exists in this package in order to avoid circular dependency with the "accountdeviceprofile" package.
+	DeviceProfileInverseTable = "account_device_profiles"
+	// DeviceProfileColumn is the table column denoting the device_profile relation/edge.
+	DeviceProfileColumn = "account_id"
 	// AccountGroupsTable is the table that holds the account_groups relation/edge.
 	AccountGroupsTable = "account_groups"
 	// AccountGroupsInverseTable is the table name for the AccountGroup entity.
@@ -457,6 +466,13 @@ func ByUsageLogs(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByDeviceProfileField orders the results by device_profile field.
+func ByDeviceProfileField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newDeviceProfileStep(), sql.OrderByField(field, opts...))
+	}
+}
+
 // ByAccountGroupsCount orders the results by account_groups count.
 func ByAccountGroupsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -503,6 +519,13 @@ func newUsageLogsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(UsageLogsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, UsageLogsTable, UsageLogsColumn),
+	)
+}
+func newDeviceProfileStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(DeviceProfileInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2O, false, DeviceProfileTable, DeviceProfileColumn),
 	)
 }
 func newAccountGroupsStep() *sqlgraph.Step {
