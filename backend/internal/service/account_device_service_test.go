@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/accountdeviceprofile"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
@@ -671,6 +672,76 @@ func TestLearnIfOfficialUnprovenGeminiUADoesNotWrite(t *testing.T) {
 	require.Equal(t, "0.1.0", got.ClientVersion)
 	require.Equal(t, service.LearnedFromBaseline, got.LearnedFrom)
 	require.Zero(t, repo.casWriteCount(account.ID))
+}
+
+func TestLearnIfOfficialOfficialCodexTUICLIHigherVersionUpdatesSoftwareOnly(t *testing.T) {
+	cases := []struct {
+		name       string
+		userAgent  func(version string) string
+		originator string
+	}{
+		{
+			name: "codex_cli_rs",
+			userAgent: func(version string) string {
+				return "codex_cli_rs/" + version + " (Ubuntu 22.4.0; x86_64) xterm-256color"
+			},
+			originator: "codex_cli_rs",
+		},
+		{
+			name: "codex-tui",
+			userAgent: func(version string) string {
+				return openai.CodexDefaultOriginator + "/" + version + " (Mac OS X 15.1.0; arm64) iTerm.app"
+			},
+			originator: openai.CodexDefaultOriginator,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, client, repo := newCountingAccountDeviceService(t)
+			ctx := context.Background()
+			account := mustCreateDeviceAccount(t, client, service.PlatformOpenAI, map[string]any{
+				"device_learning_enabled": true,
+			})
+
+			created, err := svc.GetOrCreate(ctx, account)
+			require.NoError(t, err)
+			n, err := client.AccountDeviceProfile.Update().
+				Where(accountdeviceprofile.AccountID(account.ID)).
+				SetClientVersion("0.1.0").
+				SetLearningEnabled(true).
+				Save(ctx)
+			require.NoError(t, err)
+			require.Equal(t, 1, n)
+
+			bundle, ok := service.NewSoftwareBundleRegistry().Lookup(
+				service.PlatformOpenAI,
+				service.ClientFamilyCodexCLI,
+				created.ClientVersion,
+			)
+			require.True(t, ok)
+
+			got, err := svc.LearnIfOfficial(ctx, account, service.OfficialInbound{
+				UserAgent:     tc.userAgent(bundle.ClientVersion),
+				Originator:    tc.originator,
+				ClientVersion: bundle.ClientVersion,
+			})
+			require.NoError(t, err)
+			require.NoError(t, service.ValidateAccountDeviceProfile(got))
+			require.Equal(t, 1, repo.casWriteCount(account.ID))
+			require.Equal(t, bundle.ClientVersion, got.ClientVersion)
+			require.Equal(t, service.LearnedFromOfficial, got.LearnedFrom)
+			require.Equal(t, created.DeviceID, got.DeviceID)
+			require.Equal(t, created.InstallationID, got.InstallationID)
+			require.Equal(t, created.GatewayAccountUUID, got.GatewayAccountUUID)
+			require.Equal(t, created.SessionNamespace, got.SessionNamespace)
+			require.Equal(t, created.MachineID, got.MachineID)
+			require.Equal(t, created.OSFamily, got.OSFamily)
+			require.Equal(t, created.Arch, got.Arch)
+			require.Equal(t, created.Platform, got.Platform)
+			require.Equal(t, created.ClientFamily, got.ClientFamily)
+		})
+	}
 }
 
 func TestLearnIfOfficialCodexVSCodeUADoesNotWrite(t *testing.T) {

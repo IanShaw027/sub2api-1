@@ -2,6 +2,32 @@ package openai
 
 import "testing"
 
+func TestIsCodexTUIOrCLIUserAgent(t *testing.T) {
+	tests := []struct {
+		name string
+		ua   string
+		want bool
+	}{
+		{name: "cli prefix", ua: "codex_cli_rs/0.146.0 (Ubuntu 22.4.0; x86_64) xterm-256color", want: true},
+		{name: "tui prefix", ua: "codex-tui/0.146.0 (Mac OS X 15.1.0; arm64) iTerm.app", want: true},
+		{name: "mixed case cli", ua: "CODEX_CLI_RS/0.146.0", want: true},
+		{name: "whitespace", ua: "  codex-tui/0.146.0  ", want: true},
+		{name: "no slash", ua: "codex_cli_rs", want: false},
+		{name: "embedded contains", ua: "Mozilla/5.0 codex_cli_rs/0.146.0", want: false},
+		{name: "vscode", ua: "codex_vscode/0.146.0", want: false},
+		{name: "exec", ua: "codex_exec/0.146.0", want: false},
+		{name: "empty", ua: "", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsCodexTUIOrCLIUserAgent(tt.ua)
+			if got != tt.want {
+				t.Fatalf("IsCodexTUIOrCLIUserAgent(%q) = %v, want %v", tt.ua, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsCodexCLIRequest(t *testing.T) {
 	tests := []struct {
 		name string
