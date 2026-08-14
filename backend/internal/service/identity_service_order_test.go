@@ -116,6 +116,66 @@ func TestIdentityService_RewriteUserIDWithMasking_DoesNotMintRandomSessionID(t *
 	require.Zero(t, cache.setMaskedCalls)
 }
 
+func TestRewriteUserID_UsesGatewayUUIDNotExtraUUID(t *testing.T) {
+	svc := NewIdentityService(&identityCacheStub{})
+	const extraUUID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	const gatewayUUID = "11111111-2222-4333-8444-555555555555"
+	const deviceID = "d61f76d0730d2b920763648949bad5c79742155c27037fc77ac3f9805cb90169"
+	originalUserID := FormatMetadataUserID(deviceID, extraUUID, "7578cf37-aaca-46e4-a45c-71285d9dbb83", "2.1.22")
+	body := []byte(`{"metadata":{"user_id":` + strconvQuote(originalUserID) + `}}`)
+
+	result, err := svc.RewriteUserID(body, 123, gatewayUUID, deviceID, "claude-cli/2.1.22 (external, cli)")
+	require.NoError(t, err)
+	resultStr := string(result)
+	require.NotContains(t, resultStr, extraUUID)
+	require.Contains(t, resultStr, gatewayUUID)
+	require.Contains(t, resultStr, "user_"+deviceID+"_account_"+gatewayUUID+"_session_")
+}
+
+func TestRewriteUserID_EmptyGatewayUUIDSkipsRewrite(t *testing.T) {
+	svc := NewIdentityService(&identityCacheStub{})
+	const extraUUID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	const deviceID = "d61f76d0730d2b920763648949bad5c79742155c27037fc77ac3f9805cb90169"
+	originalUserID := FormatMetadataUserID(deviceID, extraUUID, "7578cf37-aaca-46e4-a45c-71285d9dbb83", "2.1.22")
+	body := []byte(`{"metadata":{"user_id":` + strconvQuote(originalUserID) + `}}`)
+
+	result, err := svc.RewriteUserID(body, 123, "", deviceID, "claude-cli/2.1.22 (external, cli)")
+	require.NoError(t, err)
+	require.Equal(t, string(body), string(result))
+}
+
+func TestRewriteUserIDWithMasking_DoesNotReadExtraAccountUUID(t *testing.T) {
+	svc := NewIdentityService(&identityCacheStub{})
+	const extraUUID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	const gatewayUUID = "11111111-2222-4333-8444-555555555555"
+	const deviceID = "d61f76d0730d2b920763648949bad5c79742155c27037fc77ac3f9805cb90169"
+	originalUserID := FormatMetadataUserID(deviceID, extraUUID, "7578cf37-aaca-46e4-a45c-71285d9dbb83", "2.1.22")
+	body := []byte(`{"metadata":{"user_id":` + strconvQuote(originalUserID) + `}}`)
+	account := &Account{
+		ID:       123,
+		Platform: PlatformAnthropic,
+		Type:     AccountTypeOAuth,
+		Extra:    map[string]any{"account_uuid": extraUUID},
+	}
+
+	result, err := svc.RewriteUserIDWithMasking(context.Background(), body, account, gatewayUUID, deviceID, "claude-cli/2.1.22 (external, cli)")
+	require.NoError(t, err)
+	resultStr := string(result)
+	require.NotContains(t, resultStr, extraUUID)
+	require.Contains(t, resultStr, gatewayUUID)
+}
+
+func TestIdentityService_GatewayAccountUUIDForRewrite_UsesProfileUUID(t *testing.T) {
+	profile := &AccountDeviceProfile{GatewayAccountUUID: "11111111-2222-4333-8444-555555555555"}
+	got := GatewayAccountUUIDForRewrite(profile, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+	require.Equal(t, "11111111-2222-4333-8444-555555555555", got)
+}
+
+func TestIdentityService_GatewayAccountUUIDForRewrite_EmptyProfileDoesNotFallBackToExtra(t *testing.T) {
+	require.Empty(t, GatewayAccountUUIDForRewrite(&AccountDeviceProfile{}, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+	require.Empty(t, GatewayAccountUUIDForRewrite(nil, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+}
+
 func strconvQuote(v string) string {
 	return `"` + strings.ReplaceAll(strings.ReplaceAll(v, `\`, `\\`), `"`, `\"`) + `"`
 }
