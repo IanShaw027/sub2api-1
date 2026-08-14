@@ -4514,8 +4514,6 @@ const isOAuthFlow = computed(() => {
   return accountCategory.value === 'oauth-based'
 })
 
-const isGrokSSOInputMethod = computed(() => form.platform === 'grok' && oauthFlowRef.value?.inputMethod === 'sso_cookie')
-
 const accountNamePlaceholder = computed(() =>
   isOAuthFlow.value
     ? t('admin.accounts.accountNameOAuthPlaceholder')
