@@ -6,6 +6,7 @@ import (
 	"errors"
 	"hash/fnv"
 	"log/slog"
+	"math"
 	"net/url"
 	"reflect"
 	"sort"
@@ -176,6 +177,46 @@ func (a *Account) EffectiveLoadFactor() int {
 		return a.Concurrency
 	}
 	return 1
+}
+
+func DefaultConcurrencyForPlatform(platform, accountType string) int {
+	if (platform == PlatformAnthropic || platform == PlatformOpenAI) &&
+		(accountType == AccountTypeOAuth || accountType == AccountTypeSetupToken) {
+		return 12
+	}
+	if platform == PlatformGrok && accountType == AccountTypeOAuth {
+		return 1
+	}
+	return 3
+}
+
+func (a *Account) EffectiveConcurrency() int {
+	if a == nil {
+		return 3
+	}
+	if a.Concurrency >= 1 && a.Concurrency <= 32 {
+		return a.Concurrency
+	}
+	return DefaultConcurrencyForPlatform(a.Platform, a.Type)
+}
+
+func (a *Account) OverflowConcurrency() int {
+	overflow := int(math.Round(float64(a.EffectiveConcurrency()) * 0.2))
+	if overflow < 1 {
+		overflow = 1
+	}
+	return overflow
+}
+
+func (a *Account) BurstConcurrency() int {
+	return a.EffectiveConcurrency() + a.OverflowConcurrency()
+}
+
+func applyCreateConcurrency(platform, accountType string, requested int) int {
+	if requested >= 1 && requested <= 32 {
+		return requested
+	}
+	return DefaultConcurrencyForPlatform(platform, accountType)
 }
 
 func (a *Account) IsSchedulable() bool {

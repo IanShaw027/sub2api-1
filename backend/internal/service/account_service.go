@@ -250,7 +250,7 @@ func (s *AccountService) Create(ctx context.Context, req CreateAccountRequest) (
 		Credentials: SanitizeStoredCredentials(req.Platform, req.Credentials),
 		Extra:       req.Extra,
 		ProxyID:     req.ProxyID,
-		Concurrency: req.Concurrency,
+		Concurrency: applyCreateConcurrency(req.Platform, req.Type, req.Concurrency),
 		Priority:    req.Priority,
 		Status:      StatusActive,
 		ExpiresAt:   req.ExpiresAt,

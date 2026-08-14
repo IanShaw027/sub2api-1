@@ -333,12 +333,7 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 }
 
 func normalizeAccountConcurrency(platform, accountType string, concurrency int) int {
-	if platform == PlatformGrok && accountType == AccountTypeOAuth {
-		if concurrency <= 0 {
-			return 1
-		}
-	}
-	return concurrency
+	return applyCreateConcurrency(platform, accountType, concurrency)
 }
 
 // ValidateOpenAILongContextBillingExtra validates the OpenAI account billing flag when present.
@@ -768,7 +763,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	// 只在指针非 nil 时更新 Concurrency（支持设置为 0）
 	if input.Concurrency != nil {
-		account.Concurrency = normalizeAccountConcurrency(account.Platform, account.Type, *input.Concurrency)
+		account.Concurrency = *input.Concurrency
 	}
 	// 只在指针非 nil 时更新 Priority（支持设置为 0）
 	if input.Priority != nil {
