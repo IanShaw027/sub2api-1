@@ -390,7 +390,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 3. 获取账号并发槽位
 			accountReleaseFunc := selection.ReleaseFunc
 			if !selection.Acquired {
-				if selection.WaitPlan == nil {
+				if selection.WaitPlan == nil && !service.PreserveStickyBindingFromContext(c.Request.Context()) {
 					markOpsRoutingCapacityLimited(c)
 					reqLog.Warn("gateway.select_account_no_slot_no_wait_plan",
 						zap.Int64("account_id", account.ID),
@@ -400,44 +400,23 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", streamStarted)
 					return
 				}
-				accountWaitCounted := false
-				canWait, err := h.concurrencyHelper.IncrementAccountWaitCount(c.Request.Context(), account.ID, selection.WaitPlan.MaxWaiting)
-				if err != nil {
-					reqLog.Warn("gateway.account_wait_counter_increment_failed", zap.Int64("account_id", account.ID), zap.Error(err))
-				} else if !canWait {
-					reqLog.Info("gateway.account_wait_queue_full",
-						zap.Int64("account_id", account.ID),
-						zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
-					)
-					h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later", streamStarted)
-					return
-				}
-				if err == nil && canWait {
-					accountWaitCounted = true
-				}
-				releaseWait := func() {
-					if accountWaitCounted {
-						h.concurrencyHelper.DecrementAccountWaitCount(c.Request.Context(), account.ID)
-						accountWaitCounted = false
-					}
-				}
-
-				accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
-					c,
-					account.ID,
-					selection.WaitPlan.MaxConcurrency,
-					selection.WaitPlan.Timeout,
-					reqStream,
-					&streamStarted,
-				)
-				if err != nil {
+				slot := runAccountSlotLadder(c, h.concurrencyHelper, account, selection.WaitPlan, reqStream, &streamStarted)
+				var cont, done bool
+				accountReleaseFunc, cont, done = applyGatewaySlotLadder(c, fs, account.ID, slot, streamStarted, func(err error) {
 					reqLog.Warn("gateway.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
-					releaseWait()
+					if slot.Decision == SlotSwitchAccountPreserveBinding {
+						markOpsRoutingCapacityLimited(c)
+						h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", streamStarted)
+						return
+					}
 					h.handleConcurrencyError(c, err, "account", streamStarted)
+				})
+				if done {
 					return
 				}
-				// Slot acquired: no longer waiting in queue.
-				releaseWait()
+				if cont {
+					continue
+				}
 			}
 			// 终检与准入后绑定使用选号结果携带的门（见 responses 同名注释）。
 			admissionCtx := service.ContextWithSelectionProfitGate(c.Request.Context(), selection)
@@ -717,7 +696,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// 3. 获取账号并发槽位
 			accountReleaseFunc := selection.ReleaseFunc
 			if !selection.Acquired {
-				if selection.WaitPlan == nil {
+				if selection.WaitPlan == nil && !service.PreserveStickyBindingFromContext(c.Request.Context()) {
 					markOpsRoutingCapacityLimited(c)
 					reqLog.Warn("gateway.select_account_no_slot_no_wait_plan",
 						zap.Int64("account_id", account.ID),
@@ -727,44 +706,23 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", streamStarted)
 					return
 				}
-				accountWaitCounted := false
-				canWait, err := h.concurrencyHelper.IncrementAccountWaitCount(c.Request.Context(), account.ID, selection.WaitPlan.MaxWaiting)
-				if err != nil {
-					reqLog.Warn("gateway.account_wait_counter_increment_failed", zap.Int64("account_id", account.ID), zap.Error(err))
-				} else if !canWait {
-					reqLog.Info("gateway.account_wait_queue_full",
-						zap.Int64("account_id", account.ID),
-						zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
-					)
-					h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later", streamStarted)
-					return
-				}
-				if err == nil && canWait {
-					accountWaitCounted = true
-				}
-				releaseWait := func() {
-					if accountWaitCounted {
-						h.concurrencyHelper.DecrementAccountWaitCount(c.Request.Context(), account.ID)
-						accountWaitCounted = false
-					}
-				}
-
-				accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
-					c,
-					account.ID,
-					selection.WaitPlan.MaxConcurrency,
-					selection.WaitPlan.Timeout,
-					reqStream,
-					&streamStarted,
-				)
-				if err != nil {
+				slot := runAccountSlotLadder(c, h.concurrencyHelper, account, selection.WaitPlan, reqStream, &streamStarted)
+				var cont, done bool
+				accountReleaseFunc, cont, done = applyGatewaySlotLadder(c, fs, account.ID, slot, streamStarted, func(err error) {
 					reqLog.Warn("gateway.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
-					releaseWait()
+					if slot.Decision == SlotSwitchAccountPreserveBinding {
+						markOpsRoutingCapacityLimited(c)
+						h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", streamStarted)
+						return
+					}
 					h.handleConcurrencyError(c, err, "account", streamStarted)
+				})
+				if done {
 					return
 				}
-				// Slot acquired: no longer waiting in queue.
-				releaseWait()
+				if cont {
+					continue
+				}
 			}
 			// 终检与准入后绑定使用选号结果携带的门（见 responses 同名注释）。
 			admissionCtx := service.ContextWithSelectionProfitGate(c.Request.Context(), selection)

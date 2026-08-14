@@ -207,23 +207,27 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		// 4. Acquire account concurrency slot
 		accountReleaseFunc := selection.ReleaseFunc
 		if !selection.Acquired {
-			if selection.WaitPlan == nil {
+			if selection.WaitPlan == nil && !service.PreserveStickyBindingFromContext(c.Request.Context()) {
 				markOpsRoutingCapacityLimited(c)
 				h.responsesErrorResponse(c, http.StatusServiceUnavailable, "api_error", "No available accounts")
 				return
 			}
-			accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
-				c,
-				account.ID,
-				selection.WaitPlan.MaxConcurrency,
-				selection.WaitPlan.Timeout,
-				reqStream,
-				&streamStarted,
-			)
-			if err != nil {
+			slot := runAccountSlotLadder(c, h.concurrencyHelper, account, selection.WaitPlan, reqStream, &streamStarted)
+			var cont, done bool
+			accountReleaseFunc, cont, done = applyGatewaySlotLadder(c, fs, account.ID, slot, streamStarted, func(err error) {
 				reqLog.Warn("gateway.responses.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+				if slot.Decision == SlotSwitchAccountPreserveBinding {
+					markOpsRoutingCapacityLimited(c)
+					h.responsesErrorResponse(c, http.StatusServiceUnavailable, "api_error", "No available accounts")
+					return
+				}
 				h.handleConcurrencyError(c, err, "account", streamStarted)
+			})
+			if done {
 				return
+			}
+			if cont {
+				continue
 			}
 		}
 		// 终检与准入后绑定必须使用选号结果携带的门：门安装在调度栈的局部

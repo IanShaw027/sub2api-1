@@ -311,6 +311,10 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 			}
 			continue
 		}
+		if slotResult == openAISlotAcquireSwitchAccount {
+			continueOpenAISlotSwitch(c, failedAccountIDs, account.ID)
+			continue
+		}
 		if slotResult != openAISlotAcquireOK {
 			return
 		}

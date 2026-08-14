@@ -373,6 +373,11 @@ func (s *defaultOpenAIAccountScheduler) Select(
 	req OpenAIAccountScheduleRequest,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
 	decision := OpenAIAccountScheduleDecision{StickyAccountID: req.StickyAccountID}
+	if req.PreserveStickyBinding {
+		ctx = WithPreserveStickyBinding(ctx)
+	} else if PreserveStickyBindingFromContext(ctx) {
+		req.PreserveStickyBinding = true
+	}
 	start := time.Now()
 	defer func() {
 		decision.LatencyMs = time.Since(start).Milliseconds()
@@ -547,25 +552,12 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 
 	cfg := s.service.schedulingConfig()
 	// WaitPlan.MaxConcurrency 使用 EffectiveConcurrency（非 EffectiveLoadFactor），因为 WaitPlan 控制的是 Redis 实际并发槽位等待。
+	// 并发满不再立即 concurrency_full 逃逸：交给 handler 30s 梯子。等待队列满由
+	// IncrementAccountWaitCount 在梯子入口换号，而不是在选号期丢掉粘性账号。
 	if s.service.concurrencyService != nil {
-		if escapeCfg.enabled && acquireErr == nil && result != nil && !result.Acquired {
-			errorRate, ttft, _ := s.stats.snapshot(accountID)
-			slog.Info("sticky_escape_triggered",
-				"account_id", accountID,
-				"reason", "concurrency_full",
-				"error_rate", errorRate,
-				"ttft", ttft,
-			)
-			return nil, true, nil
-		}
 		return attachSelectionProfitGate(ctx, &AccountSelectionResult{
-			Account: account,
-			WaitPlan: &AccountWaitPlan{
-				AccountID:      accountID,
-				MaxConcurrency: account.EffectiveConcurrency(),
-				Timeout:        cfg.StickySessionWaitTimeout,
-				MaxWaiting:     cfg.StickySessionMaxWaiting,
-			},
+			Account:  account,
+			WaitPlan: waitPlanUnlessPostSwitch(ctx, account, cfg.StickySessionWaitTimeout, cfg.StickySessionMaxWaiting),
 		}), false, nil
 	}
 	return nil, false, nil
@@ -1144,8 +1136,9 @@ func (s *defaultOpenAIAccountScheduler) tryAcquireOpenAISelectionOrderWithBudget
 		if candidate.account == nil {
 			continue
 		}
-		if candidate.loadKnown && candidate.account.Concurrency > 0 &&
-			candidate.loadInfo.CurrentConcurrency >= candidate.account.Concurrency {
+		if candidate.loadKnown && candidate.account != nil &&
+			candidate.loadInfo.CurrentConcurrency >= candidate.account.EffectiveConcurrency() &&
+			!(req.StickyAccountID > 0 && candidate.account.ID == req.StickyAccountID) {
 			continue
 		}
 
@@ -1297,13 +1290,8 @@ func (s *defaultOpenAIAccountScheduler) tryFallbackToWeightedSticky(
 		if s.service.concurrencyService != nil {
 			cfg := s.service.schedulingConfig()
 			return attachSelectionProfitGate(ctx, &AccountSelectionResult{
-				Account: account,
-				WaitPlan: &AccountWaitPlan{
-					AccountID:      account.ID,
-					MaxConcurrency: account.EffectiveConcurrency(),
-					Timeout:        cfg.StickySessionWaitTimeout,
-					MaxWaiting:     cfg.StickySessionMaxWaiting,
-				},
+				Account:  account,
+				WaitPlan: waitPlanUnlessPostSwitch(ctx, account, cfg.StickySessionWaitTimeout, cfg.StickySessionMaxWaiting),
 			}), nil
 		}
 	}
@@ -1684,13 +1672,8 @@ func (s *defaultOpenAIAccountScheduler) finishLoadBalanceSelectionFallback(
 				continue
 			}
 			return attachSelectionProfitGate(ctx, &AccountSelectionResult{
-				Account: fresh,
-				WaitPlan: &AccountWaitPlan{
-					AccountID:      fresh.ID,
-					MaxConcurrency: fresh.EffectiveConcurrency(),
-					Timeout:        cfg.FallbackWaitTimeout,
-					MaxWaiting:     cfg.FallbackMaxWaiting,
-				},
+				Account:  fresh,
+				WaitPlan: waitPlanUnlessPostSwitch(ctx, fresh, cfg.FallbackWaitTimeout, cfg.FallbackMaxWaiting),
 			}), candidateCount, topK, loadSkew, nil
 		}
 	}
@@ -2255,6 +2238,7 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 		StickyPreviousAccountID: stickyPreviousAccountID,
 		StickyWeighted:          stickyWeighted,
 		SubscriptionPriority:    subscriptionPriority,
+		PreserveStickyBinding:   PreserveStickyBindingFromContext(ctx),
 		PreviousResponseID:      previousResponseID,
 		PreviousResponseCanMove: previousResponseCanMove,
 		UseUpstreamTokenCost:    useUpstreamTokenCost,

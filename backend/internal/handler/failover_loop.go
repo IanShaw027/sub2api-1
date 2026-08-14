@@ -149,6 +149,24 @@ func (s *FailoverState) RecordProfitVeto(accountID int64) FailoverAction {
 	return FailoverContinue
 }
 
+// RecordConcurrencyTimeout excludes a busy account after the slot ladder
+// (deadline two-shot or wait-queue full) and continues onto another account
+// while the original sticky binding is preserved by the caller.
+func (s *FailoverState) RecordConcurrencyTimeout(accountID int64) FailoverAction {
+	if s == nil {
+		return FailoverExhausted
+	}
+	if s.FailedAccountIDs == nil {
+		s.FailedAccountIDs = make(map[int64]struct{})
+	}
+	s.FailedAccountIDs[accountID] = struct{}{}
+	if s.SwitchCount >= s.MaxSwitches {
+		return FailoverExhausted
+	}
+	s.SwitchCount++
+	return FailoverContinue
+}
+
 // ProfitVetoCount 返回本次请求累计的利润否决次数（供日志使用）。
 func (s *FailoverState) ProfitVetoCount() int { return s.profitVetoCount }
 

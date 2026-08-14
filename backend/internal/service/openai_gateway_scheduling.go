@@ -958,21 +958,12 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		}
 		if stickyAccountID > 0 && stickyAccountID == account.ID && s.concurrencyService != nil {
 			waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, account.ID)
-			if waitingCount < cfg.StickySessionMaxWaiting {
-				return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
-					AccountID:      account.ID,
-					MaxConcurrency: account.EffectiveConcurrency(),
-					Timeout:        cfg.StickySessionWaitTimeout,
-					MaxWaiting:     cfg.StickySessionMaxWaiting,
-				})
+			maxWaiting := slotLadderMaxWaiting(cfg.StickySessionMaxWaiting, account)
+			if waitingCount < maxWaiting {
+				return s.newSelectionResult(ctx, account, false, nil, waitPlanUnlessPostSwitch(ctx, account, cfg.StickySessionWaitTimeout, cfg.StickySessionMaxWaiting))
 			}
 		}
-		return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
-			AccountID:      account.ID,
-			MaxConcurrency: account.EffectiveConcurrency(),
-			Timeout:        cfg.FallbackWaitTimeout,
-			MaxWaiting:     cfg.FallbackMaxWaiting,
-		})
+		return s.newSelectionResult(ctx, account, false, nil, waitPlanUnlessPostSwitch(ctx, account, cfg.FallbackWaitTimeout, cfg.FallbackMaxWaiting))
 	}
 
 	accounts, err := s.listSchedulableAccounts(ctx, groupID, platform)
@@ -1025,13 +1016,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 						}
 
 						waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
-						if waitingCount < cfg.StickySessionMaxWaiting {
-							return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
-								AccountID:      accountID,
-								MaxConcurrency: account.EffectiveConcurrency(),
-								Timeout:        cfg.StickySessionWaitTimeout,
-								MaxWaiting:     cfg.StickySessionMaxWaiting,
-							})
+						maxWaiting := slotLadderMaxWaiting(cfg.StickySessionMaxWaiting, account)
+						if waitingCount < maxWaiting {
+							return s.newSelectionResult(ctx, account, false, nil, waitPlanUnlessPostSwitch(ctx, account, cfg.StickySessionWaitTimeout, cfg.StickySessionMaxWaiting))
 						}
 					}
 				}
@@ -1103,12 +1090,16 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			if loadInfo == nil {
 				loadInfo = &AccountLoadInfo{AccountID: acc.ID}
 			}
-			if loadInfo.LoadRate < 100 {
+			if accountIsSlotCandidate(acc, loadInfo, stickyAccountID) {
 				available = append(available, accountWithLoad{
 					account:  acc,
 					loadInfo: loadInfo,
 				})
 			}
+		}
+
+		if stickyAccountID == 0 || PreserveStickyBindingFromContext(ctx) {
+			available = preferInstantFanoutAccounts(available)
 		}
 
 		if len(available) == 0 {
@@ -1261,12 +1252,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
 			continue
 		}
-		return s.newSelectionResult(ctx, fresh, false, nil, &AccountWaitPlan{
-			AccountID:      fresh.ID,
-			MaxConcurrency: fresh.EffectiveConcurrency(),
-			Timeout:        cfg.FallbackWaitTimeout,
-			MaxWaiting:     cfg.FallbackMaxWaiting,
-		})
+		return s.newSelectionResult(ctx, fresh, false, nil, waitPlanUnlessPostSwitch(ctx, fresh, cfg.FallbackWaitTimeout, cfg.FallbackMaxWaiting))
 	}
 
 	if requireCompact && baseCandidateCount > 0 {
