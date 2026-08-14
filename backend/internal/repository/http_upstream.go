@@ -129,12 +129,15 @@ type openAIHTTP2Settings struct {
 // upstreamClientEntry 上游客户端缓存条目
 // 记录客户端实例及其元数据，用于连接池管理和淘汰策略
 type upstreamClientEntry struct {
-	client       *http.Client // HTTP 客户端实例
-	proxyKey     string       // 代理标识（用于检测代理变更）
-	poolKey      string       // 连接池配置标识（用于检测配置变更）
-	protocolMode string       // 协议模式（default/openai_h1/openai_h2/openai_h1_fallback）
-	lastUsed     int64        // 最后使用时间戳（纳秒），用于 LRU 淘汰
-	inFlight     int64        // 当前进行中的请求数，>0 时不可淘汰
+	client          *http.Client // HTTP 客户端实例
+	accountID       int64        // 账户标识（用于同账户连接池切换时回收旧条目）
+	proxyKey        string       // 代理标识（用于检测代理变更）
+	tlsProfileKey   string       // TLS 指纹标识（用于 TLS 池切换时回收旧条目）
+	transportFamily string       // Transport 家族（h1/h2，用于协议族切换时回收旧条目）
+	poolKey         string       // 连接池配置标识（用于检测配置变更）
+	protocolMode    string       // 协议模式（default/openai_h1/openai_h2/openai_h1_fallback）
+	lastUsed        int64        // 最后使用时间戳（纳秒），用于 LRU 淘汰
+	inFlight        int64        // 当前进行中的请求数，>0 时不可淘汰
 }
 
 type openAIHTTP2FallbackState struct {
@@ -490,8 +493,10 @@ func (s *httpUpstreamService) acquireClientWithTLS(proxyURL string, accountID in
 	return s.getClientEntryWithTLS(proxyURL, accountID, accountConcurrency, profile, upstreamProfile, true, true)
 }
 
-// getClientEntryWithTLS 获取或创建带 TLS 指纹的客户端条目
+// getClientEntryWithTLS 获取或创建带 TLS 指纹的客户端条目。
 // TLS 指纹客户端使用独立的缓存键，与普通客户端隔离
+// accountConcurrency 参数传入原始/Effective N，本包会在内部应用 Burst 扩展，
+// 调用方不要提前传入 BurstConcurrency()。
 func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile, upstreamProfile service.HTTPUpstreamProfile, markInFlight bool, enforceLimit bool) (*upstreamClientEntry, error) {
 	isolation := s.getIsolationMode()
 	proxyKey, parsedProxy, err := normalizeProxyURL(proxyURL)
@@ -542,6 +547,7 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 			"pool_changed", entry.poolKey != poolKey)
 		s.removeClientLocked(cacheKey, entry)
 	}
+	s.removeSiblingClientsLocked(cacheKey, isolation, accountID, proxyKey, tlsProfileKey, transportFamily)
 
 	// 超出缓存上限时尝试淘汰
 	if enforceLimit && s.maxUpstreamClients() > 0 {
@@ -568,9 +574,12 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	}
 
 	entry := &upstreamClientEntry{
-		client:   client,
-		proxyKey: proxyKey,
-		poolKey:  poolKey,
+		client:          client,
+		accountID:       accountID,
+		proxyKey:        proxyKey,
+		tlsProfileKey:   tlsProfileKey,
+		transportFamily: transportFamily,
+		poolKey:         poolKey,
 	}
 	atomic.StoreInt64(&entry.lastUsed, nowUnix)
 	if markInFlight {
@@ -698,6 +707,7 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 		}
 		s.removeClientLocked(cacheKey, entry)
 	}
+	s.removeSiblingClientsLocked(cacheKey, isolation, accountID, proxyKey, tlsProfileKeyNone, transportFamily)
 
 	// 超出缓存上限时尝试淘汰，无法淘汰则拒绝新建
 	if enforceLimit && s.maxUpstreamClients() > 0 {
@@ -721,10 +731,13 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 		client.CheckRedirect = s.redirectChecker
 	}
 	entry := &upstreamClientEntry{
-		client:       client,
-		proxyKey:     proxyKey,
-		poolKey:      poolKey,
-		protocolMode: protocolMode,
+		client:          client,
+		accountID:       accountID,
+		proxyKey:        proxyKey,
+		tlsProfileKey:   tlsProfileKeyNone,
+		transportFamily: transportFamily,
+		poolKey:         poolKey,
+		protocolMode:    protocolMode,
 	}
 	atomic.StoreInt64(&entry.lastUsed, nowUnix)
 	if markInFlight {
@@ -752,6 +765,31 @@ func (s *httpUpstreamService) shouldReuseEntry(entry *upstreamClientEntry, isola
 		return false
 	}
 	return true
+}
+
+func (s *httpUpstreamService) removeSiblingClientsLocked(cacheKey, isolation string, accountID int64, proxyKey, tlsProfileKey, transportFamily string) {
+	for key, entry := range s.clients {
+		if key == cacheKey || entry == nil {
+			continue
+		}
+		switch isolation {
+		case config.ConnectionPoolIsolationAccount, config.ConnectionPoolIsolationAccountProxy:
+			if entry.accountID != accountID {
+				continue
+			}
+		default:
+			if entry.proxyKey != proxyKey {
+				continue
+			}
+		}
+		proxyChanged := entry.proxyKey != proxyKey
+		tlsChanged := entry.tlsProfileKey != tlsProfileKey
+		familyChanged := entry.transportFamily != transportFamily
+		if !proxyChanged && !tlsChanged && !familyChanged {
+			continue
+		}
+		s.removeClientLocked(key, entry)
+	}
 }
 
 // removeClientLocked 移除客户端（需持有锁）
@@ -889,7 +927,8 @@ func (s *httpUpstreamService) clientIdleTTL() time.Duration {
 //
 // 参数:
 //   - isolation: 隔离模式
-//   - accountConcurrency: 账户并发限制
+//   - accountConcurrency: 原始/Effective N；本函数内部会再换算为 Burst，
+//     调用方不要传入 BurstConcurrency()
 //
 // 返回:
 //   - poolSettings: 连接池配置
