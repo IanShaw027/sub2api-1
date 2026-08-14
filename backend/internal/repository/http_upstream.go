@@ -10,8 +10,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -99,6 +101,9 @@ const (
 	upstreamProtocolModeOpenAIH1         = "openai_h1"
 	upstreamProtocolModeOpenAIH2         = "openai_h2"
 	upstreamProtocolModeOpenAIH1Fallback = "openai_h1_fallback"
+	transportFamilyH1                    = "h1"
+	transportFamilyH2                    = "h2"
+	tlsProfileKeyNone                    = "none"
 )
 
 var errUpstreamClientLimitReached = errors.New("upstream client cache limit reached")
@@ -495,9 +500,12 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	}
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, upstreamProfile)
+	burstConcurrency := resolvePoolBurstConcurrency(accountConcurrency)
+	transportFamily := transportFamilyForProtocolMode(upstreamProtocolModeDefault)
+	tlsProfileKey := tlsProfileCacheKey(profile)
 	// TLS 指纹客户端使用独立的缓存键，加 "tls:" 前缀
-	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID, upstreamProtocolModeDefault)
-	poolKey := buildPoolKey(settings, upstreamProtocolModeDefault) + ":tls"
+	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID, burstConcurrency, tlsProfileKey, transportFamily, upstreamProtocolModeDefault)
+	poolKey := buildPoolKey(settings, tlsProfileKey, transportFamily, upstreamProtocolModeDefault) + ":tls"
 
 	now := time.Now()
 	nowUnix := now.UnixNano()
@@ -655,10 +663,12 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 	protocolMode := s.resolveProtocolMode(profile, proxyKey, parsedProxy)
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, profile)
+	burstConcurrency := resolvePoolBurstConcurrency(accountConcurrency)
+	transportFamily := transportFamilyForProtocolMode(protocolMode)
 	// 构建缓存键（根据隔离策略不同）
-	cacheKey := buildCacheKey(isolation, proxyKey, accountID, protocolMode)
+	cacheKey := buildCacheKey(isolation, proxyKey, accountID, burstConcurrency, tlsProfileKeyNone, transportFamily, protocolMode)
 	// 构建连接池配置键（用于检测配置变更）
-	poolKey := buildPoolKey(settings, protocolMode)
+	poolKey := buildPoolKey(settings, tlsProfileKeyNone, transportFamily, protocolMode)
 
 	now := time.Now()
 	nowUnix := now.UnixNano()
@@ -890,10 +900,11 @@ func (s *httpUpstreamService) clientIdleTTL() time.Duration {
 func (s *httpUpstreamService) resolvePoolSettings(isolation string, accountConcurrency int) poolSettings {
 	settings := defaultPoolSettings(s.cfg)
 	// 账户隔离模式下，根据账户并发数调整连接池大小
-	if (isolation == config.ConnectionPoolIsolationAccount || isolation == config.ConnectionPoolIsolationAccountProxy) && accountConcurrency > 0 {
-		settings.maxIdleConns = accountConcurrency
-		settings.maxIdleConnsPerHost = accountConcurrency
-		settings.maxConnsPerHost = accountConcurrency
+	if isolation == config.ConnectionPoolIsolationAccount || isolation == config.ConnectionPoolIsolationAccountProxy {
+		burstConcurrency := resolvePoolBurstConcurrency(accountConcurrency)
+		settings.maxIdleConns = burstConcurrency
+		settings.maxIdleConnsPerHost = burstConcurrency
+		settings.maxConnsPerHost = burstConcurrency
 	}
 	return settings
 }
@@ -909,15 +920,53 @@ func (s *httpUpstreamService) applyProfilePoolSettings(settings poolSettings, pr
 	return settings
 }
 
+func resolvePoolBurstConcurrency(accountConcurrency int) int {
+	n := accountConcurrency
+	if n <= 0 {
+		n = 3
+	}
+	overflow := int(math.Round(float64(n) * 0.2))
+	if overflow < 1 {
+		overflow = 1
+	}
+	return n + overflow
+}
+
+func transportFamilyForProtocolMode(protocolMode string) string {
+	if protocolMode == upstreamProtocolModeOpenAIH2 {
+		return transportFamilyH2
+	}
+	return transportFamilyH1
+}
+
+func tlsProfileCacheKey(profile *tlsfingerprint.Profile) string {
+	if profile == nil {
+		return tlsProfileKeyNone
+	}
+	name := strings.TrimSpace(profile.Name)
+	if name == "" {
+		name = "custom"
+	}
+	encoded, err := json.Marshal(profile)
+	if err != nil {
+		return name
+	}
+	hasher := fnv.New64a()
+	_, _ = hasher.Write(encoded)
+	return fmt.Sprintf("%s:%x", name, hasher.Sum64())
+}
+
 // buildPoolKey 构建连接池配置键，用于检测连接池配置变更。
-func buildPoolKey(settings poolSettings, protocolMode string) string {
+func buildPoolKey(settings poolSettings, tlsProfileKey, transportFamily, protocolMode string) string {
 	base := fmt.Sprintf(
-		"idle:%d|idle_host:%d|max:%d|idle_timeout:%s|header_timeout:%s",
+		"idle:%d|idle_host:%d|max:%d|idle_timeout:%s|header_timeout:%s|tls_profile:%s|family:%s",
 		settings.maxIdleConns,
 		settings.maxIdleConnsPerHost,
 		settings.maxConnsPerHost,
 		settings.idleConnTimeout,
 		settings.responseHeaderTimeout,
+		tlsProfileKey,
+		transportFamily,
 	)
 	if protocolMode == "" || protocolMode == upstreamProtocolModeDefault {
 		return base
@@ -937,18 +986,18 @@ func buildPoolKey(settings poolSettings, protocolMode string) string {
 //   - string: 缓存键
 //
 // 缓存键格式:
-//   - proxy 模式: "proxy:{proxyKey}"
-//   - account 模式: "account:{accountID}"
-//   - account_proxy 模式: "account:{accountID}|proxy:{proxyKey}"
-func buildCacheKey(isolation, proxyKey string, accountID int64, protocolMode string) string {
+//   - proxy 模式: "proxy:{proxyKey}|tls_profile:{tlsProfileKey}|family:{transportFamily}"
+//   - account 模式: "account:{accountID}|burst:{burst}|tls_profile:{tlsProfileKey}|family:{transportFamily}"
+//   - account_proxy 模式: "account:{accountID}|proxy:{proxyKey}|burst:{burst}|tls_profile:{tlsProfileKey}|family:{transportFamily}"
+func buildCacheKey(isolation, proxyKey string, accountID int64, burstConcurrency int, tlsProfileKey, transportFamily, protocolMode string) string {
 	var base string
 	switch isolation {
 	case config.ConnectionPoolIsolationAccount:
-		base = fmt.Sprintf("account:%d", accountID)
+		base = fmt.Sprintf("account:%d|burst:%d|tls_profile:%s|family:%s", accountID, burstConcurrency, tlsProfileKey, transportFamily)
 	case config.ConnectionPoolIsolationAccountProxy:
-		base = fmt.Sprintf("account:%d|proxy:%s", accountID, proxyKey)
+		base = fmt.Sprintf("account:%d|proxy:%s|burst:%d|tls_profile:%s|family:%s", accountID, proxyKey, burstConcurrency, tlsProfileKey, transportFamily)
 	default:
-		base = fmt.Sprintf("proxy:%s", proxyKey)
+		base = fmt.Sprintf("proxy:%s|tls_profile:%s|family:%s", proxyKey, tlsProfileKey, transportFamily)
 	}
 	if protocolMode != "" && protocolMode != upstreamProtocolModeDefault {
 		base += "|proto:" + protocolMode

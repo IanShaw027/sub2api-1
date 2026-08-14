@@ -204,7 +204,7 @@ func TestHTTPUpstreamDoAppliesGrokCLIIdentityBeforeOAuthRoundTrip(t *testing.T) 
 			protocolMode := svc.resolveProtocolMode(profile, proxyKey, nil)
 			settings := svc.resolvePoolSettings(isolation, 1)
 			settings = svc.applyProfilePoolSettings(settings, profile)
-			cacheKey := buildCacheKey(isolation, proxyKey, accountID, protocolMode)
+			cacheKey := buildCacheKey(isolation, proxyKey, accountID, resolvePoolBurstConcurrency(1), tlsProfileKeyNone, transportFamilyForProtocolMode(protocolMode), protocolMode)
 
 			var capturedHeaders http.Header
 			svc.clients[cacheKey] = &upstreamClientEntry{
@@ -222,7 +222,7 @@ func TestHTTPUpstreamDoAppliesGrokCLIIdentityBeforeOAuthRoundTrip(t *testing.T) 
 					}, nil
 				})},
 				proxyKey:     proxyKey,
-				poolKey:      buildPoolKey(settings, protocolMode),
+				poolKey:      buildPoolKey(settings, tlsProfileKeyNone, transportFamilyForProtocolMode(protocolMode), protocolMode),
 				protocolMode: protocolMode,
 			}
 
@@ -254,7 +254,7 @@ func TestHTTPUpstreamDoFallsBackToOfficialGrokAPIOnCLIAccessDenied(t *testing.T)
 	protocolMode := svc.resolveProtocolMode(profile, proxyKey, nil)
 	settings := svc.resolvePoolSettings(isolation, 1)
 	settings = svc.applyProfilePoolSettings(settings, profile)
-	cacheKey := buildCacheKey(isolation, proxyKey, accountID, protocolMode)
+	cacheKey := buildCacheKey(isolation, proxyKey, accountID, resolvePoolBurstConcurrency(1), tlsProfileKeyNone, transportFamilyForProtocolMode(protocolMode), protocolMode)
 
 	payload := []byte(`{"model":"grok-4.5","input":"hello"}`)
 	var calls int
@@ -288,7 +288,7 @@ func TestHTTPUpstreamDoFallsBackToOfficialGrokAPIOnCLIAccessDenied(t *testing.T)
 			}, nil
 		})},
 		proxyKey:     proxyKey,
-		poolKey:      buildPoolKey(settings, protocolMode),
+		poolKey:      buildPoolKey(settings, tlsProfileKeyNone, transportFamilyForProtocolMode(protocolMode), protocolMode),
 		protocolMode: protocolMode,
 	}
 
@@ -865,6 +865,69 @@ func (s *HTTPUpstreamSuite) TestAccountModeProxyChangeClearsPool() {
 	require.False(s.T(), hasEntry(svc, entry1), "旧连接池应被清理")
 }
 
+func TestBuildCacheKey_AccountIsolationIncludesTLSProfileAndTransportFamily(t *testing.T) {
+	keyA := buildCacheKey(
+		config.ConnectionPoolIsolationAccount,
+		directProxyKey,
+		17,
+		14,
+		"profile-101",
+		transportFamilyH1,
+		upstreamProtocolModeDefault,
+	)
+	keyB := buildCacheKey(
+		config.ConnectionPoolIsolationAccount,
+		directProxyKey,
+		17,
+		14,
+		"profile-202",
+		transportFamilyH1,
+		upstreamProtocolModeDefault,
+	)
+	keyH2 := buildCacheKey(
+		config.ConnectionPoolIsolationAccount,
+		directProxyKey,
+		17,
+		14,
+		"profile-101",
+		transportFamilyH2,
+		upstreamProtocolModeOpenAIH2,
+	)
+
+	require.NotEqual(t, keyA, keyB)
+	require.NotEqual(t, keyA, keyH2)
+	require.Contains(t, keyA, "tls_profile:profile-101")
+	require.Contains(t, keyA, "family:h1")
+	require.Contains(t, keyA, "burst:14")
+}
+
+func TestBuildCacheKey_ProxyIsolationOmitsAccountAndBurst(t *testing.T) {
+	keyA := buildCacheKey(
+		config.ConnectionPoolIsolationProxy,
+		"http://proxy.local:8080",
+		11,
+		4,
+		"profile-101",
+		transportFamilyH1,
+		upstreamProtocolModeDefault,
+	)
+	keyB := buildCacheKey(
+		config.ConnectionPoolIsolationProxy,
+		"http://proxy.local:8080",
+		22,
+		14,
+		"profile-101",
+		transportFamilyH1,
+		upstreamProtocolModeDefault,
+	)
+
+	require.Equal(t, keyA, keyB)
+	require.NotContains(t, keyA, "account:")
+	require.NotContains(t, keyA, "burst:")
+	require.Contains(t, keyA, "tls_profile:profile-101")
+	require.Contains(t, keyA, "family:h1")
+}
+
 // TestAccountConcurrencyOverridesPoolSettings 测试账户并发数覆盖连接池配置
 // 验证账户隔离模式下，连接池大小与账户并发数对应
 func (s *HTTPUpstreamSuite) TestAccountConcurrencyOverridesPoolSettings() {
@@ -875,9 +938,31 @@ func (s *HTTPUpstreamSuite) TestAccountConcurrencyOverridesPoolSettings() {
 	transport, ok := entry.client.Transport.(*http.Transport)
 	require.True(s.T(), ok, "expected *http.Transport")
 	// 连接池参数应与并发数一致
-	require.Equal(s.T(), 12, transport.MaxConnsPerHost, "MaxConnsPerHost mismatch")
-	require.Equal(s.T(), 12, transport.MaxIdleConns, "MaxIdleConns mismatch")
-	require.Equal(s.T(), 12, transport.MaxIdleConnsPerHost, "MaxIdleConnsPerHost mismatch")
+	require.Equal(s.T(), 14, transport.MaxConnsPerHost, "MaxConnsPerHost mismatch")
+	require.Equal(s.T(), 14, transport.MaxIdleConns, "MaxIdleConns mismatch")
+	require.Equal(s.T(), 14, transport.MaxIdleConnsPerHost, "MaxIdleConnsPerHost mismatch")
+}
+
+func (s *HTTPUpstreamSuite) TestPoolSettings_AccountIsolationUsesBurstConcurrency() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount}
+	svc := s.newService()
+
+	settings := svc.resolvePoolSettings(config.ConnectionPoolIsolationAccount, 12)
+
+	require.Equal(s.T(), 14, settings.maxConnsPerHost)
+	require.Equal(s.T(), 14, settings.maxIdleConns)
+	require.Equal(s.T(), 14, settings.maxIdleConnsPerHost)
+}
+
+func (s *HTTPUpstreamSuite) TestPoolSettings_AccountIsolationFallsBackToBurstOfThree() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccountProxy}
+	svc := s.newService()
+
+	settings := svc.resolvePoolSettings(config.ConnectionPoolIsolationAccountProxy, 0)
+
+	require.Equal(s.T(), 4, settings.maxConnsPerHost)
+	require.Equal(s.T(), 4, settings.maxIdleConns)
+	require.Equal(s.T(), 4, settings.maxIdleConnsPerHost)
 }
 
 // TestAccountConcurrencyFallbackToDefault 测试账户并发数为 0 时回退到默认配置
@@ -894,9 +979,69 @@ func (s *HTTPUpstreamSuite) TestAccountConcurrencyFallbackToDefault() {
 	entry := mustGetOrCreateClient(s.T(), svc, "", 1, 0)
 	transport, ok := entry.client.Transport.(*http.Transport)
 	require.True(s.T(), ok, "expected *http.Transport")
-	require.Equal(s.T(), 66, transport.MaxConnsPerHost, "MaxConnsPerHost fallback mismatch")
-	require.Equal(s.T(), 77, transport.MaxIdleConns, "MaxIdleConns fallback mismatch")
-	require.Equal(s.T(), 55, transport.MaxIdleConnsPerHost, "MaxIdleConnsPerHost fallback mismatch")
+	require.Equal(s.T(), 4, transport.MaxConnsPerHost, "MaxConnsPerHost fallback mismatch")
+	require.Equal(s.T(), 4, transport.MaxIdleConns, "MaxIdleConns fallback mismatch")
+	require.Equal(s.T(), 4, transport.MaxIdleConnsPerHost, "MaxIdleConnsPerHost fallback mismatch")
+}
+
+func (s *HTTPUpstreamSuite) TestTLSPoolKey_ProxyIsolationSeparatesTLSProfiles() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationProxy}
+	svc := s.newService()
+
+	entry1, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		&tlsfingerprint.Profile{Name: "profile-101"},
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+
+	entry2, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		2,
+		12,
+		&tlsfingerprint.Profile{Name: "profile-202"},
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+
+	require.NotSame(s.T(), entry1, entry2, "different TLS profiles must not share the same proxy pool")
+	require.Equal(s.T(), 2, len(svc.clients), "proxy isolation should keep separate pools per TLS profile")
+}
+
+func (s *HTTPUpstreamSuite) TestTLSPoolKey_ProxyIsolationReusesPoolAcrossAccounts() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationProxy}
+	svc := s.newService()
+
+	entry1, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		&tlsfingerprint.Profile{Name: "profile-101"},
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+
+	entry2, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		2,
+		12,
+		&tlsfingerprint.Profile{Name: "profile-101"},
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+
+	require.Same(s.T(), entry1, entry2, "proxy isolation must ignore per-account Burst")
+	require.Equal(s.T(), 1, len(svc.clients))
 }
 
 // TestEvictOverLimitRemovesOldestIdle 测试超出数量限制时的 LRU 淘汰
