@@ -424,23 +424,6 @@ func (s *IdentityService) RewriteUserIDWithMasking(ctx context.Context, body []b
 	return maskedBody, nil
 }
 
-// generateRandomUUID 生成随机 UUID v4 格式字符串
-func generateRandomUUID() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		// fallback: 使用时间戳生成
-		h := sha256.Sum256([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
-		b = h[:16]
-	}
-
-	// 设置 UUID v4 版本和变体位
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-
-	return fmt.Sprintf("%x-%x-%x-%x-%x",
-		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
-}
-
 // generateClientID 生成64位十六进制客户端ID（32字节随机数）
 func generateClientID() string {
 	b := make([]byte, 32)
