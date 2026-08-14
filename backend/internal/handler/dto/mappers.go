@@ -328,6 +328,9 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		enabled := true
 		out.EnableTLSFingerprint = &enabled
 	}
+	if enabled, ok := a.Extra["device_learning_enabled"].(bool); ok && enabled {
+		out.DeviceLearningEnabled = &enabled
+	}
 	if profileID := a.GetTLSFingerprintProfileID(); profileID != 0 {
 		out.TLSFingerprintProfileID = &profileID
 	}

@@ -34,7 +34,7 @@ func ValidateAccountExtraIdentity(extra map[string]any) error {
 	if err := validateTLSFingerprintProfileID(extra); err != nil {
 		return err
 	}
-	return nil
+	return validateDeviceLearningEnabled(extra)
 }
 
 // ValidateAccountCapacityExtra validates capacity and TLS extras on write.
@@ -80,6 +80,10 @@ func ValidateAccountCapacityExtra(extra map[string]any) error {
 		if _, ok := v.(bool); !ok {
 			return identityReject("enable_tls_fingerprint must be a boolean")
 		}
+	}
+
+	if err := validateDeviceLearningEnabled(extra); err != nil {
+		return err
 	}
 
 	if v, ok := extra["codex_fingerprint_mode"]; ok {
@@ -147,6 +151,18 @@ func requiredPresentCapacityInt(extra map[string]any, key string) (int64, bool, 
 		return 0, true, identityReject(fmt.Sprintf("%s must be an integer", key))
 	}
 	return n, true, nil
+}
+
+func validateDeviceLearningEnabled(extra map[string]any) error {
+	if v, ok := extra["device_learning_enabled"]; ok {
+		if v == nil {
+			return identityReject("device_learning_enabled must be a boolean")
+		}
+		if _, ok := v.(bool); !ok {
+			return identityReject("device_learning_enabled must be a boolean")
+		}
+	}
+	return nil
 }
 
 func validateTLSFingerprintProfileID(extra map[string]any) error {
