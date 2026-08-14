@@ -428,6 +428,8 @@ type OpenAIGatewayService struct {
 	channelService        *ChannelService
 	balanceNotifyService  *BalanceNotifyService
 	settingService        *SettingService
+	tlsFPProfileService   *TLSFingerprintProfileService
+	tlsFPRouterService    *TLSFingerprintRouterService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	liveAttestation       liveattestation.Provider
 	liveAttestationCipher SecretEncryptor
@@ -540,6 +542,18 @@ func NewOpenAIGatewayService(
 	}
 	svc.logOpenAIWSModeBootstrap()
 	return svc
+}
+
+func (s *OpenAIGatewayService) SetTLSFingerprintServices(profile *TLSFingerprintProfileService, router *TLSFingerprintRouterService) {
+	if s == nil {
+		return
+	}
+	s.tlsFPProfileService = profile
+	s.tlsFPRouterService = router
+}
+
+func (s *OpenAIGatewayService) doAccountHTTP(ctx context.Context, c *gin.Context, account *Account, req *http.Request, proxyURL, protocol string) (*http.Response, error) {
+	return doAccountHTTPUpstreamFromGin(ctx, c, s.httpUpstream, req, proxyURL, account, s.tlsFPProfileService, s.tlsFPRouterService, "http", protocol)
 }
 
 // ResolveChannelMapping 解析渠道级模型映射（代理到 ChannelService）

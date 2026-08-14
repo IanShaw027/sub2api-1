@@ -120,6 +120,9 @@ type SupportTicketRevision func(*sql.Selector)
 // TLSFingerprintProfile is the predicate function for tlsfingerprintprofile builders.
 type TLSFingerprintProfile func(*sql.Selector)
 
+// TLSFingerprintRouter is the predicate function for tlsfingerprintrouter builders.
+type TLSFingerprintRouter func(*sql.Selector)
+
 // UsageCleanupTask is the predicate function for usagecleanuptask builders.
 type UsageCleanupTask func(*sql.Selector)
 

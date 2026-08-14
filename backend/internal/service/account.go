@@ -2050,23 +2050,13 @@ func (a *Account) IsAnthropicOAuthOrSetupToken() bool {
 	return a.Platform == PlatformAnthropic && (a.Type == AccountTypeOAuth || a.Type == AccountTypeSetupToken)
 }
 
-// IsTLSFingerprintEnabled 检查是否启用 TLS 指纹伪装
-// 仅适用于 Anthropic OAuth/SetupToken 类型账号
-// 启用后将模拟 Claude Code (Node.js) 客户端的 TLS 握手特征
+// IsTLSFingerprintEnabled 检查是否启用 TLS 指纹伪装。
+// 全平台可用：anthropic / openai / gemini / antigravity / grok / kiro。
 func (a *Account) IsTLSFingerprintEnabled() bool {
-	// 仅支持 Anthropic OAuth/SetupToken 账号
-	if !a.IsAnthropicOAuthOrSetupToken() {
+	if a == nil || !supportsAccountTLSFingerprint(a.Platform) {
 		return false
 	}
-	if a.Extra == nil {
-		return false
-	}
-	if v, ok := a.Extra["enable_tls_fingerprint"]; ok {
-		if enabled, ok := v.(bool); ok {
-			return enabled
-		}
-	}
-	return false
+	return a.isTLSFingerprintFlagEnabled()
 }
 
 // GetTLSFingerprintProfileID 获取账号绑定的 TLS 指纹模板 ID

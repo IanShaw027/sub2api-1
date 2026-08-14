@@ -2627,41 +2627,6 @@
           </div>
         </div>
 
-        <!-- TLS Fingerprint -->
-        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
-          <div class="flex items-center justify-between">
-            <div>
-              <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.tlsFingerprint.label') }}</label>
-              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                {{ t('admin.accounts.quotaControl.tlsFingerprint.hint') }}
-              </p>
-            </div>
-            <button
-              type="button"
-              @click="tlsFingerprintEnabled = !tlsFingerprintEnabled"
-              :class="[
-                'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-                tlsFingerprintEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
-              ]"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                  tlsFingerprintEnabled ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              />
-            </button>
-          </div>
-          <!-- Profile selector -->
-          <div v-if="tlsFingerprintEnabled" class="mt-3">
-            <select v-model="tlsFingerprintProfileId" class="input">
-              <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultProfile') }}</option>
-              <option v-if="tlsFingerprintProfiles.length > 0" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
-              <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
-            </select>
-          </div>
-        </div>
-
         <!-- Session ID Masking -->
         <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
           <div class="flex items-center justify-between">
@@ -2761,6 +2726,72 @@
               class="input"
               :placeholder="t('admin.accounts.quotaControl.customBaseUrl.urlHint')"
             />
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-if="supportsTLSFingerprint(account?.platform)"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
+      >
+        <div class="rounded-lg border border-gray-200 p-4 dark:border-dark-600">
+          <div class="flex items-center justify-between">
+            <div>
+              <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.tlsFingerprint.label') }}</label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.quotaControl.tlsFingerprint.hint') }}
+              </p>
+            </div>
+            <button
+              type="button"
+              @click="tlsFingerprintEnabled = !tlsFingerprintEnabled"
+              :class="[
+                'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+                tlsFingerprintEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              ]"
+            >
+              <span
+                :class="[
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  tlsFingerprintEnabled ? 'translate-x-5' : 'translate-x-0'
+                ]"
+              />
+            </button>
+          </div>
+          <div v-if="tlsFingerprintEnabled" class="mt-3 space-y-3">
+            <select v-model="tlsFingerprintProfileId" class="input">
+              <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultProfile') }}</option>
+              <option v-if="tlsFingerprintProfiles.length > 0" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
+              <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+            </select>
+            <select v-model="tlsFingerprintRouterId" class="input">
+              <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.noRouter') }}</option>
+              <option v-for="router in tlsFingerprintRouters" :key="router.id" :value="router.id">{{ router.name }}</option>
+            </select>
+            <select v-model="tlsFingerprintDefaultOS" class="input">
+              <option value="">{{ t('admin.accounts.quotaControl.tlsFingerprint.anyDefaultOS') }}</option>
+              <option v-for="os in tlsFingerprintOSOptions" :key="os" :value="os">{{ os }}</option>
+            </select>
+            <div class="space-y-2">
+              <div v-for="(row, index) in tlsFingerprintBindingRows" :key="index" class="grid grid-cols-4 gap-2">
+                <select v-model="row.os" class="input">
+                  <option value="">os</option>
+                  <option v-for="os in tlsFingerprintOSOptions" :key="os" :value="os">{{ os }}</option>
+                </select>
+                <input v-model="row.client" class="input" placeholder="client" />
+                <select v-model="row.protocol" class="input">
+                  <option value="">protocol</option>
+                  <option v-for="protocol in tlsFingerprintProtocolOptions" :key="protocol" :value="protocol">{{ protocol }}</option>
+                </select>
+                <select v-model.number="row.profileId" class="input">
+                  <option :value="0">—</option>
+                  <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
+                </select>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" @click="addTLSFingerprintBindingRow">
+                {{ t('admin.accounts.quotaControl.tlsFingerprint.addBinding') }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -3200,6 +3231,75 @@ const umqModeOptions = computed(() => [
 const tlsFingerprintEnabled = ref(false)
 const tlsFingerprintProfileId = ref<number | null>(null)
 const tlsFingerprintProfiles = ref<{ id: number; name: string }[]>([])
+const tlsFingerprintRouters = ref<{ id: number; name: string }[]>([])
+const tlsFingerprintRouterId = ref<number | null>(null)
+const tlsFingerprintDefaultOS = ref('')
+const tlsFingerprintOSOptions = ['windows', 'macos', 'linux', 'ios', 'android']
+const tlsFingerprintProtocolOptions = ['messages', 'responses', 'chat_completions', 'images', 'embeddings', 'gemini', 'antigravity', 'kiro']
+const tlsFingerprintBindingRows = ref<{ os: string; client: string; protocol: string; profileId: number }[]>([])
+
+function supportsTLSFingerprint(platform?: string | null) {
+  return ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kiro'].includes(platform || '')
+}
+
+function addTLSFingerprintBindingRow() {
+  tlsFingerprintBindingRows.value.push({ os: '', client: '', protocol: '', profileId: 0 })
+}
+
+function applyTLSFingerprintToExtra(extra: Record<string, unknown>) {
+  if (tlsFingerprintEnabled.value) {
+    extra.enable_tls_fingerprint = true
+    if (tlsFingerprintProfileId.value) {
+      extra.tls_fingerprint_profile_id = tlsFingerprintProfileId.value
+    } else {
+      delete extra.tls_fingerprint_profile_id
+    }
+    if (tlsFingerprintRouterId.value) {
+      extra.tls_fingerprint_router_id = tlsFingerprintRouterId.value
+    } else {
+      delete extra.tls_fingerprint_router_id
+    }
+    if (tlsFingerprintDefaultOS.value) {
+      extra.tls_fingerprint_default_os = tlsFingerprintDefaultOS.value
+    } else {
+      delete extra.tls_fingerprint_default_os
+    }
+    const bindings = tlsFingerprintBindingsFromRows()
+    if (bindings) {
+      extra.tls_fingerprint_bindings = bindings
+    } else {
+      delete extra.tls_fingerprint_bindings
+    }
+    return
+  }
+  delete extra.enable_tls_fingerprint
+  delete extra.tls_fingerprint_profile_id
+  delete extra.tls_fingerprint_router_id
+  delete extra.tls_fingerprint_default_os
+  delete extra.tls_fingerprint_bindings
+}
+
+function tlsFingerprintBindingsFromRows(): Record<string, number> | undefined {
+  const out: Record<string, number> = {}
+  for (const row of tlsFingerprintBindingRows.value) {
+    const parts = [row.os, row.client].filter((part) => part.trim())
+    let key = parts.join('/').toLowerCase()
+    if (row.protocol.trim()) {
+      key = key ? `${key}@${row.protocol.trim().toLowerCase()}` : row.protocol.trim().toLowerCase()
+    }
+    if (!key || !row.profileId) continue
+    out[key] = row.profileId
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+function tlsFingerprintRowsFromBindings(bindings?: Record<string, number> | null) {
+  tlsFingerprintBindingRows.value = Object.entries(bindings || {}).map(([key, profileId]) => {
+    const [left, protocol = ''] = key.split('@')
+    const [os = '', client = ''] = left.split('/')
+    return { os, client, protocol, profileId }
+  })
+}
 const sessionIdMaskingEnabled = ref(false)
 const cacheTTLOverrideEnabled = ref(false)
 const cacheTTLOverrideTarget = ref<string>('5m')
@@ -3985,10 +4085,15 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 
 async function loadTLSProfiles() {
   try {
-    const profiles = await adminAPI.tlsFingerprintProfiles.list()
+    const [profiles, routers] = await Promise.all([
+      adminAPI.tlsFingerprintProfiles.list(),
+      adminAPI.tlsFingerprintRouters.list()
+    ])
     tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name }))
+    tlsFingerprintRouters.value = routers.map(r => ({ id: r.id, name: r.name }))
   } catch {
     tlsFingerprintProfiles.value = []
+    tlsFingerprintRouters.value = []
   }
 }
 
@@ -4342,11 +4447,24 @@ function loadQuotaControlSettings(account: Account) {
   userMsgQueueMode.value = ''
   tlsFingerprintEnabled.value = false
   tlsFingerprintProfileId.value = null
+  tlsFingerprintRouterId.value = null
+  tlsFingerprintDefaultOS.value = ''
+  tlsFingerprintBindingRows.value = []
   sessionIdMaskingEnabled.value = false
   cacheTTLOverrideEnabled.value = false
   cacheTTLOverrideTarget.value = '5m'
   customBaseUrlEnabled.value = false
   customBaseUrl.value = ''
+
+  if (supportsTLSFingerprint(account.platform)) {
+    if (account.enable_tls_fingerprint === true) {
+      tlsFingerprintEnabled.value = true
+    }
+    tlsFingerprintProfileId.value = account.tls_fingerprint_profile_id ?? null
+    tlsFingerprintRouterId.value = account.tls_fingerprint_router_id ?? null
+    tlsFingerprintDefaultOS.value = account.tls_fingerprint_default_os ?? ''
+    tlsFingerprintRowsFromBindings(account.tls_fingerprint_bindings)
+  }
 
   // Remaining quota control settings only apply to Anthropic accounts
   if (account.platform !== 'anthropic') {
@@ -4381,12 +4499,6 @@ function loadQuotaControlSettings(account: Account) {
 
   // UMQ mode（独立于 RPM 加载，防止编辑无 RPM 账号时丢失已有配置）
   userMsgQueueMode.value = account.user_msg_queue_mode ?? ''
-
-  // Load TLS fingerprint setting
-  if (account.enable_tls_fingerprint === true) {
-    tlsFingerprintEnabled.value = true
-  }
-  tlsFingerprintProfileId.value = account.tls_fingerprint_profile_id ?? null
 
   // Load session ID masking setting
   if (account.session_id_masking_enabled === true) {
@@ -5024,19 +5136,6 @@ const handleSubmit = async () => {
       }
       delete newExtra.user_msg_queue_enabled  // 清理旧字段
 
-      // TLS fingerprint setting
-      if (tlsFingerprintEnabled.value) {
-        newExtra.enable_tls_fingerprint = true
-        if (tlsFingerprintProfileId.value) {
-          newExtra.tls_fingerprint_profile_id = tlsFingerprintProfileId.value
-        } else {
-          delete newExtra.tls_fingerprint_profile_id
-        }
-      } else {
-        delete newExtra.enable_tls_fingerprint
-        delete newExtra.tls_fingerprint_profile_id
-      }
-
       // Session ID masking setting
       if (sessionIdMaskingEnabled.value) {
         newExtra.session_id_masking_enabled = true
@@ -5262,6 +5361,15 @@ const handleSubmit = async () => {
         (props.account.extra as Record<string, unknown>) ||
         {}
       updatePayload.extra = stripKiroRuntimeExtra(currentExtra)
+    }
+
+    if (supportsTLSFingerprint(props.account.platform)) {
+      const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
+        (props.account.extra as Record<string, unknown>) ||
+        {}
+      const newExtra: Record<string, unknown> = { ...currentExtra }
+      applyTLSFingerprintToExtra(newExtra)
+      updatePayload.extra = newExtra
     }
 
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {

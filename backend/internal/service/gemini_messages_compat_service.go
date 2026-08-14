@@ -54,6 +54,8 @@ type GeminiMessagesCompatService struct {
 	rateLimitService          *RateLimitService
 	httpUpstream              HTTPUpstream
 	antigravityGatewayService *AntigravityGatewayService
+	tlsFPProfileService       *TLSFingerprintProfileService
+	tlsFPRouterService        *TLSFingerprintRouterService
 	cfg                       *config.Config
 	responseHeaderFilter      *responseheaders.CompiledHeaderFilter
 }
@@ -93,6 +95,18 @@ func NewGeminiMessagesCompatService(
 		cfg:                       cfg,
 		responseHeaderFilter:      compileResponseHeaderFilter(cfg),
 	}
+}
+
+func (s *GeminiMessagesCompatService) SetTLSFingerprintServices(profile *TLSFingerprintProfileService, router *TLSFingerprintRouterService) {
+	if s == nil {
+		return
+	}
+	s.tlsFPProfileService = profile
+	s.tlsFPRouterService = router
+}
+
+func (s *GeminiMessagesCompatService) doAccountHTTP(ctx context.Context, account *Account, req *http.Request, proxyURL, inboundUA string) (*http.Response, error) {
+	return doAccountHTTPUpstream(ctx, s.httpUpstream, req, proxyURL, account, s.tlsFPProfileService, s.tlsFPRouterService, inboundUA, "http", "gemini")
 }
 
 // GetTokenProvider returns the token provider for OAuth accounts
@@ -782,7 +796,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		}
 		requestIDHeader = idHeader
 
-		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+		resp, err = s.doAccountHTTP(ctx, account, upstreamReq, proxyURL, inboundUserAgentFromGin(c))
 		if err != nil {
 			safeErr := sanitizeUpstreamErrorMessage(err.Error())
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -1315,7 +1329,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		}
 		requestIDHeader = idHeader
 
-		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+		resp, err = s.doAccountHTTP(ctx, account, upstreamReq, proxyURL, inboundUserAgentFromGin(c))
 		if err != nil {
 			safeErr := sanitizeUpstreamErrorMessage(err.Error())
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -2785,7 +2799,7 @@ func (s *GeminiMessagesCompatService) ForwardAIStudioGET(ctx context.Context, ac
 		return nil, fmt.Errorf("unsupported account type: %s", account.Type)
 	}
 
-	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+	resp, err := s.doAccountHTTP(ctx, account, req, proxyURL, "")
 	if err != nil {
 		return nil, err
 	}

@@ -153,7 +153,7 @@ func (s *GatewayService) ForwardAsChatCompletions(
 	}
 
 	// 11. Send request
-	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := doAccountHTTPUpstreamFromGin(ctx, c, s.httpUpstream, upstreamReq, proxyURL, account, s.tlsFPProfileService, s.tlsFPRouterService, "http", "chat_completions")
 	if err != nil {
 		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()

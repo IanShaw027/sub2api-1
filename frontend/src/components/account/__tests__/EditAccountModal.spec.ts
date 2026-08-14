@@ -36,6 +36,9 @@ vi.mock('@/api/admin', () => ({
     },
     tlsFingerprintProfiles: {
       list: vi.fn().mockResolvedValue([])
+    },
+    tlsFingerprintRouters: {
+      list: vi.fn().mockResolvedValue([])
     }
   }
 }))
@@ -1177,5 +1180,37 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.credentials).not.toHaveProperty(
       'antigravity_project_id'
     )
+  })
+
+  it('preserves OpenAI TLS fingerprint extra on an unrelated save', async () => {
+    const account = {
+      ...buildAccount(),
+      type: 'oauth',
+      enable_tls_fingerprint: true,
+      tls_fingerprint_router_id: 9,
+      tls_fingerprint_default_os: 'macos',
+      tls_fingerprint_bindings: { 'macos/codex-cli@responses': 21 },
+      extra: {
+        enable_tls_fingerprint: true,
+        tls_fingerprint_router_id: 9,
+        tls_fingerprint_default_os: 'macos',
+        tls_fingerprint_bindings: { 'macos/codex-cli@responses': 21 }
+      }
+    }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toMatchObject({
+      enable_tls_fingerprint: true,
+      tls_fingerprint_router_id: 9,
+      tls_fingerprint_default_os: 'macos',
+      tls_fingerprint_bindings: { 'macos/codex-cli@responses': 21 }
+    })
   })
 })

@@ -23,6 +23,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
+	"github.com/gin-gonic/gin"
 	"github.com/cespare/xxhash/v2"
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/tidwall/gjson"
@@ -798,6 +799,7 @@ type GatewayService struct {
 	compositeResolver     *CompositeRouteResolver
 	debugGatewayBodyFile  atomic.Pointer[os.File] // non-nil when SUB2API_DEBUG_GATEWAY_BODY is set
 	tlsFPProfileService   *TLSFingerprintProfileService
+	tlsFPRouterService    *TLSFingerprintRouterService
 	balanceNotifyService  *BalanceNotifyService
 	userPlatformQuotaRepo UserPlatformQuotaRepository
 	kiroTokenProvider     *KiroTokenProvider
@@ -810,6 +812,20 @@ func (s *GatewayService) SetKiroDeps(kiroTokenProvider *KiroTokenProvider, kiroG
 	}
 	s.kiroTokenProvider = kiroTokenProvider
 	s.kiroGatewayService = kiroGatewayService
+}
+
+func (s *GatewayService) SetTLSFingerprintRouterService(svc *TLSFingerprintRouterService) {
+	if s == nil {
+		return
+	}
+	s.tlsFPRouterService = svc
+}
+
+func (s *GatewayService) resolveGatewayTLSFingerprintRuntime(ctx context.Context, c *gin.Context, account *Account, protocol string) accountTLSFingerprintRuntime {
+	if protocol == "" && c != nil && c.Request != nil && c.Request.URL != nil {
+		protocol = inboundProtocolFromPath(c.Request.URL.Path)
+	}
+	return resolveAccountTLSFingerprintRuntime(ctx, account, s.tlsFPProfileService, s.tlsFPRouterService, inboundUserAgentFromGin(c), "http", protocol)
 }
 
 // NewGatewayService creates a new GatewayService

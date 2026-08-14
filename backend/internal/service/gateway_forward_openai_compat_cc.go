@@ -232,7 +232,7 @@ func (s *GatewayService) sendOpenAICompatCCChatRequest(
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := doAccountHTTPUpstreamFromGin(ctx, c, s.httpUpstream, upstreamReq, proxyURL, account, s.tlsFPProfileService, s.tlsFPRouterService, "http", "chat_completions")
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{

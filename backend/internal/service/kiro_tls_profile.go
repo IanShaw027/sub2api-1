@@ -16,6 +16,7 @@ type accountTLSFingerprintRuntime struct {
 	Profile            *tlsfingerprint.Profile
 	UpstreamUserAgent  string
 	UpstreamOriginator string
+	Matched            bool
 }
 
 func resolveKiroTLSProfile(account *Account, tlsFPProfileService *TLSFingerprintProfileService) *tlsfingerprint.Profile {
@@ -23,15 +24,6 @@ func resolveKiroTLSProfile(account *Account, tlsFPProfileService *TLSFingerprint
 		return nil
 	}
 	return tlsFPProfileService.ResolveTLSProfile(account)
-}
-
-func resolveKiroTLSProfileWithRouter(
-	ctx context.Context,
-	account *Account,
-	tlsFPProfileService *TLSFingerprintProfileService,
-	inboundUA, transport string,
-) *tlsfingerprint.Profile {
-	return nil
 }
 
 func (s *KiroGatewayService) resolveTLSFingerprintRuntime(
@@ -44,7 +36,23 @@ func (s *KiroGatewayService) resolveTLSFingerprintRuntime(
 			return runtime
 		}
 	}
-	return accountTLSFingerprintRuntime{}
+	if s == nil {
+		return accountTLSFingerprintRuntime{}
+	}
+	return resolveAccountTLSFingerprintRuntime(ctx, account, s.tlsFPProfileSvc, s.tlsFPRouterSvc, inboundUserAgentFromGin(c), "http", "kiro")
+}
+
+func (s *KiroGatewayService) doKiroUpstream(ctx context.Context, c *gin.Context, account *Account, req *http.Request) (*http.Response, error) {
+	if s == nil || s.httpUpstream == nil || account == nil {
+		return nil, fmt.Errorf("kiro upstream is not configured")
+	}
+	runtime := s.resolveTLSFingerprintRuntime(ctx, c, account)
+	applyKiroTLSFingerprintRuntime(req, runtime)
+	profile := runtime.Profile
+	if profile == nil {
+		profile = resolveKiroTLSProfile(account, s.tlsFPProfileSvc)
+	}
+	return s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, profile)
 }
 
 func applyKiroTLSFingerprintRuntime(req *http.Request, runtime accountTLSFingerprintRuntime) {
@@ -57,10 +65,6 @@ func applyKiroTLSFingerprintRuntime(req *http.Request, runtime accountTLSFingerp
 	if originator := strings.TrimSpace(runtime.UpstreamOriginator); originator != "" {
 		req.Header.Set("X-Originator", originator)
 	}
-}
-
-func isKiroTLSFingerprintEnabled(account *Account) bool {
-	return false
 }
 
 func newKiroSidecarHTTPClient(account *Account, tlsFPProfileService *TLSFingerprintProfileService, timeout time.Duration) (*http.Client, error) {

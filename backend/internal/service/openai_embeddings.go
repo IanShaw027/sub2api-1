@@ -89,7 +89,7 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 	if account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	resp, err := s.doAccountHTTP(ctx, c, account, upstreamReq, proxyURL, "embeddings")
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
 		setOpsUpstreamError(c, 0, safeErr, "")
