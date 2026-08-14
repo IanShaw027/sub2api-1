@@ -6,7 +6,9 @@ import (
 	"compress/flate"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -510,7 +512,7 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	tlsProfileKey := tlsProfileCacheKey(profile)
 	// TLS 指纹客户端使用独立的缓存键，加 "tls:" 前缀
 	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID, burstConcurrency, tlsProfileKey, transportFamily, upstreamProtocolModeDefault)
-	poolKey := buildPoolKey(settings, tlsProfileKey, transportFamily, upstreamProtocolModeDefault) + ":tls"
+	poolKey := buildPoolKey(settings, tlsProfilePoolIdentity(profile), transportFamily, upstreamProtocolModeDefault) + ":tls"
 
 	now := time.Now()
 	nowUnix := now.UnixNano()
@@ -767,9 +769,10 @@ func (s *httpUpstreamService) shouldReuseEntry(entry *upstreamClientEntry, isola
 	return true
 }
 
-// removeSiblingClientsLocked drains idle sibling pools whose identity-scoped
-// configuration changed. Isolation modes treat different dimensions as identity
-// vs change:
+// removeSiblingClientsLocked drains sibling pools whose identity-scoped
+// configuration changed, including entries with in-flight requests.
+// CloseIdleConnections does not interrupt active connections. Isolation modes
+// treat different dimensions as identity vs change:
 //   - account: one live pool per account; drain on proxy, TLS profile, or family change
 //   - account_proxy: proxy is identity; drain only TLS/family change for the same account+proxy
 //   - proxy: pools are shared across accounts; never drain just because tls_profile_id
@@ -777,9 +780,6 @@ func (s *httpUpstreamService) shouldReuseEntry(entry *upstreamClientEntry, isola
 func (s *httpUpstreamService) removeSiblingClientsLocked(cacheKey, isolation string, accountID int64, proxyKey, tlsProfileKey, transportFamily string) {
 	for key, entry := range s.clients {
 		if key == cacheKey || entry == nil {
-			continue
-		}
-		if atomic.LoadInt64(&entry.inFlight) != 0 {
 			continue
 		}
 		switch isolation {
@@ -1007,6 +1007,53 @@ func tlsProfileCacheKey(profile *tlsfingerprint.Profile) string {
 		name = "custom"
 	}
 	return "builtin:" + name
+}
+
+// tlsProfilePoolIdentity is the pool-key component for a TLS profile.
+// Canonical identity stays in tlsProfileCacheKey; this appends a ClientHello
+// revision so an in-place edit of the same DB ID rebuilds the transport
+// without merging distinct IDs under proxy isolation.
+func tlsProfilePoolIdentity(profile *tlsfingerprint.Profile) string {
+	key := tlsProfileCacheKey(profile)
+	rev := tlsProfileRevision(profile)
+	if rev == "" {
+		return key
+	}
+	return key + "@" + rev
+}
+
+func tlsProfileRevision(profile *tlsfingerprint.Profile) string {
+	if profile == nil {
+		return ""
+	}
+	var b strings.Builder
+	if profile.EnableGREASE {
+		b.WriteByte('1')
+	} else {
+		b.WriteByte('0')
+	}
+	writeUint16CSV(&b, profile.CipherSuites)
+	writeUint16CSV(&b, profile.Curves)
+	writeUint16CSV(&b, profile.PointFormats)
+	writeUint16CSV(&b, profile.SignatureAlgorithms)
+	b.WriteByte('|')
+	b.WriteString(strings.Join(profile.ALPNProtocols, ","))
+	writeUint16CSV(&b, profile.SupportedVersions)
+	writeUint16CSV(&b, profile.KeyShareGroups)
+	writeUint16CSV(&b, profile.PSKModes)
+	writeUint16CSV(&b, profile.Extensions)
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:8])
+}
+
+func writeUint16CSV(b *strings.Builder, values []uint16) {
+	b.WriteByte('|')
+	for i, v := range values {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.FormatUint(uint64(v), 10))
+	}
 }
 
 // buildPoolKey 构建连接池配置键，用于检测连接池配置变更。

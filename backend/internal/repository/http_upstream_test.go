@@ -994,6 +994,17 @@ func TestTLSProfileCacheKey_UsesBuiltinNameForDefaultProfile(t *testing.T) {
 	}))
 }
 
+func TestTLSProfilePoolIdentity_SameIDConfigReplacementKeepsCanonicalID(t *testing.T) {
+	v1 := &tlsfingerprint.Profile{ID: 101, Name: "profile-101", CipherSuites: []uint16{0x1301}}
+	v2 := &tlsfingerprint.Profile{ID: 101, Name: "profile-101", CipherSuites: []uint16{0x1302}}
+
+	require.Equal(t, "101", tlsProfileCacheKey(v1))
+	require.Equal(t, "101", tlsProfileCacheKey(v2))
+	require.NotEqual(t, tlsProfilePoolIdentity(v1), tlsProfilePoolIdentity(v2))
+	require.True(t, strings.HasPrefix(tlsProfilePoolIdentity(v1), "101@"))
+	require.True(t, strings.HasPrefix(tlsProfilePoolIdentity(v2), "101@"))
+}
+
 func TestTLSPoolKey_ProxyIsolationSeparatesProfilesWithIdenticalContentsButDifferentIDs(t *testing.T) {
 	profileSvc := service.NewTLSFingerprintProfileService(&stubTLSFingerprintProfileRepo{
 		profiles: []*model.TLSFingerprintProfile{
@@ -1069,6 +1080,26 @@ func TestTLSPoolKey_ProxyIsolationSeparatesProfilesWithIdenticalContentsButDiffe
 
 	require.NotSame(t, entry1, entry2, "profiles with distinct canonical IDs must not share TLS client entries")
 	require.Equal(t, 2, len(svc.clients), "proxy-isolated TLS pools must coexist across accounts with distinct canonical profile IDs")
+
+	replaced101, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		&tlsfingerprint.Profile{
+			ID:           101,
+			Name:         "shared-profile",
+			EnableGREASE: true,
+			CipherSuites: []uint16{0x1303},
+		},
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotSame(t, entry1, replaced101, "same-ID TLS config replacement must rebuild the ClientHello transport")
+	require.False(t, hasEntry(svc, entry1), "replaced same-ID TLS client should be removed")
+	require.True(t, hasEntry(svc, entry2), "a different canonical profile ID must keep its proxy-isolated pool")
+	require.Equal(t, 2, len(svc.clients), "proxy isolation must keep distinct profile IDs coexisting after a same-ID config replace")
 }
 
 // TestAccountConcurrencyOverridesPoolSettings 测试账户并发数覆盖连接池配置
@@ -1256,6 +1287,72 @@ func (s *HTTPUpstreamSuite) TestAccountProxyTLSProfileChangeDrainsSameProxyIdleC
 
 	require.Equal(s.T(), int64(1), oldTransport.closeIdleCalls.Load(), "account_proxy TLS change on the same proxy should drain the prior idle client")
 	require.False(s.T(), hasEntry(svc, oldEntry), "stale TLS client should be removed after drain")
+	require.Equal(s.T(), 1, len(svc.clients), "only the replacement TLS client should remain cached")
+}
+
+func (s *HTTPUpstreamSuite) TestAccountModeDrainsInFlightSiblingOnProxyChange() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount}
+	svc := s.newService()
+
+	settings := svc.resolvePoolSettings(config.ConnectionPoolIsolationAccount, 3)
+	oldProxyKey, _, err := normalizeProxyURL("http://proxy-a:8080")
+	require.NoError(s.T(), err)
+	oldCacheKey := buildCacheKey(config.ConnectionPoolIsolationAccount, oldProxyKey, 1, resolvePoolBurstConcurrency(3), tlsProfileKeyNone, transportFamilyH1, upstreamProtocolModeDefault)
+	oldTransport := &closeIdleTrackingTransport{}
+	oldEntry := &upstreamClientEntry{
+		client:          &http.Client{Transport: oldTransport},
+		accountID:       1,
+		proxyKey:        oldProxyKey,
+		tlsProfileKey:   tlsProfileKeyNone,
+		transportFamily: transportFamilyH1,
+		poolKey:         buildPoolKey(settings, tlsProfileKeyNone, transportFamilyH1, upstreamProtocolModeDefault),
+		lastUsed:        time.Now().UnixNano(),
+	}
+	atomic.StoreInt64(&oldEntry.inFlight, 1)
+	svc.clients[oldCacheKey] = oldEntry
+
+	newEntry, err := svc.getClientEntry("http://proxy-b:8080", 1, 3, service.HTTPUpstreamProfileDefault, false, false)
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), newEntry)
+
+	require.Equal(s.T(), int64(1), oldTransport.closeIdleCalls.Load(), "in-flight stale sibling must still CloseIdleConnections")
+	require.False(s.T(), hasEntry(svc, oldEntry), "in-flight stale sibling must still be removed from the cache")
+	require.Equal(s.T(), 1, len(svc.clients), "only the replacement client should remain cached")
+}
+
+func (s *HTTPUpstreamSuite) TestTLSProfileSameIDConfigReplacementRebuildsClient() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount}
+	svc := s.newService()
+
+	oldProfile := &tlsfingerprint.Profile{ID: 101, Name: "profile-101", CipherSuites: []uint16{0x1301}}
+	newProfile := &tlsfingerprint.Profile{ID: 101, Name: "profile-101", CipherSuites: []uint16{0x1302}}
+	require.Equal(s.T(), tlsProfileCacheKey(oldProfile), tlsProfileCacheKey(newProfile), "canonical identity must stay the numeric ID")
+
+	oldEntry, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		oldProfile,
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+
+	newEntry, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		newProfile,
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), newEntry)
+
+	require.NotSame(s.T(), oldEntry, newEntry, "same-ID TLS config replacement must not reuse the old ClientHello transport")
+	require.False(s.T(), hasEntry(svc, oldEntry), "replaced TLS client should be removed")
 	require.Equal(s.T(), 1, len(svc.clients), "only the replacement TLS client should remain cached")
 }
 
