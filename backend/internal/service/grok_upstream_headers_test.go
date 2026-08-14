@@ -102,11 +102,13 @@ func TestApplyGrokUpstreamHeadersFromAccountUsesProfileIdentity(t *testing.T) {
 	req.Header.Set("x-grok-client-version", "inbound-claude")
 	req.Header.Set("x-grok-client-identifier", "inbound-codex")
 
-	err = applyGrokUpstreamHeadersFromAccount(context.Background(), req, &Account{ID: 7, Platform: PlatformGrok})
+	err = applyGrokInteractiveUpstreamHeadersFromAccount(context.Background(), req, &Account{ID: 7, Platform: PlatformGrok})
 	require.NoError(t, err)
 	require.Equal(t, "xai-grok-workspace/0.2.200", req.Header.Get("User-Agent"))
 	require.Equal(t, "0.2.200", req.Header.Get("x-grok-client-version"))
 	require.Equal(t, "grok-shell-learned", req.Header.Get("x-grok-client-identifier"))
+	require.Equal(t, grokClientModeInteractive, req.Header.Get("x-grok-client-mode"))
+	require.Equal(t, grokClientModeInteractive, req.Header.Get("X-Grok-Client-Mode"))
 	require.NotEqual(t, "claude-cli/2.0.0 (Mac OS; arm64)", req.Header.Get("User-Agent"))
 	require.NotEqual(t, xai.CLIUserAgent(xai.CLIClientVersion), req.Header.Get("User-Agent"))
 }
@@ -212,7 +214,42 @@ func TestApplyGrokUpstreamHeadersFromAccountNilAccountStampsPinnedCLIUA(t *testi
 	require.Equal(t, xai.CLIUserAgent(xai.CLIClientVersion), req.Header.Get("User-Agent"))
 	require.Equal(t, xai.CLIClientVersion, req.Header.Get("x-grok-client-version"))
 	require.Equal(t, xai.CLIClientIdentifier, req.Header.Get("x-grok-client-identifier"))
+	require.Equal(t, xai.CLIClientMode, req.Header.Get("x-grok-client-mode"))
 	require.Empty(t, req.Header.Get("x-grok-foo"))
+}
+
+func TestApplyGrokInteractiveUpstreamHeadersFromAccountFailsClosedOnProfileLoadError(t *testing.T) {
+	t.Setenv(xai.CLIVersionEnv, "")
+	injectOutboundGrokProfileError(t, errors.New("identity_reject: profile load failed"))
+
+	req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+	require.NoError(t, err)
+	req.Header.Set("User-Agent", "claude-cli/2.0.0 (Mac OS; arm64)")
+	req.Header.Set("x-grok-client-version", "inbound-mixed")
+	req.Header.Set("x-grok-client-mode", "inbound-invented")
+
+	err = applyGrokInteractiveUpstreamHeadersFromAccount(context.Background(), req, &Account{ID: 7, Platform: PlatformGrok})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "identity_reject")
+	require.Equal(t, "claude-cli/2.0.0 (Mac OS; arm64)", req.Header.Get("User-Agent"))
+	require.Equal(t, "inbound-mixed", req.Header.Get("x-grok-client-version"))
+	require.Equal(t, "inbound-invented", req.Header.Get("x-grok-client-mode"))
+	require.NotEqual(t, xai.CLIUserAgent(xai.CLIClientVersion), req.Header.Get("User-Agent"))
+}
+
+func TestStampGrokCLIIdentityModeSplit(t *testing.T) {
+	t.Setenv(xai.CLIVersionEnv, "")
+
+	cliReq, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+	require.NoError(t, err)
+	stampGrokCLIIdentity(cliReq, nil, xai.CLIClientMode)
+	require.Equal(t, xai.CLIClientMode, cliReq.Header.Get("x-grok-client-mode"))
+
+	interactiveReq, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+	require.NoError(t, err)
+	stampGrokCLIIdentity(interactiveReq, nil, grokClientModeInteractive)
+	require.Equal(t, grokClientModeInteractive, interactiveReq.Header.Get("x-grok-client-mode"))
+	require.Equal(t, grokClientModeInteractive, interactiveReq.Header.Get("X-Grok-Client-Mode"))
 }
 
 func validGrokOutboundProfile() *AccountDeviceProfile {

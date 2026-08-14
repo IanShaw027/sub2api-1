@@ -94,7 +94,9 @@ func (s *GrokQuotaService) syncGrokObservedModels(ctx context.Context, account *
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", grokUpstreamUserAgent)
 	if account.IsGrokOAuth() {
-		applyGrokCLIHeaders(req.Header)
+		if err := applyGrokInteractiveUpstreamHeadersFromAccount(ctx, req, account); err != nil {
+			return err
+		}
 		if isGrokCLIProxyTarget(req.URL.String()) {
 			if userID := strings.TrimSpace(account.GetCredential("sub")); userID != "" {
 				req.Header.Set("X-UserID", userID)

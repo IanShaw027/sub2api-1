@@ -953,7 +953,7 @@ func (s *AccountTestService) prepareGrokTestSSE(c *gin.Context) {
 	c.Writer.Flush()
 }
 
-func (s *AccountTestService) applyGrokTestRequestHeaders(req *http.Request, account *Account, authToken string, accept string) {
+func (s *AccountTestService) applyGrokTestRequestHeaders(ctx context.Context, req *http.Request, account *Account, authToken string, accept string) error {
 	req.Header.Set("Content-Type", "application/json")
 	if accept != "" {
 		req.Header.Set("Accept", accept)
@@ -963,9 +963,12 @@ func (s *AccountTestService) applyGrokTestRequestHeaders(req *http.Request, acco
 	// api.x.ai media (images/videos) rejects or mistreats OAuth when CLI headers
 	// are stamped on the official API host (e.g. ZDR upload_url false positives).
 	if account.IsGrokOAuth() && req.URL != nil && isGrokCLIProxyTarget(req.URL.String()) {
-		applyGrokCLIHeaders(req.Header)
+		if err := applyGrokInteractiveUpstreamHeadersFromAccount(ctx, req, account); err != nil {
+			return err
+		}
 	}
 	account.ApplyHeaderOverrides(req.Header)
+	return nil
 }
 
 func (s *AccountTestService) observeGrokTestResponse(ctx context.Context, account *Account, resp *http.Response) {
@@ -1081,7 +1084,9 @@ func (s *AccountTestService) testGrokResponsesConnection(c *gin.Context, ctx con
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Grok request")
 	}
-	s.applyGrokTestRequestHeaders(req, account, authToken, "application/json, text/event-stream")
+	if err := s.applyGrokTestRequestHeaders(ctx, req, account, authToken, "application/json, text/event-stream"); err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+	}
 
 	resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.Concurrency)
 	if err != nil {
@@ -1152,7 +1157,9 @@ func (s *AccountTestService) testGrokImageGeneration(c *gin.Context, ctx context
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Grok image request")
 	}
-	s.applyGrokTestRequestHeaders(req, account, authToken, "application/json")
+	if err := s.applyGrokTestRequestHeaders(ctx, req, account, authToken, "application/json"); err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+	}
 	req.ContentLength = int64(len(payloadBytes))
 	req.GetBody = func() (io.ReadCloser, error) {
 		return io.NopCloser(bytes.NewReader(payloadBytes)), nil
@@ -1168,7 +1175,9 @@ func (s *AccountTestService) testGrokImageGeneration(c *gin.Context, ctx context
 			if err != nil {
 				return s.sendErrorAndEnd(c, "Failed to create Grok image retry request")
 			}
-			s.applyGrokTestRequestHeaders(req, account, authToken, "application/json")
+			if err := s.applyGrokTestRequestHeaders(ctx, req, account, authToken, "application/json"); err != nil {
+				return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+			}
 			req.ContentLength = int64(len(payloadBytes))
 		}
 		resp, doErr = s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.Concurrency)
@@ -1260,7 +1269,9 @@ func (s *AccountTestService) testGrokVideoGeneration(c *gin.Context, ctx context
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Grok video request")
 	}
-	s.applyGrokTestRequestHeaders(req, account, authToken, "application/json")
+	if err := s.applyGrokTestRequestHeaders(ctx, req, account, authToken, "application/json"); err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+	}
 
 	resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.Concurrency)
 	if err != nil {
@@ -1302,7 +1313,9 @@ func (s *AccountTestService) testGrokVideoGeneration(c *gin.Context, ctx context
 		if err != nil {
 			return s.sendErrorAndEnd(c, "Failed to create Grok video status request")
 		}
-		s.applyGrokTestRequestHeaders(statusReq, account, authToken, "application/json")
+		if err := s.applyGrokTestRequestHeaders(ctx, statusReq, account, authToken, "application/json"); err != nil {
+			return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+		}
 		statusResp, err := s.httpUpstream.Do(statusReq, s.grokTestProxyURL(account), account.ID, account.Concurrency)
 		if err != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Grok video status failed: %s", err.Error()))
@@ -1359,7 +1372,9 @@ func (s *AccountTestService) emitGrokVideoResult(c *gin.Context, ctx context.Con
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Grok video content request")
 	}
-	s.applyGrokTestRequestHeaders(req, account, authToken, "video/*, application/octet-stream, */*")
+	if err := s.applyGrokTestRequestHeaders(ctx, req, account, authToken, "video/*, application/octet-stream, */*"); err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+	}
 	resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.Concurrency)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok video content download failed: %s", err.Error()))
@@ -1430,7 +1445,9 @@ User query:
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create standalone web_search probe request")
 	}
-	s.applyGrokTestRequestHeaders(req, account, authToken, "application/json")
+	if err := s.applyGrokTestRequestHeaders(ctx, req, account, authToken, "application/json"); err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+	}
 
 	resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.Concurrency)
 	if err != nil {
@@ -1512,7 +1529,9 @@ func (s *AccountTestService) testGrokTTS(c *gin.Context, ctx context.Context, ac
 		if err != nil {
 			return s.sendErrorAndEnd(c, "Failed to create Grok TTS request")
 		}
-		s.applyGrokTestRequestHeaders(req, account, authToken, "audio/*, application/json, */*")
+		if err := s.applyGrokTestRequestHeaders(ctx, req, account, authToken, "audio/*, application/json, */*"); err != nil {
+			return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+		}
 		resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.Concurrency)
 		if err != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Grok TTS failed: %s", err.Error()))
@@ -1600,7 +1619,9 @@ func (s *AccountTestService) testGrokSTT(c *gin.Context, ctx context.Context, ac
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+authToken)
 	if account.IsGrokOAuth() {
-		applyGrokCLIHeaders(req.Header)
+		if err := applyGrokInteractiveUpstreamHeadersFromAccount(ctx, req, account); err != nil {
+			return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+		}
 	}
 	account.ApplyHeaderOverrides(req.Header)
 
@@ -1673,7 +1694,9 @@ func (s *AccountTestService) testGrokRealtime(c *gin.Context, ctx context.Contex
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer "+authToken)
 	if account.IsGrokOAuth() {
-		applyGrokCLIHeaders(headers)
+		if err := applyGrokInteractiveUpstreamHeaders(ctx, headers, account); err != nil {
+			return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+		}
 	}
 	account.ApplyHeaderOverrides(headers)
 

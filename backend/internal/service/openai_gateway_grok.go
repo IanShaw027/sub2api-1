@@ -1241,7 +1241,9 @@ func buildGrokResponsesRequest(ctx context.Context, c *gin.Context, account *Acc
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	if account.IsGrokOAuth() {
-		applyGrokCLIHeaders(req.Header)
+		if err := applyGrokInteractiveUpstreamHeadersFromAccount(ctx, req, account); err != nil {
+			return nil, err
+		}
 	}
 	applyGrokCacheHeaders(req.Header, cacheIdentity)
 	if c != nil {
@@ -1253,23 +1255,6 @@ func buildGrokResponsesRequest(ctx context.Context, c *gin.Context, account *Acc
 	// 打到官方 CLI 网关时身份头仍由共享传输层最终强制。
 	account.ApplyHeaderOverrides(req.Header)
 	return req, nil
-}
-
-// applyGrokCLIHeaders identifies subscription traffic as a supported Grok CLI
-// version. The CLI gateway rejects otherwise valid OAuth requests without it.
-// Identity pins come from package xai so service-layer headers match the final
-// transport rewrite on cli-chat-proxy.grok.com.
-func applyGrokCLIHeaders(headers http.Header) {
-	if headers == nil {
-		return
-	}
-	version := xai.ResolveCLIVersion()
-	headers.Set("User-Agent", xai.CLIUserAgent(version))
-	headers.Set("X-Grok-Client-Version", version)
-	headers.Set("x-grok-client-version", version)
-	headers.Set("x-grok-client-identifier", xai.CLIClientIdentifier)
-	// Historical mode value expected by some unit tests / older CLI probes.
-	headers.Set("X-Grok-Client-Mode", "interactive")
 }
 
 func (s *OpenAIGatewayService) updateGrokUsageSnapshot(ctx context.Context, account *Account, snapshot *xai.QuotaSnapshot) {

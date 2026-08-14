@@ -20,6 +20,7 @@ const (
 	grokClientVersionHeader    = xai.CLIStableVersion
 	grokClientIdentifierHeader = xai.CLIClientIdentifier
 	grokClientModeHeader       = xai.CLIClientMode
+	grokClientModeInteractive  = "interactive"
 )
 
 // defaultGrokUpstreamUserAgent is the pinned Grok CLI / workspace UA.
@@ -32,11 +33,31 @@ func applyDefaultGrokUpstreamHeaders(req *http.Request) {
 	_ = applyGrokUpstreamHeadersFromAccount(context.Background(), req, nil)
 }
 
-// applyGrokUpstreamHeadersFromAccount stamps Grok chat/CLI outbound identity.
-// When account is set, identity comes from the device profile (fail closed on
-// load error). When account is nil, today's pinned CLI stamp is used so probes
-// keep working without a profile service.
+// applyGrokUpstreamHeadersFromAccount stamps Grok chat/CLI outbound identity
+// with x-grok-client-mode=cli. When account is set, identity comes from the
+// device profile (fail closed on load error). When account is nil, today's
+// pinned CLI stamp is used so probes keep working without a profile service.
 func applyGrokUpstreamHeadersFromAccount(ctx context.Context, req *http.Request, account *Account) error {
+	return applyGrokUpstreamHeadersFromAccountWithMode(ctx, req, account, xai.CLIClientMode)
+}
+
+// applyGrokInteractiveUpstreamHeadersFromAccount is the live/user-request
+// stamp: same profile load as applyGrokUpstreamHeadersFromAccount, but
+// x-grok-client-mode=interactive. Fail closed when account is set.
+func applyGrokInteractiveUpstreamHeadersFromAccount(ctx context.Context, req *http.Request, account *Account) error {
+	return applyGrokUpstreamHeadersFromAccountWithMode(ctx, req, account, grokClientModeInteractive)
+}
+
+// applyGrokInteractiveUpstreamHeaders stamps interactive identity onto a
+// header map (WS / header-only probes) using the same profile load.
+func applyGrokInteractiveUpstreamHeaders(ctx context.Context, headers http.Header, account *Account) error {
+	if headers == nil {
+		return nil
+	}
+	return applyGrokInteractiveUpstreamHeadersFromAccount(ctx, &http.Request{Header: headers}, account)
+}
+
+func applyGrokUpstreamHeadersFromAccountWithMode(ctx context.Context, req *http.Request, account *Account, clientMode string) error {
 	if req == nil {
 		return nil
 	}
@@ -51,11 +72,14 @@ func applyGrokUpstreamHeadersFromAccount(ctx context.Context, req *http.Request,
 	}
 
 	sanitizeGrokOutboundHeaders(req)
-	stampGrokCLIIdentity(req, profile)
+	stampGrokCLIIdentity(req, profile, clientMode)
 	return nil
 }
 
-func stampGrokCLIIdentity(req *http.Request, profile *AccountDeviceProfile) {
+func stampGrokCLIIdentity(req *http.Request, profile *AccountDeviceProfile, clientMode string) {
+	if req == nil {
+		return
+	}
 	version := xai.ResolveCLIVersion()
 	identifier := grokClientIdentifierHeader
 
@@ -72,11 +96,14 @@ func stampGrokCLIIdentity(req *http.Request, profile *AccountDeviceProfile) {
 	if profileUA := grokProfilePayloadString(profile, "user_agent"); profileUA != "" {
 		ua = profileUA
 	}
+	if strings.TrimSpace(clientMode) == "" {
+		clientMode = xai.CLIClientMode
+	}
 
 	req.Header.Set("User-Agent", ua)
 	req.Header.Set("x-grok-client-version", version)
 	req.Header.Set("x-grok-client-identifier", identifier)
-	req.Header.Set("x-grok-client-mode", grokClientModeHeader)
+	req.Header.Set("x-grok-client-mode", clientMode)
 }
 
 func grokProfilePayloadString(profile *AccountDeviceProfile, key string) string {
