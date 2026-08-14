@@ -210,7 +210,10 @@ func (s *KiroGatewayService) buildKiroMCPRequest(
 		return io.NopCloser(bytes.NewReader(body)), nil
 	}
 
-	machineID := kiropkg.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
+	machineID, err := leftoverOutboundMachineID(ctx, account)
+	if err != nil {
+		return nil, err
+	}
 	host := req.URL.Host
 	kiroVersion := runtimeSettings.KiroVersion
 

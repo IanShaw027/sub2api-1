@@ -198,7 +198,10 @@ func (s *KiroUsageService) SetOveragePreference(ctx context.Context, account *Ac
 		if s != nil && s.settingService != nil {
 			runtimeSettings = s.settingService.GetKiroRuntimeSettings(ctx)
 		}
-		machineID := kiro.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
+		machineID, err := leftoverOutboundMachineID(ctx, account)
+		if err != nil {
+			return err
+		}
 		kiroVersion := runtimeSettings.KiroVersion
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+accessToken)
@@ -364,7 +367,10 @@ func (s *KiroUsageService) fetchUsageLimitsInRegion(ctx context.Context, account
 	if s != nil && s.settingService != nil {
 		runtimeSettings = s.settingService.GetKiroRuntimeSettings(ctx)
 	}
-	machineID := kiro.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
+	machineID, err := leftoverOutboundMachineID(ctx, account)
+	if err != nil {
+		return nil, err
+	}
 	kiroVersion := runtimeSettings.KiroVersion
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	if isKiroExternalIDPAccount(account) {
@@ -411,7 +417,10 @@ func (s *KiroUsageService) fetchAvailableProfilesInRegion(ctx context.Context, a
 	if s != nil && s.settingService != nil {
 		runtimeSettings = s.settingService.GetKiroRuntimeSettings(ctx)
 	}
-	machineID := kiro.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
+	machineID, err := leftoverOutboundMachineID(ctx, account)
+	if err != nil {
+		return nil, err
+	}
 	kiroVersion := runtimeSettings.KiroVersion
 	req.Header.Set("Content-Type", "application/x-amz-json-1.0")
 	req.Header.Set("x-amz-target", "AmazonCodeWhispererService.ListAvailableProfiles")
@@ -451,7 +460,10 @@ func (s *KiroUsageService) fetchAvailableModelsInRegion(ctx context.Context, acc
 	if s != nil && s.settingService != nil {
 		runtimeSettings = s.settingService.GetKiroRuntimeSettings(ctx)
 	}
-	machineID := kiro.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
+	machineID, err := leftoverOutboundMachineID(ctx, account)
+	if err != nil {
+		return nil, err
+	}
 	kiroVersion := runtimeSettings.KiroVersion
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	if isKiroExternalIDPAccount(account) {

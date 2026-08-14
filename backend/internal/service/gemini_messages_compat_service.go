@@ -106,7 +106,7 @@ func (s *GeminiMessagesCompatService) SetTLSFingerprintServices(profile *TLSFing
 }
 
 func (s *GeminiMessagesCompatService) doAccountHTTP(ctx context.Context, account *Account, req *http.Request, proxyURL, inboundUA string) (*http.Response, error) {
-	return doAccountHTTPUpstream(ctx, s.httpUpstream, req, proxyURL, account, s.tlsFPProfileService, s.tlsFPRouterService, inboundUA, "http", "gemini")
+	return doLeftoverAccountHTTP(ctx, s.httpUpstream, req, proxyURL, account, s.tlsFPProfileService, s.tlsFPRouterService, inboundUA, "http", "gemini")
 }
 
 // GetTokenProvider returns the token provider for OAuth accounts
@@ -719,7 +719,9 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 				}
 				upstreamReq.Header.Set("Content-Type", "application/json")
 				upstreamReq.Header.Set("Authorization", "Bearer "+accessToken)
-				upstreamReq.Header.Set("User-Agent", geminicli.GeminiCLIUserAgent)
+				if err := applyOutboundProfileUserAgent(ctx, account, upstreamReq); err != nil {
+					return nil, "", err
+				}
 				return upstreamReq, "x-request-id", nil
 			} else {
 				// Mode 2: AI Studio API with OAuth (like API key mode, but using Bearer token)
@@ -796,7 +798,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		}
 		requestIDHeader = idHeader
 
-		resp, err = s.doAccountHTTP(ctx, account, upstreamReq, proxyURL, inboundUserAgentFromGin(c))
+		resp, err = s.doAccountHTTP(ctx, account, upstreamReq, proxyURL, leftoverOutboundTLSRoutingUA(upstreamReq))
 		if err != nil {
 			safeErr := sanitizeUpstreamErrorMessage(err.Error())
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -1259,7 +1261,9 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 				}
 				upstreamReq.Header.Set("Content-Type", "application/json")
 				upstreamReq.Header.Set("Authorization", "Bearer "+accessToken)
-				upstreamReq.Header.Set("User-Agent", geminicli.GeminiCLIUserAgent)
+				if err := applyOutboundProfileUserAgent(ctx, account, upstreamReq); err != nil {
+					return nil, "", err
+				}
 				return upstreamReq, "x-request-id", nil
 			} else {
 				// Mode 2: AI Studio API with OAuth (like API key mode, but using Bearer token)
@@ -1329,7 +1333,7 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 		}
 		requestIDHeader = idHeader
 
-		resp, err = s.doAccountHTTP(ctx, account, upstreamReq, proxyURL, inboundUserAgentFromGin(c))
+		resp, err = s.doAccountHTTP(ctx, account, upstreamReq, proxyURL, leftoverOutboundTLSRoutingUA(upstreamReq))
 		if err != nil {
 			safeErr := sanitizeUpstreamErrorMessage(err.Error())
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
