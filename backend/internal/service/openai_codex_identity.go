@@ -142,12 +142,13 @@ func ensureCodexIdentityHeaders(h http.Header) {
 	if h == nil {
 		return
 	}
+	deleteHeaderAllForms(h, "X-Originator")
 	identity := resolveCodexOutboundIdentity("")
 	if strings.TrimSpace(h.Get("user-agent")) == "" {
 		h.Set("user-agent", identity.userAgent)
 	}
-	if strings.TrimSpace(h.Get("originator")) == "" {
-		h.Set("originator", identity.originator)
+	if getCodexOriginator(h) == "" {
+		setCodexOriginator(h, identity.originator)
 	}
 	if strings.TrimSpace(h.Get("version")) == "" {
 		h.Set("version", identity.version)
@@ -185,7 +186,11 @@ func enforceCodexIdentityHeaders(h http.Header) {
 // 不应被补回。需要从缺失身份头恢复的调用方应先调用 ensureCodexIdentityHeaders。
 // 必须在所有 User-Agent 改写之后调用。
 func enforceCodexIdentityHeadersWithUA(h http.Header, overrideUA string) {
-	if h == nil || h.Get("originator") == "" {
+	if h == nil {
+		return
+	}
+	deleteHeaderAllForms(h, "X-Originator")
+	if getCodexOriginator(h) == "" {
 		return
 	}
 	if !codexIdentityEnforcement.Load() {
@@ -194,7 +199,7 @@ func enforceCodexIdentityHeadersWithUA(h http.Header, overrideUA string) {
 	}
 	identity := resolveCodexOutboundIdentity(overrideUA)
 	h.Set("user-agent", identity.userAgent)
-	h.Set("originator", identity.originator)
+	setCodexOriginator(h, identity.originator)
 	h.Set("version", identity.version)
 }
 
@@ -208,8 +213,17 @@ func pairCodexIdentityHeaders(h http.Header) {
 		h.Set("version", identity.version)
 	}
 	h.Set("user-agent", pairedUA)
-	h.Set("originator", originator)
+	setCodexOriginator(h, originator)
 	if v := strings.TrimSpace(h.Get("version")); v != "" && CompareVersions(v, codexUpstreamMinVersion) < 0 {
 		h.Set("version", codexCLIVersion)
 	}
+}
+
+func getCodexOriginator(h http.Header) string {
+	return strings.TrimSpace(getHeaderRaw(h, "originator"))
+}
+
+func setCodexOriginator(h http.Header, originator string) {
+	deleteHeaderAllForms(h, "X-Originator")
+	setHeaderRaw(h, "originator", originator)
 }

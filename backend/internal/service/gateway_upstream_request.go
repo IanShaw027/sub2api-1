@@ -850,16 +850,9 @@ func applyClaudeCodeMimicHeaders(req *http.Request, isStream bool) {
 	if req == nil {
 		return
 	}
-	// Start with the standard defaults (fill missing).
+	// Fill only missing Claude OAuth headers; account/fingerprint identity has
+	// already been applied and must remain stable across inbound requests.
 	applyClaudeOAuthHeaderDefaults(req)
-	// Then force key headers to match Claude Code fingerprint regardless of what the client sent.
-	// 使用 resolveWireCasing 确保 key 与真实 wire format 一致（如 "x-app" 而非 "X-App"）
-	for key, value := range claude.DefaultHeaders {
-		if value == "" {
-			continue
-		}
-		setHeaderRaw(req.Header, resolveWireCasing(key), value)
-	}
 	// Real Claude CLI uses Accept: application/json (even for streaming).
 	setHeaderRaw(req.Header, "Accept", "application/json")
 	if isStream {

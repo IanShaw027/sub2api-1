@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/model"
@@ -152,6 +153,64 @@ func TestResolveAccountTLSFingerprintRuntime_UniqueAndDimensions(t *testing.T) {
 	require.NotNil(t, runtime.Profile)
 	require.Equal(t, "unique", runtime.Profile.Name)
 	require.True(t, runtime.Matched)
+}
+
+func TestResolveAccountTLSFingerprintRuntime_UsesAccountOSNotInboundUA(t *testing.T) {
+	profiles := testTLSProfileService(
+		&model.TLSFingerprintProfile{ID: 31, Name: "bound-macos"},
+		&model.TLSFingerprintProfile{ID: 32, Name: "bound-windows"},
+	)
+	account := enabledTLSAccount(PlatformAnthropic, map[string]any{
+		"enable_tls_fingerprint": true,
+		"tls_fingerprint_bindings": map[string]any{
+			"macos/claude-code":   int64(31),
+			"windows/claude-code": int64(32),
+		},
+		"tls_fingerprint_default_os": "macos",
+	})
+
+	runtime := resolveAccountTLSFingerprintRuntime(
+		context.Background(),
+		account,
+		profiles,
+		nil,
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) claude-cli/2.1.220",
+		"http",
+		"messages",
+	)
+
+	require.NotNil(t, runtime.Profile)
+	require.Equal(t, "bound-macos", runtime.Profile.Name)
+}
+
+func TestResolveAccountTLSFingerprintRuntime_RejectsRandomProfileID(t *testing.T) {
+	profiles := testTLSProfileService(&model.TLSFingerprintProfile{ID: 31, Name: "random-candidate"})
+	account := enabledTLSAccount(PlatformOpenAI, map[string]any{
+		"enable_tls_fingerprint":     true,
+		"tls_fingerprint_profile_id": int64(-1),
+	})
+
+	runtime := resolveAccountTLSFingerprintRuntime(context.Background(), account, profiles, nil, "", "http", "responses")
+
+	require.NotNil(t, runtime.Profile)
+	require.NotEqual(t, "random-candidate", runtime.Profile.Name)
+}
+
+func TestApplyTLSFingerprintRuntimeHeaders_UsesLowercaseOriginator(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, "https://example.test", nil)
+	require.NoError(t, err)
+
+	applyTLSFingerprintRuntimeHeaders(req, accountTLSFingerprintRuntime{
+		UpstreamUserAgent:  "codex_cli_rs/0.200.1",
+		UpstreamOriginator: "codex_cli_rs",
+	})
+
+	require.Equal(t, "codex_cli_rs/0.200.1", req.Header.Get("User-Agent"))
+	require.Equal(t, "codex_cli_rs", getHeaderRaw(req.Header, "originator"))
+	require.Contains(t, req.Header, "originator")
+	require.Empty(t, req.Header.Get("X-Originator"))
+	_, hasXOriginator := req.Header["X-Originator"]
+	require.False(t, hasXOriginator)
 }
 
 func TestTLSFingerprintRouter_RegexMatchUsesCompiledPattern(t *testing.T) {

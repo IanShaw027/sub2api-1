@@ -207,16 +207,17 @@ func resolveAccountTLSFingerprintRuntime(
 		return runtime
 	}
 
-	os := inferTLSFingerprintOS(inboundUA)
-	if os == "" {
-		os = account.GetTLSFingerprintDefaultOS()
-	}
+	os := account.GetTLSFingerprintDefaultOS()
 	clientType := inferTLSFingerprintClientType(account.Platform, inboundUA, "")
 	if bindingID := lookupTLSFingerprintBinding(account.GetTLSFingerprintBindings(), os, clientType, protocol); bindingID != 0 {
 		runtime.Profile = profileSvc.resolveTLSProfileByID(bindingID)
 	}
 	if runtime.Profile == nil {
-		runtime.Profile = profileSvc.ResolveTLSProfile(account)
+		if account.GetTLSFingerprintProfileID() == -1 {
+			runtime.Profile = &tlsfingerprint.Profile{Name: "Built-in Default (Node.js 24.x)"}
+		} else {
+			runtime.Profile = profileSvc.ResolveTLSProfile(account)
+		}
 	}
 
 	if routerSvc == nil {
@@ -256,9 +257,6 @@ func (s *TLSFingerprintProfileService) resolveTLSProfileByID(id int64) *tlsfinge
 	if s == nil || id == 0 {
 		return nil
 	}
-	if id == -1 {
-		return s.getRandomProfile()
-	}
 	if id > 0 {
 		return s.GetProfileByID(id)
 	}
@@ -272,8 +270,9 @@ func applyTLSFingerprintRuntimeHeaders(req *http.Request, runtime accountTLSFing
 	if ua := strings.TrimSpace(runtime.UpstreamUserAgent); ua != "" {
 		req.Header.Set("User-Agent", ua)
 	}
+	deleteHeaderAllForms(req.Header, "X-Originator")
 	if originator := strings.TrimSpace(runtime.UpstreamOriginator); originator != "" {
-		req.Header.Set("X-Originator", originator)
+		setHeaderRaw(req.Header, "originator", originator)
 	}
 }
 

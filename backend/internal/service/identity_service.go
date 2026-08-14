@@ -393,9 +393,9 @@ func (s *IdentityService) RewriteUserIDWithMasking(ctx context.Context, body []b
 	}
 
 	if maskedSessionID == "" {
-		// 首次或已过期，生成新的伪装 session ID
-		maskedSessionID = generateRandomUUID()
-		logger.LegacyPrintf("service.identity", "Generated new masked session ID for account %d: %s", account.ID, maskedSessionID)
+		// P0 keeps the deprecated extra key but stops minting 15-minute random
+		// session IDs; the deterministic RewriteUserID result remains in place.
+		return newBody, nil
 	}
 
 	// 刷新 TTL（每次请求都刷新，保持 15 分钟有效期）
