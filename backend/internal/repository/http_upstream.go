@@ -1036,8 +1036,7 @@ func tlsProfileRevision(profile *tlsfingerprint.Profile) string {
 	writeUint16CSV(&b, profile.Curves)
 	writeUint16CSV(&b, profile.PointFormats)
 	writeUint16CSV(&b, profile.SignatureAlgorithms)
-	b.WriteByte('|')
-	b.WriteString(strings.Join(profile.ALPNProtocols, ","))
+	writeLengthPrefixedStrings(&b, profile.ALPNProtocols)
 	writeUint16CSV(&b, profile.SupportedVersions)
 	writeUint16CSV(&b, profile.KeyShareGroups)
 	writeUint16CSV(&b, profile.PSKModes)
@@ -1053,6 +1052,17 @@ func writeUint16CSV(b *strings.Builder, values []uint16) {
 			b.WriteByte(',')
 		}
 		b.WriteString(strconv.FormatUint(uint64(v), 10))
+	}
+}
+
+func writeLengthPrefixedStrings(b *strings.Builder, values []string) {
+	b.WriteByte('|')
+	b.WriteString(strconv.Itoa(len(values)))
+	for _, v := range values {
+		b.WriteByte('|')
+		b.WriteString(strconv.Itoa(len(v)))
+		b.WriteByte(':')
+		b.WriteString(v)
 	}
 }
 

@@ -1005,6 +1005,20 @@ func TestTLSProfilePoolIdentity_SameIDConfigReplacementKeepsCanonicalID(t *testi
 	require.True(t, strings.HasPrefix(tlsProfilePoolIdentity(v2), "101@"))
 }
 
+func TestTLSProfilePoolIdentity_ALPNListSplitProducesDistinctRevisions(t *testing.T) {
+	joined := &tlsfingerprint.Profile{ID: 101, Name: "profile-101", ALPNProtocols: []string{"h2,http/1.1"}}
+	split := &tlsfingerprint.Profile{ID: 101, Name: "profile-101", ALPNProtocols: []string{"h2", "http/1.1"}}
+
+	require.Equal(t, "101", tlsProfileCacheKey(joined))
+	require.Equal(t, "101", tlsProfileCacheKey(split))
+	require.NotEqual(t, tlsProfileRevision(joined), tlsProfileRevision(split),
+		"comma-joined ALPN and split ALPN lists must not share a revision")
+	require.NotEqual(t, tlsProfilePoolIdentity(joined), tlsProfilePoolIdentity(split),
+		"same-ID ALPN list split must change pool identity")
+	require.True(t, strings.HasPrefix(tlsProfilePoolIdentity(joined), "101@"))
+	require.True(t, strings.HasPrefix(tlsProfilePoolIdentity(split), "101@"))
+}
+
 func TestTLSPoolKey_ProxyIsolationSeparatesProfilesWithIdenticalContentsButDifferentIDs(t *testing.T) {
 	profileSvc := service.NewTLSFingerprintProfileService(&stubTLSFingerprintProfileRepo{
 		profiles: []*model.TLSFingerprintProfile{
@@ -1352,6 +1366,42 @@ func (s *HTTPUpstreamSuite) TestTLSProfileSameIDConfigReplacementRebuildsClient(
 	require.NotNil(s.T(), newEntry)
 
 	require.NotSame(s.T(), oldEntry, newEntry, "same-ID TLS config replacement must not reuse the old ClientHello transport")
+	require.False(s.T(), hasEntry(svc, oldEntry), "replaced TLS client should be removed")
+	require.Equal(s.T(), 1, len(svc.clients), "only the replacement TLS client should remain cached")
+}
+
+func (s *HTTPUpstreamSuite) TestTLSProfileSameIDALPNSplitRebuildsClient() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount}
+	svc := s.newService()
+
+	oldProfile := &tlsfingerprint.Profile{ID: 101, Name: "profile-101", ALPNProtocols: []string{"h2,http/1.1"}}
+	newProfile := &tlsfingerprint.Profile{ID: 101, Name: "profile-101", ALPNProtocols: []string{"h2", "http/1.1"}}
+	require.Equal(s.T(), tlsProfileCacheKey(oldProfile), tlsProfileCacheKey(newProfile), "canonical identity must stay the numeric ID")
+
+	oldEntry, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		oldProfile,
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+
+	newEntry, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		newProfile,
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), newEntry)
+
+	require.NotSame(s.T(), oldEntry, newEntry, "same-ID ALPN list split must not reuse the old ClientHello transport")
 	require.False(s.T(), hasEntry(svc, oldEntry), "replaced TLS client should be removed")
 	require.Equal(s.T(), 1, len(svc.clients), "only the replacement TLS client should remain cached")
 }
