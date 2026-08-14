@@ -6,16 +6,20 @@ import (
 	"compress/flate"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -99,6 +103,9 @@ const (
 	upstreamProtocolModeOpenAIH1         = "openai_h1"
 	upstreamProtocolModeOpenAIH2         = "openai_h2"
 	upstreamProtocolModeOpenAIH1Fallback = "openai_h1_fallback"
+	transportFamilyH1                    = "h1"
+	transportFamilyH2                    = "h2"
+	tlsProfileKeyNone                    = "none"
 )
 
 var errUpstreamClientLimitReached = errors.New("upstream client cache limit reached")
@@ -124,12 +131,15 @@ type openAIHTTP2Settings struct {
 // upstreamClientEntry 上游客户端缓存条目
 // 记录客户端实例及其元数据，用于连接池管理和淘汰策略
 type upstreamClientEntry struct {
-	client       *http.Client // HTTP 客户端实例
-	proxyKey     string       // 代理标识（用于检测代理变更）
-	poolKey      string       // 连接池配置标识（用于检测配置变更）
-	protocolMode string       // 协议模式（default/openai_h1/openai_h2/openai_h1_fallback）
-	lastUsed     int64        // 最后使用时间戳（纳秒），用于 LRU 淘汰
-	inFlight     int64        // 当前进行中的请求数，>0 时不可淘汰
+	client          *http.Client // HTTP 客户端实例
+	accountID       int64        // 账户标识（用于同账户连接池切换时回收旧条目）
+	proxyKey        string       // 代理标识（用于检测代理变更）
+	tlsProfileKey   string       // TLS 指纹标识（用于 TLS 池切换时回收旧条目）
+	transportFamily string       // Transport 家族（h1/h2，用于协议族切换时回收旧条目）
+	poolKey         string       // 连接池配置标识（用于检测配置变更）
+	protocolMode    string       // 协议模式（default/openai_h1/openai_h2/openai_h1_fallback）
+	lastUsed        int64        // 最后使用时间戳（纳秒），用于 LRU 淘汰
+	inFlight        int64        // 当前进行中的请求数，>0 时不可淘汰
 }
 
 type openAIHTTP2FallbackState struct {
@@ -485,8 +495,10 @@ func (s *httpUpstreamService) acquireClientWithTLS(proxyURL string, accountID in
 	return s.getClientEntryWithTLS(proxyURL, accountID, accountConcurrency, profile, upstreamProfile, true, true)
 }
 
-// getClientEntryWithTLS 获取或创建带 TLS 指纹的客户端条目
+// getClientEntryWithTLS 获取或创建带 TLS 指纹的客户端条目。
 // TLS 指纹客户端使用独立的缓存键，与普通客户端隔离
+// accountConcurrency 参数传入原始/Effective N，本包会在内部应用 Burst 扩展，
+// 调用方不要提前传入 BurstConcurrency()。
 func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile, upstreamProfile service.HTTPUpstreamProfile, markInFlight bool, enforceLimit bool) (*upstreamClientEntry, error) {
 	isolation := s.getIsolationMode()
 	proxyKey, parsedProxy, err := normalizeProxyURL(proxyURL)
@@ -495,9 +507,12 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	}
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, upstreamProfile)
+	burstConcurrency := resolvePoolBurstConcurrency(accountConcurrency)
+	transportFamily := transportFamilyForProtocolMode(upstreamProtocolModeDefault)
+	tlsProfileKey := tlsProfileCacheKey(profile)
 	// TLS 指纹客户端使用独立的缓存键，加 "tls:" 前缀
-	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID, upstreamProtocolModeDefault)
-	poolKey := buildPoolKey(settings, upstreamProtocolModeDefault) + ":tls"
+	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID, burstConcurrency, tlsProfileKey, transportFamily, upstreamProtocolModeDefault)
+	poolKey := buildPoolKey(settings, tlsProfilePoolIdentity(profile), transportFamily, upstreamProtocolModeDefault) + ":tls"
 
 	now := time.Now()
 	nowUnix := now.UnixNano()
@@ -534,6 +549,7 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 			"pool_changed", entry.poolKey != poolKey)
 		s.removeClientLocked(cacheKey, entry)
 	}
+	s.removeSiblingClientsLocked(cacheKey, isolation, accountID, proxyKey, tlsProfileKey, transportFamily)
 
 	// 超出缓存上限时尝试淘汰
 	if enforceLimit && s.maxUpstreamClients() > 0 {
@@ -560,9 +576,12 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	}
 
 	entry := &upstreamClientEntry{
-		client:   client,
-		proxyKey: proxyKey,
-		poolKey:  poolKey,
+		client:          client,
+		accountID:       accountID,
+		proxyKey:        proxyKey,
+		tlsProfileKey:   tlsProfileKey,
+		transportFamily: transportFamily,
+		poolKey:         poolKey,
 	}
 	atomic.StoreInt64(&entry.lastUsed, nowUnix)
 	if markInFlight {
@@ -655,10 +674,12 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 	protocolMode := s.resolveProtocolMode(profile, proxyKey, parsedProxy)
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, profile)
+	burstConcurrency := resolvePoolBurstConcurrency(accountConcurrency)
+	transportFamily := transportFamilyForProtocolMode(protocolMode)
 	// 构建缓存键（根据隔离策略不同）
-	cacheKey := buildCacheKey(isolation, proxyKey, accountID, protocolMode)
+	cacheKey := buildCacheKey(isolation, proxyKey, accountID, burstConcurrency, tlsProfileKeyNone, transportFamily, protocolMode)
 	// 构建连接池配置键（用于检测配置变更）
-	poolKey := buildPoolKey(settings, protocolMode)
+	poolKey := buildPoolKey(settings, tlsProfileKeyNone, transportFamily, protocolMode)
 
 	now := time.Now()
 	nowUnix := now.UnixNano()
@@ -688,6 +709,7 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 		}
 		s.removeClientLocked(cacheKey, entry)
 	}
+	s.removeSiblingClientsLocked(cacheKey, isolation, accountID, proxyKey, tlsProfileKeyNone, transportFamily)
 
 	// 超出缓存上限时尝试淘汰，无法淘汰则拒绝新建
 	if enforceLimit && s.maxUpstreamClients() > 0 {
@@ -711,10 +733,13 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 		client.CheckRedirect = s.redirectChecker
 	}
 	entry := &upstreamClientEntry{
-		client:       client,
-		proxyKey:     proxyKey,
-		poolKey:      poolKey,
-		protocolMode: protocolMode,
+		client:          client,
+		accountID:       accountID,
+		proxyKey:        proxyKey,
+		tlsProfileKey:   tlsProfileKeyNone,
+		transportFamily: transportFamily,
+		poolKey:         poolKey,
+		protocolMode:    protocolMode,
 	}
 	atomic.StoreInt64(&entry.lastUsed, nowUnix)
 	if markInFlight {
@@ -742,6 +767,46 @@ func (s *httpUpstreamService) shouldReuseEntry(entry *upstreamClientEntry, isola
 		return false
 	}
 	return true
+}
+
+// removeSiblingClientsLocked drains sibling pools whose identity-scoped
+// configuration changed, including entries with in-flight requests.
+// CloseIdleConnections does not interrupt active connections. Isolation modes
+// treat different dimensions as identity vs change:
+//   - account: one live pool per account; drain on proxy, TLS profile, or family change
+//   - account_proxy: proxy is identity; drain only TLS/family change for the same account+proxy
+//   - proxy: pools are shared across accounts; never drain just because tls_profile_id
+//     differs. Drain only this proxy's transport-family change (or a same-id config replace).
+func (s *httpUpstreamService) removeSiblingClientsLocked(cacheKey, isolation string, accountID int64, proxyKey, tlsProfileKey, transportFamily string) {
+	for key, entry := range s.clients {
+		if key == cacheKey || entry == nil {
+			continue
+		}
+		switch isolation {
+		case config.ConnectionPoolIsolationAccount:
+			if entry.accountID != accountID {
+				continue
+			}
+			if entry.proxyKey == proxyKey && entry.tlsProfileKey == tlsProfileKey && entry.transportFamily == transportFamily {
+				continue
+			}
+		case config.ConnectionPoolIsolationAccountProxy:
+			if entry.accountID != accountID || entry.proxyKey != proxyKey {
+				continue
+			}
+			if entry.tlsProfileKey == tlsProfileKey && entry.transportFamily == transportFamily {
+				continue
+			}
+		default:
+			if entry.proxyKey != proxyKey || entry.tlsProfileKey != tlsProfileKey {
+				continue
+			}
+			if entry.transportFamily == transportFamily {
+				continue
+			}
+		}
+		s.removeClientLocked(key, entry)
+	}
 }
 
 // removeClientLocked 移除客户端（需持有锁）
@@ -879,7 +944,8 @@ func (s *httpUpstreamService) clientIdleTTL() time.Duration {
 //
 // 参数:
 //   - isolation: 隔离模式
-//   - accountConcurrency: 账户并发限制
+//   - accountConcurrency: 原始/Effective N；本函数内部会再换算为 Burst，
+//     调用方不要传入 BurstConcurrency()
 //
 // 返回:
 //   - poolSettings: 连接池配置
@@ -890,10 +956,11 @@ func (s *httpUpstreamService) clientIdleTTL() time.Duration {
 func (s *httpUpstreamService) resolvePoolSettings(isolation string, accountConcurrency int) poolSettings {
 	settings := defaultPoolSettings(s.cfg)
 	// 账户隔离模式下，根据账户并发数调整连接池大小
-	if (isolation == config.ConnectionPoolIsolationAccount || isolation == config.ConnectionPoolIsolationAccountProxy) && accountConcurrency > 0 {
-		settings.maxIdleConns = accountConcurrency
-		settings.maxIdleConnsPerHost = accountConcurrency
-		settings.maxConnsPerHost = accountConcurrency
+	if isolation == config.ConnectionPoolIsolationAccount || isolation == config.ConnectionPoolIsolationAccountProxy {
+		burstConcurrency := resolvePoolBurstConcurrency(accountConcurrency)
+		settings.maxIdleConns = burstConcurrency
+		settings.maxIdleConnsPerHost = burstConcurrency
+		settings.maxConnsPerHost = burstConcurrency
 	}
 	return settings
 }
@@ -909,15 +976,107 @@ func (s *httpUpstreamService) applyProfilePoolSettings(settings poolSettings, pr
 	return settings
 }
 
+func resolvePoolBurstConcurrency(accountConcurrency int) int {
+	n := accountConcurrency
+	if n <= 0 {
+		n = 3
+	}
+	overflow := int(math.Round(float64(n) * 0.2))
+	if overflow < 1 {
+		overflow = 1
+	}
+	return n + overflow
+}
+
+func transportFamilyForProtocolMode(protocolMode string) string {
+	if protocolMode == upstreamProtocolModeOpenAIH2 {
+		return transportFamilyH2
+	}
+	return transportFamilyH1
+}
+
+func tlsProfileCacheKey(profile *tlsfingerprint.Profile) string {
+	if profile == nil {
+		return tlsProfileKeyNone
+	}
+	if profile.ID != 0 {
+		return strconv.FormatInt(profile.ID, 10)
+	}
+	name := strings.TrimSpace(profile.Name)
+	if name == "" {
+		name = "custom"
+	}
+	return "builtin:" + name
+}
+
+// tlsProfilePoolIdentity is the pool-key component for a TLS profile.
+// Canonical identity stays in tlsProfileCacheKey; this appends a ClientHello
+// revision so an in-place edit of the same DB ID rebuilds the transport
+// without merging distinct IDs under proxy isolation.
+func tlsProfilePoolIdentity(profile *tlsfingerprint.Profile) string {
+	key := tlsProfileCacheKey(profile)
+	rev := tlsProfileRevision(profile)
+	if rev == "" {
+		return key
+	}
+	return key + "@" + rev
+}
+
+func tlsProfileRevision(profile *tlsfingerprint.Profile) string {
+	if profile == nil {
+		return ""
+	}
+	var b strings.Builder
+	if profile.EnableGREASE {
+		b.WriteByte('1')
+	} else {
+		b.WriteByte('0')
+	}
+	writeUint16CSV(&b, profile.CipherSuites)
+	writeUint16CSV(&b, profile.Curves)
+	writeUint16CSV(&b, profile.PointFormats)
+	writeUint16CSV(&b, profile.SignatureAlgorithms)
+	writeLengthPrefixedStrings(&b, profile.ALPNProtocols)
+	writeUint16CSV(&b, profile.SupportedVersions)
+	writeUint16CSV(&b, profile.KeyShareGroups)
+	writeUint16CSV(&b, profile.PSKModes)
+	writeUint16CSV(&b, profile.Extensions)
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:8])
+}
+
+func writeUint16CSV(b *strings.Builder, values []uint16) {
+	b.WriteByte('|')
+	for i, v := range values {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.FormatUint(uint64(v), 10))
+	}
+}
+
+func writeLengthPrefixedStrings(b *strings.Builder, values []string) {
+	b.WriteByte('|')
+	b.WriteString(strconv.Itoa(len(values)))
+	for _, v := range values {
+		b.WriteByte('|')
+		b.WriteString(strconv.Itoa(len(v)))
+		b.WriteByte(':')
+		b.WriteString(v)
+	}
+}
+
 // buildPoolKey 构建连接池配置键，用于检测连接池配置变更。
-func buildPoolKey(settings poolSettings, protocolMode string) string {
+func buildPoolKey(settings poolSettings, tlsProfileKey, transportFamily, protocolMode string) string {
 	base := fmt.Sprintf(
-		"idle:%d|idle_host:%d|max:%d|idle_timeout:%s|header_timeout:%s",
+		"idle:%d|idle_host:%d|max:%d|idle_timeout:%s|header_timeout:%s|tls_profile:%s|family:%s",
 		settings.maxIdleConns,
 		settings.maxIdleConnsPerHost,
 		settings.maxConnsPerHost,
 		settings.idleConnTimeout,
 		settings.responseHeaderTimeout,
+		tlsProfileKey,
+		transportFamily,
 	)
 	if protocolMode == "" || protocolMode == upstreamProtocolModeDefault {
 		return base
@@ -937,18 +1096,18 @@ func buildPoolKey(settings poolSettings, protocolMode string) string {
 //   - string: 缓存键
 //
 // 缓存键格式:
-//   - proxy 模式: "proxy:{proxyKey}"
-//   - account 模式: "account:{accountID}"
-//   - account_proxy 模式: "account:{accountID}|proxy:{proxyKey}"
-func buildCacheKey(isolation, proxyKey string, accountID int64, protocolMode string) string {
+//   - proxy 模式: "proxy:{proxyKey}|tls_profile:{tlsProfileKey}|family:{transportFamily}"
+//   - account 模式: "account:{accountID}|proxy:{proxyKey}|burst:{burst}|tls_profile:{tlsProfileKey}|family:{transportFamily}"
+//   - account_proxy 模式: "account:{accountID}|proxy:{proxyKey}|burst:{burst}|tls_profile:{tlsProfileKey}|family:{transportFamily}"
+func buildCacheKey(isolation, proxyKey string, accountID int64, burstConcurrency int, tlsProfileKey, transportFamily, protocolMode string) string {
 	var base string
 	switch isolation {
 	case config.ConnectionPoolIsolationAccount:
-		base = fmt.Sprintf("account:%d", accountID)
+		base = fmt.Sprintf("account:%d|proxy:%s|burst:%d|tls_profile:%s|family:%s", accountID, proxyKey, burstConcurrency, tlsProfileKey, transportFamily)
 	case config.ConnectionPoolIsolationAccountProxy:
-		base = fmt.Sprintf("account:%d|proxy:%s", accountID, proxyKey)
+		base = fmt.Sprintf("account:%d|proxy:%s|burst:%d|tls_profile:%s|family:%s", accountID, proxyKey, burstConcurrency, tlsProfileKey, transportFamily)
 	default:
-		base = fmt.Sprintf("proxy:%s", proxyKey)
+		base = fmt.Sprintf("proxy:%s|tls_profile:%s|family:%s", proxyKey, tlsProfileKey, transportFamily)
 	}
 	if protocolMode != "" && protocolMode != upstreamProtocolModeDefault {
 		base += "|proto:" + protocolMode

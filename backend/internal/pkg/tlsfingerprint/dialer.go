@@ -19,6 +19,7 @@ import (
 // Profile contains TLS fingerprint configuration.
 // All slice fields use built-in defaults when empty.
 type Profile struct {
+	ID                  int64 `json:"-"`
 	Name                string // Profile name for identification
 	CipherSuites        []uint16
 	Curves              []uint16

@@ -140,7 +140,11 @@ func (s *TLSFingerprintProfileService) GetProfileByID(id int64) *tlsfingerprint.
 	s.localMu.RUnlock()
 
 	if ok && p != nil {
-		return p.ToTLSProfile()
+		profile := p.ToTLSProfile()
+		if profile != nil {
+			profile.ID = p.ID
+		}
+		return profile
 	}
 	return nil
 }
@@ -165,7 +169,12 @@ func (s *TLSFingerprintProfileService) getRandomProfile() *tlsfingerprint.Profil
 		return nil
 	}
 
-	return profiles[rand.IntN(len(profiles))].ToTLSProfile()
+	selected := profiles[rand.IntN(len(profiles))]
+	profile := selected.ToTLSProfile()
+	if profile != nil {
+		profile.ID = selected.ID
+	}
+	return profile
 }
 
 // ResolveTLSProfile 根据 Account 的配置解析出运行时 TLS Profile
