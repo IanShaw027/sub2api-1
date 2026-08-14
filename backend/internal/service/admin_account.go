@@ -761,7 +761,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			delete(account.Extra, OllamaCloudUsageSnapshotExtraKey)
 		}
 	}
-	// 只在指针非 nil 时更新 Concurrency（支持设置为 0）
+	// 只在指针非 nil 时更新 Concurrency（<=0 或 >32 时按账号类型回退到默认值）
 	if input.Concurrency != nil {
 		if *input.Concurrency <= 0 || *input.Concurrency > 32 {
 			account.Concurrency = applyCreateConcurrency(account.Platform, account.Type, *input.Concurrency)
@@ -1086,7 +1086,10 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		}
 	}
 
-	if len(kiroCredentialUpdateIDs) > 0 {
+	requiresPerAccountWrite := len(kiroCredentialUpdateIDs) > 0 ||
+		(input.Concurrency != nil && (*input.Concurrency <= 0 || *input.Concurrency > 32))
+
+	if requiresPerAccountWrite {
 		for index, accountID := range input.AccountIDs {
 			account := accountByID[accountID]
 			if account == nil {
@@ -1170,7 +1173,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	if input.ProxyID != nil {
 		repoUpdates.ProxyID = input.ProxyID
 	}
-	if input.Concurrency != nil {
+	if input.Concurrency != nil && *input.Concurrency > 0 && *input.Concurrency <= 32 {
 		repoUpdates.Concurrency = input.Concurrency
 	}
 	if input.Priority != nil {
@@ -1270,7 +1273,7 @@ func applyBulkUpdateInputToAccount(account *Account, input *BulkUpdateAccountsIn
 		account.ProxyFallbackOriginID = nil
 	}
 	if input.Concurrency != nil {
-		account.Concurrency = *input.Concurrency
+		account.Concurrency = applyCreateConcurrency(account.Platform, account.Type, *input.Concurrency)
 	}
 	if input.Priority != nil {
 		account.Priority = *input.Priority

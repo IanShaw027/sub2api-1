@@ -18,6 +18,7 @@ type accountRepoStubForBulkUpdate struct {
 	accountRepoStub
 	bulkUpdateErr       error
 	bulkUpdateIDs       []int64
+	bulkUpdateInput     AccountBulkUpdate
 	bindGroupErrByID    map[int64]error
 	bindGroupsCalls     []int64
 	bindGroupsByAccount map[int64][]int64
@@ -50,8 +51,9 @@ type accountRepoStubForBulkUpdate struct {
 	}
 }
 
-func (s *accountRepoStubForBulkUpdate) BulkUpdate(_ context.Context, ids []int64, _ AccountBulkUpdate) (int64, error) {
+func (s *accountRepoStubForBulkUpdate) BulkUpdate(_ context.Context, ids []int64, updates AccountBulkUpdate) (int64, error) {
 	s.bulkUpdateIDs = append([]int64{}, ids...)
+	s.bulkUpdateInput = updates
 	if s.bulkUpdateErr != nil {
 		return 0, s.bulkUpdateErr
 	}
@@ -306,4 +308,55 @@ func TestAdminServiceBulkUpdateAccounts_ResolvesIDsFromFilters(t *testing.T) {
 	require.Equal(t, 2, result.Success)
 	require.Equal(t, 0, result.Failed)
 	require.Equal(t, []int64{7, 11}, result.SuccessIDs)
+}
+
+func TestAdminService_BulkUpdateAccounts_NormalizesInvalidConcurrencyPerTargetAccount(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Concurrency: 7},
+			{ID: 2, Platform: PlatformGrok, Type: AccountTypeOAuth, Status: StatusActive, Concurrency: 7},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	concurrency := 0
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:            []int64{1, 2},
+		Concurrency:           &concurrency,
+		Credentials:           map[string]any{},
+		Extra:                 map[string]any{},
+		SkipMixedChannelCheck: true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 2, result.Success)
+	require.Empty(t, repo.bulkUpdateIDs, "invalid concurrency should use per-account writes")
+	require.Len(t, repo.updatedAccounts, 2)
+	require.Equal(t, 12, repo.updatedAccounts[0].Concurrency)
+	require.Equal(t, 1, repo.updatedAccounts[1].Concurrency)
+}
+
+func TestAdminService_BulkUpdateAccounts_PreservesExplicitConcurrency(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Concurrency: 7},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	concurrency := 3
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:            []int64{1},
+		Concurrency:           &concurrency,
+		Credentials:           map[string]any{},
+		Extra:                 map[string]any{},
+		SkipMixedChannelCheck: true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Success)
+	require.Equal(t, []int64{1}, repo.bulkUpdateIDs)
+	require.NotNil(t, repo.bulkUpdateInput.Concurrency)
+	require.Equal(t, 3, *repo.bulkUpdateInput.Concurrency)
+	require.Empty(t, repo.updatedAccounts, "in-range concurrency should stay on the bulk write path")
 }
