@@ -132,9 +132,29 @@ const currentRPM = computed(() => props.account.current_rpm ?? 0)
 const rpmStrategy = computed(() => props.account.rpm_strategy || 'tiered')
 const rpmStrategyTag = computed(() => rpmStrategy.value === 'sticky_exempt' ? '[S]' : '[T]')
 
+function effectiveConcurrency(account: Account): number {
+  const stored = account.concurrency
+  if (stored >= 1 && stored <= 32) return stored
+  if (
+    (account.platform === 'anthropic' || account.platform === 'openai') &&
+    (account.type === 'oauth' || account.type === 'setup-token')
+  ) {
+    return 12
+  }
+  if (account.platform === 'grok' && account.type === 'oauth') {
+    return 1
+  }
+  return 3
+}
+
 const rpmBuffer = computed(() => {
+  const manual = props.account.rpm_sticky_buffer
+  if (manual != null && manual >= 1 && manual <= 10000) {
+    return manual
+  }
   const base = props.account.base_rpm || 0
-  return props.account.rpm_sticky_buffer ?? (base > 0 ? Math.max(1, Math.floor(base / 5)) : 0)
+  if (base <= 0) return 0
+  return Math.max(effectiveConcurrency(props.account), Math.max(Math.floor(base / 5), 1))
 })
 
 const rpmClass = computed(() => {

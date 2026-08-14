@@ -2792,19 +2792,21 @@ func (a *Account) GetRPMStrategy() string {
 	return "tiered"
 }
 
-// GetRPMStickyBuffer 获取 RPM 粘性缓冲数量
-// Cache-driven: buffer = concurrency + maxSessions（覆盖幽灵窗口 + 稳态会话需求）
-// floor = baseRPM / 5（向后兼容 maxSessions=0 且 concurrency=0 场景）
+// GetRPMStickyBuffer 获取 RPM 粘性缓冲数量。
+// 手动 extra.rpm_sticky_buffer（1–10000）优先；否则
+// max(EffectiveConcurrency(), max(baseRPM/5, 1))（baseRPM<=0 时为 0）。
+// 不把 max_sessions 算进缓冲。
 func (a *Account) GetRPMStickyBuffer() int {
-	if a.Extra == nil {
+	if a == nil {
 		return 0
 	}
 
-	// 手动 override 最高优先级
-	if v, ok := a.Extra["rpm_sticky_buffer"]; ok {
-		val := parseExtraInt(v)
-		if val > 0 {
-			return val
+	if a.Extra != nil {
+		if v, ok := a.Extra["rpm_sticky_buffer"]; ok {
+			val := parseExtraInt(v)
+			if val >= 1 && val <= 10000 {
+				return val
+			}
 		}
 	}
 
@@ -2813,28 +2815,15 @@ func (a *Account) GetRPMStickyBuffer() int {
 		return 0
 	}
 
-	// Cache-driven buffer = concurrency + maxSessions
-	conc := a.Concurrency
-	if conc < 0 {
-		conc = 0
-	}
-	sess := a.GetMaxSessions()
-	if sess < 0 {
-		sess = 0
-	}
-
-	buffer := conc + sess
-
-	// floor: 向后兼容
 	floor := base / 5
 	if floor < 1 {
 		floor = 1
 	}
-	if buffer < floor {
-		buffer = floor
+	conc := a.EffectiveConcurrency()
+	if conc > floor {
+		return conc
 	}
-
-	return buffer
+	return floor
 }
 
 // CheckRPMSchedulability 根据当前 RPM 计数检查调度状态

@@ -4431,6 +4431,16 @@ function loadTempUnschedRules(credentials?: Record<string, unknown>) {
   })
 }
 
+function manualRPMStickyBufferFromExtra(extra: Account['extra'] | undefined): number | null {
+  if (!extra) return null
+  const raw = extra.rpm_sticky_buffer
+  const val = typeof raw === 'number' ? raw : Number(raw)
+  if (Number.isInteger(val) && val >= 1 && val <= 10000) {
+    return val
+  }
+  return null
+}
+
 // Load quota control settings from account (Anthropic OAuth/SetupToken only)
 function loadQuotaControlSettings(account: Account) {
   // Reset all quota control state first
@@ -4494,7 +4504,7 @@ function loadQuotaControlSettings(account: Account) {
     rpmLimitEnabled.value = true
     baseRpm.value = account.base_rpm
     rpmStrategy.value = (account.rpm_strategy as 'tiered' | 'sticky_exempt') || 'tiered'
-    rpmStickyBuffer.value = account.rpm_sticky_buffer ?? null
+    rpmStickyBuffer.value = manualRPMStickyBufferFromExtra(account.extra)
   }
 
   // UMQ mode（独立于 RPM 加载，防止编辑无 RPM 账号时丢失已有配置）
@@ -5117,7 +5127,7 @@ const handleSubmit = async () => {
           ? baseRpm.value
           : DEFAULT_BASE_RPM
         newExtra.rpm_strategy = rpmStrategy.value
-        if (rpmStickyBuffer.value != null && rpmStickyBuffer.value > 0) {
+        if (rpmStickyBuffer.value != null && rpmStickyBuffer.value >= 1 && rpmStickyBuffer.value <= 10000) {
           newExtra.rpm_sticky_buffer = rpmStickyBuffer.value
         } else {
           delete newExtra.rpm_sticky_buffer
