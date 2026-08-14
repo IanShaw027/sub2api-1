@@ -66,9 +66,10 @@ func applyKiroTLSFingerprintRuntimeWithProfile(req *http.Request, runtime accoun
 	ua := strings.TrimSpace(runtime.UpstreamUserAgent)
 	if ua != "" {
 		if profileUA := kiroProfilePayloadString(profile, "user_agent"); profileUA != "" {
-			ua = profileUA
+			req.Header.Set("User-Agent", profileUA)
+		} else if strings.TrimSpace(req.Header.Get("User-Agent")) == "" {
+			req.Header.Set("User-Agent", ua)
 		}
-		req.Header.Set("User-Agent", ua)
 	}
 	if originator := strings.TrimSpace(runtime.UpstreamOriginator); originator != "" {
 		deleteHeaderAllForms(req.Header, "X-Originator")
