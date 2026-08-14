@@ -76,7 +76,11 @@ const (
 	openAIWSIngressLeaseOperationTO     = 2 * time.Second
 )
 
-var ErrOpenAIWSIngressLeaseLost = errors.New("openai websocket ingress lease lost")
+var (
+	ErrOpenAIWSIngressLeaseLost = errors.New("openai websocket ingress lease lost")
+	ErrInvalidConcurrency       = errors.New("invalid account concurrency")
+	ErrConcurrencyUnavailable   = errors.New("concurrency service unavailable")
+)
 
 // OpenAIWSIngressLease keeps a Redis-backed ingress lease alive and cancels
 // its context if Redis cannot confirm ownership for a full lease lifetime.
@@ -468,6 +472,10 @@ func (s *ConcurrencyService) AcquireAccountSlot(ctx context.Context, accountID i
 // AcquireAccountSlotForGroup acquires an account slot and records the request
 // under the selected group for real-time group-capacity display.
 func (s *ConcurrencyService) AcquireAccountSlotForGroup(ctx context.Context, accountID int64, groupID *int64, maxConcurrency int) (*AcquireResult, error) {
+	if maxConcurrency <= 0 {
+		return &AcquireResult{Acquired: false}, ErrInvalidConcurrency
+	}
+
 	requestID := generateRequestID()
 	gid := int64(0)
 	if groupID != nil {
@@ -512,25 +520,6 @@ func (s *ConcurrencyService) AcquireAccountSlotForGroup(ctx context.Context, acc
 		if maxConcurrency > 0 {
 			_, _ = s.cache.AcquireAccountSlot(renewCtx, accountID, maxConcurrency, requestID)
 		}
-	}
-
-	if maxConcurrency <= 0 {
-		if gid > 0 {
-			if tracker, ok := s.cache.(groupConcurrencyCache); ok {
-				if err := tracker.AcquireGroupSlot(ctx, gid, requestID); err != nil {
-					logger.LegacyPrintf("service.concurrency", "Warning: failed to track group slot for account %d group %d (req=%s): %v", accountID, gid, requestID, err)
-				}
-			}
-			stopHeartbeat := s.startSlotHeartbeat(renew)
-			return &AcquireResult{
-				Acquired: true,
-				ReleaseFunc: func() {
-					stopHeartbeat()
-					release()
-				},
-			}, nil
-		}
-		return &AcquireResult{Acquired: true, ReleaseFunc: func() {}}, nil
 	}
 
 	var acquired bool

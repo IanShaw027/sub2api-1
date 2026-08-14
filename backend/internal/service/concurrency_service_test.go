@@ -218,9 +218,10 @@ func TestAcquireAccountSlot_UnlimitedConcurrency(t *testing.T) {
 
 	for _, maxConcurrency := range []int{0, -1} {
 		result, err := svc.AcquireAccountSlot(context.Background(), 1, maxConcurrency)
-		require.NoError(t, err)
-		require.True(t, result.Acquired, "maxConcurrency=%d 应无限制通过", maxConcurrency)
-		require.NotNil(t, result.ReleaseFunc, "ReleaseFunc 应为 no-op 函数")
+		require.Error(t, err, "maxConcurrency=%d must fail closed", maxConcurrency)
+		require.ErrorIs(t, err, ErrInvalidConcurrency)
+		require.NotNil(t, result)
+		require.False(t, result.Acquired, "maxConcurrency=%d must not acquire", maxConcurrency)
 	}
 }
 
@@ -658,6 +659,57 @@ func (c *groupSlotCacheForTest) GetGroupConcurrencyBatch(_ context.Context, grou
 	return out, nil
 }
 
+type countingSlotCache struct {
+	stubConcurrencyCacheForTest
+	held map[int64]int
+}
+
+func (c *countingSlotCache) AcquireAccountSlot(_ context.Context, accountID int64, maxConcurrency int, _ string) (bool, error) {
+	if c.held == nil {
+		c.held = make(map[int64]int)
+	}
+	if c.held[accountID] >= maxConcurrency {
+		return false, nil
+	}
+	c.held[accountID]++
+	return true, nil
+}
+
+func TestAcquireAccountSlotForGroup_RejectsNonPositiveMax(t *testing.T) {
+	svc := NewConcurrencyService(&stubConcurrencyCacheForTest{acquireResult: true})
+	svc.SetSlotHeartbeatInterval(0)
+
+	for _, maxConcurrency := range []int{0, -1} {
+		result, err := svc.AcquireAccountSlotForGroup(context.Background(), 11, nil, maxConcurrency)
+		require.Error(t, err, "maxConcurrency=%d must fail closed", maxConcurrency)
+		require.ErrorIs(t, err, ErrInvalidConcurrency)
+		require.NotNil(t, result)
+		require.False(t, result.Acquired, "maxConcurrency=%d must not acquire", maxConcurrency)
+	}
+}
+
+func TestAcquireAccountSlotForGroup_BurstLimitUsesSameKey(t *testing.T) {
+	cache := &countingSlotCache{}
+	svc := NewConcurrencyService(cache)
+	svc.SetSlotHeartbeatInterval(0)
+
+	first, err := svc.AcquireAccountSlotForGroup(context.Background(), 21, nil, 2)
+	require.NoError(t, err)
+	require.True(t, first.Acquired)
+
+	second, err := svc.AcquireAccountSlotForGroup(context.Background(), 21, nil, 2)
+	require.NoError(t, err)
+	require.True(t, second.Acquired)
+
+	third, err := svc.AcquireAccountSlotForGroup(context.Background(), 21, nil, 2)
+	require.NoError(t, err)
+	require.False(t, third.Acquired, "third TryAcquire(2) must fail after filling N=2")
+
+	burst, err := svc.AcquireAccountSlotForGroup(context.Background(), 21, nil, 3)
+	require.NoError(t, err)
+	require.True(t, burst.Acquired, "TryAcquire(3) must succeed on the same account key")
+}
+
 func TestAcquireAccountSlotForGroup_PairedRelease(t *testing.T) {
 	cache := &groupSlotCacheForTest{stubConcurrencyCacheForTest: stubConcurrencyCacheForTest{acquireResult: true}}
 	svc := NewConcurrencyService(cache)
@@ -680,12 +732,12 @@ func TestAcquireAccountSlotForGroup_UnlimitedStillTracksGroup(t *testing.T) {
 	gid := int64(9)
 
 	result, err := svc.AcquireAccountSlotForGroup(context.Background(), 3, &gid, 0)
-	require.NoError(t, err)
-	require.True(t, result.Acquired)
-	require.Equal(t, 1, cache.groupAcquires)
-
-	result.ReleaseFunc()
-	require.Equal(t, 1, cache.groupReleases)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrInvalidConcurrency)
+	require.NotNil(t, result)
+	require.False(t, result.Acquired)
+	require.Zero(t, cache.groupAcquires)
+	require.Zero(t, cache.accountGroupAcquires)
 }
 
 func TestSetSlotTTL_ShortensHeartbeatBelowDefault(t *testing.T) {

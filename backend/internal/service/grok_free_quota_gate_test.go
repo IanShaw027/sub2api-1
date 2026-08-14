@@ -209,6 +209,7 @@ func TestOpenAIAccountSchedulerLoadBalanceAppliesGrokFreeQuotaGate(t *testing.T)
 		usageLogRepo: &grokFreeQuotaUsageRepoStub{stats: map[int64]*usagestats.AccountStats{
 			1: {Tokens: 480_000}, // over 95% of 500k
 		}},
+		concurrencyService: NewConcurrencyService(&stubConcurrencyCacheForTest{acquireResult: true}),
 	}
 	scheduler := &defaultOpenAIAccountScheduler{service: svc, stats: newOpenAIAccountRuntimeStats()}
 
