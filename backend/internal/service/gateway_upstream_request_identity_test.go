@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/gin-gonic/gin"
@@ -111,6 +112,31 @@ func testIdentityGatewayService() *GatewayService {
 	}
 }
 
+func installMetadataPassthrough(t *testing.T, enabled bool) {
+	t.Helper()
+	prev := gatewayForwardingCache.Load()
+	gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
+		fingerprintUnification: true,
+		metadataPassthrough:    enabled,
+		expiresAt:              time.Now().Add(time.Hour).UnixNano(),
+	})
+	t.Cleanup(func() {
+		if prev != nil {
+			gatewayForwardingCache.Store(prev)
+			return
+		}
+		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{})
+	})
+}
+
+func testIdentityGatewayServiceWithMPT(t *testing.T, enableMPT bool) *GatewayService {
+	t.Helper()
+	installMetadataPassthrough(t, enableMPT)
+	svc := testIdentityGatewayService()
+	svc.settingService = NewSettingService(&settingRepoStub{values: map[string]string{}}, nil)
+	return svc
+}
+
 func testGinContext() *gin.Context {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
@@ -205,6 +231,24 @@ func TestBuildUpstreamRequest_LoadFailureDoesNotRewriteWithExtraUUID(t *testing.
 	require.NotEqual(t, testFingerprintStainlessOS, getHeaderRaw(req.Header, "X-Stainless-OS"))
 }
 
+func TestBuildUpstreamRequest_LoadFailureStripsUserIDWhenMetadataPassthrough(t *testing.T) {
+	installOutboundDeviceProfile(t, nil)
+	svc := testIdentityGatewayServiceWithMPT(t, true)
+	account := testAnthropicOAuthAccount()
+	body := testUserIDBody(testOriginalAccountUUID)
+
+	req, outBody, err := svc.buildUpstreamRequest(
+		context.Background(), testGinContext(), account, body,
+		"oauth-tok", "oauth", "claude-sonnet-4-6", false, false,
+	)
+	require.NoError(t, err)
+	got := gjson.GetBytes(outBody, "metadata.user_id").String()
+	require.Empty(t, got)
+	require.NotContains(t, string(outBody), testOriginalAccountUUID)
+	require.NotEqual(t, testFingerprintUserAgent, getHeaderRaw(req.Header, "User-Agent"))
+	require.NotEqual(t, testFingerprintStainlessOS, getHeaderRaw(req.Header, "X-Stainless-OS"))
+}
+
 func TestBuildCountTokensRequest_RewriteUserIDUsesProfileGatewayUUID(t *testing.T) {
 	installOutboundDeviceProfile(t, testAnthropicDeviceProfile())
 	svc := testIdentityGatewayService()
@@ -241,6 +285,24 @@ func TestBuildCountTokensRequest_LoadFailureDoesNotRewriteWithExtraUUID(t *testi
 	got := gjson.GetBytes(outBody, "metadata.user_id").String()
 	require.Empty(t, got)
 	require.NotContains(t, string(outBody), testExtraAccountUUID)
+	require.NotContains(t, string(outBody), testOriginalAccountUUID)
+	require.NotEqual(t, testFingerprintUserAgent, getHeaderRaw(req.Header, "User-Agent"))
+	require.NotEqual(t, testFingerprintStainlessOS, getHeaderRaw(req.Header, "X-Stainless-OS"))
+}
+
+func TestBuildCountTokensRequest_LoadFailureStripsUserIDWhenMetadataPassthrough(t *testing.T) {
+	installOutboundDeviceProfile(t, nil)
+	svc := testIdentityGatewayServiceWithMPT(t, true)
+	account := testAnthropicOAuthAccount()
+	body := testUserIDBody(testOriginalAccountUUID)
+
+	req, outBody, err := svc.buildCountTokensRequest(
+		context.Background(), testGinContext(), account, body,
+		"oauth-tok", "oauth", "claude-sonnet-4-6", false,
+	)
+	require.NoError(t, err)
+	got := gjson.GetBytes(outBody, "metadata.user_id").String()
+	require.Empty(t, got)
 	require.NotContains(t, string(outBody), testOriginalAccountUUID)
 	require.NotEqual(t, testFingerprintUserAgent, getHeaderRaw(req.Header, "User-Agent"))
 	require.NotEqual(t, testFingerprintStainlessOS, getHeaderRaw(req.Header, "X-Stainless-OS"))

@@ -411,10 +411,7 @@ func (s *GatewayService) applyAnthropicOutboundIdentity(ctx context.Context, bod
 	profile, err := LoadOutboundDeviceProfile(ctx, account)
 	if err != nil {
 		logOutboundIdentityReject(account, err)
-		if rewriteUserID {
-			body = stripAnthropicMetadataUserID(body)
-		}
-		return body, nil
+		return stripAnthropicMetadataUserID(body), nil
 	}
 	if rewriteUserID {
 		body = s.applyAnthropicUserIDFromProfile(ctx, body, account, profile)
