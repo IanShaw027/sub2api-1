@@ -105,7 +105,11 @@ func (r *KiroTokenRefresher) Refresh(ctx context.Context, account *Account) (map
 		"expires_at":    expiresAt,
 	}
 	if strings.TrimSpace(account.GetCredential("machine_id")) == "" {
-		if machineID := kiropkg.GenerateMachineID("", account.GetCredential("refresh_token")); machineID != "" {
+		machineID, midErr := leftoverOutboundMachineID(ctx, account)
+		if midErr != nil {
+			return nil, midErr
+		}
+		if machineID != "" {
 			newCreds["machine_id"] = machineID
 		}
 	}
@@ -293,7 +297,10 @@ func (r *KiroTokenRefresher) doKiroRequest(req *http.Request, account *Account, 
 		runtimeSettings = r.settingService.GetKiroRuntimeSettings(req.Context())
 	}
 	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
-	machineID := kiropkg.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
+	machineID, err := leftoverOutboundMachineID(req.Context(), account)
+	if err != nil {
+		return err
+	}
 	kiroVersion := runtimeSettings.KiroVersion
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("host", host)

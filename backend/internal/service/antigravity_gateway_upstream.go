@@ -78,8 +78,12 @@ func (s *AntigravityGatewayService) ForwardUpstream(ctx context.Context, c *gin.
 		proxyURL = account.Proxy.URL()
 	}
 
+	if err := applyOutboundProfileUserAgent(ctx, account, req); err != nil {
+		return nil, err
+	}
+
 	// 发送请求
-	resp, err := s.doAccountHTTP(ctx, account, req, proxyURL, inboundUserAgentFromGin(c))
+	resp, err := s.doAccountHTTP(ctx, account, req, proxyURL, req.Header.Get("User-Agent"))
 	if err != nil {
 		logger.LegacyPrintf("service.antigravity_gateway", "%s upstream request failed: %v", prefix, err)
 		return nil, fmt.Errorf("upstream request failed: %w", err)

@@ -381,7 +381,9 @@ func (s *GeminiMessagesCompatService) buildGeminiChatCompletionsUpstreamRequestF
 				}
 				upstreamReq.Header.Set("Content-Type", "application/json")
 				upstreamReq.Header.Set("Authorization", "Bearer "+accessToken)
-				upstreamReq.Header.Set("User-Agent", geminicli.GeminiCLIUserAgent)
+				if err := applyOutboundProfileUserAgent(ctx, account, upstreamReq); err != nil {
+					return nil, "", err
+				}
 				return upstreamReq, "x-request-id", nil
 			}
 
