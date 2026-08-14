@@ -425,48 +425,27 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		// 4) account concurrency slot
 		accountReleaseFunc := selection.ReleaseFunc
 		if !selection.Acquired {
-			if selection.WaitPlan == nil {
+			if selection.WaitPlan == nil && !service.PreserveStickyBindingFromContext(c.Request.Context()) {
 				markOpsRoutingCapacityLimited(c)
 				googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts")
 				return
 			}
-			accountWaitCounted := false
-			canWait, err := geminiConcurrency.IncrementAccountWaitCount(c.Request.Context(), account.ID, selection.WaitPlan.MaxWaiting)
-			if err != nil {
-				reqLog.Warn("gemini.account_wait_counter_increment_failed", zap.Int64("account_id", account.ID), zap.Error(err))
-			} else if !canWait {
-				reqLog.Info("gemini.account_wait_queue_full",
-					zap.Int64("account_id", account.ID),
-					zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
-				)
-				googleError(c, http.StatusTooManyRequests, "Too many pending requests, please retry later")
-				return
-			}
-			if err == nil && canWait {
-				accountWaitCounted = true
-			}
-			defer func() {
-				if accountWaitCounted {
-					geminiConcurrency.DecrementAccountWaitCount(c.Request.Context(), account.ID)
-				}
-			}()
-
-			accountReleaseFunc, err = geminiConcurrency.AcquireAccountSlotWithWaitTimeout(
-				c,
-				account.ID,
-				selection.WaitPlan.MaxConcurrency,
-				selection.WaitPlan.Timeout,
-				stream,
-				&streamStarted,
-			)
-			if err != nil {
+			slot := runAccountSlotLadder(c, geminiConcurrency, account, selection.WaitPlan, stream, &streamStarted)
+			var cont, done bool
+			accountReleaseFunc, cont, done = applyGatewaySlotLadder(c, fs, account.ID, slot, streamStarted, func(err error) {
 				reqLog.Warn("gemini.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+				if slot.Decision == SlotSwitchAccountPreserveBinding {
+					markOpsRoutingCapacityLimited(c)
+					googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts")
+					return
+				}
 				googleError(c, http.StatusTooManyRequests, err.Error())
+			})
+			if done {
 				return
 			}
-			if accountWaitCounted {
-				geminiConcurrency.DecrementAccountWaitCount(c.Request.Context(), account.ID)
-				accountWaitCounted = false
+			if cont {
+				continue
 			}
 		}
 		// 终检与准入后绑定使用选号结果携带的门（见 responses 同名注释）。

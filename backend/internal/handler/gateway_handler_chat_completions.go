@@ -205,23 +205,27 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		// 4. Acquire account concurrency slot
 		accountReleaseFunc := selection.ReleaseFunc
 		if !selection.Acquired {
-			if selection.WaitPlan == nil {
+			if selection.WaitPlan == nil && !service.PreserveStickyBindingFromContext(c.Request.Context()) {
 				markOpsRoutingCapacityLimited(c)
 				h.chatCompletionsErrorResponse(c, http.StatusServiceUnavailable, "api_error", "No available accounts")
 				return
 			}
-			accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
-				c,
-				account.ID,
-				selection.WaitPlan.MaxConcurrency,
-				selection.WaitPlan.Timeout,
-				reqStream,
-				&streamStarted,
-			)
-			if err != nil {
+			slot := runAccountSlotLadder(c, h.concurrencyHelper, account, selection.WaitPlan, reqStream, &streamStarted)
+			var cont, done bool
+			accountReleaseFunc, cont, done = applyGatewaySlotLadder(c, fs, account.ID, slot, streamStarted, func(err error) {
 				reqLog.Warn("gateway.cc.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+				if slot.Decision == SlotSwitchAccountPreserveBinding {
+					markOpsRoutingCapacityLimited(c)
+					h.chatCompletionsErrorResponse(c, http.StatusServiceUnavailable, "api_error", "No available accounts")
+					return
+				}
 				h.handleConcurrencyError(c, err, "account", streamStarted)
+			})
+			if done {
 				return
+			}
+			if cont {
+				continue
 			}
 		}
 		// 终检与准入后绑定使用选号结果携带的门（见 responses 同名注释）。

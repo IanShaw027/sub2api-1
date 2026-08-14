@@ -279,43 +279,26 @@ func (h *GatewayHandler) acquireWebSearchAccountSlot(
 	if selected.Acquired {
 		return selected.ReleaseFunc, true, nil
 	}
-	if selected.WaitPlan == nil || h.concurrencyHelper == nil {
+	if h.concurrencyHelper == nil {
+		return nil, false, nil
+	}
+	if selected.WaitPlan == nil && !service.PreserveStickyBindingFromContext(c.Request.Context()) {
 		return nil, false, nil
 	}
 	account := selected.Account
-	accountWaitCounted := false
-	canWait, waitErr := h.concurrencyHelper.IncrementAccountWaitCount(c.Request.Context(), account.ID, selected.WaitPlan.MaxWaiting)
-	if waitErr != nil {
-		logger.L().Warn("gateway.web_search.account_wait_counter_increment_failed",
-			zap.Int64("account_id", account.ID),
-			zap.Error(waitErr),
-		)
-		// Best-effort wait without counter (same as first-hop legacy path).
-	} else if !canWait {
-		return nil, false, nil
-	} else {
-		accountWaitCounted = true
-	}
-	releaseWait := func() {
-		if accountWaitCounted {
-			h.concurrencyHelper.DecrementAccountWaitCount(c.Request.Context(), account.ID)
-			accountWaitCounted = false
-		}
-	}
 	streamStarted := false
-	slotRelease, err := h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
-		c,
-		account.ID,
-		selected.WaitPlan.MaxConcurrency,
-		selected.WaitPlan.Timeout,
-		false,
-		&streamStarted,
-	)
-	releaseWait()
-	if err != nil {
-		return nil, false, err
+	slot := runAccountSlotLadder(c, h.concurrencyHelper, account, selected.WaitPlan, false, &streamStarted)
+	switch slot.Decision {
+	case SlotAcquiredNormal, SlotAcquiredBurst:
+		return slot.ReleaseFunc, true, nil
+	case SlotSwitchAccountPreserveBinding:
+		if c != nil && c.Request != nil {
+			c.Request = c.Request.WithContext(service.WithPreserveStickyBinding(c.Request.Context()))
+		}
+		return nil, false, nil
+	default:
+		return nil, false, slot.Err
 	}
-	return slotRelease, true, nil
 }
 
 // doGrokNativeWebSearch executes web search using the Grok account's native capability

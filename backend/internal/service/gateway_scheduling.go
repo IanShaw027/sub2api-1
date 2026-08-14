@@ -192,22 +192,9 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			}
 
 			if stickyAccountID > 0 && stickyAccountID == account.ID && s.concurrencyService != nil {
-				waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, account.ID)
-				if waitingCount < cfg.StickySessionMaxWaiting {
-					return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
-						AccountID:      account.ID,
-						MaxConcurrency: account.EffectiveConcurrency(),
-						Timeout:        cfg.StickySessionWaitTimeout,
-						MaxWaiting:     cfg.StickySessionMaxWaiting,
-					})
-				}
+				return s.newSelectionResult(ctx, account, false, nil, waitPlanUnlessPostSwitch(ctx, account, cfg.StickySessionWaitTimeout, cfg.StickySessionMaxWaiting))
 			}
-			return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
-				AccountID:      account.ID,
-				MaxConcurrency: account.EffectiveConcurrency(),
-				Timeout:        cfg.FallbackWaitTimeout,
-				MaxWaiting:     cfg.FallbackMaxWaiting,
-			})
+			return s.newSelectionResult(ctx, account, false, nil, waitPlanUnlessPostSwitch(ctx, account, cfg.FallbackWaitTimeout, cfg.FallbackMaxWaiting))
 		}
 	}
 
@@ -375,25 +362,16 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 							}
 
 							if stickyCacheMissReason == "" {
-								waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, stickyAccountID)
-								if waitingCount < cfg.StickySessionMaxWaiting {
-									// 会话数量限制检查（等待计划也需要占用会话配额）
-									if !s.checkAndRegisterSession(ctx, stickyAccount, sessionHash) {
-										stickyCacheMissReason = "session_limit"
-										// 会话限制已满，继续到负载感知选择
-									} else {
-										// 必须走 newSelectionResult 以 hydrate 账号凭证：
-										// 调度快照中的账号是精简版（OAuth token 等被剥离），
-										// 直接返回会导致后续转发缺少凭证而鉴权失败。
-										return s.newSelectionResult(ctx, stickyAccount, false, nil, &AccountWaitPlan{
-											AccountID:      stickyAccountID,
-											MaxConcurrency: stickyAccount.EffectiveConcurrency(),
-											Timeout:        cfg.StickySessionWaitTimeout,
-											MaxWaiting:     cfg.StickySessionMaxWaiting,
-										})
-									}
+								// 会话数量限制检查（等待计划也需要占用会话配额）
+								if !s.checkAndRegisterSession(ctx, stickyAccount, sessionHash) {
+									stickyCacheMissReason = "session_limit"
+									// 会话限制已满，继续到负载感知选择
 								} else {
-									stickyCacheMissReason = "wait_queue_full"
+									// 必须走 newSelectionResult 以 hydrate 账号凭证：
+									// 调度快照中的账号是精简版（OAuth token 等被剥离），
+									// 直接返回会导致后续转发缺少凭证而鉴权失败。
+									// 等待队列是否已满由梯子 IncrementAccountWaitCount 判定并换号。
+									return s.newSelectionResult(ctx, stickyAccount, false, nil, waitPlanUnlessPostSwitch(ctx, stickyAccount, cfg.StickySessionWaitTimeout, cfg.StickySessionMaxWaiting))
 								}
 							}
 							// 粘性账号槽位满且等待队列已满，继续使用负载感知选择
@@ -438,9 +416,12 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 				if loadInfo == nil {
 					loadInfo = &AccountLoadInfo{AccountID: acc.ID}
 				}
-				if loadInfo.LoadRate < 100 {
+				if accountIsSlotCandidate(acc, loadInfo, stickyAccountID) {
 					routingAvailable = append(routingAvailable, accountWithLoad{account: acc, loadInfo: loadInfo})
 				}
+			}
+			if stickyAccountID == 0 || PreserveStickyBindingFromContext(ctx) {
+				routingAvailable = preferInstantFanoutAccounts(routingAvailable)
 			}
 
 			if len(routingAvailable) > 0 {
@@ -494,12 +475,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 					if s.debugModelRoutingEnabled() {
 						logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] routed wait: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), item.account.ID)
 					}
-					return s.newSelectionResult(ctx, item.account, false, nil, &AccountWaitPlan{
-						AccountID:      item.account.ID,
-						MaxConcurrency: item.account.EffectiveConcurrency(),
-						Timeout:        cfg.StickySessionWaitTimeout,
-						MaxWaiting:     cfg.StickySessionMaxWaiting,
-					})
+					return s.newSelectionResult(ctx, item.account, false, nil, waitPlanUnlessPostSwitch(ctx, item.account, cfg.StickySessionWaitTimeout, cfg.StickySessionMaxWaiting))
 				}
 				// 所有路由账号会话限制都已满，继续到 Layer 2 回退
 			}
@@ -580,24 +556,17 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 						)
 					}
 
-					waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
-					if waitingCount < cfg.StickySessionMaxWaiting {
-						// 会话数量限制检查（等待计划也需要占用会话配额）
-						if !s.checkAndRegisterSession(ctx, account, sessionHash) {
-							// 会话限制已满，继续到 Layer 2
-						} else {
-							slog.Debug("sticky.layer1_5_no_routing_hit",
-								"account_id", accountID,
-								"session", shortSessionHash(sessionHash),
-								"result", "wait_plan",
-							)
-							return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
-								AccountID:      accountID,
-								MaxConcurrency: account.EffectiveConcurrency(),
-								Timeout:        cfg.StickySessionWaitTimeout,
-								MaxWaiting:     cfg.StickySessionMaxWaiting,
-							})
-						}
+					// 等待队列是否已满由梯子 IncrementAccountWaitCount 判定并换号，
+					// 选号期不得用 GetAccountWaitingCount 预检丢掉粘性账号。
+					if !s.checkAndRegisterSession(ctx, account, sessionHash) {
+						// 会话限制已满，继续到 Layer 2
+					} else {
+						slog.Debug("sticky.layer1_5_no_routing_hit",
+							"account_id", accountID,
+							"session", shortSessionHash(sessionHash),
+							"result", "wait_plan",
+						)
+						return s.newSelectionResult(ctx, account, false, nil, waitPlanUnlessPostSwitch(ctx, account, cfg.StickySessionWaitTimeout, cfg.StickySessionMaxWaiting))
 					}
 				} else if !clearSticky {
 					slog.Debug("sticky.layer1_5_no_routing_miss",
@@ -700,12 +669,15 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			if loadInfo == nil {
 				loadInfo = &AccountLoadInfo{AccountID: acc.ID}
 			}
-			if loadInfo.LoadRate < 100 {
+			if accountIsSlotCandidate(acc, loadInfo, stickyAccountID) {
 				available = append(available, accountWithLoad{
 					account:  acc,
 					loadInfo: loadInfo,
 				})
 			}
+		}
+		if stickyAccountID == 0 || PreserveStickyBindingFromContext(ctx) {
+			available = preferInstantFanoutAccounts(available)
 		}
 
 		// 分层过滤选择：优先级 →（可选）最早重置 → 负载率 → LRU
@@ -756,12 +728,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 		if !s.checkAndRegisterSession(ctx, acc, sessionHash) {
 			continue // 会话限制已满，尝试下一个账号
 		}
-		return s.newSelectionResult(ctx, acc, false, nil, &AccountWaitPlan{
-			AccountID:      acc.ID,
-			MaxConcurrency: acc.EffectiveConcurrency(),
-			Timeout:        cfg.FallbackWaitTimeout,
-			MaxWaiting:     cfg.FallbackMaxWaiting,
-		})
+		return s.newSelectionResult(ctx, acc, false, nil, waitPlanUnlessPostSwitch(ctx, acc, cfg.FallbackWaitTimeout, cfg.FallbackMaxWaiting))
 	}
 	return nil, ErrNoAvailableAccounts
 }

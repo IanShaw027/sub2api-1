@@ -231,6 +231,10 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			}
 			continue
 		}
+		if slotResult == openAISlotAcquireSwitchAccount {
+			continueOpenAISlotSwitch(c, failedAccountIDs, account.ID)
+			continue
+		}
 		if slotResult != openAISlotAcquireOK {
 			return
 		}
