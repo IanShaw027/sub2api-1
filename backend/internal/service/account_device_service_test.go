@@ -673,6 +673,90 @@ func TestLearnIfOfficialUnprovenGeminiUADoesNotWrite(t *testing.T) {
 	require.Zero(t, repo.casWriteCount(account.ID))
 }
 
+func TestLearnIfOfficialCodexVSCodeUADoesNotWrite(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformOpenAI, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	n, err := client.AccountDeviceProfile.Update().
+		Where(accountdeviceprofile.AccountID(account.ID)).
+		SetClientVersion("0.1.0").
+		SetLearningEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	bundle, ok := service.NewSoftwareBundleRegistry().Lookup(
+		service.PlatformOpenAI,
+		service.ClientFamilyCodexCLI,
+		created.ClientVersion,
+	)
+	require.True(t, ok)
+
+	got, err := svc.LearnIfOfficial(ctx, account, service.OfficialInbound{
+		UserAgent:     "codex_vscode/" + bundle.ClientVersion,
+		Originator:    "codex_vscode",
+		ClientVersion: bundle.ClientVersion,
+	})
+	require.NoError(t, err)
+	require.Equal(t, created.DeviceID, got.DeviceID)
+	require.Equal(t, "0.1.0", got.ClientVersion)
+	require.Equal(t, service.LearnedFromBaseline, got.LearnedFrom)
+	require.Zero(t, repo.casWriteCount(account.ID))
+}
+
+func TestLearnIfOfficialCodexOriginatorOnlyDoesNotWrite(t *testing.T) {
+	cases := []struct {
+		name      string
+		userAgent string
+	}{
+		{name: "empty UA", userAgent: ""},
+		{name: "non-CLI UA without version", userAgent: "python-httpx"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, client, repo := newCountingAccountDeviceService(t)
+			ctx := context.Background()
+			account := mustCreateDeviceAccount(t, client, service.PlatformOpenAI, map[string]any{
+				"device_learning_enabled": true,
+			})
+
+			created, err := svc.GetOrCreate(ctx, account)
+			require.NoError(t, err)
+			n, err := client.AccountDeviceProfile.Update().
+				Where(accountdeviceprofile.AccountID(account.ID)).
+				SetClientVersion("0.1.0").
+				SetLearningEnabled(true).
+				Save(ctx)
+			require.NoError(t, err)
+			require.Equal(t, 1, n)
+
+			bundle, ok := service.NewSoftwareBundleRegistry().Lookup(
+				service.PlatformOpenAI,
+				service.ClientFamilyCodexCLI,
+				created.ClientVersion,
+			)
+			require.True(t, ok)
+
+			got, err := svc.LearnIfOfficial(ctx, account, service.OfficialInbound{
+				UserAgent:     tc.userAgent,
+				Originator:    "codex_cli_rs",
+				ClientVersion: bundle.ClientVersion,
+			})
+			require.NoError(t, err)
+			require.Equal(t, created.DeviceID, got.DeviceID)
+			require.Equal(t, "0.1.0", got.ClientVersion)
+			require.Equal(t, service.LearnedFromBaseline, got.LearnedFrom)
+			require.Zero(t, repo.casWriteCount(account.ID))
+		})
+	}
+}
+
 func TestLearnIfOfficialClaudeSupersetStainlessStillLearns(t *testing.T) {
 	svc, client, repo := newCountingAccountDeviceService(t)
 	ctx := context.Background()
@@ -803,7 +887,6 @@ func TestLearnIfOfficialDarwinX64InboundStillLearnsSoftware(t *testing.T) {
 	require.NotEqual(t, claude.DefaultHeaders["X-Stainless-OS"], got.ProfilePayload["stainless_os"])
 	require.NotEqual(t, claude.DefaultHeaders["X-Stainless-Arch"], got.ProfilePayload["stainless_arch"])
 }
-
 
 type recordingDeviceProfileCache struct {
 	mu       sync.Mutex
