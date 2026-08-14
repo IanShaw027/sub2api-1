@@ -6,8 +6,11 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/anthropicfp"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
@@ -328,12 +331,99 @@ func outboundProfileUserAgent(profile *AccountDeviceProfile) string {
 	return strings.TrimSpace(ua)
 }
 
-func (s *GatewayService) rewriteAnthropicUserIDFromProfile(ctx context.Context, body []byte, account *Account) []byte {
-	if s == nil || s.identityService == nil || account == nil || len(body) == 0 {
+func outboundProfilePayloadString(profile *AccountDeviceProfile, key string) string {
+	if profile == nil || profile.ProfilePayload == nil {
+		return ""
+	}
+	v, _ := profile.ProfilePayload[key].(string)
+	return strings.TrimSpace(v)
+}
+
+func applyOutboundProfileIdentityHeaders(req *http.Request, profile *AccountDeviceProfile) {
+	if req == nil || profile == nil {
+		return
+	}
+	if ua := outboundProfileUserAgent(profile); ua != "" {
+		setHeaderRaw(req.Header, "User-Agent", ua)
+	}
+	if v := outboundProfilePayloadString(profile, "stainless_lang"); v != "" {
+		setHeaderRaw(req.Header, "X-Stainless-Lang", v)
+	}
+	if v := outboundProfilePayloadString(profile, "stainless_package_version"); v != "" {
+		setHeaderRaw(req.Header, "X-Stainless-Package-Version", v)
+	}
+	if v := outboundProfilePayloadString(profile, "stainless_os"); v != "" {
+		setHeaderRaw(req.Header, "X-Stainless-OS", v)
+	}
+	if v := outboundProfilePayloadString(profile, "stainless_arch"); v != "" {
+		setHeaderRaw(req.Header, "X-Stainless-Arch", v)
+	}
+	if v := outboundProfilePayloadString(profile, "stainless_runtime"); v != "" {
+		setHeaderRaw(req.Header, "X-Stainless-Runtime", v)
+	}
+	if v := outboundProfilePayloadString(profile, "stainless_runtime_version"); v != "" {
+		setHeaderRaw(req.Header, "X-Stainless-Runtime-Version", v)
+	}
+}
+
+func stripAnthropicMetadataUserID(body []byte) []byte {
+	if len(body) == 0 || !gjson.GetBytes(body, "metadata.user_id").Exists() {
 		return body
+	}
+	next, ok := deleteJSONPathBytes(body, "metadata.user_id")
+	if !ok {
+		return body
+	}
+	return next
+}
+
+const identityRejectLogInterval = 30 * time.Second
+
+var (
+	identityRejectLogMu sync.Mutex
+	identityRejectLogAt = map[int64]time.Time{}
+)
+
+func logOutboundIdentityReject(account *Account, err error) {
+	if err == nil {
+		return
+	}
+	id := int64(0)
+	if account != nil {
+		id = account.ID
+	}
+	now := time.Now()
+	identityRejectLogMu.Lock()
+	last := identityRejectLogAt[id]
+	if !last.IsZero() && now.Sub(last) < identityRejectLogInterval {
+		identityRejectLogMu.Unlock()
+		return
+	}
+	identityRejectLogAt[id] = now
+	identityRejectLogMu.Unlock()
+	logger.LegacyPrintf("service.gateway", "Warning: identity_reject account %d: %v", id, err)
+}
+
+func (s *GatewayService) applyAnthropicOutboundIdentity(ctx context.Context, body []byte, account *Account, rewriteUserID bool) ([]byte, *AccountDeviceProfile) {
+	if s == nil || account == nil {
+		return body, nil
 	}
 	profile, err := LoadOutboundDeviceProfile(ctx, account)
 	if err != nil {
+		logOutboundIdentityReject(account, err)
+		if rewriteUserID {
+			body = stripAnthropicMetadataUserID(body)
+		}
+		return body, nil
+	}
+	if rewriteUserID {
+		body = s.applyAnthropicUserIDFromProfile(ctx, body, account, profile)
+	}
+	return body, profile
+}
+
+func (s *GatewayService) applyAnthropicUserIDFromProfile(ctx context.Context, body []byte, account *Account, profile *AccountDeviceProfile) []byte {
+	if s == nil || s.identityService == nil || account == nil || len(body) == 0 {
 		return body
 	}
 	accountUUID := GatewayAccountUUIDForRewrite(profile, "")
@@ -351,12 +441,20 @@ func (s *GatewayService) rewriteAnthropicUserIDFromProfile(ctx context.Context, 
 	return newBody
 }
 
+func (s *GatewayService) rewriteAnthropicUserIDFromProfile(ctx context.Context, body []byte, account *Account) []byte {
+	body, _ = s.applyAnthropicOutboundIdentity(ctx, body, account, true)
+	return body
+}
+
 func (s *GatewayService) buildAnthropicMetadataUserIDFromProfile(ctx context.Context, account *Account, sessionSeed string) string {
 	if account == nil {
 		return ""
 	}
 	profile, err := LoadOutboundDeviceProfile(ctx, account)
 	if err != nil || profile == nil {
+		if err != nil {
+			logOutboundIdentityReject(account, err)
+		}
 		return ""
 	}
 	deviceID := strings.TrimSpace(profile.DeviceID)
@@ -384,7 +482,9 @@ func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account
 		firstUserText = extractFirstUserText(parsed.Body.Bytes())
 	}
 	seed := buildStableSessionSeed(account.ID, sessionContextDiscriminator(parsed.SessionContext), firstUserText)
-	return s.buildAnthropicMetadataUserIDFromProfile(context.Background(), account, seed)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return s.buildAnthropicMetadataUserIDFromProfile(ctx, account, seed)
 }
 
 // applyClaudeCodeOAuthMimicryToBody 将"非 Claude Code 客户端 + Claude OAuth 账号"
@@ -482,6 +582,9 @@ func (s *GatewayService) buildOAuthMetadataUserIDFromBody(
 
 	profile, err := LoadOutboundDeviceProfile(ctx, account)
 	if err != nil || profile == nil {
+		if err != nil {
+			logOutboundIdentityReject(account, err)
+		}
 		return ""
 	}
 	deviceID := strings.TrimSpace(profile.DeviceID)

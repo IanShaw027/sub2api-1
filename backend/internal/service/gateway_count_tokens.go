@@ -472,18 +472,22 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		ctEnableFP, ctEnableMPT, _ = s.settingService.GetGatewayForwardingSettings(ctx)
 	}
 	var ctFingerprint *Fingerprint
+	var ctOutboundProfile *AccountDeviceProfile
 	if account.IsOAuth() && s.identityService != nil {
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
-		if err == nil {
+		if err == nil && ctEnableFP {
 			ctFingerprint = fp
 		}
-		if !ctEnableMPT {
-			body = s.rewriteAnthropicUserIDFromProfile(ctx, body, account)
+		body, ctOutboundProfile = s.applyAnthropicOutboundIdentity(ctx, body, account, !ctEnableMPT)
+		if ctOutboundProfile == nil {
+			ctFingerprint = nil
 		}
 	}
 
 	// 同步 billing header cc_version 与实际发送的 User-Agent 版本
-	if ctFingerprint != nil && ctEnableFP {
+	if ua := outboundProfileUserAgent(ctOutboundProfile); ua != "" {
+		body = syncBillingHeaderVersion(body, ua)
+	} else if ctFingerprint != nil && ctEnableFP {
 		body = syncBillingHeaderVersion(body, ctFingerprint.UserAgent)
 	}
 
@@ -534,8 +538,10 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		}
 	}
 
-	// OAuth 账号：应用指纹到请求头（受设置开关控制）
-	if ctEnableFP && ctFingerprint != nil {
+	// OAuth 账号：profile UA/stainless 覆盖白名单透传；load failure 不回退指纹身份。
+	if ctOutboundProfile != nil {
+		applyOutboundProfileIdentityHeaders(req, ctOutboundProfile)
+	} else if ctEnableFP && ctFingerprint != nil {
 		s.identityService.ApplyFingerprint(req, ctFingerprint)
 	}
 

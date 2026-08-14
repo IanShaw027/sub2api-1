@@ -15,15 +15,19 @@ import (
 )
 
 const (
-	testExtraAccountUUID     = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-	testGatewayAccountUUID   = "11111111-2222-4333-8444-555555555555"
-	testOriginalAccountUUID  = "99999999-9999-4999-8999-999999999999"
-	testProfileDeviceID      = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	testFingerprintClientID  = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-	testProfileUserAgent     = "claude-cli/2.1.22 (external, cli)"
-	testFingerprintUserAgent = "claude-cli/2.1.221 (external, cli)"
-	testOriginalDeviceID     = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
-	testOriginalSessionID    = "7578cf37-aaca-46e4-a45c-71285d9dbb83"
+	testExtraAccountUUID         = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	testGatewayAccountUUID       = "11111111-2222-4333-8444-555555555555"
+	testOriginalAccountUUID      = "99999999-9999-4999-8999-999999999999"
+	testProfileDeviceID          = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	testFingerprintClientID      = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+	testProfileUserAgent         = "claude-cli/2.1.22 (external, cli)"
+	testFingerprintUserAgent     = "claude-cli/2.1.221 (external, cli)"
+	testProfileStainlessOS       = "Windows"
+	testProfileStainlessArch     = "x64"
+	testFingerprintStainlessOS   = "macOS"
+	testFingerprintStainlessArch = "ia32"
+	testOriginalDeviceID         = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	testOriginalSessionID        = "7578cf37-aaca-46e4-a45c-71285d9dbb83"
 )
 
 type stubOutboundDeviceRepo struct {
@@ -77,7 +81,9 @@ func testAnthropicDeviceProfile() *AccountDeviceProfile {
 		TransportFamily:    TransportH1,
 		LearnedFrom:        LearnedFromBaseline,
 		ProfilePayload: map[string]any{
-			"user_agent": testProfileUserAgent,
+			"user_agent":     testProfileUserAgent,
+			"stainless_os":   testProfileStainlessOS,
+			"stainless_arch": testProfileStainlessArch,
 		},
 	}
 }
@@ -96,8 +102,10 @@ func testIdentityGatewayService() *GatewayService {
 	return &GatewayService{
 		identityService: NewIdentityService(&stubIdentityCache{
 			fingerprint: &Fingerprint{
-				ClientID:  testFingerprintClientID,
-				UserAgent: testFingerprintUserAgent,
+				ClientID:      testFingerprintClientID,
+				UserAgent:     testFingerprintUserAgent,
+				StainlessOS:   testFingerprintStainlessOS,
+				StainlessArch: testFingerprintStainlessArch,
 			},
 		}),
 	}
@@ -139,7 +147,7 @@ func TestBuildUpstreamRequest_RewriteUserIDUsesProfileGatewayUUID(t *testing.T) 
 	account := testAnthropicOAuthAccount()
 	body := testUserIDBody(testExtraAccountUUID)
 
-	_, outBody, err := svc.buildUpstreamRequest(
+	req, outBody, err := svc.buildUpstreamRequest(
 		context.Background(), testGinContext(), account, body,
 		"oauth-tok", "oauth", "claude-sonnet-4-6", false, false,
 	)
@@ -149,6 +157,32 @@ func TestBuildUpstreamRequest_RewriteUserIDUsesProfileGatewayUUID(t *testing.T) 
 	require.Contains(t, got, testGatewayAccountUUID)
 	require.Contains(t, got, testProfileDeviceID)
 	require.NotContains(t, got, testFingerprintClientID)
+	require.Equal(t, testProfileUserAgent, getHeaderRaw(req.Header, "User-Agent"))
+	require.NotEqual(t, testFingerprintUserAgent, getHeaderRaw(req.Header, "User-Agent"))
+	require.Equal(t, testProfileStainlessOS, getHeaderRaw(req.Header, "X-Stainless-OS"))
+	require.Equal(t, testProfileStainlessArch, getHeaderRaw(req.Header, "X-Stainless-Arch"))
+	require.NotEqual(t, testFingerprintStainlessOS, getHeaderRaw(req.Header, "X-Stainless-OS"))
+}
+
+func TestBuildUpstreamRequest_AppliesProfileUserAgentWithUserID(t *testing.T) {
+	installOutboundDeviceProfile(t, testAnthropicDeviceProfile())
+	svc := testIdentityGatewayService()
+	account := testAnthropicOAuthAccount()
+	userID := FormatMetadataUserID(testOriginalDeviceID, testExtraAccountUUID, testOriginalSessionID, "2.1.22")
+	body := []byte(`{"model":"claude-sonnet-4-6","metadata":{"user_id":` + strconvQuote(userID) + `},"system":[{"type":"text","text":"x-anthropic-billing-header cc_version=1.0.0"}],"messages":[]}`)
+
+	req, outBody, err := svc.buildUpstreamRequest(
+		context.Background(), testGinContext(), account, body,
+		"oauth-tok", "oauth", "claude-sonnet-4-6", false, false,
+	)
+	require.NoError(t, err)
+	require.Equal(t, testProfileUserAgent, getHeaderRaw(req.Header, "User-Agent"))
+	require.Equal(t, testProfileStainlessOS, getHeaderRaw(req.Header, "X-Stainless-OS"))
+	got := gjson.GetBytes(outBody, "metadata.user_id").String()
+	require.Contains(t, got, testGatewayAccountUUID)
+	require.Contains(t, got, testProfileDeviceID)
+	require.Contains(t, gjson.GetBytes(outBody, "system.0.text").String(), "cc_version=2.1.22")
+	require.NotContains(t, gjson.GetBytes(outBody, "system.0.text").String(), "cc_version=2.1.221")
 }
 
 func TestBuildUpstreamRequest_LoadFailureDoesNotRewriteWithExtraUUID(t *testing.T) {
@@ -157,15 +191,18 @@ func TestBuildUpstreamRequest_LoadFailureDoesNotRewriteWithExtraUUID(t *testing.
 	account := testAnthropicOAuthAccount()
 	body := testUserIDBody(testOriginalAccountUUID)
 
-	_, outBody, err := svc.buildUpstreamRequest(
+	req, outBody, err := svc.buildUpstreamRequest(
 		context.Background(), testGinContext(), account, body,
 		"oauth-tok", "oauth", "claude-sonnet-4-6", false, false,
 	)
 	require.NoError(t, err)
 	got := gjson.GetBytes(outBody, "metadata.user_id").String()
-	require.NotContains(t, got, testExtraAccountUUID)
-	require.Contains(t, got, testOriginalAccountUUID)
-	require.Equal(t, string(body), string(outBody))
+	require.Empty(t, got)
+	require.NotContains(t, string(outBody), testExtraAccountUUID)
+	require.NotContains(t, string(outBody), testOriginalAccountUUID)
+	require.NotContains(t, string(outBody), testGatewayAccountUUID)
+	require.NotEqual(t, testFingerprintUserAgent, getHeaderRaw(req.Header, "User-Agent"))
+	require.NotEqual(t, testFingerprintStainlessOS, getHeaderRaw(req.Header, "X-Stainless-OS"))
 }
 
 func TestBuildCountTokensRequest_RewriteUserIDUsesProfileGatewayUUID(t *testing.T) {
@@ -174,7 +211,7 @@ func TestBuildCountTokensRequest_RewriteUserIDUsesProfileGatewayUUID(t *testing.
 	account := testAnthropicOAuthAccount()
 	body := testUserIDBody(testExtraAccountUUID)
 
-	_, outBody, err := svc.buildCountTokensRequest(
+	req, outBody, err := svc.buildCountTokensRequest(
 		context.Background(), testGinContext(), account, body,
 		"oauth-tok", "oauth", "claude-sonnet-4-6", false,
 	)
@@ -184,6 +221,10 @@ func TestBuildCountTokensRequest_RewriteUserIDUsesProfileGatewayUUID(t *testing.
 	require.Contains(t, got, testGatewayAccountUUID)
 	require.Contains(t, got, testProfileDeviceID)
 	require.NotContains(t, got, testFingerprintClientID)
+	require.Equal(t, testProfileUserAgent, getHeaderRaw(req.Header, "User-Agent"))
+	require.NotEqual(t, testFingerprintUserAgent, getHeaderRaw(req.Header, "User-Agent"))
+	require.Equal(t, testProfileStainlessOS, getHeaderRaw(req.Header, "X-Stainless-OS"))
+	require.NotEqual(t, testFingerprintStainlessOS, getHeaderRaw(req.Header, "X-Stainless-OS"))
 }
 
 func TestBuildCountTokensRequest_LoadFailureDoesNotRewriteWithExtraUUID(t *testing.T) {
@@ -192,14 +233,17 @@ func TestBuildCountTokensRequest_LoadFailureDoesNotRewriteWithExtraUUID(t *testi
 	account := testAnthropicOAuthAccount()
 	body := testUserIDBody(testOriginalAccountUUID)
 
-	_, outBody, err := svc.buildCountTokensRequest(
+	req, outBody, err := svc.buildCountTokensRequest(
 		context.Background(), testGinContext(), account, body,
 		"oauth-tok", "oauth", "claude-sonnet-4-6", false,
 	)
 	require.NoError(t, err)
 	got := gjson.GetBytes(outBody, "metadata.user_id").String()
-	require.NotContains(t, got, testExtraAccountUUID)
-	require.Contains(t, got, testOriginalAccountUUID)
+	require.Empty(t, got)
+	require.NotContains(t, string(outBody), testExtraAccountUUID)
+	require.NotContains(t, string(outBody), testOriginalAccountUUID)
+	require.NotEqual(t, testFingerprintUserAgent, getHeaderRaw(req.Header, "User-Agent"))
+	require.NotEqual(t, testFingerprintStainlessOS, getHeaderRaw(req.Header, "X-Stainless-OS"))
 }
 
 func TestBuildOAuthMetadataUserID_UsesProfileGatewayUUID(t *testing.T) {
