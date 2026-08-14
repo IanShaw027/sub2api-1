@@ -111,6 +111,10 @@ func (h *AccountHandler) ReauthorizeKiroOAuth(c *gin.Context) {
 		response.BadRequest(c, "account is not a Kiro OAuth account")
 		return
 	}
+	if err := service.ValidateAccountExtraWrites(req.Extra); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 
 	if _, err := h.adminService.UpdateAccount(c.Request.Context(), accountID, &service.UpdateAccountInput{
 		Name:                      req.Name,

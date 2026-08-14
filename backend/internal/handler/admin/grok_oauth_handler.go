@@ -362,6 +362,10 @@ func (h *GrokOAuthHandler) CreateAccountsFromSSO(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if err := service.ValidateAccountExtraWrites(req.Extra); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	tokens := normalizeSSOImportTokens(req.SSOTokens, req.SSOToken)
 	if len(tokens) == 0 {
 		response.BadRequest(c, "sso_tokens is required")

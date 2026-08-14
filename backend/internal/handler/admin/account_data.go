@@ -410,6 +410,15 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 			})
 			continue
 		}
+		if err := service.ValidateAccountExtraWrites(item.Extra); err != nil {
+			result.AccountFailed++
+			result.Errors = append(result.Errors, DataImportError{
+				Kind:    "account",
+				Name:    item.Name,
+				Message: err.Error(),
+			})
+			continue
+		}
 
 		var proxyID *int64
 		if item.ProxyKey != nil && *item.ProxyKey != "" {
