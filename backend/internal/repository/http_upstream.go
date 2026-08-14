@@ -987,13 +987,13 @@ func buildPoolKey(settings poolSettings, tlsProfileKey, transportFamily, protoco
 //
 // 缓存键格式:
 //   - proxy 模式: "proxy:{proxyKey}|tls_profile:{tlsProfileKey}|family:{transportFamily}"
-//   - account 模式: "account:{accountID}|burst:{burst}|tls_profile:{tlsProfileKey}|family:{transportFamily}"
+//   - account 模式: "account:{accountID}|proxy:{proxyKey}|burst:{burst}|tls_profile:{tlsProfileKey}|family:{transportFamily}"
 //   - account_proxy 模式: "account:{accountID}|proxy:{proxyKey}|burst:{burst}|tls_profile:{tlsProfileKey}|family:{transportFamily}"
 func buildCacheKey(isolation, proxyKey string, accountID int64, burstConcurrency int, tlsProfileKey, transportFamily, protocolMode string) string {
 	var base string
 	switch isolation {
 	case config.ConnectionPoolIsolationAccount:
-		base = fmt.Sprintf("account:%d|burst:%d|tls_profile:%s|family:%s", accountID, burstConcurrency, tlsProfileKey, transportFamily)
+		base = fmt.Sprintf("account:%d|proxy:%s|burst:%d|tls_profile:%s|family:%s", accountID, proxyKey, burstConcurrency, tlsProfileKey, transportFamily)
 	case config.ConnectionPoolIsolationAccountProxy:
 		base = fmt.Sprintf("account:%d|proxy:%s|burst:%d|tls_profile:%s|family:%s", accountID, proxyKey, burstConcurrency, tlsProfileKey, transportFamily)
 	default:

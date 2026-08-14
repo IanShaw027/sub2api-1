@@ -75,6 +75,31 @@ Result:
 ok      github.com/Wei-Shaw/sub2api/internal/repository   9.030s
 ```
 
+Post-review follow-up RED/GREEN:
+
+```bash
+cd backend && go test -tags=unit ./internal/repository -run 'TestBuildCacheKey_AccountIsolationIncludesTLSProfileAndTransportFamily' -count=1
+```
+
+RED:
+
+```text
+--- FAIL: TestBuildCacheKey_AccountIsolationIncludesTLSProfileAndTransportFamily (0.00s)
+Error: Should not be: "account:17|burst:14|tls_profile:profile-101|family:h1"
+```
+
+After adding proxy identity to account-mode cache keys and updating the legacy proxy-change expectation:
+
+```bash
+cd backend && go test -tags=unit ./internal/repository -count=1
+```
+
+GREEN:
+
+```text
+ok      github.com/Wei-Shaw/sub2api/internal/repository   2.679s
+```
+
 Lint verification:
 
 ```text
@@ -94,6 +119,7 @@ ReadLints on edited repository files: no linter errors found.
 ## Self-review
 
 - Verified account/account_proxy pool sizing now uses burst, including the local `<=0 -> 3 -> 4` fallback.
+- Verified account-isolation cache keys now include proxy identity as required.
 - Verified proxy isolation still reuses a shared pool across alternating accounts even when their incoming concurrency differs.
 - Verified TLS paths no longer reuse a client across distinct TLS profiles.
 - Verified transport family is encoded into both cache and pool identity material.

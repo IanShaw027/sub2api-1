@@ -852,23 +852,23 @@ func (s *HTTPUpstreamSuite) TestAccountProxyIsolation_DifferentProxy() {
 	require.Equal(s.T(), 2, len(svc.clients), "账号+代理隔离应缓存两个客户端")
 }
 
-// TestAccountModeProxyChangeClearsPool 测试账户模式下代理变更
-// 验证账户切换代理时清理旧连接池，避免复用错误代理
-func (s *HTTPUpstreamSuite) TestAccountModeProxyChangeClearsPool() {
+// TestAccountModeProxyChangeUsesDistinctPoolKeys 测试账户模式下代理变更
+// 验证账户隔离模式仍会为不同代理保留独立的客户端键
+func (s *HTTPUpstreamSuite) TestAccountModeProxyChangeUsesDistinctPoolKeys() {
 	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount}
 	svc := s.newService()
 	// 同一账户，先后使用不同代理
 	entry1 := mustGetOrCreateClient(s.T(), svc, "http://proxy-a:8080", 1, 3)
 	entry2 := mustGetOrCreateClient(s.T(), svc, "http://proxy-b:8080", 1, 3)
 	require.NotSame(s.T(), entry1, entry2, "账号切换代理应创建新连接池")
-	require.Equal(s.T(), 1, len(svc.clients), "账号模式下应仅保留一个连接池")
-	require.False(s.T(), hasEntry(svc, entry1), "旧连接池应被清理")
+	require.Equal(s.T(), 2, len(svc.clients), "账号模式下应为不同代理保留独立连接池")
+	require.True(s.T(), hasEntry(svc, entry1), "旧代理的连接池应保留在自己的缓存键下")
 }
 
 func TestBuildCacheKey_AccountIsolationIncludesTLSProfileAndTransportFamily(t *testing.T) {
 	keyA := buildCacheKey(
 		config.ConnectionPoolIsolationAccount,
-		directProxyKey,
+		"http://proxy-a.local:8080",
 		17,
 		14,
 		"profile-101",
@@ -877,7 +877,7 @@ func TestBuildCacheKey_AccountIsolationIncludesTLSProfileAndTransportFamily(t *t
 	)
 	keyB := buildCacheKey(
 		config.ConnectionPoolIsolationAccount,
-		directProxyKey,
+		"http://proxy-a.local:8080",
 		17,
 		14,
 		"profile-202",
@@ -886,16 +886,27 @@ func TestBuildCacheKey_AccountIsolationIncludesTLSProfileAndTransportFamily(t *t
 	)
 	keyH2 := buildCacheKey(
 		config.ConnectionPoolIsolationAccount,
-		directProxyKey,
+		"http://proxy-a.local:8080",
 		17,
 		14,
 		"profile-101",
 		transportFamilyH2,
 		upstreamProtocolModeOpenAIH2,
 	)
+	keyProxyB := buildCacheKey(
+		config.ConnectionPoolIsolationAccount,
+		"http://proxy-b.local:8080",
+		17,
+		14,
+		"profile-101",
+		transportFamilyH1,
+		upstreamProtocolModeDefault,
+	)
 
 	require.NotEqual(t, keyA, keyB)
 	require.NotEqual(t, keyA, keyH2)
+	require.NotEqual(t, keyA, keyProxyB)
+	require.Contains(t, keyA, "proxy:http://proxy-a.local:8080")
 	require.Contains(t, keyA, "tls_profile:profile-101")
 	require.Contains(t, keyA, "family:h1")
 	require.Contains(t, keyA, "burst:14")
