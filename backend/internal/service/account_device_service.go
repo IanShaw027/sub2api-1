@@ -5,6 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
+	"regexp"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
@@ -21,11 +26,62 @@ type AccountDeviceProfileRepository interface {
 }
 
 type AccountDeviceService struct {
-	repo AccountDeviceProfileRepository
+	repo      AccountDeviceProfileRepository
+	learnMu   sync.Mutex
+	accountMu map[int64]*sync.Mutex
 }
 
+// OfficialInbound is an inbound official-client observation used to decide
+// whether LearnIfOfficial may CAS-upgrade software fields.
+//
+// Expected Claude inbound Payload keys (mapped from X-Stainless-* headers):
+// stainless_lang, stainless_package_version, stainless_os, stainless_arch,
+// stainless_runtime, stainless_runtime_version. Learn compares only software
+// keys (lang, package_version, runtime, runtime_version) against the registry.
+// stainless_os and stainless_arch are first-write-wins identity and are not
+// required to match the registry. Extra inbound stainless_* keys such as
+// stainless_retry_count and stainless_timeout do not block learn.
+// Runtime and RuntimeVersion are reserved/gate-only; written software values
+// come from the registry bundle, not from inbound.
+type OfficialInbound struct {
+	UserAgent      string
+	Originator     string
+	ClientVersion  string
+	Runtime        string
+	RuntimeVersion string
+	Payload        map[string]any
+}
+
+var (
+	grokOfficialUAPattern        = regexp.MustCompile(`(?i)^xai-grok-workspace/\d+\.\d+\.\d+`)
+	geminiOfficialUAPattern      = regexp.MustCompile(`(?i)^GeminiCLI/\d+\.\d+\.\d+`)
+	antigravityOfficialUAPattern = regexp.MustCompile(`(?i)^antigravity/\d+\.\d+\.\d+`)
+	overlaySoftwarePayloadKeySet = map[string]struct{}{
+		"user_agent":                {},
+		"originator":                {},
+		"stainless_lang":            {},
+		"stainless_package_version": {},
+		"stainless_runtime":         {},
+		"stainless_runtime_version": {},
+		"grok_token_auth":           {},
+		"grok_identifier":           {},
+		"kiro_system_version":       {},
+		"kiro_node_version":         {},
+		"kiro_commit":               {},
+	}
+	stainlessSoftwareCompareKeys = []string{
+		"stainless_lang",
+		"stainless_package_version",
+		"stainless_runtime",
+		"stainless_runtime_version",
+	}
+)
+
 func NewAccountDeviceService(repo AccountDeviceProfileRepository) *AccountDeviceService {
-	return &AccountDeviceService{repo: repo}
+	return &AccountDeviceService{
+		repo:      repo,
+		accountMu: make(map[int64]*sync.Mutex),
+	}
 }
 
 func (s *AccountDeviceService) GetOrCreate(ctx context.Context, account *Account) (*AccountDeviceProfile, error) {
@@ -70,6 +126,226 @@ func (s *AccountDeviceService) GetOrCreate(ctx context.Context, account *Account
 		return nil, err
 	}
 	return created, nil
+}
+
+func (s *AccountDeviceService) LearnIfOfficial(ctx context.Context, account *Account, inbound OfficialInbound) (*AccountDeviceProfile, error) {
+	if s == nil || s.repo == nil {
+		return nil, fmt.Errorf("identity_reject: account device service is not configured")
+	}
+	if account == nil {
+		return nil, fmt.Errorf("identity_reject: account is required")
+	}
+
+	unlock := s.lockAccount(canonicalDeviceAccountID(account))
+	defer unlock()
+
+	profile, err := s.GetOrCreate(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+	if !deviceLearningEnabled(profile, account) {
+		return profile, nil
+	}
+	if !isOfficialInbound(profile.Platform, inbound) {
+		return profile, nil
+	}
+
+	candidate := inboundCandidateVersion(inbound)
+	if candidate == "" {
+		return profile, nil
+	}
+	if uaVersion := softwareBundleVersionFromUA(inbound.UserAgent); uaVersion != "" && uaVersion != candidate {
+		return profile, nil
+	}
+	bundle, ok := NewSoftwareBundleRegistry().Lookup(profile.Platform, profile.ClientFamily, candidate)
+	if !ok {
+		return profile, nil
+	}
+	if CompareSemver(candidate, profile.ClientVersion) <= 0 {
+		return profile, nil
+	}
+	if err := ValidateSoftwareBundle(bundle); err != nil {
+		return nil, fmt.Errorf("identity_reject: %w", err)
+	}
+	if profile.Platform == PlatformAnthropic && claudeUAChanged(profile, bundle) && !stainlessMatchesRegistry(inbound.Payload, bundle.Payload) {
+		slog.Warn("identity_reject", "reason", "ua_changed_without_stainless", "account_id", profile.AccountID)
+		return profile, nil
+	}
+	if bundle.Runtime != "" && bundle.Runtime != profile.Runtime {
+		return profile, nil
+	}
+
+	next := applyOfficialSoftwareBundle(profile, bundle)
+	if err := ValidateAccountDeviceProfile(next); err != nil {
+		slog.Warn("identity_reject", "reason", err.Error(), "account_id", profile.AccountID)
+		return nil, err
+	}
+
+	wrote, err := s.repo.UpdateCAS(ctx, profile.AccountID, profile.Revision, next)
+	if err != nil {
+		return nil, fmt.Errorf("identity_reject: cas update: %w", err)
+	}
+	if !wrote {
+		current, getErr := s.repo.GetByAccountID(ctx, profile.AccountID)
+		if getErr != nil {
+			return nil, getErr
+		}
+		if current != nil {
+			return current, nil
+		}
+		return profile, nil
+	}
+	updated, err := s.repo.GetByAccountID(ctx, profile.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	if updated == nil {
+		return next, nil
+	}
+	return updated, nil
+}
+
+func (s *AccountDeviceService) lockAccount(accountID int64) func() {
+	s.learnMu.Lock()
+	if s.accountMu == nil {
+		s.accountMu = make(map[int64]*sync.Mutex)
+	}
+	m := s.accountMu[accountID]
+	if m == nil {
+		m = &sync.Mutex{}
+		s.accountMu[accountID] = m
+	}
+	s.learnMu.Unlock()
+	m.Lock()
+	return m.Unlock
+}
+
+func canonicalDeviceAccountID(account *Account) int64 {
+	if account.IsShadow() && *account.ParentAccountID != account.ID {
+		return *account.ParentAccountID
+	}
+	return account.ID
+}
+
+func deviceLearningEnabled(profile *AccountDeviceProfile, account *Account) bool {
+	if profile != nil && profile.LearningEnabled {
+		return true
+	}
+	if account == nil || account.Extra == nil {
+		return false
+	}
+	enabled, ok := account.Extra["device_learning_enabled"].(bool)
+	return ok && enabled
+}
+
+func isOfficialInbound(platform string, inbound OfficialInbound) bool {
+	ua := strings.TrimSpace(inbound.UserAgent)
+	switch platform {
+	case PlatformAnthropic:
+		return claudeCodeUAPattern.MatchString(ua)
+	case PlatformOpenAI:
+		return openai.IsCodexOfficialClientByHeaders(ua, inbound.Originator)
+	default:
+		family := DefaultClientFamily(platform)
+		if family == "" {
+			return false
+		}
+		return inboundMatchesOfficialFamily(family, ua)
+	}
+}
+
+func inboundMatchesOfficialFamily(family, userAgent string) bool {
+	ua := strings.TrimSpace(userAgent)
+	switch family {
+	case ClientFamilyGrokCLI:
+		return grokOfficialUAPattern.MatchString(ua)
+	case ClientFamilyGeminiCLI:
+		return geminiOfficialUAPattern.MatchString(ua)
+	case ClientFamilyAntigravity:
+		return antigravityOfficialUAPattern.MatchString(ua)
+	default:
+		return false
+	}
+}
+
+func inboundCandidateVersion(inbound OfficialInbound) string {
+	if version := strings.TrimSpace(inbound.ClientVersion); version != "" {
+		return version
+	}
+	return softwareBundleVersionFromUA(inbound.UserAgent)
+}
+
+func claudeUAChanged(profile *AccountDeviceProfile, bundle SoftwareBundle) bool {
+	profileUA, _ := profile.ProfilePayload["user_agent"].(string)
+	if strings.TrimSpace(bundle.UserAgent) != strings.TrimSpace(profileUA) {
+		return true
+	}
+	return strings.TrimSpace(bundle.ClientVersion) != strings.TrimSpace(profile.ClientVersion)
+}
+
+func stainlessMatchesRegistry(inbound, registry map[string]any) bool {
+	want := stainlessSoftwareFields(registry)
+	if len(want) == 0 {
+		return true
+	}
+	got := stainlessSoftwareFields(inbound)
+	for key, value := range want {
+		if got[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func stainlessSoftwareFields(payload map[string]any) map[string]string {
+	out := make(map[string]string, len(stainlessSoftwareCompareKeys))
+	if payload == nil {
+		return out
+	}
+	for _, key := range stainlessSoftwareCompareKeys {
+		if s, ok := payload[key].(string); ok {
+			out[key] = s
+		}
+	}
+	return out
+}
+
+func applyOfficialSoftwareBundle(profile *AccountDeviceProfile, bundle SoftwareBundle) *AccountDeviceProfile {
+	next := *profile
+	next.ClientVersion = bundle.ClientVersion
+	if bundle.RuntimeVersion != "" {
+		next.RuntimeVersion = bundle.RuntimeVersion
+	}
+	next.LearnedFrom = LearnedFromOfficial
+	now := time.Now()
+	next.VersionUpgradedAt = &now
+	next.ProfilePayload = overlaySoftwarePayload(profile.ProfilePayload, bundle)
+	return &next
+}
+
+func overlaySoftwarePayload(existing map[string]any, bundle SoftwareBundle) map[string]any {
+	out := make(map[string]any, len(existing)+len(bundle.Payload))
+	for key, value := range existing {
+		out[key] = value
+	}
+	for key, value := range bundle.Payload {
+		if !isOverlaySoftwareKey(key) {
+			continue
+		}
+		out[key] = value
+	}
+	if bundle.UserAgent != "" {
+		out["user_agent"] = bundle.UserAgent
+	}
+	if bundle.Originator != "" {
+		out["originator"] = bundle.Originator
+	}
+	return out
+}
+
+func isOverlaySoftwareKey(key string) bool {
+	_, ok := overlaySoftwarePayloadKeySet[key]
+	return ok
 }
 
 func buildAccountDeviceBaseline(account *Account) (*AccountDeviceProfile, error) {
