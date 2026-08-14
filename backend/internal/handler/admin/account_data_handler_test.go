@@ -319,7 +319,7 @@ func TestImportDataReusesProxyAndSkipsDefaultGroup(t *testing.T) {
 	require.True(t, adminSvc.createdAccounts[0].SkipDefaultGroupBind)
 }
 
-func TestImportDataRejectsTLSFingerprintProfileIDMinusOne(t *testing.T) {
+func TestImportDataAcceptsTLSFingerprintProfileIDMinusOne(t *testing.T) {
 	_, adminSvc := setupAccountDataRouter()
 	h := NewAccountHandler(
 		adminSvc,
@@ -341,7 +341,7 @@ func TestImportDataRejectsTLSFingerprintProfileIDMinusOne(t *testing.T) {
 	result, err := h.importData(context.Background(), DataImportRequest{
 		Data: DataPayload{
 			Accounts: []DataAccount{{
-				Name:        "bad-tls",
+				Name:        "random-tls",
 				Platform:    service.PlatformAnthropic,
 				Type:        service.AccountTypeAPIKey,
 				Credentials: map[string]any{"api_key": "test"},
@@ -351,9 +351,9 @@ func TestImportDataRejectsTLSFingerprintProfileIDMinusOne(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, 0, result.AccountCreated)
-	require.Equal(t, 1, result.AccountFailed)
-	require.NotEmpty(t, result.Errors)
-	require.Contains(t, result.Errors[0].Message, "tls_fingerprint_profile_id")
-	require.Empty(t, adminSvc.createdAccounts)
+	require.Equal(t, 1, result.AccountCreated)
+	require.Equal(t, 0, result.AccountFailed)
+	require.Empty(t, result.Errors)
+	require.Len(t, adminSvc.createdAccounts, 1)
+	require.Equal(t, int64(-1), adminSvc.createdAccounts[0].Extra["tls_fingerprint_profile_id"])
 }

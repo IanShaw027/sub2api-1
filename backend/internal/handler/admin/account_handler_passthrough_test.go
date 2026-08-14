@@ -67,7 +67,7 @@ func TestAccountHandler_Create_AnthropicAPIKeyPassthroughExtraForwarded(t *testi
 	require.Equal(t, true, created.Extra["anthropic_passthrough"])
 }
 
-func TestBatchCreateRejectsTLSFingerprintProfileIDMinusOne(t *testing.T) {
+func TestBatchCreateAcceptsTLSFingerprintProfileIDMinusOne(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	adminSvc := newStubAdminService()
@@ -94,7 +94,7 @@ func TestBatchCreateRejectsTLSFingerprintProfileIDMinusOne(t *testing.T) {
 	body := map[string]any{
 		"accounts": []map[string]any{
 			{
-				"name":     "bad-tls",
+				"name":     "random-tls",
 				"platform": "anthropic",
 				"type":     "apikey",
 				"credentials": map[string]any{
@@ -115,7 +115,8 @@ func TestBatchCreateRejectsTLSFingerprintProfileIDMinusOne(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
-	require.Empty(t, adminSvc.createdAccounts)
+	require.Len(t, adminSvc.createdAccounts, 1)
+	require.Equal(t, float64(-1), adminSvc.createdAccounts[0].Extra["tls_fingerprint_profile_id"])
 
 	var resp struct {
 		Code int `json:"code"`
@@ -131,9 +132,8 @@ func TestBatchCreateRejectsTLSFingerprintProfileIDMinusOne(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Equal(t, 0, resp.Code)
-	require.Equal(t, 0, resp.Data.Success)
-	require.Equal(t, 1, resp.Data.Failed)
+	require.Equal(t, 1, resp.Data.Success)
+	require.Equal(t, 0, resp.Data.Failed)
 	require.Len(t, resp.Data.Results, 1)
-	require.False(t, resp.Data.Results[0].Success)
-	require.Contains(t, resp.Data.Results[0].Error, "tls_fingerprint_profile_id")
+	require.True(t, resp.Data.Results[0].Success)
 }

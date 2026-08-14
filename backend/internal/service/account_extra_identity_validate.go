@@ -3,7 +3,6 @@ package service
 import (
 	"encoding/json"
 	"fmt"
-	"maps"
 	"math"
 	"strconv"
 	"strings"
@@ -32,14 +31,8 @@ func ValidateAccountExtraIdentity(extra map[string]any) error {
 			return err
 		}
 	}
-	if _, ok := extra["tls_fingerprint_profile_id"]; ok {
-		id, present, err := requiredPresentCapacityInt(extra, "tls_fingerprint_profile_id")
-		if err != nil {
-			return err
-		}
-		if present && id == -1 {
-			return identityReject("tls_fingerprint_profile_id must not be -1")
-		}
+	if err := validateTLSFingerprintProfileID(extra); err != nil {
+		return err
 	}
 	return nil
 }
@@ -76,10 +69,8 @@ func ValidateAccountCapacityExtra(extra map[string]any) error {
 		return identityReject("rpm_sticky_buffer must be empty or 1-10000")
 	}
 
-	if n, present, err := requiredPresentCapacityInt(extra, "tls_fingerprint_profile_id"); err != nil {
+	if err := validateTLSFingerprintProfileID(extra); err != nil {
 		return err
-	} else if present && n == -1 {
-		return identityReject("tls_fingerprint_profile_id must not be -1")
 	}
 
 	if v, ok := extra["enable_tls_fingerprint"]; ok {
@@ -158,33 +149,18 @@ func requiredPresentCapacityInt(extra map[string]any, key string) (int64, bool, 
 	return n, true, nil
 }
 
-func clearLegacyTLSFingerprintProfileID(extra map[string]any) {
-	if extra == nil {
-		return
-	}
-	raw, ok := extra["tls_fingerprint_profile_id"]
-	if !ok || raw == nil {
-		return
-	}
-	n, err := identityExtraInt64(raw)
+func validateTLSFingerprintProfileID(extra map[string]any) error {
+	n, present, err := optionalCapacityInt(extra, "tls_fingerprint_profile_id")
 	if err != nil {
-		return
+		return err
 	}
-	if n == -1 {
-		extra["tls_fingerprint_profile_id"] = nil
-	}
-}
-
-func validateAccountExtraWritesForUpdate(extra map[string]any) error {
-	if extra == nil {
+	if !present || n == 0 {
 		return nil
 	}
-	view := extra
-	if raw, ok := extra["tls_fingerprint_profile_id"]; ok && raw == nil {
-		view = maps.Clone(extra)
-		delete(view, "tls_fingerprint_profile_id")
+	if n < -1 {
+		return identityReject("tls_fingerprint_profile_id must be -1 or a positive integer")
 	}
-	return ValidateAccountExtraWrites(view)
+	return nil
 }
 
 func identityExtraInt64(value any) (int64, error) {

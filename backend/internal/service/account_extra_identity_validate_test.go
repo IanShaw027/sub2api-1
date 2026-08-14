@@ -31,9 +31,22 @@ func TestValidateAccountExtraIdentityRejectsNonRFC4122OpenAIDeviceID(t *testing.
 	require.ErrorContains(t, err, "openai_device_id")
 }
 
-func TestValidateAccountExtraIdentityRejectsRandomTLSProfileID(t *testing.T) {
-	err := ValidateAccountExtraIdentity(map[string]any{
+func TestValidateAccountExtraIdentityAcceptsRandomTLSProfileID(t *testing.T) {
+	require.NoError(t, ValidateAccountExtraIdentity(map[string]any{
 		"tls_fingerprint_profile_id": int64(-1),
+	}))
+}
+
+func TestValidateAccountExtraIdentityAcceptsUnsetTLSProfileID(t *testing.T) {
+	require.NoError(t, ValidateAccountExtraIdentity(map[string]any{}))
+	require.NoError(t, ValidateAccountExtraIdentity(map[string]any{"tls_fingerprint_profile_id": ""}))
+	require.NoError(t, ValidateAccountExtraIdentity(map[string]any{"tls_fingerprint_profile_id": nil}))
+	require.NoError(t, ValidateAccountExtraIdentity(map[string]any{"tls_fingerprint_profile_id": 0}))
+}
+
+func TestValidateAccountExtraIdentityRejectsOtherNegativeTLSProfileID(t *testing.T) {
+	err := ValidateAccountExtraIdentity(map[string]any{
+		"tls_fingerprint_profile_id": int64(-2),
 	})
 
 	require.Error(t, err)
@@ -101,8 +114,9 @@ func TestValidateAccountCapacityExtraRejectsIllegalMaxSessionsIdleAndBuffer(t *t
 		{key: "session_idle_timeout_minutes", value: 1441, want: "session_idle_timeout_minutes"},
 		{key: "rpm_sticky_buffer", value: -1, want: "rpm_sticky_buffer"},
 		{key: "rpm_sticky_buffer", value: 10001, want: "rpm_sticky_buffer"},
-		{key: "tls_fingerprint_profile_id", value: int64(-1), want: "tls_fingerprint_profile_id"},
+		{key: "tls_fingerprint_profile_id", value: int64(-2), want: "tls_fingerprint_profile_id"},
 		{key: "tls_fingerprint_profile_id", value: 3.7, want: "integer"},
+		{key: "tls_fingerprint_profile_id", value: "x", want: "integer"},
 		{key: "enable_tls_fingerprint", value: "yes", want: "enable_tls_fingerprint"},
 		{key: "codex_fingerprint_mode", value: "random", want: "codex_fingerprint_mode"},
 	}
@@ -115,6 +129,13 @@ func TestValidateAccountCapacityExtraRejectsIllegalMaxSessionsIdleAndBuffer(t *t
 
 func TestValidateAccountCapacityExtraAcceptsRPMStickyBufferZero(t *testing.T) {
 	require.NoError(t, ValidateAccountCapacityExtra(map[string]any{"rpm_sticky_buffer": 0}))
+}
+
+func TestValidateAccountCapacityExtraAcceptsRandomTLSProfileID(t *testing.T) {
+	require.NoError(t, ValidateAccountCapacityExtra(map[string]any{"tls_fingerprint_profile_id": int64(-1)}))
+	require.NoError(t, ValidateAccountCapacityExtra(map[string]any{"tls_fingerprint_profile_id": 0}))
+	require.NoError(t, ValidateAccountCapacityExtra(map[string]any{"tls_fingerprint_profile_id": ""}))
+	require.NoError(t, ValidateAccountCapacityExtra(map[string]any{"tls_fingerprint_profile_id": nil}))
 }
 
 func TestValidateAccountCapacityExtraRejectsPresentEmptyValues(t *testing.T) {
@@ -144,9 +165,9 @@ func TestAdminCreateAndBulkRejectIllegalIdentityAndCapacityExtras(t *testing.T) 
 		extra map[string]any
 		want  string
 	}{
-		{name: "import tls -1", extra: map[string]any{"tls_fingerprint_profile_id": int64(-1)}, want: "tls_fingerprint_profile_id"},
 		{name: "concurrency 999", extra: map[string]any{"concurrency": 999}, want: "concurrency"},
 		{name: "float 3.7", extra: map[string]any{"max_sessions": 3.7}, want: "integer"},
+		{name: "tls -2", extra: map[string]any{"tls_fingerprint_profile_id": int64(-2)}, want: "tls_fingerprint_profile_id"},
 	}
 
 	for _, tc := range cases {
@@ -270,7 +291,47 @@ func TestAdminBulkUpdateAcceptsRPMStickyBufferZero(t *testing.T) {
 	require.Equal(t, 0, repo.bulkUpdateInput.Extra["rpm_sticky_buffer"])
 }
 
-func TestAdminUpdateAccountClearsLegacyTLSFingerprintProfileID(t *testing.T) {
+func TestAdminCreateAndBulkAcceptTLSFingerprintProfileIDMinusOne(t *testing.T) {
+	t.Parallel()
+
+	t.Run("create", func(t *testing.T) {
+		t.Parallel()
+		repo := &longContextBillingRepoStub{}
+		svc := &adminServiceImpl{accountRepo: repo}
+
+		account, err := svc.CreateAccount(context.Background(), &CreateAccountInput{
+			Name:                 "random-tls",
+			Platform:             PlatformAnthropic,
+			Type:                 AccountTypeAPIKey,
+			Credentials:          map[string]any{"api_key": "test"},
+			Extra:                map[string]any{"tls_fingerprint_profile_id": int64(-1)},
+			SkipDefaultGroupBind: true,
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, account)
+		require.Equal(t, int64(-1), repo.createdAccount.Extra["tls_fingerprint_profile_id"])
+	})
+
+	t.Run("bulk", func(t *testing.T) {
+		t.Parallel()
+		repo := &accountRepoStubForBulkUpdate{
+			getByIDsAccounts: []*Account{{ID: 1, Platform: PlatformAnthropic}},
+		}
+		svc := &adminServiceImpl{accountRepo: repo}
+
+		result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+			AccountIDs: []int64{1},
+			Extra:      map[string]any{"tls_fingerprint_profile_id": int64(-1)},
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Equal(t, int64(-1), repo.bulkUpdateInput.Extra["tls_fingerprint_profile_id"])
+	})
+}
+
+func TestAdminUpdateAccountPersistsRandomTLSFingerprintProfileID(t *testing.T) {
 	t.Parallel()
 
 	repo := &longContextBillingRepoStub{account: &Account{
@@ -289,11 +350,11 @@ func TestAdminUpdateAccountClearsLegacyTLSFingerprintProfileID(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, account)
-	require.Nil(t, repo.account.Extra["tls_fingerprint_profile_id"])
+	require.Equal(t, int64(-1), repo.account.Extra["tls_fingerprint_profile_id"])
 	require.Equal(t, true, repo.account.Extra["mixed_scheduling"])
 }
 
-func TestAdminUpdateAccountExtraClearsLegacyTLSFingerprintProfileID(t *testing.T) {
+func TestAdminUpdateAccountExtraPersistsRandomTLSFingerprintProfileID(t *testing.T) {
 	t.Parallel()
 
 	repo := &capturingUpdateExtraRepoStub{
@@ -308,7 +369,9 @@ func TestAdminUpdateAccountExtraClearsLegacyTLSFingerprintProfileID(t *testing.T
 
 	require.NoError(t, err)
 	require.Equal(t, 1, repo.updateExtraCalls)
-	require.Nil(t, repo.lastExtra["tls_fingerprint_profile_id"])
+	v, ok := repo.lastExtra["tls_fingerprint_profile_id"]
+	require.True(t, ok)
+	require.Equal(t, int64(-1), v)
 	require.Equal(t, true, repo.lastExtra["mixed_scheduling"])
 }
 

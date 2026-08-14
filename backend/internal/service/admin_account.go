@@ -574,8 +574,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		if err != nil {
 			return nil, err
 		}
-		clearLegacyTLSFingerprintProfileID(normalizedExtra)
-		if err := validateAccountExtraWritesForUpdate(normalizedExtra); err != nil {
+		if err := ValidateAccountExtraWrites(normalizedExtra); err != nil {
 			return nil, err
 		}
 	}
@@ -911,8 +910,7 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 			return err
 		}
 	}
-	clearLegacyTLSFingerprintProfileID(updates)
-	if err := validateAccountExtraWritesForUpdate(updates); err != nil {
+	if err := ValidateAccountExtraWrites(updates); err != nil {
 		return err
 	}
 	if len(updates) == 0 {
