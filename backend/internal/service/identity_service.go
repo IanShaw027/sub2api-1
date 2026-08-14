@@ -110,6 +110,12 @@ type IdentityCache interface {
 	// SetMaskedSessionID 设置固定的会话ID，TTL 为 15 分钟
 	// 每次调用都会刷新 TTL
 	SetMaskedSessionID(ctx context.Context, accountID int64, sessionID string) error
+	// GetDeviceProfile returns the Redis projection of an account device profile.
+	// A miss is (nil, nil) — Redis is not identity authority. The caller loads Postgres.
+	GetDeviceProfile(ctx context.Context, accountID int64) (*AccountDeviceProfile, error)
+	// SetDeviceProfile writes the Redis projection of an account device profile.
+	// A subsequent Get miss still means the caller must load the DB row.
+	SetDeviceProfile(ctx context.Context, accountID int64, p *AccountDeviceProfile) error
 }
 
 // IdentityService 管理OAuth账号的请求身份指纹

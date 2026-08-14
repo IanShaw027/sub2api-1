@@ -28,6 +28,12 @@ func (s *identityCacheStub) SetMaskedSessionID(_ context.Context, _ int64, sessi
 	s.maskedSessionID = sessionID
 	return nil
 }
+func (s *identityCacheStub) GetDeviceProfile(_ context.Context, _ int64) (*AccountDeviceProfile, error) {
+	return nil, nil
+}
+func (s *identityCacheStub) SetDeviceProfile(_ context.Context, _ int64, _ *AccountDeviceProfile) error {
+	return nil
+}
 
 func TestIdentityService_RewriteUserID_PreservesTopLevelFieldOrder(t *testing.T) {
 	cache := &identityCacheStub{}
