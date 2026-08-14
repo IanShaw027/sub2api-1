@@ -232,20 +232,17 @@ func TestComputeFinalCountTokensAnthropicBeta_OAuthMimic_AlwaysIncludesContextMa
 		"count_tokens 路径必须含 token-counting beta")
 }
 
-// 重构等价性回归：
-// 原 main buildCountTokensRequest 在 count_tokens mimic 分支上不跳过白名单透传
-// （与 messages mimic 不同），incomingBeta 取自客户端透传。重构后必须从 clientHeaders
-// 拿同一个值并 merge，否则会丢失客户端 beta。
-func TestComputeFinalCountTokensAnthropicBeta_OAuthMimic_PreservesClientBeta(t *testing.T) {
+// count_tokens mimic 现已与 messages mimic 对齐：不再把入站 beta 混入上游身份。
+func TestComputeFinalCountTokensAnthropicBeta_OAuthMimic_IgnoresClientBeta(t *testing.T) {
 	s := newTestGatewayServiceForBeta(false)
 	hdr := http.Header{}
 	hdr.Set("anthropic-beta", "custom-experimental-beta,context-1m-2025-08-07")
 	final, ok := s.computeFinalCountTokensAnthropicBeta("oauth", true, "claude-haiku-4-5", hdr, []byte(`{}`), nil)
 	require.True(t, ok)
-	require.True(t, anthropicBetaTokensContains(final, "custom-experimental-beta"),
-		"count_tokens mimic 不同于 messages mimic：原代码会保留客户端透传的 beta")
-	require.True(t, anthropicBetaTokensContains(final, "context-1m-2025-08-07"),
-		"客户端透传的其他 beta token 同样需要保留")
+	require.False(t, anthropicBetaTokensContains(final, "custom-experimental-beta"),
+		"count_tokens mimic 不应把客户端自带 beta 混入上游身份")
+	require.False(t, anthropicBetaTokensContains(final, "context-1m-2025-08-07"),
+		"count_tokens mimic 不应透传客户端 beta token")
 	require.True(t, anthropicBetaTokensContains(final, claude.BetaContextManagement),
 		"同时 FullClaudeCodeMimicryBetas 不打折扣")
 	require.True(t, anthropicBetaTokensContains(final, claude.BetaTokenCounting),
@@ -262,8 +259,7 @@ func TestComputeFinalAnthropicBeta_OAuthMimic_IgnoresClientBetaExplicit(t *testi
 	final, ok := s.computeFinalAnthropicBeta("oauth", true, "claude-sonnet-4-6", hdr, []byte(`{}`), nil)
 	require.True(t, ok)
 	require.False(t, anthropicBetaTokensContains(final, "custom-experimental-beta"),
-		"messages mimic 原代码跳过白名单透传 → 客户端 beta 不进入计算。"+
-			"与 count_tokens mimic 是不同的设计，不能合并为同一函数。")
+		"messages mimic 跳过白名单透传 → 客户端 beta 不进入计算")
 }
 
 func TestComputeFinalCountTokensAnthropicBeta_OAuthTransparent_NoClientBetaInjectsDefault(t *testing.T) {
@@ -594,6 +590,42 @@ func TestBuildCountTokensRequest_OAuthMimicHaiku_PreservesContextManagementEndTo
 		"对称约束：final beta 含 token 时 body 字段保留")
 	require.True(t, anthropicBetaTokensContains(outBeta, claude.BetaTokenCounting),
 		"count_tokens 路径必须含 token-counting beta")
+}
+
+func TestBuildCountTokensRequest_OAuthMimic_DoesNotPassThroughInboundIdentityHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages/count_tokens", nil)
+	c.Request.Header.Set("anthropic-beta", "custom-experimental-beta")
+	c.Request.Header.Set("x-app", "client-app")
+	c.Request.Header.Set("x-stainless-retry-count", "9")
+	c.Request.Header.Set("x-stainless-timeout", "12345")
+	c.Request.Header.Set("anthropic-dangerous-direct-browser-access", "false")
+	c.Request.Header.Set("User-Agent", "client-agent/9.9.9")
+
+	account := &Account{
+		ID:          412,
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"access_token": "oauth-tok"},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+	body := []byte(`{"model":"claude-haiku-4-5","messages":[]}`)
+	svc := &GatewayService{cfg: &config.Config{}}
+	req, _, err := svc.buildCountTokensRequest(
+		context.Background(), c, account, body,
+		"oauth-tok", "oauth", "claude-haiku-4-5", true,
+	)
+	require.NoError(t, err)
+
+	require.False(t, anthropicBetaTokensContains(getHeaderRaw(req.Header, "anthropic-beta"), "custom-experimental-beta"))
+	require.Equal(t, claude.DefaultHeaders["X-App"], getHeaderRaw(req.Header, "x-app"))
+	require.Equal(t, claude.DefaultHeaders["X-Stainless-Retry-Count"], getHeaderRaw(req.Header, "x-stainless-retry-count"))
+	require.Equal(t, claude.DefaultHeaders["X-Stainless-Timeout"], getHeaderRaw(req.Header, "x-stainless-timeout"))
+	require.Equal(t, claude.DefaultHeaders["Anthropic-Dangerous-Direct-Browser-Access"], getHeaderRaw(req.Header, "anthropic-dangerous-direct-browser-access"))
+	require.Equal(t, claude.DefaultHeaders["User-Agent"], getHeaderRaw(req.Header, "User-Agent"))
 }
 
 func TestBuildCountTokensRequest_OAuthMimic_DropsInjectedMaxTokens(t *testing.T) {

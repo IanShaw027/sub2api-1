@@ -63,7 +63,8 @@ func applyKiroTLSFingerprintRuntime(req *http.Request, runtime accountTLSFingerp
 		req.Header.Set("User-Agent", ua)
 	}
 	if originator := strings.TrimSpace(runtime.UpstreamOriginator); originator != "" {
-		req.Header.Set("X-Originator", originator)
+		deleteHeaderAllForms(req.Header, "X-Originator")
+		setHeaderRaw(req.Header, "originator", originator)
 	}
 }
 

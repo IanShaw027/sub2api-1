@@ -10,6 +10,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestNewCodexPATWhoamiRequest_UsesLowercaseOriginator(t *testing.T) {
+	req, err := newCodexPATWhoamiRequest(context.Background(), " at-test-token ")
+	require.NoError(t, err)
+
+	require.Equal(t, "Bearer at-test-token", req.Header.Get("authorization"))
+	require.Equal(t, "application/json", req.Header.Get("accept"))
+	require.Equal(t, codexCLIUserAgent, req.Header.Get("user-agent"))
+	require.Equal(t, openai.CodexDefaultOriginator, getHeaderRaw(req.Header, "originator"))
+	require.Contains(t, req.Header, "originator")
+	require.Empty(t, req.Header.Get("X-Originator"))
+	_, hasXOriginator := req.Header["X-Originator"]
+	require.False(t, hasXOriginator)
+}
+
 func TestOpenAIOAuthService_ValidateCodexPersonalAccessToken(t *testing.T) {
 	var gotAuthorization string
 	var gotOriginator string
