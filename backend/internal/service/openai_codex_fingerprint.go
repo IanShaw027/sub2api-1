@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
@@ -66,15 +67,19 @@ func deriveStableUUIDv4(seed string) string {
 }
 
 // resolveConvergedInstallationID 返回账号级恒定的 installation_id。
-// 优先使用管理员配置的真实 device_id，无则从 accountID 确定性派生。
+// 只读已校验的设备档案；加载或校验失败时返回空串，由调用方跳过收敛，不造半包。
 func resolveConvergedInstallationID(account *Account) string {
 	if account == nil {
 		return ""
 	}
-	if deviceID := account.GetOpenAIDeviceID(); deviceID != "" {
-		return deviceID
+	profile, err := LoadOutboundDeviceProfile(context.Background(), account)
+	if err != nil || profile == nil {
+		return ""
 	}
-	return deriveStableUUIDv4(fmt.Sprintf("sub2api:codex-install-id:v1:%d", account.ID))
+	if id := strings.TrimSpace(profile.InstallationID); id != "" {
+		return id
+	}
+	return strings.TrimSpace(profile.DeviceID)
 }
 
 // resolveConvergedSessionID 返回账号级恒定的 session_id。

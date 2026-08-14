@@ -98,6 +98,27 @@ type codexOutboundIdentity struct {
 	version    string
 }
 
+func profilePayloadString(profile *AccountDeviceProfile, key string) string {
+	if profile == nil || profile.ProfilePayload == nil {
+		return ""
+	}
+	s, _ := profile.ProfilePayload[key].(string)
+	return strings.TrimSpace(s)
+}
+
+func codexIdentityCandidateUA(profile *AccountDeviceProfile, fallbackUA string) string {
+	if ua := profilePayloadString(profile, "user_agent"); ua != "" {
+		return ua
+	}
+	return fallbackUA
+}
+
+// resolveCodexOutboundIdentityFromProfile 用档案 payload 的 user_agent / originator
+// 作为候选，再走既有配对与最低版本收口，保证 UA / originator / version 同源自洽。
+func resolveCodexOutboundIdentityFromProfile(profile *AccountDeviceProfile, fallbackUA string) codexOutboundIdentity {
+	return resolveCodexOutboundIdentity(codexIdentityCandidateUA(profile, fallbackUA))
+}
+
 // resolveCodexOutboundIdentity 由候选 User-Agent 推导自洽的出站身份。
 // candidateUA 为空时使用规范 User-Agent；推导不出官方身份时整体回退为规范 TUI 身份。
 //
