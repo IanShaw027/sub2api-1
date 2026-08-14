@@ -140,7 +140,11 @@ func (s *TLSFingerprintProfileService) GetProfileByID(id int64) *tlsfingerprint.
 	s.localMu.RUnlock()
 
 	if ok && p != nil {
-		return p.ToTLSProfile()
+		profile := p.ToTLSProfile()
+		if profile != nil {
+			profile.ID = p.ID
+		}
+		return profile
 	}
 	return nil
 }

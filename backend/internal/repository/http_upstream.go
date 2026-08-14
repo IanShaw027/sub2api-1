@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"io"
 	"log/slog"
 	"math"
@@ -18,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -943,17 +943,14 @@ func tlsProfileCacheKey(profile *tlsfingerprint.Profile) string {
 	if profile == nil {
 		return tlsProfileKeyNone
 	}
+	if profile.ID != 0 {
+		return strconv.FormatInt(profile.ID, 10)
+	}
 	name := strings.TrimSpace(profile.Name)
 	if name == "" {
 		name = "custom"
 	}
-	encoded, err := json.Marshal(profile)
-	if err != nil {
-		return name
-	}
-	hasher := fnv.New64a()
-	_, _ = hasher.Write(encoded)
-	return fmt.Sprintf("%s:%x", name, hasher.Sum64())
+	return "builtin:" + name
 }
 
 // buildPoolKey 构建连接池配置键，用于检测连接池配置变更。

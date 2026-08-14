@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/model"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
@@ -939,6 +941,89 @@ func TestBuildCacheKey_ProxyIsolationOmitsAccountAndBurst(t *testing.T) {
 	require.Contains(t, keyA, "family:h1")
 }
 
+func TestTLSProfileCacheKey_UsesBuiltinNameForDefaultProfile(t *testing.T) {
+	require.Equal(t, "builtin:Built-in Default (Node.js 24.x)", tlsProfileCacheKey(&tlsfingerprint.Profile{
+		Name: "Built-in Default (Node.js 24.x)",
+	}))
+}
+
+func TestTLSPoolKey_ProxyIsolationSeparatesProfilesWithIdenticalContentsButDifferentIDs(t *testing.T) {
+	profileSvc := service.NewTLSFingerprintProfileService(&stubTLSFingerprintProfileRepo{
+		profiles: []*model.TLSFingerprintProfile{
+			{
+				ID:                  101,
+				Name:                "shared-profile",
+				EnableGREASE:        true,
+				CipherSuites:        []uint16{0x1301, 0x1302},
+				Curves:              []uint16{0x001d},
+				ALPNProtocols:       []string{"h2", "http/1.1"},
+				SupportedVersions:   []uint16{0x0304, 0x0303},
+				KeyShareGroups:      []uint16{0x001d},
+				PSKModes:            []uint16{0x01},
+				Extensions:          []uint16{0, 16, 43, 51},
+				SignatureAlgorithms: []uint16{0x0403, 0x0804},
+			},
+			{
+				ID:                  202,
+				Name:                "shared-profile",
+				EnableGREASE:        true,
+				CipherSuites:        []uint16{0x1301, 0x1302},
+				Curves:              []uint16{0x001d},
+				ALPNProtocols:       []string{"h2", "http/1.1"},
+				SupportedVersions:   []uint16{0x0304, 0x0303},
+				KeyShareGroups:      []uint16{0x001d},
+				PSKModes:            []uint16{0x01},
+				Extensions:          []uint16{0, 16, 43, 51},
+				SignatureAlgorithms: []uint16{0x0403, 0x0804},
+			},
+		},
+	}, nil)
+
+	profile101 := profileSvc.GetProfileByID(101)
+	profile202 := profileSvc.GetProfileByID(202)
+	require.NotNil(t, profile101)
+	require.NotNil(t, profile202)
+	require.Equal(t, "101", tlsProfileCacheKey(profile101))
+	require.Equal(t, "202", tlsProfileCacheKey(profile202))
+
+	poolKey101 := buildPoolKey(poolSettings{}, tlsProfileCacheKey(profile101), transportFamilyH1, upstreamProtocolModeDefault)
+	poolKey202 := buildPoolKey(poolSettings{}, tlsProfileCacheKey(profile202), transportFamilyH1, upstreamProtocolModeDefault)
+	require.NotEqual(t, poolKey101, poolKey202)
+
+	upstream := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{
+			ConnectionPoolIsolation: config.ConnectionPoolIsolationProxy,
+		},
+	})
+	svc, ok := upstream.(*httpUpstreamService)
+	require.True(t, ok)
+
+	entry1, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		profile101,
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(t, err)
+
+	entry2, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		2,
+		12,
+		profile202,
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(t, err)
+
+	require.NotSame(t, entry1, entry2, "profiles with distinct canonical IDs must not share TLS client entries")
+	require.Equal(t, 2, len(svc.clients))
+}
+
 // TestAccountConcurrencyOverridesPoolSettings 测试账户并发数覆盖连接池配置
 // 验证账户隔离模式下，连接池大小与账户并发数对应
 func (s *HTTPUpstreamSuite) TestAccountConcurrencyOverridesPoolSettings() {
@@ -1115,4 +1200,33 @@ func hasEntry(svc *httpUpstreamService, target *upstreamClientEntry) bool {
 		}
 	}
 	return false
+}
+
+type stubTLSFingerprintProfileRepo struct {
+	profiles []*model.TLSFingerprintProfile
+}
+
+func (r *stubTLSFingerprintProfileRepo) List(context.Context) ([]*model.TLSFingerprintProfile, error) {
+	return r.profiles, nil
+}
+
+func (r *stubTLSFingerprintProfileRepo) GetByID(_ context.Context, id int64) (*model.TLSFingerprintProfile, error) {
+	for _, profile := range r.profiles {
+		if profile != nil && profile.ID == id {
+			return profile, nil
+		}
+	}
+	return nil, nil
+}
+
+func (r *stubTLSFingerprintProfileRepo) Create(_ context.Context, profile *model.TLSFingerprintProfile) (*model.TLSFingerprintProfile, error) {
+	return profile, nil
+}
+
+func (r *stubTLSFingerprintProfileRepo) Update(_ context.Context, profile *model.TLSFingerprintProfile) (*model.TLSFingerprintProfile, error) {
+	return profile, nil
+}
+
+func (r *stubTLSFingerprintProfileRepo) Delete(context.Context, int64) error {
+	return nil
 }
