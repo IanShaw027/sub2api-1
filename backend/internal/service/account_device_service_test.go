@@ -13,6 +13,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/accountdeviceprofile"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
@@ -165,13 +166,14 @@ func TestGetOrCreateRejectsInvalidBaselineWithoutInsert(t *testing.T) {
 }
 
 type countingDeviceProfileRepo struct {
-	inner   service.AccountDeviceProfileRepository
-	mu      sync.Mutex
-	inserts map[int64]int
+	inner     service.AccountDeviceProfileRepository
+	mu        sync.Mutex
+	inserts   map[int64]int
+	casWrites map[int64]int
 }
 
 func wrapCountingDeviceProfileRepo(inner service.AccountDeviceProfileRepository) *countingDeviceProfileRepo {
-	return &countingDeviceProfileRepo{inner: inner, inserts: map[int64]int{}}
+	return &countingDeviceProfileRepo{inner: inner, inserts: map[int64]int{}, casWrites: map[int64]int{}}
 }
 
 func (r *countingDeviceProfileRepo) GetByAccountID(ctx context.Context, accountID int64) (*service.AccountDeviceProfile, error) {
@@ -186,13 +188,25 @@ func (r *countingDeviceProfileRepo) InsertBaseline(ctx context.Context, p *servi
 }
 
 func (r *countingDeviceProfileRepo) UpdateCAS(ctx context.Context, accountID, expectedRevision int64, next *service.AccountDeviceProfile) (bool, error) {
-	return r.inner.UpdateCAS(ctx, accountID, expectedRevision, next)
+	ok, err := r.inner.UpdateCAS(ctx, accountID, expectedRevision, next)
+	if err == nil && ok {
+		r.mu.Lock()
+		r.casWrites[accountID]++
+		r.mu.Unlock()
+	}
+	return ok, err
 }
 
 func (r *countingDeviceProfileRepo) insertCount(accountID int64) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.inserts[accountID]
+}
+
+func (r *countingDeviceProfileRepo) casWriteCount(accountID int64) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.casWrites[accountID]
 }
 
 func newCountingAccountDeviceService(t *testing.T) (*service.AccountDeviceService, *dbent.Client, *countingDeviceProfileRepo) {
@@ -380,4 +394,210 @@ func TestGetOrCreateBaselineOSArchMatchesPayload(t *testing.T) {
 			}
 		})
 	}
+}
+
+func officialClaudeInbound() service.OfficialInbound {
+	bundle, ok := service.NewSoftwareBundleRegistry().Lookup(
+		service.PlatformAnthropic,
+		service.ClientFamilyClaudeCode,
+		claude.CLICurrentVersion,
+	)
+	if !ok {
+		panic("missing compile-time Claude software bundle")
+	}
+	return service.OfficialInbound{
+		UserAgent:      bundle.UserAgent,
+		ClientVersion:  bundle.ClientVersion,
+		Runtime:        bundle.Runtime,
+		RuntimeVersion: bundle.RuntimeVersion,
+		Payload:        bundle.Payload,
+	}
+}
+
+func oldClaudePayload() map[string]any {
+	return map[string]any{
+		"user_agent":                "claude-cli/0.1.0 (external, cli)",
+		"stainless_lang":            "js",
+		"stainless_package_version": "0.1.0",
+		"stainless_os":              "Linux",
+		"stainless_arch":            "arm64",
+		"stainless_runtime":         "node",
+		"stainless_runtime_version": "v18.0.0",
+	}
+}
+
+func seedOldClaudeSoftware(t *testing.T, client *dbent.Client, accountID int64, learningEnabled bool) {
+	t.Helper()
+	n, err := client.AccountDeviceProfile.Update().
+		Where(accountdeviceprofile.AccountID(accountID)).
+		SetClientVersion("0.1.0").
+		SetRuntimeVersion("v18.0.0").
+		SetProfilePayload(oldClaudePayload()).
+		SetLearningEnabled(learningEnabled).
+		Save(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+}
+
+func TestLearnIfOfficialLearningDisabledDoesNotWrite(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, nil)
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	seedOldClaudeSoftware(t, client, account.ID, false)
+
+	got, err := svc.LearnIfOfficial(ctx, account, officialClaudeInbound())
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, created.DeviceID, got.DeviceID)
+	require.Equal(t, "0.1.0", got.ClientVersion)
+	require.Equal(t, service.LearnedFromBaseline, got.LearnedFrom)
+	require.Zero(t, repo.casWriteCount(account.ID))
+	require.Equal(t, int64(1), got.Revision)
+}
+
+func TestLearnIfOfficialUnknownHighVersionDoesNotWrite(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	seedOldClaudeSoftware(t, client, account.ID, true)
+
+	inbound := officialClaudeInbound()
+	inbound.ClientVersion = "999.0.0"
+	inbound.UserAgent = "claude-cli/999.0.0 (external, cli)"
+	if inbound.Payload != nil {
+		inbound.Payload["user_agent"] = inbound.UserAgent
+	}
+
+	got, err := svc.LearnIfOfficial(ctx, account, inbound)
+	require.NoError(t, err)
+	require.Equal(t, created.DeviceID, got.DeviceID)
+	require.Equal(t, "0.1.0", got.ClientVersion)
+	require.Zero(t, repo.casWriteCount(account.ID))
+}
+
+func TestLearnIfOfficialEqualOrLowerVersionDoesNotWrite(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	require.Equal(t, claude.CLICurrentVersion, created.ClientVersion)
+
+	got, err := svc.LearnIfOfficial(ctx, account, officialClaudeInbound())
+	require.NoError(t, err)
+	require.Equal(t, created.Revision, got.Revision)
+	require.Equal(t, created.ClientVersion, got.ClientVersion)
+	require.Equal(t, created.DeviceID, got.DeviceID)
+	require.Zero(t, repo.casWriteCount(account.ID))
+}
+
+func TestLearnIfOfficialOfficialClaudeHigherVersionUpdatesSoftwareOnly(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	seedOldClaudeSoftware(t, client, account.ID, false)
+
+	got, err := svc.LearnIfOfficial(ctx, account, officialClaudeInbound())
+	require.NoError(t, err)
+	require.NoError(t, service.ValidateAccountDeviceProfile(got))
+	require.Equal(t, 1, repo.casWriteCount(account.ID))
+	require.Equal(t, claude.CLICurrentVersion, got.ClientVersion)
+	require.Equal(t, service.LearnedFromOfficial, got.LearnedFrom)
+	require.Equal(t, claude.DefaultHeaders["User-Agent"], got.ProfilePayload["user_agent"])
+	require.Equal(t, claude.DefaultHeaders["X-Stainless-Package-Version"], got.ProfilePayload["stainless_package_version"])
+	require.Equal(t, claude.DefaultHeaders["X-Stainless-Runtime-Version"], got.RuntimeVersion)
+	require.NotNil(t, got.VersionUpgradedAt)
+	require.Equal(t, created.DeviceID, got.DeviceID)
+	require.Equal(t, created.InstallationID, got.InstallationID)
+	require.Equal(t, created.GatewayAccountUUID, got.GatewayAccountUUID)
+	require.Equal(t, created.SessionNamespace, got.SessionNamespace)
+	require.Equal(t, created.MachineID, got.MachineID)
+	require.Equal(t, created.OSFamily, got.OSFamily)
+	require.Equal(t, created.Arch, got.Arch)
+	require.Equal(t, created.Platform, got.Platform)
+	require.Equal(t, created.ClientFamily, got.ClientFamily)
+	require.Equal(t, int64(2), got.Revision)
+}
+
+func TestLearnIfOfficialClaudeUAChangeWithoutStainlessDoesNotWrite(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	seedOldClaudeSoftware(t, client, account.ID, true)
+
+	inbound := officialClaudeInbound()
+	inbound.Payload = oldClaudePayload()
+	inbound.Payload["user_agent"] = inbound.UserAgent
+
+	got, err := svc.LearnIfOfficial(ctx, account, inbound)
+	require.NoError(t, err)
+	require.Equal(t, created.DeviceID, got.DeviceID)
+	require.Equal(t, "0.1.0", got.ClientVersion)
+	require.Equal(t, "claude-cli/0.1.0 (external, cli)", got.ProfilePayload["user_agent"])
+	require.Zero(t, repo.casWriteCount(account.ID))
+}
+
+func TestLearnIfOfficialConcurrentSameAccountDoesNotCorrupt(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	seedOldClaudeSoftware(t, client, account.ID, true)
+
+	const workers = 8
+	profiles := make([]*service.AccountDeviceProfile, workers)
+	errs := make([]error, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func(i int) {
+			defer wg.Done()
+			profiles[i], errs[i] = svc.LearnIfOfficial(ctx, account, officialClaudeInbound())
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		require.NoError(t, err, "worker %d", i)
+		require.NotNil(t, profiles[i])
+		require.NoError(t, service.ValidateAccountDeviceProfile(profiles[i]))
+		require.Equal(t, created.DeviceID, profiles[i].DeviceID)
+		require.Equal(t, created.InstallationID, profiles[i].InstallationID)
+		require.Equal(t, created.GatewayAccountUUID, profiles[i].GatewayAccountUUID)
+		require.Equal(t, created.SessionNamespace, profiles[i].SessionNamespace)
+		require.Equal(t, claude.CLICurrentVersion, profiles[i].ClientVersion)
+		require.Equal(t, service.LearnedFromOfficial, profiles[i].LearnedFrom)
+	}
+	require.Equal(t, 1, repo.casWriteCount(account.ID))
+
+	n, err := client.AccountDeviceProfile.Query().
+		Where(accountdeviceprofile.AccountID(account.ID)).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
 }
