@@ -411,7 +411,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			markDecodedModified()
 		}
 		// 带真实 device_id 时补齐 client_metadata 安装标识，与真实 Codex 对齐（compact 形态不同，跳过）。
-		if !isCompactRequest && applyCodexClientMetadata(decoded, account) {
+		if !isCompactRequest && applyCodexClientMetadata(ctx, decoded, account) {
 			markDecodedModified()
 		}
 		// 指纹收敛：一次性解析收敛 ID，请求体和出站头共享同一份 IDs（保证 turn_id 等随机字段一致）。
@@ -421,7 +421,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if c != nil && c.Request != nil {
 				clientHeaders = c.Request.Header
 			}
-			fpIDs := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+			fpIDs := resolveCodexFingerprintIDsFromRequest(ctx, account, clientHeaders)
 			if fpIDs != nil {
 				if applyCodexFingerprintClientMetadata(decoded, fpIDs) {
 					markDecodedModified()
@@ -1149,7 +1149,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// 终态收口：强制统一 OAuth 出站身份（User-Agent / originator / version 同源自洽）。
 	// 客户端自报身份不参与构造，浏览器型 UA 也因此不会再到达上游（原浏览器 UA 兜底已被吸收）。
 	if account.Type == AccountTypeOAuth {
-		enforceCodexIdentityHeadersWithUA(req.Header, s.codexIdentityOverrideUA(account))
+		s.enforceCodexIdentityFromAccount(ctx, req.Header, account)
 	}
 
 	// Ensure required headers exist
@@ -1173,4 +1173,19 @@ func (s *OpenAIGatewayService) codexIdentityOverrideUA(account *Account) string 
 		return ""
 	}
 	return account.GetOpenAIUserAgent()
+}
+
+func (s *OpenAIGatewayService) enforceCodexIdentityFromAccount(ctx context.Context, h http.Header, account *Account) {
+	fallback := s.codexIdentityOverrideUA(account)
+	if account == nil {
+		enforceCodexIdentityHeadersWithUA(h, fallback)
+		return
+	}
+	profile, err := LoadOutboundDeviceProfile(ctx, account)
+	if err != nil || profile == nil {
+		enforceCodexIdentityHeadersWithUA(h, fallback)
+		return
+	}
+	identity := resolveCodexOutboundIdentityFromProfile(profile, fallback)
+	enforceCodexIdentityHeadersWithUA(h, identity.userAgent)
 }

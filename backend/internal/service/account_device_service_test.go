@@ -803,3 +803,87 @@ func TestLearnIfOfficialDarwinX64InboundStillLearnsSoftware(t *testing.T) {
 	require.NotEqual(t, claude.DefaultHeaders["X-Stainless-OS"], got.ProfilePayload["stainless_os"])
 	require.NotEqual(t, claude.DefaultHeaders["X-Stainless-Arch"], got.ProfilePayload["stainless_arch"])
 }
+
+
+type recordingDeviceProfileCache struct {
+	mu       sync.Mutex
+	profiles map[int64]*service.AccountDeviceProfile
+	setErr   error
+	sets     int
+}
+
+func (c *recordingDeviceProfileCache) GetFingerprint(context.Context, int64) (*service.Fingerprint, error) {
+	return nil, nil
+}
+func (c *recordingDeviceProfileCache) SetFingerprint(context.Context, int64, *service.Fingerprint) error {
+	return nil
+}
+func (c *recordingDeviceProfileCache) GetMaskedSessionID(context.Context, int64) (string, error) {
+	return "", nil
+}
+func (c *recordingDeviceProfileCache) SetMaskedSessionID(context.Context, int64, string) error {
+	return nil
+}
+func (c *recordingDeviceProfileCache) GetDeviceProfile(_ context.Context, accountID int64) (*service.AccountDeviceProfile, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.profiles == nil {
+		return nil, nil
+	}
+	return c.profiles[accountID], nil
+}
+func (c *recordingDeviceProfileCache) SetDeviceProfile(_ context.Context, accountID int64, p *service.AccountDeviceProfile) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sets++
+	if c.setErr != nil {
+		return c.setErr
+	}
+	if c.profiles == nil {
+		c.profiles = map[int64]*service.AccountDeviceProfile{}
+	}
+	c.profiles[accountID] = p
+	return nil
+}
+
+func TestGetOrCreateProjectsDeviceProfileToCacheOnHitAndInsert(t *testing.T) {
+	svc, client, _ := newCountingAccountDeviceService(t)
+	cache := &recordingDeviceProfileCache{}
+	svc = svc.WithCache(cache)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, nil)
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	require.Equal(t, 1, cache.sets)
+	require.Equal(t, created.DeviceID, cache.profiles[account.ID].DeviceID)
+
+	hit, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	require.Equal(t, created.ID, hit.ID)
+	require.Equal(t, 2, cache.sets)
+}
+
+func TestGetOrCreateCacheErrorDoesNotFailRequest(t *testing.T) {
+	svc, client, _ := newCountingAccountDeviceService(t)
+	cache := &recordingDeviceProfileCache{setErr: fmt.Errorf("redis unavailable")}
+	svc = svc.WithCache(cache)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, nil)
+
+	got, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, 1, cache.sets)
+}
+
+func TestNewAccountDeviceServiceWorksWithoutCache(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, nil)
+
+	got, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+}

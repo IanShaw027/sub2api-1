@@ -91,13 +91,16 @@ func deriveStableUUIDv4(seed string) string {
 
 // resolveConvergedInstallationID 返回账号级恒定的 installation_id。
 // 只读已校验的设备档案；加载或校验失败时返回空串，由调用方跳过收敛，不造半包。
-func resolveConvergedInstallationID(account *Account) string {
+func resolveConvergedInstallationID(ctx context.Context, account *Account) string {
 	if account == nil {
 		return ""
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), outboundDeviceProfileLoadTimeout)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	loadCtx, cancel := context.WithTimeout(ctx, outboundDeviceProfileLoadTimeout)
 	defer cancel()
-	profile, err := LoadOutboundDeviceProfile(ctx, account)
+	profile, err := LoadOutboundDeviceProfile(loadCtx, account)
 	if err != nil || profile == nil {
 		logCodexIdentityReject(account.ID, err)
 		return ""
@@ -140,14 +143,14 @@ type codexFingerprintIDs struct {
 // 的 thread_id 派生——每个真实 Codex 会话得到一个独立线程。
 // 返回 nil 表示 off 模式，不需要改写。
 // 注意：包含随机生成的 turn_id，调用方必须只调用一次并共享结果给头改写和体改写。
-func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode codexFingerprintMode) *codexFingerprintIDs {
+func resolveCodexFingerprintIDs(ctx context.Context, account *Account, clientSessionID string, mode codexFingerprintMode) *codexFingerprintIDs {
 	if mode == codexFingerprintOff {
 		return nil
 	}
 
 	ids := &codexFingerprintIDs{mode: mode}
 
-	ids.installationID = resolveConvergedInstallationID(account)
+	ids.installationID = resolveConvergedInstallationID(ctx, account)
 	if ids.installationID == "" {
 		return nil
 	}
@@ -190,7 +193,7 @@ func extractClientSessionID(h http.Header) string {
 // resolveCodexFingerprintIDsFromRequest 从客户端原始请求头中提取 session-id，
 // 结合账号配置一次性解析收敛 ID 集合。调用方应将返回的 ids 同时传给
 // applyCodexFingerprintHeaders 和 applyCodexFingerprintClientMetadata。
-func resolveCodexFingerprintIDsFromRequest(account *Account, clientHeaders http.Header) *codexFingerprintIDs {
+func resolveCodexFingerprintIDsFromRequest(ctx context.Context, account *Account, clientHeaders http.Header) *codexFingerprintIDs {
 	if account == nil {
 		return nil
 	}
@@ -202,7 +205,7 @@ func resolveCodexFingerprintIDsFromRequest(account *Account, clientHeaders http.
 	if clientHeaders != nil {
 		clientSessionID = extractClientSessionID(clientHeaders)
 	}
-	return resolveCodexFingerprintIDs(account, clientSessionID, mode)
+	return resolveCodexFingerprintIDs(ctx, account, clientSessionID, mode)
 }
 
 // applyCodexFingerprintHeaders 按预计算的收敛 ID 改写出站 HTTP 头中的设备指纹。

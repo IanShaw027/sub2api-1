@@ -27,6 +27,7 @@ type AccountDeviceProfileRepository interface {
 
 type AccountDeviceService struct {
 	repo      AccountDeviceProfileRepository
+	cache     IdentityCache
 	learnMu   sync.Mutex
 	accountMu map[int64]*sync.Mutex
 }
@@ -84,6 +85,24 @@ func NewAccountDeviceService(repo AccountDeviceProfileRepository) *AccountDevice
 	}
 }
 
+// WithCache attaches an optional Redis projection. Redis errors must not fail GetOrCreate.
+func (s *AccountDeviceService) WithCache(cache IdentityCache) *AccountDeviceService {
+	if s == nil {
+		return s
+	}
+	s.cache = cache
+	return s
+}
+
+func (s *AccountDeviceService) projectDeviceProfile(ctx context.Context, p *AccountDeviceProfile) {
+	if s == nil || s.cache == nil || p == nil {
+		return
+	}
+	if err := s.cache.SetDeviceProfile(ctx, p.AccountID, p); err != nil {
+		slog.Warn("device profile redis projection failed", "account_id", p.AccountID, "error", err)
+	}
+}
+
 func (s *AccountDeviceService) GetOrCreate(ctx context.Context, account *Account) (*AccountDeviceProfile, error) {
 	if s == nil || s.repo == nil {
 		return nil, fmt.Errorf("identity_reject: account device service is not configured")
@@ -106,6 +125,7 @@ func (s *AccountDeviceService) GetOrCreate(ctx context.Context, account *Account
 		return nil, err
 	}
 	if existing != nil {
+		s.projectDeviceProfile(ctx, existing)
 		return existing, nil
 	}
 
@@ -121,10 +141,12 @@ func (s *AccountDeviceService) GetOrCreate(ctx context.Context, account *Account
 	if err != nil {
 		existing, getErr := s.repo.GetByAccountID(ctx, account.ID)
 		if getErr == nil && existing != nil {
+			s.projectDeviceProfile(ctx, existing)
 			return existing, nil
 		}
 		return nil, err
 	}
+	s.projectDeviceProfile(ctx, created)
 	return created, nil
 }
 

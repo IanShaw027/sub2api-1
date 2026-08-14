@@ -64,6 +64,12 @@ func ProvideKiroTokenRefresher(
 		WithProxyRepo(proxyRepo)
 }
 
+func ProvideAccountDeviceService(repo AccountDeviceProfileRepository, cache IdentityCache) *AccountDeviceService {
+	svc := NewAccountDeviceService(repo).WithCache(cache)
+	SetOutboundDeviceProfileService(svc)
+	return svc
+}
+
 func ProvideGatewayService(
 	accountRepo AccountRepository,
 	groupRepo GroupRepository,
@@ -96,6 +102,7 @@ func ProvideGatewayService(
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 	kiroTokenProvider *KiroTokenProvider,
 	kiroGatewayService *KiroGatewayService,
+	_ *AccountDeviceService,
 ) *GatewayService {
 	svc := NewGatewayService(
 		accountRepo,
@@ -157,6 +164,7 @@ func ProvideOpenAIGatewayService(
 	userPlatformQuotaRepo UserPlatformQuotaRepository,
 	tlsFPProfileService *TLSFingerprintProfileService,
 	tlsFPRouterService *TLSFingerprintRouterService,
+	_ *AccountDeviceService,
 ) *OpenAIGatewayService {
 	svc := NewOpenAIGatewayService(
 		accountRepo,
@@ -248,6 +256,7 @@ func ProvideKiroGatewayService(
 	tlsFPRouterSvc *TLSFingerprintRouterService,
 	settingService *SettingService,
 	channelService *ChannelService,
+	_ *AccountDeviceService,
 ) *KiroGatewayService {
 	svc := NewKiroGatewayService(
 		httpUpstream,
@@ -1192,6 +1201,7 @@ var ProviderSet = wire.NewSet(
 	NewUsageRecordWorkerPool,
 	ProvideSchedulerSnapshotService,
 	NewIdentityService,
+	ProvideAccountDeviceService,
 	NewCRSSyncService,
 	ProvideUpdateService,
 	ProvideTokenRefreshService,
