@@ -1417,7 +1417,7 @@ func requireOpenAIMessagesCodexIdentity(t *testing.T, req *http.Request, wantUse
 	t.Helper()
 	require.NotNil(t, req)
 	require.Equal(t, wantUserAgent, req.Header.Get("User-Agent"))
-	require.Equal(t, wantOriginator, req.Header.Get("originator"))
+	require.Equal(t, wantOriginator, getHeaderRaw(req.Header, "originator"))
 	require.Equal(t, codexCLIVersion, req.Header.Get("version"))
 	require.Equal(t, "responses=experimental", req.Header.Get("OpenAI-Beta"))
 }
