@@ -195,6 +195,25 @@ func inferTLSFingerprintClientType(platform, userAgent, originator string) strin
 	}
 }
 
+func inferTLSFingerprintAccountClientType(platform string) string {
+	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case PlatformAnthropic:
+		return "claude-code"
+	case PlatformOpenAI:
+		return "codex-cli"
+	case PlatformGemini:
+		return "gemini-cli"
+	case PlatformAntigravity:
+		return "antigravity"
+	case PlatformGrok:
+		return "grok-desktop"
+	case PlatformKiro:
+		return "kiro-ide"
+	default:
+		return ""
+	}
+}
+
 func resolveAccountTLSFingerprintRuntime(
 	ctx context.Context,
 	account *Account,
@@ -208,7 +227,7 @@ func resolveAccountTLSFingerprintRuntime(
 	}
 
 	os := account.GetTLSFingerprintDefaultOS()
-	clientType := inferTLSFingerprintClientType(account.Platform, inboundUA, "")
+	clientType := inferTLSFingerprintAccountClientType(account.Platform)
 	if bindingID := lookupTLSFingerprintBinding(account.GetTLSFingerprintBindings(), os, clientType, protocol); bindingID != 0 {
 		runtime.Profile = profileSvc.resolveTLSProfileByID(bindingID)
 	}
@@ -228,7 +247,7 @@ func resolveAccountTLSFingerprintRuntime(
 		return runtime
 	}
 
-	match, ok := routerSvc.MatchRequest(ctx, routerID, account.Platform, inboundUA, transport, protocol)
+	match, ok := routerSvc.MatchRequest(ctx, routerID, account.Platform, "", transport, protocol)
 	if !ok {
 		logger.LegacyPrintf("service.tls_fp_router",
 			"[TLSFPRouter] no_match account_id=%d platform=%s protocol=%s router_id=%d",
