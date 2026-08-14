@@ -78,3 +78,27 @@ func TestAccountServiceCreate_WritesPlatformDefaultWhenConcurrencyOmitted(t *tes
 	require.NotNil(t, accountRepo.createdAccount)
 	require.Equal(t, 12, accountRepo.createdAccount.Concurrency)
 }
+
+func TestAccountServiceCreate_WritesPlatformDefaultWhenConcurrencyNegative(t *testing.T) {
+	t.Parallel()
+
+	accountRepo := &accountRepoStubForOAuthOnlyGroup{}
+	svc := &AccountService{
+		accountRepo: accountRepo,
+		groupRepo:   &groupRepoStubForOAuthOnlyGroup{},
+	}
+
+	account, err := svc.Create(context.Background(), CreateAccountRequest{
+		Name:        "openai-oauth",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"access_token": "test"},
+		Concurrency: -1,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, 12, account.Concurrency)
+	require.NotNil(t, accountRepo.createdAccount)
+	require.Equal(t, 12, accountRepo.createdAccount.Concurrency)
+}

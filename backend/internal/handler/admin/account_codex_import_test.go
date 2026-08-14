@@ -5,11 +5,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
 )
 
 func TestParseCodexSessionImportEntriesSupportsRawTokenJSONAndArray(t *testing.T) {
@@ -903,6 +906,34 @@ func TestImportCodexSessionsOmittedConcurrencyPassesZeroToCreateAccount(t *testi
 	}
 	if got := svc.createdAccounts[0].Concurrency; got != 0 {
 		t.Fatalf("created account concurrency = %d, want omitted value to stay 0 for service defaulting", got)
+	}
+}
+
+func TestImportCodexSessionNegativeConcurrencyDoesNotReturnBadRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := newCodexImportMemoryAdminService(nil)
+	handler := NewAccountHandler(svc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := gin.New()
+	router.POST("/accounts/import/codex-session", handler.ImportCodexSession)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/accounts/import/codex-session", strings.NewReader(fmt.Sprintf(
+		`{"content":%q,"concurrency":-1,"skip_default_group_bind":true}`,
+		buildCodexAccessToken(t, "workspace-1", "user-1", time.Now().Add(time.Hour)),
+	)))
+	request.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if len(svc.createdAccounts) != 1 {
+		t.Fatalf("created accounts = %d, want 1", len(svc.createdAccounts))
+	}
+	if got := svc.createdAccounts[0].Concurrency; got != -1 {
+		t.Fatalf("created account concurrency = %d, want raw negative forwarded for service normalization", got)
 	}
 }
 

@@ -74,3 +74,27 @@ func TestCreateAccountFromCodexPATOmittedConcurrencyPassesZeroToCreateAccount(t 
 	require.Len(t, adminSvc.createdAccounts, 1)
 	require.Equal(t, 0, adminSvc.createdAccounts[0].Concurrency)
 }
+
+func TestCreateAccountFromCodexPATNegativeConcurrencyDoesNotReturnBadRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	adminSvc := newStubAdminService()
+	handler := &OpenAIOAuthHandler{
+		openaiOAuthService: &openAIOAuthHandlerCodexPATStub{},
+		adminService:       adminSvc,
+	}
+	router := gin.New()
+	router.POST("/openai/create-from-codex-pat", handler.CreateAccountFromCodexPAT)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/openai/create-from-codex-pat", strings.NewReader(
+		`{"access_token":"at-test-token","concurrency":-1,"skip_default_group_bind":true}`,
+	))
+	request.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Len(t, adminSvc.createdAccounts, 1)
+	require.Equal(t, -1, adminSvc.createdAccounts[0].Concurrency)
+}
