@@ -767,26 +767,43 @@ func (s *httpUpstreamService) shouldReuseEntry(entry *upstreamClientEntry, isola
 	return true
 }
 
+// removeSiblingClientsLocked drains idle sibling pools whose identity-scoped
+// configuration changed. Isolation modes treat different dimensions as identity
+// vs change:
+//   - account: one live pool per account; drain on proxy, TLS profile, or family change
+//   - account_proxy: proxy is identity; drain only TLS/family change for the same account+proxy
+//   - proxy: pools are shared across accounts; never drain just because tls_profile_id
+//     differs. Drain only this proxy's transport-family change (or a same-id config replace).
 func (s *httpUpstreamService) removeSiblingClientsLocked(cacheKey, isolation string, accountID int64, proxyKey, tlsProfileKey, transportFamily string) {
 	for key, entry := range s.clients {
 		if key == cacheKey || entry == nil {
 			continue
 		}
+		if atomic.LoadInt64(&entry.inFlight) != 0 {
+			continue
+		}
 		switch isolation {
-		case config.ConnectionPoolIsolationAccount, config.ConnectionPoolIsolationAccountProxy:
+		case config.ConnectionPoolIsolationAccount:
 			if entry.accountID != accountID {
 				continue
 			}
-		default:
-			if entry.proxyKey != proxyKey {
+			if entry.proxyKey == proxyKey && entry.tlsProfileKey == tlsProfileKey && entry.transportFamily == transportFamily {
 				continue
 			}
-		}
-		proxyChanged := entry.proxyKey != proxyKey
-		tlsChanged := entry.tlsProfileKey != tlsProfileKey
-		familyChanged := entry.transportFamily != transportFamily
-		if !proxyChanged && !tlsChanged && !familyChanged {
-			continue
+		case config.ConnectionPoolIsolationAccountProxy:
+			if entry.accountID != accountID || entry.proxyKey != proxyKey {
+				continue
+			}
+			if entry.tlsProfileKey == tlsProfileKey && entry.transportFamily == transportFamily {
+				continue
+			}
+		default:
+			if entry.proxyKey != proxyKey || entry.tlsProfileKey != tlsProfileKey {
+				continue
+			}
+			if entry.transportFamily == transportFamily {
+				continue
+			}
 		}
 		s.removeClientLocked(key, entry)
 	}

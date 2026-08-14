@@ -154,6 +154,21 @@ func TestResolveAccountTLSFingerprintRuntime_UniqueAndDimensions(t *testing.T) {
 	require.True(t, runtime.Matched)
 }
 
+func TestResolveTLSProfile_RandomProfilePreservesCanonicalID(t *testing.T) {
+	profiles := testTLSProfileService(
+		&model.TLSFingerprintProfile{ID: 101, Name: "shared-profile"},
+	)
+	account := enabledTLSAccount(PlatformOpenAI, map[string]any{
+		"enable_tls_fingerprint":     true,
+		"tls_fingerprint_profile_id": int64(-1),
+	})
+
+	profile := profiles.ResolveTLSProfile(account)
+	require.NotNil(t, profile)
+	require.Equal(t, int64(101), profile.ID)
+	require.Equal(t, "shared-profile", profile.Name)
+}
+
 func TestTLSFingerprintRouter_RegexMatchUsesCompiledPattern(t *testing.T) {
 	svc := testTLSRouterService(&model.TLSFingerprintRouter{
 		ID:      4,

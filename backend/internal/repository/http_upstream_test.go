@@ -855,16 +855,34 @@ func (s *HTTPUpstreamSuite) TestAccountProxyIsolation_DifferentProxy() {
 }
 
 // TestAccountModeProxyChangeUsesDistinctPoolKeys 测试账户模式下代理变更
-// 验证账户隔离模式仍会为不同代理保留独立的客户端键
+// 验证账户隔离只有一个存活池：切换代理会排空旧空闲客户端
 func (s *HTTPUpstreamSuite) TestAccountModeProxyChangeUsesDistinctPoolKeys() {
 	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount}
 	svc := s.newService()
-	// 同一账户，先后使用不同代理
-	entry1 := mustGetOrCreateClient(s.T(), svc, "http://proxy-a:8080", 1, 3)
-	entry2 := mustGetOrCreateClient(s.T(), svc, "http://proxy-b:8080", 1, 3)
-	require.NotSame(s.T(), entry1, entry2, "账号切换代理应创建新连接池")
-	require.Equal(s.T(), 2, len(svc.clients), "账号模式下应为不同代理保留独立连接池")
-	require.True(s.T(), hasEntry(svc, entry1), "旧代理的连接池应保留在自己的缓存键下")
+
+	settings := svc.resolvePoolSettings(config.ConnectionPoolIsolationAccount, 3)
+	oldProxyKey, _, err := normalizeProxyURL("http://proxy-a:8080")
+	require.NoError(s.T(), err)
+	oldCacheKey := buildCacheKey(config.ConnectionPoolIsolationAccount, oldProxyKey, 1, resolvePoolBurstConcurrency(3), tlsProfileKeyNone, transportFamilyH1, upstreamProtocolModeDefault)
+	oldTransport := &closeIdleTrackingTransport{}
+	oldEntry := &upstreamClientEntry{
+		client:          &http.Client{Transport: oldTransport},
+		accountID:       1,
+		proxyKey:        oldProxyKey,
+		tlsProfileKey:   tlsProfileKeyNone,
+		transportFamily: transportFamilyH1,
+		poolKey:         buildPoolKey(settings, tlsProfileKeyNone, transportFamilyH1, upstreamProtocolModeDefault),
+		lastUsed:        time.Now().UnixNano(),
+	}
+	svc.clients[oldCacheKey] = oldEntry
+
+	newEntry, err := svc.getClientEntry("http://proxy-b:8080", 1, 3, service.HTTPUpstreamProfileDefault, false, false)
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), newEntry)
+
+	require.Equal(s.T(), int64(1), oldTransport.closeIdleCalls.Load(), "proxy change should drain the prior idle client")
+	require.False(s.T(), hasEntry(svc, oldEntry), "old proxy client should be removed after drain")
+	require.Equal(s.T(), 1, len(svc.clients), "only the replacement client should remain cached")
 }
 
 func (s *HTTPUpstreamSuite) TestAccountModeProxyChangeDrainsPreviousIdleClient() {
@@ -1050,7 +1068,7 @@ func TestTLSPoolKey_ProxyIsolationSeparatesProfilesWithIdenticalContentsButDiffe
 	require.NoError(t, err)
 
 	require.NotSame(t, entry1, entry2, "profiles with distinct canonical IDs must not share TLS client entries")
-	require.Equal(t, 1, len(svc.clients), "proxy-isolated TLS profile switches should replace and drain the prior idle client")
+	require.Equal(t, 2, len(svc.clients), "proxy-isolated TLS pools must coexist across accounts with distinct canonical profile IDs")
 }
 
 // TestAccountConcurrencyOverridesPoolSettings 测试账户并发数覆盖连接池配置
@@ -1136,7 +1154,7 @@ func (s *HTTPUpstreamSuite) TestTLSPoolKey_ProxyIsolationSeparatesTLSProfiles() 
 	require.NoError(s.T(), err)
 
 	require.NotSame(s.T(), entry1, entry2, "different TLS profiles must not share the same proxy pool")
-	require.Equal(s.T(), 1, len(svc.clients), "proxy isolation should replace the prior idle TLS pool after a profile change")
+	require.Equal(s.T(), 2, len(svc.clients), "proxy isolation must allow distinct TLS profiles on the same proxy to coexist across accounts")
 }
 
 func (s *HTTPUpstreamSuite) TestTLSPoolKey_ProxyIsolationReusesPoolAcrossAccounts() {
@@ -1170,10 +1188,10 @@ func (s *HTTPUpstreamSuite) TestTLSPoolKey_ProxyIsolationReusesPoolAcrossAccount
 }
 
 func (s *HTTPUpstreamSuite) TestTLSProfileChangeDrainsPreviousIdleClient() {
-	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationProxy}
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount}
 	svc := s.newService()
 
-	settings := svc.resolvePoolSettings(config.ConnectionPoolIsolationProxy, 3)
+	settings := svc.resolvePoolSettings(config.ConnectionPoolIsolationAccount, 3)
 	proxyKey, _, err := normalizeProxyURL("http://proxy.local:8080")
 	require.NoError(s.T(), err)
 	oldTransport := &closeIdleTrackingTransport{}
@@ -1186,12 +1204,12 @@ func (s *HTTPUpstreamSuite) TestTLSProfileChangeDrainsPreviousIdleClient() {
 		poolKey:         buildPoolKey(settings, "profile-101", transportFamilyH1, upstreamProtocolModeDefault) + ":tls",
 		lastUsed:        time.Now().UnixNano(),
 	}
-	svc.clients["tls:"+buildCacheKey(config.ConnectionPoolIsolationProxy, proxyKey, 1, resolvePoolBurstConcurrency(3), "profile-101", transportFamilyH1, upstreamProtocolModeDefault)] = oldEntry
+	svc.clients["tls:"+buildCacheKey(config.ConnectionPoolIsolationAccount, proxyKey, 1, resolvePoolBurstConcurrency(3), "profile-101", transportFamilyH1, upstreamProtocolModeDefault)] = oldEntry
 
 	newEntry, err := svc.getClientEntryWithTLS(
 		"http://proxy.local:8080",
-		2,
-		12,
+		1,
+		3,
 		&tlsfingerprint.Profile{ID: 202, Name: "profile-202"},
 		service.HTTPUpstreamProfileDefault,
 		false,
@@ -1201,6 +1219,42 @@ func (s *HTTPUpstreamSuite) TestTLSProfileChangeDrainsPreviousIdleClient() {
 	require.NotNil(s.T(), newEntry)
 
 	require.Equal(s.T(), int64(1), oldTransport.closeIdleCalls.Load(), "TLS profile change should drain the prior idle client")
+	require.False(s.T(), hasEntry(svc, oldEntry), "stale TLS client should be removed after drain")
+	require.Equal(s.T(), 1, len(svc.clients), "only the replacement TLS client should remain cached")
+}
+
+func (s *HTTPUpstreamSuite) TestAccountProxyTLSProfileChangeDrainsSameProxyIdleClient() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccountProxy}
+	svc := s.newService()
+
+	settings := svc.resolvePoolSettings(config.ConnectionPoolIsolationAccountProxy, 3)
+	proxyKey, _, err := normalizeProxyURL("http://proxy.local:8080")
+	require.NoError(s.T(), err)
+	oldTransport := &closeIdleTrackingTransport{}
+	oldEntry := &upstreamClientEntry{
+		client:          &http.Client{Transport: oldTransport},
+		accountID:       1,
+		proxyKey:        proxyKey,
+		tlsProfileKey:   "profile-101",
+		transportFamily: transportFamilyH1,
+		poolKey:         buildPoolKey(settings, "profile-101", transportFamilyH1, upstreamProtocolModeDefault) + ":tls",
+		lastUsed:        time.Now().UnixNano(),
+	}
+	svc.clients["tls:"+buildCacheKey(config.ConnectionPoolIsolationAccountProxy, proxyKey, 1, resolvePoolBurstConcurrency(3), "profile-101", transportFamilyH1, upstreamProtocolModeDefault)] = oldEntry
+
+	newEntry, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		&tlsfingerprint.Profile{ID: 202, Name: "profile-202"},
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), newEntry)
+
+	require.Equal(s.T(), int64(1), oldTransport.closeIdleCalls.Load(), "account_proxy TLS change on the same proxy should drain the prior idle client")
 	require.False(s.T(), hasEntry(svc, oldEntry), "stale TLS client should be removed after drain")
 	require.Equal(s.T(), 1, len(svc.clients), "only the replacement TLS client should remain cached")
 }
