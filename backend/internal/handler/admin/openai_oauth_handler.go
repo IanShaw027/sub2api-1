@@ -384,6 +384,10 @@ func (h *OpenAIOAuthHandler) CreateAccountFromCodexPAT(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	if err := service.ValidateAccountExtraWrites(req.Extra); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	if req.Priority != nil && *req.Priority < 0 {
 		response.BadRequest(c, "priority must be >= 0")
 		return
