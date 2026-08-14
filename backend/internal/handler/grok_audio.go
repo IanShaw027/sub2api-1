@@ -109,7 +109,7 @@ func (h *OpenAIGatewayHandler) selectAndAcquireGrokRealtimeAccount(
 			return nil, nil, openAISlotAcquireFailed
 		}
 		var streamStarted bool
-		release, slotStatus := h.acquireResponsesAccountSlot(c, groupID, "", selection, true, &streamStarted, reqLog)
+		release, slotStatus := h.acquireResponsesAccountSlot(c, groupID, "", selection, false, &streamStarted, reqLog)
 		return selection, release, slotStatus
 	})
 }
