@@ -667,6 +667,9 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 			}
 			upstreamReq.Header.Set("Content-Type", "application/json")
 			upstreamReq.Header.Set("x-goog-api-key", apiKey)
+			if err := applyOutboundProfileUserAgent(ctx, account, upstreamReq); err != nil {
+				return nil, "", err
+			}
 			return upstreamReq, "x-request-id", nil
 		}
 		requestIDHeader = "x-request-id"
@@ -743,6 +746,9 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 				}
 				upstreamReq.Header.Set("Content-Type", "application/json")
 				upstreamReq.Header.Set("Authorization", "Bearer "+accessToken)
+				if err := applyOutboundProfileUserAgent(ctx, account, upstreamReq); err != nil {
+					return nil, "", err
+				}
 				return upstreamReq, "x-request-id", nil
 			}
 		}
@@ -774,6 +780,9 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 			}
 			upstreamReq.Header.Set("Content-Type", "application/json")
 			upstreamReq.Header.Set("Authorization", "Bearer "+accessToken)
+			if err := applyOutboundProfileUserAgent(ctx, account, upstreamReq); err != nil {
+				return nil, "", err
+			}
 			return upstreamReq, "x-request-id", nil
 		}
 		requestIDHeader = "x-request-id"
@@ -1214,6 +1223,9 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 			}
 			upstreamReq.Header.Set("Content-Type", "application/json")
 			upstreamReq.Header.Set("x-goog-api-key", apiKey)
+			if err := applyOutboundProfileUserAgent(ctx, account, upstreamReq); err != nil {
+				return nil, "", err
+			}
 			return upstreamReq, "x-request-id", nil
 		}
 		requestIDHeader = "x-request-id"
@@ -1284,6 +1296,9 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 				}
 				upstreamReq.Header.Set("Content-Type", "application/json")
 				upstreamReq.Header.Set("Authorization", "Bearer "+accessToken)
+				if err := applyOutboundProfileUserAgent(ctx, account, upstreamReq); err != nil {
+					return nil, "", err
+				}
 				return upstreamReq, "x-request-id", nil
 			}
 		}
@@ -1310,6 +1325,9 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 			}
 			upstreamReq.Header.Set("Content-Type", "application/json")
 			upstreamReq.Header.Set("Authorization", "Bearer "+accessToken)
+			if err := applyOutboundProfileUserAgent(ctx, account, upstreamReq); err != nil {
+				return nil, "", err
+			}
 			return upstreamReq, "x-request-id", nil
 		}
 		requestIDHeader = "x-request-id"
@@ -2801,6 +2819,10 @@ func (s *GeminiMessagesCompatService) ForwardAIStudioGET(ctx context.Context, ac
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 	default:
 		return nil, fmt.Errorf("unsupported account type: %s", account.Type)
+	}
+
+	if err := applyOutboundProfileUserAgent(ctx, account, req); err != nil {
+		return nil, err
 	}
 
 	resp, err := s.doAccountHTTP(ctx, account, req, proxyURL, "")
