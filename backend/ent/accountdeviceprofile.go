@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/accountdeviceprofile"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 )
 
 // AccountDeviceProfile is the model entity for the AccountDeviceProfile schema.
@@ -77,9 +78,11 @@ type AccountDeviceProfile struct {
 type AccountDeviceProfileEdges struct {
 	// Account holds the value of the account edge.
 	Account *Account `json:"account,omitempty"`
+	// TLSProfile holds the value of the tls_profile edge.
+	TLSProfile *TLSFingerprintProfile `json:"tls_profile,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // AccountOrErr returns the Account value or an error if the edge
@@ -91,6 +94,17 @@ func (e AccountDeviceProfileEdges) AccountOrErr() (*Account, error) {
 		return nil, &NotFoundError{label: account.Label}
 	}
 	return nil, &NotLoadedError{edge: "account"}
+}
+
+// TLSProfileOrErr returns the TLSProfile value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e AccountDeviceProfileEdges) TLSProfileOrErr() (*TLSFingerprintProfile, error) {
+	if e.TLSProfile != nil {
+		return e.TLSProfile, nil
+	} else if e.loadedTypes[1] {
+		return nil, &NotFoundError{label: tlsfingerprintprofile.Label}
+	}
+	return nil, &NotLoadedError{edge: "tls_profile"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -293,6 +307,11 @@ func (_m *AccountDeviceProfile) Value(name string) (ent.Value, error) {
 // QueryAccount queries the "account" edge of the AccountDeviceProfile entity.
 func (_m *AccountDeviceProfile) QueryAccount() *AccountQuery {
 	return NewAccountDeviceProfileClient(_m.config).QueryAccount(_m)
+}
+
+// QueryTLSProfile queries the "tls_profile" edge of the AccountDeviceProfile entity.
+func (_m *AccountDeviceProfile) QueryTLSProfile() *TLSFingerprintProfileQuery {
+	return NewAccountDeviceProfileClient(_m.config).QueryTLSProfile(_m)
 }
 
 // Update returns a builder for updating this AccountDeviceProfile.

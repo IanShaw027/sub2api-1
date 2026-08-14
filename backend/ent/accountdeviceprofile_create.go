@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/accountdeviceprofile"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 )
 
 // AccountDeviceProfileCreate is the builder for creating a AccountDeviceProfile entity.
@@ -234,6 +235,11 @@ func (_c *AccountDeviceProfileCreate) SetNillableVersionUpgradedAt(v *time.Time)
 // SetAccount sets the "account" edge to the Account entity.
 func (_c *AccountDeviceProfileCreate) SetAccount(v *Account) *AccountDeviceProfileCreate {
 	return _c.SetAccountID(v.ID)
+}
+
+// SetTLSProfile sets the "tls_profile" edge to the TLSFingerprintProfile entity.
+func (_c *AccountDeviceProfileCreate) SetTLSProfile(v *TLSFingerprintProfile) *AccountDeviceProfileCreate {
+	return _c.SetTLSProfileID(v.ID)
 }
 
 // Mutation returns the AccountDeviceProfileMutation object of the builder.
@@ -552,10 +558,6 @@ func (_c *AccountDeviceProfileCreate) createSpec() (*AccountDeviceProfile, *sqlg
 		_spec.SetField(accountdeviceprofile.FieldClientVersion, field.TypeString, value)
 		_node.ClientVersion = value
 	}
-	if value, ok := _c.mutation.TLSProfileID(); ok {
-		_spec.SetField(accountdeviceprofile.FieldTLSProfileID, field.TypeInt64, value)
-		_node.TLSProfileID = &value
-	}
 	if value, ok := _c.mutation.TransportFamily(); ok {
 		_spec.SetField(accountdeviceprofile.FieldTransportFamily, field.TypeString, value)
 		_node.TransportFamily = value
@@ -591,6 +593,23 @@ func (_c *AccountDeviceProfileCreate) createSpec() (*AccountDeviceProfile, *sqlg
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.AccountID = nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.TLSProfileIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   accountdeviceprofile.TLSProfileTable,
+			Columns: []string{accountdeviceprofile.TLSProfileColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(tlsfingerprintprofile.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.TLSProfileID = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
@@ -858,12 +877,6 @@ func (u *AccountDeviceProfileUpsert) SetTLSProfileID(v int64) *AccountDeviceProf
 // UpdateTLSProfileID sets the "tls_profile_id" field to the value that was provided on create.
 func (u *AccountDeviceProfileUpsert) UpdateTLSProfileID() *AccountDeviceProfileUpsert {
 	u.SetExcluded(accountdeviceprofile.FieldTLSProfileID)
-	return u
-}
-
-// AddTLSProfileID adds v to the "tls_profile_id" field.
-func (u *AccountDeviceProfileUpsert) AddTLSProfileID(v int64) *AccountDeviceProfileUpsert {
-	u.Add(accountdeviceprofile.FieldTLSProfileID, v)
 	return u
 }
 
@@ -1229,13 +1242,6 @@ func (u *AccountDeviceProfileUpsertOne) UpdateClientVersion() *AccountDeviceProf
 func (u *AccountDeviceProfileUpsertOne) SetTLSProfileID(v int64) *AccountDeviceProfileUpsertOne {
 	return u.Update(func(s *AccountDeviceProfileUpsert) {
 		s.SetTLSProfileID(v)
-	})
-}
-
-// AddTLSProfileID adds v to the "tls_profile_id" field.
-func (u *AccountDeviceProfileUpsertOne) AddTLSProfileID(v int64) *AccountDeviceProfileUpsertOne {
-	return u.Update(func(s *AccountDeviceProfileUpsert) {
-		s.AddTLSProfileID(v)
 	})
 }
 
@@ -1786,13 +1792,6 @@ func (u *AccountDeviceProfileUpsertBulk) UpdateClientVersion() *AccountDevicePro
 func (u *AccountDeviceProfileUpsertBulk) SetTLSProfileID(v int64) *AccountDeviceProfileUpsertBulk {
 	return u.Update(func(s *AccountDeviceProfileUpsert) {
 		s.SetTLSProfileID(v)
-	})
-}
-
-// AddTLSProfileID adds v to the "tls_profile_id" field.
-func (u *AccountDeviceProfileUpsertBulk) AddTLSProfileID(v int64) *AccountDeviceProfileUpsertBulk {
-	return u.Update(func(s *AccountDeviceProfileUpsert) {
-		s.AddTLSProfileID(v)
 	})
 }
 

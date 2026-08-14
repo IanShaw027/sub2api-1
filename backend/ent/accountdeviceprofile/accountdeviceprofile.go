@@ -64,6 +64,8 @@ const (
 	FieldVersionUpgradedAt = "version_upgraded_at"
 	// EdgeAccount holds the string denoting the account edge name in mutations.
 	EdgeAccount = "account"
+	// EdgeTLSProfile holds the string denoting the tls_profile edge name in mutations.
+	EdgeTLSProfile = "tls_profile"
 	// Table holds the table name of the accountdeviceprofile in the database.
 	Table = "account_device_profiles"
 	// AccountTable is the table that holds the account relation/edge.
@@ -73,6 +75,13 @@ const (
 	AccountInverseTable = "accounts"
 	// AccountColumn is the table column denoting the account relation/edge.
 	AccountColumn = "account_id"
+	// TLSProfileTable is the table that holds the tls_profile relation/edge.
+	TLSProfileTable = "account_device_profiles"
+	// TLSProfileInverseTable is the table name for the TLSFingerprintProfile entity.
+	// It exists in this package in order to avoid circular dependency with the "tlsfingerprintprofile" package.
+	TLSProfileInverseTable = "tls_fingerprint_profiles"
+	// TLSProfileColumn is the table column denoting the tls_profile relation/edge.
+	TLSProfileColumn = "tls_profile_id"
 )
 
 // Columns holds all SQL columns for accountdeviceprofile fields.
@@ -296,10 +305,24 @@ func ByAccountField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newAccountStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// ByTLSProfileField orders the results by tls_profile field.
+func ByTLSProfileField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newTLSProfileStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newAccountStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(AccountInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2O, true, AccountTable, AccountColumn),
+	)
+}
+func newTLSProfileStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(TLSProfileInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, false, TLSProfileTable, TLSProfileColumn),
 	)
 }

@@ -5187,8 +5187,6 @@ type AccountDeviceProfileMutation struct {
 	runtime              *string
 	runtime_version      *string
 	client_version       *string
-	tls_profile_id       *int64
-	addtls_profile_id    *int64
 	transport_family     *string
 	profile_payload      *map[string]interface{}
 	learned_from         *string
@@ -5197,6 +5195,8 @@ type AccountDeviceProfileMutation struct {
 	clearedFields        map[string]struct{}
 	account              *int64
 	clearedaccount       bool
+	tls_profile          *int64
+	clearedtls_profile   bool
 	done                 bool
 	oldValue             func(context.Context) (*AccountDeviceProfile, error)
 	predicates           []predicate.AccountDeviceProfile
@@ -5990,13 +5990,12 @@ func (m *AccountDeviceProfileMutation) ResetClientVersion() {
 
 // SetTLSProfileID sets the "tls_profile_id" field.
 func (m *AccountDeviceProfileMutation) SetTLSProfileID(i int64) {
-	m.tls_profile_id = &i
-	m.addtls_profile_id = nil
+	m.tls_profile = &i
 }
 
 // TLSProfileID returns the value of the "tls_profile_id" field in the mutation.
 func (m *AccountDeviceProfileMutation) TLSProfileID() (r int64, exists bool) {
-	v := m.tls_profile_id
+	v := m.tls_profile
 	if v == nil {
 		return
 	}
@@ -6020,28 +6019,9 @@ func (m *AccountDeviceProfileMutation) OldTLSProfileID(ctx context.Context) (v *
 	return oldValue.TLSProfileID, nil
 }
 
-// AddTLSProfileID adds i to the "tls_profile_id" field.
-func (m *AccountDeviceProfileMutation) AddTLSProfileID(i int64) {
-	if m.addtls_profile_id != nil {
-		*m.addtls_profile_id += i
-	} else {
-		m.addtls_profile_id = &i
-	}
-}
-
-// AddedTLSProfileID returns the value that was added to the "tls_profile_id" field in this mutation.
-func (m *AccountDeviceProfileMutation) AddedTLSProfileID() (r int64, exists bool) {
-	v := m.addtls_profile_id
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
 // ClearTLSProfileID clears the value of the "tls_profile_id" field.
 func (m *AccountDeviceProfileMutation) ClearTLSProfileID() {
-	m.tls_profile_id = nil
-	m.addtls_profile_id = nil
+	m.tls_profile = nil
 	m.clearedFields[accountdeviceprofile.FieldTLSProfileID] = struct{}{}
 }
 
@@ -6053,8 +6033,7 @@ func (m *AccountDeviceProfileMutation) TLSProfileIDCleared() bool {
 
 // ResetTLSProfileID resets all changes to the "tls_profile_id" field.
 func (m *AccountDeviceProfileMutation) ResetTLSProfileID() {
-	m.tls_profile_id = nil
-	m.addtls_profile_id = nil
+	m.tls_profile = nil
 	delete(m.clearedFields, accountdeviceprofile.FieldTLSProfileID)
 }
 
@@ -6278,6 +6257,33 @@ func (m *AccountDeviceProfileMutation) ResetAccount() {
 	m.clearedaccount = false
 }
 
+// ClearTLSProfile clears the "tls_profile" edge to the TLSFingerprintProfile entity.
+func (m *AccountDeviceProfileMutation) ClearTLSProfile() {
+	m.clearedtls_profile = true
+	m.clearedFields[accountdeviceprofile.FieldTLSProfileID] = struct{}{}
+}
+
+// TLSProfileCleared reports if the "tls_profile" edge to the TLSFingerprintProfile entity was cleared.
+func (m *AccountDeviceProfileMutation) TLSProfileCleared() bool {
+	return m.TLSProfileIDCleared() || m.clearedtls_profile
+}
+
+// TLSProfileIDs returns the "tls_profile" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// TLSProfileID instead. It exists only for internal usage by the builders.
+func (m *AccountDeviceProfileMutation) TLSProfileIDs() (ids []int64) {
+	if id := m.tls_profile; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetTLSProfile resets all changes to the "tls_profile" edge.
+func (m *AccountDeviceProfileMutation) ResetTLSProfile() {
+	m.tls_profile = nil
+	m.clearedtls_profile = false
+}
+
 // Where appends a list predicates to the AccountDeviceProfileMutation builder.
 func (m *AccountDeviceProfileMutation) Where(ps ...predicate.AccountDeviceProfile) {
 	m.predicates = append(m.predicates, ps...)
@@ -6367,7 +6373,7 @@ func (m *AccountDeviceProfileMutation) Fields() []string {
 	if m.client_version != nil {
 		fields = append(fields, accountdeviceprofile.FieldClientVersion)
 	}
-	if m.tls_profile_id != nil {
+	if m.tls_profile != nil {
 		fields = append(fields, accountdeviceprofile.FieldTLSProfileID)
 	}
 	if m.transport_family != nil {
@@ -6689,9 +6695,6 @@ func (m *AccountDeviceProfileMutation) AddedFields() []string {
 	if m.addschema_version != nil {
 		fields = append(fields, accountdeviceprofile.FieldSchemaVersion)
 	}
-	if m.addtls_profile_id != nil {
-		fields = append(fields, accountdeviceprofile.FieldTLSProfileID)
-	}
 	return fields
 }
 
@@ -6704,8 +6707,6 @@ func (m *AccountDeviceProfileMutation) AddedField(name string) (ent.Value, bool)
 		return m.AddedRevision()
 	case accountdeviceprofile.FieldSchemaVersion:
 		return m.AddedSchemaVersion()
-	case accountdeviceprofile.FieldTLSProfileID:
-		return m.AddedTLSProfileID()
 	}
 	return nil, false
 }
@@ -6728,13 +6729,6 @@ func (m *AccountDeviceProfileMutation) AddField(name string, value ent.Value) er
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddSchemaVersion(v)
-		return nil
-	case accountdeviceprofile.FieldTLSProfileID:
-		v, ok := value.(int64)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.AddTLSProfileID(v)
 		return nil
 	}
 	return fmt.Errorf("unknown AccountDeviceProfile numeric field %s", name)
@@ -6856,9 +6850,12 @@ func (m *AccountDeviceProfileMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *AccountDeviceProfileMutation) AddedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 2)
 	if m.account != nil {
 		edges = append(edges, accountdeviceprofile.EdgeAccount)
+	}
+	if m.tls_profile != nil {
+		edges = append(edges, accountdeviceprofile.EdgeTLSProfile)
 	}
 	return edges
 }
@@ -6871,13 +6868,17 @@ func (m *AccountDeviceProfileMutation) AddedIDs(name string) []ent.Value {
 		if id := m.account; id != nil {
 			return []ent.Value{*id}
 		}
+	case accountdeviceprofile.EdgeTLSProfile:
+		if id := m.tls_profile; id != nil {
+			return []ent.Value{*id}
+		}
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *AccountDeviceProfileMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 2)
 	return edges
 }
 
@@ -6889,9 +6890,12 @@ func (m *AccountDeviceProfileMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *AccountDeviceProfileMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 1)
+	edges := make([]string, 0, 2)
 	if m.clearedaccount {
 		edges = append(edges, accountdeviceprofile.EdgeAccount)
+	}
+	if m.clearedtls_profile {
+		edges = append(edges, accountdeviceprofile.EdgeTLSProfile)
 	}
 	return edges
 }
@@ -6902,6 +6906,8 @@ func (m *AccountDeviceProfileMutation) EdgeCleared(name string) bool {
 	switch name {
 	case accountdeviceprofile.EdgeAccount:
 		return m.clearedaccount
+	case accountdeviceprofile.EdgeTLSProfile:
+		return m.clearedtls_profile
 	}
 	return false
 }
@@ -6913,6 +6919,9 @@ func (m *AccountDeviceProfileMutation) ClearEdge(name string) error {
 	case accountdeviceprofile.EdgeAccount:
 		m.ClearAccount()
 		return nil
+	case accountdeviceprofile.EdgeTLSProfile:
+		m.ClearTLSProfile()
+		return nil
 	}
 	return fmt.Errorf("unknown AccountDeviceProfile unique edge %s", name)
 }
@@ -6923,6 +6932,9 @@ func (m *AccountDeviceProfileMutation) ResetEdge(name string) error {
 	switch name {
 	case accountdeviceprofile.EdgeAccount:
 		m.ResetAccount()
+		return nil
+	case accountdeviceprofile.EdgeTLSProfile:
+		m.ResetTLSProfile()
 		return nil
 	}
 	return fmt.Errorf("unknown AccountDeviceProfile edge %s", name)

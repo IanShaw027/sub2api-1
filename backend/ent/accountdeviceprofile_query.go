@@ -15,17 +15,19 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/accountdeviceprofile"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 )
 
 // AccountDeviceProfileQuery is the builder for querying AccountDeviceProfile entities.
 type AccountDeviceProfileQuery struct {
 	config
-	ctx         *QueryContext
-	order       []accountdeviceprofile.OrderOption
-	inters      []Interceptor
-	predicates  []predicate.AccountDeviceProfile
-	withAccount *AccountQuery
-	modifiers   []func(*sql.Selector)
+	ctx            *QueryContext
+	order          []accountdeviceprofile.OrderOption
+	inters         []Interceptor
+	predicates     []predicate.AccountDeviceProfile
+	withAccount    *AccountQuery
+	withTLSProfile *TLSFingerprintProfileQuery
+	modifiers      []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -77,6 +79,28 @@ func (_q *AccountDeviceProfileQuery) QueryAccount() *AccountQuery {
 			sqlgraph.From(accountdeviceprofile.Table, accountdeviceprofile.FieldID, selector),
 			sqlgraph.To(account.Table, account.FieldID),
 			sqlgraph.Edge(sqlgraph.O2O, true, accountdeviceprofile.AccountTable, accountdeviceprofile.AccountColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryTLSProfile chains the current query on the "tls_profile" edge.
+func (_q *AccountDeviceProfileQuery) QueryTLSProfile() *TLSFingerprintProfileQuery {
+	query := (&TLSFingerprintProfileClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(accountdeviceprofile.Table, accountdeviceprofile.FieldID, selector),
+			sqlgraph.To(tlsfingerprintprofile.Table, tlsfingerprintprofile.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, accountdeviceprofile.TLSProfileTable, accountdeviceprofile.TLSProfileColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -271,12 +295,13 @@ func (_q *AccountDeviceProfileQuery) Clone() *AccountDeviceProfileQuery {
 		return nil
 	}
 	return &AccountDeviceProfileQuery{
-		config:      _q.config,
-		ctx:         _q.ctx.Clone(),
-		order:       append([]accountdeviceprofile.OrderOption{}, _q.order...),
-		inters:      append([]Interceptor{}, _q.inters...),
-		predicates:  append([]predicate.AccountDeviceProfile{}, _q.predicates...),
-		withAccount: _q.withAccount.Clone(),
+		config:         _q.config,
+		ctx:            _q.ctx.Clone(),
+		order:          append([]accountdeviceprofile.OrderOption{}, _q.order...),
+		inters:         append([]Interceptor{}, _q.inters...),
+		predicates:     append([]predicate.AccountDeviceProfile{}, _q.predicates...),
+		withAccount:    _q.withAccount.Clone(),
+		withTLSProfile: _q.withTLSProfile.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -291,6 +316,17 @@ func (_q *AccountDeviceProfileQuery) WithAccount(opts ...func(*AccountQuery)) *A
 		opt(query)
 	}
 	_q.withAccount = query
+	return _q
+}
+
+// WithTLSProfile tells the query-builder to eager-load the nodes that are connected to
+// the "tls_profile" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *AccountDeviceProfileQuery) WithTLSProfile(opts ...func(*TLSFingerprintProfileQuery)) *AccountDeviceProfileQuery {
+	query := (&TLSFingerprintProfileClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withTLSProfile = query
 	return _q
 }
 
@@ -372,8 +408,9 @@ func (_q *AccountDeviceProfileQuery) sqlAll(ctx context.Context, hooks ...queryH
 	var (
 		nodes       = []*AccountDeviceProfile{}
 		_spec       = _q.querySpec()
-		loadedTypes = [1]bool{
+		loadedTypes = [2]bool{
 			_q.withAccount != nil,
+			_q.withTLSProfile != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -403,6 +440,12 @@ func (_q *AccountDeviceProfileQuery) sqlAll(ctx context.Context, hooks ...queryH
 			return nil, err
 		}
 	}
+	if query := _q.withTLSProfile; query != nil {
+		if err := _q.loadTLSProfile(ctx, query, nodes, nil,
+			func(n *AccountDeviceProfile, e *TLSFingerprintProfile) { n.Edges.TLSProfile = e }); err != nil {
+			return nil, err
+		}
+	}
 	return nodes, nil
 }
 
@@ -428,6 +471,38 @@ func (_q *AccountDeviceProfileQuery) loadAccount(ctx context.Context, query *Acc
 		nodes, ok := nodeids[n.ID]
 		if !ok {
 			return fmt.Errorf(`unexpected foreign-key "account_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
+func (_q *AccountDeviceProfileQuery) loadTLSProfile(ctx context.Context, query *TLSFingerprintProfileQuery, nodes []*AccountDeviceProfile, init func(*AccountDeviceProfile), assign func(*AccountDeviceProfile, *TLSFingerprintProfile)) error {
+	ids := make([]int64, 0, len(nodes))
+	nodeids := make(map[int64][]*AccountDeviceProfile)
+	for i := range nodes {
+		if nodes[i].TLSProfileID == nil {
+			continue
+		}
+		fk := *nodes[i].TLSProfileID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(tlsfingerprintprofile.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "tls_profile_id" returned %v`, n.ID)
 		}
 		for i := range nodes {
 			assign(nodes[i], n)
@@ -466,6 +541,9 @@ func (_q *AccountDeviceProfileQuery) querySpec() *sqlgraph.QuerySpec {
 		}
 		if _q.withAccount != nil {
 			_spec.Node.AddColumnOnce(accountdeviceprofile.FieldAccountID)
+		}
+		if _q.withTLSProfile != nil {
+			_spec.Node.AddColumnOnce(accountdeviceprofile.FieldTLSProfileID)
 		}
 	}
 	if ps := _q.predicates; len(ps) > 0 {

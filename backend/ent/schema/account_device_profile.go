@@ -67,18 +67,16 @@ func (AccountDeviceProfile) Annotations() []schema.Annotation {
 		entsql.Annotation{
 			Table: "account_device_profiles",
 			Checks: map[string]string{
-				"account_device_profiles_revision_check":          "revision >= 1",
-				"account_device_profiles_schema_version_check":    "schema_version BETWEEN 1 AND 100",
-				"account_device_profiles_platform_check":          "platform IN ('anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kiro')",
-				"account_device_profiles_client_family_check":     "client_family IN ('claude-code', 'codex-cli', 'grok-cli', 'kiro-ide', 'gemini-cli', 'antigravity')",
-				"account_device_profiles_os_family_check":         "char_length(os_family) BETWEEN 1 AND 32",
-				"account_device_profiles_arch_check":              "char_length(arch) BETWEEN 1 AND 32",
-				"account_device_profiles_runtime_check":           "char_length(runtime) BETWEEN 1 AND 32",
-				"account_device_profiles_session_namespace_check": "session_namespace ~ '^[0-9a-f]{32,64}$'",
-				"account_device_profiles_tls_profile_id_check":    "tls_profile_id IS NULL OR tls_profile_id > 0",
-				"account_device_profiles_transport_family_check":  "transport_family IN ('h1', 'h2')",
-				"account_device_profiles_learned_from_check":      "learned_from IN ('baseline', 'official_traffic', 'baseline_floor')",
-				"account_device_profiles_profile_payload_check":   "jsonb_typeof(profile_payload) = 'object'",
+				"account_device_profiles_revision_check":         "revision >= 1",
+				"account_device_profiles_schema_version_check":   "schema_version BETWEEN 1 AND 100",
+				"account_device_profiles_platform_check":         "platform IN ('anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kiro')",
+				"account_device_profiles_client_family_check":    "client_family IN ('claude-code', 'codex-cli', 'grok-cli', 'kiro-ide', 'gemini-cli', 'antigravity')",
+				"account_device_profiles_os_family_check":        "length(os_family) BETWEEN 1 AND 32",
+				"account_device_profiles_arch_check":             "length(arch) BETWEEN 1 AND 32",
+				"account_device_profiles_runtime_check":          "length(runtime) BETWEEN 1 AND 32",
+				"account_device_profiles_tls_profile_id_check":   "tls_profile_id IS NULL OR tls_profile_id > 0",
+				"account_device_profiles_transport_family_check": "transport_family IN ('h1', 'h2')",
+				"account_device_profiles_learned_from_check":     "learned_from IN ('baseline', 'official_traffic', 'baseline_floor')",
 			},
 		},
 	}
@@ -184,6 +182,11 @@ func (AccountDeviceProfile) Edges() []ent.Edge {
 			Ref("device_profile").
 			Field("account_id").
 			Required().
-			Unique(),
+			Unique().
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("tls_profile", TLSFingerprintProfile.Type).
+			Field("tls_profile_id").
+			Unique().
+			Annotations(entsql.OnDelete(entsql.SetNull)),
 	}
 }

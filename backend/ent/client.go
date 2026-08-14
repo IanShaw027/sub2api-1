@@ -1163,6 +1163,22 @@ func (c *AccountDeviceProfileClient) QueryAccount(_m *AccountDeviceProfile) *Acc
 	return query
 }
 
+// QueryTLSProfile queries the tls_profile edge of a AccountDeviceProfile.
+func (c *AccountDeviceProfileClient) QueryTLSProfile(_m *AccountDeviceProfile) *TLSFingerprintProfileQuery {
+	query := (&TLSFingerprintProfileClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(accountdeviceprofile.Table, accountdeviceprofile.FieldID, id),
+			sqlgraph.To(tlsfingerprintprofile.Table, tlsfingerprintprofile.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, accountdeviceprofile.TLSProfileTable, accountdeviceprofile.TLSProfileColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *AccountDeviceProfileClient) Hooks() []Hook {
 	return c.hooks.AccountDeviceProfile

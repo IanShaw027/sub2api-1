@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/accountdeviceprofile"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 )
 
 // AccountDeviceProfileUpdate is the builder for updating AccountDeviceProfile entities.
@@ -261,7 +262,6 @@ func (_u *AccountDeviceProfileUpdate) SetNillableClientVersion(v *string) *Accou
 
 // SetTLSProfileID sets the "tls_profile_id" field.
 func (_u *AccountDeviceProfileUpdate) SetTLSProfileID(v int64) *AccountDeviceProfileUpdate {
-	_u.mutation.ResetTLSProfileID()
 	_u.mutation.SetTLSProfileID(v)
 	return _u
 }
@@ -271,12 +271,6 @@ func (_u *AccountDeviceProfileUpdate) SetNillableTLSProfileID(v *int64) *Account
 	if v != nil {
 		_u.SetTLSProfileID(*v)
 	}
-	return _u
-}
-
-// AddTLSProfileID adds value to the "tls_profile_id" field.
-func (_u *AccountDeviceProfileUpdate) AddTLSProfileID(v int64) *AccountDeviceProfileUpdate {
-	_u.mutation.AddTLSProfileID(v)
 	return _u
 }
 
@@ -359,6 +353,11 @@ func (_u *AccountDeviceProfileUpdate) SetAccount(v *Account) *AccountDeviceProfi
 	return _u.SetAccountID(v.ID)
 }
 
+// SetTLSProfile sets the "tls_profile" edge to the TLSFingerprintProfile entity.
+func (_u *AccountDeviceProfileUpdate) SetTLSProfile(v *TLSFingerprintProfile) *AccountDeviceProfileUpdate {
+	return _u.SetTLSProfileID(v.ID)
+}
+
 // Mutation returns the AccountDeviceProfileMutation object of the builder.
 func (_u *AccountDeviceProfileUpdate) Mutation() *AccountDeviceProfileMutation {
 	return _u.mutation
@@ -367,6 +366,12 @@ func (_u *AccountDeviceProfileUpdate) Mutation() *AccountDeviceProfileMutation {
 // ClearAccount clears the "account" edge to the Account entity.
 func (_u *AccountDeviceProfileUpdate) ClearAccount() *AccountDeviceProfileUpdate {
 	_u.mutation.ClearAccount()
+	return _u
+}
+
+// ClearTLSProfile clears the "tls_profile" edge to the TLSFingerprintProfile entity.
+func (_u *AccountDeviceProfileUpdate) ClearTLSProfile() *AccountDeviceProfileUpdate {
+	_u.mutation.ClearTLSProfile()
 	return _u
 }
 
@@ -557,15 +562,6 @@ func (_u *AccountDeviceProfileUpdate) sqlSave(ctx context.Context) (_node int, e
 	if value, ok := _u.mutation.ClientVersion(); ok {
 		_spec.SetField(accountdeviceprofile.FieldClientVersion, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.TLSProfileID(); ok {
-		_spec.SetField(accountdeviceprofile.FieldTLSProfileID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedTLSProfileID(); ok {
-		_spec.AddField(accountdeviceprofile.FieldTLSProfileID, field.TypeInt64, value)
-	}
-	if _u.mutation.TLSProfileIDCleared() {
-		_spec.ClearField(accountdeviceprofile.FieldTLSProfileID, field.TypeInt64)
-	}
 	if value, ok := _u.mutation.TransportFamily(); ok {
 		_spec.SetField(accountdeviceprofile.FieldTransportFamily, field.TypeString, value)
 	}
@@ -606,6 +602,35 @@ func (_u *AccountDeviceProfileUpdate) sqlSave(ctx context.Context) (_node int, e
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(account.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.TLSProfileCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   accountdeviceprofile.TLSProfileTable,
+			Columns: []string{accountdeviceprofile.TLSProfileColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(tlsfingerprintprofile.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TLSProfileIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   accountdeviceprofile.TLSProfileTable,
+			Columns: []string{accountdeviceprofile.TLSProfileColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(tlsfingerprintprofile.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -865,7 +890,6 @@ func (_u *AccountDeviceProfileUpdateOne) SetNillableClientVersion(v *string) *Ac
 
 // SetTLSProfileID sets the "tls_profile_id" field.
 func (_u *AccountDeviceProfileUpdateOne) SetTLSProfileID(v int64) *AccountDeviceProfileUpdateOne {
-	_u.mutation.ResetTLSProfileID()
 	_u.mutation.SetTLSProfileID(v)
 	return _u
 }
@@ -875,12 +899,6 @@ func (_u *AccountDeviceProfileUpdateOne) SetNillableTLSProfileID(v *int64) *Acco
 	if v != nil {
 		_u.SetTLSProfileID(*v)
 	}
-	return _u
-}
-
-// AddTLSProfileID adds value to the "tls_profile_id" field.
-func (_u *AccountDeviceProfileUpdateOne) AddTLSProfileID(v int64) *AccountDeviceProfileUpdateOne {
-	_u.mutation.AddTLSProfileID(v)
 	return _u
 }
 
@@ -963,6 +981,11 @@ func (_u *AccountDeviceProfileUpdateOne) SetAccount(v *Account) *AccountDevicePr
 	return _u.SetAccountID(v.ID)
 }
 
+// SetTLSProfile sets the "tls_profile" edge to the TLSFingerprintProfile entity.
+func (_u *AccountDeviceProfileUpdateOne) SetTLSProfile(v *TLSFingerprintProfile) *AccountDeviceProfileUpdateOne {
+	return _u.SetTLSProfileID(v.ID)
+}
+
 // Mutation returns the AccountDeviceProfileMutation object of the builder.
 func (_u *AccountDeviceProfileUpdateOne) Mutation() *AccountDeviceProfileMutation {
 	return _u.mutation
@@ -971,6 +994,12 @@ func (_u *AccountDeviceProfileUpdateOne) Mutation() *AccountDeviceProfileMutatio
 // ClearAccount clears the "account" edge to the Account entity.
 func (_u *AccountDeviceProfileUpdateOne) ClearAccount() *AccountDeviceProfileUpdateOne {
 	_u.mutation.ClearAccount()
+	return _u
+}
+
+// ClearTLSProfile clears the "tls_profile" edge to the TLSFingerprintProfile entity.
+func (_u *AccountDeviceProfileUpdateOne) ClearTLSProfile() *AccountDeviceProfileUpdateOne {
+	_u.mutation.ClearTLSProfile()
 	return _u
 }
 
@@ -1191,15 +1220,6 @@ func (_u *AccountDeviceProfileUpdateOne) sqlSave(ctx context.Context) (_node *Ac
 	if value, ok := _u.mutation.ClientVersion(); ok {
 		_spec.SetField(accountdeviceprofile.FieldClientVersion, field.TypeString, value)
 	}
-	if value, ok := _u.mutation.TLSProfileID(); ok {
-		_spec.SetField(accountdeviceprofile.FieldTLSProfileID, field.TypeInt64, value)
-	}
-	if value, ok := _u.mutation.AddedTLSProfileID(); ok {
-		_spec.AddField(accountdeviceprofile.FieldTLSProfileID, field.TypeInt64, value)
-	}
-	if _u.mutation.TLSProfileIDCleared() {
-		_spec.ClearField(accountdeviceprofile.FieldTLSProfileID, field.TypeInt64)
-	}
 	if value, ok := _u.mutation.TransportFamily(); ok {
 		_spec.SetField(accountdeviceprofile.FieldTransportFamily, field.TypeString, value)
 	}
@@ -1240,6 +1260,35 @@ func (_u *AccountDeviceProfileUpdateOne) sqlSave(ctx context.Context) (_node *Ac
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(account.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.TLSProfileCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   accountdeviceprofile.TLSProfileTable,
+			Columns: []string{accountdeviceprofile.TLSProfileColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(tlsfingerprintprofile.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.TLSProfileIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: false,
+			Table:   accountdeviceprofile.TLSProfileTable,
+			Columns: []string{accountdeviceprofile.TLSProfileColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(tlsfingerprintprofile.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

@@ -1215,26 +1215,6 @@ func TLSProfileIDNotIn(vs ...int64) predicate.AccountDeviceProfile {
 	return predicate.AccountDeviceProfile(sql.FieldNotIn(FieldTLSProfileID, vs...))
 }
 
-// TLSProfileIDGT applies the GT predicate on the "tls_profile_id" field.
-func TLSProfileIDGT(v int64) predicate.AccountDeviceProfile {
-	return predicate.AccountDeviceProfile(sql.FieldGT(FieldTLSProfileID, v))
-}
-
-// TLSProfileIDGTE applies the GTE predicate on the "tls_profile_id" field.
-func TLSProfileIDGTE(v int64) predicate.AccountDeviceProfile {
-	return predicate.AccountDeviceProfile(sql.FieldGTE(FieldTLSProfileID, v))
-}
-
-// TLSProfileIDLT applies the LT predicate on the "tls_profile_id" field.
-func TLSProfileIDLT(v int64) predicate.AccountDeviceProfile {
-	return predicate.AccountDeviceProfile(sql.FieldLT(FieldTLSProfileID, v))
-}
-
-// TLSProfileIDLTE applies the LTE predicate on the "tls_profile_id" field.
-func TLSProfileIDLTE(v int64) predicate.AccountDeviceProfile {
-	return predicate.AccountDeviceProfile(sql.FieldLTE(FieldTLSProfileID, v))
-}
-
 // TLSProfileIDIsNil applies the IsNil predicate on the "tls_profile_id" field.
 func TLSProfileIDIsNil() predicate.AccountDeviceProfile {
 	return predicate.AccountDeviceProfile(sql.FieldIsNull(FieldTLSProfileID))
@@ -1450,6 +1430,29 @@ func HasAccount() predicate.AccountDeviceProfile {
 func HasAccountWith(preds ...predicate.Account) predicate.AccountDeviceProfile {
 	return predicate.AccountDeviceProfile(func(s *sql.Selector) {
 		step := newAccountStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasTLSProfile applies the HasEdge predicate on the "tls_profile" edge.
+func HasTLSProfile() predicate.AccountDeviceProfile {
+	return predicate.AccountDeviceProfile(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, TLSProfileTable, TLSProfileColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasTLSProfileWith applies the HasEdge predicate on the "tls_profile" edge with a given conditions (other predicates).
+func HasTLSProfileWith(preds ...predicate.TLSFingerprintProfile) predicate.AccountDeviceProfile {
+	return predicate.AccountDeviceProfile(func(s *sql.Selector) {
+		step := newTLSProfileStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)
