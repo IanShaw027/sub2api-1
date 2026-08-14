@@ -477,9 +477,19 @@ func applyGrokCLIProxyHeaders(req *http.Request) {
 		version = grokCLIStableVersion
 	}
 	req.Header.Set("X-XAI-Token-Auth", xai.CLITokenAuth)
-	req.Header.Set("x-grok-client-version", version)
-	req.Header.Set("x-grok-client-identifier", xai.CLIClientIdentifier)
-	req.Header.Set("User-Agent", xai.CLIUserAgent(version))
+	if strings.TrimSpace(req.Header.Get("x-grok-client-version")) == "" {
+		req.Header.Set("x-grok-client-version", version)
+	}
+	if strings.TrimSpace(req.Header.Get("x-grok-client-identifier")) == "" {
+		req.Header.Set("x-grok-client-identifier", xai.CLIClientIdentifier)
+	}
+	if !isStampedGrokWorkspaceUserAgent(req.Header.Get("User-Agent")) {
+		req.Header.Set("User-Agent", xai.CLIUserAgent(version))
+	}
+}
+
+func isStampedGrokWorkspaceUserAgent(ua string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(ua)), "xai-grok-workspace/")
 }
 
 func isSupportedGrokCLIVersion(version string) bool {

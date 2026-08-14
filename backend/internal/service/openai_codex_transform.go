@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -1277,15 +1278,23 @@ func ensureCodexReasoningInclude(reqBody map[string]any) bool {
 }
 
 // applyCodexClientMetadata 在请求体补齐 client_metadata["x-codex-installation-id"]，
-// 取值为账号真实的 openai_device_id（最新 Codex 在请求体携带的安装标识）。
+// 取值为已加载设备档案的 InstallationID。加载失败或服务未配置时跳过，
+// 绝不回退 extra.openai_device_id / GetOpenAIDeviceID()。
 //
-// 加法式、幂等：仅在账号存在 device_id 且该键缺失时注入，绝不覆盖既有 client_metadata
-// （如 turn metadata），也不伪造——无 device_id 时不写入。
-func applyCodexClientMetadata(reqBody map[string]any, account *Account) bool {
+// 加法式、幂等：仅在档案存在 installation id 且该键缺失时注入，绝不覆盖既有
+// client_metadata（如 turn metadata），也不伪造。
+func applyCodexClientMetadata(ctx context.Context, reqBody map[string]any, account *Account) bool {
 	if account == nil {
 		return false
 	}
-	deviceID := strings.TrimSpace(account.GetOpenAIDeviceID())
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	profile, err := LoadOutboundDeviceProfile(ctx, account)
+	if err != nil || profile == nil {
+		return false
+	}
+	deviceID := strings.TrimSpace(profile.InstallationID)
 	if deviceID == "" {
 		return false
 	}

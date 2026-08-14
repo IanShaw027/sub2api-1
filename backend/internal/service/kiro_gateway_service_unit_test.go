@@ -966,6 +966,10 @@ func TestKiroBuildRequestAndUpstream_LoadsDeviceProfileOnce(t *testing.T) {
 }
 
 func TestLoadOutboundDeviceProfile_UnconfiguredWithoutPerTestInstall(t *testing.T) {
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(nil)
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
 	p, err := LoadOutboundDeviceProfile(context.Background(), &Account{ID: 99, Platform: PlatformAnthropic})
 	require.Error(t, err)
 	require.Nil(t, p)

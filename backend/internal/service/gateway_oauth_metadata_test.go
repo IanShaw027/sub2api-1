@@ -3,6 +3,7 @@
 package service
 
 import (
+	"context"
 	"regexp"
 	"testing"
 
@@ -30,7 +31,7 @@ func TestBuildOAuthMetadataUserID_FallbackWithoutAccountUUID(t *testing.T) {
 
 	fp := &Fingerprint{ClientID: "deadbeef"}
 
-	got := svc.buildOAuthMetadataUserID(parsed, account, fp)
+	got := svc.buildOAuthMetadataUserID(context.Background(), parsed, account, fp)
 	require.Empty(t, got, "load failure must fail closed and not mint a device id")
 }
 
@@ -58,7 +59,7 @@ func TestBuildOAuthMetadataUserID_UsesAccountUUIDWhenPresent(t *testing.T) {
 		},
 	}
 
-	got := svc.buildOAuthMetadataUserID(parsed, account, nil)
+	got := svc.buildOAuthMetadataUserID(context.Background(), parsed, account, nil)
 	require.NotEmpty(t, got)
 	require.NotContains(t, got, "acc-uuid")
 	require.Contains(t, got, testGatewayAccountUUID)
@@ -100,9 +101,9 @@ func TestBuildOAuthMetadataUserID_SessionIDStableAcrossTurns(t *testing.T) {
 		`{"role":"assistant","content":"answer 2"},` +
 		`{"role":"user","content":"third question"}]}`)
 
-	id1 := svc.buildOAuthMetadataUserID(round1, account, fp)
-	id2 := svc.buildOAuthMetadataUserID(round2, account, fp)
-	id3 := svc.buildOAuthMetadataUserID(round3, account, fp)
+	id1 := svc.buildOAuthMetadataUserID(context.Background(), round1, account, fp)
+	id2 := svc.buildOAuthMetadataUserID(context.Background(), round2, account, fp)
+	id3 := svc.buildOAuthMetadataUserID(context.Background(), round3, account, fp)
 
 	require.NotEmpty(t, id1)
 	require.Equal(t, id1, id2, "session_id 应随对话增长保持不变")
@@ -111,6 +112,6 @@ func TestBuildOAuthMetadataUserID_SessionIDStableAcrossTurns(t *testing.T) {
 	// 不同的首条 user 消息应派生出不同的 session_id（不同会话）。
 	other := mustParse(`{"model":"claude-sonnet-4-5","system":"sys","messages":[` +
 		`{"role":"user","content":"a completely different opener"}]}`)
-	idOther := svc.buildOAuthMetadataUserID(other, account, fp)
+	idOther := svc.buildOAuthMetadataUserID(context.Background(), other, account, fp)
 	require.NotEqual(t, id1, idOther, "不同首条消息应派生不同 session_id")
 }

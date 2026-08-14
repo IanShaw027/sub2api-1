@@ -316,7 +316,7 @@ func TestBuildOAuthMetadataUserID_UsesProfileGatewayUUID(t *testing.T) {
 	parsed := &ParsedRequest{Model: "claude-sonnet-4-6"}
 	fp := &Fingerprint{ClientID: testFingerprintClientID, UserAgent: testFingerprintUserAgent}
 
-	got := svc.buildOAuthMetadataUserID(parsed, account, fp)
+	got := svc.buildOAuthMetadataUserID(context.Background(), parsed, account, fp)
 	require.NotEmpty(t, got)
 	require.NotContains(t, got, testExtraAccountUUID)
 	require.Contains(t, got, testGatewayAccountUUID)
@@ -333,7 +333,7 @@ func TestBuildOAuthMetadataUserID_LoadFailureDoesNotUseExtraUUID(t *testing.T) {
 	parsed := &ParsedRequest{Model: "claude-sonnet-4-6"}
 	fp := &Fingerprint{ClientID: testFingerprintClientID, UserAgent: testFingerprintUserAgent}
 
-	got := svc.buildOAuthMetadataUserID(parsed, account, fp)
+	got := svc.buildOAuthMetadataUserID(context.Background(), parsed, account, fp)
 	require.Empty(t, got)
 	require.NotContains(t, got, testExtraAccountUUID)
 }

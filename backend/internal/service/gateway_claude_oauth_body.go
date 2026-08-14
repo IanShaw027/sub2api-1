@@ -323,14 +323,6 @@ func normalizeClaudeOAuthRequestBody(body []byte, modelID string, opts claudeOAu
 	return out, modelID
 }
 
-func outboundProfileUserAgent(profile *AccountDeviceProfile) string {
-	if profile == nil || profile.ProfilePayload == nil {
-		return ""
-	}
-	ua, _ := profile.ProfilePayload["user_agent"].(string)
-	return strings.TrimSpace(ua)
-}
-
 func outboundProfilePayloadString(profile *AccountDeviceProfile, key string) string {
 	if profile == nil || profile.ProfilePayload == nil {
 		return ""
@@ -462,7 +454,7 @@ func (s *GatewayService) buildAnthropicMetadataUserIDFromProfile(ctx context.Con
 	return FormatMetadataUserID(deviceID, accountUUID, generateSessionUUID(sessionSeed), ExtractCLIVersion(outboundProfileUserAgent(profile)))
 }
 
-func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account *Account, fp *Fingerprint) string {
+func (s *GatewayService) buildOAuthMetadataUserID(ctx context.Context, parsed *ParsedRequest, account *Account, fp *Fingerprint) string {
 	if parsed == nil || account == nil {
 		return ""
 	}
@@ -479,9 +471,12 @@ func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account
 		firstUserText = extractFirstUserText(parsed.Body.Bytes())
 	}
 	seed := buildStableSessionSeed(account.ID, sessionContextDiscriminator(parsed.SessionContext), firstUserText)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	loadCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	return s.buildAnthropicMetadataUserIDFromProfile(ctx, account, seed)
+	return s.buildAnthropicMetadataUserIDFromProfile(loadCtx, account, seed)
 }
 
 // applyClaudeCodeOAuthMimicryToBody 将"非 Claude Code 客户端 + Claude OAuth 账号"
