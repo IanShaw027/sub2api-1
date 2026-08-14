@@ -42,12 +42,11 @@ func (s *KiroGatewayService) resolveTLSFingerprintRuntime(
 	return resolveAccountTLSFingerprintRuntime(ctx, account, s.tlsFPProfileSvc, s.tlsFPRouterSvc, inboundUserAgentFromGin(c), "http", "kiro")
 }
 
-func (s *KiroGatewayService) doKiroUpstream(ctx context.Context, c *gin.Context, account *Account, req *http.Request) (*http.Response, error) {
+func (s *KiroGatewayService) doKiroUpstream(ctx context.Context, c *gin.Context, account *Account, req *http.Request, deviceProfile *AccountDeviceProfile) (*http.Response, error) {
 	if s == nil || s.httpUpstream == nil || account == nil {
 		return nil, fmt.Errorf("kiro upstream is not configured")
 	}
 	runtime := s.resolveTLSFingerprintRuntime(ctx, c, account)
-	deviceProfile, _ := LoadOutboundDeviceProfile(ctx, account)
 	applyKiroTLSFingerprintRuntimeWithProfile(req, runtime, deviceProfile)
 	profile := runtime.Profile
 	if profile == nil {
@@ -65,10 +64,10 @@ func applyKiroTLSFingerprintRuntimeWithProfile(req *http.Request, runtime accoun
 		return
 	}
 	ua := strings.TrimSpace(runtime.UpstreamUserAgent)
-	if profileUA := kiroProfilePayloadString(profile, "user_agent"); profileUA != "" {
-		ua = profileUA
-	}
 	if ua != "" {
+		if profileUA := kiroProfilePayloadString(profile, "user_agent"); profileUA != "" {
+			ua = profileUA
+		}
 		req.Header.Set("User-Agent", ua)
 	}
 	if originator := strings.TrimSpace(runtime.UpstreamOriginator); originator != "" {

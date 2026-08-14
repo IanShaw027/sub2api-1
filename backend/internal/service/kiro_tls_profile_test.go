@@ -40,3 +40,17 @@ func TestApplyKiroTLSFingerprintRuntime_PrefersProfileUserAgent(t *testing.T) {
 	require.Equal(t, "profile-kiro-ua/1.0.0", req.Header.Get("User-Agent"))
 	require.Equal(t, "kiro-ide", getHeaderRaw(req.Header, "originator"))
 }
+
+func TestApplyKiroTLSFingerprintRuntime_KeepsCodeWhispererUAWhenTLSDoesNotStamp(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, "https://example.test", nil)
+	require.NoError(t, err)
+	req.Header.Set("User-Agent", "aws-sdk-js/1.0.0 kiro/2.5.0")
+
+	applyKiroTLSFingerprintRuntimeWithProfile(req, accountTLSFingerprintRuntime{}, &AccountDeviceProfile{
+		ProfilePayload: map[string]any{
+			"user_agent": "profile-kiro-ua/1.0.0",
+		},
+	})
+
+	require.Equal(t, "aws-sdk-js/1.0.0 kiro/2.5.0", req.Header.Get("User-Agent"))
+}
