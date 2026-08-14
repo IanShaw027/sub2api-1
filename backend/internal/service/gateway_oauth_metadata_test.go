@@ -1,3 +1,5 @@
+//go:build unit
+
 package service
 
 import (
@@ -8,6 +10,10 @@ import (
 )
 
 func TestBuildOAuthMetadataUserID_FallbackWithoutAccountUUID(t *testing.T) {
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(nil)
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
 	svc := &GatewayService{}
 
 	parsed := &ParsedRequest{
@@ -22,17 +28,18 @@ func TestBuildOAuthMetadataUserID_FallbackWithoutAccountUUID(t *testing.T) {
 		Extra: map[string]any{}, // intentionally missing account_uuid / claude_user_id
 	}
 
-	fp := &Fingerprint{ClientID: "deadbeef"} // should be used as user id in legacy format
+	fp := &Fingerprint{ClientID: "deadbeef"}
 
 	got := svc.buildOAuthMetadataUserID(parsed, account, fp)
-	require.NotEmpty(t, got)
-
-	// Legacy format: user_{client}_account__session_{uuid}
-	re := regexp.MustCompile(`^user_[a-zA-Z0-9]+_account__session_[a-f0-9-]{36}$`)
-	require.True(t, re.MatchString(got), "unexpected user_id format: %s", got)
+	require.Empty(t, got, "load failure must fail closed and not mint a device id")
 }
 
 func TestBuildOAuthMetadataUserID_UsesAccountUUIDWhenPresent(t *testing.T) {
+	profile := testAnthropicDeviceProfile()
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(NewAccountDeviceService(&stubOutboundDeviceRepo{profile: profile}))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
 	svc := &GatewayService{}
 
 	parsed := &ParsedRequest{
@@ -53,9 +60,10 @@ func TestBuildOAuthMetadataUserID_UsesAccountUUIDWhenPresent(t *testing.T) {
 
 	got := svc.buildOAuthMetadataUserID(parsed, account, nil)
 	require.NotEmpty(t, got)
-
-	// New format: user_{client}_account_{account_uuid}_session_{uuid}
-	re := regexp.MustCompile(`^user_clientid123_account_acc-uuid_session_[a-f0-9-]{36}$`)
+	require.NotContains(t, got, "acc-uuid")
+	require.Contains(t, got, testGatewayAccountUUID)
+	require.Contains(t, got, profile.DeviceID)
+	re := regexp.MustCompile(`^user_` + regexp.QuoteMeta(profile.DeviceID) + `_account_` + regexp.QuoteMeta(testGatewayAccountUUID) + `_session_[a-f0-9-]{36}$`)
 	require.True(t, re.MatchString(got), "unexpected user_id format: %s", got)
 }
 
@@ -64,6 +72,11 @@ func TestBuildOAuthMetadataUserID_UsesAccountUUIDWhenPresent(t *testing.T) {
 // 进程级稳定的 session。账号 / 指纹 / UA 版本均相同，唯一可能变化的就是 session_id，
 // 因此直接比较完整 user_id 字符串即可判定 session_id 是否稳定。
 func TestBuildOAuthMetadataUserID_SessionIDStableAcrossTurns(t *testing.T) {
+	profile := testAnthropicDeviceProfile()
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(NewAccountDeviceService(&stubOutboundDeviceRepo{profile: profile}))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
 	svc := &GatewayService{}
 	account := &Account{ID: 777, Type: AccountTypeOAuth, Extra: map[string]any{"account_uuid": "acc-uuid"}}
 	fp := &Fingerprint{ClientID: "clientid777", UserAgent: "claude-cli/2.1.161 (external, cli)"}
