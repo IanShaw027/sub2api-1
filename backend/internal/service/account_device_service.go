@@ -36,7 +36,13 @@ func (s *AccountDeviceService) GetOrCreate(ctx context.Context, account *Account
 		return nil, fmt.Errorf("identity_reject: account is required")
 	}
 	if account.IsShadow() {
-		return nil, fmt.Errorf("shadow account %d cannot create a device profile", account.ID)
+		if *account.ParentAccountID == account.ID {
+			return nil, fmt.Errorf("identity_reject: shadow account %d parent cycle", account.ID)
+		}
+		parent := *account
+		parent.ID = *account.ParentAccountID
+		parent.ParentAccountID = nil
+		return s.GetOrCreate(ctx, &parent)
 	}
 
 	existing, err := s.repo.GetByAccountID(ctx, account.ID)
