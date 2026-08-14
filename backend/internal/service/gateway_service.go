@@ -1010,6 +1010,9 @@ func (s *GatewayService) BindStickySessionAfterProfitAdmission(ctx context.Conte
 	if sessionHash == "" || accountID <= 0 || s.cache == nil {
 		return nil
 	}
+	if PreserveStickyBindingFromContext(ctx) {
+		return nil
+	}
 	if !gatewayProfitControlGateActive(ctx) {
 		return s.BindStickySession(ctx, groupID, sessionHash, accountID)
 	}

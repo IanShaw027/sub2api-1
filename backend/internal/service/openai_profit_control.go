@@ -361,6 +361,9 @@ func (s *OpenAIGatewayService) BindStickySessionAfterProfitAdmission(ctx context
 	if sessionHash == "" || accountID <= 0 {
 		return nil
 	}
+	if PreserveStickyBindingFromContext(ctx) {
+		return nil
+	}
 	if !gatewayProfitControlGateActive(ctx) {
 		return s.BindStickySession(ctx, groupID, sessionHash, accountID)
 	}

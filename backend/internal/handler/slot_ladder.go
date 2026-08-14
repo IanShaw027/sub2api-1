@@ -196,6 +196,16 @@ func runAccountSlotLadder(
 	if account == nil {
 		return SlotAcquireResult{Decision: SlotInfrastructureError, Err: fmt.Errorf("account is unavailable")}
 	}
+	return helper.AcquireAccountSlotLadder(c, accountSlotLadderParams(c, account, waitPlan, isStream, streamStarted))
+}
+
+func accountSlotLadderParams(
+	c *gin.Context,
+	account *service.Account,
+	waitPlan *service.AccountWaitPlan,
+	isStream bool,
+	streamStarted *bool,
+) AccountSlotLadderParams {
 	params := AccountSlotLadderParams{
 		AccountID:     account.ID,
 		NormalLimit:   account.EffectiveConcurrency(),
@@ -204,20 +214,29 @@ func runAccountSlotLadder(
 		MaxWaiting:    slotLadderMaxWaiting(3, account),
 		IsStream:      isStream,
 		StreamStarted: streamStarted,
-		ImmediateOnly: service.PreserveStickyBindingFromContext(c.Request.Context()),
+	}
+	if c != nil && c.Request != nil {
+		params.ImmediateOnly = service.PreserveStickyBindingFromContext(c.Request.Context())
 	}
 	if waitPlan != nil {
 		if waitPlan.MaxConcurrency > 0 {
 			params.NormalLimit = waitPlan.MaxConcurrency
 		}
 		if waitPlan.Timeout > 0 {
-			params.Timeout = waitPlan.Timeout
+			params.Timeout = clampLadderWaitTimeout(waitPlan.Timeout)
 		}
 		if waitPlan.MaxWaiting > 0 {
 			params.MaxWaiting = waitPlan.MaxWaiting
 		}
 	}
-	return helper.AcquireAccountSlotLadder(c, params)
+	return params
+}
+
+func clampLadderWaitTimeout(timeout time.Duration) time.Duration {
+	if timeout <= 0 || timeout > maxConcurrencyWait {
+		return maxConcurrencyWait
+	}
+	return timeout
 }
 
 func slotLadderMaxWaiting(configured int, account *service.Account) int {

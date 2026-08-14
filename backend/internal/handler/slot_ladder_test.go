@@ -3,12 +3,14 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 func slotLadderBoolPtr(v bool) *bool { return &v }
@@ -233,4 +235,145 @@ func TestFailoverState_RecordConcurrencyTimeout(t *testing.T) {
 	require.Equal(t, FailoverExhausted, fs.RecordConcurrencyTimeout(8))
 	_, ok = fs.FailedAccountIDs[8]
 	require.True(t, ok)
+}
+
+func TestSlotLadder_WaitPlanTimeoutClampedTo30s(t *testing.T) {
+	require.Equal(t, 30*time.Second, clampLadderWaitTimeout(45*time.Second), "45s sticky default must two-shot at 30s")
+	require.Equal(t, 30*time.Second, clampLadderWaitTimeout(120*time.Second), "120s StickySessionWaitTimeout must two-shot at 30s")
+	require.Equal(t, 10*time.Second, clampLadderWaitTimeout(10*time.Second), "shorter plans must be kept")
+	require.Equal(t, 30*time.Second, clampLadderWaitTimeout(0))
+
+	acc := &service.Account{ID: 1, Concurrency: 12}
+	c, _ := newHelperTestContext(http.MethodPost, "/v1/messages")
+	started := false
+	params := accountSlotLadderParams(c, acc, &service.AccountWaitPlan{
+		Timeout:        45 * time.Second,
+		MaxWaiting:     3,
+		MaxConcurrency: 12,
+	}, false, &started)
+	require.Equal(t, 30*time.Second, params.Timeout)
+
+	params = accountSlotLadderParams(c, acc, &service.AccountWaitPlan{Timeout: 120 * time.Second}, false, &started)
+	require.Equal(t, 30*time.Second, params.Timeout)
+}
+
+func TestAcquireResponsesAccountSlot_PostSwitchAdmissionBindPreservesOriginal(t *testing.T) {
+	const sessionHash = "sess"
+	cache := &handlerStickyCache{bindings: map[string]int64{"openai:" + sessionHash: 11}}
+	svc := newOpenAIGatewayServiceForHandlerTest(cache)
+	helper := newSlotLadderHelper(&helperConcurrencyCacheStub{accountSeq: []bool{true}})
+	h := &OpenAIGatewayHandler{gatewayService: svc, concurrencyHelper: helper}
+
+	c, _ := newHelperTestContext(http.MethodPost, "/v1/responses")
+	c.Request = c.Request.WithContext(service.WithPreserveStickyBinding(c.Request.Context()))
+	streamStarted := false
+	groupID := int64(1)
+	selection := &service.AccountSelectionResult{
+		Account: &service.Account{
+			ID:          22,
+			Platform:    service.PlatformOpenAI,
+			Type:        service.AccountTypeAPIKey,
+			Concurrency: 12,
+			Status:      service.StatusActive,
+			Schedulable: true,
+		},
+		Acquired: false,
+	}
+
+	release, status := h.acquireResponsesAccountSlot(c, &groupID, sessionHash, selection, false, &streamStarted, zap.NewNop())
+	require.Equal(t, openAISlotAcquireOK, status)
+	require.NotNil(t, release)
+	release()
+	require.Equal(t, int64(11), cache.bindings["openai:"+sessionHash], "switch → immediate acquire → admission-bind must keep the original sticky account")
+}
+
+func TestAcquireWebSearchAccountSlot_SwitchSetsPreserveAndImmediateNOnly(t *testing.T) {
+	cache := &helperConcurrencyCacheStub{
+		accountSeq:         []bool{false},
+		accountWaitAllowed: slotLadderBoolPtr(false),
+	}
+	h := &GatewayHandler{concurrencyHelper: newSlotLadderHelper(cache)}
+	c, _ := newHelperTestContext(http.MethodPost, "/v1/ws/search")
+	selected := &service.AccountSelectionResult{
+		Account: &service.Account{ID: 101, Concurrency: 12},
+		WaitPlan: &service.AccountWaitPlan{
+			AccountID:      101,
+			MaxConcurrency: 12,
+			Timeout:        40 * time.Millisecond,
+			MaxWaiting:     4,
+		},
+	}
+
+	release, ok, err := h.acquireWebSearchAccountSlot(c, selected)
+	require.False(t, ok)
+	require.Nil(t, release)
+	require.NoError(t, err)
+	require.True(t, service.PreserveStickyBindingFromContext(c.Request.Context()), "web-search switch must set Preserve")
+
+	post := &helperConcurrencyCacheStub{accountSeq: []bool{false}}
+	h.concurrencyHelper = newSlotLadderHelper(post)
+	next := &service.AccountSelectionResult{
+		Account: &service.Account{ID: 202, Concurrency: 12},
+		WaitPlan: &service.AccountWaitPlan{
+			AccountID:      202,
+			MaxConcurrency: 12,
+			Timeout:        30 * time.Second,
+			MaxWaiting:     4,
+		},
+	}
+	started := time.Now()
+	_, ok, _ = h.acquireWebSearchAccountSlot(c, next)
+	require.False(t, ok)
+	require.Less(t, time.Since(started), 500*time.Millisecond, "post-switch web-search must not wait")
+	require.Equal(t, []int{12}, post.accountAcquireMaxes)
+	require.Equal(t, 0, post.accountWaitCalls)
+}
+
+func newOpenAIGatewayServiceForHandlerTest(cache service.GatewayCache) *service.OpenAIGatewayService {
+	return service.NewOpenAIGatewayService(
+		nil, nil, nil, nil, nil, nil,
+		cache,
+		nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+	)
+}
+
+type handlerStickyCache struct {
+	bindings map[string]int64
+}
+
+func (c *handlerStickyCache) GetSessionAccountID(_ context.Context, _ int64, sessionHash string) (int64, error) {
+	if id, ok := c.bindings[sessionHash]; ok {
+		return id, nil
+	}
+	return 0, service.ErrStickySessionNotFound
+}
+
+func (c *handlerStickyCache) SetSessionAccountID(_ context.Context, _ int64, sessionHash string, accountID int64, _ time.Duration) error {
+	if c.bindings == nil {
+		c.bindings = make(map[string]int64)
+	}
+	c.bindings[sessionHash] = accountID
+	return nil
+}
+
+func (c *handlerStickyCache) RefreshSessionTTL(context.Context, int64, string, time.Duration) error {
+	return nil
+}
+
+func (c *handlerStickyCache) DeleteSessionAccountID(_ context.Context, _ int64, sessionHash string) error {
+	delete(c.bindings, sessionHash)
+	return nil
+}
+
+func (c *handlerStickyCache) SetGrokVideoPendingBilling(context.Context, string, []byte, time.Duration) error {
+	return nil
+}
+func (c *handlerStickyCache) GetGrokVideoPendingBilling(context.Context, string) ([]byte, error) {
+	return nil, nil
+}
+func (c *handlerStickyCache) ClaimGrokVideoBilled(context.Context, string, time.Duration) (bool, error) {
+	return true, nil
+}
+func (c *handlerStickyCache) ReleaseGrokVideoBilled(context.Context, string) error {
+	return nil
 }

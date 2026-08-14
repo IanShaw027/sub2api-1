@@ -292,6 +292,9 @@ func (h *GatewayHandler) acquireWebSearchAccountSlot(
 	case SlotAcquiredNormal, SlotAcquiredBurst:
 		return slot.ReleaseFunc, true, nil
 	case SlotSwitchAccountPreserveBinding:
+		if c != nil && c.Request != nil {
+			c.Request = c.Request.WithContext(service.WithPreserveStickyBinding(c.Request.Context()))
+		}
 		return nil, false, nil
 	default:
 		return nil, false, slot.Err

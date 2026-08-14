@@ -44,34 +44,12 @@ func (h *OpenAIGatewayHandler) GrokRealtime(c *gin.Context) {
 		return
 	}
 
-	selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
-		c.Request.Context(),
-		apiKey.GroupID,
-		"",
-		"",
-		"grok-4.5",
-		nil,
-		service.OpenAIUpstreamTransportHTTPSSE,
-		// Grok only advertises chat_completions + media capabilities on HEAD.
-		service.OpenAIEndpointCapabilityChatCompletions,
-		false,
-		false,
-		false,
-		service.PlatformGrok,
-	)
-	if err != nil || selection == nil || selection.Account == nil {
-		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No available Grok accounts")
-		return
-	}
-
-	var streamStarted bool
 	reqLog := requestLogger(c, "handler.openai_gateway.grok_realtime")
-	release, slotStatus := h.acquireResponsesAccountSlot(c, apiKey.GroupID, "", selection, true, &streamStarted, reqLog)
-	if slotStatus == openAISlotAcquireSwitchAccount {
-		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", streamStarted)
-		return
-	}
+	selection, release, slotStatus := h.selectAndAcquireGrokRealtimeAccount(c, apiKey.GroupID, reqLog)
 	if slotStatus != openAISlotAcquireOK {
+		if !c.Writer.Written() {
+			h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "No available Grok accounts")
+		}
 		return
 	}
 	defer release()
@@ -105,6 +83,64 @@ func (h *OpenAIGatewayHandler) GrokRealtime(c *gin.Context) {
 	if result := grokRealtimeBillingResult(model, elapsed, audioObserved); result != nil {
 		h.recordGrokVoiceUsage(c, apiKey, selection.Account, subscription, "realtime", nil, result)
 	}
+}
+
+func (h *OpenAIGatewayHandler) selectAndAcquireGrokRealtimeAccount(
+	c *gin.Context,
+	groupID *int64,
+	reqLog *zap.Logger,
+) (*service.AccountSelectionResult, func(), openAISlotAcquireResult) {
+	return runOpenAISlotSwitchSelection(c, 4, func(failed map[int64]struct{}) (*service.AccountSelectionResult, func(), openAISlotAcquireResult) {
+		selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
+			c.Request.Context(),
+			groupID,
+			"",
+			"",
+			"grok-4.5",
+			failed,
+			service.OpenAIUpstreamTransportHTTPSSE,
+			service.OpenAIEndpointCapabilityChatCompletions,
+			false,
+			false,
+			false,
+			service.PlatformGrok,
+		)
+		if err != nil || selection == nil || selection.Account == nil {
+			return nil, nil, openAISlotAcquireFailed
+		}
+		var streamStarted bool
+		release, slotStatus := h.acquireResponsesAccountSlot(c, groupID, "", selection, true, &streamStarted, reqLog)
+		return selection, release, slotStatus
+	})
+}
+
+func runOpenAISlotSwitchSelection(
+	c *gin.Context,
+	maxAttempts int,
+	try func(failed map[int64]struct{}) (*service.AccountSelectionResult, func(), openAISlotAcquireResult),
+) (*service.AccountSelectionResult, func(), openAISlotAcquireResult) {
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
+	failed := map[int64]struct{}{}
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		selection, release, status := try(failed)
+		switch status {
+		case openAISlotAcquireSwitchAccount:
+			if selection != nil && selection.Account != nil {
+				continueOpenAISlotSwitch(c, failed, selection.Account.ID)
+			}
+			continue
+		case openAISlotAcquireProfitVetoed:
+			if selection != nil && selection.Account != nil {
+				failed[selection.Account.ID] = struct{}{}
+			}
+			continue
+		default:
+			return selection, release, status
+		}
+	}
+	return nil, nil, openAISlotAcquireFailed
 }
 
 func grokRealtimeBillingResult(model string, elapsed time.Duration, audioObserved bool) *service.OpenAIForwardResult {
