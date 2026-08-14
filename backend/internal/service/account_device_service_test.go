@@ -601,3 +601,127 @@ func TestLearnIfOfficialConcurrentSameAccountDoesNotCorrupt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, n)
 }
+
+func TestLearnIfOfficialPreservesPinnedOSArchPayload(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+
+	pinned := oldClaudePayload()
+	pinned["stainless_os"] = "Darwin"
+	pinned["stainless_arch"] = "x64"
+	n, err := client.AccountDeviceProfile.Update().
+		Where(accountdeviceprofile.AccountID(account.ID)).
+		SetClientVersion("0.1.0").
+		SetRuntimeVersion("v18.0.0").
+		SetProfilePayload(pinned).
+		SetLearningEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	got, err := svc.LearnIfOfficial(ctx, account, officialClaudeInbound())
+	require.NoError(t, err)
+	require.NoError(t, service.ValidateAccountDeviceProfile(got))
+	require.Equal(t, 1, repo.casWriteCount(account.ID))
+	require.Equal(t, claude.CLICurrentVersion, got.ClientVersion)
+	require.Equal(t, "Darwin", got.ProfilePayload["stainless_os"])
+	require.Equal(t, "x64", got.ProfilePayload["stainless_arch"])
+	require.Equal(t, created.OSFamily, got.OSFamily)
+	require.Equal(t, created.Arch, got.Arch)
+	require.NotEqual(t, claude.DefaultHeaders["X-Stainless-OS"], got.ProfilePayload["stainless_os"])
+	require.NotEqual(t, claude.DefaultHeaders["X-Stainless-Arch"], got.ProfilePayload["stainless_arch"])
+}
+
+func TestLearnIfOfficialUnprovenGeminiUADoesNotWrite(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformGemini, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	n, err := client.AccountDeviceProfile.Update().
+		Where(accountdeviceprofile.AccountID(account.ID)).
+		SetClientVersion("0.1.0").
+		SetLearningEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	bundle, ok := service.NewSoftwareBundleRegistry().Lookup(
+		service.PlatformGemini,
+		service.ClientFamilyGeminiCLI,
+		created.ClientVersion,
+	)
+	require.True(t, ok)
+
+	got, err := svc.LearnIfOfficial(ctx, account, service.OfficialInbound{
+		UserAgent:     "curl/8.0 (gemini)",
+		ClientVersion: bundle.ClientVersion,
+	})
+	require.NoError(t, err)
+	require.Equal(t, created.DeviceID, got.DeviceID)
+	require.Equal(t, "0.1.0", got.ClientVersion)
+	require.Equal(t, service.LearnedFromBaseline, got.LearnedFrom)
+	require.Zero(t, repo.casWriteCount(account.ID))
+}
+
+func TestLearnIfOfficialClaudeSupersetStainlessStillLearns(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	seedOldClaudeSoftware(t, client, account.ID, true)
+
+	inbound := officialClaudeInbound()
+	inbound.Payload["stainless_retry_count"] = "0"
+	inbound.Payload["stainless_timeout"] = "600"
+
+	got, err := svc.LearnIfOfficial(ctx, account, inbound)
+	require.NoError(t, err)
+	require.NoError(t, service.ValidateAccountDeviceProfile(got))
+	require.Equal(t, 1, repo.casWriteCount(account.ID))
+	require.Equal(t, claude.CLICurrentVersion, got.ClientVersion)
+	require.Equal(t, service.LearnedFromOfficial, got.LearnedFrom)
+	require.Equal(t, created.DeviceID, got.DeviceID)
+}
+
+func TestLearnIfOfficialRuntimeFamilyChangeDoesNotWrite(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	n, err := client.AccountDeviceProfile.Update().
+		Where(accountdeviceprofile.AccountID(account.ID)).
+		SetClientVersion("0.1.0").
+		SetRuntime("bun").
+		SetRuntimeVersion("v18.0.0").
+		SetProfilePayload(oldClaudePayload()).
+		SetLearningEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	got, err := svc.LearnIfOfficial(ctx, account, officialClaudeInbound())
+	require.NoError(t, err)
+	require.Equal(t, created.DeviceID, got.DeviceID)
+	require.Equal(t, "0.1.0", got.ClientVersion)
+	require.Equal(t, "bun", got.Runtime)
+	require.Equal(t, service.LearnedFromBaseline, got.LearnedFrom)
+	require.Zero(t, repo.casWriteCount(account.ID))
+}

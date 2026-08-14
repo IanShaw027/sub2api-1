@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,14 @@ type AccountDeviceService struct {
 
 // OfficialInbound is an inbound official-client observation used to decide
 // whether LearnIfOfficial may CAS-upgrade software fields.
+//
+// Expected Claude inbound Payload keys (mapped from X-Stainless-* headers):
+// stainless_lang, stainless_package_version, stainless_os, stainless_arch,
+// stainless_runtime, stainless_runtime_version. Learn requires every registry
+// stainless_* key to be present with an equal value. Extra inbound stainless_*
+// keys such as stainless_retry_count and stainless_timeout do not block learn.
+// Runtime and RuntimeVersion are reserved/gate-only; written software values
+// come from the registry bundle, not from inbound.
 type OfficialInbound struct {
 	UserAgent      string
 	Originator     string
@@ -40,6 +49,25 @@ type OfficialInbound struct {
 	RuntimeVersion string
 	Payload        map[string]any
 }
+
+var (
+	grokOfficialUAPattern        = regexp.MustCompile(`(?i)^xai-grok-workspace/\d+\.\d+\.\d+`)
+	geminiOfficialUAPattern      = regexp.MustCompile(`(?i)^GeminiCLI/\d+\.\d+\.\d+`)
+	antigravityOfficialUAPattern = regexp.MustCompile(`(?i)^antigravity/\d+\.\d+\.\d+`)
+	overlaySoftwarePayloadKeySet = map[string]struct{}{
+		"user_agent":                {},
+		"originator":                {},
+		"stainless_lang":            {},
+		"stainless_package_version": {},
+		"stainless_runtime":         {},
+		"stainless_runtime_version": {},
+		"grok_token_auth":           {},
+		"grok_identifier":           {},
+		"kiro_system_version":       {},
+		"kiro_node_version":         {},
+		"kiro_commit":               {},
+	}
+)
 
 func NewAccountDeviceService(repo AccountDeviceProfileRepository) *AccountDeviceService {
 	return &AccountDeviceService{
@@ -132,6 +160,9 @@ func (s *AccountDeviceService) LearnIfOfficial(ctx context.Context, account *Acc
 		slog.Warn("identity_reject", "reason", "ua_changed_without_stainless", "account_id", profile.AccountID)
 		return profile, nil
 	}
+	if bundle.Runtime != "" && bundle.Runtime != profile.Runtime {
+		return profile, nil
+	}
 
 	next := applyOfficialSoftwareBundle(profile, bundle)
 	if err := ValidateAccountDeviceProfile(next); err != nil {
@@ -213,16 +244,14 @@ func isOfficialInbound(platform string, inbound OfficialInbound) bool {
 }
 
 func inboundMatchesOfficialFamily(family, userAgent string) bool {
-	ua := strings.ToLower(userAgent)
+	ua := strings.TrimSpace(userAgent)
 	switch family {
 	case ClientFamilyGrokCLI:
-		return strings.Contains(ua, "grok")
+		return grokOfficialUAPattern.MatchString(ua)
 	case ClientFamilyGeminiCLI:
-		return strings.Contains(ua, "gemini")
-	case ClientFamilyKiroIDE:
-		return strings.Contains(ua, "kiro")
+		return geminiOfficialUAPattern.MatchString(ua)
 	case ClientFamilyAntigravity:
-		return strings.Contains(ua, "antigravity")
+		return antigravityOfficialUAPattern.MatchString(ua)
 	default:
 		return false
 	}
@@ -246,9 +275,6 @@ func stainlessMatchesRegistry(inbound, registry map[string]any) bool {
 		return true
 	}
 	got := stainlessFields(inbound)
-	if len(got) != len(want) {
-		return false
-	}
 	for key, value := range want {
 		if got[key] != value {
 			return false
@@ -273,9 +299,6 @@ func stainlessFields(payload map[string]any) map[string]string {
 func applyOfficialSoftwareBundle(profile *AccountDeviceProfile, bundle SoftwareBundle) *AccountDeviceProfile {
 	next := *profile
 	next.ClientVersion = bundle.ClientVersion
-	if bundle.Runtime != "" {
-		next.Runtime = bundle.Runtime
-	}
 	if bundle.RuntimeVersion != "" {
 		next.RuntimeVersion = bundle.RuntimeVersion
 	}
@@ -292,6 +315,9 @@ func overlaySoftwarePayload(existing map[string]any, bundle SoftwareBundle) map[
 		out[key] = value
 	}
 	for key, value := range bundle.Payload {
+		if !isOverlaySoftwareKey(key) {
+			continue
+		}
 		out[key] = value
 	}
 	if bundle.UserAgent != "" {
@@ -301,6 +327,11 @@ func overlaySoftwarePayload(existing map[string]any, bundle SoftwareBundle) map[
 		out["originator"] = bundle.Originator
 	}
 	return out
+}
+
+func isOverlaySoftwareKey(key string) bool {
+	_, ok := overlaySoftwarePayloadKeySet[key]
+	return ok
 }
 
 func buildAccountDeviceBaseline(account *Account) (*AccountDeviceProfile, error) {
