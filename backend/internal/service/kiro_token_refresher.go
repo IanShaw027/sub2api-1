@@ -79,21 +79,24 @@ func (r *KiroTokenRefresher) NeedsRefresh(account *Account, refreshWindow time.D
 
 func (r *KiroTokenRefresher) Refresh(ctx context.Context, account *Account) (map[string]any, error) {
 	account = r.prepareAccount(ctx, account)
+	machineID, err := leftoverOutboundMachineID(ctx, account)
+	if err != nil {
+		return nil, err
+	}
 	var (
 		accessToken  string
 		refreshToken string
 		expiresAt    string
 		profileARN   string
-		err          error
 	)
 
 	switch authMethod := NormalizeKiroAuthMethod(account.Credentials); {
 	case KiroAuthMethodUsesIDCRefresh(authMethod):
-		accessToken, refreshToken, expiresAt, err = r.refreshKiroIDCToken(ctx, account)
+		accessToken, refreshToken, expiresAt, err = r.refreshKiroIDCToken(ctx, account, machineID)
 	case authMethod == "external_idp":
 		accessToken, refreshToken, expiresAt, err = r.refreshKiroExternalIDPToken(ctx, account)
 	default:
-		accessToken, refreshToken, expiresAt, profileARN, err = r.refreshKiroSocialToken(ctx, account)
+		accessToken, refreshToken, expiresAt, profileARN, err = r.refreshKiroSocialToken(ctx, account, machineID)
 	}
 	if err != nil {
 		return nil, err
@@ -104,14 +107,8 @@ func (r *KiroTokenRefresher) Refresh(ctx context.Context, account *Account) (map
 		"refresh_token": refreshToken,
 		"expires_at":    expiresAt,
 	}
-	if strings.TrimSpace(account.GetCredential("machine_id")) == "" {
-		machineID, midErr := leftoverOutboundMachineID(ctx, account)
-		if midErr != nil {
-			return nil, midErr
-		}
-		if machineID != "" {
-			newCreds["machine_id"] = machineID
-		}
+	if strings.TrimSpace(account.GetCredential("machine_id")) == "" && machineID != "" {
+		newCreds["machine_id"] = machineID
 	}
 	if profileARN != "" {
 		newCreds["profile_arn"] = profileARN
@@ -141,7 +138,7 @@ func (r *KiroTokenRefresher) prepareAccount(ctx context.Context, account *Accoun
 	return &cloned
 }
 
-func (r *KiroTokenRefresher) refreshKiroSocialToken(ctx context.Context, account *Account) (accessToken, refreshToken, expiresAt, profileARN string, err error) {
+func (r *KiroTokenRefresher) refreshKiroSocialToken(ctx context.Context, account *Account, machineID string) (accessToken, refreshToken, expiresAt, profileARN string, err error) {
 	refreshToken = strings.TrimSpace(account.GetCredential("refresh_token"))
 	if err = ValidateKiroRefreshTokenHealth(refreshToken); err != nil {
 		return "", "", "", "", err
@@ -152,7 +149,7 @@ func (r *KiroTokenRefresher) refreshKiroSocialToken(ctx context.Context, account
 	url := fmt.Sprintf("https://prod.%s.auth.desktop.kiro.dev/refreshToken", KiroAuthRegion(account))
 	host := fmt.Sprintf("prod.%s.auth.desktop.kiro.dev", KiroAuthRegion(account))
 	var out kiroRefreshResponse
-	if err = r.doKiroJSONRequest(ctx, account, url, host, payload, &out); err != nil {
+	if err = r.doKiroJSONRequest(ctx, account, url, host, payload, &out, machineID); err != nil {
 		return "", "", "", "", err
 	}
 	if err = validateKiroRefreshResponse(out); err != nil {
@@ -166,7 +163,7 @@ func (r *KiroTokenRefresher) refreshKiroSocialToken(ctx context.Context, account
 	return out.AccessToken, refreshToken, expiresAt, out.ProfileARN, nil
 }
 
-func (r *KiroTokenRefresher) refreshKiroIDCToken(ctx context.Context, account *Account) (accessToken, refreshToken, expiresAt string, err error) {
+func (r *KiroTokenRefresher) refreshKiroIDCToken(ctx context.Context, account *Account, machineID string) (accessToken, refreshToken, expiresAt string, err error) {
 	refreshToken = strings.TrimSpace(account.GetCredential("refresh_token"))
 	if err = ValidateKiroRefreshTokenHealth(refreshToken); err != nil {
 		return "", "", "", err
@@ -180,7 +177,7 @@ func (r *KiroTokenRefresher) refreshKiroIDCToken(ctx context.Context, account *A
 	url := fmt.Sprintf("https://oidc.%s.amazonaws.com/token", KiroAuthRegion(account))
 	host := fmt.Sprintf("oidc.%s.amazonaws.com", KiroAuthRegion(account))
 	var out kiroRefreshResponse
-	if err = r.doKiroJSONRequest(ctx, account, url, host, payload, &out); err != nil {
+	if err = r.doKiroJSONRequest(ctx, account, url, host, payload, &out, machineID); err != nil {
 		return "", "", "", fmt.Errorf("kiro idc refresh failed: %w", err)
 	}
 	if err = validateKiroRefreshResponse(out); err != nil {
@@ -278,7 +275,7 @@ func validateKiroRefreshResponse(out kiroRefreshResponse) error {
 	return nil
 }
 
-func (r *KiroTokenRefresher) doKiroJSONRequest(ctx context.Context, account *Account, url, host string, payload any, out any) error {
+func (r *KiroTokenRefresher) doKiroJSONRequest(ctx context.Context, account *Account, url, host string, payload any, out any, machineID string) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -288,19 +285,15 @@ func (r *KiroTokenRefresher) doKiroJSONRequest(ctx context.Context, account *Acc
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	return r.doKiroRequest(req, account, host, out)
+	return r.doKiroRequest(req, account, host, out, machineID)
 }
 
-func (r *KiroTokenRefresher) doKiroRequest(req *http.Request, account *Account, host string, out any) error {
+func (r *KiroTokenRefresher) doKiroRequest(req *http.Request, account *Account, host string, out any, machineID string) error {
 	runtimeSettings := DefaultKiroRuntimeSettings()
 	if r != nil && r.settingService != nil {
 		runtimeSettings = r.settingService.GetKiroRuntimeSettings(req.Context())
 	}
 	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
-	machineID, err := leftoverOutboundMachineID(req.Context(), account)
-	if err != nil {
-		return err
-	}
 	kiroVersion := runtimeSettings.KiroVersion
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("host", host)

@@ -123,7 +123,7 @@ func (s *GeminiMessagesCompatService) forwardClaudeBodyAsChatCompletions(
 		}
 		requestIDHeader = idHeader
 
-		resp, err = s.doAccountHTTP(ctx, account, upstreamReq, proxyURL, inboundUserAgentFromGin(c))
+		resp, err = s.doAccountHTTP(ctx, account, upstreamReq, proxyURL, leftoverOutboundTLSRoutingUA(upstreamReq))
 		if err != nil {
 			safeErr := sanitizeUpstreamErrorMessage(err.Error())
 			appendOpsUpstreamError(c, OpsUpstreamErrorEvent{

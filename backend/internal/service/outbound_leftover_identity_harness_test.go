@@ -1,3 +1,5 @@
+//go:build unit
+
 package service
 
 import (
@@ -23,7 +25,7 @@ func (r *leftoverSharedDeviceRepo) GetByAccountID(_ context.Context, accountID i
 	if p, ok := r.byID[accountID]; ok {
 		return p, nil
 	}
-	return leftoverDefaultProfile(accountID), nil
+	return nil, nil
 }
 
 func (r *leftoverSharedDeviceRepo) InsertBaseline(_ context.Context, p *AccountDeviceProfile) (*AccountDeviceProfile, error) {
@@ -102,18 +104,40 @@ func leftoverValidProfile(accountID int64, platform, family, ua, machineID strin
 	}
 }
 
-func leftoverDefaultProfile(accountID int64) *AccountDeviceProfile {
-	return leftoverValidProfile(accountID, PlatformKiro, ClientFamilyKiroIDE, "", fmt.Sprintf("default-machine-%d", accountID))
+type failAfterDeviceRepo struct {
+	leftoverSharedDeviceRepo
+	failAfter int
+	gets      int
+}
+
+func (r *failAfterDeviceRepo) GetByAccountID(ctx context.Context, accountID int64) (*AccountDeviceProfile, error) {
+	r.mu.Lock()
+	r.gets++
+	n := r.gets
+	r.mu.Unlock()
+	if r.failAfter > 0 && n > r.failAfter {
+		return nil, fmt.Errorf("identity_reject: second profile load failed")
+	}
+	return r.leftoverSharedDeviceRepo.GetByAccountID(ctx, accountID)
+}
+
+func ensureLeftoverOutboundProfileService(t *testing.T) {
+	t.Helper()
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(NewAccountDeviceService(leftoverSharedRepo))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
 }
 
 func installLeftoverOutboundProfile(t *testing.T, p *AccountDeviceProfile) {
 	t.Helper()
+	ensureLeftoverOutboundProfileService(t)
 	leftoverSharedRepo.put(p)
 	t.Cleanup(func() { leftoverSharedRepo.clear(p.AccountID) })
 }
 
 func installLeftoverOutboundProfileError(t *testing.T, accountID int64, err error) {
 	t.Helper()
+	ensureLeftoverOutboundProfileService(t)
 	leftoverSharedRepo.putErr(accountID, err)
 	t.Cleanup(func() { leftoverSharedRepo.clear(accountID) })
 }
