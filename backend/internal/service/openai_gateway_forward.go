@@ -417,12 +417,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if c != nil && c.Request != nil {
 				clientHeaders = c.Request.Header
 			}
-			fpIDs := applyCodexSharedRequestIdentity(ctx, decoded, account, clientHeaders)
+			fpIDs := applyCodexForwardRequestIdentity(ctx, c, decoded, account, clientHeaders)
 			if fpIDs != nil {
 				markDecodedModified()
-				if c != nil {
-					c.Set("codex_fingerprint_ids", fpIDs)
-				}
 			}
 		}
 		if codexResult.NormalizedModel != "" {

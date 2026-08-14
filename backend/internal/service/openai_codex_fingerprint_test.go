@@ -7,9 +7,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -155,6 +159,60 @@ func TestCodexSharedRequestIdentity_SecondLoadFailureDoesNotKeepBodyInstallation
 	}
 	require.NotContains(t, bodyDump, "extra-device-id")
 	require.Equal(t, 1, repo.gets, "request path must load the profile only once")
+}
+
+// Forward identity block: first Get succeeds and second fails. Body may keep
+// x-codex-installation-id only when the same resolve stored header IDs.
+// Restoring applyCodexClientMetadata + resolveCodexFingerprintIDsFromRequest
+// in applyCodexForwardRequestIdentity (the Forward identity block) fails this.
+func TestCodexForwardRequestIdentity_SecondLoadFailureDoesNotKeepBodyInstallationID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	profile := validOpenAIDeviceProfile(17)
+	profile.InstallationID = "profile-install-id-17"
+	repo := &failAfterMapDeviceRepo{
+		mapDeviceProfileRepo: mapDeviceProfileRepo{
+			profiles: map[int64]*AccountDeviceProfile{17: profile},
+		},
+		failAfter: 1,
+	}
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(NewAccountDeviceService(repo))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	account := newTestOAuthAccount(17, map[string]any{"openai_device_id": "extra-device-id"})
+	body := map[string]any{}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	ids := applyCodexForwardRequestIdentity(context.Background(), c, body, account, nil)
+
+	_, stored := c.Get("codex_fingerprint_ids")
+	cm, _ := body["client_metadata"].(map[string]any)
+	bodyInstall, _ := cm["x-codex-installation-id"].(string)
+	if bodyInstall != "" {
+		require.NotNil(t, ids, "body installation id must not outlive a failed second profile load")
+		require.True(t, stored, "body installation id is present only if shared header IDs were stored")
+		require.Equal(t, profile.InstallationID, bodyInstall)
+		require.Equal(t, profile.InstallationID, ids.installationID)
+	} else {
+		require.Nil(t, ids)
+		require.False(t, stored)
+	}
+	require.NotContains(t, fmt.Sprintf("%v", body), "extra-device-id")
+}
+
+func TestCodexForward_IdentityBlockUsesSingleSharedLoad(t *testing.T) {
+	src, err := os.ReadFile("openai_gateway_forward.go")
+	require.NoError(t, err)
+	text := string(src)
+	if !strings.Contains(text, "applyCodexForwardRequestIdentity(") {
+		t.Fatal("Forward must call applyCodexForwardRequestIdentity")
+	}
+	clientMeta := strings.Index(text, "applyCodexClientMetadata(")
+	resolve := strings.Index(text, "resolveCodexFingerprintIDsFromRequest(")
+	if clientMeta >= 0 && resolve > clientMeta {
+		t.Fatal("Forward restored applyCodexClientMetadata + resolveCodexFingerprintIDsFromRequest")
+	}
 }
 
 // --- deriveStableUUIDv4 ---

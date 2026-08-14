@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
@@ -200,6 +201,16 @@ func applyCodexSharedRequestIdentity(ctx context.Context, reqBody map[string]any
 		return nil
 	}
 	applyCodexFingerprintClientMetadata(reqBody, fpIDs)
+	return fpIDs
+}
+
+// applyCodexForwardRequestIdentity is the OpenAI Forward identity block:
+// one profile load, stamp body from those IDs, and store them for outbound headers.
+func applyCodexForwardRequestIdentity(ctx context.Context, c *gin.Context, reqBody map[string]any, account *Account, clientHeaders http.Header) *codexFingerprintIDs {
+	fpIDs := applyCodexSharedRequestIdentity(ctx, reqBody, account, clientHeaders)
+	if fpIDs != nil && c != nil {
+		c.Set("codex_fingerprint_ids", fpIDs)
+	}
 	return fpIDs
 }
 
