@@ -54,3 +54,22 @@ func TestApplyKiroTLSFingerprintRuntime_KeepsCodeWhispererUAWhenTLSDoesNotStamp(
 
 	require.Equal(t, "aws-sdk-js/1.0.0 kiro/2.5.0", req.Header.Get("User-Agent"))
 }
+
+func TestApplyKiroTLSFingerprintRuntime_KeepsRequestUAWhenProfilePayloadHasNoUserAgent(t *testing.T) {
+	const stampedUA = "aws-sdk-js/1.0.27 ua/2.1 os/macos#25.3.0 lang/js md/nodejs#22.21.1 api/codewhispererstreaming#1.0.27 m/E KiroIDE-2.5.0-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	req, err := http.NewRequest(http.MethodPost, "https://example.test", nil)
+	require.NoError(t, err)
+	req.Header.Set("User-Agent", stampedUA)
+
+	applyKiroTLSFingerprintRuntimeWithProfile(req, accountTLSFingerprintRuntime{
+		UpstreamUserAgent: "tls-runtime-ua/9.9.9",
+	}, &AccountDeviceProfile{
+		MachineID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+		ProfilePayload: map[string]any{
+			"kiro_system_version": "macos#25.3.0",
+			"kiro_node_version":   "22.21.1",
+		},
+	})
+
+	require.Equal(t, stampedUA, req.Header.Get("User-Agent"))
+}

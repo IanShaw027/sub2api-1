@@ -200,6 +200,31 @@ func TestBuildKiroMCPRequest_RuntimeEndpointUsesRuntimeHost(t *testing.T) {
 	require.Equal(t, "runtime.eu-central-1.kiro.dev", req.Host)
 }
 
+func TestBuildKiroMCPRequest_KeepsProfileMachineIDWhenTLSStampsUA(t *testing.T) {
+	machineID := kiroPinnedOutboundMachineID
+	installKiroOutboundDeviceProfile(t, validKiroOutboundProfile(904, machineID), nil)
+
+	svc := &KiroGatewayService{}
+	account := &Account{
+		ID:       904,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key":     "test-token",
+			"profile_arn": "arn:aws:codewhisperer:us-east-1:123:profile/ABC",
+		},
+	}
+	ctx := context.WithValue(context.Background(), kiroTLSFingerprintRuntimeContextKey{}, accountTLSFingerprintRuntime{
+		UpstreamUserAgent: "tls-runtime-ua/9.9.9",
+	})
+
+	req, err := svc.buildKiroMCPRequest(ctx, account, kiroMCPToolSearch, map[string]any{"query": "hi"}, "test-token", DefaultKiroRuntimeSettings())
+
+	require.NoError(t, err)
+	require.Contains(t, req.Header.Get("User-Agent"), machineID)
+	require.NotEqual(t, "tls-runtime-ua/9.9.9", req.Header.Get("User-Agent"))
+}
+
 func TestInvokeKiroMCP_RPCError(t *testing.T) {
 	stub := &kiroMCPStubUpstream{
 		respBody: `{"id":"1","jsonrpc":"2.0","error":{"code":-32000,"message":"boom"}}`,

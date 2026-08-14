@@ -179,7 +179,11 @@ func (s *KiroGatewayService) buildKiroMCPRequest(
 	accessToken string,
 	runtimeSettings *KiroRuntimeSettings,
 ) (*http.Request, error) {
-	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
+	profile, err := LoadOutboundDeviceProfile(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+	runtimeSettings = applyKiroProfileRuntimeOverrides(runtimeSettings, profile)
 	profileARN := strings.TrimSpace(accountCredential(account, "profile_arn"))
 
 	payload := kiroMCPRequest{
@@ -210,10 +214,7 @@ func (s *KiroGatewayService) buildKiroMCPRequest(
 		return io.NopCloser(bytes.NewReader(body)), nil
 	}
 
-	machineID, err := leftoverOutboundMachineID(ctx, account)
-	if err != nil {
-		return nil, err
-	}
+	machineID := profile.MachineID
 	host := req.URL.Host
 	kiroVersion := runtimeSettings.KiroVersion
 
@@ -235,7 +236,7 @@ func (s *KiroGatewayService) buildKiroMCPRequest(
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("amz-sdk-invocation-id", uuid.NewString())
 	req.Header.Set("amz-sdk-request", "attempt=1; max=3")
-	applyKiroTLSFingerprintRuntime(req, s.resolveTLSFingerprintRuntime(ctx, nil, account))
+	applyKiroTLSFingerprintRuntimeWithProfile(req, s.resolveTLSFingerprintRuntime(ctx, nil, account), profile)
 	return req, nil
 }
 
