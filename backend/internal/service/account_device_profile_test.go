@@ -196,3 +196,173 @@ func TestValidateAccountDeviceProfileRejectsUnknownPlatform(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorContains(t, err, "platform")
 }
+
+func TestValidateAccountDeviceProfileRejectsPaddedCanonicalStrings(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		mut  func(*AccountDeviceProfile)
+		want string
+	}{
+		{
+			name: "padded session_namespace",
+			mut:  func(p *AccountDeviceProfile) { p.SessionNamespace = " 0123456789abcdef0123456789abcdef" },
+			want: "session_namespace",
+		},
+		{
+			name: "padded platform",
+			mut:  func(p *AccountDeviceProfile) { p.Platform = " anthropic" },
+			want: "platform",
+		},
+		{
+			name: "padded client_family",
+			mut:  func(p *AccountDeviceProfile) { p.ClientFamily = "claude-code " },
+			want: "client_family",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			p := validAnthropicBaseline()
+			tc.mut(p)
+			err := ValidateAccountDeviceProfile(p)
+			require.Error(t, err)
+			require.ErrorContains(t, err, "identity_reject")
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
+}
+
+func TestValidateAccountDeviceProfileRejectsUppercasePlatform(t *testing.T) {
+	t.Parallel()
+
+	p := validAnthropicBaseline()
+	p.Platform = "ANTHROPIC"
+	p.ClientFamily = ClientFamilyClaudeCode
+
+	err := ValidateAccountDeviceProfile(p)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
+	require.ErrorContains(t, err, "platform")
+}
+
+func TestValidateAccountDeviceProfileRejectsPaddedUserAgentKey(t *testing.T) {
+	t.Parallel()
+
+	p := validAnthropicBaseline()
+	delete(p.ProfilePayload, "user_agent")
+	p.ProfilePayload[" user_agent"] = "claude-cli/2.1.0 (external, cli)"
+
+	err := ValidateAccountDeviceProfile(p)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
+	require.ErrorContains(t, err, "not allowed")
+}
+
+func TestValidateAccountDeviceProfileRejectsPaddedUserAgentKeyOver256(t *testing.T) {
+	t.Parallel()
+
+	p := validAnthropicBaseline()
+	delete(p.ProfilePayload, "user_agent")
+	p.ProfilePayload[" user_agent"] = strings.Repeat("a", 257)
+
+	err := ValidateAccountDeviceProfile(p)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
+	require.NotContains(t, err.Error(), "exceeds 512")
+}
+
+func TestValidateAccountDeviceProfileRejectsNestedPayloadCTL(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		value any
+	}{
+		{name: "array", value: []any{"MacOS\n\rX"}},
+		{name: "object", value: map[string]any{"v": "\x00"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			p := validAnthropicBaseline()
+			p.ProfilePayload["stainless_os"] = tc.value
+			err := ValidateAccountDeviceProfile(p)
+			require.Error(t, err)
+			require.ErrorContains(t, err, "identity_reject")
+		})
+	}
+}
+
+func TestValidateAccountDeviceProfileRejectsNonStringPayloadValue(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		value any
+	}{
+		{name: "array", value: []any{"MacOS"}},
+		{name: "object", value: map[string]any{"v": "ok"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			p := validAnthropicBaseline()
+			p.ProfilePayload["stainless_os"] = tc.value
+			err := ValidateAccountDeviceProfile(p)
+			require.Error(t, err)
+			require.ErrorContains(t, err, "identity_reject")
+		})
+	}
+}
+
+func TestValidateAccountDeviceProfileRejectsUppercaseSessionNamespace(t *testing.T) {
+	t.Parallel()
+
+	p := validAnthropicBaseline()
+	p.SessionNamespace = "0123456789ABCDEF0123456789ABCDEF"
+
+	err := ValidateAccountDeviceProfile(p)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
+	require.ErrorContains(t, err, "session_namespace")
+}
+
+func TestValidateAccountDeviceProfileRejectsEmptyOSFamilyOnWrite(t *testing.T) {
+	t.Parallel()
+
+	p := validAnthropicBaseline()
+	p.OSFamily = ""
+
+	err := ValidateAccountDeviceProfile(p)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
+	require.ErrorContains(t, err, "os_family")
+
+	require.NoError(t, ValidateOutboundBundle(p))
+}
+
+func TestValidateAccountDeviceProfileRejectsRevisionZero(t *testing.T) {
+	t.Parallel()
+
+	p := validAnthropicBaseline()
+	p.Revision = 0
+
+	err := ValidateAccountDeviceProfile(p)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
+	require.ErrorContains(t, err, "revision")
+}
+
+func TestValidateAccountDeviceProfileRejectsOversizedID(t *testing.T) {
+	t.Parallel()
+
+	p := validAnthropicBaseline()
+	p.DeviceID = strings.Repeat("d", 65)
+
+	err := ValidateAccountDeviceProfile(p)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
+	require.ErrorContains(t, err, "device_id")
+}

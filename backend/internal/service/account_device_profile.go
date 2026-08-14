@@ -55,6 +55,8 @@ const (
 	maxUserAgentLen        = 256
 	maxHeaderValueLen      = 512
 	maxVersionLen          = 64
+	maxIdentityIDLen       = 64
+	maxOSArchRuntimeLen    = 32
 	minSessionNamespaceLen = 32
 	maxSessionNamespaceLen = 64
 	minSchemaVersion       = 1
@@ -92,14 +94,16 @@ func validateAccountDeviceProfile(p *AccountDeviceProfile, strictOSArchRuntime b
 	if p == nil {
 		return fmt.Errorf("identity_reject: profile is required")
 	}
+	if p.Revision < 1 {
+		return fmt.Errorf("identity_reject: revision must be >= 1")
+	}
 
-	platform := strings.TrimSpace(p.Platform)
-	if !isDeviceProfilePlatform(platform) {
+	if !isDeviceProfilePlatform(p.Platform) {
 		return fmt.Errorf("identity_reject: platform %q is not allowed", p.Platform)
 	}
-	wantFamily := DefaultClientFamily(platform)
-	if strings.TrimSpace(p.ClientFamily) != wantFamily {
-		return fmt.Errorf("identity_reject: client_family %q does not match platform %q", p.ClientFamily, platform)
+	wantFamily := DefaultClientFamily(p.Platform)
+	if p.ClientFamily != wantFamily {
+		return fmt.Errorf("identity_reject: client_family %q does not match platform %q", p.ClientFamily, p.Platform)
 	}
 
 	if err := validateSessionNamespace(p.SessionNamespace); err != nil {
@@ -138,7 +142,7 @@ func validateAccountDeviceProfile(p *AccountDeviceProfile, strictOSArchRuntime b
 }
 
 func isDeviceProfilePlatform(platform string) bool {
-	switch strings.ToLower(strings.TrimSpace(platform)) {
+	switch platform {
 	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok, PlatformKiro:
 		return true
 	default:
@@ -147,20 +151,19 @@ func isDeviceProfilePlatform(platform string) bool {
 }
 
 func validateSessionNamespace(ns string) error {
-	ns = strings.TrimSpace(ns)
 	if len(ns) < minSessionNamespaceLen || len(ns) > maxSessionNamespaceLen {
 		return fmt.Errorf("identity_reject: session_namespace must be %d–%d hex characters", minSessionNamespaceLen, maxSessionNamespaceLen)
 	}
 	for _, r := range ns {
-		if !isHexRune(r) {
+		if !isLowerHexRune(r) {
 			return fmt.Errorf("identity_reject: session_namespace must be %d–%d hex characters", minSessionNamespaceLen, maxSessionNamespaceLen)
 		}
 	}
 	return nil
 }
 
-func isHexRune(r rune) bool {
-	return (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+func isLowerHexRune(r rune) bool {
+	return (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f')
 }
 
 func validateTLSProfileID(id *int64) error {
@@ -174,7 +177,7 @@ func validateTLSProfileID(id *int64) error {
 }
 
 func validateTransportFamily(family string) error {
-	switch strings.TrimSpace(family) {
+	switch family {
 	case TransportH1, TransportH2:
 		return nil
 	default:
@@ -183,7 +186,7 @@ func validateTransportFamily(family string) error {
 }
 
 func validateLearnedFrom(v string) error {
-	switch strings.TrimSpace(v) {
+	switch v {
 	case LearnedFromBaseline, LearnedFromOfficial, LearnedFromBaselineFloor:
 		return nil
 	default:
@@ -192,7 +195,6 @@ func validateLearnedFrom(v string) error {
 }
 
 func validateVersionField(field, value string) error {
-	value = strings.TrimSpace(value)
 	if value == "" {
 		return nil
 	}
@@ -212,14 +214,21 @@ func validateVersionField(field, value string) error {
 }
 
 func validateKnownOSArchRuntime(p *AccountDeviceProfile) error {
-	if osFamily := strings.TrimSpace(p.OSFamily); osFamily != "" && !isKnownOSFamily(osFamily) {
-		return fmt.Errorf("identity_reject: os_family %q is not allowed", p.OSFamily)
+	if err := validateRequiredKnownField("os_family", p.OSFamily, isKnownOSFamily); err != nil {
+		return err
 	}
-	if arch := strings.TrimSpace(p.Arch); arch != "" && !isKnownArch(arch) {
-		return fmt.Errorf("identity_reject: arch %q is not allowed", p.Arch)
+	if err := validateRequiredKnownField("arch", p.Arch, isKnownArch); err != nil {
+		return err
 	}
-	if runtime := strings.TrimSpace(p.Runtime); runtime != "" && !isKnownRuntime(runtime) {
-		return fmt.Errorf("identity_reject: runtime %q is not allowed", p.Runtime)
+	if err := validateRequiredKnownField("runtime", p.Runtime, isKnownRuntime); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateRequiredKnownField(field, value string, known func(string) bool) error {
+	if value == "" || len(value) > maxOSArchRuntimeLen || !known(value) {
+		return fmt.Errorf("identity_reject: %s %q is not allowed", field, value)
 	}
 	return nil
 }
@@ -266,7 +275,7 @@ func validateProfilePayload(payload map[string]any) error {
 		if err := rejectCTL("profile_payload key", key); err != nil {
 			return err
 		}
-		if !isAllowedProfilePayloadKey(key) {
+		if strings.TrimSpace(key) != key || !isAllowedProfilePayloadKey(key) {
 			return fmt.Errorf("identity_reject: profile_payload key %q is not allowed", key)
 		}
 		if err := validatePayloadValue(key, value); err != nil {
@@ -277,24 +286,26 @@ func validateProfilePayload(payload map[string]any) error {
 }
 
 func isAllowedProfilePayloadKey(key string) bool {
-	switch strings.TrimSpace(key) {
+	switch key {
 	case "user_agent", "originator", "grok_token_auth", "grok_identifier",
 		"kiro_system_version", "kiro_node_version", "kiro_commit":
 		return true
 	default:
-		return strings.HasPrefix(strings.TrimSpace(key), "stainless_")
+		return strings.HasPrefix(key, "stainless_")
 	}
 }
 
 func validatePayloadValue(key string, value any) error {
 	s, ok := value.(string)
 	if !ok {
-		return nil
+		return fmt.Errorf("identity_reject: profile_payload.%s must be a string", key)
+	}
+	if err := rejectUntrimmed("profile_payload."+key, s); err != nil {
+		return err
 	}
 	if err := rejectCTL("profile_payload."+key, s); err != nil {
 		return err
 	}
-	s = strings.TrimSpace(s)
 	if key == "user_agent" && len(s) > maxUserAgentLen {
 		return fmt.Errorf("identity_reject: user_agent exceeds %d characters", maxUserAgentLen)
 	}
@@ -326,9 +337,33 @@ func validateProfileStrings(p *AccountDeviceProfile) error {
 		{"learned_from", p.LearnedFrom},
 	}
 	for _, field := range fields {
+		if err := rejectUntrimmed(field.name, field.value); err != nil {
+			return err
+		}
 		if err := rejectCTL(field.name, field.value); err != nil {
 			return err
 		}
+	}
+	for _, field := range []struct {
+		name  string
+		value string
+	}{
+		{"installation_id", p.InstallationID},
+		{"device_id", p.DeviceID},
+		{"client_id", p.ClientID},
+		{"machine_id", p.MachineID},
+		{"gateway_account_uuid", p.GatewayAccountUUID},
+	} {
+		if len(field.value) > maxIdentityIDLen {
+			return fmt.Errorf("identity_reject: %s exceeds %d characters", field.name, maxIdentityIDLen)
+		}
+	}
+	return nil
+}
+
+func rejectUntrimmed(field, value string) error {
+	if strings.TrimSpace(value) != value {
+		return fmt.Errorf("identity_reject: %s must be trimmed", field)
 	}
 	return nil
 }
