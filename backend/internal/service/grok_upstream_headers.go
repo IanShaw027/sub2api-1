@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -28,14 +29,101 @@ func defaultGrokUpstreamUserAgent() string {
 }
 
 func applyDefaultGrokUpstreamHeaders(req *http.Request) {
+	_ = applyGrokUpstreamHeadersFromAccount(context.Background(), req, nil)
+}
+
+// applyGrokUpstreamHeadersFromAccount stamps Grok chat/CLI outbound identity.
+// When account is set, identity comes from the device profile (fail closed on
+// load error). When account is nil, today's pinned CLI stamp is used so probes
+// keep working without a profile service.
+func applyGrokUpstreamHeadersFromAccount(ctx context.Context, req *http.Request, account *Account) error {
 	if req == nil {
+		return nil
+	}
+
+	var profile *AccountDeviceProfile
+	if account != nil {
+		loaded, err := LoadOutboundDeviceProfile(ctx, account)
+		if err != nil {
+			return err
+		}
+		profile = loaded
+	}
+
+	sanitizeGrokOutboundHeaders(req)
+	stampGrokCLIIdentity(req, profile)
+	return nil
+}
+
+func stampGrokCLIIdentity(req *http.Request, profile *AccountDeviceProfile) {
+	ua := defaultGrokUpstreamUserAgent()
+	version := xai.ResolveCLIVersion()
+	identifier := grokClientIdentifierHeader
+
+	if profile != nil {
+		if v := strings.TrimSpace(profile.ClientVersion); v != "" {
+			version = v
+		}
+		if id := grokProfilePayloadString(profile, "grok_identifier"); id != "" {
+			identifier = id
+		}
+		if profileUA := grokProfilePayloadString(profile, "user_agent"); profileUA != "" {
+			ua = profileUA
+		}
+	}
+
+	req.Header.Set("User-Agent", ua)
+	req.Header.Set("x-grok-client-version", version)
+	req.Header.Set("x-grok-client-identifier", identifier)
+}
+
+func grokProfilePayloadString(profile *AccountDeviceProfile, key string) string {
+	if profile == nil || profile.ProfilePayload == nil {
+		return ""
+	}
+	raw, ok := profile.ProfilePayload[key]
+	if !ok {
+		return ""
+	}
+	s, ok := raw.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(s)
+}
+
+func sanitizeGrokOutboundHeaders(req *http.Request) {
+	if req == nil || req.Header == nil {
 		return
 	}
-	// Always stamp CLI identity. Do not preserve inbound client UA (Claude Code,
-	// Codex, curl, etc.) — xAI chat/CLI surfaces fingerprint the client string.
-	req.Header.Set("User-Agent", defaultGrokUpstreamUserAgent())
-	req.Header.Set("x-grok-client-version", xai.ResolveCLIVersion())
-	req.Header.Set("x-grok-client-identifier", grokClientIdentifierHeader)
+	for name := range req.Header {
+		if isUnknownGrokHeader(name) || isGrokGatewayAffinityHeader(name) {
+			req.Header.Del(name)
+		}
+	}
+}
+
+func isUnknownGrokHeader(name string) bool {
+	canonical := strings.ToLower(strings.TrimSpace(name))
+	if !strings.HasPrefix(canonical, "x-grok-") {
+		return false
+	}
+	switch canonical {
+	case "x-grok-client-version", "x-grok-client-identifier", "x-grok-conv-id", "x-grok-client-mode":
+		return false
+	default:
+		return true
+	}
+}
+
+func isGrokGatewayAffinityHeader(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "x-session-affinity", "x-session-id", "x-opencode-session",
+		"chatgpt-account-id", "x-account-id", "account-id":
+		return true
+	default:
+		return false
+	}
 }
 
 func applyGrokTLSProfileHeaders(req *http.Request, profile *tlsfingerprint.Profile) {
