@@ -102,6 +102,7 @@ func RegisterAdminRoutes(
 
 		// TLS 指纹模板管理
 		registerTLSFingerprintProfileRoutes(admin, h)
+		registerTLSFingerprintRouterRoutes(admin, h)
 
 		// API Key 管理
 		registerAdminAPIKeyRoutes(admin, h)
@@ -357,6 +358,8 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.GET("", h.Admin.Account.List)
 		accounts.GET("/capacity/timeseries", h.Admin.Capacity.GetTimeseries)
 		accounts.POST("/capacity/probe", h.Admin.Capacity.Probe)
+		accounts.GET("/openai-oauth-capacity", h.Admin.Capacity.GetOpenAIOAuthOverview)
+		accounts.GET("/openai-oauth-capacity/timeseries", h.Admin.Capacity.GetOpenAIOAuthTimeseries)
 		accounts.GET("/upstream-billing-probe/settings", h.Admin.Account.GetUpstreamBillingProbeSettings)
 		accounts.PUT("/upstream-billing-probe/settings", h.Admin.Account.UpdateUpstreamBillingProbeSettings)
 		accounts.POST("/upstream-billing-probe/batch", h.Admin.Account.ProbeUpstreamBillingBatch)
@@ -757,6 +760,17 @@ func registerTLSFingerprintProfileRoutes(admin *gin.RouterGroup, h *handler.Hand
 		profiles.POST("", h.Admin.TLSFingerprintProfile.Create)
 		profiles.PUT("/:id", h.Admin.TLSFingerprintProfile.Update)
 		profiles.DELETE("/:id", h.Admin.TLSFingerprintProfile.Delete)
+	}
+}
+
+func registerTLSFingerprintRouterRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	routers := admin.Group("/tls-fingerprint-routers")
+	{
+		routers.GET("", h.Admin.TLSFingerprintRouter.List)
+		routers.GET("/:id", h.Admin.TLSFingerprintRouter.GetByID)
+		routers.POST("", h.Admin.TLSFingerprintRouter.Create)
+		routers.PUT("/:id", h.Admin.TLSFingerprintRouter.Update)
+		routers.DELETE("/:id", h.Admin.TLSFingerprintRouter.Delete)
 	}
 }
 

@@ -21,6 +21,10 @@
                 <Icon name="chartBar" size="sm" class="mr-1.5" />
                 <span>{{ t('admin.accounts.capacityForecast.action') }}</span>
               </button>
+              <button class="btn btn-secondary" @click="showOAuthCapacity = true">
+                <Icon name="chartBar" size="sm" class="mr-1.5" />
+                <span>{{ t('admin.accounts.oauthCapacity.action') }}</span>
+              </button>
             </template>
             <template #after>
               <!-- Auto Refresh Dropdown -->
@@ -138,6 +142,12 @@
                           <Icon name="lock" size="sm" />
                         </span>
                         <span class="flex-1 text-left">{{ t('admin.tlsFingerprintProfiles.title') }}</span>
+                      </button>
+                      <button class="account-tools-menu-item" @click="openTLSFingerprintRouters">
+                        <span class="account-tools-menu-icon bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200">
+                          <Icon name="lock" size="sm" />
+                        </span>
+                        <span class="flex-1 text-left">{{ t('admin.tlsFingerprintRouters.title') }}</span>
                       </button>
 
                       <div class="my-2 border-t border-gray-100 dark:border-dark-700"></div>
@@ -517,6 +527,12 @@
     </ConfirmDialog>
     <ErrorPassthroughRulesModal :show="showErrorPassthrough" @close="showErrorPassthrough = false" />
     <TLSFingerprintProfilesModal :show="showTLSFingerprintProfiles" @close="showTLSFingerprintProfiles = false" />
+    <TLSFingerprintRoutersModal :show="showTLSFingerprintRouters" @close="showTLSFingerprintRouters = false" />
+    <OpenAIOAuthCapacityDialog
+      v-if="showOAuthCapacity"
+      :show="showOAuthCapacity"
+      @close="showOAuthCapacity = false"
+    />
     <PlatformCapacityDialog
       v-if="showCapacityForecast"
       :show="showCapacityForecast"
@@ -579,7 +595,9 @@ import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
+import TLSFingerprintRoutersModal from '@/components/admin/TLSFingerprintRoutersModal.vue'
 import PlatformCapacityDialog from '@/components/admin/account/PlatformCapacityDialog.vue'
+import OpenAIOAuthCapacityDialog from '@/components/admin/account/OpenAIOAuthCapacityDialog.vue'
 const AccountCyberEventsModal = defineAsyncComponent(() => import('@/components/admin/account/AccountCyberEventsModal.vue'))
 const OpsErrorDetailModal = defineAsyncComponent(() => import('@/views/admin/ops/components/OpsErrorDetailModal.vue'))
 import { fetchAllAccountIds } from '@/utils/accountSelection'
@@ -655,7 +673,9 @@ const showTest = ref(false)
 const showStats = ref(false)
 const showErrorPassthrough = ref(false)
 const showTLSFingerprintProfiles = ref(false)
+const showTLSFingerprintRouters = ref(false)
 const showCapacityForecast = ref(false)
+const showOAuthCapacity = ref(false)
 const showCyberEvents = ref(false)
 const showCyberErrorDetail = ref(false)
 const cyberEventsAcc = ref<Account | null>(null)
@@ -1343,7 +1363,9 @@ const isAnyModalOpen = computed(() => {
     showSchedulePanel.value ||
     showErrorPassthrough.value ||
     showTLSFingerprintProfiles.value ||
-    showCapacityForecast.value
+    showTLSFingerprintRouters.value ||
+    showCapacityForecast.value ||
+    showOAuthCapacity.value
   )
 })
 
@@ -1509,6 +1531,11 @@ const openExportDataDialogFromMenu = () => {
 const openErrorPassthrough = () => {
   closeAccountToolsDropdown()
   showErrorPassthrough.value = true
+}
+
+const openTLSFingerprintRouters = () => {
+  closeAccountToolsDropdown()
+  showTLSFingerprintRouters.value = true
 }
 
 const openTLSFingerprintProfiles = () => {

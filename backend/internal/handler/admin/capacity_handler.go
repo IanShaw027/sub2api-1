@@ -23,11 +23,12 @@ import (
 // CapacityForecastService.
 type CapacityHandler struct {
 	capacityService *service.CapacityForecastService
+	oauthCapacity   *service.OpenAIOAuthCapacityService
 }
 
 // NewCapacityHandler constructs the capacity forecasting handler.
-func NewCapacityHandler(capacityService *service.CapacityForecastService) *CapacityHandler {
-	return &CapacityHandler{capacityService: capacityService}
+func NewCapacityHandler(capacityService *service.CapacityForecastService, oauthCapacity *service.OpenAIOAuthCapacityService) *CapacityHandler {
+	return &CapacityHandler{capacityService: capacityService, oauthCapacity: oauthCapacity}
 }
 
 // capacityProbeRequest is the POST .../capacity/probe request body.
@@ -113,6 +114,62 @@ func (h *CapacityHandler) Probe(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, service.ErrCapacityProviderNotFound) {
 			response.BadRequest(c, "No capacity provider registered for this platform")
+			return
+		}
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+// GetOpenAIOAuthOverview returns OAuth seat health, remaining quota, and burn-rate alerts.
+// GET /api/v1/admin/accounts/openai-oauth-capacity?group_id=
+func (h *CapacityHandler) GetOpenAIOAuthOverview(c *gin.Context) {
+	if h == nil || h.oauthCapacity == nil {
+		response.Error(c, http.StatusServiceUnavailable, "OpenAI OAuth capacity service is not configured")
+		return
+	}
+	var groupID *int64
+	if groupRaw := strings.TrimSpace(c.Query("group_id")); groupRaw != "" {
+		id, err := strconv.ParseInt(groupRaw, 10, 64)
+		if err != nil {
+			response.BadRequest(c, "Invalid group_id")
+			return
+		}
+		groupID = &id
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 25*time.Second)
+	defer cancel()
+	result, err := h.oauthCapacity.GetOverview(ctx, groupID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
+// GetOpenAIOAuthTimeseries returns the OpenAI OAuth spend/available forecast.
+// GET /api/v1/admin/accounts/openai-oauth-capacity/timeseries?range=24h&group_id=&force=
+func (h *CapacityHandler) GetOpenAIOAuthTimeseries(c *gin.Context) {
+	if h == nil || h.oauthCapacity == nil {
+		response.Error(c, http.StatusServiceUnavailable, "OpenAI OAuth capacity service is not configured")
+		return
+	}
+	var groupID *int64
+	if groupRaw := strings.TrimSpace(c.Query("group_id")); groupRaw != "" {
+		id, err := strconv.ParseInt(groupRaw, 10, 64)
+		if err != nil {
+			response.BadRequest(c, "Invalid group_id")
+			return
+		}
+		groupID = &id
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 25*time.Second)
+	defer cancel()
+	result, err := h.oauthCapacity.GetTimeseries(ctx, groupID, c.DefaultQuery("range", "24h"), c.Query("force") == "true")
+	if err != nil {
+		if errors.Is(err, service.ErrCapacityInvalidRange) {
+			response.BadRequest(c, "Invalid range")
 			return
 		}
 		response.ErrorFrom(c, err)
