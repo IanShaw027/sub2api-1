@@ -57,9 +57,24 @@ func TestValidateAccountExtraIdentityAcceptsValidIdentityExtras(t *testing.T) {
 	err := ValidateAccountExtraIdentity(map[string]any{
 		"openai_device_id":           uuid.NewString(),
 		"tls_fingerprint_profile_id": int64(12),
+		"device_learning_enabled":    true,
 	})
 
 	require.NoError(t, err)
+}
+
+func TestValidateAccountExtraIdentityAcceptsDeviceLearningEnabledBoolsAndMissing(t *testing.T) {
+	require.NoError(t, ValidateAccountExtraIdentity(map[string]any{}))
+	require.NoError(t, ValidateAccountExtraIdentity(map[string]any{"device_learning_enabled": true}))
+	require.NoError(t, ValidateAccountExtraIdentity(map[string]any{"device_learning_enabled": false}))
+}
+
+func TestValidateAccountExtraIdentityRejectsNonBoolDeviceLearningEnabled(t *testing.T) {
+	for _, value := range []any{"yes", 1, nil} {
+		err := ValidateAccountExtraIdentity(map[string]any{"device_learning_enabled": value})
+		require.Error(t, err, "device_learning_enabled=%v", value)
+		require.ErrorContains(t, err, "device_learning_enabled")
+	}
 }
 
 func TestValidateAccountExtraIdentityRejectsNonIntegerTLSProfileID(t *testing.T) {
@@ -82,6 +97,7 @@ func TestValidateAccountCapacityExtraAcceptsEmptyAndInRangeValues(t *testing.T) 
 		"codex_fingerprint_mode":       "session",
 		"enable_tls_fingerprint":       true,
 		"tls_fingerprint_profile_id":   int64(12),
+		"device_learning_enabled":      true,
 	}))
 	require.NoError(t, ValidateAccountCapacityExtra(map[string]any{
 		"concurrency":                  32,
@@ -90,6 +106,7 @@ func TestValidateAccountCapacityExtraAcceptsEmptyAndInRangeValues(t *testing.T) 
 		"rpm_sticky_buffer":            10000,
 		"codex_fingerprint_mode":       "off",
 		"enable_tls_fingerprint":       false,
+		"device_learning_enabled":      false,
 	}))
 }
 
@@ -118,6 +135,8 @@ func TestValidateAccountCapacityExtraRejectsIllegalMaxSessionsIdleAndBuffer(t *t
 		{key: "tls_fingerprint_profile_id", value: 3.7, want: "integer"},
 		{key: "tls_fingerprint_profile_id", value: "x", want: "integer"},
 		{key: "enable_tls_fingerprint", value: "yes", want: "enable_tls_fingerprint"},
+		{key: "device_learning_enabled", value: "yes", want: "device_learning_enabled"},
+		{key: "device_learning_enabled", value: 1, want: "device_learning_enabled"},
 		{key: "codex_fingerprint_mode", value: "random", want: "codex_fingerprint_mode"},
 	}
 	for _, tc := range cases {
@@ -147,6 +166,7 @@ func TestValidateAccountCapacityExtraRejectsPresentEmptyValues(t *testing.T) {
 		{key: "max_sessions", value: "", want: "max_sessions"},
 		{key: "session_idle_timeout_minutes", value: nil, want: "session_idle_timeout_minutes"},
 		{key: "enable_tls_fingerprint", value: nil, want: "enable_tls_fingerprint"},
+		{key: "device_learning_enabled", value: nil, want: "device_learning_enabled"},
 		{key: "codex_fingerprint_mode", value: "", want: "codex_fingerprint_mode"},
 		{key: "codex_fingerprint_mode", value: " device ", want: "codex_fingerprint_mode"},
 	}
