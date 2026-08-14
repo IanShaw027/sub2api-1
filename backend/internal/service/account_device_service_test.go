@@ -24,21 +24,8 @@ import (
 
 func newAccountDeviceService(t *testing.T) (*service.AccountDeviceService, *dbent.Client) {
 	t.Helper()
-
-	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?mode=memory&cache=shared&_fk=1", t.Name()))
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = db.Close() })
-	db.SetMaxOpenConns(10)
-
-	_, err = db.Exec("PRAGMA foreign_keys = ON")
-	require.NoError(t, err)
-
-	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := enttest.NewClient(t, enttest.WithOptions(dbent.Driver(drv)))
-	t.Cleanup(func() { _ = client.Close() })
-
-	repo := repository.NewAccountDeviceProfileRepository(client)
-	return service.NewAccountDeviceService(repo), client
+	svc, client, _ := newCountingAccountDeviceService(t)
+	return svc, client
 }
 
 func mustCreateDeviceAccount(t *testing.T, client *dbent.Client, platform string, extra map[string]any) *service.Account {
@@ -177,34 +164,155 @@ func TestGetOrCreateRejectsInvalidBaselineWithoutInsert(t *testing.T) {
 	require.Zero(t, n)
 }
 
-func TestGetOrCreateShadowDoesNotInsert(t *testing.T) {
-	svc, client := newAccountDeviceService(t)
-	ctx := context.Background()
-	parent := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, nil)
+type countingDeviceProfileRepo struct {
+	inner   service.AccountDeviceProfileRepository
+	mu      sync.Mutex
+	inserts map[int64]int
+}
 
+func wrapCountingDeviceProfileRepo(inner service.AccountDeviceProfileRepository) *countingDeviceProfileRepo {
+	return &countingDeviceProfileRepo{inner: inner, inserts: map[int64]int{}}
+}
+
+func (r *countingDeviceProfileRepo) GetByAccountID(ctx context.Context, accountID int64) (*service.AccountDeviceProfile, error) {
+	return r.inner.GetByAccountID(ctx, accountID)
+}
+
+func (r *countingDeviceProfileRepo) InsertBaseline(ctx context.Context, p *service.AccountDeviceProfile) (*service.AccountDeviceProfile, error) {
+	r.mu.Lock()
+	r.inserts[p.AccountID]++
+	r.mu.Unlock()
+	return r.inner.InsertBaseline(ctx, p)
+}
+
+func (r *countingDeviceProfileRepo) UpdateCAS(ctx context.Context, accountID, expectedRevision int64, next *service.AccountDeviceProfile) (bool, error) {
+	return r.inner.UpdateCAS(ctx, accountID, expectedRevision, next)
+}
+
+func (r *countingDeviceProfileRepo) insertCount(accountID int64) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.inserts[accountID]
+}
+
+func newCountingAccountDeviceService(t *testing.T) (*service.AccountDeviceService, *dbent.Client, *countingDeviceProfileRepo) {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", fmt.Sprintf("file:%s?mode=memory&cache=shared&_fk=1", t.Name()))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	db.SetMaxOpenConns(10)
+
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	require.NoError(t, err)
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := enttest.NewClient(t, enttest.WithOptions(dbent.Driver(drv)))
+	t.Cleanup(func() { _ = client.Close() })
+
+	counting := wrapCountingDeviceProfileRepo(repository.NewAccountDeviceProfileRepository(client))
+	return service.NewAccountDeviceService(counting), client, counting
+}
+
+func mustCreateShadowAccount(t *testing.T, client *dbent.Client, parent *service.Account) *service.Account {
+	t.Helper()
 	shadowRow, err := client.Account.Create().
 		SetName("shadow").
-		SetPlatform(service.PlatformAnthropic).
+		SetPlatform(parent.Platform).
 		SetType(service.AccountTypeAPIKey).
 		SetStatus(service.StatusActive).
 		SetCredentials(map[string]any{}).
 		SetParentAccountID(parent.ID).
-		Save(ctx)
+		Save(context.Background())
 	require.NoError(t, err)
-
 	shadow := &service.Account{
 		ID:              shadowRow.ID,
 		Platform:        shadowRow.Platform,
 		ParentAccountID: shadowRow.ParentAccountID,
 	}
 	require.True(t, shadow.IsShadow())
+	return shadow
+}
+
+func TestGetOrCreateShadowDoesNotInsert(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	parent := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, nil)
+	shadow := mustCreateShadowAccount(t, client, parent)
 
 	got, err := svc.GetOrCreate(ctx, shadow)
-	require.Error(t, err)
-	require.Nil(t, got)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, parent.ID, got.AccountID)
+	require.Zero(t, repo.insertCount(shadow.ID))
 
 	n, err := client.AccountDeviceProfile.Query().
 		Where(accountdeviceprofile.AccountID(shadow.ID)).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, n)
+}
+
+func TestGetOrCreateShadowReturnsParentProfile(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+	parent := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, nil)
+	shadow := mustCreateShadowAccount(t, client, parent)
+
+	parentProfile, err := svc.GetOrCreate(ctx, parent)
+	require.NoError(t, err)
+
+	shadowProfile, err := svc.GetOrCreate(ctx, shadow)
+	require.NoError(t, err)
+	require.Equal(t, parentProfile.DeviceID, shadowProfile.DeviceID)
+	require.Equal(t, parentProfile.GatewayAccountUUID, shadowProfile.GatewayAccountUUID)
+	require.Equal(t, parentProfile.SessionNamespace, shadowProfile.SessionNamespace)
+	require.Equal(t, parentProfile.AccountID, shadowProfile.AccountID)
+}
+
+func TestGetOrCreateShadowCreatesMissingParentBaseline(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	parent := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, nil)
+	shadow := mustCreateShadowAccount(t, client, parent)
+
+	got, err := svc.GetOrCreate(ctx, shadow)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, parent.ID, got.AccountID)
+	require.NoError(t, service.ValidateAccountDeviceProfile(got))
+	require.Equal(t, service.LearnedFromBaseline, got.LearnedFrom)
+	require.False(t, got.LearningEnabled)
+	require.Equal(t, 1, repo.insertCount(parent.ID))
+	require.Zero(t, repo.insertCount(shadow.ID))
+
+	n, err := client.AccountDeviceProfile.Query().
+		Where(accountdeviceprofile.AccountID(shadow.ID)).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, n)
+
+	parentRows, err := client.AccountDeviceProfile.Query().
+		Where(accountdeviceprofile.AccountID(parent.ID)).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, parentRows)
+}
+
+func TestGetOrCreateShadowRejectsSelfParentCycle(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, nil)
+	account.ParentAccountID = &account.ID
+	require.True(t, account.IsShadow())
+
+	got, err := svc.GetOrCreate(ctx, account)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "cycle")
+	require.Nil(t, got)
+
+	n, err := client.AccountDeviceProfile.Query().
+		Where(accountdeviceprofile.AccountID(account.ID)).
 		Count(ctx)
 	require.NoError(t, err)
 	require.Zero(t, n)
