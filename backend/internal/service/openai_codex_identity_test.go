@@ -2,6 +2,7 @@ package service
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -12,10 +13,14 @@ import (
 func requireOpenAICodexProbeHeaders(t *testing.T, h http.Header) {
 	t.Helper()
 	require.Equal(t, codexCLIUserAgent, h.Get("User-Agent"))
-	require.Equal(t, openai.CodexDefaultOriginator, h.Get("Originator"))
+	require.Equal(t, openai.CodexDefaultOriginator, getHeaderRaw(h, "originator"))
+	require.Equal(t, strings.ToLower(getHeaderRaw(h, "originator")), getHeaderRaw(h, "originator"))
 	require.Equal(t, codexCLIVersion, h.Get("Version"))
 	require.Equal(t, "responses=experimental", h.Get("OpenAI-Beta"))
 	require.NotEmpty(t, h.Get("X-Codex-Window-ID"))
+	require.Empty(t, h.Get("X-Originator"))
+	_, hasXOriginator := h["X-Originator"]
+	require.False(t, hasXOriginator)
 }
 
 // 强制统一出口：无论客户端自报什么身份，OAuth 出站的 User-Agent / originator / version
@@ -58,6 +63,59 @@ func TestCodexIdentityHeadersUseLowercaseOriginatorAndStripXOriginator(t *testin
 	enforceCodexIdentityHeaders(h)
 
 	require.Equal(t, openai.CodexDefaultOriginator, getHeaderRaw(h, "originator"))
+	require.Contains(t, h, "originator")
+	require.Empty(t, h.Get("X-Originator"))
+	_, hasXOriginator := h["X-Originator"]
+	require.False(t, hasXOriginator)
+}
+
+func TestResolveCodexOutboundIdentityFromProfile_PrefersPayloadUserAgent(t *testing.T) {
+	profile := validOpenAIDeviceProfile(1)
+	profile.ProfilePayload = map[string]any{
+		"user_agent": "codex_vscode/0.150.0 (Ubuntu 22.4.0; x86_64) vscode",
+		"originator": "codex_vscode",
+	}
+
+	identity := resolveCodexOutboundIdentityFromProfile(profile, "luna/1.0.0")
+
+	require.Equal(t, "codex_vscode", identity.originator)
+	require.Equal(t, "codex_vscode", strings.ToLower(identity.originator))
+	require.True(t, strings.HasPrefix(identity.userAgent, "codex_vscode/"+codexCLIVersion))
+	require.Equal(t, codexCLIVersion, identity.version)
+}
+
+func TestResolveCodexOutboundIdentityFromProfile_UsesPayloadOriginatorNotUAPrefix(t *testing.T) {
+	profile := validOpenAIDeviceProfile(1)
+	profile.ProfilePayload = map[string]any{
+		"user_agent": "codex-tui/0.150.0 (Ubuntu 22.4.0; x86_64) vscode",
+		"originator": "CODEX_VSCODE",
+	}
+
+	identity := resolveCodexOutboundIdentityFromProfile(profile, "")
+
+	require.Equal(t, "codex_vscode", identity.originator)
+	require.Equal(t, "codex_vscode", strings.ToLower(identity.originator))
+	require.True(t, strings.HasPrefix(identity.userAgent, "codex_vscode/"))
+	require.False(t, strings.HasPrefix(identity.userAgent, "codex-tui/"),
+		"payload originator must win over UA prefix; this fails if only the UA prefix is read")
+}
+
+func TestCodexIdentityFromProfile_OriginatorLowercaseNoXOriginator(t *testing.T) {
+	profile := validOpenAIDeviceProfile(1)
+	profile.ProfilePayload = map[string]any{
+		"user_agent": "codex_vscode/0.150.0 (Ubuntu 22.4.0; x86_64) vscode",
+		"originator": "CODEX_VSCODE",
+	}
+
+	h := make(http.Header)
+	h.Set("X-Originator", "legacy")
+	h.Set("originator", "codex-tui")
+
+	identity := resolveCodexOutboundIdentityFromProfile(profile, "")
+	enforceCodexIdentityHeadersWithUA(h, identity.userAgent)
+
+	require.Equal(t, "codex_vscode", getHeaderRaw(h, "originator"))
+	require.Equal(t, strings.ToLower(getHeaderRaw(h, "originator")), getHeaderRaw(h, "originator"))
 	require.Contains(t, h, "originator")
 	require.Empty(t, h.Get("X-Originator"))
 	_, hasXOriginator := h["X-Originator"]
