@@ -300,6 +300,12 @@ func (s *IdentityService) ApplyFingerprint(req *http.Request, fp *Fingerprint) {
 // 支持旧拼接格式和新 JSON 格式的 user_id 解析，
 // 根据 fingerprintUA 版本选择输出格式。
 //
+// accountUUID is the gateway-generated UUID the caller already resolved
+// (profile.GatewayAccountUUID). Do not pass extra.account_uuid.
+// cachedClientID is the profile device_id (user segment).
+// Result shape is FormatMetadataUserID:
+// user_{device_id}_account_{gateway_account_uuid}_session_{derived}.
+//
 // 重要：此函数使用 json.RawMessage 保留其他字段的原始字节，
 // 避免重新序列化导致 thinking 块等内容被修改。
 func (s *IdentityService) RewriteUserID(body []byte, accountID int64, accountUUID, cachedClientID, fingerprintUA string) ([]byte, error) {
@@ -353,6 +359,9 @@ func (s *IdentityService) RewriteUserID(body []byte, accountID int64, accountUUI
 // RewriteUserIDWithMasking 重写body中的metadata.user_id，支持会话ID伪装
 // 如果账号启用了会话ID伪装（session_id_masking_enabled），
 // 则在完成常规重写后，将 session 部分替换为固定的伪装ID（15分钟内保持不变）
+//
+// accountUUID is the gateway-generated UUID (profile.GatewayAccountUUID).
+// This function does not read account.Extra["account_uuid"].
 //
 // 重要：此函数使用 json.RawMessage 保留其他字段的原始字节，
 // 避免重新序列化导致 thinking 块等内容被修改。
@@ -428,6 +437,17 @@ func (s *IdentityService) RewriteUserIDWithMasking(ctx context.Context, body []b
 		return newBody, nil
 	}
 	return maskedBody, nil
+}
+
+// GatewayAccountUUIDForRewrite returns profile.GatewayAccountUUID for RewriteUserID.
+// Task 9 must pass the profile UUID. fallback is accepted for call-site
+// compatibility but is never used: this must not fall back to extra.account_uuid.
+func GatewayAccountUUIDForRewrite(profile *AccountDeviceProfile, fallback string) string {
+	_ = fallback
+	if profile != nil && profile.GatewayAccountUUID != "" {
+		return profile.GatewayAccountUUID
+	}
+	return ""
 }
 
 // generateClientID 生成64位十六进制客户端ID（32字节随机数）
