@@ -54,6 +54,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 
 	// OAuth账号：应用统一指纹和metadata重写（受设置开关控制）
 	var fingerprint *Fingerprint
+	var outboundProfile *AccountDeviceProfile
 	enableFP, enableMPT := true, false
 	if s.settingService != nil {
 		enableFP, enableMPT, _ = s.settingService.GetGatewayForwardingSettings(ctx)
@@ -64,27 +65,23 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		if err != nil {
 			logger.LegacyPrintf("service.gateway", "Warning: failed to get fingerprint for account %d: %v", account.ID, err)
 			// 失败时降级为透传原始headers
-		} else {
-			if enableFP {
-				fingerprint = fp
-			}
+		} else if enableFP {
+			fingerprint = fp
+		}
 
-			// 2. 重写metadata.user_id（需要指纹中的ClientID和账号的account_uuid）
-			// 如果启用了会话ID伪装，会在重写后替换 session 部分为固定值
-			// 当 metadata 透传开启时跳过重写
-			if !enableMPT {
-				accountUUID := account.GetExtraString("account_uuid")
-				if accountUUID != "" && fp.ClientID != "" {
-					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
-						body = newBody
-					}
-				}
-			}
+		// 2. Profile identity is all-or-nothing: UA / stainless / user_id come from
+		// the same loaded profile. Load failure strips client user_id and drops
+		// fingerprint identity so we never emit a half bundle.
+		body, outboundProfile = s.applyAnthropicOutboundIdentity(ctx, body, account, !enableMPT)
+		if outboundProfile == nil {
+			fingerprint = nil
 		}
 	}
 
 	// 同步 billing header cc_version 与实际发送的 User-Agent 版本
-	if fingerprint != nil {
+	if ua := outboundProfileUserAgent(outboundProfile); ua != "" {
+		body = syncBillingHeaderVersion(body, ua)
+	} else if fingerprint != nil {
 		body = syncBillingHeaderVersion(body, fingerprint.UserAgent)
 	}
 
@@ -145,8 +142,10 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		}
 	}
 
-	// OAuth账号：应用缓存的指纹到请求头（覆盖白名单透传的头）
-	if fingerprint != nil {
+	// OAuth账号：profile UA/stainless 覆盖白名单透传；load failure 不回退指纹身份。
+	if outboundProfile != nil {
+		applyOutboundProfileIdentityHeaders(req, outboundProfile)
+	} else if fingerprint != nil {
 		s.identityService.ApplyFingerprint(req, fingerprint)
 	}
 

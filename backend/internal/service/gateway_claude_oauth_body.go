@@ -6,8 +6,11 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/anthropicfp"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
@@ -320,6 +323,145 @@ func normalizeClaudeOAuthRequestBody(body []byte, modelID string, opts claudeOAu
 	return out, modelID
 }
 
+func outboundProfileUserAgent(profile *AccountDeviceProfile) string {
+	if profile == nil || profile.ProfilePayload == nil {
+		return ""
+	}
+	ua, _ := profile.ProfilePayload["user_agent"].(string)
+	return strings.TrimSpace(ua)
+}
+
+func outboundProfilePayloadString(profile *AccountDeviceProfile, key string) string {
+	if profile == nil || profile.ProfilePayload == nil {
+		return ""
+	}
+	v, _ := profile.ProfilePayload[key].(string)
+	return strings.TrimSpace(v)
+}
+
+func applyOutboundProfileIdentityHeaders(req *http.Request, profile *AccountDeviceProfile) {
+	if req == nil || profile == nil {
+		return
+	}
+	if ua := outboundProfileUserAgent(profile); ua != "" {
+		setHeaderRaw(req.Header, "User-Agent", ua)
+	}
+	if v := outboundProfilePayloadString(profile, "stainless_lang"); v != "" {
+		setHeaderRaw(req.Header, "X-Stainless-Lang", v)
+	}
+	if v := outboundProfilePayloadString(profile, "stainless_package_version"); v != "" {
+		setHeaderRaw(req.Header, "X-Stainless-Package-Version", v)
+	}
+	if v := outboundProfilePayloadString(profile, "stainless_os"); v != "" {
+		setHeaderRaw(req.Header, "X-Stainless-OS", v)
+	}
+	if v := outboundProfilePayloadString(profile, "stainless_arch"); v != "" {
+		setHeaderRaw(req.Header, "X-Stainless-Arch", v)
+	}
+	if v := outboundProfilePayloadString(profile, "stainless_runtime"); v != "" {
+		setHeaderRaw(req.Header, "X-Stainless-Runtime", v)
+	}
+	if v := outboundProfilePayloadString(profile, "stainless_runtime_version"); v != "" {
+		setHeaderRaw(req.Header, "X-Stainless-Runtime-Version", v)
+	}
+}
+
+func stripAnthropicMetadataUserID(body []byte) []byte {
+	if len(body) == 0 || !gjson.GetBytes(body, "metadata.user_id").Exists() {
+		return body
+	}
+	next, ok := deleteJSONPathBytes(body, "metadata.user_id")
+	if !ok {
+		return body
+	}
+	return next
+}
+
+const identityRejectLogInterval = 30 * time.Second
+
+var (
+	identityRejectLogMu sync.Mutex
+	identityRejectLogAt = map[int64]time.Time{}
+)
+
+func logOutboundIdentityReject(account *Account, err error) {
+	if err == nil {
+		return
+	}
+	id := int64(0)
+	if account != nil {
+		id = account.ID
+	}
+	now := time.Now()
+	identityRejectLogMu.Lock()
+	last := identityRejectLogAt[id]
+	if !last.IsZero() && now.Sub(last) < identityRejectLogInterval {
+		identityRejectLogMu.Unlock()
+		return
+	}
+	identityRejectLogAt[id] = now
+	identityRejectLogMu.Unlock()
+	logger.LegacyPrintf("service.gateway", "Warning: identity_reject account %d: %v", id, err)
+}
+
+func (s *GatewayService) applyAnthropicOutboundIdentity(ctx context.Context, body []byte, account *Account, rewriteUserID bool) ([]byte, *AccountDeviceProfile) {
+	if s == nil || account == nil {
+		return body, nil
+	}
+	profile, err := LoadOutboundDeviceProfile(ctx, account)
+	if err != nil {
+		logOutboundIdentityReject(account, err)
+		return stripAnthropicMetadataUserID(body), nil
+	}
+	if rewriteUserID {
+		body = s.applyAnthropicUserIDFromProfile(ctx, body, account, profile)
+	}
+	return body, profile
+}
+
+func (s *GatewayService) applyAnthropicUserIDFromProfile(ctx context.Context, body []byte, account *Account, profile *AccountDeviceProfile) []byte {
+	if s == nil || s.identityService == nil || account == nil || len(body) == 0 {
+		return body
+	}
+	accountUUID := GatewayAccountUUIDForRewrite(profile, "")
+	deviceID := ""
+	if profile != nil {
+		deviceID = strings.TrimSpace(profile.DeviceID)
+	}
+	if accountUUID == "" || deviceID == "" {
+		return body
+	}
+	newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, deviceID, outboundProfileUserAgent(profile))
+	if err != nil || len(newBody) == 0 {
+		return body
+	}
+	return newBody
+}
+
+func (s *GatewayService) rewriteAnthropicUserIDFromProfile(ctx context.Context, body []byte, account *Account) []byte {
+	body, _ = s.applyAnthropicOutboundIdentity(ctx, body, account, true)
+	return body
+}
+
+func (s *GatewayService) buildAnthropicMetadataUserIDFromProfile(ctx context.Context, account *Account, sessionSeed string) string {
+	if account == nil {
+		return ""
+	}
+	profile, err := LoadOutboundDeviceProfile(ctx, account)
+	if err != nil || profile == nil {
+		if err != nil {
+			logOutboundIdentityReject(account, err)
+		}
+		return ""
+	}
+	deviceID := strings.TrimSpace(profile.DeviceID)
+	accountUUID := GatewayAccountUUIDForRewrite(profile, "")
+	if deviceID == "" || accountUUID == "" {
+		return ""
+	}
+	return FormatMetadataUserID(deviceID, accountUUID, generateSessionUUID(sessionSeed), ExtractCLIVersion(outboundProfileUserAgent(profile)))
+}
+
 func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account *Account, fp *Fingerprint) string {
 	if parsed == nil || account == nil {
 		return ""
@@ -327,16 +469,7 @@ func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account
 	if parsed.MetadataUserID != "" {
 		return ""
 	}
-
-	userID := strings.TrimSpace(account.GetClaudeUserID())
-	if userID == "" && fp != nil {
-		userID = fp.ClientID
-	}
-	if userID == "" {
-		// Fall back to a random, well-formed client id so we can still satisfy
-		// Claude Code OAuth requirements when account metadata is incomplete.
-		userID = generateClientID()
-	}
+	_ = fp
 
 	// session_id 用"会话级稳定种子"派生（账号 + 客户端区分因子 + 首条 user 文本）：
 	// 随对话在尾部追加 messages 时保持不变，贴近真实 CC 进程级稳定的 session_id。
@@ -346,15 +479,9 @@ func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account
 		firstUserText = extractFirstUserText(parsed.Body.Bytes())
 	}
 	seed := buildStableSessionSeed(account.ID, sessionContextDiscriminator(parsed.SessionContext), firstUserText)
-	sessionID := generateSessionUUID(seed)
-
-	// 根据指纹 UA 版本选择输出格式
-	var uaVersion string
-	if fp != nil {
-		uaVersion = ExtractCLIVersion(fp.UserAgent)
-	}
-	accountUUID := strings.TrimSpace(account.GetExtraString("account_uuid"))
-	return FormatMetadataUserID(userID, accountUUID, sessionID, uaVersion)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return s.buildAnthropicMetadataUserIDFromProfile(ctx, account, seed)
 }
 
 // applyClaudeCodeOAuthMimicryToBody 将"非 Claude Code 客户端 + Claude OAuth 账号"
@@ -397,18 +524,14 @@ func (s *GatewayService) applyClaudeCodeOAuthMimicryToBody(
 
 	normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: !systemRewritten}
 
-	if s.identityService != nil && c != nil && c.Request != nil {
-		if fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header); err == nil && fp != nil {
-			mimicMPT := false
-			if s.settingService != nil {
-				_, mimicMPT, _ = s.settingService.GetGatewayForwardingSettings(ctx)
-			}
-			if !mimicMPT {
-				if uid := s.buildOAuthMetadataUserIDFromBody(ctx, account, fp, body); uid != "" {
-					normalizeOpts.injectMetadata = true
-					normalizeOpts.metadataUserID = uid
-				}
-			}
+	mimicMPT := false
+	if s.settingService != nil {
+		_, mimicMPT, _ = s.settingService.GetGatewayForwardingSettings(ctx)
+	}
+	if !mimicMPT {
+		if uid := s.buildOAuthMetadataUserIDFromBody(ctx, account, nil, body); uid != "" {
+			normalizeOpts.injectMetadata = true
+			normalizeOpts.metadataUserID = uid
 		}
 	}
 
@@ -446,7 +569,7 @@ func (s *GatewayService) buildOAuthMetadataUserIDFromBody(
 	fp *Fingerprint,
 	body []byte,
 ) string {
-	_ = ctx
+	_ = fp
 	if account == nil {
 		return ""
 	}
@@ -454,29 +577,23 @@ func (s *GatewayService) buildOAuthMetadataUserIDFromBody(
 		return ""
 	}
 
-	userID := strings.TrimSpace(account.GetClaudeUserID())
-	if userID == "" && fp != nil {
-		userID = fp.ClientID
+	profile, err := LoadOutboundDeviceProfile(ctx, account)
+	if err != nil || profile == nil {
+		if err != nil {
+			logOutboundIdentityReject(account, err)
+		}
+		return ""
 	}
-	if userID == "" {
-		userID = generateClientID()
+	deviceID := strings.TrimSpace(profile.DeviceID)
+	accountUUID := GatewayAccountUUIDForRewrite(profile, "")
+	if deviceID == "" || accountUUID == "" {
+		return ""
 	}
 
 	// 与 buildOAuthMetadataUserID 一致：用会话级稳定种子，避免整 body 哈希导致
 	// 每轮（甚至每个 token 变化）都重算出不同的 session_id。
-	var clientDiscriminator string
-	if fp != nil {
-		clientDiscriminator = fp.ClientID
-	}
-	seed := buildStableSessionSeed(account.ID, clientDiscriminator, extractFirstUserText(body))
-	sessionID := generateSessionUUID(seed)
-
-	var uaVersion string
-	if fp != nil {
-		uaVersion = ExtractCLIVersion(fp.UserAgent)
-	}
-	accountUUID := strings.TrimSpace(account.GetExtraString("account_uuid"))
-	return FormatMetadataUserID(userID, accountUUID, sessionID, uaVersion)
+	seed := buildStableSessionSeed(account.ID, deviceID, extractFirstUserText(body))
+	return FormatMetadataUserID(deviceID, accountUUID, generateSessionUUID(seed), ExtractCLIVersion(outboundProfileUserAgent(profile)))
 }
 
 // buildStableSessionSeed 为伪装路径合成的 metadata.user_id session_id 生成"会话级稳定"种子。
