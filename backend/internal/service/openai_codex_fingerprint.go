@@ -190,6 +190,19 @@ func extractClientSessionID(h http.Header) string {
 	return strings.TrimSpace(h.Get("session_id"))
 }
 
+// applyCodexSharedRequestIdentity loads the outbound profile once and stamps
+// request-body client_metadata from the same IDs used for outbound headers.
+// When no shared header identity will be applied (fpIDs == nil), the body is
+// left unchanged — including skipping a standalone InstallationID stamp.
+func applyCodexSharedRequestIdentity(ctx context.Context, reqBody map[string]any, account *Account, clientHeaders http.Header) *codexFingerprintIDs {
+	fpIDs := resolveCodexFingerprintIDsFromRequest(ctx, account, clientHeaders)
+	if fpIDs == nil {
+		return nil
+	}
+	applyCodexFingerprintClientMetadata(reqBody, fpIDs)
+	return fpIDs
+}
+
 // resolveCodexFingerprintIDsFromRequest 从客户端原始请求头中提取 session-id，
 // 结合账号配置一次性解析收敛 ID 集合。调用方应将返回的 ids 同时传给
 // applyCodexFingerprintHeaders 和 applyCodexFingerprintClientMetadata。

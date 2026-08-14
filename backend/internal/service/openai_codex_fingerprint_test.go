@@ -111,6 +111,52 @@ func injectProfileForAccount(t *testing.T, account *Account) *AccountDeviceProfi
 	return profile
 }
 
+type failAfterMapDeviceRepo struct {
+	mapDeviceProfileRepo
+	failAfter int
+	gets      int
+}
+
+func (r *failAfterMapDeviceRepo) GetByAccountID(ctx context.Context, accountID int64) (*AccountDeviceProfile, error) {
+	r.gets++
+	if r.failAfter > 0 && r.gets > r.failAfter {
+		return nil, fmt.Errorf("identity_reject: second profile load failed")
+	}
+	return r.mapDeviceProfileRepo.GetByAccountID(ctx, accountID)
+}
+
+// First load succeeds and second fails: body must not keep a profile/extra
+// installation id unless the same resolve produced shared header IDs.
+func TestCodexSharedRequestIdentity_SecondLoadFailureDoesNotKeepBodyInstallationID(t *testing.T) {
+	profile := validOpenAIDeviceProfile(16)
+	profile.InstallationID = "profile-install-id-16"
+	repo := &failAfterMapDeviceRepo{
+		mapDeviceProfileRepo: mapDeviceProfileRepo{
+			profiles: map[int64]*AccountDeviceProfile{16: profile},
+		},
+		failAfter: 1,
+	}
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(NewAccountDeviceService(repo))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	account := newTestOAuthAccount(16, map[string]any{"openai_device_id": "extra-device-id"})
+	body := map[string]any{}
+
+	ids := applyCodexSharedRequestIdentity(context.Background(), body, account, nil)
+
+	bodyDump := fmt.Sprintf("%v", body)
+	if ids == nil {
+		require.NotContains(t, bodyDump, profile.InstallationID, "body must not keep profile installation id without shared header identity")
+	} else {
+		cm, _ := body["client_metadata"].(map[string]any)
+		require.Equal(t, profile.InstallationID, cm["x-codex-installation-id"])
+		require.Equal(t, profile.InstallationID, ids.installationID)
+	}
+	require.NotContains(t, bodyDump, "extra-device-id")
+	require.Equal(t, 1, repo.gets, "request path must load the profile only once")
+}
+
 // --- deriveStableUUIDv4 ---
 
 func TestDeriveStableUUIDv4_Deterministic(t *testing.T) {
