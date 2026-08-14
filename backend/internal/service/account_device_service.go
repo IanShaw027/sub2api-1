@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
@@ -73,29 +72,29 @@ func buildAccountDeviceBaseline(account *Account) (*AccountDeviceProfile, error)
 		return nil, fmt.Errorf("identity_reject: generate session_namespace: %w", err)
 	}
 
-	platform := strings.ToLower(strings.TrimSpace(account.Platform))
 	runtime := "node"
-	switch platform {
+	switch account.Platform {
 	case PlatformOpenAI:
 		runtime = "codex_cli_rs"
 	case PlatformGrok:
 		runtime = "grok-shell"
 	}
 
-	clientVersion, runtimeVersion, payload := baselineSoftwareBundle(platform)
+	osFamily, arch := baselineOSArch(account.Platform)
+	clientVersion, runtimeVersion, payload := baselineSoftwareBundle(account.Platform)
 	p := &AccountDeviceProfile{
 		AccountID:          account.ID,
 		Revision:           1,
 		SchemaVersion:      1,
-		Platform:           platform,
-		ClientFamily:       DefaultClientFamily(platform),
+		Platform:           account.Platform,
+		ClientFamily:       DefaultClientFamily(account.Platform),
 		InstallationID:     uuid.NewString(),
 		DeviceID:           uuid.NewString(),
 		MachineID:          uuid.NewString(),
 		GatewayAccountUUID: uuid.NewString(),
 		SessionNamespace:   sessionNamespace,
-		OSFamily:           "macos",
-		Arch:               "arm64",
+		OSFamily:           osFamily,
+		Arch:               arch,
 		Runtime:            runtime,
 		RuntimeVersion:     runtimeVersion,
 		ClientVersion:      clientVersion,
@@ -106,6 +105,19 @@ func buildAccountDeviceBaseline(account *Account) (*AccountDeviceProfile, error)
 		LearningEnabled:    false,
 	}
 	return p, nil
+}
+
+func baselineOSArch(platform string) (osFamily, arch string) {
+	switch platform {
+	case PlatformAnthropic:
+		return "linux", "arm64"
+	case PlatformOpenAI:
+		return "linux", "x64"
+	case PlatformGemini, PlatformAntigravity:
+		return "windows", "x64"
+	default:
+		return "macos", "arm64"
+	}
 }
 
 func baselineSoftwareBundle(platform string) (clientVersion, runtimeVersion string, payload map[string]any) {

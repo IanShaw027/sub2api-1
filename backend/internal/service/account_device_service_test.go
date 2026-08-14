@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
@@ -207,4 +208,68 @@ func TestGetOrCreateShadowDoesNotInsert(t *testing.T) {
 		Count(ctx)
 	require.NoError(t, err)
 	require.Zero(t, n)
+}
+
+func TestGetOrCreateRejectsNonExactPlatformWithoutInsert(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+
+	for _, platform := range []string{"ANTHROPIC", " anthropic "} {
+		t.Run(platform, func(t *testing.T) {
+			account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, nil)
+			account.Platform = platform
+
+			got, err := svc.GetOrCreate(ctx, account)
+			require.Error(t, err)
+			require.ErrorContains(t, err, "identity_reject")
+			require.Nil(t, got)
+
+			n, err := client.AccountDeviceProfile.Query().
+				Where(accountdeviceprofile.AccountID(account.ID)).
+				Count(ctx)
+			require.NoError(t, err)
+			require.Zero(t, n)
+		})
+	}
+}
+
+func TestGetOrCreateBaselineOSArchMatchesPayload(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+
+	cases := []struct {
+		platform string
+		osFamily string
+		arch     string
+		uaHint   string
+	}{
+		{service.PlatformAnthropic, "linux", "arm64", ""},
+		{service.PlatformOpenAI, "linux", "x64", "ubuntu"},
+		{service.PlatformGemini, "windows", "x64", "windows"},
+		{service.PlatformAntigravity, "windows", "x64", "windows"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.platform, func(t *testing.T) {
+			account := mustCreateDeviceAccount(t, client, tc.platform, nil)
+			profile, err := svc.GetOrCreate(ctx, account)
+			require.NoError(t, err)
+			require.NoError(t, service.ValidateAccountDeviceProfile(profile))
+			require.Equal(t, tc.osFamily, profile.OSFamily)
+			require.Equal(t, tc.arch, profile.Arch)
+			require.NotEqual(t, "amd64", profile.Arch)
+			require.NotEqual(t, "x86_64", profile.Arch)
+
+			if tc.uaHint != "" {
+				ua, _ := profile.ProfilePayload["user_agent"].(string)
+				require.Contains(t, strings.ToLower(ua), tc.uaHint)
+			}
+			if osVal, ok := profile.ProfilePayload["stainless_os"].(string); ok {
+				require.Equal(t, strings.ToLower(osVal), profile.OSFamily)
+			}
+			if archVal, ok := profile.ProfilePayload["stainless_arch"].(string); ok {
+				require.Equal(t, strings.ToLower(archVal), profile.Arch)
+			}
+		})
+	}
 }

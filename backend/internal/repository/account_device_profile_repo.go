@@ -80,15 +80,6 @@ func (r *accountDeviceProfileRepository) UpdateCAS(ctx context.Context, accountI
 		).
 		SetRevision(expectedRevision + 1).
 		SetSchemaVersion(next.SchemaVersion).
-		SetPlatform(next.Platform).
-		SetClientFamily(next.ClientFamily).
-		SetInstallationID(next.InstallationID).
-		SetDeviceID(next.DeviceID).
-		SetClientID(next.ClientID).
-		SetMachineID(next.MachineID).
-		SetGatewayAccountUUID(next.GatewayAccountUUID).
-		SetOsFamily(next.OSFamily).
-		SetArch(next.Arch).
 		SetRuntime(next.Runtime).
 		SetRuntimeVersion(next.RuntimeVersion).
 		SetClientVersion(next.ClientVersion).

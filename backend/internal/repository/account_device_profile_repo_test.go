@@ -140,3 +140,45 @@ func TestAccountDeviceProfileRepositoryUpdateCASSuccessAndMismatch(t *testing.T)
 	require.Equal(t, int64(2), still.Revision)
 	require.Equal(t, created.SessionNamespace, still.SessionNamespace)
 }
+
+func TestAccountDeviceProfileRepositoryUpdateCASPreservesFirstWriteIdentity(t *testing.T) {
+	repo, client := newAccountDeviceProfileRepo(t)
+	ctx := context.Background()
+	accountID := mustCreateRepoAccount(t, client)
+
+	created, err := repo.InsertBaseline(ctx, validRepoBaseline(accountID))
+	require.NoError(t, err)
+
+	next := validRepoBaseline(accountID)
+	next.ClientVersion = "2.1.221"
+	next.Runtime = "bun"
+	next.DeviceID = "99999999-9999-4999-8999-999999999999"
+	next.GatewayAccountUUID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	next.OSFamily = "linux"
+	next.Arch = "x64"
+	next.InstallationID = "88888888-8888-4888-8888-888888888888"
+	next.MachineID = "77777777-7777-4777-8777-777777777777"
+	next.ClientID = "changed-client"
+	next.Platform = service.PlatformOpenAI
+	next.ClientFamily = service.ClientFamilyCodexCLI
+
+	ok, err := repo.UpdateCAS(ctx, accountID, created.Revision, next)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	updated, err := repo.GetByAccountID(ctx, accountID)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), updated.Revision)
+	require.Equal(t, "2.1.221", updated.ClientVersion)
+	require.Equal(t, "bun", updated.Runtime)
+	require.Equal(t, created.DeviceID, updated.DeviceID)
+	require.Equal(t, created.GatewayAccountUUID, updated.GatewayAccountUUID)
+	require.Equal(t, created.OSFamily, updated.OSFamily)
+	require.Equal(t, created.Arch, updated.Arch)
+	require.Equal(t, created.InstallationID, updated.InstallationID)
+	require.Equal(t, created.MachineID, updated.MachineID)
+	require.Equal(t, created.ClientID, updated.ClientID)
+	require.Equal(t, created.Platform, updated.Platform)
+	require.Equal(t, created.ClientFamily, updated.ClientFamily)
+	require.Equal(t, created.SessionNamespace, updated.SessionNamespace)
+}
