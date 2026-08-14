@@ -15,6 +15,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/model"
+	kiropkg "github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/websearch"
 	"github.com/gin-gonic/gin"
@@ -178,6 +179,7 @@ func TestKiroGatewayService_Forward_TokenFailureReturnsFailoverAndTempUnsched(t 
 }
 
 func TestKiroGatewayService_Forward_NonFailoverHTTPErrorAppliesKiroPassthroughRule(t *testing.T) {
+	installDefaultKiroOutboundProfile(t)
 	setGinTestMode()
 
 	rec := httptest.NewRecorder()
@@ -278,6 +280,7 @@ func TestKiroGatewayService_Forward_EmulatesWebSearchBeforeKiroUpstream(t *testi
 }
 
 func TestKiroGatewayService_Forward_RetriesOnceAfterInvalidTokenResponse(t *testing.T) {
+	installDefaultKiroOutboundProfile(t)
 	setGinTestMode()
 
 	rec := httptest.NewRecorder()
@@ -353,6 +356,7 @@ func TestKiroGatewayService_Forward_RetriesOnceAfterInvalidTokenResponse(t *test
 }
 
 func TestKiroGatewayService_Forward_InvalidTokenRetryFailureDoesNotLeakRetryError(t *testing.T) {
+	installDefaultKiroOutboundProfile(t)
 	setGinTestMode()
 
 	rec := httptest.NewRecorder()
@@ -395,6 +399,7 @@ func TestKiroGatewayService_Forward_InvalidTokenRetryFailureDoesNotLeakRetryErro
 }
 
 func TestKiroGatewayService_Forward_Kiro402QuotaExhaustedTriggersFailoverRateLimitPath(t *testing.T) {
+	installDefaultKiroOutboundProfile(t)
 	setGinTestMode()
 
 	rec := httptest.NewRecorder()
@@ -499,6 +504,7 @@ func TestKiroGatewayService_Forward_WebSearchMalformedRequestDoesNotAcceptEarly(
 // 验证：上游 transport 故障（非客户端断开）时，handleKiroTransportError 应当返回
 // *UpstreamFailoverError 触发 handler 的账号 failover，并把当前账号置临时不可调度。
 func TestKiroGatewayService_Forward_TransportErr_UpstreamCancel_FailoverAndTempUnsched(t *testing.T) {
+	installDefaultKiroOutboundProfile(t)
 	setGinTestMode()
 
 	rec := httptest.NewRecorder()
@@ -665,6 +671,7 @@ func TestKiroGatewayService_HandleKiroTransportError_CanceledRequestWithConnecti
 // 验证：客户端真正断开（gin.Request.Context() 已 Canceled）时，
 // 不返回 UpstreamFailoverError、不标记账号临时不可调度。
 func TestKiroGatewayService_Forward_TransportErr_ClientDisconnect_NoFailoverNoMark(t *testing.T) {
+	installDefaultKiroOutboundProfile(t)
 	setGinTestMode()
 
 	rec := httptest.NewRecorder()
@@ -738,4 +745,229 @@ func TestKiroResponseTelemetryFlagsMixedCompletedAndPartialToolUse(t *testing.T)
 	}
 
 	require.Contains(t, telemetry.anomalyKinds("tool_use"), "incomplete_tool_use_completed")
+}
+
+const kiroPinnedOutboundMachineID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+
+type staticKiroDeviceProfileRepo struct {
+	profile       *AccountDeviceProfile
+	err           error
+	getCalls      int
+	failAfterGets int
+}
+
+func (r *staticKiroDeviceProfileRepo) GetByAccountID(_ context.Context, accountID int64) (*AccountDeviceProfile, error) {
+	r.getCalls++
+	if r.failAfterGets > 0 {
+		if r.getCalls > r.failAfterGets {
+			if r.err != nil {
+				return nil, r.err
+			}
+			return nil, errors.New("identity_reject: subsequent profile load failed")
+		}
+	} else if r.err != nil {
+		return nil, r.err
+	}
+	if r.profile == nil {
+		return nil, nil
+	}
+	cloned := *r.profile
+	cloned.AccountID = accountID
+	if cloned.ProfilePayload != nil {
+		payload := make(map[string]any, len(cloned.ProfilePayload))
+		for k, v := range cloned.ProfilePayload {
+			payload[k] = v
+		}
+		cloned.ProfilePayload = payload
+	}
+	return &cloned, nil
+}
+
+func (r *staticKiroDeviceProfileRepo) InsertBaseline(_ context.Context, p *AccountDeviceProfile) (*AccountDeviceProfile, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return p, nil
+}
+
+func (r *staticKiroDeviceProfileRepo) UpdateCAS(context.Context, int64, int64, *AccountDeviceProfile) (bool, error) {
+	return false, nil
+}
+
+func validKiroOutboundProfile(accountID int64, machineID string) *AccountDeviceProfile {
+	return &AccountDeviceProfile{
+		AccountID:          accountID,
+		Revision:           1,
+		SchemaVersion:      1,
+		Platform:           PlatformKiro,
+		ClientFamily:       ClientFamilyKiroIDE,
+		InstallationID:     "11111111-1111-4111-8111-111111111111",
+		DeviceID:           "22222222-2222-4222-8222-222222222222",
+		MachineID:          machineID,
+		GatewayAccountUUID: "55555555-5555-4555-8555-555555555555",
+		SessionNamespace:   "0123456789abcdef0123456789abcdef",
+		OSFamily:           "macos",
+		Arch:               "arm64",
+		Runtime:            "node",
+		RuntimeVersion:     defaultKiroNodeVersion,
+		ClientVersion:      defaultKiroVersion,
+		TransportFamily:    TransportH1,
+		ProfilePayload: map[string]any{
+			"kiro_system_version": defaultKiroSystemVersion,
+			"kiro_node_version":   defaultKiroNodeVersion,
+		},
+		LearnedFrom: LearnedFromBaseline,
+	}
+}
+
+func installKiroOutboundDeviceProfile(t *testing.T, profile *AccountDeviceProfile, loadErr error) {
+	t.Helper()
+	prev := OutboundDeviceProfileService()
+	if loadErr != nil || profile != nil {
+		SetOutboundDeviceProfileService(NewAccountDeviceService(&staticKiroDeviceProfileRepo{
+			profile: profile,
+			err:     loadErr,
+		}))
+	} else {
+		SetOutboundDeviceProfileService(nil)
+	}
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+}
+
+func installDefaultKiroOutboundProfile(t *testing.T) {
+	t.Helper()
+	installKiroOutboundDeviceProfile(t, validKiroOutboundProfile(0, kiroPinnedOutboundMachineID), nil)
+}
+
+func TestBuildKiroGenerateAssistantRequest_UsesProfileMachineIDNotRefreshToken(t *testing.T) {
+	installKiroOutboundDeviceProfile(t, validKiroOutboundProfile(12, kiroPinnedOutboundMachineID), nil)
+
+	body := []byte(`{"conversationState":{}}`)
+	accountA := &Account{
+		ID:       12,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "kiro-refresh-token-alpha",
+		},
+	}
+	accountB := &Account{
+		ID:       12,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "kiro-refresh-token-bravo",
+		},
+	}
+
+	reqA, err := buildKiroGenerateAssistantRequest(context.Background(), accountA, body, "access-a", nil)
+	require.NoError(t, err)
+	require.NotNil(t, reqA)
+	reqB, err := buildKiroGenerateAssistantRequest(context.Background(), accountB, body, "access-b", nil)
+	require.NoError(t, err)
+	require.NotNil(t, reqB)
+
+	tokenMachineA := kiropkg.GenerateMachineID("", accountA.GetCredential("refresh_token"))
+	tokenMachineB := kiropkg.GenerateMachineID("", accountB.GetCredential("refresh_token"))
+	require.NotEmpty(t, tokenMachineA)
+	require.NotEmpty(t, tokenMachineB)
+	require.NotEqual(t, tokenMachineA, tokenMachineB)
+
+	uaA := reqA.Header.Get("x-amz-user-agent")
+	uaB := reqB.Header.Get("x-amz-user-agent")
+	require.Equal(t, uaA, uaB)
+	require.Contains(t, uaA, kiroPinnedOutboundMachineID)
+	require.Contains(t, reqA.Header.Get("User-Agent"), kiroPinnedOutboundMachineID)
+	require.NotContains(t, uaA, tokenMachineA)
+	require.NotContains(t, uaA, tokenMachineB)
+	require.NotContains(t, reqA.Header.Get("User-Agent"), tokenMachineA)
+	require.NotContains(t, reqB.Header.Get("User-Agent"), tokenMachineB)
+}
+
+func TestBuildKiroGenerateAssistantRequest_LoadFailureDoesNotUseTokenMachineID(t *testing.T) {
+	installKiroOutboundDeviceProfile(t, nil, errors.New("identity_reject: device profile unavailable"))
+
+	account := &Account{
+		ID:       13,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"refresh_token": "kiro-refresh-token-should-not-mint-machine-id",
+		},
+	}
+
+	req, err := buildKiroGenerateAssistantRequest(context.Background(), account, []byte(`{}`), "access", nil)
+	require.Error(t, err)
+	require.Nil(t, req)
+	require.NotContains(t, err.Error(), kiropkg.GenerateMachineID("", account.GetCredential("refresh_token")))
+}
+
+func TestBuildKiroGenerateAssistantRequest_ProfilePayloadOverridesRuntimeSettings(t *testing.T) {
+	profile := validKiroOutboundProfile(14, kiroPinnedOutboundMachineID)
+	profile.ProfilePayload = map[string]any{
+		"kiro_system_version": "linux#6.8.0",
+		"kiro_node_version":   "20.19.0",
+		"kiro_commit":         "abc1234",
+	}
+	installKiroOutboundDeviceProfile(t, profile, nil)
+
+	req, err := buildKiroGenerateAssistantRequest(context.Background(), &Account{
+		ID:       14,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+	}, []byte(`{}`), "access", &KiroRuntimeSettings{
+		KiroVersion:   defaultKiroVersion,
+		SystemVersion: defaultKiroSystemVersion,
+		NodeVersion:   defaultKiroNodeVersion,
+		KiroCommit:    "runtime-commit",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, req)
+	require.Contains(t, req.Header.Get("User-Agent"), "os/linux#6.8.0")
+	require.Contains(t, req.Header.Get("User-Agent"), "md/nodejs#20.19.0")
+	require.Equal(t, "abc1234", req.Header.Get("x-amzn-kiro-commit"))
+	require.NotEqual(t, "runtime-commit", req.Header.Get("x-amzn-kiro-commit"))
+}
+
+func TestKiroBuildRequestAndUpstream_LoadsDeviceProfileOnce(t *testing.T) {
+	repo := &staticKiroDeviceProfileRepo{
+		profile:       validKiroOutboundProfile(21, kiroPinnedOutboundMachineID),
+		failAfterGets: 1,
+		err:           errors.New("identity_reject: subsequent profile load failed"),
+	}
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(NewAccountDeviceService(repo))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader("")),
+		},
+	}
+	svc := &KiroGatewayService{httpUpstream: upstream}
+	account := &Account{
+		ID:       21,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "kiro-api-key",
+		},
+	}
+
+	req, deviceProfile, err := svc.buildRequest(context.Background(), account, []byte(`{}`), "access", nil)
+	require.NoError(t, err)
+	require.NotNil(t, req)
+	resp, err := svc.doKiroUpstream(context.Background(), nil, account, req, deviceProfile)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 1, repo.getCalls)
+}
+
+func TestLoadOutboundDeviceProfile_UnconfiguredWithoutPerTestInstall(t *testing.T) {
+	p, err := LoadOutboundDeviceProfile(context.Background(), &Account{ID: 99, Platform: PlatformAnthropic})
+	require.Error(t, err)
+	require.Nil(t, p)
+	require.ErrorContains(t, err, "not configured")
 }

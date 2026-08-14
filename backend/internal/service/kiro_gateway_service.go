@@ -179,7 +179,7 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 
 	fakeCachePlan, fakeCacheHit := s.prepareFakeCachePlan(account, parsed, meta, runtimeSettings)
 	logKiroFakeCachePlan(ctx, account, parsed, fakeCachePlan, fakeCacheHit)
-	req, err := s.buildRequest(ctx, account, converted.Body, accessToken, runtimeSettings)
+	req, deviceProfile, err := s.buildRequest(ctx, account, converted.Body, accessToken, runtimeSettings)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{
 			"type":  "error",
@@ -191,7 +191,7 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 	s.emitGatewayDebugUpstreamRequest(c, account, req, converted.Body, 1)
 
 	start := time.Now()
-	resp, err := s.doKiroUpstream(ctx, c, account, req)
+	resp, err := s.doKiroUpstream(ctx, c, account, req, deviceProfile)
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(start).Milliseconds())
 	if err != nil {
 		return nil, s.handleKiroTransportError(ctx, c, account, req.URL.String(), err)
@@ -924,16 +924,28 @@ func writeKiroInvalidRequest(c *gin.Context, err error) {
 	})
 }
 
-func (s *KiroGatewayService) buildRequest(ctx context.Context, account *Account, body []byte, accessToken string, runtimeSettings *KiroRuntimeSettings) (*http.Request, error) {
-	req, err := buildKiroGenerateAssistantRequest(ctx, account, body, accessToken, runtimeSettings)
+func (s *KiroGatewayService) buildRequest(ctx context.Context, account *Account, body []byte, accessToken string, runtimeSettings *KiroRuntimeSettings) (*http.Request, *AccountDeviceProfile, error) {
+	profile, err := LoadOutboundDeviceProfile(ctx, account)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	applyKiroTLSFingerprintRuntime(req, s.resolveTLSFingerprintRuntime(ctx, nil, account))
-	return req, nil
+	req, err := buildKiroGenerateAssistantRequestWithProfile(ctx, account, body, accessToken, runtimeSettings, profile)
+	if err != nil {
+		return nil, nil, err
+	}
+	applyKiroTLSFingerprintRuntimeWithProfile(req, s.resolveTLSFingerprintRuntime(ctx, nil, account), profile)
+	return req, profile, nil
 }
 
 func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, body []byte, accessToken string, runtimeSettings *KiroRuntimeSettings) (*http.Request, error) {
+	profile, err := LoadOutboundDeviceProfile(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+	return buildKiroGenerateAssistantRequestWithProfile(ctx, account, body, accessToken, runtimeSettings, profile)
+}
+
+func buildKiroGenerateAssistantRequestWithProfile(ctx context.Context, account *Account, body []byte, accessToken string, runtimeSettings *KiroRuntimeSettings, profile *AccountDeviceProfile) (*http.Request, error) {
 	url := kiroAPIURL(account)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
@@ -943,8 +955,8 @@ func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, bo
 		return io.NopCloser(bytes.NewReader(body)), nil
 	}
 
-	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
-	machineID := kiropkg.GenerateMachineID(account.GetCredential("machine_id"), account.GetCredential("refresh_token"))
+	runtimeSettings = applyKiroProfileRuntimeOverrides(runtimeSettings, profile)
+	machineID := profile.MachineID
 	host := req.URL.Host
 	kiroVersion := runtimeSettings.KiroVersion
 	req.Header.Set("Content-Type", "application/json")
@@ -966,6 +978,24 @@ func buildKiroGenerateAssistantRequest(ctx context.Context, account *Account, bo
 	req.Header.Set("amz-sdk-invocation-id", generateRequestID())
 	req.Header.Set("amz-sdk-request", "attempt=1; max=3")
 	return req, nil
+}
+
+func applyKiroProfileRuntimeOverrides(settings *KiroRuntimeSettings, profile *AccountDeviceProfile) *KiroRuntimeSettings {
+	settings = normalizeKiroRuntimeSettings(settings)
+	if profile == nil {
+		return settings
+	}
+	cloned := *settings
+	if v := kiroProfilePayloadString(profile, "kiro_system_version"); v != "" {
+		cloned.SystemVersion = v
+	}
+	if v := kiroProfilePayloadString(profile, "kiro_node_version"); v != "" {
+		cloned.NodeVersion = v
+	}
+	if v := kiroProfilePayloadString(profile, "kiro_commit"); v != "" {
+		cloned.KiroCommit = v
+	}
+	return normalizeKiroRuntimeSettings(&cloned)
 }
 
 func kiroEndpointName(account *Account) string {
@@ -1035,12 +1065,12 @@ func (s *KiroGatewayService) retryInvalidTokenResponse(
 		kiroLogger(ctx, refreshedAccount).Warn("kiro.invalid_token_retry_failed", zap.Int("status_code", statusCode), zap.Error(err))
 		return nil, err
 	}
-	retryReq, err := s.buildRequest(ctx, refreshedAccount, requestBody, accessToken, runtimeSettings)
+	retryReq, deviceProfile, err := s.buildRequest(ctx, refreshedAccount, requestBody, accessToken, runtimeSettings)
 	if err != nil {
 		kiroLogger(ctx, refreshedAccount).Warn("kiro.invalid_token_retry_failed", zap.Int("status_code", statusCode), zap.Error(err))
 		return nil, err
 	}
-	retryResp, err := s.doKiroUpstream(ctx, nil, refreshedAccount, retryReq)
+	retryResp, err := s.doKiroUpstream(ctx, nil, refreshedAccount, retryReq, deviceProfile)
 	if err != nil {
 		kiroLogger(ctx, refreshedAccount).Warn("kiro.invalid_token_retry_failed", zap.Int("status_code", statusCode), zap.Error(err))
 		return nil, err
@@ -2623,13 +2653,13 @@ func (s *KiroGatewayService) startKiroNativeWebToolContinuation(
 	if err != nil {
 		return nil, nil, err
 	}
-	req, err := s.buildRequest(ctx, account, converted.Body, accessToken, runtimeSettings)
+	req, deviceProfile, err := s.buildRequest(ctx, account, converted.Body, accessToken, runtimeSettings)
 	if err != nil {
 		return nil, nil, err
 	}
 	s.emitGatewayDebugUpstreamRequest(c, account, req, converted.Body, 2)
 
-	resp, err := s.doKiroUpstream(ctx, c, account, req)
+	resp, err := s.doKiroUpstream(ctx, c, account, req, deviceProfile)
 	if err != nil {
 		return nil, nil, err
 	}

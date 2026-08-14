@@ -42,12 +42,12 @@ func (s *KiroGatewayService) resolveTLSFingerprintRuntime(
 	return resolveAccountTLSFingerprintRuntime(ctx, account, s.tlsFPProfileSvc, s.tlsFPRouterSvc, inboundUserAgentFromGin(c), "http", "kiro")
 }
 
-func (s *KiroGatewayService) doKiroUpstream(ctx context.Context, c *gin.Context, account *Account, req *http.Request) (*http.Response, error) {
+func (s *KiroGatewayService) doKiroUpstream(ctx context.Context, c *gin.Context, account *Account, req *http.Request, deviceProfile *AccountDeviceProfile) (*http.Response, error) {
 	if s == nil || s.httpUpstream == nil || account == nil {
 		return nil, fmt.Errorf("kiro upstream is not configured")
 	}
 	runtime := s.resolveTLSFingerprintRuntime(ctx, c, account)
-	applyKiroTLSFingerprintRuntime(req, runtime)
+	applyKiroTLSFingerprintRuntimeWithProfile(req, runtime, deviceProfile)
 	profile := runtime.Profile
 	if profile == nil {
 		profile = resolveKiroTLSProfile(account, s.tlsFPProfileSvc)
@@ -56,16 +56,35 @@ func (s *KiroGatewayService) doKiroUpstream(ctx context.Context, c *gin.Context,
 }
 
 func applyKiroTLSFingerprintRuntime(req *http.Request, runtime accountTLSFingerprintRuntime) {
+	applyKiroTLSFingerprintRuntimeWithProfile(req, runtime, nil)
+}
+
+func applyKiroTLSFingerprintRuntimeWithProfile(req *http.Request, runtime accountTLSFingerprintRuntime, profile *AccountDeviceProfile) {
 	if req == nil {
 		return
 	}
-	if ua := strings.TrimSpace(runtime.UpstreamUserAgent); ua != "" {
+	ua := strings.TrimSpace(runtime.UpstreamUserAgent)
+	if ua != "" {
+		if profileUA := kiroProfilePayloadString(profile, "user_agent"); profileUA != "" {
+			ua = profileUA
+		}
 		req.Header.Set("User-Agent", ua)
 	}
 	if originator := strings.TrimSpace(runtime.UpstreamOriginator); originator != "" {
 		deleteHeaderAllForms(req.Header, "X-Originator")
 		setHeaderRaw(req.Header, "originator", originator)
 	}
+}
+
+func kiroProfilePayloadString(profile *AccountDeviceProfile, key string) string {
+	if profile == nil || profile.ProfilePayload == nil {
+		return ""
+	}
+	value, ok := profile.ProfilePayload[key].(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(value)
 }
 
 func newKiroSidecarHTTPClient(account *Account, tlsFPProfileService *TLSFingerprintProfileService, timeout time.Duration) (*http.Client, error) {
