@@ -56,7 +56,6 @@ func applyGrokUpstreamHeadersFromAccount(ctx context.Context, req *http.Request,
 }
 
 func stampGrokCLIIdentity(req *http.Request, profile *AccountDeviceProfile) {
-	ua := defaultGrokUpstreamUserAgent()
 	version := xai.ResolveCLIVersion()
 	identifier := grokClientIdentifierHeader
 
@@ -67,14 +66,17 @@ func stampGrokCLIIdentity(req *http.Request, profile *AccountDeviceProfile) {
 		if id := grokProfilePayloadString(profile, "grok_identifier"); id != "" {
 			identifier = id
 		}
-		if profileUA := grokProfilePayloadString(profile, "user_agent"); profileUA != "" {
-			ua = profileUA
-		}
+	}
+
+	ua := xai.CLIUserAgent(version)
+	if profileUA := grokProfilePayloadString(profile, "user_agent"); profileUA != "" {
+		ua = profileUA
 	}
 
 	req.Header.Set("User-Agent", ua)
 	req.Header.Set("x-grok-client-version", version)
 	req.Header.Set("x-grok-client-identifier", identifier)
+	req.Header.Set("x-grok-client-mode", grokClientModeHeader)
 }
 
 func grokProfilePayloadString(profile *AccountDeviceProfile, key string) string {
@@ -117,9 +119,14 @@ func isUnknownGrokHeader(name string) bool {
 }
 
 func isGrokGatewayAffinityHeader(name string) bool {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "x-session-affinity", "x-session-id", "x-opencode-session",
-		"chatgpt-account-id", "x-account-id", "account-id":
+	canonical := strings.ToLower(strings.TrimSpace(name))
+	for _, sessionName := range explicitOpenAIHeaderSessionNames {
+		if canonical == strings.ToLower(strings.TrimSpace(sessionName)) {
+			return true
+		}
+	}
+	switch canonical {
+	case "chatgpt-account-id", "x-account-id", "account-id":
 		return true
 	default:
 		return false

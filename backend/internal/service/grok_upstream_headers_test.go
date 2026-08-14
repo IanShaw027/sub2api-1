@@ -150,6 +150,55 @@ func TestApplyGrokUpstreamHeadersFromAccountDropsUnknownXGrokHeaders(t *testing.
 	require.Empty(t, req.Header.Get("X-Account-Id"))
 }
 
+func TestApplyGrokUpstreamHeadersFromAccountMissingUAUsesProfileVersion(t *testing.T) {
+	t.Setenv(xai.CLIVersionEnv, "")
+
+	profile := validGrokOutboundProfile()
+	profile.ClientVersion = "0.2.200"
+	delete(profile.ProfilePayload, "user_agent")
+	injectOutboundGrokProfile(t, profile)
+
+	req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+	require.NoError(t, err)
+
+	err = applyGrokUpstreamHeadersFromAccount(context.Background(), req, &Account{ID: 7, Platform: PlatformGrok})
+	require.NoError(t, err)
+	require.Equal(t, "0.2.200", req.Header.Get("x-grok-client-version"))
+	require.Equal(t, xai.CLIUserAgent("0.2.200"), req.Header.Get("User-Agent"))
+	require.NotEqual(t, xai.CLIUserAgent(xai.CLIClientVersion), req.Header.Get("User-Agent"))
+}
+
+func TestApplyGrokUpstreamHeadersFromAccountDropsGatewaySessionAffinityHeaders(t *testing.T) {
+	t.Setenv(xai.CLIVersionEnv, "")
+	injectOutboundGrokProfile(t, validGrokOutboundProfile())
+
+	req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+	require.NoError(t, err)
+	req.Header.Set("session_id", "sess-1")
+	req.Header.Set("conversation_id", "conv-1")
+	req.Header.Set("X-Conversation-ID", "xconv-1")
+
+	err = applyGrokUpstreamHeadersFromAccount(context.Background(), req, &Account{ID: 7, Platform: PlatformGrok})
+	require.NoError(t, err)
+	require.Empty(t, req.Header.Get("session_id"))
+	require.Empty(t, req.Header.Get("conversation_id"))
+	require.Empty(t, req.Header.Get("X-Conversation-ID"))
+}
+
+func TestApplyGrokUpstreamHeadersFromAccountStampsClientMode(t *testing.T) {
+	t.Setenv(xai.CLIVersionEnv, "")
+	injectOutboundGrokProfile(t, validGrokOutboundProfile())
+
+	req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+	require.NoError(t, err)
+	req.Header.Set("x-grok-client-mode", "inbound-invented")
+
+	err = applyGrokUpstreamHeadersFromAccount(context.Background(), req, &Account{ID: 7, Platform: PlatformGrok})
+	require.NoError(t, err)
+	require.Equal(t, grokClientModeHeader, req.Header.Get("x-grok-client-mode"))
+	require.NotEqual(t, "inbound-invented", req.Header.Get("x-grok-client-mode"))
+}
+
 func TestApplyGrokUpstreamHeadersFromAccountNilAccountStampsPinnedCLIUA(t *testing.T) {
 	t.Setenv(xai.CLIVersionEnv, "")
 
