@@ -90,11 +90,9 @@ func deriveStableUUIDv4(seed string) string {
 		b[10:16])
 }
 
-// resolveConvergedInstallationID 返回账号级恒定的 installation_id。
-// 只读已校验的设备档案；加载或校验失败时返回空串，由调用方跳过收敛，不造半包。
-func resolveConvergedInstallationID(ctx context.Context, account *Account) string {
+func loadOutboundCodexProfile(ctx context.Context, account *Account) *AccountDeviceProfile {
 	if account == nil {
-		return ""
+		return nil
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -104,27 +102,46 @@ func resolveConvergedInstallationID(ctx context.Context, account *Account) strin
 	profile, err := LoadOutboundDeviceProfile(loadCtx, account)
 	if err != nil || profile == nil {
 		logCodexIdentityReject(account.ID, err)
+		return nil
+	}
+	return profile
+}
+
+// resolveConvergedInstallationID 返回账号级恒定的 installation_id。
+// 只读已校验的设备档案；加载或校验失败时返回空串，由调用方跳过收敛，不造半包。
+func resolveConvergedInstallationID(ctx context.Context, account *Account) string {
+	profile := loadOutboundCodexProfile(ctx, account)
+	if profile == nil {
 		return ""
 	}
 	return strings.TrimSpace(profile.InstallationID)
 }
 
-// resolveConvergedSessionID 返回账号级恒定的 session_id。
-func resolveConvergedSessionID(account *Account) string {
-	if account == nil {
+// resolveConvergedSessionID 返回档案 session_namespace 上的账号级恒定 session_id。
+func resolveConvergedSessionID(sessionNamespace string) string {
+	sessionID, _, _, err := DeriveSessionIDs(sessionNamespace, "")
+	if err != nil {
 		return ""
 	}
-	return deriveStableUUIDv4(fmt.Sprintf("sub2api:codex-session-id:v1:%d", account.ID))
+	return sessionID
 }
 
-// resolveConvergedThreadID 按客户端原始 session-id 确定性派生 thread_id。
+// resolveConvergedThreadID 按客户端原始 session-id 从 session_namespace 派生 thread_id。
 // 每个真实 Codex 会话（不同客户端启动实例）获得一个独立线程，
 // 模拟正常用户 spawn 子代理或开多窗口的模式。
-func resolveConvergedThreadID(account *Account, clientSessionID string) string {
-	if account == nil || clientSessionID == "" {
+//
+// Uses DeriveSessionIDs(ns, clientSessionID).sessionID, not the returned
+// threadID. Design §7's thread_id is HMAC(ns, "thread:"+session_id) and would
+// collapse session mode to one thread per account-stable session.
+func resolveConvergedThreadID(sessionNamespace, clientSessionID string) string {
+	if clientSessionID == "" {
 		return ""
 	}
-	return deriveStableUUIDv4(fmt.Sprintf("sub2api:codex-thread-id:v1:%d:%s", account.ID, clientSessionID))
+	sessionID, _, _, err := DeriveSessionIDs(sessionNamespace, clientSessionID)
+	if err != nil {
+		return ""
+	}
+	return sessionID
 }
 
 // codexFingerprintIDs 收敛后的完整 ID 集合。
@@ -149,9 +166,12 @@ func resolveCodexFingerprintIDs(ctx context.Context, account *Account, clientSes
 		return nil
 	}
 
+	profile := loadOutboundCodexProfile(ctx, account)
+	if profile == nil {
+		return nil
+	}
 	ids := &codexFingerprintIDs{mode: mode}
-
-	ids.installationID = resolveConvergedInstallationID(ctx, account)
+	ids.installationID = strings.TrimSpace(profile.InstallationID)
 	if ids.installationID == "" {
 		return nil
 	}
@@ -161,8 +181,12 @@ func resolveCodexFingerprintIDs(ctx context.Context, account *Account, clientSes
 		return ids
 
 	case codexFingerprintSession:
-		ids.sessionID = resolveConvergedSessionID(account)
-		ids.threadID = resolveConvergedThreadID(account, clientSessionID)
+		ids.sessionID = resolveConvergedSessionID(profile.SessionNamespace)
+		if ids.sessionID == "" {
+			logCodexIdentityReject(account.ID, fmt.Errorf("identity_reject: derive session_id from session_namespace"))
+			return nil
+		}
+		ids.threadID = resolveConvergedThreadID(profile.SessionNamespace, clientSessionID)
 		if ids.threadID == "" {
 			ids.threadID = ids.sessionID
 		}
@@ -171,7 +195,11 @@ func resolveCodexFingerprintIDs(ctx context.Context, account *Account, clientSes
 		return ids
 
 	case codexFingerprintFull:
-		ids.sessionID = resolveConvergedSessionID(account)
+		ids.sessionID = resolveConvergedSessionID(profile.SessionNamespace)
+		if ids.sessionID == "" {
+			logCodexIdentityReject(account.ID, fmt.Errorf("identity_reject: derive session_id from session_namespace"))
+			return nil
+		}
 		ids.threadID = ids.sessionID
 		ids.turnID = uuid.Must(uuid.NewV7()).String()
 		ids.windowID = ids.threadID + ":0"
