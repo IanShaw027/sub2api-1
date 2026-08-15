@@ -1098,12 +1098,12 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 				req.Header.Set("version", codexCLIVersion)
 			}
 			compactSession := resolveOpenAICompactSessionID(c)
-			req.Header.Set("session_id", isolateOpenAISessionID(apiKeyID, compactSession))
+			req.Header.Set("session_id", openaiOutboundSessionID(ctx, account, apiKeyID, compactSession))
 		} else {
 			req.Header.Set("accept", "text/event-stream")
 		}
 		if promptCacheKey != "" {
-			isolated := isolateOpenAISessionID(apiKeyID, promptCacheKey)
+			isolated := openaiOutboundSessionID(ctx, account, apiKeyID, promptCacheKey)
 			req.Header.Set("session_id", isolated)
 			if !compatMessagesBridge || clientConversationID != "" {
 				req.Header.Set("conversation_id", isolated)
@@ -1128,6 +1128,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	}
 
 	// 指纹收敛：使用 Forward() 中预计算的收敛 ID 改写出站头，与请求体使用同一份 IDs。
+	// leftover 5 session/full 模式会用账号级恒定 session_id 覆盖上面的
+	// isolate+namespace 值；那是「一号一安装」收敛，不是 leftover 11 的缺口。
+	// leftover 11 在 off/device、以及不走指纹的 passthrough/WS/compat 路径生效。
 	if account.Type == AccountTypeOAuth && c != nil {
 		if fpIDs, ok := c.Get("codex_fingerprint_ids"); ok {
 			if ids, ok := fpIDs.(*codexFingerprintIDs); ok {

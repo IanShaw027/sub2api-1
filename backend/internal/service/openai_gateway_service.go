@@ -1060,6 +1060,9 @@ func getAPIKeyIDFromContext(c *gin.Context) int64 {
 // isolateOpenAISessionID 将 apiKeyID 混入 session 标识符，
 // 确保不同 API Key 的用户即使使用相同的原始 session_id/conversation_id，
 // 到达上游的标识符也不同，防止跨用户会话碰撞。
+//
+// Outbound session/conversation headers should use openaiOutboundSessionID
+// or openaiOutboundSessionUUID so a valid device-profile namespace is folded in.
 func isolateOpenAISessionID(apiKeyID int64, raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -1069,6 +1072,60 @@ func isolateOpenAISessionID(apiKeyID int64, raw string) string {
 	_, _ = fmt.Fprintf(h, "k%d:", apiKeyID)
 	_, _ = h.WriteString(raw)
 	return fmt.Sprintf("%016x", h.Sum64())
+}
+
+func loadOpenAIOutboundSessionProfile(ctx context.Context, account *Account) *AccountDeviceProfile {
+	if account == nil || !account.IsOpenAIOAuth() {
+		return nil
+	}
+	return loadOutboundCodexProfile(ctx, account)
+}
+
+func deriveOpenAIOutboundSessionIDFromProfile(profile *AccountDeviceProfile, isolated string) string {
+	if profile == nil || isolated == "" {
+		return ""
+	}
+	sessionID, _, _, err := DeriveSessionIDs(profile.SessionNamespace, isolated)
+	if err != nil || sessionID == "" {
+		return ""
+	}
+	return sessionID
+}
+
+func deriveOpenAIOutboundSessionID(ctx context.Context, account *Account, apiKeyID int64, raw string) string {
+	isolated := isolateOpenAISessionID(apiKeyID, raw)
+	if isolated == "" {
+		return ""
+	}
+	return deriveOpenAIOutboundSessionIDFromProfile(loadOpenAIOutboundSessionProfile(ctx, account), isolated)
+}
+
+func openaiOutboundSessionIDFromProfile(profile *AccountDeviceProfile, apiKeyID int64, raw string) string {
+	isolated := isolateOpenAISessionID(apiKeyID, raw)
+	if derived := deriveOpenAIOutboundSessionIDFromProfile(profile, isolated); derived != "" {
+		return derived
+	}
+	return isolated
+}
+
+func openaiOutboundSessionID(ctx context.Context, account *Account, apiKeyID int64, raw string) string {
+	if derived := deriveOpenAIOutboundSessionID(ctx, account, apiKeyID, raw); derived != "" {
+		return derived
+	}
+	return isolateOpenAISessionID(apiKeyID, raw)
+}
+
+func openaiOutboundSessionUUID(ctx context.Context, account *Account, apiKeyID int64, raw string) string {
+	if derived := deriveOpenAIOutboundSessionID(ctx, account, apiKeyID, raw); derived != "" {
+		return derived
+	}
+	return generateSessionUUID(isolateOpenAISessionID(apiKeyID, raw))
+}
+
+func openaiOutboundSessionPair(ctx context.Context, account *Account, apiKeyID int64, sessionRaw, conversationRaw string) (sessionID, conversationID string) {
+	profile := loadOpenAIOutboundSessionProfile(ctx, account)
+	return openaiOutboundSessionIDFromProfile(profile, apiKeyID, sessionRaw),
+		openaiOutboundSessionIDFromProfile(profile, apiKeyID, conversationRaw)
 }
 
 func logCodexCLIOnlyDetection(ctx context.Context, c *gin.Context, account *Account, apiKeyID int64, result CodexClientRestrictionDetectionResult, body []byte) {

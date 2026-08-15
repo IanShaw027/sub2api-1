@@ -426,11 +426,14 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		if clientConversationID == "" {
 			clientConversationID = promptCacheKey
 		}
-		if clientSessionID != "" {
-			req.Header.Set("session_id", isolateOpenAISessionID(apiKeyID, clientSessionID))
-		}
-		if clientConversationID != "" {
-			req.Header.Set("conversation_id", isolateOpenAISessionID(apiKeyID, clientConversationID))
+		if clientSessionID != "" || clientConversationID != "" {
+			sessionID, conversationID := openaiOutboundSessionPair(ctx, account, apiKeyID, clientSessionID, clientConversationID)
+			if clientSessionID != "" {
+				req.Header.Set("session_id", sessionID)
+			}
+			if clientConversationID != "" {
+				req.Header.Set("conversation_id", conversationID)
+			}
 		}
 	} else if isOpenAIResponsesCompactPath(c) {
 		// 透传白名单会放行客户端的 Accept: text/event-stream；compact 上游是
