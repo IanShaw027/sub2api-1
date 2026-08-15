@@ -79,10 +79,15 @@ func (r *KiroTokenRefresher) NeedsRefresh(account *Account, refreshWindow time.D
 
 func (r *KiroTokenRefresher) Refresh(ctx context.Context, account *Account) (map[string]any, error) {
 	account = r.prepareAccount(ctx, account)
-	machineID, err := leftoverOutboundMachineID(ctx, account)
+	runtimeSettings := DefaultKiroRuntimeSettings()
+	if r != nil && r.settingService != nil {
+		runtimeSettings = r.settingService.GetKiroRuntimeSettings(ctx)
+	}
+	runtimeSettings, machineID, err := applyKiroSidecarIdentity(ctx, account, runtimeSettings)
 	if err != nil {
 		return nil, err
 	}
+	ctx = withKiroSidecarIdentity(ctx, runtimeSettings, machineID)
 	var (
 		accessToken  string
 		refreshToken string
@@ -293,7 +298,13 @@ func (r *KiroTokenRefresher) doKiroRequest(req *http.Request, account *Account, 
 	if r != nil && r.settingService != nil {
 		runtimeSettings = r.settingService.GetKiroRuntimeSettings(req.Context())
 	}
-	runtimeSettings = normalizeKiroRuntimeSettings(runtimeSettings)
+	runtimeSettings, profileMachineID, err := applyKiroSidecarIdentity(req.Context(), account, runtimeSettings)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(machineID) == "" {
+		machineID = profileMachineID
+	}
 	kiroVersion := runtimeSettings.KiroVersion
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("host", host)

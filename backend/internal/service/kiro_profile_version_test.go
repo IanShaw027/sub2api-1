@@ -4,6 +4,10 @@ package service
 
 import (
 	"context"
+	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -59,4 +63,133 @@ func TestBuildKiroGenerateAssistantRequest_UsesProfileClientVersionNotSettings(t
 	require.NotContains(t, req.Header.Get("x-amz-user-agent"), "KiroIDE-0.10.0-")
 	require.Contains(t, req.Header.Get("User-Agent"), kiroPinnedOutboundMachineID)
 	require.Contains(t, req.Header.Get("x-amz-user-agent"), kiroPinnedOutboundMachineID)
+}
+
+func TestApplyKiroSidecarIdentity_PrefersProfileClientVersion(t *testing.T) {
+	profile := validKiroOutboundProfile(31, kiroPinnedOutboundMachineID)
+	profile.ClientVersion = "0.11.0"
+	installKiroOutboundDeviceProfile(t, profile, nil)
+
+	settings, machineID, err := applyKiroSidecarIdentity(context.Background(), &Account{
+		ID:       31,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+	}, &KiroRuntimeSettings{KiroVersion: "0.10.0"})
+	require.NoError(t, err)
+	require.Equal(t, "0.11.0", settings.KiroVersion)
+	require.Equal(t, kiroPinnedOutboundMachineID, machineID)
+}
+
+func TestApplyKiroSidecarIdentity_EmptyProfileVersionKeepsSettings(t *testing.T) {
+	profile := validKiroOutboundProfile(32, kiroPinnedOutboundMachineID)
+	profile.ClientVersion = "0.10.0"
+	installKiroOutboundDeviceProfile(t, profile, nil)
+
+	settings, machineID, err := applyKiroSidecarIdentity(context.Background(), &Account{
+		ID:       32,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+	}, &KiroRuntimeSettings{KiroVersion: "0.10.0"})
+	require.NoError(t, err)
+	require.Equal(t, "0.10.0", settings.KiroVersion)
+	require.Equal(t, kiroPinnedOutboundMachineID, machineID)
+}
+
+func TestApplyKiroSidecarIdentity_LoadFailureIsFailClosed(t *testing.T) {
+	installKiroOutboundDeviceProfile(t, nil, errors.New("identity_reject: device profile unavailable"))
+
+	settings, machineID, err := applyKiroSidecarIdentity(context.Background(), &Account{
+		ID:       36,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+	}, &KiroRuntimeSettings{KiroVersion: "0.10.0"})
+	require.Error(t, err)
+	require.Nil(t, settings)
+	require.Empty(t, machineID)
+	require.Contains(t, err.Error(), "identity_reject")
+}
+
+func TestKiroUsageSetOveragePreference_UsesProfileClientVersionNotSettings(t *testing.T) {
+	profile := validKiroOutboundProfile(33, kiroPinnedOutboundMachineID)
+	profile.ClientVersion = "0.11.0"
+	installKiroOutboundDeviceProfile(t, profile, nil)
+
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{}`)),
+		},
+	}
+	svc := NewKiroUsageService().WithTransport(upstream, nil)
+	err := svc.SetOveragePreference(context.Background(), &Account{
+		ID:       33,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"region": "us-east-1",
+		},
+	}, "access", true)
+	require.NoError(t, err)
+	require.NotNil(t, upstream.req)
+	require.Contains(t, upstream.req.Header.Get("User-Agent"), "KiroIDE-0.11.0-")
+	require.Contains(t, upstream.req.Header.Get("x-amz-user-agent"), "KiroIDE-0.11.0-")
+	require.NotContains(t, upstream.req.Header.Get("User-Agent"), "KiroIDE-0.10.0-")
+	require.NotContains(t, upstream.req.Header.Get("x-amz-user-agent"), "KiroIDE-0.10.0-")
+}
+
+func TestKiroTokenRefresher_UsesProfileClientVersionNotSettings(t *testing.T) {
+	profile := validKiroOutboundProfile(34, kiroPinnedOutboundMachineID)
+	profile.ClientVersion = "0.11.0"
+	installKiroOutboundDeviceProfile(t, profile, nil)
+
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"accessToken":"new-access"}`)),
+		},
+	}
+	refresher := NewKiroTokenRefresher().WithTransport(upstream, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken", nil)
+	require.NoError(t, err)
+	var out kiroRefreshResponse
+	err = refresher.doKiroRequest(req, &Account{
+		ID:       34,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+	}, "prod.us-east-1.auth.desktop.kiro.dev", &out, kiroPinnedOutboundMachineID)
+	require.NoError(t, err)
+	require.NotNil(t, upstream.req)
+	require.Equal(t, "KiroIDE-0.11.0-"+kiroPinnedOutboundMachineID, upstream.req.Header.Get("User-Agent"))
+	require.NotContains(t, upstream.req.Header.Get("User-Agent"), "KiroIDE-0.10.0-")
+}
+
+func TestKiroTokenRefresherOIDC_UsesProfileClientVersionNotSettings(t *testing.T) {
+	profile := validKiroOutboundProfile(35, kiroPinnedOutboundMachineID)
+	profile.ClientVersion = "0.11.0"
+	installKiroOutboundDeviceProfile(t, profile, nil)
+
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"accessToken":"new-access"}`)),
+		},
+	}
+	refresher := NewKiroTokenRefresher().WithTransport(upstream, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "https://oidc.us-east-1.amazonaws.com/token", nil)
+	require.NoError(t, err)
+	var out kiroRefreshResponse
+	err = refresher.doKiroRequest(req, &Account{
+		ID:       35,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+	}, "oidc.us-east-1.amazonaws.com", &out, kiroPinnedOutboundMachineID)
+	require.NoError(t, err)
+	require.NotNil(t, upstream.req)
+	require.Contains(t, upstream.req.Header.Get("User-Agent"), "KiroIDE-0.11.0-")
+	require.Contains(t, upstream.req.Header.Get("x-amz-user-agent"), "KiroIDE-0.11.0-")
+	require.NotContains(t, upstream.req.Header.Get("User-Agent"), "KiroIDE-0.10.0-")
+	require.NotContains(t, upstream.req.Header.Get("x-amz-user-agent"), "KiroIDE-0.10.0-")
 }
