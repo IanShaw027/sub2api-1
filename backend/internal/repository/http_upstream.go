@@ -515,7 +515,7 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	if err != nil {
 		return nil, err
 	}
-	tlsPlan := s.planTLSTransport(isolation, accountConcurrency, profile, upstreamProfile)
+	tlsPlan := s.planTLSTransport(isolation, accountConcurrency, profile, upstreamProfile, parsedProxy)
 	settings := tlsPlan.settings
 	burstConcurrency := resolvePoolBurstConcurrency(accountConcurrency)
 	transportFamily := tlsPlan.family
@@ -1014,10 +1014,13 @@ type tlsTransportPlan struct {
 	wantH2   bool
 }
 
-func (s *httpUpstreamService) planTLSTransport(isolation string, accountConcurrency int, profile *tlsfingerprint.Profile, upstreamProfile service.HTTPUpstreamProfile) tlsTransportPlan {
+func (s *httpUpstreamService) planTLSTransport(isolation string, accountConcurrency int, profile *tlsfingerprint.Profile, upstreamProfile service.HTTPUpstreamProfile, proxyURL *url.URL) tlsTransportPlan {
 	claimed := claimedTLSTransportFamily(profile)
 	alpn := effectiveTLSALPNProtocols(profile)
-	wantH2 := claimed == service.TransportH2 && service.ALPNContainsH2(alpn)
+	// Pessimistic: do not key the cache as h2 until HTTP/2 is reachable
+	// without a utls DialTLSContext. net/http never copies tlsState from
+	// *utls.UConn, so those paths can only speak HTTP/1.1.
+	wantH2 := claimed == service.TransportH2 && service.ALPNContainsH2(alpn) && tlsFingerprintHTTP2Reachable(proxyURL)
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, upstreamProfile)
 	if wantH2 {
@@ -1030,8 +1033,20 @@ func (s *httpUpstreamService) planTLSTransport(isolation string, accountConcurre
 	}
 }
 
+func tlsFingerprintHTTP2Reachable(proxyURL *url.URL) bool {
+	if proxyURL == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(proxyURL.Scheme)) {
+	case "http", "https", "socks5", "socks5h":
+		return false
+	default:
+		return true
+	}
+}
+
 func (s *httpUpstreamService) buildLiveTLSTransport(isolation string, accountConcurrency int, parsedProxy *url.URL, profile *tlsfingerprint.Profile, upstreamProfile service.HTTPUpstreamProfile) (*http.Transport, tlsTransportPlan, error) {
-	plan := s.planTLSTransport(isolation, accountConcurrency, profile, upstreamProfile)
+	plan := s.planTLSTransport(isolation, accountConcurrency, profile, upstreamProfile, parsedProxy)
 	transport, err := buildUpstreamTransportWithTLSFingerprint(plan.settings, parsedProxy, profile, plan.wantH2)
 	if err != nil && plan.wantH2 {
 		plan = s.planTLSTransportH1(isolation, accountConcurrency, upstreamProfile)
@@ -1086,7 +1101,33 @@ func effectiveTLSALPNProtocols(profile *tlsfingerprint.Profile) []string {
 }
 
 func transportHasLiveHTTP2(transport *http.Transport) bool {
-	return transport != nil && transport.ForceAttemptHTTP2 && transport.TLSNextProto != nil && transport.TLSNextProto["h2"] != nil
+	if transport == nil || transport.DialTLSContext != nil {
+		return false
+	}
+	return transport.ForceAttemptHTTP2 && transport.TLSNextProto != nil && transport.TLSNextProto["h2"] != nil
+}
+
+func isUtlsFingerprintedProxy(proxyURL *url.URL) bool {
+	if proxyURL == nil {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(proxyURL.Scheme)) {
+	case "http", "socks5", "socks5h":
+		return true
+	default:
+		return false
+	}
+}
+
+// honestH1FingerprintProfile drops advertised h2 when the transport cannot
+// speak HTTP/2. Advertising h2 then sending HTTP/1.1 fails against h2 servers.
+func honestH1FingerprintProfile(profile *tlsfingerprint.Profile) *tlsfingerprint.Profile {
+	if profile == nil || !service.ALPNContainsH2(effectiveTLSALPNProtocols(profile)) {
+		return profile
+	}
+	copy := *profile
+	copy.ALPNProtocols = []string{"http/1.1"}
+	return &copy
 }
 
 func transportFamilyForProtocolMode(protocolMode string) string {
@@ -1629,6 +1670,13 @@ func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *u
 		ForceAttemptHTTP2: false,
 	}
 
+	// utls DialTLSContext returns *utls.UConn. net/http only copies tlsState
+	// from *tls.Conn, so HTTP/2 never upgrades. Do not advertise or enable h2.
+	if proxyURL == nil || isUtlsFingerprintedProxy(proxyURL) {
+		enableHTTP2 = false
+		profile = honestH1FingerprintProfile(profile)
+	}
+
 	// 根据代理类型选择合适的 TLS 指纹 Dialer
 	if proxyURL == nil {
 		// 直连：使用 TLSFingerprintDialer
@@ -1661,7 +1709,7 @@ func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *u
 		}
 	}
 
-	if enableHTTP2 {
+	if enableHTTP2 && transport.DialTLSContext == nil {
 		transport.ForceAttemptHTTP2 = true
 		if _, err := enableOpenAIHTTP2KeepAlive(transport); err != nil {
 			return nil, err

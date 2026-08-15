@@ -28,6 +28,7 @@ type Profile struct {
 	SignatureAlgorithms []uint16 // Empty uses defaultSignatureAlgorithms
 	ALPNProtocols       []string // Empty uses ["http/1.1"]
 	TransportFamily     string   // Optional claimed h1|h2; empty is treated as h1
+	InsecureSkipVerify  bool     `json:"-"` // test-only; production unset
 	SupportedVersions   []uint16 // Empty uses [TLS1.3, TLS1.2]
 	KeyShareGroups      []uint16 // Empty uses [X25519]
 	PSKModes            []uint16 // Empty uses [psk_dhe_ke]
@@ -278,7 +279,11 @@ func performTLSHandshake(ctx context.Context, conn net.Conn, profile *Profile, a
 	}
 
 	spec := buildClientHelloSpecFromProfile(profile)
-	tlsConn := utls.UClient(conn, &utls.Config{ServerName: host}, utls.HelloCustom)
+	tlsCfg := &utls.Config{ServerName: host}
+	if profile != nil {
+		tlsCfg.InsecureSkipVerify = profile.InsecureSkipVerify
+	}
+	tlsConn := utls.UClient(conn, tlsCfg, utls.HelloCustom)
 
 	if err := tlsConn.ApplyPreset(spec); err != nil {
 		_ = conn.Close()

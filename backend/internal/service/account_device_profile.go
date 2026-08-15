@@ -197,11 +197,11 @@ func EffectiveTransportFamily(claimed string, alpn []string, http2Enabled bool) 
 	return TransportH2
 }
 
-// PersistDeviceTransportFamily writes the effective family onto a device
-// profile. Codex/Kiro (and every other platform) must not persist h2 unless
-// ALPN and the HTTP/2 transport are both live.
+// PersistDeviceTransportFamily downgrades an unverified h2 claim. Invalid or
+// empty families are left untouched so ValidateAccountDeviceProfile can still
+// identity_reject them.
 func PersistDeviceTransportFamily(p *AccountDeviceProfile, alpn []string, http2Enabled bool) {
-	if p == nil {
+	if p == nil || p.TransportFamily != TransportH2 {
 		return
 	}
 	p.TransportFamily = EffectiveTransportFamily(p.TransportFamily, alpn, http2Enabled)

@@ -395,6 +395,18 @@ func TestPersistDeviceTransportFamily_KeepsH2WhenALPNAndHTTP2AreLive(t *testing.
 	require.Equal(t, TransportH2, p.TransportFamily)
 }
 
+func TestPersistDeviceTransportFamily_LeavesInvalidFamilyForValidate(t *testing.T) {
+	t.Parallel()
+
+	for _, family := range []string{"", "h3", "http/2"} {
+		p := validCodexBaseline()
+		p.TransportFamily = family
+		PersistDeviceTransportFamily(p, []string{"h2", "http/1.1"}, true)
+		require.Equal(t, family, p.TransportFamily, "invalid family %q must not be coerced to h1", family)
+		require.ErrorContains(t, ValidateAccountDeviceProfile(p), "transport_family")
+	}
+}
+
 func validCodexBaseline() *AccountDeviceProfile {
 	p := validAnthropicBaseline()
 	p.Platform = PlatformOpenAI

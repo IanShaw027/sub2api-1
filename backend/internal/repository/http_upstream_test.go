@@ -1447,7 +1447,7 @@ func TestDeviceProfileTransportFamily_ToTLSProfileSendHonesty(t *testing.T) {
 		wantCap int
 	}{
 		{name: "h1-alpn", alpn: []string{"http/1.1"}, wantFam: transportFamilyH1, wantH2: false, wantCap: 14},
-		{name: "live-h2", alpn: []string{"h2", "http/1.1"}, wantFam: transportFamilyH2, wantH2: true, wantCap: 2},
+		{name: "claimed-h2-utls-is-h1", alpn: []string{"h2", "http/1.1"}, wantFam: transportFamilyH1, wantH2: false, wantCap: 14},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			device := &service.AccountDeviceProfile{
@@ -1525,6 +1525,62 @@ func TestOpenAIHTTP1_KeepsBurstCaps(t *testing.T) {
 	require.Equal(t, 14, transport.MaxIdleConnsPerHost)
 }
 
+func TestTLSFingerprint_UtlsDialerDoesNotSpeakHTTP2OnTheWire(t *testing.T) {
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(r.Proto))
+	}))
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	t.Cleanup(server.Close)
+
+	req, err := http.NewRequest(http.MethodGet, server.URL, nil)
+	require.NoError(t, err)
+
+	up := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	})
+	resp, err := up.DoWithTLS(req, "", 1, 12, &tlsfingerprint.Profile{
+		Name:               "utls-claimed-h2",
+		TransportFamily:    service.TransportH2,
+		ALPNProtocols:      []string{"h2", "http/1.1"},
+		InsecureSkipVerify: true,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	require.Equal(t, "HTTP/1.1", resp.Proto, "utls DialTLSContext cannot reach net/http h2")
+
+	svc := up.(*httpUpstreamService)
+	require.Len(t, svc.clients, 1)
+	for _, entry := range svc.clients {
+		require.Equal(t, transportFamilyH1, entry.transportFamily)
+		transport, ok := entry.client.Transport.(*http.Transport)
+		require.True(t, ok)
+		require.NotNil(t, transport.DialTLSContext)
+		require.False(t, transport.ForceAttemptHTTP2)
+	}
+}
+
+func TestTLSFingerprint_ClaimedH2DoesNotThrashCacheOnHonestH1(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	}).(*httpUpstreamService)
+	profile := &tlsfingerprint.Profile{
+		Name:            "claimed-h2-cache",
+		TransportFamily: service.TransportH2,
+		ALPNProtocols:   []string{"h2", "http/1.1"},
+	}
+
+	first, err := svc.getClientEntryWithTLS("", 1, 12, profile, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+	second, err := svc.getClientEntryWithTLS("", 1, 12, profile, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+
+	require.Equal(t, transportFamilyH1, first.transportFamily)
+	require.Same(t, first, second, "honest h1 must reuse the cached client, not evict on an optimistic h2 key")
+	require.Equal(t, 1, len(svc.clients))
+}
+
 func TestTLSFingerprint_ClaimedH2WithH1ALPNStaysH1AndKeepsBurst(t *testing.T) {
 	svc := NewHTTPUpstream(&config.Config{
 		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
@@ -1556,7 +1612,7 @@ func TestTLSFingerprint_ClaimedH2WithH1ALPNStaysH1AndKeepsBurst(t *testing.T) {
 	}
 }
 
-func TestTLSFingerprint_ClaimedH2WithALPNEnablesLiveHTTP2AndSpareBudget(t *testing.T) {
+func TestTLSFingerprint_ClaimedH2WithALPNStaysH1UntilUtlsCanSpeakH2(t *testing.T) {
 	svc := NewHTTPUpstream(&config.Config{
 		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
 	}).(*httpUpstreamService)
@@ -1570,20 +1626,20 @@ func TestTLSFingerprint_ClaimedH2WithALPNEnablesLiveHTTP2AndSpareBudget(t *testi
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			entry, err := svc.getClientEntryWithTLS("", 1, 12, &tlsfingerprint.Profile{
-				Name:            "claimed-h2-live-" + tc.name,
+				Name:            "claimed-h2-utls-" + tc.name,
 				TransportFamily: service.TransportH2,
 				ALPNProtocols:   []string{"h2", "http/1.1"},
 			}, tc.profile, false, false)
 			require.NoError(t, err)
-			require.Equal(t, transportFamilyH2, entry.transportFamily)
+			require.Equal(t, transportFamilyH1, entry.transportFamily)
 
 			transport, ok := entry.client.Transport.(*http.Transport)
 			require.True(t, ok, "expected *http.Transport")
-			require.True(t, transport.ForceAttemptHTTP2, "live h2 must actually enable HTTP/2")
-			require.NotNil(t, transport.TLSNextProto["h2"], "live h2 must configure http2.Transport")
-			require.Equal(t, 2, transport.MaxConnsPerHost, "h2 budget is 1 primary + ≤1 spare")
-			require.Equal(t, 2, transport.MaxIdleConns)
-			require.Equal(t, 2, transport.MaxIdleConnsPerHost)
+			require.NotNil(t, transport.DialTLSContext)
+			require.False(t, transport.ForceAttemptHTTP2, "utls DialTLSContext cannot reach net/http h2")
+			require.Equal(t, 14, transport.MaxConnsPerHost, "honest h1 must keep Burst caps")
+			require.Equal(t, 14, transport.MaxIdleConns)
+			require.Equal(t, 14, transport.MaxIdleConnsPerHost)
 		})
 	}
 }
