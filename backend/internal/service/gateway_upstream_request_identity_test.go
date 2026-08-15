@@ -51,6 +51,10 @@ func (r *stubOutboundDeviceRepo) UpdateCAS(context.Context, int64, int64, *Accou
 	return true, nil
 }
 
+func (r *stubOutboundDeviceRepo) DeleteByAccountID(context.Context, int64) error {
+	return nil
+}
+
 func installOutboundDeviceProfile(t *testing.T, profile *AccountDeviceProfile) {
 	t.Helper()
 	prev := OutboundDeviceProfileService()

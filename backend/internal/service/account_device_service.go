@@ -23,6 +23,7 @@ type AccountDeviceProfileRepository interface {
 	GetByAccountID(ctx context.Context, accountID int64) (*AccountDeviceProfile, error)
 	InsertBaseline(ctx context.Context, p *AccountDeviceProfile) (*AccountDeviceProfile, error)
 	UpdateCAS(ctx context.Context, accountID, expectedRevision int64, next *AccountDeviceProfile) (bool, error)
+	DeleteByAccountID(ctx context.Context, accountID int64) error
 }
 
 type AccountDeviceService struct {
@@ -119,6 +120,29 @@ func (s *AccountDeviceService) GetOrCreate(ctx context.Context, account *Account
 		parent.ParentAccountID = nil
 		return s.GetOrCreate(ctx, &parent)
 	}
+	existing, err := s.repo.GetByAccountID(ctx, account.ID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil && !deviceProfilePlatformMismatch(existing, account) {
+		s.projectDeviceProfile(ctx, existing)
+		return existing, nil
+	}
+	unlock := s.lockAccount(account.ID)
+	defer unlock()
+	return s.getOrCreateLocked(ctx, account)
+}
+
+func (s *AccountDeviceService) getOrCreateLocked(ctx context.Context, account *Account) (*AccountDeviceProfile, error) {
+	if account.IsShadow() {
+		if account.ParentAccountID == nil || *account.ParentAccountID == account.ID {
+			return nil, fmt.Errorf("identity_reject: shadow account %d parent cycle", account.ID)
+		}
+		parent := *account
+		parent.ID = *account.ParentAccountID
+		parent.ParentAccountID = nil
+		return s.getOrCreateLocked(ctx, &parent)
+	}
 
 	existing, err := s.repo.GetByAccountID(ctx, account.ID)
 	if err != nil {
@@ -132,8 +156,7 @@ func (s *AccountDeviceService) GetOrCreate(ctx context.Context, account *Account
 	// Mismatched or missing row: insert a new baseline. leftoverSharedRepo
 	// overwrites (test remint). Production unique(account_id) makes this
 	// INSERT fail; the conflict handler below returns identity_reject and
-	// never the stale row. That conflict is the intended fail-closed path
-	// until an admin "reset device profile" action exists.
+	// never the stale row. Operators remint via AccountDeviceService.Reset.
 
 	baseline, err := buildAccountDeviceBaseline(account)
 	if err != nil {
@@ -165,6 +188,61 @@ func (s *AccountDeviceService) GetOrCreate(ctx context.Context, account *Account
 	return created, nil
 }
 
+// Reset deletes the stored device profile (and Redis projection) then mints a
+// new baseline for the account's current platform. Use this after an operator
+// edits account.platform so GetOrCreate is no longer stuck on a unique conflict.
+// The per-account lock is taken after shadow resolution so a concurrent
+// LearnIfOfficial cannot CAS stale software onto the reminted revision-1 row.
+func (s *AccountDeviceService) Reset(ctx context.Context, account *Account) (*AccountDeviceProfile, error) {
+	if s == nil || s.repo == nil {
+		return nil, fmt.Errorf("identity_reject: account device service is not configured")
+	}
+	if account == nil {
+		return nil, fmt.Errorf("identity_reject: account is required")
+	}
+	if account.IsShadow() {
+		if account.ParentAccountID == nil || *account.ParentAccountID == account.ID {
+			return nil, fmt.Errorf("identity_reject: shadow account %d parent cycle", account.ID)
+		}
+		parent := *account
+		parent.ID = *account.ParentAccountID
+		parent.ParentAccountID = nil
+		return s.Reset(ctx, &parent)
+	}
+	unlock := s.lockAccount(account.ID)
+	defer unlock()
+	var lastErr error
+	for attempt := 0; attempt < resetRemintAttempts; attempt++ {
+		if err := s.repo.DeleteByAccountID(ctx, account.ID); err != nil {
+			return nil, err
+		}
+		if s.cache != nil {
+			if err := s.cache.DeleteDeviceProfile(ctx, account.ID); err != nil {
+				slog.Warn("device profile redis delete failed", "account_id", account.ID, "error", err)
+			}
+		}
+		p, err := s.getOrCreateLocked(ctx, account)
+		if err == nil {
+			return p, nil
+		}
+		lastErr = err
+		if !isResetRemintConflict(err) {
+			return nil, err
+		}
+	}
+	return nil, lastErr
+}
+
+const resetRemintAttempts = 3
+
+func isResetRemintConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "identity_reject") && strings.Contains(msg, "insert baseline")
+}
+
 func (s *AccountDeviceService) LearnIfOfficial(ctx context.Context, account *Account, inbound OfficialInbound) (*AccountDeviceProfile, error) {
 	if s == nil || s.repo == nil {
 		return nil, fmt.Errorf("identity_reject: account device service is not configured")
@@ -176,7 +254,7 @@ func (s *AccountDeviceService) LearnIfOfficial(ctx context.Context, account *Acc
 	unlock := s.lockAccount(canonicalDeviceAccountID(account))
 	defer unlock()
 
-	profile, err := s.GetOrCreate(ctx, account)
+	profile, err := s.getOrCreateLocked(ctx, account)
 	if err != nil {
 		return nil, err
 	}

@@ -77,6 +77,7 @@ func (r *accountDeviceProfileRepository) UpdateCAS(ctx context.Context, accountI
 		Where(
 			accountdeviceprofile.AccountID(accountID),
 			accountdeviceprofile.RevisionEQ(expectedRevision),
+			accountdeviceprofile.SessionNamespaceEQ(next.SessionNamespace),
 		).
 		SetRevision(expectedRevision + 1).
 		SetSchemaVersion(next.SchemaVersion).
@@ -103,6 +104,13 @@ func (r *accountDeviceProfileRepository) UpdateCAS(ctx context.Context, accountI
 		return false, err
 	}
 	return n == 1, nil
+}
+
+func (r *accountDeviceProfileRepository) DeleteByAccountID(ctx context.Context, accountID int64) error {
+	_, err := r.client.AccountDeviceProfile.Delete().
+		Where(accountdeviceprofile.AccountID(accountID)).
+		Exec(ctx)
+	return err
 }
 
 func accountDeviceProfileToService(row *ent.AccountDeviceProfile) *service.AccountDeviceProfile {

@@ -49,6 +49,9 @@ func (s *stubIdentityCache) GetDeviceProfile(_ context.Context, _ int64) (*Accou
 func (s *stubIdentityCache) SetDeviceProfile(_ context.Context, _ int64, _ *AccountDeviceProfile) error {
 	return nil
 }
+func (s *stubIdentityCache) DeleteDeviceProfile(_ context.Context, _ int64) error {
+	return nil
+}
 
 func headersWithUA(ua string) http.Header {
 	h := http.Header{}

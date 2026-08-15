@@ -42,6 +42,11 @@ func (r *leftoverSharedDeviceRepo) UpdateCAS(context.Context, int64, int64, *Acc
 	return false, nil
 }
 
+func (r *leftoverSharedDeviceRepo) DeleteByAccountID(_ context.Context, accountID int64) error {
+	r.clear(accountID)
+	return nil
+}
+
 func (r *leftoverSharedDeviceRepo) put(p *AccountDeviceProfile) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

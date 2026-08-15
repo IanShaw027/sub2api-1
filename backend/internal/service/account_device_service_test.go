@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/accountdeviceprofile"
@@ -131,6 +132,221 @@ func TestGetOrCreateRejectsPlatformMismatchWhenBaselineInsertConflicts(t *testin
 	require.Nil(t, got)
 }
 
+func TestResetDeviceProfileDeletesStaleRowAndRemintsMatchingPlatform(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	cache := &recordingDeviceProfileCache{}
+	svc = svc.WithCache(cache)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, nil)
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	require.Equal(t, service.PlatformAnthropic, created.Platform)
+
+	grokAccount := *account
+	grokAccount.Platform = service.PlatformGrok
+	_, err = svc.GetOrCreate(ctx, &grokAccount)
+	require.Error(t, err)
+
+	reset, err := svc.Reset(ctx, &grokAccount)
+	require.NoError(t, err)
+	require.NotNil(t, reset)
+	require.Equal(t, service.PlatformGrok, reset.Platform)
+	require.Equal(t, service.ClientFamilyGrokCLI, reset.ClientFamily)
+	require.NotEqual(t, created.InstallationID, reset.InstallationID)
+
+	reloaded, err := svc.GetOrCreate(ctx, &grokAccount)
+	require.NoError(t, err)
+	require.Equal(t, reset.InstallationID, reloaded.InstallationID)
+	require.Equal(t, service.PlatformGrok, cache.profiles[account.ID].Platform)
+}
+
+func TestResetDeviceProfileMintsWhenMissing(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformOpenAI, nil)
+
+	reset, err := svc.Reset(ctx, account)
+	require.NoError(t, err)
+	require.Equal(t, service.PlatformOpenAI, reset.Platform)
+	require.Equal(t, service.ClientFamilyCodexCLI, reset.ClientFamily)
+}
+
+func TestResetDeviceProfileShadowResetsParent(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+	parent := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, nil)
+	created, err := svc.GetOrCreate(ctx, parent)
+	require.NoError(t, err)
+
+	parentID := parent.ID
+	shadow := &service.Account{
+		ID:              parent.ID + 9000,
+		Platform:        service.PlatformAnthropic,
+		ParentAccountID: &parentID,
+	}
+	reset, err := svc.Reset(ctx, shadow)
+	require.NoError(t, err)
+	require.Equal(t, parent.ID, reset.AccountID)
+	require.Equal(t, service.PlatformAnthropic, reset.Platform)
+	require.NotEqual(t, created.InstallationID, reset.InstallationID)
+
+	reloaded, err := svc.GetOrCreate(ctx, parent)
+	require.NoError(t, err)
+	require.Equal(t, reset.InstallationID, reloaded.InstallationID)
+}
+
+func TestResetDeviceProfileWaitsForInFlightLearn(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+	_, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	seedOldClaudeSoftware(t, client, account.ID, false)
+
+	aboutToCAS := make(chan struct{})
+	releaseCAS := make(chan struct{})
+	repo.beforeCAS = func() {
+		select {
+		case <-aboutToCAS:
+		default:
+			close(aboutToCAS)
+		}
+		<-releaseCAS
+	}
+
+	learnDone := make(chan error, 1)
+	go func() {
+		_, learnErr := svc.LearnIfOfficial(ctx, account, officialClaudeInbound())
+		learnDone <- learnErr
+	}()
+	select {
+	case <-aboutToCAS:
+	case <-time.After(2 * time.Second):
+		t.Fatal("learn did not reach CAS")
+	}
+
+	grokAccount := *account
+	grokAccount.Platform = service.PlatformGrok
+	resetDone := make(chan error, 1)
+	go func() {
+		_, resetErr := svc.Reset(ctx, &grokAccount)
+		resetDone <- resetErr
+	}()
+	select {
+	case err := <-resetDone:
+		t.Fatalf("reset completed while learn held the account lock: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	close(releaseCAS)
+	require.NoError(t, <-learnDone)
+	require.NoError(t, <-resetDone)
+
+	got, err := svc.GetOrCreate(ctx, &grokAccount)
+	require.NoError(t, err)
+	require.Equal(t, service.PlatformGrok, got.Platform)
+	require.Equal(t, service.ClientFamilyGrokCLI, got.ClientFamily)
+	ua, _ := got.ProfilePayload["user_agent"].(string)
+	require.NotContains(t, ua, "claude-cli/")
+}
+
+func TestResetDeviceProfileWaitsForInFlightGetOrCreate(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, nil)
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	require.Equal(t, service.PlatformAnthropic, created.Platform)
+
+	aboutToInsert := make(chan struct{})
+	releaseInsert := make(chan struct{})
+	repo.beforeInsert = func() {
+		select {
+		case <-aboutToInsert:
+		default:
+			close(aboutToInsert)
+		}
+		<-releaseInsert
+	}
+
+	grokAccount := *account
+	grokAccount.Platform = service.PlatformGrok
+	resetDone := make(chan error, 1)
+	go func() {
+		_, resetErr := svc.Reset(ctx, &grokAccount)
+		resetDone <- resetErr
+	}()
+	select {
+	case <-aboutToInsert:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reset did not reach baseline insert")
+	}
+
+	getDone := make(chan error, 1)
+	go func() {
+		_, getErr := svc.GetOrCreate(ctx, account)
+		getDone <- getErr
+	}()
+	select {
+	case err := <-getDone:
+		t.Fatalf("GetOrCreate completed while reset held the account lock: %v", err)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	close(releaseInsert)
+	require.NoError(t, <-resetDone)
+	require.Error(t, <-getDone)
+
+	got, err := svc.GetOrCreate(ctx, &grokAccount)
+	require.NoError(t, err)
+	require.Equal(t, service.PlatformGrok, got.Platform)
+	require.Equal(t, service.ClientFamilyGrokCLI, got.ClientFamily)
+}
+
+func TestResetDeviceProfileRetriesWhenOtherInstanceInsertsStalePlatform(t *testing.T) {
+	svcA, client, repo := newCountingAccountDeviceService(t)
+	svcB := service.NewAccountDeviceService(repo)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, nil)
+	_, err := svcA.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+
+	deleted := make(chan struct{})
+	bInserted := make(chan struct{})
+	deletes := 0
+	repo.afterDelete = func() {
+		deletes++
+		if deletes == 1 {
+			close(deleted)
+			<-bInserted
+		}
+	}
+
+	grokAccount := *account
+	grokAccount.Platform = service.PlatformGrok
+	resetDone := make(chan error, 1)
+	var reset *service.AccountDeviceProfile
+	go func() {
+		var resetErr error
+		reset, resetErr = svcA.Reset(ctx, &grokAccount)
+		resetDone <- resetErr
+	}()
+	select {
+	case <-deleted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reset did not delete")
+	}
+	_, err = svcB.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	close(bInserted)
+	require.NoError(t, <-resetDone)
+	require.NotNil(t, reset)
+	require.Equal(t, service.PlatformGrok, reset.Platform)
+	require.Equal(t, service.ClientFamilyGrokCLI, reset.ClientFamily)
+}
+
 func TestGetOrCreateRaceStillOneRow(t *testing.T) {
 	svc, client := newAccountDeviceService(t)
 	ctx := context.Background()
@@ -185,10 +401,13 @@ func TestGetOrCreateRejectsInvalidBaselineWithoutInsert(t *testing.T) {
 }
 
 type countingDeviceProfileRepo struct {
-	inner     service.AccountDeviceProfileRepository
-	mu        sync.Mutex
-	inserts   map[int64]int
-	casWrites map[int64]int
+	inner        service.AccountDeviceProfileRepository
+	mu           sync.Mutex
+	inserts      map[int64]int
+	casWrites    map[int64]int
+	beforeCAS    func()
+	beforeInsert func()
+	afterDelete  func()
 }
 
 func wrapCountingDeviceProfileRepo(inner service.AccountDeviceProfileRepository) *countingDeviceProfileRepo {
@@ -200,6 +419,9 @@ func (r *countingDeviceProfileRepo) GetByAccountID(ctx context.Context, accountI
 }
 
 func (r *countingDeviceProfileRepo) InsertBaseline(ctx context.Context, p *service.AccountDeviceProfile) (*service.AccountDeviceProfile, error) {
+	if r.beforeInsert != nil {
+		r.beforeInsert()
+	}
 	r.mu.Lock()
 	r.inserts[p.AccountID]++
 	r.mu.Unlock()
@@ -207,6 +429,9 @@ func (r *countingDeviceProfileRepo) InsertBaseline(ctx context.Context, p *servi
 }
 
 func (r *countingDeviceProfileRepo) UpdateCAS(ctx context.Context, accountID, expectedRevision int64, next *service.AccountDeviceProfile) (bool, error) {
+	if r.beforeCAS != nil {
+		r.beforeCAS()
+	}
 	ok, err := r.inner.UpdateCAS(ctx, accountID, expectedRevision, next)
 	if err == nil && ok {
 		r.mu.Lock()
@@ -214,6 +439,14 @@ func (r *countingDeviceProfileRepo) UpdateCAS(ctx context.Context, accountID, ex
 		r.mu.Unlock()
 	}
 	return ok, err
+}
+
+func (r *countingDeviceProfileRepo) DeleteByAccountID(ctx context.Context, accountID int64) error {
+	err := r.inner.DeleteByAccountID(ctx, accountID)
+	if r.afterDelete != nil {
+		r.afterDelete()
+	}
+	return err
 }
 
 func (r *countingDeviceProfileRepo) insertCount(accountID int64) int {
@@ -1015,6 +1248,12 @@ func (c *recordingDeviceProfileCache) SetDeviceProfile(_ context.Context, accoun
 		c.profiles = map[int64]*service.AccountDeviceProfile{}
 	}
 	c.profiles[accountID] = p
+	return nil
+}
+func (c *recordingDeviceProfileCache) DeleteDeviceProfile(_ context.Context, accountID int64) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.profiles, accountID)
 	return nil
 }
 

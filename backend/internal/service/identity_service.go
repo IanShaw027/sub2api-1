@@ -116,6 +116,8 @@ type IdentityCache interface {
 	// SetDeviceProfile writes the Redis projection of an account device profile.
 	// A subsequent Get miss still means the caller must load the DB row.
 	SetDeviceProfile(ctx context.Context, accountID int64, p *AccountDeviceProfile) error
+	// DeleteDeviceProfile drops the Redis projection. A miss is not an error.
+	DeleteDeviceProfile(ctx context.Context, accountID int64) error
 }
 
 // IdentityService 管理OAuth账号的请求身份指纹
