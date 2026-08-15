@@ -34,6 +34,9 @@ func (s *identityCacheStub) GetDeviceProfile(_ context.Context, _ int64) (*Accou
 func (s *identityCacheStub) SetDeviceProfile(_ context.Context, _ int64, _ *AccountDeviceProfile) error {
 	return nil
 }
+func (s *identityCacheStub) DeleteDeviceProfile(_ context.Context, _ int64) error {
+	return nil
+}
 
 func TestIdentityService_RewriteUserID_PreservesTopLevelFieldOrder(t *testing.T) {
 	cache := &identityCacheStub{}

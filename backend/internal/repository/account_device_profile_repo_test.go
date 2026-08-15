@@ -115,7 +115,7 @@ func TestAccountDeviceProfileRepositoryUpdateCASSuccessAndMismatch(t *testing.T)
 
 	next := validRepoBaseline(accountID)
 	next.ClientVersion = "2.1.221"
-	next.SessionNamespace = "ffffffffffffffffffffffffffffffff"
+	next.SessionNamespace = created.SessionNamespace
 	next.DeviceID = created.DeviceID
 	next.InstallationID = created.InstallationID
 	next.MachineID = created.MachineID
@@ -181,4 +181,25 @@ func TestAccountDeviceProfileRepositoryUpdateCASPreservesFirstWriteIdentity(t *t
 	require.Equal(t, created.Platform, updated.Platform)
 	require.Equal(t, created.ClientFamily, updated.ClientFamily)
 	require.Equal(t, created.SessionNamespace, updated.SessionNamespace)
+
+	next.SessionNamespace = "ffffffffffffffffffffffffffffffff"
+	ok, err = repo.UpdateCAS(ctx, accountID, updated.Revision, next)
+	require.NoError(t, err)
+	require.False(t, ok)
+}
+
+func TestAccountDeviceProfileRepositoryDeleteByAccountIDIsIdempotent(t *testing.T) {
+	repo, client := newAccountDeviceProfileRepo(t)
+	ctx := context.Background()
+	accountID := mustCreateRepoAccount(t, client)
+
+	_, err := repo.InsertBaseline(ctx, validRepoBaseline(accountID))
+	require.NoError(t, err)
+
+	require.NoError(t, repo.DeleteByAccountID(ctx, accountID))
+	got, err := repo.GetByAccountID(ctx, accountID)
+	require.NoError(t, err)
+	require.Nil(t, got)
+
+	require.NoError(t, repo.DeleteByAccountID(ctx, accountID))
 }

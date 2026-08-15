@@ -394,6 +394,16 @@ export async function recoverState(id: number): Promise<Account> {
 }
 
 /**
+ * Delete the pinned device profile and remint a baseline for the current platform.
+ * @param id - Account ID
+ * @returns Updated account
+ */
+export async function resetDeviceProfile(id: number): Promise<Account> {
+  const { data } = await apiClient.post<Account>(`/admin/accounts/${id}/reset-device-profile`)
+  return data
+}
+
+/**
  * Reset account quota usage
  * @param id - Account ID
  * @returns Updated account
@@ -1047,6 +1057,7 @@ export const accountsAPI = {
   getBatchTodayStats,
   clearRateLimit,
   recoverState,
+  resetDeviceProfile,
   resetAccountQuota,
   getTempUnschedulableStatus,
   resetTempUnschedulable,

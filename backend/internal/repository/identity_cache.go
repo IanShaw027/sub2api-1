@@ -114,3 +114,7 @@ func (c *identityCache) SetDeviceProfile(ctx context.Context, accountID int64, p
 	// Leftover fingerprint keys are not device-profile authority.
 	return c.rdb.Del(ctx, fingerprintKey(accountID)).Err()
 }
+
+func (c *identityCache) DeleteDeviceProfile(ctx context.Context, accountID int64) error {
+	return c.rdb.Del(ctx, deviceProfileKey(accountID), fingerprintKey(accountID)).Err()
+}

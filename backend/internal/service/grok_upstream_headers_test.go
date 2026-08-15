@@ -389,6 +389,10 @@ func (r *fixedGrokDeviceProfileRepo) UpdateCAS(_ context.Context, _, _ int64, _ 
 	return false, r.err
 }
 
+func (r *fixedGrokDeviceProfileRepo) DeleteByAccountID(context.Context, int64) error {
+	return r.err
+}
+
 type hangingGrokDeviceProfileRepo struct{}
 
 func (r *hangingGrokDeviceProfileRepo) GetByAccountID(ctx context.Context, _ int64) (*AccountDeviceProfile, error) {
@@ -402,6 +406,10 @@ func (r *hangingGrokDeviceProfileRepo) InsertBaseline(context.Context, *AccountD
 
 func (r *hangingGrokDeviceProfileRepo) UpdateCAS(context.Context, int64, int64, *AccountDeviceProfile) (bool, error) {
 	return false, nil
+}
+
+func (r *hangingGrokDeviceProfileRepo) DeleteByAccountID(context.Context, int64) error {
+	return nil
 }
 
 type conflictGrokDeviceProfileRepo struct {
@@ -418,4 +426,8 @@ func (r *conflictGrokDeviceProfileRepo) InsertBaseline(context.Context, *Account
 
 func (r *conflictGrokDeviceProfileRepo) UpdateCAS(context.Context, int64, int64, *AccountDeviceProfile) (bool, error) {
 	return false, nil
+}
+
+func (r *conflictGrokDeviceProfileRepo) DeleteByAccountID(context.Context, int64) error {
+	return nil
 }

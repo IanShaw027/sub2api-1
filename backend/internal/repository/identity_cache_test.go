@@ -73,6 +73,29 @@ func TestDeviceProfile_SetDeletesLeftoverFingerprint(t *testing.T) {
 	require.Nil(t, fp)
 }
 
+func TestDeviceProfile_DeleteRemovesProjection(t *testing.T) {
+	cache := newTestIdentityCache(t)
+	ctx := context.Background()
+	require.NoError(t, cache.SetDeviceProfile(ctx, 11, &service.AccountDeviceProfile{
+		AccountID:          11,
+		DeviceID:           "dev-11",
+		GatewayAccountUUID: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+		SessionNamespace:   "cccccccccccccccccccccccccccccccc",
+	}))
+
+	require.NoError(t, cache.SetFingerprint(ctx, 11, &service.Fingerprint{ClientID: "old"}))
+	require.NoError(t, cache.DeleteDeviceProfile(ctx, 11))
+	got, err := cache.GetDeviceProfile(ctx, 11)
+	require.NoError(t, err)
+	require.Nil(t, got)
+
+	fp, err := cache.GetFingerprint(ctx, 11)
+	require.ErrorIs(t, err, redis.Nil)
+	require.Nil(t, fp)
+
+	require.NoError(t, cache.DeleteDeviceProfile(ctx, 11))
+}
+
 func TestFingerprintKey(t *testing.T) {
 	tests := []struct {
 		name      string

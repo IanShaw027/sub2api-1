@@ -59,6 +59,13 @@ func (r *mapDeviceProfileRepo) UpdateCAS(context.Context, int64, int64, *Account
 	return false, nil
 }
 
+func (r *mapDeviceProfileRepo) DeleteByAccountID(_ context.Context, accountID int64) error {
+	if r.profiles != nil {
+		delete(r.profiles, accountID)
+	}
+	return nil
+}
+
 func validOpenAIDeviceProfile(accountID int64) *AccountDeviceProfile {
 	version := NormalizeCodexClientVersion(codexCLIVersion)
 	if version == "" {

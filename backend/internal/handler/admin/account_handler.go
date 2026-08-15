@@ -66,6 +66,7 @@ type AccountHandler struct {
 	upstreamBillingProbe    *service.UpstreamBillingProbeService
 	ollamaCloudUsage        *service.OllamaCloudUsageService
 	opsService              *service.OpsService
+	accountDeviceService    *service.AccountDeviceService
 }
 
 // SetUpstreamBillingProbeService attaches the optional remote billing probe service.
@@ -79,6 +80,10 @@ func (h *AccountHandler) SetOllamaCloudUsageService(usage *service.OllamaCloudUs
 
 func (h *AccountHandler) SetOpsService(opsService *service.OpsService) {
 	h.opsService = opsService
+}
+
+func (h *AccountHandler) SetAccountDeviceService(svc *service.AccountDeviceService) {
+	h.accountDeviceService = svc
 }
 
 // NewAccountHandler creates a new admin account handler
@@ -1206,6 +1211,41 @@ func (h *AccountHandler) RecoverState(c *gin.Context) {
 	}
 
 	account, err := h.adminService.GetAccount(c.Request.Context(), accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+}
+
+// ResetDeviceProfile deletes the stored device profile and remints a baseline
+// for the account's current platform.
+// POST /api/v1/admin/accounts/:id/reset-device-profile
+func (h *AccountHandler) ResetDeviceProfile(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+
+	if h.accountDeviceService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Account device service unavailable")
+		return
+	}
+
+	account, err := h.adminService.GetAccount(c.Request.Context(), accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	if _, err := h.accountDeviceService.Reset(c.Request.Context(), account); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	account, err = h.adminService.GetAccount(c.Request.Context(), accountID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

@@ -794,6 +794,10 @@ func (r *staticKiroDeviceProfileRepo) UpdateCAS(context.Context, int64, int64, *
 	return false, nil
 }
 
+func (r *staticKiroDeviceProfileRepo) DeleteByAccountID(context.Context, int64) error {
+	return nil
+}
+
 func validKiroOutboundProfile(accountID int64, machineID string) *AccountDeviceProfile {
 	return &AccountDeviceProfile{
 		AccountID:          accountID,
