@@ -149,11 +149,94 @@ func resolveConvergedThreadID(sessionNamespace, clientSessionID string) string {
 // 确保所有载体中的 turn_id 等随机字段一致。
 type codexFingerprintIDs struct {
 	mode           codexFingerprintMode
+	profile        *AccountDeviceProfile
 	installationID string
 	sessionID      string
 	threadID       string
 	turnID         string
 	windowID       string
+}
+
+const outboundDeviceProfileGinKey = "outbound_device_profile"
+
+type outboundDeviceProfileGinValue struct {
+	accountID int64
+	profile   *AccountDeviceProfile
+}
+
+func outboundDeviceAccountID(account *Account) int64 {
+	if account == nil {
+		return 0
+	}
+	return canonicalDeviceAccountID(account)
+}
+
+func outboundDeviceProfileFromGin(c *gin.Context, account *Account) *AccountDeviceProfile {
+	profile, ok := outboundDeviceProfileFromGinForAccount(c, outboundDeviceAccountID(account))
+	if !ok {
+		return nil
+	}
+	return profile
+}
+
+func outboundDeviceProfileFromGinForAccount(c *gin.Context, accountID int64) (*AccountDeviceProfile, bool) {
+	if c == nil || accountID == 0 {
+		return nil, false
+	}
+	v, ok := c.Get(outboundDeviceProfileGinKey)
+	if !ok {
+		return nil, false
+	}
+	stashed, ok := v.(*outboundDeviceProfileGinValue)
+	if !ok || stashed == nil || stashed.accountID != accountID {
+		return nil, false
+	}
+	return stashed.profile, true
+}
+
+func stashOutboundDeviceProfile(c *gin.Context, accountID int64, profile *AccountDeviceProfile) {
+	if c == nil || accountID == 0 {
+		return
+	}
+	c.Set(outboundDeviceProfileGinKey, &outboundDeviceProfileGinValue{
+		accountID: accountID,
+		profile:   profile,
+	})
+}
+
+func resolveOpenAIOutboundDeviceProfile(ctx context.Context, c *gin.Context, account *Account) *AccountDeviceProfile {
+	accountID := outboundDeviceAccountID(account)
+	if accountID == 0 {
+		return nil
+	}
+	if profile, ok := outboundDeviceProfileFromGinForAccount(c, accountID); ok {
+		return profile
+	}
+	profile := loadOpenAIOutboundSessionProfile(ctx, account)
+	stashOutboundDeviceProfile(c, accountID, profile)
+	return profile
+}
+
+func fingerprintIDsBelongToAccount(ids *codexFingerprintIDs, account *Account) bool {
+	if ids == nil || ids.profile == nil {
+		return false
+	}
+	return ids.profile.AccountID == outboundDeviceAccountID(account)
+}
+
+func clearCodexFingerprintIDsForAccount(c *gin.Context, account *Account) {
+	if c == nil {
+		return
+	}
+	v, ok := c.Get("codex_fingerprint_ids")
+	if !ok {
+		return
+	}
+	ids, ok := v.(*codexFingerprintIDs)
+	if !ok || !fingerprintIDsBelongToAccount(ids, account) {
+		return
+	}
+	c.Set("codex_fingerprint_ids", (*codexFingerprintIDs)(nil))
 }
 
 // resolveCodexFingerprintIDs 按收敛模式计算出站 ID 集合。
@@ -170,7 +253,7 @@ func resolveCodexFingerprintIDs(ctx context.Context, account *Account, clientSes
 	if profile == nil {
 		return nil
 	}
-	ids := &codexFingerprintIDs{mode: mode}
+	ids := &codexFingerprintIDs{mode: mode, profile: profile}
 	ids.installationID = strings.TrimSpace(profile.InstallationID)
 	if ids.installationID == "" {
 		return nil
@@ -236,10 +319,19 @@ func applyCodexSharedRequestIdentity(ctx context.Context, reqBody map[string]any
 // one profile load, stamp body from those IDs, and store them for outbound headers.
 func applyCodexForwardRequestIdentity(ctx context.Context, c *gin.Context, reqBody map[string]any, account *Account, clientHeaders http.Header) *codexFingerprintIDs {
 	fpIDs := applyCodexSharedRequestIdentity(ctx, reqBody, account, clientHeaders)
-	if fpIDs != nil && c != nil {
-		c.Set("codex_fingerprint_ids", fpIDs)
+	if c == nil {
+		return fpIDs
 	}
-	return fpIDs
+	if fpIDs != nil {
+		c.Set("codex_fingerprint_ids", fpIDs)
+		stashOutboundDeviceProfile(c, outboundDeviceAccountID(account), fpIDs.profile)
+		return fpIDs
+	}
+	if account != nil && account.GetCodexFingerprintMode() != codexFingerprintOff {
+		stashOutboundDeviceProfile(c, outboundDeviceAccountID(account), nil)
+		clearCodexFingerprintIDsForAccount(c, account)
+	}
+	return nil
 }
 
 // resolveCodexFingerprintIDsFromRequest 从客户端原始请求头中提取 session-id，
