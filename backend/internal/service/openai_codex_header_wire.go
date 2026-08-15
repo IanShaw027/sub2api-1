@@ -13,24 +13,25 @@ import (
 // Only keys with in-repo casing evidence are rewritten. Uncaptured keys
 // (chatgpt-account-id, conversation_id, thread-id, x-client-request-id,
 // accept-language, x-codex-beta-features, x-openai-fedramp, leftover-5
-// session_id) keep whatever the builder already emitted.
+// session_id, and Go-Set content-type/accept/version) keep whatever the
+// builder already emitted (Content-Type / Accept / Version).
 //
 // Casing evidence:
 //   - originator: forced lowercase raw key (issue #3901; openai_codex_identity_test.go)
-//   - version / session-id / x-codex-*: written lowercase by outbound builders
+//   - session-id / x-codex-*: written lowercase by outbound builders
 //     (session-id is the official CLI hyphen form per extractClientSessionID)
-//   - User-Agent / Authorization / content-type / accept: P2 brief
+//   - User-Agent / Authorization: P2 brief
 //   - OpenAI-Beta: written that way by ensureCodexIdentityHeaders
 //
 // Official send order was not captured. The order list is the evidenced
 // keys only; it is not an official CLI sequence. Unknown keys append.
+//
+// Apply only at the last mutation before send (doAccountHTTP). Callers
+// Header.Set/Get after buildUpstreamRequest must still see Go-canonical keys.
 var codexHeaderWireCasing = map[string]string{
 	"authorization":           "Authorization",
 	"user-agent":              "User-Agent",
-	"accept":                  "accept",
-	"content-type":            "content-type",
 	"originator":              "originator",
-	"version":                 "version",
 	"session-id":              "session-id",
 	"openai-beta":             "OpenAI-Beta",
 	"x-codex-installation-id": "x-codex-installation-id",
@@ -42,10 +43,7 @@ var codexHeaderWireCasing = map[string]string{
 var codexHeaderWireOrder = []string{
 	"Authorization",
 	"User-Agent",
-	"accept",
-	"content-type",
 	"originator",
-	"version",
 	"session-id",
 	"OpenAI-Beta",
 	"x-codex-installation-id",

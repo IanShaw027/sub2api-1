@@ -556,6 +556,12 @@ func (s *OpenAIGatewayService) doAccountHTTP(ctx context.Context, c *gin.Context
 	if account != nil && account.Platform == PlatformGrok {
 		return doLeftoverAccountHTTP(ctx, s.httpUpstream, req, proxyURL, account, s.tlsFPProfileService, s.tlsFPRouterService, inboundUserAgentFromGin(c), "http", protocol)
 	}
+	// Last mutation before send: callers may Header.Set/Get after buildUpstreamRequest
+	// (images Content-Type, messages identity + turn-state). leftover 5 session_id
+	// values are unchanged; originator stays lowercase.
+	if account != nil && account.Type == AccountTypeOAuth && req != nil {
+		applyCodexHeaderWireCasing(req.Header)
+	}
 	return doAccountHTTPUpstreamFromGin(ctx, c, s.httpUpstream, req, proxyURL, account, s.tlsFPProfileService, s.tlsFPRouterService, "http", protocol)
 }
 
