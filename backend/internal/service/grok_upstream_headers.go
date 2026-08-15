@@ -64,7 +64,12 @@ func applyGrokUpstreamHeadersFromAccountWithMode(ctx context.Context, req *http.
 
 	var profile *AccountDeviceProfile
 	if account != nil {
-		loaded, err := LoadOutboundDeviceProfile(ctx, account)
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		loadCtx, cancel := context.WithTimeout(ctx, outboundDeviceProfileLoadTimeout)
+		loaded, err := LoadOutboundDeviceProfile(loadCtx, account)
+		cancel()
 		if err != nil {
 			return err
 		}

@@ -112,6 +112,24 @@ func TestGetOrCreateUsesOpenAIAndGrokRuntimes(t *testing.T) {
 	require.Equal(t, service.ClientFamilyGrokCLI, grokProfile.ClientFamily)
 }
 
+func TestGetOrCreateRejectsPlatformMismatchWhenBaselineInsertConflicts(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, nil)
+	_, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+
+	grokAccount := *account
+	grokAccount.Platform = service.PlatformGrok
+	got, err := svc.GetOrCreate(ctx, &grokAccount)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
+	require.ErrorContains(t, err, service.PlatformAnthropic)
+	require.ErrorContains(t, err, "account_id=")
+	require.ErrorContains(t, err, "insert baseline:")
+	require.Nil(t, got)
+}
+
 func TestGetOrCreateRaceStillOneRow(t *testing.T) {
 	svc, client := newAccountDeviceService(t)
 	ctx := context.Background()
@@ -803,7 +821,6 @@ func TestLearnIfOfficialDarwinX64InboundStillLearnsSoftware(t *testing.T) {
 	require.NotEqual(t, claude.DefaultHeaders["X-Stainless-OS"], got.ProfilePayload["stainless_os"])
 	require.NotEqual(t, claude.DefaultHeaders["X-Stainless-Arch"], got.ProfilePayload["stainless_arch"])
 }
-
 
 type recordingDeviceProfileCache struct {
 	mu       sync.Mutex

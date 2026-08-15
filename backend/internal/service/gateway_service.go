@@ -1384,8 +1384,14 @@ func (s *GatewayService) DoGrokNativeResponsesJSON(ctx context.Context, account 
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Accept", "application/json")
 	upstreamReq.Header.Set("User-Agent", defaultGrokUpstreamUserAgent())
-	if err := applyGrokInteractiveUpstreamHeadersFromAccount(ctx, upstreamReq, account); err != nil {
-		return nil, err
+	if account.IsGrokOAuth() {
+		if err := applyGrokInteractiveUpstreamHeadersFromAccount(ctx, upstreamReq, account); err != nil {
+			slog.Warn("identity_reject", "account_id", account.ID, "reason", err.Error())
+			return nil, &UpstreamFailoverError{
+				StatusCode: http.StatusBadGateway,
+				Reason:     GatewayFailureReason("grok_search_identity"),
+			}
+		}
 	}
 	account.ApplyHeaderOverrides(upstreamReq.Header)
 	proxyURL := ""
