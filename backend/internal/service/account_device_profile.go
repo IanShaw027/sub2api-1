@@ -219,10 +219,8 @@ func StampTLSProfileFromDevice(profile *tlsfingerprint.Profile, device *AccountD
 // ALPNContainsH2 reports whether the ALPN list includes the h2 token.
 func ALPNContainsH2(alpn []string) bool {
 	for _, proto := range alpn {
-		for _, part := range strings.Split(proto, ",") {
-			if strings.EqualFold(strings.TrimSpace(part), "h2") {
-				return true
-			}
+		if proto == "h2" {
+			return true
 		}
 	}
 	return false

@@ -367,6 +367,18 @@ func TestValidateAccountDeviceProfileRejectsOversizedID(t *testing.T) {
 	require.ErrorContains(t, err, "device_id")
 }
 
+func TestALPNContainsH2_ExactTokenOnly(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, ALPNContainsH2([]string{"h2"}))
+	require.True(t, ALPNContainsH2([]string{"h2", "http/1.1"}))
+	require.False(t, ALPNContainsH2([]string{"H2"}))
+	require.False(t, ALPNContainsH2([]string{" h2 "}))
+	require.False(t, ALPNContainsH2([]string{"h2,http/1.1"}))
+	require.False(t, ALPNContainsH2([]string{"http/1.1"}))
+	require.False(t, ALPNContainsH2(nil))
+}
+
 func TestEffectiveTransportFamily_RequiresClaimALPNAndLiveHTTP2(t *testing.T) {
 	t.Parallel()
 

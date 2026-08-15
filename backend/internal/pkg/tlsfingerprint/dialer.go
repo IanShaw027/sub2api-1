@@ -5,6 +5,7 @@ package tlsfingerprint
 import (
 	"bufio"
 	"context"
+	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"log/slog"
@@ -19,20 +20,20 @@ import (
 // Profile contains TLS fingerprint configuration.
 // All slice fields use built-in defaults when empty.
 type Profile struct {
-	ID                  int64 `json:"-"`
+	ID                  int64  `json:"-"`
 	Name                string // Profile name for identification
 	CipherSuites        []uint16
 	Curves              []uint16
 	PointFormats        []uint16
 	EnableGREASE        bool
-	SignatureAlgorithms []uint16 // Empty uses defaultSignatureAlgorithms
-	ALPNProtocols       []string // Empty uses ["http/1.1"]
-	TransportFamily     string   // Optional claimed h1|h2; empty is treated as h1
-	InsecureSkipVerify  bool     `json:"-"` // test-only; production unset
-	SupportedVersions   []uint16 // Empty uses [TLS1.3, TLS1.2]
-	KeyShareGroups      []uint16 // Empty uses [X25519]
-	PSKModes            []uint16 // Empty uses [psk_dhe_ke]
-	Extensions          []uint16 // Extension type IDs in order; empty uses default Node.js 24.x order
+	SignatureAlgorithms []uint16       // Empty uses defaultSignatureAlgorithms
+	ALPNProtocols       []string       // Empty uses ["http/1.1"]
+	TransportFamily     string         // Optional claimed h1|h2; empty is treated as h1
+	RootCAs             *x509.CertPool `json:"-"` // optional extra roots; production unset
+	SupportedVersions   []uint16       // Empty uses [TLS1.3, TLS1.2]
+	KeyShareGroups      []uint16       // Empty uses [X25519]
+	PSKModes            []uint16       // Empty uses [psk_dhe_ke]
+	Extensions          []uint16       // Extension type IDs in order; empty uses default Node.js 24.x order
 }
 
 // Dialer creates TLS connections with custom fingerprints.
@@ -281,7 +282,7 @@ func performTLSHandshake(ctx context.Context, conn net.Conn, profile *Profile, a
 	spec := buildClientHelloSpecFromProfile(profile)
 	tlsCfg := &utls.Config{ServerName: host}
 	if profile != nil {
-		tlsCfg.InsecureSkipVerify = profile.InsecureSkipVerify
+		tlsCfg.RootCAs = profile.RootCAs
 	}
 	tlsConn := utls.UClient(conn, tlsCfg, utls.HelloCustom)
 

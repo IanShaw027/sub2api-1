@@ -519,10 +519,11 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	settings := tlsPlan.settings
 	burstConcurrency := resolvePoolBurstConcurrency(accountConcurrency)
 	transportFamily := tlsPlan.family
-	tlsProfileKey := tlsProfileCacheKey(profile)
+	effectiveProfile := effectiveTLSFingerprintProfile(parsedProxy, profile)
+	tlsProfileKey := tlsProfileCacheKey(effectiveProfile)
 	// TLS 指纹客户端使用独立的缓存键，加 "tls:" 前缀
 	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID, burstConcurrency, tlsProfileKey, transportFamily, upstreamProtocolModeDefault)
-	poolKey := buildPoolKey(settings, tlsProfilePoolIdentity(profile), transportFamily, upstreamProtocolModeDefault) + ":tls"
+	poolKey := buildPoolKey(settings, tlsProfilePoolIdentity(effectiveProfile), transportFamily, upstreamProtocolModeDefault) + ":tls"
 
 	now := time.Now()
 	nowUnix := now.UnixNano()
@@ -574,7 +575,7 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 
 	// 创建带 TLS 指纹的 Transport
 	slog.Debug("tls_fingerprint_creating_new_client", "account_id", accountID, "cache_key", cacheKey, "proxy", proxyKey)
-	transport, livePlan, err := s.buildLiveTLSTransport(isolation, accountConcurrency, parsedProxy, profile, upstreamProfile)
+	transport, livePlan, err := s.buildLiveTLSTransport(isolation, accountConcurrency, parsedProxy, effectiveProfile, upstreamProfile)
 	if err != nil {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("build TLS fingerprint transport: %w", err)
@@ -583,7 +584,7 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 		transportFamily = livePlan.family
 		settings = livePlan.settings
 		cacheKey = "tls:" + buildCacheKey(isolation, proxyKey, accountID, burstConcurrency, tlsProfileKey, transportFamily, upstreamProtocolModeDefault)
-		poolKey = buildPoolKey(settings, tlsProfilePoolIdentity(profile), transportFamily, upstreamProtocolModeDefault) + ":tls"
+		poolKey = buildPoolKey(settings, tlsProfilePoolIdentity(effectiveProfile), transportFamily, upstreamProtocolModeDefault) + ":tls"
 		s.removeSiblingClientsLocked(cacheKey, isolation, accountID, proxyKey, tlsProfileKey, transportFamily)
 	}
 
@@ -691,9 +692,6 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 	protocolMode := s.resolveProtocolMode(profile, proxyKey, parsedProxy)
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, profile)
-	if protocolMode == upstreamProtocolModeOpenAIH2 {
-		settings = applyH2PoolBudget(settings)
-	}
 	burstConcurrency := resolvePoolBurstConcurrency(accountConcurrency)
 	transportFamily := transportFamilyForProtocolMode(protocolMode)
 	// 构建缓存键（根据隔离策略不同）
@@ -747,6 +745,9 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 	if err != nil {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("build transport: %w", err)
+	}
+	if live := applyPoolBudgetForTransport(settings, transport); live != settings {
+		applyPoolCaps(transport, live)
 	}
 	client := &http.Client{Transport: transport}
 	if s.shouldValidateResolvedIP() {
@@ -1086,6 +1087,22 @@ func applyH2PoolBudget(settings poolSettings) poolSettings {
 	return settings
 }
 
+func applyPoolBudgetForTransport(settings poolSettings, transport *http.Transport) poolSettings {
+	if !transportHasLiveHTTP2(transport) {
+		return settings
+	}
+	return applyH2PoolBudget(settings)
+}
+
+func applyPoolCaps(transport *http.Transport, settings poolSettings) {
+	if transport == nil {
+		return
+	}
+	transport.MaxIdleConns = settings.maxIdleConns
+	transport.MaxIdleConnsPerHost = settings.maxIdleConnsPerHost
+	transport.MaxConnsPerHost = settings.maxConnsPerHost
+}
+
 func claimedTLSTransportFamily(profile *tlsfingerprint.Profile) string {
 	if profile != nil && profile.TransportFamily == service.TransportH2 {
 		return service.TransportH2
@@ -1119,15 +1136,40 @@ func isUtlsFingerprintedProxy(proxyURL *url.URL) bool {
 	}
 }
 
+func effectiveTLSFingerprintProfile(proxyURL *url.URL, profile *tlsfingerprint.Profile) *tlsfingerprint.Profile {
+	if proxyURL == nil || isUtlsFingerprintedProxy(proxyURL) {
+		return honestH1FingerprintProfile(profile)
+	}
+	return profile
+}
+
+var alpnRewriteWarned sync.Map
+
 // honestH1FingerprintProfile drops advertised h2 when the transport cannot
 // speak HTTP/2. Advertising h2 then sending HTTP/1.1 fails against h2 servers.
 func honestH1FingerprintProfile(profile *tlsfingerprint.Profile) *tlsfingerprint.Profile {
-	if profile == nil || !service.ALPNContainsH2(effectiveTLSALPNProtocols(profile)) {
+	if profile == nil || !service.ALPNContainsH2(profile.ALPNProtocols) {
 		return profile
 	}
-	copy := *profile
-	copy.ALPNProtocols = []string{"http/1.1"}
-	return &copy
+	from := append([]string(nil), profile.ALPNProtocols...)
+	cloned := *profile
+	cloned.ALPNProtocols = []string{"http/1.1"}
+	warnHonestH1ALPNRewrite(profile, from)
+	return &cloned
+}
+
+func warnHonestH1ALPNRewrite(profile *tlsfingerprint.Profile, from []string) {
+	id := int64(0)
+	if profile != nil {
+		id = profile.ID
+	}
+	if _, loaded := alpnRewriteWarned.LoadOrStore(id, struct{}{}); loaded {
+		return
+	}
+	slog.Warn("tls_fingerprint_alpn_rewritten_to_h1",
+		"profile_id", id,
+		"from", from,
+		"to", []string{"http/1.1"})
 }
 
 func transportFamilyForProtocolMode(protocolMode string) string {

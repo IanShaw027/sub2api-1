@@ -3,6 +3,7 @@ package repository
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -1505,6 +1506,22 @@ func TestOpenAIHTTP2_LivePoolUsesSpareBudgetNotBurst(t *testing.T) {
 	require.Equal(t, 2, transport.MaxIdleConnsPerHost)
 }
 
+func TestOpenAIHTTP2_NoLiveProofKeepsBurstCaps(t *testing.T) {
+	settings := poolSettings{maxIdleConns: 14, maxIdleConnsPerHost: 14, maxConnsPerHost: 14}
+	transport := &http.Transport{
+		ForceAttemptHTTP2:   true,
+		MaxIdleConns:        14,
+		MaxIdleConnsPerHost: 14,
+		MaxConnsPerHost:     14,
+	}
+	got := applyPoolBudgetForTransport(settings, transport)
+	require.Equal(t, settings, got, "openai_h2 attempt without live h2 must keep Burst")
+	applyPoolCaps(transport, got)
+	require.Equal(t, 14, transport.MaxConnsPerHost)
+	require.Equal(t, 14, transport.MaxIdleConns)
+	require.Equal(t, 14, transport.MaxIdleConnsPerHost)
+}
+
 func TestOpenAIHTTP1_KeepsBurstCaps(t *testing.T) {
 	svc := NewHTTPUpstream(&config.Config{
 		Gateway: config.GatewayConfig{
@@ -1540,11 +1557,13 @@ func TestTLSFingerprint_UtlsDialerDoesNotSpeakHTTP2OnTheWire(t *testing.T) {
 	up := NewHTTPUpstream(&config.Config{
 		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
 	})
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
 	resp, err := up.DoWithTLS(req, "", 1, 12, &tlsfingerprint.Profile{
-		Name:               "utls-claimed-h2",
-		TransportFamily:    service.TransportH2,
-		ALPNProtocols:      []string{"h2", "http/1.1"},
-		InsecureSkipVerify: true,
+		Name:            "utls-claimed-h2",
+		TransportFamily: service.TransportH2,
+		ALPNProtocols:   []string{"h2", "http/1.1"},
+		RootCAs:         roots,
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = resp.Body.Close() })
@@ -1559,6 +1578,35 @@ func TestTLSFingerprint_UtlsDialerDoesNotSpeakHTTP2OnTheWire(t *testing.T) {
 		require.NotNil(t, transport.DialTLSContext)
 		require.False(t, transport.ForceAttemptHTTP2)
 	}
+}
+
+func TestTLSFingerprint_EffectiveALPNSharesPoolAfterH2Rewrite(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	}).(*httpUpstreamService)
+
+	claimedH2 := &tlsfingerprint.Profile{
+		ID:              101,
+		Name:            "shared-hello",
+		TransportFamily: service.TransportH2,
+		ALPNProtocols:   []string{"h2", "http/1.1"},
+	}
+	honestH1 := &tlsfingerprint.Profile{
+		ID:              101,
+		Name:            "shared-hello",
+		TransportFamily: service.TransportH1,
+		ALPNProtocols:   []string{"http/1.1"},
+	}
+
+	first, err := svc.getClientEntryWithTLS("", 1, 12, claimedH2, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+	second, err := svc.getClientEntryWithTLS("", 1, 12, honestH1, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+
+	require.Equal(t, transportFamilyH1, first.transportFamily)
+	require.Same(t, first, second, "rewritten h2 ALPN must share the effective-h1 ClientHello pool")
+	require.Equal(t, 1, len(svc.clients))
+	require.Equal(t, tlsProfilePoolIdentity(honestH1FingerprintProfile(claimedH2)), tlsProfilePoolIdentity(honestH1))
 }
 
 func TestTLSFingerprint_ClaimedH2DoesNotThrashCacheOnHonestH1(t *testing.T) {
