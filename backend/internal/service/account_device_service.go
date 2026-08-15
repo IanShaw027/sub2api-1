@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/google/uuid"
@@ -28,9 +29,16 @@ type AccountDeviceProfileRepository interface {
 
 type AccountDeviceService struct {
 	repo      AccountDeviceProfileRepository
+	accounts  AccountIdentityLookup
 	cache     IdentityCache
 	learnMu   sync.Mutex
 	accountMu map[int64]*sync.Mutex
+}
+
+// AccountIdentityLookup loads the canonical account so shadow GetOrCreate
+// adopts the parent's extra / credential pins, not the shadow's.
+type AccountIdentityLookup interface {
+	GetByID(ctx context.Context, id int64) (*Account, error)
 }
 
 // OfficialInbound is an inbound official-client observation used to decide
@@ -95,6 +103,14 @@ func (s *AccountDeviceService) WithCache(cache IdentityCache) *AccountDeviceServ
 	return s
 }
 
+func (s *AccountDeviceService) WithAccountLookup(accounts AccountIdentityLookup) *AccountDeviceService {
+	if s == nil {
+		return s
+	}
+	s.accounts = accounts
+	return s
+}
+
 func (s *AccountDeviceService) projectDeviceProfile(ctx context.Context, p *AccountDeviceProfile) {
 	if s == nil || s.cache == nil || p == nil {
 		return
@@ -111,14 +127,9 @@ func (s *AccountDeviceService) GetOrCreate(ctx context.Context, account *Account
 	if account == nil {
 		return nil, fmt.Errorf("identity_reject: account is required")
 	}
-	if account.IsShadow() {
-		if *account.ParentAccountID == account.ID {
-			return nil, fmt.Errorf("identity_reject: shadow account %d parent cycle", account.ID)
-		}
-		parent := *account
-		parent.ID = *account.ParentAccountID
-		parent.ParentAccountID = nil
-		return s.GetOrCreate(ctx, &parent)
+	account, err := s.canonicalAccount(ctx, account)
+	if err != nil {
+		return nil, err
 	}
 	existing, err := s.repo.GetByAccountID(ctx, account.ID)
 	if err != nil {
@@ -134,14 +145,9 @@ func (s *AccountDeviceService) GetOrCreate(ctx context.Context, account *Account
 }
 
 func (s *AccountDeviceService) getOrCreateLocked(ctx context.Context, account *Account) (*AccountDeviceProfile, error) {
-	if account.IsShadow() {
-		if account.ParentAccountID == nil || *account.ParentAccountID == account.ID {
-			return nil, fmt.Errorf("identity_reject: shadow account %d parent cycle", account.ID)
-		}
-		parent := *account
-		parent.ID = *account.ParentAccountID
-		parent.ParentAccountID = nil
-		return s.getOrCreateLocked(ctx, &parent)
+	account, err := s.canonicalAccount(ctx, account)
+	if err != nil {
+		return nil, err
 	}
 
 	existing, err := s.repo.GetByAccountID(ctx, account.ID)
@@ -188,9 +194,11 @@ func (s *AccountDeviceService) getOrCreateLocked(ctx context.Context, account *A
 	return created, nil
 }
 
-// Reset deletes the stored device profile (and Redis projection) then mints a
-// new baseline for the account's current platform. Use this after an operator
-// edits account.platform so GetOrCreate is no longer stuck on a unique conflict.
+// Reset deletes the stored device profile (and Redis projection) then writes a
+// new baseline for the account's current platform. Pinned OpenAI
+// openai_device_id / Kiro machine_id values are re-adopted; other identity
+// fields are reminted. Use this after an operator edits account.platform so
+// GetOrCreate is no longer stuck on a unique conflict.
 // The per-account lock is taken after shadow resolution so a concurrent
 // LearnIfOfficial cannot CAS stale software onto the reminted revision-1 row.
 func (s *AccountDeviceService) Reset(ctx context.Context, account *Account) (*AccountDeviceProfile, error) {
@@ -200,14 +208,9 @@ func (s *AccountDeviceService) Reset(ctx context.Context, account *Account) (*Ac
 	if account == nil {
 		return nil, fmt.Errorf("identity_reject: account is required")
 	}
-	if account.IsShadow() {
-		if account.ParentAccountID == nil || *account.ParentAccountID == account.ID {
-			return nil, fmt.Errorf("identity_reject: shadow account %d parent cycle", account.ID)
-		}
-		parent := *account
-		parent.ID = *account.ParentAccountID
-		parent.ParentAccountID = nil
-		return s.Reset(ctx, &parent)
+	account, err := s.canonicalAccount(ctx, account)
+	if err != nil {
+		return nil, err
 	}
 	unlock := s.lockAccount(account.ID)
 	defer unlock()
@@ -318,6 +321,35 @@ func (s *AccountDeviceService) LearnIfOfficial(ctx context.Context, account *Acc
 		return next, nil
 	}
 	return updated, nil
+}
+
+func (s *AccountDeviceService) canonicalAccount(ctx context.Context, account *Account) (*Account, error) {
+	if account == nil {
+		return nil, fmt.Errorf("identity_reject: account is required")
+	}
+	if !account.IsShadow() {
+		return account, nil
+	}
+	if account.ParentAccountID == nil || *account.ParentAccountID == account.ID {
+		return nil, fmt.Errorf("identity_reject: shadow account %d parent cycle", account.ID)
+	}
+	if s == nil || s.accounts == nil {
+		return nil, fmt.Errorf("identity_reject: shadow account %d parent lookup is not configured", account.ID)
+	}
+	parentID := *account.ParentAccountID
+	parent, err := s.accounts.GetByID(ctx, parentID)
+	if err != nil {
+		return nil, fmt.Errorf("identity_reject: load parent account %d: %w", parentID, err)
+	}
+	if parent == nil {
+		return nil, fmt.Errorf("identity_reject: parent account %d not found", parentID)
+	}
+	if parent.IsShadow() {
+		return nil, fmt.Errorf("identity_reject: parent account %d is itself a shadow", parentID)
+	}
+	parentCopy := *parent
+	parentCopy.ParentAccountID = nil
+	return &parentCopy, nil
 }
 
 func (s *AccountDeviceService) lockAccount(accountID int64) func() {
@@ -481,15 +513,23 @@ func buildAccountDeviceBaseline(account *Account) (*AccountDeviceProfile, error)
 
 	osFamily, arch := baselineOSArch(account.Platform)
 	clientVersion, runtimeVersion, payload := baselineSoftwareBundle(account.Platform)
+	installationID, err := baselineInstallationID(account)
+	if err != nil {
+		return nil, err
+	}
+	machineID, err := baselineMachineID(account)
+	if err != nil {
+		return nil, err
+	}
 	p := &AccountDeviceProfile{
 		AccountID:          account.ID,
 		Revision:           1,
 		SchemaVersion:      1,
 		Platform:           account.Platform,
 		ClientFamily:       DefaultClientFamily(account.Platform),
-		InstallationID:     uuid.NewString(),
+		InstallationID:     installationID,
 		DeviceID:           uuid.NewString(),
-		MachineID:          uuid.NewString(),
+		MachineID:          machineID,
 		GatewayAccountUUID: uuid.NewString(),
 		SessionNamespace:   sessionNamespace,
 		OSFamily:           osFamily,
@@ -504,6 +544,74 @@ func buildAccountDeviceBaseline(account *Account) (*AccountDeviceProfile, error)
 		LearningEnabled:    false,
 	}
 	return p, nil
+}
+
+func baselineInstallationID(account *Account) (string, error) {
+	if account == nil || account.Platform != PlatformOpenAI {
+		return uuid.NewString(), nil
+	}
+	v, ok := extraValue(account.Extra, "openai_device_id")
+	if !ok {
+		return uuid.NewString(), nil
+	}
+	raw, ok := v.(string)
+	if !ok {
+		return "", fmt.Errorf("identity_reject: openai_device_id is not a valid RFC4122 UUID (account_id=%d)", account.ID)
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return uuid.NewString(), nil
+	}
+	if err := validateOpenAIDeviceIDExtra(raw); err != nil {
+		return "", fmt.Errorf("identity_reject: openai_device_id is not a valid RFC4122 UUID (account_id=%d)", account.ID)
+	}
+	parsed, err := uuid.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("identity_reject: openai_device_id is not a valid RFC4122 UUID (account_id=%d)", account.ID)
+	}
+	return parsed.String(), nil
+}
+
+func baselineMachineID(account *Account) (string, error) {
+	if account == nil || account.Platform != PlatformKiro {
+		return uuid.NewString(), nil
+	}
+	v, ok := extraValue(account.Credentials, "machine_id")
+	if !ok {
+		return mintKiroMachineID()
+	}
+	raw, ok := v.(string)
+	if !ok {
+		return "", fmt.Errorf("identity_reject: kiro machine_id is not a valid machine id (account_id=%d)", account.ID)
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return mintKiroMachineID()
+	}
+	normalized := kiro.NormalizeMachineID(raw)
+	if normalized == "" {
+		return "", fmt.Errorf("identity_reject: kiro machine_id is not a valid machine id (account_id=%d)", account.ID)
+	}
+	return normalized, nil
+}
+
+func extraValue(values map[string]any, key string) (any, bool) {
+	if values == nil {
+		return nil, false
+	}
+	v, ok := values[key]
+	if !ok {
+		return nil, false
+	}
+	return v, true
+}
+
+func mintKiroMachineID() (string, error) {
+	var raw [32]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", fmt.Errorf("identity_reject: generate machine_id: %w", err)
+	}
+	return hex.EncodeToString(raw[:]), nil
 }
 
 func baselineOSArch(platform string) (osFamily, arch string) {

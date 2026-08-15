@@ -156,7 +156,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	balanceNotifyService := service.ProvideBalanceNotifyService(emailService, settingRepository, accountRepository, notificationEmailService)
 	kiroTokenProvider := service.ProvideKiroTokenProvider(accountRepository, proxyRepository, geminiTokenCache, httpUpstream, tlsFingerprintProfileService, oAuthRefreshAPI, settingService)
 	accountDeviceProfileRepository := repository.NewAccountDeviceProfileRepository(client)
-	accountDeviceService := service.ProvideAccountDeviceService(accountDeviceProfileRepository, identityCache)
+	accountDeviceService := service.ProvideAccountDeviceService(accountDeviceProfileRepository, identityCache, accountRepository)
 	kiroGatewayService := service.ProvideKiroGatewayService(httpUpstream, kiroTokenProvider, rateLimitService, tlsFingerprintProfileService, tlsFingerprintRouterService, settingService, channelService, accountDeviceService)
 	gatewayService := service.ProvideGatewayService(accountRepository, groupRepository, usageLogRepository, usageBillingRepository, userRepository, userSubscriptionRepository, userGroupRateRepository, gatewayCache, configConfig, schedulerSnapshotService, concurrencyService, billingService, rateLimitService, billingCacheService, identityService, httpUpstream, deferredService, claudeTokenProvider, sessionLimitCache, rpmCache, digestSessionStore, settingService, tlsFingerprintProfileService, tlsFingerprintRouterService, channelService, modelPricingResolver, compositeRouteResolver, balanceNotifyService, serviceUserPlatformQuotaRepository, kiroTokenProvider, kiroGatewayService, accountDeviceService)
 	openAIOAuthClient := repository.NewOpenAIOAuthClient()

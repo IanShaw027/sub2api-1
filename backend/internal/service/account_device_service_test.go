@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/accountdeviceprofile"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/kiro"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -112,6 +113,172 @@ func TestGetOrCreateUsesOpenAIAndGrokRuntimes(t *testing.T) {
 	require.NoError(t, service.ValidateAccountDeviceProfile(grokProfile))
 	require.Equal(t, "grok-shell", grokProfile.Runtime)
 	require.Equal(t, service.ClientFamilyGrokCLI, grokProfile.ClientFamily)
+}
+
+func TestGetOrCreateAdoptsOpenAIDeviceIDFromExtra(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+	pinned := "11111111-1111-4111-8111-111111111111"
+	account := mustCreateDeviceAccount(t, client, service.PlatformOpenAI, map[string]any{
+		"openai_device_id": pinned,
+		"account_uuid":     "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+	})
+
+	got, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	require.NoError(t, service.ValidateAccountDeviceProfile(got))
+	require.Equal(t, pinned, got.InstallationID)
+	require.NotEqual(t, pinned, got.DeviceID)
+	require.NotEqual(t, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", got.GatewayAccountUUID)
+}
+
+func TestGetOrCreateRejectsInvalidOpenAIDeviceIDExtra(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformOpenAI, map[string]any{
+		"openai_device_id": "dev-xyz",
+	})
+
+	got, err := svc.GetOrCreate(ctx, account)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
+	require.Nil(t, got)
+
+	n, err := client.AccountDeviceProfile.Query().
+		Where(accountdeviceprofile.AccountID(account.ID)).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, n)
+}
+
+func TestGetOrCreateAdoptsKiroMachineIDFromCredential(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformKiro, nil)
+	account.Credentials = map[string]any{
+		"machine_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+	}
+
+	got, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	require.NoError(t, service.ValidateAccountDeviceProfile(got))
+	require.Equal(t, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", got.MachineID)
+}
+
+func TestGetOrCreateRejectsInvalidKiroMachineIDCredential(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformKiro, nil)
+	account.Credentials = map[string]any{
+		"machine_id": "not-a-machine-id",
+	}
+
+	got, err := svc.GetOrCreate(ctx, account)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
+	require.Nil(t, got)
+
+	n, err := client.AccountDeviceProfile.Query().
+		Where(accountdeviceprofile.AccountID(account.ID)).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, n)
+}
+
+func TestGetOrCreateRejectsNonStringOpenAIDeviceIDExtra(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformOpenAI, nil)
+	account.Extra = map[string]any{"openai_device_id": true}
+
+	got, err := svc.GetOrCreate(ctx, account)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
+	require.Nil(t, got)
+
+	account.Extra = map[string]any{"openai_device_id": nil}
+	got, err = svc.GetOrCreate(ctx, account)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
+	require.Nil(t, got)
+
+	n, err := client.AccountDeviceProfile.Query().
+		Where(accountdeviceprofile.AccountID(account.ID)).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, n)
+}
+
+func TestGetOrCreateRejectsNonStringKiroMachineIDCredential(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformKiro, nil)
+	account.Credentials = map[string]any{"machine_id": true}
+
+	got, err := svc.GetOrCreate(ctx, account)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
+	require.Nil(t, got)
+
+	account.Credentials = map[string]any{"machine_id": nil}
+	got, err = svc.GetOrCreate(ctx, account)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
+	require.Nil(t, got)
+
+	n, err := client.AccountDeviceProfile.Query().
+		Where(accountdeviceprofile.AccountID(account.ID)).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, n)
+}
+
+func TestGetOrCreateMintsKiroMachineIDWithoutRefreshToken(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformKiro, nil)
+	account.Credentials = map[string]any{
+		"refresh_token": "rt-should-not-derive-machine-id",
+	}
+
+	got, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	require.NoError(t, service.ValidateAccountDeviceProfile(got))
+	require.Regexp(t, `^[0-9a-f]{64}$`, got.MachineID)
+	require.NotEqual(t, kiro.GenerateMachineID("", "rt-should-not-derive-machine-id"), got.MachineID)
+}
+
+func TestGetOrCreateShadowAdoptsParentOpenAIDeviceID(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+	pinned := "22222222-2222-4222-8222-222222222222"
+	parent := mustCreateDeviceAccount(t, client, service.PlatformOpenAI, map[string]any{
+		"openai_device_id": pinned,
+	})
+	shadow := mustCreateShadowAccount(t, client, parent)
+	shadow.Extra = map[string]any{"openai_device_id": "33333333-3333-4333-8333-333333333333"}
+
+	got, err := svc.GetOrCreate(ctx, shadow)
+	require.NoError(t, err)
+	require.Equal(t, parent.ID, got.AccountID)
+	require.Equal(t, pinned, got.InstallationID)
+}
+
+func TestGetOrCreateShadowAdoptsParentKiroMachineID(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+	parent := mustCreateDeviceAccount(t, client, service.PlatformKiro, nil)
+	_, err := client.Account.UpdateOneID(parent.ID).
+		SetCredentials(map[string]any{"machine_id": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"}).
+		Save(ctx)
+	require.NoError(t, err)
+	shadow := mustCreateShadowAccount(t, client, parent)
+	shadow.Credentials = map[string]any{"machine_id": "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"}
+
+	got, err := svc.GetOrCreate(ctx, shadow)
+	require.NoError(t, err)
+	require.Equal(t, parent.ID, got.AccountID)
+	require.Equal(t, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", got.MachineID)
 }
 
 func TestGetOrCreateRejectsPlatformMismatchWhenBaselineInsertConflicts(t *testing.T) {
@@ -477,7 +644,27 @@ func newCountingAccountDeviceService(t *testing.T) (*service.AccountDeviceServic
 	t.Cleanup(func() { _ = client.Close() })
 
 	counting := wrapCountingDeviceProfileRepo(repository.NewAccountDeviceProfileRepository(client))
-	return service.NewAccountDeviceService(counting), client, counting
+	svc := service.NewAccountDeviceService(counting).WithAccountLookup(&entAccountIdentityLookup{client: client})
+	return svc, client, counting
+}
+
+type entAccountIdentityLookup struct {
+	client *dbent.Client
+}
+
+func (l *entAccountIdentityLookup) GetByID(ctx context.Context, id int64) (*service.Account, error) {
+	row, err := l.client.Account.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &service.Account{
+		ID:              row.ID,
+		Platform:        row.Platform,
+		Type:            row.Type,
+		Extra:           row.Extra,
+		Credentials:     row.Credentials,
+		ParentAccountID: row.ParentAccountID,
+	}, nil
 }
 
 func mustCreateShadowAccount(t *testing.T, client *dbent.Client, parent *service.Account) *service.Account {
@@ -563,6 +750,74 @@ func TestGetOrCreateShadowCreatesMissingParentBaseline(t *testing.T) {
 		Count(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 1, parentRows)
+}
+
+func TestGetOrCreateShadowRejectsWhenLookupMissing(t *testing.T) {
+	_, client, repo := newCountingAccountDeviceService(t)
+	svc := service.NewAccountDeviceService(repo)
+	ctx := context.Background()
+	parent := mustCreateDeviceAccount(t, client, service.PlatformOpenAI, map[string]any{
+		"openai_device_id": "22222222-2222-4222-8222-222222222222",
+	})
+	shadow := mustCreateShadowAccount(t, client, parent)
+	shadow.Extra = map[string]any{"openai_device_id": "33333333-3333-4333-8333-333333333333"}
+
+	got, err := svc.GetOrCreate(ctx, shadow)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
+	require.Nil(t, got)
+
+	n, err := client.AccountDeviceProfile.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, n)
+}
+
+func TestGetOrCreateShadowRejectsWhenParentIsShadow(t *testing.T) {
+	svc, client := newAccountDeviceService(t)
+	ctx := context.Background()
+	canonical := mustCreateDeviceAccount(t, client, service.PlatformOpenAI, map[string]any{
+		"openai_device_id": "22222222-2222-4222-8222-222222222222",
+	})
+	mid := mustCreateShadowAccount(t, client, canonical)
+	leaf := mustCreateShadowAccount(t, client, mid)
+	leaf.Extra = map[string]any{"openai_device_id": "33333333-3333-4333-8333-333333333333"}
+
+	got, err := svc.GetOrCreate(ctx, leaf)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
+	require.ErrorContains(t, err, "itself a shadow")
+	require.Nil(t, got)
+
+	n, err := client.AccountDeviceProfile.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, n)
+}
+
+func TestGetOrCreateShadowRejectsWhenLookupFails(t *testing.T) {
+	_, client, repo := newCountingAccountDeviceService(t)
+	svc := service.NewAccountDeviceService(repo).WithAccountLookup(&errAccountIdentityLookup{err: fmt.Errorf("db down")})
+	ctx := context.Background()
+	parent := mustCreateDeviceAccount(t, client, service.PlatformOpenAI, map[string]any{
+		"openai_device_id": "22222222-2222-4222-8222-222222222222",
+	})
+	shadow := mustCreateShadowAccount(t, client, parent)
+	shadow.Extra = map[string]any{"openai_device_id": "33333333-3333-4333-8333-333333333333"}
+
+	got, err := svc.GetOrCreate(ctx, shadow)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
+	require.ErrorContains(t, err, "db down")
+	require.Nil(t, got)
+
+	n, err := client.AccountDeviceProfile.Query().Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, n)
+}
+
+type errAccountIdentityLookup struct{ err error }
+
+func (l *errAccountIdentityLookup) GetByID(context.Context, int64) (*service.Account, error) {
+	return nil, l.err
 }
 
 func TestGetOrCreateShadowRejectsSelfParentCycle(t *testing.T) {
