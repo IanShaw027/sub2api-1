@@ -54,7 +54,9 @@ func TestSortCodexHeadersByWireOrder_ReturnsKnownKeysInDeclaredOrder(t *testing.
 	h["x-codex-installation-id"] = []string{"install-1"}
 	h["version"] = []string{"0.146.0"}
 	h["session-id"] = []string{"sess-1"}
-	h["unknown-extra"] = []string{"keep"}
+	// Uncaptured key: currently sits mid-sequence in the invented order
+	// (before x-codex-installation-id). After the shrink it must append.
+	h["Chatgpt-Account-Id"] = []string{"acc-1"}
 
 	got := sortCodexHeadersByWireOrder(h)
 
@@ -65,8 +67,28 @@ func TestSortCodexHeadersByWireOrder_ReturnsKnownKeysInDeclaredOrder(t *testing.
 		"session-id",
 		"x-codex-installation-id",
 		"x-codex-turn-state",
-		"unknown-extra",
+		"Chatgpt-Account-Id",
 	}, got)
+}
+
+func TestApplyCodexHeaderWireCasing_DoesNotRewriteUncapturedKeys(t *testing.T) {
+	h := make(http.Header)
+	h.Set("conversation_id", "conv-1")
+	h.Set("chatgpt-account-id", "acc-1")
+	require.Contains(t, h, "Conversation_id")
+	require.Contains(t, h, "Chatgpt-Account-Id")
+
+	applyCodexHeaderWireCasing(h)
+
+	require.Contains(t, h, "Conversation_id")
+	require.Equal(t, "conv-1", h["Conversation_id"][0])
+	_, hasConvLower := h["conversation_id"]
+	require.False(t, hasConvLower, "uncaptured conversation_id must keep the builder's emitted key")
+
+	require.Contains(t, h, "Chatgpt-Account-Id")
+	require.Equal(t, "acc-1", h["Chatgpt-Account-Id"][0])
+	_, hasChatLower := h["chatgpt-account-id"]
+	require.False(t, hasChatLower, "uncaptured chatgpt-account-id must keep the builder's emitted key")
 }
 
 func TestApplyCodexHeaderWireCasing_OriginatorStaysLowercaseRawKey(t *testing.T) {
