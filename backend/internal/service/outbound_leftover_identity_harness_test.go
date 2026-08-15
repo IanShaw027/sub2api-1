@@ -11,14 +11,19 @@ import (
 )
 
 type leftoverSharedDeviceRepo struct {
-	mu      sync.RWMutex
-	byID    map[int64]*AccountDeviceProfile
-	errByID map[int64]error
+	mu        sync.RWMutex
+	byID      map[int64]*AccountDeviceProfile
+	errByID   map[int64]error
+	getCounts map[int64]int
 }
 
 func (r *leftoverSharedDeviceRepo) GetByAccountID(_ context.Context, accountID int64) (*AccountDeviceProfile, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.getCounts == nil {
+		r.getCounts = map[int64]int{}
+	}
+	r.getCounts[accountID]++
 	if err, ok := r.errByID[accountID]; ok {
 		return nil, err
 	}
@@ -26,6 +31,12 @@ func (r *leftoverSharedDeviceRepo) GetByAccountID(_ context.Context, accountID i
 		return p, nil
 	}
 	return nil, nil
+}
+
+func (r *leftoverSharedDeviceRepo) getCount(accountID int64) int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.getCounts[accountID]
 }
 
 func (r *leftoverSharedDeviceRepo) InsertBaseline(_ context.Context, p *AccountDeviceProfile) (*AccountDeviceProfile, error) {
@@ -70,11 +81,13 @@ func (r *leftoverSharedDeviceRepo) clear(accountID int64) {
 	defer r.mu.Unlock()
 	delete(r.byID, accountID)
 	delete(r.errByID, accountID)
+	delete(r.getCounts, accountID)
 }
 
 var leftoverSharedRepo = &leftoverSharedDeviceRepo{
-	byID:    map[int64]*AccountDeviceProfile{},
-	errByID: map[int64]error{},
+	byID:      map[int64]*AccountDeviceProfile{},
+	errByID:   map[int64]error{},
+	getCounts: map[int64]int{},
 }
 
 func TestMain(m *testing.M) {
