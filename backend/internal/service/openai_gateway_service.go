@@ -553,6 +553,9 @@ func (s *OpenAIGatewayService) SetTLSFingerprintServices(profile *TLSFingerprint
 }
 
 func (s *OpenAIGatewayService) doAccountHTTP(ctx context.Context, c *gin.Context, account *Account, req *http.Request, proxyURL, protocol string) (*http.Response, error) {
+	if account != nil && account.Platform == PlatformGrok {
+		return doLeftoverAccountHTTP(ctx, s.httpUpstream, req, proxyURL, account, s.tlsFPProfileService, s.tlsFPRouterService, inboundUserAgentFromGin(c), "http", protocol)
+	}
 	return doAccountHTTPUpstreamFromGin(ctx, c, s.httpUpstream, req, proxyURL, account, s.tlsFPProfileService, s.tlsFPRouterService, "http", protocol)
 }
 
