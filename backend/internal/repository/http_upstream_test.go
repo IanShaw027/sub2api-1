@@ -239,7 +239,7 @@ func TestHTTPUpstreamDoAppliesGrokCLIIdentityBeforeOAuthRoundTrip(t *testing.T) 
 
 			require.Equal(t, "0.2.114", capturedHeaders.Get("x-grok-client-version"))
 			require.Equal(t, "xai-grok-cli", capturedHeaders.Get("X-XAI-Token-Auth"))
-			require.Equal(t, "xai-grok-workspace/0.2.114", capturedHeaders.Get("User-Agent"))
+			require.Equal(t, "sub2api-grok/1.0", capturedHeaders.Get("User-Agent"))
 		})
 	}
 }
@@ -528,6 +528,19 @@ func TestApplyGrokCLIProxyHeaders(t *testing.T) {
 			require.Equal(t, "xai-grok-workspace/0.2.114", req.Header.Get("User-Agent"))
 		})
 	}
+
+	t.Run("does not overwrite a non-empty non-workspace user agent", func(t *testing.T) {
+		t.Setenv("XAI_GROK_CLI_VERSION", "")
+		req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+		require.NoError(t, err)
+		req.Header.Set("User-Agent", "grok-shell/0.2.200")
+
+		applyGrokCLIProxyHeaders(req)
+
+		require.Equal(t, "grok-shell/0.2.200", req.Header.Get("User-Agent"))
+		require.Equal(t, "0.2.114", req.Header.Get("x-grok-client-version"))
+		require.Equal(t, "xai-grok-cli", req.Header.Get("X-XAI-Token-Auth"))
+	})
 
 	t.Run("does not overwrite already-stamped profile identity", func(t *testing.T) {
 		t.Setenv("XAI_GROK_CLI_VERSION", "")

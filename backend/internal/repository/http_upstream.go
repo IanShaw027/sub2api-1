@@ -460,6 +460,8 @@ type prefixedReadCloser struct {
 // the final shared transport boundary. Keying this behavior to the exact CLI
 // proxy host keeps direct api.x.ai traffic unchanged and automatically covers
 // Responses, Chat Completions, media, quota probes, and account tests.
+// A non-empty User-Agent is left alone so a device-profile stamp survives
+// even when it is not xai-grok-workspace/-prefixed.
 //
 // Operator overrides must be >= CLIClientVersion (the preferred pin). Package
 // xai.IsSupportedCLIVersion uses a lower floor (CLIStableVersion) for general
@@ -483,13 +485,9 @@ func applyGrokCLIProxyHeaders(req *http.Request) {
 	if strings.TrimSpace(req.Header.Get("x-grok-client-identifier")) == "" {
 		req.Header.Set("x-grok-client-identifier", xai.CLIClientIdentifier)
 	}
-	if !isStampedGrokWorkspaceUserAgent(req.Header.Get("User-Agent")) {
+	if strings.TrimSpace(req.Header.Get("User-Agent")) == "" {
 		req.Header.Set("User-Agent", xai.CLIUserAgent(version))
 	}
-}
-
-func isStampedGrokWorkspaceUserAgent(ua string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(ua)), "xai-grok-workspace/")
 }
 
 func isSupportedGrokCLIVersion(version string) bool {
