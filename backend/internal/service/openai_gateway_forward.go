@@ -1159,6 +1159,13 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http", req.Header, body, "not_applicable")
 
+	// After identity + fingerprint stamping, restore official Codex wire casing
+	// so Go canonical keys (X-Codex-Installation-Id) do not ride alongside the
+	// lowercase CLI keys. leftover 5 session_id values are unchanged.
+	if account.Type == AccountTypeOAuth {
+		applyCodexHeaderWireCasing(req.Header)
+	}
+
 	return req, nil
 }
 

@@ -151,7 +151,7 @@ func TestBuildUpstreamRequestAppliesParentFingerprintForShadowAccount(t *testing
 	require.NoError(t, err)
 	require.NotNil(t, req)
 	require.Equal(t, 1, leftoverSharedRepo.getCount(parent.ID), "shadow outbound must reuse the parent device profile")
-	require.Equal(t, profile.InstallationID, req.Header.Get("x-codex-installation-id"))
+	require.Equal(t, profile.InstallationID, getHeaderRaw(req.Header, "x-codex-installation-id"))
 	require.Equal(t, resolveCodexOutboundIdentityFromProfile(profile, "").userAgent, req.Header.Get("User-Agent"))
 }
 
@@ -194,7 +194,7 @@ func TestBuildUpstreamRequestClearsStaleFingerprintIDsAfterForwardLoadFailure(t 
 	req, err := svc.buildUpstreamRequest(context.Background(), c, account, []byte(`{"model":"gpt-5.4"}`), "oauth-token", true, "cache-key", true)
 	require.NoError(t, err)
 	require.NotNil(t, req)
-	require.Empty(t, req.Header.Get("x-codex-installation-id"), "stale fingerprint IDs must not survive a later Forward load failure")
+	require.Empty(t, getHeaderRaw(req.Header, "x-codex-installation-id"), "stale fingerprint IDs must not survive a later Forward load failure")
 	require.NotEqual(t, resolveCodexOutboundIdentityFromProfile(profile, "").userAgent, req.Header.Get("User-Agent"))
 }
 
