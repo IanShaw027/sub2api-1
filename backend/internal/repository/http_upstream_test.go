@@ -100,7 +100,7 @@ func TestHTTPUpstreamDoWithTLSPlainHTTPUsesConfiguredSOCKSProxy(t *testing.T) {
 func TestTLSFingerprintHTTPSProxyFallsBackWithoutBypassingProxy(t *testing.T) {
 	proxyURL, err := url.Parse("https://user:pass@proxy.example:8443")
 	require.NoError(t, err)
-	transport, err := buildUpstreamTransportWithTLSFingerprint(poolSettings{}, proxyURL, &tlsfingerprint.Profile{Name: "test"})
+	transport, err := buildUpstreamTransportWithTLSFingerprint(poolSettings{}, proxyURL, &tlsfingerprint.Profile{Name: "test"}, false)
 	require.NoError(t, err)
 	require.NotNil(t, transport.Proxy)
 	require.Nil(t, transport.DialTLSContext)
@@ -1432,6 +1432,69 @@ func (s *HTTPUpstreamSuite) TestTLSProfileSameIDALPNSplitRebuildsClient() {
 	require.NotSame(s.T(), oldEntry, newEntry, "same-ID ALPN list split must not reuse the old ClientHello transport")
 	require.False(s.T(), hasEntry(svc, oldEntry), "replaced TLS client should be removed")
 	require.Equal(s.T(), 1, len(svc.clients), "only the replacement TLS client should remain cached")
+}
+
+func TestTLSFingerprint_ClaimedH2WithH1ALPNStaysH1AndKeepsBurst(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	}).(*httpUpstreamService)
+
+	for _, tc := range []struct {
+		name    string
+		profile service.HTTPUpstreamProfile
+	}{
+		{name: "codex", profile: service.HTTPUpstreamProfileOpenAI},
+		{name: "kiro", profile: service.HTTPUpstreamProfileDefault},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			entry, err := svc.getClientEntryWithTLS("", 1, 12, &tlsfingerprint.Profile{
+				Name:            "claimed-h2-h1-alpn-" + tc.name,
+				TransportFamily: service.TransportH2,
+				ALPNProtocols:   []string{"http/1.1"},
+			}, tc.profile, false, false)
+			require.NoError(t, err)
+			require.Equal(t, transportFamilyH1, entry.transportFamily)
+
+			transport, ok := entry.client.Transport.(*http.Transport)
+			require.True(t, ok, "expected *http.Transport")
+			require.False(t, transport.ForceAttemptHTTP2, "ALPN-only http/1.1 must not ForceAttemptHTTP2")
+			require.Equal(t, 14, transport.MaxConnsPerHost, "H1 must keep Burst caps")
+			require.Equal(t, 14, transport.MaxIdleConns)
+			require.Equal(t, 14, transport.MaxIdleConnsPerHost)
+		})
+	}
+}
+
+func TestTLSFingerprint_ClaimedH2WithALPNEnablesLiveHTTP2AndSpareBudget(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	}).(*httpUpstreamService)
+
+	for _, tc := range []struct {
+		name    string
+		profile service.HTTPUpstreamProfile
+	}{
+		{name: "codex", profile: service.HTTPUpstreamProfileOpenAI},
+		{name: "kiro", profile: service.HTTPUpstreamProfileDefault},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			entry, err := svc.getClientEntryWithTLS("", 1, 12, &tlsfingerprint.Profile{
+				Name:            "claimed-h2-live-" + tc.name,
+				TransportFamily: service.TransportH2,
+				ALPNProtocols:   []string{"h2", "http/1.1"},
+			}, tc.profile, false, false)
+			require.NoError(t, err)
+			require.Equal(t, transportFamilyH2, entry.transportFamily)
+
+			transport, ok := entry.client.Transport.(*http.Transport)
+			require.True(t, ok, "expected *http.Transport")
+			require.True(t, transport.ForceAttemptHTTP2, "live h2 must actually enable HTTP/2")
+			require.NotNil(t, transport.TLSNextProto["h2"], "live h2 must configure http2.Transport")
+			require.Equal(t, 2, transport.MaxConnsPerHost, "h2 budget is 1 primary + ≤1 spare")
+			require.Equal(t, 2, transport.MaxIdleConns)
+			require.Equal(t, 2, transport.MaxIdleConnsPerHost)
+		})
+	}
 }
 
 // TestEvictOverLimitRemovesOldestIdle 测试超出数量限制时的 LRU 淘汰

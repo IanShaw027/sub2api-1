@@ -185,6 +185,38 @@ func validateTransportFamily(family string) error {
 	}
 }
 
+// EffectiveTransportFamily returns h2 only when the profile claims h2, the
+// configured/negotiated ALPN list includes h2, and the HTTP transport actually
+// enables HTTP/2. Otherwise it returns h1.
+func EffectiveTransportFamily(claimed string, alpn []string, http2Enabled bool) string {
+	if claimed != TransportH2 || !http2Enabled || !ALPNContainsH2(alpn) {
+		return TransportH1
+	}
+	return TransportH2
+}
+
+// PersistDeviceTransportFamily writes the effective family onto a device
+// profile. Codex/Kiro (and every other platform) must not persist h2 unless
+// ALPN and the HTTP/2 transport are both live.
+func PersistDeviceTransportFamily(p *AccountDeviceProfile, alpn []string, http2Enabled bool) {
+	if p == nil {
+		return
+	}
+	p.TransportFamily = EffectiveTransportFamily(p.TransportFamily, alpn, http2Enabled)
+}
+
+// ALPNContainsH2 reports whether the ALPN list includes the h2 token.
+func ALPNContainsH2(alpn []string) bool {
+	for _, proto := range alpn {
+		for _, part := range strings.Split(proto, ",") {
+			if strings.EqualFold(strings.TrimSpace(part), "h2") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func validateLearnedFrom(v string) error {
 	switch v {
 	case LearnedFromBaseline, LearnedFromOfficial, LearnedFromBaselineFloor:

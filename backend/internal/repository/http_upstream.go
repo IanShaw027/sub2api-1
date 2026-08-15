@@ -106,6 +106,8 @@ const (
 	transportFamilyH1                    = "h1"
 	transportFamilyH2                    = "h2"
 	tlsProfileKeyNone                    = "none"
+	// h2PoolPrimaryPlusSpare is the §2.3 live-h2 budget: 1 primary + ≤1 spare.
+	h2PoolPrimaryPlusSpare = 2
 )
 
 var errUpstreamClientLimitReached = errors.New("upstream client cache limit reached")
@@ -513,10 +515,10 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	if err != nil {
 		return nil, err
 	}
-	settings := s.resolvePoolSettings(isolation, accountConcurrency)
-	settings = s.applyProfilePoolSettings(settings, upstreamProfile)
+	tlsPlan := s.planTLSTransport(isolation, accountConcurrency, profile, upstreamProfile)
+	settings := tlsPlan.settings
 	burstConcurrency := resolvePoolBurstConcurrency(accountConcurrency)
-	transportFamily := transportFamilyForProtocolMode(upstreamProtocolModeDefault)
+	transportFamily := tlsPlan.family
 	tlsProfileKey := tlsProfileCacheKey(profile)
 	// TLS 指纹客户端使用独立的缓存键，加 "tls:" 前缀
 	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID, burstConcurrency, tlsProfileKey, transportFamily, upstreamProtocolModeDefault)
@@ -572,10 +574,17 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 
 	// 创建带 TLS 指纹的 Transport
 	slog.Debug("tls_fingerprint_creating_new_client", "account_id", accountID, "cache_key", cacheKey, "proxy", proxyKey)
-	transport, err := buildUpstreamTransportWithTLSFingerprint(settings, parsedProxy, profile)
+	transport, livePlan, err := s.buildLiveTLSTransport(isolation, accountConcurrency, parsedProxy, profile, upstreamProfile)
 	if err != nil {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("build TLS fingerprint transport: %w", err)
+	}
+	if livePlan.family != transportFamily || livePlan.settings != settings {
+		transportFamily = livePlan.family
+		settings = livePlan.settings
+		cacheKey = "tls:" + buildCacheKey(isolation, proxyKey, accountID, burstConcurrency, tlsProfileKey, transportFamily, upstreamProtocolModeDefault)
+		poolKey = buildPoolKey(settings, tlsProfilePoolIdentity(profile), transportFamily, upstreamProtocolModeDefault) + ":tls"
+		s.removeSiblingClientsLocked(cacheKey, isolation, accountID, proxyKey, tlsProfileKey, transportFamily)
 	}
 
 	client := &http.Client{Transport: transport}
@@ -994,6 +1003,87 @@ func resolvePoolBurstConcurrency(accountConcurrency int) int {
 		overflow = 1
 	}
 	return n + overflow
+}
+
+type tlsTransportPlan struct {
+	settings poolSettings
+	family   string
+	wantH2   bool
+}
+
+func (s *httpUpstreamService) planTLSTransport(isolation string, accountConcurrency int, profile *tlsfingerprint.Profile, upstreamProfile service.HTTPUpstreamProfile) tlsTransportPlan {
+	claimed := claimedTLSTransportFamily(profile)
+	alpn := effectiveTLSALPNProtocols(profile)
+	wantH2 := claimed == service.TransportH2 && service.ALPNContainsH2(alpn)
+	settings := s.resolvePoolSettings(isolation, accountConcurrency)
+	settings = s.applyProfilePoolSettings(settings, upstreamProfile)
+	if wantH2 {
+		settings = applyH2PoolBudget(settings)
+	}
+	return tlsTransportPlan{
+		settings: settings,
+		family:   service.EffectiveTransportFamily(claimed, alpn, wantH2),
+		wantH2:   wantH2,
+	}
+}
+
+func (s *httpUpstreamService) buildLiveTLSTransport(isolation string, accountConcurrency int, parsedProxy *url.URL, profile *tlsfingerprint.Profile, upstreamProfile service.HTTPUpstreamProfile) (*http.Transport, tlsTransportPlan, error) {
+	plan := s.planTLSTransport(isolation, accountConcurrency, profile, upstreamProfile)
+	transport, err := buildUpstreamTransportWithTLSFingerprint(plan.settings, parsedProxy, profile, plan.wantH2)
+	if err != nil && plan.wantH2 {
+		plan = s.planTLSTransportH1(isolation, accountConcurrency, upstreamProfile)
+		transport, err = buildUpstreamTransportWithTLSFingerprint(plan.settings, parsedProxy, profile, false)
+	}
+	if err != nil {
+		return nil, plan, err
+	}
+	http2Live := transportHasLiveHTTP2(transport)
+	claimed := claimedTLSTransportFamily(profile)
+	alpn := effectiveTLSALPNProtocols(profile)
+	plan.family = service.EffectiveTransportFamily(claimed, alpn, http2Live)
+	if plan.family != transportFamilyH2 && plan.wantH2 {
+		plan = s.planTLSTransportH1(isolation, accountConcurrency, upstreamProfile)
+		transport, err = buildUpstreamTransportWithTLSFingerprint(plan.settings, parsedProxy, profile, false)
+		if err != nil {
+			return nil, plan, err
+		}
+	}
+	return transport, plan, nil
+}
+
+func (s *httpUpstreamService) planTLSTransportH1(isolation string, accountConcurrency int, upstreamProfile service.HTTPUpstreamProfile) tlsTransportPlan {
+	settings := s.resolvePoolSettings(isolation, accountConcurrency)
+	settings = s.applyProfilePoolSettings(settings, upstreamProfile)
+	return tlsTransportPlan{
+		settings: settings,
+		family:   transportFamilyH1,
+		wantH2:   false,
+	}
+}
+
+func applyH2PoolBudget(settings poolSettings) poolSettings {
+	settings.maxIdleConns = h2PoolPrimaryPlusSpare
+	settings.maxIdleConnsPerHost = h2PoolPrimaryPlusSpare
+	settings.maxConnsPerHost = h2PoolPrimaryPlusSpare
+	return settings
+}
+
+func claimedTLSTransportFamily(profile *tlsfingerprint.Profile) string {
+	if profile != nil && profile.TransportFamily == service.TransportH2 {
+		return service.TransportH2
+	}
+	return service.TransportH1
+}
+
+func effectiveTLSALPNProtocols(profile *tlsfingerprint.Profile) []string {
+	if profile != nil && len(profile.ALPNProtocols) > 0 {
+		return profile.ALPNProtocols
+	}
+	return []string{"http/1.1"}
+}
+
+func transportHasLiveHTTP2(transport *http.Transport) bool {
+	return transport != nil && transport.ForceAttemptHTTP2 && transport.TLSNextProto != nil && transport.TLSNextProto["h2"] != nil
 }
 
 func transportFamilyForProtocolMode(protocolMode string) string {
@@ -1525,14 +1615,14 @@ func enableOpenAIHTTP2KeepAlive(transport *http.Transport) (*http2.Transport, er
 //   - nil/空: 直连，使用 TLSFingerprintDialer
 //   - http/https: HTTP 代理，使用 HTTPProxyDialer（CONNECT 隧道 + utls 握手）
 //   - socks5: SOCKS5 代理，使用 SOCKS5ProxyDialer（SOCKS5 隧道 + utls 握手）
-func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *url.URL, profile *tlsfingerprint.Profile) (*http.Transport, error) {
+func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *url.URL, profile *tlsfingerprint.Profile, enableHTTP2 bool) (*http.Transport, error) {
 	transport := &http.Transport{
 		MaxIdleConns:          settings.maxIdleConns,
 		MaxIdleConnsPerHost:   settings.maxIdleConnsPerHost,
 		MaxConnsPerHost:       settings.maxConnsPerHost,
 		IdleConnTimeout:       settings.idleConnTimeout,
 		ResponseHeaderTimeout: settings.responseHeaderTimeout,
-		// 禁用默认的 TLS，我们使用自定义的 DialTLSContext
+		// 默认禁用 HTTP/2；仅在 ALPN 含 h2 且调用方明确要求时再接线。
 		ForceAttemptHTTP2: false,
 	}
 
@@ -1565,6 +1655,13 @@ func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *u
 			if err := proxyutil.ConfigureTransportProxy(transport, proxyURL); err != nil {
 				return nil, err
 			}
+		}
+	}
+
+	if enableHTTP2 {
+		transport.ForceAttemptHTTP2 = true
+		if _, err := enableOpenAIHTTP2KeepAlive(transport); err != nil {
+			return nil, err
 		}
 	}
 

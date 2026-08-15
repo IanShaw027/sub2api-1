@@ -27,6 +27,7 @@ type Profile struct {
 	EnableGREASE        bool
 	SignatureAlgorithms []uint16 // Empty uses defaultSignatureAlgorithms
 	ALPNProtocols       []string // Empty uses ["http/1.1"]
+	TransportFamily     string   // Optional claimed h1|h2; empty is treated as h1
 	SupportedVersions   []uint16 // Empty uses [TLS1.3, TLS1.2]
 	KeyShareGroups      []uint16 // Empty uses [X25519]
 	PSKModes            []uint16 // Empty uses [psk_dhe_ke]
