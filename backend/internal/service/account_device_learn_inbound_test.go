@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -98,12 +100,82 @@ func TestMaybeLearnOfficialDeviceProfileSkipsGrokOnOpenAIForwardPath(t *testing.
 	require.Equal(t, 0, repo.getCount(account.ID))
 }
 
+func TestMaybeLearnOfficialDeviceProfileLearnsOfficialGeminiCLI(t *testing.T) {
+	account := leftoverGeminiOAuthAccount(1946)
+	account.Extra = map[string]any{"device_learning_enabled": true}
+	profile := leftoverValidProfile(account.ID, PlatformGemini, ClientFamilyGeminiCLI, "GeminiCLI/0.1.0 (Windows; AMD64)", "mid-gemini-learn")
+	profile.ClientVersion = "0.1.0"
+	repo := installLeftoverLearnRepo(t, profile)
+
+	headers := make(http.Header)
+	headers.Set("User-Agent", geminicli.GeminiCLIUserAgent)
+	maybeLearnOfficialDeviceProfile(context.Background(), account, headers)
+	require.Greater(t, repo.casCount+repo.getCount(account.ID), 0, "official GeminiCLI inbound must call Learn")
+	got, err := repo.GetByAccountID(context.Background(), account.ID)
+	require.NoError(t, err)
+	require.Equal(t, profile.DeviceID, got.DeviceID)
+}
+
+func TestMaybeLearnOfficialDeviceProfileLearnsOfficialAntigravity(t *testing.T) {
+	account := leftoverAntigravityOAuthAccount(1947)
+	account.Extra = map[string]any{"device_learning_enabled": true}
+	profile := leftoverValidProfile(account.ID, PlatformAntigravity, ClientFamilyAntigravity, "antigravity/0.1.0 windows/amd64", "mid-ag-learn")
+	profile.ClientVersion = "0.1.0"
+	repo := installLeftoverLearnRepo(t, profile)
+
+	headers := make(http.Header)
+	headers.Set("User-Agent", antigravity.BuildUserAgent(antigravity.DefaultUserAgentVersion))
+	maybeLearnOfficialDeviceProfile(context.Background(), account, headers)
+	require.Greater(t, repo.casCount+repo.getCount(account.ID), 0, "official antigravity inbound must call Learn")
+	got, err := repo.GetByAccountID(context.Background(), account.ID)
+	require.NoError(t, err)
+	require.Equal(t, profile.DeviceID, got.DeviceID)
+}
+
+func TestMaybeLearnOfficialDeviceProfileSkipsUnofficialGeminiUA(t *testing.T) {
+	account := leftoverGeminiOAuthAccount(1948)
+	account.Extra = map[string]any{"device_learning_enabled": true}
+	profile := leftoverValidProfile(account.ID, PlatformGemini, ClientFamilyGeminiCLI, "GeminiCLI/0.1.0 (Windows; AMD64)", "mid-gemini-unofficial")
+	profile.ClientVersion = "0.1.0"
+	repo := installLeftoverLearnRepo(t, profile)
+
+	headers := make(http.Header)
+	headers.Set("User-Agent", "curl/8.0")
+	maybeLearnOfficialDeviceProfile(context.Background(), account, headers)
+	require.Equal(t, 0, repo.casCount)
+	require.Equal(t, 0, repo.getCount(account.ID))
+}
+
+func TestMaybeLearnOfficialDeviceProfileSkipsGeminiWhenLearningDisabled(t *testing.T) {
+	account := leftoverGeminiOAuthAccount(1949)
+	account.Extra = nil
+	profile := leftoverValidProfile(account.ID, PlatformGemini, ClientFamilyGeminiCLI, "GeminiCLI/0.1.0 (Windows; AMD64)", "mid-gemini-disabled")
+	profile.ClientVersion = "0.1.0"
+	repo := installLeftoverLearnRepo(t, profile)
+
+	headers := make(http.Header)
+	headers.Set("User-Agent", geminicli.GeminiCLIUserAgent)
+	maybeLearnOfficialDeviceProfile(context.Background(), account, headers)
+	require.Equal(t, 0, repo.casCount)
+	require.Equal(t, 0, repo.getCount(account.ID))
+}
+
 func TestLiveForwardsCallMaybeLearnOfficialDeviceProfile(t *testing.T) {
-	for _, name := range []string{"gateway_forward.go", "openai_gateway_forward.go"} {
+	for _, name := range []string{
+		"gateway_forward.go",
+		"openai_gateway_forward.go",
+		"gemini_messages_compat_service.go",
+		"antigravity_gateway_claude.go",
+		"antigravity_gateway_gemini.go",
+		"gateway_count_tokens.go",
+	} {
 		src, err := os.ReadFile(name)
 		require.NoError(t, err)
 		require.Contains(t, string(src), "maybeLearnOfficialDeviceProfile(", name+" must observe official inbound")
 	}
+	wsSrc, err := os.ReadFile("openai_ws_forwarder_v2.go")
+	require.NoError(t, err)
+	require.NotContains(t, string(wsSrc), "maybeLearnOfficialDeviceProfile(", "WS reconnect path must not re-learn; OpenAI Forward already observed inbound")
 }
 
 func leftoverClaudeLearnAccount(id int64) *Account {
