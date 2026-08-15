@@ -64,8 +64,8 @@ func ProvideKiroTokenRefresher(
 		WithProxyRepo(proxyRepo)
 }
 
-func ProvideAccountDeviceService(repo AccountDeviceProfileRepository, cache IdentityCache) *AccountDeviceService {
-	svc := NewAccountDeviceService(repo).WithCache(cache)
+func ProvideAccountDeviceService(repo AccountDeviceProfileRepository, cache IdentityCache, accounts AccountRepository) *AccountDeviceService {
+	svc := NewAccountDeviceService(repo).WithCache(cache).WithAccountLookup(accounts)
 	SetOutboundDeviceProfileService(svc)
 	return svc
 }
