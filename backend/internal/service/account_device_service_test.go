@@ -1553,3 +1553,26 @@ func TestNewAccountDeviceServiceWorksWithoutCache(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, got)
 }
+
+func TestLearnIfOfficialProjectsDeviceProfileAfterCAS(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	cache := &recordingDeviceProfileCache{}
+	svc = svc.WithCache(cache)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	require.Equal(t, 1, cache.sets)
+	seedOldClaudeSoftware(t, client, account.ID, false)
+
+	got, err := svc.LearnIfOfficial(ctx, account, officialClaudeInbound())
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.casWriteCount(account.ID))
+	require.Equal(t, 3, cache.sets)
+	require.Equal(t, got.ClientVersion, cache.profiles[account.ID].ClientVersion)
+	require.Equal(t, claude.CLICurrentVersion, cache.profiles[account.ID].ClientVersion)
+	require.Equal(t, created.DeviceID, cache.profiles[account.ID].DeviceID)
+}
