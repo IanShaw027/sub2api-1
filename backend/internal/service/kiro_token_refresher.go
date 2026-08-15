@@ -87,7 +87,7 @@ func (r *KiroTokenRefresher) Refresh(ctx context.Context, account *Account) (map
 	if err != nil {
 		return nil, err
 	}
-	ctx = withKiroSidecarIdentity(ctx, runtimeSettings, machineID)
+	ctx = withKiroSidecarIdentity(ctx, account.ID, runtimeSettings, machineID)
 	var (
 		accessToken  string
 		refreshToken string

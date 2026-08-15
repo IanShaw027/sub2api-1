@@ -1004,12 +1004,13 @@ func applyKiroProfileRuntimeOverrides(settings *KiroRuntimeSettings, profile *Ac
 type kiroSidecarIdentityKey struct{}
 
 type kiroSidecarIdentityValue struct {
+	accountID int64
 	settings  *KiroRuntimeSettings
 	machineID string
 }
 
 func applyKiroSidecarIdentity(ctx context.Context, account *Account, settings *KiroRuntimeSettings) (*KiroRuntimeSettings, string, error) {
-	if ident, ok := kiroSidecarIdentityFrom(ctx); ok {
+	if ident, ok := kiroSidecarIdentityFrom(ctx); ok && account != nil && ident.accountID == account.ID {
 		return ident.settings, ident.machineID, nil
 	}
 	profile, err := LoadOutboundDeviceProfile(ctx, account)
@@ -1019,11 +1020,12 @@ func applyKiroSidecarIdentity(ctx context.Context, account *Account, settings *K
 	return applyKiroProfileRuntimeOverrides(settings, profile), profile.MachineID, nil
 }
 
-func withKiroSidecarIdentity(ctx context.Context, settings *KiroRuntimeSettings, machineID string) context.Context {
+func withKiroSidecarIdentity(ctx context.Context, accountID int64, settings *KiroRuntimeSettings, machineID string) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	return context.WithValue(ctx, kiroSidecarIdentityKey{}, kiroSidecarIdentityValue{
+		accountID: accountID,
 		settings:  settings,
 		machineID: machineID,
 	})

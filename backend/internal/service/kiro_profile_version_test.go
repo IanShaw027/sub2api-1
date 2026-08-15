@@ -80,19 +80,28 @@ func TestApplyKiroSidecarIdentity_PrefersProfileClientVersion(t *testing.T) {
 	require.Equal(t, kiroPinnedOutboundMachineID, machineID)
 }
 
-func TestApplyKiroSidecarIdentity_EmptyProfileVersionKeepsSettings(t *testing.T) {
-	profile := validKiroOutboundProfile(32, kiroPinnedOutboundMachineID)
-	profile.ClientVersion = "0.10.0"
-	installKiroOutboundDeviceProfile(t, profile, nil)
+func TestApplyKiroSidecarIdentity_StashMismatchLoadsRequestedAccount(t *testing.T) {
+	const machineB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	profileA := validKiroOutboundProfile(41, kiroPinnedOutboundMachineID)
+	profileA.ClientVersion = "0.11.0"
+	profileB := validKiroOutboundProfile(42, machineB)
+	profileB.ClientVersion = "0.12.0"
+	installLeftoverOutboundProfile(t, profileA)
+	installLeftoverOutboundProfile(t, profileB)
 
-	settings, machineID, err := applyKiroSidecarIdentity(context.Background(), &Account{
-		ID:       32,
+	stashed := applyKiroProfileRuntimeOverrides(&KiroRuntimeSettings{KiroVersion: "0.10.0"}, profileA)
+	ctx := withKiroSidecarIdentity(context.Background(), 41, stashed, kiroPinnedOutboundMachineID)
+
+	settings, machineID, err := applyKiroSidecarIdentity(ctx, &Account{
+		ID:       42,
 		Platform: PlatformKiro,
 		Type:     AccountTypeOAuth,
 	}, &KiroRuntimeSettings{KiroVersion: "0.10.0"})
 	require.NoError(t, err)
-	require.Equal(t, "0.10.0", settings.KiroVersion)
-	require.Equal(t, kiroPinnedOutboundMachineID, machineID)
+	require.Equal(t, "0.12.0", settings.KiroVersion)
+	require.Equal(t, machineB, machineID)
+	require.NotEqual(t, kiroPinnedOutboundMachineID, machineID)
+	require.NotEqual(t, "0.11.0", settings.KiroVersion)
 }
 
 func TestApplyKiroSidecarIdentity_LoadFailureIsFailClosed(t *testing.T) {
