@@ -47,7 +47,9 @@ type AccountIdentityLookup interface {
 // Expected Claude inbound Payload keys (mapped from X-Stainless-* headers):
 // stainless_lang, stainless_package_version, stainless_os, stainless_arch,
 // stainless_runtime, stainless_runtime_version. Learn compares only software
-// keys (lang, package_version, runtime, runtime_version) against the registry.
+// keys (lang, package_version, runtime) against the registry.
+// stainless_runtime_version is not a learn gate; real Claude Code Node
+// versions may differ from the registry's hardcoded v24.3.0.
 // stainless_os and stainless_arch are first-write-wins identity and are not
 // required to match the registry. Extra inbound stainless_* keys such as
 // stainless_retry_count and stainless_timeout do not block learn.
@@ -83,7 +85,6 @@ var (
 		"stainless_lang",
 		"stainless_package_version",
 		"stainless_runtime",
-		"stainless_runtime_version",
 	}
 )
 
@@ -254,32 +255,33 @@ func (s *AccountDeviceService) LearnIfOfficial(ctx context.Context, account *Acc
 		return nil, fmt.Errorf("identity_reject: account is required")
 	}
 
-	unlock := s.lockAccount(canonicalDeviceAccountID(account))
+	account, err := s.canonicalAccount(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+
+	existing, err := s.repo.GetByAccountID(ctx, account.ID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil && !deviceProfilePlatformMismatch(existing, account) && learnWouldSkipWrite(existing, account, inbound) {
+		return existing, nil
+	}
+
+	unlock := s.lockAccount(account.ID)
 	defer unlock()
 
 	profile, err := s.getOrCreateLocked(ctx, account)
 	if err != nil {
 		return nil, err
 	}
-	if !deviceLearningEnabled(profile, account) {
-		return profile, nil
-	}
-	if !isOfficialInbound(profile.Platform, inbound) {
+	if learnWouldSkipWrite(profile, account, inbound) {
 		return profile, nil
 	}
 
 	candidate := inboundCandidateVersion(inbound)
-	if candidate == "" {
-		return profile, nil
-	}
-	if uaVersion := softwareBundleVersionFromUA(inbound.UserAgent); uaVersion != "" && uaVersion != candidate {
-		return profile, nil
-	}
 	bundle, ok := NewSoftwareBundleRegistry().Lookup(profile.Platform, profile.ClientFamily, candidate)
 	if !ok {
-		return profile, nil
-	}
-	if CompareSemver(candidate, profile.ClientVersion) <= 0 {
 		return profile, nil
 	}
 	if err := ValidateSoftwareBundle(bundle); err != nil {
@@ -323,6 +325,26 @@ func (s *AccountDeviceService) LearnIfOfficial(ctx context.Context, account *Acc
 	}
 	s.projectDeviceProfile(ctx, updated)
 	return updated, nil
+}
+
+func learnWouldSkipWrite(profile *AccountDeviceProfile, account *Account, inbound OfficialInbound) bool {
+	if !deviceLearningEnabled(profile, account) {
+		return true
+	}
+	if !isOfficialInbound(profile.Platform, inbound) {
+		return true
+	}
+	candidate := inboundCandidateVersion(inbound)
+	if candidate == "" {
+		return true
+	}
+	if uaVersion := softwareBundleVersionFromUA(inbound.UserAgent); uaVersion != "" && uaVersion != candidate {
+		return true
+	}
+	if _, ok := NewSoftwareBundleRegistry().Lookup(profile.Platform, profile.ClientFamily, candidate); !ok {
+		return true
+	}
+	return CompareSemver(candidate, profile.ClientVersion) <= 0
 }
 
 func (s *AccountDeviceService) canonicalAccount(ctx context.Context, account *Account) (*Account, error) {
