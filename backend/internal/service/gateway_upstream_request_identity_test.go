@@ -355,6 +355,13 @@ func TestBuildOAuthMetadataUserIDFromBody_UsesProfileGatewayUUID(t *testing.T) {
 	require.Contains(t, got, testGatewayAccountUUID)
 	require.Contains(t, got, testProfileDeviceID)
 	require.NotContains(t, got, testFingerprintClientID)
+	parsed := ParseMetadataUserID(got)
+	require.NotNil(t, parsed)
+	seed := buildStableSessionSeed(account.ID, testProfileDeviceID, "hi")
+	want, _, _, err := DeriveSessionIDs(testAnthropicDeviceProfile().SessionNamespace, seed)
+	require.NoError(t, err)
+	require.Equal(t, want, parsed.SessionID)
+	require.NotEqual(t, generateSessionUUID(seed), parsed.SessionID)
 }
 
 func TestBuildOAuthMetadataUserIDFromBody_LoadFailureDoesNotUseExtraUUID(t *testing.T) {
