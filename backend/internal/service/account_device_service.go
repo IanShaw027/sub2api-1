@@ -318,8 +318,10 @@ func (s *AccountDeviceService) LearnIfOfficial(ctx context.Context, account *Acc
 		return nil, err
 	}
 	if updated == nil {
+		s.projectDeviceProfile(ctx, next)
 		return next, nil
 	}
+	s.projectDeviceProfile(ctx, updated)
 	return updated, nil
 }
 
