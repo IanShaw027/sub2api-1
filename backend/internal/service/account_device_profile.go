@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 )
 
 type AccountDeviceProfile struct {
@@ -203,6 +205,15 @@ func PersistDeviceTransportFamily(p *AccountDeviceProfile, alpn []string, http2E
 		return
 	}
 	p.TransportFamily = EffectiveTransportFamily(p.TransportFamily, alpn, http2Enabled)
+}
+
+// StampTLSProfileFromDevice copies the device-profile transport family onto a
+// runtime TLS profile after ToTLSProfile. ToTLSProfile itself has no device.
+func StampTLSProfileFromDevice(profile *tlsfingerprint.Profile, device *AccountDeviceProfile) {
+	if profile == nil || device == nil {
+		return
+	}
+	profile.TransportFamily = device.TransportFamily
 }
 
 // ALPNContainsH2 reports whether the ALPN list includes the h2 token.

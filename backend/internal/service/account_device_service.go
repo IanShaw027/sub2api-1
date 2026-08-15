@@ -295,6 +295,7 @@ func (s *AccountDeviceService) LearnIfOfficial(ctx context.Context, account *Acc
 	}
 
 	next := applyOfficialSoftwareBundle(profile, bundle)
+	PersistDeviceTransportFamily(next, nil, false)
 	if err := ValidateAccountDeviceProfile(next); err != nil {
 		slog.Warn("identity_reject", "reason", err.Error(), "account_id", profile.AccountID)
 		return nil, err

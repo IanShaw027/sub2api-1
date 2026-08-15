@@ -1434,6 +1434,97 @@ func (s *HTTPUpstreamSuite) TestTLSProfileSameIDALPNSplitRebuildsClient() {
 	require.Equal(s.T(), 1, len(svc.clients), "only the replacement TLS client should remain cached")
 }
 
+func TestDeviceProfileTransportFamily_ToTLSProfileSendHonesty(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	}).(*httpUpstreamService)
+
+	for _, tc := range []struct {
+		name    string
+		alpn    []string
+		wantFam string
+		wantH2  bool
+		wantCap int
+	}{
+		{name: "h1-alpn", alpn: []string{"http/1.1"}, wantFam: transportFamilyH1, wantH2: false, wantCap: 14},
+		{name: "live-h2", alpn: []string{"h2", "http/1.1"}, wantFam: transportFamilyH2, wantH2: true, wantCap: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			device := &service.AccountDeviceProfile{
+				Platform:        service.PlatformOpenAI,
+				ClientFamily:    service.ClientFamilyCodexCLI,
+				TransportFamily: service.TransportH2,
+			}
+			modelProfile := &model.TLSFingerprintProfile{
+				ID:            88,
+				Name:          "from-device-" + tc.name,
+				ALPNProtocols: tc.alpn,
+			}
+			runtime := modelProfile.ToTLSProfile()
+			require.NotNil(t, runtime)
+			require.Empty(t, runtime.TransportFamily, "ToTLSProfile has no device profile")
+			runtime.ID = modelProfile.ID
+			service.StampTLSProfileFromDevice(runtime, device)
+
+			entry, err := svc.getClientEntryWithTLS("", 1, 12, runtime, service.HTTPUpstreamProfileOpenAI, false, false)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantFam, entry.transportFamily)
+
+			transport, ok := entry.client.Transport.(*http.Transport)
+			require.True(t, ok)
+			require.Equal(t, tc.wantH2, transport.ForceAttemptHTTP2)
+			if tc.wantH2 {
+				require.NotNil(t, transport.TLSNextProto["h2"])
+			}
+			require.Equal(t, tc.wantCap, transport.MaxConnsPerHost)
+			require.Equal(t, tc.wantCap, transport.MaxIdleConns)
+			require.Equal(t, tc.wantCap, transport.MaxIdleConnsPerHost)
+		})
+	}
+}
+
+func TestOpenAIHTTP2_LivePoolUsesSpareBudgetNotBurst(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{
+			ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount,
+			OpenAIHTTP2:             config.GatewayOpenAIHTTP2Config{Enabled: true},
+		},
+	}).(*httpUpstreamService)
+
+	entry, err := svc.getClientEntry("", 1, 12, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+	require.Equal(t, transportFamilyH2, entry.transportFamily)
+	require.Equal(t, upstreamProtocolModeOpenAIH2, entry.protocolMode)
+
+	transport, ok := entry.client.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.True(t, transport.ForceAttemptHTTP2)
+	require.NotNil(t, transport.TLSNextProto["h2"])
+	require.Equal(t, 2, transport.MaxConnsPerHost, "live openai_h2 must use 1 primary + ≤1 spare")
+	require.Equal(t, 2, transport.MaxIdleConns)
+	require.Equal(t, 2, transport.MaxIdleConnsPerHost)
+}
+
+func TestOpenAIHTTP1_KeepsBurstCaps(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{
+			ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount,
+			OpenAIHTTP2:             config.GatewayOpenAIHTTP2Config{Enabled: false},
+		},
+	}).(*httpUpstreamService)
+
+	entry, err := svc.getClientEntry("", 1, 12, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+	require.Equal(t, transportFamilyH1, entry.transportFamily)
+
+	transport, ok := entry.client.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.False(t, transport.ForceAttemptHTTP2)
+	require.Equal(t, 14, transport.MaxConnsPerHost)
+	require.Equal(t, 14, transport.MaxIdleConns)
+	require.Equal(t, 14, transport.MaxIdleConnsPerHost)
+}
+
 func TestTLSFingerprint_ClaimedH2WithH1ALPNStaysH1AndKeepsBurst(t *testing.T) {
 	svc := NewHTTPUpstream(&config.Config{
 		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},

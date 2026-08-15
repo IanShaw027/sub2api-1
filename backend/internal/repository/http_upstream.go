@@ -691,6 +691,9 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 	protocolMode := s.resolveProtocolMode(profile, proxyKey, parsedProxy)
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, profile)
+	if protocolMode == upstreamProtocolModeOpenAIH2 {
+		settings = applyH2PoolBudget(settings)
+	}
 	burstConcurrency := resolvePoolBurstConcurrency(accountConcurrency)
 	transportFamily := transportFamilyForProtocolMode(protocolMode)
 	// 构建缓存键（根据隔离策略不同）

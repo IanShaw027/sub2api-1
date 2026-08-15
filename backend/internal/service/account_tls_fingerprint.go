@@ -240,10 +240,12 @@ func resolveAccountTLSFingerprintRuntime(
 	}
 
 	if routerSvc == nil {
+		stampRuntimeTransportFamily(ctx, account, runtime.Profile)
 		return runtime
 	}
 	routerID := account.GetTLSFingerprintRouterID()
 	if routerID <= 0 {
+		stampRuntimeTransportFamily(ctx, account, runtime.Profile)
 		return runtime
 	}
 
@@ -252,6 +254,7 @@ func resolveAccountTLSFingerprintRuntime(
 		logger.LegacyPrintf("service.tls_fp_router",
 			"[TLSFPRouter] no_match account_id=%d platform=%s protocol=%s router_id=%d",
 			account.ID, account.Platform, protocol, routerID)
+		stampRuntimeTransportFamily(ctx, account, runtime.Profile)
 		return runtime
 	}
 
@@ -269,7 +272,24 @@ func resolveAccountTLSFingerprintRuntime(
 	runtime.UpstreamUserAgent = strings.TrimSpace(match.UpstreamUserAgent)
 	runtime.UpstreamOriginator = strings.TrimSpace(match.UpstreamOriginator)
 	runtime.Matched = true
+	stampRuntimeTransportFamily(ctx, account, runtime.Profile)
 	return runtime
+}
+
+func stampRuntimeTransportFamily(ctx context.Context, account *Account, profile *tlsfingerprint.Profile) {
+	if profile == nil || account == nil {
+		return
+	}
+	switch account.Platform {
+	case PlatformOpenAI, PlatformKiro:
+	default:
+		return
+	}
+	device, err := LoadOutboundDeviceProfile(ctx, account)
+	if err != nil || device == nil {
+		return
+	}
+	StampTLSProfileFromDevice(profile, device)
 }
 
 func (s *TLSFingerprintProfileService) resolveTLSProfileByID(id int64) *tlsfingerprint.Profile {

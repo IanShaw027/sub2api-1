@@ -252,6 +252,60 @@ func TestApplyTLSFingerprintRuntimeHeaders_UsesLowercaseOriginator(t *testing.T)
 	require.False(t, hasXOriginator)
 }
 
+func TestResolveAccountTLSFingerprintRuntime_StampsDeviceTransportFamily(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		platform string
+		device   *AccountDeviceProfile
+	}{
+		{name: "codex", platform: PlatformOpenAI, device: validCodexBaseline()},
+		{name: "kiro", platform: PlatformKiro, device: validKiroBaseline()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.device.TransportFamily = TransportH2
+			prev := OutboundDeviceProfileService()
+			SetOutboundDeviceProfileService(NewAccountDeviceService(&stampDeviceProfileRepo{profile: tc.device}))
+			t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+			account := enabledTLSAccount(tc.platform, map[string]any{
+				"enable_tls_fingerprint":     true,
+				"tls_fingerprint_profile_id": int64(77),
+			})
+			account.ID = tc.device.AccountID
+			profiles := testTLSProfileService(&model.TLSFingerprintProfile{
+				ID:            77,
+				Name:          "runtime-" + tc.name,
+				ALPNProtocols: []string{"h2", "http/1.1"},
+			})
+
+			runtime := resolveAccountTLSFingerprintRuntime(context.Background(), account, profiles, nil, "", "http", "responses")
+			require.NotNil(t, runtime.Profile)
+			require.Equal(t, TransportH2, runtime.Profile.TransportFamily, "device-profile family must be stamped after ToTLSProfile")
+			require.Equal(t, []string{"h2", "http/1.1"}, runtime.Profile.ALPNProtocols)
+		})
+	}
+}
+
+type stampDeviceProfileRepo struct {
+	profile *AccountDeviceProfile
+}
+
+func (r *stampDeviceProfileRepo) GetByAccountID(context.Context, int64) (*AccountDeviceProfile, error) {
+	return r.profile, nil
+}
+
+func (r *stampDeviceProfileRepo) InsertBaseline(_ context.Context, p *AccountDeviceProfile) (*AccountDeviceProfile, error) {
+	return p, nil
+}
+
+func (r *stampDeviceProfileRepo) UpdateCAS(context.Context, int64, int64, *AccountDeviceProfile) (bool, error) {
+	return false, nil
+}
+
+func (r *stampDeviceProfileRepo) DeleteByAccountID(context.Context, int64) error {
+	return nil
+}
+
 func TestResolveTLSProfile_RandomProfilePreservesCanonicalID(t *testing.T) {
 	profiles := testTLSProfileService(
 		&model.TLSFingerprintProfile{ID: 101, Name: "shared-profile"},
