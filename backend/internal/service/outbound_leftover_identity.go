@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -37,8 +38,14 @@ func leftoverFamilyDefaultUserAgent(p *AccountDeviceProfile) string {
 	}
 }
 
-func isLeftoverIdentityReject(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "identity_reject")
+type leftoverProfileLoadError struct{ err error }
+
+func (e *leftoverProfileLoadError) Error() string { return e.err.Error() }
+func (e *leftoverProfileLoadError) Unwrap() error { return e.err }
+
+func isLeftoverProfileLoadError(err error) bool {
+	var loadErr *leftoverProfileLoadError
+	return errors.As(err, &loadErr)
 }
 
 func applyOutboundProfileUserAgent(ctx context.Context, account *Account, req *http.Request) error {

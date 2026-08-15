@@ -72,7 +72,7 @@ func resolveAntigravityForwardBaseURL() string {
 
 func (p *antigravityRetryLoopParams) sendAntigravityAccountHTTP(s *AntigravityGatewayService, req *http.Request) (*http.Response, error) {
 	if err := applyOutboundProfileUserAgent(p.ctx, p.account, req); err != nil {
-		return nil, err
+		return nil, &leftoverProfileLoadError{err: err}
 	}
 	return doLeftoverAccountHTTP(p.ctx, p.httpUpstream, req, p.proxyURL, p.account, s.tlsFPProfileService, s.tlsFPRouterService, leftoverOutboundTLSRoutingUA(req), "http", "antigravity")
 }
@@ -219,8 +219,8 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 				}
 			}
 			retryResp, retryErr := p.sendAntigravityAccountHTTP(s, retryReq)
-			if isLeftoverIdentityReject(retryErr) {
-				logger.LegacyPrintf("service.antigravity_gateway", "%s status=smart_retry_request_build_failed error=%v", p.prefix, retryErr)
+			if isLeftoverProfileLoadError(retryErr) {
+				logger.LegacyPrintf("service.antigravity_gateway", "%s status=smart_retry_identity_reject error=%v", p.prefix, retryErr)
 				p.handleError(p.ctx, p.prefix, p.account, resp.StatusCode, resp.Header, respBody, p.requestedModel, p.groupID, p.sessionHash, p.isStickySession)
 				return &smartRetryResult{
 					action: smartRetryActionBreakWithResp,
@@ -405,8 +405,8 @@ func (s *AntigravityGatewayService) handleSingleAccountRetryInPlace(
 			break
 		}
 		retryResp, retryErr := p.sendAntigravityAccountHTTP(s, retryReq)
-		if isLeftoverIdentityReject(retryErr) {
-			logger.LegacyPrintf("service.antigravity_gateway", "%s single_account_503_retry: request_build_failed error=%v", p.prefix, retryErr)
+		if isLeftoverProfileLoadError(retryErr) {
+			logger.LegacyPrintf("service.antigravity_gateway", "%s single_account_503_retry: identity_reject error=%v", p.prefix, retryErr)
 			break
 		}
 		if retryErr == nil && retryResp != nil && retryResp.StatusCode != http.StatusTooManyRequests && retryResp.StatusCode != http.StatusServiceUnavailable {
@@ -546,7 +546,7 @@ urlFallbackLoop:
 				return nil, err
 			}
 			resp, err = p.sendAntigravityAccountHTTP(s, upstreamReq)
-			if isLeftoverIdentityReject(err) {
+			if isLeftoverProfileLoadError(err) {
 				return nil, err
 			}
 			if err == nil && resp == nil {

@@ -79,6 +79,44 @@ func TestAntigravityOAuthRetryLoopUsesProfileUserAgent(t *testing.T) {
 	require.Equal(t, 1, leftoverSharedRepo.getCount(account.ID), "profile must be loaded once per send, not once in a pre-call and again in sendAntigravityAccountHTTP")
 }
 
+func TestAntigravityOAuthRetryLoopAbortsWhenProfileStoreReturnsUnmarkedError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv(antigravityForwardBaseURLEnv, "")
+
+	account := leftoverAntigravityOAuthAccount(1414)
+	installLeftoverOutboundProfileError(t, account.ID, errors.New("connection refused"))
+
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"response":{}}`)),
+		},
+	}
+	svc := &AntigravityGatewayService{httpUpstream: httpStub}
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/antigravity/v1/generateContent", bytes.NewReader([]byte(`{}`)))
+
+	result, err := svc.antigravityRetryLoop(antigravityRetryLoopParams{
+		ctx:          context.Background(),
+		prefix:       "[test-ag-oauth-ua-unmarked]",
+		account:      account,
+		accessToken:  "token",
+		action:       "generateContent",
+		body:         []byte(`{"input":"test"}`),
+		c:            c,
+		httpUpstream: httpStub,
+		handleError: func(context.Context, string, *Account, int, http.Header, []byte, string, int64, string, bool) *handleModelRateLimitResult {
+			return nil
+		},
+	})
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Zero(t, httpStub.calls)
+	require.Equal(t, 1, leftoverSharedRepo.getCount(account.ID), "unmarked store errors must abort without retrying the profile load")
+}
+
 func TestAntigravityOAuthRetryLoopAbortsWhenProfileLoadFails(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv(antigravityForwardBaseURLEnv, "")
