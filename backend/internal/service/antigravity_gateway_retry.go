@@ -218,8 +218,9 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 					},
 				}
 			}
-			if err := applyOutboundProfileUserAgent(p.ctx, p.account, retryReq); err != nil {
-				logger.LegacyPrintf("service.antigravity_gateway", "%s status=smart_retry_request_build_failed error=%v", p.prefix, err)
+			retryResp, retryErr := p.sendAntigravityAccountHTTP(s, retryReq)
+			if isLeftoverIdentityReject(retryErr) {
+				logger.LegacyPrintf("service.antigravity_gateway", "%s status=smart_retry_request_build_failed error=%v", p.prefix, retryErr)
 				p.handleError(p.ctx, p.prefix, p.account, resp.StatusCode, resp.Header, respBody, p.requestedModel, p.groupID, p.sessionHash, p.isStickySession)
 				return &smartRetryResult{
 					action: smartRetryActionBreakWithResp,
@@ -230,8 +231,6 @@ func (s *AntigravityGatewayService) handleSmartRetry(p antigravityRetryLoopParam
 					},
 				}
 			}
-
-			retryResp, retryErr := p.sendAntigravityAccountHTTP(s, retryReq)
 			if retryErr == nil && retryResp != nil && retryResp.StatusCode != http.StatusTooManyRequests && retryResp.StatusCode != http.StatusServiceUnavailable {
 				log.Printf("%s status=%d smart_retry_success attempt=%d/%d", p.prefix, retryResp.StatusCode, attempt, maxAttempts)
 				// 重试成功，清除 MODEL_CAPACITY_EXHAUSTED cooldown
@@ -405,12 +404,11 @@ func (s *AntigravityGatewayService) handleSingleAccountRetryInPlace(
 			logger.LegacyPrintf("service.antigravity_gateway", "%s single_account_503_retry: request_build_failed error=%v", p.prefix, err)
 			break
 		}
-		if err := applyOutboundProfileUserAgent(p.ctx, p.account, retryReq); err != nil {
-			logger.LegacyPrintf("service.antigravity_gateway", "%s single_account_503_retry: request_build_failed error=%v", p.prefix, err)
+		retryResp, retryErr := p.sendAntigravityAccountHTTP(s, retryReq)
+		if isLeftoverIdentityReject(retryErr) {
+			logger.LegacyPrintf("service.antigravity_gateway", "%s single_account_503_retry: request_build_failed error=%v", p.prefix, retryErr)
 			break
 		}
-
-		retryResp, retryErr := p.sendAntigravityAccountHTTP(s, retryReq)
 		if retryErr == nil && retryResp != nil && retryResp.StatusCode != http.StatusTooManyRequests && retryResp.StatusCode != http.StatusServiceUnavailable {
 			logger.LegacyPrintf("service.antigravity_gateway", "%s status=%d single_account_503_retry_success attempt=%d/%d total_waited=%v",
 				p.prefix, retryResp.StatusCode, attempt, antigravitySingleAccountSmartRetryMaxAttempts, totalWaited)
@@ -547,11 +545,10 @@ urlFallbackLoop:
 			if err != nil {
 				return nil, err
 			}
-			if err := applyOutboundProfileUserAgent(p.ctx, p.account, upstreamReq); err != nil {
+			resp, err = p.sendAntigravityAccountHTTP(s, upstreamReq)
+			if isLeftoverIdentityReject(err) {
 				return nil, err
 			}
-
-			resp, err = p.sendAntigravityAccountHTTP(s, upstreamReq)
 			if err == nil && resp == nil {
 				err = errors.New("upstream returned nil response")
 			}

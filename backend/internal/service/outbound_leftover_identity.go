@@ -37,6 +37,10 @@ func leftoverFamilyDefaultUserAgent(p *AccountDeviceProfile) string {
 	}
 }
 
+func isLeftoverIdentityReject(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "identity_reject")
+}
+
 func applyOutboundProfileUserAgent(ctx context.Context, account *Account, req *http.Request) error {
 	p, err := LoadOutboundDeviceProfile(ctx, account)
 	if err != nil {

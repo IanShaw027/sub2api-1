@@ -76,6 +76,7 @@ func TestAntigravityOAuthRetryLoopUsesProfileUserAgent(t *testing.T) {
 	require.Equal(t, profileUA, httpStub.lastReq.Header.Get("User-Agent"))
 	require.NotEqual(t, "inbound-should-not-win", httpStub.lastReq.Header.Get("User-Agent"))
 	require.NotEqual(t, antigravity.GetUserAgentForContext(context.Background()), httpStub.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, 1, leftoverSharedRepo.getCount(account.ID), "profile must be loaded once per send, not once in a pre-call and again in sendAntigravityAccountHTTP")
 }
 
 func TestAntigravityOAuthRetryLoopAbortsWhenProfileLoadFails(t *testing.T) {
