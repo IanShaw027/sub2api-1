@@ -419,6 +419,9 @@ func (s *AccountTestService) buildGeminiUpstreamModelsRequest(ctx context.Contex
 		)
 	}
 
+	if err := applyOutboundProfileUserAgent(ctx, account, req); err != nil {
+		return nil, err
+	}
 	return req, nil
 }
 

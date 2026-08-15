@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -330,4 +331,195 @@ func TestForwardAIStudioGETAbortsWhenProfileLoadFails(t *testing.T) {
 			require.ErrorContains(t, err, "identity_reject")
 		})
 	}
+}
+
+func leftoverGeminiTestService() *AccountTestService {
+	return &AccountTestService{
+		cfg:                 upstreamModelSyncTestConfig(),
+		geminiTokenProvider: NewGeminiTokenProvider(nil, &geminiOutboundProfileTokenCache{token: "ya29.outbound-sa"}, nil),
+	}
+}
+
+func TestBuildGeminiUpstreamModelsRequestStampsProfileUserAgent(t *testing.T) {
+	const profileUA = "GeminiCLI/5.5.5 (models-sync; leftover)"
+	account := geminiOutboundAPIKeyAccount(1501)
+	geminiOutboundInstallProfile(t, account, profileUA)
+
+	req, err := leftoverGeminiTestService().buildGeminiUpstreamModelsRequest(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, profileUA, req.Header.Get("User-Agent"))
+	require.NotEqual(t, geminicli.GeminiCLIUserAgent, req.Header.Get("User-Agent"))
+}
+
+func TestBuildGeminiUpstreamModelsRequestAbortsWhenProfileLoadFails(t *testing.T) {
+	account := geminiOutboundAPIKeyAccount(1502)
+	installLeftoverOutboundProfileError(t, account.ID, errors.New("identity_reject: profile store down"))
+
+	req, err := leftoverGeminiTestService().buildGeminiUpstreamModelsRequest(context.Background(), account)
+	require.Error(t, err)
+	require.Nil(t, req)
+	require.ErrorContains(t, err, "identity_reject")
+}
+
+func TestBuildGeminiAPIKeyRequestStampsProfileUserAgent(t *testing.T) {
+	const profileUA = "GeminiCLI/5.5.4 (account-test; leftover)"
+	account := geminiOutboundAPIKeyAccount(1511)
+	geminiOutboundInstallProfile(t, account, profileUA)
+
+	req, err := leftoverGeminiTestService().buildGeminiAPIKeyRequest(context.Background(), account, "gemini-2.5-flash", []byte(`{"contents":[]}`))
+	require.NoError(t, err)
+	require.Equal(t, profileUA, req.Header.Get("User-Agent"))
+}
+
+func TestBuildGeminiAPIKeyRequestAbortsWhenProfileLoadFails(t *testing.T) {
+	account := geminiOutboundAPIKeyAccount(1512)
+	installLeftoverOutboundProfileError(t, account.ID, errors.New("identity_reject: profile store down"))
+
+	req, err := leftoverGeminiTestService().buildGeminiAPIKeyRequest(context.Background(), account, "gemini-2.5-flash", []byte(`{"contents":[]}`))
+	require.Error(t, err)
+	require.Nil(t, req)
+	require.ErrorContains(t, err, "identity_reject")
+}
+
+func TestBuildGeminiOAuthAIStudioRequestStampsProfileUserAgent(t *testing.T) {
+	const profileUA = "GeminiCLI/5.5.3 (oauth-aistudio; leftover)"
+	account := geminiOutboundOAuthAIStudioAccount(1521)
+	geminiOutboundInstallProfile(t, account, profileUA)
+
+	req, err := leftoverGeminiTestService().buildGeminiOAuthRequest(context.Background(), account, "gemini-2.5-flash", []byte(`{"contents":[]}`))
+	require.NoError(t, err)
+	require.Equal(t, profileUA, req.Header.Get("User-Agent"))
+}
+
+func TestBuildGeminiServiceAccountRequestStampsProfileUserAgent(t *testing.T) {
+	const profileUA = "GeminiCLI/5.5.2 (service-account; leftover)"
+	account := geminiOutboundServiceAccount(1531)
+	geminiOutboundInstallProfile(t, account, profileUA)
+
+	req, err := leftoverGeminiTestService().buildGeminiServiceAccountRequest(context.Background(), account, "gemini-2.5-flash", []byte(`{"contents":[]}`))
+	require.NoError(t, err)
+	require.Equal(t, profileUA, req.Header.Get("User-Agent"))
+}
+
+func TestBuildCodeAssistRequestStampsProfileUserAgent(t *testing.T) {
+	const profileUA = "GeminiCLI/5.5.1 (code-assist; leftover)"
+	account := leftoverGeminiOAuthAccount(1541)
+	geminiOutboundInstallProfile(t, account, profileUA)
+
+	req, err := leftoverGeminiTestService().buildCodeAssistRequest(context.Background(), account, "ya29.test", "project-1", "gemini-2.5-flash", []byte(`{"contents":[]}`))
+	require.NoError(t, err)
+	require.Equal(t, profileUA, req.Header.Get("User-Agent"))
+	require.NotEqual(t, geminicli.GeminiCLIUserAgent, req.Header.Get("User-Agent"))
+}
+
+func TestBuildCodeAssistRequestAbortsWhenProfileLoadFails(t *testing.T) {
+	account := leftoverGeminiOAuthAccount(1542)
+	installLeftoverOutboundProfileError(t, account.ID, errors.New("identity_reject: profile store down"))
+
+	req, err := leftoverGeminiTestService().buildCodeAssistRequest(context.Background(), account, "ya29.test", "project-1", "gemini-2.5-flash", []byte(`{"contents":[]}`))
+	require.Error(t, err)
+	require.Nil(t, req)
+	require.ErrorContains(t, err, "identity_reject")
+}
+
+func TestGeminiBatchSubmitStampsProfileUserAgent(t *testing.T) {
+	const profileUA = "GeminiCLI/5.4.9 (batch-image; leftover)"
+	account := geminiOutboundAPIKeyAccount(1551)
+	geminiOutboundInstallProfile(t, account, profileUA)
+
+	var gotUA string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUA = r.Header.Get("User-Agent")
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(r.URL.Path, "/upload/"):
+			_, _ = w.Write([]byte(`{"file":{"name":"files/input-jsonl"}}`))
+		default:
+			_, _ = w.Write([]byte(`{"name":"batches/job-123","state":"JOB_STATE_PENDING"}`))
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	provider := NewGeminiAPIBatchImageProvider(NewGeminiBatchHTTPClient(server.URL, server.Client()))
+	got, err := provider.Submit(context.Background(), nil, account, validGeminiBatchInput())
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, profileUA, gotUA)
+}
+
+func TestGeminiBatchSubmitAbortsWhenProfileLoadFails(t *testing.T) {
+	account := geminiOutboundAPIKeyAccount(1552)
+	installLeftoverOutboundProfileError(t, account.ID, errors.New("identity_reject: profile store down"))
+
+	client := &fakeGeminiBatchClient{
+		uploaded: &GeminiUploadedFile{Name: "files/input-jsonl"},
+		created:  &GeminiBatchJob{Name: "batches/job-123", State: "JOB_STATE_PENDING"},
+	}
+	provider := NewGeminiAPIBatchImageProvider(client)
+	got, err := provider.Submit(context.Background(), nil, account, validGeminiBatchInput())
+	require.Error(t, err)
+	require.Nil(t, got)
+	require.ErrorContains(t, err, "identity_reject")
+	require.Empty(t, client.calls)
+}
+
+func TestFetchProjectIDUsesAccountProfileUserAgent(t *testing.T) {
+	const profileUA = "GeminiCLI/9.1.1 (code-assist-fetch; leftover)"
+	account := leftoverGeminiOAuthAccount(1561)
+	geminiOutboundInstallProfile(t, account, profileUA)
+
+	var gotUA string
+	codeAssist := &mockGeminiCodeAssistClient{
+		loadCodeAssistFunc: func(_ context.Context, _, _, userAgent string, _ *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+			gotUA = userAgent
+			return &geminicli.LoadCodeAssistResponse{
+				CloudAICompanionProject: "auto-project-123",
+				CurrentTier:             &geminicli.TierInfo{ID: "STANDARD"},
+			}, nil
+		},
+	}
+	svc := NewGeminiOAuthService(nil, nil, codeAssist, nil, &config.Config{})
+	t.Cleanup(svc.Stop)
+
+	_, _, err := svc.fetchProjectID(context.Background(), "ya29.test", "", account)
+	require.NoError(t, err)
+	require.Equal(t, profileUA, gotUA)
+	require.NotEqual(t, geminicli.GeminiCLIUserAgent, gotUA)
+}
+
+func TestFetchProjectIDWithoutAccountUsesDefaultUserAgent(t *testing.T) {
+	var gotUA string
+	codeAssist := &mockGeminiCodeAssistClient{
+		loadCodeAssistFunc: func(_ context.Context, _, _, userAgent string, _ *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+			gotUA = userAgent
+			return &geminicli.LoadCodeAssistResponse{
+				CloudAICompanionProject: "auto-project-123",
+				CurrentTier:             &geminicli.TierInfo{ID: "STANDARD"},
+			}, nil
+		},
+	}
+	svc := NewGeminiOAuthService(nil, nil, codeAssist, nil, &config.Config{})
+	t.Cleanup(svc.Stop)
+
+	_, _, err := svc.fetchProjectID(context.Background(), "ya29.test", "", nil)
+	require.NoError(t, err)
+	require.Equal(t, geminicli.GeminiCLIUserAgent, gotUA)
+}
+
+func TestFetchProjectIDAbortsWhenAccountProfileLoadFails(t *testing.T) {
+	account := leftoverGeminiOAuthAccount(1562)
+	installLeftoverOutboundProfileError(t, account.ID, errors.New("identity_reject: profile store down"))
+
+	codeAssist := &mockGeminiCodeAssistClient{
+		loadCodeAssistFunc: func(_ context.Context, _, _, _ string, _ *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+			t.Fatal("LoadCodeAssist should not run when profile load fails")
+			return nil, nil
+		},
+	}
+	svc := NewGeminiOAuthService(nil, nil, codeAssist, nil, &config.Config{})
+	t.Cleanup(svc.Stop)
+
+	_, _, err := svc.fetchProjectID(context.Background(), "ya29.test", "", account)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "identity_reject")
 }

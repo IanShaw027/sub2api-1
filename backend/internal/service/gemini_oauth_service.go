@@ -537,7 +537,7 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 		if projectID == "" {
 			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] No project_id provided, attempting to fetch from LoadCodeAssist API...")
 			var err error
-			projectID, tierID, err = s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL)
+			projectID, tierID, err = s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL, nil)
 			if err != nil {
 				// 记录警告但不阻断流程，允许后续补充 project_id
 				fmt.Printf("[GeminiOAuth] Warning: Failed to fetch project_id during token exchange: %v\n", err)
@@ -548,7 +548,7 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 		} else {
 			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] User provided project_id: %s, fetching tier_id...", projectID)
 			// 用户手动填了 project_id，仍需调用 LoadCodeAssist 获取 tierID
-			_, fetchedTierID, err := s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL)
+			_, fetchedTierID, err := s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL, nil)
 			if err != nil {
 				fmt.Printf("[GeminiOAuth] Warning: Failed to fetch tierID: %v\n", err)
 				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to fetch tier_id: %v", err)
@@ -582,7 +582,7 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 		if projectID == "" {
 			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] No project_id provided, attempting to fetch from LoadCodeAssist API...")
 			var err error
-			projectID, _, err = s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL)
+			projectID, _, err = s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL, nil)
 			if err != nil {
 				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] ERROR: Failed to fetch project_id: %v", err)
 				return nil, fmt.Errorf("google One accounts require a project_id, failed to auto-detect: %w", err)
@@ -810,7 +810,7 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 		// 尝试自动探测 project_id 和 tier_id
 		needDetect := strings.TrimSpace(tokenInfo.ProjectID) == "" || tokenInfo.TierID == ""
 		if needDetect {
-			projectID, tierID, err := s.fetchProjectID(ctx, tokenInfo.AccessToken, proxyURL)
+			projectID, tierID, err := s.fetchProjectID(ctx, tokenInfo.AccessToken, proxyURL, account)
 			if err != nil {
 				fmt.Printf("[GeminiOAuth] Warning: failed to auto-detect project/tier: %v\n", err)
 			} else {
@@ -919,12 +919,23 @@ func (s *GeminiOAuthService) Stop() {
 	s.sessionStore.Stop()
 }
 
-func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, proxyURL string) (string, string, error) {
+func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, proxyURL string, account *Account) (string, string, error) {
 	if s.codeAssist == nil {
 		return "", "", errors.New("code assist client not configured")
 	}
 
-	loadResp, loadErr := s.codeAssist.LoadCodeAssist(ctx, accessToken, proxyURL, nil)
+	userAgent := geminicli.GeminiCLIUserAgent
+	if account != nil {
+		profile, err := LoadOutboundDeviceProfile(ctx, account)
+		if err != nil {
+			return "", "", err
+		}
+		if ua := outboundProfileUserAgent(profile); ua != "" {
+			userAgent = ua
+		}
+	}
+
+	loadResp, loadErr := s.codeAssist.LoadCodeAssist(ctx, accessToken, proxyURL, userAgent, nil)
 
 	// Extract tierID from response (works whether CloudAICompanionProject is set or not)
 	tierID := "LEGACY"
@@ -980,7 +991,7 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 
 	maxAttempts := 5
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		resp, err := s.codeAssist.OnboardUser(ctx, accessToken, proxyURL, req)
+		resp, err := s.codeAssist.OnboardUser(ctx, accessToken, proxyURL, userAgent, req)
 		if err != nil {
 			// If Code Assist onboarding fails (e.g. INVALID_ARGUMENT), fallback to Cloud Resource Manager projects.
 			fallback, fbErr := fetchProjectIDFromResourceManager(ctx, accessToken, proxyURL)
