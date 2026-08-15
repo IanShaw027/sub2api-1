@@ -12,7 +12,7 @@ func maybeLearnOfficialDeviceProfile(ctx context.Context, account *Account, head
 		return
 	}
 	switch account.Platform {
-	case PlatformAnthropic, PlatformOpenAI:
+	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity:
 	default:
 		return
 	}
