@@ -570,7 +570,9 @@ func TestGetOrCreateRejectsInvalidBaselineWithoutInsert(t *testing.T) {
 type countingDeviceProfileRepo struct {
 	inner        service.AccountDeviceProfileRepository
 	mu           sync.Mutex
+	gets         map[int64]int
 	inserts      map[int64]int
+	casCalls     map[int64]int
 	casWrites    map[int64]int
 	beforeCAS    func()
 	beforeInsert func()
@@ -578,10 +580,19 @@ type countingDeviceProfileRepo struct {
 }
 
 func wrapCountingDeviceProfileRepo(inner service.AccountDeviceProfileRepository) *countingDeviceProfileRepo {
-	return &countingDeviceProfileRepo{inner: inner, inserts: map[int64]int{}, casWrites: map[int64]int{}}
+	return &countingDeviceProfileRepo{
+		inner:     inner,
+		gets:      map[int64]int{},
+		inserts:   map[int64]int{},
+		casCalls:  map[int64]int{},
+		casWrites: map[int64]int{},
+	}
 }
 
 func (r *countingDeviceProfileRepo) GetByAccountID(ctx context.Context, accountID int64) (*service.AccountDeviceProfile, error) {
+	r.mu.Lock()
+	r.gets[accountID]++
+	r.mu.Unlock()
 	return r.inner.GetByAccountID(ctx, accountID)
 }
 
@@ -596,6 +607,9 @@ func (r *countingDeviceProfileRepo) InsertBaseline(ctx context.Context, p *servi
 }
 
 func (r *countingDeviceProfileRepo) UpdateCAS(ctx context.Context, accountID, expectedRevision int64, next *service.AccountDeviceProfile) (bool, error) {
+	r.mu.Lock()
+	r.casCalls[accountID]++
+	r.mu.Unlock()
 	if r.beforeCAS != nil {
 		r.beforeCAS()
 	}
@@ -616,10 +630,22 @@ func (r *countingDeviceProfileRepo) DeleteByAccountID(ctx context.Context, accou
 	return err
 }
 
+func (r *countingDeviceProfileRepo) getCount(accountID int64) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.gets[accountID]
+}
+
 func (r *countingDeviceProfileRepo) insertCount(accountID int64) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.inserts[accountID]
+}
+
+func (r *countingDeviceProfileRepo) casCallCount(accountID int64) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.casCalls[accountID]
 }
 
 func (r *countingDeviceProfileRepo) casWriteCount(accountID int64) int {
@@ -1009,6 +1035,29 @@ func TestLearnIfOfficialEqualOrLowerVersionDoesNotWrite(t *testing.T) {
 	require.Zero(t, repo.casWriteCount(account.ID))
 }
 
+func TestLearnIfOfficialSameVersionOfficialDoesNotCallUpdateCAS(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	getsAfterCreate := repo.getCount(account.ID)
+	insertsAfterCreate := repo.insertCount(account.ID)
+
+	got, err := svc.LearnIfOfficial(ctx, account, officialClaudeInbound())
+	require.NoError(t, err)
+	require.Equal(t, created.Revision, got.Revision)
+	require.Equal(t, created.ClientVersion, got.ClientVersion)
+	require.Equal(t, created.DeviceID, got.DeviceID)
+	require.Zero(t, repo.casCallCount(account.ID))
+	require.Zero(t, repo.casWriteCount(account.ID))
+	require.Equal(t, insertsAfterCreate, repo.insertCount(account.ID))
+	require.Equal(t, 1, repo.getCount(account.ID)-getsAfterCreate)
+}
+
 func TestLearnIfOfficialOfficialClaudeHigherVersionUpdatesSoftwareOnly(t *testing.T) {
 	svc, client, repo := newCountingAccountDeviceService(t)
 	ctx := context.Background()
@@ -1385,6 +1434,45 @@ func TestLearnIfOfficialRuntimeFamilyChangeDoesNotWrite(t *testing.T) {
 	require.Equal(t, "bun", got.Runtime)
 	require.Equal(t, service.LearnedFromBaseline, got.LearnedFrom)
 	require.Zero(t, repo.casWriteCount(account.ID))
+}
+
+func TestLearnIfOfficialClaudeInboundNodeVersionMismatchStillLearns(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	getsAfterCreate := repo.getCount(account.ID)
+	seedOldClaudeSoftware(t, client, account.ID, true)
+
+	inbound := officialClaudeInbound()
+	payload := make(map[string]any, len(inbound.Payload))
+	for key, value := range inbound.Payload {
+		payload[key] = value
+	}
+	payload["stainless_runtime_version"] = "v22.14.0"
+	inbound.Payload = payload
+	inbound.RuntimeVersion = "v22.14.0"
+
+	got, err := svc.LearnIfOfficial(ctx, account, inbound)
+	require.NoError(t, err)
+	require.NoError(t, service.ValidateAccountDeviceProfile(got))
+	require.Equal(t, 1, repo.casCallCount(account.ID))
+	require.Equal(t, 1, repo.casWriteCount(account.ID))
+	require.GreaterOrEqual(t, repo.getCount(account.ID)-getsAfterCreate, 2)
+	require.Equal(t, claude.CLICurrentVersion, got.ClientVersion)
+	require.Equal(t, service.LearnedFromOfficial, got.LearnedFrom)
+	require.Equal(t, claude.DefaultHeaders["X-Stainless-Runtime-Version"], got.RuntimeVersion)
+	require.Equal(t, claude.DefaultHeaders["X-Stainless-Runtime-Version"], got.ProfilePayload["stainless_runtime_version"])
+	require.NotEqual(t, "v22.14.0", got.RuntimeVersion)
+	require.NotEqual(t, "v22.14.0", got.ProfilePayload["stainless_runtime_version"])
+	require.Equal(t, created.DeviceID, got.DeviceID)
+	require.Equal(t, created.InstallationID, got.InstallationID)
+	require.Equal(t, created.OSFamily, got.OSFamily)
+	require.Equal(t, created.Arch, got.Arch)
 }
 
 func TestLearnIfOfficialMismatchedUAVersionDoesNotWrite(t *testing.T) {
