@@ -548,7 +548,7 @@ func TestForwardGrokChatRuntimeGateFallsBackToRaw(t *testing.T) {
 				c.Set("api_key", &APIKey{ID: int64(7301 + index)})
 			}
 
-			account := grokChatBridgeTestAccount(int64(73 + index))
+			account := grokChatBridgeTestAccount(int64(900083 + index))
 			if tt.mappedModel != "" {
 				account.Credentials["model_mapping"] = map[string]any{"grok": tt.mappedModel}
 			}

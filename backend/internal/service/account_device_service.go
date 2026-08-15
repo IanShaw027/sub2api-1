@@ -124,10 +124,16 @@ func (s *AccountDeviceService) GetOrCreate(ctx context.Context, account *Account
 	if err != nil {
 		return nil, err
 	}
-	if existing != nil {
+	if existing != nil && !deviceProfilePlatformMismatch(existing, account) {
 		s.projectDeviceProfile(ctx, existing)
 		return existing, nil
 	}
+
+	// Mismatched or missing row: insert a new baseline. leftoverSharedRepo
+	// overwrites (test remint). Production unique(account_id) makes this
+	// INSERT fail; the conflict handler below returns identity_reject and
+	// never the stale row. That conflict is the intended fail-closed path
+	// until an admin "reset device profile" action exists.
 
 	baseline, err := buildAccountDeviceBaseline(account)
 	if err != nil {
@@ -139,12 +145,21 @@ func (s *AccountDeviceService) GetOrCreate(ctx context.Context, account *Account
 
 	created, err := s.repo.InsertBaseline(ctx, baseline)
 	if err != nil {
+		if deviceProfilePlatformMismatch(existing, account) {
+			return nil, fmt.Errorf("%w (insert baseline: %v)", deviceProfilePlatformMismatchError(existing, account), err)
+		}
 		existing, getErr := s.repo.GetByAccountID(ctx, account.ID)
 		if getErr == nil && existing != nil {
+			if deviceProfilePlatformMismatch(existing, account) {
+				return nil, fmt.Errorf("%w (insert baseline: %v)", deviceProfilePlatformMismatchError(existing, account), err)
+			}
 			s.projectDeviceProfile(ctx, existing)
 			return existing, nil
 		}
 		return nil, err
+	}
+	if deviceProfilePlatformMismatch(created, account) {
+		return nil, deviceProfilePlatformMismatchError(created, account)
 	}
 	s.projectDeviceProfile(ctx, created)
 	return created, nil

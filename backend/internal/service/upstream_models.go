@@ -218,7 +218,9 @@ func (s *AccountTestService) buildGrokUpstreamModelsRequest(ctx context.Context,
 		// The shared HTTP transport adds the official CLI marker/version for the
 		// exact proxy host. Keep the request builder aligned with the other Grok
 		// probes and only forward account identity headers to that trusted host.
-		applyGrokCLIHeaders(req.Header)
+		if err := applyGrokInteractiveUpstreamHeadersFromAccount(ctx, req, account); err != nil {
+			return nil, err
+		}
 		if isGrokCLIProxyTarget(req.URL.String()) {
 			if userID := strings.TrimSpace(account.GetCredential("sub")); userID != "" {
 				req.Header.Set("X-UserID", userID)

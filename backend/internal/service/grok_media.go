@@ -665,7 +665,9 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	upstreamReq.Header.Set("Authorization", "Bearer "+token)
 	upstreamReq.Header.Set("Accept", "application/json")
 	if account.IsGrokOAuth() && isGrokCLIProxyTarget(targetURL) {
-		applyGrokCLIHeaders(upstreamReq.Header)
+		if err := applyGrokInteractiveUpstreamHeadersFromAccount(upstreamCtx, upstreamReq, account); err != nil {
+			return nil, err
+		}
 	}
 	if endpoint.RequiresRequestBody() {
 		contentType = strings.TrimSpace(contentType)
@@ -775,7 +777,9 @@ func (s *OpenAIGatewayService) forwardGrokMediaVideoContent(
 	statusReq.Header.Set("Authorization", "Bearer "+token)
 	statusReq.Header.Set("Accept", "application/json")
 	if account.IsGrokOAuth() && isGrokCLIProxyTarget(statusURL) {
-		applyGrokCLIHeaders(statusReq.Header)
+		if err := applyGrokInteractiveUpstreamHeadersFromAccount(upstreamCtx, statusReq, account); err != nil {
+			return nil, err
+		}
 	}
 	account.ApplyHeaderOverrides(statusReq.Header)
 
@@ -838,7 +842,9 @@ func (s *OpenAIGatewayService) forwardGrokMediaVideoContent(
 	if !signedContent {
 		contentReq.Header.Set("Authorization", "Bearer "+token)
 		if account.IsGrokOAuth() && isGrokCLIProxyTarget(contentURL) {
-			applyGrokCLIHeaders(contentReq.Header)
+			if err := applyGrokInteractiveUpstreamHeadersFromAccount(upstreamCtx, contentReq, account); err != nil {
+				return nil, err
+			}
 		}
 		account.ApplyHeaderOverrides(contentReq.Header)
 	}

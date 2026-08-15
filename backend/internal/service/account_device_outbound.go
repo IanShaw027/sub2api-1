@@ -39,5 +39,29 @@ func LoadOutboundDeviceProfile(ctx context.Context, account *Account) (*AccountD
 	if err := ValidateOutboundBundle(p); err != nil {
 		return nil, err
 	}
+	if deviceProfilePlatformMismatch(p, account) {
+		return nil, deviceProfilePlatformMismatchError(p, account)
+	}
 	return p, nil
+}
+
+func deviceProfilePlatformMismatch(p *AccountDeviceProfile, account *Account) bool {
+	if p == nil || account == nil || account.Platform == "" {
+		return false
+	}
+	return p.Platform != account.Platform
+}
+
+func deviceProfilePlatformMismatchError(p *AccountDeviceProfile, account *Account) error {
+	platform := ""
+	accountPlatform := ""
+	var accountID int64
+	if p != nil {
+		platform = p.Platform
+	}
+	if account != nil {
+		accountPlatform = account.Platform
+		accountID = account.ID
+	}
+	return fmt.Errorf("identity_reject: device profile platform %s does not match account %s (account_id=%d)", platform, accountPlatform, accountID)
 }

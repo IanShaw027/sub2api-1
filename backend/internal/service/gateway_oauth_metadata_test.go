@@ -50,8 +50,9 @@ func TestBuildOAuthMetadataUserID_UsesAccountUUIDWhenPresent(t *testing.T) {
 	}
 
 	account := &Account{
-		ID:   123,
-		Type: AccountTypeOAuth,
+		ID:       123,
+		Type:     AccountTypeOAuth,
+		Platform: PlatformAnthropic,
 		Extra: map[string]any{
 			"account_uuid":      "acc-uuid",
 			"claude_user_id":    "clientid123",
@@ -79,7 +80,7 @@ func TestBuildOAuthMetadataUserID_SessionIDStableAcrossTurns(t *testing.T) {
 	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
 
 	svc := &GatewayService{}
-	account := &Account{ID: 777, Type: AccountTypeOAuth, Extra: map[string]any{"account_uuid": "acc-uuid"}}
+	account := &Account{ID: 777, Type: AccountTypeOAuth, Platform: PlatformAnthropic, Extra: map[string]any{"account_uuid": "acc-uuid"}}
 	fp := &Fingerprint{ClientID: "clientid777", UserAgent: "claude-cli/2.1.161 (external, cli)"}
 
 	mustParse := func(body string) *ParsedRequest {

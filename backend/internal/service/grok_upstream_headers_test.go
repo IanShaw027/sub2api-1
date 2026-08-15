@@ -5,7 +5,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -102,11 +104,13 @@ func TestApplyGrokUpstreamHeadersFromAccountUsesProfileIdentity(t *testing.T) {
 	req.Header.Set("x-grok-client-version", "inbound-claude")
 	req.Header.Set("x-grok-client-identifier", "inbound-codex")
 
-	err = applyGrokUpstreamHeadersFromAccount(context.Background(), req, &Account{ID: 7, Platform: PlatformGrok})
+	err = applyGrokInteractiveUpstreamHeadersFromAccount(context.Background(), req, &Account{ID: 7, Platform: PlatformGrok})
 	require.NoError(t, err)
 	require.Equal(t, "xai-grok-workspace/0.2.200", req.Header.Get("User-Agent"))
 	require.Equal(t, "0.2.200", req.Header.Get("x-grok-client-version"))
 	require.Equal(t, "grok-shell-learned", req.Header.Get("x-grok-client-identifier"))
+	require.Equal(t, grokClientModeInteractive, req.Header.Get("x-grok-client-mode"))
+	require.Equal(t, grokClientModeInteractive, req.Header.Get("X-Grok-Client-Mode"))
 	require.NotEqual(t, "claude-cli/2.0.0 (Mac OS; arm64)", req.Header.Get("User-Agent"))
 	require.NotEqual(t, xai.CLIUserAgent(xai.CLIClientVersion), req.Header.Get("User-Agent"))
 }
@@ -212,7 +216,110 @@ func TestApplyGrokUpstreamHeadersFromAccountNilAccountStampsPinnedCLIUA(t *testi
 	require.Equal(t, xai.CLIUserAgent(xai.CLIClientVersion), req.Header.Get("User-Agent"))
 	require.Equal(t, xai.CLIClientVersion, req.Header.Get("x-grok-client-version"))
 	require.Equal(t, xai.CLIClientIdentifier, req.Header.Get("x-grok-client-identifier"))
+	require.Equal(t, xai.CLIClientMode, req.Header.Get("x-grok-client-mode"))
 	require.Empty(t, req.Header.Get("x-grok-foo"))
+}
+
+func TestApplyGrokInteractiveUpstreamHeadersFromAccountFailsClosedOnProfileLoadError(t *testing.T) {
+	t.Setenv(xai.CLIVersionEnv, "")
+	injectOutboundGrokProfileError(t, errors.New("identity_reject: profile load failed"))
+
+	req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+	require.NoError(t, err)
+	req.Header.Set("User-Agent", "claude-cli/2.0.0 (Mac OS; arm64)")
+	req.Header.Set("x-grok-client-version", "inbound-mixed")
+	req.Header.Set("x-grok-client-mode", "inbound-invented")
+
+	err = applyGrokInteractiveUpstreamHeadersFromAccount(context.Background(), req, &Account{ID: 7, Platform: PlatformGrok})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "identity_reject")
+	require.Equal(t, "claude-cli/2.0.0 (Mac OS; arm64)", req.Header.Get("User-Agent"))
+	require.Equal(t, "inbound-mixed", req.Header.Get("x-grok-client-version"))
+	require.Equal(t, "inbound-invented", req.Header.Get("x-grok-client-mode"))
+	require.NotEqual(t, xai.CLIUserAgent(xai.CLIClientVersion), req.Header.Get("User-Agent"))
+}
+
+func TestStampGrokCLIIdentityModeSplit(t *testing.T) {
+	t.Setenv(xai.CLIVersionEnv, "")
+
+	cliReq, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+	require.NoError(t, err)
+	stampGrokCLIIdentity(cliReq, nil, xai.CLIClientMode)
+	require.Equal(t, xai.CLIClientMode, cliReq.Header.Get("x-grok-client-mode"))
+
+	interactiveReq, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+	require.NoError(t, err)
+	stampGrokCLIIdentity(interactiveReq, nil, grokClientModeInteractive)
+	require.Equal(t, grokClientModeInteractive, interactiveReq.Header.Get("x-grok-client-mode"))
+	require.Equal(t, grokClientModeInteractive, interactiveReq.Header.Get("X-Grok-Client-Mode"))
+}
+
+func TestApplyGrokUpstreamHeadersFromAccountRejectsNonGrokProfile(t *testing.T) {
+	t.Setenv(xai.CLIVersionEnv, "")
+
+	foreign := leftoverValidProfile(7, PlatformKiro, ClientFamilyKiroIDE, "KiroIDE/0.10.0", "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee")
+	foreign.ClientVersion = "0.10.0"
+	injectOutboundGrokRepo(t, &conflictGrokDeviceProfileRepo{profile: foreign})
+
+	req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+	require.NoError(t, err)
+	req.Header.Set("User-Agent", "claude-cli/2.0.0 (Mac OS; arm64)")
+	req.Header.Set("x-grok-client-version", "inbound-mixed")
+
+	err = applyGrokInteractiveUpstreamHeadersFromAccount(context.Background(), req, &Account{ID: 7, Platform: PlatformGrok})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "identity_reject")
+	require.Contains(t, err.Error(), PlatformKiro)
+	require.Contains(t, err.Error(), "account_id=7")
+	require.Equal(t, "claude-cli/2.0.0 (Mac OS; arm64)", req.Header.Get("User-Agent"))
+	require.Equal(t, "inbound-mixed", req.Header.Get("x-grok-client-version"))
+	require.NotEqual(t, "0.10.0", req.Header.Get("x-grok-client-version"))
+	require.NotEqual(t, "KiroIDE/0.10.0", req.Header.Get("User-Agent"))
+}
+
+func TestApplyGrokUpstreamHeadersFromAccountRemintsLeftoverForeignProfile(t *testing.T) {
+	t.Setenv(xai.CLIVersionEnv, "")
+
+	foreign := leftoverValidProfile(900007, PlatformKiro, ClientFamilyKiroIDE, "KiroIDE/0.10.0", "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee")
+	foreign.ClientVersion = "0.10.0"
+	installLeftoverOutboundProfile(t, foreign)
+
+	req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+	require.NoError(t, err)
+	req.Header.Set("User-Agent", "claude-cli/2.0.0 (Mac OS; arm64)")
+	req.Header.Set("x-grok-client-version", "inbound-mixed")
+
+	err = applyGrokInteractiveUpstreamHeadersFromAccount(context.Background(), req, &Account{ID: 900007, Platform: PlatformGrok})
+	require.NoError(t, err)
+	require.NotEqual(t, "KiroIDE/0.10.0", req.Header.Get("User-Agent"))
+	require.NotEqual(t, "0.10.0", req.Header.Get("x-grok-client-version"))
+	require.Equal(t, grokClientModeInteractive, req.Header.Get("x-grok-client-mode"))
+	require.True(t, strings.HasPrefix(req.Header.Get("User-Agent"), "xai-grok-workspace/"))
+}
+
+func TestApplyGrokUpstreamHeadersFromAccountTimesOutProfileLoad(t *testing.T) {
+	t.Setenv(xai.CLIVersionEnv, "")
+	injectOutboundGrokRepo(t, &hangingGrokDeviceProfileRepo{})
+
+	req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+	require.NoError(t, err)
+	req.Header.Set("User-Agent", "claude-cli/2.0.0 (Mac OS; arm64)")
+	req.Header.Set("x-grok-client-version", "inbound-mixed")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- applyGrokInteractiveUpstreamHeadersFromAccount(context.Background(), req, &Account{ID: 7, Platform: PlatformGrok})
+	}()
+
+	select {
+	case err := <-done:
+		require.Error(t, err)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		require.Equal(t, "claude-cli/2.0.0 (Mac OS; arm64)", req.Header.Get("User-Agent"))
+		require.Equal(t, "inbound-mixed", req.Header.Get("x-grok-client-version"))
+	case <-time.After(outboundDeviceProfileLoadTimeout + time.Second):
+		t.Fatal("profile load did not bound to outboundDeviceProfileLoadTimeout")
+	}
 }
 
 func validGrokOutboundProfile() *AccountDeviceProfile {
@@ -280,4 +387,35 @@ func (r *fixedGrokDeviceProfileRepo) InsertBaseline(_ context.Context, p *Accoun
 
 func (r *fixedGrokDeviceProfileRepo) UpdateCAS(_ context.Context, _, _ int64, _ *AccountDeviceProfile) (bool, error) {
 	return false, r.err
+}
+
+type hangingGrokDeviceProfileRepo struct{}
+
+func (r *hangingGrokDeviceProfileRepo) GetByAccountID(ctx context.Context, _ int64) (*AccountDeviceProfile, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (r *hangingGrokDeviceProfileRepo) InsertBaseline(context.Context, *AccountDeviceProfile) (*AccountDeviceProfile, error) {
+	return nil, errors.New("insert unused")
+}
+
+func (r *hangingGrokDeviceProfileRepo) UpdateCAS(context.Context, int64, int64, *AccountDeviceProfile) (bool, error) {
+	return false, nil
+}
+
+type conflictGrokDeviceProfileRepo struct {
+	profile *AccountDeviceProfile
+}
+
+func (r *conflictGrokDeviceProfileRepo) GetByAccountID(context.Context, int64) (*AccountDeviceProfile, error) {
+	return r.profile, nil
+}
+
+func (r *conflictGrokDeviceProfileRepo) InsertBaseline(context.Context, *AccountDeviceProfile) (*AccountDeviceProfile, error) {
+	return nil, errors.New("duplicate account device profile")
+}
+
+func (r *conflictGrokDeviceProfileRepo) UpdateCAS(context.Context, int64, int64, *AccountDeviceProfile) (bool, error) {
+	return false, nil
 }
