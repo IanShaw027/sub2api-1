@@ -965,7 +965,7 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] User has tier (%s) but no cloudaicompanionProject, trying Cloud Resource Manager...", registeredTierID)
 
 			// Try to get project from Cloud Resource Manager
-			fallback, fbErr := fetchProjectIDFromResourceManager(ctx, accessToken, proxyURL)
+			fallback, fbErr := fetchProjectIDFromResourceManager(ctx, accessToken, proxyURL, userAgent)
 			if fbErr == nil && strings.TrimSpace(fallback) != "" {
 				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Found project from Cloud Resource Manager: %s", fallback)
 				return strings.TrimSpace(fallback), tierID, nil
@@ -994,7 +994,7 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 		resp, err := s.codeAssist.OnboardUser(ctx, accessToken, proxyURL, userAgent, req)
 		if err != nil {
 			// If Code Assist onboarding fails (e.g. INVALID_ARGUMENT), fallback to Cloud Resource Manager projects.
-			fallback, fbErr := fetchProjectIDFromResourceManager(ctx, accessToken, proxyURL)
+			fallback, fbErr := fetchProjectIDFromResourceManager(ctx, accessToken, proxyURL, userAgent)
 			if fbErr == nil && strings.TrimSpace(fallback) != "" {
 				return strings.TrimSpace(fallback), tierID, nil
 			}
@@ -1012,7 +1012,7 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 				}
 			}
 
-			fallback, fbErr := fetchProjectIDFromResourceManager(ctx, accessToken, proxyURL)
+			fallback, fbErr := fetchProjectIDFromResourceManager(ctx, accessToken, proxyURL, userAgent)
 			if fbErr == nil && strings.TrimSpace(fallback) != "" {
 				return strings.TrimSpace(fallback), tierID, nil
 			}
@@ -1021,7 +1021,7 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 		time.Sleep(2 * time.Second)
 	}
 
-	fallback, fbErr := fetchProjectIDFromResourceManager(ctx, accessToken, proxyURL)
+	fallback, fbErr := fetchProjectIDFromResourceManager(ctx, accessToken, proxyURL, userAgent)
 	if fbErr == nil && strings.TrimSpace(fallback) != "" {
 		return strings.TrimSpace(fallback), tierID, nil
 	}
@@ -1041,25 +1041,37 @@ type googleCloudProjectsResponse struct {
 	Projects []googleCloudProject `json:"projects"`
 }
 
-func fetchProjectIDFromResourceManager(ctx context.Context, accessToken, proxyURL string) (string, error) {
+// leftoverGeminiResourceManagerRoundTrip, when set, intercepts the Cloud Resource
+// Manager GET so tests can assert the outbound User-Agent without a network call.
+var leftoverGeminiResourceManagerRoundTrip func(*http.Request) (*http.Response, error)
+
+func fetchProjectIDFromResourceManager(ctx context.Context, accessToken, proxyURL, userAgent string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://cloudresourcemanager.googleapis.com/v1/projects", nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create resource manager request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("User-Agent", geminicli.GeminiCLIUserAgent)
-
-	client, err := httpclient.GetClient(httpclient.Options{
-		ProxyURL:           strings.TrimSpace(proxyURL),
-		Timeout:            30 * time.Second,
-		ValidateResolvedIP: true,
-	})
-	if err != nil {
-		return "", fmt.Errorf("create http client failed: %w", err)
+	if strings.TrimSpace(userAgent) == "" {
+		userAgent = geminicli.GeminiCLIUserAgent
 	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("User-Agent", userAgent)
 
-	resp, err := client.Do(req)
+	var resp *http.Response
+	if leftoverGeminiResourceManagerRoundTrip != nil {
+		resp, err = leftoverGeminiResourceManagerRoundTrip(req)
+	} else {
+		var client *http.Client
+		client, err = httpclient.GetClient(httpclient.Options{
+			ProxyURL:           strings.TrimSpace(proxyURL),
+			Timeout:            30 * time.Second,
+			ValidateResolvedIP: true,
+		})
+		if err != nil {
+			return "", fmt.Errorf("create http client failed: %w", err)
+		}
+		resp, err = client.Do(req)
+	}
 	if err != nil {
 		return "", fmt.Errorf("resource manager request failed: %w", err)
 	}
