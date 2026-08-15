@@ -506,6 +506,67 @@ func TestFetchProjectIDWithoutAccountUsesDefaultUserAgent(t *testing.T) {
 	require.Equal(t, geminicli.GeminiCLIUserAgent, gotUA)
 }
 
+func TestFetchProjectIDResourceManagerFallbackUsesAccountProfileUserAgent(t *testing.T) {
+	const profileUA = "GeminiCLI/9.1.1 (crm-fallback; leftover)"
+	account := leftoverGeminiOAuthAccount(1571)
+	geminiOutboundInstallProfile(t, account, profileUA)
+
+	var gotUA string
+	leftoverGeminiResourceManagerRoundTrip = func(req *http.Request) (*http.Response, error) {
+		gotUA = req.Header.Get("User-Agent")
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"projects":[{"projectId":"crm-project-1","name":"default","lifecycleState":"ACTIVE"}]}`)),
+		}, nil
+	}
+	t.Cleanup(func() { leftoverGeminiResourceManagerRoundTrip = nil })
+
+	codeAssist := &mockGeminiCodeAssistClient{
+		loadCodeAssistFunc: func(_ context.Context, _, _, _ string, _ *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+			return &geminicli.LoadCodeAssistResponse{
+				CurrentTier: &geminicli.TierInfo{ID: "STANDARD"},
+			}, nil
+		},
+	}
+	svc := NewGeminiOAuthService(nil, nil, codeAssist, nil, &config.Config{})
+	t.Cleanup(svc.Stop)
+
+	project, _, err := svc.fetchProjectID(context.Background(), "ya29.test", "", account)
+	require.NoError(t, err)
+	require.Equal(t, "crm-project-1", project)
+	require.Equal(t, profileUA, gotUA)
+	require.NotEqual(t, geminicli.GeminiCLIUserAgent, gotUA)
+}
+
+func TestFetchProjectIDResourceManagerFallbackWithoutAccountUsesDefaultUserAgent(t *testing.T) {
+	var gotUA string
+	leftoverGeminiResourceManagerRoundTrip = func(req *http.Request) (*http.Response, error) {
+		gotUA = req.Header.Get("User-Agent")
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"projects":[{"projectId":"crm-project-1","name":"default","lifecycleState":"ACTIVE"}]}`)),
+		}, nil
+	}
+	t.Cleanup(func() { leftoverGeminiResourceManagerRoundTrip = nil })
+
+	codeAssist := &mockGeminiCodeAssistClient{
+		loadCodeAssistFunc: func(_ context.Context, _, _, _ string, _ *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+			return &geminicli.LoadCodeAssistResponse{
+				CurrentTier: &geminicli.TierInfo{ID: "STANDARD"},
+			}, nil
+		},
+	}
+	svc := NewGeminiOAuthService(nil, nil, codeAssist, nil, &config.Config{})
+	t.Cleanup(svc.Stop)
+
+	project, _, err := svc.fetchProjectID(context.Background(), "ya29.test", "", nil)
+	require.NoError(t, err)
+	require.Equal(t, "crm-project-1", project)
+	require.Equal(t, geminicli.GeminiCLIUserAgent, gotUA)
+}
+
 func TestFetchProjectIDAbortsWhenAccountProfileLoadFails(t *testing.T) {
 	account := leftoverGeminiOAuthAccount(1562)
 	installLeftoverOutboundProfileError(t, account.ID, errors.New("identity_reject: profile store down"))
