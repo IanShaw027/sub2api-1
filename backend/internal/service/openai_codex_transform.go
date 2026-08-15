@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -1273,55 +1272,6 @@ func ensureCodexReasoningInclude(reqBody map[string]any) bool {
 		return true
 	default:
 		// include 为非预期类型时保持原样，避免破坏调用方意图。
-		return false
-	}
-}
-
-// applyCodexClientMetadata 在请求体补齐 client_metadata["x-codex-installation-id"]，
-// 取值为已加载设备档案的 InstallationID。加载失败或服务未配置时跳过，
-// 绝不回退 extra.openai_device_id / GetOpenAIDeviceID()。
-//
-// 加法式、幂等：仅在档案存在 installation id 且该键缺失时注入，绝不覆盖既有
-// client_metadata（如 turn metadata），也不伪造。
-func applyCodexClientMetadata(ctx context.Context, reqBody map[string]any, account *Account) bool {
-	if account == nil {
-		return false
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	profile, err := LoadOutboundDeviceProfile(ctx, account)
-	if err != nil || profile == nil {
-		return false
-	}
-	deviceID := strings.TrimSpace(profile.InstallationID)
-	if deviceID == "" {
-		return false
-	}
-	const key = "x-codex-installation-id"
-	switch existing := reqBody["client_metadata"].(type) {
-	case map[string]any:
-		if v, ok := existing[key].(string); ok && strings.TrimSpace(v) != "" {
-			return false
-		}
-		existing[key] = deviceID
-		reqBody["client_metadata"] = existing
-		return true
-	case map[string]string:
-		if strings.TrimSpace(existing[key]) != "" {
-			return false
-		}
-		next := make(map[string]any, len(existing)+1)
-		for k, v := range existing {
-			next[k] = v
-		}
-		next[key] = deviceID
-		reqBody["client_metadata"] = next
-		return true
-	case nil:
-		reqBody["client_metadata"] = map[string]any{key: deviceID}
-		return true
-	default:
 		return false
 	}
 }

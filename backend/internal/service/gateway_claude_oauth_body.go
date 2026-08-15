@@ -434,11 +434,6 @@ func (s *GatewayService) applyAnthropicUserIDFromProfile(ctx context.Context, bo
 	return newBody
 }
 
-func (s *GatewayService) rewriteAnthropicUserIDFromProfile(ctx context.Context, body []byte, account *Account) []byte {
-	body, _ = s.applyAnthropicOutboundIdentity(ctx, body, account, true)
-	return body
-}
-
 func (s *GatewayService) buildAnthropicMetadataUserIDFromProfile(ctx context.Context, account *Account, sessionSeed string) string {
 	if account == nil {
 		return ""
