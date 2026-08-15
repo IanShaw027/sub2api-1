@@ -168,12 +168,14 @@ func TestLiveForwardsCallMaybeLearnOfficialDeviceProfile(t *testing.T) {
 		"antigravity_gateway_claude.go",
 		"antigravity_gateway_gemini.go",
 		"gateway_count_tokens.go",
-		"openai_ws_forwarder_v2.go",
 	} {
 		src, err := os.ReadFile(name)
 		require.NoError(t, err)
 		require.Contains(t, string(src), "maybeLearnOfficialDeviceProfile(", name+" must observe official inbound")
 	}
+	wsSrc, err := os.ReadFile("openai_ws_forwarder_v2.go")
+	require.NoError(t, err)
+	require.NotContains(t, string(wsSrc), "maybeLearnOfficialDeviceProfile(", "WS reconnect path must not re-learn; OpenAI Forward already observed inbound")
 }
 
 func leftoverClaudeLearnAccount(id int64) *Account {
