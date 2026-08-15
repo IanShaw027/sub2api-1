@@ -986,6 +986,9 @@ func applyKiroProfileRuntimeOverrides(settings *KiroRuntimeSettings, profile *Ac
 		return settings
 	}
 	cloned := *settings
+	if v := strings.TrimSpace(profile.ClientVersion); v != "" {
+		cloned.KiroVersion = profile.ClientVersion
+	}
 	if v := kiroProfilePayloadString(profile, "kiro_system_version"); v != "" {
 		cloned.SystemVersion = v
 	}
