@@ -751,7 +751,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStoreFalseByDefault(t *testing.T
 	require.Equal(t, "native-wsv2", gjson.Get(requestJSON, "input.0.namespace").String(), "OAuth WSv2 应保留原生 namespace")
 	require.Equal(t, openAIWSBetaV2Value, captureDialer.lastHeaders.Get("OpenAI-Beta"))
 	require.Equal(t, "remote_compaction_v2", captureDialer.lastHeaders.Get("x-codex-beta-features"))
-	// OAuth 账号的 session_id/conversation_id 应被 isolateOpenAISessionID 隔离，
+	// OAuth 账号的 session_id/conversation_id 应被 namespace+apiKey 隔离，
 	// 测试中未设置 api_key 到 context，apiKeyID=0。
 	require.Equal(t, openaiOutboundSessionID(context.Background(), account, 0, "sess-oauth-1"), captureDialer.lastHeaders.Get("session_id"))
 	require.Equal(t, openaiOutboundSessionID(context.Background(), account, 0, "conv-oauth-1"), captureDialer.lastHeaders.Get("conversation_id"))
@@ -976,7 +976,7 @@ func TestOpenAIGatewayService_Forward_WSv2_HeaderSessionFallbackFromPromptCacheK
 	require.NotNil(t, result)
 	require.Equal(t, "resp_prompt_cache_key", result.RequestID)
 
-	// OAuth 账号的 session_id 应被 isolateOpenAISessionID 隔离（apiKeyID=0，未在 context 设置）。
+	// OAuth 账号的 session_id 应被 namespace+apiKey 隔离（apiKeyID=0，未在 context 设置）。
 	require.Equal(t, openaiOutboundSessionID(context.Background(), account, 0, "pcache_123"), captureDialer.lastHeaders.Get("session_id"))
 	require.Empty(t, captureDialer.lastHeaders.Get("conversation_id"))
 	require.NotNil(t, captureConn.lastWrite)

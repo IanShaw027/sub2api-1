@@ -1074,16 +1074,15 @@ func isolateOpenAISessionID(apiKeyID int64, raw string) string {
 	return fmt.Sprintf("%016x", h.Sum64())
 }
 
-func deriveOpenAIOutboundSessionID(ctx context.Context, account *Account, apiKeyID int64, raw string) string {
-	isolated := isolateOpenAISessionID(apiKeyID, raw)
-	if isolated == "" || account == nil {
-		return ""
+func loadOpenAIOutboundSessionProfile(ctx context.Context, account *Account) *AccountDeviceProfile {
+	if account == nil || !account.IsOpenAIOAuth() {
+		return nil
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	profile, err := LoadOutboundDeviceProfile(ctx, account)
-	if err != nil || profile == nil {
+	return loadOutboundCodexProfile(ctx, account)
+}
+
+func deriveOpenAIOutboundSessionIDFromProfile(profile *AccountDeviceProfile, isolated string) string {
+	if profile == nil || isolated == "" {
 		return ""
 	}
 	sessionID, _, _, err := DeriveSessionIDs(profile.SessionNamespace, isolated)
@@ -1091,6 +1090,22 @@ func deriveOpenAIOutboundSessionID(ctx context.Context, account *Account, apiKey
 		return ""
 	}
 	return sessionID
+}
+
+func deriveOpenAIOutboundSessionID(ctx context.Context, account *Account, apiKeyID int64, raw string) string {
+	isolated := isolateOpenAISessionID(apiKeyID, raw)
+	if isolated == "" {
+		return ""
+	}
+	return deriveOpenAIOutboundSessionIDFromProfile(loadOpenAIOutboundSessionProfile(ctx, account), isolated)
+}
+
+func openaiOutboundSessionIDFromProfile(profile *AccountDeviceProfile, apiKeyID int64, raw string) string {
+	isolated := isolateOpenAISessionID(apiKeyID, raw)
+	if derived := deriveOpenAIOutboundSessionIDFromProfile(profile, isolated); derived != "" {
+		return derived
+	}
+	return isolated
 }
 
 func openaiOutboundSessionID(ctx context.Context, account *Account, apiKeyID int64, raw string) string {
@@ -1105,6 +1120,12 @@ func openaiOutboundSessionUUID(ctx context.Context, account *Account, apiKeyID i
 		return derived
 	}
 	return generateSessionUUID(isolateOpenAISessionID(apiKeyID, raw))
+}
+
+func openaiOutboundSessionPair(ctx context.Context, account *Account, apiKeyID int64, sessionRaw, conversationRaw string) (sessionID, conversationID string) {
+	profile := loadOpenAIOutboundSessionProfile(ctx, account)
+	return openaiOutboundSessionIDFromProfile(profile, apiKeyID, sessionRaw),
+		openaiOutboundSessionIDFromProfile(profile, apiKeyID, conversationRaw)
 }
 
 func logCodexCLIOnlyDetection(ctx context.Context, c *gin.Context, account *Account, apiKeyID int64, result CodexClientRestrictionDetectionResult, body []byte) {

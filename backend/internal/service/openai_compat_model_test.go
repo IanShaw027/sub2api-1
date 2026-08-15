@@ -491,7 +491,7 @@ func TestForwardAsAnthropic_AutoDerivesPromptCacheKeyWhenMessagesDispatchHasNoSe
 	cacheKey := gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String()
 	require.NotEmpty(t, cacheKey)
 	require.True(t, strings.HasPrefix(cacheKey, "anthropic-digest-"))
-	require.Equal(t, openaiOutboundSessionUUID(context.Background(), account, 0, cacheKey), upstream.lastReq.Header.Get("session_id"))
+	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(0, cacheKey)), upstream.lastReq.Header.Get("session_id"))
 }
 
 func TestForwardAsAnthropic_DoesNotAutoDerivePromptCacheKeyForNonCodexModel(t *testing.T) {

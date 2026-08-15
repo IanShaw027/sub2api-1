@@ -64,4 +64,52 @@ func TestDeriveOpenAIOutboundSessionIDFallsBackWhenProfileLoadFails(t *testing.T
 	installLeftoverOutboundProfileError(t, account.ID, errors.New("identity_reject: profile store down"))
 	require.Empty(t, deriveOpenAIOutboundSessionID(context.Background(), account, 3, "sess"))
 	require.Equal(t, isolateOpenAISessionID(3, "sess"), openaiOutboundSessionID(context.Background(), account, 3, "sess"))
+	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(3, "sess")), openaiOutboundSessionUUID(context.Background(), account, 3, "sess"))
+}
+
+func TestDeriveOpenAIOutboundSessionIDDifferentAPIKeysStillDiffer(t *testing.T) {
+	account := &Account{ID: 1816, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	installLeftoverOutboundProfile(t, leftoverValidProfile(account.ID, PlatformOpenAI, ClientFamilyCodexCLI, "codex-cli/1.2.3", "mid-oa-keys"))
+
+	gotA := deriveOpenAIOutboundSessionID(context.Background(), account, 1, "same-anchor")
+	gotB := deriveOpenAIOutboundSessionID(context.Background(), account, 2, "same-anchor")
+	require.NotEmpty(t, gotA)
+	require.NotEmpty(t, gotB)
+	require.NotEqual(t, gotA, gotB)
+}
+
+func TestDeriveOpenAIOutboundSessionIDSkipsNonOpenAIOAuthAccounts(t *testing.T) {
+	account := &Account{ID: 1817, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	t.Cleanup(func() { leftoverSharedRepo.clear(account.ID) })
+
+	require.Empty(t, deriveOpenAIOutboundSessionID(context.Background(), account, 3, "sess"))
+	require.Equal(t, isolateOpenAISessionID(3, "sess"), openaiOutboundSessionID(context.Background(), account, 3, "sess"))
+	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(3, "sess")), openaiOutboundSessionUUID(context.Background(), account, 3, "sess"))
+	require.Equal(t, 0, leftoverSharedRepo.getCount(account.ID))
+}
+
+func TestOpenAIOutboundSessionUUIDUsesSessionNamespace(t *testing.T) {
+	account := &Account{ID: 1818, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	installLeftoverOutboundProfile(t, leftoverValidProfile(account.ID, PlatformOpenAI, ClientFamilyCodexCLI, "codex-cli/1.2.3", "mid-oa-uuid"))
+
+	got := openaiOutboundSessionUUID(context.Background(), account, 99, "cache-key-123")
+	want := deriveOpenAIOutboundSessionID(context.Background(), account, 99, "cache-key-123")
+	require.Equal(t, want, got)
+	require.NotEqual(t, generateSessionUUID(isolateOpenAISessionID(99, "cache-key-123")), got)
+}
+
+func TestOpenAIOutboundSessionPairLoadsProfileOnce(t *testing.T) {
+	account := &Account{ID: 1819, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	profile := leftoverValidProfile(account.ID, PlatformOpenAI, ClientFamilyCodexCLI, "codex-cli/1.2.3", "mid-oa-pair")
+	installLeftoverOutboundProfile(t, profile)
+
+	sessionID, conversationID := openaiOutboundSessionPair(context.Background(), account, 9, "sess-a", "conv-b")
+	require.Equal(t, 1, leftoverSharedRepo.getCount(account.ID))
+
+	wantSession, _, _, err := DeriveSessionIDs(profile.SessionNamespace, isolateOpenAISessionID(9, "sess-a"))
+	require.NoError(t, err)
+	wantConversation, _, _, err := DeriveSessionIDs(profile.SessionNamespace, isolateOpenAISessionID(9, "conv-b"))
+	require.NoError(t, err)
+	require.Equal(t, wantSession, sessionID)
+	require.Equal(t, wantConversation, conversationID)
 }
