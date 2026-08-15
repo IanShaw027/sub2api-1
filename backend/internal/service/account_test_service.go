@@ -2348,6 +2348,9 @@ func (s *AccountTestService) buildGeminiAPIKeyRequest(ctx context.Context, accou
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-goog-api-key", apiKey)
+	if err := applyOutboundProfileUserAgent(ctx, account, req); err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -2386,11 +2389,14 @@ func (s *AccountTestService) buildGeminiOAuthRequest(ctx context.Context, accoun
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+accessToken)
+		if err := applyOutboundProfileUserAgent(ctx, account, req); err != nil {
+			return nil, err
+		}
 		return req, nil
 	}
 
 	// Code Assist mode (with project_id)
-	return s.buildCodeAssistRequest(ctx, accessToken, projectID, modelID, payload)
+	return s.buildCodeAssistRequest(ctx, account, accessToken, projectID, modelID, payload)
 }
 
 func (s *AccountTestService) buildGeminiServiceAccountRequest(ctx context.Context, account *Account, modelID string, payload []byte) (*http.Request, error) {
@@ -2411,11 +2417,14 @@ func (s *AccountTestService) buildGeminiServiceAccountRequest(ctx context.Contex
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+accessToken)
+	if err := applyOutboundProfileUserAgent(ctx, account, req); err != nil {
+		return nil, err
+	}
 	return req, nil
 }
 
 // buildCodeAssistRequest builds request for Google Code Assist API (used by Gemini CLI and Antigravity)
-func (s *AccountTestService) buildCodeAssistRequest(ctx context.Context, accessToken, projectID, modelID string, payload []byte) (*http.Request, error) {
+func (s *AccountTestService) buildCodeAssistRequest(ctx context.Context, account *Account, accessToken, projectID, modelID string, payload []byte) (*http.Request, error) {
 	var inner map[string]any
 	if err := json.Unmarshal(payload, &inner); err != nil {
 		return nil, err
@@ -2441,7 +2450,9 @@ func (s *AccountTestService) buildCodeAssistRequest(ctx context.Context, accessT
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("User-Agent", geminicli.GeminiCLIUserAgent)
+	if err := applyOutboundProfileUserAgent(ctx, account, req); err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }

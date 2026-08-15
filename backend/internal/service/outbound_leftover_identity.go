@@ -58,6 +58,35 @@ func leftoverOutboundMachineID(ctx context.Context, account *Account) (string, e
 	return p.MachineID, nil
 }
 
+type leftoverGeminiOutboundUAKey struct{}
+
+func withLeftoverGeminiOutboundUserAgent(ctx context.Context, ua string) context.Context {
+	if strings.TrimSpace(ua) == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, leftoverGeminiOutboundUAKey{}, ua)
+}
+
+func leftoverGeminiOutboundUserAgent(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	ua, _ := ctx.Value(leftoverGeminiOutboundUAKey{}).(string)
+	return strings.TrimSpace(ua)
+}
+
+func leftoverGeminiAccountUserAgent(ctx context.Context, account *Account) (context.Context, error) {
+	p, err := LoadOutboundDeviceProfile(ctx, account)
+	if err != nil {
+		return ctx, err
+	}
+	ua := outboundProfileUserAgent(p)
+	if ua == "" {
+		return ctx, fmt.Errorf("identity_reject: gemini outbound user-agent is empty")
+	}
+	return withLeftoverGeminiOutboundUserAgent(ctx, ua), nil
+}
+
 func leftoverOutboundTLSRoutingUA(req *http.Request) string {
 	if req == nil {
 		return ""
