@@ -305,12 +305,15 @@ func (s *IdentityService) ApplyFingerprint(req *http.Request, fp *Fingerprint) {
 // accountUUID is the gateway-generated UUID the caller already resolved
 // (profile.GatewayAccountUUID). Do not pass extra.account_uuid.
 // cachedClientID is the profile device_id (user segment).
+// sessionNamespace is profile.SessionNamespace; the session segment is
+// DeriveSessionIDs(sessionNamespace, originalSessionTail).sessionID.
+// Empty or invalid namespace skips the rewrite (nothing is invented).
 // Result shape is FormatMetadataUserID:
 // user_{device_id}_account_{gateway_account_uuid}_session_{derived}.
 //
 // 重要：此函数使用 json.RawMessage 保留其他字段的原始字节，
 // 避免重新序列化导致 thinking 块等内容被修改。
-func (s *IdentityService) RewriteUserID(body []byte, accountID int64, accountUUID, cachedClientID, fingerprintUA string) ([]byte, error) {
+func (s *IdentityService) RewriteUserID(body []byte, sessionNamespace, accountUUID, cachedClientID, fingerprintUA string) ([]byte, error) {
 	if len(body) == 0 || accountUUID == "" || cachedClientID == "" {
 		return body, nil
 	}
@@ -340,9 +343,10 @@ func (s *IdentityService) RewriteUserID(body []byte, accountID int64, accountUUI
 
 	sessionTail := parsed.SessionID // 原始session UUID
 
-	// 生成新的session hash: SHA256(accountID::sessionTail) -> UUID格式
-	seed := fmt.Sprintf("%d::%s", accountID, sessionTail)
-	newSessionHash := generateUUIDFromSeed(seed)
+	newSessionHash, _, _, err := DeriveSessionIDs(sessionNamespace, sessionTail)
+	if err != nil || newSessionHash == "" {
+		return body, nil
+	}
 
 	// 根据客户端版本选择输出格式
 	version := ExtractCLIVersion(fingerprintUA)
@@ -363,13 +367,14 @@ func (s *IdentityService) RewriteUserID(body []byte, accountID int64, accountUUI
 // 则在完成常规重写后，将 session 部分替换为固定的伪装ID（15分钟内保持不变）
 //
 // accountUUID is the gateway-generated UUID (profile.GatewayAccountUUID).
+// sessionNamespace is profile.SessionNamespace and is forwarded to RewriteUserID.
 // This function does not read account.Extra["account_uuid"].
 //
 // 重要：此函数使用 json.RawMessage 保留其他字段的原始字节，
 // 避免重新序列化导致 thinking 块等内容被修改。
-func (s *IdentityService) RewriteUserIDWithMasking(ctx context.Context, body []byte, account *Account, accountUUID, cachedClientID, fingerprintUA string) ([]byte, error) {
+func (s *IdentityService) RewriteUserIDWithMasking(ctx context.Context, body []byte, account *Account, accountUUID, cachedClientID, fingerprintUA, sessionNamespace string) ([]byte, error) {
 	// 先执行常规的 RewriteUserID 逻辑
-	newBody, err := s.RewriteUserID(body, account.ID, accountUUID, cachedClientID, fingerprintUA)
+	newBody, err := s.RewriteUserID(body, sessionNamespace, accountUUID, cachedClientID, fingerprintUA)
 	if err != nil {
 		return newBody, err
 	}

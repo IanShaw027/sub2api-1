@@ -423,7 +423,11 @@ func (s *GatewayService) applyAnthropicUserIDFromProfile(ctx context.Context, bo
 	if accountUUID == "" || deviceID == "" {
 		return body
 	}
-	newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, deviceID, outboundProfileUserAgent(profile))
+	sessionNamespace := ""
+	if profile != nil {
+		sessionNamespace = profile.SessionNamespace
+	}
+	newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, deviceID, outboundProfileUserAgent(profile), sessionNamespace)
 	if err != nil || len(newBody) == 0 {
 		return body
 	}
@@ -451,7 +455,11 @@ func (s *GatewayService) buildAnthropicMetadataUserIDFromProfile(ctx context.Con
 	if deviceID == "" || accountUUID == "" {
 		return ""
 	}
-	return FormatMetadataUserID(deviceID, accountUUID, generateSessionUUID(sessionSeed), ExtractCLIVersion(outboundProfileUserAgent(profile)))
+	sessionID, _, _, err := DeriveSessionIDs(profile.SessionNamespace, sessionSeed)
+	if err != nil || sessionID == "" {
+		return ""
+	}
+	return FormatMetadataUserID(deviceID, accountUUID, sessionID, ExtractCLIVersion(outboundProfileUserAgent(profile)))
 }
 
 func (s *GatewayService) buildOAuthMetadataUserID(ctx context.Context, parsed *ParsedRequest, account *Account, fp *Fingerprint) string {
@@ -588,14 +596,18 @@ func (s *GatewayService) buildOAuthMetadataUserIDFromBody(
 	// 与 buildOAuthMetadataUserID 一致：用会话级稳定种子，避免整 body 哈希导致
 	// 每轮（甚至每个 token 变化）都重算出不同的 session_id。
 	seed := buildStableSessionSeed(account.ID, deviceID, extractFirstUserText(body))
-	return FormatMetadataUserID(deviceID, accountUUID, generateSessionUUID(seed), ExtractCLIVersion(outboundProfileUserAgent(profile)))
+	sessionID, _, _, err := DeriveSessionIDs(profile.SessionNamespace, seed)
+	if err != nil || sessionID == "" {
+		return ""
+	}
+	return FormatMetadataUserID(deviceID, accountUUID, sessionID, ExtractCLIVersion(outboundProfileUserAgent(profile)))
 }
 
 // buildStableSessionSeed 为伪装路径合成的 metadata.user_id session_id 生成"会话级稳定"种子。
 //
 // 真实 Claude Code 的 session_id 是进程级随机 UUID，在一段会话内跨请求保持不变。无状态代理
 // 无法恢复该值，这里用"会话内不变的锚点"近似：账号 ID + 客户端区分因子 + 首条 user 消息文本。
-// 对话在尾部追加 messages 时这三者都不变，因此 generateSessionUUID(seed) 跨轮稳定。
+// 对话在尾部追加 messages 时这三者都不变，因此 DeriveSessionIDs(namespace, seed) 跨轮稳定。
 //
 // 注意：粘性路由键 GenerateSessionHash 按设计逐轮变化（见其测试），本函数与之独立、互不影响。
 // accountID 恒存在，故 seed 永不为空 —— 输出始终是确定性 UUID，而非随机值。
