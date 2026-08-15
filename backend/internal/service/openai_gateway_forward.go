@@ -1092,18 +1092,19 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 			req.Header.Set("originator", resolveOpenAIUpstreamOriginator(c, isCodexCLI))
 		}
 		apiKeyID := getAPIKeyIDFromContext(c)
+		profile := resolveOpenAIOutboundDeviceProfile(ctx, c, account)
 		if isOpenAIResponsesCompactPath(c) {
 			req.Header.Set("accept", "application/json")
 			if req.Header.Get("version") == "" {
 				req.Header.Set("version", codexCLIVersion)
 			}
 			compactSession := resolveOpenAICompactSessionID(c)
-			req.Header.Set("session_id", openaiOutboundSessionID(ctx, account, apiKeyID, compactSession))
+			req.Header.Set("session_id", openaiOutboundSessionIDFromProfile(profile, apiKeyID, compactSession))
 		} else {
 			req.Header.Set("accept", "text/event-stream")
 		}
 		if promptCacheKey != "" {
-			isolated := openaiOutboundSessionID(ctx, account, apiKeyID, promptCacheKey)
+			isolated := openaiOutboundSessionIDFromProfile(profile, apiKeyID, promptCacheKey)
 			req.Header.Set("session_id", isolated)
 			if !compatMessagesBridge || clientConversationID != "" {
 				req.Header.Set("conversation_id", isolated)
@@ -1133,7 +1134,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// leftover 11 在 off/device、以及不走指纹的 passthrough/WS/compat 路径生效。
 	if account.Type == AccountTypeOAuth && c != nil {
 		if fpIDs, ok := c.Get("codex_fingerprint_ids"); ok {
-			if ids, ok := fpIDs.(*codexFingerprintIDs); ok {
+			if ids, ok := fpIDs.(*codexFingerprintIDs); ok && fingerprintIDsBelongToAccount(ids, account) {
 				applyCodexFingerprintHeaders(req.Header, ids)
 			}
 		}
@@ -1142,7 +1143,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// 终态收口：强制统一 OAuth 出站身份（User-Agent / originator / version 同源自洽）。
 	// 客户端自报身份不参与构造，浏览器型 UA 也因此不会再到达上游（原浏览器 UA 兜底已被吸收）。
 	if account.Type == AccountTypeOAuth {
-		s.enforceCodexIdentityFromAccount(ctx, req.Header, account)
+		s.enforceCodexIdentityFromLoadedProfile(req.Header, account, outboundDeviceProfileFromGin(c, account))
 	}
 
 	// Ensure required headers exist
@@ -1169,13 +1170,20 @@ func (s *OpenAIGatewayService) codexIdentityOverrideUA(account *Account) string 
 }
 
 func (s *OpenAIGatewayService) enforceCodexIdentityFromAccount(ctx context.Context, h http.Header, account *Account) {
-	fallback := s.codexIdentityOverrideUA(account)
 	if account == nil {
-		enforceCodexIdentityHeadersWithUA(h, fallback)
+		s.enforceCodexIdentityFromLoadedProfile(h, account, nil)
 		return
 	}
 	profile, err := LoadOutboundDeviceProfile(ctx, account)
-	if err != nil || profile == nil {
+	if err != nil {
+		profile = nil
+	}
+	s.enforceCodexIdentityFromLoadedProfile(h, account, profile)
+}
+
+func (s *OpenAIGatewayService) enforceCodexIdentityFromLoadedProfile(h http.Header, account *Account, profile *AccountDeviceProfile) {
+	fallback := s.codexIdentityOverrideUA(account)
+	if profile == nil {
 		enforceCodexIdentityHeadersWithUA(h, fallback)
 		return
 	}
