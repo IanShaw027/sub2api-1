@@ -367,6 +367,7 @@ func (s *IdentityService) RewriteUserID(body []byte, sessionNamespace, accountUU
 // 则在完成常规重写后，将 session 部分替换为固定的伪装ID（15分钟内保持不变）
 //
 // accountUUID is the gateway-generated UUID (profile.GatewayAccountUUID).
+// sessionNamespace is profile.SessionNamespace and is forwarded to RewriteUserID.
 // This function does not read account.Extra["account_uuid"].
 //
 // 重要：此函数使用 json.RawMessage 保留其他字段的原始字节，

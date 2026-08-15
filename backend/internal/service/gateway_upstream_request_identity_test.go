@@ -149,6 +149,18 @@ func testGinContext() *gin.Context {
 	return c
 }
 
+func assertRewrittenSessionFromProfileNamespace(t *testing.T, userID, sessionTail string) {
+	t.Helper()
+	parsed := ParseMetadataUserID(userID)
+	require.NotNil(t, parsed)
+	want, _, _, err := DeriveSessionIDs(testAnthropicDeviceProfile().SessionNamespace, sessionTail)
+	require.NoError(t, err)
+	require.Equal(t, want, parsed.SessionID)
+	wrong, _, _, err := DeriveSessionIDs(testProfileDeviceID, sessionTail)
+	require.NoError(t, err)
+	require.NotEqual(t, wrong, parsed.SessionID, "session must not be derived from DeviceID")
+}
+
 func testUserIDBody(accountUUID string) []byte {
 	userID := FormatMetadataUserID(testOriginalDeviceID, accountUUID, testOriginalSessionID, "2.1.22")
 	return []byte(`{"model":"claude-sonnet-4-6","metadata":{"user_id":` + strconvQuote(userID) + `},"messages":[]}`)
@@ -187,6 +199,7 @@ func TestBuildUpstreamRequest_RewriteUserIDUsesProfileGatewayUUID(t *testing.T) 
 	require.Contains(t, got, testGatewayAccountUUID)
 	require.Contains(t, got, testProfileDeviceID)
 	require.NotContains(t, got, testFingerprintClientID)
+	assertRewrittenSessionFromProfileNamespace(t, got, testOriginalSessionID)
 	require.Equal(t, testProfileUserAgent, getHeaderRaw(req.Header, "User-Agent"))
 	require.NotEqual(t, testFingerprintUserAgent, getHeaderRaw(req.Header, "User-Agent"))
 	require.Equal(t, testProfileStainlessOS, getHeaderRaw(req.Header, "X-Stainless-OS"))
@@ -211,6 +224,7 @@ func TestBuildUpstreamRequest_AppliesProfileUserAgentWithUserID(t *testing.T) {
 	got := gjson.GetBytes(outBody, "metadata.user_id").String()
 	require.Contains(t, got, testGatewayAccountUUID)
 	require.Contains(t, got, testProfileDeviceID)
+	assertRewrittenSessionFromProfileNamespace(t, got, testOriginalSessionID)
 	require.Contains(t, gjson.GetBytes(outBody, "system.0.text").String(), "cc_version=2.1.22")
 	require.NotContains(t, gjson.GetBytes(outBody, "system.0.text").String(), "cc_version=2.1.221")
 }
@@ -269,6 +283,7 @@ func TestBuildCountTokensRequest_RewriteUserIDUsesProfileGatewayUUID(t *testing.
 	require.Contains(t, got, testGatewayAccountUUID)
 	require.Contains(t, got, testProfileDeviceID)
 	require.NotContains(t, got, testFingerprintClientID)
+	assertRewrittenSessionFromProfileNamespace(t, got, testOriginalSessionID)
 	require.Equal(t, testProfileUserAgent, getHeaderRaw(req.Header, "User-Agent"))
 	require.NotEqual(t, testFingerprintUserAgent, getHeaderRaw(req.Header, "User-Agent"))
 	require.Equal(t, testProfileStainlessOS, getHeaderRaw(req.Header, "X-Stainless-OS"))
