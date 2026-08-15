@@ -5,6 +5,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -541,4 +542,58 @@ func TestClearCreditsExhausted(t *testing.T) {
 		_, exists = rawLimits["claude-sonnet-4-5"]
 		require.True(t, exists, "普通模型限流应保留")
 	})
+}
+
+func TestAttemptCreditsOveragesRetryStampsProfileUserAgent(t *testing.T) {
+	const profileUA = "antigravity/8.8.8 windows/amd64"
+	account := leftoverAntigravityOAuthAccount(1601)
+	installLeftoverOutboundProfile(t, leftoverValidProfile(account.ID, PlatformAntigravity, ClientFamilyAntigravity, profileUA, "mid-ag-overages"))
+
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"response":{}}`)),
+		},
+	}
+	svc := &AntigravityGatewayService{httpUpstream: httpStub}
+	result := svc.attemptCreditsOveragesRetry(antigravityRetryLoopParams{
+		ctx:          context.Background(),
+		prefix:       "[test-overages-ua]",
+		account:      account,
+		accessToken:  "token",
+		action:       "generateContent",
+		body:         []byte(`{"model":"claude-sonnet-4-5","request":{}}`),
+		httpUpstream: httpStub,
+	}, "https://cloudcode-pa.googleapis.com", "claude-sonnet-4-5", 0, http.StatusTooManyRequests, []byte(`quota`))
+
+	require.True(t, result.handled)
+	require.NotNil(t, httpStub.lastReq)
+	require.Equal(t, profileUA, httpStub.lastReq.Header.Get("User-Agent"))
+	require.NotEqual(t, antigravity.GetUserAgentForContext(context.Background()), httpStub.lastReq.Header.Get("User-Agent"))
+}
+
+func TestAttemptCreditsOveragesRetryAbortsWhenProfileLoadFails(t *testing.T) {
+	account := leftoverAntigravityOAuthAccount(1602)
+	installLeftoverOutboundProfileError(t, account.ID, errors.New("identity_reject: profile store down"))
+
+	httpStub := &geminiCompatHTTPUpstreamStub{
+		response: &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"response":{}}`)),
+		},
+	}
+	svc := &AntigravityGatewayService{httpUpstream: httpStub}
+	result := svc.attemptCreditsOveragesRetry(antigravityRetryLoopParams{
+		ctx:          context.Background(),
+		prefix:       "[test-overages-ua-fail]",
+		account:      account,
+		accessToken:  "token",
+		action:       "generateContent",
+		body:         []byte(`{"model":"claude-sonnet-4-5","request":{}}`),
+		httpUpstream: httpStub,
+	}, "https://cloudcode-pa.googleapis.com", "claude-sonnet-4-5", 0, http.StatusTooManyRequests, []byte(`quota`))
+
+	require.True(t, result.handled)
+	require.Zero(t, httpStub.calls)
 }
