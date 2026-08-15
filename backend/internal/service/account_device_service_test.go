@@ -576,6 +576,7 @@ type countingDeviceProfileRepo struct {
 	casWrites    map[int64]int
 	beforeCAS    func()
 	beforeInsert func()
+	beforeGet    func()
 	afterGet     func()
 	afterDelete  func()
 }
@@ -591,6 +592,9 @@ func wrapCountingDeviceProfileRepo(inner service.AccountDeviceProfileRepository)
 }
 
 func (r *countingDeviceProfileRepo) GetByAccountID(ctx context.Context, accountID int64) (*service.AccountDeviceProfile, error) {
+	if r.beforeGet != nil {
+		r.beforeGet()
+	}
 	r.mu.Lock()
 	r.gets[accountID]++
 	r.mu.Unlock()
@@ -1061,6 +1065,58 @@ func TestLearnIfOfficialSameVersionOfficialDoesNotCallUpdateCAS(t *testing.T) {
 	require.Zero(t, repo.casWriteCount(account.ID))
 	require.Equal(t, insertsAfterCreate, repo.insertCount(account.ID))
 	require.Equal(t, 1, repo.getCount(account.ID)-getsAfterCreate)
+}
+
+func TestLearnIfOfficialSameVersionPathIsLockFree(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+
+	const workers = 2
+	entered := make(chan struct{}, workers)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseAll)
+
+	repo.beforeGet = func() {
+		entered <- struct{}{}
+		<-release
+	}
+
+	errs := make([]error, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func(i int) {
+			defer wg.Done()
+			got, err := svc.LearnIfOfficial(ctx, account, officialClaudeInbound())
+			errs[i] = err
+			if err == nil && got != nil && got.DeviceID != created.DeviceID {
+				errs[i] = fmt.Errorf("worker %d device id changed", i)
+			}
+		}(i)
+	}
+
+	for i := 0; i < workers; i++ {
+		select {
+		case <-entered:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("LearnIfOfficial did not reach GetByAccountID concurrently (got %d/%d); same-version path is not lock-free", i, workers)
+		}
+	}
+	releaseAll()
+	wg.Wait()
+
+	for i, err := range errs {
+		require.NoError(t, err, "worker %d", i)
+	}
+	require.Zero(t, repo.casCallCount(account.ID))
 }
 
 func TestLearnIfOfficialSameVersionOfficialDoesNotProjectCache(t *testing.T) {
