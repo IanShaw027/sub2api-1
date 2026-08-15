@@ -391,22 +391,19 @@ func TestResolveConvergedInstallationID_ValidateFailureDoesNotMint(t *testing.T)
 // --- resolveConvergedThreadID ---
 
 func TestResolveConvergedThreadID_PerClientSession(t *testing.T) {
-	account := newTestOAuthAccount(1, nil)
-	a := resolveConvergedThreadID(account, "session-aaa")
-	b := resolveConvergedThreadID(account, "session-bbb")
+	a := resolveConvergedThreadID(testSessionNSA, "session-aaa")
+	b := resolveConvergedThreadID(testSessionNSA, "session-bbb")
 	assert.NotEqual(t, a, b, "不同客户端 session 应得到不同 thread_id")
 }
 
 func TestResolveConvergedThreadID_Deterministic(t *testing.T) {
-	account := newTestOAuthAccount(1, nil)
-	a := resolveConvergedThreadID(account, "session-aaa")
-	b := resolveConvergedThreadID(account, "session-aaa")
+	a := resolveConvergedThreadID(testSessionNSA, "session-aaa")
+	b := resolveConvergedThreadID(testSessionNSA, "session-aaa")
 	assert.Equal(t, a, b, "同一客户端 session 应得到相同 thread_id")
 }
 
 func TestResolveConvergedThreadID_EmptySession(t *testing.T) {
-	account := newTestOAuthAccount(1, nil)
-	assert.Equal(t, "", resolveConvergedThreadID(account, ""))
+	assert.Equal(t, "", resolveConvergedThreadID(testSessionNSA, ""))
 }
 
 // --- off 模式：resolveCodexFingerprintIDsFromRequest 返回 nil ---
@@ -425,6 +422,58 @@ func TestResolveCodexFingerprintIDsFromRequest_DefaultIsSession(t *testing.T) {
 	assert.Equal(t, codexFingerprintSession, ids.mode)
 	assert.NotEmpty(t, ids.sessionID)
 	assert.NotEmpty(t, ids.turnID)
+}
+
+func TestResolveCodexFingerprintIDs_SessionModeUsesDeriveSessionIDs(t *testing.T) {
+	account := newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "session"})
+	profile := injectProfileForAccount(t, account)
+	wantSession, _, _, err := DeriveSessionIDs(profile.SessionNamespace, "")
+	require.NoError(t, err)
+	wantThread, _, _, err := DeriveSessionIDs(profile.SessionNamespace, "client-session-aaa")
+	require.NoError(t, err)
+
+	clientHeaders := http.Header{}
+	clientHeaders.Set("session-id", "client-session-aaa")
+	ids := resolveCodexFingerprintIDsFromRequest(context.Background(), account, clientHeaders)
+	require.NotNil(t, ids)
+	require.Equal(t, wantSession, ids.sessionID)
+	require.Equal(t, wantThread, ids.threadID)
+	require.Equal(t, wantThread+":0", ids.windowID)
+	require.NotEqual(t, deriveStableUUIDv4(fmt.Sprintf("sub2api:codex-session-id:v1:%d", account.ID)), ids.sessionID)
+	require.NotEqual(t, deriveStableUUIDv4(fmt.Sprintf("sub2api:codex-thread-id:v1:%d:%s", account.ID, "client-session-aaa")), ids.threadID)
+}
+
+func TestResolveCodexFingerprintIDs_FailoverUsesTargetNamespace(t *testing.T) {
+	accountA := newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "session"})
+	accountB := newTestOAuthAccount(2, map[string]any{codexFingerprintModeExtraKey: "session"})
+	profileA := validOpenAIDeviceProfile(accountA.ID)
+	profileB := validOpenAIDeviceProfile(accountB.ID)
+	profileB.SessionNamespace = "fedcba9876543210fedcba9876543210"
+	prev := OutboundDeviceProfileService()
+	repo := &mapDeviceProfileRepo{profiles: map[int64]*AccountDeviceProfile{
+		accountA.ID: profileA,
+		accountB.ID: profileB,
+	}}
+	SetOutboundDeviceProfileService(NewAccountDeviceService(repo))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	headers := http.Header{}
+	headers.Set("session-id", "shared-anchor")
+	idsA := resolveCodexFingerprintIDsFromRequest(context.Background(), accountA, headers)
+	idsB := resolveCodexFingerprintIDsFromRequest(context.Background(), accountB, headers)
+	require.NotNil(t, idsA)
+	require.NotNil(t, idsB)
+	require.NotEqual(t, idsA.sessionID, idsB.sessionID)
+	require.NotEqual(t, idsA.threadID, idsB.threadID)
+	require.NotEqual(t, idsA.windowID, idsB.windowID)
+
+	wantSessionB, _, _, err := DeriveSessionIDs(profileB.SessionNamespace, "")
+	require.NoError(t, err)
+	wantThreadB, _, _, err := DeriveSessionIDs(profileB.SessionNamespace, "shared-anchor")
+	require.NoError(t, err)
+	require.Equal(t, wantSessionB, idsB.sessionID)
+	require.Equal(t, wantThreadB, idsB.threadID)
+	require.Equal(t, wantThreadB+":0", idsB.windowID)
 }
 
 // --- applyCodexFingerprintHeaders: off 模式 ---
@@ -490,8 +539,8 @@ func TestApplyCodexFingerprintHeaders_SessionMode(t *testing.T) {
 	applyCodexFingerprintHeaders(h, ids)
 
 	convergedInstall := resolveConvergedInstallationID(context.Background(), account)
-	convergedSession := resolveConvergedSessionID(account)
-	convergedThread := resolveConvergedThreadID(account, "client-session-aaa")
+	convergedSession := resolveConvergedSessionID(testSessionNSA)
+	convergedThread := resolveConvergedThreadID(testSessionNSA, "client-session-aaa")
 
 	assert.Equal(t, convergedInstall, h.Get("x-codex-installation-id"))
 	assert.Equal(t, convergedSession, h.Get("session-id"))
@@ -549,7 +598,7 @@ func TestApplyCodexFingerprintHeaders_FullMode(t *testing.T) {
 		codexFingerprintModeExtraKey: "full",
 	})
 	injectProfileForAccount(t, account)
-	convergedSession := resolveConvergedSessionID(account)
+	convergedSession := resolveConvergedSessionID(testSessionNSA)
 
 	clientA := http.Header{}
 	clientA.Set("session-id", "client-A")
@@ -698,8 +747,8 @@ func TestApplyCodexFingerprintClientMetadata_SessionMode(t *testing.T) {
 	cm, ok := reqBody["client_metadata"].(map[string]any)
 	require.True(t, ok)
 	convergedInstall := resolveConvergedInstallationID(context.Background(), account)
-	convergedSession := resolveConvergedSessionID(account)
-	convergedThread := resolveConvergedThreadID(account, "client-session-aaa")
+	convergedSession := resolveConvergedSessionID(testSessionNSA)
+	convergedThread := resolveConvergedThreadID(testSessionNSA, "client-session-aaa")
 
 	assert.Equal(t, convergedInstall, cm["x-codex-installation-id"])
 	assert.Equal(t, convergedSession, cm["session_id"])
@@ -739,7 +788,7 @@ func TestApplyCodexFingerprintClientMetadata_FullMode(t *testing.T) {
 
 	cm, ok := reqBody["client_metadata"].(map[string]any)
 	require.True(t, ok)
-	convergedSession := resolveConvergedSessionID(account)
+	convergedSession := resolveConvergedSessionID(testSessionNSA)
 
 	assert.Equal(t, convergedSession, cm["session_id"])
 	assert.Equal(t, convergedSession, cm["thread_id"], "full 模式 thread_id 应等于 session_id")
