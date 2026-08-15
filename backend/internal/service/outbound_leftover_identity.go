@@ -61,14 +61,6 @@ func applyOutboundProfileUserAgent(ctx context.Context, account *Account, req *h
 	return nil
 }
 
-func leftoverOutboundMachineID(ctx context.Context, account *Account) (string, error) {
-	p, err := LoadOutboundDeviceProfile(ctx, account)
-	if err != nil {
-		return "", err
-	}
-	return p.MachineID, nil
-}
-
 type leftoverGeminiOutboundUAKey struct{}
 
 func withLeftoverGeminiOutboundUserAgent(ctx context.Context, ua string) context.Context {

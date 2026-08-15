@@ -986,6 +986,9 @@ func applyKiroProfileRuntimeOverrides(settings *KiroRuntimeSettings, profile *Ac
 		return settings
 	}
 	cloned := *settings
+	if v := strings.TrimSpace(profile.ClientVersion); v != "" {
+		cloned.KiroVersion = profile.ClientVersion
+	}
 	if v := kiroProfilePayloadString(profile, "kiro_system_version"); v != "" {
 		cloned.SystemVersion = v
 	}
@@ -996,6 +999,44 @@ func applyKiroProfileRuntimeOverrides(settings *KiroRuntimeSettings, profile *Ac
 		cloned.KiroCommit = v
 	}
 	return normalizeKiroRuntimeSettings(&cloned)
+}
+
+type kiroSidecarIdentityKey struct{}
+
+type kiroSidecarIdentityValue struct {
+	accountID int64
+	settings  *KiroRuntimeSettings
+	machineID string
+}
+
+func applyKiroSidecarIdentity(ctx context.Context, account *Account, settings *KiroRuntimeSettings) (*KiroRuntimeSettings, string, error) {
+	if ident, ok := kiroSidecarIdentityFrom(ctx); ok && account != nil && ident.accountID == account.ID {
+		return ident.settings, ident.machineID, nil
+	}
+	profile, err := LoadOutboundDeviceProfile(ctx, account)
+	if err != nil {
+		return nil, "", err
+	}
+	return applyKiroProfileRuntimeOverrides(settings, profile), profile.MachineID, nil
+}
+
+func withKiroSidecarIdentity(ctx context.Context, accountID int64, settings *KiroRuntimeSettings, machineID string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, kiroSidecarIdentityKey{}, kiroSidecarIdentityValue{
+		accountID: accountID,
+		settings:  settings,
+		machineID: machineID,
+	})
+}
+
+func kiroSidecarIdentityFrom(ctx context.Context) (kiroSidecarIdentityValue, bool) {
+	if ctx == nil {
+		return kiroSidecarIdentityValue{}, false
+	}
+	ident, ok := ctx.Value(kiroSidecarIdentityKey{}).(kiroSidecarIdentityValue)
+	return ident, ok && ident.settings != nil
 }
 
 func kiroEndpointName(account *Account) string {

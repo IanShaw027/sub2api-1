@@ -187,6 +187,15 @@ func (s *KiroUsageService) SetOveragePreference(ctx context.Context, account *Ac
 	if err != nil {
 		return err
 	}
+	runtimeSettings := DefaultKiroRuntimeSettings()
+	if s != nil && s.settingService != nil {
+		runtimeSettings = s.settingService.GetKiroRuntimeSettings(ctx)
+	}
+	runtimeSettings, machineID, err := applyKiroSidecarIdentity(ctx, account, runtimeSettings)
+	if err != nil {
+		return err
+	}
+	kiroVersion := runtimeSettings.KiroVersion
 	var firstErr error
 	for _, region := range kiroRESTRegions(account) {
 		host := fmt.Sprintf("q.%s.amazonaws.com", region)
@@ -194,15 +203,6 @@ func (s *KiroUsageService) SetOveragePreference(ctx context.Context, account *Ac
 		if err != nil {
 			return err
 		}
-		runtimeSettings := DefaultKiroRuntimeSettings()
-		if s != nil && s.settingService != nil {
-			runtimeSettings = s.settingService.GetKiroRuntimeSettings(ctx)
-		}
-		machineID, err := leftoverOutboundMachineID(ctx, account)
-		if err != nil {
-			return err
-		}
-		kiroVersion := runtimeSettings.KiroVersion
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 		if isKiroExternalIDPAccount(account) {
@@ -367,7 +367,7 @@ func (s *KiroUsageService) fetchUsageLimitsInRegion(ctx context.Context, account
 	if s != nil && s.settingService != nil {
 		runtimeSettings = s.settingService.GetKiroRuntimeSettings(ctx)
 	}
-	machineID, err := leftoverOutboundMachineID(ctx, account)
+	runtimeSettings, machineID, err := applyKiroSidecarIdentity(ctx, account, runtimeSettings)
 	if err != nil {
 		return nil, err
 	}
@@ -417,7 +417,7 @@ func (s *KiroUsageService) fetchAvailableProfilesInRegion(ctx context.Context, a
 	if s != nil && s.settingService != nil {
 		runtimeSettings = s.settingService.GetKiroRuntimeSettings(ctx)
 	}
-	machineID, err := leftoverOutboundMachineID(ctx, account)
+	runtimeSettings, machineID, err := applyKiroSidecarIdentity(ctx, account, runtimeSettings)
 	if err != nil {
 		return nil, err
 	}
@@ -460,7 +460,7 @@ func (s *KiroUsageService) fetchAvailableModelsInRegion(ctx context.Context, acc
 	if s != nil && s.settingService != nil {
 		runtimeSettings = s.settingService.GetKiroRuntimeSettings(ctx)
 	}
-	machineID, err := leftoverOutboundMachineID(ctx, account)
+	runtimeSettings, machineID, err := applyKiroSidecarIdentity(ctx, account, runtimeSettings)
 	if err != nil {
 		return nil, err
 	}
