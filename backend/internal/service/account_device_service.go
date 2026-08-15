@@ -265,7 +265,6 @@ func (s *AccountDeviceService) LearnIfOfficial(ctx context.Context, account *Acc
 		return nil, err
 	}
 	if existing != nil && !deviceProfilePlatformMismatch(existing, account) && learnWouldSkipWrite(existing, account, inbound) {
-		s.projectDeviceProfile(ctx, existing)
 		return existing, nil
 	}
 

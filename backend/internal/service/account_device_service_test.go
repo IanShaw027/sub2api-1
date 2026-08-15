@@ -576,6 +576,7 @@ type countingDeviceProfileRepo struct {
 	casWrites    map[int64]int
 	beforeCAS    func()
 	beforeInsert func()
+	afterGet     func()
 	afterDelete  func()
 }
 
@@ -593,7 +594,11 @@ func (r *countingDeviceProfileRepo) GetByAccountID(ctx context.Context, accountI
 	r.mu.Lock()
 	r.gets[accountID]++
 	r.mu.Unlock()
-	return r.inner.GetByAccountID(ctx, accountID)
+	p, err := r.inner.GetByAccountID(ctx, accountID)
+	if r.afterGet != nil {
+		r.afterGet()
+	}
+	return p, err
 }
 
 func (r *countingDeviceProfileRepo) InsertBaseline(ctx context.Context, p *service.AccountDeviceProfile) (*service.AccountDeviceProfile, error) {
@@ -1056,6 +1061,64 @@ func TestLearnIfOfficialSameVersionOfficialDoesNotCallUpdateCAS(t *testing.T) {
 	require.Zero(t, repo.casWriteCount(account.ID))
 	require.Equal(t, insertsAfterCreate, repo.insertCount(account.ID))
 	require.Equal(t, 1, repo.getCount(account.ID)-getsAfterCreate)
+}
+
+func TestLearnIfOfficialSameVersionOfficialDoesNotProjectCache(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	cache := &recordingDeviceProfileCache{}
+	svc = svc.WithCache(cache)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	require.NotZero(t, cache.sets)
+	setsAfterCreate := cache.sets
+
+	got, err := svc.LearnIfOfficial(ctx, account, officialClaudeInbound())
+	require.NoError(t, err)
+	require.Equal(t, created.DeviceID, got.DeviceID)
+	require.Zero(t, repo.casCallCount(account.ID))
+	require.Equal(t, setsAfterCreate, cache.sets)
+}
+
+func TestLearnIfOfficialLockFreeSkipDoesNotOverwriteResetProjection(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	cache := &recordingDeviceProfileCache{}
+	svc = svc.WithCache(cache)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	require.Equal(t, created.DeviceID, cache.profiles[account.ID].DeviceID)
+
+	var reminted *service.AccountDeviceProfile
+	repo.afterGet = func() {
+		if reminted != nil {
+			return
+		}
+		repo.afterGet = nil
+		var resetErr error
+		reminted, resetErr = svc.Reset(ctx, account)
+		require.NoError(t, resetErr)
+		require.NotNil(t, reminted)
+		require.NotEqual(t, created.DeviceID, reminted.DeviceID)
+	}
+
+	got, err := svc.LearnIfOfficial(ctx, account, officialClaudeInbound())
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.NotNil(t, reminted)
+	require.Zero(t, repo.casCallCount(account.ID))
+	require.Equal(t, reminted.DeviceID, cache.profiles[account.ID].DeviceID)
+	require.Equal(t, reminted.InstallationID, cache.profiles[account.ID].InstallationID)
+	require.Equal(t, reminted.GatewayAccountUUID, cache.profiles[account.ID].GatewayAccountUUID)
+	require.NotEqual(t, created.DeviceID, cache.profiles[account.ID].DeviceID)
 }
 
 func TestLearnIfOfficialOfficialClaudeHigherVersionUpdatesSoftwareOnly(t *testing.T) {
