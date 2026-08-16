@@ -366,3 +366,73 @@ func TestValidateAccountDeviceProfileRejectsOversizedID(t *testing.T) {
 	require.ErrorContains(t, err, "identity_reject")
 	require.ErrorContains(t, err, "device_id")
 }
+
+func TestALPNContainsH2_ExactTokenOnly(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, ALPNContainsH2([]string{"h2"}))
+	require.True(t, ALPNContainsH2([]string{"h2", "http/1.1"}))
+	require.False(t, ALPNContainsH2([]string{"H2"}))
+	require.False(t, ALPNContainsH2([]string{" h2 "}))
+	require.False(t, ALPNContainsH2([]string{"h2,http/1.1"}))
+	require.False(t, ALPNContainsH2([]string{"http/1.1"}))
+	require.False(t, ALPNContainsH2(nil))
+}
+
+func TestEffectiveTransportFamily_RequiresClaimALPNAndLiveHTTP2(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, TransportH1, EffectiveTransportFamily(TransportH2, []string{"http/1.1"}, true))
+	require.Equal(t, TransportH1, EffectiveTransportFamily(TransportH2, []string{"h2", "http/1.1"}, false))
+	require.Equal(t, TransportH1, EffectiveTransportFamily(TransportH1, []string{"h2", "http/1.1"}, true))
+	require.Equal(t, TransportH2, EffectiveTransportFamily(TransportH2, []string{"h2", "http/1.1"}, true))
+}
+
+func TestPersistDeviceTransportFamily_CodexKiroDowngradeWithoutLiveH2(t *testing.T) {
+	t.Parallel()
+
+	for _, p := range []*AccountDeviceProfile{validCodexBaseline(), validKiroBaseline()} {
+		p.TransportFamily = TransportH2
+		PersistDeviceTransportFamily(p, []string{"http/1.1"}, false)
+		require.Equal(t, TransportH1, p.TransportFamily, p.Platform)
+	}
+}
+
+func TestPersistDeviceTransportFamily_KeepsH2WhenALPNAndHTTP2AreLive(t *testing.T) {
+	t.Parallel()
+
+	p := validCodexBaseline()
+	p.TransportFamily = TransportH2
+	PersistDeviceTransportFamily(p, []string{"h2", "http/1.1"}, true)
+	require.Equal(t, TransportH2, p.TransportFamily)
+}
+
+func TestPersistDeviceTransportFamily_LeavesInvalidFamilyForValidate(t *testing.T) {
+	t.Parallel()
+
+	for _, family := range []string{"", "h3", "http/2"} {
+		p := validCodexBaseline()
+		p.TransportFamily = family
+		PersistDeviceTransportFamily(p, []string{"h2", "http/1.1"}, true)
+		require.Equal(t, family, p.TransportFamily, "invalid family %q must not be coerced to h1", family)
+		require.ErrorContains(t, ValidateAccountDeviceProfile(p), "transport_family")
+	}
+}
+
+func validCodexBaseline() *AccountDeviceProfile {
+	p := validAnthropicBaseline()
+	p.Platform = PlatformOpenAI
+	p.ClientFamily = ClientFamilyCodexCLI
+	p.Runtime = "codex_cli_rs"
+	p.ProfilePayload = map[string]any{"user_agent": "codex_cli_rs/0.1.0"}
+	return p
+}
+
+func validKiroBaseline() *AccountDeviceProfile {
+	p := validAnthropicBaseline()
+	p.Platform = PlatformKiro
+	p.ClientFamily = ClientFamilyKiroIDE
+	p.Runtime = "node"
+	p.ProfilePayload = map[string]any{"user_agent": "KiroIDE/0.1.0"}
+	return p
+}

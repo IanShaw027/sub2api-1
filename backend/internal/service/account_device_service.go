@@ -169,6 +169,7 @@ func (s *AccountDeviceService) getOrCreateLocked(ctx context.Context, account *A
 	if err != nil {
 		return nil, err
 	}
+	PersistDeviceTransportFamily(baseline, nil, false)
 	if err := ValidateAccountDeviceProfile(baseline); err != nil {
 		return nil, err
 	}
@@ -296,6 +297,7 @@ func (s *AccountDeviceService) LearnIfOfficial(ctx context.Context, account *Acc
 	}
 
 	next := applyOfficialSoftwareBundle(profile, bundle)
+	PersistDeviceTransportFamily(next, nil, false)
 	if err := ValidateAccountDeviceProfile(next); err != nil {
 		slog.Warn("identity_reject", "reason", err.Error(), "account_id", profile.AccountID)
 		return nil, err
@@ -562,7 +564,7 @@ func buildAccountDeviceBaseline(account *Account) (*AccountDeviceProfile, error)
 		RuntimeVersion:     runtimeVersion,
 		ClientVersion:      clientVersion,
 		TLSProfileID:       nil,
-		TransportFamily:    TransportH1,
+		TransportFamily:    EffectiveTransportFamily(TransportH1, nil, false),
 		ProfilePayload:     payload,
 		LearnedFrom:        LearnedFromBaseline,
 		LearningEnabled:    false,

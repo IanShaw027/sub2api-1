@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 )
 
 type AccountDeviceProfile struct {
@@ -183,6 +185,45 @@ func validateTransportFamily(family string) error {
 	default:
 		return fmt.Errorf("identity_reject: transport_family must be %s or %s", TransportH1, TransportH2)
 	}
+}
+
+// EffectiveTransportFamily returns h2 only when the profile claims h2, the
+// configured/negotiated ALPN list includes h2, and the HTTP transport actually
+// enables HTTP/2. Otherwise it returns h1.
+func EffectiveTransportFamily(claimed string, alpn []string, http2Enabled bool) string {
+	if claimed != TransportH2 || !http2Enabled || !ALPNContainsH2(alpn) {
+		return TransportH1
+	}
+	return TransportH2
+}
+
+// PersistDeviceTransportFamily downgrades an unverified h2 claim. Invalid or
+// empty families are left untouched so ValidateAccountDeviceProfile can still
+// identity_reject them.
+func PersistDeviceTransportFamily(p *AccountDeviceProfile, alpn []string, http2Enabled bool) {
+	if p == nil || p.TransportFamily != TransportH2 {
+		return
+	}
+	p.TransportFamily = EffectiveTransportFamily(p.TransportFamily, alpn, http2Enabled)
+}
+
+// StampTLSProfileFromDevice copies the device-profile transport family onto a
+// runtime TLS profile after ToTLSProfile. ToTLSProfile itself has no device.
+func StampTLSProfileFromDevice(profile *tlsfingerprint.Profile, device *AccountDeviceProfile) {
+	if profile == nil || device == nil {
+		return
+	}
+	profile.TransportFamily = device.TransportFamily
+}
+
+// ALPNContainsH2 reports whether the ALPN list includes the h2 token.
+func ALPNContainsH2(alpn []string) bool {
+	for _, proto := range alpn {
+		if proto == "h2" {
+			return true
+		}
+	}
+	return false
 }
 
 func validateLearnedFrom(v string) error {

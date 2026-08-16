@@ -1348,6 +1348,47 @@ func TestLearnIfOfficialUnprovenGeminiUADoesNotWrite(t *testing.T) {
 	require.Zero(t, repo.casWriteCount(account.ID))
 }
 
+func TestLearnIfOfficialUnverifiedH2IsPersistedAsH1(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformOpenAI, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	n, err := client.AccountDeviceProfile.Update().
+		Where(accountdeviceprofile.AccountID(account.ID)).
+		SetClientVersion("0.1.0").
+		SetTransportFamily(service.TransportH2).
+		SetLearningEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	bundle, ok := service.NewSoftwareBundleRegistry().Lookup(
+		service.PlatformOpenAI,
+		service.ClientFamilyCodexCLI,
+		created.ClientVersion,
+	)
+	require.True(t, ok)
+
+	got, err := svc.LearnIfOfficial(ctx, account, service.OfficialInbound{
+		UserAgent:     "codex_cli_rs/" + bundle.ClientVersion + " (Ubuntu 22.4.0; x86_64) xterm-256color",
+		Originator:    "codex_cli_rs",
+		ClientVersion: bundle.ClientVersion,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.casWriteCount(account.ID))
+	require.Equal(t, service.TransportH1, got.TransportFamily, "Learn/UpdateCAS must not keep unverified h2")
+
+	stored, err := client.AccountDeviceProfile.Query().
+		Where(accountdeviceprofile.AccountID(account.ID)).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, service.TransportH1, stored.TransportFamily)
+}
+
 func TestLearnIfOfficialOfficialCodexTUICLIHigherVersionUpdatesSoftwareOnly(t *testing.T) {
 	cases := []struct {
 		name       string

@@ -52,6 +52,7 @@ func (s *KiroGatewayService) doKiroUpstream(ctx context.Context, c *gin.Context,
 	if profile == nil {
 		profile = resolveKiroTLSProfile(account, s.tlsFPProfileSvc)
 	}
+	StampTLSProfileFromDevice(profile, deviceProfile)
 	return s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, profile)
 }
 

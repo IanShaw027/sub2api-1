@@ -3,6 +3,7 @@ package repository
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -100,7 +101,7 @@ func TestHTTPUpstreamDoWithTLSPlainHTTPUsesConfiguredSOCKSProxy(t *testing.T) {
 func TestTLSFingerprintHTTPSProxyFallsBackWithoutBypassingProxy(t *testing.T) {
 	proxyURL, err := url.Parse("https://user:pass@proxy.example:8443")
 	require.NoError(t, err)
-	transport, err := buildUpstreamTransportWithTLSFingerprint(poolSettings{}, proxyURL, &tlsfingerprint.Profile{Name: "test"})
+	transport, err := buildUpstreamTransportWithTLSFingerprint(poolSettings{}, proxyURL, &tlsfingerprint.Profile{Name: "test"}, false)
 	require.NoError(t, err)
 	require.NotNil(t, transport.Proxy)
 	require.Nil(t, transport.DialTLSContext)
@@ -1432,6 +1433,247 @@ func (s *HTTPUpstreamSuite) TestTLSProfileSameIDALPNSplitRebuildsClient() {
 	require.NotSame(s.T(), oldEntry, newEntry, "same-ID ALPN list split must not reuse the old ClientHello transport")
 	require.False(s.T(), hasEntry(svc, oldEntry), "replaced TLS client should be removed")
 	require.Equal(s.T(), 1, len(svc.clients), "only the replacement TLS client should remain cached")
+}
+
+func TestDeviceProfileTransportFamily_ToTLSProfileSendHonesty(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	}).(*httpUpstreamService)
+
+	for _, tc := range []struct {
+		name    string
+		alpn    []string
+		wantFam string
+		wantH2  bool
+		wantCap int
+	}{
+		{name: "h1-alpn", alpn: []string{"http/1.1"}, wantFam: transportFamilyH1, wantH2: false, wantCap: 14},
+		{name: "claimed-h2-utls-is-h1", alpn: []string{"h2", "http/1.1"}, wantFam: transportFamilyH1, wantH2: false, wantCap: 14},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			device := &service.AccountDeviceProfile{
+				Platform:        service.PlatformOpenAI,
+				ClientFamily:    service.ClientFamilyCodexCLI,
+				TransportFamily: service.TransportH2,
+			}
+			modelProfile := &model.TLSFingerprintProfile{
+				ID:            88,
+				Name:          "from-device-" + tc.name,
+				ALPNProtocols: tc.alpn,
+			}
+			runtime := modelProfile.ToTLSProfile()
+			require.NotNil(t, runtime)
+			require.Empty(t, runtime.TransportFamily, "ToTLSProfile has no device profile")
+			runtime.ID = modelProfile.ID
+			service.StampTLSProfileFromDevice(runtime, device)
+
+			entry, err := svc.getClientEntryWithTLS("", 1, 12, runtime, service.HTTPUpstreamProfileOpenAI, false, false)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantFam, entry.transportFamily)
+
+			transport, ok := entry.client.Transport.(*http.Transport)
+			require.True(t, ok)
+			require.Equal(t, tc.wantH2, transport.ForceAttemptHTTP2)
+			if tc.wantH2 {
+				require.NotNil(t, transport.TLSNextProto["h2"])
+			}
+			require.Equal(t, tc.wantCap, transport.MaxConnsPerHost)
+			require.Equal(t, tc.wantCap, transport.MaxIdleConns)
+			require.Equal(t, tc.wantCap, transport.MaxIdleConnsPerHost)
+		})
+	}
+}
+
+func TestOpenAIHTTP2_LivePoolUsesSpareBudgetNotBurst(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{
+			ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount,
+			OpenAIHTTP2:             config.GatewayOpenAIHTTP2Config{Enabled: true},
+		},
+	}).(*httpUpstreamService)
+
+	entry, err := svc.getClientEntry("", 1, 12, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+	require.Equal(t, transportFamilyH2, entry.transportFamily)
+	require.Equal(t, upstreamProtocolModeOpenAIH2, entry.protocolMode)
+
+	transport, ok := entry.client.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.True(t, transport.ForceAttemptHTTP2)
+	require.NotNil(t, transport.TLSNextProto["h2"])
+	require.Equal(t, 14, transport.MaxConnsPerHost, "attempt-only openai_h2 must keep P0 Burst, not 1+1 spare")
+	require.Equal(t, 14, transport.MaxIdleConns)
+	require.Equal(t, 14, transport.MaxIdleConnsPerHost)
+}
+
+func TestOpenAIHTTP1_KeepsBurstCaps(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{
+			ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount,
+			OpenAIHTTP2:             config.GatewayOpenAIHTTP2Config{Enabled: false},
+		},
+	}).(*httpUpstreamService)
+
+	entry, err := svc.getClientEntry("", 1, 12, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+	require.Equal(t, transportFamilyH1, entry.transportFamily)
+
+	transport, ok := entry.client.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.False(t, transport.ForceAttemptHTTP2)
+	require.Equal(t, 14, transport.MaxConnsPerHost)
+	require.Equal(t, 14, transport.MaxIdleConns)
+	require.Equal(t, 14, transport.MaxIdleConnsPerHost)
+}
+
+func TestTLSFingerprint_UtlsDialerDoesNotSpeakHTTP2OnTheWire(t *testing.T) {
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(r.Proto))
+	}))
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	t.Cleanup(server.Close)
+
+	req, err := http.NewRequest(http.MethodGet, server.URL, nil)
+	require.NoError(t, err)
+
+	up := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	})
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
+	resp, err := up.DoWithTLS(req, "", 1, 12, &tlsfingerprint.Profile{
+		Name:            "utls-claimed-h2",
+		TransportFamily: service.TransportH2,
+		ALPNProtocols:   []string{"h2", "http/1.1"},
+		RootCAs:         roots,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	require.Equal(t, "HTTP/1.1", resp.Proto, "utls DialTLSContext cannot reach net/http h2")
+
+	svc := up.(*httpUpstreamService)
+	require.Len(t, svc.clients, 1)
+	for _, entry := range svc.clients {
+		require.Equal(t, transportFamilyH1, entry.transportFamily)
+		transport, ok := entry.client.Transport.(*http.Transport)
+		require.True(t, ok)
+		require.NotNil(t, transport.DialTLSContext)
+		require.False(t, transport.ForceAttemptHTTP2)
+	}
+}
+
+func TestTLSFingerprint_EffectiveALPNSharesPoolAfterH2Rewrite(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	}).(*httpUpstreamService)
+
+	claimedH2 := &tlsfingerprint.Profile{
+		ID:              101,
+		Name:            "shared-hello",
+		TransportFamily: service.TransportH2,
+		ALPNProtocols:   []string{"h2", "http/1.1"},
+	}
+	honestH1 := &tlsfingerprint.Profile{
+		ID:              101,
+		Name:            "shared-hello",
+		TransportFamily: service.TransportH1,
+		ALPNProtocols:   []string{"http/1.1"},
+	}
+
+	first, err := svc.getClientEntryWithTLS("", 1, 12, claimedH2, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+	second, err := svc.getClientEntryWithTLS("", 1, 12, honestH1, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+
+	require.Equal(t, transportFamilyH1, first.transportFamily)
+	require.Same(t, first, second, "rewritten h2 ALPN must share the effective-h1 ClientHello pool")
+	require.Equal(t, 1, len(svc.clients))
+	require.Equal(t, tlsProfilePoolIdentity(honestH1FingerprintProfile(claimedH2)), tlsProfilePoolIdentity(honestH1))
+}
+
+func TestTLSFingerprint_ClaimedH2DoesNotThrashCacheOnHonestH1(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	}).(*httpUpstreamService)
+	profile := &tlsfingerprint.Profile{
+		Name:            "claimed-h2-cache",
+		TransportFamily: service.TransportH2,
+		ALPNProtocols:   []string{"h2", "http/1.1"},
+	}
+
+	first, err := svc.getClientEntryWithTLS("", 1, 12, profile, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+	second, err := svc.getClientEntryWithTLS("", 1, 12, profile, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+
+	require.Equal(t, transportFamilyH1, first.transportFamily)
+	require.Same(t, first, second, "honest h1 must reuse the cached client, not evict on an optimistic h2 key")
+	require.Equal(t, 1, len(svc.clients))
+}
+
+func TestTLSFingerprint_ClaimedH2WithH1ALPNStaysH1AndKeepsBurst(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	}).(*httpUpstreamService)
+
+	for _, tc := range []struct {
+		name    string
+		profile service.HTTPUpstreamProfile
+	}{
+		{name: "codex", profile: service.HTTPUpstreamProfileOpenAI},
+		{name: "kiro", profile: service.HTTPUpstreamProfileDefault},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			entry, err := svc.getClientEntryWithTLS("", 1, 12, &tlsfingerprint.Profile{
+				Name:            "claimed-h2-h1-alpn-" + tc.name,
+				TransportFamily: service.TransportH2,
+				ALPNProtocols:   []string{"http/1.1"},
+			}, tc.profile, false, false)
+			require.NoError(t, err)
+			require.Equal(t, transportFamilyH1, entry.transportFamily)
+
+			transport, ok := entry.client.Transport.(*http.Transport)
+			require.True(t, ok, "expected *http.Transport")
+			require.False(t, transport.ForceAttemptHTTP2, "ALPN-only http/1.1 must not ForceAttemptHTTP2")
+			require.Equal(t, 14, transport.MaxConnsPerHost, "H1 must keep Burst caps")
+			require.Equal(t, 14, transport.MaxIdleConns)
+			require.Equal(t, 14, transport.MaxIdleConnsPerHost)
+		})
+	}
+}
+
+func TestTLSFingerprint_ClaimedH2WithALPNStaysH1UntilUtlsCanSpeakH2(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	}).(*httpUpstreamService)
+
+	for _, tc := range []struct {
+		name    string
+		profile service.HTTPUpstreamProfile
+	}{
+		{name: "codex", profile: service.HTTPUpstreamProfileOpenAI},
+		{name: "kiro", profile: service.HTTPUpstreamProfileDefault},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			entry, err := svc.getClientEntryWithTLS("", 1, 12, &tlsfingerprint.Profile{
+				Name:            "claimed-h2-utls-" + tc.name,
+				TransportFamily: service.TransportH2,
+				ALPNProtocols:   []string{"h2", "http/1.1"},
+			}, tc.profile, false, false)
+			require.NoError(t, err)
+			require.Equal(t, transportFamilyH1, entry.transportFamily)
+
+			transport, ok := entry.client.Transport.(*http.Transport)
+			require.True(t, ok, "expected *http.Transport")
+			require.NotNil(t, transport.DialTLSContext)
+			require.False(t, transport.ForceAttemptHTTP2, "utls DialTLSContext cannot reach net/http h2")
+			require.Equal(t, 14, transport.MaxConnsPerHost, "honest h1 must keep Burst caps")
+			require.Equal(t, 14, transport.MaxIdleConns)
+			require.Equal(t, 14, transport.MaxIdleConnsPerHost)
+		})
+	}
 }
 
 // TestEvictOverLimitRemovesOldestIdle 测试超出数量限制时的 LRU 淘汰
