@@ -80,7 +80,7 @@ func (s *AccountTestService) testKiroAccountConnection(c *gin.Context, account *
 	if s.httpUpstream == nil {
 		return s.sendErrorAndEnd(c, "HTTP upstream is not configured")
 	}
-	resp, err := s.httpUpstream.Do(req, accountProxyURL(account), account.ID, account.Concurrency)
+	resp, err := s.httpUpstream.Do(req, accountProxyURL(account), account.ID, account.EffectiveConcurrency())
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Kiro request failed: %s", err.Error()))
 	}

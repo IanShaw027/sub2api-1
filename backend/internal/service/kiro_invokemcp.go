@@ -100,7 +100,7 @@ func (s *KiroGatewayService) invokeKiroMCP(
 	}
 
 	tlsRuntime := s.resolveTLSFingerprintRuntime(ctx, nil, account)
-	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, tlsRuntime.Profile)
+	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.EffectiveConcurrency(), tlsRuntime.Profile)
 	if err != nil {
 		return "", fmt.Errorf("kiro mcp: upstream request: %w", err)
 	}
@@ -119,7 +119,7 @@ func (s *KiroGatewayService) invokeKiroMCP(
 				if buildErr != nil {
 					return "", buildErr
 				}
-				retryResp, retryErr := s.httpUpstream.DoWithTLS(retryReq, accountProxyURL(refreshedAccount), refreshedAccount.ID, refreshedAccount.Concurrency, s.resolveTLSFingerprintRuntime(ctx, nil, refreshedAccount).Profile)
+				retryResp, retryErr := s.httpUpstream.DoWithTLS(retryReq, accountProxyURL(refreshedAccount), refreshedAccount.ID, refreshedAccount.EffectiveConcurrency(), s.resolveTLSFingerprintRuntime(ctx, nil, refreshedAccount).Profile)
 				if retryErr != nil {
 					return "", fmt.Errorf("kiro mcp: retry upstream request: %w", retryErr)
 				}

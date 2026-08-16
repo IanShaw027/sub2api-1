@@ -635,7 +635,7 @@ func doKiroSidecarRequest(
 			req,
 			accountProxyURL(account),
 			account.ID,
-			account.Concurrency,
+			account.EffectiveConcurrency(),
 			resolveKiroTLSProfile(account, tlsFPProfileService),
 		)
 	}

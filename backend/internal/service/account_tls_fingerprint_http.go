@@ -22,7 +22,7 @@ func doAccountHTTPUpstream(
 	}
 	runtime := resolveAccountTLSFingerprintRuntime(ctx, account, profileSvc, routerSvc, inboundUA, transport, protocol)
 	applyTLSFingerprintRuntimeHeaders(req, runtime)
-	return upstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, runtime.Profile)
+	return upstream.DoWithTLS(req, proxyURL, account.ID, account.EffectiveConcurrency(), runtime.Profile)
 }
 
 func doAccountHTTPUpstreamFromGin(
