@@ -1776,7 +1776,60 @@ func TestGetOrCreateProjectsDeviceProfileToCacheOnHitAndInsert(t *testing.T) {
 	hit, err := svc.GetOrCreate(ctx, account)
 	require.NoError(t, err)
 	require.Equal(t, created.ID, hit.ID)
-	require.Equal(t, 2, cache.sets)
+	require.Equal(t, 1, cache.sets)
+}
+
+func TestGetOrCreateHitDoesNotProjectDeviceProfile(t *testing.T) {
+	svc, client, _ := newCountingAccountDeviceService(t)
+	cache := &recordingDeviceProfileCache{}
+	svc = svc.WithCache(cache)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, nil)
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	require.Equal(t, 1, cache.sets)
+	require.Equal(t, created.DeviceID, cache.profiles[account.ID].DeviceID)
+
+	hit, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	require.Equal(t, created.ID, hit.ID)
+	require.Equal(t, created.DeviceID, hit.DeviceID)
+	require.Equal(t, 1, cache.sets)
+}
+
+func TestGetOrCreateHitDoesNotOverwriteResetProjection(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	cache := &recordingDeviceProfileCache{}
+	svc = svc.WithCache(cache)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, nil)
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	require.Equal(t, created.DeviceID, cache.profiles[account.ID].DeviceID)
+
+	var reminted *service.AccountDeviceProfile
+	repo.afterGet = func() {
+		if reminted != nil {
+			return
+		}
+		repo.afterGet = nil
+		var resetErr error
+		reminted, resetErr = svc.Reset(ctx, account)
+		require.NoError(t, resetErr)
+		require.NotNil(t, reminted)
+		require.NotEqual(t, created.DeviceID, reminted.DeviceID)
+	}
+
+	got, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.NotNil(t, reminted)
+	require.Equal(t, reminted.DeviceID, cache.profiles[account.ID].DeviceID)
+	require.Equal(t, reminted.InstallationID, cache.profiles[account.ID].InstallationID)
+	require.Equal(t, reminted.GatewayAccountUUID, cache.profiles[account.ID].GatewayAccountUUID)
+	require.NotEqual(t, created.DeviceID, cache.profiles[account.ID].DeviceID)
 }
 
 func TestGetOrCreateCacheErrorDoesNotFailRequest(t *testing.T) {
@@ -1819,7 +1872,7 @@ func TestLearnIfOfficialProjectsDeviceProfileAfterCAS(t *testing.T) {
 	got, err := svc.LearnIfOfficial(ctx, account, officialClaudeInbound())
 	require.NoError(t, err)
 	require.Equal(t, 1, repo.casWriteCount(account.ID))
-	require.Equal(t, 3, cache.sets)
+	require.Equal(t, 2, cache.sets)
 	require.Equal(t, got.ClientVersion, cache.profiles[account.ID].ClientVersion)
 	require.Equal(t, claude.CLICurrentVersion, cache.profiles[account.ID].ClientVersion)
 	require.Equal(t, created.DeviceID, cache.profiles[account.ID].DeviceID)

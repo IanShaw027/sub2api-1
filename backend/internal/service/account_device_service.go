@@ -137,7 +137,6 @@ func (s *AccountDeviceService) GetOrCreate(ctx context.Context, account *Account
 		return nil, err
 	}
 	if existing != nil && !deviceProfilePlatformMismatch(existing, account) {
-		s.projectDeviceProfile(ctx, existing)
 		return existing, nil
 	}
 	unlock := s.lockAccount(account.ID)
@@ -156,7 +155,6 @@ func (s *AccountDeviceService) getOrCreateLocked(ctx context.Context, account *A
 		return nil, err
 	}
 	if existing != nil && !deviceProfilePlatformMismatch(existing, account) {
-		s.projectDeviceProfile(ctx, existing)
 		return existing, nil
 	}
 
