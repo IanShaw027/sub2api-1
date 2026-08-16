@@ -7,6 +7,7 @@ import (
 	"errors"
 	"math"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,21 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestBuildAffiliateRebateAuditClaimQueryDoesNotRequireFullUniqueConstraint(t *testing.T) {
+	query, args := buildAffiliateRebateAuditClaimQuery(nil, "943", `{"status":"reserved"}`)
+
+	assert.NotContains(t, strings.ToUpper(query), "ON CONFLICT")
+	assert.Contains(t, query, "WHERE NOT EXISTS")
+	assert.Len(t, args, 3)
+}
+
+func TestIsAffiliateRebateClaimConflict(t *testing.T) {
+	assert.True(t, isAffiliateRebateClaimConflict(errors.New(
+		`pq: duplicate key value violates unique constraint "idx_payment_audit_logs_order_action_uniq"`,
+	)))
+	assert.False(t, isAffiliateRebateClaimConflict(errors.New("pq: connection reset")))
+}
 
 type paymentFulfillmentTestProvider struct {
 	key            string
