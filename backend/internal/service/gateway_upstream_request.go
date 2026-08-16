@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
@@ -60,18 +59,9 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		enableFP, enableMPT, _ = s.settingService.GetGatewayForwardingSettings(ctx)
 	}
 	if account.IsOAuth() && s.identityService != nil {
-		// 1. 获取或创建指纹（包含随机生成的ClientID）
-		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
-		if err != nil {
-			logger.LegacyPrintf("service.gateway", "Warning: failed to get fingerprint for account %d: %v", account.ID, err)
-			// 失败时降级为透传原始headers
-		} else if enableFP {
-			fingerprint = fp
-		}
-
-		// 2. Profile identity is all-or-nothing: UA / stainless / user_id come from
-		// the same loaded profile. Load failure strips client user_id and drops
-		// fingerprint identity so we never emit a half bundle.
+		// Profile identity is all-or-nothing: UA / stainless / user_id come from
+		// the same loaded profile. Do not mint a fingerprint first — a loaded
+		// profile never uses it, and load failure already nils fingerprint.
 		body, outboundProfile = s.applyAnthropicOutboundIdentity(ctx, body, account, !enableMPT)
 		if outboundProfile == nil {
 			fingerprint = nil

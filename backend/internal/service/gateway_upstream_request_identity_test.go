@@ -390,3 +390,57 @@ func TestBuildOAuthMetadataUserIDFromBody_LoadFailureDoesNotUseExtraUUID(t *test
 	require.Empty(t, got)
 	require.NotContains(t, got, testExtraAccountUUID)
 }
+
+type recordingFingerprintCache struct {
+	stubIdentityCache
+	gets int
+}
+
+func (c *recordingFingerprintCache) GetFingerprint(ctx context.Context, accountID int64) (*Fingerprint, error) {
+	c.gets++
+	return c.stubIdentityCache.GetFingerprint(ctx, accountID)
+}
+
+func newRecordingFingerprintGateway() (*GatewayService, *recordingFingerprintCache) {
+	cache := &recordingFingerprintCache{
+		stubIdentityCache: stubIdentityCache{
+			fingerprint: &Fingerprint{
+				ClientID:      testFingerprintClientID,
+				UserAgent:     testFingerprintUserAgent,
+				StainlessOS:   testFingerprintStainlessOS,
+				StainlessArch: testFingerprintStainlessArch,
+			},
+		},
+	}
+	return &GatewayService{identityService: NewIdentityService(cache)}, cache
+}
+
+func TestBuildUpstreamRequest_LoadedProfileDoesNotMintFingerprint(t *testing.T) {
+	installOutboundDeviceProfile(t, testAnthropicDeviceProfile())
+	svc, cache := newRecordingFingerprintGateway()
+	account := testAnthropicOAuthAccount()
+	body := testUserIDBody(testExtraAccountUUID)
+
+	_, _, err := svc.buildUpstreamRequest(
+		context.Background(), testGinContext(), account, body,
+		"oauth-tok", "oauth", "claude-sonnet-4-6", false, false,
+	)
+	require.NoError(t, err)
+	require.Zero(t, cache.gets, "GetOrCreateFingerprint must not read fingerprint cache when a profile is loaded")
+	require.Zero(t, cache.setCalls, "GetOrCreateFingerprint must not write fingerprint cache when a profile is loaded")
+}
+
+func TestBuildCountTokensRequest_LoadedProfileDoesNotMintFingerprint(t *testing.T) {
+	installOutboundDeviceProfile(t, testAnthropicDeviceProfile())
+	svc, cache := newRecordingFingerprintGateway()
+	account := testAnthropicOAuthAccount()
+	body := testUserIDBody(testExtraAccountUUID)
+
+	_, _, err := svc.buildCountTokensRequest(
+		context.Background(), testGinContext(), account, body,
+		"oauth-tok", "oauth", "claude-sonnet-4-6", false,
+	)
+	require.NoError(t, err)
+	require.Zero(t, cache.gets, "GetOrCreateFingerprint must not read fingerprint cache when a profile is loaded")
+	require.Zero(t, cache.setCalls, "GetOrCreateFingerprint must not write fingerprint cache when a profile is loaded")
+}

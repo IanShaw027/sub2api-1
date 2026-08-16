@@ -477,10 +477,8 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	var ctFingerprint *Fingerprint
 	var ctOutboundProfile *AccountDeviceProfile
 	if account.IsOAuth() && s.identityService != nil {
-		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
-		if err == nil && ctEnableFP {
-			ctFingerprint = fp
-		}
+		// Same as buildUpstreamRequest: skip the dead fingerprint mint. A loaded
+		// profile never uses it, and load failure already nils fingerprint.
 		body, ctOutboundProfile = s.applyAnthropicOutboundIdentity(ctx, body, account, !ctEnableMPT)
 		if ctOutboundProfile == nil {
 			ctFingerprint = nil
