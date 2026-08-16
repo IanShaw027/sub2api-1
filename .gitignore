@@ -140,6 +140,9 @@ docs/*
 !docs/legal/*.md
 !docs/migration-details/
 !docs/migration-details/*.md
+!docs/superpowers/
+!docs/superpowers/**
+.worktrees/
 .serena/
 .codex/
 frontend/coverage/

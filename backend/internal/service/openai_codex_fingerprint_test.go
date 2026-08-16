@@ -1,10 +1,19 @@
 package service
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,6 +25,200 @@ func newTestOAuthAccount(id int64, extra map[string]any) *Account {
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeOAuth,
 		Extra:    extra,
+	}
+}
+
+type mapDeviceProfileRepo struct {
+	profiles        map[int64]*AccountDeviceProfile
+	getErr          error
+	requireDeadline bool
+	sawDeadline     bool
+}
+
+func (r *mapDeviceProfileRepo) GetByAccountID(ctx context.Context, accountID int64) (*AccountDeviceProfile, error) {
+	if r.requireDeadline {
+		if _, ok := ctx.Deadline(); !ok {
+			return nil, fmt.Errorf("identity_reject: load context has no deadline")
+		}
+		r.sawDeadline = true
+	}
+	if r.getErr != nil {
+		return nil, r.getErr
+	}
+	if r.profiles == nil {
+		return nil, nil
+	}
+	return r.profiles[accountID], nil
+}
+
+func (r *mapDeviceProfileRepo) InsertBaseline(_ context.Context, p *AccountDeviceProfile) (*AccountDeviceProfile, error) {
+	return nil, fmt.Errorf("identity_reject: unexpected baseline insert in test")
+}
+
+func (r *mapDeviceProfileRepo) UpdateCAS(context.Context, int64, int64, *AccountDeviceProfile) (bool, error) {
+	return false, nil
+}
+
+func (r *mapDeviceProfileRepo) DeleteByAccountID(_ context.Context, accountID int64) error {
+	if r.profiles != nil {
+		delete(r.profiles, accountID)
+	}
+	return nil
+}
+
+func validOpenAIDeviceProfile(accountID int64) *AccountDeviceProfile {
+	version := NormalizeCodexClientVersion(codexCLIVersion)
+	if version == "" {
+		version = codexCLIVersion
+	}
+	return &AccountDeviceProfile{
+		ID:                 accountID,
+		AccountID:          accountID,
+		Revision:           1,
+		SchemaVersion:      1,
+		Platform:           PlatformOpenAI,
+		ClientFamily:       ClientFamilyCodexCLI,
+		InstallationID:     "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+		DeviceID:           "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+		MachineID:          "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+		GatewayAccountUUID: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+		SessionNamespace:   "0123456789abcdef0123456789abcdef",
+		OSFamily:           "linux",
+		Arch:               "x64",
+		Runtime:            "codex_cli_rs",
+		RuntimeVersion:     version,
+		ClientVersion:      version,
+		TransportFamily:    TransportH1,
+		ProfilePayload: map[string]any{
+			"user_agent": buildCodexCLIUserAgent(version),
+			"originator": openai.CodexDefaultOriginator,
+		},
+		LearnedFrom: LearnedFromBaseline,
+	}
+}
+
+func injectOutboundDeviceProfile(t *testing.T, accountID int64, profile *AccountDeviceProfile) {
+	t.Helper()
+	prev := OutboundDeviceProfileService()
+	repo := &mapDeviceProfileRepo{profiles: map[int64]*AccountDeviceProfile{}}
+	if profile != nil {
+		repo.profiles[accountID] = profile
+	}
+	SetOutboundDeviceProfileService(NewAccountDeviceService(repo))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+}
+
+func injectOutboundDeviceProfileError(t *testing.T, err error) {
+	t.Helper()
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(NewAccountDeviceService(&mapDeviceProfileRepo{getErr: err}))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+}
+
+func injectProfileForAccount(t *testing.T, account *Account) *AccountDeviceProfile {
+	t.Helper()
+	profile := validOpenAIDeviceProfile(account.ID)
+	injectOutboundDeviceProfile(t, account.ID, profile)
+	return profile
+}
+
+type failAfterMapDeviceRepo struct {
+	mapDeviceProfileRepo
+	failAfter int
+	gets      int
+}
+
+func (r *failAfterMapDeviceRepo) GetByAccountID(ctx context.Context, accountID int64) (*AccountDeviceProfile, error) {
+	r.gets++
+	if r.failAfter > 0 && r.gets > r.failAfter {
+		return nil, fmt.Errorf("identity_reject: second profile load failed")
+	}
+	return r.mapDeviceProfileRepo.GetByAccountID(ctx, accountID)
+}
+
+// First load succeeds and second fails: body must not keep a profile/extra
+// installation id unless the same resolve produced shared header IDs.
+func TestCodexSharedRequestIdentity_SecondLoadFailureDoesNotKeepBodyInstallationID(t *testing.T) {
+	profile := validOpenAIDeviceProfile(16)
+	profile.InstallationID = "profile-install-id-16"
+	repo := &failAfterMapDeviceRepo{
+		mapDeviceProfileRepo: mapDeviceProfileRepo{
+			profiles: map[int64]*AccountDeviceProfile{16: profile},
+		},
+		failAfter: 1,
+	}
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(NewAccountDeviceService(repo))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	account := newTestOAuthAccount(16, map[string]any{"openai_device_id": "extra-device-id"})
+	body := map[string]any{}
+
+	ids := applyCodexSharedRequestIdentity(context.Background(), body, account, nil)
+
+	bodyDump := fmt.Sprintf("%v", body)
+	if ids == nil {
+		require.NotContains(t, bodyDump, profile.InstallationID, "body must not keep profile installation id without shared header identity")
+	} else {
+		cm, _ := body["client_metadata"].(map[string]any)
+		require.Equal(t, profile.InstallationID, cm["x-codex-installation-id"])
+		require.Equal(t, profile.InstallationID, ids.installationID)
+	}
+	require.NotContains(t, bodyDump, "extra-device-id")
+	require.Equal(t, 1, repo.gets, "request path must load the profile only once")
+}
+
+// Forward identity block: first Get succeeds and second fails. Body may keep
+// x-codex-installation-id only when the same resolve stored header IDs.
+// Restoring applyCodexClientMetadata + resolveCodexFingerprintIDsFromRequest
+// in applyCodexForwardRequestIdentity (the Forward identity block) fails this.
+func TestCodexForwardRequestIdentity_SecondLoadFailureDoesNotKeepBodyInstallationID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	profile := validOpenAIDeviceProfile(17)
+	profile.InstallationID = "profile-install-id-17"
+	repo := &failAfterMapDeviceRepo{
+		mapDeviceProfileRepo: mapDeviceProfileRepo{
+			profiles: map[int64]*AccountDeviceProfile{17: profile},
+		},
+		failAfter: 1,
+	}
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(NewAccountDeviceService(repo))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	account := newTestOAuthAccount(17, map[string]any{"openai_device_id": "extra-device-id"})
+	body := map[string]any{}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	ids := applyCodexForwardRequestIdentity(context.Background(), c, body, account, nil)
+
+	_, stored := c.Get("codex_fingerprint_ids")
+	cm, _ := body["client_metadata"].(map[string]any)
+	bodyInstall, _ := cm["x-codex-installation-id"].(string)
+	if bodyInstall != "" {
+		require.NotNil(t, ids, "body installation id must not outlive a failed second profile load")
+		require.True(t, stored, "body installation id is present only if shared header IDs were stored")
+		require.Equal(t, profile.InstallationID, bodyInstall)
+		require.Equal(t, profile.InstallationID, ids.installationID)
+	} else {
+		require.Nil(t, ids)
+		require.False(t, stored)
+	}
+	require.NotContains(t, fmt.Sprintf("%v", body), "extra-device-id")
+}
+
+func TestCodexForward_IdentityBlockUsesSingleSharedLoad(t *testing.T) {
+	src, err := os.ReadFile("openai_gateway_forward.go")
+	require.NoError(t, err)
+	text := string(src)
+	if !strings.Contains(text, "applyCodexForwardRequestIdentity(") {
+		t.Fatal("Forward must call applyCodexForwardRequestIdentity")
+	}
+	clientMeta := strings.Index(text, "applyCodexClientMetadata(")
+	resolve := strings.Index(text, "resolveCodexFingerprintIDsFromRequest(")
+	if clientMeta >= 0 && resolve > clientMeta {
+		t.Fatal("Forward restored applyCodexClientMetadata + resolveCodexFingerprintIDsFromRequest")
 	}
 }
 
@@ -68,61 +271,209 @@ func TestGetCodexFingerprintMode(t *testing.T) {
 
 // --- resolveConvergedInstallationID ---
 
-func TestResolveConvergedInstallationID_UsesDeviceID(t *testing.T) {
-	account := newTestOAuthAccount(1, map[string]any{"openai_device_id": "real-device-id"})
-	assert.Equal(t, "real-device-id", resolveConvergedInstallationID(account))
+func TestResolveConvergedInstallationID_IgnoresExtraDeviceID(t *testing.T) {
+	account := newTestOAuthAccount(1, map[string]any{"openai_device_id": "extra-device-id"})
+	profile := injectProfileForAccount(t, account)
+	require.NotEqual(t, "extra-device-id", profile.InstallationID)
+	assert.Equal(t, profile.InstallationID, resolveConvergedInstallationID(context.Background(), account))
+	assert.NotEqual(t, "extra-device-id", resolveConvergedInstallationID(context.Background(), account))
 }
 
-func TestResolveConvergedInstallationID_DerivesFromAccountID(t *testing.T) {
+func TestResolveConvergedInstallationID_UsesInjectedProfile(t *testing.T) {
 	account := newTestOAuthAccount(42, nil)
-	result := resolveConvergedInstallationID(account)
+	profile := injectProfileForAccount(t, account)
+	result := resolveConvergedInstallationID(context.Background(), account)
 	_, err := uuid.Parse(result)
-	require.NoError(t, err, "派生值应为合法 UUID")
-	assert.Equal(t, result, resolveConvergedInstallationID(account), "确定性")
+	require.NoError(t, err, "档案 installation_id 应为合法 UUID")
+	assert.Equal(t, profile.InstallationID, result)
+	assert.Equal(t, result, resolveConvergedInstallationID(context.Background(), account), "确定性")
+}
+
+func TestResolveConvergedInstallationID_EmptyInstallationIDSkips(t *testing.T) {
+	profile := validOpenAIDeviceProfile(3)
+	profile.InstallationID = ""
+	injectOutboundDeviceProfile(t, 3, profile)
+
+	account := newTestOAuthAccount(3, nil)
+	require.Empty(t, resolveConvergedInstallationID(context.Background(), account))
+	require.NotEqual(t, profile.DeviceID, resolveConvergedInstallationID(context.Background(), account))
+	require.Nil(t, resolveCodexFingerprintIDsFromRequest(context.Background(), account, nil))
+}
+
+func TestResolveConvergedInstallationID_LoadUsesBoundedContext(t *testing.T) {
+	profile := validOpenAIDeviceProfile(8)
+	repo := &mapDeviceProfileRepo{
+		profiles:        map[int64]*AccountDeviceProfile{8: profile},
+		requireDeadline: true,
+	}
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(NewAccountDeviceService(repo))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	account := newTestOAuthAccount(8, nil)
+	require.Equal(t, profile.InstallationID, resolveConvergedInstallationID(context.Background(), account))
+	require.True(t, repo.sawDeadline, "LoadOutboundDeviceProfile 必须带 deadline，不能用裸 context.Background()")
+}
+
+func TestResolveConvergedInstallationID_LoadFailureLogsIdentityReject(t *testing.T) {
+	var buf bytes.Buffer
+	prevLog := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prevLog) })
+
+	injectOutboundDeviceProfileError(t, fmt.Errorf("identity_reject: simulated load failure"))
+	account := newTestOAuthAccount(99, nil)
+	require.Empty(t, resolveConvergedInstallationID(context.Background(), account))
+	require.Contains(t, buf.String(), "identity_reject")
 }
 
 func TestResolveConvergedInstallationID_DifferentAccounts(t *testing.T) {
-	a := resolveConvergedInstallationID(newTestOAuthAccount(1, nil))
-	b := resolveConvergedInstallationID(newTestOAuthAccount(2, nil))
+	accountA := newTestOAuthAccount(1, nil)
+	accountB := newTestOAuthAccount(2, nil)
+	profileA := validOpenAIDeviceProfile(1)
+	profileA.InstallationID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	profileB := validOpenAIDeviceProfile(2)
+	profileB.InstallationID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(NewAccountDeviceService(&mapDeviceProfileRepo{
+		profiles: map[int64]*AccountDeviceProfile{1: profileA, 2: profileB},
+	}))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	a := resolveConvergedInstallationID(context.Background(), accountA)
+	b := resolveConvergedInstallationID(context.Background(), accountB)
 	assert.NotEqual(t, a, b)
+	assert.Equal(t, profileA.InstallationID, a)
+	assert.Equal(t, profileB.InstallationID, b)
+}
+
+func TestResolveConvergedInstallationID_UsesProfileInstallationID(t *testing.T) {
+	profile := validOpenAIDeviceProfile(7)
+	profile.InstallationID = "11111111-1111-4111-8111-111111111111"
+	profile.DeviceID = "22222222-2222-4222-8222-222222222222"
+	injectOutboundDeviceProfile(t, 7, profile)
+
+	account := newTestOAuthAccount(7, map[string]any{"openai_device_id": "extra-device-id"})
+	require.Equal(t, profile.InstallationID, resolveConvergedInstallationID(context.Background(), account))
+
+	ids := resolveCodexFingerprintIDsFromRequest(context.Background(), account, nil)
+	require.NotNil(t, ids)
+	require.Equal(t, profile.InstallationID, ids.installationID)
+}
+
+func TestResolveConvergedInstallationID_LoadFailureDoesNotMint(t *testing.T) {
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(nil)
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	account := newTestOAuthAccount(42, map[string]any{"openai_device_id": "extra-device-id"})
+	minted := deriveStableUUIDv4(fmt.Sprintf("sub2api:codex-install-id:v1:%d", account.ID))
+
+	got := resolveConvergedInstallationID(context.Background(), account)
+	require.Empty(t, got)
+	require.NotEqual(t, minted, got)
+	require.NotEqual(t, "extra-device-id", got)
+	require.Nil(t, resolveCodexFingerprintIDsFromRequest(context.Background(), account, nil))
+}
+
+func TestResolveConvergedInstallationID_ValidateFailureDoesNotMint(t *testing.T) {
+	injectOutboundDeviceProfileError(t, fmt.Errorf("identity_reject: simulated load failure"))
+
+	account := newTestOAuthAccount(42, nil)
+	minted := deriveStableUUIDv4(fmt.Sprintf("sub2api:codex-install-id:v1:%d", account.ID))
+
+	got := resolveConvergedInstallationID(context.Background(), account)
+	require.Empty(t, got)
+	require.NotEqual(t, minted, got)
+	require.Nil(t, resolveCodexFingerprintIDsFromRequest(context.Background(), account, nil))
 }
 
 // --- resolveConvergedThreadID ---
 
 func TestResolveConvergedThreadID_PerClientSession(t *testing.T) {
-	account := newTestOAuthAccount(1, nil)
-	a := resolveConvergedThreadID(account, "session-aaa")
-	b := resolveConvergedThreadID(account, "session-bbb")
+	a := resolveConvergedThreadID(testSessionNSA, "session-aaa")
+	b := resolveConvergedThreadID(testSessionNSA, "session-bbb")
 	assert.NotEqual(t, a, b, "不同客户端 session 应得到不同 thread_id")
 }
 
 func TestResolveConvergedThreadID_Deterministic(t *testing.T) {
-	account := newTestOAuthAccount(1, nil)
-	a := resolveConvergedThreadID(account, "session-aaa")
-	b := resolveConvergedThreadID(account, "session-aaa")
+	a := resolveConvergedThreadID(testSessionNSA, "session-aaa")
+	b := resolveConvergedThreadID(testSessionNSA, "session-aaa")
 	assert.Equal(t, a, b, "同一客户端 session 应得到相同 thread_id")
 }
 
 func TestResolveConvergedThreadID_EmptySession(t *testing.T) {
-	account := newTestOAuthAccount(1, nil)
-	assert.Equal(t, "", resolveConvergedThreadID(account, ""))
+	assert.Equal(t, "", resolveConvergedThreadID(testSessionNSA, ""))
 }
 
 // --- off 模式：resolveCodexFingerprintIDsFromRequest 返回 nil ---
 
 func TestResolveCodexFingerprintIDsFromRequest_ExplicitOff(t *testing.T) {
 	account := newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "off"})
-	ids := resolveCodexFingerprintIDsFromRequest(account, nil)
+	ids := resolveCodexFingerprintIDsFromRequest(context.Background(), account, nil)
 	assert.Nil(t, ids, "显式 off 模式应返回 nil")
 }
 
 func TestResolveCodexFingerprintIDsFromRequest_DefaultIsSession(t *testing.T) {
 	account := newTestOAuthAccount(1, nil)
-	ids := resolveCodexFingerprintIDsFromRequest(account, nil)
+	injectProfileForAccount(t, account)
+	ids := resolveCodexFingerprintIDsFromRequest(context.Background(), account, nil)
 	require.NotNil(t, ids, "无 extra 默认 session 模式，应返回非 nil")
 	assert.Equal(t, codexFingerprintSession, ids.mode)
 	assert.NotEmpty(t, ids.sessionID)
 	assert.NotEmpty(t, ids.turnID)
+}
+
+func TestResolveCodexFingerprintIDs_SessionModeUsesDeriveSessionIDs(t *testing.T) {
+	account := newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "session"})
+	profile := injectProfileForAccount(t, account)
+	wantSession, _, _, err := DeriveSessionIDs(profile.SessionNamespace, "")
+	require.NoError(t, err)
+	wantThread, _, _, err := DeriveSessionIDs(profile.SessionNamespace, "client-session-aaa")
+	require.NoError(t, err)
+
+	clientHeaders := http.Header{}
+	clientHeaders.Set("session-id", "client-session-aaa")
+	ids := resolveCodexFingerprintIDsFromRequest(context.Background(), account, clientHeaders)
+	require.NotNil(t, ids)
+	require.Equal(t, wantSession, ids.sessionID)
+	require.Equal(t, wantThread, ids.threadID)
+	require.Equal(t, wantThread+":0", ids.windowID)
+	require.NotEqual(t, deriveStableUUIDv4(fmt.Sprintf("sub2api:codex-session-id:v1:%d", account.ID)), ids.sessionID)
+	require.NotEqual(t, deriveStableUUIDv4(fmt.Sprintf("sub2api:codex-thread-id:v1:%d:%s", account.ID, "client-session-aaa")), ids.threadID)
+}
+
+func TestResolveCodexFingerprintIDs_FailoverUsesTargetNamespace(t *testing.T) {
+	accountA := newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "session"})
+	accountB := newTestOAuthAccount(2, map[string]any{codexFingerprintModeExtraKey: "session"})
+	profileA := validOpenAIDeviceProfile(accountA.ID)
+	profileB := validOpenAIDeviceProfile(accountB.ID)
+	profileB.SessionNamespace = "fedcba9876543210fedcba9876543210"
+	prev := OutboundDeviceProfileService()
+	repo := &mapDeviceProfileRepo{profiles: map[int64]*AccountDeviceProfile{
+		accountA.ID: profileA,
+		accountB.ID: profileB,
+	}}
+	SetOutboundDeviceProfileService(NewAccountDeviceService(repo))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	headers := http.Header{}
+	headers.Set("session-id", "shared-anchor")
+	idsA := resolveCodexFingerprintIDsFromRequest(context.Background(), accountA, headers)
+	idsB := resolveCodexFingerprintIDsFromRequest(context.Background(), accountB, headers)
+	require.NotNil(t, idsA)
+	require.NotNil(t, idsB)
+	require.NotEqual(t, idsA.sessionID, idsB.sessionID)
+	require.NotEqual(t, idsA.threadID, idsB.threadID)
+	require.NotEqual(t, idsA.windowID, idsB.windowID)
+
+	wantSessionB, _, _, err := DeriveSessionIDs(profileB.SessionNamespace, "")
+	require.NoError(t, err)
+	wantThreadB, _, _, err := DeriveSessionIDs(profileB.SessionNamespace, "shared-anchor")
+	require.NoError(t, err)
+	require.Equal(t, wantSessionB, idsB.sessionID)
+	require.Equal(t, wantThreadB, idsB.threadID)
+	require.Equal(t, wantThreadB+":0", idsB.windowID)
 }
 
 // --- applyCodexFingerprintHeaders: off 模式 ---
@@ -143,23 +494,26 @@ func TestApplyCodexFingerprintHeaders_OffMode(t *testing.T) {
 func TestApplyCodexFingerprintHeaders_DeviceMode(t *testing.T) {
 	account := newTestOAuthAccount(1, map[string]any{
 		codexFingerprintModeExtraKey: "device",
-		"openai_device_id":           "converged-device",
+		"openai_device_id":           "extra-device-id",
 	})
+	profile := injectProfileForAccount(t, account)
+	require.NotEqual(t, "extra-device-id", profile.InstallationID)
 	turnMetadata := `{"installation_id":"user-install","session_id":"user-session","sandbox":"seccomp"}`
 	h := http.Header{}
 	h.Set("x-codex-installation-id", "user-install")
 	h.Set("x-codex-window-id", "user-window:0")
 	h.Set("x-codex-turn-metadata", turnMetadata)
 
-	ids := resolveCodexFingerprintIDsFromRequest(account, nil)
+	ids := resolveCodexFingerprintIDsFromRequest(context.Background(), account, nil)
 	applyCodexFingerprintHeaders(h, ids)
 
-	assert.Equal(t, "converged-device", h.Get("x-codex-installation-id"), "installation_id 应收敛")
+	assert.Equal(t, profile.InstallationID, h.Get("x-codex-installation-id"), "installation_id 应收敛到档案")
+	assert.NotEqual(t, "extra-device-id", h.Get("x-codex-installation-id"))
 	assert.Equal(t, "user-window:0", h.Get("x-codex-window-id"), "device 模式不改写 window_id")
 
 	var meta map[string]any
 	require.NoError(t, json.Unmarshal([]byte(h.Get("x-codex-turn-metadata")), &meta))
-	assert.Equal(t, "converged-device", meta["installation_id"])
+	assert.Equal(t, profile.InstallationID, meta["installation_id"])
 	assert.Equal(t, "user-session", meta["session_id"], "device 模式不改写 session_id")
 	assert.Equal(t, "seccomp", meta["sandbox"], "非指纹字段保留原样")
 }
@@ -170,6 +524,7 @@ func TestApplyCodexFingerprintHeaders_SessionMode(t *testing.T) {
 	account := newTestOAuthAccount(1, map[string]any{
 		codexFingerprintModeExtraKey: "session",
 	})
+	injectProfileForAccount(t, account)
 	clientHeaders := http.Header{}
 	clientHeaders.Set("session-id", "client-session-aaa")
 
@@ -180,12 +535,12 @@ func TestApplyCodexFingerprintHeaders_SessionMode(t *testing.T) {
 	h.Set("x-codex-turn-metadata", turnMetadata)
 	h.Set("x-client-request-id", "user-thread")
 
-	ids := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+	ids := resolveCodexFingerprintIDsFromRequest(context.Background(), account, clientHeaders)
 	applyCodexFingerprintHeaders(h, ids)
 
-	convergedInstall := resolveConvergedInstallationID(account)
-	convergedSession := resolveConvergedSessionID(account)
-	convergedThread := resolveConvergedThreadID(account, "client-session-aaa")
+	convergedInstall := resolveConvergedInstallationID(context.Background(), account)
+	convergedSession := resolveConvergedSessionID(testSessionNSA)
+	convergedThread := resolveConvergedThreadID(testSessionNSA, "client-session-aaa")
 
 	assert.Equal(t, convergedInstall, h.Get("x-codex-installation-id"))
 	assert.Equal(t, convergedSession, h.Get("session-id"))
@@ -210,6 +565,7 @@ func TestApplyCodexFingerprintHeaders_SessionMode_DifferentClients(t *testing.T)
 	account := newTestOAuthAccount(1, map[string]any{
 		codexFingerprintModeExtraKey: "session",
 	})
+	injectProfileForAccount(t, account)
 
 	makeTurnMeta := func() string {
 		return `{"installation_id":"x","session_id":"x","thread_id":"x","turn_id":"x","window_id":"x:0"}`
@@ -217,14 +573,14 @@ func TestApplyCodexFingerprintHeaders_SessionMode_DifferentClients(t *testing.T)
 
 	clientA := http.Header{}
 	clientA.Set("session-id", "client-A")
-	idsA := resolveCodexFingerprintIDsFromRequest(account, clientA)
+	idsA := resolveCodexFingerprintIDsFromRequest(context.Background(), account, clientA)
 	hA := http.Header{}
 	hA.Set("x-codex-turn-metadata", makeTurnMeta())
 	applyCodexFingerprintHeaders(hA, idsA)
 
 	clientB := http.Header{}
 	clientB.Set("session-id", "client-B")
-	idsB := resolveCodexFingerprintIDsFromRequest(account, clientB)
+	idsB := resolveCodexFingerprintIDsFromRequest(context.Background(), account, clientB)
 	hB := http.Header{}
 	hB.Set("x-codex-turn-metadata", makeTurnMeta())
 	applyCodexFingerprintHeaders(hB, idsB)
@@ -241,18 +597,19 @@ func TestApplyCodexFingerprintHeaders_FullMode(t *testing.T) {
 	account := newTestOAuthAccount(1, map[string]any{
 		codexFingerprintModeExtraKey: "full",
 	})
-	convergedSession := resolveConvergedSessionID(account)
+	injectProfileForAccount(t, account)
+	convergedSession := resolveConvergedSessionID(testSessionNSA)
 
 	clientA := http.Header{}
 	clientA.Set("session-id", "client-A")
-	idsA := resolveCodexFingerprintIDsFromRequest(account, clientA)
+	idsA := resolveCodexFingerprintIDsFromRequest(context.Background(), account, clientA)
 	hA := http.Header{}
 	hA.Set("x-codex-turn-metadata", `{"installation_id":"x","session_id":"x","thread_id":"x","turn_id":"x","window_id":"x:0"}`)
 	applyCodexFingerprintHeaders(hA, idsA)
 
 	clientB := http.Header{}
 	clientB.Set("session-id", "client-B")
-	idsB := resolveCodexFingerprintIDsFromRequest(account, clientB)
+	idsB := resolveCodexFingerprintIDsFromRequest(context.Background(), account, clientB)
 	hB := http.Header{}
 	hB.Set("x-codex-turn-metadata", `{"installation_id":"x","session_id":"x","thread_id":"x","turn_id":"x","window_id":"x:0"}`)
 	applyCodexFingerprintHeaders(hB, idsB)
@@ -268,10 +625,11 @@ func TestFingerprintIDs_HeaderAndBody_TurnID_Consistent(t *testing.T) {
 	account := newTestOAuthAccount(1, map[string]any{
 		codexFingerprintModeExtraKey: "session",
 	})
+	injectProfileForAccount(t, account)
 	clientHeaders := http.Header{}
 	clientHeaders.Set("session-id", "client-session-xyz")
 
-	ids := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+	ids := resolveCodexFingerprintIDsFromRequest(context.Background(), account, clientHeaders)
 	require.NotNil(t, ids)
 
 	// 头改写
@@ -330,9 +688,11 @@ func TestApplyCodexFingerprintClientMetadata_OffMode(t *testing.T) {
 func TestApplyCodexFingerprintClientMetadata_DeviceMode(t *testing.T) {
 	account := newTestOAuthAccount(1, map[string]any{
 		codexFingerprintModeExtraKey: "device",
-		"openai_device_id":           "converged-device",
+		"openai_device_id":           "extra-device-id",
 	})
-	ids := resolveCodexFingerprintIDsFromRequest(account, nil)
+	profile := injectProfileForAccount(t, account)
+	require.NotEqual(t, "extra-device-id", profile.InstallationID)
+	ids := resolveCodexFingerprintIDsFromRequest(context.Background(), account, nil)
 	require.NotNil(t, ids)
 
 	embeddedMeta := `{"installation_id":"x","session_id":"user-session","sandbox":"seccomp"}`
@@ -349,14 +709,15 @@ func TestApplyCodexFingerprintClientMetadata_DeviceMode(t *testing.T) {
 
 	cm, ok := reqBody["client_metadata"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "converged-device", cm["x-codex-installation-id"])
+	assert.Equal(t, profile.InstallationID, cm["x-codex-installation-id"])
+	assert.NotEqual(t, "extra-device-id", cm["x-codex-installation-id"])
 	assert.Equal(t, "user-session", cm["session_id"], "device 模式不改 session_id")
 
 	turnMetaStr, ok := cm["x-codex-turn-metadata"].(string)
 	require.True(t, ok)
 	var meta map[string]any
 	require.NoError(t, json.Unmarshal([]byte(turnMetaStr), &meta))
-	assert.Equal(t, "converged-device", meta["installation_id"])
+	assert.Equal(t, profile.InstallationID, meta["installation_id"])
 	assert.Equal(t, "seccomp", meta["sandbox"], "非指纹字段保留原样")
 }
 
@@ -364,10 +725,11 @@ func TestApplyCodexFingerprintClientMetadata_SessionMode(t *testing.T) {
 	account := newTestOAuthAccount(1, map[string]any{
 		codexFingerprintModeExtraKey: "session",
 	})
+	injectProfileForAccount(t, account)
 	clientHeaders := http.Header{}
 	clientHeaders.Set("session-id", "client-session-aaa")
 
-	ids := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+	ids := resolveCodexFingerprintIDsFromRequest(context.Background(), account, clientHeaders)
 	require.NotNil(t, ids)
 
 	embeddedMeta := `{"installation_id":"x","session_id":"x","thread_id":"x","turn_id":"x","window_id":"x:0","sandbox":"seccomp"}`
@@ -384,9 +746,9 @@ func TestApplyCodexFingerprintClientMetadata_SessionMode(t *testing.T) {
 
 	cm, ok := reqBody["client_metadata"].(map[string]any)
 	require.True(t, ok)
-	convergedInstall := resolveConvergedInstallationID(account)
-	convergedSession := resolveConvergedSessionID(account)
-	convergedThread := resolveConvergedThreadID(account, "client-session-aaa")
+	convergedInstall := resolveConvergedInstallationID(context.Background(), account)
+	convergedSession := resolveConvergedSessionID(testSessionNSA)
+	convergedThread := resolveConvergedThreadID(testSessionNSA, "client-session-aaa")
 
 	assert.Equal(t, convergedInstall, cm["x-codex-installation-id"])
 	assert.Equal(t, convergedSession, cm["session_id"])
@@ -406,10 +768,11 @@ func TestApplyCodexFingerprintClientMetadata_FullMode(t *testing.T) {
 	account := newTestOAuthAccount(1, map[string]any{
 		codexFingerprintModeExtraKey: "full",
 	})
+	injectProfileForAccount(t, account)
 	clientHeaders := http.Header{}
 	clientHeaders.Set("session-id", "any-client")
 
-	ids := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+	ids := resolveCodexFingerprintIDsFromRequest(context.Background(), account, clientHeaders)
 	require.NotNil(t, ids)
 
 	reqBody := map[string]any{
@@ -425,7 +788,7 @@ func TestApplyCodexFingerprintClientMetadata_FullMode(t *testing.T) {
 
 	cm, ok := reqBody["client_metadata"].(map[string]any)
 	require.True(t, ok)
-	convergedSession := resolveConvergedSessionID(account)
+	convergedSession := resolveConvergedSessionID(testSessionNSA)
 
 	assert.Equal(t, convergedSession, cm["session_id"])
 	assert.Equal(t, convergedSession, cm["thread_id"], "full 模式 thread_id 应等于 session_id")

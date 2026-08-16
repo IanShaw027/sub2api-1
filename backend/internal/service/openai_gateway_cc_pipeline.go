@@ -208,7 +208,9 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 
 	if account.Platform == PlatformGrok {
 		if account.IsGrokOAuth() {
-			applyGrokCLIHeaders(upstreamReq.Header)
+			if err := applyGrokInteractiveUpstreamHeadersFromAccount(ctx, upstreamReq, account); err != nil {
+				return nil, err
+			}
 		}
 		applyGrokCacheHeaders(upstreamReq.Header, grokCacheIdentity)
 	}
@@ -220,7 +222,7 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	if account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.EffectiveConcurrency())
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 	}

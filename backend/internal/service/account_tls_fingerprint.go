@@ -195,6 +195,25 @@ func inferTLSFingerprintClientType(platform, userAgent, originator string) strin
 	}
 }
 
+func inferTLSFingerprintAccountClientType(platform string) string {
+	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case PlatformAnthropic:
+		return "claude-code"
+	case PlatformOpenAI:
+		return "codex-cli"
+	case PlatformGemini:
+		return "gemini-cli"
+	case PlatformAntigravity:
+		return "antigravity"
+	case PlatformGrok:
+		return "grok-desktop"
+	case PlatformKiro:
+		return "kiro-ide"
+	default:
+		return ""
+	}
+}
+
 func resolveAccountTLSFingerprintRuntime(
 	ctx context.Context,
 	account *Account,
@@ -207,16 +226,17 @@ func resolveAccountTLSFingerprintRuntime(
 		return runtime
 	}
 
-	os := inferTLSFingerprintOS(inboundUA)
-	if os == "" {
-		os = account.GetTLSFingerprintDefaultOS()
-	}
-	clientType := inferTLSFingerprintClientType(account.Platform, inboundUA, "")
+	os := account.GetTLSFingerprintDefaultOS()
+	clientType := inferTLSFingerprintAccountClientType(account.Platform)
 	if bindingID := lookupTLSFingerprintBinding(account.GetTLSFingerprintBindings(), os, clientType, protocol); bindingID != 0 {
 		runtime.Profile = profileSvc.resolveTLSProfileByID(bindingID)
 	}
 	if runtime.Profile == nil {
-		runtime.Profile = profileSvc.ResolveTLSProfile(account)
+		if account.GetTLSFingerprintProfileID() == -1 {
+			runtime.Profile = &tlsfingerprint.Profile{Name: "Built-in Default (Node.js 24.x)"}
+		} else {
+			runtime.Profile = profileSvc.ResolveTLSProfile(account)
+		}
 	}
 
 	if routerSvc == nil {
@@ -227,7 +247,7 @@ func resolveAccountTLSFingerprintRuntime(
 		return runtime
 	}
 
-	match, ok := routerSvc.MatchRequest(ctx, routerID, account.Platform, inboundUA, transport, protocol)
+	match, ok := routerSvc.MatchRequest(ctx, routerID, account.Platform, "", transport, protocol)
 	if !ok {
 		logger.LegacyPrintf("service.tls_fp_router",
 			"[TLSFPRouter] no_match account_id=%d platform=%s protocol=%s router_id=%d",
@@ -256,9 +276,6 @@ func (s *TLSFingerprintProfileService) resolveTLSProfileByID(id int64) *tlsfinge
 	if s == nil || id == 0 {
 		return nil
 	}
-	if id == -1 {
-		return s.getRandomProfile()
-	}
 	if id > 0 {
 		return s.GetProfileByID(id)
 	}
@@ -272,8 +289,9 @@ func applyTLSFingerprintRuntimeHeaders(req *http.Request, runtime accountTLSFing
 	if ua := strings.TrimSpace(runtime.UpstreamUserAgent); ua != "" {
 		req.Header.Set("User-Agent", ua)
 	}
+	deleteHeaderAllForms(req.Header, "X-Originator")
 	if originator := strings.TrimSpace(runtime.UpstreamOriginator); originator != "" {
-		req.Header.Set("X-Originator", originator)
+		setHeaderRaw(req.Header, "originator", originator)
 	}
 }
 

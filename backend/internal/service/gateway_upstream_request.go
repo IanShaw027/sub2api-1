@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
@@ -54,37 +53,25 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 
 	// OAuth账号：应用统一指纹和metadata重写（受设置开关控制）
 	var fingerprint *Fingerprint
+	var outboundProfile *AccountDeviceProfile
 	enableFP, enableMPT := true, false
 	if s.settingService != nil {
 		enableFP, enableMPT, _ = s.settingService.GetGatewayForwardingSettings(ctx)
 	}
 	if account.IsOAuth() && s.identityService != nil {
-		// 1. 获取或创建指纹（包含随机生成的ClientID）
-		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
-		if err != nil {
-			logger.LegacyPrintf("service.gateway", "Warning: failed to get fingerprint for account %d: %v", account.ID, err)
-			// 失败时降级为透传原始headers
-		} else {
-			if enableFP {
-				fingerprint = fp
-			}
-
-			// 2. 重写metadata.user_id（需要指纹中的ClientID和账号的account_uuid）
-			// 如果启用了会话ID伪装，会在重写后替换 session 部分为固定值
-			// 当 metadata 透传开启时跳过重写
-			if !enableMPT {
-				accountUUID := account.GetExtraString("account_uuid")
-				if accountUUID != "" && fp.ClientID != "" {
-					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
-						body = newBody
-					}
-				}
-			}
+		// Profile identity is all-or-nothing: UA / stainless / user_id come from
+		// the same loaded profile. Do not mint a fingerprint first — a loaded
+		// profile never uses it, and load failure already nils fingerprint.
+		body, outboundProfile = s.applyAnthropicOutboundIdentity(ctx, body, account, !enableMPT)
+		if outboundProfile == nil {
+			fingerprint = nil
 		}
 	}
 
 	// 同步 billing header cc_version 与实际发送的 User-Agent 版本
-	if fingerprint != nil {
+	if ua := outboundProfileUserAgent(outboundProfile); ua != "" {
+		body = syncBillingHeaderVersion(body, ua)
+	} else if fingerprint != nil {
 		body = syncBillingHeaderVersion(body, fingerprint.UserAgent)
 	}
 
@@ -145,8 +132,10 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 		}
 	}
 
-	// OAuth账号：应用缓存的指纹到请求头（覆盖白名单透传的头）
-	if fingerprint != nil {
+	// OAuth账号：profile UA/stainless 覆盖白名单透传；load failure 不回退指纹身份。
+	if outboundProfile != nil {
+		applyOutboundProfileIdentityHeaders(req, outboundProfile)
+	} else if fingerprint != nil {
 		s.identityService.ApplyFingerprint(req, fingerprint)
 	}
 
@@ -523,7 +512,7 @@ func (s *GatewayService) computeFinalAnthropicBeta(
 // 两条特殊规则：
 //
 //   - OAuth mimic：requiredBetas 为 FullClaudeCodeMimicryBetas + BetaTokenCounting；
-//     count_tokens 另外保留客户端 beta，而 messages mimic 会忽略客户端 beta。
+//     与 messages mimic 对齐，忽略客户端 beta，避免入站身份泄漏到上游。
 //   - OAuth 透传 + 客户端未传 anthropic-beta：补齐 CountTokensBetaHeader
 //   - OAuth 透传 + 客户端传了：补齐 BetaTokenCounting（如果未含）
 //
@@ -543,12 +532,8 @@ func (s *GatewayService) computeFinalCountTokensAnthropicBeta(
 
 	if tokenType == "oauth" {
 		if mimicClaudeCode {
-			// 与原代码严格等价：original buildCountTokensRequest 在 count_tokens mimic
-			// 分支上**不**会跳过白名单透传（与 messages mimic 路径不同），所以
-			// incomingBeta = req.Header[anthropic-beta] = 客户端透传过来的 client beta。
-			// 重构后直接从 clientHeaders 拿同一个值，保持行为一致。
 			requiredBetas := append(claude.FullClaudeCodeMimicryBetas(), claude.BetaTokenCounting)
-			return mergeAnthropicBetaDropping(requiredBetas, clientBeta, effectiveDropSet), true
+			return mergeAnthropicBetaDropping(requiredBetas, "", effectiveDropSet), true
 		}
 		if clientBeta == "" {
 			return claude.CountTokensBetaHeader, true
@@ -850,16 +835,9 @@ func applyClaudeCodeMimicHeaders(req *http.Request, isStream bool) {
 	if req == nil {
 		return
 	}
-	// Start with the standard defaults (fill missing).
+	// Fill only missing Claude OAuth headers; account/fingerprint identity has
+	// already been applied and must remain stable across inbound requests.
 	applyClaudeOAuthHeaderDefaults(req)
-	// Then force key headers to match Claude Code fingerprint regardless of what the client sent.
-	// 使用 resolveWireCasing 确保 key 与真实 wire format 一致（如 "x-app" 而非 "X-App"）
-	for key, value := range claude.DefaultHeaders {
-		if value == "" {
-			continue
-		}
-		setHeaderRaw(req.Header, resolveWireCasing(key), value)
-	}
 	// Real Claude CLI uses Accept: application/json (even for streaming).
 	setHeaderRaw(req.Header, "Accept", "application/json")
 	if isStream {

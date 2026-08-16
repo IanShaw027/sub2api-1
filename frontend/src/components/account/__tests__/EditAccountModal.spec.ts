@@ -1213,4 +1213,75 @@ describe('EditAccountModal', () => {
       tls_fingerprint_bindings: { 'macos/codex-cli@responses': 21 }
     })
   })
+
+  function buildAnthropicOAuthAccount() {
+    return {
+      ...buildAccount(),
+      id: 8,
+      name: 'Claude OAuth',
+      platform: 'anthropic',
+      type: 'oauth',
+      concurrency: 3,
+      credentials: { refresh_token: 'rt' },
+      extra: {}
+    } as any
+  }
+
+  it('writes extra.device_learning_enabled true when the learning toggle is on', async () => {
+    const account = buildAccount()
+    account.extra = { existing_key: 'keep-me' }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    const toggle = wrapper.get('[data-testid="device-learning-toggle"]')
+    expect(toggle.attributes('aria-checked')).toBe('false')
+
+    await toggle.trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.device_learning_enabled).toBe(true)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.existing_key).toBe('keep-me')
+  })
+
+  it('does not write a computed RPM sticky buffer back into extra', async () => {
+    const account = buildAnthropicOAuthAccount()
+    account.base_rpm = 15
+    account.rpm_strategy = 'tiered'
+    account.rpm_sticky_buffer = 13
+    account.max_sessions = 10
+    account.extra = { base_rpm: 15, max_sessions: 10 }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('rpm_sticky_buffer')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.base_rpm).toBe(15)
+  })
+
+  it('writes a manual RPM sticky buffer from extra', async () => {
+    const account = buildAnthropicOAuthAccount()
+    account.base_rpm = 15
+    account.rpm_strategy = 'tiered'
+    account.rpm_sticky_buffer = 5
+    account.extra = { base_rpm: 15, rpm_sticky_buffer: 5 }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.rpm_sticky_buffer).toBe(5)
+  })
 })

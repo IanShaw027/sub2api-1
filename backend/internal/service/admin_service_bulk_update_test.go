@@ -18,6 +18,8 @@ type accountRepoStubForBulkUpdate struct {
 	accountRepoStub
 	bulkUpdateErr       error
 	bulkUpdateIDs       []int64
+	bulkUpdateInput     AccountBulkUpdate
+	bulkUpdateCalls     []bulkUpdateCall
 	bindGroupErrByID    map[int64]error
 	bindGroupsCalls     []int64
 	bindGroupsByAccount map[int64][]int64
@@ -50,8 +52,18 @@ type accountRepoStubForBulkUpdate struct {
 	}
 }
 
-func (s *accountRepoStubForBulkUpdate) BulkUpdate(_ context.Context, ids []int64, _ AccountBulkUpdate) (int64, error) {
+type bulkUpdateCall struct {
+	ids     []int64
+	updates AccountBulkUpdate
+}
+
+func (s *accountRepoStubForBulkUpdate) BulkUpdate(_ context.Context, ids []int64, updates AccountBulkUpdate) (int64, error) {
 	s.bulkUpdateIDs = append([]int64{}, ids...)
+	s.bulkUpdateInput = updates
+	s.bulkUpdateCalls = append(s.bulkUpdateCalls, bulkUpdateCall{
+		ids:     append([]int64{}, ids...),
+		updates: updates,
+	})
 	if s.bulkUpdateErr != nil {
 		return 0, s.bulkUpdateErr
 	}
@@ -137,7 +149,13 @@ func (s *accountRepoStubForBulkUpdate) ListWithFilters(_ context.Context, params
 
 // TestAdminService_BulkUpdateAccounts_AllSuccessIDs 验证批量更新成功时返回 success_ids/failed_ids。
 func TestAdminService_BulkUpdateAccounts_AllSuccessIDs(t *testing.T) {
-	repo := &accountRepoStubForBulkUpdate{}
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Status: StatusActive},
+			{ID: 2, Status: StatusActive},
+			{ID: 3, Status: StatusActive},
+		},
+	}
 	svc := &adminServiceImpl{accountRepo: repo}
 
 	schedulable := true
@@ -192,6 +210,11 @@ func TestAdminService_BulkUpdateAccounts_PartialFailureIDs(t *testing.T) {
 	repo := &accountRepoStubForBulkUpdate{
 		bindGroupErrByID: map[int64]error{
 			2: errors.New("bind failed"),
+		},
+		getByIDsAccounts: []*Account{
+			{ID: 1, Status: StatusActive},
+			{ID: 2, Status: StatusActive},
+			{ID: 3, Status: StatusActive},
 		},
 	}
 	svc := &adminServiceImpl{
@@ -306,4 +329,128 @@ func TestAdminServiceBulkUpdateAccounts_ResolvesIDsFromFilters(t *testing.T) {
 	require.Equal(t, 2, result.Success)
 	require.Equal(t, 0, result.Failed)
 	require.Equal(t, []int64{7, 11}, result.SuccessIDs)
+}
+
+func TestAdminService_BulkUpdateAccounts_NormalizesInvalidConcurrencyPerTargetAccount(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Concurrency: 7},
+			{ID: 2, Platform: PlatformGrok, Type: AccountTypeOAuth, Status: StatusActive, Concurrency: 7},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	concurrency := 0
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:            []int64{1, 2},
+		Concurrency:           &concurrency,
+		Credentials:           map[string]any{},
+		Extra:                 map[string]any{},
+		SkipMixedChannelCheck: true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 2, result.Success)
+	require.Len(t, repo.bulkUpdateCalls, 3, "invalid concurrency should keep the shared bulk write before per-account normalization")
+	require.Equal(t, []int64{1, 2}, repo.bulkUpdateCalls[0].ids)
+	require.Nil(t, repo.bulkUpdateCalls[0].updates.Concurrency)
+	require.Equal(t, []int64{1}, repo.bulkUpdateCalls[1].ids)
+	require.NotNil(t, repo.bulkUpdateCalls[1].updates.Concurrency)
+	require.Equal(t, 12, *repo.bulkUpdateCalls[1].updates.Concurrency)
+	require.Equal(t, []int64{2}, repo.bulkUpdateCalls[2].ids)
+	require.NotNil(t, repo.bulkUpdateCalls[2].updates.Concurrency)
+	require.Equal(t, 1, *repo.bulkUpdateCalls[2].updates.Concurrency)
+	require.Empty(t, repo.updatedAccounts, "invalid concurrency normalization should not fall back to full-account updates")
+}
+
+func TestAdminService_BulkUpdateAccounts_InvalidConcurrencyStillSanitizesCredentialsOnSharedPath(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Concurrency: 7},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	concurrency := 0
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:  []int64{1},
+		Concurrency: &concurrency,
+		Credentials: map[string]any{
+			"cookie":                  "session-secret",
+			"header_override_enabled": true,
+			"header_overrides": map[string]any{
+				" X-Test ": " value ",
+			},
+		},
+		Extra:                 map[string]any{},
+		SkipMixedChannelCheck: true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Success)
+	require.Len(t, repo.bulkUpdateCalls, 2)
+	require.Equal(t, []int64{1}, repo.bulkUpdateCalls[0].ids)
+	require.Nil(t, repo.bulkUpdateCalls[0].updates.Concurrency)
+	require.NotContains(t, repo.bulkUpdateCalls[0].updates.Credentials, "cookie")
+	require.Equal(t, true, repo.bulkUpdateCalls[0].updates.Credentials["header_override_enabled"])
+	require.Equal(t, map[string]any{"x-test": "value"}, repo.bulkUpdateCalls[0].updates.Credentials["header_overrides"])
+	require.Equal(t, []int64{1}, repo.bulkUpdateCalls[1].ids)
+	require.NotNil(t, repo.bulkUpdateCalls[1].updates.Concurrency)
+	require.Equal(t, 12, *repo.bulkUpdateCalls[1].updates.Concurrency)
+	require.Nil(t, repo.bulkUpdateCalls[1].updates.Credentials)
+}
+
+func TestAdminService_BulkUpdateAccounts_InvalidConcurrencyStillPersistsProbeEnabled(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Concurrency: 7},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	concurrency := 0
+	enabled := true
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:            []int64{1},
+		Concurrency:           &concurrency,
+		ProbeEnabled:          &enabled,
+		Extra:                 map[string]any{},
+		SkipMixedChannelCheck: true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Success)
+	require.Len(t, repo.bulkUpdateCalls, 2)
+	require.Equal(t, []int64{1}, repo.bulkUpdateCalls[0].ids)
+	require.NotNil(t, repo.bulkUpdateCalls[0].updates.ProbeEnabled)
+	require.Equal(t, true, *repo.bulkUpdateCalls[0].updates.ProbeEnabled)
+	require.Equal(t, true, repo.bulkUpdateCalls[0].updates.Extra[UpstreamBillingProbeEnabledExtraKey])
+	require.Equal(t, []int64{1}, repo.bulkUpdateCalls[1].ids)
+	require.NotNil(t, repo.bulkUpdateCalls[1].updates.Concurrency)
+	require.Equal(t, 3, *repo.bulkUpdateCalls[1].updates.Concurrency)
+}
+
+func TestAdminService_BulkUpdateAccounts_PreservesExplicitConcurrency(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Concurrency: 7},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	concurrency := 3
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:            []int64{1},
+		Concurrency:           &concurrency,
+		Credentials:           map[string]any{},
+		Extra:                 map[string]any{},
+		SkipMixedChannelCheck: true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Success)
+	require.Equal(t, []int64{1}, repo.bulkUpdateIDs)
+	require.NotNil(t, repo.bulkUpdateInput.Concurrency)
+	require.Equal(t, 3, *repo.bulkUpdateInput.Concurrency)
+	require.Empty(t, repo.updatedAccounts, "in-range concurrency should stay on the bulk write path")
 }

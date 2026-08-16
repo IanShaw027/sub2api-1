@@ -216,16 +216,16 @@ func TestOpenAIWSProtocolResolver_Resolve_ModeRouterV2(t *testing.T) {
 		require.Equal(t, "ws_v2_mode_http_bridge", decision.Reason)
 	})
 
-	t.Run("non-positive concurrency is rejected in v2 router", func(t *testing.T) {
-		invalidConcurrency := &Account{
+	t.Run("oauth stored zero concurrency uses effective twelve and stays on ws", func(t *testing.T) {
+		oauthZero := &Account{
 			Platform: PlatformOpenAI,
 			Type:     AccountTypeOAuth,
 			Extra: map[string]any{
 				"openai_oauth_responses_websockets_v2_mode": OpenAIWSIngressModeCtxPool,
 			},
 		}
-		decision := NewOpenAIWSProtocolResolver(cfg).Resolve(invalidConcurrency)
-		require.Equal(t, OpenAIUpstreamTransportHTTPSSE, decision.Transport)
-		require.Equal(t, "account_concurrency_invalid", decision.Reason)
+		decision := NewOpenAIWSProtocolResolver(cfg).Resolve(oauthZero)
+		require.Equal(t, OpenAIUpstreamTransportResponsesWebsocketV2, decision.Transport)
+		require.Equal(t, "ws_v2_mode_ctx_pool", decision.Reason)
 	})
 }

@@ -99,14 +99,18 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 			}
 		}
 	}
-	// OAuth 账号：将 apiKeyID 混入 session 标识符，防止跨用户会话碰撞。
+	// OAuth 账号：将 apiKeyID 与设备档案 session_namespace 一并混入
+	// session 标识符，防止跨用户 / 跨账号会话碰撞。
 	if account != nil && account.Type == AccountTypeOAuth {
 		apiKeyID := getAPIKeyIDFromContext(c)
-		if sessionResolution.SessionID != "" {
-			headers.Set("session_id", isolateOpenAISessionID(apiKeyID, sessionResolution.SessionID))
-		}
-		if sessionResolution.ConversationID != "" {
-			headers.Set("conversation_id", isolateOpenAISessionID(apiKeyID, sessionResolution.ConversationID))
+		if sessionResolution.SessionID != "" || sessionResolution.ConversationID != "" {
+			sessionID, conversationID := openaiOutboundSessionPair(ctx, account, apiKeyID, sessionResolution.SessionID, sessionResolution.ConversationID)
+			if sessionResolution.SessionID != "" {
+				headers.Set("session_id", sessionID)
+			}
+			if sessionResolution.ConversationID != "" {
+				headers.Set("conversation_id", conversationID)
+			}
 		}
 	} else {
 		if sessionResolution.SessionID != "" {
@@ -153,7 +157,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	// 终态收口：WS 握手与 HTTP 出站共用同一套身份语义，账号级自定义 UA 同样作为
 	// 管理员显式配置传入（上面写进 headers 的值只在强制统一被关闭时才参与配对）。
 	if account != nil && account.Type == AccountTypeOAuth {
-		enforceCodexIdentityHeadersWithUA(headers, s.codexIdentityOverrideUA(account))
+		s.enforceCodexIdentityFromAccount(ctx, headers, account)
 	}
 
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）。

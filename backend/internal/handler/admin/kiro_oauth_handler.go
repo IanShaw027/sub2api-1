@@ -139,6 +139,10 @@ func (h *KiroOAuthHandler) RefreshToken(c *gin.Context) {
 		response.InternalError(c, "Kiro OAuth refresh service is not configured")
 		return
 	}
+	if err := service.ValidateAccountExtraWrites(req.Extra); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 
 	req.Credentials = service.NormalizeKiroOAuthCredentialShape(req.Credentials)
 	refreshToken := strings.TrimSpace(stringCredentialValue(req.Credentials, "refresh_token"))

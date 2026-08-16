@@ -537,7 +537,7 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 		if projectID == "" {
 			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] No project_id provided, attempting to fetch from LoadCodeAssist API...")
 			var err error
-			projectID, tierID, err = s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL)
+			projectID, tierID, err = s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL, nil)
 			if err != nil {
 				// 记录警告但不阻断流程，允许后续补充 project_id
 				fmt.Printf("[GeminiOAuth] Warning: Failed to fetch project_id during token exchange: %v\n", err)
@@ -548,7 +548,7 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 		} else {
 			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] User provided project_id: %s, fetching tier_id...", projectID)
 			// 用户手动填了 project_id，仍需调用 LoadCodeAssist 获取 tierID
-			_, fetchedTierID, err := s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL)
+			_, fetchedTierID, err := s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL, nil)
 			if err != nil {
 				fmt.Printf("[GeminiOAuth] Warning: Failed to fetch tierID: %v\n", err)
 				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] WARNING: Failed to fetch tier_id: %v", err)
@@ -582,7 +582,7 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 		if projectID == "" {
 			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] No project_id provided, attempting to fetch from LoadCodeAssist API...")
 			var err error
-			projectID, _, err = s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL)
+			projectID, _, err = s.fetchProjectID(ctx, tokenResp.AccessToken, proxyURL, nil)
 			if err != nil {
 				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] ERROR: Failed to fetch project_id: %v", err)
 				return nil, fmt.Errorf("google One accounts require a project_id, failed to auto-detect: %w", err)
@@ -810,7 +810,7 @@ func (s *GeminiOAuthService) RefreshAccountToken(ctx context.Context, account *A
 		// 尝试自动探测 project_id 和 tier_id
 		needDetect := strings.TrimSpace(tokenInfo.ProjectID) == "" || tokenInfo.TierID == ""
 		if needDetect {
-			projectID, tierID, err := s.fetchProjectID(ctx, tokenInfo.AccessToken, proxyURL)
+			projectID, tierID, err := s.fetchProjectID(ctx, tokenInfo.AccessToken, proxyURL, account)
 			if err != nil {
 				fmt.Printf("[GeminiOAuth] Warning: failed to auto-detect project/tier: %v\n", err)
 			} else {
@@ -919,12 +919,23 @@ func (s *GeminiOAuthService) Stop() {
 	s.sessionStore.Stop()
 }
 
-func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, proxyURL string) (string, string, error) {
+func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, proxyURL string, account *Account) (string, string, error) {
 	if s.codeAssist == nil {
 		return "", "", errors.New("code assist client not configured")
 	}
 
-	loadResp, loadErr := s.codeAssist.LoadCodeAssist(ctx, accessToken, proxyURL, nil)
+	userAgent := geminicli.GeminiCLIUserAgent
+	if account != nil {
+		profile, err := LoadOutboundDeviceProfile(ctx, account)
+		if err != nil {
+			return "", "", err
+		}
+		if ua := outboundProfileUserAgent(profile); ua != "" {
+			userAgent = ua
+		}
+	}
+
+	loadResp, loadErr := s.codeAssist.LoadCodeAssist(ctx, accessToken, proxyURL, userAgent, nil)
 
 	// Extract tierID from response (works whether CloudAICompanionProject is set or not)
 	tierID := "LEGACY"
@@ -954,7 +965,7 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 			logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] User has tier (%s) but no cloudaicompanionProject, trying Cloud Resource Manager...", registeredTierID)
 
 			// Try to get project from Cloud Resource Manager
-			fallback, fbErr := fetchProjectIDFromResourceManager(ctx, accessToken, proxyURL)
+			fallback, fbErr := fetchProjectIDFromResourceManager(ctx, accessToken, proxyURL, userAgent)
 			if fbErr == nil && strings.TrimSpace(fallback) != "" {
 				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Found project from Cloud Resource Manager: %s", fallback)
 				return strings.TrimSpace(fallback), tierID, nil
@@ -980,10 +991,10 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 
 	maxAttempts := 5
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		resp, err := s.codeAssist.OnboardUser(ctx, accessToken, proxyURL, req)
+		resp, err := s.codeAssist.OnboardUser(ctx, accessToken, proxyURL, userAgent, req)
 		if err != nil {
 			// If Code Assist onboarding fails (e.g. INVALID_ARGUMENT), fallback to Cloud Resource Manager projects.
-			fallback, fbErr := fetchProjectIDFromResourceManager(ctx, accessToken, proxyURL)
+			fallback, fbErr := fetchProjectIDFromResourceManager(ctx, accessToken, proxyURL, userAgent)
 			if fbErr == nil && strings.TrimSpace(fallback) != "" {
 				return strings.TrimSpace(fallback), tierID, nil
 			}
@@ -1001,7 +1012,7 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 				}
 			}
 
-			fallback, fbErr := fetchProjectIDFromResourceManager(ctx, accessToken, proxyURL)
+			fallback, fbErr := fetchProjectIDFromResourceManager(ctx, accessToken, proxyURL, userAgent)
 			if fbErr == nil && strings.TrimSpace(fallback) != "" {
 				return strings.TrimSpace(fallback), tierID, nil
 			}
@@ -1010,7 +1021,7 @@ func (s *GeminiOAuthService) fetchProjectID(ctx context.Context, accessToken, pr
 		time.Sleep(2 * time.Second)
 	}
 
-	fallback, fbErr := fetchProjectIDFromResourceManager(ctx, accessToken, proxyURL)
+	fallback, fbErr := fetchProjectIDFromResourceManager(ctx, accessToken, proxyURL, userAgent)
 	if fbErr == nil && strings.TrimSpace(fallback) != "" {
 		return strings.TrimSpace(fallback), tierID, nil
 	}
@@ -1030,25 +1041,37 @@ type googleCloudProjectsResponse struct {
 	Projects []googleCloudProject `json:"projects"`
 }
 
-func fetchProjectIDFromResourceManager(ctx context.Context, accessToken, proxyURL string) (string, error) {
+// leftoverGeminiResourceManagerRoundTrip, when set, intercepts the Cloud Resource
+// Manager GET so tests can assert the outbound User-Agent without a network call.
+var leftoverGeminiResourceManagerRoundTrip func(*http.Request) (*http.Response, error)
+
+func fetchProjectIDFromResourceManager(ctx context.Context, accessToken, proxyURL, userAgent string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://cloudresourcemanager.googleapis.com/v1/projects", nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create resource manager request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("User-Agent", geminicli.GeminiCLIUserAgent)
-
-	client, err := httpclient.GetClient(httpclient.Options{
-		ProxyURL:           strings.TrimSpace(proxyURL),
-		Timeout:            30 * time.Second,
-		ValidateResolvedIP: true,
-	})
-	if err != nil {
-		return "", fmt.Errorf("create http client failed: %w", err)
+	if strings.TrimSpace(userAgent) == "" {
+		userAgent = geminicli.GeminiCLIUserAgent
 	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("User-Agent", userAgent)
 
-	resp, err := client.Do(req)
+	var resp *http.Response
+	if leftoverGeminiResourceManagerRoundTrip != nil {
+		resp, err = leftoverGeminiResourceManagerRoundTrip(req)
+	} else {
+		var client *http.Client
+		client, err = httpclient.GetClient(httpclient.Options{
+			ProxyURL:           strings.TrimSpace(proxyURL),
+			Timeout:            30 * time.Second,
+			ValidateResolvedIP: true,
+		})
+		if err != nil {
+			return "", fmt.Errorf("create http client failed: %w", err)
+		}
+		resp, err = client.Do(req)
+	}
 	if err != nil {
 		return "", fmt.Errorf("resource manager request failed: %w", err)
 	}

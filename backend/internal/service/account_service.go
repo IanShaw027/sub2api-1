@@ -230,6 +230,9 @@ func (s *AccountService) Create(ctx context.Context, req CreateAccountRequest) (
 			return nil, err
 		}
 	}
+	if err := ValidateAccountExtraWrites(req.Extra); err != nil {
+		return nil, err
+	}
 
 	// 验证分组是否存在（如果指定了分组）
 	if len(req.GroupIDs) > 0 {
@@ -250,7 +253,7 @@ func (s *AccountService) Create(ctx context.Context, req CreateAccountRequest) (
 		Credentials: SanitizeStoredCredentials(req.Platform, req.Credentials),
 		Extra:       req.Extra,
 		ProxyID:     req.ProxyID,
-		Concurrency: req.Concurrency,
+		Concurrency: applyCreateConcurrency(req.Platform, req.Type, req.Concurrency),
 		Priority:    req.Priority,
 		Status:      StatusActive,
 		ExpiresAt:   req.ExpiresAt,
@@ -348,6 +351,9 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 	}
 
 	if req.Extra != nil {
+		if err := ValidateAccountExtraWrites(*req.Extra); err != nil {
+			return nil, err
+		}
 		extra := make(map[string]any, len(*req.Extra))
 		for key, value := range *req.Extra {
 			extra[key] = value

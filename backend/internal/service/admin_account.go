@@ -333,12 +333,7 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 }
 
 func normalizeAccountConcurrency(platform, accountType string, concurrency int) int {
-	if platform == PlatformGrok && accountType == AccountTypeOAuth {
-		if concurrency <= 0 {
-			return 1
-		}
-	}
-	return concurrency
+	return applyCreateConcurrency(platform, accountType, concurrency)
 }
 
 // ValidateOpenAILongContextBillingExtra validates the OpenAI account billing flag when present.
@@ -487,6 +482,9 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	if err != nil {
 		return nil, err
 	}
+	if err := ValidateAccountExtraWrites(accountExtra); err != nil {
+		return nil, err
+	}
 
 	// 绑定分组
 	groupIDs := input.GroupIDs
@@ -574,6 +572,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		}
 		normalizedExtra, err = normalizeGrokMediaEligibilityUpdateExtra(account, input, normalizedExtra)
 		if err != nil {
+			return nil, err
+		}
+		if err := ValidateAccountExtraWrites(normalizedExtra); err != nil {
 			return nil, err
 		}
 	}
@@ -766,9 +767,13 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			delete(account.Extra, OllamaCloudUsageSnapshotExtraKey)
 		}
 	}
-	// 只在指针非 nil 时更新 Concurrency（支持设置为 0）
+	// 只在指针非 nil 时更新 Concurrency（<=0 或 >32 时按账号类型回退到默认值）
 	if input.Concurrency != nil {
-		account.Concurrency = normalizeAccountConcurrency(account.Platform, account.Type, *input.Concurrency)
+		if *input.Concurrency <= 0 || *input.Concurrency > 32 {
+			account.Concurrency = applyCreateConcurrency(account.Platform, account.Type, *input.Concurrency)
+		} else {
+			account.Concurrency = *input.Concurrency
+		}
 	}
 	// 只在指针非 nil 时更新 Priority（支持设置为 0）
 	if input.Priority != nil {
@@ -905,6 +910,9 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 			return err
 		}
 	}
+	if err := ValidateAccountExtraWrites(updates); err != nil {
+		return err
+	}
 	if len(updates) == 0 {
 		return nil
 	}
@@ -921,6 +929,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	delete(input.Extra, OllamaCloudUsageSessionExtraKey)
 	delete(input.Extra, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(input.Extra, OllamaCloudUsageSnapshotExtraKey)
+	if err := ValidateAccountExtraWrites(input.Extra); err != nil {
+		return nil, err
+	}
 
 	if len(input.AccountIDs) == 0 && input.Filters != nil {
 		accountIDs, err := s.resolveBulkUpdateTargetIDs(ctx, input.Filters)
@@ -1087,7 +1098,11 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		}
 	}
 
-	if len(kiroCredentialUpdateIDs) > 0 {
+	requiresPerAccountWrite := len(kiroCredentialUpdateIDs) > 0
+	needsPerAccountConcurrencyNormalization := input.Concurrency != nil &&
+		(*input.Concurrency <= 0 || *input.Concurrency > 32)
+
+	if requiresPerAccountWrite {
 		for index, accountID := range input.AccountIDs {
 			account := accountByID[accountID]
 			if account == nil {
@@ -1171,7 +1186,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	if input.ProxyID != nil {
 		repoUpdates.ProxyID = input.ProxyID
 	}
-	if input.Concurrency != nil {
+	if input.Concurrency != nil && *input.Concurrency > 0 && *input.Concurrency <= 32 {
 		repoUpdates.Concurrency = input.Concurrency
 	}
 	if input.Priority != nil {
@@ -1225,6 +1240,20 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 			}
 		}
 	}
+	if needsPerAccountConcurrencyNormalization {
+		for _, accountID := range input.AccountIDs {
+			account := accountByID[accountID]
+			if account == nil {
+				continue
+			}
+			normalizedConcurrency := applyCreateConcurrency(account.Platform, account.Type, *input.Concurrency)
+			if _, err := s.accountRepo.BulkUpdate(ctx, []int64{accountID}, AccountBulkUpdate{
+				Concurrency: &normalizedConcurrency,
+			}); err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	// Handle group bindings per account (requires individual operations).
 	for _, accountID := range input.AccountIDs {
@@ -1271,7 +1300,7 @@ func applyBulkUpdateInputToAccount(account *Account, input *BulkUpdateAccountsIn
 		account.ProxyFallbackOriginID = nil
 	}
 	if input.Concurrency != nil {
-		account.Concurrency = *input.Concurrency
+		account.Concurrency = applyCreateConcurrency(account.Platform, account.Type, *input.Concurrency)
 	}
 	if input.Priority != nil {
 		account.Priority = *input.Priority

@@ -33,6 +33,18 @@ type openAICodexPATWhoamiResponse struct {
 	ChatGPTAccountIsFedRAMP *bool  `json:"chatgpt_account_is_fedramp"`
 }
 
+func newCodexPATWhoamiRequest(ctx context.Context, accessToken string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, openAICodexPATWhoamiURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("authorization", "Bearer "+strings.TrimSpace(accessToken))
+	req.Header.Set("accept", "application/json")
+	setCodexOriginator(req.Header, openai.CodexDefaultOriginator)
+	req.Header.Set("user-agent", codexCLIUserAgent)
+	return req, nil
+}
+
 // ValidateCodexPersonalAccessToken validates a Codex at-* token using the same
 // first-class PAT endpoint used by the Codex client.
 func (s *OpenAIOAuthService) ValidateCodexPersonalAccessToken(ctx context.Context, accessToken, proxyURL string) (*OpenAITokenInfo, error) {
@@ -53,14 +65,10 @@ func (s *OpenAIOAuthService) ValidateCodexPersonalAccessToken(ctx context.Contex
 		return nil, infraerrors.Newf(http.StatusBadRequest, "OPENAI_CODEX_PAT_PROXY_INVALID", "invalid proxy configuration: %v", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, openAICodexPATWhoamiURL, nil)
+	req, err := newCodexPATWhoamiRequest(ctx, accessToken)
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusInternalServerError, "OPENAI_CODEX_PAT_REQUEST_FAILED", "failed to build validation request: %v", err)
 	}
-	req.Header.Set("authorization", "Bearer "+accessToken)
-	req.Header.Set("accept", "application/json")
-	req.Header.Set("originator", openai.CodexDefaultOriginator)
-	req.Header.Set("user-agent", codexCLIUserAgent)
 
 	resp, err := client.Do(req)
 	if err != nil {

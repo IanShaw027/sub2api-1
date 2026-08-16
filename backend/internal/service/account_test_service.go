@@ -420,7 +420,7 @@ func (s *AccountTestService) testClaudeAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.EffectiveConcurrency(), s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -492,7 +492,7 @@ func (s *AccountTestService) testClaudeVertexServiceAccountConnection(c *gin.Con
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.EffectiveConcurrency(), s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -578,7 +578,7 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, nil)
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.EffectiveConcurrency(), nil)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -766,7 +766,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.EffectiveConcurrency(), s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -953,7 +953,7 @@ func (s *AccountTestService) prepareGrokTestSSE(c *gin.Context) {
 	c.Writer.Flush()
 }
 
-func (s *AccountTestService) applyGrokTestRequestHeaders(req *http.Request, account *Account, authToken string, accept string) {
+func (s *AccountTestService) applyGrokTestRequestHeaders(ctx context.Context, req *http.Request, account *Account, authToken string, accept string) error {
 	req.Header.Set("Content-Type", "application/json")
 	if accept != "" {
 		req.Header.Set("Accept", accept)
@@ -963,9 +963,12 @@ func (s *AccountTestService) applyGrokTestRequestHeaders(req *http.Request, acco
 	// api.x.ai media (images/videos) rejects or mistreats OAuth when CLI headers
 	// are stamped on the official API host (e.g. ZDR upload_url false positives).
 	if account.IsGrokOAuth() && req.URL != nil && isGrokCLIProxyTarget(req.URL.String()) {
-		applyGrokCLIHeaders(req.Header)
+		if err := applyGrokInteractiveUpstreamHeadersFromAccount(ctx, req, account); err != nil {
+			return err
+		}
 	}
 	account.ApplyHeaderOverrides(req.Header)
+	return nil
 }
 
 func (s *AccountTestService) observeGrokTestResponse(ctx context.Context, account *Account, resp *http.Response) {
@@ -1081,9 +1084,11 @@ func (s *AccountTestService) testGrokResponsesConnection(c *gin.Context, ctx con
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Grok request")
 	}
-	s.applyGrokTestRequestHeaders(req, account, authToken, "application/json, text/event-stream")
+	if err := s.applyGrokTestRequestHeaders(ctx, req, account, authToken, "application/json, text/event-stream"); err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+	}
 
-	resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.Concurrency)
+	resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.EffectiveConcurrency())
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok Responses API request failed: %s", err.Error()))
 	}
@@ -1152,7 +1157,9 @@ func (s *AccountTestService) testGrokImageGeneration(c *gin.Context, ctx context
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Grok image request")
 	}
-	s.applyGrokTestRequestHeaders(req, account, authToken, "application/json")
+	if err := s.applyGrokTestRequestHeaders(ctx, req, account, authToken, "application/json"); err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+	}
 	req.ContentLength = int64(len(payloadBytes))
 	req.GetBody = func() (io.ReadCloser, error) {
 		return io.NopCloser(bytes.NewReader(payloadBytes)), nil
@@ -1168,10 +1175,12 @@ func (s *AccountTestService) testGrokImageGeneration(c *gin.Context, ctx context
 			if err != nil {
 				return s.sendErrorAndEnd(c, "Failed to create Grok image retry request")
 			}
-			s.applyGrokTestRequestHeaders(req, account, authToken, "application/json")
+			if err := s.applyGrokTestRequestHeaders(ctx, req, account, authToken, "application/json"); err != nil {
+				return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+			}
 			req.ContentLength = int64(len(payloadBytes))
 		}
-		resp, doErr = s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.Concurrency)
+		resp, doErr = s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.EffectiveConcurrency())
 		if doErr == nil {
 			break
 		}
@@ -1260,9 +1269,11 @@ func (s *AccountTestService) testGrokVideoGeneration(c *gin.Context, ctx context
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Grok video request")
 	}
-	s.applyGrokTestRequestHeaders(req, account, authToken, "application/json")
+	if err := s.applyGrokTestRequestHeaders(ctx, req, account, authToken, "application/json"); err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+	}
 
-	resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.Concurrency)
+	resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.EffectiveConcurrency())
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok video request failed: %s", err.Error()))
 	}
@@ -1302,8 +1313,10 @@ func (s *AccountTestService) testGrokVideoGeneration(c *gin.Context, ctx context
 		if err != nil {
 			return s.sendErrorAndEnd(c, "Failed to create Grok video status request")
 		}
-		s.applyGrokTestRequestHeaders(statusReq, account, authToken, "application/json")
-		statusResp, err := s.httpUpstream.Do(statusReq, s.grokTestProxyURL(account), account.ID, account.Concurrency)
+		if err := s.applyGrokTestRequestHeaders(ctx, statusReq, account, authToken, "application/json"); err != nil {
+			return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+		}
+		statusResp, err := s.httpUpstream.Do(statusReq, s.grokTestProxyURL(account), account.ID, account.EffectiveConcurrency())
 		if err != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Grok video status failed: %s", err.Error()))
 		}
@@ -1359,8 +1372,10 @@ func (s *AccountTestService) emitGrokVideoResult(c *gin.Context, ctx context.Con
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create Grok video content request")
 	}
-	s.applyGrokTestRequestHeaders(req, account, authToken, "video/*, application/octet-stream, */*")
-	resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.Concurrency)
+	if err := s.applyGrokTestRequestHeaders(ctx, req, account, authToken, "video/*, application/octet-stream, */*"); err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+	}
+	resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.EffectiveConcurrency())
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok video content download failed: %s", err.Error()))
 	}
@@ -1430,9 +1445,11 @@ User query:
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Failed to create standalone web_search probe request")
 	}
-	s.applyGrokTestRequestHeaders(req, account, authToken, "application/json")
+	if err := s.applyGrokTestRequestHeaders(ctx, req, account, authToken, "application/json"); err != nil {
+		return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+	}
 
-	resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.Concurrency)
+	resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.EffectiveConcurrency())
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("standalone web_search probe failed: %s", err.Error()))
 	}
@@ -1512,8 +1529,10 @@ func (s *AccountTestService) testGrokTTS(c *gin.Context, ctx context.Context, ac
 		if err != nil {
 			return s.sendErrorAndEnd(c, "Failed to create Grok TTS request")
 		}
-		s.applyGrokTestRequestHeaders(req, account, authToken, "audio/*, application/json, */*")
-		resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.Concurrency)
+		if err := s.applyGrokTestRequestHeaders(ctx, req, account, authToken, "audio/*, application/json, */*"); err != nil {
+			return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+		}
+		resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.EffectiveConcurrency())
 		if err != nil {
 			return s.sendErrorAndEnd(c, fmt.Sprintf("Grok TTS failed: %s", err.Error()))
 		}
@@ -1600,11 +1619,13 @@ func (s *AccountTestService) testGrokSTT(c *gin.Context, ctx context.Context, ac
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+authToken)
 	if account.IsGrokOAuth() {
-		applyGrokCLIHeaders(req.Header)
+		if err := applyGrokInteractiveUpstreamHeadersFromAccount(ctx, req, account); err != nil {
+			return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+		}
 	}
 	account.ApplyHeaderOverrides(req.Header)
 
-	resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.Concurrency)
+	resp, err := s.httpUpstream.Do(req, s.grokTestProxyURL(account), account.ID, account.EffectiveConcurrency())
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Grok STT failed: %s", err.Error()))
 	}
@@ -1673,7 +1694,9 @@ func (s *AccountTestService) testGrokRealtime(c *gin.Context, ctx context.Contex
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer "+authToken)
 	if account.IsGrokOAuth() {
-		applyGrokCLIHeaders(headers)
+		if err := applyGrokInteractiveUpstreamHeaders(ctx, headers, account); err != nil {
+			return s.sendErrorAndEnd(c, fmt.Sprintf("Failed to stamp Grok identity headers: %s", err.Error()))
+		}
 	}
 	account.ApplyHeaderOverrides(headers)
 
@@ -1970,7 +1993,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.EffectiveConcurrency(), s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Chat Completions API (/v1/chat/completions) request failed: %s", err.Error()))
 	}
@@ -2086,7 +2109,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.EffectiveConcurrency(), s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		if s.accountRepo != nil {
 			updates := buildOpenAICompactProbeExtraUpdates(nil, nil, err, time.Now())
@@ -2229,7 +2252,7 @@ func (s *AccountTestService) testGeminiAccountConnection(c *gin.Context, account
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.EffectiveConcurrency(), s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -2325,6 +2348,9 @@ func (s *AccountTestService) buildGeminiAPIKeyRequest(ctx context.Context, accou
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-goog-api-key", apiKey)
+	if err := applyOutboundProfileUserAgent(ctx, account, req); err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -2363,11 +2389,14 @@ func (s *AccountTestService) buildGeminiOAuthRequest(ctx context.Context, accoun
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+accessToken)
+		if err := applyOutboundProfileUserAgent(ctx, account, req); err != nil {
+			return nil, err
+		}
 		return req, nil
 	}
 
 	// Code Assist mode (with project_id)
-	return s.buildCodeAssistRequest(ctx, accessToken, projectID, modelID, payload)
+	return s.buildCodeAssistRequest(ctx, account, accessToken, projectID, modelID, payload)
 }
 
 func (s *AccountTestService) buildGeminiServiceAccountRequest(ctx context.Context, account *Account, modelID string, payload []byte) (*http.Request, error) {
@@ -2388,11 +2417,14 @@ func (s *AccountTestService) buildGeminiServiceAccountRequest(ctx context.Contex
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+accessToken)
+	if err := applyOutboundProfileUserAgent(ctx, account, req); err != nil {
+		return nil, err
+	}
 	return req, nil
 }
 
 // buildCodeAssistRequest builds request for Google Code Assist API (used by Gemini CLI and Antigravity)
-func (s *AccountTestService) buildCodeAssistRequest(ctx context.Context, accessToken, projectID, modelID string, payload []byte) (*http.Request, error) {
+func (s *AccountTestService) buildCodeAssistRequest(ctx context.Context, account *Account, accessToken, projectID, modelID string, payload []byte) (*http.Request, error) {
 	var inner map[string]any
 	if err := json.Unmarshal(payload, &inner); err != nil {
 		return nil, err
@@ -2418,7 +2450,9 @@ func (s *AccountTestService) buildCodeAssistRequest(ctx context.Context, accessT
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("User-Agent", geminicli.GeminiCLIUserAgent)
+	if err := applyOutboundProfileUserAgent(ctx, account, req); err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -2854,7 +2888,7 @@ func (s *AccountTestService) testOpenAIImageAPIKey(c *gin.Context, ctx context.C
 		proxyURL = account.Proxy.URL()
 	}
 
-	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
+	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.EffectiveConcurrency(), s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Request failed: %s", err.Error()))
 	}
@@ -2978,7 +3012,7 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.EffectiveConcurrency())
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Responses API request failed: %s", err.Error()))
 	}

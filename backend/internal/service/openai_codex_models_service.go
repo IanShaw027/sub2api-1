@@ -321,7 +321,7 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 		accountID:           account.ID,
 		credentialAccountID: credAccount.ID,
 		credentialAccount:   credAccount,
-		accountConcurrency:  account.Concurrency,
+		accountConcurrency:  account.EffectiveConcurrency(),
 		useAPIKeyUpstream:   useAPIKeyUpstream,
 	}
 	if useAPIKeyUpstream {

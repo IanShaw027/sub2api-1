@@ -194,20 +194,26 @@ func (s *liveTestStore) MarkLiveCallClosed(_ context.Context, callHash string, _
 
 type liveTestConcurrencyCache struct {
 	ConcurrencyCache
-	mu       sync.Mutex
-	releases int
+	mu                 sync.Mutex
+	releases           int
+	accountMax         int
+	acquireLiveLeaseN  int
 }
 
 func (c *liveTestConcurrencyCache) AcquireLiveLease(
-	context.Context,
-	int64,
-	int,
-	int64,
-	int,
-	int64,
-	string,
-	bool,
+	_ context.Context,
+	_ int64,
+	accountMax int,
+	_ int64,
+	_ int,
+	_ int64,
+	_ string,
+	_ bool,
 ) (bool, error) {
+	c.mu.Lock()
+	c.accountMax = accountMax
+	c.acquireLiveLeaseN++
+	c.mu.Unlock()
 	return true, nil
 }
 

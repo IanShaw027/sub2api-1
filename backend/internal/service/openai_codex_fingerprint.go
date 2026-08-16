@@ -1,14 +1,18 @@
 package service
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
@@ -33,7 +37,28 @@ const (
 	codexFingerprintFull codexFingerprintMode = "full"
 )
 
-const codexFingerprintModeExtraKey = "codex_fingerprint_mode"
+const (
+	codexFingerprintModeExtraKey     = "codex_fingerprint_mode"
+	outboundDeviceProfileLoadTimeout = 2 * time.Second
+	codexIdentityRejectLogInterval   = 30 * time.Second
+)
+
+var (
+	codexIdentityRejectLogMu   sync.Mutex
+	codexIdentityRejectLastLog = map[int64]time.Time{}
+)
+
+func logCodexIdentityReject(accountID int64, err error) {
+	now := time.Now()
+	codexIdentityRejectLogMu.Lock()
+	if last, ok := codexIdentityRejectLastLog[accountID]; ok && now.Sub(last) < codexIdentityRejectLogInterval {
+		codexIdentityRejectLogMu.Unlock()
+		return
+	}
+	codexIdentityRejectLastLog[accountID] = now
+	codexIdentityRejectLogMu.Unlock()
+	slog.Warn("identity_reject: failed to load outbound device profile", "account_id", accountID, "error", err)
+}
 
 // GetCodexFingerprintMode 从账号 extra JSON 读取指纹收敛模式。
 // 未设置时默认 session（设备+会话收敛），显式设为 "off" 才关闭。
@@ -65,34 +90,58 @@ func deriveStableUUIDv4(seed string) string {
 		b[10:16])
 }
 
+func loadOutboundCodexProfile(ctx context.Context, account *Account) *AccountDeviceProfile {
+	if account == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	loadCtx, cancel := context.WithTimeout(ctx, outboundDeviceProfileLoadTimeout)
+	defer cancel()
+	profile, err := LoadOutboundDeviceProfile(loadCtx, account)
+	if err != nil || profile == nil {
+		logCodexIdentityReject(account.ID, err)
+		return nil
+	}
+	return profile
+}
+
 // resolveConvergedInstallationID 返回账号级恒定的 installation_id。
-// 优先使用管理员配置的真实 device_id，无则从 accountID 确定性派生。
-func resolveConvergedInstallationID(account *Account) string {
-	if account == nil {
+// 只读已校验的设备档案；加载或校验失败时返回空串，由调用方跳过收敛，不造半包。
+func resolveConvergedInstallationID(ctx context.Context, account *Account) string {
+	profile := loadOutboundCodexProfile(ctx, account)
+	if profile == nil {
 		return ""
 	}
-	if deviceID := account.GetOpenAIDeviceID(); deviceID != "" {
-		return deviceID
-	}
-	return deriveStableUUIDv4(fmt.Sprintf("sub2api:codex-install-id:v1:%d", account.ID))
+	return strings.TrimSpace(profile.InstallationID)
 }
 
-// resolveConvergedSessionID 返回账号级恒定的 session_id。
-func resolveConvergedSessionID(account *Account) string {
-	if account == nil {
+// resolveConvergedSessionID 返回档案 session_namespace 上的账号级恒定 session_id。
+func resolveConvergedSessionID(sessionNamespace string) string {
+	sessionID, _, _, err := DeriveSessionIDs(sessionNamespace, "")
+	if err != nil {
 		return ""
 	}
-	return deriveStableUUIDv4(fmt.Sprintf("sub2api:codex-session-id:v1:%d", account.ID))
+	return sessionID
 }
 
-// resolveConvergedThreadID 按客户端原始 session-id 确定性派生 thread_id。
+// resolveConvergedThreadID 按客户端原始 session-id 从 session_namespace 派生 thread_id。
 // 每个真实 Codex 会话（不同客户端启动实例）获得一个独立线程，
 // 模拟正常用户 spawn 子代理或开多窗口的模式。
-func resolveConvergedThreadID(account *Account, clientSessionID string) string {
-	if account == nil || clientSessionID == "" {
+//
+// Uses DeriveSessionIDs(ns, clientSessionID).sessionID, not the returned
+// threadID. Design §7's thread_id is HMAC(ns, "thread:"+session_id) and would
+// collapse session mode to one thread per account-stable session.
+func resolveConvergedThreadID(sessionNamespace, clientSessionID string) string {
+	if clientSessionID == "" {
 		return ""
 	}
-	return deriveStableUUIDv4(fmt.Sprintf("sub2api:codex-thread-id:v1:%d:%s", account.ID, clientSessionID))
+	sessionID, _, _, err := DeriveSessionIDs(sessionNamespace, clientSessionID)
+	if err != nil {
+		return ""
+	}
+	return sessionID
 }
 
 // codexFingerprintIDs 收敛后的完整 ID 集合。
@@ -100,6 +149,7 @@ func resolveConvergedThreadID(account *Account, clientSessionID string) string {
 // 确保所有载体中的 turn_id 等随机字段一致。
 type codexFingerprintIDs struct {
 	mode           codexFingerprintMode
+	profile        *AccountDeviceProfile
 	installationID string
 	sessionID      string
 	threadID       string
@@ -107,19 +157,104 @@ type codexFingerprintIDs struct {
 	windowID       string
 }
 
+const outboundDeviceProfileGinKey = "outbound_device_profile"
+
+type outboundDeviceProfileGinValue struct {
+	accountID int64
+	profile   *AccountDeviceProfile
+}
+
+func outboundDeviceAccountID(account *Account) int64 {
+	if account == nil {
+		return 0
+	}
+	return canonicalDeviceAccountID(account)
+}
+
+func outboundDeviceProfileFromGin(c *gin.Context, account *Account) *AccountDeviceProfile {
+	profile, ok := outboundDeviceProfileFromGinForAccount(c, outboundDeviceAccountID(account))
+	if !ok {
+		return nil
+	}
+	return profile
+}
+
+func outboundDeviceProfileFromGinForAccount(c *gin.Context, accountID int64) (*AccountDeviceProfile, bool) {
+	if c == nil || accountID == 0 {
+		return nil, false
+	}
+	v, ok := c.Get(outboundDeviceProfileGinKey)
+	if !ok {
+		return nil, false
+	}
+	stashed, ok := v.(*outboundDeviceProfileGinValue)
+	if !ok || stashed == nil || stashed.accountID != accountID {
+		return nil, false
+	}
+	return stashed.profile, true
+}
+
+func stashOutboundDeviceProfile(c *gin.Context, accountID int64, profile *AccountDeviceProfile) {
+	if c == nil || accountID == 0 {
+		return
+	}
+	c.Set(outboundDeviceProfileGinKey, &outboundDeviceProfileGinValue{
+		accountID: accountID,
+		profile:   profile,
+	})
+}
+
+func resolveOpenAIOutboundDeviceProfile(ctx context.Context, c *gin.Context, account *Account) *AccountDeviceProfile {
+	accountID := outboundDeviceAccountID(account)
+	if accountID == 0 {
+		return nil
+	}
+	if profile, ok := outboundDeviceProfileFromGinForAccount(c, accountID); ok {
+		return profile
+	}
+	profile := loadOpenAIOutboundSessionProfile(ctx, account)
+	stashOutboundDeviceProfile(c, accountID, profile)
+	return profile
+}
+
+func fingerprintIDsBelongToAccount(ids *codexFingerprintIDs, account *Account) bool {
+	if ids == nil || ids.profile == nil {
+		return false
+	}
+	return ids.profile.AccountID == outboundDeviceAccountID(account)
+}
+
+func clearCodexFingerprintIDsForAccount(c *gin.Context, account *Account) {
+	if c == nil {
+		return
+	}
+	v, ok := c.Get("codex_fingerprint_ids")
+	if !ok {
+		return
+	}
+	ids, ok := v.(*codexFingerprintIDs)
+	if !ok || !fingerprintIDsBelongToAccount(ids, account) {
+		return
+	}
+	c.Set("codex_fingerprint_ids", (*codexFingerprintIDs)(nil))
+}
+
 // resolveCodexFingerprintIDs 按收敛模式计算出站 ID 集合。
 // clientSessionID 是客户端原始的 session-id 头值（连字符形式），用于 session 模式下
 // 的 thread_id 派生——每个真实 Codex 会话得到一个独立线程。
 // 返回 nil 表示 off 模式，不需要改写。
 // 注意：包含随机生成的 turn_id，调用方必须只调用一次并共享结果给头改写和体改写。
-func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode codexFingerprintMode) *codexFingerprintIDs {
+func resolveCodexFingerprintIDs(ctx context.Context, account *Account, clientSessionID string, mode codexFingerprintMode) *codexFingerprintIDs {
 	if mode == codexFingerprintOff {
 		return nil
 	}
 
-	ids := &codexFingerprintIDs{mode: mode}
-
-	ids.installationID = resolveConvergedInstallationID(account)
+	profile := loadOutboundCodexProfile(ctx, account)
+	if profile == nil {
+		return nil
+	}
+	ids := &codexFingerprintIDs{mode: mode, profile: profile}
+	ids.installationID = strings.TrimSpace(profile.InstallationID)
 	if ids.installationID == "" {
 		return nil
 	}
@@ -129,8 +264,12 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 		return ids
 
 	case codexFingerprintSession:
-		ids.sessionID = resolveConvergedSessionID(account)
-		ids.threadID = resolveConvergedThreadID(account, clientSessionID)
+		ids.sessionID = resolveConvergedSessionID(profile.SessionNamespace)
+		if ids.sessionID == "" {
+			logCodexIdentityReject(account.ID, fmt.Errorf("identity_reject: derive session_id from session_namespace"))
+			return nil
+		}
+		ids.threadID = resolveConvergedThreadID(profile.SessionNamespace, clientSessionID)
 		if ids.threadID == "" {
 			ids.threadID = ids.sessionID
 		}
@@ -139,7 +278,11 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 		return ids
 
 	case codexFingerprintFull:
-		ids.sessionID = resolveConvergedSessionID(account)
+		ids.sessionID = resolveConvergedSessionID(profile.SessionNamespace)
+		if ids.sessionID == "" {
+			logCodexIdentityReject(account.ID, fmt.Errorf("identity_reject: derive session_id from session_namespace"))
+			return nil
+		}
 		ids.threadID = ids.sessionID
 		ids.turnID = uuid.Must(uuid.NewV7()).String()
 		ids.windowID = ids.threadID + ":0"
@@ -159,10 +302,42 @@ func extractClientSessionID(h http.Header) string {
 	return strings.TrimSpace(h.Get("session_id"))
 }
 
+// applyCodexSharedRequestIdentity loads the outbound profile once and stamps
+// request-body client_metadata from the same IDs used for outbound headers.
+// When no shared header identity will be applied (fpIDs == nil), the body is
+// left unchanged — including skipping a standalone InstallationID stamp.
+func applyCodexSharedRequestIdentity(ctx context.Context, reqBody map[string]any, account *Account, clientHeaders http.Header) *codexFingerprintIDs {
+	fpIDs := resolveCodexFingerprintIDsFromRequest(ctx, account, clientHeaders)
+	if fpIDs == nil {
+		return nil
+	}
+	applyCodexFingerprintClientMetadata(reqBody, fpIDs)
+	return fpIDs
+}
+
+// applyCodexForwardRequestIdentity is the OpenAI Forward identity block:
+// one profile load, stamp body from those IDs, and store them for outbound headers.
+func applyCodexForwardRequestIdentity(ctx context.Context, c *gin.Context, reqBody map[string]any, account *Account, clientHeaders http.Header) *codexFingerprintIDs {
+	fpIDs := applyCodexSharedRequestIdentity(ctx, reqBody, account, clientHeaders)
+	if c == nil {
+		return fpIDs
+	}
+	if fpIDs != nil {
+		c.Set("codex_fingerprint_ids", fpIDs)
+		stashOutboundDeviceProfile(c, outboundDeviceAccountID(account), fpIDs.profile)
+		return fpIDs
+	}
+	if account != nil && account.GetCodexFingerprintMode() != codexFingerprintOff {
+		stashOutboundDeviceProfile(c, outboundDeviceAccountID(account), nil)
+		clearCodexFingerprintIDsForAccount(c, account)
+	}
+	return nil
+}
+
 // resolveCodexFingerprintIDsFromRequest 从客户端原始请求头中提取 session-id，
 // 结合账号配置一次性解析收敛 ID 集合。调用方应将返回的 ids 同时传给
 // applyCodexFingerprintHeaders 和 applyCodexFingerprintClientMetadata。
-func resolveCodexFingerprintIDsFromRequest(account *Account, clientHeaders http.Header) *codexFingerprintIDs {
+func resolveCodexFingerprintIDsFromRequest(ctx context.Context, account *Account, clientHeaders http.Header) *codexFingerprintIDs {
 	if account == nil {
 		return nil
 	}
@@ -174,7 +349,7 @@ func resolveCodexFingerprintIDsFromRequest(account *Account, clientHeaders http.
 	if clientHeaders != nil {
 		clientSessionID = extractClientSessionID(clientHeaders)
 	}
-	return resolveCodexFingerprintIDs(account, clientSessionID, mode)
+	return resolveCodexFingerprintIDs(ctx, account, clientSessionID, mode)
 }
 
 // applyCodexFingerprintHeaders 按预计算的收敛 ID 改写出站 HTTP 头中的设备指纹。

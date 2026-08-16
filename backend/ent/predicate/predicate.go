@@ -12,6 +12,9 @@ type APIKey func(*sql.Selector)
 // Account is the predicate function for account builders.
 type Account func(*sql.Selector)
 
+// AccountDeviceProfile is the predicate function for accountdeviceprofile builders.
+type AccountDeviceProfile func(*sql.Selector)
+
 // AccountGroup is the predicate function for accountgroup builders.
 type AccountGroup func(*sql.Selector)
 

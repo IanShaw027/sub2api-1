@@ -44,6 +44,9 @@ func WithForwardGeminiSession(groupID int64, sessionHash string) ForwardGeminiOp
 func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Context, account *Account, originalModel string, action string, stream bool, body []byte, isStickySession bool, options ...ForwardGeminiOption) (*ForwardResult, error) {
 	beginUpstreamResponseModelObservation(c)
 	startTime := time.Now()
+	if c != nil && c.Request != nil {
+		maybeLearnOfficialDeviceProfile(ctx, account, c.Request.Header)
+	}
 	forwardOpts := forwardGeminiOptions{}
 	for _, apply := range options {
 		if apply != nil {
@@ -200,7 +203,7 @@ func (s *AntigravityGatewayService) ForwardGemini(ctx context.Context, c *gin.Co
 				if err == nil {
 					fallbackReq, err := antigravity.NewAPIRequest(ctx, upstreamAction, accessToken, fallbackWrapped)
 					if err == nil {
-						fallbackResp, err := s.httpUpstream.Do(fallbackReq, proxyURL, account.ID, account.Concurrency)
+						fallbackResp, err := s.httpUpstream.Do(fallbackReq, proxyURL, account.ID, account.EffectiveConcurrency())
 						if err == nil && fallbackResp.StatusCode < 400 {
 							_ = resp.Body.Close()
 							resp = fallbackResp

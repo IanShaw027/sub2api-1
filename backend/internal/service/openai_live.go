@@ -180,7 +180,7 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 		acquired, acquireErr := liveCache.AcquireLiveLease(
 			ctx,
 			account.ID,
-			account.Concurrency,
+			account.EffectiveConcurrency(),
 			identity.UserID,
 			userMaxConcurrency,
 			identity.APIKeyID,
@@ -304,7 +304,7 @@ func (s *OpenAIGatewayService) createUpstreamLiveCall(
 	upstreamReq.Header.Set(liveAttestationHeader, attestation)
 	applyLiveUpstreamIdentityHeaders(upstreamReq.Header)
 
-	resp, err := s.httpUpstream.Do(upstreamReq, resolveAccountProxyURL(account), account.ID, account.Concurrency)
+	resp, err := s.httpUpstream.Do(upstreamReq, resolveAccountProxyURL(account), account.ID, account.EffectiveConcurrency())
 	if err != nil {
 		logLiveCreateStageFailure(ctx, account.ID, "upstream_transport", err)
 		return nil, err

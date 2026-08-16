@@ -125,8 +125,8 @@ func (h *AccountHandler) ImportCodexSession(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	if req.Concurrency != nil && *req.Concurrency < 0 {
-		response.BadRequest(c, "concurrency must be >= 0")
+	if err := service.ValidateAccountExtraWrites(req.Extra); err != nil {
+		response.ErrorFrom(c, err)
 		return
 	}
 	if req.Priority != nil && *req.Priority < 0 {
@@ -173,7 +173,7 @@ func (h *AccountHandler) importCodexSessions(ctx context.Context, req CodexSessi
 	if req.UpdateExisting != nil {
 		updateExisting = *req.UpdateExisting
 	}
-	concurrency := 3
+	concurrency := 0
 	if req.Concurrency != nil {
 		concurrency = *req.Concurrency
 	}

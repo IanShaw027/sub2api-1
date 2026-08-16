@@ -384,6 +384,8 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.DELETE("/:id", h.Admin.Account.Delete)
 		accounts.POST("/:id/test", h.Admin.Account.Test)
 		accounts.POST("/:id/recover-state", h.Admin.Account.RecoverState)
+		accounts.GET("/:id/device-profile", h.Admin.Account.GetDeviceProfile)
+		accounts.POST("/:id/reset-device-profile", h.Admin.Account.ResetDeviceProfile)
 		accounts.POST("/:id/refresh", h.Admin.Account.Refresh)
 		accounts.POST("/:id/apply-oauth-credentials", h.Admin.Account.ApplyOAuthCredentials)
 		accounts.POST("/:id/kiro-reauthorize", h.Admin.Account.ReauthorizeKiroOAuth)

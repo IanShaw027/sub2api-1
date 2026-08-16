@@ -533,6 +533,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			}
 			continue
 		}
+		if slotResult == openAISlotAcquireSwitchAccount {
+			continueOpenAISlotSwitch(c, failedAccountIDs, account.ID)
+			continue
+		}
 		if slotResult != openAISlotAcquireOK {
 			return
 		}
@@ -1093,6 +1097,10 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			}
 			continue
 		}
+		if slotResult == openAISlotAcquireSwitchAccount {
+			continueOpenAISlotSwitch(c, failedAccountIDs, account.ID)
+			continue
+		}
 		if slotResult != openAISlotAcquireOK {
 			return
 		}
@@ -1396,7 +1404,19 @@ const (
 	// 未写任何响应；调用方应经 recordOpenAIProfitVeto 把该账号加入本请求排除集
 	// 后重新选号，全池耗尽由下一轮选号返回标准 no available accounts。
 	openAISlotAcquireProfitVetoed
+	// openAISlotAcquireSwitchAccount：30s 梯子截止或等待队列满，应换号并保留原粘性绑定。
+	// 未写响应；调用方加入排除集后 continue。
+	openAISlotAcquireSwitchAccount
 )
+
+func continueOpenAISlotSwitch(c *gin.Context, failedAccountIDs map[int64]struct{}, accountID int64) {
+	if failedAccountIDs != nil {
+		failedAccountIDs[accountID] = struct{}{}
+	}
+	if c != nil && c.Request != nil {
+		c.Request = c.Request.WithContext(service.WithPreserveStickyBinding(c.Request.Context()))
+	}
+}
 
 // openAIWSTurnPricing 持有 WebSocket 连接内「当前 turn」的计费定价时刻。
 // 由 BeforeTurn 在每个 turn 开始时冻结，AfterTurn 的用量提交读取它；turn 在
@@ -1492,30 +1512,22 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 		}
 		return wrapReleaseOnDone(ctx, selection.ReleaseFunc), openAISlotAcquireOK
 	}
-	if selection.WaitPlan == nil {
+	if selection.WaitPlan == nil && !service.PreserveStickyBindingFromContext(ctx) {
 		markOpsRoutingCapacityLimited(c)
 		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", *streamStarted)
 		return nil, openAISlotAcquireFailed
 	}
 
-	fastReleaseFunc, fastAcquired, err := h.concurrencyHelper.TryAcquireAccountSlotForGroup(
-		ctx,
-		account.ID,
-		groupID,
-		selection.WaitPlan.MaxConcurrency,
-	)
-	if err != nil {
-		reqLog.Warn("openai.account_slot_quick_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
-		h.handleConcurrencyError(c, err, "account", *streamStarted)
-		return nil, openAISlotAcquireFailed
-	}
-	if fastAcquired {
-		// 分组利润控制：快速抢槽成功后终检。选号与抢槽之间账号
-		// 倍率可能刷新，越线则释放槽位交由调用方排除重选，不绑定粘连。
+	slot := runAccountSlotLadder(c, h.concurrencyHelper, account, selection.WaitPlan, reqStream, streamStarted)
+	switch slot.Decision {
+	case SlotAcquiredNormal, SlotAcquiredBurst:
+		accountReleaseFunc := slot.ReleaseFunc
+		// 分组利润控制：WaitPlan 排队成功后终检。排队期间账号倍率
+		// 可能上调，越线则释放槽位交由调用方排除重选，不绑定粘连。
 		latest, vetoed, reason := h.gatewayService.ProfitControlVetoLatest(ctx, account)
 		if vetoed {
-			if fastReleaseFunc != nil {
-				fastReleaseFunc()
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
 			}
 			reqLog.Debug("openai.account_slot_profit_vetoed", zap.Int64("account_id", account.ID), zap.String("reason", reason))
 			return nil, openAISlotAcquireProfitVetoed
@@ -1525,62 +1537,19 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 		if err := h.gatewayService.BindStickySessionAfterProfitAdmission(ctx, groupID, sessionHash, account.ID); err != nil {
 			reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		}
-		return wrapReleaseOnDone(ctx, fastReleaseFunc), openAISlotAcquireOK
-	}
-
-	canWait, waitErr := h.concurrencyHelper.IncrementAccountWaitCount(ctx, account.ID, selection.WaitPlan.MaxWaiting)
-	if waitErr != nil {
-		reqLog.Warn("openai.account_wait_counter_increment_failed", zap.Int64("account_id", account.ID), zap.Error(waitErr))
-	} else if !canWait {
-		reqLog.Info("openai.account_wait_queue_full",
-			zap.Int64("account_id", account.ID),
-			zap.Int("max_waiting", selection.WaitPlan.MaxWaiting),
-		)
-		h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "Too many pending requests, please retry later", *streamStarted)
+		return wrapReleaseOnDone(ctx, accountReleaseFunc), openAISlotAcquireOK
+	case SlotSwitchAccountPreserveBinding:
+		if streamStarted != nil && *streamStarted {
+			h.handleConcurrencyError(c, slot.Err, "account", *streamStarted)
+			return nil, openAISlotAcquireFailed
+		}
+		reqLog.Info("openai.account_slot_switch_preserve_binding", zap.Int64("account_id", account.ID))
+		return nil, openAISlotAcquireSwitchAccount
+	default:
+		reqLog.Warn("openai.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(slot.Err))
+		h.handleConcurrencyError(c, slot.Err, "account", *streamStarted)
 		return nil, openAISlotAcquireFailed
 	}
-
-	accountWaitCounted := waitErr == nil && canWait
-	releaseWait := func() {
-		if accountWaitCounted {
-			h.concurrencyHelper.DecrementAccountWaitCount(ctx, account.ID)
-			accountWaitCounted = false
-		}
-	}
-	defer releaseWait()
-
-	accountReleaseFunc, err := h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(
-		c,
-		account.ID,
-		selection.WaitPlan.MaxConcurrency,
-		selection.WaitPlan.Timeout,
-		reqStream,
-		streamStarted,
-	)
-	if err != nil {
-		reqLog.Warn("openai.account_slot_acquire_failed", zap.Int64("account_id", account.ID), zap.Error(err))
-		h.handleConcurrencyError(c, err, "account", *streamStarted)
-		return nil, openAISlotAcquireFailed
-	}
-
-	// Slot acquired: no longer waiting in queue.
-	releaseWait()
-	// 分组利润控制：WaitPlan 排队成功后终检。排队期间账号倍率
-	// 可能上调，越线则释放槽位交由调用方排除重选，不绑定粘连。
-	latest, vetoed, reason := h.gatewayService.ProfitControlVetoLatest(ctx, account)
-	if vetoed {
-		if accountReleaseFunc != nil {
-			accountReleaseFunc()
-		}
-		reqLog.Debug("openai.account_slot_profit_vetoed", zap.Int64("account_id", account.ID), zap.String("reason", reason))
-		return nil, openAISlotAcquireProfitVetoed
-	}
-	account = latest
-	selection.Account = latest
-	if err := h.gatewayService.BindStickySessionAfterProfitAdmission(ctx, groupID, sessionHash, account.ID); err != nil {
-		reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
-	}
-	return wrapReleaseOnDone(ctx, accountReleaseFunc), openAISlotAcquireOK
 }
 
 // ResponsesWebSocket handles OpenAI Responses API WebSocket ingress endpoint
@@ -1917,7 +1886,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		}
 
 		account := selection.Account
-		accountMaxConcurrency := account.Concurrency
+		accountMaxConcurrency := account.EffectiveConcurrency()
 		if selection.WaitPlan != nil && selection.WaitPlan.MaxConcurrency > 0 {
 			accountMaxConcurrency = selection.WaitPlan.MaxConcurrency
 		}

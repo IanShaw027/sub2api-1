@@ -823,20 +823,23 @@ func TestKiroTokenRefresherPersistsStableMachineIDBeforeRefreshTokenRotates(t *t
 	}
 	refresher := NewKiroTokenRefresher().WithTransport(upstream, &TLSFingerprintProfileService{})
 
-	credentials, err := refresher.Refresh(context.Background(), &Account{
+	account := &Account{
+		ID:          1326,
 		Platform:    PlatformKiro,
 		Type:        AccountTypeOAuth,
 		Credentials: map[string]any{"refresh_token": oldRefresh},
 		Concurrency: 1,
-	})
+	}
+	profile := leftoverValidProfile(account.ID, PlatformKiro, ClientFamilyKiroIDE, "", "profile-stable-machine-13")
+	installLeftoverOutboundProfile(t, profile)
+	credentials, err := refresher.Refresh(context.Background(), account)
 
 	if err != nil {
 		t.Fatalf("refresh returned error: %v", err)
 	}
-	oldMachineID := kiropkg.GenerateMachineID("", oldRefresh)
 	newMachineID := kiropkg.GenerateMachineID("", newRefresh)
-	if got := strings.TrimSpace(stringCredential(credentials, "machine_id")); got != oldMachineID {
-		t.Fatalf("machine_id = %q, want stable old-token machine id %q", got, oldMachineID)
+	if got := strings.TrimSpace(stringCredential(credentials, "machine_id")); got != profile.MachineID {
+		t.Fatalf("machine_id = %q, want profile machine id %q", got, profile.MachineID)
 	}
 	if stringCredential(credentials, "machine_id") == newMachineID {
 		t.Fatalf("machine_id should not be derived from rotated refresh token")

@@ -80,7 +80,9 @@ func (s *OpenAIGatewayService) ForwardGrokVoice(ctx context.Context, c *gin.Cont
 	// Match media path: CLI identity headers only on the CLI chat proxy.
 	// Official api.x.ai voice rejects or mistreats OAuth when CLI headers are stamped.
 	if account.IsGrokOAuth() && isGrokCLIProxyTarget(targetURL) {
-		applyGrokCLIHeaders(req.Header)
+		if err := applyGrokInteractiveUpstreamHeadersFromAccount(upstreamCtx, req, account); err != nil {
+			return nil, err
+		}
 	}
 	account.ApplyHeaderOverrides(req.Header)
 
@@ -89,7 +91,7 @@ func (s *OpenAIGatewayService) ForwardGrokVoice(ctx context.Context, c *gin.Cont
 		proxyURL = account.Proxy.URL()
 	}
 	started := time.Now()
-	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
+	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.EffectiveConcurrency())
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(started).Milliseconds())
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
@@ -138,7 +140,9 @@ func (s *OpenAIGatewayService) ProxyGrokRealtime(ctx context.Context, c *gin.Con
 	headers := http.Header{"Authorization": []string{"Bearer " + token}}
 	// Match media/voice HTTP: CLI headers only on CLI proxy hosts.
 	if account.IsGrokOAuth() && isGrokCLIProxyTarget(u.String()) {
-		applyGrokCLIHeaders(headers)
+		if err := applyGrokInteractiveUpstreamHeaders(ctx, headers, account); err != nil {
+			return false, err
+		}
 	}
 	if account != nil {
 		account.ApplyHeaderOverrides(headers)

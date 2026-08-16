@@ -126,6 +126,13 @@ func TestOpenAIAgentIdentityPassthroughKeepsSessionAndPromptCacheHeaders(t *test
 	c.Request.Header.Set("conversation_id", "client-conversation")
 	c.Request.Header.Set("Authorization", "Bearer inbound-must-not-forward")
 
+	profile := leftoverValidProfile(account.ID, PlatformOpenAI, ClientFamilyCodexCLI, "codex-cli/1.2.3", "mid-agent-passthrough")
+	installLeftoverOutboundProfile(t, profile)
+	wantSession, _, _, err := DeriveSessionIDs(profile.SessionNamespace, isolateOpenAISessionID(0, "client-session"))
+	require.NoError(t, err)
+	wantConversation, _, _, err := DeriveSessionIDs(profile.SessionNamespace, isolateOpenAISessionID(0, "client-conversation"))
+	require.NoError(t, err)
+
 	svc := &OpenAIGatewayService{}
 	req, err := svc.buildUpstreamRequestOpenAIPassthrough(context.Background(), c, account, body, "")
 	require.NoError(t, err)
@@ -133,17 +140,16 @@ func TestOpenAIAgentIdentityPassthroughKeepsSessionAndPromptCacheHeaders(t *test
 	require.Equal(t, "account-agent-passthrough", req.Header.Get("chatgpt-account-id"))
 	require.NotEqual(t, "client-session", req.Header.Get("session_id"))
 	require.NotEqual(t, "client-conversation", req.Header.Get("conversation_id"))
-	require.Equal(t, isolateOpenAISessionID(0, "client-session"), req.Header.Get("session_id"))
-	require.Equal(t, isolateOpenAISessionID(0, "client-conversation"), req.Header.Get("conversation_id"))
+	require.Equal(t, wantSession, req.Header.Get("session_id"))
+	require.Equal(t, wantConversation, req.Header.Get("conversation_id"))
 	requestBody, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
 	require.Contains(t, string(requestBody), `"prompt_cache_key":"cache-agent"`)
 
 	// Authentication mode must not affect session isolation or prompt-cache
-	// behavior. Compare the same request with the existing OAuth path instead
-	// of pinning this test to an implementation-specific hash.
+	// behavior. Compare the same account/namespace and vary only auth_mode.
 	oauthAccount := &Account{
-		ID:       26,
+		ID:       account.ID,
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
@@ -157,8 +163,8 @@ func TestOpenAIAgentIdentityPassthroughKeepsSessionAndPromptCacheHeaders(t *test
 	oauthContext.Request.Header.Set("conversation_id", "client-conversation")
 	oauthReq, err := svc.buildUpstreamRequestOpenAIPassthrough(context.Background(), oauthContext, oauthAccount, body, "oauth-token")
 	require.NoError(t, err)
-	require.Equal(t, oauthReq.Header.Get("session_id"), req.Header.Get("session_id"))
-	require.Equal(t, oauthReq.Header.Get("conversation_id"), req.Header.Get("conversation_id"))
+	require.Equal(t, wantSession, oauthReq.Header.Get("session_id"))
+	require.Equal(t, wantConversation, oauthReq.Header.Get("conversation_id"))
 }
 
 func TestOpenAIAgentIdentityErrorRedactionDoesNotLeakCredentialValues(t *testing.T) {

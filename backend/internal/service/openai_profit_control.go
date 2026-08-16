@@ -342,6 +342,9 @@ func (s *OpenAIGatewayService) ProfitControlVetoLatest(ctx context.Context, sele
 // only after the terminal post-slot check, so an account rejected after a rate
 // refresh cannot become the new sticky target.
 func (s *OpenAIGatewayService) bindOpenAIStickySessionDuringSelection(ctx context.Context, groupID *int64, sessionHash string, accountID int64) error {
+	if PreserveStickyBindingFromContext(ctx) {
+		return nil
+	}
 	if gatewayProfitControlGateActive(ctx) {
 		return nil
 	}
@@ -356,6 +359,9 @@ func (s *OpenAIGatewayService) bindOpenAIStickySessionDuringSelection(ctx contex
 // recovers.
 func (s *OpenAIGatewayService) BindStickySessionAfterProfitAdmission(ctx context.Context, groupID *int64, sessionHash string, accountID int64) error {
 	if sessionHash == "" || accountID <= 0 {
+		return nil
+	}
+	if PreserveStickyBindingFromContext(ctx) {
 		return nil
 	}
 	if !gatewayProfitControlGateActive(ctx) {

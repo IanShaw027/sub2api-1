@@ -42,6 +42,17 @@ func (s *stubIdentityCache) SetMaskedSessionID(_ context.Context, _ int64, _ str
 	return nil
 }
 
+func (s *stubIdentityCache) GetDeviceProfile(_ context.Context, _ int64) (*AccountDeviceProfile, error) {
+	return nil, nil
+}
+
+func (s *stubIdentityCache) SetDeviceProfile(_ context.Context, _ int64, _ *AccountDeviceProfile) error {
+	return nil
+}
+func (s *stubIdentityCache) DeleteDeviceProfile(_ context.Context, _ int64) error {
+	return nil
+}
+
 func headersWithUA(ua string) http.Header {
 	h := http.Header{}
 	if ua != "" {

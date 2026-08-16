@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
@@ -20,7 +21,7 @@ func NewGeminiCliCodeAssistClient() service.GeminiCliCodeAssistClient {
 	return &geminiCliCodeAssistClient{baseURL: geminicli.GeminiCliBaseURL}
 }
 
-func (c *geminiCliCodeAssistClient) LoadCodeAssist(ctx context.Context, accessToken, proxyURL string, reqBody *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
+func (c *geminiCliCodeAssistClient) LoadCodeAssist(ctx context.Context, accessToken, proxyURL, userAgent string, reqBody *geminicli.LoadCodeAssistRequest) (*geminicli.LoadCodeAssistResponse, error) {
 	if reqBody == nil {
 		reqBody = defaultLoadCodeAssistRequest()
 	}
@@ -34,7 +35,7 @@ func (c *geminiCliCodeAssistClient) LoadCodeAssist(ctx context.Context, accessTo
 		SetContext(ctx).
 		SetHeader("Authorization", "Bearer "+accessToken).
 		SetHeader("Content-Type", "application/json").
-		SetHeader("User-Agent", geminicli.GeminiCLIUserAgent).
+		SetHeader("User-Agent", codeAssistUserAgent(userAgent)).
 		SetBody(reqBody).
 		SetSuccessResult(&out).
 		Post(c.baseURL + "/v1internal:loadCodeAssist")
@@ -62,7 +63,7 @@ func (c *geminiCliCodeAssistClient) LoadCodeAssist(ctx context.Context, accessTo
 	return &out, nil
 }
 
-func (c *geminiCliCodeAssistClient) OnboardUser(ctx context.Context, accessToken, proxyURL string, reqBody *geminicli.OnboardUserRequest) (*geminicli.OnboardUserResponse, error) {
+func (c *geminiCliCodeAssistClient) OnboardUser(ctx context.Context, accessToken, proxyURL, userAgent string, reqBody *geminicli.OnboardUserRequest) (*geminicli.OnboardUserResponse, error) {
 	if reqBody == nil {
 		reqBody = defaultOnboardUserRequest()
 	}
@@ -78,7 +79,7 @@ func (c *geminiCliCodeAssistClient) OnboardUser(ctx context.Context, accessToken
 		SetContext(ctx).
 		SetHeader("Authorization", "Bearer "+accessToken).
 		SetHeader("Content-Type", "application/json").
-		SetHeader("User-Agent", geminicli.GeminiCLIUserAgent).
+		SetHeader("User-Agent", codeAssistUserAgent(userAgent)).
 		SetBody(reqBody).
 		SetSuccessResult(&out).
 		Post(c.baseURL + "/v1internal:onboardUser")
@@ -111,6 +112,13 @@ func createGeminiCliReqClient(proxyURL string) (*req.Client, error) {
 		ProxyURL: proxyURL,
 		Timeout:  30 * time.Second,
 	})
+}
+
+func codeAssistUserAgent(userAgent string) string {
+	if strings.TrimSpace(userAgent) != "" {
+		return userAgent
+	}
+	return geminicli.GeminiCLIUserAgent
 }
 
 func defaultLoadCodeAssistRequest() *geminicli.LoadCodeAssistRequest {

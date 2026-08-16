@@ -2,7 +2,9 @@
 package dto
 
 import (
+	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -292,8 +294,9 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 			out.BaseRPM = &rpm
 			strategy := a.GetRPMStrategy()
 			out.RPMStrategy = &strategy
-			buffer := a.GetRPMStickyBuffer()
-			out.RPMStickyBuffer = &buffer
+			if buffer, ok := manualRPMStickyBuffer(a.Extra); ok {
+				out.RPMStickyBuffer = &buffer
+			}
 		}
 		// 用户消息队列模式
 		if mode := a.GetUserMsgQueueMode(); mode != "" {
@@ -324,6 +327,9 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 	if a.IsTLSFingerprintEnabled() {
 		enabled := true
 		out.EnableTLSFingerprint = &enabled
+	}
+	if enabled, ok := a.Extra["device_learning_enabled"].(bool); ok && enabled {
+		out.DeviceLearningEnabled = &enabled
 	}
 	if profileID := a.GetTLSFingerprintProfileID(); profileID != 0 {
 		out.TLSFingerprintProfileID = &profileID
@@ -409,6 +415,43 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 	}
 
 	return out
+}
+
+// manualRPMStickyBuffer returns a user-set extra.rpm_sticky_buffer in 1–10000.
+// Computed buffers must not be copied onto the DTO or they get persisted as manual.
+func manualRPMStickyBuffer(extra map[string]any) (int, bool) {
+	if extra == nil {
+		return 0, false
+	}
+	v, ok := extra["rpm_sticky_buffer"]
+	if !ok {
+		return 0, false
+	}
+	val := extraInt(v)
+	if val >= 1 && val <= 10000 {
+		return val, true
+	}
+	return 0, false
+}
+
+func extraInt(value any) int {
+	switch v := value.(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case json.Number:
+		if i, err := v.Int64(); err == nil {
+			return int(i)
+		}
+	case string:
+		if i, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			return i
+		}
+	}
+	return 0
 }
 
 func redactAccountManagedExtra(extra map[string]any) map[string]any {

@@ -599,7 +599,15 @@ func TestCodexUnsupportedAdditionalToolsDoNotBecomeToolFreeCacheIntent(t *testin
 func TestBuildGrokResponsesRequestUsesAccountBaseURLAndBearerToken(t *testing.T) {
 	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
 
+	profile := validGrokOutboundProfile()
+	profile.AccountID = 4599
+	profile.ClientVersion = "0.2.200"
+	profile.ProfilePayload["user_agent"] = "xai-grok-workspace/0.2.200"
+	profile.ProfilePayload["grok_identifier"] = "grok-shell-learned"
+	injectOutboundGrokProfile(t, profile)
+
 	account := &Account{
+		ID:       4599,
 		Platform: PlatformGrok,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
@@ -614,7 +622,10 @@ func TestBuildGrokResponsesRequestUsesAccountBaseURLAndBearerToken(t *testing.T)
 	require.Equal(t, "Bearer access-token", req.Header.Get("Authorization"))
 	require.Equal(t, "application/json", req.Header.Get("Content-Type"))
 	require.Contains(t, req.Header.Get("Accept"), "text/event-stream")
-	require.Equal(t, grokCLIVersion, req.Header.Get("X-Grok-Client-Version"))
+	require.Equal(t, "xai-grok-workspace/0.2.200", req.Header.Get("User-Agent"))
+	require.Equal(t, "0.2.200", req.Header.Get("x-grok-client-version"))
+	require.Equal(t, "grok-shell-learned", req.Header.Get("x-grok-client-identifier"))
+	require.Equal(t, grokClientModeInteractive, req.Header.Get("x-grok-client-mode"))
 	require.Equal(t, "isolated-cache-id", req.Header.Get(grokConversationIDHeader))
 
 	data, err := io.ReadAll(req.Body)

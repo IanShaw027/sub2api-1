@@ -665,7 +665,9 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	upstreamReq.Header.Set("Authorization", "Bearer "+token)
 	upstreamReq.Header.Set("Accept", "application/json")
 	if account.IsGrokOAuth() && isGrokCLIProxyTarget(targetURL) {
-		applyGrokCLIHeaders(upstreamReq.Header)
+		if err := applyGrokInteractiveUpstreamHeadersFromAccount(upstreamCtx, upstreamReq, account); err != nil {
+			return nil, err
+		}
 	}
 	if endpoint.RequiresRequestBody() {
 		contentType = strings.TrimSpace(contentType)
@@ -682,7 +684,7 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 		proxyURL = account.Proxy.URL()
 	}
 	upstreamStart := time.Now()
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.EffectiveConcurrency())
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
@@ -775,7 +777,9 @@ func (s *OpenAIGatewayService) forwardGrokMediaVideoContent(
 	statusReq.Header.Set("Authorization", "Bearer "+token)
 	statusReq.Header.Set("Accept", "application/json")
 	if account.IsGrokOAuth() && isGrokCLIProxyTarget(statusURL) {
-		applyGrokCLIHeaders(statusReq.Header)
+		if err := applyGrokInteractiveUpstreamHeadersFromAccount(upstreamCtx, statusReq, account); err != nil {
+			return nil, err
+		}
 	}
 	account.ApplyHeaderOverrides(statusReq.Header)
 
@@ -784,7 +788,7 @@ func (s *OpenAIGatewayService) forwardGrokMediaVideoContent(
 		proxyURL = account.Proxy.URL()
 	}
 	upstreamStart := time.Now()
-	statusResp, err := s.httpUpstream.Do(statusReq, proxyURL, account.ID, account.Concurrency)
+	statusResp, err := s.httpUpstream.Do(statusReq, proxyURL, account.ID, account.EffectiveConcurrency())
 	if err != nil {
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
@@ -838,12 +842,14 @@ func (s *OpenAIGatewayService) forwardGrokMediaVideoContent(
 	if !signedContent {
 		contentReq.Header.Set("Authorization", "Bearer "+token)
 		if account.IsGrokOAuth() && isGrokCLIProxyTarget(contentURL) {
-			applyGrokCLIHeaders(contentReq.Header)
+			if err := applyGrokInteractiveUpstreamHeadersFromAccount(upstreamCtx, contentReq, account); err != nil {
+				return nil, err
+			}
 		}
 		account.ApplyHeaderOverrides(contentReq.Header)
 	}
 
-	contentResp, err := s.httpUpstream.Do(contentReq, proxyURL, account.ID, account.Concurrency)
+	contentResp, err := s.httpUpstream.Do(contentReq, proxyURL, account.ID, account.EffectiveConcurrency())
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
 	if err != nil {
 		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)

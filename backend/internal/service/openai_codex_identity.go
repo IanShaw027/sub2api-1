@@ -98,6 +98,48 @@ type codexOutboundIdentity struct {
 	version    string
 }
 
+func profilePayloadString(profile *AccountDeviceProfile, key string) string {
+	if profile == nil || profile.ProfilePayload == nil {
+		return ""
+	}
+	s, _ := profile.ProfilePayload[key].(string)
+	return strings.TrimSpace(s)
+}
+
+func codexIdentityCandidateUA(profile *AccountDeviceProfile, fallbackUA string) string {
+	if ua := profilePayloadString(profile, "user_agent"); ua != "" {
+		return ua
+	}
+	return fallbackUA
+}
+
+func applyCodexPayloadOriginator(ua, originator string) string {
+	originator = strings.ToLower(strings.TrimSpace(originator))
+	if originator == "" {
+		return ua
+	}
+	ua = strings.TrimSpace(ua)
+	slash := strings.IndexByte(ua, '/')
+	if slash <= 0 {
+		return ua
+	}
+	return originator + ua[slash:]
+}
+
+// resolveCodexOutboundIdentityFromProfile 用档案 payload 的 user_agent / originator
+// 作为候选，再走既有配对与最低版本收口，保证 UA / originator / version 同源自洽。
+// originator 一律小写后改写 UA 首段，再交给 PairCodexClientIdentity，避免只读 UA 前缀。
+func resolveCodexOutboundIdentityFromProfile(profile *AccountDeviceProfile, fallbackUA string) codexOutboundIdentity {
+	ua := codexIdentityCandidateUA(profile, fallbackUA)
+	if originator := profilePayloadString(profile, "originator"); originator != "" {
+		if strings.TrimSpace(ua) == "" {
+			ua = codexCanonicalUserAgent()
+		}
+		ua = applyCodexPayloadOriginator(ua, originator)
+	}
+	return resolveCodexOutboundIdentity(ua)
+}
+
 // resolveCodexOutboundIdentity 由候选 User-Agent 推导自洽的出站身份。
 // candidateUA 为空时使用规范 User-Agent；推导不出官方身份时整体回退为规范 TUI 身份。
 //
@@ -142,12 +184,13 @@ func ensureCodexIdentityHeaders(h http.Header) {
 	if h == nil {
 		return
 	}
+	deleteHeaderAllForms(h, "X-Originator")
 	identity := resolveCodexOutboundIdentity("")
 	if strings.TrimSpace(h.Get("user-agent")) == "" {
 		h.Set("user-agent", identity.userAgent)
 	}
-	if strings.TrimSpace(h.Get("originator")) == "" {
-		h.Set("originator", identity.originator)
+	if getCodexOriginator(h) == "" {
+		setCodexOriginator(h, identity.originator)
 	}
 	if strings.TrimSpace(h.Get("version")) == "" {
 		h.Set("version", identity.version)
@@ -185,7 +228,11 @@ func enforceCodexIdentityHeaders(h http.Header) {
 // 不应被补回。需要从缺失身份头恢复的调用方应先调用 ensureCodexIdentityHeaders。
 // 必须在所有 User-Agent 改写之后调用。
 func enforceCodexIdentityHeadersWithUA(h http.Header, overrideUA string) {
-	if h == nil || h.Get("originator") == "" {
+	if h == nil {
+		return
+	}
+	deleteHeaderAllForms(h, "X-Originator")
+	if getCodexOriginator(h) == "" {
 		return
 	}
 	if !codexIdentityEnforcement.Load() {
@@ -194,7 +241,7 @@ func enforceCodexIdentityHeadersWithUA(h http.Header, overrideUA string) {
 	}
 	identity := resolveCodexOutboundIdentity(overrideUA)
 	h.Set("user-agent", identity.userAgent)
-	h.Set("originator", identity.originator)
+	setCodexOriginator(h, identity.originator)
 	h.Set("version", identity.version)
 }
 
@@ -208,8 +255,17 @@ func pairCodexIdentityHeaders(h http.Header) {
 		h.Set("version", identity.version)
 	}
 	h.Set("user-agent", pairedUA)
-	h.Set("originator", originator)
+	setCodexOriginator(h, originator)
 	if v := strings.TrimSpace(h.Get("version")); v != "" && CompareVersions(v, codexUpstreamMinVersion) < 0 {
 		h.Set("version", codexCLIVersion)
 	}
+}
+
+func getCodexOriginator(h http.Header) string {
+	return strings.TrimSpace(getHeaderRaw(h, "originator"))
+}
+
+func setCodexOriginator(h http.Header, originator string) {
+	deleteHeaderAllForms(h, "X-Originator")
+	setHeaderRaw(h, "originator", originator)
 }

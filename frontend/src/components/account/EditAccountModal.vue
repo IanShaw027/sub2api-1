@@ -2796,6 +2796,25 @@
         </div>
       </div>
 
+      <div
+        v-if="!isSparkShadow"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between gap-4">
+          <div class="min-w-0">
+            <label class="input-label mb-0">{{ t('admin.accounts.deviceLearning.label') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.deviceLearning.hint') }}
+            </p>
+          </div>
+          <Toggle
+            v-model="deviceLearningEnabled"
+            data-testid="device-learning-toggle"
+            :aria-label="t('admin.accounts.deviceLearning.label')"
+          />
+        </div>
+      </div>
+
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div>
           <label class="input-label">{{ t('common.status') }}</label>
@@ -3237,6 +3256,7 @@ const tlsFingerprintDefaultOS = ref('')
 const tlsFingerprintOSOptions = ['windows', 'macos', 'linux', 'ios', 'android']
 const tlsFingerprintProtocolOptions = ['messages', 'responses', 'chat_completions', 'images', 'embeddings', 'gemini', 'antigravity', 'kiro']
 const tlsFingerprintBindingRows = ref<{ os: string; client: string; protocol: string; profileId: number }[]>([])
+const deviceLearningEnabled = ref(false)
 
 function supportsTLSFingerprint(platform?: string | null) {
   return ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kiro'].includes(platform || '')
@@ -3758,6 +3778,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   mixedScheduling.value = false
   allowOverages.value = false
 	const extra = newAccount.extra as Record<string, unknown> | undefined
+	deviceLearningEnabled.value = extra?.device_learning_enabled === true
 	mixedScheduling.value = extra?.mixed_scheduling === true
 	allowOverages.value = extra?.allow_overages === true
 	autoPause5hThreshold.value = typeof extra?.auto_pause_5h_threshold === 'number' ? extra.auto_pause_5h_threshold * 100 : null
@@ -4431,6 +4452,16 @@ function loadTempUnschedRules(credentials?: Record<string, unknown>) {
   })
 }
 
+function manualRPMStickyBufferFromExtra(extra: Account['extra'] | undefined): number | null {
+  if (!extra) return null
+  const raw = extra.rpm_sticky_buffer
+  const val = typeof raw === 'number' ? raw : Number(raw)
+  if (Number.isInteger(val) && val >= 1 && val <= 10000) {
+    return val
+  }
+  return null
+}
+
 // Load quota control settings from account (Anthropic OAuth/SetupToken only)
 function loadQuotaControlSettings(account: Account) {
   // Reset all quota control state first
@@ -4494,7 +4525,7 @@ function loadQuotaControlSettings(account: Account) {
     rpmLimitEnabled.value = true
     baseRpm.value = account.base_rpm
     rpmStrategy.value = (account.rpm_strategy as 'tiered' | 'sticky_exempt') || 'tiered'
-    rpmStickyBuffer.value = account.rpm_sticky_buffer ?? null
+    rpmStickyBuffer.value = manualRPMStickyBufferFromExtra(account.extra)
   }
 
   // UMQ mode（独立于 RPM 加载，防止编辑无 RPM 账号时丢失已有配置）
@@ -5117,7 +5148,7 @@ const handleSubmit = async () => {
           ? baseRpm.value
           : DEFAULT_BASE_RPM
         newExtra.rpm_strategy = rpmStrategy.value
-        if (rpmStickyBuffer.value != null && rpmStickyBuffer.value > 0) {
+        if (rpmStickyBuffer.value != null && rpmStickyBuffer.value >= 1 && rpmStickyBuffer.value <= 10000) {
           newExtra.rpm_sticky_buffer = rpmStickyBuffer.value
         } else {
           delete newExtra.rpm_sticky_buffer
@@ -5370,6 +5401,16 @@ const handleSubmit = async () => {
       const newExtra: Record<string, unknown> = { ...currentExtra }
       applyTLSFingerprintToExtra(newExtra)
       updatePayload.extra = newExtra
+    }
+
+    if (!isSparkShadow.value) {
+      const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
+        (props.account.extra as Record<string, unknown>) ||
+        {}
+      updatePayload.extra = {
+        ...currentExtra,
+        device_learning_enabled: deviceLearningEnabled.value
+      }
     }
 
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {

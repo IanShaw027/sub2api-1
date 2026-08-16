@@ -33,7 +33,7 @@ func grokOAuthModelSyncTestAccount(baseURL string) *Account {
 		credentials["base_url"] = baseURL
 	}
 	return &Account{
-		ID:          10,
+		ID:          900010,
 		Platform:    PlatformGrok,
 		Type:        AccountTypeOAuth,
 		Credentials: credentials,

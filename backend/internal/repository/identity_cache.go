@@ -15,6 +15,8 @@ const (
 	fingerprintTTL         = 7 * 24 * time.Hour // 7天，配合每24小时懒续期可保持活跃账号永不过期
 	maskedSessionKeyPrefix = "masked_session:"
 	maskedSessionTTL       = 15 * time.Minute
+	deviceProfileKeyPrefix = "device_profile:"
+	deviceProfileTTL       = 7 * 24 * time.Hour
 )
 
 // fingerprintKey generates the Redis key for account fingerprint cache.
@@ -25,6 +27,10 @@ func fingerprintKey(accountID int64) string {
 // maskedSessionKey generates the Redis key for masked session ID cache.
 func maskedSessionKey(accountID int64) string {
 	return fmt.Sprintf("%s%d", maskedSessionKeyPrefix, accountID)
+}
+
+func deviceProfileKey(accountID int64) string {
+	return fmt.Sprintf("%s%d", deviceProfileKeyPrefix, accountID)
 }
 
 type identityCache struct {
@@ -72,4 +78,43 @@ func (c *identityCache) GetMaskedSessionID(ctx context.Context, accountID int64)
 func (c *identityCache) SetMaskedSessionID(ctx context.Context, accountID int64, sessionID string) error {
 	key := maskedSessionKey(accountID)
 	return c.rdb.Set(ctx, key, sessionID, maskedSessionTTL).Err()
+}
+
+// GetDeviceProfile returns the cached device-profile projection.
+// A miss is (nil, nil) — Redis is not identity authority. The caller loads Postgres.
+func (c *identityCache) GetDeviceProfile(ctx context.Context, accountID int64) (*service.AccountDeviceProfile, error) {
+	key := deviceProfileKey(accountID)
+	val, err := c.rdb.Get(ctx, key).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var p service.AccountDeviceProfile
+	if err := json.Unmarshal([]byte(val), &p); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// SetDeviceProfile writes the device-profile projection. Redis is a cache of Postgres;
+// a miss on GetDeviceProfile means the caller must load the DB row.
+func (c *identityCache) SetDeviceProfile(ctx context.Context, accountID int64, p *service.AccountDeviceProfile) error {
+	if p == nil {
+		return fmt.Errorf("device profile is required")
+	}
+	val, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	if err := c.rdb.Set(ctx, deviceProfileKey(accountID), val, deviceProfileTTL).Err(); err != nil {
+		return err
+	}
+	// Leftover fingerprint keys are not device-profile authority.
+	return c.rdb.Del(ctx, fingerprintKey(accountID)).Err()
+}
+
+func (c *identityCache) DeleteDeviceProfile(ctx context.Context, accountID int64) error {
+	return c.rdb.Del(ctx, deviceProfileKey(accountID), fingerprintKey(accountID)).Err()
 }

@@ -18,6 +18,9 @@ import (
 // ForwardCountTokens 转发 count_tokens 请求到上游 API
 // 特点：不记录使用量、仅支持非流式响应
 func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) error {
+	if c != nil && c.Request != nil {
+		maybeLearnOfficialDeviceProfile(ctx, account, c.Request.Header)
+	}
 	if parsed == nil {
 		s.countTokensError(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
 		return fmt.Errorf("parse request: empty request")
@@ -472,23 +475,20 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		ctEnableFP, ctEnableMPT, _ = s.settingService.GetGatewayForwardingSettings(ctx)
 	}
 	var ctFingerprint *Fingerprint
+	var ctOutboundProfile *AccountDeviceProfile
 	if account.IsOAuth() && s.identityService != nil {
-		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
-		if err == nil {
-			ctFingerprint = fp
-			if !ctEnableMPT {
-				accountUUID := account.GetExtraString("account_uuid")
-				if accountUUID != "" && fp.ClientID != "" {
-					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
-						body = newBody
-					}
-				}
-			}
+		// Same as buildUpstreamRequest: skip the dead fingerprint mint. A loaded
+		// profile never uses it, and load failure already nils fingerprint.
+		body, ctOutboundProfile = s.applyAnthropicOutboundIdentity(ctx, body, account, !ctEnableMPT)
+		if ctOutboundProfile == nil {
+			ctFingerprint = nil
 		}
 	}
 
 	// 同步 billing header cc_version 与实际发送的 User-Agent 版本
-	if ctFingerprint != nil && ctEnableFP {
+	if ua := outboundProfileUserAgent(ctOutboundProfile); ua != "" {
+		body = syncBillingHeaderVersion(body, ua)
+	} else if ctFingerprint != nil && ctEnableFP {
 		body = syncBillingHeaderVersion(body, ctFingerprint.UserAgent)
 	}
 
@@ -523,19 +523,26 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 		setAnthropicAPIKeyAuthHeader(req.Header, account, token)
 	}
 
-	// 白名单透传 headers（恢复真实 wire casing）
-	for key, values := range clientHeaders {
-		lowerKey := strings.ToLower(key)
-		if allowedHeaders[lowerKey] {
-			wireKey := resolveWireCasing(key)
-			for _, v := range values {
-				addHeaderRaw(req.Header, wireKey, v)
+	// 白名单透传 headers（恢复真实 wire casing）。
+	// OAuth mimic 路径与 /v1/messages 对齐：不透传客户端 header，避免入站 x-app /
+	// x-stainless-* / anthropic-dangerous-direct-browser-access / user-agent 等身份
+	// 在 count_tokens 上游请求里闪烁。
+	if tokenType != "oauth" || !mimicClaudeCode {
+		for key, values := range clientHeaders {
+			lowerKey := strings.ToLower(key)
+			if allowedHeaders[lowerKey] {
+				wireKey := resolveWireCasing(key)
+				for _, v := range values {
+					addHeaderRaw(req.Header, wireKey, v)
+				}
 			}
 		}
 	}
 
-	// OAuth 账号：应用指纹到请求头（受设置开关控制）
-	if ctEnableFP && ctFingerprint != nil {
+	// OAuth 账号：profile UA/stainless 覆盖白名单透传；load failure 不回退指纹身份。
+	if ctOutboundProfile != nil {
+		applyOutboundProfileIdentityHeaders(req, ctOutboundProfile)
+	} else if ctEnableFP && ctFingerprint != nil {
 		s.identityService.ApplyFingerprint(req, ctFingerprint)
 	}
 

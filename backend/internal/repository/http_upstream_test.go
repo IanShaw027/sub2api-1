@@ -2,6 +2,8 @@ package repository
 
 import (
 	"bytes"
+	"context"
+	"crypto/x509"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -16,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/model"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
@@ -98,7 +101,7 @@ func TestHTTPUpstreamDoWithTLSPlainHTTPUsesConfiguredSOCKSProxy(t *testing.T) {
 func TestTLSFingerprintHTTPSProxyFallsBackWithoutBypassingProxy(t *testing.T) {
 	proxyURL, err := url.Parse("https://user:pass@proxy.example:8443")
 	require.NoError(t, err)
-	transport, err := buildUpstreamTransportWithTLSFingerprint(poolSettings{}, proxyURL, &tlsfingerprint.Profile{Name: "test"})
+	transport, err := buildUpstreamTransportWithTLSFingerprint(poolSettings{}, proxyURL, &tlsfingerprint.Profile{Name: "test"}, false)
 	require.NoError(t, err)
 	require.NotNil(t, transport.Proxy)
 	require.Nil(t, transport.DialTLSContext)
@@ -204,7 +207,7 @@ func TestHTTPUpstreamDoAppliesGrokCLIIdentityBeforeOAuthRoundTrip(t *testing.T) 
 			protocolMode := svc.resolveProtocolMode(profile, proxyKey, nil)
 			settings := svc.resolvePoolSettings(isolation, 1)
 			settings = svc.applyProfilePoolSettings(settings, profile)
-			cacheKey := buildCacheKey(isolation, proxyKey, accountID, protocolMode)
+			cacheKey := buildCacheKey(isolation, proxyKey, accountID, resolvePoolBurstConcurrency(1), tlsProfileKeyNone, transportFamilyForProtocolMode(protocolMode), protocolMode)
 
 			var capturedHeaders http.Header
 			svc.clients[cacheKey] = &upstreamClientEntry{
@@ -222,7 +225,7 @@ func TestHTTPUpstreamDoAppliesGrokCLIIdentityBeforeOAuthRoundTrip(t *testing.T) 
 					}, nil
 				})},
 				proxyKey:     proxyKey,
-				poolKey:      buildPoolKey(settings, protocolMode),
+				poolKey:      buildPoolKey(settings, tlsProfileKeyNone, transportFamilyForProtocolMode(protocolMode), protocolMode),
 				protocolMode: protocolMode,
 			}
 
@@ -237,7 +240,7 @@ func TestHTTPUpstreamDoAppliesGrokCLIIdentityBeforeOAuthRoundTrip(t *testing.T) 
 
 			require.Equal(t, "0.2.114", capturedHeaders.Get("x-grok-client-version"))
 			require.Equal(t, "xai-grok-cli", capturedHeaders.Get("X-XAI-Token-Auth"))
-			require.Equal(t, "xai-grok-workspace/0.2.114", capturedHeaders.Get("User-Agent"))
+			require.Equal(t, "sub2api-grok/1.0", capturedHeaders.Get("User-Agent"))
 		})
 	}
 }
@@ -254,7 +257,7 @@ func TestHTTPUpstreamDoFallsBackToOfficialGrokAPIOnCLIAccessDenied(t *testing.T)
 	protocolMode := svc.resolveProtocolMode(profile, proxyKey, nil)
 	settings := svc.resolvePoolSettings(isolation, 1)
 	settings = svc.applyProfilePoolSettings(settings, profile)
-	cacheKey := buildCacheKey(isolation, proxyKey, accountID, protocolMode)
+	cacheKey := buildCacheKey(isolation, proxyKey, accountID, resolvePoolBurstConcurrency(1), tlsProfileKeyNone, transportFamilyForProtocolMode(protocolMode), protocolMode)
 
 	payload := []byte(`{"model":"grok-4.5","input":"hello"}`)
 	var calls int
@@ -288,7 +291,7 @@ func TestHTTPUpstreamDoFallsBackToOfficialGrokAPIOnCLIAccessDenied(t *testing.T)
 			}, nil
 		})},
 		proxyKey:     proxyKey,
-		poolKey:      buildPoolKey(settings, protocolMode),
+		poolKey:      buildPoolKey(settings, tlsProfileKeyNone, transportFamilyForProtocolMode(protocolMode), protocolMode),
 		protocolMode: protocolMode,
 	}
 
@@ -454,7 +457,6 @@ func TestApplyGrokCLIProxyHeaders(t *testing.T) {
 		t.Setenv("XAI_GROK_CLI_VERSION", "")
 		req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
 		require.NoError(t, err)
-		req.Header.Set("User-Agent", "sub2api-grok/1.0")
 
 		applyGrokCLIProxyHeaders(req)
 
@@ -527,6 +529,35 @@ func TestApplyGrokCLIProxyHeaders(t *testing.T) {
 			require.Equal(t, "xai-grok-workspace/0.2.114", req.Header.Get("User-Agent"))
 		})
 	}
+
+	t.Run("does not overwrite a non-empty non-workspace user agent", func(t *testing.T) {
+		t.Setenv("XAI_GROK_CLI_VERSION", "")
+		req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+		require.NoError(t, err)
+		req.Header.Set("User-Agent", "grok-shell/0.2.200")
+
+		applyGrokCLIProxyHeaders(req)
+
+		require.Equal(t, "grok-shell/0.2.200", req.Header.Get("User-Agent"))
+		require.Equal(t, "0.2.114", req.Header.Get("x-grok-client-version"))
+		require.Equal(t, "xai-grok-cli", req.Header.Get("X-XAI-Token-Auth"))
+	})
+
+	t.Run("does not overwrite already-stamped profile identity", func(t *testing.T) {
+		t.Setenv("XAI_GROK_CLI_VERSION", "")
+		req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+		require.NoError(t, err)
+		req.Header.Set("User-Agent", "xai-grok-workspace/0.2.200")
+		req.Header.Set("x-grok-client-version", "0.2.200")
+		req.Header.Set("x-grok-client-identifier", "grok-shell-learned")
+
+		applyGrokCLIProxyHeaders(req)
+
+		require.Equal(t, "xai-grok-workspace/0.2.200", req.Header.Get("User-Agent"))
+		require.Equal(t, "0.2.200", req.Header.Get("x-grok-client-version"))
+		require.Equal(t, "grok-shell-learned", req.Header.Get("x-grok-client-identifier"))
+		require.Equal(t, "xai-grok-cli", req.Header.Get("X-XAI-Token-Auth"))
+	})
 
 	t.Run("leaves direct xAI API requests unchanged", func(t *testing.T) {
 		t.Setenv("XAI_GROK_CLI_VERSION", "0.2.95")
@@ -852,17 +883,266 @@ func (s *HTTPUpstreamSuite) TestAccountProxyIsolation_DifferentProxy() {
 	require.Equal(s.T(), 2, len(svc.clients), "账号+代理隔离应缓存两个客户端")
 }
 
-// TestAccountModeProxyChangeClearsPool 测试账户模式下代理变更
-// 验证账户切换代理时清理旧连接池，避免复用错误代理
-func (s *HTTPUpstreamSuite) TestAccountModeProxyChangeClearsPool() {
+// TestAccountModeProxyChangeUsesDistinctPoolKeys 测试账户模式下代理变更
+// 验证账户隔离只有一个存活池：切换代理会排空旧空闲客户端
+func (s *HTTPUpstreamSuite) TestAccountModeProxyChangeUsesDistinctPoolKeys() {
 	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount}
 	svc := s.newService()
-	// 同一账户，先后使用不同代理
-	entry1 := mustGetOrCreateClient(s.T(), svc, "http://proxy-a:8080", 1, 3)
-	entry2 := mustGetOrCreateClient(s.T(), svc, "http://proxy-b:8080", 1, 3)
-	require.NotSame(s.T(), entry1, entry2, "账号切换代理应创建新连接池")
-	require.Equal(s.T(), 1, len(svc.clients), "账号模式下应仅保留一个连接池")
-	require.False(s.T(), hasEntry(svc, entry1), "旧连接池应被清理")
+
+	settings := svc.resolvePoolSettings(config.ConnectionPoolIsolationAccount, 3)
+	oldProxyKey, _, err := normalizeProxyURL("http://proxy-a:8080")
+	require.NoError(s.T(), err)
+	oldCacheKey := buildCacheKey(config.ConnectionPoolIsolationAccount, oldProxyKey, 1, resolvePoolBurstConcurrency(3), tlsProfileKeyNone, transportFamilyH1, upstreamProtocolModeDefault)
+	oldTransport := &closeIdleTrackingTransport{}
+	oldEntry := &upstreamClientEntry{
+		client:          &http.Client{Transport: oldTransport},
+		accountID:       1,
+		proxyKey:        oldProxyKey,
+		tlsProfileKey:   tlsProfileKeyNone,
+		transportFamily: transportFamilyH1,
+		poolKey:         buildPoolKey(settings, tlsProfileKeyNone, transportFamilyH1, upstreamProtocolModeDefault),
+		lastUsed:        time.Now().UnixNano(),
+	}
+	svc.clients[oldCacheKey] = oldEntry
+
+	newEntry, err := svc.getClientEntry("http://proxy-b:8080", 1, 3, service.HTTPUpstreamProfileDefault, false, false)
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), newEntry)
+
+	require.Equal(s.T(), int64(1), oldTransport.closeIdleCalls.Load(), "proxy change should drain the prior idle client")
+	require.False(s.T(), hasEntry(svc, oldEntry), "old proxy client should be removed after drain")
+	require.Equal(s.T(), 1, len(svc.clients), "only the replacement client should remain cached")
+}
+
+func (s *HTTPUpstreamSuite) TestAccountModeProxyChangeDrainsPreviousIdleClient() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount}
+	svc := s.newService()
+
+	settings := svc.resolvePoolSettings(config.ConnectionPoolIsolationAccount, 3)
+	oldProxyKey, _, err := normalizeProxyURL("http://proxy-a:8080")
+	require.NoError(s.T(), err)
+	oldCacheKey := buildCacheKey(config.ConnectionPoolIsolationAccount, oldProxyKey, 1, resolvePoolBurstConcurrency(3), tlsProfileKeyNone, transportFamilyH1, upstreamProtocolModeDefault)
+	oldTransport := &closeIdleTrackingTransport{}
+	oldEntry := &upstreamClientEntry{
+		client:          &http.Client{Transport: oldTransport},
+		accountID:       1,
+		proxyKey:        oldProxyKey,
+		tlsProfileKey:   tlsProfileKeyNone,
+		transportFamily: transportFamilyH1,
+		poolKey:         buildPoolKey(settings, tlsProfileKeyNone, transportFamilyH1, upstreamProtocolModeDefault),
+		lastUsed:        time.Now().UnixNano(),
+	}
+	svc.clients[oldCacheKey] = oldEntry
+
+	newEntry, err := svc.getClientEntry("http://proxy-b:8080", 1, 3, service.HTTPUpstreamProfileDefault, false, false)
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), newEntry)
+
+	require.Equal(s.T(), int64(1), oldTransport.closeIdleCalls.Load(), "proxy change should drain the prior idle client")
+	require.False(s.T(), hasEntry(svc, oldEntry), "old proxy client should be removed after drain")
+	require.Equal(s.T(), 1, len(svc.clients), "only the replacement client should remain cached")
+}
+
+func TestBuildCacheKey_AccountIsolationIncludesTLSProfileAndTransportFamily(t *testing.T) {
+	keyA := buildCacheKey(
+		config.ConnectionPoolIsolationAccount,
+		"http://proxy-a.local:8080",
+		17,
+		14,
+		"profile-101",
+		transportFamilyH1,
+		upstreamProtocolModeDefault,
+	)
+	keyB := buildCacheKey(
+		config.ConnectionPoolIsolationAccount,
+		"http://proxy-a.local:8080",
+		17,
+		14,
+		"profile-202",
+		transportFamilyH1,
+		upstreamProtocolModeDefault,
+	)
+	keyH2 := buildCacheKey(
+		config.ConnectionPoolIsolationAccount,
+		"http://proxy-a.local:8080",
+		17,
+		14,
+		"profile-101",
+		transportFamilyH2,
+		upstreamProtocolModeOpenAIH2,
+	)
+	keyProxyB := buildCacheKey(
+		config.ConnectionPoolIsolationAccount,
+		"http://proxy-b.local:8080",
+		17,
+		14,
+		"profile-101",
+		transportFamilyH1,
+		upstreamProtocolModeDefault,
+	)
+
+	require.NotEqual(t, keyA, keyB)
+	require.NotEqual(t, keyA, keyH2)
+	require.NotEqual(t, keyA, keyProxyB)
+	require.Contains(t, keyA, "proxy:http://proxy-a.local:8080")
+	require.Contains(t, keyA, "tls_profile:profile-101")
+	require.Contains(t, keyA, "family:h1")
+	require.Contains(t, keyA, "burst:14")
+}
+
+func TestBuildCacheKey_ProxyIsolationOmitsAccountAndBurst(t *testing.T) {
+	keyA := buildCacheKey(
+		config.ConnectionPoolIsolationProxy,
+		"http://proxy.local:8080",
+		11,
+		4,
+		"profile-101",
+		transportFamilyH1,
+		upstreamProtocolModeDefault,
+	)
+	keyB := buildCacheKey(
+		config.ConnectionPoolIsolationProxy,
+		"http://proxy.local:8080",
+		22,
+		14,
+		"profile-101",
+		transportFamilyH1,
+		upstreamProtocolModeDefault,
+	)
+
+	require.Equal(t, keyA, keyB)
+	require.NotContains(t, keyA, "account:")
+	require.NotContains(t, keyA, "burst:")
+	require.Contains(t, keyA, "tls_profile:profile-101")
+	require.Contains(t, keyA, "family:h1")
+}
+
+func TestTLSProfileCacheKey_UsesBuiltinNameForDefaultProfile(t *testing.T) {
+	require.Equal(t, "builtin:Built-in Default (Node.js 24.x)", tlsProfileCacheKey(&tlsfingerprint.Profile{
+		Name: "Built-in Default (Node.js 24.x)",
+	}))
+}
+
+func TestTLSProfilePoolIdentity_SameIDConfigReplacementKeepsCanonicalID(t *testing.T) {
+	v1 := &tlsfingerprint.Profile{ID: 101, Name: "profile-101", CipherSuites: []uint16{0x1301}}
+	v2 := &tlsfingerprint.Profile{ID: 101, Name: "profile-101", CipherSuites: []uint16{0x1302}}
+
+	require.Equal(t, "101", tlsProfileCacheKey(v1))
+	require.Equal(t, "101", tlsProfileCacheKey(v2))
+	require.NotEqual(t, tlsProfilePoolIdentity(v1), tlsProfilePoolIdentity(v2))
+	require.True(t, strings.HasPrefix(tlsProfilePoolIdentity(v1), "101@"))
+	require.True(t, strings.HasPrefix(tlsProfilePoolIdentity(v2), "101@"))
+}
+
+func TestTLSProfilePoolIdentity_ALPNListSplitProducesDistinctRevisions(t *testing.T) {
+	joined := &tlsfingerprint.Profile{ID: 101, Name: "profile-101", ALPNProtocols: []string{"h2,http/1.1"}}
+	split := &tlsfingerprint.Profile{ID: 101, Name: "profile-101", ALPNProtocols: []string{"h2", "http/1.1"}}
+
+	require.Equal(t, "101", tlsProfileCacheKey(joined))
+	require.Equal(t, "101", tlsProfileCacheKey(split))
+	require.NotEqual(t, tlsProfileRevision(joined), tlsProfileRevision(split),
+		"comma-joined ALPN and split ALPN lists must not share a revision")
+	require.NotEqual(t, tlsProfilePoolIdentity(joined), tlsProfilePoolIdentity(split),
+		"same-ID ALPN list split must change pool identity")
+	require.True(t, strings.HasPrefix(tlsProfilePoolIdentity(joined), "101@"))
+	require.True(t, strings.HasPrefix(tlsProfilePoolIdentity(split), "101@"))
+}
+
+func TestTLSPoolKey_ProxyIsolationSeparatesProfilesWithIdenticalContentsButDifferentIDs(t *testing.T) {
+	profileSvc := service.NewTLSFingerprintProfileService(&stubTLSFingerprintProfileRepo{
+		profiles: []*model.TLSFingerprintProfile{
+			{
+				ID:                  101,
+				Name:                "shared-profile",
+				EnableGREASE:        true,
+				CipherSuites:        []uint16{0x1301, 0x1302},
+				Curves:              []uint16{0x001d},
+				ALPNProtocols:       []string{"h2", "http/1.1"},
+				SupportedVersions:   []uint16{0x0304, 0x0303},
+				KeyShareGroups:      []uint16{0x001d},
+				PSKModes:            []uint16{0x01},
+				Extensions:          []uint16{0, 16, 43, 51},
+				SignatureAlgorithms: []uint16{0x0403, 0x0804},
+			},
+			{
+				ID:                  202,
+				Name:                "shared-profile",
+				EnableGREASE:        true,
+				CipherSuites:        []uint16{0x1301, 0x1302},
+				Curves:              []uint16{0x001d},
+				ALPNProtocols:       []string{"h2", "http/1.1"},
+				SupportedVersions:   []uint16{0x0304, 0x0303},
+				KeyShareGroups:      []uint16{0x001d},
+				PSKModes:            []uint16{0x01},
+				Extensions:          []uint16{0, 16, 43, 51},
+				SignatureAlgorithms: []uint16{0x0403, 0x0804},
+			},
+		},
+	}, nil)
+
+	profile101 := profileSvc.GetProfileByID(101)
+	profile202 := profileSvc.GetProfileByID(202)
+	require.NotNil(t, profile101)
+	require.NotNil(t, profile202)
+	require.Equal(t, "101", tlsProfileCacheKey(profile101))
+	require.Equal(t, "202", tlsProfileCacheKey(profile202))
+
+	poolKey101 := buildPoolKey(poolSettings{}, tlsProfileCacheKey(profile101), transportFamilyH1, upstreamProtocolModeDefault)
+	poolKey202 := buildPoolKey(poolSettings{}, tlsProfileCacheKey(profile202), transportFamilyH1, upstreamProtocolModeDefault)
+	require.NotEqual(t, poolKey101, poolKey202)
+
+	upstream := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{
+			ConnectionPoolIsolation: config.ConnectionPoolIsolationProxy,
+		},
+	})
+	svc, ok := upstream.(*httpUpstreamService)
+	require.True(t, ok)
+
+	entry1, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		profile101,
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(t, err)
+
+	entry2, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		2,
+		12,
+		profile202,
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(t, err)
+
+	require.NotSame(t, entry1, entry2, "profiles with distinct canonical IDs must not share TLS client entries")
+	require.Equal(t, 2, len(svc.clients), "proxy-isolated TLS pools must coexist across accounts with distinct canonical profile IDs")
+
+	replaced101, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		&tlsfingerprint.Profile{
+			ID:           101,
+			Name:         "shared-profile",
+			EnableGREASE: true,
+			CipherSuites: []uint16{0x1303},
+		},
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(t, err)
+	require.NotSame(t, entry1, replaced101, "same-ID TLS config replacement must rebuild the ClientHello transport")
+	require.False(t, hasEntry(svc, entry1), "replaced same-ID TLS client should be removed")
+	require.True(t, hasEntry(svc, entry2), "a different canonical profile ID must keep its proxy-isolated pool")
+	require.Equal(t, 2, len(svc.clients), "proxy isolation must keep distinct profile IDs coexisting after a same-ID config replace")
 }
 
 // TestAccountConcurrencyOverridesPoolSettings 测试账户并发数覆盖连接池配置
@@ -875,9 +1155,31 @@ func (s *HTTPUpstreamSuite) TestAccountConcurrencyOverridesPoolSettings() {
 	transport, ok := entry.client.Transport.(*http.Transport)
 	require.True(s.T(), ok, "expected *http.Transport")
 	// 连接池参数应与并发数一致
-	require.Equal(s.T(), 12, transport.MaxConnsPerHost, "MaxConnsPerHost mismatch")
-	require.Equal(s.T(), 12, transport.MaxIdleConns, "MaxIdleConns mismatch")
-	require.Equal(s.T(), 12, transport.MaxIdleConnsPerHost, "MaxIdleConnsPerHost mismatch")
+	require.Equal(s.T(), 14, transport.MaxConnsPerHost, "MaxConnsPerHost mismatch")
+	require.Equal(s.T(), 14, transport.MaxIdleConns, "MaxIdleConns mismatch")
+	require.Equal(s.T(), 14, transport.MaxIdleConnsPerHost, "MaxIdleConnsPerHost mismatch")
+}
+
+func (s *HTTPUpstreamSuite) TestPoolSettings_AccountIsolationUsesBurstConcurrency() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount}
+	svc := s.newService()
+
+	settings := svc.resolvePoolSettings(config.ConnectionPoolIsolationAccount, 12)
+
+	require.Equal(s.T(), 14, settings.maxConnsPerHost)
+	require.Equal(s.T(), 14, settings.maxIdleConns)
+	require.Equal(s.T(), 14, settings.maxIdleConnsPerHost)
+}
+
+func (s *HTTPUpstreamSuite) TestPoolSettings_AccountIsolationFallsBackToBurstOfThree() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccountProxy}
+	svc := s.newService()
+
+	settings := svc.resolvePoolSettings(config.ConnectionPoolIsolationAccountProxy, 0)
+
+	require.Equal(s.T(), 4, settings.maxConnsPerHost)
+	require.Equal(s.T(), 4, settings.maxIdleConns)
+	require.Equal(s.T(), 4, settings.maxIdleConnsPerHost)
 }
 
 // TestAccountConcurrencyFallbackToDefault 测试账户并发数为 0 时回退到默认配置
@@ -894,9 +1196,500 @@ func (s *HTTPUpstreamSuite) TestAccountConcurrencyFallbackToDefault() {
 	entry := mustGetOrCreateClient(s.T(), svc, "", 1, 0)
 	transport, ok := entry.client.Transport.(*http.Transport)
 	require.True(s.T(), ok, "expected *http.Transport")
-	require.Equal(s.T(), 66, transport.MaxConnsPerHost, "MaxConnsPerHost fallback mismatch")
-	require.Equal(s.T(), 77, transport.MaxIdleConns, "MaxIdleConns fallback mismatch")
-	require.Equal(s.T(), 55, transport.MaxIdleConnsPerHost, "MaxIdleConnsPerHost fallback mismatch")
+	require.Equal(s.T(), 4, transport.MaxConnsPerHost, "MaxConnsPerHost fallback mismatch")
+	require.Equal(s.T(), 4, transport.MaxIdleConns, "MaxIdleConns fallback mismatch")
+	require.Equal(s.T(), 4, transport.MaxIdleConnsPerHost, "MaxIdleConnsPerHost fallback mismatch")
+}
+
+func (s *HTTPUpstreamSuite) TestTLSPoolKey_ProxyIsolationSeparatesTLSProfiles() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationProxy}
+	svc := s.newService()
+
+	entry1, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		&tlsfingerprint.Profile{Name: "profile-101"},
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+
+	entry2, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		2,
+		12,
+		&tlsfingerprint.Profile{Name: "profile-202"},
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+
+	require.NotSame(s.T(), entry1, entry2, "different TLS profiles must not share the same proxy pool")
+	require.Equal(s.T(), 2, len(svc.clients), "proxy isolation must allow distinct TLS profiles on the same proxy to coexist across accounts")
+}
+
+func (s *HTTPUpstreamSuite) TestTLSPoolKey_ProxyIsolationReusesPoolAcrossAccounts() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationProxy}
+	svc := s.newService()
+
+	entry1, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		&tlsfingerprint.Profile{Name: "profile-101"},
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+
+	entry2, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		2,
+		12,
+		&tlsfingerprint.Profile{Name: "profile-101"},
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+
+	require.Same(s.T(), entry1, entry2, "proxy isolation must ignore per-account Burst")
+	require.Equal(s.T(), 1, len(svc.clients))
+}
+
+func (s *HTTPUpstreamSuite) TestTLSProfileChangeDrainsPreviousIdleClient() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount}
+	svc := s.newService()
+
+	settings := svc.resolvePoolSettings(config.ConnectionPoolIsolationAccount, 3)
+	proxyKey, _, err := normalizeProxyURL("http://proxy.local:8080")
+	require.NoError(s.T(), err)
+	oldTransport := &closeIdleTrackingTransport{}
+	oldEntry := &upstreamClientEntry{
+		client:          &http.Client{Transport: oldTransport},
+		accountID:       1,
+		proxyKey:        proxyKey,
+		tlsProfileKey:   "profile-101",
+		transportFamily: transportFamilyH1,
+		poolKey:         buildPoolKey(settings, "profile-101", transportFamilyH1, upstreamProtocolModeDefault) + ":tls",
+		lastUsed:        time.Now().UnixNano(),
+	}
+	svc.clients["tls:"+buildCacheKey(config.ConnectionPoolIsolationAccount, proxyKey, 1, resolvePoolBurstConcurrency(3), "profile-101", transportFamilyH1, upstreamProtocolModeDefault)] = oldEntry
+
+	newEntry, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		&tlsfingerprint.Profile{ID: 202, Name: "profile-202"},
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), newEntry)
+
+	require.Equal(s.T(), int64(1), oldTransport.closeIdleCalls.Load(), "TLS profile change should drain the prior idle client")
+	require.False(s.T(), hasEntry(svc, oldEntry), "stale TLS client should be removed after drain")
+	require.Equal(s.T(), 1, len(svc.clients), "only the replacement TLS client should remain cached")
+}
+
+func (s *HTTPUpstreamSuite) TestAccountProxyTLSProfileChangeDrainsSameProxyIdleClient() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccountProxy}
+	svc := s.newService()
+
+	settings := svc.resolvePoolSettings(config.ConnectionPoolIsolationAccountProxy, 3)
+	proxyKey, _, err := normalizeProxyURL("http://proxy.local:8080")
+	require.NoError(s.T(), err)
+	oldTransport := &closeIdleTrackingTransport{}
+	oldEntry := &upstreamClientEntry{
+		client:          &http.Client{Transport: oldTransport},
+		accountID:       1,
+		proxyKey:        proxyKey,
+		tlsProfileKey:   "profile-101",
+		transportFamily: transportFamilyH1,
+		poolKey:         buildPoolKey(settings, "profile-101", transportFamilyH1, upstreamProtocolModeDefault) + ":tls",
+		lastUsed:        time.Now().UnixNano(),
+	}
+	svc.clients["tls:"+buildCacheKey(config.ConnectionPoolIsolationAccountProxy, proxyKey, 1, resolvePoolBurstConcurrency(3), "profile-101", transportFamilyH1, upstreamProtocolModeDefault)] = oldEntry
+
+	newEntry, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		&tlsfingerprint.Profile{ID: 202, Name: "profile-202"},
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), newEntry)
+
+	require.Equal(s.T(), int64(1), oldTransport.closeIdleCalls.Load(), "account_proxy TLS change on the same proxy should drain the prior idle client")
+	require.False(s.T(), hasEntry(svc, oldEntry), "stale TLS client should be removed after drain")
+	require.Equal(s.T(), 1, len(svc.clients), "only the replacement TLS client should remain cached")
+}
+
+func (s *HTTPUpstreamSuite) TestAccountModeDrainsInFlightSiblingOnProxyChange() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount}
+	svc := s.newService()
+
+	settings := svc.resolvePoolSettings(config.ConnectionPoolIsolationAccount, 3)
+	oldProxyKey, _, err := normalizeProxyURL("http://proxy-a:8080")
+	require.NoError(s.T(), err)
+	oldCacheKey := buildCacheKey(config.ConnectionPoolIsolationAccount, oldProxyKey, 1, resolvePoolBurstConcurrency(3), tlsProfileKeyNone, transportFamilyH1, upstreamProtocolModeDefault)
+	oldTransport := &closeIdleTrackingTransport{}
+	oldEntry := &upstreamClientEntry{
+		client:          &http.Client{Transport: oldTransport},
+		accountID:       1,
+		proxyKey:        oldProxyKey,
+		tlsProfileKey:   tlsProfileKeyNone,
+		transportFamily: transportFamilyH1,
+		poolKey:         buildPoolKey(settings, tlsProfileKeyNone, transportFamilyH1, upstreamProtocolModeDefault),
+		lastUsed:        time.Now().UnixNano(),
+	}
+	atomic.StoreInt64(&oldEntry.inFlight, 1)
+	svc.clients[oldCacheKey] = oldEntry
+
+	newEntry, err := svc.getClientEntry("http://proxy-b:8080", 1, 3, service.HTTPUpstreamProfileDefault, false, false)
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), newEntry)
+
+	require.Equal(s.T(), int64(1), oldTransport.closeIdleCalls.Load(), "in-flight stale sibling must still CloseIdleConnections")
+	require.False(s.T(), hasEntry(svc, oldEntry), "in-flight stale sibling must still be removed from the cache")
+	require.Equal(s.T(), 1, len(svc.clients), "only the replacement client should remain cached")
+}
+
+func (s *HTTPUpstreamSuite) TestTLSProfileSameIDConfigReplacementRebuildsClient() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount}
+	svc := s.newService()
+
+	oldProfile := &tlsfingerprint.Profile{ID: 101, Name: "profile-101", CipherSuites: []uint16{0x1301}}
+	newProfile := &tlsfingerprint.Profile{ID: 101, Name: "profile-101", CipherSuites: []uint16{0x1302}}
+	require.Equal(s.T(), tlsProfileCacheKey(oldProfile), tlsProfileCacheKey(newProfile), "canonical identity must stay the numeric ID")
+
+	oldEntry, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		oldProfile,
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+
+	newEntry, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		newProfile,
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), newEntry)
+
+	require.NotSame(s.T(), oldEntry, newEntry, "same-ID TLS config replacement must not reuse the old ClientHello transport")
+	require.False(s.T(), hasEntry(svc, oldEntry), "replaced TLS client should be removed")
+	require.Equal(s.T(), 1, len(svc.clients), "only the replacement TLS client should remain cached")
+}
+
+func (s *HTTPUpstreamSuite) TestTLSProfileSameIDALPNSplitRebuildsClient() {
+	s.cfg.Gateway = config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount}
+	svc := s.newService()
+
+	oldProfile := &tlsfingerprint.Profile{ID: 101, Name: "profile-101", ALPNProtocols: []string{"h2,http/1.1"}}
+	newProfile := &tlsfingerprint.Profile{ID: 101, Name: "profile-101", ALPNProtocols: []string{"h2", "http/1.1"}}
+	require.Equal(s.T(), tlsProfileCacheKey(oldProfile), tlsProfileCacheKey(newProfile), "canonical identity must stay the numeric ID")
+
+	oldEntry, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		oldProfile,
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+
+	newEntry, err := svc.getClientEntryWithTLS(
+		"http://proxy.local:8080",
+		1,
+		3,
+		newProfile,
+		service.HTTPUpstreamProfileDefault,
+		false,
+		false,
+	)
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), newEntry)
+
+	require.NotSame(s.T(), oldEntry, newEntry, "same-ID ALPN list split must not reuse the old ClientHello transport")
+	require.False(s.T(), hasEntry(svc, oldEntry), "replaced TLS client should be removed")
+	require.Equal(s.T(), 1, len(svc.clients), "only the replacement TLS client should remain cached")
+}
+
+func TestDeviceProfileTransportFamily_ToTLSProfileSendHonesty(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	}).(*httpUpstreamService)
+
+	for _, tc := range []struct {
+		name    string
+		alpn    []string
+		wantFam string
+		wantH2  bool
+		wantCap int
+	}{
+		{name: "h1-alpn", alpn: []string{"http/1.1"}, wantFam: transportFamilyH1, wantH2: false, wantCap: 14},
+		{name: "claimed-h2-utls-is-h1", alpn: []string{"h2", "http/1.1"}, wantFam: transportFamilyH1, wantH2: false, wantCap: 14},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			device := &service.AccountDeviceProfile{
+				Platform:        service.PlatformOpenAI,
+				ClientFamily:    service.ClientFamilyCodexCLI,
+				TransportFamily: service.TransportH2,
+			}
+			modelProfile := &model.TLSFingerprintProfile{
+				ID:            88,
+				Name:          "from-device-" + tc.name,
+				ALPNProtocols: tc.alpn,
+			}
+			runtime := modelProfile.ToTLSProfile()
+			require.NotNil(t, runtime)
+			require.Empty(t, runtime.TransportFamily, "ToTLSProfile has no device profile")
+			runtime.ID = modelProfile.ID
+			service.StampTLSProfileFromDevice(runtime, device)
+
+			entry, err := svc.getClientEntryWithTLS("", 1, 12, runtime, service.HTTPUpstreamProfileOpenAI, false, false)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantFam, entry.transportFamily)
+
+			transport, ok := entry.client.Transport.(*http.Transport)
+			require.True(t, ok)
+			require.Equal(t, tc.wantH2, transport.ForceAttemptHTTP2)
+			if tc.wantH2 {
+				require.NotNil(t, transport.TLSNextProto["h2"])
+			}
+			require.Equal(t, tc.wantCap, transport.MaxConnsPerHost)
+			require.Equal(t, tc.wantCap, transport.MaxIdleConns)
+			require.Equal(t, tc.wantCap, transport.MaxIdleConnsPerHost)
+		})
+	}
+}
+
+func TestTLSFingerprint_HonestH1CloneDoesNotClaimH2(t *testing.T) {
+	claimed := &tlsfingerprint.Profile{
+		ID:              101,
+		Name:            "claimed-h2",
+		TransportFamily: service.TransportH2,
+		ALPNProtocols:   []string{"h2", "http/1.1"},
+	}
+
+	got := honestH1FingerprintProfile(claimed)
+	require.NotSame(t, claimed, got)
+	require.Equal(t, []string{"http/1.1"}, got.ALPNProtocols)
+	require.Equal(t, service.TransportH1, got.TransportFamily, "honest-h1 clone must not keep a dishonest h2 claim")
+	require.Equal(t, service.TransportH2, claimed.TransportFamily, "must not mutate the source profile")
+	require.Equal(t, []string{"h2", "http/1.1"}, claimed.ALPNProtocols)
+}
+
+func TestOpenAIHTTP2_AttemptOnlyKeepsBurstCaps(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{
+			ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount,
+			OpenAIHTTP2:             config.GatewayOpenAIHTTP2Config{Enabled: true},
+		},
+	}).(*httpUpstreamService)
+
+	entry, err := svc.getClientEntry("", 1, 12, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+	require.Equal(t, transportFamilyH2, entry.transportFamily)
+	require.Equal(t, upstreamProtocolModeOpenAIH2, entry.protocolMode)
+
+	transport, ok := entry.client.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.True(t, transport.ForceAttemptHTTP2)
+	require.NotNil(t, transport.TLSNextProto["h2"])
+	require.Equal(t, 14, transport.MaxConnsPerHost, "attempt-only openai_h2 must keep P0 Burst, not 1+1 spare")
+	require.Equal(t, 14, transport.MaxIdleConns)
+	require.Equal(t, 14, transport.MaxIdleConnsPerHost)
+}
+
+func TestOpenAIHTTP1_KeepsBurstCaps(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{
+			ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount,
+			OpenAIHTTP2:             config.GatewayOpenAIHTTP2Config{Enabled: false},
+		},
+	}).(*httpUpstreamService)
+
+	entry, err := svc.getClientEntry("", 1, 12, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+	require.Equal(t, transportFamilyH1, entry.transportFamily)
+
+	transport, ok := entry.client.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.False(t, transport.ForceAttemptHTTP2)
+	require.Equal(t, 14, transport.MaxConnsPerHost)
+	require.Equal(t, 14, transport.MaxIdleConns)
+	require.Equal(t, 14, transport.MaxIdleConnsPerHost)
+}
+
+func TestTLSFingerprint_UtlsDialerDoesNotSpeakHTTP2OnTheWire(t *testing.T) {
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(r.Proto))
+	}))
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	t.Cleanup(server.Close)
+
+	req, err := http.NewRequest(http.MethodGet, server.URL, nil)
+	require.NoError(t, err)
+
+	up := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	})
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
+	resp, err := up.DoWithTLS(req, "", 1, 12, &tlsfingerprint.Profile{
+		Name:            "utls-claimed-h2",
+		TransportFamily: service.TransportH2,
+		ALPNProtocols:   []string{"h2", "http/1.1"},
+		RootCAs:         roots,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	require.Equal(t, "HTTP/1.1", resp.Proto, "utls DialTLSContext cannot reach net/http h2")
+
+	svc := up.(*httpUpstreamService)
+	require.Len(t, svc.clients, 1)
+	for _, entry := range svc.clients {
+		require.Equal(t, transportFamilyH1, entry.transportFamily)
+		transport, ok := entry.client.Transport.(*http.Transport)
+		require.True(t, ok)
+		require.NotNil(t, transport.DialTLSContext)
+		require.False(t, transport.ForceAttemptHTTP2)
+	}
+}
+
+func TestTLSFingerprint_EffectiveALPNSharesPoolAfterH2Rewrite(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	}).(*httpUpstreamService)
+
+	claimedH2 := &tlsfingerprint.Profile{
+		ID:              101,
+		Name:            "shared-hello",
+		TransportFamily: service.TransportH2,
+		ALPNProtocols:   []string{"h2", "http/1.1"},
+	}
+	honestH1 := &tlsfingerprint.Profile{
+		ID:              101,
+		Name:            "shared-hello",
+		TransportFamily: service.TransportH1,
+		ALPNProtocols:   []string{"http/1.1"},
+	}
+
+	first, err := svc.getClientEntryWithTLS("", 1, 12, claimedH2, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+	second, err := svc.getClientEntryWithTLS("", 1, 12, honestH1, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+
+	require.Equal(t, transportFamilyH1, first.transportFamily)
+	require.Same(t, first, second, "rewritten h2 ALPN must share the effective-h1 ClientHello pool")
+	require.Equal(t, 1, len(svc.clients))
+	require.Equal(t, tlsProfilePoolIdentity(honestH1FingerprintProfile(claimedH2)), tlsProfilePoolIdentity(honestH1))
+}
+
+func TestTLSFingerprint_ClaimedH2DoesNotThrashCacheOnHonestH1(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	}).(*httpUpstreamService)
+	profile := &tlsfingerprint.Profile{
+		Name:            "claimed-h2-cache",
+		TransportFamily: service.TransportH2,
+		ALPNProtocols:   []string{"h2", "http/1.1"},
+	}
+
+	first, err := svc.getClientEntryWithTLS("", 1, 12, profile, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+	second, err := svc.getClientEntryWithTLS("", 1, 12, profile, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(t, err)
+
+	require.Equal(t, transportFamilyH1, first.transportFamily)
+	require.Same(t, first, second, "honest h1 must reuse the cached client, not evict on an optimistic h2 key")
+	require.Equal(t, 1, len(svc.clients))
+}
+
+func TestTLSFingerprint_ClaimedH2WithH1ALPNStaysH1AndKeepsBurst(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	}).(*httpUpstreamService)
+
+	for _, tc := range []struct {
+		name    string
+		profile service.HTTPUpstreamProfile
+	}{
+		{name: "codex", profile: service.HTTPUpstreamProfileOpenAI},
+		{name: "kiro", profile: service.HTTPUpstreamProfileDefault},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			entry, err := svc.getClientEntryWithTLS("", 1, 12, &tlsfingerprint.Profile{
+				Name:            "claimed-h2-h1-alpn-" + tc.name,
+				TransportFamily: service.TransportH2,
+				ALPNProtocols:   []string{"http/1.1"},
+			}, tc.profile, false, false)
+			require.NoError(t, err)
+			require.Equal(t, transportFamilyH1, entry.transportFamily)
+
+			transport, ok := entry.client.Transport.(*http.Transport)
+			require.True(t, ok, "expected *http.Transport")
+			require.False(t, transport.ForceAttemptHTTP2, "ALPN-only http/1.1 must not ForceAttemptHTTP2")
+			require.Equal(t, 14, transport.MaxConnsPerHost, "H1 must keep Burst caps")
+			require.Equal(t, 14, transport.MaxIdleConns)
+			require.Equal(t, 14, transport.MaxIdleConnsPerHost)
+		})
+	}
+}
+
+func TestTLSFingerprint_ClaimedH2WithALPNStaysH1UntilUtlsCanSpeakH2(t *testing.T) {
+	svc := NewHTTPUpstream(&config.Config{
+		Gateway: config.GatewayConfig{ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount},
+	}).(*httpUpstreamService)
+
+	for _, tc := range []struct {
+		name    string
+		profile service.HTTPUpstreamProfile
+	}{
+		{name: "codex", profile: service.HTTPUpstreamProfileOpenAI},
+		{name: "kiro", profile: service.HTTPUpstreamProfileDefault},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			entry, err := svc.getClientEntryWithTLS("", 1, 12, &tlsfingerprint.Profile{
+				Name:            "claimed-h2-utls-" + tc.name,
+				TransportFamily: service.TransportH2,
+				ALPNProtocols:   []string{"h2", "http/1.1"},
+			}, tc.profile, false, false)
+			require.NoError(t, err)
+			require.Equal(t, transportFamilyH1, entry.transportFamily)
+
+			transport, ok := entry.client.Transport.(*http.Transport)
+			require.True(t, ok, "expected *http.Transport")
+			require.NotNil(t, transport.DialTLSContext)
+			require.False(t, transport.ForceAttemptHTTP2, "utls DialTLSContext cannot reach net/http h2")
+			require.Equal(t, 14, transport.MaxConnsPerHost, "honest h1 must keep Burst caps")
+			require.Equal(t, 14, transport.MaxIdleConns)
+			require.Equal(t, 14, transport.MaxIdleConnsPerHost)
+		})
+	}
 }
 
 // TestEvictOverLimitRemovesOldestIdle 测试超出数量限制时的 LRU 淘汰
@@ -959,4 +1752,45 @@ func hasEntry(svc *httpUpstreamService, target *upstreamClientEntry) bool {
 		}
 	}
 	return false
+}
+
+type stubTLSFingerprintProfileRepo struct {
+	profiles []*model.TLSFingerprintProfile
+}
+
+type closeIdleTrackingTransport struct {
+	closeIdleCalls atomic.Int64
+}
+
+func (t *closeIdleTrackingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("unexpected round trip")
+}
+
+func (t *closeIdleTrackingTransport) CloseIdleConnections() {
+	t.closeIdleCalls.Add(1)
+}
+
+func (r *stubTLSFingerprintProfileRepo) List(context.Context) ([]*model.TLSFingerprintProfile, error) {
+	return r.profiles, nil
+}
+
+func (r *stubTLSFingerprintProfileRepo) GetByID(_ context.Context, id int64) (*model.TLSFingerprintProfile, error) {
+	for _, profile := range r.profiles {
+		if profile != nil && profile.ID == id {
+			return profile, nil
+		}
+	}
+	return nil, nil
+}
+
+func (r *stubTLSFingerprintProfileRepo) Create(_ context.Context, profile *model.TLSFingerprintProfile) (*model.TLSFingerprintProfile, error) {
+	return profile, nil
+}
+
+func (r *stubTLSFingerprintProfileRepo) Update(_ context.Context, profile *model.TLSFingerprintProfile) (*model.TLSFingerprintProfile, error) {
+	return profile, nil
+}
+
+func (r *stubTLSFingerprintProfileRepo) Delete(context.Context, int64) error {
+	return nil
 }

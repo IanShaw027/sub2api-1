@@ -9,6 +9,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/account"
+	"github.com/Wei-Shaw/sub2api/ent/accountdeviceprofile"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
@@ -166,6 +167,33 @@ func (f TraverseAccount) Traverse(ctx context.Context, q ent.Query) error {
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.AccountQuery", q)
+}
+
+// The AccountDeviceProfileFunc type is an adapter to allow the use of ordinary function as a Querier.
+type AccountDeviceProfileFunc func(context.Context, *ent.AccountDeviceProfileQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f AccountDeviceProfileFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.AccountDeviceProfileQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.AccountDeviceProfileQuery", q)
+}
+
+// The TraverseAccountDeviceProfile type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseAccountDeviceProfile func(context.Context, *ent.AccountDeviceProfileQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseAccountDeviceProfile) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseAccountDeviceProfile) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.AccountDeviceProfileQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.AccountDeviceProfileQuery", q)
 }
 
 // The AccountGroupFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -1390,6 +1418,8 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.APIKeyQuery, predicate.APIKey, apikey.OrderOption]{typ: ent.TypeAPIKey, tq: q}, nil
 	case *ent.AccountQuery:
 		return &query[*ent.AccountQuery, predicate.Account, account.OrderOption]{typ: ent.TypeAccount, tq: q}, nil
+	case *ent.AccountDeviceProfileQuery:
+		return &query[*ent.AccountDeviceProfileQuery, predicate.AccountDeviceProfile, accountdeviceprofile.OrderOption]{typ: ent.TypeAccountDeviceProfile, tq: q}, nil
 	case *ent.AccountGroupQuery:
 		return &query[*ent.AccountGroupQuery, predicate.AccountGroup, accountgroup.OrderOption]{typ: ent.TypeAccountGroup, tq: q}, nil
 	case *ent.AnnouncementQuery:

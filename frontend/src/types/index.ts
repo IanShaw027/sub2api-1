@@ -1239,6 +1239,7 @@ export interface Account {
   tls_fingerprint_router_id?: number | null
   tls_fingerprint_bindings?: Record<string, number> | null
   tls_fingerprint_default_os?: string | null
+  device_learning_enabled?: boolean | null
 
   // 会话ID伪装（仅 Anthropic OAuth/SetupToken 账号有效）
   // 启用后将在15分钟内固定 metadata.user_id 中的 session ID
@@ -1284,6 +1285,21 @@ export interface Account {
   parent_privacy_mode?: string
   parent_subscription_expires_at?: string
   parent_chatgpt_account_id?: string
+}
+
+export interface AccountDeviceProfile {
+  account_id: number
+  platform: string
+  client_family: string
+  client_version: string
+  user_agent: string
+  os_family: string
+  arch: string
+  revision: number
+  learned_from: string
+  learning_enabled: boolean
+  transport_family: string
+  updated_at: string
 }
 
 export interface AccountSchedulerGroupScore {

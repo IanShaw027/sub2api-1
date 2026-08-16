@@ -110,6 +110,14 @@ type IdentityCache interface {
 	// SetMaskedSessionID 设置固定的会话ID，TTL 为 15 分钟
 	// 每次调用都会刷新 TTL
 	SetMaskedSessionID(ctx context.Context, accountID int64, sessionID string) error
+	// GetDeviceProfile returns the Redis projection of an account device profile.
+	// A miss is (nil, nil) — Redis is not identity authority. The caller loads Postgres.
+	GetDeviceProfile(ctx context.Context, accountID int64) (*AccountDeviceProfile, error)
+	// SetDeviceProfile writes the Redis projection of an account device profile.
+	// A subsequent Get miss still means the caller must load the DB row.
+	SetDeviceProfile(ctx context.Context, accountID int64, p *AccountDeviceProfile) error
+	// DeleteDeviceProfile drops the Redis projection. A miss is not an error.
+	DeleteDeviceProfile(ctx context.Context, accountID int64) error
 }
 
 // IdentityService 管理OAuth账号的请求身份指纹
@@ -294,9 +302,18 @@ func (s *IdentityService) ApplyFingerprint(req *http.Request, fp *Fingerprint) {
 // 支持旧拼接格式和新 JSON 格式的 user_id 解析，
 // 根据 fingerprintUA 版本选择输出格式。
 //
+// accountUUID is the gateway-generated UUID the caller already resolved
+// (profile.GatewayAccountUUID). Do not pass extra.account_uuid.
+// cachedClientID is the profile device_id (user segment).
+// sessionNamespace is profile.SessionNamespace; the session segment is
+// DeriveSessionIDs(sessionNamespace, originalSessionTail).sessionID.
+// Empty or invalid namespace skips the rewrite (nothing is invented).
+// Result shape is FormatMetadataUserID:
+// user_{device_id}_account_{gateway_account_uuid}_session_{derived}.
+//
 // 重要：此函数使用 json.RawMessage 保留其他字段的原始字节，
 // 避免重新序列化导致 thinking 块等内容被修改。
-func (s *IdentityService) RewriteUserID(body []byte, accountID int64, accountUUID, cachedClientID, fingerprintUA string) ([]byte, error) {
+func (s *IdentityService) RewriteUserID(body []byte, sessionNamespace, accountUUID, cachedClientID, fingerprintUA string) ([]byte, error) {
 	if len(body) == 0 || accountUUID == "" || cachedClientID == "" {
 		return body, nil
 	}
@@ -326,9 +343,10 @@ func (s *IdentityService) RewriteUserID(body []byte, accountID int64, accountUUI
 
 	sessionTail := parsed.SessionID // 原始session UUID
 
-	// 生成新的session hash: SHA256(accountID::sessionTail) -> UUID格式
-	seed := fmt.Sprintf("%d::%s", accountID, sessionTail)
-	newSessionHash := generateUUIDFromSeed(seed)
+	newSessionHash, _, _, err := DeriveSessionIDs(sessionNamespace, sessionTail)
+	if err != nil || newSessionHash == "" {
+		return body, nil
+	}
 
 	// 根据客户端版本选择输出格式
 	version := ExtractCLIVersion(fingerprintUA)
@@ -348,11 +366,15 @@ func (s *IdentityService) RewriteUserID(body []byte, accountID int64, accountUUI
 // 如果账号启用了会话ID伪装（session_id_masking_enabled），
 // 则在完成常规重写后，将 session 部分替换为固定的伪装ID（15分钟内保持不变）
 //
+// accountUUID is the gateway-generated UUID (profile.GatewayAccountUUID).
+// sessionNamespace is profile.SessionNamespace and is forwarded to RewriteUserID.
+// This function does not read account.Extra["account_uuid"].
+//
 // 重要：此函数使用 json.RawMessage 保留其他字段的原始字节，
 // 避免重新序列化导致 thinking 块等内容被修改。
-func (s *IdentityService) RewriteUserIDWithMasking(ctx context.Context, body []byte, account *Account, accountUUID, cachedClientID, fingerprintUA string) ([]byte, error) {
+func (s *IdentityService) RewriteUserIDWithMasking(ctx context.Context, body []byte, account *Account, accountUUID, cachedClientID, fingerprintUA, sessionNamespace string) ([]byte, error) {
 	// 先执行常规的 RewriteUserID 逻辑
-	newBody, err := s.RewriteUserID(body, account.ID, accountUUID, cachedClientID, fingerprintUA)
+	newBody, err := s.RewriteUserID(body, sessionNamespace, accountUUID, cachedClientID, fingerprintUA)
 	if err != nil {
 		return newBody, err
 	}
@@ -393,9 +415,9 @@ func (s *IdentityService) RewriteUserIDWithMasking(ctx context.Context, body []b
 	}
 
 	if maskedSessionID == "" {
-		// 首次或已过期，生成新的伪装 session ID
-		maskedSessionID = generateRandomUUID()
-		logger.LegacyPrintf("service.identity", "Generated new masked session ID for account %d: %s", account.ID, maskedSessionID)
+		// P0 keeps the deprecated extra key but stops minting 15-minute random
+		// session IDs; the deterministic RewriteUserID result remains in place.
+		return newBody, nil
 	}
 
 	// 刷新 TTL（每次请求都刷新，保持 15 分钟有效期）
@@ -424,21 +446,15 @@ func (s *IdentityService) RewriteUserIDWithMasking(ctx context.Context, body []b
 	return maskedBody, nil
 }
 
-// generateRandomUUID 生成随机 UUID v4 格式字符串
-func generateRandomUUID() string {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		// fallback: 使用时间戳生成
-		h := sha256.Sum256([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
-		b = h[:16]
+// GatewayAccountUUIDForRewrite returns profile.GatewayAccountUUID for RewriteUserID.
+// Task 9 must pass the profile UUID. fallback is accepted for call-site
+// compatibility but is never used: this must not fall back to extra.account_uuid.
+func GatewayAccountUUIDForRewrite(profile *AccountDeviceProfile, fallback string) string {
+	_ = fallback
+	if profile != nil && profile.GatewayAccountUUID != "" {
+		return profile.GatewayAccountUUID
 	}
-
-	// 设置 UUID v4 版本和变体位
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
-
-	return fmt.Sprintf("%x-%x-%x-%x-%x",
-		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+	return ""
 }
 
 // generateClientID 生成64位十六进制客户端ID（32字节随机数）

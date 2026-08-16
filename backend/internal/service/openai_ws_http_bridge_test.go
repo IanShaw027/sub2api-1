@@ -529,7 +529,7 @@ func TestProxyOpenAIWSHTTPBridgeTurnPromotesCodexAdditionalToolsForMixedCache(t 
 		httpUpstream: upstream,
 	}
 	account := &Account{
-		ID:          73,
+		ID:          900073,
 		Platform:    PlatformGrok,
 		Type:        AccountTypeOAuth,
 		Concurrency: 1,

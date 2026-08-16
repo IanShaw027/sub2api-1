@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/model"
@@ -154,6 +155,222 @@ func TestResolveAccountTLSFingerprintRuntime_UniqueAndDimensions(t *testing.T) {
 	require.True(t, runtime.Matched)
 }
 
+func TestResolveAccountTLSFingerprintRuntime_UsesAccountOSNotInboundUA(t *testing.T) {
+	profiles := testTLSProfileService(
+		&model.TLSFingerprintProfile{ID: 31, Name: "bound-macos"},
+		&model.TLSFingerprintProfile{ID: 32, Name: "bound-windows"},
+	)
+	account := enabledTLSAccount(PlatformAnthropic, map[string]any{
+		"enable_tls_fingerprint": true,
+		"tls_fingerprint_bindings": map[string]any{
+			"macos/claude-code":   int64(31),
+			"windows/claude-code": int64(32),
+		},
+		"tls_fingerprint_default_os": "macos",
+	})
+
+	runtime := resolveAccountTLSFingerprintRuntime(
+		context.Background(),
+		account,
+		profiles,
+		nil,
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) claude-cli/2.1.220",
+		"http",
+		"messages",
+	)
+
+	require.NotNil(t, runtime.Profile)
+	require.Equal(t, "bound-macos", runtime.Profile.Name)
+}
+
+func TestResolveAccountTLSFingerprintRuntime_UsesAccountClientFamilyNotInboundUA(t *testing.T) {
+	profiles := testTLSProfileService(
+		&model.TLSFingerprintProfile{ID: 41, Name: "macos-codex"},
+		&model.TLSFingerprintProfile{ID: 42, Name: "macos-generic"},
+	)
+	account := enabledTLSAccount(PlatformOpenAI, map[string]any{
+		"enable_tls_fingerprint": true,
+		"tls_fingerprint_bindings": map[string]any{
+			"macos/codex-cli": int64(41),
+			"macos":           int64(42),
+		},
+		"tls_fingerprint_default_os": "macos",
+	})
+
+	emptyRuntime := resolveAccountTLSFingerprintRuntime(
+		context.Background(),
+		account,
+		profiles,
+		nil,
+		"",
+		"http",
+		"responses",
+	)
+	windowsRuntime := resolveAccountTLSFingerprintRuntime(
+		context.Background(),
+		account,
+		profiles,
+		nil,
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) codex_cli_rs/0.200.1",
+		"http",
+		"responses",
+	)
+
+	require.NotNil(t, emptyRuntime.Profile)
+	require.NotNil(t, windowsRuntime.Profile)
+	require.Equal(t, "macos-codex", emptyRuntime.Profile.Name)
+	require.Equal(t, emptyRuntime.Profile.Name, windowsRuntime.Profile.Name)
+}
+
+func TestResolveAccountTLSFingerprintRuntime_RejectsRandomProfileID(t *testing.T) {
+	profiles := testTLSProfileService(&model.TLSFingerprintProfile{ID: 31, Name: "random-candidate"})
+	account := enabledTLSAccount(PlatformOpenAI, map[string]any{
+		"enable_tls_fingerprint":     true,
+		"tls_fingerprint_profile_id": int64(-1),
+	})
+
+	runtime := resolveAccountTLSFingerprintRuntime(context.Background(), account, profiles, nil, "", "http", "responses")
+
+	require.NotNil(t, runtime.Profile)
+	require.NotEqual(t, "random-candidate", runtime.Profile.Name)
+}
+
+func TestApplyTLSFingerprintRuntimeHeaders_UsesLowercaseOriginator(t *testing.T) {
+	req, err := http.NewRequest(http.MethodPost, "https://example.test", nil)
+	require.NoError(t, err)
+
+	applyTLSFingerprintRuntimeHeaders(req, accountTLSFingerprintRuntime{
+		UpstreamUserAgent:  "codex_cli_rs/0.200.1",
+		UpstreamOriginator: "codex_cli_rs",
+	})
+
+	require.Equal(t, "codex_cli_rs/0.200.1", req.Header.Get("User-Agent"))
+	require.Equal(t, "codex_cli_rs", getHeaderRaw(req.Header, "originator"))
+	require.Contains(t, req.Header, "originator")
+	require.Empty(t, req.Header.Get("X-Originator"))
+	_, hasXOriginator := req.Header["X-Originator"]
+	require.False(t, hasXOriginator)
+}
+
+func TestResolveAccountTLSFingerprintRuntime_StampsDeviceTransportFamily(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		platform string
+		device   *AccountDeviceProfile
+	}{
+		{name: "codex", platform: PlatformOpenAI, device: validCodexBaseline()},
+		{name: "kiro", platform: PlatformKiro, device: validKiroBaseline()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.device.TransportFamily = TransportH2
+			repo := &stampDeviceProfileRepo{profile: tc.device}
+			prev := OutboundDeviceProfileService()
+			SetOutboundDeviceProfileService(NewAccountDeviceService(repo))
+			t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+			account := enabledTLSAccount(tc.platform, map[string]any{
+				"enable_tls_fingerprint":     true,
+				"tls_fingerprint_profile_id": int64(77),
+			})
+			account.ID = tc.device.AccountID
+			profiles := testTLSProfileService(&model.TLSFingerprintProfile{
+				ID:            77,
+				Name:          "runtime-" + tc.name,
+				ALPNProtocols: []string{"h2", "http/1.1"},
+			})
+
+			runtime := resolveAccountTLSFingerprintRuntime(context.Background(), account, profiles, nil, "", "http", "responses")
+			require.NotNil(t, runtime.Profile)
+			require.Empty(t, runtime.Profile.TransportFamily, "ToTLSProfile has no device profile; resolve must not load one")
+			require.Equal(t, []string{"h2", "http/1.1"}, runtime.Profile.ALPNProtocols)
+			require.Zero(t, repo.getCalls, "TLS resolve must not LoadOutboundDeviceProfile / GetOrCreate")
+			require.Zero(t, repo.insertCalls, "TLS resolve must not create a device profile")
+		})
+	}
+}
+
+func TestKiroTLSFingerprint_StampsDeviceTransportFamilyFromCaller(t *testing.T) {
+	device := validKiroBaseline()
+	device.TransportFamily = TransportH2
+	repo := &stampDeviceProfileRepo{profile: device}
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(NewAccountDeviceService(repo))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	account := enabledTLSAccount(PlatformKiro, map[string]any{
+		"enable_tls_fingerprint":     true,
+		"tls_fingerprint_profile_id": int64(77),
+	})
+	account.ID = device.AccountID
+
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       http.NoBody,
+		},
+	}
+	svc := &KiroGatewayService{
+		httpUpstream: upstream,
+		tlsFPProfileSvc: testTLSProfileService(&model.TLSFingerprintProfile{
+			ID:            77,
+			Name:          "kiro-runtime",
+			ALPNProtocols: []string{"h2", "http/1.1"},
+		}),
+	}
+
+	req, err := http.NewRequest(http.MethodPost, "https://example.com/kiro", nil)
+	require.NoError(t, err)
+
+	resp, err := svc.doKiroUpstream(context.Background(), nil, account, req, device)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NotNil(t, upstream.profile)
+	require.Equal(t, TransportH2, upstream.profile.TransportFamily, "doKiroUpstream must stamp from the caller-held profile")
+	require.Equal(t, []string{"h2", "http/1.1"}, upstream.profile.ALPNProtocols)
+	require.Zero(t, repo.getCalls, "doKiroUpstream must not reload the device profile via TLS resolve")
+	require.Zero(t, repo.insertCalls)
+}
+
+type stampDeviceProfileRepo struct {
+	profile     *AccountDeviceProfile
+	getCalls    int
+	insertCalls int
+}
+
+func (r *stampDeviceProfileRepo) GetByAccountID(context.Context, int64) (*AccountDeviceProfile, error) {
+	r.getCalls++
+	return r.profile, nil
+}
+
+func (r *stampDeviceProfileRepo) InsertBaseline(_ context.Context, p *AccountDeviceProfile) (*AccountDeviceProfile, error) {
+	r.insertCalls++
+	return p, nil
+}
+
+func (r *stampDeviceProfileRepo) UpdateCAS(context.Context, int64, int64, *AccountDeviceProfile) (bool, error) {
+	return false, nil
+}
+
+func (r *stampDeviceProfileRepo) DeleteByAccountID(context.Context, int64) error {
+	return nil
+}
+
+func TestResolveTLSProfile_RandomProfilePreservesCanonicalID(t *testing.T) {
+	profiles := testTLSProfileService(
+		&model.TLSFingerprintProfile{ID: 101, Name: "shared-profile"},
+	)
+	account := enabledTLSAccount(PlatformOpenAI, map[string]any{
+		"enable_tls_fingerprint":     true,
+		"tls_fingerprint_profile_id": int64(-1),
+	})
+
+	profile := profiles.ResolveTLSProfile(account)
+	require.NotNil(t, profile)
+	require.Equal(t, int64(101), profile.ID)
+	require.Equal(t, "shared-profile", profile.Name)
+}
+
 func TestTLSFingerprintRouter_RegexMatchUsesCompiledPattern(t *testing.T) {
 	svc := testTLSRouterService(&model.TLSFingerprintRouter{
 		ID:      4,
@@ -194,16 +411,17 @@ func TestTLSFingerprintRouter_MissingIDDoesNotRefreshWhenReady(t *testing.T) {
 	require.Equal(t, 1, repo.listCalls)
 }
 
-func TestResolveAccountTLSFingerprintRuntime_UARewriteWithoutProfile(t *testing.T) {
+func TestResolveAccountTLSFingerprintRuntime_UpstreamRewriteWithoutProfile(t *testing.T) {
 	profiles := testTLSProfileService()
 	router := testTLSRouterService(&model.TLSFingerprintRouter{
 		ID:      5,
 		Enabled: true,
 		Rules: []model.TLSFingerprintRouterRule{{
-			Name:              "ua-only",
-			Enabled:           true,
-			Pattern:           "Codex",
-			UpstreamUserAgent: "rewritten-ua",
+			Name:               "protocol-only",
+			Enabled:            true,
+			Protocol:           "responses",
+			UpstreamUserAgent:  "rewritten-ua",
+			UpstreamOriginator: "rewritten-originator",
 		}},
 	})
 	account := enabledTLSAccount(PlatformOpenAI, map[string]any{
@@ -213,6 +431,67 @@ func TestResolveAccountTLSFingerprintRuntime_UARewriteWithoutProfile(t *testing.
 	runtime := resolveAccountTLSFingerprintRuntime(context.Background(), account, profiles, router, "Codex/1", "http", "responses")
 	require.True(t, runtime.Matched)
 	require.Equal(t, "rewritten-ua", runtime.UpstreamUserAgent)
+	require.Equal(t, "rewritten-originator", runtime.UpstreamOriginator)
+}
+
+func TestResolveAccountTLSFingerprintRuntime_RouterDoesNotDependOnInboundUA(t *testing.T) {
+	profiles := testTLSProfileService(
+		&model.TLSFingerprintProfile{ID: 51, Name: "ua-specific"},
+		&model.TLSFingerprintProfile{ID: 52, Name: "stable"},
+	)
+	router := testTLSRouterService(&model.TLSFingerprintRouter{
+		ID:      6,
+		Enabled: true,
+		Rules: []model.TLSFingerprintRouterRule{
+			{
+				Name:                    "codex-only",
+				Enabled:                 true,
+				Pattern:                 "Codex",
+				TLSFingerprintProfileID: 51,
+				UpstreamUserAgent:       "codex-upstream",
+				UpstreamOriginator:      "codex-originator",
+			},
+			{
+				Name:                    "fallback",
+				Enabled:                 true,
+				TLSFingerprintProfileID: 52,
+				UpstreamUserAgent:       "stable-upstream",
+				UpstreamOriginator:      "stable-originator",
+			},
+		},
+	})
+	account := enabledTLSAccount(PlatformOpenAI, map[string]any{
+		"enable_tls_fingerprint":    true,
+		"tls_fingerprint_router_id": int64(6),
+	})
+
+	codexRuntime := resolveAccountTLSFingerprintRuntime(
+		context.Background(),
+		account,
+		profiles,
+		router,
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Codex/1.0",
+		"http",
+		"responses",
+	)
+	curlRuntime := resolveAccountTLSFingerprintRuntime(
+		context.Background(),
+		account,
+		profiles,
+		router,
+		"curl/8.0",
+		"http",
+		"responses",
+	)
+
+	require.True(t, codexRuntime.Matched)
+	require.True(t, curlRuntime.Matched)
+	require.NotNil(t, codexRuntime.Profile)
+	require.NotNil(t, curlRuntime.Profile)
+	require.Equal(t, "stable", codexRuntime.Profile.Name)
+	require.Equal(t, codexRuntime.Profile.Name, curlRuntime.Profile.Name)
+	require.Equal(t, codexRuntime.UpstreamUserAgent, curlRuntime.UpstreamUserAgent)
+	require.Equal(t, codexRuntime.UpstreamOriginator, curlRuntime.UpstreamOriginator)
 }
 
 func TestInboundProtocolFromPath_AntigravityBeforeMessages(t *testing.T) {

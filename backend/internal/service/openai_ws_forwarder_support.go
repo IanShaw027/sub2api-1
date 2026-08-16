@@ -407,7 +407,7 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 		return nil, nil
 	}
 
-	result, acquireErr := s.tryAcquireAccountSlot(ctx, accountID, groupID, account.Concurrency)
+	result, acquireErr := s.tryAcquireAccountSlot(ctx, accountID, groupID, account.EffectiveConcurrency())
 	if acquireErr == nil && result.Acquired {
 		logOpenAIWSBindResponseAccountWarn(
 			derefGroupID(groupID),
@@ -425,13 +425,8 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 	cfg := s.schedulingConfig()
 	if s.concurrencyService != nil {
 		return attachSelectionProfitGate(ctx, &AccountSelectionResult{
-			Account: account,
-			WaitPlan: &AccountWaitPlan{
-				AccountID:      accountID,
-				MaxConcurrency: account.Concurrency,
-				Timeout:        cfg.StickySessionWaitTimeout,
-				MaxWaiting:     cfg.StickySessionMaxWaiting,
-			},
+			Account:  account,
+			WaitPlan: waitPlanUnlessPostSwitch(ctx, account, cfg.StickySessionWaitTimeout, cfg.StickySessionMaxWaiting),
 		}), nil
 	}
 	return nil, nil

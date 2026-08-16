@@ -1,7 +1,7 @@
 <template>
   <div class="flex flex-col gap-0.5">
     <!-- 并发槽位 -->
-    <CapacityBadge :color-class="concurrencyClass" :current="currentConcurrency" :max="account.concurrency">
+    <CapacityBadge :color-class="concurrencyClass" :current="currentConcurrency" :max="concurrencyMax">
       <svg class="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
         <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
       </svg>
@@ -50,10 +50,11 @@ const { t } = useI18n()
 
 // ====== 并发 ======
 const currentConcurrency = computed(() => props.account.current_concurrency || 0)
+const concurrencyMax = computed(() => effectiveConcurrency(props.account))
 
 const concurrencyClass = computed(() => {
   const current = currentConcurrency.value
-  const max = props.account.concurrency
+  const max = concurrencyMax.value
   if (current >= max) return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
   if (current > 0) return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
   return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
@@ -132,9 +133,29 @@ const currentRPM = computed(() => props.account.current_rpm ?? 0)
 const rpmStrategy = computed(() => props.account.rpm_strategy || 'tiered')
 const rpmStrategyTag = computed(() => rpmStrategy.value === 'sticky_exempt' ? '[S]' : '[T]')
 
+function effectiveConcurrency(account: Account): number {
+  const stored = account.concurrency
+  if (stored >= 1 && stored <= 32) return stored
+  if (
+    (account.platform === 'anthropic' || account.platform === 'openai') &&
+    (account.type === 'oauth' || account.type === 'setup-token')
+  ) {
+    return 12
+  }
+  if (account.platform === 'grok' && account.type === 'oauth') {
+    return 1
+  }
+  return 3
+}
+
 const rpmBuffer = computed(() => {
+  const manual = props.account.rpm_sticky_buffer
+  if (manual != null && manual >= 1 && manual <= 10000) {
+    return manual
+  }
   const base = props.account.base_rpm || 0
-  return props.account.rpm_sticky_buffer ?? (base > 0 ? Math.max(1, Math.floor(base / 5)) : 0)
+  if (base <= 0) return 0
+  return Math.max(effectiveConcurrency(props.account), Math.max(Math.floor(base / 5), 1))
 })
 
 const rpmClass = computed(() => {

@@ -93,6 +93,9 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		return nil, fmt.Errorf("parse request: empty request")
 	}
 	beginUpstreamResponseModelObservation(c)
+	if c != nil && c.Request != nil {
+		maybeLearnOfficialDeviceProfile(ctx, account, c.Request.Header)
+	}
 
 	// Web Search 模拟：纯 web_search 请求时，直接调用搜索 API 构造响应
 	if account != nil && s.shouldEmulateWebSearch(ctx, account, parsed.GroupID, parsed.Body.Bytes()) {
@@ -226,16 +229,15 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		// 未重写时（注入开关关闭）剥离客户端 cache_control，与原有行为一致。
 		// 两种情况下 enforceCacheControlLimit 都会兜底处理上限。
 		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: !systemRewritten}
-		if s.identityService != nil && c != nil {
-			fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header)
-			if err == nil && fp != nil {
-				// metadata 透传开启时跳过 metadata 注入
-				_, mimicMPT, _ := s.settingService.GetGatewayForwardingSettings(ctx)
-				if !mimicMPT {
-					if metadataUserID := s.buildOAuthMetadataUserID(parsed, account, fp); metadataUserID != "" {
-						normalizeOpts.injectMetadata = true
-						normalizeOpts.metadataUserID = metadataUserID
-					}
+		if c != nil {
+			mimicMPT := false
+			if s.settingService != nil {
+				_, mimicMPT, _ = s.settingService.GetGatewayForwardingSettings(ctx)
+			}
+			if !mimicMPT {
+				if metadataUserID := s.buildOAuthMetadataUserID(ctx, parsed, account, nil); metadataUserID != "" {
+					normalizeOpts.injectMetadata = true
+					normalizeOpts.metadataUserID = metadataUserID
 				}
 			}
 		}
@@ -399,7 +401,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 
 		// 发送请求
 		applyTLSFingerprintRuntimeHeaders(upstreamReq, tlsRuntime)
-		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
+		resp, err = s.httpUpstream.DoWithTLS(upstreamReq, proxyURL, account.ID, account.EffectiveConcurrency(), tlsRuntime.Profile)
 		if err != nil {
 			if resp != nil && resp.Body != nil {
 				_ = resp.Body.Close()
@@ -482,7 +484,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 					releaseRetryCtx()
 					if buildErr == nil {
 						applyTLSFingerprintRuntimeHeaders(retryReq, tlsRuntime)
-						retryResp, retryErr := s.httpUpstream.DoWithTLS(retryReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
+						retryResp, retryErr := s.httpUpstream.DoWithTLS(retryReq, proxyURL, account.ID, account.EffectiveConcurrency(), tlsRuntime.Profile)
 						if retryErr == nil {
 							if retryResp.StatusCode < 400 {
 								// 重试请求被上游接受后同步 ParsedRequest，保证 usage/日志看到真实请求体。
@@ -524,7 +526,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 									releaseRetryCtx2()
 									if buildErr2 == nil {
 										applyTLSFingerprintRuntimeHeaders(retryReq2, tlsRuntime)
-										retryResp2, retryErr2 := s.httpUpstream.DoWithTLS(retryReq2, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
+										retryResp2, retryErr2 := s.httpUpstream.DoWithTLS(retryReq2, proxyURL, account.ID, account.EffectiveConcurrency(), tlsRuntime.Profile)
 										if retryErr2 == nil {
 											if retryResp2.StatusCode < 400 {
 												// 二阶段工具块降级成功时也必须更新当前 body。
@@ -604,7 +606,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 						releaseBudgetRetryCtx()
 						if buildErr == nil {
 							applyTLSFingerprintRuntimeHeaders(budgetRetryReq, tlsRuntime)
-							budgetRetryResp, retryErr := s.httpUpstream.DoWithTLS(budgetRetryReq, proxyURL, account.ID, account.Concurrency, tlsRuntime.Profile)
+							budgetRetryResp, retryErr := s.httpUpstream.DoWithTLS(budgetRetryReq, proxyURL, account.ID, account.EffectiveConcurrency(), tlsRuntime.Profile)
 							if retryErr == nil {
 								if budgetRetryResp.StatusCode < 400 {
 									// budget 修正请求成功后，ParsedRequest 也要描述被接受的修正版。

@@ -458,10 +458,10 @@ func TestGrokQuotaServiceProbeUsageDoesNotRetryResponsesPost(t *testing.T) {
 func TestGrokQuotaServiceProbeUsageStoresHeaders(t *testing.T) {
 	t.Parallel()
 
-	account := healthyGrokQuotaOAuthAccount(42)
+	account := healthyGrokQuotaOAuthAccount(900042)
 	repo := &grokQuotaAccountRepo{
 		mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
-			accountsByID: map[int64]*Account{42: account},
+			accountsByID: map[int64]*Account{900042: account},
 		},
 	}
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
@@ -477,7 +477,7 @@ func TestGrokQuotaServiceProbeUsageStoresHeaders(t *testing.T) {
 	}}
 	svc := NewGrokQuotaService(repo, nil, NewGrokTokenProvider(repo, nil), upstream, nil)
 
-	result, err := svc.ProbeUsage(context.Background(), 42)
+	result, err := svc.ProbeUsage(context.Background(), 900042)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, result.StatusCode)
 	require.Equal(t, "grok-4.5", result.Model)
@@ -499,7 +499,7 @@ func TestGrokQuotaServiceProbeUsageStoresHeaders(t *testing.T) {
 	require.True(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "max_output_tokens").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "store").Exists())
-	require.NotNil(t, repo.updates[42][grokQuotaSnapshotExtraKey])
+	require.NotNil(t, repo.updates[900042][grokQuotaSnapshotExtraKey])
 }
 
 func TestGrokQuotaServiceProbeUsageIgnoresAccountGrokMapping(t *testing.T) {

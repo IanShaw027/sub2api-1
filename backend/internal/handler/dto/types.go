@@ -257,6 +257,7 @@ type Account struct {
 	TLSFingerprintRouterID   *int64           `json:"tls_fingerprint_router_id,omitempty"`
 	TLSFingerprintBindings   map[string]int64 `json:"tls_fingerprint_bindings,omitempty"`
 	TLSFingerprintDefaultOS  *string          `json:"tls_fingerprint_default_os,omitempty"`
+	DeviceLearningEnabled    *bool            `json:"device_learning_enabled,omitempty"`
 
 	// 会话ID伪装（仅 Anthropic OAuth/SetupToken 账号有效）
 	// 启用后将在15分钟内固定 metadata.user_id 中的 session ID

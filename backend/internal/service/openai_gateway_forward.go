@@ -39,6 +39,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		})
 		return nil, errors.New("codex_cli_only restriction: only codex official clients are allowed")
 	}
+	if c != nil && c.Request != nil {
+		maybeLearnOfficialDeviceProfile(ctx, account, c.Request.Header)
+	}
 
 	normalizedBody, normalized, err := normalizeOpenAICodexCompactReasoningEffortForAccount(c, account, body)
 	if err != nil {
@@ -410,26 +413,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if codexResult.Modified {
 			markDecodedModified()
 		}
-		// 带真实 device_id 时补齐 client_metadata 安装标识，与真实 Codex 对齐（compact 形态不同，跳过）。
-		if !isCompactRequest && applyCodexClientMetadata(decoded, account) {
-			markDecodedModified()
-		}
-		// 指纹收敛：一次性解析收敛 ID，请求体和出站头共享同一份 IDs（保证 turn_id 等随机字段一致）。
-		// fingerprintIDs 在此处解析，后续 buildUpstreamRequest 中使用同一份。
+		// 一次加载档案：请求体 client_metadata 与出站头共享同一份 fingerprint IDs。
+		// compact 形态不同，跳过。fpIDs == nil 时不单独盖 installation id。
 		if !isCompactRequest {
 			var clientHeaders http.Header
 			if c != nil && c.Request != nil {
 				clientHeaders = c.Request.Header
 			}
-			fpIDs := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+			fpIDs := applyCodexForwardRequestIdentity(ctx, c, decoded, account, clientHeaders)
 			if fpIDs != nil {
-				if applyCodexFingerprintClientMetadata(decoded, fpIDs) {
-					markDecodedModified()
-				}
-			}
-			// 将 fpIDs 存入 gin context，供 buildUpstreamRequest 中头改写使用
-			if c != nil && fpIDs != nil {
-				c.Set("codex_fingerprint_ids", fpIDs)
+				markDecodedModified()
 			}
 		}
 		if codexResult.NormalizedModel != "" {
@@ -1102,18 +1095,19 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 			req.Header.Set("originator", resolveOpenAIUpstreamOriginator(c, isCodexCLI))
 		}
 		apiKeyID := getAPIKeyIDFromContext(c)
+		profile := resolveOpenAIOutboundDeviceProfile(ctx, c, account)
 		if isOpenAIResponsesCompactPath(c) {
 			req.Header.Set("accept", "application/json")
 			if req.Header.Get("version") == "" {
 				req.Header.Set("version", codexCLIVersion)
 			}
 			compactSession := resolveOpenAICompactSessionID(c)
-			req.Header.Set("session_id", isolateOpenAISessionID(apiKeyID, compactSession))
+			req.Header.Set("session_id", openaiOutboundSessionIDFromProfile(profile, apiKeyID, compactSession))
 		} else {
 			req.Header.Set("accept", "text/event-stream")
 		}
 		if promptCacheKey != "" {
-			isolated := isolateOpenAISessionID(apiKeyID, promptCacheKey)
+			isolated := openaiOutboundSessionIDFromProfile(profile, apiKeyID, promptCacheKey)
 			req.Header.Set("session_id", isolated)
 			if !compatMessagesBridge || clientConversationID != "" {
 				req.Header.Set("conversation_id", isolated)
@@ -1138,9 +1132,12 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	}
 
 	// 指纹收敛：使用 Forward() 中预计算的收敛 ID 改写出站头，与请求体使用同一份 IDs。
+	// leftover 5 session/full 模式会用账号级恒定 session_id 覆盖上面的
+	// isolate+namespace 值；那是「一号一安装」收敛，不是 leftover 11 的缺口。
+	// leftover 11 在 off/device、以及不走指纹的 passthrough/WS/compat 路径生效。
 	if account.Type == AccountTypeOAuth && c != nil {
 		if fpIDs, ok := c.Get("codex_fingerprint_ids"); ok {
-			if ids, ok := fpIDs.(*codexFingerprintIDs); ok {
+			if ids, ok := fpIDs.(*codexFingerprintIDs); ok && fingerprintIDsBelongToAccount(ids, account) {
 				applyCodexFingerprintHeaders(req.Header, ids)
 			}
 		}
@@ -1149,7 +1146,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// 终态收口：强制统一 OAuth 出站身份（User-Agent / originator / version 同源自洽）。
 	// 客户端自报身份不参与构造，浏览器型 UA 也因此不会再到达上游（原浏览器 UA 兜底已被吸收）。
 	if account.Type == AccountTypeOAuth {
-		enforceCodexIdentityHeadersWithUA(req.Header, s.codexIdentityOverrideUA(account))
+		s.enforceCodexIdentityFromLoadedProfile(req.Header, account, outboundDeviceProfileFromGin(c, account))
 	}
 
 	// Ensure required headers exist
@@ -1173,4 +1170,26 @@ func (s *OpenAIGatewayService) codexIdentityOverrideUA(account *Account) string 
 		return ""
 	}
 	return account.GetOpenAIUserAgent()
+}
+
+func (s *OpenAIGatewayService) enforceCodexIdentityFromAccount(ctx context.Context, h http.Header, account *Account) {
+	if account == nil {
+		s.enforceCodexIdentityFromLoadedProfile(h, account, nil)
+		return
+	}
+	profile, err := LoadOutboundDeviceProfile(ctx, account)
+	if err != nil {
+		profile = nil
+	}
+	s.enforceCodexIdentityFromLoadedProfile(h, account, profile)
+}
+
+func (s *OpenAIGatewayService) enforceCodexIdentityFromLoadedProfile(h http.Header, account *Account, profile *AccountDeviceProfile) {
+	fallback := s.codexIdentityOverrideUA(account)
+	if profile == nil {
+		enforceCodexIdentityHeadersWithUA(h, fallback)
+		return
+	}
+	identity := resolveCodexOutboundIdentityFromProfile(profile, fallback)
+	enforceCodexIdentityHeadersWithUA(h, identity.userAgent)
 }

@@ -112,6 +112,11 @@ func (p *GeminiAPIBatchImageProvider) Submit(ctx context.Context, job *BatchImag
 		displayName = strings.TrimSpace(input.BatchID)
 	}
 
+	ctx, err = leftoverGeminiAccountUserAgent(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+
 	uploaded, err := p.client.UploadJSONL(ctx, apiKey, displayName, bytes.NewReader(jsonl))
 	if err != nil {
 		return nil, mapGeminiClientError(err)
@@ -146,6 +151,11 @@ func (p *GeminiAPIBatchImageProvider) Get(ctx context.Context, job *BatchImageJo
 	jobName := batchImageProviderJobName(job)
 	if jobName == "" {
 		return nil, ErrBatchImageProviderMissingJobName
+	}
+
+	ctx, err := leftoverGeminiAccountUserAgent(ctx, account)
+	if err != nil {
+		return nil, err
 	}
 
 	batch, err := p.client.GetBatch(ctx, apiKey, jobName)
@@ -185,6 +195,10 @@ func (p *GeminiAPIBatchImageProvider) Cancel(ctx context.Context, job *BatchImag
 	if jobName == "" {
 		return ErrBatchImageProviderMissingJobName
 	}
+	ctx, err := leftoverGeminiAccountUserAgent(ctx, account)
+	if err != nil {
+		return err
+	}
 	return mapGeminiClientError(p.client.CancelBatch(ctx, apiKey, jobName))
 }
 
@@ -200,6 +214,10 @@ func (p *GeminiAPIBatchImageProvider) OpenResult(ctx context.Context, job *Batch
 	if outputRef == "" {
 		return nil, "", ErrBatchImageProviderMissingResultRef
 	}
+	ctx, err := leftoverGeminiAccountUserAgent(ctx, account)
+	if err != nil {
+		return nil, "", err
+	}
 	r, contentType, err := p.client.DownloadFile(ctx, apiKey, outputRef)
 	return r, contentType, mapGeminiClientError(err)
 }
@@ -211,6 +229,10 @@ func (p *GeminiAPIBatchImageProvider) Cleanup(ctx context.Context, job *BatchIma
 	apiKey := batchImageProviderAPIKey(account)
 	if apiKey == "" {
 		return ErrBatchImageProviderMissingAPIKey
+	}
+	ctx, err := leftoverGeminiAccountUserAgent(ctx, account)
+	if err != nil {
+		return err
 	}
 
 	switch target {
@@ -591,6 +613,9 @@ func (c *GeminiBatchHTTPClient) DownloadFile(ctx context.Context, apiKey string,
 		return nil, "", err
 	}
 	req.Header.Set("x-goog-api-key", apiKey)
+	if ua := leftoverGeminiOutboundUserAgent(ctx); ua != "" {
+		req.Header.Set("User-Agent", ua)
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, "", err
@@ -659,6 +684,9 @@ func (c *GeminiBatchHTTPClient) newRequest(ctx context.Context, method, path, ap
 		return nil, err
 	}
 	req.Header.Set("x-goog-api-key", apiKey)
+	if ua := leftoverGeminiOutboundUserAgent(ctx); ua != "" {
+		req.Header.Set("User-Agent", ua)
+	}
 	return req, nil
 }
 

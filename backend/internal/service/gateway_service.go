@@ -23,8 +23,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
-	"github.com/gin-gonic/gin"
 	"github.com/cespare/xxhash/v2"
+	"github.com/gin-gonic/gin"
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -664,8 +664,8 @@ type UpstreamFailoverError struct {
 	SameAccountRetryMax      int
 	RetryExhaustedCooldown   time.Duration // 同账号重试耗尽后，对该账号施加的短期冷却
 	RetryExhaustedReason     string        // 同账号重试耗尽后的冷却原因
-	RequestScopedTransient   bool        // 故障因素与账号无关（如上游按客户端身份/模型容量降载）：可同账号重试，但不得据此对账号做临时封禁
-	SafeToFailoverAfterWrite bool        // 仅写出 SSE 注释等非语义字节时，仍可在同一客户端流中切换账号
+	RequestScopedTransient   bool          // 故障因素与账号无关（如上游按客户端身份/模型容量降载）：可同账号重试，但不得据此对账号做临时封禁
+	SafeToFailoverAfterWrite bool          // 仅写出 SSE 注释等非语义字节时，仍可在同一客户端流中切换账号
 	Stage                    GatewayFailureStage
 	Scope                    GatewayFailureScope
 	Reason                   GatewayFailureReason
@@ -991,6 +991,9 @@ func (s *GatewayService) BindStickySession(ctx context.Context, groupID *int64, 
 // only after the terminal post-slot check, otherwise a rejected candidate could
 // overwrite a healthy pre-existing sticky binding.
 func (s *GatewayService) bindGatewayStickySessionDuringSelection(ctx context.Context, groupID *int64, sessionHash string, accountID int64) error {
+	if PreserveStickyBindingFromContext(ctx) {
+		return nil
+	}
 	if gatewayProfitControlGateActive(ctx) {
 		return nil
 	}
@@ -1005,6 +1008,9 @@ func (s *GatewayService) bindGatewayStickySessionDuringSelection(ctx context.Con
 // account rate recovers.
 func (s *GatewayService) BindStickySessionAfterProfitAdmission(ctx context.Context, groupID *int64, sessionHash string, accountID int64) error {
 	if sessionHash == "" || accountID <= 0 || s.cache == nil {
+		return nil
+	}
+	if PreserveStickyBindingFromContext(ctx) {
 		return nil
 	}
 	if !gatewayProfitControlGateActive(ctx) {
@@ -1378,13 +1384,21 @@ func (s *GatewayService) DoGrokNativeResponsesJSON(ctx context.Context, account 
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Accept", "application/json")
 	upstreamReq.Header.Set("User-Agent", defaultGrokUpstreamUserAgent())
-	applyGrokCLIHeaders(upstreamReq.Header)
+	if account.IsGrokOAuth() {
+		if err := applyGrokInteractiveUpstreamHeadersFromAccount(ctx, upstreamReq, account); err != nil {
+			slog.Warn("identity_reject", "account_id", account.ID, "reason", err.Error())
+			return nil, &UpstreamFailoverError{
+				StatusCode: http.StatusBadGateway,
+				Reason:     GatewayFailureReason("grok_search_identity"),
+			}
+		}
+	}
 	account.ApplyHeaderOverrides(upstreamReq.Header)
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.EffectiveConcurrency())
 	if err != nil {
 		return nil, &UpstreamFailoverError{StatusCode: http.StatusBadGateway, Reason: GatewayFailureReason("grok_search_transport")}
 	}
