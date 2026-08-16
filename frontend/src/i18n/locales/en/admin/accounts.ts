@@ -542,9 +542,26 @@ export default {
       recoverStateSuccess: 'Account state recovered successfully',
       recoverStateFailed: 'Failed to recover account state',
       resetDeviceProfile: 'Reset Device Profile',
-      resetDeviceProfileConfirm: 'Reset the pinned device identity for "{name}"? The account will look like a new official-client install. Use this after changing the account platform.',
+      resetDeviceProfileConfirm: 'Reset the pinned device identity for "{name}"? This remints a baseline official-client install. Use it after a platform change, or when the current profile is bad or corrupt.',
       resetDeviceProfileSuccess: 'Device profile reset',
       resetDeviceProfileFailed: 'Failed to reset device profile',
+      inspectDeviceProfile: 'Inspect Device Profile',
+      deviceLearning: {
+        label: 'Device profile learning',
+        hint: 'When enabled, official inbound clients can upgrade this account\'s pinned software bundle. Off by default.'
+      },
+      deviceProfile: {
+        platform: 'Platform',
+        clientVersion: 'Client version',
+        revision: 'Revision',
+        learnedFrom: 'Learned from',
+        learningEnabled: 'Learning',
+        learningOn: 'On',
+        learningOff: 'Off',
+        transportFamily: 'Transport',
+        userAgent: 'User agent',
+        loadFailed: 'Failed to load device profile'
+      },
       fallbackActive: 'Fallback',
       fallbackActiveTip: 'Origin proxy {origin} expired',
       revertProxy: 'Revert proxy',

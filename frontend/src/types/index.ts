@@ -1287,6 +1287,21 @@ export interface Account {
   parent_chatgpt_account_id?: string
 }
 
+export interface AccountDeviceProfile {
+  account_id: number
+  platform: string
+  client_family: string
+  client_version: string
+  user_agent: string
+  os_family: string
+  arch: string
+  revision: number
+  learned_from: string
+  learning_enabled: boolean
+  transport_family: string
+  updated_at: string
+}
+
 export interface AccountSchedulerGroupScore {
   group_id?: number | null
   group_name?: string
