@@ -263,8 +263,9 @@ func TestResolveAccountTLSFingerprintRuntime_StampsDeviceTransportFamily(t *test
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.device.TransportFamily = TransportH2
+			repo := &stampDeviceProfileRepo{profile: tc.device}
 			prev := OutboundDeviceProfileService()
-			SetOutboundDeviceProfileService(NewAccountDeviceService(&stampDeviceProfileRepo{profile: tc.device}))
+			SetOutboundDeviceProfileService(NewAccountDeviceService(repo))
 			t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
 
 			account := enabledTLSAccount(tc.platform, map[string]any{
@@ -280,21 +281,70 @@ func TestResolveAccountTLSFingerprintRuntime_StampsDeviceTransportFamily(t *test
 
 			runtime := resolveAccountTLSFingerprintRuntime(context.Background(), account, profiles, nil, "", "http", "responses")
 			require.NotNil(t, runtime.Profile)
-			require.Equal(t, TransportH2, runtime.Profile.TransportFamily, "device-profile family must be stamped after ToTLSProfile")
+			require.Empty(t, runtime.Profile.TransportFamily, "ToTLSProfile has no device profile; resolve must not load one")
 			require.Equal(t, []string{"h2", "http/1.1"}, runtime.Profile.ALPNProtocols)
+			require.Zero(t, repo.getCalls, "TLS resolve must not LoadOutboundDeviceProfile / GetOrCreate")
+			require.Zero(t, repo.insertCalls, "TLS resolve must not create a device profile")
 		})
 	}
 }
 
+func TestKiroTLSFingerprint_StampsDeviceTransportFamilyFromCaller(t *testing.T) {
+	device := validKiroBaseline()
+	device.TransportFamily = TransportH2
+	repo := &stampDeviceProfileRepo{profile: device}
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(NewAccountDeviceService(repo))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	account := enabledTLSAccount(PlatformKiro, map[string]any{
+		"enable_tls_fingerprint":     true,
+		"tls_fingerprint_profile_id": int64(77),
+	})
+	account.ID = device.AccountID
+
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       http.NoBody,
+		},
+	}
+	svc := &KiroGatewayService{
+		httpUpstream: upstream,
+		tlsFPProfileSvc: testTLSProfileService(&model.TLSFingerprintProfile{
+			ID:            77,
+			Name:          "kiro-runtime",
+			ALPNProtocols: []string{"h2", "http/1.1"},
+		}),
+	}
+
+	req, err := http.NewRequest(http.MethodPost, "https://example.com/kiro", nil)
+	require.NoError(t, err)
+
+	resp, err := svc.doKiroUpstream(context.Background(), nil, account, req, device)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NotNil(t, upstream.profile)
+	require.Equal(t, TransportH2, upstream.profile.TransportFamily, "doKiroUpstream must stamp from the caller-held profile")
+	require.Equal(t, []string{"h2", "http/1.1"}, upstream.profile.ALPNProtocols)
+	require.Zero(t, repo.getCalls, "doKiroUpstream must not reload the device profile via TLS resolve")
+	require.Zero(t, repo.insertCalls)
+}
+
 type stampDeviceProfileRepo struct {
-	profile *AccountDeviceProfile
+	profile     *AccountDeviceProfile
+	getCalls    int
+	insertCalls int
 }
 
 func (r *stampDeviceProfileRepo) GetByAccountID(context.Context, int64) (*AccountDeviceProfile, error) {
+	r.getCalls++
 	return r.profile, nil
 }
 
 func (r *stampDeviceProfileRepo) InsertBaseline(_ context.Context, p *AccountDeviceProfile) (*AccountDeviceProfile, error) {
+	r.insertCalls++
 	return p, nil
 }
 

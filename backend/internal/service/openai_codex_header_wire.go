@@ -7,7 +7,7 @@ import (
 
 // Codex official OAuth outbound wire casing.
 //
-// These maps are Codex-specific. Do not merge them into Claude's
+// This map is Codex-specific. Do not merge it into Claude's
 // headerWireCasing / headerWireOrder in header_util.go.
 //
 // Only keys with in-repo casing evidence are rewritten. Uncaptured keys
@@ -23,8 +23,8 @@ import (
 //   - User-Agent / Authorization: P2 brief
 //   - OpenAI-Beta: written that way by ensureCodexIdentityHeaders
 //
-// Official send order was not captured. The order list is the evidenced
-// keys only; it is not an official CLI sequence. Unknown keys append.
+// Official send order was not captured and is not applied. http.Header
+// cannot preserve it, and no Codex debug dump exists.
 //
 // Apply only at the last mutation before send (doAccountHTTP). Callers
 // Header.Set/Get after buildUpstreamRequest must still see Go-canonical keys.
@@ -38,18 +38,6 @@ var codexHeaderWireCasing = map[string]string{
 	"x-codex-window-id":       "x-codex-window-id",
 	"x-codex-turn-metadata":   "x-codex-turn-metadata",
 	"x-codex-turn-state":      "x-codex-turn-state",
-}
-
-var codexHeaderWireOrder = []string{
-	"Authorization",
-	"User-Agent",
-	"originator",
-	"session-id",
-	"OpenAI-Beta",
-	"x-codex-installation-id",
-	"x-codex-window-id",
-	"x-codex-turn-metadata",
-	"x-codex-turn-state",
 }
 
 func resolveCodexWireCasing(key string) string {
@@ -90,36 +78,4 @@ func applyCodexHeaderWireCasing(h http.Header) {
 			}
 		}
 	}
-}
-
-// sortCodexHeadersByWireOrder returns header keys in the declared Codex wire
-// order. Keys not in the list are appended after the known ones.
-func sortCodexHeadersByWireOrder(h http.Header) []string {
-	present := make(map[string]string, len(h))
-	for k := range h {
-		present[strings.ToLower(k)] = k
-	}
-
-	result := make([]string, 0, len(h))
-	seen := make(map[string]struct{}, len(h))
-
-	for _, wk := range codexHeaderWireOrder {
-		lk := strings.ToLower(wk)
-		if actual, ok := present[lk]; ok {
-			if _, dup := seen[lk]; !dup {
-				result = append(result, actual)
-				seen[lk] = struct{}{}
-			}
-		}
-	}
-
-	for k := range h {
-		lk := strings.ToLower(k)
-		if _, ok := seen[lk]; !ok {
-			result = append(result, k)
-			seen[lk] = struct{}{}
-		}
-	}
-
-	return result
 }

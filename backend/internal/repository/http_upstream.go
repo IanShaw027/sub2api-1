@@ -1135,6 +1135,7 @@ func honestH1FingerprintProfile(profile *tlsfingerprint.Profile) *tlsfingerprint
 	from := append([]string(nil), profile.ALPNProtocols...)
 	cloned := *profile
 	cloned.ALPNProtocols = []string{"http/1.1"}
+	cloned.TransportFamily = service.TransportH1
 	warnHonestH1ALPNRewrite(profile, from)
 	return &cloned
 }

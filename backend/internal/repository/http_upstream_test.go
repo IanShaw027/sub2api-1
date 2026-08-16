@@ -1484,7 +1484,23 @@ func TestDeviceProfileTransportFamily_ToTLSProfileSendHonesty(t *testing.T) {
 	}
 }
 
-func TestOpenAIHTTP2_LivePoolUsesSpareBudgetNotBurst(t *testing.T) {
+func TestTLSFingerprint_HonestH1CloneDoesNotClaimH2(t *testing.T) {
+	claimed := &tlsfingerprint.Profile{
+		ID:              101,
+		Name:            "claimed-h2",
+		TransportFamily: service.TransportH2,
+		ALPNProtocols:   []string{"h2", "http/1.1"},
+	}
+
+	got := honestH1FingerprintProfile(claimed)
+	require.NotSame(t, claimed, got)
+	require.Equal(t, []string{"http/1.1"}, got.ALPNProtocols)
+	require.Equal(t, service.TransportH1, got.TransportFamily, "honest-h1 clone must not keep a dishonest h2 claim")
+	require.Equal(t, service.TransportH2, claimed.TransportFamily, "must not mutate the source profile")
+	require.Equal(t, []string{"h2", "http/1.1"}, claimed.ALPNProtocols)
+}
+
+func TestOpenAIHTTP2_AttemptOnlyKeepsBurstCaps(t *testing.T) {
 	svc := NewHTTPUpstream(&config.Config{
 		Gateway: config.GatewayConfig{
 			ConnectionPoolIsolation: config.ConnectionPoolIsolationAccount,

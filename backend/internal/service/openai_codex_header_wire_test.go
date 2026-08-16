@@ -46,29 +46,6 @@ func TestApplyCodexHeaderWireCasing_InstallationIDUsesWireKeyNotCanonicalDuplica
 	require.False(t, hasOriginatorTitle)
 }
 
-func TestSortCodexHeadersByWireOrder_ReturnsKnownKeysInDeclaredOrder(t *testing.T) {
-	h := make(http.Header)
-	h["x-codex-turn-state"] = []string{"active"}
-	h["originator"] = []string{openai.CodexDefaultOriginator}
-	h["User-Agent"] = []string{"codex-tui/0.146.0"}
-	h["x-codex-installation-id"] = []string{"install-1"}
-	h["session-id"] = []string{"sess-1"}
-	// Uncaptured key: currently sits mid-sequence in the invented order
-	// (before x-codex-installation-id). After the shrink it must append.
-	h["Chatgpt-Account-Id"] = []string{"acc-1"}
-
-	got := sortCodexHeadersByWireOrder(h)
-
-	require.Equal(t, []string{
-		"User-Agent",
-		"originator",
-		"session-id",
-		"x-codex-installation-id",
-		"x-codex-turn-state",
-		"Chatgpt-Account-Id",
-	}, got)
-}
-
 func TestApplyCodexHeaderWireCasing_DoesNotRewriteUncapturedKeys(t *testing.T) {
 	h := make(http.Header)
 	h.Set("conversation_id", "conv-1")
