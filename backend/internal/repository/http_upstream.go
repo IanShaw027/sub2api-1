@@ -746,9 +746,6 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 		s.mu.Unlock()
 		return nil, fmt.Errorf("build transport: %w", err)
 	}
-	if live := applyPoolBudgetForTransport(settings, transport); live != settings {
-		applyPoolCaps(transport, live)
-	}
 	client := &http.Client{Transport: transport}
 	if s.shouldValidateResolvedIP() {
 		client.CheckRedirect = s.redirectChecker
@@ -1085,22 +1082,6 @@ func applyH2PoolBudget(settings poolSettings) poolSettings {
 	settings.maxIdleConnsPerHost = h2PoolPrimaryPlusSpare
 	settings.maxConnsPerHost = h2PoolPrimaryPlusSpare
 	return settings
-}
-
-func applyPoolBudgetForTransport(settings poolSettings, transport *http.Transport) poolSettings {
-	if !transportHasLiveHTTP2(transport) {
-		return settings
-	}
-	return applyH2PoolBudget(settings)
-}
-
-func applyPoolCaps(transport *http.Transport, settings poolSettings) {
-	if transport == nil {
-		return
-	}
-	transport.MaxIdleConns = settings.maxIdleConns
-	transport.MaxIdleConnsPerHost = settings.maxIdleConnsPerHost
-	transport.MaxConnsPerHost = settings.maxConnsPerHost
 }
 
 func claimedTLSTransportFamily(profile *tlsfingerprint.Profile) string {

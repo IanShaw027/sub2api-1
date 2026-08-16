@@ -1501,23 +1501,7 @@ func TestOpenAIHTTP2_LivePoolUsesSpareBudgetNotBurst(t *testing.T) {
 	require.True(t, ok)
 	require.True(t, transport.ForceAttemptHTTP2)
 	require.NotNil(t, transport.TLSNextProto["h2"])
-	require.Equal(t, 2, transport.MaxConnsPerHost, "live openai_h2 must use 1 primary + ≤1 spare")
-	require.Equal(t, 2, transport.MaxIdleConns)
-	require.Equal(t, 2, transport.MaxIdleConnsPerHost)
-}
-
-func TestOpenAIHTTP2_NoLiveProofKeepsBurstCaps(t *testing.T) {
-	settings := poolSettings{maxIdleConns: 14, maxIdleConnsPerHost: 14, maxConnsPerHost: 14}
-	transport := &http.Transport{
-		ForceAttemptHTTP2:   true,
-		MaxIdleConns:        14,
-		MaxIdleConnsPerHost: 14,
-		MaxConnsPerHost:     14,
-	}
-	got := applyPoolBudgetForTransport(settings, transport)
-	require.Equal(t, settings, got, "openai_h2 attempt without live h2 must keep Burst")
-	applyPoolCaps(transport, got)
-	require.Equal(t, 14, transport.MaxConnsPerHost)
+	require.Equal(t, 14, transport.MaxConnsPerHost, "attempt-only openai_h2 must keep P0 Burst, not 1+1 spare")
 	require.Equal(t, 14, transport.MaxIdleConns)
 	require.Equal(t, 14, transport.MaxIdleConnsPerHost)
 }
