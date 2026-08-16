@@ -1227,6 +1227,26 @@ describe('EditAccountModal', () => {
     } as any
   }
 
+  it('writes extra.device_learning_enabled true when the learning toggle is on', async () => {
+    const account = buildAccount()
+    account.extra = { existing_key: 'keep-me' }
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    const toggle = wrapper.get('[data-testid="device-learning-toggle"]')
+    expect(toggle.attributes('aria-checked')).toBe('false')
+
+    await toggle.trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.device_learning_enabled).toBe(true)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.existing_key).toBe('keep-me')
+  })
+
   it('does not write a computed RPM sticky buffer back into extra', async () => {
     const account = buildAnthropicOAuthAccount()
     account.base_rpm = 15

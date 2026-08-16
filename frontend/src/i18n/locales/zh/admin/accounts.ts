@@ -620,9 +620,26 @@ export default {
       recoverStateSuccess: '账号状态已恢复',
       recoverStateFailed: '恢复账号状态失败',
       resetDeviceProfile: '重置设备画像',
-      resetDeviceProfileConfirm: '确定重置「{name}」的固定设备身份？账号会以新的官方客户端安装身份出现。在修改账号平台后使用。',
+      resetDeviceProfileConfirm: '确定重置「{name}」的固定设备身份？这会重新签发一份官方客户端基线画像。在修改账号平台后，或当前画像损坏/异常时使用。',
       resetDeviceProfileSuccess: '设备画像已重置',
       resetDeviceProfileFailed: '重置设备画像失败',
+      inspectDeviceProfile: '查看设备画像',
+      deviceLearning: {
+        label: '设备画像学习',
+        hint: '开启后，官方客户端入站流量可以升级该账号已固定的软件包。默认关闭。'
+      },
+      deviceProfile: {
+        platform: '平台',
+        clientVersion: '客户端版本',
+        revision: '修订号',
+        learnedFrom: '学习来源',
+        learningEnabled: '学习',
+        learningOn: '已开启',
+        learningOff: '已关闭',
+        transportFamily: '传输',
+        userAgent: 'User-Agent',
+        loadFailed: '加载设备画像失败'
+      },
       fallbackActive: '已回退',
       fallbackActiveTip: '原代理 {origin} 已到期，当前使用备用代理',
       revertProxy: '切回原代理',

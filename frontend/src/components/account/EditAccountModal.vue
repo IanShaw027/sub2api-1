@@ -2796,6 +2796,25 @@
         </div>
       </div>
 
+      <div
+        v-if="!isSparkShadow"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between gap-4">
+          <div class="min-w-0">
+            <label class="input-label mb-0">{{ t('admin.accounts.deviceLearning.label') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.deviceLearning.hint') }}
+            </p>
+          </div>
+          <Toggle
+            v-model="deviceLearningEnabled"
+            data-testid="device-learning-toggle"
+            :aria-label="t('admin.accounts.deviceLearning.label')"
+          />
+        </div>
+      </div>
+
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div>
           <label class="input-label">{{ t('common.status') }}</label>
@@ -3237,6 +3256,7 @@ const tlsFingerprintDefaultOS = ref('')
 const tlsFingerprintOSOptions = ['windows', 'macos', 'linux', 'ios', 'android']
 const tlsFingerprintProtocolOptions = ['messages', 'responses', 'chat_completions', 'images', 'embeddings', 'gemini', 'antigravity', 'kiro']
 const tlsFingerprintBindingRows = ref<{ os: string; client: string; protocol: string; profileId: number }[]>([])
+const deviceLearningEnabled = ref(false)
 
 function supportsTLSFingerprint(platform?: string | null) {
   return ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kiro'].includes(platform || '')
@@ -3758,6 +3778,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   mixedScheduling.value = false
   allowOverages.value = false
 	const extra = newAccount.extra as Record<string, unknown> | undefined
+	deviceLearningEnabled.value = extra?.device_learning_enabled === true
 	mixedScheduling.value = extra?.mixed_scheduling === true
 	allowOverages.value = extra?.allow_overages === true
 	autoPause5hThreshold.value = typeof extra?.auto_pause_5h_threshold === 'number' ? extra.auto_pause_5h_threshold * 100 : null
@@ -5380,6 +5401,16 @@ const handleSubmit = async () => {
       const newExtra: Record<string, unknown> = { ...currentExtra }
       applyTLSFingerprintToExtra(newExtra)
       updatePayload.extra = newExtra
+    }
+
+    if (!isSparkShadow.value) {
+      const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
+        (props.account.extra as Record<string, unknown>) ||
+        {}
+      updatePayload.extra = {
+        ...currentExtra,
+        device_learning_enabled: deviceLearningEnabled.value
+      }
     }
 
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {

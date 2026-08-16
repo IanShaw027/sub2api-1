@@ -6,6 +6,7 @@
 import { apiClient } from '../client'
 import type {
   Account,
+  AccountDeviceProfile,
   CreateAccountRequest,
   UpdateAccountRequest,
   PaginatedResponse,
@@ -400,6 +401,15 @@ export async function recoverState(id: number): Promise<Account> {
  */
 export async function resetDeviceProfile(id: number): Promise<Account> {
   const { data } = await apiClient.post<Account>(`/admin/accounts/${id}/reset-device-profile`)
+  return data
+}
+
+/**
+ * Inspect the pinned device profile. Does not mint a row.
+ * Missing profile is 404 DEVICE_PROFILE_NOT_FOUND.
+ */
+export async function getDeviceProfile(id: number): Promise<AccountDeviceProfile> {
+  const { data } = await apiClient.get<AccountDeviceProfile>(`/admin/accounts/${id}/device-profile`)
   return data
 }
 
@@ -1058,6 +1068,7 @@ export const accountsAPI = {
   clearRateLimit,
   recoverState,
   resetDeviceProfile,
+  getDeviceProfile,
   resetAccountQuota,
   getTempUnschedulableStatus,
   resetTempUnschedulable,

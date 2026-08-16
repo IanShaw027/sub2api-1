@@ -29,6 +29,21 @@ function mountCell(account: Record<string, unknown>) {
   })
 }
 
+describe('AccountCapacityCell concurrency badge', () => {
+  it('shows effective concurrency 12 for Anthropic OAuth with concurrency=0 and is not red when current is 0', () => {
+    const wrapper = mountCell({
+      platform: 'anthropic',
+      type: 'oauth',
+      concurrency: 0,
+      current_concurrency: 0
+    })
+
+    const concurrencyBadge = wrapper.findAllComponents({ name: 'CapacityBadge' })[0]
+    expect(concurrencyBadge?.props('max')).toBe(12)
+    expect(concurrencyBadge?.props('colorClass')).not.toContain('bg-red')
+  })
+})
+
 describe('AccountCapacityCell RPM buffer', () => {
   it('uses max(effectiveConcurrency, max(baseRPM/5, 1)) when no manual key', () => {
     const wrapper = mountCell({

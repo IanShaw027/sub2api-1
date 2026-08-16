@@ -502,7 +502,7 @@
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
-    <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @reset-device-profile="handleResetDeviceProfile" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
+    <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @inspect-device-profile="handleInspectDeviceProfile" @reset-device-profile="handleResetDeviceProfile" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal :show="showImportData" @close="showImportData = false" @imported="handleDataImported" />
     <BulkEditAccountModal
@@ -518,7 +518,8 @@
     />
     <TempUnschedStatusModal :show="showTempUnsched" :account="tempUnschedAcc" @close="showTempUnsched = false" @reset="handleTempUnschedReset" />
     <ConfirmDialog :show="showDeleteDialog" :title="t('admin.accounts.deleteAccount')" :message="t('admin.accounts.deleteConfirm', { name: deletingAcc?.name })" :confirm-text="t('common.delete')" :cancel-text="t('common.cancel')" :danger="true" @confirm="confirmDelete" @cancel="showDeleteDialog = false" />
-    <ConfirmDialog :show="showResetDeviceProfileDialog" :title="t('admin.accounts.resetDeviceProfile')" :message="t('admin.accounts.resetDeviceProfileConfirm', { name: resettingDeviceAcc?.name })" :confirm-text="t('common.confirm')" :cancel-text="t('common.cancel')" :danger="true" @confirm="confirmResetDeviceProfile" @cancel="showResetDeviceProfileDialog = false" />
+    <ConfirmDialog :show="showResetDeviceProfileDialog" :title="t('admin.accounts.resetDeviceProfile')" :message="t('admin.accounts.resetDeviceProfileConfirm', { name: resettingDeviceAcc?.name })" :confirm-text="t('common.confirm')" :cancel-text="t('common.cancel')" :danger="true" :confirming="resettingDeviceProfile" @confirm="confirmResetDeviceProfile" @cancel="showResetDeviceProfileDialog = false" />
+    <DeviceProfileInspectModal :show="showDeviceProfileInspect" :account="inspectingDeviceAcc" @close="closeDeviceProfileInspect" />
     <ConfirmDialog :show="showCreateShadowDialog" :title="t('admin.accounts.createSparkShadow')" :message="t('admin.accounts.createSparkShadowConfirm', { name: creatingShadowAcc?.name })" @confirm="confirmCreateSparkShadow" @cancel="showCreateShadowDialog = false" />
     <ConfirmDialog :show="showExportDataDialog" :title="t('admin.accounts.dataExport')" :message="t('admin.accounts.dataExportConfirmMessage')" :confirm-text="t('admin.accounts.dataExportConfirm')" :cancel-text="t('common.cancel')" @confirm="handleExportData" @cancel="showExportDataDialog = false">
       <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -580,6 +581,7 @@ import AccountTableActions from '@/components/admin/account/AccountTableActions.
 import AccountTableFilters from '@/components/admin/account/AccountTableFilters.vue'
 import AccountBulkActionsBar from '@/components/admin/account/AccountBulkActionsBar.vue'
 import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
+import DeviceProfileInspectModal from '@/components/admin/account/DeviceProfileInspectModal.vue'
 import ImportDataModal from '@/components/admin/account/ImportDataModal.vue'
 import ReAuthAccountModal from '@/components/admin/account/ReAuthAccountModal.vue'
 import AccountTestModal from '@/components/admin/account/AccountTestModal.vue'
@@ -669,6 +671,8 @@ const bulkEditTarget = ref<AccountBulkEditTarget | null>(null)
 const showTempUnsched = ref(false)
 const showDeleteDialog = ref(false)
 const showResetDeviceProfileDialog = ref(false)
+const showDeviceProfileInspect = ref(false)
+const resettingDeviceProfile = ref(false)
 const showCreateShadowDialog = ref(false)
 const showReAuth = ref(false)
 const showTest = ref(false)
@@ -686,6 +690,7 @@ const edAcc = ref<Account | null>(null)
 const tempUnschedAcc = ref<Account | null>(null)
 const deletingAcc = ref<Account | null>(null)
 const resettingDeviceAcc = ref<Account | null>(null)
+const inspectingDeviceAcc = ref<Account | null>(null)
 const creatingShadowAcc = ref<Account | null>(null)
 const reAuthAcc = ref<Account | null>(null)
 const testingAcc = ref<Account | null>(null)
@@ -1361,6 +1366,7 @@ const isAnyModalOpen = computed(() => {
     showTempUnsched.value ||
     showDeleteDialog.value ||
     showResetDeviceProfileDialog.value ||
+    showDeviceProfileInspect.value ||
     showReAuth.value ||
     showTest.value ||
     showStats.value ||
@@ -1404,6 +1410,7 @@ const syncAccountRefs = (nextAccount: Account) => {
   if (tempUnschedAcc.value?.id === nextAccount.id) tempUnschedAcc.value = nextAccount
   if (deletingAcc.value?.id === nextAccount.id) deletingAcc.value = nextAccount
   if (resettingDeviceAcc.value?.id === nextAccount.id) resettingDeviceAcc.value = nextAccount
+  if (inspectingDeviceAcc.value?.id === nextAccount.id) inspectingDeviceAcc.value = nextAccount
   if (menu.acc?.id === nextAccount.id) menu.acc = nextAccount
 }
 
@@ -1854,7 +1861,7 @@ const openMenu = (a: Account, e: MouseEvent) => {
   if (target) {
     const rect = target.getBoundingClientRect()
     const menuWidth = 200
-    const menuHeight = 240
+    const menuHeight = 360
     const padding = 8
     const viewportWidth = window.innerWidth
     const viewportHeight = window.innerHeight
@@ -2423,13 +2430,22 @@ const handleResetQuota = async (a: Account) => {
     console.error('Failed to reset quota:', error)
   }
 }
+const handleInspectDeviceProfile = (a: Account) => {
+  inspectingDeviceAcc.value = a
+  showDeviceProfileInspect.value = true
+}
+const closeDeviceProfileInspect = () => {
+  showDeviceProfileInspect.value = false
+  inspectingDeviceAcc.value = null
+}
 const handleResetDeviceProfile = (a: Account) => {
   resettingDeviceAcc.value = a
   showResetDeviceProfileDialog.value = true
 }
 const confirmResetDeviceProfile = async () => {
   const a = resettingDeviceAcc.value
-  if (!a) return
+  if (!a || resettingDeviceProfile.value) return
+  resettingDeviceProfile.value = true
   try {
     const updated = await adminAPI.accounts.resetDeviceProfile(a.id)
     patchAccountInList(updated)
@@ -2437,9 +2453,11 @@ const confirmResetDeviceProfile = async () => {
     showResetDeviceProfileDialog.value = false
     resettingDeviceAcc.value = null
     appStore.showSuccess(t('admin.accounts.resetDeviceProfileSuccess'))
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Failed to reset device profile:', error)
-    appStore.showError(error?.message || t('admin.accounts.resetDeviceProfileFailed'))
+    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.resetDeviceProfileFailed')))
+  } finally {
+    resettingDeviceProfile.value = false
   }
 }
 
