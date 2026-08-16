@@ -53,7 +53,7 @@ func (s *KiroGatewayService) doKiroUpstream(ctx context.Context, c *gin.Context,
 		profile = resolveKiroTLSProfile(account, s.tlsFPProfileSvc)
 	}
 	StampTLSProfileFromDevice(profile, deviceProfile)
-	return s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.Concurrency, profile)
+	return s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.EffectiveConcurrency(), profile)
 }
 
 func applyKiroTLSFingerprintRuntime(req *http.Request, runtime accountTLSFingerprintRuntime) {
@@ -93,7 +93,7 @@ func newKiroSidecarHTTPClient(account *Account, tlsFPProfileService *TLSFingerpr
 	if account == nil {
 		return nil, fmt.Errorf("account is required")
 	}
-	poolSize := normalizeKiroTransportConcurrency(account.Concurrency)
+	poolSize := normalizeKiroTransportConcurrency(account.EffectiveConcurrency())
 	return httpclient.GetClient(httpclient.Options{
 		ProxyURL:              accountProxyURL(account),
 		Timeout:               timeout,

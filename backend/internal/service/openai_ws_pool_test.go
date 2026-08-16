@@ -946,8 +946,8 @@ func TestOpenAIWSConnPool_EffectiveMaxConnsByAccount(t *testing.T) {
 	apiKeyLow := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1}
 	require.Equal(t, 1, pool.effectiveMaxConnsByAccount(apiKeyLow), "最小值应保持为 1")
 
-	unlimited := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 0}
-	require.Equal(t, 8, pool.effectiveMaxConnsByAccount(unlimited), "无限并发应回退到全局硬上限")
+	oauthZero := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 0}
+	require.Equal(t, 8, pool.effectiveMaxConnsByAccount(oauthZero), "OAuth stored 0 is EffectiveConcurrency 12, then hard-capped")
 
 	require.Equal(t, 8, pool.effectiveMaxConnsByAccount(nil), "缺少账号上下文应回退到全局硬上限")
 }
@@ -977,11 +977,14 @@ func TestOpenAIWSConnPool_EffectiveMaxConnsByAccount_ModeRouterV2RespectsHardCap
 	high := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 20}
 	require.Equal(t, 8, pool.effectiveMaxConnsByAccount(high), "v2 路径也必须受连接池硬上限约束")
 
-	nonPositive := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 0}
-	require.Equal(t, 0, pool.effectiveMaxConnsByAccount(nonPositive), "并发数<=0 时应不可调度")
+	apiKeyZero := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 0}
+	require.Equal(t, 3, pool.effectiveMaxConnsByAccount(apiKeyZero), "API Key stored 0 uses platform default EffectiveConcurrency 3")
+
+	oauthZero := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 0}
+	require.Equal(t, 8, pool.effectiveMaxConnsByAccount(oauthZero), "OAuth stored 0 uses EffectiveConcurrency 12, then hard-capped")
 }
 
-func TestOpenAIWSConnPool_AcquireRejectsWhenEffectiveMaxConnsIsZero(t *testing.T) {
+func TestOpenAIWSConnPool_AcquireAllowsOAuthZeroConcurrency(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
 	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 8
@@ -992,7 +995,7 @@ func TestOpenAIWSConnPool_AcquireRejectsWhenEffectiveMaxConnsIsZero(t *testing.T
 		Account: account,
 		WSURL:   "wss://example.com/v1/responses",
 	})
-	require.ErrorIs(t, err, errOpenAIWSConnQueueFull)
+	require.NotErrorIs(t, err, errOpenAIWSConnQueueFull, "OAuth stored 0 must use EffectiveConcurrency 12 and remain schedulable")
 }
 
 func TestOpenAIWSConnLease_ReadMessageWithContextTimeout_PerRead(t *testing.T) {

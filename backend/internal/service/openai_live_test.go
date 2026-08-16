@@ -17,8 +17,9 @@ import (
 )
 
 type liveHTTPUpstreamStub struct {
-	request *http.Request
-	body    []byte
+	request            *http.Request
+	body               []byte
+	accountConcurrency int
 }
 
 type liveAttestationStub struct {
@@ -38,9 +39,10 @@ func (s *liveHTTPUpstreamStub) Do(
 	request *http.Request,
 	_ string,
 	_ int64,
-	_ int,
+	accountConcurrency int,
 ) (*http.Response, error) {
 	s.request = request
+	s.accountConcurrency = accountConcurrency
 	body, err := io.ReadAll(request.Body)
 	if err != nil {
 		return nil, err
