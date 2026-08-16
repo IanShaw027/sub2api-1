@@ -1241,6 +1241,10 @@ func (h *AccountHandler) ResetDeviceProfile(c *gin.Context) {
 	}
 
 	if _, err := h.accountDeviceService.Reset(c.Request.Context(), account); err != nil {
+		if strings.Contains(err.Error(), "identity_reject") {
+			response.ErrorFrom(c, infraerrors.BadRequest("IDENTITY_REJECT", err.Error()))
+			return
+		}
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -1252,6 +1256,33 @@ func (h *AccountHandler) ResetDeviceProfile(c *gin.Context) {
 	}
 
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+}
+
+// GetDeviceProfile returns the inspect DTO for an account's stored device profile.
+// GET /api/v1/admin/accounts/:id/device-profile
+func (h *AccountHandler) GetDeviceProfile(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+
+	if h.accountDeviceService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Account device service unavailable")
+		return
+	}
+
+	profile, err := h.accountDeviceService.Get(c.Request.Context(), accountID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if profile == nil {
+		response.ErrorFrom(c, infraerrors.NotFound("DEVICE_PROFILE_NOT_FOUND", "device profile not found"))
+		return
+	}
+
+	response.Success(c, dto.AccountDeviceProfileInspectFromService(profile))
 }
 
 // SyncFromCRS handles syncing accounts from claude-relay-service (CRS)
