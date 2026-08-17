@@ -95,7 +95,24 @@ WS 重连（`openai_ws_forwarder_v2.go`）不再学。选号失败发生在 Forw
 | 81600 | Codex | 0.147.0 | 27 `pin:codex-cli:linux:h1` |
 | 81481 | Grok | 1.0.4 | 29 `pin:grok-cli:macos:h1` |
 
-Linux / macOS 的 Claude 瘦字段可以相同；**Codex Linux ≠ macOS**（Linux 30 cipher + TLS1.3/ML-KEM，macOS rustls 22 cipher）。不要把一边的 hello 克隆到另一边。Grok rustls 扩展集合相同、顺序随机。
+测试机 `pin:` 目录（2026-08-17 部署后核对）。完整 = cipher / extensions / ALPN 都非空；`h2` 与 `ios`/`android` 不进选择器。
+
+| id | name | 来源 | 选择器 |
+|---|---|---|---|
+| 24 | `pin:claude-code:linux:h1` | 官方 Claude 2.1.233 Linux | 是（Anthropic 基线） |
+| 25 | `pin:claude-code:macos:h1` | 官方 Claude 2.1.233 macOS，瘦字段与 24 相同 | 是 |
+| 27 | `pin:codex-cli:linux:h1` | 官方 Codex 0.147.0 Linux（30 cipher） | 是（OpenAI 基线） |
+| 28 | `pin:codex-cli:macos:h1` | 官方 Codex 0.147.0 macOS（22 cipher） | 是 |
+| 22 | `pin:grok-cli:linux:h1` | 官方 Grok 1.0.4 Linux rustls | 是 |
+| 29 | `pin:grok-cli:macos:h1` | 官方 Grok 1.0.4 macOS rustls | 是（Grok 基线） |
+| 32 | `pin:gemini-cli:macos:h1` | 官方 Gemini CLI macOS Node | 是 |
+| 23 | `pin:gemini-cli:windows:h1` | **占位**：克隆 capture 12，不是 Windows Gemini | 是（Gemini 基线，待真采） |
+| 26 | `pin:antigravity:windows:h1` | **占位**：克隆 capture 12 | 是（Antigravity 基线，待真采） |
+| 30 | `pin:kiro-ide:macos:h1` | **占位**：克隆 capture 12 | 是（Kiro 基线，待真采） |
+| 21 | `pin:codex-cli:linux:h2` | 克隆 capture 12 | 否（h2） |
+| 20 | `pin:grok-cli:linux:h2` | 来自 capture 18 | 否（h2） |
+
+Linux / macOS 的 Claude 瘦字段可以相同；**Codex Linux ≠ macOS**（Linux 30 cipher + TLS1.3/ML-KEM，macOS rustls 22 cipher）。不要把一边的 hello 克隆到另一边。Grok rustls 扩展集合相同、顺序随机。Gemini / Antigravity / Kiro 的基线行在拿到对应 OS 的官方 ClientHello 之前不要用别的平台 hello 覆盖。
 
 ## 后期：升软件版本
 
