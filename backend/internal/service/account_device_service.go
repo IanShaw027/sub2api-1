@@ -65,7 +65,7 @@ type OfficialInbound struct {
 }
 
 var (
-	grokOfficialUAPattern        = regexp.MustCompile(`(?i)^xai-grok-workspace/\d+\.\d+\.\d+`)
+	grokOfficialUAPattern        = regexp.MustCompile(`(?i)^(xai-grok-workspace|grok-pager|grok-shell)/\d+\.\d+\.\d+`)
 	geminiOfficialUAPattern      = regexp.MustCompile(`(?i)^GeminiCLI/\d+\.\d+\.\d+`)
 	antigravityOfficialUAPattern = regexp.MustCompile(`(?i)^antigravity/\d+\.\d+\.\d+`)
 	overlaySoftwarePayloadKeySet = map[string]struct{}{
@@ -137,7 +137,7 @@ func (s *AccountDeviceService) GetOrCreate(ctx context.Context, account *Account
 		return nil, err
 	}
 	if existing != nil && !deviceProfilePlatformMismatch(existing, account) {
-		return existing, nil
+		return s.pinExistingIfNeeded(ctx, existing)
 	}
 	unlock := s.lockAccount(account.ID)
 	defer unlock()
@@ -155,7 +155,7 @@ func (s *AccountDeviceService) getOrCreateLocked(ctx context.Context, account *A
 		return nil, err
 	}
 	if existing != nil && !deviceProfilePlatformMismatch(existing, account) {
-		return existing, nil
+		return s.pinExistingIfNeeded(ctx, existing)
 	}
 
 	// Mismatched or missing row: insert a new baseline. leftoverSharedRepo
@@ -168,6 +168,7 @@ func (s *AccountDeviceService) getOrCreateLocked(ctx context.Context, account *A
 		return nil, err
 	}
 	PersistDeviceTransportFamily(baseline, nil, false)
+	applyTLSProfilePin(baseline)
 	if err := ValidateAccountDeviceProfile(baseline); err != nil {
 		return nil, err
 	}
@@ -192,6 +193,46 @@ func (s *AccountDeviceService) getOrCreateLocked(ctx context.Context, account *A
 	}
 	s.projectDeviceProfile(ctx, created)
 	return created, nil
+}
+
+func (s *AccountDeviceService) pinExistingIfNeeded(ctx context.Context, existing *AccountDeviceProfile) (*AccountDeviceProfile, error) {
+	if existing == nil || existing.TLSProfileID != nil {
+		return existing, nil
+	}
+	if lookupTLSProfilePin(existing.ClientFamily, existing.OSFamily, existing.TransportFamily) == nil {
+		return existing, nil
+	}
+	unlock := s.lockAccount(existing.AccountID)
+	defer unlock()
+	current, err := s.repo.GetByAccountID(ctx, existing.AccountID)
+	if err != nil {
+		return existing, err
+	}
+	if current == nil {
+		return existing, nil
+	}
+	if current.TLSProfileID != nil {
+		return current, nil
+	}
+	next := *current
+	applyTLSProfilePin(&next)
+	if next.TLSProfileID == nil {
+		return current, nil
+	}
+	if err := ValidateAccountDeviceProfile(&next); err != nil {
+		return current, nil
+	}
+	wrote, err := s.repo.UpdateCAS(ctx, current.AccountID, current.Revision, &next)
+	if err != nil || !wrote {
+		return current, nil
+	}
+	updated, getErr := s.repo.GetByAccountID(ctx, current.AccountID)
+	if getErr != nil || updated == nil {
+		s.projectDeviceProfile(ctx, &next)
+		return &next, nil
+	}
+	s.projectDeviceProfile(ctx, updated)
+	return updated, nil
 }
 
 // Reset deletes the stored device profile (and Redis projection) then writes a
@@ -566,6 +607,14 @@ func buildAccountDeviceBaseline(account *Account) (*AccountDeviceProfile, error)
 		ProfilePayload:     payload,
 		LearnedFrom:        LearnedFromBaseline,
 		LearningEnabled:    false,
+	}
+	if id := ChosenDeviceTLSProfileID(account); id != nil {
+		if name := lookupTLSProfilePinName(*id); name != "" {
+			if err := ApplyChosenTLSPinMeta(p, name); err != nil {
+				return nil, err
+			}
+			p.TLSProfileID = id
+		}
 	}
 	return p, nil
 }

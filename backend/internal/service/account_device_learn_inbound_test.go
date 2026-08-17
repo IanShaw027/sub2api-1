@@ -13,6 +13,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,6 +22,67 @@ func TestMaybeLearnOfficialDeviceProfileUpgradesOfficialClaude(t *testing.T) {
 	profile := leftoverValidProfile(account.ID, PlatformAnthropic, ClientFamilyClaudeCode, "claude-cli/0.1.0 (external, cli)", "mid-learn")
 	profile.ClientVersion = "0.1.0"
 	profile.RuntimeVersion = "v18.0.0"
+	profile.ProfilePayload = map[string]any{
+		"user_agent":                "claude-cli/0.1.0 (external, cli)",
+		"stainless_lang":            "js",
+		"stainless_package_version": "0.1.0",
+		"stainless_os":              "linux",
+		"stainless_arch":            "arm64",
+		"stainless_runtime":         "node",
+		"stainless_runtime_version": "v18.0.0",
+	}
+	repo := installLeftoverLearnRepo(t, profile)
+
+	maybeLearnOfficialDeviceProfile(context.Background(), account, officialClaudeLearnHeaders())
+	require.Equal(t, 1, repo.casCount)
+	got, err := repo.GetByAccountID(context.Background(), account.ID)
+	require.NoError(t, err)
+	require.Equal(t, claude.CLICurrentVersion, got.ClientVersion)
+	require.Equal(t, profile.DeviceID, got.DeviceID)
+}
+
+func TestMaybeLearnOfficialDeviceProfileUpgradesOfficialClaudeCurrentSDK(t *testing.T) {
+	account := leftoverClaudeLearnAccount(1950)
+	profile := leftoverValidProfile(account.ID, PlatformAnthropic, ClientFamilyClaudeCode, "claude-cli/0.1.0 (external, cli)", "mid-learn-sdk")
+	profile.ClientVersion = "0.1.0"
+	profile.Runtime = "node"
+	profile.RuntimeVersion = "v18.0.0"
+	profile.LearningEnabled = true
+	profile.ProfilePayload = map[string]any{
+		"user_agent":                "claude-cli/0.1.0 (external, cli)",
+		"stainless_lang":            "js",
+		"stainless_package_version": "0.1.0",
+		"stainless_os":              "linux",
+		"stainless_arch":            "arm64",
+		"stainless_runtime":         "node",
+		"stainless_runtime_version": "v18.0.0",
+	}
+	repo := installLeftoverLearnRepo(t, profile)
+
+	headers := make(http.Header)
+	headers.Set("User-Agent", "claude-cli/"+claude.CLICurrentVersion+" (external, sdk-cli)")
+	headers.Set("X-Stainless-Lang", "js")
+	headers.Set("X-Stainless-Package-Version", claude.CLIStainlessPackageVersion)
+	headers.Set("X-Stainless-OS", "MacOS")
+	headers.Set("X-Stainless-Arch", "arm64")
+	headers.Set("X-Stainless-Runtime", "node")
+	headers.Set("X-Stainless-Runtime-Version", "v26.3.0")
+	maybeLearnOfficialDeviceProfile(context.Background(), account, headers)
+	require.Equal(t, 1, repo.casCount)
+	got, err := repo.GetByAccountID(context.Background(), account.ID)
+	require.NoError(t, err)
+	require.Equal(t, claude.CLICurrentVersion, got.ClientVersion)
+	require.Equal(t, claude.DefaultHeaders["User-Agent"], got.ProfilePayload["user_agent"])
+	require.Equal(t, profile.DeviceID, got.DeviceID)
+}
+
+func TestMaybeLearnOfficialDeviceProfileLearnsWhenRowLearningEnabledAndExtraAbsent(t *testing.T) {
+	account := leftoverClaudeLearnAccount(1951)
+	account.Extra = map[string]any{}
+	profile := leftoverValidProfile(account.ID, PlatformAnthropic, ClientFamilyClaudeCode, "claude-cli/0.1.0 (external, cli)", "mid-row-learn")
+	profile.ClientVersion = "0.1.0"
+	profile.RuntimeVersion = "v18.0.0"
+	profile.LearningEnabled = true
 	profile.ProfilePayload = map[string]any{
 		"user_agent":                "claude-cli/0.1.0 (external, cli)",
 		"stainless_lang":            "js",
@@ -49,7 +111,7 @@ func TestMaybeLearnOfficialDeviceProfileSkipsWhenLearningDisabled(t *testing.T) 
 
 	maybeLearnOfficialDeviceProfile(context.Background(), account, officialClaudeLearnHeaders())
 	require.Equal(t, 0, repo.casCount)
-	require.Equal(t, 0, repo.getCount(account.ID))
+	require.Equal(t, 1, repo.getCount(account.ID), "extra-off must Get the row flag and skip Learn")
 }
 
 func TestMaybeLearnOfficialDeviceProfileSkipsUnofficialUA(t *testing.T) {
@@ -86,18 +148,24 @@ func TestMaybeLearnOfficialDeviceProfileSkipsCodexVSCodeUA(t *testing.T) {
 	require.Equal(t, 0, repo.getCount(account.ID))
 }
 
-func TestMaybeLearnOfficialDeviceProfileSkipsGrokOnOpenAIForwardPath(t *testing.T) {
+func TestMaybeLearnOfficialDeviceProfileLearnsOfficialGrok(t *testing.T) {
 	account := leftoverOAuthAccount(1945, map[string]any{"device_learning_enabled": true})
 	account.Platform = PlatformGrok
-	profile := leftoverValidProfile(account.ID, PlatformGrok, ClientFamilyGrokCLI, "xai-grok-workspace/1.0.0", "mid-grok")
+	profile := leftoverValidProfile(account.ID, PlatformGrok, ClientFamilyGrokCLI, "xai-grok-workspace/0.1.0", "mid-grok")
 	profile.ClientVersion = "0.1.0"
+	profile.Runtime = "grok-shell"
+	profile.LearningEnabled = true
 	repo := installLeftoverLearnRepo(t, profile)
 
 	headers := make(http.Header)
-	headers.Set("User-Agent", "xai-grok-workspace/1.2.3")
+	headers.Set("User-Agent", xai.CLIUserAgent(xai.CLIClientVersion))
+	headers.Set("x-grok-client-version", xai.CLIClientVersion)
 	maybeLearnOfficialDeviceProfile(context.Background(), account, headers)
-	require.Equal(t, 0, repo.casCount)
-	require.Equal(t, 0, repo.getCount(account.ID))
+	require.Equal(t, 1, repo.casCount)
+	got, err := repo.GetByAccountID(context.Background(), account.ID)
+	require.NoError(t, err)
+	require.Equal(t, xai.CLIClientVersion, got.ClientVersion)
+	require.Equal(t, profile.DeviceID, got.DeviceID)
 }
 
 func TestMaybeLearnOfficialDeviceProfileLearnsOfficialGeminiCLI(t *testing.T) {
@@ -157,13 +225,14 @@ func TestMaybeLearnOfficialDeviceProfileSkipsGeminiWhenLearningDisabled(t *testi
 	headers.Set("User-Agent", geminicli.GeminiCLIUserAgent)
 	maybeLearnOfficialDeviceProfile(context.Background(), account, headers)
 	require.Equal(t, 0, repo.casCount)
-	require.Equal(t, 0, repo.getCount(account.ID))
+	require.Equal(t, 1, repo.getCount(account.ID), "extra-off must Get the row flag and skip Learn")
 }
 
 func TestLiveForwardsCallMaybeLearnOfficialDeviceProfile(t *testing.T) {
 	for _, name := range []string{
 		"gateway_forward.go",
 		"openai_gateway_forward.go",
+		"openai_gateway_chat_completions.go",
 		"gemini_messages_compat_service.go",
 		"antigravity_gateway_claude.go",
 		"antigravity_gateway_gemini.go",

@@ -1,11 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent } from 'vue'
+import { defineComponent, nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 
-const { updateAccountMock, checkMixedChannelRiskMock, authIsSimpleMode } = vi.hoisted(() => ({
+const {
+  updateAccountMock,
+  checkMixedChannelRiskMock,
+  authIsSimpleMode,
+  tlsFingerprintProfileListMock,
+  tlsFingerprintProfileListCompleteMock
+} = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
   checkMixedChannelRiskMock: vi.fn(),
-  authIsSimpleMode: { value: true }
+  authIsSimpleMode: { value: true },
+  tlsFingerprintProfileListMock: vi.fn(),
+  tlsFingerprintProfileListCompleteMock: vi.fn()
 }))
 
 vi.mock('@/stores/app', () => ({
@@ -35,7 +43,8 @@ vi.mock('@/api/admin', () => ({
       getSettings: vi.fn().mockResolvedValue({})
     },
     tlsFingerprintProfiles: {
-      list: vi.fn().mockResolvedValue([])
+      list: tlsFingerprintProfileListMock,
+      listComplete: tlsFingerprintProfileListCompleteMock
     },
     tlsFingerprintRouters: {
       list: vi.fn().mockResolvedValue([])
@@ -314,9 +323,18 @@ function mountModal(account = buildAccount()) {
   })
 }
 
+async function flushAsyncUpdates() {
+  await Promise.resolve()
+  await nextTick()
+}
+
 describe('EditAccountModal', () => {
   beforeEach(() => {
     authIsSimpleMode.value = true
+    tlsFingerprintProfileListMock.mockReset()
+    tlsFingerprintProfileListMock.mockResolvedValue([])
+    tlsFingerprintProfileListCompleteMock.mockReset()
+    tlsFingerprintProfileListCompleteMock.mockResolvedValue([])
   })
 
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {
@@ -1245,6 +1263,161 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.device_learning_enabled).toBe(true)
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.existing_key).toBe('keep-me')
+  })
+
+  it('shows and submits the device TLS catalog selection only while learning is enabled', async () => {
+    const account = buildAccount()
+    account.extra = { existing_key: 'keep-me', device_tls_profile_id: 99 }
+    tlsFingerprintProfileListCompleteMock.mockResolvedValue([
+      {
+        id: 42,
+        name: 'pin:codex-cli:macos:h1',
+        description: 'Codex macOS HTTP/1.1',
+        client_family: 'codex-cli',
+        os_family: 'macos',
+        transport: 'h1',
+        software_label: '0.112.1'
+      }
+    ])
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await flushAsyncUpdates()
+
+    expect(wrapper.find('[data-testid="device-tls-profile-select"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="device-learning-toggle"]').trigger('click')
+    await flushAsyncUpdates()
+    const picker = wrapper.get<HTMLSelectElement>('[data-testid="device-tls-profile-select"]')
+    expect(tlsFingerprintProfileListCompleteMock).toHaveBeenCalledWith('openai')
+    expect(picker.find('option[value="42"]').exists()).toBe(true)
+    await picker.setValue('42')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    const enabledPayload = updateAccountMock.mock.calls[0]?.[1]
+    expect(enabledPayload?.extra?.device_learning_enabled).toBe(true)
+    expect(enabledPayload?.extra?.device_tls_profile_id).toBe(42)
+    expect(enabledPayload?.extra?.tls_fingerprint_profile_id).toBeUndefined()
+
+    updateAccountMock.mockClear()
+    await wrapper.get('[data-testid="device-learning-toggle"]').trigger('click')
+    await flushAsyncUpdates()
+    expect(wrapper.find('[data-testid="device-tls-profile-select"]').exists()).toBe(false)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    const disabledPayload = updateAccountMock.mock.calls[0]?.[1]
+    expect(disabledPayload?.extra?.device_learning_enabled).toBe(false)
+    expect(disabledPayload?.extra?.device_tls_profile_id).toBe(42)
+  })
+
+  it('keeps extra.device_tls_profile_id when learning is turned off after a catalog selection', async () => {
+    const account = buildAccount()
+    account.extra = { existing_key: 'keep-me' }
+    tlsFingerprintProfileListCompleteMock.mockResolvedValue([
+      {
+        id: 42,
+        name: 'pin:codex-cli:macos:h1',
+        description: 'Codex macOS HTTP/1.1',
+        client_family: 'codex-cli',
+        os_family: 'macos',
+        transport: 'h1',
+        software_label: '0.112.1'
+      }
+    ])
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await flushAsyncUpdates()
+
+    await wrapper.get('[data-testid="device-learning-toggle"]').trigger('click')
+    await flushAsyncUpdates()
+    await wrapper.get<HTMLSelectElement>('[data-testid="device-tls-profile-select"]').setValue('42')
+    await wrapper.get('[data-testid="device-learning-toggle"]').trigger('click')
+    await flushAsyncUpdates()
+    expect(wrapper.find('[data-testid="device-tls-profile-select"]').exists()).toBe(false)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    const payload = updateAccountMock.mock.calls[0]?.[1]
+    expect(payload?.extra?.device_learning_enabled).toBe(false)
+    expect(payload?.extra?.device_tls_profile_id).toBe(42)
+    expect(payload?.extra?.existing_key).toBe('keep-me')
+  })
+
+  it('shows the previous catalog selection again when learning is turned back on', async () => {
+    const account = buildAccount()
+    account.extra = { device_tls_profile_id: 42 }
+    tlsFingerprintProfileListCompleteMock.mockResolvedValue([
+      {
+        id: 42,
+        name: 'pin:codex-cli:macos:h1',
+        description: 'Codex macOS HTTP/1.1',
+        client_family: 'codex-cli',
+        os_family: 'macos',
+        transport: 'h1',
+        software_label: '0.112.1'
+      }
+    ])
+
+    const wrapper = mountModal(account)
+    await flushAsyncUpdates()
+
+    await wrapper.get('[data-testid="device-learning-toggle"]').trigger('click')
+    await flushAsyncUpdates()
+    const picker = wrapper.get<HTMLSelectElement>('[data-testid="device-tls-profile-select"]')
+    expect(picker.element.value).toBe('42')
+
+    await wrapper.get('[data-testid="device-learning-toggle"]').trigger('click')
+    await flushAsyncUpdates()
+    expect(wrapper.find('[data-testid="device-tls-profile-select"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="device-learning-toggle"]').trigger('click')
+    await flushAsyncUpdates()
+    expect(wrapper.get<HTMLSelectElement>('[data-testid="device-tls-profile-select"]').element.value).toBe('42')
+  })
+
+  it('omits extra.device_tls_profile_id when learning stays on and automatic is selected', async () => {
+    const account = buildAccount()
+    account.extra = { existing_key: 'keep-me', device_tls_profile_id: 99 }
+    tlsFingerprintProfileListCompleteMock.mockResolvedValue([
+      {
+        id: 42,
+        name: 'pin:codex-cli:macos:h1',
+        description: 'Codex macOS HTTP/1.1',
+        client_family: 'codex-cli',
+        os_family: 'macos',
+        transport: 'h1',
+        software_label: '0.112.1'
+      }
+    ])
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await flushAsyncUpdates()
+
+    await wrapper.get('[data-testid="device-learning-toggle"]').trigger('click')
+    await flushAsyncUpdates()
+    const picker = wrapper.get<HTMLSelectElement>('[data-testid="device-tls-profile-select"]')
+    await picker.setValue('42')
+    await picker.setValue('')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    const payload = updateAccountMock.mock.calls[0]?.[1]
+    expect(payload?.extra?.device_learning_enabled).toBe(true)
+    expect(payload?.extra).not.toHaveProperty('device_tls_profile_id')
+    expect(payload?.extra?.existing_key).toBe('keep-me')
   })
 
   it('does not write a computed RPM sticky buffer back into extra', async () => {

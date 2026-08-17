@@ -32,6 +32,7 @@ type stubAdminService struct {
 	createAccountErr                    error
 	createSparkShadowErr                error
 	updateAccountErr                    error
+	updateAccountResult                 *service.Account
 	lastUpdateAccountInput              *service.UpdateAccountInput
 	bulkUpdateAccountErr                error
 	lastBulkUpdateAccountInput          *service.BulkUpdateAccountsInput
@@ -509,6 +510,9 @@ func (s *stubAdminService) UpdateAccount(ctx context.Context, id int64, input *s
 	s.lastUpdateAccountInput = input
 	if s.updateAccountErr != nil {
 		return nil, s.updateAccountErr
+	}
+	if s.updateAccountResult != nil {
+		return s.updateAccountResult, nil
 	}
 	account := service.Account{ID: id, Name: input.Name, Status: service.StatusActive}
 	return &account, nil

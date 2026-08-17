@@ -26,6 +26,16 @@ export interface TLSFingerprintProfile {
   updated_at: string
 }
 
+export interface DeviceTLSCatalogOption {
+  id: number
+  name: string
+  description?: string | null
+  client_family: string
+  os_family: string
+  transport: string
+  software_label: string
+}
+
 /**
  * Create profile request
  */
@@ -67,6 +77,13 @@ export async function list(): Promise<TLSFingerprintProfile[]> {
   return data
 }
 
+export async function listComplete(platform: string): Promise<DeviceTLSCatalogOption[]> {
+  const { data } = await apiClient.get<DeviceTLSCatalogOption[]>(
+    `/admin/tls-fingerprint-profiles/complete?platform=${encodeURIComponent(platform)}`
+  )
+  return data
+}
+
 export async function getById(id: number): Promise<TLSFingerprintProfile> {
   const { data } = await apiClient.get<TLSFingerprintProfile>(`/admin/tls-fingerprint-profiles/${id}`)
   return data
@@ -89,6 +106,7 @@ export async function deleteProfile(id: number): Promise<{ message: string }> {
 
 export const tlsFingerprintProfileAPI = {
   list,
+  listComplete,
   getById,
   create,
   update,

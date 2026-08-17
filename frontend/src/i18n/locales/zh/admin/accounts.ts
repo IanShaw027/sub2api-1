@@ -626,7 +626,11 @@ export default {
       inspectDeviceProfile: '查看设备画像',
       deviceLearning: {
         label: '设备画像学习',
-        hint: '开启后，官方客户端入站流量可以升级该账号已固定的软件包。默认关闭。'
+        hint: '开启后，官方客户端入站流量可以升级该账号已固定的软件包。默认关闭。',
+        tlsProfileLabel: '设备 TLS 画像',
+        tlsProfileHint: '选择完整目录画像以固定该账号，或保留自动使用平台默认值。',
+        tlsProfileAutomatic: '自动（平台默认）',
+        tlsProfileOption: '{name} · {family} · {os}/{transport} · {software} · 完整可用'
       },
       deviceProfile: {
         platform: '平台',

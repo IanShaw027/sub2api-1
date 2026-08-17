@@ -758,6 +758,7 @@ func registerTLSFingerprintProfileRoutes(admin *gin.RouterGroup, h *handler.Hand
 	profiles := admin.Group("/tls-fingerprint-profiles")
 	{
 		profiles.GET("", h.Admin.TLSFingerprintProfile.List)
+		profiles.GET("/complete", h.Admin.TLSFingerprintProfile.ListCompleteOptions)
 		profiles.GET("/:id", h.Admin.TLSFingerprintProfile.GetByID)
 		profiles.POST("", h.Admin.TLSFingerprintProfile.Create)
 		profiles.PUT("/:id", h.Admin.TLSFingerprintProfile.Update)

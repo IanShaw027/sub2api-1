@@ -279,6 +279,72 @@ func TestKiroGatewayService_Forward_EmulatesWebSearchBeforeKiroUpstream(t *testi
 	require.Zero(t, upstream.calls)
 }
 
+func TestKiroGatewayService_Forward_HonorsDeviceTLSProfileID(t *testing.T) {
+	pinID := int64(12)
+	device := validKiroOutboundProfile(620, kiroPinnedOutboundMachineID)
+	device.TLSProfileID = &pinID
+	installKiroOutboundDeviceProfile(t, device, nil)
+	setGinTestMode()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	c.Request.Header.Set("User-Agent", "curl/8.0")
+
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body: io.NopCloser(bytes.NewReader(buildKiroTestFrame(t, map[string]string{
+				":message-type": "event",
+				":event-type":   "assistantResponseEvent",
+			}, map[string]any{"content": "pinned tls"}))),
+		},
+	}
+	svc := &KiroGatewayService{
+		httpUpstream: upstream,
+		tlsFPProfileSvc: testTLSProfileService(
+			&model.TLSFingerprintProfile{ID: 12, Name: "pin:kiro-ide:macos:h1"},
+			&model.TLSFingerprintProfile{ID: 23, Name: "router-unique"},
+		),
+		tlsFPRouterSvc: testTLSRouterService(&model.TLSFingerprintRouter{
+			ID:      3,
+			Enabled: true,
+			Rules: []model.TLSFingerprintRouterRule{{
+				Name:                    "unique",
+				Enabled:                 true,
+				TLSFingerprintProfileID: 23,
+			}},
+		}),
+	}
+
+	result, err := svc.Forward(context.Background(), c, &Account{
+		ID:       620,
+		Platform: PlatformKiro,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "kiro-api-key",
+		},
+		Extra: map[string]any{
+			"enable_tls_fingerprint":     true,
+			"tls_fingerprint_profile_id": int64(23),
+			"tls_fingerprint_router_id":  int64(3),
+		},
+	}, &ParsedRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Body: NewRequestBodyRef([]byte(`{
+			"model":"claude-sonnet-4-5-20250929",
+			"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]
+		}`)),
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.profile)
+	require.Equal(t, "pin:kiro-ide:macos:h1", upstream.profile.Name)
+	require.NotEqual(t, "router-unique", upstream.profile.Name)
+}
+
 func TestKiroGatewayService_Forward_RetriesOnceAfterInvalidTokenResponse(t *testing.T) {
 	installDefaultKiroOutboundProfile(t)
 	setGinTestMode()
@@ -753,6 +819,7 @@ type staticKiroDeviceProfileRepo struct {
 	profile       *AccountDeviceProfile
 	err           error
 	getCalls      int
+	insertCalls   int
 	failAfterGets int
 }
 
@@ -784,6 +851,7 @@ func (r *staticKiroDeviceProfileRepo) GetByAccountID(_ context.Context, accountI
 }
 
 func (r *staticKiroDeviceProfileRepo) InsertBaseline(_ context.Context, p *AccountDeviceProfile) (*AccountDeviceProfile, error) {
+	r.insertCalls++
 	if r.err != nil {
 		return nil, r.err
 	}

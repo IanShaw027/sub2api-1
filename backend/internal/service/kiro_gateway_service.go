@@ -150,8 +150,6 @@ func (s *KiroGatewayService) Forward(ctx context.Context, c *gin.Context, accoun
 	if account == nil {
 		return nil, errors.New("account is required")
 	}
-	tlsRuntime := s.resolveTLSFingerprintRuntime(ctx, c, account)
-	ctx = context.WithValue(ctx, kiroTLSFingerprintRuntimeContextKey{}, tlsRuntime)
 	if s.shouldEmulateWebSearch(ctx, account, parsed) {
 		return s.handleWebSearchEmulation(ctx, c, account, parsed)
 	}
@@ -933,7 +931,7 @@ func (s *KiroGatewayService) buildRequest(ctx context.Context, account *Account,
 	if err != nil {
 		return nil, nil, err
 	}
-	applyKiroTLSFingerprintRuntimeWithProfile(req, s.resolveTLSFingerprintRuntime(ctx, nil, account), profile)
+	applyKiroTLSFingerprintRuntimeWithProfile(req, s.resolveTLSFingerprintRuntimeWithDevice(ctx, nil, account, profile), profile)
 	return req, profile, nil
 }
 
@@ -1012,6 +1010,9 @@ type kiroSidecarIdentityValue struct {
 func applyKiroSidecarIdentity(ctx context.Context, account *Account, settings *KiroRuntimeSettings) (*KiroRuntimeSettings, string, error) {
 	if ident, ok := kiroSidecarIdentityFrom(ctx); ok && account != nil && ident.accountID == account.ID {
 		return ident.settings, ident.machineID, nil
+	}
+	if account == nil || account.ID <= 0 {
+		return applyKiroProfileRuntimeOverrides(settings, nil), "", nil
 	}
 	profile, err := LoadOutboundDeviceProfile(ctx, account)
 	if err != nil {

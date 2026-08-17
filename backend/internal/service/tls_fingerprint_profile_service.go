@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"math/rand/v2"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/model"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 )
@@ -18,6 +20,16 @@ type TLSFingerprintProfileRepository interface {
 	Create(ctx context.Context, profile *model.TLSFingerprintProfile) (*model.TLSFingerprintProfile, error)
 	Update(ctx context.Context, profile *model.TLSFingerprintProfile) (*model.TLSFingerprintProfile, error)
 	Delete(ctx context.Context, id int64) error
+}
+
+type DeviceTLSCatalogOption struct {
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	Description   string `json:"description,omitempty"`
+	ClientFamily  string `json:"client_family"`
+	OSFamily      string `json:"os_family"`
+	Transport     string `json:"transport"`
+	SoftwareLabel string `json:"software_label"`
 }
 
 // TLSFingerprintProfileCache 定义 TLS 指纹模板的缓存接口
@@ -74,6 +86,64 @@ func NewTLSFingerprintProfileService(
 // List 获取所有模板
 func (s *TLSFingerprintProfileService) List(ctx context.Context) ([]*model.TLSFingerprintProfile, error) {
 	return s.repo.List(ctx)
+}
+
+func (s *TLSFingerprintProfileService) ListCompleteOptions(ctx context.Context, platform string) ([]DeviceTLSCatalogOption, error) {
+	_ = ctx
+	registry := NewSoftwareBundleRegistry()
+	options := make([]DeviceTLSCatalogOption, 0)
+
+	s.localMu.RLock()
+	defer s.localMu.RUnlock()
+
+	for _, profile := range s.localCache {
+		if profile == nil || !TLSPinCatalogComplete(profile.Name, profile.CipherSuites, profile.Extensions, profile.ALPNProtocols) {
+			continue
+		}
+		parsed, ok := ParseTLSPinProfileName(profile.Name)
+		if !ok || !TLSPinFamilyMatchesPlatform(parsed.ClientFamily, platform) {
+			continue
+		}
+		if rejectUnusableTLSPin(parsed) != nil {
+			continue
+		}
+		bundle, ok := lookupCurrentSoftwareBundle(registry, platform, parsed.ClientFamily)
+		if !ok {
+			continue
+		}
+
+		description := ""
+		if profile.Description != nil {
+			description = *profile.Description
+		}
+		softwareLabel := bundle.ClientVersion
+		if parsed.ClientFamily == ClientFamilyClaudeCode {
+			softwareLabel += " / " + claude.CLIStainlessPackageVersion
+		}
+		options = append(options, DeviceTLSCatalogOption{
+			ID:            profile.ID,
+			Name:          profile.Name,
+			Description:   description,
+			ClientFamily:  parsed.ClientFamily,
+			OSFamily:      parsed.OSFamily,
+			Transport:     parsed.Transport,
+			SoftwareLabel: softwareLabel,
+		})
+	}
+
+	sort.Slice(options, func(i, j int) bool {
+		return options[i].ID < options[j].ID
+	})
+	return options, nil
+}
+
+func lookupCurrentSoftwareBundle(registry *SoftwareBundleRegistry, platform, family string) (SoftwareBundle, bool) {
+	for _, bundle := range compileTimeSoftwareBundles() {
+		if bundle.Platform == platform && bundle.ClientFamily == family {
+			return registry.Lookup(platform, family, bundle.ClientVersion)
+		}
+	}
+	return SoftwareBundle{}, false
 }
 
 // GetByID 根据 ID 获取模板
@@ -240,6 +310,41 @@ func (s *TLSFingerprintProfileService) setLocalCache(profiles []*model.TLSFinger
 	s.localMu.Lock()
 	s.localCache = m
 	s.localMu.Unlock()
+	SetTLSProfilePinLookup(s.lookupPin)
+	SetTLSProfilePinNameLookup(s.lookupNameByID)
+	setDeviceTLSCatalogGuard(s.RejectUnusableDeviceTLSSelection)
+}
+
+func (s *TLSFingerprintProfileService) lookupPin(family, osFamily, transport string) *int64 {
+	if s == nil {
+		return nil
+	}
+	want := TLSPinProfileName(family, osFamily, transport)
+	s.localMu.RLock()
+	defer s.localMu.RUnlock()
+	byName := make(map[string]int64, len(s.localCache))
+	for id, p := range s.localCache {
+		if p != nil && p.Name != "" {
+			byName[p.Name] = id
+		}
+	}
+	if id, ok := byName[want]; ok && id > 0 {
+		copied := id
+		return &copied
+	}
+	return nil
+}
+
+func (s *TLSFingerprintProfileService) lookupNameByID(id int64) string {
+	if s == nil || id <= 0 {
+		return ""
+	}
+	s.localMu.RLock()
+	defer s.localMu.RUnlock()
+	if p := s.localCache[id]; p != nil {
+		return p.Name
+	}
+	return ""
 }
 
 func (s *TLSFingerprintProfileService) newCacheRefreshContext() (context.Context, context.CancelFunc) {

@@ -1177,6 +1177,47 @@ func TestLearnIfOfficialLockFreeSkipDoesNotOverwriteResetProjection(t *testing.T
 	require.NotEqual(t, created.DeviceID, cache.profiles[account.ID].DeviceID)
 }
 
+func TestLearnIfOfficialOfficialClaudeCurrentSDKInboundLearns(t *testing.T) {
+	svc, client, repo := newCountingAccountDeviceService(t)
+	ctx := context.Background()
+	account := mustCreateDeviceAccount(t, client, service.PlatformAnthropic, map[string]any{
+		"device_learning_enabled": true,
+	})
+
+	created, err := svc.GetOrCreate(ctx, account)
+	require.NoError(t, err)
+	seedOldClaudeSoftware(t, client, account.ID, true)
+
+	// Official Claude Code 2.1.233 omits version / X-Client-Version, uses
+	// (external, sdk-cli), Stainless 0.112.1, and a newer Node than the registry.
+	inbound := service.OfficialInbound{
+		UserAgent:      "claude-cli/" + claude.CLICurrentVersion + " (external, sdk-cli)",
+		Runtime:        "node",
+		RuntimeVersion: "v26.3.0",
+		Payload: map[string]any{
+			"stainless_lang":            "js",
+			"stainless_package_version": claude.CLIStainlessPackageVersion,
+			"stainless_os":              "MacOS",
+			"stainless_arch":            "arm64",
+			"stainless_runtime":         "node",
+			"stainless_runtime_version": "v26.3.0",
+		},
+	}
+
+	got, err := svc.LearnIfOfficial(ctx, account, inbound)
+	require.NoError(t, err)
+	require.NoError(t, service.ValidateAccountDeviceProfile(got))
+	require.Equal(t, 1, repo.casWriteCount(account.ID))
+	require.Equal(t, claude.CLICurrentVersion, got.ClientVersion)
+	require.Equal(t, service.LearnedFromOfficial, got.LearnedFrom)
+	require.Equal(t, claude.DefaultHeaders["User-Agent"], got.ProfilePayload["user_agent"])
+	require.Equal(t, claude.DefaultHeaders["X-Stainless-Package-Version"], got.ProfilePayload["stainless_package_version"])
+	require.NotContains(t, got.ProfilePayload["user_agent"], "sdk-cli")
+	require.Equal(t, created.DeviceID, got.DeviceID)
+	require.Equal(t, created.OSFamily, got.OSFamily)
+	require.Equal(t, created.TLSProfileID, got.TLSProfileID)
+}
+
 func TestLearnIfOfficialOfficialClaudeHigherVersionUpdatesSoftwareOnly(t *testing.T) {
 	svc, client, repo := newCountingAccountDeviceService(t)
 	ctx := context.Background()

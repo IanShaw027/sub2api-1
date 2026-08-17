@@ -214,6 +214,30 @@ func inferTLSFingerprintAccountClientType(platform string) string {
 	}
 }
 
+func pinnedDeviceTLSRuntime(
+	profileSvc *TLSFingerprintProfileService,
+	device *AccountDeviceProfile,
+) (accountTLSFingerprintRuntime, bool) {
+	if device == nil {
+		return accountTLSFingerprintRuntime{}, false
+	}
+	runtime := accountTLSFingerprintRuntime{}
+	if device.TLSProfileID != nil && profileSvc != nil {
+		if profile := profileSvc.GetProfileByID(*device.TLSProfileID); profile != nil {
+			StampTLSProfileFromDevice(profile, device)
+			runtime.Profile = profile
+		}
+	}
+	return runtime, true
+}
+
+func loadDeviceProfileForTLSResolve(ctx context.Context, account *Account) (*AccountDeviceProfile, error) {
+	if OutboundDeviceProfileService() == nil {
+		return nil, nil
+	}
+	return LoadOutboundDeviceProfile(ctx, account)
+}
+
 func resolveAccountTLSFingerprintRuntime(
 	ctx context.Context,
 	account *Account,
@@ -221,6 +245,21 @@ func resolveAccountTLSFingerprintRuntime(
 	routerSvc *TLSFingerprintRouterService,
 	inboundUA, transport, protocol string,
 ) accountTLSFingerprintRuntime {
+	return resolveTLSFingerprintRuntime(ctx, account, profileSvc, routerSvc, inboundUA, transport, protocol, nil)
+}
+
+func resolveTLSFingerprintRuntime(
+	ctx context.Context,
+	account *Account,
+	profileSvc *TLSFingerprintProfileService,
+	routerSvc *TLSFingerprintRouterService,
+	inboundUA, transport, protocol string,
+	device *AccountDeviceProfile,
+) accountTLSFingerprintRuntime {
+	if pinned, ok := pinnedDeviceTLSRuntime(profileSvc, device); ok {
+		return pinned
+	}
+
 	runtime := accountTLSFingerprintRuntime{}
 	if account == nil || !account.IsTLSFingerprintEnabled() || profileSvc == nil {
 		return runtime

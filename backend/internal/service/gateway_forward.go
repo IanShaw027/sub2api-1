@@ -344,7 +344,10 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	}
 
 	// 解析 TLS 指纹（同一请求生命周期内不变，避免重试循环中重复解析）
-	tlsRuntime := s.resolveGatewayTLSFingerprintRuntime(ctx, c, account, "messages")
+	tlsRuntime, err := s.resolveGatewayTLSFingerprintRuntime(ctx, c, account, "messages")
+	if err != nil {
+		return nil, err
+	}
 
 	// 调试日志：记录即将转发的账号信息
 	logger.LegacyPrintf("service.gateway", "[Forward] Using account: ID=%d Name=%s Platform=%s Type=%s TLSFingerprint=%v Proxy=%s",

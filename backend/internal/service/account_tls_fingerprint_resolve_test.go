@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 
@@ -371,6 +372,16 @@ func TestResolveTLSProfile_RandomProfilePreservesCanonicalID(t *testing.T) {
 	require.Equal(t, "shared-profile", profile.Name)
 }
 
+func TestTLSFingerprintProfileServiceLookupPinDoesNotFallbackToEmptyTransport(t *testing.T) {
+	svc := testTLSProfileService(
+		&model.TLSFingerprintProfile{ID: 11, Name: "pin:claude-code:linux:"},
+		&model.TLSFingerprintProfile{ID: 12, Name: "pin:claude-code:linux:h2"},
+	)
+
+	got := svc.lookupPin(ClientFamilyClaudeCode, "linux", TransportH1)
+	require.Nil(t, got)
+}
+
 func TestTLSFingerprintRouter_RegexMatchUsesCompiledPattern(t *testing.T) {
 	svc := testTLSRouterService(&model.TLSFingerprintRouter{
 		ID:      4,
@@ -499,6 +510,160 @@ func TestInboundProtocolFromPath_AntigravityBeforeMessages(t *testing.T) {
 	require.Equal(t, "messages", inboundProtocolFromPath("/v1/messages"))
 	require.Equal(t, "kiro", inboundProtocolFromPath("/kiro/v1/messages"))
 	require.Equal(t, "chat_completions", inboundProtocolFromPath("/v1/chat/completions"))
+}
+
+func TestResolveTLSFingerprintRuntime_PinnedDeviceIgnoresRouter(t *testing.T) {
+	pinID := int64(12)
+	device := validCodexBaseline()
+	device.TLSProfileID = &pinID
+	profiles := testTLSProfileService(
+		&model.TLSFingerprintProfile{ID: 12, Name: "pin:codex-cli:linux:h1"},
+		&model.TLSFingerprintProfile{ID: 23, Name: "router-unique"},
+	)
+	router := testTLSRouterService(&model.TLSFingerprintRouter{
+		ID:      3,
+		Enabled: true,
+		Rules: []model.TLSFingerprintRouterRule{{
+			Name:                    "unique",
+			Enabled:                 true,
+			TLSFingerprintProfileID: 23,
+		}},
+	})
+	account := enabledTLSAccount(PlatformOpenAI, map[string]any{
+		"enable_tls_fingerprint":    true,
+		"tls_fingerprint_router_id": int64(3),
+	})
+	account.ID = device.AccountID
+
+	runtime := resolveTLSFingerprintRuntime(context.Background(), account, profiles, router, "curl/8.0", "http", "responses", device)
+	require.NotNil(t, runtime.Profile)
+	require.Equal(t, "pin:codex-cli:linux:h1", runtime.Profile.Name)
+	require.False(t, runtime.Matched)
+}
+
+func TestResolveTLSFingerprintRuntime_DeviceRowWithoutPinDoesNotUseExtraOrRouter(t *testing.T) {
+	device := validCodexBaseline()
+	device.TLSProfileID = nil
+	profiles := testTLSProfileService(
+		&model.TLSFingerprintProfile{ID: 77, Name: "extra-profile"},
+		&model.TLSFingerprintProfile{ID: 23, Name: "router-unique"},
+	)
+	router := testTLSRouterService(&model.TLSFingerprintRouter{
+		ID:      3,
+		Enabled: true,
+		Rules: []model.TLSFingerprintRouterRule{{
+			Name:                    "unique",
+			Enabled:                 true,
+			TLSFingerprintProfileID: 23,
+		}},
+	})
+	account := enabledTLSAccount(PlatformOpenAI, map[string]any{
+		"enable_tls_fingerprint":     true,
+		"tls_fingerprint_profile_id": int64(77),
+		"tls_fingerprint_router_id":  int64(3),
+	})
+	account.ID = device.AccountID
+
+	runtime := resolveTLSFingerprintRuntime(context.Background(), account, profiles, router, "curl/8.0", "http", "responses", device)
+	require.Nil(t, runtime.Profile, "device row without pin must not fall back to extra or built-in")
+	require.False(t, runtime.Matched, "device row without pin must not use the request-time router")
+}
+
+func TestResolveTLSFingerprintRuntime_PinnedDeviceCatalogMissDoesNotUseExtraOrRouter(t *testing.T) {
+	missingID := int64(99)
+	device := validCodexBaseline()
+	device.TLSProfileID = &missingID
+	profiles := testTLSProfileService(
+		&model.TLSFingerprintProfile{ID: 77, Name: "extra-profile"},
+		&model.TLSFingerprintProfile{ID: 23, Name: "router-unique"},
+	)
+	router := testTLSRouterService(&model.TLSFingerprintRouter{
+		ID:      3,
+		Enabled: true,
+		Rules: []model.TLSFingerprintRouterRule{{
+			Name:                    "unique",
+			Enabled:                 true,
+			TLSFingerprintProfileID: 23,
+		}},
+	})
+	account := enabledTLSAccount(PlatformOpenAI, map[string]any{
+		"enable_tls_fingerprint":     true,
+		"tls_fingerprint_profile_id": int64(77),
+		"tls_fingerprint_router_id":  int64(3),
+	})
+	account.ID = device.AccountID
+
+	runtime := resolveTLSFingerprintRuntime(context.Background(), account, profiles, router, "curl/8.0", "http", "responses", device)
+	require.Nil(t, runtime.Profile, "catalog miss must not fall back to extra or built-in")
+	require.False(t, runtime.Matched, "catalog miss must not use the request-time router")
+}
+
+func TestDoAccountHTTPUpstream_LoadDeviceProfileErrorFailsClosed(t *testing.T) {
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(NewAccountDeviceService(&mapDeviceProfileRepo{
+		getErr: errors.New("identity_reject: device profile store unavailable"),
+	}))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: http.NoBody},
+	}
+	account := enabledTLSAccount(PlatformAnthropic, map[string]any{
+		"enable_tls_fingerprint":     true,
+		"tls_fingerprint_profile_id": int64(77),
+	})
+	profiles := testTLSProfileService(&model.TLSFingerprintProfile{ID: 77, Name: "extra-profile"})
+	req, err := http.NewRequest(http.MethodPost, "https://example.test/v1/messages", nil)
+	require.NoError(t, err)
+
+	resp, err := doAccountHTTPUpstream(context.Background(), upstream, req, "", account, profiles, nil, "", "http", "messages")
+	require.Error(t, err)
+	require.Nil(t, resp)
+	require.Zero(t, upstream.calls, "load failure must not continue with a different ClientHello")
+}
+
+func TestDoAccountHTTPUpstream_UnconfiguredDeviceServiceKeepsExtraProfile(t *testing.T) {
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(nil)
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	upstream := &kiroHTTPUpstreamRecorder{
+		resp: &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: http.NoBody},
+	}
+	account := enabledTLSAccount(PlatformAnthropic, map[string]any{
+		"enable_tls_fingerprint":     true,
+		"tls_fingerprint_profile_id": int64(77),
+	})
+	profiles := testTLSProfileService(&model.TLSFingerprintProfile{ID: 77, Name: "extra-profile"})
+	req, err := http.NewRequest(http.MethodPost, "https://example.test/v1/messages", nil)
+	require.NoError(t, err)
+
+	resp, err := doAccountHTTPUpstream(context.Background(), upstream, req, "", account, profiles, nil, "", "http", "messages")
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, 1, upstream.calls)
+	require.NotNil(t, upstream.profile)
+	require.Equal(t, "extra-profile", upstream.profile.Name)
+}
+
+func TestResolveGatewayTLSFingerprintRuntime_LoadDeviceProfileErrorFailsClosed(t *testing.T) {
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(NewAccountDeviceService(&mapDeviceProfileRepo{
+		getErr: errors.New("identity_reject: device profile store unavailable"),
+	}))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	svc := &GatewayService{
+		tlsFPProfileService: testTLSProfileService(&model.TLSFingerprintProfile{ID: 77, Name: "extra-profile"}),
+	}
+	account := enabledTLSAccount(PlatformAnthropic, map[string]any{
+		"enable_tls_fingerprint":     true,
+		"tls_fingerprint_profile_id": int64(77),
+	})
+
+	runtime, err := svc.resolveGatewayTLSFingerprintRuntime(context.Background(), nil, account, "messages")
+	require.Error(t, err)
+	require.Nil(t, runtime.Profile, "load failure must not fall back to extra ClientHello")
 }
 
 type countingTLSRouterRepo struct {

@@ -62,6 +62,17 @@ func (h *TLSFingerprintProfileHandler) List(c *gin.Context) {
 	response.Success(c, profiles)
 }
 
+// ListCompleteOptions 获取指定平台可用的完整设备 TLS pin 模板
+// GET /api/v1/admin/tls-fingerprint-profiles/complete?platform=anthropic
+func (h *TLSFingerprintProfileHandler) ListCompleteOptions(c *gin.Context) {
+	options, err := h.service.ListCompleteOptions(c.Request.Context(), c.Query("platform"))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, options)
+}
+
 // GetByID 根据 ID 获取模板
 // GET /api/v1/admin/tls-fingerprint-profiles/:id
 func (h *TLSFingerprintProfileHandler) GetByID(c *gin.Context) {

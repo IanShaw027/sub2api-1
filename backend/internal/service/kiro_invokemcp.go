@@ -94,13 +94,12 @@ func (s *KiroGatewayService) invokeKiroMCP(
 		return "", errors.New("kiro mcp: profile_arn is required")
 	}
 
-	req, err := s.buildKiroMCPRequest(ctx, account, toolName, arguments, accessToken, runtimeSettings)
+	req, profile, err := s.buildKiroMCPRequestWithProfile(ctx, account, toolName, arguments, accessToken, runtimeSettings)
 	if err != nil {
 		return "", err
 	}
 
-	tlsRuntime := s.resolveTLSFingerprintRuntime(ctx, nil, account)
-	resp, err := s.httpUpstream.DoWithTLS(req, accountProxyURL(account), account.ID, account.EffectiveConcurrency(), tlsRuntime.Profile)
+	resp, err := s.doKiroUpstream(ctx, nil, account, req, profile)
 	if err != nil {
 		return "", fmt.Errorf("kiro mcp: upstream request: %w", err)
 	}
@@ -115,11 +114,11 @@ func (s *KiroGatewayService) invokeKiroMCP(
 		if refreshErr == nil && refreshedAccount != nil {
 			newToken := refreshedAccount.GetCredential("access_token")
 			if newToken != "" {
-				retryReq, buildErr := s.buildKiroMCPRequest(ctx, refreshedAccount, toolName, arguments, newToken, runtimeSettings)
+				retryReq, retryProfile, buildErr := s.buildKiroMCPRequestWithProfile(ctx, refreshedAccount, toolName, arguments, newToken, runtimeSettings)
 				if buildErr != nil {
 					return "", buildErr
 				}
-				retryResp, retryErr := s.httpUpstream.DoWithTLS(retryReq, accountProxyURL(refreshedAccount), refreshedAccount.ID, refreshedAccount.EffectiveConcurrency(), s.resolveTLSFingerprintRuntime(ctx, nil, refreshedAccount).Profile)
+				retryResp, retryErr := s.doKiroUpstream(ctx, nil, refreshedAccount, retryReq, retryProfile)
 				if retryErr != nil {
 					return "", fmt.Errorf("kiro mcp: retry upstream request: %w", retryErr)
 				}
@@ -179,9 +178,21 @@ func (s *KiroGatewayService) buildKiroMCPRequest(
 	accessToken string,
 	runtimeSettings *KiroRuntimeSettings,
 ) (*http.Request, error) {
+	req, _, err := s.buildKiroMCPRequestWithProfile(ctx, account, toolName, arguments, accessToken, runtimeSettings)
+	return req, err
+}
+
+func (s *KiroGatewayService) buildKiroMCPRequestWithProfile(
+	ctx context.Context,
+	account *Account,
+	toolName string,
+	arguments map[string]any,
+	accessToken string,
+	runtimeSettings *KiroRuntimeSettings,
+) (*http.Request, *AccountDeviceProfile, error) {
 	profile, err := LoadOutboundDeviceProfile(ctx, account)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	runtimeSettings = applyKiroProfileRuntimeOverrides(runtimeSettings, profile)
 	profileARN := strings.TrimSpace(accountCredential(account, "profile_arn"))
@@ -198,7 +209,7 @@ func (s *KiroGatewayService) buildKiroMCPRequest(
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("kiro mcp: marshal request: %w", err)
+		return nil, nil, fmt.Errorf("kiro mcp: marshal request: %w", err)
 	}
 
 	region := KiroRegion(account)
@@ -208,7 +219,7 @@ func (s *KiroGatewayService) buildKiroMCPRequest(
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("kiro mcp: new request: %w", err)
+		return nil, nil, fmt.Errorf("kiro mcp: new request: %w", err)
 	}
 	req.GetBody = func() (io.ReadCloser, error) {
 		return io.NopCloser(bytes.NewReader(body)), nil
@@ -236,8 +247,8 @@ func (s *KiroGatewayService) buildKiroMCPRequest(
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("amz-sdk-invocation-id", uuid.NewString())
 	req.Header.Set("amz-sdk-request", "attempt=1; max=3")
-	applyKiroTLSFingerprintRuntimeWithProfile(req, s.resolveTLSFingerprintRuntime(ctx, nil, account), profile)
-	return req, nil
+	applyKiroTLSFingerprintRuntimeWithProfile(req, s.resolveTLSFingerprintRuntimeWithDevice(ctx, nil, account, profile), profile)
+	return req, profile, nil
 }
 
 // kiroMCPWebSearchResults 把 InvokeMCP web_search 返回的内层 JSON 解析成 websearch.SearchResult。

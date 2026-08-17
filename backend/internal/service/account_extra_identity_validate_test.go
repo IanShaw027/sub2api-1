@@ -44,6 +44,22 @@ func TestValidateAccountExtraIdentityAcceptsUnsetTLSProfileID(t *testing.T) {
 	require.NoError(t, ValidateAccountExtraIdentity(map[string]any{"tls_fingerprint_profile_id": 0}))
 }
 
+func TestValidateAccountExtraIdentityAcceptsDeviceTLSProfileID(t *testing.T) {
+	require.NoError(t, ValidateAccountExtraIdentity(map[string]any{}))
+	require.NoError(t, ValidateAccountExtraIdentity(map[string]any{DeviceTLSProfileIDExtraKey: nil}))
+	require.NoError(t, ValidateAccountExtraIdentity(map[string]any{DeviceTLSProfileIDExtraKey: 0}))
+	require.NoError(t, ValidateAccountExtraIdentity(map[string]any{DeviceTLSProfileIDExtraKey: int64(29)}))
+	require.NoError(t, ValidateAccountExtraIdentity(map[string]any{DeviceTLSProfileIDExtraKey: float64(29)}))
+}
+
+func TestValidateAccountExtraIdentityRejectsBadDeviceTLSProfileID(t *testing.T) {
+	for _, value := range []any{int64(-1), "29", true} {
+		err := ValidateAccountExtraIdentity(map[string]any{DeviceTLSProfileIDExtraKey: value})
+		require.Error(t, err, "%v", value)
+		require.ErrorContains(t, err, DeviceTLSProfileIDExtraKey)
+	}
+}
+
 func TestValidateAccountExtraIdentityRejectsOtherNegativeTLSProfileID(t *testing.T) {
 	err := ValidateAccountExtraIdentity(map[string]any{
 		"tls_fingerprint_profile_id": int64(-2),

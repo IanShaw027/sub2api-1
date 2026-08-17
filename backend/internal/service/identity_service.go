@@ -79,7 +79,7 @@ func isAcceptableFingerprintUserAgent(ua string) bool {
 var defaultFingerprint = Fingerprint{
 	UserAgent:               "claude-cli/" + claude.CLICurrentVersion + " (external, cli)",
 	StainlessLang:           "js",
-	StainlessPackageVersion: "0.94.0",
+	StainlessPackageVersion: claude.CLIStainlessPackageVersion,
 	StainlessOS:             "Linux",
 	StainlessArch:           "arm64",
 	StainlessRuntime:        "node",

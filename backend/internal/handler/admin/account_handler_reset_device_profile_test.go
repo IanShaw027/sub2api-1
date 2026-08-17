@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -72,6 +73,15 @@ func setupResetDeviceProfileRouter(adminSvc *stubAdminService, deviceSvc *servic
 	router := gin.New()
 	router.GET("/api/v1/admin/accounts/:id/device-profile", handler.GetDeviceProfile)
 	router.POST("/api/v1/admin/accounts/:id/reset-device-profile", handler.ResetDeviceProfile)
+	return router
+}
+
+func setupUpdateDeviceTLSProfileRouter(adminSvc *stubAdminService, deviceSvc *service.AccountDeviceService) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	handler := NewAccountHandler(adminSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	handler.SetAccountDeviceService(deviceSvc)
+	router := gin.New()
+	router.PUT("/api/v1/admin/accounts/:id", handler.Update)
 	return router
 }
 
@@ -161,6 +171,162 @@ func TestResetDeviceProfileIdentityRejectIsBadRequest(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
 	require.Equal(t, "IDENTITY_REJECT", payload.Reason)
 	require.Contains(t, payload.Message, "identity_reject")
+}
+
+func TestUpdateAccountMapsRemintIdentityReject(t *testing.T) {
+	adminSvc := newStubAdminService()
+	adminSvc.updateAccountErr = errors.New("identity_reject: remint blocked")
+	router := setupUpdateDeviceTLSProfileRouter(adminSvc, service.NewAccountDeviceService(&memoryDeviceProfileRepo{}))
+
+	body := []byte(`{"extra":{"device_learning_enabled":true,"device_tls_profile_id":29}}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/accounts/3", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	var payload struct {
+		Reason  string `json:"reason"`
+		Message string `json:"message"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	require.Equal(t, "IDENTITY_REJECT", payload.Reason)
+	require.Contains(t, payload.Message, "identity_reject")
+}
+
+func TestUpdateAccountEnablingLearningWithSameDeviceTLSProfileIDDoesNotRemint(t *testing.T) {
+	const accountID int64 = 3
+	profileID := int64(29)
+	service.SetTLSProfilePinNameLookup(func(id int64) string {
+		if id == profileID {
+			return "pin:claude-code:macos:h1"
+		}
+		return ""
+	})
+	t.Cleanup(func() { service.SetTLSProfilePinNameLookup(nil) })
+
+	adminSvc := newStubAdminService()
+	adminSvc.getAccountResult = &service.Account{
+		ID:       accountID,
+		Name:     "claude-account",
+		Platform: service.PlatformAnthropic,
+		Type:     service.AccountTypeOAuth,
+		Status:   service.StatusActive,
+		Extra: map[string]any{
+			"device_learning_enabled":          false,
+			service.DeviceTLSProfileIDExtraKey: profileID,
+		},
+	}
+	adminSvc.updateAccountResult = &service.Account{
+		ID:       accountID,
+		Name:     "claude-account",
+		Platform: service.PlatformAnthropic,
+		Type:     service.AccountTypeOAuth,
+		Status:   service.StatusActive,
+		Extra: map[string]any{
+			"device_learning_enabled":          true,
+			service.DeviceTLSProfileIDExtraKey: profileID,
+		},
+	}
+	repo := &memoryDeviceProfileRepo{profiles: map[int64]*service.AccountDeviceProfile{
+		accountID: {
+			AccountID:          accountID,
+			Revision:           1,
+			SchemaVersion:      1,
+			Platform:           service.PlatformAnthropic,
+			ClientFamily:       service.ClientFamilyClaudeCode,
+			OSFamily:           "macos",
+			Arch:               "arm64",
+			TransportFamily:    service.TransportH1,
+			TLSProfileID:       &profileID,
+			InstallationID:     "11111111-1111-4111-8111-111111111111",
+			DeviceID:           "22222222-2222-4222-8222-222222222222",
+			GatewayAccountUUID: "55555555-5555-4555-8555-555555555555",
+			SessionNamespace:   "0123456789abcdef0123456789abcdef",
+		},
+	}}
+	router := setupUpdateDeviceTLSProfileRouter(adminSvc, service.NewAccountDeviceService(repo))
+
+	body := []byte(`{"extra":{"device_learning_enabled":true,"device_tls_profile_id":29}}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/accounts/3", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	got, err := repo.GetByAccountID(context.Background(), accountID)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, "22222222-2222-4222-8222-222222222222", got.DeviceID)
+	require.NotNil(t, got.TLSProfileID)
+	require.Equal(t, profileID, *got.TLSProfileID)
+}
+
+func TestUpdateAccountClearingDeviceTLSProfileIDDoesNotRemint(t *testing.T) {
+	const accountID int64 = 3
+	previousID := int64(29)
+	service.SetTLSProfilePinNameLookup(func(id int64) string {
+		if id == previousID {
+			return "pin:claude-code:macos:h1"
+		}
+		return ""
+	})
+	t.Cleanup(func() { service.SetTLSProfilePinNameLookup(nil) })
+
+	adminSvc := newStubAdminService()
+	adminSvc.getAccountResult = &service.Account{
+		ID:       accountID,
+		Name:     "claude-account",
+		Platform: service.PlatformAnthropic,
+		Type:     service.AccountTypeOAuth,
+		Status:   service.StatusActive,
+		Extra: map[string]any{
+			"device_learning_enabled":          true,
+			service.DeviceTLSProfileIDExtraKey: previousID,
+		},
+	}
+	adminSvc.updateAccountResult = &service.Account{
+		ID:       accountID,
+		Name:     "claude-account",
+		Platform: service.PlatformAnthropic,
+		Type:     service.AccountTypeOAuth,
+		Status:   service.StatusActive,
+		Extra: map[string]any{
+			"device_learning_enabled": true,
+		},
+	}
+	repo := &memoryDeviceProfileRepo{profiles: map[int64]*service.AccountDeviceProfile{
+		accountID: {
+			AccountID:          accountID,
+			Revision:           1,
+			SchemaVersion:      1,
+			Platform:           service.PlatformAnthropic,
+			ClientFamily:       service.ClientFamilyClaudeCode,
+			OSFamily:           "macos",
+			Arch:               "arm64",
+			TransportFamily:    service.TransportH1,
+			TLSProfileID:       &previousID,
+			InstallationID:     "11111111-1111-4111-8111-111111111111",
+			DeviceID:           "22222222-2222-4222-8222-222222222222",
+			GatewayAccountUUID: "55555555-5555-4555-8555-555555555555",
+			SessionNamespace:   "0123456789abcdef0123456789abcdef",
+		},
+	}}
+	router := setupUpdateDeviceTLSProfileRouter(adminSvc, service.NewAccountDeviceService(repo))
+
+	body := []byte(`{"extra":{"device_learning_enabled":true}}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/accounts/3", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	got, err := repo.GetByAccountID(context.Background(), accountID)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, "22222222-2222-4222-8222-222222222222", got.DeviceID)
+	require.NotNil(t, got.TLSProfileID)
+	require.Equal(t, previousID, *got.TLSProfileID)
 }
 
 func TestGetDeviceProfileReturnsInspectDTO(t *testing.T) {

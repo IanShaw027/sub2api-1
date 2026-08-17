@@ -1078,6 +1078,9 @@ func (h *AccountHandler) Update(c *gin.Context) {
 			return
 		}
 
+		if mapAccountDeviceResetError(c, err) {
+			return
+		}
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -1089,6 +1092,14 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	}
 
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+}
+
+func mapAccountDeviceResetError(c *gin.Context, err error) bool {
+	if err == nil || !strings.Contains(err.Error(), "identity_reject") {
+		return false
+	}
+	response.ErrorFrom(c, infraerrors.BadRequest("IDENTITY_REJECT", err.Error()))
+	return true
 }
 
 // scheduleOpenAIResponsesProbe 异步触发 OpenAI APIKey 账号的 Responses API 能力探测。
@@ -1241,8 +1252,7 @@ func (h *AccountHandler) ResetDeviceProfile(c *gin.Context) {
 	}
 
 	if _, err := h.accountDeviceService.Reset(c.Request.Context(), account); err != nil {
-		if strings.Contains(err.Error(), "identity_reject") {
-			response.ErrorFrom(c, infraerrors.BadRequest("IDENTITY_REJECT", err.Error()))
+		if mapAccountDeviceResetError(c, err) {
 			return
 		}
 		response.ErrorFrom(c, err)
@@ -2324,6 +2334,9 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 					"other_platform":   mixedErr.OtherPlatform,
 				},
 			})
+			return
+		}
+		if mapAccountDeviceResetError(c, err) {
 			return
 		}
 		response.ErrorFrom(c, err)

@@ -104,6 +104,40 @@ func TestApplyKiroSidecarIdentity_StashMismatchLoadsRequestedAccount(t *testing.
 	require.NotEqual(t, "0.11.0", settings.KiroVersion)
 }
 
+func TestApplyKiroSidecarIdentity_UnsavedAccountFallsBackWithoutCreatingProfile(t *testing.T) {
+	repo := &staticKiroDeviceProfileRepo{}
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(NewAccountDeviceService(repo))
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	settings, machineID, err := applyKiroSidecarIdentity(context.Background(), &Account{
+		ID:       0,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+	}, &KiroRuntimeSettings{KiroVersion: "0.10.0"})
+	require.NoError(t, err)
+	require.Equal(t, "0.10.0", settings.KiroVersion)
+	require.Equal(t, defaultKiroSystemVersion, settings.SystemVersion)
+	require.Equal(t, defaultKiroNodeVersion, settings.NodeVersion)
+	require.Empty(t, machineID)
+	require.Zero(t, repo.getCalls)
+	require.Zero(t, repo.insertCalls)
+}
+
+func TestApplyKiroSidecarIdentity_UnsavedAccountSkipsUnconfiguredDeviceService(t *testing.T) {
+	installKiroOutboundDeviceProfile(t, nil, nil)
+
+	settings, machineID, err := applyKiroSidecarIdentity(context.Background(), &Account{
+		ID:       0,
+		Platform: PlatformKiro,
+		Type:     AccountTypeOAuth,
+	}, &KiroRuntimeSettings{KiroVersion: "0.10.0"})
+	require.NoError(t, err)
+	require.Equal(t, "0.10.0", settings.KiroVersion)
+	require.Equal(t, defaultKiroSystemVersion, settings.SystemVersion)
+	require.Empty(t, machineID)
+}
+
 func TestApplyKiroSidecarIdentity_LoadFailureIsFailClosed(t *testing.T) {
 	installKiroOutboundDeviceProfile(t, nil, errors.New("identity_reject: device profile unavailable"))
 

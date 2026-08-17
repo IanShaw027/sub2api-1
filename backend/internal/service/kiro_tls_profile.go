@@ -26,27 +26,23 @@ func resolveKiroTLSProfile(account *Account, tlsFPProfileService *TLSFingerprint
 	return tlsFPProfileService.ResolveTLSProfile(account)
 }
 
-func (s *KiroGatewayService) resolveTLSFingerprintRuntime(
+func (s *KiroGatewayService) resolveTLSFingerprintRuntimeWithDevice(
 	ctx context.Context,
 	c *gin.Context,
 	account *Account,
+	device *AccountDeviceProfile,
 ) accountTLSFingerprintRuntime {
-	if ctx != nil {
-		if runtime, ok := ctx.Value(kiroTLSFingerprintRuntimeContextKey{}).(accountTLSFingerprintRuntime); ok {
-			return runtime
-		}
-	}
 	if s == nil {
 		return accountTLSFingerprintRuntime{}
 	}
-	return resolveAccountTLSFingerprintRuntime(ctx, account, s.tlsFPProfileSvc, s.tlsFPRouterSvc, inboundUserAgentFromGin(c), "http", "kiro")
+	return resolveTLSFingerprintRuntime(ctx, account, s.tlsFPProfileSvc, s.tlsFPRouterSvc, inboundUserAgentFromGin(c), "http", "kiro", device)
 }
 
 func (s *KiroGatewayService) doKiroUpstream(ctx context.Context, c *gin.Context, account *Account, req *http.Request, deviceProfile *AccountDeviceProfile) (*http.Response, error) {
 	if s == nil || s.httpUpstream == nil || account == nil {
 		return nil, fmt.Errorf("kiro upstream is not configured")
 	}
-	runtime := s.resolveTLSFingerprintRuntime(ctx, c, account)
+	runtime := s.resolveTLSFingerprintRuntimeWithDevice(ctx, c, account, deviceProfile)
 	applyKiroTLSFingerprintRuntimeWithProfile(req, runtime, deviceProfile)
 	profile := runtime.Profile
 	if profile == nil {

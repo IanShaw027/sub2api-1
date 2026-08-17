@@ -2813,6 +2813,23 @@
             :aria-label="t('admin.accounts.deviceLearning.label')"
           />
         </div>
+        <div v-if="deviceLearningEnabled" class="mt-3 space-y-1">
+          <label class="input-label" for="device-tls-profile-select">
+            {{ t('admin.accounts.deviceLearning.tlsProfileLabel') }}
+          </label>
+          <select
+            id="device-tls-profile-select"
+            v-model="deviceTLSProfileSelection"
+            class="input"
+            data-testid="device-tls-profile-select"
+          >
+            <option value="">{{ t('admin.accounts.deviceLearning.tlsProfileAutomatic') }}</option>
+            <option v-for="option in deviceTLSCatalogOptions" :key="option.id" :value="String(option.id)">
+              {{ formatDeviceTLSProfileLabel(option) }}
+            </option>
+          </select>
+          <p class="input-hint">{{ t('admin.accounts.deviceLearning.tlsProfileHint') }}</p>
+        </div>
       </div>
 
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
@@ -2950,6 +2967,7 @@ import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
 import type { KiroDiscoveredProfile } from '@/api/admin/accounts'
+import type { DeviceTLSCatalogOption } from '@/api/admin/tlsFingerprintProfile'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
 import type {
   Account,
@@ -3257,6 +3275,31 @@ const tlsFingerprintOSOptions = ['windows', 'macos', 'linux', 'ios', 'android']
 const tlsFingerprintProtocolOptions = ['messages', 'responses', 'chat_completions', 'images', 'embeddings', 'gemini', 'antigravity', 'kiro']
 const tlsFingerprintBindingRows = ref<{ os: string; client: string; protocol: string; profileId: number }[]>([])
 const deviceLearningEnabled = ref(false)
+const deviceTLSProfileId = ref<number | null>(null)
+const deviceTLSCatalogOptions = ref<DeviceTLSCatalogOption[]>([])
+const deviceTLSProfileSelection = computed({
+  get: () => (deviceTLSProfileId.value == null ? '' : String(deviceTLSProfileId.value)),
+  set: (value: string) => {
+    const id = Number(value)
+    deviceTLSProfileId.value = Number.isInteger(id) && id > 0 ? id : null
+  }
+})
+
+function formatDeviceTLSProfileLabel(option: DeviceTLSCatalogOption) {
+  const label = t('admin.accounts.deviceLearning.tlsProfileOption', {
+    name: option.name,
+    family: option.client_family,
+    os: option.os_family,
+    transport: option.transport,
+    software: option.software_label
+  })
+  return option.description ? `${label} - ${option.description}` : label
+}
+
+function readDeviceTLSProfileId(value: unknown): number | null {
+  const id = Number(value)
+  return Number.isInteger(id) && id > 0 ? id : null
+}
 
 function supportsTLSFingerprint(platform?: string | null) {
   return ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kiro'].includes(platform || '')
@@ -3779,6 +3822,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   allowOverages.value = false
 	const extra = newAccount.extra as Record<string, unknown> | undefined
 	deviceLearningEnabled.value = extra?.device_learning_enabled === true
+  deviceTLSProfileId.value = readDeviceTLSProfileId(extra?.device_tls_profile_id)
 	mixedScheduling.value = extra?.mixed_scheduling === true
 	allowOverages.value = extra?.allow_overages === true
 	autoPause5hThreshold.value = typeof extra?.auto_pause_5h_threshold === 'number' ? extra.auto_pause_5h_threshold * 100 : null
@@ -4118,15 +4162,29 @@ async function loadTLSProfiles() {
   }
 }
 
+async function loadCompleteDeviceTLSProfiles(platform?: string | null) {
+  if (!platform) {
+    deviceTLSCatalogOptions.value = []
+    return
+  }
+  try {
+    deviceTLSCatalogOptions.value = await adminAPI.tlsFingerprintProfiles.listComplete(platform)
+  } catch {
+    deviceTLSCatalogOptions.value = []
+  }
+}
+
 watch(
-  [() => props.show, () => props.account],
-  ([show, newAccount], [wasShow, previousAccount]) => {
+  [() => props.show, () => props.account, () => props.account?.platform],
+  ([show, newAccount, platform], [wasShow, previousAccount, previousPlatform]) => {
     if (!show || !newAccount) {
+      deviceTLSCatalogOptions.value = []
       return
     }
-    if (!wasShow || newAccount !== previousAccount) {
+    if (!wasShow || newAccount !== previousAccount || platform !== previousPlatform) {
       syncFormFromAccount(newAccount)
       loadTLSProfiles()
+      loadCompleteDeviceTLSProfiles(platform)
     }
   },
   { immediate: true }
@@ -5407,10 +5465,14 @@ const handleSubmit = async () => {
       const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
         (props.account.extra as Record<string, unknown>) ||
         {}
-      updatePayload.extra = {
-        ...currentExtra,
-        device_learning_enabled: deviceLearningEnabled.value
+      const newExtra: Record<string, unknown> = { ...currentExtra }
+      newExtra.device_learning_enabled = deviceLearningEnabled.value
+      if (deviceTLSProfileId.value) {
+        newExtra.device_tls_profile_id = deviceTLSProfileId.value
+      } else {
+        delete newExtra.device_tls_profile_id
       }
+      updatePayload.extra = newExtra
     }
 
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {

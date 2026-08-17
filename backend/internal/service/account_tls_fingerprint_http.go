@@ -20,7 +20,11 @@ func doAccountHTTPUpstream(
 	if protocol == "" && req != nil && req.URL != nil {
 		protocol = inboundProtocolFromPath(req.URL.Path)
 	}
-	runtime := resolveAccountTLSFingerprintRuntime(ctx, account, profileSvc, routerSvc, inboundUA, transport, protocol)
+	device, err := loadDeviceProfileForTLSResolve(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+	runtime := resolveTLSFingerprintRuntime(ctx, account, profileSvc, routerSvc, inboundUA, transport, protocol, device)
 	applyTLSFingerprintRuntimeHeaders(req, runtime)
 	return upstream.DoWithTLS(req, proxyURL, account.ID, account.EffectiveConcurrency(), runtime.Profile)
 }

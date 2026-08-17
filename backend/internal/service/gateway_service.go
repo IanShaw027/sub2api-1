@@ -821,11 +821,15 @@ func (s *GatewayService) SetTLSFingerprintRouterService(svc *TLSFingerprintRoute
 	s.tlsFPRouterService = svc
 }
 
-func (s *GatewayService) resolveGatewayTLSFingerprintRuntime(ctx context.Context, c *gin.Context, account *Account, protocol string) accountTLSFingerprintRuntime {
+func (s *GatewayService) resolveGatewayTLSFingerprintRuntime(ctx context.Context, c *gin.Context, account *Account, protocol string) (accountTLSFingerprintRuntime, error) {
 	if protocol == "" && c != nil && c.Request != nil && c.Request.URL != nil {
 		protocol = inboundProtocolFromPath(c.Request.URL.Path)
 	}
-	return resolveAccountTLSFingerprintRuntime(ctx, account, s.tlsFPProfileService, s.tlsFPRouterService, inboundUserAgentFromGin(c), "http", protocol)
+	device, err := loadDeviceProfileForTLSResolve(ctx, account)
+	if err != nil {
+		return accountTLSFingerprintRuntime{}, err
+	}
+	return resolveTLSFingerprintRuntime(ctx, account, s.tlsFPProfileService, s.tlsFPRouterService, inboundUserAgentFromGin(c), "http", protocol, device), nil
 }
 
 // NewGatewayService creates a new GatewayService

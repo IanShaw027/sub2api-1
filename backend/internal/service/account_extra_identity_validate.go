@@ -34,7 +34,10 @@ func ValidateAccountExtraIdentity(extra map[string]any) error {
 	if err := validateTLSFingerprintProfileID(extra); err != nil {
 		return err
 	}
-	return validateDeviceLearningEnabled(extra)
+	if err := validateDeviceLearningEnabled(extra); err != nil {
+		return err
+	}
+	return validateDeviceTLSProfileID(extra)
 }
 
 // ValidateAccountCapacityExtra validates capacity and TLS extras on write.
@@ -161,6 +164,31 @@ func validateDeviceLearningEnabled(extra map[string]any) error {
 		if _, ok := v.(bool); !ok {
 			return identityReject("device_learning_enabled must be a boolean")
 		}
+	}
+	return nil
+}
+
+func validateDeviceTLSProfileID(extra map[string]any) error {
+	v, ok := extra[DeviceTLSProfileIDExtraKey]
+	if !ok || v == nil {
+		return nil
+	}
+	if s, ok := v.(string); ok {
+		if strings.TrimSpace(s) == "" {
+			return nil
+		}
+		return identityReject(DeviceTLSProfileIDExtraKey + " must be an integer")
+	}
+
+	n, present, err := optionalCapacityInt(extra, DeviceTLSProfileIDExtraKey)
+	if err != nil {
+		return err
+	}
+	if !present || n == 0 {
+		return nil
+	}
+	if n < 1 {
+		return identityReject(DeviceTLSProfileIDExtraKey + " must be empty or a positive integer")
 	}
 	return nil
 }

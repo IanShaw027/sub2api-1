@@ -548,7 +548,11 @@ export default {
       inspectDeviceProfile: 'Inspect Device Profile',
       deviceLearning: {
         label: 'Device profile learning',
-        hint: 'When enabled, official inbound clients can upgrade this account\'s pinned software bundle. Off by default.'
+        hint: 'When enabled, official inbound clients can upgrade this account\'s pinned software bundle. Off by default.',
+        tlsProfileLabel: 'Device TLS profile',
+        tlsProfileHint: 'Choose a complete catalog profile to pin this account, or leave automatic to use the platform default.',
+        tlsProfileAutomatic: 'Automatic (platform default)',
+        tlsProfileOption: '{name} · {family} · {os}/{transport} · {software} · Complete and available'
       },
       deviceProfile: {
         platform: 'Platform',

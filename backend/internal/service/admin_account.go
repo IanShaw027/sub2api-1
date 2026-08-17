@@ -485,6 +485,12 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	if err := ValidateAccountExtraWrites(accountExtra); err != nil {
 		return nil, err
 	}
+	if err := rejectDeviceTLSSelectionWhenLearningDisabled(nil, accountExtra); err != nil {
+		return nil, err
+	}
+	if err := rejectUnusableDeviceTLSSelection(input.Platform, accountExtra); err != nil {
+		return nil, err
+	}
 
 	// 绑定分组
 	groupIDs := input.GroupIDs
@@ -565,7 +571,12 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		return nil, err
 	}
 	var normalizedExtra map[string]any
+	var previousExtra map[string]any
 	if input.Extra != nil {
+		previousExtra, err = cloneAccountJSONMap(account.Extra)
+		if err != nil {
+			return nil, err
+		}
 		normalizedExtra, err = normalizeOpenAILongContextBillingUpdateExtra(account, input)
 		if err != nil {
 			return nil, err
@@ -575,6 +586,15 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			return nil, err
 		}
 		if err := ValidateAccountExtraWrites(normalizedExtra); err != nil {
+			return nil, err
+		}
+		if err := rejectShadowDeviceTLSSelection(account, normalizedExtra); err != nil {
+			return nil, err
+		}
+		if err := rejectDeviceTLSSelectionWhenLearningDisabled(account.Extra, normalizedExtra); err != nil {
+			return nil, err
+		}
+		if err := rejectUnusableDeviceTLSSelection(account.Platform, normalizedExtra); err != nil {
 			return nil, err
 		}
 	}
@@ -889,6 +909,11 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if err != nil {
 		return nil, err
 	}
+	if input.Extra != nil {
+		if err := remintDeviceProfileIfTLSSelectionRequires(ctx, updated, previousExtra); err != nil {
+			return nil, err
+		}
+	}
 	return updated, nil
 }
 
@@ -901,11 +926,14 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	delete(updates, OllamaCloudUsageSessionExtraKey)
 	delete(updates, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(updates, OllamaCloudUsageSnapshotExtraKey)
+	if len(updates) == 0 {
+		return nil
+	}
+	account, err := s.accountRepo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
 	if _, exists := updates[openAILongContextBillingEnabledKey]; exists {
-		account, err := s.accountRepo.GetByID(ctx, id)
-		if err != nil {
-			return err
-		}
 		if err := ValidateOpenAILongContextBillingExtra(account.Platform, updates); err != nil {
 			return err
 		}
@@ -913,10 +941,22 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	if err := ValidateAccountExtraWrites(updates); err != nil {
 		return err
 	}
-	if len(updates) == 0 {
-		return nil
+	if err := rejectShadowDeviceTLSSelection(account, updates); err != nil {
+		return err
 	}
-	return s.accountRepo.UpdateExtra(ctx, id, updates)
+	nextExtra := mergeAccountExtraMaps(account.Extra, updates)
+	if err := rejectDeviceTLSSelectionWhenLearningDisabled(account.Extra, nextExtra); err != nil {
+		return err
+	}
+	if err := rejectUnusableDeviceTLSSelection(account.Platform, updates); err != nil {
+		return err
+	}
+	if err := s.accountRepo.UpdateExtra(ctx, id, updates); err != nil {
+		return err
+	}
+	updated := *account
+	updated.Extra = nextExtra
+	return remintDeviceProfileIfTLSSelectionRequires(ctx, &updated, account.Extra)
 }
 
 // BulkUpdateAccounts updates multiple accounts in one request.
@@ -1001,6 +1041,23 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 				return nil, err
 			}
 			break
+		}
+	}
+	if len(input.Extra) > 0 {
+		for _, account := range cachedTargets {
+			if account == nil {
+				continue
+			}
+			if err := rejectShadowDeviceTLSSelection(account, input.Extra); err != nil {
+				return nil, err
+			}
+			nextExtra := mergeAccountExtraMaps(account.Extra, input.Extra)
+			if err := rejectDeviceTLSSelectionWhenLearningDisabled(account.Extra, nextExtra); err != nil {
+				return nil, err
+			}
+			if err := rejectUnusableDeviceTLSSelection(account.Platform, input.Extra); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -1144,6 +1201,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 			result.SuccessIDs = append(result.SuccessIDs, accountID)
 			result.Results = append(result.Results, entry)
 		}
+		if err := remintDeviceProfilesAfterExtraPersist(ctx, cachedTargets, input.Extra); err != nil {
+			return nil, err
+		}
 		return result, nil
 	}
 
@@ -1276,7 +1336,111 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		result.Results = append(result.Results, entry)
 	}
 
+	if err := remintDeviceProfilesAfterExtraPersist(ctx, cachedTargets, input.Extra); err != nil {
+		return nil, err
+	}
 	return result, nil
+}
+
+func rejectShadowDeviceTLSSelection(account *Account, extra map[string]any) error {
+	if account == nil || !account.IsCredentialShadow() || extra == nil {
+		return nil
+	}
+	if _, ok := extra[DeviceTLSProfileIDExtraKey]; ok {
+		return identityReject(DeviceTLSProfileIDExtraKey + " cannot be set on a shadow account")
+	}
+	return nil
+}
+
+func rejectDeviceTLSSelectionWhenLearningDisabled(previousExtra, nextExtra map[string]any) error {
+	nextID, nextPresent, err := optionalCapacityInt(nextExtra, DeviceTLSProfileIDExtraKey)
+	if err != nil {
+		return err
+	}
+	if !nextPresent || nextID <= 0 {
+		return nil
+	}
+	if accountExtraDeviceLearningEnabled(&Account{Extra: nextExtra}) {
+		return nil
+	}
+	prevID, prevPresent, err := optionalCapacityInt(previousExtra, DeviceTLSProfileIDExtraKey)
+	if err != nil {
+		return err
+	}
+	if prevPresent && prevID == nextID {
+		return nil
+	}
+	return identityReject(DeviceTLSProfileIDExtraKey + " cannot be changed while device learning is disabled")
+}
+
+func mergeAccountExtraMaps(previous, updates map[string]any) map[string]any {
+	if previous == nil && updates == nil {
+		return nil
+	}
+	next := maps.Clone(previous)
+	if next == nil {
+		next = map[string]any{}
+	}
+	maps.Copy(next, updates)
+	return next
+}
+
+func remintDeviceProfilesAfterExtraPersist(ctx context.Context, accounts []*Account, extraUpdates map[string]any) error {
+	if len(extraUpdates) == 0 {
+		return nil
+	}
+	for _, account := range accounts {
+		if account == nil {
+			continue
+		}
+		updated := *account
+		updated.Extra = mergeAccountExtraMaps(account.Extra, extraUpdates)
+		if err := remintDeviceProfileIfTLSSelectionRequires(ctx, &updated, account.Extra); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func remintDeviceProfileIfTLSSelectionRequires(ctx context.Context, account *Account, previousExtra map[string]any) error {
+	deviceSvc := OutboundDeviceProfileService()
+	if deviceSvc == nil || account == nil || account.IsCredentialShadow() {
+		return nil
+	}
+	needed, err := deviceTLSSelectionNeedsRemint(ctx, deviceSvc, account, previousExtra)
+	if err != nil {
+		return err
+	}
+	if !needed {
+		return nil
+	}
+	_, err = deviceSvc.Reset(ctx, account)
+	return err
+}
+
+func deviceTLSSelectionNeedsRemint(ctx context.Context, deviceSvc *AccountDeviceService, account *Account, previousExtra map[string]any) (bool, error) {
+	nextID, nextPresent, err := optionalCapacityInt(account.Extra, DeviceTLSProfileIDExtraKey)
+	if err != nil {
+		return false, err
+	}
+	if !nextPresent || nextID <= 0 {
+		return false, nil
+	}
+	changed, err := DeviceTLSProfileIDChangedToDifferentPositive(previousExtra, account.Extra)
+	if err != nil {
+		return false, err
+	}
+	if changed {
+		return true, nil
+	}
+	row, err := deviceSvc.Get(ctx, account.ID)
+	if err != nil {
+		return false, err
+	}
+	if row == nil || row.TLSProfileID == nil || *row.TLSProfileID != nextID {
+		return true, nil
+	}
+	return false, nil
 }
 
 func applyBulkUpdateInputToAccount(account *Account, input *BulkUpdateAccountsInput, index int) {

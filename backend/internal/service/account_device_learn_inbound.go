@@ -8,11 +8,11 @@ import (
 )
 
 func maybeLearnOfficialDeviceProfile(ctx context.Context, account *Account, headers http.Header) {
-	if account == nil || headers == nil || !accountExtraDeviceLearningEnabled(account) {
+	if account == nil || headers == nil {
 		return
 	}
 	switch account.Platform {
-	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity:
+	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok:
 	default:
 		return
 	}
@@ -29,9 +29,28 @@ func maybeLearnOfficialDeviceProfile(ctx context.Context, account *Account, head
 	}
 	learnCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), outboundDeviceProfileLoadTimeout)
 	defer cancel()
+	if !inboundDeviceLearningOpen(learnCtx, svc, account) {
+		return
+	}
 	if _, err := svc.LearnIfOfficial(learnCtx, account, inbound); err != nil {
 		slog.Warn("device profile learn failed", "account_id", account.ID, "error", err)
 	}
+}
+
+// inboundDeviceLearningOpen matches LearnIfOfficial: extra OR an existing row flag.
+// Get (not GetOrCreate) so a missing row does not mint a baseline just to decide.
+func inboundDeviceLearningOpen(ctx context.Context, svc *AccountDeviceService, account *Account) bool {
+	if accountExtraDeviceLearningEnabled(account) {
+		return true
+	}
+	if svc == nil || account == nil {
+		return false
+	}
+	profile, err := svc.Get(ctx, account.ID)
+	if err != nil {
+		return false
+	}
+	return deviceLearningEnabled(profile, account)
 }
 
 func accountExtraDeviceLearningEnabled(account *Account) bool {
@@ -46,7 +65,7 @@ func officialInboundFromHeaders(headers http.Header) OfficialInbound {
 	inbound := OfficialInbound{
 		UserAgent:      strings.TrimSpace(getHeaderRaw(headers, "User-Agent")),
 		Originator:     strings.TrimSpace(firstNonEmptyHeader(headers, "originator", "Originator")),
-		ClientVersion:  strings.TrimSpace(firstNonEmptyHeader(headers, "version", "X-Client-Version")),
+		ClientVersion:  strings.TrimSpace(firstNonEmptyHeader(headers, "version", "X-Client-Version", "x-grok-client-version")),
 		Runtime:        strings.TrimSpace(getHeaderRaw(headers, "X-Stainless-Runtime")),
 		RuntimeVersion: strings.TrimSpace(getHeaderRaw(headers, "X-Stainless-Runtime-Version")),
 	}
