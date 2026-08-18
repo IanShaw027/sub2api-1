@@ -141,6 +141,9 @@ docs/*
 !docs/legal/*.md
 !docs/superpowers/
 !docs/superpowers/**
+# Local planning/spec drafts are workspace artifacts; ignore the directories.
+docs/superpowers/plans/
+docs/superpowers/specs/
 .worktrees/
 .serena/
 .codex/
@@ -150,3 +153,10 @@ output/
 
 # Vitest / Vite cache at repo root
 .vite/
+
+# Local runtime/build artifacts and environment backups
+/data/
+/sub2api
+/tools/__pycache__/
+/deploy/.env.bak*
+/deploy/docker-compose.standalone.host.yml
