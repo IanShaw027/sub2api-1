@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -131,4 +132,54 @@ func HasCompactionTriggerInInput(body []byte) bool {
 		return true
 	})
 	return found
+}
+
+// NormalizeCompactionTriggerInputOrder enforces the Responses v2 wire
+// contract: the compaction_trigger item must be the final input item. Some
+// clients append continuation metadata after the trigger; forwarding that
+// ordering makes the upstream reject the request before compaction starts.
+// Duplicate trigger items are collapsed to one final trigger.
+func NormalizeCompactionTriggerInputOrder(body []byte) ([]byte, bool, error) {
+	if len(body) == 0 {
+		return body, false, nil
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return body, false, err
+	}
+	rawInput, ok := payload["input"]
+	input, ok := rawInput.([]any)
+	if !ok || len(input) == 0 {
+		return body, false, nil
+	}
+	triggerFound := false
+	triggerCount := 0
+	normalized := make([]any, 0, len(input))
+	for _, raw := range input {
+		item, itemOK := raw.(map[string]any)
+		if itemOK && item["type"] == "compaction_trigger" {
+			triggerFound = true
+			triggerCount++
+			continue
+		}
+		normalized = append(normalized, raw)
+	}
+	if !triggerFound {
+		return body, false, nil
+	}
+	// A single canonical trigger is always the final item, regardless of where
+	// the client placed it or how many duplicate markers it supplied.
+	normalized = append(normalized, map[string]any{"type": "compaction_trigger"})
+	if triggerCount == 1 && len(input) == len(normalized) {
+		last, ok := input[len(input)-1].(map[string]any)
+		if ok && last["type"] == "compaction_trigger" {
+			return body, false, nil
+		}
+	}
+	payload["input"] = normalized
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return body, false, err
+	}
+	return encoded, true, nil
 }
