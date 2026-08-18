@@ -154,4 +154,38 @@ describe('admin DashboardView', () => {
       granularity: 'hour'
     }))
   })
+
+  it('reloads range-scoped summary stats when the date range changes', async () => {
+    const dateRangePicker = {
+      template: '<button data-test="date-range" @click="$emit(\'update:startDate\', \'2026-08-01\'); $emit(\'update:endDate\', \'2026-08-07\'); $emit(\'change\', { startDate: \'2026-08-01\', endDate: \'2026-08-07\', preset: null })" />'
+    }
+    const wrapper = mount(DashboardView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          LoadingSpinner: true,
+          Icon: true,
+          HelpTooltip: { template: '<div><slot name="trigger" /><slot /></div>' },
+          DateRangePicker: dateRangePicker,
+          Select: true,
+          ModelDistributionChart: true,
+          TokenUsageTrend: true,
+          Line: true
+        }
+      }
+    })
+
+    await flushPromises()
+    expect(getSnapshotV2).toHaveBeenCalledTimes(1)
+
+    await wrapper.get('[data-test="date-range"]').trigger('click')
+    await flushPromises()
+
+    expect(getSnapshotV2).toHaveBeenCalledTimes(2)
+    expect(getSnapshotV2).toHaveBeenLastCalledWith(expect.objectContaining({
+      start_date: '2026-08-01',
+      end_date: '2026-08-07',
+      include_stats: true
+    }))
+  })
 })

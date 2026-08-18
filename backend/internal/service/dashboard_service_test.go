@@ -393,3 +393,19 @@ func TestDashboardService_AggDisabled_UsesUsageLogsFallback(t *testing.T) {
 	require.False(t, repo.rangeEnd.IsZero())
 	require.Equal(t, truncateToDayUTC(repo.rangeEnd.AddDate(0, 0, -7)), repo.rangeStart)
 }
+
+func TestDashboardService_GetDashboardStatsWithRange_UsesSelectedRange(t *testing.T) {
+	start := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 8, 13, 0, 0, 0, 0, time.UTC)
+	expected := &usagestats.DashboardStats{TotalTokens: 1234}
+	repo := &usageRepoStub{rangeStats: expected}
+	cfg := &config.Config{Dashboard: config.DashboardCacheConfig{Enabled: false}}
+	svc := NewDashboardService(repo, nil, nil, cfg)
+
+	got, err := svc.GetDashboardStatsWithRange(context.Background(), start, end)
+	require.NoError(t, err)
+	require.Same(t, expected, got)
+	require.Equal(t, int32(1), atomic.LoadInt32(&repo.rangeCalls))
+	require.Equal(t, start, repo.rangeStart)
+	require.Equal(t, end, repo.rangeEnd)
+}

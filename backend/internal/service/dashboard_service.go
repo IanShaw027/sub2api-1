@@ -124,6 +124,25 @@ func (s *DashboardService) GetDashboardStats(ctx context.Context) (*usagestats.D
 	return stats, nil
 }
 
+// GetDashboardStatsWithRange returns dashboard usage statistics for the
+// requested half-open time range. Entity counts remain dashboard-wide, while
+// token/request/cost fields are calculated from the selected usage window.
+func (s *DashboardService) GetDashboardStatsWithRange(ctx context.Context, start, end time.Time) (*usagestats.DashboardStats, error) {
+	if !end.After(start) {
+		return nil, errors.New("invalid dashboard statistics time range")
+	}
+	if fetcher, ok := s.usageRepo.(dashboardStatsRangeFetcher); ok {
+		stats, err := fetcher.GetDashboardStatsWithRange(ctx, start, end)
+		if err != nil {
+			return nil, fmt.Errorf("get dashboard stats with range: %w", err)
+		}
+		return stats, nil
+	}
+	// Keep compatibility with repository implementations that predate the
+	// range-aware method; callers still receive a valid dashboard response.
+	return s.GetDashboardStats(ctx)
+}
+
 func (s *DashboardService) GetUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8) ([]usagestats.TrendDataPoint, error) {
 	trend, err := s.usageRepo.GetUsageTrendWithFilters(ctx, startTime, endTime, granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType)
 	if err != nil {

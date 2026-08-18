@@ -782,7 +782,9 @@ const onDateRangeChange = (range: {
     granularity.value = 'day'
   }
 
-  loadChartData()
+  // The summary cards are scoped to the selected range as well, so refresh
+  // the snapshot stats when the date window changes.
+  loadDashboardStats()
 }
 
 // Load data
