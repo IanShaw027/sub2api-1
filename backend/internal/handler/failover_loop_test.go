@@ -58,6 +58,24 @@ func TestSameAccountRetryDelayFor(t *testing.T) {
 	t.Run("nil error keeps fixed delay", func(t *testing.T) {
 		require.Equal(t, 500*time.Millisecond, sameAccountRetryDelayFor(nil, 10))
 	})
+
+	t.Run("OAuth 429 with deadline retries immediately", func(t *testing.T) {
+		require.Equal(t, time.Duration(0), sameAccountRetryDelayFor(&service.UpstreamFailoverError{
+			StatusCode:               http.StatusTooManyRequests,
+			SameAccountRetryDeadline: time.Now().Add(time.Minute),
+		}, 1))
+	})
+}
+
+func TestSameAccountRetryAllowed_DeadlineExpiresBeforeFailover(t *testing.T) {
+	err := &service.UpstreamFailoverError{
+		RetryableOnSameAccount:   true,
+		SameAccountRetryDeadline: time.Now().Add(time.Minute),
+	}
+	require.True(t, sameAccountRetryAllowed(err, 99, 0))
+
+	err.SameAccountRetryDeadline = time.Now().Add(-time.Millisecond)
+	require.False(t, sameAccountRetryAllowed(err, 0, 99))
 }
 
 func TestPinSameAccountRetryContext(t *testing.T) {

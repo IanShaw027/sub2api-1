@@ -929,13 +929,18 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				})
 
 				shouldDisable := s.handleFailoverSideEffects(ctx, resp, account, respBody, upstreamModel)
-				return nil, newOpenAIUpstreamFailoverError(
+				failoverErr := newOpenAIUpstreamFailoverError(
 					resp.StatusCode,
 					resp.Header,
 					respBody,
 					upstreamMsg,
-					!shouldDisable && account.IsPoolMode() && (account.IsPoolModeRetryableStatus(resp.StatusCode) || isOpenAITransientProcessingError(resp.StatusCode, upstreamMsg, respBody)),
+					s.shouldRetryOpenAIOAuth429OnSameAccount(account, resp.StatusCode, shouldDisable) || (!shouldDisable && account.IsPoolMode() && isOpenAITransientProcessingError(resp.StatusCode, upstreamMsg, respBody)),
 				)
+				if failoverErr.RetryableOnSameAccount {
+					failoverErr.SameAccountRetryDelay = openAIOAuth429SameAccountRetryDelay(resp.StatusCode, account)
+					failoverErr.SameAccountRetryDeadline = s.openAIOAuth429RetryDeadline(account)
+				}
+				return nil, failoverErr
 			}
 			return s.handleErrorResponse(ctx, resp, c, account, body, billingModel)
 		}

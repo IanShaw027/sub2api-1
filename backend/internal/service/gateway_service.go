@@ -662,6 +662,7 @@ type UpstreamFailoverError struct {
 	RetryableOnSameAccount   bool        // 临时性错误（如 Google 间歇性 400、空响应），应在同一账号上重试 N 次再切换
 	SameAccountRetryDelay    time.Duration
 	SameAccountRetryMax      int
+	SameAccountRetryDeadline time.Time
 	RetryExhaustedCooldown   time.Duration // 同账号重试耗尽后，对该账号施加的短期冷却
 	RetryExhaustedReason     string        // 同账号重试耗尽后的冷却原因
 	RequestScopedTransient   bool          // 故障因素与账号无关（如上游按客户端身份/模型容量降载）：可同账号重试，但不得据此对账号做临时封禁

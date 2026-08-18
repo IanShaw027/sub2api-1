@@ -56,6 +56,12 @@ const (
 const profitVetoExhaustedMessage = "No available accounts: all candidates rejected by group profit control"
 
 func sameAccountRetryDelayFor(failoverErr *service.UpstreamFailoverError, retryCount int) time.Duration {
+	// An OAuth 429 with a request-scoped deadline intentionally retries
+	// immediately; zero is meaningful here and must not fall back to 500ms.
+	if failoverErr != nil && failoverErr.StatusCode == http.StatusTooManyRequests &&
+		!failoverErr.SameAccountRetryDeadline.IsZero() && failoverErr.SameAccountRetryDelay <= 0 {
+		return 0
+	}
 	if failoverErr != nil && failoverErr.SameAccountRetryDelay > 0 {
 		return failoverErr.SameAccountRetryDelay
 	}
@@ -71,6 +77,16 @@ func sameAccountRetryDelayFor(failoverErr *service.UpstreamFailoverError, retryC
 		delay *= 2
 	}
 	return delay
+}
+
+func sameAccountRetryAllowed(failoverErr *service.UpstreamFailoverError, retryCount, retryLimit int) bool {
+	if failoverErr == nil || !failoverErr.RetryableOnSameAccount {
+		return false
+	}
+	if !failoverErr.SameAccountRetryDeadline.IsZero() {
+		return time.Now().Before(failoverErr.SameAccountRetryDeadline)
+	}
+	return retryCount < retryLimit
 }
 
 func pinSameAccountRetryContext(
@@ -210,14 +226,14 @@ func (s *FailoverState) HandleFailoverError(
 	}
 
 	// 同账号重试不算切换账号，粘性会话仅在实际切换时强制缓存计费。
-	sameAccountRetry := failoverErr.RetryableOnSameAccount && s.SameAccountRetryCount[accountID] < retryMax
+	sameAccountRetry := sameAccountRetryAllowed(failoverErr, s.SameAccountRetryCount[accountID], retryMax)
 	if needForceCacheBilling(s.hasBoundSession, failoverErr, sameAccountRetry) {
 		s.ForceCacheBilling = true
 	}
 
 	// 同账号重试：对 RetryableOnSameAccount 的临时性错误，先在同一账号上重试。
 	// 重试次数上限 retryLimit 由调用方传入（账号级 pool_mode_retry_count 配置）。
-	if failoverErr.RetryableOnSameAccount && s.SameAccountRetryCount[accountID] < retryMax {
+	if sameAccountRetryAllowed(failoverErr, s.SameAccountRetryCount[accountID], retryMax) {
 		s.SameAccountRetryCount[accountID]++
 		retryDelay := sameAccountRetryDelayFor(failoverErr, s.SameAccountRetryCount[accountID])
 		logger.FromContext(ctx).Warn("gateway.failover_same_account_retry",

@@ -11,8 +11,10 @@ import (
 
 const (
 	openAIAccountStateUpdateTimeout       = 5 * time.Second
-	openAIOAuth429FallbackCooldown        = 5 * time.Second
+	openAIOAuth429RetryWindow             = 2 * time.Minute
+	openAIOAuth429RetryDelay              = 0
 	openAIStopSchedulingBridgeCooldown    = 2 * time.Minute
+	openAIOAuth429MaxAccountAttempts      = 3
 	openAIOAuth429StormWindow             = 10 * time.Second
 	openAIOAuth429StormThreshold          = 20
 	openAIOAuth429StormMaxAccountSwitches = 1
@@ -140,20 +142,125 @@ func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context
 		return
 	}
 	s.recordOpenAIOAuth429()
+	if s.ShouldRetryOpenAIOAuth429(account, headers, responseBody) {
+		return
+	}
 
-	cooldownUntil := time.Now().Add(openAIOAuth429FallbackCooldown)
+	cooldownUntil := time.Time{}
+	hasCooldown := false
 	if s.rateLimitService != nil {
 		if resetAt := s.rateLimitService.calculateOpenAI429ResetTime(headers); resetAt != nil && resetAt.After(time.Now()) {
 			cooldownUntil = *resetAt
+			hasCooldown = true
 		} else if resetUnix := parseOpenAIRateLimitResetTime(responseBody); resetUnix != nil {
 			if resetAt := time.Unix(*resetUnix, 0); resetAt.After(time.Now()) {
 				cooldownUntil = resetAt
+				hasCooldown = true
 			}
 		} else if cooldown, ok := s.rateLimitService.get429FallbackCooldown(ctx, account); ok && cooldown > 0 {
 			cooldownUntil = time.Now().Add(cooldown)
+			hasCooldown = true
 		}
 	}
+	if !hasCooldown {
+		// The request-local retry window has expired without an upstream reset
+		// signal. Keep the account out of new selections while this request
+		// switches to another candidate, rather than immediately selecting it
+		// again on a concurrent request.
+		cooldownUntil = time.Now().Add(openAIStopSchedulingBridgeCooldown)
+	}
 	s.BlockAccountScheduling(account, cooldownUntil, "429")
+	s.openaiOAuth429RetryStartedAt.Delete(account.ID)
+}
+
+// shouldRetryOpenAIOAuth429OnSameAccount keeps an OAuth account pinned while
+// a transient 429 is still inside its retry window. API-key accounts keep the
+// existing pool-mode behavior.
+func (s *OpenAIGatewayService) shouldRetryOpenAIOAuth429OnSameAccount(account *Account, statusCode int, shouldDisable bool) bool {
+	if shouldDisable || account == nil {
+		return false
+	}
+	if statusCode == http.StatusTooManyRequests && isOpenAIOAuthAccount(account) && !account.IsShadow() {
+		// A prior retry window may already have expired and parked this account.
+		// Do not create a fresh window while that runtime block is active.
+		if s.isOpenAIAccountRuntimeBlocked(account) {
+			return false
+		}
+		return s.openAIOAuth429RetryWindowActive(account)
+	}
+	return account.IsPoolMode() && account.IsPoolModeRetryableStatus(statusCode)
+}
+
+// ShouldRetryOpenAIOAuth429 is used before persisting a scheduler block. An
+// upstream-provided reset takes precedence; only temporary 429s without one
+// stay on the same OAuth account during the retry window.
+func (s *OpenAIGatewayService) ShouldRetryOpenAIOAuth429(account *Account, headers http.Header, responseBody []byte) bool {
+	if s == nil || !isOpenAIOAuthAccount(account) || account.IsShadow() {
+		return false
+	}
+	if s.isOpenAIAccountRuntimeBlocked(account) {
+		return false
+	}
+	if s.rateLimitService != nil && s.rateLimitService.calculateOpenAI429ResetTime(headers) != nil {
+		return false
+	}
+	if parseOpenAIRateLimitResetTime(responseBody) != nil {
+		return false
+	}
+	return s.openAIOAuth429RetryWindowActive(account)
+}
+
+func (s *OpenAIGatewayService) openAIOAuth429RetryWindowActive(account *Account) bool {
+	if s == nil || !isOpenAIOAuthAccount(account) || account.IsShadow() {
+		return false
+	}
+	now := time.Now()
+	value, _ := s.openaiOAuth429RetryStartedAt.LoadOrStore(account.ID, now)
+	startedAt, ok := value.(time.Time)
+	if !ok {
+		s.openaiOAuth429RetryStartedAt.Store(account.ID, now)
+		startedAt = now
+	}
+	return now.Sub(startedAt) < openAIOAuth429RetryWindow
+}
+
+func openAIOAuth429SameAccountRetryDelay(statusCode int, account *Account) time.Duration {
+	if statusCode == http.StatusTooManyRequests && isOpenAIOAuthAccount(account) && !account.IsShadow() {
+		return openAIOAuth429RetryDelay
+	}
+	return 0
+}
+
+// openAIOAuth429RetryDeadline returns the request-local retry window end that
+// was established when the account first saw a temporary OAuth 429.
+func (s *OpenAIGatewayService) openAIOAuth429RetryDeadline(account *Account) time.Time {
+	if s == nil || !isOpenAIOAuthAccount(account) || account.IsShadow() {
+		return time.Time{}
+	}
+	value, ok := s.openaiOAuth429RetryStartedAt.Load(account.ID)
+	if !ok {
+		return time.Time{}
+	}
+	startedAt, ok := value.(time.Time)
+	if !ok {
+		return time.Time{}
+	}
+	return startedAt.Add(openAIOAuth429RetryWindow)
+}
+
+// SameAccountRetryLimit returns the request-local retry budget. OAuth 429s
+// deliberately use a time-derived budget rather than an account pool setting.
+func SameAccountRetryLimit(account *Account, failoverErr *UpstreamFailoverError) int {
+	if failoverErr != nil && failoverErr.StatusCode == http.StatusTooManyRequests &&
+		isOpenAIOAuthAccount(account) && !account.IsShadow() {
+		// The handler uses SameAccountRetryDeadline for the real two-minute
+		// budget; retain a finite fallback for callers without that metadata.
+		return 24
+	}
+	if account == nil {
+		return 0
+	}
+	return account.GetPoolModeRetryCount()
 }
 
 func (s *OpenAIGatewayService) BlockAccountScheduling(account *Account, until time.Time, reason string) {
@@ -359,5 +466,9 @@ func (s *OpenAIGatewayService) ShouldStopOpenAIOAuth429Failover(account *Account
 	if statusCode != http.StatusTooManyRequests || !isOpenAIOAuthAccount(account) {
 		return false
 	}
-	return s.isOpenAIOAuth429Storm()
+	// failedSwitches is incremented after each exhausted candidate. Therefore,
+	// a value of three means this request has already given three distinct OAuth
+	// accounts their full same-account retry window. A 429 storm is diagnostic
+	// only; it must not skip those candidates and return a client 429 early.
+	return failedSwitches >= openAIOAuth429MaxAccountAttempts
 }

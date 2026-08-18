@@ -365,7 +365,7 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 					return
 				}
 				if failoverErr.RetryableOnSameAccount {
-					retryLimit := account.GetPoolModeRetryCount()
+					retryLimit := service.SameAccountRetryLimit(account, failoverErr)
 					if sameAccountRetryCount[account.ID] < retryLimit {
 						sameAccountRetryCount[account.ID]++
 						reqLog.Warn("grok_media.pool_mode_same_account_retry",

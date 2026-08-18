@@ -638,13 +638,18 @@ func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 		Detail:               upstreamDetail,
 		UpstreamResponseBody: upstreamDetail,
 	})
-	return newOpenAIUpstreamFailoverError(
+	failoverErr := newOpenAIUpstreamFailoverError(
 		resp.StatusCode,
 		resp.Header,
 		body,
 		upstreamMsg,
-		!shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode),
+		s.shouldRetryOpenAIOAuth429OnSameAccount(account, resp.StatusCode, shouldDisable),
 	)
+	if failoverErr.RetryableOnSameAccount {
+		failoverErr.SameAccountRetryDelay = openAIOAuth429SameAccountRetryDelay(resp.StatusCode, account)
+		failoverErr.SameAccountRetryDeadline = s.openAIOAuth429RetryDeadline(account)
+	}
+	return failoverErr
 }
 
 func (s *OpenAIGatewayService) handleErrorResponsePassthrough(
