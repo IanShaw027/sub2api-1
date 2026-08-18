@@ -62,6 +62,20 @@ func TestOpenAI429FastPath_BlocksOAuthAccountAfterRetryWindow(t *testing.T) {
 	require.False(t, svc.shouldRetryOpenAIOAuth429OnSameAccount(account, http.StatusTooManyRequests, false))
 }
 
+func TestOpenAI429FastPath_RetryStrategyDoesNotBlockAfterWindow(t *testing.T) {
+	settingRepo := newMockSettingRepo()
+	settingRepo.data[SettingKeyRateLimit429CooldownSettings] = `{"enabled":false,"cooldown_seconds":1,"strategy":"same_account_retry","retry_interval_ms":200,"retry_max_duration_seconds":1,"max_account_switches":3}`
+	svc := &OpenAIGatewayService{settingService: NewSettingService(settingRepo, &config.Config{})}
+	account := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	svc.openaiOAuth429RetryStartedAt.Store(account.ID, time.Now().Add(-2*time.Second))
+
+	svc.markOpenAIOAuth429RateLimited(context.Background(), account, http.Header{}, nil)
+
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	_, retryWindowExists := svc.openaiOAuth429RetryStartedAt.Load(account.ID)
+	require.False(t, retryWindowExists)
+}
+
 func TestSameAccountRetryLimit_UsesTwoMinuteBudgetForOpenAIOAuth429(t *testing.T) {
 	account := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	retryLimit := SameAccountRetryLimit(account, &UpstreamFailoverError{StatusCode: http.StatusTooManyRequests})

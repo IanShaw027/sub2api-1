@@ -164,6 +164,13 @@ func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context
 	if s.ShouldRetryOpenAIOAuth429(account, headers, responseBody) {
 		return
 	}
+	// same_account_retry is request-local by design. Exhausting one request's
+	// retry window must not remove the account from scheduling for unrelated
+	// requests; the current handler already excludes it before switching.
+	if s.settingService != nil && s.rateLimit429StrategySettings().Strategy == "same_account_retry" {
+		s.openaiOAuth429RetryStartedAt.Delete(account.ID)
+		return
+	}
 
 	cooldownUntil := time.Time{}
 	hasCooldown := false
