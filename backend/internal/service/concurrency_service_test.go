@@ -676,12 +676,27 @@ func (c *countingSlotCache) AcquireAccountSlot(_ context.Context, accountID int6
 }
 
 func TestAcquireAccountSlotForGroup_NilCacheAllowsAcquire(t *testing.T) {
+	// Fail-open is required for handler/unit tests that construct
+	// ConcurrencyService(nil) or leave cache unset. Production Wire always
+	// injects cache; the structured warn (effect=slot_acquire_noop) is the
+	// prod-visible signal if this path is ever hit.
 	gid := int64(42)
-	result, err := NewConcurrencyService(nil).AcquireAccountSlotForGroup(context.Background(), 11, &gid, 3)
-	require.NoError(t, err)
-	require.True(t, result.Acquired)
-	require.NotNil(t, result.ReleaseFunc)
-	require.NotPanics(t, result.ReleaseFunc)
+	for _, tc := range []struct {
+		name string
+		svc  *ConcurrencyService
+	}{
+		{name: "nil service", svc: nil},
+		{name: "nil cache", svc: NewConcurrencyService(nil)},
+		{name: "unset cache", svc: &ConcurrencyService{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := tc.svc.AcquireAccountSlotForGroup(context.Background(), 11, &gid, 3)
+			require.NoError(t, err)
+			require.True(t, result.Acquired, "nil cache must fail-open")
+			require.NotNil(t, result.ReleaseFunc)
+			require.NotPanics(t, result.ReleaseFunc)
+		})
+	}
 }
 
 func TestAcquireAccountSlotForGroup_RejectsNonPositiveMax(t *testing.T) {

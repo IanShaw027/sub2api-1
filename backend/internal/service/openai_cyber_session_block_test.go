@@ -25,7 +25,7 @@ func newCyberBlockTestCtx(headers map[string]string, body string) (*gin.Context,
 
 // TestCyberSessionBlockKey verifies F5a key derivation: explicit session signals
 // only (header session_id/conversation_id or body prompt_cache_key), apiKey
-// isolated, with a stable content-derived fallback when no explicit signal is
+// isolated, with a stable first-user prefix fallback when no explicit signal is
 // present, and EMPTY only when neither signal nor content exists.
 func TestCyberSessionBlockKey(t *testing.T) {
 	c1, b1 := newCyberBlockTestCtx(map[string]string{"session_id": "sess-abc"}, `{}`)
@@ -44,8 +44,8 @@ func TestCyberSessionBlockKey(t *testing.T) {
 	c4, b4 := newCyberBlockTestCtx(nil, `{"prompt_cache_key":"pck-1"}`)
 	require.NotEmpty(t, CyberSessionBlockKey(101, c4, b4))
 
-	// No explicit signal uses stable content seed; changing the first user input
-	// starts a different session key.
+	// No explicit signal uses the first-user prefix; later turns must not
+	// rotate the key, and changing the first user input starts a new one.
 	c5, b5 := newCyberBlockTestCtx(nil, `{"input":"hello world"}`)
 	k5 := CyberSessionBlockKey(101, c5, b5)
 	require.NotEmpty(t, k5)
@@ -55,6 +55,19 @@ func TestCyberSessionBlockKey(t *testing.T) {
 	require.NotEqual(t, k5, CyberSessionBlockKey(101, c5c, b5c))
 	c5d, b5d := newCyberBlockTestCtx(nil, `{}`)
 	require.Empty(t, CyberSessionBlockKey(101, c5d, b5d))
+
+	turn1 := `{"model":"gpt-5.4","tools":[{"type":"function","function":{"name":"lookup"}}],"messages":[{"role":"user","content":"Hello"}]}`
+	turn2 := `{"model":"gpt-5.4","tools":[{"type":"function","function":{"name":"lookup"}}],"messages":[{"role":"user","content":"Hello"},{"role":"assistant","content":"Hi there!"},{"role":"user","content":"Follow up"}]}`
+	cTurn1, bTurn1 := newCyberBlockTestCtx(nil, turn1)
+	kTurn1 := CyberSessionBlockKey(101, cTurn1, bTurn1)
+	cTurn2, bTurn2 := newCyberBlockTestCtx(nil, turn2)
+	require.Equal(t, kTurn1, CyberSessionBlockKey(101, cTurn2, bTurn2), "later assistant/user turns must not change the session block key")
+
+	cOtherUser, bOtherUser := newCyberBlockTestCtx(nil, `{"model":"gpt-5.4","tools":[{"type":"function","function":{"name":"lookup"}}],"messages":[{"role":"user","content":"Different opener"}]}`)
+	require.NotEqual(t, kTurn1, CyberSessionBlockKey(101, cOtherUser, bOtherUser), "different first user turn must change the key")
+
+	cOtherKey, bOtherKey := newCyberBlockTestCtx(nil, turn1)
+	require.NotEqual(t, kTurn1, CyberSessionBlockKey(202, cOtherKey, bOtherKey), "content fallback must isolate by apiKeyID")
 
 	// conversation_id header counts as explicit; key is stable and non-empty.
 	c6, b6 := newCyberBlockTestCtx(map[string]string{"conversation_id": "conv-xyz"}, `{}`)

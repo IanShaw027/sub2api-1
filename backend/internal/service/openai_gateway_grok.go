@@ -301,7 +301,8 @@ func isGrokInvalidEncryptedContentResponse(statusCode int, body []byte) bool {
 }
 
 // requestHasGrokEncryptedReasoning reports whether the outbound Responses body
-// still carries reasoning.encrypted_content that can be stripped for retry.
+// still carries encrypted reasoning or compaction history that can be stripped
+// for retry.
 func requestHasGrokEncryptedReasoning(body []byte) bool {
 	input := gjson.GetBytes(body, "input")
 	if !input.Exists() {
@@ -312,7 +313,7 @@ func requestHasGrokEncryptedReasoning(body []byte) bool {
 		items = []gjson.Result{input}
 	}
 	for _, item := range items {
-		if strings.TrimSpace(item.Get("type").String()) != "reasoning" {
+		if !grokInputItemEligibleForEncryptedContentRetry(item) {
 			continue
 		}
 		enc := item.Get("encrypted_content")
@@ -321,6 +322,18 @@ func requestHasGrokEncryptedReasoning(body []byte) bool {
 		}
 	}
 	return false
+}
+
+// grokInputItemEligibleForEncryptedContentRetry reports whether an input item
+// can be handed to sanitizeEncryptedReasoningInputItem. Compaction histories
+// use type "compaction" / "compaction_summary"; reasoning items are eligible
+// when they still carry encrypted_content.
+func grokInputItemEligibleForEncryptedContentRetry(item gjson.Result) bool {
+	itemType := strings.TrimSpace(item.Get("type").String())
+	if isOpenAICompactionType(itemType) {
+		return true
+	}
+	return itemType == "reasoning" && item.Get("encrypted_content").Exists()
 }
 
 type grokEncryptedContentStripRetriedKey struct{}
@@ -392,7 +405,7 @@ func trimGrokInvalidEncryptedContentRetryBody(body []byte) ([]byte, bool, error)
 
 	hasEncryptedReasoning := false
 	for _, item := range items {
-		if strings.TrimSpace(item.Get("type").String()) == "reasoning" && item.Get("encrypted_content").Exists() {
+		if grokInputItemEligibleForEncryptedContentRetry(item) {
 			hasEncryptedReasoning = true
 			break
 		}

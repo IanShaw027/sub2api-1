@@ -2,80 +2,180 @@ package service
 
 import (
 	"bytes"
-	"encoding/json"
 	"sort"
 	"strings"
 
 	"github.com/tidwall/gjson"
 )
 
+// shouldSanitizeOpenAIResponsesToolSchemaPatterns reports whether lookaround
+// pattern stripping should run for this account. OpenAI's schema validator
+// rejects lookahead/lookbehind; Grok, native-Anthropic, and CN-vendor paths
+// do not, so they must keep the original constraint.
+func shouldSanitizeOpenAIResponsesToolSchemaPatterns(account *Account) bool {
+	return account != nil && account.Platform == PlatformOpenAI
+}
+
+// openAIResponsesToolSchemaPattern 记录一处待删除的 lookaround pattern 成员，
+// 区间覆盖原始 body 上的整段 `"pattern":"..."`（含配对逗号），便于一次性拼接。
+type openAIResponsesToolSchemaPattern struct {
+	offset int
+	length int
+}
+
+const (
+	// JSON Schema 可在 properties / items / anyOf 下多层嵌套；比 tools 嵌套更深，
+	// 截断即可，避免畸形请求体把递归打满栈。
+	openAIResponsesToolSchemaPatternMaxDepth = 16
+	openAIResponsesToolSchemaPatternKey      = `"pattern"`
+)
+
 // sanitizeOpenAIResponsesToolSchemaPatterns removes JSON Schema patterns that
 // use PCRE lookaround. OpenAI's schema validator rejects lookahead/lookbehind
 // even though the client-side regex engine accepts them; dropping only the
 // incompatible constraint preserves the rest of the tool contract.
+//
+// 只改命中的成员区间，不 json.Marshal 整份 body：/v1/responses 上限默认 256MB，
+// 全量 decode+encode 会重排键并 HTML-escape（< → \u003c），破坏 wire mimic。
 func sanitizeOpenAIResponsesToolSchemaPatterns(body []byte) ([]byte, bool, error) {
-	if len(body) == 0 || !bytes.Contains(body, []byte(`"pattern"`)) {
+	if len(body) == 0 || !bytes.Contains(body, []byte(openAIResponsesToolSchemaPatternKey)) {
 		return body, false, nil
 	}
-	var root any
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.UseNumber()
-	if err := decoder.Decode(&root); err != nil {
-		return nil, false, err
+
+	hits := make([]openAIResponsesToolSchemaPattern, 0, 2)
+	collectOpenAIResponsesToolSchemaPatternsFromTools(body, gjson.GetBytes(body, "tools"), 0, &hits)
+	if input := gjson.GetBytes(body, "input"); input.IsArray() {
+		input.ForEach(func(_, item gjson.Result) bool {
+			if item.IsObject() {
+				collectOpenAIResponsesToolSchemaPatternsFromTools(body, item.Get("tools"), 0, &hits)
+			}
+			return true
+		})
 	}
-	changed := false
-	var visitSchema func(any)
-	visitSchema = func(value any) {
-		switch node := value.(type) {
-		case map[string]any:
-			if pattern, ok := node["pattern"].(string); ok && hasRegexLookaround(pattern) {
-				delete(node, "pattern")
-				changed = true
-			}
-			for _, child := range node {
-				visitSchema(child)
-			}
-		case []any:
-			for _, child := range node {
-				visitSchema(child)
-			}
-		}
-	}
-	var visitTools func(any)
-	visitTools = func(value any) {
-		switch node := value.(type) {
-		case map[string]any:
-			if parameters, ok := node["parameters"]; ok {
-				visitSchema(parameters)
-			}
-			if function, ok := node["function"]; ok {
-				visitTools(function)
-			}
-			if tools, ok := node["tools"]; ok {
-				visitTools(tools)
-			}
-		case []any:
-			for _, child := range node {
-				visitTools(child)
-			}
-		}
-	}
-	if document, ok := root.(map[string]any); ok {
-		if tools, exists := document["tools"]; exists {
-			visitTools(tools)
-		}
-		if input, exists := document["input"]; exists {
-			visitTools(input)
-		}
-	}
-	if !changed {
+	if len(hits) == 0 {
 		return body, false, nil
 	}
-	sanitized, err := json.Marshal(root)
-	if err != nil {
-		return nil, false, err
+
+	sort.Slice(hits, func(i, j int) bool { return hits[i].offset < hits[j].offset })
+
+	sanitized := make([]byte, 0, len(body))
+	cursor := 0
+	for _, hit := range hits {
+		if hit.offset < cursor {
+			continue
+		}
+		sanitized = append(sanitized, body[cursor:hit.offset]...)
+		cursor = hit.offset + hit.length
 	}
+	sanitized = append(sanitized, body[cursor:]...)
 	return sanitized, true, nil
+}
+
+func collectOpenAIResponsesToolSchemaPatternsFromTools(
+	body []byte, tools gjson.Result, depth int, hits *[]openAIResponsesToolSchemaPattern,
+) {
+	if depth > openAIResponsesToolSchemaMaxDepth || !tools.IsArray() {
+		return
+	}
+	tools.ForEach(func(_, tool gjson.Result) bool {
+		if !tool.IsObject() {
+			return true
+		}
+		for _, suffix := range []string{"parameters", "function.parameters"} {
+			params := tool.Get(suffix)
+			if params.IsObject() {
+				collectOpenAIResponsesToolSchemaLookaroundPatterns(body, params, 0, hits)
+			}
+		}
+		collectOpenAIResponsesToolSchemaPatternsFromTools(body, tool.Get("tools"), depth+1, hits)
+		return true
+	})
+}
+
+func collectOpenAIResponsesToolSchemaLookaroundPatterns(
+	body []byte, schema gjson.Result, depth int, hits *[]openAIResponsesToolSchemaPattern,
+) {
+	if depth > openAIResponsesToolSchemaPatternMaxDepth {
+		return
+	}
+	if schema.IsObject() {
+		schema.ForEach(func(key, value gjson.Result) bool {
+			if key.String() == "pattern" && value.Type == gjson.String && hasRegexLookaround(value.String()) {
+				appendOpenAIResponsesToolSchemaPattern(body, value, hits)
+			}
+			if value.IsObject() || value.IsArray() {
+				collectOpenAIResponsesToolSchemaLookaroundPatterns(body, value, depth+1, hits)
+			}
+			return true
+		})
+		return
+	}
+	if schema.IsArray() {
+		schema.ForEach(func(_, value gjson.Result) bool {
+			if value.IsObject() || value.IsArray() {
+				collectOpenAIResponsesToolSchemaLookaroundPatterns(body, value, depth+1, hits)
+			}
+			return true
+		})
+	}
+}
+
+// appendOpenAIResponsesToolSchemaPattern 把 gjson 给出的 pattern 值扩成整段对象
+// 成员（含配对逗号）。Index 不可用或对不上原文时跳过，避免拼错位置毁掉请求体。
+func appendOpenAIResponsesToolSchemaPattern(
+	body []byte, value gjson.Result, hits *[]openAIResponsesToolSchemaPattern,
+) {
+	end := value.Index + len(value.Raw)
+	if value.Index <= 0 || end > len(body) {
+		return
+	}
+	if !bytes.Equal(body[value.Index:end], []byte(value.Raw)) {
+		return
+	}
+	start, length, ok := jsonObjectMemberSpan(body, value.Index, end)
+	if !ok {
+		return
+	}
+	*hits = append(*hits, openAIResponsesToolSchemaPattern{offset: start, length: length})
+}
+
+func jsonObjectMemberSpan(body []byte, valueStart, valueEnd int) (int, int, bool) {
+	i := valueStart - 1
+	for i >= 0 && isJSONSpace(body[i]) {
+		i--
+	}
+	if i < 0 || body[i] != ':' {
+		return 0, 0, false
+	}
+	i--
+	for i >= 0 && isJSONSpace(body[i]) {
+		i--
+	}
+	keyLen := len(openAIResponsesToolSchemaPatternKey)
+	keyStart := i - keyLen + 1
+	if keyStart < 0 || !bytes.Equal(body[keyStart:i+1], []byte(openAIResponsesToolSchemaPatternKey)) {
+		return 0, 0, false
+	}
+
+	j := valueEnd
+	for j < len(body) && isJSONSpace(body[j]) {
+		j++
+	}
+	if j < len(body) && body[j] == ',' {
+		return keyStart, j + 1 - keyStart, true
+	}
+	k := keyStart - 1
+	for k >= 0 && isJSONSpace(body[k]) {
+		k--
+	}
+	if k >= 0 && body[k] == ',' {
+		return k, valueEnd - k, true
+	}
+	return keyStart, valueEnd - keyStart, true
+}
+
+func isJSONSpace(b byte) bool {
+	return b == ' ' || b == '\n' || b == '\r' || b == '\t'
 }
 
 func hasRegexLookaround(pattern string) bool {

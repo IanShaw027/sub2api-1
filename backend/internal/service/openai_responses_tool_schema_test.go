@@ -1,9 +1,17 @@
 package service
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -228,6 +236,110 @@ func TestSanitizeOpenAIResponsesToolSchemaPatterns_DoesNotTouchUserInputPattern(
 	require.NoError(t, err)
 	require.False(t, changed)
 	require.Equal(t, string(body), string(sanitized))
+}
+
+func TestSanitizeOpenAIResponsesToolSchemaPatterns_PreservesKeyOrderAndUnrelatedFields(t *testing.T) {
+	body := []byte(`{"z":true,"model":"gpt-5","tools":[{"type":"function","name":"search","description":"a < b & c","parameters":{"type":"object","properties":{"q":{"type":"string","pattern":"^(?=.*foo)[a-z]+$","minLength":1}}}}],"a":1}`)
+	original := append([]byte(nil), body...)
+
+	sanitized, changed, err := sanitizeOpenAIResponsesToolSchemaPatterns(body)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, string(original), string(body), "调用方的 body 不得被就地改写")
+	require.False(t, gjson.GetBytes(sanitized, "tools.0.parameters.properties.q.pattern").Exists())
+	require.Equal(t, 1, int(gjson.GetBytes(sanitized, "tools.0.parameters.properties.q.minLength").Int()))
+	require.Contains(t, string(sanitized), `"description":"a < b & c"`)
+	require.True(t, bytes.HasPrefix(sanitized, []byte(`{"z":true,"model":"gpt-5","tools":`)))
+	require.True(t, bytes.HasSuffix(sanitized, []byte(`],"a":1}`)))
+	require.True(t, json.Valid(sanitized))
+}
+
+func TestSanitizeOpenAIResponsesToolSchemaPatterns_RemovesLookaroundMemberWithValidJSON(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		gone string
+		keep string
+	}{
+		{"first_key", `{"tools":[{"parameters":{"pattern":"(?=x)","type":"object"}}]}`, "tools.0.parameters.pattern", "tools.0.parameters.type"},
+		{"last_key", `{"tools":[{"parameters":{"type":"object","pattern":"(?=x)"}}]}`, "tools.0.parameters.pattern", "tools.0.parameters.type"},
+		{"only_key", `{"tools":[{"parameters":{"pattern":"(?=x)"}}]}`, "tools.0.parameters.pattern", ""},
+		{"function_parameters", `{"tools":[{"type":"function","function":{"name":"legacy","parameters":{"type":"object","properties":{"q":{"pattern":"(?=x)"}}}}}]}`, "tools.0.function.parameters.properties.q.pattern", "tools.0.function.name"},
+		{"nested_history", `{"input":[{"type":"additional_tools","tools":[{"type":"function","parameters":{"properties":{"q":{"pattern":"(?=x)"}}}}]}]}`, "input.0.tools.0.parameters.properties.q.pattern", "input.0.type"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sanitized, changed, err := sanitizeOpenAIResponsesToolSchemaPatterns([]byte(tc.body))
+			require.NoError(t, err)
+			require.True(t, changed)
+			require.True(t, json.Valid(sanitized))
+			require.False(t, gjson.GetBytes(sanitized, tc.gone).Exists())
+			if tc.keep != "" {
+				require.True(t, gjson.GetBytes(sanitized, tc.keep).Exists())
+			}
+		})
+	}
+}
+
+func TestShouldSanitizeOpenAIResponsesToolSchemaPatterns_OpenAIOnly(t *testing.T) {
+	require.False(t, shouldSanitizeOpenAIResponsesToolSchemaPatterns(nil))
+	require.False(t, shouldSanitizeOpenAIResponsesToolSchemaPatterns(&Account{Platform: PlatformGrok, Type: AccountTypeAPIKey}))
+	require.False(t, shouldSanitizeOpenAIResponsesToolSchemaPatterns(&Account{
+		Platform: PlatformKimi, Type: AccountTypeAPIKey,
+		Credentials: map[string]any{"api_protocol": APIProtocolAnthropic},
+	}))
+	require.False(t, shouldSanitizeOpenAIResponsesToolSchemaPatterns(&Account{Platform: PlatformKimi, Type: AccountTypeAPIKey}))
+	require.False(t, shouldSanitizeOpenAIResponsesToolSchemaPatterns(&Account{Platform: PlatformZhipu, Type: AccountTypeAPIKey}))
+	require.False(t, shouldSanitizeOpenAIResponsesToolSchemaPatterns(&Account{Platform: PlatformDeepseek, Type: AccountTypeAPIKey}))
+	require.True(t, shouldSanitizeOpenAIResponsesToolSchemaPatterns(&Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}))
+	require.True(t, shouldSanitizeOpenAIResponsesToolSchemaPatterns(&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}))
+	require.True(t, shouldSanitizeOpenAIResponsesToolSchemaPatterns(&Account{
+		Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+		Extra: map[string]any{"openai_passthrough": true},
+	}))
+}
+
+func TestOpenAIGatewayService_Forward_GrokKeepsLookaroundToolPatterns(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"grok","input":"hi","stream":true,"tools":[{"type":"function","name":"search","parameters":{"type":"object","properties":{"q":{"type":"string","pattern":"^(?=.*foo)[a-z]+$"}}}}]}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	account := &Account{
+		ID:          53,
+		Name:        "grok-api-key",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 2,
+		Credentials: map[string]any{
+			"api_key":  "xai-test-key",
+			"base_url": "https://api.x.ai/v1",
+		},
+	}
+	upstreamBody := strings.Join([]string{
+		`data: {"type":"response.output_text.delta","sequence_number":0,"delta":"ok"}`,
+		"",
+		`data: {"type":"response.completed","sequence_number":1,"response":{"id":"resp_grok_keep_pattern","model":"grok-4.5","usage":{"input_tokens":2,"output_tokens":1}}}`,
+		"",
+	}, "\n")
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+	}}
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	svc := &OpenAIGatewayService{cfg: cfg, httpUpstream: upstream}
+
+	_, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, upstream.lastBody)
+	require.Equal(t, "^(?=.*foo)[a-z]+$", gjson.GetBytes(upstream.lastBody, "tools.0.parameters.properties.q.pattern").String())
 }
 
 func buildToolSchemaNullTypeBody(t *testing.T, hits int) []byte {

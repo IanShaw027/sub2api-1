@@ -176,11 +176,13 @@ scanRoot:
 	return contentSessionSeedPrefix + b.String()
 }
 
-// deriveOpenAICyberContentSessionSeed builds a higher-precision content seed
-// for cyber blocking. Unlike sticky routing (which intentionally uses only the
-// first user turn), cyber isolation includes the complete semantic conversation
-// so unrelated sessions sharing the same opening prompt do not share a block.
-// Volatile transport/continuation fields are deliberately excluded.
+// deriveOpenAICyberContentSessionSeed builds a stable content seed for cyber
+// session blocking. Matching granularity is the sticky-style prefix: model,
+// instructions, tools/functions, and the first user turn only. Later
+// assistant/user turns are excluded so a block at turn N still matches turn
+// N+1. Tenant isolation is applied later via isolateOpenAISessionID(apiKeyID);
+// this seed does not mix the full growing transcript. Version is bumped when
+// the hashed field set changes so old keys do not silently collide.
 func deriveOpenAICyberContentSessionSeed(body []byte) string {
 	if len(body) == 0 {
 		return ""
@@ -190,7 +192,7 @@ func deriveOpenAICyberContentSessionSeed(body []byte) string {
 		return ""
 	}
 	var b strings.Builder
-	for _, field := range []string{"model", "instructions", "tools", "functions", "messages", "input"} {
+	for _, field := range []string{"model", "instructions", "tools", "functions"} {
 		v := root.Get(field)
 		if !v.Exists() || (v.Type == gjson.String && strings.TrimSpace(v.String()) == "") {
 			continue
@@ -206,10 +208,55 @@ func deriveOpenAICyberContentSessionSeed(body []byte) string {
 		b.WriteByte('=')
 		b.WriteString(canonical)
 	}
+
+	appendField := func(label, canonical string) {
+		if canonical == "" {
+			return
+		}
+		b.WriteString("|")
+		b.WriteString(label)
+		b.WriteByte('=')
+		b.WriteString(canonical)
+	}
+
+	if msgs := root.Get("messages"); msgs.Exists() && msgs.IsArray() {
+		msgs.ForEach(func(_, msg gjson.Result) bool {
+			if msg.Get("role").String() != "user" {
+				return true
+			}
+			if c := msg.Get("content"); c.Exists() {
+				appendField("first_user", normalizeCompatSeedJSON(json.RawMessage(c.Raw)))
+			}
+			return false
+		})
+	} else if inp := root.Get("input"); inp.Exists() {
+		if inp.Type == gjson.String {
+			if strings.TrimSpace(inp.String()) != "" {
+				appendField("input", inp.String())
+			}
+		} else if inp.IsArray() {
+			inp.ForEach(func(_, item gjson.Result) bool {
+				if item.Get("role").String() == "user" {
+					if c := item.Get("content"); c.Exists() {
+						appendField("first_user", normalizeCompatSeedJSON(json.RawMessage(c.Raw)))
+					}
+					return false
+				}
+				if item.Get("type").String() == "input_text" {
+					if text := item.Get("text").String(); text != "" {
+						appendField("first_user", text)
+					}
+					return false
+				}
+				return true
+			})
+		}
+	}
+
 	if b.Len() == 0 {
 		return ""
 	}
-	return "cyber-content:v1" + b.String()
+	return "cyber-content:v2" + b.String()
 }
 
 // deriveOpenAIAnchoredContentSessionSeed returns the legacy content-derived

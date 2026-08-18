@@ -1,3 +1,5 @@
+//go:build unit
+
 package service
 
 import (
@@ -10,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -111,7 +114,9 @@ func TestOpenAIGatewayService_Forward_FailoverReparsesCachedBodyForNextAccount(t
 }
 
 func TestOpenAIGatewayService_HandleFailoverSideEffects_DoesNotRereadResponseBody(t *testing.T) {
-	svc := &OpenAIGatewayService{}
+	settingRepo := newMockSettingRepo()
+	settingRepo.data[SettingKeyRateLimit429CooldownSettings] = `{"enabled":false,"cooldown_seconds":1,"strategy":"same_account_retry","retry_interval_ms":200,"retry_max_duration_seconds":120,"max_account_switches":3}`
+	svc := &OpenAIGatewayService{settingService: NewSettingService(settingRepo, &config.Config{})}
 	account := &Account{
 		ID:       88,
 		Platform: PlatformOpenAI,

@@ -165,22 +165,17 @@ func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context
 		return
 	}
 	s.recordOpenAIOAuth429()
-	if s.ShouldRetryOpenAIOAuth429(account, headers, responseBody) {
-		// Request-local same-account retry: stay schedulable during the window.
-		if s.settingService != nil && s.rateLimit429StrategySettings().Strategy == "same_account_retry" {
-			return
-		}
-		// Unit tests and bare gateway instances without rate-limit wiring keep the
-		// retry window semantics. Production paths with rateLimitService apply the
-		// fallback cooldown block below instead of parking early.
-		if s.settingService == nil && s.rateLimitService == nil {
-			return
-		}
+	// rateLimit429StrategySettings falls back to defaults when settingService
+	// is nil. Stay schedulable only for an in-window same_account_retry; do
+	// not treat missing DI as a retry-window signal.
+	strategy := s.rateLimit429StrategySettings().Strategy
+	if strategy == "same_account_retry" && s.ShouldRetryOpenAIOAuth429(account, headers, responseBody) {
+		return
 	}
 	// same_account_retry is request-local by design. Exhausting one request's
 	// retry window must not remove the account from scheduling for unrelated
 	// requests; the current handler already excludes it before switching.
-	if s.settingService != nil && s.rateLimit429StrategySettings().Strategy == "same_account_retry" {
+	if strategy == "same_account_retry" {
 		s.openaiOAuth429RetryStartedAt.Delete(account.ID)
 		return
 	}
@@ -522,15 +517,11 @@ func (s *OpenAIGatewayService) isOpenAIOAuth429Storm() bool {
 
 func (s *OpenAIGatewayService) ShouldStopOpenAIOAuth429Failover(account *Account, statusCode int, failedSwitches int, state *OpenAIOAuth429FailoverState) bool {
 	if state != nil && state.grokOAuth429FollowupPending {
-		if statusCode == http.StatusTooManyRequests {
-			if isGrokOAuthAccount(account) && failedSwitches >= 2 {
-				return true
-			}
-			return false
+		if statusCode == http.StatusTooManyRequests && isGrokOAuthAccount(account) {
+			return failedSwitches >= 2
 		}
 		// The follow-up budget was armed by a Grok OAuth 429. Consume it on
-		// any failing follow-up account, even if a mixed pool selected an API-key
-		// account next.
+		// any failing follow-up account, including a mixed-pool API-key 429.
 		return true
 	}
 	if isGrokOAuthAccount(account) {

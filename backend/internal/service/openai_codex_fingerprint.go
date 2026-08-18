@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -263,6 +265,12 @@ func loadOutboundCodexProfile(ctx context.Context, account *Account) *AccountDev
 	return profile
 }
 
+// loadExistingOutboundCodexProfile returns the pinned outbound profile for
+// fingerprint stamping. When the device service is configured and no row
+// exists it GetOrCreates once so body client_metadata, session headers, and
+// enforceCodexIdentityFromAccount share the same IDs on request 1 and stay
+// stable on request 2. Unconfigured service returns (nil, nil) so the caller
+// can seed-fallback. Load/mint errors fail closed (no seed fallback).
 func loadExistingOutboundCodexProfile(ctx context.Context, account *Account) (*AccountDeviceProfile, error) {
 	if account == nil {
 		return nil, nil
@@ -276,8 +284,11 @@ func loadExistingOutboundCodexProfile(ctx context.Context, account *Account) (*A
 	}
 	loadCtx, cancel := context.WithTimeout(ctx, outboundDeviceProfileLoadTimeout)
 	defer cancel()
-	profile, err := svc.GetIfExists(loadCtx, account)
+	profile, err := LoadOutboundDeviceProfile(loadCtx, account)
 	if err != nil {
+		if errors.Is(err, ErrDeviceProfileServiceUnconfigured) {
+			return nil, nil
+		}
 		logCodexIdentityReject(account.ID, err)
 		return nil, err
 	}
@@ -312,6 +323,27 @@ func resolveConvergedInstallationID(account *Account, seed string) string {
 // resolveConvergedSessionID 返回账号级恒定的 session_id。
 // 合法 fingerprint seed（UUID）走 v2 种子派生；否则按设备档案
 // session_namespace 用 DeriveSessionIDs 派生（identity pinning）。
+// fingerprintSeedSessionNamespace is the 32-hex namespace minted for an
+// OpenAI baseline that adopted a fingerprint seed. finishCodexFingerprintIDs
+// recognizes it and stamps historical seed-v2 session/thread IDs so a
+// mint-once profile does not flip away from the seed identity.
+func fingerprintSeedSessionNamespace(seed string) string {
+	h := sha256.Sum256([]byte("sub2api:codex-session-ns:v1:" + seed))
+	return hex.EncodeToString(h[:16])
+}
+
+func codexFingerprintFinishKey(account *Account, profile *AccountDeviceProfile) string {
+	if profile == nil {
+		return ""
+	}
+	if account != nil {
+		if seed, ok := codexFingerprintSeed(account.Extra); ok && profile.SessionNamespace == fingerprintSeedSessionNamespace(seed) {
+			return seed
+		}
+	}
+	return profile.SessionNamespace
+}
+
 func resolveConvergedSessionID(key string) string {
 	if key == "" {
 		return ""
@@ -453,7 +485,9 @@ func clearCodexFingerprintIDsForAccount(c *gin.Context, account *Account) {
 // 的 thread_id 派生——每个真实 Codex 会话得到一个独立线程。
 // 返回 nil 表示 off 模式，不需要改写。
 // 注意：包含随机生成的 turn_id，调用方必须只调用一次并共享结果给头改写和体改写。
-// 优先使用已校验设备档案（identity pinning）；档案不可用时回退到账号种子派生。
+// 优先使用已校验设备档案（identity pinning）。服务已配置但档案不存在时
+// GetOrCreate 一次（mint-once），避免同请求后续 GetOrCreate 与种子 ID 分裂。
+// 服务未配置时回退账号种子派生；加载/铸造失败 fail-closed（不回退种子）。
 func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode codexFingerprintMode) *codexFingerprintIDs {
 	return resolveCodexFingerprintIDsWithContext(context.Background(), account, clientSessionID, mode)
 }
@@ -477,7 +511,7 @@ func resolveCodexFingerprintIDsWithContext(ctx context.Context, account *Account
 		if ids.installationID == "" {
 			return nil
 		}
-		return finishCodexFingerprintIDs(ids, account, profile.SessionNamespace, clientSessionID, mode)
+		return finishCodexFingerprintIDs(ids, account, codexFingerprintFinishKey(account, profile), clientSessionID, mode)
 	}
 
 	seed, ok := codexFingerprintSeed(account.Extra)

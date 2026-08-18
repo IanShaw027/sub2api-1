@@ -14,7 +14,9 @@ import (
 )
 
 func TestOpenAI429FastPath_KeepsOAuthAccountSchedulableDuringRetryWindow(t *testing.T) {
-	svc := &OpenAIGatewayService{}
+	settingRepo := newMockSettingRepo()
+	settingRepo.data[SettingKeyRateLimit429CooldownSettings] = `{"enabled":false,"cooldown_seconds":1,"strategy":"same_account_retry","retry_interval_ms":200,"retry_max_duration_seconds":120,"max_account_switches":3}`
+	svc := &OpenAIGatewayService{settingService: NewSettingService(settingRepo, &config.Config{})}
 	account := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	apiKeyAccount := &Account{ID: 43, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 
@@ -30,7 +32,9 @@ func TestOpenAI429FastPath_KeepsOAuthAccountSchedulableDuringRetryWindow(t *test
 // TestOpenAI429FastPath_SkipsSparkShadow 外审第8轮 P1:spark 影子被选中后若 /responses 返回 429,
 // 不得按 global x-codex-* 信号写内存运行时熔断(否则 spark 被冷却到 global reset、单影子场景无可用账号)。
 func TestOpenAI429FastPath_SkipsSparkShadow(t *testing.T) {
-	svc := &OpenAIGatewayService{}
+	settingRepo := newMockSettingRepo()
+	settingRepo.data[SettingKeyRateLimit429CooldownSettings] = `{"enabled":false,"cooldown_seconds":1,"strategy":"same_account_retry","retry_interval_ms":200,"retry_max_duration_seconds":120,"max_account_switches":3}`
+	svc := &OpenAIGatewayService{settingService: NewSettingService(settingRepo, &config.Config{})}
 	parentID := int64(800)
 	shadow := &Account{
 		ID:              801,
@@ -485,7 +489,14 @@ func TestShouldStopOpenAIOAuth429Failover_TracksOneGrokFollowupAttempt(t *testin
 		require.True(t, svc.ShouldStopOpenAIOAuth429Failover(apiKeyAccount, http.StatusInternalServerError, 2, &state))
 	})
 
-	var state OpenAIOAuth429FailoverState
-	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusTooManyRequests, 0, &state))
-	require.False(t, svc.ShouldStopOpenAIOAuth429Failover(apiKeyAccount, http.StatusTooManyRequests, 2, &state))
+	t.Run("OAuth 429 then mixed-pool API-key 429 consumes the followup", func(t *testing.T) {
+		openaiAPIKey := &Account{ID: 46, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+		var grokState OpenAIOAuth429FailoverState
+		require.False(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusTooManyRequests, 1, &grokState))
+		require.True(t, svc.ShouldStopOpenAIOAuth429Failover(apiKeyAccount, http.StatusTooManyRequests, 2, &grokState))
+
+		var openaiState OpenAIOAuth429FailoverState
+		require.False(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusTooManyRequests, 1, &openaiState))
+		require.True(t, svc.ShouldStopOpenAIOAuth429Failover(openaiAPIKey, http.StatusTooManyRequests, 2, &openaiState))
+	})
 }

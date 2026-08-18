@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -63,6 +64,24 @@ func (r *mapDeviceProfileRepo) GetByAccountID(ctx context.Context, accountID int
 
 func (r *mapDeviceProfileRepo) InsertBaseline(_ context.Context, p *AccountDeviceProfile) (*AccountDeviceProfile, error) {
 	return nil, fmt.Errorf("identity_reject: unexpected baseline insert in test")
+}
+
+// mintingDeviceProfileRepo persists GetOrCreate baselines so a later
+// GetIfExists/load can observe the same minted identity.
+type mintingDeviceProfileRepo struct {
+	mapDeviceProfileRepo
+}
+
+func (r *mintingDeviceProfileRepo) InsertBaseline(_ context.Context, p *AccountDeviceProfile) (*AccountDeviceProfile, error) {
+	if r.profiles == nil {
+		r.profiles = map[int64]*AccountDeviceProfile{}
+	}
+	copied := *p
+	if p.ProfilePayload != nil {
+		copied.ProfilePayload = maps.Clone(p.ProfilePayload)
+	}
+	r.profiles[p.AccountID] = &copied
+	return &copied, nil
 }
 
 func (r *mapDeviceProfileRepo) UpdateCAS(context.Context, int64, int64, *AccountDeviceProfile) (bool, error) {
@@ -505,6 +524,45 @@ func TestResolveCodexFingerprintIDsFromRequest_EnabledModesRequireValidSeed(t *t
 			require.Nil(t, resolveCodexFingerprintIDsFromRequest(account, nil))
 		})
 	}
+}
+
+func TestResolveCodexFingerprintIDs_MintsOnceWhenNoProfileExists(t *testing.T) {
+	account := newTestOAuthAccount(8801, map[string]any{codexFingerprintModeExtraKey: "session"})
+	seed, ok := codexFingerprintSeed(account.Extra)
+	require.True(t, ok)
+	wantInstall := resolveConvergedInstallationID(account, seed)
+	wantSession := resolveConvergedSessionID(seed)
+
+	repo := &mintingDeviceProfileRepo{mapDeviceProfileRepo: mapDeviceProfileRepo{
+		profiles: map[int64]*AccountDeviceProfile{},
+	}}
+	svc := NewAccountDeviceService(repo)
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(svc)
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	ids := resolveCodexFingerprintIDsWithContext(context.Background(), account, "client-session", codexFingerprintSession)
+	require.NotNil(t, ids)
+	require.Equal(t, wantInstall, ids.installationID)
+	require.Equal(t, wantSession, ids.sessionID)
+
+	existing, err := svc.GetIfExists(context.Background(), account)
+	require.NoError(t, err)
+	require.NotNil(t, existing, "first resolve must mint so later GetIfExists sees the same profile")
+	require.Equal(t, wantInstall, existing.InstallationID)
+	require.Equal(t, existing.InstallationID, ids.installationID)
+	require.Equal(t, fingerprintSeedSessionNamespace(seed), existing.SessionNamespace)
+	require.Equal(t, wantSession, resolveConvergedSessionID(codexFingerprintFinishKey(account, existing)))
+
+	ids2 := resolveCodexFingerprintIDsWithContext(context.Background(), account, "client-session", codexFingerprintSession)
+	require.NotNil(t, ids2)
+	require.Equal(t, ids.installationID, ids2.installationID)
+	require.Equal(t, ids.sessionID, ids2.sessionID)
+
+	created, err := svc.GetOrCreate(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, ids.installationID, created.InstallationID)
+	require.Equal(t, existing.SessionNamespace, created.SessionNamespace)
 }
 
 func TestResolveCodexFingerprintIDs_SessionModeUsesDeriveSessionIDs(t *testing.T) {

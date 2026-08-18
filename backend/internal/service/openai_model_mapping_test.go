@@ -223,15 +223,117 @@ func TestResolveOpenAICompactForwardModel(t *testing.T) {
 }
 
 func TestResolveOpenAIAccountUpstreamModelForRequest_CompactMappingPrecedesNormalMapping(t *testing.T) {
-	account := &Account{Credentials: map[string]any{
+	conflictingMappings := map[string]any{
 		"model_mapping":         map[string]any{"gpt-5.5": "gpt-5.4"},
 		"compact_model_mapping": map[string]any{"gpt-5.5": "gpt-5.5-openai-compact"},
-	}}
-	if got := resolveOpenAIAccountUpstreamModelForRequest(account, "gpt-5.5", true); got != "gpt-5.5-openai-compact" {
-		t.Fatalf("compact upstream model = %q, want gpt-5.5-openai-compact", got)
 	}
-	if got := resolveOpenAIAccountUpstreamModelForRequest(account, "gpt-5.5", false); got != "gpt-5.4" {
-		t.Fatalf("normal upstream model = %q, want gpt-5.4", got)
+	mappedOnlyCompact := map[string]any{
+		"model_mapping":         map[string]any{"gpt-5.5": "gpt-5.4"},
+		"compact_model_mapping": map[string]any{"gpt-5.4": "gpt-5.4-openai-compact"},
+	}
+	tests := []struct {
+		name           string
+		account        *Account
+		requestedModel string
+		requireCompact bool
+		wantUpstream   string
+		wantBilling    string
+	}{
+		{
+			name: "compact-first uses client-visible model not ordinary mapping",
+			account: &Account{
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeOAuth,
+				Credentials: conflictingMappings,
+			},
+			requestedModel: "gpt-5.5",
+			requireCompact: true,
+			wantUpstream:   "gpt-5.5-openai-compact",
+			wantBilling:    "gpt-5.4",
+		},
+		{
+			name: "ordinary mapping still applies when compact is not required",
+			account: &Account{
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeOAuth,
+				Credentials: conflictingMappings,
+			},
+			requestedModel: "gpt-5.5",
+			requireCompact: false,
+			wantUpstream:   "gpt-5.4",
+			wantBilling:    "gpt-5.4",
+		},
+		{
+			name: "compact fallback still remaps after ordinary mapping",
+			account: &Account{
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeOAuth,
+				Credentials: mappedOnlyCompact,
+			},
+			requestedModel: "gpt-5.5",
+			requireCompact: true,
+			wantUpstream:   "gpt-5.4-openai-compact",
+			wantBilling:    "gpt-5.4",
+		},
+		{
+			name: "passthrough ignores ordinary mapping and applies compact only",
+			account: &Account{
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeOAuth,
+				Credentials: conflictingMappings,
+				Extra:       map[string]any{"openai_passthrough": true},
+			},
+			requestedModel: "gpt-5.5",
+			requireCompact: true,
+			wantUpstream:   "gpt-5.5-openai-compact",
+			wantBilling:    "gpt-5.5",
+		},
+		{
+			name: "passthrough without compact keeps the client-visible model",
+			account: &Account{
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeOAuth,
+				Credentials: conflictingMappings,
+				Extra:       map[string]any{"openai_passthrough": true},
+			},
+			requestedModel: "gpt-5.5",
+			requireCompact: false,
+			wantUpstream:   "gpt-5.5",
+			wantBilling:    "gpt-5.5",
+		},
+		{
+			name: "raw chat completions api-key never applies compact mapping",
+			account: &Account{
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeAPIKey,
+				Credentials: conflictingMappings,
+				Extra:       map[string]any{"openai_responses_supported": false},
+			},
+			requestedModel: "gpt-5.5",
+			requireCompact: true,
+			wantUpstream:   "gpt-5.4",
+			wantBilling:    "gpt-5.4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotResolver := resolveOpenAIAccountUpstreamModelForRequest(tt.account, tt.requestedModel, tt.requireCompact)
+			if gotResolver != tt.wantUpstream {
+				t.Fatalf("resolveOpenAIAccountUpstreamModelForRequest(...) = %q, want %q", gotResolver, tt.wantUpstream)
+			}
+
+			gotBilling, gotForward := resolveOpenAIForwardMappedModels(tt.account, tt.requestedModel, tt.requireCompact)
+			if gotForward != tt.wantUpstream {
+				t.Fatalf("resolveOpenAIForwardMappedModels(...) upstream = %q, want %q", gotForward, tt.wantUpstream)
+			}
+			if gotBilling != tt.wantBilling {
+				t.Fatalf("resolveOpenAIForwardMappedModels(...) billing = %q, want %q", gotBilling, tt.wantBilling)
+			}
+			if gotForward != gotResolver {
+				t.Fatalf("Forward chain %q disagrees with scheduler %q", gotForward, gotResolver)
+			}
+		})
 	}
 }
 

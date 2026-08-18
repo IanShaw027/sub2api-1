@@ -1909,6 +1909,43 @@ func TestIsGrokInvalidEncryptedContentResponse_CompactionBlob(t *testing.T) {
 	}
 }
 
+func TestTrimGrokInvalidEncryptedContentRetryBody_CompactionBlobSanitizes(t *testing.T) {
+	compactionBlobError := []byte(`{"error":{"code":"invalid-argument","message":"Could not decode the compaction blob. Ensure it is unmodified from the compact response."}}`)
+	require.True(t, isGrokInvalidEncryptedContentResponse(http.StatusBadRequest, compactionBlobError))
+
+	tests := []struct {
+		name     string
+		itemType string
+	}{
+		{name: "compaction", itemType: "compaction"},
+		{name: "compaction_summary", itemType: "compaction_summary"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(fmt.Sprintf(`{
+				"model":"grok",
+				"input":[
+					{"type":"%[1]s","id":"cmp_stale","encrypted_content":"compact-blob","summary":[{"type":"summary_text","text":"keep this compact summary"}]},
+					{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}
+				]
+			}`, tt.itemType))
+
+			require.True(t, requestHasGrokEncryptedReasoning(body),
+				"compaction history must be eligible for encrypted-content recovery")
+
+			retryBody, changed, err := trimGrokInvalidEncryptedContentRetryBody(body)
+			require.NoError(t, err)
+			require.True(t, changed, "compaction-blob recovery must reach the existing sanitizer")
+			require.False(t, gjson.GetBytes(retryBody, fmt.Sprintf(`input.#(type=="%s")`, tt.itemType)).Exists())
+			require.False(t, gjson.GetBytes(retryBody, "input.0.encrypted_content").Exists())
+			require.Equal(t, "message", gjson.GetBytes(retryBody, "input.0.type").String())
+			require.Equal(t, "hi", gjson.GetBytes(retryBody, "input.0.content.0.text").String())
+			require.Equal(t, int64(1), gjson.GetBytes(retryBody, "input.#").Int())
+		})
+	}
+}
+
 func TestForwardGrokResponsesInvalidEncryptedContentRecoveryDoesNotOvermatch(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

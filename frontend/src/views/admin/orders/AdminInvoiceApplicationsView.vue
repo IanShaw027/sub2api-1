@@ -59,7 +59,7 @@
         </ul>
         <div v-if="detail.status === 'APPLIED'">
           <label class="input-label">{{ t('payment.invoices.uploadFile') }}</label>
-          <input type="file" accept=".pdf,.ofd,.xml,.zip,application/pdf" @change="onFile" />
+          <input type="file" accept="application/pdf,.pdf" @change="onFile" />
         </div>
       </div>
       <template #footer>

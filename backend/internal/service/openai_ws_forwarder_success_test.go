@@ -952,6 +952,10 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthHonorsAccountUserAgent(t *testin
 			"responses_websockets_v2_enabled": true,
 		},
 	}
+	// Profile-first identity: an auto-minted baseline would pin Ubuntu/xterm and
+	// hide the account UA. Install a profile with no payload user_agent so the
+	// credential-plane UA remains the fallback.
+	installLeftoverOutboundProfile(t, leftoverValidProfile(account.ID, PlatformOpenAI, ClientFamilyCodexCLI, "", "mid-ws-account-ua"))
 
 	body := []byte(`{"model":"gpt-5.1","stream":false,"input":[{"type":"input_text","text":"hello"}]}`)
 	result, err := svc.Forward(context.Background(), c, account, body)

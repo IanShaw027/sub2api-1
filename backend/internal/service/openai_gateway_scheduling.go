@@ -744,6 +744,28 @@ func resolveOpenAIAccountUpstreamModelForRequest(account *Account, requestedMode
 	return normalizeOpenAIModelForUpstream(account, upstreamModel)
 }
 
+// resolveOpenAIForwardMappedModels is the account/model/requireCompact chain
+// used by Forward. billingModel is the ordinary account mapping used for
+// usage billing. upstreamModel is the model actually sent, and must match
+// resolveOpenAIAccountUpstreamModelForRequest so scheduler, channel
+// restriction, and Forward cannot disagree.
+func resolveOpenAIForwardMappedModels(account *Account, requestedModel string, requireCompact bool) (billingModel, upstreamModel string) {
+	requestedModel = strings.TrimSpace(requestedModel)
+	if account != nil && account.IsOpenAIPassthroughEnabled() {
+		billingModel = requestedModel
+	} else if account != nil {
+		billingModel = strings.TrimSpace(account.GetMappedModel(requestedModel))
+	}
+	if billingModel == "" {
+		billingModel = requestedModel
+	}
+	upstreamModel = resolveOpenAIAccountUpstreamModelForRequest(account, requestedModel, requireCompact)
+	if strings.TrimSpace(upstreamModel) == "" {
+		upstreamModel = billingModel
+	}
+	return billingModel, upstreamModel
+}
+
 func (s *OpenAIGatewayService) selectAccountForModelWithExclusions(ctx context.Context, groupID *int64, platform string, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, stickyAccountID int64, requiredCapability OpenAIEndpointCapability, preferLowUpstreamRate bool) (*Account, error) {
 	platform = NormalizeOpenAICompatiblePlatform(platform)
 	if s.checkChannelPricingRestriction(ctx, groupID, requestedModel) {

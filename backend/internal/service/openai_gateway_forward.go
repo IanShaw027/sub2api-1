@@ -61,12 +61,14 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if toolSchemaSanitized {
 		body = sanitizedToolBody
 	}
-	patternSanitizedBody, patternSanitized, patternErr := sanitizeOpenAIResponsesToolSchemaPatterns(body)
-	if patternErr != nil {
-		return nil, fmt.Errorf("sanitize OpenAI Responses tool schema patterns: %w", patternErr)
-	}
-	if patternSanitized {
-		body = patternSanitizedBody
+	if shouldSanitizeOpenAIResponsesToolSchemaPatterns(account) {
+		patternSanitizedBody, patternSanitized, patternErr := sanitizeOpenAIResponsesToolSchemaPatterns(body)
+		if patternErr != nil {
+			return nil, fmt.Errorf("sanitize OpenAI Responses tool schema patterns: %w", patternErr)
+		}
+		if patternSanitized {
+			body = patternSanitizedBody
+		}
 	}
 	if account.IsOpenAIOAuth() && isOpenAIResponsesLiteHeader(c.GetHeader(responsesLiteHeader)) {
 		liteBody, changed, liteErr := normalizeOpenAIResponsesLiteToolsPayload(body)
@@ -300,36 +302,35 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		markPatchSet("instructions", defaultCodexSynthInstructions(reqModel))
 	}
 
-	billingModel := account.GetMappedModel(reqModel)
-	if billingModel != reqModel {
-		logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Model mapping applied: %s -> %s (account: %s, isCodexCLI: %v)", reqModel, billingModel, account.Name, isCodexCLI)
-		reqModel = billingModel
-		markPatchSet("model", billingModel)
+	clientModel := strings.TrimSpace(reqModel)
+	if clientModel == "" {
+		clientModel = strings.TrimSpace(requestView.Model)
 	}
-	upstreamModel := billingModel
+	billingModel, upstreamModel := resolveOpenAIForwardMappedModels(account, clientModel, compactPath)
 	isCompactRequest := compactPath
-	compactMapped := false
-	if isCompactRequest {
-		compactMappedModel := resolveOpenAICompactForwardModel(account, billingModel)
-		if compactMappedModel != "" && compactMappedModel != billingModel {
-			compactMapped = true
-			upstreamModel = compactMappedModel
-			reqModel = compactMappedModel
-			markPatchSet("model", compactMappedModel)
-			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Compact model mapping applied: %s -> %s (account: %s, isCodexCLI: %v)", billingModel, compactMappedModel, account.Name, isCodexCLI)
-		}
-	}
-	if !compactMapped {
-		modelForNormalize := reqModel
-		if modelForNormalize == "" {
-			modelForNormalize = requestView.Model
-		}
-		upstreamModel = normalizeOpenAIModelForUpstream(account, modelForNormalize)
-		if upstreamModel != "" && upstreamModel != modelForNormalize {
+	compactFromClient := resolveOpenAICompactForwardModel(account, clientModel)
+	compactFromBilling := resolveOpenAICompactForwardModel(account, billingModel)
+	compactApplied := isCompactRequest && upstreamModel != "" &&
+		(compactFromClient == upstreamModel && compactFromClient != clientModel ||
+			compactFromBilling == upstreamModel && compactFromBilling != billingModel)
+	if upstreamModel != "" && upstreamModel != clientModel {
+		switch {
+		case compactApplied:
+			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Compact model mapping applied: %s -> %s (account: %s, isCodexCLI: %v)", clientModel, upstreamModel, account.Name, isCodexCLI)
+		case upstreamModel == billingModel:
+			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Model mapping applied: %s -> %s (account: %s, isCodexCLI: %v)", clientModel, billingModel, account.Name, isCodexCLI)
+		default:
+			modelForNormalize := clientModel
+			if billingModel != clientModel {
+				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Model mapping applied: %s -> %s (account: %s, isCodexCLI: %v)", clientModel, billingModel, account.Name, isCodexCLI)
+				modelForNormalize = billingModel
+			}
 			logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Upstream model resolved: %s -> %s (account: %s, type: %s, isCodexCLI: %v)", modelForNormalize, upstreamModel, account.Name, account.Type, isCodexCLI)
-			reqModel = upstreamModel
-			markPatchSet("model", upstreamModel)
 		}
+		reqModel = upstreamModel
+		markPatchSet("model", upstreamModel)
+	} else if upstreamModel != "" {
+		reqModel = upstreamModel
 	}
 	if strings.TrimSpace(gjson.GetBytes(body, "reasoning.effort").String()) == "minimal" {
 		markPatchSet("reasoning.effort", "none")

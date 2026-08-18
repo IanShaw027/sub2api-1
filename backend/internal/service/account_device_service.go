@@ -591,7 +591,7 @@ func isOverlaySoftwareKey(key string) bool {
 }
 
 func buildAccountDeviceBaseline(account *Account) (*AccountDeviceProfile, error) {
-	sessionNamespace, err := randomSessionNamespace()
+	sessionNamespace, err := baselineSessionNamespace(account)
 	if err != nil {
 		return nil, fmt.Errorf("identity_reject: generate session_namespace: %w", err)
 	}
@@ -653,7 +653,7 @@ func baselineInstallationID(account *Account) (string, error) {
 	}
 	v, ok := extraValue(account.Extra, "openai_device_id")
 	if !ok {
-		return uuid.NewString(), nil
+		return baselineFingerprintInstallationID(account)
 	}
 	raw, ok := v.(string)
 	if !ok {
@@ -661,7 +661,7 @@ func baselineInstallationID(account *Account) (string, error) {
 	}
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return uuid.NewString(), nil
+		return baselineFingerprintInstallationID(account)
 	}
 	if err := validateOpenAIDeviceIDExtra(raw); err != nil {
 		return "", fmt.Errorf("identity_reject: openai_device_id is not a valid RFC4122 UUID (account_id=%d)", account.ID)
@@ -772,6 +772,26 @@ func baselineSoftwareBundle(platform string) (clientVersion, runtimeVersion stri
 	default:
 		return "1.0.0", claude.DefaultHeaders["X-Stainless-Runtime-Version"], map[string]any{}
 	}
+}
+
+func baselineSessionNamespace(account *Account) (string, error) {
+	if account != nil {
+		if seed, ok := codexFingerprintSeed(account.Extra); ok {
+			return fingerprintSeedSessionNamespace(seed), nil
+		}
+	}
+	return randomSessionNamespace()
+}
+
+func baselineFingerprintInstallationID(account *Account) (string, error) {
+	if account != nil {
+		if seed, ok := codexFingerprintSeed(account.Extra); ok {
+			if id := resolveConvergedInstallationID(account, seed); id != "" {
+				return id, nil
+			}
+		}
+	}
+	return uuid.NewString(), nil
 }
 
 func randomSessionNamespace() (string, error) {

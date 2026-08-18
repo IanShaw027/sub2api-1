@@ -4,6 +4,7 @@ export interface InvoiceDraft {
   email: string
   contact_name: string
   contact_phone: string
+  request_note: string
 }
 
 const STORAGE_PREFIX = 'sub2api:invoice-draft:v1:'
@@ -13,7 +14,7 @@ function key(userID: number | string): string {
 }
 
 export function loadInvoiceDraft(userID: number | string, fallbackEmail = ''): InvoiceDraft {
-  const empty: InvoiceDraft = { title: '', tax_number: '', email: fallbackEmail, contact_name: '', contact_phone: '' }
+  const empty: InvoiceDraft = { title: '', tax_number: '', email: fallbackEmail, contact_name: '', contact_phone: '', request_note: '' }
   try {
     const raw = localStorage.getItem(key(userID))
     if (!raw) return empty
@@ -24,6 +25,7 @@ export function loadInvoiceDraft(userID: number | string, fallbackEmail = ''): I
       email: typeof parsed.email === 'string' && parsed.email ? parsed.email : fallbackEmail,
       contact_name: typeof parsed.contact_name === 'string' ? parsed.contact_name : '',
       contact_phone: typeof parsed.contact_phone === 'string' ? parsed.contact_phone : '',
+      request_note: typeof parsed.request_note === 'string' ? parsed.request_note : '',
     }
   } catch {
     return empty

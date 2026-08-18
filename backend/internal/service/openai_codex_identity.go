@@ -138,10 +138,10 @@ func profilePayloadString(profile *AccountDeviceProfile, key string) string {
 	return strings.TrimSpace(s)
 }
 
+// codexIdentityCandidateUA 优先取档案 payload 的 user_agent，没有再回退 fallbackUA
+//（账号 openai_user_agent / 覆写）。管理员 UA 不得压过档案身份，否则会与
+// payload originator、TLS pin 组成错配三元组。
 func codexIdentityCandidateUA(profile *AccountDeviceProfile, fallbackUA string) string {
-	if ua := strings.TrimSpace(fallbackUA); ua != "" {
-		return ua
-	}
 	if ua := profilePayloadString(profile, "user_agent"); ua != "" {
 		return ua
 	}
@@ -162,7 +162,8 @@ func applyCodexPayloadOriginator(ua, originator string) string {
 }
 
 // resolveCodexOutboundIdentityFromProfile 用档案 payload 的 user_agent / originator
-// 作为候选，再走既有配对与最低版本收口，保证 UA / originator / version 同源自洽。
+// 作为候选（user_agent 优先于 fallbackUA），再走既有配对与最低版本收口，保证
+// UA / originator / version 同源自洽。
 // originator 一律小写后改写 UA 首段，再交给 PairCodexClientIdentity，避免只读 UA 前缀。
 func resolveCodexOutboundIdentityFromProfile(profile *AccountDeviceProfile, fallbackUA string) codexOutboundIdentity {
 	ua := codexIdentityCandidateUA(profile, fallbackUA)

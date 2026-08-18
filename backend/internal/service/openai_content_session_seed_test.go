@@ -548,3 +548,42 @@ func TestDeriveOpenAIStablePrefixSessionSeed_RequiresMeaningfulPrefix(t *testing
 		require.Empty(t, deriveOpenAIStablePrefixSessionSeed(body))
 	}
 }
+
+func TestDeriveOpenAICyberContentSessionSeed_StableAcrossTurns(t *testing.T) {
+	turn1 := []byte(`{
+		"model": "gpt-5.4",
+		"tools": [{"type":"function","function":{"name":"lookup"}}],
+		"messages": [{"role": "user", "content": "Hello"}]
+	}`)
+	turn2 := []byte(`{
+		"model": "gpt-5.4",
+		"tools": [{"type":"function","function":{"name":"lookup"}}],
+		"messages": [
+			{"role": "user", "content": "Hello"},
+			{"role": "assistant", "content": "Hi there!"},
+			{"role": "user", "content": "Follow up"}
+		]
+	}`)
+	s1 := deriveOpenAICyberContentSessionSeed(turn1)
+	s2 := deriveOpenAICyberContentSessionSeed(turn2)
+	require.NotEmpty(t, s1)
+	require.Equal(t, s1, s2, "cyber seed must stay stable across later assistant/user turns")
+	require.True(t, strings.HasPrefix(s1, "cyber-content:v2"))
+	require.Contains(t, s1, "|first_user=")
+	require.NotContains(t, s1, "Follow up")
+}
+
+func TestDeriveOpenAICyberContentSessionSeed_DifferentFirstUserDiffers(t *testing.T) {
+	req1 := []byte(`{"model":"gpt-5.4","messages":[{"role":"user","content":"Question A"}]}`)
+	req2 := []byte(`{"model":"gpt-5.4","messages":[{"role":"user","content":"Question B"}]}`)
+	require.NotEqual(t, deriveOpenAICyberContentSessionSeed(req1), deriveOpenAICyberContentSessionSeed(req2))
+}
+
+func TestDeriveOpenAICyberContentSessionSeed_ResponsesInputArrayStableAcrossTurns(t *testing.T) {
+	turn1 := []byte(`{"model":"gpt-5.4","instructions":"Be concise.","input":[{"role":"user","content":"Hello"}]}`)
+	turn2 := []byte(`{"model":"gpt-5.4","instructions":"Be concise.","input":[{"role":"user","content":"Hello"},{"role":"assistant","content":"Hi"},{"role":"user","content":"More"}]}`)
+	s1 := deriveOpenAICyberContentSessionSeed(turn1)
+	require.Equal(t, s1, deriveOpenAICyberContentSessionSeed(turn2))
+	require.Contains(t, s1, "|first_user=")
+	require.NotContains(t, s1, "More")
+}
