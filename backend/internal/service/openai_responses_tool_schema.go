@@ -2,10 +2,88 @@ package service
 
 import (
 	"bytes"
+	"encoding/json"
 	"sort"
+	"strings"
 
 	"github.com/tidwall/gjson"
 )
+
+// sanitizeOpenAIResponsesToolSchemaPatterns removes JSON Schema patterns that
+// use PCRE lookaround. OpenAI's schema validator rejects lookahead/lookbehind
+// even though the client-side regex engine accepts them; dropping only the
+// incompatible constraint preserves the rest of the tool contract.
+func sanitizeOpenAIResponsesToolSchemaPatterns(body []byte) ([]byte, bool, error) {
+	if len(body) == 0 || !bytes.Contains(body, []byte(`"pattern"`)) {
+		return body, false, nil
+	}
+	var root any
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&root); err != nil {
+		return nil, false, err
+	}
+	changed := false
+	var visitSchema func(any)
+	visitSchema = func(value any) {
+		switch node := value.(type) {
+		case map[string]any:
+			if pattern, ok := node["pattern"].(string); ok && hasRegexLookaround(pattern) {
+				delete(node, "pattern")
+				changed = true
+			}
+			for _, child := range node {
+				visitSchema(child)
+			}
+		case []any:
+			for _, child := range node {
+				visitSchema(child)
+			}
+		}
+	}
+	var visitTools func(any)
+	visitTools = func(value any) {
+		switch node := value.(type) {
+		case map[string]any:
+			if parameters, ok := node["parameters"]; ok {
+				visitSchema(parameters)
+			}
+			if function, ok := node["function"]; ok {
+				visitTools(function)
+			}
+			if tools, ok := node["tools"]; ok {
+				visitTools(tools)
+			}
+		case []any:
+			for _, child := range node {
+				visitTools(child)
+			}
+		}
+	}
+	if document, ok := root.(map[string]any); ok {
+		if tools, exists := document["tools"]; exists {
+			visitTools(tools)
+		}
+		if input, exists := document["input"]; exists {
+			visitTools(input)
+		}
+	}
+	if !changed {
+		return body, false, nil
+	}
+	sanitized, err := json.Marshal(root)
+	if err != nil {
+		return nil, false, err
+	}
+	return sanitized, true, nil
+}
+
+func hasRegexLookaround(pattern string) bool {
+	return strings.Contains(pattern, "(?=") ||
+		strings.Contains(pattern, "(?!") ||
+		strings.Contains(pattern, "(?<=") ||
+		strings.Contains(pattern, "(?<!")
+}
 
 const (
 	// 工具定义在多轮历史里最多再嵌套一层 tools，留出余量后截断，避免畸形请求体

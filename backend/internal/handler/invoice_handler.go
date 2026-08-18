@@ -75,6 +75,7 @@ func (h *InvoiceHandler) ListMine(c *gin.Context) {
 	items, total, err := h.invoiceService.List(c.Request.Context(), service.InvoiceListParams{
 		UserID:   subject.UserID,
 		Status:   strings.TrimSpace(c.Query("status")),
+		Keyword:  strings.TrimSpace(c.Query("keyword")),
 		Page:     page,
 		PageSize: pageSize,
 	})

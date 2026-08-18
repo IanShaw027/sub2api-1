@@ -176,6 +176,42 @@ scanRoot:
 	return contentSessionSeedPrefix + b.String()
 }
 
+// deriveOpenAICyberContentSessionSeed builds a higher-precision content seed
+// for cyber blocking. Unlike sticky routing (which intentionally uses only the
+// first user turn), cyber isolation includes the complete semantic conversation
+// so unrelated sessions sharing the same opening prompt do not share a block.
+// Volatile transport/continuation fields are deliberately excluded.
+func deriveOpenAICyberContentSessionSeed(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	root := parseRawJSONView(body)
+	if !root.Exists() || !root.IsObject() {
+		return ""
+	}
+	var b strings.Builder
+	for _, field := range []string{"model", "instructions", "tools", "functions", "messages", "input"} {
+		v := root.Get(field)
+		if !v.Exists() || (v.Type == gjson.String && strings.TrimSpace(v.String()) == "") {
+			continue
+		}
+		canonical := v.Raw
+		if v.Type == gjson.String {
+			canonical = v.String()
+		} else {
+			canonical = normalizeCompatSeedJSON(json.RawMessage(v.Raw))
+		}
+		b.WriteString("|")
+		b.WriteString(field)
+		b.WriteByte('=')
+		b.WriteString(canonical)
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	return "cyber-content:v1" + b.String()
+}
+
 // deriveOpenAIAnchoredContentSessionSeed returns the legacy content-derived
 // seed only when it contains a meaningful user/input anchor. This preserves
 // the existing session derivation while preventing model-only requests from

@@ -62,13 +62,25 @@ func normalizeOpenAIResponsesRejectedFieldRetryBody(statusCode int, body, respon
 
 	code := strings.ToLower(strings.TrimSpace(extractUpstreamErrorCode(responseBody)))
 	message := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))
-	if !isExplicitOpenAIResponsesFieldRejection(code, message) {
-		return nil, "", false, nil
-	}
-
 	param := strings.ToLower(strings.TrimSpace(gjson.GetBytes(responseBody, "error.param").String()))
 	if param == "" {
 		param = openAIResponsesRejectedParamFromMessage(message)
+	}
+	// ChatGPT/Codex upstreams report this model-gated field as
+	// invalid_parameter rather than unknown/unsupported_parameter. Removing it
+	// is safe because it is only an optional cache hint, and lets the same
+	// request continue on models without breakpoint support.
+	if param == "prompt_cache_breakpoint" &&
+		(strings.EqualFold(code, "invalid_parameter") || strings.Contains(message, "not supported on this model")) &&
+		gjson.GetBytes(body, "prompt_cache_breakpoint").Exists() {
+		retryBody, err := sjson.DeleteBytes(body, "prompt_cache_breakpoint")
+		if err != nil {
+			return nil, "", false, fmt.Errorf("delete rejected prompt_cache_breakpoint: %w", err)
+		}
+		return retryBody, "prompt_cache_breakpoint parameter rejection", true, nil
+	}
+	if !isExplicitOpenAIResponsesFieldRejection(code, message) {
+		return nil, "", false, nil
 	}
 	if index, ok := openAIResponsesRejectedNamespaceIndex(param); ok {
 		return removeOpenAIResponsesRejectedNamespaceAtIndex(body, index)

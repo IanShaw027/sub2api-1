@@ -1146,7 +1146,7 @@ var (
 		{Name: "id", Type: field.TypeInt64, Increment: true},
 		{Name: "user_id", Type: field.TypeInt64},
 		{Name: "user_email", Type: field.TypeString, Size: 255, Default: ""},
-		{Name: "status", Type: field.TypeString, Size: 16, Default: "applied"},
+		{Name: "status", Type: field.TypeString, Size: 16, Default: "APPLIED"},
 		{Name: "unread_by_admin", Type: field.TypeBool, Default: true},
 		{Name: "invoice_amount", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,2)"}},
 		{Name: "currency", Type: field.TypeString, Size: 8, Default: ""},

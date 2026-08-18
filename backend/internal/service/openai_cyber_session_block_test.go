@@ -25,8 +25,8 @@ func newCyberBlockTestCtx(headers map[string]string, body string) (*gin.Context,
 
 // TestCyberSessionBlockKey verifies F5a key derivation: explicit session signals
 // only (header session_id/conversation_id or body prompt_cache_key), apiKey
-// isolated, and EMPTY when no explicit signal (no content-derived fallback —
-// "不退化" decision).
+// isolated, with a stable content-derived fallback when no explicit signal is
+// present, and EMPTY only when neither signal nor content exists.
 func TestCyberSessionBlockKey(t *testing.T) {
 	c1, b1 := newCyberBlockTestCtx(map[string]string{"session_id": "sess-abc"}, `{}`)
 	k1 := CyberSessionBlockKey(101, c1, b1)
@@ -44,9 +44,17 @@ func TestCyberSessionBlockKey(t *testing.T) {
 	c4, b4 := newCyberBlockTestCtx(nil, `{"prompt_cache_key":"pck-1"}`)
 	require.NotEmpty(t, CyberSessionBlockKey(101, c4, b4))
 
-	// No explicit signal → empty key → caller must skip blocking entirely.
+	// No explicit signal uses stable content seed; changing the first user input
+	// starts a different session key.
 	c5, b5 := newCyberBlockTestCtx(nil, `{"input":"hello world"}`)
-	require.Empty(t, CyberSessionBlockKey(101, c5, b5))
+	k5 := CyberSessionBlockKey(101, c5, b5)
+	require.NotEmpty(t, k5)
+	c5b, b5b := newCyberBlockTestCtx(nil, `{"input":"hello world","previous_response_id":"resp_random"}`)
+	require.Equal(t, k5, CyberSessionBlockKey(101, c5b, b5b), "volatile response fields must not change content session key")
+	c5c, b5c := newCyberBlockTestCtx(nil, `{"input":"different content"}`)
+	require.NotEqual(t, k5, CyberSessionBlockKey(101, c5c, b5c))
+	c5d, b5d := newCyberBlockTestCtx(nil, `{}`)
+	require.Empty(t, CyberSessionBlockKey(101, c5d, b5d))
 
 	// conversation_id header counts as explicit; key is stable and non-empty.
 	c6, b6 := newCyberBlockTestCtx(map[string]string{"conversation_id": "conv-xyz"}, `{}`)

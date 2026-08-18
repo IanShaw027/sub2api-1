@@ -45,6 +45,9 @@ func RegisterPaymentRoutes(
 			orders.POST("/:id/cancel", paymentHandler.CancelOrder)
 			orders.POST("/:id/refund-request", paymentHandler.RequestRefund)
 			orders.GET("/refund-eligible-providers", paymentHandler.GetRefundEligibleProviders)
+			// Keep the personal-dev invoice eligibility contract while retaining
+			// the legacy /payment/invoices/eligible-providers endpoint below.
+			orders.GET("/invoice-eligible-providers", invoiceHandler.EligibleProviders)
 		}
 
 		invoices := authenticated.Group("/invoices")
@@ -130,6 +133,7 @@ func RegisterPaymentRoutes(
 			adminInvoices.GET("/:id", adminInvoiceHandler.Get)
 			adminInvoices.POST("/:id/cancel", adminInvoiceHandler.Cancel)
 			adminInvoices.POST("/:id/issue", adminInvoiceHandler.Issue)
+			adminInvoices.POST("/:id/upload", adminInvoiceHandler.Issue)
 			adminInvoices.POST("/:id/resend-email", adminInvoiceHandler.ResendEmail)
 			adminInvoices.GET("/:id/file", adminInvoiceHandler.DownloadFile)
 			adminInvoices.POST("/:id/download-grant", adminInvoiceHandler.DownloadGrant)

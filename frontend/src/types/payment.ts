@@ -165,7 +165,7 @@ export interface ProviderInstance {
   sort_order: number
 }
 
-export type InvoiceStatus = 'applied' | 'issued' | 'cancelled'
+export type InvoiceStatus = 'APPLIED' | 'ISSUED' | 'CANCELLED'
 
 export interface InvoiceOrderItem {
   order_id: number
@@ -174,6 +174,7 @@ export interface InvoiceOrderItem {
   out_trade_no: string
   payment_type: string
   is_active: boolean
+  created_at: string
 }
 
 export interface Invoice {

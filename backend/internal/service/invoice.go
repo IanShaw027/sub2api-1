@@ -7,9 +7,9 @@ import (
 )
 
 const (
-	InvoiceStatusApplied   = "applied"
-	InvoiceStatusIssued    = "issued"
-	InvoiceStatusCancelled = "cancelled"
+	InvoiceStatusApplied   = "APPLIED"
+	InvoiceStatusIssued    = "ISSUED"
+	InvoiceStatusCancelled = "CANCELLED"
 
 	MaxInvoiceOrders = 100
 )
@@ -50,12 +50,13 @@ type ApplyInvoiceInput struct {
 
 // InvoiceOrderItem is one order covered by an invoice.
 type InvoiceOrderItem struct {
-	OrderID           int64   `json:"order_id"`
-	PayAmountSnapshot float64 `json:"pay_amount_snapshot"`
-	Currency          string  `json:"currency,omitempty"`
-	OutTradeNo        string  `json:"out_trade_no"`
-	PaymentType       string  `json:"payment_type"`
-	IsActive          bool    `json:"is_active"`
+	OrderID           int64     `json:"order_id"`
+	PayAmountSnapshot float64   `json:"pay_amount_snapshot"`
+	Currency          string    `json:"currency,omitempty"`
+	OutTradeNo        string    `json:"out_trade_no"`
+	PaymentType       string    `json:"payment_type"`
+	IsActive          bool      `json:"is_active"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 // InvoiceView is the API representation of an invoice.

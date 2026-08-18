@@ -26,6 +26,7 @@ const (
 	GrokFailureRateLimit     GrokUpstreamFailureClass = "rate_limit"
 	GrokFailureAuth          GrokUpstreamFailureClass = "auth_error"
 	GrokFailureServer        GrokUpstreamFailureClass = "server_error"
+	GrokFailureCompatibility GrokUpstreamFailureClass = "compatibility_error"
 )
 
 // GrokUpstreamFailureDecision is a pure classification result. Callers map it
@@ -150,6 +151,20 @@ func classifyGrokUpstreamFailure(statusCode int, responseBody []byte, requestedM
 		}
 	}
 
+	// xAI returns 422 when the Responses decoder rejects a Chat-to-Responses
+	// content shape. This is account/protocol capability-specific in a pool:
+	// park the account briefly and let the request fail over instead of replaying
+	// the same malformed payload against it.
+	if statusCode == http.StatusUnprocessableEntity && isGrokCompatibilityErrorText(low) {
+		return GrokUpstreamFailureDecision{
+			Class:          GrokFailureCompatibility,
+			Cooldown:       10 * time.Minute,
+			ShouldCooldown: true,
+			ShouldFailover: true,
+			Reason:         firstNonEmpty(text, "Grok request compatibility error"),
+		}
+	}
+
 	// Upstream 5xx — brief cool. Empty-output synthetic 502 already handled above.
 	if statusCode >= 500 && statusCode <= 599 {
 		return GrokUpstreamFailureDecision{
@@ -162,6 +177,13 @@ func classifyGrokUpstreamFailure(statusCode int, responseBody []byte, requestedM
 	}
 
 	return GrokUpstreamFailureDecision{Reason: text}
+}
+
+func isGrokCompatibilityErrorText(text string) bool {
+	text = strings.ToLower(strings.TrimSpace(text))
+	return strings.Contains(text, "failed to deserialize the json body") ||
+		strings.Contains(text, "untagged enum content") ||
+		strings.Contains(text, "data did not match any variant")
 }
 
 func grokUpstreamErrorCorpus(statusCode int, responseBody []byte) (text, code, low string) {

@@ -4,10 +4,10 @@
       <div class="flex items-center justify-between">
         <button class="btn btn-secondary" @click="router.push('/invoices')">{{ t('common.back') }}</button>
         <div class="flex gap-2">
-          <button v-if="invoice?.status === 'applied'" class="btn btn-danger" :disabled="actionLoading" @click="cancelInvoice">
+          <button v-if="invoice?.status === 'APPLIED'" class="btn btn-danger" :disabled="actionLoading" @click="cancelInvoice">
             {{ t('payment.invoices.cancel') }}
           </button>
-          <button v-if="invoice?.status === 'issued' && invoice.has_file" class="btn btn-primary" :disabled="actionLoading" @click="download">
+          <button v-if="invoice?.status === 'ISSUED' && invoice.has_file" class="btn btn-primary" :disabled="actionLoading" @click="download">
             {{ t('payment.invoices.download') }}
           </button>
         </div>
@@ -21,7 +21,7 @@
           </div>
           <div>
             <p class="text-xs text-gray-500">{{ t('payment.invoices.statusLabel') }}</p>
-            <p>{{ t('payment.invoices.status.' + invoice.status, invoice.status) }}</p>
+            <p>{{ statusLabel(invoice.status) }}</p>
           </div>
           <div>
             <p class="text-xs text-gray-500">{{ t('payment.invoices.title') }}</p>
@@ -62,7 +62,7 @@
           <ul class="space-y-1 text-sm">
             <li v-for="item in invoice.orders || []" :key="item.order_id" class="flex justify-between">
               <span class="font-mono">#{{ item.order_id }} {{ item.out_trade_no }}</span>
-              <span>{{ item.pay_amount_snapshot.toFixed(2) }}</span>
+              <span>{{ item.pay_amount_snapshot.toFixed(2) }}{{ item.currency ? ` ${item.currency}` : '' }}</span>
             </li>
           </ul>
         </div>
@@ -88,6 +88,10 @@ const appStore = useAppStore()
 const invoice = ref<Invoice | null>(null)
 const actionLoading = ref(false)
 
+function statusLabel(status: string) {
+  return t(`payment.invoices.status.${String(status).toLowerCase()}`, status)
+}
+
 async function load() {
   const id = Number(route.params.id)
   try {
@@ -99,7 +103,7 @@ async function load() {
 }
 
 async function cancelInvoice() {
-  if (!invoice.value) return
+  if (!invoice.value || invoice.value.status !== 'APPLIED') return
   actionLoading.value = true
   try {
     const res = await paymentAPI.cancelInvoice(invoice.value.id)

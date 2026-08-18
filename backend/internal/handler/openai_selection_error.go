@@ -3,10 +3,40 @@ package handler
 import (
 	"errors"
 	"fmt"
+	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
+
+var selectionModelRateLimitedPattern = regexp.MustCompile(`(?:model_rate_limited|rate_limited)=(\d+)`)
+
+// classifySelectionFailureError preserves the useful scheduler diagnosis on
+// the client-facing error path. The scheduler includes compact counters in
+// ErrNoAvailableAccounts; when model_rate_limited is present, a generic 503
+// hides the actionable reason and prevents clients from applying their retry
+// policy.
+func classifySelectionFailureError(err error, fallback noAccountErrorClassification) noAccountErrorClassification {
+	if err == nil {
+		return fallback
+	}
+	message := strings.ToLower(err.Error())
+	match := selectionModelRateLimitedPattern.FindStringSubmatch(message)
+	if len(match) != 2 {
+		return fallback
+	}
+	count, parseErr := strconv.Atoi(match[1])
+	if parseErr != nil || count <= 0 {
+		return fallback
+	}
+	return noAccountErrorClassification{
+		Status:  http.StatusTooManyRequests,
+		ErrType: "rate_limit_error",
+		Message: "All available accounts are currently rate-limited. Please retry later.",
+	}
+}
 
 func buildOpenAISelectionFailureMessage(err error, fallback string) string {
 	if err == nil {

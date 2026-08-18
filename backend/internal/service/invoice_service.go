@@ -226,7 +226,7 @@ func (s *InvoiceService) List(ctx context.Context, params InvoiceListParams) ([]
 		q = q.Where(invoice.UserIDEQ(params.UserID))
 	}
 	if status := strings.TrimSpace(params.Status); status != "" {
-		q = q.Where(invoice.StatusEQ(status))
+		q = q.Where(invoice.StatusIn(invoiceStatusVariants(status)...))
 	}
 	if kw := strings.TrimSpace(params.Keyword); kw != "" {
 		q = q.Where(invoice.Or(
@@ -249,14 +249,14 @@ func (s *InvoiceService) List(ctx context.Context, params InvoiceListParams) ([]
 	}
 	out := make([]InvoiceView, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, invoiceToView(row, nil, row.Status == InvoiceStatusIssued))
+		out = append(out, invoiceToView(row, nil, invoiceStatusIs(row.Status, InvoiceStatusIssued)))
 	}
 	return out, total, nil
 }
 
 func (s *InvoiceService) CountUnreadApplied(ctx context.Context) (int, error) {
 	return s.entClient.Invoice.Query().
-		Where(invoice.StatusEQ(InvoiceStatusApplied), invoice.UnreadByAdminEQ(true)).
+		Where(invoice.StatusIn(invoiceStatusVariants(InvoiceStatusApplied)...), invoice.UnreadByAdminEQ(true)).
 		Count(ctx)
 }
 
@@ -271,7 +271,7 @@ func (s *InvoiceService) Cancel(ctx context.Context, invoiceID, actorUserID int6
 	if !isAdmin && inv.UserID != actorUserID {
 		return nil, ErrInvoiceForbidden
 	}
-	if inv.Status != InvoiceStatusApplied {
+	if !invoiceStatusIs(inv.Status, InvoiceStatusApplied) {
 		return nil, ErrInvoiceInvalidStatus
 	}
 	tx, err := s.entClient.Tx(ctx)
@@ -286,7 +286,7 @@ func (s *InvoiceService) Cancel(ctx context.Context, invoiceID, actorUserID int6
 	}()
 	now := time.Now()
 	updated, err := tx.Invoice.Update().
-		Where(invoice.IDEQ(invoiceID), invoice.StatusEQ(InvoiceStatusApplied)).
+		Where(invoice.IDEQ(invoiceID), invoice.StatusIn(invoiceStatusVariants(InvoiceStatusApplied)...)).
 		SetStatus(InvoiceStatusCancelled).
 		SetCancelledAt(now).
 		SetUnreadByAdmin(false).
@@ -332,7 +332,7 @@ func (s *InvoiceService) Issue(ctx context.Context, invoiceID, mediaID int64) (*
 		}
 		return nil, err
 	}
-	if inv.Status != InvoiceStatusApplied {
+	if !invoiceStatusIs(inv.Status, InvoiceStatusApplied) {
 		return nil, ErrInvoiceInvalidStatus
 	}
 	if err := s.ensureLinkedOrdersStillCompletable(ctx, tx.Client(), invoiceID); err != nil {
@@ -359,7 +359,7 @@ func (s *InvoiceService) Issue(ctx context.Context, invoiceID, mediaID int64) (*
 
 	now := time.Now()
 	updated, err := tx.Invoice.Update().
-		Where(invoice.IDEQ(invoiceID), invoice.StatusEQ(InvoiceStatusApplied)).
+		Where(invoice.IDEQ(invoiceID), invoice.StatusIn(invoiceStatusVariants(InvoiceStatusApplied)...)).
 		SetStatus(InvoiceStatusIssued).
 		SetIssuedAt(now).
 		SetFileMediaID(mediaID).
@@ -424,7 +424,7 @@ func (s *InvoiceService) ResendIssuedEmail(ctx context.Context, invoiceID int64)
 		}
 		return err
 	}
-	if inv.Status != InvoiceStatusIssued {
+	if !invoiceStatusIs(inv.Status, InvoiceStatusIssued) {
 		return ErrInvoiceInvalidStatus
 	}
 	view, err := s.viewWithOrders(ctx, inv, true)
@@ -439,7 +439,7 @@ func (s *InvoiceService) HasActiveIssuedInvoiceForOrder(ctx context.Context, ord
 		Where(
 			invoiceorder.OrderIDEQ(orderID),
 			invoiceorder.IsActiveEQ(true),
-			invoiceorder.HasInvoiceWith(invoice.StatusEQ(InvoiceStatusIssued)),
+			invoiceorder.HasInvoiceWith(invoice.StatusIn(invoiceStatusVariants(InvoiceStatusIssued)...)),
 		).
 		Exist(ctx)
 }
@@ -482,7 +482,7 @@ func (s *InvoiceService) CancelActiveInvoicesForRefund(ctx context.Context, clie
 func (s *InvoiceService) cancelActiveInvoices(ctx context.Context, client *dbent.Client, orderID int64, includeIssued bool) error {
 	// ISSUED invoices must be credit-noted (红冲) by finance; never auto-cancel them.
 	_ = includeIssued
-	statuses := []string{InvoiceStatusApplied}
+	statuses := invoiceStatusVariants(InvoiceStatusApplied)
 	links, err := client.InvoiceOrder.Query().
 		Where(
 			invoiceorder.OrderIDEQ(orderID),
@@ -540,7 +540,7 @@ func (s *InvoiceService) viewWithOrders(ctx context.Context, inv *dbent.Invoice,
 	if err != nil {
 		return nil, err
 	}
-	view := invoiceToView(inv, links, includeFile && inv.Status == InvoiceStatusIssued)
+	view := invoiceToView(inv, links, includeFile && invoiceStatusIs(inv.Status, InvoiceStatusIssued))
 	return &view, nil
 }
 
@@ -725,7 +725,7 @@ func invoiceToView(inv *dbent.Invoice, links []*dbent.InvoiceOrder, includeFile 
 		ID:            inv.ID,
 		UserID:        inv.UserID,
 		UserEmail:     inv.UserEmail,
-		Status:        inv.Status,
+		Status:        normalizeInvoiceStatus(inv.Status),
 		UnreadByAdmin: inv.UnreadByAdmin,
 		InvoiceAmount: inv.InvoiceAmount,
 		Currency:      inv.Currency,
@@ -760,10 +760,27 @@ func invoiceToView(inv *dbent.Invoice, links []*dbent.InvoiceOrder, includeFile 
 				OutTradeNo:        link.OutTradeNo,
 				PaymentType:       link.PaymentType,
 				IsActive:          link.IsActive,
+				CreatedAt:         link.CreatedAt,
 			})
 		}
 	}
 	return view
+}
+
+func normalizeInvoiceStatus(status string) string {
+	return strings.ToUpper(strings.TrimSpace(status))
+}
+
+func invoiceStatusIs(status, expected string) bool {
+	return normalizeInvoiceStatus(status) == normalizeInvoiceStatus(expected)
+}
+
+func invoiceStatusVariants(status string) []string {
+	canonical := normalizeInvoiceStatus(status)
+	if canonical == "" {
+		return nil
+	}
+	return []string{canonical, strings.ToLower(canonical)}
 }
 
 func queryInvoiceForUpdate(ctx context.Context, client *dbent.Client, invoiceID int64) (*dbent.Invoice, error) {

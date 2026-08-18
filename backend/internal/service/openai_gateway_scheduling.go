@@ -719,6 +719,18 @@ func resolveOpenAIAccountUpstreamModelForRequest(account *Account, requestedMode
 		return upstreamModel
 	}
 
+	// Compact mappings are keyed by the client-visible model. Apply them before
+	// the ordinary account mapping; otherwise a normal alias (for example
+	// gpt-5.5 -> gpt-5.4) can hide the compact-specific rule and make the
+	// scheduler reject a request that the account can serve.
+	if requireCompact && account != nil {
+		if compactModel, matched := account.ResolveCompactMappedModel(strings.TrimSpace(requestedModel)); matched {
+			if compactModel = strings.TrimSpace(compactModel); compactModel != "" {
+				return compactModel
+			}
+		}
+	}
+
 	upstreamModel := resolveOpenAIForwardModel(account, requestedModel, "")
 	if upstreamModel == "" {
 		return ""
