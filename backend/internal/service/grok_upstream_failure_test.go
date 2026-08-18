@@ -68,6 +68,14 @@ func TestClassifyGrokUpstreamFailure_ValidationNoCool(t *testing.T) {
 	require.False(t, d.ShouldFailover)
 }
 
+func TestClassifyGrokUpstreamFailure_Compatibility422(t *testing.T) {
+	d := classifyGrokUpstreamFailure(http.StatusUnprocessableEntity, []byte(`{"error":"Failed to deserialize the JSON body into the target type: messages[1]: data did not match any variant of untagged enum Content"}`), "grok-4.6")
+	require.Equal(t, GrokFailureCompatibility, d.Class)
+	require.True(t, d.ShouldCooldown)
+	require.True(t, d.ShouldFailover)
+	require.Equal(t, 10*time.Minute, d.Cooldown)
+}
+
 func TestClassifyGrokUpstreamFailure_FreeUsageWinsOver5xx(t *testing.T) {
 	// Proxy may rewrite free-usage into synthetic 502; body must win.
 	d := classifyGrokUpstreamFailure(http.StatusBadGateway, []byte(`subscription:free-usage-exhausted for model grok-4.3`), "grok-4.3")

@@ -1900,6 +1900,15 @@ func TestForwardGrokResponsesRetriesInvalidEncryptedContentOnce(t *testing.T) {
 	require.False(t, hasTerminalStatus)
 }
 
+func TestIsGrokInvalidEncryptedContentResponse_CompactionBlob(t *testing.T) {
+	for _, body := range []string{
+		`{"error":{"code":"invalid-argument","message":"Could not decode the compaction blob. Ensure it is unmodified from the compact response."}}`,
+		`{"error":{"message":"Could not decode the compaction blob. Ensure it is unmodified from the compact response."}}`,
+	} {
+		require.True(t, isGrokInvalidEncryptedContentResponse(http.StatusBadRequest, []byte(body)))
+	}
+}
+
 func TestForwardGrokResponsesInvalidEncryptedContentRecoveryDoesNotOvermatch(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

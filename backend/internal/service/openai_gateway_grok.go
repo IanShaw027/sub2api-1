@@ -287,13 +287,17 @@ func isGrokInvalidEncryptedContentResponse(statusCode int, body []byte) bool {
 	if !strings.EqualFold(code, "invalid-argument") && code != "" {
 		return false
 	}
-	// Nested OpenAI-style envelopes may omit top-level code; require decrypt text.
-	if code == "" && !strings.Contains(normalizedMessage, "decrypt") {
+	// Nested OpenAI-style envelopes may omit top-level code. Both encrypted
+	// content and compact blobs are recoverable request-history incompatibilities.
+	if code == "" &&
+		!strings.Contains(normalizedMessage, "decrypt") &&
+		!strings.Contains(normalizedMessage, "decode the compaction blob") {
 		return false
 	}
-	return strings.Contains(normalizedMessage, "encrypted_content") &&
+	return (strings.Contains(normalizedMessage, "encrypted_content") &&
 		(strings.Contains(normalizedMessage, "decrypt") ||
-			strings.Contains(normalizedMessage, "unmodified"))
+			strings.Contains(normalizedMessage, "unmodified"))) ||
+		strings.Contains(normalizedMessage, "decode the compaction blob")
 }
 
 // requestHasGrokEncryptedReasoning reports whether the outbound Responses body
@@ -1665,6 +1669,13 @@ func (s *OpenAIGatewayService) handleGrokAccountUpstreamError(ctx context.Contex
 	// status switch so non-429 free-usage bodies still cool the account.
 	// Pool-mode still skips durable mutation unless an explicit temp rule matches.
 	decision := classifyGrokUpstreamFailure(statusCode, responseBody, grokRequestedModelFromCtx(ctx))
+	if decision.Class == GrokFailureCompatibility {
+		// A pool account that cannot decode this Responses content shape should
+		// not receive the same request again. Persist a short temporary block so
+		// selection moves to another Grok account.
+		s.tempUnscheduleGrok(ctx, account, decision.Cooldown, decision.Reason)
+		return
+	}
 	if decision.ShouldCooldown && decision.Class != GrokFailureNone && decision.Class != GrokFailureRateLimit {
 		if account.IsPoolMode() {
 			// Allow configured temp rules (403) below; skip default body cools.
