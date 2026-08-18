@@ -222,6 +222,19 @@ func TestResolveOpenAICompactForwardModel(t *testing.T) {
 	}
 }
 
+func TestResolveOpenAIAccountUpstreamModelForRequest_CompactMappingPrecedesNormalMapping(t *testing.T) {
+	account := &Account{Credentials: map[string]any{
+		"model_mapping":         map[string]any{"gpt-5.5": "gpt-5.4"},
+		"compact_model_mapping": map[string]any{"gpt-5.5": "gpt-5.5-openai-compact"},
+	}}
+	if got := resolveOpenAIAccountUpstreamModelForRequest(account, "gpt-5.5", true); got != "gpt-5.5-openai-compact" {
+		t.Fatalf("compact upstream model = %q, want gpt-5.5-openai-compact", got)
+	}
+	if got := resolveOpenAIAccountUpstreamModelForRequest(account, "gpt-5.5", false); got != "gpt-5.4" {
+		t.Fatalf("normal upstream model = %q, want gpt-5.4", got)
+	}
+}
+
 func TestNormalizeCodexModel(t *testing.T) {
 	cases := map[string]string{
 		"gpt-5.3-codex-spark":       "gpt-5.3-codex-spark",
