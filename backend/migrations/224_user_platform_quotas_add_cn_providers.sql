@@ -6,12 +6,13 @@
 -- 语句 → 注册路径 fail-open 吞错 → 新用户拿到零条配额记录（含原有 5 平台，缺失配额
 -- 行 = 无限额）。与 157 头注释记载的 grok 同型事故一致。
 --
--- 修复：把约束与代码平台列表（PlatformKimi/PlatformZhipu/PlatformDeepseek）对齐。
--- DROP ... IF EXISTS 保证可重入；新约束是旧约束的超集，存量行（仅 5 平台）瞬时校验通过。
+-- 修复：把约束与代码平台列表（AllowedQuotaPlatforms）对齐。
+-- 必须保留 personal 已落地的 kiro；否则 DROP+ADD 会让存量 kiro 行违约。
+-- DROP ... IF EXISTS 保证可重入；新约束是旧约束的超集。
 ALTER TABLE user_platform_quotas
     DROP CONSTRAINT IF EXISTS user_platform_quotas_platform_check;
 
 ALTER TABLE user_platform_quotas
     ADD CONSTRAINT user_platform_quotas_platform_check
-    CHECK (platform IN ('anthropic', 'openai', 'gemini', 'antigravity', 'grok',
+    CHECK (platform IN ('anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kiro',
                         'kimi', 'zhipu', 'deepseek'));
