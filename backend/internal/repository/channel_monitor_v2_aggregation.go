@@ -22,7 +22,7 @@ const (
 	channelMonitorV2RetentionUser1m      = 3 * 24 * time.Hour
 	channelMonitorV2RetentionMetrics1m   = 7 * 24 * time.Hour
 	channelMonitorV2RetentionError1m     = 7 * 24 * time.Hour
-	channelMonitorV2RetentionHistogram1m = 7 * 24 * time.Hour
+	channelMonitorV2RetentionHistogram1m = 36 * time.Hour
 	channelMonitorV2RetentionRollup5m    = 7 * 24 * time.Hour  // bucket_seconds=300
 	channelMonitorV2RetentionRollup1h    = 30 * 24 * time.Hour // 3600
 	channelMonitorV2RetentionRollup12h   = 45 * 24 * time.Hour // 43200
@@ -218,7 +218,7 @@ SELECT date_trunc('minute', ul.created_at), %s, COALESCE(ul.group_id, 0), %s,
 FROM usage_logs ul
 LEFT JOIN groups g ON g.id = ul.group_id
 LEFT JOIN accounts a ON a.id = ul.account_id
-CROSS JOIN LATERAL (VALUES (0::bigint), (ul.user_id)) audience(user_id)
+CROSS JOIN LATERAL (VALUES (0::bigint)) audience(user_id)
 CROSS JOIN LATERAL (VALUES ('ttft'::text, ul.first_token_ms), ('duration'::text, ul.duration_ms)) latency(metric, value_ms)
 WHERE ul.created_at >= $1 AND ul.created_at < $2
   AND audience.user_id IS NOT NULL AND latency.value_ms IS NOT NULL AND latency.value_ms >= 0

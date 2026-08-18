@@ -141,7 +141,7 @@ func TestChannelMonitorV2TierRetentionPolicy(t *testing.T) {
 	require.Equal(t, 3*24*time.Hour, channelMonitorV2RetentionUser1m)
 	require.Equal(t, 7*24*time.Hour, channelMonitorV2RetentionMetrics1m)
 	require.Equal(t, 7*24*time.Hour, channelMonitorV2RetentionError1m)
-	require.Equal(t, 7*24*time.Hour, channelMonitorV2RetentionHistogram1m)
+	require.Equal(t, 36*time.Hour, channelMonitorV2RetentionHistogram1m)
 	require.Equal(t, 7*24*time.Hour, channelMonitorV2RetentionRollup5m)
 	require.Equal(t, 30*24*time.Hour, channelMonitorV2RetentionRollup1h)
 	require.Equal(t, 45*24*time.Hour, channelMonitorV2RetentionRollup12h)

@@ -42,6 +42,11 @@ func TestOpsSystemLogSink_ShouldIndex(t *testing.T) {
 			want:  false,
 		},
 		{
+			name:  "same-account retry stays in stdout only",
+			event: &logger.LogEvent{Level: "warn", Component: "handler.openai_gateway.responses", Message: "openai.pool_mode_same_account_retry"},
+			want:  false,
+		},
+		{
 			name: "rejected access excluded from database sink",
 			event: &logger.LogEvent{
 				Level:     "info",

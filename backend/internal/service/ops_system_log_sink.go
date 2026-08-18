@@ -153,7 +153,9 @@ func (s *OpsSystemLogSink) shouldIndex(event *logger.LogEvent) bool {
 			return false
 		}
 	}
-	if strings.Contains(strings.ToLower(strings.TrimSpace(event.Message)), "upstream_failover_switching") {
+	msg := strings.ToLower(strings.TrimSpace(event.Message))
+	if strings.Contains(msg, "upstream_failover_switching") ||
+		strings.Contains(msg, "pool_mode_same_account_retry") {
 		return false
 	}
 	level := strings.ToLower(strings.TrimSpace(event.Level))
