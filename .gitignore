@@ -139,8 +139,6 @@ docs/*
 !docs/ASYNC_IMAGE_TASKS.md
 !docs/legal/
 !docs/legal/*.md
-!docs/migration-details/
-!docs/migration-details/*.md
 !docs/superpowers/
 !docs/superpowers/**
 .worktrees/

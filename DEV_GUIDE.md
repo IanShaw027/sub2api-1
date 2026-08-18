@@ -264,18 +264,11 @@ psql -U sub2api -h 127.0.0.1 -d sub2api -f migration.sql
 ### Git 操作
 
 ```bash
-# 同步上游
+# 同步上游：只走 personal-main，完整步骤见 PERSONAL_FORK_WORKFLOW.md
 git fetch upstream
-git checkout main
+git switch personal-main
 git merge upstream/main
-git push origin main
-
-# 创建功能分支
-git checkout -b feature/xxx
-
-# Rebase 到最新 main
-git fetch upstream
-git rebase upstream/main
+git push origin personal-main
 ```
 
 ### 前端操作
