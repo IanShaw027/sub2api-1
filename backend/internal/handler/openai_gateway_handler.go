@@ -2551,6 +2551,16 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 	}
 	statusCode := failoverErr.StatusCode
 	responseBody := failoverErr.ResponseBody
+	// Business passthrough rules must not override credential/workspace safety
+	// classification; those failures are account-scoped and already exhausted
+	// the account failover path.
+	if vis, ok := service.ClassifyClientVisibleUpstreamError(
+		service.ExtractUpstreamErrorMessage(responseBody), responseBody,
+	); ok {
+		service.SetOpsUpstreamErrorWithType(c, vis.ErrorType, vis.StatusCode, vis.Message, string(responseBody))
+		h.handleStreamingAwareError(c, vis.StatusCode, vis.ErrorType, vis.Message, streamStarted)
+		return
+	}
 	if service.IsOpenAISilentRefusalErrorBody(responseBody) {
 		service.SetOpsUpstreamError(c, statusCode, service.OpenAISilentRefusalClientMessage(), "")
 		h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", service.OpenAISilentRefusalClientMessage(), streamStarted)
@@ -2584,12 +2594,6 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 	// 记录原始上游状态码，以便 ops 错误日志捕获真实的上游错误
 	upstreamMsg := service.ExtractUpstreamErrorMessage(responseBody)
 	service.SetOpsUpstreamError(c, statusCode, upstreamMsg, "")
-
-	if vis, ok := service.ClassifyClientVisibleUpstreamError(upstreamMsg, responseBody); ok {
-		service.SetOpsUpstreamErrorWithType(c, vis.ErrorType, vis.StatusCode, vis.Message, string(responseBody))
-		h.handleStreamingAwareError(c, vis.StatusCode, vis.ErrorType, vis.Message, streamStarted)
-		return
-	}
 
 	// 使用默认的错误映射
 	status, errType, errMsg := h.mapUpstreamError(statusCode)
