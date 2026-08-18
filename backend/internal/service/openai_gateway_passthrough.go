@@ -642,6 +642,12 @@ func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, r
 	if isOpenAIContextWindowError("", responseBody) {
 		return false
 	}
+	if isOpenAIUpstreamAccessStateError(strings.ToLower(string(responseBody)), extractUpstreamErrorCode(responseBody)) {
+		// Provider-side account/workspace state is account-scoped. It must be
+		// retried on another credential before any client-facing response is
+		// produced, including OAuth passthrough requests.
+		return true
+	}
 	if isOpenAIRequestBodyTooLargeError(statusCode, "", responseBody) {
 		return true
 	}

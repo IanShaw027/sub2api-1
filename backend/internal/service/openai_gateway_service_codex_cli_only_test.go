@@ -323,6 +323,17 @@ func TestShouldFailoverOpenAIUpstreamResponseContextWindow502(t *testing.T) {
 	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusBadGateway, "temporary upstream outage", []byte(`{"error":{"message":"temporary upstream outage"}}`)))
 }
 
+func TestShouldFailoverOpenAIUpstreamResponse_DeactivatedWorkspace(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	body := []byte(`{"detail":{"code":"deactivated_workspace","message":"This workspace has been deactivated."}}`)
+	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusForbidden, "Upstream workspace is deactivated", body))
+}
+
+func TestShouldFailoverOpenAIPassthroughResponse_AccessState(t *testing.T) {
+	body := []byte(`{"error":{"message":"Your account is deactivated"}}`)
+	require.True(t, shouldFailoverOpenAIPassthroughResponse(&Account{Type: AccountTypeOAuth}, http.StatusForbidden, body))
+}
+
 func TestOpenAIGatewayService_Forward_LogsInstructionsRequiredDetails(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	logSink, restore := captureStructuredLog(t)

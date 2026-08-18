@@ -40,9 +40,26 @@ func TestClassifyClientVisibleUpstreamError_DeactivatedWorkspace(t *testing.T) {
 	body := []byte(`{"detail":{"code":"deactivated_workspace"}}`)
 	vis, ok := ClassifyClientVisibleUpstreamError("Upstream compact response failed", body)
 	require.True(t, ok)
-	require.Equal(t, http.StatusForbidden, vis.StatusCode)
+	require.Equal(t, http.StatusBadGateway, vis.StatusCode)
 	require.Equal(t, "upstream_error", vis.ErrorType)
-	require.Equal(t, "Upstream workspace is deactivated", vis.Message)
+	require.Equal(t, openAIUpstreamAccessUnavailableClientMessage, vis.Message)
+}
+
+func TestClassifyClientVisibleUpstreamError_AccessStateDetailsAreRedacted(t *testing.T) {
+	for _, body := range []string{
+		`{"error":{"message":"Your account is deactivated"}}`,
+		`{"error":{"message":"The organization is disabled"}}`,
+		`{"detail":{"message":"This workspace is suspended"}}`,
+	} {
+		vis, ok := ClassifyClientVisibleUpstreamError("", []byte(body))
+		require.True(t, ok)
+		require.Equal(t, http.StatusBadGateway, vis.StatusCode)
+		require.Equal(t, "upstream_error", vis.ErrorType)
+		require.Equal(t, openAIUpstreamAccessUnavailableClientMessage, vis.Message)
+		require.NotContains(t, strings.ToLower(vis.Message), "deactiv")
+		require.NotContains(t, strings.ToLower(vis.Message), "disab")
+		require.NotContains(t, strings.ToLower(vis.Message), "suspend")
+	}
 }
 
 func TestPreferClientVisibleUpstreamError_OpsDetailTransportFallback(t *testing.T) {

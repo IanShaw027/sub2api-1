@@ -9,6 +9,8 @@ import (
 
 const openAIContextWindowClientMessage = "Your input exceeds the context window of this model. Please adjust your input and try again."
 
+const openAIUpstreamAccessUnavailableClientMessage = "Upstream access is temporarily unavailable, please retry later"
+
 // ClientVisibleUpstreamError is a safe, user-facing classification of an
 // upstream failure. Prefer this over opaque transport fallbacks when the
 // failure is a known business/protocol condition (context overflow, quota,
@@ -72,14 +74,11 @@ func ClassifyClientVisibleUpstreamError(message string, body []byte) (ClientVisi
 		}, true
 	}
 
-	if strings.EqualFold(code, "deactivated_workspace") ||
-		strings.Contains(combinedLower, "deactivated_workspace") ||
-		strings.Contains(combinedLower, "workspace deactivated") ||
-		strings.Contains(combinedLower, "workspace is deactivated") {
+	if isOpenAIUpstreamAccessStateError(combinedLower, code) {
 		return ClientVisibleUpstreamError{
-			StatusCode: http.StatusForbidden,
+			StatusCode: http.StatusBadGateway,
 			ErrorType:  "upstream_error",
-			Message:    "Upstream workspace is deactivated",
+			Message:    openAIUpstreamAccessUnavailableClientMessage,
 		}, true
 	}
 
@@ -117,6 +116,38 @@ func ClassifyClientVisibleUpstreamError(message string, body []byte) (ClientVisi
 	}
 
 	return ClientVisibleUpstreamError{}, false
+}
+
+// isOpenAIUpstreamAccessStateError identifies provider-side account/workspace
+// state failures without exposing the provider's internal status terminology.
+func isOpenAIUpstreamAccessStateError(combinedLower, code string) bool {
+	if strings.EqualFold(code, "deactivated_workspace") ||
+		strings.Contains(combinedLower, "deactivated_workspace") {
+		return true
+	}
+	for _, phrase := range []string{
+		"workspace is deactivated",
+		"workspace deactivated",
+		"workspace is disabled",
+		"workspace disabled",
+		"account is deactivated",
+		"account deactivated",
+		"account is disabled",
+		"account disabled",
+		"organization is deactivated",
+		"organization deactivated",
+		"organization is disabled",
+		"organization disabled",
+		"account is suspended",
+		"account suspended",
+		"workspace is suspended",
+		"workspace suspended",
+	} {
+		if strings.Contains(combinedLower, phrase) {
+			return true
+		}
+	}
+	return false
 }
 
 // ClassifyClientVisibleUpstreamErrorFromErr unwraps known typed upstream
