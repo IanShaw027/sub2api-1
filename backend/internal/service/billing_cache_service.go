@@ -796,9 +796,11 @@ func (s *BillingCacheService) checkRPM(ctx context.Context, user *User, group *G
 
 	var (
 		shouldCheckGroup bool
+		shouldTrackGroup bool
 		groupLimit       int
 	)
 	if group != nil {
+		shouldTrackGroup = group.ID > 0
 		var override *int
 		if user.UserGroupRPMOverride != nil {
 			override = user.UserGroupRPMOverride
@@ -826,15 +828,19 @@ func (s *BillingCacheService) checkRPM(ctx context.Context, user *User, group *G
 		}
 	}
 
+	// RPM is an operational metric as well as a limiter. Keep collecting the
+	// current-minute counters when limits are disabled so admin views reflect
+	// real traffic; only positive limits participate in admission checks.
+	shouldTrackUser := user.ID > 0
 	shouldCheckUser := user.RPMLimit > 0
-	if shouldCheckGroup || shouldCheckUser {
+	if shouldTrackGroup || shouldTrackUser {
 		if admitter, ok := s.userRPMCache.(userRPMAtomicAdmitter); ok {
 			groupID := int64(0)
 			if group != nil {
 				groupID = group.ID
 			}
 			groupCount, userCount, admitted, err := admitter.TryIncrementUserAndGroupRPM(
-				ctx, user.ID, groupID, groupLimit, user.RPMLimit, shouldCheckGroup, shouldCheckUser,
+				ctx, user.ID, groupID, groupLimit, user.RPMLimit, shouldTrackGroup, shouldTrackUser,
 			)
 			if err != nil {
 				logger.LegacyPrintf(
@@ -857,7 +863,7 @@ func (s *BillingCacheService) checkRPM(ctx context.Context, user *User, group *G
 		}
 	}
 
-	if shouldCheckGroup {
+	if shouldTrackGroup {
 		count, err := s.userRPMCache.IncrementUserGroupRPM(ctx, user.ID, group.ID)
 		if err != nil {
 			logger.LegacyPrintf(
@@ -865,12 +871,12 @@ func (s *BillingCacheService) checkRPM(ctx context.Context, user *User, group *G
 				"Warning: rpm increment (group/override) failed for user=%d group=%d: %v",
 				user.ID, group.ID, err,
 			)
-		} else if count > groupLimit {
+		} else if shouldCheckGroup && count > groupLimit {
 			return ErrGroupRPMExceeded
 		}
 	}
 
-	if shouldCheckUser {
+	if shouldTrackUser {
 		count, err := s.userRPMCache.IncrementUserRPM(ctx, user.ID)
 		if err != nil {
 			logger.LegacyPrintf(
@@ -880,7 +886,7 @@ func (s *BillingCacheService) checkRPM(ctx context.Context, user *User, group *G
 			)
 			return nil // fail-open
 		}
-		if count > user.RPMLimit {
+		if shouldCheckUser && count > user.RPMLimit {
 			return ErrUserRPMExceeded
 		}
 	}

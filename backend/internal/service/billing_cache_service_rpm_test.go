@@ -124,17 +124,17 @@ func TestBillingCacheService_CheckRPM_OverrideZeroSkipsGroupButUserStillApplies(
 	user := &User{ID: 1, RPMLimit: 5}
 	group := &Group{ID: 10, RPMLimit: 100}
 
-	// override=0 跳过分组计数，但 user.RPMLimit=5 仍生效
+	// override=0 跳过分组限额，但仍记录分组 RPM；user.RPMLimit=5 仍生效。
 	for i := 0; i < 5; i++ {
 		require.NoError(t, svc.checkRPM(context.Background(), user, group), "request %d should pass", i+1)
 	}
 	require.ErrorIs(t, svc.checkRPM(context.Background(), user, group), ErrUserRPMExceeded,
 		"override=0 跳过分组但 user 全局上限仍应生效")
-	require.EqualValues(t, 0, atomic.LoadInt32(&cache.userGroupCalls), "override=0 不应触发分组计数器")
+	require.EqualValues(t, 6, atomic.LoadInt32(&cache.userGroupCalls), "override=0 不应跳过分组 RPM 统计")
 	require.EqualValues(t, 6, atomic.LoadInt32(&cache.userCalls), "user 计数器应被调用")
 }
 
-func TestBillingCacheService_CheckRPM_OverrideZeroAndUserZeroIsFullyUnlimited(t *testing.T) {
+func TestBillingCacheService_CheckRPM_OverrideZeroAndUserZeroStillTracksUsage(t *testing.T) {
 	zero := 0
 	cache := &userRPMCacheStub{}
 	repo := &rpmOverrideRepoStub{override: &zero}
@@ -146,8 +146,8 @@ func TestBillingCacheService_CheckRPM_OverrideZeroAndUserZeroIsFullyUnlimited(t 
 	for i := 0; i < 50; i++ {
 		require.NoError(t, svc.checkRPM(context.Background(), user, group))
 	}
-	require.EqualValues(t, 0, atomic.LoadInt32(&cache.userGroupCalls), "override=0 不触发分组计数")
-	require.EqualValues(t, 0, atomic.LoadInt32(&cache.userCalls), "user.RPMLimit=0 也不触发用户计数")
+	require.EqualValues(t, 50, atomic.LoadInt32(&cache.userGroupCalls), "override=0 仅跳过限额，仍应统计分组 RPM")
+	require.EqualValues(t, 50, atomic.LoadInt32(&cache.userCalls), "user.RPMLimit=0 仅表示不限额，仍应统计用户 RPM")
 }
 
 func TestBillingCacheService_CheckRPM_NilOverrideFallsThroughToGroup(t *testing.T) {
@@ -193,11 +193,11 @@ func TestBillingCacheService_CheckRPM_UserLevelFallbackWhenGroupUnlimited(t *tes
 	require.NoError(t, svc.checkRPM(context.Background(), user, group))
 	require.ErrorIs(t, svc.checkRPM(context.Background(), user, group), ErrUserRPMExceeded)
 
-	require.EqualValues(t, 0, atomic.LoadInt32(&cache.userGroupCalls), "group 未设限时不应 INCR user-group 键")
+	require.EqualValues(t, 3, atomic.LoadInt32(&cache.userGroupCalls), "group 未设限时仍应统计 user-group RPM")
 	require.EqualValues(t, 3, atomic.LoadInt32(&cache.userCalls))
 }
 
-func TestBillingCacheService_CheckRPM_NoLimitsConfiguredIsNoop(t *testing.T) {
+func TestBillingCacheService_CheckRPM_NoLimitsConfiguredStillTracksUsage(t *testing.T) {
 	cache := &userRPMCacheStub{}
 	repo := &rpmOverrideRepoStub{override: nil}
 	svc := newBillingServiceForRPM(t, cache, repo)
@@ -208,8 +208,8 @@ func TestBillingCacheService_CheckRPM_NoLimitsConfiguredIsNoop(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		require.NoError(t, svc.checkRPM(context.Background(), user, group))
 	}
-	require.EqualValues(t, 0, atomic.LoadInt32(&cache.userGroupCalls))
-	require.EqualValues(t, 0, atomic.LoadInt32(&cache.userCalls))
+	require.EqualValues(t, 10, atomic.LoadInt32(&cache.userGroupCalls))
+	require.EqualValues(t, 10, atomic.LoadInt32(&cache.userCalls))
 }
 
 func TestBillingCacheService_CheckRPM_RedisErrorFailOpen(t *testing.T) {
@@ -286,4 +286,16 @@ func TestBillingCacheService_CheckRPM_AtomicAdmitRejectsWithoutFallbackIncrement
 	require.Equal(t, 2, cache.groupLimitSeen)
 	require.EqualValues(t, 0, atomic.LoadInt32(&cache.userGroupCalls))
 	require.EqualValues(t, 0, atomic.LoadInt32(&cache.userCalls))
+}
+
+func TestBillingCacheService_CheckRPM_AtomicAdmitTracksUnlimitedTraffic(t *testing.T) {
+	cache := &userRPMAtomicAdmitStub{admitted: true}
+	svc := newBillingServiceForRPM(t, cache, nil)
+
+	require.NoError(t, svc.checkRPM(context.Background(), &User{ID: 1}, &Group{ID: 10}))
+	require.EqualValues(t, 1, atomic.LoadInt32(&cache.calls))
+	require.True(t, cache.incGroupSeen)
+	require.True(t, cache.incUserSeen)
+	require.Equal(t, 0, cache.groupLimitSeen)
+	require.Equal(t, 0, cache.userLimitSeen)
 }
