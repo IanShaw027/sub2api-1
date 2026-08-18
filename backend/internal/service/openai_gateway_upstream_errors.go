@@ -266,10 +266,13 @@ func newOpenAIUpstreamFailoverError(
 		failoverErr.ClientMessage = OpenAIRequestBodyTooLargeClientMessage
 	}
 	if isOpenAIUpstreamAccessStateError(strings.ToLower(strings.TrimSpace(upstreamMsg))+" "+strings.ToLower(string(responseBody)), extractUpstreamErrorCode(responseBody)) {
+		failoverErr.RetryableOnSameAccount = false
 		failoverErr.Stage = GatewayFailureStageAccountAuth
 		failoverErr.Scope = GatewayFailureScopeAccount
 		failoverErr.Reason = GatewayFailureReason("openai_upstream_access_state")
 		failoverErr.NextAccountAction = NextAccountRetry
+		failoverErr.ClientStatusCode = http.StatusBadGateway
+		failoverErr.ClientMessage = openAIUpstreamAccessUnavailableClientMessage
 	}
 	return failoverErr
 }
