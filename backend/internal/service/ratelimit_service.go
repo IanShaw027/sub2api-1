@@ -292,6 +292,14 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 		s.handleAuthError(ctx, account, msg)
 		return true
 	}
+	// 529 overload cooldown is an explicit global policy and must apply to
+	// pool accounts and accounts with custom error-code filters as well.
+	// Handle it before those early-return gates so the configured cooldown is
+	// not silently skipped.
+	if statusCode == 529 {
+		s.handle529(ctx, account)
+		return false
+	}
 
 	// 池模式默认不标记本地账号状态；但管理员显式配置的临时不可调度规则优先。
 	// 401 保留现有认证错误语义，不在这里改变池模式的认证处理。
@@ -497,7 +505,7 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 		s.handle429(ctx, account, headers, responseBody)
 		shouldDisable = false
 	case 529:
-		s.handle529(ctx, account)
+		// handled before pool/custom-code gates above
 		shouldDisable = false
 	default:
 		// 自定义错误码启用时：在列表中的错误码都应该停止调度

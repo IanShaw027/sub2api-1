@@ -334,6 +334,13 @@ func TestShouldFailoverOpenAIPassthroughResponse_AccessState(t *testing.T) {
 	require.True(t, shouldFailoverOpenAIPassthroughResponse(&Account{Type: AccountTypeOAuth}, http.StatusForbidden, body))
 }
 
+func TestShouldFailoverOpenAIUpstreamResponse_CyberNeverSwitchesAccount(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	body := []byte(`{"error":{"code":"cyber_policy","message":"blocked"}}`)
+	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusForbidden, "blocked", body))
+	require.False(t, shouldFailoverOpenAIPassthroughResponse(&Account{Type: AccountTypeOAuth}, http.StatusForbidden, body))
+}
+
 func TestOpenAIGatewayService_Forward_LogsInstructionsRequiredDetails(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	logSink, restore := captureStructuredLog(t)

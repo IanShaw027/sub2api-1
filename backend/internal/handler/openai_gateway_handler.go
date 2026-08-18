@@ -712,7 +712,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					h.gatewayService.RecordOpenAIAccountSwitch()
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
-					if switchCount >= maxAccountSwitches {
+					if switchCount >= maxAccountSwitches && !(failoverErr.StatusCode == http.StatusTooManyRequests && account.Platform == service.PlatformOpenAI && account.Type == service.AccountTypeOAuth) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
@@ -1863,7 +1863,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		h.gatewayService.RecordOpenAIAccountSwitch()
 		failedAccountIDs[account.ID] = struct{}{}
 		lastFailoverErr = failoverErr
-		if switchCount >= maxAccountSwitches {
+		if switchCount >= maxAccountSwitches && !(failoverErr.StatusCode == http.StatusTooManyRequests && account.Platform == service.PlatformOpenAI && account.Type == service.AccountTypeOAuth) {
 			closeOpenAIWSFailoverExhausted(wsConn, failoverErr)
 			return false
 		}

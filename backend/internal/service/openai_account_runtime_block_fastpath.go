@@ -10,13 +10,13 @@ import (
 )
 
 const (
-	openAIAccountStateUpdateTimeout       = 5 * time.Second
-	openAIOAuth429RetryWindow             = 2 * time.Minute
-	openAIOAuth429RetryDelay              = 0
-	openAIStopSchedulingBridgeCooldown    = 2 * time.Minute
-	openAIOAuth429MaxAccountAttempts      = 3
-	openAIOAuth429StormWindow             = 10 * time.Second
-	openAIOAuth429StormThreshold          = 20
+	openAIAccountStateUpdateTimeout    = 5 * time.Second
+	openAIOAuth429RetryWindow          = 2 * time.Minute
+	openAIOAuth429RetryDelay           = 0
+	openAIStopSchedulingBridgeCooldown = 2 * time.Minute
+	openAIOAuth429MaxAccountAttempts   = 3
+	openAIOAuth429StormWindow          = 10 * time.Second
+	openAIOAuth429StormThreshold       = 20
 )
 
 func (s *OpenAIGatewayService) rateLimit429StrategySettings() RateLimit429CooldownSettings {
@@ -328,9 +328,6 @@ func (s *OpenAIGatewayService) openAIOAuth429SameAccountRetryMax() int {
 	max := int(window / interval)
 	if max < 1 {
 		max = 1
-	}
-	if max > 240 {
-		max = 240
 	}
 	return max
 }
