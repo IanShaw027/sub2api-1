@@ -622,14 +622,25 @@ func (h *AuthHandler) upsertPendingOAuthAdoptionDecision(
 	sessionID int64,
 	req oauthAdoptionDecisionRequest,
 ) (*dbent.IdentityAdoptionDecision, error) {
+	return h.upsertPendingOAuthAdoptionDecisionCtx(c.Request.Context(), sessionID, req)
+}
+
+func (h *AuthHandler) upsertPendingOAuthAdoptionDecisionCtx(
+	ctx context.Context,
+	sessionID int64,
+	req oauthAdoptionDecisionRequest,
+) (*dbent.IdentityAdoptionDecision, error) {
 	client := h.entClient()
 	if client == nil {
 		return nil, infraerrors.ServiceUnavailable("PENDING_AUTH_NOT_READY", "pending auth service is not ready")
 	}
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		client = tx.Client()
+	}
 
 	existing, err := client.IdentityAdoptionDecision.Query().
 		Where(identityadoptiondecision.PendingAuthSessionIDEQ(sessionID)).
-		Only(c.Request.Context())
+		Only(ctx)
 	if err != nil && !dbent.IsNotFound(err) {
 		return nil, infraerrors.InternalServer("PENDING_AUTH_ADOPTION_LOAD_FAILED", "failed to load oauth profile adoption decision").WithCause(err)
 	}
@@ -659,7 +670,7 @@ func (h *AuthHandler) upsertPendingOAuthAdoptionDecision(
 	if err != nil {
 		return nil, err
 	}
-	decision, err := svc.UpsertAdoptionDecision(c.Request.Context(), input)
+	decision, err := svc.UpsertAdoptionDecision(ctx, input)
 	if err != nil {
 		return nil, infraerrors.InternalServer("PENDING_AUTH_ADOPTION_SAVE_FAILED", "failed to save oauth profile adoption decision").WithCause(err)
 	}
@@ -671,7 +682,15 @@ func (h *AuthHandler) ensurePendingOAuthAdoptionDecision(
 	sessionID int64,
 	req oauthAdoptionDecisionRequest,
 ) (*dbent.IdentityAdoptionDecision, error) {
-	decision, err := h.upsertPendingOAuthAdoptionDecision(c, sessionID, req)
+	return h.ensurePendingOAuthAdoptionDecisionCtx(c.Request.Context(), sessionID, req)
+}
+
+func (h *AuthHandler) ensurePendingOAuthAdoptionDecisionCtx(
+	ctx context.Context,
+	sessionID int64,
+	req oauthAdoptionDecisionRequest,
+) (*dbent.IdentityAdoptionDecision, error) {
+	decision, err := h.upsertPendingOAuthAdoptionDecisionCtx(ctx, sessionID, req)
 	if err != nil {
 		return nil, err
 	}
@@ -683,7 +702,7 @@ func (h *AuthHandler) ensurePendingOAuthAdoptionDecision(
 	if err != nil {
 		return nil, err
 	}
-	decision, err = svc.UpsertAdoptionDecision(c.Request.Context(), service.PendingIdentityAdoptionDecisionInput{
+	decision, err = svc.UpsertAdoptionDecision(ctx, service.PendingIdentityAdoptionDecisionInput{
 		PendingAuthSessionID: sessionID,
 	})
 	if err != nil {
@@ -1812,15 +1831,6 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 		return false
 	}
 
-	decision, err := h.ensurePendingOAuthAdoptionDecision(c, session.ID, req.adoptionDecision())
-	if err != nil {
-		if rollbackCreatedUser(err) {
-			return
-		}
-		response.ErrorFrom(c, err)
-		return
-	}
-
 	tx, err := client.Tx(c.Request.Context())
 	if err != nil {
 		if rollbackCreatedUser(err) {
@@ -1831,6 +1841,15 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 	}
 	defer func() { _ = tx.Rollback() }()
 	txCtx := dbent.NewTxContext(c.Request.Context(), tx)
+	decision, err := h.ensurePendingOAuthAdoptionDecisionCtx(txCtx, session.ID, req.adoptionDecision())
+	if err != nil {
+		_ = tx.Rollback()
+		if rollbackCreatedUser(err) {
+			return
+		}
+		response.ErrorFrom(c, err)
+		return
+	}
 
 	if err := applyPendingOAuthBinding(txCtx, client, h.authService, h.userService, session, decision, &user.ID, true, false); err != nil {
 		_ = tx.Rollback()

@@ -568,7 +568,7 @@ func TestDeriveOpenAICyberContentSessionSeed_StableAcrossTurns(t *testing.T) {
 	s2 := deriveOpenAICyberContentSessionSeed(turn2)
 	require.NotEmpty(t, s1)
 	require.Equal(t, s1, s2, "cyber seed must stay stable across later assistant/user turns")
-	require.True(t, strings.HasPrefix(s1, "cyber-content:v2"))
+	require.True(t, strings.HasPrefix(s1, "cyber-content:v3"))
 	require.Contains(t, s1, "|first_user=")
 	require.NotContains(t, s1, "Follow up")
 }
@@ -576,6 +576,12 @@ func TestDeriveOpenAICyberContentSessionSeed_StableAcrossTurns(t *testing.T) {
 func TestDeriveOpenAICyberContentSessionSeed_DifferentFirstUserDiffers(t *testing.T) {
 	req1 := []byte(`{"model":"gpt-5.4","messages":[{"role":"user","content":"Question A"}]}`)
 	req2 := []byte(`{"model":"gpt-5.4","messages":[{"role":"user","content":"Question B"}]}`)
+	require.NotEqual(t, deriveOpenAICyberContentSessionSeed(req1), deriveOpenAICyberContentSessionSeed(req2))
+}
+
+func TestDeriveOpenAICyberContentSessionSeed_DifferentSystemPromptDiffers(t *testing.T) {
+	req1 := []byte(`{"model":"gpt-5.4","messages":[{"role":"system","content":"A"},{"role":"user","content":"Hello"}]}`)
+	req2 := []byte(`{"model":"gpt-5.4","messages":[{"role":"system","content":"B"},{"role":"user","content":"Hello"}]}`)
 	require.NotEqual(t, deriveOpenAICyberContentSessionSeed(req1), deriveOpenAICyberContentSessionSeed(req2))
 }
 

@@ -17,7 +17,6 @@ const (
 	openAIOAuth429MaxAccountAttempts      = 3
 	openAIOAuth429StormWindow             = 10 * time.Second
 	openAIOAuth429StormThreshold          = 20
-	openAIOAuth429StormMaxAccountSwitches = 1
 )
 
 func (s *OpenAIGatewayService) rateLimit429StrategySettings() RateLimit429CooldownSettings {
@@ -215,7 +214,7 @@ func (s *OpenAIGatewayService) shouldRetryOpenAIOAuth429OnSameAccount(account *A
 		return false
 	}
 	if statusCode == http.StatusTooManyRequests && isOpenAIOAuthAccount(account) && !account.IsShadow() {
-		if s.settingService != nil && s.rateLimit429StrategySettings().Strategy != "same_account_retry" {
+		if s.rateLimit429StrategySettings().Strategy != "same_account_retry" {
 			return false
 		}
 		// A prior retry window may already have expired and parked this account.
@@ -238,7 +237,7 @@ func (s *OpenAIGatewayService) ShouldRetryOpenAIOAuth429(account *Account, heade
 	if s.isOpenAIAccountRuntimeBlocked(account) {
 		return false
 	}
-	if s.settingService != nil && s.rateLimit429StrategySettings().Strategy != "same_account_retry" {
+	if s.rateLimit429StrategySettings().Strategy != "same_account_retry" {
 		return false
 	}
 	if s.rateLimitService != nil && s.rateLimitService.calculateOpenAI429ResetTime(headers) != nil {
@@ -515,13 +514,25 @@ func (s *OpenAIGatewayService) isOpenAIOAuth429Storm() bool {
 	return s.openaiOAuth429WindowCount.Load() >= openAIOAuth429StormThreshold
 }
 
+func (s *OpenAIGatewayService) openAIOAuth429FailoverMaxAttempts() int {
+	maxAttempts := openAIOAuth429MaxAccountAttempts
+	if s != nil && s.settingService != nil {
+		maxAttempts = s.rateLimit429StrategySettings().MaxAccountSwitches + 1
+	}
+	return maxAttempts
+}
+
 func (s *OpenAIGatewayService) ShouldStopOpenAIOAuth429Failover(account *Account, statusCode int, failedSwitches int, state *OpenAIOAuth429FailoverState) bool {
 	if state != nil && state.grokOAuth429FollowupPending {
 		if statusCode == http.StatusTooManyRequests && isGrokOAuthAccount(account) {
 			return failedSwitches >= 2
 		}
-		// The follow-up budget was armed by a Grok OAuth 429. Consume it on
-		// any failing follow-up account, including a mixed-pool API-key 429.
+		if statusCode == http.StatusTooManyRequests {
+			// Mixed-pool 429s still honor MaxAccountSwitches; do not stop after
+			// two accounts when the admin configured a larger switch budget.
+			return failedSwitches >= s.openAIOAuth429FailoverMaxAttempts()
+		}
+		// Non-429 follow-up failures consume the one-shot budget.
 		return true
 	}
 	if isGrokOAuthAccount(account) {
@@ -535,10 +546,7 @@ func (s *OpenAIGatewayService) ShouldStopOpenAIOAuth429Failover(account *Account
 		}
 		return false
 	}
-	maxAttempts := openAIOAuth429MaxAccountAttempts
-	if s != nil && s.settingService != nil {
-		maxAttempts = s.rateLimit429StrategySettings().MaxAccountSwitches + 1
-	}
+	maxAttempts := s.openAIOAuth429FailoverMaxAttempts()
 	if failedSwitches < maxAttempts {
 		return false
 	}

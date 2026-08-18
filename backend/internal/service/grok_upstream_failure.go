@@ -152,14 +152,13 @@ func classifyGrokUpstreamFailure(statusCode int, responseBody []byte, requestedM
 	}
 
 	// xAI returns 422 when the Responses decoder rejects a Chat-to-Responses
-	// content shape. This is account/protocol capability-specific in a pool:
-	// park the account briefly and let the request fail over instead of replaying
-	// the same malformed payload against it.
+	// content shape. Fail over so another protocol path can try, but do not
+	// park the account: the same request-shaped payload would otherwise cool
+	// every healthy Grok account in the pool.
 	if statusCode == http.StatusUnprocessableEntity && isGrokCompatibilityErrorText(low) {
 		return GrokUpstreamFailureDecision{
 			Class:          GrokFailureCompatibility,
-			Cooldown:       10 * time.Minute,
-			ShouldCooldown: true,
+			ShouldCooldown: false,
 			ShouldFailover: true,
 			Reason:         firstNonEmpty(text, "Grok request compatibility error"),
 		}

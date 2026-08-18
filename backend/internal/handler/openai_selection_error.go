@@ -11,7 +11,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
-var selectionModelRateLimitedPattern = regexp.MustCompile(`(?:model_rate_limited|rate_limited)=(\d+)`)
+// Word-boundary so `rate_limited` does not steal the suffix of `model_rate_limited`,
+// and so a leading `model_rate_limited=0` cannot hide a later `rate_limited=N`.
+var selectionRateLimitedCounterPattern = regexp.MustCompile(`(?:^|[^a-z_])((?:model_)?rate_limited)=(\d+)`)
 
 // classifySelectionFailureError preserves the useful scheduler diagnosis on
 // the client-facing error path. The scheduler includes compact counters in
@@ -23,12 +25,7 @@ func classifySelectionFailureError(err error, fallback noAccountErrorClassificat
 		return fallback
 	}
 	message := strings.ToLower(err.Error())
-	match := selectionModelRateLimitedPattern.FindStringSubmatch(message)
-	if len(match) != 2 {
-		return fallback
-	}
-	count, parseErr := strconv.Atoi(match[1])
-	if parseErr != nil || count <= 0 {
+	if !selectionFailureHasPositiveRateLimitedCount(message) {
 		return fallback
 	}
 	return noAccountErrorClassification{
@@ -36,6 +33,19 @@ func classifySelectionFailureError(err error, fallback noAccountErrorClassificat
 		ErrType: "rate_limit_error",
 		Message: "All available accounts are currently rate-limited. Please retry later.",
 	}
+}
+
+func selectionFailureHasPositiveRateLimitedCount(message string) bool {
+	for _, match := range selectionRateLimitedCounterPattern.FindAllStringSubmatch(message, -1) {
+		if len(match) != 3 {
+			continue
+		}
+		count, parseErr := strconv.Atoi(match[2])
+		if parseErr == nil && count > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func buildOpenAISelectionFailureMessage(err error, fallback string) string {

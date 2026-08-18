@@ -21,6 +21,24 @@ func TestClassifySelectionFailureError_RateLimitedPool(t *testing.T) {
 	require.Contains(t, got.Message, "rate-limited")
 }
 
+func TestClassifySelectionFailureError_PrefersPositiveRateLimitedAfterZeroModelCount(t *testing.T) {
+	fallback := noAccountErrorClassification{Status: http.StatusServiceUnavailable, ErrType: "api_error", Message: "Service temporarily unavailable"}
+	got := classifySelectionFailureError(
+		fmt.Errorf("no available accounts (model_rate_limited=0 rate_limited=3)"),
+		fallback,
+	)
+	require.Equal(t, http.StatusTooManyRequests, got.Status)
+	require.Equal(t, "rate_limit_error", got.ErrType)
+}
+
+func TestClassifySelectionFailureError_ZeroCountersKeepFallback(t *testing.T) {
+	fallback := noAccountErrorClassification{Status: http.StatusServiceUnavailable, ErrType: "api_error", Message: "Service temporarily unavailable"}
+	require.Equal(t, fallback, classifySelectionFailureError(
+		fmt.Errorf("no available accounts (model_rate_limited=0 rate_limited=0)"),
+		fallback,
+	))
+}
+
 func TestClassifySelectionFailureError_UnknownKeepsFallback(t *testing.T) {
 	fallback := noAccountErrorClassification{Status: http.StatusServiceUnavailable, ErrType: "api_error", Message: "Service temporarily unavailable"}
 	require.Equal(t, fallback, classifySelectionFailureError(errors.New("no available accounts"), fallback))

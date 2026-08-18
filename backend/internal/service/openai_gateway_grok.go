@@ -1683,10 +1683,8 @@ func (s *OpenAIGatewayService) handleGrokAccountUpstreamError(ctx context.Contex
 	// Pool-mode still skips durable mutation unless an explicit temp rule matches.
 	decision := classifyGrokUpstreamFailure(statusCode, responseBody, grokRequestedModelFromCtx(ctx))
 	if decision.Class == GrokFailureCompatibility {
-		// A pool account that cannot decode this Responses content shape should
-		// not receive the same request again. Persist a short temporary block so
-		// selection moves to another Grok account.
-		s.tempUnscheduleGrok(ctx, account, decision.Cooldown, decision.Reason)
+		// Fail over without parking. Cooling here would remove healthy accounts
+		// for a request-specific payload the next Grok credential also cannot fix.
 		return
 	}
 	if decision.ShouldCooldown && decision.Class != GrokFailureNone && decision.Class != GrokFailureRateLimit {

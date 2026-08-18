@@ -269,8 +269,9 @@ func loadOutboundCodexProfile(ctx context.Context, account *Account) *AccountDev
 // fingerprint stamping. When the device service is configured and no row
 // exists it GetOrCreates once so body client_metadata, session headers, and
 // enforceCodexIdentityFromAccount share the same IDs on request 1 and stay
-// stable on request 2. Unconfigured service returns (nil, nil) so the caller
-// can seed-fallback. Load/mint errors fail closed (no seed fallback).
+// stable on request 2. Unconfigured service or a transient load/mint error
+// returns (nil, nil) so the caller can seed-fallback instead of sending the
+// client's unmodified identity.
 func loadExistingOutboundCodexProfile(ctx context.Context, account *Account) (*AccountDeviceProfile, error) {
 	if account == nil {
 		return nil, nil
@@ -286,11 +287,10 @@ func loadExistingOutboundCodexProfile(ctx context.Context, account *Account) (*A
 	defer cancel()
 	profile, err := LoadOutboundDeviceProfile(loadCtx, account)
 	if err != nil {
-		if errors.Is(err, ErrDeviceProfileServiceUnconfigured) {
-			return nil, nil
+		if !errors.Is(err, ErrDeviceProfileServiceUnconfigured) {
+			logCodexIdentityReject(account.ID, err)
 		}
-		logCodexIdentityReject(account.ID, err)
-		return nil, err
+		return nil, nil
 	}
 	return profile, nil
 }

@@ -181,13 +181,15 @@ func TestBuildUpstreamRequestClearsStaleFingerprintIDsAfterForwardLoadFailure(t 
 	leftoverSharedRepo.putErr(account.ID, fmt.Errorf("identity_reject: profile unavailable"))
 	t.Cleanup(func() { leftoverSharedRepo.clear(account.ID) })
 
-	require.Nil(t, applyCodexForwardRequestIdentity(context.Background(), c, map[string]any{}, account, c.Request.Header))
+	seedIDs := applyCodexForwardRequestIdentity(context.Background(), c, map[string]any{}, account, c.Request.Header)
+	require.NotNil(t, seedIDs, "load failure must seed-fallback instead of sending the client identity unmodified")
+	require.NotEqual(t, profile.InstallationID, seedIDs.installationID)
 
 	svc := &OpenAIGatewayService{}
 	req, err := svc.buildUpstreamRequest(context.Background(), c, account, []byte(`{"model":"gpt-5.4"}`), "oauth-token", true, "cache-key", true)
 	require.NoError(t, err)
 	require.NotNil(t, req)
-	require.Empty(t, getHeaderRaw(req.Header, "x-codex-installation-id"), "stale fingerprint IDs must not survive a later Forward load failure")
+	require.NotEqual(t, profile.InstallationID, getHeaderRaw(req.Header, "x-codex-installation-id"), "stale profile fingerprint IDs must not survive a later Forward load failure")
 	require.NotEqual(t, resolveCodexOutboundIdentityFromProfile(profile, "").userAgent, req.Header.Get("User-Agent"))
 }
 

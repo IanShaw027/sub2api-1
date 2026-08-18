@@ -71,6 +71,7 @@ func TestCodexIdentityHeadersUseLowercaseOriginatorAndStripXOriginator(t *testin
 
 func TestResolveCodexOutboundIdentityFromProfile_PrefersPayloadUserAgent(t *testing.T) {
 	profile := validOpenAIDeviceProfile(1)
+	profile.LearnedFrom = LearnedFromOfficial
 	profile.ProfilePayload = map[string]any{
 		"user_agent": "codex_vscode/0.150.0 (Ubuntu 22.4.0; x86_64) vscode",
 		"originator": "codex_vscode",
@@ -84,8 +85,19 @@ func TestResolveCodexOutboundIdentityFromProfile_PrefersPayloadUserAgent(t *test
 	require.Equal(t, codexCLIVersion, identity.version)
 }
 
+func TestResolveCodexOutboundIdentityFromProfile_BaselineDefersToAccountUA(t *testing.T) {
+	profile := validOpenAIDeviceProfile(1)
+	require.Equal(t, LearnedFromBaseline, profile.LearnedFrom)
+
+	identity := resolveCodexOutboundIdentityFromProfile(profile, "codex-tui/0.125.0 (Mac OS X 15.1.0; arm64) iTerm.app")
+
+	require.Equal(t, "codex-tui", identity.originator)
+	require.True(t, strings.HasPrefix(identity.userAgent, "codex-tui/"+codexCLIVersion+" (Mac OS X 15.1.0; arm64) iTerm.app"))
+}
+
 func TestResolveCodexOutboundIdentityFromProfile_UsesPayloadOriginatorNotUAPrefix(t *testing.T) {
 	profile := validOpenAIDeviceProfile(1)
+	profile.LearnedFrom = LearnedFromOfficial
 	profile.ProfilePayload = map[string]any{
 		"user_agent": "codex-tui/0.150.0 (Ubuntu 22.4.0; x86_64) vscode",
 		"originator": "CODEX_VSCODE",
@@ -102,6 +114,7 @@ func TestResolveCodexOutboundIdentityFromProfile_UsesPayloadOriginatorNotUAPrefi
 
 func TestCodexIdentityFromProfile_OriginatorLowercaseNoXOriginator(t *testing.T) {
 	profile := validOpenAIDeviceProfile(1)
+	profile.LearnedFrom = LearnedFromOfficial
 	profile.ProfilePayload = map[string]any{
 		"user_agent": "codex_vscode/0.150.0 (Ubuntu 22.4.0; x86_64) vscode",
 		"originator": "CODEX_VSCODE",

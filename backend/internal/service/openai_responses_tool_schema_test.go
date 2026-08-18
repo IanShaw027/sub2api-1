@@ -255,6 +255,44 @@ func TestSanitizeOpenAIResponsesToolSchemaPatterns_PreservesKeyOrderAndUnrelated
 	require.True(t, json.Valid(sanitized))
 }
 
+func TestSanitizeOpenAIResponsesToolSchemaPatterns_DuplicatePatternKeys(t *testing.T) {
+	body := []byte(`{"tools":[{"parameters":{"pattern":"(?=x)","pattern":"(?=y)","type":"object"}}]}`)
+
+	sanitized, changed, err := sanitizeOpenAIResponsesToolSchemaPatterns(body)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.True(t, json.Valid(sanitized))
+	require.False(t, gjson.GetBytes(sanitized, "tools.0.parameters.pattern").Exists())
+	require.Equal(t, "object", gjson.GetBytes(sanitized, "tools.0.parameters.type").String())
+	require.NotContains(t, string(sanitized), "(?=")
+}
+
+func TestSanitizeOpenAIResponsesToolSchemaPatterns_InputItemBareParameters(t *testing.T) {
+	body := []byte(`{"input":[{"type":"function","name":"search","parameters":{"properties":{"q":{"pattern":"(?=x)"}}}},{"type":"function","function":{"name":"legacy","parameters":{"properties":{"q":{"pattern":"(?!y)"}}}}}]}`)
+
+	sanitized, changed, err := sanitizeOpenAIResponsesToolSchemaPatterns(body)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.True(t, json.Valid(sanitized))
+	require.False(t, gjson.GetBytes(sanitized, "input.0.parameters.properties.q.pattern").Exists())
+	require.False(t, gjson.GetBytes(sanitized, "input.1.function.parameters.properties.q.pattern").Exists())
+	require.Equal(t, "search", gjson.GetBytes(sanitized, "input.0.name").String())
+	require.Equal(t, "legacy", gjson.GetBytes(sanitized, "input.1.function.name").String())
+}
+
+func TestSanitizeOpenAIResponsesToolParameterTypes_InputItemBareParameters(t *testing.T) {
+	body := []byte(`{"input":[{"type":"function","name":"automation_update","parameters":{"type":null}},{"type":"function","function":{"name":"legacy","parameters":{"type":null}}}]}`)
+
+	sanitized, changed, err := sanitizeOpenAIResponsesToolParameterTypes(body)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "object", gjson.GetBytes(sanitized, "input.0.parameters.type").String())
+	require.Equal(t, "object", gjson.GetBytes(sanitized, "input.1.function.parameters.type").String())
+}
+
 func TestSanitizeOpenAIResponsesToolSchemaPatterns_RemovesLookaroundMemberWithValidJSON(t *testing.T) {
 	cases := []struct {
 		name string

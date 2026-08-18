@@ -63,6 +63,39 @@ func TestHandleOpenAITransientError_529RemainsOverloadOnly(t *testing.T) {
 	require.False(t, shouldCooldownOpenAITransientUpstreamError(529, []byte(`{"error":{"message":"overloaded"}}`)))
 }
 
+func TestHandleOpenAITransientError_CompactWireModelUsesSchedulingKey(t *testing.T) {
+	account := &Account{
+		ID:       5110,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"compact_model_mapping": map[string]any{
+				"gpt-5.5": "gpt-5.5-openai-compact",
+			},
+		},
+	}
+	clientModel := "gpt-5.5"
+	wireModel := "gpt-5.5-openai-compact"
+	schedulingModel := canonicalOpenAIAccountSchedulingModel(account, clientModel)
+	require.Equal(t, clientModel, schedulingModel)
+	require.NotEqual(t, wireModel, schedulingModel)
+
+	svc := &OpenAIGatewayService{}
+	svc.rateLimitService = NewRateLimitService(transientCooldownAccountRepo{}, nil, &config.Config{}, nil, nil)
+	for range 2 {
+		svc.handleOpenAIAccountUpstreamError(context.Background(), account, http.StatusBadGateway, http.Header{}, []byte(`{"error":{"message":"temporary upstream failure"}}`), schedulingModel)
+	}
+	require.True(t, svc.isOpenAIAccountModelRuntimeBlocked(account, clientModel))
+
+	mismatched := &OpenAIGatewayService{}
+	mismatched.rateLimitService = NewRateLimitService(transientCooldownAccountRepo{}, nil, &config.Config{}, nil, nil)
+	for range 2 {
+		mismatched.handleOpenAIAccountUpstreamError(context.Background(), account, http.StatusBadGateway, http.Header{}, []byte(`{"error":{"message":"temporary upstream failure"}}`), wireModel)
+	}
+	require.False(t, mismatched.isOpenAIAccountModelRuntimeBlocked(account, clientModel),
+		"recording the compact wire model must not be visible under the client/scheduling key")
+}
+
 func TestHandleOpenAITransientError_CanonicalModelIsNotMappedTwice(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	svc.rateLimitService = NewRateLimitService(transientCooldownAccountRepo{}, nil, &config.Config{}, nil, nil)

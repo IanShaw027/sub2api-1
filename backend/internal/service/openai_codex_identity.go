@@ -138,14 +138,20 @@ func profilePayloadString(profile *AccountDeviceProfile, key string) string {
 	return strings.TrimSpace(s)
 }
 
-// codexIdentityCandidateUA 优先取档案 payload 的 user_agent，没有再回退 fallbackUA
-//（账号 openai_user_agent / 覆写）。管理员 UA 不得压过档案身份，否则会与
-// payload originator、TLS pin 组成错配三元组。
+// codexIdentityCandidateUA 只对从真实官方流量学到的档案优先用 payload
+// user_agent。自动 mint 的 baseline 总会写入合成 UA，不能压过管理员配置的
+// fallbackUA（账号 openai_user_agent）。learned 档案的 UA 必须压过账号覆写，
+// 否则会与 payload originator、TLS pin 组成错配三元组。
 func codexIdentityCandidateUA(profile *AccountDeviceProfile, fallbackUA string) string {
-	if ua := profilePayloadString(profile, "user_agent"); ua != "" {
+	if profile != nil && profile.LearnedFrom == LearnedFromOfficial {
+		if ua := profilePayloadString(profile, "user_agent"); ua != "" {
+			return ua
+		}
+	}
+	if ua := strings.TrimSpace(fallbackUA); ua != "" {
 		return ua
 	}
-	return fallbackUA
+	return profilePayloadString(profile, "user_agent")
 }
 
 func applyCodexPayloadOriginator(ua, originator string) string {
@@ -161,17 +167,19 @@ func applyCodexPayloadOriginator(ua, originator string) string {
 	return originator + ua[slash:]
 }
 
-// resolveCodexOutboundIdentityFromProfile 用档案 payload 的 user_agent / originator
-// 作为候选（user_agent 优先于 fallbackUA），再走既有配对与最低版本收口，保证
-// UA / originator / version 同源自洽。
+// resolveCodexOutboundIdentityFromProfile 用档案 payload 的 originator 与
+// 候选 UA（official 档案优先 payload UA，baseline 优先账号覆写）再走既有
+// 配对与最低版本收口，保证 UA / originator / version 同源自洽。
 // originator 一律小写后改写 UA 首段，再交给 PairCodexClientIdentity，避免只读 UA 前缀。
 func resolveCodexOutboundIdentityFromProfile(profile *AccountDeviceProfile, fallbackUA string) codexOutboundIdentity {
 	ua := codexIdentityCandidateUA(profile, fallbackUA)
-	if originator := profilePayloadString(profile, "originator"); originator != "" {
-		if strings.TrimSpace(ua) == "" {
-			ua = codexCanonicalUserAgent()
+	if profile != nil && profile.LearnedFrom == LearnedFromOfficial {
+		if originator := profilePayloadString(profile, "originator"); originator != "" {
+			if strings.TrimSpace(ua) == "" {
+				ua = codexCanonicalUserAgent()
+			}
+			ua = applyCodexPayloadOriginator(ua, originator)
 		}
-		ua = applyCodexPayloadOriginator(ua, originator)
 	}
 	return resolveCodexOutboundIdentity(ua)
 }

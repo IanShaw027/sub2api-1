@@ -178,7 +178,8 @@ scanRoot:
 
 // deriveOpenAICyberContentSessionSeed builds a stable content seed for cyber
 // session blocking. Matching granularity is the sticky-style prefix: model,
-// instructions, tools/functions, and the first user turn only. Later
+// instructions, tools/functions, system/developer turns, and the first user
+// turn only. Later
 // assistant/user turns are excluded so a block at turn N still matches turn
 // N+1. Tenant isolation is applied later via isolateOpenAISessionID(apiKeyID);
 // this seed does not mix the full growing transcript. Version is bumped when
@@ -219,15 +220,25 @@ func deriveOpenAICyberContentSessionSeed(body []byte) string {
 		b.WriteString(canonical)
 	}
 
-	if msgs := root.Get("messages"); msgs.Exists() && msgs.IsArray() {
-		msgs.ForEach(func(_, msg gjson.Result) bool {
-			if msg.Get("role").String() != "user" {
-				return true
+	appendRoleContent := func(role string, content gjson.Result) bool {
+		switch role {
+		case "system", "developer":
+			if content.Exists() {
+				appendField("system", normalizeCompatSeedJSON(json.RawMessage(content.Raw)))
 			}
-			if c := msg.Get("content"); c.Exists() {
-				appendField("first_user", normalizeCompatSeedJSON(json.RawMessage(c.Raw)))
+			return true
+		case "user":
+			if content.Exists() {
+				appendField("first_user", normalizeCompatSeedJSON(json.RawMessage(content.Raw)))
 			}
 			return false
+		}
+		return true
+	}
+
+	if msgs := root.Get("messages"); msgs.Exists() && msgs.IsArray() {
+		msgs.ForEach(func(_, msg gjson.Result) bool {
+			return appendRoleContent(msg.Get("role").String(), msg.Get("content"))
 		})
 	} else if inp := root.Get("input"); inp.Exists() {
 		if inp.Type == gjson.String {
@@ -236,11 +247,8 @@ func deriveOpenAICyberContentSessionSeed(body []byte) string {
 			}
 		} else if inp.IsArray() {
 			inp.ForEach(func(_, item gjson.Result) bool {
-				if item.Get("role").String() == "user" {
-					if c := item.Get("content"); c.Exists() {
-						appendField("first_user", normalizeCompatSeedJSON(json.RawMessage(c.Raw)))
-					}
-					return false
+				if role := item.Get("role").String(); role != "" {
+					return appendRoleContent(role, item.Get("content"))
 				}
 				if item.Get("type").String() == "input_text" {
 					if text := item.Get("text").String(); text != "" {
@@ -256,7 +264,7 @@ func deriveOpenAICyberContentSessionSeed(body []byte) string {
 	if b.Len() == 0 {
 		return ""
 	}
-	return "cyber-content:v2" + b.String()
+	return "cyber-content:v3" + b.String()
 }
 
 // deriveOpenAIAnchoredContentSessionSeed returns the legacy content-derived

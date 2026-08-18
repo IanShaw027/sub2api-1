@@ -527,3 +527,12 @@ func createInvoiceTestMedia(t *testing.T, client *dbent.Client, ownerUserID, inv
 	require.NoError(t, err)
 	return asset.ID
 }
+
+func TestInvoiceStatusWireFormatIsUppercase(t *testing.T) {
+	require.Equal(t, "APPLIED", InvoiceStatusApplied)
+	require.Equal(t, "ISSUED", InvoiceStatusIssued)
+	require.Equal(t, "CANCELLED", InvoiceStatusCancelled)
+	require.Equal(t, InvoiceStatusApplied, normalizeInvoiceStatus("applied"))
+	require.Equal(t, InvoiceStatusIssued, normalizeInvoiceStatus(" issued "))
+	require.ElementsMatch(t, []string{"APPLIED", "applied"}, invoiceStatusVariants(InvoiceStatusApplied))
+}

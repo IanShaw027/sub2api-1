@@ -19,8 +19,10 @@ func shouldSanitizeOpenAIResponsesToolSchemaPatterns(account *Account) bool {
 // openAIResponsesToolSchemaPattern 记录一处待删除的 lookaround pattern 成员，
 // 区间覆盖原始 body 上的整段 `"pattern":"..."`（含配对逗号），便于一次性拼接。
 type openAIResponsesToolSchemaPattern struct {
-	offset int
-	length int
+	offset   int
+	length   int
+	keyStart int
+	valueEnd int
 }
 
 const (
@@ -48,6 +50,12 @@ func sanitizeOpenAIResponsesToolSchemaPatterns(body []byte) ([]byte, bool, error
 		input.ForEach(func(_, item gjson.Result) bool {
 			if item.IsObject() {
 				collectOpenAIResponsesToolSchemaPatternsFromTools(body, item.Get("tools"), 0, &hits)
+				for _, suffix := range []string{"parameters", "function.parameters"} {
+					params := item.Get(suffix)
+					if params.IsObject() {
+						collectOpenAIResponsesToolSchemaLookaroundPatterns(body, params, 0, &hits)
+					}
+				}
 			}
 			return true
 		})
@@ -61,11 +69,17 @@ func sanitizeOpenAIResponsesToolSchemaPatterns(body []byte) ([]byte, bool, error
 	sanitized := make([]byte, 0, len(body))
 	cursor := 0
 	for _, hit := range hits {
-		if hit.offset < cursor {
+		start, end := hit.offset, hit.offset+hit.length
+		if start < cursor {
+			// Adjacent duplicate "pattern" keys: the first hit already ate the
+			// shared comma. Fall back to the key/value span without that comma.
+			start, end = hit.keyStart, hit.valueEnd
+		}
+		if start < cursor || end <= start || end > len(body) {
 			continue
 		}
-		sanitized = append(sanitized, body[cursor:hit.offset]...)
-		cursor = hit.offset + hit.length
+		sanitized = append(sanitized, body[cursor:start]...)
+		cursor = end
 	}
 	sanitized = append(sanitized, body[cursor:]...)
 	return sanitized, true, nil
@@ -136,16 +150,25 @@ func appendOpenAIResponsesToolSchemaPattern(
 	if !ok {
 		return
 	}
-	*hits = append(*hits, openAIResponsesToolSchemaPattern{offset: start, length: length})
+	keyStart, keyOK := jsonObjectMemberKeyStart(body, value.Index)
+	if !keyOK {
+		keyStart = start
+	}
+	*hits = append(*hits, openAIResponsesToolSchemaPattern{
+		offset:   start,
+		length:   length,
+		keyStart: keyStart,
+		valueEnd: end,
+	})
 }
 
-func jsonObjectMemberSpan(body []byte, valueStart, valueEnd int) (int, int, bool) {
+func jsonObjectMemberKeyStart(body []byte, valueStart int) (int, bool) {
 	i := valueStart - 1
 	for i >= 0 && isJSONSpace(body[i]) {
 		i--
 	}
 	if i < 0 || body[i] != ':' {
-		return 0, 0, false
+		return 0, false
 	}
 	i--
 	for i >= 0 && isJSONSpace(body[i]) {
@@ -154,6 +177,14 @@ func jsonObjectMemberSpan(body []byte, valueStart, valueEnd int) (int, int, bool
 	keyLen := len(openAIResponsesToolSchemaPatternKey)
 	keyStart := i - keyLen + 1
 	if keyStart < 0 || !bytes.Equal(body[keyStart:i+1], []byte(openAIResponsesToolSchemaPatternKey)) {
+		return 0, false
+	}
+	return keyStart, true
+}
+
+func jsonObjectMemberSpan(body []byte, valueStart, valueEnd int) (int, int, bool) {
+	keyStart, ok := jsonObjectMemberKeyStart(body, valueStart)
+	if !ok {
 		return 0, 0, false
 	}
 
@@ -228,6 +259,15 @@ func sanitizeOpenAIResponsesToolParameterTypes(body []byte) ([]byte, bool, error
 		input.ForEach(func(_, item gjson.Result) bool {
 			if item.IsObject() {
 				collectOpenAIResponsesToolSchemaNullTypes(body, item.Get("tools"), 0, &hits)
+				for _, suffix := range []string{"parameters", "function.parameters"} {
+					params := item.Get(suffix)
+					if !params.IsObject() {
+						continue
+					}
+					if typ := params.Get("type"); typ.Type == gjson.Null && typ.Raw == openAIResponsesToolSchemaNullLiteral {
+						appendOpenAIResponsesToolSchemaNullType(body, typ, &hits)
+					}
+				}
 			}
 			return true
 		})

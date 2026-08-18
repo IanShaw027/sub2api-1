@@ -442,6 +442,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			fpIDs := applyCodexForwardRequestIdentity(ctx, c, decoded, account, clientHeaders)
 			if fpIDs != nil {
 				markDecodedModified()
+				if fpIDs.profile != nil {
+					ctx = withOutboundDeviceProfile(ctx, fpIDs.profile)
+				}
 			}
 			stageCodexFingerprintIDs(c, fpIDs)
 		}
@@ -950,7 +953,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					Detail:             upstreamDetail,
 				})
 
-				shouldDisable := s.handleFailoverSideEffects(ctx, resp, account, respBody, upstreamModel)
+				shouldDisable := s.handleFailoverSideEffects(ctx, resp, account, respBody, canonicalOpenAIAccountSchedulingModel(account, clientModel))
 				failoverErr := newOpenAIUpstreamFailoverError(
 					resp.StatusCode,
 					resp.Header,

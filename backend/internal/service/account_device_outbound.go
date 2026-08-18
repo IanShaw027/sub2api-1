@@ -51,6 +51,13 @@ func OutboundDeviceProfileService() *AccountDeviceService {
 // On miss it GetOrCreates. On ValidateOutboundBundle failure it returns the
 // error and does not invent a half bundle.
 func LoadOutboundDeviceProfile(ctx context.Context, account *Account) (*AccountDeviceProfile, error) {
+	if cached := outboundDeviceProfileFromContext(ctx); cached != nil {
+		if account == nil || cached.AccountID == account.ID {
+			if err := ValidateOutboundBundle(cached); err == nil && !deviceProfilePlatformMismatch(cached, account) {
+				return cached, nil
+			}
+		}
+	}
 	svc := OutboundDeviceProfileService()
 	if svc == nil {
 		return nil, ErrDeviceProfileServiceUnconfigured

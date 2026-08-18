@@ -445,19 +445,24 @@ func (s *AuthPendingIdentityService) UpsertAdoptionDecision(ctx context.Context,
 		return nil, fmt.Errorf("pending auth ent client is not configured")
 	}
 
-	tx, err := s.entClient.Tx(ctx)
-	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
-		return nil, err
-	}
-
 	client := s.entClient
 	txCtx := ctx
-	if err == nil {
-		defer func() { _ = tx.Rollback() }()
-		client = tx.Client()
-		txCtx = dbent.NewTxContext(ctx, tx)
-	} else if existingTx := dbent.TxFromContext(ctx); existingTx != nil {
+	var ownedTx *dbent.Tx
+	if existingTx := dbent.TxFromContext(ctx); existingTx != nil {
+		// Reuse the caller's write tx. Opening a second root-client tx while
+		// SQLite already holds that write lock deadlocks the helper DSN.
 		client = existingTx.Client()
+	} else {
+		tx, err := s.entClient.Tx(ctx)
+		if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
+			return nil, err
+		}
+		if err == nil {
+			ownedTx = tx
+			defer func() { _ = tx.Rollback() }()
+			client = tx.Client()
+			txCtx = dbent.NewTxContext(ctx, tx)
+		}
 	}
 
 	releaseLocks, err := lockAuthPendingIdentityKeys(txCtx, client, pendingIdentityAdoptionLockKeys(input.PendingAuthSessionID, input.IdentityID)...)
@@ -506,8 +511,8 @@ func (s *AuthPendingIdentityService) UpsertAdoptionDecision(ctx context.Context,
 		return nil, err
 	}
 
-	if tx != nil {
-		if err := tx.Commit(); err != nil {
+	if ownedTx != nil {
+		if err := ownedTx.Commit(); err != nil {
 			return nil, err
 		}
 	}

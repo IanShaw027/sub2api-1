@@ -88,7 +88,12 @@ func TestSameAccountRetryLimit_UsesTwoMinuteBudgetForOpenAIOAuth429(t *testing.T
 }
 
 func TestOpenAIOAuth429RetryWindow_ExplicitResetTakesPrecedence(t *testing.T) {
-	svc := &OpenAIGatewayService{rateLimitService: &RateLimitService{}}
+	settingRepo := newMockSettingRepo()
+	settingRepo.data[SettingKeyRateLimit429CooldownSettings] = `{"enabled":false,"cooldown_seconds":1,"strategy":"same_account_retry","retry_interval_ms":200,"retry_max_duration_seconds":120,"max_account_switches":3}`
+	svc := &OpenAIGatewayService{
+		rateLimitService: &RateLimitService{},
+		settingService:   NewSettingService(settingRepo, &config.Config{}),
+	}
 	account := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 
 	headers := http.Header{}
@@ -98,6 +103,18 @@ func TestOpenAIOAuth429RetryWindow_ExplicitResetTakesPrecedence(t *testing.T) {
 
 	require.False(t, svc.ShouldRetryOpenAIOAuth429(account, headers, nil))
 	require.True(t, svc.ShouldRetryOpenAIOAuth429(account, http.Header{}, nil))
+}
+
+func TestOpenAI429FastPath_NilSettingServiceMatchesDefaultCooldown(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	require.Equal(t, "cooldown", svc.rateLimit429StrategySettings().Strategy)
+	require.False(t, svc.ShouldRetryOpenAIOAuth429(account, http.Header{}, nil))
+	require.False(t, svc.shouldRetryOpenAIOAuth429OnSameAccount(account, http.StatusTooManyRequests, false))
+
+	svc.markOpenAIOAuth429RateLimited(context.Background(), account, http.Header{}, nil)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
 }
 
 func TestOpenAIRuntimeBlock_AppliesToOpenAIAPIKeyWhenRateLimitServiceStopsScheduling(t *testing.T) {
@@ -489,14 +506,16 @@ func TestShouldStopOpenAIOAuth429Failover_TracksOneGrokFollowupAttempt(t *testin
 		require.True(t, svc.ShouldStopOpenAIOAuth429Failover(apiKeyAccount, http.StatusInternalServerError, 2, &state))
 	})
 
-	t.Run("OAuth 429 then mixed-pool API-key 429 consumes the followup", func(t *testing.T) {
+	t.Run("OAuth 429 then mixed-pool API-key 429 honors max account attempts", func(t *testing.T) {
 		openaiAPIKey := &Account{ID: 46, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 		var grokState OpenAIOAuth429FailoverState
 		require.False(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusTooManyRequests, 1, &grokState))
-		require.True(t, svc.ShouldStopOpenAIOAuth429Failover(apiKeyAccount, http.StatusTooManyRequests, 2, &grokState))
+		require.False(t, svc.ShouldStopOpenAIOAuth429Failover(apiKeyAccount, http.StatusTooManyRequests, 2, &grokState))
+		require.True(t, svc.ShouldStopOpenAIOAuth429Failover(apiKeyAccount, http.StatusTooManyRequests, 3, &grokState))
 
 		var openaiState OpenAIOAuth429FailoverState
 		require.False(t, svc.ShouldStopOpenAIOAuth429Failover(account, http.StatusTooManyRequests, 1, &openaiState))
-		require.True(t, svc.ShouldStopOpenAIOAuth429Failover(openaiAPIKey, http.StatusTooManyRequests, 2, &openaiState))
+		require.False(t, svc.ShouldStopOpenAIOAuth429Failover(openaiAPIKey, http.StatusTooManyRequests, 2, &openaiState))
+		require.True(t, svc.ShouldStopOpenAIOAuth429Failover(openaiAPIKey, http.StatusTooManyRequests, 3, &openaiState))
 	})
 }

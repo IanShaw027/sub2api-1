@@ -389,15 +389,6 @@ func (h *AuthHandler) completeEmailOAuthRegistration(c *gin.Context, provider st
 		response.ErrorFrom(c, infraerrors.ServiceUnavailable("PENDING_AUTH_NOT_READY", "pending auth service is not ready"))
 		return
 	}
-	// Adoption must run before the bind/finalize transaction. SQLite (and the
-	// pending-flow helper DSN) deadlocks if a write tx is open while
-	// ensurePendingOAuthAdoptionDecision queries the root client.
-	decision, err := h.ensurePendingOAuthAdoptionDecision(c, session.ID, oauthAdoptionDecisionRequest{})
-	if err != nil {
-		_ = h.authService.RollbackOAuthEmailAccountCreation(c.Request.Context(), user.ID, strings.TrimSpace(req.InvitationCode))
-		response.ErrorFrom(c, err)
-		return
-	}
 	tx, err := client.Tx(c.Request.Context())
 	if err != nil {
 		_ = h.authService.RollbackOAuthEmailAccountCreation(c.Request.Context(), user.ID, strings.TrimSpace(req.InvitationCode))
@@ -406,6 +397,16 @@ func (h *AuthHandler) completeEmailOAuthRegistration(c *gin.Context, provider st
 	}
 	defer func() { _ = tx.Rollback() }()
 	txCtx := dbent.NewTxContext(c.Request.Context(), tx)
+	// Adoption must use the same tx client as bind/finalize. Querying the root
+	// client while this write tx is open deadlocks SQLite; writing outside the
+	// tx would leave an orphan decision if bind rolls back.
+	decision, err := h.ensurePendingOAuthAdoptionDecisionCtx(txCtx, session.ID, oauthAdoptionDecisionRequest{})
+	if err != nil {
+		_ = tx.Rollback()
+		_ = h.authService.RollbackOAuthEmailAccountCreation(c.Request.Context(), user.ID, strings.TrimSpace(req.InvitationCode))
+		response.ErrorFrom(c, err)
+		return
+	}
 	sessionForBinding := *session
 	sessionForBinding.UpstreamIdentityClaims = clonePendingMap(session.UpstreamIdentityClaims)
 	if strings.TrimSpace(req.InvitationCode) != "" {
