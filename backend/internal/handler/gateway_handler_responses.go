@@ -175,6 +175,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		if err != nil {
 			if len(fs.FailedAccountIDs) == 0 {
 				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, effectiveAPIKeyPlatform(c, apiKey))
+				cls = classifySelectionFailureError(err, cls)
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}
@@ -370,15 +371,17 @@ func (h *GatewayHandler) responsesErrorResponse(c *gin.Context, status int, code
 
 // handleResponsesFailoverExhausted writes a failover-exhausted error in Responses format.
 func (h *GatewayHandler) handleResponsesFailoverExhausted(c *gin.Context, lastErr *service.UpstreamFailoverError, streamStarted bool) {
-	if streamStarted {
-		return // Can't write error after stream started
-	}
 	if lastErr != nil {
 		copyFailoverRetryAfter(c, lastErr.ResponseHeaders)
 	}
 	if lastErr != nil && lastErr.IsCredentialFailure() {
 		status, message := credentialFailoverClientResponse(lastErr)
-		h.responsesErrorResponse(c, status, "server_error", message)
+		if streamStarted {
+			service.MarkOpsStreamError(c, "server_error", message, status)
+			writeResponsesFailedSSE(c, "server_error", message)
+		} else {
+			h.responsesErrorResponse(c, status, "server_error", message)
+		}
 		return
 	}
 	statusCode := http.StatusBadGateway
@@ -387,8 +390,28 @@ func (h *GatewayHandler) handleResponsesFailoverExhausted(c *gin.Context, lastEr
 	}
 	if lastErr != nil && service.IsOpenAISilentRefusalErrorBody(lastErr.ResponseBody) {
 		service.SetOpsUpstreamError(c, statusCode, service.OpenAISilentRefusalClientMessage(), "")
-		h.responsesErrorResponse(c, http.StatusBadGateway, "upstream_error", service.OpenAISilentRefusalClientMessage())
+		if streamStarted {
+			writeResponsesFailedSSE(c, "upstream_error", service.OpenAISilentRefusalClientMessage())
+		} else {
+			h.responsesErrorResponse(c, http.StatusBadGateway, "upstream_error", service.OpenAISilentRefusalClientMessage())
+		}
 		return
 	}
-	h.responsesErrorResponse(c, statusCode, "server_error", "All available accounts exhausted")
+	message := "All available accounts exhausted"
+	code := "server_error"
+	status := statusCode
+	if lastErr != nil {
+		upstreamMessage := service.ExtractUpstreamErrorMessage(lastErr.ResponseBody)
+		if visible, ok := service.ClassifyClientVisibleUpstreamError(upstreamMessage, lastErr.ResponseBody); ok {
+			status, code, message = visible.StatusCode, visible.ErrorType, visible.Message
+		} else if statusCode == http.StatusTooManyRequests {
+			status, code, message = http.StatusTooManyRequests, "rate_limit_error", "All available accounts are currently rate-limited. Please retry later."
+		}
+	}
+	if streamStarted {
+		service.MarkOpsStreamError(c, code, message, status)
+		writeResponsesFailedSSE(c, code, message)
+	} else {
+		h.responsesErrorResponse(c, status, code, message)
+	}
 }

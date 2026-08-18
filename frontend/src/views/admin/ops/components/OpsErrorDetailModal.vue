@@ -94,6 +94,16 @@
         </div>
 
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
+          <div class="text-xs font-bold uppercase tracking-wider text-gray-400">Upstream Status</div>
+          <div class="mt-1">
+            <span v-if="detail.upstream_status_code != null" :class="['inline-flex items-center rounded-lg px-2 py-1 text-xs font-black ring-1 ring-inset shadow-sm', upstreamStatusClass]">
+              {{ detail.upstream_status_code }}
+            </span>
+            <span v-else class="text-sm font-medium text-gray-500 dark:text-gray-400">—</span>
+          </div>
+        </div>
+
+        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
           <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.requestType') }}</div>
           <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
             {{ formatRequestTypeLabel(detail.request_type) }}
@@ -102,8 +112,8 @@
 
         <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
           <div class="text-xs font-bold uppercase tracking-wider text-gray-400">{{ t('admin.ops.errorDetail.message') }}</div>
-          <div class="mt-1 truncate text-sm font-medium text-gray-900 dark:text-white" :title="detail.message">
-            {{ detail.message || '—' }}
+          <div class="mt-1 break-words text-sm font-medium text-gray-900 dark:text-white">
+            {{ rootCauseMessage || '—' }}
           </div>
         </div>
 
@@ -116,10 +126,22 @@
 
       </div>
 
-      <!-- Response content (client request -> error_body; upstream -> upstream_error_detail/message) -->
+      <div v-if="detail.upstream_error_message" class="rounded-xl bg-amber-50 p-6 dark:bg-amber-900/10">
+        <h3 class="text-sm font-black uppercase tracking-wider text-amber-900 dark:text-amber-200">Root Cause</h3>
+        <div class="mt-3 break-words text-sm font-medium text-amber-900 dark:text-amber-100">
+          {{ detail.upstream_error_message }}
+        </div>
+      </div>
+
+      <!-- Keep diagnostic payloads separate and deduplicated so retry/SSE context is readable. -->
       <div class="rounded-xl bg-gray-50 p-6 dark:bg-dark-900">
         <h3 class="text-sm font-black uppercase tracking-wider text-gray-900 dark:text-white">{{ t('admin.ops.errorDetail.responseBody') }}</h3>
-        <pre class="mt-4 max-h-[520px] overflow-auto rounded-xl border border-gray-200 bg-white p-4 text-xs text-gray-800 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-100"><code>{{ prettyJSON(primaryResponseBody || '') }}</code></pre>
+        <div class="mt-4 space-y-4">
+          <div v-for="section in payloadSections" :key="section.key">
+            <div class="mb-2 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">{{ section.label }}</div>
+            <pre class="max-h-[520px] overflow-auto rounded-xl border border-gray-200 bg-white p-4 text-xs text-gray-800 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-100"><code>{{ prettyJSON(section.value) }}</code></pre>
+          </div>
+        </div>
       </div>
 
       <!-- Upstream errors list (only for request errors) -->
@@ -230,6 +252,29 @@ const requestId = computed(() => detail.value?.request_id || detail.value?.clien
 
 const primaryResponseBody = computed(() => {
   return resolvePrimaryResponseBody(detail.value, props.errorType)
+})
+
+const rootCauseMessage = computed(() => {
+  const d = detail.value
+  if (!d) return ''
+  for (const candidate of [d.upstream_error_message, d.upstream_error_detail, d.message, d.error_body]) {
+    const value = String(candidate || '').trim()
+    if (value) return value
+  }
+  return ''
+})
+
+const payloadSections = computed(() => {
+  const d = detail.value
+  if (!d) return []
+  const sections = [
+    { key: 'client-body', label: 'Client Body', value: String(d.error_body || '').trim() },
+    { key: 'upstream-message', label: 'Upstream Message', value: String(d.upstream_error_message || '').trim() },
+    { key: 'upstream-detail', label: 'Upstream Detail', value: String(d.upstream_error_detail || '').trim() },
+    { key: 'upstream-errors', label: 'Upstream Events', value: String(d.upstream_errors || '').trim() },
+    { key: 'selected-response', label: 'Selected Response', value: String(primaryResponseBody.value || '').trim() }
+  ]
+  return sections.filter((section, index, all) => section.value && all.findIndex(item => item.value === section.value) === index)
 })
 
 
@@ -360,6 +405,14 @@ watch(
 
 const statusClass = computed(() => {
   const code = detail.value?.status_code ?? 0
+  if (code >= 500) return 'bg-red-50 text-red-700 ring-red-600/20 dark:bg-red-900/30 dark:text-red-400 dark:ring-red-500/30'
+  if (code === 429) return 'bg-purple-50 text-purple-700 ring-purple-600/20 dark:bg-purple-900/30 dark:text-purple-400 dark:ring-purple-500/30'
+  if (code >= 400) return 'bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-900/30 dark:text-amber-400 dark:ring-amber-500/30'
+  return 'bg-gray-50 text-gray-700 ring-gray-600/20 dark:bg-gray-900/30 dark:text-gray-400 dark:ring-gray-500/30'
+})
+
+const upstreamStatusClass = computed(() => {
+  const code = detail.value?.upstream_status_code ?? 0
   if (code >= 500) return 'bg-red-50 text-red-700 ring-red-600/20 dark:bg-red-900/30 dark:text-red-400 dark:ring-red-500/30'
   if (code === 429) return 'bg-purple-50 text-purple-700 ring-purple-600/20 dark:bg-purple-900/30 dark:text-purple-400 dark:ring-purple-500/30'
   if (code >= 400) return 'bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-900/30 dark:text-amber-400 dark:ring-amber-500/30'
