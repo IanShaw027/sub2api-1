@@ -211,7 +211,7 @@ export const adminPaymentAPI = {
   issueInvoice(id: number, file: File) {
     const body = new FormData()
     body.append('file', file)
-    return apiClient.post<Invoice>(`/admin/payment/invoices/${id}/issue`, body, {
+    return apiClient.post<Invoice>(`/admin/payment/invoices/${id}/upload`, body, {
       transformRequest: [
         (data, headers) => {
           if (data instanceof FormData) {
@@ -222,6 +222,11 @@ export const adminPaymentAPI = {
       ],
       timeout: 120000,
     })
+  },
+
+  /** Personal-dev compatible name for uploading and issuing an invoice file. */
+  uploadInvoiceFile(id: number, file: File) {
+    return adminPaymentAPI.issueInvoice(id, file)
   },
 
   resendInvoiceEmail(id: number) {

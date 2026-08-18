@@ -14,10 +14,10 @@
       <DataTable :columns="columns" :data="invoices" :loading="loading">
         <template #cell-id="{ value, row }">
           <span class="font-mono text-sm">#{{ value }}</span>
-          <span v-if="row.unread_by_admin && row.status === 'applied'" class="ml-2 inline-block h-2 w-2 rounded-full bg-red-500" />
+          <span v-if="row.unread_by_admin && String(row.status).toUpperCase() === 'APPLIED'" class="ml-2 inline-block h-2 w-2 rounded-full bg-red-500" />
         </template>
         <template #cell-status="{ value }">
-          {{ t('payment.invoices.status.' + value, value) }}
+          {{ statusLabel(value) }}
         </template>
         <template #cell-invoice_amount="{ value, row }">
           {{ Number(value).toFixed(2) }}{{ row.currency ? ' ' + row.currency : '' }}
@@ -25,7 +25,7 @@
         <template #cell-actions="{ row }">
           <div class="flex items-center gap-2">
             <button class="text-xs text-blue-600 hover:underline" @click="openDetail(row.id)">{{ t('common.view') }}</button>
-            <button v-if="row.status === 'applied'" class="text-xs text-yellow-600 hover:underline" @click="cancelInvoice(row.id)">{{ t('common.cancel') }}</button>
+            <button v-if="String(row.status).toUpperCase() === 'APPLIED'" class="text-xs text-yellow-600 hover:underline" @click="cancelInvoice(row.id)">{{ t('common.cancel') }}</button>
           </div>
         </template>
       </DataTable>
@@ -44,7 +44,7 @@
       <div v-if="detail" class="space-y-4">
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <p class="text-sm">{{ detail.title }} · {{ detail.invoice_amount.toFixed(2) }}{{ detail.currency ? ' ' + detail.currency : '' }}</p>
-          <p class="text-sm">{{ t('payment.invoices.status.' + detail.status) }}</p>
+          <p class="text-sm">{{ statusLabel(detail.status) }}</p>
           <p class="text-xs text-gray-500">{{ detail.email }} / {{ detail.tax_number || '-' }}</p>
           <p class="text-xs text-gray-500">{{ detail.contact_name || '-' }} / {{ detail.contact_phone || '-' }}</p>
           <p class="text-xs text-gray-500">{{ t('payment.invoices.fileName') }}: {{ detail.file_name || '-' }}</p>
@@ -57,16 +57,16 @@
             <span>{{ item.pay_amount_snapshot.toFixed(2) }}{{ item.currency ? ' ' + item.currency : '' }}</span>
           </li>
         </ul>
-        <div v-if="detail.status === 'applied'">
+        <div v-if="detail.status === 'APPLIED'">
           <label class="input-label">{{ t('payment.invoices.uploadFile') }}</label>
-          <input type="file" accept="application/pdf" @change="onFile" />
+          <input type="file" accept=".pdf,.ofd,.xml,.zip,application/pdf" @change="onFile" />
         </div>
       </div>
       <template #footer>
         <div class="flex justify-end gap-2">
-          <button v-if="detail?.status === 'issued'" class="btn btn-secondary" @click="resend">{{ t('payment.invoices.resendEmail') }}</button>
-          <button v-if="detail?.status === 'issued' && detail.has_file" class="btn btn-secondary" @click="download">{{ t('payment.invoices.download') }}</button>
-          <button v-if="detail?.status === 'applied'" class="btn btn-primary" :disabled="!file || actionLoading" @click="issue">{{ t('payment.invoices.issue') }}</button>
+          <button v-if="detail?.status === 'ISSUED'" class="btn btn-secondary" @click="resend">{{ t('payment.invoices.resendEmail') }}</button>
+          <button v-if="detail?.status === 'ISSUED' && detail.has_file" class="btn btn-secondary" @click="download">{{ t('payment.invoices.download') }}</button>
+          <button v-if="detail?.status === 'APPLIED'" class="btn btn-primary" :disabled="!file || actionLoading" @click="issue">{{ t('payment.invoices.issue') }}</button>
         </div>
       </template>
     </BaseDialog>
@@ -102,10 +102,14 @@ let debounceTimer: number | undefined
 
 const statusFilters = computed(() => [
   { value: '', label: t('common.all') },
-  { value: 'applied', label: t('payment.invoices.status.applied') },
-  { value: 'issued', label: t('payment.invoices.status.issued') },
-  { value: 'cancelled', label: t('payment.invoices.status.cancelled') },
+  { value: 'APPLIED', label: t('payment.invoices.status.applied') },
+  { value: 'ISSUED', label: t('payment.invoices.status.issued') },
+  { value: 'CANCELLED', label: t('payment.invoices.status.cancelled') },
 ])
+
+function statusLabel(value: string) {
+  return t(`payment.invoices.status.${String(value).toLowerCase()}`, value)
+}
 
 const columns = computed((): Column[] => [
   { key: 'id', label: t('payment.invoices.id') },
@@ -162,7 +166,7 @@ async function issue() {
   if (!detail.value || !file.value) return
   actionLoading.value = true
   try {
-    const res = await adminPaymentAPI.issueInvoice(detail.value.id, file.value)
+    const res = await adminPaymentAPI.uploadInvoiceFile(detail.value.id, file.value)
     detail.value = res.data
     appStore.showSuccess(t('common.success'))
     await load()

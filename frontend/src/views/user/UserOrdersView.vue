@@ -130,7 +130,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores'
@@ -143,10 +143,13 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 import OrderTable from '@/components/payment/OrderTable.vue'
+import { useAuthStore } from '@/stores/auth'
+import { loadInvoiceDraft, saveInvoiceDraft } from './invoiceDraft'
 
 const { t } = useI18n()
 const router = useRouter()
 const appStore = useAppStore()
+const authStore = useAuthStore()
 
 const loading = ref(false)
 const actionLoading = ref(false)
@@ -168,6 +171,16 @@ const cancelTargetId = ref<number | null>(null)
 const refundTarget = ref<PaymentOrder | null>(null)
 const refundReason = ref('')
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
+
+function hydrateInvoiceDraft() {
+  if (authStore.user?.id) Object.assign(invoiceForm, loadInvoiceDraft(authStore.user.id, authStore.user.email))
+}
+
+function persistInvoiceDraft() {
+  if (authStore.user?.id) saveInvoiceDraft(authStore.user.id, invoiceForm)
+}
+
+watch(invoiceForm, persistInvoiceDraft, { deep: true })
 
 const statusFilters = computed(() => [
   { value: '', label: t('common.all') },
@@ -254,9 +267,10 @@ function toggleSelect(id: number) {
 }
 
 async function confirmInvoice() {
-  if (!invoiceForm.title.trim() || !invoiceForm.email.trim() || selectedIds.value.length === 0) return
+  if (!invoiceForm.title.trim() || !invoiceForm.tax_number.trim() || !invoiceForm.email.trim() || selectedIds.value.length === 0) return
   actionLoading.value = true
   try {
+    persistInvoiceDraft()
     await paymentAPI.applyInvoice({
       order_ids: selectedIds.value,
       title: invoiceForm.title.trim(),
@@ -292,5 +306,5 @@ async function loadInvoiceEligibility() {
   } catch { /* ignore */ }
 }
 
-onMounted(() => { fetchOrders(); loadRefundEligibility(); loadInvoiceEligibility() })
+onMounted(() => { hydrateInvoiceDraft(); fetchOrders(); loadRefundEligibility(); loadInvoiceEligibility() })
 </script>

@@ -31,8 +31,8 @@ func (Invoice) Fields() []ent.Field {
 			Default(""),
 		field.String("status").
 			MaxLen(16).
-			Default("applied").
-			Comment("applied | issued | cancelled"),
+			Default("APPLIED").
+			Comment("APPLIED | ISSUED | CANCELLED"),
 		field.Bool("unread_by_admin").
 			Default(true),
 		field.Float("invoice_amount").

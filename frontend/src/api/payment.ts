@@ -91,13 +91,13 @@ export const paymentAPI = {
   },
 
   getInvoiceEligibleProviders() {
-    return apiClient.get<{ provider_instance_ids: string[] }>('/payment/invoices/eligible-providers')
+    return apiClient.get<{ provider_instance_ids: string[] }>('/payment/orders/invoice-eligible-providers')
   },
 
   applyInvoice(data: {
     order_ids: number[]
     title: string
-    tax_number?: string
+    tax_number: string
     email: string
     contact_name?: string
     contact_phone?: string
@@ -106,7 +106,7 @@ export const paymentAPI = {
     return apiClient.post<Invoice>('/payment/invoices', data)
   },
 
-  getMyInvoices(params?: { page?: number; page_size?: number; status?: string }) {
+  getMyInvoices(params?: { page?: number; page_size?: number; status?: string; keyword?: string }) {
     return apiClient.get<BasePaginationResponse<Invoice>>('/payment/invoices', { params })
   },
 
