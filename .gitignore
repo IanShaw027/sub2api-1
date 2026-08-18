@@ -141,12 +141,25 @@ docs/*
 !docs/legal/*.md
 !docs/superpowers/
 !docs/superpowers/**
+# Local planning/spec drafts are workspace artifacts; keep the directory
+# available locally without adding generated or in-progress documents.
+docs/superpowers/plans/
+docs/superpowers/specs/2026-06-11-http-ingress-upstream-ws-design.md
+docs/superpowers/specs/2026-06-12-platform-model-routing-design.md
+docs/superpowers/specs/2026-06-28-claude-code-seed-registry-design.md
 .worktrees/
 .serena/
 .codex/
 frontend/coverage/
 aicodex
 output/
+
+# Local runtime/build artifacts and environment backups
+/data/
+/sub2api
+/tools/__pycache__/
+/deploy/.env.bak.*
+/deploy/docker-compose.standalone.host.yml
 
 # Vitest / Vite cache at repo root
 .vite/
