@@ -51,7 +51,7 @@ func (s *OpenAIGatewayService) recordOpenAIStickyScheduleDecision(ctx context.Co
 
 	input := &OpenAIStickyScheduleEventInput{
 		CreatedAt:                 time.Now(),
-		Platform:                  normalizeOpenAICompatiblePlatform(req.Platform),
+		Platform:                  NormalizeOpenAICompatiblePlatform(req.Platform),
 		GroupID:                   req.GroupID,
 		StickyAccountID:           decision.StickyAccountID,
 		SelectedAccountID:         selectedAccountID,

@@ -10,7 +10,6 @@ import (
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
 
 const openAICodexPATWhoamiURLDefault = "https://auth.openai.com/api/accounts/v1/user-auth-credential/whoami"
@@ -40,8 +39,7 @@ func newCodexPATWhoamiRequest(ctx context.Context, accessToken string) (*http.Re
 	}
 	req.Header.Set("authorization", "Bearer "+strings.TrimSpace(accessToken))
 	req.Header.Set("accept", "application/json")
-	setCodexOriginator(req.Header, openai.CodexDefaultOriginator)
-	req.Header.Set("user-agent", codexCLIUserAgent)
+	ApplyCodexCanonicalAuthIdentity(req.Header)
 	return req, nil
 }
 

@@ -828,6 +828,7 @@ export default {
         userStatus: '状态'
       },
       usageToday: '今日',
+      usageYesterday: '昨日',
       usageTotal: '累计',
       accountsAvailable: '可用:',
       accountsRateLimited: '限流:',
@@ -897,6 +898,9 @@ export default {
         antigravity: 'Antigravity',
         kiro: 'Kiro',
         grok: 'Grok',
+        kimi: 'Kimi',
+        zhipu: 'Zhipu GLM',
+        deepseek: 'DeepSeek',
         composite: 'Composite',
       },
       saving: '保存中...',
