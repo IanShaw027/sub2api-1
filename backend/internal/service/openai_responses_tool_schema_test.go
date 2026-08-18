@@ -201,6 +201,35 @@ func TestSanitizeOpenAIResponsesToolParameterTypes_DoesNotMutateInputBody(t *tes
 	require.NotEqual(t, string(original), string(sanitized))
 }
 
+func TestSanitizeOpenAIResponsesToolSchemaPatterns_RemovesLookaroundOnly(t *testing.T) {
+	body := []byte(`{"tools":[{"type":"function","name":"search","parameters":{"type":"object","properties":{"q":{"type":"string","pattern":"^(?=.*foo)[a-z]+$"},"id":{"type":"string","pattern":"^[a-z]+$"},"z":{"type":"string","pattern":"(?<!bad)ok"}}}}]}`)
+
+	sanitized, changed, err := sanitizeOpenAIResponsesToolSchemaPatterns(body)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.False(t, gjson.GetBytes(sanitized, "tools.0.parameters.properties.q.pattern").Exists())
+	require.False(t, gjson.GetBytes(sanitized, "tools.0.parameters.properties.z.pattern").Exists())
+	require.Equal(t, "^[a-z]+$", gjson.GetBytes(sanitized, "tools.0.parameters.properties.id.pattern").String())
+	require.Equal(t, "object", gjson.GetBytes(sanitized, "tools.0.parameters.type").String())
+}
+
+func TestSanitizeOpenAIResponsesToolSchemaPatterns_NoOpPreservesBytes(t *testing.T) {
+	body := []byte(`{"tools":[{"type":"function","parameters":{"type":"object","pattern":"^[a-z]+$"}}]}`)
+	sanitized, changed, err := sanitizeOpenAIResponsesToolSchemaPatterns(body)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, string(body), string(sanitized))
+}
+
+func TestSanitizeOpenAIResponsesToolSchemaPatterns_DoesNotTouchUserInputPattern(t *testing.T) {
+	body := []byte(`{"input":{"pattern":"(?=keep)"},"metadata":{"pattern":"(?!keep)"}}`)
+	sanitized, changed, err := sanitizeOpenAIResponsesToolSchemaPatterns(body)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Equal(t, string(body), string(sanitized))
+}
+
 func buildToolSchemaNullTypeBody(t *testing.T, hits int) []byte {
 	t.Helper()
 	tools := make([]any, 0, hits)
