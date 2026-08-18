@@ -194,6 +194,9 @@ func TestLogger_AccessLogIncludesCoreFields(t *testing.T) {
 		if event.Fields["platform"] != "openai" || event.Fields["model"] != "gpt-5" {
 			t.Fatalf("platform/model mismatch: %+v", event.Fields)
 		}
+		if skipped, _ := event.Fields[logger.OpsSystemLogSkipField].(bool); !skipped {
+			t.Fatalf("%s must be true for access logs", logger.OpsSystemLogSkipField)
+		}
 	}
 	if !found {
 		t.Fatalf("access log event not found")

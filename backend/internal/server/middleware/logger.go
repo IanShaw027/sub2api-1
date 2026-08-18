@@ -61,11 +61,11 @@ func Logger() gin.HandlerFunc {
 			zap.String("protocol", protocol),
 			zap.String("method", method),
 			zap.String("path", path),
+			zap.Bool(logger.OpsSystemLogSkipField, true),
 		}
 		if rejected {
 			fields = append(fields,
 				zap.String("ingress_reject_reason", string(reason)),
-				zap.Bool(logger.OpsSystemLogSkipField, true),
 			)
 		}
 		if hasAccountID && accountID > 0 {

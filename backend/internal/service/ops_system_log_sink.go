@@ -153,6 +153,9 @@ func (s *OpsSystemLogSink) shouldIndex(event *logger.LogEvent) bool {
 			return false
 		}
 	}
+	if strings.Contains(strings.ToLower(strings.TrimSpace(event.Message)), "upstream_failover_switching") {
+		return false
+	}
 	level := strings.ToLower(strings.TrimSpace(event.Level))
 	switch level {
 	case "warn", "warning", "error", "fatal", "panic", "dpanic":
@@ -166,8 +169,10 @@ func (s *OpsSystemLogSink) shouldIndex(event *logger.LogEvent) bool {
 			component = fc
 		}
 	}
+	// Access logs stay on stdout/file. Persisting every request here is what
+	// filled ops_system_logs (millions of rows / week) without helping routing.
 	if strings.Contains(component, "http.access") {
-		return true
+		return false
 	}
 	if strings.Contains(component, "audit") {
 		return true
