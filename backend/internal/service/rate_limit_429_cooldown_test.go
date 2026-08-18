@@ -35,6 +35,10 @@ func TestGetRateLimit429CooldownSettings_DefaultsWhenNotSet(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, settings.Enabled)
 	require.Equal(t, 5, settings.CooldownSeconds)
+	require.Equal(t, "cooldown", settings.Strategy)
+	require.Equal(t, 500, settings.RetryIntervalMs)
+	require.Equal(t, 120, settings.RetryMaxDurationSeconds)
+	require.Equal(t, 2, settings.MaxAccountSwitches)
 }
 
 func TestGetRateLimit429CooldownSettings_ReadsFromDB(t *testing.T) {
@@ -47,6 +51,44 @@ func TestGetRateLimit429CooldownSettings_ReadsFromDB(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, settings.Enabled)
 	require.Equal(t, 12, settings.CooldownSeconds)
+	require.Equal(t, "same_account_retry", settings.Strategy)
+}
+
+func TestGetRateLimit429CooldownSettings_EnabledUsesCooldownStrategy(t *testing.T) {
+	repo := newMockSettingRepo()
+	data, _ := json.Marshal(RateLimit429CooldownSettings{
+		Enabled:         true,
+		CooldownSeconds: 12,
+		Strategy:        "same_account_retry",
+	})
+	repo.data[SettingKeyRateLimit429CooldownSettings] = string(data)
+	svc := NewSettingService(repo, &config.Config{})
+
+	settings, err := svc.GetRateLimit429CooldownSettings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "cooldown", settings.Strategy)
+}
+
+func TestSetRateLimit429CooldownSettings_DisabledUsesSameAccountRetry(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.SetRateLimit429CooldownSettings(context.Background(), &RateLimit429CooldownSettings{
+		Enabled:                 false,
+		CooldownSeconds:         12,
+		RetryIntervalMs:         200,
+		RetryMaxDurationSeconds: 90,
+		MaxAccountSwitches:      1,
+	})
+	require.NoError(t, err)
+
+	settings, err := svc.GetRateLimit429CooldownSettings(context.Background())
+	require.NoError(t, err)
+	require.False(t, settings.Enabled)
+	require.Equal(t, "same_account_retry", settings.Strategy)
+	require.Equal(t, 200, settings.RetryIntervalMs)
+	require.Equal(t, 90, settings.RetryMaxDurationSeconds)
+	require.Equal(t, 1, settings.MaxAccountSwitches)
 }
 
 func TestSetRateLimit429CooldownSettings_EnabledRejectsOutOfRange(t *testing.T) {

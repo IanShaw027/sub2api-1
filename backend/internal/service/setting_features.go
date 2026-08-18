@@ -788,8 +788,10 @@ func (s *SettingService) GetRateLimit429CooldownSettings(ctx context.Context) (*
 	if settings.CooldownSeconds > 7200 {
 		settings.CooldownSeconds = 7200
 	}
-	if settings.Strategy != "same_account_retry" {
+	if settings.Enabled {
 		settings.Strategy = "cooldown"
+	} else {
+		settings.Strategy = "same_account_retry"
 	}
 	if settings.RetryIntervalMs < 100 {
 		settings.RetryIntervalMs = 500
@@ -818,7 +820,11 @@ func (s *SettingService) SetRateLimit429CooldownSettings(ctx context.Context, se
 	if settings == nil {
 		return fmt.Errorf("settings cannot be nil")
 	}
-	if settings.Strategy == "" { settings.Strategy = "cooldown" }
+	if settings.Enabled {
+		settings.Strategy = "cooldown"
+	} else {
+		settings.Strategy = "same_account_retry"
+	}
 	if settings.RetryIntervalMs == 0 { settings.RetryIntervalMs = 500 }
 	if settings.RetryMaxDurationSeconds == 0 { settings.RetryMaxDurationSeconds = 120 }
 	if settings.MaxAccountSwitches < 0 { settings.MaxAccountSwitches = 0 }

@@ -58,7 +58,9 @@ func TestOpenAI429FastPath_SkipsSparkShadow(t *testing.T) {
 }
 
 func TestOpenAI429FastPath_BlocksOAuthAccountAfterRetryWindow(t *testing.T) {
-	svc := &OpenAIGatewayService{}
+	settingRepo := newMockSettingRepo()
+	settingRepo.data[SettingKeyRateLimit429CooldownSettings] = `{"enabled":true,"cooldown_seconds":5,"strategy":"cooldown","retry_interval_ms":500,"retry_max_duration_seconds":120,"max_account_switches":2}`
+	svc := &OpenAIGatewayService{settingService: NewSettingService(settingRepo, &config.Config{})}
 	account := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	svc.openaiOAuth429RetryStartedAt.Store(account.ID, time.Now().Add(-openAIOAuth429RetryWindow))
 	svc.markOpenAIOAuth429RateLimited(context.Background(), account, http.Header{}, nil)
