@@ -115,6 +115,23 @@ func TestApplyGrokUpstreamHeadersFromAccountUsesProfileIdentity(t *testing.T) {
 	require.NotEqual(t, xai.CLIUserAgent(xai.CLIClientVersion), req.Header.Get("User-Agent"))
 }
 
+func TestApplyGrokUpstreamHeadersFromAccountFallsBackWhenProfileServiceUnconfigured(t *testing.T) {
+	t.Setenv(xai.CLIVersionEnv, "")
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(nil)
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/responses", nil)
+	require.NoError(t, err)
+	req.Header.Set("User-Agent", "claude-cli/2.0.0 (Mac OS; arm64)")
+
+	err = applyGrokInteractiveUpstreamHeadersFromAccount(context.Background(), req, &Account{ID: 7, Platform: PlatformGrok})
+	require.NoError(t, err)
+	require.Equal(t, xai.CLIUserAgent(xai.CLIClientVersion), req.Header.Get("User-Agent"))
+	require.Equal(t, xai.CLIClientVersion, req.Header.Get("x-grok-client-version"))
+	require.Equal(t, grokClientModeInteractive, req.Header.Get("x-grok-client-mode"))
+}
+
 func TestApplyGrokUpstreamHeadersFromAccountLoadFailureDoesNotStampMixedBundle(t *testing.T) {
 	t.Setenv(xai.CLIVersionEnv, "")
 	injectOutboundGrokProfileError(t, errors.New("identity_reject: profile load failed"))

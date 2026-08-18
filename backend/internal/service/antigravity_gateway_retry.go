@@ -71,10 +71,17 @@ func resolveAntigravityForwardBaseURL() string {
 }
 
 func (p *antigravityRetryLoopParams) sendAntigravityAccountHTTP(s *AntigravityGatewayService, req *http.Request) (*http.Response, error) {
-	if err := applyOutboundProfileUserAgent(p.ctx, p.account, req); err != nil {
+	profile, err := LoadOutboundDeviceProfile(p.ctx, p.account)
+	if err != nil {
 		return nil, &leftoverProfileLoadError{err: err}
 	}
-	return doLeftoverAccountHTTP(p.ctx, p.httpUpstream, req, p.proxyURL, p.account, s.tlsFPProfileService, s.tlsFPRouterService, leftoverOutboundTLSRoutingUA(req), "http", "antigravity")
+	if req != nil {
+		if ua := outboundProfileUserAgent(profile); ua != "" {
+			req.Header.Set("User-Agent", ua)
+		}
+	}
+	ctx := withOutboundDeviceProfile(p.ctx, profile)
+	return doLeftoverAccountHTTP(ctx, p.httpUpstream, req, p.proxyURL, p.account, s.tlsFPProfileService, s.tlsFPRouterService, leftoverOutboundTLSRoutingUA(req), "http", "antigravity")
 }
 
 // smartRetryAction 智能重试的处理结果

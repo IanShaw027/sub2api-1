@@ -121,6 +121,34 @@ func (s *AccountDeviceService) projectDeviceProfile(ctx context.Context, p *Acco
 	}
 }
 
+// GetIfExists returns a validated stored profile without minting a baseline on miss.
+func (s *AccountDeviceService) GetIfExists(ctx context.Context, account *Account) (*AccountDeviceProfile, error) {
+	if s == nil || s.repo == nil {
+		return nil, ErrDeviceProfileServiceUnconfigured
+	}
+	if account == nil {
+		return nil, fmt.Errorf("identity_reject: account is required")
+	}
+	account, err := s.canonicalAccount(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+	existing, err := s.repo.GetByAccountID(ctx, account.ID)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil {
+		return nil, nil
+	}
+	if err := ValidateOutboundBundle(existing); err != nil {
+		return nil, err
+	}
+	if deviceProfilePlatformMismatch(existing, account) {
+		return nil, deviceProfilePlatformMismatchError(existing, account)
+	}
+	return existing, nil
+}
+
 func (s *AccountDeviceService) GetOrCreate(ctx context.Context, account *Account) (*AccountDeviceProfile, error) {
 	if s == nil || s.repo == nil {
 		return nil, fmt.Errorf("identity_reject: account device service is not configured")

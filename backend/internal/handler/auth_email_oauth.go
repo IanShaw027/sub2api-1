@@ -389,8 +389,18 @@ func (h *AuthHandler) completeEmailOAuthRegistration(c *gin.Context, provider st
 		response.ErrorFrom(c, infraerrors.ServiceUnavailable("PENDING_AUTH_NOT_READY", "pending auth service is not ready"))
 		return
 	}
+	// Adoption must run before the bind/finalize transaction. SQLite (and the
+	// pending-flow helper DSN) deadlocks if a write tx is open while
+	// ensurePendingOAuthAdoptionDecision queries the root client.
+	decision, err := h.ensurePendingOAuthAdoptionDecision(c, session.ID, oauthAdoptionDecisionRequest{})
+	if err != nil {
+		_ = h.authService.RollbackOAuthEmailAccountCreation(c.Request.Context(), user.ID, strings.TrimSpace(req.InvitationCode))
+		response.ErrorFrom(c, err)
+		return
+	}
 	tx, err := client.Tx(c.Request.Context())
 	if err != nil {
+		_ = h.authService.RollbackOAuthEmailAccountCreation(c.Request.Context(), user.ID, strings.TrimSpace(req.InvitationCode))
 		response.ErrorFrom(c, infraerrors.InternalServer("PENDING_AUTH_BIND_APPLY_FAILED", "failed to consume pending oauth session").WithCause(err))
 		return
 	}
@@ -400,13 +410,6 @@ func (h *AuthHandler) completeEmailOAuthRegistration(c *gin.Context, provider st
 	sessionForBinding.UpstreamIdentityClaims = clonePendingMap(session.UpstreamIdentityClaims)
 	if strings.TrimSpace(req.InvitationCode) != "" {
 		sessionForBinding.UpstreamIdentityClaims["invitation_code"] = strings.TrimSpace(req.InvitationCode)
-	}
-	decision, err := h.ensurePendingOAuthAdoptionDecision(c, session.ID, oauthAdoptionDecisionRequest{})
-	if err != nil {
-		_ = tx.Rollback()
-		_ = h.authService.RollbackOAuthEmailAccountCreation(c.Request.Context(), user.ID, strings.TrimSpace(req.InvitationCode))
-		response.ErrorFrom(c, err)
-		return
 	}
 	if err := applyPendingOAuthBinding(txCtx, client, h.authService, h.userService, &sessionForBinding, decision, &user.ID, true, false); err != nil {
 		_ = tx.Rollback()
@@ -426,7 +429,7 @@ func (h *AuthHandler) completeEmailOAuthRegistration(c *gin.Context, provider st
 		response.ErrorFrom(c, err)
 		return
 	}
-	if err := consumePendingOAuthBrowserSessionTx(c.Request.Context(), tx, session); err != nil {
+	if err := consumePendingOAuthBrowserSessionTx(txCtx, tx, session); err != nil {
 		_ = tx.Rollback()
 		_ = h.authService.RollbackOAuthEmailAccountCreation(c.Request.Context(), user.ID, strings.TrimSpace(req.InvitationCode))
 		clearCookies()

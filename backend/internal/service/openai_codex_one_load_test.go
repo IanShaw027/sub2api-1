@@ -15,14 +15,7 @@ import (
 
 func TestBuildUpstreamRequestReusesForwardDeviceProfile(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	account := &Account{
-		ID:       1920,
-		Platform: PlatformOpenAI,
-		Type:     AccountTypeOAuth,
-		Credentials: map[string]any{
-			"access_token": "oauth-token",
-		},
-	}
+	account := leftoverOAuthAccount(1920, nil)
 	profile := leftoverValidProfile(account.ID, PlatformOpenAI, ClientFamilyCodexCLI, "codex-cli/1.2.3", "mid-one-load")
 	installLeftoverOutboundProfile(t, profile)
 
@@ -199,6 +192,12 @@ func TestBuildUpstreamRequestClearsStaleFingerprintIDsAfterForwardLoadFailure(t 
 }
 
 func leftoverOAuthAccount(id int64, extra map[string]any) *Account {
+	if extra == nil {
+		extra = map[string]any{
+			codexFingerprintModeExtraKey: "session",
+			codexFingerprintSeedExtraKey: testCodexFingerprintSeed,
+		}
+	}
 	return &Account{
 		ID:       id,
 		Platform: PlatformOpenAI,

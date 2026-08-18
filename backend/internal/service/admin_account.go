@@ -517,6 +517,11 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 			return nil, err
 		}
 	}
+	if len(groupIDs) > 0 {
+		if err := s.validateGroupIDsExist(ctx, groupIDs); err != nil {
+			return nil, err
+		}
+	}
 
 	// 校验并规范化请求头覆写配置（header 名小写化、格式检查）
 	if err := NormalizeHeaderOverrideCredentials(input.Credentials); err != nil {
@@ -1022,9 +1027,12 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	var cachedTargets []*Account
+	needsPerAccountConcurrencyNormalization := input.Concurrency != nil &&
+		(*input.Concurrency <= 0 || *input.Concurrency > 32)
 	needCachedTargets := len(input.Credentials) > 0 || input.ProxyID != nil || len(input.ProxyIDs) > 0 ||
 		needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil ||
-		input.RateMultiplier != nil || len(input.Extra) > 0
+		input.RateMultiplier != nil || len(input.Extra) > 0 ||
+		needsPerAccountConcurrencyNormalization
 	if needCachedTargets {
 		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
@@ -1171,8 +1179,6 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	requiresPerAccountWrite := len(kiroCredentialUpdateIDs) > 0
-	needsPerAccountConcurrencyNormalization := input.Concurrency != nil &&
-		(*input.Concurrency <= 0 || *input.Concurrency > 32)
 
 	if requiresPerAccountWrite {
 		for index, accountID := range input.AccountIDs {

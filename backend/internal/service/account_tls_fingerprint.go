@@ -232,6 +232,9 @@ func pinnedDeviceTLSRuntime(
 }
 
 func loadDeviceProfileForTLSResolve(ctx context.Context, account *Account) (*AccountDeviceProfile, error) {
+	if cached := outboundDeviceProfileFromContext(ctx); cached != nil {
+		return cached, nil
+	}
 	if OutboundDeviceProfileService() == nil {
 		return nil, nil
 	}

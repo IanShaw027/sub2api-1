@@ -126,6 +126,9 @@ func (w *leftoverPinnedUAUpstream) DoWithTLS(req *http.Request, proxyURL string,
 	if w.ua != "" && req != nil {
 		req.Header.Set("User-Agent", w.ua)
 	}
+	if profile == nil {
+		return w.inner.Do(req, proxyURL, accountID, accountConcurrency)
+	}
 	return w.inner.DoWithTLS(req, proxyURL, accountID, accountConcurrency, profile)
 }
 

@@ -675,6 +675,15 @@ func (c *countingSlotCache) AcquireAccountSlot(_ context.Context, accountID int6
 	return true, nil
 }
 
+func TestAcquireAccountSlotForGroup_NilCacheAllowsAcquire(t *testing.T) {
+	gid := int64(42)
+	result, err := NewConcurrencyService(nil).AcquireAccountSlotForGroup(context.Background(), 11, &gid, 3)
+	require.NoError(t, err)
+	require.True(t, result.Acquired)
+	require.NotNil(t, result.ReleaseFunc)
+	require.NotPanics(t, result.ReleaseFunc)
+}
+
 func TestAcquireAccountSlotForGroup_RejectsNonPositiveMax(t *testing.T) {
 	svc := NewConcurrencyService(&stubConcurrencyCacheForTest{acquireResult: true})
 	svc.SetSlotHeartbeatInterval(0)

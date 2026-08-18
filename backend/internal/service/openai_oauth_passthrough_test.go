@@ -1988,12 +1988,13 @@ func TestOpenAIGatewayService_CodexFingerprintHTTPTransformedHeaderBodyParityAnd
 	wantSession := resolveConvergedSessionID(seed)
 	wantThread := resolveConvergedThreadID(seed, "header-session")
 
-	require.Equal(t, wantInstall, upstream.lastReq.Header.Get("x-codex-installation-id"))
-	require.Equal(t, wantSession, upstream.lastReq.Header.Get("session-id"))
-	require.Equal(t, wantSession, upstream.lastReq.Header.Get("session_id"))
-	require.Equal(t, wantThread, upstream.lastReq.Header.Get("thread-id"))
-	require.Equal(t, wantThread, upstream.lastReq.Header.Get("x-client-request-id"))
-	require.Equal(t, wantThread+":0", upstream.lastReq.Header.Get("x-codex-window-id"))
+	h := upstream.lastReq.Header
+	require.Equal(t, wantInstall, getHeaderRaw(h, "x-codex-installation-id"))
+	require.Equal(t, wantSession, getHeaderRaw(h, "session-id"))
+	require.Equal(t, wantSession, getHeaderRaw(h, "session_id"))
+	require.Equal(t, wantThread, getHeaderRaw(h, "thread-id"))
+	require.Equal(t, wantThread, getHeaderRaw(h, "x-client-request-id"))
+	require.Equal(t, wantThread+":0", getHeaderRaw(h, "x-codex-window-id"))
 
 	require.Equal(t, wantSession, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
 	require.Equal(t, wantInstall, gjson.GetBytes(upstream.lastBody, "client_metadata.x-codex-installation-id").String())
@@ -2002,7 +2003,7 @@ func TestOpenAIGatewayService_CodexFingerprintHTTPTransformedHeaderBodyParityAnd
 	require.Equal(t, wantThread+":0", gjson.GetBytes(upstream.lastBody, "client_metadata.x-codex-window-id").String())
 
 	bodyTurnMetadata := gjson.GetBytes(upstream.lastBody, "client_metadata.x-codex-turn-metadata").String()
-	headerTurnMetadata := upstream.lastReq.Header.Get("x-codex-turn-metadata")
+	headerTurnMetadata := getHeaderRaw(upstream.lastReq.Header, "x-codex-turn-metadata")
 	require.Equal(t, wantSession, gjson.Get(bodyTurnMetadata, "session_id").String())
 	require.Equal(t, wantSession, gjson.Get(headerTurnMetadata, "session_id").String())
 	require.Equal(t, gjson.Get(bodyTurnMetadata, "turn_id").String(), gjson.Get(headerTurnMetadata, "turn_id").String())
@@ -2050,12 +2051,13 @@ func TestOpenAIGatewayService_CodexFingerprintHTTPRawPassthroughHeaderBodyParity
 	wantSession := resolveConvergedSessionID(seed)
 	wantThread := resolveConvergedThreadID(seed, "header-session")
 
-	require.Equal(t, wantInstall, upstream.lastReq.Header.Get("x-codex-installation-id"))
-	require.Equal(t, wantSession, upstream.lastReq.Header.Get("session-id"))
-	require.Equal(t, wantSession, upstream.lastReq.Header.Get("session_id"))
-	require.Equal(t, wantThread, upstream.lastReq.Header.Get("thread-id"))
-	require.Equal(t, wantThread, upstream.lastReq.Header.Get("x-client-request-id"))
-	require.Equal(t, wantThread+":0", upstream.lastReq.Header.Get("x-codex-window-id"))
+	h := upstream.lastReq.Header
+	require.Equal(t, wantInstall, getHeaderRaw(h, "x-codex-installation-id"))
+	require.Equal(t, wantSession, getHeaderRaw(h, "session-id"))
+	require.Equal(t, wantSession, getHeaderRaw(h, "session_id"))
+	require.Equal(t, wantThread, getHeaderRaw(h, "thread-id"))
+	require.Equal(t, wantThread, getHeaderRaw(h, "x-client-request-id"))
+	require.Equal(t, wantThread+":0", getHeaderRaw(h, "x-codex-window-id"))
 
 	require.Equal(t, wantSession, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
 	require.Equal(t, wantInstall, gjson.GetBytes(upstream.lastBody, "client_metadata.x-codex-installation-id").String())
@@ -2064,7 +2066,7 @@ func TestOpenAIGatewayService_CodexFingerprintHTTPRawPassthroughHeaderBodyParity
 	require.Equal(t, wantThread+":0", gjson.GetBytes(upstream.lastBody, "client_metadata.x-codex-window-id").String())
 
 	bodyTurnMetadata := gjson.GetBytes(upstream.lastBody, "client_metadata.x-codex-turn-metadata").String()
-	headerTurnMetadata := upstream.lastReq.Header.Get("x-codex-turn-metadata")
+	headerTurnMetadata := getHeaderRaw(upstream.lastReq.Header, "x-codex-turn-metadata")
 	require.Equal(t, wantSession, gjson.Get(bodyTurnMetadata, "session_id").String())
 	require.Equal(t, wantSession, gjson.Get(headerTurnMetadata, "session_id").String())
 	require.Equal(t, gjson.Get(bodyTurnMetadata, "turn_id").String(), gjson.Get(headerTurnMetadata, "turn_id").String())

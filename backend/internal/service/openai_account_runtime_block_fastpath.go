@@ -166,7 +166,16 @@ func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context
 	}
 	s.recordOpenAIOAuth429()
 	if s.ShouldRetryOpenAIOAuth429(account, headers, responseBody) {
-		return
+		// Request-local same-account retry: stay schedulable during the window.
+		if s.settingService != nil && s.rateLimit429StrategySettings().Strategy == "same_account_retry" {
+			return
+		}
+		// Unit tests and bare gateway instances without rate-limit wiring keep the
+		// retry window semantics. Production paths with rateLimitService apply the
+		// fallback cooldown block below instead of parking early.
+		if s.settingService == nil && s.rateLimitService == nil {
+			return
+		}
 	}
 	// same_account_retry is request-local by design. Exhausting one request's
 	// retry window must not remove the account from scheduling for unrelated
@@ -512,14 +521,13 @@ func (s *OpenAIGatewayService) isOpenAIOAuth429Storm() bool {
 }
 
 func (s *OpenAIGatewayService) ShouldStopOpenAIOAuth429Failover(account *Account, statusCode int, failedSwitches int, state *OpenAIOAuth429FailoverState) bool {
-	maxSwitches := openAIOAuth429StormMaxAccountSwitches
-	if s != nil && s.settingService != nil {
-		maxSwitches = s.rateLimit429StrategySettings().MaxAccountSwitches
-	}
-	if failedSwitches < maxSwitches {
-		return false
-	}
 	if state != nil && state.grokOAuth429FollowupPending {
+		if statusCode == http.StatusTooManyRequests {
+			if isGrokOAuthAccount(account) && failedSwitches >= 2 {
+				return true
+			}
+			return false
+		}
 		// The follow-up budget was armed by a Grok OAuth 429. Consume it on
 		// any failing follow-up account, even if a mixed pool selected an API-key
 		// account next.
@@ -536,12 +544,19 @@ func (s *OpenAIGatewayService) ShouldStopOpenAIOAuth429Failover(account *Account
 		}
 		return false
 	}
+	maxAttempts := openAIOAuth429MaxAccountAttempts
+	if s != nil && s.settingService != nil {
+		maxAttempts = s.rateLimit429StrategySettings().MaxAccountSwitches + 1
+	}
+	if failedSwitches < maxAttempts {
+		return false
+	}
 	if statusCode != http.StatusTooManyRequests || !isOpenAIOAuthAccount(account) {
 		return false
 	}
 	// failedSwitches is incremented after each exhausted candidate. Therefore,
-	// a value of three means this request has already given three distinct OAuth
-	// accounts their full same-account retry window. A 429 storm is diagnostic
-	// only; it must not skip those candidates and return a client 429 early.
-	return failedSwitches >= maxSwitches+1
+	// maxAttempts accounts were already tried on this request. A 429 storm is
+	// diagnostic only; it must not skip those candidates and return a client
+	// 429 early.
+	return failedSwitches >= maxAttempts
 }

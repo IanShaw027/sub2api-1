@@ -362,6 +362,12 @@ func (s *SettingService) LoadForwardedClientIPSettings(ctx context.Context) erro
 
 // GetAllSettings 获取所有系统设置
 func (s *SettingService) GetAllSettings(ctx context.Context) (*SystemSettings, error) {
+	if s == nil {
+		return nil, fmt.Errorf("setting service is not configured")
+	}
+	if s.settingRepo == nil {
+		return s.parseSettings(map[string]string{}), nil
+	}
 	settings, err := s.settingRepo.GetAll(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("get all settings: %w", err)

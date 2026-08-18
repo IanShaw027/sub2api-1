@@ -263,6 +263,27 @@ func loadOutboundCodexProfile(ctx context.Context, account *Account) *AccountDev
 	return profile
 }
 
+func loadExistingOutboundCodexProfile(ctx context.Context, account *Account) (*AccountDeviceProfile, error) {
+	if account == nil {
+		return nil, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	svc := OutboundDeviceProfileService()
+	if svc == nil {
+		return nil, nil
+	}
+	loadCtx, cancel := context.WithTimeout(ctx, outboundDeviceProfileLoadTimeout)
+	defer cancel()
+	profile, err := svc.GetIfExists(loadCtx, account)
+	if err != nil {
+		logCodexIdentityReject(account.ID, err)
+		return nil, err
+	}
+	return profile, nil
+}
+
 // resolveConvergedInstallationIDFromProfile 只读已校验的设备档案；
 // 加载或校验失败时返回空串，由调用方跳过收敛，不造半包。
 func resolveConvergedInstallationIDFromProfile(ctx context.Context, account *Account) string {
@@ -448,7 +469,9 @@ func resolveCodexFingerprintIDsWithContext(ctx context.Context, account *Account
 		turnStartedAtUnixMs: time.Now().UnixMilli(),
 	}
 
-	if profile := loadOutboundCodexProfile(ctx, account); profile != nil {
+	if profile, err := loadExistingOutboundCodexProfile(ctx, account); err != nil {
+		return nil
+	} else if profile != nil {
 		ids.profile = profile
 		ids.installationID = strings.TrimSpace(profile.InstallationID)
 		if ids.installationID == "" {

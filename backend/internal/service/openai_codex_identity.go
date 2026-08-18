@@ -100,7 +100,7 @@ func ApplyCodexCanonicalAuthIdentity(h http.Header) {
 	}
 	userAgent, originator := CodexCanonicalAuthIdentity()
 	h.Set("user-agent", userAgent)
-	h.Set("originator", originator)
+	setCodexOriginator(h, originator)
 }
 
 // CodexCanonicalClientVersion 返回当前生效的 Codex 客户端版本号。
@@ -139,6 +139,9 @@ func profilePayloadString(profile *AccountDeviceProfile, key string) string {
 }
 
 func codexIdentityCandidateUA(profile *AccountDeviceProfile, fallbackUA string) string {
+	if ua := strings.TrimSpace(fallbackUA); ua != "" {
+		return ua
+	}
 	if ua := profilePayloadString(profile, "user_agent"); ua != "" {
 		return ua
 	}

@@ -2,12 +2,35 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 )
 
 // Outbound device-profile loader for Tasks 9–13.
 // Task 16 wires SetOutboundDeviceProfileService. Until then tests call it directly.
+
+var ErrDeviceProfileServiceUnconfigured = errors.New("identity_reject: device profile service is not configured")
+
+type outboundDeviceProfileCtxKey struct{}
+
+func withOutboundDeviceProfile(ctx context.Context, profile *AccountDeviceProfile) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if profile == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, outboundDeviceProfileCtxKey{}, profile)
+}
+
+func outboundDeviceProfileFromContext(ctx context.Context) *AccountDeviceProfile {
+	if ctx == nil {
+		return nil
+	}
+	p, _ := ctx.Value(outboundDeviceProfileCtxKey{}).(*AccountDeviceProfile)
+	return p
+}
 
 var outboundDeviceProfileMu sync.RWMutex
 var outboundDeviceProfileSvc *AccountDeviceService
@@ -30,7 +53,7 @@ func OutboundDeviceProfileService() *AccountDeviceService {
 func LoadOutboundDeviceProfile(ctx context.Context, account *Account) (*AccountDeviceProfile, error) {
 	svc := OutboundDeviceProfileService()
 	if svc == nil {
-		return nil, fmt.Errorf("identity_reject: device profile service is not configured")
+		return nil, ErrDeviceProfileServiceUnconfigured
 	}
 	p, err := svc.GetOrCreate(ctx, account)
 	if err != nil {

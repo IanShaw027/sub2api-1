@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -534,8 +535,8 @@ func TestOpenAIRecoverResponsesPanic_WritesFallbackResponse(t *testing.T) {
 
 	errorObj, ok := parsed["error"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "upstream_error", errorObj["type"])
-	assert.Equal(t, "Upstream request failed", errorObj["message"])
+	assert.Equal(t, "upstream_transport_error", errorObj["type"])
+	assert.Equal(t, "Upstream transport error", errorObj["message"])
 }
 
 func TestOpenAIRecoverResponsesPanic_NoPanicNoWrite(t *testing.T) {
@@ -1853,6 +1854,10 @@ type openAIHTTPPassthroughFailoverUpstream struct {
 	accountIDs []int64
 }
 
+func (u *openAIHTTPPassthroughFailoverUpstream) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	return u.Do(req, proxyURL, accountID, accountConcurrency)
+}
+
 func (u *openAIHTTPPassthroughFailoverUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
 	u.mu.Lock()
 	u.accountIDs = append(u.accountIDs, accountID)
@@ -1875,6 +1880,10 @@ type openAIHTTPPassthroughAuthFailoverUpstream struct {
 	mu         sync.Mutex
 	accountIDs []int64
 	statusCode int
+}
+
+func (u *openAIHTTPPassthroughAuthFailoverUpstream) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	return u.Do(req, proxyURL, accountID, accountConcurrency)
 }
 
 func (u *openAIHTTPPassthroughAuthFailoverUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {
@@ -1905,6 +1914,10 @@ type openAIHTTPPassthroughSSERateLimitUpstream struct {
 	service.HTTPUpstream
 	mu         sync.Mutex
 	accountIDs []int64
+}
+
+func (u *openAIHTTPPassthroughSSERateLimitUpstream) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, _ *tlsfingerprint.Profile) (*http.Response, error) {
+	return u.Do(req, proxyURL, accountID, accountConcurrency)
 }
 
 func (u *openAIHTTPPassthroughSSERateLimitUpstream) Do(_ *http.Request, _ string, accountID int64, _ int) (*http.Response, error) {

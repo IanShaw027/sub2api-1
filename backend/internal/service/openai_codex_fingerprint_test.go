@@ -161,7 +161,10 @@ func TestCodexSharedRequestIdentity_SecondLoadFailureDoesNotKeepBodyInstallation
 	SetOutboundDeviceProfileService(NewAccountDeviceService(repo))
 	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
 
-	account := newTestOAuthAccount(16, map[string]any{"openai_device_id": "extra-device-id"})
+	account := newTestOAuthAccount(16, map[string]any{
+		codexFingerprintModeExtraKey: "session",
+		"openai_device_id":           "extra-device-id",
+	})
 	body := map[string]any{}
 
 	ids := applyCodexSharedRequestIdentity(context.Background(), body, account, nil)
@@ -196,7 +199,10 @@ func TestCodexForwardRequestIdentity_SecondLoadFailureDoesNotKeepBodyInstallatio
 	SetOutboundDeviceProfileService(NewAccountDeviceService(repo))
 	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
 
-	account := newTestOAuthAccount(17, map[string]any{"openai_device_id": "extra-device-id"})
+	account := newTestOAuthAccount(17, map[string]any{
+		codexFingerprintModeExtraKey: "session",
+		"openai_device_id":           "extra-device-id",
+	})
 	body := map[string]any{}
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -470,7 +476,7 @@ func TestResolveCodexFingerprintIDsFromRequest_DefaultIsOff(t *testing.T) {
 func TestResolveCodexFingerprintIDsFromRequest_ExplicitOptInHonored(t *testing.T) {
 	for _, mode := range []string{"device", "session", "full"} {
 		t.Run(mode, func(t *testing.T) {
-			account := newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: mode})
+			account := newTestOAuthAccount(50101, map[string]any{codexFingerprintModeExtraKey: mode})
 			ids := resolveCodexFingerprintIDsFromRequest(account, nil)
 			require.NotNil(t, ids, "显式配置必须生效")
 			assert.Equal(t, codexFingerprintMode(mode), ids.mode)
@@ -753,7 +759,7 @@ func TestFingerprintIDs_HeaderAndBody_TurnID_Consistent(t *testing.T) {
 }
 
 func TestFingerprintIDs_MalformedEmbeddedMetadataRebuiltConsistently(t *testing.T) {
-	account := newTestOAuthAccount(2, map[string]any{codexFingerprintModeExtraKey: "session"})
+	account := newTestOAuthAccount(50102, map[string]any{codexFingerprintModeExtraKey: "session"})
 	clientHeaders := make(http.Header)
 	clientHeaders.Set("session-id", "client-session-malformed")
 	ids := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)

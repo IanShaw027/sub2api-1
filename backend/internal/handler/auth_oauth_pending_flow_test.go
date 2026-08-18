@@ -3169,8 +3169,15 @@ func (r *oauthPendingFlowUserRepo) CreateWithEmailAliasGuardAndDomainLimit(ctx c
 	return r.CreateWithEmailAliasGuard(ctx, user)
 }
 
+func (r *oauthPendingFlowUserRepo) entClient(ctx context.Context) *dbent.Client {
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		return tx.Client()
+	}
+	return r.client
+}
+
 func (r *oauthPendingFlowUserRepo) GetByID(ctx context.Context, id int64) (*service.User, error) {
-	entity, err := r.client.User.Get(ctx, id)
+	entity, err := r.entClient(ctx).User.Get(ctx, id)
 	if err != nil {
 		if dbent.IsNotFound(err) {
 			return nil, service.ErrUserNotFound

@@ -289,6 +289,10 @@ func TestAccountTestService_TestAccountConnection_OpenAICompactProbeIdentityMatc
 			codexFingerprintSeedExtraKey: testCodexFingerprintSeed,
 		},
 	}
+	seed, ok := codexFingerprintSeed(account.Extra)
+	require.True(t, ok)
+	profile := leftoverValidProfile(account.ID, PlatformOpenAI, ClientFamilyCodexCLI, "codex-cli/1.2.3", "mid-compact")
+	installLeftoverOutboundProfile(t, profile)
 	repo := &snapshotUpdateAccountRepo{
 		stubOpenAIAccountRepo: stubOpenAIAccountRepo{accounts: []Account{account}},
 		updateExtraCalls:      updateCalls,
@@ -306,13 +310,12 @@ func TestAccountTestService_TestAccountConnection_OpenAICompactProbeIdentityMatc
 
 	require.NoError(t, svc.TestAccountConnection(c, account.ID, "gpt-5.4", "", AccountTestModeCompact))
 
-	// 显式 session 收敛模式：出站身份 = 账号级收敛值
-	seed, ok := codexFingerprintSeed(account.Extra)
-	require.True(t, ok)
-	converged := resolveConvergedSessionID(seed)
+	// 出站身份走已校验设备档案（与真实转发同路径），不再回退到随机 mint。
+	_ = seed
+	converged := resolveConvergedSessionID(profile.SessionNamespace)
 	require.Equal(t, converged, upstream.lastReq.Header.Get("session-id"))
 	require.Equal(t, converged, upstream.lastReq.Header.Get("session_id"))
-	require.Equal(t, resolveConvergedInstallationID(&account, seed), upstream.lastReq.Header.Get("x-codex-installation-id"),
+	require.Equal(t, profile.InstallationID, upstream.lastReq.Header.Get("x-codex-installation-id"),
 		"真实 Codex 每个请求必带 installation-id，探测不得缺失")
 	require.NotContains(t, upstream.lastReq.Header.Get("session-id"), "probe_compact",
 		"探测标识不得是可被上游一眼识别的字面量")

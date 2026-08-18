@@ -475,6 +475,10 @@ func (s *ConcurrencyService) AcquireAccountSlotForGroup(ctx context.Context, acc
 	if maxConcurrency <= 0 {
 		return &AcquireResult{Acquired: false}, ErrInvalidConcurrency
 	}
+	if s == nil || s.cache == nil {
+		logger.LegacyPrintf("service.concurrency", "Warning: concurrency cache unavailable for account %d; allowing acquire as no-op", accountID)
+		return &AcquireResult{Acquired: true, ReleaseFunc: func() {}}, nil
+	}
 
 	requestID := generateRequestID()
 	gid := int64(0)

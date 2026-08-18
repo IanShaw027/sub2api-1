@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -71,9 +72,14 @@ func applyGrokUpstreamHeadersFromAccountWithMode(ctx context.Context, req *http.
 		loaded, err := LoadOutboundDeviceProfile(loadCtx, account)
 		cancel()
 		if err != nil {
-			return err
+			// Real load errors stay fail-closed. Only admin probes without a wired
+			// profile service keep the pinned CLI stamp for quota/billing probes.
+			if !errors.Is(err, ErrDeviceProfileServiceUnconfigured) {
+				return err
+			}
+		} else {
+			profile = loaded
 		}
-		profile = loaded
 	}
 
 	sanitizeGrokOutboundHeaders(req)

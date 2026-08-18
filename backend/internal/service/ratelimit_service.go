@@ -249,7 +249,7 @@ const (
 )
 
 // CheckErrorPolicy 检查自定义错误码和临时不可调度规则。
-// 自定义错误码开启时覆盖后续所有逻辑（包括临时不可调度）。
+// 自定义错误码命中时覆盖同状态的临时不可调度规则。
 func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Account, statusCode int, responseBody []byte, requestedModel ...string) ErrorPolicyResult {
 	ctx = withTempUnschedulableModel(ctx, requestedModel)
 	if isAPIKeyBillingExhausted(account, statusCode, responseBody) {
@@ -257,9 +257,6 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 	}
 	if account.IsCustomErrorCodesEnabled() {
 		if account.ShouldHandleErrorCode(statusCode) {
-			if statusCode != http.StatusUnauthorized && s.tryTempUnschedulable(ctx, account, statusCode, responseBody, firstRequestedModel(requestedModel)) {
-				return ErrorPolicyTempUnscheduled
-			}
 			return ErrorPolicyMatched
 		}
 		slog.Info("account_error_code_skipped", "account_id", account.ID, "status_code", statusCode)
