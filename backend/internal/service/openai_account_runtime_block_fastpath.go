@@ -20,6 +20,25 @@ const (
 	openAIOAuth429StormMaxAccountSwitches = 1
 )
 
+func (s *OpenAIGatewayService) rateLimit429StrategySettings() RateLimit429CooldownSettings {
+	defaults := DefaultRateLimit429CooldownSettings()
+	if s == nil || s.settingService == nil {
+		return *defaults
+	}
+	s.openai429StrategyMu.Lock()
+	defer s.openai429StrategyMu.Unlock()
+	if time.Since(s.openai429StrategyCachedAt) < 5*time.Second {
+		return s.openai429StrategyCached
+	}
+	settings := *defaults
+	if loaded, err := s.settingService.GetRateLimit429CooldownSettings(context.Background()); err == nil && loaded != nil {
+		settings = *loaded
+	}
+	s.openai429StrategyCached = settings
+	s.openai429StrategyCachedAt = time.Now()
+	return settings
+}
+
 // OpenAIOAuth429FailoverState tracks the request-local follow-up budget after
 // the first Grok OAuth 429. Once that 429 occurs, exactly one different account
 // may be attempted; any failure from that follow-up account ends failover.
@@ -181,6 +200,9 @@ func (s *OpenAIGatewayService) shouldRetryOpenAIOAuth429OnSameAccount(account *A
 		return false
 	}
 	if statusCode == http.StatusTooManyRequests && isOpenAIOAuthAccount(account) && !account.IsShadow() {
+		if s.settingService != nil && s.rateLimit429StrategySettings().Strategy != "same_account_retry" {
+			return false
+		}
 		// A prior retry window may already have expired and parked this account.
 		// Do not create a fresh window while that runtime block is active.
 		if s.isOpenAIAccountRuntimeBlocked(account) {
@@ -199,6 +221,9 @@ func (s *OpenAIGatewayService) ShouldRetryOpenAIOAuth429(account *Account, heade
 		return false
 	}
 	if s.isOpenAIAccountRuntimeBlocked(account) {
+		return false
+	}
+	if s.settingService != nil && s.rateLimit429StrategySettings().Strategy != "same_account_retry" {
 		return false
 	}
 	if s.rateLimitService != nil && s.rateLimitService.calculateOpenAI429ResetTime(headers) != nil {
@@ -221,7 +246,11 @@ func (s *OpenAIGatewayService) openAIOAuth429RetryWindowActive(account *Account)
 		s.openaiOAuth429RetryStartedAt.Store(account.ID, now)
 		startedAt = now
 	}
-	return now.Sub(startedAt) < openAIOAuth429RetryWindow
+	window := openAIOAuth429RetryWindow
+	if s.settingService != nil {
+		window = time.Duration(s.rateLimit429StrategySettings().RetryMaxDurationSeconds) * time.Second
+	}
+	return now.Sub(startedAt) < window
 }
 
 func openAIOAuth429SameAccountRetryDelay(statusCode int, account *Account) time.Duration {
@@ -229,6 +258,13 @@ func openAIOAuth429SameAccountRetryDelay(statusCode int, account *Account) time.
 		return openAIOAuth429RetryDelay
 	}
 	return 0
+}
+
+func (s *OpenAIGatewayService) openAIOAuth429SameAccountRetryDelay(statusCode int, account *Account) time.Duration {
+	if statusCode == http.StatusTooManyRequests && isOpenAIOAuthAccount(account) && !account.IsShadow() && s != nil && s.settingService != nil {
+		return time.Duration(s.rateLimit429StrategySettings().RetryIntervalMs) * time.Millisecond
+	}
+	return openAIOAuth429SameAccountRetryDelay(statusCode, account)
 }
 
 // openAIOAuth429RetryDeadline returns the request-local retry window end that
@@ -245,7 +281,11 @@ func (s *OpenAIGatewayService) openAIOAuth429RetryDeadline(account *Account) tim
 	if !ok {
 		return time.Time{}
 	}
-	return startedAt.Add(openAIOAuth429RetryWindow)
+	window := openAIOAuth429RetryWindow
+	if s.settingService != nil {
+		window = time.Duration(s.rateLimit429StrategySettings().RetryMaxDurationSeconds) * time.Second
+	}
+	return startedAt.Add(window)
 }
 
 // SameAccountRetryLimit returns the request-local retry budget. OAuth 429s
@@ -253,14 +293,32 @@ func (s *OpenAIGatewayService) openAIOAuth429RetryDeadline(account *Account) tim
 func SameAccountRetryLimit(account *Account, failoverErr *UpstreamFailoverError) int {
 	if failoverErr != nil && failoverErr.StatusCode == http.StatusTooManyRequests &&
 		isOpenAIOAuthAccount(account) && !account.IsShadow() {
-		// The handler uses SameAccountRetryDeadline for the real two-minute
-		// budget; retain a finite fallback for callers without that metadata.
+		if failoverErr.SameAccountRetryMax > 0 {
+			return failoverErr.SameAccountRetryMax
+		}
 		return 24
 	}
 	if account == nil {
 		return 0
 	}
 	return account.GetPoolModeRetryCount()
+}
+
+func (s *OpenAIGatewayService) openAIOAuth429SameAccountRetryMax() int {
+	if s == nil || s.settingService == nil {
+		return 24
+	}
+	settings := s.rateLimit429StrategySettings()
+	interval := time.Duration(settings.RetryIntervalMs) * time.Millisecond
+	window := time.Duration(settings.RetryMaxDurationSeconds) * time.Second
+	max := int(window / interval)
+	if max < 1 {
+		max = 1
+	}
+	if max > 240 {
+		max = 240
+	}
+	return max
 }
 
 func (s *OpenAIGatewayService) BlockAccountScheduling(account *Account, until time.Time, reason string) {
@@ -443,7 +501,11 @@ func (s *OpenAIGatewayService) isOpenAIOAuth429Storm() bool {
 }
 
 func (s *OpenAIGatewayService) ShouldStopOpenAIOAuth429Failover(account *Account, statusCode int, failedSwitches int, state *OpenAIOAuth429FailoverState) bool {
-	if failedSwitches < openAIOAuth429StormMaxAccountSwitches {
+	maxSwitches := openAIOAuth429StormMaxAccountSwitches
+	if s != nil && s.settingService != nil {
+		maxSwitches = s.rateLimit429StrategySettings().MaxAccountSwitches
+	}
+	if failedSwitches < maxSwitches {
 		return false
 	}
 	if state != nil && state.grokOAuth429FollowupPending {
@@ -470,5 +532,5 @@ func (s *OpenAIGatewayService) ShouldStopOpenAIOAuth429Failover(account *Account
 	// a value of three means this request has already given three distinct OAuth
 	// accounts their full same-account retry window. A 429 storm is diagnostic
 	// only; it must not skip those candidates and return a client 429 early.
-	return failedSwitches >= openAIOAuth429MaxAccountAttempts
+	return failedSwitches >= maxSwitches+1
 }

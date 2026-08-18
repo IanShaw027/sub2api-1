@@ -937,8 +937,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					s.shouldRetryOpenAIOAuth429OnSameAccount(account, resp.StatusCode, shouldDisable) || (!shouldDisable && account.IsPoolMode() && isOpenAITransientProcessingError(resp.StatusCode, upstreamMsg, respBody)),
 				)
 				if failoverErr.RetryableOnSameAccount {
-					failoverErr.SameAccountRetryDelay = openAIOAuth429SameAccountRetryDelay(resp.StatusCode, account)
+					failoverErr.SameAccountRetryDelay = s.openAIOAuth429SameAccountRetryDelay(resp.StatusCode, account)
 					failoverErr.SameAccountRetryDeadline = s.openAIOAuth429RetryDeadline(account)
+					failoverErr.SameAccountRetryMax = s.openAIOAuth429SameAccountRetryMax()
 				}
 				return nil, failoverErr
 			}

@@ -83,6 +83,9 @@ func sameAccountRetryAllowed(failoverErr *service.UpstreamFailoverError, retryCo
 	if failoverErr == nil || !failoverErr.RetryableOnSameAccount {
 		return false
 	}
+	if retryLimit > 0 && retryCount >= retryLimit {
+		return false
+	}
 	if !failoverErr.SameAccountRetryDeadline.IsZero() {
 		return time.Now().Before(failoverErr.SameAccountRetryDeadline)
 	}

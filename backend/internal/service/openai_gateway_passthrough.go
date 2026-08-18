@@ -646,8 +646,9 @@ func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 		s.shouldRetryOpenAIOAuth429OnSameAccount(account, resp.StatusCode, shouldDisable),
 	)
 	if failoverErr.RetryableOnSameAccount {
-		failoverErr.SameAccountRetryDelay = openAIOAuth429SameAccountRetryDelay(resp.StatusCode, account)
+		failoverErr.SameAccountRetryDelay = s.openAIOAuth429SameAccountRetryDelay(resp.StatusCode, account)
 		failoverErr.SameAccountRetryDeadline = s.openAIOAuth429RetryDeadline(account)
+		failoverErr.SameAccountRetryMax = s.openAIOAuth429SameAccountRetryMax()
 	}
 	return failoverErr
 }

@@ -167,21 +167,21 @@ type SystemSettings struct {
 	CustomMenuItems             string // JSON array of custom menu items
 	CustomEndpoints             string // JSON array of custom endpoints
 
-	DefaultConcurrency           int
-	DefaultBalance               float64
-	RiskControlEnabled           bool
-	CyberSessionBlockEnabled     bool
-	CyberSessionBlockTTLSeconds  int
-	AffiliateEnabled             bool
-	AffiliateRebateRate          float64
-	AffiliateRebateFreezeHours   int
-	AffiliateRebateDurationDays  int
-	AffiliateRebatePerInviteeCap float64
-	AffiliateRebateCap           float64
-	AffiliateRebateInviteeLimit  int
-	AffiliateSignupBonus         float64
-	AdminRechargeRebateEnabled   bool
-	TicketEnabled                bool
+	DefaultConcurrency              int
+	DefaultBalance                  float64
+	RiskControlEnabled              bool
+	CyberSessionBlockEnabled        bool
+	CyberSessionBlockTTLSeconds     int
+	AffiliateEnabled                bool
+	AffiliateRebateRate             float64
+	AffiliateRebateFreezeHours      int
+	AffiliateRebateDurationDays     int
+	AffiliateRebatePerInviteeCap    float64
+	AffiliateRebateCap              float64
+	AffiliateRebateInviteeLimit     int
+	AffiliateSignupBonus            float64
+	AdminRechargeRebateEnabled      bool
+	TicketEnabled                   bool
 	KiroDefaultVersion              string
 	KiroDefaultCommit               string
 	KiroDefaultSystemVersion        string
@@ -191,12 +191,12 @@ type SystemSettings struct {
 	KiroCacheIndependentTTLSeconds  int
 	KiroCachePrefixTTLSeconds       int
 	KiroCodeExecutionSandboxCommand string
-	IPMultiAccountBanEnabled       bool
-	IPMultiAccountBanWindowMinutes int
-	IPMultiAccountBanThreshold     int
-	IPMultiAccountBanLearningUntil string
-	DefaultUserRPMLimit          int
-	DefaultSubscriptions         []DefaultSubscriptionSetting
+	IPMultiAccountBanEnabled        bool
+	IPMultiAccountBanWindowMinutes  int
+	IPMultiAccountBanThreshold      int
+	IPMultiAccountBanLearningUntil  string
+	DefaultUserRPMLimit             int
+	DefaultSubscriptions            []DefaultSubscriptionSetting
 
 	// Model fallback configuration
 	EnableModelFallback      bool   `json:"enable_model_fallback"`
@@ -594,7 +594,11 @@ type RateLimit429CooldownSettings struct {
 	// Enabled 是否在无法解析上游重置时间时应用默认429回避
 	Enabled bool `json:"enabled"`
 	// CooldownSeconds 默认回避时长（秒）
-	CooldownSeconds int `json:"cooldown_seconds"`
+	CooldownSeconds         int    `json:"cooldown_seconds"`
+	Strategy                string `json:"strategy"`
+	RetryIntervalMs         int    `json:"retry_interval_ms"`
+	RetryMaxDurationSeconds int    `json:"retry_max_duration_seconds"`
+	MaxAccountSwitches      int    `json:"max_account_switches"`
 }
 
 // DefaultOverloadCooldownSettings 返回默认的过载冷却配置（启用，10分钟）
@@ -608,8 +612,12 @@ func DefaultOverloadCooldownSettings() *OverloadCooldownSettings {
 // DefaultRateLimit429CooldownSettings 返回默认的429回避配置（启用，5秒）
 func DefaultRateLimit429CooldownSettings() *RateLimit429CooldownSettings {
 	return &RateLimit429CooldownSettings{
-		Enabled:         true,
-		CooldownSeconds: 5,
+		Enabled:                 true,
+		CooldownSeconds:         5,
+		Strategy:                "cooldown",
+		RetryIntervalMs:         500,
+		RetryMaxDurationSeconds: 120,
+		MaxAccountSwitches:      2,
 	}
 }
 
