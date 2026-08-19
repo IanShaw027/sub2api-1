@@ -88,11 +88,21 @@ func sleepWithContext(ctx context.Context, d time.Duration) error {
 }
 
 // Forward 转发请求到Claude API
-func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) (*ForwardResult, error) {
+func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, parsed *ParsedRequest) (result *ForwardResult, err error) {
 	startTime := time.Now()
 	if parsed == nil {
 		return nil, fmt.Errorf("parse request: empty request")
 	}
+	// Anthropic Fast is requested with speed=fast rather than OpenAI's
+	// service_tier. Attach it at this shared boundary so passthrough, OAuth and
+	// partial-stream results all use the same billing and usage-log path.
+	defer func() {
+		if result != nil {
+			if tier := anthropicSpeedServiceTier(account, parsed); tier != nil {
+				result.ServiceTier = tier
+			}
+		}
+	}()
 	beginUpstreamResponseModelObservation(c)
 	if c != nil && c.Request != nil {
 		maybeLearnOfficialDeviceProfile(ctx, account, c.Request.Header)
@@ -914,6 +924,14 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 		FirstTokenMs:                  firstTokenMs,
 		ClientDisconnect:              clientDisconnect,
 	}, nil
+}
+
+func anthropicSpeedServiceTier(account *Account, parsed *ParsedRequest) *string {
+	if account == nil || parsed == nil || account.Platform != PlatformAnthropic || parsed.Speed != "fast" {
+		return nil
+	}
+	tier := "fast"
+	return &tier
 }
 
 // ResolveChannelMapping 委托渠道服务解析模型映射
