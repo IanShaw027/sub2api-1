@@ -295,10 +295,11 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 	// 529 overload cooldown is an explicit global policy and must apply to
 	// pool accounts and accounts with custom error-code filters as well.
 	// Handle it before those early-return gates so the configured cooldown is
-	// not silently skipped.
+	// not silently skipped, then continue through the normal rule pipeline so
+	// an administrator's temp-unschedulable rule can still apply as it did
+	// before the global-policy fast path was introduced.
 	if statusCode == 529 {
 		s.handle529(ctx, account)
-		return false
 	}
 
 	// 池模式默认不标记本地账号状态；但管理员显式配置的临时不可调度规则优先。

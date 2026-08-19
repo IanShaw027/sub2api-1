@@ -19,11 +19,19 @@ type gatewayForwardErrorPolicyRepoStub struct {
 	AccountRepository
 	tempCalls           int
 	modelRateLimitCalls []gatewayForwardModelRateLimitCall
+	overloadedCalls     []int64
 }
 
 type gatewayForwardModelRateLimitCall struct {
 	accountID int64
 	scope     string
+}
+
+// SetOverloaded 必须实现：529 处理路径会调用它，嵌入的 AccountRepository 为 nil，
+// 未实现时 handle529 会在 nil 接口上 panic。
+func (r *gatewayForwardErrorPolicyRepoStub) SetOverloaded(_ context.Context, id int64, _ time.Time) error {
+	r.overloadedCalls = append(r.overloadedCalls, id)
+	return nil
 }
 
 func (r *gatewayForwardErrorPolicyRepoStub) SetTempUnschedulable(context.Context, int64, time.Time, string) error {
@@ -250,6 +258,8 @@ func TestGatewayService_Forward_PreOutputSSEOverloadedErrorUsesSemantic529(t *te
 	require.ErrorAs(t, err, &failoverErr)
 	require.Equal(t, 529, failoverErr.StatusCode)
 	require.JSONEq(t, errorJSON, string(failoverErr.ResponseBody))
+	require.Equal(t, []int64{account.ID}, repo.overloadedCalls,
+		"synthetic 529 must retain the global overload cooldown")
 	require.Len(t, repo.modelRateLimitCalls, 1, "synthetic 529 must participate in temp-unschedulable rules")
 	require.Equal(t, account.ID, repo.modelRateLimitCalls[0].accountID)
 	require.Equal(t, parsed.Model, repo.modelRateLimitCalls[0].scope)
