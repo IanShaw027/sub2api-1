@@ -74,7 +74,20 @@ func ParseTLSPinProfileName(name string) (ParsedTLSPinName, bool) {
 
 func TLSPinCatalogComplete(name string, cipherSuites []uint16, extensions []uint16, alpn []string) bool {
 	_, ok := ParseTLSPinProfileName(name)
-	return ok && len(cipherSuites) > 0 && len(extensions) > 0 && len(alpn) > 0
+	return ok && len(cipherSuites) > 0 && len(extensions) > 0 && len(alpn) > 0 && tlsExtensionsOfferTLS13(extensions)
+}
+
+func tlsExtensionsOfferTLS13(extensions []uint16) bool {
+	var hasSupportedVersions, hasKeyShare bool
+	for _, id := range extensions {
+		switch id {
+		case 43: // supported_versions
+			hasSupportedVersions = true
+		case 51: // key_share
+			hasKeyShare = true
+		}
+	}
+	return hasSupportedVersions && hasKeyShare
 }
 
 func TLSPinFamilyMatchesPlatform(family, platform string) bool {

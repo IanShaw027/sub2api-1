@@ -31,9 +31,10 @@ func TestParseTLSPinProfileName(t *testing.T) {
 }
 
 func TestTLSPinCatalogComplete(t *testing.T) {
-	require.True(t, TLSPinCatalogComplete("pin:grok-cli:linux:h1", []uint16{1}, []uint16{2}, []string{"http/1.1"}))
-	require.False(t, TLSPinCatalogComplete("pin:grok-cli:linux:h1", nil, []uint16{2}, []string{"http/1.1"}))
-	require.False(t, TLSPinCatalogComplete("pin:grok-cli:linux:h1", []uint16{1}, []uint16{2}, nil))
+	require.True(t, TLSPinCatalogComplete("pin:grok-cli:linux:h1", []uint16{1}, []uint16{0, 43, 51}, []string{"http/1.1"}))
+	require.False(t, TLSPinCatalogComplete("pin:grok-cli:linux:h1", nil, []uint16{0, 43, 51}, []string{"http/1.1"}))
+	require.False(t, TLSPinCatalogComplete("pin:grok-cli:linux:h1", []uint16{1}, []uint16{0, 43, 51}, nil))
+	require.False(t, TLSPinCatalogComplete("pin:codex-cli:macos:h1", []uint16{1}, []uint16{0, 10, 11, 13, 5, 18, 23}, []string{"http/1.1"}))
 }
 
 func TestTLSPinFamilyMatchesPlatform(t *testing.T) {
@@ -61,7 +62,7 @@ func TestRejectUnusableDeviceTLSSelection(t *testing.T) {
 			ID:            completeMatchingID,
 			Name:          "pin:claude-code:macos:h1",
 			CipherSuites:  []uint16{0x1301},
-			Extensions:    []uint16{0},
+			Extensions:    []uint16{0, 43, 51},
 			ALPNProtocols: []string{"http/1.1"},
 		},
 		&model.TLSFingerprintProfile{
@@ -145,7 +146,7 @@ func TestTLSFingerprintProfileServiceListCompleteOptionsFiltersCatalogPins(t *te
 			Name:          "pin:claude-code:macos:h1",
 			Description:   &description,
 			CipherSuites:  []uint16{0x1301},
-			Extensions:    []uint16{0},
+			Extensions:    []uint16{0, 43, 51},
 			ALPNProtocols: []string{"http/1.1"},
 		},
 		&model.TLSFingerprintProfile{

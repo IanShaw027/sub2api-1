@@ -20,6 +20,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	utls "github.com/refraction-networking/utls"
 )
 
 // TestDialerBasicConnection tests that the dialer can establish TLS connections.
@@ -261,6 +263,19 @@ func TestBuildClientHelloSpec(t *testing.T) {
 
 	if len(spec.CipherSuites) != 2 {
 		t.Errorf("expected 2 cipher suites, got %d", len(spec.CipherSuites))
+	}
+	if spec.TLSVersMax != utls.VersionTLS13 {
+		t.Errorf("expected default TLSVersMax TLS1.3, got 0x%04x", spec.TLSVersMax)
+	}
+
+	tls12Only := &Profile{
+		Name:         "codex-macos-st",
+		CipherSuites: []uint16{0x00ff, 0xc02c},
+		Extensions:   []uint16{0, 10, 11, 13, 5, 18, 23},
+	}
+	spec = buildClientHelloSpecFromProfile(tls12Only)
+	if spec.TLSVersMax != utls.VersionTLS12 {
+		t.Errorf("expected TLSVersMax TLS1.2 when supported_versions is absent, got 0x%04x", spec.TLSVersMax)
 	}
 }
 

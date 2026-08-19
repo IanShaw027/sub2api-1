@@ -48,7 +48,7 @@ func TestTLSFingerprintProfileRoutesCompleteBeforeID(t *testing.T) {
 				ID:            401,
 				Name:          "pin:claude-code:macos:h1",
 				CipherSuites:  []uint16{0x1301},
-				Extensions:    []uint16{0},
+				Extensions:    []uint16{0, 43, 51},
 				ALPNProtocols: []string{"http/1.1"},
 			},
 		},

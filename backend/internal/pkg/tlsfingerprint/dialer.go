@@ -455,13 +455,27 @@ func buildClientHelloSpecFromProfile(profile *Profile) *utls.ClientHelloSpec {
 		extensions = append(extensions, &utls.UtlsGREASEExtension{})
 	}
 
+	tlsVersMax := uint16(utls.VersionTLS13)
+	if !extensionOrderOffersTLS13(extOrder) {
+		tlsVersMax = utls.VersionTLS12
+	}
+
 	return &utls.ClientHelloSpec{
 		CipherSuites:       cipherSuites,
 		CompressionMethods: []uint8{0}, // null compression only (standard)
 		Extensions:         extensions,
-		TLSVersMax:         utls.VersionTLS13,
+		TLSVersMax:         tlsVersMax,
 		TLSVersMin:         utls.VersionTLS10,
 	}
+}
+
+func extensionOrderOffersTLS13(extOrder []uint16) bool {
+	for _, id := range extOrder {
+		if id == 43 { // supported_versions
+			return true
+		}
+	}
+	return false
 }
 
 // toUint8s converts []uint16 to []uint8 (for utls fields that require []uint8).
