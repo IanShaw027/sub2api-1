@@ -129,6 +129,7 @@ var openAIChatGPTInternalUnsupportedFields = []string{
 	"prompt_cache_retention",
 	"safety_identifier",
 	"stream_options",
+	"truncation",
 }
 
 var openAICodexOAuthUnsupportedFields = append([]string{
