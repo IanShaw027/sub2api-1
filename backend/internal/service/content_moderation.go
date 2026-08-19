@@ -2978,6 +2978,7 @@ type CyberPolicyRecordInput struct {
 	GroupName       string
 	Endpoint        string
 	Model           string
+	InputExcerpt    string
 	UpstreamMessage string
 	UpstreamBody    string
 	UpstreamStatus  int
@@ -3013,11 +3014,7 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 	if in.APIKeyID > 0 {
 		apiKeyID = &in.APIKeyID
 	}
-	errBody := strings.TrimSpace(in.UpstreamMessage)
-	if b := strings.TrimSpace(in.UpstreamBody); b != "" {
-		// 原始 body 不在此预脱敏；写入 log.Error 前由 redactContentModerationSecrets 统一脱敏。
-		errBody = strings.TrimSpace(errBody + "\n" + b)
-	}
+	errBody := cyberPolicyUpstreamErrorSummary(in)
 	if in.UpstreamInTok > 0 || in.UpstreamOutTok > 0 {
 		errBody = fmt.Sprintf("%s\nupstream_usage=in:%d,out:%d", errBody, in.UpstreamInTok, in.UpstreamOutTok)
 	}
@@ -3037,6 +3034,7 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 		Flagged:         true,
 		HighestCategory: "cyber_policy",
 		HighestScore:    1.0,
+		InputExcerpt:    trimRunes(redactContentModerationSecrets(in.InputExcerpt), maxCyberPolicyInputExcerptRunes),
 		Error:           trimRunes(redactContentModerationSecrets(errBody), maxModerationExcerptRunes*4),
 		CreatedAt:       time.Now(),
 	}
@@ -3070,6 +3068,83 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 	if logPersisted && emailSent {
 		if err := s.repo.UpdateLogEmailSent(ctx, log.ID, true); err != nil {
 			slog.Warn("content_moderation.cyber_update_email_sent_failed", "log_id", log.ID, "error", err)
+		}
+	}
+}
+
+func cyberPolicyUpstreamErrorSummary(in CyberPolicyRecordInput) string {
+	code := "cyber_policy"
+	message := strings.TrimSpace(in.UpstreamMessage)
+	structuredDiagnostic := false
+	if body := strings.TrimSpace(in.UpstreamBody); body != "" {
+		var document map[string]any
+		if json.Unmarshal([]byte(body), &document) == nil {
+			errorObject, _ := document["error"].(map[string]any)
+			if response, ok := document["response"].(map[string]any); ok {
+				if nested, ok := response["error"].(map[string]any); ok {
+					errorObject = nested
+				}
+			}
+			if parsedCode := strings.TrimSpace(cyberString(errorObject["code"])); parsedCode != "" {
+				code = parsedCode
+				structuredDiagnostic = true
+			}
+			if parsedMessage := strings.TrimSpace(cyberString(errorObject["message"])); parsedMessage != "" {
+				structuredDiagnostic = true
+				if message == "" {
+					message = parsedMessage
+				}
+			}
+		}
+	}
+	parts := []string{"upstream_code=" + code}
+	if in.UpstreamStatus > 0 {
+		parts = append(parts, fmt.Sprintf("upstream_status=%d", in.UpstreamStatus))
+	}
+	if message != "" {
+		parts = append(parts, "upstream_message="+message)
+	}
+	if !structuredDiagnostic {
+		if excerpt := cyberPolicyDiagnosticBodyExcerpt(in.UpstreamBody, 500); excerpt != "" {
+			parts = append(parts, "upstream_body_excerpt="+excerpt)
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+func cyberPolicyDiagnosticBodyExcerpt(body string, maxRunes int) string {
+	body = strings.TrimSpace(body)
+	if body == "" || maxRunes <= 0 {
+		return ""
+	}
+	var document any
+	if json.Unmarshal([]byte(body), &document) == nil {
+		stripCyberPolicySemanticFields(document)
+		if compact, err := json.Marshal(document); err == nil {
+			body = string(compact)
+		}
+	}
+	runes := []rune(body)
+	if len(runes) > maxRunes {
+		body = string(runes[:maxRunes])
+	}
+	return body
+}
+
+func stripCyberPolicySemanticFields(value any) {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			switch strings.ToLower(strings.TrimSpace(key)) {
+			case "instructions", "input", "messages", "content", "output", "tools":
+				delete(typed, key)
+			default:
+				stripCyberPolicySemanticFields(child)
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			stripCyberPolicySemanticFields(child)
 		}
 	}
 }

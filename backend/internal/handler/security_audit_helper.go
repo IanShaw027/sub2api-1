@@ -15,6 +15,12 @@ import (
 const securityAuditCompletedContextKey = "sub2api.security_audit.completed"
 const securityAuditWSTurnContextKey = "sub2api.security_audit.ws_turn"
 const securityAuditWSDedupeContextKey = "sub2api.security_audit.ws_dedupe"
+const cyberPolicyInputSnapshotContextKey = "sub2api.cyber_policy.input_snapshot"
+
+type cyberPolicyInputSnapshot struct {
+	protocol string
+	body     []byte
+}
 
 type securityAuditWSDedupeEntry struct {
 	stage    string
@@ -68,6 +74,14 @@ func (h *OpenAIGatewayHandler) checkSecurityAuditStage(c *gin.Context, reqLog *z
 func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securityaudit.Coordinator, legacy *service.ContentModerationService, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol, model string, body []byte, stage string) *securityaudit.Decision {
 	if c == nil || c.Request == nil {
 		return nil
+	}
+	// A WebSocket AfterTurn hook no longer owns the response.create payload.
+	// Keep a byte snapshot, but defer semantic parsing until Cyber actually hits.
+	if isSecurityAuditWebSocketStage(stage) {
+		c.Set(cyberPolicyInputSnapshotContextKey, cyberPolicyInputSnapshot{
+			protocol: protocol,
+			body:     append([]byte(nil), body...),
+		})
 	}
 	cacheCompletion := cachesSecurityAuditCompletion(stage)
 	if cacheCompletion {

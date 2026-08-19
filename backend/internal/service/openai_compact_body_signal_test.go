@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestHasCompactionTriggerInInput_DetectsCompactSignal(t *testing.T) {

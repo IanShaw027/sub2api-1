@@ -112,8 +112,11 @@ func explicitGrokCacheSeed(c *gin.Context, body []byte, explicitKey string) stri
 	if seed == "" && c != nil {
 		seed = strings.TrimSpace(c.GetHeader(grokConversationIDHeader))
 	}
+	// 与 explicitOpenAIRequestSessionID 共用解包视图，避免 Responses WebSocket 帧下
+	// 两条路径算出不同的 cache identity。普通 HTTP body 不受解包影响。
+	payload := lazyOpenAIRequestPayloadView(body)
 	if seed == "" && len(body) > 0 {
-		seed = strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+		seed = strings.TrimSpace(payload().Get("prompt_cache_key").String())
 	}
 	if seed == "" {
 		seed = strings.TrimSpace(explicitKey)
@@ -122,7 +125,7 @@ func explicitGrokCacheSeed(c *gin.Context, body []byte, explicitKey string) stri
 	// explicit session still share one cache identity (model is already in the
 	// isolated seed). Message ids are rejected by the seed helper.
 	if seed == "" && len(body) > 0 {
-		seed = grokPreviousResponseSessionSeed(body)
+		seed = grokPreviousResponseSessionSeedResult(payload())
 	}
 	return seed
 }

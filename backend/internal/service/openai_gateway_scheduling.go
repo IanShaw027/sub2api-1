@@ -60,15 +60,42 @@ func (s *OpenAIGatewayService) ExtractSessionID(c *gin.Context, body []byte) str
 }
 
 func explicitOpenAISessionID(c *gin.Context, body []byte) string {
-	if c == nil {
-		return ""
-	}
-
 	sessionID := explicitOpenAIHeaderSessionID(c)
 	if sessionID == "" && len(body) > 0 {
-		sessionID = strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+		root := openAIRequestPayloadView(body)
+		sessionID = strings.TrimSpace(root.Get("prompt_cache_key").String())
 	}
 	return sessionID
+}
+
+// openAIRequestPayloadView unwraps Responses WebSocket event envelopes while
+// leaving ordinary HTTP request objects untouched, even if they happen to
+// contain an unrelated field named response.
+func openAIRequestPayloadView(body []byte) gjson.Result {
+	root := parseRawJSONView(body)
+	eventType := strings.ToLower(strings.TrimSpace(root.Get("type").String()))
+	if strings.HasPrefix(eventType, "response.") {
+		if response := root.Get("response"); response.Exists() && response.IsObject() {
+			return response
+		}
+	}
+	return root
+}
+
+// lazyOpenAIRequestPayloadView defers the unwrap scan until a caller actually
+// needs the body. Callers that resolve a session from headers pay nothing.
+func lazyOpenAIRequestPayloadView(body []byte) func() gjson.Result {
+	var (
+		payload gjson.Result
+		parsed  bool
+	)
+	return func() gjson.Result {
+		if !parsed {
+			payload = openAIRequestPayloadView(body)
+			parsed = true
+		}
+		return payload
+	}
 }
 
 // explicitOpenAIRequestSessionID extends the common OpenAI session signals
@@ -85,16 +112,19 @@ func explicitOpenAIRequestSessionID(c *gin.Context, body []byte) string {
 	if c == nil {
 		return ""
 	}
+	// 惰性解析：header 命中时不解析 body。openAIRequestPayloadView 需要探测顶层
+	// type，而普通 HTTP 请求体没有该字段，gjson 要扫完整个 body 才能确定不存在。
+	payload := lazyOpenAIRequestPayloadView(body)
 
 	sessionID := explicitOpenAIHeaderSessionID(c)
 	if sessionID == "" && isGrokRequestContext(c) {
 		sessionID = strings.TrimSpace(c.GetHeader(grokConversationIDHeader))
 	}
 	if sessionID == "" && len(body) > 0 {
-		sessionID = strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+		sessionID = strings.TrimSpace(payload().Get("prompt_cache_key").String())
 	}
 	if sessionID == "" && isGrokRequestContext(c) && len(body) > 0 {
-		sessionID = grokPreviousResponseSessionSeed(body)
+		sessionID = grokPreviousResponseSessionSeedResult(payload())
 	}
 	return sessionID
 }
@@ -103,7 +133,11 @@ func explicitOpenAIRequestSessionID(c *gin.Context, body []byte) string {
 // previous_response_id. Only resp_* response ids are accepted; message ids and
 // unknown shapes must not pin sticky routing or prompt-cache identity.
 func grokPreviousResponseSessionSeed(body []byte) string {
-	id := strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String())
+	return grokPreviousResponseSessionSeedResult(parseRawJSONView(body))
+}
+
+func grokPreviousResponseSessionSeedResult(payload gjson.Result) string {
+	id := strings.TrimSpace(payload.Get("previous_response_id").String())
 	if id == "" {
 		return ""
 	}

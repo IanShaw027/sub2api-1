@@ -53,6 +53,43 @@ func TestRunSecurityAuditDoesNotSkipSubsequentWebSocketTurns(t *testing.T) {
 	require.Equal(t, int64(2), engine.enqueues.Load(), "subsequent WebSocket turns must be audited again")
 }
 
+func TestRunSecurityAuditCapturesCurrentWebSocketTurnForCyberReview(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := &turnCountingEngine{mode: securityaudit.ModeAsync}
+	coordinator := securityaudit.NewCoordinator(nil, engine)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	firstPayload := []byte(`{"type":"response.create","response":{"input":"first request"}}`)
+	runSecurityAudit(c, nil, coordinator, nil, nil, middleware2.AuthSubject{UserID: 7}, "openai_responses", "gpt-test", firstPayload, "first_turn")
+	first, exists := c.Get(cyberPolicyInputSnapshotContextKey)
+	require.True(t, exists)
+	firstSnapshot := first.(cyberPolicyInputSnapshot)
+	require.Contains(t, string(firstSnapshot.body), "first request")
+
+	secondPayload := []byte(`{"type":"response.create","response":{"input":[{"type":"function_call_output","output":"second tool result"}]}}`)
+	runSecurityAudit(c, nil, coordinator, nil, nil, middleware2.AuthSubject{UserID: 7}, "openai_responses", "gpt-test", secondPayload, "subsequent_turn")
+	second, exists := c.Get(cyberPolicyInputSnapshotContextKey)
+	require.True(t, exists)
+	secondSnapshot := second.(cyberPolicyInputSnapshot)
+	require.Contains(t, string(secondSnapshot.body), "second tool result")
+	require.NotContains(t, string(secondSnapshot.body), "first request")
+}
+
+func TestRunSecurityAuditDoesNotSnapshotHTTPBodyForCyber(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := &turnCountingEngine{mode: securityaudit.ModeAsync}
+	coordinator := securityaudit.NewCoordinator(nil, engine)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	runSecurityAudit(c, nil, coordinator, nil, nil, middleware2.AuthSubject{UserID: 7}, "openai_responses", "gpt-test", []byte(`{"input":"ordinary request"}`), "http")
+	_, exists := c.Get(cyberPolicyInputSnapshotContextKey)
+	require.False(t, exists, "HTTP Cyber excerpts are built only after an upstream Cyber hit")
+}
+
 func TestRunSecurityAuditDeduplicatesRepeatedPayloadWithinWebSocketTurn(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := &turnCountingEngine{mode: securityaudit.ModeBlocking}

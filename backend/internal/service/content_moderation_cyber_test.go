@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
@@ -113,6 +114,7 @@ func TestRecordCyberPolicyEvent_WritesLogWhenEnabled(t *testing.T) {
 		UserEmail:       "u@x.com",
 		Model:           "gpt-5",
 		Endpoint:        "/v1/responses",
+		InputExcerpt:    "[user]\nshow token=abcdefghijklmnopqrstuvwxyz1234567890",
 		UpstreamMessage: "flagged",
 		UpstreamBody:    `{"error":{"code":"cyber_policy"}}`,
 		UpstreamStatus:  400,
@@ -148,6 +150,9 @@ func TestRecordCyberPolicyEvent_WritesLogWhenEnabled(t *testing.T) {
 
 	// endpoint
 	require.Equal(t, "/v1/responses", log.Endpoint)
+	require.Contains(t, log.InputExcerpt, "[user]")
+	require.Contains(t, log.InputExcerpt, "token=[已脱敏]")
+	require.NotContains(t, log.InputExcerpt, "abcdefghijklmnopqrstuvwxyz1234567890")
 
 	// violation count >= 1 (side-effects ran)
 	require.GreaterOrEqual(t, log.ViolationCount, 1)
@@ -155,6 +160,60 @@ func TestRecordCyberPolicyEvent_WritesLogWhenEnabled(t *testing.T) {
 	// Error field should also contain the upstream body JSON
 	require.True(t, strings.Contains(log.Error, "cyber_policy") || strings.Contains(log.Error, "flagged"),
 		"Error should mention flagged or cyber_policy")
+}
+
+func TestRecordCyberPolicyEvent_DoesNotPersistUpstreamInstructions(t *testing.T) {
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled: "true",
+		}},
+		repo, nil, nil, nil, nil, nil, nil,
+	)
+	svc.RecordCyberPolicyEvent(context.Background(), CyberPolicyRecordInput{
+		UserID:          1,
+		Model:           "gpt-5",
+		Endpoint:        "/v1/responses",
+		InputExcerpt:    "[tool result]\nfailed on package service",
+		UpstreamMessage: "This content was flagged for possible cybersecurity risk.",
+		UpstreamBody:    `{"type":"response.failed","response":{"error":{"code":"cyber_policy","message":"blocked"},"instructions":"DO_NOT_PERSIST_THIS_INSTRUCTION_CANARY"}}`,
+		UpstreamStatus:  400,
+		UpstreamInTok:   12,
+		UpstreamOutTok:  3,
+	})
+
+	logs := repo.snapshotLogs()
+	require.Len(t, logs, 1)
+	require.Equal(t, "[tool result]\nfailed on package service", logs[0].InputExcerpt)
+	require.Contains(t, logs[0].Error, "upstream_code=cyber_policy")
+	require.Contains(t, logs[0].Error, "upstream_status=400")
+	require.Contains(t, logs[0].Error, "upstream_usage=in:12,out:3")
+	require.NotContains(t, logs[0].Error, "DO_NOT_PERSIST_THIS_INSTRUCTION_CANARY")
+	require.NotContains(t, logs[0].Error, `"instructions"`)
+}
+
+func TestCyberPolicyUpstreamErrorSummaryKeepsBoundedFallbackDiagnostics(t *testing.T) {
+	t.Run("unexpected json shape", func(t *testing.T) {
+		summary := cyberPolicyUpstreamErrorSummary(CyberPolicyRecordInput{
+			UpstreamBody:   `{"request_id":"req_diag_123","instructions":"private prompt","input":"private input"}`,
+			UpstreamStatus: 502,
+		})
+		require.Contains(t, summary, "upstream_code=cyber_policy")
+		require.Contains(t, summary, "upstream_body_excerpt=")
+		require.Contains(t, summary, "req_diag_123")
+		require.NotContains(t, summary, "private prompt")
+		require.NotContains(t, summary, "private input")
+	})
+
+	t.Run("non json prefix is bounded", func(t *testing.T) {
+		summary := cyberPolicyUpstreamErrorSummary(CyberPolicyRecordInput{
+			UpstreamBody: "diagnostic-start " + strings.Repeat("x", 600),
+		})
+		require.Contains(t, summary, "upstream_body_excerpt=")
+		require.Contains(t, summary, "diagnostic-start")
+		excerpt := strings.SplitN(summary, "upstream_body_excerpt=", 2)[1]
+		require.LessOrEqual(t, utf8.RuneCountInString(excerpt), 500)
+	})
 }
 
 func TestRecordCyberPolicyEvent_RespectsContentModerationScope(t *testing.T) {

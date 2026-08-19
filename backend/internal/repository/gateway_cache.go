@@ -131,21 +131,58 @@ func (c *gatewayCache) ReleaseGrokVideoBilled(ctx context.Context, key string) e
 var _ service.CyberSessionBlockStore = (*gatewayCache)(nil)
 var _ service.LiveCallStore = (*gatewayCache)(nil)
 
-const cyberSessionBlockPrefix = "cyber_session_block:"
+const (
+	cyberSessionBlockPrefix = "cyber_session_block:"
+	cyberSessionScopePrefix = "cyber_session_scope:"
+)
 
-// SetCyberSessionBlocked 把被 cyber_policy 命中的会话写入屏蔽表（TTL 自动过期）。
-// 存储值 "1" 作为存在标记（IsCyberSessionBlocked 只检查 key 是否存在，不读值）。
-func (c *gatewayCache) SetCyberSessionBlocked(ctx context.Context, key string, ttl time.Duration) error {
-	return c.rdb.Set(ctx, cyberSessionBlockPrefix+key, "1", ttl).Err()
+// SetCyberSessionBlocked atomically writes all exact blocks and their optional
+// coarse source scope with the same TTL.
+func (c *gatewayCache) SetCyberSessionBlocked(ctx context.Context, scopeKey string, keys []string, ttl time.Duration) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	pipe := c.rdb.TxPipeline()
+	for _, key := range keys {
+		if key != "" {
+			pipe.Set(ctx, cyberSessionBlockPrefix+key, "1", ttl)
+		}
+	}
+	if scopeKey != "" {
+		pipe.Set(ctx, cyberSessionScopePrefix+scopeKey, "1", ttl)
+	}
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
-// IsCyberSessionBlocked 查询会话是否在屏蔽表中。
-func (c *gatewayCache) IsCyberSessionBlocked(ctx context.Context, key string) (bool, error) {
-	n, err := c.rdb.Exists(ctx, cyberSessionBlockPrefix+key).Result()
+func (c *gatewayCache) IsCyberSessionScopeActive(ctx context.Context, scopeKey string) (bool, error) {
+	n, err := c.rdb.Exists(ctx, cyberSessionScopePrefix+scopeKey).Result()
 	if err != nil {
 		return false, err
 	}
 	return n > 0, nil
+}
+
+// FindCyberSessionBlocked checks transcript-prefix candidates in one Redis
+// round trip and returns the first blocked key in caller order.
+func (c *gatewayCache) FindCyberSessionBlocked(ctx context.Context, keys []string) (string, error) {
+	if len(keys) == 0 {
+		return "", nil
+	}
+	redisKeys := make([]string, len(keys))
+	for i, key := range keys {
+		redisKeys[i] = cyberSessionBlockPrefix + key
+	}
+	values, err := c.rdb.MGet(ctx, redisKeys...).Result()
+	if err != nil {
+		return "", err
+	}
+	for i, value := range values {
+		if value != nil {
+			return keys[i], nil
+		}
+	}
+	return "", nil
 }
 
 var claimLiveControllerScript = redis.NewScript(`
