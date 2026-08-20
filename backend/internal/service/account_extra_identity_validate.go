@@ -41,7 +41,7 @@ func ValidateAccountExtraIdentity(extra map[string]any) error {
 }
 
 // ValidateAccountCapacityExtra validates capacity and TLS extras on write.
-// concurrency is empty or 1–32; max_sessions 0–10000; idle 1–1440;
+// concurrency is empty or 1–10000; max_sessions 0–10000; idle 1–1440;
 // rpm_sticky_buffer empty or 1–10000. Non-integer floats are rejected.
 func ValidateAccountCapacityExtra(extra map[string]any) error {
 	if len(extra) == 0 {
@@ -50,8 +50,8 @@ func ValidateAccountCapacityExtra(extra map[string]any) error {
 
 	if n, present, err := optionalCapacityInt(extra, "concurrency"); err != nil {
 		return err
-	} else if present && (n < 1 || n > 32) {
-		return identityReject("concurrency must be empty or 1-32")
+	} else if present && (n < int64(MinAccountConcurrency) || n > int64(MaxAccountConcurrency)) {
+		return identityReject(fmt.Sprintf("concurrency must be empty or %d-%d", MinAccountConcurrency, MaxAccountConcurrency))
 	}
 
 	if n, present, err := requiredPresentCapacityInt(extra, "max_sessions"); err != nil {

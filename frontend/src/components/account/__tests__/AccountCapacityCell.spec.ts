@@ -61,6 +61,30 @@ describe('AccountCapacityCell RPM buffer', () => {
     expect(rpmBadge?.attributes('title')).toContain('"buffer":3')
   })
 
+  it('shows stored 200 for API key accounts instead of falling back to 3', () => {
+    const wrapper = mountCell({
+      platform: 'openai',
+      type: 'apikey',
+      concurrency: 200,
+      current_concurrency: 0
+    })
+
+    const concurrencyBadge = wrapper.findAllComponents({ name: 'CapacityBadge' })[0]
+    expect(concurrencyBadge?.props('max')).toBe(200)
+  })
+
+  it('caps setup-token accounts at 32 and uses the platform fallback', () => {
+    const wrapper = mountCell({
+      platform: 'anthropic',
+      type: 'setup-token',
+      concurrency: 200,
+      current_concurrency: 0
+    })
+
+    const concurrencyBadge = wrapper.findAllComponents({ name: 'CapacityBadge' })[0]
+    expect(concurrencyBadge?.props('max')).toBe(12)
+  })
+
   it('uses EffectiveConcurrency fallback when stored concurrency is out of range', () => {
     const wrapper = mountCell({
       platform: 'anthropic',

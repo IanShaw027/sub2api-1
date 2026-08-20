@@ -166,6 +166,33 @@ func (a *Account) BillingRateMultiplier() float64 {
 	return *a.RateMultiplier
 }
 
+const (
+	MinAccountConcurrency      = 1
+	MaxOAuthAccountConcurrency = 32
+	MaxAccountConcurrency      = 10000
+)
+
+// highConcurrencyAccountType limits the elevated range to API key accounts.
+// Official OAuth and setup-token accounts stay capped at 32.
+func highConcurrencyAccountType(accountType string) bool {
+	return accountType == AccountTypeAPIKey
+}
+
+func maxConcurrencyForAccountType(accountType string) int {
+	if highConcurrencyAccountType(accountType) {
+		return MaxAccountConcurrency
+	}
+	return MaxOAuthAccountConcurrency
+}
+
+func ValidAccountConcurrency(accountType string, n int) bool {
+	return n >= MinAccountConcurrency && n <= maxConcurrencyForAccountType(accountType)
+}
+
+func validSharedBulkConcurrency(n int) bool {
+	return n >= MinAccountConcurrency && n <= MaxOAuthAccountConcurrency
+}
+
 func (a *Account) EffectiveLoadFactor() int {
 	if a == nil {
 		return 1
@@ -194,7 +221,7 @@ func (a *Account) EffectiveConcurrency() int {
 	if a == nil {
 		return 3
 	}
-	if a.Concurrency >= 1 && a.Concurrency <= 32 {
+	if ValidAccountConcurrency(a.Type, a.Concurrency) {
 		return a.Concurrency
 	}
 	return DefaultConcurrencyForPlatform(a.Platform, a.Type)
@@ -213,7 +240,7 @@ func (a *Account) BurstConcurrency() int {
 }
 
 func applyCreateConcurrency(platform, accountType string, requested int) int {
-	if requested >= 1 && requested <= 32 {
+	if ValidAccountConcurrency(accountType, requested) {
 		return requested
 	}
 	return DefaultConcurrencyForPlatform(platform, accountType)

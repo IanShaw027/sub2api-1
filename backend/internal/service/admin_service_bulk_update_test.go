@@ -475,6 +475,30 @@ func TestAdminService_BulkUpdateAccounts_PreservesExplicitConcurrency(t *testing
 	require.Empty(t, repo.updatedAccounts, "in-range concurrency should stay on the bulk write path")
 }
 
+func TestAdminService_BulkUpdateAccounts_NormalizesHighConcurrencyByAccountType(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Concurrency: 7},
+			{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Status: StatusActive, Concurrency: 7},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	concurrency := 200
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:            []int64{1, 2},
+		Concurrency:           &concurrency,
+		SkipMixedChannelCheck: true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 2, result.Success)
+	require.Len(t, repo.bulkUpdateCalls, 3)
+	require.Nil(t, repo.bulkUpdateCalls[0].updates.Concurrency)
+	require.Equal(t, 200, *repo.bulkUpdateCalls[1].updates.Concurrency)
+	require.Equal(t, 12, *repo.bulkUpdateCalls[2].updates.Concurrency)
+}
+
 func TestAdminServiceBulkUpdateAccounts_NormalizesOpenAISettings(t *testing.T) {
 	repo := &accountRepoStubForBulkUpdate{getByIDsAccounts: []*Account{
 		{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey},

@@ -29,7 +29,9 @@ func TestEffectiveConcurrency_Fallback(t *testing.T) {
 	}{
 		{name: "anthropic oauth defaults to twelve", platform: PlatformAnthropic, typ: AccountTypeOAuth, conc: 0, want: 12},
 		{name: "anthropic setup token defaults to twelve", platform: PlatformAnthropic, typ: AccountTypeSetupToken, conc: -1, want: 12},
-		{name: "openai oauth caps invalid high values", platform: PlatformOpenAI, typ: AccountTypeOAuth, conc: 99, want: 12},
+		{name: "anthropic setup token caps invalid high values", platform: PlatformAnthropic, typ: AccountTypeSetupToken, conc: 200, want: 12},
+		{name: "openai oauth caps invalid high values", platform: PlatformOpenAI, typ: AccountTypeOAuth, conc: 200, want: 12},
+		{name: "openai apikey keeps stored 200", platform: PlatformOpenAI, typ: AccountTypeAPIKey, conc: 200, want: 200},
 		{name: "grok oauth defaults to one", platform: PlatformGrok, typ: AccountTypeOAuth, conc: 0, want: 1},
 		{name: "gemini oauth keeps generic default", platform: PlatformGemini, typ: AccountTypeOAuth, conc: 0, want: 3},
 		{name: "anthropic apikey keeps generic default", platform: PlatformAnthropic, typ: AccountTypeAPIKey, conc: 0, want: 3},
@@ -53,6 +55,15 @@ func TestBurstConcurrency(t *testing.T) {
 	require.Equal(t, 14, (&Account{Platform: PlatformAnthropic, Type: AccountTypeOAuth, Concurrency: 0}).BurstConcurrency())
 	require.Equal(t, 3, (&Account{Concurrency: 15}).OverflowConcurrency())
 	require.Equal(t, 18, (&Account{Concurrency: 15}).BurstConcurrency())
+}
+
+func TestApplyCreateConcurrency_KeepsRequestedWhenInRange(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, 200, applyCreateConcurrency(PlatformOpenAI, AccountTypeAPIKey, 200))
+	require.Equal(t, 3, applyCreateConcurrency(PlatformOpenAI, AccountTypeAPIKey, MaxAccountConcurrency+1))
+	require.Equal(t, 12, applyCreateConcurrency(PlatformOpenAI, AccountTypeOAuth, 200))
+	require.Equal(t, 12, applyCreateConcurrency(PlatformAnthropic, AccountTypeSetupToken, 200))
 }
 
 func TestAccountServiceCreate_WritesPlatformDefaultWhenConcurrencyOmitted(t *testing.T) {

@@ -799,13 +799,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			delete(account.Extra, OllamaCloudUsageSnapshotExtraKey)
 		}
 	}
-	// 只在指针非 nil 时更新 Concurrency（<=0 或 >32 时按账号类型回退到默认值）
+	// 只在指针非 nil 时更新 Concurrency（OAuth 越界回落到平台默认；API Key 保留高并发）
 	if input.Concurrency != nil {
-		if *input.Concurrency <= 0 || *input.Concurrency > 32 {
-			account.Concurrency = applyCreateConcurrency(account.Platform, account.Type, *input.Concurrency)
-		} else {
-			account.Concurrency = *input.Concurrency
-		}
+		account.Concurrency = applyCreateConcurrency(account.Platform, account.Type, *input.Concurrency)
 	}
 	// 只在指针非 nil 时更新 Priority（支持设置为 0）
 	if input.Priority != nil {
@@ -1028,7 +1024,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	var cachedTargets []*Account
 	needsPerAccountConcurrencyNormalization := input.Concurrency != nil &&
-		(*input.Concurrency <= 0 || *input.Concurrency > 32)
+		!validSharedBulkConcurrency(*input.Concurrency)
 	needCachedTargets := len(input.Credentials) > 0 || input.ProxyID != nil || len(input.ProxyIDs) > 0 ||
 		needMixedChannelCheck || openAISettings.any() || input.ProbeEnabled != nil ||
 		input.RateMultiplier != nil || len(input.Extra) > 0 ||
@@ -1268,7 +1264,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	if input.ProxyID != nil {
 		repoUpdates.ProxyID = input.ProxyID
 	}
-	if input.Concurrency != nil && *input.Concurrency > 0 && *input.Concurrency <= 32 {
+	if input.Concurrency != nil && validSharedBulkConcurrency(*input.Concurrency) {
 		repoUpdates.Concurrency = input.Concurrency
 	}
 	if input.Priority != nil {

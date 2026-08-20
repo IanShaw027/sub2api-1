@@ -116,7 +116,7 @@ func TestValidateAccountCapacityExtraAcceptsEmptyAndInRangeValues(t *testing.T) 
 		"device_learning_enabled":      true,
 	}))
 	require.NoError(t, ValidateAccountCapacityExtra(map[string]any{
-		"concurrency":                  32,
+		"concurrency":                  MaxAccountConcurrency,
 		"max_sessions":                 10000,
 		"session_idle_timeout_minutes": 1440,
 		"rpm_sticky_buffer":            10000,
@@ -124,10 +124,11 @@ func TestValidateAccountCapacityExtraAcceptsEmptyAndInRangeValues(t *testing.T) 
 		"enable_tls_fingerprint":       false,
 		"device_learning_enabled":      false,
 	}))
+	require.NoError(t, ValidateAccountCapacityExtra(map[string]any{"concurrency": 200}))
 }
 
 func TestValidateAccountCapacityExtraRejectsIllegalConcurrency(t *testing.T) {
-	for _, value := range []any{0, -1, 999, 3.7, json.Number("3.7")} {
+	for _, value := range []any{0, -1, MaxAccountConcurrency + 1, 3.7, json.Number("3.7")} {
 		err := ValidateAccountCapacityExtra(map[string]any{"concurrency": value})
 		require.Error(t, err, "concurrency=%v", value)
 		require.ErrorContains(t, err, "concurrency")
@@ -249,7 +250,7 @@ func TestAdminCreateAndBulkRejectIllegalIdentityAndCapacityExtras(t *testing.T) 
 func TestAccountWritePathsRejectIllegalCapacityExtras(t *testing.T) {
 	t.Parallel()
 
-	illegal := map[string]any{"concurrency": 999}
+	illegal := map[string]any{"concurrency": MaxAccountConcurrency + 1}
 
 	t.Run("account service create", func(t *testing.T) {
 		t.Parallel()
@@ -275,7 +276,7 @@ func TestAccountWritePathsRejectIllegalCapacityExtras(t *testing.T) {
 			getByIDAccount: &Account{ID: 7, Platform: PlatformAnthropic, Type: AccountTypeAPIKey, Extra: map[string]any{}},
 		}
 		svc := NewAccountService(repo, &groupRepoStubForOAuthOnlyGroup{})
-		extra := map[string]any{"concurrency": 999}
+		extra := map[string]any{"concurrency": MaxAccountConcurrency + 1}
 
 		account, err := svc.Update(context.Background(), 7, UpdateAccountRequest{Extra: &extra})
 
@@ -301,12 +302,24 @@ func TestAccountWritePathsRejectIllegalCapacityExtras(t *testing.T) {
 		repo := &longContextBillingRepoStub{account: &Account{ID: 1, Platform: PlatformAnthropic}}
 		svc := &adminServiceImpl{accountRepo: repo}
 
-		err := svc.UpdateAccountExtra(context.Background(), 1, map[string]any{"concurrency": 999})
+		err := svc.UpdateAccountExtra(context.Background(), 1, map[string]any{"concurrency": MaxAccountConcurrency + 1})
 
 		require.ErrorContains(t, err, "concurrency")
 		require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
 		require.Zero(t, repo.updateExtraCalls)
 	})
+}
+
+func TestAdminUpdateAccountExtraAcceptsHighConcurrency(t *testing.T) {
+	t.Parallel()
+
+	repo := &longContextBillingRepoStub{account: &Account{ID: 1, Platform: PlatformAnthropic}}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	err := svc.UpdateAccountExtra(context.Background(), 1, map[string]any{"concurrency": 999})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.updateExtraCalls)
 }
 
 func TestAdminBulkUpdateAcceptsRPMStickyBufferZero(t *testing.T) {

@@ -135,7 +135,8 @@ const rpmStrategyTag = computed(() => rpmStrategy.value === 'sticky_exempt' ? '[
 
 function effectiveConcurrency(account: Account): number {
   const stored = account.concurrency
-  if (stored >= 1 && stored <= 32) return stored
+  const max = account.type === 'apikey' ? 10000 : 32
+  if (stored >= 1 && stored <= max) return stored
   if (
     (account.platform === 'anthropic' || account.platform === 'openai') &&
     (account.type === 'oauth' || account.type === 'setup-token')
