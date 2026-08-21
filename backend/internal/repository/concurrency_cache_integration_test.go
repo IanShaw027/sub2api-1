@@ -441,10 +441,12 @@ func (s *ConcurrencyCacheSuite) TestCleanupStaleProcessSlots() {
 	accountID := int64(901)
 	userID := int64(902)
 	apiKeyID := int64(903)
+	groupID := int64(904)
 	unindexedAccountID := int64(1901)
 	accountKey := fmt.Sprintf("%s%d", accountSlotKeyPrefix, accountID)
 	userKey := fmt.Sprintf("%s%d", userSlotKeyPrefix, userID)
 	apiKeyKey := fmt.Sprintf("%s%d", apiKeySlotKeyPrefix, apiKeyID)
+	groupKey := fmt.Sprintf("%s%d", groupSlotKeyPrefix, groupID)
 	unindexedAccountKey := fmt.Sprintf("%s%d", accountSlotKeyPrefix, unindexedAccountID)
 	userWaitKey := fmt.Sprintf("%s%d", waitQueueKeyPrefix, userID)
 	accountWaitKey := fmt.Sprintf("%s%d", accountWaitKeyPrefix, accountID)
@@ -459,6 +461,10 @@ func (s *ConcurrencyCacheSuite) TestCleanupStaleProcessSlots() {
 	require.NoError(s.T(), s.rdb.ZAdd(s.ctx, userKey,
 		redis.Z{Score: float64(now), Member: "oldproc-2"},
 		redis.Z{Score: float64(now), Member: "keep-2"},
+	).Err())
+	require.NoError(s.T(), s.rdb.ZAdd(s.ctx, groupKey,
+		redis.Z{Score: float64(now), Member: "oldproc-g"},
+		redis.Z{Score: float64(now), Member: "keep-g"},
 	).Err())
 	require.NoError(s.T(), s.rdb.ZAdd(s.ctx, unindexedAccountKey,
 		redis.Z{Score: float64(now), Member: "oldproc-unindexed"},
@@ -478,6 +484,10 @@ func (s *ConcurrencyCacheSuite) TestCleanupStaleProcessSlots() {
 		Score:  float64(now + 60),
 		Member: strconv.FormatInt(userID, 10),
 	}).Err())
+	require.NoError(s.T(), s.rdb.ZAdd(s.ctx, groupActiveIndexKey, redis.Z{
+		Score:  float64(now + 60),
+		Member: strconv.FormatInt(groupID, 10),
+	}).Err())
 
 	require.NoError(s.T(), s.cache.CleanupStaleProcessSlots(s.ctx, "keep-"))
 
@@ -488,6 +498,10 @@ func (s *ConcurrencyCacheSuite) TestCleanupStaleProcessSlots() {
 	userMembers, err := s.rdb.ZRange(s.ctx, userKey, 0, -1).Result()
 	require.NoError(s.T(), err)
 	require.Equal(s.T(), []string{"keep-2"}, userMembers)
+
+	groupMembers, err := s.rdb.ZRange(s.ctx, groupKey, 0, -1).Result()
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), []string{"keep-g"}, groupMembers)
 
 	// API Key 槽位（stats-only）不在启动清理范围内，靠分数裁剪与 key TTL 自愈。
 	apiKeyMembers, err := s.rdb.ZRange(s.ctx, apiKeyKey, 0, -1).Result()
@@ -768,8 +782,10 @@ func (s *ConcurrencyCacheSuite) TestCleanupStaleProcessSlots_ProcessesExpiredInd
 	require.NoError(s.T(), s.rdb.Set(s.ctx, legacyWaitSweepMarkerKey, "1", 0).Err())
 	accountID := int64(3901)
 	userID := int64(3902)
+	groupID := int64(3903)
 	accountKey := fmt.Sprintf("%s%d", accountSlotKeyPrefix, accountID)
 	userKey := fmt.Sprintf("%s%d", userSlotKeyPrefix, userID)
+	groupKey := fmt.Sprintf("%s%d", groupSlotKeyPrefix, groupID)
 	accountWaitKey := fmt.Sprintf("%s%d", accountWaitKeyPrefix, accountID)
 
 	now, err := s.rawCache.redisUnixSeconds(s.ctx)
@@ -780,6 +796,9 @@ func (s *ConcurrencyCacheSuite) TestCleanupStaleProcessSlots_ProcessesExpiredInd
 	require.NoError(s.T(), s.rdb.ZAdd(s.ctx, userKey,
 		redis.Z{Score: float64(now), Member: "oldproc-2"},
 	).Err())
+	require.NoError(s.T(), s.rdb.ZAdd(s.ctx, groupKey,
+		redis.Z{Score: float64(now), Member: "oldproc-g"},
+	).Err())
 	require.NoError(s.T(), s.rdb.Set(s.ctx, accountWaitKey, 4, time.Minute).Err())
 	// 索引 score 设为过去时刻，模拟长时间停机后索引已“过期”。
 	require.NoError(s.T(), s.rdb.ZAdd(s.ctx, accountActiveIndexKey, redis.Z{
@@ -789,6 +808,10 @@ func (s *ConcurrencyCacheSuite) TestCleanupStaleProcessSlots_ProcessesExpiredInd
 	require.NoError(s.T(), s.rdb.ZAdd(s.ctx, userActiveIndexKey, redis.Z{
 		Score:  float64(now - 100),
 		Member: strconv.FormatInt(userID, 10),
+	}).Err())
+	require.NoError(s.T(), s.rdb.ZAdd(s.ctx, groupActiveIndexKey, redis.Z{
+		Score:  float64(now - 100),
+		Member: strconv.FormatInt(groupID, 10),
 	}).Err())
 
 	require.NoError(s.T(), s.cache.CleanupStaleProcessSlots(s.ctx, "keep-"))
@@ -801,12 +824,18 @@ func (s *ConcurrencyCacheSuite) TestCleanupStaleProcessSlots_ProcessesExpiredInd
 	require.NoError(s.T(), err)
 	require.EqualValues(s.T(), 0, exists)
 
+	exists, err = s.rdb.Exists(s.ctx, groupKey).Result()
+	require.NoError(s.T(), err)
+	require.EqualValues(s.T(), 0, exists, "stale group slots of expired index member should be purged")
+
 	_, err = s.rdb.Get(s.ctx, accountWaitKey).Result()
 	require.ErrorIs(s.T(), err, redis.Nil, "wait counter of expired index member should be deleted")
 
 	_, err = s.rdb.ZScore(s.ctx, accountActiveIndexKey, strconv.FormatInt(accountID, 10)).Result()
 	require.ErrorIs(s.T(), err, redis.Nil, "emptied member should be removed from index")
 	_, err = s.rdb.ZScore(s.ctx, userActiveIndexKey, strconv.FormatInt(userID, 10)).Result()
+	require.ErrorIs(s.T(), err, redis.Nil)
+	_, err = s.rdb.ZScore(s.ctx, groupActiveIndexKey, strconv.FormatInt(groupID, 10)).Result()
 	require.ErrorIs(s.T(), err, redis.Nil)
 }
 

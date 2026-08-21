@@ -1279,6 +1279,8 @@ func (c *concurrencyCache) reconcileExpiredIndexCandidates(ctx context.Context, 
 // CleanupStaleProcessSlots 启动时清理非当前进程前缀的槽位。
 // 清理范围来自活跃索引（含 score 已过期的成员——它们往往正是崩溃进程留下的残留），
 // 避免在 Redis 上 SCAN 全部 concurrency:* 键；另有一次性迁移清扫兜底索引机制上线前的遗留等待计数。
+// 账号、用户、分组槽位都走这条路径。分组槽只做展示计数，但死进程残留会把页面并发数字
+// 撑高，因此必须和账号/用户槽一起按 request-id 前缀清掉。
 // API Key 槽位（concurrency:api_key:*）是 stats-only 数据：每次 Track/读取都会按分数
 // 裁剪过期成员，key 自带 TTL，可在一个 slot TTL 内自愈，因此不参与启动清理。
 func (c *concurrencyCache) CleanupStaleProcessSlots(ctx context.Context, activeRequestPrefix string) error {
@@ -1305,7 +1307,15 @@ func (c *concurrencyCache) CleanupStaleProcessSlots(ctx context.Context, activeR
 	if err != nil {
 		return err
 	}
-	return c.cleanupStaleProcessSlotsForIndex(ctx, userSlotIndex, userMembers, activeRequestPrefix, now)
+	if err := c.cleanupStaleProcessSlotsForIndex(ctx, userSlotIndex, userMembers, activeRequestPrefix, now); err != nil {
+		return err
+	}
+
+	groupMembers, err := c.allIndexMembers(ctx, groupActiveIndexKey)
+	if err != nil {
+		return err
+	}
+	return c.cleanupStaleProcessSlotsForIndex(ctx, groupSlotIndex, groupMembers, activeRequestPrefix, now)
 }
 
 // sweepLegacyWaitKeysOnce 一次性清扫活跃索引机制上线前遗留的等待计数键。
@@ -1354,7 +1364,7 @@ func (c *concurrencyCache) allIndexMembers(ctx context.Context, indexKey string)
 	return members, nil
 }
 
-// cleanupStaleProcessSlotsForIndex 逐个处理索引中的账号/用户。
+// cleanupStaleProcessSlotsForIndex 逐个处理索引中的账号/用户/分组。
 // Lua 脚本一次只碰一个槽位 key，兼容 Redis Cluster，随后删除重启后已失效的等待计数；
 // 索引 member 的去留由脚本返回的剩余槽位数决定，最后批量写回。
 func (c *concurrencyCache) cleanupStaleProcessSlotsForIndex(
@@ -1378,8 +1388,11 @@ func (c *concurrencyCache) cleanupStaleProcessSlotsForIndex(
 			return fmt.Errorf("cleanup stale process slots %s: %w", spec.slotKey(id), err)
 		}
 		// 等待计数属于已死进程，直接删除；剩余槽位（当前进程前缀）决定索引 member 去留。
-		if err := c.rdb.Del(ctx, spec.waitKey(id)).Err(); err != nil {
-			return fmt.Errorf("delete stale wait key %s: %w", spec.waitKey(id), err)
+		// 分组槽没有等待键（waitKey 返回空），不能对空 key 发 DEL。
+		if waitKey := spec.waitKey(id); waitKey != "" {
+			if err := c.rdb.Del(ctx, waitKey).Err(); err != nil {
+				return fmt.Errorf("delete stale wait key %s: %w", waitKey, err)
+			}
 		}
 		if remaining > 0 {
 			refreshed = append(refreshed, redis.Z{
