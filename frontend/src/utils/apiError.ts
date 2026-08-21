@@ -35,6 +35,11 @@ export function extractApiErrorCode(err: unknown): string | undefined {
   return code != null ? String(code) : undefined
 }
 
+/** 阿里云验证码 2.0 服务端校验失败（与 captchaVerifyCallback.captchaResult 对应） */
+export function isAliyunCaptchaVerificationError(err: unknown): boolean {
+  return extractApiErrorCode(err) === 'ALIYUN_CAPTCHA_VERIFICATION_FAILED'
+}
+
 /**
  * Extract metadata (interpolation params) from an API error object.
  * Backend errors carry `metadata` with template variables that fill i18n placeholders.

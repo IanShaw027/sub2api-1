@@ -9867,7 +9867,10 @@ type SettingsForm = Omit<
   | "ip_multi_account_ban_enabled"
   | "ip_multi_account_ban_window_minutes"
   | "ip_multi_account_ban_threshold"
+  | "ip_multi_account_ban_window2_minutes"
+  | "ip_multi_account_ban_threshold2"
   | "ip_multi_account_ban_learning_until"
+  | "registration_block_datacenter_ip"
 > & {
   /** Form always binds a concrete boolean (SystemSettings marks this optional). */
   channel_monitor_hide_throughput: boolean;
@@ -12155,13 +12158,24 @@ async function loadAdminApiKey() {
 async function createAdminApiKey() {
   adminApiKeyOperating.value = true;
   try {
-    const result = await adminAPI.settings.regenerateAdminApiKey();
+    const result = await settingsStepUp.run(() =>
+      adminAPI.settings.regenerateAdminApiKey(),
+    );
     newAdminApiKey.value = result.key;
     adminApiKeyExists.value = true;
     adminApiKeyMasked.value =
       result.key.substring(0, 10) + "..." + result.key.slice(-4);
     appStore.showSuccess(t("admin.settings.adminApiKey.keyGenerated"));
   } catch (error: unknown) {
+    if (isStepUpCancelled(error)) return;
+    if (isStepUpBlocked(error)) {
+      appStore.showError(
+        stepUpBlockReason(error) === "STEP_UP_ADMIN_API_KEY_FORBIDDEN"
+          ? t("stepUp.adminApiKeyForbidden")
+          : t("stepUp.notEnabled"),
+      );
+      return;
+    }
     appStore.showError(extractApiErrorMessage(error, t("common.error")));
   } finally {
     adminApiKeyOperating.value = false;
@@ -12177,12 +12191,21 @@ async function deleteAdminApiKey() {
   if (!confirm(t("admin.settings.adminApiKey.deleteConfirm"))) return;
   adminApiKeyOperating.value = true;
   try {
-    await adminAPI.settings.deleteAdminApiKey();
+    await settingsStepUp.run(() => adminAPI.settings.deleteAdminApiKey());
     adminApiKeyExists.value = false;
     adminApiKeyMasked.value = "";
     newAdminApiKey.value = "";
     appStore.showSuccess(t("admin.settings.adminApiKey.keyDeleted"));
   } catch (error: unknown) {
+    if (isStepUpCancelled(error)) return;
+    if (isStepUpBlocked(error)) {
+      appStore.showError(
+        stepUpBlockReason(error) === "STEP_UP_ADMIN_API_KEY_FORBIDDEN"
+          ? t("stepUp.adminApiKeyForbidden")
+          : t("stepUp.notEnabled"),
+      );
+      return;
+    }
     appStore.showError(extractApiErrorMessage(error, t("common.error")));
   } finally {
     adminApiKeyOperating.value = false;

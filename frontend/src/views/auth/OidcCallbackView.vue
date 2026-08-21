@@ -269,6 +269,7 @@ import {
   loadOAuthAffiliateCode,
   oauthAffiliatePayload
 } from '@/utils/oauthAffiliate'
+import { sanitizeAuthRedirect as sanitizeRedirectPath } from '@/utils/authRedirect'
 
 const route = useRoute()
 const router = useRouter()
@@ -389,15 +390,6 @@ function readLegacyFragmentLogin(params: URLSearchParams): OAuthTokenResponse | 
     completion.token_type = tokenType
   }
   return completion
-}
-
-function sanitizeRedirectPath(path: string | null | undefined): string {
-  if (!path) return '/dashboard'
-  if (!path.startsWith('/')) return '/dashboard'
-  if (path.startsWith('//')) return '/dashboard'
-  if (path.includes('://')) return '/dashboard'
-  if (path.includes('\n') || path.includes('\r')) return '/dashboard'
-  return path
 }
 
 async function loadProviderName() {
@@ -695,9 +687,15 @@ async function handleContinueLogin() {
   }
 }
 
-async function handleCreateAccount(payload: PendingOAuthCreateAccountPayload) {
+async function handleCreateAccount(
+  payload: PendingOAuthCreateAccountPayload,
+  settle?: (error?: unknown) => void
+) {
   accountActionError.value = ''
-  if (!payload.email || !payload.password) return
+  if (!payload.email || !payload.password) {
+    settle?.(new Error(t('auth.emailRequired')))
+    return
+  }
 
   isSubmitting.value = true
   try {
@@ -717,7 +715,9 @@ async function handleCreateAccount(payload: PendingOAuthCreateAccountPayload) {
       ...serializeAdoptionDecision(currentAdoptionDecision())
     })
     await finalizePendingAccountResponse(data)
+    settle?.()
   } catch (e: unknown) {
+    settle?.(e)
     if (isCreateAccountRecoveryError(e)) {
       switchToBindLoginMode(payload.email.trim())
       return

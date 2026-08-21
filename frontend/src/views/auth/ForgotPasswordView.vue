@@ -70,12 +70,12 @@
         <div v-if="captchaEnabled">
           <TurnstileWidget
             ref="turnstileRef"
-            :turnstile-enabled="turnstileCaptchaEnabled"
+            :turnstile-enabled="turnstileWidgetActive"
             :turnstile-site-key="turnstileSiteKey"
-            :tencent-enabled="tencentCaptchaEnabled"
+            :tencent-enabled="tencentWidgetActive"
             :tencent-app-id="tencentCaptchaAppId"
             :tencent-region="tencentCaptchaRegion"
-            :aliyun-enabled="aliyunCaptchaEnabled"
+            :aliyun-enabled="aliyunWidgetActive"
             :aliyun-scene-id="aliyunCaptchaSceneId"
             :aliyun-prefix="aliyunCaptchaPrefix"
             :aliyun-region="aliyunCaptchaRegion"
@@ -88,7 +88,7 @@
         <!-- Submit Button -->
         <button
           type="submit"
-          :disabled="isLoading || (turnstileCaptchaEnabled && !turnstileToken)"
+          :disabled="isLoading || (turnstileWidgetActive && !turnstileToken)"
           class="btn btn-primary w-full"
         >
           <svg
@@ -138,8 +138,10 @@ import { useI18n } from 'vue-i18n'
 import { AuthLayout } from '@/components/layout'
 import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/CaptchaChallenge.vue'
+import type { AliyunCaptchaBizResult } from '@/components/AliyunCaptchaWidget.vue'
 import { useAppStore } from '@/stores'
 import { getPublicSettings, forgotPassword } from '@/api/auth'
+import { isAliyunCaptchaVerificationError } from '@/utils/apiError'
 
 const { t } = useI18n()
 
@@ -174,20 +176,23 @@ const aliyunCaptchaReady = computed(
     Boolean(aliyunCaptchaSceneId.value) &&
     Boolean(aliyunCaptchaPrefix.value)
 )
-// 动作触发式验证码（腾讯/阿里云）：提交时弹窗验证。腾讯优先于阿里云。
-const actionCaptchaProvider = computed<'tencent' | 'aliyun' | null>(() =>
-  tencentCaptchaEnabled.value && Boolean(tencentCaptchaAppId.value)
-    ? 'tencent'
-    : aliyunCaptchaReady.value
-      ? 'aliyun'
-      : null
+const turnstileWidgetActive = computed(
+  () => turnstileEnabled.value && Boolean(turnstileSiteKey.value)
 )
-const actionCaptchaEnabled = computed(() => actionCaptchaProvider.value !== null)
-const turnstileCaptchaEnabled = computed(
-  () => turnstileEnabled.value && Boolean(turnstileSiteKey.value) && !actionCaptchaProvider.value
+const tencentWidgetActive = computed(
+  () =>
+    !turnstileWidgetActive.value &&
+    tencentCaptchaEnabled.value &&
+    Boolean(tencentCaptchaAppId.value)
+)
+const aliyunWidgetActive = computed(
+  () => !turnstileWidgetActive.value && !tencentWidgetActive.value && aliyunCaptchaReady.value
+)
+const actionCaptchaEnabled = computed(
+  () => tencentWidgetActive.value || aliyunWidgetActive.value
 )
 const captchaEnabled = computed(
-  () => turnstileCaptchaEnabled.value || actionCaptchaEnabled.value
+  () => turnstileWidgetActive.value || actionCaptchaEnabled.value
 )
 
 const formData = reactive({
@@ -254,7 +259,7 @@ function resetCaptchaProof(): void {
 }
 
 async function acquireActionProof(): Promise<boolean> {
-  if (!actionCaptchaEnabled.value) return true
+  if (!tencentWidgetActive.value) return true
 
   const proof = await turnstileRef.value?.verifyAction()
   if (!proof) return false
@@ -281,12 +286,42 @@ function validateForm(): boolean {
     isValid = false
   }
 
-  if ((turnstileCaptchaEnabled.value || aliyunCaptchaReady.value) && !turnstileToken.value) {
+  // 阿里云嵌入式：点提交后再取参，不在这里预检 token
+  if (turnstileWidgetActive.value && !turnstileToken.value) {
     errors.turnstile = t('auth.completeVerification')
     isValid = false
   }
 
   return isValid
+}
+
+function forgotPasswordErrorMessage(error: unknown): string {
+  const err = error as { message?: string; response?: { data?: { detail?: string } } }
+  if (err.response?.data?.detail) return err.response.data.detail
+  if (err.message) return err.message
+  return t('auth.sendResetLinkFailed')
+}
+
+async function submitForgotWithCaptcha(captchaParam?: string): Promise<AliyunCaptchaBizResult> {
+  try {
+    await forgotPassword({
+      email: formData.email,
+      // 阿里云 captchaVerifyParam 复用后端 turnstile_token 字段。
+      turnstile_token:
+        turnstileWidgetActive.value || aliyunWidgetActive.value ? captchaParam : undefined,
+      tencent_captcha_ticket: tencentWidgetActive.value ? captchaParam : undefined,
+      tencent_captcha_randstr: tencentWidgetActive.value ? tencentCaptchaRandstr.value : undefined
+    })
+    return { captchaResult: true, bizResult: true }
+  } catch (error: unknown) {
+    errorMessage.value = forgotPasswordErrorMessage(error)
+    appStore.showError(errorMessage.value)
+    if (isAliyunCaptchaVerificationError(error)) {
+      errors.turnstile = t('auth.completeVerification')
+      return { captchaResult: false, bizResult: false }
+    }
+    return { captchaResult: true, bizResult: false }
+  }
 }
 
 // ==================== Form Handlers ====================
@@ -298,44 +333,39 @@ async function handleSubmit(): Promise<void> {
     return
   }
 
-  if (!(await acquireActionProof())) {
-    return
-  }
-
   isLoading.value = true
+  let submitted = false
 
   try {
-    await forgotPassword({
-      email: formData.email,
-      // 阿里云 captchaVerifyParam 复用后端 turnstile_token 字段。
-      turnstile_token:
-        turnstileCaptchaEnabled.value || actionCaptchaProvider.value === 'aliyun'
-          ? turnstileToken.value
-          : undefined,
-      tencent_captcha_ticket: actionCaptchaProvider.value === 'tencent' ? turnstileToken.value : undefined,
-      tencent_captcha_randstr:
-        actionCaptchaProvider.value === 'tencent' ? tencentCaptchaRandstr.value : undefined
-    })
-
-    isSubmitted.value = true
-    appStore.showSuccess(t('auth.resetEmailSent'))
-  } catch (error: unknown) {
-    const err = error as { message?: string; response?: { data?: { detail?: string } } }
-
-    if (err.response?.data?.detail) {
-      errorMessage.value = err.response.data.detail
-    } else if (err.message) {
-      errorMessage.value = err.message
+    if (aliyunWidgetActive.value) {
+      const result = await turnstileRef.value?.runAliyunVerify((param) =>
+        submitForgotWithCaptcha(param)
+      )
+      if (!result?.captchaResult && !result?.bizResult) {
+        errors.turnstile = t('auth.completeVerification')
+      }
+      submitted = result?.bizResult === true
     } else {
-      errorMessage.value = t('auth.sendResetLinkFailed')
-    }
+      if (!(await acquireActionProof())) {
+        return
+      }
 
-    appStore.showError(errorMessage.value)
+      const result = await submitForgotWithCaptcha(
+        turnstileWidgetActive.value || tencentWidgetActive.value ? turnstileToken.value : undefined
+      )
+      submitted = result.bizResult === true
+    }
   } finally {
+    // 先 reset 再切成功态，避免 v-if 卸载验证码组件后拿不到 ref
     if (captchaEnabled.value) {
       resetCaptchaProof()
     }
     isLoading.value = false
+  }
+
+  if (submitted) {
+    isSubmitted.value = true
+    appStore.showSuccess(t('auth.resetEmailSent'))
   }
 }
 </script>

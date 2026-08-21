@@ -846,10 +846,12 @@ async function restoreBackup(id: string) {
 async function removeBackup(id: string) {
   if (!window.confirm(t('admin.backup.actions.deleteConfirm'))) return
   try {
-    await adminAPI.backup.deleteBackup(id)
+    await backupStepUp.run(() => adminAPI.backup.deleteBackup(id))
     appStore.showSuccess(t('admin.backup.actions.deleted'))
     await loadBackups()
   } catch (error) {
+    if (isStepUpCancelled(error)) return
+    if (reportStepUpBlocked(error)) return
     appStore.showError((error as { message?: string })?.message || t('errors.networkError'))
   }
 }

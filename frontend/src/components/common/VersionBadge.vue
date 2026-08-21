@@ -634,6 +634,7 @@
     <span v-else-if="version" class="text-xs text-gray-500 dark:text-dark-400">
       v{{ version }}
     </span>
+    <TotpStepUpDialog :controller="systemStepUp" />
   </div>
 </template>
 
@@ -649,7 +650,9 @@ import {
   type RollbackVersionInfo
 } from '@/api/admin/system'
 import { useClipboard } from '@/composables/useClipboard'
+import { useStepUp, isStepUpBlocked, isStepUpCancelled, stepUpBlockReason } from '@/composables/useStepUp'
 import Icon from '@/components/icons/Icon.vue'
+import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 
 const GITHUB_REPO = 'Wei-Shaw/sub2api'
 // Docker Hub image published by CI (tags carry no "v" prefix, e.g. weishaw/sub2api:0.1.146)
@@ -663,6 +666,7 @@ const props = defineProps<{
 
 const authStore = useAuthStore()
 const appStore = useAppStore()
+const systemStepUp = useStepUp()
 
 const isAdmin = computed(() => authStore.isAdmin)
 
@@ -759,13 +763,22 @@ async function handleUpdate() {
   updateSuccess.value = false
 
   try {
-    const result = await performUpdate()
+    const result = await systemStepUp.run(() => performUpdate())
     successKind.value = 'update'
     updateSuccess.value = true
     needRestart.value = result.need_restart
     // Clear version cache to reflect update completed
     appStore.clearVersionCache()
   } catch (error: unknown) {
+    if (isStepUpCancelled(error)) return
+    if (isStepUpBlocked(error)) {
+      appStore.showError(
+        stepUpBlockReason(error) === 'STEP_UP_ADMIN_API_KEY_FORBIDDEN'
+          ? t('stepUp.adminApiKeyForbidden')
+          : t('stepUp.notEnabled')
+      )
+      return
+    }
     const err = error as { response?: { data?: { message?: string } }; message?: string }
     updateError.value = err.response?.data?.message || err.message || t('version.updateFailed')
   } finally {
@@ -833,7 +846,7 @@ async function handleRollback() {
   rollbackError.value = ''
 
   try {
-    const result = await rollbackAPI(selectedRollbackVersion.value)
+    const result = await systemStepUp.run(() => rollbackAPI(selectedRollbackVersion.value))
     successKind.value = 'rollback'
     updateSuccess.value = true
     needRestart.value = result.need_restart
@@ -841,6 +854,15 @@ async function handleRollback() {
     // Clear version cache so the next check reflects the rolled-back version
     appStore.clearVersionCache()
   } catch (error: unknown) {
+    if (isStepUpCancelled(error)) return
+    if (isStepUpBlocked(error)) {
+      appStore.showError(
+        stepUpBlockReason(error) === 'STEP_UP_ADMIN_API_KEY_FORBIDDEN'
+          ? t('stepUp.adminApiKeyForbidden')
+          : t('stepUp.notEnabled')
+      )
+      return
+    }
     const err = error as { response?: { data?: { message?: string } }; message?: string }
     rollbackError.value = err.response?.data?.message || err.message || t('version.rollbackFailed')
   } finally {
@@ -855,9 +877,22 @@ async function handleRestart() {
   restartCountdown.value = 8
 
   try {
-    await restartService()
+    await systemStepUp.run(() => restartService())
     // Service will restart, page will reload automatically or show disconnected
-  } catch (error) {
+  } catch (error: unknown) {
+    if (isStepUpCancelled(error)) {
+      restarting.value = false
+      return
+    }
+    if (isStepUpBlocked(error)) {
+      appStore.showError(
+        stepUpBlockReason(error) === 'STEP_UP_ADMIN_API_KEY_FORBIDDEN'
+          ? t('stepUp.adminApiKeyForbidden')
+          : t('stepUp.notEnabled')
+      )
+      restarting.value = false
+      return
+    }
     // Expected - connection will be lost during restart
     console.log('Service restarting...')
   }

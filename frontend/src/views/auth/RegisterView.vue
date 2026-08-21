@@ -207,12 +207,12 @@
         <div v-if="captchaEnabled" data-testid="registration-turnstile">
           <TurnstileWidget
             ref="turnstileRef"
-            :turnstile-enabled="turnstileEnabled"
+            :turnstile-enabled="turnstileWidgetActive"
             :turnstile-site-key="turnstileSiteKey"
-            :tencent-enabled="tencentCaptchaEnabled"
+            :tencent-enabled="tencentWidgetActive"
             :tencent-app-id="tencentCaptchaAppId"
             :tencent-region="tencentCaptchaRegion"
-            :aliyun-enabled="aliyunCaptchaEnabled"
+            :aliyun-enabled="aliyunWidgetActive"
             :aliyun-scene-id="aliyunCaptchaSceneId"
             :aliyun-prefix="aliyunCaptchaPrefix"
             :aliyun-region="aliyunCaptchaRegion"
@@ -237,7 +237,7 @@
         <!-- Submit Button -->
         <button
           type="submit"
-          :disabled="registrationActionDisabled || ((turnstileEnabled || aliyunCaptchaReady) && !turnstileToken)"
+          :disabled="registrationActionDisabled || (turnstileWidgetActive && !turnstileToken)"
           class="btn btn-primary w-full"
         >
           <svg
@@ -345,15 +345,24 @@ import TurnstileWidget from '@/components/CaptchaChallenge.vue'
 import { useAuthStore, useAppStore } from '@/stores'
 import {
   buildOAuthLoginStartURL,
+  getPendingRegistrationPassword,
   getPublicSettings,
   isWeChatWebOAuthEnabled,
+  sendVerifyCode,
+  setPendingRegistrationPassword,
   startOAuthLogin,
   type OAuthLoginStart,
   validatePromoCode,
   validateInvitationCode
 } from '@/api/auth'
 import { buildAuthErrorMessage } from '@/utils/authError'
-import { extractApiErrorCode, extractApiErrorMetadata, extractI18nErrorMessage } from '@/utils/apiError'
+import {
+  extractApiErrorCode,
+  extractApiErrorMetadata,
+  extractI18nErrorMessage,
+  isAliyunCaptchaVerificationError
+} from '@/utils/apiError'
+import type { AliyunCaptchaBizResult } from '@/components/AliyunCaptchaWidget.vue'
 import {
   canonicalRegistrationEmail,
   formatRegistrationEmailSuffixWhitelistForMessage,
@@ -366,7 +375,7 @@ import {
   loadAffiliateReferralCode,
   resolveAffiliateReferralCode
 } from '@/utils/oauthAffiliate'
-import type { LoginAgreementDocument } from '@/types'
+import type { ActionCaptchaRequestProof, LoginAgreementDocument } from '@/types'
 
 const { t, locale } = useI18n()
 const LOGIN_AGREEMENT_STORAGE_KEY = 'sub2api_login_agreement_consent'
@@ -428,15 +437,25 @@ const aliyunCaptchaReady = computed(
     Boolean(aliyunCaptchaSceneId.value) &&
     Boolean(aliyunCaptchaPrefix.value)
 )
+// 与 CaptchaChallenge 展示优先级一致：Turnstile > 腾讯 > 阿里云
+const turnstileWidgetActive = computed(
+  () => turnstileEnabled.value && Boolean(turnstileSiteKey.value)
+)
+const tencentWidgetActive = computed(
+  () =>
+    !turnstileWidgetActive.value &&
+    tencentCaptchaEnabled.value &&
+    Boolean(tencentCaptchaAppId.value)
+)
+const aliyunWidgetActive = computed(
+  () => !turnstileWidgetActive.value && !tencentWidgetActive.value && aliyunCaptchaReady.value
+)
 // 动作触发式验证码（腾讯/阿里云）：提交、OAuth 启动时弹窗验证
 const actionCaptchaEnabled = computed(
-  () =>
-    (tencentCaptchaEnabled.value && Boolean(tencentCaptchaAppId.value)) ||
-    aliyunCaptchaReady.value
+  () => tencentWidgetActive.value || aliyunWidgetActive.value
 )
 const captchaEnabled = computed(
-  () =>
-    (turnstileEnabled.value && Boolean(turnstileSiteKey.value)) || actionCaptchaEnabled.value
+  () => turnstileWidgetActive.value || actionCaptchaEnabled.value
 )
 
 // Promo code validation
@@ -517,6 +536,19 @@ function syncAffiliateReferralCode(): string {
 // ==================== Lifecycle ====================
 
 onMounted(async () => {
+  const pendingRegistration = sessionStorage.getItem('register_data')
+  if (pendingRegistration) {
+    try {
+      const saved = JSON.parse(pendingRegistration) as Record<string, unknown>
+      formData.email = typeof saved.email === 'string' ? saved.email : formData.email
+      formData.password = getPendingRegistrationPassword()
+      formData.promo_code = typeof saved.promo_code === 'string' ? saved.promo_code : ''
+      formData.invitation_code = typeof saved.invitation_code === 'string' ? saved.invitation_code : ''
+      formData.aff_code = typeof saved.aff_code === 'string' ? saved.aff_code : formData.aff_code
+    } catch {
+      sessionStorage.removeItem('register_data')
+    }
+  }
   syncAffiliateReferralCode()
 
   try {
@@ -830,19 +862,42 @@ async function handleOAuthStart(request: OAuthLoginStart): Promise<void> {
 
   isLoading.value = true
   try {
+    if (aliyunWidgetActive.value) {
+      const result = await turnstileRef.value?.runAliyunVerify((param) =>
+        startOAuthWithCaptcha(request, { turnstile_token: param })
+      )
+      if (!result?.captchaResult && !result?.bizResult) {
+        errors.turnstile = t('auth.completeVerification')
+      }
+      return
+    }
+
     const proof = await turnstileRef.value?.verifyAction()
     if (!proof) return
 
-    const result = await startOAuthLogin(
+    await startOAuthWithCaptcha(
       request,
-      tencentCaptchaEnabled.value
+      tencentWidgetActive.value
         ? {
             tencent_captcha_ticket: proof.token,
             tencent_captcha_randstr: proof.randstr
           }
         : { turnstile_token: proof.token }
     )
+  } finally {
+    resetCaptchaProof()
+    isLoading.value = false
+  }
+}
+
+async function startOAuthWithCaptcha(
+  request: OAuthLoginStart,
+  proof: ActionCaptchaRequestProof
+): Promise<AliyunCaptchaBizResult> {
+  try {
+    const result = await startOAuthLogin(request, proof)
     window.location.href = result.authorize_url
+    return { captchaResult: true, bizResult: true }
   } catch (error: unknown) {
     errorMessage.value = extractI18nErrorMessage(
       error,
@@ -851,9 +906,11 @@ async function handleOAuthStart(request: OAuthLoginStart): Promise<void> {
       t('auth.turnstileFailed')
     )
     appStore.showError(errorMessage.value)
-  } finally {
-    resetCaptchaProof()
-    isLoading.value = false
+    if (isAliyunCaptchaVerificationError(error)) {
+      errors.turnstile = t('auth.completeVerification')
+      return { captchaResult: false, bizResult: false }
+    }
+    return { captchaResult: true, bizResult: false }
   }
 }
 
@@ -935,7 +992,7 @@ function validateForm(): boolean {
     }
   }
 
-  if ((turnstileEnabled.value || aliyunCaptchaReady.value) && !turnstileToken.value) {
+  if (turnstileWidgetActive.value && !turnstileToken.value) {
     errors.turnstile = t('auth.completeVerification')
     isValid = false
   }
@@ -943,47 +1000,109 @@ function validateForm(): boolean {
   return isValid
 }
 
+function prepareAffiliateCode(): string {
+  const affCode = formData.aff_code.trim() || loadAffiliateReferralCode()
+  if (affCode) {
+    formData.aff_code = affCode
+  }
+  return affCode
+}
+
+async function submitRegisterWithCaptcha(captchaParam?: string): Promise<AliyunCaptchaBizResult> {
+  const affCode = prepareAffiliateCode()
+  try {
+    if (emailVerifyEnabled.value) {
+      let codeSent = false
+      let countdown = 0
+      if (aliyunWidgetActive.value) {
+        const response = await sendVerifyCode({
+          email: formData.email,
+          turnstile_token: captchaParam
+        })
+        codeSent = true
+        countdown = response.countdown
+      }
+      sessionStorage.setItem(
+        'register_data',
+        JSON.stringify({
+          email: formData.email,
+          turnstile_token:
+            !codeSent && (turnstileWidgetActive.value || aliyunWidgetActive.value)
+              ? captchaParam
+              : undefined,
+          tencent_captcha_ticket: !codeSent && tencentWidgetActive.value ? captchaParam : undefined,
+          tencent_captcha_randstr:
+            !codeSent && tencentWidgetActive.value ? tencentCaptchaRandstr.value : undefined,
+          promo_code: formData.promo_code || undefined,
+          invitation_code: formData.invitation_code || undefined,
+          ...(affCode ? { aff_code: affCode } : {}),
+          ...(codeSent ? { code_sent: true, countdown } : {})
+        })
+      )
+      setPendingRegistrationPassword(formData.password)
+      await router.push('/email-verify')
+      return { captchaResult: true, bizResult: true }
+    }
+
+    await authStore.register({
+      email: formData.email,
+      password: formData.password,
+      turnstile_token:
+        turnstileWidgetActive.value || aliyunWidgetActive.value ? captchaParam : undefined,
+      tencent_captcha_ticket: tencentWidgetActive.value ? captchaParam : undefined,
+      tencent_captcha_randstr: tencentWidgetActive.value
+        ? tencentCaptchaRandstr.value
+        : undefined,
+      promo_code: formData.promo_code || undefined,
+      invitation_code: formData.invitation_code || undefined,
+      ...(affCode ? { aff_code: affCode } : {})
+    })
+    clearAffiliateReferralCode()
+    appStore.showSuccess(t('auth.accountCreatedSuccess', { siteName: siteName.value }))
+    await router.push('/dashboard')
+    return { captchaResult: true, bizResult: true }
+  } catch (error: unknown) {
+    errorMessage.value = buildRegistrationErrorMessage(error, t('auth.registrationFailed'))
+    appStore.showError(errorMessage.value)
+    if (isAliyunCaptchaVerificationError(error)) {
+      errors.turnstile = t('auth.completeVerification')
+      return { captchaResult: false, bizResult: false }
+    }
+    return { captchaResult: true, bizResult: false }
+  }
+}
+
 // ==================== Form Handlers ====================
 
 async function handleRegister(): Promise<void> {
-  // Clear previous error
   errorMessage.value = ''
 
-  // Validate form
   if (!validateForm()) {
     return
   }
 
-  // Check promo code validation status
   if (formData.promo_code.trim()) {
-    // If promo code is being validated, wait
     if (promoValidating.value) {
       errorMessage.value = t('auth.promoCodeValidating')
       return
     }
-    // If promo code is invalid, block submission
     if (promoValidation.invalid) {
       errorMessage.value = t('auth.promoCodeInvalidCannotRegister')
       return
     }
   }
 
-  // Check invitation code validation status (if enabled and code provided)
   if (invitationCodeEnabled.value) {
-    // If still validating, wait
     if (invitationValidating.value) {
       errorMessage.value = t('auth.invitationCodeValidating')
       return
     }
-    // If invitation code is invalid, block submission
     if (invitationValidation.invalid) {
       errorMessage.value = t('auth.invitationCodeInvalidCannotRegister')
       return
     }
-    // If invitation code is required but not validated yet
     if (formData.invitation_code.trim() && !invitationValidation.valid) {
       errorMessage.value = t('auth.invitationCodeValidating')
-      // Trigger validation
       await validateInvitationCodeDebounced(formData.invitation_code.trim())
       if (!invitationValidation.valid) {
         errorMessage.value = t('auth.invitationCodeInvalidCannotRegister')
@@ -992,66 +1111,25 @@ async function handleRegister(): Promise<void> {
     }
   }
 
-  if (!(await acquireActionProof())) {
-    return
-  }
-
   isLoading.value = true
-
   try {
-    const affCode = formData.aff_code.trim() || loadAffiliateReferralCode()
-    if (affCode) {
-      formData.aff_code = affCode
-    }
-
-    // If email verification is enabled, redirect to verification page
-    if (emailVerifyEnabled.value) {
-      // Store registration data in sessionStorage
-      sessionStorage.setItem(
-        'register_data',
-        JSON.stringify({
-          email: formData.email,
-          password: formData.password,
-          turnstile_token:
-            turnstileEnabled.value || aliyunCaptchaEnabled.value ? turnstileToken.value : undefined,
-          tencent_captcha_ticket: tencentCaptchaEnabled.value ? turnstileToken.value : undefined,
-          tencent_captcha_randstr: tencentCaptchaEnabled.value ? tencentCaptchaRandstr.value : undefined,
-          promo_code: formData.promo_code || undefined,
-          invitation_code: formData.invitation_code || undefined,
-          ...(affCode ? { aff_code: affCode } : {})
-        })
+    if (aliyunWidgetActive.value) {
+      const result = await turnstileRef.value?.runAliyunVerify((param) =>
+        submitRegisterWithCaptcha(param)
       )
-
-      // Navigate to email verification page
-      await router.push('/email-verify')
+      if (!result?.captchaResult && !result?.bizResult) {
+        errors.turnstile = t('auth.completeVerification')
+      }
       return
     }
 
-    // Otherwise, directly register
-    await authStore.register({
-      email: formData.email,
-      password: formData.password,
-      turnstile_token:
-        turnstileEnabled.value || aliyunCaptchaEnabled.value ? turnstileToken.value : undefined,
-      tencent_captcha_ticket: tencentCaptchaEnabled.value ? turnstileToken.value : undefined,
-      tencent_captcha_randstr: tencentCaptchaEnabled.value ? tencentCaptchaRandstr.value : undefined,
-      promo_code: formData.promo_code || undefined,
-      invitation_code: formData.invitation_code || undefined,
-      ...(affCode ? { aff_code: affCode } : {})
-    })
-    clearAffiliateReferralCode()
+    if (!(await acquireActionProof())) {
+      return
+    }
 
-    // Show success toast
-    appStore.showSuccess(t('auth.accountCreatedSuccess', { siteName: siteName.value }))
-
-    // Redirect to dashboard
-    await router.push('/dashboard')
-  } catch (error: unknown) {
-    // Handle registration error
-    errorMessage.value = buildRegistrationErrorMessage(error, t('auth.registrationFailed'))
-
-    // Also show error toast
-    appStore.showError(errorMessage.value)
+    await submitRegisterWithCaptcha(
+      turnstileWidgetActive.value || tencentWidgetActive.value ? turnstileToken.value : undefined
+    )
   } finally {
     if (captchaEnabled.value) {
       resetCaptchaProof()

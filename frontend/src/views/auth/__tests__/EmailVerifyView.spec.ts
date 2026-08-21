@@ -2,6 +2,9 @@ import { defineComponent, h } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import EmailVerifyView from '@/views/auth/EmailVerifyView.vue'
+import {
+  clearPendingRegistrationPassword,
+} from '@/api/auth'
 
 const {
   pushMock,
@@ -123,6 +126,7 @@ describe('EmailVerifyView', () => {
     authStoreState.pendingAuthSession = null
     sessionStorage.clear()
     localStorage.clear()
+    clearPendingRegistrationPassword()
 
     getPublicSettingsMock.mockResolvedValue({
       turnstile_enabled: false,
@@ -885,7 +889,6 @@ describe('EmailVerifyView', () => {
     }))
     expect(JSON.parse(sessionStorage.getItem('register_data') || '{}')).toEqual({
       email: 'normal@example.com',
-      password: 'secret-456',
     })
 
     await wrapper.get('#code').setValue('654321')
@@ -897,6 +900,42 @@ describe('EmailVerifyView', () => {
       verify_code: '654321',
       tencent_captcha_ticket: undefined,
       tencent_captcha_randstr: undefined,
+    }))
+  })
+
+  it('keeps the password out of storage and accepts re-entry after a page refresh', async () => {
+    sessionStorage.setItem(
+      'register_data',
+      JSON.stringify({ email: 'refresh@example.com', code_sent: true, countdown: 30 })
+    )
+    registerMock.mockResolvedValue({})
+
+    const wrapper = mount(EmailVerifyView, {
+      global: {
+        stubs: {
+          AuthLayout: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: true,
+          TurnstileWidget: true,
+          transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('#registration-password').exists()).toBe(true)
+    expect(sessionStorage.getItem('register_data')).not.toContain('password')
+
+    await wrapper.get('#registration-password').setValue('r')
+    expect(wrapper.find('#registration-password').exists()).toBe(true)
+    await wrapper.get('#registration-password').setValue('reentered-secret')
+    await wrapper.get('#code').setValue('654321')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(registerMock).toHaveBeenCalledWith(expect.objectContaining({
+      email: 'refresh@example.com',
+      password: 'reentered-secret',
+      verify_code: '654321',
     }))
   })
 })

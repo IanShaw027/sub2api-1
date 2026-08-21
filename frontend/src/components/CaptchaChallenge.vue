@@ -29,7 +29,9 @@
 import { ref } from 'vue'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import TencentCaptchaGate from '@/components/TencentCaptchaGate.vue'
-import AliyunCaptchaWidget from '@/components/AliyunCaptchaWidget.vue'
+import AliyunCaptchaWidget, {
+  type AliyunCaptchaBizResult
+} from '@/components/AliyunCaptchaWidget.vue'
 
 // ActionCaptchaResult 动作触发式验证的结果：
 // 腾讯 token=ticket、randstr 非空；阿里云 token=captchaVerifyParam、randstr 恒为空。
@@ -67,8 +69,26 @@ function reset(): void {
   aliyunRef.value?.reset()
 }
 
+/**
+ * 阿里云官方 V2：把业务请求放进 captchaVerifyCallback。
+ * fn 收到 captchaVerifyParam，返回给 SDK 的 captchaResult/bizResult。
+ */
+async function runAliyunVerify(
+  fn: (captchaVerifyParam: string) => Promise<AliyunCaptchaBizResult>
+): Promise<AliyunCaptchaBizResult> {
+  if (!(props.aliyunEnabled && props.aliyunSceneId && props.aliyunPrefix)) {
+    return { captchaResult: false, bizResult: false }
+  }
+  return (
+    (await aliyunRef.value?.run(fn)) ?? {
+      captchaResult: false,
+      bizResult: false
+    }
+  )
+}
+
 // verifyAction 等待当前启用的动作触发式验证码结果。
-// 腾讯仍走弹窗；阿里云走页面内嵌验证。未完成或异常返回 null。
+// 腾讯仍走弹窗；阿里云走官方 button 触发回调并取出 captchaVerifyParam。
 async function verifyAction(): Promise<ActionCaptchaResult | null> {
   if (props.tencentEnabled && props.tencentAppId) {
     try {
@@ -82,9 +102,14 @@ async function verifyAction(): Promise<ActionCaptchaResult | null> {
   }
   if (props.aliyunEnabled && props.aliyunSceneId && props.aliyunPrefix) {
     try {
-      const param = (await aliyunRef.value?.verify()) ?? null
-      if (!param) return null
-      return { token: param, randstr: '' }
+      let token: string | null = null
+      const result = await runAliyunVerify(async (param) => {
+        token = param
+        // 仅取参；真正的 VerifyIntelligentCaptcha 仍由后续业务接口完成
+        return { captchaResult: true, bizResult: true }
+      })
+      if (!result.captchaResult || !token) return null
+      return { token, randstr: '' }
     } catch {
       emit('error')
       return null
@@ -93,5 +118,5 @@ async function verifyAction(): Promise<ActionCaptchaResult | null> {
   return null
 }
 
-defineExpose({ reset, verifyAction })
+defineExpose({ reset, verifyAction, runAliyunVerify })
 </script>

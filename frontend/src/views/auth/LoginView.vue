@@ -82,12 +82,12 @@
         <div v-if="captchaEnabled">
           <TurnstileWidget
             ref="turnstileRef"
-            :turnstile-enabled="turnstileEnabled"
+            :turnstile-enabled="turnstileWidgetActive"
             :turnstile-site-key="turnstileSiteKey"
-            :tencent-enabled="tencentCaptchaEnabled"
+            :tencent-enabled="tencentWidgetActive"
             :tencent-app-id="tencentCaptchaAppId"
             :tencent-region="tencentCaptchaRegion"
-            :aliyun-enabled="aliyunCaptchaEnabled"
+            :aliyun-enabled="aliyunWidgetActive"
             :aliyun-scene-id="aliyunCaptchaSceneId"
             :aliyun-prefix="aliyunCaptchaPrefix"
             :aliyun-region="aliyunCaptchaRegion"
@@ -100,7 +100,7 @@
         <!-- Submit Button -->
         <button
           type="submit"
-          :disabled="authActionDisabled || ((turnstileEnabled || aliyunCaptchaReady) && !turnstileToken)"
+          :disabled="authActionDisabled || (turnstileWidgetActive && !turnstileToken)"
           class="btn btn-primary w-full"
         >
           <svg
@@ -249,8 +249,10 @@ import type {
   LoginAgreementDocument,
   TotpLoginResponse
 } from '@/types'
-import { extractI18nErrorMessage } from '@/utils/apiError'
+import { extractI18nErrorMessage, isAliyunCaptchaVerificationError } from '@/utils/apiError'
+import type { AliyunCaptchaBizResult } from '@/components/AliyunCaptchaWidget.vue'
 import { clearAllAffiliateReferralCodes } from '@/utils/oauthAffiliate'
+import { sanitizeAuthRedirect } from '@/utils/authRedirect'
 
 const { t } = useI18n()
 const LOGIN_AGREEMENT_STORAGE_KEY = 'sub2api_login_agreement_consent'
@@ -307,15 +309,25 @@ const aliyunCaptchaReady = computed(
     Boolean(aliyunCaptchaSceneId.value) &&
     Boolean(aliyunCaptchaPrefix.value)
 )
+// 与 CaptchaChallenge 展示优先级一致：Turnstile > 腾讯 > 阿里云
+const turnstileWidgetActive = computed(
+  () => turnstileEnabled.value && Boolean(turnstileSiteKey.value)
+)
+const tencentWidgetActive = computed(
+  () =>
+    !turnstileWidgetActive.value &&
+    tencentCaptchaEnabled.value &&
+    Boolean(tencentCaptchaAppId.value)
+)
+const aliyunWidgetActive = computed(
+  () => !turnstileWidgetActive.value && !tencentWidgetActive.value && aliyunCaptchaReady.value
+)
 // 动作触发式验证码（腾讯/阿里云）：提交、OAuth 启动、passkey 时弹窗验证
 const actionCaptchaEnabled = computed(
-  () =>
-    (tencentCaptchaEnabled.value && Boolean(tencentCaptchaAppId.value)) ||
-    aliyunCaptchaReady.value
+  () => tencentWidgetActive.value || aliyunWidgetActive.value
 )
 const captchaEnabled = computed(
-  () =>
-    (turnstileEnabled.value && Boolean(turnstileSiteKey.value)) || actionCaptchaEnabled.value
+  () => turnstileWidgetActive.value || actionCaptchaEnabled.value
 )
 
 // 2FA state
@@ -547,7 +559,8 @@ function validateForm(): boolean {
     isValid = false
   }
 
-  if ((turnstileEnabled.value || aliyunCaptchaReady.value) && !turnstileToken.value) {
+  // 阿里云嵌入式：完成滑块后点登录按钮才取参，不在这里预检 token
+  if (turnstileWidgetActive.value && !turnstileToken.value) {
     errors.turnstile = t('auth.completeVerification')
     isValid = false
   }
@@ -555,58 +568,72 @@ function validateForm(): boolean {
   return isValid
 }
 
-// ==================== Form Handlers ====================
-
-async function handleLogin(): Promise<void> {
-  // Clear previous error
-  errorMessage.value = ''
-
-  // Validate form
-  if (!validateForm()) {
-    return
-  }
-
-  if (!(await acquireActionProof())) {
-    return
-  }
-
-  isLoading.value = true
-
+async function submitLoginWithCaptcha(captchaParam?: string): Promise<AliyunCaptchaBizResult> {
   try {
-    // Call auth store login（阿里云 captchaVerifyParam 复用 turnstile_token 字段）
     const response = await authStore.login({
       email: formData.email,
       password: formData.password,
       turnstile_token:
-        turnstileEnabled.value || aliyunCaptchaEnabled.value ? turnstileToken.value : undefined,
-      tencent_captcha_ticket: tencentCaptchaEnabled.value ? turnstileToken.value : undefined,
-      tencent_captcha_randstr: tencentCaptchaEnabled.value
+        turnstileWidgetActive.value || aliyunWidgetActive.value ? captchaParam : undefined,
+      tencent_captcha_ticket: tencentWidgetActive.value ? captchaParam : undefined,
+      tencent_captcha_randstr: tencentWidgetActive.value
         ? tencentCaptchaRandstr.value
         : undefined
     })
 
-    // Check if 2FA is required
     if (isTotp2FARequired(response)) {
       const totpResponse = response as TotpLoginResponse
       totpTempToken.value = totpResponse.temp_token || ''
       totpUserEmailMasked.value = totpResponse.user_email_masked || ''
       show2FAModal.value = true
-      isLoading.value = false
+      return { captchaResult: true, bizResult: true }
+    }
+
+    clearAllAffiliateReferralCodes()
+    appStore.showSuccess(t('auth.loginSuccess'))
+    const redirectTo = sanitizeAuthRedirect(router.currentRoute.value.query.redirect)
+    await router.push(redirectTo)
+    return { captchaResult: true, bizResult: true }
+  } catch (error: unknown) {
+    errorMessage.value = extractI18nErrorMessage(error, t, 'auth.errors', t('auth.loginFailed'))
+    appStore.showError(errorMessage.value)
+    if (isAliyunCaptchaVerificationError(error)) {
+      errors.turnstile = t('auth.completeVerification')
+      return { captchaResult: false, bizResult: false }
+    }
+    return { captchaResult: true, bizResult: false }
+  }
+}
+
+// ==================== Form Handlers ====================
+
+async function handleLogin(): Promise<void> {
+  errorMessage.value = ''
+
+  if (!validateForm()) {
+    return
+  }
+
+  isLoading.value = true
+  try {
+    if (aliyunWidgetActive.value) {
+      // 官方 V2：业务请求放在 captchaVerifyCallback 内，与 VerifyIntelligentCaptcha 同一趟
+      const result = await turnstileRef.value?.runAliyunVerify((param) =>
+        submitLoginWithCaptcha(param)
+      )
+      if (!result?.captchaResult && !result?.bizResult) {
+        errors.turnstile = t('auth.completeVerification')
+      }
       return
     }
 
-    // Show success toast
-    clearAllAffiliateReferralCodes()
-    appStore.showSuccess(t('auth.loginSuccess'))
+    if (!(await acquireActionProof())) {
+      return
+    }
 
-    // Redirect to dashboard or intended route
-    const redirectTo = (router.currentRoute.value.query.redirect as string) || '/dashboard'
-    await router.push(redirectTo)
-  } catch (error: unknown) {
-    errorMessage.value = extractI18nErrorMessage(error, t, 'auth.errors', t('auth.loginFailed'))
-
-    // Also show error toast
-    appStore.showError(errorMessage.value)
+    await submitLoginWithCaptcha(
+      turnstileWidgetActive.value || tencentWidgetActive.value ? turnstileToken.value : undefined
+    )
   } finally {
     if (captchaEnabled.value) {
       resetCaptchaProof()
@@ -626,34 +653,56 @@ async function handlePasskeyLogin(): Promise<void> {
 
   passkeyLoading.value = true
   try {
-    let proof: ActionCaptchaRequestProof | undefined
-    if (actionCaptchaEnabled.value) {
-      const result = await turnstileRef.value?.verifyAction()
-      if (!result) return
-      proof = tencentCaptchaEnabled.value
-        ? {
-            tencent_captcha_ticket: result.token,
-            tencent_captcha_randstr: result.randstr
-          }
-        : { turnstile_token: result.token }
+    if (aliyunWidgetActive.value) {
+      const result = await turnstileRef.value?.runAliyunVerify((param) =>
+        submitPasskeyWithCaptcha({ turnstile_token: param })
+      )
+      if (!result?.captchaResult && !result?.bizResult) {
+        errors.turnstile = t('auth.completeVerification')
+      }
+      return
     }
 
+    let proof: ActionCaptchaRequestProof | undefined
+    if (tencentWidgetActive.value) {
+      const result = await turnstileRef.value?.verifyAction()
+      if (!result) return
+      proof = {
+        tencent_captcha_ticket: result.token,
+        tencent_captcha_randstr: result.randstr
+      }
+    }
+
+    await submitPasskeyWithCaptcha(proof)
+  } finally {
+    if (actionCaptchaEnabled.value) {
+      resetCaptchaProof()
+    }
+    passkeyLoading.value = false
+  }
+}
+
+async function submitPasskeyWithCaptcha(
+  proof?: ActionCaptchaRequestProof
+): Promise<AliyunCaptchaBizResult> {
+  try {
     await authStore.loginWithPasskey(proof)
     clearAllAffiliateReferralCodes()
     appStore.showSuccess(t('auth.loginSuccess'))
-    const redirectTo = (router.currentRoute.value.query.redirect as string) || '/dashboard'
+    const redirectTo = sanitizeAuthRedirect(router.currentRoute.value.query.redirect)
     await router.push(redirectTo)
+    return { captchaResult: true, bizResult: true }
   } catch (error: unknown) {
     const fallback = error instanceof DOMException && error.name === 'NotAllowedError'
       ? t('auth.passkeyCancelled')
       : t('auth.passkeyFailed')
     errorMessage.value = extractI18nErrorMessage(error, t, 'auth.errors', fallback)
     appStore.showError(errorMessage.value)
-  } finally {
-    if (actionCaptchaEnabled.value) {
-      resetCaptchaProof()
+    if (isAliyunCaptchaVerificationError(error)) {
+      errors.turnstile = t('auth.completeVerification')
+      return { captchaResult: false, bizResult: false }
     }
-    passkeyLoading.value = false
+    return { captchaResult: true, bizResult: false }
   }
 }
 
@@ -667,19 +716,42 @@ async function handleOAuthStart(request: OAuthLoginStart): Promise<void> {
 
   isLoading.value = true
   try {
+    if (aliyunWidgetActive.value) {
+      const result = await turnstileRef.value?.runAliyunVerify((param) =>
+        startOAuthWithCaptcha(request, { turnstile_token: param })
+      )
+      if (!result?.captchaResult && !result?.bizResult) {
+        errors.turnstile = t('auth.completeVerification')
+      }
+      return
+    }
+
     const proof = await turnstileRef.value?.verifyAction()
     if (!proof) return
 
-    const result = await startOAuthLogin(
+    await startOAuthWithCaptcha(
       request,
-      tencentCaptchaEnabled.value
+      tencentWidgetActive.value
         ? {
             tencent_captcha_ticket: proof.token,
             tencent_captcha_randstr: proof.randstr
           }
         : { turnstile_token: proof.token }
     )
+  } finally {
+    resetCaptchaProof()
+    isLoading.value = false
+  }
+}
+
+async function startOAuthWithCaptcha(
+  request: OAuthLoginStart,
+  proof: ActionCaptchaRequestProof
+): Promise<AliyunCaptchaBizResult> {
+  try {
+    const result = await startOAuthLogin(request, proof)
     window.location.href = result.authorize_url
+    return { captchaResult: true, bizResult: true }
   } catch (error: unknown) {
     errorMessage.value = extractI18nErrorMessage(
       error,
@@ -688,9 +760,11 @@ async function handleOAuthStart(request: OAuthLoginStart): Promise<void> {
       t('auth.turnstileFailed')
     )
     appStore.showError(errorMessage.value)
-  } finally {
-    resetCaptchaProof()
-    isLoading.value = false
+    if (isAliyunCaptchaVerificationError(error)) {
+      errors.turnstile = t('auth.completeVerification')
+      return { captchaResult: false, bizResult: false }
+    }
+    return { captchaResult: true, bizResult: false }
   }
 }
 
@@ -710,7 +784,7 @@ async function handle2FAVerify(code: string): Promise<void> {
     appStore.showSuccess(t('auth.loginSuccess'))
 
     // Redirect to dashboard or intended route
-    const redirectTo = (router.currentRoute.value.query.redirect as string) || '/dashboard'
+    const redirectTo = sanitizeAuthRedirect(router.currentRoute.value.query.redirect)
     await router.push(redirectTo)
   } catch (error: unknown) {
     const err = error as { message?: string; response?: { data?: { message?: string } } }

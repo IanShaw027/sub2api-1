@@ -10,6 +10,7 @@ const getPublicSettings = vi.fn()
 const showError = vi.fn()
 const turnstileReset = vi.fn()
 const verifyAction = vi.fn()
+const runAliyunVerify = vi.fn()
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
@@ -45,6 +46,7 @@ describe('PendingOAuthCreateAccountForm', () => {
     showError.mockReset()
     turnstileReset.mockReset()
     verifyAction.mockReset()
+    runAliyunVerify.mockReset()
     getPublicSettings.mockResolvedValue({
       turnstile_enabled: false,
       turnstile_site_key: ''
@@ -104,6 +106,115 @@ describe('PendingOAuthCreateAccountForm', () => {
       ]
     ])
     expect(turnstileReset).toHaveBeenCalledTimes(2)
+  })
+
+  it('awaits parent create-account result inside aliyun captcha callback', async () => {
+    getPublicSettings.mockResolvedValue({
+      email_verify_enabled: true,
+      turnstile_enabled: false,
+      turnstile_site_key: '',
+      tencent_captcha_enabled: false,
+      aliyun_captcha_enabled: true,
+      aliyun_captcha_scene_id: 'scene-1',
+      aliyun_captcha_prefix: 'prefix-1'
+    })
+    runAliyunVerify.mockImplementation(async (fn: (param: string) => Promise<unknown>) =>
+      fn('aliyun-param')
+    )
+    const CaptchaChallengeStub = defineComponent({
+      setup(_, { expose }) {
+        expose({ verifyAction, runAliyunVerify, reset: turnstileReset })
+        return () => h('div')
+      }
+    })
+
+    const wrapper = mount(PendingOAuthCreateAccountForm, {
+      props: {
+        testIdPrefix: 'oidc',
+        initialEmail: 'user@example.com',
+        isSubmitting: false
+      },
+      global: {
+        stubs: { TurnstileWidget: CaptchaChallengeStub }
+      }
+    })
+
+    await flushPromises()
+    await wrapper.get('[data-testid="oidc-create-account-password"]').setValue('secret-123')
+    await wrapper.get('[data-testid="oidc-create-account-verify-code"]').setValue('246810')
+
+    const click = wrapper.get('[data-testid="oidc-create-account-submit"]').trigger('click')
+    await flushPromises()
+
+    const emitted = wrapper.emitted('submit')
+    expect(emitted).toHaveLength(1)
+    expect(emitted?.[0]?.[0]).toEqual(
+      expect.objectContaining({
+        email: 'user@example.com',
+        turnstileToken: 'aliyun-param'
+      })
+    )
+    const settle = emitted?.[0]?.[1] as ((error?: unknown) => void) | undefined
+    expect(typeof settle).toBe('function')
+    settle?.()
+    await click
+    await flushPromises()
+    expect(runAliyunVerify).toHaveBeenCalledOnce()
+    expect(turnstileReset).toHaveBeenCalledOnce()
+  })
+
+  it('blocks create-account while an aliyun send-code request is still running', async () => {
+    getPublicSettings.mockResolvedValue({
+      email_verify_enabled: true,
+      turnstile_enabled: false,
+      turnstile_site_key: '',
+      tencent_captcha_enabled: false,
+      aliyun_captcha_enabled: true,
+      aliyun_captcha_scene_id: 'scene-1',
+      aliyun_captcha_prefix: 'prefix-1'
+    })
+    let finishSendCode: ((value: { countdown: number }) => void) | null = null
+    sendPendingOAuthVerifyCode.mockImplementation(
+      () =>
+        new Promise<{ countdown: number }>((resolve) => {
+          finishSendCode = resolve
+        })
+    )
+    runAliyunVerify.mockImplementation(async (fn: (param: string) => Promise<unknown>) =>
+      fn('aliyun-send-param')
+    )
+    const CaptchaChallengeStub = defineComponent({
+      setup(_, { expose }) {
+        expose({ verifyAction, runAliyunVerify, reset: turnstileReset })
+        return () => h('div')
+      }
+    })
+    const wrapper = mount(PendingOAuthCreateAccountForm, {
+      props: {
+        testIdPrefix: 'oidc',
+        initialEmail: 'user@example.com',
+        isSubmitting: false
+      },
+      global: {
+        stubs: { TurnstileWidget: CaptchaChallengeStub }
+      }
+    })
+
+    await flushPromises()
+    await wrapper.get('[data-testid="oidc-create-account-password"]').setValue('secret-123')
+    await wrapper.get('[data-testid="oidc-create-account-verify-code"]').setValue('246810')
+    const sendClick = wrapper.get('[data-testid="oidc-create-account-send-code"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="oidc-create-account-submit"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('form').trigger('submit.prevent')
+    expect(wrapper.emitted('submit')).toBeUndefined()
+    expect(runAliyunVerify).toHaveBeenCalledOnce()
+
+    finishSendCode?.({ countdown: 60 })
+    await sendClick
+    await flushPromises()
+    expect(wrapper.get('[data-testid="oidc-create-account-submit"]').attributes('disabled')).toBeUndefined()
   })
 
   it('emits trimmed email, password, and verify code on submit', async () => {

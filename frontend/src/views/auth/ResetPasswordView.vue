@@ -257,6 +257,12 @@ onMounted(() => {
   email.value = (route.query.email as string) || ''
   token.value = (route.query.token as string) || ''
 
+  // Keep the one-time secret only in memory. Same-origin requests otherwise
+  // send the full query in Referer under strict-origin-when-cross-origin.
+  if (email.value || token.value) {
+    window.history.replaceState(window.history.state, '', route.path)
+  }
+
   if (!email.value || !token.value) {
     appStore.showError(t('auth.invalidResetLink'))
   }

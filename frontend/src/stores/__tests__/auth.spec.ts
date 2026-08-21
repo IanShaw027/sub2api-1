@@ -79,6 +79,23 @@ describe('useAuthStore', () => {
       expect(localStorage.getItem('auth_user')).toBe(JSON.stringify(fakeUser))
     })
 
+    it('新认证响应缺少 refresh token 时不会继承旧会话', async () => {
+      localStorage.setItem('refresh_token', 'old-user-refresh')
+      localStorage.setItem('token_expires_at', String(Date.now() + 60_000))
+      mockLogin.mockResolvedValue({
+        access_token: 'new-user-access',
+        token_type: 'Bearer',
+        user: { ...fakeUser, id: 9, email: 'new@example.com' },
+      })
+      const store = useAuthStore()
+
+      await store.login({ email: 'new@example.com', password: '123456' })
+
+      expect(localStorage.getItem('refresh_token')).toBeNull()
+      expect(localStorage.getItem('token_expires_at')).toBeNull()
+      expect(store.token).toBe('new-user-access')
+    })
+
     it('登录失败时清除状态并抛出错误', async () => {
       mockLogin.mockRejectedValue(new Error('Invalid credentials'))
       const store = useAuthStore()

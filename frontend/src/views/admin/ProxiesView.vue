@@ -141,7 +141,7 @@
                   class="rounded p-0.5 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400"
                   :title="t('admin.proxies.copyProxyUrl')"
                   @click.stop="copyProxyUrl(row)"
-                  @contextmenu.prevent="toggleCopyMenu(row.id)"
+                  @contextmenu.prevent="toggleCopyMenu(row)"
                 >
                   <Icon name="copy" size="sm" />
                 </button>
@@ -164,21 +164,13 @@
           </template>
 
           <template #cell-auth="{ row }">
-            <div v-if="row.username || row.password" class="flex items-center gap-1.5">
+            <div v-if="row.username || row.has_password" class="flex items-center gap-1.5">
               <div class="flex flex-col text-xs">
                 <span v-if="row.username" class="text-gray-700 dark:text-gray-200">{{ row.username }}</span>
-                <span v-if="row.password" class="font-mono text-gray-500 dark:text-gray-400">
-                  {{ visiblePasswordIds.has(row.id) ? row.password : '••••••' }}
+                <span v-if="row.has_password" class="font-mono text-gray-500 dark:text-gray-400">
+                  ••••••
                 </span>
               </div>
-              <button
-                v-if="row.password"
-                type="button"
-                class="ml-1 rounded p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                @click.stop="visiblePasswordIds.has(row.id) ? visiblePasswordIds.delete(row.id) : visiblePasswordIds.add(row.id)"
-              >
-                <Icon :name="visiblePasswordIds.has(row.id) ? 'eyeOff' : 'eye'" size="sm" />
-              </button>
             </div>
             <span v-else class="text-sm text-gray-400">-</span>
           </template>
@@ -960,6 +952,7 @@
         </div>
       </template>
     </BaseDialog>
+    <TotpStepUpDialog :controller="proxyExportStepUp" />
   </AppLayout>
 </template>
 
@@ -985,6 +978,8 @@ import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { useSwipeSelect } from '@/composables/useSwipeSelect'
 import { useTableSelection } from '@/composables/useTableSelection'
+import { useStepUp, isStepUpBlocked, isStepUpCancelled, stepUpBlockReason } from '@/composables/useStepUp'
+import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { formatDateTime } from '@/utils/format'
 import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
@@ -992,6 +987,7 @@ import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
 const { t } = useI18n()
 const appStore = useAppStore()
 const { copyToClipboard } = useClipboard()
+const proxyExportStepUp = useStepUp()
 
 const columns = computed<Column[]>(() => [
   { key: 'select', label: '', sortable: false },
@@ -1038,8 +1034,8 @@ const editStatusOptions = computed(() => [
 ])
 
 const proxies = ref<Proxy[]>([])
-const visiblePasswordIds = reactive(new Set<number>())
 const copyMenuProxyId = ref<number | null>(null)
+const copyMenuSource = ref<Proxy | null>(null)
 const loading = ref(false)
 const searchQuery = ref('')
 const filters = reactive({
@@ -1903,12 +1899,14 @@ const handleExportData = async () => {
   if (exportingData.value) return
   exportingData.value = true
   try {
-    const dataPayload = await adminAPI.proxies.exportData(
-      selectedCount.value > 0
-        ? { ids: Array.from(selectedProxyIds.value) }
-        : {
-            filters: buildProxyQueryFilters()
-          }
+    const dataPayload = await proxyExportStepUp.run(() =>
+      adminAPI.proxies.exportData(
+        selectedCount.value > 0
+          ? { ids: Array.from(selectedProxyIds.value) }
+          : {
+              filters: buildProxyQueryFilters()
+            }
+      )
     )
     const timestamp = formatExportTimestamp()
     const filename = `sub2api-proxy-${timestamp}.json`
@@ -1921,6 +1919,15 @@ const handleExportData = async () => {
     URL.revokeObjectURL(url)
     appStore.showSuccess(t('admin.proxies.dataExported'))
   } catch (error: any) {
+    if (isStepUpCancelled(error)) return
+    if (isStepUpBlocked(error)) {
+      appStore.showError(
+        stepUpBlockReason(error) === 'STEP_UP_ADMIN_API_KEY_FORBIDDEN'
+          ? t('stepUp.adminApiKeyForbidden')
+          : t('stepUp.notEnabled')
+      )
+      return
+    }
     appStore.showError(error?.message || t('admin.proxies.dataExportFailed'))
   } finally {
     exportingData.value = false
@@ -2024,31 +2031,93 @@ function buildProxyUrl(row: any): string {
 }
 
 function getCopyFormats(row: any) {
-  const hasAuth = row.username || row.password
-  const fullUrl = buildProxyUrl(row)
-  const formats = [
-    { label: fullUrl, value: fullUrl },
-  ]
+	const source = copyMenuProxyId.value === row.id && copyMenuSource.value
+		? copyMenuSource.value
+		: row
+	const hasAuth = source.username || source.password
+	const fullUrl = buildProxyUrl(source)
+	const formats = [
+		{ label: fullUrl, value: fullUrl },
+	]
   if (hasAuth) {
     const withoutProtocol = fullUrl.replace(/^[^:]+:\/\//, '')
     formats.push({ label: withoutProtocol, value: withoutProtocol })
   }
-  formats.push({ label: `${row.host}:${row.port}`, value: `${row.host}:${row.port}` })
-  return formats
+	formats.push({ label: `${source.host}:${source.port}`, value: `${source.host}:${source.port}` })
+	return formats
 }
 
-function copyProxyUrl(row: any) {
-  copyToClipboard(buildProxyUrl(row), t('admin.proxies.urlCopied'))
-  copyMenuProxyId.value = null
+async function copyProxyUrl(row: Proxy) {
+  try {
+    let source: Proxy = row
+    if (row.has_password && !row.password) {
+      const payload = await proxyExportStepUp.run(() => adminAPI.proxies.exportData({ ids: [row.id] }))
+      const exported = payload.proxies[0]
+      if (!exported?.password) {
+        throw new Error(t('admin.proxies.dataExportFailed'))
+      }
+      source = { ...row, ...exported }
+    }
+    copyToClipboard(buildProxyUrl(source), t('admin.proxies.urlCopied'))
+  } catch (error: any) {
+    if (isStepUpCancelled(error)) return
+    if (isStepUpBlocked(error)) {
+      appStore.showError(
+        stepUpBlockReason(error) === 'STEP_UP_ADMIN_API_KEY_FORBIDDEN'
+          ? t('stepUp.adminApiKeyForbidden')
+          : t('stepUp.notEnabled')
+      )
+      return
+    }
+    appStore.showError(
+      error.response?.data?.detail || error?.message || t('admin.proxies.dataExportFailed')
+    )
+	} finally {
+		copyMenuProxyId.value = null
+		copyMenuSource.value = null
+	}
 }
 
-function toggleCopyMenu(id: number) {
-  copyMenuProxyId.value = copyMenuProxyId.value === id ? null : id
+async function toggleCopyMenu(row: Proxy) {
+	if (copyMenuProxyId.value === row.id) {
+		copyMenuProxyId.value = null
+		copyMenuSource.value = null
+		return
+	}
+	try {
+		let source = row
+		if (row.has_password && !row.password) {
+			const payload = await proxyExportStepUp.run(() => adminAPI.proxies.exportData({ ids: [row.id] }))
+			const exported = payload.proxies[0]
+			if (!exported?.password) {
+				throw new Error(t('admin.proxies.dataExportFailed'))
+			}
+			source = { ...row, ...exported }
+		}
+		copyMenuSource.value = source
+		copyMenuProxyId.value = row.id
+	} catch (error: any) {
+		copyMenuSource.value = null
+		copyMenuProxyId.value = null
+		if (isStepUpCancelled(error)) return
+		if (isStepUpBlocked(error)) {
+			appStore.showError(
+				stepUpBlockReason(error) === 'STEP_UP_ADMIN_API_KEY_FORBIDDEN'
+					? t('stepUp.adminApiKeyForbidden')
+					: t('stepUp.notEnabled')
+			)
+			return
+		}
+		appStore.showError(
+			error.response?.data?.detail || error?.message || t('admin.proxies.dataExportFailed')
+		)
+	}
 }
 
 function copyFormat(value: string) {
-  copyToClipboard(value, t('admin.proxies.urlCopied'))
-  copyMenuProxyId.value = null
+	copyToClipboard(value, t('admin.proxies.urlCopied'))
+	copyMenuProxyId.value = null
+	copyMenuSource.value = null
 }
 
 function closeCopyMenu() {

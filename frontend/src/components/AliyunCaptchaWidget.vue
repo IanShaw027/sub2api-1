@@ -5,6 +5,13 @@
       class="aliyun-captcha-embed"
       :class="{ 'aliyun-captcha-embed--verified': state === 'verified' }"
     ></div>
+    <button
+      :id="buttonId"
+      type="button"
+      class="aliyun-captcha-trigger"
+      tabindex="-1"
+      aria-hidden="true"
+    ></button>
     <p v-if="state === 'loading'" class="aliyun-captcha-status aliyun-captcha-status--muted">
       {{ t('auth.captchaLoading') }}
     </p>
@@ -21,10 +28,12 @@
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-interface AliyunCaptchaVerifyResult {
+export interface AliyunCaptchaBizResult {
   captchaResult: boolean
   bizResult?: boolean
 }
+
+type AliyunCaptchaBusinessFn = (captchaVerifyParam: string) => Promise<AliyunCaptchaBizResult>
 
 interface AliyunCaptchaInstance {
   refresh?: () => void
@@ -33,19 +42,21 @@ interface AliyunCaptchaInstance {
 
 interface AliyunCaptchaInitOptions {
   SceneId: string
-  prefix: string
   mode: 'popup' | 'embed'
   element: string
+  button: string
   captchaVerifyCallback: (
     captchaVerifyParam: string
-  ) => AliyunCaptchaVerifyResult | Promise<AliyunCaptchaVerifyResult>
+  ) => AliyunCaptchaBizResult | Promise<AliyunCaptchaBizResult>
   onBizResultCallback: (bizResult: boolean) => void
-  onFallback?: (error?: unknown) => void
   getInstance: (instance: AliyunCaptchaInstance) => void
   slideStyle?: { width: number; height: number }
   language?: string
-  region?: string
-  isShowErrorTip?: boolean
+  immediate?: boolean
+  autoRefresh?: boolean
+  timeout?: number
+  rem?: number
+  onError?: (error?: unknown) => void
 }
 
 declare global {
@@ -70,28 +81,33 @@ const emit = defineEmits<{
   (e: 'verify', param: string): void
   (e: 'expire'): void
   (e: 'error'): void
+  (e: 'biz-result', ok: boolean): void
 }>()
 
 const { t, locale } = useI18n()
 
 const uid = Math.random().toString(36).slice(2, 10)
 const elementId = `aliyun-captcha-element-${uid}`
+const buttonId = `aliyun-captcha-button-${uid}`
 
 const state = ref<'loading' | 'idle' | 'verified' | 'error'>('loading')
 
 const SCRIPT_SRC = 'https://o.alicdn.com/captcha-frontend/aliyunCaptcha/AliyunCaptcha.js'
-const MAX_CAPTCHA_WIDTH = 360
+const BASE_SLIDE_WIDTH = 360
+const MIN_SLIDE_WIDTH = 320
+const TRIGGER_WAIT_MS = 2500
 
-let cachedParam: string | null = null
-let pending: { resolve: (value: string | null) => void } | null = null
 let readyPromise: Promise<void> | null = null
 let captchaInstance: AliyunCaptchaInstance | null = null
-let resizeObserver: ResizeObserver | null = null
-let resizeScheduled = false
-let initializedWidth = 0
+let pendingRun: {
+  resolve: (value: AliyunCaptchaBizResult) => void
+  triggerTimer: ReturnType<typeof setTimeout> | null
+  business: AliyunCaptchaBusinessFn
+} | null = null
 
 const loadScript = (): Promise<void> => {
   return new Promise((resolve, reject) => {
+    // region/prefix 只能放在全局 AliyunCaptchaConfig，且必须在加载 JS 之前设置
     window.AliyunCaptchaConfig = { region: props.region, prefix: props.prefix }
 
     if (window.initAliyunCaptcha) {
@@ -122,26 +138,51 @@ const loadScript = (): Promise<void> => {
 function markError(): void {
   state.value = 'error'
   emit('error')
-  settlePending(null)
+  settleRun({ captchaResult: false, bizResult: false })
 }
 
-function captchaWidth(): number {
-  const element = document.getElementById(elementId)
-  const width = Math.floor(
-    element?.parentElement?.getBoundingClientRect().width ||
-      element?.getBoundingClientRect().width ||
-      0
-  )
-  return width > 0 ? Math.min(width, MAX_CAPTCHA_WIDTH) : MAX_CAPTCHA_WIDTH
+function clearTriggerTimer(run = pendingRun): void {
+  if (run?.triggerTimer != null) {
+    clearTimeout(run.triggerTimer)
+    run.triggerTimer = null
+  }
+}
+
+function settleRun(
+  result: AliyunCaptchaBizResult,
+  expected: typeof pendingRun = pendingRun
+): void {
+  if (!expected || pendingRun !== expected) {
+    return
+  }
+  const current = expected
+  pendingRun = null
+  if (current.triggerTimer != null) {
+    clearTimeout(current.triggerTimer)
+  }
+  current.resolve(result)
 }
 
 function destroyCaptchaInstance(): void {
   try {
     captchaInstance?.destroy?.()
   } catch {
-    // SDK 实例销毁失败不影响重建或卸载
+    // SDK 实例销毁失败不影响卸载
   }
   captchaInstance = null
+}
+
+function captchaRem(): number {
+  const element = document.getElementById(elementId)
+  const width = Math.floor(
+    element?.parentElement?.getBoundingClientRect().width ||
+      element?.getBoundingClientRect().width ||
+      0
+  )
+  if (width <= 0 || width >= BASE_SLIDE_WIDTH) {
+    return 1
+  }
+  return Math.max(0.5, Math.floor((width / BASE_SLIDE_WIDTH) * 100) / 100)
 }
 
 async function initCaptcha(): Promise<void> {
@@ -149,23 +190,37 @@ async function initCaptcha(): Promise<void> {
     throw new Error('Aliyun captcha script not ready')
   }
   await nextTick()
-  if (!document.getElementById(elementId)) {
+  if (!document.getElementById(elementId) || !document.getElementById(buttonId)) {
     throw new Error('Aliyun captcha element is missing')
   }
-  initializedWidth = captchaWidth()
+
+  const rem = captchaRem()
   const result = window.initAliyunCaptcha({
     SceneId: props.sceneId,
-    prefix: props.prefix,
-    region: props.region,
     mode: 'embed',
     element: `#${elementId}`,
-    captchaVerifyCallback: (captchaVerifyParam: string) => {
-      onCaptchaParam(captchaVerifyParam)
-      return { captchaResult: true }
+    button: `#${buttonId}`,
+    captchaVerifyCallback: async (captchaVerifyParam: string) => {
+      // 定时器只覆盖 SDK 触发；业务请求可能超过 TRIGGER_WAIT_MS
+      const current = pendingRun
+      clearTriggerTimer(current)
+      emit('verify', captchaVerifyParam)
+      state.value = 'verified'
+      if (!current) {
+        return { captchaResult: false, bizResult: false }
+      }
+      try {
+        const verifyResult = await current.business(captchaVerifyParam)
+        settleRun(verifyResult, current)
+        return verifyResult
+      } catch {
+        const failed = { captchaResult: false, bizResult: false }
+        settleRun(failed, current)
+        return failed
+      }
     },
-    onBizResultCallback: () => {},
-    onFallback: () => {
-      markError()
+    onBizResultCallback: (bizResult: boolean) => {
+      emit('biz-result', bizResult === true)
     },
     getInstance: (instance) => {
       captchaInstance = instance
@@ -173,51 +228,20 @@ async function initCaptcha(): Promise<void> {
         state.value = 'idle'
       }
     },
-    slideStyle: { width: initializedWidth, height: 40 },
+    slideStyle: { width: Math.max(MIN_SLIDE_WIDTH, BASE_SLIDE_WIDTH), height: 40 },
     language: locale.value.toLowerCase().startsWith('zh') ? 'cn' : 'en',
-    isShowErrorTip: true
+    immediate: false,
+    autoRefresh: false,
+    timeout: 5000,
+    rem,
+    onError: () => {
+      markError()
+    }
   })
   await Promise.resolve(result)
   if (state.value === 'loading') {
     state.value = 'idle'
   }
-}
-
-async function rebuildCaptchaForWidth(): Promise<void> {
-  const element = document.getElementById(elementId)
-  if (!element) return
-
-  settlePending(null)
-  cachedParam = null
-  state.value = 'loading'
-  destroyCaptchaInstance()
-  element.replaceChildren()
-  try {
-    await initCaptcha()
-  } catch (error) {
-    console.error('Failed to resize Aliyun captcha:', error)
-    markError()
-  }
-}
-
-function setupResizeObserver(): void {
-  if (typeof ResizeObserver === 'undefined' || resizeObserver) return
-  const element = document.getElementById(elementId)
-  if (!element) return
-  const container = element.parentElement || element
-
-  resizeObserver = new ResizeObserver(() => {
-    if (resizeScheduled || state.value !== 'idle') return
-    resizeScheduled = true
-    void nextTick().then(() => {
-      resizeScheduled = false
-      const width = captchaWidth()
-      if (state.value === 'idle' && width !== initializedWidth) {
-        void rebuildCaptchaForWidth()
-      }
-    })
-  })
-  resizeObserver.observe(container)
 }
 
 function ensureReady(): Promise<void> {
@@ -232,42 +256,69 @@ function ensureReady(): Promise<void> {
   return readyPromise
 }
 
-function onCaptchaParam(param: string): void {
-  cachedParam = param
-  state.value = 'verified'
-  emit('verify', param)
-  const current = pending
-  pending = null
-  current?.resolve(param)
+function isCaptchaErrorState(): boolean {
+  return state.value === 'error'
 }
 
-function settlePending(value: string | null): void {
-  const current = pending
-  pending = null
-  current?.resolve(value)
-}
+async function run(business: AliyunCaptchaBusinessFn): Promise<AliyunCaptchaBizResult> {
+  if (isCaptchaErrorState()) {
+    if (readyPromise !== null) {
+      return { captchaResult: false, bizResult: false }
+    }
+    state.value = 'loading'
+  }
+  try {
+    await ensureReady()
+  } catch {
+    return { captchaResult: false, bizResult: false }
+  }
+  // ensureReady 失败会把 state 置为 error
+  if (isCaptchaErrorState()) {
+    return { captchaResult: false, bizResult: false }
+  }
 
-async function verify(): Promise<string | null> {
-  if (state.value === 'verified' && cachedParam) {
-    return cachedParam
+  // 同一个 SDK 实例一次只能承载一个 captchaVerifyCallback。拒绝重入，
+  // 避免旧回调取得或结算后启动请求的业务函数。
+  if (pendingRun) {
+    return { captchaResult: false, bizResult: false }
   }
-  if (state.value === 'error') {
-    return null
-  }
-  settlePending(null)
-  await ensureReady()
-  if (state.value === 'verified' && cachedParam) {
-    return cachedParam
-  }
-  return new Promise<string | null>((resolve) => {
-    pending = { resolve }
+
+  return new Promise<AliyunCaptchaBizResult>((resolve) => {
+    const timer = setTimeout(() => {
+      if (pendingRun?.resolve === resolve && pendingRun.triggerTimer != null) {
+        settleRun({ captchaResult: false, bizResult: false }, pendingRun)
+      }
+    }, TRIGGER_WAIT_MS)
+
+    pendingRun = { resolve, triggerTimer: timer, business }
+    document.getElementById(buttonId)?.click()
   })
 }
 
+async function verify(): Promise<string | null> {
+  let captured: string | null = null
+  const result = await run(async (param) => {
+    captured = param
+    return { captchaResult: true, bizResult: true }
+  })
+  if (!result.captchaResult || !captured) {
+    return null
+  }
+  return captured
+}
+
 function reset(): void {
-  settlePending(null)
-  cachedParam = null
-  state.value = 'idle'
+  // captchaVerifyCallback 已开始后 triggerTimer 会被清空。业务函数常在
+  // finally 中刷新验证码，此时必须等当前回调自行结算，不能释放重入锁。
+  if (pendingRun?.triggerTimer != null) {
+    settleRun({ captchaResult: false, bizResult: false }, pendingRun)
+  }
+  if (state.value === 'error' && readyPromise === null) {
+    state.value = 'loading'
+    void ensureReady()
+  } else {
+    state.value = state.value === 'error' ? 'error' : 'idle'
+  }
   emit('expire')
   try {
     captchaInstance?.refresh?.()
@@ -278,25 +329,24 @@ function reset(): void {
   }
 }
 
-defineExpose({ verify, reset })
+defineExpose({ run, verify, reset })
 
 onMounted(() => {
   if (!props.sceneId || !props.prefix) {
     return
   }
-  void ensureReady().then(setupResizeObserver, () => {})
+  void ensureReady()
 })
 
 onUnmounted(() => {
-  settlePending(null)
-  resizeObserver?.disconnect()
-  resizeObserver = null
+  settleRun({ captchaResult: false, bizResult: false })
   destroyCaptchaInstance()
 })
 </script>
 
 <style scoped>
 .aliyun-captcha-wrapper {
+  position: relative;
   width: 100%;
 }
 
@@ -308,6 +358,18 @@ onUnmounted(() => {
 
 .aliyun-captcha-embed--verified {
   opacity: 0.85;
+}
+
+.aliyun-captcha-trigger {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .aliyun-captcha-status {

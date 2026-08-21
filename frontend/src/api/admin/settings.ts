@@ -777,7 +777,10 @@ export interface SystemSettings {
   ip_multi_account_ban_enabled: boolean;
   ip_multi_account_ban_window_minutes: number;
   ip_multi_account_ban_threshold: number;
+  ip_multi_account_ban_window2_minutes: number;
+  ip_multi_account_ban_threshold2: number;
   ip_multi_account_ban_learning_until: string;
+  registration_block_datacenter_ip: boolean;
 
   // OpenAI fast/flex policy
   openai_fast_policy_settings?: OpenAIFastPolicySettings;
@@ -1096,7 +1099,10 @@ export interface UpdateSettingsRequest {
   ip_multi_account_ban_enabled?: boolean;
   ip_multi_account_ban_window_minutes?: number;
   ip_multi_account_ban_threshold?: number;
+  ip_multi_account_ban_window2_minutes?: number;
+  ip_multi_account_ban_threshold2?: number;
   ip_multi_account_ban_learning_until?: string;
+  registration_block_datacenter_ip?: boolean;
 
   // OpenAI fast/flex policy
   openai_fast_policy_settings?: OpenAIFastPolicySettings;

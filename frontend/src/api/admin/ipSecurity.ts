@@ -4,6 +4,9 @@ export interface IPSecurityConfig {
   enabled: boolean
   window_minutes: number
   account_threshold: number
+  window2_minutes: number
+  account_threshold2: number
+  block_datacenter_registration: boolean
   learning_until: string
 }
 

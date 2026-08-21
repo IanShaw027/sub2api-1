@@ -30,6 +30,22 @@
 
       <!-- Verification Form -->
       <form v-else @submit.prevent="handleVerify" class="space-y-5">
+        <div v-if="requiresPasswordReentry">
+          <label for="registration-password" class="input-label">
+            {{ t('auth.passwordLabel') }}
+          </label>
+          <input
+            id="registration-password"
+            v-model="password"
+            type="password"
+            required
+            autocomplete="new-password"
+            class="input"
+            :placeholder="t('auth.createPasswordPlaceholder')"
+          />
+          <p class="input-hint">{{ t('auth.passwordHint') }}</p>
+        </div>
+
         <!-- Verification Code Input -->
         <div>
           <label for="code" class="input-label text-center">
@@ -67,16 +83,16 @@
         </div>
 
         <!-- Turnstile Widget for Resend -->
-        <div v-if="actionCaptchaEnabled || (turnstileEnabled && showResendTurnstile)">
+        <div v-if="actionCaptchaEnabled || (turnstileWidgetActive && showResendTurnstile)">
           <TurnstileWidget
             ref="turnstileRef"
             :site-key="turnstileSiteKey"
-            :turnstile-enabled="turnstileEnabled"
+            :turnstile-enabled="turnstileWidgetActive"
             :turnstile-site-key="turnstileSiteKey"
-            :tencent-enabled="tencentCaptchaEnabled"
+            :tencent-enabled="tencentWidgetActive"
             :tencent-app-id="tencentCaptchaAppId"
             :tencent-region="tencentCaptchaRegion"
-            :aliyun-enabled="aliyunCaptchaEnabled"
+            :aliyun-enabled="aliyunWidgetActive"
             :aliyun-scene-id="aliyunCaptchaSceneId"
             :aliyun-prefix="aliyunCaptchaPrefix"
             :aliyun-region="aliyunCaptchaRegion"
@@ -90,12 +106,12 @@
           <TurnstileWidget
             ref="createAccountTurnstileRef"
             :site-key="turnstileSiteKey"
-            :turnstile-enabled="turnstileEnabled"
+            :turnstile-enabled="turnstileWidgetActive"
             :turnstile-site-key="turnstileSiteKey"
-            :tencent-enabled="tencentCaptchaEnabled"
+            :tencent-enabled="tencentWidgetActive"
             :tencent-app-id="tencentCaptchaAppId"
             :tencent-region="tencentCaptchaRegion"
-            :aliyun-enabled="aliyunCaptchaEnabled"
+            :aliyun-enabled="aliyunWidgetActive"
             :aliyun-scene-id="aliyunCaptchaSceneId"
             :aliyun-prefix="aliyunCaptchaPrefix"
             :aliyun-region="aliyunCaptchaRegion"
@@ -150,7 +166,8 @@
             type="button"
             @click="handleResendCode"
             :disabled="
-              isSendingCode || (turnstileEnabled && showResendTurnstile && !resendTurnstileToken)
+              isSendingCode ||
+              (turnstileWidgetActive && showResendTurnstile && !resendTurnstileToken)
             "
             class="text-sm text-primary-600 transition-colors hover:text-primary-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-400 dark:hover:text-primary-300"
           >
@@ -184,18 +201,26 @@ import { useI18n } from 'vue-i18n'
 import { AuthLayout } from '@/components/layout'
 import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/CaptchaChallenge.vue'
+import type { AliyunCaptchaBizResult } from '@/components/AliyunCaptchaWidget.vue'
 import { useAuthStore, useAppStore } from '@/stores'
 import {
+  clearPendingRegistrationPassword,
+  getPendingRegistrationPassword,
   persistOAuthTokenContext,
   getPublicSettings,
   isOAuthLoginCompletion,
   type PendingOAuthSendVerifyCodeResponse,
   sendPendingOAuthVerifyCode,
   sendVerifyCode,
+  setPendingRegistrationPassword,
 } from '@/api/auth'
 import { apiClient } from '@/api/client'
 import { buildAuthErrorMessage } from '@/utils/authError'
-import { extractApiErrorCode, extractApiErrorMetadata } from '@/utils/apiError'
+import {
+  extractApiErrorCode,
+  extractApiErrorMetadata,
+  isAliyunCaptchaVerificationError
+} from '@/utils/apiError'
 import {
   canonicalRegistrationEmail,
   formatRegistrationEmailSuffixWhitelistForMessage,
@@ -208,6 +233,7 @@ import {
   loadAffiliateReferralCode,
   oauthAffiliatePayload
 } from '@/utils/oauthAffiliate'
+import { sanitizeAuthRedirect } from '@/utils/authRedirect'
 
 const { t, locale } = useI18n()
 
@@ -261,6 +287,9 @@ const pendingAdoptionDecision = ref<{
   adoptAvatar?: boolean
 } | null>(null)
 const hasRegisterData = ref<boolean>(false)
+const requiresPasswordReentry = ref<boolean>(false)
+const registerDataCodeSent = ref<boolean>(false)
+const registerDataCountdown = ref<number>(0)
 
 // Public settings
 const turnstileEnabled = ref<boolean>(false)
@@ -291,15 +320,25 @@ const aliyunCaptchaReady = computed(
     Boolean(aliyunCaptchaSceneId.value) &&
     Boolean(aliyunCaptchaPrefix.value)
 )
+// 与 CaptchaChallenge 展示优先级一致：Turnstile > 腾讯 > 阿里云
+const turnstileWidgetActive = computed(
+  () => turnstileEnabled.value && Boolean(turnstileSiteKey.value)
+)
+const tencentWidgetActive = computed(
+  () =>
+    !turnstileWidgetActive.value &&
+    tencentCaptchaEnabled.value &&
+    Boolean(tencentCaptchaAppId.value)
+)
+const aliyunWidgetActive = computed(
+  () => !turnstileWidgetActive.value && !tencentWidgetActive.value && aliyunCaptchaReady.value
+)
 // 动作触发式验证码（腾讯/阿里云）：重发验证码、创建账号时弹窗验证
 const actionCaptchaEnabled = computed(
-  () =>
-    (tencentCaptchaEnabled.value && Boolean(tencentCaptchaAppId.value)) ||
-    aliyunCaptchaReady.value
+  () => tencentWidgetActive.value || aliyunWidgetActive.value
 )
 const captchaEnabled = computed(
-  () =>
-    (turnstileEnabled.value && Boolean(turnstileSiteKey.value)) || actionCaptchaEnabled.value
+  () => turnstileWidgetActive.value || actionCaptchaEnabled.value
 )
 
 const errors = ref({
@@ -311,7 +350,7 @@ const validationToastMessage = computed(
   () => errors.value.code || errors.value.turnstile || ''
 )
 const pendingOAuthCreateTurnstileRequired = computed(
-  () => isPendingOAuthFlow() && turnstileEnabled.value
+  () => isPendingOAuthFlow() && turnstileWidgetActive.value
 )
 const pendingOAuthCreateCaptchaEnabled = computed(
   () => isPendingOAuthFlow() && captchaEnabled.value
@@ -334,7 +373,13 @@ onMounted(async () => {
     try {
       const registerData = JSON.parse(registerDataStr)
       email.value = registerData.email || ''
-      password.value = registerData.password || ''
+      const legacyPassword = typeof registerData.password === 'string' ? registerData.password : ''
+      if (legacyPassword) {
+        setPendingRegistrationPassword(legacyPassword)
+        delete registerData.password
+        sessionStorage.setItem('register_data', JSON.stringify(registerData))
+      }
+      password.value = getPendingRegistrationPassword()
       initialTurnstileToken.value =
         registerData.tencent_captcha_ticket || registerData.turnstile_token || ''
       initialTencentCaptchaRandstr.value = registerData.tencent_captcha_randstr || ''
@@ -344,22 +389,29 @@ onMounted(async () => {
       pendingAuthToken.value = registerData.pending_auth_token || activePendingSession?.token || ''
       pendingAuthTokenField.value = registerData.pending_auth_token_field || activePendingSession?.token_field || 'pending_auth_token'
       pendingProvider.value = registerData.pending_provider || activePendingSession?.provider || ''
-      pendingRedirect.value = registerData.pending_redirect || activePendingSession?.redirect || ''
+      pendingRedirect.value = sanitizeAuthRedirect(
+        registerData.pending_redirect || activePendingSession?.redirect,
+        ''
+      )
       pendingAdoptionDecision.value = registerData.pending_adoption_decision
         ? {
             adoptDisplayName: registerData.pending_adoption_decision.adopt_display_name === true,
             adoptAvatar: registerData.pending_adoption_decision.adopt_avatar === true
           }
         : null
-      hasRegisterData.value = !!(email.value && password.value)
+      hasRegisterData.value = !!email.value
+      requiresPasswordReentry.value = hasRegisterData.value && password.value.length === 0
+      registerDataCodeSent.value = registerData.code_sent === true
+      registerDataCountdown.value = Number(registerData.countdown) || 0
     } catch {
       hasRegisterData.value = false
+      requiresPasswordReentry.value = false
     }
   } else if (activePendingSession) {
     pendingAuthToken.value = activePendingSession.token
     pendingAuthTokenField.value = activePendingSession.token_field
     pendingProvider.value = activePendingSession.provider
-    pendingRedirect.value = activePendingSession.redirect || ''
+    pendingRedirect.value = sanitizeAuthRedirect(activePendingSession.redirect, '')
   }
 
   // Load public settings
@@ -385,7 +437,15 @@ onMounted(async () => {
 
   // Auto-send verification code if we have valid data
   if (hasRegisterData.value) {
-    await sendCode()
+    if (registerDataCodeSent.value) {
+      codeSent.value = true
+      if (registerDataCountdown.value > 0) {
+        startCountdown(registerDataCountdown.value)
+      }
+      clearStoredCaptchaProof()
+    } else {
+      await sendCode()
+    }
   }
 })
 
@@ -462,7 +522,7 @@ function resetCreateAccountTurnstile(): void {
 }
 
 async function acquireResendActionProof(): Promise<boolean> {
-  if (!actionCaptchaEnabled.value) return true
+  if (!tencentWidgetActive.value) return true
 
   const proof = await turnstileRef.value?.verifyAction()
   if (!proof) return false
@@ -473,7 +533,7 @@ async function acquireResendActionProof(): Promise<boolean> {
 }
 
 async function acquireCreateAccountActionProof(): Promise<boolean> {
-  if (!isPendingOAuthFlow() || !actionCaptchaEnabled.value) return true
+  if (!isPendingOAuthFlow() || !tencentWidgetActive.value) return true
 
   const proof = await createAccountTurnstileRef.value?.verifyAction()
   if (!proof) return false
@@ -522,13 +582,13 @@ function persistPendingOAuthSession(provider: string, redirect?: string): void {
     token: pendingAuthToken.value,
     token_field: pendingAuthTokenField.value,
     provider: provider.trim() || pendingProvider.value.trim(),
-    redirect: redirect || pendingRedirect.value || undefined,
+    redirect: sanitizeAuthRedirect(redirect || pendingRedirect.value, '/dashboard'),
   })
 }
 
 // ==================== Send Code ====================
 
-async function sendCode(): Promise<void> {
+async function sendCodeWithCaptcha(captchaParam?: string): Promise<AliyunCaptchaBizResult> {
   isSendingCode.value = true
   errorMessage.value = ''
   let requestSucceeded = false
@@ -540,26 +600,29 @@ async function sendCode(): Promise<void> {
         canonical_email: canonicalRegistrationEmail(email.value)
       })
       appStore.showError(errorMessage.value)
-      return
+      return { captchaResult: true, bizResult: false }
     }
-    if (!shouldBypassRegistrationEmailPolicy() && !isRegistrationEmailSuffixAllowed(email.value, registrationEmailSuffixWhitelist.value)) {
+    if (
+      !shouldBypassRegistrationEmailPolicy() &&
+      !isRegistrationEmailSuffixAllowed(email.value, registrationEmailSuffixWhitelist.value)
+    ) {
       errorMessage.value = buildEmailSuffixNotAllowedMessage()
       appStore.showError(errorMessage.value)
-      return
+      return { captchaResult: true, bizResult: false }
     }
 
+    const resolvedCaptchaParam =
+      captchaParam || resendTurnstileToken.value || initialTurnstileToken.value || undefined
     const requestPayload = {
       email: email.value,
       [pendingAuthTokenField.value]: pendingAuthToken.value || undefined,
       // 优先使用重发时新获取的 token（因为初始 token 可能已被使用）
       turnstile_token:
-        turnstileEnabled.value || aliyunCaptchaEnabled.value
-          ? resendTurnstileToken.value || initialTurnstileToken.value || undefined
+        turnstileWidgetActive.value || aliyunWidgetActive.value
+          ? resolvedCaptchaParam
           : undefined,
-      tencent_captcha_ticket: tencentCaptchaEnabled.value
-        ? resendTurnstileToken.value || initialTurnstileToken.value || undefined
-        : undefined,
-      tencent_captcha_randstr: tencentCaptchaEnabled.value
+      tencent_captcha_ticket: tencentWidgetActive.value ? resolvedCaptchaParam : undefined,
+      tencent_captcha_randstr: tencentWidgetActive.value
         ? resendTencentCaptchaRandstr.value || initialTencentCaptchaRandstr.value || undefined
         : undefined
     } as Parameters<typeof sendVerifyCode>[0]
@@ -578,22 +641,27 @@ async function sendCode(): Promise<void> {
       sessionStorage.removeItem('register_data')
       persistPendingOAuthSession(
         pendingSendCodeSession.provider || pendingProvider.value,
-        pendingSendCodeSession.redirect,
+        pendingSendCodeSession.redirect
       )
       await router.push(
-        resolvePendingOAuthCallbackRoute(pendingSendCodeSession.provider || pendingProvider.value),
+        resolvePendingOAuthCallbackRoute(pendingSendCodeSession.provider || pendingProvider.value)
       )
-      return
+      return { captchaResult: true, bizResult: true }
     }
 
     codeSent.value = true
     startCountdown(response.countdown)
 
     showResendTurnstile.value = false
+    return { captchaResult: true, bizResult: true }
   } catch (error: unknown) {
     errorMessage.value = buildRegistrationErrorMessage(error, t('auth.sendCodeFailed'))
-
     appStore.showError(errorMessage.value)
+    if (isAliyunCaptchaVerificationError(error)) {
+      errors.value.turnstile = t('auth.completeVerification')
+      return { captchaResult: false, bizResult: false }
+    }
+    return { captchaResult: true, bizResult: false }
   } finally {
     if (captchaProofUsed) {
       clearStoredCaptchaProof()
@@ -602,12 +670,16 @@ async function sendCode(): Promise<void> {
       resendTurnstileToken.value = ''
       resendTencentCaptchaRandstr.value = ''
       turnstileRef.value?.reset()
-      if (!requestSucceeded && turnstileEnabled.value) {
+      if (!requestSucceeded && turnstileWidgetActive.value) {
         showResendTurnstile.value = true
       }
     }
     isSendingCode.value = false
   }
+}
+
+async function sendCode(): Promise<void> {
+  await sendCodeWithCaptcha()
 }
 
 function clearStoredCaptchaProof(): void {
@@ -628,14 +700,24 @@ function clearStoredCaptchaProof(): void {
 // ==================== Handlers ====================
 
 async function handleResendCode(): Promise<void> {
-  // Turnstile stays staged; Tencent is acquired from this action.
-  if (turnstileEnabled.value && !showResendTurnstile.value) {
+  // Turnstile stays staged; 腾讯/阿里云在动作时取证。
+  if (turnstileWidgetActive.value && !showResendTurnstile.value) {
     showResendTurnstile.value = true
     return
   }
 
-  if (turnstileEnabled.value && !resendTurnstileToken.value) {
+  if (turnstileWidgetActive.value && !resendTurnstileToken.value) {
     errors.value.turnstile = t('auth.completeVerification')
+    return
+  }
+
+  if (aliyunWidgetActive.value) {
+    const result = await turnstileRef.value?.runAliyunVerify((param) =>
+      sendCodeWithCaptcha(param)
+    )
+    if (!result?.captchaResult && !result?.bizResult) {
+      errors.value.turnstile = t('auth.completeVerification')
+    }
     return
   }
 
@@ -656,6 +738,11 @@ function validateForm(): boolean {
 
   if (!/^\d{6}$/.test(verifyCode.value.trim())) {
     errors.value.code = t('auth.invalidCode')
+    return false
+  }
+
+  if (password.value.length < 6) {
+    appStore.showError(t('auth.passwordMinLength'))
     return false
   }
 
@@ -683,87 +770,55 @@ async function handleVerify(): Promise<void> {
     return
   }
 
-  if (!(await acquireCreateAccountActionProof())) {
-    return
-  }
-
   isLoading.value = true
 
   try {
-    if (isPendingOAuthFlow()) {
-      const payload: Record<string, unknown> = {
-        email: email.value,
-        password: password.value,
-        verify_code: verifyCode.value.trim(),
-        ...((turnstileEnabled.value || aliyunCaptchaEnabled.value) &&
-        createAccountTurnstileToken.value
-          ? { turnstile_token: createAccountTurnstileToken.value }
-          : {}),
-        ...(tencentCaptchaEnabled.value && createAccountTurnstileToken.value
-          ? {
-              tencent_captcha_ticket: createAccountTurnstileToken.value,
-              tencent_captcha_randstr: createAccountTencentCaptchaRandstr.value
-          }
-          : {}),
-        ...oauthAffiliatePayload(affCode.value || loadAffiliateReferralCode()),
-      }
-      if (invitationCode.value) {
-        payload.invitation_code = invitationCode.value
-      }
-      if (pendingAdoptionDecision.value?.adoptDisplayName !== undefined) {
-        payload.adopt_display_name = pendingAdoptionDecision.value.adoptDisplayName
-      }
-      if (pendingAdoptionDecision.value?.adoptAvatar !== undefined) {
-        payload.adopt_avatar = pendingAdoptionDecision.value.adoptAvatar
-      }
-
-      const { data } = await apiClient.post<PendingOAuthCreateAccountResponse>(
-        '/auth/oauth/pending/create-account',
-        payload
+    if (isPendingOAuthFlow() && aliyunWidgetActive.value) {
+      const result = await createAccountTurnstileRef.value?.runAliyunVerify((param) =>
+        submitPendingOAuthCreateWithCaptcha(param)
       )
-      if (isPendingOAuthSessionResponse(data)) {
-        sessionStorage.removeItem('register_data')
-        persistPendingOAuthSession(data.provider || pendingProvider.value, data.redirect)
-        await router.push(resolvePendingOAuthCallbackRoute(data.provider || pendingProvider.value))
-        return
+      if (!result?.captchaResult && !result?.bizResult) {
+        errors.value.turnstile = t('auth.completeVerification')
       }
-      if (!isOAuthLoginCompletion(data)) {
-        throw new Error(t('auth.verifyFailed'))
-      }
-
-      persistOAuthTokenContext(data)
-      await authStore.setToken(data.access_token)
-      authStore.clearPendingAuthSession?.()
-    } else {
-      // Register with verification code
-      await authStore.register({
-        email: email.value,
-        password: password.value,
-        verify_code: verifyCode.value.trim(),
-        turnstile_token:
-          turnstileEnabled.value || aliyunCaptchaEnabled.value
-            ? initialTurnstileToken.value || undefined
-            : undefined,
-        tencent_captcha_ticket: tencentCaptchaEnabled.value ? initialTurnstileToken.value || undefined : undefined,
-        tencent_captcha_randstr: tencentCaptchaEnabled.value ? initialTencentCaptchaRandstr.value || undefined : undefined,
-        promo_code: promoCode.value || undefined,
-        invitation_code: invitationCode.value || undefined,
-        ...(affCode.value ? { aff_code: affCode.value } : {})
-      })
+      return
     }
 
-    // Clear session data
+    if (!(await acquireCreateAccountActionProof())) {
+      return
+    }
+
+    if (isPendingOAuthFlow()) {
+      await submitPendingOAuthCreateWithCaptcha(createAccountTurnstileToken.value || undefined)
+      return
+    }
+
+    // Register with verification code
+    await authStore.register({
+      email: email.value,
+      password: password.value,
+      verify_code: verifyCode.value.trim(),
+      turnstile_token:
+        turnstileWidgetActive.value || aliyunWidgetActive.value
+          ? initialTurnstileToken.value || undefined
+          : undefined,
+      tencent_captcha_ticket: tencentWidgetActive.value
+        ? initialTurnstileToken.value || undefined
+        : undefined,
+      tencent_captcha_randstr: tencentWidgetActive.value
+        ? initialTencentCaptchaRandstr.value || undefined
+        : undefined,
+      promo_code: promoCode.value || undefined,
+      invitation_code: invitationCode.value || undefined,
+      ...(affCode.value ? { aff_code: affCode.value } : {})
+    })
+
     sessionStorage.removeItem('register_data')
+    clearPendingRegistrationPassword()
     clearAllAffiliateReferralCodes()
-
-    // Show success toast
     appStore.showSuccess(t('auth.accountCreatedSuccess', { siteName: siteName.value }))
-
-    // Redirect to dashboard
-    await router.push(pendingRedirect.value || '/dashboard')
+    await router.push(sanitizeAuthRedirect(pendingRedirect.value))
   } catch (error: unknown) {
     errorMessage.value = buildRegistrationErrorMessage(error, t('auth.verifyFailed'))
-
     appStore.showError(errorMessage.value)
   } finally {
     initialTurnstileToken.value = ''
@@ -775,11 +830,72 @@ async function handleVerify(): Promise<void> {
   }
 }
 
-function handleBack(): void {
-  // Clear session data
-  sessionStorage.removeItem('register_data')
+async function submitPendingOAuthCreateWithCaptcha(
+  captchaParam?: string
+): Promise<AliyunCaptchaBizResult> {
+  try {
+    const payload: Record<string, unknown> = {
+      email: email.value,
+      password: password.value,
+      verify_code: verifyCode.value.trim(),
+      ...(turnstileWidgetActive.value || aliyunWidgetActive.value
+        ? { turnstile_token: captchaParam }
+        : {}),
+      ...(tencentWidgetActive.value && captchaParam
+        ? {
+            tencent_captcha_ticket: captchaParam,
+            tencent_captcha_randstr: createAccountTencentCaptchaRandstr.value
+          }
+        : {}),
+      ...oauthAffiliatePayload(affCode.value || loadAffiliateReferralCode())
+    }
+    if (invitationCode.value) {
+      payload.invitation_code = invitationCode.value
+    }
+    if (pendingAdoptionDecision.value?.adoptDisplayName !== undefined) {
+      payload.adopt_display_name = pendingAdoptionDecision.value.adoptDisplayName
+    }
+    if (pendingAdoptionDecision.value?.adoptAvatar !== undefined) {
+      payload.adopt_avatar = pendingAdoptionDecision.value.adoptAvatar
+    }
 
-  // Go back to registration
+    const { data } = await apiClient.post<PendingOAuthCreateAccountResponse>(
+      '/auth/oauth/pending/create-account',
+      payload
+    )
+    if (isPendingOAuthSessionResponse(data)) {
+      sessionStorage.removeItem('register_data')
+      persistPendingOAuthSession(data.provider || pendingProvider.value, data.redirect)
+      await router.push(resolvePendingOAuthCallbackRoute(data.provider || pendingProvider.value))
+      return { captchaResult: true, bizResult: true }
+    }
+    if (!isOAuthLoginCompletion(data)) {
+      throw new Error(t('auth.verifyFailed'))
+    }
+
+    persistOAuthTokenContext(data)
+    await authStore.setToken(data.access_token)
+    authStore.clearPendingAuthSession?.()
+
+    sessionStorage.removeItem('register_data')
+    clearPendingRegistrationPassword()
+    clearAllAffiliateReferralCodes()
+    appStore.showSuccess(t('auth.accountCreatedSuccess', { siteName: siteName.value }))
+    await router.push(sanitizeAuthRedirect(pendingRedirect.value))
+    return { captchaResult: true, bizResult: true }
+  } catch (error: unknown) {
+    errorMessage.value = buildRegistrationErrorMessage(error, t('auth.verifyFailed'))
+    appStore.showError(errorMessage.value)
+    if (isAliyunCaptchaVerificationError(error)) {
+      errors.value.turnstile = t('auth.completeVerification')
+      return { captchaResult: false, bizResult: false }
+    }
+    return { captchaResult: true, bizResult: false }
+  }
+}
+
+function handleBack(): void {
+  // Keep non-sensitive context and the in-memory password for SPA back navigation.
   router.push('/register')
 }
 

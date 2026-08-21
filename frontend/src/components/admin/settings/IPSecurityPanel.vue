@@ -25,10 +25,25 @@
           <label class="input-label">{{ t('admin.settings.ipSecurity.accountThreshold') }}</label>
           <input v-model.number="form.account_threshold" type="number" min="2" max="100" class="input" />
         </div>
+        <div>
+          <label class="input-label">{{ t('admin.settings.ipSecurity.window2Minutes') }}</label>
+          <input v-model.number="form.window2_minutes" type="number" min="0" max="10080" class="input" />
+        </div>
+        <div>
+          <label class="input-label">{{ t('admin.settings.ipSecurity.accountThreshold2') }}</label>
+          <input v-model.number="form.account_threshold2" type="number" min="2" max="100" class="input" />
+        </div>
         <div class="md:col-span-2">
           <label class="input-label">{{ t('admin.settings.ipSecurity.learningUntil') }}</label>
           <input v-model="form.learning_until" type="text" placeholder="2026-08-16T00:00:00Z" class="input" />
         </div>
+      </div>
+      <div class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700">
+        <div>
+          <label class="font-medium text-gray-900 dark:text-white">{{ t('admin.settings.ipSecurity.blockDatacenterRegistration') }}</label>
+          <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.settings.ipSecurity.blockDatacenterRegistrationHint') }}</p>
+        </div>
+        <Toggle v-model="form.block_datacenter_registration" />
       </div>
       <div class="flex justify-end">
         <button type="button" class="btn btn-primary btn-sm" :disabled="saving" @click="saveConfig">
@@ -153,6 +168,9 @@ const form = reactive({
   enabled: false,
   window_minutes: 10,
   account_threshold: 4,
+  window2_minutes: 0,
+  account_threshold2: 2,
+  block_datacenter_registration: false,
   learning_until: ''
 })
 const saving = ref(false)
@@ -182,6 +200,9 @@ async function loadConfig() {
   form.enabled = cfg.enabled
   form.window_minutes = cfg.window_minutes
   form.account_threshold = cfg.account_threshold
+  form.window2_minutes = cfg.window2_minutes ?? 0
+  form.account_threshold2 = cfg.account_threshold2 ?? 2
+  form.block_datacenter_registration = cfg.block_datacenter_registration === true
   form.learning_until = cfg.learning_until || ''
 }
 
@@ -192,7 +213,10 @@ async function saveConfig() {
       ip_multi_account_ban_enabled: form.enabled,
       ip_multi_account_ban_window_minutes: Number(form.window_minutes) || 10,
       ip_multi_account_ban_threshold: Number(form.account_threshold) || 4,
-      ip_multi_account_ban_learning_until: form.learning_until || ''
+      ip_multi_account_ban_window2_minutes: Number(form.window2_minutes) || 0,
+      ip_multi_account_ban_threshold2: Number(form.account_threshold2) || 2,
+      ip_multi_account_ban_learning_until: form.learning_until || '',
+      registration_block_datacenter_ip: form.block_datacenter_registration
     })
     appStore.showSuccess(t('common.saved'))
     await loadConfig()

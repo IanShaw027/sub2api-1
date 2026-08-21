@@ -300,6 +300,13 @@ export const useAuthStore = defineStore('auth', () => {
     // Store token and user
     token.value = response.access_token
 
+    // A newly authenticated identity must never inherit another session's
+    // rotating refresh token or expiry metadata.
+    refreshTokenValue.value = null
+    tokenExpiresAt.value = null
+    localStorage.removeItem(REFRESH_TOKEN_KEY)
+    localStorage.removeItem(TOKEN_EXPIRES_AT_KEY)
+
     // Store refresh token if present
     if (response.refresh_token) {
       refreshTokenValue.value = response.refresh_token
@@ -361,6 +368,16 @@ export const useAuthStore = defineStore('auth', () => {
     stopTokenRefresh()
     token.value = null
     user.value = null
+
+    // API auth helpers persist the new access token before calling this method.
+    // If the token is not already staged, this is an access-token-only legacy
+    // completion and any existing refresh context belongs to an older session.
+    if (localStorage.getItem(AUTH_TOKEN_KEY) !== newToken) {
+      localStorage.removeItem(REFRESH_TOKEN_KEY)
+      localStorage.removeItem(TOKEN_EXPIRES_AT_KEY)
+      refreshTokenValue.value = null
+      tokenExpiresAt.value = null
+    }
 
     token.value = newToken
     localStorage.setItem(AUTH_TOKEN_KEY, newToken)

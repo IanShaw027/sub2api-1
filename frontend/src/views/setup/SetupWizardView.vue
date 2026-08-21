@@ -501,13 +501,23 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { testDatabase, testRedis, install, type InstallRequest } from '@/api/setup'
+import {
+  configureSetupBootstrapSecretFromLocation,
+  testDatabase,
+  testRedis,
+  install,
+  type InstallRequest
+} from '@/api/setup'
 import { buildGatewayUrl } from '@/api/client'
 import Select from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import Icon from '@/components/icons/Icon.vue'
 
 const { t } = useI18n()
+
+// Remote setup operators pass the bootstrap secret in the URL fragment. The
+// fragment never reaches the server and is removed immediately after capture.
+configureSetupBootstrapSecretFromLocation()
 
 const steps = computed(() => [
   { id: 'database', title: t('setup.database.title') },

@@ -9,12 +9,16 @@ const {
   getSchedule,
   listBackups,
   getDownloadURL,
+  deleteBackup,
+  stepUpRun,
 } = vi.hoisted(() => ({
   getS3Config: vi.fn(),
   getImageStorageConfig: vi.fn(),
   getSchedule: vi.fn(),
   listBackups: vi.fn(),
   getDownloadURL: vi.fn(),
+  deleteBackup: vi.fn(),
+  stepUpRun: vi.fn((fn: () => unknown) => fn()),
 }))
 
 vi.mock('@/api', () => ({
@@ -31,7 +35,7 @@ vi.mock('@/api', () => ({
       createBackup: vi.fn(),
       listBackups,
       getBackup: vi.fn(),
-      deleteBackup: vi.fn(),
+      deleteBackup,
       getDownloadURL,
       restoreBackup: vi.fn(),
     },
@@ -47,7 +51,7 @@ vi.mock('@/stores', () => ({
 }))
 
 vi.mock('@/composables/useStepUp', () => ({
-  useStepUp: () => ({ run: (fn: () => unknown) => fn() }),
+  useStepUp: () => ({ run: stepUpRun }),
   isStepUpBlocked: () => false,
   isStepUpCancelled: () => false,
   stepUpBlockReason: () => '',
@@ -88,6 +92,8 @@ describe('admin BackupView 分卷备份', () => {
     getImageStorageConfig.mockResolvedValue({ config: {}, secret_configured: false })
     getSchedule.mockResolvedValue({ enabled: false, cron_expr: '', retain_days: 14, retain_count: 10 })
     getDownloadURL.mockReset()
+    deleteBackup.mockReset()
+    stepUpRun.mockClear()
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
   })
 
@@ -150,5 +156,21 @@ describe('admin BackupView 分卷备份', () => {
 
     expect(wrapper.find('tbody tr td:nth-child(5)').text()).toBe('-')
     expect(wrapper.findAll('button').some(button => button.text() === 'common.delete')).toBe(false)
+  })
+
+  it('删除备份通过 step-up 验证后执行', async () => {
+    listBackups.mockResolvedValue({ items: [baseRecord('delete-me')] })
+    deleteBackup.mockResolvedValue(undefined)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    const wrapper = mountBackupView()
+    await flushPromises()
+    const deleteButton = wrapper.findAll('button').find(button => button.text() === 'common.delete')
+    expect(deleteButton).toBeDefined()
+    await deleteButton!.trigger('click')
+    await flushPromises()
+
+    expect(stepUpRun).toHaveBeenCalledTimes(1)
+    expect(deleteBackup).toHaveBeenCalledWith('delete-me')
   })
 })

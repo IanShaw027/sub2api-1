@@ -37,6 +37,7 @@ import {
   type PendingOAuthExchangeResponse
 } from '@/api/auth'
 import { clearAllAffiliateReferralCodes } from '@/utils/oauthAffiliate'
+import { sanitizeAuthRedirect as sanitizeRedirectPath } from '@/utils/authRedirect'
 
 const route = useRoute()
 const router = useRouter()
@@ -50,23 +51,20 @@ const accountActionError = ref('')
 
 const initialEmail = (route.query.email as string | undefined) || ''
 
-function sanitizeRedirectPath(path: string | null | undefined): string {
-  if (!path) return '/dashboard'
-  if (!path.startsWith('/')) return '/dashboard'
-  if (path.startsWith('//')) return '/dashboard'
-  if (path.includes('://')) return '/dashboard'
-  if (path.includes('\n') || path.includes('\r')) return '/dashboard'
-  return path
-}
-
 function getRequestErrorMessage(error: unknown, fallback: string): string {
   const err = error as { message?: string; response?: { data?: { detail?: string; message?: string } } }
   return err.response?.data?.detail || err.response?.data?.message || err.message || fallback
 }
 
-async function handleCreateAccount(payload: PendingOAuthCreateAccountPayload) {
+async function handleCreateAccount(
+  payload: PendingOAuthCreateAccountPayload,
+  settle?: (error?: unknown) => void
+) {
   accountActionError.value = ''
-  if (!payload.email || !payload.password) return
+  if (!payload.email || !payload.password) {
+    settle?.(new Error(t('auth.emailRequired')))
+    return
+  }
 
   isSubmitting.value = true
   try {
@@ -101,17 +99,22 @@ async function handleCreateAccount(payload: PendingOAuthCreateAccountPayload) {
       clearAllAffiliateReferralCodes()
       appStore.showSuccess(t('auth.loginSuccess'))
       await router.replace(redirect)
+      settle?.()
       return
     }
 
     // 后端把 pending session 转到 choice 状态（用户填的 email 已在系统内）→ 跳回 callback view 走绑定流程
     if (data.step === 'choose_account_action_required' || data.existing_account_bindable === true) {
+      settle?.()
       navigateToBindLogin(payload.email)
       return
     }
 
+    const failed = new Error(t('auth.loginFailed'))
+    settle?.(failed)
     accountActionError.value = t('auth.loginFailed')
   } catch (e: unknown) {
+    settle?.(e)
     // 全局"开放注册"关闭且未开启钉钉企业模式豁免时，引导用户去绑定已有账户而非死路
     const err = e as { response?: { data?: { reason?: string } } }
     if (err.response?.data?.reason === 'REGISTRATION_DISABLED') {

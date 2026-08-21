@@ -91,6 +91,40 @@ export function setTokenExpiresAt(expiresIn: number): void {
   localStorage.setItem('token_expires_at', String(expiresAt))
 }
 
+function clearRefreshTokenContext(): void {
+  localStorage.removeItem('refresh_token')
+  localStorage.removeItem('token_expires_at')
+}
+
+function persistNewAuthResponse(tokens: Partial<OAuthTokenResponse>): void {
+  localStorage.removeItem('auth_token')
+  localStorage.removeItem('auth_user')
+  clearRefreshTokenContext()
+  if (tokens.access_token) {
+    setAuthToken(tokens.access_token)
+  }
+  if (tokens.refresh_token) {
+    setRefreshToken(tokens.refresh_token)
+  }
+  if (tokens.expires_in) {
+    setTokenExpiresAt(tokens.expires_in)
+  }
+}
+
+let pendingRegistrationPassword = ''
+
+export function setPendingRegistrationPassword(password: string): void {
+  pendingRegistrationPassword = password
+}
+
+export function getPendingRegistrationPassword(): string {
+  return pendingRegistrationPassword
+}
+
+export function clearPendingRegistrationPassword(): void {
+  pendingRegistrationPassword = ''
+}
+
 /**
  * Get authentication token from localStorage
  */
@@ -133,13 +167,7 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse> {
 
   // Only store token if 2FA is not required
   if (!isTotp2FARequired(data)) {
-    setAuthToken(data.access_token)
-    if (data.refresh_token) {
-      setRefreshToken(data.refresh_token)
-    }
-    if (data.expires_in) {
-      setTokenExpiresAt(data.expires_in)
-    }
+    persistNewAuthResponse(data)
     localStorage.setItem('auth_user', JSON.stringify(data.user))
   }
 
@@ -155,13 +183,7 @@ export async function login2FA(request: TotpLogin2FARequest): Promise<AuthRespon
   const { data } = await apiClient.post<AuthResponse>('/auth/login/2fa', request)
 
   // Store token and user data
-  setAuthToken(data.access_token)
-  if (data.refresh_token) {
-    setRefreshToken(data.refresh_token)
-  }
-  if (data.expires_in) {
-    setTokenExpiresAt(data.expires_in)
-  }
+  persistNewAuthResponse(data)
   localStorage.setItem('auth_user', JSON.stringify(data.user))
 
   return data
@@ -176,13 +198,7 @@ export async function register(userData: RegisterRequest): Promise<AuthResponse>
   const { data } = await apiClient.post<AuthResponse>('/auth/register', userData)
 
   // Store token and user data
-  setAuthToken(data.access_token)
-  if (data.refresh_token) {
-    setRefreshToken(data.refresh_token)
-  }
-  if (data.expires_in) {
-    setTokenExpiresAt(data.expires_in)
-  }
+  persistNewAuthResponse(data)
   localStorage.setItem('auth_user', JSON.stringify(data.user))
 
   return data
@@ -306,12 +322,7 @@ export function hasPendingOAuthSuggestedProfile(
 }
 
 export function persistOAuthTokenContext(tokens: Partial<OAuthTokenResponse>): void {
-  if (tokens.refresh_token) {
-    setRefreshToken(tokens.refresh_token)
-  }
-  if (tokens.expires_in) {
-    setTokenExpiresAt(tokens.expires_in)
-  }
+  persistNewAuthResponse(tokens)
 }
 
 export async function prepareOAuthBindAccessTokenCookie(): Promise<void> {

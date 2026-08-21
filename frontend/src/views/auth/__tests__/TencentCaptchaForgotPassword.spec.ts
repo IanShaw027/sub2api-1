@@ -6,6 +6,7 @@ import ForgotPasswordView from '@/views/auth/ForgotPasswordView.vue'
 const getPublicSettingsMock = vi.fn()
 const forgotPasswordMock = vi.fn()
 const verifyActionMock = vi.fn()
+const runAliyunVerifyMock = vi.fn()
 const captchaResetMock = vi.fn()
 
 vi.mock('vue-i18n', async () => {
@@ -41,6 +42,7 @@ const CaptchaChallengeStub = defineComponent({
   setup(_, { expose }) {
     expose({
       verifyAction: verifyActionMock,
+      runAliyunVerify: runAliyunVerifyMock,
       reset: captchaResetMock
     })
     return () => h('div', { 'data-testid': 'captcha-challenge' })
@@ -65,6 +67,7 @@ describe('忘记密码腾讯验证码门禁', () => {
     getPublicSettingsMock.mockReset()
     forgotPasswordMock.mockReset()
     verifyActionMock.mockReset()
+    runAliyunVerifyMock.mockReset()
     captchaResetMock.mockReset()
     getPublicSettingsMock.mockResolvedValue({
       turnstile_enabled: false,
@@ -104,6 +107,7 @@ describe('忘记密码腾讯验证码门禁', () => {
       tencent_captcha_randstr: '@rand-value'
     })
     expect(captchaResetMock).toHaveBeenCalledOnce()
+    expect(wrapper.text()).toContain('auth.resetEmailSent')
   })
 })
 
@@ -112,6 +116,7 @@ describe('忘记密码阿里云验证码门禁', () => {
     getPublicSettingsMock.mockReset()
     forgotPasswordMock.mockReset()
     verifyActionMock.mockReset()
+    runAliyunVerifyMock.mockReset()
     captchaResetMock.mockReset()
     getPublicSettingsMock.mockResolvedValue({
       turnstile_enabled: false,
@@ -123,7 +128,9 @@ describe('忘记密码阿里云验证码门禁', () => {
       aliyun_captcha_prefix: 'prefix-1',
       aliyun_captcha_region: 'cn'
     })
-    verifyActionMock.mockResolvedValue({ token: 'aliyun-verify-param', randstr: '' })
+    runAliyunVerifyMock.mockImplementation(async (fn: (param: string) => Promise<unknown>) =>
+      fn('aliyun-verify-param')
+    )
     forgotPasswordMock.mockResolvedValue({ message: 'ok' })
   })
 
@@ -138,19 +145,16 @@ describe('忘记密码阿里云验证码门禁', () => {
     expect(captcha.props('aliyunPrefix')).toBe('prefix-1')
   })
 
-  it('提交时复用内嵌验证参数并放到 turnstile_token', async () => {
+  it('提交时通过 captchaVerifyCallback 发送业务并放到 turnstile_token', async () => {
     const wrapper = mountForgotPassword()
     await flushPromises()
     await wrapper.get('#email').setValue('user@example.com')
 
-    const captcha = wrapper.findComponent(CaptchaChallengeStub)
-    captcha.vm.$emit('verify', 'aliyun-verify-param', '')
-    await wrapper.vm.$nextTick()
-
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(verifyActionMock).toHaveBeenCalledOnce()
+    expect(runAliyunVerifyMock).toHaveBeenCalledOnce()
+    expect(verifyActionMock).not.toHaveBeenCalled()
     expect(forgotPasswordMock).toHaveBeenCalledWith({
       email: 'user@example.com',
       turnstile_token: 'aliyun-verify-param',
@@ -158,5 +162,6 @@ describe('忘记密码阿里云验证码门禁', () => {
       tencent_captcha_randstr: undefined
     })
     expect(captchaResetMock).toHaveBeenCalledOnce()
+    expect(wrapper.text()).toContain('auth.resetEmailSent')
   })
 })
