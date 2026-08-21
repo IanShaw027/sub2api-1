@@ -250,6 +250,8 @@ export default {
       '该邮箱域名无法注册新账户。请使用主流邮箱注册；如需使用企业邮箱，请联系客服添加域名白名单。',
     emailSuffixNotAllowed: '该邮箱域名不在允许注册范围内。',
     emailSuffixNotAllowedWithAllowed: '该邮箱域名不被允许。可用域名：{suffixes}',
+    emailAliasNotAllowed:
+      '不支持邮箱别名或 Gmail 点号伪装。请使用 {canonical_email}',
     emailSuffixAllowedMore: '等 {count} 项',
     loginSuccess: '登录成功！欢迎回来。',
     accountCreatedSuccess: '账户创建成功！欢迎使用 {siteName}。',
@@ -258,6 +260,7 @@ export default {
     turnstileFailed: '验证失败，请重试',
     captchaVerified: '验证已完成',
     captchaLoading: '正在加载验证码…',
+    captchaLoadFailed: '阿里云验证码加载失败，请刷新页面或检查网络后重试',
     captchaClickToVerify: '点击完成人机验证',
     captchaVerifying: '验证中…',
     completeVerification: '请完成验证',

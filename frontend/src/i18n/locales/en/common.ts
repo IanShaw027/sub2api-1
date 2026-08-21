@@ -251,6 +251,8 @@ export default {
     emailSuffixNotAllowed: 'This email domain is not allowed for registration.',
     emailSuffixNotAllowedWithAllowed:
       'This email domain is not allowed. Allowed domains: {suffixes}',
+    emailAliasNotAllowed:
+      'Email aliases are not allowed. Please use {canonical_email}',
     emailSuffixAllowedMore: 'and {count} more',
     loginSuccess: 'Login successful! Welcome back.',
     accountCreatedSuccess: 'Account created successfully! Welcome to {siteName}.',
@@ -259,6 +261,7 @@ export default {
     turnstileFailed: 'Verification failed, please try again',
     captchaVerified: 'Verification completed',
     captchaLoading: 'Loading verification…',
+    captchaLoadFailed: 'Failed to load Alibaba Cloud captcha. Refresh the page or check your network and try again.',
     captchaClickToVerify: 'Click to complete verification',
     captchaVerifying: 'Verifying…',
     completeVerification: 'Please complete the verification',

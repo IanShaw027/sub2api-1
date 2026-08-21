@@ -163,6 +163,24 @@ describe('RegisterView invitation layout', () => {
     )
   })
 
+  it('rejects gmail plus-tags and dot-trick aliases locally', async () => {
+    getPublicSettingsMock.mockResolvedValueOnce({
+      ...publicSettings,
+      turnstile_enabled: false
+    })
+
+    const wrapper = mountRegister()
+    await flushPromises()
+    await wrapper.get('#email').setValue('alta.r.azad.i.one@gmail.com')
+    await wrapper.get('#password').setValue('secret-123')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(registerMock).not.toHaveBeenCalled()
+    expect(showErrorMock).toHaveBeenCalledWith('auth.emailAliasNotAllowed')
+    expect(wrapper.get('#email').classes()).toContain('input-error')
+  })
+
   // 域名限量注册开关默认关闭：恢复 PR5423 之前的客户端白名单预检，非白名单域名不发起注册请求。
   it('rejects a non-whitelist email domain locally when the domain quota switch is disabled', async () => {
     getPublicSettingsMock.mockResolvedValueOnce({

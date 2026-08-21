@@ -254,7 +254,9 @@ export default {
         accessKeySecretHint: 'Server-side verification secret (keep this secret)',
         accessKeySecretConfiguredHint: 'Secret configured. Leave empty to keep the current value.',
         sceneId: 'Scene ID',
-        sceneIdHint: 'Create a verification scene in the Alibaba Cloud Captcha console; the captcha type (invisible/slider/puzzle) is configured per scene there',
+        sceneIdHint:
+          'Create the scene in the Alibaba Cloud Captcha 2.0 console. Click/smart captcha becomes a tap-the-characters challenge; set this scene to slider or puzzle, not click or smart upgrade.',
+        openCaptchaConsole: 'Open Alibaba Cloud Captcha console',
         prefix: 'Prefix',
         prefixHint: 'Found in the instance information on the console overview page',
         region: 'Region',

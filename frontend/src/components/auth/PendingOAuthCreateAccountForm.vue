@@ -49,7 +49,7 @@
         :data-testid="`${testIdPrefix}-create-account-send-code`"
         type="button"
         class="btn btn-secondary shrink-0"
-        :disabled="isSubmitting || isSendingCode || countdown > 0 || !email.trim() || (turnstileEnabled && !turnstileToken)"
+        :disabled="isSubmitting || isSendingCode || countdown > 0 || !email.trim() || ((turnstileEnabled || aliyunCaptchaReady) && !turnstileToken)"
         @click="handleSendCode"
       >
         {{
@@ -80,7 +80,7 @@
       :data-testid="`${testIdPrefix}-create-account-submit`"
       type="button"
       class="btn btn-primary w-full"
-      :disabled="isSubmitting || !email.trim() || password.length < 6 || (invitationCodeEnabled && !invitationCode.trim()) || (turnstileEnabled && !turnstileToken)"
+      :disabled="isSubmitting || !email.trim() || password.length < 6 || (invitationCodeEnabled && !invitationCode.trim()) || ((turnstileEnabled || aliyunCaptchaReady) && !turnstileToken)"
       @click="handleSubmit"
     >
       {{ isSubmitting ? t('common.processing') : t('auth.createAccount') }}
@@ -101,6 +101,11 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import TurnstileWidget from '@/components/CaptchaChallenge.vue'
 import { getPublicSettings, sendPendingOAuthVerifyCode } from '@/api/auth'
+import { extractApiErrorCode, extractApiErrorMetadata } from '@/utils/apiError'
+import {
+  canonicalRegistrationEmail,
+  isCanonicalRegistrationEmail
+} from '@/utils/registrationEmailPolicy'
 import { useAppStore } from '@/stores'
 
 export type PendingOAuthCreateAccountPayload = {
@@ -222,6 +227,10 @@ function startCountdown(seconds: number) {
 }
 
 function getRequestErrorMessage(error: unknown, fallback: string): string {
+  if (extractApiErrorCode(error) === 'EMAIL_ALIAS_NOT_ALLOWED') {
+    const canonical = String(extractApiErrorMetadata(error)?.canonical_email || '')
+    return t('auth.emailAliasNotAllowed', { canonical_email: canonical })
+  }
   const err = error as { message?: string; response?: { data?: { detail?: string; message?: string } } }
   return err.response?.data?.detail || err.response?.data?.message || err.message || fallback
 }
@@ -266,8 +275,14 @@ async function handleSendCode() {
   if (!trimmedEmail) {
     return
   }
+  if (!isCanonicalRegistrationEmail(trimmedEmail)) {
+    sendCodeError.value = t('auth.emailAliasNotAllowed', {
+      canonical_email: canonicalRegistrationEmail(trimmedEmail)
+    })
+    return
+  }
 
-  if (turnstileEnabled.value && !turnstileToken.value) {
+  if ((turnstileEnabled.value || aliyunCaptchaReady.value) && !turnstileToken.value) {
     sendCodeError.value = t('auth.completeVerification')
     return
   }
@@ -305,11 +320,17 @@ async function handleSubmit() {
   if (!trimmedEmail || password.value.length < 6) {
     return
   }
+  if (!isCanonicalRegistrationEmail(trimmedEmail)) {
+    sendCodeError.value = t('auth.emailAliasNotAllowed', {
+      canonical_email: canonicalRegistrationEmail(trimmedEmail)
+    })
+    return
+  }
 
   // Turnstile 票据一次性：发送验证码已消耗上一枚，reset 后要等新票据回调。
   // 缺票时不能提交——create-account 端点会校验验证码，空 token 直接被判失败。
   // 表单的隐式提交（输入框回车）绕得过按钮的 disabled，所以这里必须再挡一次。
-  if (turnstileEnabled.value && !turnstileToken.value) {
+  if ((turnstileEnabled.value || aliyunCaptchaReady.value) && !turnstileToken.value) {
     sendCodeError.value = t('auth.completeVerification')
     return
   }

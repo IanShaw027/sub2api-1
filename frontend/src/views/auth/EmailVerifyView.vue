@@ -195,9 +195,11 @@ import {
 } from '@/api/auth'
 import { apiClient } from '@/api/client'
 import { buildAuthErrorMessage } from '@/utils/authError'
-import { extractApiErrorCode } from '@/utils/apiError'
+import { extractApiErrorCode, extractApiErrorMetadata } from '@/utils/apiError'
 import {
+  canonicalRegistrationEmail,
   formatRegistrationEmailSuffixWhitelistForMessage,
+  isCanonicalRegistrationEmail,
   isRegistrationEmailSuffixAllowed,
   normalizeRegistrationEmailSuffixWhitelist
 } from '@/utils/registrationEmailPolicy'
@@ -533,6 +535,13 @@ async function sendCode(): Promise<void> {
   let captchaProofUsed = false
 
   try {
+    if (!isCanonicalRegistrationEmail(email.value)) {
+      errorMessage.value = t('auth.emailAliasNotAllowed', {
+        canonical_email: canonicalRegistrationEmail(email.value)
+      })
+      appStore.showError(errorMessage.value)
+      return
+    }
     if (!shouldBypassRegistrationEmailPolicy() && !isRegistrationEmailSuffixAllowed(email.value, registrationEmailSuffixWhitelist.value)) {
       errorMessage.value = buildEmailSuffixNotAllowedMessage()
       appStore.showError(errorMessage.value)
@@ -657,6 +666,14 @@ async function handleVerify(): Promise<void> {
   errorMessage.value = ''
 
   if (!validateForm()) {
+    return
+  }
+
+  if (!isCanonicalRegistrationEmail(email.value)) {
+    errorMessage.value = t('auth.emailAliasNotAllowed', {
+      canonical_email: canonicalRegistrationEmail(email.value)
+    })
+    appStore.showError(errorMessage.value)
     return
   }
 
@@ -785,6 +802,10 @@ function buildEmailSuffixNotAllowedMessage(): string {
 function buildRegistrationErrorMessage(error: unknown, fallback: string): string {
   if (extractApiErrorCode(error) === 'EMAIL_DOMAIN_REGISTRATION_LIMIT') {
     return t('auth.emailDomainRegistrationLimit')
+  }
+  if (extractApiErrorCode(error) === 'EMAIL_ALIAS_NOT_ALLOWED') {
+    const canonical = String(extractApiErrorMetadata(error)?.canonical_email || '')
+    return t('auth.emailAliasNotAllowed', { canonical_email: canonical })
   }
   return buildAuthErrorMessage(error, { fallback })
 }

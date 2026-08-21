@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import AliyunCaptchaWidget from '../AliyunCaptchaWidget.vue'
 
 interface CapturedInitOptions {
@@ -7,8 +7,11 @@ interface CapturedInitOptions {
   prefix: string
   mode: string
   element: string
-  button: string
+  button?: string
   captchaVerifyCallback: (param: string) => { captchaResult: boolean }
+  onFallback?: (error?: unknown) => void
+  getInstance: (instance: { refresh?: () => void; destroy?: () => void }) => void
+  slideStyle?: { width: number; height: number }
   language?: string
 }
 
@@ -29,15 +32,14 @@ describe('AliyunCaptchaWidget', () => {
     initOptions = null
     window.initAliyunCaptcha = vi.fn((options: CapturedInitOptions) => {
       initOptions = options
+      options.getInstance({})
     }) as unknown as typeof window.initAliyunCaptcha
   })
 
   afterEach(() => {
-    vi.useRealTimers()
+    vi.restoreAllMocks()
     delete window.initAliyunCaptcha
     delete window.AliyunCaptchaConfig
-    document.getElementById('aliyunCaptcha-window-popup')?.remove()
-    document.getElementById('aliyunCaptcha-mask')?.remove()
   })
 
   function mountWidget() {
@@ -48,45 +50,111 @@ describe('AliyunCaptchaWidget', () => {
     })
   }
 
-  function createVisiblePopup(): HTMLElement {
-    const popup = document.createElement('div')
-    popup.id = 'aliyunCaptcha-window-popup'
-    popup.style.display = 'block'
-    document.body.appendChild(popup)
-    return popup
-  }
-
-  it('渲染可见验证按钮并以 popup 模式初始化，全局配置就位', async () => {
+  it('以 embed 模式初始化，不展示点击人机验证按钮', async () => {
     const wrapper = mountWidget()
     await Promise.resolve()
     await Promise.resolve()
 
-    const button = wrapper.get('button')
-    expect(button.text()).toContain('auth.captchaClickToVerify')
+    expect(wrapper.find('.aliyun-captcha-embed').exists()).toBe(true)
+    expect(wrapper.find('button').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('auth.captchaClickToVerify')
     expect(window.AliyunCaptchaConfig).toEqual({ region: 'cn', prefix: 'prefix-1' })
     expect(initOptions).not.toBeNull()
-    expect(initOptions!.mode).toBe('popup')
+    expect(initOptions!.mode).toBe('embed')
+    expect(initOptions!.button).toBeUndefined()
     expect(initOptions!.SceneId).toBe('scene-1')
+    expect(initOptions!.slideStyle).toEqual({ width: 360, height: 40 })
     expect(initOptions!.language).toBe('cn')
 
     wrapper.unmount()
   })
 
-  it('用户点击按钮进入验证中，验证完成后 emit verify 并置已通过', async () => {
+  it('窄屏下按容器实际宽度初始化验证码', async () => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 280,
+      height: 40,
+      top: 0,
+      right: 280,
+      bottom: 40,
+      left: 0,
+      x: 0,
+      y: 0,
+      toJSON: () => ({})
+    } as DOMRect)
+
     const wrapper = mountWidget()
     await Promise.resolve()
     await Promise.resolve()
 
-    await wrapper.get('button').trigger('click')
-    expect(wrapper.get('button').text()).toContain('auth.captchaVerifying')
+    expect(initOptions?.slideStyle).toEqual({ width: 280, height: 40 })
+
+    wrapper.unmount()
+  })
+
+  it('容器变窄后按新宽度重建验证码并在卸载时停止监听', async () => {
+    let width = 360
+    let resizeCallback: ResizeObserverCallback | null = null
+    const observe = vi.fn()
+    const disconnect = vi.fn()
+    const destroy = vi.fn()
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+      () =>
+        ({
+          width,
+          height: 40,
+          top: 0,
+          right: width,
+          bottom: 40,
+          left: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => ({})
+        }) as DOMRect
+    )
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          resizeCallback = callback
+        }
+        observe = observe
+        disconnect = disconnect
+        unobserve = vi.fn()
+      }
+    )
+    window.initAliyunCaptcha = vi.fn((options: CapturedInitOptions) => {
+      initOptions = options
+      options.getInstance({ destroy })
+    }) as unknown as typeof window.initAliyunCaptcha
+
+    const wrapper = mountWidget()
+    await flushPromises()
+    expect(initOptions?.slideStyle).toEqual({ width: 360, height: 40 })
+    expect(observe).toHaveBeenCalledOnce()
+
+    width = 260
+    resizeCallback?.([], {} as ResizeObserver)
+    await flushPromises()
+
+    expect(window.initAliyunCaptcha).toHaveBeenCalledTimes(2)
+    expect(destroy).toHaveBeenCalledOnce()
+    expect(initOptions?.slideStyle).toEqual({ width: 260, height: 40 })
+
+    wrapper.unmount()
+    expect(disconnect).toHaveBeenCalledOnce()
+  })
+
+  it('嵌入验证通过后 emit verify 并显示已完成', async () => {
+    const wrapper = mountWidget()
+    await Promise.resolve()
+    await Promise.resolve()
 
     const result = initOptions!.captchaVerifyCallback('captcha-param-1')
     expect(result).toEqual({ captchaResult: true })
     await wrapper.vm.$nextTick()
 
     expect(wrapper.emitted('verify')).toEqual([['captcha-param-1']])
-    expect(wrapper.get('button').text()).toContain('auth.captchaVerified')
-    expect(wrapper.get('button').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('auth.captchaVerified')
 
     wrapper.unmount()
   })
@@ -96,7 +164,6 @@ describe('AliyunCaptchaWidget', () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    await wrapper.get('button').trigger('click')
     initOptions!.captchaVerifyCallback('captcha-param-2')
 
     const vm = wrapper.vm as unknown as { verify: () => Promise<string | null> }
@@ -105,7 +172,7 @@ describe('AliyunCaptchaWidget', () => {
     wrapper.unmount()
   })
 
-  it('verify() 在未预验证时触发弹窗流程并等待结果', async () => {
+  it('verify() 在未完成嵌入验证时等待回调，不弹出点击按钮', async () => {
     const wrapper = mountWidget()
     await Promise.resolve()
     await Promise.resolve()
@@ -113,9 +180,7 @@ describe('AliyunCaptchaWidget', () => {
     const vm = wrapper.vm as unknown as { verify: () => Promise<string | null> }
     const pending = vm.verify()
     await Promise.resolve()
-    await Promise.resolve()
-    await wrapper.vm.$nextTick()
-    expect(wrapper.get('button').text()).toContain('auth.captchaVerifying')
+    expect(wrapper.text()).not.toContain('auth.captchaClickToVerify')
 
     initOptions!.captchaVerifyCallback('captcha-param-3')
     await expect(pending).resolves.toBe('captcha-param-3')
@@ -123,57 +188,19 @@ describe('AliyunCaptchaWidget', () => {
     wrapper.unmount()
   })
 
-  it('弹窗未出现前会按 tick 重试触发按钮（SDK 异步绑定兜底）', async () => {
-    vi.useFakeTimers()
+  it('reset() 清空缓存并刷新嵌入实例', async () => {
+    const refresh = vi.fn()
+    window.initAliyunCaptcha = vi.fn((options: CapturedInitOptions) => {
+      initOptions = options
+      options.getInstance({ refresh })
+    }) as unknown as typeof window.initAliyunCaptcha
+
     const wrapper = mountWidget()
     await Promise.resolve()
     await Promise.resolve()
 
-    const vm = wrapper.vm as unknown as { verify: () => Promise<string | null> }
-    void vm.verify()
-    await Promise.resolve()
-    await Promise.resolve()
-
-    const button = wrapper.get('button').element as HTMLButtonElement
-    const clickSpy = vi.fn()
-    button.addEventListener('click', clickSpy)
-
-    await vi.advanceTimersByTimeAsync(1000)
-    expect(clickSpy.mock.calls.length).toBeGreaterThanOrEqual(3)
-
-    button.removeEventListener('click', clickSpy)
-    wrapper.unmount()
-  })
-
-  it('弹窗出现后被用户关闭时 resolve null 并回到未验证态', async () => {
-    vi.useFakeTimers()
-    const wrapper = mountWidget()
-    await Promise.resolve()
-    await Promise.resolve()
-
-    const vm = wrapper.vm as unknown as { verify: () => Promise<string | null> }
-    const pending = vm.verify()
-    await Promise.resolve()
-    await Promise.resolve()
-
-    const popup = createVisiblePopup()
-    await vi.advanceTimersByTimeAsync(400)
-    popup.remove()
-    await vi.advanceTimersByTimeAsync(400)
-
-    await expect(pending).resolves.toBeNull()
-    expect(wrapper.get('button').text()).toContain('auth.captchaClickToVerify')
-
-    wrapper.unmount()
-  })
-
-  it('reset() 清空缓存并取消进行中的验证', async () => {
-    const wrapper = mountWidget()
-    await Promise.resolve()
-    await Promise.resolve()
-
-    await wrapper.get('button').trigger('click')
     initOptions!.captchaVerifyCallback('captcha-param-4')
+    await wrapper.vm.$nextTick()
 
     const vm = wrapper.vm as unknown as {
       verify: () => Promise<string | null>
@@ -181,13 +208,41 @@ describe('AliyunCaptchaWidget', () => {
     }
     vm.reset()
     await wrapper.vm.$nextTick()
-    expect(wrapper.get('button').text()).toContain('auth.captchaClickToVerify')
+    expect(refresh).toHaveBeenCalled()
+    expect(wrapper.text()).not.toContain('auth.captchaVerified')
 
-    // reset 后缓存失效，verify() 重新走弹窗流程
     const pending = vm.verify()
     await Promise.resolve()
     initOptions!.captchaVerifyCallback('captcha-param-5')
     await expect(pending).resolves.toBe('captcha-param-5')
+
+    wrapper.unmount()
+  })
+
+  it('onFallback 时展示加载失败文案', async () => {
+    const wrapper = mountWidget()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    initOptions!.onFallback?.('Network Error')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('auth.captchaLoadFailed')
+    expect(wrapper.emitted('error')).toBeTruthy()
+
+    wrapper.unmount()
+  })
+
+  it('初始化失败时只 emit 一次 error', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    window.initAliyunCaptcha = vi.fn(() =>
+      Promise.reject(new Error('init failed'))
+    ) as unknown as typeof window.initAliyunCaptcha
+
+    const wrapper = mountWidget()
+    await flushPromises()
+
+    expect(wrapper.emitted('error')).toHaveLength(1)
+    expect(wrapper.text()).toContain('auth.captchaLoadFailed')
 
     wrapper.unmount()
   })

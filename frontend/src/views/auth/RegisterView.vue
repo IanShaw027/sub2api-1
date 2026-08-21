@@ -237,7 +237,7 @@
         <!-- Submit Button -->
         <button
           type="submit"
-          :disabled="registrationActionDisabled || (turnstileEnabled && !turnstileToken)"
+          :disabled="registrationActionDisabled || ((turnstileEnabled || aliyunCaptchaReady) && !turnstileToken)"
           class="btn btn-primary w-full"
         >
           <svg
@@ -353,9 +353,11 @@ import {
   validateInvitationCode
 } from '@/api/auth'
 import { buildAuthErrorMessage } from '@/utils/authError'
-import { extractApiErrorCode, extractI18nErrorMessage } from '@/utils/apiError'
+import { extractApiErrorCode, extractApiErrorMetadata, extractI18nErrorMessage } from '@/utils/apiError'
 import {
+  canonicalRegistrationEmail,
   formatRegistrationEmailSuffixWhitelistForMessage,
+  isCanonicalRegistrationEmail,
   isRegistrationEmailSuffixAllowed,
   normalizeRegistrationEmailSuffixWhitelist
 } from '@/utils/registrationEmailPolicy'
@@ -902,6 +904,11 @@ function validateForm(): boolean {
   } else if (!validateEmail(formData.email)) {
     errors.email = t('auth.invalidEmail')
     isValid = false
+  } else if (!isCanonicalRegistrationEmail(formData.email)) {
+    errors.email = t('auth.emailAliasNotAllowed', {
+      canonical_email: canonicalRegistrationEmail(formData.email)
+    })
+    isValid = false
   } else if (
     !emailDomainQuotaEnabled.value &&
     !isRegistrationEmailSuffixAllowed(formData.email, registrationEmailSuffixWhitelist.value)
@@ -928,8 +935,7 @@ function validateForm(): boolean {
     }
   }
 
-  // Turnstile validation
-  if (turnstileEnabled.value && !turnstileToken.value) {
+  if ((turnstileEnabled.value || aliyunCaptchaReady.value) && !turnstileToken.value) {
     errors.turnstile = t('auth.completeVerification')
     isValid = false
   }
@@ -1057,6 +1063,10 @@ async function handleRegister(): Promise<void> {
 function buildRegistrationErrorMessage(error: unknown, fallback: string): string {
   if (extractApiErrorCode(error) === 'EMAIL_DOMAIN_REGISTRATION_LIMIT') {
     return t('auth.emailDomainRegistrationLimit')
+  }
+  if (extractApiErrorCode(error) === 'EMAIL_ALIAS_NOT_ALLOWED') {
+    const canonical = String(extractApiErrorMetadata(error)?.canonical_email || '')
+    return t('auth.emailAliasNotAllowed', { canonical_email: canonical })
   }
   return buildAuthErrorMessage(error, { fallback })
 }

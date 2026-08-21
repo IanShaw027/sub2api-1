@@ -2399,6 +2399,14 @@
                     <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
                       {{ t("admin.settings.aliyunCaptcha.sceneIdHint") }}
                     </p>
+                    <a
+                      href="https://yundun.console.aliyun.com/?p=captcha"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="mt-2 inline-block text-sm text-primary-600 hover:text-primary-500"
+                    >
+                      {{ t("admin.settings.aliyunCaptcha.openCaptchaConsole") }}
+                    </a>
                   </div>
                   <div>
                     <label

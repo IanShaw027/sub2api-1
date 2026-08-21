@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatRegistrationEmailSuffixWhitelistForMessage,
+  canonicalRegistrationEmail,
+  isCanonicalRegistrationEmail,
   isRegistrationEmailSuffixAllowed,
   isRegistrationEmailSuffixDomainValid,
   normalizeRegistrationEmailSuffixDomain,
@@ -10,6 +12,21 @@ import {
 } from '@/utils/registrationEmailPolicy'
 
 describe('registrationEmailPolicy utils', () => {
+  it('canonicalRegistrationEmail folds gmail aliases and plus tags', () => {
+    expect(canonicalRegistrationEmail('alta.r.azad.i.one@gmail.com')).toBe('altarazadione@gmail.com')
+    expect(canonicalRegistrationEmail('User+tag@GoogleMail.com.')).toBe('user@gmail.com')
+    expect(canonicalRegistrationEmail('first.last+promo@qq.com')).toBe('first.last@qq.com')
+    expect(canonicalRegistrationEmail('plain@qq.com')).toBe('plain@qq.com')
+  })
+
+  it('isCanonicalRegistrationEmail rejects gmail dots, plus tags, and googlemail', () => {
+    expect(isCanonicalRegistrationEmail('user@gmail.com')).toBe(true)
+    expect(isCanonicalRegistrationEmail('first.last@qq.com')).toBe(true)
+    expect(isCanonicalRegistrationEmail('user.name@gmail.com')).toBe(false)
+    expect(isCanonicalRegistrationEmail('user+tag@outlook.com')).toBe(false)
+    expect(isCanonicalRegistrationEmail('user@googlemail.com')).toBe(false)
+  })
+
   it('normalizeRegistrationEmailSuffixDomain lowercases, strips @, and ignores invalid chars', () => {
     expect(normalizeRegistrationEmailSuffixDomain(' @Exa!mple.COM ')).toBe('example.com')
     expect(normalizeRegistrationEmailSuffixDomain(' *.EDU!.CN ')).toBe('*.edu.cn')

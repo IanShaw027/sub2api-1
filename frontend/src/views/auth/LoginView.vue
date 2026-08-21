@@ -100,7 +100,7 @@
         <!-- Submit Button -->
         <button
           type="submit"
-          :disabled="authActionDisabled || (turnstileEnabled && !turnstileToken)"
+          :disabled="authActionDisabled || ((turnstileEnabled || aliyunCaptchaReady) && !turnstileToken)"
           class="btn btn-primary w-full"
         >
           <svg
@@ -547,8 +547,7 @@ function validateForm(): boolean {
     isValid = false
   }
 
-  // Turnstile validation
-  if (turnstileEnabled.value && !turnstileToken.value) {
+  if ((turnstileEnabled.value || aliyunCaptchaReady.value) && !turnstileToken.value) {
     errors.turnstile = t('auth.completeVerification')
     isValid = false
   }

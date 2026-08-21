@@ -254,7 +254,9 @@ export default {
         accessKeySecretHint: '服务端验证密钥（请保密）',
         accessKeySecretConfiguredHint: '密钥已配置，留空以保留当前值。',
         sceneId: '场景 ID',
-        sceneIdHint: '在阿里云验证码控制台创建验证场景后获取；验证方式（无痕/滑块/拼图）在控制台按场景配置',
+        sceneIdHint:
+          '在阿里云验证码 2.0 控制台创建场景后获取。点选/智能验证会变成“点字”人机验证；请把该场景的验证形态改成「滑块验证」或「拼图验证」，不要用点选或智能升级。',
+        openCaptchaConsole: '打开阿里云验证码控制台',
         prefix: '身份标（prefix）',
         prefixHint: '在控制台概览页实例基本信息中获取',
         region: '服务地域',

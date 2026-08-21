@@ -281,8 +281,7 @@ function validateForm(): boolean {
     isValid = false
   }
 
-  // Turnstile validation
-  if (turnstileCaptchaEnabled.value && !turnstileToken.value) {
+  if ((turnstileCaptchaEnabled.value || aliyunCaptchaReady.value) && !turnstileToken.value) {
     errors.turnstile = t('auth.completeVerification')
     isValid = false
   }

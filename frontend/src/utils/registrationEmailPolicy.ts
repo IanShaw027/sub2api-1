@@ -65,19 +65,55 @@ export function normalizeRegistrationEmailSuffixWhitelist(
   return normalizeRegistrationEmailSuffixDomains(items).map(toCanonicalRegistrationEmailSuffix)
 }
 
-function extractRegistrationEmailDomain(email: string): string {
+const GMAIL_FAMILY_DOMAINS = new Set(['gmail.com', 'googlemail.com'])
+
+function splitRegistrationEmail(email: string): { local: string; domain: string } | null {
   const raw = String(email || '').trim().toLowerCase()
-  if (!raw) {
-    return ''
-  }
   const atIndex = raw.indexOf('@')
   if (atIndex <= 0 || atIndex >= raw.length - 1) {
-    return ''
+    return null
   }
   if (raw.indexOf('@', atIndex + 1) !== -1) {
-    return ''
+    return null
   }
-  return raw.slice(atIndex + 1)
+  return {
+    local: raw.slice(0, atIndex),
+    domain: raw.slice(atIndex + 1).replace(/\.+$/, '')
+  }
+}
+
+export function canonicalRegistrationEmail(email: string): string {
+  const normalized = String(email || '').trim().toLowerCase()
+  const parts = splitRegistrationEmail(normalized)
+  if (!parts) {
+    return normalized
+  }
+  let local = parts.local
+  let domain = parts.domain
+  const plusIndex = local.indexOf('+')
+  if (plusIndex > 0) {
+    local = local.slice(0, plusIndex)
+  }
+  if (GMAIL_FAMILY_DOMAINS.has(domain)) {
+    const stripped = local.replace(/\./g, '')
+    if (stripped) {
+      local = stripped
+    }
+    domain = 'gmail.com'
+  }
+  return `${local}@${domain}`
+}
+
+export function isCanonicalRegistrationEmail(email: string): boolean {
+  const normalized = String(email || '').trim().toLowerCase()
+  if (!normalized) {
+    return true
+  }
+  return canonicalRegistrationEmail(normalized) === normalized
+}
+
+function extractRegistrationEmailDomain(email: string): string {
+  return splitRegistrationEmail(email)?.domain || ''
 }
 
 export function isRegistrationEmailSuffixAllowed(
