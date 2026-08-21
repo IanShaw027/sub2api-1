@@ -194,7 +194,10 @@ type SystemSettings struct {
 	IPMultiAccountBanEnabled        bool
 	IPMultiAccountBanWindowMinutes  int
 	IPMultiAccountBanThreshold      int
+	IPMultiAccountBanWindow2Minutes int
+	IPMultiAccountBanThreshold2     int
 	IPMultiAccountBanLearningUntil  string
+	RegistrationBlockDatacenterIP   bool
 	DefaultUserRPMLimit             int
 	DefaultSubscriptions            []DefaultSubscriptionSetting
 

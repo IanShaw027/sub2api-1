@@ -33,10 +33,11 @@ func (s stubStepUpUserReader) GetByID(ctx context.Context, id int64) (*service.U
 
 type stubStepUpSettingReader struct {
 	enabled bool
+	err     error
 }
 
-func (s stubStepUpSettingReader) IsStepUpEnabled(ctx context.Context) bool {
-	return s.enabled
+func (s stubStepUpSettingReader) IsStepUpEnabled(ctx context.Context) (bool, error) {
+	return s.enabled, s.err
 }
 
 // stepUpEnabled 功能开关开启的设置桩，供既有门控分支测试使用。
@@ -138,6 +139,17 @@ func TestEnforceStepUpDisabledSkipsAllChecks(t *testing.T) {
 		require.True(t, ok)
 		require.False(t, c.IsAborted())
 	})
+}
+
+func TestEnforceStepUpSettingReadErrorFailsClosed(t *testing.T) {
+	c, rec := newStepUpTestContext(t)
+
+	ok := enforceStepUp(c, nil, nil, stubStepUpSettingReader{err: errors.New("read failed")})
+
+	require.False(t, ok)
+	require.True(t, c.IsAborted())
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	require.Contains(t, rec.Body.String(), "STEP_UP_UNAVAILABLE")
 }
 
 // settings 为 nil 时保持门控（fail-closed），避免装配缺陷静默关闭安全控制。

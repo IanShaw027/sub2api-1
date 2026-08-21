@@ -58,6 +58,11 @@ func setupGuard() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		if !setupAccessAllowed(c.Request) {
+			response.Error(c, http.StatusForbidden, "Setup access denied")
+			c.Abort()
+			return
+		}
 		c.Next()
 	}
 }

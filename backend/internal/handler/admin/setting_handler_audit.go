@@ -639,8 +639,17 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.IPMultiAccountBanThreshold != after.IPMultiAccountBanThreshold {
 		changed = append(changed, "ip_multi_account_ban_threshold")
 	}
+	if before.IPMultiAccountBanWindow2Minutes != after.IPMultiAccountBanWindow2Minutes {
+		changed = append(changed, "ip_multi_account_ban_window2_minutes")
+	}
+	if before.IPMultiAccountBanThreshold2 != after.IPMultiAccountBanThreshold2 {
+		changed = append(changed, "ip_multi_account_ban_threshold2")
+	}
 	if before.IPMultiAccountBanLearningUntil != after.IPMultiAccountBanLearningUntil {
 		changed = append(changed, "ip_multi_account_ban_learning_until")
+	}
+	if before.RegistrationBlockDatacenterIP != after.RegistrationBlockDatacenterIP {
+		changed = append(changed, "registration_block_datacenter_ip")
 	}
 	if before.AffiliateEnabled != after.AffiliateEnabled {
 		changed = append(changed, "affiliate_enabled")

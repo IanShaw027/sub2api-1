@@ -14,6 +14,7 @@ import (
 const (
 	totpSetupKeyPrefix    = "totp:setup:"
 	totpLoginKeyPrefix    = "totp:login:"
+	totpLoginClaimPrefix  = "totp:login:claim:"
 	totpAttemptsKeyPrefix = "totp:attempts:"
 	totpStepUpKeyPrefix   = "totp:stepup:"
 	totpAttemptsTTL       = 15 * time.Minute
@@ -107,6 +108,117 @@ func (c *TotpCache) SetLoginSession(ctx context.Context, tempToken string, sessi
 func (c *TotpCache) DeleteLoginSession(ctx context.Context, tempToken string) error {
 	key := totpLoginKeyPrefix + tempToken
 	return c.rdb.Del(ctx, key).Err()
+}
+
+func (c *TotpCache) ClaimLoginSession(
+	ctx context.Context,
+	tempToken, claimToken string,
+	ttl time.Duration,
+) (*service.TotpLoginSession, bool, error) {
+	claimKey := totpLoginClaimPrefix + tempToken
+	claimed, err := c.rdb.SetNX(ctx, claimKey, claimToken, ttl).Result()
+	if err != nil {
+		return nil, false, fmt.Errorf("claim login session: %w", err)
+	}
+	if !claimed {
+		return nil, false, nil
+	}
+
+	session, err := c.GetLoginSession(ctx, tempToken)
+	if err != nil || session == nil {
+		_ = c.ReleaseLoginSessionClaim(ctx, tempToken, claimToken)
+		return session, false, err
+	}
+	return session, true, nil
+}
+
+var finalizeTotpLoginClaimScript = redis.NewScript(`
+if redis.call('GET', KEYS[2]) ~= ARGV[1] then
+  return 0
+end
+if redis.call('EXISTS', KEYS[1]) == 0 then
+  redis.call('DEL', KEYS[2])
+  return 0
+end
+redis.call('DEL', KEYS[1], KEYS[2])
+return 1
+`)
+
+func (c *TotpCache) FinalizeLoginSessionClaim(ctx context.Context, tempToken, claimToken string) (bool, error) {
+	result, err := finalizeTotpLoginClaimScript.Run(ctx, c.rdb, []string{
+		totpLoginKeyPrefix + tempToken,
+		totpLoginClaimPrefix + tempToken,
+	}, claimToken).Int()
+	if err != nil {
+		return false, fmt.Errorf("finalize login session claim: %w", err)
+	}
+	return result == 1, nil
+}
+
+var renewTotpLoginClaimScript = redis.NewScript(`
+if redis.call('GET', KEYS[1]) ~= ARGV[1] then
+  return 0
+end
+redis.call('PEXPIRE', KEYS[1], ARGV[2])
+return 1
+`)
+
+func (c *TotpCache) RenewLoginSessionClaim(ctx context.Context, tempToken, claimToken string, ttl time.Duration) (bool, error) {
+	result, err := renewTotpLoginClaimScript.Run(
+		ctx,
+		c.rdb,
+		[]string{totpLoginClaimPrefix + tempToken},
+		claimToken,
+		ttl.Milliseconds(),
+	).Int()
+	if err != nil {
+		return false, fmt.Errorf("renew login session claim: %w", err)
+	}
+	return result == 1, nil
+}
+
+var releaseTotpLoginClaimScript = redis.NewScript(`
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
+end
+return 0
+`)
+
+func (c *TotpCache) ReleaseLoginSessionClaim(ctx context.Context, tempToken, claimToken string) error {
+	if err := releaseTotpLoginClaimScript.Run(
+		ctx,
+		c.rdb,
+		[]string{totpLoginClaimPrefix + tempToken},
+		claimToken,
+	).Err(); err != nil {
+		return fmt.Errorf("release login session claim: %w", err)
+	}
+	return nil
+}
+
+var reserveTotpVerifyAttemptScript = redis.NewScript(`
+local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+if current >= tonumber(ARGV[2]) then
+  return current + 1
+end
+local attempts = redis.call('INCR', KEYS[1])
+redis.call('PEXPIRE', KEYS[1], ARGV[1])
+return attempts
+`)
+
+func (c *TotpCache) ReserveVerifyAttempt(ctx context.Context, userID int64, maxAttempts int) (int, error) {
+	key := fmt.Sprintf("%s%d", totpAttemptsKeyPrefix, userID)
+	count, err := reserveTotpVerifyAttemptScript.Run(
+		ctx,
+		c.rdb,
+		[]string{key},
+		totpAttemptsTTL.Milliseconds(),
+		maxAttempts,
+	).Int()
+	if err != nil {
+		return 0, fmt.Errorf("reserve verify attempt: %w", err)
+	}
+	return count, nil
 }
 
 // IncrementVerifyAttempts increments the verify attempt counter

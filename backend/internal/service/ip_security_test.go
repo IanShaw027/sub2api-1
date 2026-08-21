@@ -55,6 +55,32 @@ func TestIPSecurityObserveKnownIPUsesRedisHotPath(t *testing.T) {
 	}
 }
 
+func TestIPSecuritySecondWindowBansTwoAccounts(t *testing.T) {
+	svc, repo := newTestIPSecurityService(t, true)
+	svc.settings.(ipSecuritySettingsStub).values[SettingKeyIPMultiAccountBanWindow2Minutes] = "1440"
+	svc.settings.(ipSecuritySettingsStub).values[SettingKeyIPMultiAccountBanThreshold2] = "2"
+	svc.InvalidateConfig()
+
+	svc.Observe(context.Background(), IPSecurityActivity{
+		IPAddress: "203.0.113.60", UserID: 1, Source: IPSecuritySourceAPIKey,
+	})
+	if repo.createBanCalls != 0 {
+		t.Fatalf("first account must not trip either window, got %d bans", repo.createBanCalls)
+	}
+	svc.Observe(context.Background(), IPSecurityActivity{
+		IPAddress: "203.0.113.60", UserID: 2, Source: IPSecuritySourceAPIKey,
+	})
+	if repo.createBanCalls != 1 {
+		t.Fatalf("second account in 24h window must create a ban, got %d", repo.createBanCalls)
+	}
+	if !svc.IsBlocked(context.Background(), "203.0.113.60") {
+		t.Fatal("expected IP blocked by second-layer window")
+	}
+	if got := repo.bans["203.0.113.60"].Reason; got != "long-window multi-account activity" {
+		t.Fatalf("second-window ban reason = %q", got)
+	}
+}
+
 func TestIPSecurityFourthNewAccountCreatesPermanentBan(t *testing.T) {
 	svc, repo := newTestIPSecurityService(t, true)
 	for userID := int64(1); userID <= 4; userID++ {
@@ -72,6 +98,9 @@ func TestIPSecurityFourthNewAccountCreatesPermanentBan(t *testing.T) {
 	}
 	if !svc.IsBlocked(context.Background(), "203.0.113.9") {
 		t.Fatal("expected IP to remain blocked until manual release")
+	}
+	if got := repo.bans["203.0.113.9"].Reason; got != "short-window multi-account activity" {
+		t.Fatalf("short-window ban reason = %q", got)
 	}
 }
 

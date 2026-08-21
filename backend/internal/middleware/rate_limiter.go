@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -25,6 +26,10 @@ const (
 // RateLimitOptions 限流可选配置
 type RateLimitOptions struct {
 	FailureMode RateLimitFailureMode
+	// SubnetLimit > 0 时额外按 IPv4 /24 或 IPv6 /64 计数。
+	SubnetLimit        int
+	SubnetWindow       time.Duration
+	ConcealSubnetLimit bool
 }
 
 var rateLimitScript = redis.NewScript(`
@@ -108,16 +113,13 @@ func (r *RateLimiter) Allow(ctx context.Context, key string, limit int, window t
 	return result, nil
 }
 
-// clientIPForRateLimit 返回 IP 维度限流使用的客户端地址。
-// 与审计日志/会话绑定/API Key IP ACL 共用同一套安全客户端 IP 解析
-// （SessionBindingContext 快照：兼容开关开启时信任反代转发头，关闭时走
-// server.trusted_proxies 可信链）。避免默认反代部署下 Gin ClientIP 恒等于
-// 代理地址、所有用户坍缩进同一个限流桶造成整体误拦截。
+// clientIPForRateLimit returns the client address from Gin's trusted-proxy
+// chain. Raw forwarding headers must never select a security rate-limit bucket.
 func clientIPForRateLimit(c *gin.Context) string {
-	if resolved := ippkg.GetSecurityClientIP(c, false); resolved != "" {
+	if resolved := ippkg.GetTrustedClientIP(c); resolved != "" {
 		return resolved
 	}
-	return c.ClientIP()
+	return ippkg.GetPeerIP(c)
 }
 
 // Limit 返回速率限制中间件
@@ -136,22 +138,44 @@ func (r *RateLimiter) LimitWithOptions(key string, limit int, window time.Durati
 	}
 
 	return func(c *gin.Context) {
-		result, err := r.Allow(c.Request.Context(), key+":"+clientIPForRateLimit(c), limit, window)
+		clientIP := clientIPForRateLimit(c)
+		result, err := r.Allow(c.Request.Context(), key+":"+clientIP, limit, window)
 		if err != nil {
 			log.Printf("[RateLimit] redis error: key=%s mode=%s err=%v", r.prefix+key, failureModeLabel(failureMode), err)
 			if failureMode == RateLimitFailClose {
 				abortRateLimit(c, window)
 				return
 			}
-			// Redis 错误时放行，避免影响正常服务
 			c.Next()
 			return
 		}
-
-		// 超过限制
 		if !result.Allowed {
 			abortRateLimit(c, result.RetryAfter)
 			return
+		}
+
+		if opts.SubnetLimit > 0 {
+			if subnet := ippkg.RateLimitSubnet(clientIP); subnet != "" {
+				subnetWindow := opts.SubnetWindow
+				if subnetWindow <= 0 {
+					subnetWindow = window
+				}
+				subnetResult, subnetErr := r.Allow(c.Request.Context(), key+":subnet:"+subnet, opts.SubnetLimit, subnetWindow)
+				if subnetErr != nil {
+					log.Printf("[RateLimit] redis error: key=%s mode=%s err=%v", r.prefix+key+":subnet", failureModeLabel(failureMode), subnetErr)
+					if failureMode == RateLimitFailClose {
+						abortRateLimit(c, subnetWindow)
+						return
+					}
+				} else if !subnetResult.Allowed {
+					if opts.ConcealSubnetLimit {
+						abortAccessDenied(c)
+					} else {
+						abortRateLimit(c, subnetResult.RetryAfter)
+					}
+					return
+				}
+			}
 		}
 
 		c.Next()
@@ -168,15 +192,22 @@ func windowTTLMillis(window time.Duration) int64 {
 
 func abortRateLimit(c *gin.Context, retryAfter time.Duration) {
 	if retryAfter > 0 {
-		seconds := int64(retryAfter / time.Second)
-		if retryAfter%time.Second > 0 {
-			seconds++
+		seconds := int(math.Ceil(retryAfter.Seconds()))
+		if seconds < 1 {
+			seconds = 1
 		}
-		c.Header("Retry-After", strconv.FormatInt(seconds, 10))
+		c.Header("Retry-After", strconv.Itoa(seconds))
 	}
 	c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 		"error":   "rate limit exceeded",
 		"message": "Too many requests, please try again later",
+	})
+}
+
+func abortAccessDenied(c *gin.Context) {
+	c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+		"error":   "ACCESS_DENIED",
+		"message": "Access denied",
 	})
 }
 

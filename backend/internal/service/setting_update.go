@@ -479,13 +479,18 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	kiroRuntimeSettingsCache.Store((*cachedKiroRuntimeSettings)(nil))
 	kiroRuntimeSettingsSF.Forget("kiro_runtime")
 	ipSecurityCfg := normalizeIPSecurityConfig(IPSecurityConfig{
-		WindowMinutes:    settings.IPMultiAccountBanWindowMinutes,
-		AccountThreshold: settings.IPMultiAccountBanThreshold,
+		WindowMinutes:     settings.IPMultiAccountBanWindowMinutes,
+		AccountThreshold:  settings.IPMultiAccountBanThreshold,
+		Window2Minutes:    settings.IPMultiAccountBanWindow2Minutes,
+		AccountThreshold2: settings.IPMultiAccountBanThreshold2,
 	})
 	updates[SettingKeyIPMultiAccountBanEnabled] = strconv.FormatBool(settings.IPMultiAccountBanEnabled)
 	updates[SettingKeyIPMultiAccountBanWindowMinutes] = strconv.Itoa(ipSecurityCfg.WindowMinutes)
 	updates[SettingKeyIPMultiAccountBanThreshold] = strconv.Itoa(ipSecurityCfg.AccountThreshold)
+	updates[SettingKeyIPMultiAccountBanWindow2Minutes] = strconv.Itoa(ipSecurityCfg.Window2Minutes)
+	updates[SettingKeyIPMultiAccountBanThreshold2] = strconv.Itoa(ipSecurityCfg.AccountThreshold2)
 	updates[SettingKeyIPMultiAccountBanLearningUntil] = strings.TrimSpace(settings.IPMultiAccountBanLearningUntil)
+	updates[SettingKeyRegistrationBlockDatacenterIP] = strconv.FormatBool(settings.RegistrationBlockDatacenterIP)
 
 	// 风控中心功能开关
 	updates[SettingKeyRiskControlEnabled] = strconv.FormatBool(settings.RiskControlEnabled)

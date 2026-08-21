@@ -2,10 +2,15 @@ package service
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/mail"
@@ -16,6 +21,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/cloudip"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 
@@ -49,10 +55,18 @@ var (
 	ErrInvitationCodeInvalid   = infraerrors.BadRequest("INVITATION_CODE_INVALID", "invalid or used invitation code")
 	ErrOAuthInvitationRequired = infraerrors.Forbidden("OAUTH_INVITATION_REQUIRED", "invitation code required to complete oauth registration")
 	ErrCaptchaProviderConflict = infraerrors.ServiceUnavailable("CAPTCHA_PROVIDER_CONFLICT", "multiple captcha providers are enabled")
+	// ErrAccessDenied is the public response for registration-time IP controls.
+	// The reason and message are intentionally generic so clients cannot tell
+	// which control rejected the request.
+	ErrAccessDenied = infraerrors.Forbidden("ACCESS_DENIED", "Access denied")
 )
 
 // maxTokenLength 限制 token 大小，避免超长 header 触发解析时的异常内存分配。
 const maxTokenLength = 8192
+
+const refreshRotationRetryTTL = 5 * time.Second
+
+const refreshRotationRetryKeyContext = "sub2api-refresh-rotation-retry-v1"
 
 // refreshTokenPrefix is the prefix for refresh tokens to distinguish them from access tokens.
 const refreshTokenPrefix = "rt_"
@@ -63,6 +77,10 @@ type JWTClaims struct {
 	Email        string `json:"email"`
 	Role         string `json:"role"`
 	TokenVersion int64  `json:"token_version"` // Used to invalidate tokens on password change
+	// AuthEpoch is rotated when the user revokes all sessions. Legacy tokens have
+	// no epoch and remain valid only until the first explicit all-session revoke.
+	AuthEpoch string `json:"aep,omitempty"`
+	TokenUse  string `json:"token_use,omitempty"`
 	// SessionID 会话 ID（与 refresh token family 对应），用于单会话撤销与 step-up 授权绑定。
 	SessionID string `json:"sid,omitempty"`
 	// BindingHash 会话指纹哈希（IP+UA），会话绑定开启时校验；空值表示旧 token（平滑升级）。
@@ -394,6 +412,18 @@ func (s *AuthService) SendVerifyCodeAsync(ctx context.Context, email string, loc
 	return &SendVerifyCodeResult{
 		Countdown: 60, // 60秒倒计时
 	}, nil
+}
+
+// RejectDatacenterRegistration 拒绝机房/云厂商 IP 的注册与发码。
+// 不用于 API Key 调用：下游把 key 放到云主机是正常用法。
+func (s *AuthService) RejectDatacenterRegistration(ctx context.Context, remoteIP string) error {
+	if s == nil || s.settingService == nil || !s.settingService.IsRegistrationBlockDatacenterIP(ctx) {
+		return nil
+	}
+	if !cloudip.IsDatacenter(remoteIP) {
+		return nil
+	}
+	return ErrAccessDenied
 }
 
 // VerifyCaptchaForRegister 在注册场景下验证当前启用的验证码。
@@ -1361,11 +1391,7 @@ func (s *AuthService) ValidateToken(tokenString string) (*JWTClaims, error) {
 	}
 
 	// 使用解析器并限制可接受的签名算法，防止算法混淆。
-	parser := jwt.NewParser(jwt.WithValidMethods([]string{
-		jwt.SigningMethodHS256.Name,
-		jwt.SigningMethodHS384.Name,
-		jwt.SigningMethodHS512.Name,
-	}))
+	parser := jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Name}))
 
 	// 保留默认 claims 校验（exp/nbf），避免放行过期或未生效的 token。
 	token, err := parser.ParseWithClaims(tokenString, &JWTClaims{}, func(token *jwt.Token) (any, error) {
@@ -1389,6 +1415,9 @@ func (s *AuthService) ValidateToken(tokenString string) (*JWTClaims, error) {
 	}
 
 	if claims, ok := token.Claims.(*JWTClaims); ok && token.Valid {
+		if claims.TokenUse != "" && claims.TokenUse != "access" {
+			return nil, ErrInvalidToken
+		}
 		return claims, nil
 	}
 
@@ -1422,11 +1451,15 @@ func (s *AuthService) GenerateToken(ctx context.Context, user *User) (string, er
 	if err != nil {
 		return "", fmt.Errorf("generate session id: %w", err)
 	}
-	return s.generateAccessToken(user, sessionID, sessionBindingHashFromContext(ctx))
+	authEpoch, err := s.ensureUserAuthEpoch(ctx, user.ID)
+	if err != nil {
+		return "", err
+	}
+	return s.generateAccessToken(user, sessionID, sessionBindingHashFromContext(ctx), authEpoch)
 }
 
 // generateAccessToken 生成带会话 ID 与绑定指纹的 access token。
-func (s *AuthService) generateAccessToken(user *User, sessionID, bindingHash string) (string, error) {
+func (s *AuthService) generateAccessToken(user *User, sessionID, bindingHash, authEpoch string) (string, error) {
 	now := time.Now()
 	var expiresAt time.Time
 	if s.cfg.JWT.AccessTokenExpireMinutes > 0 {
@@ -1441,6 +1474,8 @@ func (s *AuthService) generateAccessToken(user *User, sessionID, bindingHash str
 		Email:        user.Email,
 		Role:         user.Role,
 		TokenVersion: resolvedTokenVersion(user),
+		AuthEpoch:    authEpoch,
+		TokenUse:     "access",
 		SessionID:    sessionID,
 		BindingHash:  bindingHash,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -1457,6 +1492,67 @@ func (s *AuthService) generateAccessToken(user *User, sessionID, bindingHash str
 	}
 
 	return tokenString, nil
+}
+
+func (s *AuthService) atomicRefreshTokenCache() (AtomicRefreshTokenCache, bool) {
+	cache, ok := s.refreshTokenCache.(AtomicRefreshTokenCache)
+	return cache, ok
+}
+
+func (s *AuthService) currentUserAuthEpoch(ctx context.Context, userID int64) (string, error) {
+	cache, ok := s.atomicRefreshTokenCache()
+	if !ok {
+		return "", nil
+	}
+	epoch, err := cache.GetUserAuthEpoch(ctx, userID)
+	if err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to load auth epoch for user %d: %v", userID, err)
+		return "", ErrServiceUnavailable
+	}
+	return epoch, nil
+}
+
+func (s *AuthService) ensureUserAuthEpoch(ctx context.Context, userID int64) (string, error) {
+	cache, ok := s.atomicRefreshTokenCache()
+	if !ok {
+		return "", nil
+	}
+	candidate, err := randomHexString(16)
+	if err != nil {
+		return "", fmt.Errorf("generate auth epoch: %w", err)
+	}
+	epoch, err := cache.EnsureUserAuthEpoch(ctx, userID, candidate, s.authEpochTTL())
+	if err != nil || epoch == "" {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to ensure auth epoch for user %d: %v", userID, err)
+		return "", ErrServiceUnavailable
+	}
+	return epoch, nil
+}
+
+// ValidateAccessTokenState checks the Redis-backed user auth epoch. New sessions
+// always carry an epoch; a missing server-side epoch therefore fails closed.
+// Legacy JWTs without an epoch remain compatible until their first revoke-all.
+func (s *AuthService) ValidateAccessTokenState(ctx context.Context, claims *JWTClaims) error {
+	if claims == nil {
+		return ErrInvalidToken
+	}
+	epoch, err := s.currentUserAuthEpoch(ctx, claims.UserID)
+	if err != nil {
+		return err
+	}
+	if epoch == "" && claims.AuthEpoch != "" {
+		return ErrServiceUnavailable
+	}
+	if epoch != "" && claims.AuthEpoch != epoch {
+		return ErrTokenRevoked
+	}
+	return nil
+}
+
+// CurrentUserAuthEpoch returns the revocation epoch used to bind short-lived
+// authorization handoffs to the current user session state.
+func (s *AuthService) CurrentUserAuthEpoch(ctx context.Context, userID int64) (string, error) {
+	return s.currentUserAuthEpoch(ctx, userID)
 }
 
 // GetAccessTokenExpiresIn 返回Access Token的有效期（秒）
@@ -1510,6 +1606,9 @@ func (s *AuthService) RefreshToken(ctx context.Context, oldTokenString string) (
 	// This ensures tokens issued before a password change cannot be refreshed
 	if claims.TokenVersion != resolvedTokenVersion(user) {
 		return "", ErrTokenRevoked
+	}
+	if err := s.ValidateAccessTokenState(ctx, claims); err != nil {
+		return "", err
 	}
 
 	// 会话绑定检查：指纹变化的旧 token 不允许换发新 token。
@@ -1631,42 +1730,82 @@ func (s *AuthService) ResetPassword(ctx context.Context, email, token, newPasswo
 		return ErrServiceUnavailable
 	}
 
-	// Verify and consume the reset token (one-time use)
-	if err := s.emailService.ConsumePasswordResetToken(ctx, email, token); err != nil {
+	// Claim the token before touching persistent state. The Redis claim is exclusive,
+	// so concurrent requests cannot both update the password. Failures before the
+	// database write restore the original token with its remaining TTL.
+	claim, err := s.emailService.ClaimPasswordResetToken(ctx, email, token)
+	if err != nil {
 		return err
+	}
+	restoreClaim := func(originalErr error) error {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if restoreErr := s.emailService.RestorePasswordResetTokenClaim(cleanupCtx, claim); restoreErr != nil {
+			logger.LegacyPrintf("service.auth", "[Auth] Failed to restore password reset token claim for %s: %v", email, restoreErr)
+			return ErrServiceUnavailable
+		}
+		return originalErr
+	}
+	finalizeClaim := func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if finalizeErr := s.emailService.FinalizePasswordResetTokenClaim(cleanupCtx, claim); finalizeErr != nil {
+			logger.LegacyPrintf("service.auth", "[Auth] Failed to finalize password reset token claim for %s: %v", email, finalizeErr)
+		}
 	}
 
 	// Get user
 	user, err := s.userRepo.GetByEmail(ctx, email)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
+			finalizeClaim()
 			return ErrInvalidResetToken // Token was valid but user was deleted
 		}
 		logger.LegacyPrintf("service.auth", "[Auth] Database error getting user for password reset: %v", err)
-		return ErrServiceUnavailable
+		return restoreClaim(ErrServiceUnavailable)
 	}
 
 	// Check if user is active
 	if !user.IsActive() {
+		finalizeClaim()
 		return ErrUserNotActive
 	}
 
 	// Hash new password
 	hashedPassword, err := s.HashPassword(newPassword)
 	if err != nil {
-		return fmt.Errorf("hash password: %w", err)
+		return restoreClaim(fmt.Errorf("hash password: %w", err))
 	}
 
 	// Update password and increment TokenVersion
-	user.PasswordHash = hashedPassword
-	user.TokenVersion++ // Invalidate all existing tokens
+	updatedUser := *user
+	updatedUser.PasswordHash = hashedPassword
+	updatedUser.TokenVersion++ // Invalidate all existing tokens
 
 	// TokenVersion 无对应数据库列（见 resolvedTokenVersion：由 email+password_hash 指纹推导），
 	// 写回 password_hash 本身即可让旧 token 失效。
-	if err := s.userRepo.Update(ctx, user, UserUpdateFields{PasswordHash: true}); err != nil {
+	if err := s.userRepo.Update(ctx, &updatedUser, UserUpdateFields{PasswordHash: true}); err != nil {
 		logger.LegacyPrintf("service.auth", "[Auth] Database error updating password for user %d: %v", user.ID, err)
-		return ErrServiceUnavailable
+		// A timeout can be reported after the database committed. Re-read before
+		// restoring the one-time token: restore only when the new hash definitely
+		// did not land; an inconclusive read fails closed to prevent replay.
+		verifyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		persisted, verifyErr := s.userRepo.GetByID(verifyCtx, user.ID)
+		cancel()
+		if verifyErr != nil {
+			logger.LegacyPrintf("service.auth", "[Auth] Failed to verify ambiguous password update for user %d: %v", user.ID, verifyErr)
+			finalizeClaim()
+			return ErrServiceUnavailable
+		}
+		if persisted.PasswordHash != hashedPassword {
+			return restoreClaim(ErrServiceUnavailable)
+		}
 	}
+
+	// The password is already committed, so never restore the reset token from
+	// this point onward. A failed finalization leaves only the inaccessible claim
+	// key, which expires with the token's original TTL and cannot be replayed.
+	finalizeClaim()
 
 	// Also revoke all refresh tokens for this user
 	if err := s.RevokeAllUserSessions(ctx, user.ID); err != nil {
@@ -1711,14 +1850,19 @@ func (s *AuthService) GenerateTokenPair(ctx context.Context, user *User, familyI
 		familyID = hex.EncodeToString(familyBytes)
 	}
 
-	// 生成Access Token（携带会话ID与绑定指纹）
-	accessToken, err := s.generateAccessToken(user, familyID, sessionBindingHashFromContext(ctx))
+	authEpoch, err := s.ensureUserAuthEpoch(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 生成Access Token（携带会话ID、绑定指纹与用户鉴权 epoch）
+	accessToken, err := s.generateAccessToken(user, familyID, sessionBindingHashFromContext(ctx), authEpoch)
 	if err != nil {
 		return nil, fmt.Errorf("generate access token: %w", err)
 	}
 
 	// 生成Refresh Token
-	refreshToken, err := s.generateRefreshToken(ctx, user, familyID)
+	refreshToken, err := s.generateRefreshToken(ctx, user, familyID, authEpoch)
 	if err != nil {
 		return nil, fmt.Errorf("generate refresh token: %w", err)
 	}
@@ -1731,11 +1875,25 @@ func (s *AuthService) GenerateTokenPair(ctx context.Context, user *User, familyI
 }
 
 // generateRefreshToken 生成并存储Refresh Token
-func (s *AuthService) generateRefreshToken(ctx context.Context, user *User, familyID string) (string, error) {
+func (s *AuthService) generateRefreshToken(ctx context.Context, user *User, familyID, authEpoch string) (string, error) {
+	rawToken, tokenHash, data, ttl, err := s.prepareRefreshToken(ctx, user, familyID, authEpoch)
+	if err != nil {
+		return "", err
+	}
+
+	// Production StoreRefreshToken atomically writes the primary record and both
+	// revocation indexes. A partially indexed usable token must never be issued.
+	if err := s.refreshTokenCache.StoreRefreshToken(ctx, tokenHash, data, ttl); err != nil {
+		return "", fmt.Errorf("store refresh token: %w", err)
+	}
+	return rawToken, nil
+}
+
+func (s *AuthService) prepareRefreshToken(ctx context.Context, user *User, familyID, authEpoch string) (string, string, *RefreshTokenData, time.Duration, error) {
 	// 生成随机Token
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
-		return "", fmt.Errorf("generate random bytes: %w", err)
+		return "", "", nil, 0, fmt.Errorf("generate random bytes: %w", err)
 	}
 	rawToken := refreshTokenPrefix + hex.EncodeToString(tokenBytes)
 
@@ -1746,7 +1904,7 @@ func (s *AuthService) generateRefreshToken(ctx context.Context, user *User, fami
 	if familyID == "" {
 		familyBytes := make([]byte, 16)
 		if _, err := rand.Read(familyBytes); err != nil {
-			return "", fmt.Errorf("generate family id: %w", err)
+			return "", "", nil, 0, fmt.Errorf("generate family id: %w", err)
 		}
 		familyID = hex.EncodeToString(familyBytes)
 	}
@@ -1757,30 +1915,70 @@ func (s *AuthService) generateRefreshToken(ctx context.Context, user *User, fami
 	data := &RefreshTokenData{
 		UserID:       user.ID,
 		TokenVersion: resolvedTokenVersion(user),
+		AuthEpoch:    authEpoch,
 		FamilyID:     familyID,
 		BindingHash:  sessionBindingHashFromContext(ctx),
 		CreatedAt:    now,
 		ExpiresAt:    now.Add(ttl),
 	}
 
-	// 存储Token数据
-	if err := s.refreshTokenCache.StoreRefreshToken(ctx, tokenHash, data, ttl); err != nil {
-		return "", fmt.Errorf("store refresh token: %w", err)
-	}
+	return rawToken, tokenHash, data, ttl, nil
+}
 
-	// 添加到用户Token集合
-	if err := s.refreshTokenCache.AddToUserTokenSet(ctx, user.ID, tokenHash, ttl); err != nil {
-		logger.LegacyPrintf("service.auth", "[Auth] Failed to add token to user set: %v", err)
-		// 不影响主流程
-	}
+type refreshRotationRetryEnvelope struct {
+	BindingHash string            `json:"binding_hash"`
+	FamilyID    string            `json:"family_id"`
+	Result      TokenPairWithUser `json:"result"`
+}
 
-	// 添加到家族Token集合
-	if err := s.refreshTokenCache.AddToFamilyTokenSet(ctx, familyID, tokenHash, ttl); err != nil {
-		logger.LegacyPrintf("service.auth", "[Auth] Failed to add token to family set: %v", err)
-		// 不影响主流程
+func (s *AuthService) refreshRotationRetryAEAD() (cipher.AEAD, error) {
+	if s == nil || s.cfg == nil || strings.TrimSpace(s.cfg.JWT.Secret) == "" {
+		return nil, errors.New("missing JWT secret for refresh retry encryption")
 	}
+	key := sha256.Sum256([]byte(refreshRotationRetryKeyContext + "\x00" + s.cfg.JWT.Secret))
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCM(block)
+}
 
-	return rawToken, nil
+func (s *AuthService) sealRefreshRotationRetry(envelope *refreshRotationRetryEnvelope) (string, error) {
+	aead, err := s.refreshRotationRetryAEAD()
+	if err != nil {
+		return "", err
+	}
+	plaintext, err := json.Marshal(envelope)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", err
+	}
+	sealed := aead.Seal(nonce, nonce, plaintext, []byte(refreshRotationRetryKeyContext))
+	return base64.RawURLEncoding.EncodeToString(sealed), nil
+}
+
+func (s *AuthService) openRefreshRotationRetry(payload string) (*refreshRotationRetryEnvelope, error) {
+	aead, err := s.refreshRotationRetryAEAD()
+	if err != nil {
+		return nil, err
+	}
+	sealed, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil || len(sealed) < aead.NonceSize() {
+		return nil, errors.New("invalid refresh retry payload")
+	}
+	nonce, ciphertext := sealed[:aead.NonceSize()], sealed[aead.NonceSize():]
+	plaintext, err := aead.Open(nil, nonce, ciphertext, []byte(refreshRotationRetryKeyContext))
+	if err != nil {
+		return nil, errors.New("invalid refresh retry payload")
+	}
+	var envelope refreshRotationRetryEnvelope
+	if err := json.Unmarshal(plaintext, &envelope); err != nil {
+		return nil, err
+	}
+	return &envelope, nil
 }
 
 // RefreshTokenPair 使用Refresh Token刷新Token对
@@ -1797,14 +1995,21 @@ func (s *AuthService) RefreshTokenPair(ctx context.Context, refreshToken string)
 	}
 
 	tokenHash := hashToken(refreshToken)
+	atomicCache, atomicOK := s.atomicRefreshTokenCache()
 
 	// 获取Token数据
 	data, err := s.refreshTokenCache.GetRefreshToken(ctx, tokenHash)
 	if err != nil {
 		if errors.Is(err, ErrRefreshTokenNotFound) {
-			// Token不存在，可能是已被使用（Token轮转）或已过期
-			logger.LegacyPrintf("service.auth", "[Auth] Refresh token not found, possible reuse attack")
-			return nil, ErrRefreshTokenInvalid
+			if !atomicOK {
+				return nil, ErrRefreshTokenInvalid
+			}
+			state, stateErr := atomicCache.GetRefreshTokenRotationState(ctx, tokenHash)
+			if stateErr != nil {
+				logger.LegacyPrintf("service.auth", "[Auth] Error getting refresh token rotation state: %v", stateErr)
+				return nil, ErrServiceUnavailable
+			}
+			return s.resolveRefreshRotationState(ctx, state)
 		}
 		logger.LegacyPrintf("service.auth", "[Auth] Error getting refresh token: %v", err)
 		return nil, ErrServiceUnavailable
@@ -1853,21 +2058,111 @@ func (s *AuthService) RefreshTokenPair(ctx context.Context, refreshToken string)
 		}
 	}
 
-	// Token轮转：立即使旧Token失效
-	if err := s.refreshTokenCache.DeleteRefreshToken(ctx, tokenHash); err != nil {
-		logger.LegacyPrintf("service.auth", "[Auth] Failed to delete old refresh token: %v", err)
-		// 继续处理，不影响主流程
+	if !atomicOK {
+		logger.LegacyPrintf("service.auth", "[Auth] Atomic refresh token cache is not configured")
+		return nil, ErrServiceUnavailable
 	}
 
-	// 生成新的Token对，保持同一个家族ID
-	pair, err := s.GenerateTokenPair(ctx, user, data.FamilyID)
+	authEpoch, err := s.currentUserAuthEpoch(ctx, user.ID)
 	if err != nil {
 		return nil, err
 	}
-	return &TokenPairWithUser{
-		TokenPair: *pair,
-		UserRole:  user.Role,
-	}, nil
+	// Tokens issued before the most recent revoke-all have an empty or previous
+	// epoch. This also covers legacy orphaned refresh records that were not
+	// reachable through the old, non-atomic user index.
+	if authEpoch == "" && data.AuthEpoch != "" {
+		return nil, ErrServiceUnavailable
+	}
+	if authEpoch != "" && data.AuthEpoch != authEpoch {
+		_ = s.refreshTokenCache.DeleteTokenFamily(ctx, data.FamilyID)
+		return nil, ErrTokenRevoked
+	}
+	if authEpoch == "" {
+		authEpoch, err = s.ensureUserAuthEpoch(ctx, user.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	accessToken, err := s.generateAccessToken(user, data.FamilyID, sessionBindingHashFromContext(ctx), authEpoch)
+	if err != nil {
+		return nil, fmt.Errorf("generate access token: %w", err)
+	}
+	newRefreshToken, newTokenHash, newData, newTTL, err := s.prepareRefreshToken(ctx, user, data.FamilyID, authEpoch)
+	if err != nil {
+		return nil, err
+	}
+	prepared := &TokenPairWithUser{
+		TokenPair: TokenPair{
+			AccessToken:  accessToken,
+			RefreshToken: newRefreshToken,
+			ExpiresIn:    s.GetAccessTokenExpiresIn(),
+		},
+		UserRole: user.Role,
+	}
+	responsePayload, err := s.sealRefreshRotationRetry(&refreshRotationRetryEnvelope{
+		BindingHash: sessionBindingHashFromContext(ctx),
+		FamilyID:    data.FamilyID,
+		Result:      *prepared,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("protect refresh rotation response: %w", err)
+	}
+
+	rotation, err := atomicCache.RotateRefreshToken(
+		ctx,
+		tokenHash,
+		newTokenHash,
+		newData,
+		newTTL,
+		refreshRotationRetryTTL,
+		responsePayload,
+	)
+	if err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Atomic refresh token rotation failed: %v", err)
+		return nil, ErrServiceUnavailable
+	}
+	return s.resolveRefreshRotationState(ctx, rotation)
+}
+
+func (s *AuthService) resolveRefreshRotationState(ctx context.Context, rotation *RefreshTokenRotationResult) (*TokenPairWithUser, error) {
+	if rotation == nil {
+		return nil, ErrServiceUnavailable
+	}
+	switch rotation.Status {
+	case RefreshTokenRotationSucceeded, RefreshTokenRotationRetry:
+		envelope, err := s.openRefreshRotationRetry(rotation.Response)
+		if err != nil {
+			logger.LegacyPrintf("service.auth", "[Auth] Invalid refresh rotation response: %v", err)
+			return nil, ErrServiceUnavailable
+		}
+		if rotation.Status == RefreshTokenRotationRetry {
+			currentBinding := sessionBindingHashFromContext(ctx)
+			bindingMatches := envelope.BindingHash != "" && currentBinding != "" &&
+				len(envelope.BindingHash) == len(currentBinding) &&
+				subtle.ConstantTimeCompare([]byte(envelope.BindingHash), []byte(currentBinding)) == 1
+			if !bindingMatches {
+				if envelope.FamilyID != "" {
+					_ = s.refreshTokenCache.DeleteTokenFamily(ctx, envelope.FamilyID)
+				}
+				return nil, ErrRefreshTokenReused
+			}
+		}
+		return &envelope.Result, nil
+	case RefreshTokenRotationReused:
+		if rotation.TokenData == nil || rotation.TokenData.FamilyID == "" {
+			return nil, ErrRefreshTokenInvalid
+		}
+		if err := s.refreshTokenCache.DeleteTokenFamily(ctx, rotation.TokenData.FamilyID); err != nil {
+			logger.LegacyPrintf("service.auth", "[Auth] Failed to revoke reused refresh token family %s: %v", rotation.TokenData.FamilyID, err)
+			return nil, ErrServiceUnavailable
+		}
+		logger.LegacyPrintf("service.auth", "[Auth] Refresh token reuse detected; family %s revoked", rotation.TokenData.FamilyID)
+		return nil, ErrRefreshTokenReused
+	case RefreshTokenRotationMissing:
+		return nil, ErrRefreshTokenInvalid
+	default:
+		return nil, ErrServiceUnavailable
+	}
 }
 
 // RevokeRefreshToken 撤销单个Refresh Token
@@ -1913,10 +2208,35 @@ func (s *AuthService) RevokeAllUserTokens(ctx context.Context, userID int64) err
 		return fmt.Errorf("get user: %w", err)
 	}
 
-	if err := s.RevokeAllUserSessions(ctx, userID); err != nil {
-		logger.LegacyPrintf("service.auth", "[Auth] Failed to revoke refresh sessions after token invalidation for user %d: %v", userID, err)
+	cache, ok := s.atomicRefreshTokenCache()
+	if !ok {
+		return s.RevokeAllUserSessions(ctx, userID)
+	}
+	authEpoch, err := randomHexString(16)
+	if err != nil {
+		return fmt.Errorf("generate auth epoch: %w", err)
+	}
+	if err := cache.RevokeUserSessions(ctx, userID, authEpoch, s.authEpochTTL()); err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to revoke all tokens for user %d: %v", userID, err)
+		return fmt.Errorf("revoke user sessions: %w", err)
 	}
 	return nil
+}
+
+func (s *AuthService) accessTokenTTL() time.Duration {
+	if s.cfg.JWT.AccessTokenExpireMinutes > 0 {
+		return time.Duration(s.cfg.JWT.AccessTokenExpireMinutes) * time.Minute
+	}
+	return time.Duration(s.cfg.JWT.ExpireHour) * time.Hour
+}
+
+func (s *AuthService) authEpochTTL() time.Duration {
+	ttl := s.accessTokenTTL()
+	refreshTTL := time.Duration(s.cfg.JWT.RefreshTokenExpireDays) * 24 * time.Hour
+	if refreshTTL > ttl {
+		ttl = refreshTTL
+	}
+	return ttl + time.Minute
 }
 
 // hashToken 计算Token的SHA256哈希

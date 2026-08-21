@@ -52,6 +52,12 @@ func TestGetClientIPPreservesLegacyDockerForwardedHeaders(t *testing.T) {
 	require.Equal(t, "203.0.113.42", w.Body.String())
 }
 
+func TestRateLimitSubnet(t *testing.T) {
+	require.Equal(t, "203.0.113.0/24", RateLimitSubnet("203.0.113.42"))
+	require.Equal(t, "2001:db8::/64", RateLimitSubnet("2001:db8::1"))
+	require.Equal(t, "", RateLimitSubnet("not-an-ip"))
+}
+
 func TestCheckIPRestrictionWithCompiledRules(t *testing.T) {
 	whitelist := CompileIPRules([]string{"10.0.0.0/8", "192.168.1.2"})
 	blacklist := CompileIPRules([]string{"10.1.1.1"})

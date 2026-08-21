@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"html"
 	"math"
@@ -24,14 +25,17 @@ import (
 )
 
 var (
-	ErrAPIKeyNotFound       = infraerrors.NotFound("API_KEY_NOT_FOUND", "api key not found")
-	ErrGroupNotAllowed      = infraerrors.Forbidden("GROUP_NOT_ALLOWED", "user is not allowed to bind this group")
-	ErrAPIKeyExists         = infraerrors.Conflict("API_KEY_EXISTS", "api key already exists")
-	ErrAPIKeyTooShort       = infraerrors.BadRequest("API_KEY_TOO_SHORT", "api key must be at least 16 characters")
-	ErrAPIKeyInvalidChars   = infraerrors.BadRequest("API_KEY_INVALID_CHARS", "api key can only contain letters, numbers, underscores, and hyphens")
-	ErrAPIKeyRateLimited    = infraerrors.TooManyRequests("API_KEY_RATE_LIMITED", "too many failed attempts, please try again later")
-	ErrAPIKeyAuthOverloaded = infraerrors.ServiceUnavailable("API_KEY_AUTH_OVERLOADED", "api key authentication is temporarily overloaded")
-	ErrInvalidIPPattern     = infraerrors.BadRequest("INVALID_IP_PATTERN", "invalid IP or CIDR pattern")
+	ErrAPIKeyNotFound          = infraerrors.NotFound("API_KEY_NOT_FOUND", "api key not found")
+	ErrGroupNotAllowed         = infraerrors.Forbidden("GROUP_NOT_ALLOWED", "user is not allowed to bind this group")
+	ErrAPIKeyExists            = infraerrors.Conflict("API_KEY_EXISTS", "api key already exists")
+	ErrAPIKeyCustomUnavailable = infraerrors.Conflict("API_KEY_CUSTOM_UNAVAILABLE", "custom api key is unavailable; choose a stronger value or use an automatically generated key")
+	ErrAPIKeyTooShort          = infraerrors.BadRequest("API_KEY_TOO_SHORT", "api key must be at least 16 characters")
+	ErrAPIKeyInvalidChars      = infraerrors.BadRequest("API_KEY_INVALID_CHARS", "api key can only contain letters, numbers, underscores, and hyphens")
+	ErrAPIKeyWeak              = infraerrors.BadRequest("API_KEY_WEAK", "custom api key is too predictable")
+	ErrAPIKeySessionInvalid    = infraerrors.Unauthorized("API_KEY_SESSION_INVALID", "api key authorization is no longer valid")
+	ErrAPIKeyRateLimited       = infraerrors.TooManyRequests("API_KEY_RATE_LIMITED", "too many failed attempts, please try again later")
+	ErrAPIKeyAuthOverloaded    = infraerrors.ServiceUnavailable("API_KEY_AUTH_OVERLOADED", "api key authentication is temporarily overloaded")
+	ErrInvalidIPPattern        = infraerrors.BadRequest("INVALID_IP_PATTERN", "invalid IP or CIDR pattern")
 	// ErrAPIKeyExpired        = infraerrors.Forbidden("API_KEY_EXPIRED", "api key has expired")
 	ErrAPIKeyExpired = infraerrors.Forbidden("API_KEY_EXPIRED", "api key 已过期")
 	// ErrAPIKeyQuotaExhausted = infraerrors.TooManyRequests("API_KEY_QUOTA_EXHAUSTED", "api key quota exhausted")
@@ -412,8 +416,40 @@ func (s *APIKeyService) ValidateCustomKey(key string) error {
 		}
 		return ErrAPIKeyInvalidChars
 	}
+	if isObviouslyWeakCustomAPIKey(key) {
+		return ErrAPIKeyWeak
+	}
 
 	return nil
+}
+
+func isObviouslyWeakCustomAPIKey(key string) bool {
+	normalized := strings.ToLower(key)
+	unique := make(map[byte]struct{}, len(normalized))
+	for i := 0; i < len(normalized); i++ {
+		unique[normalized[i]] = struct{}{}
+	}
+	if len(unique) <= 2 {
+		return true
+	}
+
+	// Reject short motifs repeated to satisfy the length requirement, such as
+	// "abcdabcdabcdabcd" or "passwordpassword".
+	for period := 1; period <= 8 && period*2 <= len(normalized); period++ {
+		if len(normalized)%period != 0 {
+			continue
+		}
+		if strings.Repeat(normalized[:period], len(normalized)/period) == normalized {
+			return true
+		}
+	}
+
+	ascending, descending := true, true
+	for i := 1; i < len(normalized); i++ {
+		ascending = ascending && normalized[i] == normalized[i-1]+1
+		descending = descending && normalized[i]+1 == normalized[i-1]
+	}
+	return ascending || descending
 }
 
 // checkAPIKeyRateLimit 检查用户创建自定义Key的错误次数是否超限
@@ -496,9 +532,10 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 	}
 
 	var key string
+	customKeyRequested := req.CustomKey != nil && *req.CustomKey != ""
 
 	// 判断是否使用自定义Key
-	if req.CustomKey != nil && *req.CustomKey != "" {
+	if customKeyRequested {
 		// 检查限流（仅对自定义key进行限流）
 		if err := s.checkAPIKeyRateLimit(ctx, userID); err != nil {
 			return nil, err
@@ -517,7 +554,8 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 		if exists {
 			// Key已存在，增加错误计数
 			s.incrementAPIKeyErrorCount(ctx, userID)
-			return nil, ErrAPIKeyExists
+			// Do not disclose whether another tenant owns the submitted value.
+			return nil, ErrAPIKeyCustomUnavailable
 		}
 
 		key = *req.CustomKey
@@ -553,6 +591,10 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 	}
 
 	if err := s.apiKeyRepo.Create(ctx, apiKey); err != nil {
+		if customKeyRequested && errors.Is(err, ErrAPIKeyExists) {
+			s.incrementAPIKeyErrorCount(ctx, userID)
+			return nil, ErrAPIKeyCustomUnavailable
+		}
 		return nil, fmt.Errorf("create api key: %w", err)
 	}
 
@@ -753,6 +795,55 @@ func (s *APIKeyService) GetByKey(ctx context.Context, key string) (*APIKey, erro
 	apiKey.Key = key
 	s.compileAPIKeyIPRules(apiKey)
 	return apiKey, nil
+}
+
+// RevalidateLongLivedAPIKey performs a cache-backed authorization check for a
+// request that outlives its initial HTTP authentication, such as a WebSocket.
+// Stable traffic is served by the existing L1/L2 auth cache; cache invalidation
+// makes key, user, group and ACL changes visible without polling the database on
+// every turn.
+func (s *APIKeyService) RevalidateLongLivedAPIKey(ctx context.Context, credential string, original *APIKey, clientIP string) (*APIKey, error) {
+	if original == nil || strings.TrimSpace(credential) == "" {
+		return nil, ErrAPIKeySessionInvalid
+	}
+	fresh, err := s.GetByKey(ctx, credential)
+	if err != nil {
+		if errors.Is(err, ErrAPIKeyNotFound) {
+			return nil, ErrAPIKeySessionInvalid
+		}
+		return nil, err
+	}
+	if fresh == nil || fresh.ID != original.ID || fresh.UserID != original.UserID || !sameOptionalInt64(fresh.GroupID, original.GroupID) {
+		return nil, ErrAPIKeySessionInvalid
+	}
+	if !fresh.IsActive() || fresh.IsExpired() || fresh.IsQuotaExhausted() || fresh.User == nil || !fresh.User.IsActive() {
+		return nil, ErrAPIKeySessionInvalid
+	}
+	if fresh.GroupID != nil {
+		if fresh.Group == nil || !fresh.Group.IsActive() {
+			return nil, ErrAPIKeySessionInvalid
+		}
+		if original.Group != nil && fresh.Group.IsSubscriptionType() != original.Group.IsSubscriptionType() {
+			return nil, ErrAPIKeySessionInvalid
+		}
+		if !fresh.Group.IsSubscriptionType() && !fresh.User.CanBindGroup(fresh.Group.ID, fresh.Group.IsExclusive) {
+			return nil, ErrAPIKeySessionInvalid
+		}
+	}
+	if len(fresh.IPWhitelist) > 0 || len(fresh.IPBlacklist) > 0 {
+		allowed, _ := ip.CheckIPRestrictionWithCompiledRules(clientIP, fresh.CompiledIPWhitelist, fresh.CompiledIPBlacklist)
+		if !allowed {
+			return nil, ErrAPIKeySessionInvalid
+		}
+	}
+	return fresh, nil
+}
+
+func sameOptionalInt64(a, b *int64) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }
 
 // Update 更新API Key

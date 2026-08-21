@@ -349,10 +349,13 @@ type SystemSettings struct {
 	// Ticket feature switch (default enabled)
 	TicketEnabled bool `json:"ticket_enabled"`
 
-	IPMultiAccountBanEnabled       bool   `json:"ip_multi_account_ban_enabled"`
-	IPMultiAccountBanWindowMinutes int    `json:"ip_multi_account_ban_window_minutes"`
-	IPMultiAccountBanThreshold     int    `json:"ip_multi_account_ban_threshold"`
-	IPMultiAccountBanLearningUntil string `json:"ip_multi_account_ban_learning_until"`
+	IPMultiAccountBanEnabled        bool   `json:"ip_multi_account_ban_enabled"`
+	IPMultiAccountBanWindowMinutes  int    `json:"ip_multi_account_ban_window_minutes"`
+	IPMultiAccountBanThreshold      int    `json:"ip_multi_account_ban_threshold"`
+	IPMultiAccountBanWindow2Minutes int    `json:"ip_multi_account_ban_window2_minutes"`
+	IPMultiAccountBanThreshold2     int    `json:"ip_multi_account_ban_threshold2"`
+	IPMultiAccountBanLearningUntil  string `json:"ip_multi_account_ban_learning_until"`
+	RegistrationBlockDatacenterIP   bool   `json:"registration_block_datacenter_ip"`
 
 	// OpenAI fast/flex policy
 	OpenAIFastPolicySettings *OpenAIFastPolicySettings `json:"openai_fast_policy_settings,omitempty"`

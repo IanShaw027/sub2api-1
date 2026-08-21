@@ -2898,6 +2898,9 @@ func (c *Config) Validate() error {
 			strings.TrimSpace(c.OIDC.ClientSecret) == "" {
 			return fmt.Errorf("oidc_connect.client_secret is required when oidc_connect.enabled=true and token_auth_method is client_secret_post/client_secret_basic")
 		}
+		if method == "none" && !c.OIDC.UsePKCE {
+			return fmt.Errorf("oidc_connect.use_pkce must be true when token_auth_method=none")
+		}
 		if c.OIDC.ClockSkewSeconds < 0 || c.OIDC.ClockSkewSeconds > 600 {
 			return fmt.Errorf("oidc_connect.clock_skew_seconds must be between 0 and 600")
 		}

@@ -60,6 +60,8 @@ func TestRateLimiterFailureModes(t *testing.T) {
 	recorder = httptest.NewRecorder()
 	failCloseRouter.ServeHTTP(recorder, req)
 	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "rate limit exceeded")
+	require.Equal(t, "1", recorder.Header().Get("Retry-After"))
 }
 
 func TestRateLimiterDifferentIPsIndependent(t *testing.T) {
@@ -103,6 +105,80 @@ func TestRateLimiterDifferentIPsIndependent(t *testing.T) {
 	rec3 := httptest.NewRecorder()
 	router.ServeHTTP(rec3, req3)
 	require.Equal(t, http.StatusTooManyRequests, rec3.Code, "第一个 IP 的第二次请求应被限流")
+	require.Equal(t, "1", rec3.Header().Get("Retry-After"))
+}
+
+func TestRateLimiterIgnoresForwardedHeadersFromUntrustedPeer(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	callCounts := make(map[string]int64)
+	originalRun := rateLimitRun
+	rateLimitRun = func(ctx context.Context, client *redis.Client, key string, windowMillis int64) (int64, bool, error) {
+		callCounts[key]++
+		return callCounts[key], false, nil
+	}
+	t.Cleanup(func() {
+		rateLimitRun = originalRun
+	})
+
+	limiter := NewRateLimiter(redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"}))
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+	router.Use(limiter.Limit("auth", 1, time.Minute))
+	router.POST("/login", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+
+	for i, forwarded := range []string{"203.0.113.10", "203.0.113.11"} {
+		req := httptest.NewRequest(http.MethodPost, "/login", nil)
+		req.RemoteAddr = "198.51.100.7:4321"
+		req.Header.Set("X-Forwarded-For", forwarded)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if i == 0 {
+			require.Equal(t, http.StatusNoContent, rec.Code)
+		} else {
+			require.Equal(t, http.StatusTooManyRequests, rec.Code)
+		}
+	}
+}
+
+func TestRateLimiterSubnetBucketSharedAcrossHosts(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	callCounts := make(map[string]int64)
+	originalRun := rateLimitRun
+	rateLimitRun = func(ctx context.Context, client *redis.Client, key string, windowMillis int64) (int64, bool, error) {
+		callCounts[key]++
+		return callCounts[key], false, nil
+	}
+	t.Cleanup(func() {
+		rateLimitRun = originalRun
+	})
+
+	limiter := NewRateLimiter(redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"}))
+	router := gin.New()
+	router.Use(limiter.LimitWithOptions("auth-register", 5, time.Minute, RateLimitOptions{
+		SubnetLimit:        2,
+		SubnetWindow:       10 * time.Minute,
+		ConcealSubnetLimit: true,
+	}))
+	router.POST("/register", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	for i, addr := range []string{"203.0.113.10:1", "203.0.113.11:1", "203.0.113.12:1"} {
+		req := httptest.NewRequest(http.MethodPost, "/register", nil)
+		req.RemoteAddr = addr
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if i < 2 {
+			require.Equal(t, http.StatusOK, rec.Code, "host %s should pass per-IP limit", addr)
+			continue
+		}
+		require.Equal(t, http.StatusForbidden, rec.Code, "third host in the same /24 should be limited")
+		require.NotContains(t, rec.Body.String(), "rate limit")
+		require.Contains(t, rec.Body.String(), "ACCESS_DENIED")
+		require.Empty(t, rec.Header().Get("Retry-After"))
+	}
 }
 
 func TestRateLimiterAllow(t *testing.T) {

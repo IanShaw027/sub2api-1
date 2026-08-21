@@ -32,6 +32,7 @@ func setupRoleStepUpRouter(t *testing.T) (*gin.Engine, *stubAdminService) {
 	h := NewUserHandler(adminSvc, nil, nil, nil, nil, nil, nil)
 	router.POST("/api/v1/admin/users", h.Create)
 	router.PUT("/api/v1/admin/users/:id", h.Update)
+	router.POST("/api/v1/admin/users/:id/auth-identities", h.BindAuthIdentity)
 	return router, adminSvc
 }
 
@@ -81,6 +82,24 @@ func TestCreateRegularUserSkipsStepUp(t *testing.T) {
 
 	rec := doJSON(t, router, http.MethodPost, "/api/v1/admin/users", map[string]any{
 		"email": "new-user@example.com", "password": "pass123", "role": "user",
+	})
+	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestBindAdminAuthIdentityRequiresStepUp(t *testing.T) {
+	router, _ := setupRoleStepUpRouter(t)
+
+	rec := doJSON(t, router, http.MethodPost, "/api/v1/admin/users/2/auth-identities", map[string]any{
+		"provider_type": "oidc", "provider_key": "issuer", "provider_subject": "subject",
+	})
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestBindRegularUserAuthIdentitySkipsStepUp(t *testing.T) {
+	router, _ := setupRoleStepUpRouter(t)
+
+	rec := doJSON(t, router, http.MethodPost, "/api/v1/admin/users/1/auth-identities", map[string]any{
+		"provider_type": "oidc", "provider_key": "issuer", "provider_subject": "subject",
 	})
 	require.Equal(t, http.StatusOK, rec.Code)
 }

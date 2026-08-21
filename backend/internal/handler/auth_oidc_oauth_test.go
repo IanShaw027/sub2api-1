@@ -99,6 +99,16 @@ func TestOIDCParseAndValidateIDToken(t *testing.T) {
 
 	_, err = oidcParseAndValidateIDToken(context.Background(), cfg, signed, "bad-nonce")
 	require.Error(t, err)
+
+	claims.ExpiresAt = nil
+	tok = jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	tok.Header["kid"] = kid
+	signedWithoutExpiry, err := tok.SignedString(priv)
+	require.NoError(t, err)
+
+	_, err = oidcParseAndValidateIDToken(context.Background(), cfg, signedWithoutExpiry, "nonce-ok")
+	require.Error(t, err)
+	require.ErrorContains(t, err, "exp")
 }
 
 func TestOIDCParseUserInfoIncludesSuggestedProfile(t *testing.T) {
@@ -182,9 +192,10 @@ func TestOIDCOAuthBindStartRedirectsAndSetsBindCookies(t *testing.T) {
 
 	bindCookie := findCookie(cookies, oidcOAuthBindUserCookieName)
 	require.NotNil(t, bindCookie)
-	userID, err := parseOAuthBindUserCookieValue(decodeCookieValueForTest(t, bindCookie.Value), "test-secret")
+	userID, epoch, err := parseOAuthBindUserCookieValue(decodeCookieValueForTest(t, bindCookie.Value), "test-secret")
 	require.NoError(t, err)
 	require.Equal(t, int64(84), userID)
+	require.Empty(t, epoch)
 }
 
 func TestOIDCOAuthStartOmitsPKCEAndNonceWhenDisabled(t *testing.T) {
@@ -801,8 +812,20 @@ func TestCompleteOIDCOAuthRegistrationReturnsPendingSessionWhenChoiceStillRequir
 }
 
 func TestCompleteOIDCOAuthRegistrationBindsIdentityWithoutAdoptionFlags(t *testing.T) {
-	handler, client := newOAuthPendingFlowTestHandler(t, false)
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		settingValues: map[string]string{
+			service.SettingKeyRegistrationBlockDatacenterIP: "true",
+		},
+	})
 	ctx := context.Background()
+	existingUser, err := client.User.Create().
+		SetEmail("8c9f12b2a2e14b1db9efc08b27e0ef5c@oidc-connect.invalid").
+		SetUsername("").
+		SetPasswordHash("hash").
+		SetRole(service.RoleUser).
+		SetStatus(service.StatusActive).
+		Save(ctx)
+	require.NoError(t, err)
 
 	session, err := client.PendingAuthSession.Create().
 		SetSessionToken("oidc-complete-no-adoption-session").
@@ -826,6 +849,7 @@ func TestCompleteOIDCOAuthRegistrationBindsIdentityWithoutAdoptionFlags(t *testi
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/oidc/complete-registration", body)
+	req.RemoteAddr = "54.179.125.189:1234"
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue(session.SessionToken)})
 	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("oidc-browser-no-adoption")})
@@ -842,6 +866,7 @@ func TestCompleteOIDCOAuthRegistrationBindsIdentityWithoutAdoptionFlags(t *testi
 		Where(dbuser.EmailEQ(session.ResolvedEmail)).
 		Only(ctx)
 	require.NoError(t, err)
+	require.Equal(t, existingUser.ID, userEntity.ID)
 	require.Equal(t, "oidc_user", userEntity.Username)
 
 	identity, err := client.AuthIdentity.Query().

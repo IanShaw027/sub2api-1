@@ -117,6 +117,8 @@ func TestProxyExportDataWithSelectedIDs(t *testing.T) {
 	require.Len(t, resp.Data.Proxies, 1)
 	require.Equal(t, "https", resp.Data.Proxies[0].Protocol)
 	require.Equal(t, "10.0.0.2", resp.Data.Proxies[0].Host)
+	require.Equal(t, "u", resp.Data.Proxies[0].Username)
+	require.Equal(t, "p", resp.Data.Proxies[0].Password)
 	require.Equal(t, 0, adminSvc.lastListProxies.calls)
 }
 

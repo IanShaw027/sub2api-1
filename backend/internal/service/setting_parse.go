@@ -23,8 +23,8 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 	// 检查是否已有设置
 	_, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationEnabled)
 	if err == nil {
-		// 已有设置，不需要初始化
-		return nil
+		// 已有安装：补齐新增 key，避免缺省隐式生效却不出现在后台
+		return s.ensureRegistrationBlockDatacenterIPSetting(ctx)
 	}
 	if !errors.Is(err, ErrSettingNotFound) {
 		return fmt.Errorf("check existing settings: %w", err)
@@ -64,7 +64,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyLoginAgreementMode:                        defaultLoginAgreementMode,
 		SettingKeyLoginAgreementUpdatedAt:                   defaultLoginAgreementDate,
 		SettingKeyLoginAgreementDocuments:                   loginAgreementDocumentsJSON,
-		SettingKeyAPIKeyACLTrustForwardedIP:                 "true",
+		SettingKeyAPIKeyACLTrustForwardedIP:                 "false",
 		SettingKeyForwardedClientIPHeaders:                  string(forwardedClientIPHeadersJSON),
 		settingKeyForwardedClientIPModeV2:                   "true",
 		SettingKeySiteName:                                  "Sub2API",
@@ -206,12 +206,12 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyModelPlazaDescription: "",
 
 		// Affiliate (邀请返利) feature (default disabled; opt-in)
-		SettingKeyAffiliateEnabled:              "false",
-		SettingKeyAffiliateAdminRechargeEnabled: strconv.FormatBool(AdminRechargeRebateEnabledDefault),
-		SettingKeyAffiliateRebateCap:            strconv.FormatFloat(AffiliateRebateCapDefault, 'f', 2, 64),
-		SettingKeyAffiliateRebateInviteeLimit:   strconv.Itoa(AffiliateRebateInviteeLimitDefault),
-		SettingKeyAffiliateSignupBonus:          strconv.FormatFloat(AffiliateSignupBonusDefault, 'f', 2, 64),
-		SettingKeyTicketEnabled:                 "true",
+		SettingKeyAffiliateEnabled:                "false",
+		SettingKeyAffiliateAdminRechargeEnabled:   strconv.FormatBool(AdminRechargeRebateEnabledDefault),
+		SettingKeyAffiliateRebateCap:              strconv.FormatFloat(AffiliateRebateCapDefault, 'f', 2, 64),
+		SettingKeyAffiliateRebateInviteeLimit:     strconv.Itoa(AffiliateRebateInviteeLimitDefault),
+		SettingKeyAffiliateSignupBonus:            strconv.FormatFloat(AffiliateSignupBonusDefault, 'f', 2, 64),
+		SettingKeyTicketEnabled:                   "true",
 		SettingKeyKiroDefaultVersion:              defaultKiroVersion,
 		SettingKeyKiroDefaultCommit:               "",
 		SettingKeyKiroDefaultSystemVersion:        defaultKiroSystemVersion,
@@ -221,12 +221,15 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyKiroCacheIndependentTTLSeconds:  strconv.Itoa(defaultKiroCacheIndependentTTL),
 		SettingKeyKiroCachePrefixTTLSeconds:       strconv.Itoa(defaultKiroCachePrefixTTL),
 		SettingKeyKiroCodeExecutionSandboxCommand: "",
-		SettingKeyIPMultiAccountBanEnabled:       "false",
-		SettingKeyIPMultiAccountBanWindowMinutes: "10",
-		SettingKeyIPMultiAccountBanThreshold:     "4",
-		SettingKeyIPMultiAccountBanLearningUntil: "",
-		SettingKeySupportQRCodes:                "[]",
-		SettingKeyDownloadToolsURL:              "",
+		SettingKeyIPMultiAccountBanEnabled:        "false",
+		SettingKeyIPMultiAccountBanWindowMinutes:  "10",
+		SettingKeyIPMultiAccountBanThreshold:      "4",
+		SettingKeyIPMultiAccountBanWindow2Minutes: "0",
+		SettingKeyIPMultiAccountBanThreshold2:     "2",
+		SettingKeyIPMultiAccountBanLearningUntil:  "",
+		SettingKeyRegistrationBlockDatacenterIP:   "false",
+		SettingKeySupportQRCodes:                  "[]",
+		SettingKeyDownloadToolsURL:                "",
 
 		// 风控中心功能（默认关闭，显式启用）
 		SettingKeyRiskControlEnabled: "false",
@@ -282,6 +285,23 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 	}
 
 	return s.settingRepo.SetMultiple(ctx, defaults)
+}
+
+func (s *SettingService) ensureRegistrationBlockDatacenterIPSetting(ctx context.Context) error {
+	if s == nil || s.settingRepo == nil {
+		return nil
+	}
+	_, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationBlockDatacenterIP)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, ErrSettingNotFound) {
+		return fmt.Errorf("check registration datacenter block setting: %w", err)
+	}
+	if err := s.settingRepo.Set(ctx, SettingKeyRegistrationBlockDatacenterIP, "false"); err != nil {
+		return fmt.Errorf("seed registration datacenter block setting: %w", err)
+	}
+	return nil
 }
 
 func parseForwardedClientIPHeadersSetting(value string) ([]string, error) {
@@ -865,8 +885,10 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.KiroCachePrefixTTLSeconds = kiroRuntime.CachePrefixTTLSecs
 	result.KiroCodeExecutionSandboxCommand = kiroRuntime.CodeExecutionSandboxCommand
 	ipSecurityCfg := normalizeIPSecurityConfig(IPSecurityConfig{
-		WindowMinutes:    10,
-		AccountThreshold: 4,
+		WindowMinutes:     10,
+		AccountThreshold:  4,
+		Window2Minutes:    0,
+		AccountThreshold2: 2,
 	})
 	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyIPMultiAccountBanWindowMinutes])); err == nil {
 		ipSecurityCfg.WindowMinutes = v
@@ -874,11 +896,20 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyIPMultiAccountBanThreshold])); err == nil {
 		ipSecurityCfg.AccountThreshold = v
 	}
+	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyIPMultiAccountBanWindow2Minutes])); err == nil {
+		ipSecurityCfg.Window2Minutes = v
+	}
+	if v, err := strconv.Atoi(strings.TrimSpace(settings[SettingKeyIPMultiAccountBanThreshold2])); err == nil {
+		ipSecurityCfg.AccountThreshold2 = v
+	}
 	ipSecurityCfg = normalizeIPSecurityConfig(ipSecurityCfg)
 	result.IPMultiAccountBanEnabled = settings[SettingKeyIPMultiAccountBanEnabled] == "true"
 	result.IPMultiAccountBanWindowMinutes = ipSecurityCfg.WindowMinutes
 	result.IPMultiAccountBanThreshold = ipSecurityCfg.AccountThreshold
+	result.IPMultiAccountBanWindow2Minutes = ipSecurityCfg.Window2Minutes
+	result.IPMultiAccountBanThreshold2 = ipSecurityCfg.AccountThreshold2
 	result.IPMultiAccountBanLearningUntil = strings.TrimSpace(settings[SettingKeyIPMultiAccountBanLearningUntil])
+	result.RegistrationBlockDatacenterIP = settingEnabledUnlessFalse(settings[SettingKeyRegistrationBlockDatacenterIP], false)
 
 	// 风控中心功能（默认关闭，严格 true 才启用）
 	result.RiskControlEnabled = settings[SettingKeyRiskControlEnabled] == "true"

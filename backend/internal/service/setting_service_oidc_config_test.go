@@ -180,6 +180,31 @@ func TestGetOIDCConnectOAuthConfig_AllowsCompatibilityFlagsToDisablePKCEAndIDTok
 	require.False(t, got.ValidateIDToken)
 }
 
+func TestGetOIDCConnectOAuthConfig_RejectsPublicClientWithoutPKCE(t *testing.T) {
+	cfg := &config.Config{OIDC: config.OIDCConnectConfig{
+		Enabled:             true,
+		ProviderName:        "OIDC",
+		ClientID:            "public-client",
+		IssuerURL:           "https://issuer.example.com",
+		AuthorizeURL:        "https://issuer.example.com/auth",
+		TokenURL:            "https://issuer.example.com/token",
+		UserInfoURL:         "https://issuer.example.com/userinfo",
+		RedirectURL:         "https://example.com/api/v1/auth/oauth/oidc/callback",
+		FrontendRedirectURL: "/auth/oidc/callback",
+		Scopes:              "openid email profile",
+		TokenAuthMethod:     "none",
+	}}
+	repo := &settingOIDCRepoStub{values: map[string]string{
+		SettingKeyOIDCConnectEnabled:         "true",
+		SettingKeyOIDCConnectUsePKCE:         "false",
+		SettingKeyOIDCConnectTokenAuthMethod: "none",
+	}}
+
+	_, err := NewSettingService(repo, cfg).GetOIDCConnectOAuthConfig(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "public clients must enable pkce")
+}
+
 func TestGetOIDCConnectOAuthConfig_DefaultsToSecureFlagsWhenSettingsMissing(t *testing.T) {
 	cfg := &config.Config{
 		OIDC: config.OIDCConnectConfig{

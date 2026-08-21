@@ -43,6 +43,30 @@ func (s *SettingService) IsRegistrationEmailDomainQuotaEnabled(ctx context.Conte
 	return value == "true"
 }
 
+// IsRegistrationBlockDatacenterIP reports whether registration and verify-code
+// sending reject cloud/datacenter client IPs. API Key usage is never gated by
+// this switch. Missing or unreadable settings preserve the legacy allow behavior.
+func (s *SettingService) IsRegistrationBlockDatacenterIP(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return false
+	}
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationBlockDatacenterIP)
+	if err != nil {
+		return false
+	}
+	return settingEnabledUnlessFalse(value, false)
+}
+
+// settingEnabledUnlessFalse treats missing/empty values as missingDefault and
+// any non-"false" token (case-insensitive) as enabled.
+func settingEnabledUnlessFalse(raw string, missingDefault bool) bool {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return missingDefault
+	}
+	return !strings.EqualFold(value, "false")
+}
+
 // GetRegistrationEmailSuffixWhitelist returns normalized registration email suffix whitelist.
 func (s *SettingService) GetRegistrationEmailSuffixWhitelist(ctx context.Context) []string {
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationEmailSuffixWhitelist)
@@ -297,15 +321,18 @@ func (s *SettingService) IsSessionBindingEnabled(ctx context.Context) bool {
 	return value == "true"
 }
 
-// IsStepUpEnabled 检查敏感操作 step-up 2FA 门控是否启用（默认关闭）。
+// IsStepUpEnabled 检查敏感操作 step-up 2FA 门控是否启用（未配置时默认关闭）。
 // 开启时账号/代理导出、备份创建/下载、S3 配置修改、提升管理员等操作
 // 要求当前会话在有效期内完成过 TOTP step-up 验证。
-func (s *SettingService) IsStepUpEnabled(ctx context.Context) bool {
+func (s *SettingService) IsStepUpEnabled(ctx context.Context) (bool, error) {
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyStepUpEnabled)
 	if err != nil {
-		return false // 默认关闭
+		if errors.Is(err, ErrSettingNotFound) {
+			return false, nil
+		}
+		return false, fmt.Errorf("get step-up setting: %w", err)
 	}
-	return value == "true"
+	return value == "true", nil
 }
 
 // defaultAuditLogRetentionDays 审计日志默认保留天数。
@@ -825,9 +852,15 @@ func (s *SettingService) SetRateLimit429CooldownSettings(ctx context.Context, se
 	} else {
 		settings.Strategy = "same_account_retry"
 	}
-	if settings.RetryIntervalMs == 0 { settings.RetryIntervalMs = 500 }
-	if settings.RetryMaxDurationSeconds == 0 { settings.RetryMaxDurationSeconds = 120 }
-	if settings.MaxAccountSwitches < 0 { settings.MaxAccountSwitches = 0 }
+	if settings.RetryIntervalMs == 0 {
+		settings.RetryIntervalMs = 500
+	}
+	if settings.RetryMaxDurationSeconds == 0 {
+		settings.RetryMaxDurationSeconds = 120
+	}
+	if settings.MaxAccountSwitches < 0 {
+		settings.MaxAccountSwitches = 0
+	}
 
 	if settings.CooldownSeconds < 1 || settings.CooldownSeconds > 7200 {
 		if settings.Enabled {

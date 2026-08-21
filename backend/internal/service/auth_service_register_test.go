@@ -184,6 +184,59 @@ func (s *emailCacheStub) DeleteVerificationCode(ctx context.Context, email strin
 	return nil
 }
 
+func (s *emailCacheStub) VerifyAndConsumeVerificationCode(_ context.Context, _, code string, maxAttempts int) (VerificationCodeCheckResult, error) {
+	if s.err != nil {
+		return VerificationCodeMissing, s.err
+	}
+	if s.data == nil {
+		return VerificationCodeMissing, nil
+	}
+	if s.data.Attempts >= maxAttempts {
+		return VerificationCodeLocked, nil
+	}
+	if s.data.Code == code {
+		s.data = nil
+		return VerificationCodeAccepted, nil
+	}
+	s.data.Attempts++
+	if s.data.Attempts >= maxAttempts {
+		return VerificationCodeLocked, nil
+	}
+	return VerificationCodeRejected, nil
+}
+
+func (s *emailCacheStub) ReserveVerificationCodeSend(context.Context, string, string, time.Duration) (bool, error) {
+	return true, nil
+}
+
+func (s *emailCacheStub) ReleaseVerificationCodeSend(context.Context, string, string) error {
+	return nil
+}
+
+func (s *emailCacheStub) GetOrCreatePasswordResetToken(_ context.Context, _ string, candidate *PasswordResetTokenData, _ time.Duration) (*PasswordResetTokenData, error) {
+	return candidate, nil
+}
+
+func (s *emailCacheStub) ReservePasswordResetEmailSend(context.Context, string, string, time.Duration) (bool, error) {
+	return true, nil
+}
+
+func (s *emailCacheStub) ReleasePasswordResetEmailSend(context.Context, string, string) error {
+	return nil
+}
+
+func (s *emailCacheStub) ClaimPasswordResetToken(context.Context, string, string, string) (bool, error) {
+	return false, nil
+}
+
+func (s *emailCacheStub) FinalizePasswordResetTokenClaim(context.Context, string, string) error {
+	return nil
+}
+
+func (s *emailCacheStub) RestorePasswordResetTokenClaim(context.Context, string, string) error {
+	return nil
+}
+
 func (s *emailCacheStub) GetNotifyVerifyCode(ctx context.Context, email string) (*VerificationCodeData, error) {
 	return nil, nil
 }
@@ -261,6 +314,38 @@ func newAuthService(repo *userRepoStub, settings map[string]string, emailCache E
 		nil, // affiliateService
 		quotaRepo,
 	)
+}
+
+func TestAuthService_RejectDatacenterRegistration(t *testing.T) {
+	legacyDefault := newAuthService(&userRepoStub{}, map[string]string{}, nil, nil)
+	require.NoError(t, legacyDefault.RejectDatacenterRegistration(context.Background(), "54.179.125.189"))
+
+	svc := newAuthService(&userRepoStub{}, map[string]string{
+		SettingKeyRegistrationBlockDatacenterIP: "true",
+	}, nil, nil)
+	require.ErrorIs(t, svc.RejectDatacenterRegistration(context.Background(), "54.179.125.189"), ErrAccessDenied)
+	require.Equal(t, "ACCESS_DENIED", infraerrors.Reason(svc.RejectDatacenterRegistration(context.Background(), "54.179.125.189")))
+	require.NoError(t, svc.RejectDatacenterRegistration(context.Background(), "36.149.1.1"))
+
+	allowed := newAuthService(&userRepoStub{}, map[string]string{
+		SettingKeyRegistrationBlockDatacenterIP: "false",
+	}, nil, nil)
+	require.NoError(t, allowed.RejectDatacenterRegistration(context.Background(), "54.179.125.189"))
+
+	allowedUpper := newAuthService(&userRepoStub{}, map[string]string{
+		SettingKeyRegistrationBlockDatacenterIP: "FALSE",
+	}, nil, nil)
+	require.NoError(t, allowedUpper.RejectDatacenterRegistration(context.Background(), "54.179.125.189"))
+}
+
+func TestSettingEnabledUnlessFalse(t *testing.T) {
+	require.True(t, settingEnabledUnlessFalse("", true))
+	require.False(t, settingEnabledUnlessFalse("", false))
+	require.True(t, settingEnabledUnlessFalse("true", true))
+	require.False(t, settingEnabledUnlessFalse("false", true))
+	require.False(t, settingEnabledUnlessFalse("FALSE", true))
+	require.False(t, settingEnabledUnlessFalse(" False ", true))
+	require.True(t, settingEnabledUnlessFalse("1", true))
 }
 
 func TestAuthService_Register_Disabled(t *testing.T) {

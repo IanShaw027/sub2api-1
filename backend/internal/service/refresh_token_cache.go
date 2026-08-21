@@ -14,10 +14,48 @@ var ErrRefreshTokenNotFound = errors.New("refresh token not found")
 type RefreshTokenData struct {
 	UserID       int64     `json:"user_id"`
 	TokenVersion int64     `json:"token_version"`          // 用于检测密码更改后的Token失效
+	AuthEpoch    string    `json:"auth_epoch,omitempty"`   // 用于撤销全部会话；旧Token缺省为空
 	FamilyID     string    `json:"family_id"`              // Token家族ID，用于防重放攻击
 	BindingHash  string    `json:"binding_hash,omitempty"` // 会话指纹哈希（IP+UA），会话绑定开启时校验
 	CreatedAt    time.Time `json:"created_at"`
 	ExpiresAt    time.Time `json:"expires_at"`
+}
+
+type RefreshTokenRotationStatus int
+
+const (
+	RefreshTokenRotationMissing RefreshTokenRotationStatus = iota
+	RefreshTokenRotationSucceeded
+	RefreshTokenRotationRetry
+	RefreshTokenRotationReused
+)
+
+// RefreshTokenRotationResult is returned by the atomic refresh-token rotation
+// primitive. Response is an opaque, short-lived idempotency payload owned by
+// AuthService; TokenData identifies the consumed token on a replay.
+type RefreshTokenRotationResult struct {
+	Status    RefreshTokenRotationStatus
+	Response  string
+	TokenData *RefreshTokenData
+}
+
+// AtomicRefreshTokenCache contains the security-sensitive operations that must
+// be performed as one Redis transaction. It is separate from RefreshTokenCache
+// so lightweight test doubles for unrelated authentication paths remain small.
+type AtomicRefreshTokenCache interface {
+	RotateRefreshToken(
+		ctx context.Context,
+		oldTokenHash string,
+		newTokenHash string,
+		newData *RefreshTokenData,
+		newTTL time.Duration,
+		retryTTL time.Duration,
+		response string,
+	) (*RefreshTokenRotationResult, error)
+	GetRefreshTokenRotationState(ctx context.Context, tokenHash string) (*RefreshTokenRotationResult, error)
+	GetUserAuthEpoch(ctx context.Context, userID int64) (string, error)
+	EnsureUserAuthEpoch(ctx context.Context, userID int64, candidate string, ttl time.Duration) (string, error)
+	RevokeUserSessions(ctx context.Context, userID int64, authEpoch string, authEpochTTL time.Duration) error
 }
 
 // RefreshTokenCache 管理Refresh Token的Redis缓存

@@ -91,6 +91,8 @@ func TestOpenAIResponsesWebSocket_TurnReacquireUsesEffectiveConcurrencyWhenStore
 	var (
 		mu             sync.Mutex
 		accountSlotMax []int
+		revalidations  atomic.Int32
+		billingChecks  atomic.Int32
 	)
 	cache := &concurrencyCacheMock{
 		acquireUserSlotFn: func(context.Context, int64, int, string) (bool, error) {
@@ -108,6 +110,7 @@ func TestOpenAIResponsesWebSocket_TurnReacquireUsesEffectiveConcurrencyWhenStore
 	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
 	t.Cleanup(billingCacheSvc.Stop)
 
+	upstream := &wsTurnSlotHTTPUpstream{}
 	gatewaySvc := service.NewOpenAIGatewayService(
 		accountRepo,
 		nil,
@@ -122,7 +125,7 @@ func TestOpenAIResponsesWebSocket_TurnReacquireUsesEffectiveConcurrencyWhenStore
 		service.NewBillingService(cfg, nil),
 		nil,
 		billingCacheSvc,
-		&wsTurnSlotHTTPUpstream{},
+		upstream,
 		&service.DeferredService{},
 		nil,
 		nil,
@@ -143,9 +146,23 @@ func TestOpenAIResponsesWebSocket_TurnReacquireUsesEffectiveConcurrencyWhenStore
 	groupID := int64(4202)
 	apiKey := &service.APIKey{
 		ID:      1802,
+		UserID:  1702,
+		Key:     "sk-ws-turn-revalidation-test",
 		GroupID: &groupID,
 		User:    &service.User{ID: 1702, Status: service.StatusActive},
 		Group:   &service.Group{ID: groupID, Platform: service.PlatformOpenAI, Status: service.StatusActive},
+	}
+	h.revalidateLongLivedAPIKey = func(_ context.Context, credential string, original *service.APIKey, _ string) (*service.APIKey, error) {
+		require.Equal(t, apiKey.Key, credential)
+		require.Same(t, apiKey, original)
+		revalidations.Add(1)
+		return apiKey, nil
+	}
+	h.revalidateLongLivedBilling = func(_ context.Context, fresh *service.APIKey, subscription *service.UserSubscription) (*service.UserSubscription, error) {
+		require.Same(t, apiKey, fresh)
+		require.Nil(t, subscription)
+		billingChecks.Add(1)
+		return nil, nil
 	}
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -196,6 +213,8 @@ func TestOpenAIResponsesWebSocket_TurnReacquireUsesEffectiveConcurrencyWhenStore
 
 	writeMessage(`{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_slot_turn_1"}`)
 	readCompleted("resp_slot_turn_2")
+	require.Equal(t, int32(1), revalidations.Load())
+	require.Equal(t, int32(1), billingChecks.Load())
 	_ = clientConn.Close(coderws.StatusNormalClosure, "done")
 
 	mu.Lock()
@@ -205,4 +224,83 @@ func TestOpenAIResponsesWebSocket_TurnReacquireUsesEffectiveConcurrencyWhenStore
 	for _, maxConcurrency := range gotMax {
 		require.Equal(t, wantMax, maxConcurrency, "stored 0 必须按 EffectiveConcurrency() 抢槽，不能把 0 传给 fail-closed 路径")
 	}
+
+	// A second connection proves that a changed authorization state is enforced
+	// before the next turn reaches the upstream.
+	h.revalidateLongLivedAPIKey = func(context.Context, string, *service.APIKey, string) (*service.APIKey, error) {
+		revalidations.Add(1)
+		return nil, service.ErrAPIKeySessionInvalid
+	}
+	dialCtx, cancelDial = context.WithTimeout(context.Background(), 3*time.Second)
+	deniedConn, _, err := coderws.Dial(
+		dialCtx,
+		"ws"+strings.TrimPrefix(handlerServer.URL, "http")+"/openai/v1/responses",
+		&coderws.DialOptions{CompressionMode: coderws.CompressionContextTakeover},
+	)
+	cancelDial()
+	require.NoError(t, err)
+	defer func() { _ = deniedConn.CloseNow() }()
+
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+	require.NoError(t, deniedConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.1","stream":false}`)))
+	cancelWrite()
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
+	_, event, err := deniedConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, err)
+	require.Equal(t, "resp_slot_turn_3", gjson.GetBytes(event, "response.id").String())
+
+	writeCtx, cancelWrite = context.WithTimeout(context.Background(), 3*time.Second)
+	require.NoError(t, deniedConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_slot_turn_3"}`)))
+	cancelWrite()
+	readCtx, cancelRead = context.WithTimeout(context.Background(), 3*time.Second)
+	_, _, err = deniedConn.Read(readCtx)
+	cancelRead()
+	var closeErr coderws.CloseError
+	require.ErrorAs(t, err, &closeErr)
+	require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
+	require.Contains(t, closeErr.Reason, "authorization changed")
+	require.Equal(t, int64(3), upstream.turns.Load(), "denied second turn must not reach upstream")
+	require.Equal(t, int32(2), revalidations.Load())
+	require.Equal(t, int32(1), billingChecks.Load(), "billing must not run after API key revalidation fails")
+
+	h.revalidateLongLivedAPIKey = func(context.Context, string, *service.APIKey, string) (*service.APIKey, error) {
+		revalidations.Add(1)
+		return apiKey, nil
+	}
+	h.revalidateLongLivedBilling = func(context.Context, *service.APIKey, *service.UserSubscription) (*service.UserSubscription, error) {
+		billingChecks.Add(1)
+		return nil, service.ErrInsufficientBalance
+	}
+	dialCtx, cancelDial = context.WithTimeout(context.Background(), 3*time.Second)
+	billingDeniedConn, _, err := coderws.Dial(
+		dialCtx,
+		"ws"+strings.TrimPrefix(handlerServer.URL, "http")+"/openai/v1/responses",
+		&coderws.DialOptions{CompressionMode: coderws.CompressionContextTakeover},
+	)
+	cancelDial()
+	require.NoError(t, err)
+	defer func() { _ = billingDeniedConn.CloseNow() }()
+
+	writeCtx, cancelWrite = context.WithTimeout(context.Background(), 3*time.Second)
+	require.NoError(t, billingDeniedConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.1","stream":false}`)))
+	cancelWrite()
+	readCtx, cancelRead = context.WithTimeout(context.Background(), 3*time.Second)
+	_, event, err = billingDeniedConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, err)
+	require.Equal(t, "resp_slot_turn_4", gjson.GetBytes(event, "response.id").String())
+
+	writeCtx, cancelWrite = context.WithTimeout(context.Background(), 3*time.Second)
+	require.NoError(t, billingDeniedConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.1","stream":false,"previous_response_id":"resp_slot_turn_4"}`)))
+	cancelWrite()
+	readCtx, cancelRead = context.WithTimeout(context.Background(), 3*time.Second)
+	_, _, err = billingDeniedConn.Read(readCtx)
+	cancelRead()
+	require.ErrorAs(t, err, &closeErr)
+	require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
+	require.Contains(t, closeErr.Reason, "billing authorization changed")
+	require.Equal(t, int64(4), upstream.turns.Load(), "billing-denied second turn must not reach upstream")
+	require.Equal(t, int32(3), revalidations.Load())
+	require.Equal(t, int32(2), billingChecks.Load())
 }

@@ -284,12 +284,21 @@ func TestProxyHandlerEndpoints(t *testing.T) {
 	router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
 
-	body, _ := json.Marshal(map[string]any{"name": "proxy", "protocol": "http", "host": "localhost", "port": 8080})
+	body, _ := json.Marshal(map[string]any{
+		"name":     "proxy",
+		"protocol": "http",
+		"host":     "localhost",
+		"port":     8080,
+		"password": "proxy-secret",
+	})
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/admin/proxies", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotContains(t, rec.Body.String(), "proxy-secret")
+	require.NotContains(t, rec.Body.String(), `"password"`)
+	require.Contains(t, rec.Body.String(), `"has_password":true`)
 
 	body, _ = json.Marshal(map[string]any{"name": "proxy2"})
 	rec = httptest.NewRecorder()
@@ -297,6 +306,9 @@ func TestProxyHandlerEndpoints(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotContains(t, rec.Body.String(), "proxy-secret")
+	require.NotContains(t, rec.Body.String(), `"password"`)
+	require.Contains(t, rec.Body.String(), `"has_password":true`)
 
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodDelete, "/api/v1/admin/proxies/4", nil)
@@ -328,6 +340,27 @@ func TestProxyHandlerEndpoints(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/proxies/4/accounts", nil)
 	router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestProxyHandlerRedactsPasswords(t *testing.T) {
+	router, _ := setupAdminRouter()
+
+	for _, path := range []string{
+		"/api/v1/admin/proxies",
+		"/api/v1/admin/proxies/all",
+		"/api/v1/admin/proxies/4",
+	} {
+		t.Run(path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, http.StatusOK, rec.Code)
+			require.NotContains(t, rec.Body.String(), "proxy-secret")
+			require.NotContains(t, rec.Body.String(), `"password"`)
+			require.Contains(t, rec.Body.String(), `"has_password":true`)
+		})
+	}
 }
 
 func TestRedeemHandlerEndpoints(t *testing.T) {

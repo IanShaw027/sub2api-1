@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -32,6 +33,36 @@ func TestSanitizeFrontendRedirectPath(t *testing.T) {
 
 	long := "/" + strings.Repeat("a", linuxDoOAuthMaxRedirectLen)
 	require.Equal(t, "", sanitizeFrontendRedirectPath(long))
+}
+
+func TestAuthHandlerIsRequestHTTPSTrustsForwardedProtoOnlyFromConfiguredProxy(t *testing.T) {
+	handler := &AuthHandler{cfg: &config.Config{Server: config.ServerConfig{
+		TrustedProxiesConfigured: true,
+		TrustedProxies:           []string{"127.0.0.1/32", "10.0.0.0/8"},
+	}}}
+
+	newContext := func(remoteAddr string, tlsEnabled bool) *gin.Context {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/oauth/linuxdo/start", nil)
+		req.RemoteAddr = remoteAddr
+		if !tlsEnabled {
+			req.TLS = nil
+		} else {
+			req.TLS = &tls.ConnectionState{}
+		}
+		req.Header.Set("X-Forwarded-Proto", "https")
+		c.Request = req
+		return c
+	}
+
+	require.True(t, handler.isRequestHTTPS(newContext("127.0.0.1:43210", false)))
+	require.True(t, handler.isRequestHTTPS(newContext("10.20.30.40:43210", false)))
+	require.False(t, handler.isRequestHTTPS(newContext("203.0.113.10:43210", false)))
+	require.True(t, handler.isRequestHTTPS(newContext("203.0.113.10:43210", true)))
+
+	handler.cfg.Server.TrustedProxiesConfigured = false
+	require.False(t, handler.isRequestHTTPS(newContext("127.0.0.1:43210", false)))
 }
 
 func TestBuildBearerAuthorization(t *testing.T) {
@@ -166,9 +197,10 @@ func TestLinuxDoOAuthBindStartRedirectsAndSetsBindCookies(t *testing.T) {
 
 	bindCookie := findCookie(cookies, linuxDoOAuthBindUserCookieName)
 	require.NotNil(t, bindCookie)
-	userID, err := parseOAuthBindUserCookieValue(decodeCookieValueForTest(t, bindCookie.Value), "test-secret")
+	userID, epoch, err := parseOAuthBindUserCookieValue(decodeCookieValueForTest(t, bindCookie.Value), "test-secret")
 	require.NoError(t, err)
 	require.Equal(t, int64(42), userID)
+	require.Empty(t, epoch)
 }
 
 func TestLinuxDoOAuthStartOmitsPKCEWhenDisabled(t *testing.T) {
@@ -304,9 +336,10 @@ func TestLinuxDoOAuthBindStartAcceptsAccessTokenCookie(t *testing.T) {
 
 	bindCookie := findCookie(recorder.Result().Cookies(), linuxDoOAuthBindUserCookieName)
 	require.NotNil(t, bindCookie)
-	userID, err := parseOAuthBindUserCookieValue(decodeCookieValueForTest(t, bindCookie.Value), "test-secret")
+	userID, epoch, err := parseOAuthBindUserCookieValue(decodeCookieValueForTest(t, bindCookie.Value), "test-secret")
 	require.NoError(t, err)
 	require.Equal(t, user.ID, userID)
+	require.Empty(t, epoch)
 
 	accessTokenCookie := findCookie(recorder.Result().Cookies(), oauthBindAccessTokenCookieName)
 	require.NotNil(t, accessTokenCookie)

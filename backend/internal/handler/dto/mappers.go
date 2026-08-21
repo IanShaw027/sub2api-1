@@ -560,8 +560,7 @@ func ProxyWithAccountCountFromService(p *service.ProxyWithAccountCount) *ProxyWi
 	}
 }
 
-// ProxyFromServiceAdmin converts a service Proxy to AdminProxy DTO for admin users.
-// It includes the password field - user-facing endpoints must not use this.
+// ProxyFromServiceAdmin converts a service Proxy to a redacted admin DTO.
 func ProxyFromServiceAdmin(p *service.Proxy) *AdminProxy {
 	if p == nil {
 		return nil
@@ -571,13 +570,12 @@ func ProxyFromServiceAdmin(p *service.Proxy) *AdminProxy {
 		return nil
 	}
 	return &AdminProxy{
-		Proxy:    *base,
-		Password: p.Password,
+		Proxy:       *base,
+		HasPassword: p.Password != "",
 	}
 }
 
-// ProxyWithAccountCountFromServiceAdmin converts a service ProxyWithAccountCount to AdminProxyWithAccountCount DTO.
-// It includes the password field - user-facing endpoints must not use this.
+// ProxyWithAccountCountFromServiceAdmin converts a service ProxyWithAccountCount to a redacted admin DTO.
 func ProxyWithAccountCountFromServiceAdmin(p *service.ProxyWithAccountCount) *AdminProxyWithAccountCount {
 	if p == nil {
 		return nil

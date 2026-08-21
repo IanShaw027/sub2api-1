@@ -58,6 +58,34 @@ type EmailCache interface {
 	GetNotifyCodeUserRate(ctx context.Context, userID int64) (int64, error)
 }
 
+// EmailAtomicCache contains the Redis-backed operations whose security
+// properties depend on compare-and-update being performed as one operation.
+type EmailAtomicCache interface {
+	VerifyAndConsumeVerificationCode(ctx context.Context, email, code string, maxAttempts int) (VerificationCodeCheckResult, error)
+	ReserveVerificationCodeSend(ctx context.Context, email, reservationID string, ttl time.Duration) (bool, error)
+	ReleaseVerificationCodeSend(ctx context.Context, email, reservationID string) error
+	GetOrCreatePasswordResetToken(ctx context.Context, email string, candidate *PasswordResetTokenData, ttl time.Duration) (*PasswordResetTokenData, error)
+	ReservePasswordResetEmailSend(ctx context.Context, email, reservationID string, ttl time.Duration) (bool, error)
+	ReleasePasswordResetEmailSend(ctx context.Context, email, reservationID string) error
+	ClaimPasswordResetToken(ctx context.Context, email, token, claimID string) (bool, error)
+	FinalizePasswordResetTokenClaim(ctx context.Context, email, claimID string) error
+	RestorePasswordResetTokenClaim(ctx context.Context, email, claimID string) error
+}
+
+type VerificationCodeCheckResult int
+
+const (
+	VerificationCodeMissing VerificationCodeCheckResult = iota
+	VerificationCodeAccepted
+	VerificationCodeRejected
+	VerificationCodeLocked
+)
+
+type PasswordResetTokenClaim struct {
+	email   string
+	claimID string
+}
+
 // VerificationCodeData represents verification code data
 type VerificationCodeData struct {
 	Code      string
@@ -315,15 +343,49 @@ func (s *EmailService) GenerateVerifyCode() (string, error) {
 	return string(code), nil
 }
 
+func (s *EmailService) atomicCache() (EmailAtomicCache, error) {
+	cache, ok := s.cache.(EmailAtomicCache)
+	if !ok || cache == nil {
+		return nil, ErrServiceUnavailable
+	}
+	return cache, nil
+}
+
+func emailReservationID() (string, error) {
+	value := make([]byte, 16)
+	if _, err := rand.Read(value); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(value), nil
+}
+
 // SendVerifyCode 发送验证码邮件
 func (s *EmailService) SendVerifyCode(ctx context.Context, email, siteName string, locale ...string) error {
-	// 检查是否在冷却期内
-	existing, err := s.cache.GetVerificationCode(ctx, email)
-	if err == nil && existing != nil {
-		if time.Since(existing.CreatedAt) < verifyCodeCooldown {
-			return ErrVerifyCodeTooFrequent
-		}
+	atomicCache, err := s.atomicCache()
+	if err != nil {
+		return err
 	}
+	reservationID, err := emailReservationID()
+	if err != nil {
+		return fmt.Errorf("generate email reservation: %w", err)
+	}
+	reserved, err := atomicCache.ReserveVerificationCodeSend(ctx, email, reservationID, verifyCodeCooldown)
+	if err != nil {
+		return fmt.Errorf("reserve verify code send: %w", err)
+	}
+	if !reserved {
+		return ErrVerifyCodeTooFrequent
+	}
+	sent := false
+	defer func() {
+		if !sent {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if releaseErr := atomicCache.ReleaseVerificationCodeSend(cleanupCtx, email, reservationID); releaseErr != nil {
+				slog.Error("failed to release verification email reservation", "email", email, "error", releaseErr)
+			}
+		}
+	}()
 
 	// 生成验证码
 	code, err := s.GenerateVerifyCode()
@@ -354,6 +416,7 @@ func (s *EmailService) SendVerifyCode(ctx context.Context, email, siteName strin
 			},
 		})
 		if err == nil {
+			sent = true
 			return nil
 		}
 		if !shouldFallbackNotificationEmail(err) {
@@ -371,42 +434,28 @@ func (s *EmailService) SendVerifyCode(ctx context.Context, email, siteName strin
 		return fmt.Errorf("send email: %w", err)
 	}
 
+	sent = true
 	return nil
 }
 
 // VerifyCode 验证验证码
 func (s *EmailService) VerifyCode(ctx context.Context, email, code string) error {
-	data, err := s.cache.GetVerificationCode(ctx, email)
-	if err != nil || data == nil {
-		return ErrInvalidVerifyCode
+	atomicCache, err := s.atomicCache()
+	if err != nil {
+		return err
 	}
-
-	// 检查是否已达到最大尝试次数
-	if data.Attempts >= maxVerifyCodeAttempts {
+	result, err := atomicCache.VerifyAndConsumeVerificationCode(ctx, email, code, maxVerifyCodeAttempts)
+	if err != nil {
+		return ErrServiceUnavailable
+	}
+	switch result {
+	case VerificationCodeAccepted:
+		return nil
+	case VerificationCodeLocked:
 		return ErrVerifyCodeMaxAttempts
-	}
-
-	// 验证码不匹配 (constant-time comparison to prevent timing attacks)
-	if subtle.ConstantTimeCompare([]byte(data.Code), []byte(code)) != 1 {
-		data.Attempts++
-		remaining := time.Until(data.ExpiresAt)
-		if remaining <= 0 {
-			return ErrInvalidVerifyCode
-		}
-		if err := s.cache.SetVerificationCode(ctx, email, data, remaining); err != nil {
-			slog.Error("failed to update verification attempt count", "email", email, "error", err)
-		}
-		if data.Attempts >= maxVerifyCodeAttempts {
-			return ErrVerifyCodeMaxAttempts
-		}
+	default:
 		return ErrInvalidVerifyCode
 	}
-
-	// 验证成功，删除验证码
-	if err := s.cache.DeleteVerificationCode(ctx, email); err != nil {
-		slog.Error("failed to delete verification code after success", "email", email, "error", err)
-	}
-	return nil
 }
 
 // buildVerifyCodeEmailBody 构建验证码邮件HTML内容
@@ -480,34 +529,25 @@ func (s *EmailService) GeneratePasswordResetToken() (string, error) {
 
 // SendPasswordResetEmail sends a password reset email with a reset link
 func (s *EmailService) SendPasswordResetEmail(ctx context.Context, email, siteName, resetURL string, locale ...string) error {
-	var token string
-	var needSaveToken bool
-
-	// Check if token already exists
-	existing, err := s.cache.GetPasswordResetToken(ctx, email)
-	if err == nil && existing != nil {
-		// Token exists, reuse it (allows resending email without generating new token)
-		token = existing.Token
-		needSaveToken = false
-	} else {
-		// Generate new token
-		token, err = s.GeneratePasswordResetToken()
-		if err != nil {
-			return fmt.Errorf("generate token: %w", err)
-		}
-		needSaveToken = true
+	atomicCache, err := s.atomicCache()
+	if err != nil {
+		return err
 	}
-
-	// Save token to Redis (only if new token generated)
-	if needSaveToken {
-		data := &PasswordResetTokenData{
-			Token:     token,
-			CreatedAt: time.Now(),
-		}
-		if err := s.cache.SetPasswordResetToken(ctx, email, data, passwordResetTokenTTL); err != nil {
-			return fmt.Errorf("save reset token: %w", err)
-		}
+	candidateToken, err := s.GeneratePasswordResetToken()
+	if err != nil {
+		return fmt.Errorf("generate token: %w", err)
 	}
+	data, err := atomicCache.GetOrCreatePasswordResetToken(ctx, email, &PasswordResetTokenData{
+		Token:     candidateToken,
+		CreatedAt: time.Now(),
+	}, passwordResetTokenTTL)
+	if err != nil {
+		return fmt.Errorf("save reset token: %w", err)
+	}
+	if data == nil || data.Token == "" {
+		return fmt.Errorf("save reset token: empty token data")
+	}
+	token := data.Token
 
 	// Build full reset URL with URL-encoded token and email
 	fullResetURL := fmt.Sprintf("%s?email=%s&token=%s", resetURL, url.QueryEscape(email), url.QueryEscape(token))
@@ -547,22 +587,39 @@ func (s *EmailService) SendPasswordResetEmail(ctx context.Context, email, siteNa
 // SendPasswordResetEmailWithCooldown sends password reset email with cooldown check (called by queue worker)
 // This method wraps SendPasswordResetEmail with email cooldown to prevent email bombing
 func (s *EmailService) SendPasswordResetEmailWithCooldown(ctx context.Context, email, siteName, resetURL string, locale ...string) error {
-	// Check email cooldown to prevent email bombing
-	if s.cache.IsPasswordResetEmailInCooldown(ctx, email) {
-		slog.Info("password reset email skipped due to cooldown", "email", email)
-		return nil // Silent success to prevent revealing cooldown to attackers
+	atomicCache, err := s.atomicCache()
+	if err != nil {
+		return err
 	}
+	reservationID, err := emailReservationID()
+	if err != nil {
+		return fmt.Errorf("generate email reservation: %w", err)
+	}
+	reserved, err := atomicCache.ReservePasswordResetEmailSend(ctx, email, reservationID, passwordResetEmailCooldown)
+	if err != nil {
+		return fmt.Errorf("reserve password reset email: %w", err)
+	}
+	if !reserved {
+		slog.Info("password reset email skipped due to cooldown", "email", email)
+		return nil
+	}
+	sent := false
+	defer func() {
+		if !sent {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if releaseErr := atomicCache.ReleasePasswordResetEmailSend(cleanupCtx, email, reservationID); releaseErr != nil {
+				slog.Error("failed to release password reset email reservation", "email", email, "error", releaseErr)
+			}
+		}
+	}()
 
 	// Send email using core method
 	if err := s.SendPasswordResetEmail(ctx, email, siteName, resetURL, firstEmailLocale(locale)); err != nil {
 		return err
 	}
 
-	// Set cooldown marker (Redis TTL handles expiration)
-	if err := s.cache.SetPasswordResetEmailCooldown(ctx, email, passwordResetEmailCooldown); err != nil {
-		slog.Error("failed to set password reset cooldown", "email", email, "error", err)
-	}
-
+	sent = true
 	return nil
 }
 
@@ -583,14 +640,62 @@ func (s *EmailService) VerifyPasswordResetToken(ctx context.Context, email, toke
 
 // ConsumePasswordResetToken verifies and deletes the token (one-time use)
 func (s *EmailService) ConsumePasswordResetToken(ctx context.Context, email, token string) error {
-	// Verify first
-	if err := s.VerifyPasswordResetToken(ctx, email, token); err != nil {
+	claim, err := s.ClaimPasswordResetToken(ctx, email, token)
+	if err != nil {
 		return err
 	}
+	return s.FinalizePasswordResetTokenClaim(ctx, claim)
+}
 
-	// Delete after verification (one-time use)
-	if err := s.cache.DeletePasswordResetToken(ctx, email); err != nil {
-		slog.Error("failed to delete password reset token after consumption", "email", email, "error", err)
+func (s *EmailService) ClaimPasswordResetToken(ctx context.Context, email, token string) (*PasswordResetTokenClaim, error) {
+	atomicCache, err := s.atomicCache()
+	if err != nil {
+		return nil, err
+	}
+	claimID, err := emailReservationID()
+	if err != nil {
+		return nil, fmt.Errorf("generate password reset claim: %w", err)
+	}
+	claimed, err := atomicCache.ClaimPasswordResetToken(ctx, email, token, claimID)
+	if err != nil {
+		// The Lua claim may have committed before a Redis timeout was reported.
+		// Restore with the same owner token so an ambiguous result cannot leave the
+		// reset token hidden behind its claim until the original TTL expires.
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+		_ = atomicCache.RestorePasswordResetTokenClaim(cleanupCtx, email, claimID)
+		return nil, ErrServiceUnavailable
+	}
+	if !claimed {
+		return nil, ErrInvalidResetToken
+	}
+	return &PasswordResetTokenClaim{email: email, claimID: claimID}, nil
+}
+
+func (s *EmailService) FinalizePasswordResetTokenClaim(ctx context.Context, claim *PasswordResetTokenClaim) error {
+	if claim == nil {
+		return ErrInvalidResetToken
+	}
+	atomicCache, err := s.atomicCache()
+	if err != nil {
+		return err
+	}
+	if err := atomicCache.FinalizePasswordResetTokenClaim(ctx, claim.email, claim.claimID); err != nil {
+		return ErrServiceUnavailable
+	}
+	return nil
+}
+
+func (s *EmailService) RestorePasswordResetTokenClaim(ctx context.Context, claim *PasswordResetTokenClaim) error {
+	if claim == nil {
+		return nil
+	}
+	atomicCache, err := s.atomicCache()
+	if err != nil {
+		return err
+	}
+	if err := atomicCache.RestorePasswordResetTokenClaim(ctx, claim.email, claim.claimID); err != nil {
+		return ErrServiceUnavailable
 	}
 	return nil
 }

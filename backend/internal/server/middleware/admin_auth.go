@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -189,6 +190,15 @@ func validateJWTForAdmin(
 	// 校验 TokenVersion，确保管理员改密后旧 token 失效
 	if claims.TokenVersion != user.TokenVersion {
 		AbortWithError(c, 401, "TOKEN_REVOKED", "Token has been revoked (password changed)")
+		return false
+	}
+	if err := authService.ValidateAccessTokenState(c.Request.Context(), claims); err != nil {
+		if errors.Is(err, service.ErrTokenRevoked) {
+			AbortWithError(c, 401, "TOKEN_REVOKED", "Token has been revoked")
+		} else {
+			response.ErrorFrom(c, err)
+			c.Abort()
+		}
 		return false
 	}
 

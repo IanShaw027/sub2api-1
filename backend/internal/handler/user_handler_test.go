@@ -471,6 +471,53 @@ func (s *userHandlerEmailCacheStub) DeleteVerificationCode(context.Context, stri
 	return nil
 }
 
+func (s *userHandlerEmailCacheStub) VerifyAndConsumeVerificationCode(_ context.Context, _ string, code string, maxAttempts int) (service.VerificationCodeCheckResult, error) {
+	if s.data == nil {
+		return service.VerificationCodeMissing, nil
+	}
+	if s.data.Attempts >= maxAttempts {
+		return service.VerificationCodeLocked, nil
+	}
+	if s.data.Code == code {
+		s.data = nil
+		return service.VerificationCodeAccepted, nil
+	}
+	s.data.Attempts++
+	return service.VerificationCodeRejected, nil
+}
+
+func (s *userHandlerEmailCacheStub) ReserveVerificationCodeSend(context.Context, string, string, time.Duration) (bool, error) {
+	return true, nil
+}
+
+func (s *userHandlerEmailCacheStub) ReleaseVerificationCodeSend(context.Context, string, string) error {
+	return nil
+}
+
+func (s *userHandlerEmailCacheStub) GetOrCreatePasswordResetToken(_ context.Context, _ string, data *service.PasswordResetTokenData, _ time.Duration) (*service.PasswordResetTokenData, error) {
+	return data, nil
+}
+
+func (s *userHandlerEmailCacheStub) ReservePasswordResetEmailSend(context.Context, string, string, time.Duration) (bool, error) {
+	return true, nil
+}
+
+func (s *userHandlerEmailCacheStub) ReleasePasswordResetEmailSend(context.Context, string, string) error {
+	return nil
+}
+
+func (s *userHandlerEmailCacheStub) ClaimPasswordResetToken(context.Context, string, string, string) (bool, error) {
+	return false, nil
+}
+
+func (s *userHandlerEmailCacheStub) FinalizePasswordResetTokenClaim(context.Context, string, string) error {
+	return nil
+}
+
+func (s *userHandlerEmailCacheStub) RestorePasswordResetTokenClaim(context.Context, string, string) error {
+	return nil
+}
+
 func (s *userHandlerEmailCacheStub) GetNotifyVerifyCode(context.Context, string) (*service.VerificationCodeData, error) {
 	return nil, nil
 }

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
@@ -186,12 +187,30 @@ func (h *AuthHandler) isBackendModeEnabled(ctx context.Context) bool {
 	return h.settingSvc.IsBackendModeEnabled(ctx)
 }
 
+func (h *AuthHandler) datacenterRegistrationError(c *gin.Context) error {
+	if h == nil || h.authService == nil {
+		return nil
+	}
+	return h.authService.RejectDatacenterRegistration(c.Request.Context(), ip.GetTrustedClientIP(c))
+}
+
+func (h *AuthHandler) rejectDatacenterRegistration(c *gin.Context) bool {
+	if err := h.datacenterRegistrationError(c); err != nil {
+		response.ErrorFrom(c, err)
+		return true
+	}
+	return false
+}
+
 // Register handles user registration
 // POST /api/v1/auth/register
 func (h *AuthHandler) Register(c *gin.Context) {
 	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if h.rejectDatacenterRegistration(c) {
 		return
 	}
 
@@ -225,6 +244,9 @@ func (h *AuthHandler) SendVerifyCode(c *gin.Context) {
 	var req SendVerifyCodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if h.rejectDatacenterRegistration(c) {
 		return
 	}
 
@@ -321,8 +343,10 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 		"temp_token_len", len(req.TempToken),
 		"totp_code_len", len(req.TotpCode))
 
-	// Get the login session
-	session, err := h.totpService.GetLoginSession(c.Request.Context(), req.TempToken)
+	// Claim the login session without consuming it. Verification failures release
+	// the claim so the user can retry, while concurrent finish requests cannot
+	// verify or issue credentials from the same temporary session.
+	session, claimToken, err := h.totpService.ClaimLoginSession(c.Request.Context(), req.TempToken)
 	if err != nil || session == nil {
 		tokenPrefix := ""
 		if len(req.TempToken) >= 8 {
@@ -334,6 +358,14 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 		response.BadRequest(c, "Invalid or expired 2FA session")
 		return
 	}
+	claimHeld := true
+	defer func() {
+		if claimHeld {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 2*time.Second)
+			defer cancel()
+			_ = h.totpService.ReleaseLoginSessionClaim(cleanupCtx, req.TempToken, claimToken)
+		}
+	}()
 
 	slog.Debug("login_2fa_session_found",
 		"user_id", session.UserID,
@@ -365,6 +397,10 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 	}
 
 	if session.PendingOAuthBind != nil {
+		if err := h.totpService.RenewLoginSessionClaim(c.Request.Context(), req.TempToken, claimToken); err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
 		pendingSvc, err := h.pendingIdentityService()
 		if err != nil {
 			response.ErrorFrom(c, err)
@@ -386,30 +422,22 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 			response.ErrorFrom(c, err)
 			return
 		}
-		if err := applyPendingOAuthBinding(
+		if err := applyPendingOAuthBindingAndConsumeSession(
 			c.Request.Context(),
 			h.entClient(),
 			h.authService,
 			h.userService,
 			pendingSession,
 			decision,
-			&user.ID,
+			user.ID,
 			true,
 			true,
 		); err != nil {
 			response.ErrorFrom(c, infraerrors.InternalServer("PENDING_AUTH_BIND_APPLY_FAILED", "failed to bind pending oauth identity").WithCause(err))
 			return
 		}
-		if _, err := pendingSvc.ConsumeBrowserSession(
-			c.Request.Context(),
-			pendingSession.SessionToken,
-			pendingSession.BrowserSessionKey,
-		); err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
 
-		secureCookie := isRequestHTTPS(c)
+		secureCookie := h.isRequestHTTPS(c)
 		clearOAuthPendingSessionCookie(c, secureCookie)
 		clearOAuthPendingBrowserCookie(c, secureCookie)
 		h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
@@ -421,8 +449,16 @@ func (h *AuthHandler) Login2FA(c *gin.Context) {
 		}
 	}
 
-	// Delete the login session (only after all checks pass)
-	_ = h.totpService.DeleteLoginSession(c.Request.Context(), req.TempToken)
+	// Atomically consume the session only after every check and pending binding
+	// step succeeds. Token issuance is forbidden if this claim was lost.
+	finalizeCtx, finalizeCancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 2*time.Second)
+	err = h.totpService.FinalizeLoginSessionClaim(finalizeCtx, req.TempToken, claimToken)
+	finalizeCancel()
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	claimHeld = false
 
 	if session.PendingOAuthBind == nil {
 		h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
@@ -746,7 +782,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		}
 	}
 	h.consumePendingOAuthSessionOnLogout(c)
-	clearOAuthLogoutCookies(c)
+	h.clearOAuthLogoutCookies(c)
 
 	response.Success(c, LogoutResponse{
 		Message: "Logged out successfully",

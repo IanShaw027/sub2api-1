@@ -1332,7 +1332,21 @@ func TestOAuthExistingUserLoginDoesNotApplyPromoCode(t *testing.T) {
 }
 
 func TestCreateOIDCOAuthAccountExistingEmailReturnsChoicePendingSessionState(t *testing.T) {
-	handler, client := newOAuthPendingFlowTestHandlerWithEmailVerification(t, false, "owner@example.com", "135790")
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		emailVerifyEnabled: true,
+		emailCache: &oauthPendingFlowEmailCacheStub{
+			verificationCodes: map[string]*service.VerificationCodeData{
+				"owner@example.com": {
+					Code:      "135790",
+					CreatedAt: time.Now().UTC(),
+					ExpiresAt: time.Now().UTC().Add(15 * time.Minute),
+				},
+			},
+		},
+		settingValues: map[string]string{
+			service.SettingKeyRegistrationBlockDatacenterIP: "true",
+		},
+	})
 	ctx := context.Background()
 
 	existingUser, err := client.User.Create().
@@ -1365,6 +1379,7 @@ func TestCreateOIDCOAuthAccountExistingEmailReturnsChoicePendingSessionState(t *
 	recorder := httptest.NewRecorder()
 	ginCtx, _ := gin.CreateTestContext(recorder)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/oidc/create-account", body)
+	req.RemoteAddr = "54.179.125.189:1234"
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue(session.SessionToken)})
 	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("existing-email-browser-session-key")})
@@ -1403,6 +1418,44 @@ func TestCreateOIDCOAuthAccountExistingEmailReturnsChoicePendingSessionState(t *
 		Count(ctx)
 	require.NoError(t, err)
 	require.Zero(t, identityCount)
+}
+
+func TestCreateOIDCOAuthAccountBlocksNewAccountFromDatacenterIP(t *testing.T) {
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		settingValues: map[string]string{
+			service.SettingKeyRegistrationBlockDatacenterIP: "true",
+		},
+	})
+	ctx := context.Background()
+
+	session, err := client.PendingAuthSession.Create().
+		SetSessionToken("datacenter-new-account-session-token").
+		SetIntent("login").
+		SetProviderType("oidc").
+		SetProviderKey("https://issuer.example").
+		SetProviderSubject("oidc-datacenter-new-123").
+		SetBrowserSessionKey("datacenter-new-account-browser-key").
+		SetExpiresAt(time.Now().UTC().Add(10 * time.Minute)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	body := bytes.NewBufferString(`{"email":"fresh@example.com","password":"secret-123"}`)
+	recorder := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/oidc/create-account", body)
+	req.RemoteAddr = "54.179.125.189:1234"
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue(session.SessionToken)})
+	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue(session.BrowserSessionKey)})
+	ginCtx.Request = req
+
+	handler.CreateOIDCOAuthAccount(ginCtx)
+
+	require.Equal(t, http.StatusForbidden, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "ACCESS_DENIED")
+	userCount, err := client.User.Query().Where(dbuser.EmailEQ("fresh@example.com")).Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, userCount)
 }
 
 func TestCreateOIDCOAuthAccountExistingEmailNormalizesLegacySpacingAndCase(t *testing.T) {
@@ -1576,7 +1629,19 @@ func TestCreateOIDCOAuthAccountRejectsEmailOutsideWhitelistWhenQuotaDisabled(t *
 }
 
 func TestSendPendingOAuthVerifyCodeExistingEmailReturnsBindLoginState(t *testing.T) {
-	handler, client := newOAuthPendingFlowTestHandlerWithEmailVerification(t, false, "owner@example.com", "135790")
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		emailVerifyEnabled: true,
+		emailCache: &oauthPendingFlowEmailCacheStub{verificationCodes: map[string]*service.VerificationCodeData{
+			"owner@example.com": {
+				Code:      "135790",
+				CreatedAt: time.Now().UTC(),
+				ExpiresAt: time.Now().UTC().Add(15 * time.Minute),
+			},
+		}},
+		settingValues: map[string]string{
+			service.SettingKeyRegistrationBlockDatacenterIP: "true",
+		},
+	})
 	ctx := context.Background()
 
 	existingUser, err := client.User.Create().
@@ -1609,6 +1674,7 @@ func TestSendPendingOAuthVerifyCodeExistingEmailReturnsBindLoginState(t *testing
 	recorder := httptest.NewRecorder()
 	ginCtx, _ := gin.CreateTestContext(recorder)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/pending/send-verify-code", body)
+	req.RemoteAddr = "54.179.125.189:1234"
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue(session.SessionToken)})
 	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("existing-email-send-code-browser-session-key")})
@@ -2821,6 +2887,54 @@ func (s *oauthPendingFlowEmailCacheStub) DeleteVerificationCode(_ context.Contex
 	return nil
 }
 
+func (s *oauthPendingFlowEmailCacheStub) VerifyAndConsumeVerificationCode(_ context.Context, email, code string, maxAttempts int) (service.VerificationCodeCheckResult, error) {
+	data := s.verificationCodes[email]
+	if data == nil {
+		return service.VerificationCodeMissing, nil
+	}
+	if data.Attempts >= maxAttempts {
+		return service.VerificationCodeLocked, nil
+	}
+	if data.Code == code {
+		delete(s.verificationCodes, email)
+		return service.VerificationCodeAccepted, nil
+	}
+	data.Attempts++
+	return service.VerificationCodeRejected, nil
+}
+
+func (s *oauthPendingFlowEmailCacheStub) ReserveVerificationCodeSend(context.Context, string, string, time.Duration) (bool, error) {
+	return true, nil
+}
+
+func (s *oauthPendingFlowEmailCacheStub) ReleaseVerificationCodeSend(context.Context, string, string) error {
+	return nil
+}
+
+func (s *oauthPendingFlowEmailCacheStub) GetOrCreatePasswordResetToken(_ context.Context, _ string, data *service.PasswordResetTokenData, _ time.Duration) (*service.PasswordResetTokenData, error) {
+	return data, nil
+}
+
+func (s *oauthPendingFlowEmailCacheStub) ReservePasswordResetEmailSend(context.Context, string, string, time.Duration) (bool, error) {
+	return true, nil
+}
+
+func (s *oauthPendingFlowEmailCacheStub) ReleasePasswordResetEmailSend(context.Context, string, string) error {
+	return nil
+}
+
+func (s *oauthPendingFlowEmailCacheStub) ClaimPasswordResetToken(context.Context, string, string, string) (bool, error) {
+	return false, nil
+}
+
+func (s *oauthPendingFlowEmailCacheStub) FinalizePasswordResetTokenClaim(context.Context, string, string) error {
+	return nil
+}
+
+func (s *oauthPendingFlowEmailCacheStub) RestorePasswordResetTokenClaim(context.Context, string, string) error {
+	return nil
+}
+
 func (s *oauthPendingFlowEmailCacheStub) GetNotifyVerifyCode(context.Context, string) (*service.VerificationCodeData, error) {
 	return nil, nil
 }
@@ -3520,6 +3634,7 @@ func (s *oauthPendingFlowDefaultSubAssignerStub) AssignOrExtendSubscription(
 type oauthPendingFlowTotpCacheStub struct {
 	setupSessions  map[int64]*service.TotpSetupSession
 	loginSessions  map[string]*service.TotpLoginSession
+	loginClaims    map[string]string
 	verifyAttempts map[int64]int
 }
 
@@ -3561,6 +3676,44 @@ func (s *oauthPendingFlowTotpCacheStub) SetLoginSession(_ context.Context, tempT
 func (s *oauthPendingFlowTotpCacheStub) DeleteLoginSession(_ context.Context, tempToken string) error {
 	delete(s.loginSessions, tempToken)
 	return nil
+}
+
+func (s *oauthPendingFlowTotpCacheStub) ClaimLoginSession(_ context.Context, tempToken, claimToken string, _ time.Duration) (*service.TotpLoginSession, bool, error) {
+	if s.loginSessions == nil || s.loginSessions[tempToken] == nil {
+		return nil, false, nil
+	}
+	if s.loginClaims == nil {
+		s.loginClaims = map[string]string{}
+	}
+	if s.loginClaims[tempToken] != "" {
+		return nil, false, nil
+	}
+	s.loginClaims[tempToken] = claimToken
+	return s.loginSessions[tempToken], true, nil
+}
+
+func (s *oauthPendingFlowTotpCacheStub) FinalizeLoginSessionClaim(_ context.Context, tempToken, claimToken string) (bool, error) {
+	if s.loginClaims[tempToken] != claimToken || s.loginSessions[tempToken] == nil {
+		return false, nil
+	}
+	delete(s.loginClaims, tempToken)
+	delete(s.loginSessions, tempToken)
+	return true, nil
+}
+
+func (s *oauthPendingFlowTotpCacheStub) RenewLoginSessionClaim(_ context.Context, tempToken, claimToken string, _ time.Duration) (bool, error) {
+	return s.loginSessions[tempToken] != nil && s.loginClaims[tempToken] == claimToken, nil
+}
+
+func (s *oauthPendingFlowTotpCacheStub) ReleaseLoginSessionClaim(_ context.Context, tempToken, claimToken string) error {
+	if s.loginClaims[tempToken] == claimToken {
+		delete(s.loginClaims, tempToken)
+	}
+	return nil
+}
+
+func (s *oauthPendingFlowTotpCacheStub) ReserveVerifyAttempt(ctx context.Context, userID int64, _ int) (int, error) {
+	return s.IncrementVerifyAttempts(ctx, userID)
 }
 
 func (s *oauthPendingFlowTotpCacheStub) IncrementVerifyAttempts(_ context.Context, userID int64) (int, error) {

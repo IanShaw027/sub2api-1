@@ -11,7 +11,7 @@ import (
 
 func buildEncodedOAuthBindUserCookie(t *testing.T, userID int64, secret string) string {
 	t.Helper()
-	value, err := buildOAuthBindUserCookieValue(userID, secret)
+	value, err := buildOAuthBindUserCookieValue(userID, "", secret)
 	require.NoError(t, err)
 	return value
 }

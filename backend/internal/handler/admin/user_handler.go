@@ -296,6 +296,17 @@ func (h *UserHandler) BindAuthIdentity(c *gin.Context) {
 		return
 	}
 
+	target, err := h.adminService.GetUser(c.Request.Context(), userID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if target.Role == service.RoleAdmin {
+		if !middleware.EnforceStepUp(c, h.totpService, h.userService, h.settingService) {
+			return
+		}
+	}
+
 	input := service.AdminBindAuthIdentityInput{
 		ProviderType:    req.ProviderType,
 		ProviderKey:     req.ProviderKey,

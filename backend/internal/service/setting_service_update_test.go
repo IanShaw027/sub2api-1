@@ -108,8 +108,16 @@ func (s *forwardedIPMigrationRepoStub) GetValue(_ context.Context, key string) (
 	return value, nil
 }
 
-func (s *forwardedIPMigrationRepoStub) Set(context.Context, string, string) error {
-	panic("unexpected Set call")
+func (s *forwardedIPMigrationRepoStub) Set(_ context.Context, key, value string) error {
+	if s.values == nil {
+		s.values = map[string]string{}
+	}
+	if s.updates == nil {
+		s.updates = map[string]string{}
+	}
+	s.values[key] = value
+	s.updates[key] = value
+	return nil
 }
 
 func (s *forwardedIPMigrationRepoStub) GetMultiple(_ context.Context, keys []string) (map[string]string, error) {
@@ -570,7 +578,21 @@ func TestSettingService_InitializeDefaultSettingsPersistsConfiguredForwardedClie
 	svc := NewSettingService(repo, cfg)
 
 	require.NoError(t, svc.InitializeDefaultSettings(context.Background()))
+	require.Equal(t, "false", repo.values[SettingKeyAPIKeyACLTrustForwardedIP])
 	require.JSONEq(t, `["X-Cdn-Ip","True-Client-Ip"]`, repo.values[SettingKeyForwardedClientIPHeaders])
+}
+
+func TestSettingService_InitializeDefaultSettingsSeedsRegistrationBlockDatacenterIPOnExistingInstall(t *testing.T) {
+	repo := &forwardedIPMigrationRepoStub{values: map[string]string{
+		SettingKeyRegistrationEnabled: "true",
+	}}
+	svc := NewSettingService(repo, &config.Config{})
+
+	require.NoError(t, svc.InitializeDefaultSettings(context.Background()))
+	require.Equal(t, "false", repo.values[SettingKeyRegistrationBlockDatacenterIP])
+
+	require.NoError(t, svc.InitializeDefaultSettings(context.Background()))
+	require.Equal(t, "false", repo.values[SettingKeyRegistrationBlockDatacenterIP])
 }
 
 func TestSettingService_UpdateSettings_APIKeyACLTrustForwardedIPRefreshesConfig(t *testing.T) {
@@ -692,10 +714,9 @@ func TestSettingService_LoadForwardedClientIPSettingsMigration(t *testing.T) {
 			wantMigrationMarkerSet: true,
 		},
 		{
-			name:                   "legacy false without proxy config migrates to compatibility",
+			name:                   "explicit false without proxy config remains disabled",
 			values:                 map[string]string{SettingKeyAPIKeyACLTrustForwardedIP: "false"},
-			wantEnabled:            true,
-			wantForwardedIPUpdate:  "true",
+			wantEnabled:            false,
 			wantMigrationMarkerSet: true,
 		},
 		{
@@ -712,6 +733,14 @@ func TestSettingService_LoadForwardedClientIPSettingsMigration(t *testing.T) {
 				settingKeyForwardedClientIPModeV2:   "true",
 			},
 			wantEnabled: false,
+		},
+		{
+			name: "explicit true remains enabled",
+			values: map[string]string{
+				SettingKeyAPIKeyACLTrustForwardedIP: "true",
+				settingKeyForwardedClientIPModeV2:   "true",
+			},
+			wantEnabled: true,
 		},
 	}
 
@@ -804,7 +833,7 @@ func TestSettingService_LoadForwardedClientIPSettingsWriteFailureUsesComputedMod
 		trustedProxiesSet bool
 		wantEnabled       bool
 	}{
-		{name: "compatibility migration remains effective", wantEnabled: true},
+		{name: "explicit false remains disabled", wantEnabled: false},
 		{name: "explicit proxy policy remains secure", trustedProxiesSet: true, wantEnabled: false},
 	}
 

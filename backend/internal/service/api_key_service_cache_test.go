@@ -18,12 +18,17 @@ import (
 )
 
 type authRepoStub struct {
+	create            func(ctx context.Context, key *APIKey) error
 	getByKeyForAuth   func(ctx context.Context, key string) (*APIKey, error)
+	existsByKey       func(ctx context.Context, key string) (bool, error)
 	listKeysByUserID  func(ctx context.Context, userID int64) ([]string, error)
 	listKeysByGroupID func(ctx context.Context, groupID int64) ([]string, error)
 }
 
 func (s *authRepoStub) Create(ctx context.Context, key *APIKey) error {
+	if s.create != nil {
+		return s.create(ctx, key)
+	}
 	panic("unexpected Create call")
 }
 
@@ -71,6 +76,9 @@ func (s *authRepoStub) CountByUserID(ctx context.Context, userID int64) (int64, 
 }
 
 func (s *authRepoStub) ExistsByKey(ctx context.Context, key string) (bool, error) {
+	if s.existsByKey != nil {
+		return s.existsByKey(ctx, key)
+	}
 	panic("unexpected ExistsByKey call")
 }
 

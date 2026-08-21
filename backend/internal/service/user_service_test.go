@@ -29,6 +29,8 @@ type mockUserRepo struct {
 	deductAvailableBalanceFn func(ctx context.Context, id int64, amount float64) (float64, error)
 	getByIDUser              *User
 	getByIDErr               error
+	getByEmailUser           *User
+	getByEmailErr            error
 	identities               []UserAuthIdentityRecord
 	unbindIdentityErr        error
 	unboundProviders         []string
@@ -108,8 +110,17 @@ func (m *mockUserRepo) GetByID(ctx context.Context, _ int64) (*User, error) {
 	}
 	return &User{}, nil
 }
-func (m *mockUserRepo) GetByEmail(context.Context, string) (*User, error) { return &User{}, nil }
-func (m *mockUserRepo) GetFirstAdmin(context.Context) (*User, error)      { return &User{}, nil }
+func (m *mockUserRepo) GetByEmail(context.Context, string) (*User, error) {
+	if m.getByEmailErr != nil {
+		return nil, m.getByEmailErr
+	}
+	if m.getByEmailUser != nil {
+		cloned := *m.getByEmailUser
+		return &cloned, nil
+	}
+	return &User{}, nil
+}
+func (m *mockUserRepo) GetFirstAdmin(context.Context) (*User, error) { return &User{}, nil }
 func (m *mockUserRepo) Update(ctx context.Context, user *User, fields UserUpdateFields) error {
 	m.updateCalls++
 	m.updateFields = append(m.updateFields, fields)

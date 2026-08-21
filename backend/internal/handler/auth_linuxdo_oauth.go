@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -108,7 +109,7 @@ func (h *AuthHandler) LinuxDoOAuthStart(c *gin.Context) {
 		return
 	}
 
-	secureCookie := isRequestHTTPS(c)
+	secureCookie := h.isRequestHTTPS(c)
 	setCookie(c, linuxDoOAuthStateCookieName, encodeCookieValue(state), linuxDoOAuthCookieMaxAgeSec, secureCookie)
 	setCookie(c, linuxDoOAuthRedirectCookie, encodeCookieValue(redirectTo), linuxDoOAuthCookieMaxAgeSec, secureCookie)
 	intent := normalizeOAuthIntent(c.Query("intent"))
@@ -179,7 +180,7 @@ func (h *AuthHandler) LinuxDoOAuthCallback(c *gin.Context) {
 		return
 	}
 
-	secureCookie := isRequestHTTPS(c)
+	secureCookie := h.isRequestHTTPS(c)
 	defer func() {
 		clearCookie(c, linuxDoOAuthStateCookieName, secureCookie)
 		clearCookie(c, linuxDoOAuthVerifierCookie, secureCookie)
@@ -331,6 +332,10 @@ func (h *AuthHandler) LinuxDoOAuthCallback(c *gin.Context) {
 	forceEmailOnSignup := h.isForceEmailOnThirdPartySignup(c.Request.Context())
 	if compatEmailUser == nil && !emailVerificationRequired && !forceEmailOnSignup {
 		if err := h.ensureBackendModeAllowsNewUserLogin(c.Request.Context()); err != nil {
+			redirectOAuthError(c, frontendCallback, "session_error", infraerrors.Reason(err), infraerrors.Message(err))
+			return
+		}
+		if err := h.datacenterRegistrationError(c); err != nil {
 			redirectOAuthError(c, frontendCallback, "session_error", infraerrors.Reason(err), infraerrors.Message(err))
 			return
 		}
@@ -512,13 +517,16 @@ type completeLinuxDoOAuthRequest struct {
 // the invitation code and creating the user account.
 // POST /api/v1/auth/oauth/linuxdo/complete-registration
 func (h *AuthHandler) CompleteLinuxDoOAuthRegistration(c *gin.Context) {
+	if h.rejectDatacenterRegistration(c) {
+		return
+	}
 	var req completeLinuxDoOAuthRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "INVALID_REQUEST", "message": err.Error()})
 		return
 	}
 
-	secureCookie := isRequestHTTPS(c)
+	secureCookie := h.isRequestHTTPS(c)
 	sessionToken, err := readOAuthPendingSessionCookie(c)
 	if err != nil {
 		clearOAuthPendingSessionCookie(c, secureCookie)
@@ -1009,12 +1017,52 @@ func sanitizeFrontendRedirectPath(path string) string {
 	return path
 }
 
-func isRequestHTTPS(c *gin.Context) bool {
+func (h *AuthHandler) isRequestHTTPS(c *gin.Context) bool {
+	if c == nil || c.Request == nil {
+		return false
+	}
 	if c.Request.TLS != nil {
 		return true
 	}
-	proto := strings.ToLower(strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")))
-	return proto == "https"
+	if !h.requestPeerIsTrustedProxy(c) {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")), "https")
+}
+
+func (h *AuthHandler) requestPeerIsTrustedProxy(c *gin.Context) bool {
+	return h != nil && h.cfg != nil && c != nil && c.Request != nil &&
+		h.cfg.Server.TrustedProxiesConfigured &&
+		requestPeerMatchesTrustedProxy(c.Request.RemoteAddr, h.cfg.Server.TrustedProxies)
+}
+
+func requestPeerMatchesTrustedProxy(remoteAddr string, trustedProxies []string) bool {
+	host := strings.TrimSpace(remoteAddr)
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	}
+	peerIP := net.ParseIP(strings.Trim(host, "[]"))
+	if peerIP == nil {
+		return false
+	}
+
+	for _, raw := range trustedProxies {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		if trustedIP := net.ParseIP(raw); trustedIP != nil {
+			if trustedIP.Equal(peerIP) {
+				return true
+			}
+			continue
+		}
+		_, network, err := net.ParseCIDR(raw)
+		if err == nil && network.Contains(peerIP) {
+			return true
+		}
+	}
+	return false
 }
 
 func encodeCookieValue(value string) string {
@@ -1160,7 +1208,11 @@ func (h *AuthHandler) buildOAuthBindUserCookieFromContext(c *gin.Context) (strin
 	if err != nil || userID == nil || *userID <= 0 {
 		return "", infraerrors.Unauthorized("UNAUTHORIZED", "authentication required")
 	}
-	return buildOAuthBindUserCookieValue(*userID, h.oauthBindCookieSecret())
+	epoch, err := h.authService.CurrentUserAuthEpoch(c.Request.Context(), *userID)
+	if err != nil {
+		return "", err
+	}
+	return buildOAuthBindUserCookieValue(*userID, epoch, h.oauthBindCookieSecret())
 }
 
 func (h *AuthHandler) PrepareOAuthBindAccessTokenCookie(c *gin.Context) {
@@ -1178,7 +1230,7 @@ func (h *AuthHandler) PrepareOAuthBindAccessTokenCookie(c *gin.Context) {
 		return
 	}
 
-	setOAuthBindAccessTokenCookie(c, token, isRequestHTTPS(c))
+	setOAuthBindAccessTokenCookie(c, token, h.isRequestHTTPS(c))
 	c.Status(http.StatusNoContent)
 	c.Writer.WriteHeaderNow()
 }
@@ -1192,7 +1244,7 @@ func (h *AuthHandler) resolveOAuthBindTargetUserID(c *gin.Context) (*int64, erro
 	}
 
 	ck, err := c.Request.Cookie(oauthBindAccessTokenCookieName)
-	clearOAuthBindAccessTokenCookie(c, isRequestHTTPS(c))
+	clearOAuthBindAccessTokenCookie(c, h.isRequestHTTPS(c))
 	if err != nil {
 		return nil, err
 	}
@@ -1216,6 +1268,9 @@ func (h *AuthHandler) resolveOAuthBindTargetUserID(c *gin.Context) (*int64, erro
 	if user == nil || !user.IsActive() || claims.TokenVersion != user.TokenVersion {
 		return nil, service.ErrInvalidToken
 	}
+	if err := h.authService.ValidateAccessTokenState(c.Request.Context(), claims); err != nil {
+		return nil, err
+	}
 	return &user.ID, nil
 }
 
@@ -1224,7 +1279,17 @@ func (h *AuthHandler) readOAuthBindUserIDFromCookie(c *gin.Context, cookieName s
 	if err != nil {
 		return 0, err
 	}
-	return parseOAuthBindUserCookieValue(value, h.oauthBindCookieSecret())
+	userID, epoch, err := parseOAuthBindUserCookieValue(value, h.oauthBindCookieSecret())
+	if err != nil {
+		return 0, err
+	}
+	if err := h.authService.ValidateAccessTokenState(c.Request.Context(), &service.JWTClaims{
+		UserID:    userID,
+		AuthEpoch: epoch,
+	}); err != nil {
+		return 0, err
+	}
+	return userID, nil
 }
 
 func (h *AuthHandler) oauthBindCookieSecret() string {
@@ -1234,36 +1299,44 @@ func (h *AuthHandler) oauthBindCookieSecret() string {
 	return strings.TrimSpace(h.cfg.JWT.Secret)
 }
 
-func buildOAuthBindUserCookieValue(userID int64, secret string) (string, error) {
+func buildOAuthBindUserCookieValue(userID int64, authEpoch string, secret string) (string, error) {
 	secret = strings.TrimSpace(secret)
 	if userID <= 0 || secret == "" {
 		return "", errors.New("invalid oauth bind cookie input")
 	}
-	payload := strconv.FormatInt(userID, 10)
+	payload := strconv.FormatInt(userID, 10) + ":" + base64.RawURLEncoding.EncodeToString([]byte(authEpoch))
 	mac := hmac.New(sha256.New, []byte(secret))
 	_, _ = mac.Write([]byte(payload))
 	signature := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	return payload + "." + signature, nil
 }
 
-func parseOAuthBindUserCookieValue(value string, secret string) (int64, error) {
+func parseOAuthBindUserCookieValue(value string, secret string) (int64, string, error) {
 	secret = strings.TrimSpace(secret)
 	if secret == "" {
-		return 0, errors.New("missing oauth bind cookie secret")
+		return 0, "", errors.New("missing oauth bind cookie secret")
 	}
 	payload, signature, ok := strings.Cut(strings.TrimSpace(value), ".")
 	if !ok || payload == "" || signature == "" {
-		return 0, errors.New("invalid oauth bind cookie")
+		return 0, "", errors.New("invalid oauth bind cookie")
 	}
 	mac := hmac.New(sha256.New, []byte(secret))
 	_, _ = mac.Write([]byte(payload))
 	expectedSignature := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	if !hmac.Equal([]byte(signature), []byte(expectedSignature)) {
-		return 0, errors.New("invalid oauth bind cookie signature")
+		return 0, "", errors.New("invalid oauth bind cookie signature")
 	}
-	userID, err := strconv.ParseInt(payload, 10, 64)
+	userIDText, epochText, ok := strings.Cut(payload, ":")
+	if !ok {
+		return 0, "", errors.New("invalid oauth bind cookie payload")
+	}
+	userID, err := strconv.ParseInt(userIDText, 10, 64)
 	if err != nil || userID <= 0 {
-		return 0, errors.New("invalid oauth bind cookie user")
+		return 0, "", errors.New("invalid oauth bind cookie user")
 	}
-	return userID, nil
+	epoch, err := base64.RawURLEncoding.DecodeString(epochText)
+	if err != nil {
+		return 0, "", errors.New("invalid oauth bind cookie epoch")
+	}
+	return userID, string(epoch), nil
 }

@@ -147,6 +147,23 @@ func resolveLegacyForwardedHeaderIP(c *gin.Context) (string, string) {
 	return "", fallback
 }
 
+// RateLimitSubnet returns the coarse network used as a second rate-limit
+// dimension: IPv4 /24 or IPv6 /64. Empty when ip is not parseable.
+func RateLimitSubnet(ip string) string {
+	parsed := net.ParseIP(strings.TrimSpace(ip))
+	if parsed == nil {
+		return ""
+	}
+	if v4 := parsed.To4(); v4 != nil {
+		return net.IPv4(v4[0], v4[1], v4[2], 0).String() + "/24"
+	}
+	masked := parsed.Mask(net.CIDRMask(64, 128))
+	if masked == nil {
+		return ""
+	}
+	return masked.String() + "/64"
+}
+
 // GetTrustedClientIP 从 Gin 的可信代理解析链提取客户端 IP。
 // 该方法依赖 gin.Engine.SetTrustedProxies 配置，不会优先直接信任原始转发头值。
 // 适用于 ACL / 风控等安全敏感场景。

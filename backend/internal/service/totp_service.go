@@ -20,6 +20,7 @@ var (
 	ErrTotpNotSetup        = infraerrors.BadRequest("TOTP_NOT_SETUP", "totp is not set up for this account")
 	ErrTotpInvalidCode     = infraerrors.BadRequest("TOTP_INVALID_CODE", "invalid totp code")
 	ErrTotpSetupExpired    = infraerrors.BadRequest("TOTP_SETUP_EXPIRED", "totp setup session expired")
+	ErrTotpLoginSession    = infraerrors.BadRequest("TOTP_LOGIN_SESSION_INVALID", "totp login session is invalid or expired")
 	ErrTotpTooManyAttempts = infraerrors.TooManyRequests("TOTP_TOO_MANY_ATTEMPTS", "too many verification attempts, please try again later")
 	ErrVerifyCodeRequired  = infraerrors.BadRequest("VERIFY_CODE_REQUIRED", "email verification code is required")
 	ErrPasswordRequired    = infraerrors.BadRequest("PASSWORD_REQUIRED", "password is required")
@@ -36,8 +37,12 @@ type TotpCache interface {
 	GetLoginSession(ctx context.Context, tempToken string) (*TotpLoginSession, error)
 	SetLoginSession(ctx context.Context, tempToken string, session *TotpLoginSession, ttl time.Duration) error
 	DeleteLoginSession(ctx context.Context, tempToken string) error
+	ClaimLoginSession(ctx context.Context, tempToken, claimToken string, ttl time.Duration) (*TotpLoginSession, bool, error)
+	FinalizeLoginSessionClaim(ctx context.Context, tempToken, claimToken string) (bool, error)
+	ReleaseLoginSessionClaim(ctx context.Context, tempToken, claimToken string) error
 
 	// Rate limiting
+	ReserveVerifyAttempt(ctx context.Context, userID int64, maxAttempts int) (int, error)
 	IncrementVerifyAttempts(ctx context.Context, userID int64) (int, error)
 	GetVerifyAttempts(ctx context.Context, userID int64) (int, error)
 	ClearVerifyAttempts(ctx context.Context, userID int64) error
@@ -45,6 +50,10 @@ type TotpCache interface {
 	// Step-up grant methods (敏感操作 sudo 窗口)
 	SetStepUpGrant(ctx context.Context, userID int64, sessionKey string, ttl time.Duration) error
 	HasStepUpGrant(ctx context.Context, userID int64, sessionKey string) (bool, error)
+}
+
+type totpLoginClaimRenewer interface {
+	RenewLoginSessionClaim(ctx context.Context, tempToken, claimToken string, ttl time.Duration) (bool, error)
 }
 
 // SecretEncryptor defines encryption operations for TOTP secrets
@@ -89,11 +98,12 @@ type TotpSetupResponse struct {
 }
 
 const (
-	totpSetupTTL    = 5 * time.Minute
-	totpLoginTTL    = 5 * time.Minute
-	totpAttemptsTTL = 15 * time.Minute
-	maxTotpAttempts = 5
-	totpIssuer      = "Sub2API"
+	totpSetupTTL      = 5 * time.Minute
+	totpLoginTTL      = 5 * time.Minute
+	totpLoginClaimTTL = 2 * time.Minute
+	totpAttemptsTTL   = 15 * time.Minute
+	maxTotpAttempts   = 5
+	totpIssuer        = "Sub2API"
 )
 
 // TotpService handles TOTP operations
@@ -249,42 +259,10 @@ func (s *TotpService) CompleteSetup(ctx context.Context, userID int64, totpCode,
 		return ErrTotpInvalidCode
 	}
 
-	setupSecretPrefix := "N/A"
-	if len(session.Secret) >= 4 {
-		setupSecretPrefix = session.Secret[:4]
-	}
-	slog.Debug("totp_complete_setup_before_encrypt",
-		"user_id", userID,
-		"secret_len", len(session.Secret),
-		"secret_prefix", setupSecretPrefix)
-
 	// Encrypt the secret
 	encryptedSecret, err := s.encryptor.Encrypt(session.Secret)
 	if err != nil {
 		return fmt.Errorf("encrypt totp secret: %w", err)
-	}
-
-	slog.Debug("totp_complete_setup_encrypted",
-		"user_id", userID,
-		"encrypted_len", len(encryptedSecret))
-
-	// Verify encryption by decrypting
-	decrypted, decErr := s.encryptor.Decrypt(encryptedSecret)
-	if decErr != nil {
-		slog.Debug("totp_complete_setup_verify_failed",
-			"user_id", userID,
-			"error", decErr)
-	} else {
-		decryptedPrefix := "N/A"
-		if len(decrypted) >= 4 {
-			decryptedPrefix = decrypted[:4]
-		}
-		slog.Debug("totp_complete_setup_verified",
-			"user_id", userID,
-			"original_len", len(session.Secret),
-			"decrypted_len", len(decrypted),
-			"match", session.Secret == decrypted,
-			"decrypted_prefix", decryptedPrefix)
 	}
 
 	// Update user with encrypted TOTP secret
@@ -334,12 +312,6 @@ func (s *TotpService) VerifyCode(ctx context.Context, userID int64, code string)
 		"user_id", userID,
 		"code_len", len(code))
 
-	// Check rate limiting
-	attempts, err := s.cache.GetVerifyAttempts(ctx, userID)
-	if err == nil && attempts >= maxTotpAttempts {
-		return ErrTotpTooManyAttempts
-	}
-
 	// Get user
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
@@ -357,10 +329,6 @@ func (s *TotpService) VerifyCode(ctx context.Context, userID int64, code string)
 		return ErrTotpNotSetup
 	}
 
-	slog.Debug("totp_verify_encrypted_secret",
-		"user_id", userID,
-		"encrypted_len", len(*user.TotpSecretEncrypted))
-
 	// Decrypt the secret
 	secret, err := s.encryptor.Decrypt(*user.TotpSecretEncrypted)
 	if err != nil {
@@ -370,27 +338,25 @@ func (s *TotpService) VerifyCode(ctx context.Context, userID int64, code string)
 		return infraerrors.InternalServer("TOTP_VERIFY_ERROR", "failed to verify totp code")
 	}
 
-	secretPrefix := "N/A"
-	if len(secret) >= 4 {
-		secretPrefix = secret[:4]
+	// Reserve only an actual verification attempt. Repository/decryption failures
+	// must not consume the user's retry budget, while the atomic reservation still
+	// prevents concurrent invalid codes from racing a stale counter.
+	attempts, err := s.cache.ReserveVerifyAttempt(ctx, userID, maxTotpAttempts)
+	if err != nil {
+		return infraerrors.ServiceUnavailable("TOTP_VERIFY_UNAVAILABLE", "totp verification is temporarily unavailable")
 	}
-	slog.Debug("totp_verify_decrypted",
-		"user_id", userID,
-		"secret_len", len(secret),
-		"secret_prefix", secretPrefix)
+	if attempts > maxTotpAttempts {
+		return ErrTotpTooManyAttempts
+	}
 
 	// Verify the code
 	valid := totp.Validate(code, secret)
 	slog.Debug("totp_verify_result",
 		"user_id", userID,
 		"valid", valid,
-		"secret_len", len(secret),
-		"secret_prefix", secretPrefix,
 		"server_time", time.Now().UTC().Format(time.RFC3339))
 
 	if !valid {
-		// Increment failed attempts
-		_, _ = s.cache.IncrementVerifyAttempts(ctx, userID)
 		return ErrTotpInvalidCode
 	}
 
@@ -469,6 +435,54 @@ func (s *TotpService) createLoginSession(
 // GetLoginSession retrieves a login session
 func (s *TotpService) GetLoginSession(ctx context.Context, tempToken string) (*TotpLoginSession, error) {
 	return s.cache.GetLoginSession(ctx, tempToken)
+}
+
+// ClaimLoginSession acquires a short-lived exclusive lease without consuming
+// the session. Failed TOTP attempts can release the lease and retry, while a
+// successful request must finalize the same claim exactly once.
+func (s *TotpService) ClaimLoginSession(ctx context.Context, tempToken string) (*TotpLoginSession, string, error) {
+	claimToken, err := generateRandomToken(32)
+	if err != nil {
+		return nil, "", fmt.Errorf("generate login session claim: %w", err)
+	}
+	session, claimed, err := s.cache.ClaimLoginSession(ctx, tempToken, claimToken, totpLoginClaimTTL)
+	if err != nil {
+		return nil, "", err
+	}
+	if !claimed || session == nil {
+		return nil, "", ErrTotpLoginSession
+	}
+	return session, claimToken, nil
+}
+
+func (s *TotpService) FinalizeLoginSessionClaim(ctx context.Context, tempToken, claimToken string) error {
+	finalized, err := s.cache.FinalizeLoginSessionClaim(ctx, tempToken, claimToken)
+	if err != nil {
+		return fmt.Errorf("finalize login session claim: %w", err)
+	}
+	if !finalized {
+		return ErrTotpLoginSession
+	}
+	return nil
+}
+
+func (s *TotpService) RenewLoginSessionClaim(ctx context.Context, tempToken, claimToken string) error {
+	renewer, ok := s.cache.(totpLoginClaimRenewer)
+	if !ok {
+		return infraerrors.ServiceUnavailable("TOTP_SESSION_UNAVAILABLE", "2FA session is temporarily unavailable")
+	}
+	renewed, err := renewer.RenewLoginSessionClaim(ctx, tempToken, claimToken, totpLoginClaimTTL)
+	if err != nil {
+		return infraerrors.ServiceUnavailable("TOTP_SESSION_UNAVAILABLE", "2FA session is temporarily unavailable")
+	}
+	if !renewed {
+		return ErrTotpLoginSession
+	}
+	return nil
+}
+
+func (s *TotpService) ReleaseLoginSessionClaim(ctx context.Context, tempToken, claimToken string) error {
+	return s.cache.ReleaseLoginSessionClaim(ctx, tempToken, claimToken)
 }
 
 // DeleteLoginSession deletes a login session

@@ -125,6 +125,7 @@ func newStubAdminService() *stubAdminService {
 		Protocol:  "http",
 		Host:      "127.0.0.1",
 		Port:      8080,
+		Password:  "proxy-secret",
 		Status:    service.StatusActive,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -634,7 +635,16 @@ func (s *stubAdminService) CreateProxy(ctx context.Context, input *service.Creat
 	s.mu.Lock()
 	s.createdProxies = append(s.createdProxies, input)
 	s.mu.Unlock()
-	proxy := service.Proxy{ID: 400, Name: input.Name, Status: service.StatusActive}
+	proxy := service.Proxy{
+		ID:       400,
+		Name:     input.Name,
+		Protocol: input.Protocol,
+		Host:     input.Host,
+		Port:     input.Port,
+		Username: input.Username,
+		Password: input.Password,
+		Status:   service.StatusActive,
+	}
 	return &proxy, nil
 }
 
@@ -642,8 +652,20 @@ func (s *stubAdminService) UpdateProxy(ctx context.Context, id int64, input *ser
 	s.mu.Lock()
 	s.updatedProxyIDs = append(s.updatedProxyIDs, id)
 	s.updatedProxies = append(s.updatedProxies, input)
-	s.mu.Unlock()
 	proxy := service.Proxy{ID: id, Name: input.Name, Status: service.StatusActive}
+	for i := range s.proxies {
+		if s.proxies[i].ID == id {
+			proxy = s.proxies[i]
+			break
+		}
+	}
+	s.mu.Unlock()
+	if input.Name != "" {
+		proxy.Name = input.Name
+	}
+	if input.Password != "" {
+		proxy.Password = input.Password
+	}
 	return &proxy, nil
 }
 

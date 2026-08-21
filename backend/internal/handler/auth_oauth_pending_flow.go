@@ -266,7 +266,7 @@ func (h *AuthHandler) createOAuthPendingSession(c *gin.Context, payload oauthPen
 		return infraerrors.InternalServer("PENDING_AUTH_SESSION_CREATE_FAILED", "failed to create pending auth session").WithCause(err)
 	}
 
-	setOAuthPendingSessionCookie(c, session.SessionToken, isRequestHTTPS(c))
+	setOAuthPendingSessionCookie(c, session.SessionToken, h.isRequestHTTPS(c))
 	return nil
 }
 
@@ -568,7 +568,6 @@ func (h *AuthHandler) SendPendingOAuthVerifyCode(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-
 	proof := captchaProof(req.TurnstileToken, req.TencentCaptchaTicket, req.TencentCaptchaRandstr)
 	if err := h.authService.VerifyCaptcha(c.Request.Context(), proof, ip.GetClientIP(c)); err != nil {
 		response.ErrorFrom(c, err)
@@ -602,6 +601,9 @@ func (h *AuthHandler) SendPendingOAuthVerifyCode(c *gin.Context) {
 		return
 	} else if err != nil && !errors.Is(err, service.ErrUserNotFound) {
 		response.ErrorFrom(c, err)
+		return
+	}
+	if h.rejectDatacenterRegistration(c) {
 		return
 	}
 
@@ -1340,6 +1342,24 @@ func applyPendingOAuthAdoptionAndConsumeSession(
 	decision *dbent.IdentityAdoptionDecision,
 	userID int64,
 ) error {
+	return applyPendingOAuthBindingAndConsumeSession(
+		ctx, client, authService, userService, session, decision, userID,
+		false,
+		strings.EqualFold(strings.TrimSpace(session.Intent), "bind_current_user"),
+	)
+}
+
+func applyPendingOAuthBindingAndConsumeSession(
+	ctx context.Context,
+	client *dbent.Client,
+	authService *service.AuthService,
+	userService *service.UserService,
+	session *dbent.PendingAuthSession,
+	decision *dbent.IdentityAdoptionDecision,
+	userID int64,
+	forceBind bool,
+	applyFirstBindDefaults bool,
+) error {
 	if client == nil {
 		return infraerrors.ServiceUnavailable("PENDING_AUTH_NOT_READY", "pending auth service is not ready")
 	}
@@ -1354,7 +1374,17 @@ func applyPendingOAuthAdoptionAndConsumeSession(
 	defer func() { _ = tx.Rollback() }()
 
 	txCtx := dbent.NewTxContext(ctx, tx)
-	if err := applyPendingOAuthAdoption(txCtx, client, authService, userService, session, decision, &userID); err != nil {
+	if err := applyPendingOAuthBinding(
+		txCtx,
+		client,
+		authService,
+		userService,
+		session,
+		decision,
+		&userID,
+		forceBind,
+		applyFirstBindDefaults,
+	); err != nil {
 		return err
 	}
 	if err := consumePendingOAuthBrowserSessionTx(txCtx, tx, session); err != nil {
@@ -1464,7 +1494,7 @@ func (h *AuthHandler) shouldSkipPendingOAuthAdoptionPrompt(
 }
 
 func readPendingOAuthBrowserSession(c *gin.Context, h *AuthHandler) (*service.AuthPendingIdentityService, *dbent.PendingAuthSession, func(), error) {
-	secureCookie := isRequestHTTPS(c)
+	secureCookie := h.isRequestHTTPS(c)
 	clearCookies := func() {
 		clearOAuthPendingSessionCookie(c, secureCookie)
 		clearOAuthPendingBrowserCookie(c, secureCookie)
@@ -1517,8 +1547,8 @@ func (h *AuthHandler) consumePendingOAuthSessionOnLogout(c *gin.Context) {
 	_, _ = svc.ConsumeBrowserSession(c.Request.Context(), sessionToken, browserSessionKey)
 }
 
-func clearOAuthLogoutCookies(c *gin.Context) {
-	secureCookie := isRequestHTTPS(c)
+func (h *AuthHandler) clearOAuthLogoutCookies(c *gin.Context) {
+	secureCookie := h.isRequestHTTPS(c)
 
 	clearOAuthPendingSessionCookie(c, secureCookie)
 	clearOAuthPendingBrowserCookie(c, secureCookie)
@@ -1775,6 +1805,9 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 		c.JSON(http.StatusOK, buildPendingOAuthSessionStatusPayload(session))
 		return
 	}
+	if h.rejectDatacenterRegistration(c) {
+		return
+	}
 	if err := h.ensureBackendModeAllowsNewUserLogin(c.Request.Context()); err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -1915,7 +1948,7 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 // ExchangePendingOAuthCompletion redeems a pending OAuth browser session into a frontend-safe payload.
 // POST /api/v1/auth/oauth/pending/exchange
 func (h *AuthHandler) ExchangePendingOAuthCompletion(c *gin.Context) {
-	secureCookie := isRequestHTTPS(c)
+	secureCookie := h.isRequestHTTPS(c)
 	clearCookies := func() {
 		clearOAuthPendingSessionCookie(c, secureCookie)
 		clearOAuthPendingBrowserCookie(c, secureCookie)

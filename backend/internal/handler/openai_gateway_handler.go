@@ -32,7 +32,10 @@ import (
 type OpenAIGatewayHandler struct {
 	gatewayService             *service.OpenAIGatewayService
 	billingCacheService        *service.BillingCacheService
+	subscriptionService        *service.SubscriptionService
 	apiKeyService              *service.APIKeyService
+	revalidateLongLivedAPIKey  func(context.Context, string, *service.APIKey, string) (*service.APIKey, error)
+	revalidateLongLivedBilling func(context.Context, *service.APIKey, *service.UserSubscription) (*service.UserSubscription, error)
 	usageRecordWorkerPool      *service.UsageRecordWorkerPool
 	errorPassthroughService    *service.ErrorPassthroughService
 	contentModerationService   *service.ContentModerationService
@@ -233,7 +236,7 @@ func NewOpenAIGatewayHandler(
 			maxAccountSwitches = cfg.Gateway.MaxAccountSwitches
 		}
 	}
-	return &OpenAIGatewayHandler{
+	h := &OpenAIGatewayHandler{
 		gatewayService:           gatewayService,
 		billingCacheService:      billingCacheService,
 		apiKeyService:            apiKeyService,
@@ -246,6 +249,10 @@ func NewOpenAIGatewayHandler(
 		maxAccountSwitches:       maxAccountSwitches,
 		cfg:                      cfg,
 	}
+	if apiKeyService != nil {
+		h.revalidateLongLivedAPIKey = apiKeyService.RevalidateLongLivedAPIKey
+	}
+	return h
 }
 
 // Responses handles OpenAI Responses API endpoint
@@ -779,6 +786,41 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		)
 		return
 	}
+}
+
+func (h *OpenAIGatewayHandler) revalidateOpenAIWSTurnBilling(ctx context.Context, apiKey *service.APIKey, subscription *service.UserSubscription) (*service.UserSubscription, error) {
+	if h.billingCacheService == nil {
+		return nil, errors.New("billing authorization service is unavailable")
+	}
+	turnSubscription := subscription
+	simpleMode := h.cfg != nil && h.cfg.RunMode == config.RunModeSimple
+	if !simpleMode && apiKey.Group != nil && apiKey.Group.IsSubscriptionType() {
+		if h.subscriptionService == nil {
+			return nil, errors.New("subscription authorization service is unavailable")
+		}
+		freshSubscription, err := h.subscriptionService.GetActiveSubscription(ctx, apiKey.User.ID, apiKey.Group.ID)
+		if err != nil {
+			return nil, err
+		}
+		needsMaintenance, validateErr := h.subscriptionService.ValidateAndCheckLimits(freshSubscription, apiKey.Group)
+		if needsMaintenance {
+			freshSubscription, err = h.subscriptionService.EnsureWindowMaintenance(ctx, freshSubscription)
+			if err != nil {
+				return nil, err
+			}
+			_, validateErr = h.subscriptionService.ValidateAndCheckLimits(freshSubscription, apiKey.Group)
+		}
+		if validateErr != nil {
+			return nil, validateErr
+		}
+		turnSubscription = freshSubscription
+	} else if apiKey.Group == nil || !apiKey.Group.IsSubscriptionType() {
+		turnSubscription = nil
+	}
+	if err := h.billingCacheService.CheckBillingEligibility(ctx, apiKey.User, apiKey, apiKey.Group, turnSubscription, service.QuotaPlatform(ctx, apiKey)); err != nil {
+		return nil, err
+	}
+	return turnSubscription, nil
 }
 
 func isOpenAILegacyCompactPath(c *gin.Context) bool {
@@ -1639,7 +1681,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	}
 	reqLog.Info("openai.websocket_ingress_started")
 	clientIP := ip.GetClientIP(c)
+	securityClientIP := middleware2.SecurityClientIP(c)
 	userAgent := strings.TrimSpace(c.GetHeader("User-Agent"))
+	apiKeyCredential := apiKey.Key
 	clientLifecycleCtx := c.Request.Context()
 	ctx := clientLifecycleCtx
 	maxIngressConnections := 0
@@ -2107,9 +2151,38 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				return mapping.MappedModel, nil
 			},
 			BeforeTurn: func(turn int) error {
+				turnUserConcurrency := subject.Concurrency
+				turnAPIKey := apiKey
 				// turn==1 的会话屏蔽已由握手层检查覆盖；连接内 flag 只拦截后续 turn。
 				if cyberBlockedThisConn {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
+				}
+				if turn > 1 {
+					revalidate := h.revalidateLongLivedAPIKey
+					if revalidate == nil && h.apiKeyService != nil {
+						revalidate = h.apiKeyService.RevalidateLongLivedAPIKey
+					}
+					if revalidate == nil {
+						return service.NewOpenAIWSClientCloseError(coderws.StatusInternalError, "API key authorization could not be revalidated", nil)
+					}
+					freshAPIKey, err := revalidate(ctx, apiKeyCredential, apiKey, securityClientIP)
+					if err != nil {
+						reqLog.Info("openai.websocket_api_key_revalidation_failed", zap.Int("turn", turn), zap.Error(err))
+						return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "API key authorization changed; please reconnect", err)
+					}
+					turnAPIKey = freshAPIKey
+					turnUserConcurrency = freshAPIKey.User.Concurrency
+					revalidateBilling := h.revalidateLongLivedBilling
+					if revalidateBilling == nil {
+						revalidateBilling = h.revalidateOpenAIWSTurnBilling
+					}
+					turnSubscription, err := revalidateBilling(ctx, turnAPIKey, subscription)
+					if err != nil {
+						reqLog.Info("openai.websocket_billing_revalidation_failed", zap.Int("turn", turn), zap.Error(err))
+						return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "billing authorization changed; please reconnect", err)
+					}
+					apiKey = turnAPIKey
+					subscription = turnSubscription
 				}
 				// 长连接跨峰谷/倍率刷新防护：每个 turn 按当前时刻重装门并复核
 				// 当前账号，越线即要求客户端重连重选（连接绑定单一上游账号，
@@ -2129,7 +2202,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				// 防御式清理：避免异常路径下旧槽位覆盖导致泄漏。
 				releaseTurnSlots()
 				// 非首轮 turn 需要重新抢占并发槽位，避免长连接空闲占槽。
-				userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserSlotForAPIKey(ctx, subject.UserID, subject.Concurrency, apiKey.ID)
+				userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserSlotForAPIKey(ctx, subject.UserID, turnUserConcurrency, apiKey.ID)
 				if err != nil {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusInternalError, "failed to acquire user concurrency slot", err)
 				}

@@ -65,6 +65,27 @@ func TestWeChatOAuthStartRedirectsAndSetsPendingCookies(t *testing.T) {
 	require.NotEmpty(t, findCookie(cookies, oauthPendingBrowserCookieName))
 }
 
+func TestResolveWeChatOAuthAbsoluteURLTrustsForwardedHostOnlyFromConfiguredProxy(t *testing.T) {
+	handler := &AuthHandler{cfg: &config.Config{Server: config.ServerConfig{
+		TrustedProxiesConfigured: true,
+		TrustedProxies:           []string{"10.0.0.0/8"},
+	}}}
+
+	requestURL := func(remoteAddr string) string {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = remoteAddr
+		req.Host = "origin.example.com"
+		req.Header.Set("X-Forwarded-Host", "public.example.com")
+		c.Request = req
+		return handler.resolveWeChatOAuthAbsoluteURL("", c, "/api/v1/auth/oauth/wechat/callback")
+	}
+
+	require.Equal(t, "http://origin.example.com/api/v1/auth/oauth/wechat/callback", requestURL("203.0.113.10:43210"))
+	require.Equal(t, "http://public.example.com/api/v1/auth/oauth/wechat/callback", requestURL("10.20.30.40:43210"))
+}
+
 func TestWeChatOAuthStart_AllowsOpenModeWhenBothCapabilitiesEnabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler, client := newWeChatOAuthTestHandlerWithSettings(t, false, map[string]string{

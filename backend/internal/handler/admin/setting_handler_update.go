@@ -32,7 +32,7 @@ type UpdateSettingsRequest struct {
 	PasswordResetEnabled                bool                         `json:"password_reset_enabled"`
 	FrontendURL                         string                       `json:"frontend_url"`
 	InvitationCodeEnabled               bool                         `json:"invitation_code_enabled"`
-	TotpEnabled                         bool                         `json:"totp_enabled"`             // TOTP 双因素认证
+	TotpEnabled                         *bool                        `json:"totp_enabled"`             // TOTP 双因素认证（省略=保持现值）
 	PasskeyEnabled                      *bool                        `json:"passkey_enabled"`          // Passkey 登录（省略=保持现值）
 	SessionBindingEnabled               *bool                        `json:"session_binding_enabled"`  // 会话 IP/UA 绑定（省略=保持现值）
 	StepUpEnabled                       *bool                        `json:"step_up_enabled"`          // 敏感操作 step-up 2FA（省略=保持现值）
@@ -154,23 +154,23 @@ type UpdateSettingsRequest struct {
 	GoogleOAuthFrontendRedirectURL string `json:"google_oauth_frontend_redirect_url"`
 
 	// OEM设置
-	SiteName                    string                `json:"site_name"`
-	SiteLogo                    string                `json:"site_logo"`
-	SiteSubtitle                string                `json:"site_subtitle"`
-	APIBaseURL                  string                `json:"api_base_url"`
-	ContactInfo                 string                         `json:"contact_info"`
-	SupportQRCodes              []service.SupportQRCodeEntry   `json:"support_qr_codes"`
-	DownloadToolsURL            string                         `json:"download_tools_url"`
-	DocURL                      string                         `json:"doc_url"`
-	HomeContent                 string                `json:"home_content"`
-	CompactHomeEnabled          bool                  `json:"compact_home_enabled"`
-	HideCcsImportButton         bool                  `json:"hide_ccs_import_button"`
-	PurchaseSubscriptionEnabled *bool                 `json:"purchase_subscription_enabled"`
-	PurchaseSubscriptionURL     *string               `json:"purchase_subscription_url"`
-	TableDefaultPageSize        int                   `json:"table_default_page_size"`
-	TablePageSizeOptions        []int                 `json:"table_page_size_options"`
-	CustomMenuItems             *[]dto.CustomMenuItem `json:"custom_menu_items"`
-	CustomEndpoints             *[]dto.CustomEndpoint `json:"custom_endpoints"`
+	SiteName                    string                       `json:"site_name"`
+	SiteLogo                    string                       `json:"site_logo"`
+	SiteSubtitle                string                       `json:"site_subtitle"`
+	APIBaseURL                  string                       `json:"api_base_url"`
+	ContactInfo                 string                       `json:"contact_info"`
+	SupportQRCodes              []service.SupportQRCodeEntry `json:"support_qr_codes"`
+	DownloadToolsURL            string                       `json:"download_tools_url"`
+	DocURL                      string                       `json:"doc_url"`
+	HomeContent                 string                       `json:"home_content"`
+	CompactHomeEnabled          bool                         `json:"compact_home_enabled"`
+	HideCcsImportButton         bool                         `json:"hide_ccs_import_button"`
+	PurchaseSubscriptionEnabled *bool                        `json:"purchase_subscription_enabled"`
+	PurchaseSubscriptionURL     *string                      `json:"purchase_subscription_url"`
+	TableDefaultPageSize        int                          `json:"table_default_page_size"`
+	TablePageSizeOptions        []int                        `json:"table_page_size_options"`
+	CustomMenuItems             *[]dto.CustomMenuItem        `json:"custom_menu_items"`
+	CustomEndpoints             *[]dto.CustomEndpoint        `json:"custom_endpoints"`
 
 	// 默认配置
 	DefaultConcurrency                        int                               `json:"default_concurrency"`
@@ -370,10 +370,13 @@ type UpdateSettingsRequest struct {
 	// Ticket feature switch
 	TicketEnabled *bool `json:"ticket_enabled"`
 
-	IPMultiAccountBanEnabled       *bool   `json:"ip_multi_account_ban_enabled"`
-	IPMultiAccountBanWindowMinutes *int    `json:"ip_multi_account_ban_window_minutes"`
-	IPMultiAccountBanThreshold     *int    `json:"ip_multi_account_ban_threshold"`
-	IPMultiAccountBanLearningUntil *string `json:"ip_multi_account_ban_learning_until"`
+	IPMultiAccountBanEnabled        *bool   `json:"ip_multi_account_ban_enabled"`
+	IPMultiAccountBanWindowMinutes  *int    `json:"ip_multi_account_ban_window_minutes"`
+	IPMultiAccountBanThreshold      *int    `json:"ip_multi_account_ban_threshold"`
+	IPMultiAccountBanWindow2Minutes *int    `json:"ip_multi_account_ban_window2_minutes"`
+	IPMultiAccountBanThreshold2     *int    `json:"ip_multi_account_ban_threshold2"`
+	IPMultiAccountBanLearningUntil  *string `json:"ip_multi_account_ban_learning_until"`
+	RegistrationBlockDatacenterIP   *bool   `json:"registration_block_datacenter_ip"`
 
 	// 风控中心功能开关
 	RiskControlEnabled *bool `json:"risk_control_enabled"`
@@ -535,6 +538,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if req.StepUpEnabled != nil {
 		stepUpEnabled = *req.StepUpEnabled
 	}
+	totpEnabled := previousSettings.TotpEnabled
+	if req.TotpEnabled != nil {
+		totpEnabled = *req.TotpEnabled
+	}
 	passkeyEnabled := previousSettings.PasskeyEnabled
 	if req.PasskeyEnabled != nil {
 		passkeyEnabled = *req.PasskeyEnabled
@@ -599,6 +606,13 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	// 避免门控内部二次读取开关时因存储故障 fail-open（前端捕获 STEP_UP_REQUIRED 弹码重试）。
 	if !stepUpEnabled && previousSettings.StepUpEnabled {
 		if !middleware.EnforceStepUpAlways(c, h.totpService, h.userService) {
+			return
+		}
+	}
+	securityControlDowngrade := (previousSettings.TotpEnabled && !totpEnabled) ||
+		(previousSettings.SessionBindingEnabled && !sessionBindingEnabled)
+	if securityControlDowngrade && !(!stepUpEnabled && previousSettings.StepUpEnabled) {
+		if !middleware.EnforceStepUp(c, h.totpService, h.userService, h.settingService) {
 			return
 		}
 	}
@@ -852,7 +866,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 	// TOTP 双因素认证参数验证
 	// 只有手动配置了加密密钥才允许启用 TOTP 功能
-	if req.TotpEnabled && !previousSettings.TotpEnabled {
+	if totpEnabled && !previousSettings.TotpEnabled {
 		// 尝试启用 TOTP，检查加密密钥是否已手动配置
 		if !h.settingService.IsTotpEncryptionKeyConfigured() {
 			response.BadRequest(c, "Cannot enable TOTP: TOTP_ENCRYPTION_KEY environment variable must be configured first. Generate a key with 'openssl rand -hex 32' and set it in your environment.")
@@ -1265,6 +1279,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			response.BadRequest(c, "OIDC Token Auth Method must be one of client_secret_post/client_secret_basic/none")
 			return
 		}
+		if req.OIDCConnectTokenAuthMethod == "none" && !oidcUsePKCE {
+			response.BadRequest(c, "OIDC public clients must enable PKCE")
+			return
+		}
 		if req.OIDCConnectClockSkewSeconds < 0 || req.OIDCConnectClockSkewSeconds > 600 {
 			response.BadRequest(c, "OIDC clock skew seconds must be between 0 and 600")
 			return
@@ -1569,7 +1587,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PasswordResetEnabled:                req.PasswordResetEnabled,
 		FrontendURL:                         req.FrontendURL,
 		InvitationCodeEnabled:               req.InvitationCodeEnabled,
-		TotpEnabled:                         req.TotpEnabled,
+		TotpEnabled:                         totpEnabled,
 		PasskeyEnabled:                      passkeyEnabled,
 		SessionBindingEnabled:               sessionBindingEnabled,
 		StepUpEnabled:                       stepUpEnabled,
@@ -2093,6 +2111,24 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.IPMultiAccountBanThreshold
 		}(),
+		IPMultiAccountBanWindow2Minutes: func() int {
+			if req.IPMultiAccountBanWindow2Minutes != nil {
+				return *req.IPMultiAccountBanWindow2Minutes
+			}
+			return previousSettings.IPMultiAccountBanWindow2Minutes
+		}(),
+		IPMultiAccountBanThreshold2: func() int {
+			if req.IPMultiAccountBanThreshold2 != nil {
+				return *req.IPMultiAccountBanThreshold2
+			}
+			return previousSettings.IPMultiAccountBanThreshold2
+		}(),
+		RegistrationBlockDatacenterIP: func() bool {
+			if req.RegistrationBlockDatacenterIP != nil {
+				return *req.RegistrationBlockDatacenterIP
+			}
+			return previousSettings.RegistrationBlockDatacenterIP
+		}(),
 		IPMultiAccountBanLearningUntil: func() string {
 			if req.IPMultiAccountBanLearningUntil != nil {
 				return *req.IPMultiAccountBanLearningUntil
@@ -2531,12 +2567,15 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ModelPlazaRequireAuth: updatedSettings.ModelPlazaRequireAuth,
 		ModelPlazaDescription: updatedSettings.ModelPlazaDescription,
 
-		AffiliateEnabled: updatedSettings.AffiliateEnabled,
-		TicketEnabled:    updatedSettings.TicketEnabled,
-		IPMultiAccountBanEnabled:       updatedSettings.IPMultiAccountBanEnabled,
-		IPMultiAccountBanWindowMinutes: updatedSettings.IPMultiAccountBanWindowMinutes,
-		IPMultiAccountBanThreshold:     updatedSettings.IPMultiAccountBanThreshold,
-		IPMultiAccountBanLearningUntil: updatedSettings.IPMultiAccountBanLearningUntil,
+		AffiliateEnabled:                updatedSettings.AffiliateEnabled,
+		TicketEnabled:                   updatedSettings.TicketEnabled,
+		IPMultiAccountBanEnabled:        updatedSettings.IPMultiAccountBanEnabled,
+		IPMultiAccountBanWindowMinutes:  updatedSettings.IPMultiAccountBanWindowMinutes,
+		IPMultiAccountBanThreshold:      updatedSettings.IPMultiAccountBanThreshold,
+		IPMultiAccountBanWindow2Minutes: updatedSettings.IPMultiAccountBanWindow2Minutes,
+		IPMultiAccountBanThreshold2:     updatedSettings.IPMultiAccountBanThreshold2,
+		IPMultiAccountBanLearningUntil:  updatedSettings.IPMultiAccountBanLearningUntil,
+		RegistrationBlockDatacenterIP:   updatedSettings.RegistrationBlockDatacenterIP,
 
 		RiskControlEnabled:          updatedSettings.RiskControlEnabled,
 		CyberSessionBlockEnabled:    updatedSettings.CyberSessionBlockEnabled,

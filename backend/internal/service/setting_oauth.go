@@ -875,6 +875,19 @@ func (s *SettingService) GetOIDCConnectOAuthConfig(ctx context.Context) (config.
 	if effective.ClockSkewSeconds < 0 || effective.ClockSkewSeconds > 600 {
 		return config.OIDCConnectConfig{}, infraerrors.InternalServer("OAUTH_CONFIG_INVALID", "oauth clock skew must be between 0 and 600")
 	}
+	method := strings.ToLower(strings.TrimSpace(effective.TokenAuthMethod))
+	switch method {
+	case "", "client_secret_post", "client_secret_basic":
+		if strings.TrimSpace(effective.ClientSecret) == "" {
+			return config.OIDCConnectConfig{}, infraerrors.InternalServer("OAUTH_CONFIG_INVALID", "oauth client secret not configured")
+		}
+	case "none":
+		if !effective.UsePKCE {
+			return config.OIDCConnectConfig{}, infraerrors.InternalServer("OAUTH_CONFIG_INVALID", "oauth public clients must enable pkce")
+		}
+	default:
+		return config.OIDCConnectConfig{}, infraerrors.InternalServer("OAUTH_CONFIG_INVALID", "oauth token_auth_method invalid")
+	}
 
 	if err := config.ValidateAbsoluteHTTPURL(effective.IssuerURL); err != nil {
 		return config.OIDCConnectConfig{}, infraerrors.InternalServer("OAUTH_CONFIG_INVALID", "oauth issuer url invalid")
@@ -948,17 +961,6 @@ func (s *SettingService) GetOIDCConnectOAuthConfig(ctx context.Context) (config.
 	}
 	if err := config.ValidateFrontendRedirectURL(effective.FrontendRedirectURL); err != nil {
 		return config.OIDCConnectConfig{}, infraerrors.InternalServer("OAUTH_CONFIG_INVALID", "oauth frontend redirect url invalid")
-	}
-
-	method := strings.ToLower(strings.TrimSpace(effective.TokenAuthMethod))
-	switch method {
-	case "", "client_secret_post", "client_secret_basic":
-		if strings.TrimSpace(effective.ClientSecret) == "" {
-			return config.OIDCConnectConfig{}, infraerrors.InternalServer("OAUTH_CONFIG_INVALID", "oauth client secret not configured")
-		}
-	case "none":
-	default:
-		return config.OIDCConnectConfig{}, infraerrors.InternalServer("OAUTH_CONFIG_INVALID", "oauth token_auth_method invalid")
 	}
 
 	return effective, nil

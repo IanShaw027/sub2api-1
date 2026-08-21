@@ -77,7 +77,7 @@ func (h *AuthHandler) emailOAuthStart(c *gin.Context, provider string) {
 		redirectTo = emailOAuthDefaultRedirect
 	}
 
-	secureCookie := isRequestHTTPS(c)
+	secureCookie := h.isRequestHTTPS(c)
 	emailOAuthSetCookie(c, emailOAuthStateCookieName, encodeCookieValue(state), secureCookie)
 	emailOAuthSetCookie(c, emailOAuthRedirectCookie, encodeCookieValue(redirectTo), secureCookie)
 	emailOAuthSetCookie(c, emailOAuthProviderCookie, encodeCookieValue(provider), secureCookie)
@@ -117,7 +117,7 @@ func (h *AuthHandler) emailOAuthCallback(c *gin.Context, provider string) {
 		return
 	}
 
-	secureCookie := isRequestHTTPS(c)
+	secureCookie := h.isRequestHTTPS(c)
 	defer func() {
 		emailOAuthClearCookie(c, emailOAuthStateCookieName, secureCookie)
 		emailOAuthClearCookie(c, emailOAuthRedirectCookie, secureCookie)
@@ -272,7 +272,7 @@ func (h *AuthHandler) createEmailOAuthRegistrationPendingSession(
 	if err != nil {
 		return infraerrors.InternalServer("PENDING_AUTH_SESSION_CREATE_FAILED", "failed to create pending auth session").WithCause(err)
 	}
-	setOAuthPendingBrowserCookie(c, browserSessionKey, isRequestHTTPS(c))
+	setOAuthPendingBrowserCookie(c, browserSessionKey, h.isRequestHTTPS(c))
 
 	email := strings.TrimSpace(strings.ToLower(profile.Email))
 	username := strings.TrimSpace(profile.Username)
@@ -343,6 +343,9 @@ type completeEmailOAuthRequest struct {
 }
 
 func (h *AuthHandler) completeEmailOAuthRegistration(c *gin.Context, provider string) {
+	if h.rejectDatacenterRegistration(c) {
+		return
+	}
 	var req completeEmailOAuthRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())

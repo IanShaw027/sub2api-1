@@ -1008,6 +1008,33 @@ func TestValidateOIDCAllowsExplicitCompatibilityOverridesForPKCEAndIDTokenValida
 	}
 }
 
+func TestValidateOIDCRejectsPublicClientWithoutPKCE(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	cfg.OIDC.Enabled = true
+	cfg.OIDC.ClientID = "oidc-public-client"
+	cfg.OIDC.ClientSecret = ""
+	cfg.OIDC.IssuerURL = "https://issuer.example.com"
+	cfg.OIDC.AuthorizeURL = "https://issuer.example.com/auth"
+	cfg.OIDC.TokenURL = "https://issuer.example.com/token"
+	cfg.OIDC.UserInfoURL = "https://issuer.example.com/userinfo"
+	cfg.OIDC.RedirectURL = "https://example.com/api/v1/auth/oauth/oidc/callback"
+	cfg.OIDC.FrontendRedirectURL = "/auth/oidc/callback"
+	cfg.OIDC.Scopes = "openid email profile"
+	cfg.OIDC.TokenAuthMethod = "none"
+	cfg.OIDC.UsePKCE = false
+
+	err = cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "oidc_connect.use_pkce") {
+		t.Fatalf("Validate() expected public client PKCE error, got: %v", err)
+	}
+}
+
 func TestLoadDefaultDashboardCacheConfig(t *testing.T) {
 	resetViperWithJWTSecret(t)
 

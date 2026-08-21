@@ -140,7 +140,7 @@ func (h *AuthHandler) DingTalkOAuthStart(c *gin.Context) {
 		return
 	}
 
-	secureCookie := isRequestHTTPS(c)
+	secureCookie := h.isRequestHTTPS(c)
 	setDingTalkCookie(c, dingTalkOAuthStateCookieName, encodeCookieValue(state), dingTalkOAuthCookieMaxAgeSec, secureCookie)
 	setDingTalkCookie(c, dingTalkOAuthRedirectCookie, encodeCookieValue(redirectTo), dingTalkOAuthCookieMaxAgeSec, secureCookie)
 
@@ -316,7 +316,7 @@ func (h *AuthHandler) DingTalkOAuthCallback(c *gin.Context) {
 		return
 	}
 
-	secureCookie := isRequestHTTPS(c)
+	secureCookie := h.isRequestHTTPS(c)
 	defer func() {
 		clearDingTalkCookie(c, dingTalkOAuthStateCookieName, secureCookie)
 		clearDingTalkCookie(c, dingTalkOAuthRedirectCookie, secureCookie)
@@ -701,13 +701,16 @@ type completeDingTalkOAuthRequest struct {
 // the invitation code and creating the user account.
 // POST /api/v1/auth/oauth/dingtalk/complete-registration
 func (h *AuthHandler) CompleteDingTalkOAuthRegistration(c *gin.Context) {
+	if h.rejectDatacenterRegistration(c) {
+		return
+	}
 	var req completeDingTalkOAuthRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "INVALID_REQUEST", "message": err.Error()})
 		return
 	}
 
-	secureCookie := isRequestHTTPS(c)
+	secureCookie := h.isRequestHTTPS(c)
 	sessionToken, err := readOAuthPendingSessionCookie(c)
 	if err != nil {
 		clearOAuthPendingSessionCookie(c, secureCookie)

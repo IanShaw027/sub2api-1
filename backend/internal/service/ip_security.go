@@ -13,15 +13,18 @@ import (
 )
 
 const (
-	IPSecuritySourceWeb            = "web"
-	IPSecuritySourceAPIKey         = "apikey"
-	defaultIPSecurityWindowMinutes = 10
-	defaultIPSecurityThreshold     = 4
-	userIPCacheTTL                 = 365 * 24 * time.Hour
-	ipSecurityConfigCacheTTL       = 5 * time.Minute
-	maxUserIPHistory               = 256
-	ipSecurityRedisTimeout         = 20 * time.Millisecond
-	ipSecurityRedisCircuitDuration = 5 * time.Second
+	IPSecuritySourceWeb             = "web"
+	IPSecuritySourceAPIKey          = "apikey"
+	defaultIPSecurityWindowMinutes  = 10
+	defaultIPSecurityThreshold      = 4
+	defaultIPSecurityWindow2Minutes = 0
+	defaultIPSecurityThreshold2     = 2
+	maxIPSecurityWindow2Minutes     = 10080
+	userIPCacheTTL                  = 365 * 24 * time.Hour
+	ipSecurityConfigCacheTTL        = 5 * time.Minute
+	maxUserIPHistory                = 256
+	ipSecurityRedisTimeout          = 20 * time.Millisecond
+	ipSecurityRedisCircuitDuration  = 5 * time.Second
 )
 
 var (
@@ -52,10 +55,13 @@ const (
 )
 
 type IPSecurityConfig struct {
-	Enabled          bool      `json:"enabled"`
-	WindowMinutes    int       `json:"window_minutes"`
-	AccountThreshold int       `json:"account_threshold"`
-	LearningUntil    time.Time `json:"learning_until"`
+	Enabled                     bool      `json:"enabled"`
+	WindowMinutes               int       `json:"window_minutes"`
+	AccountThreshold            int       `json:"account_threshold"`
+	Window2Minutes              int       `json:"window2_minutes"`
+	AccountThreshold2           int       `json:"account_threshold2"`
+	BlockDatacenterRegistration bool      `json:"block_datacenter_registration"`
+	LearningUntil               time.Time `json:"learning_until"`
 }
 
 type IPSecurityActivity struct {
@@ -146,7 +152,12 @@ func NewIPSecurityService(repo IPSecurityRepository, settings IPSecuritySettings
 }
 
 func DefaultIPSecurityConfig() IPSecurityConfig {
-	return IPSecurityConfig{WindowMinutes: defaultIPSecurityWindowMinutes, AccountThreshold: defaultIPSecurityThreshold}
+	return IPSecurityConfig{
+		WindowMinutes:     defaultIPSecurityWindowMinutes,
+		AccountThreshold:  defaultIPSecurityThreshold,
+		Window2Minutes:    defaultIPSecurityWindow2Minutes,
+		AccountThreshold2: defaultIPSecurityThreshold2,
+	}
 }
 
 func normalizeIPSecurityConfig(cfg IPSecurityConfig) IPSecurityConfig {
@@ -162,6 +173,20 @@ func normalizeIPSecurityConfig(cfg IPSecurityConfig) IPSecurityConfig {
 	if cfg.AccountThreshold > 100 {
 		cfg.AccountThreshold = 100
 	}
+	if cfg.Window2Minutes < 0 {
+		cfg.Window2Minutes = 0
+	}
+	if cfg.Window2Minutes > maxIPSecurityWindow2Minutes {
+		cfg.Window2Minutes = maxIPSecurityWindow2Minutes
+	}
+	if cfg.Window2Minutes > 0 {
+		if cfg.AccountThreshold2 < 2 {
+			cfg.AccountThreshold2 = 2
+		}
+		if cfg.AccountThreshold2 > 100 {
+			cfg.AccountThreshold2 = 100
+		}
+	}
 	return cfg
 }
 
@@ -171,6 +196,17 @@ func readBoolSetting(ctx context.Context, settings IPSecuritySettings, key strin
 		return fallback
 	}
 	return strings.EqualFold(strings.TrimSpace(raw), "true")
+}
+
+func readEnabledUnlessFalse(ctx context.Context, settings IPSecuritySettings, key string, fallback bool) bool {
+	if settings == nil {
+		return fallback
+	}
+	raw, err := settings.GetValue(ctx, key)
+	if err != nil {
+		return fallback
+	}
+	return settingEnabledUnlessFalse(raw, fallback)
 }
 
 func readIntSetting(ctx context.Context, settings IPSecuritySettings, key string, fallback int) int {
@@ -213,6 +249,9 @@ func (s *IPSecurityService) GetConfig(ctx context.Context) IPSecurityConfig {
 	cfg.Enabled = readBoolSetting(ctx, s.settings, SettingKeyIPMultiAccountBanEnabled, false)
 	cfg.WindowMinutes = readIntSetting(ctx, s.settings, SettingKeyIPMultiAccountBanWindowMinutes, cfg.WindowMinutes)
 	cfg.AccountThreshold = readIntSetting(ctx, s.settings, SettingKeyIPMultiAccountBanThreshold, cfg.AccountThreshold)
+	cfg.Window2Minutes = readIntSetting(ctx, s.settings, SettingKeyIPMultiAccountBanWindow2Minutes, cfg.Window2Minutes)
+	cfg.AccountThreshold2 = readIntSetting(ctx, s.settings, SettingKeyIPMultiAccountBanThreshold2, cfg.AccountThreshold2)
+	cfg.BlockDatacenterRegistration = readEnabledUnlessFalse(ctx, s.settings, SettingKeyRegistrationBlockDatacenterIP, false)
 	cfg.LearningUntil = readTimeSetting(ctx, s.settings, SettingKeyIPMultiAccountBanLearningUntil)
 	cfg = normalizeIPSecurityConfig(cfg)
 	s.config.Store(&ipSecurityConfigCache{value: cfg, at: time.Now()})
@@ -373,17 +412,36 @@ func (s *IPSecurityService) Observe(ctx context.Context, activity IPSecurityActi
 		return
 	}
 	now := time.Now()
-	count, err := s.addNewAccountToWindow(ctx, activity.IPAddress, activity.UserID, now, cfg.WindowMinutes)
-	if err != nil || count < cfg.AccountThreshold {
+	count, err := s.addNewAccountToWindow(ctx, windowKey(activity.IPAddress), activity.UserID, now, cfg.WindowMinutes)
+	hit := err == nil && count >= cfg.AccountThreshold
+	windowMinutes, threshold := cfg.WindowMinutes, cfg.AccountThreshold
+	reason := "short-window multi-account activity"
+	if cfg.Window2Minutes > 0 {
+		count2, err2 := s.addNewAccountToWindow(ctx, window2Key(activity.IPAddress), activity.UserID, now, cfg.Window2Minutes)
+		if err2 == nil && count2 >= cfg.AccountThreshold2 {
+			if !hit || cfg.Window2Minutes >= windowMinutes {
+				count = count2
+				windowMinutes = cfg.Window2Minutes
+				threshold = cfg.AccountThreshold2
+				reason = "long-window multi-account activity"
+			}
+			hit = true
+		}
+	}
+	if !hit {
 		return
 	}
-	if s.IsBlocked(ctx, activity.IPAddress) {
+	s.enforceBan(ctx, activity.IPAddress, count, threshold, windowMinutes, reason, now)
+}
+
+func (s *IPSecurityService) enforceBan(ctx context.Context, ip string, count, threshold, windowMinutes int, reason string, now time.Time) {
+	if s.IsBlocked(ctx, ip) {
 		return
 	}
-	firstSeen, lastSeen := now.Add(-time.Duration(cfg.WindowMinutes)*time.Minute), now
+	firstSeen, lastSeen := now.Add(-time.Duration(windowMinutes)*time.Minute), now
 	ban := &IPSecurityBan{
-		IPAddress: activity.IPAddress, Status: "active", Reason: "short-window multi-account activity",
-		AccountThreshold: cfg.AccountThreshold, WindowMinutes: cfg.WindowMinutes,
+		IPAddress: ip, Status: "active", Reason: reason,
+		AccountThreshold: threshold, WindowMinutes: windowMinutes,
 		DetectedAccountCount: count, FirstSeenAt: firstSeen, LastSeenAt: lastSeen, CreatedAt: now,
 	}
 	created, err := s.repo.CreateBan(ctx, ban)
@@ -394,12 +452,12 @@ func (s *IPSecurityService) Observe(ctx context.Context, activity IPSecurityActi
 	if s.fallback == nil {
 		s.fallback = make(map[string]struct{})
 	}
-	s.fallback[activity.IPAddress] = struct{}{}
+	s.fallback[ip] = struct{}{}
 	s.stateMu.Unlock()
 	if s.rdb != nil {
 		if redisCtx, cancel, ok := s.redisContext(ctx); ok {
 			defer cancel()
-			if err := s.rdb.SAdd(redisCtx, "ipsec:{state}:banned", activity.IPAddress).Err(); err != nil {
+			if err := s.rdb.SAdd(redisCtx, "ipsec:{state}:banned", ip).Err(); err != nil {
 				s.noteRedisFailure(err)
 			}
 		}
@@ -554,8 +612,8 @@ func (s *IPSecurityService) addCachedUserIP(ctx context.Context, userID int64, i
 	return err
 }
 
-func (s *IPSecurityService) addNewAccountToWindow(ctx context.Context, ip string, userID int64, now time.Time, windowMinutes int) (int, error) {
-	if s.rdb == nil {
+func (s *IPSecurityService) addNewAccountToWindow(ctx context.Context, key string, userID int64, now time.Time, windowMinutes int) (int, error) {
+	if s.rdb == nil || strings.TrimSpace(key) == "" || windowMinutes < 1 {
 		return 0, redis.Nil
 	}
 	redisCtx, cancel, ok := s.redisContext(ctx)
@@ -564,7 +622,7 @@ func (s *IPSecurityService) addNewAccountToWindow(ctx context.Context, ip string
 	}
 	defer cancel()
 	window := time.Duration(windowMinutes) * time.Minute
-	result, err := newAccountWindowScript.Run(redisCtx, s.rdb, []string{windowKey(ip)},
+	result, err := newAccountWindowScript.Run(redisCtx, s.rdb, []string{key},
 		now.Add(-window).Unix(), now.Unix(), userID, int((2*window)/time.Second)).Int()
 	if err != nil {
 		s.noteRedisFailure(err)
@@ -638,7 +696,7 @@ func (s *IPSecurityService) WhitelistBan(ctx context.Context, id, releasedBy int
 			pipe := s.rdb.TxPipeline()
 			pipe.SRem(redisCtx, "ipsec:{state}:banned", ban.IPAddress)
 			pipe.SAdd(redisCtx, "ipsec:{state}:whitelisted", ban.IPAddress)
-			pipe.Del(redisCtx, windowKey(ban.IPAddress))
+			pipe.Del(redisCtx, windowKey(ban.IPAddress), window2Key(ban.IPAddress))
 			if _, err := pipe.Exec(redisCtx); err != nil {
 				s.noteRedisFailure(err)
 			}
@@ -720,7 +778,8 @@ func userIPCacheKeys(userID int64) (string, string) {
 	return "ipsec:user:" + tag + ":loaded", "ipsec:user:" + tag + ":ips"
 }
 
-func windowKey(ip string) string { return "ipsec:window:{" + ip + "}" }
+func windowKey(ip string) string  { return "ipsec:window:{" + ip + "}" }
+func window2Key(ip string) string { return "ipsec:window2:{" + ip + "}" }
 
 func containsIP(ips []string, target string) bool {
 	for _, ip := range ips {

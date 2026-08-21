@@ -692,6 +692,56 @@ func (s *emailBindCacheStub) DeleteVerificationCode(context.Context, string) err
 	return nil
 }
 
+func (s *emailBindCacheStub) VerifyAndConsumeVerificationCode(_ context.Context, _, code string, maxAttempts int) (service.VerificationCodeCheckResult, error) {
+	if s.err != nil {
+		return service.VerificationCodeMissing, s.err
+	}
+	if s.data == nil {
+		return service.VerificationCodeMissing, nil
+	}
+	if s.data.Attempts >= maxAttempts {
+		return service.VerificationCodeLocked, nil
+	}
+	if s.data.Code == code {
+		s.data = nil
+		return service.VerificationCodeAccepted, nil
+	}
+	s.data.Attempts++
+	return service.VerificationCodeRejected, nil
+}
+
+func (s *emailBindCacheStub) ReserveVerificationCodeSend(context.Context, string, string, time.Duration) (bool, error) {
+	return true, nil
+}
+
+func (s *emailBindCacheStub) ReleaseVerificationCodeSend(context.Context, string, string) error {
+	return nil
+}
+
+func (s *emailBindCacheStub) GetOrCreatePasswordResetToken(_ context.Context, _ string, data *service.PasswordResetTokenData, _ time.Duration) (*service.PasswordResetTokenData, error) {
+	return data, nil
+}
+
+func (s *emailBindCacheStub) ReservePasswordResetEmailSend(context.Context, string, string, time.Duration) (bool, error) {
+	return true, nil
+}
+
+func (s *emailBindCacheStub) ReleasePasswordResetEmailSend(context.Context, string, string) error {
+	return nil
+}
+
+func (s *emailBindCacheStub) ClaimPasswordResetToken(context.Context, string, string, string) (bool, error) {
+	return false, nil
+}
+
+func (s *emailBindCacheStub) FinalizePasswordResetTokenClaim(context.Context, string, string) error {
+	return nil
+}
+
+func (s *emailBindCacheStub) RestorePasswordResetTokenClaim(context.Context, string, string) error {
+	return nil
+}
+
 func (s *emailBindCacheStub) GetNotifyVerifyCode(context.Context, string) (*service.VerificationCodeData, error) {
 	return nil, nil
 }

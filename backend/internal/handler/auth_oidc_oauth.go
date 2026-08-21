@@ -141,7 +141,7 @@ func (h *AuthHandler) OIDCOAuthStart(c *gin.Context) {
 		return
 	}
 
-	secureCookie := isRequestHTTPS(c)
+	secureCookie := h.isRequestHTTPS(c)
 	oidcSetCookie(c, oidcOAuthStateCookieName, encodeCookieValue(state), oidcOAuthCookieMaxAgeSec, secureCookie)
 	oidcSetCookie(c, oidcOAuthRedirectCookie, encodeCookieValue(redirectTo), oidcOAuthCookieMaxAgeSec, secureCookie)
 	intent := normalizeOAuthIntent(c.Query("intent"))
@@ -222,7 +222,7 @@ func (h *AuthHandler) OIDCOAuthCallback(c *gin.Context) {
 		return
 	}
 
-	secureCookie := isRequestHTTPS(c)
+	secureCookie := h.isRequestHTTPS(c)
 	defer func() {
 		oidcClearCookie(c, oidcOAuthStateCookieName, secureCookie)
 		oidcClearCookie(c, oidcOAuthVerifierCookie, secureCookie)
@@ -621,7 +621,7 @@ func (h *AuthHandler) CompleteOIDCOAuthRegistration(c *gin.Context) {
 		return
 	}
 
-	secureCookie := isRequestHTTPS(c)
+	secureCookie := h.isRequestHTTPS(c)
 	sessionToken, err := readOAuthPendingSessionCookie(c)
 	if err != nil {
 		clearOAuthPendingSessionCookie(c, secureCookie)
@@ -661,11 +661,6 @@ func (h *AuthHandler) CompleteOIDCOAuthRegistration(c *gin.Context) {
 	} else {
 		session = updatedSession
 	}
-	if err := h.ensureBackendModeAllowsNewUserLogin(c.Request.Context()); err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-
 	email := strings.TrimSpace(session.ResolvedEmail)
 	username := pendingSessionStringValue(session.UpstreamIdentityClaims, "username")
 	if email == "" || username == "" {
@@ -677,6 +672,20 @@ func (h *AuthHandler) CompleteOIDCOAuthRegistration(c *gin.Context) {
 	if client == nil {
 		response.ErrorFrom(c, infraerrors.ServiceUnavailable("PENDING_AUTH_NOT_READY", "pending auth service is not ready"))
 		return
+	}
+	existingUser, err := findUserByNormalizedEmail(c.Request.Context(), client, email)
+	if err != nil && !errors.Is(err, service.ErrUserNotFound) {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if existingUser == nil {
+		if h.rejectDatacenterRegistration(c) {
+			return
+		}
+		if err := h.ensureBackendModeAllowsNewUserLogin(c.Request.Context()); err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
 	}
 	if err := ensurePendingOAuthRegistrationIdentityAvailable(c.Request.Context(), client, session); err != nil {
 		respondPendingOAuthBindingApplyError(c, err)
@@ -993,6 +1002,7 @@ func oidcParseAndValidateIDToken(ctx context.Context, cfg config.OIDCConnectConf
 		jwt.WithValidMethods(allowed),
 		jwt.WithAudience(cfg.ClientID),
 		jwt.WithIssuer(cfg.IssuerURL),
+		jwt.WithExpirationRequired(),
 		jwt.WithLeeway(leeway),
 	)
 	if err != nil {
@@ -1245,9 +1255,15 @@ func (h *AuthHandler) tryOIDCVerifiedEmailFastPath(
 	}
 	if err := h.ensureBackendModeAllowsNewUserLogin(ctx); err != nil {
 		log.Printf("[OIDC OAuth] verified-email fast path blocked by backend mode: reason=%s", infraerrors.Reason(err))
-		clearOAuthPendingSessionCookie(c, isRequestHTTPS(c))
-		clearOAuthPendingBrowserCookie(c, isRequestHTTPS(c))
+		clearOAuthPendingSessionCookie(c, h.isRequestHTTPS(c))
+		clearOAuthPendingBrowserCookie(c, h.isRequestHTTPS(c))
 		redirectOAuthError(c, frontendCallback, "login_blocked", infraerrors.Reason(err), infraerrors.Message(err))
+		return true
+	}
+	if err := h.datacenterRegistrationError(c); err != nil {
+		clearOAuthPendingSessionCookie(c, h.isRequestHTTPS(c))
+		clearOAuthPendingBrowserCookie(c, h.isRequestHTTPS(c))
+		redirectOAuthError(c, frontendCallback, "session_error", infraerrors.Reason(err), infraerrors.Message(err))
 		return true
 	}
 
@@ -1289,8 +1305,8 @@ func (h *AuthHandler) tryOIDCVerifiedEmailFastPath(
 	fragment.Set("expires_in", fmt.Sprintf("%d", tokenPair.ExpiresIn))
 	fragment.Set("token_type", "Bearer")
 	fragment.Set("redirect", redirectTo)
-	clearOAuthPendingSessionCookie(c, isRequestHTTPS(c))
-	clearOAuthPendingBrowserCookie(c, isRequestHTTPS(c))
+	clearOAuthPendingSessionCookie(c, h.isRequestHTTPS(c))
+	clearOAuthPendingBrowserCookie(c, h.isRequestHTTPS(c))
 	redirectWithFragment(c, frontendCallback, fragment)
 	return true
 }

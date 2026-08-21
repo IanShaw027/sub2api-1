@@ -2890,8 +2890,14 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 
 	apiKey := &service.APIKey{
 		ID:      1801,
+		Key:     "sk-openai-ws-turn-test",
 		GroupID: &groupID,
 		User:    &service.User{ID: 1701, Status: service.StatusActive},
+	}
+	h.revalidateLongLivedAPIKey = func(_ context.Context, credential string, original *service.APIKey, _ string) (*service.APIKey, error) {
+		require.Equal(t, apiKey.Key, credential)
+		require.Equal(t, apiKey.ID, original.ID)
+		return apiKey, nil
 	}
 	router := gin.New()
 	router.Use(func(c *gin.Context) {

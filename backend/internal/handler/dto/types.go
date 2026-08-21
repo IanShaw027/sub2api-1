@@ -252,12 +252,12 @@ type Account struct {
 	UserMsgQueueMode *string `json:"user_msg_queue_mode,omitempty"`
 
 	// TLS指纹伪装（全平台）
-	EnableTLSFingerprint     *bool            `json:"enable_tls_fingerprint,omitempty"`
-	TLSFingerprintProfileID  *int64           `json:"tls_fingerprint_profile_id,omitempty"`
-	TLSFingerprintRouterID   *int64           `json:"tls_fingerprint_router_id,omitempty"`
-	TLSFingerprintBindings   map[string]int64 `json:"tls_fingerprint_bindings,omitempty"`
-	TLSFingerprintDefaultOS  *string          `json:"tls_fingerprint_default_os,omitempty"`
-	DeviceLearningEnabled    *bool            `json:"device_learning_enabled,omitempty"`
+	EnableTLSFingerprint    *bool            `json:"enable_tls_fingerprint,omitempty"`
+	TLSFingerprintProfileID *int64           `json:"tls_fingerprint_profile_id,omitempty"`
+	TLSFingerprintRouterID  *int64           `json:"tls_fingerprint_router_id,omitempty"`
+	TLSFingerprintBindings  map[string]int64 `json:"tls_fingerprint_bindings,omitempty"`
+	TLSFingerprintDefaultOS *string          `json:"tls_fingerprint_default_os,omitempty"`
+	DeviceLearningEnabled   *bool            `json:"device_learning_enabled,omitempty"`
 
 	// 会话ID伪装（仅 Anthropic OAuth/SetupToken 账号有效）
 	// 启用后将在15分钟内固定 metadata.user_id 中的 session ID
@@ -363,11 +363,11 @@ type ProxyWithAccountCount struct {
 	QualityChecked *int64 `json:"quality_checked,omitempty"`
 }
 
-// AdminProxy 是管理员接口使用的 proxy DTO（包含密码等敏感字段）。
-// 注意：普通接口不得使用此 DTO。
+// AdminProxy 是管理员接口使用的 proxy DTO。
+// 密码原文仅通过受 step-up 保护的导出接口返回。
 type AdminProxy struct {
 	Proxy
-	Password string `json:"password,omitempty"`
+	HasPassword bool `json:"has_password"`
 }
 
 // AdminProxyWithAccountCount 是管理员接口使用的带账号统计的 proxy DTO。

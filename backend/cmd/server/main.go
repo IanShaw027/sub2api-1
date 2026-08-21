@@ -110,8 +110,14 @@ func runSetupServer() {
 
 	// Get server address from config.yaml or environment variables (SERVER_HOST, SERVER_PORT)
 	// This allows users to run setup on a different address if needed
-	addr := config.GetServerAddress()
+	addr, err := setup.ResolveServerAddress(config.GetServerAddress())
+	if err != nil {
+		log.Fatalf("Refusing to start insecure setup server: %v", err)
+	}
 	log.Printf("Setup wizard available at http://%s", addr)
+	if bootstrapSecret := setup.BootstrapSecret(); bootstrapSecret != "" {
+		log.Printf("Setup wizard authorized URL fragment: #setup-secret=%s", bootstrapSecret)
+	}
 	log.Println("Complete the setup wizard to configure Sub2API")
 
 	protocols := new(http.Protocols)
