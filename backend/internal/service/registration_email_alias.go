@@ -29,8 +29,10 @@ import (
 //   - Gmail family (gmail.com / googlemail.com): additionally remove dots from
 //     the local part and fold the domain to gmail.com.
 //
-// This only affects registration duplicate detection. It intentionally does not
-// change how emails are stored, displayed, or used for login/delivery.
+// Duplicate detection uses this identity so a second account cannot be opened
+// from the same inbox. Registration also rejects non-canonical forms outright
+// (plus-tags, Gmail dots, googlemail.com, trailing FQDN dots) so those aliases
+// cannot exist as the first account either.
 
 var gmailFamilyDomains = map[string]struct{}{
 	"gmail.com":      {},
@@ -124,6 +126,29 @@ func stripEmailLocalDots(local string) string {
 func isGmailFamilyDomain(domain string) bool {
 	_, ok := gmailFamilyDomains[domain]
 	return ok
+}
+
+// IsCanonicalRegistrationEmail reports whether email is already in the
+// inbox-identity form used for alias dedup. Non-canonical forms are Gmail
+// dot-trick / googlemail.com / plus-tag / trailing-FQDN variants of a real
+// mailbox. Empty or malformed input is treated as canonical so format
+// validators remain the source of those errors.
+func IsCanonicalRegistrationEmail(email string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(email))
+	if normalized == "" {
+		return true
+	}
+	return NormalizeEmailForAliasDedup(normalized) == normalized
+}
+
+func rejectNonCanonicalRegistrationEmail(email string) error {
+	normalized := strings.ToLower(strings.TrimSpace(email))
+	if normalized == "" || IsCanonicalRegistrationEmail(normalized) {
+		return nil
+	}
+	return ErrEmailAliasNotAllowed.WithMetadata(map[string]string{
+		"canonical_email": NormalizeEmailForAliasDedup(normalized),
+	})
 }
 
 // existsByEmailOrAlias reports whether an email — or any alias variant that

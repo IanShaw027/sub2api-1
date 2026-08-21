@@ -86,3 +86,37 @@ func TestEmailOAuthAuto_SnapshotsPlatformQuotaDefaults(t *testing.T) {
 	require.NotNil(t, geminiRecord.MonthlyLimitUSD)
 	require.InDelta(t, 100.0, *geminiRecord.MonthlyLimitUSD, 0.0001)
 }
+
+func TestEmailOAuthAuto_CreateRejectsNonCanonicalRegistrationEmail(t *testing.T) {
+	userRepo := &userRepoStub{nextID: 89}
+	svc := newEmailOAuthAutoAuthService(
+		userRepo,
+		map[string]string{SettingKeyRegistrationEnabled: "true"},
+		nil,
+	)
+
+	user, err := svc.createEmailOAuthUser(
+		context.Background(),
+		"some.one+tag@gmail.com",
+		"oauth-alias",
+		"google",
+		"",
+		"",
+	)
+	require.Nil(t, user)
+	require.ErrorIs(t, err, ErrEmailAliasNotAllowed)
+	require.Empty(t, userRepo.created)
+}
+
+func TestEmailOAuthAuto_ExistingIdentityPolicyDoesNotRejectAlias(t *testing.T) {
+	svc := newEmailOAuthAutoAuthService(
+		&userRepoStub{},
+		map[string]string{SettingKeyRegistrationEnabled: "true"},
+		nil,
+	)
+
+	require.NoError(t, svc.validateRegistrationEmailPolicy(
+		context.Background(),
+		"some.one+tag@gmail.com",
+	))
+}

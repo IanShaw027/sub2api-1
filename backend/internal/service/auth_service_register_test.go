@@ -381,9 +381,30 @@ func TestAuthService_Register_AliasDuplicateRejected(t *testing.T) {
 		SettingKeyRegistrationEnabled: "true",
 	}, nil, nil)
 
-	_, _, err := service.Register(context.Background(), "some.one+bulk294@gmail.com", "password")
+	_, _, err := service.Register(context.Background(), "someone@gmail.com", "password")
 	require.ErrorIs(t, err, ErrEmailExists)
 	require.Empty(t, repo.created)
+}
+
+func TestAuthService_Register_GmailDotTrickRejected(t *testing.T) {
+	repo := &userRepoStub{}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled: "true",
+	}, nil, nil)
+
+	_, _, err := service.Register(context.Background(), "alta.r.azad.i.one@gmail.com", "password")
+	require.ErrorIs(t, err, ErrEmailAliasNotAllowed)
+	require.Empty(t, repo.created)
+}
+
+func TestAuthService_SendVerifyCode_PlusAliasRejected(t *testing.T) {
+	repo := &userRepoStub{}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled: "true",
+	}, nil, nil)
+
+	err := service.SendVerifyCode(context.Background(), "user+tag@gmail.com")
+	require.ErrorIs(t, err, ErrEmailAliasNotAllowed)
 }
 
 func TestAuthService_Register_UsesAliasGuardedCreate(t *testing.T) {

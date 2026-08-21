@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,6 +36,28 @@ func TestNormalizeEmailForAliasDedup(t *testing.T) {
 			require.Equal(t, tc.want, NormalizeEmailForAliasDedup(tc.email))
 		})
 	}
+}
+
+func TestIsCanonicalRegistrationEmail(t *testing.T) {
+	require.True(t, IsCanonicalRegistrationEmail("user@gmail.com"))
+	require.True(t, IsCanonicalRegistrationEmail("  User@Gmail.COM "))
+	require.True(t, IsCanonicalRegistrationEmail("first.last@qq.com"))
+	require.True(t, IsCanonicalRegistrationEmail(""))
+	require.False(t, IsCanonicalRegistrationEmail("user.name@gmail.com"))
+	require.False(t, IsCanonicalRegistrationEmail("user+tag@gmail.com"))
+	require.False(t, IsCanonicalRegistrationEmail("user@googlemail.com"))
+	require.False(t, IsCanonicalRegistrationEmail("user@gmail.com."))
+	require.False(t, IsCanonicalRegistrationEmail("first.last+promo@qq.com"))
+}
+
+func TestRejectNonCanonicalRegistrationEmail(t *testing.T) {
+	require.NoError(t, rejectNonCanonicalRegistrationEmail("user@gmail.com"))
+	require.NoError(t, rejectNonCanonicalRegistrationEmail("first.last@qq.com"))
+
+	err := rejectNonCanonicalRegistrationEmail("alta.r.azad.i.one@gmail.com")
+	require.ErrorIs(t, err, ErrEmailAliasNotAllowed)
+	appErr := infraerrors.FromError(err)
+	require.Equal(t, "altarazadione@gmail.com", appErr.Metadata["canonical_email"])
 }
 
 func TestNormalizeEmailForAliasDedupKeepsDistinctInboxes(t *testing.T) {
