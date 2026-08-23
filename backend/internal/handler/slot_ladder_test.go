@@ -377,3 +377,9 @@ func (c *handlerStickyCache) ClaimGrokVideoBilled(context.Context, string, time.
 func (c *handlerStickyCache) ReleaseGrokVideoBilled(context.Context, string) error {
 	return nil
 }
+func (c *handlerStickyCache) SetReasoningContent(context.Context, string, string, time.Duration) error {
+	return nil
+}
+func (c *handlerStickyCache) GetReasoningContent(context.Context, string) (string, error) {
+	return "", service.ErrReasoningContentNotFound
+}

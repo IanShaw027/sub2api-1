@@ -33,9 +33,9 @@ func TestGetRateLimit429CooldownSettings_DefaultsWhenNotSet(t *testing.T) {
 
 	settings, err := svc.GetRateLimit429CooldownSettings(context.Background())
 	require.NoError(t, err)
-	require.True(t, settings.Enabled)
+	require.False(t, settings.Enabled)
 	require.Equal(t, 5, settings.CooldownSeconds)
-	require.Equal(t, "cooldown", settings.Strategy)
+	require.Equal(t, "same_account_retry", settings.Strategy)
 	require.Equal(t, 500, settings.RetryIntervalMs)
 	require.Equal(t, 120, settings.RetryMaxDurationSeconds)
 	require.Equal(t, 2, settings.MaxAccountSwitches)

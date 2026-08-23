@@ -274,7 +274,11 @@ func (r *ModelPricingResolver) GetIntervalPricing(resolved *ResolvedPricing, tot
 		return resolved.BasePricing
 	}
 
-	return intervalToModelPricing(iv, resolved.BasePricing, resolved.channelPricing)
+	pricing := intervalToModelPricing(iv, resolved.BasePricing, resolved.channelPricing)
+	// BasePricing 为 nil（仅配置区间）时拷贝不到该标志，从 resolved 回填，
+	// 保证 computeCacheCreationCost 的 5m/1h 分档判断不被区间路径吞掉。
+	pricing.SupportsCacheBreakdown = resolved.SupportsCacheBreakdown
+	return pricing
 }
 
 // intervalToModelPricing 将区间定价转换为 ModelPricing

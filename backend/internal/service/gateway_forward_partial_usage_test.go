@@ -18,6 +18,7 @@ import (
 type gatewayForwardErrorPolicyRepoStub struct {
 	AccountRepository
 	tempCalls           int
+	overloadCalls       int
 	modelRateLimitCalls []gatewayForwardModelRateLimitCall
 	overloadedCalls     []int64
 }
@@ -30,6 +31,7 @@ type gatewayForwardModelRateLimitCall struct {
 // SetOverloaded 必须实现：529 处理路径会调用它，嵌入的 AccountRepository 为 nil，
 // 未实现时 handle529 会在 nil 接口上 panic。
 func (r *gatewayForwardErrorPolicyRepoStub) SetOverloaded(_ context.Context, id int64, _ time.Time) error {
+	r.overloadCalls++
 	r.overloadedCalls = append(r.overloadedCalls, id)
 	return nil
 }

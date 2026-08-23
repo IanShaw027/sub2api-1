@@ -125,12 +125,14 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 	if account.Platform != PlatformGrok && !tempUnscheduled {
 		shouldDisable = s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, upstreamModel)
 	}
-	failoverErr := newOpenAIUpstreamFailoverError(
+	failoverErr := s.newOpenAIAccountFailoverError(
+		account,
 		resp.StatusCode,
 		resp.Header,
 		respBody,
 		upstreamMsg,
-		s.shouldRetryOpenAIOAuth429OnSameAccount(account, resp.StatusCode, shouldDisable) || (!shouldDisable && account.IsPoolMode() && isOpenAITransientProcessingError(resp.StatusCode, upstreamMsg, respBody)),
+		shouldDisable,
+		!shouldDisable && account.IsPoolMode() && (account.IsPoolModeRetryableStatus(resp.StatusCode) || isOpenAITransientProcessingError(resp.StatusCode, upstreamMsg, respBody)),
 	)
 	if failoverErr.RetryableOnSameAccount {
 		failoverErr.SameAccountRetryDelay = s.openAIOAuth429SameAccountRetryDelay(resp.StatusCode, account)

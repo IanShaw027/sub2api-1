@@ -606,6 +606,23 @@ type RateLimit429CooldownSettings struct {
 	MaxAccountSwitches      int    `json:"max_account_switches"`
 }
 
+// OpenAIAPIKeyHealthBreakerSettings controls cross-instance failure counting for OpenAI pool API keys.
+type OpenAIAPIKeyHealthBreakerSettings struct {
+	Enabled          bool `json:"enabled"`
+	WindowMinutes    int  `json:"window_minutes"`
+	FailureThreshold int  `json:"failure_threshold"`
+	CooldownMinutes  int  `json:"cooldown_minutes"`
+}
+
+func DefaultOpenAIAPIKeyHealthBreakerSettings() *OpenAIAPIKeyHealthBreakerSettings {
+	return &OpenAIAPIKeyHealthBreakerSettings{
+		Enabled:          false,
+		WindowMinutes:    2,
+		FailureThreshold: 10,
+		CooldownMinutes:  5,
+	}
+}
+
 // DefaultOverloadCooldownSettings 返回默认的过载冷却配置（启用，10分钟）
 func DefaultOverloadCooldownSettings() *OverloadCooldownSettings {
 	return &OverloadCooldownSettings{
@@ -614,12 +631,13 @@ func DefaultOverloadCooldownSettings() *OverloadCooldownSettings {
 	}
 }
 
-// DefaultRateLimit429CooldownSettings 返回默认的429回避配置（启用回避，5秒）
+// DefaultRateLimit429CooldownSettings 返回默认的429策略。
+// personal-main 默认同号重试、保持可调度，而不是上游的 5 秒回避冷却。
 func DefaultRateLimit429CooldownSettings() *RateLimit429CooldownSettings {
 	return &RateLimit429CooldownSettings{
-		Enabled:                 true,
+		Enabled:                 false,
 		CooldownSeconds:         5,
-		Strategy:                "cooldown",
+		Strategy:                "same_account_retry",
 		RetryIntervalMs:         500,
 		RetryMaxDurationSeconds: 120,
 		MaxAccountSwitches:      2,

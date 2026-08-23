@@ -26,4 +26,7 @@ func TestChannelPricingMultipliersMigration(t *testing.T) {
 	require.Equal(t, 6, strings.Count(sql, "CHECK ("))
 	require.Equal(t, 6, strings.Count(sql, "IS NULL OR"))
 	require.Equal(t, 6, strings.Count(sql, "> 0)"))
+
+	_, err = FS.ReadFile("228_channel_pricing_multipliers.sql")
+	require.NoError(t, err, "228_channel_pricing_multipliers.sql must remain (IF NOT EXISTS)")
 }

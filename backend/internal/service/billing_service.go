@@ -354,9 +354,31 @@ func (s *BillingService) initFallbackPricing() {
 		LongContextInputMultiplier:     openAIGPT54LongContextInputMultiplier,
 		LongContextOutputMultiplier:    openAIGPT54LongContextOutputMultiplier,
 	}
-	// GPT-5.5 / GPT-5.5 Pro 的标准价暂回退 GPT-5.4；Fast 为标准价 2.5 倍。
-	s.fallbackPrices["gpt-5.5"] = pricingWithPriorityMultiplier(s.fallbackPrices["gpt-5.4"], 2.5)
-	s.fallbackPrices["gpt-5.5-pro"] = pricingWithPriorityMultiplier(s.fallbackPrices["gpt-5.4"], 2.5)
+	// OpenAI GPT-5.5 官方价格；Fast 为标准价 2.5 倍。
+	// Source: https://platform.openai.com/docs/pricing
+	s.fallbackPrices["gpt-5.5"] = pricingWithPriorityMultiplier(&ModelPricing{
+		InputPricePerToken:  5e-6,
+		OutputPricePerToken: 30e-6,
+		// 官方未列独立 cache-write 价；内部出现 cache creation token 时按输入价兜底。
+		CacheCreationPricePerToken:  5e-6,
+		CacheReadPricePerToken:      0.5e-6,
+		SupportsCacheBreakdown:      false,
+		LongContextInputThreshold:   openAIGPT54LongContextInputThreshold,
+		LongContextInputMultiplier:  openAIGPT54LongContextInputMultiplier,
+		LongContextOutputMultiplier: openAIGPT54LongContextOutputMultiplier,
+	}, 2.5)
+	// GPT-5.5 Pro 当前不提供 Fast；保留标准、Flex 和长上下文 fallback 价格。
+	s.fallbackPrices["gpt-5.5-pro"] = &ModelPricing{
+		InputPricePerToken:  30e-6,
+		OutputPricePerToken: 180e-6,
+		// 官方未列独立 cached-input/cache-write 价；内部出现对应 token 时按输入价兜底。
+		CacheCreationPricePerToken:  30e-6,
+		CacheReadPricePerToken:      30e-6,
+		SupportsCacheBreakdown:      false,
+		LongContextInputThreshold:   openAIGPT54LongContextInputThreshold,
+		LongContextInputMultiplier:  openAIGPT54LongContextInputMultiplier,
+		LongContextOutputMultiplier: openAIGPT54LongContextOutputMultiplier,
+	}
 
 	// OpenAI GPT-5.6 官方价格（USD/token）。缓存写入为输入价的 1.25 倍。
 	s.fallbackPrices["gpt-5.6-sol"] = &ModelPricing{
@@ -642,7 +664,8 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown:  false,
 	}
 
-	// xAI Grok 4.5: $2 input / $0.30 cached input / $6 output below 200k.
+	// xAI Grok 4.5: $2 input / $0.30 cached input / $6 output below 200k;
+	// long-context rates are $4 / $0.60 / $12 (>=200k prompt tokens).
 	s.fallbackPrices["grok-4.5"] = &ModelPricing{
 		InputPricePerToken:            2e-6,
 		OutputPricePerToken:           6e-6,
@@ -654,9 +677,8 @@ func (s *BillingService) initFallbackPricing() {
 		LongContextOutputMultiplier:   2,
 	}
 
-	// xAI Grok 4.6 (docs.x.ai/developers/models: $2 input / $0.50 cached input /
-	// $6 output per MTok under 200k prompt tokens; ≥200k is 2× on input,
-	// cached input, and output).
+	// xAI Grok 4.6: $2 input / $0.50 cached input / $6 output below 200k;
+	// long-context rates are $4 / $1 / $12 (>=200k prompt tokens).
 	s.fallbackPrices["grok-4.6"] = &ModelPricing{
 		InputPricePerToken:            2e-6,
 		OutputPricePerToken:           6e-6,
@@ -668,7 +690,8 @@ func (s *BillingService) initFallbackPricing() {
 		LongContextOutputMultiplier:   2,
 	}
 
-	// xAI Grok 4.3: $1.25 input / $0.20 cached / $2.50 output below 200k.
+	// xAI Grok 4.3: $1.25 input / $0.20 cached / $2.50 output below 200k;
+	// long-context rates are $2.50 / $0.40 / $5.
 	s.fallbackPrices["grok-4.3"] = &ModelPricing{
 		InputPricePerToken:            1.25e-6,
 		OutputPricePerToken:           2.5e-6,
@@ -678,6 +701,33 @@ func (s *BillingService) initFallbackPricing() {
 		LongContextThresholdInclusive: true,
 		LongContextInputMultiplier:    2,
 		LongContextOutputMultiplier:   2,
+	}
+	// Grok 4.20 variants share the official $1.25 / $0.20 / $2.50 card
+	// (and $2.50 / $0.40 / $5 long-context rates) with Grok 4.3.
+	s.fallbackPrices["grok-4.20"] = &ModelPricing{
+		InputPricePerToken:            1.25e-6,
+		OutputPricePerToken:           2.5e-6,
+		CacheReadPricePerToken:        0.2e-6,
+		SupportsCacheBreakdown:        false,
+		LongContextInputThreshold:     200000,
+		LongContextThresholdInclusive: true,
+		LongContextInputMultiplier:    2,
+		LongContextOutputMultiplier:   2,
+	}
+
+	// Keep legacy Grok 3 Mini requests on their own historical xAI price card;
+	// otherwise the generic Grok fallback bills them as Grok 4.5.
+	s.fallbackPrices["grok-3-mini"] = &ModelPricing{
+		InputPricePerToken:     0.30e-6,
+		OutputPricePerToken:    0.50e-6,
+		CacheReadPricePerToken: 0.075e-6,
+		SupportsCacheBreakdown: false,
+	}
+	s.fallbackPrices["grok-3-mini-fast"] = &ModelPricing{
+		InputPricePerToken:     0.60e-6,
+		OutputPricePerToken:    4e-6,
+		CacheReadPricePerToken: 0.15e-6,
+		SupportsCacheBreakdown: false,
 	}
 	// xAI Grok Build 0.1 (official docs: $1 input / $0.20 cached input /
 	// $2 output per MTok). Composer is available only through Grok Build and
@@ -884,17 +934,22 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	}
 
 	switch modelLower {
-	case "grok", "grok-latest", "grok-4.5", "grok-4.5-latest":
-		return s.fallbackPrices["grok-4.5"]
-	case "grok-4.6", "grok-4.6-latest":
+	case "grok", "grok-latest", "grok-4.6", "grok-4.6-latest":
 		return s.fallbackPrices["grok-4.6"]
-	case "grok-4.3",
-		"grok-4.20-0309-reasoning",
+	case "grok-4.5", "grok-4.5-latest":
+		return s.fallbackPrices["grok-4.5"]
+	case "grok-3-mini":
+		return s.fallbackPrices["grok-3-mini"]
+	case "grok-3-mini-fast":
+		return s.fallbackPrices["grok-3-mini-fast"]
+	case "grok-4.3":
+		return s.fallbackPrices["grok-4.3"]
+	case "grok-4.20-0309-reasoning",
 		"grok-4.20-0309-non-reasoning",
 		"grok-4.20-multi-agent-0309",
 		"grok-4.20-reasoning",
 		"grok-4.20-non-reasoning":
-		return s.fallbackPrices["grok-4.3"]
+		return s.fallbackPrices["grok-4.20"]
 	case "grok-build", "grok-build-latest", "grok-build-0.1", "grok-composer", "grok-composer-2.5-fast", "composer-2.5":
 		return s.fallbackPrices["grok-build-0.1"]
 	}
@@ -912,7 +967,7 @@ func (s *BillingService) grokUnknownTextFamilyFallback(model string) *ModelPrici
 	if s == nil || !isGrokUnknownTextFamilyModel(model) {
 		return nil
 	}
-	return s.fallbackPrices["grok-4.5"]
+	return s.fallbackPrices["grok-4.6"]
 }
 
 func isGrokUnknownTextFamilyModel(model string) bool {
@@ -1189,7 +1244,8 @@ func (s *BillingService) calculateTokenCost(resolved *ResolvedPricing, input Cos
 
 	pricing = s.applyModelSpecificPricingPolicy(input.Model, pricing)
 
-	// 长上下文定价仅在无区间定价时应用（区间定价已包含上下文分层）
+	// 长上下文定价仅在无区间定价时应用（区间定价已包含上下文分层）。
+	// 官方长上下文阶梯同样只在无区间定价时应用。
 	applyLongCtx := len(resolved.Intervals) == 0 && contextTierPricingEnabled
 
 	breakdown := s.computeTokenBreakdown(pricing, input.Tokens, input.RateMultiplier, input.ServiceTier, applyLongCtx)

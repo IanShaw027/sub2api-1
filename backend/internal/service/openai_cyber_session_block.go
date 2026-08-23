@@ -21,6 +21,8 @@ type CyberSessionBlockStore interface {
 	FindCyberSessionBlocked(ctx context.Context, keys []string) (string, error)
 }
 
+const cyberSessionTranscriptLookupOverflowBlockKey = "transcript_lookup_limit_exceeded"
+
 // CyberSessionExplicitBlockKey returns an inexpensive exact key when the
 // client supplies a stable session signal. Callers should check this before
 // the coarse fingerprint gate because explicit sessions survive IP changes.
@@ -100,7 +102,7 @@ func (s *OpenAIGatewayService) CyberSessionBlockRuntime(ctx context.Context) (bo
 // 开关关闭、keys 为空或存储不可用时静默跳过。存储层负责将 scope
 // 与全部精确键放在同一个事务中，避免双键部分写入。
 func (s *OpenAIGatewayService) MarkCyberSessionBlocked(ctx context.Context, scopeKey string, keys []string) {
-	if len(keys) == 0 {
+	if s == nil || len(keys) == 0 {
 		return
 	}
 	enabled, ttl := s.CyberSessionBlockRuntime(ctx)
@@ -119,7 +121,8 @@ func (s *OpenAIGatewayService) MarkCyberSessionBlocked(ctx context.Context, scop
 // FindCyberSessionBlockedForRequest applies the two-level lookup. Explicit
 // session signals are checked before the coarse scope gate. On an explicit
 // miss, transcript matching still runs when the source scope is active so a
-// rotating prompt_cache_key cannot bypass an existing block.
+// rotating prompt_cache_key cannot bypass an existing block. All failures
+// remain fail-open.
 func (s *OpenAIGatewayService) FindCyberSessionBlockedForRequest(ctx context.Context, apiKeyID int64, c *gin.Context, body []byte, clientIP, userAgent string) string {
 	enabled, _ := s.CyberSessionBlockRuntime(ctx)
 	if !enabled {
@@ -148,7 +151,13 @@ func (s *OpenAIGatewayService) FindCyberSessionBlockedForRequest(ctx context.Con
 	if !active {
 		return ""
 	}
-	keys := CyberSessionTranscriptLookupKeys(apiKeyID, body)
+	transcript := deriveOpenAICyberTranscriptBlockKeys(apiKeyID, body)
+	if transcript.lookupKeysTruncated {
+		// Once the coarse scope is active, silently dropping old candidates would
+		// let a blocked client evade prefix matching by appending dummy items.
+		return cyberSessionTranscriptLookupOverflowBlockKey
+	}
+	keys := transcript.lookupKeys
 	if len(keys) == 0 {
 		return ""
 	}

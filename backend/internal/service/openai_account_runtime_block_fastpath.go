@@ -12,7 +12,8 @@ import (
 const (
 	openAIAccountStateUpdateTimeout    = 5 * time.Second
 	openAIOAuth429RetryWindow          = 2 * time.Minute
-	openAIOAuth429RetryDelay           = 0
+	openAIOAuth429RetryDelay           = time.Duration(0)
+	openAIOAuth429MaxRetryDelay        = 8 * time.Second
 	openAIStopSchedulingBridgeCooldown = 2 * time.Minute
 	openAIOAuth429MaxAccountAttempts   = 3
 	openAIOAuth429StormWindow          = 10 * time.Second
@@ -54,7 +55,7 @@ func openAIAccountStateContext(ctx context.Context) (context.Context, context.Ca
 }
 
 func isOpenAIOAuthAccount(account *Account) bool {
-	return account != nil && account.Platform == PlatformOpenAI && account.Type == AccountTypeOAuth
+	return account != nil && account.IsOpenAIOAuthLike()
 }
 
 func isGrokOAuthAccount(account *Account) bool {
@@ -75,8 +76,26 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if s != nil {
 		scheduleOllamaCloudUsageActivity(s.deferredService, account)
 	}
+	// Capacity shedding describes this request, not account health. Keep the
+	// account schedulable while the request-local retry budget handles recovery.
+	if account != nil && account.Platform == PlatformOpenAI && isOpenAIRequestScopedCapacityShed("", responseBody) {
+		return false
+	}
 	stateCtx, cancel := openAIAccountStateContext(ctx)
 	defer cancel()
+	if account != nil && account.Platform == PlatformOpenAI && isOpenAIHTTPUpstreamAccessStateError(statusCode, "", responseBody) {
+		message := "OpenAI upstream account or workspace is unavailable"
+		if upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(responseBody)); upstreamMsg != "" {
+			message = upstreamMsg
+		}
+		if s != nil && s.rateLimitService != nil {
+			s.rateLimitService.handleAuthError(stateCtx, account, message)
+		}
+		if s != nil {
+			s.BlockAccountScheduling(account, time.Time{}, "openai_access_state")
+		}
+		return true
+	}
 
 	if account != nil && account.Platform == PlatformOpenAI && isOpenAIContextWindowError("", responseBody) {
 		return false
@@ -171,13 +190,6 @@ func (s *OpenAIGatewayService) markOpenAIOAuth429RateLimited(ctx context.Context
 	if strategy == "same_account_retry" && s.ShouldRetryOpenAIOAuth429(account, headers, responseBody) {
 		return
 	}
-	// same_account_retry is request-local by design. Exhausting one request's
-	// retry window must not remove the account from scheduling for unrelated
-	// requests; the current handler already excludes it before switching.
-	if strategy == "same_account_retry" {
-		s.openaiOAuth429RetryStartedAt.Delete(account.ID)
-		return
-	}
 
 	cooldownUntil := time.Time{}
 	hasCooldown := false
@@ -267,18 +279,14 @@ func (s *OpenAIGatewayService) openAIOAuth429RetryWindowActive(account *Account)
 	return now.Sub(startedAt) < window
 }
 
-func openAIOAuth429SameAccountRetryDelay(statusCode int, account *Account) time.Duration {
-	if statusCode == http.StatusTooManyRequests && isOpenAIOAuthAccount(account) && !account.IsShadow() {
-		return openAIOAuth429RetryDelay
-	}
-	return 0
-}
-
 func (s *OpenAIGatewayService) openAIOAuth429SameAccountRetryDelay(statusCode int, account *Account) time.Duration {
 	if statusCode == http.StatusTooManyRequests && isOpenAIOAuthAccount(account) && !account.IsShadow() && s != nil && s.settingService != nil {
 		return time.Duration(s.rateLimit429StrategySettings().RetryIntervalMs) * time.Millisecond
 	}
-	return openAIOAuth429SameAccountRetryDelay(statusCode, account)
+	if statusCode == http.StatusTooManyRequests && isOpenAIOAuthAccount(account) && !account.IsShadow() {
+		return openAIOAuth429RetryDelay
+	}
+	return 0
 }
 
 // openAIOAuth429RetryDeadline returns the request-local retry window end that
@@ -330,6 +338,24 @@ func (s *OpenAIGatewayService) openAIOAuth429SameAccountRetryMax() int {
 		max = 1
 	}
 	return max
+}
+
+func openAIOAuth429SameAccountRetryDelay(headers http.Header, deadline time.Time) time.Duration {
+	delay := openAIOAuth429RetryDelay
+	now := time.Now()
+	if resetAt := parseRetryAfterResetTime(headers, now); resetAt != nil && resetAt.After(now) {
+		delay = resetAt.Sub(now)
+	}
+	if delay > openAIOAuth429MaxRetryDelay {
+		delay = openAIOAuth429MaxRetryDelay
+	}
+	if remaining := time.Until(deadline); !deadline.IsZero() && delay > remaining {
+		delay = remaining
+	}
+	if delay < 0 {
+		return 0
+	}
+	return delay
 }
 
 func (s *OpenAIGatewayService) BlockAccountScheduling(account *Account, until time.Time, reason string) {
@@ -395,6 +421,7 @@ func (s *OpenAIGatewayService) ClearAccountSchedulingBlock(accountID int64) {
 	mu.Lock()
 	defer mu.Unlock()
 	s.openaiAccountRuntimeBlockUntil.Delete(accountID)
+	s.openaiOAuth429RetryStartedAt.Delete(accountID)
 	s.openaiAccountRuntimeBlockGeneration.Store(accountID, s.openaiAccountRuntimeBlockSequence.Add(1))
 }
 
@@ -439,6 +466,9 @@ func canonicalOpenAIAccountSchedulingModel(account *Account, requestedModel stri
 	model := strings.TrimSpace(requestedModel)
 	if account == nil || model == "" {
 		return model
+	}
+	if account.IsOpenAI() {
+		return resolveOpenAIAccountUpstreamModelForRequest(account, model, false)
 	}
 	if mapped := strings.TrimSpace(account.GetMappedModel(model)); mapped != "" {
 		return mapped

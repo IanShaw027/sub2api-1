@@ -193,8 +193,8 @@ func openAIStreamEventIsTerminalWithType(data, eventType string) bool {
 }
 
 func openAIStreamEventTypeIsTerminal(eventType string) bool {
-	switch eventType {
-	case "response.completed", "response.done", "response.failed", "response.incomplete", "response.cancelled", "response.canceled":
+	switch strings.TrimSpace(eventType) {
+	case "response.completed", "response.done", "response.failed", "response.incomplete", "response.cancelled", "response.canceled", "error":
 		return true
 	default:
 		return false
@@ -453,6 +453,10 @@ var allowedHeaders = map[string]bool{
 // cache implementation (e.g. redis.Nil), mirroring ErrRefreshTokenNotFound.
 var ErrStickySessionNotFound = errors.New("sticky session not found")
 
+// ErrReasoningContentNotFound is returned by GatewayCache.GetReasoningContent
+// when no cached reasoning content exists for the reasoning item ID.
+var ErrReasoningContentNotFound = errors.New("reasoning content not found")
+
 // GatewayCache 定义网关服务的缓存操作接口。
 // 提供粘性会话（Sticky Session）的存储、查询、刷新和删除功能。
 //
@@ -487,6 +491,16 @@ type GatewayCache interface {
 	ClaimGrokVideoBilled(ctx context.Context, key string, ttl time.Duration) (bool, error)
 	// ReleaseGrokVideoBilled clears a claim so a failed RecordUsage can retry billing.
 	ReleaseGrokVideoBilled(ctx context.Context, key string) error
+
+	// Reasoning content cache (Responses→Chat Completions 桥接）。
+	// SetReasoningContent 按 reasoning item id 缓存 reasoning 全文，供后续请求
+	// 在客户端不回传明文 summary 时回注 reasoning_content（DeepSeek thinking
+	// mode 要求回传，否则 400）。
+	SetReasoningContent(ctx context.Context, itemID string, content string, ttl time.Duration) error
+	// GetReasoningContent 返回缓存的 reasoning 全文；未命中返回
+	// ErrReasoningContentNotFound，使 service 层无需依赖具体缓存实现即可
+	// 区分"未缓存"与真实读取失败。
+	GetReasoningContent(ctx context.Context, itemID string) (string, error)
 }
 
 // derefGroupID safely dereferences *int64 to int64, returning 0 if nil
@@ -658,14 +672,14 @@ type GatewayFailureReason string
 // source-compatible and preserves their legacy retry-next-account behavior.
 type UpstreamFailoverError struct {
 	StatusCode               int
-	ResponseBody             []byte      // 上游响应体，用于错误透传规则匹配
-	ResponseHeaders          http.Header // 上游响应头，用于透传 cf-ray/cf-mitigated/content-type 等诊断信息
-	ExcludedAccountIDs       []int64     // 本次请求后续 failover 必须一并排除的账号（例如共享同一 Kiro profile）
-	ForceCacheBilling        bool        // Antigravity 粘性会话切换时设为 true
-	RetryableOnSameAccount   bool        // 临时性错误（如 Google 间歇性 400、空响应），应在同一账号上重试 N 次再切换
-	SameAccountRetryDelay    time.Duration
-	SameAccountRetryMax      int
-	SameAccountRetryDeadline time.Time
+	ResponseBody             []byte        // 上游响应体，用于错误透传规则匹配
+	ResponseHeaders          http.Header   // 上游响应头，用于透传 cf-ray/cf-mitigated/content-type 等诊断信息
+	ExcludedAccountIDs       []int64       // 本次请求后续 failover 必须一并排除的账号（例如共享同一 Kiro profile）
+	ForceCacheBilling        bool          // Antigravity 粘性会话切换时设为 true
+	RetryableOnSameAccount   bool          // 临时性错误（如 Google 间歇性 400、空响应），应在同一账号上重试 N 次再切换
+	SameAccountRetryDelay    time.Duration // 同账号重试的最小间隔；零值使用 handler 默认值
+	SameAccountRetryMax      int           // 可选的错误级同账号重试上限，低于 handler 默认预算时优先采用
+	SameAccountRetryDeadline time.Time     // 同账号重试截止时间；零值表示仅受 retryLimit 限制
 	RetryExhaustedCooldown   time.Duration // 同账号重试耗尽后，对该账号施加的短期冷却
 	RetryExhaustedReason     string        // 同账号重试耗尽后的冷却原因
 	RequestScopedTransient   bool          // 故障因素与账号无关（如上游按客户端身份/模型容量降载）：可同账号重试，但不得据此对账号做临时封禁

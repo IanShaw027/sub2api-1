@@ -159,13 +159,43 @@ func TestIntervalPricePreservesDefaultFastRatio(t *testing.T) {
 
 func TestAnthropicSpeedServiceTier(t *testing.T) {
 	account := &Account{Platform: PlatformAnthropic}
-	parsed := &ParsedRequest{Speed: "fast"}
-	tier := anthropicSpeedServiceTier(account, parsed)
-	require.NotNil(t, tier)
-	require.Equal(t, "fast", *tier)
 
-	require.Nil(t, anthropicSpeedServiceTier(&Account{Platform: PlatformOpenAI}, parsed))
-	require.Nil(t, anthropicSpeedServiceTier(account, &ParsedRequest{Speed: "standard"}))
+	for _, model := range []string{"claude-opus-5", "claude-opus-4-8", "claude-opus-4.8"} {
+		tier := anthropicSpeedServiceTier(account, "fast", model)
+		require.NotNil(t, tier, "model %s should bill as fast", model)
+		require.Equal(t, "fast", *tier)
+	}
+
+	require.Nil(t, anthropicSpeedServiceTier(&Account{Platform: PlatformOpenAI}, "fast", "claude-opus-5"))
+	require.Nil(t, anthropicSpeedServiceTier(account, "standard", "claude-opus-5"))
+}
+
+// fast mode 不存在于这些模型/承载上，即便客户端传了 speed=fast 也不能计 2x。
+func TestAnthropicSpeedServiceTierRejectsUnsupportedTargets(t *testing.T) {
+	account := &Account{Platform: PlatformAnthropic}
+
+	for _, model := range []string{
+		"claude-opus-4-7",  // fast mode 已被移除
+		"claude-opus-4-6",  //
+		"claude-opus-4-5",  // 不能被 "opus-5" 规则误判
+		"claude-sonnet-5",  // 非 Opus
+		"claude-haiku-4-5", //
+		"",                 //
+	} {
+		require.Nil(t, anthropicSpeedServiceTier(account, "fast", model),
+			"model %q must not bill as fast", model)
+	}
+
+	bedrock := &Account{Platform: PlatformAnthropic, Type: AccountTypeBedrock}
+	require.Nil(t, anthropicSpeedServiceTier(bedrock, "fast", "claude-opus-5"))
+}
+
+func TestAnthropicSpeedModelPrefersMappedUpstreamModel(t *testing.T) {
+	parsed := &ParsedRequest{Model: "claude-opus-5"}
+	require.Equal(t, "claude-opus-4-7", anthropicSpeedModel(parsed, &ForwardResult{
+		UpstreamModel: "claude-opus-4-7",
+	}))
+	require.Equal(t, "claude-opus-5", anthropicSpeedModel(parsed, &ForwardResult{}))
 }
 
 func TestMultiplierOnlyIntervalIsValid(t *testing.T) {

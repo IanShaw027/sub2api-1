@@ -284,8 +284,9 @@ type OpenAIForwardResult struct {
 	// AudioUsage carries Voice billing units when present.
 	AudioUsage *AudioUsage
 
-	wsReplayInput       []json.RawMessage
-	wsReplayInputExists bool
+	wsReplayInput                []json.RawMessage
+	wsReplayInputExists          bool
+	wsAccountFailoverReplayInput []json.RawMessage
 }
 
 // SucceededForScheduling reports whether this result is an upstream success
@@ -445,6 +446,7 @@ type OpenAIGatewayService struct {
 	openaiWSStateStore             OpenAIWSStateStore
 	openaiScheduler                OpenAIAccountScheduler
 	openaiWSPassthroughDialer      openAIWSClientDialer
+	openaiWSSessionPreemptions     openAIWSSessionPreemptRegistry
 	openaiAccountStats             *openAIAccountRuntimeStats
 	openaiModelTransient           *openAIAccountModelTransientState
 	openaiProxyStreamCircuit       *openAIProxyStreamCircuit
@@ -1276,6 +1278,17 @@ func (s *OpenAIGatewayService) GetAccessToken(ctx context.Context, account *Acco
 			return accessToken, "oauth", nil
 		}
 		// 降级：TokenProvider 未配置时直接从账号读取
+		accessToken := account.GetOpenAIAccessToken()
+		if accessToken == "" {
+			return "", "", errors.New("access_token not found in credentials")
+		}
+		return accessToken, "oauth", nil
+	case AccountTypeSetupToken:
+		if !account.IsOpenAIOAuthLike() {
+			return "", "", fmt.Errorf("unsupported account type: %s", account.Type)
+		}
+		// OpenAI setup tokens are inference-only bearer credentials. They use the
+		// Codex OAuth forwarding protocol but have no refresh-token lifecycle.
 		accessToken := account.GetOpenAIAccessToken()
 		if accessToken == "" {
 			return "", "", errors.New("access_token not found in credentials")

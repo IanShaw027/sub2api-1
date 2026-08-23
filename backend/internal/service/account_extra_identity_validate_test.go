@@ -202,7 +202,7 @@ func TestAdminCreateAndBulkRejectIllegalIdentityAndCapacityExtras(t *testing.T) 
 		extra map[string]any
 		want  string
 	}{
-		{name: "concurrency 999", extra: map[string]any{"concurrency": 999}, want: "concurrency"},
+		{name: "concurrency over max", extra: map[string]any{"concurrency": MaxAccountConcurrency + 1}, want: "concurrency"},
 		{name: "float 3.7", extra: map[string]any{"max_sessions": 3.7}, want: "integer"},
 		{name: "tls -2", extra: map[string]any{"tls_fingerprint_profile_id": int64(-2)}, want: "tls_fingerprint_profile_id"},
 	}

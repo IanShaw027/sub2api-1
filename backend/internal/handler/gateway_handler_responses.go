@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
@@ -374,33 +375,23 @@ func (h *GatewayHandler) handleResponsesFailoverExhausted(c *gin.Context, lastEr
 	if lastErr != nil {
 		copyFailoverRetryAfter(c, lastErr.ResponseHeaders)
 	}
-	if lastErr != nil && lastErr.IsCredentialFailure() {
-		status, message := credentialFailoverClientResponse(lastErr)
-		if streamStarted {
-			service.MarkOpsStreamError(c, "server_error", message, status)
-			writeResponsesFailedSSE(c, "server_error", message)
-		} else {
-			h.responsesErrorResponse(c, status, "server_error", message)
-		}
-		return
-	}
 	statusCode := http.StatusBadGateway
 	if lastErr != nil && lastErr.StatusCode > 0 {
 		statusCode = lastErr.StatusCode
 	}
-	if lastErr != nil && service.IsOpenAISilentRefusalErrorBody(lastErr.ResponseBody) {
-		service.SetOpsUpstreamError(c, statusCode, service.OpenAISilentRefusalClientMessage(), "")
-		if streamStarted {
-			writeResponsesFailedSSE(c, "upstream_error", service.OpenAISilentRefusalClientMessage())
-		} else {
-			h.responsesErrorResponse(c, http.StatusBadGateway, "upstream_error", service.OpenAISilentRefusalClientMessage())
+	status, code, message := statusCode, "server_error", "All available accounts exhausted"
+	if lastErr != nil && lastErr.IsCredentialFailure() {
+		status, message = credentialFailoverClientResponse(lastErr)
+	} else if lastErr != nil && lastErr.IsOpenAICapacityShed() && strings.TrimSpace(lastErr.ClientMessage) != "" {
+		status = lastErr.ClientStatusCode
+		if status <= 0 {
+			status = http.StatusServiceUnavailable
 		}
-		return
-	}
-	message := "All available accounts exhausted"
-	code := "server_error"
-	status := statusCode
-	if lastErr != nil {
+		message = lastErr.ClientMessage
+	} else if lastErr != nil && service.IsOpenAISilentRefusalErrorBody(lastErr.ResponseBody) {
+		service.SetOpsUpstreamError(c, statusCode, service.OpenAISilentRefusalClientMessage(), "")
+		status, code, message = http.StatusBadGateway, "upstream_error", service.OpenAISilentRefusalClientMessage()
+	} else if lastErr != nil {
 		upstreamMessage := service.ExtractUpstreamErrorMessage(lastErr.ResponseBody)
 		if visible, ok := service.ClassifyClientVisibleUpstreamError(upstreamMessage, lastErr.ResponseBody); ok {
 			status, code, message = visible.StatusCode, visible.ErrorType, visible.Message
@@ -409,9 +400,15 @@ func (h *GatewayHandler) handleResponsesFailoverExhausted(c *gin.Context, lastEr
 		}
 	}
 	if streamStarted {
+		// A slot-wait heartbeat commits HTTP 200 before any upstream response.
+		// In that case a terminal frame is still required; once any semantic or
+		// official terminal bytes exist, preserve them without appending a second
+		// generic response.failed.
 		service.MarkOpsStreamError(c, code, message, status)
-		writeResponsesFailedSSE(c, code, message)
-	} else {
-		h.responsesErrorResponse(c, status, code, message)
+		if c != nil && c.Writer != nil && (c.Writer.Size() <= 0 || gatewayStreamHasOnlyHeartbeats(c)) {
+			writeResponsesFailedSSE(c, code, message)
+		}
+		return
 	}
+	h.responsesErrorResponse(c, status, code, message)
 }

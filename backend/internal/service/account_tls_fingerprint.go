@@ -235,6 +235,11 @@ func loadDeviceProfileForTLSResolve(ctx context.Context, account *Account) (*Acc
 	if cached := outboundDeviceProfileFromContext(ctx); cached != nil {
 		return cached, nil
 	}
+	// CN OpenAI-compatible accounts do not pin device TLS. A configured
+	// identity service must not fail-close their upstream send path.
+	if account != nil && IsCNProvider(account.Platform) {
+		return nil, nil
+	}
 	if OutboundDeviceProfileService() == nil {
 		return nil, nil
 	}

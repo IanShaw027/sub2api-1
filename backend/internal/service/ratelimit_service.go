@@ -26,6 +26,7 @@ type RateLimitService struct {
 	geminiQuotaService    *GeminiQuotaService
 	tempUnschedCache      TempUnschedCache
 	tempUnschedCounter    TempUnschedCounterCache
+	openAIAPIKeyHealth    OpenAIAPIKeyHealthCache
 	timeoutCounterCache   TimeoutCounterCache
 	openAI403CounterCache OpenAI403CounterCache
 	settingService        *SettingService
@@ -104,6 +105,10 @@ func (s *RateLimitService) SetTimeoutCounterCache(cache TimeoutCounterCache) {
 
 func (s *RateLimitService) SetTempUnschedCounter(cache TempUnschedCounterCache) {
 	s.tempUnschedCounter = cache
+}
+
+func (s *RateLimitService) SetOpenAIAPIKeyHealthCache(cache OpenAIAPIKeyHealthCache) {
+	s.openAIAPIKeyHealth = cache
 }
 
 // SetOpenAI403CounterCache 设置 OpenAI 403 连续失败计数器（可选依赖）
@@ -270,6 +275,11 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 		}
 		return ErrorPolicySkipped
 	}
+	// The global overload cooldown is the default for ordinary accounts. Explicit
+	// account policies above retain precedence over this fallback.
+	if statusCode == 529 {
+		return ErrorPolicyMatched
+	}
 	if s.tryTempUnschedulable(ctx, account, statusCode, responseBody, firstRequestedModel(requestedModel)) {
 		return ErrorPolicyTempUnscheduled
 	}
@@ -292,16 +302,6 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 		s.handleAuthError(ctx, account, msg)
 		return true
 	}
-	// 529 overload cooldown is an explicit global policy and must apply to
-	// pool accounts and accounts with custom error-code filters as well.
-	// Handle it before those early-return gates so the configured cooldown is
-	// not silently skipped, then continue through the normal rule pipeline so
-	// an administrator's temp-unschedulable rule can still apply as it did
-	// before the global-policy fast path was introduced.
-	if statusCode == 529 {
-		s.handle529(ctx, account)
-	}
-
 	// 池模式默认不标记本地账号状态；但管理员显式配置的临时不可调度规则优先。
 	// 401 保留现有认证错误语义，不在这里改变池模式的认证处理。
 	if account.IsPoolMode() && !customErrorCodesEnabled {
@@ -317,6 +317,15 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 	if !account.ShouldHandleErrorCode(statusCode) {
 		slog.Info("account_error_code_skipped", "account_id", account.ID, "status_code", statusCode)
 		return false
+	}
+
+	if statusCode == 529 {
+		if customErrorCodesEnabled {
+			s.handleCustomErrorCode(ctx, account, statusCode, extractUpstreamErrorMessage(responseBody))
+			return true
+		}
+		s.handle529(ctx, account)
+		// Continue so admin temp-unschedulable rules can still match this 529.
 	}
 
 	if len(requestedModel) > 0 && s.HandleUpstreamModelNotFound(ctx, account, requestedModel[0], statusCode, responseBody) {
