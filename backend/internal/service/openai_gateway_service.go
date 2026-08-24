@@ -1150,14 +1150,14 @@ func openaiOutboundSessionID(ctx context.Context, account *Account, apiKeyID int
 	if derived := deriveOpenAIOutboundSessionID(ctx, account, apiKeyID, raw); derived != "" {
 		return derived
 	}
-	return isolateOpenAISessionID(apiKeyID, raw)
+	return isolateOpenAIUpstreamSessionID(apiKeyID, account, raw)
 }
 
 func openaiOutboundSessionUUID(ctx context.Context, account *Account, apiKeyID int64, raw string) string {
 	if derived := deriveOpenAIOutboundSessionID(ctx, account, apiKeyID, raw); derived != "" {
 		return derived
 	}
-	return generateSessionUUID(isolateOpenAISessionID(apiKeyID, raw))
+	return generateSessionUUID(isolateOpenAIUpstreamSessionID(apiKeyID, account, raw))
 }
 
 func openaiOutboundSessionPair(ctx context.Context, account *Account, apiKeyID int64, sessionRaw, conversationRaw string) (sessionID, conversationID string) {

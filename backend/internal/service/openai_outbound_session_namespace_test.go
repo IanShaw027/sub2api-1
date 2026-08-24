@@ -63,8 +63,26 @@ func TestDeriveOpenAIOutboundSessionIDFallsBackWhenProfileLoadFails(t *testing.T
 	account := &Account{ID: 1815, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 	installLeftoverOutboundProfileError(t, account.ID, errors.New("identity_reject: profile store down"))
 	require.Empty(t, deriveOpenAIOutboundSessionID(context.Background(), account, 3, "sess"))
-	require.Equal(t, isolateOpenAISessionID(3, "sess"), openaiOutboundSessionID(context.Background(), account, 3, "sess"))
-	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(3, "sess")), openaiOutboundSessionUUID(context.Background(), account, 3, "sess"))
+	require.Equal(t, isolateOpenAIUpstreamSessionID(3, account, "sess"), openaiOutboundSessionID(context.Background(), account, 3, "sess"))
+	require.Equal(t, generateSessionUUID(isolateOpenAIUpstreamSessionID(3, account, "sess")), openaiOutboundSessionUUID(context.Background(), account, 3, "sess"))
+}
+
+func TestOpenAIOutboundSessionIDFallsBackToAccountNamespaceWhenProfileLoadFails(t *testing.T) {
+	account := &Account{
+		ID:          1820,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"chatgpt_account_id": "acct-failover-a"},
+	}
+	installLeftoverOutboundProfileError(t, account.ID, errors.New("identity_reject: profile store down"))
+
+	gotID := openaiOutboundSessionID(context.Background(), account, 3, "sess")
+	gotUUID := openaiOutboundSessionUUID(context.Background(), account, 3, "sess")
+	wantIsolated := isolateOpenAIUpstreamSessionID(3, account, "sess")
+	require.Equal(t, wantIsolated, gotID)
+	require.Equal(t, generateSessionUUID(wantIsolated), gotUUID)
+	require.NotEqual(t, isolateOpenAISessionID(3, "sess"), gotID)
+	require.NotEqual(t, generateSessionUUID(isolateOpenAISessionID(3, "sess")), gotUUID)
 }
 
 func TestDeriveOpenAIOutboundSessionIDDifferentAPIKeysStillDiffer(t *testing.T) {
