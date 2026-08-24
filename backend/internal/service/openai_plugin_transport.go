@@ -52,7 +52,7 @@ func doOpenAITLSFallback(
 }
 
 // doOpenAIAccountTestUpstream 让 OpenAI OAuth 账号测试与真实转发使用同一插件路径。
-// API Key 和未命中插件的账号保持各自原有的 HTTPUpstream 行为。
+// 未命中插件且需要 TLS 时，与 doOpenAIUpstream 共用 leftover / 协议推断。
 func (s *AccountTestService) doOpenAIAccountTestUpstream(
 	request *http.Request,
 	proxyURL string,
@@ -66,13 +66,8 @@ func (s *AccountTestService) doOpenAIAccountTestUpstream(
 		}
 	}
 	if useTLSFallback {
-		return s.httpUpstream.DoWithTLS(
-			request,
-			proxyURL,
-			account.ID,
-			account.EffectiveConcurrency(),
-			s.tlsFPProfileService.ResolveTLSProfile(account),
-		)
+		inboundUA, ctx := inboundUAAndContextFromRequest(request)
+		return doOpenAITLSFallback(ctx, s.httpUpstream, request, proxyURL, account, s.tlsFPProfileService, s.tlsFPRouterService, inboundUA)
 	}
 	return s.httpUpstream.Do(request, proxyURL, account.ID, account.EffectiveConcurrency())
 }

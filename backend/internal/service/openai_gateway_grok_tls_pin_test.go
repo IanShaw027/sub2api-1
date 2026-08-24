@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/model"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -163,3 +164,118 @@ func TestOpenAIGatewayDoOpenAIUpstreamInfersProtocolFromPath(t *testing.T) {
 	require.NotEqual(t, "responses-router-ua", upstream.lastReq.Header.Get("User-Agent"))
 }
 
+type tlsProfileUpstreamRecorder struct {
+	httpUpstreamRecorder
+	lastProfileName string
+}
+
+func (u *tlsProfileUpstreamRecorder) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+	if profile != nil {
+		u.lastProfileName = profile.Name
+	}
+	return u.Do(req, proxyURL, accountID, accountConcurrency)
+}
+
+func TestOpenAIAccountTestUpstreamPinsGrokLeftoverAndUsesRouterProfile(t *testing.T) {
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(nil)
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	const profileUA = "xai-grok-workspace/0.2.200"
+	const routerUA = "router-rewritten-grok-ua"
+
+	req, err := http.NewRequest(http.MethodPost, "https://cli-chat-proxy.grok.com/v1/chat/completions", nil)
+	require.NoError(t, err)
+	req.Header.Set("User-Agent", profileUA)
+
+	upstream := &tlsProfileUpstreamRecorder{httpUpstreamRecorder: httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(`{}`)),
+		Header:     make(http.Header),
+	}}}
+	account := &Account{
+		ID:       1915,
+		Platform: PlatformGrok,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"enable_tls_fingerprint":     true,
+			"tls_fingerprint_profile_id": int64(11),
+			"tls_fingerprint_router_id":  int64(8),
+		},
+	}
+	svc := &AccountTestService{
+		httpUpstream:        upstream,
+		tlsFPProfileService: testTLSProfileService(
+			&model.TLSFingerprintProfile{ID: 11, Name: "account-default"},
+			&model.TLSFingerprintProfile{ID: 22, Name: "router-profile"},
+		),
+		tlsFPRouterService: testTLSRouterService(&model.TLSFingerprintRouter{
+			ID:      8,
+			Enabled: true,
+			Rules: []model.TLSFingerprintRouterRule{{
+				Name:                    "rewrite-ua",
+				Enabled:                 true,
+				TLSFingerprintProfileID: 22,
+				UpstreamUserAgent:       routerUA,
+			}},
+		}),
+	}
+
+	resp, err := svc.doOpenAIAccountTestUpstream(req, "", account, true)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, profileUA, upstream.lastReq.Header.Get("User-Agent"))
+	require.NotEqual(t, routerUA, upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, "router-profile", upstream.lastProfileName)
+}
+
+func TestOpenAIAccountTestUpstreamInfersProtocolFromPath(t *testing.T) {
+	prev := OutboundDeviceProfileService()
+	SetOutboundDeviceProfileService(nil)
+	t.Cleanup(func() { SetOutboundDeviceProfileService(prev) })
+
+	req, err := http.NewRequest(http.MethodPost, "https://api.openai.com/v1/chat/completions", nil)
+	require.NoError(t, err)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(`{}`)),
+		Header:     make(http.Header),
+	}}
+	account := &Account{
+		ID:       1916,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Extra: map[string]any{
+			"enable_tls_fingerprint":    true,
+			"tls_fingerprint_router_id": int64(9),
+		},
+	}
+	svc := &AccountTestService{
+		httpUpstream:        upstream,
+		tlsFPProfileService: testTLSProfileService(),
+		tlsFPRouterService: testTLSRouterService(&model.TLSFingerprintRouter{
+			ID:      9,
+			Enabled: true,
+			Rules: []model.TLSFingerprintRouterRule{
+				{
+					Name:              "responses",
+					Enabled:           true,
+					Protocol:          "responses",
+					UpstreamUserAgent: "responses-router-ua",
+				},
+				{
+					Name:              "chat-completions",
+					Enabled:           true,
+					Protocol:          "chat_completions",
+					UpstreamUserAgent: "chat-completions-router-ua",
+				},
+			},
+		}),
+	}
+
+	resp, err := svc.doOpenAIAccountTestUpstream(req, "", account, true)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, "chat-completions-router-ua", upstream.lastReq.Header.Get("User-Agent"))
+}

@@ -147,6 +147,7 @@ type AccountTestService struct {
 	cfg                       *config.Config
 	settingService            *SettingService
 	tlsFPProfileService       *TLSFingerprintProfileService
+	tlsFPRouterService        *TLSFingerprintRouterService
 	pluginManager             *PluginManager
 	agentIdentityTaskMu       sync.Mutex
 	agentIdentityWS           agentIdentityWSConnectionInvalidator
@@ -170,6 +171,12 @@ func (s *AccountTestService) SetSettingService(settingService *SettingService) {
 func (s *AccountTestService) SetPluginManager(pluginManager *PluginManager) {
 	if s != nil {
 		s.pluginManager = pluginManager
+	}
+}
+
+func (s *AccountTestService) SetTLSFingerprintRouterService(router *TLSFingerprintRouterService) {
+	if s != nil {
+		s.tlsFPRouterService = router
 	}
 }
 

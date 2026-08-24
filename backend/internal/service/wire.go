@@ -515,6 +515,7 @@ func ProvideAccountTestService(
 	httpUpstream HTTPUpstream,
 	cfg *config.Config,
 	tlsFPProfileService *TLSFingerprintProfileService,
+	tlsFPRouterService *TLSFingerprintRouterService,
 	openAIGatewayService *OpenAIGatewayService,
 	settingService *SettingService,
 	kiroTokenProvider *KiroTokenProvider,
@@ -534,6 +535,7 @@ func ProvideAccountTestService(
 	service.SetSettingService(settingService)
 	service.SetKiroTokenProvider(kiroTokenProvider)
 	service.SetPluginManager(pluginManager)
+	service.SetTLSFingerprintRouterService(tlsFPRouterService)
 	return service
 }
 
