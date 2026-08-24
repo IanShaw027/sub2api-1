@@ -128,9 +128,9 @@ func TestOpenAIAgentIdentityPassthroughKeepsSessionAndPromptCacheHeaders(t *test
 
 	profile := leftoverValidProfile(account.ID, PlatformOpenAI, ClientFamilyCodexCLI, "codex-cli/1.2.3", "mid-agent-passthrough")
 	installLeftoverOutboundProfile(t, profile)
-	wantSession, _, _, err := DeriveSessionIDs(profile.SessionNamespace, isolateOpenAISessionID(0, "client-session"))
+	wantSession, _, _, err := DeriveSessionIDs(profile.SessionNamespace, isolateOpenAIUpstreamSessionID(0, account, "client-session"))
 	require.NoError(t, err)
-	wantConversation, _, _, err := DeriveSessionIDs(profile.SessionNamespace, isolateOpenAISessionID(0, "client-conversation"))
+	wantConversation, _, _, err := DeriveSessionIDs(profile.SessionNamespace, isolateOpenAIUpstreamSessionID(0, account, "client-conversation"))
 	require.NoError(t, err)
 
 	svc := &OpenAIGatewayService{}
@@ -153,7 +153,7 @@ func TestOpenAIAgentIdentityPassthroughKeepsSessionAndPromptCacheHeaders(t *test
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
-			"chatgpt_account_id": "account-oauth-passthrough",
+			"chatgpt_account_id": "account-agent-passthrough",
 		},
 	}
 	oauthRecorder := httptest.NewRecorder()

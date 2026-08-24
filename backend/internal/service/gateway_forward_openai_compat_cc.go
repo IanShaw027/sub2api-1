@@ -24,6 +24,7 @@ func shouldAutoRouteOpenAICompatCCUpstream(account *Account) bool {
 
 type responsesChatToolCompatibility struct {
 	customTools    map[string]bool
+	functionTools  map[string]bool
 	toolSearch     bool
 	namespaceTools map[string]apicompat.NamespacedToolName
 }
@@ -31,6 +32,7 @@ type responsesChatToolCompatibility struct {
 func newResponsesChatToolCompatibility(tools []apicompat.ResponsesTool) responsesChatToolCompatibility {
 	return responsesChatToolCompatibility{
 		customTools:    apicompat.CustomToolNames(tools),
+		functionTools:  apicompat.FunctionToolNames(tools),
 		toolSearch:     apicompat.HasToolSearchTool(tools),
 		namespaceTools: apicompat.NamespaceToolNames(tools),
 	}
@@ -41,6 +43,7 @@ func (compat responsesChatToolCompatibility) applyTo(state *apicompat.ChatComple
 		return
 	}
 	state.CustomTools = compat.customTools
+	state.FunctionTools = compat.functionTools
 	state.ToolSearchDeclared = compat.toolSearch
 	state.NamespaceTools = compat.namespaceTools
 }
@@ -399,6 +402,7 @@ func (s *GatewayService) bufferOpenAICompatCCChatAsResponses(
 		&ccResp,
 		originalModel,
 		toolCompatibility.customTools,
+		toolCompatibility.functionTools,
 		toolCompatibility.toolSearch,
 		toolCompatibility.namespaceTools,
 	)

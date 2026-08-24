@@ -247,11 +247,14 @@ type OpenAIForwardResult struct {
 	// response before any client-facing rewrite or protocol conversion.
 	UpstreamResponseModel         string
 	UpstreamResponseModelConflict bool
+	// UpstreamResponseServiceTier is the tier the upstream reports having used
+	// (response service_tier: "priority" / "default" / "flex" / ...); "" when not declared.
+	UpstreamResponseServiceTier string
 	// UpstreamEndpoint is the actual upstream API path used for this request.
 	// It avoids guessing when one downstream protocol can use multiple upstream endpoints.
 	UpstreamEndpoint string
-	// ServiceTier records the OpenAI Responses API service tier, e.g. "priority" / "flex".
-	// Nil means the request did not specify a recognized tier.
+	// ServiceTier 优先取上游实际响应回显的 tier；缺失时回退到最终出站 body 的
+	// tier。nil 表示两者都无识别 tier。
 	ServiceTier *string
 	// ReasoningEffort is extracted from request body (reasoning.effort) or derived from model suffix.
 	// Stored for usage records display; nil means not provided / not applicable.
@@ -420,6 +423,7 @@ type OpenAIGatewayService struct {
 	billingCacheService   *BillingCacheService
 	userGroupRateResolver *userGroupRateResolver
 	httpUpstream          HTTPUpstream
+	pluginManager         *PluginManager
 	deferredService       *DeferredService
 	openAITokenProvider   *OpenAITokenProvider
 	grokTokenProvider     *GrokTokenProvider
@@ -566,6 +570,12 @@ func (s *OpenAIGatewayService) SetTLSFingerprintServices(profile *TLSFingerprint
 func (s *OpenAIGatewayService) doAccountHTTP(ctx context.Context, c *gin.Context, account *Account, req *http.Request, proxyURL, protocol string) (*http.Response, error) {
 	if account != nil && account.Platform == PlatformGrok {
 		return doLeftoverAccountHTTP(ctx, s.httpUpstream, req, proxyURL, account, s.tlsFPProfileService, s.tlsFPRouterService, inboundUserAgentFromGin(c), "http", protocol)
+	}
+	if s.pluginManager != nil && req != nil {
+		response, handled, err := s.pluginManager.RoundTripOpenAIOAuth(req.Context(), req, proxyURL, account)
+		if handled {
+			return response, err
+		}
 	}
 	// Last mutation before send: callers may Header.Set/Get after buildUpstreamRequest
 	// (images Content-Type, messages identity + turn-state). leftover 5 session_id
@@ -1117,7 +1127,7 @@ func deriveOpenAIOutboundSessionIDFromProfile(profile *AccountDeviceProfile, iso
 }
 
 func deriveOpenAIOutboundSessionID(ctx context.Context, account *Account, apiKeyID int64, raw string) string {
-	isolated := isolateOpenAISessionID(apiKeyID, raw)
+	isolated := isolateOpenAIUpstreamSessionID(apiKeyID, account, raw)
 	if isolated == "" {
 		return ""
 	}
@@ -1125,7 +1135,11 @@ func deriveOpenAIOutboundSessionID(ctx context.Context, account *Account, apiKey
 }
 
 func openaiOutboundSessionIDFromProfile(profile *AccountDeviceProfile, apiKeyID int64, raw string) string {
-	isolated := isolateOpenAISessionID(apiKeyID, raw)
+	return openaiOutboundSessionIDFromProfileAccount(profile, apiKeyID, nil, raw)
+}
+
+func openaiOutboundSessionIDFromProfileAccount(profile *AccountDeviceProfile, apiKeyID int64, account *Account, raw string) string {
+	isolated := isolateOpenAIUpstreamSessionID(apiKeyID, account, raw)
 	if derived := deriveOpenAIOutboundSessionIDFromProfile(profile, isolated); derived != "" {
 		return derived
 	}
@@ -1148,8 +1162,8 @@ func openaiOutboundSessionUUID(ctx context.Context, account *Account, apiKeyID i
 
 func openaiOutboundSessionPair(ctx context.Context, account *Account, apiKeyID int64, sessionRaw, conversationRaw string) (sessionID, conversationID string) {
 	profile := loadOpenAIOutboundSessionProfile(ctx, account)
-	return openaiOutboundSessionIDFromProfile(profile, apiKeyID, sessionRaw),
-		openaiOutboundSessionIDFromProfile(profile, apiKeyID, conversationRaw)
+	return openaiOutboundSessionIDFromProfileAccount(profile, apiKeyID, account, sessionRaw),
+		openaiOutboundSessionIDFromProfileAccount(profile, apiKeyID, account, conversationRaw)
 }
 
 func logCodexCLIOnlyDetection(ctx context.Context, c *gin.Context, account *Account, apiKeyID int64, result CodexClientRestrictionDetectionResult, body []byte) {

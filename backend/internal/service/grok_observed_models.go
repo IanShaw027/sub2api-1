@@ -92,7 +92,7 @@ func (s *GrokQuotaService) syncGrokObservedModels(ctx context.Context, account *
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", grokUpstreamUserAgent)
+	req.Header.Set("User-Agent", defaultGrokUpstreamUserAgent())
 	if account.IsGrokOAuth() {
 		if err := applyGrokInteractiveUpstreamHeadersFromAccount(ctx, req, account); err != nil {
 			return err

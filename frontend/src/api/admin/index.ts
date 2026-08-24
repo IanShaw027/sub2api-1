@@ -39,6 +39,7 @@ import adminComplianceAPI from './compliance'
 import auditAPI from './audit'
 import capacityAPI from './capacity'
 import ipSecurityAPI from './ipSecurity'
+import pluginsAPI from './plugins'
 
 /**
  * Unified admin API object for convenient access
@@ -79,7 +80,8 @@ export const adminAPI = {
   compliance: adminComplianceAPI,
   audit: auditAPI,
   capacity: capacityAPI,
-  ipSecurity: ipSecurityAPI
+  ipSecurity: ipSecurityAPI,
+  plugins: pluginsAPI
 }
 
 export {
@@ -117,7 +119,8 @@ export {
   adminComplianceAPI,
   auditAPI,
   capacityAPI,
-  ipSecurityAPI
+  ipSecurityAPI,
+  pluginsAPI
 }
 
 export default adminAPI
@@ -135,3 +138,9 @@ export type {
   CapacityTimeseries,
   CapacityProbeResult
 } from './capacity'
+export type {
+  PluginInstallation,
+  PluginCompatibility,
+  PluginUISession,
+  PluginTestResult
+} from './plugins'
