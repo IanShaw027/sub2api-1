@@ -28,6 +28,7 @@ const (
 )
 
 var explicitOpenAIHeaderSessionNames = []string{
+	"session-id",
 	"session_id",
 	"conversation_id",
 	openCodeSessionAffinityHeader,
@@ -164,7 +165,7 @@ func (s *OpenAIGatewayService) GenerateExplicitSessionHash(c *gin.Context, body 
 // GenerateSessionHash generates a sticky-session hash for OpenAI requests.
 //
 // Priority:
-//  1. Header: session_id
+//  1. Header: session-id / session_id
 //  2. Header: conversation_id
 //  3. Header: x-session-affinity / x-session-id / x-opencode-session (OpenCode)
 //  4. Header: x-conversation-id (CodeBuddy)
@@ -1182,6 +1183,11 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	// ============ Layer 1: Sticky session ============
+	// A healthy sticky account whose bounded wait queue is full may be used as a
+	// one-request capacity spillover in Layer 2. Keep that spillover temporary:
+	// rewriting the durable binding here would make a short burst migrate the
+	// whole conversation to a cache-cold account.
+	stickySpillover := false
 	if sessionHash != "" {
 		accountID := stickyAccountID
 		if accountID > 0 && !isExcluded(accountID) {
@@ -1214,7 +1220,14 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 							return selection, nil
 						}
 
-						return s.newSelectionResult(ctx, account, false, nil, waitPlanUnlessPostSwitch(ctx, account, cfg.StickySessionWaitTimeout, cfg.StickySessionMaxWaiting))
+						if PreserveStickyBindingFromContext(ctx) {
+							return s.newSelectionResult(ctx, account, false, nil, nil)
+						}
+						waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
+						if waitingCount < cfg.StickySessionMaxWaiting {
+							return s.newSelectionResult(ctx, account, false, nil, newAccountWaitPlan(account, cfg.StickySessionWaitTimeout, cfg.StickySessionMaxWaiting))
+						}
+						stickySpillover = true
 					}
 				}
 			}
@@ -1370,7 +1383,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				if selectErr != nil {
 					return nil, true, selectErr
 				}
-				if sessionHash != "" && !gatewayProfitControlGateActive(ctx) && !PreserveStickyBindingFromContext(ctx) {
+				if sessionHash != "" && !stickySpillover && !gatewayProfitControlGateActive(ctx) && !PreserveStickyBindingFromContext(ctx) {
 					_ = s.setStickySessionAccountID(ctx, groupID, sessionHash, fresh.ID, openaiStickySessionTTL)
 				}
 				return selection, true, nil
@@ -1409,7 +1422,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				if selectErr != nil {
 					return nil, selectErr
 				}
-				if sessionHash != "" && !gatewayProfitControlGateActive(ctx) && !PreserveStickyBindingFromContext(ctx) {
+				if sessionHash != "" && !stickySpillover && !gatewayProfitControlGateActive(ctx) && !PreserveStickyBindingFromContext(ctx) {
 					_ = s.setStickySessionAccountID(ctx, groupID, sessionHash, fresh.ID, openaiStickySessionTTL)
 				}
 				return selection, nil

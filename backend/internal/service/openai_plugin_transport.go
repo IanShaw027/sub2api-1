@@ -52,7 +52,8 @@ func doOpenAITLSFallback(
 }
 
 // doOpenAIAccountTestUpstream 让 OpenAI OAuth 账号测试与真实转发使用同一插件路径。
-// 未命中插件且需要 TLS 时，与 doOpenAIUpstream 共用 leftover / 协议推断。
+// 未命中插件时：已启用 fingerprint 的账号走 leftover / 协议推断；其余探测仍走
+// DoWithTLS(ResolveTLSProfile)，与历史探针和 live 非 pin 账号一致。
 func (s *AccountTestService) doOpenAIAccountTestUpstream(
 	request *http.Request,
 	proxyURL string,
@@ -66,8 +67,17 @@ func (s *AccountTestService) doOpenAIAccountTestUpstream(
 		}
 	}
 	if useTLSFallback {
-		inboundUA, ctx := inboundUAAndContextFromRequest(request)
-		return doOpenAITLSFallback(ctx, s.httpUpstream, request, proxyURL, account, s.tlsFPProfileService, s.tlsFPRouterService, inboundUA)
+		if account != nil && account.IsTLSFingerprintEnabled() {
+			inboundUA, ctx := inboundUAAndContextFromRequest(request)
+			return doOpenAITLSFallback(ctx, s.httpUpstream, request, proxyURL, account, s.tlsFPProfileService, s.tlsFPRouterService, inboundUA)
+		}
+		return s.httpUpstream.DoWithTLS(
+			request,
+			proxyURL,
+			account.ID,
+			account.EffectiveConcurrency(),
+			s.tlsFPProfileService.ResolveTLSProfile(account),
+		)
 	}
 	return s.httpUpstream.Do(request, proxyURL, account.ID, account.EffectiveConcurrency())
 }

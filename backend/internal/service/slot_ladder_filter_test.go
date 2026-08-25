@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -367,12 +368,16 @@ func TestOpenAISelectAccountWithLoadAwareness_QueueFullEntersLadder(t *testing.T
 		},
 	}
 	cache := &stubGatewayCache{sessionBindings: map[string]int64{"openai:" + sessionHash: 1}}
+	cfg := &config.Config{RunMode: config.RunModeStandard}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = true
+	cfg.Gateway.Scheduling.StickySessionMaxWaiting = 3
 	svc := &OpenAIGatewayService{
 		accountRepo: repo,
 		cache:       cache,
+		cfg:         cfg,
 		concurrencyService: NewConcurrencyService(stubConcurrencyCache{
 			acquireResults: map[int64]bool{1: false, 2: true},
-			waitCounts:     map[int64]int{1: 999},
+			waitCounts:     map[int64]int{1: 2},
 			loadMap: map[int64]*AccountLoadInfo{
 				1: {AccountID: 1, CurrentConcurrency: 12, LoadRate: 100},
 				2: {AccountID: 2, CurrentConcurrency: 0, LoadRate: 0},
@@ -383,7 +388,7 @@ func TestOpenAISelectAccountWithLoadAwareness_QueueFullEntersLadder(t *testing.T
 	selection, err := svc.SelectAccountWithLoadAwareness(context.Background(), &groupID, sessionHash, "gpt-4", nil)
 	require.NoError(t, err)
 	require.NotNil(t, selection)
-	require.Equal(t, int64(1), selection.Account.ID, "queue-full must enter the ladder on the sticky account")
+	require.Equal(t, int64(1), selection.Account.ID, "busy sticky under configured wait cap must enter the ladder")
 	require.False(t, selection.Acquired)
 	require.NotNil(t, selection.WaitPlan)
 	require.Equal(t, int64(1), cache.sessionBindings["openai:"+sessionHash])
