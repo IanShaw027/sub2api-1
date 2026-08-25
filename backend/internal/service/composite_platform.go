@@ -106,6 +106,8 @@ func DetectModelPlatform(model string) (string, bool) {
 			return PlatformGemini, true
 		case "xai", "x-ai", "grok":
 			return PlatformGrok, true
+		case "kiro":
+			return PlatformKiro, true
 		case "kimi", "moonshot":
 			return PlatformKimi, true
 		case "zhipu", "glm", "bigmodel":
@@ -195,7 +197,7 @@ func (s *GatewayService) resolveCompositeRouteDecision(ctx context.Context, grou
 func isConcreteRequestPlatform(platform string) bool {
 	switch platform {
 	case PlatformAnthropic, PlatformOpenAI, PlatformGemini, PlatformAntigravity, PlatformGrok,
-		PlatformKimi, PlatformZhipu, PlatformDeepseek:
+		PlatformKiro, PlatformKimi, PlatformZhipu, PlatformDeepseek:
 		return true
 	default:
 		return false

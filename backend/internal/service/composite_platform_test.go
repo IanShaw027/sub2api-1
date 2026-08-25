@@ -25,6 +25,7 @@ func TestDetectModelPlatform(t *testing.T) {
 		{name: "learnlm", model: "learnlm-2.0-flash-experimental", platform: PlatformGemini, ok: true},
 		{name: "grok", model: "grok-4", platform: PlatformGrok, ok: true},
 		{name: "xai prefix", model: "xai/grok-4", platform: PlatformGrok, ok: true},
+		{name: "kiro prefix", model: "kiro/claude-sonnet-4-5", platform: PlatformKiro, ok: true},
 		{name: "kimi", model: "kimi-k2-thinking", platform: PlatformKimi, ok: true},
 		{name: "kimi code bare k3", model: "K3", platform: PlatformKimi, ok: true},
 		{name: "kimi code bare k3 256k", model: "k3-256k", platform: PlatformKimi, ok: true},
@@ -77,4 +78,9 @@ func TestCompositeConcretePlatformsIncludeCNProviders(t *testing.T) {
 		require.True(t, isConcreteRequestPlatform(platform))
 		require.True(t, canCopyAccountsFromGroupPlatform(PlatformComposite, platform))
 	}
+}
+
+func TestCompositeConcretePlatformsIncludeKiro(t *testing.T) {
+	require.True(t, isConcreteRequestPlatform(PlatformKiro))
+	require.True(t, canCopyAccountsFromGroupPlatform(PlatformComposite, PlatformKiro))
 }

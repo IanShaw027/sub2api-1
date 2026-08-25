@@ -259,6 +259,10 @@ func TestOpenAIOAuth429RetryWindow_ExplicitResetTakesPrecedence(t *testing.T) {
 
 	require.False(t, svc.ShouldRetryOpenAIOAuth429(account, headers, nil))
 	require.True(t, svc.ShouldRetryOpenAIOAuth429(account, http.Header{}, nil))
+	require.False(t, svc.shouldRetryOpenAIOAuth429OnSameAccountWithResponse(account, http.StatusTooManyRequests, false, headers, nil),
+		"quota headers must skip same-account retry even before the runtime block is recorded")
+	require.True(t, svc.shouldRetryOpenAIOAuth429OnSameAccount(account, http.StatusTooManyRequests, false),
+		"nil-header wrapper cannot see quota signals; production call sites must use WithResponse")
 }
 
 func TestOpenAI429FastPath_NilSettingServiceMatchesDefaultCooldown(t *testing.T) {

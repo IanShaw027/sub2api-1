@@ -358,8 +358,8 @@ func TestSelectAccountWithLoadAwareness_QueueFullEntersLadder(t *testing.T) {
 	require.Equal(t, int64(1), gwCache.sessionBindings["sticky"], "queue-full must not bind a different account")
 }
 
-func TestOpenAISelectAccountWithLoadAwareness_QueueFullEntersLadder(t *testing.T) {
-	sessionHash := "sticky-queue-full"
+func TestOpenAISelectAccountWithLoadAwareness_UnderWaitCapUsesSlotLadderMaxWaiting(t *testing.T) {
+	sessionHash := "sticky-under-cap"
 	groupID := int64(1)
 	repo := stubOpenAIAccountRepo{
 		accounts: []Account{
@@ -391,6 +391,8 @@ func TestOpenAISelectAccountWithLoadAwareness_QueueFullEntersLadder(t *testing.T
 	require.Equal(t, int64(1), selection.Account.ID, "busy sticky under configured wait cap must enter the ladder")
 	require.False(t, selection.Acquired)
 	require.NotNil(t, selection.WaitPlan)
+	require.Equal(t, slotLadderMaxWaiting(3, selection.Account), selection.WaitPlan.MaxWaiting)
+	require.GreaterOrEqual(t, selection.WaitPlan.MaxWaiting, 4, "N=12 must floor MaxWaiting at overflow+2, not the configured cap of 3")
 	require.Equal(t, int64(1), cache.sessionBindings["openai:"+sessionHash])
 }
 

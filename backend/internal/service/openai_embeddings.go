@@ -136,7 +136,7 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 				Detail:             upstreamDetail,
 			})
 			shouldDisable := s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, canonicalOpenAIAccountSchedulingModel(account, originalModel))
-			retryableOnSameAccount := s.shouldRetryOpenAIOAuth429OnSameAccount(account, resp.StatusCode, shouldDisable) ||
+			retryableOnSameAccount := s.shouldRetryOpenAIOAuth429OnSameAccountWithResponse(account, resp.StatusCode, shouldDisable, resp.Header, respBody) ||
 				(!shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode))
 			if account.IsOpenAIOAuth() && resp.StatusCode == http.StatusTooManyRequests {
 				return nil, s.newOpenAIAccountFailoverError(account, resp.StatusCode, resp.Header, respBody, upstreamMsg, shouldDisable, retryableOnSameAccount)

@@ -915,7 +915,7 @@ func (s *OpenAIGatewayService) handleFailoverErrorResponsePassthrough(
 		body,
 		upstreamMsg,
 		shouldDisable,
-		s.shouldRetryOpenAIOAuth429OnSameAccount(account, resp.StatusCode, shouldDisable) || (!shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode)),
+		s.shouldRetryOpenAIOAuth429OnSameAccountWithResponse(account, resp.StatusCode, shouldDisable, resp.Header, body) || (!shouldDisable && account.IsPoolMode() && account.IsPoolModeRetryableStatus(resp.StatusCode)),
 	)
 	if failoverErr.RetryableOnSameAccount {
 		failoverErr.SameAccountRetryDelay = s.openAIOAuth429SameAccountRetryDelay(resp.StatusCode, account)
