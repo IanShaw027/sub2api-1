@@ -65,6 +65,7 @@ type SettingHandler struct {
 	opsService               *service.OpsService
 	paymentConfigService     *service.PaymentConfigService
 	paymentService           *service.PaymentService
+	mediaService             *service.MediaService
 	userAttributeService     *service.UserAttributeService
 	notificationEmailService *service.NotificationEmailService
 	totpService              *service.TotpService
@@ -94,6 +95,11 @@ func (h *SettingHandler) SetNotificationEmailService(notificationEmailService *s
 // changing the constructor signature used by existing unit tests.
 func (h *SettingHandler) SetAliyunCaptchaService(aliyunCaptchaService *service.AliyunCaptchaService) {
 	h.aliyunCaptchaService = aliyunCaptchaService
+}
+
+// SetMediaService attaches the shared S3-backed media store used for settings images.
+func (h *SettingHandler) SetMediaService(mediaService *service.MediaService) {
+	h.mediaService = mediaService
 }
 
 // SetStepUpDeps attaches the services backing the step-up switch preconditions

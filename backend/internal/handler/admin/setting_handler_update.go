@@ -1577,6 +1577,32 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		return
 	}
 
+	ownerUserID := int64(0)
+	if subject, ok := middleware.GetAuthSubjectFromContext(c); ok {
+		ownerUserID = subject.UserID
+	}
+	systemMediaIDs, paymentMediaIDs, err := h.ingestSettingsMedia(
+		c.Request.Context(),
+		ownerUserID,
+		sentFields,
+		&req,
+	)
+	if err != nil {
+		h.cleanupSettingsMedia(c.Request.Context(), append(systemMediaIDs, paymentMediaIDs...))
+		response.ErrorFrom(c, err)
+		return
+	}
+	systemMediaPersisted := false
+	paymentMediaPersisted := false
+	defer func() {
+		if !systemMediaPersisted {
+			h.cleanupSettingsMedia(c.Request.Context(), systemMediaIDs)
+		}
+		if !paymentMediaPersisted {
+			h.cleanupSettingsMedia(c.Request.Context(), paymentMediaIDs)
+		}
+	}()
+
 	settings := &service.SystemSettings{
 		// 系统全局 platform quota 默认值（整体替换语义）
 		DefaultPlatformQuotas:       req.DefaultPlatformQuotas,
@@ -2229,6 +2255,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	systemMediaPersisted = true
 	if h.opsService != nil {
 		h.opsService.SetMonitoringEnabled(settings.OpsMonitoringEnabled)
 	}
@@ -2273,6 +2300,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			response.ErrorFrom(c, err)
 			return
 		}
+		paymentMediaPersisted = true
 		// Refresh in-memory provider registry so config changes take effect immediately
 		if h.paymentService != nil {
 			h.paymentService.RefreshProviders(c.Request.Context())
