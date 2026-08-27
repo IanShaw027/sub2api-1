@@ -16,14 +16,18 @@ const (
 	MediaBizInvoice      = domain.MediaBizInvoice
 	MediaBizTicket       = domain.MediaBizTicket
 	MediaBizAvatar       = domain.MediaBizAvatar
+	MediaBizSiteLogo     = domain.MediaBizSiteLogo
 	MediaBizSupportQR    = domain.MediaBizSupportQR
 	MediaBizAnnouncement = domain.MediaBizAnnouncement
+	MediaBizPaymentHelp  = domain.MediaBizPaymentHelp
 	MediaBizImageTask    = domain.MediaBizImageTask
 
 	MediaStatusReady   = domain.MediaStatusReady
 	MediaStatusDeleted = domain.MediaStatusDeleted
 
 	MaxMediaUploadBytes            = 64 << 20
+	MaxMediaImageDimension         = 16384
+	MaxMediaImagePixels            = 40_000_000
 	DefaultMediaTTLMinutes         = 15
 	MaxMediaTTLMinutes             = 60
 	MinMediaTTLMinutes             = 1

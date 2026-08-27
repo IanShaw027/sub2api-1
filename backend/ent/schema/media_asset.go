@@ -31,7 +31,7 @@ func (MediaAsset) Fields() []ent.Field {
 		field.String("biz_type").
 			MaxLen(32).
 			NotEmpty().
-			Comment("业务类型: invoice, ticket, avatar, image_task"),
+			Comment("业务类型: invoice, ticket, avatar, site_logo, support_qr, announcement, payment_help, image_task"),
 		field.String("biz_id").
 			MaxLen(128).
 			Default("").

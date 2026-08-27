@@ -7,8 +7,10 @@ const (
 	MediaBizInvoice      = "invoice"
 	MediaBizTicket       = "ticket"
 	MediaBizAvatar       = "avatar"
+	MediaBizSiteLogo     = "site_logo"
 	MediaBizSupportQR    = "support_qr"
 	MediaBizAnnouncement = "announcement"
+	MediaBizPaymentHelp  = "payment_help"
 	MediaBizImageTask    = "image_task"
 
 	MediaStatusReady   = "ready"

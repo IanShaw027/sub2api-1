@@ -5,6 +5,10 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"strings"
 	"sync"
@@ -16,9 +20,10 @@ import (
 )
 
 type memoryMediaStore struct {
-	mu      sync.Mutex
-	objects map[string][]byte
-	puts    []mediaPutRecord
+	mu        sync.Mutex
+	objects   map[string][]byte
+	puts      []mediaPutRecord
+	deleteErr error
 }
 
 type mediaPutRecord struct {
@@ -30,6 +35,19 @@ type mediaPutRecord struct {
 
 func newMemoryMediaStore() *memoryMediaStore {
 	return &memoryMediaStore{objects: map[string][]byte{}}
+}
+
+func mediaTestPNG(t *testing.T) []byte {
+	return mediaTestPNGSize(t, 8, 8)
+}
+
+func mediaTestPNGSize(t *testing.T, width, height int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	img.Set(0, 0, color.RGBA{R: 0x22, G: 0x66, B: 0xaa, A: 0xff})
+	var encoded bytes.Buffer
+	require.NoError(t, png.Encode(&encoded, img))
+	return encoded.Bytes()
 }
 
 func (s *memoryMediaStore) Put(_ context.Context, key, contentType string, data []byte) error {
@@ -63,6 +81,9 @@ func (s *memoryMediaStore) PresignGet(_ context.Context, key string, _ time.Dura
 func (s *memoryMediaStore) Delete(_ context.Context, key string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.deleteErr != nil {
+		return s.deleteErr
+	}
 	delete(s.objects, key)
 	return nil
 }
@@ -189,6 +210,7 @@ func TestMediaUploadForcesInvoiceAndTicketPrivate(t *testing.T) {
 
 func TestMediaPublicAccessUsesGatewayNotBucketACL(t *testing.T) {
 	svc, store, _ := newTestMediaService(t)
+	imageData := mediaTestPNG(t)
 
 	asset, err := svc.Upload(context.Background(), UploadMediaInput{
 		OwnerUserID: 7,
@@ -196,7 +218,7 @@ func TestMediaPublicAccessUsesGatewayNotBucketACL(t *testing.T) {
 		BizID:       "7",
 		Filename:    "avatar.png",
 		Visibility:  MediaVisibilityPublic,
-		Data:        []byte("\x89PNG\r\n\x1a\n"),
+		Data:        imageData,
 	})
 	require.NoError(t, err)
 	require.Equal(t, MediaVisibilityPublic, asset.Visibility)
@@ -207,7 +229,7 @@ func TestMediaPublicAccessUsesGatewayNotBucketACL(t *testing.T) {
 	opened, body, err := svc.OpenPublic(context.Background(), asset.ID)
 	require.NoError(t, err)
 	require.Equal(t, asset.ID, opened.ID)
-	require.Equal(t, []byte("\x89PNG\r\n\x1a\n"), body)
+	require.Equal(t, imageData, body)
 }
 
 func TestMediaOpenPublicRejectsPrivateAsset(t *testing.T) {
@@ -367,7 +389,7 @@ func TestMediaDownloadGrantTTLClamped(t *testing.T) {
 		BizType:     MediaBizAvatar,
 		Filename:    "a.png",
 		Visibility:  MediaVisibilityPrivate,
-		Data:        []byte("\x89PNG\r\n\x1a\n"),
+		Data:        mediaTestPNG(t),
 	})
 	require.NoError(t, err)
 
@@ -401,6 +423,28 @@ func TestMediaUploadRejectsPublicHTML(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.True(t, infraerrors.IsBadRequest(err))
+}
+
+func TestMediaUploadRejectsCorruptAndOversizedDimensionImages(t *testing.T) {
+	svc, store, _ := newTestMediaService(t)
+	input := UploadMediaInput{
+		OwnerUserID:  7,
+		BizType:      MediaBizAnnouncement,
+		Filename:     "notice.png",
+		Visibility:   MediaVisibilityPublic,
+		ActorIsAdmin: true,
+		Data:         []byte("\x89PNG\r\n\x1a\n"),
+	}
+
+	_, err := svc.Upload(context.Background(), input)
+	require.ErrorIs(t, err, ErrMediaUnsupportedType)
+	require.Empty(t, store.puts)
+
+	input.Data = mediaTestPNGSize(t, MaxMediaImageDimension+1, 1)
+	_, err = svc.Upload(context.Background(), input)
+	require.Error(t, err)
+	require.Equal(t, "MEDIA_IMAGE_DIMENSIONS_INVALID", infraerrors.Reason(err))
+	require.Empty(t, store.puts)
 }
 
 func TestMediaUploadRejectsHTMLDisguisedAsPDF(t *testing.T) {
@@ -460,6 +504,48 @@ func TestMediaUploadDeletesObjectWhenCreateFails(t *testing.T) {
 	require.Empty(t, store.objects)
 }
 
+func TestMediaUploadReportsObjectCleanupFailureWhenCreateFails(t *testing.T) {
+	store := newMemoryMediaStore()
+	store.deleteErr = errors.New("s3 cleanup failed")
+	repo := &failingMediaRepo{}
+	svc := NewMediaService(repo, fixedMediaResolver{
+		store:   store,
+		binding: MediaStorageBinding{ProfileID: "backup", Prefix: "media"},
+	}, []byte("test-media-hmac-secret"))
+
+	_, err := svc.Upload(context.Background(), UploadMediaInput{
+		OwnerUserID:  1,
+		BizType:      MediaBizInvoice,
+		Filename:     "a.pdf",
+		ActorIsAdmin: true,
+		Data:         []byte("%PDF-1.4"),
+	})
+	require.ErrorContains(t, err, "create failed")
+	require.ErrorContains(t, err, "clean up media object")
+	require.Len(t, store.objects, 1)
+}
+
+func TestMediaDeleteKeepsAssetReadyWhenObjectDeleteFails(t *testing.T) {
+	svc, store, repo := newTestMediaService(t)
+	asset, err := svc.Upload(context.Background(), UploadMediaInput{
+		OwnerUserID:  7,
+		BizType:      MediaBizSiteLogo,
+		Filename:     "site-logo.png",
+		Visibility:   MediaVisibilityPublic,
+		ActorIsAdmin: true,
+		Data:         mediaTestPNG(t),
+	})
+	require.NoError(t, err)
+	store.deleteErr = errors.New("s3 delete failed")
+
+	err = svc.Delete(context.Background(), asset.ID, 7, true)
+	require.ErrorContains(t, err, "delete media object")
+	stored, getErr := repo.GetByID(context.Background(), asset.ID)
+	require.NoError(t, getErr)
+	require.Equal(t, MediaStatusReady, stored.Status)
+	require.Contains(t, store.objects, asset.StorageKey)
+}
+
 func TestMediaUploadAnnouncementRequiresAdminAndAllowsPublic(t *testing.T) {
 	svc, store, _ := newTestMediaService(t)
 	_, err := svc.Upload(context.Background(), UploadMediaInput{
@@ -468,7 +554,7 @@ func TestMediaUploadAnnouncementRequiresAdminAndAllowsPublic(t *testing.T) {
 		Filename:     "notice.png",
 		Visibility:   MediaVisibilityPublic,
 		ActorIsAdmin: false,
-		Data:         []byte("\x89PNG\r\n\x1a\n"),
+		Data:         mediaTestPNG(t),
 	})
 	require.Error(t, err)
 	require.Equal(t, "MEDIA_ADMIN_ONLY", infraerrors.Reason(err))
@@ -479,11 +565,34 @@ func TestMediaUploadAnnouncementRequiresAdminAndAllowsPublic(t *testing.T) {
 		Filename:     "notice.png",
 		Visibility:   MediaVisibilityPublic,
 		ActorIsAdmin: true,
-		Data:         []byte("\x89PNG\r\n\x1a\n"),
+		Data:         mediaTestPNG(t),
 	})
 	require.NoError(t, err)
 	require.Equal(t, MediaVisibilityPublic, asset.Visibility)
 	require.NotEmpty(t, store.puts)
+}
+
+func TestMediaUploadSettingsImagesRequireAdminAndAllowPublic(t *testing.T) {
+	svc, _, _ := newTestMediaService(t)
+	for _, bizType := range []string{MediaBizSiteLogo, MediaBizSupportQR, MediaBizPaymentHelp} {
+		input := UploadMediaInput{
+			OwnerUserID: 7,
+			BizType:     bizType,
+			Filename:    "settings-image.png",
+			Visibility:  MediaVisibilityPublic,
+			Data:        mediaTestPNG(t),
+		}
+
+		_, err := svc.Upload(context.Background(), input)
+		require.Error(t, err)
+		require.Equal(t, "MEDIA_ADMIN_ONLY", infraerrors.Reason(err))
+
+		input.ActorIsAdmin = true
+		asset, err := svc.Upload(context.Background(), input)
+		require.NoError(t, err)
+		require.Equal(t, bizType, asset.BizType)
+		require.Equal(t, MediaVisibilityPublic, asset.Visibility)
+	}
 }
 
 func TestMediaUploadInvoiceRequiresAdmin(t *testing.T) {

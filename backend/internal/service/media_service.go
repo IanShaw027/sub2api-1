@@ -1,12 +1,18 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"net/url"
@@ -20,7 +26,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/google/uuid"
+	_ "golang.org/x/image/webp"
 )
+
+const mediaObjectCleanupTimeout = 10 * time.Second
 
 // MediaService stores and serves media objects from a private S3-compatible bucket.
 type MediaService struct {
@@ -94,7 +103,7 @@ func mediaBizForcedPrivate(bizType string) bool {
 
 func validMediaBizType(bizType string) bool {
 	switch bizType {
-	case MediaBizInvoice, MediaBizTicket, MediaBizAvatar, MediaBizSupportQR, MediaBizAnnouncement, MediaBizImageTask:
+	case MediaBizInvoice, MediaBizTicket, MediaBizAvatar, MediaBizSiteLogo, MediaBizSupportQR, MediaBizAnnouncement, MediaBizPaymentHelp, MediaBizImageTask:
 		return true
 	default:
 		return false
@@ -149,7 +158,7 @@ func (s *MediaService) Upload(ctx context.Context, in UploadMediaInput) (*MediaA
 	if !validMediaBizType(bizType) {
 		return nil, ErrMediaInvalidBizType
 	}
-	if (bizType == MediaBizInvoice || bizType == MediaBizSupportQR || bizType == MediaBizAnnouncement) && !in.ActorIsAdmin {
+	if (bizType == MediaBizInvoice || bizType == MediaBizSiteLogo || bizType == MediaBizSupportQR || bizType == MediaBizAnnouncement || bizType == MediaBizPaymentHelp) && !in.ActorIsAdmin {
 		return nil, ErrMediaAdminOnlyBiz
 	}
 
@@ -177,6 +186,11 @@ func (s *MediaService) Upload(ctx context.Context, in UploadMediaInput) (*MediaA
 	mime := sniffMediaMIME(in.Data)
 	if !allowedMediaMIME(bizType, mime) {
 		return nil, ErrMediaUnsupportedType
+	}
+	if strings.HasPrefix(mime, "image/") {
+		if err := validateMediaImage(in.Data, mime); err != nil {
+			return nil, err
+		}
 	}
 	filename := sanitizeMediaFilename(in.Filename)
 	key := buildMediaStorageKey(binding.Prefix, bizType, filename, s.now)
@@ -208,7 +222,11 @@ func (s *MediaService) Upload(ctx context.Context, in UploadMediaInput) (*MediaA
 	}
 
 	if err := s.repo.Create(ctx, asset); err != nil {
-		_ = store.Delete(ctx, key)
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), mediaObjectCleanupTimeout)
+		defer cancel()
+		if deleteErr := store.Delete(cleanupCtx, key); deleteErr != nil {
+			return nil, errors.Join(err, fmt.Errorf("clean up media object after create failure: %w", deleteErr))
+		}
 		return nil, err
 	}
 	applyMediaAccessURL(asset)
@@ -454,8 +472,15 @@ func (s *MediaService) Delete(ctx context.Context, id, actorUserID int64, isAdmi
 	if !isAdmin && asset.OwnerUserID != actorUserID {
 		return ErrMediaForbidden
 	}
-	if _, store, err := s.resolver.Resolve(ctx); err == nil && store != nil {
-		_ = store.Delete(ctx, asset.StorageKey)
+	_, store, err := s.resolver.Resolve(ctx)
+	if err != nil {
+		return err
+	}
+	if store == nil {
+		return ErrMediaStorageNotConfigured
+	}
+	if err := store.Delete(ctx, asset.StorageKey); err != nil {
+		return fmt.Errorf("delete media object: %w", err)
 	}
 	return s.repo.MarkDeleted(ctx, id)
 }
@@ -489,6 +514,30 @@ func sniffMediaMIME(data []byte) string {
 	return detected
 }
 
+func validateMediaImage(data []byte, mime string) error {
+	config, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || config.Width <= 0 || config.Height <= 0 {
+		return ErrMediaUnsupportedType
+	}
+	actualMIME := map[string]string{
+		"png":  "image/png",
+		"jpeg": "image/jpeg",
+		"gif":  "image/gif",
+		"webp": "image/webp",
+	}[strings.ToLower(format)]
+	if actualMIME == "" || actualMIME != strings.ToLower(strings.TrimSpace(mime)) {
+		return ErrMediaUnsupportedType
+	}
+	if config.Width > MaxMediaImageDimension || config.Height > MaxMediaImageDimension ||
+		int64(config.Width)*int64(config.Height) > MaxMediaImagePixels {
+		return infraerrors.BadRequest("MEDIA_IMAGE_DIMENSIONS_INVALID", "image dimensions exceed the allowed limit")
+	}
+	if _, decodedFormat, err := image.Decode(bytes.NewReader(data)); err != nil || !strings.EqualFold(decodedFormat, format) {
+		return ErrMediaUnsupportedType
+	}
+	return nil
+}
+
 func allowedMediaMIME(bizType, mime string) bool {
 	mime = strings.ToLower(strings.TrimSpace(strings.Split(mime, ";")[0]))
 	switch mime {
@@ -498,7 +547,7 @@ func allowedMediaMIME(bizType, mime string) bool {
 	switch bizType {
 	case MediaBizInvoice:
 		return mime == "application/pdf"
-	case MediaBizAvatar, MediaBizSupportQR, MediaBizAnnouncement, MediaBizImageTask:
+	case MediaBizAvatar, MediaBizSiteLogo, MediaBizSupportQR, MediaBizAnnouncement, MediaBizPaymentHelp, MediaBizImageTask:
 		return mime == "image/png" || mime == "image/jpeg" || mime == "image/gif" || mime == "image/webp"
 	case MediaBizTicket:
 		switch mime {
