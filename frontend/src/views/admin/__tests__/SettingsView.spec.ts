@@ -1549,6 +1549,29 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(Array.isArray(receivedProviders[0].supported_types)).toBe(true);
     expect(receivedProviders[0].supported_types).toEqual([]);
   });
+
+  it("submits settings image data URLs for backend S3 ingestion", async () => {
+    const image =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      site_logo: image,
+      support_qr_codes: [{ image_url: image, note: " support " }],
+      payment_help_image_url: image,
+    });
+
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    const payload = updateSettings.mock.calls.at(-1)?.[0];
+    expect(payload.site_logo).toBe(image);
+    expect(payload.support_qr_codes).toEqual([
+      { image_url: image, note: "support" },
+    ]);
+    expect(payload.payment_help_image_url).toBe(image);
+  });
 });
 
 describe("admin SettingsView wechat connect controls", () => {

@@ -9181,8 +9181,6 @@ import type {
   Proxy,
   SupportQRCodeEntry,
 } from "@/types";
-import { adminMediaAPI, mediaPublicUrl } from "@/api/media";
-import { sanitizeSupportQRUrl } from "@/utils/url";
 import type { ProviderInstance } from "@/types/payment";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import Icon from "@/components/icons/Icon.vue";
@@ -9209,7 +9207,7 @@ import {
 import TotpStepUpDialog from "@/components/auth/TotpStepUpDialog.vue";
 import { affiliatesAPI, type AffiliateAdminEntry, type SimpleUser as AffiliateSimpleUser } from "@/api/admin/affiliates";
 import { extractApiErrorMessage, extractI18nErrorMessage } from "@/utils/apiError";
-import { useAppStore, useAuthStore } from "@/stores";
+import { useAppStore } from "@/stores";
 import { useAdminSettingsStore } from "@/stores/adminSettings";
 import { normalizeVisibleMethod } from "@/components/payment/paymentFlow";
 import {
@@ -11049,38 +11047,14 @@ function removeSupportQRCode(index: number) {
   form.support_qr_codes.splice(index, 1);
 }
 
-async function persistSupportQRCodes(): Promise<SupportQRCodeEntry[]> {
-  const out: SupportQRCodeEntry[] = [];
-  let ownerUserId: number | undefined;
-  for (const item of form.support_qr_codes) {
-    let imageURL = (item.image_url || "").trim();
-    if (imageURL.startsWith("data:image/")) {
-      if (ownerUserId == null) {
-        ownerUserId = useAuthStore().user?.id;
-      }
-      if (!ownerUserId) {
-        continue;
-      }
-      const blob = await (await fetch(imageURL)).blob();
-      const file = new File([blob], "support-qr.png", { type: blob.type || "image/png" });
-      const uploaded = await adminMediaAPI.upload(file, {
-        owner_user_id: ownerUserId,
-        biz_type: "support_qr",
-        visibility: "public",
-        filename: file.name,
-      });
-      imageURL = mediaPublicUrl(uploaded.data.id);
-    }
-    imageURL = sanitizeSupportQRUrl(imageURL);
-    if (!imageURL) continue;
-    const note = (item.note || "").trim();
-    out.push({
-      image_url: imageURL,
-      note: note.length > 80 ? note.slice(0, 80) : note,
-    });
-    if (out.length >= 8) break;
-  }
-  return out;
+function normalizeSupportQRCodesForSave(): SupportQRCodeEntry[] {
+  return form.support_qr_codes
+    .map((item) => ({
+      image_url: (item.image_url || "").trim(),
+      note: (item.note || "").trim().slice(0, 80),
+    }))
+    .filter((item) => item.image_url)
+    .slice(0, 8);
 }
 
 function addLoginAgreementDocument() {
@@ -11684,7 +11658,7 @@ async function saveSettings() {
       site_subtitle: form.site_subtitle,
       api_base_url: form.api_base_url,
       contact_info: form.contact_info,
-      support_qr_codes: await persistSupportQRCodes(),
+      support_qr_codes: normalizeSupportQRCodesForSave(),
       doc_url: form.doc_url,
       download_tools_url: form.download_tools_url,
       home_content: form.home_content,
