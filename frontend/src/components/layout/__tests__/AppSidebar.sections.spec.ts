@@ -1,0 +1,367 @@
+import { nextTick } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
+import { createI18n } from 'vue-i18n'
+import { mount, flushPromises } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import AppSidebar from '../AppSidebar.vue'
+import { groupAdminNav, groupUserNav } from '../sidebar/navSections'
+import { sectionKeyForSelector } from '@/constants/sidebar'
+import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
+import { useAdminSettingsStore } from '@/stores/adminSettings'
+import { useOnboardingStore } from '@/stores/onboarding'
+import type { User } from '@/types'
+import type { NavItem } from '../sidebar/navSections'
+
+vi.mock('vue-i18n', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('vue-i18n')>()
+  return {
+    ...actual,
+    useI18n: () => ({
+      t: (key: string) => key
+    })
+  }
+})
+
+vi.mock('@/composables/useBatchImageAccess', () => ({
+  useBatchImageAccess: () => ({
+    canUseBatchImage: { value: true },
+    refreshBatchImageAccess: vi.fn().mockResolvedValue(true)
+  })
+}))
+
+vi.mock('@/api/admin/payment', () => ({
+  adminPaymentAPI: {
+    getInvoiceUnreadCount: vi.fn().mockResolvedValue({ data: { count: 0 } })
+  }
+}))
+
+vi.mock('@/api/admin/tickets', () => ({
+  adminTicketsAPI: {
+    unreadCount: vi.fn().mockResolvedValue({ data: { count: 0 } })
+  }
+}))
+
+vi.mock('@/api/tickets', () => ({
+  ticketsAPI: {
+    unreadCount: vi.fn().mockResolvedValue({ data: { count: 0 } })
+  }
+}))
+
+vi.mock('@/api', () => ({
+  adminAPI: {
+    settings: {
+      getSettings: vi.fn().mockResolvedValue({
+        ops_monitoring_enabled: true,
+        custom_menu_items: []
+      })
+    },
+    payment: {
+      getConfig: vi.fn().mockResolvedValue({ data: { enabled: true } })
+    }
+  }
+}))
+
+function fakeUser(role: 'admin' | 'user'): User {
+  return {
+    id: 1,
+    username: role,
+    email: `${role}@test.com`,
+    role,
+    balance: 42,
+    concurrency: 0,
+    status: 'active',
+    allowed_groups: null,
+    balance_notify_enabled: false,
+    balance_notify_threshold: null,
+    balance_notify_extra_emails: [],
+    created_at: '',
+    updated_at: ''
+  } as User
+}
+
+function nav(path: string): NavItem {
+  return { path, label: path, icon: null }
+}
+
+async function mountSidebar(
+  path: string,
+  role: 'admin' | 'user',
+  collapsed = false,
+  setup?: (ctx: {
+    appStore: ReturnType<typeof useAppStore>
+    onboardingStore: ReturnType<typeof useOnboardingStore>
+  }) => void
+) {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  const authStore = useAuthStore()
+  authStore.user = fakeUser(role)
+
+  const appStore = useAppStore()
+  const onboardingStore = useOnboardingStore()
+  if (collapsed) {
+    appStore.setSidebarCollapsed(true)
+  }
+  setup?.({ appStore, onboardingStore })
+
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/admin/dashboard', component: { template: '<div />' } },
+      { path: '/admin/ops', component: { template: '<div />' } },
+      { path: '/dashboard', component: { template: '<div />' } },
+      { path: '/keys', component: { template: '<div />' } },
+      { path: '/:pathMatch(.*)*', component: { template: '<div />' } }
+    ]
+  })
+  await router.push(path)
+  await router.isReady()
+
+  const i18n = createI18n({
+    legacy: false,
+    locale: 'en',
+    messages: { en: {} }
+  })
+
+  const wrapper = mount(AppSidebar, {
+    global: {
+      plugins: [pinia, router, i18n],
+      stubs: {
+        VersionBadge: true
+      }
+    }
+  })
+
+  await flushPromises()
+  await nextTick()
+  return { wrapper, appStore, router }
+}
+
+describe('AppSidebar section grouping', () => {
+  it('maps admin items into the specified section order without dropping items', () => {
+    const admin = [
+      nav('/admin/dashboard'),
+      nav('/admin/ops'),
+      nav('/admin/users'),
+      nav('/admin/groups'),
+      nav('/admin/channels'),
+      nav('/admin/subscriptions'),
+      nav('/admin/accounts'),
+      nav('/admin/plugins'),
+      nav('/admin/announcements'),
+      nav('/admin/proxies'),
+      nav('/admin/redeem'),
+      nav('/admin/usage'),
+      nav('/admin/settings')
+    ]
+    const personal = [nav('/keys'), nav('/profile')]
+    const sections = groupAdminNav(admin, personal)
+
+    expect(sections.map((section) => section.key)).toEqual([
+      'overview',
+      'usersResources',
+      'channels',
+      'operations',
+      'securityAudit',
+      'system',
+      'myAccount'
+    ])
+    expect(sections.find((section) => section.key === 'overview')?.items.map((item) => item.path)).toEqual([
+      '/admin/dashboard',
+      '/admin/ops'
+    ])
+    expect(sections.find((section) => section.key === 'usersResources')?.items.map((item) => item.path)).toEqual([
+      '/admin/users',
+      '/admin/groups',
+      '/admin/subscriptions',
+      '/admin/accounts',
+      '/admin/proxies'
+    ])
+    expect(sections.find((section) => section.key === 'myAccount')?.items.map((item) => item.path)).toEqual([
+      '/keys',
+      '/profile'
+    ])
+  })
+
+  it('maps user items into workspace / billing / support', () => {
+    const items = [
+      nav('/dashboard'),
+      nav('/keys'),
+      nav('/usage'),
+      nav('/subscriptions'),
+      nav('/redeem'),
+      nav('/tickets'),
+      nav('/profile')
+    ]
+    const sections = groupUserNav(items)
+    expect(sections.map((section) => section.key)).toEqual(['workspace', 'billing', 'support'])
+    expect(sections[0].items.map((item) => item.path)).toEqual(['/dashboard', '/keys', '/usage'])
+    expect(sections[1].items.map((item) => item.path)).toEqual(['/subscriptions', '/redeem'])
+    expect(sections[2].items.map((item) => item.path)).toEqual(['/tickets', '/profile'])
+  })
+})
+
+describe('sectionKeyForSelector', () => {
+  it('maps tour selectors to the sidebar section that owns the target', () => {
+    // Static fallback only: `/keys` is assumed to be the admin "My Account"
+    // path. Runtime resolution must prefer the live element's `[data-section]`.
+    expect(sectionKeyForSelector('[data-tour="sidebar-my-keys"]')).toBe('myAccount')
+    expect(sectionKeyForSelector('#sidebar-group-manage')).toBe('usersResources')
+    expect(sectionKeyForSelector('#sidebar-channel-manage')).toBe('usersResources')
+    expect(sectionKeyForSelector('#sidebar-wallet')).toBe('operations')
+    expect(sectionKeyForSelector('[data-tour="unrelated"]')).toBeUndefined()
+  })
+})
+
+describe('AppSidebar sections render', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    document.documentElement.classList.remove('dark')
+  })
+
+  it('renders admin sections including My Account', async () => {
+    const { wrapper } = await mountSidebar('/admin/dashboard', 'admin')
+    const keys = wrapper.findAll('[data-section]').map((el) => el.attributes('data-section'))
+    expect(keys).toContain('overview')
+    expect(keys).toContain('myAccount')
+    expect(wrapper.find('[data-section="overview"]').exists()).toBe(true)
+    expect(wrapper.find('[data-section="myAccount"]').exists()).toBe(true)
+    expect(wrapper.find('#sidebar-group-manage').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('renders user sections per role', async () => {
+    const { wrapper } = await mountSidebar('/dashboard', 'user')
+    const keys = wrapper.findAll('[data-section]').map((el) => el.attributes('data-section'))
+    expect(keys).toEqual(expect.arrayContaining(['workspace', 'billing', 'support']))
+    expect(keys).not.toContain('overview')
+    expect(wrapper.find('[data-tour="sidebar-my-keys"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('places /keys in workspace for user nav so DOM resolution is not myAccount', async () => {
+    const { wrapper } = await mountSidebar('/dashboard', 'user')
+    const keysItem = wrapper.find('[data-tour="sidebar-my-keys"]')
+    expect(keysItem.exists()).toBe(true)
+    expect(keysItem.element.closest('[data-section]')?.getAttribute('data-section')).toBe('workspace')
+    wrapper.unmount()
+  })
+
+  it('keeps My Account collapsed by default and opens it on an active child', async () => {
+    const closed = await mountSidebar('/admin/dashboard', 'admin')
+    const myAccount = closed.wrapper.find('[data-section="myAccount"]')
+    expect(myAccount.exists()).toBe(true)
+    expect(myAccount.find('[data-tour="sidebar-my-keys"]').exists()).toBe(true)
+    expect(myAccount.find('.sidebar-section-items').classes()).toContain('hidden')
+    closed.wrapper.unmount()
+
+    const opened = await mountSidebar('/keys', 'admin')
+    const openAccount = opened.wrapper.find('[data-section="myAccount"]')
+    expect(openAccount.find('[data-tour="sidebar-my-keys"]').exists()).toBe(true)
+    expect(openAccount.find('.sidebar-section-items').classes()).not.toContain('hidden')
+    opened.wrapper.unmount()
+  })
+
+  it('opens My Account via isSectionOpen when the tour highlights sidebar-my-keys', async () => {
+    const { wrapper, appStore } = await mountSidebar('/admin/dashboard', 'admin', false, ({ onboardingStore }) => {
+      vi.spyOn(onboardingStore, 'isDriverActive').mockReturnValue(true)
+      vi.spyOn(onboardingStore, 'isCurrentStep').mockImplementation(
+        (selector) => selector === '[data-tour="sidebar-my-keys"]'
+      )
+    })
+    expect(appStore.sidebarSectionsOpen.myAccount).toBeUndefined()
+    const myAccount = wrapper.find('[data-section="myAccount"]')
+    expect(myAccount.exists()).toBe(true)
+    expect(myAccount.find('[data-tour="sidebar-my-keys"]').exists()).toBe(true)
+    expect(myAccount.find('.sidebar-section-items').classes()).not.toContain('hidden')
+    wrapper.unmount()
+  })
+
+  it('opens My Account from transient force-open without persisting preference', async () => {
+    const { wrapper, appStore } = await mountSidebar('/admin/dashboard', 'admin')
+    expect(wrapper.find('[data-section="myAccount"] .sidebar-section-items').classes()).toContain('hidden')
+
+    appStore.forceOpenSidebarSection('myAccount')
+    await nextTick()
+
+    expect(wrapper.find('[data-section="myAccount"] .sidebar-section-items').classes()).not.toContain('hidden')
+    expect(appStore.sidebarSectionsOpen.myAccount).toBeUndefined()
+    expect(localStorage.getItem('sidebar-sections-open')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('clears force-open on explicit toggle and persists closed', async () => {
+    const { wrapper, appStore } = await mountSidebar('/admin/dashboard', 'admin')
+    appStore.forceOpenSidebarSection('myAccount')
+    await nextTick()
+    expect(wrapper.find('[data-section="myAccount"] .sidebar-section-items').classes()).not.toContain('hidden')
+
+    await wrapper.get('[data-section="myAccount"] .sidebar-section-title').trigger('click')
+    await nextTick()
+
+    expect(appStore.sidebarSectionsForceOpen.myAccount).toBeUndefined()
+    expect(appStore.sidebarSectionsOpen.myAccount).toBe(false)
+    expect(localStorage.getItem('sidebar-sections-open')).toContain('"myAccount":false')
+    expect(wrapper.find('[data-section="myAccount"] .sidebar-section-items').classes()).toContain('hidden')
+    wrapper.unmount()
+  })
+
+  it('keeps tour anchors in the DOM for an admin on the dashboard', async () => {
+    const { wrapper } = await mountSidebar('/admin/dashboard', 'admin')
+    expect(wrapper.find('#sidebar-group-manage').exists()).toBe(true)
+    expect(wrapper.find('#sidebar-channel-manage').exists()).toBe(true)
+    expect(wrapper.find('[data-tour="sidebar-my-keys"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('persists section collapse via appStore', async () => {
+    const { wrapper, appStore } = await mountSidebar('/admin/dashboard', 'admin')
+    expect(appStore.sidebarSectionsOpen.overview).toBeUndefined()
+
+    await wrapper.get('[data-section="overview"] .sidebar-section-title').trigger('click')
+    await nextTick()
+    expect(appStore.sidebarSectionsOpen.overview).toBe(false)
+    expect(localStorage.getItem('sidebar-sections-open')).toContain('"overview":false')
+    const overviewItems = wrapper.find('[data-section="overview"] .sidebar-section-items')
+    expect(overviewItems.exists()).toBe(true)
+    expect(overviewItems.classes()).toContain('hidden')
+    expect(overviewItems.attributes('aria-hidden')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('hides section titles when the sidebar is collapsed', async () => {
+    const { wrapper } = await mountSidebar('/admin/dashboard', 'admin', true)
+    expect(wrapper.find('.sidebar-section-title').exists()).toBe(false)
+    expect(wrapper.find('.sidebar-section-divider').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('keeps tour anchors measurable when the sidebar is collapsed', async () => {
+    const { wrapper } = await mountSidebar('/admin/dashboard', 'admin', true)
+    expect(wrapper.find('#sidebar-group-manage').exists()).toBe(true)
+    expect(wrapper.find('#sidebar-channel-manage').exists()).toBe(true)
+    expect(wrapper.find('[data-tour="sidebar-my-keys"]').exists()).toBe(true)
+    const items = wrapper.findAll('.sidebar-section-items')
+    expect(items.length).toBeGreaterThan(0)
+    for (const item of items) {
+      expect(item.classes()).not.toContain('hidden')
+    }
+    wrapper.unmount()
+  })
+
+  it('omits a feature-flagged item from the section DOM', async () => {
+    const { wrapper } = await mountSidebar('/admin/dashboard', 'admin', false, () => {
+      const adminSettings = useAdminSettingsStore()
+      adminSettings.setOpsMonitoringEnabledLocal(false)
+      vi.spyOn(adminSettings, 'fetch').mockResolvedValue(undefined)
+    })
+    expect(wrapper.find('[data-section="overview"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/admin/dashboard"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/admin/ops"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})

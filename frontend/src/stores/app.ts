@@ -13,6 +13,31 @@ import {
   type ReleaseInfo
 } from '@/api/admin/system'
 import { getPublicSettings as fetchPublicSettingsAPI } from '@/api/auth'
+import { defaultSectionOpen } from '@/constants/sidebar'
+
+const SIDEBAR_SECTIONS_STORAGE_KEY = 'sidebar-sections-open'
+
+function loadSidebarSectionsOpen(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_SECTIONS_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, boolean>
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed
+    }
+  } catch {
+    // ignore malformed localStorage
+  }
+  return {}
+}
+
+function persistSidebarSectionsOpen(value: Record<string, boolean>): void {
+  try {
+    localStorage.setItem(SIDEBAR_SECTIONS_STORAGE_KEY, JSON.stringify(value))
+  } catch {
+    // ignore quota / private-mode failures
+  }
+}
 
 export const useAppStore = defineStore('app', () => {
   // ==================== State ====================
@@ -20,6 +45,9 @@ export const useAppStore = defineStore('app', () => {
   const sidebarCollapsed = ref<boolean>(false)
   const mobileOpen = ref<boolean>(false)
   const sidebarScrollTop = ref<number>(0)
+  const sidebarSectionsOpen = ref<Record<string, boolean>>(loadSidebarSectionsOpen())
+  /** Transient tour force-open; not persisted. Cleared when the tour ends. */
+  const sidebarSectionsForceOpen = ref<Record<string, true>>({})
   const loading = ref<boolean>(false)
   const toasts = ref<Toast[]>([])
 
@@ -69,6 +97,43 @@ export const useAppStore = defineStore('app', () => {
    */
   function setSidebarCollapsed(collapsed: boolean): void {
     sidebarCollapsed.value = collapsed
+  }
+
+  /**
+   * Toggle a sidebar section's open/closed state and persist to localStorage.
+   * Missing keys use `defaultSectionOpen` (closed only for `myAccount`).
+   */
+  function toggleSidebarSection(key: string): void {
+    const current = sidebarSectionsOpen.value[key]
+    const isOpen = current === undefined ? defaultSectionOpen(key) : current
+    sidebarSectionsOpen.value = { ...sidebarSectionsOpen.value, [key]: !isOpen }
+    persistSidebarSectionsOpen(sidebarSectionsOpen.value)
+  }
+
+  function setSidebarSectionOpen(key: string, open: boolean): void {
+    sidebarSectionsOpen.value = { ...sidebarSectionsOpen.value, [key]: open }
+    persistSidebarSectionsOpen(sidebarSectionsOpen.value)
+  }
+
+  /**
+   * Temporarily force a section open (e.g. onboarding tour) without writing
+   * localStorage. Does not change the user's persisted preference.
+   */
+  function forceOpenSidebarSection(key: string): void {
+    if (sidebarSectionsForceOpen.value[key]) return
+    sidebarSectionsForceOpen.value = { ...sidebarSectionsForceOpen.value, [key]: true }
+  }
+
+  function clearSidebarSectionForceOpen(key: string): void {
+    if (!sidebarSectionsForceOpen.value[key]) return
+    const next = { ...sidebarSectionsForceOpen.value }
+    delete next[key]
+    sidebarSectionsForceOpen.value = next
+  }
+
+  function clearSidebarSectionsForceOpen(): void {
+    if (Object.keys(sidebarSectionsForceOpen.value).length === 0) return
+    sidebarSectionsForceOpen.value = {}
   }
 
   /**
@@ -224,11 +289,16 @@ export const useAppStore = defineStore('app', () => {
   }
 
   /**
-   * Reset app state to defaults
-   * Useful for cleanup or testing
+   * Reset in-memory UI state to defaults (testing / cleanup).
+   * Does not clear `sidebar-sections-open` in localStorage — user section
+   * preferences rehydrate on the next store instance.
    */
   function reset(): void {
     sidebarCollapsed.value = false
+    mobileOpen.value = false
+    sidebarScrollTop.value = 0
+    sidebarSectionsOpen.value = {}
+    sidebarSectionsForceOpen.value = {}
     loading.value = false
     loadingCount.value = 0
     toasts.value = []
@@ -442,6 +512,8 @@ export const useAppStore = defineStore('app', () => {
     sidebarCollapsed,
     mobileOpen,
     sidebarScrollTop,
+    sidebarSectionsOpen,
+    sidebarSectionsForceOpen,
     loading,
     toasts,
 
@@ -471,6 +543,11 @@ export const useAppStore = defineStore('app', () => {
     // Actions
     toggleSidebar,
     setSidebarCollapsed,
+    toggleSidebarSection,
+    setSidebarSectionOpen,
+    forceOpenSidebarSection,
+    clearSidebarSectionForceOpen,
+    clearSidebarSectionsForceOpen,
     toggleMobileSidebar,
     setMobileOpen,
     setLoading,

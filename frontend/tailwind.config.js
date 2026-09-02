@@ -5,6 +5,31 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Glass semantic tokens. Values are OKLCH strings in CSS variables, so
+        // Tailwind opacity modifiers (bg-accent/10) will NOT work — use
+        // color-mix(in oklch, var(--accent) 10%, transparent) in component CSS.
+        canvas: 'var(--canvas)',
+        background: 'var(--background)',
+        foreground: 'var(--foreground)',
+        surface: {
+          DEFAULT: 'var(--surface)',
+          2: 'var(--surface-secondary)',
+          3: 'var(--surface-tertiary)'
+        },
+        muted: 'var(--muted)',
+        line: 'var(--border)',
+        success: {
+          DEFAULT: 'var(--success)',
+          text: 'var(--success-text)'
+        },
+        warning: {
+          DEFAULT: 'var(--warning)',
+          text: 'var(--warning-text)'
+        },
+        danger: {
+          DEFAULT: 'var(--danger)',
+          text: 'var(--danger-text)'
+        },
         // 主色调 - Teal/Cyan 青色系
         primary: {
           50: '#f0fdfa',
@@ -19,8 +44,9 @@ export default {
           900: '#134e4a',
           950: '#042f2e'
         },
-        // 辅助色 - 深蓝灰
+        // 辅助色 - 深蓝灰. DEFAULT is the Glass accent token; numbered scale is legacy.
         accent: {
+          DEFAULT: 'var(--accent)',
           50: '#f8fafc',
           100: '#f1f5f9',
           200: '#e2e8f0',
@@ -65,7 +91,9 @@ export default {
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace']
       },
       boxShadow: {
-        glass: '0 8px 32px rgba(0, 0, 0, 0.08)',
+        glass: 'var(--shadow)',
+        'glass-hover': 'var(--shadow-hover)',
+        field: 'var(--field-shadow)',
         'glass-sm': '0 4px 16px rgba(0, 0, 0, 0.06)',
         glow: '0 0 20px rgba(20, 184, 166, 0.25)',
         'glow-lg': '0 0 40px rgba(20, 184, 166, 0.35)',
@@ -126,7 +154,11 @@ export default {
         xs: '2px'
       },
       borderRadius: {
-        '4xl': '2rem'
+        '4xl': '2rem',
+        btn: 'var(--radius-btn)',
+        field: 'var(--radius-field)',
+        card: 'var(--radius-card)',
+        hero: 'var(--radius-hero)'
       }
     }
   },

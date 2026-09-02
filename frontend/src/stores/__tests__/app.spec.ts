@@ -304,21 +304,94 @@ describe('useAppStore', () => {
     })
   })
 
+  describe('sidebar section force-open', () => {
+    it('does not persist force-open to localStorage', () => {
+      const store = useAppStore()
+      store.forceOpenSidebarSection('myAccount')
+
+      expect(store.sidebarSectionsForceOpen.myAccount).toBe(true)
+      expect(store.sidebarSectionsOpen.myAccount).toBeUndefined()
+      expect(localStorage.getItem('sidebar-sections-open')).toBeNull()
+
+      store.clearSidebarSectionsForceOpen()
+      expect(store.sidebarSectionsForceOpen.myAccount).toBeUndefined()
+    })
+
+    it('clearSidebarSectionForceOpen removes a single key', () => {
+      const store = useAppStore()
+      store.forceOpenSidebarSection('myAccount')
+      store.forceOpenSidebarSection('overview')
+
+      store.clearSidebarSectionForceOpen('myAccount')
+
+      expect(store.sidebarSectionsForceOpen.myAccount).toBeUndefined()
+      expect(store.sidebarSectionsForceOpen.overview).toBe(true)
+    })
+  })
+
   // --- reset ---
 
   describe('reset', () => {
-    it('重置所有 UI 状态', () => {
+    it('reset clears in-memory sidebar UI state and leaves localStorage preferences', () => {
       const store = useAppStore()
 
       store.setSidebarCollapsed(true)
+      store.setMobileOpen(true)
+      store.sidebarScrollTop = 120
+      store.toggleSidebarSection('overview')
+      store.toggleSidebarSection('myAccount')
       store.setLoading(true)
       store.showSuccess('消息')
+      store.forceOpenSidebarSection('myAccount')
+
+      expect(localStorage.getItem('sidebar-sections-open')).toContain('"overview":false')
 
       store.reset()
 
       expect(store.sidebarCollapsed).toBe(false)
+      expect(store.mobileOpen).toBe(false)
+      expect(store.sidebarScrollTop).toBe(0)
+      expect(store.sidebarSectionsOpen).toEqual({})
+      expect(store.sidebarSectionsForceOpen).toEqual({})
       expect(store.loading).toBe(false)
       expect(store.toasts).toHaveLength(0)
+      // Preferences stay in localStorage so a later store instance can rehydrate.
+      expect(localStorage.getItem('sidebar-sections-open')).toContain('"overview":false')
+    })
+  })
+
+  describe('sidebar section persistence', () => {
+    it('hydrates sidebarSectionsOpen from localStorage', () => {
+      localStorage.setItem(
+        'sidebar-sections-open',
+        JSON.stringify({ myAccount: true, overview: false })
+      )
+      setActivePinia(createPinia())
+      const store = useAppStore()
+
+      expect(store.sidebarSectionsOpen).toEqual({ myAccount: true, overview: false })
+    })
+
+    it('toggles myAccount and overview and persists both', () => {
+      const store = useAppStore()
+
+      store.toggleSidebarSection('myAccount')
+      store.toggleSidebarSection('overview')
+
+      expect(store.sidebarSectionsOpen.myAccount).toBe(true)
+      expect(store.sidebarSectionsOpen.overview).toBe(false)
+      expect(JSON.parse(localStorage.getItem('sidebar-sections-open') || '{}')).toEqual({
+        myAccount: true,
+        overview: false
+      })
+    })
+
+    it('hydrates malformed JSON as an empty object', () => {
+      localStorage.setItem('sidebar-sections-open', '{not-json')
+      setActivePinia(createPinia())
+      const store = useAppStore()
+
+      expect(store.sidebarSectionsOpen).toEqual({})
     })
   })
 

@@ -2,27 +2,90 @@ import { onMounted, onUnmounted, nextTick } from 'vue'
 import { driver, type Driver, type DriveStep } from 'driver.js'
 import 'driver.js/dist/driver.css'
 import { useAuthStore as useUserStore } from '@/stores/auth'
+import { useAppStore } from '@/stores/app'
 import { useOnboardingStore } from '@/stores/onboarding'
 import { useI18n } from 'vue-i18n'
 import { getAdminSteps, getUserSteps } from '@/components/Guide/steps'
+import { ensureSidebarSectionForSelector } from '@/composables/ensureSidebarSectionForSelector'
 
 export interface OnboardingOptions {
   storageKey?: string
   autoStart?: boolean
 }
 
+const TIMING = {
+  INTERACTIVE_WAIT_MS: 800,        // Default wait time for interactive steps
+  ELEMENT_TIMEOUT_MS: 8000,        // Timeout for element detection
+  AUTO_START_DELAY_MS: 1000        // Delay before auto-starting tour
+} as const
+
+/** Serializes tour advances so click + nextStep + keyboard cannot skip a step. */
+let moveNextInFlight = false
+
+export function resetMoveNextInFlight(): void {
+  moveNextInFlight = false
+}
+
+/**
+ * Check if an element exists, retrying until timeout.
+ */
+const ensureElement = async (selector: string, timeout = 5000): Promise<boolean> => {
+  const startTime = Date.now()
+  while (Date.now() - startTime < timeout) {
+    const element = document.querySelector(selector)
+    if (element && element.getBoundingClientRect().height > 0) {
+      return true
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150))
+  }
+  return false
+}
+
+/**
+ * Open the next step's sidebar section and wait for a measurable rect before
+ * `moveNext()`, so driver.js `scrollIntoView` does not skip a 0×0 target.
+ *
+ * Concurrent callers (sidebar `nextStep`, interactive clickHandler, ArrowRight)
+ * share `moveNextInFlight` + a bound-index check so only one advance wins.
+ */
+export async function moveNextSafely(
+  driverInstance: Driver | null,
+  elementTimeoutMs = TIMING.ELEMENT_TIMEOUT_MS
+): Promise<void> {
+  if (!driverInstance?.isActive()) return
+  if (moveNextInFlight) return
+  moveNextInFlight = true
+  const boundIndex = driverInstance.getActiveIndex() ?? 0
+
+  try {
+    const steps = driverInstance.getConfig().steps ?? []
+    const next = steps[boundIndex + 1]
+    const selector = next?.element && typeof next.element === 'string' ? next.element : undefined
+
+    if (selector) {
+      await ensureSidebarSectionForSelector(selector)
+      const exists = await ensureElement(selector, elementTimeoutMs)
+      if (!exists) {
+        console.warn(`Onboarding: Next step element not found: ${selector}`)
+      } else {
+        document.querySelector(selector)?.scrollIntoView({ block: 'nearest' })
+      }
+    }
+
+    if (!driverInstance?.isActive()) return
+    if (driverInstance.getActiveIndex() !== boundIndex) return
+    driverInstance.moveNext()
+  } finally {
+    moveNextInFlight = false
+  }
+}
+
 export function useOnboardingTour(options: OnboardingOptions) {
   const { t } = useI18n()
   const userStore = useUserStore()
+  const appStore = useAppStore()
   const onboardingStore = useOnboardingStore()
   const storageVersion = 'v4_interactive' // Bump version for new tour type
-
-  // Timing constants for better maintainability
-  const TIMING = {
-    INTERACTIVE_WAIT_MS: 800,        // Default wait time for interactive steps
-    ELEMENT_TIMEOUT_MS: 8000,        // Timeout for element detection
-    AUTO_START_DELAY_MS: 1000        // Delay before auto-starting tour
-  } as const
 
   // Helper: Check if a step is interactive (only close button shown)
   const isInteractiveStep = (step: DriveStep): boolean => {
@@ -76,21 +139,6 @@ export function useOnboardingTour(options: OnboardingOptions) {
     localStorage.removeItem(getStorageKey())
   }
 
-  /**
-   * 检查元素是否存在，如果不存在则重试
-   */
-  const ensureElement = async (selector: string, timeout = 5000): Promise<boolean> => {
-    const startTime = Date.now()
-    while (Date.now() - startTime < timeout) {
-      const element = document.querySelector(selector)
-      if (element && element.getBoundingClientRect().height > 0) {
-        return true
-      }
-      await new Promise((resolve) => setTimeout(resolve, 150))
-    }
-    return false
-  }
-
   const startTour = async (startIndex = 0) => {
     // 动态获取当前用户角色和步骤
     const isAdmin = userStore.user?.role === 'admin'
@@ -99,12 +147,6 @@ export function useOnboardingTour(options: OnboardingOptions) {
 
     // 确保 DOM 就绪
     await nextTick()
-
-    // 如果指定了起始步骤，确保元素可见
-    const currentStep = steps[startIndex]
-    if (currentStep?.element && typeof currentStep.element === 'string') {
-      await ensureElement(currentStep.element, TIMING.ELEMENT_TIMEOUT_MS)
-    }
 
     if (driverInstance) {
       driverInstance.destroy()
@@ -147,10 +189,13 @@ export function useOnboardingTour(options: OnboardingOptions) {
               }
             }
           }
-          driverInstance?.moveNext()
+          await moveNextSafely(driverInstance)
         }
       },
       onPrevClick: () => {
+        // Force-open flags accumulate for the whole tour and are cleared on
+        // destroy, so previously visited sections stay measurable. Backward
+        // nav does not need a symmetric pre-open of the previous step.
         driverInstance?.movePrevious()
       },
       onCloseClick: () => {
@@ -274,9 +319,13 @@ export function useOnboardingTour(options: OnboardingOptions) {
         // 清理之前的监听器
         cleanupClickListener()
 
+        if (step.element && typeof step.element === 'string') {
+          await ensureSidebarSectionForSelector(step.element)
+        }
+
         // 尝试等待元素
         if (!element && step.element && typeof step.element === 'string') {
-           const exists = await ensureElement(step.element, 8000)
+           const exists = await ensureElement(step.element, TIMING.ELEMENT_TIMEOUT_MS)
            if (!exists) {
              console.warn(`Tour element not found after 8s: ${step.element}`)
              return
@@ -339,20 +388,9 @@ export function useOnboardingTour(options: OnboardingOptions) {
               return
             }
 
-            const nextStep = steps[currentIndex + 1]
-
-            if (nextStep?.element && typeof nextStep.element === 'string') {
-              const exists = await ensureElement(nextStep.element, TIMING.ELEMENT_TIMEOUT_MS)
-              if (!exists) {
-                console.warn(`Onboarding: Next step element not found: ${nextStep.element}`)
-                return
-              }
-            }
-
-            // Final check before moving
-            if (driverInstance && driverInstance.isActive()) {
-              driverInstance.moveNext()
-            }
+            // Sidebar items also advance via handleMenuItemClick → nextStep.
+            // In-flight + boundIndex inside moveNextSafely collapse that race.
+            await moveNextSafely(driverInstance)
           }
 
           // For input fields, advance on input/change events instead of click
@@ -399,6 +437,7 @@ export function useOnboardingTour(options: OnboardingOptions) {
 
       onDestroyed: () => {
         cleanupClickListener()
+        appStore.clearSidebarSectionsForceOpen()
         // 清理全局监听器 (由此处唯一管理)
         if (globalKeyboardHandler) {
           document.removeEventListener('keydown', globalKeyboardHandler, { capture: true })
@@ -453,7 +492,7 @@ export function useOnboardingTour(options: OnboardingOptions) {
         }
 
         // 非交互式步骤才允许箭头键翻页
-        driverInstance!.moveNext()
+        void moveNextSafely(driverInstance)
       }
       else if (e.key === 'Enter') {
         const target = e.target as HTMLElement
@@ -482,7 +521,7 @@ export function useOnboardingTour(options: OnboardingOptions) {
             }
           }
         }
-        driverInstance!.moveNext()
+        void moveNextSafely(driverInstance)
       }
       else if (e.key === 'ArrowLeft') {
         const target = e.target as HTMLElement
@@ -493,6 +532,7 @@ export function useOnboardingTour(options: OnboardingOptions) {
 
         e.preventDefault()
         e.stopPropagation()
+        // Same as onPrevClick: force-open accumulates until destroy.
         driverInstance.movePrevious()
       }
     }
@@ -506,7 +546,7 @@ export function useOnboardingTour(options: OnboardingOptions) {
     if (delay > 0) {
       await new Promise(resolve => setTimeout(resolve, delay))
     }
-    driverInstance.moveNext()
+    await moveNextSafely(driverInstance)
   }
 
   const isCurrentStep = (elementSelector: string): boolean => {

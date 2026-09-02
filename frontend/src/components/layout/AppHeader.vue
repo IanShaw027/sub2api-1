@@ -1,21 +1,24 @@
 <template>
-  <header class="glass sticky top-0 z-30 border-b border-gray-200/50 dark:border-dark-700/50">
-    <div class="flex h-16 items-center justify-between gap-2 px-2 sm:px-4 md:px-6">
-      <!-- Left: Mobile Menu Toggle + Page Title -->
-      <div class="flex shrink-0 items-center gap-2 sm:gap-4">
+  <header class="app-header sticky top-0 z-30">
+    <div class="flex h-[60px] items-center justify-between gap-2 px-2 sm:px-5 lg:px-6 lg:pl-5">
+      <!-- Left: Mobile Menu Toggle + Breadcrumb -->
+      <div class="flex min-w-0 shrink-0 items-center gap-2 sm:gap-4">
         <button
           @click="toggleMobileSidebar"
-          class="btn-ghost btn-icon lg:hidden"
+          class="header-icon-btn lg:hidden"
           :aria-label="t('common.toggleMenu')"
         >
           <Icon name="menu" size="md" />
         </button>
 
-        <div class="hidden lg:block">
-          <h1 class="text-lg font-semibold text-gray-900 dark:text-white">
-            {{ pageTitle }}
-          </h1>
-          <p v-if="pageDescription" class="text-xs text-gray-500 dark:text-dark-400">
+        <div class="hidden min-w-0 flex-col justify-center md:flex">
+          <nav class="hidden min-w-0 items-center gap-2 text-[13px] text-[var(--muted)] lg:flex" aria-label="breadcrumb">
+            <span>{{ breadcrumbRoot }}</span>
+            <span class="opacity-50">/</span>
+            <span class="truncate font-semibold text-[var(--foreground)]">{{ pageTitle }}</span>
+          </nav>
+          <span class="truncate text-sm font-semibold text-[var(--foreground)] lg:hidden">{{ pageTitle }}</span>
+          <p v-if="pageDescription" class="truncate text-xs text-[var(--muted)]">
             {{ pageDescription }}
           </p>
         </div>
@@ -32,10 +35,12 @@
           :href="docUrl"
           target="_blank"
           rel="noopener noreferrer"
-          class="hidden items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-dark-400 dark:hover:bg-dark-800 dark:hover:text-white sm:flex"
+          class="header-icon-btn header-docs-link hidden sm:inline-flex"
+          :title="t('nav.docs')"
+          :aria-label="t('nav.docs')"
         >
           <Icon name="book" size="sm" />
-          <span class="hidden sm:inline">{{ t('nav.docs') }}</span>
+          <span class="hidden lg:inline">{{ t('nav.docs') }}</span>
         </a>
 
         <a
@@ -66,6 +71,17 @@
 
         <!-- Language Switcher -->
         <LocaleSwitcher />
+
+        <button
+          type="button"
+          class="header-icon-btn"
+          :title="isDark ? t('nav.lightMode') : t('nav.darkMode')"
+          :aria-label="isDark ? t('nav.lightMode') : t('nav.darkMode')"
+          @click="toggleTheme"
+        >
+          <Icon v-if="isDark" name="sun" size="sm" />
+          <Icon v-else name="moon" size="sm" />
+        </button>
 
         <!-- Subscription Progress (for users with active subscriptions) -->
         <SubscriptionProgressMini v-if="user" />
@@ -278,6 +294,7 @@ import Icon from '@/components/icons/Icon.vue'
 import SupportQRCodesButton from '@/components/common/SupportQRCodesButton.vue'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
+import { useTheme } from '@/composables/useTheme'
 
 const router = useRouter()
 const route = useRoute()
@@ -286,6 +303,7 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const adminSettingsStore = useAdminSettingsStore()
 const onboardingStore = useOnboardingStore()
+const { isDark, toggleTheme } = useTheme()
 
 const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
@@ -352,6 +370,13 @@ const pageDescription = computed(() => {
   return (route.meta.description as string) || ''
 })
 
+const breadcrumbRoot = computed(() => {
+  if (route.path.startsWith('/admin')) {
+    return t('nav.breadcrumbAdmin')
+  }
+  return t('nav.breadcrumbUser')
+})
+
 function toggleMobileSidebar() {
   appStore.toggleMobileSidebar()
 }
@@ -410,5 +435,37 @@ onBeforeUnmount(() => {
 .dropdown-leave-to {
   opacity: 0;
   transform: scale(0.95) translateY(-4px);
+}
+
+.app-header {
+  background: color-mix(in oklch, var(--background) 82%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+
+.header-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.header-icon-btn:hover {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+}
+
+@media (min-width: 1024px) {
+  .header-docs-link {
+    width: auto;
+    gap: 6px;
+    padding: 0 10px;
+  }
 }
 </style>

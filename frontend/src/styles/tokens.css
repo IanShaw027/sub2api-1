@@ -1,0 +1,95 @@
+/*
+ * Glass design tokens.
+ * OKLCH values are defined locally; do not load webfonts.
+ */
+
+:root,
+[data-theme='glass-light'] {
+  color-scheme: light;
+  --canvas: oklch(92% 0.004 262);
+  --background: oklch(97.02% 0.0015 262.89);
+  --foreground: oklch(21% 0.012 262);
+  --surface: oklch(100% 0 0);
+  --surface-secondary: oklch(95.24% 0.0023 262.89);
+  --surface-tertiary: oklch(92.5% 0.003 262.89);
+  --muted: oklch(55.17% 0.006 259.82);
+  --border: oklch(90% 0.003 259.82);
+  --accent: oklch(62.31% 0.1881 259.82);
+  --success: oklch(73.29% 0.1946 151.55);
+  --success-text: oklch(45% 0.15 151.55);
+  --warning: oklch(78.19% 0.1593 73.04);
+  --warning-text: oklch(52% 0.14 73.04);
+  --danger: oklch(65.32% 0.2342 26.45);
+  --danger-text: oklch(52% 0.2 26.45);
+  --code-bg: oklch(20% 0.01 262);
+  --shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.75), 0 1px 2px rgba(16, 24, 40, 0.04),
+    0 20px 40px -24px rgba(16, 24, 40, 0.16);
+  --shadow-hover: inset 0 1px 0 0 rgba(255, 255, 255, 0.75), 0 2px 4px rgba(16, 24, 40, 0.05),
+    0 28px 48px -24px rgba(16, 24, 40, 0.24);
+  --btn-hi: rgba(255, 255, 255, 0.65);
+  --field-shadow: inset 0 1px 2px rgba(16, 24, 40, 0.05);
+  --display: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius-sm: 8px;
+  --radius-btn: 10px;
+  --radius-field: 12px;
+  --radius-card: 14px;
+  --radius-hero: 16px;
+}
+
+[data-theme='glass-dark'] {
+  color-scheme: dark;
+  --canvas: oklch(9% 0.003 262);
+  --background: oklch(12% 0.0015 262.89);
+  --foreground: oklch(95% 0.004 262);
+  --surface: oklch(21.03% 0.003 262.89);
+  --surface-secondary: oklch(25.7% 0.0023 262.89);
+  --surface-tertiary: oklch(30% 0.003 262.89);
+  --muted: oklch(70.5% 0.006 259.82);
+  --border: oklch(28% 0.003 259.82);
+  --accent: oklch(62.31% 0.1881 259.82);
+  --success: oklch(73.29% 0.1946 151.55);
+  --success-text: var(--success);
+  --warning: oklch(78.19% 0.1593 73.04);
+  --warning-text: var(--warning);
+  --danger: oklch(65.32% 0.2342 26.45);
+  --danger-text: oklch(72% 0.2 26.45);
+  --code-bg: oklch(15% 0.008 262);
+  --shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.07), 0 20px 40px -24px rgba(0, 0, 0, 0.6);
+  --shadow-hover: inset 0 1px 0 0 rgba(255, 255, 255, 0.09), 0 28px 48px -24px rgba(0, 0, 0, 0.8);
+  --btn-hi: rgba(255, 255, 255, 0.06);
+  --field-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+[data-accent='sky'] {
+  --accent: oklch(58.76% 0.1389 241.98);
+}
+
+[data-accent='indigo'] {
+  --accent: oklch(58.54% 0.2041 277.12);
+}
+
+[data-accent='teal'] {
+  --accent: oklch(60.02% 0.1039 184.73);
+}
+
+[data-accent='violet'] {
+  --accent: oklch(60.56% 0.219 292.72);
+}
+
+html,
+body {
+  font-family: var(--display);
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--font-mono);
+}
+
+::selection {
+  background: color-mix(in oklch, var(--accent) 22%, transparent);
+}

@@ -6,16 +6,19 @@ import { describe, expect, it } from 'vitest'
 
 const componentPath = resolve(dirname(fileURLToPath(import.meta.url)), '../AppSidebar.vue')
 const componentSource = readFileSync(componentPath, 'utf8')
+const itemPath = resolve(dirname(fileURLToPath(import.meta.url)), '../sidebar/SidebarItem.vue')
+const itemSource = readFileSync(itemPath, 'utf8')
 const stylePath = resolve(dirname(fileURLToPath(import.meta.url)), '../../../style.css')
 const styleSource = readFileSync(stylePath, 'utf8')
 
 describe('AppSidebar custom SVG styles', () => {
   it('does not override uploaded SVG fill or stroke colors', () => {
-    expect(componentSource).toContain('.sidebar-svg-icon {')
-    expect(componentSource).toContain('color: currentColor;')
-    expect(componentSource).toContain('display: block;')
-    expect(componentSource).not.toContain('stroke: currentColor;')
-    expect(componentSource).not.toContain('fill: none;')
+    expect(itemSource).toContain('.sidebar-svg-icon {')
+    expect(itemSource).toContain('color: currentColor;')
+    expect(itemSource).toContain('display: block;')
+    expect(itemSource).not.toContain('stroke: currentColor;')
+    expect(itemSource).not.toContain('fill: none;')
+    expect(componentSource).not.toContain('.sidebar-svg-icon {')
   })
 })
 
@@ -39,6 +42,14 @@ describe('AppSidebar scroll position persistence', () => {
     expect(componentSource).toContain('onMounted')
     expect(componentSource).toContain('appStore.sidebarScrollTop')
     expect(componentSource).toContain('nextTick')
+  })
+})
+
+describe('SidebarItem aria-controls', () => {
+  it('only sets aria-controls when the children panel is expanded', () => {
+    expect(itemSource).toContain(
+      ':aria-controls="!collapsed && isExpanded ? groupChildrenId : undefined"'
+    )
   })
 })
 

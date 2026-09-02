@@ -1,21 +1,13 @@
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-dark-950">
-    <!-- Background Decoration -->
-    <div class="pointer-events-none fixed inset-0 bg-mesh-gradient"></div>
+  <div class="app-shell">
+    <div class="app-shell-glow" aria-hidden="true"></div>
 
-    <!-- Sidebar -->
     <AppSidebar />
 
-    <!-- Main Content Area -->
-    <div
-      class="relative min-h-screen transition-all duration-300"
-      :class="[sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-64']"
-    >
-      <!-- Header -->
+    <div class="app-shell-main" :class="{ 'is-collapsed': sidebarCollapsed }">
       <AppHeader />
 
-      <!-- Main Content -->
-      <main class="p-4 md:p-6 lg:p-8">
+      <main class="app-shell-content">
         <slot />
       </main>
     </div>
@@ -50,3 +42,47 @@ onMounted(() => {
 
 defineExpose({ replayTour })
 </script>
+
+<style scoped>
+.app-shell {
+  min-height: 100vh;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.app-shell-glow {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(circle at 0% 0%, color-mix(in oklch, var(--accent) 22%, transparent) 0%, transparent 30rem),
+    radial-gradient(circle at 18% 100%, color-mix(in oklch, var(--accent) 10%, transparent) 0%, transparent 30rem),
+    radial-gradient(circle at 100% 0%, color-mix(in oklch, var(--success) 14%, transparent) 0%, transparent 24rem);
+}
+
+.app-shell-main {
+  position: relative;
+  min-height: 100vh;
+  transition: margin-left 0.2s ease;
+}
+
+@media (min-width: 1024px) {
+  .app-shell-main {
+    margin-left: 224px;
+  }
+
+  .app-shell-main.is-collapsed {
+    margin-left: 72px;
+  }
+}
+
+.app-shell-content {
+  padding: 1rem;
+}
+
+@media (min-width: 768px) {
+  .app-shell-content {
+    padding: 8px 24px 24px 20px;
+  }
+}
+</style>
