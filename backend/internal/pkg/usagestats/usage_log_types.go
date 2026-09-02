@@ -391,9 +391,20 @@ type AccountUsageSummary struct {
 
 // AccountUsageStatsResponse represents the full usage statistics response for an account
 type AccountUsageStatsResponse struct {
-	History           []AccountUsageHistory `json:"history"`
-	Summary           AccountUsageSummary   `json:"summary"`
-	Models            []ModelStat           `json:"models"`
-	Endpoints         []EndpointStat        `json:"endpoints"`
-	UpstreamEndpoints []EndpointStat        `json:"upstream_endpoints"`
+	History           []AccountUsageHistory   `json:"history"`
+	Summary           AccountUsageSummary     `json:"summary"`
+	Models            []ModelStat             `json:"models"`
+	Endpoints         []EndpointStat          `json:"endpoints"`
+	UpstreamEndpoints []EndpointStat          `json:"upstream_endpoints"`
+	SevenDayForecasts []SevenDayForecastPoint `json:"seven_day_forecasts,omitempty"`
+}
+
+type SevenDayForecastPoint struct {
+	Bucket             int       `json:"bucket"`
+	WindowStart        time.Time `json:"window_start"`
+	ObservedAt         time.Time `json:"observed_at"`
+	UsedCost           float64   `json:"used_cost"`
+	PredictedTotalCost float64   `json:"predicted_total_cost"`
+	RateLimit429       *int64    `json:"rate_limit_429"`
+	Sessions           *int64    `json:"sessions"`
 }

@@ -1351,6 +1351,7 @@ export interface UsageProgress {
   resets_at: string | null
   remaining_seconds: number
   window_stats?: WindowStats | null // 窗口期统计（从窗口开始到当前的使用量）
+  predicted_total_cost?: number | null // 按当前金额使用率外推的7d总金额
   used_requests?: number
   limit_requests?: number
 }
@@ -2268,6 +2269,15 @@ export interface AccountUsageStatsResponse {
   models: ModelStat[]
   endpoints: EndpointStat[]
   upstream_endpoints: EndpointStat[]
+  seven_day_forecasts?: Array<{
+    bucket: number
+    window_start: string
+    observed_at: string
+    used_cost: number
+    predicted_total_cost: number
+    rate_limit_429: number | null
+    sessions: number | null
+  }>
 }
 
 // ==================== User Attribute Types ====================

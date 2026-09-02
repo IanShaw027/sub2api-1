@@ -1068,6 +1068,14 @@ func (s *OpenAIGatewayService) updateCodexUsageSnapshot(ctx context.Context, acc
 	if len(updates) == 0 {
 		return
 	}
+	if normalized := snapshot.Normalize(); normalized != nil && normalized.Used7dPercent != nil && normalized.Reset7dSeconds != nil {
+		resetAt := codexSnapshotBaseTime(snapshot, now).Add(time.Duration(*normalized.Reset7dSeconds) * time.Second)
+		go func(utilization float64, resetAt, observedAt time.Time) {
+			observationCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			recordSevenDayForecastObservation(observationCtx, s.usageLogRepo, accountID, utilization, resetAt, observedAt)
+		}(*normalized.Used7dPercent, resetAt, now)
+	}
 	if !s.getCodexSnapshotThrottle().Allow(accountID, now) {
 		return
 	}

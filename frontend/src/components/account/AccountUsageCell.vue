@@ -56,6 +56,7 @@
           label="7d"
           :utilization="usageInfo.seven_day.utilization"
           :resets-at="usageInfo.seven_day.resets_at"
+          :predicted-total-cost="usageInfo.seven_day.predicted_total_cost"
           color="emerald"
         />
 
@@ -134,6 +135,7 @@
           :utilization="usageInfo.seven_day.utilization"
           :resets-at="usageInfo.seven_day.resets_at"
           :window-stats="usageInfo.seven_day.window_stats"
+          :predicted-total-cost="usageInfo.seven_day.predicted_total_cost"
           :show-now-when-idle="true"
           color="emerald"
         />
@@ -420,6 +422,7 @@
             :utilization="grokWeeklyBillingBar.utilization"
             :resets-at="grokWeeklyBillingBar.resetsAt"
             :window-stats="grokWeeklyBillingBar.windowStats"
+            :predicted-total-cost="grokWeeklyBillingBar.predictedTotalCost"
             :show-now-when-idle="true"
             color="indigo"
           />
@@ -1180,6 +1183,7 @@ interface GrokQuotaBarInfo {
   utilization: number
   resetsAt: string | null
   windowStats?: WindowStats | null
+  predictedTotalCost?: number | null
 }
 
 const grokBilling = computed(() => usageInfo.value?.grok_billing || null)
@@ -1197,7 +1201,10 @@ const grokWeeklyBillingBar = computed((): GrokQuotaBarInfo | null => {
   return {
     utilization: Math.min(100, Math.max(0, billing.usage_percent)),
     resetsAt: billing.period_end || null,
-    windowStats: grokLocalUsage7d.value
+    windowStats: grokLocalUsage7d.value,
+    predictedTotalCost: grokLocalUsage7d.value && billing.usage_percent > 0
+      ? grokLocalUsage7d.value.cost * 100 / billing.usage_percent
+      : null
   }
 })
 // Monthly used/limit % from billing probe (used_percent or derived from cents).

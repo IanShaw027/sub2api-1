@@ -112,6 +112,19 @@ describe('UsageProgressBar', () => {
     expect(wrapper.get('.h-1\\.5 > div').classes()).toContain('bg-green-500')
   })
 
+  it('百分比保留两位小数且不向上四舍五入', () => {
+    const wrapper = mount(UsageProgressBar, {
+      props: {
+        label: '7d',
+        utilization: 37.429,
+        color: 'indigo'
+      }
+    })
+
+    expect(wrapper.text()).toContain('37.42%')
+    expect(wrapper.text()).not.toContain('37.43%')
+  })
+
   it('剩余容量模式在低量和耗尽时缩短并变红', async () => {
     const wrapper = mount(UsageProgressBar, {
       props: {

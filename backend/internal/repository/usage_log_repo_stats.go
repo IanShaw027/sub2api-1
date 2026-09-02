@@ -842,6 +842,96 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 // AccountUsageHistory represents daily usage history for an account
 type AccountUsageHistory = usagestats.AccountUsageHistory
 
+func (r *usageLogRepository) RecordAccountSevenDayForecastObservation(ctx context.Context, accountID int64, utilization float64, resetAt, observedAt time.Time) error {
+	bucket := int(utilization/10) * 10
+	if bucket > 100 {
+		bucket = 100
+	}
+	if accountID <= 0 || bucket < 10 || resetAt.IsZero() {
+		return nil
+	}
+	// Reset-after headers may jitter by a second between responses. A minute
+	// anchor keeps one upstream quota period under one database identity.
+	resetAt = resetAt.UTC().Round(time.Minute)
+	observedAt = observedAt.UTC()
+	_, err := r.sql.ExecContext(ctx, `
+		INSERT INTO account_seven_day_forecast_snapshots
+			(account_id, window_start, bucket, utilization, observed_at)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (account_id, window_start, bucket) DO NOTHING`,
+		accountID, resetAt.Add(-7*24*time.Hour), bucket, utilization, observedAt)
+	return err
+}
+
+func (r *usageLogRepository) GetAccountSevenDayForecastPoints(ctx context.Context, accountID int64) ([]usagestats.SevenDayForecastPoint, error) {
+	rows, err := r.sql.QueryContext(ctx, `
+		WITH latest_window AS (
+			SELECT window_start
+			FROM account_seven_day_forecast_snapshots
+			WHERE account_id = $1
+			ORDER BY observed_at DESC
+			LIMIT 1
+		), points AS (
+			SELECT s.bucket, s.utilization, s.window_start, s.observed_at,
+				LAG(s.observed_at) OVER (ORDER BY s.observed_at) AS previous_observed_at
+			FROM account_seven_day_forecast_snapshots s
+			JOIN latest_window w ON w.window_start = s.window_start
+			WHERE s.account_id = $1
+		)
+		SELECT p.bucket, p.utilization, p.window_start, p.observed_at,
+			COALESCE((SELECT SUM(COALESCE(ul.account_stats_cost, ul.total_cost) * COALESCE(ul.account_rate_multiplier, 1))
+				FROM usage_logs ul
+				WHERE ul.account_id = $1 AND ul.created_at >= p.window_start AND ul.created_at < p.observed_at), 0),
+			CASE WHEN p.previous_observed_at IS NULL THEN NULL ELSE
+				(SELECT COUNT(DISTINCT COALESCE(NULLIF(BTRIM(o.request_id), ''), NULLIF(BTRIM(o.client_request_id), ''), o.id::text))
+				 FROM ops_error_logs o
+				 WHERE o.created_at >= p.previous_observed_at AND o.created_at < p.observed_at
+				   AND ((o.account_id = $1 AND COALESCE(o.upstream_status_code, o.status_code, 0) = 429)
+				     OR EXISTS (
+				       SELECT 1
+				       FROM jsonb_array_elements(CASE WHEN jsonb_typeof(o.upstream_errors) = 'array' THEN o.upstream_errors ELSE '[]'::jsonb END) ev
+				       WHERE ev->>'account_id' = $1::text
+				         AND COALESCE(NULLIF(ev->>'upstream_status_code', '')::int, 0) = 429))) END,
+			CASE WHEN p.previous_observed_at IS NULL THEN NULL ELSE
+				(SELECT COUNT(*) FROM usage_logs ul
+				 WHERE ul.account_id = $1 AND ul.created_at >= p.previous_observed_at AND ul.created_at < p.observed_at
+				   AND (ul.session_id IS NULL OR BTRIM(ul.session_id) = ''))
+				+ (SELECT COUNT(DISTINCT BTRIM(ul.session_id)) FROM usage_logs ul
+				   WHERE ul.account_id = $1 AND ul.created_at >= p.previous_observed_at AND ul.created_at < p.observed_at
+				     AND ul.session_id IS NOT NULL AND BTRIM(ul.session_id) <> '') END
+		FROM points p
+		ORDER BY p.observed_at`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	points := make([]usagestats.SevenDayForecastPoint, 0, 10)
+	for rows.Next() {
+		var point usagestats.SevenDayForecastPoint
+		var utilization, usedCost float64
+		var rate429, sessions sql.NullInt64
+		if err := rows.Scan(&point.Bucket, &utilization, &point.WindowStart, &point.ObservedAt, &usedCost, &rate429, &sessions); err != nil {
+			return nil, err
+		}
+		point.UsedCost = usedCost
+		if utilization > 0 {
+			point.PredictedTotalCost = usedCost * 100 / utilization
+		}
+		if rate429.Valid {
+			point.RateLimit429 = &rate429.Int64
+		}
+		if sessions.Valid {
+			point.Sessions = &sessions.Int64
+		}
+		points = append(points, point)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return points, nil
+}
+
 // AccountUsageSummary represents summary statistics for an account
 type AccountUsageSummary = usagestats.AccountUsageSummary
 

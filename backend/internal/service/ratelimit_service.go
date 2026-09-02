@@ -2069,6 +2069,8 @@ func (s *RateLimitService) UpdateSessionWindow(ctx context.Context, account *Acc
 // utilization 与 reset 被动采样数据，合并为一次 Extra 写入。无数据时不写。
 func (s *RateLimitService) samplePassiveUsageFromHeaders(ctx context.Context, account *Account, headers http.Header) {
 	extraUpdates := make(map[string]any, 6)
+	var forecastUtilization *float64
+	var forecastResetAt *time.Time
 	// 5h utilization（0-1 小数），供 estimateSetupTokenUsage 使用
 	if utilStr := headers.Get("anthropic-ratelimit-unified-5h-utilization"); utilStr != "" {
 		if util, err := strconv.ParseFloat(utilStr, 64); err == nil {
@@ -2079,6 +2081,8 @@ func (s *RateLimitService) samplePassiveUsageFromHeaders(ctx context.Context, ac
 	if utilStr := headers.Get("anthropic-ratelimit-unified-7d-utilization"); utilStr != "" {
 		if util, err := strconv.ParseFloat(utilStr, 64); err == nil {
 			extraUpdates["passive_usage_7d_utilization"] = util
+			percent := util * 100
+			forecastUtilization = &percent
 		}
 	}
 	// 7d reset timestamp
@@ -2088,6 +2092,8 @@ func (s *RateLimitService) samplePassiveUsageFromHeaders(ctx context.Context, ac
 				ts = ts / 1000
 			}
 			extraUpdates["passive_usage_7d_reset"] = ts
+			resetAt := time.Unix(ts, 0).UTC()
+			forecastResetAt = &resetAt
 		}
 	}
 	// 7d_oi (Fable 专属 7d 窗口) utilization（0-1 小数）
@@ -2106,9 +2112,13 @@ func (s *RateLimitService) samplePassiveUsageFromHeaders(ctx context.Context, ac
 		}
 	}
 	if len(extraUpdates) > 0 {
-		extraUpdates["passive_usage_sampled_at"] = time.Now().UTC().Format(time.RFC3339)
+		observedAt := time.Now().UTC()
+		extraUpdates["passive_usage_sampled_at"] = observedAt.Format(time.RFC3339)
 		if err := s.accountRepo.UpdateExtra(ctx, account.ID, extraUpdates); err != nil {
 			slog.Warn("passive_usage_update_failed", "account_id", account.ID, "error", err)
+		}
+		if forecastUtilization != nil && forecastResetAt != nil {
+			recordSevenDayForecastObservation(ctx, s.usageRepo, account.ID, *forecastUtilization, *forecastResetAt, observedAt)
 		}
 	}
 }

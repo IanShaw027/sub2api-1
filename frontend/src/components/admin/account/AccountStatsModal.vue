@@ -395,7 +395,7 @@
         <!-- Usage Trend Chart -->
         <div class="card p-4">
           <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
-            {{ t('admin.accounts.stats.usageTrend') }}
+            {{ hasSevenDayForecast ? t('usage.sevenDayForecast') : t('admin.accounts.stats.usageTrend') }}
           </h3>
           <div class="h-64">
             <Line v-if="trendChartData" :data="trendChartData" :options="lineChartOptions" />
@@ -456,6 +456,7 @@ import {
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend,
@@ -475,6 +476,7 @@ ChartJS.register(
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend,
@@ -506,9 +508,47 @@ const chartColors = computed(() => ({
   grid: isDarkMode.value ? '#374151' : '#e5e7eb'
 }))
 
+const hasSevenDayForecast = computed(() => (stats.value?.seven_day_forecasts?.length || 0) > 0)
+
 // Line chart data
-const trendChartData = computed(() => {
-  if (!stats.value?.history?.length) return null
+// The chart is rendered by the Line wrapper but uses mixed line/bar datasets
+// for forecast points; Chart.js supports this at runtime while the wrapper's
+// generic only describes a pure line chart.
+const trendChartData = computed<any>(() => {
+  if (!stats.value) return null
+  const forecasts = stats.value.seven_day_forecasts || []
+  if (forecasts.length > 0) {
+    return {
+      labels: forecasts.map((point) => `${point.bucket}%`),
+      datasets: [
+        {
+          label: t('usage.predicted7dTotal'),
+          data: forecasts.map((point) => point.predicted_total_cost),
+          borderColor: '#8b5cf6',
+          backgroundColor: 'rgba(139, 92, 246, 0.08)',
+          fill: false,
+          tension: 0.3,
+          yAxisID: 'y'
+        },
+        {
+          type: 'bar' as const,
+          label: t('usage.rateLimit429'),
+          data: forecasts.map((point) => point.rate_limit_429),
+          backgroundColor: 'rgba(239, 68, 68, 0.55)',
+          yAxisID: 'y1'
+        },
+        {
+          type: 'bar' as const,
+          label: t('usage.sessions'),
+          data: forecasts.map((point) => point.sessions),
+          backgroundColor: 'rgba(14, 165, 233, 0.55)',
+          yAxisID: 'y1'
+        }
+      ]
+    }
+  }
+
+  if (!stats.value.history?.length) return null
 
   return {
     labels: stats.value.history.map((h) => h.label),
@@ -609,7 +649,9 @@ const lineChartOptions = computed(() => ({
       },
       title: {
         display: true,
-        text: t('usage.accountBilled') + ' (USD)',
+        text: hasSevenDayForecast.value
+          ? t('usage.predicted7dTotal')
+          : t('usage.accountBilled') + ' (USD)',
         color: '#3b82f6',
         font: {
           size: 11
@@ -632,7 +674,9 @@ const lineChartOptions = computed(() => ({
       },
       title: {
         display: true,
-        text: t('admin.accounts.stats.requests'),
+        text: hasSevenDayForecast.value
+          ? `${t('usage.rateLimit429')} / ${t('usage.sessions')}`
+          : t('admin.accounts.stats.requests'),
         color: '#f97316',
         font: {
           size: 11

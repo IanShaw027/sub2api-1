@@ -80,6 +80,35 @@ type UsageLogRepository interface {
 	GetDailyStatsAggregated(ctx context.Context, userID int64, startTime, endTime time.Time) ([]map[string]any, error)
 }
 
+type sevenDayForecastObservationWriter interface {
+	RecordAccountSevenDayForecastObservation(ctx context.Context, accountID int64, utilization float64, resetAt, observedAt time.Time) error
+}
+
+type sevenDayForecastPointReader interface {
+	GetAccountSevenDayForecastPoints(ctx context.Context, accountID int64) ([]usagestats.SevenDayForecastPoint, error)
+}
+
+var sevenDayForecastObservationThrottle = newAccountWriteThrottle(5 * time.Minute)
+
+func recordSevenDayForecastObservation(ctx context.Context, repo UsageLogRepository, accountID int64, utilization float64, resetAt, observedAt time.Time) {
+	writer, ok := repo.(sevenDayForecastObservationWriter)
+	if !ok || accountID <= 0 || utilization < 10 || resetAt.IsZero() {
+		return
+	}
+	bucket := int(utilization/10) * 10
+	if bucket > 100 {
+		bucket = 100
+	}
+	// One process-local write per account/bucket is enough; the database
+	// uniqueness constraint remains the cross-process source of truth.
+	if !sevenDayForecastObservationThrottle.Allow(accountID*1000+int64(bucket), observedAt) {
+		return
+	}
+	if err := writer.RecordAccountSevenDayForecastObservation(ctx, accountID, utilization, resetAt, observedAt); err != nil {
+		slog.Warn("seven_day_forecast_observation_persist_failed", "account_id", accountID, "error", err)
+	}
+}
+
 type accountWindowStatsBatchReader interface {
 	GetAccountWindowStatsBatch(ctx context.Context, accountIDs []int64, startTime time.Time) (map[int64]*usagestats.AccountStats, error)
 }
@@ -148,12 +177,36 @@ type WindowStats struct {
 
 // UsageProgress 使用量进度
 type UsageProgress struct {
-	Utilization      float64      `json:"utilization"`            // 使用率百分比 (0-100+，100表示100%)
-	ResetsAt         *time.Time   `json:"resets_at"`              // 重置时间
-	RemainingSeconds int          `json:"remaining_seconds"`      // 距重置剩余秒数
-	WindowStats      *WindowStats `json:"window_stats,omitempty"` // 窗口期统计（从窗口开始到当前的使用量）
-	UsedRequests     int64        `json:"used_requests,omitempty"`
-	LimitRequests    int64        `json:"limit_requests,omitempty"`
+	Utilization        float64      `json:"utilization"`                    // 使用率百分比 (0-100+，100表示100%)
+	ResetsAt           *time.Time   `json:"resets_at"`                      // 重置时间
+	RemainingSeconds   int          `json:"remaining_seconds"`              // 距重置剩余秒数
+	WindowStats        *WindowStats `json:"window_stats,omitempty"`         // 窗口期统计（从窗口开始到当前的使用量）
+	PredictedTotalCost *float64     `json:"predicted_total_cost,omitempty"` // 按当前金额使用率外推的7d总金额
+	UsedRequests       int64        `json:"used_requests,omitempty"`
+	LimitRequests      int64        `json:"limit_requests,omitempty"`
+}
+
+// annotateSevenDayCostForecast derives a monetary 7d total only when both
+// the provider usage percentage and accumulated 7d cost are available.
+func annotateSevenDayCostForecast(info *UsageInfo) *UsageInfo {
+	if info == nil || info.SevenDay == nil || info.SevenDay.WindowStats == nil {
+		return info
+	}
+	percent := info.SevenDay.Utilization
+	cost := info.SevenDay.WindowStats.Cost
+	if percent > 0 && cost >= 0 {
+		value := cost * 100 / percent
+		info.SevenDay.PredictedTotalCost = &value
+	}
+	return info
+}
+
+func (s *AccountUsageService) recordSevenDayForecastSnapshot(ctx context.Context, account *Account, info *UsageInfo) {
+	if s == nil || account == nil || info == nil || info.SevenDay == nil ||
+		info.SevenDay.Utilization < 10 || info.SevenDay.ResetsAt == nil {
+		return
+	}
+	recordSevenDayForecastObservation(ctx, s.usageLogRepo, account.ID, info.SevenDay.Utilization, info.SevenDay.ResetsAt.UTC(), time.Now().UTC())
 }
 
 // AntigravityModelQuota Antigravity 单个模型的配额信息
@@ -376,7 +429,11 @@ func batchUsageErrorMessage(err error) string {
 	return err.Error()
 }
 
-func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *Account, forceProbe bool) (*UsageInfo, error) {
+func (s *AccountUsageService) getUsageForAccount(ctx context.Context, account *Account, forceProbe bool) (usage *UsageInfo, err error) {
+	defer func() {
+		usage = annotateSevenDayCostForecast(usage)
+		s.recordSevenDayForecastSnapshot(ctx, account, usage)
+	}()
 	if account == nil {
 		return nil, fmt.Errorf("account is required")
 	}
@@ -635,13 +692,17 @@ func (s *AccountUsageService) GetPassiveUsage(ctx context.Context, accountID int
 	return s.getPassiveUsageForAccount(ctx, account)
 }
 
-func (s *AccountUsageService) getPassiveUsageForAccount(ctx context.Context, account *Account) (*UsageInfo, error) {
+func (s *AccountUsageService) getPassiveUsageForAccount(ctx context.Context, account *Account) (info *UsageInfo, err error) {
+	defer func() {
+		info = annotateSevenDayCostForecast(info)
+		s.recordSevenDayForecastSnapshot(ctx, account, info)
+	}()
 	if !supportsAnthropicPassiveUsage(account) {
 		return nil, fmt.Errorf("passive usage only supported for Anthropic OAuth/SetupToken accounts")
 	}
 
 	// 复用 estimateSetupTokenUsage 构建 5h 窗口（OAuth 和 SetupToken 逻辑一致）
-	info := s.estimateSetupTokenUsage(account)
+	info = s.estimateSetupTokenUsage(account)
 	info.Source = "passive"
 
 	// 设置采样时间
@@ -1429,6 +1490,18 @@ func (s *AccountUsageService) addWindowStats(ctx context.Context, account *Accou
 	if usage.FiveHour != nil {
 		usage.FiveHour.WindowStats = windowStats
 	}
+	if usage.SevenDay != nil {
+		start := time.Now().Add(-7 * 24 * time.Hour)
+		if usage.SevenDay.ResetsAt != nil {
+			start = usage.SevenDay.ResetsAt.Add(-7 * 24 * time.Hour)
+		}
+		if stats, err := s.usageLogRepo.GetAccountWindowStats(ctx, account.ID, start); err == nil {
+			usage.SevenDay.WindowStats = &WindowStats{
+				Requests: stats.Requests, Tokens: stats.Tokens, Cost: stats.Cost,
+				StandardCost: stats.StandardCost, UserCost: stats.UserCost,
+			}
+		}
+	}
 }
 
 // GetTodayStats 获取账号今日统计
@@ -1594,6 +1667,11 @@ func (s *AccountUsageService) GetAccountUsageStats(ctx context.Context, accountI
 	stats, err := s.usageLogRepo.GetAccountUsageStats(ctx, accountID, startTime, endTime)
 	if err != nil {
 		return nil, fmt.Errorf("get account usage stats failed: %w", err)
+	}
+	if reader, ok := s.usageLogRepo.(sevenDayForecastPointReader); ok {
+		if points, readErr := reader.GetAccountSevenDayForecastPoints(ctx, accountID); readErr == nil {
+			stats.SevenDayForecasts = points
+		}
 	}
 	return stats, nil
 }

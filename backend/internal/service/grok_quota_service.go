@@ -323,6 +323,11 @@ func (s *GrokQuotaService) probeBilling(ctx context.Context, accountID int64) (*
 		slog.Warn("grok_billing_persist_failed", "account_id", account.ID, "error", persistErr)
 	}
 	now := time.Now().UTC()
+	if billing.UsagePercent != nil {
+		if resetAt, parseErr := parseTime(strings.TrimSpace(billing.PeriodEnd)); parseErr == nil {
+			recordSevenDayForecastObservation(ctx, s.usageLogRepo, account.ID, *billing.UsagePercent, resetAt, now)
+		}
+	}
 	localUsage24h, localUsage7d, localUsageMonthly := grokLocalUsageForQuota(ctx, s.usageLogRepo, account.ID, billing, now)
 	return &GrokQuotaProbeResult{
 		Source:            "billing_probe",

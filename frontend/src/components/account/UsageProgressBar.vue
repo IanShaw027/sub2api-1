@@ -46,6 +46,13 @@
       <span :class="['w-[32px] shrink-0 text-right text-[10px] font-medium', textClass]">
         {{ displayPercent }}
       </span>
+      <span
+        v-if="predictedTotalCost != null && Number.isFinite(predictedTotalCost)"
+        class="shrink-0 text-[10px] text-gray-500 dark:text-gray-400"
+        :title="t('usage.predicted7dTotal')"
+      >
+        ~${{ predictedTotalCost.toFixed(2) }}
+      </span>
 
       <!-- Reset time -->
       <span v-if="shouldShowResetTime" class="shrink-0 text-[10px] text-gray-400">
@@ -70,6 +77,7 @@ const props = defineProps<{
   windowStats?: WindowStats | null
   showNowWhenIdle?: boolean
   remainingCapacity?: boolean
+  predictedTotalCost?: number | null
 }>()
 
 const { t } = useI18n()
@@ -154,12 +162,14 @@ const barWidth = computed(() => {
 
 // Display percentage (cap at 999% for readability)
 const displayPercent = computed(() => {
-  const percent = Math.round(
+  const percent =
     props.remainingCapacity
       ? Math.min(Math.max(props.utilization, 0), 100)
       : props.utilization
-  )
-  return percent > 999 ? '>999%' : `${percent}%`
+  if (percent > 999) return '>999%'
+  // Keep useful fractional precision without rounding up the reported usage.
+  const truncated = Math.trunc(percent * 100) / 100
+  return `${truncated.toFixed(2).replace(/\.?0+$/, '')}%`
 })
 
 const shouldShowResetTime = computed(() => {
