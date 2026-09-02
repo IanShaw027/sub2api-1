@@ -64,7 +64,6 @@ function applyToDocument(): void {
   if (typeof document === 'undefined') return
   const root = document.documentElement
   const dark = resolveIsDark(preference.value)
-  root.classList.toggle('dark', dark)
   root.dataset.theme = dark ? 'glass-dark' : 'glass-light'
   root.dataset.accent = accent.value
   generation.value += 1
@@ -124,7 +123,7 @@ export function toggleDark(): void {
 }
 
 /**
- * Single source of truth for `html.dark`, `data-theme`, and `data-accent`.
+ * Single source of truth for `data-theme` and `data-accent`.
  * `main.ts` calls `initTheme()` before mount; components use this composable.
  */
 export function useTheme() {

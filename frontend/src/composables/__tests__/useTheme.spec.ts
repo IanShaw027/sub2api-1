@@ -40,16 +40,16 @@ describe('useTheme', () => {
     delete document.documentElement.dataset.accent
   })
 
-  it('sets both html.dark and data-theme for explicit dark', () => {
+  it('sets data-theme for explicit dark', () => {
     localStorage.setItem('theme', 'dark')
     initTheme()
 
-    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
     expect(document.documentElement.dataset.theme).toBe('glass-dark')
     expect(document.documentElement.dataset.accent).toBe('blue')
   })
 
-  it('sets glass-light without the dark class for explicit light', () => {
+  it('sets glass-light without the legacy dark class for explicit light', () => {
     localStorage.setItem('theme', 'light')
     initTheme()
 
@@ -61,7 +61,7 @@ describe('useTheme', () => {
     mockMatchMedia(true)
     initTheme()
 
-    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
     expect(document.documentElement.dataset.theme).toBe('glass-dark')
 
     setTheme('system')
@@ -88,7 +88,7 @@ describe('useTheme', () => {
 
     toggleDark()
     expect(localStorage.getItem('theme')).toBe('dark')
-    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
     expect(document.documentElement.dataset.theme).toBe('glass-dark')
   })
 
@@ -104,7 +104,7 @@ describe('useTheme', () => {
       throw new Error('quota')
     })
     expect(() => setTheme('dark')).not.toThrow()
-    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
     expect(document.documentElement.dataset.theme).toBe('glass-dark')
     setItem.mockRestore()
   })
@@ -119,7 +119,7 @@ describe('useTheme', () => {
     expect(document.documentElement.dataset.accent).toBe('blue')
   })
 
-  it('flips html.dark and data-theme when the system preference changes', () => {
+  it('flips data-theme when the system preference changes', () => {
     const media = mockMatchMedia(false)
     localStorage.setItem('theme', 'system')
     initTheme()
@@ -130,7 +130,7 @@ describe('useTheme', () => {
     media.matches = true
     media.emit()
 
-    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
     expect(document.documentElement.dataset.theme).toBe('glass-dark')
   })
 })
