@@ -419,6 +419,7 @@ export default {
       note: '备注',
       fileName: '发票文件',
       orders: '关联订单',
+      appliedAt: '申请时间',
       cancel: '撤销申请',
       download: '下载发票',
       uploadFile: '上传发票文件',

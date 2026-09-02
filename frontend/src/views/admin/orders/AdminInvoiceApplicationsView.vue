@@ -22,6 +22,9 @@
         <template #cell-invoice_amount="{ value, row }">
           {{ Number(value).toFixed(2) }}{{ row.currency ? ' ' + row.currency : '' }}
         </template>
+        <template #cell-applied_at="{ value }">
+          <span class="text-xs text-gray-500">{{ formatDateTime(value) || '-' }}</span>
+        </template>
         <template #cell-actions="{ row }">
           <div class="flex items-center gap-2">
             <button class="text-xs text-blue-600 hover:underline" @click="openDetail(row.id)">{{ t('common.view') }}</button>
@@ -49,6 +52,7 @@
           <p class="text-xs text-gray-500">{{ detail.contact_name || '-' }} / {{ detail.contact_phone || '-' }}</p>
           <p class="text-xs text-gray-500">{{ t('payment.invoices.fileName') }}: {{ detail.file_name || '-' }}</p>
           <p class="text-xs text-gray-500">{{ t('payment.invoices.orderCount') }}: {{ detail.order_count }}</p>
+          <p class="text-xs text-gray-500">{{ t('payment.invoices.appliedAt') }}: {{ formatDateTime(detail.applied_at) || '-' }}</p>
         </div>
         <p v-if="detail.request_note" class="text-sm text-gray-600 dark:text-gray-300">{{ detail.request_note }}</p>
         <ul class="text-sm">
@@ -78,6 +82,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminPaymentAPI } from '@/api/admin/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
+import { formatDateTime } from '@/utils/format'
 import { useAppStore } from '@/stores'
 import type { Invoice } from '@/types/payment'
 import type { Column } from '@/components/common/types'
@@ -115,8 +120,12 @@ const columns = computed((): Column[] => [
   { key: 'id', label: t('payment.invoices.id') },
   { key: 'user_email', label: t('payment.admin.colUser') },
   { key: 'title', label: t('payment.invoices.title') },
+  { key: 'tax_number', label: t('payment.invoices.taxNumber') },
+  { key: 'email', label: t('payment.invoices.email') },
   { key: 'invoice_amount', label: t('payment.invoices.amount') },
+  { key: 'order_count', label: t('payment.invoices.orderCount') },
   { key: 'status', label: t('payment.invoices.statusLabel') },
+  { key: 'applied_at', label: t('payment.invoices.appliedAt') },
   { key: 'actions', label: t('common.actions') },
 ])
 

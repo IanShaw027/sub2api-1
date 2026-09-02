@@ -24,8 +24,8 @@
         <template #cell-invoice_amount="{ value, row }">
           <span class="text-sm font-medium">{{ Number(value).toFixed(2) }}{{ row.currency ? ' ' + row.currency : '' }}</span>
         </template>
-        <template #cell-created_at="{ value }">
-          <span class="text-xs text-gray-500">{{ formatDate(value) }}</span>
+        <template #cell-applied_at="{ value }">
+          <span class="text-xs text-gray-500">{{ formatDateTime(value) || '-' }}</span>
         </template>
         <template #cell-actions="{ row }">
           <div class="flex items-center gap-2">
@@ -57,6 +57,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
+import { formatDateTime } from '@/utils/format'
 import { useAppStore } from '@/stores'
 import type { Invoice } from '@/types/payment'
 import type { Column } from '@/components/common/types'
@@ -96,16 +97,14 @@ function statusClass(value: string) {
 const columns = computed((): Column[] => [
   { key: 'id', label: t('payment.invoices.id') },
   { key: 'title', label: t('payment.invoices.title') },
+  { key: 'tax_number', label: t('payment.invoices.taxNumber') },
+  { key: 'email', label: t('payment.invoices.email') },
   { key: 'invoice_amount', label: t('payment.invoices.amount') },
   { key: 'order_count', label: t('payment.invoices.orderCount') },
   { key: 'status', label: t('payment.invoices.statusLabel') },
-  { key: 'created_at', label: t('payment.orders.createdAt') },
+  { key: 'applied_at', label: t('payment.invoices.appliedAt') },
   { key: 'actions', label: t('common.actions') },
 ])
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleString()
-}
 
 async function fetchInvoices() {
   loading.value = true
