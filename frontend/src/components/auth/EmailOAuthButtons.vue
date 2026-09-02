@@ -1,28 +1,28 @@
 <template>
-  <div v-if="hasProviders" class="space-y-4">
-    <div v-if="showDivider" class="flex items-center gap-3">
-      <div class="h-px flex-1 bg-gray-200 dark:bg-dark-700"></div>
-      <span class="text-xs text-gray-500 dark:text-dark-400">
-        {{ t('auth.oauthOrContinue') }}
-      </span>
-      <div class="h-px flex-1 bg-gray-200 dark:bg-dark-700"></div>
-    </div>
+ <div v-if="hasProviders" class="space-y-4">
+ <div v-if="showDivider" class="flex items-center gap-3">
+ <div class="h-px flex-1 bg-surface-2"></div>
+ <span class="text-xs text-muted">
+ {{ t('auth.oauthOrContinue') }}
+ </span>
+ <div class="h-px flex-1 bg-surface-2"></div>
+ </div>
 
-    <div :class="providerGridClass">
-      <button
-        v-for="provider in visibleProviders"
-        :key="provider"
-        type="button"
-        :disabled="disabled"
-        class="btn btn-secondary h-12 w-full justify-center gap-2"
-        @click="startLogin(provider)"
-      >
-        <GitHubMark v-if="provider === 'github'" class="h-5 w-5 text-gray-800 dark:text-gray-100" />
-        <GoogleMark v-else class="h-5 w-5" />
-        <span class="font-medium">{{ providerLabel(provider) }}</span>
-      </button>
-    </div>
-  </div>
+ <div :class="providerGridClass">
+ <button
+ v-for="provider in visibleProviders"
+ :key="provider"
+ type="button"
+ :disabled="disabled"
+ class="btn btn-secondary h-12 w-full justify-center gap-2"
+ @click="startLogin(provider)"
+ >
+ <GitHubMark v-if="provider === 'github'" class="h-5 w-5 text-foreground" />
+ <GoogleMark v-else class="h-5 w-5" />
+ <span class="font-medium">{{ providerLabel(provider) }}</span>
+ </button>
+ </div>
+ </div>
 </template>
 
 <script setup lang="ts">
@@ -39,56 +39,56 @@ type EmailOAuthProvider = 'github' | 'google'
 const EMAIL_OAUTH_PENDING_PROVIDER_KEY = 'email_oauth_pending_provider'
 
 const props = withDefaults(defineProps<{
-  disabled?: boolean
-  affCode?: string
-  promoCode?: string
-  githubEnabled?: boolean
-  googleEnabled?: boolean
-  showDivider?: boolean
+ disabled?: boolean
+ affCode?: string
+ promoCode?: string
+ githubEnabled?: boolean
+ googleEnabled?: boolean
+ showDivider?: boolean
 }>(), {
-  showDivider: true
+ showDivider: true
 })
 const emit = defineEmits<{
-  start: [request: OAuthLoginStart]
+ start: [request: OAuthLoginStart]
 }>()
 
 const route = useRoute()
 const { t } = useI18n()
 
 const visibleProviders = computed<EmailOAuthProvider[]>(() => {
-  const providers: EmailOAuthProvider[] = []
-  if (props.githubEnabled) providers.push('github')
-  if (props.googleEnabled) providers.push('google')
-  return providers
+ const providers: EmailOAuthProvider[] = []
+ if (props.githubEnabled) providers.push('github')
+ if (props.googleEnabled) providers.push('google')
+ return providers
 })
 
 const hasProviders = computed(() => visibleProviders.value.length > 0)
 const hasMultipleProviders = computed(() => visibleProviders.value.length > 1)
 const providerGridClass = computed(() => [
-  'grid',
-  'grid-cols-1',
-  'gap-3',
-  hasMultipleProviders.value ? 'sm:grid-cols-2' : ''
+ 'grid',
+ 'grid-cols-1',
+ 'gap-3',
+ hasMultipleProviders.value ? 'sm:grid-cols-2' : ''
 ])
 
 function providerLabel(provider: EmailOAuthProvider): string {
-  const name = provider === 'github' ? 'GitHub' : 'Google'
-  return hasMultipleProviders.value ? name : t('auth.emailOAuth.signIn', { providerName: name })
+ const name = provider === 'github' ? 'GitHub' : 'Google'
+ return hasMultipleProviders.value ? name : t('auth.emailOAuth.signIn', { providerName: name })
 }
 
 function startLogin(provider: EmailOAuthProvider): void {
-  const redirectTo = sanitizeAuthRedirect(route.query.redirect)
-  const affiliateCode = resolveAffiliateReferralCode(props.affCode, route.query.aff, route.query.aff_code)
-  storeOAuthAffiliateCode(affiliateCode)
-  window.sessionStorage.setItem(EMAIL_OAUTH_PENDING_PROVIDER_KEY, provider)
-  const params: Record<string, string> = { redirect: redirectTo }
-  if (affiliateCode) {
-    params.aff_code = affiliateCode
-  }
-  const promoCode = props.promoCode?.trim()
-  if (promoCode) {
-    params.promo_code = promoCode
-  }
-  emit('start', { provider, params })
+ const redirectTo = sanitizeAuthRedirect(route.query.redirect)
+ const affiliateCode = resolveAffiliateReferralCode(props.affCode, route.query.aff, route.query.aff_code)
+ storeOAuthAffiliateCode(affiliateCode)
+ window.sessionStorage.setItem(EMAIL_OAUTH_PENDING_PROVIDER_KEY, provider)
+ const params: Record<string, string> = { redirect: redirectTo }
+ if (affiliateCode) {
+ params.aff_code = affiliateCode
+ }
+ const promoCode = props.promoCode?.trim()
+ if (promoCode) {
+ params.promo_code = promoCode
+ }
+ emit('start', { provider, params })
 }
 </script>

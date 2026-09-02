@@ -7,7 +7,7 @@
   >
     <div class="space-y-4">
       <div class="flex items-center justify-between">
-        <p class="text-sm text-gray-500 dark:text-gray-400">
+        <p class="text-sm text-muted">
           {{ t('admin.tlsFingerprintRouters.description') }}
         </p>
         <button class="btn btn-primary btn-sm" @click="startCreate">
@@ -17,17 +17,17 @@
       </div>
 
       <div v-if="loading" class="flex justify-center py-8">
-        <Icon name="refresh" size="lg" class="animate-spin text-gray-400" />
+        <Icon name="refresh" size="lg" class="animate-spin text-muted" />
       </div>
-      <div v-else-if="routers.length === 0" class="py-8 text-center text-sm text-gray-500">
+      <div v-else-if="routers.length === 0" class="py-8 text-center text-sm text-muted">
         {{ t('admin.tlsFingerprintRouters.empty') }}
       </div>
-      <div v-else class="max-h-80 overflow-auto rounded-lg border border-gray-200 dark:border-dark-600">
-        <table class="min-w-full divide-y divide-gray-200 dark:divide-dark-700">
-          <tbody class="divide-y divide-gray-200 dark:divide-dark-700">
+      <div v-else class="max-h-80 overflow-auto rounded-lg border border-line">
+        <table class="min-w-full divide-y divide-line">
+          <tbody class="divide-y divide-line">
             <tr v-for="router in routers" :key="router.id">
-              <td class="px-3 py-2 text-sm font-medium text-gray-900 dark:text-white">{{ router.name }}</td>
-              <td class="px-3 py-2 text-xs text-gray-500">{{ router.rules?.length || 0 }} {{ t('admin.tlsFingerprintRouters.rules') }}</td>
+              <td class="px-3 py-2 text-sm font-medium text-foreground">{{ router.name }}</td>
+              <td class="px-3 py-2 text-xs text-muted">{{ router.rules?.length || 0 }} {{ t('admin.tlsFingerprintRouters.rules') }}</td>
               <td class="px-3 py-2 text-right">
                 <button class="btn btn-secondary btn-sm mr-2" @click="startEdit(router)">{{ t('common.edit') }}</button>
                 <button class="btn btn-danger btn-sm" @click="askRemove(router)">{{ t('common.delete') }}</button>
@@ -37,14 +37,14 @@
         </table>
       </div>
 
-      <div v-if="editing" class="space-y-3 rounded-lg border border-gray-200 p-4 dark:border-dark-600">
+      <div v-if="editing" class="space-y-3 rounded-lg border border-line p-4">
         <input v-model="form.name" class="input" :placeholder="t('admin.tlsFingerprintRouters.name')" />
         <textarea v-model="form.description" class="input" rows="2" :placeholder="t('admin.tlsFingerprintRouters.descriptionField')" />
         <label class="flex items-center gap-2 text-sm">
           <input v-model="form.enabled" type="checkbox" />
           {{ t('admin.tlsFingerprintRouters.enabled') }}
         </label>
-        <div v-for="(rule, index) in form.rules" :key="index" class="grid grid-cols-2 gap-2 rounded border border-gray-100 p-3 dark:border-dark-700">
+        <div v-for="(rule, index) in form.rules" :key="index" class="grid grid-cols-2 gap-2 rounded border border-line p-3">
           <label class="col-span-2 flex items-center gap-2 text-sm">
             <input v-model="rule.enabled" type="checkbox" />
             {{ t('admin.tlsFingerprintRouters.ruleEnabled') }}

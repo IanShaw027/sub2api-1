@@ -8,11 +8,11 @@
     <div class="space-y-6">
       <!-- Toolbar -->
       <div
-        class="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-gray-100 bg-white p-3 shadow-sm dark:border-dark-700 dark:bg-dark-800"
+        class="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-line bg-surface p-3 shadow-sm"
       >
         <div class="flex min-w-0 flex-1 flex-wrap items-end gap-3">
           <div class="flex min-w-[10rem] flex-col gap-1">
-            <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
+            <span class="text-xs font-medium text-muted">
               {{ t('admin.accounts.capacityForecast.platform') }}
             </span>
             <Select
@@ -32,13 +32,13 @@
                   <PlatformIcon :platform="(option.value as GroupPlatform)" size="sm" />
                   <span class="truncate">{{ option.label }}</span>
                 </span>
-                <Icon v-if="selected" name="check" size="sm" class="text-primary-500" />
+                <Icon v-if="selected" name="check" size="sm" class="text-accent" />
               </template>
             </Select>
           </div>
 
           <div class="flex min-w-[12rem] flex-col gap-1">
-            <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
+            <span class="text-xs font-medium text-muted">
               {{ t('admin.accounts.capacityForecast.group') }}
             </span>
             <Select
@@ -49,20 +49,20 @@
           </div>
 
           <div class="flex flex-col gap-1">
-            <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
+            <span class="text-xs font-medium text-muted">
               {{ t('admin.accounts.capacityForecast.range') }}
             </span>
-            <div class="inline-flex rounded-lg border border-gray-200 p-0.5 dark:border-dark-600">
+            <div class="inline-flex rounded-lg border border-line p-0.5">
               <button
                 v-for="option in rangeOptions"
                 :key="option.value"
                 type="button"
                 class="rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors"
                 :class="
-                  selectedRange === option.value
-                    ? 'bg-primary-600 text-white shadow-sm'
-                    : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700'
-                "
+ selectedRange === option.value
+ ? 'bg-primary-600 text-white shadow-sm'
+ : 'text-muted hover:bg-surface-2'
+ "
                 @click="selectedRange = option.value"
               >
                 {{ option.label }}
@@ -71,7 +71,7 @@
           </div>
 
           <div class="flex flex-col gap-1">
-            <span class="text-xs font-medium text-transparent dark:text-transparent">·</span>
+            <span class="text-xs font-medium text-transparent">·</span>
             <button type="button" class="btn btn-secondary" @click="openProbeModal">
               <Icon name="beaker" size="sm" />
               <span>{{ t('admin.accounts.capacityForecast.probe') }}</span>
@@ -80,7 +80,7 @@
         </div>
 
         <div class="flex items-center gap-2">
-          <span v-if="series" class="text-xs text-gray-500 dark:text-gray-400">
+          <span v-if="series" class="text-xs text-muted">
             {{ t('admin.accounts.capacityForecast.generatedAt', { time: formatTime(series.generated_at) }) }}
           </span>
           <button
@@ -101,7 +101,7 @@
 
       <div
         v-else-if="error"
-        class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300"
+        class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-danger-text"
       >
         {{ error }}
       </div>
@@ -116,7 +116,7 @@
             :class="kpi.cardClass"
           >
             <div class="mb-2 flex items-center justify-between gap-2">
-              <span class="truncate text-xs font-medium text-gray-500 dark:text-gray-400">{{ kpi.label }}</span>
+              <span class="truncate text-xs font-medium text-muted">{{ kpi.label }}</span>
               <div class="rounded-lg p-1.5" :class="kpi.iconWrapClass">
                 <Icon :name="kpi.icon" size="sm" :class="kpi.iconClass" />
               </div>
@@ -128,10 +128,10 @@
         <!-- Trend chart -->
         <div class="card p-4">
           <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
+            <h4 class="text-sm font-semibold text-foreground">
               {{ t('admin.accounts.capacityForecast.chartTitle') }}
             </h4>
-            <div class="flex flex-wrap items-center gap-3 text-[11px] text-gray-500 dark:text-gray-400">
+            <div class="flex flex-wrap items-center gap-3 text-[11px] text-muted">
               <span class="inline-flex items-center gap-1.5">
                 <span class="inline-block h-0.5 w-4 rounded bg-blue-500" />
                 {{ t('admin.accounts.capacityForecast.chartActualSpend') }}
@@ -158,7 +158,7 @@
           <div class="relative min-h-48">
             <div
               v-if="loading && series"
-              class="absolute inset-0 z-10 flex items-center justify-center bg-white/60 dark:bg-dark-800/60"
+              class="absolute inset-0 z-10 flex items-center justify-center bg-white/60"
             >
               <LoadingSpinner />
             </div>
@@ -167,7 +167,7 @@
             </div>
             <div
               v-else
-              class="flex h-48 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+              class="flex h-48 items-center justify-center text-sm text-muted"
             >
               {{ t('admin.accounts.capacityForecast.noData') }}
             </div>
@@ -176,39 +176,39 @@
 
         <!-- Events -->
         <div class="card overflow-hidden p-0">
-          <div class="border-b border-gray-100 px-4 py-3 dark:border-dark-700">
-            <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
+          <div class="border-b border-line px-4 py-3">
+            <h4 class="text-sm font-semibold text-foreground">
               {{ t('admin.accounts.capacityForecast.eventsTitle') }}
             </h4>
           </div>
           <div
             v-if="events.length === 0"
-            class="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400"
+            class="px-4 py-6 text-center text-sm text-muted"
           >
             {{ t('admin.accounts.capacityForecast.eventsEmpty') }}
           </div>
           <div v-else class="overflow-x-auto">
             <table class="w-full min-w-[40rem] text-left text-sm">
-              <thead class="bg-gray-50 text-xs text-gray-500 dark:bg-dark-900 dark:text-gray-400">
+              <thead class="bg-surface-2 text-xs text-muted">
                 <tr>
                   <th class="px-3 py-2.5">{{ t('admin.accounts.capacityForecast.eventsTime') }}</th>
                   <th class="px-3 py-2.5">{{ t('admin.accounts.capacityForecast.eventsType') }}</th>
                   <th class="px-3 py-2.5">{{ t('admin.accounts.capacityForecast.eventsDetail') }}</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
-                <tr v-for="(event, index) in events" :key="`${event.at}-${index}`" class="bg-white dark:bg-dark-800">
-                  <td class="whitespace-nowrap px-3 py-2.5 font-mono text-xs text-gray-600 dark:text-gray-300">
+              <tbody class="divide-y divide-line">
+                <tr v-for="(event, index) in events" :key="`${event.at}-${index}`" class="bg-surface">
+                  <td class="whitespace-nowrap px-3 py-2.5 font-mono text-xs text-muted">
                     {{ formatTime(event.at) }}
                   </td>
                   <td class="px-3 py-2.5">
                     <span
                       class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium"
                       :class="
-                        event.type === 'recover'
-                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                          : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-                      "
+ event.type === 'recover'
+ ? 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text'
+ : 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text'
+ "
                     >
                       {{
                         event.type === 'recover'
@@ -217,11 +217,11 @@
                       }}
                     </span>
                   </td>
-                  <td class="px-3 py-2.5 text-gray-700 dark:text-gray-200">
+                  <td class="px-3 py-2.5 text-foreground">
                     <div>{{ eventDetail(event) }}</div>
                     <div
                       v-if="eventRecommendation(event)"
-                      class="mt-0.5 text-xs text-gray-500 dark:text-gray-400"
+                      class="mt-0.5 text-xs text-muted"
                     >
                       {{
                         t('admin.accounts.capacityForecast.eventRecommendation', {
@@ -248,13 +248,13 @@
       @close="closeProbeModal"
     >
       <div class="space-y-4">
-        <p class="text-sm text-gray-600 dark:text-gray-300">
+        <p class="text-sm text-muted">
           {{ t('admin.accounts.capacityForecast.probeDesc') }}
         </p>
         <label
-          class="flex items-center justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 dark:border-dark-700 dark:bg-dark-900/40"
+          class="flex items-center justify-between gap-3 rounded-lg border border-line bg-surface-2 px-3 py-2.5"
         >
-          <span class="text-sm text-gray-700 dark:text-gray-200">
+          <span class="text-sm text-foreground">
             {{ t('admin.accounts.capacityForecast.probeIncludeNormal') }}
           </span>
           <Toggle v-model="probeIncludeNormal" />
@@ -262,7 +262,7 @@
 
         <div
           v-if="probing"
-          class="flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 text-sm text-gray-600 dark:border-dark-700 dark:bg-dark-900/40 dark:text-gray-300"
+          class="flex items-center gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-sm text-muted"
         >
           <LoadingSpinner size="sm" />
           {{ t('admin.accounts.capacityForecast.probeRunning') }}
@@ -270,16 +270,16 @@
 
         <div
           v-if="probeError"
-          class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300"
+          class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-danger-text"
         >
           {{ probeError }}
         </div>
 
         <div
           v-if="probeResult"
-          class="space-y-2 rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900/40"
+          class="space-y-2 rounded-lg border border-line bg-surface-2 p-3"
         >
-          <p class="text-sm text-gray-700 dark:text-gray-200">
+          <p class="text-sm text-foreground">
             {{
               t('admin.accounts.capacityForecast.probeResultSummary', {
                 probed: probeResult.probed,
@@ -294,7 +294,7 @@
           <div v-if="probeResult.failures.length > 0">
             <button
               type="button"
-              class="text-xs font-medium text-primary-600 hover:underline dark:text-primary-400"
+              class="text-xs font-medium text-accent hover:underline"
               @click="showProbeFailures = !showProbeFailures"
             >
               {{ t('admin.accounts.capacityForecast.probeFailuresTitle', { count: probeResult.failures.length }) }}
@@ -302,12 +302,12 @@
             </button>
             <ul
               v-if="showProbeFailures"
-              class="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs text-gray-600 dark:text-gray-300"
+              class="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs text-muted"
             >
               <li
                 v-for="failure in probeResult.failures"
                 :key="failure.account_id"
-                class="rounded bg-white px-2 py-1 dark:bg-dark-800"
+                class="rounded bg-surface px-2 py-1"
               >
                 <span class="font-medium">{{ failure.name }}</span>: {{ failure.error }}
               </li>
@@ -428,20 +428,20 @@ const kpiItems = computed(() => {
       label: t('admin.accounts.capacityForecast.kpiCurrentAvailable'),
       value: usd(kpis.current_available_usd),
       icon: 'dollar' as const,
-      cardClass: 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-white dark:border-emerald-800/30 dark:from-emerald-900/10 dark:to-dark-700',
-      iconWrapClass: 'bg-emerald-100 dark:bg-emerald-900/30',
-      iconClass: 'text-emerald-600 dark:text-emerald-400',
-      valueClass: 'text-gray-900 dark:text-white'
+      cardClass: 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-white',
+      iconWrapClass: 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)]',
+      iconClass: 'text-success-text',
+      valueClass: 'text-foreground'
     },
     {
       key: 'forecastSpend',
       label: t('admin.accounts.capacityForecast.kpiFutureForecastSpend'),
       value: usd(kpis.future_forecast_spend_usd),
       icon: 'trendingUp' as const,
-      cardClass: 'border-blue-200 bg-gradient-to-br from-blue-50 to-white dark:border-blue-800/30 dark:from-blue-900/10 dark:to-dark-700',
-      iconWrapClass: 'bg-blue-100 dark:bg-blue-900/30',
-      iconClass: 'text-blue-600 dark:text-blue-400',
-      valueClass: 'text-gray-900 dark:text-white'
+      cardClass: 'border-blue-200 bg-gradient-to-br from-blue-50 to-white',
+      iconWrapClass: 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]',
+      iconClass: 'text-accent',
+      valueClass: 'text-foreground'
     },
     {
       key: 'shortfall',
@@ -451,21 +451,21 @@ const kpiItems = computed(() => {
         : t('admin.accounts.capacityForecast.kpiNoShortfall'),
       icon: hasShortfall ? ('exclamationTriangle' as const) : ('check' as const),
       cardClass: hasShortfall
-        ? 'border-red-200 bg-gradient-to-br from-red-50 to-white dark:border-red-800/30 dark:from-red-900/10 dark:to-dark-700'
-        : 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-white dark:border-emerald-800/30 dark:from-emerald-900/10 dark:to-dark-700',
-      iconWrapClass: hasShortfall ? 'bg-red-100 dark:bg-red-900/30' : 'bg-emerald-100 dark:bg-emerald-900/30',
-      iconClass: hasShortfall ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400',
-      valueClass: hasShortfall ? 'text-red-600 dark:text-red-300' : 'text-emerald-600 dark:text-emerald-300'
+        ? 'border-red-200 bg-gradient-to-br from-red-50 to-white'
+        : 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-white',
+      iconWrapClass: hasShortfall ? 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)]' : 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)]',
+      iconClass: hasShortfall ? 'text-danger-text' : 'text-success-text',
+      valueClass: hasShortfall ? 'text-danger-text' : 'text-success-text'
     },
     {
       key: 'suggest',
       label: t('admin.accounts.capacityForecast.kpiSuggestAccounts'),
       value: String(kpis.suggest_accounts),
       icon: 'calculator' as const,
-      cardClass: 'border-purple-200 bg-gradient-to-br from-purple-50 to-white dark:border-purple-800/30 dark:from-purple-900/10 dark:to-dark-700',
-      iconWrapClass: 'bg-purple-100 dark:bg-purple-900/30',
-      iconClass: 'text-purple-600 dark:text-purple-400',
-      valueClass: 'text-gray-900 dark:text-white'
+      cardClass: 'border-purple-200 bg-gradient-to-br from-purple-50 to-white',
+      iconWrapClass: 'bg-purple-100',
+      iconClass: 'text-purple-600',
+      valueClass: 'text-foreground'
     }
   ]
 })

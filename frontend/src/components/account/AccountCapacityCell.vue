@@ -55,9 +55,9 @@ const concurrencyMax = computed(() => effectiveConcurrency(props.account))
 const concurrencyClass = computed(() => {
   const current = currentConcurrency.value
   const max = concurrencyMax.value
-  if (current >= max) return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-  if (current > 0) return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-  return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+  if (current >= max) return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text'
+  if (current > 0) return 'bg-yellow-100 text-yellow-700'
+  return 'bg-surface-2 text-muted'
 })
 
 // ====== 窗口费用 ======
@@ -79,10 +79,10 @@ const windowCostClass = computed(() => {
   const current = currentWindowCost.value
   const limit = props.account.window_cost_limit || 0
   const reserve = props.account.window_cost_sticky_reserve || 10
-  if (current >= limit + reserve) return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-  if (current >= limit) return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-  if (current >= limit * 0.8) return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-  return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+  if (current >= limit + reserve) return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text'
+  if (current >= limit) return 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text'
+  if (current >= limit * 0.8) return 'bg-yellow-100 text-yellow-700'
+  return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text'
 })
 
 const windowCostTooltip = computed(() => {
@@ -108,9 +108,9 @@ const sessionLimitClass = computed(() => {
   if (!showSessionLimit.value) return ''
   const current = activeSessions.value
   const max = props.account.max_sessions || 0
-  if (current >= max) return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-  if (current >= max * 0.8) return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-  return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+  if (current >= max) return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text'
+  if (current >= max * 0.8) return 'bg-yellow-100 text-yellow-700'
+  return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text'
 })
 
 const sessionLimitTooltip = computed(() => {
@@ -165,13 +165,13 @@ const rpmClass = computed(() => {
   const base = props.account.base_rpm ?? 0
   const buffer = rpmBuffer.value
   if (rpmStrategy.value === 'tiered') {
-    if (current >= base + buffer) return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-    if (current >= base) return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+    if (current >= base + buffer) return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text'
+    if (current >= base) return 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text'
   } else {
-    if (current >= base) return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+    if (current >= base) return 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text'
   }
-  if (current >= base * 0.8) return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-  return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+  if (current >= base * 0.8) return 'bg-yellow-100 text-yellow-700'
+  return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text'
 })
 
 const rpmTooltip = computed(() => {

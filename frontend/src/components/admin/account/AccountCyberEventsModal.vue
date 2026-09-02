@@ -1,12 +1,12 @@
 <template>
   <BaseDialog :show="show" :title="t('admin.accounts.cyber.title', { name: account.name })" width="wide" @close="close">
     <div class="space-y-4 p-1">
-      <div class="flex items-center justify-between gap-4 border-b border-gray-100 pb-3 dark:border-dark-700">
+      <div class="flex items-center justify-between gap-4 border-b border-line pb-3">
         <div>
-          <div class="text-sm font-medium text-gray-900 dark:text-white">
+          <div class="text-sm font-medium text-foreground">
             {{ t('admin.accounts.cyber.total', { count: total }) }}
           </div>
-          <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          <div class="mt-1 text-xs text-muted">
             {{ t('admin.accounts.cyber.deduplicatedHint') }}
           </div>
         </div>
@@ -16,30 +16,30 @@
       </div>
 
       <div v-if="loading" class="flex justify-center py-12">
-        <div class="h-7 w-7 animate-spin rounded-full border-2 border-gray-200 border-t-primary-600"></div>
+        <div class="h-7 w-7 animate-spin rounded-full border-2 border-line border-t-primary-600"></div>
       </div>
-      <div v-else-if="error" class="py-10 text-center text-sm text-red-600 dark:text-red-400">{{ error }}</div>
-      <div v-else-if="events.length === 0" class="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+      <div v-else-if="error" class="py-10 text-center text-sm text-danger-text">{{ error }}</div>
+      <div v-else-if="events.length === 0" class="py-10 text-center text-sm text-muted">
         {{ t('admin.accounts.cyber.empty') }}
       </div>
-      <div v-else class="overflow-hidden rounded-md border border-gray-200 dark:border-dark-700">
+      <div v-else class="overflow-hidden rounded-md border border-line">
         <div
           v-for="event in events"
           :key="event.error_id ?? `${event.created_at}:${event.request_id}`"
-          class="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-gray-100 p-3 last:border-b-0 dark:border-dark-700"
+          class="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-line p-3 last:border-b-0"
         >
           <div class="min-w-0 space-y-1">
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
               <span>{{ formatDateTime(event.created_at) }}</span>
-              <span v-if="event.model" class="font-mono text-gray-700 dark:text-gray-300">{{ event.model }}</span>
+              <span v-if="event.model" class="font-mono text-foreground">{{ event.model }}</span>
               <span v-if="event.status_code != null" class="font-mono">HTTP {{ event.status_code }}</span>
             </div>
-            <div class="break-words text-sm text-gray-800 dark:text-gray-200">{{ event.message || '-' }}</div>
-            <div v-if="event.request_id" class="break-all font-mono text-[11px] text-gray-400">{{ event.request_id }}</div>
+            <div class="break-words text-sm text-foreground">{{ event.message || '-' }}</div>
+            <div v-if="event.request_id" class="break-all font-mono text-[11px] text-muted">{{ event.request_id }}</div>
           </div>
           <button
             v-if="event.error_id != null"
-            class="inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-accent"
             :title="t('admin.accounts.cyber.viewDetail')"
             @click="emit('open-detail', event.error_id)"
           >

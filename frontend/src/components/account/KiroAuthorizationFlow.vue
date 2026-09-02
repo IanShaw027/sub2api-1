@@ -1,26 +1,26 @@
 <template>
-  <div class="rounded-lg border border-cyan-200 bg-cyan-50/70 p-4 dark:border-cyan-900/40 dark:bg-cyan-950/20">
+  <div class="rounded-lg border border-cyan-200 bg-cyan-50/70 p-4">
     <div class="mb-4 flex items-start gap-3">
       <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-cyan-500 text-white">
         <Icon name="link" size="md" />
       </div>
       <div>
-        <h4 class="font-semibold text-cyan-950 dark:text-cyan-100">
+        <h4 class="font-semibold text-cyan-950">
           {{ title }}
         </h4>
-        <p class="mt-1 text-sm text-cyan-800 dark:text-cyan-200">
+        <p class="mt-1 text-sm text-cyan-800">
           {{ description }}
         </p>
       </div>
     </div>
 
     <div class="space-y-4">
-      <p class="text-sm text-cyan-800 dark:text-cyan-300">
+      <p class="text-sm text-cyan-800">
         {{ t('admin.accounts.kiro.followSteps') }}
       </p>
 
-      <div class="rounded-lg border border-cyan-300 bg-white/80 p-4 dark:border-cyan-700 dark:bg-gray-800/80">
-        <label class="mb-3 block text-sm font-medium text-cyan-900 dark:text-cyan-100">
+      <div class="rounded-lg border border-cyan-300 bg-white/80 p-4">
+        <label class="mb-3 block text-sm font-medium text-cyan-900">
           {{ t('admin.accounts.inputMethod') }}
         </label>
         <div class="flex flex-wrap gap-4">
@@ -31,7 +31,7 @@
               value="oauth"
               class="text-cyan-600 focus:ring-cyan-500"
             />
-            <span class="text-sm text-cyan-900 dark:text-cyan-200">
+            <span class="text-sm text-cyan-900">
               {{ t('admin.accounts.oauth.manualAuth') }}
             </span>
           </label>
@@ -42,7 +42,7 @@
               value="refresh_token"
               class="text-cyan-600 focus:ring-cyan-500"
             />
-            <span class="text-sm text-cyan-900 dark:text-cyan-200">
+            <span class="text-sm text-cyan-900">
               {{ t('admin.accounts.kiro.manualRefreshTokenAuth') }}
             </span>
           </label>
@@ -51,14 +51,14 @@
 
       <div
         v-if="inputMode === 'oauth'"
-        class="rounded-lg border border-cyan-300 bg-white/80 p-4 dark:border-cyan-700 dark:bg-gray-800/80"
+        class="rounded-lg border border-cyan-300 bg-white/80 p-4"
       >
         <div class="flex items-start gap-3">
           <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-600 text-xs font-bold text-white">
             1
           </div>
           <div class="flex-1">
-            <p class="mb-2 font-medium text-cyan-950 dark:text-cyan-100">
+            <p class="mb-2 font-medium text-cyan-950">
               {{ t('admin.accounts.kiro.step1GenerateUrl') }}
             </p>
             <button
@@ -86,7 +86,7 @@
                   :value="authUrl"
                   readonly
                   type="text"
-                  class="input flex-1 bg-gray-50 font-mono text-xs dark:bg-gray-700"
+                  class="input flex-1 bg-surface-2 font-mono text-xs"
                 />
                 <button
                   type="button"
@@ -117,7 +117,7 @@
                   />
                 </button>
               </div>
-              <p class="text-xs text-cyan-700 dark:text-cyan-300">
+              <p class="text-xs text-cyan-700">
                 {{ t('admin.accounts.kiro.callbackBaseUrlHint', { value: callbackBaseUrl || t('admin.accounts.kiro.optionalPlaceholder') }) }}
               </p>
             </div>
@@ -127,17 +127,17 @@
 
       <div
         v-if="inputMode === 'oauth'"
-        class="rounded-lg border border-cyan-300 bg-white/80 p-4 dark:border-cyan-700 dark:bg-gray-800/80"
+        class="rounded-lg border border-cyan-300 bg-white/80 p-4"
       >
         <div class="flex items-start gap-3">
           <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-600 text-xs font-bold text-white">
             2
           </div>
           <div class="flex-1">
-            <p class="mb-2 font-medium text-cyan-950 dark:text-cyan-100">
+            <p class="mb-2 font-medium text-cyan-950">
               {{ t('admin.accounts.kiro.step2Authorize') }}
             </p>
-            <p class="text-sm text-cyan-700 dark:text-cyan-300">
+            <p class="text-sm text-cyan-700">
               {{ t('admin.accounts.kiro.step2AuthorizeHint') }}
             </p>
           </div>
@@ -146,7 +146,7 @@
 
       <div
         v-if="inputMode === 'oauth'"
-        class="rounded-lg border border-cyan-300 bg-white/80 p-4 dark:border-cyan-700 dark:bg-gray-800/80"
+        class="rounded-lg border border-cyan-300 bg-white/80 p-4"
       >
         <div class="flex items-start gap-3">
           <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-600 text-xs font-bold text-white">
@@ -154,10 +154,10 @@
           </div>
           <div class="flex-1 space-y-3">
             <div>
-              <p class="mb-2 font-medium text-cyan-950 dark:text-cyan-100">
+              <p class="mb-2 font-medium text-cyan-950">
                 {{ t('admin.accounts.kiro.step3PasteCallback') }}
               </p>
-              <p class="mb-3 text-sm text-cyan-700 dark:text-cyan-300">
+              <p class="mb-3 text-sm text-cyan-700">
                 {{ t('admin.accounts.kiro.callbackUrlHint') }}
               </p>
               <textarea
@@ -168,12 +168,12 @@
               />
             </div>
 
-            <details class="rounded-lg border border-cyan-200/80 bg-white/70 p-3 dark:border-cyan-900/50 dark:bg-black/10">
-              <summary class="cursor-pointer text-sm font-medium text-cyan-900 dark:text-cyan-100">
+            <details class="rounded-lg border border-cyan-200/80 bg-surface/70 p-3">
+              <summary class="cursor-pointer text-sm font-medium text-cyan-900">
                 {{ t('admin.accounts.kiro.advancedFieldsTitle') }}
               </summary>
               <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-                <p class="md:col-span-2 text-sm text-cyan-700 dark:text-cyan-300">
+                <p class="md:col-span-2 text-sm text-cyan-700">
                   {{ t('admin.accounts.kiro.runtimeManagedHint') }}
                 </p>
                 <div>
@@ -246,7 +246,7 @@
                     </span>
                     <span
                       v-if="kiroProfilePendingHint"
-                      class="text-cyan-700 dark:text-cyan-300"
+                      class="text-cyan-700"
                     >
                       {{ kiroProfilePendingHint }}
                     </span>
@@ -266,7 +266,7 @@
 
             <div
               v-if="localError || error"
-              class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800/60 dark:bg-red-900/20 dark:text-red-300"
+              class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-danger-text"
             >
               {{ localError || error }}
             </div>
@@ -294,7 +294,7 @@
 
       <div
         v-if="inputMode === 'oauth' && continuation"
-        class="rounded-lg border border-amber-300 bg-amber-50/80 p-4 dark:border-amber-700/60 dark:bg-amber-900/20"
+        class="rounded-lg border border-amber-300 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)]/80 p-4"
       >
         <div class="flex items-start gap-3">
           <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white">
@@ -302,20 +302,20 @@
           </div>
           <div class="flex-1 space-y-3">
             <div>
-              <p class="font-medium text-amber-950 dark:text-amber-100">
+              <p class="font-medium text-amber-950">
                 {{ t('admin.accounts.kiro.idcContinuationTitle') }}
               </p>
-              <p class="mt-1 text-sm text-amber-800 dark:text-amber-200">
+              <p class="mt-1 text-sm text-amber-800">
                 {{ t('admin.accounts.kiro.idcContinuationDesc') }}
               </p>
             </div>
 
-            <div class="rounded-md border border-amber-200 bg-white/80 p-3 dark:border-amber-800/60 dark:bg-gray-800/60">
-              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+            <div class="rounded-md border border-amber-200 bg-white/80 p-3">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
                 {{ t('admin.accounts.kiro.idcUserCodeLabel') }}
               </p>
               <div class="flex flex-wrap items-center gap-3">
-                <span class="select-all font-mono text-2xl font-bold tracking-[0.3em] text-amber-950 dark:text-amber-100">
+                <span class="select-all font-mono text-2xl font-bold tracking-[0.3em] text-amber-950">
                   {{ continuation.user_code || '—' }}
                 </span>
                 <button
@@ -329,13 +329,13 @@
                   {{ t('common.copy') }}
                 </button>
               </div>
-              <p class="mt-2 text-xs text-amber-800 dark:text-amber-200">
+              <p class="mt-2 text-xs text-amber-800">
                 {{ t('admin.accounts.kiro.idcUserCodeHint') }}
               </p>
             </div>
 
-            <div class="rounded-md border border-amber-200 bg-white/80 p-3 dark:border-amber-800/60 dark:bg-gray-800/60">
-              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+            <div class="rounded-md border border-amber-200 bg-white/80 p-3">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
                 {{ t('admin.accounts.kiro.idcVerificationUrlLabel') }}
               </p>
               <a
@@ -348,15 +348,15 @@
                 <Icon name="link" size="sm" class="mr-2" />
                 {{ t('admin.accounts.kiro.idcVerificationUrlOpen') }}
               </a>
-              <p v-else class="text-xs text-amber-800 dark:text-amber-200">
+              <p v-else class="text-xs text-amber-800">
                 {{ t('admin.accounts.kiro.idcVerificationUrlMissing') }}
               </p>
-              <p v-if="verificationUrl" class="mt-2 break-all font-mono text-xs text-amber-800 dark:text-amber-200">
+              <p v-if="verificationUrl" class="mt-2 break-all font-mono text-xs text-amber-800">
                 {{ verificationUrl }}
               </p>
             </div>
 
-            <div class="grid grid-cols-1 gap-2 text-xs text-amber-900 dark:text-amber-100 md:grid-cols-2">
+            <div class="grid grid-cols-1 gap-2 text-xs text-amber-900 md:grid-cols-2">
               <div>
                 <span class="font-semibold">{{ t('admin.accounts.kiro.idcExpiresLabel') }}:</span>
                 <span class="ml-1">
@@ -379,7 +379,7 @@
               </div>
             </div>
 
-            <div class="flex items-center gap-2 text-xs text-amber-800 dark:text-amber-200">
+            <div class="flex items-center gap-2 text-xs text-amber-800">
               <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -395,7 +395,7 @@
               >
                 {{ t('admin.accounts.kiro.idcCancelAction') }}
               </button>
-              <p class="text-xs text-amber-700 dark:text-amber-300">
+              <p class="text-xs text-amber-700">
                 {{ t('admin.accounts.kiro.idcCancelHint') }}
               </p>
             </div>
@@ -405,7 +405,7 @@
 
       <div
         v-if="inputMode === 'oauth' && externalIDPAuthorization"
-        class="rounded-lg border border-blue-300 bg-blue-50/80 p-4 dark:border-blue-700/60 dark:bg-blue-900/20"
+        class="rounded-lg border border-blue-300 bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]/80 p-4"
       >
         <div class="flex items-start gap-3">
           <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">
@@ -413,16 +413,16 @@
           </div>
           <div class="flex-1 space-y-3">
             <div>
-              <p class="font-medium text-blue-950 dark:text-blue-100">
+              <p class="font-medium text-blue-950">
                 {{ t('admin.accounts.kiro.externalIdpAuthorizationTitle') }}
               </p>
-              <p class="mt-1 text-sm text-blue-800 dark:text-blue-200">
+              <p class="mt-1 text-sm text-blue-800">
                 {{ t('admin.accounts.kiro.externalIdpAuthorizationDesc') }}
               </p>
             </div>
 
-            <div class="rounded-md border border-blue-200 bg-white/80 p-3 dark:border-blue-800/60 dark:bg-gray-800/60">
-              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+            <div class="rounded-md border border-blue-200 bg-white/80 p-3">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-accent">
                 {{ t('admin.accounts.kiro.externalIdpAuthUrlLabel') }}
               </p>
               <div class="flex flex-wrap items-center gap-2">
@@ -445,12 +445,12 @@
                   {{ t('common.copy') }}
                 </button>
               </div>
-              <p class="mt-2 break-all font-mono text-xs text-blue-800 dark:text-blue-200">
+              <p class="mt-2 break-all font-mono text-xs text-blue-800">
                 {{ externalIDPAuthorization.auth_url }}
               </p>
             </div>
 
-            <div class="grid grid-cols-1 gap-2 text-xs text-blue-900 dark:text-blue-100 md:grid-cols-2">
+            <div class="grid grid-cols-1 gap-2 text-xs text-blue-900 md:grid-cols-2">
               <div v-if="externalIDPAuthorization.client_id" class="break-all">
                 {{ t('admin.accounts.kiro.externalIdpClientId', { value: externalIDPAuthorization.client_id }) }}
               </div>
@@ -468,7 +468,7 @@
               </div>
             </div>
 
-            <div class="rounded-md border border-blue-200 bg-white/70 p-3 text-xs text-blue-900 dark:border-blue-800/60 dark:bg-gray-800/60 dark:text-blue-100">
+            <div class="rounded-md border border-blue-200 bg-surface/70 p-3 text-xs text-blue-900">
               {{ t('admin.accounts.kiro.externalIdpFinalCallbackHint') }}
             </div>
           </div>
@@ -477,9 +477,9 @@
 
       <div
         v-if="inputMode === 'refresh_token'"
-        class="rounded-lg border border-cyan-300 bg-white/80 p-4 dark:border-cyan-700 dark:bg-gray-800/80"
+        class="rounded-lg border border-cyan-300 bg-white/80 p-4"
       >
-        <p class="mb-3 text-sm text-cyan-700 dark:text-cyan-300">
+        <p class="mb-3 text-sm text-cyan-700">
           {{ t('admin.accounts.kiro.manualRefreshTokenDesc') }}
         </p>
 
@@ -494,7 +494,7 @@
         </div>
 
         <div class="mb-4">
-          <label class="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-300">
+          <label class="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
             <Icon name="key" size="sm" class="text-cyan-500" />
             {{ t('admin.accounts.kiro.refreshTokenLabel') }}
             <span
@@ -510,7 +510,7 @@
             class="input w-full resize-y font-mono text-sm"
             :placeholder="t('admin.accounts.kiro.refreshTokenPlaceholderBatch')"
           />
-          <p v-if="parsedRefreshTokenCount > 1" class="mt-1 text-xs text-cyan-600 dark:text-cyan-400">
+          <p v-if="parsedRefreshTokenCount > 1" class="mt-1 text-xs text-cyan-600">
             {{ t('admin.accounts.oauth.batchCreateAccounts', { count: parsedRefreshTokenCount }) }}
           </p>
         </div>
@@ -602,12 +602,12 @@
           </div>
         </div>
 
-        <details class="mt-4 rounded-lg border border-cyan-200/80 bg-white/70 p-3 dark:border-cyan-900/50 dark:bg-black/10">
-          <summary class="cursor-pointer text-sm font-medium text-cyan-900 dark:text-cyan-100">
+        <details class="mt-4 rounded-lg border border-cyan-200/80 bg-surface/70 p-3">
+          <summary class="cursor-pointer text-sm font-medium text-cyan-900">
             {{ t('admin.accounts.kiro.advancedFieldsTitle') }}
           </summary>
           <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <p class="md:col-span-2 text-sm text-cyan-700 dark:text-cyan-300">
+            <p class="md:col-span-2 text-sm text-cyan-700">
               {{ t('admin.accounts.kiro.runtimeManagedHint') }}
             </p>
             <div>
@@ -680,7 +680,7 @@
                 </span>
                 <span
                   v-if="kiroProfilePendingHint"
-                  class="text-cyan-700 dark:text-cyan-300"
+                  class="text-cyan-700"
                 >
                   {{ kiroProfilePendingHint }}
                 </span>
@@ -700,7 +700,7 @@
 
         <div
           v-if="localError || error"
-          class="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800/60 dark:bg-red-900/20 dark:text-red-300"
+          class="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-danger-text"
         >
           {{ localError || error }}
         </div>
@@ -849,8 +849,8 @@ const kiroProfileStatusLabel = computed(() => {
 })
 const kiroProfileStatusBadgeClass = computed(() => {
   return effectiveProfileArn.value
-    ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300'
-    : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+    ? 'bg-cyan-100 text-cyan-700'
+    : 'bg-slate-100 text-slate-700'
 })
 const kiroProfilePendingHint = computed(() => {
   if (props.mode !== 'reauth') return ''

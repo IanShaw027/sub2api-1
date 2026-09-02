@@ -22,21 +22,21 @@ export const ticketStatusOptions: Array<{ value: TicketStatus; labelKey: string 
 export function getTicketStatusBadgeClass(status: TicketStatus): string {
   switch (status) {
     case 'submitted':
-      return 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+      return 'badge-tone-accent'
     case 'processing':
-      return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+      return 'badge-tone-warning'
     case 'waiting_user':
-      return 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
+      return 'bg-purple-500/15 text-purple-700'
     case 'waiting_admin':
-      return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
+      return 'bg-indigo-500/15 text-indigo-700'
     case 'resolved':
-      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+      return 'badge-tone-success'
     case 'closed':
-      return 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300'
+      return 'badge-tone-muted'
     case 'withdrawn':
-      return 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300'
+      return 'bg-rose-500/15 text-rose-700'
     default:
-      return 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300'
+      return 'badge-tone-muted'
   }
 }
 

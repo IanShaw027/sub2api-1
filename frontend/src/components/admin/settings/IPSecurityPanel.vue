@@ -1,22 +1,22 @@
 <template>
   <div class="card">
-    <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+    <div class="border-b border-line px-6 py-4">
+      <h2 class="text-lg font-semibold text-foreground">
         {{ t('admin.settings.ipSecurity.title') }}
       </h2>
-      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+      <p class="mt-1 text-sm text-muted">
         {{ t('admin.settings.ipSecurity.description') }}
       </p>
     </div>
     <div class="space-y-5 p-6">
       <div class="flex items-center justify-between">
         <div>
-          <label class="font-medium text-gray-900 dark:text-white">{{ t('admin.settings.ipSecurity.enable') }}</label>
-          <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.settings.ipSecurity.enableHint') }}</p>
+          <label class="font-medium text-foreground">{{ t('admin.settings.ipSecurity.enable') }}</label>
+          <p class="text-sm text-muted">{{ t('admin.settings.ipSecurity.enableHint') }}</p>
         </div>
         <Toggle v-model="form.enabled" />
       </div>
-      <div v-if="form.enabled" class="grid gap-4 border-t border-gray-100 pt-4 dark:border-dark-700 md:grid-cols-2">
+      <div v-if="form.enabled" class="grid gap-4 border-t border-line pt-4 md:grid-cols-2">
         <div>
           <label class="input-label">{{ t('admin.settings.ipSecurity.windowMinutes') }}</label>
           <input v-model.number="form.window_minutes" type="number" min="1" max="1440" class="input" />
@@ -38,10 +38,10 @@
           <input v-model="form.learning_until" type="text" placeholder="2026-08-16T00:00:00Z" class="input" />
         </div>
       </div>
-      <div class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700">
+      <div class="flex items-center justify-between border-t border-line pt-4">
         <div>
-          <label class="font-medium text-gray-900 dark:text-white">{{ t('admin.settings.ipSecurity.blockDatacenterRegistration') }}</label>
-          <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.settings.ipSecurity.blockDatacenterRegistrationHint') }}</p>
+          <label class="font-medium text-foreground">{{ t('admin.settings.ipSecurity.blockDatacenterRegistration') }}</label>
+          <p class="text-sm text-muted">{{ t('admin.settings.ipSecurity.blockDatacenterRegistrationHint') }}</p>
         </div>
         <Toggle v-model="form.block_datacenter_registration" />
       </div>
@@ -51,7 +51,7 @@
         </button>
       </div>
 
-      <div class="flex flex-wrap items-center gap-3 border-t border-gray-100 pt-4 dark:border-dark-700">
+      <div class="flex flex-wrap items-center gap-3 border-t border-line pt-4">
         <select v-model="status" class="input w-auto" @change="loadBans(1)">
           <option value="active">{{ t('admin.settings.ipSecurity.statusActive') }}</option>
           <option value="whitelisted">{{ t('admin.settings.ipSecurity.statusWhitelisted') }}</option>
@@ -62,12 +62,12 @@
           <Icon name="search" size="sm" />
           {{ t('common.refresh') }}
         </button>
-        <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.settings.ipSecurity.listHint') }}</span>
+        <span class="text-xs text-muted">{{ t('admin.settings.ipSecurity.listHint') }}</span>
       </div>
 
-      <div v-if="bans.length" class="overflow-x-auto rounded border border-gray-200 dark:border-dark-700">
+      <div v-if="bans.length" class="overflow-x-auto rounded border border-line">
         <table class="min-w-full text-left text-sm">
-          <thead class="bg-gray-50 dark:bg-dark-800">
+          <thead class="bg-surface-2">
             <tr>
               <th class="px-3 py-2">IP</th>
               <th class="px-3 py-2">{{ t('common.status') }}</th>
@@ -77,7 +77,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="ban in bans" :key="ban.id" class="border-t border-gray-100 dark:border-dark-700">
+            <tr v-for="ban in bans" :key="ban.id" class="border-t border-line">
               <td class="px-3 py-2 font-mono">{{ ban.ip_address }}</td>
               <td class="px-3 py-2">{{ formatStatus(ban.status) }}</td>
               <td class="px-3 py-2">{{ ban.detected_account_count }} / {{ ban.account_threshold }}</td>
@@ -91,7 +91,7 @@
           </tbody>
         </table>
       </div>
-      <div v-if="total" class="flex items-center justify-between text-sm text-gray-500">
+      <div v-if="total" class="flex items-center justify-between text-sm text-muted">
         <span>{{ t('admin.settings.ipSecurity.total', { count: total }) }}</span>
         <div class="flex items-center gap-2">
           <button type="button" class="btn btn-secondary btn-xs" :disabled="page <= 1 || loading" @click="loadBans(page - 1)">
@@ -104,11 +104,11 @@
         </div>
       </div>
 
-      <div v-if="detail" class="rounded border border-gray-200 p-4 dark:border-dark-700">
+      <div v-if="detail" class="rounded border border-line p-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div class="font-mono font-semibold">{{ detail.ban.ip_address }}</div>
-            <div class="text-xs text-gray-500">{{ formatStatus(detail.ban.status) }} · {{ detail.ban.reason }}</div>
+            <div class="text-xs text-muted">{{ formatStatus(detail.ban.status) }} · {{ detail.ban.reason }}</div>
           </div>
           <button
             v-if="detail.ban.status === 'active'"
@@ -131,7 +131,7 @@
           <div
             v-for="activity in detail.activities"
             :key="`${activity.user_id}-${activity.source}-${activity.api_key_id}-${activity.request_id}-${activity.path}`"
-            class="rounded bg-gray-50 p-2 dark:bg-dark-800"
+            class="rounded bg-surface-2 p-2"
           >
             <div class="flex flex-wrap justify-between gap-2">
               <span>{{ activity.user_email || activity.user_username || `#${activity.user_id}` }}</span>
@@ -140,8 +140,8 @@
                 <span v-if="activity.api_key_id"> · key #{{ activity.api_key_id }}</span>
               </span>
             </div>
-            <div class="mt-1 break-all font-mono text-xs text-gray-500">{{ activity.method }} {{ activity.path }}</div>
-            <div class="mt-1 text-[11px] text-gray-400">
+            <div class="mt-1 break-all font-mono text-xs text-muted">{{ activity.method }} {{ activity.path }}</div>
+            <div class="mt-1 text-[11px] text-muted">
               {{ t('admin.settings.ipSecurity.calls') }}: {{ activity.request_count }} ·
               {{ formatTime(activity.first_seen_at) }} - {{ formatTime(activity.last_seen_at) }}
             </div>

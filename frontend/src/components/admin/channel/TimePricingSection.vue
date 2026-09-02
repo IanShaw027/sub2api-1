@@ -1,13 +1,13 @@
 <template>
-  <section class="mt-3 border-t border-gray-200 pt-3 dark:border-dark-600">
+  <section class="mt-3 border-t border-line pt-3">
     <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
       <div class="min-w-0 flex-1 sm:max-w-2xl">
-        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400">
+        <label class="block text-xs font-medium text-muted">
           {{ t('admin.channels.form.timePricing') }}
         </label>
         <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           <div class="min-w-0">
-            <label class="block text-xs text-gray-400">
+            <label class="block text-xs text-muted">
               {{ t('admin.channels.form.timezone') }}
             </label>
             <Select
@@ -22,7 +22,7 @@
             />
           </div>
           <div class="min-w-0">
-            <label class="block text-xs text-gray-400">
+            <label class="block text-xs text-muted">
               {{ t('admin.channels.form.timePricingDayScope') }}
             </label>
             <Select
@@ -38,7 +38,7 @@
       </div>
       <button
         type="button"
-        class="self-start text-xs text-primary-600 hover:text-primary-700 sm:self-end sm:pb-2"
+        class="self-start text-xs text-accent hover:text-accent sm:self-end sm:pb-2"
         data-testid="add-time-period"
         @click="addPeriod"
       >
@@ -50,10 +50,10 @@
       <div
         v-for="(period, index) in modelValue.periods"
         :key="index"
-        class="grid grid-cols-1 gap-2 border-t border-gray-200 pt-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_2rem] sm:items-end dark:border-dark-600"
+        class="grid grid-cols-1 gap-2 border-t border-line pt-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_2rem] sm:items-end"
       >
         <div class="min-w-0">
-          <label :for="`${inputIdPrefix}-start-${index}`" class="block text-xs text-gray-400">
+          <label :for="`${inputIdPrefix}-start-${index}`" class="block text-xs text-muted">
             {{ t('admin.channels.form.startTime') }}
           </label>
           <input
@@ -70,7 +70,7 @@
           />
         </div>
         <div class="min-w-0">
-          <label :for="`${inputIdPrefix}-end-${index}`" class="block text-xs text-gray-400">
+          <label :for="`${inputIdPrefix}-end-${index}`" class="block text-xs text-muted">
             {{ t('admin.channels.form.endTime') }}
           </label>
           <input
@@ -87,7 +87,7 @@
           />
         </div>
         <div class="min-w-0">
-          <label :for="`${inputIdPrefix}-multiplier-${index}`" class="block text-xs text-gray-400">
+          <label :for="`${inputIdPrefix}-multiplier-${index}`" class="block text-xs text-muted">
             {{ t('admin.channels.form.multiplier') }}
           </label>
           <input
@@ -103,7 +103,7 @@
         </div>
         <button
           type="button"
-          class="flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-red-500"
+          class="flex h-8 w-8 items-center justify-center rounded text-muted hover:text-red-500"
           :title="t('admin.channels.form.removeTimePeriod')"
           :aria-label="t('admin.channels.form.removeTimePeriod')"
           :data-testid="`remove-time-period-${index}`"

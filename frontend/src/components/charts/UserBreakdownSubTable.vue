@@ -1,40 +1,40 @@
 <template>
-  <div class="bg-gray-50/50 dark:bg-dark-700/30">
-    <div v-if="loading" class="flex items-center justify-center py-3">
-      <LoadingSpinner />
-    </div>
-    <div v-else-if="items.length === 0" class="py-2 text-center text-xs text-gray-400">
-      {{ t('admin.dashboard.noDataAvailable') }}
-    </div>
-    <table v-else class="w-full text-xs">
-      <tbody>
-        <tr
-          v-for="user in items"
-          :key="user.user_id"
-          class="border-t border-gray-100/50 dark:border-dark-700/50"
-        >
-          <td class="max-w-[120px] truncate py-1 pl-6 text-gray-600 dark:text-gray-300" :title="user.email">
-            {{ user.email || `User #${user.user_id}` }}
-          </td>
-          <td class="py-1 text-right text-gray-500 dark:text-gray-400">
-            {{ user.requests.toLocaleString() }}
-          </td>
-          <td class="py-1 text-right text-gray-500 dark:text-gray-400">
-            {{ formatTokens(user.total_tokens) }}
-          </td>
-          <td class="py-1 text-right text-green-600 dark:text-green-400">
-            ${{ formatCost(user.actual_cost) }}
-          </td>
-          <td v-if="showAccountCost" class="py-1 text-right text-orange-500 dark:text-orange-400">
-            ${{ formatCost(user.account_cost) }}
-          </td>
-          <td class="py-1 pr-1 text-right text-gray-400 dark:text-gray-500">
-            ${{ formatCost(user.cost) }}
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+ <div class="bg-surface-2/50">
+ <div v-if="loading" class="flex items-center justify-center py-3">
+ <LoadingSpinner />
+ </div>
+ <div v-else-if="items.length === 0" class="py-2 text-center text-xs text-muted">
+ {{ t('admin.dashboard.noDataAvailable') }}
+ </div>
+ <table v-else class="w-full text-xs">
+ <tbody>
+ <tr
+ v-for="user in items"
+ :key="user.user_id"
+ class="border-t border-line/50"
+ >
+ <td class="max-w-[120px] truncate py-1 pl-6 text-muted" :title="user.email">
+ {{ user.email || `User #${user.user_id}` }}
+ </td>
+ <td class="py-1 text-right text-muted">
+ {{ user.requests.toLocaleString() }}
+ </td>
+ <td class="py-1 text-right text-muted">
+ {{ formatTokens(user.total_tokens) }}
+ </td>
+ <td class="py-1 text-right text-green-600">
+ ${{ formatCost(user.actual_cost) }}
+ </td>
+ <td v-if="showAccountCost" class="py-1 text-right text-orange-500">
+ ${{ formatCost(user.account_cost) }}
+ </td>
+ <td class="py-1 pr-1 text-right text-muted">
+ ${{ formatCost(user.cost) }}
+ </td>
+ </tr>
+ </tbody>
+ </table>
+ </div>
 </template>
 
 <script setup lang="ts">
@@ -46,28 +46,28 @@ import type { UserBreakdownItem } from '@/types'
 const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
-  items: UserBreakdownItem[]
-  loading?: boolean
-  showAccountCost?: boolean
+ items: UserBreakdownItem[]
+ loading?: boolean
+ showAccountCost?: boolean
 }>(), {
-  loading: false,
-  showAccountCost: true,
+ loading: false,
+ showAccountCost: true,
 })
 
 const showAccountCost = computed(() => props.showAccountCost)
 
 const formatTokens = (value: number): string => {
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`
-  if (value >= 1_000) return `${(value / 1_000).toFixed(2)}K`
-  return value.toLocaleString()
+ if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`
+ if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`
+ if (value >= 1_000) return `${(value / 1_000).toFixed(2)}K`
+ return value.toLocaleString()
 }
 
 const formatCost = (value: number | undefined | null): string => {
-  if (value == null) return '0.0000'
-  if (value >= 1000) return (value / 1000).toFixed(2) + 'K'
-  if (value >= 1) return value.toFixed(2)
-  if (value >= 0.01) return value.toFixed(3)
-  return value.toFixed(4)
+ if (value == null) return '0.0000'
+ if (value >= 1000) return (value / 1000).toFixed(2) + 'K'
+ if (value >= 1) return value.toFixed(2)
+ if (value >= 0.01) return value.toFixed(3)
+ return value.toFixed(4)
 }
 </script>

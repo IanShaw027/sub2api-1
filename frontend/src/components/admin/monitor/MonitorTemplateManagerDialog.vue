@@ -6,7 +6,7 @@
     @close="$emit('close')"
   >
     <!-- provider tabs -->
-    <div class="mb-4 border-b border-gray-200 dark:border-dark-700">
+    <div class="mb-4 border-b border-line">
       <div role="tablist" class="flex flex-wrap gap-1">
         <button
           v-for="tab in providerTabs"
@@ -21,7 +21,7 @@
           {{ tab.label }}
           <span
             v-if="countByProvider[tab.value] > 0"
-            class="ml-1.5 rounded-full bg-gray-100 px-2 py-0.5 text-xs dark:bg-dark-700"
+            class="ml-1.5 rounded-full bg-surface-2 px-2 py-0.5 text-xs"
           >
             {{ countByProvider[tab.value] }}
           </span>
@@ -38,13 +38,13 @@
         </button>
       </div>
 
-      <div v-if="loading" class="py-8 text-center text-sm text-gray-400">
+      <div v-if="loading" class="py-8 text-center text-sm text-muted">
         {{ t('common.loading') }}
       </div>
 
       <div
         v-else-if="templatesForActiveProvider.length === 0"
-        class="py-8 text-center text-sm text-gray-400"
+        class="py-8 text-center text-sm text-muted"
       >
         {{ t('admin.channelMonitor.template.emptyState') }}
       </div>
@@ -53,12 +53,12 @@
         v-for="tpl in templatesForActiveProvider"
         v-else
         :key="tpl.id"
-        class="rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800"
+        class="rounded-lg border border-line bg-surface p-4"
       >
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
-              <span class="font-medium text-gray-900 dark:text-white">{{ tpl.name }}</span>
+              <span class="font-medium text-foreground">{{ tpl.name }}</span>
               <span
                 class="inline-flex items-center rounded-md px-1.5 py-0.5 text-xs"
                 :class="modeBadgeClass(tpl.body_override_mode)"
@@ -74,15 +74,15 @@
               </span>
               <span
                 v-if="tpl.associated_monitors > 0"
-                class="text-xs text-gray-500 dark:text-gray-400"
+                class="text-xs text-muted"
               >
                 {{ t('admin.channelMonitor.template.associatedCount', { n: tpl.associated_monitors }) }}
               </span>
             </div>
-            <p v-if="tpl.description" class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+            <p v-if="tpl.description" class="mt-0.5 text-xs text-muted">
               {{ tpl.description }}
             </p>
-            <p class="mt-1 text-xs text-gray-400">
+            <p class="mt-1 text-xs text-muted">
               {{ t('admin.channelMonitor.template.headersSummary', {
                 n: Object.keys(tpl.extra_headers || {}).length,
               }) }}
@@ -144,7 +144,7 @@
         </div>
       </div>
 
-      <div v-if="form.provider === PROVIDER_OPENAI" class="rounded-lg border border-blue-100 bg-blue-50/50 p-3 dark:border-blue-500/20 dark:bg-blue-500/10">
+      <div v-if="form.provider === PROVIDER_OPENAI" class="rounded-lg border border-[color-mix(in_oklch,var(--accent)_12%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]/50 p-3">
         <label class="input-label">{{ t('admin.channelMonitor.form.apiMode') }}</label>
         <div class="grid gap-3 sm:grid-cols-2">
           <button
@@ -467,18 +467,18 @@ async function doDelete() {
 // --- misc ---
 function tabClass(value: Provider): string {
   return activeProvider.value === value
-    ? 'border-b-2 border-primary-500 text-primary-600 dark:text-primary-400'
-    : 'border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+    ? 'border-b-2 border-accent text-accent'
+    : 'border-b-2 border-transparent text-muted hover:text-foreground'
 }
 
 function modeBadgeClass(mode: BodyOverrideMode): string {
   switch (mode) {
     case 'merge':
-      return 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
+      return 'bg-amber-100 text-amber-700'
     case 'replace':
-      return 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300'
+      return 'bg-purple-100 text-purple-700'
     default:
-      return 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
+      return 'bg-surface-2 text-muted'
   }
 }
 
@@ -512,9 +512,9 @@ function normalizeAPIMode(mode: APIMode | undefined | null): APIMode {
 function apiModeButtonClass(mode: APIMode): string {
   const active = form.api_mode === mode
   if (active) {
-    return 'border-primary-500 bg-white text-primary-700 shadow-sm dark:border-primary-400 dark:bg-primary-500/15 dark:text-primary-300'
+    return 'border-accent bg-surface text-accent shadow-sm'
   }
-  return 'border-blue-100 bg-white/70 text-gray-600 hover:border-primary-300 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400'
+  return 'border-[color-mix(in_oklch,var(--accent)_12%,transparent)] bg-surface/70 text-muted hover:border-[color-mix(in_oklch,var(--accent)_28%,transparent)]'
 }
 
 function apiModeLabel(mode: APIMode): string {
@@ -525,8 +525,8 @@ function apiModeLabel(mode: APIMode): string {
 
 function apiModeBadgeClass(mode: APIMode): string {
   if (normalizeAPIMode(mode) === API_MODE_RESPONSES) {
-    return 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300'
+    return 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
   }
-  return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
+  return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text'
 }
 </script>

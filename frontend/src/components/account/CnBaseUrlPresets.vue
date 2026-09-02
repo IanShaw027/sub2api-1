@@ -6,11 +6,11 @@
       type="button"
       data-testid="cn-base-url-preset"
       :class="[
-        'rounded-lg px-3 py-1 text-xs transition-colors',
-        isActive(preset)
-          ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
-          : 'bg-gray-100 text-gray-700 hover:bg-primary-50 hover:text-primary-700 dark:bg-dark-600 dark:text-gray-300 dark:hover:bg-primary-900/30 dark:hover:text-primary-400'
-      ]"
+ 'rounded-lg px-3 py-1 text-xs transition-colors',
+ isActive(preset)
+ ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
+ : 'bg-surface-2 text-foreground hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] hover:text-accent'
+ ]"
       @click="emit('select', preset)"
     >
       {{ preset.label }} ({{ displayUrl(preset.url) }})

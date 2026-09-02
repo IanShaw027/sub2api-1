@@ -7,24 +7,24 @@
   >
     <div class="space-y-6">
       <div
-        class="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-gray-100 bg-white p-3 shadow-sm dark:border-dark-700 dark:bg-dark-800"
+        class="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-line bg-surface p-3 shadow-sm"
       >
         <div class="flex min-w-0 flex-1 flex-wrap items-end gap-3">
           <div class="flex flex-col gap-1">
-            <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
+            <span class="text-xs font-medium text-muted">
               {{ t('admin.accounts.oauthCapacity.range') }}
             </span>
-            <div class="inline-flex rounded-lg border border-gray-200 p-0.5 dark:border-dark-600">
+            <div class="inline-flex rounded-lg border border-line p-0.5">
               <button
                 v-for="option in rangeOptions"
                 :key="option"
                 type="button"
                 class="rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors"
                 :class="
-                  selectedRange === option
-                    ? 'bg-primary-600 text-white shadow-sm'
-                    : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700'
-                "
+ selectedRange === option
+ ? 'bg-primary-600 text-white shadow-sm'
+ : 'text-muted hover:bg-surface-2'
+ "
                 @click="selectedRange = option"
               >
                 {{ option }}
@@ -32,7 +32,7 @@
             </div>
           </div>
           <div class="flex min-w-[14rem] flex-col gap-1">
-            <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
+            <span class="text-xs font-medium text-muted">
               {{ t('admin.accounts.oauthCapacity.scope') }}
             </span>
             <Select
@@ -43,7 +43,7 @@
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <span v-if="overview" class="text-xs text-gray-500 dark:text-gray-400">
+          <span v-if="overview" class="text-xs text-muted">
             {{ formatTime(overview.generated_at) }}
           </span>
           <button
@@ -58,7 +58,7 @@
         </div>
       </div>
 
-      <p class="text-sm text-gray-500 dark:text-gray-400">
+      <p class="text-sm text-muted">
         {{ t('admin.accounts.oauthCapacity.hint') }}
       </p>
 
@@ -68,7 +68,7 @@
 
       <div
         v-else-if="error"
-        class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300"
+        class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-danger-text"
       >
         {{ error }}
       </div>
@@ -82,7 +82,7 @@
             :class="metric.cardClass"
           >
             <div class="mb-2 flex items-center justify-between">
-              <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ metric.label }}</span>
+              <span class="text-xs font-medium text-muted">{{ metric.label }}</span>
               <div class="rounded-lg p-1.5" :class="metric.iconWrapClass">
                 <Icon :name="metric.icon" size="sm" :class="metric.iconClass" />
               </div>
@@ -92,19 +92,19 @@
         </div>
 
         <div class="card p-4">
-          <h4 class="mb-3 text-sm font-semibold text-gray-900 dark:text-white">
+          <h4 class="mb-3 text-sm font-semibold text-foreground">
             {{ t('admin.accounts.oauthCapacity.rateLimitDistribution') }}
           </h4>
           <div class="grid grid-cols-4 gap-2 sm:grid-cols-8">
             <div
               v-for="bucket in rateLimitRows"
               :key="bucket.label"
-              class="rounded-lg border border-gray-100 bg-gray-50 px-2 py-2.5 text-center dark:border-dark-700 dark:bg-dark-900/40"
+              class="rounded-lg border border-line bg-surface-2 px-2 py-2.5 text-center"
             >
-              <div class="text-[11px] text-gray-500 dark:text-gray-400">{{ bucket.label }}</div>
+              <div class="text-[11px] text-muted">{{ bucket.label }}</div>
               <div
                 class="mt-1 text-base font-semibold"
-                :class="bucket.value ? 'text-amber-700 dark:text-amber-300' : 'text-gray-400 dark:text-gray-500'"
+                :class="bucket.value ? 'text-amber-700' : 'text-muted'"
               >
                 {{ bucket.value }}
               </div>
@@ -124,7 +124,7 @@
               <span
                 v-if="window.alert"
                 class="text-xs font-medium uppercase"
-                :class="window.alert === 'critical' ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'"
+                :class="window.alert === 'critical' ? 'text-danger-text' : 'text-amber-700'"
               >
                 {{ window.alert === 'critical'
                   ? t('admin.accounts.oauthCapacity.alertCritical')
@@ -134,7 +134,7 @@
             <div class="text-3xl font-semibold">
               {{ formatPercent(window.remaining_percent) }}
             </div>
-            <div class="mt-2 space-y-1 text-xs text-gray-500 dark:text-gray-400">
+            <div class="mt-2 space-y-1 text-xs text-muted">
               <div>
                 {{ t('admin.accounts.oauthCapacity.remaining') }}
                 · {{ t('admin.accounts.oauthCapacity.used') }} {{ formatPercent(window.used_percent) }}
@@ -157,26 +157,26 @@
             class="card min-w-0 border p-4"
             :class="kpi.cardClass"
           >
-            <div class="mb-2 text-xs font-medium text-gray-500 dark:text-gray-400">{{ kpi.label }}</div>
+            <div class="mb-2 text-xs font-medium text-muted">{{ kpi.label }}</div>
             <p class="font-mono text-xl font-bold" :class="kpi.valueClass">{{ kpi.value }}</p>
           </div>
         </div>
 
         <div
           v-if="overview.total.suggest_accounts"
-          class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+          class="rounded-lg border border-amber-200 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-3 text-sm text-amber-800"
         >
           {{ t('admin.accounts.oauthCapacity.suggestAdd', { count: overview.total.suggest_accounts }) }}
         </div>
 
         <div class="card p-4">
-          <h4 class="mb-3 text-sm font-semibold text-gray-900 dark:text-white">
+          <h4 class="mb-3 text-sm font-semibold text-foreground">
             {{ t('admin.accounts.oauthCapacity.hourlyTrend') }}
           </h4>
           <div class="relative min-h-48">
             <div
               v-if="loading && series"
-              class="absolute inset-0 z-10 flex items-center justify-center bg-white/60 dark:bg-dark-800/60"
+              class="absolute inset-0 z-10 flex items-center justify-center bg-white/60"
             >
               <LoadingSpinner />
             </div>
@@ -185,7 +185,7 @@
             </div>
             <div
               v-else
-              class="flex h-48 items-center justify-center text-sm text-gray-500 dark:text-gray-400"
+              class="flex h-48 items-center justify-center text-sm text-muted"
             >
               {{ t('admin.accounts.oauthCapacity.noTrendData') }}
             </div>
@@ -193,14 +193,14 @@
         </div>
 
         <div class="card overflow-hidden p-0">
-          <div class="border-b border-gray-100 px-4 py-3 dark:border-dark-700">
-            <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
+          <div class="border-b border-line px-4 py-3">
+            <h4 class="text-sm font-semibold text-foreground">
               {{ t('admin.accounts.oauthCapacity.planMix') }}
             </h4>
           </div>
           <div class="overflow-x-auto">
             <table class="w-full text-left text-sm">
-              <thead class="bg-gray-50 text-xs uppercase text-gray-500 dark:bg-dark-900 dark:text-gray-400">
+              <thead class="bg-surface-2 text-xs uppercase text-muted">
                 <tr>
                   <th class="px-3 py-2.5">{{ t('admin.accounts.oauthCapacity.plan') }}</th>
                   <th class="px-3 py-2.5 text-right">{{ t('admin.accounts.oauthCapacity.accounts') }}</th>
@@ -209,7 +209,7 @@
                   <th class="px-3 py-2.5 text-right">{{ t('admin.accounts.oauthCapacity.rateLimited') }}</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
+              <tbody class="divide-y divide-line">
                 <tr v-for="plan in overview.total.plan_counts" :key="plan.plan_type">
                   <td class="px-3 py-2.5 font-semibold uppercase">{{ plan.plan_type }}</td>
                   <td class="px-3 py-2.5 text-right">{{ plan.total }}</td>
@@ -223,14 +223,14 @@
         </div>
 
         <div v-if="overview.groups?.length" class="card overflow-hidden p-0">
-          <div class="border-b border-gray-100 px-4 py-3 dark:border-dark-700">
-            <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
+          <div class="border-b border-line px-4 py-3">
+            <h4 class="text-sm font-semibold text-foreground">
               {{ t('admin.accounts.oauthCapacity.groups') }}
             </h4>
           </div>
           <div class="overflow-x-auto">
             <table class="w-full text-left text-sm">
-              <thead class="bg-gray-50 text-xs uppercase text-gray-500 dark:bg-dark-900 dark:text-gray-400">
+              <thead class="bg-surface-2 text-xs uppercase text-muted">
                 <tr>
                   <th class="px-3 py-2.5">{{ t('admin.accounts.oauthCapacity.groups') }}</th>
                   <th class="px-3 py-2.5 text-right">{{ t('admin.accounts.oauthCapacity.accounts') }}</th>
@@ -239,7 +239,7 @@
                   <th class="px-3 py-2.5 text-right">{{ t('admin.accounts.oauthCapacity.rateLimited') }}</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
+              <tbody class="divide-y divide-line">
                 <tr v-for="group in overview.groups" :key="group.group_id ?? group.group_name">
                   <td class="px-3 py-2.5 font-medium">
                     {{ group.group_name === 'ungrouped' ? t('admin.accounts.oauthCapacity.ungrouped') : group.group_name }}
@@ -315,41 +315,41 @@ const accountMetrics = computed(() => {
       label: t('admin.accounts.oauthCapacity.accounts'),
       value: accounts.total,
       icon: 'users' as const,
-      cardClass: 'border-gray-200 dark:border-dark-600',
-      iconWrapClass: 'bg-gray-100 dark:bg-dark-700',
-      iconClass: 'text-gray-600 dark:text-gray-300',
-      valueClass: 'text-gray-900 dark:text-white'
+      cardClass: 'border-line',
+      iconWrapClass: 'bg-surface-2',
+      iconClass: 'text-muted',
+      valueClass: 'text-foreground'
     },
     {
       label: t('admin.accounts.oauthCapacity.schedulable'),
       value: accounts.schedulable,
       icon: 'check' as const,
-      cardClass: 'border-emerald-200 dark:border-emerald-800/40',
-      iconWrapClass: 'bg-emerald-100 dark:bg-emerald-900/30',
-      iconClass: 'text-emerald-600 dark:text-emerald-400',
-      valueClass: 'text-emerald-700 dark:text-emerald-300'
+      cardClass: 'border-emerald-200',
+      iconWrapClass: 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)]',
+      iconClass: 'text-success-text',
+      valueClass: 'text-success-text'
     },
     {
       label: t('admin.accounts.oauthCapacity.errors'),
       value: accounts.errors,
       icon: 'exclamationTriangle' as const,
       cardClass: accounts.errors
-        ? 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/30'
-        : 'border-gray-200 dark:border-dark-600',
-      iconWrapClass: accounts.errors ? 'bg-red-100 dark:bg-red-900/30' : 'bg-gray-100 dark:bg-dark-700',
-      iconClass: accounts.errors ? 'text-red-600 dark:text-red-400' : 'text-gray-500',
-      valueClass: accounts.errors ? 'text-red-600 dark:text-red-300' : 'text-gray-900 dark:text-white'
+        ? 'border-red-200 bg-red-50'
+        : 'border-line',
+      iconWrapClass: accounts.errors ? 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)]' : 'bg-surface-2',
+      iconClass: accounts.errors ? 'text-danger-text' : 'text-muted',
+      valueClass: accounts.errors ? 'text-danger-text' : 'text-foreground'
     },
     {
       label: t('admin.accounts.oauthCapacity.rateLimited'),
       value: accounts.rate_limited,
       icon: 'clock' as const,
       cardClass: accounts.rate_limited
-        ? 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30'
-        : 'border-gray-200 dark:border-dark-600',
-      iconWrapClass: accounts.rate_limited ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-gray-100 dark:bg-dark-700',
-      iconClass: accounts.rate_limited ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500',
-      valueClass: accounts.rate_limited ? 'text-amber-700 dark:text-amber-300' : 'text-gray-900 dark:text-white'
+        ? 'border-amber-200 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)]'
+        : 'border-line',
+      iconWrapClass: accounts.rate_limited ? 'bg-amber-100' : 'bg-surface-2',
+      iconClass: accounts.rate_limited ? 'text-warning-text' : 'text-muted',
+      valueClass: accounts.rate_limited ? 'text-amber-700' : 'text-foreground'
     }
   ]
 })
@@ -376,28 +376,28 @@ const forecastKpis = computed(() => {
     {
       label: t('admin.accounts.capacityForecast.kpiCurrentAvailable'),
       value: kpis ? usd(kpis.current_available_usd) : '—',
-      cardClass: 'border-emerald-200 dark:border-emerald-800/40',
-      valueClass: 'text-emerald-700 dark:text-emerald-300'
+      cardClass: 'border-emerald-200',
+      valueClass: 'text-success-text'
     },
     {
       label: t('admin.accounts.capacityForecast.kpiFutureForecastSpend'),
       value: kpis ? usd(kpis.future_forecast_spend_usd) : '—',
-      cardClass: 'border-blue-200 dark:border-blue-800/40',
-      valueClass: 'text-gray-900 dark:text-white'
+      cardClass: 'border-blue-200',
+      valueClass: 'text-foreground'
     },
     {
       label: t('admin.accounts.oauthCapacity.firstShortfall'),
       value: shortfall ? formatTime(shortfall) : t('admin.accounts.oauthCapacity.noShortfall'),
       cardClass: shortfall
-        ? 'border-red-200 dark:border-red-800/40'
-        : 'border-gray-200 dark:border-dark-600',
-      valueClass: shortfall ? 'text-red-600 dark:text-red-300' : 'text-gray-500'
+        ? 'border-red-200'
+        : 'border-line',
+      valueClass: shortfall ? 'text-danger-text' : 'text-muted'
     },
     {
       label: t('admin.accounts.capacityForecast.kpiSuggestAccounts'),
       value: String(overview.value?.total.suggest_accounts ?? kpis?.suggest_accounts ?? 0),
-      cardClass: 'border-purple-200 dark:border-purple-800/40',
-      valueClass: 'text-gray-900 dark:text-white'
+      cardClass: 'border-purple-200',
+      valueClass: 'text-foreground'
     }
   ]
 })
@@ -511,9 +511,9 @@ function windowLabel(window: string) {
 }
 
 function windowCardClass(alert?: string) {
-  if (alert === 'critical') return 'border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/30'
-  if (alert === 'warning') return 'border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30'
-  return 'border-gray-200 dark:border-dark-600'
+  if (alert === 'critical') return 'border-red-300 bg-red-50'
+  if (alert === 'warning') return 'border-amber-300 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)]'
+  return 'border-line'
 }
 
 function formatPercent(value: number | null | undefined) {

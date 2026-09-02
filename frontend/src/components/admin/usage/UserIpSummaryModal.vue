@@ -6,15 +6,15 @@
     @close="$emit('close')"
   >
     <div class="space-y-4">
-      <div class="flex flex-wrap items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
+      <div class="flex flex-wrap items-center gap-3 text-sm text-muted">
         <span v-if="summary?.top_ip" class="font-mono">
           Top IP: <strong>{{ summary.top_ip }}</strong>
         </span>
         <span
           class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ring-1 ring-inset"
           :class="summary?.pin_known_ips
-            ? 'bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/30'
-            : 'bg-gray-50 text-gray-600 ring-gray-200 dark:bg-dark-800 dark:text-gray-300 dark:ring-dark-600'"
+ ? 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-amber-700 ring-amber-200'
+ : 'bg-surface-2 text-muted ring-line'"
         >
           {{ summary?.pin_known_ips ? t('admin.usage.ipPin.enabled') : t('admin.usage.ipPin.disabled') }}
         </span>
@@ -23,13 +23,13 @@
         </button>
       </div>
 
-      <div v-if="loading" class="py-8 text-center text-sm text-gray-500">{{ t('common.loading') }}</div>
-      <div v-else-if="!summary?.items?.length" class="py-8 text-center text-sm text-gray-500">
+      <div v-if="loading" class="py-8 text-center text-sm text-muted">{{ t('common.loading') }}</div>
+      <div v-else-if="!summary?.items?.length" class="py-8 text-center text-sm text-muted">
         {{ t('admin.usage.ipSummaryEmpty') }}
       </div>
-      <div v-else class="overflow-x-auto rounded border border-gray-200 dark:border-dark-700">
+      <div v-else class="overflow-x-auto rounded border border-line">
         <table class="min-w-full text-left text-sm">
-          <thead class="bg-gray-50 dark:bg-dark-800">
+          <thead class="bg-surface-2">
             <tr>
               <th class="px-3 py-2">IP</th>
               <th class="px-3 py-2">{{ t('admin.usage.ipRequests') }}</th>
@@ -43,12 +43,12 @@
             <tr
               v-for="item in summary.items"
               :key="item.ip_address"
-              class="border-t border-gray-100 dark:border-dark-700"
-              :class="item.is_top ? 'bg-primary-50/40 dark:bg-primary-900/10' : ''"
+              class="border-t border-line"
+              :class="item.is_top ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]/40' : ''"
             >
               <td class="px-3 py-2 font-mono text-xs">
                 {{ item.ip_address }}
-                <span v-if="item.is_top" class="ml-1 text-[10px] text-primary-600 dark:text-primary-400">TOP</span>
+                <span v-if="item.is_top" class="ml-1 text-[10px] text-accent">TOP</span>
               </td>
               <td class="px-3 py-2 tabular-nums">{{ item.request_count.toLocaleString() }}</td>
               <td class="px-3 py-2 tabular-nums">${{ item.total_cost.toFixed(2) }}</td>
@@ -57,13 +57,13 @@
                   {{ statusLabel(item) }}
                 </span>
               </td>
-              <td class="px-3 py-2 text-xs text-gray-600 dark:text-gray-300">
+              <td class="px-3 py-2 text-xs text-muted">
                 <template v-if="item.shared_users?.length">
                   <div v-for="u in item.shared_users" :key="u.id" class="truncate" :title="u.email">
                     #{{ u.id }} {{ u.email }} ({{ u.request_count }})
                   </div>
                 </template>
-                <span v-else class="text-gray-400">-</span>
+                <span v-else class="text-muted">-</span>
               </td>
               <td class="px-3 py-2 text-right whitespace-nowrap">
                 <button
@@ -151,10 +151,10 @@ function statusLabel(item: UserIPSummaryItem): string {
 }
 
 function statusClass(item: UserIPSummaryItem): string {
-  if (item.ban_status === 'active') return 'bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/30'
-  if (item.ban_status === 'whitelisted') return 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/30'
-  if (item.ban_status === 'released') return 'bg-slate-50 text-slate-600 ring-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:ring-slate-500/30'
-  return 'bg-gray-50 text-gray-600 ring-gray-200 dark:bg-dark-800 dark:text-gray-300 dark:ring-dark-600'
+  if (item.ban_status === 'active') return 'bg-rose-50 text-rose-700 ring-rose-200'
+  if (item.ban_status === 'whitelisted') return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text ring-emerald-200'
+  if (item.ban_status === 'released') return 'bg-slate-50 text-slate-600 ring-slate-200'
+  return 'bg-surface-2 text-muted ring-line'
 }
 
 async function togglePin() {

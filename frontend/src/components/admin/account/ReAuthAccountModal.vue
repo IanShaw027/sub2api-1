@@ -8,7 +8,7 @@
     <div v-if="account" class="space-y-4">
       <!-- Account Info -->
       <div
-        class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700"
+        class="rounded-lg border border-line bg-surface-2 p-4"
       >
         <div class="flex items-center gap-3">
           <div
@@ -30,10 +30,10 @@
             <Icon name="sparkles" size="md" class="text-white" />
           </div>
           <div>
-            <span class="block font-semibold text-gray-900 dark:text-white">{{
+            <span class="block font-semibold text-foreground">{{
               account.name
             }}</span>
-            <span class="text-sm text-gray-500 dark:text-gray-400">
+            <span class="text-sm text-muted">
               {{
                 isOpenAI
                   ? t('admin.accounts.openaiAccount')
@@ -54,16 +54,16 @@
 
       <div
         v-if="isKiroOAuth && kiroDiagnosticItems.length"
-        class="rounded-lg border border-cyan-200 bg-cyan-50/60 p-4 dark:border-cyan-900/40 dark:bg-cyan-950/20"
+        class="rounded-lg border border-cyan-200 bg-cyan-50/60 p-4"
       >
-        <div class="mb-2 text-sm font-medium text-cyan-900 dark:text-cyan-100">
+        <div class="mb-2 text-sm font-medium text-cyan-900">
           {{ t('admin.accounts.kiro.diagnosticSummaryTitle') }}
         </div>
         <KiroDiagnosticChips
           :credentials="account.credentials || {}"
           :extra="account.extra || {}"
           :usage-info="{}"
-          chip-class="inline-flex rounded bg-white/80 px-2 py-1 text-cyan-800 dark:bg-black/10 dark:text-cyan-200"
+          chip-class="inline-flex rounded bg-white/80 px-2 py-1 text-cyan-800"
         />
       </div>
 
@@ -76,9 +76,9 @@
               v-model="addMethod"
               type="radio"
               value="oauth"
-              class="mr-2 text-primary-600 focus:ring-primary-500"
+              class="mr-2 text-accent focus:ring-primary-500"
             />
-            <span class="text-sm text-gray-700 dark:text-gray-300">{{
+            <span class="text-sm text-foreground">{{
               t('admin.accounts.types.oauth')
             }}</span>
           </label>
@@ -87,9 +87,9 @@
               v-model="addMethod"
               type="radio"
               value="setup-token"
-              class="mr-2 text-primary-600 focus:ring-primary-500"
+              class="mr-2 text-accent focus:ring-primary-500"
             />
-            <span class="text-sm text-gray-700 dark:text-gray-300">{{
+            <span class="text-sm text-foreground">{{
               t('admin.accounts.setupTokenLongLived')
             }}</span>
           </label>
@@ -97,8 +97,8 @@
       </fieldset>
 
       <!-- Gemini OAuth Type Display (read-only) -->
-      <div v-if="isGemini" class="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700">
-        <div class="mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+      <div v-if="isGemini" class="rounded-lg border border-line bg-surface-2 p-4">
+        <div class="mb-2 text-sm font-medium text-foreground">
           {{ t('admin.accounts.oauth.gemini.oauthTypeLabel') }}
         </div>
         <div class="flex items-center gap-3">
@@ -117,7 +117,7 @@
             <Icon v-else name="sparkles" size="sm" />
           </div>
           <div>
-            <span class="block text-sm font-medium text-gray-900 dark:text-white">
+            <span class="block text-sm font-medium text-foreground">
               {{
                 geminiOAuthType === 'google_one'
                   ? 'Google One'
@@ -126,7 +126,7 @@
                     : t('admin.accounts.gemini.oauthType.customTitle')
               }}
             </span>
-            <span class="text-xs text-gray-500 dark:text-gray-400">
+            <span class="text-xs text-muted">
               {{
                 geminiOAuthType === 'google_one'
                   ? t('admin.accounts.gemini.oauthType.googleOneDesc')

@@ -38,10 +38,10 @@ export const durationSeverity = (ms: number): LatencySeverity =>
   classify(ms, DURATION_THRESHOLDS_MS)
 
 export const LATENCY_TEXT_CLASSES: Record<LatencySeverity, string> = {
-  good: 'text-emerald-600 dark:text-emerald-400',
-  warn: 'text-amber-600 dark:text-amber-400',
-  slow: 'text-orange-600 dark:text-orange-400',
-  critical: 'text-red-600 dark:text-red-400',
+  good: 'text-emerald-600',
+  warn: 'text-amber-600',
+  slow: 'text-orange-600',
+  critical: 'text-red-600',
 }
 
 /** 无首字数据时的纯色色条（仅按总耗时档着色）。 */
