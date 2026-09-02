@@ -1,12 +1,12 @@
 <template>
+  <!-- Off-screen on &lt;768 (not display:none) so onboarding tour selectors still resolve. -->
   <aside
-    class="sidebar"
-    :class="{
-      'is-collapsed': sidebarCollapsed,
-      'is-mobile-hidden': !mobileOpen
-    }"
+    class="sidebar is-mobile-hidden"
+    :class="{ 'is-collapsed': railCollapsed }"
+    :aria-hidden="isMobile ? 'true' : 'false'"
+    :inert="isMobile"
   >
-    <div class="sidebar-header" :class="{ 'sidebar-header-collapsed': sidebarCollapsed }">
+    <div class="sidebar-header" :class="{ 'sidebar-header-collapsed': railCollapsed }">
       <router-link
         :to="homePath"
         class="sidebar-logo flex h-[30px] w-[30px] flex-none items-center justify-center overflow-hidden rounded-[9px] transition-opacity hover:opacity-80"
@@ -15,7 +15,7 @@
       >
         <img v-if="settingsLoaded" :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
       </router-link>
-      <div class="sidebar-brand" :class="{ 'sidebar-brand-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
+      <div class="sidebar-brand" :class="{ 'sidebar-brand-collapsed': railCollapsed }" :aria-hidden="railCollapsed ? 'true' : 'false'">
         <router-link
           :to="homePath"
           class="sidebar-brand-title font-[800] tracking-tight text-[var(--foreground)]"
@@ -29,55 +29,37 @@
     </div>
 
     <nav ref="sidebarNavRef" class="sidebar-nav scrollbar-hide">
-      <template v-if="isAdmin">
-        <SidebarSection
-          v-for="(section, index) in adminSections"
-          :key="section.key"
-          :section="section"
-          :open="isSectionOpen(section)"
-          :collapsed="sidebarCollapsed"
-          :is-first="index === 0"
-          :route-path="route.path"
-          :is-item-active="(item) => isActive(item.path)"
-          :is-group-active="isGroupActive"
-          :is-group-expanded="isGroupExpanded"
-          :group-badge="groupBadge"
-          @toggle="handleSectionToggle"
-          @navigate="handleMenuItemClick"
-          @group-click="handleGroupClick"
-        />
-      </template>
-
-      <template v-else-if="!appStore.backendModeEnabled">
-        <SidebarSection
-          v-for="(section, index) in userSections"
-          :key="section.key"
-          :section="section"
-          :open="isSectionOpen(section)"
-          :collapsed="sidebarCollapsed"
-          :is-first="index === 0"
-          :route-path="route.path"
-          :is-item-active="(item) => isActive(item.path)"
-          :is-group-active="isGroupActive"
-          :is-group-expanded="isGroupExpanded"
-          :group-badge="groupBadge"
-          @toggle="handleSectionToggle"
-          @navigate="handleMenuItemClick"
-          @group-click="handleGroupClick"
-        />
-      </template>
+      <SidebarNavContent
+        :sections="sections"
+        :collapsed="railCollapsed"
+        :route-path="route.path"
+        :is-section-open="isSectionOpen"
+        :is-item-active="(item) => isActive(item.path)"
+        :is-group-active="isGroupActive"
+        :is-group-expanded="isGroupExpanded"
+        :group-badge="groupBadge"
+        :omit-tour-anchors="railOmitTourAnchors"
+        @toggle="handleSectionToggle"
+        @navigate="handleMenuItemClick"
+        @group-click="handleGroupClick"
+      />
     </nav>
 
-    <SidebarFooter :collapsed="sidebarCollapsed" />
+    <SidebarFooter v-if="!isMobile" :collapsed="railCollapsed" />
   </aside>
 
-  <transition name="fade">
-    <div
-      v-if="mobileOpen"
-      class="fixed inset-0 z-30 bg-black/50 lg:hidden"
-      @click="closeMobile"
-    ></div>
-  </transition>
+  <MobileDrawer
+    :sections="sections"
+    :route-path="route.path"
+    :is-section-open="isSectionOpen"
+    :is-item-active="(item) => isActive(item.path)"
+    :is-group-active="isGroupActive"
+    :is-group-expanded="isGroupExpanded"
+    :group-badge="groupBadge"
+    @toggle="handleSectionToggle"
+    @navigate="handleMenuItemClick"
+    @group-click="handleGroupClick"
+  />
 </template>
 
 <script setup lang="ts">
@@ -95,8 +77,10 @@ import { adminTicketsAPI } from '@/api/admin/tickets'
 import { ticketsAPI } from '@/api/tickets'
 import { TICKET_UNREAD_CHANGED_EVENT } from '@/utils/ticketForm'
 import { defaultSectionOpen } from '@/constants/sidebar'
-import SidebarSection from './sidebar/SidebarSection.vue'
+import { useIsMobile } from '@/composables/useIsMobile'
+import SidebarNavContent from './sidebar/SidebarNavContent.vue'
 import SidebarFooter from './sidebar/SidebarFooter.vue'
+import MobileDrawer from './MobileDrawer.vue'
 import {
   groupAdminNav,
   groupUserNav,
@@ -135,6 +119,10 @@ const { canUseBatchImage, refreshBatchImageAccess } = useBatchImageAccess()
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
 const mobileOpen = computed(() => appStore.mobileOpen)
 const isAdmin = computed(() => authStore.isAdmin)
+const { isMobile, isDesktop } = useIsMobile()
+const railCollapsed = computed(() => sidebarCollapsed.value || !isDesktop.value)
+const tourActive = computed(() => onboardingStore.isDriverActive())
+const railOmitTourAnchors = computed(() => isMobile.value && tourActive.value)
 const sidebarNavRef = ref<HTMLElement | null>(null)
 const invoiceUnreadCount = ref(0)
 const userTicketUnreadCount = ref(0)
@@ -701,6 +689,11 @@ const adminSections = computed((): NavSection[] =>
   groupAdminNav(adminNavItems.value, authStore.isSimpleMode ? [] : personalNavItems.value)
 )
 const userSections = computed((): NavSection[] => groupUserNav(userNavItems.value))
+const sections = computed((): NavSection[] => {
+  if (isAdmin.value) return adminSections.value
+  if (appStore.backendModeEnabled) return []
+  return userSections.value
+})
 
 function sectionHasActiveTourTarget(section: NavSection): boolean {
   if (!onboardingStore.isDriverActive()) return false
@@ -741,12 +734,8 @@ function handleSectionToggle(key: string) {
   appStore.setSidebarSectionOpen(key, nextOpen)
 }
 
-function closeMobile() {
-  appStore.setMobileOpen(false)
-}
-
 function handleMenuItemClick(itemPath: string) {
-  if (mobileOpen.value) {
+  if (mobileOpen.value && !tourActive.value) {
     setTimeout(() => {
       appStore.setMobileOpen(false)
     }, 150)
@@ -799,7 +788,8 @@ function toggleGroup(item: NavItem) {
  *   (router-link semantics) and ensure the group is expanded.
  */
 function handleGroupClick(item: NavItem) {
-  if (sidebarCollapsed.value) return
+  // Drawer nav is never collapsed; only skip when the visible rail is icon-only.
+  if (!isMobile.value && railCollapsed.value) return
   if (item.expandOnly) {
     toggleGroup(item)
     return
@@ -812,6 +802,14 @@ function handleGroupClick(item: NavItem) {
     expandedGroups.value.add(item.path)
   }
 }
+
+watch(
+  [tourActive, isMobile],
+  ([active, mobile]) => {
+    if (active && mobile) appStore.setMobileOpen(true)
+  },
+  { immediate: true }
+)
 
 watch(
   isAdmin,

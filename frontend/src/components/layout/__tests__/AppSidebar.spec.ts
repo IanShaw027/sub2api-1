@@ -48,7 +48,7 @@ describe('AppSidebar scroll position persistence', () => {
 describe('SidebarItem aria-controls', () => {
   it('only sets aria-controls when the children panel is expanded', () => {
     expect(itemSource).toContain(
-      ':aria-controls="!collapsed && isExpanded ? groupChildrenId : undefined"'
+      ':aria-controls="!omitTourAnchors && !collapsed && isExpanded ? groupChildrenId : undefined"'
     )
   })
 })

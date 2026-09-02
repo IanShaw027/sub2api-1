@@ -41,6 +41,7 @@
         <span v-if="!collapsed" class="truncate">{{ isDark ? t('nav.lightMode') : t('nav.darkMode') }}</span>
       </button>
       <button
+        v-if="isDesktop"
         type="button"
         class="sidebar-item h-[30px] w-[30px] flex-none justify-center px-0"
         :title="collapsed ? t('nav.expand') : t('nav.collapse')"
@@ -96,6 +97,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { useTheme } from '@/composables/useTheme'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 defineProps<{
   collapsed: boolean
@@ -105,6 +107,7 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const { isDark, toggleTheme } = useTheme()
+const { isDesktop } = useIsMobile()
 
 const user = computed(() => authStore.user)
 const isAdmin = computed(() => authStore.isAdmin)

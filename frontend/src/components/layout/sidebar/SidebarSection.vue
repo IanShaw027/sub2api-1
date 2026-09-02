@@ -5,7 +5,7 @@
       type="button"
       class="sidebar-section-title"
       :aria-expanded="open"
-      :aria-controls="`sidebar-section-${section.key}`"
+      :aria-controls="sectionItemsId"
       @click="$emit('toggle', section.key)"
     >
       <span>{{ t(section.titleKey) }}</span>
@@ -30,7 +30,7 @@
     </button>
     <div v-else-if="!isFirst" class="sidebar-section-divider" />
     <div
-      :id="`sidebar-section-${section.key}`"
+      :id="sectionItemsId"
       class="sidebar-section-items"
       :class="{ hidden: !open && !collapsed }"
       :aria-hidden="!open && !collapsed ? 'true' : 'false'"
@@ -45,6 +45,7 @@
         :is-expanded="isGroupExpanded(item)"
         :badge-count="groupBadge(item)"
         :route-path="routePath"
+        :omit-tour-anchors="omitTourAnchors"
         @navigate="$emit('navigate', $event)"
         @group-click="$emit('group-click', $event)"
       />
@@ -53,11 +54,12 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import SidebarItem from './SidebarItem.vue'
 import type { NavItem, NavSection } from './navSections'
 
-defineProps<{
+const props = withDefaults(defineProps<{
   section: NavSection
   open: boolean
   collapsed: boolean
@@ -67,7 +69,10 @@ defineProps<{
   isGroupActive: (item: NavItem) => boolean
   isGroupExpanded: (item: NavItem) => boolean
   groupBadge: (item: NavItem) => number
-}>()
+  omitTourAnchors?: boolean
+}>(), {
+  omitTourAnchors: false
+})
 
 defineEmits<{
   toggle: [key: string]
@@ -76,4 +81,8 @@ defineEmits<{
 }>()
 
 const { t } = useI18n()
+
+const sectionItemsId = computed(() =>
+  props.omitTourAnchors ? undefined : `sidebar-section-${props.section.key}`
+)
 </script>

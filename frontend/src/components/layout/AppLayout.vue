@@ -4,7 +4,7 @@
 
     <AppSidebar />
 
-    <div class="app-shell-main" :class="{ 'is-collapsed': sidebarCollapsed }">
+    <div class="app-shell-main" :class="{ 'is-collapsed': !isDesktop || sidebarCollapsed }">
       <AppHeader />
 
       <main class="app-shell-content">
@@ -21,11 +21,13 @@ import { useAppStore } from '@/stores'
 import { useAuthStore } from '@/stores/auth'
 import { useOnboardingTour } from '@/composables/useOnboardingTour'
 import { useOnboardingStore } from '@/stores/onboarding'
+import { useIsMobile } from '@/composables/useIsMobile'
 import AppSidebar from './AppSidebar.vue'
 import AppHeader from './AppHeader.vue'
 
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const { isDesktop } = useIsMobile()
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
 const isAdmin = computed(() => authStore.user?.role === 'admin')
 
@@ -64,6 +66,12 @@ defineExpose({ replayTour })
   position: relative;
   min-height: 100vh;
   transition: margin-left 0.2s ease;
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .app-shell-main {
+    margin-left: 72px;
+  }
 }
 
 @media (min-width: 1024px) {

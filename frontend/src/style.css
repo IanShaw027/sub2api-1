@@ -398,6 +398,12 @@
     color: var(--foreground);
   }
 
+  .mobile-drawer .sidebar-item {
+    height: 44px;
+    border-radius: 12px;
+    font-size: 14px;
+  }
+
   .btn-glass-primary {
     display: inline-flex;
     align-items: center;
@@ -809,11 +815,13 @@
 
   .sidebar.is-mobile-hidden {
     transform: translateX(calc(-100% - 24px));
+    pointer-events: none;
   }
 
-  @media (min-width: 1024px) {
+  @media (min-width: 768px) {
     .sidebar.is-mobile-hidden {
       transform: none;
+      pointer-events: auto;
     }
   }
 

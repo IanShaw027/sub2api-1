@@ -1,17 +1,22 @@
 <template>
   <header class="app-header sticky top-0 z-30">
-    <div class="flex h-[60px] items-center justify-between gap-2 px-2 sm:px-5 lg:px-6 lg:pl-5">
-      <!-- Left: Mobile Menu Toggle + Breadcrumb -->
-      <div class="flex min-w-0 shrink-0 items-center gap-2 sm:gap-4">
-        <button
-          @click="toggleMobileSidebar"
-          class="header-icon-btn lg:hidden"
-          :aria-label="t('common.toggleMenu')"
+    <div class="mobile-topbar">
+      <div class="flex min-w-0 flex-1 items-center gap-2.5 md:hidden">
+        <router-link
+          :to="homePath"
+          class="mobile-topbar-logo flex h-[30px] w-[30px] flex-none items-center justify-center overflow-hidden rounded-[9px]"
+          style="background: linear-gradient(135deg, color-mix(in oklch, var(--accent) 70%, white) 0%, var(--accent) 55%, color-mix(in oklch, var(--accent) 80%, black) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 6px 14px -6px var(--accent)"
         >
-          <Icon name="menu" size="md" />
-        </button>
+          <img v-if="settingsLoaded" :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
+        </router-link>
+        <div class="flex min-w-0 flex-1 flex-col justify-center leading-tight">
+          <span class="mobile-topbar-title truncate">{{ pageTitle }}</span>
+          <span class="truncate text-[11px] text-[var(--muted)]">{{ mobileSubtitle }}</span>
+        </div>
+      </div>
 
-        <div class="hidden min-w-0 flex-col justify-center md:flex">
+      <div class="hidden min-w-0 shrink-0 items-center gap-2 sm:gap-4 md:flex">
+        <div class="flex min-w-0 flex-col justify-center">
           <nav class="hidden min-w-0 items-center gap-2 text-[13px] text-[var(--muted)] lg:flex" aria-label="breadcrumb">
             <span>{{ breadcrumbRoot }}</span>
             <span class="opacity-50">/</span>
@@ -24,11 +29,12 @@
         </div>
       </div>
 
-      <!-- Right: Announcements + Docs + Language + Subscriptions + Balance + User Dropdown -->
-      <div class="flex min-w-0 items-center gap-1 sm:gap-3">
-        <!-- Announcement Bell -->
-        <AnnouncementBell v-if="user" />
+      <div class="ml-auto flex min-w-0 items-center gap-1 sm:gap-3">
+        <div v-if="user" class="header-icon-btn mobile-topbar-icon md:contents">
+          <AnnouncementBell />
+        </div>
 
+        <div class="hidden md:contents">
         <!-- Docs Link -->
         <a
           v-if="docUrl"
@@ -171,19 +177,6 @@
                 <div class="text-xs text-gray-500 dark:text-dark-400">{{ user.email }}</div>
               </div>
 
-              <!-- Balance (mobile only) -->
-              <div class="border-b border-gray-100 px-4 py-2 dark:border-dark-700 sm:hidden">
-                <div class="text-xs text-gray-500 dark:text-dark-400">
-                  {{ t('common.balance') }}
-                </div>
-                <div class="text-sm font-semibold text-primary-600 dark:text-primary-400">
-                  {{ formatHeaderMoney(availableBalance) }}
-                </div>
-                <div v-if="frozenBalance > 0" class="mt-1 text-xs text-amber-600 dark:text-amber-300">
-                  {{ balanceFrozenText }} {{ formatHeaderMoney(frozenBalance) }}
-                </div>
-              </div>
-
               <div class="py-1">
                 <router-link to="/profile" @click="closeDropdown" class="dropdown-item">
                   <Icon name="user" size="sm" />
@@ -276,6 +269,18 @@
             </div>
           </transition>
         </div>
+        </div>
+
+        <button
+          type="button"
+          class="header-icon-btn mobile-topbar-icon md:hidden"
+          :aria-label="t('common.toggleMenu')"
+          :aria-expanded="appStore.mobileOpen"
+          aria-controls="mobile-drawer"
+          @click="toggleMobileSidebar"
+        >
+          <Icon name="menu" size="md" />
+        </button>
       </div>
     </div>
   </header>
@@ -314,6 +319,9 @@ const downloadToolsUrl = computed(() => sanitizeUrl(appStore.cachedPublicSetting
 const supportQRCodes = computed(() => appStore.cachedPublicSettings?.support_qr_codes || [])
 const modelPlazaEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.modelPlaza))
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
+const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
+const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
+const homePath = computed(() => (authStore.isAdmin ? '/admin/dashboard' : '/dashboard'))
 const availableBalance = computed(() => Number(user.value?.balance || 0))
 const frozenBalance = computed(() => Number(user.value?.frozen_balance || 0))
 const totalBalance = computed(() => availableBalance.value + frozenBalance.value)
@@ -369,6 +377,8 @@ const pageDescription = computed(() => {
   }
   return (route.meta.description as string) || ''
 })
+
+const mobileSubtitle = computed(() => pageDescription.value || user.value?.email || '')
 
 const breadcrumbRoot = computed(() => {
   if (route.path.startsWith('/admin')) {
@@ -459,6 +469,48 @@ onBeforeUnmount(() => {
 .header-icon-btn:hover {
   background: color-mix(in oklch, var(--foreground) 6%, transparent);
   color: var(--foreground);
+}
+
+.mobile-topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  padding: 0 16px 0 20px;
+}
+
+@media (min-width: 768px) {
+  .mobile-topbar {
+    height: 60px;
+    justify-content: space-between;
+    padding: 0 20px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .mobile-topbar {
+    padding: 0 24px 0 20px;
+  }
+}
+
+.mobile-topbar-title {
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--foreground);
+}
+
+.mobile-topbar-icon {
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+}
+
+@media (max-width: 767px) {
+  .mobile-topbar-icon :deep(button) {
+    width: 40px;
+    height: 40px;
+  }
 }
 
 @media (min-width: 1024px) {

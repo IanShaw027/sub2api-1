@@ -7,6 +7,7 @@ import { useOnboardingStore } from '@/stores/onboarding'
 import { useI18n } from 'vue-i18n'
 import { getAdminSteps, getUserSteps } from '@/components/Guide/steps'
 import { ensureSidebarSectionForSelector } from '@/composables/ensureSidebarSectionForSelector'
+import { TABLET_UP_MEDIA_QUERY } from '@/composables/useIsMobile'
 
 export interface OnboardingOptions {
   storageKey?: string
@@ -147,6 +148,13 @@ export function useOnboardingTour(options: OnboardingOptions) {
 
     // 确保 DOM 就绪
     await nextTick()
+
+    // Mobile rail is inert/off-screen; tour anchors live in the drawer.
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      && !window.matchMedia(TABLET_UP_MEDIA_QUERY).matches) {
+      appStore.setMobileOpen(true)
+      await nextTick()
+    }
 
     if (driverInstance) {
       driverInstance.destroy()
@@ -321,16 +329,17 @@ export function useOnboardingTour(options: OnboardingOptions) {
 
         if (step.element && typeof step.element === 'string') {
           await ensureSidebarSectionForSelector(step.element)
-        }
-
-        // 尝试等待元素
-        if (!element && step.element && typeof step.element === 'string') {
-           const exists = await ensureElement(step.element, TIMING.ELEMENT_TIMEOUT_MS)
-           if (!exists) {
-             console.warn(`Tour element not found after 8s: ${step.element}`)
-             return
-           }
-           element = document.querySelector(step.element) as HTMLElement
+          const latest = document.querySelector(step.element) as HTMLElement | null
+          if (latest) {
+            element = latest
+          } else if (!element) {
+            const exists = await ensureElement(step.element, TIMING.ELEMENT_TIMEOUT_MS)
+            if (!exists) {
+              console.warn(`Tour element not found after 8s: ${step.element}`)
+              return
+            }
+            element = document.querySelector(step.element) as HTMLElement
+          }
         }
 
         if (isInteractiveStep(step) && element) {
@@ -448,6 +457,8 @@ export function useOnboardingTour(options: OnboardingOptions) {
     })
 
     onboardingStore.setDriverInstance(driverInstance)
+    // Let the drawer pick up tour anchors before driver.js queries the DOM.
+    await nextTick()
 
     // 添加全局键盘监听器
     globalKeyboardHandler = (e: KeyboardEvent) => {

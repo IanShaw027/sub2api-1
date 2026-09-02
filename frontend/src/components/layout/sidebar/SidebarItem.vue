@@ -11,7 +11,7 @@
         :title="collapsed ? item.label : undefined"
         :aria-label="collapsed ? item.label : undefined"
         :aria-expanded="collapsed ? undefined : isExpanded"
-        :aria-controls="!collapsed && isExpanded ? groupChildrenId : undefined"
+        :aria-controls="!omitTourAnchors && !collapsed && isExpanded ? groupChildrenId : undefined"
         @click="$emit('group-click', item)"
       >
         <span class="sidebar-item-icon">
@@ -46,7 +46,7 @@
       </button>
       <div
         v-if="!collapsed && isExpanded"
-        :id="groupChildrenId"
+        :id="omitTourAnchors ? undefined : groupChildrenId"
         class="mb-1 ml-[17px] flex flex-col gap-px border-l border-[var(--border)] pl-[9px]"
       >
         <router-link
@@ -80,8 +80,8 @@
       :title="collapsed ? item.label : undefined"
       :aria-label="collapsed ? item.label : undefined"
       :aria-current="isActive ? 'page' : undefined"
-      :id="domId"
-      :data-tour="tourAttr"
+      :id="omitTourAnchors ? undefined : domId"
+      :data-tour="omitTourAnchors ? undefined : tourAttr"
       @click="$emit('navigate', item.path)"
     >
       <span class="sidebar-item-icon">
@@ -118,6 +118,7 @@ const props = defineProps<{
   isExpanded: boolean
   badgeCount: number
   routePath: string
+  omitTourAnchors?: boolean
 }>()
 
 defineEmits<{
