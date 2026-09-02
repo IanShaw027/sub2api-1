@@ -10,10 +10,6 @@
   bottom: 0;
   height: 120px;
   pointer-events: none;
-  background: linear-gradient(
-    to bottom,
-    color-mix(in oklch, var(--background) 0%, transparent),
-    color-mix(in oklch, var(--background) 92%, transparent)
-  );
+  background: linear-gradient(180deg, transparent, var(--background) 70%);
 }
 </style>

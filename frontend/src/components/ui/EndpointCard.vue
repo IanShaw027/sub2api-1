@@ -1,79 +1,112 @@
 <template>
-  <GlassCard variant="solid" padding="md" class="ui-endpoint-card">
-    <div class="ui-endpoint-card-header">
-      <div class="ui-endpoint-card-method" :class="`is-${method.toLowerCase()}`">{{ method }}</div>
-      <code class="ui-endpoint-card-path">{{ path }}</code>
-      <StatusBadge v-if="status" :tone="statusTone" :label="status" />
+  <GlassCard variant="glass" padding="md" class="ui-endpoint-card">
+    <div class="ui-endpoint-card-top">
+      <span class="ui-endpoint-card-label">{{ label }}</span>
+      <span v-if="badge" class="ui-endpoint-card-badge" :class="badgeClass">{{ badge }}</span>
+    </div>
+    <div class="ui-endpoint-card-url-row">
+      <code class="ui-endpoint-card-url">{{ url }}</code>
+      <button
+        type="button"
+        class="ui-endpoint-card-copy"
+        :aria-label="copyLabel"
+        @click="$emit('copy', url)"
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 8h12v12H8zM16 8V4H4v12h4" />
+        </svg>
+        {{ copyLabel }}
+      </button>
     </div>
     <p v-if="description" class="ui-endpoint-card-description">{{ description }}</p>
-    <div v-if="$slots.default" class="ui-endpoint-card-body">
-      <slot />
-    </div>
   </GlassCard>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import GlassCard from './GlassCard.vue'
-import StatusBadge from './StatusBadge.vue'
 import type { StatusBadgeTone } from './types'
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
-    method: string
-    path: string
+    label: string
+    url: string
     description?: string
-    status?: string
-    statusTone?: StatusBadgeTone
+    badge?: string
+    badgeTone?: StatusBadgeTone
+    copyLabel?: string
   }>(),
   {
-    statusTone: 'muted'
+    badgeTone: 'accent',
+    copyLabel: 'Copy'
   }
 )
+
+defineEmits<{
+  copy: [url: string]
+}>()
+
+const badgeClass = computed(() => `badge-tone-${props.badgeTone}`)
 </script>
 
 <style scoped>
-.ui-endpoint-card-header {
+.ui-endpoint-card-top {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  flex-wrap: wrap;
 }
 
-.ui-endpoint-card-method {
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  background: color-mix(in oklch, var(--accent) 14%, transparent);
-  color: var(--accent);
-}
-
-.ui-endpoint-card-method.is-post {
-  background: color-mix(in oklch, var(--success) 16%, transparent);
-  color: var(--success-text);
-}
-
-.ui-endpoint-card-method.is-get {
-  background: color-mix(in oklch, var(--accent) 14%, transparent);
-  color: var(--accent);
-}
-
-.ui-endpoint-card-path {
-  font-family: var(--font-mono);
+.ui-endpoint-card-label {
   font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.ui-endpoint-card-badge {
+  font-size: 11px;
+  font-weight: 600;
+  height: 22px;
+}
+
+.ui-endpoint-card-url-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.ui-endpoint-card-url {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  font-weight: 500;
   color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-endpoint-card-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-secondary);
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .ui-endpoint-card-description {
   margin-top: 8px;
   font-size: 12px;
   color: var(--muted);
-}
-
-.ui-endpoint-card-body {
-  margin-top: 12px;
 }
 </style>

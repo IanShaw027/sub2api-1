@@ -20,8 +20,13 @@
       @blur="emit('blur', $event)"
       @focus="emit('focus', $event)"
     >
-    <p v-if="error" :id="`${inputId}-error`" class="ui-text-input-error-text" role="alert">
-      {{ error }}
+    <p
+      v-if="error || $slots.error"
+      :id="`${inputId}-error`"
+      class="ui-text-input-error-text"
+      role="alert"
+    >
+      <slot name="error">{{ error }}</slot>
     </p>
   </div>
 </template>

@@ -3,11 +3,12 @@
     <Transition name="ui-drawer-overlay">
       <div v-if="open" class="ui-drawer-overlay" @click="onOverlayClick" />
     </Transition>
-    <Transition name="ui-drawer-panel">
+    <Transition :name="panelTransition">
       <aside
         v-if="open"
         ref="panelRef"
         class="ui-drawer-panel"
+        :class="side === 'left' ? 'is-left' : 'is-right'"
         role="dialog"
         aria-modal="true"
         :aria-label="title"
@@ -15,7 +16,7 @@
         <header class="ui-drawer-header">
           <h2 class="ui-drawer-title">{{ title }}</h2>
           <button type="button" class="ui-drawer-close" :aria-label="closeLabel" @click="emit('close')">
-            ×
+            <Icon name="x" size="sm" />
           </button>
         </header>
         <div class="ui-drawer-body">
@@ -30,13 +31,16 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import Icon from '@/components/icons/Icon.vue'
+import { focusFirst, trapFocus } from './focusTrap'
+import type { DrawerSide } from './types'
 
 const props = withDefaults(
   defineProps<{
     open: boolean
     title: string
-    side?: 'right' | 'left'
+    side?: DrawerSide
     closeOnOverlay?: boolean
     closeOnEscape?: boolean
     closeLabel?: string
@@ -52,17 +56,23 @@ const props = withDefaults(
 const emit = defineEmits<{ close: [] }>()
 
 const panelRef = ref<HTMLElement | null>(null)
+const panelTransition = computed(() =>
+  props.side === 'left' ? 'ui-drawer-panel-left' : 'ui-drawer-panel-right'
+)
 let previousFocus: HTMLElement | null = null
+let previousOverflow = ''
 let bodyLocked = false
 
-const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-
 function lockBody(lock: boolean) {
+  if (typeof document === 'undefined') return
   if (lock && !bodyLocked) {
+    previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     bodyLocked = true
-  } else if (!lock && bodyLocked) {
-    document.body.style.overflow = ''
+    return
+  }
+  if (!lock && bodyLocked) {
+    document.body.style.overflow = previousOverflow
     bodyLocked = false
   }
 }
@@ -77,20 +87,7 @@ function onKeydown(event: KeyboardEvent) {
     emit('close')
     return
   }
-  if (event.key !== 'Tab' || !panelRef.value) return
-  const nodes = Array.from(panelRef.value.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-    (el) => !el.hasAttribute('disabled')
-  )
-  if (nodes.length === 0) return
-  const first = nodes[0]
-  const last = nodes[nodes.length - 1]
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault()
-    last.focus()
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault()
-    first.focus()
-  }
+  trapFocus(event, panelRef.value)
 }
 
 watch(
@@ -101,8 +98,7 @@ watch(
       lockBody(true)
       window.addEventListener('keydown', onKeydown)
       await nextTick()
-      const first = panelRef.value?.querySelector<HTMLElement>(FOCUSABLE)
-      first?.focus()
+      focusFirst(panelRef.value)
       return
     }
     if (wasOpen) {
@@ -111,7 +107,8 @@ watch(
       previousFocus?.focus?.()
       previousFocus = null
     }
-  }
+  },
+  { immediate: true }
 )
 
 onBeforeUnmount(() => {
@@ -127,21 +124,33 @@ onBeforeUnmount(() => {
   z-index: 55;
   background: rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
 }
 
 .ui-drawer-panel {
   position: fixed;
   top: 0;
-  right: 0;
+  bottom: 0;
   z-index: 56;
   width: min(420px, 100vw);
-  height: 100%;
   display: flex;
   flex-direction: column;
   background: color-mix(in oklch, var(--background) 88%, transparent);
   backdrop-filter: blur(28px);
-  border-left: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
-  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.12);
+  -webkit-backdrop-filter: blur(28px);
+  color: var(--foreground);
+}
+
+.ui-drawer-panel.is-right {
+  right: 0;
+  border-left: 1px solid var(--border);
+  box-shadow: -30px 0 60px -30px rgba(0, 0, 0, 0.5);
+}
+
+.ui-drawer-panel.is-left {
+  left: 0;
+  border-right: 1px solid var(--border);
+  box-shadow: 30px 0 60px -30px rgba(0, 0, 0, 0.5);
 }
 
 .ui-drawer-header {
@@ -160,14 +169,21 @@ onBeforeUnmount(() => {
 }
 
 .ui-drawer-close {
-  width: 32px;
-  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-btn);
   background: transparent;
   color: var(--muted);
-  font-size: 22px;
   cursor: pointer;
+}
+
+.ui-drawer-close:hover {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  color: var(--foreground);
 }
 
 .ui-drawer-body {
@@ -182,10 +198,8 @@ onBeforeUnmount(() => {
 }
 
 .ui-drawer-overlay-enter-active,
-.ui-drawer-overlay-leave-active,
-.ui-drawer-panel-enter-active,
-.ui-drawer-panel-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+.ui-drawer-overlay-leave-active {
+  transition: opacity 0.2s ease;
 }
 
 .ui-drawer-overlay-enter-from,
@@ -193,8 +207,20 @@ onBeforeUnmount(() => {
   opacity: 0;
 }
 
-.ui-drawer-panel-enter-from,
-.ui-drawer-panel-leave-to {
+.ui-drawer-panel-right-enter-active,
+.ui-drawer-panel-right-leave-active,
+.ui-drawer-panel-left-enter-active,
+.ui-drawer-panel-left-leave-active {
+  transition: transform 0.25s ease;
+}
+
+.ui-drawer-panel-right-enter-from,
+.ui-drawer-panel-right-leave-to {
   transform: translateX(100%);
+}
+
+.ui-drawer-panel-left-enter-from,
+.ui-drawer-panel-left-leave-to {
+  transform: translateX(-100%);
 }
 </style>

@@ -77,7 +77,9 @@ function handleClick(event: MouseEvent) {
   text-decoration: none;
 }
 
-.ui-btn-md {
+.ui-btn-md,
+.ui-btn-md.btn-glass-primary,
+.ui-btn-md.btn-glass-secondary {
   height: 42px;
   padding: 0 18px;
   font-size: 14px;
@@ -91,13 +93,13 @@ function handleClick(event: MouseEvent) {
   height: 34px;
   padding: 0 14px;
   border-radius: var(--radius-btn);
-  background: var(--danger);
-  color: #fff;
+  background: color-mix(in oklch, var(--danger) 12%, transparent);
+  color: var(--danger-text);
   font-size: 13px;
   font-weight: 600;
   border: 0;
   cursor: pointer;
-  transition: filter 0.15s ease, transform 0.1s ease;
+  transition: filter 0.15s ease, transform 0.1s ease, background 0.15s ease;
 }
 
 .ui-btn-md.ui-btn-danger {
@@ -146,15 +148,20 @@ function handleClick(event: MouseEvent) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   padding: 0;
   border-radius: var(--radius-btn);
   background: color-mix(in oklch, var(--surface) 80%, transparent);
-  color: var(--foreground);
+  color: var(--muted);
   border: 1px solid var(--border);
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.1s ease;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.ui-btn-md.ui-btn-icon {
+  width: 42px;
+  height: 42px;
 }
 
 .ui-btn-icon:active {

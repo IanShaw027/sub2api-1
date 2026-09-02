@@ -1,11 +1,11 @@
 <template>
   <label class="ui-checkbox" :class="{ 'is-disabled': disabled }">
     <input
+      ref="inputRef"
       type="checkbox"
       class="ui-checkbox-input"
       :checked="modelValue"
       :disabled="disabled"
-      :indeterminate="indeterminate"
       @change="onChange"
     >
     <span class="ui-checkbox-box" aria-hidden="true">
@@ -20,7 +20,9 @@
 </template>
 
 <script setup lang="ts">
-withDefaults(
+import { ref, watch } from 'vue'
+
+const props = withDefaults(
   defineProps<{
     modelValue: boolean
     disabled?: boolean
@@ -35,6 +37,16 @@ withDefaults(
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
 }>()
+
+const inputRef = ref<HTMLInputElement | null>(null)
+
+watch(
+  [() => props.indeterminate, inputRef],
+  () => {
+    if (inputRef.value) inputRef.value.indeterminate = props.indeterminate
+  },
+  { immediate: true }
+)
 
 function onChange(event: Event) {
   const target = event.target as HTMLInputElement

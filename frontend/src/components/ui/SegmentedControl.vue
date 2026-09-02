@@ -9,7 +9,7 @@
       :class="{ 'segmented-item-active': option.value === modelValue }"
       :aria-selected="option.value === modelValue"
       :disabled="option.disabled"
-      @click="select(option.value)"
+      @click="select(option)"
     >
       {{ option.label }}
     </button>
@@ -28,7 +28,8 @@ const emit = defineEmits<{
   'update:modelValue': [value: T]
 }>()
 
-function select(value: T) {
-  emit('update:modelValue', value)
+function select(option: SegmentedOption<T>) {
+  if (option.disabled) return
+  emit('update:modelValue', option.value)
 }
 </script>

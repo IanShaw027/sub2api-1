@@ -10,8 +10,22 @@ export type ToggleSwitchSize = 'compact' | 'form'
 
 export type PageHeaderVariant = 'compact' | 'hero'
 
+export type StatDeltaTone = 'up' | 'down' | 'neutral'
+
+export type DrawerSide = 'right' | 'left'
+
+export type ModalWidth = 'sm' | 'md' | 'lg' | 'xl'
+
 export type SegmentedOption<T extends string = string> = {
   value: T
   label: string
   disabled?: boolean
+}
+
+export type ChipOption<T extends string = string> = SegmentedOption<T>
+
+export type MiniStatItem = {
+  label: string
+  value: string | number
+  sub?: string
 }

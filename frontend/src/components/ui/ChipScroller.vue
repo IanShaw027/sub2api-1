@@ -17,11 +17,11 @@
 </template>
 
 <script setup lang="ts" generic="T extends string">
-import type { SegmentedOption } from './types'
+import type { ChipOption } from './types'
 
 defineProps<{
   modelValue: T
-  chips: SegmentedOption<T>[]
+  chips: ChipOption<T>[]
 }>()
 
 defineEmits<{

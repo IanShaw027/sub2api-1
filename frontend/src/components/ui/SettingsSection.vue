@@ -1,16 +1,20 @@
 <template>
-  <section class="ui-settings-section">
-    <header v-if="title || description" class="ui-settings-section-header">
-      <h2 v-if="title" class="ui-settings-section-title">{{ title }}</h2>
-      <p v-if="description" class="ui-settings-section-description">{{ description }}</p>
+  <GlassCard variant="glass" padding="lg" class="ui-settings-section">
+    <header v-if="title || description || $slots.header" class="ui-settings-section-header">
+      <slot name="header">
+        <h2 v-if="title" class="ui-settings-section-title">{{ title }}</h2>
+        <p v-if="description" class="ui-settings-section-description">{{ description }}</p>
+      </slot>
     </header>
     <div class="ui-settings-section-rows">
       <slot />
     </div>
-  </section>
+  </GlassCard>
 </template>
 
 <script setup lang="ts">
+import GlassCard from './GlassCard.vue'
+
 defineProps<{
   title?: string
   description?: string
@@ -19,7 +23,11 @@ defineProps<{
 
 <style scoped>
 .ui-settings-section + .ui-settings-section {
-  margin-top: 24px;
+  margin-top: 16px;
+}
+
+.ui-settings-section-header {
+  margin-bottom: 4px;
 }
 
 .ui-settings-section-title {
@@ -35,9 +43,7 @@ defineProps<{
 }
 
 .ui-settings-section-rows {
-  margin-top: 12px;
   display: flex;
   flex-direction: column;
-  gap: 0;
 }
 </style>

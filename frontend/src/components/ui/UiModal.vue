@@ -25,7 +25,7 @@
               :aria-label="closeLabel"
               @click="emit('close')"
             >
-              ×
+              <Icon name="x" size="sm" />
             </button>
           </header>
           <div ref="bodyRef" class="ui-modal-body">
@@ -42,12 +42,15 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
+import Icon from '@/components/icons/Icon.vue'
+import { focusFirst, trapFocus } from './focusTrap'
+import type { ModalWidth } from './types'
 
 const props = withDefaults(
   defineProps<{
     open: boolean
     title: string
-    width?: 'sm' | 'md' | 'lg' | 'xl'
+    width?: ModalWidth
     closeOnOverlay?: boolean
     closeOnEscape?: boolean
     showClose?: boolean
@@ -70,36 +73,21 @@ const bodyRef = ref<HTMLElement | null>(null)
 let previousFocus: HTMLElement | null = null
 
 const panelStyle = computed(() => {
-  const widths = { sm: '420px', md: '520px', lg: '680px', xl: '840px' }
+  const widths: Record<ModalWidth, string> = { sm: '420px', md: '520px', lg: '680px', xl: '840px' }
   return { maxWidth: widths[props.width] }
 })
-
-const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
 
 function onOverlayClick() {
   if (props.closeOnOverlay) emit('close')
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (!props.open || !props.closeOnEscape) return
-  if (event.key === 'Escape') {
+  if (!props.open) return
+  if (event.key === 'Escape' && props.closeOnEscape) {
     emit('close')
     return
   }
-  if (event.key !== 'Tab' || !panelRef.value) return
-  const nodes = Array.from(panelRef.value.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-    (el) => !el.hasAttribute('disabled')
-  )
-  if (nodes.length === 0) return
-  const first = nodes[0]
-  const last = nodes[nodes.length - 1]
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault()
-    last.focus()
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault()
-    first.focus()
-  }
+  trapFocus(event, panelRef.value)
 }
 
 watch(
@@ -110,9 +98,8 @@ watch(
       document.body.classList.add('modal-open')
       window.addEventListener('keydown', onKeydown)
       await nextTick()
-      bodyRef.value && (bodyRef.value.scrollTop = 0)
-      const first = panelRef.value?.querySelector<HTMLElement>(FOCUSABLE)
-      first?.focus()
+      if (bodyRef.value) bodyRef.value.scrollTop = 0
+      focusFirst(panelRef.value)
       return
     }
     if (wasOpen) {
@@ -121,7 +108,8 @@ watch(
       previousFocus?.focus?.()
       previousFocus = null
     }
-  }
+  },
+  { immediate: true }
 )
 
 onBeforeUnmount(() => {
@@ -141,6 +129,7 @@ onBeforeUnmount(() => {
   padding: 16px;
   background: rgba(0, 0, 0, 0.28);
   backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
 }
 
 .ui-modal-panel {
@@ -149,6 +138,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border-radius: var(--radius-hero);
 }
 
 .ui-modal-header {
@@ -167,15 +157,21 @@ onBeforeUnmount(() => {
 }
 
 .ui-modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 32px;
   height: 32px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-btn);
   background: transparent;
   color: var(--muted);
-  font-size: 22px;
-  line-height: 1;
   cursor: pointer;
+}
+
+.ui-modal-close:hover {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  color: var(--foreground);
 }
 
 .ui-modal-body {
