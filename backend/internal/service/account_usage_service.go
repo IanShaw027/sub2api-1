@@ -95,13 +95,14 @@ func recordSevenDayForecastObservation(ctx context.Context, repo UsageLogReposit
 	if !ok || accountID <= 0 || utilization < 10 || resetAt.IsZero() {
 		return
 	}
-	bucket := int(utilization/10) * 10
-	if bucket > 100 {
-		bucket = 100
+	maxBucket := int(utilization/10) * 10
+	if maxBucket > 100 {
+		maxBucket = 100
 	}
-	// One process-local write per account/bucket is enough; the database
-	// uniqueness constraint remains the cross-process source of truth.
-	if !sevenDayForecastObservationThrottle.Allow(accountID*1000+int64(bucket), observedAt) {
+	// Throttle on the highest crossed milestone for this observation. The repo
+	// backfills every 10% bucket up to maxBucket in one call (10/20/30/...).
+	// Database uniqueness remains the cross-process source of truth.
+	if !sevenDayForecastObservationThrottle.Allow(accountID*1000+int64(maxBucket), observedAt) {
 		return
 	}
 	if err := writer.RecordAccountSevenDayForecastObservation(ctx, accountID, utilization, resetAt, observedAt); err != nil {

@@ -11,11 +11,22 @@
       <div v-else-if="apiKeys.length === 0" class="py-8 text-center"><p class="text-sm text-gray-500">{{ t('admin.users.noApiKeys') }}</p></div>
       <div v-else ref="scrollContainerRef" class="max-h-96 space-y-3 overflow-y-auto" @scroll="closeGroupSelector">
         <div v-for="key in apiKeys" :key="key.id" class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-600 dark:bg-dark-800">
-          <div class="flex items-start justify-between">
+          <div class="flex items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
               <div class="mb-1 flex items-center gap-2"><span class="font-medium text-gray-900 dark:text-white">{{ key.name }}</span><span :class="['badge text-xs', key.status === 'active' ? 'badge-success' : 'badge-danger']">{{ key.status }}</span></div>
               <p class="truncate font-mono text-sm text-gray-500">{{ key.key.substring(0, 20) }}...{{ key.key.substring(key.key.length - 8) }}</p>
             </div>
+            <button
+              v-if="canToggleKeyStatus(key)"
+              type="button"
+              class="btn btn-xs shrink-0"
+              :class="key.status === 'active' ? 'btn-danger' : 'btn-secondary'"
+              :disabled="updatingKeyIds.has(key.id)"
+              @click="toggleKeyStatus(key)"
+            >
+              <svg v-if="updatingKeyIds.has(key.id)" class="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+              <span>{{ key.status === 'active' ? t('admin.users.disableApiKey') : t('admin.users.enableApiKey') }}</span>
+            </button>
           </div>
           <div class="mt-3 flex flex-wrap gap-4 text-xs text-gray-500">
             <div class="flex items-center gap-1">
@@ -221,6 +232,38 @@ const changeGroup = async (key: ApiKey, newGroupId: number | null) => {
     }
   } catch (error: any) {
     appStore.showError(error?.message || t('admin.users.groupChangeFailed'))
+  } finally {
+    updatingKeyIds.value.delete(key.id)
+  }
+}
+
+const canToggleKeyStatus = (key: ApiKey) =>
+  key.status === 'active' || key.status === 'disabled' || key.status === 'inactive'
+
+const toggleKeyStatus = async (key: ApiKey) => {
+  if (!canToggleKeyStatus(key) || updatingKeyIds.value.has(key.id)) return
+
+  const nextStatus = key.status === 'active' ? 'disabled' : 'active'
+  const confirmMessage =
+    nextStatus === 'disabled'
+      ? t('admin.users.disableApiKeyConfirm', { name: key.name })
+      : t('admin.users.enableApiKeyConfirm', { name: key.name })
+  if (!window.confirm(confirmMessage)) return
+
+  updatingKeyIds.value.add(key.id)
+  try {
+    const result = await adminAPI.apiKeys.updateApiKeyStatus(key.id, nextStatus)
+    const idx = apiKeys.value.findIndex((k) => k.id === key.id)
+    if (idx !== -1) {
+      apiKeys.value[idx] = result.api_key
+    }
+    appStore.showSuccess(
+      nextStatus === 'disabled'
+        ? t('admin.users.apiKeyDisabledSuccess')
+        : t('admin.users.apiKeyEnabledSuccess')
+    )
+  } catch (error: any) {
+    appStore.showError(error?.message || t('admin.users.apiKeyStatusUpdateFailed'))
   } finally {
     updatingKeyIds.value.delete(key.id)
   }

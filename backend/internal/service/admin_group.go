@@ -1264,6 +1264,33 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 	return result, nil
 }
 
+// AdminUpdateAPIKeyStatus sets an API key status to active or disabled and invalidates auth cache.
+// Idempotent when the key already has the requested status.
+func (s *adminServiceImpl) AdminUpdateAPIKeyStatus(ctx context.Context, keyID int64, status string) (*APIKey, error) {
+	switch status {
+	case StatusAPIKeyActive, StatusAPIKeyDisabled:
+	default:
+		return nil, infraerrors.BadRequest("INVALID_STATUS", "status must be active or disabled")
+	}
+
+	apiKey, err := s.apiKeyRepo.GetByID(ctx, keyID)
+	if err != nil {
+		return nil, err
+	}
+	if apiKey.Status == status {
+		return apiKey, nil
+	}
+
+	apiKey.Status = status
+	if err := s.apiKeyRepo.Update(ctx, apiKey, APIKeyUpdateFields{Status: true}); err != nil {
+		return nil, fmt.Errorf("update api key status: %w", err)
+	}
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, apiKey.Key)
+	}
+	return apiKey, nil
+}
+
 // AdminResetAPIKeyRateLimitUsage resets all API key rate-limit usage windows.
 func (s *adminServiceImpl) AdminResetAPIKeyRateLimitUsage(ctx context.Context, keyID int64) (*APIKey, error) {
 	apiKey, err := s.apiKeyRepo.GetByID(ctx, keyID)

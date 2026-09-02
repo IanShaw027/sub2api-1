@@ -570,6 +570,11 @@ export default {
       releaseIp: 'Restore',
       banIpSuccess: 'IP banned',
       banIpFailed: 'Failed to ban IP',
+      banApiKey: 'Ban',
+      banApiKeyConfirm: 'Ban API key "{name}"? It will stop working immediately.',
+      banApiKeySuccess: 'API key banned',
+      banApiKeyFailed: 'Failed to ban API key',
+      apiKeyAlreadyDisabled: 'Disabled',
       releaseIpSuccess: 'IP restored (whitelisted)',
       releaseIpFailed: 'Failed to restore IP',
       ipStatus: {

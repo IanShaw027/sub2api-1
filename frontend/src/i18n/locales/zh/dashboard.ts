@@ -288,6 +288,7 @@ export default {
     status: {
       active: '活跃',
       inactive: '已停用',
+      disabled: '已禁用',
       quota_exhausted: '额度耗尽',
       expired: '已过期'
     }

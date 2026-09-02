@@ -240,3 +240,80 @@ type failingUpdateGroupService struct {
 func (f *failingUpdateGroupService) AdminUpdateAPIKeyGroupID(_ context.Context, _ int64, _ *int64) (*service.AdminUpdateAPIKeyGroupIDResult, error) {
 	return nil, f.err
 }
+
+func TestAdminAPIKeyHandler_UpdateStatus_Disable(t *testing.T) {
+	router := setupAPIKeyHandler(newStubAdminService())
+	body := `{"status":"disabled"}`
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/api-keys/10", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			APIKey struct {
+				ID     int64  `json:"id"`
+				Status string `json:"status"`
+			} `json:"api_key"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+	require.Equal(t, int64(10), resp.Data.APIKey.ID)
+	require.Equal(t, service.StatusAPIKeyDisabled, resp.Data.APIKey.Status)
+}
+
+func TestAdminAPIKeyHandler_UpdateStatus_Enable(t *testing.T) {
+	svc := newStubAdminService()
+	svc.apiKeys[0].Status = service.StatusAPIKeyDisabled
+	router := setupAPIKeyHandler(svc)
+	body := `{"status":"active"}`
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/api-keys/10", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			APIKey struct {
+				Status string `json:"status"`
+			} `json:"api_key"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 0, resp.Code)
+	require.Equal(t, service.StatusAPIKeyActive, resp.Data.APIKey.Status)
+}
+
+func TestAdminAPIKeyHandler_UpdateStatus_InvalidStatus(t *testing.T) {
+	router := setupAPIKeyHandler(newStubAdminService())
+	body := `{"status":"inactive"}`
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/api-keys/10", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "INVALID_STATUS")
+}
+
+func TestAdminAPIKeyHandler_UpdateStatus_KeyNotFound(t *testing.T) {
+	router := setupAPIKeyHandler(newStubAdminService())
+	body := `{"status":"disabled"}`
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/api-keys/999", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusNotFound, rec.Code)
+}

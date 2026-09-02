@@ -567,6 +567,11 @@ export default {
       releaseIp: '恢复',
       banIpSuccess: 'IP 已封禁',
       banIpFailed: '封禁 IP 失败',
+      banApiKey: '封禁',
+      banApiKeyConfirm: '确定要封禁 API 密钥「{name}」吗？封禁后该密钥将无法调用。',
+      banApiKeySuccess: 'API 密钥已封禁',
+      banApiKeyFailed: '封禁 API 密钥失败',
+      apiKeyAlreadyDisabled: '已禁用',
       releaseIpSuccess: 'IP 已恢复（白名单）',
       releaseIpFailed: '恢复 IP 失败',
       ipStatus: {

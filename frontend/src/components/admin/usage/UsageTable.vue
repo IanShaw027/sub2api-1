@@ -54,7 +54,25 @@
         </template>
 
         <template #cell-api_key="{ row }">
-          <span class="text-sm text-gray-900 dark:text-white">{{ row.api_key?.name || '-' }}</span>
+          <div class="flex items-center gap-1.5">
+            <span class="text-sm text-gray-900 dark:text-white">{{ row.api_key?.name || '-' }}</span>
+            <button
+              v-if="canBanApiKey(row)"
+              type="button"
+              class="btn btn-danger btn-xs px-1.5 py-0 text-[10px]"
+              :disabled="banningKeyId === apiKeyIdOf(row)"
+              :title="t('admin.usage.banApiKey')"
+              @click.stop="banRowApiKey(row)"
+            >
+              {{ t('admin.usage.banApiKey') }}
+            </button>
+            <span
+              v-else-if="allowIpSecurityActions && isApiKeyDisabled(row)"
+              class="inline-flex items-center rounded px-1 py-px text-[10px] font-medium leading-tight bg-rose-100 text-rose-600 ring-1 ring-inset ring-rose-200 dark:bg-rose-500/20 dark:text-rose-400 dark:ring-rose-500/30"
+            >
+              {{ t('admin.usage.apiKeyAlreadyDisabled') }}
+            </span>
+          </div>
         </template>
 
         <template #cell-account="{ row }">
@@ -588,6 +606,7 @@ import IpGeoCell from '@/components/common/IpGeoCell.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { fetchBatch, getEntry } from '@/utils/ipGeoLookup'
 import ipSecurityAPI from '@/api/admin/ipSecurity'
+import { adminAPI } from '@/api/admin'
 import type { AdminUsageLog } from '@/types'
 import type { Column } from '@/components/common/types'
 
@@ -627,11 +646,35 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const copiedRequestId = ref<string | null>(null)
 const banningIp = ref('')
+const banningKeyId = ref<number | null>(null)
+const bannedKeyIds = ref(new Set<number>())
 
 // prop 打开不够：普通用户账号即使误传 prop 也不展示封禁入口
 const allowIpSecurityActions = computed(
   () => props.allowIpSecurityActions && authStore.isAdmin,
 )
+
+const apiKeyIdOf = (row: AdminUsageLog): number | null => {
+  const id = row.api_key?.id ?? row.api_key_id
+  return typeof id === 'number' && id > 0 ? id : null
+}
+
+const isApiKeyDisabled = (row: AdminUsageLog): boolean => {
+  const id = apiKeyIdOf(row)
+  if (id !== null && bannedKeyIds.value.has(id)) return true
+  const status = row.api_key?.status
+  return status === 'disabled' || status === 'inactive'
+}
+
+const canBanApiKey = (row: AdminUsageLog): boolean => {
+  if (!allowIpSecurityActions.value) return false
+  const id = apiKeyIdOf(row)
+  if (id === null) return false
+  if (bannedKeyIds.value.has(id)) return false
+  const status = row.api_key?.status
+  // Missing nested status still allows ban (usage rows may omit full key DTO).
+  return !status || status === 'active'
+}
 
 const banRowIp = async (ipAddr: string) => {
   if (!allowIpSecurityActions.value || !ipAddr || banningIp.value) return
@@ -643,6 +686,27 @@ const banRowIp = async (ipAddr: string) => {
     appStore.showError(e?.message || t('admin.usage.banIpFailed'))
   } finally {
     banningIp.value = ''
+  }
+}
+
+const banRowApiKey = async (row: AdminUsageLog) => {
+  const keyId = apiKeyIdOf(row)
+  if (!allowIpSecurityActions.value || keyId === null || banningKeyId.value !== null) return
+  const keyName = row.api_key?.name || `#${keyId}`
+  if (!window.confirm(t('admin.usage.banApiKeyConfirm', { name: keyName }))) return
+
+  banningKeyId.value = keyId
+  try {
+    await adminAPI.apiKeys.updateApiKeyStatus(keyId, 'disabled')
+    bannedKeyIds.value = new Set(bannedKeyIds.value).add(keyId)
+    if (row.api_key) {
+      row.api_key.status = 'disabled'
+    }
+    appStore.showSuccess(t('admin.usage.banApiKeySuccess'))
+  } catch (e: any) {
+    appStore.showError(e?.message || t('admin.usage.banApiKeyFailed'))
+  } finally {
+    banningKeyId.value = null
   }
 }
 const showAccountBilling = props.showAccountBilling

@@ -565,3 +565,61 @@ func TestAdminService_AdminUpdateAPIKeyGroupID_Unbind_NoAllowedGroupUpdate(t *te
 	require.False(t, userRepo.addGroupCalled)
 	require.False(t, got.AutoGrantedGroupAccess)
 }
+
+func TestAdminService_AdminUpdateAPIKeyStatus_Disable(t *testing.T) {
+	existing := &APIKey{ID: 1, UserID: 42, Key: "sk-test", Status: StatusAPIKeyActive}
+	apiKeyRepo := &apiKeyRepoStubForGroupUpdate{key: existing}
+	cache := &authCacheInvalidatorStub{}
+	svc := &adminServiceImpl{apiKeyRepo: apiKeyRepo, authCacheInvalidator: cache}
+
+	got, err := svc.AdminUpdateAPIKeyStatus(context.Background(), 1, StatusAPIKeyDisabled)
+	require.NoError(t, err)
+	require.Equal(t, StatusAPIKeyDisabled, got.Status)
+	require.NotNil(t, apiKeyRepo.updated)
+	require.Equal(t, StatusAPIKeyDisabled, apiKeyRepo.updated.Status)
+	require.Equal(t, []string{"sk-test"}, cache.keys)
+}
+
+func TestAdminService_AdminUpdateAPIKeyStatus_Enable(t *testing.T) {
+	existing := &APIKey{ID: 1, UserID: 42, Key: "sk-test", Status: StatusAPIKeyDisabled}
+	apiKeyRepo := &apiKeyRepoStubForGroupUpdate{key: existing}
+	cache := &authCacheInvalidatorStub{}
+	svc := &adminServiceImpl{apiKeyRepo: apiKeyRepo, authCacheInvalidator: cache}
+
+	got, err := svc.AdminUpdateAPIKeyStatus(context.Background(), 1, StatusAPIKeyActive)
+	require.NoError(t, err)
+	require.Equal(t, StatusAPIKeyActive, got.Status)
+	require.Equal(t, []string{"sk-test"}, cache.keys)
+}
+
+func TestAdminService_AdminUpdateAPIKeyStatus_Idempotent(t *testing.T) {
+	existing := &APIKey{ID: 1, UserID: 42, Key: "sk-test", Status: StatusAPIKeyDisabled}
+	apiKeyRepo := &apiKeyRepoStubForGroupUpdate{key: existing}
+	cache := &authCacheInvalidatorStub{}
+	svc := &adminServiceImpl{apiKeyRepo: apiKeyRepo, authCacheInvalidator: cache}
+
+	got, err := svc.AdminUpdateAPIKeyStatus(context.Background(), 1, StatusAPIKeyDisabled)
+	require.NoError(t, err)
+	require.Equal(t, StatusAPIKeyDisabled, got.Status)
+	require.Nil(t, apiKeyRepo.updated)
+	require.Empty(t, cache.keys)
+}
+
+func TestAdminService_AdminUpdateAPIKeyStatus_InvalidStatus(t *testing.T) {
+	existing := &APIKey{ID: 1, UserID: 42, Key: "sk-test", Status: StatusAPIKeyActive}
+	apiKeyRepo := &apiKeyRepoStubForGroupUpdate{key: existing}
+	svc := &adminServiceImpl{apiKeyRepo: apiKeyRepo}
+
+	_, err := svc.AdminUpdateAPIKeyStatus(context.Background(), 1, "inactive")
+	require.Error(t, err)
+	require.True(t, infraerrors.IsBadRequest(err))
+	require.Equal(t, "INVALID_STATUS", infraerrors.Reason(err))
+}
+
+func TestAdminService_AdminUpdateAPIKeyStatus_KeyNotFound(t *testing.T) {
+	apiKeyRepo := &apiKeyRepoStubForGroupUpdate{getErr: ErrAPIKeyNotFound}
+	svc := &adminServiceImpl{apiKeyRepo: apiKeyRepo}
+
+	_, err := svc.AdminUpdateAPIKeyStatus(context.Background(), 999, StatusAPIKeyDisabled)
+	require.ErrorIs(t, err, ErrAPIKeyNotFound)
+}

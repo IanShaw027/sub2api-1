@@ -10,17 +10,51 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRecordAccountSevenDayForecastObservation(t *testing.T) {
+func TestRecordAccountSevenDayForecastObservation_BackfillsCrossedBuckets(t *testing.T) {
 	db, mock := newSQLMock(t)
 	repo := newUsageLogRepositoryWithSQL(nil, db)
 	resetAt := time.Date(2026, 8, 30, 12, 0, 0, 900, time.UTC)
 	observedAt := resetAt.Add(-3 * 24 * time.Hour)
+	windowStart := resetAt.Round(time.Minute).Add(-7 * 24 * time.Hour)
+	insertRE := regexp.QuoteMeta("INSERT INTO account_seven_day_forecast_snapshots")
 
-	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO account_seven_day_forecast_snapshots")).
-		WithArgs(int64(42), resetAt.Round(time.Minute).Add(-7*24*time.Hour), 30, 37.42, observedAt).
-		WillReturnResult(sqlmock.NewResult(1, 1))
+	// 37.42% crosses 10/20/30 — all three milestones must be recorded.
+	for _, bucket := range []int{10, 20, 30} {
+		mock.ExpectExec(insertRE).
+			WithArgs(int64(42), windowStart, bucket, 37.42, observedAt).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+	}
 
 	require.NoError(t, repo.RecordAccountSevenDayForecastObservation(context.Background(), 42, 37.42, resetAt, observedAt))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRecordAccountSevenDayForecastObservation_JumpTo28Backfills10And20(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := newUsageLogRepositoryWithSQL(nil, db)
+	resetAt := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	observedAt := resetAt.Add(-2 * 24 * time.Hour)
+	windowStart := resetAt.Round(time.Minute).Add(-7 * 24 * time.Hour)
+	insertRE := regexp.QuoteMeta("INSERT INTO account_seven_day_forecast_snapshots")
+
+	// Jumping straight to 28% must still create the 10% and 20% milestones.
+	for _, bucket := range []int{10, 20} {
+		mock.ExpectExec(insertRE).
+			WithArgs(int64(7), windowStart, bucket, 28.0, observedAt).
+			WillReturnResult(sqlmock.NewResult(1, 1))
+	}
+
+	require.NoError(t, repo.RecordAccountSevenDayForecastObservation(context.Background(), 7, 28.0, resetAt, observedAt))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRecordAccountSevenDayForecastObservation_BelowTenSkipped(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := newUsageLogRepositoryWithSQL(nil, db)
+	resetAt := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	observedAt := resetAt.Add(-time.Hour)
+
+	require.NoError(t, repo.RecordAccountSevenDayForecastObservation(context.Background(), 7, 9.9, resetAt, observedAt))
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

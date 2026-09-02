@@ -844,24 +844,34 @@ func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters Us
 type AccountUsageHistory = usagestats.AccountUsageHistory
 
 func (r *usageLogRepository) RecordAccountSevenDayForecastObservation(ctx context.Context, accountID int64, utilization float64, resetAt, observedAt time.Time) error {
-	bucket := int(utilization/10) * 10
-	if bucket > 100 {
-		bucket = 100
+	// Strict 10% milestones: when utilization jumps (e.g. 5% → 28%), record every
+	// crossed bucket (10 and 20), not only floor(utilization/10)*10. Existing rows
+	// stay untouched via ON CONFLICT DO NOTHING. Stored utilization stays the real
+	// observed value so predicted_total_cost = used_cost*100/utilization stays correct;
+	// the chart X-axis still labels points as 10%/20%/30%/...
+	maxBucket := int(utilization/10) * 10
+	if maxBucket > 100 {
+		maxBucket = 100
 	}
-	if accountID <= 0 || bucket < 10 || resetAt.IsZero() {
+	if accountID <= 0 || maxBucket < 10 || resetAt.IsZero() {
 		return nil
 	}
 	// Reset-after headers may jitter by a second between responses. A minute
 	// anchor keeps one upstream quota period under one database identity.
 	resetAt = resetAt.UTC().Round(time.Minute)
 	observedAt = observedAt.UTC()
-	_, err := r.sql.ExecContext(ctx, `
+	windowStart := resetAt.Add(-7 * 24 * time.Hour)
+	const insertSQL = `
 		INSERT INTO account_seven_day_forecast_snapshots
 			(account_id, window_start, bucket, utilization, observed_at)
 		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (account_id, window_start, bucket) DO NOTHING`,
-		accountID, resetAt.Add(-7*24*time.Hour), bucket, utilization, observedAt)
-	return err
+		ON CONFLICT (account_id, window_start, bucket) DO NOTHING`
+	for bucket := 10; bucket <= maxBucket; bucket += 10 {
+		if _, err := r.sql.ExecContext(ctx, insertSQL, accountID, windowStart, bucket, utilization, observedAt); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *usageLogRepository) GetAccountSevenDayForecastPoints(ctx context.Context, accountID int64) ([]usagestats.SevenDayForecastPoint, error) {
@@ -901,7 +911,7 @@ func (r *usageLogRepository) GetAccountSevenDayForecastPoints(ctx context.Contex
 				   WHERE ul.account_id = $1 AND ul.created_at >= p.previous_observed_at AND ul.created_at < p.observed_at
 				     AND ul.session_id IS NOT NULL AND BTRIM(ul.session_id) <> '') END
 		FROM points p
-		ORDER BY p.observed_at`, accountID)
+		ORDER BY p.observed_at, p.bucket`, accountID)
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -765,6 +766,22 @@ func (s *stubAdminService) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 				}
 			}
 			return &service.AdminUpdateAPIKeyGroupIDResult{APIKey: &k}, nil
+		}
+	}
+	return nil, service.ErrAPIKeyNotFound
+}
+
+func (s *stubAdminService) AdminUpdateAPIKeyStatus(ctx context.Context, keyID int64, status string) (*service.APIKey, error) {
+	switch status {
+	case service.StatusAPIKeyActive, service.StatusAPIKeyDisabled:
+	default:
+		return nil, infraerrors.BadRequest("INVALID_STATUS", "status must be active or disabled")
+	}
+	for i := range s.apiKeys {
+		if s.apiKeys[i].ID == keyID {
+			s.apiKeys[i].Status = status
+			k := s.apiKeys[i]
+			return &k, nil
 		}
 	}
 	return nil, service.ErrAPIKeyNotFound
