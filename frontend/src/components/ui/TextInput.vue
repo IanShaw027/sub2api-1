@@ -1,0 +1,90 @@
+<template>
+  <div class="ui-text-input">
+    <FieldLabel v-if="label" :html-for="inputId" :hint="hint" :required="required">
+      {{ label }}
+    </FieldLabel>
+    <input
+      :id="inputId"
+      ref="inputRef"
+      class="field"
+      :class="{ 'ui-text-input-error': error }"
+      :type="type"
+      :value="modelValue"
+      :placeholder="placeholder"
+      :disabled="disabled"
+      :readonly="readonly"
+      :autocomplete="autocomplete"
+      :aria-invalid="error ? true : undefined"
+      :aria-describedby="error ? `${inputId}-error` : undefined"
+      @input="onInput"
+      @blur="emit('blur', $event)"
+      @focus="emit('focus', $event)"
+    >
+    <p v-if="error" :id="`${inputId}-error`" class="ui-text-input-error-text" role="alert">
+      {{ error }}
+    </p>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, ref, useId } from 'vue'
+import FieldLabel from './FieldLabel.vue'
+
+const props = withDefaults(
+  defineProps<{
+    modelValue?: string | number
+    label?: string
+    hint?: string
+    error?: string
+    placeholder?: string
+    type?: string
+    disabled?: boolean
+    readonly?: boolean
+    required?: boolean
+    autocomplete?: string
+    id?: string
+  }>(),
+  {
+    modelValue: '',
+    type: 'text',
+    disabled: false,
+    readonly: false,
+    required: false
+  }
+)
+
+const emit = defineEmits<{
+  'update:modelValue': [value: string | number]
+  blur: [event: FocusEvent]
+  focus: [event: FocusEvent]
+}>()
+
+const fallbackId = useId()
+const inputId = computed(() => props.id ?? `ui-input-${fallbackId}`)
+const inputRef = ref<HTMLInputElement | null>(null)
+
+function onInput(event: Event) {
+  const target = event.target as HTMLInputElement
+  emit('update:modelValue', props.type === 'number' ? Number(target.value) : target.value)
+}
+
+defineExpose({ focus: () => inputRef.value?.focus() })
+</script>
+
+<style scoped>
+.ui-text-input-error {
+  border-color: var(--danger);
+}
+
+.ui-text-input-error:focus,
+.ui-text-input-error:focus-visible {
+  border-color: var(--danger);
+  box-shadow: var(--field-shadow), 0 0 0 3px color-mix(in oklch, var(--danger) 18%, transparent);
+}
+
+.ui-text-input-error-text {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--danger-text);
+}
+</style>
