@@ -312,6 +312,11 @@ func registerUserManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		users.POST("/:id/auth-identities", h.Admin.User.BindAuthIdentity)
 		users.POST("", h.Admin.User.Create)
 		users.PUT("/:id", h.Admin.User.Update)
+		if h.Admin.IPSecurity != nil {
+			users.PUT("/:id/ip-pin", h.Admin.IPSecurity.SetUserIPPin)
+			users.POST("/:id/allowed-ips", h.Admin.IPSecurity.AppendUserAllowedIP)
+			users.GET("/:id/ip-summary", h.Admin.IPSecurity.GetUserIPSummary)
+		}
 		users.DELETE("/:id", h.Admin.User.Delete)
 		users.POST("/:id/balance", h.Admin.User.UpdateBalance)
 		users.GET("/:id/api-keys", h.Admin.User.GetUserAPIKeys)
@@ -630,6 +635,10 @@ func registerIPSecurityRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	{
 		ipSecurity.GET("/config", h.Admin.IPSecurity.GetConfig)
 		ipSecurity.GET("/bans", h.Admin.IPSecurity.ListBans)
+		ipSecurity.POST("/bans", h.Admin.IPSecurity.CreateBan)
+		// by-ip routes must be registered before /bans/:id to avoid "by-ip" matching as an id.
+		ipSecurity.POST("/bans/by-ip/:ip/release", h.Admin.IPSecurity.ReleaseBanByIP)
+		ipSecurity.POST("/bans/by-ip/:ip/activate", h.Admin.IPSecurity.ActivateBanByIP)
 		ipSecurity.GET("/bans/:id", h.Admin.IPSecurity.GetBan)
 		ipSecurity.POST("/bans/:id/release", h.Admin.IPSecurity.ReleaseBan)
 		ipSecurity.POST("/bans/:id/remove-whitelist", h.Admin.IPSecurity.RemoveWhitelist)

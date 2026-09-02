@@ -123,6 +123,7 @@
         <div v-show="activeTab === 'usage'" class="overflow-hidden rounded-b-2xl">
           <UsageTable
             flat
+            allow-ip-security-actions
             :data="usageLogs"
             :loading="loading"
             :columns="visibleColumns"
@@ -131,6 +132,7 @@
             :default-sort-order="'desc'"
             @sort="handleSort"
             @userClick="handleUserClick"
+            @userIpClick="handleUserIpClick"
             @ipGeoBatchFailed="handleIpGeoBatchFailed"
           />
           <Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" />
@@ -179,6 +181,13 @@
     :hide-actions="true"
     @close="showBalanceHistoryModal = false; balanceHistoryUser = null"
   />
+  <UserIpSummaryModal
+    :show="showUserIpSummaryModal"
+    :user-id="userIpSummaryUserId"
+    :user-email="userIpSummaryEmail"
+    :days="30"
+    @close="showUserIpSummaryModal = false; userIpSummaryUserId = null; userIpSummaryEmail = ''"
+  />
 </template>
 
 <script setup lang="ts">
@@ -195,6 +204,7 @@ import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'; impo
 import UsageTable from '@/components/admin/usage/UsageTable.vue'; import UsageExportProgress from '@/components/admin/usage/UsageExportProgress.vue'
 import UserTokenRanking from '@/components/admin/usage/UserTokenRanking.vue'
 import UsageCleanupDialog from '@/components/admin/usage/UsageCleanupDialog.vue'
+import UserIpSummaryModal from '@/components/admin/usage/UserIpSummaryModal.vue'
 import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryModal.vue'
 import OpsErrorLogTable from '@/views/admin/ops/components/OpsErrorLogTable.vue'
 import OpsErrorDetailModal from '@/views/admin/ops/components/OpsErrorDetailModal.vue'
@@ -236,6 +246,9 @@ const cleanupDialogVisible = ref(false)
 // Balance history modal state
 const showBalanceHistoryModal = ref(false)
 const balanceHistoryUser = ref<AdminUser | null>(null)
+const showUserIpSummaryModal = ref(false)
+const userIpSummaryUserId = ref<number | null>(null)
+const userIpSummaryEmail = ref('')
 
 const breakdownFilters = computed(() => {
   const f: Record<string, any> = {}
@@ -262,6 +275,12 @@ const handleUserClick = async (userId: number) => {
   } catch {
     appStore.showError(t('admin.usage.failedToLoadUser'))
   }
+}
+
+const handleUserIpClick = (userId: number, email?: string) => {
+  userIpSummaryUserId.value = userId
+  userIpSummaryEmail.value = email || ''
+  showUserIpSummaryModal.value = true
 }
 
 // Drill down from the per-user token ranking: scope the whole usage view to

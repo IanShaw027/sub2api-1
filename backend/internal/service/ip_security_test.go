@@ -81,6 +81,29 @@ func TestIPSecuritySecondWindowBansTwoAccounts(t *testing.T) {
 	}
 }
 
+func TestIPSecurityManualBanOverridesWhitelist(t *testing.T) {
+	svc, repo := newTestIPSecurityService(t, true)
+	now := time.Now()
+	repo.bans["203.0.113.77"] = IPSecurityBan{
+		ID: 9, IPAddress: "203.0.113.77", Status: "whitelisted",
+		Reason: "old", FirstSeenAt: now, LastSeenAt: now, CreatedAt: now,
+	}
+
+	ban, err := svc.ManualBan(context.Background(), "203.0.113.77", "manual: test override")
+	if err != nil {
+		t.Fatalf("ManualBan: %v", err)
+	}
+	if ban.Status != "active" || ban.Reason != "manual: test override" {
+		t.Fatalf("unexpected ban: %+v", ban)
+	}
+	if !svc.IsBlocked(context.Background(), "203.0.113.77") {
+		t.Fatal("expected manual ban to block immediately")
+	}
+	if got := repo.bans["203.0.113.77"].Status; got != "active" {
+		t.Fatalf("repo status = %q, want active", got)
+	}
+}
+
 func TestIPSecurityFourthNewAccountCreatesPermanentBan(t *testing.T) {
 	svc, repo := newTestIPSecurityService(t, true)
 	for userID := int64(1); userID <= 4; userID++ {
@@ -259,12 +282,39 @@ func TestIPSecurityLearningPeriodOnlyRecordsHistory(t *testing.T) {
 	}
 }
 
+func TestIPSecurityPinnedUnknownIPIsBlockedWithoutOverridingWhitelist(t *testing.T) {
+	svc, repo := newTestIPSecurityService(t, false)
+	repo.pinned[1] = true
+	repo.bans["203.0.113.88"] = IPSecurityBan{ID: 8, IPAddress: "203.0.113.88", Status: "whitelisted"}
+
+	blocked, _, err := svc.EnforcePinnedUserIP(context.Background(), 1, "203.0.113.88")
+	if err != nil || !blocked {
+		t.Fatalf("expected pinned request to be blocked, blocked=%v err=%v", blocked, err)
+	}
+	if got := repo.bans["203.0.113.88"].Status; got != "whitelisted" {
+		t.Fatalf("pinned rejection must preserve whitelist, got status %q", got)
+	}
+}
+
+func TestIPSecurityPinnedUnknownIPCreatesBan(t *testing.T) {
+	svc, repo := newTestIPSecurityService(t, false)
+	repo.pinned[1] = true
+
+	blocked, _, err := svc.EnforcePinnedUserIP(context.Background(), 1, "203.0.113.89")
+	if err != nil || !blocked {
+		t.Fatalf("expected pinned request to be blocked, blocked=%v err=%v", blocked, err)
+	}
+	if got := repo.bans["203.0.113.89"].Status; got != "active" {
+		t.Fatalf("expected active ban, got %q", got)
+	}
+}
+
 func newTestIPSecurityService(t *testing.T, enabled bool) (*IPSecurityService, *ipSecurityRepoStub) {
 	t.Helper()
 	mr := miniredis.RunT(t)
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = rdb.Close() })
-	repo := &ipSecurityRepoStub{ips: map[int64][]string{}, bans: map[string]IPSecurityBan{}, saturated: map[int64]bool{}}
+	repo := &ipSecurityRepoStub{ips: map[int64][]string{}, bans: map[string]IPSecurityBan{}, saturated: map[int64]bool{}, pinned: map[int64]bool{}}
 	settings := ipSecuritySettingsStub{values: map[string]string{
 		SettingKeyIPMultiAccountBanEnabled:       strconv.FormatBool(enabled),
 		SettingKeyIPMultiAccountBanWindowMinutes: "10",
@@ -295,6 +345,7 @@ type ipSecurityRepoStub struct {
 	addUserIPCalls int
 	createBanCalls int
 	saturated      map[int64]bool
+	pinned         map[int64]bool
 }
 
 func (r *ipSecurityRepoStub) GetUserIPs(_ context.Context, userID int64) ([]string, bool, error) {
@@ -331,9 +382,62 @@ func (r *ipSecurityRepoStub) CreateBan(_ context.Context, ban *IPSecurityBan) (b
 		return false, nil
 	}
 	r.createBanCalls++
-	ban.ID = int64(len(r.bans) + 1)
+	if ban.ID == 0 {
+		ban.ID = int64(len(r.bans) + 1)
+	}
 	r.bans[ban.IPAddress] = *ban
 	return true, nil
+}
+
+func (r *ipSecurityRepoStub) ForceCreateBan(_ context.Context, ban *IPSecurityBan) (bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.createBanCalls++
+	if existing, ok := r.bans[ban.IPAddress]; ok {
+		ban.ID = existing.ID
+	} else if ban.ID == 0 {
+		ban.ID = int64(len(r.bans) + 1)
+	}
+	r.bans[ban.IPAddress] = *ban
+	return true, nil
+}
+
+func (r *ipSecurityRepoStub) GetBanByIP(_ context.Context, ip string) (*IPSecurityBan, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ban, ok := r.bans[ip]
+	if !ok {
+		return nil, sql.ErrNoRows
+	}
+	cp := ban
+	return &cp, nil
+}
+
+func (r *ipSecurityRepoStub) GetUserIPPinState(_ context.Context, userID int64) (*UserIPPinState, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return &UserIPPinState{Pinned: r.pinned[userID], IPs: append([]string(nil), r.ips[userID]...), Saturated: r.saturated[userID]}, nil
+}
+func (r *ipSecurityRepoStub) SetUserIPPin(_ context.Context, userID int64, pinned bool, ips []string, _ *time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ips[userID] = append([]string(nil), ips...)
+	r.pinned[userID] = pinned
+	return nil
+}
+func (r *ipSecurityRepoStub) AppendUserAllowedIP(_ context.Context, userID int64, ip string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !containsIP(r.ips[userID], ip) {
+		r.ips[userID] = append(r.ips[userID], ip)
+	}
+	return nil
+}
+func (r *ipSecurityRepoStub) ListUsageIPsForUser(context.Context, int64, time.Time) ([]string, error) {
+	return nil, nil
+}
+func (r *ipSecurityRepoStub) ListUserIPSummary(context.Context, int64, time.Time) (*UserIPSummary, error) {
+	return &UserIPSummary{Items: []UserIPSummaryItem{}}, nil
 }
 
 func (r *ipSecurityRepoStub) IsIPStatus(_ context.Context, ip, status string) (bool, error) {

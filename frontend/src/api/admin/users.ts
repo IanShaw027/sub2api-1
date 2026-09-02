@@ -55,6 +55,39 @@ export interface BatchUpdateUserLimitsResponse {
   affected: number
 }
 
+export interface UserIPSharedUser {
+  id: number
+  email: string
+  request_count: number
+}
+
+export interface UserIPSummaryItem {
+  ip_address: string
+  request_count: number
+  total_cost: number
+  first_seen_at: string
+  last_seen_at: string
+  is_top: boolean
+  ban_status: 'normal' | 'active' | 'whitelisted' | 'released' | string
+  ban_reason?: string
+  ban_id?: number
+  shared_users: UserIPSharedUser[]
+}
+
+export interface UserIPSummary {
+  user_id: number
+  pin_known_ips: boolean
+  top_ip?: string
+  items: UserIPSummaryItem[]
+}
+
+export interface UserIPPinState {
+  pinned: boolean
+  enabled_at?: string | null
+  ips?: string[]
+  saturated?: boolean
+}
+
 /**
  * List all users with pagination
  * @param page - Page number (default: 1)
@@ -401,6 +434,21 @@ export async function resetPlatformQuotaWindow(
   return data
 }
 
+export async function getIpSummary(id: number, params?: { days?: number }): Promise<UserIPSummary> {
+  const { data } = await apiClient.get<UserIPSummary>(`/admin/users/${id}/ip-summary`, { params })
+  return data
+}
+
+export async function setIpPin(id: number, enabled: boolean): Promise<UserIPPinState> {
+  const { data } = await apiClient.put<UserIPPinState>(`/admin/users/${id}/ip-pin`, { enabled })
+  return data
+}
+
+export async function addAllowedIp(id: number, ip: string): Promise<{ message: string }> {
+  const { data } = await apiClient.post<{ message: string }>(`/admin/users/${id}/allowed-ips`, { ip })
+  return data
+}
+
 export const usersAPI = {
   list,
   getById,
@@ -419,6 +467,9 @@ export const usersAPI = {
   getPlatformQuotas,
   updatePlatformQuotas,
   resetPlatformQuotaWindow,
+  getIpSummary,
+  setIpPin,
+  addAllowedIp,
 }
 
 export default usersAPI

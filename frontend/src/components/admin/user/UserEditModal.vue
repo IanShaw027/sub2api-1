@@ -66,6 +66,25 @@
         />
         <p class="input-hint">{{ t('admin.users.form.rpmLimitHint') }}</p>
       </div>
+      <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <label class="font-medium text-gray-900 dark:text-white">{{ t('admin.usage.ipPin.enable') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.usage.ipPin.hint') }}</p>
+          </div>
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm shrink-0"
+            :disabled="pinLoading"
+            @click="toggleIpPin"
+          >
+            {{ form.pin_known_ips ? t('admin.usage.ipPin.disable') : t('admin.usage.ipPin.enable') }}
+          </button>
+        </div>
+        <p class="mt-2 text-xs" :class="form.pin_known_ips ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500'">
+          {{ form.pin_known_ips ? t('admin.usage.ipPin.enabled') : t('admin.usage.ipPin.disabled') }}
+        </p>
+      </div>
       <UserAttributeForm v-model="form.customAttributes" :user-id="user?.id" />
     </form>
     <template #footer>
@@ -101,6 +120,7 @@ const emit = defineEmits(['close', 'success'])
 const { t } = useI18n(); const appStore = useAppStore(); const { copyToClipboard } = useClipboard()
 
 const submitting = ref(false); const passwordCopied = ref(false)
+const pinLoading = ref(false)
 const roleOptions = computed(() => [
   { value: 'user', label: t('admin.users.roles.user') },
   { value: 'admin', label: t('admin.users.roles.admin') }
@@ -113,15 +133,38 @@ const form = reactive({
   role: 'user' as AdminUser['role'],
   concurrency: 1,
   rpm_limit: 0,
+  pin_known_ips: false,
   customAttributes: {} as UserAttributeValuesMap
 })
 
-watch(() => props.user, (u) => {
+watch(() => props.user, async (u) => {
   if (u) {
-    Object.assign(form, { email: u.email, password: '', username: u.username || '', notes: u.notes || '', role: u.role || 'user', concurrency: u.concurrency, rpm_limit: u.rpm_limit ?? 0, customAttributes: {} })
+    Object.assign(form, { email: u.email, password: '', username: u.username || '', notes: u.notes || '', role: u.role || 'user', concurrency: u.concurrency, rpm_limit: u.rpm_limit ?? 0, pin_known_ips: false, customAttributes: {} })
     passwordCopied.value = false
+    try {
+      const summary = await adminAPI.users.getIpSummary(u.id, { days: 1 })
+      form.pin_known_ips = !!summary.pin_known_ips
+    } catch {
+      form.pin_known_ips = false
+    }
   }
 }, { immediate: true })
+
+const toggleIpPin = async () => {
+  if (!props.user) return
+  const enable = !form.pin_known_ips
+  if (enable && !window.confirm(t('admin.usage.ipPin.confirmEnable'))) return
+  pinLoading.value = true
+  try {
+    await adminAPI.users.setIpPin(props.user.id, enable)
+    form.pin_known_ips = enable
+    appStore.showSuccess(enable ? t('admin.usage.ipPin.enabledToast') : t('admin.usage.ipPin.disabledToast'))
+  } catch (e: any) {
+    appStore.showError(e?.message || t('admin.usage.ipPin.failed'))
+  } finally {
+    pinLoading.value = false
+  }
+}
 
 const generatePassword = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*'

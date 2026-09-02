@@ -142,6 +142,9 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			setGroupContext(c, apiKey.Group)
 			_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
 			observeIPSecurity(c, apiKey.User.ID, service.IPSecuritySourceAPIKey, apiKey.ID)
+			if c.IsAborted() {
+				return
+			}
 			c.Next()
 			return
 		}
@@ -216,6 +219,9 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		setGroupContext(c, apiKey.Group)
 		_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
 		observeIPSecurity(c, apiKey.User.ID, service.IPSecuritySourceAPIKey, apiKey.ID)
+		if c.IsAborted() {
+			return
+		}
 		c.Next()
 	}
 }

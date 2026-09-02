@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -100,14 +101,54 @@ type IPSecurityActivityDetail struct {
 	LastSeenAt   time.Time `json:"last_seen_at"`
 }
 
+type UserIPPinState struct {
+	Pinned    bool       `json:"pinned"`
+	EnabledAt *time.Time `json:"enabled_at,omitempty"`
+	IPs       []string   `json:"ips,omitempty"`
+	Saturated bool       `json:"saturated"`
+}
+
+type UserIPSummaryItem struct {
+	IPAddress    string             `json:"ip_address"`
+	RequestCount int64              `json:"request_count"`
+	TotalCost    float64            `json:"total_cost"`
+	FirstSeenAt  time.Time          `json:"first_seen_at"`
+	LastSeenAt   time.Time          `json:"last_seen_at"`
+	IsTop        bool               `json:"is_top"`
+	BanStatus    string             `json:"ban_status"` // normal|active|whitelisted|released
+	BanReason    string             `json:"ban_reason,omitempty"`
+	BanID        int64              `json:"ban_id,omitempty"`
+	SharedUsers  []UserIPSharedUser `json:"shared_users"`
+}
+
+type UserIPSharedUser struct {
+	ID           int64  `json:"id"`
+	Email        string `json:"email"`
+	RequestCount int64  `json:"request_count"`
+}
+
+type UserIPSummary struct {
+	UserID      int64               `json:"user_id"`
+	PinKnownIPs bool                `json:"pin_known_ips"`
+	TopIP       string              `json:"top_ip,omitempty"`
+	Items       []UserIPSummaryItem `json:"items"`
+}
+
 type IPSecurityRepository interface {
 	GetUserIPs(ctx context.Context, userID int64) ([]string, bool, error)
+	GetUserIPPinState(ctx context.Context, userID int64) (*UserIPPinState, error)
+	SetUserIPPin(ctx context.Context, userID int64, pinned bool, ips []string, enabledAt *time.Time) error
+	AppendUserAllowedIP(ctx context.Context, userID int64, ip string) error
+	ListUsageIPsForUser(ctx context.Context, userID int64, since time.Time) ([]string, error)
+	ListUserIPSummary(ctx context.Context, userID int64, since time.Time) (*UserIPSummary, error)
 	AddUserIPActivity(ctx context.Context, activity IPSecurityActivity, now time.Time) (added, saturated bool, err error)
 	CreateBan(ctx context.Context, ban *IPSecurityBan) (bool, error)
+	ForceCreateBan(ctx context.Context, ban *IPSecurityBan) (bool, error)
 	IsIPStatus(ctx context.Context, ip, status string) (bool, error)
 	LoadIPStatuses(ctx context.Context) (active, whitelisted []string, err error)
 	ListBans(ctx context.Context, status string, limit, offset int) ([]IPSecurityBan, int64, error)
 	GetBan(ctx context.Context, id int64) (*IPSecurityBan, error)
+	GetBanByIP(ctx context.Context, ip string) (*IPSecurityBan, error)
 	ListActivity(ctx context.Context, ip string, since, until time.Time) ([]IPSecurityActivityDetail, error)
 	WhitelistBan(ctx context.Context, id int64, releasedBy int64, now time.Time) (*IPSecurityBan, error)
 	RemoveWhitelist(ctx context.Context, id, removedBy int64, now time.Time) (*IPSecurityBan, error)
@@ -139,7 +180,18 @@ type IPSecurityService struct {
 	whitelist         map[string]struct{}
 	userMu            sync.RWMutex
 	userIPs           map[int64]userIPLocalState
+	pinMu             sync.RWMutex
+	pinStates         map[int64]cachedUserIPPinState
 	redisFailureUntil atomic.Int64
+}
+
+// Keep policy propagation bounded across service instances while avoiding a
+// database round trip on every authenticated request.
+const userIPPinCacheTTL = 5 * time.Second
+
+type cachedUserIPPinState struct {
+	state   *UserIPPinState
+	expires time.Time
 }
 
 var globalIPSecurityService atomic.Pointer[IPSecurityService]
@@ -148,7 +200,8 @@ func SetGlobalIPSecurityService(svc *IPSecurityService) { globalIPSecurityServic
 func GlobalIPSecurityService() *IPSecurityService       { return globalIPSecurityService.Load() }
 
 func NewIPSecurityService(repo IPSecurityRepository, settings IPSecuritySettings, rdb *redis.Client) *IPSecurityService {
-	return &IPSecurityService{repo: repo, settings: settings, rdb: rdb, userIPs: make(map[int64]userIPLocalState)}
+	return &IPSecurityService{repo: repo, settings: settings, rdb: rdb,
+		userIPs: make(map[int64]userIPLocalState), pinStates: make(map[int64]cachedUserIPPinState)}
 }
 
 func DefaultIPSecurityConfig() IPSecurityConfig {
@@ -448,20 +501,7 @@ func (s *IPSecurityService) enforceBan(ctx context.Context, ip string, count, th
 	if err != nil || !created {
 		return
 	}
-	s.stateMu.Lock()
-	if s.fallback == nil {
-		s.fallback = make(map[string]struct{})
-	}
-	s.fallback[ip] = struct{}{}
-	s.stateMu.Unlock()
-	if s.rdb != nil {
-		if redisCtx, cancel, ok := s.redisContext(ctx); ok {
-			defer cancel()
-			if err := s.rdb.SAdd(redisCtx, "ipsec:{state}:banned", ip).Err(); err != nil {
-				s.noteRedisFailure(err)
-			}
-		}
-	}
+	s.applyActiveBanLocalAndRedis(ctx, ip)
 }
 
 func (s *IPSecurityService) userIPKnown(ctx context.Context, userID int64, ip string) (known, cacheReady bool) {
@@ -674,6 +714,268 @@ func (s *IPSecurityService) WarmCache(ctx context.Context) error {
 		s.noteRedisFailure(err)
 	}
 	return err
+}
+
+// EnforcePinnedUserIP rejects requests from unknown IPs when the user has
+// pin_known_ips enabled, and globally bans that IP. Returns true when the
+// caller should abort the request with IP_NOT_ALLOWED.
+func (s *IPSecurityService) EnforcePinnedUserIP(ctx context.Context, userID int64, rawIP string) (blocked bool, clientIP string, err error) {
+	if s == nil || userID <= 0 {
+		return false, "", nil
+	}
+	clientIP = normalizePublicIP(rawIP)
+	if clientIP == "" {
+		// Non-public / unparseable IPs cannot be pinned-checked reliably.
+		return false, "", nil
+	}
+	state, err := s.getUserIPPinState(ctx, userID)
+	if err != nil {
+		return false, clientIP, err
+	}
+	if state == nil || !state.Pinned {
+		return false, clientIP, nil
+	}
+	if containsIP(state.IPs, clientIP) {
+		return false, clientIP, nil
+	}
+	reason := fmt.Sprintf("pinned-user unknown ip (user #%d)", userID)
+	ban := &IPSecurityBan{
+		IPAddress: clientIP, Status: "active", Reason: reason,
+		AccountThreshold: 1, DetectedAccountCount: 1,
+		FirstSeenAt: time.Now(), LastSeenAt: time.Now(), CreatedAt: time.Now(),
+	}
+	// A user-level pin rejection must not override an administrator whitelist.
+	// The request is still denied, but the shared IP remains whitelisted.
+	created, banErr := s.repo.CreateBan(ctx, ban)
+	if banErr != nil {
+		// Still block the request even if ban persistence races.
+		return true, clientIP, banErr
+	}
+	if created {
+		s.applyActiveBanLocalAndRedis(ctx, clientIP)
+	}
+	return true, clientIP, nil
+}
+
+func (s *IPSecurityService) getUserIPPinState(ctx context.Context, userID int64) (*UserIPPinState, error) {
+	now := time.Now()
+	s.pinMu.RLock()
+	cached, ok := s.pinStates[userID]
+	s.pinMu.RUnlock()
+	if ok && cached.state != nil && now.Before(cached.expires) {
+		return cloneUserIPPinState(cached.state), nil
+	}
+	state, err := s.repo.GetUserIPPinState(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if state == nil {
+		return nil, nil
+	}
+	s.pinMu.Lock()
+	s.pinStates[userID] = cachedUserIPPinState{state: cloneUserIPPinState(state), expires: now.Add(userIPPinCacheTTL)}
+	s.pinMu.Unlock()
+	return state, nil
+}
+
+func cloneUserIPPinState(state *UserIPPinState) *UserIPPinState {
+	if state == nil {
+		return nil
+	}
+	clone := *state
+	clone.IPs = append([]string(nil), state.IPs...)
+	return &clone
+}
+
+func (s *IPSecurityService) invalidateUserIPPinState(userID int64) {
+	if s == nil {
+		return
+	}
+	s.pinMu.Lock()
+	delete(s.pinStates, userID)
+	s.pinMu.Unlock()
+}
+
+func (s *IPSecurityService) SetPinKnownIPs(ctx context.Context, userID int64, enabled bool) (*UserIPPinState, error) {
+	if userID <= 0 {
+		return nil, fmt.Errorf("invalid user id")
+	}
+	state, err := s.getUserIPPinState(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if state == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	if !enabled {
+		if err := s.repo.SetUserIPPin(ctx, userID, false, state.IPs, nil); err != nil {
+			return nil, err
+		}
+		s.invalidateUserIPPinState(userID)
+		_ = s.seedUserIPs(ctx, userID, state.IPs, state.Saturated)
+		out, err := s.getUserIPPinState(ctx, userID)
+		return out, err
+	}
+
+	merged := make(map[string]struct{}, len(state.IPs)+16)
+	ips := make([]string, 0, len(state.IPs)+16)
+	for _, ipAddr := range state.IPs {
+		if normalized := normalizePublicIP(ipAddr); normalized != "" {
+			if _, exists := merged[normalized]; !exists {
+				merged[normalized] = struct{}{}
+				ips = append(ips, normalized)
+			}
+		}
+	}
+	usageIPs, err := s.repo.ListUsageIPsForUser(ctx, userID, time.Now().Add(-90*24*time.Hour))
+	if err != nil {
+		return nil, err
+	}
+	for _, ipAddr := range usageIPs {
+		if normalized := normalizePublicIP(ipAddr); normalized != "" {
+			if _, exists := merged[normalized]; !exists {
+				merged[normalized] = struct{}{}
+				ips = append(ips, normalized)
+			}
+		}
+	}
+	if len(ips) > maxUserIPHistory {
+		ips = ips[:maxUserIPHistory]
+	}
+	now := time.Now()
+	if err := s.repo.SetUserIPPin(ctx, userID, true, ips, &now); err != nil {
+		return nil, err
+	}
+	s.invalidateUserIPPinState(userID)
+	_ = s.seedUserIPs(ctx, userID, ips, len(ips) >= maxUserIPHistory)
+	return s.getUserIPPinState(ctx, userID)
+}
+
+func (s *IPSecurityService) AppendAllowedIP(ctx context.Context, userID int64, rawIP string) error {
+	ipAddr := normalizePublicIP(rawIP)
+	if ipAddr == "" {
+		return fmt.Errorf("invalid public ip address")
+	}
+	if err := s.repo.AppendUserAllowedIP(ctx, userID, ipAddr); err != nil {
+		return err
+	}
+	s.invalidateUserIPPinState(userID)
+	state, err := s.getUserIPPinState(ctx, userID)
+	if err == nil && state != nil {
+		_ = s.seedUserIPs(ctx, userID, state.IPs, state.Saturated)
+	}
+	return nil
+}
+
+func (s *IPSecurityService) GetUserIPSummary(ctx context.Context, userID int64, days int) (*UserIPSummary, error) {
+	if userID <= 0 {
+		return nil, fmt.Errorf("invalid user id")
+	}
+	if days <= 0 {
+		days = 30
+	}
+	if days > 90 {
+		days = 90
+	}
+	return s.repo.ListUserIPSummary(ctx, userID, time.Now().Add(-time.Duration(days)*24*time.Hour))
+}
+
+// ManualBan creates or re-activates a global IP ban (overrides whitelist).
+// reason should be a stable prefix such as "manual: ..." or "pinned-user unknown ip ...".
+func (s *IPSecurityService) ManualBan(ctx context.Context, rawIP, reason string) (*IPSecurityBan, error) {
+	ip := normalizePublicIP(rawIP)
+	if ip == "" {
+		return nil, fmt.Errorf("invalid public ip address")
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "manual: admin ban"
+	}
+	now := time.Now()
+	ban := &IPSecurityBan{
+		IPAddress:            ip,
+		Status:               "active",
+		Reason:               reason,
+		AccountThreshold:     1,
+		WindowMinutes:        0,
+		DetectedAccountCount: 1,
+		FirstSeenAt:          now,
+		LastSeenAt:           now,
+		CreatedAt:            now,
+	}
+	created, err := s.repo.ForceCreateBan(ctx, ban)
+	if err != nil {
+		return nil, err
+	}
+	if !created {
+		return nil, fmt.Errorf("failed to create ip ban")
+	}
+	s.applyActiveBanLocalAndRedis(ctx, ip)
+	return ban, nil
+}
+
+func (s *IPSecurityService) applyActiveBanLocalAndRedis(ctx context.Context, ip string) {
+	s.stateMu.Lock()
+	if s.fallback == nil {
+		s.fallback = make(map[string]struct{})
+	}
+	s.fallback[ip] = struct{}{}
+	if s.whitelist != nil {
+		delete(s.whitelist, ip)
+	}
+	s.stateMu.Unlock()
+	if s.rdb == nil {
+		return
+	}
+	if redisCtx, cancel, ok := s.redisContext(ctx); ok {
+		defer cancel()
+		pipe := s.rdb.TxPipeline()
+		pipe.SAdd(redisCtx, "ipsec:{state}:banned", ip)
+		pipe.SRem(redisCtx, "ipsec:{state}:whitelisted", ip)
+		if _, err := pipe.Exec(redisCtx); err != nil {
+			s.noteRedisFailure(err)
+		}
+	}
+}
+
+func (s *IPSecurityService) GetBanByIP(ctx context.Context, rawIP string) (*IPSecurityBan, error) {
+	ip := normalizePublicIP(rawIP)
+	if ip == "" {
+		return nil, fmt.Errorf("invalid public ip address")
+	}
+	return s.repo.GetBanByIP(ctx, ip)
+}
+
+func (s *IPSecurityService) WhitelistBanByIP(ctx context.Context, rawIP string, releasedBy int64) error {
+	ban, err := s.GetBanByIP(ctx, rawIP)
+	if err != nil {
+		return err
+	}
+	if ban.Status == "whitelisted" {
+		return nil
+	}
+	if ban.Status == "released" {
+		// Releasing an already released ban is idempotent. Do not reactivate it
+		// briefly just to whitelist it again.
+		return nil
+	}
+	if ban.Status != "active" {
+		if _, err := s.ManualBan(ctx, ban.IPAddress, ban.Reason); err != nil {
+			return err
+		}
+		ban, err = s.GetBanByIP(ctx, ban.IPAddress)
+		if err != nil {
+			return err
+		}
+	}
+	return s.WhitelistBan(ctx, ban.ID, releasedBy)
+}
+
+func (s *IPSecurityService) ActivateBanByIP(ctx context.Context, rawIP, reason string) (*IPSecurityBan, error) {
+	if strings.TrimSpace(reason) == "" {
+		reason = "manual: admin re-activate"
+	}
+	return s.ManualBan(ctx, rawIP, reason)
 }
 
 func (s *IPSecurityService) WhitelistBan(ctx context.Context, id, releasedBy int64) error {

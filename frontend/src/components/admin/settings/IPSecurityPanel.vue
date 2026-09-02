@@ -248,7 +248,7 @@ async function loadBans(nextPage = 1) {
 
 async function openBan(id: number) {
   try {
-    const res = await ipSecurityAPI.getBan(id)
+    const res = await ipSecurityAPI.getBan(id, { page: 1, page_size: 100, days: 30 })
     detail.value = { ban: res.ban, activities: res.activities || [] }
   } catch (error: any) {
     appStore.showError(error.response?.data?.detail || t('admin.settings.ipSecurity.loadFailed'))

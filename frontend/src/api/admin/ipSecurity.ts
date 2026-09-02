@@ -45,12 +45,18 @@ export const ipSecurityAPI = {
   getConfig: async () => (await apiClient.get<IPSecurityConfig>('/admin/ip-security/config')).data,
   listBans: async (params?: { status?: string; page?: number; page_size?: number }) =>
     (await apiClient.get<{ items: IPSecurityBan[]; page: number; page_size: number; total: number; pages: number }>('/admin/ip-security/bans', { params })).data,
-  getBan: async (id: number, params?: { page?: number; page_size?: number }) =>
+  createBan: async (payload: { ip_address: string; reason?: string }) =>
+    (await apiClient.post<IPSecurityBan>('/admin/ip-security/bans', payload)).data,
+  getBan: async (id: number, params?: { page?: number; page_size?: number; days?: number }) =>
     (await apiClient.get<{ ban: IPSecurityBan; activities: IPSecurityActivityDetail[]; page: number; page_size: number; total: number; pages: number }>(`/admin/ip-security/bans/${id}`, { params })).data,
   releaseBan: async (id: number) =>
     (await apiClient.post<{ message: string }>(`/admin/ip-security/bans/${id}/release`)).data,
   removeWhitelist: async (id: number) =>
     (await apiClient.post<{ message: string }>(`/admin/ip-security/bans/${id}/remove-whitelist`)).data,
+  releaseBanByIP: async (ip: string) =>
+    (await apiClient.post<{ message: string }>(`/admin/ip-security/bans/by-ip/${encodeURIComponent(ip)}/release`)).data,
+  activateBanByIP: async (ip: string, reason?: string) =>
+    (await apiClient.post<IPSecurityBan>(`/admin/ip-security/bans/by-ip/${encodeURIComponent(ip)}/activate`, { reason })).data,
 }
 
 export default ipSecurityAPI

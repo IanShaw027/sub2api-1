@@ -23,8 +23,22 @@ func observeIPSecurity(c *gin.Context, userID int64, source string, apiKeyID int
 	if security == nil || userID <= 0 {
 		return
 	}
+	clientIP := ip.GetTrustedClientIP(c)
+	blocked, deniedIP, err := security.EnforcePinnedUserIP(c.Request.Context(), userID, clientIP)
+	if err != nil {
+		AbortWithError(c, 503, "IP_SECURITY_UNAVAILABLE", "IP security policy is temporarily unavailable")
+		return
+	}
+	if blocked {
+		msg := "Access denied. IP is not in this user's allowed exit list"
+		if deniedIP != "" {
+			msg = msg + " (" + deniedIP + ")"
+		}
+		AbortWithError(c, 403, "IP_NOT_ALLOWED", msg)
+		return
+	}
 	security.Observe(c.Request.Context(), service.IPSecurityActivity{
-		IPAddress:    ip.GetTrustedClientIP(c),
+		IPAddress:    clientIP,
 		PeerIP:       ip.GetPeerIP(c),
 		ForwardedFor: c.GetHeader("X-Forwarded-For"),
 		UserID:       userID,

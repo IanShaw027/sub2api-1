@@ -114,6 +114,9 @@ func jwtAuth(
 			activityToucher.TouchLastActiveForUser(c.Request.Context(), user)
 		}
 		observeIPSecurity(c, user.ID, service.IPSecuritySourceWeb, 0)
+		if c.IsAborted() {
+			return
+		}
 
 		c.Next()
 	}

@@ -41,6 +41,15 @@
               {{ t('admin.usage.userDeletedBadge') }}
             </span>
             <span class="ml-1 text-gray-500 dark:text-gray-400">#{{ row.user_id }}</span>
+            <button
+              v-if="allowIpSecurityActions && row.user_id"
+              type="button"
+              class="ml-1 inline-flex items-center rounded px-1 py-px text-[10px] font-medium leading-tight bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200 transition-colors hover:bg-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/30 dark:hover:bg-sky-500/20"
+              :title="t('admin.usage.clickToViewIps')"
+              @click.stop="$emit('userIpClick', row.user_id, row.user?.email)"
+            >
+              IP
+            </button>
           </div>
         </template>
 
@@ -262,8 +271,20 @@
         </template>
 
         <template #cell-ip_address="{ row }">
-          <div v-if="row.ip_address">
-            <span class="text-sm font-mono text-gray-600 dark:text-gray-400">{{ row.ip_address }}</span>
+          <div v-if="row.ip_address" class="space-y-1">
+            <div class="flex items-center gap-1.5">
+              <span class="text-sm font-mono text-gray-600 dark:text-gray-400">{{ row.ip_address }}</span>
+              <button
+                v-if="allowIpSecurityActions"
+                type="button"
+                class="btn btn-danger btn-xs px-1.5 py-0 text-[10px]"
+                :disabled="banningIp === row.ip_address"
+                :title="t('admin.usage.banIp')"
+                @click.stop="banRowIp(row.ip_address)"
+              >
+                {{ t('admin.usage.banIp') }}
+              </button>
+            </div>
             <IpGeoCell :ip="row.ip_address" />
           </div>
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
@@ -500,6 +521,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
 import { formatDateTime, formatReasoningEffort } from '@/utils/format'
 import { formatCacheTokens, formatMultiplier } from '@/utils/formatters'
 import { formatTokenPricePerMillion } from '@/utils/usagePricing'
@@ -548,6 +570,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import IpGeoCell from '@/components/common/IpGeoCell.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { fetchBatch, getEntry } from '@/utils/ipGeoLookup'
+import ipSecurityAPI from '@/api/admin/ipSecurity'
 import type { AdminUsageLog } from '@/types'
 import type { Column } from '@/components/common/types'
 
@@ -562,6 +585,8 @@ interface Props {
   showUpstreamEndpoint?: boolean
   /** 嵌入统一卡片内使用：去掉自身卡片外观 */
   flat?: boolean
+  /** 仅管理端用量页传入；仍需当前登录用户为 admin 才会展示 */
+  allowIpSecurityActions?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -571,16 +596,38 @@ const props = withDefaults(defineProps<Props>(), {
   defaultSortOrder: 'asc',
   showAccountBilling: true,
   showUpstreamEndpoint: true,
-  flat: false
+  flat: false,
+  allowIpSecurityActions: false,
 })
 const emit = defineEmits<{
   userClick: [userID: number, email?: string]
+  userIpClick: [userID: number, email?: string]
   sort: [key: string, order: 'asc' | 'desc']
   ipGeoBatchFailed: []
 }>()
 const { t } = useI18n()
 const appStore = useAppStore()
+const authStore = useAuthStore()
 const copiedRequestId = ref<string | null>(null)
+const banningIp = ref('')
+
+// prop 打开不够：普通用户账号即使误传 prop 也不展示封禁入口
+const allowIpSecurityActions = computed(
+  () => props.allowIpSecurityActions && authStore.isAdmin,
+)
+
+const banRowIp = async (ipAddr: string) => {
+  if (!allowIpSecurityActions.value || !ipAddr || banningIp.value) return
+  banningIp.value = ipAddr
+  try {
+    await ipSecurityAPI.createBan({ ip_address: ipAddr, reason: 'manual: usage table one-click ban' })
+    appStore.showSuccess(t('admin.usage.banIpSuccess'))
+  } catch (e: any) {
+    appStore.showError(e?.message || t('admin.usage.banIpFailed'))
+  } finally {
+    banningIp.value = ''
+  }
+}
 const showAccountBilling = props.showAccountBilling
 const showUpstreamEndpoint = props.showUpstreamEndpoint
 const ipGeoBatchLoading = ref(false)

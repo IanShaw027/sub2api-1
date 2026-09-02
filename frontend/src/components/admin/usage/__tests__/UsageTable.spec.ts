@@ -9,8 +9,20 @@ const appStoreMocks = vi.hoisted(() => ({
   showError: vi.fn(),
 }))
 
+const ipSecurityMocks = vi.hoisted(() => ({
+  createBan: vi.fn(),
+}))
+
+const authStoreMocks = vi.hoisted(() => ({
+  isAdmin: true,
+}))
+
 vi.mock('@/utils/ipGeoLookup', () => ipGeoMocks)
 vi.mock('@/stores/app', () => ({ useAppStore: () => appStoreMocks }))
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => authStoreMocks }))
+vi.mock('@/api/admin/ipSecurity', () => ({
+  default: ipSecurityMocks,
+}))
 
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
@@ -66,6 +78,10 @@ const messages: Record<string, string> = {
 	'usage.upstreamResponseModel': 'Upstream response',
 	'usage.modelVariant': 'Possible version variant',
 	'usage.modelMismatch': 'Different model',
+  'admin.usage.banIp': 'Ban',
+  'admin.usage.banIpSuccess': 'IP banned',
+  'admin.usage.banIpFailed': 'Failed to ban IP',
+  'admin.usage.clickToViewIps': 'View user IPs',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -551,6 +567,55 @@ describe('admin UsageTable IP geolocation batch toolbar', () => {
     expect(wrapper.text()).toContain('121.35.47.43')
     expect(wrapper.text()).toContain('CN · Guangdong · Shenzhen')
   })
+
+  it('hides IP ban button by default for shared user usage views', () => {
+    authStoreMocks.isAdmin = true
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [{ request_id: 'r1', ip_address: '8.8.8.8' }],
+        loading: false,
+        columns: [{ key: 'ip_address', label: 'IP' }],
+      },
+      global: { stubs: { DataTable: DataTableStubWithIp, EmptyState: true, Teleport: true } },
+    })
+    expect(wrapper.text()).toContain('8.8.8.8')
+    expect(wrapper.text()).not.toContain('Ban')
+  })
+
+  it('hides IP ban button for non-admin even if allowIpSecurityActions is enabled', () => {
+    authStoreMocks.isAdmin = false
+    const wrapper = mount(UsageTable, {
+      props: {
+        allowIpSecurityActions: true,
+        data: [{ request_id: 'r1', ip_address: '8.8.8.8' }],
+        loading: false,
+        columns: [{ key: 'ip_address', label: 'IP' }],
+      },
+      global: { stubs: { DataTable: DataTableStubWithIp, EmptyState: true, Teleport: true } },
+    })
+    expect(wrapper.find('button[title="Ban"]').exists()).toBe(false)
+  })
+
+  it('shows IP ban button only when allowIpSecurityActions is enabled and user is admin', async () => {
+    authStoreMocks.isAdmin = true
+    ipSecurityMocks.createBan.mockResolvedValue({})
+    const wrapper = mount(UsageTable, {
+      props: {
+        allowIpSecurityActions: true,
+        data: [{ request_id: 'r1', ip_address: '8.8.8.8' }],
+        loading: false,
+        columns: [{ key: 'ip_address', label: 'IP' }],
+      },
+      global: { stubs: { DataTable: DataTableStubWithIp, EmptyState: true, Teleport: true } },
+    })
+    const banButton = wrapper.find('button[title="Ban"]')
+    expect(banButton.exists()).toBe(true)
+    await banButton.trigger('click')
+    expect(ipSecurityMocks.createBan).toHaveBeenCalledWith({
+      ip_address: '8.8.8.8',
+      reason: 'manual: usage table one-click ban',
+    })
+  })
 })
 
 // A DataTable stub that also renders cell-user, so the deleted badge can be asserted.
@@ -568,6 +633,53 @@ const DataTableStubWithUser = {
     </div>
   `,
 }
+
+describe('admin UsageTable user IP summary entry', () => {
+  it('hides the user IP summary button unless allowIpSecurityActions is enabled for an admin', () => {
+    const row = {
+      request_id: 'req-user-ip-1',
+      model: 'claude-3',
+      user_id: 9,
+      user: { id: 9, email: 'u@test.com' },
+      actual_cost: 0,
+      total_cost: 0,
+    }
+    authStoreMocks.isAdmin = true
+    const hidden = mount(UsageTable, {
+      props: {
+        data: [row],
+        loading: false,
+        columns: [{ key: 'user', label: 'User' }],
+      },
+      global: { stubs: { DataTable: DataTableStubWithUser, EmptyState: true, Teleport: true } },
+    })
+    expect(hidden.find('button[title="View user IPs"]').exists()).toBe(false)
+
+    authStoreMocks.isAdmin = false
+    const nonAdmin = mount(UsageTable, {
+      props: {
+        allowIpSecurityActions: true,
+        data: [row],
+        loading: false,
+        columns: [{ key: 'user', label: 'User' }],
+      },
+      global: { stubs: { DataTable: DataTableStubWithUser, EmptyState: true, Teleport: true } },
+    })
+    expect(nonAdmin.find('button[title="View user IPs"]').exists()).toBe(false)
+
+    authStoreMocks.isAdmin = true
+    const shown = mount(UsageTable, {
+      props: {
+        allowIpSecurityActions: true,
+        data: [row],
+        loading: false,
+        columns: [{ key: 'user', label: 'User' }],
+      },
+      global: { stubs: { DataTable: DataTableStubWithUser, EmptyState: true, Teleport: true } },
+    })
+    expect(shown.find('button[title="View user IPs"]').exists()).toBe(true)
+  })
+})
 
 describe('admin UsageTable deleted-user badge', () => {
   it('renders deleted badge for a soft-deleted user row', () => {

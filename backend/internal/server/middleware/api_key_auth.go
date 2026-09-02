@@ -184,6 +184,10 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			if !billingInfoRequest {
 				_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
 			}
+			observeIPSecurity(c, apiKey.User.ID, service.IPSecuritySourceAPIKey, apiKey.ID)
+			if c.IsAborted() {
+				return
+			}
 			c.Next()
 			return
 		}
@@ -283,6 +287,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
 		}
 		observeIPSecurity(c, apiKey.User.ID, service.IPSecuritySourceAPIKey, apiKey.ID)
+		if c.IsAborted() {
+			return
+		}
 
 		c.Next()
 	}
