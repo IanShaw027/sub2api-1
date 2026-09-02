@@ -48,7 +48,7 @@
                 </p>
                 <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
                   <span>{{ t('payment.planCard.rate') }}: ×{{ subscription.group?.rate_multiplier ?? 1 }}</span>
-                  <span v-if="subscriptionHasPeakRate(subscription)" class="text-amber-700">
+                  <span v-if="subscriptionHasPeakRate(subscription)" class="text-warning-text">
                     {{ t('payment.planCard.peakRate') }}: {{ subscriptionPeakRateLabel(subscription) }}
                   </span>
                 </div>
@@ -219,7 +219,7 @@ function platformAccentDotClass(p: string): string {
     case 'openai': return 'bg-emerald-500'
     case 'antigravity': return 'bg-purple-500'
     case 'gemini': return 'bg-blue-500'
-    default: return 'bg-gray-400'
+    default: return 'bg-surface-3'
   }
 }
 
@@ -281,10 +281,10 @@ function getExpirationClass(expiresAt: string): string {
   const diff = expires.getTime() - now.getTime()
   const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
 
-  if (diff <= 0) return 'text-red-600 dark:text-red-400 font-medium'
-  if (days <= 3) return 'text-red-600 dark:text-red-400'
-  if (days <= 7) return 'text-orange-600 dark:text-orange-400'
-  return 'text-gray-700 dark:text-gray-300'
+  if (diff <= 0) return 'text-danger-text  font-medium'
+  if (days <= 3) return 'text-danger-text '
+  if (days <= 7) return 'text-warning-text '
+  return 'text-foreground '
 }
 
 function formatDurationParts(parts: RemainingDurationParts): string {

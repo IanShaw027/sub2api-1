@@ -63,7 +63,7 @@
  </button>
  <button
  type="button"
- class="btn-glass-secondary btn-sm text-red-600 hover:text-red-700 "
+ class="btn-glass-secondary btn-sm text-danger-text hover:text-danger-text "
  :disabled="bulkDeleting"
  @click="deleteSelectedJobs"
  >
@@ -124,7 +124,7 @@
  <span v-if="row.child_count > 0 && !row.is_child" class="flex-shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-xs font-normal text-muted ">
  {{ t('batchImage.list.childCount', { n: row.child_count }, row.child_count) }}
  </span>
- <span v-if="row.is_child" class="flex-shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-normal text-amber-700 ">
+ <span v-if="row.is_child" class="flex-shrink-0 rounded-full bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-2 py-0.5 text-xs font-normal text-warning-text ">
  {{ t('batchImage.list.childBadge') }}
  </span>
 	 </span>
@@ -157,9 +157,9 @@
 
  <template #cell-counts="{ row }">
  <div class="flex items-center justify-center gap-2 text-sm tabular-nums">
- <span class="text-emerald-600 ">{{ displayJob(row).success_count }}</span>
+ <span class="text-success-text ">{{ displayJob(row).success_count }}</span>
  <span class="text-muted">/</span>
- <span :class="displayJob(row).fail_count > 0 ? 'text-red-600 ' : 'text-muted'">{{ displayJob(row).fail_count }}</span>
+ <span :class="displayJob(row).fail_count > 0 ? 'text-danger-text ' : 'text-muted'">{{ displayJob(row).fail_count }}</span>
  <span class="text-xs text-muted">{{ t('batchImage.list.totalCount', { n: displayJob(row).item_count }) }}</span>
  </div>
  </template>
@@ -171,7 +171,7 @@
  </template>
 
  <template #cell-downloaded="{ row }">
- <span class="block text-center text-sm" :class="row.downloaded_at ? 'text-emerald-700 ' : 'text-muted'">
+ <span class="block text-center text-sm" :class="row.downloaded_at ? 'text-success-text ' : 'text-muted'">
  {{ row.downloaded_at ? formatDate(row.downloaded_at) : t('batchImage.list.notDownloaded') }}
  </span>
  </template>
@@ -190,7 +190,7 @@
  <button
  type="button"
  class="batch-row-action flex flex-col items-center gap-0.5 rounded-lg p-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklch,var(--accent)_30%,transparent)]"
- :class="canDownload(row) ? 'text-muted hover:bg-green-50 hover:text-green-600' : 'text-muted'"
+ :class="canDownload(row) ? 'text-muted hover:bg-[color-mix(in_oklch,var(--success)_16%,transparent)] hover:text-success-text' : 'text-muted'"
  :disabled="!canDownload(row) || downloading"
  :title="t('batchImage.actions.downloadZip')"
  @click="downloadJob(row)"
@@ -291,7 +291,7 @@
  <button
  v-if="canRetry(job)"
  type="button"
- class="flex w-full items-center gap-2 px-3 py-2 text-left text-foreground transition-colors hover:bg-amber-50 hover:text-amber-700 disabled:opacity-60"
+ class="flex w-full items-center gap-2 px-3 py-2 text-left text-foreground transition-colors hover:bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] hover:text-amber-700 disabled:opacity-60"
  :disabled="retryingBatchId === job.id"
  @click="retryFailedJob(job)"
  >
@@ -301,7 +301,7 @@
  <button
  v-if="canDeleteRecord(job)"
  type="button"
- class="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 transition-colors hover:bg-red-50 disabled:opacity-60"
+ class="flex w-full items-center gap-2 px-3 py-2 text-left text-danger-text transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] disabled:opacity-60"
  :disabled="deletingBatchId === job.id"
  @click="deleteJob(job)"
  >
@@ -352,9 +352,9 @@
  <div class="min-w-0 text-center">
  <p class="text-xs text-muted">{{ hasChildJobs(currentJob.id) ? t('batchImage.detail.aggregatedResult') : t('batchImage.detail.result') }}</p>
  <p class="mt-1 flex items-center justify-center gap-2 font-medium tabular-nums">
- <span class="text-emerald-600 ">{{ (currentDisplayJob || currentJob).success_count }}</span>
+ <span class="text-success-text ">{{ (currentDisplayJob || currentJob).success_count }}</span>
  <span class="text-muted">/</span>
- <span :class="(currentDisplayJob || currentJob).fail_count > 0 ? 'text-red-600 ' : 'text-muted'">{{ (currentDisplayJob || currentJob).fail_count }}</span>
+ <span :class="(currentDisplayJob || currentJob).fail_count > 0 ? 'text-danger-text ' : 'text-muted'">{{ (currentDisplayJob || currentJob).fail_count }}</span>
  </p>
  </div>
  <div class="min-w-0 text-center">
@@ -524,7 +524,7 @@
 
  <BaseDialog :show="!!previewImageItem" :title="previewImageItem?.custom_id || t('batchImage.imagePreview.title')" width="extra-wide" :z-index="60" @close="closeImagePreview">
  <div class="space-y-3">
- <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 ">
+ <div class="rounded-lg border border-[color-mix(in_oklch,var(--warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-3 py-2 text-sm text-warning-text ">
  {{ t('batchImage.imagePreview.notice') }}
  </div>
  <div class="flex min-h-[420px] items-center justify-center rounded-lg bg-surface-2 p-4 ">
@@ -560,7 +560,7 @@
  {{ key.name }} · {{ key.group?.name || 'Gemini' }}
  </option>
  </select>
- <p v-if="!loadingKeys && geminiApiKeys.length === 0" class="input-hint text-amber-600 ">
+ <p v-if="!loadingKeys && geminiApiKeys.length === 0" class="input-hint text-warning-text ">
  {{ t('batchImage.create.noKeysHint') }}
  </p>
  </div>
@@ -574,10 +574,10 @@
  {{ model.label }}
  </option>
  </select>
- <p v-if="modelLoadError" class="input-hint text-amber-600 ">
+ <p v-if="modelLoadError" class="input-hint text-warning-text ">
  {{ modelLoadError }}
  </p>
- <p v-else-if="selectedApiKey && !loadingModels && availableBatchImageModels.length === 0" class="input-hint text-amber-600 ">
+ <p v-else-if="selectedApiKey && !loadingModels && availableBatchImageModels.length === 0" class="input-hint text-warning-text ">
  {{ batchImageText('noModelsHint') }}
  </p>
  </div>
@@ -664,7 +664,7 @@
  class="inline-flex max-w-full items-center gap-1 rounded-md border border-line bg-surface-2 px-2 py-1 text-xs text-foreground "
  >
  <span class="max-w-[180px] truncate">{{ ref.name }}</span>
- <button type="button" class="text-muted hover:text-red-600" :title="t('batchImage.create.removeReferenceImage')" @click="removeReferenceImageDraft(refIndex)">
+ <button type="button" class="text-muted hover:text-danger-text" :title="t('batchImage.create.removeReferenceImage')" @click="removeReferenceImageDraft(refIndex)">
  <Icon name="x" size="xs" />
  </button>
  </span>
@@ -687,7 +687,7 @@
  <span v-if="row.reference_images.length" class="flex-shrink-0 text-xs text-muted">
  {{ t('batchImage.create.referenceCount', { n: row.reference_images.length }, row.reference_images.length) }}
  </span>
- <button type="button" class="btn-ghost btn-icon flex-shrink-0 text-red-600 hover:bg-red-50" :title="t('common.delete')" @click="removePromptRow(index)">
+ <button type="button" class="btn-ghost btn-icon flex-shrink-0 text-danger-text hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)]" :title="t('common.delete')" @click="removePromptRow(index)">
  <Icon name="trash" size="sm" />
  </button>
  </div>
@@ -697,10 +697,10 @@
  </div>
  </div>
 
-	 <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900 ">
+	 <div class="rounded-lg border border-[color-mix(in_oklch,var(--warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-3 text-sm leading-6 text-warning-text ">
 	 {{ t('batchImage.create.cancelNotice') }}
 	 </div>
-	 <div v-if="submitting" class="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm leading-6 text-sky-800 ">
+	 <div v-if="submitting" class="rounded-lg border border-sky-200 bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-3 text-sm leading-6 text-sky-800 ">
 	 {{ t('batchImage.create.submittingNotice') }}
 	 </div>
 	 </form>
@@ -1991,9 +1991,9 @@ function isRecoveredOriginalFailure(item: BatchImageDetailItem) {
 
 function detailItemRowClass(item: BatchImageDetailItem) {
   if (isRecoveredOriginalFailure(item)) {
-    return 'bg-gray-50/80 text-gray-400 hover:bg-gray-100/80 dark:bg-dark-900/60 dark:text-gray-500 dark:hover:bg-dark-800/70'
+    return 'bg-surface-2 text-muted hover:bg-surface-2   '
   }
-  return 'hover:bg-gray-50/70 dark:hover:bg-dark-800/60'
+  return 'hover:bg-surface-2 '
 }
 
 function previewCacheSupported() {
@@ -2373,10 +2373,10 @@ function itemResultLabel(item: BatchImageDetailItem) {
 }
 
 function itemResultClass(item: BatchImageDetailItem) {
-  if (isRecoveredOriginalFailure(item)) return 'bg-gray-100 text-gray-500 ring-gray-200 dark:bg-dark-800 dark:text-gray-400 dark:ring-dark-700'
-  if (item.error || item.status === 'failed' || item.status === 'cancelled') return 'bg-red-50 text-red-700 ring-red-100 dark:bg-red-950/30 dark:text-red-300 dark:ring-red-900/50'
-  if (item.status === 'succeeded' || item.status === 'success') return 'bg-emerald-50 text-emerald-700 ring-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300 dark:ring-emerald-900/50'
-  return 'bg-gray-50 text-gray-500 ring-gray-200 dark:bg-dark-800 dark:text-gray-400 dark:ring-dark-700'
+  if (isRecoveredOriginalFailure(item)) return 'bg-surface-2 text-muted ring-line   '
+  if (item.error || item.status === 'failed' || item.status === 'cancelled') return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text ring-red-100   '
+  if (item.status === 'succeeded' || item.status === 'success') return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text ring-emerald-100   '
+  return 'bg-surface-2 text-muted ring-line   '
 }
 
 function friendlyItemError(error: BatchImageItem['error']) {

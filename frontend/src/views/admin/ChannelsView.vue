@@ -72,7 +72,7 @@
 
           <template #cell-group_count="{ row }">
             <span
-              class="inline-flex items-center rounded bg-surface-2 px-2 py-0.5 text-xs font-medium text-foreground dark:bg-dark-600"
+              class="inline-flex items-center rounded bg-surface-2 px-2 py-0.5 text-xs font-medium text-foreground "
             >
               {{ (row.group_ids || []).length }}
               {{ t('admin.channels.groupsUnit', 'groups') }}
@@ -81,7 +81,7 @@
 
           <template #cell-pricing_count="{ row }">
             <span
-              class="inline-flex items-center rounded bg-surface-2 px-2 py-0.5 text-xs font-medium text-foreground dark:bg-dark-600"
+              class="inline-flex items-center rounded bg-surface-2 px-2 py-0.5 text-xs font-medium text-foreground "
             >
               {{ (row.model_pricing || []).length }}
               {{ t('admin.channels.pricingUnit', 'pricing rules') }}
@@ -98,14 +98,14 @@
             <div class="flex items-center gap-1">
               <button
                 @click="openEditDialog(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-accent dark:hover:text-primary-400"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-accent "
               >
                 <Icon name="edit" size="sm" />
                 <span class="text-xs">{{ t('common.edit', 'Edit') }}</span>
               </button>
               <button
                 @click="handleDelete(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text  "
               >
                 <Icon name="trash" size="sm" />
                 <span class="text-xs">{{ t('common.delete', 'Delete') }}</span>
@@ -239,7 +239,7 @@
                   :key="p"
                   class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors"
                   :class="activePlatforms.includes(p)
- ? 'bg-primary-50 border-primary-300 dark:bg-primary-900/20 dark:border-primary-700'
+ ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] border-[color-mix(in_oklch,var(--accent)_40%,transparent)]  '
  : 'border-line hover:bg-surface-2 '"
                 >
                   <input
@@ -301,7 +301,7 @@
                     :key="group.id"
                     class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-line px-2 py-1 text-xs transition-colors hover:bg-surface-2"
                     :class="[
- section.group_ids.includes(group.id) ? 'bg-primary-50 border-primary-300 dark:bg-primary-900/20 dark:border-primary-700' : '',
+ section.group_ids.includes(group.id) ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] border-[color-mix(in_oklch,var(--accent)_40%,transparent)]  ' : '',
  isGroupInOtherChannel(group.id, section.platform) ? 'opacity-40' : ''
  ]"
                   >
@@ -333,7 +333,7 @@
                   <label class="text-xs font-medium text-foreground">
                     {{ t('admin.channels.form.webSearchEmulation') }}
                   </label>
-                  <p class="mt-0.5 text-[11px] text-red-500 dark:text-red-400">
+                  <p class="mt-0.5 text-[11px] text-red-500 ">
                     {{ t('admin.channels.form.webSearchEmulationHint') }}
                   </p>
                 </div>
@@ -348,7 +348,7 @@
                   <label class="text-xs font-medium text-foreground">
                     {{ t('admin.channels.form.codexImageGenerationBridge') }}
                   </label>
-                  <p class="mt-0.5 text-[11px] text-amber-600 dark:text-amber-400">
+                  <p class="mt-0.5 text-[11px] text-warning-text ">
                     {{ t('admin.channels.form.codexImageGenerationBridgeHint') }}
                   </p>
                 </div>
@@ -363,7 +363,7 @@
                   <label class="text-xs font-medium text-foreground">
                     {{ t('admin.channels.form.bedrockCCCompat') }}
                   </label>
-                  <p class="mt-0.5 text-[11px] text-amber-600 dark:text-amber-400">
+                  <p class="mt-0.5 text-[11px] text-warning-text ">
                     {{ t('admin.channels.form.bedrockCCCompatHint') }}
                   </p>
                 </div>
@@ -375,13 +375,13 @@
             <div>
               <div class="mb-1 flex items-center justify-between">
                 <label class="input-label text-xs mb-0">{{ t('admin.channels.form.modelMapping', 'Model Mapping') }}</label>
-                <button type="button" @click="addMappingEntry(sIdx)" class="text-xs text-accent hover:text-primary-700">
+                <button type="button" @click="addMappingEntry(sIdx)" class="text-xs text-accent hover:text-accent">
                   + {{ t('common.add', 'Add') }}
                 </button>
               </div>
               <div
                 v-if="Object.keys(section.model_mapping).length === 0"
-                class="rounded border border-dashed border-line p-2 text-center text-xs text-muted dark:border-dark-500"
+                class="rounded border border-dashed border-line p-2 text-center text-xs text-muted "
               >
                 {{ t('admin.channels.form.noMappingRules', 'No mapping rules. Click "Add" to create one.') }}
               </div>
@@ -411,7 +411,7 @@
                   <button
                     type="button"
                     @click="removeMappingEntry(sIdx, srcModel)"
-                    class="rounded p-0.5 text-muted hover:text-red-500"
+                    class="rounded p-0.5 text-muted hover:text-danger-text"
                   >
                     <Icon name="trash" size="sm" />
                   </button>
@@ -432,14 +432,14 @@
                   >
                     {{ syncingPlatform === section.platform ? t('admin.channels.form.syncingModels') : t('admin.channels.form.syncLatestModels') }}
                   </button>
-                  <button type="button" @click="addPricingEntry(sIdx)" class="text-xs text-accent hover:text-primary-700">
+                  <button type="button" @click="addPricingEntry(sIdx)" class="text-xs text-accent hover:text-accent">
                     + {{ t('common.add', 'Add') }}
                   </button>
                 </div>
               </div>
               <div
                 v-if="section.model_pricing.length === 0"
-                class="rounded border border-dashed border-line p-2 text-center text-xs text-muted dark:border-dark-500"
+                class="rounded border border-dashed border-line p-2 text-center text-xs text-muted "
               >
                 {{ t('admin.channels.form.noPricingRules', 'No pricing rules yet. Click "Add" to create one.') }}
               </div>
@@ -466,7 +466,7 @@
                 <button
                   type="button"
                   @click="addAccountStatsRule(sIdx)"
-                  class="rounded-lg border border-primary-300 px-3 py-1 text-xs font-medium text-accent hover:bg-primary-50 dark:border-primary-600 dark:text-primary-400 dark:hover:bg-primary-900/20"
+                  class="rounded-lg border border-[color-mix(in_oklch,var(--accent)_40%,transparent)] px-3 py-1 text-xs font-medium text-accent hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]   "
                 >
                   + {{ t('admin.channels.form.addRule') }}
                 </button>
@@ -491,7 +491,7 @@
                     :placeholder="t('admin.channels.form.ruleName')"
                     class="bg-transparent text-sm font-medium text-foreground placeholder-gray-400 outline-none"
                   />
-                  <button type="button" @click="removeAccountStatsRule(sIdx, ruleIndex)" class="text-xs text-red-500 hover:text-red-700">
+                  <button type="button" @click="removeAccountStatsRule(sIdx, ruleIndex)" class="text-xs text-red-500 hover:text-danger-text">
                     {{ t('common.delete') }}
                   </button>
                 </div>
@@ -504,7 +504,7 @@
                       :key="gid"
                       class="inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors"
                       :class="rule.group_ids.includes(gid)
- ? 'border-primary-300 bg-primary-50 dark:border-primary-700 dark:bg-primary-900/20'
+ ? 'border-[color-mix(in_oklch,var(--accent)_40%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]  '
  : 'border-line hover:bg-surface-2 '"
                     >
                       <input type="checkbox" :checked="rule.group_ids.includes(gid)" class="h-3 w-3 rounded border-line text-accent focus:ring-accent" @change="rule.group_ids.includes(gid) ? rule.group_ids.splice(rule.group_ids.indexOf(gid), 1) : rule.group_ids.push(gid)" />
@@ -523,10 +523,10 @@
                     <span
                       v-for="accountId in rule.account_ids"
                       :key="accountId"
-                      class="inline-flex items-center gap-1 rounded-md border border-primary-300 bg-primary-50 px-2 py-0.5 text-xs dark:border-primary-700 dark:bg-primary-900/20"
+                      class="inline-flex items-center gap-1 rounded-md border border-[color-mix(in_oklch,var(--accent)_40%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] px-2 py-0.5 text-xs  "
                     >
                       <span :class="['font-medium', platformTextClass(section.platform)]">{{ getRuleAccountLabel(accountId) }}</span>
-                      <button type="button" @click="removeRuleAccount(rule, accountId)" class="text-muted hover:text-red-500">
+                      <button type="button" @click="removeRuleAccount(rule, accountId)" class="text-muted hover:text-danger-text">
                         <Icon name="x" size="xs" />
                       </button>
                     </span>
@@ -544,7 +544,7 @@
                     <!-- Search results dropdown -->
                     <div
                       v-if="showRuleAccountDropdown[`${section.platform}-${ruleIndex}`] && (ruleAccountSearchResults[`${section.platform}-${ruleIndex}`]?.length ?? 0) > 0"
-                      class="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border bg-white shadow-lg"
+                      class="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border bg-surface shadow-lg"
                     >
                       <button
                         v-for="account in ruleAccountSearchResults[`${section.platform}-${ruleIndex}`]"
@@ -568,11 +568,11 @@
                 <div>
                   <div class="mb-1 flex items-center justify-between">
                     <label class="text-xs text-muted">{{ t('admin.channels.form.ruleModelPricing') }}</label>
-                    <button type="button" @click="addRulePricingEntry(sIdx, ruleIndex)" class="text-xs text-accent hover:text-primary-700">
+                    <button type="button" @click="addRulePricingEntry(sIdx, ruleIndex)" class="text-xs text-accent hover:text-accent">
                       + {{ t('common.add') }}
                     </button>
                   </div>
-                  <div v-if="rule.pricing.length === 0" class="rounded border border-dashed border-line p-2 text-center text-xs text-muted dark:border-dark-500">
+                  <div v-if="rule.pricing.length === 0" class="rounded border border-dashed border-line p-2 text-center text-xs text-muted ">
                     {{ t('admin.channels.form.noPricingRules') }}
                   </div>
                   <div v-else class="space-y-2">

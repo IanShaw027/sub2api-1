@@ -160,7 +160,7 @@
                 <span
                   class="rounded px-2 py-0.5"
                   :class="plugin.runtime_healthy
- ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+ ? 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text  '
  : 'bg-surface-2 text-muted'"
                 >
                   {{
@@ -178,7 +178,7 @@
               </div>
               <p
                 v-if="plugin.last_error"
-                class="mt-3 break-words text-xs text-red-600 dark:text-red-400"
+                class="mt-3 break-words text-xs text-danger-text "
               >
                 {{ plugin.last_error }}
               </p>
@@ -252,7 +252,7 @@
             </button>
             <button
               type="button"
-              class="btn-glass-secondary text-sm text-red-600"
+              class="btn-glass-secondary text-sm text-danger-text"
               :disabled="busyID === plugin.id || hasEnabledBinding(plugin)"
               @click="uninstallPlugin(plugin)"
             >
@@ -297,7 +297,7 @@
             :src="uiSession.url"
             sandbox="allow-scripts"
             referrerpolicy="no-referrer"
-            class="h-full w-full border-0 bg-white"
+            class="h-full w-full border-0 bg-surface"
             :title="
               t('admin.plugins.configTitle', { name: configPlugin?.name || '' })
             "
@@ -668,22 +668,22 @@ async function handleBridgeMessage(event: MessageEvent): Promise<void> {
 
 function stateClass(state: PluginInstallation["state"]): string {
   if (state === "enabled")
-    return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300";
+    return "bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text  ";
   if (state === "error" || state === "incompatible")
-    return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300";
+    return "bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text  ";
   if (state === "starting")
-    return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300";
-  return "bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300";
+    return "bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text  ";
+  return "bg-surface-2 text-muted  ";
 }
 
 function compatibilityClass(
   status: PluginInstallation["compatibility"]["status"],
 ): string {
   if (status === "compatible")
-    return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300";
+    return "bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text  ";
   if (status === "untested")
-    return "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300";
-  return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300";
+    return "bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text  ";
+  return "bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text  ";
 }
 
 onMounted(() => {

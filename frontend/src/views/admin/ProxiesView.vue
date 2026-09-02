@@ -168,14 +168,14 @@
             <button
               v-if="(value || 0) > 0"
               type="button"
-              class="inline-flex items-center rounded bg-surface-2 px-2 py-0.5 text-xs font-medium text-primary-700 hover:bg-surface-3 dark:bg-dark-600 dark:text-primary-300 dark:hover:bg-dark-500"
+              class="inline-flex items-center rounded bg-surface-2 px-2 py-0.5 text-xs font-medium text-accent hover:bg-surface-3   "
               @click="openAccountsModal(row)"
             >
               {{ t('admin.groups.accountsCount', { count: value || 0 }) }}
             </button>
             <span
               v-else
-              class="inline-flex items-center rounded bg-surface-2 px-2 py-0.5 text-xs font-medium text-foreground dark:bg-dark-600"
+              class="inline-flex items-center rounded bg-surface-2 px-2 py-0.5 text-xs font-medium text-foreground "
             >
               {{ t('admin.groups.accountsCount', { count: 0 }) }}
             </span>
@@ -238,7 +238,7 @@
               <button
                 @click="handleTestConnection(row)"
                 :disabled="testingProxyIds.has(row.id)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-emerald-50 hover:text-emerald-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-emerald-900/20 dark:hover:text-emerald-400"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--success)_16%,transparent)] hover:text-success-text disabled:cursor-not-allowed disabled:opacity-50  "
               >
                 <svg
                   v-if="testingProxyIds.has(row.id)"
@@ -266,7 +266,7 @@
               <button
                 @click="handleQualityCheck(row)"
                 :disabled="qualityCheckingProxyIds.has(row.id)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] hover:text-accent disabled:cursor-not-allowed disabled:opacity-50  "
               >
                 <svg
                   v-if="qualityCheckingProxyIds.has(row.id)"
@@ -293,14 +293,14 @@
               </button>
               <button
                 @click="handleEdit(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-accent dark:hover:text-primary-400"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-accent "
               >
                 <Icon name="edit" size="sm" />
                 <span class="text-xs">{{ t('common.edit') }}</span>
               </button>
               <button
                 @click="handleDelete(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text  "
               >
                 <Icon name="trash" size="sm" />
                 <span class="text-xs">{{ t('common.delete') }}</span>
@@ -351,7 +351,7 @@
  '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors',
  createMode === 'standard'
  ? 'border-accent text-accent'
- : 'border-transparent text-muted hover:text-foreground dark:hover:text-muted'
+ : 'border-transparent text-muted hover:text-foreground '
  ]"
           >
             <Icon name="plus" size="sm" class="mr-1.5 inline" />
@@ -364,7 +364,7 @@
  '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors',
  createMode === 'batch'
  ? 'border-accent text-accent'
- : 'border-transparent text-muted hover:text-foreground dark:hover:text-muted'
+ : 'border-transparent text-muted hover:text-foreground '
  ]"
           >
             <svg
@@ -528,7 +528,7 @@
                 :stroke-width="2"
                 class="text-amber-500"
               />
-              <span class="text-amber-600 dark:text-amber-400">
+              <span class="text-warning-text ">
                 {{ t('admin.proxies.invalidCount', { count: batchParseResult.invalid }) }}
               </span>
             </div>
@@ -844,8 +844,8 @@
         </div>
 
         <div class="max-h-80 overflow-auto rounded-lg border border-line">
-          <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-dark-700">
-            <thead class="bg-surface-2 text-xs uppercase text-muted dark:text-dark-400">
+          <table class="min-w-full divide-y divide-line text-sm ">
+            <thead class="bg-surface-2 text-xs uppercase text-muted ">
               <tr>
                 <th class="whitespace-nowrap px-3 py-2 text-left">{{ t('admin.proxies.qualityTableTarget') }}</th>
                 <th class="whitespace-nowrap px-3 py-2 text-left">{{ t('admin.proxies.qualityTableStatus') }}</th>
@@ -854,7 +854,7 @@
                 <th class="px-3 py-2 text-left">{{ t('admin.proxies.qualityTableMessage') }}</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700">
+            <tbody class="divide-y divide-line bg-surface ">
               <tr v-for="item in qualityReport.items" :key="item.target">
                 <td class="whitespace-nowrap px-3 py-2 text-foreground">{{ qualityTargetLabel(item.target) }}</td>
                 <td class="whitespace-nowrap px-3 py-2">
@@ -897,15 +897,15 @@
         {{ t('admin.proxies.accountsEmpty') }}
       </div>
       <div v-else class="max-h-80 overflow-auto">
-        <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-dark-700">
-          <thead class="bg-surface-2 text-xs uppercase text-muted dark:text-dark-400">
+        <table class="min-w-full divide-y divide-line text-sm ">
+          <thead class="bg-surface-2 text-xs uppercase text-muted ">
             <tr>
               <th class="px-4 py-2 text-left">{{ t('admin.proxies.accountName') }}</th>
               <th class="px-4 py-2 text-left">{{ t('admin.accounts.columns.platformType') }}</th>
               <th class="px-4 py-2 text-left">{{ t('admin.proxies.accountNotes') }}</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-200 bg-white dark:divide-dark-700">
+          <tbody class="divide-y divide-line bg-surface ">
             <tr v-for="account in proxyAccounts" :key="account.id">
               <td class="px-4 py-2 font-medium text-foreground">{{ account.name }}</td>
               <td class="px-4 py-2">

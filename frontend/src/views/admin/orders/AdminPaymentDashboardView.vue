@@ -99,14 +99,14 @@ function methodColor(type: string): string {
     alipay_direct: 'bg-blue-400', wxpay_direct: 'bg-green-400',
     stripe: 'bg-purple-500',
   }
-  return c[type] || 'bg-gray-400'
+  return c[type] || 'bg-surface-3'
 }
 
 function rankClass(idx: number): string {
-  if (idx === 0) return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
-  if (idx === 1) return 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-  if (idx === 2) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-  return 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-400'
+  if (idx === 0) return 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-yellow-700  '
+  if (idx === 1) return 'bg-surface-3 text-muted  '
+  if (idx === 2) return 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text  '
+  return 'bg-surface-2 text-muted  '
 }
 
 function sortedAmounts(amounts: CurrencyAmounts): [string, number][] {

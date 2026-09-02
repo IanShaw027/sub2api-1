@@ -112,7 +112,7 @@
           <template #cell-actions="{ row }">
             <button
               type="button"
-              class="inline-flex items-center gap-1 font-medium text-accent transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+              class="inline-flex items-center gap-1 font-medium text-accent transition-colors hover:text-accent  "
               @click="openDetail(row.id)"
             >
               <Icon name="eye" size="sm" />
@@ -323,7 +323,7 @@
         </button>
         <button
           type="button"
-          class="btn-glass-secondary text-red-600"
+          class="btn-glass-secondary text-danger-text"
           :disabled="clearing || clearTotpCode.length !== 6"
           @click="submitClear"
         >
@@ -656,9 +656,9 @@ function statusText(status: number): string {
 
 function statusBadgeClass(status: number): string {
   const base = 'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold '
-  if (status >= 500) return base + 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-  if (status >= 400) return base + 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-  return base + 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+  if (status >= 500) return base + 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text  '
+  if (status >= 400) return base + 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text  '
+  return base + 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text  '
 }
 
 function statusDotClass(status: number): string {

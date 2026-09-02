@@ -87,19 +87,19 @@
  </div>
  </div>
  <button class="account-tools-menu-item" @click="openSyncFromCrs">
- <span class="account-tools-menu-icon bg-blue-50 text-blue-600 ">
+ <span class="account-tools-menu-icon bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent ">
  <Icon name="sync" size="sm" />
  </span>
  <span class="flex-1 text-left">{{ t('admin.accounts.syncFromCrs') }}</span>
  </button>
  <button class="account-tools-menu-item" @click="openImportData">
- <span class="account-tools-menu-icon bg-emerald-50 text-emerald-600 ">
+ <span class="account-tools-menu-icon bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text ">
  <Icon name="upload" size="sm" />
  </span>
  <span class="flex-1 text-left">{{ t('admin.accounts.dataImport') }}</span>
  </button>
  <button class="account-tools-menu-item" @click="openExportDataDialogFromMenu">
- <span class="account-tools-menu-icon bg-violet-50 text-violet-600 ">
+ <span class="account-tools-menu-icon bg-violet-500/15 text-violet-600 ">
  <Icon name="download" size="sm" />
  </span>
  <span class="flex-1 text-left">
@@ -120,19 +120,19 @@
  </div>
  </div>
  <button class="account-tools-menu-item" @click="openErrorPassthrough">
- <span class="account-tools-menu-icon bg-amber-50 text-amber-600 ">
+ <span class="account-tools-menu-icon bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text ">
  <Icon name="shield" size="sm" />
  </span>
  <span class="flex-1 text-left">{{ t('admin.errorPassthrough.title') }}</span>
  </button>
  <button class="account-tools-menu-item" @click="openTLSFingerprintProfiles">
- <span class="account-tools-menu-icon bg-slate-100 text-slate-600 ">
+ <span class="account-tools-menu-icon bg-slate-500/15 text-slate-600 ">
  <Icon name="lock" size="sm" />
  </span>
  <span class="flex-1 text-left">{{ t('admin.tlsFingerprintProfiles.title') }}</span>
  </button>
  <button class="account-tools-menu-item" @click="openTLSFingerprintRouters">
- <span class="account-tools-menu-icon bg-slate-100 text-slate-600 ">
+ <span class="account-tools-menu-icon bg-slate-500/15 text-slate-600 ">
  <Icon name="lock" size="sm" />
  </span>
  <span class="flex-1 text-left">{{ t('admin.tlsFingerprintRouters.title') }}</span>
@@ -251,8 +251,8 @@
  :class="[
  'border-b border-dotted font-medium',
  hasCyberAlert(row)
- ? 'border-red-300 text-red-600 '
- : 'border-line text-gray-900 dark:text-white '
+ ? 'border-red-300 text-danger-text '
+ : 'border-line text-foreground  '
  ]"
  >
  {{ value }}
@@ -261,7 +261,7 @@
  </HelpTooltip>
  <span
  v-else
- :class="hasCyberAlert(row) ? 'font-medium text-red-600 ' : 'font-medium text-foreground '"
+ :class="hasCyberAlert(row) ? 'font-medium text-danger-text ' : 'font-medium text-foreground '"
  >{{ value }}</span>
  <button
  v-if="isOpenAIOAuthAccount(row) && row.cyber_count != null"
@@ -269,7 +269,7 @@
  :class="[
  'mt-0.5 inline-flex self-start items-center gap-1 text-xs font-medium transition-colors',
  hasCyberAlert(row)
- ? 'text-red-600 hover:text-red-700 '
+ ? 'text-danger-text hover:text-danger-text '
  : 'text-muted hover:text-accent '
  ]"
  :title="row.cyber_latest_at ? t('admin.accounts.cyber.latest', { time: formatDateTime(row.cyber_latest_at) }) : t('admin.accounts.cyber.viewDetail')"
@@ -376,7 +376,7 @@
  <span :class="proxyExpiryBadge(row.proxy)">{{ proxyExpiryText(row.proxy) }}</span>
  </div>
  <div v-if="row.proxy_fallback_origin_id" class="flex items-center gap-1">
- <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 " :title="t('admin.accounts.fallbackActiveTip', { origin: row.proxy_fallback_origin_name })">
+ <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-yellow-800 " :title="t('admin.accounts.fallbackActiveTip', { origin: row.proxy_fallback_origin_name })">
  {{ t('admin.accounts.fallbackActive') }}
  </span>
  <button class="text-xs px-1.5 py-0.5 rounded border border-line text-muted hover:bg-surface-2 " @click="onRevertFallback(row)">{{ t('admin.accounts.revertProxy') }}</button>
@@ -388,7 +388,7 @@
  <span>{{ formatMultiplier(row.rate_multiplier ?? 1) }}x</span>
  <span
  v-if="row.extra?.upstream_billing_rate_sync_enabled === true"
- class="inline-flex cursor-help text-emerald-600 "
+ class="inline-flex cursor-help text-success-text "
  :aria-label="t('admin.accounts.upstreamBilling.syncedRateTooltip')"
  :title="t('admin.accounts.upstreamBilling.syncedRateTooltip')"
  data-testid="account-rate-sync-indicator"
@@ -452,13 +452,13 @@
  <div v-if="isExpired(value) || (row.auto_pause_on_expired && value)" class="flex items-center gap-1">
  <span
  v-if="isExpired(value)"
- class="inline-flex items-center rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 "
+ class="inline-flex items-center rounded-md bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-2 py-0.5 text-xs font-medium text-warning-text "
  >
  {{ t('admin.accounts.expired') }}
  </span>
  <span
  v-if="row.auto_pause_on_expired && value"
- class="inline-flex items-center rounded-md bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 "
+ class="inline-flex items-center rounded-md bg-[color-mix(in_oklch,var(--success)_16%,transparent)] px-2 py-0.5 text-xs font-medium text-success-text "
  >
  {{ t('admin.accounts.autoPauseOnExpired') }}
  </span>
@@ -471,7 +471,7 @@
  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
  <span class="text-xs">{{ t('common.edit') }}</span>
  </button>
- <button @click="handleDelete(row)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-red-50 hover:text-red-600 ">
+ <button @click="handleDelete(row)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text ">
  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
  <span class="text-xs">{{ t('common.delete') }}</span>
  </button>
@@ -1894,8 +1894,8 @@ function getAntigravityTierClass(row: any): string {
   const tier = getAntigravityTierFromRow(row)
   switch (tier) {
     case 'free-tier': return 'bg-surface-2 text-muted'
-    case 'g1-pro-tier': return 'bg-blue-100 text-blue-600  '
-    case 'g1-ultra-tier': return 'bg-purple-100 text-purple-600  '
+    case 'g1-pro-tier': return 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent  '
+    case 'g1-ultra-tier': return 'bg-purple-500/15 text-purple-600  '
     default: return ''
   }
 }

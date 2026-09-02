@@ -157,7 +157,7 @@
               :class="[
  'text-sm',
  row.status === 'expired'
- ? 'text-red-600 dark:text-red-400'
+ ? 'text-danger-text '
  : 'text-muted'
  ]"
             >
@@ -170,7 +170,7 @@
               <button
                 v-if="row.status === 'unused'"
                 @click="handleDelete(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text  "
               >
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
@@ -191,15 +191,15 @@
       <template #pagination>
         <div
           v-if="selectedCount > 0"
-          class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-primary-50 p-3 dark:bg-primary-900/20"
+          class="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-3 "
         >
-          <span class="text-sm font-medium text-primary-900 dark:text-primary-100">
+          <span class="text-sm font-medium text-accent ">
             {{ t('admin.redeem.selectedCount', { count: selectedCount }) }}
           </span>
           <div class="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              class="text-xs font-medium text-primary-700 hover:text-primary-800 dark:text-primary-300 dark:hover:text-primary-200"
+              class="text-xs font-medium text-accent hover:text-primary-800  "
               @click="clearSelectedCodes"
             >
               {{ t('admin.redeem.clearSelection') }}
@@ -225,7 +225,7 @@
 
         <!-- Batch Actions -->
         <div v-if="filters.status === 'unused'" class="flex justify-end">
-          <button @click="showDeleteUnusedDialog = true" class="btn-glass-secondary text-red-600">
+          <button @click="showDeleteUnusedDialog = true" class="btn-glass-secondary text-danger-text">
             {{ t('admin.redeem.deleteAllUnused') }}
           </button>
         </div>
@@ -261,7 +261,7 @@
       <div v-if="showGenerateDialog" class="fixed inset-0 z-50 flex items-center justify-center">
         <div class="fixed inset-0 bg-black/50" @click="showGenerateDialog = false"></div>
         <div
-          class="relative z-10 w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+          class="relative z-10 w-full max-w-md rounded-xl bg-surface p-6 shadow-xl"
         >
           <h2 class="mb-4 text-lg font-semibold text-foreground">
             {{ t('admin.redeem.generateCodesTitle') }}
@@ -290,8 +290,8 @@
               />
             </div>
             <!-- 邀请码类型：显示提示信息 -->
-            <div v-if="generateForm.type === 'invitation'" class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
-              <p class="text-sm text-blue-700 dark:text-blue-300">
+            <div v-if="generateForm.type === 'invitation'" class="rounded-lg bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-3 ">
+              <p class="text-sm text-accent ">
                 {{ t('admin.redeem.invitationHint') }}
               </p>
             </div>
@@ -351,7 +351,7 @@
                   :class="[
  'rounded-lg border px-3 py-2 text-sm transition-colors',
  generateForm.expiry_option === option.value
- ? 'border-accent bg-primary-50 text-primary-700 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-300'
+ ? 'border-accent bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent   '
  : 'border-line text-foreground hover:bg-surface-2 '
  ]"
                 >
@@ -401,7 +401,7 @@
       >
         <div class="fixed inset-0 bg-black/50" @click="closeBatchUpdateDialog"></div>
         <div
-          class="relative z-10 w-full max-w-lg rounded-xl bg-white p-6 shadow-xl"
+          class="relative z-10 w-full max-w-lg rounded-xl bg-surface p-6 shadow-xl"
         >
           <h2 class="mb-1 text-lg font-semibold text-foreground">
             {{ t('admin.redeem.batchUpdateTitle') }}
@@ -511,17 +511,17 @@
     <Teleport to="body">
       <div v-if="showResultDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div class="fixed inset-0 bg-black/50" @click="closeResultDialog"></div>
-        <div class="relative z-10 w-full max-w-lg rounded-xl bg-white shadow-xl">
+        <div class="relative z-10 w-full max-w-lg rounded-xl bg-surface shadow-xl">
           <!-- Header -->
           <div
             class="flex items-center justify-between border-b border-line px-5 py-4"
           >
             <div class="flex items-center gap-3">
               <div
-                class="flex h-10 w-10 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30"
+                class="flex h-10 w-10 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--success)_16%,transparent)] "
               >
                 <svg
-                  class="h-5 w-5 text-green-600 dark:text-green-400"
+                  class="h-5 w-5 text-success-text "
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -545,7 +545,7 @@
             </div>
             <button
               @click="closeResultDialog"
-              class="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-muted dark:hover:text-muted"
+              class="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-muted "
             >
               <Icon name="x" size="md" :stroke-width="2" />
             </button>
