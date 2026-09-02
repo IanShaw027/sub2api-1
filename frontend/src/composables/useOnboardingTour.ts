@@ -447,6 +447,13 @@ export function useOnboardingTour(options: OnboardingOptions) {
       onDestroyed: () => {
         cleanupClickListener()
         appStore.clearSidebarSectionsForceOpen()
+        if (
+          typeof window !== 'undefined' &&
+          typeof window.matchMedia === 'function' &&
+          !window.matchMedia(TABLET_UP_MEDIA_QUERY).matches
+        ) {
+          appStore.setMobileOpen(false)
+        }
         // 清理全局监听器 (由此处唯一管理)
         if (globalKeyboardHandler) {
           document.removeEventListener('keydown', globalKeyboardHandler, { capture: true })

@@ -409,6 +409,18 @@ describe('MobileDrawer', () => {
     wrapper.unmount()
   })
 
+  it('closes the drawer when the onboarding tour ends on mobile', async () => {
+    const { wrapper, appStore, onboardingStore } = await mountSidebar('/admin/dashboard', 'admin')
+    onboardingStore.setDriverInstance({ isActive: () => true } as never)
+    await nextTick()
+    expect(appStore.mobileOpen).toBe(true)
+
+    onboardingStore.setDriverInstance(null)
+    await nextTick()
+    expect(appStore.mobileOpen).toBe(false)
+    wrapper.unmount()
+  })
+
   it('does not clear body overflow on mount while the drawer is closed', async () => {
     document.body.style.overflow = 'scroll'
     const { wrapper } = await mountSidebar('/admin/dashboard')

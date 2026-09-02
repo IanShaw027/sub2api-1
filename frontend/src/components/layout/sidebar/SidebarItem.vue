@@ -1,7 +1,9 @@
 <template>
   <div>
     <template v-if="item.children?.length">
+      <div class="sidebar-group-root">
       <button
+        ref="groupButtonRef"
         type="button"
         class="sidebar-item mb-0.5 w-full"
         :class="{
@@ -10,9 +12,9 @@
         }"
         :title="collapsed ? item.label : undefined"
         :aria-label="collapsed ? item.label : undefined"
-        :aria-expanded="collapsed ? undefined : isExpanded"
+        :aria-expanded="collapsed ? (isTablet && flyoutOpen ? true : undefined) : isExpanded"
         :aria-controls="!omitTourAnchors && !collapsed && isExpanded ? groupChildrenId : undefined"
-        @click="$emit('group-click', item)"
+        @click="onGroupClick"
       >
         <span class="sidebar-item-icon">
           <component :is="item.icon" class="h-[17px] w-[17px] flex-shrink-0" />
@@ -44,6 +46,29 @@
           </svg>
         </span>
       </button>
+      <div
+        v-if="collapsed && isTablet && flyoutOpen"
+        class="sidebar-group-flyout"
+        role="menu"
+        :aria-label="item.label"
+      >
+        <router-link
+          v-for="child in item.children"
+          :key="child.path"
+          :to="child.path"
+          class="sidebar-group-flyout-item"
+          role="menuitem"
+          :class="{ 'sidebar-item-active': routePath === child.path }"
+          :aria-current="routePath === child.path ? 'page' : undefined"
+          @click="onFlyoutNavigate(child.path)"
+        >
+          <span v-if="child.icon" class="sidebar-item-icon">
+            <component :is="child.icon" class="h-4 w-4" />
+          </span>
+          <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
+        </router-link>
+      </div>
+      </div>
       <div
         v-if="!collapsed && isExpanded"
         :id="omitTourAnchors ? undefined : groupChildrenId"
@@ -106,8 +131,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { sanitizeSvg } from '@/utils/sanitize'
+import { useIsMobile } from '@/composables/useIsMobile'
 import { itemDomId, itemTourAttr, type NavItem } from './navSections'
 
 const props = defineProps<{
@@ -121,16 +147,48 @@ const props = defineProps<{
   omitTourAnchors?: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   navigate: [path: string]
   'group-click': [item: NavItem]
 }>()
+
+const { isTablet } = useIsMobile()
+const flyoutOpen = ref(false)
+const groupButtonRef = ref<HTMLElement | null>(null)
 
 const domId = computed(() => itemDomId(props.item.path))
 const tourAttr = computed(() => itemTourAttr(props.item.path))
 const groupChildrenId = computed(() => {
   const slug = props.item.path.replace(/^\//, '').replace(/\//g, '-')
   return `sidebar-group-${slug}`
+})
+
+function onGroupClick() {
+  if (props.collapsed && isTablet.value && props.item.children?.length) {
+    flyoutOpen.value = !flyoutOpen.value
+    return
+  }
+  emit('group-click', props.item)
+}
+
+function onFlyoutNavigate(path: string) {
+  flyoutOpen.value = false
+  emit('navigate', path)
+}
+
+function onDocumentClick(event: MouseEvent) {
+  if (!flyoutOpen.value) return
+  const target = event.target as Node | null
+  if (groupButtonRef.value?.contains(target)) return
+  flyoutOpen.value = false
+}
+
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
 })
 </script>
 
@@ -143,5 +201,40 @@ const groupChildrenId = computed(() => {
   display: block;
   width: 17px;
   height: 17px;
+}
+
+.sidebar-group-root {
+  position: relative;
+}
+
+.sidebar-group-flyout {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 8px);
+  z-index: 300;
+  min-width: 200px;
+  padding: 6px;
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--background) 92%, transparent);
+  border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+  box-shadow: var(--shadow-hover);
+  backdrop-filter: blur(20px);
+}
+
+.sidebar-group-flyout-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.sidebar-group-flyout-item:hover {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
 }
 </style>

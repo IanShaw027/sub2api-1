@@ -804,9 +804,14 @@ function handleGroupClick(item: NavItem) {
 }
 
 watch(
-  [tourActive, isMobile],
-  ([active, mobile]) => {
-    if (active && mobile) appStore.setMobileOpen(true)
+  tourActive,
+  (active, wasActive) => {
+    if (!isMobile.value) return
+    if (active) {
+      appStore.setMobileOpen(true)
+    } else if (wasActive) {
+      appStore.setMobileOpen(false)
+    }
   },
   { immediate: true }
 )
