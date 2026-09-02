@@ -87,6 +87,59 @@ func TestOpenAIAccessStateCredentialFailureUsesTypedSafeResponse(t *testing.T) {
 	require.NotContains(t, recorder.Body.String(), "must-not-leak")
 }
 
+func TestFailoverExhaustedPrefersExtractedMessageFor424(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"error":{"message":"No account available for this model"}}`)
+
+	t.Run("openai", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		(&OpenAIGatewayHandler{}).handleFailoverExhausted(c, &service.UpstreamFailoverError{
+			StatusCode:   http.StatusFailedDependency,
+			ResponseBody: body,
+		}, false)
+		require.Equal(t, http.StatusFailedDependency, recorder.Code)
+		require.Equal(t, "upstream_error", gjson.Get(recorder.Body.String(), "error.type").String())
+		require.Equal(t, "No account available for this model", gjson.Get(recorder.Body.String(), "error.message").String())
+		require.NotContains(t, recorder.Body.String(), "Upstream request failed")
+	})
+
+	t.Run("anthropic_gateway", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		(&GatewayHandler{}).handleFailoverExhausted(c, &service.UpstreamFailoverError{
+			StatusCode:   http.StatusFailedDependency,
+			ResponseBody: body,
+		}, service.PlatformAnthropic, false)
+		require.Equal(t, http.StatusFailedDependency, recorder.Code)
+		require.Equal(t, "No account available for this model", gjson.Get(recorder.Body.String(), "error.message").String())
+		require.NotContains(t, recorder.Body.String(), "Upstream request failed")
+	})
+}
+
+func TestFailoverExhaustedPrefersExtractedMessageFor402(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	(&OpenAIGatewayHandler{}).handleFailoverExhausted(c, &service.UpstreamFailoverError{
+		StatusCode:   http.StatusPaymentRequired,
+		ResponseBody: []byte(`{"error":{"message":"Team has run out of credits"}}`),
+	}, false)
+
+	require.Equal(t, http.StatusPaymentRequired, recorder.Code)
+	require.Equal(t, "Team has run out of credits", gjson.Get(recorder.Body.String(), "error.message").String())
+	require.NotContains(t, recorder.Body.String(), "Upstream request failed")
+}
+
+func TestExtractedUpstreamErrorFallbackIgnoresGenericPlaceholder(t *testing.T) {
+	_, _, _, ok := extractedUpstreamErrorFallback(http.StatusFailedDependency, "Upstream error: 424")
+	require.False(t, ok)
+	_, _, _, ok = extractedUpstreamErrorFallback(http.StatusNotFound, "Unknown request URL")
+	require.False(t, ok)
+	_, _, _, ok = extractedUpstreamErrorFallback(http.StatusUnprocessableEntity, "Invalid schema for field messages")
+	require.False(t, ok)
+}
+
 func TestOpenAICapacityFailoverExhaustionPreservesMessageAsServerError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	message := "Our servers are currently overloaded. Please try again later."

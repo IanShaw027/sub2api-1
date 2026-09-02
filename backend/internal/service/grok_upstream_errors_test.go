@@ -258,6 +258,35 @@ func TestGrokContentPolicy403MediaResponseBypassesCustomErrorCodes(t *testing.T)
 	require.Zero(t, repo.updateCalls)
 }
 
+func TestHandleGrokMediaErrorResponse_AspectRatioValidationReturns400WithoutFailover(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := "Failed to deserialize the JSON body into the target type: aspect_ratio: unknown variant `5:4`, expected one of `1:1`, `16:9`, `auto`"
+	repo := &grokQuotaAccountRepo{}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	account := &Account{ID: 4722, Platform: PlatformGrok, Type: AccountTypeOAuth}
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil)
+	resp := &http.Response{
+		StatusCode: http.StatusUnprocessableEntity,
+		Header:     http.Header{"Content-Type": []string{"text/plain"}},
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	result, err := svc.handleGrokMediaErrorResponse(context.Background(), resp, c, account, "request-id", "grok-imagine")
+	require.Nil(t, result)
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr))
+	require.True(t, IsResponseCommitted(c))
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Contains(t, recorder.Body.String(), "invalid_request_error")
+	require.Contains(t, recorder.Body.String(), "aspect_ratio")
+	require.Contains(t, recorder.Body.String(), "5:4")
+	require.Zero(t, repo.tempUnschedCalls)
+	require.Zero(t, repo.rateLimitedCalls)
+}
+
 func TestGrokContentPolicySSEErrorDoesNotMutateOrFailover(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &grokQuotaAccountRepo{}

@@ -201,6 +201,11 @@ func (s *OpenAIGatewayService) shouldFailoverGrokUpstreamError(statusCode int, r
 	if isGrokContentPolicyRejection(statusCode, responseBody) {
 		return false
 	}
+	// Invalid media request fields (aspect_ratio/resolution/…) are deterministic
+	// client errors. Do not burn the account pool on the same bad payload.
+	if isGrokClientParameterValidationError(statusCode, responseBody) {
+		return false
+	}
 	// A 422 emitted by xAI's ModelInput decoder is account/runtime compatibility,
 	// not quota exhaustion. Another account may run a different upstream build,
 	// so fail over without applying an account cooldown.

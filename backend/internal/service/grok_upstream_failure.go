@@ -168,6 +168,17 @@ func classifyGrokUpstreamFailure(statusCode int, responseBody []byte, requestedM
 		}
 	}
 
+	// Client field validation (e.g. aspect_ratio unknown variant) is request-
+	// scoped: return it to the caller instead of rotating accounts.
+	if isGrokClientParameterValidationError(statusCode, responseBody) {
+		return GrokUpstreamFailureDecision{
+			Class:          GrokFailureNone,
+			ShouldCooldown: false,
+			ShouldFailover: false,
+			Reason:         firstNonEmpty(text, "invalid request parameter"),
+		}
+	}
+
 	// xAI returns 422 when the Responses decoder rejects a Chat-to-Responses
 	// content shape. Fail over so another protocol path can try, but do not
 	// park the account: the same request-shaped payload would otherwise cool
@@ -197,9 +208,70 @@ func classifyGrokUpstreamFailure(statusCode int, responseBody []byte, requestedM
 
 func isGrokCompatibilityErrorText(text string) bool {
 	text = strings.ToLower(strings.TrimSpace(text))
+	if isGrokClientParameterValidationErrorText(text) {
+		return false
+	}
 	return strings.Contains(text, "failed to deserialize the json body") ||
 		strings.Contains(text, "untagged enum content") ||
 		strings.Contains(text, "data did not match any variant")
+}
+
+// isGrokClientParameterValidationError detects request-field enum/schema
+// rejections from xAI media APIs (aspect_ratio, resolution, …). These must be
+// returned to the client instead of being treated as account compatibility
+// failures that rotate the pool.
+func isGrokClientParameterValidationError(statusCode int, responseBody []byte) bool {
+	if statusCode != http.StatusBadRequest && statusCode != http.StatusUnprocessableEntity {
+		return false
+	}
+	_, _, low := grokUpstreamErrorCorpus(statusCode, responseBody)
+	if low == "" {
+		low = strings.ToLower(strings.TrimSpace(string(responseBody)))
+	}
+	return isGrokClientParameterValidationErrorText(low)
+}
+
+func isGrokClientParameterValidationErrorText(text string) bool {
+	text = strings.ToLower(strings.TrimSpace(text))
+	if text == "" {
+		return false
+	}
+	// Protocol/content-shape decoder errors stay on the compatibility failover path.
+	if strings.Contains(text, "modelinput") ||
+		strings.Contains(text, "model input") ||
+		strings.Contains(text, "untagged enum content") ||
+		strings.Contains(text, "untagged enum modelinput") ||
+		((strings.Contains(text, "messages[") || strings.Contains(text, "messages.")) &&
+			strings.Contains(text, "content")) ||
+		((strings.Contains(text, "input[") || strings.Contains(text, "input.")) &&
+			(strings.Contains(text, "modelinput") || strings.Contains(text, "content"))) {
+		return false
+	}
+	mediaFields := []string{
+		"aspect_ratio",
+		"resolution",
+		"response_format",
+		"quality",
+		"size",
+		"n:",
+		"\"n\"",
+		"duration",
+		"fps",
+	}
+	hasMediaField := false
+	for _, field := range mediaFields {
+		if strings.Contains(text, field) {
+			hasMediaField = true
+			break
+		}
+	}
+	if !hasMediaField {
+		return false
+	}
+	return strings.Contains(text, "unknown variant") ||
+		strings.Contains(text, "failed to deserialize the json body") ||
+		strings.Contains(text, "invalid value") ||
+		strings.Contains(text, "expected one of")
 }
 
 func grokUpstreamErrorCorpus(statusCode int, responseBody []byte) (text, code, low string) {

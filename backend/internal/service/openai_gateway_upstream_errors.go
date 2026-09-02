@@ -644,8 +644,10 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		reqModel = canonicalOpenAIAccountSchedulingModel(account, reqModel)
 	}
 	shouldDisable := s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, body, reqModel)
+	vis, visOK := ClassifyClientVisibleUpstreamError(upstreamMsg, body)
+	writeThrough := visOK && shouldWriteThroughClientVisibleUpstreamError(resp.StatusCode, vis, upstreamMsg, body)
 	kind := "http_error"
-	if shouldDisable {
+	if shouldDisable && !writeThrough {
 		kind = "failover"
 	}
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -658,7 +660,9 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		Message:            upstreamMsg,
 		Detail:             upstreamDetail,
 	})
-	if shouldDisable {
+	// Client-visible business errors (400/402/403/404/422) must not burn the
+	// account pool. Durable access-state / credential 403s still failover.
+	if shouldDisable && !writeThrough {
 		return nil, &UpstreamFailoverError{
 			StatusCode:             resp.StatusCode,
 			ResponseBody:           body,
@@ -680,6 +684,23 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	// code/param。原生 Responses 是唯一漏掉的一条。
 	if isOpenAIDeterministicClientError(resp.StatusCode) {
 		writeOpenAIUpstreamClientError(c, resp.StatusCode, body, upstreamMsg)
+		if upstreamMsg == "" {
+			return nil, fmt.Errorf("upstream error: %d", resp.StatusCode)
+		}
+		return nil, fmt.Errorf("upstream error: %d message=%s", resp.StatusCode, upstreamMsg)
+	}
+
+	// Prefer classified business/protocol errors over generic 401/402/403/429 map.
+	if visOK {
+		c.JSON(vis.StatusCode, gin.H{
+			"error": gin.H{
+				"type":    vis.ErrorType,
+				"message": vis.Message,
+			},
+		})
+		if upstreamMsg == "" {
+			upstreamMsg = vis.Message
+		}
 		if upstreamMsg == "" {
 			return nil, fmt.Errorf("upstream error: %d", resp.StatusCode)
 		}
@@ -778,9 +799,9 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 		return nil, fmt.Errorf("grok content policy rejection: %s", clientMsg)
 	}
 
-	upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(body))
+	upstreamMsg := strings.TrimSpace(ExtractUpstreamErrorMessage(body))
 	if upstreamMsg == "" {
-		upstreamMsg = fmt.Sprintf("Upstream error: %d", resp.StatusCode)
+		upstreamMsg = resolveCompatUpstreamErrorMessage(resp.StatusCode, body)
 	}
 	upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
 
@@ -839,8 +860,10 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 	shouldDisable := s.handleOpenAIAccountUpstreamError(
 		c.Request.Context(), account, resp.StatusCode, resp.Header, body, modelForCooldown,
 	)
+	vis, visOK := ClassifyClientVisibleUpstreamError(upstreamMsg, body)
+	writeThrough := visOK && shouldWriteThroughClientVisibleUpstreamError(resp.StatusCode, vis, upstreamMsg, body)
 	kind := "http_error"
-	if shouldDisable {
+	if shouldDisable && !writeThrough {
 		kind = "failover"
 	}
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -853,7 +876,7 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 		Message:            upstreamMsg,
 		Detail:             upstreamDetail,
 	})
-	if shouldDisable {
+	if shouldDisable && !writeThrough {
 		return nil, &UpstreamFailoverError{
 			StatusCode:             resp.StatusCode,
 			ResponseBody:           body,
@@ -862,6 +885,12 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 	}
 
 	MarkResponseCommitted(c)
+
+	// Prefer classification over resp.StatusCode + placeholder "Upstream error: NNN".
+	if visOK {
+		writeError(c, vis.StatusCode, vis.ErrorType, vis.Message)
+		return nil, fmt.Errorf("upstream error: %d %s", resp.StatusCode, vis.Message)
+	}
 
 	// Map status code to error type and write response
 	errType := "api_error"
@@ -878,4 +907,71 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 
 	writeError(c, resp.StatusCode, errType, upstreamMsg)
 	return nil, fmt.Errorf("upstream error: %d %s", resp.StatusCode, upstreamMsg)
+}
+
+// shouldWriteThroughClientVisibleUpstreamError reports whether a classified
+// upstream failure should be returned to the client instead of rotating
+// accounts. Durable access-state / credential failures keep failing over.
+func shouldWriteThroughClientVisibleUpstreamError(
+	statusCode int,
+	vis ClientVisibleUpstreamError,
+	upstreamMsg string,
+	body []byte,
+) bool {
+	switch statusCode {
+	case http.StatusBadRequest,
+		http.StatusPaymentRequired,
+		http.StatusForbidden,
+		http.StatusNotFound,
+		http.StatusUnprocessableEntity:
+	default:
+		return false
+	}
+	if strings.TrimSpace(vis.Message) == "" {
+		return false
+	}
+	// True account/workspace auth failures must keep rotating credentials.
+	if isOpenAIAccessStateFailover(statusCode, upstreamMsg, body) {
+		return false
+	}
+	if vis.Message == openAIUpstreamAccessUnavailableClientMessage {
+		return false
+	}
+	return true
+}
+
+// resolveCompatUpstreamErrorMessage recovers a useful message when extract is
+// empty (e.g. top-level JSON string bodies before extract hardening lands).
+func resolveCompatUpstreamErrorMessage(statusCode int, body []byte) string {
+	// Classify from the parsed response fields only. Passing the whole body as a
+	// fallback message lets echoed prompts trigger business-error patterns.
+	if vis, ok := ClassifyClientVisibleUpstreamError("", body); ok {
+		if msg := strings.TrimSpace(vis.Message); msg != "" {
+			return msg
+		}
+	}
+	if text, _, _ := grokUpstreamErrorCorpus(statusCode, body); strings.TrimSpace(text) != "" {
+		return strings.TrimSpace(text)
+	}
+	if msg := rawUpstreamErrorText(body); msg != "" {
+		return msg
+	}
+	return fmt.Sprintf("Upstream error: %d", statusCode)
+}
+
+func rawUpstreamErrorText(body []byte) string {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return ""
+	}
+	if gjson.ValidBytes(trimmed) {
+		if root := gjson.ParseBytes(trimmed); root.Type == gjson.String {
+			return strings.TrimSpace(root.String())
+		}
+		return ""
+	}
+	if trimmed[0] != '{' && trimmed[0] != '[' {
+		return string(trimmed)
+	}
+	return ""
 }

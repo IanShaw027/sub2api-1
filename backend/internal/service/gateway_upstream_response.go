@@ -332,7 +332,35 @@ func extractUpstreamErrorMessage(body []byte) string {
 	}
 
 	// 兜底：尝试顶层 message
-	return gjson.GetBytes(body, "message").String()
+	if m := gjson.GetBytes(body, "message").String(); strings.TrimSpace(m) != "" {
+		return m
+	}
+
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return ""
+	}
+
+	// Top-level JSON string body (xAI may return a bare quoted error string).
+	if gjson.ValidBytes(trimmed) {
+		if root := gjson.ParseBytes(trimmed); root.Type == gjson.String {
+			if msg := strings.TrimSpace(root.String()); msg != "" {
+				return msg
+			}
+		}
+		return ""
+	}
+
+	// Plain non-JSON text body that looks like a human-readable error.
+	if trimmed[0] != '{' && trimmed[0] != '[' {
+		// Gateway/proxy HTML is not a useful client error and may contain
+		// provider infrastructure details. Keep it on the generic fallback path.
+		if looksLikeHTMLUpstreamErrorBody(string(trimmed)) {
+			return ""
+		}
+		return string(trimmed)
+	}
+	return ""
 }
 
 func extractUpstreamErrorCode(body []byte) string {

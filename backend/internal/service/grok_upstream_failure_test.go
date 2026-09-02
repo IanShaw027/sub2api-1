@@ -11,6 +11,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestGrokMediaUpstreamClientMessage_HidesHTMLGatewayBody(t *testing.T) {
+	msg := grokMediaUpstreamClientMessage(http.StatusBadGateway, []byte("<html><body>Cloudflare 502 Bad Gateway</body></html>"))
+	require.Equal(t, "xAI upstream returned status 502", msg)
+}
+
 func TestClassifyGrokUpstreamFailure_FreeUsage(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -137,6 +142,35 @@ func TestClassifyGrokUpstreamFailure_Compatibility422(t *testing.T) {
 	require.Equal(t, GrokFailureCompatibility, d.Class)
 	require.False(t, d.ShouldCooldown)
 	require.True(t, d.ShouldFailover)
+}
+
+func TestClassifyGrokUpstreamFailure_AspectRatioValidationDoesNotFailover(t *testing.T) {
+	body := []byte("Failed to deserialize the JSON body into the target type: aspect_ratio: unknown variant `5:4`, expected one of `1:1`, `16:9`, `auto`")
+	d := classifyGrokUpstreamFailure(http.StatusUnprocessableEntity, body, "grok-imagine-image")
+	require.Equal(t, GrokFailureNone, d.Class)
+	require.False(t, d.ShouldFailover)
+	require.False(t, d.ShouldCooldown)
+
+	svc := &OpenAIGatewayService{}
+	require.False(t, svc.shouldFailoverGrokUpstreamError(http.StatusUnprocessableEntity, body))
+	require.True(t, isGrokClientParameterValidationError(http.StatusUnprocessableEntity, body))
+
+	vis, ok := ClassifyClientVisibleUpstreamError("", body)
+	require.True(t, ok)
+	require.Equal(t, http.StatusBadRequest, vis.StatusCode)
+	require.Equal(t, "invalid_request_error", vis.ErrorType)
+	require.Contains(t, vis.Message, "aspect_ratio: unknown variant `5:4`")
+}
+
+func TestIsGrokClientParameterValidationError_DurationAndN(t *testing.T) {
+	require.True(t, isGrokClientParameterValidationError(
+		http.StatusUnprocessableEntity,
+		[]byte(`{"duration":"unknown variant", "expected":"10"}`),
+	))
+	require.True(t, isGrokClientParameterValidationError(
+		http.StatusBadRequest,
+		[]byte(`n: unknown variant, expected one of 1, 2, 3`),
+	))
 }
 
 func TestClassifyGrokUpstreamFailure_FreeUsageWinsOver5xx(t *testing.T) {

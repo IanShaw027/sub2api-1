@@ -167,7 +167,11 @@ func TestHandleErrorResponse_NonDeterministicStatusesKeepGeneric502(t *testing.T
 		// 403 的自由文本不能升级成 durable access-state typed failover；只有明确结构化 code 才可以。
 		{"unauthorized", http.StatusUnauthorized, `{"error":{"message":"Incorrect API key provided: sk-abc"}}`,
 			http.StatusBadGateway, "upstream_error", "Upstream authentication failed, please contact administrator"},
+		// Access-state free text is redacted via ClassifyClientVisibleUpstreamError
+		// instead of the generic 403 administrator contact copy.
 		{"forbidden", http.StatusForbidden, `{"error":{"message":"Your account is deactivated"}}`,
+			http.StatusBadGateway, "upstream_error", openAIUpstreamAccessUnavailableClientMessage},
+		{"forbidden_generic", http.StatusForbidden, `{"error":{"message":"Request not allowed for this resource"}}`,
 			http.StatusBadGateway, "upstream_error", "Upstream access forbidden, please contact administrator"},
 		// 429 保持独立映射。
 		{"rate_limited", http.StatusTooManyRequests, `{"error":{"message":"Rate limit reached"}}`,
@@ -185,7 +189,7 @@ func TestHandleErrorResponse_NonDeterministicStatusesKeepGeneric502(t *testing.T
 				c, newOpenAIUpstreamErrorTestAccount(), nil,
 			)
 			require.Error(t, err)
-			if tc.name == "forbidden" {
+			if tc.name == "forbidden" || tc.name == "forbidden_generic" {
 				var failoverErr *UpstreamFailoverError
 				require.False(t, errors.As(err, &failoverErr))
 			}
@@ -194,6 +198,79 @@ func TestHandleErrorResponse_NonDeterministicStatusesKeepGeneric502(t *testing.T
 			require.Equal(t, tc.wantMsg, gjson.Get(rec.Body.String(), "error.message").String())
 		})
 	}
+}
+
+func TestHandleErrorResponse_ClientVisibleUsageLimitBeatsGenericMap(t *testing.T) {
+	c, rec := newOpenAIUpstreamErrorTestContext(t)
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	body := `{"error":{"message":"The usage limit has been reached","plan_type":"k12"}}`
+
+	_, err := svc.handleErrorResponse(
+		context.Background(),
+		newOpenAIUpstreamErrorResponse(http.StatusBadGateway, body),
+		c, newOpenAIUpstreamErrorTestAccount(), nil,
+	)
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr))
+	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+	require.Equal(t, "rate_limit_error", gjson.Get(rec.Body.String(), "error.type").String())
+	require.Equal(t, openAIBillingLimitClientMessage(), gjson.Get(rec.Body.String(), "error.message").String())
+}
+
+func TestHandleCompatErrorResponse_TopLevelJSONStringMessage(t *testing.T) {
+	svc := &OpenAIGatewayService{cfg: &config.Config{}}
+	compatCtx, _ := newOpenAIUpstreamErrorTestContext(t)
+	var gotStatus int
+	var gotType, gotMsg string
+	writeError := func(_ *gin.Context, statusCode int, errType, message string) {
+		gotStatus, gotType, gotMsg = statusCode, errType, message
+	}
+
+	_, err := svc.handleCompatErrorResponse(
+		newOpenAIUpstreamErrorResponse(
+			http.StatusBadRequest,
+			`"Multi Agent requests are not allowed on chat completions"`,
+		),
+		compatCtx, newOpenAIUpstreamErrorTestAccount(), writeError,
+	)
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.False(t, errors.As(err, &failoverErr))
+	require.Equal(t, http.StatusBadRequest, gotStatus)
+	require.Equal(t, "invalid_request_error", gotType)
+	require.Equal(t, "Multi Agent requests are not allowed on chat completions", gotMsg)
+	require.NotContains(t, gotMsg, "Upstream error:")
+}
+
+func TestResolveCompatUpstreamErrorMessage_RawJSONString(t *testing.T) {
+	msg := resolveCompatUpstreamErrorMessage(
+		http.StatusBadRequest,
+		[]byte(`"Multi Agent requests are not allowed on chat completions"`),
+	)
+	require.Equal(t, "Multi Agent requests are not allowed on chat completions", msg)
+}
+
+func TestResolveCompatUpstreamErrorMessage_DoesNotClassifyEchoedPrompt(t *testing.T) {
+	body := []byte(`{"input":"your request was blocked; multi agent requests are not allowed on chat completions"}`)
+	msg := resolveCompatUpstreamErrorMessage(http.StatusBadRequest, body)
+	require.Equal(t, "Upstream error: 400", msg)
+}
+
+func TestShouldWriteThroughClientVisibleUpstreamError_SkipsAccessState(t *testing.T) {
+	body := []byte(`{"detail":{"code":"deactivated_workspace"}}`)
+	vis, ok := ClassifyClientVisibleUpstreamError("", body)
+	require.True(t, ok)
+	require.False(t, shouldWriteThroughClientVisibleUpstreamError(
+		http.StatusForbidden, vis, "", body,
+	))
+
+	billingBody := []byte(`{"error":{"message":"The usage limit has been reached"}}`)
+	billingVis, billingOK := ClassifyClientVisibleUpstreamError("The usage limit has been reached", billingBody)
+	require.True(t, billingOK)
+	require.True(t, shouldWriteThroughClientVisibleUpstreamError(
+		http.StatusPaymentRequired, billingVis, "The usage limit has been reached", billingBody,
+	))
 }
 
 // 顺序守卫：管理员配置的错误透传规则在更上游命中，新分支不得抢在它前面。

@@ -2872,9 +2872,8 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 	// Business passthrough rules must not override credential/workspace safety
 	// classification; those failures are account-scoped and already exhausted
 	// the account failover path.
-	if vis, ok := service.ClassifyClientVisibleUpstreamError(
-		service.ExtractUpstreamErrorMessage(responseBody), responseBody,
-	); ok {
+	upstreamMsg := service.ExtractUpstreamErrorMessage(responseBody)
+	if vis, ok := service.ClassifyClientVisibleUpstreamError(upstreamMsg, responseBody); ok {
 		service.SetOpsUpstreamErrorWithType(c, vis.ErrorType, vis.StatusCode, vis.Message, string(responseBody))
 		h.handleStreamingAwareError(c, vis.StatusCode, vis.ErrorType, vis.Message, streamStarted)
 		return
@@ -2895,7 +2894,7 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 			}
 
 			// 确定响应消息
-			msg := service.SanitizeUpstreamErrorMessage(service.ExtractUpstreamErrorMessage(responseBody))
+			msg := service.SanitizeUpstreamErrorMessage(upstreamMsg)
 			if !rule.PassthroughBody && rule.CustomMessage != nil {
 				msg = *rule.CustomMessage
 			}
@@ -2910,8 +2909,13 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 	}
 
 	// 记录原始上游状态码，以便 ops 错误日志捕获真实的上游错误
-	upstreamMsg := service.ExtractUpstreamErrorMessage(responseBody)
 	service.SetOpsUpstreamError(c, statusCode, upstreamMsg, "")
+
+	// Only well-known business fallbacks may beat generic transport mapping.
+	if status, errType, errMsg, ok := extractedUpstreamErrorFallback(statusCode, upstreamMsg); ok {
+		h.handleStreamingAwareError(c, status, errType, errMsg, streamStarted)
+		return
+	}
 
 	// 使用默认的错误映射
 	status, errType, errMsg := h.mapUpstreamError(statusCode)
@@ -2984,6 +2988,32 @@ func (h *OpenAIGatewayHandler) mapUpstreamError(statusCode int) (int, string, st
 	default:
 		return http.StatusBadGateway, "upstream_error", "Upstream request failed"
 	}
+}
+
+// extractedUpstreamErrorFallback surfaces a clear upstream body for statuses that
+// mapUpstreamError would otherwise collapse to generic "Upstream request failed".
+func extractedUpstreamErrorFallback(statusCode int, upstreamMsg string) (int, string, string, bool) {
+	msg := service.SanitizeUpstreamErrorMessage(strings.TrimSpace(upstreamMsg))
+	if msg == "" {
+		return 0, "", "", false
+	}
+	lower := strings.ToLower(msg)
+	if lower == "upstream request failed" || strings.HasPrefix(lower, "upstream error:") {
+		return 0, "", "", false
+	}
+	switch statusCode {
+	case http.StatusPaymentRequired:
+		lower := strings.ToLower(msg)
+		if strings.Contains(lower, "credit") || strings.Contains(lower, "quota") || strings.Contains(lower, "billing") || strings.Contains(lower, "余额") || strings.Contains(lower, "额度") {
+			return statusCode, "upstream_error", msg, true
+		}
+	case http.StatusFailedDependency: // 424 no-account / dependency failures
+		lower := strings.ToLower(msg)
+		if strings.Contains(lower, "no account") || strings.Contains(lower, "没有可用账号") || strings.Contains(lower, "无可用账号") {
+			return statusCode, "upstream_error", msg, true
+		}
+	}
+	return 0, "", "", false
 }
 
 // handleStreamingAwareError handles errors that may occur after streaming has started

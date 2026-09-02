@@ -1821,11 +1821,17 @@ func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *se
 
 	// 记录原始上游状态码，以便 ops 错误日志捕获真实的上游错误
 	upstreamMsg := service.ExtractUpstreamErrorMessage(responseBody)
-	service.SetOpsUpstreamError(c, statusCode, upstreamMsg, "")
-
 	if vis, ok := service.ClassifyClientVisibleUpstreamError(upstreamMsg, responseBody); ok {
 		service.SetOpsUpstreamErrorWithType(c, vis.ErrorType, vis.StatusCode, vis.Message, string(responseBody))
 		h.handleStreamingAwareError(c, vis.StatusCode, vis.ErrorType, vis.Message, streamStarted)
+		return
+	}
+
+	service.SetOpsUpstreamError(c, statusCode, upstreamMsg, "")
+
+	// 402/424 with a clear body beat generic "Upstream request failed".
+	if status, errType, errMsg, ok := extractedUpstreamErrorFallback(statusCode, upstreamMsg); ok {
+		h.handleStreamingAwareError(c, status, errType, errMsg, streamStarted)
 		return
 	}
 

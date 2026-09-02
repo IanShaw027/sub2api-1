@@ -31,6 +31,10 @@ func classifyUpstreamForwardError(err error) upstreamForwardErrorDetail {
 		}
 	}
 
+	if detail, ok := classifyGrokWrongEndpointModelError(err); ok {
+		return detail
+	}
+
 	if vis, ok := service.ClassifyClientVisibleUpstreamErrorFromErr(err); ok {
 		return upstreamForwardErrorDetail{
 			StatusCode: vis.StatusCode,
@@ -133,6 +137,9 @@ func classifyUpstreamForwardError(err error) upstreamForwardErrorDetail {
 }
 
 func resolveUpstreamForwardErrorDetail(c *gin.Context, forwardErr error) upstreamForwardErrorDetail {
+	if detail, ok := classifyGrokWrongEndpointModelError(forwardErr); ok {
+		return detail
+	}
 	if vis, ok := service.ClassifyClientVisibleUpstreamErrorFromErr(forwardErr); ok {
 		detail := sanitizeUpstreamForwardErrorDetail(strings.TrimSpace(errString(forwardErr)))
 		return upstreamForwardErrorDetail{
@@ -157,6 +164,23 @@ func resolveUpstreamForwardErrorDetail(c *gin.Context, forwardErr error) upstrea
 		return detail
 	}
 	return classifyUpstreamForwardError(forwardErr)
+}
+
+func classifyGrokWrongEndpointModelError(err error) (upstreamForwardErrorDetail, bool) {
+	var wrongEndpoint *service.GrokWrongEndpointModelError
+	if !errors.As(err, &wrongEndpoint) {
+		return upstreamForwardErrorDetail{}, false
+	}
+	msg := strings.TrimSpace(wrongEndpoint.Error())
+	if msg == "" {
+		msg = "Invalid request model for this endpoint"
+	}
+	return upstreamForwardErrorDetail{
+		StatusCode: 400,
+		ErrorType:  "invalid_request_error",
+		Message:    msg,
+		Detail:     sanitizeUpstreamForwardErrorDetail(msg),
+	}, true
 }
 
 func errString(err error) string {

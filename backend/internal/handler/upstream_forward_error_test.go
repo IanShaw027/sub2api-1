@@ -3,8 +3,10 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,6 +37,16 @@ func TestClassifyUpstreamForwardError(t *testing.T) {
 		require.Equal(t, "invalid_request_error", detail.ErrorType)
 		require.Equal(t, 400, detail.StatusCode)
 		require.Contains(t, detail.Message, "context window")
+		require.NotEqual(t, "upstream_transport_error", detail.ErrorType)
+		require.NotEqual(t, "Upstream transport error", detail.Message)
+	})
+
+	t.Run("grok image model on responses is not transport", func(t *testing.T) {
+		msg := "model grok-imagine-image is an image model and is not available on the Responses endpoint; use /v1/images/generations instead"
+		detail := classifyUpstreamForwardError(fmt.Errorf("forward failed: %w", &service.GrokWrongEndpointModelError{Message: msg}))
+		require.Equal(t, "invalid_request_error", detail.ErrorType)
+		require.Equal(t, 400, detail.StatusCode)
+		require.Equal(t, msg, detail.Message)
 		require.NotEqual(t, "upstream_transport_error", detail.ErrorType)
 		require.NotEqual(t, "Upstream transport error", detail.Message)
 	})
