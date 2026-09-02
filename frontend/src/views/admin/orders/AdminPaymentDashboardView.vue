@@ -1,28 +1,27 @@
 <template>
   <AppLayout>
     <div class="space-y-6">
-      <!-- Header with Day Switcher -->
-      <div class="flex items-center justify-end">
-        <div class="flex items-center gap-2">
-          <div class="flex rounded-lg border border-gray-200 dark:border-dark-600">
+      <PageHeader :title="t('nav.paymentDashboard')">
+        <template #actions>
+          <div class="flex rounded-lg border border-line">
             <button
               v-for="d in DAYS_OPTIONS"
               :key="d"
               type="button"
               class="px-3 py-1.5 text-xs font-medium transition-colors first:rounded-l-lg last:rounded-r-lg"
               :class="days === d
-                ? 'bg-primary-600 text-white'
-                : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700'"
+ ? 'bg-accent text-white'
+ : 'text-muted hover:bg-surface-2'"
               @click="days = d"
             >
               {{ d }}{{ t('payment.admin.daySuffix') }}
             </button>
           </div>
-          <button @click="loadDashboard" :disabled="loading" class="btn btn-secondary" :title="t('common.refresh')">
+          <Button variant="secondary" :disabled="loading" :title="t('common.refresh')" @click="loadDashboard">
             <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
-          </button>
-        </div>
-      </div>
+          </Button>
+        </template>
+      </PageHeader>
 
       <!-- Dashboard Content -->
       <div v-if="loading" class="flex items-center justify-center py-12">
@@ -32,38 +31,38 @@
         <OrderStatsCards :stats="stats" />
         <DailyRevenueChart :data="stats.daily_series || []" :loading="loading" />
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <div class="card p-4">
-            <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">{{ t('payment.admin.paymentDistribution') }}</h3>
-            <div v-if="!stats.payment_methods?.length" class="flex h-32 items-center justify-center text-sm text-gray-500 dark:text-gray-400">{{ t('payment.admin.noData') }}</div>
+          <GlassCard>
+            <h3 class="mb-4 text-sm font-semibold text-foreground">{{ t('payment.admin.paymentDistribution') }}</h3>
+            <div v-if="!stats.payment_methods?.length" class="flex h-32 items-center justify-center text-sm text-muted">{{ t('payment.admin.noData') }}</div>
             <div v-else class="space-y-3">
               <div v-for="method in stats.payment_methods" :key="method.type" class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
                   <span :class="['inline-block h-3 w-3 rounded-full', methodColor(method.type)]"></span>
-                  <span class="text-sm text-gray-700 dark:text-gray-300">{{ t('payment.methods.' + method.type, method.type) }}</span>
+                  <span class="text-sm text-foreground">{{ t('payment.methods.' + method.type, method.type) }}</span>
                 </div>
                 <div class="space-y-1 text-right">
-                  <span v-for="[currency, amount] in sortedAmounts(method.amount)" :key="currency" class="block text-sm font-medium text-gray-900 dark:text-white">{{ formatMoney(currency, amount) }}</span>
-                  <span class="ml-2 text-xs text-gray-500 dark:text-gray-400">({{ method.count }})</span>
+                  <span v-for="[currency, amount] in sortedAmounts(method.amount)" :key="currency" class="block text-sm font-medium text-foreground">{{ formatMoney(currency, amount) }}</span>
+                  <span class="ml-2 text-xs text-muted">({{ method.count }})</span>
                 </div>
               </div>
             </div>
-          </div>
-          <div class="card p-4">
-            <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">{{ t('payment.admin.topUsers') }}</h3>
-            <div v-if="!hasTopUsers(stats.top_users)" class="flex h-32 items-center justify-center text-sm text-gray-500 dark:text-gray-400">{{ t('payment.admin.noData') }}</div>
+          </GlassCard>
+          <GlassCard>
+            <h3 class="mb-4 text-sm font-semibold text-foreground">{{ t('payment.admin.topUsers') }}</h3>
+            <div v-if="!hasTopUsers(stats.top_users)" class="flex h-32 items-center justify-center text-sm text-muted">{{ t('payment.admin.noData') }}</div>
             <div v-else class="space-y-2">
               <div v-for="[currency, users] in sortedTopUsers(stats.top_users)" :key="currency" class="space-y-2">
-                <p class="text-xs font-semibold text-gray-500 dark:text-gray-400">{{ currency }}</p>
-                <div v-for="(user, idx) in users" :key="user.user_id" class="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-gray-50 dark:hover:bg-dark-700">
+                <p class="text-xs font-semibold text-muted">{{ currency }}</p>
+                <div v-for="(user, idx) in users" :key="user.user_id" class="flex items-center justify-between rounded-lg px-3 py-2 hover:bg-surface-2">
                   <div class="flex items-center gap-3">
                     <span :class="['flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold', rankClass(idx)]">{{ idx + 1 }}</span>
-                    <span class="text-sm text-gray-700 dark:text-gray-300">{{ user.email }}</span>
+                    <span class="text-sm text-foreground">{{ user.email }}</span>
                   </div>
-                  <span class="text-sm font-medium text-gray-900 dark:text-white">{{ formatMoney(currency, user.amount) }}</span>
+                  <span class="text-sm font-medium text-foreground">{{ formatMoney(currency, user.amount) }}</span>
                 </div>
               </div>
             </div>
-          </div>
+          </GlassCard>
         </div>
       </template>
     </div>
@@ -78,6 +77,9 @@ import { adminPaymentAPI } from '@/api/admin/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import type { CurrencyAmounts, DashboardStats, TopUserPaymentStats } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
+import Button from '@/components/ui/Button.vue'
+import GlassCard from '@/components/ui/GlassCard.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Icon from '@/components/icons/Icon.vue'
 import OrderStatsCards from '@/components/admin/payment/OrderStatsCards.vue'

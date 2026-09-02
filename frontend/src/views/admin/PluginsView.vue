@@ -1,29 +1,8 @@
 <template>
   <AppLayout>
     <div class="space-y-6">
-      <section
-        class="flex flex-col gap-4 border-b border-gray-200 pb-5 dark:border-dark-700 sm:flex-row sm:items-end sm:justify-between"
-      >
-        <div class="min-w-0">
-          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-            {{ t("admin.plugins.title") }}
-          </h2>
-          <p class="mt-1 max-w-3xl text-sm text-gray-500 dark:text-gray-400">
-            {{ t("admin.plugins.description") }}
-          </p>
-          <div
-            class="mt-3 flex flex-wrap gap-2 text-xs text-gray-600 dark:text-gray-300"
-          >
-            <span class="rounded bg-gray-100 px-2 py-1 dark:bg-dark-700">{{
-              t("admin.plugins.onlyOpenAI")
-            }}</span>
-            <span class="rounded bg-gray-100 px-2 py-1 dark:bg-dark-700">{{
-              t("admin.plugins.noAccountCoupling")
-            }}</span>
-          </div>
-        </div>
-
-        <div class="flex flex-shrink-0 items-center gap-2">
+      <PageHeader :title="t('admin.plugins.title')" :description="t('admin.plugins.description')">
+        <template #actions>
           <input
             ref="fileInput"
             class="hidden"
@@ -31,34 +10,36 @@
             accept=".s2plugin,application/zip"
             @change="handleFileSelected"
           />
-          <button
-            type="button"
-            class="btn btn-primary"
-            :disabled="uploading"
-            @click="fileInput?.click()"
-          >
+          <Button :disabled="uploading" @click="fileInput?.click()">
             <Icon name="upload" size="sm" />
             {{ uploading ? t("common.processing") : t("admin.plugins.upload") }}
-          </button>
-          <button
-            type="button"
-            class="btn btn-secondary"
+          </Button>
+          <Button
+            variant="secondary"
             :disabled="loading"
             :title="t('common.refresh')"
             @click="loadPlugins"
           >
             <Icon name="refresh" size="sm" />
             <span class="sr-only">{{ t("common.refresh") }}</span>
-          </button>
-        </div>
-      </section>
+          </Button>
+        </template>
+      </PageHeader>
+      <div class="flex flex-wrap gap-2 text-xs text-muted">
+        <span class="rounded bg-surface-2 px-2 py-1">{{
+          t("admin.plugins.onlyOpenAI")
+        }}</span>
+        <span class="rounded bg-surface-2 px-2 py-1">{{
+          t("admin.plugins.noAccountCoupling")
+        }}</span>
+      </div>
 
-      <p class="text-xs text-gray-500 dark:text-gray-400">
+      <p class="text-xs text-muted">
         {{ t("admin.plugins.uploadHint") }}
       </p>
 
       <div
-        class="border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200"
+        class="rounded-lg border border-line bg-surface-2 px-4 py-3 text-sm text-foreground"
       >
         <p>{{ t("admin.plugins.runtimeNotice") }}</p>
         <p class="mt-1">{{ t("admin.plugins.menuNotice") }}</p>
@@ -66,41 +47,41 @@
 
       <div
         v-if="loading"
-        class="flex min-h-48 items-center justify-center text-sm text-gray-500"
+        class="flex min-h-48 items-center justify-center text-sm text-muted"
       >
         {{ t("common.loading") }}
       </div>
 
       <div
         v-else-if="plugins.length === 0"
-        class="flex min-h-56 flex-col items-center justify-center border border-dashed border-gray-300 px-6 text-center dark:border-dark-600"
+        class="flex min-h-56 flex-col items-center justify-center border border-dashed border-line px-6 text-center"
       >
-        <Icon name="cube" size="xl" class="text-gray-400" />
-        <p class="mt-3 font-medium text-gray-800 dark:text-gray-200">
+        <Icon name="cube" size="xl" class="text-muted" />
+        <p class="mt-3 font-medium text-foreground">
           {{ t("admin.plugins.empty") }}
         </p>
-        <p class="mt-1 max-w-lg text-sm text-gray-500 dark:text-gray-400">
+        <p class="mt-1 max-w-lg text-sm text-muted">
           {{ t("admin.plugins.emptyHint") }}
         </p>
       </div>
 
       <div v-else class="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <article
+        <GlassCard
           v-for="plugin in plugins"
           :key="plugin.id"
-          class="card overflow-hidden border border-gray-200 dark:border-dark-700"
+          class="overflow-hidden"
         >
           <div
-            class="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 p-5 dark:border-dark-700"
+            class="flex flex-wrap items-start justify-between gap-3 border-b border-line p-5"
           >
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2">
                 <h3
-                  class="truncate text-base font-semibold text-gray-900 dark:text-white"
+                  class="truncate text-base font-semibold text-foreground"
                 >
                   {{ plugin.name }}
                 </h3>
-                <span class="font-mono text-xs text-gray-500"
+                <span class="font-mono text-xs text-muted"
                   >v{{ plugin.version }}</span
                 >
                 <span
@@ -110,20 +91,20 @@
                   {{ t(`admin.plugins.${plugin.state}`) }}
                 </span>
               </div>
-              <p class="mt-1 text-xs text-gray-500">
+              <p class="mt-1 text-xs text-muted">
                 {{ plugin.plugin_key
                 }}<span v-if="plugin.author"> · {{ plugin.author }}</span>
               </p>
               <p
                 v-if="plugin.description"
-                class="mt-2 text-sm text-gray-600 dark:text-gray-300"
+                class="mt-2 text-sm text-muted"
               >
                 {{ plugin.description }}
               </p>
             </div>
             <button
               type="button"
-              class="btn btn-secondary btn-sm"
+              class="btn-glass-secondary text-sm"
               @click="openConfiguration(plugin)"
             >
               <Icon name="cog" size="sm" />
@@ -133,7 +114,7 @@
 
           <div class="grid grid-cols-1 gap-x-6 gap-y-4 p-5 md:grid-cols-2">
             <div>
-              <p class="text-xs font-medium uppercase text-gray-500">
+              <p class="text-xs font-medium uppercase text-muted">
                 {{ t("admin.plugins.compatibility") }}
               </p>
               <div class="mt-2 flex items-center gap-2">
@@ -143,46 +124,44 @@
                 >
                   {{ t(`admin.plugins.${plugin.compatibility.status}`) }}
                 </span>
-                <span class="text-xs text-gray-500 dark:text-gray-400">{{
+                <span class="text-xs text-muted">{{
                   plugin.compatibility.message
                 }}</span>
               </div>
               <dl
                 class="mt-3 grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs"
               >
-                <dt class="text-gray-500">
+                <dt class="text-muted">
                   {{ t("admin.plugins.currentVersion") }}
                 </dt>
-                <dd class="font-mono text-gray-800 dark:text-gray-200">
+                <dd class="font-mono text-foreground">
                   {{ plugin.compatibility.current_sub2api_version }}
                 </dd>
-                <dt class="text-gray-500">
+                <dt class="text-muted">
                   {{ t("admin.plugins.requiredVersion") }}
                 </dt>
-                <dd class="font-mono text-gray-800 dark:text-gray-200">
+                <dd class="font-mono text-foreground">
                   {{ plugin.compatibility.required_sub2api_version }}
                 </dd>
-                <dt class="text-gray-500">
+                <dt class="text-muted">
                   {{ t("admin.plugins.recommendedVersion") }}
                 </dt>
-                <dd class="font-mono text-gray-800 dark:text-gray-200">
+                <dd class="font-mono text-foreground">
                   {{ plugin.compatibility.recommended_sub2api_version || "-" }}
                 </dd>
               </dl>
             </div>
 
             <div>
-              <p class="text-xs font-medium uppercase text-gray-500">
+              <p class="text-xs font-medium uppercase text-muted">
                 {{ t("admin.plugins.runtime") }}
               </p>
               <div class="mt-2 flex flex-wrap gap-2 text-xs">
                 <span
                   class="rounded px-2 py-0.5"
-                  :class="
-                    plugin.runtime_healthy
-                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                      : 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
-                  "
+                  :class="plugin.runtime_healthy
+ ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+ : 'bg-surface-2 text-muted'"
                 >
                   {{
                     plugin.runtime_healthy
@@ -191,7 +170,7 @@
                   }}
                 </span>
                 <span
-                  class="rounded bg-gray-100 px-2 py-0.5 text-gray-600 dark:bg-dark-700 dark:text-gray-300"
+                  class="rounded bg-surface-2 px-2 py-0.5 text-muted"
                 >
                   {{ t("admin.plugins.signature") }}:
                   {{ t(`admin.plugins.${plugin.signature_status}`) }}
@@ -205,7 +184,7 @@
               </p>
               <p
                 v-else-if="plugin.runtime_message"
-                class="mt-3 break-words text-xs text-gray-500"
+                class="mt-3 break-words text-xs text-muted"
               >
                 {{ plugin.runtime_message }}
               </p>
@@ -213,7 +192,7 @@
 
             <div class="md:col-span-2">
               <label
-                class="flex items-center justify-between gap-4 text-xs font-medium text-gray-600 dark:text-gray-300"
+                class="flex items-center justify-between gap-4 text-xs font-medium text-muted"
               >
                 <span>{{ t("admin.plugins.rollout") }}</span>
                 <span class="w-11 text-right font-mono"
@@ -236,11 +215,11 @@
           </div>
 
           <div
-            class="flex flex-wrap justify-end gap-2 border-t border-gray-100 px-5 py-4 dark:border-dark-700"
+            class="flex flex-wrap justify-end gap-2 border-t border-line px-5 py-4"
           >
             <button
               type="button"
-              class="btn btn-secondary btn-sm"
+              class="btn-glass-secondary text-sm"
               :disabled="busyID === plugin.id"
               @click="testPlugin(plugin)"
             >
@@ -250,7 +229,7 @@
             <button
               v-if="hasEnabledBinding(plugin)"
               type="button"
-              class="btn btn-secondary btn-sm"
+              class="btn-glass-secondary text-sm"
               :disabled="busyID === plugin.id"
               @click="disablePlugin(plugin)"
             >
@@ -260,7 +239,7 @@
             <button
               v-else
               type="button"
-              class="btn btn-primary btn-sm"
+              class="btn-glass-primary text-sm"
               :disabled="
                 busyID === plugin.id ||
                 plugin.state === 'starting' ||
@@ -273,7 +252,7 @@
             </button>
             <button
               type="button"
-              class="btn btn-danger btn-sm"
+              class="btn-glass-secondary text-sm text-red-600"
               :disabled="busyID === plugin.id || hasEnabledBinding(plugin)"
               @click="uninstallPlugin(plugin)"
             >
@@ -281,7 +260,7 @@
               {{ t("admin.plugins.uninstall") }}
             </button>
           </div>
-        </article>
+        </GlassCard>
       </div>
 
       <BaseDialog
@@ -293,12 +272,12 @@
         @close="closeConfiguration"
       >
         <div
-          class="relative min-h-[520px] overflow-hidden bg-gray-50 dark:bg-dark-900"
+          class="relative min-h-[520px] overflow-hidden bg-surface-2"
           :style="{ height: `${iframeHeight}px` }"
         >
           <div
             v-if="uiLoading"
-            class="absolute inset-0 z-10 flex items-center justify-center text-sm text-gray-500"
+            class="absolute inset-0 z-10 flex items-center justify-center text-sm text-muted"
           >
             {{ t("admin.plugins.loadingUI") }}
           </div>
@@ -307,10 +286,10 @@
             class="absolute inset-0 z-20 flex flex-col items-center justify-center p-8 text-center"
           >
             <Icon name="exclamationTriangle" size="xl" class="text-amber-500" />
-            <p class="mt-3 font-medium text-gray-800 dark:text-gray-200">
+            <p class="mt-3 font-medium text-foreground">
               {{ t("admin.plugins.uiUnavailable") }}
             </p>
-            <p class="mt-1 max-w-xl text-sm text-gray-500">{{ uiError }}</p>
+            <p class="mt-1 max-w-xl text-sm text-muted">{{ uiError }}</p>
           </div>
           <iframe
             v-if="uiSession"
@@ -318,7 +297,7 @@
             :src="uiSession.url"
             sandbox="allow-scripts"
             referrerpolicy="no-referrer"
-            class="h-full w-full border-0 bg-white dark:bg-dark-900"
+            class="h-full w-full border-0 bg-white"
             :title="
               t('admin.plugins.configTitle', { name: configPlugin?.name || '' })
             "
@@ -342,6 +321,9 @@ import {
 } from "@/api/admin";
 import { useAppStore } from "@/stores";
 import AppLayout from "@/components/layout/AppLayout.vue";
+import PageHeader from "@/components/ui/PageHeader.vue";
+import Button from "@/components/ui/Button.vue";
+import GlassCard from "@/components/ui/GlassCard.vue";
 import BaseDialog from "@/components/common/BaseDialog.vue";
 import Icon from "@/components/icons/Icon.vue";
 import TotpStepUpDialog from "@/components/auth/TotpStepUpDialog.vue";

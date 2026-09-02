@@ -1,15 +1,21 @@
 <template>
   <AppLayout>
     <div class="space-y-4">
-      <div class="card p-4">
-        <div class="flex flex-wrap items-center gap-3">
-          <input v-model="keyword" type="text" class="input sm:max-w-64" :placeholder="t('payment.invoices.search')" @input="debounceLoad" />
-          <Select v-model="status" :options="statusFilters" class="w-36" @change="load" />
-          <button class="btn btn-secondary" :disabled="loading" @click="load">
+      <PageHeader :title="t('nav.invoiceApplications')">
+        <template #actions>
+          <Button variant="secondary" :disabled="loading" @click="load">
             <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
-          </button>
-        </div>
-      </div>
+          </Button>
+        </template>
+      </PageHeader>
+      <FilterBar :search-placeholder="t('payment.invoices.search')">
+        <template #search>
+          <input v-model="keyword" type="text" class="input" :placeholder="t('payment.invoices.search')" @input="debounceLoad" />
+        </template>
+        <template #filters>
+          <Select v-model="status" :options="statusFilters" class="w-36" @change="load" />
+        </template>
+      </FilterBar>
 
       <DataTable :columns="columns" :data="invoices" :loading="loading">
         <template #cell-id="{ value, row }">
@@ -23,7 +29,7 @@
           {{ Number(value).toFixed(2) }}{{ row.currency ? ' ' + row.currency : '' }}
         </template>
         <template #cell-applied_at="{ value }">
-          <span class="text-xs text-gray-500">{{ formatDateTime(value) || '-' }}</span>
+          <span class="text-xs text-muted">{{ formatDateTime(value) || '-' }}</span>
         </template>
         <template #cell-actions="{ row }">
           <div class="flex items-center gap-2">
@@ -48,13 +54,13 @@
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <p class="text-sm">{{ detail.title }} · {{ detail.invoice_amount.toFixed(2) }}{{ detail.currency ? ' ' + detail.currency : '' }}</p>
           <p class="text-sm">{{ statusLabel(detail.status) }}</p>
-          <p class="text-xs text-gray-500">{{ detail.email }} / {{ detail.tax_number || '-' }}</p>
-          <p class="text-xs text-gray-500">{{ detail.contact_name || '-' }} / {{ detail.contact_phone || '-' }}</p>
-          <p class="text-xs text-gray-500">{{ t('payment.invoices.fileName') }}: {{ detail.file_name || '-' }}</p>
-          <p class="text-xs text-gray-500">{{ t('payment.invoices.orderCount') }}: {{ detail.order_count }}</p>
-          <p class="text-xs text-gray-500">{{ t('payment.invoices.appliedAt') }}: {{ formatDateTime(detail.applied_at) || '-' }}</p>
+          <p class="text-xs text-muted">{{ detail.email }} / {{ detail.tax_number || '-' }}</p>
+          <p class="text-xs text-muted">{{ detail.contact_name || '-' }} / {{ detail.contact_phone || '-' }}</p>
+          <p class="text-xs text-muted">{{ t('payment.invoices.fileName') }}: {{ detail.file_name || '-' }}</p>
+          <p class="text-xs text-muted">{{ t('payment.invoices.orderCount') }}: {{ detail.order_count }}</p>
+          <p class="text-xs text-muted">{{ t('payment.invoices.appliedAt') }}: {{ formatDateTime(detail.applied_at) || '-' }}</p>
         </div>
-        <p v-if="detail.request_note" class="text-sm text-gray-600 dark:text-gray-300">{{ detail.request_note }}</p>
+        <p v-if="detail.request_note" class="text-sm text-muted">{{ detail.request_note }}</p>
         <ul class="text-sm">
           <li v-for="item in detail.orders || []" :key="item.order_id" class="flex justify-between">
             <span class="font-mono">#{{ item.order_id }} {{ item.out_trade_no }}</span>
@@ -68,9 +74,9 @@
       </div>
       <template #footer>
         <div class="flex justify-end gap-2">
-          <button v-if="detail?.status === 'ISSUED'" class="btn btn-secondary" @click="resend">{{ t('payment.invoices.resendEmail') }}</button>
-          <button v-if="detail?.status === 'ISSUED' && detail.has_file" class="btn btn-secondary" @click="download">{{ t('payment.invoices.download') }}</button>
-          <button v-if="detail?.status === 'APPLIED'" class="btn btn-primary" :disabled="!file || actionLoading" @click="issue">{{ t('payment.invoices.issue') }}</button>
+          <button v-if="detail?.status === 'ISSUED'" class="btn-glass-secondary" @click="resend">{{ t('payment.invoices.resendEmail') }}</button>
+          <button v-if="detail?.status === 'ISSUED' && detail.has_file" class="btn-glass-secondary" @click="download">{{ t('payment.invoices.download') }}</button>
+          <button v-if="detail?.status === 'APPLIED'" class="btn-glass-primary" :disabled="!file || actionLoading" @click="issue">{{ t('payment.invoices.issue') }}</button>
         </div>
       </template>
     </BaseDialog>
@@ -87,6 +93,9 @@ import { useAppStore } from '@/stores'
 import type { Invoice } from '@/types/payment'
 import type { Column } from '@/components/common/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
+import Button from '@/components/ui/Button.vue'
+import FilterBar from '@/components/ui/FilterBar.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'

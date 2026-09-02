@@ -1,40 +1,43 @@
 <template>
   <AppLayout>
+    <PageHeader :title="t('admin.announcements.title')" :description="t('admin.announcements.description')">
+      <template #actions>
+        <Button variant="secondary" :disabled="loading" :title="t('common.refresh')" @click="loadAnnouncements">
+          <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
+        </Button>
+        <Button class="announcements-create-desktop" @click="openCreateDialog">
+          <Icon name="plus" size="md" />
+          {{ t('admin.announcements.createAnnouncement') }}
+        </Button>
+      </template>
+    </PageHeader>
     <TablePageLayout>
       <template #filters>
-        <div class="flex flex-wrap items-center gap-3">
-          <!-- Left: Search + Filters -->
-          <div class="flex-1 sm:max-w-64">
-            <input
-              v-model="searchQuery"
-              type="text"
-              :placeholder="t('admin.announcements.searchAnnouncements')"
-              class="input"
-              @input="handleSearch"
-            />
-          </div>
-          <Select
-            v-model="filters.status"
-            :options="statusFilterOptions"
-            class="w-40"
-            @change="handleStatusChange"
+        <div class="flex flex-col gap-3">
+          <FilterBar :search-placeholder="t('admin.announcements.searchAnnouncements')">
+            <template #search>
+              <input
+                v-model="searchQuery"
+                type="text"
+                :placeholder="t('admin.announcements.searchAnnouncements')"
+                class="input"
+                @input="handleSearch"
+              />
+            </template>
+            <template #filters>
+              <Select
+                v-model="filters.status"
+                :options="statusFilterOptions"
+                class="w-40"
+                @change="handleStatusChange"
+              />
+            </template>
+          </FilterBar>
+          <ChipScroller
+            :model-value="String(filters.status || '')"
+            :chips="announcementStatusChips"
+            @update:model-value="onAnnouncementStatusChip"
           />
-
-          <!-- Right: Action buttons -->
-          <div class="flex flex-1 flex-wrap items-center justify-end gap-2">
-            <button
-              @click="loadAnnouncements"
-              :disabled="loading"
-              class="btn btn-secondary"
-              :title="t('common.refresh')"
-            >
-              <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
-            </button>
-            <button @click="openCreateDialog" class="btn btn-primary">
-              <Icon name="plus" size="md" class="mr-1" />
-              {{ t('admin.announcements.createAnnouncement') }}
-            </button>
-          </div>
         </div>
       </template>
 
@@ -51,11 +54,11 @@
           <template #cell-title="{ value, row }">
             <div class="min-w-0">
               <div class="flex items-center gap-2">
-                <span class="truncate font-medium text-gray-900 dark:text-white">{{ value }}</span>
+                <span class="truncate font-medium text-foreground">{{ value }}</span>
               </div>
-              <div class="mt-1 flex items-center gap-2 text-xs text-gray-500 dark:text-dark-400">
+              <div class="mt-1 flex items-center gap-2 text-xs text-muted">
                 <span>#{{ row.id }}</span>
-                <span class="text-gray-300 dark:text-dark-700">·</span>
+                <span class="text-muted">·</span>
                 <span>{{ formatDateTime(row.created_at) }}</span>
               </div>
             </div>
@@ -64,13 +67,13 @@
           <template #cell-status="{ value }">
             <span
               :class="[
-                'badge',
-                value === 'active'
-                  ? 'badge-success'
-                  : value === 'draft'
-                    ? 'badge-gray'
-                    : 'badge-warning'
-              ]"
+ 'badge',
+ value === 'active'
+ ? 'badge-success'
+ : value === 'draft'
+ ? 'badge-gray'
+ : 'badge-warning'
+ ]"
             >
               {{ statusLabel(value) }}
             </span>
@@ -79,24 +82,24 @@
           <template #cell-notify_mode="{ row }">
             <span
               :class="[
-                'badge',
-                row.notify_mode === 'popup'
-                  ? 'badge-warning'
-                  : 'badge-gray'
-              ]"
+ 'badge',
+ row.notify_mode === 'popup'
+ ? 'badge-warning'
+ : 'badge-gray'
+ ]"
             >
               {{ row.notify_mode === 'popup' ? t('admin.announcements.notifyModeLabels.popup') : t('admin.announcements.notifyModeLabels.silent') }}
             </span>
           </template>
 
           <template #cell-targeting="{ row }">
-            <span class="text-sm text-gray-600 dark:text-gray-300">
+            <span class="text-sm text-muted">
               {{ targetingSummary(row.targeting) }}
             </span>
           </template>
 
           <template #cell-timeRange="{ row }">
-            <div class="text-sm text-gray-600 dark:text-gray-300">
+            <div class="text-sm text-muted">
               <div>
                 <span class="font-medium">{{ t('admin.announcements.form.startsAt') }}:</span>
                 <span class="ml-1">{{ row.starts_at ? formatDateTime(row.starts_at) : t('admin.announcements.timeImmediate') }}</span>
@@ -109,35 +112,35 @@
           </template>
 
           <template #cell-created_at="{ value }">
-            <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatDateTime(value) }}</span>
+            <span class="text-sm text-muted">{{ formatDateTime(value) }}</span>
           </template>
 
           <template #cell-actions="{ row }">
             <div class="flex items-center space-x-1">
               <button
                 @click="openPreview(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
                 :title="t('admin.announcements.preview')"
               >
                 <Icon name="eye" size="sm" />
               </button>
               <button
                 @click="openReadStatus(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
                 :title="t('admin.announcements.readStatus')"
               >
                 <Icon name="chartBar" size="sm" />
               </button>
               <button
                 @click="openEditDialog(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-dark-600 dark:hover:text-gray-300"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-foreground dark:hover:text-muted"
                 :title="t('common.edit')"
               >
                 <Icon name="edit" size="sm" />
               </button>
               <button
                 @click="handleDelete(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
                 :title="t('common.delete')"
               >
                 <Icon name="trash" size="sm" />
@@ -167,6 +170,10 @@
         />
       </template>
     </TablePageLayout>
+    <Fab class="announcements-fab" :label="t('admin.announcements.createAnnouncement')" @click="openCreateDialog">
+      <Icon name="plus" size="md" />
+      {{ t('admin.announcements.createAnnouncement') }}
+    </Fab>
 
     <!-- Create/Edit Dialog -->
     <BaseDialog
@@ -185,7 +192,7 @@
           <label class="input-label">{{ t('admin.announcements.form.content') }}</label>
           <textarea ref="contentTextareaRef" v-model="form.content" rows="6" class="input" required></textarea>
           <div class="mt-2 flex items-center gap-3">
-            <label class="btn btn-secondary cursor-pointer">
+            <label class="btn-glass-secondary cursor-pointer">
               {{ t('admin.announcements.form.insertImage') }}
               <input
                 type="file"
@@ -196,7 +203,7 @@
                 @change="handleImageUpload"
               />
             </label>
-            <span v-if="uploading" class="text-sm text-gray-500 dark:text-gray-400">
+            <span v-if="uploading" class="text-sm text-muted">
               {{ t('admin.announcements.form.uploading') }}
             </span>
           </div>
@@ -235,10 +242,10 @@
 
       <template #footer>
         <div class="flex justify-end gap-3">
-          <button type="button" @click="closeEdit" class="btn btn-secondary">
+          <button type="button" @click="closeEdit" class="btn-glass-secondary">
             {{ t('common.cancel') }}
           </button>
-          <button type="submit" form="announcement-form" :disabled="saving" class="btn btn-primary">
+          <button type="submit" form="announcement-form" :disabled="saving" class="btn-glass-primary">
             {{ saving ? t('common.saving') : t('common.save') }}
           </button>
         </div>
@@ -286,6 +293,11 @@ import type { Column } from '@/components/common/types'
 
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
+import Button from '@/components/ui/Button.vue'
+import FilterBar from '@/components/ui/FilterBar.vue'
+import ChipScroller from '@/components/ui/ChipScroller.vue'
+import Fab from '@/components/ui/Fab.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -330,6 +342,15 @@ const statusFilterOptions = computed(() => [
   { value: 'active', label: t('admin.announcements.statusLabels.active') },
   { value: 'archived', label: t('admin.announcements.statusLabels.archived') }
 ])
+
+const announcementStatusChips = computed(() =>
+  statusFilterOptions.value.map((opt) => ({ value: String(opt.value), label: opt.label }))
+)
+
+const onAnnouncementStatusChip = (value: string) => {
+  filters.status = value
+  handleStatusChange()
+}
 
 const statusOptions = computed(() => [
   { value: 'draft', label: t('admin.announcements.statusLabels.draft') },
@@ -690,3 +711,10 @@ onUnmounted(() => {
   currentController?.abort()
 })
 </script>
+<style scoped>
+.announcements-fab { display: none; }
+@media (max-width: 767px) {
+  .announcements-create-desktop { display: none; }
+  .announcements-fab { display: inline-flex; }
+}
+</style>

@@ -1,100 +1,83 @@
 <template>
   <AppLayout>
+    <PageHeader :title="t('admin.audit.title')" :description="t('admin.audit.description')">
+      <template #actions>
+        <Button :disabled="loading" @click="search">{{ t('common.search') }}</Button>
+        <Button variant="secondary" :disabled="loading" @click="resetFilters">{{ t('common.reset') }}</Button>
+        <Button variant="danger" @click="openClearDialog">
+          <Icon name="trash" size="sm" class="mr-1.5" />
+          {{ t('admin.audit.clearAll') }}
+        </Button>
+      </template>
+    </PageHeader>
     <TablePageLayout>
       <!-- Filters -->
       <template #filters>
-        <div class="card p-4 sm:p-6">
-          <div class="flex flex-wrap items-end justify-between gap-4">
-            <!-- Left: filter fields -->
-            <div class="flex flex-1 flex-wrap items-end gap-4">
-              <div class="w-full sm:w-auto sm:min-w-[240px]">
-                <label class="input-label">{{ t('admin.audit.filters.q') }}</label>
-                <div class="relative">
-                  <Icon
-                    name="search"
-                    size="md"
-                    class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-                  />
-                  <input
-                    v-model.trim="filters.q"
-                    type="text"
-                    class="input pl-10"
-                    :placeholder="t('admin.audit.filters.qPlaceholder')"
-                    @keyup.enter="search"
-                  />
-                </div>
-              </div>
-
-              <div class="w-full sm:w-auto sm:min-w-[200px]">
-                <label class="input-label">{{ t('admin.audit.filters.actorEmail') }}</label>
-                <input v-model.trim="filters.actor_email" type="text" class="input" @keyup.enter="search" />
-              </div>
-
-              <div class="w-full sm:w-auto sm:min-w-[180px]">
-                <label class="input-label">{{ t('admin.audit.filters.action') }}</label>
-                <input v-model.trim="filters.action" type="text" class="input" @keyup.enter="search" />
-              </div>
-
-              <div class="w-full sm:w-auto sm:min-w-[160px]">
-                <label class="input-label">{{ t('admin.audit.filters.clientIp') }}</label>
-                <input v-model.trim="filters.client_ip" type="text" class="input" @keyup.enter="search" />
-              </div>
-
-              <div class="w-full sm:w-auto sm:min-w-[140px]">
-                <label class="input-label">{{ t('admin.audit.filters.method') }}</label>
-                <Select v-model="filters.method" :options="methodOptions" @change="search" />
-              </div>
-
-              <div class="w-full sm:w-auto sm:min-w-[170px]">
-                <label class="input-label">{{ t('admin.audit.filters.authMethod') }}</label>
-                <Select v-model="filters.auth_method" :options="authMethodOptions" @change="search" />
-              </div>
-
-              <div class="w-full sm:w-auto sm:min-w-[140px]">
-                <label class="input-label">{{ t('admin.audit.filters.result') }}</label>
-                <Select v-model="filters.success" :options="resultOptions" @change="search" />
-              </div>
-
-              <div class="w-full sm:w-auto sm:min-w-[170px]">
-                <label class="input-label">{{ t('admin.dashboard.timeRange') }}</label>
-                <Select
-                  :model-value="timeRange"
-                  :options="timeRangeOptions"
-                  @update:model-value="handleTimeRangeChange"
-                />
-              </div>
+        <FilterBar :search-placeholder="t('admin.audit.filters.qPlaceholder')">
+          <template #search>
+            <div class="relative">
+              <Icon
+                name="search"
+                size="md"
+                class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"
+              />
+              <input
+                v-model.trim="filters.q"
+                type="text"
+                class="input pl-10"
+                :placeholder="t('admin.audit.filters.qPlaceholder')"
+                @keyup.enter="search"
+              />
             </div>
-
-            <!-- Right: actions -->
-            <div class="flex w-full flex-wrap items-center justify-end gap-3 sm:w-auto">
-              <button type="button" class="btn btn-primary" :disabled="loading" @click="search">
-                {{ t('common.search') }}
-              </button>
-              <button type="button" class="btn btn-secondary" :disabled="loading" @click="resetFilters">
-                {{ t('common.reset') }}
-              </button>
-              <button type="button" class="btn btn-danger" @click="openClearDialog">
-                <Icon name="trash" size="sm" class="mr-1.5" />
-                {{ t('admin.audit.clearAll') }}
-              </button>
-            </div>
-          </div>
-        </div>
+          </template>
+          <template #filters>
+            <input
+              v-model.trim="filters.actor_email"
+              type="text"
+              class="input w-full sm:w-48"
+              :placeholder="t('admin.audit.filters.actorEmail')"
+              @keyup.enter="search"
+            />
+            <input
+              v-model.trim="filters.action"
+              type="text"
+              class="input w-full sm:w-44"
+              :placeholder="t('admin.audit.filters.action')"
+              @keyup.enter="search"
+            />
+            <input
+              v-model.trim="filters.client_ip"
+              type="text"
+              class="input w-full sm:w-40"
+              :placeholder="t('admin.audit.filters.clientIp')"
+              @keyup.enter="search"
+            />
+            <Select v-model="filters.method" :options="methodOptions" class="w-36" @change="search" />
+            <Select v-model="filters.auth_method" :options="authMethodOptions" class="w-40" @change="search" />
+            <Select v-model="filters.success" :options="resultOptions" class="w-36" @change="search" />
+            <Select
+              :model-value="timeRange"
+              :options="timeRangeOptions"
+              class="w-44"
+              @update:model-value="handleTimeRangeChange"
+            />
+          </template>
+        </FilterBar>
       </template>
 
       <!-- Table -->
       <template #table>
         <DataTable :columns="columns" :data="logs" :loading="loading" row-key="id">
           <template #cell-created_at="{ value }">
-            <span class="whitespace-nowrap text-gray-600 dark:text-gray-300">{{ formatTime(value) }}</span>
+            <span class="whitespace-nowrap text-muted">{{ formatTime(value) }}</span>
           </template>
 
           <template #cell-actor="{ row }">
             <div class="min-w-0 max-w-[220px]">
-              <div class="truncate font-medium text-gray-900 dark:text-white" :title="row.actor_email">
+              <div class="truncate font-medium text-foreground" :title="row.actor_email">
                 {{ row.actor_email || '—' }}
               </div>
-              <div class="mt-0.5 truncate text-xs text-gray-400">
+              <div class="mt-0.5 truncate text-xs text-muted">
                 {{ row.actor_role }}<span v-if="row.auth_method"> · {{ authMethodLabel(row.auth_method) }}</span>
               </div>
             </div>
@@ -102,10 +85,10 @@
 
           <template #cell-action="{ row }">
             <div class="min-w-0 max-w-xs">
-              <div class="truncate font-mono text-sm text-gray-800 dark:text-gray-200" :title="row.action">
+              <div class="truncate font-mono text-sm text-foreground" :title="row.action">
                 {{ row.action }}
               </div>
-              <div class="mt-0.5 truncate font-mono text-xs text-gray-400" :title="`${row.method} ${row.path}`">
+              <div class="mt-0.5 truncate font-mono text-xs text-muted" :title="`${row.method} ${row.path}`">
                 {{ row.method }} {{ row.path }}
               </div>
             </div>
@@ -119,17 +102,17 @@
           </template>
 
           <template #cell-latency_ms="{ value }">
-            <span class="whitespace-nowrap text-gray-500 dark:text-gray-400">{{ value }} ms</span>
+            <span class="whitespace-nowrap text-muted">{{ value }} ms</span>
           </template>
 
           <template #cell-client_ip="{ value }">
-            <span class="whitespace-nowrap font-mono text-gray-600 dark:text-gray-300">{{ value || '—' }}</span>
+            <span class="whitespace-nowrap font-mono text-muted">{{ value || '—' }}</span>
           </template>
 
           <template #cell-actions="{ row }">
             <button
               type="button"
-              class="inline-flex items-center gap-1 font-medium text-primary-600 transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
+              class="inline-flex items-center gap-1 font-medium text-accent transition-colors hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
               @click="openDetail(row.id)"
             >
               <Icon name="eye" size="sm" />
@@ -139,8 +122,8 @@
 
           <template #empty>
             <div class="flex flex-col items-center py-8">
-              <Icon name="shield" size="xl" class="mb-4 h-12 w-12 text-gray-300 dark:text-dark-600" />
-              <p class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('admin.audit.empty') }}</p>
+              <Icon name="shield" size="xl" class="mb-4 h-12 w-12 text-muted" />
+              <p class="text-sm font-medium text-muted">{{ t('admin.audit.empty') }}</p>
             </div>
           </template>
         </DataTable>
@@ -170,31 +153,31 @@
       <div v-if="detailLoading" class="flex items-center justify-center py-16">
         <div class="flex flex-col items-center gap-3">
           <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-primary-600"></div>
-          <div class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('common.loading') }}</div>
+          <div class="text-sm font-medium text-muted">{{ t('common.loading') }}</div>
         </div>
       </div>
 
       <div v-else-if="detail" class="space-y-5 py-2">
         <!-- Hero: action + result at a glance -->
-        <div class="rounded-2xl border border-gray-200 bg-gray-50/60 p-5 dark:border-dark-700 dark:bg-dark-900/60">
+        <div class="rounded-2xl border border-line bg-surface-2 p-5">
           <div class="flex flex-wrap items-center gap-3">
             <span :class="statusBadgeClass(detail.status_code)">
               <span class="h-1.5 w-1.5 rounded-full" :class="statusDotClass(detail.status_code)"></span>
               {{ detail.status_code }} {{ statusText(detail.status_code) }}
             </span>
-            <span class="break-all font-mono text-base font-semibold text-gray-900 dark:text-white">
+            <span class="break-all font-mono text-base font-semibold text-foreground">
               {{ detail.action }}
             </span>
           </div>
 
-          <div class="mt-3 flex items-center gap-2 rounded-lg bg-white px-3 py-2 ring-1 ring-gray-200 dark:bg-dark-800 dark:ring-dark-600">
-            <span class="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[11px] font-bold text-gray-700 dark:bg-dark-700 dark:text-gray-200">
+          <div class="mt-3 flex items-center gap-2 rounded-lg bg-surface px-3 py-2 ring-1 ring-line">
+            <span class="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] font-bold text-foreground">
               {{ detail.method }}
             </span>
-            <span class="break-all font-mono text-xs text-gray-600 dark:text-gray-300">{{ detail.path }}</span>
+            <span class="break-all font-mono text-xs text-muted">{{ detail.path }}</span>
           </div>
 
-          <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-gray-500 dark:text-gray-400">
+          <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-muted">
             <span class="inline-flex items-center gap-1.5">
               <Icon name="clock" size="xs" />
               {{ formatTime(detail.created_at) }}
@@ -209,33 +192,33 @@
 
         <!-- Actor / auth / source -->
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-            <div class="text-xs font-bold uppercase tracking-wider text-gray-400">
+          <div class="rounded-xl bg-surface-2 p-4">
+            <div class="text-xs font-bold uppercase tracking-wider text-muted">
               {{ t('admin.audit.columns.actor') }}
             </div>
-            <div class="mt-1 break-all text-sm font-medium text-gray-900 dark:text-white">
+            <div class="mt-1 break-all text-sm font-medium text-foreground">
               {{ detail.actor_email || '—' }}
             </div>
-            <div class="mt-0.5 text-xs text-gray-400">{{ detail.actor_role }}</div>
+            <div class="mt-0.5 text-xs text-muted">{{ detail.actor_role }}</div>
           </div>
 
-          <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-            <div class="text-xs font-bold uppercase tracking-wider text-gray-400">
+          <div class="rounded-xl bg-surface-2 p-4">
+            <div class="text-xs font-bold uppercase tracking-wider text-muted">
               {{ t('admin.audit.filters.authMethod') }}
             </div>
-            <div class="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+            <div class="mt-1 text-sm font-medium text-foreground">
               {{ authMethodLabel(detail.auth_method) || '—' }}
             </div>
-            <div v-if="detail.credential_masked" class="mt-0.5 break-all font-mono text-xs text-gray-400">
+            <div v-if="detail.credential_masked" class="mt-0.5 break-all font-mono text-xs text-muted">
               {{ detail.credential_masked }}
             </div>
           </div>
 
-          <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-900">
-            <div class="text-xs font-bold uppercase tracking-wider text-gray-400">
+          <div class="rounded-xl bg-surface-2 p-4">
+            <div class="text-xs font-bold uppercase tracking-wider text-muted">
               {{ t('admin.audit.columns.clientIp') }}
             </div>
-            <div class="mt-1 break-all font-mono text-sm font-medium text-gray-900 dark:text-white">
+            <div class="mt-1 break-all font-mono text-sm font-medium text-foreground">
               {{ detail.client_ip || '—' }}
             </div>
           </div>
@@ -243,28 +226,28 @@
 
         <!-- User-Agent -->
         <section>
-          <h4 class="mb-1.5 text-xs font-bold uppercase tracking-wider text-gray-400">
+          <h4 class="mb-1.5 text-xs font-bold uppercase tracking-wider text-muted">
             {{ t('admin.audit.detail.userAgent') }}
           </h4>
-          <div class="break-all rounded-xl bg-gray-50 p-3 font-mono text-xs leading-relaxed text-gray-600 dark:bg-dark-900 dark:text-gray-400">
+          <div class="break-all rounded-xl bg-surface-2 p-3 font-mono text-xs leading-relaxed text-muted">
             {{ detail.user_agent || '—' }}
           </div>
         </section>
 
         <!-- Request body (redacted) -->
         <section v-if="detail.request_body">
-          <h4 class="mb-1.5 text-xs font-bold uppercase tracking-wider text-gray-400">
+          <h4 class="mb-1.5 text-xs font-bold uppercase tracking-wider text-muted">
             {{ t('admin.audit.detail.requestBody') }}
           </h4>
-          <pre class="max-h-72 overflow-auto rounded-xl bg-gray-50 p-4 font-mono text-xs leading-relaxed text-gray-600 dark:bg-dark-900 dark:text-gray-400">{{ prettyBody(detail.request_body) }}</pre>
+          <pre class="max-h-72 overflow-auto rounded-xl bg-surface-2 p-4 font-mono text-xs leading-relaxed text-muted">{{ prettyBody(detail.request_body) }}</pre>
         </section>
 
         <!-- Extra -->
         <section v-if="detail.extra && Object.keys(detail.extra).length">
-          <h4 class="mb-1.5 text-xs font-bold uppercase tracking-wider text-gray-400">
+          <h4 class="mb-1.5 text-xs font-bold uppercase tracking-wider text-muted">
             {{ t('admin.audit.detail.extra') }}
           </h4>
-          <pre class="max-h-48 overflow-auto rounded-xl bg-gray-50 p-4 font-mono text-xs leading-relaxed text-gray-600 dark:bg-dark-900 dark:text-gray-400">{{ JSON.stringify(detail.extra, null, 2) }}</pre>
+          <pre class="max-h-48 overflow-auto rounded-xl bg-surface-2 p-4 font-mono text-xs leading-relaxed text-muted">{{ JSON.stringify(detail.extra, null, 2) }}</pre>
         </section>
       </div>
     </BaseDialog>
@@ -287,12 +270,12 @@
         </div>
       </div>
       <template #footer>
-        <button type="button" class="btn btn-secondary" @click="handleCustomTimeRangeCancel">
+        <button type="button" class="btn-glass-secondary" @click="handleCustomTimeRangeCancel">
           {{ t('common.cancel') }}
         </button>
         <button
           type="button"
-          class="btn btn-primary"
+          class="btn-glass-primary"
           :disabled="!customStartTimeInput || !customEndTimeInput"
           @click="handleCustomTimeRangeConfirm"
         >
@@ -322,7 +305,7 @@
       @close="cancelClearTotp"
     >
       <div class="py-2">
-        <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.audit.clearConfirm.totpHint') }}</p>
+        <p class="text-sm text-muted">{{ t('admin.audit.clearConfirm.totpHint') }}</p>
         <input
           v-model.trim="clearTotpCode"
           type="text"
@@ -335,12 +318,12 @@
         />
       </div>
       <template #footer>
-        <button type="button" class="btn btn-secondary" :disabled="clearing" @click="cancelClearTotp">
+        <button type="button" class="btn-glass-secondary" :disabled="clearing" @click="cancelClearTotp">
           {{ t('common.cancel') }}
         </button>
         <button
           type="button"
-          class="btn btn-danger"
+          class="btn-glass-secondary text-red-600"
           :disabled="clearing || clearTotpCode.length !== 6"
           @click="submitClear"
         >
@@ -357,6 +340,9 @@ import { useI18n } from 'vue-i18n'
 import { adminAPI, type AuditLog } from '@/api/admin'
 import { totpAPI } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
+import Button from '@/components/ui/Button.vue'
+import FilterBar from '@/components/ui/FilterBar.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import type { Column } from '@/components/common/types'
