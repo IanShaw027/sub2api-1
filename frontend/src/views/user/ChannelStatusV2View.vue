@@ -3,7 +3,7 @@
     <div class="space-y-6 pb-12">
       <!-- Ops-style elevated shell: title toolbar + filters (mirrors OpsDashboardHeader) -->
       <section
-        class="card glass-card sticky top-0 z-20 !rounded-3xl !border-0 p-0 shadow-sm ring-1 ring-gray-900/5"
+        class="glass-card sticky top-0 z-20 !rounded-3xl !border-0 p-0 shadow-sm ring-1 ring-gray-900/5"
       >
         <PageHeader class="page-header mb-0 flex flex-wrap items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-6">
           <template #title>
@@ -265,13 +265,13 @@
         />
         <div
           v-else-if="loading"
-          class="card flex min-h-[320px] items-center justify-center !rounded-3xl !border-0 text-sm text-muted shadow-sm ring-1 ring-gray-900/5"
+          class="glass-card flex min-h-[320px] items-center justify-center !rounded-3xl !border-0 text-sm text-muted shadow-sm ring-1 ring-gray-900/5"
         >
           <span class="animate-pulse">{{ t('common.loading') }}</span>
         </div>
       </div>
 
-      <section class="card glass-card flex min-h-0 flex-col overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-gray-900/5">
+      <section class="glass-card flex min-h-0 flex-col overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-gray-900/5">
         <div class="border-b border-line px-5 pt-4 sm:px-6">
           <nav class="tabs w-full max-w-md sm:w-auto" role="tablist" :aria-label="t('channelMonitorV2.tabs.aria')">
             <button

@@ -81,7 +81,7 @@
               step="0.1"
               min="0"
               autocomplete="off"
-              class="hide-spinner w-20 rounded border border-line bg-surface px-2 py-1 text-center text-sm transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-primary-500/20"
+              class="hide-spinner w-20 rounded border border-line bg-surface px-2 py-1 text-center text-sm transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/20"
               placeholder="0.5"
             />
             <button
@@ -170,7 +170,7 @@
                         autocomplete="off"
                         :value="entry.rate_multiplier ?? ''"
                         :placeholder="String(props.group?.rate_multiplier ?? 1)"
-                        class="hide-spinner w-20 rounded border border-line bg-surface px-2 py-1 text-center text-sm font-medium transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-primary-500/20"
+                        class="hide-spinner w-20 rounded border border-line bg-surface px-2 py-1 text-center text-sm font-medium transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/20"
                         @change="updateLocalRate(entry.user_id, ($event.target as HTMLInputElement).value)"
                       />
                     </td>

@@ -1,6 +1,6 @@
 <template>
  <div class="flex min-h-0 flex-1 flex-col">
- <div class="card flex min-h-0 flex-1 flex-col overflow-hidden">
+ <div class="glass-card flex min-h-0 flex-1 flex-col overflow-hidden">
  <DataTable
  :columns="columns"
  :data="rows"

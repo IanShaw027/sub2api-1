@@ -68,12 +68,12 @@ onBeforeUnmount(() => {
  <div
  v-for="(item, index) in allEndpoints"
  :key="index"
- class="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs transition-colors hover:border-primary-200"
+ class="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs transition-colors hover:border-[color-mix(in_oklch,var(--accent)_20%,transparent)]"
  >
  <span class="font-medium text-muted">{{ item.name }}</span>
  <span
  v-if="item.isDefault"
- class="rounded bg-primary-50 px-1 py-px text-[10px] font-medium leading-tight text-accent"
+ class="rounded bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] px-1 py-px text-[10px] font-medium leading-tight text-accent"
  >{{ t('keys.endpoints.default') }}</span>
 
  <span class="text-muted">|</span>
@@ -92,7 +92,7 @@ onBeforeUnmount(() => {
  class="flex items-center gap-1.5 text-[11px] leading-4 text-accent"
  :class="item.description ? 'mt-1.5' : ''"
  >
- <span class="h-1.5 w-1.5 rounded-full bg-primary-500"></span>
+ <span class="h-1.5 w-1.5 rounded-full bg-accent"></span>
  {{ tooltipHint(item.endpoint) }}
  </p>
  <div class="absolute left-1/2 top-full h-3 w-3 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-slate-200 bg-surface"></div>

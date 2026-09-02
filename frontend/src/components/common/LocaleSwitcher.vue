@@ -28,7 +28,7 @@
  @click="selectLocale(locale.code)"
  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground transition-colors hover:bg-surface-2"
  :class="{
- 'bg-primary-50 text-accent':
+ 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent':
  locale.code === currentLocaleCode
  }"
  >

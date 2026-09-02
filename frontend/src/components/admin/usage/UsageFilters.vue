@@ -154,7 +154,7 @@
           <input
             v-model="filters.exclude_admin"
             type="checkbox"
-            class="rounded border-line text-accent focus:ring-primary-500"
+            class="rounded border-line text-accent focus:ring-accent"
             @change="emitChange"
           />
           {{ t('admin.usage.excludeAdmin') }}

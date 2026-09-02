@@ -1,19 +1,19 @@
 <template>
   <div class="mb-4 flex items-center justify-between rounded-lg bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-3">
     <div class="flex flex-wrap items-center gap-2">
-      <span v-if="allResultsSelected" class="text-sm font-medium text-primary-900">
+      <span v-if="allResultsSelected" class="text-sm font-medium text-accent">
         {{ t('admin.accounts.bulkActions.selectedAll', { count: selectedIds.length }) }}
       </span>
-      <span v-else-if="selectedIds.length > 0" class="text-sm font-medium text-primary-900">
+      <span v-else-if="selectedIds.length > 0" class="text-sm font-medium text-accent">
         {{ t('admin.accounts.bulkActions.selected', { count: selectedIds.length }) }}
       </span>
-      <span v-else class="text-sm font-medium text-primary-900">
+      <span v-else class="text-sm font-medium text-accent">
         {{ t('admin.accounts.bulkEdit.title') }}
       </span>
       <template v-if="selectedIds.length > 0">
         <button
           @click="$emit('select-page')"
-          class="text-xs font-medium text-accent hover:text-primary-800"
+          class="text-xs font-medium text-accent hover:text-accent"
         >
           {{ t('admin.accounts.bulkActions.selectCurrentPage') }}
         </button>
@@ -23,7 +23,7 @@
         <button
           :disabled="selectingAll"
           @click="$emit('select-all-results')"
-          class="text-xs font-medium text-accent hover:text-primary-800 disabled:cursor-not-allowed disabled:opacity-60"
+          class="text-xs font-medium text-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-60"
         >
           {{
             selectingAll
@@ -36,7 +36,7 @@
         <span class="text-muted">•</span>
         <button
           @click="$emit('clear')"
-          class="text-xs font-medium text-accent hover:text-primary-800"
+          class="text-xs font-medium text-accent hover:text-accent"
         >
           {{ t('admin.accounts.bulkActions.clear') }}
         </button>

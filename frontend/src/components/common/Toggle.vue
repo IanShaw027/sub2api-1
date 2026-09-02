@@ -3,7 +3,7 @@
  type="button"
  @click="toggle"
  class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
- :class="[modelValue ? 'bg-primary-600' : 'bg-surface-2']"
+ :class="[modelValue ? 'bg-accent' : 'bg-surface-2']"
  role="switch"
  :aria-checked="modelValue"
  >

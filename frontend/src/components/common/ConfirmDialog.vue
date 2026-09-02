@@ -22,7 +22,7 @@
  'rounded-md px-4 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
  danger
  ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500'
- : 'bg-primary-600 hover:bg-primary-700 focus:ring-accent'
+ : 'bg-accent hover:opacity-90 focus:ring-accent'
  ]"
  >
  {{ confirmText }}

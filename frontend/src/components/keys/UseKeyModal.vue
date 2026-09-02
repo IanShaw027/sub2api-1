@@ -77,7 +77,7 @@
  :class="[
  'rounded-md px-3 py-2 text-sm font-medium transition-colors',
  codexAuthMode === 'legacy'
- ? 'bg-surface text-primary-700 shadow-sm'
+ ? 'bg-surface text-accent shadow-sm'
  : 'text-muted hover:text-foreground'
  ]"
  @click="codexAuthMode = 'legacy'"
@@ -92,7 +92,7 @@
  :class="[
  'rounded-md px-3 py-2 text-sm font-medium transition-colors',
  codexAuthMode === 'api-key'
- ? 'bg-surface text-primary-700 shadow-sm'
+ ? 'bg-surface text-accent shadow-sm'
  : 'text-muted hover:text-foreground'
  ]"
  @click="codexAuthMode = 'api-key'"

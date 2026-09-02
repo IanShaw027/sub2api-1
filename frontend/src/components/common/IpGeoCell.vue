@@ -2,7 +2,7 @@
  <div v-if="entry.status === 'idle'" class="mt-0.5 text-xs">
  <button
  type="button"
- class="text-accent underline decoration-dashed underline-offset-2 hover:text-primary-700"
+ class="text-accent underline decoration-dashed underline-offset-2 hover:text-accent"
  @click="handleFetch"
  >
  {{ t('usage.ipGeo.fetch') }}

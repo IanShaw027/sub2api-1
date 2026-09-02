@@ -16,7 +16,7 @@
       </div>
 
       <div v-if="loading" class="flex justify-center py-12">
-        <div class="h-7 w-7 animate-spin rounded-full border-2 border-line border-t-primary-600"></div>
+        <div class="h-7 w-7 animate-spin rounded-full border-2 border-line border-t-accent"></div>
       </div>
       <div v-else-if="error" class="py-10 text-center text-sm text-danger-text">{{ error }}</div>
       <div v-else-if="events.length === 0" class="py-10 text-center text-sm text-muted">

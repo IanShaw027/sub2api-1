@@ -144,7 +144,7 @@
                         min="0"
                         autocomplete="off"
                         :value="entry.rpm_override"
-                        class="hide-spinner w-20 rounded border border-line bg-surface px-2 py-1 text-center text-sm font-medium transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-primary-500/20"
+                        class="hide-spinner w-20 rounded border border-line bg-surface px-2 py-1 text-center text-sm font-medium transition-colors focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/20"
                         @change="updateLocalRpm(entry.user_id, ($event.target as HTMLInputElement).value)"
                       />
                     </td>

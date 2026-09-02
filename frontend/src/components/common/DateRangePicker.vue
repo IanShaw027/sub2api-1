@@ -371,8 +371,8 @@ onUnmounted(() => {
 }
 
 .date-picker-preset-active {
- @apply bg-primary-100
- @apply text-primary-700
+ @apply bg-[color-mix(in_oklch,var(--accent)_16%,transparent)]
+ @apply text-accent
 }
 
 .date-picker-divider {
@@ -418,8 +418,8 @@ onUnmounted(() => {
 
 .date-picker-apply {
  @apply rounded-lg px-4 py-1.5 text-sm font-medium;
- @apply bg-primary-600 text-white;
- @apply hover:bg-primary-700;
+ @apply bg-accent text-white;
+ @apply hover:opacity-90;
  @apply transition-colors duration-150;
 }
 

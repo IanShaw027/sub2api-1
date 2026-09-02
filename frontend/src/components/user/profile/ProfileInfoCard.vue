@@ -2,12 +2,12 @@
  <div class="space-y-6">
  <section
  data-testid="profile-overview-hero"
- class="card overflow-hidden border border-primary-100/80 bg-gradient-to-br from-primary-50 via-white to-amber-50/70"
+ class="glass-card overflow-hidden border border-[color-mix(in_oklch,var(--accent)_16%,transparent)] bg-gradient-to-br from-[color-mix(in_oklch,var(--accent)_12%,transparent)] via-surface to-[color-mix(in_oklch,var(--warning)_12%,transparent)]"
  >
  <div class="px-6 py-6 md:px-8">
  <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
  <div
- class="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-primary-500 to-primary-600 text-2xl font-bold text-white shadow-lg shadow-primary-500/20"
+ class="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-[var(--accent)] to-[color-mix(in_oklch,var(--accent)_80%,black)] text-2xl font-bold text-white shadow-lg shadow-[color-mix(in_oklch,var(--accent)_20%,transparent)]"
  >
  <img
  v-if="avatarUrl"
@@ -49,7 +49,7 @@
  <span
  v-for="hint in sourceHints"
  :key="hint.key"
- class="inline-flex items-center gap-1 rounded-full bg-surface/80 px-3 py-1 ring-1 ring-primary-100"
+ class="inline-flex items-center gap-1 rounded-full bg-surface/80 px-3 py-1 ring-1 ring-[color-mix(in_oklch,var(--accent)_16%,transparent)]"
  >
  <Icon name="link" size="sm" />
  {{ hint.text }}
@@ -102,7 +102,7 @@
  <div data-testid="profile-main-column" class="space-y-6">
  <section
  data-testid="profile-basics-panel"
- class="card border border-line bg-surface/90 p-6"
+ class="glass-card border border-line bg-surface/90 p-6"
  >
  <div class="mb-5 flex items-start justify-between gap-4">
  <div>
@@ -134,7 +134,7 @@
 
  <section
  data-testid="profile-auth-bindings-panel"
- class="card border border-line bg-surface/90 p-6"
+ class="glass-card border border-line bg-surface/90 p-6"
  >
  <ProfileIdentityBindingsSection
  :user="user"
@@ -154,7 +154,7 @@
  <div data-testid="profile-side-column" class="space-y-6">
  <section
  v-if="sourceHints.length"
- class="card border border-line bg-surface/90 p-6"
+ class="glass-card border border-line bg-surface/90 p-6"
  >
  <h3 class="text-lg font-semibold text-foreground">
  {{ t('profile.linkedProfileSources') }}

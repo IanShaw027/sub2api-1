@@ -8,7 +8,7 @@
  </span>
  <button
  type="button"
- class="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-accent transition-colors hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50"
+ class="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-accent transition-colors hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] disabled:cursor-not-allowed disabled:opacity-50"
  :disabled="loading || pendingCount === 0"
  @click="run"
  >

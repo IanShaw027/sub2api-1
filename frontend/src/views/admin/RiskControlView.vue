@@ -54,7 +54,7 @@
           data-test="pre-block-runtime-cards"
           class="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,520px)_minmax(0,1fr)]"
         >
-          <GlassCard data-test="pre-block-sync-card" class="card">
+          <GlassCard data-test="pre-block-sync-card" class="glass-card">
             <div class="flex flex-col gap-4 border-b border-line px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h2 class="text-lg font-semibold text-foreground">{{ t('admin.riskControl.preBlockSyncStatus') }}</h2>
@@ -81,7 +81,7 @@
             </div>
           </GlassCard>
 
-          <GlassCard data-test="pre-block-api-key-load-card" class="card">
+          <GlassCard data-test="pre-block-api-key-load-card" class="glass-card">
             <div class="flex flex-col gap-4 border-b border-line px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h2 class="text-lg font-semibold text-foreground">{{ t('admin.riskControl.preBlockAPIKeyLoad') }}</h2>
@@ -174,7 +174,7 @@
                   <span class="text-sm font-semibold text-foreground">{{ queueUsagePercent }}</span>
                 </div>
                 <div class="mt-4 h-2 overflow-hidden rounded-full bg-surface-2">
-                  <div class="h-full rounded-full bg-primary-500 transition-all duration-300" :style="queueUsageStyle"></div>
+                  <div class="h-full rounded-full bg-accent transition-all duration-300" :style="queueUsageStyle"></div>
                 </div>
               </div>
 
@@ -482,7 +482,7 @@
                       <button
                         type="button"
                         class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
-                        :class="configForm.api_keys_mode === 'append' ? 'bg-primary-500 text-white shadow-sm' : 'text-muted hover:bg-surface-2 '"
+                        :class="configForm.api_keys_mode === 'append' ? 'bg-accent text-white shadow-sm' : 'text-muted hover:bg-surface-2 '"
                         :disabled="configForm.clear_api_key"
                         @click="setAPIKeysMode('append')"
                       >
@@ -686,7 +686,7 @@
                           <span class="font-mono text-muted">{{ percent(score.score) }} / {{ percent(score.threshold) }}</span>
                         </div>
                         <div class="h-1.5 overflow-hidden rounded-full bg-surface-2">
-                          <div class="h-full rounded-full" :class="score.hit ? 'bg-red-500' : 'bg-primary-500'" :style="{ width: percentWidth(score.score) }"></div>
+                          <div class="h-full rounded-full" :class="score.hit ? 'bg-red-500' : 'bg-accent'" :style="{ width: percentWidth(score.score) }"></div>
                         </div>
                       </div>
                     </div>
@@ -742,7 +742,7 @@
                   </span>
                   <span
                     class="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border"
-                    :class="isGroupSelected(group.id) ? 'border-accent bg-primary-500 text-white' : 'border-line text-transparent '"
+                    :class="isGroupSelected(group.id) ? 'border-accent bg-accent text-white' : 'border-line text-transparent '"
                   >
                     <Icon name="check" size="xs" :stroke-width="2" />
                   </span>
@@ -778,7 +778,7 @@
                     <span
                       class="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border"
                       :class="configForm.model_filter_type === option.value
- ? 'border-accent bg-primary-500 text-white'
+ ? 'border-accent bg-accent text-white'
  : 'border-line text-transparent '"
                     >
                       <Icon name="check" size="xs" :stroke-width="2" />
@@ -994,7 +994,7 @@
                     <span
                       class="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border"
                       :class="configForm.keyword_blocking_mode === option.value
- ? 'border-accent bg-primary-500 text-white'
+ ? 'border-accent bg-accent text-white'
  : 'border-line text-transparent '"
                     >
                       <Icon name="check" size="xs" :stroke-width="2" />
@@ -1341,8 +1341,8 @@ type KeywordNoticeView = {
 const keywordNoticeTones = {
   info: {
     icon: 'infoCircle' as const,
-    toneClass: 'border-[color-mix(in_oklch,var(--accent)_18%,transparent)] bg-primary-50/60  ',
-    iconClass: 'mt-0.5 flex-shrink-0 text-primary-500 ',
+    toneClass: 'border-[color-mix(in_oklch,var(--accent)_18%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]/60  ',
+    iconClass: 'mt-0.5 flex-shrink-0 text-accent ',
     titleClass: 'text-accent ',
   },
   warning: {

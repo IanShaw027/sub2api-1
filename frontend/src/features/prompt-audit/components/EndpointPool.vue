@@ -27,7 +27,7 @@
  v-for="endpoint in endpoints"
  :key="endpoint.id"
  :data-test="`endpoint-${endpoint.id}`"
- class="group grid gap-4 border-l-[3px] border-l-transparent px-4 py-4 transition-[background-color,border-color] duration-200 hover:border-l-primary-500 hover:bg-surface-2/80 sm:px-5 xl:grid-cols-[minmax(260px,1.45fr)_minmax(210px,1fr)_minmax(190px,.8fr)_minmax(230px,1.15fr)_auto] xl:items-center xl:gap-5"
+ class="group grid gap-4 border-l-[3px] border-l-transparent px-4 py-4 transition-[background-color,border-color] duration-200 hover:border-l-accent hover:bg-surface-2/80 sm:px-5 xl:grid-cols-[minmax(260px,1.45fr)_minmax(210px,1fr)_minmax(190px,.8fr)_minmax(230px,1.15fr)_auto] xl:items-center xl:gap-5"
  >
  <div class="flex min-w-0 items-center gap-3">
  <button
@@ -36,7 +36,7 @@
  :aria-checked="endpoint.enabled"
  :aria-label="t('admin.promptAudit.pool.toggleNode', { name: endpoint.name })"
  class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
- :class="endpoint.enabled ? 'bg-primary-600' : 'bg-surface-2'"
+ :class="endpoint.enabled ? 'bg-accent' : 'bg-surface-2'"
  @click="toggleEndpoint(endpoint.id)"
  >
  <span

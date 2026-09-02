@@ -60,7 +60,7 @@
                 class="rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors"
                 :class="
  selectedRange === option.value
- ? 'bg-primary-600 text-white shadow-sm'
+ ? 'bg-accent text-white shadow-sm'
  : 'text-muted hover:bg-surface-2'
  "
                 @click="selectedRange = option.value"
@@ -112,7 +112,7 @@
           <div
             v-for="kpi in kpiItems"
             :key="kpi.key"
-            class="card min-w-0 border p-4"
+            class="glass-card min-w-0 border p-4"
             :class="kpi.cardClass"
           >
             <div class="mb-2 flex items-center justify-between gap-2">
@@ -126,7 +126,7 @@
         </div>
 
         <!-- Trend chart -->
-        <div class="card p-4">
+        <div class="glass-card p-4">
           <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h4 class="text-sm font-semibold text-foreground">
               {{ t('admin.accounts.capacityForecast.chartTitle') }}
@@ -175,7 +175,7 @@
         </div>
 
         <!-- Events -->
-        <div class="card overflow-hidden p-0">
+        <div class="glass-card overflow-hidden p-0">
           <div class="border-b border-line px-4 py-3">
             <h4 class="text-sm font-semibold text-foreground">
               {{ t('admin.accounts.capacityForecast.eventsTitle') }}

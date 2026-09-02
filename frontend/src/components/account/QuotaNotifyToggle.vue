@@ -21,7 +21,7 @@ const emit = defineEmits<{
       @click="emit('update:enabled', !enabled)"
       :class="[
  'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
- enabled ? 'bg-primary-600' : 'bg-surface-3'
+ enabled ? 'bg-accent' : 'bg-surface-3'
  ]"
     >
       <span

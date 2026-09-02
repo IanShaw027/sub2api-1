@@ -25,14 +25,14 @@
  <RouterLink
  v-if="isAuthenticated"
  :to="backTarget"
- class="inline-flex flex-shrink-0 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition-all duration-200 hover:from-primary-600 hover:to-primary-700 hover:shadow-lg hover:shadow-primary-500/30 active:scale-[0.98]"
+ class="inline-flex flex-shrink-0 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-[var(--accent)] to-[color-mix(in_oklch,var(--accent)_80%,black)] px-4 py-2 text-sm font-semibold text-white shadow-md shadow-[color-mix(in_oklch,var(--accent)_25%,transparent)] transition-all duration-200 hover:opacity-90 hover:shadow-lg hover:shadow-[color-mix(in_oklch,var(--accent)_30%,transparent)] active:scale-[0.98]"
  >
  {{ t('modelPlaza.nav.backToDashboard') }}
  </RouterLink>
  <RouterLink
  v-else
  :to="{ path: '/login', query: { redirect: '/model-plaza' } }"
- class="inline-flex flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition-all duration-200 hover:from-primary-600 hover:to-primary-700 hover:shadow-lg hover:shadow-primary-500/30 active:scale-[0.98]"
+ class="inline-flex flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-[var(--accent)] to-[color-mix(in_oklch,var(--accent)_80%,black)] px-4 py-2 text-sm font-semibold text-white shadow-md shadow-[color-mix(in_oklch,var(--accent)_25%,transparent)] transition-all duration-200 hover:opacity-90 hover:shadow-lg hover:shadow-[color-mix(in_oklch,var(--accent)_30%,transparent)] active:scale-[0.98]"
  >
  {{ t('modelPlaza.nav.login') }}
  </RouterLink>

@@ -10,8 +10,8 @@
  <div class="space-y-4">
  <div class="rounded-xl bg-surface-2 p-4">
  <div class="flex items-center gap-3">
- <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary-100">
- <span class="text-lg font-medium text-primary-700">
+ <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--accent)_16%,transparent)]">
+ <span class="text-lg font-medium text-accent">
  {{ avatarInitial }}
  </span>
  </div>

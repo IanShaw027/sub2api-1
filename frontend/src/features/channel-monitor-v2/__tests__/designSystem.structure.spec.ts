@@ -18,7 +18,7 @@ describe('channel-monitor-v2 design system structure', () => {
     const src = read('views/user/ChannelStatusV2View.vue')
     expect(src).toContain('page-header')
     expect(src).toContain('page-title')
-    expect(src).toContain('class="card')
+    expect(src).toContain('class="glass-card')
     expect(src).toContain('btn btn-secondary')
     expect(src).toContain('class="tab')
     expect(src).toContain('tab-active')
@@ -47,9 +47,9 @@ describe('channel-monitor-v2 design system structure', () => {
 
   it('RelayPulseMatrix uses card chrome, matrix scroll, and hover tooltips (no click modal)', () => {
     const src = read('features/channel-monitor-v2/RelayPulseMatrix.vue')
-    expect(src).toContain('class="card')
-    expect(src).toContain('card-header')
-    expect(src).toContain('card-body')
+    expect(src).toContain('class="glass-card')
+    expect(src).toContain('glass-card-header')
+    expect(src).toContain('glass-card-body')
     expect(src).toContain('matrix-scroll')
     expect(src).toMatch(/max-h-\[min\(42vh/)
     expect(src).toContain('overflow-auto')
@@ -70,7 +70,7 @@ describe('channel-monitor-v2 design system structure', () => {
 
   it('MonitorTrendChart uses Ops chart shell tokens', () => {
     const src = read('features/channel-monitor-v2/MonitorTrendChart.vue')
-    expect(src).toContain('class="card')
+    expect(src).toContain('class="glass-card')
     expect(src).toContain('rounded-3xl')
     expect(src).toContain('ring-1 ring-line/5')
     expect(src).toContain('EmptyState')
@@ -88,7 +88,7 @@ describe('channel-monitor-v2 design system structure', () => {
     const src = read('features/channel-monitor-v2/MonitorSettingsPanel.vue')
     expect(src).toContain('page-header')
     expect(src).toContain('btn btn-primary')
-    expect(src).toContain('class="card')
+    expect(src).toContain('class="glass-card')
     expect(src).toContain('tab-active')
     expect(src).toMatch(/max-h-\[min\(40vh/)
   })

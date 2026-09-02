@@ -580,8 +580,8 @@ onUnmounted(() => {
 }
 
 .select-dropdown-portal .select-option-selected {
- @apply bg-primary-50
- @apply text-primary-700
+ @apply bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]
+ @apply text-accent
 }
 
 .select-dropdown-portal .select-option-focused {

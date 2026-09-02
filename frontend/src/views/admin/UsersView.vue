@@ -420,7 +420,7 @@
           <template #cell-balance_platform_quota="{ row }">
             <button
               type="button"
-              class="block text-left underline decoration-dashed decoration-line underline-offset-4 transition-colors hover:decoration-primary-400 "
+              class="block text-left underline decoration-dashed decoration-line underline-offset-4 transition-colors hover:decoration-accent "
               :title="t('admin.users.platformQuota.cellColumnTooltip')"
               @click="handlePlatformQuota(row)"
             >

@@ -3,7 +3,7 @@
  <div v-if="loading" class="py-12 text-center text-sm text-muted" aria-busy="true">{{ t('common.loading') }}</div>
  <div v-else-if="event" class="flex flex-col">
  <div class="flex flex-wrap gap-2 border-b border-line pb-3" role="tablist">
- <button v-for="tab in tabs" :key="tab" type="button" role="tab" :aria-selected="activeTab === tab" class="rounded-md px-3 py-1.5 text-sm" :class="activeTab === tab ? 'bg-primary-50 text-primary-700' : 'text-muted'" @click="activeTab = tab">
+ <button v-for="tab in tabs" :key="tab" type="button" role="tab" :aria-selected="activeTab === tab" class="rounded-md px-3 py-1.5 text-sm" :class="activeTab === tab ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent' : 'text-muted'" @click="activeTab = tab">
  {{ t(`admin.promptAudit.events.tabs.${tab}`) }}
  </button>
  </div>

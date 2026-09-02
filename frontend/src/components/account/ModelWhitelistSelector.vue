@@ -77,7 +77,7 @@
             <button
               type="button"
               data-testid="copy-model-id"
-              class="mr-2 rounded p-1.5 text-muted opacity-70 transition-colors hover:bg-surface-3 hover:text-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 group-hover:opacity-100"
+              class="mr-2 rounded p-1.5 text-muted opacity-70 transition-colors hover:bg-surface-3 hover:text-accent focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover:opacity-100"
               :title="`${t('common.copy')} ${model.value}`"
               :aria-label="`${t('common.copy')} ${model.value}`"
               @click="copyModelId(model.value)"

@@ -1,7 +1,7 @@
 <template>
   <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
     <!-- Today Revenue -->
-    <div class="card p-4">
+    <div class="glass-card p-4">
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-[color-mix(in_oklch,var(--success)_16%,transparent)] p-2">
           <Icon name="dollar" size="md" class="text-green-600" :stroke-width="2" />
@@ -19,7 +19,7 @@
     </div>
 
     <!-- Total Revenue -->
-    <div class="card p-4">
+    <div class="glass-card p-4">
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-2">
           <Icon name="creditCard" size="md" class="text-accent" :stroke-width="2" />
@@ -37,7 +37,7 @@
     </div>
 
     <!-- Today Orders -->
-    <div class="card p-4">
+    <div class="glass-card p-4">
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-purple-100 p-2">
           <Icon name="chart" size="md" class="text-purple-600" :stroke-width="2" />
@@ -50,7 +50,7 @@
     </div>
 
     <!-- Average Amount -->
-    <div class="card p-4">
+    <div class="glass-card p-4">
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-amber-100 p-2">
           <Icon name="chart" size="md" class="text-warning-text" :stroke-width="2" />

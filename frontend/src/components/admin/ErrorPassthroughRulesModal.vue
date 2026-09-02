@@ -164,8 +164,8 @@
                 <button
                   @click="toggleEnabled(rule)"
                   :class="[
- 'relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- rule.enabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ rule.enabled ? 'bg-accent' : 'bg-surface-3'
  ]"
                 >
                   <span
@@ -291,7 +291,7 @@
                   type="radio"
                   :value="option.value"
                   v-model="form.match_mode"
-                  class="mt-0.5 h-3.5 w-3.5 border-line text-accent focus:ring-primary-500"
+                  class="mt-0.5 h-3.5 w-3.5 border-line text-accent focus:ring-accent"
                 />
                 <div class="flex-1">
                   <span class="text-xs font-medium text-foreground">{{ option.label }}</span>
@@ -313,7 +313,7 @@
                   type="checkbox"
                   :value="platform.value"
                   v-model="form.platforms"
-                  class="h-3.5 w-3.5 rounded border-line text-accent focus:ring-primary-500"
+                  class="h-3.5 w-3.5 rounded border-line text-accent focus:ring-accent"
                 />
                 <span class="text-xs text-foreground">{{ platform.label }}</span>
               </label>
@@ -334,7 +334,7 @@
                 <input
                   type="checkbox"
                   v-model="form.passthrough_code"
-                  class="h-3.5 w-3.5 rounded border-line text-accent focus:ring-primary-500"
+                  class="h-3.5 w-3.5 rounded border-line text-accent focus:ring-accent"
                 />
                 <span class="text-xs font-medium text-foreground">
                   {{ t('admin.errorPassthrough.form.passthroughCode') }}
@@ -357,7 +357,7 @@
                 <input
                   type="checkbox"
                   v-model="form.passthrough_body"
-                  class="h-3.5 w-3.5 rounded border-line text-accent focus:ring-primary-500"
+                  class="h-3.5 w-3.5 rounded border-line text-accent focus:ring-accent"
                 />
                 <span class="text-xs font-medium text-foreground">
                   {{ t('admin.errorPassthrough.form.passthroughBody') }}
@@ -394,7 +394,7 @@
           <input
             type="checkbox"
             v-model="form.enabled"
-            class="h-3.5 w-3.5 rounded border-line text-accent focus:ring-primary-500"
+            class="h-3.5 w-3.5 rounded border-line text-accent focus:ring-accent"
           />
           <span class="text-xs font-medium text-foreground">
             {{ t('admin.errorPassthrough.form.enabled') }}

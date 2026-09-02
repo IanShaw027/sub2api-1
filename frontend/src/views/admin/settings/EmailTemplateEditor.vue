@@ -1,5 +1,5 @@
 <template>
-  <div class="card">
+  <div class="glass-card">
     <div
       class="flex flex-col gap-3 border-b border-line px-6 py-4  lg:flex-row lg:items-start lg:justify-between"
     >
@@ -45,7 +45,7 @@
         class="flex items-center gap-2 text-sm text-muted "
       >
         <span
-          class="h-4 w-4 animate-spin rounded-full border-b-2 border-primary-600"
+          class="h-4 w-4 animate-spin rounded-full border-b-2 border-accent"
         ></span>
         {{ t("common.loading") }}
       </div>
@@ -94,7 +94,7 @@
 
         <div
           v-if="selectedEventMeta"
-          class="rounded-lg border border-[color-mix(in_oklch,var(--accent)_18%,transparent)] bg-primary-50/70 p-4  "
+          class="rounded-lg border border-[color-mix(in_oklch,var(--accent)_18%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-4  "
         >
           <div class="flex flex-wrap items-center gap-2">
             <div class="text-sm font-semibold text-foreground ">

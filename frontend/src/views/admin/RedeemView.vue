@@ -199,7 +199,7 @@
           <div class="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              class="text-xs font-medium text-accent hover:text-primary-800  "
+              class="text-xs font-medium text-accent hover:text-accent  "
               @click="clearSelectedCodes"
             >
               {{ t('admin.redeem.clearSelection') }}

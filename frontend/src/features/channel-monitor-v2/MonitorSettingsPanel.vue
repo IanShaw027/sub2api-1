@@ -41,13 +41,13 @@
 
  <div
  v-if="loading"
- class="card flex min-h-[200px] items-center justify-center !rounded-3xl !border-0 text-sm text-muted shadow-sm ring-1 ring-line/5"
+ class="glass-card flex min-h-[200px] items-center justify-center !rounded-3xl !border-0 text-sm text-muted shadow-sm ring-1 ring-line/5"
  >
  <span class="animate-pulse">{{ t('channelMonitorV2.settings.loading') }}</span>
  </div>
 
  <template v-else-if="draft">
- <div class="card divide-y divide-line !rounded-3xl !border-0 shadow-sm ring-1 ring-line/5">
+ <div class="glass-card divide-y divide-line !rounded-3xl !border-0 shadow-sm ring-1 ring-line/5">
  <div class="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
  <div>
  <strong class="text-sm font-semibold text-foreground">{{ t('channelMonitorV2.settings.enableTitle') }}</strong>
@@ -83,8 +83,8 @@
  </div>
  </div>
 
- <div class="card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-line/5">
- <div class="card-header !py-3">
+ <div class="glass-card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-line/5">
+ <div class="glass-card-header !py-3">
  <h3 class="text-sm font-semibold text-foreground">{{ t('channelMonitorV2.settings.platformsTitle') }}</h3>
  <p class="mt-0.5 text-xs text-muted">
  {{ t('channelMonitorV2.settings.platformsHint') }}
@@ -115,8 +115,8 @@
  </div>
  </div>
 
- <div class="card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-line/5">
- <div class="card-header flex flex-wrap items-center justify-between gap-2 !py-3">
+ <div class="glass-card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-line/5">
+ <div class="glass-card-header flex flex-wrap items-center justify-between gap-2 !py-3">
  <div>
  <h3 class="text-sm font-semibold text-foreground">{{ t('channelMonitorV2.settings.groupsTitle') }}</h3>
  <p class="mt-0.5 text-xs text-muted">
@@ -157,8 +157,8 @@
  </div>
  </div>
 
- <div class="card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-line/5">
- <div class="card-header !py-3">
+ <div class="glass-card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-line/5">
+ <div class="glass-card-header !py-3">
  <h3 class="text-sm font-semibold text-foreground">{{ t('channelMonitorV2.settings.errorsTitle') }}</h3>
  <p class="mt-0.5 text-xs text-muted">
  {{ t('channelMonitorV2.settings.errorsHint') }}
@@ -194,8 +194,8 @@
  </div>
  </div>
 
- <div class="card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-line/5">
- <div class="card-header !py-3">
+ <div class="glass-card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-line/5">
+ <div class="glass-card-header !py-3">
  <h3 class="text-sm font-semibold text-foreground">{{ t('channelMonitorV2.settings.healthTitle') }}</h3>
  <p class="mt-0.5 text-xs text-muted">
  {{ t('channelMonitorV2.settings.healthHint') }}
@@ -238,7 +238,7 @@
  </div>
 
  <div class="space-y-2">
- <div class="rounded-2xl border border-primary-200 bg-primary-50/80 px-4 py-3 text-sm text-primary-900">
+ <div class="rounded-2xl border border-[color-mix(in_oklch,var(--accent)_20%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] px-4 py-3 text-sm text-accent">
  <template v-if="namedModelCount === 0">
  {{ t('channelMonitorV2.settings.namedModelsEmpty') }}
  </template>

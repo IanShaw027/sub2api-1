@@ -24,7 +24,7 @@
 
  <!-- 加载/错误/空 -->
  <div v-if="loading" class="flex min-h-[240px] items-center justify-center">
- <div class="h-8 w-8 animate-spin rounded-full border-2 border-primary-600/25 border-t-primary-600"></div>
+ <div class="h-8 w-8 animate-spin rounded-full border-2 border-accent/25 border-t-accent"></div>
  </div>
  <div
  v-else-if="error"
@@ -170,7 +170,7 @@ const filteredGroups = computed(() => {
 }
 
 .plaza-description :deep(a) {
- @apply text-accent underline underline-offset-4 hover:text-primary-700
+ @apply text-accent underline underline-offset-4 hover:text-accent
 }
 
 .plaza-description :deep(ul) {

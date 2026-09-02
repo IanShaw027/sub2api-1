@@ -1,5 +1,5 @@
 <template>
- <div class="card p-4">
+ <div class="glass-card p-4">
  <div class="mb-4 flex items-center justify-between gap-3">
  <h3 class="text-sm font-semibold text-foreground">
  {{ !enableRankingView || activeView === 'model_distribution'

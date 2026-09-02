@@ -1,5 +1,5 @@
 <template>
- <div class="card">
+ <div class="glass-card">
  <div class="border-b border-line px-6 py-4">
  <h2 class="text-lg font-medium text-foreground">
  {{ t('profile.balanceNotify.title') }}
@@ -14,7 +14,7 @@
  <label class="input-label mb-0">{{ t('profile.balanceNotify.enabled') }}</label>
  <label class="relative inline-flex items-center cursor-pointer">
  <input type="checkbox" v-model="notifyEnabled" @change="handleToggle" class="sr-only peer" />
- <div class="w-11 h-6 bg-surface-2 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface after:border-line after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+ <div class="w-11 h-6 bg-surface-2 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-accent rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface after:border-line after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent"></div>
  </label>
  </div>
 
@@ -57,7 +57,7 @@
  <div class="flex items-center gap-2 min-w-0 flex-1">
  <label class="relative inline-flex items-center cursor-pointer shrink-0">
  <input type="checkbox" :checked="!entry.disabled" @change="handleEmailToggle(entry)" class="sr-only peer" />
- <div class="w-9 h-5 bg-surface-2 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface after:border-line after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-600"></div>
+ <div class="w-9 h-5 bg-surface-2 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface after:border-line after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent"></div>
  </label>
  <span class="text-sm text-foreground truncate">{{ entry.email }}</span>
  </div>
@@ -72,7 +72,7 @@
  class="w-20 rounded border border-line px-2 py-1 text-xs"
  :placeholder="t('profile.balanceNotify.codePlaceholder')"
  />
- <button @click="verifySavedEmail(entry.email)" :disabled="!verifyCode || verifyCode.length !== 6 || verifyingSaved" class="text-xs text-accent hover:text-primary-700">
+ <button @click="verifySavedEmail(entry.email)" :disabled="!verifyCode || verifyCode.length !== 6 || verifyingSaved" class="text-xs text-accent hover:text-accent">
  {{ t('profile.balanceNotify.verify') }}
  </button>
  <span v-if="verifyCountdown > 0" class="text-xs text-muted">{{ verifyCountdown }}s</span>
@@ -84,7 +84,7 @@
  </button>
  </template>
  <template v-else>
- <button @click="sendCodeForSaved(entry.email)" :disabled="sendingSavedCode" class="text-xs text-accent hover:text-primary-700">
+ <button @click="sendCodeForSaved(entry.email)" :disabled="sendingSavedCode" class="text-xs text-accent hover:text-accent">
  {{ t('profile.balanceNotify.verify') }}
  </button>
  <span class="text-xs text-yellow-500">{{ t('profile.balanceNotify.unverified') }}</span>
@@ -104,7 +104,7 @@
  class="flex items-center gap-2 px-3 py-2 bg-yellow-50 rounded-lg border border-yellow-200">
  <span class="flex-1 text-sm text-foreground">{{ pe.email }}</span>
  <div v-if="!pe.codeSent" class="flex items-center gap-1">
- <button @click="sendCodeFor(idx)" :disabled="pe.sending" class="text-xs text-accent hover:text-primary-700">
+ <button @click="sendCodeFor(idx)" :disabled="pe.sending" class="text-xs text-accent hover:text-accent">
  {{ t('profile.balanceNotify.sendCode') }}
  </button>
  <button @click="pendingEmails.splice(idx, 1)" class="text-xs text-red-500 hover:text-red-700 ml-1">
@@ -119,7 +119,7 @@
  class="w-20 rounded border border-line px-2 py-1 text-xs"
  :placeholder="t('profile.balanceNotify.codePlaceholder')"
  />
- <button @click="verifyPending(idx)" :disabled="!pe.code || pe.code.length !== 6 || pe.verifying" class="text-xs text-accent hover:text-primary-700">
+ <button @click="verifyPending(idx)" :disabled="!pe.code || pe.code.length !== 6 || pe.verifying" class="text-xs text-accent hover:text-accent">
  {{ t('profile.balanceNotify.verify') }}
  </button>
  <span v-if="pe.countdown > 0" class="text-xs text-muted">{{ pe.countdown }}s</span>

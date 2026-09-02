@@ -598,12 +598,12 @@ function cancelDelete() {
 
           <div class="flex items-center justify-between rounded-xl bg-surface-2 px-4 py-3  md:col-span-2">
             <span class="text-xs font-bold text-foreground ">{{ t('admin.ops.alertRules.form.enabled') }}</span>
-            <input v-model="draft!.enabled" type="checkbox" class="h-4 w-4 rounded border-line text-accent focus:ring-primary-500" />
+            <input v-model="draft!.enabled" type="checkbox" class="h-4 w-4 rounded border-line text-accent focus:ring-accent" />
           </div>
 
           <div class="flex items-center justify-between rounded-xl bg-surface-2 px-4 py-3  md:col-span-2">
             <span class="text-xs font-bold text-foreground ">{{ t('admin.ops.alertRules.form.notifyEmail') }}</span>
-            <input v-model="draft!.notify_email" type="checkbox" class="h-4 w-4 rounded border-line text-accent focus:ring-primary-500" />
+            <input v-model="draft!.notify_email" type="checkbox" class="h-4 w-4 rounded border-line text-accent focus:ring-accent" />
           </div>
         </div>
       </div>

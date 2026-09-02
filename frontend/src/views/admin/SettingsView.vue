@@ -75,7 +75,7 @@
  <!-- Tab: Security — Admin API Key -->
  <div v-show="activeTab === 'security'" class="space-y-6">
  <!-- Admin API Key Settings -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -232,7 +232,7 @@
  <!-- Tab: Gateway -->
  <div v-show="activeTab === 'gateway'" class="space-y-6">
  <!-- Overload Cooldown (529) Settings -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -333,7 +333,7 @@
  </div>
 
  <!-- Rate Limit Cooldown (429) Settings -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -446,7 +446,7 @@
  </div>
 
  <!-- Stream Timeout Settings -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -626,7 +626,7 @@
  </div>
 
  <!-- Request Rectifier Settings -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -825,7 +825,7 @@
  </div>
  </div>
  <!-- Beta Policy Settings -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -1104,7 +1104,7 @@
  </div>
  </div>
  <!-- OpenAI Fast/Flex Policy Settings -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -1457,7 +1457,7 @@
  <!-- Tab: Security — Registration, Turnstile, LinuxDo -->
  <div v-show="activeTab === 'security'" class="space-y-6">
  <!-- Registration Settings -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -1789,7 +1789,7 @@
  </div>
 
  <!-- API Key IP ACL Settings -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -1878,7 +1878,7 @@
  <IPSecurityPanel />
 
  <!-- Panel API Rate Limit Settings -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -2069,7 +2069,7 @@
  </div>
 
  <!-- 人机验证 Settings -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -2481,7 +2481,7 @@
  </div>
 
  <!-- LinuxDo Connect OAuth 登录 -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -2599,7 +2599,7 @@
  </div>
 
  <!-- GitHub / Google 邮箱快捷登录 -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -2825,7 +2825,7 @@
  </div>
 
  <!-- WeChat Connect OAuth 登录 -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -3167,7 +3167,7 @@
  </div>
 
  <!-- DingTalk Connect OAuth 登录 -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -3455,7 +3455,7 @@
  </div>
 
  <!-- Generic OIDC OAuth 登录 -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -3868,7 +3868,7 @@
  <!-- Tab: Users -->
  <div v-show="activeTab === 'users'" class="space-y-6">
  <!-- Default Settings -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -4141,7 +4141,7 @@
  </div>
  </div>
 
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -4484,7 +4484,7 @@
  <!-- Tab: Gateway — Claude Code, Scheduling -->
  <div v-show="activeTab === 'gateway'" class="space-y-6">
  <!-- Claude Code Settings -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -4536,7 +4536,7 @@
  </div>
 
  <!-- Kiro Runtime Defaults -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -4767,7 +4767,7 @@
  </div>
 
  <!-- Codex Settings -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -5015,7 +5015,7 @@
  </div>
 
  <!-- Upstream Billing Probe Settings -->
- <div class="card" data-testid="upstream-billing-probe-settings">
+ <div class="glass-card" data-testid="upstream-billing-probe-settings">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -5101,7 +5101,7 @@
  </div>
 
  <!-- Ollama Cloud Usage Settings -->
- <div class="card" data-testid="ollama-cloud-usage-global-settings">
+ <div class="glass-card" data-testid="ollama-cloud-usage-global-settings">
  <div class="border-b border-line px-6 py-4 ">
  <h2 class="text-lg font-semibold text-foreground ">
  {{ t("admin.settings.ollamaCloudUsage.title") }}
@@ -5185,7 +5185,7 @@
  </div>
 
  <!-- Gateway Scheduling Settings -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -5466,7 +5466,7 @@
  </div>
 
  <!-- Gateway Forwarding Behavior -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -6055,7 +6055,7 @@
  </div>
 
  <!-- Web Search Emulation -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -6491,7 +6491,7 @@
  </div>
 
  <!-- Usage Records Settings -->
- <div class="card">
+ <div class="glass-card">
  <div class="border-b border-line px-6 py-4 ">
  <h2 class="text-lg font-semibold text-foreground ">
  {{ t('admin.settings.usageRecords.title') }}
@@ -6524,7 +6524,7 @@
  <!-- Tab: General -->
  <div v-show="activeTab === 'general'" class="space-y-6">
  <!-- Site Settings -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -6973,7 +6973,7 @@
  </div>
 
  <!-- Custom Menu Items -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -7170,7 +7170,7 @@
 
 	 <!-- Tab: Login Agreement -->
 	 <div v-show="activeTab === 'agreement'" class="space-y-6">
-	 <div class="card">
+	 <div class="glass-card">
 	 <div class="border-b border-line px-6 py-4 ">
 	 <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 	 <div>
@@ -7373,7 +7373,7 @@
 	 <!-- Tab: Features (功能开关) -->
  <div v-show="activeTab === 'features'" class="space-y-6">
 
- <div class="card">
+ <div class="glass-card">
  <div class="border-b border-line px-6 py-4 ">
  <h2 class="text-lg font-semibold text-foreground ">
  {{ t('admin.settings.features.ticket.title') }}
@@ -7397,7 +7397,7 @@
  </div>
  </div>
 
- <div class="card">
+ <div class="glass-card">
  <div class="border-b border-line px-6 py-4 ">
  <h2 class="text-lg font-semibold text-foreground ">
  {{ t('admin.settings.features.channelMonitor.title') }}
@@ -7515,7 +7515,7 @@
  </div>
  </div>
 
- <div class="card">
+ <div class="glass-card">
  <div class="border-b border-line px-6 py-4 ">
  <h2 class="text-lg font-semibold text-foreground ">
  {{ t('admin.settings.features.availableChannels.title') }}
@@ -7548,7 +7548,7 @@
  </div>
  </div>
 
- <div class="card">
+ <div class="glass-card">
  <div class="border-b border-line px-6 py-4 ">
  <h2 class="text-lg font-semibold text-foreground ">
  {{ t('admin.settings.features.modelPlaza.title') }}
@@ -7598,7 +7598,7 @@
  </div>
  </div>
 
- <div class="card">
+ <div class="glass-card">
  <div class="border-b border-line px-6 py-4 ">
  <h2 class="text-lg font-semibold text-foreground ">
  {{ t('admin.settings.features.pluginManagement.title') }}
@@ -7622,7 +7622,7 @@
  </div>
  </div>
 
- <div class="card">
+ <div class="glass-card">
  <div class="border-b border-line px-6 py-4 ">
  <h2 class="text-lg font-semibold text-foreground ">
  {{ t('admin.settings.features.riskControl.title') }}
@@ -7681,7 +7681,7 @@
  </div>
 
  <!-- Affiliate (邀请返利) feature card -->
- <div class="card">
+ <div class="glass-card">
  <div class="border-b border-line px-6 py-4 ">
  <h2 class="text-lg font-semibold text-foreground ">
  {{ t('admin.settings.features.affiliate.title') }}
@@ -8146,7 +8146,7 @@
  <!-- Tab: Payment -->
  <div v-show="activeTab === 'payment'" class="space-y-6">
  <!-- Payment System Settings -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -8697,7 +8697,7 @@
 
  <div v-show="activeTab === 'email'" class="space-y-6">
  <!-- Email disabled hint - show when email_verify_enabled is off -->
- <div v-if="!form.email_verify_enabled" class="card">
+ <div v-if="!form.email_verify_enabled" class="glass-card">
  <div class="p-6">
  <div class="flex items-start gap-3">
  <Icon
@@ -8718,7 +8718,7 @@
  </div>
 
  <!-- SMTP Settings - Only show when email verification is enabled -->
- <div v-if="form.email_verify_enabled" class="card">
+ <div v-if="form.email_verify_enabled" class="glass-card">
  <div
  class="flex items-center justify-between border-b border-line px-6 py-4 "
  >
@@ -8881,7 +8881,7 @@
  </div>
 
  <!-- Send Test Email - Only show when email verification is enabled -->
- <div v-if="form.email_verify_enabled" class="card">
+ <div v-if="form.email_verify_enabled" class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -8948,7 +8948,7 @@
  </div>
 
  <!-- 订阅到期提醒 -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -8979,7 +8979,7 @@
  <EmailTemplateEditor />
 
  <!-- Balance Low Notification -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >
@@ -9039,7 +9039,7 @@
  </div>
 
  <!-- Account Quota Notification -->
- <div class="card">
+ <div class="glass-card">
  <div
  class="border-b border-line px-6 py-4 "
  >

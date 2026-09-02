@@ -642,7 +642,7 @@
                   <div class="rounded bg-[var(--code-bg)] p-2 ">
                     <p class="text-xs leading-relaxed text-muted">
                       <span
-                        class="inline-flex items-center gap-1 text-primary-400"
+                        class="inline-flex items-center gap-1 text-accent"
                         ><Icon name="lightbulb" size="xs" />
                         {{ t("admin.groups.exclusiveTooltip.example") }}</span
                       >
@@ -664,7 +664,7 @@
               :class="[
  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
  createForm.is_exclusive
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 ',
  ]"
             >
@@ -763,7 +763,7 @@
               :class="[
  'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
  createModelsListState.enabled
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 ',
  ]"
             >
@@ -1344,7 +1344,7 @@
               :class="[
  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
  createForm.mcp_xml_inject
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 ',
  ]"
             >
@@ -1404,7 +1404,7 @@
               :class="[
  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
  createForm.claude_code_only
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 ',
  ]"
             >
@@ -1579,7 +1579,7 @@
               @click="createForm.force_openai_fast = !createForm.force_openai_fast"
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="createForm.force_openai_fast
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 '"
             >
               <span
@@ -1635,7 +1635,7 @@
               @click="toggleLive('create')"
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="createForm.allow_live
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 '"
             >
               <span
@@ -1671,7 +1671,7 @@
               "
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="createForm.allow_messages_dispatch
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 '"
             >
               <span
@@ -1761,12 +1761,12 @@
               class="mt-5 relative overflow-hidden rounded-xl border border-[color-mix(in_oklch,var(--accent)_28%,transparent)] bg-surface shadow-sm "
             >
               <div
-                class="border-b border-[color-mix(in_oklch,var(--accent)_18%,transparent)] bg-primary-50/80 px-4 py-3  "
+                class="border-b border-[color-mix(in_oklch,var(--accent)_18%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] px-4 py-3  "
               >
                 <div class="flex items-start justify-between gap-3">
                   <div>
                     <div class="flex items-center gap-2">
-                      <div class="h-2 w-2 rounded-full bg-primary-500"></div>
+                      <div class="h-2 w-2 rounded-full bg-accent"></div>
                       <label
                         class="text-sm font-medium text-accent "
                         >{{
@@ -1827,7 +1827,7 @@
                           />
                         </div>
                         <div
-                          class="hidden md:flex md:justify-center md:pt-7 text-primary-300 "
+                          class="hidden md:flex md:justify-center md:pt-7 text-accent "
                         >
                           <Icon
                             name="arrowRight"
@@ -1867,7 +1867,7 @@
                   <button
                     type="button"
                     @click="addCreateMessagesDispatchMapping"
-                    class="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-line bg-surface py-3 text-sm font-medium text-muted transition-all hover:border-accent hover:bg-primary-50/50 hover:text-accent   "
+                    class="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-line bg-surface py-3 text-sm font-medium text-muted transition-all hover:border-accent hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] hover:text-accent   "
                   >
                     <Icon name="plus" size="sm" />
                     {{ t("admin.groups.openaiMessages.addExactMapping") }}
@@ -1912,7 +1912,7 @@
               "
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="createForm.require_oauth_only
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 '"
             >
               <span
@@ -1945,7 +1945,7 @@
               "
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="createForm.require_privacy_set
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 '"
             >
               <span
@@ -2020,7 +2020,7 @@
               :class="[
  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
  createForm.model_routing_enabled
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 ',
  ]"
             >
@@ -2416,7 +2416,7 @@
                   <div class="rounded bg-[var(--code-bg)] p-2 ">
                     <p class="text-xs leading-relaxed text-muted">
                       <span
-                        class="inline-flex items-center gap-1 text-primary-400"
+                        class="inline-flex items-center gap-1 text-accent"
                         ><Icon name="lightbulb" size="xs" />
                         {{ t("admin.groups.exclusiveTooltip.example") }}</span
                       >
@@ -2438,7 +2438,7 @@
               :class="[
  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
  editForm.is_exclusive
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 ',
  ]"
             >
@@ -2542,7 +2542,7 @@
               :class="[
  'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
  editModelsListState.enabled
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 ',
  ]"
             >
@@ -3123,7 +3123,7 @@
               :class="[
  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
  editForm.mcp_xml_inject
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 ',
  ]"
             >
@@ -3181,7 +3181,7 @@
               :class="[
  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
  editForm.claude_code_only
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 ',
  ]"
             >
@@ -3354,7 +3354,7 @@
               @click="editForm.force_openai_fast = !editForm.force_openai_fast"
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="editForm.force_openai_fast
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 '"
             >
               <span
@@ -3410,7 +3410,7 @@
               @click="toggleLive('edit')"
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="editForm.allow_live
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 '"
             >
               <span
@@ -3446,7 +3446,7 @@
               "
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="editForm.allow_messages_dispatch
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 '"
             >
               <span
@@ -3535,12 +3535,12 @@
               class="mt-5 relative overflow-hidden rounded-xl border border-[color-mix(in_oklch,var(--accent)_28%,transparent)] bg-surface shadow-sm "
             >
               <div
-                class="border-b border-[color-mix(in_oklch,var(--accent)_18%,transparent)] bg-primary-50/80 px-4 py-3  "
+                class="border-b border-[color-mix(in_oklch,var(--accent)_18%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] px-4 py-3  "
               >
                 <div class="flex items-start justify-between gap-3">
                   <div>
                     <div class="flex items-center gap-2">
-                      <div class="h-2 w-2 rounded-full bg-primary-500"></div>
+                      <div class="h-2 w-2 rounded-full bg-accent"></div>
                       <label
                         class="text-sm font-medium text-accent "
                         >{{
@@ -3601,7 +3601,7 @@
                           />
                         </div>
                         <div
-                          class="hidden md:flex md:justify-center md:pt-7 text-primary-300 "
+                          class="hidden md:flex md:justify-center md:pt-7 text-accent "
                         >
                           <Icon
                             name="arrowRight"
@@ -3641,7 +3641,7 @@
                   <button
                     type="button"
                     @click="addEditMessagesDispatchMapping"
-                    class="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-line bg-surface py-3 text-sm font-medium text-muted transition-all hover:border-accent hover:bg-primary-50/50 hover:text-accent   "
+                    class="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-line bg-surface py-3 text-sm font-medium text-muted transition-all hover:border-accent hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] hover:text-accent   "
                   >
                     <Icon name="plus" size="sm" />
                     {{ t("admin.groups.openaiMessages.addExactMapping") }}
@@ -3686,7 +3686,7 @@
               "
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="editForm.require_oauth_only
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 '"
             >
               <span
@@ -3719,7 +3719,7 @@
               "
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="editForm.require_privacy_set
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 '"
             >
               <span
@@ -3793,7 +3793,7 @@
               :class="[
  'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
  editForm.model_routing_enabled
- ? 'bg-primary-500'
+ ? 'bg-accent'
  : 'bg-surface-3 ',
  ]"
             >

@@ -2,7 +2,7 @@
   <BaseDialog :show="show" :title="title" width="full" :close-on-click-outside="true" @close="close">
     <div v-if="loading" class="flex items-center justify-center py-16">
       <div class="flex flex-col items-center gap-3">
-        <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-primary-600"></div>
+        <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-accent"></div>
         <div class="text-sm font-medium text-muted ">{{ t('admin.ops.errorDetail.loading') }}</div>
       </div>
     </div>

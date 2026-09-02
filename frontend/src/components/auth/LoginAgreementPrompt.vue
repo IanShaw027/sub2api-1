@@ -24,7 +24,7 @@
  :to="documentRoute(doc)"
  target="_blank"
  rel="noopener noreferrer"
- class="font-medium text-accent underline-offset-4 transition hover:text-primary-700 hover:underline"
+ class="font-medium text-accent underline-offset-4 transition hover:text-accent hover:underline"
  >
  {{ doc.title }}
  </RouterLink>
@@ -37,19 +37,19 @@
 
  <div
  v-else-if="!accepted && documents.length > 0"
- class="rounded-lg border border-primary-100 bg-primary-50/70 p-3 text-sm text-primary-900"
+ class="rounded-lg border border-[color-mix(in_oklch,var(--accent)_16%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-3 text-sm text-accent"
  >
  <div class="flex items-start gap-3">
  <Icon name="shield" size="sm" class="mt-0.5 flex-shrink-0 text-accent" />
  <div class="min-w-0 flex-1">
  <p class="font-medium">{{ t('legal.loginAgreementPrompt.noticeTitle') }}</p>
- <p class="mt-1 text-primary-700">
+ <p class="mt-1 text-accent">
  {{ t('legal.loginAgreementPrompt.noticeDescription') }}
  </p>
  </div>
  <button
  type="button"
- class="flex-shrink-0 rounded-md bg-primary-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-primary-700"
+ class="flex-shrink-0 rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:opacity-90"
  @click="emit('open')"
  >
  {{ t('legal.loginAgreementPrompt.viewTerms') }}
@@ -66,7 +66,7 @@
  <div class="w-full max-w-[600px] overflow-hidden rounded-2xl bg-surface shadow-2xl ring-1 ring-black/10">
  <div class="border-b border-line bg-surface px-6 py-6">
  <div class="flex items-start gap-4">
- <span class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-700 ring-1 ring-primary-100">
+ <span class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent ring-1 ring-[color-mix(in_oklch,var(--accent)_16%,transparent)]">
  <Icon name="shield" size="md" />
  </span>
  <div class="min-w-0 flex-1">
@@ -103,15 +103,15 @@
  :to="documentRoute(doc)"
  target="_blank"
  rel="noopener noreferrer"
- class="group flex min-h-[72px] w-full items-center gap-3 rounded-xl border border-line bg-surface-2/70 px-4 py-3 text-left transition hover:-translate-y-0.5 hover:border-primary-200 hover:bg-surface hover:shadow-sm"
+ class="group flex min-h-[72px] w-full items-center gap-3 rounded-xl border border-line bg-surface-2/70 px-4 py-3 text-left transition hover:-translate-y-0.5 hover:border-[color-mix(in_oklch,var(--accent)_20%,transparent)] hover:bg-surface hover:shadow-sm"
  >
- <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-surface text-foreground ring-1 ring-line transition group-hover:bg-primary-50 group-hover:text-primary-700 group-hover:ring-primary-100">
+ <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-surface text-foreground ring-1 ring-line transition group-hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] group-hover:text-accent group-hover:ring-[color-mix(in_oklch,var(--accent)_16%,transparent)]">
  <Icon :name="documentIcon(index, doc.title)" size="sm" />
  </span>
  <span class="min-w-0 flex-1">
  <span class="block truncate text-sm font-semibold text-foreground">{{ doc.title }}</span>
  </span>
- <span class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-muted transition group-hover:bg-primary-50 group-hover:text-accent">
+ <span class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-muted transition group-hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] group-hover:text-accent">
  <Icon name="externalLink" size="sm" />
  </span>
  </RouterLink>
@@ -129,7 +129,7 @@
  </button>
  <button
  type="button"
- class="rounded-xl bg-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700"
+ class="rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white shadow-sm shadow-[color-mix(in_oklch,var(--accent)_20%,transparent)] transition hover:opacity-90"
  @click="emit('accept')"
  >
  {{ t('legal.loginAgreementPrompt.accept') }}

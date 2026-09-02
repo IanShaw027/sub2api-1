@@ -54,7 +54,7 @@
             id="deduct-balance"
             v-model="form.deduct_balance"
             type="checkbox"
-            class="h-4 w-4 rounded border-line text-accent focus:ring-primary-500"
+            class="h-4 w-4 rounded border-line text-accent focus:ring-accent"
           />
           <label for="deduct-balance" class="text-sm text-foreground">
             {{ t('payment.admin.deductBalance') }}

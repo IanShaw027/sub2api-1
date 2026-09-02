@@ -8,7 +8,7 @@
  @click="emit('toggle')"
  :class="[
  'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200',
- checked ? 'bg-primary-500' : 'bg-surface-3',
+ checked ? 'bg-accent' : 'bg-surface-3',
  ]"
  >
  <span :class="[

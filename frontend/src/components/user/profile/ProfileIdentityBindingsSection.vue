@@ -501,7 +501,7 @@ function providerIconClass(provider: UserAuthProvider): string {
  if (provider === 'oidc') {
  return 'bg-sky-100 text-sky-600'
  }
- return 'bg-primary-100 text-accent'
+ return 'bg-[color-mix(in_oklch,var(--accent)_16%,transparent)] text-accent'
 }
 
 function providerSummary(provider: UserAuthProvider): string {

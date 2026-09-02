@@ -46,7 +46,7 @@
  :class="[
  'rounded-lg border px-2.5 py-1 text-xs font-medium transition-all',
  form.payment_mode === mode.value
- ? 'border-primary-500 bg-primary-500 text-white shadow-sm'
+ ? 'border-accent bg-accent text-white shadow-sm'
  : 'border-line bg-surface text-muted hover:border-line hover:bg-surface-2',
  ]"
  >{{ mode.label }}</button>
@@ -63,7 +63,7 @@
  :class="[
  'rounded-lg border px-2.5 py-1 text-xs font-medium transition-all',
  isTypeSelected(pt.value)
- ? 'border-primary-500 bg-primary-500 text-white shadow-sm'
+ ? 'border-accent bg-accent text-white shadow-sm'
  : 'border-line bg-surface text-muted hover:border-line hover:bg-surface-2',
  ]"
  >{{ pt.label }}</button>
@@ -125,7 +125,7 @@
  <template #trigger>
  <button
  type="button"
- class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-line text-[11px] font-semibold text-muted transition-colors hover:border-primary-500 hover:text-primary-600"
+ class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-line text-[11px] font-semibold text-muted transition-colors hover:border-accent hover:text-accent"
  :aria-label="t('admin.settings.payment.paymentGuideTrigger')"
  :title="t('admin.settings.payment.paymentGuideTrigger')"
  >

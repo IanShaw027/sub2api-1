@@ -207,7 +207,7 @@
                 min="1"
                 max="100"
                 step="1"
-                class="mt-2 w-full accent-primary-600"
+                class="mt-2 w-full accent-accent"
                 :disabled="hasEnabledBinding(plugin)"
                 @input="setRollout(plugin.id, $event)"
               />

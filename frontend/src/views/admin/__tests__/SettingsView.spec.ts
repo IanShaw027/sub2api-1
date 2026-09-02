@@ -834,7 +834,7 @@ describe("admin SettingsView payment visible method controls", () => {
     await flushPromises();
 
     const card = wrapper
-      .findAll(".card")
+      .findAll(".glass-card")
       .find((node) => node.text().includes("admin.settings.captcha.title"));
     expect(card).toBeDefined();
     expect(card!.text()).not.toContain("admin.settings.turnstile.siteKey");
@@ -876,7 +876,7 @@ describe("admin SettingsView payment visible method controls", () => {
     await wrapper.get('[data-testid="tencent-captcha-region-intl"]').trigger("click");
 
     const card = wrapper
-      .findAll(".card")
+      .findAll(".glass-card")
       .find((node) => node.text().includes("admin.settings.captcha.title"));
     expect(card).toBeDefined();
     expect(card!.get('a[href="https://console.tencentcloud.com/captcha/graphical"]').exists()).toBe(
@@ -907,7 +907,7 @@ describe("admin SettingsView payment visible method controls", () => {
     await flushPromises();
 
     const card = wrapper
-      .findAll(".card")
+      .findAll(".glass-card")
       .find((node) => node.text().includes("admin.settings.captcha.title"));
     expect(card).toBeDefined();
     expect(card!.text()).toContain("admin.settings.aliyunCaptcha.region");
@@ -1003,7 +1003,7 @@ describe("admin SettingsView payment visible method controls", () => {
     await openSecurityTab(wrapper);
 
     const card = wrapper
-      .findAll(".card")
+      .findAll(".glass-card")
       .find((node) => node.text().includes("admin.settings.apiKeyAcl.title"));
     expect(card).toBeDefined();
     const toggle = card!.get('input[type="checkbox"]');

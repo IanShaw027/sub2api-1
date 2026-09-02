@@ -1,8 +1,8 @@
 <template>
  <section
- class="card flex min-h-[360px] flex-col overflow-visible !rounded-3xl !border-0 !p-6 shadow-sm ring-1 ring-line/5"
+ class="glass-card flex min-h-[360px] flex-col overflow-visible !rounded-3xl !border-0 !p-6 shadow-sm ring-1 ring-line/5"
  >
- <div class="card-header mb-4 flex shrink-0 flex-wrap items-start justify-between gap-3 !border-0 !p-0">
+ <div class="glass-card-header mb-4 flex shrink-0 flex-wrap items-start justify-between gap-3 !border-0 !p-0">
  <div class="min-w-0">
  <h2 class="flex items-center gap-2 text-sm font-bold text-foreground">
  <span class="inline-flex h-4 w-4 text-emerald-500" aria-hidden="true">
@@ -28,7 +28,7 @@
  </div>
  </div>
 
- <div class="card-body min-h-0 flex-1 !p-0">
+ <div class="glass-card-body min-h-0 flex-1 !p-0">
  <div
  v-if="rows.length"
  ref="scrollRef"
@@ -552,7 +552,7 @@ function formatBucketRange(value: string) {
 }
 .pulse-cell.has-data:hover,
 .pulse-cell.has-data:focus-visible {
- outline: 2px solid rgb(var(--color-primary-500, 99 102 241) / 0.55);
+  outline: 2px solid color-mix(in oklch, var(--accent) 55%, transparent);
  outline-offset: 1px;
  z-index: 5;
 }

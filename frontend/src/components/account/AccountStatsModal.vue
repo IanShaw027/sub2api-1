@@ -9,11 +9,11 @@
       <!-- Account Info Header -->
       <div
         v-if="account"
-        class="flex items-center justify-between rounded-xl border border-[color-mix(in_oklch,var(--accent)_28%,transparent)] bg-gradient-to-r from-primary-50 to-primary-100 p-3"
+        class="flex items-center justify-between rounded-xl border border-[color-mix(in_oklch,var(--accent)_28%,transparent)] bg-gradient-to-r from-[color-mix(in_oklch,var(--accent)_12%,transparent)] to-[color-mix(in_oklch,var(--accent)_16%,transparent)] p-3"
       >
         <div class="flex items-center gap-3">
           <div
-            class="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-primary-600"
+            class="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-[var(--accent)] to-[color-mix(in_oklch,var(--accent)_80%,black)]"
           >
             <Icon name="chartBar" size="md" class="text-white" :stroke-width="2" />
           </div>
@@ -46,7 +46,7 @@
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <!-- 30-Day Total Cost -->
           <div
-            class="card border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4"
+            class="glass-card border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-muted">{{
@@ -84,7 +84,7 @@
 
           <!-- 30-Day Total Requests -->
           <div
-            class="card border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4"
+            class="glass-card border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-muted">{{
@@ -104,7 +104,7 @@
 
           <!-- Daily Average Cost -->
           <div
-            class="card border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4"
+            class="glass-card border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-muted">{{
@@ -136,7 +136,7 @@
 
           <!-- Daily Average Requests -->
           <div
-            class="card border-purple-200 bg-gradient-to-br from-purple-50 to-white p-4"
+            class="glass-card border-purple-200 bg-gradient-to-br from-purple-50 to-white p-4"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-muted">{{
@@ -170,7 +170,7 @@
         <!-- Row 2: Today, Highest Cost, Highest Requests -->
         <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <!-- Today Overview -->
-          <div class="card p-4">
+          <div class="glass-card p-4">
             <div class="mb-3 flex items-center gap-2">
               <div class="rounded-lg bg-cyan-100 p-1.5">
                 <svg
@@ -224,7 +224,7 @@
           </div>
 
           <!-- Highest Cost Day -->
-          <div class="card p-4">
+          <div class="glass-card p-4">
             <div class="mb-3 flex items-center gap-2">
               <div class="rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-1.5">
                 <Icon
@@ -271,7 +271,7 @@
           </div>
 
           <!-- Highest Request Day -->
-          <div class="card p-4">
+          <div class="glass-card p-4">
             <div class="mb-3 flex items-center gap-2">
               <div class="rounded-lg bg-indigo-100 p-1.5">
                 <Icon
@@ -321,7 +321,7 @@
         <!-- Row 3: Token Stats -->
         <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <!-- Accumulated Tokens -->
-          <div class="card p-4">
+          <div class="glass-card p-4">
             <div class="mb-3 flex items-center gap-2">
               <div class="rounded-lg bg-teal-100 p-1.5">
                 <Icon name="cube" size="sm" class="text-teal-600" :stroke-width="2" />
@@ -351,7 +351,7 @@
           </div>
 
           <!-- Performance -->
-          <div class="card p-4">
+          <div class="glass-card p-4">
             <div class="mb-3 flex items-center gap-2">
               <div class="rounded-lg bg-rose-100 p-1.5">
                 <Icon name="bolt" size="sm" class="text-rose-600" :stroke-width="2" />
@@ -381,7 +381,7 @@
           </div>
 
           <!-- Recent Activity -->
-          <div class="card p-4">
+          <div class="glass-card p-4">
             <div class="mb-3 flex items-center gap-2">
               <div class="rounded-lg bg-lime-100 p-1.5">
                 <Icon
@@ -429,7 +429,7 @@
         </div>
 
         <!-- Usage Trend Chart -->
-        <div class="card p-4">
+        <div class="glass-card p-4">
           <h3 class="mb-4 text-sm font-semibold text-foreground">
             {{ t('admin.accounts.stats.usageTrend') }}
           </h3>

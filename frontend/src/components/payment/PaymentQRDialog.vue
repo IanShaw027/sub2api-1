@@ -14,7 +14,7 @@
  <!-- Popup window waiting mode (no QR code) -->
  <template v-else>
  <div class="flex flex-col items-center py-4">
- <div class="h-10 w-10 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"></div>
+ <div class="h-10 w-10 animate-spin rounded-full border-4 border-accent border-t-transparent"></div>
  <p class="mt-4 text-sm text-muted">{{ t('payment.qr.payInNewWindowHint') }}</p>
  <button v-if="payUrl" class="btn btn-secondary mt-3 text-sm" @click="reopenPopup">
  {{ t('payment.qr.openPayWindow') }}

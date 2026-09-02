@@ -1,5 +1,5 @@
 <template>
- <div class="card">
+ <div class="glass-card">
  <!-- Header -->
  <div class="border-b border-line px-4 py-3">
  <div class="flex items-center justify-between">
@@ -39,7 +39,7 @@
  <div class="p-4">
  <!-- Loading -->
  <div v-if="loading && !providers.length" class="flex items-center justify-center py-6">
- <div class="h-5 w-5 animate-spin rounded-full border-2 border-primary-500 border-t-transparent" />
+ <div class="h-5 w-5 animate-spin rounded-full border-2 border-accent border-t-transparent" />
  </div>
 
  <!-- Provider cards (draggable) -->

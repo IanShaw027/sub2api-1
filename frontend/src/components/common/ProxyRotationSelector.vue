@@ -9,7 +9,7 @@
  :key="proxy.id"
  class="flex min-h-12 items-center gap-2 px-3 py-2"
  >
- <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-primary-50 text-xs font-semibold text-primary-700">
+ <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-xs font-semibold text-accent">
  {{ index + 1 }}
  </span>
  <div class="min-w-0 flex-1">

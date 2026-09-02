@@ -63,7 +63,7 @@
  <span class="flex min-w-0 flex-1 items-center gap-2">
  <span
  class="checkbox flex h-4 w-4 items-center justify-center rounded border border-line bg-surface text-accent"
- :class="modelValue.includes(option.value) ? 'border-accent bg-primary-50' : ''"
+ :class="modelValue.includes(option.value) ? 'border-accent bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]' : ''"
  >
  <Icon v-if="modelValue.includes(option.value)" name="check" size="sm" class="text-accent" />
  </span>

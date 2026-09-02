@@ -555,8 +555,8 @@
               type="button"
               @click="poolModeEnabled = !poolModeEnabled"
               :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- poolModeEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ poolModeEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
             >
               <span
@@ -619,8 +619,8 @@
               type="button"
               @click="customErrorCodesEnabled = !customErrorCodesEnabled"
               :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- customErrorCodesEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ customErrorCodesEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
             >
               <span
@@ -743,8 +743,8 @@
             data-testid="grok-custom-base-url-toggle"
             @click="grokOAuthCustomBaseUrlEnabled = !grokOAuthCustomBaseUrlEnabled"
             :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- grokOAuthCustomBaseUrlEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ grokOAuthCustomBaseUrlEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
           >
             <span
@@ -780,8 +780,8 @@
             type="button"
             @click="headerOverrideEnabled = !headerOverrideEnabled"
             :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- headerOverrideEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ headerOverrideEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
           >
             <span
@@ -1248,7 +1248,7 @@
             <input
               v-model="editBedrockForceGlobal"
               type="checkbox"
-              class="rounded border-line text-accent focus:ring-primary-500"
+              class="rounded border-line text-accent focus:ring-accent"
             />
             <span class="text-sm text-foreground">{{ t('admin.accounts.bedrockForceGlobal') }}</span>
           </label>
@@ -1337,8 +1337,8 @@
               type="button"
               @click="poolModeEnabled = !poolModeEnabled"
               :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- poolModeEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ poolModeEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
             >
               <span
@@ -1518,8 +1518,8 @@
             type="button"
             @click="tempUnschedEnabled = !tempUnschedEnabled"
             :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- tempUnschedEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ tempUnschedEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
           >
             <span
@@ -1670,7 +1670,7 @@
             v-model="accountSchedulingThresholdOverrideEnabled"
             data-testid="account-scheduling-threshold-override-enabled"
             type="checkbox"
-            class="h-4 w-4 rounded border-line text-accent focus:ring-primary-500"
+            class="h-4 w-4 rounded border-line text-accent focus:ring-accent"
           />
         </div>
         <div v-if="accountSchedulingThresholdOverrideEnabled">
@@ -1705,8 +1705,8 @@
             type="button"
             @click="interceptWarmupRequests = !interceptWarmupRequests"
             :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- interceptWarmupRequests ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ interceptWarmupRequests ? 'bg-accent' : 'bg-surface-3'
  ]"
           >
             <span
@@ -1817,8 +1817,8 @@
             type="button"
             @click="openaiPassthroughEnabled = !openaiPassthroughEnabled"
             :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- openaiPassthroughEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ openaiPassthroughEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
           >
             <span
@@ -1848,8 +1848,8 @@
             data-testid="edit-openai-flatten-namespaces-toggle"
             @click="openaiFlattenNamespacesEnabled = !openaiFlattenNamespacesEnabled"
             :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- openaiFlattenNamespacesEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ openaiFlattenNamespacesEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
           >
             <span
@@ -1987,7 +1987,7 @@
             >
               <input
                 type="checkbox"
-                class="rounded border-line text-accent focus:ring-primary-500"
+                class="rounded border-line text-accent focus:ring-accent"
                 :data-testid="`openai-endpoint-capability-${option.value}`"
                 :checked="openAIEndpointCapabilities.includes(option.value)"
                 @change="toggleOpenAIEndpointCapability(option.value, $event)"
@@ -2039,8 +2039,8 @@
             type="button"
             @click="anthropicPassthroughEnabled = !anthropicPassthroughEnabled"
             :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- anthropicPassthroughEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ anthropicPassthroughEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
           >
             <span
@@ -2213,8 +2213,8 @@
             :aria-checked="openAILongContextBillingEnabled"
             @click="openAILongContextBillingEnabled = !openAILongContextBillingEnabled"
             :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- openAILongContextBillingEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ openAILongContextBillingEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
           >
             <span
@@ -2242,8 +2242,8 @@
             type="button"
             @click="codexCLIOnlyEnabled = !codexCLIOnlyEnabled"
             :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- codexCLIOnlyEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ codexCLIOnlyEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
           >
             <span
@@ -2268,8 +2268,8 @@
             type="button"
             @click="codexCLIOnlyAppServerEnabled = !codexCLIOnlyAppServerEnabled"
             :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- codexCLIOnlyAppServerEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ codexCLIOnlyAppServerEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
           >
             <span
@@ -2390,8 +2390,8 @@
             type="button"
             @click="autoPauseOnExpired = !autoPauseOnExpired"
             :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- autoPauseOnExpired ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ autoPauseOnExpired ? 'bg-accent' : 'bg-surface-3'
  ]"
           >
             <span
@@ -2415,8 +2415,8 @@
               type="button"
               @click="autoPause5hDisabled = !autoPause5hDisabled"
               :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- autoPause5hDisabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ autoPause5hDisabled ? 'bg-accent' : 'bg-surface-3'
  ]"
               data-testid="auto-pause-5h-disabled"
             >
@@ -2451,8 +2451,8 @@
               type="button"
               @click="autoPause7dDisabled = !autoPause7dDisabled"
               :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- autoPause7dDisabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ autoPause7dDisabled ? 'bg-accent' : 'bg-surface-3'
  ]"
               data-testid="auto-pause-7d-disabled"
             >
@@ -2499,8 +2499,8 @@
             data-testid="auto-reset-credit-enabled"
             @click="autoResetCreditEnabled = !autoResetCreditEnabled"
             :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- autoResetCreditEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ autoResetCreditEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
           >
             <span
@@ -2567,8 +2567,8 @@
               type="button"
               @click="windowCostEnabled = !windowCostEnabled"
               :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- windowCostEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ windowCostEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
             >
               <span
@@ -2627,8 +2627,8 @@
               type="button"
               @click="sessionLimitEnabled = !sessionLimitEnabled"
               :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- sessionLimitEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ sessionLimitEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
             >
               <span
@@ -2684,8 +2684,8 @@
               type="button"
               @click="rpmLimitEnabled = !rpmLimitEnabled"
               :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- rpmLimitEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ rpmLimitEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
             >
               <span
@@ -2775,7 +2775,7 @@
                 :class="[
  'px-3 py-1.5 text-sm rounded-md border transition-colors',
  userMsgQueueMode === opt.value
- ? 'bg-primary-600 text-white border-primary-600'
+ ? 'bg-accent text-white border-accent'
  : 'bg-surface text-foreground border-line hover:bg-surface-2'
  ]">
                 {{ opt.label }}
@@ -2797,8 +2797,8 @@
               type="button"
               @click="sessionIdMaskingEnabled = !sessionIdMaskingEnabled"
               :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- sessionIdMaskingEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ sessionIdMaskingEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
             >
               <span
@@ -2824,8 +2824,8 @@
               type="button"
               @click="cacheTTLOverrideEnabled = !cacheTTLOverrideEnabled"
               :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- cacheTTLOverrideEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ cacheTTLOverrideEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
             >
               <span
@@ -2840,7 +2840,7 @@
             <label class="input-label text-xs">{{ t('admin.accounts.quotaControl.cacheTTLOverride.target') }}</label>
             <select
               v-model="cacheTTLOverrideTarget"
-              class="mt-1 block w-full rounded-md border border-line bg-surface px-3 py-2 text-sm shadow-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-primary-500"
+              class="mt-1 block w-full rounded-md border border-line bg-surface px-3 py-2 text-sm shadow-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             >
               <option value="5m">5m</option>
               <option value="1h">1h</option>
@@ -2864,8 +2864,8 @@
               type="button"
               @click="customBaseUrlEnabled = !customBaseUrlEnabled"
               :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- customBaseUrlEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ customBaseUrlEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
             >
               <span
@@ -2903,8 +2903,8 @@
               type="button"
               @click="tlsFingerprintEnabled = !tlsFingerprintEnabled"
               :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- tlsFingerprintEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ tlsFingerprintEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
             >
               <span
@@ -3002,7 +3002,7 @@
               type="checkbox"
               v-model="mixedScheduling"
               disabled
-              class="h-4 w-4 cursor-not-allowed rounded border-line text-accent focus:ring-primary-500"
+              class="h-4 w-4 cursor-not-allowed rounded border-line text-accent focus:ring-accent"
             />
             <span class="text-sm font-medium text-foreground">
               {{ t('admin.accounts.mixedScheduling') }}
@@ -3030,7 +3030,7 @@
             <input
               type="checkbox"
               v-model="allowOverages"
-              class="h-4 w-4 rounded border-line text-accent focus:ring-primary-500"
+              class="h-4 w-4 rounded border-line text-accent focus:ring-accent"
             />
             <span class="text-sm font-medium text-foreground">
               {{ t('admin.accounts.allowOverages') }}

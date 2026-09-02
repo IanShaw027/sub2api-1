@@ -45,7 +45,7 @@
         </div>
         <button
           type="button"
-          class="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-accent transition-colors hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] hover:text-accent focus:outline-none focus:ring-2 focus:ring-primary-500/30"
+          class="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-accent transition-colors hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
           @click="addGroup"
         >
           <Icon name="plus" size="sm" />
@@ -194,7 +194,7 @@
 
           <button
             type="button"
-            class="inline-flex min-h-9 items-center gap-1.5 text-sm font-medium text-accent transition-colors hover:text-accent focus:outline-none focus:ring-2 focus:ring-primary-500/30"
+            class="inline-flex min-h-9 items-center gap-1.5 text-sm font-medium text-accent transition-colors hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
             @click="addPair(group.id)"
           >
             <Icon name="plus" size="sm" />

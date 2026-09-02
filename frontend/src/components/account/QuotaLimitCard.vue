@@ -149,8 +149,8 @@ const dailyFixedHint = computed(() =>
           type="button"
           @click="localEnabled = !localEnabled"
           :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
- localEnabled ? 'bg-primary-600' : 'bg-surface-3'
+ 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+ localEnabled ? 'bg-accent' : 'bg-surface-3'
  ]"
         >
           <span

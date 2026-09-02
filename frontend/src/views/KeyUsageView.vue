@@ -713,7 +713,7 @@ const detailRows = computed<DetailRow[]>(() => {
           valueStr += ` (⟳ ${resetStr})`
         }
         rows.push({
-          iconBg: 'bg-primary-500/10', iconColor: 'text-primary-500', iconSvg: ICON_DOLLAR,
+          iconBg: 'bg-[color-mix(in_oklch,var(--accent)_10%,transparent)]', iconColor: 'text-accent', iconSvg: ICON_DOLLAR,
           label: `${t('keyUsage.usedQuota')} (${windowMap[rl.window] || rl.window})`,
           value: valueStr,
           valueClass: getUsageColor(pct),
@@ -731,7 +731,7 @@ const detailRows = computed<DetailRow[]>(() => {
       if (sub.daily_limit_usd > 0) {
         const pct = (sub.daily_usage_usd / sub.daily_limit_usd) * 100
         rows.push({
-          iconBg: 'bg-primary-500/10', iconColor: 'text-primary-500', iconSvg: ICON_DOLLAR,
+          iconBg: 'bg-[color-mix(in_oklch,var(--accent)_10%,transparent)]', iconColor: 'text-accent', iconSvg: ICON_DOLLAR,
           label: `${t('keyUsage.usedQuota')} (${locale.value === 'zh' ? '日' : 'D'})`, value: `${usd(sub.daily_usage_usd)} / ${usd(sub.daily_limit_usd)}`, valueClass: getUsageColor(pct),
         })
       }

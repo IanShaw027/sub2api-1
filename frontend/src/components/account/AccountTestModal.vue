@@ -13,7 +13,7 @@
       >
         <div class="flex items-center gap-3">
           <div
-            class="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-primary-600"
+            class="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-[var(--accent)] to-[color-mix(in_oklch,var(--accent)_80%,black)]"
           >
             <Icon name="play" size="md" class="text-white" :stroke-width="2" />
           </div>
@@ -209,12 +209,12 @@
           :class="[
  'flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all',
  status === 'connecting' || !selectedModelId
- ? 'cursor-not-allowed bg-primary-400 text-white'
+ ? 'cursor-not-allowed bg-accent/60 text-white'
  : status === 'success'
  ? 'bg-green-500 text-white hover:bg-green-600'
  : status === 'error'
  ? 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)]0 text-white hover:bg-orange-600'
- : 'bg-accent text-white hover:bg-primary-600'
+ : 'bg-accent text-white hover:opacity-90'
  ]"
         >
           <Icon

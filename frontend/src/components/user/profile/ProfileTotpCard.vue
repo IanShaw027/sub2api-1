@@ -1,5 +1,5 @@
 <template>
- <div class="card">
+ <div class="glass-card">
  <div class="border-b border-line px-6 py-4">
  <h2 class="text-lg font-medium text-foreground">
  {{ t('profile.totp.title') }}

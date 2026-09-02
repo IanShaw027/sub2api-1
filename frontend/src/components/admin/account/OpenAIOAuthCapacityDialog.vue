@@ -22,7 +22,7 @@
                 class="rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors"
                 :class="
  selectedRange === option
- ? 'bg-primary-600 text-white shadow-sm'
+ ? 'bg-accent text-white shadow-sm'
  : 'text-muted hover:bg-surface-2'
  "
                 @click="selectedRange = option"
@@ -78,7 +78,7 @@
           <div
             v-for="metric in accountMetrics"
             :key="metric.label"
-            class="card min-w-0 p-4"
+            class="glass-card min-w-0 p-4"
             :class="metric.cardClass"
           >
             <div class="mb-2 flex items-center justify-between">
@@ -91,7 +91,7 @@
           </div>
         </div>
 
-        <div class="card p-4">
+        <div class="glass-card p-4">
           <h4 class="mb-3 text-sm font-semibold text-foreground">
             {{ t('admin.accounts.oauthCapacity.rateLimitDistribution') }}
           </h4>
@@ -154,7 +154,7 @@
           <div
             v-for="kpi in forecastKpis"
             :key="kpi.label"
-            class="card min-w-0 border p-4"
+            class="glass-card min-w-0 border p-4"
             :class="kpi.cardClass"
           >
             <div class="mb-2 text-xs font-medium text-muted">{{ kpi.label }}</div>
@@ -169,7 +169,7 @@
           {{ t('admin.accounts.oauthCapacity.suggestAdd', { count: overview.total.suggest_accounts }) }}
         </div>
 
-        <div class="card p-4">
+        <div class="glass-card p-4">
           <h4 class="mb-3 text-sm font-semibold text-foreground">
             {{ t('admin.accounts.oauthCapacity.hourlyTrend') }}
           </h4>
@@ -192,7 +192,7 @@
           </div>
         </div>
 
-        <div class="card overflow-hidden p-0">
+        <div class="glass-card overflow-hidden p-0">
           <div class="border-b border-line px-4 py-3">
             <h4 class="text-sm font-semibold text-foreground">
               {{ t('admin.accounts.oauthCapacity.planMix') }}
@@ -222,7 +222,7 @@
           </div>
         </div>
 
-        <div v-if="overview.groups?.length" class="card overflow-hidden p-0">
+        <div v-if="overview.groups?.length" class="glass-card overflow-hidden p-0">
           <div class="border-b border-line px-4 py-3">
             <h4 class="text-sm font-semibold text-foreground">
               {{ t('admin.accounts.oauthCapacity.groups') }}

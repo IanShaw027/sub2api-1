@@ -13,7 +13,7 @@
  :class="[
  'rounded-lg border-2 px-4 py-3 text-center font-medium transition-colors',
  modelValue === amt
- ? 'border-primary-500 bg-primary-50 text-primary-700'
+ ? 'border-accent bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
  : 'border-line bg-surface text-foreground hover:border-line',
  ]"
  @click="selectAmount(amt)"

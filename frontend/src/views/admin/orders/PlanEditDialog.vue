@@ -15,7 +15,7 @@
             </template>
             <template #option="{ option, selected }">
               <span class="flex-1 truncate text-left" :class="option.platform ? platformTextClass(String(option.platform)) : ''">{{ option.label }}</span>
-              <Icon v-if="selected" name="check" size="sm" class="text-primary-500" :stroke-width="2" />
+              <Icon v-if="selected" name="check" size="sm" class="text-accent" :stroke-width="2" />
             </template>
           </Select>
         </div>
@@ -69,8 +69,8 @@
         <button
           type="button"
           :class="[
-            'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
-            planForm.for_sale ? 'bg-primary-500' : 'bg-surface-3 '
+            'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
+            planForm.for_sale ? 'bg-accent' : 'bg-surface-3 '
           ]"
           @click="planForm.for_sale = !planForm.for_sale"
         >

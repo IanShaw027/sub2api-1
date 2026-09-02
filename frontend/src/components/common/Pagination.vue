@@ -91,7 +91,7 @@
  :class="[
  'relative inline-flex items-center border px-4 py-2 text-sm font-medium',
  pageNum === page
- ? 'z-10 border-accent bg-primary-50 text-accent'
+ ? 'z-10 border-accent bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
  : 'border-line bg-surface text-foreground hover:bg-surface-2',
  typeof pageNum !== 'number' && 'cursor-default'
  ]"

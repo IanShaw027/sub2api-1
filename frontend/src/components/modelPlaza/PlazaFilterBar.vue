@@ -171,7 +171,7 @@ function rateEnabled(r: number): boolean {
 
 function chipClass(active: boolean): string {
  return active
- ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-sm shadow-primary-500/30'
+ ? 'bg-gradient-to-r from-[var(--accent)] to-[color-mix(in_oklch,var(--accent)_80%,black)] text-white shadow-sm shadow-[color-mix(in_oklch,var(--accent)_30%,transparent)]'
  : 'bg-surface text-muted ring-1 ring-inset ring-line enabled:hover:bg-surface-2 enabled:hover:text-foreground enabled:hover:ring-line'
 }
 </script>

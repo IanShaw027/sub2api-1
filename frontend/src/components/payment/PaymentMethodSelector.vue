@@ -103,6 +103,6 @@ function methodSelectedClass(type: string): string {
   if (isBuiltInWxpayMethod(type)) return 'border-[#09BB07] bg-green-50 text-foreground shadow-sm'
   if (type === 'stripe') return 'border-[#676BE5] bg-indigo-50 text-foreground shadow-sm'
   if (type === 'airwallex') return 'border-[#FF6B3D] bg-orange-50 text-foreground shadow-sm'
- return 'border-primary-500 bg-primary-50 text-foreground shadow-sm'
+ return 'border-accent bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-foreground shadow-sm'
 }
 </script>

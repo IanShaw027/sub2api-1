@@ -2,7 +2,7 @@
   <BaseDialog :show="show" :title="t('admin.users.groupConfig')" width="wide" @close="$emit('close')">
     <div v-if="user" class="space-y-6">
       <!-- 用户信息头部 -->
-      <div class="flex items-center gap-4 rounded-2xl bg-gradient-to-r from-primary-50 to-primary-100 p-5">
+      <div class="flex items-center gap-4 rounded-2xl bg-gradient-to-r from-[color-mix(in_oklch,var(--accent)_12%,transparent)] to-[color-mix(in_oklch,var(--accent)_16%,transparent)] p-5">
         <div class="flex h-14 w-14 items-center justify-center rounded-full bg-surface shadow-sm">
           <span class="text-2xl font-semibold text-accent">{{ user.email.charAt(0).toUpperCase() }}</span>
         </div>
@@ -85,7 +85,7 @@
                     :value="config.customRate ?? ''"
                     @input="updateCustomRate(config.groupId, ($event.target as HTMLInputElement).value)"
                     :placeholder="String(config.defaultRate)"
-                    class="hide-spinner w-24 rounded-lg border border-line bg-surface px-3 py-2 text-sm font-medium transition-colors focus:border-accent focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                    class="hide-spinner w-24 rounded-lg border border-line bg-surface px-3 py-2 text-sm font-medium transition-colors focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
                   />
                 </div>
               </div>
@@ -106,7 +106,7 @@
                 type="checkbox"
                 :checked="restrictPublicGroups"
                 @change="toggleRestrictPublicGroups"
-                class="h-4 w-4 cursor-pointer rounded border-line text-accent focus:ring-primary-500"
+                class="h-4 w-4 cursor-pointer rounded border-line text-accent focus:ring-accent"
               />
               {{ t('admin.users.restrictPublicGroups') }}
             </label>
@@ -165,7 +165,7 @@
                     :value="config.customRate ?? ''"
                     @input="updateCustomRate(config.groupId, ($event.target as HTMLInputElement).value)"
                     :placeholder="String(config.defaultRate)"
-                    class="hide-spinner w-24 rounded-lg border border-line bg-surface px-3 py-2 text-sm font-medium transition-colors focus:border-accent focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                    class="hide-spinner w-24 rounded-lg border border-line bg-surface px-3 py-2 text-sm font-medium transition-colors focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20"
                   />
                 </div>
               </div>

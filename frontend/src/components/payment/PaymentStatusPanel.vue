@@ -4,7 +4,7 @@
 
  <!-- Success -->
  <template v-if="outcome === 'success'">
- <div class="card p-6">
+ <div class="glass-card p-6">
  <div class="flex flex-col items-center space-y-4 py-4">
  <div class="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
  <Icon name="check" size="lg" class="text-green-500" />
@@ -37,7 +37,7 @@
 
  <!-- Cancelled -->
  <template v-else-if="outcome === 'cancelled'">
- <div class="card p-6">
+ <div class="glass-card p-6">
  <div class="flex flex-col items-center space-y-4 py-4">
  <div class="flex h-16 w-16 items-center justify-center rounded-full bg-surface-2">
  <svg class="h-8 w-8 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -53,7 +53,7 @@
 
  <!-- Expired / Failed -->
  <template v-else-if="outcome === 'expired'">
- <div class="card p-6">
+ <div class="glass-card p-6">
  <div class="flex flex-col items-center space-y-4 py-4">
  <div class="flex h-16 w-16 items-center justify-center rounded-full bg-orange-100">
  <svg class="h-8 w-8 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -72,7 +72,7 @@
  <!-- Mobile Alipay app handoff. The QR fallback stays hidden until launch timeout. -->
  <template v-else-if="isMobileAlipayDeepLink">
  <template v-if="!deepLinkFallbackVisible">
- <div class="card p-6">
+ <div class="glass-card p-6">
  <div class="flex flex-col items-center space-y-4 py-4 text-center">
  <div
  v-if="deepLinkState === 'launching'"
@@ -99,14 +99,14 @@
  </button>
  </div>
  </div>
- <div class="card p-4 text-center">
+ <div class="glass-card p-4 text-center">
  <p class="text-sm text-muted">{{ t('payment.qr.expiresIn') }}</p>
  <p class="mt-1 text-2xl font-bold tabular-nums text-foreground">{{ countdownDisplay }}</p>
  <p class="mt-1 text-xs text-muted">{{ t('payment.qr.waitingPayment') }}</p>
  </div>
  </template>
  <template v-else>
- <div data-test="alipay-qr-fallback" class="card p-6">
+ <div data-test="alipay-qr-fallback" class="glass-card p-6">
  <div class="flex flex-col items-center space-y-4">
  <div class="text-center">
  <p class="text-lg font-semibold text-foreground">{{ t('payment.qr.alipayFallbackTitle') }}</p>
@@ -167,7 +167,7 @@
 
  <!-- QR Code Mode -->
  <template v-else-if="showQRCode">
- <div class="card p-6">
+ <div class="glass-card p-6">
  <div class="flex flex-col items-center space-y-4">
  <p class="text-lg font-semibold text-foreground">{{ scanTitle }}</p>
  <div :class="['relative rounded-lg border-2 p-4', qrBorderClass]">
@@ -185,7 +185,7 @@
  </button>
  </div>
  </div>
- <div class="card p-4 text-center">
+ <div class="glass-card p-4 text-center">
  <p class="text-sm text-muted">{{ t('payment.qr.expiresIn') }}</p>
  <p class="mt-1 text-2xl font-bold tabular-nums text-foreground">{{ countdownDisplay }}</p>
  <p class="mt-1 text-xs text-muted">{{ t('payment.qr.waitingPayment') }}</p>
@@ -197,16 +197,16 @@
 
  <!-- Waiting for Popup/Redirect Mode -->
  <template v-else>
- <div class="card p-6">
+ <div class="glass-card p-6">
  <div class="flex flex-col items-center space-y-4 py-4">
- <div class="h-10 w-10 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"></div>
+ <div class="h-10 w-10 animate-spin rounded-full border-4 border-accent border-t-transparent"></div>
  <p class="text-sm text-muted">{{ t('payment.qr.payInNewWindowHint') }}</p>
  <button v-if="payUrl" class="btn btn-secondary text-sm" @click="reopenPopup">
  {{ t('payment.qr.openPayWindow') }}
  </button>
  </div>
  </div>
- <div class="card p-4 text-center">
+ <div class="glass-card p-4 text-center">
  <p class="mt-1 text-2xl font-bold tabular-nums text-foreground">{{ countdownDisplay }}</p>
  <p class="mt-1 text-xs text-muted">{{ t('payment.qr.waitingPayment') }}</p>
  </div>

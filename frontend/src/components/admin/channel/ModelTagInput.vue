@@ -12,7 +12,7 @@
         <button
           type="button"
           @click="removeModel(idx)"
-          class="ml-0.5 rounded-full p-0.5 hover:bg-primary-200"
+          class="ml-0.5 rounded-full p-0.5 hover:bg-[color-mix(in_oklch,var(--accent)_20%,transparent)]"
         >
           <Icon name="x" size="xs" />
         </button>
