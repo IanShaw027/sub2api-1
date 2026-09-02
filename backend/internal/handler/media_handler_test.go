@@ -5,6 +5,9 @@ package handler
 import (
 	"bytes"
 	"context"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +21,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func handlerTestPNG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	img.Set(0, 0, color.RGBA{R: 0x22, G: 0x66, B: 0xaa, A: 0xff})
+	var encoded bytes.Buffer
+	require.NoError(t, png.Encode(&encoded, img))
+	return encoded.Bytes()
+}
 
 type handlerMediaStore struct {
 	mu      sync.Mutex
@@ -113,7 +125,7 @@ func TestMediaPublicGetSetsCacheControlAndDoesNotExposeS3(t *testing.T) {
 		BizType:     service.MediaBizAvatar,
 		Filename:    "a.png",
 		Visibility:  service.MediaVisibilityPublic,
-		Data:        []byte("\x89PNG\r\n\x1a\n"),
+		Data:        handlerTestPNG(t),
 	})
 	require.NoError(t, err)
 

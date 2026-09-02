@@ -326,6 +326,10 @@ func (s *kiroDefaultAccountRepoStub) IncrementQuotaUsed(ctx context.Context, id 
 
 func (s *kiroDefaultAccountRepoStub) ResetQuotaUsed(ctx context.Context, id int64) error { return nil }
 
+func (s *kiroDefaultAccountRepoStub) ResetQuotaUsedAndClearRateLimitCooldown(ctx context.Context, id int64) error {
+	return nil
+}
+
 func (s *kiroDefaultAccountRepoStub) RevertProxyFallback(ctx context.Context, accountID int64) error {
 	return nil
 }

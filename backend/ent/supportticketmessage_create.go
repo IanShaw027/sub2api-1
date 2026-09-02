@@ -4,7 +4,7 @@ package ent
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"time"
@@ -107,7 +107,7 @@ func (_c *SupportTicketMessageCreate) SetNillableContent(v *string) *SupportTick
 }
 
 // SetAttachments sets the "attachments" field.
-func (_c *SupportTicketMessageCreate) SetAttachments(v json.RawMessage) *SupportTicketMessageCreate {
+func (_c *SupportTicketMessageCreate) SetAttachments(v jsontext.Value) *SupportTicketMessageCreate {
 	_c.mutation.SetAttachments(v)
 	return _c
 }
@@ -461,7 +461,7 @@ func (u *SupportTicketMessageUpsert) UpdateContent() *SupportTicketMessageUpsert
 }
 
 // SetAttachments sets the "attachments" field.
-func (u *SupportTicketMessageUpsert) SetAttachments(v json.RawMessage) *SupportTicketMessageUpsert {
+func (u *SupportTicketMessageUpsert) SetAttachments(v jsontext.Value) *SupportTicketMessageUpsert {
 	u.Set(supportticketmessage.FieldAttachments, v)
 	return u
 }
@@ -630,7 +630,7 @@ func (u *SupportTicketMessageUpsertOne) UpdateContent() *SupportTicketMessageUps
 }
 
 // SetAttachments sets the "attachments" field.
-func (u *SupportTicketMessageUpsertOne) SetAttachments(v json.RawMessage) *SupportTicketMessageUpsertOne {
+func (u *SupportTicketMessageUpsertOne) SetAttachments(v jsontext.Value) *SupportTicketMessageUpsertOne {
 	return u.Update(func(s *SupportTicketMessageUpsert) {
 		s.SetAttachments(v)
 	})
@@ -967,7 +967,7 @@ func (u *SupportTicketMessageUpsertBulk) UpdateContent() *SupportTicketMessageUp
 }
 
 // SetAttachments sets the "attachments" field.
-func (u *SupportTicketMessageUpsertBulk) SetAttachments(v json.RawMessage) *SupportTicketMessageUpsertBulk {
+func (u *SupportTicketMessageUpsertBulk) SetAttachments(v jsontext.Value) *SupportTicketMessageUpsertBulk {
 	return u.Update(func(s *SupportTicketMessageUpsert) {
 		s.SetAttachments(v)
 	})

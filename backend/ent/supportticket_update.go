@@ -4,7 +4,7 @@ package ent
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"time"
@@ -110,13 +110,13 @@ func (_u *SupportTicketUpdate) SetNillableStatus(v *string) *SupportTicketUpdate
 }
 
 // SetCurrentFormPayload sets the "current_form_payload" field.
-func (_u *SupportTicketUpdate) SetCurrentFormPayload(v json.RawMessage) *SupportTicketUpdate {
+func (_u *SupportTicketUpdate) SetCurrentFormPayload(v jsontext.Value) *SupportTicketUpdate {
 	_u.mutation.SetCurrentFormPayload(v)
 	return _u
 }
 
 // AppendCurrentFormPayload appends value to the "current_form_payload" field.
-func (_u *SupportTicketUpdate) AppendCurrentFormPayload(v json.RawMessage) *SupportTicketUpdate {
+func (_u *SupportTicketUpdate) AppendCurrentFormPayload(v jsontext.Value) *SupportTicketUpdate {
 	_u.mutation.AppendCurrentFormPayload(v)
 	return _u
 }
@@ -672,13 +672,13 @@ func (_u *SupportTicketUpdateOne) SetNillableStatus(v *string) *SupportTicketUpd
 }
 
 // SetCurrentFormPayload sets the "current_form_payload" field.
-func (_u *SupportTicketUpdateOne) SetCurrentFormPayload(v json.RawMessage) *SupportTicketUpdateOne {
+func (_u *SupportTicketUpdateOne) SetCurrentFormPayload(v jsontext.Value) *SupportTicketUpdateOne {
 	_u.mutation.SetCurrentFormPayload(v)
 	return _u
 }
 
 // AppendCurrentFormPayload appends value to the "current_form_payload" field.
-func (_u *SupportTicketUpdateOne) AppendCurrentFormPayload(v json.RawMessage) *SupportTicketUpdateOne {
+func (_u *SupportTicketUpdateOne) AppendCurrentFormPayload(v jsontext.Value) *SupportTicketUpdateOne {
 	_u.mutation.AppendCurrentFormPayload(v)
 	return _u
 }

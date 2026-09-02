@@ -24,6 +24,14 @@ func classifySelectionFailureError(err error, fallback noAccountErrorClassificat
 	if err == nil {
 		return fallback
 	}
+	// A 404 model_not_found fallback is authoritative and must not be downgraded
+	// to a rate-limit verdict. classifyNoAccountError only reaches it through
+	// DiagnoseModelAvailabilityForPlatform; a transient per-model cooldown on
+	// one remaining candidate does not make "all available accounts are
+	// rate-limited" true, and reporting 429 here hides the real config error.
+	if fallback.ModelNotFound {
+		return fallback
+	}
 	message := strings.ToLower(err.Error())
 	if !selectionFailureHasPositiveRateLimitedCount(message) {
 		return fallback

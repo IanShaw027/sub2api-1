@@ -565,9 +565,9 @@ func TestHandleStreamingResponse_SSEErrorEvent_NonJSONDataLine(t *testing.T) {
 	require.True(t, errors.As(err, &sseErr))
 	require.Equal(t, "not-a-json-payload", sseErr.RawData)
 
-	// gjson 对非 JSON 输入返回空字符串，不 panic — Forward 主流程靠这个 invariant 安全地走下去
+	// gjson 对非 JSON 输入返回空字符串；extract 对纯文本会原样回传，不得 panic
 	require.NotPanics(t, func() {
 		_ = ExtractUpstreamErrorMessage([]byte(sseErr.RawData))
 	})
-	require.Equal(t, "", ExtractUpstreamErrorMessage([]byte(sseErr.RawData)))
+	require.Equal(t, "not-a-json-payload", ExtractUpstreamErrorMessage([]byte(sseErr.RawData)))
 }

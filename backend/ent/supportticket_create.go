@@ -4,7 +4,7 @@ package ent
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"time"
@@ -64,7 +64,7 @@ func (_c *SupportTicketCreate) SetNillableStatus(v *string) *SupportTicketCreate
 }
 
 // SetCurrentFormPayload sets the "current_form_payload" field.
-func (_c *SupportTicketCreate) SetCurrentFormPayload(v json.RawMessage) *SupportTicketCreate {
+func (_c *SupportTicketCreate) SetCurrentFormPayload(v jsontext.Value) *SupportTicketCreate {
 	_c.mutation.SetCurrentFormPayload(v)
 	return _c
 }
@@ -620,7 +620,7 @@ func (u *SupportTicketUpsert) UpdateStatus() *SupportTicketUpsert {
 }
 
 // SetCurrentFormPayload sets the "current_form_payload" field.
-func (u *SupportTicketUpsert) SetCurrentFormPayload(v json.RawMessage) *SupportTicketUpsert {
+func (u *SupportTicketUpsert) SetCurrentFormPayload(v jsontext.Value) *SupportTicketUpsert {
 	u.Set(supportticket.FieldCurrentFormPayload, v)
 	return u
 }
@@ -886,7 +886,7 @@ func (u *SupportTicketUpsertOne) UpdateStatus() *SupportTicketUpsertOne {
 }
 
 // SetCurrentFormPayload sets the "current_form_payload" field.
-func (u *SupportTicketUpsertOne) SetCurrentFormPayload(v json.RawMessage) *SupportTicketUpsertOne {
+func (u *SupportTicketUpsertOne) SetCurrentFormPayload(v jsontext.Value) *SupportTicketUpsertOne {
 	return u.Update(func(s *SupportTicketUpsert) {
 		s.SetCurrentFormPayload(v)
 	})
@@ -1342,7 +1342,7 @@ func (u *SupportTicketUpsertBulk) UpdateStatus() *SupportTicketUpsertBulk {
 }
 
 // SetCurrentFormPayload sets the "current_form_payload" field.
-func (u *SupportTicketUpsertBulk) SetCurrentFormPayload(v json.RawMessage) *SupportTicketUpsertBulk {
+func (u *SupportTicketUpsertBulk) SetCurrentFormPayload(v jsontext.Value) *SupportTicketUpsertBulk {
 	return u.Update(func(s *SupportTicketUpsert) {
 		s.SetCurrentFormPayload(v)
 	})

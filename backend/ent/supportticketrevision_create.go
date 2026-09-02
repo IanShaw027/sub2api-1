@@ -4,7 +4,7 @@ package ent
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"time"
@@ -43,7 +43,7 @@ func (_c *SupportTicketRevisionCreate) SetTitle(v string) *SupportTicketRevision
 }
 
 // SetFormPayload sets the "form_payload" field.
-func (_c *SupportTicketRevisionCreate) SetFormPayload(v json.RawMessage) *SupportTicketRevisionCreate {
+func (_c *SupportTicketRevisionCreate) SetFormPayload(v jsontext.Value) *SupportTicketRevisionCreate {
 	_c.mutation.SetFormPayload(v)
 	return _c
 }
@@ -335,7 +335,7 @@ func (u *SupportTicketRevisionUpsert) UpdateTitle() *SupportTicketRevisionUpsert
 }
 
 // SetFormPayload sets the "form_payload" field.
-func (u *SupportTicketRevisionUpsert) SetFormPayload(v json.RawMessage) *SupportTicketRevisionUpsert {
+func (u *SupportTicketRevisionUpsert) SetFormPayload(v jsontext.Value) *SupportTicketRevisionUpsert {
 	u.Set(supportticketrevision.FieldFormPayload, v)
 	return u
 }
@@ -477,7 +477,7 @@ func (u *SupportTicketRevisionUpsertOne) UpdateTitle() *SupportTicketRevisionUps
 }
 
 // SetFormPayload sets the "form_payload" field.
-func (u *SupportTicketRevisionUpsertOne) SetFormPayload(v json.RawMessage) *SupportTicketRevisionUpsertOne {
+func (u *SupportTicketRevisionUpsertOne) SetFormPayload(v jsontext.Value) *SupportTicketRevisionUpsertOne {
 	return u.Update(func(s *SupportTicketRevisionUpsert) {
 		s.SetFormPayload(v)
 	})
@@ -793,7 +793,7 @@ func (u *SupportTicketRevisionUpsertBulk) UpdateTitle() *SupportTicketRevisionUp
 }
 
 // SetFormPayload sets the "form_payload" field.
-func (u *SupportTicketRevisionUpsertBulk) SetFormPayload(v json.RawMessage) *SupportTicketRevisionUpsertBulk {
+func (u *SupportTicketRevisionUpsertBulk) SetFormPayload(v jsontext.Value) *SupportTicketRevisionUpsertBulk {
 	return u.Update(func(s *SupportTicketRevisionUpsert) {
 		s.SetFormPayload(v)
 	})

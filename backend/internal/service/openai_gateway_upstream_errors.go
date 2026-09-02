@@ -950,8 +950,12 @@ func resolveCompatUpstreamErrorMessage(statusCode int, body []byte) string {
 			return msg
 		}
 	}
-	if text, _, _ := grokUpstreamErrorCorpus(statusCode, body); strings.TrimSpace(text) != "" {
-		return strings.TrimSpace(text)
+	if text, code, _ := grokUpstreamErrorCorpus(statusCode, body); strings.TrimSpace(text) != "" {
+		// Corpus starts from the raw body. If nothing structured was parsed,
+		// returning that JSON would leak echoed prompts such as {"input":"..."}.
+		if code != "" || strings.TrimSpace(text) != strings.TrimSpace(string(body)) {
+			return strings.TrimSpace(text)
+		}
 	}
 	if msg := rawUpstreamErrorText(body); msg != "" {
 		return msg

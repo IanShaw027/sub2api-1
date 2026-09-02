@@ -19,7 +19,7 @@ type MediaAsset struct {
 	ID int64 `json:"id,omitempty"`
 	// 拥有者用户 ID
 	OwnerUserID int64 `json:"owner_user_id,omitempty"`
-	// 业务类型: invoice, ticket, avatar, image_task
+	// 业务类型: invoice, ticket, avatar, site_logo, support_qr, announcement, payment_help, image_task
 	BizType string `json:"biz_type,omitempty"`
 	// 业务主键（发票/工单 ID 等）
 	BizID string `json:"biz_id,omitempty"`

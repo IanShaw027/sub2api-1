@@ -4,6 +4,7 @@ package ent
 
 import (
 	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"strings"
 	"time"
@@ -26,7 +27,7 @@ type SupportTicketRevision struct {
 	// Title holds the value of the "title" field.
 	Title string `json:"title,omitempty"`
 	// FormPayload holds the value of the "form_payload" field.
-	FormPayload json.RawMessage `json:"form_payload,omitempty"`
+	FormPayload jsontext.Value `json:"form_payload,omitempty"`
 	// SubmittedBy holds the value of the "submitted_by" field.
 	SubmittedBy *int64 `json:"submitted_by,omitempty"`
 	// SubmittedAt holds the value of the "submitted_at" field.

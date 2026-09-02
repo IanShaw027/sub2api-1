@@ -3,7 +3,7 @@
 package supportticket
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -112,7 +112,7 @@ var (
 	// StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	StatusValidator func(string) error
 	// DefaultCurrentFormPayload holds the default value on creation for the "current_form_payload" field.
-	DefaultCurrentFormPayload json.RawMessage
+	DefaultCurrentFormPayload jsontext.Value
 	// DefaultCurrentRevisionNo holds the default value on creation for the "current_revision_no" field.
 	DefaultCurrentRevisionNo int
 	// DefaultLatestMessageAt holds the default value on creation for the "latest_message_at" field.

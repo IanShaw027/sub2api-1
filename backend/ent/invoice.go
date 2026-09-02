@@ -21,7 +21,7 @@ type Invoice struct {
 	UserID int64 `json:"user_id,omitempty"`
 	// UserEmail holds the value of the "user_email" field.
 	UserEmail string `json:"user_email,omitempty"`
-	// applied | issued | cancelled
+	// APPLIED | ISSUED | CANCELLED
 	Status string `json:"status,omitempty"`
 	// UnreadByAdmin holds the value of the "unread_by_admin" field.
 	UnreadByAdmin bool `json:"unread_by_admin,omitempty"`

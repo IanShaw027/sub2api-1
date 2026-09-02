@@ -3,7 +3,7 @@
 package supportticketmessage
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -86,7 +86,7 @@ var (
 	// DefaultContent holds the default value on creation for the "content" field.
 	DefaultContent string
 	// DefaultAttachments holds the default value on creation for the "attachments" field.
-	DefaultAttachments json.RawMessage
+	DefaultAttachments jsontext.Value
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
 	DefaultCreatedAt func() time.Time
 )

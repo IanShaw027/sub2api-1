@@ -4,6 +4,7 @@ package ent
 
 import (
 	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"strings"
 	"time"
@@ -34,7 +35,7 @@ type SupportTicketMessage struct {
 	// Content holds the value of the "content" field.
 	Content string `json:"content,omitempty"`
 	// Attachments holds the value of the "attachments" field.
-	Attachments json.RawMessage `json:"attachments,omitempty"`
+	Attachments jsontext.Value `json:"attachments,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.

@@ -4,7 +4,7 @@ package ent
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"time"
@@ -81,13 +81,13 @@ func (_u *SupportTicketRevisionUpdate) SetNillableTitle(v *string) *SupportTicke
 }
 
 // SetFormPayload sets the "form_payload" field.
-func (_u *SupportTicketRevisionUpdate) SetFormPayload(v json.RawMessage) *SupportTicketRevisionUpdate {
+func (_u *SupportTicketRevisionUpdate) SetFormPayload(v jsontext.Value) *SupportTicketRevisionUpdate {
 	_u.mutation.SetFormPayload(v)
 	return _u
 }
 
 // AppendFormPayload appends value to the "form_payload" field.
-func (_u *SupportTicketRevisionUpdate) AppendFormPayload(v json.RawMessage) *SupportTicketRevisionUpdate {
+func (_u *SupportTicketRevisionUpdate) AppendFormPayload(v jsontext.Value) *SupportTicketRevisionUpdate {
 	_u.mutation.AppendFormPayload(v)
 	return _u
 }
@@ -329,13 +329,13 @@ func (_u *SupportTicketRevisionUpdateOne) SetNillableTitle(v *string) *SupportTi
 }
 
 // SetFormPayload sets the "form_payload" field.
-func (_u *SupportTicketRevisionUpdateOne) SetFormPayload(v json.RawMessage) *SupportTicketRevisionUpdateOne {
+func (_u *SupportTicketRevisionUpdateOne) SetFormPayload(v jsontext.Value) *SupportTicketRevisionUpdateOne {
 	_u.mutation.SetFormPayload(v)
 	return _u
 }
 
 // AppendFormPayload appends value to the "form_payload" field.
-func (_u *SupportTicketRevisionUpdateOne) AppendFormPayload(v json.RawMessage) *SupportTicketRevisionUpdateOne {
+func (_u *SupportTicketRevisionUpdateOne) AppendFormPayload(v jsontext.Value) *SupportTicketRevisionUpdateOne {
 	_u.mutation.AppendFormPayload(v)
 	return _u
 }

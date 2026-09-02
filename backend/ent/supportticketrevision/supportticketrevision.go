@@ -3,7 +3,7 @@
 package supportticketrevision
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
@@ -68,7 +68,7 @@ var (
 	// TitleValidator is a validator for the "title" field. It is called by the builders before save.
 	TitleValidator func(string) error
 	// DefaultFormPayload holds the default value on creation for the "form_payload" field.
-	DefaultFormPayload json.RawMessage
+	DefaultFormPayload jsontext.Value
 	// DefaultSubmittedAt holds the default value on creation for the "submitted_at" field.
 	DefaultSubmittedAt func() time.Time
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.

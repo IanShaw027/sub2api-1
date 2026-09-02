@@ -141,7 +141,7 @@ func TestRateLimitService_HandleUpstreamError_OAuth401SetsTempUnschedulable(t *t
 		require.Equal(t, 0, repo.setErrorCalls, "Antigravity OAuth 401 must keep status=active so refresh worker can recover it")
 		require.Equal(t, 1, repo.tempCalls)
 		require.Equal(t, int64(100), repo.lastTempID)
-		require.Contains(t, repo.lastTempReason, "invalid or expired credentials")
+		require.Contains(t, repo.lastTempReason, "OAuth 401:")
 		require.Equal(t, 1, repo.updateExtraCalls)
 		require.Equal(t, true, repo.lastExtraUpdates[antigravityForceTokenRefreshExtraKey])
 		require.Equal(t, "401_invalid", repo.lastExtraUpdates[antigravityForceTokenRefreshReasonExtraKey])
@@ -287,7 +287,7 @@ func TestRateLimitService_HandleUpstreamError_OAuth401NoRefreshTokenSetsError(t 
 		require.Equal(t, 1, repo.setErrorCalls, "AT-only OAuth 401 must SetError")
 		require.Equal(t, 0, repo.tempCalls, "AT-only OAuth 401 must NOT temp-unschedule")
 		require.Equal(t, 0, repo.updateCredentialsCalls, "no point forcing expires_at when refresh is impossible")
-		require.Contains(t, repo.lastErrorMsg, "refresh_token missing")
+		require.Contains(t, repo.lastErrorMsg, "OAuth 401 (no refresh_token)")
 		require.Len(t, invalidator.accounts, 1, "cache should still be invalidated")
 	})
 
@@ -330,7 +330,7 @@ func TestRateLimitService_HandleUpstreamError_OAuth401NoRefreshTokenSetsError(t 
 		require.True(t, shouldDisable)
 		require.Equal(t, 1, repo.setErrorCalls, "Antigravity OAuth without refresh_token cannot self-recover")
 		require.Equal(t, 0, repo.tempCalls)
-		require.Contains(t, repo.lastErrorMsg, "refresh_token missing")
+		require.Contains(t, repo.lastErrorMsg, "OAuth 401 (no refresh_token)")
 		require.Len(t, invalidator.accounts, 1)
 	})
 }

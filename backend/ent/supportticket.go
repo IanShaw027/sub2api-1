@@ -4,6 +4,7 @@ package ent
 
 import (
 	"encoding/json"
+	"encoding/json/jsontext"
 	"fmt"
 	"strings"
 	"time"
@@ -29,7 +30,7 @@ type SupportTicket struct {
 	// Status holds the value of the "status" field.
 	Status string `json:"status,omitempty"`
 	// CurrentFormPayload holds the value of the "current_form_payload" field.
-	CurrentFormPayload json.RawMessage `json:"current_form_payload,omitempty"`
+	CurrentFormPayload jsontext.Value `json:"current_form_payload,omitempty"`
 	// CurrentRevisionNo holds the value of the "current_revision_no" field.
 	CurrentRevisionNo int `json:"current_revision_no,omitempty"`
 	// LatestMessageAt holds the value of the "latest_message_at" field.
