@@ -18,6 +18,7 @@ var (
 		{Name: "key", Type: field.TypeString, Unique: true, Size: 128},
 		{Name: "name", Type: field.TypeString, Size: 100},
 		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
+		{Name: "purpose", Type: field.TypeString, Size: 32, Default: ""},
 		{Name: "last_used_at", Type: field.TypeTime, Nullable: true},
 		{Name: "ip_whitelist", Type: field.TypeJSON, Nullable: true},
 		{Name: "ip_blacklist", Type: field.TypeJSON, Nullable: true},
@@ -44,13 +45,13 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "api_keys_groups_api_keys",
-				Columns:    []*schema.Column{APIKeysColumns[22]},
+				Columns:    []*schema.Column{APIKeysColumns[23]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "api_keys_users_api_keys",
-				Columns:    []*schema.Column{APIKeysColumns[23]},
+				Columns:    []*schema.Column{APIKeysColumns[24]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -59,12 +60,12 @@ var (
 			{
 				Name:    "apikey_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[23]},
+				Columns: []*schema.Column{APIKeysColumns[24]},
 			},
 			{
 				Name:    "apikey_group_id",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[22]},
+				Columns: []*schema.Column{APIKeysColumns[23]},
 			},
 			{
 				Name:    "apikey_status",
@@ -79,17 +80,22 @@ var (
 			{
 				Name:    "apikey_last_used_at",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[7]},
+				Columns: []*schema.Column{APIKeysColumns[8]},
 			},
 			{
 				Name:    "apikey_quota_quota_used",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[10], APIKeysColumns[11]},
+				Columns: []*schema.Column{APIKeysColumns[11], APIKeysColumns[12]},
 			},
 			{
 				Name:    "apikey_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[12]},
+				Columns: []*schema.Column{APIKeysColumns[13]},
+			},
+			{
+				Name:    "apikey_user_id_group_id_purpose",
+				Unique:  false,
+				Columns: []*schema.Column{APIKeysColumns[24], APIKeysColumns[23], APIKeysColumns[7]},
 			},
 		},
 	}
@@ -908,6 +914,135 @@ var (
 				Name:    "compositemodelroute_priority",
 				Unique:  false,
 				Columns: []*schema.Column{CompositeModelRoutesColumns[9]},
+			},
+		},
+	}
+	// CreationImageJobsColumns holds the columns for the "creation_image_jobs" table.
+	CreationImageJobsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "group_id", Type: field.TypeInt64},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "pending"},
+		{Name: "model", Type: field.TypeString, Size: 100, Default: ""},
+		{Name: "prompt", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "media_asset_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "provider_task_id", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "error", Type: field.TypeString, Nullable: true, Size: 2147483647},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "session_id", Type: field.TypeInt64, Nullable: true},
+	}
+	// CreationImageJobsTable holds the schema information for the "creation_image_jobs" table.
+	CreationImageJobsTable = &schema.Table{
+		Name:       "creation_image_jobs",
+		Columns:    CreationImageJobsColumns,
+		PrimaryKey: []*schema.Column{CreationImageJobsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "creation_image_jobs_creation_sessions_image_jobs",
+				Columns:    []*schema.Column{CreationImageJobsColumns[11]},
+				RefColumns: []*schema.Column{CreationSessionsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "creationimagejob_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{CreationImageJobsColumns[1]},
+			},
+			{
+				Name:    "creationimagejob_session_id",
+				Unique:  false,
+				Columns: []*schema.Column{CreationImageJobsColumns[11]},
+			},
+			{
+				Name:    "creationimagejob_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{CreationImageJobsColumns[1], CreationImageJobsColumns[9]},
+			},
+			{
+				Name:    "creationimagejob_provider_task_id",
+				Unique:  false,
+				Columns: []*schema.Column{CreationImageJobsColumns[7]},
+			},
+		},
+	}
+	// CreationMessagesColumns holds the columns for the "creation_messages" table.
+	CreationMessagesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "role", Type: field.TypeString, Size: 32},
+		{Name: "content", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "model", Type: field.TypeString, Nullable: true, Size: 100},
+		{Name: "input_tokens", Type: field.TypeInt, Nullable: true},
+		{Name: "output_tokens", Type: field.TypeInt, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "session_id", Type: field.TypeInt64},
+	}
+	// CreationMessagesTable holds the schema information for the "creation_messages" table.
+	CreationMessagesTable = &schema.Table{
+		Name:       "creation_messages",
+		Columns:    CreationMessagesColumns,
+		PrimaryKey: []*schema.Column{CreationMessagesColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "creation_messages_creation_sessions_messages",
+				Columns:    []*schema.Column{CreationMessagesColumns[7]},
+				RefColumns: []*schema.Column{CreationSessionsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "creationmessage_session_id",
+				Unique:  false,
+				Columns: []*schema.Column{CreationMessagesColumns[7]},
+			},
+			{
+				Name:    "creationmessage_session_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{CreationMessagesColumns[7], CreationMessagesColumns[6]},
+			},
+		},
+	}
+	// CreationSessionsColumns holds the columns for the "creation_sessions" table.
+	CreationSessionsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "group_id", Type: field.TypeInt64},
+		{Name: "title", Type: field.TypeString, Size: 200, Default: ""},
+		{Name: "model", Type: field.TypeString, Size: 100, Default: ""},
+		{Name: "mode", Type: field.TypeString, Size: 16, Default: "chat"},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "active"},
+		{Name: "metadata", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+	}
+	// CreationSessionsTable holds the schema information for the "creation_sessions" table.
+	CreationSessionsTable = &schema.Table{
+		Name:       "creation_sessions",
+		Columns:    CreationSessionsColumns,
+		PrimaryKey: []*schema.Column{CreationSessionsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "creationsession_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{CreationSessionsColumns[3]},
+			},
+			{
+				Name:    "creationsession_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{CreationSessionsColumns[4]},
+			},
+			{
+				Name:    "creationsession_user_id_status",
+				Unique:  false,
+				Columns: []*schema.Column{CreationSessionsColumns[3], CreationSessionsColumns[8]},
+			},
+			{
+				Name:    "creationsession_user_id_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{CreationSessionsColumns[3], CreationSessionsColumns[2]},
 			},
 		},
 	}
@@ -2034,6 +2169,7 @@ var (
 		{Name: "first_token_ms", Type: field.TypeInt, Nullable: true},
 		{Name: "user_agent", Type: field.TypeString, Nullable: true, Size: 512},
 		{Name: "ip_address", Type: field.TypeString, Nullable: true, Size: 45},
+		{Name: "session_id", Type: field.TypeString, Nullable: true, Size: 255},
 		{Name: "image_count", Type: field.TypeInt, Default: 0},
 		{Name: "image_size", Type: field.TypeString, Nullable: true, Size: 10},
 		{Name: "image_input_size", Type: field.TypeString, Nullable: true, Size: 32},
@@ -2059,31 +2195,31 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "usage_logs_api_keys_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[43]},
+				Columns:    []*schema.Column{UsageLogsColumns[44]},
 				RefColumns: []*schema.Column{APIKeysColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "usage_logs_accounts_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[44]},
+				Columns:    []*schema.Column{UsageLogsColumns[45]},
 				RefColumns: []*schema.Column{AccountsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "usage_logs_groups_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[45]},
+				Columns:    []*schema.Column{UsageLogsColumns[46]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "usage_logs_users_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[46]},
+				Columns:    []*schema.Column{UsageLogsColumns[47]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "usage_logs_user_subscriptions_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[47]},
+				Columns:    []*schema.Column{UsageLogsColumns[48]},
 				RefColumns: []*schema.Column{UserSubscriptionsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -2092,32 +2228,32 @@ var (
 			{
 				Name:    "usagelog_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[46]},
+				Columns: []*schema.Column{UsageLogsColumns[47]},
 			},
 			{
 				Name:    "usagelog_api_key_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[43]},
+				Columns: []*schema.Column{UsageLogsColumns[44]},
 			},
 			{
 				Name:    "usagelog_account_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[44]},
+				Columns: []*schema.Column{UsageLogsColumns[45]},
 			},
 			{
 				Name:    "usagelog_group_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[45]},
+				Columns: []*schema.Column{UsageLogsColumns[46]},
 			},
 			{
 				Name:    "usagelog_subscription_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[47]},
+				Columns: []*schema.Column{UsageLogsColumns[48]},
 			},
 			{
 				Name:    "usagelog_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[42]},
+				Columns: []*schema.Column{UsageLogsColumns[43]},
 			},
 			{
 				Name:    "usagelog_model",
@@ -2137,17 +2273,17 @@ var (
 			{
 				Name:    "usagelog_user_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[46], UsageLogsColumns[42]},
+				Columns: []*schema.Column{UsageLogsColumns[47], UsageLogsColumns[43]},
 			},
 			{
 				Name:    "usagelog_api_key_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[43], UsageLogsColumns[42]},
+				Columns: []*schema.Column{UsageLogsColumns[44], UsageLogsColumns[43]},
 			},
 			{
 				Name:    "usagelog_group_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[45], UsageLogsColumns[42]},
+				Columns: []*schema.Column{UsageLogsColumns[46], UsageLogsColumns[43]},
 			},
 		},
 	}
@@ -2471,6 +2607,9 @@ var (
 		ChannelMonitorHistoriesTable,
 		ChannelMonitorRequestTemplatesTable,
 		CompositeModelRoutesTable,
+		CreationImageJobsTable,
+		CreationMessagesTable,
+		CreationSessionsTable,
 		ErrorPassthroughRulesTable,
 		GroupsTable,
 		IdempotencyRecordsTable,
@@ -2582,6 +2721,17 @@ func init() {
 	CompositeModelRoutesTable.ForeignKeys[0].RefTable = GroupsTable
 	CompositeModelRoutesTable.Annotation = &entsql.Annotation{
 		Table: "composite_model_routes",
+	}
+	CreationImageJobsTable.ForeignKeys[0].RefTable = CreationSessionsTable
+	CreationImageJobsTable.Annotation = &entsql.Annotation{
+		Table: "creation_image_jobs",
+	}
+	CreationMessagesTable.ForeignKeys[0].RefTable = CreationSessionsTable
+	CreationMessagesTable.Annotation = &entsql.Annotation{
+		Table: "creation_messages",
+	}
+	CreationSessionsTable.Annotation = &entsql.Annotation{
+		Table: "creation_sessions",
 	}
 	ErrorPassthroughRulesTable.Annotation = &entsql.Annotation{
 		Table: "error_passthrough_rules",

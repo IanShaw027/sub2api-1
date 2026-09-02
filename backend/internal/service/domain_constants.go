@@ -214,6 +214,7 @@ const (
 	SettingKeyAffiliateSignupBonus                = "affiliate_signup_bonus"           // 被邀请人注册奖励（0=不发放）
 	SettingKeyAffiliateAdminRechargeEnabled       = "affiliate_admin_recharge_enabled" // 管理员充值是否产生返利
 	SettingKeyTicketEnabled                       = "ticket_enabled"                   // 工单功能总开关（默认开启）
+	SettingKeyCreationCenterEnabled               = "creation_center_enabled"          // 创作中心功能总开关（默认关闭）
 	SettingKeyIPMultiAccountBanEnabled            = "ip_multi_account_ban_enabled"     // 异常 IP 多账号封禁（默认关闭）
 	SettingKeyIPMultiAccountBanWindowMinutes      = "ip_multi_account_ban_window_minutes"
 	SettingKeyIPMultiAccountBanThreshold          = "ip_multi_account_ban_threshold"

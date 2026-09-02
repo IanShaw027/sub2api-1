@@ -351,6 +351,9 @@ type SystemSettings struct {
 	// Ticket feature switch (default enabled)
 	TicketEnabled bool `json:"ticket_enabled"`
 
+	// Creation center feature switch (default disabled)
+	CreationCenterEnabled bool `json:"creation_center_enabled"`
+
 	IPMultiAccountBanEnabled        bool   `json:"ip_multi_account_ban_enabled"`
 	IPMultiAccountBanWindowMinutes  int    `json:"ip_multi_account_ban_window_minutes"`
 	IPMultiAccountBanThreshold      int    `json:"ip_multi_account_ban_threshold"`
@@ -455,6 +458,7 @@ type PublicSettings struct {
 
 	AffiliateEnabled bool `json:"affiliate_enabled"`
 	TicketEnabled    bool `json:"ticket_enabled"`
+	CreationCenterEnabled bool `json:"creation_center_enabled"`
 
 	RiskControlEnabled bool `json:"risk_control_enabled"`
 

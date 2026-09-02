@@ -24,6 +24,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorhistory"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorrequesttemplate"
 	"github.com/Wei-Shaw/sub2api/ent/compositemodelroute"
+	"github.com/Wei-Shaw/sub2api/ent/creationimagejob"
+	"github.com/Wei-Shaw/sub2api/ent/creationmessage"
+	"github.com/Wei-Shaw/sub2api/ent/creationsession"
 	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
@@ -545,6 +548,87 @@ func (f TraverseCompositeModelRoute) Traverse(ctx context.Context, q ent.Query) 
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.CompositeModelRouteQuery", q)
+}
+
+// The CreationImageJobFunc type is an adapter to allow the use of ordinary function as a Querier.
+type CreationImageJobFunc func(context.Context, *ent.CreationImageJobQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f CreationImageJobFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.CreationImageJobQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.CreationImageJobQuery", q)
+}
+
+// The TraverseCreationImageJob type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseCreationImageJob func(context.Context, *ent.CreationImageJobQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseCreationImageJob) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseCreationImageJob) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.CreationImageJobQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.CreationImageJobQuery", q)
+}
+
+// The CreationMessageFunc type is an adapter to allow the use of ordinary function as a Querier.
+type CreationMessageFunc func(context.Context, *ent.CreationMessageQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f CreationMessageFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.CreationMessageQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.CreationMessageQuery", q)
+}
+
+// The TraverseCreationMessage type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseCreationMessage func(context.Context, *ent.CreationMessageQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseCreationMessage) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseCreationMessage) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.CreationMessageQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.CreationMessageQuery", q)
+}
+
+// The CreationSessionFunc type is an adapter to allow the use of ordinary function as a Querier.
+type CreationSessionFunc func(context.Context, *ent.CreationSessionQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f CreationSessionFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.CreationSessionQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.CreationSessionQuery", q)
+}
+
+// The TraverseCreationSession type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseCreationSession func(context.Context, *ent.CreationSessionQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseCreationSession) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseCreationSession) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.CreationSessionQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.CreationSessionQuery", q)
 }
 
 // The ErrorPassthroughRuleFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -1446,6 +1530,12 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.ChannelMonitorRequestTemplateQuery, predicate.ChannelMonitorRequestTemplate, channelmonitorrequesttemplate.OrderOption]{typ: ent.TypeChannelMonitorRequestTemplate, tq: q}, nil
 	case *ent.CompositeModelRouteQuery:
 		return &query[*ent.CompositeModelRouteQuery, predicate.CompositeModelRoute, compositemodelroute.OrderOption]{typ: ent.TypeCompositeModelRoute, tq: q}, nil
+	case *ent.CreationImageJobQuery:
+		return &query[*ent.CreationImageJobQuery, predicate.CreationImageJob, creationimagejob.OrderOption]{typ: ent.TypeCreationImageJob, tq: q}, nil
+	case *ent.CreationMessageQuery:
+		return &query[*ent.CreationMessageQuery, predicate.CreationMessage, creationmessage.OrderOption]{typ: ent.TypeCreationMessage, tq: q}, nil
+	case *ent.CreationSessionQuery:
+		return &query[*ent.CreationSessionQuery, predicate.CreationSession, creationsession.OrderOption]{typ: ent.TypeCreationSession, tq: q}, nil
 	case *ent.ErrorPassthroughRuleQuery:
 		return &query[*ent.ErrorPassthroughRuleQuery, predicate.ErrorPassthroughRule, errorpassthroughrule.OrderOption]{typ: ent.TypeErrorPassthroughRule, tq: q}, nil
 	case *ent.GroupQuery:

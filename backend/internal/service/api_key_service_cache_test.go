@@ -18,11 +18,12 @@ import (
 )
 
 type authRepoStub struct {
-	create            func(ctx context.Context, key *APIKey) error
-	getByKeyForAuth   func(ctx context.Context, key string) (*APIKey, error)
-	existsByKey       func(ctx context.Context, key string) (bool, error)
-	listKeysByUserID  func(ctx context.Context, userID int64) ([]string, error)
-	listKeysByGroupID func(ctx context.Context, groupID int64) ([]string, error)
+	create                   func(ctx context.Context, key *APIKey) error
+	getByKeyForAuth          func(ctx context.Context, key string) (*APIKey, error)
+	getByUserGroupAndPurpose func(ctx context.Context, userID, groupID int64, purpose string) (*APIKey, error)
+	existsByKey              func(ctx context.Context, key string) (bool, error)
+	listKeysByUserID         func(ctx context.Context, userID int64) ([]string, error)
+	listKeysByGroupID        func(ctx context.Context, groupID int64) ([]string, error)
 }
 
 func (s *authRepoStub) Create(ctx context.Context, key *APIKey) error {
@@ -49,6 +50,13 @@ func (s *authRepoStub) GetByKeyForAuth(ctx context.Context, key string) (*APIKey
 		panic("unexpected GetByKeyForAuth call")
 	}
 	return s.getByKeyForAuth(ctx, key)
+}
+
+func (s *authRepoStub) GetByUserGroupAndPurpose(ctx context.Context, userID, groupID int64, purpose string) (*APIKey, error) {
+	if s.getByUserGroupAndPurpose == nil {
+		panic("unexpected GetByUserGroupAndPurpose call")
+	}
+	return s.getByUserGroupAndPurpose(ctx, userID, groupID, purpose)
 }
 
 func (s *authRepoStub) Update(ctx context.Context, key *APIKey, _ APIKeyUpdateFields) error {

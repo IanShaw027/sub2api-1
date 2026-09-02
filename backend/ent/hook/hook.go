@@ -201,6 +201,42 @@ func (f CompositeModelRouteFunc) Mutate(ctx context.Context, m ent.Mutation) (en
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CompositeModelRouteMutation", m)
 }
 
+// The CreationImageJobFunc type is an adapter to allow the use of ordinary
+// function as CreationImageJob mutator.
+type CreationImageJobFunc func(context.Context, *ent.CreationImageJobMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f CreationImageJobFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.CreationImageJobMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CreationImageJobMutation", m)
+}
+
+// The CreationMessageFunc type is an adapter to allow the use of ordinary
+// function as CreationMessage mutator.
+type CreationMessageFunc func(context.Context, *ent.CreationMessageMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f CreationMessageFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.CreationMessageMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CreationMessageMutation", m)
+}
+
+// The CreationSessionFunc type is an adapter to allow the use of ordinary
+// function as CreationSession mutator.
+type CreationSessionFunc func(context.Context, *ent.CreationSessionMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f CreationSessionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.CreationSessionMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CreationSessionMutation", m)
+}
+
 // The ErrorPassthroughRuleFunc type is an adapter to allow the use of ordinary
 // function as ErrorPassthroughRule mutator.
 type ErrorPassthroughRuleFunc func(context.Context, *ent.ErrorPassthroughRuleMutation) (ent.Value, error)

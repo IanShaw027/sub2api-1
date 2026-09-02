@@ -1550,6 +1550,10 @@ func (r *stubApiKeyRepo) GetByKeyForAuth(ctx context.Context, key string) (*serv
 	return r.GetByKey(ctx, key)
 }
 
+func (r *stubApiKeyRepo) GetByUserGroupAndPurpose(context.Context, int64, int64, string) (*service.APIKey, error) {
+	return nil, nil
+}
+
 func (r *stubApiKeyRepo) Update(ctx context.Context, key *service.APIKey, _ service.APIKeyUpdateFields) error {
 	return errors.New("not implemented")
 }

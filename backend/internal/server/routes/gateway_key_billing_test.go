@@ -30,6 +30,10 @@ func (r *keyBillingRouteAPIKeyRepo) GetByKeyForAuth(_ context.Context, key strin
 	return &clone, nil
 }
 
+func (r *keyBillingRouteAPIKeyRepo) GetByUserGroupAndPurpose(context.Context, int64, int64, string) (*service.APIKey, error) {
+	return nil, nil
+}
+
 type keyBillingRouteRateRepo struct {
 	service.UserGroupRateRepository
 	lookupCalls int

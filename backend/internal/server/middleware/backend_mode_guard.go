@@ -85,6 +85,18 @@ func TicketFeatureGuard(settingService *service.SettingService) gin.HandlerFunc 
 	}
 }
 
+// CreationFeatureGuard blocks creation-center routes when the module is disabled.
+func CreationFeatureGuard(settingService *service.SettingService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if settingService != nil && settingService.IsCreationCenterEnabled(c.Request.Context()) {
+			c.Next()
+			return
+		}
+		response.ErrorFrom(c, service.ErrCreationCenterDisabled)
+		c.Abort()
+	}
+}
+
 // BackendModeAuthGuard selectively blocks auth endpoints when backend mode is enabled.
 // Allows the minimal auth surface admins still need in backend mode, including
 // OAuth callbacks and pending continuations. Handler-level backend mode checks

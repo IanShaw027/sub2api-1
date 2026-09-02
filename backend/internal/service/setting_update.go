@@ -457,6 +457,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	// Affiliate (邀请返利) feature switch
 	updates[SettingKeyAffiliateEnabled] = strconv.FormatBool(settings.AffiliateEnabled)
 	updates[SettingKeyTicketEnabled] = strconv.FormatBool(settings.TicketEnabled)
+	updates[SettingKeyCreationCenterEnabled] = strconv.FormatBool(settings.CreationCenterEnabled)
 	kiroRuntime := normalizeKiroRuntimeSettings(&KiroRuntimeSettings{
 		KiroVersion:                 settings.KiroDefaultVersion,
 		KiroCommit:                  settings.KiroDefaultCommit,

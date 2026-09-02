@@ -213,6 +213,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyAffiliateRebateInviteeLimit:     strconv.Itoa(AffiliateRebateInviteeLimitDefault),
 		SettingKeyAffiliateSignupBonus:            strconv.FormatFloat(AffiliateSignupBonusDefault, 'f', 2, 64),
 		SettingKeyTicketEnabled:                   "true",
+		SettingKeyCreationCenterEnabled:           "false",
 		SettingKeyKiroDefaultVersion:              defaultKiroVersion,
 		SettingKeyKiroDefaultCommit:               "",
 		SettingKeyKiroDefaultSystemVersion:        defaultKiroSystemVersion,
@@ -876,6 +877,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// Affiliate (邀请返利) feature (default: disabled; strict true)
 	result.AffiliateEnabled = settings[SettingKeyAffiliateEnabled] == "true"
 	result.TicketEnabled = settings[SettingKeyTicketEnabled] != "false"
+	result.CreationCenterEnabled = settings[SettingKeyCreationCenterEnabled] == "true"
 	kiroRuntime := parseKiroRuntimeSettingsMap(settings)
 	result.KiroDefaultVersion = kiroRuntime.KiroVersion
 	result.KiroDefaultCommit = kiroRuntime.KiroCommit

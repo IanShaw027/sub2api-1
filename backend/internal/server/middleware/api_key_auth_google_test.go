@@ -106,6 +106,9 @@ func (f fakeAPIKeyRepo) GetByKey(ctx context.Context, key string) (*service.APIK
 func (f fakeAPIKeyRepo) GetByKeyForAuth(ctx context.Context, key string) (*service.APIKey, error) {
 	return f.GetByKey(ctx, key)
 }
+func (f fakeAPIKeyRepo) GetByUserGroupAndPurpose(context.Context, int64, int64, string) (*service.APIKey, error) {
+	return nil, nil
+}
 func (f fakeAPIKeyRepo) Update(ctx context.Context, key *service.APIKey, _ service.APIKeyUpdateFields) error {
 	return errors.New("not implemented")
 }

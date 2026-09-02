@@ -1017,6 +1017,7 @@ func TestAPIContracts(t *testing.T) {
 					"cyber_session_block_ttl_seconds": 3600,
 					"affiliate_enabled": false,
 					"ticket_enabled": true,
+					"creation_center_enabled": false,
 					"ip_multi_account_ban_enabled": false,
 					"ip_multi_account_ban_window_minutes": 10,
 					"ip_multi_account_ban_threshold": 4,
@@ -1352,6 +1353,7 @@ func TestAPIContracts(t *testing.T) {
 					"cyber_session_block_ttl_seconds": 3600,
 					"affiliate_enabled": false,
 					"ticket_enabled": true,
+					"creation_center_enabled": false,
 					"ip_multi_account_ban_enabled": false,
 					"ip_multi_account_ban_window_minutes": 10,
 					"ip_multi_account_ban_threshold": 4,
@@ -2414,6 +2416,10 @@ func (r *stubApiKeyRepo) GetByKey(ctx context.Context, key string) (*service.API
 
 func (r *stubApiKeyRepo) GetByKeyForAuth(ctx context.Context, key string) (*service.APIKey, error) {
 	return r.GetByKey(ctx, key)
+}
+
+func (r *stubApiKeyRepo) GetByUserGroupAndPurpose(context.Context, int64, int64, string) (*service.APIKey, error) {
+	return nil, nil
 }
 
 func (r *stubApiKeyRepo) Update(ctx context.Context, key *service.APIKey, _ service.APIKeyUpdateFields) error {

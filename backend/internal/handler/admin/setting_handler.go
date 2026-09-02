@@ -418,6 +418,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 
 		AffiliateEnabled:                settings.AffiliateEnabled,
 		TicketEnabled:                   settings.TicketEnabled,
+		CreationCenterEnabled:           settings.CreationCenterEnabled,
 		IPMultiAccountBanEnabled:        settings.IPMultiAccountBanEnabled,
 		IPMultiAccountBanWindowMinutes:  settings.IPMultiAccountBanWindowMinutes,
 		IPMultiAccountBanThreshold:      settings.IPMultiAccountBanThreshold,

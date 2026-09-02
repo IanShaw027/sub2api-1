@@ -1325,6 +1325,8 @@ var ProviderSet = wire.NewSet(
 	ProvidePaymentConfigService,
 	ProvideInvoiceService,
 	ProvideTicketService,
+	ProvideCreationService,
+	ProvideCreationKeyResolver,
 	ProvidePaymentService,
 	ProvidePaymentOrderExpiryService,
 	ProvideBalanceNotifyService,

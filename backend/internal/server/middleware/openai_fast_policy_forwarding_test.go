@@ -163,6 +163,10 @@ func (r *openAIFastPolicyForwardingAPIKeyRepo) GetByKeyForAuth(_ context.Context
 	return &clone, nil
 }
 
+func (r *openAIFastPolicyForwardingAPIKeyRepo) GetByUserGroupAndPurpose(context.Context, int64, int64, string) (*service.APIKey, error) {
+	return nil, nil
+}
+
 func (r *openAIFastPolicyForwardingAPIKeyRepo) UpdateLastUsed(context.Context, int64, time.Time) error {
 	return nil
 }

@@ -94,6 +94,7 @@ type APIKeyRepository interface {
 	GetByKey(ctx context.Context, key string) (*APIKey, error)
 	// GetByKeyForAuth 认证专用查询，返回最小字段集
 	GetByKeyForAuth(ctx context.Context, key string) (*APIKey, error)
+	GetByUserGroupAndPurpose(ctx context.Context, userID, groupID int64, purpose string) (*APIKey, error)
 	// Update 只写 fields 中显式声明的列，其余列保持库中当前值。
 	Update(ctx context.Context, key *APIKey, fields APIKeyUpdateFields) error
 	Delete(ctx context.Context, id int64) error

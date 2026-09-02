@@ -244,6 +244,7 @@ func ProvideHandlers(
 	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
 	mediaHandler *MediaHandler,
+	creationHandler *CreationHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 	_ *service.OpenAIQuotaAutoResetService,
@@ -273,6 +274,7 @@ func ProvideHandlers(
 		AsyncImage:       asyncImageHandler,
 		BatchImage:       batchImageHandler,
 		Media:            mediaHandler,
+		Creation:         creationHandler,
 	}
 }
 
@@ -302,6 +304,7 @@ var ProviderSet = wire.NewSet(
 	NewAsyncImageHandler,
 	ProvideBatchImageHandler,
 	NewMediaHandler,
+	NewCreationHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,

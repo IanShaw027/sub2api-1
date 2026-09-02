@@ -182,6 +182,7 @@ type SystemSettings struct {
 	AffiliateSignupBonus            float64
 	AdminRechargeRebateEnabled      bool
 	TicketEnabled                   bool
+	CreationCenterEnabled           bool
 	KiroDefaultVersion              string
 	KiroDefaultCommit               string
 	KiroDefaultSystemVersion        string
@@ -437,6 +438,9 @@ type PublicSettings struct {
 
 	// Ticket feature toggle (default enabled)
 	TicketEnabled bool `json:"ticket_enabled"`
+
+	// Creation center feature toggle (default disabled)
+	CreationCenterEnabled bool `json:"creation_center_enabled"`
 
 	// 风控中心功能开关
 	RiskControlEnabled bool `json:"risk_control_enabled"`

@@ -234,6 +234,15 @@ func (s *SettingService) IsTicketEnabled(ctx context.Context) bool {
 	return value != "false"
 }
 
+// IsCreationCenterEnabled reports whether the creation-center module is on.
+func (s *SettingService) IsCreationCenterEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyCreationCenterEnabled)
+	if err != nil {
+		return false
+	}
+	return value == "true"
+}
+
 // IsPasswordResetEnabled 检查是否启用密码重置功能
 // 要求：必须同时开启邮件验证
 func (s *SettingService) IsPasswordResetEnabled(ctx context.Context) bool {

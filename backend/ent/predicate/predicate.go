@@ -54,6 +54,15 @@ type ChannelMonitorRequestTemplate func(*sql.Selector)
 // CompositeModelRoute is the predicate function for compositemodelroute builders.
 type CompositeModelRoute func(*sql.Selector)
 
+// CreationImageJob is the predicate function for creationimagejob builders.
+type CreationImageJob func(*sql.Selector)
+
+// CreationMessage is the predicate function for creationmessage builders.
+type CreationMessage func(*sql.Selector)
+
+// CreationSession is the predicate function for creationsession builders.
+type CreationSession func(*sql.Selector)
+
 // ErrorPassthroughRule is the predicate function for errorpassthroughrule builders.
 type ErrorPassthroughRule func(*sql.Selector)
 

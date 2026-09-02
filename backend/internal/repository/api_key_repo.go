@@ -48,6 +48,7 @@ func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) erro
 		SetKey(key.Key).
 		SetName(key.Name).
 		SetStatus(key.Status).
+		SetPurpose(key.Purpose).
 		SetNillableGroupID(key.GroupID).
 		SetNillableLastUsedAt(key.LastUsedAt).
 		SetQuota(key.Quota).
@@ -235,6 +236,24 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 	if err != nil {
 		if dbent.IsNotFound(err) {
 			return nil, service.ErrAPIKeyNotFound
+		}
+		return nil, err
+	}
+	return apiKeyEntityToService(m), nil
+}
+
+func (r *apiKeyRepository) GetByUserGroupAndPurpose(ctx context.Context, userID, groupID int64, purpose string) (*service.APIKey, error) {
+	m, err := r.activeQuery().
+		Where(
+			apikey.UserIDEQ(userID),
+			apikey.GroupIDEQ(groupID),
+			apikey.PurposeEQ(purpose),
+		).
+		Select(apikey.FieldID, apikey.FieldKey).
+		Only(ctx)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return nil, nil
 		}
 		return nil, err
 	}
@@ -877,6 +896,7 @@ func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 		Key:           m.Key,
 		Name:          m.Name,
 		Status:        m.Status,
+		Purpose:       m.Purpose,
 		IPWhitelist:   m.IPWhitelist,
 		IPBlacklist:   m.IPBlacklist,
 		LastUsedAt:    m.LastUsedAt,

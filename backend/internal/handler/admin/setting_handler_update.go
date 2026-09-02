@@ -374,6 +374,9 @@ type UpdateSettingsRequest struct {
 	// Ticket feature switch
 	TicketEnabled *bool `json:"ticket_enabled"`
 
+	// Creation center feature switch
+	CreationCenterEnabled *bool `json:"creation_center_enabled"`
+
 	IPMultiAccountBanEnabled        *bool   `json:"ip_multi_account_ban_enabled"`
 	IPMultiAccountBanWindowMinutes  *int    `json:"ip_multi_account_ban_window_minutes"`
 	IPMultiAccountBanThreshold      *int    `json:"ip_multi_account_ban_threshold"`
@@ -2135,6 +2138,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.TicketEnabled
 		}(),
+		CreationCenterEnabled: func() bool {
+			if req.CreationCenterEnabled != nil {
+				return *req.CreationCenterEnabled
+			}
+			return previousSettings.CreationCenterEnabled
+		}(),
 		IPMultiAccountBanEnabled: func() bool {
 			if req.IPMultiAccountBanEnabled != nil {
 				return *req.IPMultiAccountBanEnabled
@@ -2614,6 +2623,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 		AffiliateEnabled:                updatedSettings.AffiliateEnabled,
 		TicketEnabled:                   updatedSettings.TicketEnabled,
+		CreationCenterEnabled:           updatedSettings.CreationCenterEnabled,
 		IPMultiAccountBanEnabled:        updatedSettings.IPMultiAccountBanEnabled,
 		IPMultiAccountBanWindowMinutes:  updatedSettings.IPMultiAccountBanWindowMinutes,
 		IPMultiAccountBanThreshold:      updatedSettings.IPMultiAccountBanThreshold,

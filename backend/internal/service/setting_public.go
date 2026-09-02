@@ -240,6 +240,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyPluginManagementEnabled,
 		SettingKeyAffiliateEnabled,
 		SettingKeyTicketEnabled,
+		SettingKeyCreationCenterEnabled,
 		SettingKeyRiskControlEnabled,
 		SettingKeyAllowUserViewErrorRequests,
 	}
@@ -372,6 +373,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 
 		AffiliateEnabled: settings[SettingKeyAffiliateEnabled] == "true",
 		TicketEnabled:    settings[SettingKeyTicketEnabled] != "false",
+		CreationCenterEnabled: settings[SettingKeyCreationCenterEnabled] == "true",
 
 		RiskControlEnabled: settings[SettingKeyRiskControlEnabled] == "true",
 
@@ -633,6 +635,7 @@ type PublicSettingsInjectionPayload struct {
 	PluginManagementEnabled    bool `json:"plugin_management_enabled"`
 	AffiliateEnabled           bool `json:"affiliate_enabled"`
 	TicketEnabled              bool `json:"ticket_enabled"`
+	CreationCenterEnabled      bool `json:"creation_center_enabled"`
 	RiskControlEnabled         bool `json:"risk_control_enabled"`
 	AllowUserViewErrorRequests bool `json:"allow_user_view_error_requests"`
 }
@@ -717,6 +720,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		PluginManagementEnabled:              settings.PluginManagementEnabled,
 		AffiliateEnabled:                     settings.AffiliateEnabled,
 		TicketEnabled:                        settings.TicketEnabled,
+		CreationCenterEnabled:                settings.CreationCenterEnabled,
 		RiskControlEnabled:                   settings.RiskControlEnabled,
 		AllowUserViewErrorRequests:           settings.AllowUserViewErrorRequests,
 	}, nil

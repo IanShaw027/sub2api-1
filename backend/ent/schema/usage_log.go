@@ -140,6 +140,11 @@ func (UsageLog) Fields() []ent.Field {
 			MaxLen(45). // 支持 IPv6
 			Optional().
 			Nillable(),
+		field.String("session_id").
+			MaxLen(255).
+			Optional().
+			Nillable().
+			Comment("Client-provided session/conversation correlation identifier"),
 
 		// 图片生成字段（仅 gemini-3-pro-image 等图片模型使用）
 		field.Int("image_count").

@@ -47,6 +47,10 @@ func (APIKey) Fields() []ent.Field {
 		field.String("status").
 			MaxLen(20).
 			Default(domain.StatusActive),
+		field.String("purpose").
+			MaxLen(32).
+			Default("").
+			Comment("Key purpose: empty=normal, creation=internal creation-center key"),
 		field.Time("last_used_at").
 			Optional().
 			Nillable().
@@ -144,5 +148,6 @@ func (APIKey) Indexes() []ent.Index {
 		// Index for quota queries
 		index.Fields("quota", "quota_used"),
 		index.Fields("expires_at"),
+		index.Fields("user_id", "group_id", "purpose"),
 	}
 }

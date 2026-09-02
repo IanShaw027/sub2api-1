@@ -11,7 +11,8 @@ const (
 	MediaBizSupportQR    = "support_qr"
 	MediaBizAnnouncement = "announcement"
 	MediaBizPaymentHelp  = "payment_help"
-	MediaBizImageTask    = "image_task"
+	MediaBizImageTask      = "image_task"
+	MediaBizCreationImage  = "creation_image"
 
 	MediaStatusReady   = "ready"
 	MediaStatusDeleted = "deleted"

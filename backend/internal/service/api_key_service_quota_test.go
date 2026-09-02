@@ -95,6 +95,9 @@ func (s *quotaBaseAPIKeyRepoStub) GetByKey(context.Context, string) (*APIKey, er
 func (s *quotaBaseAPIKeyRepoStub) GetByKeyForAuth(context.Context, string) (*APIKey, error) {
 	panic("unexpected GetByKeyForAuth call")
 }
+func (s *quotaBaseAPIKeyRepoStub) GetByUserGroupAndPurpose(context.Context, int64, int64, string) (*APIKey, error) {
+	panic("unexpected GetByUserGroupAndPurpose call")
+}
 func (s *quotaBaseAPIKeyRepoStub) Update(context.Context, *APIKey, APIKeyUpdateFields) error {
 	panic("unexpected Update call")
 }

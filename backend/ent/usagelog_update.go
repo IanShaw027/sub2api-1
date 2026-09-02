@@ -752,6 +752,26 @@ func (_u *UsageLogUpdate) ClearIPAddress() *UsageLogUpdate {
 	return _u
 }
 
+// SetSessionID sets the "session_id" field.
+func (_u *UsageLogUpdate) SetSessionID(v string) *UsageLogUpdate {
+	_u.mutation.SetSessionID(v)
+	return _u
+}
+
+// SetNillableSessionID sets the "session_id" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableSessionID(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetSessionID(*v)
+	}
+	return _u
+}
+
+// ClearSessionID clears the value of the "session_id" field.
+func (_u *UsageLogUpdate) ClearSessionID() *UsageLogUpdate {
+	_u.mutation.ClearSessionID()
+	return _u
+}
+
 // SetImageCount sets the "image_count" field.
 func (_u *UsageLogUpdate) SetImageCount(v int) *UsageLogUpdate {
 	_u.mutation.ResetImageCount()
@@ -1086,6 +1106,11 @@ func (_u *UsageLogUpdate) check() error {
 			return &ValidationError{Name: "ip_address", err: fmt.Errorf(`ent: validator failed for field "UsageLog.ip_address": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.SessionID(); ok {
+		if err := usagelog.SessionIDValidator(v); err != nil {
+			return &ValidationError{Name: "session_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.session_id": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.ImageSize(); ok {
 		if err := usagelog.ImageSizeValidator(v); err != nil {
 			return &ValidationError{Name: "image_size", err: fmt.Errorf(`ent: validator failed for field "UsageLog.image_size": %w`, err)}
@@ -1320,6 +1345,12 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.IPAddressCleared() {
 		_spec.ClearField(usagelog.FieldIPAddress, field.TypeString)
+	}
+	if value, ok := _u.mutation.SessionID(); ok {
+		_spec.SetField(usagelog.FieldSessionID, field.TypeString, value)
+	}
+	if _u.mutation.SessionIDCleared() {
+		_spec.ClearField(usagelog.FieldSessionID, field.TypeString)
 	}
 	if value, ok := _u.mutation.ImageCount(); ok {
 		_spec.SetField(usagelog.FieldImageCount, field.TypeInt, value)
@@ -2266,6 +2297,26 @@ func (_u *UsageLogUpdateOne) ClearIPAddress() *UsageLogUpdateOne {
 	return _u
 }
 
+// SetSessionID sets the "session_id" field.
+func (_u *UsageLogUpdateOne) SetSessionID(v string) *UsageLogUpdateOne {
+	_u.mutation.SetSessionID(v)
+	return _u
+}
+
+// SetNillableSessionID sets the "session_id" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableSessionID(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetSessionID(*v)
+	}
+	return _u
+}
+
+// ClearSessionID clears the value of the "session_id" field.
+func (_u *UsageLogUpdateOne) ClearSessionID() *UsageLogUpdateOne {
+	_u.mutation.ClearSessionID()
+	return _u
+}
+
 // SetImageCount sets the "image_count" field.
 func (_u *UsageLogUpdateOne) SetImageCount(v int) *UsageLogUpdateOne {
 	_u.mutation.ResetImageCount()
@@ -2613,6 +2664,11 @@ func (_u *UsageLogUpdateOne) check() error {
 			return &ValidationError{Name: "ip_address", err: fmt.Errorf(`ent: validator failed for field "UsageLog.ip_address": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.SessionID(); ok {
+		if err := usagelog.SessionIDValidator(v); err != nil {
+			return &ValidationError{Name: "session_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.session_id": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.ImageSize(); ok {
 		if err := usagelog.ImageSizeValidator(v); err != nil {
 			return &ValidationError{Name: "image_size", err: fmt.Errorf(`ent: validator failed for field "UsageLog.image_size": %w`, err)}
@@ -2864,6 +2920,12 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if _u.mutation.IPAddressCleared() {
 		_spec.ClearField(usagelog.FieldIPAddress, field.TypeString)
+	}
+	if value, ok := _u.mutation.SessionID(); ok {
+		_spec.SetField(usagelog.FieldSessionID, field.TypeString, value)
+	}
+	if _u.mutation.SessionIDCleared() {
+		_spec.ClearField(usagelog.FieldSessionID, field.TypeString)
 	}
 	if value, ok := _u.mutation.ImageCount(); ok {
 		_spec.SetField(usagelog.FieldImageCount, field.TypeInt, value)

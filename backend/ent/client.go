@@ -31,6 +31,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorhistory"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitorrequesttemplate"
 	"github.com/Wei-Shaw/sub2api/ent/compositemodelroute"
+	"github.com/Wei-Shaw/sub2api/ent/creationimagejob"
+	"github.com/Wei-Shaw/sub2api/ent/creationmessage"
+	"github.com/Wei-Shaw/sub2api/ent/creationsession"
 	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
@@ -104,6 +107,12 @@ type Client struct {
 	ChannelMonitorRequestTemplate *ChannelMonitorRequestTemplateClient
 	// CompositeModelRoute is the client for interacting with the CompositeModelRoute builders.
 	CompositeModelRoute *CompositeModelRouteClient
+	// CreationImageJob is the client for interacting with the CreationImageJob builders.
+	CreationImageJob *CreationImageJobClient
+	// CreationMessage is the client for interacting with the CreationMessage builders.
+	CreationMessage *CreationMessageClient
+	// CreationSession is the client for interacting with the CreationSession builders.
+	CreationSession *CreationSessionClient
 	// ErrorPassthroughRule is the client for interacting with the ErrorPassthroughRule builders.
 	ErrorPassthroughRule *ErrorPassthroughRuleClient
 	// Group is the client for interacting with the Group builders.
@@ -195,6 +204,9 @@ func (c *Client) init() {
 	c.ChannelMonitorHistory = NewChannelMonitorHistoryClient(c.config)
 	c.ChannelMonitorRequestTemplate = NewChannelMonitorRequestTemplateClient(c.config)
 	c.CompositeModelRoute = NewCompositeModelRouteClient(c.config)
+	c.CreationImageJob = NewCreationImageJobClient(c.config)
+	c.CreationMessage = NewCreationMessageClient(c.config)
+	c.CreationSession = NewCreationSessionClient(c.config)
 	c.ErrorPassthroughRule = NewErrorPassthroughRuleClient(c.config)
 	c.Group = NewGroupClient(c.config)
 	c.IdempotencyRecord = NewIdempotencyRecordClient(c.config)
@@ -335,6 +347,9 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ChannelMonitorHistory:         NewChannelMonitorHistoryClient(cfg),
 		ChannelMonitorRequestTemplate: NewChannelMonitorRequestTemplateClient(cfg),
 		CompositeModelRoute:           NewCompositeModelRouteClient(cfg),
+		CreationImageJob:              NewCreationImageJobClient(cfg),
+		CreationMessage:               NewCreationMessageClient(cfg),
+		CreationSession:               NewCreationSessionClient(cfg),
 		ErrorPassthroughRule:          NewErrorPassthroughRuleClient(cfg),
 		Group:                         NewGroupClient(cfg),
 		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
@@ -402,6 +417,9 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ChannelMonitorHistory:         NewChannelMonitorHistoryClient(cfg),
 		ChannelMonitorRequestTemplate: NewChannelMonitorRequestTemplateClient(cfg),
 		CompositeModelRoute:           NewCompositeModelRouteClient(cfg),
+		CreationImageJob:              NewCreationImageJobClient(cfg),
+		CreationMessage:               NewCreationMessageClient(cfg),
+		CreationSession:               NewCreationSessionClient(cfg),
 		ErrorPassthroughRule:          NewErrorPassthroughRuleClient(cfg),
 		Group:                         NewGroupClient(cfg),
 		IdempotencyRecord:             NewIdempotencyRecordClient(cfg),
@@ -467,16 +485,16 @@ func (c *Client) Use(hooks ...Hook) {
 		c.AnnouncementRead, c.AuthIdentity, c.AuthIdentityChannel, c.BatchImageEvent,
 		c.BatchImageItem, c.BatchImageJob, c.ChannelMonitor,
 		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
-		c.ChannelMonitorRequestTemplate, c.CompositeModelRoute, c.ErrorPassthroughRule,
-		c.Group, c.IdempotencyRecord, c.IdentityAdoptionDecision, c.Invoice,
-		c.InvoiceOrder, c.MediaAsset, c.PaymentAuditLog, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.SupportTicket, c.SupportTicketMessage, c.SupportTicketReplyTemplate,
-		c.SupportTicketRevision, c.TLSFingerprintProfile, c.TLSFingerprintRouter,
-		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
-		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
-		c.UserSubscription,
+		c.ChannelMonitorRequestTemplate, c.CompositeModelRoute, c.CreationImageJob,
+		c.CreationMessage, c.CreationSession, c.ErrorPassthroughRule, c.Group,
+		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.Invoice, c.InvoiceOrder,
+		c.MediaAsset, c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
+		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.Proxy, c.RedeemCode,
+		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.SupportTicket,
+		c.SupportTicketMessage, c.SupportTicketReplyTemplate, c.SupportTicketRevision,
+		c.TLSFingerprintProfile, c.TLSFingerprintRouter, c.UsageCleanupTask,
+		c.UsageLog, c.User, c.UserAllowedGroup, c.UserAttributeDefinition,
+		c.UserAttributeValue, c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -490,16 +508,16 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.AnnouncementRead, c.AuthIdentity, c.AuthIdentityChannel, c.BatchImageEvent,
 		c.BatchImageItem, c.BatchImageJob, c.ChannelMonitor,
 		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
-		c.ChannelMonitorRequestTemplate, c.CompositeModelRoute, c.ErrorPassthroughRule,
-		c.Group, c.IdempotencyRecord, c.IdentityAdoptionDecision, c.Invoice,
-		c.InvoiceOrder, c.MediaAsset, c.PaymentAuditLog, c.PaymentOrder,
-		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.SupportTicket, c.SupportTicketMessage, c.SupportTicketReplyTemplate,
-		c.SupportTicketRevision, c.TLSFingerprintProfile, c.TLSFingerprintRouter,
-		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
-		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
-		c.UserSubscription,
+		c.ChannelMonitorRequestTemplate, c.CompositeModelRoute, c.CreationImageJob,
+		c.CreationMessage, c.CreationSession, c.ErrorPassthroughRule, c.Group,
+		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.Invoice, c.InvoiceOrder,
+		c.MediaAsset, c.PaymentAuditLog, c.PaymentOrder, c.PaymentProviderInstance,
+		c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage, c.Proxy, c.RedeemCode,
+		c.SecuritySecret, c.Setting, c.SubscriptionPlan, c.SupportTicket,
+		c.SupportTicketMessage, c.SupportTicketReplyTemplate, c.SupportTicketRevision,
+		c.TLSFingerprintProfile, c.TLSFingerprintRouter, c.UsageCleanupTask,
+		c.UsageLog, c.User, c.UserAllowedGroup, c.UserAttributeDefinition,
+		c.UserAttributeValue, c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -540,6 +558,12 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ChannelMonitorRequestTemplate.mutate(ctx, m)
 	case *CompositeModelRouteMutation:
 		return c.CompositeModelRoute.mutate(ctx, m)
+	case *CreationImageJobMutation:
+		return c.CreationImageJob.mutate(ctx, m)
+	case *CreationMessageMutation:
+		return c.CreationMessage.mutate(ctx, m)
+	case *CreationSessionMutation:
+		return c.CreationSession.mutate(ctx, m)
 	case *ErrorPassthroughRuleMutation:
 		return c.ErrorPassthroughRule.mutate(ctx, m)
 	case *GroupMutation:
@@ -3139,6 +3163,469 @@ func (c *CompositeModelRouteClient) mutate(ctx context.Context, m *CompositeMode
 		return (&CompositeModelRouteDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown CompositeModelRoute mutation op: %q", m.Op())
+	}
+}
+
+// CreationImageJobClient is a client for the CreationImageJob schema.
+type CreationImageJobClient struct {
+	config
+}
+
+// NewCreationImageJobClient returns a client for the CreationImageJob from the given config.
+func NewCreationImageJobClient(c config) *CreationImageJobClient {
+	return &CreationImageJobClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `creationimagejob.Hooks(f(g(h())))`.
+func (c *CreationImageJobClient) Use(hooks ...Hook) {
+	c.hooks.CreationImageJob = append(c.hooks.CreationImageJob, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `creationimagejob.Intercept(f(g(h())))`.
+func (c *CreationImageJobClient) Intercept(interceptors ...Interceptor) {
+	c.inters.CreationImageJob = append(c.inters.CreationImageJob, interceptors...)
+}
+
+// Create returns a builder for creating a CreationImageJob entity.
+func (c *CreationImageJobClient) Create() *CreationImageJobCreate {
+	mutation := newCreationImageJobMutation(c.config, OpCreate)
+	return &CreationImageJobCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of CreationImageJob entities.
+func (c *CreationImageJobClient) CreateBulk(builders ...*CreationImageJobCreate) *CreationImageJobCreateBulk {
+	return &CreationImageJobCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CreationImageJobClient) MapCreateBulk(slice any, setFunc func(*CreationImageJobCreate, int)) *CreationImageJobCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CreationImageJobCreateBulk{err: fmt.Errorf("calling to CreationImageJobClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CreationImageJobCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CreationImageJobCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for CreationImageJob.
+func (c *CreationImageJobClient) Update() *CreationImageJobUpdate {
+	mutation := newCreationImageJobMutation(c.config, OpUpdate)
+	return &CreationImageJobUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CreationImageJobClient) UpdateOne(_m *CreationImageJob) *CreationImageJobUpdateOne {
+	mutation := newCreationImageJobMutation(c.config, OpUpdateOne, withCreationImageJob(_m))
+	return &CreationImageJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CreationImageJobClient) UpdateOneID(id int64) *CreationImageJobUpdateOne {
+	mutation := newCreationImageJobMutation(c.config, OpUpdateOne, withCreationImageJobID(id))
+	return &CreationImageJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for CreationImageJob.
+func (c *CreationImageJobClient) Delete() *CreationImageJobDelete {
+	mutation := newCreationImageJobMutation(c.config, OpDelete)
+	return &CreationImageJobDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CreationImageJobClient) DeleteOne(_m *CreationImageJob) *CreationImageJobDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CreationImageJobClient) DeleteOneID(id int64) *CreationImageJobDeleteOne {
+	builder := c.Delete().Where(creationimagejob.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CreationImageJobDeleteOne{builder}
+}
+
+// Query returns a query builder for CreationImageJob.
+func (c *CreationImageJobClient) Query() *CreationImageJobQuery {
+	return &CreationImageJobQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCreationImageJob},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a CreationImageJob entity by its id.
+func (c *CreationImageJobClient) Get(ctx context.Context, id int64) (*CreationImageJob, error) {
+	return c.Query().Where(creationimagejob.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CreationImageJobClient) GetX(ctx context.Context, id int64) *CreationImageJob {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QuerySession queries the session edge of a CreationImageJob.
+func (c *CreationImageJobClient) QuerySession(_m *CreationImageJob) *CreationSessionQuery {
+	query := (&CreationSessionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(creationimagejob.Table, creationimagejob.FieldID, id),
+			sqlgraph.To(creationsession.Table, creationsession.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, creationimagejob.SessionTable, creationimagejob.SessionColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *CreationImageJobClient) Hooks() []Hook {
+	return c.hooks.CreationImageJob
+}
+
+// Interceptors returns the client interceptors.
+func (c *CreationImageJobClient) Interceptors() []Interceptor {
+	return c.inters.CreationImageJob
+}
+
+func (c *CreationImageJobClient) mutate(ctx context.Context, m *CreationImageJobMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CreationImageJobCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CreationImageJobUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CreationImageJobUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CreationImageJobDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown CreationImageJob mutation op: %q", m.Op())
+	}
+}
+
+// CreationMessageClient is a client for the CreationMessage schema.
+type CreationMessageClient struct {
+	config
+}
+
+// NewCreationMessageClient returns a client for the CreationMessage from the given config.
+func NewCreationMessageClient(c config) *CreationMessageClient {
+	return &CreationMessageClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `creationmessage.Hooks(f(g(h())))`.
+func (c *CreationMessageClient) Use(hooks ...Hook) {
+	c.hooks.CreationMessage = append(c.hooks.CreationMessage, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `creationmessage.Intercept(f(g(h())))`.
+func (c *CreationMessageClient) Intercept(interceptors ...Interceptor) {
+	c.inters.CreationMessage = append(c.inters.CreationMessage, interceptors...)
+}
+
+// Create returns a builder for creating a CreationMessage entity.
+func (c *CreationMessageClient) Create() *CreationMessageCreate {
+	mutation := newCreationMessageMutation(c.config, OpCreate)
+	return &CreationMessageCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of CreationMessage entities.
+func (c *CreationMessageClient) CreateBulk(builders ...*CreationMessageCreate) *CreationMessageCreateBulk {
+	return &CreationMessageCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CreationMessageClient) MapCreateBulk(slice any, setFunc func(*CreationMessageCreate, int)) *CreationMessageCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CreationMessageCreateBulk{err: fmt.Errorf("calling to CreationMessageClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CreationMessageCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CreationMessageCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for CreationMessage.
+func (c *CreationMessageClient) Update() *CreationMessageUpdate {
+	mutation := newCreationMessageMutation(c.config, OpUpdate)
+	return &CreationMessageUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CreationMessageClient) UpdateOne(_m *CreationMessage) *CreationMessageUpdateOne {
+	mutation := newCreationMessageMutation(c.config, OpUpdateOne, withCreationMessage(_m))
+	return &CreationMessageUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CreationMessageClient) UpdateOneID(id int64) *CreationMessageUpdateOne {
+	mutation := newCreationMessageMutation(c.config, OpUpdateOne, withCreationMessageID(id))
+	return &CreationMessageUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for CreationMessage.
+func (c *CreationMessageClient) Delete() *CreationMessageDelete {
+	mutation := newCreationMessageMutation(c.config, OpDelete)
+	return &CreationMessageDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CreationMessageClient) DeleteOne(_m *CreationMessage) *CreationMessageDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CreationMessageClient) DeleteOneID(id int64) *CreationMessageDeleteOne {
+	builder := c.Delete().Where(creationmessage.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CreationMessageDeleteOne{builder}
+}
+
+// Query returns a query builder for CreationMessage.
+func (c *CreationMessageClient) Query() *CreationMessageQuery {
+	return &CreationMessageQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCreationMessage},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a CreationMessage entity by its id.
+func (c *CreationMessageClient) Get(ctx context.Context, id int64) (*CreationMessage, error) {
+	return c.Query().Where(creationmessage.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CreationMessageClient) GetX(ctx context.Context, id int64) *CreationMessage {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QuerySession queries the session edge of a CreationMessage.
+func (c *CreationMessageClient) QuerySession(_m *CreationMessage) *CreationSessionQuery {
+	query := (&CreationSessionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(creationmessage.Table, creationmessage.FieldID, id),
+			sqlgraph.To(creationsession.Table, creationsession.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, creationmessage.SessionTable, creationmessage.SessionColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *CreationMessageClient) Hooks() []Hook {
+	return c.hooks.CreationMessage
+}
+
+// Interceptors returns the client interceptors.
+func (c *CreationMessageClient) Interceptors() []Interceptor {
+	return c.inters.CreationMessage
+}
+
+func (c *CreationMessageClient) mutate(ctx context.Context, m *CreationMessageMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CreationMessageCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CreationMessageUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CreationMessageUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CreationMessageDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown CreationMessage mutation op: %q", m.Op())
+	}
+}
+
+// CreationSessionClient is a client for the CreationSession schema.
+type CreationSessionClient struct {
+	config
+}
+
+// NewCreationSessionClient returns a client for the CreationSession from the given config.
+func NewCreationSessionClient(c config) *CreationSessionClient {
+	return &CreationSessionClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `creationsession.Hooks(f(g(h())))`.
+func (c *CreationSessionClient) Use(hooks ...Hook) {
+	c.hooks.CreationSession = append(c.hooks.CreationSession, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `creationsession.Intercept(f(g(h())))`.
+func (c *CreationSessionClient) Intercept(interceptors ...Interceptor) {
+	c.inters.CreationSession = append(c.inters.CreationSession, interceptors...)
+}
+
+// Create returns a builder for creating a CreationSession entity.
+func (c *CreationSessionClient) Create() *CreationSessionCreate {
+	mutation := newCreationSessionMutation(c.config, OpCreate)
+	return &CreationSessionCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of CreationSession entities.
+func (c *CreationSessionClient) CreateBulk(builders ...*CreationSessionCreate) *CreationSessionCreateBulk {
+	return &CreationSessionCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CreationSessionClient) MapCreateBulk(slice any, setFunc func(*CreationSessionCreate, int)) *CreationSessionCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CreationSessionCreateBulk{err: fmt.Errorf("calling to CreationSessionClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CreationSessionCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CreationSessionCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for CreationSession.
+func (c *CreationSessionClient) Update() *CreationSessionUpdate {
+	mutation := newCreationSessionMutation(c.config, OpUpdate)
+	return &CreationSessionUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CreationSessionClient) UpdateOne(_m *CreationSession) *CreationSessionUpdateOne {
+	mutation := newCreationSessionMutation(c.config, OpUpdateOne, withCreationSession(_m))
+	return &CreationSessionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CreationSessionClient) UpdateOneID(id int64) *CreationSessionUpdateOne {
+	mutation := newCreationSessionMutation(c.config, OpUpdateOne, withCreationSessionID(id))
+	return &CreationSessionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for CreationSession.
+func (c *CreationSessionClient) Delete() *CreationSessionDelete {
+	mutation := newCreationSessionMutation(c.config, OpDelete)
+	return &CreationSessionDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CreationSessionClient) DeleteOne(_m *CreationSession) *CreationSessionDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CreationSessionClient) DeleteOneID(id int64) *CreationSessionDeleteOne {
+	builder := c.Delete().Where(creationsession.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CreationSessionDeleteOne{builder}
+}
+
+// Query returns a query builder for CreationSession.
+func (c *CreationSessionClient) Query() *CreationSessionQuery {
+	return &CreationSessionQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCreationSession},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a CreationSession entity by its id.
+func (c *CreationSessionClient) Get(ctx context.Context, id int64) (*CreationSession, error) {
+	return c.Query().Where(creationsession.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CreationSessionClient) GetX(ctx context.Context, id int64) *CreationSession {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryMessages queries the messages edge of a CreationSession.
+func (c *CreationSessionClient) QueryMessages(_m *CreationSession) *CreationMessageQuery {
+	query := (&CreationMessageClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(creationsession.Table, creationsession.FieldID, id),
+			sqlgraph.To(creationmessage.Table, creationmessage.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, creationsession.MessagesTable, creationsession.MessagesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryImageJobs queries the image_jobs edge of a CreationSession.
+func (c *CreationSessionClient) QueryImageJobs(_m *CreationSession) *CreationImageJobQuery {
+	query := (&CreationImageJobClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(creationsession.Table, creationsession.FieldID, id),
+			sqlgraph.To(creationimagejob.Table, creationimagejob.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, creationsession.ImageJobsTable, creationsession.ImageJobsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *CreationSessionClient) Hooks() []Hook {
+	return c.hooks.CreationSession
+}
+
+// Interceptors returns the client interceptors.
+func (c *CreationSessionClient) Interceptors() []Interceptor {
+	return c.inters.CreationSession
+}
+
+func (c *CreationSessionClient) mutate(ctx context.Context, m *CreationSessionMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CreationSessionCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CreationSessionUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CreationSessionUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CreationSessionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown CreationSession mutation op: %q", m.Op())
 	}
 }
 
@@ -8248,28 +8735,30 @@ type (
 		AnnouncementRead, AuthIdentity, AuthIdentityChannel, BatchImageEvent,
 		BatchImageItem, BatchImageJob, ChannelMonitor, ChannelMonitorDailyRollup,
 		ChannelMonitorHistory, ChannelMonitorRequestTemplate, CompositeModelRoute,
-		ErrorPassthroughRule, Group, IdempotencyRecord, IdentityAdoptionDecision,
-		Invoice, InvoiceOrder, MediaAsset, PaymentAuditLog, PaymentOrder,
-		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
-		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, SupportTicket,
-		SupportTicketMessage, SupportTicketReplyTemplate, SupportTicketRevision,
-		TLSFingerprintProfile, TLSFingerprintRouter, UsageCleanupTask, UsageLog, User,
-		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
-		UserPlatformQuota, UserSubscription []ent.Hook
+		CreationImageJob, CreationMessage, CreationSession, ErrorPassthroughRule,
+		Group, IdempotencyRecord, IdentityAdoptionDecision, Invoice, InvoiceOrder,
+		MediaAsset, PaymentAuditLog, PaymentOrder, PaymentProviderInstance,
+		PendingAuthSession, PromoCode, PromoCodeUsage, Proxy, RedeemCode,
+		SecuritySecret, Setting, SubscriptionPlan, SupportTicket, SupportTicketMessage,
+		SupportTicketReplyTemplate, SupportTicketRevision, TLSFingerprintProfile,
+		TLSFingerprintRouter, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
+		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
+		UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountDeviceProfile, AccountGroup, Announcement,
 		AnnouncementRead, AuthIdentity, AuthIdentityChannel, BatchImageEvent,
 		BatchImageItem, BatchImageJob, ChannelMonitor, ChannelMonitorDailyRollup,
 		ChannelMonitorHistory, ChannelMonitorRequestTemplate, CompositeModelRoute,
-		ErrorPassthroughRule, Group, IdempotencyRecord, IdentityAdoptionDecision,
-		Invoice, InvoiceOrder, MediaAsset, PaymentAuditLog, PaymentOrder,
-		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
-		RedeemCode, SecuritySecret, Setting, SubscriptionPlan, SupportTicket,
-		SupportTicketMessage, SupportTicketReplyTemplate, SupportTicketRevision,
-		TLSFingerprintProfile, TLSFingerprintRouter, UsageCleanupTask, UsageLog, User,
-		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
-		UserPlatformQuota, UserSubscription []ent.Interceptor
+		CreationImageJob, CreationMessage, CreationSession, ErrorPassthroughRule,
+		Group, IdempotencyRecord, IdentityAdoptionDecision, Invoice, InvoiceOrder,
+		MediaAsset, PaymentAuditLog, PaymentOrder, PaymentProviderInstance,
+		PendingAuthSession, PromoCode, PromoCodeUsage, Proxy, RedeemCode,
+		SecuritySecret, Setting, SubscriptionPlan, SupportTicket, SupportTicketMessage,
+		SupportTicketReplyTemplate, SupportTicketRevision, TLSFingerprintProfile,
+		TLSFingerprintRouter, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
+		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
+		UserSubscription []ent.Interceptor
 	}
 )
 

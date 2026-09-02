@@ -491,6 +491,20 @@ func (_c *UsageLogCreate) SetNillableIPAddress(v *string) *UsageLogCreate {
 	return _c
 }
 
+// SetSessionID sets the "session_id" field.
+func (_c *UsageLogCreate) SetSessionID(v string) *UsageLogCreate {
+	_c.mutation.SetSessionID(v)
+	return _c
+}
+
+// SetNillableSessionID sets the "session_id" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableSessionID(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetSessionID(*v)
+	}
+	return _c
+}
+
 // SetImageCount sets the "image_count" field.
 func (_c *UsageLogCreate) SetImageCount(v int) *UsageLogCreate {
 	_c.mutation.SetImageCount(v)
@@ -894,6 +908,11 @@ func (_c *UsageLogCreate) check() error {
 			return &ValidationError{Name: "ip_address", err: fmt.Errorf(`ent: validator failed for field "UsageLog.ip_address": %w`, err)}
 		}
 	}
+	if v, ok := _c.mutation.SessionID(); ok {
+		if err := usagelog.SessionIDValidator(v); err != nil {
+			return &ValidationError{Name: "session_id", err: fmt.Errorf(`ent: validator failed for field "UsageLog.session_id": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.ImageCount(); !ok {
 		return &ValidationError{Name: "image_count", err: errors.New(`ent: missing required field "UsageLog.image_count"`)}
 	}
@@ -1090,6 +1109,10 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.IPAddress(); ok {
 		_spec.SetField(usagelog.FieldIPAddress, field.TypeString, value)
 		_node.IPAddress = &value
+	}
+	if value, ok := _c.mutation.SessionID(); ok {
+		_spec.SetField(usagelog.FieldSessionID, field.TypeString, value)
+		_node.SessionID = &value
 	}
 	if value, ok := _c.mutation.ImageCount(); ok {
 		_spec.SetField(usagelog.FieldImageCount, field.TypeInt, value)
@@ -1899,6 +1922,24 @@ func (u *UsageLogUpsert) UpdateIPAddress() *UsageLogUpsert {
 // ClearIPAddress clears the value of the "ip_address" field.
 func (u *UsageLogUpsert) ClearIPAddress() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldIPAddress)
+	return u
+}
+
+// SetSessionID sets the "session_id" field.
+func (u *UsageLogUpsert) SetSessionID(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldSessionID, v)
+	return u
+}
+
+// UpdateSessionID sets the "session_id" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateSessionID() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldSessionID)
+	return u
+}
+
+// ClearSessionID clears the value of the "session_id" field.
+func (u *UsageLogUpsert) ClearSessionID() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldSessionID)
 	return u
 }
 
@@ -2859,6 +2900,27 @@ func (u *UsageLogUpsertOne) UpdateIPAddress() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearIPAddress() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearIPAddress()
+	})
+}
+
+// SetSessionID sets the "session_id" field.
+func (u *UsageLogUpsertOne) SetSessionID(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetSessionID(v)
+	})
+}
+
+// UpdateSessionID sets the "session_id" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateSessionID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateSessionID()
+	})
+}
+
+// ClearSessionID clears the value of the "session_id" field.
+func (u *UsageLogUpsertOne) ClearSessionID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearSessionID()
 	})
 }
 
@@ -4015,6 +4077,27 @@ func (u *UsageLogUpsertBulk) UpdateIPAddress() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearIPAddress() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearIPAddress()
+	})
+}
+
+// SetSessionID sets the "session_id" field.
+func (u *UsageLogUpsertBulk) SetSessionID(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetSessionID(v)
+	})
+}
+
+// UpdateSessionID sets the "session_id" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateSessionID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateSessionID()
+	})
+}
+
+// ClearSessionID clears the value of the "session_id" field.
+func (u *UsageLogUpsertBulk) ClearSessionID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearSessionID()
 	})
 }
 
