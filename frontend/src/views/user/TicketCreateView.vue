@@ -1,30 +1,31 @@
 <template>
-  <AppLayout>
-    <div class="grid h-[calc(100vh-10rem)] min-h-[calc(100vh-10rem)] min-w-0 gap-6 overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.95fr)]">
-      <div class="min-h-0">
-        <TicketConversationPane
-          :title="t('tickets.createConversationTitle')"
-          :subtitle="t('tickets.createConversationSubtitle')"
-          :messages="systemMessages"
-          :empty-text="t('tickets.emptyConversation')"
-          :show-composer="false"
-        />
-      </div>
+ <AppLayout>
+ <PageHeader :title="t('tickets.create')" :description="t('tickets.createConversationSubtitle')" />
+ <div class="grid h-[calc(100vh-10rem)] min-h-[calc(100vh-10rem)] min-w-0 gap-6 overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.95fr)]">
+ <div class="min-h-0">
+ <TicketConversationPane
+ :title="t('tickets.createConversationTitle')"
+ :subtitle="t('tickets.createConversationSubtitle')"
+ :messages="systemMessages"
+ :empty-text="t('tickets.emptyConversation')"
+ :show-composer="false"
+ />
+ </div>
 
-      <div class="min-h-0">
-        <TicketEditorCard
-          :category="category"
-          :title="title"
-          :payload="payload"
-          :submit-label="t('tickets.submit')"
-          :submitting="submitting"
-          :user-concurrency="authStore.user?.concurrency ?? null"
-          :rate-groups="rateGroups"
-          @submit="submit"
-        />
-      </div>
-    </div>
-  </AppLayout>
+ <div class="min-h-0">
+ <TicketEditorCard
+ :category="category"
+ :title="title"
+ :payload="payload"
+ :submit-label="t('tickets.submit')"
+ :submitting="submitting"
+ :user-concurrency="authStore.user?.concurrency ?? null"
+ :rate-groups="rateGroups"
+ @submit="submit"
+ />
+ </div>
+ </div>
+ </AppLayout>
 </template>
 
 <script setup lang="ts">
@@ -32,6 +33,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { useAppStore, useAuthStore } from '@/stores'
 import { ticketsAPI } from '@/api/tickets'
 import TicketConversationPane from '@/components/tickets/TicketConversationPane.vue'

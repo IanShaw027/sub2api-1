@@ -1,74 +1,72 @@
 <template>
-  <AppLayout>
-    <div class="space-y-4">
-      <div class="flex items-center justify-between">
-        <button class="btn btn-secondary" @click="router.push('/invoices')">{{ t('common.back') }}</button>
-        <div class="flex gap-2">
-          <button v-if="invoice?.status === 'APPLIED'" class="btn btn-danger" :disabled="actionLoading" @click="cancelInvoice">
-            {{ t('payment.invoices.cancel') }}
-          </button>
-          <button v-if="invoice?.status === 'ISSUED' && invoice.has_file" class="btn btn-primary" :disabled="actionLoading" @click="download">
-            {{ t('payment.invoices.download') }}
-          </button>
-        </div>
-      </div>
+ <AppLayout>
+ <PageHeader :title="t('payment.invoices.mine')" :description="invoice ? `#${invoice.id}` : t('nav.myInvoices')">
+ <template #actions>
+ <Button variant="secondary" @click="router.push('/invoices')">{{ t('common.back') }}</Button>
+ <Button v-if="invoice?.status === 'APPLIED'" variant="danger" :disabled="actionLoading" @click="cancelInvoice">
+ {{ t('payment.invoices.cancel') }}
+ </Button>
+ <Button v-if="invoice?.status === 'ISSUED' && invoice.has_file" :disabled="actionLoading" @click="download">
+ {{ t('payment.invoices.download') }}
+ </Button>
+ </template>
+ </PageHeader>
 
-      <div v-if="invoice" class="card space-y-4 p-6">
-        <div class="grid gap-4 sm:grid-cols-2">
-          <div>
-            <p class="text-xs text-gray-500">{{ t('payment.invoices.id') }}</p>
-            <p class="font-mono">#{{ invoice.id }}</p>
-          </div>
-          <div>
-            <p class="text-xs text-gray-500">{{ t('payment.invoices.statusLabel') }}</p>
-            <p>{{ statusLabel(invoice.status) }}</p>
-          </div>
-          <div>
-            <p class="text-xs text-gray-500">{{ t('payment.invoices.title') }}</p>
-            <p>{{ invoice.title }}</p>
-          </div>
-          <div>
-            <p class="text-xs text-gray-500">{{ t('payment.invoices.amount') }}</p>
-            <p>{{ invoice.invoice_amount.toFixed(2) }}{{ invoice.currency ? ' ' + invoice.currency : '' }}</p>
-          </div>
-          <div>
-            <p class="text-xs text-gray-500">{{ t('payment.invoices.taxNumber') }}</p>
-            <p>{{ invoice.tax_number || '-' }}</p>
-          </div>
-          <div>
-            <p class="text-xs text-gray-500">{{ t('payment.invoices.email') }}</p>
-            <p>{{ invoice.email }}</p>
-          </div>
-          <div>
-            <p class="text-xs text-gray-500">{{ t('payment.invoices.contactName') }}</p>
-            <p>{{ invoice.contact_name || '-' }}</p>
-          </div>
-          <div>
-            <p class="text-xs text-gray-500">{{ t('payment.invoices.contactPhone') }}</p>
-            <p>{{ invoice.contact_phone || '-' }}</p>
-          </div>
-          <div>
-            <p class="text-xs text-gray-500">{{ t('payment.invoices.note') }}</p>
-            <p>{{ invoice.request_note || '-' }}</p>
-          </div>
-          <div>
-            <p class="text-xs text-gray-500">{{ t('payment.invoices.fileName') }}</p>
-            <p>{{ invoice.file_name || '-' }}</p>
-          </div>
-        </div>
+ <GlassCard v-if="invoice" class="space-y-4" padding="lg">
+ <div class="grid gap-4 sm:grid-cols-2">
+ <div>
+ <p class="text-xs text-muted">{{ t('payment.invoices.id') }}</p>
+ <p class="font-mono">#{{ invoice.id }}</p>
+ </div>
+ <div>
+ <p class="text-xs text-muted">{{ t('payment.invoices.statusLabel') }}</p>
+ <p>{{ statusLabel(invoice.status) }}</p>
+ </div>
+ <div>
+ <p class="text-xs text-muted">{{ t('payment.invoices.title') }}</p>
+ <p>{{ invoice.title }}</p>
+ </div>
+ <div>
+ <p class="text-xs text-muted">{{ t('payment.invoices.amount') }}</p>
+ <p>{{ invoice.invoice_amount.toFixed(2) }}{{ invoice.currency ? ' ' + invoice.currency : '' }}</p>
+ </div>
+ <div>
+ <p class="text-xs text-muted">{{ t('payment.invoices.taxNumber') }}</p>
+ <p>{{ invoice.tax_number || '-' }}</p>
+ </div>
+ <div>
+ <p class="text-xs text-muted">{{ t('payment.invoices.email') }}</p>
+ <p>{{ invoice.email }}</p>
+ </div>
+ <div>
+ <p class="text-xs text-muted">{{ t('payment.invoices.contactName') }}</p>
+ <p>{{ invoice.contact_name || '-' }}</p>
+ </div>
+ <div>
+ <p class="text-xs text-muted">{{ t('payment.invoices.contactPhone') }}</p>
+ <p>{{ invoice.contact_phone || '-' }}</p>
+ </div>
+ <div>
+ <p class="text-xs text-muted">{{ t('payment.invoices.note') }}</p>
+ <p>{{ invoice.request_note || '-' }}</p>
+ </div>
+ <div>
+ <p class="text-xs text-muted">{{ t('payment.invoices.fileName') }}</p>
+ <p>{{ invoice.file_name || '-' }}</p>
+ </div>
+ </div>
 
-        <div>
-          <p class="mb-2 text-sm font-medium">{{ t('payment.invoices.orders') }}</p>
-          <ul class="space-y-1 text-sm">
-            <li v-for="item in invoice.orders || []" :key="item.order_id" class="flex justify-between">
-              <span class="font-mono">#{{ item.order_id }} {{ item.out_trade_no }}</span>
-              <span>{{ item.pay_amount_snapshot.toFixed(2) }}{{ item.currency ? ` ${item.currency}` : '' }}</span>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </AppLayout>
+ <div>
+ <p class="mb-2 text-sm font-medium">{{ t('payment.invoices.orders') }}</p>
+ <ul class="space-y-1 text-sm">
+ <li v-for="item in invoice.orders || []" :key="item.order_id" class="flex justify-between">
+ <span class="font-mono">#{{ item.order_id }} {{ item.out_trade_no }}</span>
+ <span>{{ item.pay_amount_snapshot.toFixed(2) }}{{ item.currency ? ` ${item.currency}` : '' }}</span>
+ </li>
+ </ul>
+ </div>
+ </GlassCard>
+ </AppLayout>
 </template>
 
 <script setup lang="ts">
@@ -80,6 +78,9 @@ import { extractI18nErrorMessage } from '@/utils/apiError'
 import { useAppStore } from '@/stores'
 import type { Invoice } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import Button from '@/components/ui/Button.vue'
+import GlassCard from '@/components/ui/GlassCard.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
 
 const { t } = useI18n()
 const route = useRoute()

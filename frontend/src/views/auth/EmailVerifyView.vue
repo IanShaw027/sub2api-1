@@ -1,37 +1,32 @@
 <template>
   <AuthLayout>
     <div class="space-y-6">
-      <!-- Title -->
-      <div class="text-center">
-        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
-          {{ t('auth.verifyYourEmail') }}
-        </h2>
-        <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
+      <div class="login-title">
+        <h2>{{ t('auth.verifyYourEmail') }}</h2>
+        <p>
           {{ t('auth.sendCodeDesc') }}
-          <span class="font-medium text-gray-700 dark:text-gray-300">{{ email }}</span>
+          <span class="font-medium text-foreground">{{ email }}</span>
         </p>
       </div>
 
-      <!-- No Data Warning -->
       <div
         v-if="!hasRegisterData"
-        class="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-900/20"
+        class="rounded-xl border border-[color-mix(in_oklch,var(--warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--warning)_12%,transparent)] p-4"
       >
         <div class="flex items-start gap-3">
           <div class="flex-shrink-0">
-            <Icon name="exclamationCircle" size="md" class="text-amber-500" />
+            <Icon name="exclamationCircle" size="md" class="text-[var(--warning-text)]" />
           </div>
-          <div class="text-sm text-amber-700 dark:text-amber-400">
+          <div class="text-sm text-[var(--warning-text)]">
             <p class="font-medium">{{ t('auth.sessionExpired') }}</p>
             <p class="mt-1">{{ t('auth.sessionExpiredDesc') }}</p>
           </div>
         </div>
       </div>
 
-      <!-- Verification Form -->
-      <form v-else @submit.prevent="handleVerify" class="space-y-5">
+      <form v-else @submit.prevent="handleVerify" class="login-form">
         <div v-if="requiresPasswordReentry">
-          <label for="registration-password" class="input-label">
+          <label for="registration-password" class="login-label">
             {{ t('auth.passwordLabel') }}
           </label>
           <input
@@ -40,15 +35,14 @@
             type="password"
             required
             autocomplete="new-password"
-            class="input"
+            class="field"
             :placeholder="t('auth.createPasswordPlaceholder')"
           />
-          <p class="input-hint">{{ t('auth.passwordHint') }}</p>
+          <p class="mt-1 text-xs text-muted">{{ t('auth.passwordHint') }}</p>
         </div>
 
-        <!-- Verification Code Input -->
         <div>
-          <label for="code" class="input-label text-center">
+          <label for="code" class="login-label text-center">
             {{ t('auth.verificationCode') }}
           </label>
           <input
@@ -60,29 +54,27 @@
             inputmode="numeric"
             maxlength="6"
             :disabled="isLoading"
-            class="input py-3 text-center font-mono text-xl tracking-[0.5em]"
+            class="field py-3 text-center font-mono text-xl tracking-[0.5em]"
             :class="{ 'input-error': errors.code }"
             placeholder="000000"
           />
-          <p class="input-hint text-center">{{ t('auth.verificationCodeHint') }}</p>
+          <p class="mt-1 text-center text-xs text-muted">{{ t('auth.verificationCodeHint') }}</p>
         </div>
 
-        <!-- Code Status -->
         <div
           v-if="codeSent"
-          class="rounded-xl border border-green-200 bg-green-50 p-4 dark:border-green-800/50 dark:bg-green-900/20"
+          class="rounded-xl border border-[color-mix(in_oklch,var(--success)_35%,transparent)] bg-[color-mix(in_oklch,var(--success)_12%,transparent)] p-4"
         >
           <div class="flex items-start gap-3">
             <div class="flex-shrink-0">
-              <Icon name="checkCircle" size="md" class="text-green-500" />
+              <Icon name="checkCircle" size="md" class="text-[var(--success-text)]" />
             </div>
-            <p class="text-sm text-green-700 dark:text-green-400">
+            <p class="text-sm text-[var(--success-text)]">
               {{ t('auth.codeSentSuccess') }}
             </p>
           </div>
         </div>
 
-        <!-- Turnstile Widget for Resend -->
         <div v-if="actionCaptchaEnabled || (turnstileWidgetActive && showResendTurnstile)">
           <TurnstileWidget
             ref="turnstileRef"
@@ -121,43 +113,23 @@
           />
         </div>
 
-        <!-- Submit Button -->
-        <button
-          type="submit"
+        <Button
+          native-type="submit"
+          size="md"
+          class="w-full"
           :disabled="isLoading || !verifyCode || (pendingOAuthCreateTurnstileRequired && !createAccountTurnstileToken)"
-          class="btn btn-primary w-full"
+          :loading="isLoading"
         >
-          <svg
-            v-if="isLoading"
-            class="-ml-1 mr-2 h-4 w-4 animate-spin text-white"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              class="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              stroke-width="4"
-            ></circle>
-            <path
-              class="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
-          </svg>
-          <Icon v-else name="checkCircle" size="md" class="mr-2" />
+          <Icon v-if="!isLoading" name="checkCircle" size="md" />
           {{ isLoading ? t('auth.verifying') : t('auth.verifyAndCreate') }}
-        </button>
+        </Button>
 
-        <!-- Resend Code -->
         <div class="text-center">
           <button
             v-if="countdown > 0"
             type="button"
             disabled
-            class="cursor-not-allowed text-sm text-gray-400 dark:text-dark-500"
+            class="cursor-not-allowed text-sm text-muted"
           >
             {{ t('auth.resendCountdown', { countdown }) }}
           </button>
@@ -169,7 +141,7 @@
               isSendingCode ||
               (turnstileWidgetActive && showResendTurnstile && !resendTurnstileToken)
             "
-            class="text-sm text-primary-600 transition-colors hover:text-primary-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-400 dark:hover:text-primary-300"
+            class="text-sm text-accent disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span v-if="isSendingCode">{{ t('auth.sendingCode') }}</span>
             <span v-else-if="captchaEnabled && !showResendTurnstile">
@@ -181,11 +153,10 @@
       </form>
     </div>
 
-    <!-- Footer -->
     <template #footer>
       <button
         @click="handleBack"
-        class="flex items-center gap-2 text-gray-500 transition-colors hover:text-gray-700 dark:text-dark-400 dark:hover:text-gray-300"
+        class="flex items-center gap-2 text-muted transition-colors hover:text-foreground"
       >
         <Icon name="arrowLeft" size="sm" />
         {{ t('auth.backToRegistration') }}
@@ -200,6 +171,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { AuthLayout } from '@/components/layout'
 import Icon from '@/components/icons/Icon.vue'
+import Button from '@/components/ui/Button.vue'
 import TurnstileWidget from '@/components/CaptchaChallenge.vue'
 import type { AliyunCaptchaBizResult } from '@/components/AliyunCaptchaWidget.vue'
 import { useAuthStore, useAppStore } from '@/stores'
@@ -928,6 +900,37 @@ function buildRegistrationErrorMessage(error: unknown, fallback: string): string
 </script>
 
 <style scoped>
+.login-title h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  text-align: center;
+  color: var(--foreground);
+}
+
+.login-title p {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.login-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
 .fade-enter-active,
 .fade-leave-active {
   transition: all 0.3s ease;

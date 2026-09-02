@@ -243,6 +243,16 @@
     box-shadow: var(--shadow-hover);
   }
 
+  .callback-page {
+    min-height: 100vh;
+    color: var(--foreground);
+    background:
+      linear-gradient(color-mix(in oklch, var(--foreground) 2.5%, transparent) 1px, transparent 1px) 0 0 / 48px 48px,
+      linear-gradient(90deg, color-mix(in oklch, var(--foreground) 2.5%, transparent) 1px, transparent 1px) 0 0 / 48px 48px,
+      radial-gradient(circle at 0% 0%, color-mix(in oklch, var(--accent) 18%, transparent) 0%, transparent 28rem),
+      var(--background);
+  }
+
   .badge-tone-success,
   .badge-tone-warning,
   .badge-tone-danger,

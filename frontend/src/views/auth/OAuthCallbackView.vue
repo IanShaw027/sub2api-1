@@ -1,148 +1,148 @@
 <template>
-  <div class="min-h-screen bg-gray-50 px-4 py-10 dark:bg-dark-900">
-    <div class="mx-auto max-w-2xl">
-      <div v-if="isProcessing" class="card p-6 text-center">
-        <div class="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-primary-500 border-t-transparent"></div>
-        <h1 class="mt-4 text-lg font-semibold text-gray-900 dark:text-white">
-          {{ t('auth.oauth.callbackTitle') }}
-        </h1>
-        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          {{ t('auth.oauth.callbackHint') }}
-        </p>
-      </div>
+ <div class="callback-page px-4 py-10">
+ <div class="mx-auto max-w-2xl">
+ <div v-if="isProcessing" class="glass-card p-6 text-center">
+ <div class="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-[var(--accent)] border-t-transparent"></div>
+ <h1 class="mt-4 text-lg font-semibold text-foreground">
+ {{ t('auth.oauth.callbackTitle') }}
+ </h1>
+ <p class="mt-2 text-sm text-muted">
+ {{ t('auth.oauth.callbackHint') }}
+ </p>
+ </div>
 
-      <div v-else-if="needsRegistrationCompletion" class="card p-6">
-        <h1 class="text-lg font-semibold text-gray-900 dark:text-white">
-          {{ t('auth.oidc.callbackTitle', { providerName }) }}
-        </h1>
-        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          {{ registrationHint }}
-        </p>
+ <div v-else-if="needsRegistrationCompletion" class="glass-card p-6">
+ <h1 class="text-lg font-semibold text-foreground">
+ {{ t('auth.oidc.callbackTitle', { providerName }) }}
+ </h1>
+ <p class="mt-2 text-sm text-muted">
+ {{ registrationHint }}
+ </p>
 
-        <div class="mt-6 space-y-4">
-          <div>
-            <label class="input-label">{{ t('auth.emailLabel') }}</label>
-            <input
-              class="input w-full"
-              type="email"
-              :value="registrationEmail"
-              readonly
-              disabled
-            />
-          </div>
-          <div>
-            <label class="input-label">{{ t('auth.passwordLabel') }}</label>
-            <input
-              v-model="password"
-              type="password"
-              class="input w-full"
-              :placeholder="t('auth.createPasswordPlaceholder')"
-              :disabled="isSubmitting"
-              autocomplete="new-password"
-              @keyup.enter="handleSubmitRegistration"
-            />
-          </div>
-          <div>
-            <label class="input-label">{{ t('auth.confirmPassword') }}</label>
-            <input
-              v-model="confirmPassword"
-              type="password"
-              class="input w-full"
-              :placeholder="t('auth.confirmPasswordPlaceholder')"
-              :disabled="isSubmitting"
-              autocomplete="new-password"
-              @keyup.enter="handleSubmitRegistration"
-            />
-          </div>
-          <div v-if="invitationRequired">
-            <label class="input-label">{{ t('auth.invitationCodeLabel') }}</label>
-            <input
-              v-model="invitationCode"
-              type="text"
-              class="input w-full"
-              :placeholder="t('auth.invitationCodePlaceholder')"
-              :disabled="isSubmitting"
-              @keyup.enter="handleSubmitRegistration"
-            />
-          </div>
-          <p v-if="registrationError" class="text-sm text-red-600 dark:text-red-400">
-            {{ registrationError }}
-          </p>
-          <button
-            class="btn btn-primary w-full"
-            type="button"
-            :disabled="isSubmitting || !canSubmitRegistration"
-            @click="handleSubmitRegistration"
-          >
-            {{ isSubmitting ? t('common.processing') : t('auth.oidc.completeRegistration') }}
-          </button>
-        </div>
-      </div>
+ <div class="mt-6 space-y-4">
+ <div>
+ <label class="login-label">{{ t('auth.emailLabel') }}</label>
+ <input
+ class="field w-full"
+ type="email"
+ :value="registrationEmail"
+ readonly
+ disabled
+ />
+ </div>
+ <div>
+ <label class="login-label">{{ t('auth.passwordLabel') }}</label>
+ <input
+ v-model="password"
+ type="password"
+ class="field w-full"
+ :placeholder="t('auth.createPasswordPlaceholder')"
+ :disabled="isSubmitting"
+ autocomplete="new-password"
+ @keyup.enter="handleSubmitRegistration"
+ />
+ </div>
+ <div>
+ <label class="login-label">{{ t('auth.confirmPassword') }}</label>
+ <input
+ v-model="confirmPassword"
+ type="password"
+ class="field w-full"
+ :placeholder="t('auth.confirmPasswordPlaceholder')"
+ :disabled="isSubmitting"
+ autocomplete="new-password"
+ @keyup.enter="handleSubmitRegistration"
+ />
+ </div>
+ <div v-if="invitationRequired">
+ <label class="login-label">{{ t('auth.invitationCodeLabel') }}</label>
+ <input
+ v-model="invitationCode"
+ type="text"
+ class="field w-full"
+ :placeholder="t('auth.invitationCodePlaceholder')"
+ :disabled="isSubmitting"
+ @keyup.enter="handleSubmitRegistration"
+ />
+ </div>
+ <p v-if="registrationError" class="text-sm text-red-600 ">
+ {{ registrationError }}
+ </p>
+ <button
+ class="btn-glass-primary w-full"
+ type="button"
+ :disabled="isSubmitting || !canSubmitRegistration"
+ @click="handleSubmitRegistration"
+ >
+ {{ isSubmitting ? t('common.processing') : t('auth.oidc.completeRegistration') }}
+ </button>
+ </div>
+ </div>
 
-      <div v-else-if="invalidCallback" class="card p-6 text-center">
-        <h1 class="text-lg font-semibold text-gray-900 dark:text-white">
-          {{ t('auth.oauth.invalidCallbackTitle') }}
-        </h1>
-        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          {{ t('auth.oauth.invalidCallbackHint') }}
-        </p>
-        <button class="btn btn-primary mt-6" type="button" @click="router.replace('/login')">
-          {{ t('auth.backToLogin') }}
-        </button>
-      </div>
+ <div v-else-if="invalidCallback" class="glass-card p-6 text-center">
+ <h1 class="text-lg font-semibold text-foreground">
+ {{ t('auth.oauth.invalidCallbackTitle') }}
+ </h1>
+ <p class="mt-2 text-sm text-muted">
+ {{ t('auth.oauth.invalidCallbackHint') }}
+ </p>
+ <button class="btn-glass-primary mt-6" type="button" @click="router.replace('/login')">
+ {{ t('auth.backToLogin') }}
+ </button>
+ </div>
 
-      <div v-else class="card p-6">
-        <h1 class="text-lg font-semibold text-gray-900 dark:text-white">
-          {{ t('auth.oauth.callbackTitle') }}
-        </h1>
-        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-          {{ t('auth.oauth.callbackHint') }}
-        </p>
+ <div v-else class="glass-card p-6">
+ <h1 class="text-lg font-semibold text-foreground">
+ {{ t('auth.oauth.callbackTitle') }}
+ </h1>
+ <p class="mt-2 text-sm text-muted">
+ {{ t('auth.oauth.callbackHint') }}
+ </p>
 
-        <div class="mt-6 space-y-4">
-          <div>
-            <label class="input-label">{{ t('auth.oauth.code') }}</label>
-            <div class="flex gap-2">
-              <input class="input flex-1 font-mono text-sm" :value="code" readonly />
-              <button class="btn btn-secondary" type="button" :disabled="!code" @click="copy(code)">
-                {{ t('common.copy') }}
-              </button>
-            </div>
-          </div>
+ <div class="mt-6 space-y-4">
+ <div>
+ <label class="login-label">{{ t('auth.oauth.code') }}</label>
+ <div class="flex gap-2">
+ <input class="field flex-1 font-mono text-sm" :value="code" readonly />
+ <button class="btn-glass-secondary" type="button" :disabled="!code" @click="copy(code)">
+ {{ t('common.copy') }}
+ </button>
+ </div>
+ </div>
 
-          <div>
-            <label class="input-label">{{ t('auth.oauth.state') }}</label>
-            <div class="flex gap-2">
-              <input class="input flex-1 font-mono text-sm" :value="state" readonly />
-              <button
-                class="btn btn-secondary"
-                type="button"
-                :disabled="!state"
-                @click="copy(state)"
-              >
-                {{ t('common.copy') }}
-              </button>
-            </div>
-          </div>
+ <div>
+ <label class="login-label">{{ t('auth.oauth.state') }}</label>
+ <div class="flex gap-2">
+ <input class="field flex-1 font-mono text-sm" :value="state" readonly />
+ <button
+ class="btn-glass-secondary"
+ type="button"
+ :disabled="!state"
+ @click="copy(state)"
+ >
+ {{ t('common.copy') }}
+ </button>
+ </div>
+ </div>
 
-          <div>
-            <label class="input-label">{{ t('auth.oauth.fullUrl') }}</label>
-            <div class="flex gap-2">
-              <input class="input flex-1 font-mono text-xs" :value="fullUrl" readonly />
-              <button
-                class="btn btn-secondary"
-                type="button"
-                :disabled="!fullUrl"
-                @click="copy(fullUrl)"
-              >
-                {{ t('common.copy') }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+ <div>
+ <label class="login-label">{{ t('auth.oauth.fullUrl') }}</label>
+ <div class="flex gap-2">
+ <input class="field flex-1 font-mono text-xs" :value="fullUrl" readonly />
+ <button
+ class="btn-glass-secondary"
+ type="button"
+ :disabled="!fullUrl"
+ @click="copy(fullUrl)"
+ >
+ {{ t('common.copy') }}
+ </button>
+ </div>
+ </div>
+ </div>
+ </div>
+ </div>
+ </div>
 </template>
 
 <script setup lang="ts">

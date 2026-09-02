@@ -1,13 +1,9 @@
 <template>
   <AuthLayout>
     <div class="space-y-6">
-      <div class="text-center">
-        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
-          {{ t('auth.dingtalk.createAccountTitle') }}
-        </h2>
-        <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
-          {{ t('auth.oauthFlow.createAccountHint') }}
-        </p>
+      <div class="login-title">
+        <h2>{{ t('auth.dingtalk.createAccountTitle') }}</h2>
+        <p>{{ t('auth.oauthFlow.createAccountHint') }}</p>
       </div>
 
       <PendingOAuthCreateAccountForm
@@ -140,3 +136,22 @@ function handleSwitchToBind(email: string) {
   navigateToBindLogin(email)
 }
 </script>
+
+<style scoped>
+.login-title h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  text-align: center;
+  color: var(--foreground);
+}
+
+.login-title p {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  color: var(--muted);
+  text-align: center;
+}
+</style>

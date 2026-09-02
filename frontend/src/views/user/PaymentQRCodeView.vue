@@ -1,35 +1,35 @@
 <template>
-  <AppLayout>
-    <div class="mx-auto flex max-w-md flex-col items-center space-y-6 py-8">
-      <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
-        {{ qrUrl ? scanTitle : t('payment.qr.payInNewWindow') }}
-      </h2>
-      <div v-if="qrUrl" class="rounded-2xl bg-white p-6 shadow-lg dark:bg-dark-800">
-        <canvas ref="qrCanvas" class="mx-auto"></canvas>
-      </div>
-      <!-- Scan prompt for QR code -->
-      <p v-if="qrUrl && !expired && scanHint" class="text-center text-sm text-gray-500 dark:text-gray-400">
-        {{ scanHint }}
-      </p>
-      <div v-if="expired" class="text-center">
-        <p class="text-lg font-medium text-red-500">{{ t('payment.qr.expired') }}</p>
-        <button class="btn btn-primary mt-4" @click="router.push('/purchase')">{{ t('payment.result.backToRecharge') }}</button>
-      </div>
-      <div v-else class="text-center">
-        <p class="text-sm text-gray-500 dark:text-gray-400">{{ qrUrl ? t('payment.qr.expiresIn') : t('payment.qr.payInNewWindowHint') }}</p>
-        <p class="mt-1 text-2xl font-bold tabular-nums text-gray-900 dark:text-white">{{ countdownDisplay }}</p>
-        <p class="mt-2 text-sm text-gray-400 dark:text-gray-500">{{ t('payment.qr.waitingPayment') }}</p>
-      </div>
-      <a v-if="payUrl && !qrUrl && !expired" :href="payUrl" target="_blank" rel="noopener noreferrer"
-        class="btn btn-primary w-full py-3">
-        {{ t('payment.qr.openPayWindow') }}
-      </a>
-      <!-- Cancel button -->
-      <button v-if="!expired && orderId" class="btn btn-secondary w-full" :disabled="cancelling" @click="handleCancel">
-        {{ cancelling ? t('common.processing') : t('payment.qr.cancelOrder') }}
-      </button>
-    </div>
-  </AppLayout>
+ <AppLayout>
+ <div class="mx-auto flex max-w-md flex-col items-center space-y-6 py-8">
+ <h2 class="text-xl font-semibold text-foreground">
+ {{ qrUrl ? scanTitle : t('payment.qr.payInNewWindow') }}
+ </h2>
+ <div v-if="qrUrl" class="glass-card p-6">
+ <canvas ref="qrCanvas" class="mx-auto"></canvas>
+ </div>
+ <!-- Scan prompt for QR code -->
+ <p v-if="qrUrl && !expired && scanHint" class="text-center text-sm text-muted">
+ {{ scanHint }}
+ </p>
+ <div v-if="expired" class="text-center">
+ <p class="text-lg font-medium text-red-500">{{ t('payment.qr.expired') }}</p>
+ <button class="btn-glass-primary mt-4" @click="router.push('/purchase')">{{ t('payment.result.backToRecharge') }}</button>
+ </div>
+ <div v-else class="text-center">
+ <p class="text-sm text-muted">{{ qrUrl ? t('payment.qr.expiresIn') : t('payment.qr.payInNewWindowHint') }}</p>
+ <p class="mt-1 text-2xl font-bold tabular-nums text-foreground">{{ countdownDisplay }}</p>
+ <p class="mt-2 text-sm text-muted">{{ t('payment.qr.waitingPayment') }}</p>
+ </div>
+ <a v-if="payUrl && !qrUrl && !expired" :href="payUrl" target="_blank" rel="noopener noreferrer"
+ class="btn-glass-primary w-full py-3">
+ {{ t('payment.qr.openPayWindow') }}
+ </a>
+ <!-- Cancel button -->
+ <button v-if="!expired && orderId" class="btn-glass-secondary w-full" :disabled="cancelling" @click="handleCancel">
+ {{ cancelling ? t('common.processing') : t('payment.qr.cancelOrder') }}
+ </button>
+ </div>
+ </AppLayout>
 </template>
 
 <script setup lang="ts">
