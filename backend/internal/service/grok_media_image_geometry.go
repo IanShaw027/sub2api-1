@@ -27,6 +27,41 @@ var grokImagineAspectRatioValues = []struct {
 	{"9:19.5", 9.0 / 19.5},
 	{"20:9", 20.0 / 9.0},
 	{"9:20", 9.0 / 20.0},
+	{"21:9", 21.0 / 9.0},
+	{"5:2", 2.5},
+}
+
+const grokImagineAspectRatioAuto = "auto"
+
+func grokImagineAllowedAspectRatioLabels() []string {
+	labels := make([]string, 0, len(grokImagineAspectRatioValues)+1)
+	for _, candidate := range grokImagineAspectRatioValues {
+		labels = append(labels, candidate.label)
+	}
+	labels = append(labels, grokImagineAspectRatioAuto)
+	return labels
+}
+
+func isAllowedGrokImagineAspectRatio(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return true
+	}
+	if strings.EqualFold(value, grokImagineAspectRatioAuto) {
+		return true
+	}
+	for _, candidate := range grokImagineAspectRatioValues {
+		if candidate.label == value {
+			return true
+		}
+	}
+	return false
+}
+
+func invalidGrokImagineAspectRatioMessage(value string) string {
+	value = strings.TrimSpace(value)
+	return "aspect_ratio: unknown variant `" + value + "`, expected one of `" +
+		strings.Join(grokImagineAllowedAspectRatioLabels(), "`, `") + "`"
 }
 
 func applyGrokImagineImageGeometry(body []byte) ([]byte, error) {
@@ -59,6 +94,8 @@ func applyGrokImagineImageGeometry(body []byte) ([]byte, error) {
 			}
 			out = next
 		}
+	} else if !isAllowedGrokImagineAspectRatio(aspect) {
+		return nil, &GrokMediaClientParameterError{Message: invalidGrokImagineAspectRatioMessage(aspect)}
 	}
 
 	if !gjson.GetBytes(out, "size").Exists() {

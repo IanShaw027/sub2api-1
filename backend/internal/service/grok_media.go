@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -20,6 +21,20 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
+
+// GrokMediaClientParameterError is a deterministic client-side media request
+// validation failure (for example an unsupported aspect_ratio). Callers should
+// return it to the client without rotating accounts.
+type GrokMediaClientParameterError struct {
+	Message string
+}
+
+func (e *GrokMediaClientParameterError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return strings.TrimSpace(e.Message)
+}
 
 type GrokMediaEndpoint string
 
@@ -656,6 +671,17 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	}
 	body, contentType, err = sanitizeGrokMediaForwardBody(endpoint, body, contentType)
 	if err != nil {
+		var paramErr *GrokMediaClientParameterError
+		if errors.As(err, &paramErr) {
+			msg := strings.TrimSpace(paramErr.Error())
+			if msg == "" {
+				msg = "Invalid request parameter"
+			}
+			setOpsUpstreamError(c, http.StatusBadRequest, msg, "")
+			MarkResponseCommitted(c)
+			writeGrokMediaErrorResponse(c, http.StatusBadRequest, "invalid_request_error", msg)
+			return nil, err
+		}
 		return nil, err
 	}
 
@@ -1228,10 +1254,7 @@ func (s *OpenAIGatewayService) handleGrokMediaErrorResponse(
 	// Reconcile readiness before configurable passthrough branches can return;
 	// otherwise a Grok 429 can remain schedulable.
 	s.handleGrokAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, body)
-	upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(body)))
-	if upstreamMsg == "" {
-		upstreamMsg = fmt.Sprintf("xAI upstream returned status %d", resp.StatusCode)
-	}
+	upstreamMsg := grokMediaUpstreamClientMessage(resp.StatusCode, body)
 
 	upstreamDetail := ""
 	if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
@@ -1317,9 +1340,37 @@ func (s *OpenAIGatewayService) handleGrokMediaErrorResponse(
 		}
 	}
 
+	statusCode := resp.StatusCode
+	errType := grokMediaErrorType(resp.StatusCode)
+	if isGrokClientParameterValidationError(resp.StatusCode, body) {
+		statusCode = http.StatusBadRequest
+		errType = "invalid_request_error"
+	}
 	MarkResponseCommitted(c)
-	writeGrokMediaErrorResponse(c, resp.StatusCode, grokMediaErrorType(resp.StatusCode), upstreamMsg)
+	writeGrokMediaErrorResponse(c, statusCode, errType, upstreamMsg)
 	return nil, fmt.Errorf("upstream error: %d %s", resp.StatusCode, upstreamMsg)
+}
+
+func grokMediaUpstreamClientMessage(statusCode int, body []byte) string {
+	msg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(body)))
+	if msg == "" {
+		if text, _, _ := grokUpstreamErrorCorpus(statusCode, body); strings.TrimSpace(text) != "" {
+			candidate := strings.TrimSpace(text)
+			if !looksLikeHTMLUpstreamErrorBody(candidate) {
+				msg = sanitizeUpstreamErrorMessage(candidate)
+			}
+		}
+	}
+	if msg == "" {
+		raw := strings.TrimSpace(string(body))
+		if raw != "" && !gjson.ValidBytes(body) && !looksLikeHTMLUpstreamErrorBody(raw) {
+			msg = sanitizeUpstreamErrorMessage(raw)
+		}
+	}
+	if msg == "" {
+		return fmt.Sprintf("xAI upstream returned status %d", statusCode)
+	}
+	return msg
 }
 
 func grokMediaErrorType(statusCode int) string {

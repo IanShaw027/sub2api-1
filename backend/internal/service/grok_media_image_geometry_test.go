@@ -58,3 +58,18 @@ func TestGrokImagineAspectRatioFromSize(t *testing.T) {
 	require.Equal(t, "4:3", grokImagineAspectRatioFromSize("1536x1152"))
 	require.Equal(t, "16:9", grokImagineAspectRatioFromSize("1792x1024"))
 }
+
+func TestApplyGrokImagineImageGeometryRejectsUnsupportedAspectRatio(t *testing.T) {
+	t.Parallel()
+
+	_, err := applyGrokImagineImageGeometry([]byte(`{"model":"grok-imagine-image","prompt":"hi","aspect_ratio":"5:4"}`))
+	var paramErr *GrokMediaClientParameterError
+	require.ErrorAs(t, err, &paramErr)
+	require.Contains(t, paramErr.Error(), "aspect_ratio: unknown variant `5:4`")
+	require.Contains(t, paramErr.Error(), "`1:1`")
+	require.Contains(t, paramErr.Error(), "`auto`")
+	require.True(t, isAllowedGrokImagineAspectRatio("5:2"))
+	require.True(t, isAllowedGrokImagineAspectRatio("21:9"))
+	require.True(t, isAllowedGrokImagineAspectRatio("auto"))
+	require.False(t, isAllowedGrokImagineAspectRatio("5:4"))
+}

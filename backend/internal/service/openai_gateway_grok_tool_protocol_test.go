@@ -228,6 +228,59 @@ func TestForwardGrokResponsesClientToolNameConflictReturns400(t *testing.T) {
 	require.Empty(t, upstream.requests, "an ambiguous request must not reach xAI")
 }
 
+func TestForwardGrokResponsesImageModelWrongEndpointReturns400(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name         string
+		model        string
+		wantFragment string
+	}{
+		{
+			name:         "imagine image fast",
+			model:        "grok-imagine-image",
+			wantFragment: "image model and is not available on the Responses endpoint",
+		},
+		{
+			name:         "imagine video",
+			model:        "grok-imagine-video",
+			wantFragment: "video model and is not available on the Responses endpoint",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(`{"model":"` + tt.model + `","stream":false,"input":"draw a cat"}`)
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(body))
+			upstream := &httpUpstreamRecorder{}
+			svc := &OpenAIGatewayService{httpUpstream: upstream}
+			account := grokProtocolAPIKeyAccount(7110)
+
+			result, err := svc.forwardGrokResponses(context.Background(), c, account, body, tt.model, false, time.Now())
+
+			require.Error(t, err)
+			require.Nil(t, result)
+			var wrongEndpoint *GrokWrongEndpointModelError
+			require.ErrorAs(t, err, &wrongEndpoint)
+			require.Contains(t, wrongEndpoint.Error(), tt.wantFragment)
+			require.True(t, IsResponseCommitted(c))
+			require.Equal(t, http.StatusBadRequest, recorder.Code)
+			require.Equal(t, "invalid_request_error", gjson.Get(recorder.Body.String(), "error.type").String())
+			require.Equal(t, "model", gjson.Get(recorder.Body.String(), "error.param").String())
+			require.Contains(t, gjson.Get(recorder.Body.String(), "error.message").String(), tt.wantFragment)
+			require.NotEqual(t, "upstream_transport_error", gjson.Get(recorder.Body.String(), "error.type").String())
+			require.Empty(t, upstream.requests, "wrong-endpoint media models must not reach xAI Responses")
+
+			opsType, _ := c.Get(OpsUpstreamErrorTypeKey)
+			require.Equal(t, "invalid_request_error", opsType)
+			opsStatus, _ := c.Get(OpsUpstreamStatusCodeKey)
+			require.Equal(t, http.StatusBadRequest, opsStatus)
+		})
+	}
+}
+
 func TestForwardGrokResponsesMalformedToolSearchOutputReturns400BeforeUpstream(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

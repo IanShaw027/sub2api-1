@@ -31,6 +31,42 @@ const (
 	grokRateLimitBackoffQuietPeriod        = time.Hour
 )
 
+// GrokWrongEndpointModelError is a deterministic client misuse: a media model
+// was sent to the text Responses endpoint. Handlers must surface it as
+// invalid_request_error rather than an opaque upstream transport failure.
+type GrokWrongEndpointModelError struct {
+	Message string
+}
+
+func (e *GrokWrongEndpointModelError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return strings.TrimSpace(e.Message)
+}
+
+func rejectGrokResponsesWrongEndpointModel(c *gin.Context, upstreamModel string) error {
+	upstreamModel = strings.TrimSpace(upstreamModel)
+	var msg string
+	switch {
+	case isGrokImageGenerationModel(upstreamModel):
+		msg = fmt.Sprintf("model %s is an image model and is not available on the Responses endpoint; use /v1/images/generations instead", upstreamModel)
+	case isGrokVideoGenerationModel(upstreamModel):
+		msg = fmt.Sprintf("model %s is a video model and is not available on the Responses endpoint; use /v1/videos/generations instead", upstreamModel)
+	default:
+		return nil
+	}
+	err := &GrokWrongEndpointModelError{Message: msg}
+	SetOpsUpstreamErrorWithType(c, "invalid_request_error", http.StatusBadRequest, msg, "")
+	MarkResponseCommitted(c)
+	if c != nil && c.Writer != nil && !c.Writer.Written() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+			"type": "invalid_request_error", "message": msg, "param": "model",
+		}})
+	}
+	return err
+}
+
 func (s *OpenAIGatewayService) forwardGrokResponses(
 	ctx context.Context,
 	c *gin.Context,
@@ -52,8 +88,8 @@ func (s *OpenAIGatewayService) forwardGrokResponses(
 	// account has no model_mapping, matching the Chat Completions path and xAI's
 	// actual Responses model IDs.
 	upstreamModel = xai.ResolveGrokTextResponsesModelID(upstreamModel, grokDefaultResponsesModel)
-	if isGrokImageGenerationModel(upstreamModel) {
-		return nil, fmt.Errorf("model %s is an image model and is not available on the Responses endpoint; use /v1/images/generations instead", upstreamModel)
+	if err := rejectGrokResponsesWrongEndpointModel(c, upstreamModel); err != nil {
+		return nil, err
 	}
 	patchedBody, clientToolMapping, err := patchGrokResponsesBodyWithClientTools(body, upstreamModel)
 	if err != nil {

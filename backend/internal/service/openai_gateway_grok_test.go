@@ -1339,6 +1339,48 @@ func TestForwardGrokMediaImagesGenerationStripsUnsupportedSize(t *testing.T) {
 	require.Equal(t, "1024x1024", result.ImageInputSize)
 }
 
+func TestForwardGrokMediaImagesGenerationRejectsUnsupportedAspectRatioWithoutFailover(t *testing.T) {
+	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
+	gin.SetMode(gin.TestMode)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	body := []byte(`{"model":"grok-imagine-image","prompt":"draw a cat","aspect_ratio":"5:4"}`)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	account := &Account{
+		ID:          67,
+		Name:        "grok",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key":  "api-key",
+			"base_url": "https://xai.test/v1",
+		},
+	}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"data":[{"url":"https://images.test/cat.png"}]}`)),
+	}}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+
+	result, err := svc.ForwardGrokMedia(context.Background(), c, account, GrokMediaEndpointImagesGenerations, "", body, "application/json")
+	require.Nil(t, result)
+	var paramErr *GrokMediaClientParameterError
+	require.ErrorAs(t, err, &paramErr)
+	var failoverErr *UpstreamFailoverError
+	require.NotErrorAs(t, err, &failoverErr)
+	require.True(t, IsResponseCommitted(c))
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Equal(t, "invalid_request_error", gjson.Get(recorder.Body.String(), "error.type").String())
+	require.Contains(t, gjson.Get(recorder.Body.String(), "error.message").String(), "aspect_ratio")
+	require.Contains(t, gjson.Get(recorder.Body.String(), "error.message").String(), "5:4")
+	require.Empty(t, upstream.lastBody)
+}
+
 func TestForwardGrokMediaImagesEditMultipartConvertsToJSON(t *testing.T) {
 	t.Setenv(xai.EnvAllowUnsafeURLOverrides, "true")
 	gin.SetMode(gin.TestMode)
