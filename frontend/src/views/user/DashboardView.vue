@@ -1,6 +1,7 @@
 <template>
   <AppLayout>
-    <div class="space-y-6">
+    <div class="dash-page">
+      <PageHeader :title="t('dashboard.title')" :description="t('dashboard.welcomeMessage')" />
       <div v-if="loading" class="flex items-center justify-center py-12"><LoadingSpinner /></div>
       <template v-else-if="stats">
         <UserDashboardStats
@@ -31,9 +32,11 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { usageAPI, type UserDashboardStats as UserStatsType } from '@/api/usage'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import UserDashboardStats from '@/components/user/dashboard/UserDashboardStats.vue'
 import UserDashboardCharts from '@/components/user/dashboard/UserDashboardCharts.vue'
@@ -45,6 +48,7 @@ import { getMyPlatformQuotas, getMyRPMStatus, type UserRPMStatus } from '@/api/u
 import { formatDateLocalInput } from '@/utils/format'
 
 const authStore = useAuthStore()
+const { t } = useI18n()
 const user = computed(() => authStore.user)
 const stats = ref<UserStatsType | null>(null)
 const loading = ref(false)
@@ -141,3 +145,10 @@ onMounted(() => {
   refreshAll()
 })
 </script>
+<style scoped>
+.dash-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+</style>

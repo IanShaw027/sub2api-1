@@ -1,17 +1,28 @@
 <template>
   <AppLayout>
+    <PageHeader :title="t('payment.invoices.mine')" :description="t('nav.myInvoices')">
+      <template #actions>
+        <Button variant="secondary" :disabled="loading" :title="t('common.refresh')" @click="fetchInvoices">
+          <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
+        </Button>
+        <Button @click="router.push('/orders')">{{ t('payment.invoices.fromOrders') }}</Button>
+      </template>
+    </PageHeader>
     <div class="space-y-4">
-      <div class="card p-4">
-        <div class="flex flex-wrap items-center gap-3">
-          <input v-model="keyword" type="search" class="input flex-1 sm:max-w-72" :placeholder="t('payment.invoices.search')" @keyup.enter="applyFilters" />
-          <Select v-model="currentFilter" :options="statusFilters" class="w-36" @change="applyFilters" />
-          <div class="flex flex-1 items-center justify-end gap-2">
-            <button class="btn btn-secondary" :disabled="loading" @click="fetchInvoices">
-              <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
-            </button>
-            <button class="btn btn-primary" @click="router.push('/orders')">{{ t('payment.invoices.fromOrders') }}</button>
-          </div>
-        </div>
+      <div class="flex flex-col gap-3">
+        <FilterBar :search-placeholder="t('payment.invoices.search')">
+          <template #search>
+            <input v-model="keyword" type="search" class="input" :placeholder="t('payment.invoices.search')" @keyup.enter="applyFilters" />
+          </template>
+          <template #filters>
+            <Select v-model="currentFilter" :options="statusFilters" class="w-36" @change="applyFilters" />
+          </template>
+        </FilterBar>
+        <ChipScroller
+          :model-value="String(currentFilter || '')"
+          :chips="statusFilters.map((opt) => ({ value: String(opt.value), label: opt.label }))"
+          @update:model-value="(v) => { currentFilter = v || ''; applyFilters() }"
+        />
       </div>
 
       <DataTable :columns="columns" :data="invoices" :loading="loading">
@@ -19,17 +30,21 @@
           <span class="font-mono text-sm">#{{ value }}</span>
         </template>
         <template #cell-status="{ value }">
-          <span :class="['inline-flex rounded-full px-2 py-0.5 text-xs font-medium', statusClass(value)]">{{ statusLabel(value) }}</span>
+          <StatusBadge
+            :tone="String(value).toUpperCase() === 'ISSUED' ? 'success' : String(value).toUpperCase() === 'CANCELLED' ? 'muted' : 'warning'"
+            :label="statusLabel(value)"
+            dot
+          />
         </template>
         <template #cell-invoice_amount="{ value, row }">
           <span class="text-sm font-medium">{{ Number(value).toFixed(2) }}{{ row.currency ? ' ' + row.currency : '' }}</span>
         </template>
         <template #cell-applied_at="{ value }">
-          <span class="text-xs text-gray-500">{{ formatDateTime(value) || '-' }}</span>
+          <span class="text-xs text-muted">{{ formatDateTime(value) || '-' }}</span>
         </template>
         <template #cell-actions="{ row }">
           <div class="flex items-center gap-2">
-            <button class="text-xs text-blue-600 hover:underline" @click="router.push(`/invoices/${row.id}`)">{{ t('common.view') }}</button>
+            <button class="text-xs text-accent hover:underline" @click="router.push(`/invoices/${row.id}`)">{{ t('common.view') }}</button>
             <button
               v-if="String(row.status).toUpperCase() === 'APPLIED'"
               class="text-xs text-yellow-600 hover:underline"
@@ -39,7 +54,7 @@
         </template>
       </DataTable>
 
-      <Pagination
+      <UiPagination
         v-if="pagination.total > 0"
         :page="pagination.page"
         :total="pagination.total"
@@ -62,8 +77,13 @@ import { useAppStore } from '@/stores'
 import type { Invoice } from '@/types/payment'
 import type { Column } from '@/components/common/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
+import Button from '@/components/ui/Button.vue'
+import FilterBar from '@/components/ui/FilterBar.vue'
+import ChipScroller from '@/components/ui/ChipScroller.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
+import UiPagination from '@/components/ui/UiPagination.vue'
 import DataTable from '@/components/common/DataTable.vue'
-import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 
@@ -85,13 +105,6 @@ const statusFilters = computed(() => [
 
 function statusLabel(value: string) {
   return t(`payment.invoices.status.${String(value).toLowerCase()}`, value)
-}
-
-function statusClass(value: string) {
-  const status = String(value).toUpperCase()
-  if (status === 'ISSUED') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-  if (status === 'CANCELLED') return 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-400'
-  return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
 }
 
 const columns = computed((): Column[] => [

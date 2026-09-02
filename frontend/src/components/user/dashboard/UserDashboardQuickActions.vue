@@ -1,70 +1,46 @@
 <template>
-  <div class="card">
-    <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
-      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('dashboard.quickActions') }}</h2>
-    </div>
-    <div class="space-y-3 p-4">
-      <button @click="router.push('/keys')" class="group flex w-full items-center gap-4 rounded-xl bg-gray-50 p-4 text-left transition-all duration-200 hover:bg-gray-100 dark:bg-dark-800/50 dark:hover:bg-dark-800">
-        <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-primary-100 transition-transform group-hover:scale-105 dark:bg-primary-900/30">
-          <Icon name="key" size="lg" class="text-primary-600 dark:text-primary-400" />
-        </div>
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('dashboard.createApiKey') }}</p>
-          <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('dashboard.generateNewKey') }}</p>
-        </div>
-        <Icon
-          name="chevronRight"
-          size="md"
-          class="text-gray-400 transition-colors group-hover:text-primary-500 dark:text-dark-500"
-        />
+  <GlassCard padding="sm">
+    <template #header>
+      <h2 class="text-lg font-semibold text-foreground">{{ t('dashboard.quickActions') }}</h2>
+    </template>
+    <div class="space-y-3">
+      <button type="button" class="dash-action" @click="router.push('/keys')">
+        <span class="dash-action-icon"><Icon name="key" size="lg" /></span>
+        <span class="min-w-0 flex-1 text-left">
+          <span class="dash-action-title">{{ t('dashboard.createApiKey') }}</span>
+          <span class="dash-action-desc">{{ t('dashboard.generateNewKey') }}</span>
+        </span>
+        <Icon name="chevronRight" size="md" class="text-muted" />
       </button>
 
-      <button @click="router.push('/usage')" class="group flex w-full items-center gap-4 rounded-xl bg-gray-50 p-4 text-left transition-all duration-200 hover:bg-gray-100 dark:bg-dark-800/50 dark:hover:bg-dark-800">
-        <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-100 transition-transform group-hover:scale-105 dark:bg-emerald-900/30">
-          <Icon name="chart" size="lg" class="text-emerald-600 dark:text-emerald-400" />
-        </div>
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('dashboard.viewUsage') }}</p>
-          <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('dashboard.checkDetailedLogs') }}</p>
-        </div>
-        <Icon
-          name="chevronRight"
-          size="md"
-          class="text-gray-400 transition-colors group-hover:text-emerald-500 dark:text-dark-500"
-        />
+      <button type="button" class="dash-action" @click="router.push('/usage')">
+        <span class="dash-action-icon"><Icon name="chart" size="lg" /></span>
+        <span class="min-w-0 flex-1 text-left">
+          <span class="dash-action-title">{{ t('dashboard.viewUsage') }}</span>
+          <span class="dash-action-desc">{{ t('dashboard.checkDetailedLogs') }}</span>
+        </span>
+        <Icon name="chevronRight" size="md" class="text-muted" />
       </button>
 
-      <button v-if="canUseBatchImage" @click="router.push('/batch-image')" class="group flex w-full items-center gap-4 rounded-xl bg-gray-50 p-4 text-left transition-all duration-200 hover:bg-gray-100 dark:bg-dark-800/50 dark:hover:bg-dark-800">
-        <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-sky-100 transition-transform group-hover:scale-105 dark:bg-sky-900/30">
-          <Icon name="sparkles" size="lg" class="text-sky-600 dark:text-sky-400" />
-        </div>
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('dashboard.batchImageAgent') }}</p>
-          <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('dashboard.batchImageAgentDesc') }}</p>
-        </div>
-        <Icon
-          name="chevronRight"
-          size="md"
-          class="text-gray-400 transition-colors group-hover:text-sky-500 dark:text-dark-500"
-        />
+      <button v-if="canUseBatchImage" type="button" class="dash-action" @click="router.push('/batch-image')">
+        <span class="dash-action-icon"><Icon name="sparkles" size="lg" /></span>
+        <span class="min-w-0 flex-1 text-left">
+          <span class="dash-action-title">{{ t('dashboard.batchImageAgent') }}</span>
+          <span class="dash-action-desc">{{ t('dashboard.batchImageAgentDesc') }}</span>
+        </span>
+        <Icon name="chevronRight" size="md" class="text-muted" />
       </button>
 
-      <button @click="router.push('/redeem')" class="group flex w-full items-center gap-4 rounded-xl bg-gray-50 p-4 text-left transition-all duration-200 hover:bg-gray-100 dark:bg-dark-800/50 dark:hover:bg-dark-800">
-        <div class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-amber-100 transition-transform group-hover:scale-105 dark:bg-amber-900/30">
-          <Icon name="gift" size="lg" class="text-amber-600 dark:text-amber-400" />
-        </div>
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('dashboard.redeemCode') }}</p>
-          <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('dashboard.addBalanceWithCode') }}</p>
-        </div>
-        <Icon
-          name="chevronRight"
-          size="md"
-          class="text-gray-400 transition-colors group-hover:text-amber-500 dark:text-dark-500"
-        />
+      <button type="button" class="dash-action" @click="router.push('/redeem')">
+        <span class="dash-action-icon"><Icon name="gift" size="lg" /></span>
+        <span class="min-w-0 flex-1 text-left">
+          <span class="dash-action-title">{{ t('dashboard.redeemCode') }}</span>
+          <span class="dash-action-desc">{{ t('dashboard.addBalanceWithCode') }}</span>
+        </span>
+        <Icon name="chevronRight" size="md" class="text-muted" />
       </button>
     </div>
-  </div>
+  </GlassCard>
 </template>
 
 <script setup lang="ts">
@@ -72,6 +48,7 @@ import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
+import GlassCard from '@/components/ui/GlassCard.vue'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
 const router = useRouter()
 const { t } = useI18n()
@@ -81,3 +58,30 @@ onMounted(() => {
   void refreshBatchImageAccess()
 })
 </script>
+<style scoped>
+.dash-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--surface-secondary) 70%, transparent);
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.dash-action-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
+  color: var(--accent);
+  flex: none;
+}
+.dash-action-title { display: block; font-size: 14px; font-weight: 600; color: var(--foreground); }
+.dash-action-desc { display: block; font-size: 12px; color: var(--muted); }
+</style>

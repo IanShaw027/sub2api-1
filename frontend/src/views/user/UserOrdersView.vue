@@ -1,38 +1,43 @@
 <template>
   <AppLayout>
+    <PageHeader :title="t('payment.orders.title')" :description="t('nav.myOrders')">
+      <template #actions>
+        <Button v-if="selectedIds.length > 0" variant="secondary" @click="showInvoiceDialog = true">
+          {{ t('payment.invoices.applySelected', { count: selectedIds.length }) }}
+        </Button>
+        <Button variant="secondary" @click="router.push('/invoices')">{{ t('payment.invoices.mine') }}</Button>
+        <Button variant="secondary" :disabled="loading" :title="t('common.refresh')" @click="fetchOrders">
+          <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
+        </Button>
+        <Button @click="router.push('/purchase')">{{ t('payment.result.backToRecharge') }}</Button>
+      </template>
+    </PageHeader>
     <div class="space-y-4">
-      <!-- Filters -->
-      <div class="card p-4">
-        <div class="flex flex-wrap items-center gap-3">
-          <Select v-model="currentFilter" :options="statusFilters" class="w-36" @change="fetchOrders" />
-          <div class="flex flex-1 items-center justify-end gap-2">
-            <button
-              v-if="selectedIds.length > 0"
-              class="btn btn-secondary"
-              @click="showInvoiceDialog = true"
-            >{{ t('payment.invoices.applySelected', { count: selectedIds.length }) }}</button>
-            <button class="btn btn-secondary" @click="router.push('/invoices')">{{ t('payment.invoices.mine') }}</button>
-            <button @click="fetchOrders" :disabled="loading" class="btn btn-secondary" :title="t('common.refresh')">
-              <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
-            </button>
-            <button class="btn btn-primary" @click="router.push('/purchase')">{{ t('payment.result.backToRecharge') }}</button>
-          </div>
-        </div>
+      <div class="flex flex-col gap-3">
+        <FilterBar>
+          <template #search>
+            <Select v-model="currentFilter" :options="statusFilters" class="w-36" @change="fetchOrders" />
+          </template>
+        </FilterBar>
+        <ChipScroller
+          :model-value="String(currentFilter || '')"
+          :chips="statusFilters.map((opt) => ({ value: String(opt.value), label: opt.label }))"
+          @update:model-value="(v) => { currentFilter = v || ''; fetchOrders() }"
+        />
       </div>
 
-      <!-- Table -->
       <OrderTable :orders="orders" :loading="loading">
         <template #actions="{ row }">
           <div class="flex items-center gap-2">
-            <label v-if="canInvoice(row)" class="inline-flex items-center gap-1 text-xs text-gray-600">
+            <label v-if="canInvoice(row)" class="inline-flex items-center gap-1 text-xs text-muted">
               <input type="checkbox" :checked="selectedIds.includes(row.id)" @change="toggleSelect(row.id)" />
               {{ t('payment.invoices.select') }}
             </label>
-            <button v-if="row.status === 'PENDING'" @click="handleCancel(row.id)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-yellow-600 hover:bg-yellow-50 dark:text-yellow-400 dark:hover:bg-yellow-900/20">
+            <button v-if="row.status === 'PENDING'" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-yellow-600 hover:bg-yellow-50" @click="handleCancel(row.id)">
               <Icon name="x" size="sm" />
               <span>{{ t('payment.orders.cancel') }}</span>
             </button>
-            <button v-if="canRequestRefund(row)" @click="openRefundDialog(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-900/20">
+            <button v-if="canRequestRefund(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50" @click="openRefundDialog(row)">
               <Icon name="dollar" size="sm" />
               <span>{{ t('payment.orders.requestRefund') }}</span>
             </button>
@@ -40,8 +45,7 @@
         </template>
       </OrderTable>
 
-      <!-- Pagination -->
-      <Pagination
+      <UiPagination
         v-if="pagination.total > 0"
         :page="pagination.page"
         :total="pagination.total"
@@ -51,30 +55,28 @@
       />
     </div>
 
-    <!-- Cancel Confirm Dialog -->
     <BaseDialog :show="!!cancelTargetId" :title="t('payment.orders.cancel')" width="narrow" @close="cancelTargetId = null">
-      <p class="text-sm text-gray-600 dark:text-gray-300">{{ t('payment.confirmCancel') }}</p>
+      <p class="text-sm text-muted">{{ t('payment.confirmCancel') }}</p>
       <template #footer>
         <div class="flex justify-end gap-3">
-          <button class="btn btn-secondary" @click="cancelTargetId = null">{{ t('common.cancel') }}</button>
-          <button class="btn btn-danger" :disabled="actionLoading" @click="confirmCancel">{{ actionLoading ? t('common.processing') : t('payment.orders.cancel') }}</button>
+          <Button variant="secondary" @click="cancelTargetId = null">{{ t('common.cancel') }}</Button>
+          <Button variant="danger" :disabled="actionLoading" @click="confirmCancel">{{ actionLoading ? t('common.processing') : t('payment.orders.cancel') }}</Button>
         </div>
       </template>
     </BaseDialog>
 
-    <!-- Refund Dialog -->
     <BaseDialog :show="!!refundTarget" :title="t('payment.orders.requestRefund')" @close="refundTarget = null">
       <div v-if="refundTarget" class="space-y-4">
-        <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-800">
+        <GlassCard variant="solid" padding="sm">
           <div class="flex justify-between text-sm">
-            <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderId') }}</span>
-            <span class="font-mono text-gray-900 dark:text-white">#{{ refundTarget.id }}</span>
+            <span class="text-muted">{{ t('payment.orders.orderId') }}</span>
+            <span class="font-mono text-foreground">#{{ refundTarget.id }}</span>
           </div>
           <div class="mt-2 flex justify-between text-sm">
-            <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.amount') }}</span>
-            <span class="text-gray-900 dark:text-white">${{ refundTarget.amount.toFixed(2) }}</span>
+            <span class="text-muted">{{ t('payment.orders.amount') }}</span>
+            <span class="text-foreground">${{ refundTarget.amount.toFixed(2) }}</span>
           </div>
-        </div>
+        </GlassCard>
         <div>
           <label class="input-label">{{ t('payment.refundReason') }}</label>
           <textarea v-model="refundReason" rows="3" class="input mt-1 w-full" :placeholder="t('payment.refundReasonPlaceholder')" />
@@ -82,15 +84,15 @@
       </div>
       <template #footer>
         <div class="flex justify-end gap-3">
-          <button class="btn btn-secondary" @click="refundTarget = null">{{ t('common.cancel') }}</button>
-          <button class="btn btn-primary" :disabled="actionLoading || !refundReason.trim()" @click="confirmRefund">{{ actionLoading ? t('common.processing') : t('payment.orders.requestRefund') }}</button>
+          <Button variant="secondary" @click="refundTarget = null">{{ t('common.cancel') }}</Button>
+          <Button :disabled="actionLoading || !refundReason.trim()" @click="confirmRefund">{{ actionLoading ? t('common.processing') : t('payment.orders.requestRefund') }}</Button>
         </div>
       </template>
     </BaseDialog>
 
     <BaseDialog :show="showInvoiceDialog" :title="t('payment.invoices.apply')" @close="showInvoiceDialog = false">
       <div class="space-y-3">
-        <p class="text-sm text-gray-500">{{ t('payment.invoices.applyHint', { count: selectedIds.length }) }}</p>
+        <p class="text-sm text-muted">{{ t('payment.invoices.applyHint', { count: selectedIds.length }) }}</p>
         <div>
           <label class="input-label">{{ t('payment.invoices.title') }}</label>
           <input v-model="invoiceForm.title" class="input mt-1 w-full" />
@@ -98,7 +100,7 @@
         <div>
           <label class="input-label">{{ t('payment.invoices.taxNumber') }} <span class="text-red-500">*</span></label>
           <input v-model="invoiceForm.tax_number" class="input mt-1 w-full" required />
-          <p class="mt-1 text-xs text-gray-500">{{ t('payment.invoices.taxNumberRequired') }}</p>
+          <p class="mt-1 text-xs text-muted">{{ t('payment.invoices.taxNumberRequired') }}</p>
         </div>
         <div>
           <label class="input-label">{{ t('payment.invoices.email') }}</label>
@@ -119,10 +121,10 @@
       </div>
       <template #footer>
         <div class="flex justify-end gap-3">
-          <button class="btn btn-secondary" @click="showInvoiceDialog = false">{{ t('common.cancel') }}</button>
-          <button class="btn btn-primary" :disabled="actionLoading || !invoiceForm.title.trim() || !invoiceForm.tax_number.trim() || !invoiceForm.email.trim()" @click="confirmInvoice">
+          <Button variant="secondary" @click="showInvoiceDialog = false">{{ t('common.cancel') }}</Button>
+          <Button :disabled="actionLoading || !invoiceForm.title.trim() || !invoiceForm.tax_number.trim() || !invoiceForm.email.trim()" @click="confirmInvoice">
             {{ actionLoading ? t('common.processing') : t('payment.invoices.apply') }}
-          </button>
+          </Button>
         </div>
       </template>
     </BaseDialog>
@@ -138,7 +140,12 @@ import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import type { PaymentOrder } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import Pagination from '@/components/common/Pagination.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
+import Button from '@/components/ui/Button.vue'
+import FilterBar from '@/components/ui/FilterBar.vue'
+import ChipScroller from '@/components/ui/ChipScroller.vue'
+import GlassCard from '@/components/ui/GlassCard.vue'
+import UiPagination from '@/components/ui/UiPagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'

@@ -1,14 +1,21 @@
 <template>
   <AppLayout>
+    <PageHeader :title="t('availableChannels.title')" :description="t('availableChannels.description')">
+      <template #actions>
+        <Button variant="secondary" :disabled="loading" :title="t('common.refresh', 'Refresh')" @click="loadChannels">
+          <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
+        </Button>
+      </template>
+    </PageHeader>
     <TablePageLayout>
       <template #filters>
-        <div class="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
-          <div class="flex flex-1 flex-wrap items-center gap-3">
-            <div class="relative w-full sm:w-80">
+        <FilterBar :search-placeholder="t('availableChannels.searchPlaceholder')">
+          <template #search>
+            <div class="relative w-full">
               <Icon
                 name="search"
                 size="md"
-                class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500"
+                class="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
               />
               <input
                 v-model="searchQuery"
@@ -17,19 +24,8 @@
                 class="input pl-10"
               />
             </div>
-          </div>
-
-          <div class="flex w-full flex-shrink-0 flex-wrap items-center justify-end gap-3 lg:w-auto">
-            <button
-              @click="loadChannels"
-              :disabled="loading"
-              class="btn btn-secondary"
-              :title="t('common.refresh', 'Refresh')"
-            >
-              <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
-            </button>
-          </div>
-        </div>
+          </template>
+        </FilterBar>
       </template>
 
       <template #table>
@@ -53,6 +49,9 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
+import Button from '@/components/ui/Button.vue'
+import FilterBar from '@/components/ui/FilterBar.vue'
 import Icon from '@/components/icons/Icon.vue'
 import AvailableChannelsTable from '@/components/channels/AvailableChannelsTable.vue'
 import userChannelsAPI, { type UserAvailableChannel } from '@/api/channels'

@@ -1,51 +1,63 @@
 <template>
   <AppLayout>
+    <PageHeader :title="t('tickets.title')" :description="t('tickets.description')">
+      <template #actions>
+        <Button variant="secondary" @click="resetFilters">{{ t('common.reset') }}</Button>
+        <Button variant="secondary" :disabled="loading" :title="t('common.refresh')" @click="loadTickets">
+          <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
+        </Button>
+        <Button class="tickets-create-desktop" @click="openCreateDialog">
+          <Icon name="plus" size="md" />
+          {{ t('tickets.create') }}
+        </Button>
+      </template>
+    </PageHeader>
     <TablePageLayout>
       <template #filters>
-        <div class="flex flex-wrap items-center gap-3">
-          <SearchInput
-            v-model="filters.search"
-            :placeholder="t('tickets.filters.search')"
-            class="w-full sm:w-64"
-            @search="applyFilters"
+        <div class="flex flex-col gap-3">
+          <FilterBar :search-placeholder="t('tickets.filters.search')">
+            <template #search>
+              <SearchInput
+                v-model="filters.search"
+                :placeholder="t('tickets.filters.search')"
+                class="w-full"
+                @search="applyFilters"
+              />
+            </template>
+            <template #filters>
+              <Select
+                v-model="filters.category"
+                :options="categoryFilterOptions"
+                :searchable="false"
+                class="w-full sm:w-40"
+                @change="applyFilters"
+              />
+              <Select
+                v-model="filters.status"
+                :options="statusFilterOptions"
+                :searchable="false"
+                class="w-full sm:w-40"
+                @change="applyFilters"
+              />
+              <input
+                v-model="filters.start_date"
+                type="date"
+                class="input w-full sm:w-40"
+                @change="applyFilters"
+              />
+              <input
+                v-model="filters.end_date"
+                type="date"
+                class="input w-full sm:w-40"
+                @change="applyFilters"
+              />
+            </template>
+          </FilterBar>
+          <ChipScroller
+            :model-value="String(filters.status || '')"
+            :chips="statusFilterOptions.map((opt) => ({ value: String(opt.value), label: opt.label }))"
+            @update:model-value="onStatusChipChange"
           />
-          <Select
-            v-model="filters.category"
-            :options="categoryFilterOptions"
-            :searchable="false"
-            class="w-full sm:w-40"
-            @change="applyFilters"
-          />
-          <Select
-            v-model="filters.status"
-            :options="statusFilterOptions"
-            :searchable="false"
-            class="w-full sm:w-40"
-            @change="applyFilters"
-          />
-          <input
-            v-model="filters.start_date"
-            type="date"
-            class="input w-full sm:w-40"
-            @change="applyFilters"
-          />
-          <input
-            v-model="filters.end_date"
-            type="date"
-            class="input w-full sm:w-40"
-            @change="applyFilters"
-          />
-
-          <div class="flex flex-1 flex-wrap items-center justify-end gap-2">
-            <button class="btn btn-secondary" @click="resetFilters">{{ t('common.reset') }}</button>
-            <button class="btn btn-secondary" :disabled="loading" :title="t('common.refresh')" @click="loadTickets">
-              <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
-            </button>
-            <button class="btn btn-primary" @click="openCreateDialog">
-              <Icon name="plus" size="md" class="mr-1" />
-              {{ t('tickets.create') }}
-            </button>
-          </div>
         </div>
       </template>
 
@@ -56,41 +68,43 @@
           :loading="showInitialLoading"
         >
           <template #cell-category="{ row }">
-            <span class="text-sm text-gray-900 dark:text-white">
+            <span class="text-sm text-foreground">
               {{ t(`tickets.categories.${row.category}`) }}
             </span>
           </template>
 
           <template #cell-title="{ row }">
-            <div class="max-w-[28rem] whitespace-normal break-words text-sm text-gray-900 dark:text-white">
+            <div class="max-w-[28rem] whitespace-normal break-words text-sm text-foreground">
               {{ row.title }}
               <span v-if="row.unread_by_user" class="ml-2 inline-block h-2 w-2 rounded-full bg-red-500 align-middle" />
             </div>
           </template>
 
           <template #cell-status="{ row }">
-            <span class="rounded-full px-2.5 py-1 text-xs font-medium" :class="getTicketStatusBadgeClass(row.status)">
-              {{ t(`tickets.statuses.${row.status}`) }}
-            </span>
+            <StatusBadge
+              :tone="row.status === 'resolved' ? 'success' : row.status === 'withdrawn' ? 'danger' : row.status === 'closed' ? 'muted' : row.status === 'submitted' ? 'accent' : 'warning'"
+              :label="t(`tickets.statuses.${row.status}`)"
+              dot
+            />
           </template>
 
           <template #cell-created_at="{ value }">
-            <span class="text-sm text-gray-500 dark:text-dark-400">
+            <span class="text-sm text-muted">
               {{ formatRelativeWithDateTime(value) }}
             </span>
           </template>
 
           <template #cell-updated_at="{ value }">
-            <span class="text-sm text-gray-500 dark:text-dark-400">
+            <span class="text-sm text-muted">
               {{ formatRelativeWithDateTime(value) }}
             </span>
           </template>
 
           <template #cell-actions="{ row }">
             <div class="flex flex-wrap items-center gap-2">
-              <button class="btn btn-secondary btn-sm" @click="router.push(`/tickets/${row.id}`)">{{ t('tickets.actions.view') }}</button>
-              <button v-if="row.status === 'withdrawn'" class="btn btn-secondary btn-sm" @click="openEdit(row)">{{ t('tickets.actions.edit') }}</button>
-              <button v-if="canCloseTicket(row.status)" class="btn btn-secondary btn-sm" :disabled="row.status === 'closed'" @click="closeTicketItem(row.id)">{{ t('tickets.actions.close') }}</button>
+              <Button variant="secondary" @click="router.push(`/tickets/${row.id}`)">{{ t('tickets.actions.view') }}</Button>
+              <Button v-if="row.status === 'withdrawn'" variant="secondary" @click="openEdit(row)">{{ t('tickets.actions.edit') }}</Button>
+              <Button v-if="canCloseTicket(row.status)" variant="secondary" :disabled="row.status === 'closed'" @click="closeTicketItem(row.id)">{{ t('tickets.actions.close') }}</Button>
             </div>
           </template>
 
@@ -99,9 +113,9 @@
               <Icon
                 name="inbox"
                 size="xl"
-                class="mb-4 h-12 w-12 text-gray-400 dark:text-dark-500"
+                class="mb-4 h-12 w-12 text-muted"
               />
-              <p class="text-lg font-medium text-gray-900 dark:text-gray-100">
+              <p class="text-lg font-medium text-foreground">
                 {{ t('tickets.empty') }}
               </p>
             </div>
@@ -110,7 +124,7 @@
       </template>
 
       <template #pagination>
-        <Pagination
+        <UiPagination
           v-if="pagination.total > 0"
           :page="pagination.page"
           :total="pagination.total"
@@ -120,6 +134,10 @@
         />
       </template>
     </TablePageLayout>
+    <Fab class="tickets-fab" :label="t('tickets.create')" @click="openCreateDialog">
+      <Icon name="plus" size="md" />
+      {{ t('tickets.create') }}
+    </Fab>
 
     <TicketCreateDialog
       :show="showCreateDialog"
@@ -138,7 +156,13 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
-import Pagination from '@/components/common/Pagination.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
+import Button from '@/components/ui/Button.vue'
+import FilterBar from '@/components/ui/FilterBar.vue'
+import ChipScroller from '@/components/ui/ChipScroller.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
+import Fab from '@/components/ui/Fab.vue'
+import UiPagination from '@/components/ui/UiPagination.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import SearchInput from '@/components/common/SearchInput.vue'
 import Select from '@/components/common/Select.vue'
@@ -149,7 +173,7 @@ import { useAppStore, useAuthStore } from '@/stores'
 import { ticketsAPI } from '@/api/tickets'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { formatRelativeWithDateTime } from '@/utils/format'
-import { getTicketStatusBadgeClass, ticketCategoryOptions, ticketStatusOptions, validateTicketPayload } from '@/utils/tickets'
+import { ticketCategoryOptions, ticketStatusOptions, validateTicketPayload } from '@/utils/tickets'
 import type { SupportTicket, TicketCategory, TicketRateGroupOption, TicketStatus } from '@/types/ticket'
 
 const { t } = useI18n()
@@ -228,6 +252,11 @@ async function loadTickets() {
       hasLoadedTickets.value = true
     }
   }
+}
+
+function onStatusChipChange(value: string) {
+  filters.status = (value || '') as TicketStatus | ''
+  applyFilters()
 }
 
 function applyFilters() {
@@ -318,3 +347,16 @@ onMounted(async () => {
   await Promise.all([loadTickets(), loadTicketContext()])
 })
 </script>
+<style scoped>
+.tickets-fab {
+  display: none;
+}
+@media (max-width: 767px) {
+  .tickets-create-desktop {
+    display: none;
+  }
+  .tickets-fab {
+    display: inline-flex;
+  }
+}
+</style>
