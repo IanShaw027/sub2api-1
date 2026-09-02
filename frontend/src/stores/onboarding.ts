@@ -18,6 +18,8 @@ export const useOnboardingStore = defineStore('onboarding', () => {
 
   // 全局 driver 实例，跨组件保持
   const driverInstance = shallowRef<Driver | null>(null)
+  /** Reactive tour flag — `driver.isActive()` is not tracked by Vue. */
+  const driverActive = ref(false)
 
   function setReplayCallback(callback: VoidCallback | null): void {
     replayCallback.value = callback
@@ -38,6 +40,13 @@ export const useOnboardingStore = defineStore('onboarding', () => {
 
   function setDriverInstance(driver: Driver | null): void {
     driverInstance.value = driver ? markRaw(driver) : null
+    if (!driver) {
+      driverActive.value = false
+    }
+  }
+
+  function setDriverActive(active: boolean): void {
+    driverActive.value = active
   }
 
   function getDriverInstance(): Driver | null {
@@ -45,7 +54,7 @@ export const useOnboardingStore = defineStore('onboarding', () => {
   }
 
   function isDriverActive(): boolean {
-    return driverInstance.value?.isActive?.() ?? false
+    return driverActive.value
   }
 
   function replay(): void {
@@ -79,8 +88,10 @@ export const useOnboardingStore = defineStore('onboarding', () => {
     setControlMethods,
     clearControlMethods,
     setDriverInstance,
+    setDriverActive,
     getDriverInstance,
     isDriverActive,
+    driverActive,
     replay,
     nextStep,
     isCurrentStep

@@ -557,6 +557,7 @@ export function useOnboardingTour(options: OnboardingOptions) {
 
     document.addEventListener('keydown', globalKeyboardHandler, { capture: true })
     driverInstance.drive(startIndex)
+    onboardingStore.setDriverActive(true)
   }
 
   const nextStep = async (delay = 300) => {

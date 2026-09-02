@@ -453,24 +453,6 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--border);
 }
 
-.header-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  color: var(--muted);
-  background: transparent;
-  border: 1px solid transparent;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.header-icon-btn:hover {
-  background: color-mix(in oklch, var(--foreground) 6%, transparent);
-  color: var(--foreground);
-}
-
 .mobile-topbar {
   display: flex;
   align-items: center;

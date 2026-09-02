@@ -345,15 +345,15 @@ onBeforeUnmount(() => {
 
 .mobile-drawer {
   position: fixed;
-  top: 0;
+  top: calc(56px + env(safe-area-inset-top, 0px));
   right: 0;
   bottom: 0;
-  z-index: 50;
+  z-index: 25;
   display: flex;
   flex-direction: column;
   width: 300px;
   box-sizing: border-box;
-  padding: calc(56px + env(safe-area-inset-top, 0px)) 14px 24px;
+  padding: 14px 14px 24px;
   background: color-mix(in oklch, var(--background) 88%, transparent);
   backdrop-filter: blur(28px);
   -webkit-backdrop-filter: blur(28px);
@@ -417,8 +417,9 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  flex: 1;
   height: 40px;
+  min-height: 40px;
+  flex: none;
   border-radius: 12px;
   font-size: 13px;
   font-weight: 600;
@@ -427,8 +428,12 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
 }
 
+.mobile-drawer-footer-row > .mobile-drawer-pill {
+  flex: 1;
+}
+
 .mobile-drawer-logout {
-  color: #dc2626;
+  color: var(--danger-text);
 }
 
 .mobile-drawer-overlay-enter-active,

@@ -364,7 +364,7 @@ describe('MobileDrawer', () => {
 
   it('hosts unique tour anchors in the open drawer while the tour is active', async () => {
     const { wrapper, appStore } = await mountSidebar('/admin/dashboard', 'admin', ({ onboardingStore }) => {
-      vi.spyOn(onboardingStore, 'isDriverActive').mockReturnValue(true)
+      onboardingStore.setDriverActive(true)
     })
     expect(appStore.mobileOpen).toBe(true)
     await nextTick()
@@ -409,13 +409,25 @@ describe('MobileDrawer', () => {
     wrapper.unmount()
   })
 
+  it('opens the drawer when the tour becomes active after mount', async () => {
+    const { wrapper, appStore } = await mountSidebar('/admin/dashboard', 'admin')
+    const onboardingStore = useOnboardingStore()
+    expect(appStore.mobileOpen).toBe(false)
+
+    onboardingStore.setDriverActive(true)
+    await nextTick()
+    expect(appStore.mobileOpen).toBe(true)
+    wrapper.unmount()
+  })
+
   it('closes the drawer when the onboarding tour ends on mobile', async () => {
-    const { wrapper, appStore, onboardingStore } = await mountSidebar('/admin/dashboard', 'admin')
-    onboardingStore.setDriverInstance({ isActive: () => true } as never)
+    const { wrapper, appStore } = await mountSidebar('/admin/dashboard', 'admin')
+    const onboardingStore = useOnboardingStore()
+    onboardingStore.setDriverActive(true)
     await nextTick()
     expect(appStore.mobileOpen).toBe(true)
 
-    onboardingStore.setDriverInstance(null)
+    onboardingStore.setDriverActive(false)
     await nextTick()
     expect(appStore.mobileOpen).toBe(false)
     wrapper.unmount()
@@ -455,6 +467,8 @@ describe('mobile shell breakpoints', () => {
     expect(headerSource).toContain(':aria-expanded="appStore.mobileOpen"')
     expect(headerSource).toContain('aria-controls="mobile-drawer"')
     expect(headerSource).not.toContain('header-icon-btn lg:hidden')
+    expect(headerSource).not.toContain('.header-icon-btn {')
+    expect(styleSource).toContain('.header-icon-btn {')
     expect((headerSource.match(/<AnnouncementBell/g) ?? []).length).toBe(1)
   })
 })
