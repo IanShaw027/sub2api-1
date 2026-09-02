@@ -1,25 +1,40 @@
 <template>
-  <AuthLayout>
-    <div class="space-y-6">
-      <!-- Title -->
-      <div class="text-center">
-        <h2 class="text-2xl font-bold text-gray-900 dark:text-white">
-          {{ t('auth.welcomeBack') }}
-        </h2>
-        <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
-          {{ t('auth.signInToAccount') }}
-        </p>
+  <div class="login-page">
+    <GlassCard class="login-brand" padding="lg">
+      <div class="login-brand-inner">
+        <div class="login-brand-mark">
+          <img :src="siteLogo || '/logo.svg'" alt="" />
+          <span>{{ siteName }}</span>
+        </div>
+        <div class="login-brand-copy">
+          <h1>{{ t('home.heroSubtitle') }}</h1>
+          <p>{{ siteSubtitle || t('home.heroDescription') }}</p>
+          <ul>
+            <li>{{ t('home.features.unifiedGateway') }} · {{ t('home.features.unifiedGatewayDesc') }}</li>
+            <li>{{ t('home.features.multiAccount') }} · {{ t('home.features.multiAccountDesc') }}</li>
+            <li>{{ t('home.features.balanceQuota') }} · {{ t('home.features.balanceQuotaDesc') }}</li>
+          </ul>
+        </div>
+        <StatusBadge tone="success" dot :label="t('home.providers.supported')" />
       </div>
+    </GlassCard>
+
+    <div class="login-form-wrap">
+      <GlassCard class="login-card" padding="lg">
+        <div class="login-title">
+          <h2>{{ t('auth.welcomeBack') }}</h2>
+          <p>{{ t('auth.signInToAccount') }}</p>
+        </div>
       <!-- Login Form -->
-      <form @submit.prevent="handleLogin" class="space-y-5">
+      <form @submit.prevent="handleLogin" class="login-form">
         <!-- Email Input -->
         <div>
-          <label for="email" class="input-label">
+          <label for="email" class="login-label">
             {{ t('auth.emailLabel') }}
           </label>
           <div class="relative">
             <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-              <Icon name="mail" size="md" class="text-gray-400 dark:text-dark-500" />
+              <Icon name="mail" size="md" class="text-muted" />
             </div>
             <input
               id="email"
@@ -29,8 +44,8 @@
               autofocus
               autocomplete="email"
               :disabled="authActionDisabled"
-              class="input pl-11"
-              :class="{ 'input-error': errors.email }"
+              class="field pl-11"
+              :class="{ 'ui-text-input-error': errors.email }"
               :placeholder="t('auth.emailPlaceholder')"
             />
           </div>
@@ -38,12 +53,12 @@
 
         <!-- Password Input -->
         <div>
-          <label for="password" class="input-label">
+          <label for="password" class="login-label">
             {{ t('auth.passwordLabel') }}
           </label>
           <div class="relative">
             <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-              <Icon name="lock" size="md" class="text-gray-400 dark:text-dark-500" />
+              <Icon name="lock" size="md" class="text-muted" />
             </div>
             <input
               id="password"
@@ -52,15 +67,15 @@
               required
               autocomplete="current-password"
               :disabled="authActionDisabled"
-              class="input pl-11 pr-11"
-              :class="{ 'input-error': errors.password }"
+              class="field pl-11 pr-11"
+              :class="{ 'ui-text-input-error': errors.password }"
               :placeholder="t('auth.passwordPlaceholder')"
             />
             <button
               type="button"
               @click="showPassword = !showPassword"
               :disabled="authActionDisabled"
-              class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-dark-300"
+              class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-muted"
             >
               <Icon v-if="showPassword" name="eyeOff" size="md" />
               <Icon v-else name="eye" size="md" />
@@ -71,7 +86,7 @@
             <router-link
               v-if="passwordResetEnabled && !backendModeEnabled"
               to="/forgot-password"
-              class="text-sm font-medium text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
+              class="login-link"
             >
               {{ t('auth.forgotPassword') }}
             </router-link>
@@ -97,35 +112,16 @@
           />
         </div>
 
-        <!-- Submit Button -->
-        <button
-          type="submit"
+        <Button
+          native-type="submit"
+          size="md"
+          class="w-full"
           :disabled="authActionDisabled || (turnstileWidgetActive && !turnstileToken)"
-          class="btn btn-primary w-full"
+          :loading="isLoading"
         >
-          <svg
-            v-if="isLoading"
-            class="-ml-1 mr-2 h-4 w-4 animate-spin text-white"
-            fill="none"
-            viewBox="0 0 24 24"
-          >
-            <circle
-              class="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              stroke-width="4"
-            ></circle>
-            <path
-              class="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            ></path>
-          </svg>
-          <Icon v-else name="login" size="md" class="mr-2" />
+          <Icon v-if="!isLoading" name="login" size="md" />
           {{ isLoading ? t('auth.signingIn') : t('auth.signIn') }}
-        </button>
+        </Button>
 
         <LoginAgreementPrompt
           v-if="loginAgreementEnabled"
@@ -140,24 +136,22 @@
         />
 
         <div v-if="showPasskeyLogin || showOAuthLogin" class="space-y-3 pt-1">
-          <div class="flex items-center gap-3">
-            <div class="h-px flex-1 bg-gray-200 dark:bg-dark-700"></div>
-            <span class="text-xs text-gray-500 dark:text-dark-400">
-              {{ t('auth.oauthOrContinue') }}
-            </span>
-            <div class="h-px flex-1 bg-gray-200 dark:bg-dark-700"></div>
+          <div class="login-divider">
+            <span>{{ t('auth.oauthOrContinue') }}</span>
           </div>
 
-          <button
+          <Button
             v-if="showPasskeyLogin"
-            type="button"
-            class="btn btn-secondary w-full"
+            variant="secondary"
+            size="md"
+            class="btn-secondary w-full"
             :disabled="authActionDisabled"
+            :loading="passkeyLoading"
             @click="handlePasskeyLogin"
           >
-            <Icon name="key" size="md" class="mr-2" />
+            <Icon v-if="!passkeyLoading" name="key" size="md" />
             {{ passkeyLoading ? t('auth.passkeySigningIn') : t('auth.passkeySignIn') }}
-          </button>
+          </Button>
 
           <EmailOAuthButtons
             :disabled="authActionDisabled"
@@ -194,21 +188,15 @@
           />
         </div>
       </form>
+        <p v-if="!backendModeEnabled" class="login-footer">
+          {{ t('auth.dontHaveAccount') }}
+          <router-link to="/register" class="login-link">
+            {{ t('auth.signUp') }}
+          </router-link>
+        </p>
+      </GlassCard>
     </div>
-
-    <!-- Footer -->
-    <template v-if="!backendModeEnabled" #footer>
-      <p class="text-gray-500 dark:text-dark-400">
-        {{ t('auth.dontHaveAccount') }}
-        <router-link
-          to="/register"
-          class="font-medium text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300"
-        >
-          {{ t('auth.signUp') }}
-        </router-link>
-      </p>
-    </template>
-  </AuthLayout>
+  </div>
 
   <!-- 2FA Modal -->
   <TotpLoginModal
@@ -225,7 +213,6 @@
 import { computed, ref, reactive, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { AuthLayout } from '@/components/layout'
 import LinuxDoOAuthSection from '@/components/auth/LinuxDoOAuthSection.vue'
 import DingTalkOAuthSection from '@/components/auth/DingTalkOAuthSection.vue'
 import OidcOAuthSection from '@/components/auth/OidcOAuthSection.vue'
@@ -234,8 +221,12 @@ import EmailOAuthButtons from '@/components/auth/EmailOAuthButtons.vue'
 import LoginAgreementPrompt from '@/components/auth/LoginAgreementPrompt.vue'
 import TotpLoginModal from '@/components/auth/TotpLoginModal.vue'
 import Icon from '@/components/icons/Icon.vue'
+import Button from '@/components/ui/Button.vue'
+import GlassCard from '@/components/ui/GlassCard.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
 import TurnstileWidget from '@/components/CaptchaChallenge.vue'
 import { useAuthStore, useAppStore } from '@/stores'
+import { sanitizeUrl } from '@/utils/url'
 import {
   buildOAuthLoginStartURL,
   getPublicSettings,
@@ -262,6 +253,10 @@ const LOGIN_AGREEMENT_STORAGE_KEY = 'sub2api_login_agreement_consent'
 const router = useRouter()
 const authStore = useAuthStore()
 const appStore = useAppStore()
+
+const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
+const siteLogo = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
+const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || '')
 
 // ==================== State ====================
 
@@ -805,14 +800,157 @@ function handle2FACancel(): void {
 </script>
 
 <style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: all 0.3s ease;
+.login-page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  background:
+    linear-gradient(color-mix(in oklch, var(--foreground) 2.5%, transparent) 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(90deg, color-mix(in oklch, var(--foreground) 2.5%, transparent) 1px, transparent 1px) 0 0 / 48px 48px,
+    radial-gradient(circle at 0% 0%, color-mix(in oklch, var(--accent) 22%, transparent) 0%, transparent 30rem),
+    radial-gradient(circle at 100% 0%, color-mix(in oklch, var(--success) 14%, transparent) 0%, transparent 24rem),
+    var(--background);
 }
 
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
+.login-brand {
+  margin: 20px 0 20px 20px;
+  border-radius: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-brand-inner {
+  min-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 28px 36px;
+}
+
+.login-brand-mark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.login-brand-mark img {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  object-fit: contain;
+}
+
+.login-brand-copy h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 46px;
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+}
+
+.login-brand-copy p,
+.login-brand-copy li {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.login-brand-copy ul {
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.login-form-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+
+.login-card {
+  width: 440px;
+  max-width: 100%;
+  border-radius: 20px;
+}
+
+.login-title h2 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.login-title p {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.login-form {
+  margin-top: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.login-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.login-link {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.login-footer {
+  margin: 16px 0 0;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  .login-page {
+    grid-template-columns: 1fr;
+  }
+
+  .login-brand {
+    display: none;
+  }
+
+  .login-form-wrap {
+    padding: 24px 16px;
+  }
 }
 </style>
