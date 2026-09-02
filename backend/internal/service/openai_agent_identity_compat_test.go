@@ -491,7 +491,16 @@ func TestOpenAIAgentIdentityChatRecoveryKeepsAutoDerivedSessionIsolationStable(t
 	secondKey := gjson.GetBytes(upstream.bodies[1], "prompt_cache_key").String()
 	require.NotEmpty(t, firstKey)
 	require.Equal(t, firstKey, secondKey)
-	require.Equal(t, openaiOutboundSessionUUID(context.Background(), account, 99, firstKey), upstream.requests[0].Header.Get("session_id"))
+	t.Cleanup(func() { leftoverSharedRepo.clear(account.ID) })
+	isolated := isolateOpenAIUpstreamSessionID(99, account, firstKey)
+	profile, err := LoadOutboundDeviceProfile(context.Background(), account)
+	require.NoError(t, err)
+	require.NotNil(t, profile)
+	wantSessionID, _, _, err := DeriveSessionIDs(profile.SessionNamespace, isolated)
+	require.NoError(t, err)
+	require.NotEmpty(t, wantSessionID)
+	require.NotEqual(t, generateSessionUUID(firstKey), wantSessionID)
+	require.Equal(t, wantSessionID, upstream.requests[0].Header.Get("session_id"))
 	require.Equal(t, upstream.requests[0].Header.Get("session_id"), upstream.requests[1].Header.Get("session_id"))
 }
 
