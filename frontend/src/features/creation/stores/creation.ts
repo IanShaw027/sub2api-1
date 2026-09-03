@@ -16,6 +16,7 @@ import type {
 } from '../types'
 
 const IMAGE_POLL_INTERVAL_MS = 3000
+const MAX_IMAGE_POLL_ATTEMPTS = 60
 const MAX_SEND_RETRIES = 2
 
 export const useCreationStore = defineStore('creation', () => {
@@ -41,6 +42,7 @@ export const useCreationStore = defineStore('creation', () => {
   const error = ref<string | null>(null)
 
   const pendingQueue = ref<PendingSendRequest[]>([])
+  const lastFailedSend = ref<{ sessionId: number; text: string } | null>(null)
   const initialized = ref(false)
 
   let streamAbort: AbortController | null = null
@@ -145,6 +147,7 @@ export const useCreationStore = defineStore('creation', () => {
   }
 
   async function selectSession(sessionId: number) {
+    clearImagePollers()
     selectedSessionId.value = sessionId
     const session = sessions.value.find((item) => item.id === sessionId)
     if (!session) return
@@ -183,6 +186,7 @@ export const useCreationStore = defineStore('creation', () => {
   }
 
   async function deleteSession(sessionId: number) {
+    clearImagePollers()
     await creationAPI.deleteSession(sessionId)
     sessions.value = sessions.value.filter((session) => session.id !== sessionId)
     if (selectedSessionId.value === sessionId) {
@@ -212,9 +216,16 @@ export const useCreationStore = defineStore('creation', () => {
   }
 
   function enqueueSend(sessionId: number, text: string) {
+    lastFailedSend.value = null
     pendingQueue.value.push({ sessionId, text, retryCount: 0 })
+  }
+
+  async function submitText(text: string) {
+    const trimmed = text.trim()
+    if (!trimmed || !selectedSessionId.value) return
+    enqueueSend(selectedSessionId.value, trimmed)
     if (!streaming.value) {
-      processQueue()
+      await processQueue()
     }
   }
 
@@ -224,9 +235,11 @@ export const useCreationStore = defineStore('creation', () => {
     try {
       await sendMessage(job.text, job.sessionId)
       pendingQueue.value.shift()
+      lastFailedSend.value = null
     } catch {
       job.retryCount += 1
       if (job.retryCount > MAX_SEND_RETRIES) {
+        lastFailedSend.value = { sessionId: job.sessionId, text: job.text }
         pendingQueue.value.shift()
       }
     }
@@ -278,17 +291,6 @@ export const useCreationStore = defineStore('creation', () => {
       })
 
       const finalAssistant = assistantText || streamingContent.value
-      messages.value = [
-        ...messages.value,
-        {
-          id: Date.now() + 1,
-          session_id: sessionId,
-          role: 'assistant',
-          content: finalAssistant,
-          model: model.value,
-          created_at: new Date().toISOString(),
-        },
-      ]
 
       await creationAPI.createSessionMessage(sessionId, {
         role: 'user',
@@ -299,7 +301,9 @@ export const useCreationStore = defineStore('creation', () => {
         content: finalAssistant,
         model: model.value,
       })
+      await loadMessages(sessionId)
     } catch (err) {
+      messages.value = messages.value.filter((msg) => msg.id !== optimisticUser.id)
       if (!(err instanceof DOMException && err.name === 'AbortError')) {
         error.value = err instanceof Error ? err.message : 'send failed'
         throw err
@@ -337,16 +341,23 @@ export const useCreationStore = defineStore('creation', () => {
       item.id === placeholder.id ? { ...mapped, id: placeholder.id } : item,
     )
 
-    pollImageTask(task.task_id, session.id, placeholder.id)
+    pollImageTask(task.task_id, session.id, placeholder.id, groupId.value)
   }
 
-  function pollImageTask(taskId: string, sessionId: number, placeholderId: number) {
-    if (!groupId.value) return
+  function pollImageTask(
+    taskId: string,
+    sessionId: number,
+    placeholderId: number,
+    pollGroupId: number,
+  ) {
     if (imagePollers.has(taskId)) return
 
+    let attempts = 0
+
     const timer = setInterval(async () => {
+      attempts += 1
       try {
-        const task = await creationAPI.getImageTask(groupId.value!, taskId)
+        const task = await creationAPI.getImageTask(pollGroupId, taskId)
         const status = task.status
         const mediaUrl = extractImageUrlFromTask(task)
 
@@ -371,6 +382,21 @@ export const useCreationStore = defineStore('creation', () => {
           clearInterval(timer)
           imagePollers.delete(taskId)
           await loadImageTasks(sessionId)
+          return
+        }
+
+        if (attempts >= MAX_IMAGE_POLL_ATTEMPTS) {
+          clearInterval(timer)
+          imagePollers.delete(taskId)
+          imageTasks.value = imageTasks.value.map((item) => {
+            if (item.id !== placeholderId) return item
+            return {
+              ...item,
+              status: 'failed',
+              error: 'Image generation timed out',
+              updated_at: new Date().toISOString(),
+            }
+          })
         }
       } catch (err) {
         clearInterval(timer)
@@ -383,9 +409,15 @@ export const useCreationStore = defineStore('creation', () => {
   }
 
   async function retryLastFailed() {
-    const failed = pendingQueue.value[0]
+    const failed = lastFailedSend.value
     if (!failed) return
-    await processQueue()
+    lastFailedSend.value = null
+    error.value = null
+    try {
+      await sendMessage(failed.text, failed.sessionId)
+    } catch {
+      lastFailedSend.value = failed
+    }
   }
 
   async function initialize() {
@@ -425,6 +457,7 @@ export const useCreationStore = defineStore('creation', () => {
     streamingContent.value = ''
     error.value = null
     pendingQueue.value = []
+    lastFailedSend.value = null
     initialized.value = false
   }
 
@@ -446,6 +479,7 @@ export const useCreationStore = defineStore('creation', () => {
     streamingContent,
     error,
     pendingQueue,
+    lastFailedSend,
     selectedSession,
     selectedGroup,
     selectedPlatform,
@@ -463,6 +497,7 @@ export const useCreationStore = defineStore('creation', () => {
     setModel,
     sendMessage,
     enqueueSend,
+    submitText,
     retryLastFailed,
     reset,
   }

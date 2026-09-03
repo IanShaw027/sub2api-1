@@ -19,7 +19,7 @@ export function parseSSELines(lines: string[]): ParsedSSEChunk[] {
   const chunks: ParsedSSEChunk[] = []
   for (const line of lines) {
     if (!line.startsWith('data:')) continue
-    const payload = line.slice(5).trimStart()
+    const payload = line.slice(5).trim()
     if (!payload) continue
     if (payload === '[DONE]') {
       chunks.push({ data: '', done: true })

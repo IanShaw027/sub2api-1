@@ -99,6 +99,46 @@ describe('creation store', () => {
     expect(store.pendingQueue[0].text).toBe('queued message')
   })
 
+  it('retryLastFailed resends the last failed message', async () => {
+    creationApi.streamCreationChat.mockRejectedValue(new Error('stream failed'))
+    creationApi.listSessionMessages.mockResolvedValue([])
+
+    const store = useCreationStore()
+    store.sessions = [
+      {
+        id: 1,
+        user_id: 1,
+        group_id: 2,
+        title: 'Chat',
+        model: 'gpt-4o',
+        mode: 'chat',
+        status: 'active',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ]
+    store.selectedSessionId = 1
+    store.groupId = 2
+    store.model = 'gpt-4o'
+
+    await store.submitText('hello again')
+    expect(store.lastFailedSend).toEqual({ sessionId: 1, text: 'hello again' })
+
+    creationApi.streamCreationChat.mockResolvedValue('world')
+    creationApi.createSessionMessage.mockResolvedValue({
+      id: 99,
+      session_id: 1,
+      role: 'assistant',
+      content: 'world',
+      created_at: '2026-01-01T00:00:00Z',
+    })
+
+    await store.retryLastFailed()
+
+    expect(creationApi.streamCreationChat).toHaveBeenCalled()
+    expect(store.lastFailedSend).toBeNull()
+  })
+
   it('reset clears state', () => {
     const store = useCreationStore()
     store.sessions = [

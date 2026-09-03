@@ -14,7 +14,7 @@ async function submit() {
   if (!text || store.streaming) return
   draft.value = ''
   try {
-    await store.sendMessage(text)
+    await store.submitText(text)
   } catch {
     draft.value = text
   }

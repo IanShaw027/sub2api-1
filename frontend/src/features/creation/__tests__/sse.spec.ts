@@ -33,4 +33,9 @@ describe('creation sse parser', () => {
     const { deltas } = parseSSEBuffer(buffer)
     expect(deltas).toEqual(['A', 'B'])
   })
+
+  it('recognizes [DONE] under CRLF framing', () => {
+    const chunks = parseSSELines(['data: [DONE]\r'])
+    expect(chunks).toEqual([{ data: '', done: true }])
+  })
 })
