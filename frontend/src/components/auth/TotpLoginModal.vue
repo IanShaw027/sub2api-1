@@ -1,9 +1,9 @@
 <template>
  <div class="fixed inset-0 z-50 overflow-y-auto">
  <div class="flex min-h-full items-center justify-center p-4">
- <div class="fixed inset-0 bg-black/50 transition-opacity"></div>
+ <div class="fixed inset-0 glass-modal-scrim transition-opacity"></div>
 
- <div class="relative w-full max-w-md transform rounded-xl bg-surface p-6 shadow-xl transition-all">
+ <div class="relative w-full max-w-md transform glass-card-solid rounded-hero p-6 transition-all">
  <!-- Header -->
  <div class="mb-6 text-center">
  <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--accent)_16%,transparent)]">

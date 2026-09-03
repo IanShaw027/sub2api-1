@@ -61,9 +61,9 @@
  <Transition name="agreement-fade">
  <div
  v-if="dialogVisible"
- class="fixed inset-0 z-[140] flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm"
+ class="fixed inset-0 z-[140] flex items-center justify-center overflow-y-auto glass-modal-scrim p-4"
  >
- <div class="w-full max-w-[600px] overflow-hidden rounded-2xl bg-surface shadow-2xl ring-1 ring-black/10">
+ <div class="w-full max-w-[600px] overflow-hidden glass-card-solid rounded-hero">
  <div class="border-b border-line bg-surface px-6 py-6">
  <div class="flex items-start gap-4">
  <span class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent ring-1 ring-[color-mix(in_oklch,var(--accent)_16%,transparent)]">

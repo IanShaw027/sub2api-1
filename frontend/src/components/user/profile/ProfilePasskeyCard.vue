@@ -132,9 +132,9 @@
  <!-- 删除确认：吊销凭据需验证当前密码，防止被窃会话静默移除 Passkey -->
  <div v-if="deleteTarget" class="fixed inset-0 z-50 overflow-y-auto">
  <div class="flex min-h-full items-center justify-center p-4">
- <div class="fixed inset-0 bg-black/50 transition-opacity" @click="closeDeleteDialog"></div>
+ <div class="fixed inset-0 glass-modal-scrim transition-opacity" @click="closeDeleteDialog"></div>
  <div
- class="relative w-full max-w-md transform rounded-xl bg-surface p-6 shadow-xl transition-all"
+ class="relative w-full max-w-md transform glass-card-solid rounded-hero p-6 transition-all"
  >
  <h3 class="text-lg font-semibold text-foreground">
  {{ t('profile.passkey.deleteTitle') }}

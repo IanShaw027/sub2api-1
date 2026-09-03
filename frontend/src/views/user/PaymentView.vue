@@ -231,10 +231,10 @@
  <!-- Renewal Plan Selection Modal -->
  <Teleport to="body">
  <Transition name="modal">
- <div v-if="showRenewalModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" @click.self="closeRenewalModal">
- <div class="relative w-full max-w-lg rounded-2xl border border-line bg-surface p-6 shadow-2xl ">
+ <div v-if="showRenewalModal" class="fixed inset-0 z-50 flex items-center justify-center glass-modal-scrim p-4" @click.self="closeRenewalModal">
+ <div class="relative w-full max-w-lg glass-card-solid rounded-hero p-6">
  <!-- Close button -->
- <button class="absolute right-4 top-4 rounded-lg p-1 text-muted transition-colors hover:bg-surface-2 hover:text-foreground" @click="closeRenewalModal">
+ <button type="button" class="modal-close absolute right-4 top-4" @click="closeRenewalModal">
  <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
  </button>
  <h3 class="mb-4 text-lg font-semibold text-foreground">{{ t('payment.selectPlan') }}</h3>

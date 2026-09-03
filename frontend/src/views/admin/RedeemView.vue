@@ -259,9 +259,9 @@
     <!-- Generate Codes Dialog -->
     <Teleport to="body">
       <div v-if="showGenerateDialog" class="fixed inset-0 z-50 flex items-center justify-center">
-        <div class="fixed inset-0 bg-black/50" @click="showGenerateDialog = false"></div>
+        <div class="fixed inset-0 glass-modal-scrim" @click="showGenerateDialog = false"></div>
         <div
-          class="relative z-10 w-full max-w-md rounded-xl bg-surface p-6 shadow-xl"
+          class="relative z-10 w-full max-w-md glass-card-solid rounded-hero p-6"
         >
           <h2 class="mb-4 text-lg font-semibold text-foreground">
             {{ t('admin.redeem.generateCodesTitle') }}
@@ -399,9 +399,9 @@
         v-if="showBatchUpdateDialog"
         class="fixed inset-0 z-50 flex items-center justify-center p-4"
       >
-        <div class="fixed inset-0 bg-black/50" @click="closeBatchUpdateDialog"></div>
+        <div class="fixed inset-0 glass-modal-scrim" @click="closeBatchUpdateDialog"></div>
         <div
-          class="relative z-10 w-full max-w-lg rounded-xl bg-surface p-6 shadow-xl"
+          class="relative z-10 w-full max-w-lg glass-card-solid rounded-hero p-6"
         >
           <h2 class="mb-1 text-lg font-semibold text-foreground">
             {{ t('admin.redeem.batchUpdateTitle') }}
@@ -510,8 +510,8 @@
     <!-- Generated Codes Result Dialog -->
     <Teleport to="body">
       <div v-if="showResultDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div class="fixed inset-0 bg-black/50" @click="closeResultDialog"></div>
-        <div class="relative z-10 w-full max-w-lg rounded-xl bg-surface shadow-xl">
+        <div class="fixed inset-0 glass-modal-scrim" @click="closeResultDialog"></div>
+        <div class="relative z-10 w-full max-w-lg glass-card-solid rounded-hero">
           <!-- Header -->
           <div
             class="flex items-center justify-between border-b border-line px-5 py-4"

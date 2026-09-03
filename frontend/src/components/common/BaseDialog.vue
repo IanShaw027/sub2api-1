@@ -11,7 +11,7 @@
  @click.self="handleClose"
  >
  <!-- Modal panel -->
- <div ref="dialogRef" :class="['modal-content', widthClasses]" @click.stop>
+ <div ref="dialogRef" :class="['modal-content', 'glass-card-solid', widthClasses]" @click.stop>
  <!-- Header -->
  <div class="modal-header">
  <h3 :id="dialogId" class="modal-title">
@@ -19,8 +19,9 @@
  </h3>
  <button
  v-if="showCloseButton"
+ type="button"
  @click="emit('close')"
- class="-mr-2 rounded-xl p-2 text-muted transition-colors hover:bg-surface-2 hover:text-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2"
+ class="modal-close"
  aria-label="Close modal"
  >
  <Icon name="x" size="md" />

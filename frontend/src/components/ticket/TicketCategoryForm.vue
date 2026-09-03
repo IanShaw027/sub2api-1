@@ -37,7 +37,7 @@
       </div>
     </div>
     <div v-else-if="category === 'rate_apply'" class="space-y-3">
-      <p class="text-sm text-gray-500">{{ t('tickets.form.rateHint') }}</p>
+      <p class="text-sm text-muted">{{ t('tickets.form.rateHint') }}</p>
       <label v-for="group in rateGroups" :key="group.group_id" class="flex items-center gap-2 text-sm">
         <input v-model="selectedGroupIds" type="checkbox" :value="group.group_id" :disabled="disabled" />
         <span>{{ group.name }} · {{ t('tickets.form.baseRate') }} {{ group.base_rate_multiplier }} · {{ t('tickets.form.effectiveRate') }} {{ group.effective_rate }}</span>

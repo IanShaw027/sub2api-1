@@ -176,7 +176,7 @@
           <div class="relative min-h-48">
             <div
               v-if="loading && series"
-              class="absolute inset-0 z-10 flex items-center justify-center bg-white/60"
+              class="absolute inset-0 z-10 flex items-center justify-center bg-surface/60"
             >
               <LoadingSpinner />
             </div>

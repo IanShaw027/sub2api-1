@@ -6410,11 +6410,11 @@
  <!-- Web Search Test Dialog -->
  <div
  v-if="wsTestDialogOpen"
- class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+ class="fixed inset-0 z-50 flex items-center justify-center glass-modal-scrim"
  @click.self="wsTestDialogOpen = false"
  >
  <div
- class="mx-4 w-full max-w-lg rounded-xl bg-surface p-6 shadow-xl "
+ class="mx-4 w-full max-w-lg glass-card-solid rounded-hero p-6"
  >
  <h3
  class="mb-4 text-lg font-semibold text-foreground "
@@ -7998,10 +7998,10 @@
  <!-- Affiliate add/edit modal -->
  <div
  v-if="affiliateModal.open"
- class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+ class="fixed inset-0 z-50 flex items-center justify-center glass-modal-scrim p-4"
  @click.self="closeAffiliateModal"
  >
- <div class="w-full max-w-md rounded-lg bg-surface p-6 shadow-xl ">
+ <div class="w-full max-w-md glass-card-solid rounded-hero p-6">
  <h3 class="mb-4 text-lg font-semibold">
  {{ affiliateModal.mode === 'add' ? t('admin.settings.features.affiliate.modal.addTitle') : t('admin.settings.features.affiliate.modal.editTitle') }}
  </h3>
@@ -8123,10 +8123,10 @@
  <!-- Affiliate batch rate modal -->
  <div
  v-if="affiliateBatchModal.open"
- class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+ class="fixed inset-0 z-50 flex items-center justify-center glass-modal-scrim p-4"
  @click.self="affiliateBatchModal.open = false"
  >
- <div class="w-full max-w-md rounded-lg bg-surface p-6 shadow-xl ">
+ <div class="w-full max-w-md glass-card-solid rounded-hero p-6">
  <h3 class="mb-4 text-lg font-semibold">
  {{ t('admin.settings.features.affiliate.batchModal.title', { count: affiliateState.selected.length }) }}
  </h3>

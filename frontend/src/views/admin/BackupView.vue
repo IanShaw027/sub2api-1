@@ -297,9 +297,9 @@
     <teleport to="body">
       <transition name="modal">
         <div v-if="showR2Guide" class="fixed inset-0 z-50 flex items-center justify-center p-4" @mousedown.self="showR2Guide = false">
-          <div class="fixed inset-0 bg-black/50" @click="showR2Guide = false"></div>
-          <div class="relative max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-surface p-6 shadow-2xl ">
-            <button type="button" class="absolute right-4 top-4 text-muted hover:text-foreground " @click="showR2Guide = false">
+          <div class="fixed inset-0 glass-modal-scrim" @click="showR2Guide = false"></div>
+          <div class="relative max-h-[85vh] w-full max-w-2xl overflow-y-auto glass-card-solid rounded-hero p-6">
+            <button type="button" class="modal-close absolute right-4 top-4" @click="showR2Guide = false">
               <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
 
@@ -384,11 +384,11 @@
           class="fixed inset-0 z-50 flex items-center justify-center p-4"
           @mousedown.self="closeDownloadParts"
         >
-          <div class="fixed inset-0 bg-black/50" @click="closeDownloadParts"></div>
-          <div class="relative max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl bg-surface p-6 shadow-2xl ">
+          <div class="fixed inset-0 glass-modal-scrim" @click="closeDownloadParts"></div>
+          <div class="relative max-h-[85vh] w-full max-w-lg overflow-y-auto glass-card-solid rounded-hero p-6">
             <button
               type="button"
-              class="absolute right-4 top-4 text-muted hover:text-foreground "
+              class="modal-close absolute right-4 top-4"
               :aria-label="t('common.close')"
               @click="closeDownloadParts"
             >

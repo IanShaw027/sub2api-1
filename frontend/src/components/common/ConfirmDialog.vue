@@ -6,11 +6,11 @@
  </div>
 
  <template #footer>
- <div class="flex justify-end space-x-3">
+ <div class="flex justify-end gap-2">
  <button
  @click="handleCancel"
  type="button"
- class="rounded-md border border-line bg-surface px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
+ class="btn-glass-secondary"
  >
  {{ cancelText }}
  </button>
@@ -18,12 +18,9 @@
  @click="handleConfirm"
  type="button"
  :disabled="confirming"
- :class="[
- 'rounded-md px-4 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
- danger
- ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500'
- : 'bg-accent hover:opacity-90 focus:ring-accent'
- ]"
+ :class="danger
+ ? 'inline-flex h-[34px] items-center justify-center rounded-btn bg-danger px-3.5 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50'
+ : 'btn-glass-primary disabled:cursor-not-allowed disabled:opacity-50'"
  >
  {{ confirmText }}
  </button>

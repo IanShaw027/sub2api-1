@@ -19,7 +19,7 @@
         {{ t('admin.accounts.kiro.followSteps') }}
       </p>
 
-      <div class="rounded-lg border border-cyan-300 bg-white/80 p-4">
+      <div class="rounded-lg border border-line bg-surface/80 p-4">
         <label class="mb-3 block text-sm font-medium text-cyan-900">
           {{ t('admin.accounts.inputMethod') }}
         </label>
@@ -51,7 +51,7 @@
 
       <div
         v-if="inputMode === 'oauth'"
-        class="rounded-lg border border-cyan-300 bg-white/80 p-4"
+        class="rounded-lg border border-line bg-surface/80 p-4"
       >
         <div class="flex items-start gap-3">
           <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-600 text-xs font-bold text-white">
@@ -127,7 +127,7 @@
 
       <div
         v-if="inputMode === 'oauth'"
-        class="rounded-lg border border-cyan-300 bg-white/80 p-4"
+        class="rounded-lg border border-line bg-surface/80 p-4"
       >
         <div class="flex items-start gap-3">
           <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-600 text-xs font-bold text-white">
@@ -146,7 +146,7 @@
 
       <div
         v-if="inputMode === 'oauth'"
-        class="rounded-lg border border-cyan-300 bg-white/80 p-4"
+        class="rounded-lg border border-line bg-surface/80 p-4"
       >
         <div class="flex items-start gap-3">
           <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-cyan-600 text-xs font-bold text-white">
@@ -310,7 +310,7 @@
               </p>
             </div>
 
-            <div class="rounded-md border border-amber-200 bg-white/80 p-3">
+            <div class="rounded-md border border-line bg-surface/80 p-3">
               <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
                 {{ t('admin.accounts.kiro.idcUserCodeLabel') }}
               </p>
@@ -334,7 +334,7 @@
               </p>
             </div>
 
-            <div class="rounded-md border border-amber-200 bg-white/80 p-3">
+            <div class="rounded-md border border-line bg-surface/80 p-3">
               <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">
                 {{ t('admin.accounts.kiro.idcVerificationUrlLabel') }}
               </p>
@@ -421,7 +421,7 @@
               </p>
             </div>
 
-            <div class="rounded-md border border-blue-200 bg-white/80 p-3">
+            <div class="rounded-md border border-line bg-surface/80 p-3">
               <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-accent">
                 {{ t('admin.accounts.kiro.externalIdpAuthUrlLabel') }}
               </p>
@@ -477,7 +477,7 @@
 
       <div
         v-if="inputMode === 'refresh_token'"
-        class="rounded-lg border border-cyan-300 bg-white/80 p-4"
+        class="rounded-lg border border-line bg-surface/80 p-4"
       >
         <p class="mb-3 text-sm text-cyan-700">
           {{ t('admin.accounts.kiro.manualRefreshTokenDesc') }}

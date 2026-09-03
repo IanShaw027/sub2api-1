@@ -63,7 +63,7 @@
           :credentials="account.credentials || {}"
           :extra="account.extra || {}"
           :usage-info="{}"
-          chip-class="inline-flex rounded bg-white/80 px-2 py-1 text-cyan-800"
+          chip-class="inline-flex rounded bg-surface/80 px-2 py-1 text-cyan-800"
         />
       </div>
 

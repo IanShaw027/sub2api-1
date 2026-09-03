@@ -32,6 +32,7 @@ describe('BaseDialog', () => {
     await nextTick()
 
     expect(document.body.querySelector<HTMLElement>('.modal-body')?.scrollTop).toBe(0)
+    expect(document.body.querySelector('.modal-content')?.classList.contains('glass-card-solid')).toBe(true)
     wrapper.unmount()
   })
 })

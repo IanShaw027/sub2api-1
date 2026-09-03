@@ -142,7 +142,7 @@
         <!-- Refresh Token Input (OpenAI / Antigravity / Mobile RT) -->
         <div v-if="inputMethod === 'refresh_token' || inputMethod === 'mobile_refresh_token'" class="space-y-4">
           <div
-            class="rounded-lg border border-blue-300 bg-white/80 p-4"
+            class="rounded-lg border border-line bg-surface/80 p-4"
           >
             <p class="mb-3 text-sm text-accent">
               {{ t(getOAuthKey('refreshTokenDesc')) }}
@@ -226,7 +226,7 @@
         <!-- SSO Cookie Input (Grok Web -> Grok Build) -->
         <div v-if="inputMethod === 'sso_cookie'" class="space-y-4">
           <div
-            class="rounded-lg border border-blue-300 bg-white/80 p-4"
+            class="rounded-lg border border-line bg-surface/80 p-4"
           >
             <p class="mb-3 text-sm text-accent">
               {{ t(getOAuthKey('ssoCookieDesc')) }}
@@ -301,7 +301,7 @@
         <!-- Grok email + password → ephemeral SSO → Build OAuth (password never stored) -->
         <div v-if="inputMethod === 'email_password'" class="space-y-4">
           <div
-            class="rounded-lg border border-blue-300 bg-white/80 p-4"
+            class="rounded-lg border border-line bg-surface/80 p-4"
           >
             <p class="mb-3 text-sm text-accent">
               {{ t(getOAuthKey('emailPasswordDesc')) }}
@@ -374,7 +374,7 @@
         <!-- Codex auth.json / session credential batch import -->
         <div v-if="inputMethod === 'codex_session' || inputMethod === 'agent_identity'" class="space-y-4">
           <div
-            class="rounded-lg border border-blue-300 bg-white/80 p-4"
+            class="rounded-lg border border-line bg-surface/80 p-4"
           >
             <p class="mb-3 text-sm text-accent">
               {{ t(isAgentIdentityInput ? 'admin.accounts.oauth.openai.agentIdentityDesc' : 'admin.accounts.oauth.openai.codexSessionDesc') }}
@@ -453,7 +453,7 @@
         <!-- Codex Personal Access Token -->
         <div v-if="inputMethod === 'codex_pat'" class="space-y-4">
           <div
-            class="rounded-lg border border-blue-300 bg-white/80 p-4"
+            class="rounded-lg border border-line bg-surface/80 p-4"
           >
             <p class="mb-3 text-sm text-accent">
               {{ t('admin.accounts.oauth.openai.codexPatDesc') }}
@@ -526,7 +526,7 @@
         <!-- Cookie Auto-Auth Form -->
         <div v-if="inputMethod === 'cookie'" class="space-y-4">
           <div
-            class="rounded-lg border border-blue-300 bg-white/80 p-4"
+            class="rounded-lg border border-line bg-surface/80 p-4"
           >
             <p class="mb-3 text-sm text-accent">
               {{ t('admin.accounts.oauth.cookieAutoAuthDesc') }}
@@ -663,7 +663,7 @@
 
           <!-- Step 1: Generate Auth URL -->
           <div
-            class="rounded-lg border border-blue-300 bg-white/80 p-4"
+            class="rounded-lg border border-line bg-surface/80 p-4"
           >
             <div class="flex items-start gap-3">
               <div
@@ -782,7 +782,7 @@
 
           <!-- Step 2: Open URL and authorize -->
           <div
-            class="rounded-lg border border-blue-300 bg-white/80 p-4"
+            class="rounded-lg border border-line bg-surface/80 p-4"
           >
             <div class="flex items-start gap-3">
               <div
@@ -823,7 +823,7 @@
 
           <!-- Step 3: Enter authorization code -->
           <div
-            class="rounded-lg border border-blue-300 bg-white/80 p-4"
+            class="rounded-lg border border-line bg-surface/80 p-4"
           >
             <div class="flex items-start gap-3">
               <div

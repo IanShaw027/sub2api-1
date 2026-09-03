@@ -103,7 +103,7 @@
           :credentials="account.credentials || {}"
           :extra="account.extra || {}"
           :include-profile-mode="false"
-          chip-class="inline-flex rounded bg-white/80 px-2 py-1 text-xs text-violet-800"
+          chip-class="inline-flex rounded bg-surface/80 px-2 py-1 text-xs text-violet-800"
         />
       </div>
 
