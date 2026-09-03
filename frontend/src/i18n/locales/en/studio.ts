@@ -49,5 +49,23 @@ export default {
       completed: 'Completed',
       failed: 'Failed',
     },
+    tokens: {
+      total: 'Total: {total} tokens',
+      detail: '📊 Input: {input} | Output: {output}',
+      ariaLabel: 'This message used {total} tokens in total: {input} input and {output} output',
+    },
+    a11y: {
+      messageLog: 'Conversation messages',
+      userMessage: 'User message, {timestamp}',
+      assistantMessage: 'Assistant message, {timestamp}',
+      systemMessage: 'System message, {timestamp}',
+      assistantStreaming: 'Assistant message, streaming',
+      loadingMessages: 'Loading messages',
+      composerInput: 'Message input',
+      closePreview: 'Close preview',
+      previewImage: 'Generated image preview',
+      loadingSessions: 'Loading sessions',
+      loadingTasks: 'Loading image tasks',
+    },
   },
 }

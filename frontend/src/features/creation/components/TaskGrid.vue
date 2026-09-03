@@ -12,8 +12,14 @@ const store = useCreationStore()
 </script>
 
 <template>
-  <div class="studio-task-grid">
-    <div v-if="store.imageTasksLoading && store.imageTasks.length === 0" class="text-sm text-muted">
+  <div class="studio-task-grid" :aria-busy="store.imageTasksLoading">
+    <div
+      v-if="store.imageTasksLoading && store.imageTasks.length === 0"
+      class="text-sm text-muted"
+      role="status"
+      aria-live="polite"
+      :aria-label="t('studio.a11y.loadingTasks')"
+    >
       {{ t('common.loading') }}
     </div>
 

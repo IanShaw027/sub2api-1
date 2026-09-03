@@ -47,5 +47,23 @@ export default {
       completed: '已完成',
       failed: '失败',
     },
+    tokens: {
+      total: '总计：{total} tokens',
+      detail: '📊 输入：{input} ｜ 输出：{output}',
+      ariaLabel: '本条消息共使用 {total} tokens，其中输入 {input}，输出 {output}',
+    },
+    a11y: {
+      messageLog: '对话消息',
+      userMessage: '用户消息，{timestamp}',
+      assistantMessage: '助手消息，{timestamp}',
+      systemMessage: '系统消息，{timestamp}',
+      assistantStreaming: '助手消息，正在生成',
+      loadingMessages: '正在加载消息',
+      composerInput: '消息输入框',
+      closePreview: '关闭预览',
+      previewImage: '生成的图像预览',
+      loadingSessions: '正在加载会话',
+      loadingTasks: '正在加载图像任务',
+    },
   },
 }

@@ -49,7 +49,7 @@ function openPreview() {
       <StatusBadge :tone="tone" dot>{{ statusLabel }}</StatusBadge>
       <p class="studio-task-prompt text-foreground">{{ task.prompt }}</p>
       <p class="text-xs text-muted">{{ task.model }}</p>
-      <p v-if="task.error" class="text-xs text-danger">{{ task.error }}</p>
+      <p v-if="task.error" class="text-xs text-danger" role="alert" aria-live="assertive">{{ task.error }}</p>
     </div>
   </article>
 </template>

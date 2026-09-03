@@ -9,6 +9,7 @@ const vueFiles = [
   'components/SessionList.vue',
   'components/MessageStream.vue',
   'components/MessageContent.vue',
+  'components/TokenStats.vue',
   'components/ComposerBar.vue',
   'components/ModelMenu.vue',
   'components/TaskGrid.vue',

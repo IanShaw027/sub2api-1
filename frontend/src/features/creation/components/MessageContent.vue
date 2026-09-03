@@ -3,12 +3,15 @@ import { computed } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import creationAPI from '../api'
+import TokenStats from './TokenStats.vue'
 import type { CreationMessageRole } from '../types'
 
 const props = defineProps<{
   role: CreationMessageRole | 'assistant' | 'user' | 'system'
   content: unknown
   streaming?: boolean
+  inputTokens?: number | null
+  outputTokens?: number | null
 }>()
 
 const text = computed(() => creationAPI.extractMessageText(props.content))
@@ -25,6 +28,11 @@ const html = computed(() => {
     <div v-if="role === 'assistant'" class="studio-markdown text-foreground" v-html="html" />
     <p v-else class="text-sm text-foreground whitespace-pre-wrap">{{ text }}</p>
     <span v-if="streaming" class="studio-cursor" aria-hidden="true">▍</span>
+    <TokenStats
+      v-if="role === 'assistant' && !streaming"
+      :input-tokens="inputTokens"
+      :output-tokens="outputTokens"
+    />
   </div>
 </template>
 

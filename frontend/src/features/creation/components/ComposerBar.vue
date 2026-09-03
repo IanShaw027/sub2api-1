@@ -34,6 +34,7 @@ async function submit() {
       v-model="draft"
       class="studio-composer-input"
       rows="3"
+      :aria-label="t('studio.a11y.composerInput')"
       :placeholder="store.isImageSession ? t('studio.composer.placeholderImage') : t('studio.composer.placeholderChat')"
       :disabled="store.streaming || (store.isImageSession && !store.hasImageModels)"
       @keydown.enter.exact.prevent="submit"
@@ -42,6 +43,7 @@ async function submit() {
       <Button
         variant="primary"
         :loading="store.streaming"
+        :aria-busy="store.streaming"
         :disabled="!canSubmit"
         @click="submit"
       >
@@ -51,10 +53,17 @@ async function submit() {
         {{ t('studio.retry') }}
       </Button>
     </div>
-    <p v-if="store.isImageSession && !store.hasImageModels" class="text-xs text-danger">
+    <p
+      v-if="store.isImageSession && !store.hasImageModels"
+      class="text-xs text-danger"
+      role="alert"
+      aria-live="assertive"
+    >
       {{ t('studio.errors.noImageModels') }}
     </p>
-    <p v-else-if="store.error" class="text-xs text-danger">{{ store.error }}</p>
+    <p v-else-if="store.error" class="text-xs text-danger" role="alert" aria-live="assertive">
+      {{ store.error }}
+    </p>
   </div>
 </template>
 

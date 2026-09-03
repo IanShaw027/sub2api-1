@@ -12,7 +12,9 @@
   --surface: oklch(100% 0 0);
   --surface-secondary: oklch(95.24% 0.0023 262.89);
   --surface-tertiary: oklch(92.5% 0.003 262.89);
-  --muted: oklch(55.17% 0.006 259.82);
+  /* 51.19% is the minimum L that clears 4.5:1 against --canvas (the darkest of the
+     light-theme surfaces muted text sits on); 50% keeps a small safety margin. */
+  --muted: oklch(50% 0.006 259.82);
   --border: oklch(90% 0.003 259.82);
   --accent: oklch(62.31% 0.1881 259.82);
   --success: oklch(73.29% 0.1946 151.55);
@@ -47,7 +49,10 @@
   --surface-secondary: oklch(25.7% 0.0023 262.89);
   --surface-tertiary: oklch(30% 0.003 262.89);
   --muted: oklch(70.5% 0.006 259.82);
-  --border: oklch(28% 0.003 259.82);
+  /* 50.38% is the minimum L that clears 3:1 against --surface (the closest-in-lightness
+     of the surfaces --border is drawn against in dark mode: canvas/background/surface);
+     51% keeps a small safety margin so input/field borders are perceivable (WCAG 1.4.11). */
+  --border: oklch(51% 0.003 259.82);
   --accent: oklch(62.31% 0.1881 259.82);
   --success: oklch(73.29% 0.1946 151.55);
   --success-text: var(--success);

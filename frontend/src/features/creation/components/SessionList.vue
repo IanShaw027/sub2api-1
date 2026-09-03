@@ -62,7 +62,14 @@ async function removeSession(id: number) {
       </Button>
     </div>
 
-    <div v-if="store.sessionsLoading" class="px-2 py-3 text-xs text-muted">
+    <div
+      v-if="store.sessionsLoading"
+      class="px-2 py-3 text-xs text-muted"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      :aria-label="t('studio.a11y.loadingSessions')"
+    >
       {{ t('common.loading') }}
     </div>
 
@@ -85,6 +92,7 @@ async function removeSession(id: number) {
           type="button"
           class="studio-session-delete text-muted"
           :title="t('studio.deleteSession')"
+          :aria-label="t('studio.deleteSession')"
           @click="removeSession(session.id)"
         >
           ×
