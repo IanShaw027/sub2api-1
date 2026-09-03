@@ -11,6 +11,7 @@ export default {
     cancel: 'Cancel',
     delete: 'Delete',
     edit: 'Edit',
+    moreActions: 'More actions',
     create: 'Create',
     update: 'Update',
     confirm: 'Confirm',

@@ -337,19 +337,29 @@ onUnmounted(() => {
 
 <style scoped>
 .select-trigger {
- @apply flex w-full items-center justify-between gap-2;
- @apply rounded-xl px-4 py-2.5 text-sm;
- @apply bg-surface;
- @apply border border-line;
- @apply text-foreground;
- @apply transition-all duration-200;
- @apply focus:border-accent focus:outline-none focus:ring-2 focus:ring-[color-mix(in_oklch,var(--accent)_30%,transparent)];
- @apply hover:border-line;
- @apply cursor-pointer;
+ display: flex;
+ width: 100%;
+ align-items: center;
+ justify-content: space-between;
+ gap: 8px;
+ height: 36px;
+ padding: 0 12px;
+ border-radius: var(--radius-field);
+ background: color-mix(in oklch, var(--surface) 85%, transparent);
+ border: 1px solid var(--border);
+ box-shadow: var(--field-shadow);
+ color: var(--foreground);
+ font-size: 13px;
+ transition: border-color 0.15s ease, box-shadow 0.15s ease;
+ cursor: pointer;
 }
 
+.select-trigger:focus,
+.select-trigger:focus-visible,
 .select-trigger-open {
- @apply border-accent ring-2 ring-[color-mix(in_oklch,var(--accent)_30%,transparent)];
+ outline: none;
+ border-color: var(--accent);
+ box-shadow: var(--field-shadow), 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent);
 }
 
 .select-trigger-disabled {
@@ -365,12 +375,18 @@ onUnmounted(() => {
 }
 
 .select-dropdown {
- @apply absolute z-[100] mt-2 w-full;
- @apply bg-surface;
- @apply rounded-xl;
- @apply border border-line;
- @apply shadow-lg shadow-black/10;
- @apply overflow-hidden;
+ position: absolute;
+ z-index: 100;
+ margin-top: 8px;
+ width: 100%;
+ padding: 6px;
+ border-radius: 12px;
+ background: color-mix(in oklch, var(--surface) 92%, transparent);
+ border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+ box-shadow: var(--shadow-pop);
+ backdrop-filter: blur(20px);
+ -webkit-backdrop-filter: blur(20px);
+ overflow: hidden;
 }
 
 .select-header {

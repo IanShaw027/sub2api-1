@@ -48,7 +48,7 @@
         </div>
 
         <div class="text-center">
-          <Button to="/login" size="md" class="inline-flex items-center gap-2">
+          <Button to="/login" size="lg" class="inline-flex items-center gap-2">
             <Icon name="login" size="md" />
             {{ t('auth.signIn') }}
           </Button>

@@ -32,7 +32,7 @@ const sizeClasses = computed(() => {
   const sizes: Record<SpinnerSize, string> = {
     sm: 'w-4 h-4',
     md: 'w-5 h-5',
-    lg: 'w-8 h-8',
+    lg: 'w-6 h-6',
     xl: 'w-12 h-12'
   }
   return sizes[props.size]

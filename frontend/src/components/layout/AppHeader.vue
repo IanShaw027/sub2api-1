@@ -380,7 +380,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 56px;
+  height: 52px;
   padding: 0 16px 0 20px;
   background: color-mix(in oklch, var(--background) 88%, transparent);
   backdrop-filter: blur(20px);
@@ -445,11 +445,11 @@ onBeforeUnmount(() => {
 /* ---------- Desktop (≥768) · 60px, transparent ---------- */
 .topbar {
   display: none;
-  height: 60px;
+  height: 56px;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 6px 24px 0 20px;
+  padding: 0 24px 0 20px;
 }
 
 .topbar-crumbs {
@@ -484,7 +484,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 34px;
+  height: 36px;
   width: 230px;
   padding: 0 12px;
   border-radius: var(--radius-field);

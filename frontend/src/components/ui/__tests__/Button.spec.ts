@@ -13,9 +13,9 @@ describe('Button', () => {
     expect(tokensCss).toContain('--radius-btn: 10px')
   })
 
-  it('applies 42px md size and remaining variants', () => {
+  it('applies 42px lg size and remaining variants', () => {
     expect(readUi('Button.vue')).toContain('height: 42px')
-    expect(mount(Button, { props: { size: 'md' } }).classes()).toContain('ui-btn-md')
+    expect(mount(Button, { props: { size: 'lg' } }).classes()).toContain('ui-btn-lg')
     expect(mount(Button, { props: { variant: 'secondary' } }).classes()).toContain('btn-glass-secondary')
     expect(mount(Button, { props: { variant: 'ghost' } }).classes()).toContain('ui-btn-ghost')
     expect(mount(Button, { props: { variant: 'danger' } }).classes()).toContain('ui-btn-danger')

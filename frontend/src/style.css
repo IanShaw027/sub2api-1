@@ -94,6 +94,30 @@
     outline-offset: 2px;
   }
 
+  /* Glass focus ring: interactive primitives use a soft accent halo instead of
+     the browser default outline (ui-standards.md §1/§7). */
+  .field:focus-visible,
+  .btn:focus-visible,
+  .icon-btn:focus-visible,
+  .filter-pill:focus-visible,
+  .segmented-item:focus-visible,
+  .dropdown-item:focus-visible,
+  a:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
   input[type='number']::-webkit-inner-spin-button,
   input[type='number']::-webkit-outer-spin-button {
     -webkit-appearance: none;
@@ -329,7 +353,7 @@
   }
 
   .btn-xs {
-    height: 28px;
+    height: 26px;
     padding: 0 9px;
     border-radius: 8px;
     font-size: 12px;
@@ -469,8 +493,8 @@
   textarea.input,
   textarea.field {
     height: auto;
-    min-height: 88px;
-    padding: 8px 12px;
+    min-height: 96px;
+    padding: 10px 12px;
     line-height: 1.55;
     resize: vertical;
   }
@@ -499,7 +523,7 @@
   .input-error:focus,
   .field-error:focus {
     border-color: var(--danger);
-    box-shadow: var(--field-shadow), 0 0 0 3px color-mix(in oklch, var(--danger) 18%, transparent);
+    box-shadow: var(--field-shadow), 0 0 0 3px color-mix(in oklch, var(--danger) 14%, transparent);
   }
 
   .input-label {
@@ -600,7 +624,7 @@
   }
 
   .segmented-sm {
-    height: 28px;
+    height: 30px;
     border-radius: 9px;
     font-size: 12px;
   }
@@ -711,6 +735,24 @@
     border-radius: 999px;
     background: currentColor;
     flex: none;
+  }
+
+  /* Live status dot (real-time tones) pulses via s2a-pulse. */
+  .badge-live.badge-dot::before,
+  .badge-dot.badge-live::before {
+    animation: s2a-pulse 1.6s ease-in-out infinite;
+  }
+
+  @keyframes s2a-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.45;
+      transform: scale(0.85);
+    }
   }
 
   /* Square "type" tag: OAuth / API Key / 默认 */
@@ -971,6 +1013,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
+    height: 64px;
     padding: 12px 14px;
     border-radius: 12px;
     background: color-mix(in oklch, var(--surface) 72%, transparent);
@@ -994,14 +1037,14 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 12.5px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--muted);
   }
 
   .summary-chip-dot {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
     border-radius: 999px;
     flex: none;
   }
@@ -1012,6 +1055,57 @@
     font-weight: 800;
     letter-spacing: -0.03em;
     font-variant-numeric: tabular-nums;
+    color: var(--foreground);
+  }
+
+  /* Summary chip row layout — ListPage puts N .summary-chip in this grid
+     (views only compose it, all sizing/color lives here). */
+  .summary-row {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  @media (max-width: 1023px) and (min-width: 768px) {
+    .summary-row {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 767px) {
+    .summary-row {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  /* Filter row layout — ListPage filter bar (search + pills + trailing meta) */
+  .filter-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .filter-search {
+    flex: none;
+    width: 260px;
+  }
+
+  @media (max-width: 767px) {
+    .filter-search {
+      width: 100%;
+    }
+  }
+
+  .filter-count {
+    margin-left: auto;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+
+  .filter-count b,
+  .filter-count strong {
+    font-weight: 600;
     color: var(--foreground);
   }
 
@@ -1144,9 +1238,9 @@
 
   .dropdown-label {
     padding: 8px 10px 4px;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--muted);
   }
@@ -1167,9 +1261,9 @@
   .modal-overlay,
   .dialog-overlay,
   .glass-modal-scrim {
-    background: var(--scrim);
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
+    background: color-mix(in oklch, var(--foreground) 40%, transparent);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
   }
 
   .modal-overlay,
@@ -1264,7 +1358,7 @@
 
   .modal-footer,
   .dialog-footer {
-    padding: 12px 20px 16px;
+    padding: 12px 20px;
     border-top: 1px solid var(--border);
     display: flex;
     align-items: center;
@@ -1278,11 +1372,11 @@
   }
 
   .modal-enter-active {
-    transition: opacity 250ms ease-out;
+    transition: opacity 160ms ease-out;
   }
 
   .modal-leave-active {
-    transition: opacity 200ms ease-in;
+    transition: opacity 160ms ease-in;
   }
 
   .modal-enter-from,
@@ -1291,16 +1385,16 @@
   }
 
   .modal-enter-active .modal-content {
-    transition: transform 250ms ease-out, opacity 250ms ease-out;
+    transition: transform 160ms ease-out, opacity 160ms ease-out;
   }
 
   .modal-leave-active .modal-content {
-    transition: transform 200ms ease-in, opacity 200ms ease-in;
+    transition: transform 160ms ease-in, opacity 160ms ease-in;
   }
 
   .modal-enter-from .modal-content,
   .modal-leave-to .modal-content {
-    transform: scale(0.96) translateY(6px);
+    transform: scale(0.98);
     opacity: 0;
   }
 
@@ -1322,6 +1416,23 @@
     .modal-enter-from .modal-content,
     .modal-leave-to .modal-content {
       transform: none;
+    }
+  }
+
+  /* <768px: modals/dialogs dock to the bottom as a sheet (top radius only) */
+  @media (max-width: 767px) {
+    .modal-overlay,
+    .dialog-overlay {
+      align-items: flex-end;
+      padding: 0;
+    }
+
+    .modal-content,
+    .dialog-container {
+      width: 100%;
+      max-width: none !important;
+      max-height: 92vh;
+      border-radius: 16px 16px 0 0;
     }
   }
 
@@ -1438,7 +1549,11 @@
     min-height: 0;
     overflow-y: auto;
     margin-top: 6px;
+    padding-bottom: 10px;
     scrollbar-width: none;
+    /* 导航溢出时末项渐隐，避免被底部主题 / 用户块的分隔线硬切 */
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 18px), transparent);
+    mask-image: linear-gradient(to bottom, black calc(100% - 18px), transparent);
   }
 
   .sidebar-nav::-webkit-scrollbar {
@@ -1707,6 +1822,21 @@
 
   .switch-active .switch-thumb {
     transform: translateX(16px);
+  }
+
+  /* Compact variant (table rows) · 32×18 with a 14px thumb. */
+  .switch-compact {
+    width: 32px;
+    height: 18px;
+  }
+
+  .switch-compact .switch-thumb {
+    width: 14px;
+    height: 14px;
+  }
+
+  .switch-compact.switch-active .switch-thumb {
+    transform: translateX(14px);
   }
 
   /* ---------- Code ---------- */

@@ -336,12 +336,12 @@ onBeforeUnmount(() => {
  position: fixed;
  inset: 0;
  z-index: 45;
- background: var(--scrim);
- backdrop-filter: blur(2px);
- -webkit-backdrop-filter: blur(2px);
+ background: color-mix(in oklch, var(--foreground) 40%, transparent);
+ backdrop-filter: blur(6px);
+ -webkit-backdrop-filter: blur(6px);
 }
 
-/* Design 08: full-height right drawer, 300px, 64px top inset for the status/top bar */
+/* Design 08: full-height right drawer, 280px, 64px top inset for the status/top bar */
 .mobile-drawer {
  position: fixed;
  top: 0;
@@ -351,7 +351,7 @@ onBeforeUnmount(() => {
  display: flex;
  flex-direction: column;
  gap: 2px;
- width: 300px;
+ width: 280px;
  max-width: 88vw;
  box-sizing: border-box;
  padding: calc(64px + env(safe-area-inset-top, 0px)) 14px calc(24px + env(safe-area-inset-bottom, 0px));

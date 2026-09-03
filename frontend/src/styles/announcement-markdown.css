@@ -25,7 +25,12 @@
 }
 
 .markdown-body a {
-  @apply font-medium text-blue-600 underline decoration-blue-600/30 decoration-2 underline-offset-2 transition-all hover:decoration-blue-600;
+  @apply font-medium text-accent underline decoration-2 underline-offset-2 transition-all;
+  text-decoration-color: color-mix(in oklch, var(--accent) 30%, transparent);
+}
+
+.markdown-body a:hover {
+  text-decoration-color: var(--accent);
 }
 
 .markdown-body ul,
@@ -46,28 +51,35 @@
 }
 
 .markdown-body li::marker {
-  @apply text-blue-600;
+  @apply text-accent;
 }
 
 .markdown-body blockquote {
-  @apply relative my-5 border-l-4 border-blue-500 bg-blue-50/50 py-3 pl-5 pr-4 italic text-foreground;
+  @apply relative my-5 border-l-4 py-3 pl-5 pr-4 italic text-foreground;
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 6%, transparent);
 }
 
 .markdown-body blockquote::before {
   content: '"';
-  @apply absolute -left-1 top-0 font-serif text-5xl text-blue-500/20;
+  @apply absolute -left-1 top-0 font-serif text-5xl;
+  color: color-mix(in oklch, var(--accent) 20%, transparent);
 }
 
 .markdown-body code {
-  @apply rounded-lg bg-surface-2 px-2 py-1 font-mono text-[13px] text-pink-600;
+  @apply rounded-lg px-2 py-1 font-mono text-[13px];
+  background: var(--code-bg);
+  color: color-mix(in oklch, white 92%, var(--code-bg));
 }
 
 .markdown-body pre {
-  @apply my-5 overflow-x-auto rounded-xl border border-line bg-background p-5;
+  @apply my-5 overflow-x-auto rounded-xl border border-line p-5;
+  background: var(--code-bg);
 }
 
 .markdown-body pre code {
-  @apply bg-transparent p-0 text-[13px] text-foreground;
+  @apply bg-transparent p-0 text-[13px];
+  color: color-mix(in oklch, white 92%, var(--code-bg));
 }
 
 .markdown-body hr {
@@ -93,7 +105,7 @@
 }
 
 .markdown-body th {
-  @apply bg-gradient-to-br from-blue-50 to-indigo-50 font-semibold text-foreground;
+  @apply bg-surface-2 font-semibold text-foreground;
 }
 
 .markdown-body tbody tr {

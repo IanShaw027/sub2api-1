@@ -2,7 +2,7 @@
  <div v-if="hasEntries || hasLegacyContactInfo">
  <button
  type="button"
- class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+ class="header-icon-btn !w-auto gap-1.5 px-2.5 text-sm font-medium"
  :aria-label="t('common.contactSupport')"
  @click="showDialog = true"
  >
@@ -21,9 +21,9 @@
  <div
  v-for="(entry, index) in normalizedEntries"
  :key="`${entry.image_url}-${index}`"
- class="rounded-2xl border border-line bg-surface-2/80 p-4"
+ class="rounded-xl border border-line bg-surface-2/80 p-4"
  >
- <div class="overflow-hidden rounded-2xl bg-surface p-3 shadow-sm ring-1 ring-line">
+ <div class="overflow-hidden rounded-xl bg-surface p-3 shadow-sm ring-1 ring-line">
  <img
  :src="entry.image_url"
  :alt="entry.note || t('common.contactSupport')"
@@ -40,7 +40,7 @@
  </div>
  <p
  v-else
- class="rounded-2xl border border-line bg-surface-2/80 p-4 text-sm leading-6 text-foreground whitespace-pre-line break-words"
+ class="rounded-xl border border-line bg-surface-2/80 p-4 text-sm leading-6 text-foreground whitespace-pre-line break-words"
  >
  {{ normalizedLegacyContactInfo }}
  </p>

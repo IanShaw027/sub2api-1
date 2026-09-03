@@ -1,8 +1,9 @@
-export type GlassCardVariant = 'glass' | 'solid' | 'transparent'
+export type GlassCardVariant = 'glass' | 'solid' | 'transparent' | 'flat'
 export type GlassCardPadding = 'sm' | 'md' | 'lg'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'icon'
-export type ButtonSize = 'sm' | 'md'
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 'warning' | 'icon'
+/** `xs` 26px · `sm` 32px · default (unset) 34px · `md` 42px (hero) */
+export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg'
 
 export type StatusBadgeTone = 'success' | 'warning' | 'danger' | 'muted' | 'accent'
 

@@ -6,56 +6,57 @@
 - [x] 0.4 确认 `i18n/locales/zh/misc.ts` 重复键已删除，运行 `node scripts/i18n-diff.mjs`（任务 15.2 提供；此处先用临时脚本）验证 zh/en 键差集为 0
 - [x] 0.5 字体自托管：下载 Manrope 600/700/800、Inter 400/500/600/700、JetBrains Mono 400/500 的 woff2 到 `public/fonts/`，在 `src/styles/fonts.css` 写 `@font-face`（`font-display: swap`），`index.html` 移除 Google Fonts 链接、只 preload Manrope 800 与 Inter 400；验证 `designTokens.spec.ts` 通过、离线加载 `/home` 标题为 Manrope、总字体体积 ≤ 400KB
 - [x] 0.6 修复其余失败测试到全绿：`HomeView.compact.spec`（5）、`AccountsView.bulkEdit / sparkShadow / usageWindowsHint`（4）、`TencentCaptchaActionGate`（2）、`PaymentMethodSelector`（2）、`AffiliateView`（1）、`BaseDialog`（1）、`TablePageLayout`（1）；只更新合法变化的选择器，不删除断言；验证 `vitest run` 0 失败
-- [ ] 0.7 `vue-tsc --noEmit` 0 错误、`vitest run` 0 失败、`npm run build` 成功；提交 `chore(glass): stabilize tree after interrupted redesign run (tasks 0.1–0.7)`
+- [x] 0.7 `vue-tsc --noEmit` 0 错误、`vitest run` 0 失败、`npm run build` 成功；提交 `chore(glass): stabilize tree after interrupted redesign run (tasks 0.1–0.7)`
 - [x] 0.8 把原型渲染脚本固化为 `frontend/scripts/ui/proto-shots.cjs`（输入 `.dc.html` 路径，输出每个画板 PNG，亮 / 暗两套），生成 `openspec/changes/glass-ui-redesign/reference/{light,dark}/*.png`；验证 9 个画板 × 2 主题 = 18 张图存在
 - [x] 0.9 固化截图工具 `frontend/scripts/ui/shot.cjs`（+ `scripts/ui/dev-preview.sh`）（封装 mock 后端 + Vite + CDP 截图；参数 route / w / h / role / theme / locale / full）与 `frontend/scripts/mock/server.js`；验证 `bash scripts/ui-shots.sh /admin/accounts 1440 1000 admin dark zh` 产出图片
 
 ## 1. 令牌与主题（lead 单代理）
 
-- [ ] 1.1 逐值核对 `styles/tokens.css` 亮 / 暗两组与 `ui-standards.md §1` 一致（含 `--code-bg --shadow --shadow-hover --shadow-pop --btn-hi --field-shadow --thumb`）；验证 `designTokens.spec.ts` 新增断言读取 computed style 并通过
-- [ ] 1.2 增加 `html[data-accent=sky|indigo|teal|violet]` 覆盖，默认 blue；验证设置 `data-accent="teal"` 后 `--accent` 变化且按钮 / 焦点环随之变化（结构测试）
-- [ ] 1.3 核对 `--display / --font-body / --font-mono` 字体栈与自托管 `@font-face` 对应；验证 `document.fonts.check('800 24px Manrope')` 为 true
-- [ ] 1.4 核对 `tailwind.config.js` 调色板 → 令牌映射（red/rose/orange/amber/yellow → danger/warning，emerald/green/teal → success，blue/indigo/sky/violet/purple → accent，gray/slate/zinc/neutral → surface/muted/border），确认 `<alpha-value>` 透明度修饰符可用；验证 `bg-red-50/50 text-emerald-600 border-blue-500` 编译产物含 `color-mix(...var(--danger)...)`
-- [ ] 1.5 定义并核对 `--bg-public`（48px 网格 + 三处径向光）与 `--bg-workspace`（仅环境光）；验证 `/login` 与 `/admin/accounts` 截图背景差异符合 spec
-- [ ] 1.6 全局微交互：`::selection`、`.btn:active scale(.98)`、滚动条 hover 显示、焦点环 3px 主色 18%、`prefers-reduced-motion` 关闭动画；验证 `style.css` 中对应规则存在且键盘聚焦字段截图有焦点环
-- [ ] 1.7 提交 `feat(glass): tokens verified against prototype (tasks 1.1–1.6)`
+- [x] 1.1 逐值核对 `styles/tokens.css` 亮 / 暗两组与 `ui-standards.md §1` 一致（含 `--code-bg --shadow --shadow-hover --shadow-pop --btn-hi --field-shadow --thumb`）；验证 `designTokens.spec.ts` 新增断言读取 computed style 并通过
+- [x] 1.2 增加 `html[data-accent=sky|indigo|teal|violet]` 覆盖，默认 blue；验证设置 `data-accent="teal"` 后 `--accent` 变化且按钮 / 焦点环随之变化（结构测试）
+- [x] 1.3 核对 `--display / --font-body / --font-mono` 字体栈与自托管 `@font-face` 对应；验证 `document.fonts.check('800 24px Manrope')` 为 true
+- [x] 1.4 核对 `tailwind.config.js` 调色板 → 令牌映射（red/rose/orange/amber/yellow → danger/warning，emerald/green/teal → success，blue/indigo/sky/violet/purple → accent，gray/slate/zinc/neutral → surface/muted/border），确认 `<alpha-value>` 透明度修饰符可用；验证 `bg-red-50/50 text-emerald-600 border-blue-500` 编译产物含 `color-mix(...var(--danger)...)`
+- [x] 1.5 定义并核对 `--bg-public`（48px 网格 + 三处径向光）与 `--bg-workspace`（仅环境光）；验证 `/login` 与 `/admin/accounts` 截图背景差异符合 spec
+- [x] 1.6 全局微交互：`::selection`、`.btn:active scale(.98)`、滚动条 hover 显示、焦点环 3px 主色 18%、`prefers-reduced-motion` 关闭动画；验证 `style.css` 中对应规则存在且键盘聚焦字段截图有焦点环
+- [x] 1.7 提交 `feat(glass): tokens verified against prototype (tasks 1.1–1.6)`
 
 ## 2. 全局类与 ui 组件库核对（2 个代理：A 按钮/字段/选择/开关/徽章/标签；B 卡片/表格/分页/弹层/反馈）
 
-- [ ] 2.1 `.btn*` 与 `ui/Button.vue`：变体 × 尺寸矩阵与 spec 一致（34/32/42/26、圆角 10/9/12/8、阴影、hover/active/disabled/loading）；验证 `designSystem.structure.spec.ts` 新增尺寸断言通过、组件预览截图对照原型 07
-- [ ] 2.2 `.field .input-lg .input-error` 与 `ui/TextInput.vue`、`ui/FieldLabel.vue`：36/40、圆角 12、`--field-shadow`、focus/error 外环、前后缀图标、文本域 96；验证结构测试 + 截图
-- [ ] 2.3 `ui/UiSelect.vue` + `.filter-pill` + `.dropdown*`：触发器 36、pill 变体、面板 92% 玻璃 + blur、选项 36、选中态对勾、搜索行 32、键盘导航；验证 `UiSelect.spec` 与截图
-- [ ] 2.4 `ui/ToggleSwitch.vue`（36×20 / 32×18）、`ui/Checkbox.vue`（16 r5，indeterminate）、`ui/SegmentedControl.vue`（36 / 30，键盘 ←→）；验证结构测试与截图
-- [ ] 2.5 `ui/StatusBadge.vue` + `.badge* .tag* .count-badge .chip*`：22px、tone 五档、圆点、pulse；验证结构测试与暗色对比度 ≥ 4.5:1（`scripts/check-contrast.js` 扩展）
-- [ ] 2.6 `ui/GlassCard.vue` + `.glass-card* .glass-ring .glass-inset .card-header/title/subtitle/body/footer`：72% 玻璃、圆角 14、变体、hover 阴影、禁止嵌套；验证结构测试与截图
-- [ ] 2.7 `ui/StatCard.vue`、`ui/MiniStatCard.vue`、`.summary-chip*`、`ui/EndpointCard.vue`、`ui/ProgressBar.vue`：尺寸与 spec 一致，sparkline 插槽，阈值配色；验证结构测试与截图
-- [ ] 2.8 `ui/PageHeader.vue`（compact / hero，<768 标题 20）、`ui/FilterBar.vue`（插槽、右侧元信息、<768 折叠为 44px 按钮 + 抽屉）、`ui/SettingsSection.vue` / `ui/SettingRow.vue`（240px 网格、14 20、单列断点）；验证结构测试与截图
-- [ ] 2.9 `ui/UiModal.vue`、`ui/UiDrawer.vue`、`common/ConfirmDialog.vue`、`common/BaseDialog.vue`（别名）：宽度档位、头尾结构、动画 160ms、焦点陷阱、Esc、移动端贴底；验证 `UiModal.spec` / `BaseDialog.spec` 通过、390 截图贴底
-- [ ] 2.10 `.toast* .notice-* .empty-state* .skeleton .spinner .tooltip-bubble .code .code-block .log-block .kbd .divider`：与 spec 尺寸一致；验证结构测试与截图
-- [ ] 2.11 `ui/Fab.vue`（52 r16）、`ui/ChipScroller.vue`、`ui/ListFade.vue`、`ui/UiPagination.vue`（28px、当前页主色）；验证结构测试
-- [ ] 2.12a 把各视图各自复制的 `.summary-row / .filter-row / .filter-search / .filter-count` scoped 布局类提升为 `style.css` 全局类（5 列 → 3 列 → 1 列断点、260px 搜索、右侧元信息），并在 RedeemView / TicketsView / AdminOrdersView 中改用；验证三页截图不变
-- [ ] 2.12 新建 5 个布局骨架 `components/layout/{PublicPageLayout,DashboardPageLayout,DetailPageLayout,SettingsPageLayout}.vue` 并把 `TablePageLayout.vue` 对齐 ListPage 配方（内容区 8/24/24/20、gap 14、桌面固定头 + 滚动表格、移动端卡片流）；验证 `TablePageLayout.spec` 通过、每个骨架有结构测试
-- [ ] 2.13 编写 `components/ui/README.md` 组件 → 尺寸 → 使用页面 映射（同原型组件映射表）；验证与 `ui-standards.md §4` 一致
-- [ ] 2.14 提交 `feat(glass): ui primitives aligned to component spec (tasks 2.1–2.13)`
+- [x] 2.1 `.btn*` 与 `ui/Button.vue`：变体 × 尺寸矩阵与 spec 一致（34/32/42/26、圆角 10/9/12/8、阴影、hover/active/disabled/loading）；验证 `designSystem.structure.spec.ts` 新增尺寸断言通过、组件预览截图对照原型 07
+- [x] 2.2 `.field .input-lg .input-error` 与 `ui/TextInput.vue`、`ui/FieldLabel.vue`：36/40、圆角 12、`--field-shadow`、focus/error 外环、前后缀图标、文本域 96；验证结构测试 + 截图
+- [x] 2.3 `ui/UiSelect.vue` + `.filter-pill` + `.dropdown*`：触发器 36、pill 变体、面板 92% 玻璃 + blur、选项 36、选中态对勾、搜索行 32、键盘导航；验证 `UiSelect.spec` 与截图
+- [x] 2.4 `ui/ToggleSwitch.vue`（36×20 / 32×18）、`ui/Checkbox.vue`（16 r5，indeterminate）、`ui/SegmentedControl.vue`（36 / 30，键盘 ←→）；验证结构测试与截图
+- [x] 2.5 `ui/StatusBadge.vue` + `.badge* .tag* .count-badge .chip*`：22px、tone 五档、圆点、pulse；验证结构测试与暗色对比度 ≥ 4.5:1（`scripts/check-contrast.js` 扩展）
+- [x] 2.1a `Button` 尺寸命名对齐规范（当前 默认=34、`md`=42、新增 `xs`=26 / `sm`=32）：把 `md` 改为 34、新增 `lg`=42，并更新唯一调用方 `ForgotPasswordView.vue` 与 `Button.spec.ts`；验证结构测试通过
+- [x] 2.6 `ui/GlassCard.vue` + `.glass-card* .glass-ring .glass-inset .card-header/title/subtitle/body/footer`：72% 玻璃、圆角 14、变体、hover 阴影、禁止嵌套；验证结构测试与截图
+- [x] 2.7 `ui/StatCard.vue`、`ui/MiniStatCard.vue`、`.summary-chip*`、`ui/EndpointCard.vue`、`ui/ProgressBar.vue`：尺寸与 spec 一致，sparkline 插槽，阈值配色；验证结构测试与截图
+- [x] 2.8 `ui/PageHeader.vue`（compact / hero，<768 标题 20）、`ui/FilterBar.vue`（插槽、右侧元信息、<768 折叠为 44px 按钮 + 抽屉）、`ui/SettingsSection.vue` / `ui/SettingRow.vue`（240px 网格、14 20、单列断点）；验证结构测试与截图
+- [x] 2.9 `ui/UiModal.vue`、`ui/UiDrawer.vue`、`common/ConfirmDialog.vue`、`common/BaseDialog.vue`（别名）：宽度档位、头尾结构、动画 160ms、焦点陷阱、Esc、移动端贴底；验证 `UiModal.spec` / `BaseDialog.spec` 通过、390 截图贴底
+- [x] 2.10 `.toast* .notice-* .empty-state* .skeleton .spinner .tooltip-bubble .code .code-block .log-block .kbd .divider`：与 spec 尺寸一致；验证结构测试与截图
+- [x] 2.11 `ui/Fab.vue`（52 r16）、`ui/ChipScroller.vue`、`ui/ListFade.vue`、`ui/UiPagination.vue`（28px、当前页主色）；验证结构测试
+- [x] 2.12a 把各视图各自复制的 `.summary-row / .filter-row / .filter-search / .filter-count` scoped 布局类提升为 `style.css` 全局类（5 列 → 3 列 → 1 列断点、260px 搜索、右侧元信息），并在 RedeemView / TicketsView / AdminOrdersView 中改用；验证三页截图不变
+- [x] 2.12 新建 5 个布局骨架 `components/layout/{PublicPageLayout,DashboardPageLayout,DetailPageLayout,SettingsPageLayout}.vue` 并把 `TablePageLayout.vue` 对齐 ListPage 配方（内容区 8/24/24/20、gap 14、桌面固定头 + 滚动表格、移动端卡片流）；验证 `TablePageLayout.spec` 通过、每个骨架有结构测试
+- [x] 2.13 编写 `components/ui/README.md` 组件 → 尺寸 → 使用页面 映射（同原型组件映射表）；验证与 `ui-standards.md §4` 一致
+- [x] 2.14 提交 `feat(glass): ui primitives aligned to component spec (tasks 2.1–2.13)`
 
 ## 3. common 组件（2 个代理：A 表格族；B 其余）
 
-- [ ] 3.1 `common/DataTable.vue`：表头 42 / 行 58–60 / hover 左轨 / sticky 列背景跟随 / 排序图标 / 复选外观 / 骨架行 / 卡内空态 / 横向阴影 / 滚动条；验证 `DataTable*.spec` 通过、`/admin/users` 截图
-- [ ] 3.2 `common/Pagination.vue`：容器 10 16、文案数字加粗、28px 项、每页数 pill、移动端按钮；验证 spec 与截图
-- [ ] 3.3 新建统一单元格组件 `components/common/cells/{NameIdCell,PlatformCell,TypeTagCell,StatusCell,UsageWindowCell,TodayStatsCell,MonoCell,TimeCell,ActionsCell}.vue`（改造自 `components/account/*Cell.vue` 与 `AccountTableActions.vue` 的可复用部分）；验证各有结构测试与 story 式截图
-- [ ] 3.4 `common/Select.vue`（含 pill 变体）、`SearchInput.vue`、`Input.vue`、`TextArea.vue`、`Toggle.vue`、`DateRangePicker.vue`、`ProxySelector.vue`、`ProxyRotationSelector.vue`、`GroupSelector.vue`、`GroupOptionItem.vue`：`.field` 36 配方；验证各 spec 与截图
-- [ ] 3.5 `common/StatusBadge.vue`、`GroupBadge.vue`、`GroupCapacityBadge.vue`、`PlatformTypeBadge.vue`、`HelpTooltip.vue`、`StatCard.vue`（改为 `ui/StatCard` 的薄包装或删除并迁移引用）；验证 spec 与截图
-- [ ] 3.6 `common/Toast.vue`、`EmptyState.vue`、`Skeleton.vue`、`LoadingSpinner.vue`、`NavigationProgress.vue`、`AnnouncementBell.vue`、`AnnouncementPopup.vue`、`ExportProgressDialog.vue`、`ImageUpload.vue`、`IpGeoBatchToolbar.vue`、`IpGeoCell.vue`、`MonitorQuotaView.vue`、`SubscriptionProgressMini.vue`、`AutoRefreshButton.vue`、`SupportQRCodesButton.vue`、`LocaleSwitcher.vue`、`VersionBadge.vue`：清除遗留类、对齐尺寸；验证 `vitest run src/components/common` 全绿、`lint:ui` 对目录 0 命中
-- [ ] 3.7 更新 `components/common/README.md`；提交 `feat(glass): common components (tasks 3.1–3.6)`
+- [x] 3.1 `common/DataTable.vue`：表头 42 / 行 58–60 / hover 左轨 / sticky 列背景跟随 / 排序图标 / 复选外观 / 骨架行 / 卡内空态 / 横向阴影 / 滚动条；验证 `DataTable*.spec` 通过、`/admin/users` 截图
+- [x] 3.2 `common/Pagination.vue`：容器 10 16、文案数字加粗、28px 项、每页数 pill、移动端按钮；验证 spec 与截图
+- [x] 3.3 新建统一单元格组件 `components/common/cells/{NameIdCell,PlatformCell,TypeTagCell,StatusCell,UsageWindowCell,TodayStatsCell,MonoCell,TimeCell,ActionsCell}.vue`（改造自 `components/account/*Cell.vue` 与 `AccountTableActions.vue` 的可复用部分）；验证各有结构测试与 story 式截图
+- [x] 3.4 `common/Select.vue`（含 pill 变体）、`SearchInput.vue`、`Input.vue`、`TextArea.vue`、`Toggle.vue`、`DateRangePicker.vue`、`ProxySelector.vue`、`ProxyRotationSelector.vue`、`GroupSelector.vue`、`GroupOptionItem.vue`：`.field` 36 配方；验证各 spec 与截图
+- [x] 3.5 `common/StatusBadge.vue`、`GroupBadge.vue`、`GroupCapacityBadge.vue`、`PlatformTypeBadge.vue`、`HelpTooltip.vue`、`StatCard.vue`（改为 `ui/StatCard` 的薄包装或删除并迁移引用）；验证 spec 与截图
+- [x] 3.6 `common/Toast.vue`、`EmptyState.vue`、`Skeleton.vue`、`LoadingSpinner.vue`、`NavigationProgress.vue`、`AnnouncementBell.vue`、`AnnouncementPopup.vue`、`ExportProgressDialog.vue`、`ImageUpload.vue`、`IpGeoBatchToolbar.vue`、`IpGeoCell.vue`、`MonitorQuotaView.vue`、`SubscriptionProgressMini.vue`、`AutoRefreshButton.vue`、`SupportQRCodesButton.vue`、`LocaleSwitcher.vue`、`VersionBadge.vue`：清除遗留类、对齐尺寸；验证 `vitest run src/components/common` 全绿、`lint:ui` 对目录 0 命中
+- [x] 3.7 更新 `components/common/README.md`；提交 `feat(glass): common components (tasks 3.1–3.6)`
 
 ## 4. 布局壳（1 个代理）
 
-- [ ] 4.1 `AppSidebar.vue`：对照 `Sidebar.dc.html` 与参考图核对分类、28px 项、激活态配方、折叠 60px、底部主题 / 用户块不遮挡导航末项（当前 `/admin/orders` 截图有遮挡）；验证 1440 / 900 / 390 截图 + `AppSidebar.spec`
-- [ ] 4.2 `AppHeader.vue`：面包屑、⌘K 搜索、图标按钮 34、余额药丸、用户菜单 `.dropdown`；验证截图 + spec
-- [ ] 4.3 `MobileDrawer.vue`、`CommandPalette.vue`、`AppLayout.vue`：抽屉与命令面板走 `UiDrawer` / 弹层配方；验证 390 截图 + spec
-- [ ] 4.4 `AuthLayout.vue` 与 `PublicPageLayout.vue`：品牌面板组件化（登录 / 注册 / 忘记密码共用）；验证结构测试
-- [ ] 4.5 `styles/onboarding.css`、`announcement-markdown.css`：令牌化；验证 `lint:ui`
-- [ ] 4.6 提交 `feat(glass): app shell (tasks 4.1–4.5)`
+- [x] 4.1 `AppSidebar.vue`：对照 `Sidebar.dc.html` 与参考图核对分类、28px 项、激活态配方、折叠 60px、底部主题 / 用户块不遮挡导航末项（当前 `/admin/orders` 截图有遮挡）；验证 1440 / 900 / 390 截图 + `AppSidebar.spec`
+- [x] 4.2 `AppHeader.vue`：面包屑、⌘K 搜索、图标按钮 34、余额药丸、用户菜单 `.dropdown`；验证截图 + spec
+- [x] 4.3 `MobileDrawer.vue`、`CommandPalette.vue`、`AppLayout.vue`：抽屉与命令面板走 `UiDrawer` / 弹层配方；验证 390 截图 + spec
+- [x] 4.4 `AuthLayout.vue` 与 `PublicPageLayout.vue`：品牌面板组件化（登录 / 注册 / 忘记密码共用）；验证结构测试
+- [x] 4.5 `styles/onboarding.css`、`announcement-markdown.css`：令牌化；验证 `lint:ui`
+- [x] 4.6 提交 `feat(glass): app shell (tasks 4.1–4.5)`
 
 ## 5. 公开页（2 个代理：A 首页像素 diff；B 其余公开页）
 

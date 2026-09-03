@@ -48,7 +48,7 @@ defineExpose({ replayTour })
 <style scoped>
 .app-shell {
  min-height: 100vh;
- background: var(--background);
+ background: var(--bg-workspace);
  color: var(--foreground);
 }
 

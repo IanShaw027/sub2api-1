@@ -11,7 +11,7 @@
  @click.self="handleClose"
  >
  <!-- Modal panel -->
- <div ref="dialogRef" :class="['modal-content', widthClasses]" @click.stop>
+ <div ref="dialogRef" class="modal-content" :style="widthStyle" @click.stop>
  <!-- Header -->
  <div class="modal-header">
  <h3 :id="dialogId" class="modal-title">
@@ -89,18 +89,18 @@ const zIndexStyle = computed(() => {
  return props.zIndex !== 50 ? { zIndex: props.zIndex } : undefined
 })
 
-const widthClasses = computed(() => {
- // Width guidance: narrow=confirm/short prompts, normal=standard forms,
- // wide=multi-section forms or rich content, extra-wide=analytics/tables,
- // full=full-screen or very dense layouts.
+// `BaseDialog` is a compatible wrapper over `UiModal`'s look: its five legacy
+// width names map onto the same fixed sm/md/lg/xl scale (440/560/720/960px)
+// — no other panel widths are allowed by the glass-ui spec.
+const widthStyle = computed(() => {
  const widths: Record<DialogWidth, string> = {
- narrow: 'max-w-md',
- normal: 'max-w-lg',
- wide: 'w-full sm:max-w-2xl md:max-w-3xl lg:max-w-4xl',
- 'extra-wide': 'w-full sm:max-w-3xl md:max-w-4xl lg:max-w-5xl xl:max-w-6xl',
- full: 'w-full sm:max-w-4xl md:max-w-5xl lg:max-w-6xl xl:max-w-7xl'
+ narrow: '440px',
+ normal: '560px',
+ wide: '720px',
+ 'extra-wide': '960px',
+ full: '960px'
  }
- return widths[props.width]
+ return { maxWidth: widths[props.width] }
 })
 
 const handleClose = () => {

@@ -23,11 +23,14 @@ const props = withDefaults(
     variant?: GlassCardVariant
     hover?: boolean
     padding?: GlassCardPadding
+    /** Selected-state accent hairline ring (`.glass-ring`). */
+    ring?: boolean
   }>(),
   {
     variant: 'glass',
     hover: false,
-    padding: 'md'
+    padding: 'md',
+    ring: false
   }
 )
 
@@ -37,6 +40,8 @@ const variantClass = computed(() => {
       return 'glass-card-solid'
     case 'transparent':
       return 'ui-glass-card-transparent'
+    case 'flat':
+      return 'glass-card-flat'
     default:
       return 'glass-card'
   }
@@ -56,7 +61,8 @@ const paddingClass = computed(() => {
 const rootClass = computed(() => [
   variantClass.value,
   paddingClass.value,
-  props.hover ? 'glass-card-hover' : null
+  props.hover ? 'glass-card-hover' : null,
+  props.ring ? 'glass-ring' : null
 ])
 
 const bodyClass = computed(() => (slots.header || slots.footer ? 'ui-glass-card-body' : null))
@@ -83,7 +89,7 @@ const bodyClass = computed(() => (slots.header || slots.footer ? 'ui-glass-card-
 
 .ui-glass-card-header {
   margin: -16px -16px 0;
-  padding: 16px 16px 12px;
+  padding: 16px 20px 12px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -103,7 +109,7 @@ const bodyClass = computed(() => (slots.header || slots.footer ? 'ui-glass-card-
 
 .ui-glass-card-footer {
   margin: 0 -16px -16px;
-  padding: 12px 16px;
+  padding: 12px 20px;
   border-top: 1px solid var(--border);
 }
 
@@ -114,6 +120,6 @@ const bodyClass = computed(() => (slots.header || slots.footer ? 'ui-glass-card-
 
 .ui-glass-card-pad-lg .ui-glass-card-footer {
   margin: 0 -20px -20px;
-  padding: 14px 20px;
+  padding: 12px 20px;
 }
 </style>

@@ -117,6 +117,70 @@ describe('design tokens', () => {
     expect(sky).not.toBe(indigo)
   })
 
+  it('matches the prototype oklch value for every data-accent override', () => {
+    const ACCENT_OVERRIDES: Record<string, string> = {
+      sky: 'oklch(58.76% 0.1389 241.98)',
+      indigo: 'oklch(58.54% 0.2041 277.12)',
+      teal: 'oklch(60.02% 0.1039 184.73)',
+      violet: 'oklch(60.56% 0.219 292.72)'
+    }
+    for (const [accent, expected] of Object.entries(ACCENT_OVERRIDES)) {
+      const block = cssBlock(tokensSource, `[data-accent='${accent}']`)
+      expect(tokenValue(block, '--accent'), accent).toBe(expected)
+    }
+  })
+
+  it('matches the prototype light-theme oklch values (documented deviations excepted)', () => {
+    const light = cssBlock(tokensSource, "[data-theme='glass-light']")
+    // NOTE: --muted is intentionally 50% L, not the prototype's 55.17% L — see
+    // deviations.md ("--muted 亮色"): 55.17% fails 4.5:1 against --surface-secondary
+    // / --surface-tertiary. 50% is the minimum safe value.
+    const LIGHT_TOKENS: Record<string, string> = {
+      '--background': 'oklch(97.02% 0.0015 262.89)',
+      '--foreground': 'oklch(21% 0.012 262)',
+      '--surface': 'oklch(100% 0 0)',
+      '--border': 'oklch(90% 0.003 259.82)',
+      '--muted': 'oklch(50% 0.006 259.82)',
+      '--accent': 'oklch(62.31% 0.1881 259.82)',
+      '--success': 'oklch(73.29% 0.1946 151.55)',
+      '--warning': 'oklch(78.19% 0.1593 73.04)',
+      '--danger': 'oklch(65.32% 0.2342 26.45)'
+    }
+    for (const [token, expected] of Object.entries(LIGHT_TOKENS)) {
+      expect(tokenValue(light, token), token).toBe(expected)
+    }
+  })
+
+  it('matches the prototype dark-theme oklch values (documented deviations excepted)', () => {
+    const dark = cssBlock(tokensSource, "[data-theme='glass-dark']")
+    // NOTE: --border is intentionally 51% L, not the prototype's 28% L — see
+    // deviations.md ("--border 暗色"): 28% fails 3:1 non-text contrast against
+    // --surface / --background in dark mode. 51% is the minimum safe value.
+    // --accent/--success/--warning/--danger are redeclared identically to
+    // light here: the prototype marks them "同" (same as light).
+    const DARK_TOKENS: Record<string, string> = {
+      '--background': 'oklch(12% 0.0015 262.89)',
+      '--foreground': 'oklch(95% 0.004 262)',
+      '--surface': 'oklch(21.03% 0.003 262.89)',
+      '--border': 'oklch(51% 0.003 259.82)',
+      '--muted': 'oklch(70.5% 0.006 259.82)',
+      '--accent': 'oklch(62.31% 0.1881 259.82)',
+      '--success': 'oklch(73.29% 0.1946 151.55)',
+      '--warning': 'oklch(78.19% 0.1593 73.04)',
+      '--danger': 'oklch(65.32% 0.2342 26.45)'
+    }
+    for (const [token, expected] of Object.entries(DARK_TOKENS)) {
+      expect(tokenValue(dark, token), token).toBe(expected)
+    }
+  })
+
+  it('derives dark --success-text and --warning-text from --success/--warning, and pins --danger-text', () => {
+    const dark = cssBlock(tokensSource, "[data-theme='glass-dark']")
+    expect(tokenValue(dark, '--success-text')).toBe('var(--success)')
+    expect(tokenValue(dark, '--warning-text')).toBe('var(--warning)')
+    expect(tokenValue(dark, '--danger-text')).toBe('oklch(72% 0.2 26.45)')
+  })
+
   it('does not reference Google Fonts CSS in src or index.html', () => {
     const googleFontsHost = ['fonts', 'googleapis', 'com'].join('.')
     const files = [...collectSourceFiles(srcDir), indexHtmlPath]

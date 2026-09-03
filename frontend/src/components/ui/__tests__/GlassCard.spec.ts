@@ -21,11 +21,18 @@ describe('GlassCard', () => {
     expect(wrapper.text()).toContain('Footer')
   })
 
-  it('switches solid and transparent variants', () => {
+  it('switches solid, transparent, and flat variants', () => {
     const solid = mount(GlassCard, { props: { variant: 'solid' } })
     expect(solid.classes()).toContain('glass-card-solid')
     const transparent = mount(GlassCard, { props: { variant: 'transparent' } })
     expect(transparent.classes()).toContain('ui-glass-card-transparent')
+    const flat = mount(GlassCard, { props: { variant: 'flat' } })
+    expect(flat.classes()).toContain('glass-card-flat')
+  })
+
+  it('appends the accent hairline ring when selected', () => {
+    const wrapper = mount(GlassCard, { props: { ring: true } })
+    expect(wrapper.classes()).toContain('glass-ring')
   })
 
   it('uses token radius and documented paddings', () => {

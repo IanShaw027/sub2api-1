@@ -8,7 +8,7 @@
         v-if="open"
         ref="panelRef"
         class="ui-drawer-panel"
-        :class="side === 'left' ? 'is-left' : 'is-right'"
+        :class="[side === 'left' ? 'is-left' : 'is-right', width === 'md' ? 'is-md' : 'is-sm']"
         role="dialog"
         aria-modal="true"
         tabindex="-1"
@@ -43,12 +43,15 @@ const props = withDefaults(
     open: boolean
     title: string
     side?: DrawerSide
+    /** Panel width scale: sm = 480px, md = 640px. */
+    width?: 'sm' | 'md'
     closeOnOverlay?: boolean
     closeOnEscape?: boolean
     closeLabel?: string
   }>(),
   {
     side: 'right',
+    width: 'sm',
     closeOnOverlay: true,
     closeOnEscape: true,
     closeLabel: 'Close'
@@ -117,9 +120,9 @@ onBeforeUnmount(releaseOverlay)
   position: fixed;
   inset: 0;
   z-index: 55;
-  background: var(--scrim);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  background: color-mix(in oklch, var(--foreground) 40%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .ui-drawer-panel {
@@ -127,13 +130,23 @@ onBeforeUnmount(releaseOverlay)
   top: 0;
   bottom: 0;
   z-index: 56;
-  width: min(420px, 100vw);
+  width: min(480px, 100vw);
   display: flex;
   flex-direction: column;
   background: color-mix(in oklch, var(--background) 88%, transparent);
   backdrop-filter: blur(28px);
   -webkit-backdrop-filter: blur(28px);
   color: var(--foreground);
+}
+
+.ui-drawer-panel.is-md {
+  width: min(640px, 100vw);
+}
+
+@media (max-width: 767px) {
+  .ui-drawer-panel {
+    width: 100vw;
+  }
 }
 
 .ui-drawer-panel.is-right {
@@ -190,7 +203,7 @@ onBeforeUnmount(releaseOverlay)
 }
 
 .ui-drawer-footer {
-  padding: 12px 20px 16px;
+  padding: 12px 20px;
   border-top: 1px solid var(--border);
   display: flex;
   justify-content: flex-end;

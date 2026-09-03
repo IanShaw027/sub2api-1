@@ -4,18 +4,16 @@
  <template v-if="isAdmin">
  <button
  @click="toggleDropdown"
- class="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs transition-colors"
+ class="tag font-mono transition-colors"
  :class="[
- hasUpdate
- ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
- : 'bg-surface-2 text-muted hover:bg-surface-2'
+ hasUpdate ? 'tag-warning' : 'hover:bg-surface-2'
  ]"
  :title="hasUpdate ? t('version.updateAvailable') : t('version.upToDate')"
  >
- <span v-if="currentVersion" class="font-medium">v{{ currentVersion }}</span>
+ <span v-if="currentVersion">v{{ currentVersion }}</span>
  <span
  v-else
- class="h-3 w-12 animate-pulse rounded bg-surface-2 font-medium"
+ class="skeleton h-3 w-12"
  ></span>
  <!-- Update indicator -->
  <span v-if="hasUpdate" class="relative flex h-2 w-2">
@@ -31,7 +29,7 @@
  <div
  v-if="dropdownOpen"
  ref="dropdownRef"
- class="absolute left-0 z-50 mt-2 overflow-hidden whitespace-normal rounded-xl border border-line bg-surface shadow-lg transition-all duration-200"
+ class="dropdown absolute left-0 z-50 mt-2 min-w-0 overflow-hidden whitespace-normal !p-0 transition-all duration-200"
  :class="rollbackPanelOpen && isReleaseBuild ? 'w-80' : 'w-64'"
  >
  <!-- Header with refresh button -->
@@ -631,7 +629,7 @@
  </template>
 
  <!-- Non-admin: Simple static version text -->
- <span v-else-if="version" class="text-xs text-muted">
+ <span v-else-if="version" class="tag font-mono">
  v{{ version }}
  </span>
  <TotpStepUpDialog :controller="systemStepUp" />

@@ -199,7 +199,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 48px;
+  height: 44px;
   padding: 0 14px;
   border-bottom: 1px solid var(--border);
 }
@@ -235,7 +235,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 10px;
   width: 100%;
-  height: 36px;
+  height: 40px;
   padding: 0 10px;
   border-radius: 9px;
   border: 0;

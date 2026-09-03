@@ -9,10 +9,15 @@
       :disabled="disabled"
       @change="onChange"
     >
-    <span class="ui-checkbox-box" aria-hidden="true">
+    <span
+      class="ui-checkbox-box"
+      :class="{ 'is-checked': modelValue, 'is-indeterminate': indeterminate && !modelValue }"
+      aria-hidden="true"
+    >
       <svg v-if="modelValue" viewBox="0 0 12 10" class="ui-checkbox-icon">
         <path d="M1 5.2 4.2 8.4 11 1.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
+      <span v-else-if="indeterminate" class="ui-checkbox-dash" />
     </span>
     <span v-if="$slots.default" class="ui-checkbox-label">
       <slot />
@@ -92,9 +97,17 @@ function onChange(event: Event) {
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.ui-checkbox-input:checked + .ui-checkbox-box {
+.ui-checkbox-input:checked + .ui-checkbox-box,
+.ui-checkbox-box.is-indeterminate {
   background: var(--accent);
   border-color: var(--accent);
+}
+
+.ui-checkbox-dash {
+  width: 8px;
+  height: 1.5px;
+  border-radius: 1px;
+  background: #fff;
 }
 
 .ui-checkbox-input:focus-visible + .ui-checkbox-box {

@@ -18,7 +18,12 @@
           @click.stop
         >
           <header class="ui-modal-header">
-            <h2 :id="titleId" class="ui-modal-title">{{ title }}</h2>
+            <div class="ui-modal-heading">
+              <h2 :id="titleId" class="ui-modal-title">{{ title }}</h2>
+              <p v-if="subtitle || $slots.subtitle" class="modal-subtitle">
+                <slot name="subtitle">{{ subtitle }}</slot>
+              </p>
+            </div>
             <button
               v-if="showClose"
               type="button"
@@ -52,6 +57,7 @@ const props = withDefaults(
   defineProps<{
     open: boolean
     title: string
+    subtitle?: string
     width?: ModalWidth
     closeOnOverlay?: boolean
     closeOnEscape?: boolean
@@ -75,8 +81,9 @@ const bodyRef = ref<HTMLElement | null>(null)
 let previousFocus: HTMLElement | null = null
 let overlayHeld = false
 
+/** Panel widths only ever come from this fixed sm/md/lg/xl scale (440/560/720/960). */
 const panelStyle = computed(() => {
-  const widths: Record<ModalWidth, string> = { sm: '420px', md: '520px', lg: '680px', xl: '840px' }
+  const widths: Record<ModalWidth, string> = { sm: '440px', md: '560px', lg: '720px', xl: '960px' }
   return { maxWidth: widths[props.width] }
 })
 
@@ -138,9 +145,9 @@ onBeforeUnmount(releaseOverlay)
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: var(--scrim);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  background: color-mix(in oklch, var(--foreground) 40%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .ui-modal-panel {
@@ -159,6 +166,14 @@ onBeforeUnmount(releaseOverlay)
   gap: 12px;
   padding: 16px 20px 12px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.ui-modal-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .ui-modal-title {
@@ -189,25 +204,50 @@ onBeforeUnmount(releaseOverlay)
 }
 
 .ui-modal-body {
-  padding: 16px 20px;
+  padding: 20px;
   overflow: auto;
+  max-height: 80vh;
 }
 
 .ui-modal-footer {
-  padding: 12px 20px 16px;
+  padding: 12px 20px;
   border-top: 1px solid var(--border);
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .ui-modal-enter-active,
 .ui-modal-leave-active {
-  transition: opacity 0.18s ease;
+  transition: opacity 160ms ease;
+}
+
+.ui-modal-enter-active .ui-modal-panel,
+.ui-modal-leave-active .ui-modal-panel {
+  transition: transform 160ms ease, opacity 160ms ease;
 }
 
 .ui-modal-enter-from,
 .ui-modal-leave-to {
   opacity: 0;
+}
+
+.ui-modal-enter-from .ui-modal-panel,
+.ui-modal-leave-to .ui-modal-panel {
+  transform: scale(0.98);
+  opacity: 0;
+}
+
+@media (max-width: 767px) {
+  .ui-modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .ui-modal-panel {
+    max-height: 92vh;
+    border-radius: 16px 16px 0 0;
+  }
 }
 </style>

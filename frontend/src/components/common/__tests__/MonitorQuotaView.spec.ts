@@ -92,7 +92,7 @@ describe('MonitorQuotaView', () => {
     expect(wrapper.text()).toContain('12.50 CNY')
     expect(wrapper.text()).toContain('0.00 USD')
     // 余额为 0 用红色警示
-    expect(wrapper.html()).toContain('text-red-600')
+    expect(wrapper.html()).toContain('text-danger-text')
   })
 
   it('falls back to the single balance + currency pair', () => {

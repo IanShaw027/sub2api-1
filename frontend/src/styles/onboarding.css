@@ -26,14 +26,14 @@
   border-radius: 10px !important;
 }
 
-/* 2. Popover container — solid glass card, radius 16 */
+/* 2. Popover container — solid glass card, radius 12 */
 .driver-popover.theme-tour-popover {
   position: fixed !important;
   z-index: 100000000 !important;
   background-color: var(--surface) !important;
   border: 1px solid color-mix(in oklch, var(--border) 85%, transparent) !important;
   box-shadow: var(--shadow-pop) !important;
-  border-radius: var(--radius-hero) !important;
+  border-radius: var(--radius-card) !important;
   padding: 0 !important;
   max-width: min(440px, 90vw) !important;
   color: var(--foreground) !important;
@@ -52,10 +52,10 @@
 }
 
 .driver-popover-title-text {
-  font-family: var(--display) !important;
-  font-size: 16px !important;
-  font-weight: 800 !important;
-  letter-spacing: -0.02em !important;
+  font-family: var(--font-body) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  letter-spacing: normal !important;
   color: var(--foreground) !important;
   line-height: 1.3 !important;
   padding-right: 100px !important; /* keep clear of Skip/Close */
@@ -120,9 +120,9 @@
 
 .theme-tour-popover .driver-popover-progress-text {
   font-size: 12.5px !important;
-  color: var(--muted) !important;
+  color: var(--accent) !important;
   margin: 0 !important;
-  font-weight: 500 !important;
+  font-weight: 600 !important;
   white-space: nowrap !important;
   font-variant-numeric: tabular-nums !important;
 }

@@ -25,13 +25,13 @@ defineProps<{
 }
 
 .ui-field-label-text {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--foreground);
 }
 
 .ui-field-label-hint {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   font-weight: 500;
 }
