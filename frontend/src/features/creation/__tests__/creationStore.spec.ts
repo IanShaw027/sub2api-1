@@ -139,6 +139,32 @@ describe('creation store', () => {
     expect(store.lastFailedSend).toBeNull()
   })
 
+  it('marks image placeholder failed when async submit errors', async () => {
+    creationApi.submitImageGenerationAsync.mockRejectedValue(new Error('quota exceeded'))
+
+    const store = useCreationStore()
+    store.groupId = 2
+    store.model = 'dall-e-3'
+    store.sessions = [
+      {
+        id: 5,
+        user_id: 1,
+        group_id: 2,
+        title: 'Images',
+        model: 'dall-e-3',
+        mode: 'image',
+        status: 'active',
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    ]
+    store.selectedSessionId = 5
+
+    await expect(store.sendMessage('a red balloon', 5)).rejects.toThrow('quota exceeded')
+    expect(store.imageTasks[0]?.status).toBe('failed')
+    expect(store.imageTasks[0]?.error).toBe('quota exceeded')
+  })
+
   it('reset clears state', () => {
     const store = useCreationStore()
     store.sessions = [

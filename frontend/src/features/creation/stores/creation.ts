@@ -123,7 +123,10 @@ export const useCreationStore = defineStore('creation', () => {
     messagesLoading.value = true
     error.value = null
     try {
-      messages.value = await creationAPI.listSessionMessages(sessionId)
+      const items = await creationAPI.listSessionMessages(sessionId)
+      if (selectedSessionId.value === sessionId) {
+        messages.value = items
+      }
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'loadMessages failed'
       throw err
@@ -132,12 +135,39 @@ export const useCreationStore = defineStore('creation', () => {
     }
   }
 
+  function mergeImageTasksWithInFlight(serverItems: CreationImageJob[], sessionId: number): CreationImageJob[] {
+    const serverTaskIds = new Set(
+      serverItems
+        .map((item) => item.provider_task_id)
+        .filter((id): id is string => Boolean(id)),
+    )
+    const inFlight = imageTasks.value.filter(
+      (item) =>
+        item.session_id === sessionId &&
+        (item.status === 'processing' || item.status === 'pending') &&
+        (!item.provider_task_id || !serverTaskIds.has(item.provider_task_id)),
+    )
+    const merged = [...inFlight]
+    for (const item of serverItems) {
+      if (item.provider_task_id && inFlight.some((local) => local.provider_task_id === item.provider_task_id)) {
+        continue
+      }
+      merged.push(item)
+    }
+    return merged.sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )
+  }
+
   async function loadImageTasks(sessionId: number) {
     imageTasksLoading.value = true
     error.value = null
     try {
       const response = await creationAPI.listImages({ session_id: sessionId, page: 1, page_size: 100 })
-      imageTasks.value = response.items ?? []
+      const merged = mergeImageTasksWithInFlight(response.items ?? [], sessionId)
+      if (selectedSessionId.value === sessionId) {
+        imageTasks.value = merged
+      }
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'loadImageTasks failed'
       throw err
@@ -147,7 +177,10 @@ export const useCreationStore = defineStore('creation', () => {
   }
 
   async function selectSession(sessionId: number) {
+    stopStreaming()
     clearImagePollers()
+    pendingQueue.value = []
+    lastFailedSend.value = null
     selectedSessionId.value = sessionId
     const session = sessions.value.find((item) => item.id === sessionId)
     if (!session) return
@@ -186,6 +219,11 @@ export const useCreationStore = defineStore('creation', () => {
   }
 
   async function deleteSession(sessionId: number) {
+    if (selectedSessionId.value === sessionId) {
+      stopStreaming()
+      pendingQueue.value = []
+      lastFailedSend.value = null
+    }
     clearImagePollers()
     await creationAPI.deleteSession(sessionId)
     sessions.value = sessions.value.filter((session) => session.id !== sessionId)
@@ -301,9 +339,13 @@ export const useCreationStore = defineStore('creation', () => {
         content: finalAssistant,
         model: model.value,
       })
-      await loadMessages(sessionId)
+      if (selectedSessionId.value === sessionId) {
+        await loadMessages(sessionId)
+      }
     } catch (err) {
-      messages.value = messages.value.filter((msg) => msg.id !== optimisticUser.id)
+      if (selectedSessionId.value === sessionId) {
+        messages.value = messages.value.filter((msg) => msg.id !== optimisticUser.id)
+      }
       if (!(err instanceof DOMException && err.name === 'AbortError')) {
         error.value = err instanceof Error ? err.message : 'send failed'
         throw err
@@ -331,17 +373,32 @@ export const useCreationStore = defineStore('creation', () => {
     }
     imageTasks.value = [placeholder, ...imageTasks.value]
 
-    const task = await creationAPI.submitImageGenerationAsync(groupId.value, session.id, {
-      model: model.value,
-      prompt,
-    })
+    try {
+      const task = await creationAPI.submitImageGenerationAsync(groupId.value, session.id, {
+        model: model.value,
+        prompt,
+      })
 
-    const mapped = mapAsyncTaskToImageJob(task, session.id, groupId.value, model.value, prompt)
-    imageTasks.value = imageTasks.value.map((item) =>
-      item.id === placeholder.id ? { ...mapped, id: placeholder.id } : item,
-    )
+      const mapped = mapAsyncTaskToImageJob(task, session.id, groupId.value, model.value, prompt)
+      imageTasks.value = imageTasks.value.map((item) =>
+        item.id === placeholder.id ? { ...mapped, id: placeholder.id } : item,
+      )
 
-    pollImageTask(task.task_id, session.id, placeholder.id, groupId.value)
+      pollImageTask(task.task_id, session.id, placeholder.id, groupId.value)
+    } catch (err) {
+      imageTasks.value = imageTasks.value.map((item) =>
+        item.id === placeholder.id
+          ? {
+              ...item,
+              status: 'failed',
+              error: err instanceof Error ? err.message : 'Image generation failed',
+              updated_at: new Date().toISOString(),
+            }
+          : item,
+      )
+      error.value = err instanceof Error ? err.message : 'Image generation failed'
+      throw err
+    }
   }
 
   function pollImageTask(
@@ -381,7 +438,9 @@ export const useCreationStore = defineStore('creation', () => {
         if (status === 'completed' || status === 'failed') {
           clearInterval(timer)
           imagePollers.delete(taskId)
-          await loadImageTasks(sessionId)
+          if (selectedSessionId.value === sessionId) {
+            await loadImageTasks(sessionId)
+          }
           return
         }
 
