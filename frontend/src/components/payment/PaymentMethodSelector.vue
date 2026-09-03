@@ -1,11 +1,11 @@
 <template>
  <div>
- <label class="mb-2 block text-sm font-medium text-foreground">
+ <label class="input-label">
  {{ t('payment.paymentMethod') }}
  </label>
  <div
  data-testid="payment-method-grid"
- class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
+ class="method-grid"
  >
  <button
  v-for="method in sortedMethods"
@@ -13,28 +13,23 @@
  type="button"
  :title="methodLabel(method)"
  :disabled="!method.available"
+ class="method-option glass-card"
  :class="[
- 'relative flex h-[60px] min-w-0 flex-col items-center justify-center rounded-lg border px-3 transition-all',
- !method.available
- ? 'cursor-not-allowed border-line bg-surface-2 opacity-50'
- : selected === method.type
- ? methodSelectedClass(method.type)
- : 'border-line bg-surface text-foreground hover:border-line',
+ !method.available ? 'method-option--disabled' : '',
+ selected === method.type ? 'glass-ring method-option--active' : '',
  ]"
  @click="method.available && emit('select', method.type)"
  >
- <span class="flex w-full min-w-0 items-center justify-center gap-2">
- <img :src="methodIcon(method.type)" :alt="methodLabel(method)" class="h-7 w-7 shrink-0 object-contain" />
- <span class="flex min-w-0 flex-col items-start leading-none">
- <span data-testid="payment-method-label" class="block w-full truncate text-base font-semibold">
+ <img :src="methodIcon(method.type)" :alt="methodLabel(method)" class="method-option-icon" />
+ <span class="method-option-body">
+ <span data-testid="payment-method-label" class="method-option-label">
  {{ methodLabel(method) }}
  </span>
  <span
  v-if="method.fee_rate > 0"
- class="text-[10px] tracking-wide text-muted"
+ class="method-option-fee"
  >
  {{ t('payment.fee') }} {{ method.fee_rate }}%
- </span>
  </span>
  </span>
  </button>
@@ -97,12 +92,81 @@ function methodIcon(type: string): string {
 function methodLabel(method: PaymentMethodOption): string {
  return method.display_name || t(`payment.methods.${method.type}`, method.type)
 }
-
-function methodSelectedClass(type: string): string {
-  if (isBuiltInAlipayMethod(type)) return 'border-[#02A9F1] bg-blue-50 text-foreground shadow-sm'
-  if (isBuiltInWxpayMethod(type)) return 'border-[#09BB07] bg-green-50 text-foreground shadow-sm'
-  if (type === 'stripe') return 'border-[#676BE5] bg-indigo-50 text-foreground shadow-sm'
-  if (type === 'airwallex') return 'border-[#FF6B3D] bg-orange-50 text-foreground shadow-sm'
- return 'border-accent bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-foreground shadow-sm'
-}
 </script>
+
+<style scoped>
+.method-grid {
+ display: grid;
+ grid-template-columns: repeat(2, 1fr);
+ gap: 10px;
+}
+
+@media (min-width: 640px) {
+ .method-grid {
+ grid-template-columns: repeat(3, 1fr);
+ }
+}
+
+@media (min-width: 1024px) {
+ .method-grid {
+ grid-template-columns: repeat(4, 1fr);
+ }
+}
+
+.method-option {
+ display: flex;
+ min-width: 0;
+ height: 58px;
+ align-items: center;
+ justify-content: center;
+ gap: 8px;
+ padding: 0 12px;
+ cursor: pointer;
+ transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.method-option:hover:not(.method-option--disabled) {
+ transform: translateY(-1px);
+}
+
+.method-option--active {
+ background: color-mix(in oklch, var(--accent) 8%, transparent);
+}
+
+.method-option--disabled {
+ cursor: not-allowed;
+ opacity: 0.5;
+}
+
+.method-option-icon {
+ height: 26px;
+ width: 26px;
+ flex-shrink: 0;
+ object-fit: contain;
+}
+
+.method-option-body {
+ display: flex;
+ min-width: 0;
+ flex-direction: column;
+ align-items: flex-start;
+ line-height: 1.2;
+}
+
+.method-option-label {
+ display: block;
+ width: 100%;
+ overflow: hidden;
+ text-overflow: ellipsis;
+ white-space: nowrap;
+ font-size: 13px;
+ font-weight: 600;
+ color: var(--foreground);
+}
+
+.method-option-fee {
+ font-size: 10.5px;
+ letter-spacing: 0.02em;
+ color: var(--muted);
+}
+</style>

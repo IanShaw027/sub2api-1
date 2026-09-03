@@ -35,7 +35,7 @@
       <!-- Dropdown List -->
       <div
         v-if="showDropdown"
-        class="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-line bg-surface shadow-lg"
+        class="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-line bg-surface shadow-[var(--shadow-pop)]"
       >
         <div class="sticky top-0 border-b border-line bg-surface p-2">
           <input

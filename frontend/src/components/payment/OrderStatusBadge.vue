@@ -1,16 +1,13 @@
 <template>
- <span
- class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium"
- :class="statusClass"
- >
- {{ statusLabel }}
- </span>
+ <StatusBadge :tone="statusTone" :label="statusLabel" dot />
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { OrderStatus } from '@/types/payment'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
+import type { StatusBadgeTone } from '@/components/ui/types'
 
 const props = defineProps<{
  status: OrderStatus
@@ -18,20 +15,20 @@ const props = defineProps<{
 
 const { t } = useI18n()
 
-const statusMap: Record<OrderStatus, { key: string; class: string }> = {
- PENDING: { key: 'payment.status.pending', class: 'bg-yellow-100 text-yellow-800' },
- PAID: { key: 'payment.status.paid', class: 'bg-blue-100 text-blue-800' },
- RECHARGING: { key: 'payment.status.recharging', class: 'bg-blue-100 text-blue-800' },
- COMPLETED: { key: 'payment.status.completed', class: 'bg-green-100 text-green-800' },
- EXPIRED: { key: 'payment.status.expired', class: 'bg-surface-2 text-foreground' },
- CANCELLED: { key: 'payment.status.cancelled', class: 'bg-surface-2 text-foreground' },
- FAILED: { key: 'payment.status.failed', class: 'bg-red-100 text-red-800' },
- REFUND_REQUESTED: { key: 'payment.status.refund_requested', class: 'bg-orange-100 text-orange-800' },
- REFUNDING: { key: 'payment.status.refunding', class: 'bg-orange-100 text-orange-800' },
- REFUND_PENDING: { key: 'payment.status.refund_pending', class: 'bg-orange-100 text-orange-800' },
- REFUNDED: { key: 'payment.status.refunded', class: 'bg-purple-100 text-purple-800' },
- PARTIALLY_REFUNDED: { key: 'payment.status.partially_refunded', class: 'bg-purple-100 text-purple-800' },
- REFUND_FAILED: { key: 'payment.status.refund_failed', class: 'bg-red-100 text-red-800' },
+const statusMap: Record<OrderStatus, { key: string; tone: StatusBadgeTone }> = {
+ PENDING: { key: 'payment.status.pending', tone: 'warning' },
+ PAID: { key: 'payment.status.paid', tone: 'accent' },
+ RECHARGING: { key: 'payment.status.recharging', tone: 'accent' },
+ COMPLETED: { key: 'payment.status.completed', tone: 'success' },
+ EXPIRED: { key: 'payment.status.expired', tone: 'muted' },
+ CANCELLED: { key: 'payment.status.cancelled', tone: 'muted' },
+ FAILED: { key: 'payment.status.failed', tone: 'danger' },
+ REFUND_REQUESTED: { key: 'payment.status.refund_requested', tone: 'warning' },
+ REFUNDING: { key: 'payment.status.refunding', tone: 'warning' },
+ REFUND_PENDING: { key: 'payment.status.refund_pending', tone: 'warning' },
+ REFUNDED: { key: 'payment.status.refunded', tone: 'accent' },
+ PARTIALLY_REFUNDED: { key: 'payment.status.partially_refunded', tone: 'accent' },
+ REFUND_FAILED: { key: 'payment.status.refund_failed', tone: 'danger' },
 }
 
 const statusLabel = computed(() => {
@@ -39,8 +36,5 @@ const statusLabel = computed(() => {
  return entry ? t(entry.key) : props.status
 })
 
-const statusClass = computed(() => {
- const entry = statusMap[props.status]
- return entry?.class ?? 'bg-surface-2 text-foreground'
-})
+const statusTone = computed<StatusBadgeTone>(() => statusMap[props.status]?.tone ?? 'muted')
 </script>

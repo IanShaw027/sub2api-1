@@ -7,24 +7,41 @@
  :label="t('dashboard.balance')"
  :value="`$${formatBalance(balance)}`"
  :sub="t('common.available')"
- class="cursor-pointer"
+ class="dash-stat-card cursor-pointer"
  @click="emit('balance-history')"
  />
  <StatCard
  :label="t('dashboard.apiKeys')"
  :value="stats?.total_api_keys || 0"
  :sub="`${stats?.active_api_keys || 0} ${t('common.active')}`"
+ class="dash-stat-card"
  />
  <StatCard
  :label="t('dashboard.todayRequests')"
  :value="stats?.today_requests || 0"
  :sub="`${t('common.total')}: ${formatNumber(stats?.total_requests || 0)}`"
- />
+ class="dash-stat-card"
+ >
+ <template v-if="requestsSpark" #sparkline>
+ <svg viewBox="0 0 100 28" preserveAspectRatio="none" class="dash-spark">
+ <path :d="requestsSpark.area" class="dash-spark-area" />
+ <path :d="requestsSpark.line" class="dash-spark-line" />
+ </svg>
+ </template>
+ </StatCard>
  <StatCard
  :label="t('dashboard.todayCost')"
  :value="`$${formatCost(stats?.today_actual_cost || 0)}`"
  :sub="`${t('common.total')}: $${formatCost(stats?.total_actual_cost || 0)}`"
- />
+ class="dash-stat-card"
+ >
+ <template v-if="costSpark" #sparkline>
+ <svg viewBox="0 0 100 28" preserveAspectRatio="none" class="dash-spark">
+ <path :d="costSpark.area" class="dash-spark-area" />
+ <path :d="costSpark.line" class="dash-spark-line" />
+ </svg>
+ </template>
+ </StatCard>
  </div>
 
  <!-- Row 2: Token Stats -->
@@ -33,95 +50,99 @@
  :label="t('dashboard.todayTokens')"
  :value="formatTokens(stats?.today_tokens || 0)"
  :sub="`${t('dashboard.input')}: ${formatTokens(stats?.today_input_tokens || 0)} / ${t('dashboard.output')}: ${formatTokens(stats?.today_output_tokens || 0)}`"
- />
+ class="dash-stat-card"
+ >
+ <template v-if="tokensSpark" #sparkline>
+ <svg viewBox="0 0 100 28" preserveAspectRatio="none" class="dash-spark">
+ <path :d="tokensSpark.area" class="dash-spark-area" />
+ <path :d="tokensSpark.line" class="dash-spark-line" />
+ </svg>
+ </template>
+ </StatCard>
  <StatCard
  :label="t('dashboard.totalTokens')"
  :value="formatTokens(stats?.total_tokens || 0)"
  :sub="`${t('dashboard.input')}: ${formatTokens(stats?.total_input_tokens || 0)} / ${t('dashboard.output')}: ${formatTokens(stats?.total_output_tokens || 0)}`"
+ class="dash-stat-card"
  />
- <StatCard :label="t('dashboard.performance')" :value="liveRpmUsed" :sub="liveRpmLabel">
- <template #sparkline>
- <div class="dash-perf">
- <span>{{ formatTokens(stats?.rpm || 0) }} {{ t('dashboard.avgRpm') }}</span>
- <span>{{ currentConcurrency }} {{ t('dashboard.currentConcurrency') }}</span>
- </div>
- </template>
- </StatCard>
+ <StatCard
+ :label="t('dashboard.performance')"
+ :value="liveRpmUsed"
+ :sub="perfSub"
+ class="dash-stat-card"
+ />
  <StatCard
  :label="t('dashboard.avgResponse')"
  :value="formatDuration(stats?.average_duration_ms || 0)"
  :sub="t('dashboard.averageTime')"
+ class="dash-stat-card"
  />
  </div>
 
  <!-- Row 3: Per-platform breakdown -->
- <GlassCard v-if="!isSimple && platformCards.length > 0" padding="md">
- <div class="mb-3 flex items-center justify-between">
- <h3 class="text-sm font-semibold text-foreground">{{ t('dashboard.platformBreakdown') }}</h3>
- <span class="text-xs text-muted">
- {{ t('dashboard.platformCount', { count: sortedPlatforms.length }) }}
- </span>
+ <GlassCard v-if="!isSimple && platformCards.length > 0" padding="md" class="dash-platform-card">
+ <div class="card-header dash-list-header">
+ <span class="card-title">{{ t('dashboard.platformBreakdown') }}</span>
+ <span class="card-subtitle">{{ t('dashboard.platformCount', { count: sortedPlatforms.length }) }}</span>
  </div>
- <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+ <div class="dash-platform-grid">
  <div
  v-for="item in platformCards"
  :key="item.platform"
- :class="[
- 'rounded-lg border p-3',
- item.isOther
- ? 'border-dashed border-line bg-surface-2'
- : 'border-line'
- ]"
+ :class="['dash-platform-tile', item.isOther ? 'dash-platform-tile-other' : '']"
  >
- <div class="flex items-center justify-between">
- <span class="text-sm font-semibold text-foreground">
+ <div class="dash-platform-tile-top">
+ <span class="dash-platform-tile-name">
+ <span
+ v-if="!item.isOther"
+ class="dash-brand-tile"
+ :style="{ background: platformTileBackground(item.platform) }"
+ >{{ platformInitial(item.platform) }}</span>
  {{ item.isOther ? t('dashboard.platformOther') : platformLabel(item.platform) }}
  </span>
- <span class="font-mono text-sm text-success-text" :title="t('dashboard.actual')">
+ <span class="dash-platform-tile-cost" :title="t('dashboard.actual')">
  ${{ formatCost(item.total_actual_cost) }}
  </span>
  </div>
- <div class="mt-2 space-y-1 text-xs">
- <div class="flex items-center justify-between">
- <span class="text-muted">{{ t('dashboard.todayCost') }}</span>
- <span class="font-mono text-foreground">${{ formatCost(item.today_actual_cost) }}</span>
+ <div class="dash-platform-tile-rows">
+ <div class="dash-platform-tile-row">
+ <span class="dash-muted">{{ t('dashboard.todayCost') }}</span>
+ <span class="dash-mono">${{ formatCost(item.today_actual_cost) }}</span>
  </div>
- <div class="flex items-center justify-between">
- <span class="text-muted">{{ t('dashboard.requests') }}</span>
- <span class="font-mono text-foreground">
+ <div class="dash-platform-tile-row">
+ <span class="dash-muted">{{ t('dashboard.requests') }}</span>
+ <span class="dash-mono">
  {{ item.total_requests > 0 ? formatNumber(item.total_requests) : '-' }}
  </span>
  </div>
- <div class="flex items-center justify-between">
- <span class="text-muted">{{ t('dashboard.tokens') }}</span>
- <span class="font-mono text-foreground">
+ <div class="dash-platform-tile-row">
+ <span class="dash-muted">{{ t('dashboard.tokens') }}</span>
+ <span class="dash-mono">
  {{ item.total_tokens > 0 ? formatTokens(item.total_tokens) : '-' }}
  </span>
  </div>
  </div>
 
- <div v-if="hasAnyLimit(item.quota) && !item.isOther" class="mt-3 space-y-1.5 border-t border-line pt-2">
- <p class="text-[10px] uppercase tracking-wide text-muted">
- {{ t('dashboard.platformQuota.title') }}
- </p>
+ <div v-if="hasAnyLimit(item.quota) && !item.isOther" class="dash-quota-block">
+ <p class="dash-quota-title">{{ t('dashboard.platformQuota.title') }}</p>
  <template v-for="w in (['daily', 'weekly', 'monthly'] as const)" :key="w">
- <div v-if="quotaVal(item.quota, `${w}_limit_usd`) != null" class="space-y-0.5">
+ <div v-if="quotaVal(item.quota, `${w}_limit_usd`) != null" class="dash-quota-row">
  <template v-if="(quotaVal(item.quota, `${w}_limit_usd`) as number) === 0">
- <div class="flex items-center justify-between text-xs">
- <span class="text-foreground">{{ t(`dashboard.platformQuota.${w}`) }}</span>
- <span class="font-mono text-danger-text">{{ t('dashboard.platformQuota.disabled') }}</span>
+ <div class="dash-platform-tile-row">
+ <span class="dash-quota-label">{{ t(`dashboard.platformQuota.${w}`) }}</span>
+ <span class="dash-mono dash-quota-disabled">{{ t('dashboard.platformQuota.disabled') }}</span>
  </div>
  <ProgressBar :value="100" />
  </template>
  <template v-else>
- <div class="flex items-center justify-between text-xs">
- <span class="text-foreground">{{ t(`dashboard.platformQuota.${w}`) }}</span>
- <span class="font-mono text-foreground">
+ <div class="dash-platform-tile-row">
+ <span class="dash-quota-label">{{ t(`dashboard.platformQuota.${w}`) }}</span>
+ <span class="dash-mono">
  ${{ formatUsd((quotaVal(item.quota, `${w}_usage_usd`) as number) ?? 0) }} / ${{ formatUsd(quotaVal(item.quota, `${w}_limit_usd`) as number) }}
  </span>
  </div>
  <ProgressBar :value="calcPercent((quotaVal(item.quota, `${w}_usage_usd`) as number) ?? 0, quotaVal(item.quota, `${w}_limit_usd`) as number)" />
- <p v-if="quotaVal(item.quota, `${w}_window_resets_at`)" class="text-[10px] text-muted">
+ <p v-if="quotaVal(item.quota, `${w}_window_resets_at`)" class="dash-quota-reset">
  {{ t('dashboard.platformQuota.resetsAt', { time: formatResetTime(quotaVal(item.quota, `${w}_window_resets_at`) as string) }) }}
  </p>
  </template>
@@ -139,8 +160,9 @@ import { useI18n } from 'vue-i18n'
 import StatCard from '@/components/ui/StatCard.vue'
 import GlassCard from '@/components/ui/GlassCard.vue'
 import ProgressBar from '@/components/ui/ProgressBar.vue'
+import { platformTileBackground, platformLabel as tilePlatformLabel } from '@/utils/platformTile'
 import type { UserDashboardStats as UserStatsType } from '@/api/usage'
-import type { PlatformQuotaItem } from '@/types'
+import type { PlatformQuotaItem, TrendDataPoint } from '@/types'
 
 interface FusedPlatformCard {
  platform: string
@@ -160,6 +182,7 @@ const props = defineProps<{
  liveRpmUsed?: number
  liveRpmLimit?: number
  currentConcurrency?: number
+ trend?: TrendDataPoint[]
 }>()
 const emit = defineEmits<{
  'balance-history': []
@@ -168,9 +191,12 @@ const { t } = useI18n()
 
 const liveRpmUsed = computed(() => props.liveRpmUsed ?? 0)
 const currentConcurrency = computed(() => props.currentConcurrency ?? 0)
-const liveRpmLabel = computed(() => {
+const perfSub = computed(() => {
  const limit = props.liveRpmLimit ?? 0
- return limit > 0 ? `RPM ${liveRpmUsed.value}/${limit}` : t('dashboard.liveRpm')
+ const rpmPart = limit > 0
+ ? `RPM ${liveRpmUsed.value}/${limit}`
+ : `${formatTokens(props.stats?.rpm || 0)} ${t('dashboard.avgRpm')}`
+ return `${rpmPart} · ${currentConcurrency.value} ${t('dashboard.currentConcurrency')}`
 })
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -180,7 +206,8 @@ const PLATFORM_LABELS: Record<string, string> = {
  antigravity: 'Antigravity'
 }
 
-const platformLabel = (p: string) => PLATFORM_LABELS[p] ?? p
+const platformLabel = (p: string) => PLATFORM_LABELS[p] ?? tilePlatformLabel(p) ?? p
+const platformInitial = (p: string) => platformLabel(p).slice(0, 1).toUpperCase()
 
 const sortedPlatforms = computed(() => {
  const list = props.stats?.by_platform ?? []
@@ -308,6 +335,29 @@ const formatTokens = (t: number) => {
  return t.toString()
 }
 const formatDuration = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms.toFixed(0)}ms`
+
+// ---- Sparklines: derived from the already-loaded trend series, never faked ----
+function buildSparkline(values: number[]): { area: string; line: string } | null {
+ if (!values || values.length < 2) return null
+ const w = 100
+ const h = 28
+ const max = Math.max(...values)
+ const min = Math.min(...values)
+ const range = max - min || 1
+ const stepX = w / (values.length - 1)
+ const points = values.map((v, i) => {
+ const x = i * stepX
+ const y = h - ((v - min) / range) * h
+ return `${x.toFixed(2)},${y.toFixed(2)}`
+ })
+ const line = `M${points.join(' L')}`
+ const area = `${line} L${w},${h} L0,${h} Z`
+ return { area, line }
+}
+
+const requestsSpark = computed(() => buildSparkline((props.trend ?? []).map((d) => d.requests)))
+const tokensSpark = computed(() => buildSparkline((props.trend ?? []).map((d) => d.total_tokens)))
+const costSpark = computed(() => buildSparkline((props.trend ?? []).map((d) => d.actual_cost)))
 </script>
 <style scoped>
 .dash-stats {
@@ -320,22 +370,156 @@ const formatDuration = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(2)}s`
  grid-template-columns: repeat(4, minmax(0, 1fr));
  gap: 12px;
 }
-.dash-perf {
+:deep(.ui-stat-card) {
+ padding: 14px 16px !important;
+}
+:deep(.ui-stat-card-value) {
+ font-size: 28px !important;
+ letter-spacing: -0.04em !important;
+}
+.dash-spark {
+ width: 96px;
+ height: 28px;
+ flex: none;
+ overflow: visible;
+}
+.dash-spark-area {
+ fill: color-mix(in oklch, var(--accent) 14%, transparent);
+}
+.dash-spark-line {
+ fill: none;
+ stroke: var(--accent);
+ stroke-width: 1.6;
+ stroke-linecap: round;
+ stroke-linejoin: round;
+}
+.dash-platform-card {
+ padding: 0 !important;
+}
+.dash-list-header {
+ flex-direction: row;
+ align-items: center;
+ justify-content: space-between;
+}
+.dash-platform-grid {
+ display: grid;
+ grid-template-columns: repeat(4, minmax(0, 1fr));
+ gap: 12px;
+ padding: 16px 20px;
+}
+.dash-platform-tile {
+ border-radius: 12px;
+ border: 1px solid var(--border);
+ padding: 12px;
+}
+.dash-platform-tile-other {
+ border-style: dashed;
+ background: var(--surface-secondary);
+}
+.dash-platform-tile-top {
+ display: flex;
+ align-items: center;
+ justify-content: space-between;
+ gap: 8px;
+}
+.dash-platform-tile-name {
+ display: inline-flex;
+ align-items: center;
+ gap: 8px;
+ font-size: 13px;
+ font-weight: 600;
+ color: var(--foreground);
+}
+.dash-brand-tile {
+ display: inline-flex;
+ align-items: center;
+ justify-content: center;
+ width: 20px;
+ height: 20px;
+ border-radius: 6px;
+ color: #fff;
+ font-size: 10.5px;
+ font-weight: 700;
+ box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+ flex: none;
+}
+.dash-platform-tile-cost {
+ font-family: var(--font-mono);
+ font-size: 12.5px;
+ color: var(--success-text);
+}
+.dash-platform-tile-rows {
+ margin-top: 8px;
  display: flex;
  flex-direction: column;
- gap: 2px;
+ gap: 4px;
+}
+.dash-platform-tile-row {
+ display: flex;
+ align-items: center;
+ justify-content: space-between;
+ font-size: 12px;
+}
+.dash-muted {
+ color: var(--muted);
+}
+.dash-mono {
+ font-family: var(--font-mono);
+ color: var(--foreground);
+ font-variant-numeric: tabular-nums;
+}
+.dash-quota-block {
+ margin-top: 10px;
+ padding-top: 8px;
+ border-top: 1px solid var(--border);
+ display: flex;
+ flex-direction: column;
+ gap: 6px;
+}
+.dash-quota-title {
+ margin: 0;
+ font-size: 10px;
+ font-weight: 600;
+ text-transform: uppercase;
+ letter-spacing: 0.06em;
+ color: var(--muted);
+}
+.dash-quota-row {
+ display: flex;
+ flex-direction: column;
+ gap: 3px;
+}
+.dash-quota-label {
+ font-size: 12px;
+ color: var(--foreground);
+}
+.dash-quota-disabled {
+ color: var(--danger-text) !important;
+}
+.dash-quota-reset {
+ margin: 0;
  font-size: 10px;
  color: var(--muted);
- width: 100%;
 }
 @media (max-width: 1100px) {
  .dash-stat-grid {
+ grid-template-columns: 1fr 1fr;
+ }
+ .dash-platform-grid {
  grid-template-columns: 1fr 1fr;
  }
 }
 @media (max-width: 767px) {
  .dash-stat-grid {
  grid-template-columns: 1fr 1fr;
+ }
+ .dash-platform-grid {
+ grid-template-columns: 1fr;
+ }
+}
+@media (max-width: 480px) {
+ .dash-stat-grid {
+ grid-template-columns: 1fr;
  }
 }
 </style>

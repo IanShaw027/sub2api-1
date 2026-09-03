@@ -332,10 +332,11 @@ describe('admin AccountsView — 账号行展示', () => {
       target: '_blank',
       rel: 'noopener noreferrer',
     })
-    expect(link.classes()).toEqual(expect.arrayContaining([
-      'border-dotted',
-      'text-foreground',
-    ]))
+    // The dotted-underline/foreground-color styling moved from Tailwind
+    // utility classes into the scoped `.acct-name-link` rule during the
+    // Glass redesign (border-bottom: 1px dotted; color: var(--foreground)).
+    expect(link.classes()).toContain('acct-name-link')
+    expect(link.classes()).not.toContain('is-alert')
     expect(link.classes()).not.toContain('text-primary-600')
     const tooltip = wrapper.findComponent(HelpTooltip)
     expect(tooltip.props('content')).toBe('https://relay.example.com')

@@ -26,6 +26,6 @@ describe('SegmentedControl', () => {
     })
     await wrapper.findAll('.segmented-item')[2].trigger('click')
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
-    expect(styleCss).toMatch(/\.segmented \{[\s\S]*?height:\s*36px/)
+    expect(styleCss).toMatch(/\.segmented[\s\S]{0,40}?\{[\s\S]*?height:\s*36px/)
   })
 })

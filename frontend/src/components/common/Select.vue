@@ -1,123 +1,146 @@
 <template>
- <div class="relative" ref="containerRef">
- <button
- ref="triggerRef"
- type="button"
- @click="toggle"
- :disabled="disabled"
- :aria-expanded="isOpen"
- :aria-haspopup="true"
- :id="id"
- :aria-label="ariaLabel ?? 'Select option'"
- :aria-describedby="ariaDescribedby"
- :class="[
- 'select-trigger',
- isOpen && 'select-trigger-open',
- error && 'select-trigger-error',
- disabled && 'select-trigger-disabled'
- ]"
- @keydown.down.prevent="onTriggerKeyDown"
- @keydown.up.prevent="onTriggerKeyDown"
- >
- <span class="select-value">
- <slot name="selected" :option="selectedOption">
- {{ selectedLabel }}
- </slot>
- </span>
- <span
- v-if="clearable && hasValue && !disabled"
- class="select-clear"
- role="button"
- tabindex="-1"
- aria-label="Clear selection"
- @click.stop="clearSelection"
- @mousedown.stop
- @keydown.enter.stop.prevent="clearSelection"
- >
- <Icon name="x" size="sm" />
- </span>
- <span class="select-icon">
- <Icon
- name="chevronDown"
- size="md"
- :class="['transition-transform duration-200', isOpen && 'rotate-180']"
- />
- </span>
- </button>
+  <div class="select-root" :class="variant === 'pill' && 'select-root-pill'" ref="containerRef">
+    <button
+      ref="triggerRef"
+      type="button"
+      @click="toggle"
+      :disabled="disabled"
+      :aria-expanded="isOpen"
+      :aria-haspopup="true"
+      :id="id"
+      :aria-label="ariaLabel ?? 'Select option'"
+      :aria-describedby="ariaDescribedby"
+      :class="[
+        'select-trigger',
+        variant === 'pill' && 'filter-pill select-trigger-pill',
+        isOpen && 'select-trigger-open',
+        error && 'select-trigger-error',
+        disabled && 'select-trigger-disabled'
+      ]"
+      @keydown.down.prevent="onTriggerKeyDown"
+      @keydown.up.prevent="onTriggerKeyDown"
+    >
+      <span v-if="variant === 'pill' && pillLabel" class="filter-pill-label">{{ pillLabel }}</span>
+      <span class="select-value" :class="variant === 'pill' && 'filter-pill-value'">
+        <slot name="selected" :option="selectedOption">
+          {{ selectedLabel }}
+        </slot>
+      </span>
+      <span
+        v-if="clearable && hasValue && !disabled"
+        class="select-clear"
+        role="button"
+        tabindex="-1"
+        aria-label="Clear selection"
+        @click.stop="clearSelection"
+        @mousedown.stop
+        @keydown.enter.stop.prevent="clearSelection"
+      >
+        <Icon name="x" size="sm" />
+      </span>
+      <span class="select-icon">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          :class="['transition-transform duration-200', isOpen && 'rotate-180']"
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </span>
+    </button>
 
- <!-- Teleport dropdown to body to escape stacking context -->
- <Teleport to="body">
- <Transition name="select-dropdown">
- <div
- v-if="isOpen"
- ref="dropdownRef"
- class="select-dropdown-portal"
- :class="[instanceId]"
- :style="dropdownStyle"
- role="listbox"
- @click.stop
- @mousedown.stop
- @keydown="onDropdownKeyDown"
- >
- <!-- Search input -->
- <div v-if="isSearchable" class="select-search">
- <Icon name="search" size="sm" class="text-muted" />
- <input
- ref="searchInputRef"
- v-model="searchQuery"
- type="text"
- :placeholder="searchPlaceholderText"
- :aria-label="searchPlaceholderText"
- class="select-search-input"
- @click.stop
- />
- </div>
+    <!-- Teleport dropdown to body to escape stacking context -->
+    <Teleport to="body">
+      <Transition name="select-dropdown">
+        <div
+          v-if="isOpen"
+          ref="dropdownRef"
+          class="dropdown select-dropdown-portal"
+          :class="[instanceId]"
+          :style="dropdownStyle"
+          role="listbox"
+          @click.stop
+          @mousedown.stop
+          @keydown="onDropdownKeyDown"
+        >
+          <!-- Search row · 32px field -->
+          <div v-if="isSearchable" class="select-search">
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="select-search-icon"
+              aria-hidden="true"
+            >
+              <path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35" />
+            </svg>
+            <input
+              ref="searchInputRef"
+              v-model="searchQuery"
+              type="text"
+              :placeholder="searchPlaceholderText"
+              :aria-label="searchPlaceholderText"
+              class="select-search-input"
+              @click.stop
+            />
+          </div>
 
- <!-- Options list -->
- <div class="select-options" ref="optionsListRef">
- <div
- v-for="(option, index) in filteredOptions"
- :key="`${typeof getOptionValue(option)}:${String(getOptionValue(option) ?? '')}`"
- role="option"
- :aria-selected="isSelected(option)"
- :aria-disabled="isOptionDisabled(option)"
- @click.stop="!isOptionDisabled(option) && selectOption(option)"
- @mouseenter="handleOptionMouseEnter(option, index)"
- :class="[
- 'select-option',
- isGroupHeaderOption(option) && 'select-option-group',
- isSelected(option) && 'select-option-selected',
- isOptionDisabled(option) && !isGroupHeaderOption(option) && 'select-option-disabled',
- focusedIndex === index && !isGroupHeaderOption(option) && 'select-option-focused'
- ]"
- >
- <slot name="option" :option="option" :selected="isSelected(option)">
- <Icon
- v-if="option._creatable"
- name="search"
- size="sm"
- class="flex-shrink-0 text-muted"
- />
- <span class="select-option-label" :class="option._creatable && 'italic text-muted'">{{ getOptionLabel(option) }}</span>
- <Icon
- v-if="isSelected(option)"
- name="check"
- size="sm"
- class="text-accent"
- :stroke-width="2"
- />
- </slot>
- </div>
+          <!-- Options list -->
+          <div class="select-options" ref="optionsListRef">
+            <div
+              v-for="(option, index) in filteredOptions"
+              :key="`${typeof getOptionValue(option)}:${String(getOptionValue(option) ?? '')}`"
+              role="option"
+              :aria-selected="isSelected(option)"
+              :aria-disabled="isOptionDisabled(option)"
+              @click.stop="!isOptionDisabled(option) && selectOption(option)"
+              @mouseenter="handleOptionMouseEnter(option, index)"
+              :class="[
+                'select-option',
+                isGroupHeaderOption(option) && 'select-option-group',
+                isSelected(option) && 'select-option-selected',
+                isOptionDisabled(option) && !isGroupHeaderOption(option) && 'select-option-disabled',
+                focusedIndex === index && !isGroupHeaderOption(option) && 'select-option-focused'
+              ]"
+            >
+              <slot name="option" :option="option" :selected="isSelected(option)">
+                <Icon
+                  v-if="option._creatable"
+                  name="search"
+                  size="sm"
+                  class="flex-shrink-0 text-muted"
+                />
+                <span class="select-option-label" :class="option._creatable && 'italic text-muted'">{{ getOptionLabel(option) }}</span>
+                <Icon
+                  v-if="isSelected(option)"
+                  name="check"
+                  size="sm"
+                  class="select-option-check"
+                  :stroke-width="2.4"
+                />
+              </slot>
+            </div>
 
- <!-- Empty state -->
- <div v-if="filteredOptions.length === 0" class="select-empty">
- {{ props.loading ? t('common.loading') : emptyTextDisplay }}
- </div>
- </div>
- </div>
- </Transition>
- </Teleport>
- </div>
+            <!-- Empty state -->
+            <div v-if="filteredOptions.length === 0" class="select-empty">
+              {{ props.loading ? t('common.loading') : emptyTextDisplay }}
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -154,6 +177,10 @@ interface Props {
  id?: string
  ariaLabel?: string
  ariaDescribedby?: string
+ /** 触发器外观：field（默认 36px 输入框）| pill（filter-pill 的 label · value） */
+ variant?: 'field' | 'pill'
+ /** variant="pill" 时显示在数值前的静态标签 */
+ pillLabel?: string
  /** 远程搜索模式：输入不在本地过滤 options，而是防抖后 emit('search', query)，由父组件请求数据更新 options */
  remote?: boolean
  /** 远程搜索模式下的加载态：options 为空时下拉显示 loading 文案 */
@@ -176,7 +203,8 @@ const props = withDefaults(defineProps<Props>(), {
  valueKey: 'value',
  labelKey: 'label',
  remote: false,
- loading: false
+ loading: false,
+ variant: 'field'
 })
 
 const emit = defineEmits<Emits>()
@@ -505,122 +533,234 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.select-trigger {
- @apply flex w-full items-center justify-between gap-2;
- @apply rounded-xl px-4 py-2.5 text-sm;
- @apply bg-surface;
- @apply border border-line;
- @apply text-foreground;
- @apply transition-all duration-200;
- @apply focus:border-accent focus:outline-none focus:ring-2 focus:ring-[color-mix(in_oklch,var(--accent)_30%,transparent)];
- @apply hover:border-line;
- @apply cursor-pointer;
+.select-root {
+  position: relative;
 }
 
+.select-root-pill {
+  display: inline-block;
+  width: max-content;
+}
+
+/* Trigger · `.field` recipe (36px, radius 12, glass 85%, field-shadow). */
+.select-trigger {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px 0 12px;
+  border-radius: var(--radius-field);
+  border: 1px solid var(--border);
+  background: color-mix(in oklch, var(--surface) 85%, transparent);
+  box-shadow: var(--field-shadow);
+  color: var(--foreground);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.select-trigger:focus-visible,
 .select-trigger-open {
- @apply border-accent ring-2 ring-[color-mix(in_oklch,var(--accent)_30%,transparent)];
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--field-shadow), 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent);
+}
+
+/* Pill variant · `label · value` (geometry from the global `.filter-pill`). */
+.select-trigger.select-trigger-pill {
+  width: max-content;
+  justify-content: flex-start;
 }
 
 .select-trigger-error {
- @apply border-red-500 focus:border-red-500 focus:ring-red-500/30;
+  border-color: var(--danger);
+}
+
+.select-trigger-error.select-trigger-open,
+.select-trigger-error:focus-visible {
+  border-color: var(--danger);
+  box-shadow: var(--field-shadow), 0 0 0 3px color-mix(in oklch, var(--danger) 18%, transparent);
 }
 
 .select-trigger-disabled {
- @apply cursor-not-allowed bg-surface-2 opacity-60;
+  cursor: not-allowed;
+  background: var(--surface-secondary);
+  opacity: 0.7;
 }
 
 .select-value {
- @apply flex-1 truncate text-left;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.select-trigger-pill .select-value {
+  flex: none;
 }
 
 .select-icon {
- @apply flex-shrink-0 text-muted;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
 }
 
 .select-clear {
- @apply flex flex-shrink-0 cursor-pointer items-center justify-center;
- @apply rounded text-muted transition-colors;
- @apply hover:text-muted;
+  display: inline-flex;
+  flex: none;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  transition: color 0.15s ease;
+}
+
+.select-clear:hover {
+  color: var(--foreground);
 }
 </style>
 
 <style>
-.select-dropdown-portal {
- @apply w-max min-w-[200px];
- @apply bg-surface;
- @apply rounded-xl;
- @apply border border-line;
- @apply shadow-lg shadow-black/10;
- @apply overflow-hidden;
- pointer-events: auto !important;
+/* Panel geometry (radius 12, padding 6, surface 92% + blur 20, shadow-pop)
+   comes from the global `.dropdown` recipe; only the list internals live here. */
+.dropdown.select-dropdown-portal {
+  width: max-content;
+  min-width: 200px;
+  overflow: hidden;
+  pointer-events: auto !important;
+  animation: none;
 }
 
 .select-dropdown-portal .select-search {
- @apply flex items-center gap-2 px-3 py-2;
- @apply border-b border-line;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  margin-bottom: 4px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: color-mix(in oklch, var(--surface) 85%, transparent);
+  box-shadow: var(--field-shadow);
+}
+
+.select-dropdown-portal .select-search-icon {
+  flex: none;
+  color: var(--muted);
 }
 
 .select-dropdown-portal .select-search-input {
- @apply flex-1 bg-transparent text-sm;
- @apply text-foreground;
- @apply placeholder:text-muted;
- @apply focus:outline-none;
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  color: var(--foreground);
+  outline: none;
+}
+
+.select-dropdown-portal .select-search-input::placeholder {
+  color: var(--muted);
 }
 
 .select-dropdown-portal .select-options {
- @apply max-h-80 overflow-y-auto py-1 outline-none;
+  max-height: 320px;
+  overflow-y: auto;
+  outline: none;
 }
 
+/* Option · 36px, radius 9 */
 .select-dropdown-portal .select-option {
- @apply flex items-center justify-between gap-2;
- @apply px-4 py-2.5 text-sm;
- @apply text-foreground;
- @apply cursor-pointer transition-colors duration-150;
- @apply hover:bg-surface-2;
- pointer-events: auto !important;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--foreground);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  pointer-events: auto !important;
+}
+
+.select-dropdown-portal .select-option:hover {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
 }
 
 .select-dropdown-portal .select-option-selected {
- @apply bg-[color-mix(in_oklch,var(--accent)_12%,transparent)];
- @apply text-accent;
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
+  color: var(--accent);
+}
+
+.select-dropdown-portal .select-option-check {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
 }
 
 .select-dropdown-portal .select-option-focused {
- @apply bg-surface-2;
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+
+.select-dropdown-portal .select-option-selected.select-option-focused {
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
 }
 
 .select-dropdown-portal .select-option-disabled {
- @apply cursor-not-allowed opacity-40;
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 
 .select-dropdown-portal .select-option-group {
- @apply cursor-default select-none;
- @apply bg-surface-2;
- @apply text-[11px] font-bold uppercase tracking-wider;
- @apply text-muted;
+  height: 26px;
+  cursor: default;
+  user-select: none;
+  background: transparent;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .select-dropdown-portal .select-option-group:hover {
- @apply bg-surface-2;
+  background: transparent;
 }
 
 .select-dropdown-portal .select-option-label {
- @apply flex-1 min-w-0 truncate text-left;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
 }
 
 .select-dropdown-portal .select-empty {
- @apply px-4 py-8 text-center text-sm;
- @apply text-muted;
+  padding: 20px 10px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--muted);
 }
 
 .select-dropdown-enter-active,
 .select-dropdown-leave-active {
- transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
 
 .select-dropdown-enter-from,
 .select-dropdown-leave-to {
- opacity: 0;
- transform: translateY(-8px);
+  opacity: 0;
+  transform: translateY(-6px);
 }
 </style>

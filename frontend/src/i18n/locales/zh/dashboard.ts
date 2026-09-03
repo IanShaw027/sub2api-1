@@ -12,6 +12,7 @@ export default {
     performance: '性能指标',
     liveRpm: '实时 RPM',
     avgRpm: '近5分钟 RPM',
+    currentConcurrency: '当前并发',
     avgResponse: '平均响应',
     averageTime: '平均时间',
     timeRange: '时间范围',
@@ -74,10 +75,26 @@ export default {
     endpoints: {
       title: 'API 端点',
       default: '默认',
+      custom: '自定义',
+      copy: '复制',
       copied: '已复制',
       copiedHint: '已复制到剪贴板',
       clickToCopy: '点击可复制此端点',
       speedTest: '测速',
+    },
+    filters: {
+      toggle: '筛选',
+    },
+    sortedByPrefix: '排序方式：',
+    sortedBySuffix: '',
+    usageQuery: '用量查询',
+    moreActions: '更多操作',
+    use: '使用',
+    showKey: '显示密钥',
+    hideKey: '隐藏密钥',
+    ccsImport: {
+      title: '导入到 CC-Switch',
+      description: '选择要导入到 CC-Switch 的 API 密钥。',
     },
     allGroups: '全部分组',
     allStatus: '全部状态',
@@ -756,7 +773,13 @@ export default {
     codeRedeemSuccess: '兑换成功！',
     failedToRedeem: '兑换失败，请检查兑换码后重试。',
     subscriptionRefreshFailed: '兑换成功，但订阅状态刷新失败。',
-    pleaseEnterCode: '请输入兑换码'
+    pleaseEnterCode: '请输入兑换码',
+    columns: {
+      type: '类型',
+      code: '兑换码',
+      time: '时间',
+      amount: '金额'
+    }
   },
 
   // Profile

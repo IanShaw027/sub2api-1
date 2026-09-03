@@ -679,6 +679,7 @@ export default {
         backendMode: 'Backend Mode',
         backendModeDescription:
           'Disables user registration, public site, and self-service features. Only admin can log in and manage the platform.',
+        backendModeWarning: 'Regular users will not be able to sign in once enabled',
         siteName: 'Site Name',
         siteNamePlaceholder: 'Sub2API',
         siteNameHint: 'Displayed in emails and page titles',
@@ -1317,6 +1318,12 @@ export default {
       user_error_view: {
         label: 'Allow users to view their own error requests',
         description: 'When enabled, users can see a redacted view of their failed requests on the usage page (no internal/upstream details). Requires ops monitoring enabled to have data.',
+      },
+      unsavedChanges: '{count} unsaved change(s)',
+      deployment: {
+        title: 'Deployment',
+        version: 'Version',
+        codexSync: 'Codex version sync'
       },
       saveSettings: 'Save Settings',
       saving: 'Saving...',

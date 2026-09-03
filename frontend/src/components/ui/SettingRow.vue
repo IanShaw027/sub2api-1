@@ -24,11 +24,11 @@ const titleId = `ui-setting-row-${useId()}`
 <style scoped>
 .ui-setting-row {
   display: grid;
-  grid-template-columns: minmax(0, 240px) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 12px 24px;
   align-items: center;
-  padding: 14px 0;
-  border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
 }
 
 .ui-setting-row:last-child {
@@ -42,9 +42,18 @@ const titleId = `ui-setting-row-${useId()}`
 }
 
 .ui-setting-row-description {
-  margin-top: 4px;
+  margin-top: 2px;
   font-size: 12px;
   color: var(--muted);
+}
+
+.ui-setting-row-control {
+  min-width: 0;
+}
+
+.ui-setting-row-control :deep(.field),
+.ui-setting-row-control :deep(.input) {
+  max-width: 420px;
 }
 
 @media (max-width: 767px) {

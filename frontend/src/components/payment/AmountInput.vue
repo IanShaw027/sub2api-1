@@ -1,21 +1,17 @@
 <template>
- <div class="space-y-4">
+ <div class="space-y-3">
  <!-- Quick Amount Buttons -->
  <div>
- <label class="mb-2 block text-sm font-medium text-foreground">
+ <label class="input-label">
  {{ t('payment.quickAmounts') }}
  </label>
- <div class="grid grid-cols-3 gap-2">
+ <div class="quick-amounts">
  <button
  v-for="amt in filteredAmounts"
  :key="amt"
  type="button"
- :class="[
- 'rounded-lg border-2 px-4 py-3 text-center font-medium transition-colors',
- modelValue === amt
- ? 'border-accent bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
- : 'border-line bg-surface text-foreground hover:border-line',
- ]"
+ class="chip-filter num"
+ :class="{ 'is-active': modelValue === amt }"
  @click="selectAmount(amt)"
  >
  {{ amt }}
@@ -25,19 +21,17 @@
 
  <!-- Custom Amount Input -->
  <div>
- <label class="mb-2 block text-sm font-medium text-foreground">
+ <label class="input-label">
  {{ t('payment.customAmount') }}
  </label>
- <div class="relative">
- <span class="absolute left-3 top-1/2 -translate-y-1/2 text-muted">
- $
- </span>
+ <div class="amount-field">
+ <span class="amount-prefix">$</span>
  <input
  type="text"
  inputmode="decimal"
  :value="customText"
  :placeholder="placeholderText"
- class="input w-full py-3 pl-8 pr-4"
+ class="field input-lg amount-field-input num"
  @input="handleInput"
  />
  </div>
@@ -109,3 +103,34 @@ watch(() => props.modelValue, (v) => {
  }
 }, { immediate: true })
 </script>
+
+<style scoped>
+.quick-amounts {
+ display: flex;
+ flex-wrap: wrap;
+ gap: 8px;
+}
+
+.quick-amounts .chip-filter {
+ height: 28px;
+}
+
+.amount-field {
+ position: relative;
+}
+
+.amount-prefix {
+ position: absolute;
+ left: 12px;
+ top: 50%;
+ transform: translateY(-50%);
+ font-size: 13px;
+ color: var(--muted);
+ pointer-events: none;
+}
+
+.amount-field-input {
+ padding-left: 26px;
+ width: 100%;
+}
+</style>

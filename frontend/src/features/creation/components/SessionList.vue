@@ -134,45 +134,70 @@ async function removeSession(id: number) {
 .studio-session-item {
   display: flex;
   align-items: center;
-  gap: 4px;
-  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
-  border-radius: 12px;
-  background: color-mix(in oklch, var(--surface) 80%, transparent);
+  gap: 2px;
+  border-radius: 9px;
+  transition: background 0.15s ease;
 }
 
-.studio-session-item-active {
-  border-color: color-mix(in oklch, var(--accent) 45%, var(--border));
-  background: color-mix(in oklch, var(--accent) 8%, var(--surface));
+.studio-session-item:hover {
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+
+.studio-session-item-active,
+.studio-session-item-active:hover {
+  background: color-mix(in oklch, var(--surface) 92%, transparent);
+  box-shadow: inset 0 1px 0 var(--btn-hi), 0 1px 3px rgba(16, 24, 40, 0.1),
+    0 0 0 1px color-mix(in oklch, var(--border) 80%, transparent);
 }
 
 .studio-session-button {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px;
+  justify-content: center;
+  gap: 1px;
+  min-height: 36px;
+  padding: 4px 10px;
   text-align: left;
   background: transparent;
   border: none;
+  border-radius: 9px;
   color: var(--foreground);
 }
 
 .studio-session-title {
   font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-session-item-active .studio-session-title {
+  color: var(--accent);
   font-weight: 600;
 }
 
 .studio-session-meta {
   font-size: 11px;
+  font-family: var(--font-mono);
 }
 
 .studio-session-delete {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
+  flex: none;
   border: none;
+  border-radius: 8px;
   background: transparent;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
+}
+
+.studio-session-delete:hover {
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--foreground);
 }
 
 @media (max-width: 767px) {

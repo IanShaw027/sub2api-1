@@ -1,7 +1,21 @@
 <template>
   <AppLayout>
     <div class="dash-page">
-      <PageHeader :title="t('dashboard.title')" :description="t('dashboard.welcomeMessage')" />
+      <PageHeader :title="t('dashboard.title')" :description="t('dashboard.welcomeMessage')">
+        <template #actions>
+          <DateRangePicker
+            :start-date="startDate"
+            :end-date="endDate"
+            @update:startDate="startDate = $event"
+            @update:endDate="endDate = $event"
+            @change="loadCharts"
+          />
+          <button type="button" class="dash-refresh-btn" :disabled="loadingCharts" @click="refreshAll">
+            <Icon name="refresh" size="sm" :class="{ 'animate-spin': loadingCharts }" />
+            {{ t('common.refresh') }}
+          </button>
+        </template>
+      </PageHeader>
       <div v-if="loading" class="flex items-center justify-center py-12"><LoadingSpinner /></div>
       <template v-else-if="stats">
         <UserDashboardStats
@@ -12,12 +26,19 @@
           :live-rpm-used="liveRpm?.user_rpm_used"
           :live-rpm-limit="liveRpm?.user_rpm_limit"
           :current-concurrency="liveRpm?.current_concurrency"
+          :trend="trendData"
           @balance-history="showBalanceHistory = true"
         />
-        <UserDashboardCharts v-model:startDate="startDate" v-model:endDate="endDate" v-model:granularity="granularity" :loading="loadingCharts" :trend="trendData" :models="modelStats" @dateRangeChange="loadCharts" @granularityChange="loadCharts" @refresh="refreshAll" />
-        <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div class="lg:col-span-2"><UserDashboardRecentUsage :data="recentUsage" :loading="loadingUsage" /></div>
-          <div class="lg:col-span-1"><UserDashboardQuickActions /></div>
+        <UserDashboardCharts
+          v-model:granularity="granularity"
+          :loading="loadingCharts"
+          :trend="trendData"
+          :models="modelStats"
+          @granularityChange="loadCharts"
+        />
+        <div class="dash-row-2-1">
+          <UserDashboardRecentUsage :data="recentUsage" :loading="loadingUsage" />
+          <UserDashboardQuickActions />
         </div>
         <UserBalanceHistoryModal
           :show="showBalanceHistory"
@@ -37,6 +58,8 @@ import { useAuthStore } from '@/stores/auth'
 import { usageAPI, type UserDashboardStats as UserStatsType } from '@/api/usage'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import Icon from '@/components/icons/Icon.vue'
+import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import UserDashboardStats from '@/components/user/dashboard/UserDashboardStats.vue'
 import UserDashboardCharts from '@/components/user/dashboard/UserDashboardCharts.vue'
@@ -150,5 +173,57 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.dash-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--surface) 80%, transparent);
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 var(--btn-hi), 0 1px 2px rgba(16, 24, 40, 0.06);
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  flex: none;
+  white-space: nowrap;
+}
+
+.dash-refresh-btn:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: color-mix(in oklch, var(--foreground) 18%, transparent);
+}
+
+.dash-refresh-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.dash-refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.dash-row-2-1 {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+@media (max-width: 1023px) {
+  .dash-row-2-1 {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .dash-page :deep(.ui-page-header-title) {
+    font-size: 20px;
+  }
 }
 </style>

@@ -13,136 +13,113 @@
   </div>
 
   <!-- Compact Home Page -->
-  <div
-    v-else-if="compactHomeEnabled"
-    data-testid="compact-home"
-    class="home-compact"
-  >
-    <header class="home-compact-header">
-      <nav class="home-compact-nav">
-        <div class="flex min-w-0 flex-1 items-center gap-3">
-          <img
-            :src="siteLogo || '/logo.svg'"
-            alt="Logo"
-            class="h-9 w-9 shrink-0 rounded-lg object-contain"
-          />
-          <span class="min-w-0 truncate text-base font-semibold text-foreground">{{ siteName }}</span>
-        </div>
-        <div class="flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2">
+  <div v-else-if="compactHomeEnabled" data-testid="compact-home" class="home-compact public-page">
+    <header class="home-nav">
+      <div class="home-nav-inner">
+        <router-link to="/home" class="home-brand">
+          <span class="brand-mark"><img :src="siteLogo || '/logo.svg'" alt="" /></span>
+          <span class="home-brand-name">{{ siteName }}</span>
+        </router-link>
+        <div class="home-nav-actions">
           <LocaleSwitcher />
           <a
             v-if="docUrl"
             :href="docUrl"
             target="_blank"
             rel="noopener noreferrer"
-            class="home-icon-btn"
+            class="header-icon-btn"
             :title="t('home.viewDocs')"
           >
-            <Icon name="book" size="md" />
+            <Icon name="book" size="sm" />
           </a>
           <router-link
             v-if="showModelPlazaEntry"
             to="/model-plaza"
-            class="home-icon-btn home-icon-btn-wide"
+            class="header-icon-btn"
             :title="t('nav.modelPlaza')"
           >
-            <Icon name="grid" size="md" />
-            <span class="hidden sm:inline">{{ t('nav.modelPlaza') }}</span>
+            <Icon name="grid" size="sm" />
           </router-link>
           <button
-            class="home-icon-btn"
+            type="button"
+            class="header-icon-btn"
             :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
             @click="toggleTheme"
           >
-            <Icon v-if="isDark" name="sun" size="md" />
-            <Icon v-else name="moon" size="md" />
+            <Icon v-if="isDark" name="sun" size="sm" />
+            <Icon v-else name="moon" size="sm" />
           </button>
-          <router-link
-            :to="isAuthenticated ? dashboardPath : '/login'"
-            class="btn-glass-primary home-compact-cta"
-          >
+          <router-link :to="isAuthenticated ? dashboardPath : '/login'" class="btn btn-primary">
             {{ isAuthenticated ? t('home.dashboard') : t('home.login') }}
           </router-link>
         </div>
-      </nav>
+      </div>
     </header>
 
     <main class="home-compact-main">
-      <div class="min-w-0 max-w-2xl text-center">
-        <img
-          :src="siteLogo || '/logo.svg'"
-          alt="Logo"
-          class="mx-auto mb-6 h-20 w-20 rounded-2xl object-contain"
-        />
+      <div class="home-compact-card glass-card glass-ring">
+        <span class="brand-mark brand-mark-xl home-compact-logo"><img :src="siteLogo || '/logo.svg'" alt="" /></span>
         <h1 class="home-compact-title">{{ siteName }}</h1>
         <p class="home-compact-subtitle">{{ siteSubtitle }}</p>
-        <router-link
-          :to="isAuthenticated ? dashboardPath : '/login'"
-          class="btn-glass-primary mt-8 inline-flex min-h-10 items-center justify-center px-5 text-sm"
-        >
+        <router-link :to="isAuthenticated ? dashboardPath : '/login'" class="btn btn-primary btn-hero">
           {{ isAuthenticated ? t('home.goToDashboard') : t('home.login') }}
+          <Icon name="arrowRight" size="sm" />
         </router-link>
       </div>
     </main>
 
-    <footer class="home-compact-footer">
-      &copy; {{ currentYear }} {{ siteName }}
+    <footer class="home-footer">
+      <span>&copy; {{ currentYear }} {{ siteName }}. {{ t('home.footer.allRightsReserved') }}</span>
     </footer>
   </div>
 
-  <!-- Default Home Page -->
-  <div v-else class="home-page">
+  <!-- Default Home Page (design 01) -->
+  <div v-else class="home-page public-page">
     <header class="home-nav">
       <div class="home-nav-inner">
-        <div class="home-brand">
-          <div class="home-logo">
-            <img :src="siteLogo || '/logo.svg'" alt="Logo" />
-          </div>
+        <router-link to="/home" class="home-brand">
+          <span class="brand-mark"><img :src="siteLogo || '/logo.svg'" alt="" /></span>
           <span class="home-brand-name">{{ siteName }}</span>
-        </div>
+        </router-link>
 
         <nav class="home-nav-links" aria-label="Primary">
-          <router-link v-if="showModelPlazaEntry" to="/model-plaza">{{ t('nav.modelPlaza') }}</router-link>
-          <a v-if="docUrl" :href="docUrl" target="_blank" rel="noopener noreferrer">{{ t('home.docs') }}</a>
-          <router-link to="/key-usage">{{ t('keyUsage.title') }}</router-link>
+          <router-link v-if="showModelPlazaEntry" to="/model-plaza">{{ t('home.nav.modelPlaza') }}</router-link>
+          <a v-if="docUrl" :href="docUrl" target="_blank" rel="noopener noreferrer">{{ t('home.nav.docs') }}</a>
+          <router-link to="/key-usage">{{ t('home.nav.keyUsage') }}</router-link>
+          <router-link v-if="channelMonitorEnabled" to="/monitor">{{ t('home.nav.status') }}</router-link>
         </nav>
 
         <div class="home-nav-actions">
-          <LocaleSwitcher />
+          <LocaleSwitcher class="home-nav-locale" />
           <button
-            class="home-icon-btn"
+            type="button"
+            class="header-icon-btn"
             :title="isDark ? t('home.switchToLight') : t('home.switchToDark')"
             @click="toggleTheme"
           >
-            <Icon v-if="isDark" name="sun" size="md" />
-            <Icon v-else name="moon" size="md" />
+            <Icon v-if="isDark" name="sun" size="sm" />
+            <Icon v-else name="moon" size="sm" />
           </button>
-          <router-link
-            v-if="isAuthenticated"
-            :to="dashboardPath"
-            class="btn-glass-secondary home-login-btn"
-          >
+          <router-link v-if="isAuthenticated" :to="dashboardPath" class="btn btn-secondary home-login-btn">
             <span class="home-user-dot">{{ userInitial }}</span>
             {{ t('home.dashboard') }}
           </router-link>
-          <router-link v-else to="/login" class="btn-glass-secondary home-login-btn">
+          <router-link v-else to="/login" class="btn btn-secondary home-login-btn">
             {{ t('home.login') }}
           </router-link>
-          <router-link
-            :to="isAuthenticated ? dashboardPath : '/login'"
-            class="btn-glass-primary home-start-btn"
-          >
+          <router-link :to="isAuthenticated ? dashboardPath : '/login'" class="btn btn-primary home-start-btn">
             {{ isAuthenticated ? t('home.goToDashboard') : t('home.getStarted') }}
           </router-link>
           <details class="home-mobile-menu">
-            <summary class="home-icon-btn" :aria-label="t('common.toggleMenu')">
-              <Icon name="menu" size="md" />
+            <summary class="header-icon-btn" :aria-label="t('common.toggleMenu')">
+              <Icon name="menu" size="sm" />
             </summary>
-            <div class="home-mobile-panel">
-              <router-link v-if="showModelPlazaEntry" to="/model-plaza">{{ t('nav.modelPlaza') }}</router-link>
-              <a v-if="docUrl" :href="docUrl" target="_blank" rel="noopener noreferrer">{{ t('home.docs') }}</a>
-              <router-link to="/key-usage">{{ t('keyUsage.title') }}</router-link>
-              <a :href="githubUrl" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <div class="home-mobile-panel dropdown">
+              <router-link v-if="showModelPlazaEntry" to="/model-plaza" class="dropdown-item">{{ t('home.nav.modelPlaza') }}</router-link>
+              <a v-if="docUrl" :href="docUrl" target="_blank" rel="noopener noreferrer" class="dropdown-item">{{ t('home.nav.docs') }}</a>
+              <router-link to="/key-usage" class="dropdown-item">{{ t('home.nav.keyUsage') }}</router-link>
+              <router-link v-if="channelMonitorEnabled" to="/monitor" class="dropdown-item">{{ t('home.nav.status') }}</router-link>
+              <a :href="githubUrl" target="_blank" rel="noopener noreferrer" class="dropdown-item">GitHub</a>
             </div>
           </details>
         </div>
@@ -150,136 +127,117 @@
     </header>
 
     <main class="home-main">
+      <!-- Hero -->
       <section class="home-hero">
         <div class="home-hero-copy">
           <div class="home-tags">
-            <span class="home-tag home-tag-accent">{{ t('home.tags.subscriptionToApi') }}</span>
-            <span class="home-tag">{{ t('home.tags.stickySession') }}</span>
-            <span class="home-tag">{{ t('home.tags.realtimeBilling') }}</span>
+            <span class="chip chip-accent">{{ t('home.tags.subscriptionToApi') }}</span>
+            <span class="chip">{{ t('home.tags.stickySession') }}</span>
+            <span class="chip">{{ t('home.tags.realtimeBilling') }}</span>
           </div>
           <h1 class="home-hero-title">
-            {{ siteName }}
-            <span class="home-hero-gradient">{{ t('home.heroSubtitle') }}</span>
+            {{ t('home.heroTitle1') }}<br />
+            <span class="text-gradient">{{ t('home.heroTitle2') }}</span>
           </h1>
-          <p class="home-hero-desc">{{ siteSubtitle || t('home.heroDescription') }}</p>
+          <p class="home-hero-desc">{{ heroDescription }}</p>
           <div class="home-hero-ctas">
-            <router-link
-              :to="isAuthenticated ? dashboardPath : '/login'"
-              class="btn-glass-primary home-cta-primary"
-            >
+            <router-link :to="isAuthenticated ? dashboardPath : '/login'" class="btn btn-primary btn-hero">
               {{ isAuthenticated ? t('home.goToDashboard') : t('home.getStarted') }}
-              <Icon name="arrowRight" size="md" />
+              <Icon name="arrowRight" size="sm" :stroke-width="2" />
             </router-link>
             <a
               v-if="docUrl"
               :href="docUrl"
               target="_blank"
               rel="noopener noreferrer"
-              class="btn-glass-secondary home-cta-secondary"
+              class="btn btn-secondary btn-hero home-cta-secondary"
             >
               {{ t('home.viewDocs') }}
             </a>
+            <router-link v-else-if="showModelPlazaEntry" to="/model-plaza" class="btn btn-secondary btn-hero home-cta-secondary">
+              {{ t('home.nav.modelPlaza') }}
+            </router-link>
+          </div>
+          <div class="home-social">
+            <span class="home-avatars" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span>{{ t('home.socialProof') }}</span>
           </div>
         </div>
 
         <div class="home-hero-visual">
-          <div class="terminal-container">
-            <div class="terminal-window">
-              <div class="terminal-header">
-                <div class="terminal-buttons">
-                  <span class="btn-close"></span>
-                  <span class="btn-minimize"></span>
-                  <span class="btn-maximize"></span>
-                </div>
-                <span class="terminal-title">terminal</span>
-              </div>
-              <div class="terminal-body">
-                <div class="code-line line-1">
-                  <span class="code-prompt">$</span>
-                  <span class="code-cmd">curl</span>
-                  <span class="code-flag">-X POST</span>
-                  <span class="code-url">/v1/messages</span>
-                </div>
-                <div class="code-line line-2">
-                  <span class="code-comment"># Routing to upstream...</span>
-                </div>
-                <div class="code-line line-3">
-                  <span class="code-success">200 OK</span>
-                  <span class="code-response">{ "content": "Hello!" }</span>
-                </div>
-                <div class="code-line line-4">
-                  <span class="code-prompt">$</span>
-                  <span class="cursor"></span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <ConsolePreview :api-base-url="apiBaseUrl" />
         </div>
       </section>
 
+      <!-- Three steps + code -->
       <section class="home-steps">
-        <div>
-          <p class="home-kicker">{{ t('home.solutions.subtitle') }}</p>
-          <h2 class="home-section-title">{{ t('home.solutions.title') }}</h2>
+        <div class="home-steps-copy">
+          <div>
+            <p class="section-kicker">{{ t('home.steps.kicker') }}</p>
+            <h2 class="section-title">{{ t('home.steps.title') }}</h2>
+          </div>
           <div class="home-step-list">
-            <GlassCard v-for="(feature, index) in featureCards" :key="feature.title" padding="md" hover>
-              <div class="home-step">
-                <span class="home-step-num">{{ String(index + 1).padStart(2, '0') }}</span>
-                <div>
-                  <h3>{{ feature.title }}</h3>
-                  <p>{{ feature.desc }}</p>
-                </div>
+            <div v-for="(step, index) in steps" :key="step.title" class="home-step">
+              <span class="home-step-num">{{ String(index + 1).padStart(2, '0') }}</span>
+              <div>
+                <h3>{{ step.title }}</h3>
+                <p>{{ step.desc }}</p>
               </div>
-            </GlassCard>
+            </div>
+          </div>
+          <div class="home-clients">
+            <span v-for="c in clients" :key="c" class="home-client"><i></i>{{ c }}</span>
           </div>
         </div>
+        <HomeCodeTabs :api-base-url="apiBaseUrl" />
       </section>
 
-      <section class="home-providers">
+      <!-- Models & pricing -->
+      <section v-if="showPricing" class="home-pricing">
         <div class="home-section-head">
-          <h2 class="home-section-title">{{ t('home.providers.title') }}</h2>
-          <p class="home-section-desc">{{ t('home.providers.description') }}</p>
+          <div>
+            <p class="section-kicker">{{ t('home.pricing.kicker') }}</p>
+            <h2 class="section-title">{{ t('home.pricing.title') }}</h2>
+          </div>
+          <router-link v-if="showModelPlazaEntry" to="/model-plaza" class="home-section-link">
+            {{ t('home.pricing.link') }}
+            <Icon name="arrowRight" size="xs" :stroke-width="2" />
+          </router-link>
         </div>
-        <div class="home-provider-row">
-          <GlassCard v-for="provider in providers" :key="provider.name" padding="sm" class="home-provider-card">
-            <div class="home-provider">
-              <span class="home-provider-mark" :style="{ background: provider.color }">{{ provider.mark }}</span>
-              <span>{{ provider.name }}</span>
-              <StatusBadge :tone="provider.soon ? 'muted' : 'success'" :label="provider.soon ? t('home.providers.soon') : t('home.providers.supported')" />
-            </div>
-          </GlassCard>
-        </div>
+        <HomePricingTable :rows="pricingRows" />
       </section>
 
+      <!-- Comparison -->
       <section class="home-compare">
-        <div>
-          <p class="home-kicker">{{ t('home.comparison.title') }}</p>
-          <h2 class="home-section-title">{{ t('home.features.unifiedGateway') }}</h2>
-          <p class="home-hero-desc">{{ t('home.features.unifiedGatewayDesc') }}</p>
+        <div class="home-compare-copy">
+          <p class="section-kicker">{{ t('home.comparison.title') }}</p>
+          <h2 class="section-title">{{ t('home.features.multiAccount') }}</h2>
+          <p class="home-compare-desc">{{ t('home.features.multiAccountDesc') }} {{ t('home.features.balanceQuotaDesc') }}</p>
         </div>
-        <GlassCard padding="sm" class="home-compare-table">
+        <div class="home-compare-table glass-card">
           <div class="home-compare-head">
             <span>{{ t('home.comparison.headers.feature') }}</span>
             <span>{{ t('home.comparison.headers.official') }}</span>
-            <span>{{ t('home.comparison.headers.us') }}</span>
+            <span class="text-accent">{{ t('home.comparison.headers.us') }}</span>
           </div>
           <div v-for="row in comparisonRows" :key="row.feature" class="home-compare-row">
-            <span>{{ row.feature }}</span>
+            <span class="home-compare-feature">{{ row.feature }}</span>
             <span class="text-muted">{{ row.official }}</span>
-            <span>{{ row.us }}</span>
+            <span class="home-compare-us">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+              {{ row.us }}
+            </span>
           </div>
-        </GlassCard>
+        </div>
       </section>
 
+      <!-- CTA -->
       <section class="home-cta-banner">
         <div>
           <h2>{{ t('home.cta.title') }}</h2>
           <p>{{ t('home.cta.description') }}</p>
         </div>
-        <router-link
-          :to="isAuthenticated ? dashboardPath : '/login'"
-          class="btn-glass-primary home-cta-primary"
-        >
+        <router-link :to="isAuthenticated ? dashboardPath : '/register'" class="btn btn-primary home-cta-btn">
           {{ isAuthenticated ? t('home.goToDashboard') : t('home.cta.button') }}
         </router-link>
       </section>
@@ -288,24 +246,30 @@
     <footer class="home-footer">
       <span>&copy; {{ currentYear }} {{ siteName }}. {{ t('home.footer.allRightsReserved') }}</span>
       <div class="home-footer-links">
-        <a v-if="docUrl" :href="docUrl" target="_blank" rel="noopener noreferrer">{{ t('home.docs') }}</a>
+        <router-link v-for="doc in legalDocuments" :key="doc.id" :to="`/legal/${doc.id}`">{{ doc.title }}</router-link>
+        <a v-if="docUrl" :href="docUrl" target="_blank" rel="noopener noreferrer">{{ t('home.nav.docs') }}</a>
         <a :href="githubUrl" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <span v-if="contactInfo" :title="contactInfo">{{ t('home.footerLinks.contact') }}</span>
       </div>
     </footer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore, useAppStore } from '@/stores'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
-import GlassCard from '@/components/ui/GlassCard.vue'
-import StatusBadge from '@/components/ui/StatusBadge.vue'
+import ConsolePreview from '@/components/home/ConsolePreview.vue'
+import HomeCodeTabs from '@/components/home/HomeCodeTabs.vue'
+import HomePricingTable, { type PricingRow } from '@/components/home/HomePricingTable.vue'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { useTheme } from '@/composables/useTheme'
+import { getModelPlaza } from '@/api/modelPlaza'
+import { platformFromModel, platformLabel } from '@/utils/platformTile'
+import type { GroupPlatform } from '@/types'
 
 const { t } = useI18n()
 
@@ -317,10 +281,20 @@ const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appS
 const siteLogo = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
 const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'AI API Gateway Platform')
 const docUrl = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.doc_url || appStore.docUrl || ''))
+const apiBaseUrl = computed(() => appStore.cachedPublicSettings?.api_base_url || '')
+const contactInfo = computed(() => appStore.cachedPublicSettings?.contact_info || '')
+const legalDocuments = computed(() => (appStore.cachedPublicSettings?.login_agreement_documents ?? []).filter((d) => d.title?.trim()))
 const homeContent = computed(() => appStore.cachedPublicSettings?.home_content || '')
 const hasHomeContent = computed(() => homeContent.value.trim().length > 0)
 const compactHomeEnabled = computed(() => appStore.cachedPublicSettings?.compact_home_enabled === true)
 const modelPlazaEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.modelPlaza))
+const channelMonitorEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.channelMonitor))
+
+const heroDescription = computed(() => {
+  const custom = appStore.cachedPublicSettings?.site_subtitle
+  const base = custom && custom !== siteName.value ? custom : t('home.heroDescription')
+  return `${base.replace(/[。.]$/, '')}。${t('home.heroDescriptionExt')}`
+})
 
 // Check if homeContent is a URL (for iframe display)
 const isHomeContentUrl = computed(() => {
@@ -352,19 +326,13 @@ const userInitial = computed(() => {
 // Current year for footer
 const currentYear = computed(() => new Date().getFullYear())
 
-const featureCards = computed(() => [
-  { title: t('home.features.unifiedGateway'), desc: t('home.features.unifiedGatewayDesc') },
-  { title: t('home.features.multiAccount'), desc: t('home.features.multiAccountDesc') },
-  { title: t('home.features.balanceQuota'), desc: t('home.features.balanceQuotaDesc') }
+const steps = computed(() => [
+  { title: t('home.steps.items.create.title'), desc: t('home.steps.items.create.desc') },
+  { title: t('home.steps.items.baseUrl.title'), desc: t('home.steps.items.baseUrl.desc') },
+  { title: t('home.steps.items.client.title'), desc: t('home.steps.items.client.desc') }
 ])
 
-const providers = computed(() => [
-  { name: t('home.providers.claude'), mark: 'C', color: 'oklch(70% 0.18 55)', soon: false },
-  { name: 'GPT', mark: 'G', color: 'oklch(62% 0.17 155)', soon: false },
-  { name: t('home.providers.gemini'), mark: 'G', color: 'oklch(62% 0.18 240)', soon: false },
-  { name: t('home.providers.antigravity'), mark: 'A', color: 'oklch(62% 0.2 350)', soon: false },
-  { name: t('home.providers.more'), mark: '+', color: 'var(--muted)', soon: true }
-])
+const clients = ['Claude Code', 'Codex CLI', 'Cursor', 'Cline', 'Roo Code', 'OpenAI SDK', 'Anthropic SDK']
 
 const comparisonRows = computed(() => [
   {
@@ -394,138 +362,98 @@ const comparisonRows = computed(() => [
   }
 ])
 
-onMounted(() => {
+// ---- Public pricing (model plaza) ----
+const pricingRows = ref<PricingRow[]>([])
+const pricingLoaded = ref(false)
+const showPricing = computed(() => showModelPlazaEntry.value && (pricingRows.value.length > 0 || !pricingLoaded.value))
+
+function perMillion(price: number | null | undefined): string {
+  if (price === null || price === undefined || !Number.isFinite(price)) return '—'
+  const v = price * 1_000_000
+  return `$${v >= 100 ? v.toFixed(0) : v.toFixed(2)}`
+}
+
+function contextLabel(model: string): string {
+  const m = model.toLowerCase()
+  if (m.startsWith('gemini')) return '1M'
+  if (m.startsWith('gpt-5') || m.includes('codex')) return '400K'
+  if (m.startsWith('grok')) return '256K'
+  if (m.startsWith('claude')) return '200K'
+  return '128K'
+}
+
+async function loadPublicPricing() {
+  if (!showModelPlazaEntry.value) {
+    pricingLoaded.value = true
+    return
+  }
+  try {
+    const data = await getModelPlaza()
+    const seen = new Set<string>()
+    const rows: PricingRow[] = []
+    for (const group of data.groups ?? []) {
+      for (const m of group.models ?? []) {
+        if (seen.has(m.name) || rows.length >= 6) continue
+        const pricing = m.pricing ?? m.official_pricing
+        if (!pricing) continue
+        seen.add(m.name)
+        const platform = platformFromModel(m.name, m.platform) as GroupPlatform
+        rows.push({
+          model: m.name,
+          vendor: platformLabel(platform),
+          platform,
+          input: perMillion(pricing.input_price),
+          output: perMillion(pricing.output_price),
+          context: contextLabel(m.name),
+          limited: Boolean(m.time_pricing?.periods?.length)
+        })
+      }
+      if (rows.length >= 6) break
+    }
+    pricingRows.value = rows
+  } catch {
+    pricingRows.value = []
+  } finally {
+    pricingLoaded.value = true
+  }
+}
+
+onMounted(async () => {
   // Check auth state
   authStore.checkAuth()
 
   // Ensure public settings are loaded (will use cache if already loaded from injected config)
   if (!appStore.publicSettingsLoaded) {
-    appStore.fetchPublicSettings()
+    await appStore.fetchPublicSettings()
   }
+  void loadPublicPricing()
 })
 </script>
 
 <style scoped>
-.home-page {
+.home-page,
+.home-compact {
   position: relative;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  color: var(--foreground);
-  background:
-    linear-gradient(color-mix(in oklch, var(--foreground) 2.5%, transparent) 1px, transparent 1px) 0 0 / 48px 48px,
-    linear-gradient(90deg, color-mix(in oklch, var(--foreground) 2.5%, transparent) 1px, transparent 1px) 0 0 / 48px 48px,
-    radial-gradient(circle at 0% 0%, color-mix(in oklch, var(--accent) 22%, transparent) 0%, transparent 30rem),
-    radial-gradient(circle at 18% 100%, color-mix(in oklch, var(--accent) 10%, transparent) 0%, transparent 30rem),
-    radial-gradient(circle at 100% 0%, color-mix(in oklch, var(--success) 14%, transparent) 0%, transparent 24rem),
-    var(--background);
 }
 
-.home-compact {
-  display: flex;
-  min-height: 100vh;
-  flex-direction: column;
-  background: var(--background);
-  color: var(--foreground);
-}
-
-.home-compact-header {
-  border-bottom: 1px solid var(--border);
-  padding: 16px 24px;
-}
-
-.home-compact-nav {
-  margin: 0 auto;
-  display: flex;
-  max-width: 64rem;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.home-compact-main {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  align-items: center;
-  justify-content: center;
-  padding: 64px 24px;
-}
-
-.home-compact-title {
-  font-family: var(--display);
-  font-size: 32px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  overflow-wrap: anywhere;
-}
-
-.home-compact-subtitle {
-  margin-top: 16px;
-  font-size: 16px;
-  color: var(--muted);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.home-compact-footer {
-  border-top: 1px solid var(--border);
-  padding: 20px 24px;
-  text-align: center;
-  font-size: 14px;
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
-
-.home-compact-cta {
-  min-height: 40px;
-  padding: 0 16px;
-}
-
-.home-icon-btn {
-  display: inline-flex;
-  height: 40px;
-  width: 40px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 10px;
-  color: var(--muted);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.home-icon-btn:hover {
-  background: color-mix(in oklch, var(--foreground) 6%, transparent);
-  color: var(--foreground);
-}
-
-.home-icon-btn-wide {
-  width: auto;
-  gap: 6px;
-  padding: 0 10px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
+/* ---------- Nav · 68px ---------- */
 .home-nav {
-  min-height: 68px;
-  height: auto;
+  height: 68px;
   display: flex;
   align-items: center;
 }
 
 .home-nav-inner {
   width: 100%;
-  max-width: 1280px;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 12px 80px;
+  padding: 0 80px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
   gap: 16px;
 }
 
@@ -533,20 +461,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.home-logo {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  overflow: hidden;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 6px 14px -6px var(--accent);
-}
-
-.home-logo img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+  color: var(--foreground);
+  text-decoration: none;
 }
 
 .home-brand-name {
@@ -567,8 +483,10 @@ onMounted(() => {
 .home-nav-links a {
   color: inherit;
   text-decoration: none;
+  transition: color 0.15s ease;
 }
 
+.home-nav-links a:hover,
 .home-nav-links a.router-link-active {
   color: var(--foreground);
 }
@@ -577,11 +495,6 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.home-login-btn,
-.home-start-btn {
-  height: 34px;
 }
 
 .home-user-dot {
@@ -611,40 +524,27 @@ onMounted(() => {
 }
 
 .home-mobile-panel {
-  position: absolute;
   right: 0;
   top: calc(100% + 8px);
-  z-index: 30;
+  min-width: 200px;
   display: flex;
-  min-width: 180px;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px;
-  border-radius: 12px;
-  background: color-mix(in oklch, var(--surface) 88%, transparent);
-  border: 1px solid var(--border);
-  backdrop-filter: blur(20px);
-  box-shadow: var(--shadow);
+  gap: 2px;
 }
 
-.home-mobile-panel a {
+.home-mobile-panel .dropdown-item {
   height: 44px;
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  border-radius: 10px;
-  color: var(--foreground);
-  text-decoration: none;
+  border-radius: 12px;
   font-size: 14px;
   font-weight: 600;
 }
 
+/* ---------- Main ---------- */
 .home-main {
   flex: 1;
-  max-width: 1280px;
   width: 100%;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 0 80px 56px;
 }
 
 .home-hero {
@@ -652,38 +552,20 @@ onMounted(() => {
   grid-template-columns: 1.15fr 1fr;
   gap: 64px;
   align-items: center;
-  padding: 64px 0 56px;
+  padding: 64px 80px 56px;
 }
 
 .home-hero-copy {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  min-width: 0;
 }
 
 .home-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-.home-tag {
-  height: 24px;
-  padding: 0 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  background: color-mix(in oklch, var(--surface) 80%, transparent);
-  border: 1px solid var(--border);
-  color: var(--muted);
-}
-
-.home-tag-accent {
-  background: color-mix(in oklch, var(--accent) 12%, transparent);
-  color: var(--accent);
-  border-color: transparent;
 }
 
 .home-hero-title {
@@ -693,16 +575,7 @@ onMounted(() => {
   line-height: 1.06;
   font-weight: 800;
   letter-spacing: -0.035em;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.home-hero-gradient {
-  background: linear-gradient(92deg, var(--foreground) 0%, var(--accent) 70%, color-mix(in oklch, var(--accent) 70%, var(--success)) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  text-wrap: balance;
 }
 
 .home-hero-desc {
@@ -711,56 +584,80 @@ onMounted(() => {
   line-height: 1.65;
   color: var(--muted);
   max-width: 520px;
+  text-wrap: pretty;
 }
 
 .home-hero-ctas {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  margin-top: 6px;
 }
 
-.home-cta-primary,
 .home-cta-secondary {
-  height: 42px;
   padding: 0 18px;
 }
 
-.home-cta-primary {
-  flex: 1 1 auto;
+.home-social {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-top: 8px;
 }
 
-.home-kicker {
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent);
-  font-weight: 700;
+.home-avatars {
+  display: flex;
+}
+
+.home-avatars i {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 2px solid var(--background);
+  background: var(--surface-tertiary);
+}
+
+.home-avatars i + i {
+  margin-left: -8px;
+}
+
+.home-avatars i:nth-child(2) {
+  background: color-mix(in oklch, var(--accent) 40%, var(--surface));
+}
+
+.home-avatars i:nth-child(3) {
+  background: color-mix(in oklch, var(--success) 40%, var(--surface));
+}
+
+.home-hero-visual {
+  position: relative;
+  min-width: 0;
+}
+
+/* ---------- Steps ---------- */
+.home-steps {
+  padding: 24px 80px 64px;
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  gap: 48px;
+  align-items: center;
+}
+
+.home-steps-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.section-kicker {
   margin: 0 0 8px;
 }
 
-.home-section-title {
-  margin: 0;
-  font-family: var(--display);
-  font-size: 30px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-}
-
-.home-section-desc {
-  margin: 8px 0 0;
-  color: var(--muted);
-  font-size: 14px;
-}
-
-.home-steps,
-.home-providers,
-.home-compare {
-  padding: 0 0 64px;
-}
-
 .home-step-list {
-  margin-top: 22px;
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
 }
 
@@ -786,8 +683,10 @@ onMounted(() => {
 
 .home-step h3 {
   margin: 0;
+  font-family: var(--font-body);
   font-size: 14.5px;
   font-weight: 600;
+  letter-spacing: 0;
 }
 
 .home-step p {
@@ -796,43 +695,92 @@ onMounted(() => {
   color: var(--muted);
 }
 
-.home-section-head {
-  text-align: center;
-  margin-bottom: 20px;
-}
-
-.home-provider-row {
+.home-clients {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  gap: 8px;
+}
+
+.home-client {
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in oklch, var(--surface) 80%, transparent);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+}
+
+.home-client i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--success);
+}
+
+/* ---------- Pricing ---------- */
+.home-pricing {
+  padding: 0 80px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.home-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.home-section-link {
+  font-size: 13.5px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.home-section-link:hover {
+  text-decoration: underline;
+}
+
+/* ---------- Compare ---------- */
+.home-compare {
+  padding: 0 80px 64px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  align-items: start;
+}
+
+.home-compare-copy {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
-.home-provider {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 600;
+.home-compare-copy .section-kicker {
+  margin: 0;
 }
 
-.home-provider-mark {
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
+.home-compare-desc {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.65;
+  max-width: 440px;
 }
 
-.home-compare {
-  display: grid;
-  grid-template-columns: 1fr 1.1fr;
-  gap: 48px;
-  align-items: start;
+.home-compare-table {
+  border-radius: 16px;
+  overflow: hidden;
 }
 
 .home-compare-head,
@@ -846,6 +794,10 @@ onMounted(() => {
   border-bottom: 1px solid var(--border);
 }
 
+.home-compare-row:last-child {
+  border-bottom: 0;
+}
+
 .home-compare-head {
   font-size: 11px;
   font-weight: 600;
@@ -854,19 +806,35 @@ onMounted(() => {
   background: color-mix(in oklch, var(--surface-secondary) 45%, transparent);
 }
 
+.home-compare-feature {
+  font-weight: 600;
+}
+
+.home-compare-us {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+/* ---------- CTA ---------- */
 .home-cta-banner {
-  margin-bottom: 56px;
+  margin: 0 80px 56px;
   padding: 40px 48px;
   border-radius: 20px;
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  color: var(--foreground);
   background:
     linear-gradient(120deg, color-mix(in oklch, var(--accent) 16%, transparent), color-mix(in oklch, var(--success) 10%, transparent)),
     color-mix(in oklch, var(--surface) 70%, transparent);
   border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   box-shadow: var(--shadow), 0 30px 60px -40px var(--accent);
 }
 
@@ -884,11 +852,27 @@ onMounted(() => {
   color: var(--muted);
 }
 
+.home-cta-btn {
+  height: 44px;
+  padding: 0 22px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 12px 28px -12px var(--accent);
+  flex: none;
+}
+
+/* ---------- Footer ---------- */
 .home-footer {
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
   padding: 20px 80px 28px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
   font-size: 12.5px;
   color: var(--muted);
   border-top: 1px solid var(--border);
@@ -896,113 +880,98 @@ onMounted(() => {
 
 .home-footer-links {
   display: flex;
+  flex-wrap: wrap;
   gap: 20px;
 }
 
-.home-footer-links a {
+.home-footer-links a,
+.home-footer-links span {
   color: inherit;
   text-decoration: none;
 }
 
-.terminal-container {
-  position: relative;
-  display: inline-block;
+.home-footer-links a:hover {
+  color: var(--foreground);
 }
 
-.terminal-window {
-  width: 420px;
-  background: color-mix(in oklch, var(--surface) 76%, transparent);
-  border-radius: 18px;
-  border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
-  backdrop-filter: blur(24px);
-  box-shadow: var(--shadow), 0 50px 100px -50px color-mix(in oklch, var(--accent) 55%, transparent);
-  overflow: hidden;
-}
-
-.terminal-header {
+/* ---------- Compact ---------- */
+.home-compact-main {
   display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.terminal-buttons {
-  display: flex;
-  gap: 8px;
-}
-
-.terminal-buttons span {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--surface-tertiary);
-}
-
-.terminal-title {
   flex: 1;
-  text-align: center;
-  font-size: 12px;
-  font-family: var(--font-mono);
-  color: var(--muted);
-  margin-right: 52px;
-}
-
-.terminal-body {
-  padding: 20px 24px;
-  font-family: var(--font-mono);
-  font-size: 14px;
-  line-height: 2;
-}
-
-.code-line {
-  display: flex;
+  min-width: 0;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  opacity: 0;
-  animation: line-appear 0.5s ease forwards;
+  justify-content: center;
+  padding: 64px 24px;
 }
 
-.line-1 { animation-delay: 0.3s; }
-.line-2 { animation-delay: 1s; }
-.line-3 { animation-delay: 1.8s; }
-.line-4 { animation-delay: 2.5s; }
-
-@keyframes line-appear {
-  from { opacity: 0; transform: translateY(5px); }
-  to { opacity: 1; transform: translateY(0); }
+.home-compact-card {
+  width: 100%;
+  max-width: 520px;
+  padding: 40px 36px;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
 }
 
-.code-prompt { color: var(--success-text); font-weight: bold; }
-.code-cmd { color: var(--accent); }
-.code-flag { color: var(--muted); }
-.code-url { color: var(--foreground); }
-.code-comment { color: var(--muted); font-style: italic; }
-.code-success {
-  color: var(--success-text);
-  background: color-mix(in oklch, var(--success) 16%, transparent);
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-weight: 600;
-}
-.code-response { color: var(--warning-text); }
-
-.cursor {
-  display: inline-block;
-  width: 8px;
-  height: 16px;
-  background: var(--success);
-  animation: blink 1s step-end infinite;
+.home-compact-logo {
+  margin-bottom: 4px;
 }
 
-@keyframes blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
+.home-compact-title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  overflow-wrap: anywhere;
 }
 
-@media (max-width: 1100px) {
+.home-compact-subtitle {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1180px) {
+  .home-nav-inner,
+  .home-footer {
+    padding-left: 40px;
+    padding-right: 40px;
+  }
+
+  .home-hero,
+  .home-steps,
+  .home-pricing,
+  .home-compare {
+    padding-left: 40px;
+    padding-right: 40px;
+  }
+
+  .home-cta-banner {
+    margin-left: 40px;
+    margin-right: 40px;
+  }
+
+  .home-hero {
+    gap: 40px;
+  }
+
+  .home-hero-title {
+    font-size: 48px;
+  }
+}
+
+@media (max-width: 1023px) {
   .home-nav-links,
-  .home-start-btn {
+  .home-start-btn,
+  .home-nav-locale {
     display: none;
   }
 
@@ -1010,51 +979,104 @@ onMounted(() => {
     display: block;
   }
 
+  .home-hero,
+  .home-steps,
+  .home-compare {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+
+  .home-hero {
+    padding-top: 28px;
+  }
+
+  .home-hero-visual {
+    padding: 20px 0 16px;
+  }
+}
+
+@media (max-width: 767px) {
+  .home-nav {
+    height: 56px;
+  }
+
   .home-nav-inner,
-  .home-main,
-  .home-footer {
+  .home-footer,
+  .home-hero,
+  .home-steps,
+  .home-pricing,
+  .home-compare {
     padding-left: 20px;
     padding-right: 20px;
   }
 
-  .home-hero,
-  .home-compare {
-    grid-template-columns: 1fr;
-    gap: 28px;
-    padding-top: 28px;
+  .home-hero {
+    padding-top: 10px;
+    padding-bottom: 28px;
+    gap: 18px;
   }
 
   .home-hero-title {
     font-size: 40px;
   }
 
-  .home-cta-banner {
+  .home-hero-desc {
+    font-size: 14.5px;
+  }
+
+  .home-hero-ctas .btn {
+    flex: 1;
+    height: 44px;
+  }
+
+  .home-social {
+    display: none;
+  }
+
+  .home-hero-visual {
+    padding: 24px 0 20px;
+  }
+
+  .home-steps,
+  .home-pricing,
+  .home-compare {
+    padding-bottom: 40px;
+  }
+
+  .section-title {
+    font-size: 24px;
+  }
+
+  .home-section-head {
     flex-direction: column;
-    align-items: stretch;
-    padding: 28px 20px;
+    align-items: flex-start;
   }
 
-  .home-cta-primary {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .terminal-window {
-    width: 100%;
-    max-width: 420px;
-  }
-
-  .home-nav {
-    min-height: 56px;
-  }
-}
-
-@media (max-width: 640px) {
   .home-compare-head,
   .home-compare-row {
     grid-template-columns: 1fr;
-    gap: 6px;
+    gap: 4px;
     padding: 12px 16px;
+  }
+
+  .home-compare-head span:not(:first-child) {
+    display: none;
+  }
+
+  .home-cta-banner {
+    margin: 0 20px 40px;
+    padding: 28px 20px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .home-cta-btn {
+    width: 100%;
+  }
+
+  .home-footer {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

@@ -275,6 +275,7 @@ export default {
       exportCsv: '导出 CSV',
       batchUpdate: '批量修改',
       batchUpdateTitle: '批量修改兑换码',
+      selectedLabel: '已选',
       selectedCount: '已选择 {count} 个兑换码',
       clearSelection: '清空选择',
       selectCodesFirst: '请先选择兑换码',

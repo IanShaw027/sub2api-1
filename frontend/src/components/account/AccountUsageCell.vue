@@ -223,7 +223,7 @@
             />
           </svg>
           <span
-            class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded bg-[var(--code-bg)] px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100"
+            class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded bg-[var(--code-bg)] px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-[var(--shadow-pop)] transition-opacity group-hover:opacity-100"
           >
             {{ t('admin.accounts.ineligibleWarning') }}
           </span>
@@ -524,7 +524,7 @@
             />
           </svg>
           <span
-            class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded bg-[var(--code-bg)] px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100"
+            class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded bg-[var(--code-bg)] px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-[var(--shadow-pop)] transition-opacity group-hover:opacity-100"
           >
             <div class="font-semibold mb-1">{{ t('admin.accounts.gemini.quotaPolicy.title') }}</div>
             <div class="mb-2 text-muted">{{ t('admin.accounts.gemini.quotaPolicy.note') }}</div>

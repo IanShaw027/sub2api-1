@@ -1,128 +1,106 @@
 <template>
- <AppLayout>
- <PageHeader :title="ticket?.ticket_no || t('nav.ticketManagement')" :description="t('tickets.detailConversationTitle')" />
- <GlassCard v-if="loading" class="p-10 text-center text-sm text-muted">
- {{ t('common.loading') }}
- </GlassCard>
- <div v-else-if="ticket" class="grid h-[calc(100vh-10rem)] min-h-[calc(100vh-10rem)] min-w-0 gap-6 overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.95fr)]">
- <div class="min-h-0">
- <TicketConversationPane
- :title="t('tickets.detailConversationTitle')"
- :subtitle="ticket.ticket_no"
- :messages="messages"
- :empty-text="t('tickets.emptyConversation')"
- :show-composer="canReply"
- :sending="sendingReply"
- :reply-content="replyDraft"
- :clear-composer-key="clearComposerKey"
- :composer-placeholder="t('tickets.replyPlaceholderAdmin')"
- :submit-text="t('tickets.reply')"
- :sending-text="t('common.submitting')"
- :ticket-id="ticketID"
- :upload-fn="uploadAdminTicketMedia"
- :download-fn="downloadAttachment"
- @update:reply-content="replyDraft = $event"
- @reply="reply"
- @upload-error="handleUploadError"
- >
- <template #composer-actions>
- <div
- ref="templateMenuRef"
- class="relative"
- @focusin="showTemplateMenu = true"
- @focusout="handleTemplateFocusOut"
- @mouseenter="showTemplateMenu = true"
- @mouseleave="handleTemplateMouseLeave"
- >
- <button
- ref="templateTriggerRef"
- type="button"
- class="btn-glass-secondary"
- aria-haspopup="menu"
- :aria-expanded="showTemplateMenu ? 'true' : 'false'"
- @click="toggleTemplateMenu"
- @keydown.enter.prevent="openTemplateMenuAndFocusFirst"
- @keydown.space.prevent="openTemplateMenuAndFocusFirst"
- @keydown.down.prevent="openTemplateMenuAndFocusFirst"
- >
- {{ t('tickets.templates.button') }}
- </button>
+  <AppLayout>
+    <div class="detail-page">
+      <PageHeader
+        :title="ticket?.title || ticket?.ticket_no || t('nav.ticketManagement')"
+        :description="ticket ? `#${ticket.ticket_no} · ${t(`tickets.categories.${ticket.category}`)}` : t('tickets.detailConversationTitle')"
+      >
+        <template #actions>
+          <Button variant="secondary" @click="goBack">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+            {{ t('common.back') }}
+          </Button>
+        </template>
+      </PageHeader>
 
- <div
- v-if="showTemplateMenu"
- ref="templateMenuListRef"
- role="menu"
- tabindex="-1"
- class="absolute bottom-full left-0 z-20 mb-2 w-72 overflow-hidden rounded-2xl border border-line bg-surface shadow-xl "
- @keydown.esc.prevent="closeTemplateMenuAndRestoreFocus"
- >
- <div v-if="replyTemplates.length > 0" class="max-h-80 overflow-y-auto py-2">
- <button
- v-for="template in replyTemplates"
- :key="template.id"
- type="button"
- role="menuitem"
- class="flex w-full flex-col items-start px-4 py-3 text-left transition-colors hover:bg-surface-2"
- @mousedown.prevent
- @click="applyTemplate(template.content)"
- >
- <span class="text-sm font-medium text-foreground">{{ template.title }}</span>
- <span class="mt-1 line-clamp-2 text-xs text-muted">{{ template.content }}</span>
- </button>
- </div>
- <div v-else class="px-4 py-3 text-sm text-muted">
- {{ t('tickets.templates.empty') }}
- </div>
- <div class="border-t border-line p-2 ">
- <button
- type="button"
- role="menuitem"
- class="btn-glass-secondary btn-sm w-full"
- @mousedown.prevent
- @click="openTemplateDialog"
- >
- {{ t('tickets.templates.manage') }}
- </button>
- </div>
- </div>
- </div>
- </template>
- </TicketConversationPane>
- </div>
+      <GlassCard v-if="loading" class="detail-loading">
+        {{ t('common.loading') }}
+      </GlassCard>
 
- <div class="min-h-0 h-full">
- <TicketDetailPane :ticket="ticket" show-user-meta>
- <template #actions>
- <div v-if="canUpdateStatus" class="space-y-3">
- <p class="text-sm font-medium text-foreground">{{ t('tickets.adminActions') }}</p>
- <div class="flex flex-wrap gap-3">
- <button v-for="status in availableAdminStatuses" :key="status" class="btn-glass-secondary btn-sm" :disabled="actionLoading || ticket.status === status" @click="updateStatus(status)">
- {{ t(`tickets.statuses.${status}`) }}
- </button>
- </div>
- </div>
- </template>
- </TicketDetailPane>
- </div>
- </div>
+      <div v-else-if="ticket" class="detail-grid">
+        <div class="detail-main">
+          <TicketConversationPane
+            :title="t('tickets.detailConversationTitle')"
+            :subtitle="ticket.ticket_no"
+            :messages="messages"
+            :empty-text="t('tickets.emptyConversation')"
+            :show-composer="canReply"
+            :sending="sendingReply"
+            :reply-content="replyDraft"
+            :clear-composer-key="clearComposerKey"
+            :composer-placeholder="t('tickets.replyPlaceholderAdmin')"
+            :submit-text="t('tickets.reply')"
+            :sending-text="t('common.submitting')"
+            :ticket-id="ticketID"
+            :upload-fn="uploadAdminTicketMedia"
+            :download-fn="downloadAttachment"
+            @update:reply-content="replyDraft = $event"
+            @reply="reply"
+            @upload-error="handleUploadError"
+          >
+            <template #composer-actions>
+              <div class="template-rail" role="group" :aria-label="t('tickets.templates.button')">
+                <button
+                  v-for="template in replyTemplates"
+                  :key="template.id"
+                  ref="templateTriggerRef"
+                  type="button"
+                  class="filter-pill template-pill"
+                  :title="template.content"
+                  @click="applyTemplate(template.content)"
+                >
+                  <span class="filter-pill-value">{{ template.title }}</span>
+                </button>
+                <span v-if="replyTemplates.length === 0" class="template-empty">{{ t('tickets.templates.empty') }}</span>
+                <button type="button" class="filter-pill template-pill" @click="openTemplateDialog">
+                  <span class="filter-pill-label">{{ t('tickets.templates.manage') }}</span>
+                </button>
+              </div>
+            </template>
+          </TicketConversationPane>
+        </div>
 
- <TicketReplyTemplatesDialog
- :show="showTemplateDialog"
- :templates="replyTemplates"
- :saving="savingTemplates"
- @close="closeTemplateDialog"
- @save="saveTemplates"
- />
- </AppLayout>
+        <aside class="detail-side">
+          <TicketDetailPane :ticket="ticket" show-user-meta>
+            <template #actions>
+              <div v-if="canUpdateStatus" class="status-block">
+                <p class="status-label">{{ t('tickets.adminActions') }}</p>
+                <UiSelect
+                  :model-value="ticket.status"
+                  :options="statusActionOptions"
+                  :disabled="actionLoading"
+                  :searchable="false"
+                  :aria-label="t('tickets.adminActions')"
+                  @update:model-value="handleStatusSelect"
+                />
+              </div>
+            </template>
+          </TicketDetailPane>
+        </aside>
+      </div>
+    </div>
+
+    <TicketReplyTemplatesDialog
+      :show="showTemplateDialog"
+      :templates="replyTemplates"
+      :saving="savingTemplates"
+      @close="closeTemplateDialog"
+      @save="saveTemplates"
+    />
+  </AppLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import Button from '@/components/ui/Button.vue'
 import GlassCard from '@/components/ui/GlassCard.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import { useAppStore } from '@/stores'
 import { adminTicketsAPI } from '@/api/admin/tickets'
 import { adminMediaAPI } from '@/api/media'
@@ -135,6 +113,7 @@ import type { SupportTicket, SupportTicketMessage, TicketReplyTemplate, TicketSt
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 const appStore = useAppStore()
 const loading = ref(false)
 const actionLoading = ref(false)
@@ -144,12 +123,9 @@ const messages = ref<SupportTicketMessage[]>([])
 const clearComposerKey = ref(0)
 const replyDraft = ref('')
 const replyTemplates = ref<TicketReplyTemplate[]>([])
-const showTemplateMenu = ref(false)
 const showTemplateDialog = ref(false)
 const savingTemplates = ref(false)
-const templateMenuRef = ref<HTMLElement | null>(null)
 const templateTriggerRef = ref<HTMLButtonElement | null>(null)
-const templateMenuListRef = ref<HTMLElement | null>(null)
 const adminStatuses: TicketStatus[] = ['processing', 'waiting_user', 'waiting_admin', 'resolved', 'closed']
 const canReply = computed(() => !['resolved', 'closed', 'withdrawn'].includes(ticket.value?.status || ''))
 const availableAdminStatuses = computed(() => {
@@ -160,6 +136,12 @@ const availableAdminStatuses = computed(() => {
   return adminStatuses.filter((status) => isAdminStatusActionAllowed(ticket.value!.status, ticket.value!.last_reply_role, status))
 })
 const canUpdateStatus = computed(() => availableAdminStatuses.value.length > 0)
+const statusActionOptions = computed(() =>
+  availableAdminStatuses.value.map((status) => ({
+    value: status,
+    label: t(`tickets.statuses.${status}`),
+  })),
+)
 const ticketID = computed(() => Number(route.params.id))
 let loadDetailRequestID = 0
 let replyRequestID = 0
@@ -169,6 +151,14 @@ let templateDialogSessionID = 0
 
 function ticketError(err: unknown) {
   return extractI18nErrorMessage(err, t, 'tickets.errors', t('common.unknownError'))
+}
+
+function goBack() {
+  if (window.history.length > 1) {
+    router.back()
+    return
+  }
+  router.push('/admin/tickets')
 }
 
 function isAdminStatusActionAllowed(currentStatus: TicketStatus, lastReplyRole?: string, nextStatus?: TicketStatus) {
@@ -193,7 +183,7 @@ async function loadDetail(targetTicketID = ticketID.value) {
       return
     }
     ticket.value = detail.data
-    messages.value = messageData.data || []
+    messages.value = Array.isArray(messageData.data) ? messageData.data : []
     notifyTicketUnreadChanged()
   } catch (err: unknown) {
     if (requestID !== loadDetailRequestID) {
@@ -267,14 +257,12 @@ function handleUploadError() {
 
 function applyTemplate(content: string) {
   replyDraft.value = content
-  showTemplateMenu.value = false
   nextTick(() => {
     templateTriggerRef.value?.focus()
   })
 }
 
 function openTemplateDialog() {
-  showTemplateMenu.value = false
   templateDialogSessionID += 1
   showTemplateDialog.value = true
 }
@@ -334,41 +322,6 @@ async function saveTemplates(templates: TicketReplyTemplate[]) {
   }
 }
 
-function toggleTemplateMenu() {
-  if (showTemplateMenu.value) {
-    showTemplateMenu.value = false
-    return
-  }
-  showTemplateMenu.value = true
-}
-
-async function openTemplateMenuAndFocusFirst() {
-  showTemplateMenu.value = true
-  await nextTick()
-  const firstItem = templateMenuListRef.value?.querySelector<HTMLElement>('[role="menuitem"]')
-  firstItem?.focus()
-}
-
-function closeTemplateMenuAndRestoreFocus() {
-  showTemplateMenu.value = false
-  templateTriggerRef.value?.focus()
-}
-
-function handleTemplateFocusOut(event: FocusEvent) {
-  const nextTarget = event.relatedTarget
-  if (nextTarget instanceof Node && templateMenuRef.value?.contains(nextTarget)) {
-    return
-  }
-  showTemplateMenu.value = false
-}
-
-function handleTemplateMouseLeave() {
-  if (templateMenuRef.value?.contains(document.activeElement)) {
-    return
-  }
-  showTemplateMenu.value = false
-}
-
 async function updateStatus(status: TicketStatus) {
   const currentTicketID = ticketID.value
   const requestID = ++statusRequestID
@@ -392,6 +345,13 @@ async function updateStatus(status: TicketStatus) {
   }
 }
 
+function handleStatusSelect(value: string | number | boolean | null) {
+  if (typeof value !== 'string' || !value) {
+    return
+  }
+  updateStatus(value as TicketStatus)
+}
+
 onMounted(loadReplyTemplates)
 
 onUnmounted(() => {
@@ -409,3 +369,78 @@ watch(ticketID, (nextTicketID, previousTicketID) => {
   loadDetail()
 }, { immediate: true })
 </script>
+
+<style scoped>
+.detail-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+
+.detail-loading {
+  padding: 40px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.detail-grid {
+  display: grid;
+  min-width: 0;
+  gap: 24px;
+  height: calc(100vh - 10rem);
+  min-height: calc(100vh - 10rem);
+  overflow: hidden;
+}
+
+.detail-main,
+.detail-side {
+  min-width: 0;
+  min-height: 0;
+}
+
+.detail-side {
+  height: 100%;
+}
+
+@media (min-width: 1280px) {
+  .detail-grid {
+    grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.95fr);
+  }
+}
+
+.status-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.status-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.template-rail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.template-pill {
+  max-width: 220px;
+  overflow: hidden;
+}
+
+.template-pill .filter-pill-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.template-empty {
+  font-size: 12px;
+  color: var(--muted);
+}
+</style>

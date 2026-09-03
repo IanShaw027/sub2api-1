@@ -1,5 +1,5 @@
 <template>
-  <GlassCard :variant="variant" :hover="hover" :padding="padding" class="ui-stat-card">
+  <GlassCard :variant="variant" :hover="hover" :padding="padding" class="ui-stat-card ui-stat-card-pad">
     <div class="ui-stat-card-top">
       <p class="ui-stat-card-label">{{ label }}</p>
       <span v-if="delta" class="ui-stat-card-delta" :class="deltaToneClass">{{ delta }}</span>
@@ -46,6 +46,10 @@ const deltaToneClass = computed(() => {
 </script>
 
 <style scoped>
+.ui-stat-card-pad.ui-glass-card-pad-md {
+  padding: 14px 16px;
+}
+
 .ui-stat-card-top {
   display: flex;
   align-items: center;
@@ -62,9 +66,9 @@ const deltaToneClass = computed(() => {
 .ui-stat-card-value {
   margin-top: 6px;
   font-family: var(--display);
-  font-size: 24px;
+  font-size: 28px;
   font-weight: 800;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.04em;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
   color: var(--foreground);

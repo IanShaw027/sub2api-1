@@ -1,39 +1,36 @@
 <template>
- <div class="flex items-center gap-1.5">
- <span
- :class="[
- 'inline-block h-2 w-2 rounded-full',
- variantClass
- ]"
- ></span>
- <span class="text-sm text-foreground">
- {{ label }}
- </span>
- </div>
+  <span :class="['badge', 'badge-dot', toneClass]">
+    {{ label }}
+  </span>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 
 const props = defineProps<{
- status: string
- label: string
+  status: string
+  label: string
 }>()
 
-const variantClass = computed(() => {
- switch (props.status) {
- case 'active':
- case 'success':
- return 'bg-green-500'
- case 'disabled':
- case 'inactive':
- case 'warning':
- return 'bg-yellow-500'
- case 'error':
- case 'danger':
- return 'bg-red-500'
- default:
- return 'bg-surface-3'
- }
+/** Same variant mapping as before, expressed with the Glass badge tones. */
+const toneClass = computed(() => {
+  switch (props.status) {
+    case 'active':
+    case 'success':
+      return 'badge-tone-success'
+    case 'disabled':
+    case 'inactive':
+    case 'warning':
+      return 'badge-tone-warning'
+    case 'error':
+    case 'danger':
+      return 'badge-tone-danger'
+    case 'accent':
+    case 'primary':
+    case 'info':
+      return 'badge-tone-accent'
+    default:
+      return 'badge-tone-muted'
+  }
 })
 </script>

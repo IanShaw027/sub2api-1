@@ -87,7 +87,9 @@ export default defineConfig(({ mode }) => {
     plugins: [
       vue(),
       checker({
-        vueTsc: true
+        vueTsc: true,
+        // TEMP(glass-redesign visual review): keep the type overlay out of screenshots
+        overlay: false
       }),
       injectPublicSettings(backendUrl)
     ],

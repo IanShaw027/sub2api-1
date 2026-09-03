@@ -13,46 +13,59 @@
       </template>
     </PageHeader>
     <div class="space-y-4">
-      <div class="flex flex-col gap-3">
-        <FilterBar>
-          <template #search>
-            <Select v-model="currentFilter" :options="statusFilters" class="w-36" @change="fetchOrders" />
-          </template>
-        </FilterBar>
+      <div class="list-filter-row">
+        <SegmentedControl
+          class="list-filter-segmented"
+          :model-value="String(currentFilter || '')"
+          :options="statusFilters.map((opt) => ({ value: String(opt.value), label: opt.label }))"
+          @update:model-value="(v) => { currentFilter = v || ''; fetchOrders() }"
+        />
         <ChipScroller
+          class="list-filter-chips"
           :model-value="String(currentFilter || '')"
           :chips="statusFilters.map((opt) => ({ value: String(opt.value), label: opt.label }))"
           @update:model-value="(v) => { currentFilter = v || ''; fetchOrders() }"
         />
+        <span class="list-filter-meta">{{ t('common.total') }} <b>{{ pagination.total }}</b></span>
       </div>
 
-      <OrderTable :orders="orders" :loading="loading">
-        <template #actions="{ row }">
-          <div class="flex items-center gap-2">
-            <label v-if="canInvoice(row)" class="inline-flex items-center gap-1 text-xs text-muted">
-              <input type="checkbox" :checked="selectedIds.includes(row.id)" @change="toggleSelect(row.id)" />
-              {{ t('payment.invoices.select') }}
-            </label>
-            <button v-if="row.status === 'PENDING'" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-yellow-600 hover:bg-yellow-50" @click="handleCancel(row.id)">
-              <Icon name="x" size="sm" />
-              <span>{{ t('payment.orders.cancel') }}</span>
-            </button>
-            <button v-if="canRequestRefund(row)" class="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50" @click="openRefundDialog(row)">
-              <Icon name="dollar" size="sm" />
-              <span>{{ t('payment.orders.requestRefund') }}</span>
-            </button>
-          </div>
-        </template>
-      </OrderTable>
+      <div class="table-container">
+        <OrderTable :orders="orders" :loading="loading">
+          <template #actions="{ row }">
+            <div class="flex items-center justify-end gap-1">
+              <label v-if="canInvoice(row)" class="inline-flex items-center gap-1 text-xs text-muted">
+                <input type="checkbox" :checked="selectedIds.includes(row.id)" @change="toggleSelect(row.id)" />
+                {{ t('payment.invoices.select') }}
+              </label>
+              <button
+                v-if="row.status === 'PENDING'"
+                class="icon-btn"
+                :title="t('payment.orders.cancel')"
+                @click="handleCancel(row.id)"
+              >
+                <Icon name="x" size="sm" />
+              </button>
+              <button
+                v-if="canRequestRefund(row)"
+                class="icon-btn"
+                :title="t('payment.orders.requestRefund')"
+                @click="openRefundDialog(row)"
+              >
+                <Icon name="dollar" size="sm" />
+              </button>
+            </div>
+          </template>
+        </OrderTable>
 
-      <UiPagination
-        v-if="pagination.total > 0"
-        :page="pagination.page"
-        :total="pagination.total"
-        :page-size="pagination.page_size"
-        @update:page="handlePageChange"
-        @update:pageSize="handlePageSizeChange"
-      />
+        <UiPagination
+          v-if="pagination.total > 0"
+          :page="pagination.page"
+          :total="pagination.total"
+          :page-size="pagination.page_size"
+          @update:page="handlePageChange"
+          @update:pageSize="handlePageSizeChange"
+        />
+      </div>
     </div>
 
     <BaseDialog :show="!!cancelTargetId" :title="t('payment.orders.cancel')" width="narrow" @close="cancelTargetId = null">
@@ -142,12 +155,11 @@ import type { PaymentOrder } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import Button from '@/components/ui/Button.vue'
-import FilterBar from '@/components/ui/FilterBar.vue'
+import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import ChipScroller from '@/components/ui/ChipScroller.vue'
 import GlassCard from '@/components/ui/GlassCard.vue'
 import UiPagination from '@/components/ui/UiPagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
-import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 import OrderTable from '@/components/payment/OrderTable.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -315,3 +327,36 @@ async function loadInvoiceEligibility() {
 
 onMounted(() => { hydrateInvoiceDraft(); fetchOrders(); loadRefundEligibility(); loadInvoiceEligibility() })
 </script>
+
+<style scoped>
+.list-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.list-filter-chips {
+  display: none;
+}
+
+.list-filter-meta {
+  margin-left: auto;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.list-filter-meta b {
+  color: var(--foreground);
+}
+
+@media (max-width: 767px) {
+  .list-filter-segmented {
+    display: none;
+  }
+
+  .list-filter-chips {
+    display: flex;
+  }
+}
+</style>

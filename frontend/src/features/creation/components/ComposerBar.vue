@@ -32,7 +32,7 @@ async function submit() {
   <div class="studio-composer">
     <textarea
       v-model="draft"
-      class="studio-composer-input"
+      class="field studio-composer-input"
       rows="3"
       :aria-label="t('studio.a11y.composerInput')"
       :placeholder="store.isImageSession ? t('studio.composer.placeholderImage') : t('studio.composer.placeholderChat')"
@@ -75,27 +75,15 @@ async function submit() {
 }
 
 .studio-composer-input {
-  width: 100%;
-  min-height: 88px;
-  resize: vertical;
-  border-radius: var(--radius-field);
-  border: 1px solid var(--border);
-  background: color-mix(in oklch, var(--surface) 85%, transparent);
-  color: var(--foreground);
-  padding: 12px 14px;
-  font-size: 14px;
-  box-shadow: var(--field-shadow);
-}
-
-.studio-composer-input:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: var(--field-shadow), 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent);
+  min-height: 96px;
+  padding: 10px 12px;
+  font-size: 13px;
 }
 
 .studio-composer-actions {
   display: flex;
   gap: 8px;
   align-items: center;
+  justify-content: flex-end;
 }
 </style>

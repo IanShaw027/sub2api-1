@@ -12,6 +12,7 @@ export default {
     performance: 'Performance',
     liveRpm: 'Live RPM',
     avgRpm: '5-min RPM',
+    currentConcurrency: 'Current Concurrency',
     avgResponse: 'Avg Response',
     averageTime: 'Average time',
     timeRange: 'Time Range',
@@ -74,10 +75,26 @@ export default {
     endpoints: {
       title: 'API Endpoints',
       default: 'Default',
+      custom: 'Custom',
+      copy: 'Copy',
       copied: 'Copied',
       copiedHint: 'Copied to clipboard',
       clickToCopy: 'Click to copy this endpoint',
       speedTest: 'Speed Test',
+    },
+    filters: {
+      toggle: 'Filters',
+    },
+    sortedByPrefix: 'Sorted by',
+    sortedBySuffix: '',
+    usageQuery: 'Usage Query',
+    moreActions: 'More actions',
+    use: 'Use',
+    showKey: 'Show key',
+    hideKey: 'Hide key',
+    ccsImport: {
+      title: 'Import to CC-Switch',
+      description: 'Choose which API key to import into CC-Switch.',
     },
     allGroups: 'All Groups',
     allStatus: 'All Status',
@@ -752,7 +769,13 @@ export default {
     codeRedeemSuccess: 'Code redeemed successfully!',
     failedToRedeem: 'Failed to redeem code. Please check the code and try again.',
     subscriptionRefreshFailed: 'Redeemed successfully, but failed to refresh subscription status.',
-    pleaseEnterCode: 'Please enter a redeem code'
+    pleaseEnterCode: 'Please enter a redeem code',
+    columns: {
+      type: 'Type',
+      code: 'Code',
+      time: 'Time',
+      amount: 'Amount'
+    }
   },
 
   // Profile

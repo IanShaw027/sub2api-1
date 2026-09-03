@@ -1,68 +1,69 @@
 <template>
- <div class="inline-flex flex-col gap-0.5 text-xs font-medium">
- <!-- Row 1: Platform + Type -->
- <div class="inline-flex items-center overflow-hidden rounded-md">
- <span :class="['inline-flex items-center gap-1 px-2 py-1', platformClass]">
- <PlatformIcon :platform="platform" size="xs" />
- <span>{{ platformLabel }}</span>
- </span>
- <span :class="['inline-flex items-center gap-1 px-1.5 py-1', typeClass]">
- <!-- OAuth icon -->
- <svg
- v-if="type === 'oauth'"
- class="h-3 w-3"
- fill="none"
- viewBox="0 0 24 24"
- stroke="currentColor"
- stroke-width="2"
- >
- <path
- stroke-linecap="round"
- stroke-linejoin="round"
- d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
- />
- </svg>
- <!-- Setup Token icon -->
- <Icon v-else-if="type === 'setup-token'" name="shield" size="xs" />
- <!-- API Key icon -->
- <Icon v-else-if="type === 'service_account'" name="cloud" size="xs" />
- <Icon v-else name="key" size="xs" />
- <span>{{ typeLabel }}</span>
- </span>
- </div>
- <!-- Row 2: Plan type + Privacy mode (only if either exists) -->
- <div v-if="planLabel || privacyBadge" class="inline-flex items-center overflow-hidden rounded-md">
- <span v-if="planLabel" :class="['inline-flex items-center gap-1 px-1.5 py-1', planBadgeClass]">
- <GrokFreeIcon
- v-if="isGrokFreePlan"
- data-testid="grok-free-plan-icon"
- />
- <Icon
- v-else-if="planIconName"
- :name="planIconName"
- size="xs"
- data-testid="grok-plan-icon"
- aria-hidden="true"
- />
- <span>{{ planLabel }}</span>
- </span>
- <span
- v-if="privacyBadge"
- :class="['inline-flex items-center gap-1 px-1.5 py-1', privacyBadge.class]"
- :title="privacyBadge.title"
- >
- <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
- <path stroke-linecap="round" stroke-linejoin="round" :d="privacyBadge.icon" />
- </svg>
- <span>{{ privacyBadge.label }}</span>
- </span>
- </div>
- <!-- Row 3: Subscription expiration (non-free paid accounts only) -->
- <div v-if="expiresLabel" class="text-[10px] leading-tight text-muted pl-0.5" :title="subscriptionExpiresAt">
- {{ expiresLabel }}
- </div>
- </div>
+  <div class="ptb">
+    <!-- Row 1: 20px brand tile + platform name + `.tag` type chip -->
+    <div class="ptb-row">
+      <span class="ptb-tile" :style="{ background: platformTileBackground(platform) }" aria-hidden="true">
+        <PlatformIcon :platform="platform" size="xs" />
+      </span>
+      <span class="ptb-name">{{ platformLabel }}</span>
+      <span class="tag">
+        <!-- OAuth icon -->
+        <svg
+          v-if="type === 'oauth'"
+          class="h-3 w-3"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
+          />
+        </svg>
+        <!-- Setup Token icon -->
+        <Icon v-else-if="type === 'setup-token'" name="shield" size="xs" />
+        <!-- API Key icon -->
+        <Icon v-else-if="type === 'service_account'" name="cloud" size="xs" />
+        <Icon v-else name="key" size="xs" />
+        <span>{{ typeLabel }}</span>
+      </span>
+    </div>
+    <!-- Row 2: Plan type + Privacy mode (only if either exists) -->
+    <div v-if="planLabel || privacyBadge" class="ptb-row">
+      <span v-if="planLabel" :class="planBadgeClass">
+        <GrokFreeIcon
+          v-if="isGrokFreePlan"
+          data-testid="grok-free-plan-icon"
+        />
+        <Icon
+          v-else-if="planIconName"
+          :name="planIconName"
+          size="xs"
+          data-testid="grok-plan-icon"
+          aria-hidden="true"
+        />
+        <span>{{ planLabel }}</span>
+      </span>
+      <span
+        v-if="privacyBadge"
+        :class="privacyBadge.class"
+        :title="privacyBadge.title"
+      >
+        <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" :d="privacyBadge.icon" />
+        </svg>
+        <span>{{ privacyBadge.label }}</span>
+      </span>
+    </div>
+    <!-- Row 3: Subscription expiration (non-free paid accounts only) -->
+    <div v-if="expiresLabel" class="ptb-expires" :title="subscriptionExpiresAt">
+      {{ expiresLabel }}
+    </div>
+  </div>
 </template>
+
 
 <script setup lang="ts">
 import { computed } from 'vue'
@@ -71,6 +72,7 @@ import type { AccountPlatform, AccountType } from '@/types'
 import GrokFreeIcon from './GrokFreeIcon.vue'
 import PlatformIcon from './PlatformIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { platformTileBackground } from '@/utils/platformTile'
 
 const { t } = useI18n()
 
@@ -179,59 +181,11 @@ const planIconName = computed<'bolt' | null>(() => {
  return null
 })
 
-const platformClass = computed(() => {
- if (props.platform === 'anthropic') {
- return 'bg-orange-100 text-orange-700'
- }
- if (props.platform === 'openai') {
- return 'bg-emerald-100 text-emerald-700'
- }
- if (props.platform === 'antigravity') {
- return 'bg-purple-100 text-purple-700'
- }
- if (props.platform === 'grok') {
- return 'bg-zinc-100 text-zinc-700'
- }
- if (props.platform === 'kimi') {
- return 'bg-pink-100 text-pink-700'
- }
- if (props.platform === 'zhipu') {
- return 'bg-indigo-100 text-indigo-700'
- }
- if (props.platform === 'deepseek') {
- return 'bg-teal-100 text-teal-700'
- }
- return 'bg-blue-100 text-blue-700'
-})
-
-const typeClass = computed(() => {
- if (props.platform === 'anthropic') {
- return 'bg-orange-100 text-orange-600'
- }
- if (props.platform === 'openai') {
- return 'bg-emerald-100 text-emerald-600'
- }
- if (props.platform === 'antigravity') {
- return 'bg-purple-100 text-purple-600'
- }
- if (props.platform === 'grok') {
- return 'bg-zinc-100 text-zinc-600'
- }
- if (props.platform === 'kimi') {
- return 'bg-pink-100 text-pink-600'
- }
- if (props.platform === 'zhipu') {
- return 'bg-indigo-100 text-indigo-600'
- }
- if (props.platform === 'deepseek') {
- return 'bg-teal-100 text-teal-600'
- }
- return 'bg-blue-100 text-blue-600'
-})
+const typeClass = computed(() => 'tag')
 
 const planBadgeClass = computed(() => {
  if (normalizedPlanType.value === 'abnormal') {
- return 'bg-red-100 text-red-600'
+ return 'tag tag-danger'
  }
  // Free stays muted gray; paid Grok tiers get distinct colors.
  if (
@@ -239,29 +193,29 @@ const planBadgeClass = computed(() => {
  normalizedPlanType.value === 'basic' ||
  normalizedPlanType.value === 'xbasic'
  ) {
- return 'bg-surface-2 text-muted'
+ return 'tag bg-surface-2 text-muted'
  }
  if (props.platform === 'grok' && normalizedPlanType.value) {
  // Heavy / SuperGrok Heavy → purple
  if (normalizedPlanType.value.includes('heavy')) {
- return 'bg-purple-100 text-purple-600'
+ return 'tag bg-purple-100 text-purple-600'
  }
  // SuperGrok → cyan
  if (normalizedPlanType.value.includes('supergrok')) {
- return 'bg-cyan-100 text-cyan-700'
+ return 'tag bg-cyan-100 text-cyan-700'
  }
  // Any other non-free Grok plan (future tiers) → amber so it still stands out
- return 'bg-amber-100 text-amber-700'
+ return 'tag tag-warning'
  }
  // OpenAI / other paid plan labels: keep readable distinction from free gray
  if (normalizedPlanType.value === 'plus') {
- return 'bg-sky-100 text-sky-700'
+ return 'tag bg-sky-100 text-sky-700'
  }
  if (normalizedPlanType.value === 'team') {
- return 'bg-indigo-100 text-indigo-700'
+ return 'tag bg-indigo-100 text-indigo-700'
  }
  if (normalizedPlanType.value === 'pro' || normalizedPlanType.value === 'chatgptpro') {
- return 'bg-violet-100 text-violet-700'
+ return 'tag bg-violet-100 text-violet-700'
  }
  return typeClass.value
 })
@@ -297,18 +251,58 @@ const privacyBadge = computed(() => {
  switch (props.privacyMode) {
  // OpenAI states
  case 'training_off':
- return { label: 'Private', icon: shieldCheck, title: t('admin.accounts.privacyTrainingOff'), class: 'bg-green-100 text-green-600' }
+ return { label: 'Private', icon: shieldCheck, title: t('admin.accounts.privacyTrainingOff'), class: 'tag tag-success' }
  case 'training_set_cf_blocked':
- return { label: 'CF', icon: shieldX, title: t('admin.accounts.privacyCfBlocked'), class: 'bg-yellow-100 text-yellow-600' }
+ return { label: 'CF', icon: shieldX, title: t('admin.accounts.privacyCfBlocked'), class: 'tag tag-warning' }
  case 'training_set_failed':
- return { label: 'Fail', icon: shieldX, title: t('admin.accounts.privacyFailed'), class: 'bg-red-100 text-red-600' }
+ return { label: 'Fail', icon: shieldX, title: t('admin.accounts.privacyFailed'), class: 'tag tag-danger' }
  // Antigravity states
  case 'privacy_set':
- return { label: 'Private', icon: shieldCheck, title: t('admin.accounts.privacyAntigravitySet'), class: 'bg-green-100 text-green-600' }
+ return { label: 'Private', icon: shieldCheck, title: t('admin.accounts.privacyAntigravitySet'), class: 'tag tag-success' }
  case 'privacy_set_failed':
- return { label: 'Fail', icon: shieldX, title: t('admin.accounts.privacyAntigravityFailed'), class: 'bg-red-100 text-red-600' }
+ return { label: 'Fail', icon: shieldX, title: t('admin.accounts.privacyAntigravityFailed'), class: 'tag tag-danger' }
  default:
  return null
  }
 })
 </script>
+
+<style scoped>
+.ptb {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ptb-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 20px 品牌底板 · 圆角 6，内描边 rgba(255,255,255,.14)，字形留白 */
+.ptb-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 6px;
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.ptb-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--foreground);
+  white-space: nowrap;
+}
+
+.ptb-expires {
+  font-size: 10.5px;
+  line-height: 1.3;
+  color: var(--muted);
+}
+</style>

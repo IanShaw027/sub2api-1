@@ -14,10 +14,10 @@ describe('Checkbox', () => {
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([true])
   })
 
-  it('uses an 18px token-colored box', () => {
+  it('uses a 16px token-colored box', () => {
     const src = readUi('Checkbox.vue')
-    expect(src).toContain('width: 18px')
-    expect(src).toContain('height: 18px')
+    expect(src).toContain('width: 16px')
+    expect(src).toContain('height: 16px')
     expect(src).toContain('var(--accent)')
     expect(src).toContain('var(--field-shadow)')
   })

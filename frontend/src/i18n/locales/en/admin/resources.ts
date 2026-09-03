@@ -268,6 +268,7 @@ export default {
       exportCsv: 'Export CSV',
       batchUpdate: 'Batch Update',
       batchUpdateTitle: 'Batch Update Redeem Codes',
+      selectedLabel: 'Selected',
       selectedCount: '{count} redeem code(s) selected',
       clearSelection: 'Clear selection',
       selectCodesFirst: 'Select redeem codes first',

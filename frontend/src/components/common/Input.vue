@@ -2,13 +2,13 @@
  <div class="w-full">
  <label v-if="label" :for="id" class="input-label mb-1.5 block">
  {{ label }}
- <span v-if="required" class="text-red-500">*</span>
+ <span v-if="required" class="text-danger-text">*</span>
  </label>
  <div class="relative">
  <!-- Prefix Icon Slot -->
  <div
  v-if="$slots.prefix"
- class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-muted"
+ class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-muted"
  >
  <slot name="prefix"></slot>
  </div>
@@ -24,10 +24,10 @@
  :autocomplete="autocomplete"
  :readonly="readonly"
  :class="[
- 'input w-full transition-all duration-200',
- $slots.prefix ? 'pl-11' : '',
- $slots.suffix ? 'pr-11' : '',
- error ? 'input-error ring-2 ring-red-500/20' : '',
+ 'field w-full transition-all duration-200',
+ $slots.prefix ? 'pl-9' : '',
+ $slots.suffix ? 'pr-9' : '',
+ error ? 'field-error' : '',
  disabled ? 'cursor-not-allowed bg-surface-2 opacity-60' : ''
  ]"
  @input="onInput"

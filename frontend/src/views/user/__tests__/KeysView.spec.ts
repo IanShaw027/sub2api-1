@@ -417,7 +417,9 @@ describe('user KeysView column settings', () => {
     const selects = wrapper.findAllComponents({ name: 'Select' })
     await selects[0].vm.$emit('update:modelValue', 42)
     await flushPromises()
-    await selects[1].vm.$emit('update:modelValue', 'active')
+
+    // Status filtering now uses the segmented control instead of a second Select.
+    await getButtonByText(wrapper, 'Active').trigger('click')
     await flushPromises()
 
     listKeys.mockClear()

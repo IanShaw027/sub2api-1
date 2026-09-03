@@ -18,9 +18,11 @@ describe('TablePageLayout responsive table scrolling', () => {
     const baseBlock = tableWrapperBlocks.find(([selector]) => !selector.includes('.mobile-mode'))
     const mobileBlocks = tableWrapperBlocks.filter(([selector]) => selector.includes('.mobile-mode'))
 
-    expect(baseBlock?.[2]).toContain('overflow-x-auto')
-    expect(mobileBlocks.every(([, , declarations]) => !declarations.includes('overflow-visible'))).toBe(
-      true
-    )
+    expect(baseBlock?.[2]).toMatch(/overflow-x:\s*auto/)
+    expect(
+      mobileBlocks.every(
+        ([, , declarations]) => !/overflow(-x)?:\s*visible/.test(declarations) && !declarations.includes('overflow-visible')
+      )
+    ).toBe(true)
   })
 })

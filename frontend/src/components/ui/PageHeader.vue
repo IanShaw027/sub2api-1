@@ -43,7 +43,7 @@ const descriptionText = computed(() => props.description || props.subtitle)
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .ui-page-header-hero {

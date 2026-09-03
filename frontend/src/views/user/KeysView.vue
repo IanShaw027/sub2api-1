@@ -1,97 +1,127 @@
 <template>
-
  <AppLayout>
- <PageHeader :title="t('keys.title')" :description="t('keys.description')">
+ <div class="keys-page">
+ <PageHeader class="keys-header" :title="t('keys.title')" :description="t('keys.description')">
  <template #actions>
- <Button variant="secondary" :disabled="loading" :title="t('common.refresh')" @click="loadApiKeys">
+ <Button
+ variant="icon"
+ :disabled="loading"
+ :title="t('common.refresh')"
+ :aria-label="t('common.refresh')"
+ @click="loadApiKeys"
+ >
  <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
  </Button>
- <div class="relative" ref="columnDropdownRef">
- <Button
- variant="secondary"
- :title="t('keys.columnSettings')"
- @click="showColumnDropdown = !showColumnDropdown"
- >
- <svg class="h-4 w-4 md:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
- <path stroke-linecap="round" stroke-linejoin="round" d="M9 4.5v15m6-15v15m-10.875 0h15.75c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H4.125C3.504 4.5 3 5.004 3 5.625v12.75c0 .621.504 1.125 1.125 1.125z" />
- </svg>
- <span class="hidden md:inline">{{ t('keys.columnSettings') }}</span>
+ <Button variant="secondary" to="/key-usage" class="keys-header-link">
+ {{ t('keys.usageQuery') }}
  </Button>
- <div
- v-if="showColumnDropdown"
- class="absolute right-0 top-full z-50 mt-1 max-h-80 w-48 overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-lg "
+ <Button
+ v-if="!publicSettings?.hide_ccs_import_button"
+ variant="secondary"
+ class="keys-header-link"
+ @click="openCcsImportPicker"
  >
- <button
- v-for="col in toggleableColumns"
- :key="col.key"
- @click="toggleColumn(col.key)"
- class="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-foreground hover:bg-surface-2 "
- >
- <span>{{ col.label }}</span>
- <Icon
- v-if="isColumnVisible(col.key)"
- name="check"
- size="sm"
- class="text-accent"
- :stroke-width="2"
- />
- </button>
- </div>
- </div>
+ <Icon name="externalLink" size="sm" />
+ {{ t('keys.importToCcSwitch') }}
+ </Button>
  <Button class="keys-create-desktop" data-tour="keys-create-btn" @click="showCreateModal = true">
  <Icon name="plus" size="md" />
  {{ t('keys.createKey') }}
  </Button>
  </template>
  </PageHeader>
- <TablePageLayout>
+
+ <TablePageLayout class="keys-layout">
  <template #filters>
- <div class="flex flex-col gap-3">
- <div v-if="publicSettings?.api_base_url || (publicSettings?.custom_endpoints?.length ?? 0) > 0" class="keys-endpoints">
+ <div class="keys-toolbar">
+ <div class="keys-top-grid" :class="{ 'is-wide': endpointCards.length > 2 }">
  <EndpointCard
- v-if="publicSettings?.api_base_url"
- :label="t('keys.endpoints.title')"
- :url="publicSettings.api_base_url"
- :badge="t('keys.endpoints.default')"
- :copy-label="t('keys.endpoints.clickToCopy')"
+ v-for="endpoint in endpointCards"
+ :key="endpoint.url"
+ class="keys-endpoint"
+ :label="endpoint.label"
+ :url="endpoint.url"
+ :description="endpoint.description"
+ :badge="endpoint.badge"
+ :badge-tone="endpoint.badgeTone"
+ :copy-label="t('keys.endpoints.copy')"
  @copy="copyEndpoint"
  />
- <EndpointCard
- v-for="ep in publicSettings?.custom_endpoints || []"
- :key="ep.endpoint"
- :label="ep.name"
- :url="ep.endpoint"
- :description="ep.description"
- :copy-label="t('keys.endpoints.clickToCopy')"
- @copy="copyEndpoint"
- />
+ <MiniStatCard class="keys-stats" :items="keyMiniStats" />
  </div>
- <MiniStatCard :items="keyMiniStats" />
- <FilterBar :search-placeholder="t('keys.searchPlaceholder')">
+
+ <FilterBar class="keys-filter-bar" :filter-label="t('keys.filters.toggle')" @open-filters="showMobileFilters = !showMobileFilters">
  <template #search>
  <SearchInput
  v-model="filterSearch"
  :placeholder="t('keys.searchPlaceholder')"
- class="w-full sm:w-64"
+ class="w-full"
  @search="onFilterChange"
  />
  </template>
  <template #filters>
  <Select
+ variant="pill"
+ :pill-label="t('keys.group')"
+ :aria-label="t('keys.group')"
  :model-value="filterGroupId"
- class="w-40"
  :options="groupFilterOptions"
  @update:model-value="onGroupFilterChange"
  />
- <Select
- :model-value="filterStatus"
- class="w-40"
- :options="statusFilterOptions"
+ <SegmentedControl
+ class="keys-status-segmented"
+ :model-value="String(filterStatus || '')"
+ :options="statusSegmentOptions"
  @update:model-value="onStatusFilterChange"
  />
  </template>
+ <template #trailing>
+ <span class="keys-sort-note">
+ {{ t('keys.sortedByPrefix') }} <b>{{ activeSortLabel }}</b> {{ t('keys.sortedBySuffix') }}
+ </span>
+ <div ref="columnDropdownRef" class="keys-column-settings">
+ <button
+ type="button"
+ class="filter-pill keys-column-btn"
+ :title="t('keys.columnSettings')"
+ :aria-label="t('keys.columnSettings')"
+ @click="showColumnDropdown = !showColumnDropdown"
+ >
+ <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+ <path d="M9 4.5v15m6-15v15M4.125 19.5h15.75c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H4.125C3.504 4.5 3 5.004 3 5.625v12.75c0 .621.504 1.125 1.125 1.125z" />
+ </svg>
+ </button>
+ <div v-if="showColumnDropdown" class="dropdown keys-column-dropdown">
+ <p class="dropdown-label">{{ t('keys.columnSettings') }}</p>
+ <button
+ v-for="col in toggleableColumns"
+ :key="col.key"
+ type="button"
+ class="dropdown-item"
+ :class="{ 'is-active': isColumnVisible(col.key) }"
+ @click="toggleColumn(col.key)"
+ >
+ <span class="keys-column-item-label">{{ col.label }}</span>
+ <Icon v-if="isColumnVisible(col.key)" name="check" size="sm" :stroke-width="2" />
+ </button>
+ </div>
+ </div>
+ </template>
  </FilterBar>
+
+ <div v-if="showMobileFilters" class="keys-mobile-filters">
+ <Select
+ variant="pill"
+ :pill-label="t('keys.group')"
+ :aria-label="t('keys.group')"
+ :model-value="filterGroupId"
+ :options="groupFilterOptions"
+ @update:model-value="onGroupFilterChange"
+ />
+ </div>
+
  <ChipScroller
+ class="keys-chips"
  :model-value="String(filterStatus || '')"
  :chips="statusChipOptions"
  @update:model-value="onStatusFilterChange"
@@ -99,9 +129,11 @@
  </div>
  </template>
 
-
  <template #table>
+ <div class="keys-table-wrap">
  <DataTable
+ v-if="isTabletUp"
+ class="keys-table"
  :columns="columns"
  :data="apiKeys"
  :loading="loading"
@@ -110,59 +142,63 @@
  default-sort-order="desc"
  @sort="handleSort"
  >
- <template #cell-id="{ value }">
- <span class="font-mono text-xs text-muted ">#{{ value }}</span>
- </template>
-
- <template #cell-key="{ value, row }">
- <div class="flex items-center gap-2">
- <code class="code text-xs">
- {{ maskApiKey(value) }}
- </code>
- <button
- @click="copyToClipboard(value, row.id)"
- class="rounded-lg p-1 transition-colors hover:bg-surface-2 "
- :class="
- copiedKeyId === row.id
- ? 'text-green-500'
- : 'text-muted hover:text-foreground '
- "
- :title="copiedKeyId === row.id ? t('keys.copied') : t('keys.copyToClipboard')"
- >
+ <template #cell-name="{ value, row }">
+ <div class="keys-cell-name">
+ <span class="keys-name-line">
+ <span class="keys-name-text">{{ value }}</span>
  <Icon
- v-if="copiedKeyId === row.id"
- name="check"
- size="sm"
- :stroke-width="2"
+ v-if="hasIpRestriction(row)"
+ name="shield"
+ size="xs"
+ class="keys-name-shield"
+ :title="t('keys.ipRestrictionEnabled')"
  />
- <Icon v-else name="clipboard" size="sm" />
- </button>
+ </span>
+ <span class="keys-name-id">#{{ row.id }}</span>
  </div>
  </template>
 
- <template #cell-name="{ value, row }">
- <div class="flex items-center gap-1.5">
- <span class="font-medium text-foreground ">{{ value }}</span>
- <Icon
- v-if="row.ip_whitelist?.length > 0 || row.ip_blacklist?.length > 0"
- name="shield"
- size="sm"
- class="text-blue-500"
- :title="t('keys.ipRestrictionEnabled')"
- />
+ <template #cell-id="{ value }">
+ <span class="keys-name-id">#{{ value }}</span>
+ </template>
+
+ <template #cell-key="{ value, row }">
+ <div class="keys-cell-key">
+ <code class="code keys-key-code">{{ isKeyRevealed(row.id) ? value : maskApiKey(value) }}</code>
+ <button
+ type="button"
+ class="icon-btn keys-icon-btn-xs"
+ :title="isKeyRevealed(row.id) ? t('keys.hideKey') : t('keys.showKey')"
+ :aria-label="isKeyRevealed(row.id) ? t('keys.hideKey') : t('keys.showKey')"
+ @click.stop="toggleKeyReveal(row.id)"
+ >
+ <Icon :name="isKeyRevealed(row.id) ? 'eyeOff' : 'eye'" size="xs" />
+ </button>
+ <button
+ type="button"
+ class="icon-btn keys-icon-btn-xs"
+ :class="{ 'is-copied': copiedKeyId === row.id }"
+ :title="copiedKeyId === row.id ? t('keys.copied') : t('keys.copyToClipboard')"
+ :aria-label="t('keys.copyToClipboard')"
+ @click.stop="copyToClipboard(value, row.id)"
+ >
+ <Icon :name="copiedKeyId === row.id ? 'check' : 'clipboard'" size="xs" />
+ </button>
  </div>
  </template>
 
  <template #cell-group="{ row }">
  <div class="group/dropdown relative">
  <button
+ type="button"
  :ref="(el) => setGroupButtonRef(row.id, el)"
- @click="openGroupSelector(row)"
- class="-mx-2 -my-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 transition-all duration-200 hover:bg-surface-2 "
+ class="keys-group-btn"
  :title="t('keys.clickToChangeGroup')"
+ @click="openGroupSelector(row)"
  >
  <GroupBadge
  v-if="row.group"
+ class="keys-group-badge"
  :name="row.group.name"
  :platform="row.group.platform"
  :subscription-type="row.group.subscription_type"
@@ -173,266 +209,85 @@
  :peak-end="row.group.peak_end"
  :peak-rate-multiplier="row.group.peak_rate_multiplier"
  />
- <span v-else class="text-sm text-muted ">{{
- t('keys.noGroup')
- }}</span>
- <span class="text-xs text-muted ">{{ t('keys.selectGroup') }}</span>
- <svg
- class="h-3.5 w-3.5 text-muted opacity-60 transition-opacity group-hover/dropdown:opacity-100"
- fill="none"
- stroke="currentColor"
- viewBox="0 0 24 24"
- stroke-width="2"
- >
- <path
- stroke-linecap="round"
- stroke-linejoin="round"
- d="M8.25 15L12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9"
- />
- </svg>
+ <span v-else class="tag">{{ t('keys.noGroup') }}</span>
+ <Icon name="chevronDown" size="xs" class="keys-group-caret" />
  </button>
  </div>
  </template>
 
  <template #cell-current_concurrency="{ value }">
- <span
- :class="[
- 'inline-flex min-w-8 items-center justify-center rounded px-2 py-1 text-sm font-semibold tabular-nums',
- (value ?? 0) > 0
- ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 '
- : 'bg-surface-2 text-muted '
- ]"
- >
- {{ value ?? 0 }}
- </span>
+ <span class="keys-concurrency">{{ value ?? 0 }}</span>
  </template>
 
  <template #cell-usage="{ row }">
- <div class="text-sm">
- <div class="flex items-center gap-1.5">
- <span class="text-muted ">{{ t('keys.today') }}:</span>
- <span class="font-medium text-foreground ">
- ${{ (usageStats[row.id]?.today_actual_cost ?? 0).toFixed(4) }}
+ <div class="keys-usage">
+ <span class="keys-usage-today" :title="`$${(usageStats[row.id]?.today_actual_cost ?? 0).toFixed(4)}`">
+ {{ formatCost(usageStats[row.id]?.today_actual_cost) }}
  </span>
- </div>
- <div class="mt-0.5 flex items-center gap-1.5">
- <span class="text-muted ">{{ t('keys.total') }}:</span>
- <span class="font-medium text-foreground ">
- ${{ (usageStats[row.id]?.total_actual_cost ?? 0).toFixed(4) }}
+ <span class="keys-usage-total" :title="`$${(usageStats[row.id]?.total_actual_cost ?? 0).toFixed(4)}`">
+ {{ formatCost(usageStats[row.id]?.total_actual_cost) }}
  </span>
- </div>
- <!-- Quota progress (if quota is set) -->
- <div v-if="row.quota > 0" class="mt-1.5">
- <div class="flex items-center gap-1.5">
- <span class="text-muted ">{{ t('keys.quota') }}:</span>
- <span :class="[
- 'font-medium',
- row.quota_used >= row.quota ? 'text-red-500' :
- row.quota_used >= row.quota * 0.8 ? 'text-yellow-500' :
- 'text-foreground '
- ]">
- ${{ row.quota_used?.toFixed(2) || '0.00' }} / ${{ row.quota?.toFixed(2) }}
- </span>
- </div>
- <div class="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-3 ">
- <div
- :class="[
- 'h-full rounded-full transition-all',
- row.quota_used >= row.quota ? 'bg-red-500' :
- row.quota_used >= row.quota * 0.8 ? 'bg-yellow-500' :
- 'bg-accent'
- ]"
- :style="{ width: Math.min((row.quota_used / row.quota) * 100, 100) + '%' }"
+ <span
+ v-if="row.quota > 0"
+ class="progress progress-thin keys-usage-quota"
+ :title="`${t('keys.quota')} ${formatCost(row.quota_used)} / ${formatCost(row.quota)}`"
+ >
+ <span
+ class="progress-bar"
+ :class="quotaBarClass(row)"
+ :style="{ width: quotaPercent(row) + '%' }"
  />
- </div>
- </div>
+ </span>
  </div>
  </template>
 
  <template #cell-rate_limit="{ row }">
- <div v-if="row.rate_limit_5h > 0 || row.rate_limit_1d > 0 || row.rate_limit_7d > 0" class="space-y-1.5 min-w-[140px]">
- <!-- 5h window -->
- <div v-if="row.rate_limit_5h > 0">
- <div class="flex items-center justify-between text-xs">
- <span class="text-muted ">5h</span>
- <span :class="[
- 'font-medium tabular-nums',
- row.usage_5h >= row.rate_limit_5h ? 'text-red-500' :
- row.usage_5h >= row.rate_limit_5h * 0.8 ? 'text-yellow-500' :
- 'text-foreground '
- ]">
- ${{ row.usage_5h?.toFixed(2) || '0.00' }}/${{ row.rate_limit_5h?.toFixed(2) }}
- </span>
- </div>
- <div class="h-1 w-full overflow-hidden rounded-full bg-surface-3 ">
- <div
- :class="[
- 'h-full rounded-full transition-all',
- row.usage_5h >= row.rate_limit_5h ? 'bg-red-500' :
- row.usage_5h >= row.rate_limit_5h * 0.8 ? 'bg-yellow-500' :
- 'bg-emerald-500'
- ]"
- :style="{ width: Math.min((row.usage_5h / row.rate_limit_5h) * 100, 100) + '%' }"
- />
- </div>
- <div v-if="row.reset_5h_at && formatResetTime(row.reset_5h_at)" class="text-[10px] text-muted tabular-nums">
- ⟳ {{ formatResetTime(row.reset_5h_at) }}
- </div>
- </div>
- <!-- 1d window -->
- <div v-if="row.rate_limit_1d > 0">
- <div class="flex items-center justify-between text-xs">
- <span class="text-muted ">1d</span>
- <span :class="[
- 'font-medium tabular-nums',
- row.usage_1d >= row.rate_limit_1d ? 'text-red-500' :
- row.usage_1d >= row.rate_limit_1d * 0.8 ? 'text-yellow-500' :
- 'text-foreground '
- ]">
- ${{ row.usage_1d?.toFixed(2) || '0.00' }}/${{ row.rate_limit_1d?.toFixed(2) }}
- </span>
- </div>
- <div class="h-1 w-full overflow-hidden rounded-full bg-surface-3 ">
- <div
- :class="[
- 'h-full rounded-full transition-all',
- row.usage_1d >= row.rate_limit_1d ? 'bg-red-500' :
- row.usage_1d >= row.rate_limit_1d * 0.8 ? 'bg-yellow-500' :
- 'bg-emerald-500'
- ]"
- :style="{ width: Math.min((row.usage_1d / row.rate_limit_1d) * 100, 100) + '%' }"
- />
- </div>
- <div v-if="row.reset_1d_at && formatResetTime(row.reset_1d_at)" class="text-[10px] text-muted tabular-nums">
- ⟳ {{ formatResetTime(row.reset_1d_at) }}
- </div>
- </div>
- <!-- 7d window -->
- <div v-if="row.rate_limit_7d > 0">
- <div class="flex items-center justify-between text-xs">
- <span class="text-muted ">7d</span>
- <span :class="[
- 'font-medium tabular-nums',
- row.usage_7d >= row.rate_limit_7d ? 'text-red-500' :
- row.usage_7d >= row.rate_limit_7d * 0.8 ? 'text-yellow-500' :
- 'text-foreground '
- ]">
- ${{ row.usage_7d?.toFixed(2) || '0.00' }}/${{ row.rate_limit_7d?.toFixed(2) }}
- </span>
- </div>
- <div class="h-1 w-full overflow-hidden rounded-full bg-surface-3 ">
- <div
- :class="[
- 'h-full rounded-full transition-all',
- row.usage_7d >= row.rate_limit_7d ? 'bg-red-500' :
- row.usage_7d >= row.rate_limit_7d * 0.8 ? 'bg-yellow-500' :
- 'bg-emerald-500'
- ]"
- :style="{ width: Math.min((row.usage_7d / row.rate_limit_7d) * 100, 100) + '%' }"
- />
- </div>
- <div v-if="row.reset_7d_at && formatResetTime(row.reset_7d_at)" class="text-[10px] text-muted tabular-nums">
- ⟳ {{ formatResetTime(row.reset_7d_at) }}
- </div>
- </div>
- <!-- Reset button -->
- <button
- v-if="row.usage_5h > 0 || row.usage_1d > 0 || row.usage_7d > 0"
- @click.stop="confirmResetRateLimitFromTable(row)"
- class="mt-0.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-accent "
- :title="t('keys.resetRateLimitUsage')"
+ <span
+ v-if="rateLimitSummary(row)"
+ class="keys-rate-limit"
+ :class="rateLimitToneClass(row)"
+ :title="rateLimitDetail(row)"
  >
- <Icon name="refresh" size="xs" />
- {{ t('keys.resetUsage') }}
- </button>
- </div>
- <span v-else class="text-sm text-muted ">-</span>
+ {{ rateLimitSummary(row) }}
+ </span>
+ <span v-else class="keys-cell-empty">—</span>
  </template>
 
  <template #cell-expires_at="{ value }">
- <span v-if="value" :class="[
- 'text-sm',
- new Date(value) < new Date() ? 'text-red-500 ' : 'text-muted '
- ]">
- {{ formatDateTime(value) }}
+ <span class="keys-expiry" :class="expiryToneClass(value)">
+ {{ value ? formatDate(value) : t('keys.noExpiration') }}
  </span>
- <span v-else class="text-sm text-muted ">{{ t('keys.noExpiration') }}</span>
- </template>
-
- <template #cell-status="{ value }">
- <StatusBadge
- :tone="value === 'active' ? 'success' : value === 'quota_exhausted' ? 'warning' : (value === 'expired' || value === 'disabled' || value === 'inactive') ? 'danger' : 'muted'"
- :label="t('keys.status.' + value)"
- dot
- />
  </template>
 
  <template #cell-last_used_at="{ value }">
- <span v-if="value" class="text-sm text-muted ">
- {{ formatDateTime(value) }}
- </span>
- <span v-else class="text-sm text-muted ">-</span>
+ <span class="keys-muted-cell">{{ value ? formatDate(value) : '—' }}</span>
  </template>
 
  <template #cell-last_used_ip="{ value }">
- <span v-if="value" class="text-sm text-muted ">
- {{ value }}
- </span>
- <span v-else class="text-sm text-muted ">-</span>
+ <span class="keys-muted-cell keys-mono-cell">{{ value || '—' }}</span>
  </template>
 
  <template #cell-created_at="{ value }">
- <span class="text-sm text-muted ">{{ formatDateTime(value) }}</span>
+ <span class="keys-muted-cell">{{ formatDate(value) }}</span>
+ </template>
+
+ <template #cell-status="{ value }">
+ <StatusBadge :tone="statusTone(value)" :label="t('keys.status.' + value)" dot />
  </template>
 
  <template #cell-actions="{ row }">
- <div class="flex items-center gap-1">
- <!-- Use Key Button -->
- <button
- @click="openUseKeyModal(row)"
- class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-green-50 hover:text-green-600 "
- >
- <Icon name="terminal" size="sm" />
- <span class="text-xs">{{ t('keys.useKey') }}</span>
+ <div class="keys-actions">
+ <button type="button" class="keys-use-btn" @click.stop="openUseKeyModal(row)">
+ {{ t('keys.use') }}
  </button>
- <!-- Import to CC Switch Button -->
  <button
- v-if="!publicSettings?.hide_ccs_import_button"
- @click="importToCcswitch(row)"
- class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-blue-50 hover:text-blue-600 "
+ type="button"
+ class="icon-btn keys-more-btn"
+ :title="t('keys.moreActions')"
+ :aria-label="t('keys.moreActions')"
+ @click.stop="toggleRowMenu(row, $event)"
  >
- <Icon name="upload" size="sm" />
- <span class="text-xs">{{ t('keys.importToCcSwitch') }}</span>
- </button>
- <!-- Toggle Status Button -->
- <button
- @click="toggleKeyStatus(row)"
- :class="[
- 'flex flex-col items-center gap-0.5 rounded-lg p-1.5 transition-colors',
- row.status === 'active'
- ? 'text-muted hover:bg-yellow-50 hover:text-yellow-600 '
- : 'text-muted hover:bg-green-50 hover:text-green-600 '
- ]"
- >
- <Icon v-if="row.status === 'active'" name="ban" size="sm" />
- <Icon v-else name="checkCircle" size="sm" />
- <span class="text-xs">{{ row.status === 'active' ? t('keys.disable') : t('keys.enable') }}</span>
- </button>
- <!-- Edit Button -->
- <button
- @click="editKey(row)"
- class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-accent "
- >
- <Icon name="edit" size="sm" />
- <span class="text-xs">{{ t('common.edit') }}</span>
- </button>
- <!-- Delete Button -->
- <button
- @click="confirmDelete(row)"
- class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-red-50 hover:text-red-600 "
- >
- <Icon name="trash" size="sm" />
- <span class="text-xs">{{ t('common.delete') }}</span>
+ <Icon name="more" size="sm" :stroke-width="2.4" />
  </button>
  </div>
  </template>
@@ -446,47 +301,126 @@
  />
  </template>
  </DataTable>
- </template>
 
- <template #pagination>
+ <div v-else class="keys-mobile-wrap">
+ <div class="keys-mobile-list">
+ <template v-if="loading">
+ <div v-for="i in 4" :key="i" class="glass-card keys-card">
+ <div class="skeleton h-4 w-32"></div>
+ <div class="skeleton h-10 w-full"></div>
+ <div class="skeleton h-6 w-full"></div>
+ </div>
+ </template>
+ <EmptyState
+ v-else-if="apiKeys.length === 0"
+ :title="t('keys.noKeysYet')"
+ :description="t('keys.createFirstKey')"
+ :action-text="t('keys.createKey')"
+ @action="showCreateModal = true"
+ />
+ <article v-for="row in apiKeys" v-else :key="row.id" class="glass-card keys-card">
+ <div class="keys-card-top">
+ <div class="keys-card-ident">
+ <span class="keys-card-name">{{ row.name }}</span>
+ <span class="keys-card-meta">#{{ row.id }} · {{ row.group?.name || t('keys.noGroup') }}</span>
+ </div>
+ <div class="keys-card-top-right">
+ <StatusBadge :tone="statusTone(row.status)" :label="t('keys.status.' + row.status)" />
+ <button
+ type="button"
+ class="icon-btn keys-card-more"
+ :title="t('keys.moreActions')"
+ :aria-label="t('keys.moreActions')"
+ @click.stop="toggleRowMenu(row, $event)"
+ >
+ <Icon name="more" size="sm" :stroke-width="2.4" />
+ </button>
+ </div>
+ </div>
+ <div class="keys-card-key">
+ <span class="keys-card-key-text">{{ isKeyRevealed(row.id) ? row.key : maskApiKey(row.key) }}</span>
+ <button
+ type="button"
+ class="keys-card-key-btn"
+ :title="isKeyRevealed(row.id) ? t('keys.hideKey') : t('keys.showKey')"
+ :aria-label="isKeyRevealed(row.id) ? t('keys.hideKey') : t('keys.showKey')"
+ @click.stop="toggleKeyReveal(row.id)"
+ >
+ <Icon :name="isKeyRevealed(row.id) ? 'eyeOff' : 'eye'" size="sm" />
+ </button>
+ <button
+ type="button"
+ class="keys-card-key-btn"
+ :title="copiedKeyId === row.id ? t('keys.copied') : t('keys.copyToClipboard')"
+ :aria-label="t('keys.copyToClipboard')"
+ @click.stop="copyToClipboard(row.key, row.id)"
+ >
+ <Icon :name="copiedKeyId === row.id ? 'check' : 'clipboard'" size="sm" />
+ </button>
+ </div>
+ <div class="keys-card-stats">
+ <div class="keys-card-stat">
+ <span>{{ t('keys.today') }}</span>
+ <b>{{ formatCost(usageStats[row.id]?.today_actual_cost) }}</b>
+ </div>
+ <div class="keys-card-stat">
+ <span>{{ t('keys.currentConcurrency') }}</span>
+ <b>{{ row.current_concurrency ?? 0 }}</b>
+ </div>
+ <div class="keys-card-stat">
+ <span>{{ t('keys.expiresAt') }}</span>
+ <b :class="expiryToneClass(row.expires_at)">
+ {{ row.expires_at ? formatDate(row.expires_at) : t('keys.noExpiration') }}
+ </b>
+ </div>
+ <div class="keys-card-stat is-end">
+ <span>{{ t('keys.lastUsedAt') }}</span>
+ <b>{{ row.last_used_at ? formatDate(row.last_used_at) : '—' }}</b>
+ </div>
+ </div>
+ </article>
+ </div>
+ <ListFade class="keys-list-fade" />
+ </div>
+
  <Pagination
  v-if="pagination.total > 0"
+ class="keys-pagination"
  :page="pagination.page"
  :total="pagination.total"
  :page-size="pagination.page_size"
  @update:page="handlePageChange"
  @update:pageSize="handlePageSizeChange"
  />
+ </div>
  </template>
  </TablePageLayout>
+
  <Fab class="keys-fab" data-tour="keys-create-btn" :label="t('keys.createKey')" @click="showCreateModal = true">
- <Icon name="plus" size="md" />
+ <Icon name="plus" size="md" :stroke-width="2.4" />
  {{ t('keys.createKey') }}
  </Fab>
 
- <!-- Create/Edit Modal -->
- <BaseDialog
- :show="showCreateModal || showEditModal"
+ <!-- Create / Edit key -->
+ <UiModal
+ :open="showCreateModal || showEditModal"
  :title="showEditModal ? t('keys.editKey') : t('keys.createKey')"
- width="normal"
+ width="lg"
+ :close-label="t('common.close')"
  @close="closeModals"
  >
- <form id="key-form" @submit.prevent="handleSubmit" class="space-y-5">
- <div>
- <label class="input-label">{{ t('keys.nameLabel') }}</label>
- <input
+ <form id="key-form" class="keys-form" @submit.prevent="handleSubmit">
+ <TextInput
  v-model="formData.name"
- type="text"
- required
- class="input"
+ :label="t('keys.nameLabel')"
  :placeholder="t('keys.namePlaceholder')"
+ required
  data-tour="key-form-name"
  />
- </div>
 
- <div>
- <label class="input-label">{{ t('keys.groupLabel') }}</label>
- <Select
+ <div class="keys-field">
+ <FieldLabel>{{ t('keys.groupLabel') }}</FieldLabel>
+ <UiSelect
  v-model="formData.group_id"
  :options="groupOptions"
  :placeholder="t('keys.selectGroup')"
@@ -524,489 +458,185 @@
  :selected="selected"
  />
  </template>
- </Select>
+ </UiSelect>
  </div>
 
- <!-- Custom Key Section (only for create) -->
- <div v-if="!showEditModal" class="space-y-3">
- <div class="flex items-center justify-between">
- <label class="input-label mb-0">{{ t('keys.customKeyLabel') }}</label>
- <button
- type="button"
- @click="formData.use_custom_key = !formData.use_custom_key"
- :class="[
- 'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
- formData.use_custom_key ? 'bg-accent' : 'bg-surface-3 '
- ]"
- >
- <span
- :class="[
- 'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-surface shadow ring-0 transition duration-200 ease-in-out',
- formData.use_custom_key ? 'translate-x-4' : 'translate-x-0'
- ]"
- />
- </button>
+ <div v-if="!showEditModal" class="keys-field">
+ <div class="keys-toggle-row">
+ <span class="keys-toggle-label">{{ t('keys.customKeyLabel') }}</span>
+ <ToggleSwitch v-model="formData.use_custom_key" />
  </div>
- <div v-if="formData.use_custom_key">
- <input
+ <TextInput
+ v-if="formData.use_custom_key"
  v-model="formData.custom_key"
- type="text"
- class="input font-mono"
+ class="keys-mono-input"
  :placeholder="t('keys.customKeyPlaceholder')"
- :class="{ 'border-red-500 ': customKeyError }"
+ :error="customKeyError"
+ :hint="customKeyError ? undefined : t('keys.customKeyHint')"
  />
- <p v-if="customKeyError" class="mt-1 text-sm text-red-500">{{ customKeyError }}</p>
- <p v-else class="input-hint">{{ t('keys.customKeyHint') }}</p>
- </div>
  </div>
 
- <div v-if="showEditModal">
- <label class="input-label">{{ t('keys.statusLabel') }}</label>
- <Select
+ <div v-if="showEditModal" class="keys-field">
+ <FieldLabel>{{ t('keys.statusLabel') }}</FieldLabel>
+ <UiSelect
  v-model="formData.status"
  :options="statusOptions"
  :placeholder="t('keys.selectStatus')"
  />
  </div>
 
- <!-- IP Restriction Section -->
- <div class="space-y-3">
- <div class="flex items-center justify-between">
- <label class="input-label mb-0">{{ t('keys.ipRestriction') }}</label>
- <button
- type="button"
- @click="formData.enable_ip_restriction = !formData.enable_ip_restriction"
- :class="[
- 'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
- formData.enable_ip_restriction ? 'bg-accent' : 'bg-surface-3 '
- ]"
- >
- <span
- :class="[
- 'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-surface shadow ring-0 transition duration-200 ease-in-out',
- formData.enable_ip_restriction ? 'translate-x-4' : 'translate-x-0'
- ]"
- />
- </button>
+ <div class="keys-field">
+ <div class="keys-toggle-row">
+ <span class="keys-toggle-label">{{ t('keys.ipRestriction') }}</span>
+ <ToggleSwitch v-model="formData.enable_ip_restriction" />
  </div>
-
- <div v-if="formData.enable_ip_restriction" class="space-y-4 pt-2">
+ <div v-if="formData.enable_ip_restriction" class="keys-field-stack">
  <div>
- <label class="input-label">{{ t('keys.ipWhitelist') }}</label>
+ <FieldLabel :hint="t('keys.ipWhitelistHint')">{{ t('keys.ipWhitelist') }}</FieldLabel>
  <textarea
  v-model="formData.ip_whitelist"
  rows="3"
- class="input font-mono text-sm"
+ class="field keys-textarea"
  :placeholder="t('keys.ipWhitelistPlaceholder')"
  />
- <p class="input-hint">{{ t('keys.ipWhitelistHint') }}</p>
  </div>
-
  <div>
- <label class="input-label">{{ t('keys.ipBlacklist') }}</label>
+ <FieldLabel :hint="t('keys.ipBlacklistHint')">{{ t('keys.ipBlacklist') }}</FieldLabel>
  <textarea
  v-model="formData.ip_blacklist"
  rows="3"
- class="input font-mono text-sm"
+ class="field keys-textarea"
  :placeholder="t('keys.ipBlacklistPlaceholder')"
  />
- <p class="input-hint">{{ t('keys.ipBlacklistHint') }}</p>
  </div>
  </div>
  </div>
 
- <!-- Quota Limit Section -->
- <div class="space-y-3">
- <label class="input-label">{{ t('keys.quotaLimit') }}</label>
- <!-- Switch commented out - always show input, 0 = unlimited
- <div class="flex items-center justify-between">
- <label class="input-label mb-0">{{ t('keys.quotaLimit') }}</label>
- <button
- type="button"
- @click="formData.enable_quota = !formData.enable_quota"
- :class="[
- 'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
- formData.enable_quota ? 'bg-accent' : 'bg-surface-3 '
- ]"
- >
- <span
- :class="[
- 'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-surface shadow ring-0 transition duration-200 ease-in-out',
- formData.enable_quota ? 'translate-x-4' : 'translate-x-0'
- ]"
- />
- </button>
- </div>
- -->
-
- <div class="space-y-4">
- <div>
- <div class="relative">
- <span class="absolute left-3 top-1/2 -translate-y-1/2 text-muted">$</span>
- <input
- v-model.number="formData.quota"
+ <div class="keys-field">
+ <TextInput
+ :model-value="formData.quota ?? ''"
  type="number"
  step="0.01"
  min="0"
- class="input pl-7"
+ :label="t('keys.quotaLimit')"
+ :hint="t('keys.quotaAmountHint')"
  :placeholder="t('keys.quotaAmountPlaceholder')"
+ @update:model-value="(v) => (formData.quota = v === '' ? null : Number(v))"
  />
+ <div v-if="showEditModal && selectedKey && selectedKey.quota > 0" class="keys-usage-row">
+ <div class="glass-inset keys-usage-readout">
+ <b>{{ formatCost(selectedKey.quota_used, 4) }}</b>
+ <span class="keys-usage-sep">/</span>
+ <span class="text-muted">{{ formatCost(selectedKey.quota) }}</span>
  </div>
- <p class="input-hint">{{ t('keys.quotaAmountHint') }}</p>
- </div>
-
- <!-- Quota used display (only in edit mode) -->
- <div v-if="showEditModal && selectedKey && selectedKey.quota > 0">
- <label class="input-label">{{ t('keys.quotaUsed') }}</label>
- <div class="flex items-center gap-2">
- <div class="flex-1 rounded-lg bg-surface-2 px-3 py-2 ">
- <span class="font-medium text-foreground ">
- ${{ selectedKey.quota_used?.toFixed(4) || '0.0000' }}
- </span>
- <span class="mx-2 text-muted">/</span>
- <span class="text-muted ">
- ${{ selectedKey.quota?.toFixed(2) || '0.00' }}
- </span>
- </div>
- <button
- type="button"
- @click="confirmResetQuota"
- class="btn-glass-secondary text-sm"
- :title="t('keys.resetQuotaUsed')"
- >
+ <Button variant="secondary" :title="t('keys.resetQuotaUsed')" @click="confirmResetQuota">
  {{ t('keys.reset') }}
- </button>
- </div>
- </div>
+ </Button>
  </div>
  </div>
 
- <!-- Rate Limit Section -->
- <div class="space-y-3">
- <div class="flex items-center justify-between">
- <label class="input-label mb-0">{{ t('keys.rateLimitSection') }}</label>
- <button
- type="button"
- @click="formData.enable_rate_limit = !formData.enable_rate_limit"
- :class="[
- 'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
- formData.enable_rate_limit ? 'bg-accent' : 'bg-surface-3 '
- ]"
- >
- <span
- :class="[
- 'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-surface shadow ring-0 transition duration-200 ease-in-out',
- formData.enable_rate_limit ? 'translate-x-4' : 'translate-x-0'
- ]"
- />
- </button>
+ <div class="keys-field">
+ <div class="keys-toggle-row">
+ <span class="keys-toggle-label">{{ t('keys.rateLimitSection') }}</span>
+ <ToggleSwitch v-model="formData.enable_rate_limit" />
  </div>
-
- <div v-if="formData.enable_rate_limit" class="space-y-4 pt-2">
- <p class="input-hint -mt-2">{{ t('keys.rateLimitHint') }}</p>
- <!-- 5-Hour Limit -->
- <div>
- <label class="input-label">{{ t('keys.rateLimit5h') }}</label>
- <div class="relative">
- <span class="absolute left-3 top-1/2 -translate-y-1/2 text-muted">$</span>
- <input
- v-model.number="formData.rate_limit_5h"
+ <div v-if="formData.enable_rate_limit" class="keys-field-stack">
+ <p class="input-hint">{{ t('keys.rateLimitHint') }}</p>
+ <div v-for="window in rateLimitWindows" :key="window.key">
+ <TextInput
+ :model-value="formData[window.key] ?? ''"
  type="number"
  step="0.01"
  min="0"
- class="input pl-7"
- :placeholder="'0'"
+ :label="window.label"
+ placeholder="0"
+ @update:model-value="(v) => (formData[window.key] = v === '' ? null : Number(v))"
  />
+ <div v-if="showEditModal && selectedKey && (selectedKey[window.limitField] ?? 0) > 0" class="keys-window-usage">
+ <div class="keys-window-readout">
+ <b :class="windowToneClass(selectedKey, window)">
+ {{ formatCost(selectedKey[window.usageField], 4) }}
+ </b>
+ <span class="keys-usage-sep">/</span>
+ <span class="text-muted">{{ formatCost(selectedKey[window.limitField]) }}</span>
  </div>
- <!-- Usage info (edit mode only) -->
- <div v-if="showEditModal && selectedKey && selectedKey.rate_limit_5h > 0" class="mt-2">
- <div class="flex items-center gap-2">
- <div class="flex-1 rounded-lg bg-surface-2 px-3 py-2 text-sm">
- <span :class="[
- 'font-medium',
- selectedKey.usage_5h >= selectedKey.rate_limit_5h ? 'text-red-500' :
- selectedKey.usage_5h >= selectedKey.rate_limit_5h * 0.8 ? 'text-yellow-500' :
- 'text-foreground '
- ]">
- ${{ selectedKey.usage_5h?.toFixed(4) || '0.0000' }}
- </span>
- <span class="mx-2 text-muted">/</span>
- <span class="text-muted ">
- ${{ selectedKey.rate_limit_5h?.toFixed(2) || '0.00' }}
- </span>
+ <ProgressBar :value="windowPercent(selectedKey, window)" />
  </div>
  </div>
- <div class="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-3 ">
- <div
- :class="[
- 'h-full rounded-full transition-all',
- selectedKey.usage_5h >= selectedKey.rate_limit_5h ? 'bg-red-500' :
- selectedKey.usage_5h >= selectedKey.rate_limit_5h * 0.8 ? 'bg-yellow-500' :
- 'bg-green-500'
- ]"
- :style="{ width: Math.min((selectedKey.usage_5h / selectedKey.rate_limit_5h) * 100, 100) + '%' }"
- />
- </div>
- </div>
- </div>
-
- <!-- Daily Limit -->
- <div>
- <label class="input-label">{{ t('keys.rateLimit1d') }}</label>
- <div class="relative">
- <span class="absolute left-3 top-1/2 -translate-y-1/2 text-muted">$</span>
- <input
- v-model.number="formData.rate_limit_1d"
- type="number"
- step="0.01"
- min="0"
- class="input pl-7"
- :placeholder="'0'"
- />
- </div>
- <!-- Usage info (edit mode only) -->
- <div v-if="showEditModal && selectedKey && selectedKey.rate_limit_1d > 0" class="mt-2">
- <div class="flex items-center gap-2">
- <div class="flex-1 rounded-lg bg-surface-2 px-3 py-2 text-sm">
- <span :class="[
- 'font-medium',
- selectedKey.usage_1d >= selectedKey.rate_limit_1d ? 'text-red-500' :
- selectedKey.usage_1d >= selectedKey.rate_limit_1d * 0.8 ? 'text-yellow-500' :
- 'text-foreground '
- ]">
- ${{ selectedKey.usage_1d?.toFixed(4) || '0.0000' }}
- </span>
- <span class="mx-2 text-muted">/</span>
- <span class="text-muted ">
- ${{ selectedKey.rate_limit_1d?.toFixed(2) || '0.00' }}
- </span>
- </div>
- </div>
- <div class="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-3 ">
- <div
- :class="[
- 'h-full rounded-full transition-all',
- selectedKey.usage_1d >= selectedKey.rate_limit_1d ? 'bg-red-500' :
- selectedKey.usage_1d >= selectedKey.rate_limit_1d * 0.8 ? 'bg-yellow-500' :
- 'bg-green-500'
- ]"
- :style="{ width: Math.min((selectedKey.usage_1d / selectedKey.rate_limit_1d) * 100, 100) + '%' }"
- />
- </div>
- </div>
- </div>
-
- <!-- 7-Day Limit -->
- <div>
- <label class="input-label">{{ t('keys.rateLimit7d') }}</label>
- <div class="relative">
- <span class="absolute left-3 top-1/2 -translate-y-1/2 text-muted">$</span>
- <input
- v-model.number="formData.rate_limit_7d"
- type="number"
- step="0.01"
- min="0"
- class="input pl-7"
- :placeholder="'0'"
- />
- </div>
- <!-- Usage info (edit mode only) -->
- <div v-if="showEditModal && selectedKey && selectedKey.rate_limit_7d > 0" class="mt-2">
- <div class="flex items-center gap-2">
- <div class="flex-1 rounded-lg bg-surface-2 px-3 py-2 text-sm">
- <span :class="[
- 'font-medium',
- selectedKey.usage_7d >= selectedKey.rate_limit_7d ? 'text-red-500' :
- selectedKey.usage_7d >= selectedKey.rate_limit_7d * 0.8 ? 'text-yellow-500' :
- 'text-foreground '
- ]">
- ${{ selectedKey.usage_7d?.toFixed(4) || '0.0000' }}
- </span>
- <span class="mx-2 text-muted">/</span>
- <span class="text-muted ">
- ${{ selectedKey.rate_limit_7d?.toFixed(2) || '0.00' }}
- </span>
- </div>
- </div>
- <div class="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-3 ">
- <div
- :class="[
- 'h-full rounded-full transition-all',
- selectedKey.usage_7d >= selectedKey.rate_limit_7d ? 'bg-red-500' :
- selectedKey.usage_7d >= selectedKey.rate_limit_7d * 0.8 ? 'bg-yellow-500' :
- 'bg-green-500'
- ]"
- :style="{ width: Math.min((selectedKey.usage_7d / selectedKey.rate_limit_7d) * 100, 100) + '%' }"
- />
- </div>
- </div>
- </div>
-
- <!-- Reset Rate Limit button (edit mode only) -->
- <div v-if="showEditModal && selectedKey && (selectedKey.rate_limit_5h > 0 || selectedKey.rate_limit_1d > 0 || selectedKey.rate_limit_7d > 0)">
- <button
- type="button"
- @click="confirmResetRateLimit"
- class="btn-glass-secondary text-sm"
- >
+ <div v-if="showEditModal && selectedKey && hasRateLimit(selectedKey)">
+ <Button variant="secondary" @click="confirmResetRateLimit">
  {{ t('keys.resetRateLimitUsage') }}
- </button>
+ </Button>
  </div>
  </div>
  </div>
 
- <!-- Expiration Section -->
- <div class="space-y-3">
- <div class="flex items-center justify-between">
- <label class="input-label mb-0">{{ t('keys.expiration') }}</label>
- <button
- type="button"
- @click="formData.enable_expiration = !formData.enable_expiration"
- :class="[
- 'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
- formData.enable_expiration ? 'bg-accent' : 'bg-surface-3 '
- ]"
- >
- <span
- :class="[
- 'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-surface shadow ring-0 transition duration-200 ease-in-out',
- formData.enable_expiration ? 'translate-x-4' : 'translate-x-0'
- ]"
- />
- </button>
+ <div class="keys-field">
+ <div class="keys-toggle-row">
+ <span class="keys-toggle-label">{{ t('keys.expiration') }}</span>
+ <ToggleSwitch v-model="formData.enable_expiration" />
  </div>
-
- <div v-if="formData.enable_expiration" class="space-y-4 pt-2">
- <!-- Quick select buttons (for both create and edit mode) -->
- <div class="flex flex-wrap gap-2">
+ <div v-if="formData.enable_expiration" class="keys-field-stack">
+ <div class="keys-expiry-presets">
  <button
  v-for="days in ['7', '30', '90']"
  :key="days"
  type="button"
+ class="chip chip-filter"
+ :class="{ 'is-active': formData.expiration_preset === days }"
  @click="setExpirationDays(parseInt(days))"
- :class="[
- 'rounded-lg px-3 py-1.5 text-sm transition-colors',
- formData.expiration_preset === days
- ? 'bg-accent text-white '
- : 'bg-surface-2 text-muted hover:bg-surface-2 '
- ]"
  >
  {{ showEditModal ? t('keys.extendDays', { days }) : t('keys.expiresInDays', { days }) }}
  </button>
  <button
  type="button"
+ class="chip chip-filter"
+ :class="{ 'is-active': formData.expiration_preset === 'custom' }"
  @click="formData.expiration_preset = 'custom'"
- :class="[
- 'rounded-lg px-3 py-1.5 text-sm transition-colors',
- formData.expiration_preset === 'custom'
- ? 'bg-accent text-white '
- : 'bg-surface-2 text-muted hover:bg-surface-2 '
- ]"
  >
  {{ t('keys.customDate') }}
  </button>
  </div>
-
- <!-- Date picker (always show for precise adjustment) -->
- <div>
- <label class="input-label">{{ t('keys.expirationDate') }}</label>
- <input
+ <TextInput
  v-model="formData.expiration_date"
  type="datetime-local"
- class="input"
+ :label="t('keys.expirationDate')"
+ :hint="t('keys.expirationDateHint')"
  />
- <p class="input-hint">{{ t('keys.expirationDateHint') }}</p>
- </div>
-
- <!-- Current expiration display (only in edit mode) -->
- <div v-if="showEditModal && selectedKey?.expires_at" class="text-sm">
- <span class="text-muted ">{{ t('keys.currentExpiration') }}: </span>
- <span class="font-medium text-foreground ">
- {{ formatDateTime(selectedKey.expires_at) }}
- </span>
- </div>
+ <p v-if="showEditModal && selectedKey?.expires_at" class="keys-current-expiry">
+ <span class="text-muted">{{ t('keys.currentExpiration') }}: </span>
+ <b>{{ formatDateTime(selectedKey.expires_at) }}</b>
+ </p>
  </div>
  </div>
  </form>
  <template #footer>
- <div class="flex justify-end gap-3">
- <button @click="closeModals" type="button" class="btn-glass-secondary">
- {{ t('common.cancel') }}
- </button>
- <button
+ <Button variant="secondary" @click="closeModals">{{ t('common.cancel') }}</Button>
+ <Button
+ native-type="submit"
  form="key-form"
- type="submit"
- :disabled="submitting"
- class="btn-glass-primary"
+ :loading="submitting"
  data-tour="key-form-submit"
  >
- <svg
- v-if="submitting"
- class="-ml-1 mr-2 h-4 w-4 animate-spin"
- fill="none"
- viewBox="0 0 24 24"
- >
- <circle
- class="opacity-25"
- cx="12"
- cy="12"
- r="10"
- stroke="currentColor"
- stroke-width="4"
- ></circle>
- <path
- class="opacity-75"
- fill="currentColor"
- d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
- ></path>
- </svg>
- {{
- submitting
- ? t('keys.saving')
- : showEditModal
- ? t('common.update')
- : t('common.create')
- }}
- </button>
- </div>
+ {{ submitting ? t('keys.saving') : showEditModal ? t('common.update') : t('common.create') }}
+ </Button>
  </template>
- </BaseDialog>
+ </UiModal>
 
- <!-- Delete Confirmation Dialog -->
- <ConfirmDialog
- :show="showDeleteDialog"
- :title="t('keys.deleteKey')"
- :message="t('keys.deleteConfirmMessage', { name: selectedKey?.name })"
- :confirm-text="t('common.delete')"
- :cancel-text="t('common.cancel')"
- :danger="true"
- @confirm="handleDelete"
- @cancel="showDeleteDialog = false"
- />
-
- <!-- Reset Quota Confirmation Dialog -->
- <ConfirmDialog
- :show="showResetQuotaDialog"
- :title="t('keys.resetQuotaTitle')"
- :message="t('keys.resetQuotaConfirmMessage', { name: selectedKey?.name, used: selectedKey?.quota_used?.toFixed(4) })"
- :confirm-text="t('keys.reset')"
- :cancel-text="t('common.cancel')"
- :danger="true"
- @confirm="resetQuotaUsed"
- @cancel="showResetQuotaDialog = false"
- />
-
- <!-- Reset Rate Limit Confirmation Dialog -->
- <ConfirmDialog
- :show="showResetRateLimitDialog"
- :title="t('keys.resetRateLimitTitle')"
- :message="t('keys.resetRateLimitConfirmMessage', { name: selectedKey?.name })"
- :confirm-text="t('keys.reset')"
- :cancel-text="t('common.cancel')"
- :danger="true"
- @confirm="resetRateLimitUsage"
- @cancel="showResetRateLimitDialog = false"
- />
+ <!-- Confirmations -->
+ <UiModal
+ :open="confirmDialog !== null"
+ :title="confirmDialog?.title || ''"
+ width="sm"
+ :close-label="t('common.close')"
+ @close="confirmDialog = null"
+ >
+ <p class="keys-confirm-text">{{ confirmDialog?.message }}</p>
+ <template #footer>
+ <Button variant="secondary" @click="confirmDialog = null">{{ t('common.cancel') }}</Button>
+ <Button variant="danger" @click="runConfirm">{{ confirmDialog?.confirmText }}</Button>
+ </template>
+ </UiModal>
 
  <!-- Use Key Modal -->
  <UseKeyModal
@@ -1018,96 +648,138 @@
  @close="closeUseKeyModal"
  />
 
- <!-- CCS Client Selection Dialog for Antigravity -->
- <BaseDialog
- :show="showCcsClientSelect"
+ <!-- CC Switch: pick a key to import -->
+ <UiModal
+ :open="showCcsImportModal"
+ :title="t('keys.ccsImport.title')"
+ width="md"
+ :close-label="t('common.close')"
+ @close="showCcsImportModal = false"
+ >
+ <p class="keys-confirm-text">{{ t('keys.ccsImport.description') }}</p>
+ <ul class="keys-ccs-list">
+ <li v-for="row in apiKeys" :key="row.id" class="keys-ccs-item">
+ <span class="keys-ccs-name">{{ row.name }}</span>
+ <code class="code keys-ccs-key">{{ maskApiKey(row.key) }}</code>
+ <Button variant="secondary" @click="importFromPicker(row)">
+ {{ t('keys.importToCcSwitch') }}
+ </Button>
+ </li>
+ </ul>
+ </UiModal>
+
+ <!-- CC Switch client selection (Antigravity) -->
+ <UiModal
+ :open="showCcsClientSelect"
  :title="t('keys.ccsClientSelect.title')"
- width="narrow"
+ width="sm"
+ :close-label="t('common.close')"
  @close="closeCcsClientSelect"
  >
- <div class="space-y-4">
- <p class="text-sm text-muted ">
- {{ t('keys.ccsClientSelect.description') }}
-	 </p>
-	 <div class="grid grid-cols-2 gap-3">
-	 <button
-	 @click="handleCcsClientSelect('claude')"
-	 class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-line hover:border-accent hover:bg-accent transition-all"
-	 >
-	 <Icon name="terminal" size="xl" class="text-muted " />
-	 <span class="font-medium text-foreground ">{{
-	 t('keys.ccsClientSelect.claudeCode')
-	 }}</span>
-	 <span class="text-xs text-muted ">{{
-	 t('keys.ccsClientSelect.claudeCodeDesc')
-	 }}</span>
-	 </button>
-	 <button
-	 @click="handleCcsClientSelect('gemini')"
-	 class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-line hover:border-accent hover:bg-accent transition-all"
-	 >
-	 <Icon name="sparkles" size="xl" class="text-muted " />
-	 <span class="font-medium text-foreground ">{{
-	 t('keys.ccsClientSelect.geminiCli')
-	 }}</span>
-	 <span class="text-xs text-muted ">{{
-	 t('keys.ccsClientSelect.geminiCliDesc')
-	 }}</span>
-	 </button>
-	 </div>
-	 </div>
- <template #footer>
- <div class="flex justify-end">
- <button @click="closeCcsClientSelect" class="btn-glass-secondary">
- {{ t('common.cancel') }}
+ <p class="keys-confirm-text">{{ t('keys.ccsClientSelect.description') }}</p>
+ <div class="keys-client-grid">
+ <button type="button" class="keys-client-card" @click="handleCcsClientSelect('claude')">
+ <Icon name="terminal" size="lg" />
+ <span class="keys-client-title">{{ t('keys.ccsClientSelect.claudeCode') }}</span>
+ <span class="keys-client-desc">{{ t('keys.ccsClientSelect.claudeCodeDesc') }}</span>
+ </button>
+ <button type="button" class="keys-client-card" @click="handleCcsClientSelect('gemini')">
+ <Icon name="sparkles" size="lg" />
+ <span class="keys-client-title">{{ t('keys.ccsClientSelect.geminiCli') }}</span>
+ <span class="keys-client-desc">{{ t('keys.ccsClientSelect.geminiCliDesc') }}</span>
  </button>
  </div>
+ <template #footer>
+ <Button variant="secondary" @click="closeCcsClientSelect">{{ t('common.cancel') }}</Button>
  </template>
- </BaseDialog>
+ </UiModal>
+
+ <!-- Row actions menu -->
+ <Teleport to="body">
+ <div
+ v-if="rowMenuKeyId !== null && rowMenuPosition && rowMenuKey"
+ ref="rowMenuRef"
+ class="dropdown keys-row-menu"
+ :style="{ top: rowMenuPosition.top + 'px', left: rowMenuPosition.left + 'px' }"
+ >
+ <button type="button" class="dropdown-item" @click="runRowAction(() => openUseKeyModal(rowMenuKey!))">
+ <Icon name="terminal" size="sm" />
+ {{ t('keys.useKey') }}
+ </button>
+ <button
+ v-if="!publicSettings?.hide_ccs_import_button"
+ type="button"
+ class="dropdown-item"
+ @click="runRowAction(() => importToCcswitch(rowMenuKey!))"
+ >
+ <Icon name="upload" size="sm" />
+ {{ t('keys.importToCcSwitch') }}
+ </button>
+ <button type="button" class="dropdown-item" @click="runRowAction(() => copyToClipboard(rowMenuKey!.key, rowMenuKey!.id))">
+ <Icon name="clipboard" size="sm" />
+ {{ t('keys.copyToClipboard') }}
+ </button>
+ <div class="dropdown-divider" />
+ <button type="button" class="dropdown-item" @click="runRowAction(() => editKey(rowMenuKey!))">
+ <Icon name="edit" size="sm" />
+ {{ t('common.edit') }}
+ </button>
+ <button type="button" class="dropdown-item" @click="runRowAction(() => toggleKeyStatus(rowMenuKey!))">
+ <Icon :name="rowMenuKey.status === 'active' ? 'ban' : 'checkCircle'" size="sm" />
+ {{ rowMenuKey.status === 'active' ? t('keys.disable') : t('keys.enable') }}
+ </button>
+ <button
+ v-if="hasRateLimitUsage(rowMenuKey)"
+ type="button"
+ class="dropdown-item"
+ @click="runRowAction(() => confirmResetRateLimitFromTable(rowMenuKey!))"
+ >
+ <Icon name="refresh" size="sm" />
+ {{ t('keys.resetRateLimitUsage') }}
+ </button>
+ <div class="dropdown-divider" />
+ <button type="button" class="dropdown-item dropdown-item-danger" @click="runRowAction(() => confirmDelete(rowMenuKey!))">
+ <Icon name="trash" size="sm" />
+ {{ t('common.delete') }}
+ </button>
+ </div>
+ </Teleport>
 
  <!-- Group Selector Dropdown (Teleported to body to avoid overflow clipping) -->
  <Teleport to="body">
  <div
  v-if="groupSelectorKeyId !== null && dropdownPosition"
  ref="dropdownRef"
- class="animate-in fade-in slide-in-from-top-2 fixed z-[100000020] w-max max-w-[calc(100vw-16px)] overflow-hidden rounded-xl bg-surface shadow-lg ring-1 ring-black/5 duration-200 sm:min-w-[380px] "
- style="pointer-events: auto !important;"
+ class="dropdown keys-group-dropdown"
  :style="{
  top: dropdownPosition.top !== undefined ? dropdownPosition.top + 'px' : undefined,
  bottom: dropdownPosition.bottom !== undefined ? dropdownPosition.bottom + 'px' : undefined,
  left: dropdownPosition.left + 'px'
  }"
  >
- <!-- Search box -->
- <div class="border-b border-line p-2 ">
- <div class="relative">
- <svg class="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
- <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
- </svg>
+ <div class="keys-group-search">
+ <Icon name="search" size="sm" class="text-muted" />
  <input
  v-model="groupSearchQuery"
  type="text"
- class="w-full rounded-lg border border-line bg-surface-2 py-1.5 pl-8 pr-3 text-sm text-foreground placeholder-muted outline-none focus:border-accent focus:ring-1 focus:ring-accent "
+ class="keys-group-search-input"
  :placeholder="t('keys.searchGroup')"
  @click.stop
  />
  </div>
- </div>
- <!-- Group list -->
- <div class="max-h-80 overflow-y-auto p-1.5">
+ <div class="keys-group-options">
  <button
  v-for="option in filteredGroupOptions"
  :key="option.value ?? 'null'"
- @click="changeGroup(selectedKeyForGroup!, option.value)"
- :class="[
- 'flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors',
- 'border-b border-line last:border-0 ',
+ type="button"
+ class="dropdown-item keys-group-option"
+ :class="{
+ 'is-active':
  selectedKeyForGroup?.group_id === option.value ||
  (!selectedKeyForGroup?.group_id && option.value === null)
- ? 'bg-accent '
- : 'hover:bg-surface-2 '
- ]"
+ }"
  :title="option.description || undefined"
+ @click="changeGroup(selectedKeyForGroup!, option.value)"
  >
  <GroupOptionItem
  :name="option.label"
@@ -1126,52 +798,62 @@
  "
  />
  </button>
- <!-- Empty state when search has no results -->
- <div v-if="filteredGroupOptions.length === 0" class="py-4 text-center text-sm text-muted ">
+ <p v-if="filteredGroupOptions.length === 0" class="keys-group-empty">
  {{ t('keys.noGroupFound') }}
- </div>
+ </p>
  </div>
  </div>
  </Teleport>
+ </div>
  </AppLayout>
 </template>
 
 <script setup lang="ts">
-	import { ref, reactive, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
-	import { useI18n } from 'vue-i18n'
-	import { useAppStore } from '@/stores/app'
-	import { useOnboardingStore } from '@/stores/onboarding'
-	import { useClipboard } from '@/composables/useClipboard'
+import { ref, reactive, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useAppStore } from '@/stores/app'
+import { useOnboardingStore } from '@/stores/onboarding'
+import { useClipboard } from '@/composables/useClipboard'
+import { useIsMobile } from '@/composables/useIsMobile'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
-
-const { t } = useI18n()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
-	import DataTable from '@/components/common/DataTable.vue'
-	import Pagination from '@/components/common/Pagination.vue'
-	import BaseDialog from '@/components/common/BaseDialog.vue'
-	import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-	import EmptyState from '@/components/common/EmptyState.vue'
-	import Select from '@/components/common/Select.vue'
-	import SearchInput from '@/components/common/SearchInput.vue'
-	import Icon from '@/components/icons/Icon.vue'
+import DataTable from '@/components/common/DataTable.vue'
+import Pagination from '@/components/common/Pagination.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import Select from '@/components/common/Select.vue'
+import SearchInput from '@/components/common/SearchInput.vue'
+import Icon from '@/components/icons/Icon.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import Button from '@/components/ui/Button.vue'
+import FieldLabel from '@/components/ui/FieldLabel.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
+import ProgressBar from '@/components/ui/ProgressBar.vue'
+import SegmentedControl from '@/components/ui/SegmentedControl.vue'
+import UiModal from '@/components/ui/UiModal.vue'
 import FilterBar from '@/components/ui/FilterBar.vue'
 import ChipScroller from '@/components/ui/ChipScroller.vue'
 import EndpointCard from '@/components/ui/EndpointCard.vue'
 import MiniStatCard from '@/components/ui/MiniStatCard.vue'
+import ListFade from '@/components/ui/ListFade.vue'
 import Fab from '@/components/ui/Fab.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
-	import UseKeyModal from '@/components/keys/UseKeyModal.vue'
-		import GroupBadge from '@/components/common/GroupBadge.vue'
-	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
-	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
+import UseKeyModal from '@/components/keys/UseKeyModal.vue'
+import GroupBadge from '@/components/common/GroupBadge.vue'
+import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
+import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
 import type { Column } from '@/components/common/types'
+import type { StatusBadgeTone } from '@/components/ui/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
-import { formatDateTime } from '@/utils/format'
+import { formatDateTime, formatDate } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
+
+const { t } = useI18n()
+const { isTabletUp } = useIsMobile()
+
 import {
   buildCcSwitchImportDeeplink,
   type CcSwitchClientType
@@ -1323,12 +1005,11 @@ const filterGroupId = ref<string | number>('')
 
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
-const showDeleteDialog = ref(false)
-const showResetQuotaDialog = ref(false)
-const showResetRateLimitDialog = ref(false)
 const showUseKeyModal = ref(false)
 const showCcsClientSelect = ref(false)
+const showCcsImportModal = ref(false)
 const showColumnDropdown = ref(false)
+const showMobileFilters = ref(false)
 const pendingCcsRow = ref<ApiKey | null>(null)
 const selectedKey = ref<ApiKey | null>(null)
 const copiedKeyId = ref<number | null>(null)
@@ -1338,12 +1019,35 @@ const dropdownRef = ref<HTMLElement | null>(null)
 const columnDropdownRef = ref<HTMLElement | null>(null)
 const dropdownPosition = ref<{ top?: number; bottom?: number; left: number } | null>(null)
 const groupButtonRefs = ref<Map<number, HTMLElement>>(new Map())
+const revealedKeyIds = reactive<Set<number>>(new Set())
+const rowMenuKeyId = ref<number | null>(null)
+const rowMenuPosition = ref<{ top: number; left: number } | null>(null)
+const rowMenuRef = ref<HTMLElement | null>(null)
+const confirmDialog = ref<{
+  title: string
+  message: string
+  confirmText: string
+  onConfirm: () => void | Promise<void>
+} | null>(null)
+
+const runConfirm = async () => {
+  const dialog = confirmDialog.value
+  if (!dialog) return
+  confirmDialog.value = null
+  await dialog.onConfirm()
+}
 let abortController: AbortController | null = null
 
 // Get the currently selected key for group change
 const selectedKeyForGroup = computed(() => {
   if (groupSelectorKeyId.value === null) return null
   return apiKeys.value.find((k) => k.id === groupSelectorKeyId.value) || null
+})
+
+// Key currently targeted by the row "more actions" menu
+const rowMenuKey = computed<ApiKey | null>(() => {
+  if (rowMenuKeyId.value === null) return null
+  return apiKeys.value.find((k) => k.id === rowMenuKeyId.value) || null
 })
 
 const setGroupButtonRef = (keyId: number, el: Element | ComponentPublicInstance | null) => {
@@ -1425,6 +1129,20 @@ const statusChipOptions = computed(() => statusFilterOptions.value.map((opt) => 
   label: opt.label
 })))
 
+// Compact segmented control only surfaces the highest-signal statuses;
+// the chip scroller (statusChipOptions) exposes the full list on mobile.
+const statusSegmentOptions = computed(() => [
+  { value: '', label: t('keys.allStatus') },
+  { value: 'active', label: t('keys.status.active') },
+  { value: 'expired', label: t('keys.status.expired') },
+  { value: 'disabled', label: t('keys.status.disabled') }
+])
+
+const activeSortLabel = computed(() => {
+  const column = allColumns.value.find((col) => col.key === sortState.value.sort_by)
+  return column ? column.label : sortState.value.sort_by
+})
+
 const activeKeyCount = computed(() => apiKeys.value.filter((key) => key.status === 'active').length)
 const todayKeySpend = computed(() =>
   apiKeys.value.reduce((sum, key) => sum + (usageStats.value[key.id]?.today_actual_cost ?? 0), 0)
@@ -1437,6 +1155,45 @@ const keyMiniStats = computed(() => [
 
 const copyEndpoint = async (url: string) => {
   await clipboardCopy(url, t('keys.endpoints.copied'))
+}
+
+interface EndpointCardEntry {
+  url: string
+  label: string
+  description?: string
+  badge?: string
+  badgeTone?: StatusBadgeTone
+}
+
+const endpointCards = computed<EndpointCardEntry[]>(() => {
+  const cards: EndpointCardEntry[] = []
+  if (publicSettings.value?.api_base_url) {
+    cards.push({
+      url: publicSettings.value.api_base_url,
+      label: t('keys.endpoints.title'),
+      badge: t('keys.endpoints.default'),
+      badgeTone: 'accent'
+    })
+  }
+  for (const endpoint of publicSettings.value?.custom_endpoints || []) {
+    cards.push({
+      url: endpoint.endpoint,
+      label: endpoint.name,
+      description: endpoint.description || undefined,
+      badge: t('keys.endpoints.custom'),
+      badgeTone: 'muted'
+    })
+  }
+  return cards
+})
+
+const openCcsImportPicker = () => {
+  showCcsImportModal.value = true
+}
+
+const importFromPicker = (row: ApiKey) => {
+  showCcsImportModal.value = false
+  importToCcswitch(row)
 }
 
 const onFilterChange = () => {
@@ -1490,6 +1247,129 @@ const copyToClipboard = async (text: string, keyId: number) => {
       copiedKeyId.value = null
     }, 800)
   }
+}
+
+const hasIpRestriction = (key: ApiKey) => (key.ip_whitelist?.length > 0) || (key.ip_blacklist?.length > 0)
+
+const isKeyRevealed = (id: number) => revealedKeyIds.has(id)
+
+const toggleKeyReveal = (id: number) => {
+  if (revealedKeyIds.has(id)) {
+    revealedKeyIds.delete(id)
+  } else {
+    revealedKeyIds.add(id)
+  }
+}
+
+const formatCost = (value: number | null | undefined, decimals = 2) => `$${(value ?? 0).toFixed(decimals)}`
+
+const quotaPercent = (key: ApiKey) => {
+  if (!key.quota || key.quota <= 0) return 0
+  return Math.min(100, (key.quota_used / key.quota) * 100)
+}
+
+const quotaBarClass = (key: ApiKey) => {
+  const pct = quotaPercent(key)
+  if (pct >= 90) return 'progress-bar-danger'
+  if (pct >= 70) return 'progress-bar-warning'
+  return ''
+}
+
+const statusTone = (status: ApiKey['status']): StatusBadgeTone => {
+  if (status === 'active') return 'success'
+  if (status === 'quota_exhausted') return 'warning'
+  if (status === 'expired' || status === 'disabled' || status === 'inactive') return 'danger'
+  return 'muted'
+}
+
+const expiryToneClass = (value: string | null) => (value && new Date(value) < now.value ? 'keys-tone-danger' : '')
+
+interface RateLimitWindow {
+  key: 'rate_limit_5h' | 'rate_limit_1d' | 'rate_limit_7d'
+  label: string
+  shortLabel: string
+  limitField: 'rate_limit_5h' | 'rate_limit_1d' | 'rate_limit_7d'
+  usageField: 'usage_5h' | 'usage_1d' | 'usage_7d'
+  resetField: 'reset_5h_at' | 'reset_1d_at' | 'reset_7d_at'
+}
+
+const rateLimitWindows = computed<RateLimitWindow[]>(() => [
+  {
+    key: 'rate_limit_5h',
+    label: t('keys.rateLimit5h'),
+    shortLabel: '5h',
+    limitField: 'rate_limit_5h',
+    usageField: 'usage_5h',
+    resetField: 'reset_5h_at'
+  },
+  {
+    key: 'rate_limit_1d',
+    label: t('keys.rateLimit1d'),
+    shortLabel: '1d',
+    limitField: 'rate_limit_1d',
+    usageField: 'usage_1d',
+    resetField: 'reset_1d_at'
+  },
+  {
+    key: 'rate_limit_7d',
+    label: t('keys.rateLimit7d'),
+    shortLabel: '7d',
+    limitField: 'rate_limit_7d',
+    usageField: 'usage_7d',
+    resetField: 'reset_7d_at'
+  }
+])
+
+const windowPercent = (key: ApiKey, window: RateLimitWindow) => {
+  const limit = key[window.limitField]
+  if (!limit || limit <= 0) return 0
+  return Math.min(100, (key[window.usageField] / limit) * 100)
+}
+
+const windowToneClass = (key: ApiKey, window: RateLimitWindow) => {
+  const pct = windowPercent(key, window)
+  if (pct >= 90) return 'keys-tone-danger'
+  if (pct >= 70) return 'keys-tone-warning'
+  return ''
+}
+
+const hasRateLimit = (key: ApiKey) => key.usage_5h > 0 || key.usage_1d > 0 || key.usage_7d > 0
+
+const hasRateLimitUsage = (key: ApiKey | null) => !!key && hasRateLimit(key)
+
+const activeRateLimitWindows = (key: ApiKey) =>
+  rateLimitWindows.value.filter((window) => (key[window.limitField] ?? 0) > 0)
+
+const mostConstrainedRateLimitWindow = (key: ApiKey): RateLimitWindow | null => {
+  const windows = activeRateLimitWindows(key)
+  if (windows.length === 0) return null
+  return windows.reduce((worst, window) =>
+    windowPercent(key, window) > windowPercent(key, worst) ? window : worst
+  , windows[0])
+}
+
+const rateLimitSummary = (key: ApiKey) => {
+  const window = mostConstrainedRateLimitWindow(key)
+  if (!window) return ''
+  return `${window.shortLabel} ${Math.round(windowPercent(key, window))}%`
+}
+
+const rateLimitToneClass = (key: ApiKey) => {
+  const window = mostConstrainedRateLimitWindow(key)
+  return window ? windowToneClass(key, window) : ''
+}
+
+const rateLimitDetail = (key: ApiKey) => {
+  const windows = activeRateLimitWindows(key)
+  if (windows.length === 0) return ''
+  return windows
+    .map((window) => {
+      const base = `${window.shortLabel}: ${formatCost(key[window.usageField])} / ${formatCost(key[window.limitField])}`
+      const resetAt = key[window.resetField]
+      const resetText = resetAt ? formatResetTime(resetAt) : ''
+      return resetText ? `${base} · ${resetText}` : base
+    })
+    .join('\n')
 }
 
 const isAbortError = (error: unknown) => {
@@ -1701,11 +1581,48 @@ const closeGroupSelector = (event: MouseEvent) => {
   if (columnDropdownRef.value && !columnDropdownRef.value.contains(target)) {
     showColumnDropdown.value = false
   }
+  if (rowMenuKeyId.value !== null && !rowMenuRef.value?.contains(target)) {
+    closeRowMenu()
+  }
+}
+
+const closeRowMenu = () => {
+  rowMenuKeyId.value = null
+  rowMenuPosition.value = null
+}
+
+const toggleRowMenu = (row: ApiKey, event: MouseEvent) => {
+  if (rowMenuKeyId.value === row.id) {
+    closeRowMenu()
+    return
+  }
+  const buttonEl = event.currentTarget as HTMLElement
+  const rect = buttonEl.getBoundingClientRect()
+  const menuEstWidth = 220
+  const menuEstHeight = 280
+  const left = Math.max(8, Math.min(rect.right - menuEstWidth, window.innerWidth - menuEstWidth - 8))
+  const spaceBelow = window.innerHeight - rect.bottom
+  const top = spaceBelow < menuEstHeight && rect.top > spaceBelow
+    ? Math.max(8, rect.top - menuEstHeight)
+    : rect.bottom + 4
+  rowMenuPosition.value = { top, left }
+  rowMenuKeyId.value = row.id
+}
+
+// Runs a row-menu action while its target key is still resolvable, then closes the menu.
+const runRowAction = (action: () => void) => {
+  action()
+  closeRowMenu()
 }
 
 const confirmDelete = (key: ApiKey) => {
   selectedKey.value = key
-  showDeleteDialog.value = true
+  confirmDialog.value = {
+    title: t('keys.deleteKey'),
+    message: t('keys.deleteConfirmMessage', { name: key.name }),
+    confirmText: t('common.delete'),
+    onConfirm: handleDelete
+  }
 }
 
 const handleSubmit = async () => {
@@ -1821,7 +1738,6 @@ const handleDelete = async () => {
   try {
     await keysAPI.delete(selectedKey.value.id)
     appStore.showSuccess(t('keys.keyDeletedSuccess'))
-    showDeleteDialog.value = false
     loadApiKeys()
   } catch (error: any) {
     // 优先使用后端返回的错误消息，提供更具体的错误信息给用户
@@ -1857,7 +1773,16 @@ const closeModals = () => {
 
 // Show reset quota confirmation dialog
 const confirmResetQuota = () => {
-  showResetQuotaDialog.value = true
+  if (!selectedKey.value) return
+  confirmDialog.value = {
+    title: t('keys.resetQuotaTitle'),
+    message: t('keys.resetQuotaConfirmMessage', {
+      name: selectedKey.value.name,
+      used: selectedKey.value.quota_used?.toFixed(4)
+    }),
+    confirmText: t('keys.reset'),
+    onConfirm: resetQuotaUsed
+  }
 }
 
 // Set expiration date based on quick select days
@@ -1871,7 +1796,6 @@ const setExpirationDays = (days: number) => {
 // Reset quota used for an API key
 const resetQuotaUsed = async () => {
   if (!selectedKey.value) return
-  showResetQuotaDialog.value = false
   try {
     await keysAPI.update(selectedKey.value.id, { reset_quota: true })
     appStore.showSuccess(t('keys.quotaResetSuccess'))
@@ -1887,19 +1811,24 @@ const resetQuotaUsed = async () => {
 
 // Show reset rate limit confirmation dialog (from edit modal)
 const confirmResetRateLimit = () => {
-  showResetRateLimitDialog.value = true
+  if (!selectedKey.value) return
+  confirmDialog.value = {
+    title: t('keys.resetRateLimitTitle'),
+    message: t('keys.resetRateLimitConfirmMessage', { name: selectedKey.value.name }),
+    confirmText: t('keys.reset'),
+    onConfirm: resetRateLimitUsage
+  }
 }
 
 // Show reset rate limit confirmation dialog (from table row)
 const confirmResetRateLimitFromTable = (row: ApiKey) => {
   selectedKey.value = row
-  showResetRateLimitDialog.value = true
+  confirmResetRateLimit()
 }
 
 // Reset rate limit usage for an API key
 const resetRateLimitUsage = async () => {
   if (!selectedKey.value) return
-  showResetRateLimitDialog.value = false
   try {
     await keysAPI.update(selectedKey.value.id, { reset_rate_limit_usage: true })
     appStore.showSuccess(t('keys.rateLimitResetSuccess'))
@@ -2016,23 +1945,748 @@ onUnmounted(() => {
 })
 </script>
 <style scoped>
-.keys-endpoints {
+/* ---------- Page shell · prototype 05 (content padding 8/24/24/20, gap 14) ---------- */
+.keys-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.keys-page .keys-header {
+  margin-bottom: 0;
+}
+
+.keys-page .keys-layout {
+  gap: 14px;
+}
+
+@media (min-width: 1024px) {
+  .keys-page {
+    height: calc(100vh - 93px);
+  }
+
+  .keys-page .keys-layout {
+    height: auto;
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+/* ---------- Top row: endpoints (1.2fr 1.2fr) + mini stats (1fr) ---------- */
+.keys-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.keys-top-grid {
   display: grid;
   grid-template-columns: 1.2fr 1.2fr 1fr;
   gap: 12px;
 }
+
+.keys-top-grid.is-wide {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.keys-page .keys-endpoint {
+  padding: 14px 16px;
+}
+
+.keys-page .keys-toolbar .keys-stats :deep(.ui-mini-stat:nth-child(2) .ui-mini-stat-value) {
+  color: var(--success-text);
+}
+
+/* ---------- Filter row ---------- */
+.keys-page .keys-filter-bar {
+  margin-bottom: 0;
+}
+
+.keys-sort-note {
+  font-size: 12.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.keys-sort-note b {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.keys-column-settings {
+  position: relative;
+  flex: none;
+}
+
+.keys-column-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.keys-column-btn:hover {
+  color: var(--foreground);
+}
+
+.keys-column-dropdown {
+  right: 0;
+  top: calc(100% + 6px);
+  max-height: 320px;
+  overflow-y: auto;
+  min-width: 200px;
+}
+
+.keys-column-item-label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.keys-mobile-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.keys-page .keys-chips {
+  display: none;
+}
+
+.keys-page .keys-chips :deep(.ui-chip) {
+  font-size: 12.5px;
+}
+
+/* ---------- Table card ---------- */
+.keys-table-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.keys-page .keys-layout :deep(.table-scroll-container) {
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
+  border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.keys-page .keys-layout :deep(thead) {
+  background: color-mix(in oklch, var(--surface-secondary) 45%, transparent);
+  backdrop-filter: none;
+}
+
+.keys-page .keys-layout :deep(tbody) {
+  background: transparent;
+}
+
+.keys-page .keys-layout :deep(th) {
+  height: 42px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.keys-page .keys-layout :deep(td) {
+  height: 58px;
+  padding: 8px;
+  font-size: 13px;
+  color: var(--foreground);
+  border-bottom: 1px solid var(--border);
+}
+
+.keys-page .keys-layout :deep(th:first-child),
+.keys-page .keys-layout :deep(td:first-child) {
+  padding-left: 16px;
+}
+
+.keys-page .keys-layout :deep(th:last-child),
+.keys-page .keys-layout :deep(td:last-child) {
+  padding-right: 16px;
+}
+
+/* ---------- Cells ---------- */
+.keys-cell-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.keys-name-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.keys-name-text {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.keys-name-shield {
+  flex: none;
+  color: var(--accent);
+}
+
+.keys-name-id {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.keys-cell-key {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.keys-key-code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.keys-icon-btn-xs {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+}
+
+.keys-icon-btn-xs.is-copied {
+  color: var(--success-text);
+}
+
+.keys-group-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  margin: -3px -6px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.keys-group-btn:hover {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+
+.keys-group-badge {
+  height: 22px;
+}
+
+.keys-group-caret {
+  flex: none;
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.keys-group-btn:hover .keys-group-caret {
+  opacity: 1;
+}
+
+.keys-concurrency {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.keys-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.keys-usage-today {
+  font-weight: 600;
+}
+
+.keys-usage-total {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.keys-usage-quota {
+  display: block;
+  width: 72px;
+  margin-top: 2px;
+}
+
+.keys-rate-limit,
+.keys-expiry,
+.keys-muted-cell {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.keys-mono-cell {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.keys-cell-empty {
+  color: var(--muted);
+}
+
+.keys-tone-danger {
+  color: var(--danger-text);
+}
+
+.keys-tone-warning {
+  color: var(--warning-text);
+}
+
+.keys-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.keys-use-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.keys-use-btn:hover {
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
+}
+
+.keys-more-btn {
+  width: 28px;
+  height: 28px;
+}
+
+/* ---------- Dropdowns ---------- */
+.keys-row-menu {
+  position: fixed;
+  z-index: 100000030;
+  min-width: 190px;
+}
+
+.keys-group-dropdown {
+  position: fixed;
+  z-index: 100000020;
+  width: max-content;
+  min-width: 320px;
+  max-width: calc(100vw - 16px);
+  padding: 0;
+  overflow: hidden;
+}
+
+.keys-group-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.keys-group-search-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 13px;
+}
+
+.keys-group-options {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.keys-group-option {
+  height: auto;
+  padding: 7px 10px;
+}
+
+.keys-group-empty {
+  padding: 16px 10px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* ---------- Modals / form ---------- */
+.keys-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.keys-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.keys-field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.keys-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.keys-toggle-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.keys-mono-input :deep(.field) {
+  font-family: var(--font-mono);
+}
+
+.keys-textarea {
+  height: auto;
+  min-height: 76px;
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.keys-usage-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.keys-usage-readout,
+.keys-window-readout {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 0 12px;
+  height: 36px;
+  border-radius: var(--radius-field);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.keys-window-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.keys-usage-sep {
+  color: var(--muted);
+}
+
+.keys-expiry-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.keys-current-expiry {
+  font-size: 12.5px;
+}
+
+.keys-confirm-text {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.keys-ccs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.keys-ccs-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-field);
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
+}
+
+.keys-ccs-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.keys-ccs-key {
+  flex: none;
+}
+
+.keys-client-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.keys-client-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.keys-client-card:hover {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 8%, transparent);
+}
+
+.keys-client-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.keys-client-desc {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* ---------- Mobile card mode (prototype 08, 390px) ---------- */
+.keys-mobile-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.keys-pagination {
+  flex: none;
+}
+
+.keys-mobile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.keys-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+}
+
+.keys-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.keys-card-ident {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.keys-card-name {
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.keys-card-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.keys-card-top-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.keys-card-more {
+  width: 32px;
+  height: 32px;
+}
+
+.keys-card-key {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+  padding: 0 6px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--foreground) 4%, transparent);
+}
+
+.keys-card-key-text {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.keys-card-key-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.keys-card-key-btn:hover {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+}
+
+.keys-card-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.keys-card-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.keys-card-stat.is-end {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.keys-card-stat b {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.keys-list-fade {
+  display: none;
+}
+
 .keys-fab {
   display: none;
 }
+
 @media (max-width: 767px) {
-  .keys-endpoints {
-    grid-template-columns: 1fr;
-  }
-  .keys-create-desktop {
+  .keys-page .keys-header {
     display: none;
   }
+
+  .keys-top-grid,
+  .keys-top-grid.is-wide {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .keys-page .keys-endpoint {
+    display: none;
+  }
+
+  .keys-toolbar {
+    gap: 12px;
+  }
+
+  .keys-page .keys-chips {
+    display: flex;
+  }
+
+  .keys-sort-note {
+    display: none;
+  }
+
+  .keys-column-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .keys-list-fade {
+    display: block;
+  }
+
   .keys-fab {
     display: inline-flex;
+  }
+
+  .keys-mobile-list {
+    padding-bottom: 72px;
   }
 }
 </style>

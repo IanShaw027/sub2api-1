@@ -1,120 +1,115 @@
 <template>
- <div
- class="flex items-center justify-between border-t border-line bg-surface px-4 py-3 sm:px-6"
- >
- <div class="flex flex-1 items-center justify-between sm:hidden">
- <!-- Mobile pagination -->
- <button
- @click="goToPage(page - 1)"
- :disabled="page === 1"
- class="relative inline-flex items-center rounded-md border border-line bg-surface px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
- >
- {{ t('pagination.previous') }}
- </button>
- <span class="text-sm text-foreground">
- {{ t('pagination.pageOf', { page, total: totalPages }) }}
- </span>
- <button
- @click="goToPage(page + 1)"
- :disabled="page === totalPages"
- class="relative ml-3 inline-flex items-center rounded-md border border-line bg-surface px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
- >
- {{ t('pagination.next') }}
- </button>
- </div>
+  <div class="pagination-bar">
+    <!-- Mobile: prev / page / next -->
+    <div class="flex flex-1 items-center justify-between gap-2 sm:hidden">
+      <button
+        type="button"
+        class="btn btn-secondary btn-sm"
+        :disabled="page === 1"
+        @click="goToPage(page - 1)"
+      >
+        {{ t('pagination.previous') }}
+      </button>
+      <span class="pagination-info">
+        {{ t('pagination.pageOf', { page, total: totalPages }) }}
+      </span>
+      <button
+        type="button"
+        class="btn btn-secondary btn-sm"
+        :disabled="page === totalPages"
+        @click="goToPage(page + 1)"
+      >
+        {{ t('pagination.next') }}
+      </button>
+    </div>
 
- <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
- <!-- Desktop pagination info -->
- <div class="flex items-center space-x-4">
- <p class="text-sm text-foreground">
- {{ t('pagination.showing') }}
- <span class="font-medium">{{ fromItem }}</span>
- {{ t('pagination.to') }}
- <span class="font-medium">{{ toItem }}</span>
- {{ t('pagination.of') }}
- <span class="font-medium">{{ total }}</span>
- {{ t('pagination.results') }}
- </p>
+    <div class="hidden gap-3 sm:flex sm:flex-1 sm:items-center sm:justify-between">
+      <!-- Desktop pagination info · 12.5px muted, numbers in foreground -->
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <p class="pagination-info">
+          {{ t('pagination.showing') }}
+          <b class="text-foreground">{{ fromItem }}</b
+          >–<b class="text-foreground">{{ toItem }}</b
+          >，{{ t('pagination.of') }}
+          <b class="text-foreground">{{ total }}</b>
+          {{ t('pagination.results') }}
+          <template v-if="!showPageSizeSelector">
+            · {{ t('pagination.perPage') }}
+            <b class="text-foreground">{{ pageSize }}</b>
+          </template>
+        </p>
 
- <!-- Page size selector -->
- <div v-if="showPageSizeSelector" class="flex items-center space-x-2">
- <span class="text-sm text-foreground"
- >{{ t('pagination.perPage') }}:</span
- >
- <div class="page-size-select w-20">
- <Select
- :model-value="pageSize"
- :options="pageSizeSelectOptions"
- @update:model-value="handlePageSizeChange"
- />
- </div>
- </div>
+        <!-- Page size selector · filter-pill, 36px -->
+        <div v-if="showPageSizeSelector" class="flex items-center gap-2">
+          <span class="pagination-sep" aria-hidden="true">·</span>
+          <div class="page-size-select">
+            <Select
+              variant="pill"
+              :pill-label="t('pagination.perPage')"
+              :aria-label="t('pagination.perPage')"
+              :model-value="pageSize"
+              :options="pageSizeSelectOptions"
+              @update:model-value="handlePageSizeChange"
+            />
+          </div>
+        </div>
 
- <div v-if="showJump" class="flex items-center space-x-2">
- <span class="text-sm text-foreground">{{ t('pagination.jumpTo') }}</span>
- <input
- v-model="jumpPage"
- type="number"
- min="1"
- :max="totalPages"
- class="input w-20 text-sm"
- :placeholder="t('pagination.jumpPlaceholder')"
- @keyup.enter="submitJump"
- />
- <button type="button" class="btn btn-ghost btn-sm" @click="submitJump">
- {{ t('pagination.jumpAction') }}
- </button>
- </div>
- </div>
+        <div v-if="showJump" class="flex items-center gap-2">
+          <span class="pagination-info">{{ t('pagination.jumpTo') }}</span>
+          <input
+            v-model="jumpPage"
+            type="number"
+            min="1"
+            :max="totalPages"
+            class="field pagination-jump"
+            :placeholder="t('pagination.jumpPlaceholder')"
+            @keyup.enter="submitJump"
+          />
+          <button type="button" class="btn btn-ghost btn-sm" @click="submitJump">
+            {{ t('pagination.jumpAction') }}
+          </button>
+        </div>
+      </div>
 
- <!-- Desktop pagination buttons -->
- <nav
- class="relative z-0 inline-flex -space-x-px rounded-md shadow-sm"
- aria-label="Pagination"
- >
- <!-- Previous button -->
- <button
- @click="goToPage(page - 1)"
- :disabled="page === 1"
- class="relative inline-flex items-center rounded-l-md border border-line bg-surface px-2 py-2 text-sm font-medium text-muted hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
- :aria-label="t('pagination.previous')"
- >
- <Icon name="chevronLeft" size="md" />
- </button>
+      <!-- Desktop pagination buttons · 28×28, radius 8 -->
+      <nav class="flex items-center gap-1" aria-label="Pagination">
+        <button
+          type="button"
+          class="pagination-btn"
+          :disabled="page === 1"
+          :aria-label="t('pagination.previous')"
+          @click="goToPage(page - 1)"
+        >
+          <Icon name="chevronLeft" size="sm" :stroke-width="2" />
+        </button>
 
- <!-- Page numbers -->
- <button
- v-for="(pageNum, index) in visiblePages"
- :key="`${pageNum}-${index}`"
- @click="typeof pageNum === 'number' && goToPage(pageNum)"
- :disabled="typeof pageNum !== 'number'"
- :class="[
- 'relative inline-flex items-center border px-4 py-2 text-sm font-medium',
- pageNum === page
- ? 'z-10 border-accent bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
- : 'border-line bg-surface text-foreground hover:bg-surface-2',
- typeof pageNum !== 'number' && 'cursor-default'
- ]"
- :aria-label="
- typeof pageNum === 'number' ? t('pagination.goToPage', { page: pageNum }) : undefined
- "
- :aria-current="pageNum === page ? 'page' : undefined"
- >
- {{ pageNum }}
- </button>
+        <template v-for="(pageNum, index) in visiblePages" :key="`${pageNum}-${index}`">
+          <span v-if="typeof pageNum !== 'number'" class="pagination-ellipsis">{{ pageNum }}</span>
+          <button
+            v-else
+            type="button"
+            class="pagination-btn"
+            :class="{ 'pagination-btn-current': pageNum === page }"
+            :aria-label="t('pagination.goToPage', { page: pageNum })"
+            :aria-current="pageNum === page ? 'page' : undefined"
+            @click="goToPage(pageNum)"
+          >
+            {{ pageNum }}
+          </button>
+        </template>
 
- <!-- Next button -->
- <button
- @click="goToPage(page + 1)"
- :disabled="page === totalPages"
- class="relative inline-flex items-center rounded-r-md border border-line bg-surface px-2 py-2 text-sm font-medium text-muted hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
- :aria-label="t('pagination.next')"
- >
- <Icon name="chevronRight" size="md" />
- </button>
- </nav>
- </div>
- </div>
+        <button
+          type="button"
+          class="pagination-btn"
+          :disabled="page === totalPages"
+          :aria-label="t('pagination.next')"
+          @click="goToPage(page + 1)"
+        >
+          <Icon name="chevronRight" size="sm" :stroke-width="2" />
+        </button>
+      </nav>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -128,23 +123,23 @@ import { setPersistedPageSize } from '@/composables/usePersistedPageSize'
 const { t } = useI18n()
 
 interface Props {
- total: number
- page: number
- pageSize: number
- pageSizeOptions?: number[]
- showPageSizeSelector?: boolean
- showJump?: boolean
+  total: number
+  page: number
+  pageSize: number
+  pageSizeOptions?: number[]
+  showPageSizeSelector?: boolean
+  showJump?: boolean
 }
 
 interface Emits {
- (e: 'update:page', page: number): void
- (e: 'update:pageSize', pageSize: number): void
+  (e: 'update:page', page: number): void
+  (e: 'update:pageSize', pageSize: number): void
 }
 
 const props = withDefaults(defineProps<Props>(), {
- pageSizeOptions: () => getConfiguredTablePageSizeOptions(),
- showPageSizeSelector: true,
- showJump: false
+  pageSizeOptions: () => getConfiguredTablePageSizeOptions(),
+  showPageSizeSelector: true,
+  showJump: false
 })
 
 const emit = defineEmits<Emits>()
@@ -152,96 +147,165 @@ const emit = defineEmits<Emits>()
 const totalPages = computed(() => Math.ceil(props.total / props.pageSize))
 
 const fromItem = computed(() => {
- if (props.total === 0) return 0
- return (props.page - 1) * props.pageSize + 1
+  if (props.total === 0) return 0
+  return (props.page - 1) * props.pageSize + 1
 })
 
 const toItem = computed(() => {
- const to = props.page * props.pageSize
- return to > props.total ? props.total : to
+  const to = props.page * props.pageSize
+  return to > props.total ? props.total : to
 })
 
 const pageSizeSelectOptions = computed(() => {
- const options = Array.from(
- new Set([
- ...getConfiguredTablePageSizeOptions(),
- normalizeTablePageSize(props.pageSize)
- ])
- ).sort((a, b) => a - b)
+  const options = Array.from(
+    new Set([
+      ...getConfiguredTablePageSizeOptions(),
+      normalizeTablePageSize(props.pageSize)
+    ])
+  ).sort((a, b) => a - b)
 
- return options.map((size) => ({
- value: size,
- label: String(size)
- }))
+  return options.map((size) => ({
+    value: size,
+    label: String(size)
+  }))
 })
 
 const jumpPage = ref('')
 
 const visiblePages = computed(() => {
- const pages: (number | string)[] = []
- const maxVisible = 7
- const total = totalPages.value
+  const pages: (number | string)[] = []
+  const maxVisible = 7
+  const total = totalPages.value
 
- if (total <= maxVisible) {
- // Show all pages if total is small
- for (let i = 1; i <= total; i++) {
- pages.push(i)
- }
- } else {
- // Always show first page
- pages.push(1)
+  if (total <= maxVisible) {
+    // Show all pages if total is small
+    for (let i = 1; i <= total; i++) {
+      pages.push(i)
+    }
+  } else {
+    // Always show first page
+    pages.push(1)
 
- const start = Math.max(2, props.page - 2)
- const end = Math.min(total - 1, props.page + 2)
+    const start = Math.max(2, props.page - 2)
+    const end = Math.min(total - 1, props.page + 2)
 
- // Add ellipsis before if needed
- if (start > 2) {
- pages.push('...')
- }
+    // Add ellipsis before if needed
+    if (start > 2) {
+      pages.push('...')
+    }
 
- // Add middle pages
- for (let i = start; i <= end; i++) {
- pages.push(i)
- }
+    // Add middle pages
+    for (let i = start; i <= end; i++) {
+      pages.push(i)
+    }
 
- // Add ellipsis after if needed
- if (end < total - 1) {
- pages.push('...')
- }
+    // Add ellipsis after if needed
+    if (end < total - 1) {
+      pages.push('...')
+    }
 
- // Always show last page
- pages.push(total)
- }
+    // Always show last page
+    pages.push(total)
+  }
 
- return pages
+  return pages
 })
 
 const goToPage = (newPage: number) => {
- if (newPage >= 1 && newPage <= totalPages.value && newPage !== props.page) {
- emit('update:page', newPage)
- }
+  if (newPage >= 1 && newPage <= totalPages.value && newPage !== props.page) {
+    emit('update:page', newPage)
+  }
 }
 
 const handlePageSizeChange = (value: string | number | boolean | null) => {
- if (value === null || typeof value === 'boolean') return
- const newPageSize = normalizeTablePageSize(typeof value === 'string' ? parseInt(value, 10) : value)
- setPersistedPageSize(newPageSize)
- emit('update:pageSize', newPageSize)
+  if (value === null || typeof value === 'boolean') return
+  const newPageSize = normalizeTablePageSize(typeof value === 'string' ? parseInt(value, 10) : value)
+  setPersistedPageSize(newPageSize)
+  emit('update:pageSize', newPageSize)
 }
 
 const submitJump = () => {
- const value = jumpPage.value.trim()
- if (!value) return
- const pageNum = Number.parseInt(value, 10)
- if (Number.isNaN(pageNum)) return
- const nextPage = Math.min(Math.max(pageNum, 1), totalPages.value)
- jumpPage.value = ''
- goToPage(nextPage)
+  const value = jumpPage.value.trim()
+  if (!value) return
+  const pageNum = Number.parseInt(value, 10)
+  if (Number.isNaN(pageNum)) return
+  const nextPage = Math.min(Math.max(pageNum, 1), totalPages.value)
+  jumpPage.value = ''
+  goToPage(nextPage)
 }
 </script>
 
 <style scoped>
-.page-size-select :deep(.select-trigger) {
- @apply px-3 py-1.5 text-sm;
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.pagination-info {
+  font-size: 12.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pagination-sep {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* 28×28 page buttons · radius 8, hairline border, transparent ground. */
+.pagination-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--foreground);
+  font-size: 12.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+
+.pagination-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pagination-btn-current {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+}
+
+.pagination-btn-current:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+.pagination-ellipsis {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 28px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.pagination-jump {
+  width: 68px;
+  text-align: center;
 }
 </style>

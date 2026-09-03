@@ -1,34 +1,40 @@
 <template>
  <AppLayout>
  <div class="custom-page-layout">
- <div class="glass-card flex-1 min-h-0 overflow-hidden">
+ <div class="glass-card embed-card flex-1 min-h-0 overflow-hidden">
+ <div v-if="menuItem" class="card-header embed-card-header">
+ <p class="card-title embed-card-title">{{ menuItem.label || t('customPage.title') }}</p>
+ <a
+ v-if="isValidUrl"
+ :href="embeddedUrl"
+ target="_blank"
+ rel="noopener noreferrer"
+ class="btn-secondary embed-open-btn"
+ >
+ <Icon name="externalLink" size="sm" />
+ {{ t('customPage.openInNewTab') }}
+ </a>
+ </div>
+
  <div v-if="loading" class="flex h-full items-center justify-center py-12">
- <div
- class="h-8 w-8 animate-spin rounded-full border-2 border-[var(--accent)] border-t-transparent"
- ></div>
+ <span class="spinner"></span>
  </div>
 
  <div
  v-else-if="!menuItem"
- class="flex h-full items-center justify-center p-10 text-center"
+ class="flex h-full items-center justify-center p-10"
  >
- <div class="max-w-md">
- <div
- class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-2"
- >
- <Icon name="link" size="lg" class="text-muted" />
+ <div class="notice notice-danger embed-notice">
+ <Icon name="link" size="sm" class="notice-icon" />
+ <div class="min-w-0 flex-1">
+ <p class="notice-title">{{ t('customPage.notFoundTitle') }}</p>
+ <p>{{ t('customPage.notFoundDesc') }}</p>
  </div>
- <h3 class="text-lg font-semibold text-foreground">
- {{ t('customPage.notFoundTitle') }}
- </h3>
- <p class="mt-2 text-sm text-muted">
- {{ t('customPage.notFoundDesc') }}
- </p>
  </div>
  </div>
 
  <!-- Markdown mode with TOC -->
- <div v-else-if="isMarkdownMode" class="flex h-full overflow-hidden">
+ <div v-else-if="isMarkdownMode" class="flex h-full overflow-hidden embed-body">
  <!-- TOC Sidebar -->
  <aside
  v-show="tocVisible"
@@ -77,33 +83,18 @@
  </div>
 
  <!-- URL not configured -->
- <div v-else-if="!isValidUrl" class="flex h-full items-center justify-center p-10 text-center">
- <div class="max-w-md">
- <div
- class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-2"
- >
- <Icon name="link" size="lg" class="text-muted" />
+ <div v-else-if="!isValidUrl" class="flex h-full items-center justify-center p-10">
+ <div class="notice notice-danger embed-notice">
+ <Icon name="link" size="sm" class="notice-icon" />
+ <div class="min-w-0 flex-1">
+ <p class="notice-title">{{ t('customPage.notConfiguredTitle') }}</p>
+ <p>{{ t('customPage.notConfiguredDesc') }}</p>
  </div>
- <h3 class="text-lg font-semibold text-foreground">
- {{ t('customPage.notConfiguredTitle') }}
- </h3>
- <p class="mt-2 text-sm text-muted">
- {{ t('customPage.notConfiguredDesc') }}
- </p>
  </div>
  </div>
 
  <!-- Iframe embed mode -->
  <div v-else class="custom-embed-shell">
- <a
- :href="embeddedUrl"
- target="_blank"
- rel="noopener noreferrer"
- class="btn-glass-secondary btn-sm custom-open-fab"
- >
- <Icon name="externalLink" size="sm" class="mr-1.5" :stroke-width="2" />
- {{ t('customPage.openInNewTab') }}
- </a>
  <iframe
  :src="embeddedUrl"
  class="custom-embed-frame"

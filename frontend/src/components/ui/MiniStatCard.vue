@@ -30,7 +30,14 @@ defineProps<{
 <style scoped>
 .ui-mini-stat-card.glass-card,
 .ui-mini-stat-group.glass-card {
-  padding: 10px 12px;
+  padding: 14px 16px;
+}
+
+@media (max-width: 767px) {
+  .ui-mini-stat-card.glass-card,
+  .ui-mini-stat-group.glass-card {
+    padding: 10px 12px;
+  }
 }
 
 .ui-mini-stat-grid {
@@ -41,15 +48,15 @@ defineProps<{
 }
 
 .ui-mini-stat-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--muted);
 }
 
 .ui-mini-stat-value {
-  margin-top: 2px;
+  margin-top: 3px;
   font-family: var(--display);
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 800;
   letter-spacing: -0.03em;
   line-height: 1.1;

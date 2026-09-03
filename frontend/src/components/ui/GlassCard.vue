@@ -83,8 +83,8 @@ const bodyClass = computed(() => (slots.header || slots.footer ? 'ui-glass-card-
 
 .ui-glass-card-header {
   margin: -16px -16px 0;
-  padding: 14px 16px;
-  border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--border);
 }
 
 .ui-glass-card-pad-sm .ui-glass-card-header {
@@ -94,7 +94,7 @@ const bodyClass = computed(() => (slots.header || slots.footer ? 'ui-glass-card-
 
 .ui-glass-card-pad-lg .ui-glass-card-header {
   margin: -20px -20px 0;
-  padding: 16px 20px;
+  padding: 16px 20px 12px;
 }
 
 .ui-glass-card-body {
@@ -104,7 +104,7 @@ const bodyClass = computed(() => (slots.header || slots.footer ? 'ui-glass-card-
 .ui-glass-card-footer {
   margin: 0 -16px -16px;
   padding: 12px 16px;
-  border-top: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  border-top: 1px solid var(--border);
 }
 
 .ui-glass-card-pad-sm .ui-glass-card-footer {

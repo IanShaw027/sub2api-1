@@ -4,6 +4,24 @@
  <div class="settings-page">
  <PageHeader :title="t('admin.settings.title')" :description="t('admin.settings.description')">
  <template #actions>
+ <span
+ v-if="settingsDirtyCount > 0"
+ class="settings-dirty"
+ data-testid="settings-dirty-indicator"
+ >
+ <span class="settings-dirty-dot" aria-hidden="true"></span>
+ {{ t("admin.settings.unsavedChanges", { count: settingsDirtyCount }) }}
+ </span>
+ <Button
+ v-show="activeTab !== 'backup'"
+ variant="secondary"
+ native-type="button"
+ :disabled="saving || loading || loadFailed || settingsDirtyCount === 0"
+ data-testid="settings-reset"
+ @click="resetSettingsForm"
+ >
+ {{ t("common.reset") }}
+ </Button>
  <Button
  v-show="activeTab !== 'backup'"
  native-type="submit"
@@ -60,33 +78,48 @@
  @click="selectSettingsTab(tab.key)"
  @keydown="handleSettingsTabKeydown($event, tab.key)"
  >
- <span class="settings-tab-icon">
- <Icon :name="tab.icon" size="sm" />
- </span>
  <span class="settings-tab-label">{{
  t(`admin.settings.tabs.${tab.key}`)
  }}</span>
+ <span
+ v-if="isSettingsTabDirty(tab.key)"
+ class="settings-tab-dot"
+ aria-hidden="true"
+ ></span>
  </button>
  </div>
  </nav>
+ <div v-if="hasDeploymentInfo" class="settings-deploy">
+ <span class="settings-deploy-title">{{
+ t("admin.settings.deployment.title")
+ }}</span>
+ <div v-if="deploymentVersion" class="settings-deploy-row">
+ <span>{{ t("admin.settings.deployment.version") }}</span>
+ <span class="settings-deploy-value">{{ deploymentVersion }}</span>
+ </div>
+ <div v-if="deploymentCodexVersion" class="settings-deploy-row">
+ <span>{{ t("admin.settings.deployment.codexSync") }}</span>
+ <span class="settings-deploy-value">{{ deploymentCodexVersion }}</span>
+ </div>
+ </div>
  </aside>
  <div class="settings-content">
 
  <!-- Tab: Security — Admin API Key -->
- <div v-show="activeTab === 'security'" class="space-y-6">
+ <div v-show="activeTab === 'security'" class="settings-stack">
  <!-- Admin API Key Settings -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.adminApiKey.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.adminApiKey.description") }}
  </p>
  </div>
- <div class="space-y-4 p-6">
+ <div class="settings-card-body">
  <!-- Security Warning -->
  <div
  class="rounded-lg border border-amber-200 bg-amber-50 p-4 "
@@ -230,20 +263,20 @@
  <!-- /Tab: Security — Admin API Key -->
 
  <!-- Tab: Gateway -->
- <div v-show="activeTab === 'gateway'" class="space-y-6">
+ <div v-show="activeTab === 'gateway'" class="settings-stack">
  <!-- Overload Cooldown (529) Settings -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.overloadCooldown.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.overloadCooldown.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div
  v-if="overloadCooldownLoading"
  class="flex items-center gap-2 text-muted"
@@ -271,9 +304,9 @@
  v-if="overloadCooldownForm.enabled"
  class="space-y-4 border-t border-line pt-4 "
  >
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.overloadCooldown.cooldownMinutes") }}
  </label>
@@ -284,7 +317,7 @@
  max="120"
  class="input w-32"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  t("admin.settings.overloadCooldown.cooldownMinutesHint")
  }}
@@ -333,18 +366,18 @@
  </div>
 
  <!-- Rate Limit Cooldown (429) Settings -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.rateLimit429Cooldown.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.rateLimit429Cooldown.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div
  v-if="rateLimit429CooldownLoading"
  class="flex items-center gap-2 text-muted"
@@ -372,9 +405,9 @@
  v-if="rateLimit429CooldownForm.enabled"
  class="space-y-4 border-t border-line pt-4 "
  >
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{
  t(
@@ -389,7 +422,7 @@
  max="7200"
  class="input w-32"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  t(
  "admin.settings.rateLimit429Cooldown.cooldownSecondsHint",
@@ -446,18 +479,18 @@
  </div>
 
  <!-- Stream Timeout Settings -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.streamTimeout.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.streamTimeout.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <!-- Loading State -->
  <div
  v-if="streamTimeoutLoading"
@@ -489,9 +522,9 @@
  class="space-y-4 border-t border-line pt-4 "
  >
  <!-- Action -->
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.streamTimeout.action") }}
  </label>
@@ -511,15 +544,15 @@
  {{ t("admin.settings.streamTimeout.actionNone") }}
  </option>
  </select>
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.streamTimeout.actionHint") }}
  </p>
  </div>
 
  <!-- Temp Unsched Minutes (only show when action is temp_unsched) -->
- <div v-if="streamTimeoutForm.action === 'temp_unsched'">
+ <div class="settings-row" v-if="streamTimeoutForm.action === 'temp_unsched'">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.streamTimeout.tempUnschedMinutes") }}
  </label>
@@ -530,7 +563,7 @@
  max="60"
  class="input w-32"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  t("admin.settings.streamTimeout.tempUnschedMinutesHint")
  }}
@@ -538,9 +571,9 @@
  </div>
 
  <!-- Threshold Count -->
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.streamTimeout.thresholdCount") }}
  </label>
@@ -551,15 +584,15 @@
  max="10"
  class="input w-32"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.streamTimeout.thresholdCountHint") }}
  </p>
  </div>
 
  <!-- Threshold Window Minutes -->
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{
  t("admin.settings.streamTimeout.thresholdWindowMinutes")
@@ -574,7 +607,7 @@
  max="60"
  class="input w-32"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  t(
  "admin.settings.streamTimeout.thresholdWindowMinutesHint",
@@ -626,18 +659,18 @@
  </div>
 
  <!-- Request Rectifier Settings -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.rectifier.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.rectifier.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <!-- Loading State -->
  <div
  v-if="rectifierLoading"
@@ -825,18 +858,18 @@
  </div>
  </div>
  <!-- Beta Policy Settings -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.betaPolicy.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.betaPolicy.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <!-- Loading State -->
  <div
  v-if="betaPolicyLoading"
@@ -868,11 +901,11 @@
  </span>
  </div>
 
- <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+ <div class="settings-row-group">
  <!-- Action -->
  <div>
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.betaPolicy.action") }}
  </label>
@@ -886,7 +919,7 @@
  <!-- Scope -->
  <div>
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.betaPolicy.scope") }}
  </label>
@@ -901,7 +934,7 @@
  <!-- Error Message (only when action=block) -->
  <div v-if="rule.action === 'block'" class="mt-3">
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.betaPolicy.errorMessage") }}
  </label>
@@ -921,7 +954,7 @@
  <!-- Quick Presets (only for tokens with presets) -->
  <div v-if="betaPresets[rule.beta_token]?.length" class="mt-3">
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.betaPolicy.quickPresets") }}
  </label>
@@ -942,7 +975,7 @@
  <!-- Model Whitelist -->
  <div class="mt-3">
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.betaPolicy.modelWhitelist") }}
  </label>
@@ -1034,7 +1067,7 @@
  class="mt-3"
  >
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.betaPolicy.fallbackAction") }}
  </label>
@@ -1104,18 +1137,18 @@
  </div>
  </div>
  <!-- OpenAI Fast/Flex Policy Settings -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.openaiFastPolicy.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.openaiFastPolicy.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <!-- Empty state -->
  <div
  v-if="openaiFastPolicyForm.rules.length === 0"
@@ -1203,11 +1236,11 @@
  </template>
  </div>
 
- <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+ <div class="settings-row-group">
  <!-- Service Tier -->
  <div>
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.openaiFastPolicy.serviceTier") }}
  </label>
@@ -1226,7 +1259,7 @@
  <!-- Action -->
  <div>
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.openaiFastPolicy.action") }}
  </label>
@@ -1246,7 +1279,7 @@
  <!-- Scope -->
  <div>
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.openaiFastPolicy.scope") }}
  </label>
@@ -1267,7 +1300,7 @@
  <!-- User Scope -->
  <div class="mt-3">
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.openaiFastPolicy.userIds") }}
  </label>
@@ -1283,7 +1316,7 @@
  <!-- Error Message (only when action=block) -->
  <div v-if="rule.action === 'block'" class="mt-3">
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.openaiFastPolicy.errorMessage") }}
  </label>
@@ -1311,7 +1344,7 @@
  >
  <label
  :id="`openai-fast-policy-models-label-${ruleIndex}`"
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.openaiFastPolicy.modelWhitelist") }}
  </label>
@@ -1388,7 +1421,7 @@
  class="mt-3"
  >
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.openaiFastPolicy.fallbackAction") }}
  </label>
@@ -1455,20 +1488,20 @@
  <!-- /Tab: Gateway -->
 
  <!-- Tab: Security — Registration, Turnstile, LinuxDo -->
- <div v-show="activeTab === 'security'" class="space-y-6">
+ <div v-show="activeTab === 'security'" class="settings-stack">
  <!-- Registration Settings -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.registration.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.registration.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <!-- Enable Registration -->
  <div class="flex items-center justify-between">
  <div>
@@ -1504,7 +1537,7 @@
  <label class="font-medium text-foreground ">{{
  t("admin.settings.registration.emailSuffixWhitelist")
  }}</label>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{
  t("admin.settings.registration.emailSuffixWhitelistHint")
  }}
@@ -1632,10 +1665,10 @@
  <!-- Frontend URL - Only show when password reset is enabled -->
  <div
  v-if="form.email_verify_enabled && form.password_reset_enabled"
- class="border-t border-line pt-4 "
+ class="settings-row border-t border-line pt-4 "
  >
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.registration.frontendUrl") }}
  </label>
@@ -1647,7 +1680,7 @@
  t('admin.settings.registration.frontendUrlPlaceholder')
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.registration.frontendUrlHint") }}
  </p>
  </div>
@@ -1789,18 +1822,18 @@
  </div>
 
  <!-- API Key IP ACL Settings -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.apiKeyAcl.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.apiKeyAcl.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div class="flex items-center justify-between gap-4">
  <div>
  <label class="font-medium text-foreground ">
@@ -1823,7 +1856,7 @@
  >
  {{ t("admin.settings.apiKeyAcl.forwardedClientIpHeaders") }}
  </label>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.apiKeyAcl.forwardedClientIpHeadersHint") }}
  </p>
  <div
@@ -1878,9 +1911,9 @@
  <IPSecurityPanel />
 
  <!-- Panel API Rate Limit Settings -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
  <div class="flex items-center gap-2">
  <Icon
@@ -1888,15 +1921,15 @@
  size="md"
  class="text-accent"
  />
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.panelRateLimit.title") }}
  </h2>
  </div>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.panelRateLimit.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div
  v-if="panelRateLimitLoading"
  class="flex items-center gap-2 text-muted"
@@ -1940,10 +1973,10 @@
  v-if="panelRateLimitForm.enabled"
  class="space-y-5 border-t border-line pt-4 "
  >
- <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
- <div>
+ <div class="settings-row-group">
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.panelRateLimit.userRpm") }}
  </label>
@@ -1960,14 +1993,14 @@
  {{ t("admin.settings.panelRateLimit.perMinute") }}
  </span>
  </div>
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.panelRateLimit.userRpmHint") }}
  </p>
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.panelRateLimit.heavyRpm") }}
  </label>
@@ -1983,14 +2016,14 @@
  {{ t("admin.settings.panelRateLimit.perMinute") }}
  </span>
  </div>
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.panelRateLimit.heavyRpmHint") }}
  </p>
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.panelRateLimit.publicIpRpm") }}
  </label>
@@ -2006,7 +2039,7 @@
  {{ t("admin.settings.panelRateLimit.perMinute") }}
  </span>
  </div>
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.panelRateLimit.publicIpRpmHint") }}
  </p>
  </div>
@@ -2069,18 +2102,18 @@
  </div>
 
  <!-- 人机验证 Settings -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.captcha.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.captcha.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <!-- Enable Captcha -->
  <div class="flex items-center justify-between">
  <div>
@@ -2103,9 +2136,9 @@
  class="border-t border-line pt-4 "
  >
  <!-- Provider Selector -->
- <div class="mb-6">
+ <div class="settings-row mb-6">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.captcha.provider") }}
  </label>
@@ -2157,11 +2190,11 @@
  <!-- Cloudflare Turnstile fields -->
  <div
  v-if="captchaProviderSelection === 'turnstile'"
- class="grid grid-cols-1 gap-6"
+ class="settings-row-group"
  >
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.turnstile.siteKey") }}
  </label>
@@ -2171,7 +2204,7 @@
  class="input font-mono text-sm"
  placeholder="0x4AAAAAAA..."
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.turnstile.siteKeyHint") }}
  <a
  href="https://dash.cloudflare.com/"
@@ -2183,9 +2216,9 @@
  >
  </p>
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.turnstile.secretKey") }}
  </label>
@@ -2195,7 +2228,7 @@
  class="input font-mono text-sm"
  placeholder="0x4AAAAAAA..."
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  form.turnstile_secret_key_configured
  ? t(
@@ -2209,8 +2242,8 @@
 
  <!-- Tencent Captcha fields -->
  <div v-else-if="captchaProviderSelection === 'tencent'">
- <div class="mb-6 max-w-sm">
- <label class="mb-2 block text-sm font-medium text-foreground ">
+ <div class="settings-row mb-6 max-w-sm">
+ <label class="settings-row-label">
  {{ t("admin.settings.tencentCaptcha.region") }}
  </label>
  <div class="grid grid-cols-2 gap-2 rounded-lg bg-surface-2 p-1 ">
@@ -2241,11 +2274,11 @@
  {{ t("admin.settings.tencentCaptcha.regionIntl") }}
  </button>
  </div>
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.tencentCaptcha.regionHint") }}
  </p>
  </div>
- <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+ <div class="settings-row-group">
  <div class="md:col-span-2">
  <h3 class="text-sm font-semibold text-foreground ">
  {{ t("admin.settings.tencentCaptcha.appCredentialsTitle") }}
@@ -2254,8 +2287,8 @@
  {{ t("admin.settings.tencentCaptcha.appCredentialsHint") }}
  </p>
  </div>
- <div>
- <label class="mb-2 block text-sm font-medium text-foreground ">
+ <div class="settings-row">
+ <label class="settings-row-label">
  {{ t("admin.settings.tencentCaptcha.appId") }}
  </label>
  <input
@@ -2266,8 +2299,8 @@
  placeholder="123456789"
  />
  </div>
- <div>
- <label class="mb-2 block text-sm font-medium text-foreground ">
+ <div class="settings-row">
+ <label class="settings-row-label">
  {{ t("admin.settings.tencentCaptcha.appSecretKey") }}
  </label>
  <input
@@ -2277,7 +2310,7 @@
  class="input font-mono text-sm"
  :placeholder="t('admin.settings.tencentCaptcha.keepExisting')"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ form.tencent_captcha_app_secret_key_configured ? t("admin.settings.tencentCaptcha.configured") : t("admin.settings.tencentCaptcha.required") }}
  </p>
  </div>
@@ -2289,8 +2322,8 @@
  {{ t("admin.settings.tencentCaptcha.cloudCredentialsHint") }}
  </p>
  </div>
- <div>
- <label class="mb-2 block text-sm font-medium text-foreground ">
+ <div class="settings-row">
+ <label class="settings-row-label">
  {{ t("admin.settings.tencentCaptcha.cloudSecretId") }}
  </label>
  <input
@@ -2300,12 +2333,12 @@
  class="input font-mono text-sm"
  :placeholder="t('admin.settings.tencentCaptcha.keepExisting')"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ form.tencent_captcha_cloud_secret_id_configured ? t("admin.settings.tencentCaptcha.configured") : t("admin.settings.tencentCaptcha.required") }}
  </p>
  </div>
- <div>
- <label class="mb-2 block text-sm font-medium text-foreground ">
+ <div class="settings-row">
+ <label class="settings-row-label">
  {{ t("admin.settings.tencentCaptcha.cloudSecretKey") }}
  </label>
  <input
@@ -2315,7 +2348,7 @@
  class="input font-mono text-sm"
  :placeholder="t('admin.settings.tencentCaptcha.keepExisting')"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ form.tencent_captcha_cloud_secret_key_configured ? t("admin.settings.tencentCaptcha.configured") : t("admin.settings.tencentCaptcha.required") }}
  </p>
  </div>
@@ -2355,11 +2388,11 @@
  </div>
 
  <!-- Aliyun Captcha 2.0 fields -->
- <div v-else class="grid grid-cols-1 gap-6">
- <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
- <div>
+ <div v-else class="settings-row-group">
+ <div class="settings-row-group">
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.aliyunCaptcha.region") }}
  </label>
@@ -2391,13 +2424,13 @@
  {{ t("admin.settings.aliyunCaptcha.regionSgp") }}
  </button>
  </div>
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.aliyunCaptcha.regionHint") }}
  </p>
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.aliyunCaptcha.prefix") }}
  </label>
@@ -2407,14 +2440,14 @@
  class="input font-mono text-sm"
  placeholder="14xxxxx"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.aliyunCaptcha.prefixHint") }}
  </p>
  </div>
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.aliyunCaptcha.sceneId") }}
  </label>
@@ -2424,7 +2457,7 @@
  class="input font-mono text-sm"
  placeholder="1cxxxxxx"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.aliyunCaptcha.sceneIdHint") }}
  </p>
  <a
@@ -2436,9 +2469,9 @@
  {{ t("admin.settings.aliyunCaptcha.openCaptchaConsole") }}
  </a>
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.aliyunCaptcha.accessKeyId") }}
  </label>
@@ -2448,13 +2481,13 @@
  class="input font-mono text-sm"
  placeholder="LTAI..."
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.aliyunCaptcha.accessKeyIdHint") }}
  </p>
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.aliyunCaptcha.accessKeySecret") }}
  </label>
@@ -2465,7 +2498,7 @@
  class="input font-mono text-sm"
  placeholder="••••••••"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  form.aliyun_captcha_access_key_secret_configured
  ? t(
@@ -2481,18 +2514,18 @@
  </div>
 
  <!-- LinuxDo Connect OAuth 登录 -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.linuxdo.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.linuxdo.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div class="flex items-center justify-between">
  <div>
  <label class="font-medium text-foreground ">{{
@@ -2509,10 +2542,10 @@
  v-if="form.linuxdo_connect_enabled"
  class="border-t border-line pt-4 "
  >
- <div class="grid grid-cols-1 gap-6">
- <div>
+ <div class="settings-row-group">
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.linuxdo.clientId") }}
  </label>
@@ -2524,14 +2557,14 @@
  t('admin.settings.linuxdo.clientIdPlaceholder')
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.linuxdo.clientIdHint") }}
  </p>
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.linuxdo.clientSecret") }}
  </label>
@@ -2547,7 +2580,7 @@
  : t('admin.settings.linuxdo.clientSecretPlaceholder')
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  form.linuxdo_connect_client_secret_configured
  ? t(
@@ -2558,9 +2591,9 @@
  </p>
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.linuxdo.redirectUrl") }}
  </label>
@@ -2589,7 +2622,7 @@
  {{ linuxdoRedirectUrlSuggestion }}
  </code>
  </div>
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.linuxdo.redirectUrlHint") }}
  </p>
  </div>
@@ -2599,14 +2632,14 @@
  </div>
 
  <!-- GitHub / Google 邮箱快捷登录 -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ localText("邮箱快捷登录", "Email OAuth Sign-in") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{
  localText(
  "开启 GitHub 或 Google 邮箱授权登录后，系统会读取已验证邮箱，存在则直接登录，不存在则自动注册。",
@@ -2615,15 +2648,15 @@
  }}
  </p>
  </div>
- <div class="space-y-6 p-6">
- <div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
+ <div class="settings-card-body">
+ <div class="settings-row-group">
  <div class="rounded-lg border border-line p-4 ">
  <div class="flex items-start justify-between gap-4">
  <div>
  <h3 class="font-medium text-foreground ">
  GitHub
  </h3>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{
  localText(
  "GitHub OAuth App 需要 read:user user:email 权限，回调地址填写下方后端地址。",
@@ -2661,9 +2694,9 @@
  </template>
  </div>
 
- <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
- <div>
- <label class="mb-2 block text-sm font-medium text-foreground ">Client ID</label>
+ <div class="settings-row-group">
+ <div class="settings-row">
+ <label class="settings-row-label">Client ID</label>
  <input
  v-model="form.github_oauth_client_id"
  type="text"
@@ -2671,8 +2704,8 @@
  placeholder="GitHub OAuth Client ID"
  />
  </div>
- <div>
- <label class="mb-2 block text-sm font-medium text-foreground ">Client Secret</label>
+ <div class="settings-row">
+ <label class="settings-row-label">Client Secret</label>
  <input
  v-model="form.github_oauth_client_secret"
  type="password"
@@ -2686,8 +2719,8 @@
  </div>
  </div>
 
- <div>
- <label class="mb-2 block text-sm font-medium text-foreground ">
+ <div class="settings-row">
+ <label class="settings-row-label">
  {{ localText("后端回调地址", "Backend Callback URL") }}
  </label>
  <input
@@ -2713,8 +2746,8 @@
  </div>
  </div>
 
- <div>
- <label class="mb-2 block text-sm font-medium text-foreground ">
+ <div class="settings-row">
+ <label class="settings-row-label">
  {{ localText("前端回跳地址", "Frontend Callback URL") }}
  </label>
  <input
@@ -2733,7 +2766,7 @@
  <h3 class="font-medium text-foreground ">
  Google
  </h3>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{
  localText(
  "Google OAuth 客户端需要 openid email profile 范围，并在凭据里登记后端回调地址。",
@@ -2755,9 +2788,9 @@
  }}
  </div>
 
- <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
- <div>
- <label class="mb-2 block text-sm font-medium text-foreground ">Client ID</label>
+ <div class="settings-row-group">
+ <div class="settings-row">
+ <label class="settings-row-label">Client ID</label>
  <input
  v-model="form.google_oauth_client_id"
  type="text"
@@ -2765,8 +2798,8 @@
  placeholder="Google OAuth Client ID"
  />
  </div>
- <div>
- <label class="mb-2 block text-sm font-medium text-foreground ">Client Secret</label>
+ <div class="settings-row">
+ <label class="settings-row-label">Client Secret</label>
  <input
  v-model="form.google_oauth_client_secret"
  type="password"
@@ -2780,8 +2813,8 @@
  </div>
  </div>
 
- <div>
- <label class="mb-2 block text-sm font-medium text-foreground ">
+ <div class="settings-row">
+ <label class="settings-row-label">
  {{ localText("后端回调地址", "Backend Callback URL") }}
  </label>
  <input
@@ -2807,8 +2840,8 @@
  </div>
  </div>
 
- <div>
- <label class="mb-2 block text-sm font-medium text-foreground ">
+ <div class="settings-row">
+ <label class="settings-row-label">
  {{ localText("前端回跳地址", "Frontend Callback URL") }}
  </label>
  <input
@@ -2825,18 +2858,18 @@
  </div>
 
  <!-- WeChat Connect OAuth 登录 -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.wechatConnect.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.wechatConnect.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div class="flex items-center justify-between">
  <div>
  <label class="font-medium text-foreground ">{{
@@ -2865,7 +2898,7 @@
  <h3 class="font-medium text-foreground ">
  {{ localText("PC 应用", "PC App") }}
  </h3>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{
  localText(
  "桌面浏览器通过微信开放平台扫码登录。可与公众号或移动应用同时存在。",
@@ -2882,11 +2915,11 @@
  </div>
  <div
  v-if="form.wechat_connect_open_enabled"
- class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2"
+ class="settings-row-group"
  >
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ localText("PC AppID", "PC App ID") }}
  </label>
@@ -2903,9 +2936,9 @@
  "
  />
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ localText("PC AppSecret", "PC App Secret") }}
  </label>
@@ -2938,7 +2971,7 @@
  <h3 class="font-medium text-foreground ">
  {{ localText("公众号", "Official Account") }}
  </h3>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{
  localText(
  "仅在微信内浏览器可用；非微信环境下会显示不可用。",
@@ -2955,11 +2988,11 @@
  </div>
  <div
  v-if="form.wechat_connect_mp_enabled"
- class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2"
+ class="settings-row-group"
  >
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ localText("公众号 AppID", "Official Account App ID") }}
  </label>
@@ -2976,9 +3009,9 @@
  "
  />
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{
  localText(
@@ -3016,7 +3049,7 @@
  <h3 class="font-medium text-foreground ">
  {{ localText("移动应用", "Mobile App") }}
  </h3>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{
  localText(
  "原生移动端通过微信 SDK 唤起授权，网页端不会直接发起该流程。",
@@ -3033,11 +3066,11 @@
  </div>
  <div
  v-if="form.wechat_connect_mobile_enabled"
- class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2"
+ class="settings-row-group"
  >
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ localText("移动应用 AppID", "Mobile App ID") }}
  </label>
@@ -3054,9 +3087,9 @@
  "
  />
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ localText("移动应用 AppSecret", "Mobile App Secret") }}
  </label>
@@ -3098,10 +3131,10 @@
  }}
  </div>
 
- <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
- <div>
+ <div class="settings-row-group">
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{
  localText(
@@ -3117,7 +3150,7 @@
  class="input font-mono text-sm"
  :placeholder="t('admin.settings.wechatConnect.redirectUrlPlaceholder')"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  localText(
  "用于 PC 应用和公众号的网页回调。移动应用走原生 SDK 时不直接使用这个浏览器回调。",
@@ -3145,9 +3178,9 @@
  </div>
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.wechatConnect.frontendRedirectUrlLabel") }}
  </label>
@@ -3158,7 +3191,7 @@
  class="input font-mono text-sm"
  :placeholder="t('admin.settings.wechatConnect.frontendRedirectUrlPlaceholder')"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.wechatConnect.frontendRedirectUrlHint") }}
  </p>
  </div>
@@ -3167,18 +3200,18 @@
  </div>
 
  <!-- DingTalk Connect OAuth 登录 -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.dingtalk.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.dingtalk.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div class="flex items-center justify-between">
  <div>
  <label class="font-medium text-foreground ">{{
@@ -3195,10 +3228,10 @@
  v-if="form.dingtalk_connect_enabled"
  class="border-t border-line pt-4 "
  >
- <div class="grid grid-cols-1 gap-6">
- <div>
+ <div class="settings-row-group">
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.dingtalk.clientId") }}
  </label>
@@ -3210,14 +3243,14 @@
  t('admin.settings.dingtalk.clientIdPlaceholder')
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.dingtalk.clientIdHint") }}
  </p>
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.dingtalk.clientSecret") }}
  </label>
@@ -3233,7 +3266,7 @@
  : t('admin.settings.dingtalk.clientSecretPlaceholder')
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  form.dingtalk_connect_client_secret_configured
  ? t(
@@ -3244,9 +3277,9 @@
  </p>
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.dingtalk.redirectUrl") }}
  </label>
@@ -3258,14 +3291,14 @@
  t('admin.settings.dingtalk.redirectUrlPlaceholder')
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.dingtalk.redirectUrlHint") }}
  </p>
  </div>
 
  <!-- Corp Restriction Policy -->
- <div class="border-t border-line pt-4 ">
- <label class="mb-2 block text-sm font-medium text-foreground ">
+ <div class="settings-row border-t border-line pt-4 ">
+ <label class="settings-row-label">
  {{ t("admin.settings.dingtalk.corpPolicy.label") }}
  </label>
  <p class="mb-3 text-xs text-muted ">
@@ -3455,18 +3488,18 @@
  </div>
 
  <!-- Generic OIDC OAuth 登录 -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.oidc.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.oidc.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div class="flex items-center justify-between">
  <div>
  <label class="font-medium text-foreground ">{{
@@ -3483,10 +3516,10 @@
  v-if="form.oidc_connect_enabled"
  class="space-y-6 border-t border-line pt-4 "
  >
- <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
- <div>
+ <div class="settings-row-group">
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.providerName") }}
  </label>
@@ -3500,9 +3533,9 @@
  />
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.clientId") }}
  </label>
@@ -3516,9 +3549,9 @@
  />
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.clientSecret") }}
  </label>
@@ -3534,7 +3567,7 @@
  : t('admin.settings.oidc.clientSecretPlaceholder')
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  form.oidc_connect_client_secret_configured
  ? t("admin.settings.oidc.clientSecretConfiguredHint")
@@ -3544,10 +3577,10 @@
  </div>
  </div>
 
- <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
- <div>
+ <div class="settings-row-group">
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.issuerUrl") }}
  </label>
@@ -3561,9 +3594,9 @@
  />
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.discoveryUrl") }}
  </label>
@@ -3577,9 +3610,9 @@
  />
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.authorizeUrl") }}
  </label>
@@ -3593,9 +3626,9 @@
  />
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.tokenUrl") }}
  </label>
@@ -3609,9 +3642,9 @@
  />
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.userinfoUrl") }}
  </label>
@@ -3625,9 +3658,9 @@
  />
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.jwksUrl") }}
  </label>
@@ -3640,10 +3673,10 @@
  </div>
  </div>
 
- <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
- <div>
+ <div class="settings-row-group">
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.scopes") }}
  </label>
@@ -3653,14 +3686,14 @@
  class="input font-mono text-sm"
  :placeholder="t('admin.settings.oidc.scopesPlaceholder')"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.oidc.scopesHint") }}
  </p>
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.redirectUrl") }}
  </label>
@@ -3689,14 +3722,14 @@
  {{ oidcRedirectUrlSuggestion }}
  </code>
  </div>
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.oidc.redirectUrlHint") }}
  </p>
  </div>
 
- <div class="lg:col-span-2">
+ <div class="settings-row lg:col-span-2">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.frontendRedirectUrl") }}
  </label>
@@ -3708,16 +3741,16 @@
  t('admin.settings.oidc.frontendRedirectUrlPlaceholder')
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.oidc.frontendRedirectUrlHint") }}
  </p>
  </div>
  </div>
 
- <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
- <div>
+ <div class="settings-row-group">
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.tokenAuthMethod") }}
  </label>
@@ -3735,9 +3768,9 @@
  </select>
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.clockSkewSeconds") }}
  </label>
@@ -3750,9 +3783,9 @@
  />
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.allowedSigningAlgs") }}
  </label>
@@ -3767,7 +3800,7 @@
  </div>
  </div>
 
- <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+ <div class="settings-row-group">
  <div
  class="flex items-center justify-between rounded border border-line px-4 py-3 "
  >
@@ -3810,10 +3843,10 @@
  </div>
  </div>
 
- <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
- <div>
+ <div class="settings-row-group">
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.userinfoEmailPath") }}
  </label>
@@ -3827,9 +3860,9 @@
  />
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.userinfoIdPath") }}
  </label>
@@ -3843,9 +3876,9 @@
  />
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.oidc.userinfoUsernamePath") }}
  </label>
@@ -3866,24 +3899,24 @@
  <!-- /Tab: Security — Registration, Turnstile, LinuxDo, OIDC -->
 
  <!-- Tab: Users -->
- <div v-show="activeTab === 'users'" class="space-y-6">
+ <div v-show="activeTab === 'users'" class="settings-stack">
  <!-- Default Settings -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.defaults.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.defaults.description") }}
  </p>
  </div>
- <div class="space-y-6 p-6">
- <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
- <div>
+ <div class="settings-card-body">
+ <div class="settings-row-group">
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.defaults.defaultBalance") }}
  </label>
@@ -3895,13 +3928,13 @@
  class="input"
  placeholder="0.00"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.defaults.defaultBalanceHint") }}
  </p>
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.defaults.defaultConcurrency") }}
  </label>
@@ -3912,13 +3945,13 @@
  class="input"
  placeholder="1"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.defaults.defaultConcurrencyHint") }}
  </p>
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.defaults.defaultUserRpmLimit") }}
  </label>
@@ -3930,7 +3963,7 @@
  class="input"
  placeholder="0"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.defaults.defaultUserRpmLimitHint") }}
  </p>
  </div>
@@ -3973,7 +4006,7 @@
  >
  <div>
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.defaults.subscriptionGroup") }}
  </label>
@@ -4047,7 +4080,7 @@
  </div>
  <div>
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{
  t("admin.settings.defaults.subscriptionValidityDays")
@@ -4080,7 +4113,7 @@
  <label class="font-medium text-foreground ">
  {{ t("admin.settings.defaults.defaultPlatformQuotas") }}
  </label>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.defaults.defaultPlatformQuotasHint") }}
  </p>
  <p class="mt-0.5 text-xs text-amber-600 ">
@@ -4141,18 +4174,18 @@
  </div>
  </div>
 
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.authSourceDefaults.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.authSourceDefaults.description") }}
  </p>
  </div>
- <div class="space-y-6 p-6">
+ <div class="settings-card-body">
  <div
  class="flex items-center justify-between rounded border border-line px-4 py-3 "
  >
@@ -4178,7 +4211,7 @@
  <div class="font-medium text-foreground ">
  {{ authSource.title }}
  </div>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ authSource.description }}
  </p>
  </div>
@@ -4199,10 +4232,10 @@
  {{ t("admin.settings.authSourceDefaults.enabledHint") }}
  </p>
 
- <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
- <div>
+ <div class="settings-row-group">
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.defaults.defaultBalance") }}
  </label>
@@ -4217,9 +4250,9 @@
  placeholder="0.00"
  />
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.defaults.defaultConcurrency") }}
  </label>
@@ -4303,7 +4336,7 @@
  >
  <div>
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.defaults.subscriptionGroup") }}
  </label>
@@ -4379,7 +4412,7 @@
  </div>
  <div>
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{
  t(
@@ -4482,23 +4515,23 @@
  <!-- /Tab: Users -->
 
  <!-- Tab: Gateway — Claude Code, Scheduling -->
- <div v-show="activeTab === 'gateway'" class="space-y-6">
+ <div v-show="activeTab === 'gateway'" class="settings-stack">
  <!-- Claude Code Settings -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.claudeCode.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.claudeCode.description") }}
  </p>
  </div>
- <div class="p-6">
- <div>
+ <div class="settings-card-body">
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.claudeCode.minVersion") }}
  </label>
@@ -4510,13 +4543,13 @@
  t('admin.settings.claudeCode.minVersionPlaceholder')
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.claudeCode.minVersionHint") }}
  </p>
  </div>
- <div class="mt-4">
+ <div class="settings-row mt-4">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.claudeCode.maxVersion") }}
  </label>
@@ -4528,7 +4561,7 @@
  t('admin.settings.claudeCode.maxVersionPlaceholder')
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.claudeCode.maxVersionHint") }}
  </p>
  </div>
@@ -4536,22 +4569,22 @@
  </div>
 
  <!-- Kiro Runtime Defaults -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.kiroRuntime.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.kiroRuntime.description") }}
  </p>
  </div>
- <div class="space-y-6 p-6">
- <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
- <div>
+ <div class="settings-card-body">
+ <div class="settings-row-group">
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.kiroRuntime.kiroVersion") }}
  </label>
@@ -4563,9 +4596,9 @@
  :placeholder="t('admin.settings.kiroRuntime.kiroVersionPlaceholder')"
  />
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.kiroRuntime.kiroCommit") }}
  </label>
@@ -4577,9 +4610,9 @@
  :placeholder="t('admin.settings.kiroRuntime.kiroCommitPlaceholder')"
  />
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.kiroRuntime.systemVersion") }}
  </label>
@@ -4591,9 +4624,9 @@
  :placeholder="t('admin.settings.kiroRuntime.systemVersionPlaceholder')"
  />
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.kiroRuntime.nodeVersion") }}
  </label>
@@ -4607,9 +4640,9 @@
  </div>
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{
  t(
@@ -4628,7 +4661,7 @@
  )
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  t(
  "admin.settings.kiroRuntime.codeExecutionSandboxCommandHint",
@@ -4646,10 +4679,10 @@
  </div>
  </div>
 
- <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
- <div>
+ <div class="settings-row-group">
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.kiroRuntime.cacheHitRateScale") }}
  </label>
@@ -4668,13 +4701,13 @@
  )
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.kiroRuntime.cacheHitRateScaleHint") }}
  </p>
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.kiroRuntime.cacheMinBlockTokens") }}
  </label>
@@ -4693,15 +4726,15 @@
  )
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  t("admin.settings.kiroRuntime.cacheMinBlockTokensHint")
  }}
  </p>
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{
  t(
@@ -4725,7 +4758,7 @@
  )
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  t(
  "admin.settings.kiroRuntime.cacheIndependentTtlSecondsHint",
@@ -4733,9 +4766,9 @@
  }}
  </p>
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.kiroRuntime.cachePrefixTtlSeconds") }}
  </label>
@@ -4754,7 +4787,7 @@
  )
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  t(
  "admin.settings.kiroRuntime.cachePrefixTtlSecondsHint",
@@ -4767,27 +4800,27 @@
  </div>
 
  <!-- Codex Settings -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.gatewayForwarding.codexHardeningTitle") }}
  </h2>
  </div>
- <div class="p-6 space-y-4">
+ <div class="settings-card-body">
  <div>
  <h3 class="text-base font-semibold text-foreground ">
  {{ t("admin.settings.gatewayForwarding.codexClientRestrictionTitle") }}
  </h3>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.gatewayForwarding.codexHardeningDesc") }}
  </p>
  </div>
  <div class="grid gap-4 sm:grid-cols-2">
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.gatewayForwarding.minCodexVersion") }}
  </label>
@@ -4802,9 +4835,9 @@
  "
  />
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.gatewayForwarding.maxCodexVersion") }}
  </label>
@@ -5015,18 +5048,18 @@
  </div>
 
  <!-- Upstream Billing Probe Settings -->
- <div class="glass-card" data-testid="upstream-billing-probe-settings">
+ <div class="glass-card settings-card" data-testid="upstream-billing-probe-settings">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.upstreamBillingProbe.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.upstreamBillingProbe.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div
  v-if="upstreamBillingProbeLoading"
  class="flex items-center gap-2 text-muted"
@@ -5056,10 +5089,10 @@
 
  <div
  v-if="upstreamBillingProbeForm.enabled"
- class="border-t border-line pt-4 "
+ class="settings-row border-t border-line pt-4 "
  >
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  for="upstream-billing-probe-interval"
  >
  {{ t("admin.settings.upstreamBillingProbe.intervalMinutes") }}
@@ -5074,7 +5107,7 @@
  data-testid="upstream-billing-probe-interval"
  @keydown.enter.prevent="saveUpstreamBillingProbeSettings"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.upstreamBillingProbe.intervalHint") }}
  </p>
  </div>
@@ -5101,16 +5134,16 @@
  </div>
 
  <!-- Ollama Cloud Usage Settings -->
- <div class="glass-card" data-testid="ollama-cloud-usage-global-settings">
- <div class="border-b border-line px-6 py-4 ">
- <h2 class="text-lg font-semibold text-foreground ">
+ <div class="glass-card settings-card" data-testid="ollama-cloud-usage-global-settings">
+ <div class="settings-card-head">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.ollamaCloudUsage.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.ollamaCloudUsage.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div v-if="ollamaCloudUsageLoading" class="flex items-center gap-2 text-muted">
  <div class="h-4 w-4 animate-spin rounded-full border-b-2 border-accent"></div>
  {{ t("common.loading") }}
@@ -5132,8 +5165,8 @@
  />
  </div>
  <div v-if="ollamaCloudUsageForm.enabled" class="space-y-4 border-t border-line pt-4 ">
- <div>
- <label class="mb-2 block text-sm font-medium text-foreground " for="ollama-cloud-usage-debounce">
+ <div class="settings-row">
+ <label class="settings-row-label" for="ollama-cloud-usage-debounce">
  {{ t("admin.settings.ollamaCloudUsage.debounceMinutes") }}
  </label>
  <input
@@ -5146,12 +5179,12 @@
  data-testid="ollama-cloud-usage-global-debounce"
  @keydown.enter.prevent="saveOllamaCloudUsageSettings"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.ollamaCloudUsage.debounceHint") }}
  </p>
  </div>
- <div>
- <label class="mb-2 block text-sm font-medium text-foreground " for="ollama-cloud-usage-interval">
+ <div class="settings-row">
+ <label class="settings-row-label" for="ollama-cloud-usage-interval">
  {{ t("admin.settings.ollamaCloudUsage.intervalMinutes") }}
  </label>
  <input
@@ -5164,7 +5197,7 @@
  data-testid="ollama-cloud-usage-global-interval"
  @keydown.enter.prevent="saveOllamaCloudUsageSettings"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.ollamaCloudUsage.intervalHint") }}
  </p>
  </div>
@@ -5185,18 +5218,18 @@
  </div>
 
  <!-- Gateway Scheduling Settings -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.scheduling.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.scheduling.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div class="flex items-center justify-between">
  <div>
  <label
@@ -5220,7 +5253,7 @@
  )
  }}
  </label>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{
  t(
  "admin.settings.scheduling.accountSchedulingThresholdsDescription",
@@ -5466,18 +5499,18 @@
  </div>
 
  <!-- Gateway Forwarding Behavior -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.gatewayForwarding.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.gatewayForwarding.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div class="grid gap-5 border-b border-line pb-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
  <div>
  <label
@@ -5500,7 +5533,7 @@
  <option value="grok-4.1-fast" />
  <option value="grok-4" />
  </datalist>
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.gatewayForwarding.grokDefaultTextModelHint") }}
  </p>
  </div>
@@ -5538,7 +5571,7 @@
  <option value="us-west-2">{{ t("admin.settings.gatewayForwarding.grokBaseURLModeUSWest2") }}</option>
  <option value="eu-west-1">{{ t("admin.settings.gatewayForwarding.grokBaseURLModeEUWest1") }}</option>
  </select>
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.gatewayForwarding.grokDefaultBaseURLModeHint") }}
  </p>
  </div>
@@ -5564,7 +5597,7 @@
  {{ t("admin.settings.gatewayForwarding.openaiTTFTModeVisible") }}
  </option>
  </select>
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.gatewayForwarding.openaiTTFTModeHint") }}
  </p>
  </div>
@@ -5653,9 +5686,9 @@
  />
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{
  t(
@@ -5754,7 +5787,7 @@
  <div class="grid gap-3 md:grid-cols-2">
  <div>
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{
  t(
@@ -5773,7 +5806,7 @@
  </div>
  <div>
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{
  t(
@@ -5790,7 +5823,7 @@
 
  <div class="mt-3">
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.gatewayForwarding.systemBlockText") }}
  </label>
@@ -5850,7 +5883,7 @@
  }}
  </button>
  </div>
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  t(
  "admin.settings.gatewayForwarding.claudeOAuthSystemPromptBlocksHint",
@@ -5933,9 +5966,9 @@
  </div>
 
  <!-- Antigravity UA 版本 -->
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{
  t(
@@ -5953,7 +5986,7 @@
  )
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  t(
  "admin.settings.gatewayForwarding.antigravityUserAgentVersionHint",
@@ -5963,9 +5996,9 @@
  </div>
 
  <!-- OpenAI Codex UA -->
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{
  t(
@@ -5983,7 +6016,7 @@
  )
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  t(
  "admin.settings.gatewayForwarding.openaiCodexUserAgentHint",
@@ -5993,9 +6026,9 @@
  </div>
 
  <!-- Codex 客户端版本号 -->
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{
  t(
@@ -6013,7 +6046,7 @@
  )
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  t(
  "admin.settings.gatewayForwarding.openaiCodexClientVersionHint",
@@ -6055,18 +6088,18 @@
  </div>
 
  <!-- Web Search Emulation -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.webSearchEmulation.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.webSearchEmulation.description") }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <!-- Global Toggle -->
  <div class="flex items-center justify-between">
  <div>
@@ -6491,16 +6524,16 @@
  </div>
 
  <!-- Usage Records Settings -->
- <div class="glass-card">
- <div class="border-b border-line px-6 py-4 ">
- <h2 class="text-lg font-semibold text-foreground ">
+ <div class="glass-card settings-card">
+ <div class="settings-card-head">
+ <h2 class="settings-card-title">
  {{ t('admin.settings.usageRecords.title') }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t('admin.settings.usageRecords.description') }}
  </p>
  </div>
- <div class="space-y-4 p-6">
+ <div class="settings-card-body">
  <!-- User error requests visibility -->
  <div class="flex items-center justify-between">
  <div>
@@ -6522,39 +6555,55 @@
  <!-- /Tab: Gateway — Claude Code, Scheduling -->
 
  <!-- Tab: General -->
- <div v-show="activeTab === 'general'" class="space-y-6">
+ <div v-show="activeTab === 'general'" class="settings-stack">
  <!-- Site Settings -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.site.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.site.description") }}
  </p>
  </div>
- <div class="space-y-6 p-6">
+ <div class="settings-card-body">
  <!-- Backend Mode -->
- <div
- class="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 p-4 "
- >
- <div>
- <h3 class="text-sm font-medium text-foreground ">
+ <div class="settings-row">
+ <label class="settings-row-label">
  {{ t("admin.settings.site.backendMode") }}
- </h3>
- <p class="mt-1 text-xs text-muted ">
+ </label>
+ <div class="flex items-center gap-3">
+ <Toggle v-model="form.backend_mode_enabled" />
+ <span class="settings-warning-hint">
+ <svg
+ width="14"
+ height="14"
+ viewBox="0 0 24 24"
+ fill="none"
+ stroke="currentColor"
+ stroke-width="2"
+ stroke-linecap="round"
+ stroke-linejoin="round"
+ aria-hidden="true"
+ >
+ <path
+ d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"
+ />
+ </svg>
+ {{ t("admin.settings.site.backendModeWarning") }}
+ </span>
+ </div>
+ <p class="settings-row-hint">
  {{ t("admin.settings.site.backendModeDescription") }}
  </p>
-	 </div>
-	 <Toggle v-model="form.backend_mode_enabled" />
-	 </div>
+ </div>
 
-	 <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
- <div>
+	 <div class="settings-row-group">
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.site.siteName") }}
  </label>
@@ -6564,13 +6613,13 @@
  class="input"
  :placeholder="t('admin.settings.site.siteNamePlaceholder')"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.site.siteNameHint") }}
  </p>
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.site.siteSubtitle") }}
  </label>
@@ -6582,16 +6631,16 @@
  t('admin.settings.site.siteSubtitlePlaceholder')
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.site.siteSubtitleHint") }}
  </p>
  </div>
  </div>
 
  <!-- API Base URL -->
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.site.apiBaseUrl") }}
  </label>
@@ -6601,194 +6650,16 @@
  class="input font-mono text-sm"
  :placeholder="t('admin.settings.site.apiBaseUrlPlaceholder')"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.site.apiBaseUrlHint") }}
  </p>
  </div>
 
- <!-- Global Table Preferences -->
- <div class="border-t border-line pt-4 ">
- <h3 class="text-sm font-medium text-foreground ">
- {{ t("admin.settings.site.tablePreferencesTitle") }}
- </h3>
- <p class="mt-1 text-xs text-muted ">
- {{ t("admin.settings.site.tablePreferencesDescription") }}
- </p>
- <div class="mt-4 grid grid-cols-1 gap-6 md:grid-cols-2">
- <div>
- <label
- class="mb-2 block text-sm font-medium text-foreground "
- >
- {{ t("admin.settings.site.tableDefaultPageSize") }}
- </label>
- <input
- v-model.number="form.table_default_page_size"
- type="number"
- min="5"
- max="1000"
- step="1"
- class="input w-40"
- />
- <p class="mt-1.5 text-xs text-muted ">
- {{ t("admin.settings.site.tableDefaultPageSizeHint") }}
- </p>
- </div>
- <div>
- <label
- class="mb-2 block text-sm font-medium text-foreground "
- >
- {{ t("admin.settings.site.tablePageSizeOptions") }}
- </label>
- <input
- v-model="tablePageSizeOptionsInput"
- type="text"
- class="input font-mono text-sm"
- :placeholder="
- t('admin.settings.site.tablePageSizeOptionsPlaceholder')
- "
- />
- <p class="mt-1.5 text-xs text-muted ">
- {{ t("admin.settings.site.tablePageSizeOptionsHint") }}
- </p>
- </div>
- </div>
- </div>
-
- <!-- Custom Endpoints -->
- <div>
- <label
- class="mb-2 block text-sm font-medium text-foreground "
- >
- {{ t("admin.settings.site.customEndpoints.title") }}
- </label>
- <p class="mb-3 text-xs text-muted ">
- {{ t("admin.settings.site.customEndpoints.description") }}
- </p>
-
- <div class="space-y-3">
- <div
- v-for="(ep, index) in form.custom_endpoints"
- :key="index"
- class="rounded-lg border border-line p-4 "
- >
- <div class="mb-3 flex items-center justify-between">
- <span
- class="text-sm font-medium text-foreground "
- >
- {{
- t("admin.settings.site.customEndpoints.itemLabel", {
- n: index + 1,
- })
- }}
- </span>
- <button
- type="button"
- class="rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600 "
- @click="removeEndpoint(index)"
- >
- <svg
- class="h-4 w-4"
- fill="none"
- viewBox="0 0 24 24"
- stroke="currentColor"
- stroke-width="2"
- >
- <path
- stroke-linecap="round"
- stroke-linejoin="round"
- d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
- />
- </svg>
- </button>
- </div>
- <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
- <div>
- <label
- class="mb-1 block text-xs font-medium text-muted "
- >
- {{ t("admin.settings.site.customEndpoints.name") }}
- </label>
- <input
- v-model="ep.name"
- type="text"
- class="input text-sm"
- :placeholder="
- t(
- 'admin.settings.site.customEndpoints.namePlaceholder',
- )
- "
- />
- </div>
- <div>
- <label
- class="mb-1 block text-xs font-medium text-muted "
- >
- {{
- t("admin.settings.site.customEndpoints.endpointUrl")
- }}
- </label>
- <input
- v-model="ep.endpoint"
- type="url"
- class="input font-mono text-sm"
- :placeholder="
- t(
- 'admin.settings.site.customEndpoints.endpointUrlPlaceholder',
- )
- "
- />
- </div>
- <div class="sm:col-span-2">
- <label
- class="mb-1 block text-xs font-medium text-muted "
- >
- {{
- t(
- "admin.settings.site.customEndpoints.descriptionLabel",
- )
- }}
- </label>
- <input
- v-model="ep.description"
- type="text"
- class="input text-sm"
- :placeholder="
- t(
- 'admin.settings.site.customEndpoints.descriptionPlaceholder',
- )
- "
- />
- </div>
- </div>
- </div>
- </div>
-
- <button
- type="button"
- class="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line px-4 py-2.5 text-sm text-muted transition-colors hover:border-accent hover:text-accent "
- @click="addEndpoint"
- >
- <svg
- class="h-4 w-4"
- fill="none"
- viewBox="0 0 24 24"
- stroke="currentColor"
- stroke-width="2"
- >
- <path
- stroke-linecap="round"
- stroke-linejoin="round"
- d="M12 4v16m8-8H4"
- />
- </svg>
- {{ t("admin.settings.site.customEndpoints.add") }}
- </button>
- </div>
 
  <!-- Contact Info -->
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.site.contactInfo") }}
  </label>
@@ -6798,21 +6669,21 @@
  class="input"
  :placeholder="t('admin.settings.site.contactInfoPlaceholder')"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.site.contactInfoHint") }}
  </p>
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.site.supportQRCodes") }}
  </label>
  <div class="space-y-4">
  <div
  v-if="form.support_qr_codes.length > 0"
- class="grid grid-cols-1 gap-4"
+ class="settings-row-group"
  :class="form.support_qr_codes.length > 1 ? 'lg:grid-cols-2' : ''"
  >
  <div
@@ -6830,8 +6701,8 @@
  :hint="t('admin.settings.site.supportQRCodeImageHint')"
  :max-size="500 * 1024"
  />
- <div>
- <label class="mb-2 block text-sm font-medium text-foreground ">
+ <div class="settings-row">
+ <label class="settings-row-label">
  {{ t("admin.settings.site.supportQRCodeNote") }}
  </label>
  <input
@@ -6863,15 +6734,15 @@
  {{ t("admin.settings.site.addSupportQRCode") }}
  </button>
  </div>
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.site.supportQRCodesHint") }}
  </p>
  </div>
 
  <!-- Doc URL -->
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.site.docUrl") }}
  </label>
@@ -6881,14 +6752,14 @@
  class="input font-mono text-sm"
  :placeholder="t('admin.settings.site.docUrlPlaceholder')"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.site.docUrlHint") }}
  </p>
  </div>
 
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.site.downloadToolsUrl") }}
  </label>
@@ -6898,15 +6769,15 @@
  class="input font-mono text-sm"
  :placeholder="t('admin.settings.site.downloadToolsUrlPlaceholder')"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.site.downloadToolsUrlHint") }}
  </p>
  </div>
 
  <!-- Site Logo Upload -->
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.site.siteLogo") }}
  </label>
@@ -6921,9 +6792,9 @@
  </div>
 
  <!-- Home Content -->
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.site.homeContent") }}
  </label>
@@ -6933,7 +6804,7 @@
  class="input font-mono text-sm"
  :placeholder="t('admin.settings.site.homeContentPlaceholder')"
  ></textarea>
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ t("admin.settings.site.homeContentHint") }}
  </p>
  <!-- iframe CSP Warning -->
@@ -6972,19 +6843,164 @@
  </div>
  </div>
 
- <!-- Custom Menu Items -->
- <div class="glass-card">
- <div
- class="border-b border-line px-6 py-4 "
+ <!-- Custom Endpoints -->
+ <div class="glass-card settings-card">
+ <div class="settings-card-head settings-list-head">
+ <div class="settings-list-head-text">
+ <h2 class="settings-card-title">
+ {{ t("admin.settings.site.customEndpoints.title") }}
+ </h2>
+ <p class="settings-card-desc">
+ {{ t("admin.settings.site.customEndpoints.description") }}
+ </p>
+ </div>
+ <button
+ type="button"
+ class="btn-glass-secondary settings-btn-sm"
+ @click="addEndpoint"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <svg
+ width="14"
+ height="14"
+ viewBox="0 0 24 24"
+ fill="none"
+ stroke="currentColor"
+ stroke-width="2.2"
+ stroke-linecap="round"
+ stroke-linejoin="round"
+ aria-hidden="true"
+ >
+ <path d="M12 5v14M5 12h14" />
+ </svg>
+ {{ t("admin.settings.site.customEndpoints.add") }}
+ </button>
+ </div>
+ <div class="settings-card-body">
+ <div
+ v-for="(ep, index) in form.custom_endpoints"
+ :key="index"
+ class="settings-list-row"
+ >
+ <input
+ v-model="ep.name"
+ type="text"
+ class="input"
+ :aria-label="t('admin.settings.site.customEndpoints.name')"
+ :placeholder="
+ t('admin.settings.site.customEndpoints.namePlaceholder')
+ "
+ />
+ <input
+ v-model="ep.endpoint"
+ type="url"
+ class="input font-mono"
+ :aria-label="t('admin.settings.site.customEndpoints.endpointUrl')"
+ :placeholder="
+ t('admin.settings.site.customEndpoints.endpointUrlPlaceholder')
+ "
+ />
+ <input
+ v-model="ep.description"
+ type="text"
+ class="input"
+ :aria-label="
+ t('admin.settings.site.customEndpoints.descriptionLabel')
+ "
+ :placeholder="
+ t('admin.settings.site.customEndpoints.descriptionPlaceholder')
+ "
+ />
+ <button
+ type="button"
+ class="settings-icon-danger"
+ :title="t('common.delete')"
+ :aria-label="t('common.delete')"
+ @click="removeEndpoint(index)"
+ >
+ <svg
+ class="h-4 w-4"
+ fill="none"
+ viewBox="0 0 24 24"
+ stroke="currentColor"
+ stroke-width="2"
+ >
+ <path
+ stroke-linecap="round"
+ stroke-linejoin="round"
+ d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+ />
+ </svg>
+ </button>
+ </div>
+ <p v-if="form.custom_endpoints.length === 0" class="settings-empty-hint">
+ {{ t("common.noData") }}
+ </p>
+ </div>
+ </div>
+
+ <!-- Global Table Preferences -->
+ <div class="glass-card settings-card">
+ <div class="settings-card-head">
+ <h2 class="settings-card-title">
+ {{ t("admin.settings.site.tablePreferencesTitle") }}
+ </h2>
+ <p class="settings-card-desc">
+ {{ t("admin.settings.site.tablePreferencesDescription") }}
+ </p>
+ </div>
+ <div class="settings-card-body">
+ <div class="settings-row">
+ <label
+ class="settings-row-label"
+ >
+ {{ t("admin.settings.site.tableDefaultPageSize") }}
+ </label>
+ <input
+ v-model.number="form.table_default_page_size"
+ type="number"
+ min="5"
+ max="1000"
+ step="1"
+ class="input w-40"
+ />
+ <p class="settings-row-hint">
+ {{ t("admin.settings.site.tableDefaultPageSizeHint") }}
+ </p>
+ </div>
+ <div class="settings-row">
+ <label
+ class="settings-row-label"
+ >
+ {{ t("admin.settings.site.tablePageSizeOptions") }}
+ </label>
+ <input
+ v-model="tablePageSizeOptionsInput"
+ type="text"
+ class="input font-mono text-sm"
+ :placeholder="
+ t('admin.settings.site.tablePageSizeOptionsPlaceholder')
+ "
+ />
+ <p class="settings-row-hint">
+ {{ t("admin.settings.site.tablePageSizeOptionsHint") }}
+ </p>
+ </div>
+ </div>
+ </div>
+
+ <!-- Custom Menu Items -->
+ <div class="glass-card settings-card">
+ <div
+ class="settings-card-head"
+ >
+ <h2 class="settings-card-title">
  {{ t("admin.settings.customMenu.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.customMenu.description") }}
  </p>
  </div>
- <div class="space-y-4 p-6">
+ <div class="settings-card-body">
  <!-- Existing menu items -->
  <div
  v-for="(item, index) in form.custom_menu_items"
@@ -7068,11 +7084,11 @@
  </div>
  </div>
 
- <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+ <div class="settings-row-group">
  <!-- Label -->
  <div>
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.customMenu.name") }}
  </label>
@@ -7089,7 +7105,7 @@
  <!-- Visibility -->
  <div>
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.customMenu.visibility") }}
  </label>
@@ -7106,7 +7122,7 @@
  <!-- URL (full width) -->
  <div class="sm:col-span-2">
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.customMenu.url") }}
  </label>
@@ -7126,7 +7142,7 @@
  <!-- SVG Icon (full width) -->
  <div class="sm:col-span-2">
  <label
- class="mb-1 block text-xs font-medium text-muted "
+ class="settings-sub-label"
  >
  {{ t("admin.settings.customMenu.iconSvg") }}
  </label>
@@ -7169,15 +7185,15 @@
 	 <!-- /Tab: General -->
 
 	 <!-- Tab: Login Agreement -->
-	 <div v-show="activeTab === 'agreement'" class="space-y-6">
-	 <div class="glass-card">
-	 <div class="border-b border-line px-6 py-4 ">
+	 <div v-show="activeTab === 'agreement'" class="settings-stack">
+	 <div class="glass-card settings-card">
+	 <div class="settings-card-head">
 	 <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 	 <div>
-	 <h2 class="text-lg font-semibold text-foreground ">
+	 <h2 class="settings-card-title">
 	 {{ localText("登录条款确认", "Login agreement") }}
 	 </h2>
-	 <p class="mt-1 text-sm text-muted ">
+	 <p class="settings-card-desc">
 	 {{
 	 localText(
 	 "控制登录页是否要求用户先阅读并同意服务条款、隐私政策或其他 Markdown 文档。",
@@ -7195,10 +7211,10 @@
 	 </div>
 	 </div>
 
-	 <div class="space-y-6 p-6">
+	 <div class="settings-card-body">
 	 <div class="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_220px]">
-	 <div>
-	 <label class="mb-2 block text-sm font-medium text-foreground ">
+	 <div class="settings-row">
+	 <label class="settings-row-label">
 	 {{ localText("展示形式", "Display mode") }}
 	 </label>
 	 <div class="grid grid-cols-2 gap-2 rounded-lg bg-surface-2 p-1 ">
@@ -7229,7 +7245,7 @@
  {{ localText("复选框", "Checkbox") }}
  </button>
  </div>
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  form.login_agreement_mode === "checkbox"
  ? localText("复选框会显示在登录按钮下方，未勾选前所有登录入口禁用。", "The checkbox appears below the login button and gates all login actions.")
@@ -7238,8 +7254,8 @@
  </p>
  </div>
 
- <div>
- <label class="mb-2 block text-sm font-medium text-foreground ">
+ <div class="settings-row">
+ <label class="settings-row-label">
  {{ localText("条款更新日期", "Updated date") }}
  </label>
  <input
@@ -7247,7 +7263,7 @@
  type="date"
  class="input"
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{ localText("日期或文档内容变化后，用户需要重新同意。", "Changing the date or content requires fresh consent.") }}
  </p>
  </div>
@@ -7322,9 +7338,9 @@
  </button>
  </div>
 
- <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
+ <div class="settings-row-group">
  <div>
- <label class="mb-1 block text-xs font-medium text-muted ">
+ <label class="settings-sub-label">
  {{ localText("文档名称", "Document title") }}
  </label>
  <input
@@ -7335,7 +7351,7 @@
  />
  </div>
  <div>
- <label class="mb-1 block text-xs font-medium text-muted ">
+ <label class="settings-sub-label">
  {{ localText("路由标识", "Route slug") }}
  </label>
  <div class="flex overflow-hidden rounded-lg border border-line bg-surface focus-within:border-accent focus-within:ring-1 focus-within:ring-accent ">
@@ -7352,7 +7368,7 @@
  </div>
  </div>
  <div class="mt-3">
- <label class="mb-1 block text-xs font-medium text-muted ">
+ <label class="settings-sub-label">
  {{ localText("Markdown 内容", "Markdown content") }}
  </label>
  <textarea
@@ -7371,18 +7387,18 @@
  <!-- /Tab: Login Agreement -->
 
 	 <!-- Tab: Features (功能开关) -->
- <div v-show="activeTab === 'features'" class="space-y-6">
+ <div v-show="activeTab === 'features'" class="settings-stack">
 
- <div class="glass-card">
- <div class="border-b border-line px-6 py-4 ">
- <h2 class="text-lg font-semibold text-foreground ">
+ <div class="glass-card settings-card">
+ <div class="settings-card-head">
+ <h2 class="settings-card-title">
  {{ t('admin.settings.features.ticket.title') }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t('admin.settings.features.ticket.description') }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
  <div>
  <label class="text-sm font-medium text-foreground ">
@@ -7397,16 +7413,16 @@
  </div>
  </div>
 
- <div class="glass-card">
- <div class="border-b border-line px-6 py-4 ">
- <h2 class="text-lg font-semibold text-foreground ">
+ <div class="glass-card settings-card">
+ <div class="settings-card-head">
+ <h2 class="settings-card-title">
  {{ t('admin.settings.features.creationCenter.title') }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t('admin.settings.features.creationCenter.description') }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
  <div>
  <label class="text-sm font-medium text-foreground ">
@@ -7421,12 +7437,12 @@
  </div>
  </div>
 
- <div class="glass-card">
- <div class="border-b border-line px-6 py-4 ">
- <h2 class="text-lg font-semibold text-foreground ">
+ <div class="glass-card settings-card">
+ <div class="settings-card-head">
+ <h2 class="settings-card-title">
  {{ t('admin.settings.features.channelMonitor.title') }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t('admin.settings.features.channelMonitor.description') }}
  </p>
  <p class="mt-1.5 text-xs">
@@ -7439,7 +7455,7 @@
  </router-link>
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div class="flex items-center justify-between">
  <div>
  <label class="text-sm font-medium text-foreground ">
@@ -7483,7 +7499,7 @@
  {{ t('admin.settings.features.channelMonitor.modeV1') }}
  </button>
  </div>
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  form.channel_monitor_mode === 'v1'
  ? t('admin.settings.features.channelMonitor.modeV1Hint')
@@ -7539,12 +7555,12 @@
  </div>
  </div>
 
- <div class="glass-card">
- <div class="border-b border-line px-6 py-4 ">
- <h2 class="text-lg font-semibold text-foreground ">
+ <div class="glass-card settings-card">
+ <div class="settings-card-head">
+ <h2 class="settings-card-title">
  {{ t('admin.settings.features.availableChannels.title') }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t('admin.settings.features.availableChannels.description') }}
  </p>
  <p class="mt-1.5 text-xs">
@@ -7557,7 +7573,7 @@
  </router-link>
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div class="flex items-center justify-between">
  <div>
  <label class="text-sm font-medium text-foreground ">
@@ -7572,16 +7588,16 @@
  </div>
  </div>
 
- <div class="glass-card">
- <div class="border-b border-line px-6 py-4 ">
- <h2 class="text-lg font-semibold text-foreground ">
+ <div class="glass-card settings-card">
+ <div class="settings-card-head">
+ <h2 class="settings-card-title">
  {{ t('admin.settings.features.modelPlaza.title') }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t('admin.settings.features.modelPlaza.description') }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div class="flex items-center justify-between">
  <div>
  <label class="text-sm font-medium text-foreground ">
@@ -7622,16 +7638,16 @@
  </div>
  </div>
 
- <div class="glass-card">
- <div class="border-b border-line px-6 py-4 ">
- <h2 class="text-lg font-semibold text-foreground ">
+ <div class="glass-card settings-card">
+ <div class="settings-card-head">
+ <h2 class="settings-card-title">
  {{ t('admin.settings.features.pluginManagement.title') }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t('admin.settings.features.pluginManagement.description') }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div class="flex items-center justify-between gap-4">
  <div>
  <label class="text-sm font-medium text-foreground ">
@@ -7646,12 +7662,12 @@
  </div>
  </div>
 
- <div class="glass-card">
- <div class="border-b border-line px-6 py-4 ">
- <h2 class="text-lg font-semibold text-foreground ">
+ <div class="glass-card settings-card">
+ <div class="settings-card-head">
+ <h2 class="settings-card-title">
  {{ t('admin.settings.features.riskControl.title') }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t('admin.settings.features.riskControl.description') }}
  </p>
  <p class="mt-1.5 text-xs">
@@ -7664,7 +7680,7 @@
  </router-link>
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div class="flex items-center justify-between">
  <div>
  <label class="text-sm font-medium text-foreground ">
@@ -7705,16 +7721,16 @@
  </div>
 
  <!-- Affiliate (邀请返利) feature card -->
- <div class="glass-card">
- <div class="border-b border-line px-6 py-4 ">
- <h2 class="text-lg font-semibold text-foreground ">
+ <div class="glass-card settings-card">
+ <div class="settings-card-head">
+ <h2 class="settings-card-title">
  {{ t('admin.settings.features.affiliate.title') }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t('admin.settings.features.affiliate.description') }}
  </p>
  </div>
- <div class="space-y-5 p-6">
+ <div class="settings-card-body">
  <div class="flex items-center justify-between">
  <div>
  <label class="text-sm font-medium text-foreground ">
@@ -8168,16 +8184,16 @@
 
  <!-- Tab: Email -->
  <!-- Tab: Payment -->
- <div v-show="activeTab === 'payment'" class="space-y-6">
+ <div v-show="activeTab === 'payment'" class="settings-stack">
  <!-- Payment System Settings -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.payment.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.payment.description") }}
  <a
  :href="paymentGuideHref"
@@ -8202,7 +8218,7 @@
  </a>
  </p>
  </div>
- <div class="space-y-4 p-6">
+ <div class="settings-card-body">
  <!-- Enable toggle -->
  <div class="flex items-center justify-between">
  <div>
@@ -8217,7 +8233,7 @@
  </div>
  <template v-if="form.payment_enabled">
  <!-- Row 1: Product name -->
- <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+ <div class="settings-row-group">
  <div>
  <label class="input-label">{{
  t("admin.settings.payment.productNamePrefix")
@@ -8668,7 +8684,7 @@
  </p>
  </div>
  <!-- Row 5: Help image + text -->
- <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+ <div class="settings-row-group">
  <div>
  <label class="input-label">{{
  t("admin.settings.payment.helpImage")
@@ -8719,10 +8735,10 @@
  />
  </div>
 
- <div v-show="activeTab === 'email'" class="space-y-6">
+ <div v-show="activeTab === 'email'" class="settings-stack">
  <!-- Email disabled hint - show when email_verify_enabled is off -->
- <div v-if="!form.email_verify_enabled" class="glass-card">
- <div class="p-6">
+ <div v-if="!form.email_verify_enabled" class="glass-card settings-card">
+ <div class="settings-card-body">
  <div class="flex items-start gap-3">
  <Icon
  name="mail"
@@ -8733,7 +8749,7 @@
  <h3 class="font-medium text-foreground ">
  {{ t("admin.settings.emailTabDisabledTitle") }}
  </h3>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.emailTabDisabledHint") }}
  </p>
  </div>
@@ -8742,15 +8758,15 @@
  </div>
 
  <!-- SMTP Settings - Only show when email verification is enabled -->
- <div v-if="form.email_verify_enabled" class="glass-card">
+ <div v-if="form.email_verify_enabled" class="glass-card settings-card">
  <div
  class="flex items-center justify-between border-b border-line px-6 py-4 "
  >
  <div>
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.smtp.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.smtp.description") }}
  </p>
  </div>
@@ -8787,11 +8803,11 @@
  }}
  </button>
  </div>
- <div class="space-y-6 p-6">
- <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
- <div>
+ <div class="settings-card-body">
+ <div class="settings-row-group">
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.smtp.host") }}
  </label>
@@ -8802,9 +8818,9 @@
  :placeholder="t('admin.settings.smtp.hostPlaceholder')"
  />
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.smtp.port") }}
  </label>
@@ -8817,9 +8833,9 @@
  :placeholder="t('admin.settings.smtp.portPlaceholder')"
  />
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.smtp.username") }}
  </label>
@@ -8830,9 +8846,9 @@
  :placeholder="t('admin.settings.smtp.usernamePlaceholder')"
  />
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.smtp.password") }}
  </label>
@@ -8851,7 +8867,7 @@
  : t('admin.settings.smtp.passwordPlaceholder')
  "
  />
- <p class="mt-1.5 text-xs text-muted ">
+ <p class="settings-row-hint">
  {{
  form.smtp_password_configured
  ? t("admin.settings.smtp.passwordConfiguredHint")
@@ -8859,9 +8875,9 @@
  }}
  </p>
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.smtp.fromEmail") }}
  </label>
@@ -8872,9 +8888,9 @@
  :placeholder="t('admin.settings.smtp.fromEmailPlaceholder')"
  />
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.smtp.fromName") }}
  </label>
@@ -8905,22 +8921,22 @@
  </div>
 
  <!-- Send Test Email - Only show when email verification is enabled -->
- <div v-if="form.email_verify_enabled" class="glass-card">
+ <div v-if="form.email_verify_enabled" class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
- <h2 class="text-lg font-semibold text-foreground ">
+ <h2 class="settings-card-title">
  {{ t("admin.settings.testEmail.title") }}
  </h2>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.testEmail.description") }}
  </p>
  </div>
- <div class="p-6">
+ <div class="settings-card-body">
  <div class="flex items-end gap-4">
- <div class="flex-1">
+ <div class="settings-row flex-1">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >
  {{ t("admin.settings.testEmail.recipientEmail") }}
  </label>
@@ -8972,14 +8988,14 @@
  </div>
 
  <!-- 订阅到期提醒 -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
  <h3 class="text-base font-medium text-foreground ">
  {{ t("admin.settings.subscriptionExpiryNotify.title") }}
  </h3>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.subscriptionExpiryNotify.description") }}
  </p>
  </div>
@@ -9003,18 +9019,18 @@
  <EmailTemplateEditor />
 
  <!-- Balance Low Notification -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
  <h3 class="text-base font-medium text-foreground ">
  {{ t("admin.settings.balanceNotify.title") }}
  </h3>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.balanceNotify.description") }}
  </p>
  </div>
- <div class="px-6 py-6 space-y-4">
+ <div class="settings-card-body">
  <div class="flex items-center justify-between">
  <label
  class="mb-0 block text-sm font-medium text-foreground "
@@ -9022,9 +9038,9 @@
  >
  <Toggle v-model="form.balance_low_notify_enabled" />
  </div>
- <div v-if="form.balance_low_notify_enabled">
+ <div class="settings-row" v-if="form.balance_low_notify_enabled">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >{{ t("admin.settings.balanceNotify.threshold") }}</label
  >
  <div class="relative">
@@ -9044,9 +9060,9 @@
  {{ t("admin.settings.balanceNotify.thresholdHint") }}
  </p>
  </div>
- <div>
+ <div class="settings-row">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >{{ t("admin.settings.balanceNotify.rechargeUrl") }}</label
  >
  <input
@@ -9063,18 +9079,18 @@
  </div>
 
  <!-- Account Quota Notification -->
- <div class="glass-card">
+ <div class="glass-card settings-card">
  <div
- class="border-b border-line px-6 py-4 "
+ class="settings-card-head"
  >
  <h3 class="text-base font-medium text-foreground ">
  {{ t("admin.settings.quotaNotify.title") }}
  </h3>
- <p class="mt-1 text-sm text-muted ">
+ <p class="settings-card-desc">
  {{ t("admin.settings.quotaNotify.description") }}
  </p>
  </div>
- <div class="px-6 py-6 space-y-4">
+ <div class="settings-card-body">
  <div class="flex items-center justify-between">
  <label
  class="mb-0 block text-sm font-medium text-foreground "
@@ -9082,9 +9098,9 @@
  >
  <Toggle v-model="form.account_quota_notify_enabled" />
  </div>
- <div v-if="form.account_quota_notify_enabled">
+ <div class="settings-row" v-if="form.account_quota_notify_enabled">
  <label
- class="mb-2 block text-sm font-medium text-foreground "
+ class="settings-row-label"
  >{{ t("admin.settings.quotaNotify.emails") }}</label
  >
  <div class="space-y-2">
@@ -9378,8 +9394,31 @@ const settingsTabKeyboardActions = {
   End: "last",
 } as const;
 
+const settingsTabKeys = settingsTabs.map((item) => item.key);
+
+function isSettingsTab(value: string): value is SettingsTab {
+  return (settingsTabKeys as string[]).includes(value);
+}
+
+/** 支持 /admin/settings#email 直达分区（截图与外链引用用）。 */
+function applySettingsTabFromHash(): void {
+  try {
+    const raw = window.location.hash.replace(/^#/, "");
+    if (raw && isSettingsTab(raw)) {
+      activeTab.value = raw;
+    }
+  } catch {
+    /* noop */
+  }
+}
+
 function selectSettingsTab(tab: SettingsTab): void {
   activeTab.value = tab;
+  try {
+    window.history.replaceState(window.history.state, "", `#${tab}`);
+  } catch {
+    /* noop */
+  }
 }
 function onSettingsMobileTabChange(event: Event): void {
   const value = (event.target as HTMLSelectElement).value as SettingsTab;
@@ -11296,6 +11335,91 @@ const codexSyncedVersionLabel = computed(() => {
   });
 });
 
+// =========================
+// 未保存更改追踪（页头提示 + 分区导航圆点）
+// =========================
+const settingsSnapshot = ref<string>("");
+const settingsDirtyKeys = ref<string[]>([]);
+const settingsDirtyTabs = ref<SettingsTab[]>([]);
+const settingsDirtyTrackingReady = ref(false);
+
+function readSettingsSnapshot(): Record<string, unknown> | null {
+  if (!settingsSnapshot.value) return null;
+  try {
+    return JSON.parse(settingsSnapshot.value) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function captureSettingsSnapshot(): void {
+  try {
+    settingsSnapshot.value = JSON.stringify(form);
+  } catch {
+    settingsSnapshot.value = "";
+  }
+  settingsDirtyKeys.value = [];
+  settingsDirtyTabs.value = [];
+  settingsDirtyTrackingReady.value = true;
+}
+
+function computeSettingsDirtyKeys(): string[] {
+  const base = readSettingsSnapshot();
+  if (!base) return [];
+  const current = form as unknown as Record<string, unknown>;
+  const keys: string[] = [];
+  for (const key of Object.keys(current)) {
+    let a: string | undefined;
+    let b: string | undefined;
+    try {
+      a = JSON.stringify(current[key]);
+      b = JSON.stringify(base[key]);
+    } catch {
+      continue;
+    }
+    if (a !== b) keys.push(key);
+  }
+  return keys;
+}
+
+const settingsDirtyCount = computed(() => settingsDirtyKeys.value.length);
+
+function isSettingsTabDirty(tab: SettingsTab): boolean {
+  return settingsDirtyTabs.value.includes(tab);
+}
+
+watch(
+  form,
+  () => {
+    if (!settingsDirtyTrackingReady.value) return;
+    const keys = computeSettingsDirtyKeys();
+    settingsDirtyKeys.value = keys;
+    if (keys.length === 0) {
+      settingsDirtyTabs.value = [];
+      return;
+    }
+    if (!settingsDirtyTabs.value.includes(activeTab.value)) {
+      settingsDirtyTabs.value = [...settingsDirtyTabs.value, activeTab.value];
+    }
+  },
+  { deep: true },
+);
+
+/** 重置：丢弃本地改动，重新拉取已保存的设置。 */
+async function resetSettingsForm(): Promise<void> {
+  if (saving.value) return;
+  settingsDirtyTrackingReady.value = false;
+  await loadSettings();
+}
+
+const deploymentVersion = computed(() => appStore.currentVersion || "");
+const deploymentCodexVersion = computed(
+  () => form.openai_codex_client_version_synced?.trim() || "",
+);
+const hasDeploymentInfo = computed(
+  () => Boolean(deploymentVersion.value) || Boolean(deploymentCodexVersion.value),
+);
+
 async function loadSettings() {
   loading.value = true;
   loadFailed.value = false;
@@ -11470,6 +11594,7 @@ async function loadSettings() {
     );
   } finally {
     loading.value = false;
+    captureSettingsSnapshot();
   }
 }
 
@@ -12146,6 +12271,7 @@ async function saveSettings() {
     if (wsOk) {
       appStore.showSuccess(t("admin.settings.settingsSaved"));
     }
+    captureSettingsSnapshot();
   } catch (error: unknown) {
     // 用户取消 step-up 验证：静默返回，不弹错误
     if (isStepUpCancelled(error)) {
@@ -13124,6 +13250,7 @@ async function handleDeleteProvider() {
 }
 
 onMounted(() => {
+  applySettingsTabFromHash();
   loadSettings();
   loadSubscriptionGroups();
   loadAdminApiKey();
@@ -13516,31 +13643,52 @@ watch(
  @apply h-[42px];
 }
 
-/* ============ 系统设置 Tab 导航 ============ */
+/* ============ 系统设置：分区导航 + 表单节奏（对齐原型 06） ============ */
 .settings-page {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
+.settings-page .ui-page-header {
+  margin-bottom: 0;
+}
+.settings-dirty {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--warning-text);
+  white-space: nowrap;
+}
+.settings-dirty-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--warning);
+  flex: none;
+}
 .settings-layout {
   display: grid;
-  grid-template-columns: 224px 1fr;
+  grid-template-columns: 224px minmax(0, 1fr);
   gap: 14px;
   align-items: start;
 }
 .settings-nav {
   position: sticky;
   top: 4.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 .settings-nav-mobile {
   display: none;
-  margin-bottom: 10px;
 }
 .settings-tabs-scroll {
   background: color-mix(in oklch, var(--surface) 70%, transparent);
   border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
   border-radius: 14px;
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   box-shadow: var(--shadow);
   padding: 8px;
 }
@@ -13552,35 +13700,77 @@ watch(
 .settings-tab {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   height: 34px;
   padding: 0 10px;
   border-radius: 9px;
   border: 0;
   background: transparent;
-  color: var(--muted);
+  color: var(--foreground);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   width: 100%;
   text-align: left;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 .settings-tab:hover,
 .settings-tab:focus-visible {
   background: color-mix(in oklch, var(--foreground) 5%, transparent);
-  color: var(--foreground);
   outline: none;
 }
-.settings-tab-active {
-  background: var(--surface);
-  color: var(--foreground);
+.settings-tab-active,
+.settings-tab-active:hover {
+  background: color-mix(in oklch, var(--surface) 92%, transparent);
+  color: var(--accent);
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  box-shadow:
+    inset 0 1px 0 var(--btn-hi),
+    0 1px 3px rgba(16, 24, 40, 0.1),
+    0 0 0 1px color-mix(in oklch, var(--border) 80%, transparent);
 }
-.settings-tab-icon {
-  display: inline-flex;
-  width: 16px;
-  height: 16px;
+.settings-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-tab-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--warning);
+}
+.settings-deploy {
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
+  border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+  border-radius: 14px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.settings-deploy-title {
+  font-weight: 600;
+  color: var(--foreground);
+}
+.settings-deploy-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.settings-deploy-value {
+  font-family: var(--font-mono);
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .settings-content {
   display: flex;
@@ -13588,9 +13778,11 @@ watch(
   gap: 12px;
   min-width: 0;
 }
-.settings-save {
+.settings-stack {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
 }
 .settings-spinner {
   width: 32px;
@@ -13599,20 +13791,287 @@ watch(
   border-bottom: 2px solid var(--accent);
   animation: spin 0.8s linear infinite;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
-.card {
-  background: color-mix(in oklch, var(--surface) 70%, transparent);
-  border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- 设置卡片 ---------- */
+.settings-card {
   border-radius: 14px;
-  backdrop-filter: blur(20px);
-  box-shadow: var(--shadow);
   overflow: hidden;
 }
+.settings-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--foreground);
+  letter-spacing: 0;
+}
+.settings-card-desc {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.settings-card-head .settings-card-desc {
+  margin-top: 0;
+}
+
+/* ---------- 表单行节奏：240px / 1fr ---------- */
+.settings-card-body > *,
+.settings-row-group > * {
+  padding: 14px 20px;
+}
+.settings-card-body > * + *,
+.settings-row-group > * + * {
+  border-top: 1px solid var(--border);
+}
+.settings-row-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+}
+.settings-row {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  column-gap: 24px;
+  row-gap: 2px;
+  align-items: center;
+}
+.settings-row > .settings-row-label {
+  grid-column: 1;
+  grid-row: 1;
+  display: block;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  line-height: 1.4;
+}
+.settings-row > .settings-row-hint {
+  grid-column: 1;
+  grid-row: 2;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.settings-row > :not(.settings-row-label):not(.settings-row-hint) {
+  grid-column: 2;
+  min-width: 0;
+}
+.settings-row > .settings-row-label + :not(.settings-row-hint) {
+  grid-row: 1 / span 2;
+}
+.settings-row .settings-sub-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.settings-sub-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* 控件尺寸对齐原型：文本 36px / max 420，数字 120 */
+.settings-content .input,
+.settings-content .field {
+  font-size: 13px;
+}
+.settings-content .text-sm {
+  font-size: 13px;
+}
+.settings-row > .input,
+.settings-row > .field {
+  max-width: 420px;
+}
+.settings-row > input[type="number"].input,
+.settings-row > input[type="number"].field {
+  width: 120px;
+  max-width: 120px;
+}
+.settings-row > textarea.input,
+.settings-row > textarea.field {
+  max-width: 100%;
+}
+
+/* 开关/说明行：左侧 240px 标签块 + 右侧控件 */
+.settings-card-body > .flex.items-center.justify-between,
+.settings-card-body > .flex.items-start.justify-between,
+.settings-row-group > .flex.items-center.justify-between,
+.settings-card-body > * > .flex.items-center.justify-between.border-t {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  column-gap: 24px;
+  align-items: center;
+}
+.settings-card-body > .flex.items-center.justify-between > *:first-child,
+.settings-card-body > .flex.items-start.justify-between > *:first-child,
+.settings-row-group > .flex.items-center.justify-between > *:first-child {
+  min-width: 0;
+}
+.settings-card-body h3,
+.settings-row-group h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+/* 危险/警告提示 */
+.settings-warning-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--warning-text);
+}
+
+/* 嵌套行分组（子标题下的行）拉齐到卡片边缘 */
+.settings-card-body > * .settings-row-group {
+  margin: 12px -20px -14px;
+}
+.settings-card-body > * .settings-row-group > *:first-child {
+  border-top: 1px solid var(--border);
+}
+
+/* 开关行内的标签/说明排版 */
+.settings-card-body > .flex > div > label,
+.settings-card-body > .flex > div > h3,
+.settings-row-group > .flex > div > label,
+.settings-row-group > .flex > div > h3 {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+.settings-card-body > .flex > div > p,
+.settings-row-group > .flex > div > p {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* 重复项编辑器（自定义端点等） */
+.settings-list-head {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.settings-list-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.settings-btn-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  font-weight: 600;
+  flex: none;
+}
+.settings-empty-hint {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.settings-list-row {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) minmax(0, 1fr) 32px;
+  gap: 12px;
+  align-items: center;
+}
+.settings-card-body > .settings-list-row {
+  padding: 12px 20px;
+}
+.settings-icon-danger {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--danger-text);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  flex: none;
+}
+.settings-icon-danger:hover {
+  background: color-mix(in oklch, var(--danger) 10%, transparent);
+}
+
+.default-sub-group-select :deep(.select-trigger) {
+  height: 36px;
+}
+.default-sub-delete-btn {
+  height: 36px;
+}
+
 @media (max-width: 767px) {
   .settings-layout {
     grid-template-columns: 1fr;
   }
-  .settings-nav-mobile { display: block; }
-  .settings-tabs-scroll { display: none; }
+  .settings-nav {
+    position: static;
+  }
+  .settings-nav-mobile {
+    display: block;
+  }
+  .settings-tabs-scroll,
+  .settings-deploy {
+    display: none;
+  }
+  .settings-row {
+    grid-template-columns: 1fr;
+    row-gap: 4px;
+  }
+  .settings-row > :not(.settings-row-label):not(.settings-row-hint),
+  .settings-row > .settings-row-label + :not(.settings-row-hint) {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  .settings-row > .settings-row-hint {
+    grid-row: auto;
+  }
+  .settings-card-body > *,
+  .settings-row-group > * {
+    padding: 14px 16px;
+  }
+  .settings-card-body > .flex.items-center.justify-between,
+  .settings-card-body > .flex.items-start.justify-between,
+  .settings-row-group > .flex.items-center.justify-between {
+    grid-template-columns: 1fr;
+    row-gap: 10px;
+  }
+  .settings-list-row {
+    grid-template-columns: minmax(0, 1fr) 32px;
+  }
+  .settings-list-row > *:nth-child(2),
+  .settings-list-row > *:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+  .settings-card-body > * .settings-row-group {
+    margin: 12px -16px -14px;
+  }
 }
 </style>

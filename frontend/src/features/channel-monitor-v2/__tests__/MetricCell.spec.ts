@@ -13,23 +13,25 @@ describe('MetricCell', () => {
       },
     })
 
-    expect(wrapper.classes().join(' ') + wrapper.html()).toContain('stat-card')
+    expect(wrapper.classes().join(' ') + wrapper.html()).toContain('summary-chip')
+    expect(wrapper.html()).toContain('summary-chip-label')
+    expect(wrapper.html()).toContain('summary-chip-value')
     expect(wrapper.text()).toContain('请求')
     expect(wrapper.text()).toContain('1,234')
     expect(wrapper.text()).toContain('12.5 RPM')
-    expect(wrapper.find('strong').classes().join(' ')).toMatch(/emerald/)
+    expect(wrapper.find('strong').classes().join(' ')).toMatch(/success-text/)
   })
 
   it('maps warning and critical health states to distinct colors', () => {
     const warning = mount(MetricCell, {
       props: { label: '错误', value: '10%', detail: '1 次', state: 'warning' },
     })
-    expect(warning.find('strong').classes().join(' ')).toMatch(/amber/)
+    expect(warning.find('strong').classes().join(' ')).toMatch(/warning-text/)
 
     const critical = mount(MetricCell, {
       props: { label: '错误', value: '50%', detail: '5 次', state: 'critical' },
     })
-    expect(critical.find('strong').classes().join(' ')).toMatch(/red/)
+    expect(critical.find('strong').classes().join(' ')).toMatch(/danger-text/)
   })
 
   it('renders multi-part detail as non-truncated chips (AVG · P90 fully visible)', () => {

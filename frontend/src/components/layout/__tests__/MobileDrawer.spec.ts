@@ -461,8 +461,9 @@ describe('mobile shell breakpoints', () => {
   })
 
   it('renders a compact mobile topbar and keeps the hamburger off tablet+', () => {
-    expect(headerSource).toContain('mobile-topbar')
-    expect(headerSource).toContain('header-icon-btn mobile-topbar-icon md:hidden')
+    expect(headerSource).toContain('topbar-mobile')
+    expect(headerSource).toContain('class="topbar-mobile-btn"')
+    expect(headerSource).toContain('@media (min-width: 768px)')
     expect(headerSource).toContain(':aria-label="t(\'common.toggleMenu\')"')
     expect(headerSource).toContain(':aria-expanded="appStore.mobileOpen"')
     expect(headerSource).toContain('aria-controls="mobile-drawer"')

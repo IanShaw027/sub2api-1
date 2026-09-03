@@ -1,7 +1,16 @@
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AffiliateView from '../AffiliateView.vue'
+
+const componentSource = readFileSync(
+  resolve(dirname(fileURLToPath(import.meta.url)), '../AffiliateView.vue'),
+  'utf8',
+)
 
 const { copyToClipboard, getAffiliateDetail } = vi.hoisted(() => ({
   copyToClipboard: vi.fn(),
@@ -73,34 +82,38 @@ describe('AffiliateView', () => {
 
     await flushPromises()
 
+    // These mobile/desktop responsibilities moved from Tailwind utility
+    // classes into scoped `.affiliate-copy-row`/`.affiliate-copy-value`/
+    // `.affiliate-copy-btn` rules during the Glass redesign: the row stacks
+    // (column, stretched) and the value wraps with `break-all` by default,
+    // switching to a horizontal, truncating row only from the `sm` (640px)
+    // breakpoint up.
     const values = wrapper.findAll('code')
     expect(values).toHaveLength(2)
     for (const value of values) {
-      expect(value.classes()).toEqual(expect.arrayContaining([
-        'min-w-0',
-        'break-all',
-        'sm:flex-1',
-        'sm:truncate',
-      ]))
-      expect(Array.from(value.element.parentElement?.classList ?? [])).toEqual(expect.arrayContaining([
-        'flex-col',
-        'items-stretch',
-        'sm:flex-row',
-        'sm:items-center',
-      ]))
+      expect(value.classes()).toContain('affiliate-copy-value')
+      expect(Array.from(value.element.parentElement?.classList ?? [])).toContain('affiliate-copy-row')
     }
+
+    const valueRuleMatch = componentSource.match(/\.affiliate-copy-value\s*\{([^}]*)\}/)
+    expect(valueRuleMatch?.[1]).toMatch(/word-break:\s*break-all/)
+    const rowRuleMatch = componentSource.match(/\.affiliate-copy-row\s*\{([^}]*)\}/)
+    expect(rowRuleMatch?.[1]).toMatch(/flex-direction:\s*column/)
+    expect(rowRuleMatch?.[1]).toMatch(/align-items:\s*stretch/)
+
+    const responsiveBlockMatch = componentSource.match(/@media \(min-width: 640px\)\s*\{([\s\S]*?)\n\}\n/)
+    const responsiveBlock = responsiveBlockMatch?.[1] ?? ''
+    expect(responsiveBlock).toMatch(/\.affiliate-copy-row\s*\{[^}]*flex-direction:\s*row/)
+    expect(responsiveBlock).toMatch(/\.affiliate-copy-value\s*\{[^}]*white-space:\s*nowrap/)
 
     const copyButtons = wrapper.findAll('button').filter((button) =>
       ['affiliate.copyCode', 'affiliate.copyLink'].includes(button.text()),
     )
     expect(copyButtons).toHaveLength(2)
     for (const button of copyButtons) {
-      expect(button.classes()).toEqual(expect.arrayContaining([
-        'w-full',
-        'sm:w-auto',
-        'sm:shrink-0',
-      ]))
+      expect(button.classes()).toContain('affiliate-copy-btn')
     }
+    expect(responsiveBlock).toMatch(/\.affiliate-copy-btn\s*\{[^}]*width:\s*auto/)
 
     await copyButtons[0].trigger('click')
     await copyButtons[1].trigger('click')

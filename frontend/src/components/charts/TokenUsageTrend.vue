@@ -1,6 +1,6 @@
 <template>
- <div class="glass-card p-4">
- <h3 class="mb-4 text-sm font-semibold text-foreground">
+ <div :class="bare ? '' : 'glass-card p-4'">
+ <h3 v-if="!bare" class="mb-4 text-sm font-semibold text-foreground">
  {{ t('admin.dashboard.tokenUsageTrend') }}
  </h3>
  <div v-if="loading" class="flex h-48 items-center justify-center">
@@ -53,19 +53,36 @@ const { t } = useI18n()
 const props = defineProps<{
  trendData: TrendDataPoint[]
  loading?: boolean
+ /** Render just the chart, without the self-contained card + title (parent supplies its own header). */
+ bare?: boolean
 }>()
 
 const { isDark: isDarkMode } = useTheme()
 
-const chartColors = computed(() => ({
- text: isDarkMode.value ? '#e5e7eb' : '#374151',
- grid: isDarkMode.value ? '#374151' : '#e5e7eb',
- input: '#3b82f6',
- output: '#10b981',
- cacheCreation: '#f59e0b',
- cacheRead: '#06b6d4',
- cacheHitRate: '#8b5cf6'
-}))
+// Resolve design tokens to concrete colour strings Chart.js/canvas can use.
+// Recomputes whenever the theme toggles (isDarkMode is read so it stays reactive).
+function cssVar(name: string, fallback: string): string {
+ if (typeof window === 'undefined') return fallback
+ const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+ return value || fallback
+}
+
+const chartColors = computed(() => {
+ void isDarkMode.value
+ return {
+ text: cssVar('--muted', '#6b7280'),
+ grid: cssVar('--border', '#e5e7eb'),
+ input: cssVar('--accent', '#3b82f6'),
+ output: cssVar('--success', '#10b981'),
+ cacheCreation: cssVar('--warning', '#f59e0b'),
+ cacheRead: cssVar('--accent', '#06b6d4'),
+ cacheHitRate: cssVar('--danger', '#8b5cf6')
+ }
+})
+
+function alpha(color: string, pct: number): string {
+ return `color-mix(in oklch, ${color} ${pct}%, transparent)`
+}
 
 const chartData = computed(() => {
  if (!props.trendData?.length) return null
@@ -77,7 +94,7 @@ const chartData = computed(() => {
  label: 'Input',
  data: props.trendData.map((d) => d.input_tokens),
  borderColor: chartColors.value.input,
- backgroundColor: `${chartColors.value.input}20`,
+ backgroundColor: alpha(chartColors.value.input, 16),
  fill: true,
  tension: 0.3
  },
@@ -85,7 +102,7 @@ const chartData = computed(() => {
  label: 'Output',
  data: props.trendData.map((d) => d.output_tokens),
  borderColor: chartColors.value.output,
- backgroundColor: `${chartColors.value.output}20`,
+ backgroundColor: alpha(chartColors.value.output, 16),
  fill: true,
  tension: 0.3
  },
@@ -93,7 +110,7 @@ const chartData = computed(() => {
  label: 'Cache Creation',
  data: props.trendData.map((d) => d.cache_creation_tokens),
  borderColor: chartColors.value.cacheCreation,
- backgroundColor: `${chartColors.value.cacheCreation}20`,
+ backgroundColor: alpha(chartColors.value.cacheCreation, 16),
  fill: true,
  tension: 0.3
  },
@@ -101,7 +118,7 @@ const chartData = computed(() => {
  label: 'Cache Read',
  data: props.trendData.map((d) => d.cache_read_tokens),
  borderColor: chartColors.value.cacheRead,
- backgroundColor: `${chartColors.value.cacheRead}20`,
+ backgroundColor: alpha(chartColors.value.cacheRead, 16),
  fill: true,
  tension: 0.3
  },
@@ -112,7 +129,7 @@ const chartData = computed(() => {
  return totalPromptTokens > 0 ? (d.cache_read_tokens / totalPromptTokens) * 100 : 0
  }),
  borderColor: chartColors.value.cacheHitRate,
- backgroundColor: `${chartColors.value.cacheHitRate}20`,
+ backgroundColor: alpha(chartColors.value.cacheHitRate, 16),
  borderDash: [5, 5],
  fill: false,
  tension: 0.3,
@@ -138,7 +155,7 @@ const lineOptions = computed(() => ({
  pointStyle: 'circle',
  padding: 15,
  font: {
- size: 11
+ size: 10.5
  }
  }
  },
@@ -169,7 +186,7 @@ const lineOptions = computed(() => ({
  ticks: {
  color: chartColors.value.text,
  font: {
- size: 10
+ size: 10.5
  }
  }
  },
@@ -180,7 +197,7 @@ const lineOptions = computed(() => ({
  ticks: {
  color: chartColors.value.text,
  font: {
- size: 10
+ size: 10.5
  },
  callback: (value: string | number) => formatTokens(Number(value))
  }
@@ -195,7 +212,7 @@ const lineOptions = computed(() => ({
  ticks: {
  color: chartColors.value.cacheHitRate,
  font: {
- size: 10
+ size: 10.5
  },
  callback: (value: string | number) => `${value}%`
  }

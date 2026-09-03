@@ -1,150 +1,271 @@
 <template>
- <div class="auth-page">
- <GlassCard class="auth-brand" padding="lg">
- <div class="auth-brand-inner">
- <div class="auth-brand-mark">
- <img :src="siteLogo || '/logo.svg'" alt="" />
- <span>{{ siteName }}</span>
- </div>
- <div class="auth-brand-copy">
- <h1>{{ siteName }}</h1>
- <p>{{ siteSubtitle }}</p>
- </div>
- </div>
- </GlassCard>
+  <div class="public-page auth-page">
+    <section class="auth-brand">
+      <div class="auth-brand-texture" aria-hidden="true"></div>
+      <div class="auth-brand-orb" aria-hidden="true"></div>
 
- <div class="auth-form-wrap">
- <GlassCard class="auth-card" padding="lg">
- <slot />
- </GlassCard>
- <div v-if="$slots.footer" class="auth-footer">
- <slot name="footer" />
- </div>
- <p class="auth-copy">&copy; {{ currentYear }} {{ siteName }}. All rights reserved.</p>
- </div>
- </div>
+      <div class="auth-brand-top">
+        <span class="brand-mark brand-mark-lg">
+          <img v-if="siteLogo" :src="siteLogo" alt="" />
+          <template v-else>{{ siteInitial }}</template>
+        </span>
+        <span class="auth-brand-name">{{ siteName }}</span>
+      </div>
+
+      <div class="auth-brand-copy">
+        <slot name="brand">
+          <h1>{{ brandTitle }}</h1>
+          <p>{{ brandDescription }}</p>
+          <div class="auth-brand-features">
+            <div v-for="feature in brandFeatures" :key="feature" class="auth-brand-feature">
+              <span class="auth-brand-check" aria-hidden="true">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+              </span>
+              <span>{{ feature }}</span>
+            </div>
+          </div>
+        </slot>
+      </div>
+
+      <div class="auth-brand-foot">
+        <StatusBadge tone="success" dot :label="t('auth.brand.serviceNormal')" />
+        <span>{{ providerLine }}</span>
+      </div>
+    </section>
+
+    <div class="auth-form-wrap">
+      <div class="auth-card glass-card glass-ring">
+        <slot />
+      </div>
+      <div v-if="$slots.footer" class="auth-footer">
+        <slot name="footer" />
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores'
 import { sanitizeUrl } from '@/utils/url'
-import GlassCard from '@/components/ui/GlassCard.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
 
+const { t } = useI18n()
 const appStore = useAppStore()
 
-const siteName = computed(() => appStore.siteName || 'Sub2API')
-const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
-const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'Subscription to API Conversion Platform')
+const siteName = computed(
+  () => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API'
+)
+const siteInitial = computed(() => siteName.value.trim().charAt(0).toUpperCase() || 'S')
+const siteLogo = computed(() =>
+  sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '', {
+    allowRelative: true,
+    allowDataUrl: true
+  })
+)
+const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || '')
 
-const currentYear = computed(() => new Date().getFullYear())
+const brandTitle = computed(() => t('home.heroSubtitle'))
+const brandDescription = computed(() => siteSubtitle.value || t('home.heroDescription'))
+const brandFeatures = computed(() => [
+  `${t('home.features.unifiedGateway')} · ${t('home.features.unifiedGatewayDesc')}`,
+  `${t('home.features.multiAccount')} · ${t('home.features.multiAccountDesc')}`,
+  `${t('home.features.balanceQuota')} · ${t('home.features.balanceQuotaDesc')}`
+])
+
+/**
+ * Provider line: derive from public settings when the backend exposes an
+ * enabled-platform list, otherwise fall back to the static i18n copy.
+ */
+const providerLine = computed(() => {
+  const settings = appStore.cachedPublicSettings as Record<string, unknown> | null | undefined
+  const raw = settings?.enabled_platforms ?? settings?.supported_platforms
+  const list = Array.isArray(raw)
+    ? raw.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : []
+  if (list.length > 0) {
+    return `${t('home.providers.supported')} ${list.join(' · ')}`
+  }
+  return `${t('home.providers.supported')} ${t('home.providers.line')}`
+})
 
 onMounted(() => {
- appStore.fetchPublicSettings()
+  appStore.fetchPublicSettings()
 })
 </script>
 
 <style scoped>
 .auth-page {
- min-height: 100vh;
- display: grid;
- grid-template-columns: 1.1fr 1fr;
- background:
- linear-gradient(color-mix(in oklch, var(--foreground) 2.5%, transparent) 1px, transparent 1px) 0 0 / 48px 48px,
- linear-gradient(90deg, color-mix(in oklch, var(--foreground) 2.5%, transparent) 1px, transparent 1px) 0 0 / 48px 48px,
- radial-gradient(circle at 0% 0%, color-mix(in oklch, var(--accent) 22%, transparent) 0%, transparent 30rem),
- radial-gradient(circle at 100% 0%, color-mix(in oklch, var(--success) 14%, transparent) 0%, transparent 24rem),
- var(--background);
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
 }
 
+/* ---------- Left brand panel ---------- */
 .auth-brand {
- margin: 20px 0 20px 20px;
- border-radius: 20px;
- position: relative;
- overflow: hidden;
+  position: relative;
+  overflow: hidden;
+  margin: 20px 0 20px 20px;
+  padding: 48px 56px;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: color-mix(in oklch, var(--surface) 55%, transparent);
+  border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: var(--shadow);
 }
 
-.auth-brand-inner {
- min-height: calc(100vh - 40px);
- display: flex;
- flex-direction: column;
- justify-content: space-between;
- gap: 24px;
- padding: 28px 36px;
+.auth-brand-texture {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(color-mix(in oklch, var(--foreground) 9%, transparent) 1px, transparent 1.3px) 0 0 / 18px 18px;
+  mask-image: linear-gradient(200deg, transparent 30%, black 100%);
+  -webkit-mask-image: linear-gradient(200deg, transparent 30%, black 100%);
+  pointer-events: none;
 }
 
-.auth-brand-mark {
- display: flex;
- align-items: center;
- gap: 10px;
- font-size: 16px;
- font-weight: 700;
+.auth-brand-orb {
+  position: absolute;
+  right: -140px;
+  bottom: -160px;
+  width: 520px;
+  height: 520px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 35% 35%,
+    color-mix(in oklch, var(--accent) 45%, white) 0%,
+    color-mix(in oklch, var(--accent) 35%, transparent) 45%,
+    transparent 70%
+  );
+  pointer-events: none;
 }
 
-.auth-brand-mark img {
- width: 32px;
- height: 32px;
- border-radius: 9px;
- object-fit: contain;
+.auth-brand-top {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.auth-brand-copy h1 {
- margin: 0;
- font-family: var(--display);
- font-size: 46px;
- line-height: 1.1;
- font-weight: 800;
- letter-spacing: -0.035em;
- color: var(--foreground);
+.auth-brand-name {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
-.auth-brand-copy p {
- color: var(--muted);
- font-size: 15px;
- line-height: 1.65;
+.auth-brand-copy {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  max-width: 520px;
 }
 
+.auth-brand-copy :deep(h1) {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 46px;
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.auth-brand-copy :deep(p) {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+
+.auth-brand-features {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.auth-brand-feature {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.auth-brand-check {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--success) 18%, transparent);
+  color: var(--success-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-brand-foot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* ---------- Right form column ---------- */
 .auth-form-wrap {
- display: flex;
- flex-direction: column;
- align-items: center;
- justify-content: center;
- padding: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
 }
 
 .auth-card {
- width: 440px;
- max-width: 100%;
- border-radius: 20px;
+  position: relative;
+  width: 440px;
+  max-width: 100%;
+  padding: 36px;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
 }
 
 .auth-footer {
- margin-top: 16px;
- text-align: center;
- font-size: 12.5px;
- color: var(--muted);
- width: 440px;
- max-width: 100%;
-}
-
-.auth-copy {
- margin: 16px 0 0;
- text-align: center;
- font-size: 11px;
- color: var(--muted);
+  margin-top: 16px;
+  width: 440px;
+  max-width: 100%;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--muted);
 }
 
 @media (max-width: 900px) {
- .auth-page {
- grid-template-columns: 1fr;
- }
+  .auth-page {
+    grid-template-columns: 1fr;
+  }
 
- .auth-brand {
- display: none;
- }
+  .auth-brand {
+    display: none;
+  }
 
- .auth-form-wrap {
- padding: 24px 16px;
- }
+  .auth-form-wrap {
+    padding: 24px 16px;
+  }
+
+  .auth-card {
+    width: 100%;
+    padding: 24px;
+  }
+
+  .auth-card :deep(.btn) {
+    min-height: 44px;
+  }
 }
 </style>

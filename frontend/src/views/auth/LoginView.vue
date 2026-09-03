@@ -1,202 +1,184 @@
 <template>
-  <div class="login-page">
-    <GlassCard class="login-brand" padding="lg">
-      <div class="login-brand-inner">
-        <div class="login-brand-mark">
-          <img :src="siteLogo || '/logo.svg'" alt="" />
-          <span>{{ siteName }}</span>
-        </div>
-        <div class="login-brand-copy">
-          <h1>{{ t('home.heroSubtitle') }}</h1>
-          <p>{{ siteSubtitle || t('home.heroDescription') }}</p>
-          <ul>
-            <li>{{ t('home.features.unifiedGateway') }} · {{ t('home.features.unifiedGatewayDesc') }}</li>
-            <li>{{ t('home.features.multiAccount') }} · {{ t('home.features.multiAccountDesc') }}</li>
-            <li>{{ t('home.features.balanceQuota') }} · {{ t('home.features.balanceQuotaDesc') }}</li>
-          </ul>
-        </div>
-        <StatusBadge tone="success" dot :label="t('home.providers.supported')" />
-      </div>
-    </GlassCard>
+  <AuthLayout>
+    <div class="login-title">
+      <h2>{{ t('auth.welcomeBack') }}</h2>
+      <p>{{ t('auth.signInToAccount') }}</p>
+    </div>
 
-    <div class="login-form-wrap">
-      <GlassCard class="login-card" padding="lg">
-        <div class="login-title">
-          <h2>{{ t('auth.welcomeBack') }}</h2>
-          <p>{{ t('auth.signInToAccount') }}</p>
-        </div>
-      <!-- Login Form -->
-      <form @submit.prevent="handleLogin" class="login-form">
-        <!-- Email Input -->
-        <div>
-          <label for="email" class="login-label">
-            {{ t('auth.emailLabel') }}
-          </label>
-          <div class="relative">
-            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-              <Icon name="mail" size="md" class="text-muted" />
-            </div>
-            <input
-              id="email"
-              v-model="formData.email"
-              type="email"
-              required
-              autofocus
-              autocomplete="email"
-              :disabled="authActionDisabled"
-              class="field pl-11"
-              :class="{ 'ui-text-input-error': errors.email }"
-              :placeholder="t('auth.emailPlaceholder')"
-            />
-          </div>
-        </div>
+    <!-- Login Form -->
+    <form class="login-form" @submit.prevent="handleLogin">
+      <!-- Email Input -->
+      <label class="login-field" for="email">
+        <span class="login-label">{{ t('auth.emailLabel') }}</span>
+        <input
+          id="email"
+          v-model="formData.email"
+          type="email"
+          required
+          autofocus
+          autocomplete="email"
+          :disabled="authActionDisabled"
+          class="field input-lg"
+          :class="{ 'field-error': errors.email }"
+          :placeholder="t('auth.emailPlaceholder')"
+        />
+      </label>
 
-        <!-- Password Input -->
-        <div>
-          <label for="password" class="login-label">
-            {{ t('auth.passwordLabel') }}
-          </label>
-          <div class="relative">
-            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-              <Icon name="lock" size="md" class="text-muted" />
-            </div>
-            <input
-              id="password"
-              v-model="formData.password"
-              :type="showPassword ? 'text' : 'password'"
-              required
-              autocomplete="current-password"
-              :disabled="authActionDisabled"
-              class="field pl-11 pr-11"
-              :class="{ 'ui-text-input-error': errors.password }"
-              :placeholder="t('auth.passwordPlaceholder')"
-            />
-            <button
-              type="button"
-              @click="showPassword = !showPassword"
-              :disabled="authActionDisabled"
-              class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-muted"
-            >
-              <Icon v-if="showPassword" name="eyeOff" size="md" />
-              <Icon v-else name="eye" size="md" />
-            </button>
-          </div>
-          <div class="mt-1 flex items-center justify-between">
-            <span></span>
-            <router-link
-              v-if="passwordResetEnabled && !backendModeEnabled"
-              to="/forgot-password"
-              class="login-link"
-            >
-              {{ t('auth.forgotPassword') }}
-            </router-link>
-          </div>
-        </div>
-
-        <!-- Turnstile Widget -->
-        <div v-if="captchaEnabled">
-          <TurnstileWidget
-            ref="turnstileRef"
-            :turnstile-enabled="turnstileWidgetActive"
-            :turnstile-site-key="turnstileSiteKey"
-            :tencent-enabled="tencentWidgetActive"
-            :tencent-app-id="tencentCaptchaAppId"
-            :tencent-region="tencentCaptchaRegion"
-            :aliyun-enabled="aliyunWidgetActive"
-            :aliyun-scene-id="aliyunCaptchaSceneId"
-            :aliyun-prefix="aliyunCaptchaPrefix"
-            :aliyun-region="aliyunCaptchaRegion"
-            @verify="onTurnstileVerify"
-            @expire="onTurnstileExpire"
-            @error="onTurnstileError"
+      <!-- Password Input -->
+      <label class="login-field" for="password">
+        <span class="login-label">{{ t('auth.passwordLabel') }}</span>
+        <span class="login-password">
+          <input
+            id="password"
+            v-model="formData.password"
+            :type="showPassword ? 'text' : 'password'"
+            required
+            autocomplete="current-password"
+            :disabled="authActionDisabled"
+            class="field input-lg login-password-input"
+            :class="{ 'field-error': errors.password }"
+            :placeholder="t('auth.passwordPlaceholder')"
           />
-        </div>
+          <button
+            type="button"
+            class="login-eye"
+            :disabled="authActionDisabled"
+            :aria-label="t('auth.passwordLabel')"
+            @click="showPassword = !showPassword"
+          >
+            <Icon v-if="showPassword" name="eyeOff" size="sm" />
+            <Icon v-else name="eye" size="sm" />
+          </button>
+        </span>
+      </label>
 
-        <Button
-          native-type="submit"
-          size="md"
-          class="w-full"
-          :disabled="authActionDisabled || (turnstileWidgetActive && !turnstileToken)"
-          :loading="isLoading"
+      <div class="login-row">
+        <Checkbox v-model="rememberMe" class="login-remember">
+          {{ t('auth.rememberMe') }}
+        </Checkbox>
+        <router-link
+          v-if="passwordResetEnabled && !backendModeEnabled"
+          to="/forgot-password"
+          class="login-link"
         >
-          <Icon v-if="!isLoading" name="login" size="md" />
-          {{ isLoading ? t('auth.signingIn') : t('auth.signIn') }}
-        </Button>
+          {{ t('auth.forgotPassword') }}
+        </router-link>
+      </div>
 
-        <LoginAgreementPrompt
-          v-if="loginAgreementEnabled"
-          :accepted="agreementAccepted"
-          :documents="loginAgreementDocuments"
-          :mode="loginAgreementMode"
-          :updated-at="loginAgreementUpdatedAt"
-          :visible="showAgreementModal"
-          @accept="acceptLoginAgreement"
-          @reject="rejectLoginAgreement"
-          @open="showAgreementModal = true"
+      <!-- Turnstile Widget -->
+      <div v-if="captchaEnabled">
+        <TurnstileWidget
+          ref="turnstileRef"
+          :turnstile-enabled="turnstileWidgetActive"
+          :turnstile-site-key="turnstileSiteKey"
+          :tencent-enabled="tencentWidgetActive"
+          :tencent-app-id="tencentCaptchaAppId"
+          :tencent-region="tencentCaptchaRegion"
+          :aliyun-enabled="aliyunWidgetActive"
+          :aliyun-scene-id="aliyunCaptchaSceneId"
+          :aliyun-prefix="aliyunCaptchaPrefix"
+          :aliyun-region="aliyunCaptchaRegion"
+          @verify="onTurnstileVerify"
+          @expire="onTurnstileExpire"
+          @error="onTurnstileError"
+        />
+      </div>
+
+      <Button
+        native-type="submit"
+        size="md"
+        class="login-submit"
+        :disabled="authActionDisabled || (turnstileWidgetActive && !turnstileToken)"
+        :loading="isLoading"
+      >
+        {{ isLoading ? t('auth.signingIn') : t('auth.signIn') }}
+      </Button>
+
+      <LoginAgreementPrompt
+        v-if="loginAgreementEnabled"
+        :accepted="agreementAccepted"
+        :documents="loginAgreementDocuments"
+        :mode="loginAgreementMode"
+        :updated-at="loginAgreementUpdatedAt"
+        :visible="showAgreementModal"
+        @accept="acceptLoginAgreement"
+        @reject="rejectLoginAgreement"
+        @open="showAgreementModal = true"
+      />
+    </form>
+
+    <template v-if="showPasskeyLogin || showOAuthLogin">
+      <div class="login-divider">
+        <span>{{ t('auth.oauthOrContinue') }}</span>
+      </div>
+
+      <div class="login-oauth">
+        <LinuxDoOAuthSection
+          v-if="linuxdoOAuthEnabled"
+          :disabled="authActionDisabled"
+          :show-divider="false"
+          @start="handleOAuthStart"
         />
 
-        <div v-if="showPasskeyLogin || showOAuthLogin" class="space-y-3 pt-1">
-          <div class="login-divider">
-            <span>{{ t('auth.oauthOrContinue') }}</span>
-          </div>
+        <button
+          v-if="showPasskeyLogin"
+          type="button"
+          class="btn btn-secondary oauth-btn"
+          :disabled="authActionDisabled || passkeyLoading"
+          @click="handlePasskeyLogin"
+        >
+          <svg class="oauth-mark-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21v-2a4 4 0 0 1 4-4h4M18 14v7M15 17l3-3 3 3" />
+          </svg>
+          {{ passkeyLoading ? t('auth.passkeySigningIn') : t('auth.passkeySignIn') }}
+        </button>
 
-          <Button
-            v-if="showPasskeyLogin"
-            variant="secondary"
-            size="md"
-            class="btn-secondary w-full"
-            :disabled="authActionDisabled"
-            :loading="passkeyLoading"
-            @click="handlePasskeyLogin"
-          >
-            <Icon v-if="!passkeyLoading" name="key" size="md" />
-            {{ passkeyLoading ? t('auth.passkeySigningIn') : t('auth.passkeySignIn') }}
-          </Button>
+        <DingTalkOAuthSection
+          v-if="dingtalkOAuthEnabled"
+          :disabled="authActionDisabled"
+          :show-divider="false"
+          @start="handleOAuthStart"
+        />
+        <WechatOAuthSection
+          v-if="wechatOAuthEnabled"
+          :disabled="authActionDisabled"
+          :show-divider="false"
+          @start="handleOAuthStart"
+        />
+        <OidcOAuthSection
+          v-if="oidcOAuthEnabled"
+          :disabled="authActionDisabled"
+          :provider-name="oidcOAuthProviderName"
+          :show-divider="false"
+          @start="handleOAuthStart"
+        />
+        <EmailOAuthButtons
+          class="login-oauth-full"
+          :disabled="authActionDisabled"
+          :github-enabled="githubOAuthEnabled"
+          :google-enabled="googleOAuthEnabled"
+          :show-divider="false"
+          @start="handleOAuthStart"
+        />
+      </div>
+    </template>
 
-          <EmailOAuthButtons
-            :disabled="authActionDisabled"
-            :github-enabled="githubOAuthEnabled"
-            :google-enabled="googleOAuthEnabled"
-            :show-divider="false"
-            @start="handleOAuthStart"
-          />
-
-          <LinuxDoOAuthSection
-            v-if="linuxdoOAuthEnabled"
-            :disabled="authActionDisabled"
-            :show-divider="false"
-            @start="handleOAuthStart"
-          />
-          <DingTalkOAuthSection
-            v-if="dingtalkOAuthEnabled"
-            :disabled="authActionDisabled"
-            :show-divider="false"
-            @start="handleOAuthStart"
-          />
-          <WechatOAuthSection
-            v-if="wechatOAuthEnabled"
-            :disabled="authActionDisabled"
-            :show-divider="false"
-            @start="handleOAuthStart"
-          />
-          <OidcOAuthSection
-            v-if="oidcOAuthEnabled"
-            :disabled="authActionDisabled"
-            :provider-name="oidcOAuthProviderName"
-            :show-divider="false"
-            @start="handleOAuthStart"
-          />
-        </div>
-      </form>
-        <p v-if="!backendModeEnabled" class="login-footer">
-          {{ t('auth.dontHaveAccount') }}
-          <router-link to="/register" class="login-link">
-            {{ t('auth.signUp') }}
-          </router-link>
-        </p>
-      </GlassCard>
+    <div class="login-foot">
+      <span v-if="!backendModeEnabled">
+        {{ t('auth.dontHaveAccount') }}
+        <router-link to="/register" class="login-link">
+          {{ t('auth.signUp') }}
+        </router-link>
+      </span>
+      <span v-if="agreementLinks.length" class="login-terms">
+        {{ t('auth.agreementNotice') }}
+        <template v-for="(doc, index) in agreementLinks" :key="doc.id">
+          <span v-if="index > 0"> {{ t('auth.agreementSeparator') }} </span>
+          <router-link :to="`/legal/${doc.id}`" class="login-terms-link">{{ doc.title }}</router-link>
+        </template>
+      </span>
     </div>
-  </div>
+  </AuthLayout>
 
   <!-- 2FA Modal -->
   <TotpLoginModal
@@ -222,11 +204,10 @@ import LoginAgreementPrompt from '@/components/auth/LoginAgreementPrompt.vue'
 import TotpLoginModal from '@/components/auth/TotpLoginModal.vue'
 import Icon from '@/components/icons/Icon.vue'
 import Button from '@/components/ui/Button.vue'
-import GlassCard from '@/components/ui/GlassCard.vue'
-import StatusBadge from '@/components/ui/StatusBadge.vue'
+import Checkbox from '@/components/ui/Checkbox.vue'
+import AuthLayout from '@/components/layout/AuthLayout.vue'
 import TurnstileWidget from '@/components/CaptchaChallenge.vue'
 import { useAuthStore, useAppStore } from '@/stores'
-import { sanitizeUrl } from '@/utils/url'
 import {
   buildOAuthLoginStartURL,
   getPublicSettings,
@@ -253,10 +234,6 @@ const LOGIN_AGREEMENT_STORAGE_KEY = 'sub2api_login_agreement_consent'
 const router = useRouter()
 const authStore = useAuthStore()
 const appStore = useAppStore()
-
-const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
-const siteLogo = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
-const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || '')
 
 // ==================== State ====================
 
@@ -331,10 +308,20 @@ const totpTempToken = ref<string>('')
 const totpUserEmailMasked = ref<string>('')
 const totpModalRef = ref<InstanceType<typeof TotpLoginModal> | null>(null)
 
+const REMEMBERED_EMAIL_STORAGE_KEY = 'sub2api_remembered_email'
+
 const formData = reactive({
   email: '',
   password: ''
 })
+
+// The auth store has no "remember session" flag, so the toggle persists the
+// e-mail address only (UI parity with the design, no behaviour invented).
+const rememberMe = ref<boolean>(false)
+
+const agreementLinks = computed(() =>
+  loginAgreementDocuments.value.filter((doc) => doc.id && doc.title?.trim())
+)
 
 const errors = reactive({
   email: '',
@@ -378,6 +365,16 @@ watch(validationToastMessage, (value, previousValue) => {
 // ==================== Lifecycle ====================
 
 onMounted(async () => {
+  try {
+    const savedEmail = localStorage.getItem(REMEMBERED_EMAIL_STORAGE_KEY)
+    if (savedEmail) {
+      formData.email = savedEmail
+      rememberMe.value = true
+    }
+  } catch {
+    // ignore storage failures (private mode)
+  }
+
   const expiredFlag = sessionStorage.getItem('auth_expired')
   if (expiredFlag) {
     sessionStorage.removeItem('auth_expired')
@@ -584,6 +581,7 @@ async function submitLoginWithCaptcha(captchaParam?: string): Promise<AliyunCapt
       return { captchaResult: true, bizResult: true }
     }
 
+    persistRememberedEmail()
     clearAllAffiliateReferralCodes()
     appStore.showSuccess(t('auth.loginSuccess'))
     const redirectTo = sanitizeAuthRedirect(router.currentRoute.value.query.redirect)
@@ -597,6 +595,18 @@ async function submitLoginWithCaptcha(captchaParam?: string): Promise<AliyunCapt
       return { captchaResult: false, bizResult: false }
     }
     return { captchaResult: true, bizResult: false }
+  }
+}
+
+function persistRememberedEmail(): void {
+  try {
+    if (rememberMe.value && formData.email.trim()) {
+      localStorage.setItem(REMEMBERED_EMAIL_STORAGE_KEY, formData.email.trim())
+    } else {
+      localStorage.removeItem(REMEMBERED_EMAIL_STORAGE_KEY)
+    }
+  } catch {
+    // ignore storage failures (private mode)
   }
 }
 
@@ -800,85 +810,10 @@ function handle2FACancel(): void {
 </script>
 
 <style scoped>
-.login-page {
-  min-height: 100vh;
-  display: grid;
-  grid-template-columns: 1.1fr 1fr;
-  background:
-    linear-gradient(color-mix(in oklch, var(--foreground) 2.5%, transparent) 1px, transparent 1px) 0 0 / 48px 48px,
-    linear-gradient(90deg, color-mix(in oklch, var(--foreground) 2.5%, transparent) 1px, transparent 1px) 0 0 / 48px 48px,
-    radial-gradient(circle at 0% 0%, color-mix(in oklch, var(--accent) 22%, transparent) 0%, transparent 30rem),
-    radial-gradient(circle at 100% 0%, color-mix(in oklch, var(--success) 14%, transparent) 0%, transparent 24rem),
-    var(--background);
-}
-
-.login-brand {
-  margin: 20px 0 20px 20px;
-  border-radius: 20px;
-  position: relative;
-  overflow: hidden;
-}
-
-.login-brand-inner {
-  min-height: calc(100vh - 40px);
+.login-title {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 28px 36px;
-}
-
-.login-brand-mark {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.login-brand-mark img {
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  object-fit: contain;
-}
-
-.login-brand-copy h1 {
-  margin: 0;
-  font-family: var(--display);
-  font-size: 46px;
-  line-height: 1.1;
-  font-weight: 800;
-  letter-spacing: -0.035em;
-}
-
-.login-brand-copy p,
-.login-brand-copy li {
-  color: var(--muted);
-  font-size: 15px;
-  line-height: 1.65;
-}
-
-.login-brand-copy ul {
-  margin: 16px 0 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.login-form-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px;
-}
-
-.login-card {
-  width: 440px;
-  max-width: 100%;
-  border-radius: 20px;
+  gap: 6px;
 }
 
 .login-title h2 {
@@ -890,24 +825,67 @@ function handle2FACancel(): void {
 }
 
 .login-title p {
-  margin: 6px 0 0;
+  margin: 0;
   font-size: 13.5px;
   color: var(--muted);
 }
 
 .login-form {
-  margin-top: 22px;
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .login-label {
-  display: block;
-  margin-bottom: 6px;
   font-size: 12.5px;
   font-weight: 600;
   color: var(--foreground);
+}
+
+.login-password {
+  position: relative;
+  display: block;
+}
+
+.login-password-input {
+  padding-right: 38px;
+}
+
+.login-eye {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 40px;
+  width: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.login-eye:hover {
+  color: var(--foreground);
+}
+
+.login-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+}
+
+.login-remember {
+  color: var(--muted);
+  font-size: 12.5px;
 }
 
 .login-link {
@@ -915,6 +893,19 @@ function handle2FACancel(): void {
   font-weight: 600;
   color: var(--accent);
   text-decoration: none;
+}
+
+.login-link:hover {
+  text-decoration: underline;
+}
+
+.login-submit {
+  width: 100%;
+  height: 42px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 12px 28px -12px var(--accent);
 }
 
 .login-divider {
@@ -933,24 +924,44 @@ function handle2FACancel(): void {
   background: var(--border);
 }
 
-.login-footer {
-  margin: 16px 0 0;
+.login-oauth {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* First entry spans the row; a lone trailing entry does too. */
+.login-oauth > :first-child,
+.login-oauth > :nth-child(even):last-child,
+.login-oauth-full {
+  grid-column: 1 / -1;
+}
+
+.login-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   text-align: center;
   font-size: 12.5px;
   color: var(--muted);
 }
 
+.login-terms {
+  font-size: 11.5px;
+}
+
+.login-terms-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.login-terms-link:hover {
+  text-decoration: underline;
+}
+
 @media (max-width: 900px) {
-  .login-page {
-    grid-template-columns: 1fr;
-  }
-
-  .login-brand {
-    display: none;
-  }
-
-  .login-form-wrap {
-    padding: 24px 16px;
+  .login-submit {
+    height: 44px;
   }
 }
 </style>

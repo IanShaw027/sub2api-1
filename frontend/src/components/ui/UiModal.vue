@@ -138,7 +138,7 @@ onBeforeUnmount(releaseOverlay)
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(0, 0, 0, 0.28);
+  background: var(--scrim);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
 }
@@ -157,13 +157,15 @@ onBeforeUnmount(releaseOverlay)
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 18px;
-  border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
 }
 
 .ui-modal-title {
+  font-family: var(--display);
   font-size: 16px;
   font-weight: 800;
+  letter-spacing: -0.02em;
   color: var(--foreground);
 }
 
@@ -171,11 +173,11 @@ onBeforeUnmount(releaseOverlay)
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
   border: 0;
-  border-radius: var(--radius-btn);
+  border-radius: 9px;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -187,13 +189,13 @@ onBeforeUnmount(releaseOverlay)
 }
 
 .ui-modal-body {
-  padding: 16px 18px;
+  padding: 16px 20px;
   overflow: auto;
 }
 
 .ui-modal-footer {
-  padding: 12px 18px 16px;
-  border-top: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--border);
   display: flex;
   justify-content: flex-end;
   gap: 8px;

@@ -16,7 +16,7 @@
  <!-- Row 2: description with top spacing -->
  <span
  v-if="description"
- class="mt-1.5 w-full whitespace-pre-line [overflow-wrap:anywhere] text-left text-xs leading-relaxed text-muted line-clamp-3"
+ class="mt-1.5 w-full whitespace-pre-line [overflow-wrap:anywhere] text-left text-[11.5px] leading-relaxed text-muted line-clamp-3"
  >
  {{ description }}
  </span>
@@ -26,7 +26,7 @@
  <div class="flex shrink-0 items-center gap-2 pt-0.5">
  <div class="flex shrink-0 flex-col items-end gap-1">
  <!-- Rate pill (platform color) -->
- <span v-if="rateMultiplier !== undefined" :class="['inline-flex items-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold', ratePillClass]">
+ <span v-if="rateMultiplier !== undefined" :class="['badge', ratePillClass]">
  <template v-if="hasCustomRate">
  <span class="mr-1 line-through opacity-50">{{ rateMultiplier }}x</span>
  <span class="font-bold">{{ userRateMultiplier }}x</span>
@@ -37,7 +37,7 @@
  </span>
  <span
  v-if="hasPeakRate"
- class="inline-flex items-center whitespace-nowrap rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700"
+ class="badge badge-tone-warning"
  :title="peakRateTitle"
  >
  {{ peakRateText }}
@@ -46,7 +46,7 @@
  <!-- Checkmark -->
  <svg
  v-if="showCheckmark && selected"
- class="h-4 w-4 shrink-0 text-accent"
+ class="h-3.5 w-3.5 shrink-0 text-accent"
  fill="none"
  stroke="currentColor"
  viewBox="0 0 24 24"
@@ -127,13 +127,13 @@ const peakRateTitle = computed(() => {
 const ratePillClass = computed(() => {
  switch (props.platform) {
  case 'anthropic':
- return 'bg-amber-50 text-amber-700'
+ return 'badge-tone-warning'
  case 'openai':
- return 'bg-green-50 text-green-700'
+ return 'badge-tone-success'
  case 'gemini':
- return 'bg-sky-50 text-sky-700'
+ return 'badge-tone-accent'
  default: // antigravity and others
- return 'bg-violet-50 text-violet-700'
+ return 'badge-tone-muted'
  }
 })
 </script>

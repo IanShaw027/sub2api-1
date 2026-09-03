@@ -3,7 +3,7 @@
  <button
  @click="toggleDropdown"
  :disabled="switching"
- class="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-muted transition-colors hover:bg-surface-2"
+ class="btn btn-ghost btn-sm"
  :title="currentLocale?.name"
  >
  <span class="text-base">{{ currentLocale?.flag }}</span>
@@ -19,18 +19,15 @@
  <transition name="dropdown">
  <div
  v-if="isOpen"
- class="absolute right-0 z-50 mt-1 w-32 overflow-hidden rounded-lg border border-line bg-surface shadow-lg"
+ class="dropdown right-0 mt-1 w-36"
  >
  <button
  v-for="locale in availableLocales"
  :key="locale.code"
  :disabled="switching"
  @click="selectLocale(locale.code)"
- class="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground transition-colors hover:bg-surface-2"
- :class="{
- 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent':
- locale.code === currentLocaleCode
- }"
+ class="dropdown-item"
+ :class="{ 'is-active': locale.code === currentLocaleCode }"
  >
  <span class="text-base">{{ locale.flag }}</span>
  <span>{{ locale.name }}</span>

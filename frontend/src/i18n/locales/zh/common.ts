@@ -200,6 +200,14 @@ export default {
     },
     breadcrumbAdmin: '管理后台',
     breadcrumbUser: '控制台',
+    search: '搜索',
+    searchPlaceholder: '搜索账号、密钥、用户…',
+    searchEmpty: '没有匹配的页面',
+    searchHint: '↑↓ 选择 · Enter 打开 · Esc 关闭',
+    balance: '余额',
+    theme: '主题',
+    notifications: '通知',
+    pages: '页面',
     lightMode: '浅色模式',
     darkMode: '深色模式',
     collapse: '收起',
@@ -231,6 +239,12 @@ export default {
 
   // Auth
   auth: {
+    brand: {
+      serviceNormal: '服务正常'
+    },
+    agreementNotice: '登录即表示同意',
+    agreementSeparator: '与',
+    signUpAgreementNotice: '注册即表示同意',
     welcomeBack: '欢迎回来',
     signInToAccount: '登录您的账户以继续',
     signIn: '登录',

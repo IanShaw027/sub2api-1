@@ -1,29 +1,42 @@
 <template>
- <button
- type="button"
- @click="toggle"
- class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
- :class="[modelValue ? 'bg-accent' : 'bg-surface-2']"
- role="switch"
- :aria-checked="modelValue"
- >
- <span
- class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-surface shadow ring-0 transition duration-200 ease-in-out"
- :class="[modelValue ? 'translate-x-5' : 'translate-x-0']"
- />
- </button>
+  <button
+    type="button"
+    @click="toggle"
+    class="switch toggle-switch"
+    :class="{ 'switch-active': modelValue }"
+    role="switch"
+    :aria-checked="modelValue"
+  >
+    <span class="switch-thumb" aria-hidden="true" />
+  </button>
 </template>
 
 <script setup lang="ts">
 const props = defineProps<{
- modelValue: boolean
+  modelValue: boolean
 }>()
 
 const emit = defineEmits<{
- (e: 'update:modelValue', value: boolean): void
+  (e: 'update:modelValue', value: boolean): void
 }>()
 
 function toggle() {
- emit('update:modelValue', !props.modelValue)
+  emit('update:modelValue', !props.modelValue)
 }
 </script>
+
+<style scoped>
+/* Geometry (36×20, 16px thumb, accent + inset shadow when on) comes from the
+   global `.switch` / `.switch-thumb` / `.switch-active` recipe. */
+.toggle-switch {
+  padding: 0;
+  border-width: 1px;
+  border-style: solid;
+  appearance: none;
+}
+
+.toggle-switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+</style>

@@ -205,7 +205,11 @@ describe('Tencent captcha action gate', () => {
     const wrapper = mountLogin()
     await flushPromises()
 
-    await wrapper.get('button.btn-secondary.w-full').trigger('click')
+    // The Passkey button's classes moved from `btn-secondary w-full` to the
+    // shared `btn btn-secondary oauth-btn` treatment during the Glass
+    // redesign; it's the only `.oauth-btn` button in this mount (the other
+    // OAuth provider sections are stubbed to `true`).
+    await wrapper.get('button.oauth-btn').trigger('click')
     await flushPromises()
 
     expect(verifyActionMock).toHaveBeenCalledOnce()
@@ -221,7 +225,7 @@ describe('Tencent captcha action gate', () => {
     const wrapper = mountLogin()
     await flushPromises()
 
-    await wrapper.get('button.btn-secondary.w-full').trigger('click')
+    await wrapper.get('button.oauth-btn').trigger('click')
     await flushPromises()
 
     expect(loginWithPasskeyMock).not.toHaveBeenCalled()

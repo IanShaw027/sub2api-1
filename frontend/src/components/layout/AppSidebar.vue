@@ -899,6 +899,9 @@ onBeforeUnmount(() => {
 }
 
 .sidebar-brand {
+ display: flex;
+ align-items: center;
+ gap: 8px;
  min-width: 0;
  flex: 1 1 auto;
  white-space: nowrap;
@@ -919,6 +922,7 @@ onBeforeUnmount(() => {
 
 .sidebar-brand-title {
  display: block;
+ min-width: 0;
  overflow: hidden;
  text-overflow: ellipsis;
  white-space: nowrap;

@@ -66,8 +66,12 @@ const { isMobile } = useIsMobile()
 }
 
 .ui-filter-bar-search {
-  flex: 1 1 220px;
+  flex: 0 1 260px;
   min-width: 180px;
+}
+
+.ui-filter-bar-trailing {
+  margin-left: auto;
 }
 
 .ui-filter-bar-filters,

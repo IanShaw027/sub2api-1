@@ -18,9 +18,9 @@ describe('StatCard', () => {
     expect(wrapper.classes()).toContain('glass-card')
   })
 
-  it('uses 24px tabular numbers', () => {
+  it('uses 28px tabular numbers', () => {
     const src = readUi('StatCard.vue')
-    expect(src).toContain('font-size: 24px')
+    expect(src).toContain('font-size: 28px')
     expect(src).toContain('font-variant-numeric: tabular-nums')
   })
 })

@@ -46,7 +46,7 @@
  <div v-else-if="entry.status === 'error'" class="mt-0.5 text-xs">
  <button
  type="button"
- class="text-red-600 underline decoration-dashed underline-offset-2 hover:text-red-700"
+ class="text-danger-text underline decoration-dashed underline-offset-2 hover:opacity-80"
  @click="handleFetch"
  >
  {{ t('usage.ipGeo.failed') }}

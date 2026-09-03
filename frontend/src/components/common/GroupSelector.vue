@@ -6,28 +6,28 @@
  </label>
  <div
  v-if="isSearchable"
- class="flex items-center gap-2 rounded-t-lg border border-b-0 border-line bg-surface-2 px-3 py-2"
+ class="flex h-9 items-center gap-2 rounded-t-[12px] border border-b-0 border-line bg-surface-2 px-3"
  >
  <Icon name="search" size="sm" class="shrink-0 text-muted" />
  <input
  v-model="searchText"
  type="text"
  :placeholder="t('common.searchPlaceholder')"
- class="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted focus:outline-none"
+ class="flex-1 bg-transparent text-[13px] text-foreground placeholder:text-muted focus:outline-none"
  />
  </div>
  <div
  :class="[
  'grid max-h-32 grid-cols-2 gap-1 overflow-y-auto p-2',
  isSearchable
- ? 'rounded-b-lg border border-t-0 border-line bg-surface-2'
- : 'rounded-lg border border-line bg-surface-2'
+ ? 'rounded-b-[12px] border border-t-0 border-line bg-surface-2'
+ : 'rounded-[12px] border border-line bg-surface-2'
  ]"
  >
  <label
  v-for="group in filteredGroups"
  :key="group.id"
- class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 transition-colors hover:bg-surface"
+ class="flex cursor-pointer items-center gap-2 rounded-[9px] px-2 py-1.5 transition-colors hover:bg-surface"
  :title="t('admin.groups.rateAndAccounts', { rate: group.rate_multiplier, count: group.account_count || 0 })"
  >
  <input
@@ -35,7 +35,7 @@
  :value="group.id"
  :checked="modelValue.includes(group.id)"
  @change="handleChange(group.id, ($event.target as HTMLInputElement).checked)"
- class="h-3.5 w-3.5 shrink-0 rounded border-line text-accent focus:ring-accent"
+ class="h-4 w-4 shrink-0 rounded-[5px] border-line accent-[var(--accent)]"
  />
  <GroupBadge
  :name="group.name"
@@ -44,11 +44,11 @@
  :rate-multiplier="group.rate_multiplier"
  class="min-w-0 flex-1"
  />
- <span class="shrink-0 text-xs text-muted">{{ group.account_count || 0 }}</span>
+ <span class="shrink-0 text-[11.5px] text-muted">{{ group.account_count || 0 }}</span>
  </label>
  <div
  v-if="filteredGroups.length === 0"
- class="col-span-2 py-2 text-center text-sm text-muted"
+ class="col-span-2 py-2 text-center text-[12.5px] text-muted"
  >
  {{ t('common.noGroupsAvailable') }}
  </div>

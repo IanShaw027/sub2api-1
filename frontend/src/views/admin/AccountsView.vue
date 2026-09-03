@@ -1,163 +1,78 @@
 <template>
 
  <AppLayout>
- <PageHeader :title="t('admin.accounts.title')" :description="t('admin.accounts.description')">
+ <PageHeader class="acct-header" :title="t('admin.accounts.title')" :description="t('admin.accounts.description')">
  <template #actions>
  <AccountTableActions
  :loading="loading"
  @refresh="handleManualRefresh"
  @create="showCreate = true"
  >
- <template #beforeCreate>
- <Button variant="secondary" @click="showCapacityForecast = true">
- <Icon name="chartBar" size="sm" />
- <span>{{ t('admin.accounts.capacityForecast.action') }}</span>
- </Button>
- </template>
  <template #after>
- <!-- Auto Refresh Dropdown -->
- <div class="relative" ref="autoRefreshDropdownRef">
- <button
- @click="
- showAutoRefreshDropdown = !showAutoRefreshDropdown;
- showAccountToolsDropdown = false
- "
- class="btn-glass-secondary px-2 md:px-3"
- :title="t('admin.accounts.autoRefresh')"
- >
- <Icon name="refresh" size="sm" :class="[autoRefreshEnabled ? 'animate-spin' : '']" />
- <span class="hidden md:inline">
- {{
- autoRefreshEnabled
- ? t('admin.accounts.autoRefreshCountdown', { seconds: autoRefreshCountdown })
- : t('admin.accounts.autoRefresh')
- }}
- </span>
+ <Button variant="secondary" @click="openBulkEditFromHeader">
+ {{ t('admin.accounts.bulkEditHeader') }}
+ </Button>
+
+ <!-- Import / Export -->
+ <div class="acct-menu" ref="importExportDropdownRef">
+ <Button variant="secondary" :aria-expanded="showImportExportDropdown" @click="toggleImportExportDropdown">
+ <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+ <span>{{ t('admin.accounts.importExport') }}</span>
+ </Button>
+ <div v-if="showImportExportDropdown" class="dropdown acct-dropdown">
+ <div class="dropdown-label">{{ t('admin.accounts.dataActions') }}</div>
+ <button type="button" class="dropdown-item" @click="openSyncFromCrsFromMenu">
+ <Icon name="sync" size="sm" />
+ <span>{{ t('admin.accounts.syncFromCrs') }}</span>
  </button>
- <div
- v-if="showAutoRefreshDropdown"
- class="absolute right-0 z-50 mt-2 w-56 origin-top-right rounded-lg border border-line bg-surface shadow-lg "
- >
- <div class="p-2">
- <button
- @click="setAutoRefreshEnabled(!autoRefreshEnabled)"
- class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-foreground hover:bg-surface-2 "
- >
- <span>{{ t('admin.accounts.enableAutoRefresh') }}</span>
- <Icon v-if="autoRefreshEnabled" name="check" size="sm" class="text-accent" />
+ <button type="button" class="dropdown-item" @click="openImportDataFromMenu">
+ <Icon name="upload" size="sm" />
+ <span>{{ t('admin.accounts.dataImport') }}</span>
  </button>
- <div class="my-1 border-t border-line "></div>
- <button
- v-for="sec in autoRefreshIntervals"
- :key="sec"
- @click="setAutoRefreshInterval(sec)"
- class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-foreground hover:bg-surface-2 "
- >
- <span>{{ autoRefreshIntervalLabel(sec) }}</span>
- <Icon v-if="autoRefreshIntervalSeconds === sec" name="check" size="sm" class="text-accent" />
+ <button type="button" class="dropdown-item" @click="openExportDataFromMenu">
+ <Icon name="download" size="sm" />
+ <span>{{ selIds.length ? t('admin.accounts.dataExportSelected') : t('admin.accounts.dataExport') }}</span>
+ <span v-if="selIds.length" class="acct-dropdown-count">{{ selIds.length }}</span>
  </button>
- </div>
  </div>
  </div>
 
- <!-- More Tools Dropdown -->
- <div class="relative" ref="accountToolsDropdownRef">
- <button
+ <!-- More tools -->
+ <div class="acct-menu" ref="accountToolsDropdownRef">
+ <Button
  ref="accountToolsTriggerRef"
- @click="toggleAccountToolsDropdown"
- class="btn-glass-secondary px-2 md:px-3"
- :title="t('admin.accounts.moreActions')"
+ variant="secondary"
  :aria-expanded="showAccountToolsDropdown"
+ @click="toggleAccountToolsDropdown"
  >
- <Icon name="more" size="sm" class="md:mr-1.5" />
- <span class="hidden md:inline">{{ t('admin.accounts.moreActions') }}</span>
- <Icon name="chevronDown" size="xs" class="ml-1 hidden md:inline" />
- </button>
+ <span>{{ t('common.more') }}</span>
+ <Icon name="chevronDown" size="xs" />
+ </Button>
  <Teleport to="body">
  <div
  v-if="showAccountToolsDropdown"
- class="fixed z-[9999] origin-top-right overflow-hidden rounded-lg border border-line bg-surface shadow-xl "
+ class="dropdown acct-tools-dropdown"
  :style="accountToolsDropdownStyle"
  @click.stop
  >
- <div class="overflow-y-auto p-2" :style="{ maxHeight: `${accountToolsDropdownPosition.maxHeight}px` }">
- <div class="px-2 py-2">
- <div class="text-xs font-semibold uppercase tracking-wide text-muted ">
- {{ t('admin.accounts.dataActions') }}
- </div>
- </div>
- <button class="account-tools-menu-item" @click="openSyncFromCrs">
- <span class="account-tools-menu-icon bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent ">
- <Icon name="sync" size="sm" />
- </span>
- <span class="flex-1 text-left">{{ t('admin.accounts.syncFromCrs') }}</span>
+ <div class="acct-tools-scroll" :style="{ maxHeight: `${accountToolsDropdownPosition.maxHeight}px` }">
+ <div class="dropdown-label">{{ t('admin.accounts.toolActions') }}</div>
+ <button type="button" class="dropdown-item" @click="openCapacityForecast">
+ <Icon name="chartBar" size="sm" />
+ <span>{{ t('admin.accounts.capacityForecast.action') }}</span>
  </button>
- <button class="account-tools-menu-item" @click="openImportData">
- <span class="account-tools-menu-icon bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text ">
- <Icon name="upload" size="sm" />
- </span>
- <span class="flex-1 text-left">{{ t('admin.accounts.dataImport') }}</span>
- </button>
- <button class="account-tools-menu-item" @click="openExportDataDialogFromMenu">
- <span class="account-tools-menu-icon bg-violet-500/15 text-violet-600 ">
- <Icon name="download" size="sm" />
- </span>
- <span class="flex-1 text-left">
- {{ selIds.length ? t('admin.accounts.dataExportSelected') : t('admin.accounts.dataExport') }}
- </span>
- <span
- v-if="selIds.length"
- class="rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent "
- >
- {{ t('admin.accounts.selectedCount', { count: selIds.length }) }}
- </span>
- </button>
-
- <div class="my-2 border-t border-line "></div>
- <div class="px-2 py-2">
- <div class="text-xs font-semibold uppercase tracking-wide text-muted ">
- {{ t('admin.accounts.toolActions') }}
- </div>
- </div>
- <button class="account-tools-menu-item" @click="openErrorPassthrough">
- <span class="account-tools-menu-icon bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text ">
+ <button type="button" class="dropdown-item" @click="openErrorPassthrough">
  <Icon name="shield" size="sm" />
- </span>
- <span class="flex-1 text-left">{{ t('admin.errorPassthrough.title') }}</span>
+ <span>{{ t('admin.errorPassthrough.title') }}</span>
  </button>
- <button class="account-tools-menu-item" @click="openTLSFingerprintProfiles">
- <span class="account-tools-menu-icon bg-slate-500/15 text-slate-600 ">
+ <button type="button" class="dropdown-item" @click="openTLSFingerprintProfiles">
  <Icon name="lock" size="sm" />
- </span>
- <span class="flex-1 text-left">{{ t('admin.tlsFingerprintProfiles.title') }}</span>
+ <span>{{ t('admin.tlsFingerprintProfiles.title') }}</span>
  </button>
- <button class="account-tools-menu-item" @click="openTLSFingerprintRouters">
- <span class="account-tools-menu-icon bg-slate-500/15 text-slate-600 ">
+ <button type="button" class="dropdown-item" @click="openTLSFingerprintRouters">
  <Icon name="lock" size="sm" />
- </span>
- <span class="flex-1 text-left">{{ t('admin.tlsFingerprintRouters.title') }}</span>
+ <span>{{ t('admin.tlsFingerprintRouters.title') }}</span>
  </button>
-
- <div class="my-2 border-t border-line "></div>
- <div class="px-2 py-2">
- <div class="flex items-center justify-between gap-3">
- <span class="text-xs font-semibold uppercase tracking-wide text-muted ">
- {{ t('admin.accounts.viewColumns') }}
- </span>
- <Icon name="grid" size="sm" class="text-muted" />
- </div>
- </div>
- <div class="grid grid-cols-1 gap-1">
- <button
- v-for="col in toggleableColumns"
- :key="col.key"
- @click="toggleColumn(col.key)"
- class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-foreground transition-colors hover:bg-surface-2 "
- >
- <span class="truncate">{{ col.label }}</span>
- <Icon v-if="isColumnVisible(col.key)" name="check" size="sm" class="text-accent" />
- </button>
- </div>
  </div>
  </div>
  </Teleport>
@@ -166,10 +81,26 @@
  </AccountTableActions>
  </template>
  </PageHeader>
- <TablePageLayout>
+ <TablePageLayout class="acct-layout">
  <template #filters>
- <FilterBar :search-placeholder="t('admin.accounts.searchAccounts')">
- <template #search>
+ <div class="acct-summary" role="group" :aria-label="t('admin.accounts.columns.status')">
+ <button
+ v-for="chip in statusChips"
+ :key="chip.value || 'all'"
+ type="button"
+ class="summary-chip"
+ :class="{ 'is-active': params.status === chip.value }"
+ :data-testid="`account-summary-${chip.value || 'all'}`"
+ @click="applyStatusChip(chip.value)"
+ >
+ <span class="summary-chip-label">
+ <span class="summary-chip-dot" :style="{ background: chip.color }"></span>
+ {{ chip.label }}
+ </span>
+ <span class="summary-chip-value num">{{ chip.count }}</span>
+ </button>
+ </div>
+ <div class="acct-filter-row">
  <AccountTableFilters
  v-model:searchQuery="params.search"
  :filters="params"
@@ -178,8 +109,73 @@
  @change="debouncedReload"
  @update:searchQuery="debouncedReload"
  />
- </template>
- </FilterBar>
+
+ <!-- Auto refresh -->
+ <div class="acct-menu" ref="autoRefreshDropdownRef">
+ <button
+ type="button"
+ class="filter-pill"
+ :class="{ 'is-active': autoRefreshEnabled }"
+ :title="t('admin.accounts.autoRefresh')"
+ @click="toggleAutoRefreshDropdown"
+ >
+ <Icon name="refresh" size="xs" :class="autoRefreshEnabled ? 'animate-spin' : ''" />
+ <span class="filter-pill-value">
+ {{ autoRefreshEnabled ? t('admin.accounts.autoRefreshCountdown', { seconds: autoRefreshCountdown }) : t('admin.accounts.autoRefresh') }}
+ </span>
+ </button>
+ <div v-if="showAutoRefreshDropdown" class="dropdown acct-dropdown">
+ <button type="button" class="dropdown-item" :class="{ 'is-active': autoRefreshEnabled }" @click="setAutoRefreshEnabled(!autoRefreshEnabled)">
+ <span class="acct-dropdown-text">{{ t('admin.accounts.enableAutoRefresh') }}</span>
+ <Icon v-if="autoRefreshEnabled" name="check" size="sm" />
+ </button>
+ <div class="dropdown-divider"></div>
+ <button
+ v-for="sec in autoRefreshIntervals"
+ :key="sec"
+ type="button"
+ class="dropdown-item"
+ :class="{ 'is-active': autoRefreshIntervalSeconds === sec }"
+ @click="setAutoRefreshInterval(sec)"
+ >
+ <span class="acct-dropdown-text">{{ autoRefreshIntervalLabel(sec) }}</span>
+ <Icon v-if="autoRefreshIntervalSeconds === sec" name="check" size="sm" />
+ </button>
+ </div>
+ </div>
+
+ <span class="acct-selection-count">
+ {{ t('admin.accounts.selectedOfTotal') }}
+ <b>{{ selIds.length }}</b> / {{ pagination.total }}
+ </span>
+
+ <!-- Column settings -->
+ <div class="acct-menu" ref="columnsDropdownRef">
+ <button
+ type="button"
+ class="acct-icon-pill"
+ :title="t('admin.accounts.viewColumns')"
+ :aria-expanded="showColumnsDropdown"
+ @click="toggleColumnsDropdown"
+ >
+ <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" /></svg>
+ </button>
+ <div v-if="showColumnsDropdown" class="dropdown acct-dropdown acct-columns-dropdown">
+ <div class="dropdown-label">{{ t('admin.accounts.viewColumns') }}</div>
+ <button
+ v-for="col in toggleableColumns"
+ :key="col.key"
+ type="button"
+ class="dropdown-item"
+ :class="{ 'is-active': isColumnVisible(col.key) }"
+ @click="toggleColumn(col.key)"
+ >
+ <span class="acct-dropdown-text">{{ col.label }}</span>
+ <Icon v-if="isColumnVisible(col.key)" name="check" size="sm" />
+ </button>
+ </div>
+ </div>
+ </div>
  <div v-if="hasPendingListSync" class="acct-pending-sync">
  <span>{{ t('admin.accounts.listPendingSyncHint') }}</span>
  <Button variant="secondary" size="sm" @click="syncPendingListChanges">
@@ -216,27 +212,27 @@
  default-sort-key="name"
  default-sort-order="asc"
  :sort-storage-key="ACCOUNT_SORT_STORAGE_KEY"
- :estimate-row-height="156"
+ :estimate-row-height="60"
  :overscan="5"
  :virtualize-threshold="50"
  >
  <template #header-select>
  <input
  type="checkbox"
- class="h-4 w-4 cursor-pointer rounded border-line text-accent focus:ring-accent"
+ class="acct-checkbox"
  :checked="allVisibleSelected"
  @click.stop
  @change="toggleSelectAllVisible($event)"
  />
  </template>
  <template #cell-select="{ row }">
- <input type="checkbox" :checked="isSelected(row.id)" @change="toggleSel(row.id)" class="rounded border-line text-accent focus:ring-accent" />
+ <input type="checkbox" class="acct-checkbox" :checked="isSelected(row.id)" @change="toggleSel(row.id)" />
  </template>
  <template #cell-id="{ value }">
- <span class="font-mono text-xs text-muted ">#{{ value }}</span>
+ <span class="acct-mono-muted">#{{ value }}</span>
  </template>
  <template #cell-name="{ row, value }">
- <div class="flex flex-col">
+ <div class="acct-name-cell">
  <HelpTooltip
  v-if="accountHomepageUrl(row)"
  :content="accountHomepageUrl(row)"
@@ -248,52 +244,51 @@
  :href="accountHomepageUrl(row)"
  target="_blank"
  rel="noopener noreferrer"
- :class="[
- 'border-b border-dotted font-medium',
- hasCyberAlert(row)
- ? 'border-red-300 text-danger-text '
- : 'border-line text-foreground  '
- ]"
+ class="acct-name-link"
+ :class="{ 'is-alert': hasCyberAlert(row) }"
  >
  {{ value }}
  </a>
  </template>
  </HelpTooltip>
+ <span v-else class="acct-name-text" :class="{ 'is-alert': hasCyberAlert(row) }">{{ value }}</span>
+ <span class="acct-name-sub" :title="accountIdentityTitle(row)">
+ #{{ row.id }}<template v-if="accountGroupLabel(row)"> · {{ accountGroupLabel(row) }}</template>
+ </span>
  <span
- v-else
- :class="hasCyberAlert(row) ? 'font-medium text-danger-text ' : 'font-medium text-foreground '"
- >{{ value }}</span>
+ v-if="accountDisplayEmail(row)"
+ class="acct-name-email"
+ :title="accountDisplayEmail(row) + (row.parent_chatgpt_account_id ? ' · ' + row.parent_chatgpt_account_id : '')"
+ >
+ {{ accountDisplayEmail(row) }}
+ </span>
  <button
  v-if="isOpenAIOAuthAccount(row) && row.cyber_count != null"
  type="button"
- :class="[
- 'mt-0.5 inline-flex self-start items-center gap-1 text-xs font-medium transition-colors',
- hasCyberAlert(row)
- ? 'text-danger-text hover:text-danger-text '
- : 'text-muted hover:text-accent '
- ]"
+ class="acct-cyber-btn"
+ :class="{ 'is-alert': hasCyberAlert(row) }"
  :title="row.cyber_latest_at ? t('admin.accounts.cyber.latest', { time: formatDateTime(row.cyber_latest_at) }) : t('admin.accounts.cyber.viewDetail')"
  @click="openCyberEvents(row)"
  >
  <Icon name="shield" size="xs" />
  <span>Cyber: {{ row.cyber_count }}</span>
  </button>
- <span
- v-if="accountDisplayEmail(row)"
- class="text-xs text-muted truncate max-w-[200px]"
- :title="accountDisplayEmail(row) + (row.parent_chatgpt_account_id ? ' · ' + row.parent_chatgpt_account_id : '')"
- >
- {{ accountDisplayEmail(row) }}
- </span>
  </div>
  </template>
  <template #cell-notes="{ value }">
- <span v-if="value" :title="value" class="block max-w-xs truncate text-sm text-muted ">{{ value }}</span>
- <span v-else class="text-sm text-muted ">-</span>
+ <span v-if="value" :title="value" class="acct-note-text">{{ value }}</span>
+ <span v-else class="acct-muted-text">-</span>
+ </template>
+ <template #cell-platform="{ row }">
+ <div class="acct-platform-cell">
+ <span class="acct-platform-tile" :style="{ background: platformTileBackground(row.platform) }">
+ <PlatformIcon :platform="row.platform" size="xs" />
+ </span>
+ <span class="acct-platform-name">{{ platformLabel(row.platform) }}</span>
+ </div>
  </template>
  <template #cell-platform_type="{ row }">
- <div class="flex min-w-0 flex-col gap-1">
- <div class="flex flex-wrap items-center gap-1">
+ <div class="acct-type-cell">
  <PlatformTypeBadge :platform="row.platform" :type="row.type"
  :auth-mode="getOpenAIAuthMode(row)"
  :plan-type="getAccountPlanType(row)"
@@ -301,20 +296,16 @@
  :subscription-expires-at="row.credentials?.subscription_expires_at || row.parent_subscription_expires_at" />
  <span
  v-if="getAntigravityTierLabel(row)"
- :class="['inline-block rounded px-1.5 py-0.5 text-[10px] font-medium', getAntigravityTierClass(row)]"
+ :class="['tag', getAntigravityTierClass(row)]"
  >
  {{ getAntigravityTierLabel(row) }}
  </span>
- </div>
  <div
  v-if="getOpenAICompactMeta(row)"
- :class="[
- 'inline-flex items-center gap-1.5 pl-0.5 text-[11px] font-medium leading-4',
- getOpenAICompactMeta(row)?.className
- ]"
+ :class="['acct-compact-meta', getOpenAICompactMeta(row)?.className]"
  :title="getOpenAICompactTitle(row)"
  >
- <span :class="['h-1.5 w-1.5 rounded-full', getOpenAICompactMeta(row)?.dotClass]" />
+ <span :class="['acct-compact-dot', getOpenAICompactMeta(row)?.dotClass]" />
  <span>{{ getOpenAICompactMeta(row)?.label }}</span>
  </div>
  </div>
@@ -323,14 +314,16 @@
  <AccountCapacityCell :account="row" />
  </template>
  <template #cell-status="{ row }">
- <div class="flex items-center gap-1.5">
  <AccountStatusIndicator :account="row" @show-temp-unsched="handleShowTempUnsched" />
- </div>
  </template>
  <template #cell-schedulable="{ row }">
- <button @click="handleToggleSchedulable(row)" :disabled="togglingSchedulable === row.id" class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 " :class="[row.schedulable ? 'bg-accent hover:bg-accent' : 'bg-surface-3 hover:bg-surface-3 ']" :title="row.schedulable ? t('admin.accounts.schedulableEnabled') : t('admin.accounts.schedulableDisabled')">
- <span class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-surface shadow ring-0 transition duration-200 ease-in-out" :class="[row.schedulable ? 'translate-x-4' : 'translate-x-0']" />
- </button>
+ <ToggleSwitch
+ size="compact"
+ :model-value="!!row.schedulable"
+ :disabled="togglingSchedulable === row.id"
+ :aria-label="row.schedulable ? t('admin.accounts.schedulableEnabled') : t('admin.accounts.schedulableDisabled')"
+ @update:model-value="handleToggleSchedulable(row)"
+ />
  </template>
  <template #cell-today_stats="{ row }">
  <AccountTodayStatsCell
@@ -363,32 +356,30 @@
  />
  </template>
  <template #cell-proxy="{ row }">
- <div class="flex flex-col gap-1">
+ <div class="acct-proxy-cell">
  <div v-if="row.proxy" class="flex items-center gap-2">
- <span class="text-sm text-foreground ">{{ row.proxy.name }}</span>
- <span v-if="row.proxy.country_code" class="text-xs text-muted ">
- ({{ row.proxy.country_code }})
- </span>
+ <span class="acct-proxy-name">{{ row.proxy.name }}</span>
+ <span v-if="row.proxy.country_code" class="acct-muted-text">({{ row.proxy.country_code }})</span>
  </div>
- <span v-else class="text-sm text-muted ">-</span>
- <div v-if="row.proxy && row.proxy.expires_at" class="flex items-center gap-2 text-xs">
- <span class="text-muted ">{{ formatDateTime(row.proxy.expires_at) }}</span>
+ <span v-else class="acct-muted-text">-</span>
+ <div v-if="row.proxy && row.proxy.expires_at" class="flex items-center gap-2">
+ <span class="acct-muted-text">{{ formatDateTime(row.proxy.expires_at) }}</span>
  <span :class="proxyExpiryBadge(row.proxy)">{{ proxyExpiryText(row.proxy) }}</span>
  </div>
  <div v-if="row.proxy_fallback_origin_id" class="flex items-center gap-1">
- <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-yellow-800 " :title="t('admin.accounts.fallbackActiveTip', { origin: row.proxy_fallback_origin_name })">
+ <span class="tag tag-warning" :title="t('admin.accounts.fallbackActiveTip', { origin: row.proxy_fallback_origin_name })">
  {{ t('admin.accounts.fallbackActive') }}
  </span>
- <button class="text-xs px-1.5 py-0.5 rounded border border-line text-muted hover:bg-surface-2 " @click="onRevertFallback(row)">{{ t('admin.accounts.revertProxy') }}</button>
+ <button type="button" class="acct-inline-btn" @click="onRevertFallback(row)">{{ t('admin.accounts.revertProxy') }}</button>
  </div>
  </div>
  </template>
  <template #cell-rate_multiplier="{ row }">
- <span class="inline-flex items-center gap-1 text-sm font-mono text-foreground ">
+ <span class="acct-rate-cell">
  <span>{{ formatMultiplier(row.rate_multiplier ?? 1) }}x</span>
  <span
  v-if="row.extra?.upstream_billing_rate_sync_enabled === true"
- class="inline-flex cursor-help text-success-text "
+ class="acct-rate-sync"
  :aria-label="t('admin.accounts.upstreamBilling.syncedRateTooltip')"
  :title="t('admin.accounts.upstreamBilling.syncedRateTooltip')"
  data-testid="account-rate-sync-indicator"
@@ -415,7 +406,7 @@
  />
  </template>
  <template #cell-priority="{ value }">
- <span class="text-sm text-foreground ">{{ value }}</span>
+ <span class="acct-priority-cell num">{{ value }}</span>
  </template>
  <template #header-scheduler_score="{ column }">
  <div class="flex items-center">
@@ -424,67 +415,65 @@
  </div>
  </template>
  <template #cell-scheduler_score="{ row }">
- <div v-if="getSchedulerScoreRows(row).length" class="flex min-w-[7rem] flex-col gap-0.5 font-mono text-[11px] leading-4">
+ <div v-if="getSchedulerScoreRows(row).length" class="acct-score-cell">
  <div
  v-for="score in getSchedulerScoreRows(row)"
  :key="String(score.group_id)"
- class="flex items-center gap-1 whitespace-nowrap text-foreground "
+ class="acct-score-row"
  :title="`${formatSchedulerScoreGroup(score)} / ${formatSchedulerScore(score.base_score)} / ${formatStickySchedulerScore(score)}`"
  >
- <span class="max-w-[4.75rem] truncate text-muted ">{{ formatSchedulerScoreGroup(score) }}</span>
- <span class="text-muted ">/</span>
+ <span class="acct-score-group">{{ formatSchedulerScoreGroup(score) }}</span>
+ <span class="acct-muted-text">/</span>
  <span>{{ formatSchedulerScore(score.base_score) }}</span>
- <span class="text-muted ">/</span>
- <span class="text-accent ">{{ formatStickySchedulerScore(score) }}</span>
+ <span class="acct-muted-text">/</span>
+ <span class="text-accent">{{ formatStickySchedulerScore(score) }}</span>
  </div>
  </div>
- <span v-else class="text-sm text-muted ">-</span>
+ <span v-else class="acct-muted-text">-</span>
  </template>
  <template #cell-last_used_at="{ value }">
- <span class="text-sm text-muted ">{{ formatRelativeTime(value) }}</span>
+ <span class="acct-last-used">{{ formatRelativeTime(value) }}</span>
  </template>
  <template #cell-created_at="{ value }">
- <span class="text-sm text-muted ">{{ formatDateTime(value) }}</span>
+ <span class="acct-last-used">{{ formatDateTime(value) }}</span>
  </template>
  <template #cell-expires_at="{ row, value }">
- <div class="flex flex-col items-start gap-1">
- <span class="text-sm text-muted ">{{ formatExpiresAt(value) }}</span>
+ <div class="acct-expires-cell">
+ <span class="acct-last-used">{{ formatExpiresAt(value) }}</span>
  <div v-if="isExpired(value) || (row.auto_pause_on_expired && value)" class="flex items-center gap-1">
- <span
- v-if="isExpired(value)"
- class="inline-flex items-center rounded-md bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-2 py-0.5 text-xs font-medium text-warning-text "
- >
- {{ t('admin.accounts.expired') }}
- </span>
- <span
- v-if="row.auto_pause_on_expired && value"
- class="inline-flex items-center rounded-md bg-[color-mix(in_oklch,var(--success)_16%,transparent)] px-2 py-0.5 text-xs font-medium text-success-text "
- >
- {{ t('admin.accounts.autoPauseOnExpired') }}
- </span>
+ <span v-if="isExpired(value)" class="tag tag-warning">{{ t('admin.accounts.expired') }}</span>
+ <span v-if="row.auto_pause_on_expired && value" class="tag tag-success">{{ t('admin.accounts.autoPauseOnExpired') }}</span>
  </div>
  </div>
  </template>
  <template #cell-actions="{ row }">
- <div class="flex items-center gap-1">
- <button @click="handleEdit(row)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-accent ">
- <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
- <span class="text-xs">{{ t('common.edit') }}</span>
+ <div class="acct-actions-cell">
+ <button type="button" class="icon-btn" :title="t('common.edit')" :aria-label="t('common.edit')" @click="handleEdit(row)">
+ <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
  </button>
- <button @click="handleDelete(row)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text ">
- <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
- <span class="text-xs">{{ t('common.delete') }}</span>
- </button>
- <button @click="openMenu(row, $event)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-foreground ">
- <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM12.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0zM18.75 12a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" /></svg>
- <span class="text-xs">{{ t('common.more') }}</span>
+ <button type="button" class="icon-btn" :title="t('common.more')" :aria-label="t('common.more')" @click="openMenu(row, $event)">
+ <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01" /></svg>
  </button>
  </div>
  </template>
  </DataTable>
  </div>
+ <div v-if="pagination.total > 0" class="acct-table-footer">
+ <span class="acct-table-footer-info">
+ {{ t('pagination.showing') }}
+ <b>{{ pageFromItem }}</b>–<b>{{ pageToItem }}</b>,
+ {{ t('pagination.of') }} <b>{{ pagination.total }}</b> {{ t('pagination.results') }}
+ </span>
+ <Pagination
+ class="acct-pagination"
+ :page="pagination.page"
+ :total="pagination.total"
+ :page-size="pagination.page_size"
+ @update:page="handlePageChange"
+ @update:pageSize="handlePageSizeChange"
+ />
+ </div>
  </template>
- <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
  </TablePageLayout>
  <Fab class="acct-fab" data-tour="accounts-create-btn" :label="t('admin.accounts.createAccount')" @click="showCreate = true">
  <Icon name="plus" size="md" />
@@ -503,7 +492,7 @@
  <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
  <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
  <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
- <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @inspect-device-profile="handleInspectDeviceProfile" @reset-device-profile="handleResetDeviceProfile" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
+ <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @inspect-device-profile="handleInspectDeviceProfile" @reset-device-profile="handleResetDeviceProfile" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" @delete="handleDelete" />
  <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
  <ImportDataModal :show="showImportData" @close="showImportData = false" @imported="handleDataImported" />
  <BulkEditAccountModal
@@ -523,8 +512,8 @@
  <DeviceProfileInspectModal :show="showDeviceProfileInspect" :account="inspectingDeviceAcc" @close="closeDeviceProfileInspect" />
  <ConfirmDialog :show="showCreateShadowDialog" :title="t('admin.accounts.createSparkShadow')" :message="t('admin.accounts.createSparkShadowConfirm', { name: creatingShadowAcc?.name })" @confirm="confirmCreateSparkShadow" @cancel="showCreateShadowDialog = false" />
  <ConfirmDialog :show="showExportDataDialog" :title="t('admin.accounts.dataExport')" :message="t('admin.accounts.dataExportConfirmMessage')" :confirm-text="t('admin.accounts.dataExportConfirm')" :cancel-text="t('common.cancel')" @confirm="handleExportData" @cancel="showExportDataDialog = false">
- <label class="flex items-center gap-2 text-sm text-foreground ">
- <input type="checkbox" class="h-4 w-4 rounded border-line text-accent focus:ring-accent" v-model="includeProxyOnExport" />
+ <label class="acct-export-option">
+ <input type="checkbox" class="acct-checkbox" v-model="includeProxyOnExport" />
  <span>{{ t('admin.accounts.dataExportIncludeProxies') }}</span>
  </label>
  </ConfirmDialog>
@@ -553,7 +542,6 @@
  <TotpStepUpDialog :controller="accountExportStepUp" />
  </AppLayout>
 </template>
-
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, toRaw, watch, defineAsyncComponent } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
@@ -591,10 +579,11 @@ import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import UpstreamBillingRateCell from '@/components/account/UpstreamBillingRateCell.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
+import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import Button from '@/components/ui/Button.vue'
-import FilterBar from '@/components/ui/FilterBar.vue'
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
 import Fab from '@/components/ui/Fab.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
@@ -610,6 +599,7 @@ import { extractApiErrorMessage } from '@/utils/apiError'
 import { sanitizeUrl } from '@/utils/url'
 import { getFloatingPanelPosition } from '@/utils/floatingPanel'
 import { formatMultiplier } from '@/utils/formatters'
+import { platformTileBackground, platformLabel } from '@/utils/platformTile'
 import type { Account, AccountPlatform, AccountSchedulerGroupScore, AccountType, AccountUsageInfo, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel, UpstreamBillingProbeSnapshot } from '@/types'
 
 const { t } = useI18n()
@@ -707,10 +697,18 @@ const upstreamBillingRateRefreshing = ref(false)
 let upstreamBillingRateAbortController: AbortController | null = null
 useIntervalFn(() => { upstreamBillingNow.value = Date.now() }, 60_000)
 
+// Import / export dropdown
+const showImportExportDropdown = ref(false)
+const importExportDropdownRef = ref<HTMLElement | null>(null)
+
+// Column settings dropdown
+const showColumnsDropdown = ref(false)
+const columnsDropdownRef = ref<HTMLElement | null>(null)
+
 // Account tools dropdown
 const showAccountToolsDropdown = ref(false)
 const accountToolsDropdownRef = ref<HTMLElement | null>(null)
-const accountToolsTriggerRef = ref<HTMLElement | null>(null)
+const accountToolsTriggerRef = ref<HTMLElement | { $el?: HTMLElement } | null>(null)
 const accountToolsDropdownPosition = reactive({
   top: null as number | null,
   bottom: null as number | null,
@@ -725,7 +723,15 @@ const accountToolsDropdownStyle = computed(() => ({
   width: `${accountToolsDropdownPosition.width}px`
 }))
 const hiddenColumns = reactive<Set<string>>(new Set())
-const DEFAULT_HIDDEN_COLUMNS = ['today_stats', 'proxy', 'notes', 'scheduler_score', 'rate_multiplier']
+const DEFAULT_HIDDEN_COLUMNS = [
+  'id',
+  'groups',
+  'proxy',
+  'notes',
+  'scheduler_score',
+  'rate_multiplier',
+  'expires_at'
+]
 const HIDDEN_COLUMNS_KEY = 'account-hidden-columns'
 // One-time migration: hide scheduler score for existing admins too, because showing it opt-ins to heavy backend scoring.
 const HIDDEN_COLUMNS_VERSION_KEY = 'account-hidden-columns-version'
@@ -1597,8 +1603,9 @@ const closeAccountToolsDropdown = () => {
 }
 
 const updateAccountToolsDropdownPosition = () => {
-  const trigger = accountToolsTriggerRef.value
-  if (!trigger) return
+  const raw = accountToolsTriggerRef.value as HTMLElement | { $el?: HTMLElement } | null
+  const trigger = (raw && '$el' in raw ? raw.$el : raw) as HTMLElement | null | undefined
+  if (!trigger || typeof trigger.getBoundingClientRect !== 'function') return
 
   const position = getFloatingPanelPosition(
     trigger.getBoundingClientRect(),
@@ -1611,24 +1618,66 @@ const updateAccountToolsDropdownPosition = () => {
 const toggleAccountToolsDropdown = () => {
   const nextVisible = !showAccountToolsDropdown.value
   showAutoRefreshDropdown.value = false
+  showImportExportDropdown.value = false
+  showColumnsDropdown.value = false
   if (nextVisible) updateAccountToolsDropdownPosition()
   showAccountToolsDropdown.value = nextVisible
 }
 
-const openSyncFromCrs = () => {
-  closeAccountToolsDropdown()
+const toggleImportExportDropdown = () => {
+  const nextVisible = !showImportExportDropdown.value
+  showAccountToolsDropdown.value = false
+  showAutoRefreshDropdown.value = false
+  showColumnsDropdown.value = false
+  showImportExportDropdown.value = nextVisible
+}
+
+const toggleAutoRefreshDropdown = () => {
+  const nextVisible = !showAutoRefreshDropdown.value
+  showAccountToolsDropdown.value = false
+  showImportExportDropdown.value = false
+  showColumnsDropdown.value = false
+  showAutoRefreshDropdown.value = nextVisible
+}
+
+const toggleColumnsDropdown = () => {
+  const nextVisible = !showColumnsDropdown.value
+  showAccountToolsDropdown.value = false
+  showImportExportDropdown.value = false
+  showAutoRefreshDropdown.value = false
+  showColumnsDropdown.value = nextVisible
+}
+
+const openSyncFromCrsFromMenu = () => {
+  showImportExportDropdown.value = false
   showSync.value = true
 }
 
-const openImportData = () => {
-  closeAccountToolsDropdown()
+const openImportDataFromMenu = () => {
+  showImportExportDropdown.value = false
   showImportData.value = true
 }
 
-const openExportDataDialogFromMenu = () => {
-  closeAccountToolsDropdown()
+const openExportDataFromMenu = () => {
+  showImportExportDropdown.value = false
   openExportDataDialog()
 }
+
+const openCapacityForecast = () => {
+  closeAccountToolsDropdown()
+  showCapacityForecast.value = true
+}
+
+const openBulkEditFromHeader = () => {
+  if (selIds.value.length > 0) {
+    openBulkEditSelected()
+    return
+  }
+  void openBulkEditFiltered()
+}
+
+
+
 
 const openErrorPassthrough = () => {
   closeAccountToolsDropdown()
@@ -1893,9 +1942,9 @@ function getOpenAICompactTitle(row: any): string {
 function getAntigravityTierClass(row: any): string {
   const tier = getAntigravityTierFromRow(row)
   switch (tier) {
-    case 'free-tier': return 'bg-surface-2 text-muted'
-    case 'g1-pro-tier': return 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent  '
-    case 'g1-ultra-tier': return 'bg-purple-500/15 text-purple-600  '
+    case 'free-tier': return ''
+    case 'g1-pro-tier': return 'tag-accent'
+    case 'g1-ultra-tier': return 'tag-success'
     default: return ''
   }
 }
@@ -1904,9 +1953,10 @@ function getAntigravityTierClass(row: any): string {
 const allColumns = computed(() => {
   const c = [
     { key: 'select', label: '', sortable: false },
-    { key: 'name', label: t('admin.accounts.columns.name'), sortable: true },
+    { key: 'name', label: t('admin.accounts.columns.nameId'), sortable: true },
     { key: 'id', label: t('admin.accounts.columns.id'), sortable: true },
-    { key: 'platform_type', label: t('admin.accounts.columns.platformType'), sortable: false },
+    { key: 'platform', label: t('admin.accounts.columns.platform'), sortable: false },
+    { key: 'platform_type', label: t('admin.accounts.columns.type'), sortable: false },
     { key: 'capacity', label: t('admin.accounts.columns.capacity'), sortable: false },
     { key: 'status', label: t('admin.accounts.columns.status'), sortable: true },
     { key: 'schedulable', label: t('admin.accounts.columns.schedulable'), sortable: true },
@@ -1917,12 +1967,12 @@ const allColumns = computed(() => {
   }
   c.push({ key: 'usage', label: t('admin.accounts.columns.usageWindows'), sortable: false })
   c.push(
-    { key: 'proxy', label: t('admin.accounts.columns.proxy'), sortable: false },
     { key: 'priority', label: t('admin.accounts.columns.priority'), sortable: true },
+    { key: 'last_used_at', label: t('admin.accounts.columns.lastUsed'), sortable: true },
+    { key: 'proxy', label: t('admin.accounts.columns.proxy'), sortable: false },
     { key: 'scheduler_score', label: t('admin.accounts.columns.schedulerScore'), sortable: false },
     { key: 'rate_multiplier', label: t('admin.accounts.columns.billingRateMultiplier'), sortable: true },
     { key: 'upstream_billing_rate', label: t('admin.accounts.columns.upstreamBillingRate'), sortable: true },
-    { key: 'last_used_at', label: t('admin.accounts.columns.lastUsed'), sortable: true },
     { key: 'created_at', label: t('admin.accounts.columns.createdAt'), sortable: true },
     { key: 'expires_at', label: t('admin.accounts.columns.expiresAt'), sortable: true },
     { key: 'notes', label: t('admin.accounts.columns.notes'), sortable: false },
@@ -1941,6 +1991,119 @@ const cols = computed(() =>
   allColumns.value.filter(col =>
     col.key === 'select' || col.key === 'name' || col.key === 'actions' || !hiddenColumns.has(col.key)
   )
+)
+
+// ---------------------------------------------------------------------------
+// Summary chips (全部 / 正常 / 限流 / 异常 / 已暂停)
+// ---------------------------------------------------------------------------
+type AccountStatusBucket = 'active' | 'rate_limited' | 'error' | 'unschedulable'
+
+const accountStatusBucket = (account: Account, now: number): AccountStatusBucket => {
+  if (account.status === 'error') return 'error'
+  if (account.rate_limit_reset_at && new Date(account.rate_limit_reset_at).getTime() > now) {
+    return 'rate_limited'
+  }
+  if (!account.schedulable || account.status !== 'active') return 'unschedulable'
+  return 'active'
+}
+
+// Counts are derived from the rows currently loaded; the API exposes no
+// aggregate endpoint, so the snapshot is captured on the last unfiltered load
+// and reused while a status filter narrows the result set.
+const statusBucketCounts = ref<Record<AccountStatusBucket, number>>({
+  active: 0,
+  rate_limited: 0,
+  error: 0,
+  unschedulable: 0
+})
+const statusBucketTotal = ref(0)
+
+const captureStatusBucketCounts = () => {
+  const now = Date.now()
+  const next: Record<AccountStatusBucket, number> = {
+    active: 0,
+    rate_limited: 0,
+    error: 0,
+    unschedulable: 0
+  }
+  for (const account of accounts.value) next[accountStatusBucket(account, now)] += 1
+  statusBucketCounts.value = next
+  statusBucketTotal.value = pagination.total
+}
+
+watch(
+  () => accounts.value,
+  () => {
+    if (!params.status) captureStatusBucketCounts()
+  },
+  { deep: false }
+)
+
+const statusChips = computed(() => [
+  {
+    value: '',
+    label: t('admin.accounts.summary.all'),
+    color: 'var(--accent)',
+    count: params.status ? statusBucketTotal.value : pagination.total
+  },
+  {
+    value: 'active',
+    label: t('admin.accounts.summary.normal'),
+    color: 'var(--success)',
+    count: statusBucketCounts.value.active
+  },
+  {
+    value: 'rate_limited',
+    label: t('admin.accounts.summary.limited'),
+    color: 'var(--warning)',
+    count: statusBucketCounts.value.rate_limited
+  },
+  {
+    value: 'error',
+    label: t('admin.accounts.summary.abnormal'),
+    color: 'var(--danger)',
+    count: statusBucketCounts.value.error
+  },
+  {
+    value: 'unschedulable',
+    label: t('admin.accounts.summary.paused'),
+    color: 'var(--muted)',
+    count: statusBucketCounts.value.unschedulable
+  }
+])
+
+const applyStatusChip = (value: string) => {
+  if (params.status === value) return
+  params.status = value
+  clearSelection()
+  reload()
+}
+
+// ---------------------------------------------------------------------------
+// Row display helpers
+// ---------------------------------------------------------------------------
+const accountGroupLabel = (account: Account): string => {
+  const groupList = account.groups ?? []
+  if (!groupList.length) return t('admin.accounts.ungroupedGroup')
+  const [first, ...rest] = groupList
+  return rest.length ? `${first.name} +${rest.length}` : first.name
+}
+
+const accountIdentityTitle = (account: Account): string => {
+  const parts = [`#${account.id}`, accountGroupLabel(account)]
+  const email = accountDisplayEmail(account)
+  if (email) parts.push(email)
+  if (account.parent_chatgpt_account_id) parts.push(String(account.parent_chatgpt_account_id))
+  return parts.join(' · ')
+}
+
+const pageFromItem = computed(() => {
+  if (pagination.total === 0) return 0
+  return (pagination.page - 1) * pagination.page_size + 1
+})
+
+const pageToItem = computed(() =>
+  Math.min(pagination.page * pagination.page_size, pagination.total)
 )
 
 const handleEdit = (a: Account) => { edAcc.value = a; showEdit.value = true }
@@ -2682,6 +2845,12 @@ const handleClickOutside = (event: MouseEvent) => {
   if (autoRefreshDropdownRef.value && !autoRefreshDropdownRef.value.contains(target)) {
     showAutoRefreshDropdown.value = false
   }
+  if (importExportDropdownRef.value && !importExportDropdownRef.value.contains(target)) {
+    showImportExportDropdown.value = false
+  }
+  if (columnsDropdownRef.value && !columnsDropdownRef.value.contains(target)) {
+    showColumnsDropdown.value = false
+  }
 }
 
 onMounted(async () => {
@@ -2749,6 +2918,121 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* ---------------------------------------------------------------------------
+ * 04 账号管理 — prototype geometry
+ * content column gap 14 · summary chips 5×gap 10 · filter row gap 8
+ * table card radius 14 · header 42 · rows 60 · footer 10/16
+ * ------------------------------------------------------------------------- */
+.acct-header {
+  margin-bottom: 14px;
+}
+
+.acct-layout {
+  gap: 14px;
+}
+
+/* ---------- Summary chips ---------- */
+.acct-summary {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.acct-summary .summary-chip {
+  width: 100%;
+  text-align: left;
+}
+
+/* ---------- Filter row ---------- */
+.acct-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.acct-selection-count {
+  margin-left: auto;
+  font-size: 12.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.acct-selection-count b {
+  color: var(--foreground);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.acct-icon-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: var(--radius-field);
+  border: 1px solid var(--border);
+  background: color-mix(in oklch, var(--surface) 85%, transparent);
+  box-shadow: var(--field-shadow);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.acct-icon-pill:hover {
+  color: var(--foreground);
+  border-color: color-mix(in oklch, var(--foreground) 18%, transparent);
+}
+
+/* ---------- Menus ---------- */
+.acct-menu {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.acct-dropdown {
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  min-width: 200px;
+}
+
+.acct-columns-dropdown {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.acct-dropdown-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acct-dropdown-count {
+  margin-left: auto;
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.acct-tools-dropdown {
+  position: fixed;
+  z-index: 9999;
+}
+
+.acct-tools-scroll {
+  overflow-y: auto;
+}
+
 .acct-pending-sync {
   margin-top: 8px;
   display: flex;
@@ -2762,91 +3046,467 @@ onUnmounted(() => {
   color: var(--warning-text);
   font-size: 13px;
 }
-.acct-dropdown {
-  position: absolute;
-  right: 0;
-  z-index: 50;
-  margin-top: 8px;
-  width: 14rem;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: color-mix(in oklch, var(--surface) 92%, transparent);
-  box-shadow: var(--shadow);
-  padding: 8px;
-}
-.acct-dropdown-item {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  justify-content: space-between;
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 13px;
-  color: var(--foreground);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-}
-.acct-dropdown-item:hover {
-  background: color-mix(in oklch, var(--foreground) 6%, transparent);
-}
-.acct-dropdown-sep {
-  margin: 6px 0;
-  border-top: 1px solid var(--border);
-}
-.acct-tools-menu {
-  position: fixed;
-  z-index: 9999;
-  overflow: hidden;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: color-mix(in oklch, var(--surface) 92%, transparent);
+
+/* ---------- Table card ---------- */
+.acct-layout :deep(.table-scroll-container) {
+  border-radius: var(--radius-card);
+  border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
   box-shadow: var(--shadow);
 }
-.acct-tools-label {
+
+/* 42px header · 11px/600 uppercase · surface-secondary 45% */
+.acct-layout :deep(.table-scroll-container th) {
+  height: 42px;
+  padding: 0 6px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
 }
-.acct-count-chip {
-  border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  background: color-mix(in oklch, var(--accent) 12%, transparent);
-  color: var(--accent);
+
+.acct-layout :deep(.table-scroll-container th:first-child) {
+  padding-left: 16px;
 }
-.acct-fab { display: none; }
-@media (max-width: 767px) {
-  .acct-fab { display: inline-flex; }
+
+.acct-layout :deep(.table-scroll-container th:last-child) {
+  padding-right: 16px;
 }
-.account-tools-menu-item {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 12px;
-  border-radius: 8px;
-  padding: 8px 12px;
+
+/* 60px rows · 12px inter-column gap via 6px symmetric padding */
+.acct-layout :deep(.table-scroll-container td) {
+  height: 60px;
+  padding: 6px;
   font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+
+.acct-layout :deep(.table-scroll-container td:first-child) {
+  padding-left: 16px;
+}
+
+.acct-layout :deep(.table-scroll-container td:last-child) {
+  padding-right: 16px;
+}
+
+.acct-layout :deep(.table-scroll-container tbody tr:last-child td) {
+  border-bottom: 0;
+}
+
+/* Sort indicator · 10px accent triangle */
+.acct-layout :deep(.data-table-th-sortable svg) {
+  width: 10px;
+  height: 10px;
+}
+
+/* ---------- Table footer ---------- */
+.acct-table-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+  padding: 10px 16px;
+  font-size: 12.5px;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+}
+
+.acct-table-footer-info b {
   color: var(--foreground);
-  background: transparent;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Pagination · 28×28 radius 8, current page solid accent */
+.acct-pagination :deep(> div) {
   border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.acct-pagination :deep(nav) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0;
+}
+
+.acct-pagination :deep(nav > button) {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0;
+  margin: 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  justify-content: center;
+}
+
+.acct-pagination :deep(nav > button:hover:not(:disabled)) {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+}
+
+.acct-pagination :deep(nav > button[aria-current='page']) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.acct-pagination :deep(nav > button:disabled) {
+  opacity: 0.45;
+}
+
+/* the "…" separator keeps no border */
+.acct-pagination :deep(nav > button.cursor-default) {
+  border-color: transparent;
+}
+
+/* left info block of the shared Pagination is replaced by our own footer text */
+.acct-table-footer :deep(.sm\:flex > .flex.items-center.space-x-4) {
+  display: none;
+}
+
+/* ---------- Cells ---------- */
+.acct-checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  border: 1.5px solid var(--border);
+  accent-color: var(--accent);
   cursor: pointer;
 }
-.account-tools-menu-item:hover {
-  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+
+.acct-name-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
-.account-tools-menu-icon {
+
+.acct-name-link,
+.acct-name-text {
+  font-weight: 600;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-decoration: none;
+}
+
+.acct-name-link {
+  border-bottom: 1px dotted var(--border);
+  align-self: flex-start;
+}
+
+.acct-name-link.is-alert,
+.acct-name-text.is-alert {
+  color: var(--danger-text);
+  border-bottom-color: color-mix(in oklch, var(--danger) 45%, transparent);
+}
+
+.acct-name-sub {
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.acct-name-email {
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.acct-cyber-btn {
   display: inline-flex;
-  height: 32px;
-  width: 32px;
-  flex-shrink: 0;
+  align-self: flex-start;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.acct-cyber-btn:hover {
+  color: var(--accent);
+}
+
+.acct-cyber-btn.is-alert {
+  color: var(--danger-text);
+}
+
+.acct-platform-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.acct-platform-tile {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  background: var(--surface-secondary);
-  color: var(--accent);
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 6px;
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.acct-platform-name {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.acct-type-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* The 平台 column already carries the brand tile + name. */
+.acct-type-cell :deep(.ptb-tile),
+.acct-type-cell :deep(.ptb-name) {
+  display: none;
+}
+
+.acct-compact-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.acct-compact-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex: none;
+}
+
+.acct-mono-muted {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.acct-muted-text {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.acct-note-text {
+  display: block;
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.acct-priority-cell {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.acct-last-used {
+  font-size: 12.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.acct-actions-cell {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.acct-proxy-cell,
+.acct-expires-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.acct-proxy-name {
+  font-size: 12.5px;
+  color: var(--foreground);
+}
+
+.acct-inline-btn {
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  padding: 1px 6px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.acct-inline-btn:hover {
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+}
+
+.acct-rate-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+
+.acct-rate-sync {
+  display: inline-flex;
+  cursor: help;
+  color: var(--success-text);
+}
+
+.acct-score-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 7rem;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.acct-score-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.acct-score-group {
+  max-width: 4.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
+.acct-export-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--foreground);
+}
+
+/* ---------- FAB (mobile only) ---------- */
+.acct-fab {
+  display: none;
+}
+
+/* ---------- Mobile card mode ---------- */
+@media (max-width: 767px) {
+  .acct-fab {
+    display: inline-flex;
+  }
+
+  .acct-summary {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .acct-filter-row {
+    gap: 8px;
+  }
+
+  .acct-selection-count {
+    order: 5;
+  }
+
+  .acct-layout :deep(.data-table-mobile-card) {
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* keys-card pattern: 4-up mini stats, 11px labels / 13px 600 values */
+  .acct-layout :deep(.data-table-mobile-card [data-field]) {
+    align-items: center;
+  }
+
+  .acct-layout :deep(.data-table-mobile-card [data-field] > span:first-child) {
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    color: var(--muted);
+  }
+
+  .acct-layout :deep(.data-table-mobile-card [data-field] > div) {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .acct-layout :deep(.data-table-mobile-card [data-field='name'] > span:first-child) {
+    display: none;
+  }
+
+  .acct-layout :deep(.data-table-mobile-card [data-field='name'] > div) {
+    width: 100%;
+    text-align: left;
+    font-weight: 400;
+  }
+
+  .acct-name-cell .acct-name-link,
+  .acct-name-cell .acct-name-text {
+    font-size: 15px;
+  }
+
+  .acct-name-sub {
+    font-size: 12px;
+  }
+
+  .acct-actions-cell {
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .acct-actions-cell .icon-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: color-mix(in oklch, var(--surface) 80%, transparent);
+  }
+
+  .acct-table-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
 }
 </style>

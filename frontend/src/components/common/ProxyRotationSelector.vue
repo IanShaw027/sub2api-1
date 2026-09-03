@@ -2,19 +2,19 @@
  <div class="space-y-3">
  <div
  v-if="selectedProxies.length > 0"
- class="divide-y divide-line overflow-hidden rounded-md border border-line"
+ class="divide-y divide-line overflow-hidden rounded-[12px] border border-line"
  >
  <div
  v-for="(proxy, index) in selectedProxies"
  :key="proxy.id"
  class="flex min-h-12 items-center gap-2 px-3 py-2"
  >
- <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-xs font-semibold text-accent">
+ <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-[11.5px] font-semibold text-accent">
  {{ index + 1 }}
  </span>
  <div class="min-w-0 flex-1">
- <div class="truncate text-sm font-medium text-foreground">{{ proxy.name }}</div>
- <div class="truncate text-xs text-muted">
+ <div class="truncate text-[13px] font-medium text-foreground">{{ proxy.name }}</div>
+ <div class="truncate text-[11.5px] text-muted">
  {{ proxy.protocol }}://{{ proxy.host }}:{{ proxy.port }}
  </div>
  </div>
@@ -38,7 +38,7 @@
  </button>
  <button
  type="button"
- class="btn btn-ghost h-8 w-8 p-0 text-red-600"
+ class="btn btn-ghost h-8 w-8 p-0 text-danger-text"
  :title="t('common.remove')"
  @click="toggle(proxy.id, false)"
  >
@@ -47,13 +47,13 @@
  </div>
  </div>
 
- <div class="overflow-hidden rounded-md border border-line">
- <div class="flex items-center gap-2 border-b border-line bg-surface-2 px-3 py-2">
+ <div class="overflow-hidden rounded-[12px] border border-line">
+ <div class="flex h-9 items-center gap-2 border-b border-line bg-surface-2 px-3">
  <Icon name="search" size="sm" class="shrink-0 text-muted" />
  <input
  v-model="search"
  type="text"
- class="min-w-0 flex-1 bg-transparent text-sm text-foreground placeholder:text-muted focus:outline-none"
+ class="min-w-0 flex-1 bg-transparent text-[13px] text-foreground placeholder:text-muted focus:outline-none"
  :placeholder="t('admin.proxies.searchProxies')"
  />
  </div>
@@ -61,25 +61,25 @@
  <label
  v-for="proxy in filteredProxies"
  :key="proxy.id"
- class="flex cursor-pointer items-start gap-2 rounded px-2 py-2 hover:bg-surface-2"
+ class="flex cursor-pointer items-start gap-2 rounded-[9px] px-2 py-2 hover:bg-surface-2"
  >
  <input
  type="checkbox"
- class="mt-0.5 h-4 w-4 shrink-0 rounded border-line text-accent focus:ring-accent"
+ class="mt-0.5 h-4 w-4 shrink-0 rounded-[5px] border-line accent-[var(--accent)]"
  :checked="modelValue.includes(proxy.id)"
  @change="toggle(proxy.id, ($event.target as HTMLInputElement).checked)"
  />
  <span class="min-w-0">
- <span class="block truncate text-sm font-medium text-foreground">{{ proxy.name }}</span>
- <span class="block truncate text-xs text-muted">{{ proxy.host }}:{{ proxy.port }}</span>
+ <span class="block truncate text-[13px] font-medium text-foreground">{{ proxy.name }}</span>
+ <span class="block truncate text-[11.5px] text-muted">{{ proxy.host }}:{{ proxy.port }}</span>
  </span>
  </label>
- <div v-if="filteredProxies.length === 0" class="py-3 text-center text-sm text-muted sm:col-span-2">
+ <div v-if="filteredProxies.length === 0" class="py-3 text-center text-[12.5px] text-muted sm:col-span-2">
  {{ t('common.noOptionsFound') }}
  </div>
  </div>
  </div>
- <p class="text-xs text-muted">
+ <p class="text-[11.5px] text-muted">
  {{ t('admin.accounts.bulkEdit.proxyRotationHint', { count: modelValue.length }) }}
  </p>
  </div>

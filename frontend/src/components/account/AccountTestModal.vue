@@ -9,7 +9,7 @@
       <!-- Account Info Card -->
       <div
         v-if="account"
-        class="flex items-center justify-between rounded-xl border border-line bg-gradient-to-r from-gray-50 to-gray-100 p-3"
+        class="flex items-center justify-between rounded-xl border border-line bg-surface-2 p-3"
       >
         <div class="flex items-center gap-3">
           <div
@@ -139,12 +139,12 @@
           <div
             v-for="(image, index) in generatedImages"
             :key="`${image.url}-${index}`"
-            class="group/img relative cursor-pointer overflow-hidden rounded-xl border border-line bg-surface shadow-sm transition hover:border-[color-mix(in_oklch,var(--accent)_28%,transparent)] hover:shadow-md"
+            class="group/img relative cursor-pointer overflow-hidden rounded-xl border border-line bg-surface shadow-sm transition hover:border-[color-mix(in_oklch,var(--accent)_28%,transparent)] hover:shadow-[var(--shadow-hover)]"
             @click="previewImageUrl = image.url"
           >
             <img :src="image.url" :alt="`test-image-${index + 1}`" class="max-h-[360px] w-full object-contain" />
             <div class="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover/img:bg-black/20">
-              <Icon name="eye" size="lg" class="text-white opacity-0 drop-shadow-lg transition-opacity group-hover/img:opacity-100" :stroke-width="2" />
+              <Icon name="eye" size="lg" class="text-white opacity-0 drop-shadow transition-opacity group-hover/img:opacity-100" :stroke-width="2" />
             </div>
             <div class="border-t border-line px-3 py-1.5 text-xs text-muted">
               {{ image.mimeType || 'image/*' }}

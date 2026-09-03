@@ -79,10 +79,10 @@ function onChange(event: Event) {
 }
 
 .ui-checkbox-box {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 5px;
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border);
   background: color-mix(in oklch, var(--surface) 85%, transparent);
   display: inline-flex;
   align-items: center;
@@ -103,8 +103,8 @@ function onChange(event: Event) {
 }
 
 .ui-checkbox-icon {
-  width: 12px;
-  height: 10px;
+  width: 11px;
+  height: 9px;
 }
 
 .ui-checkbox-label {

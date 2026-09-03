@@ -1,30 +1,25 @@
 <template>
   <AppLayout>
     <PageHeader :title="t('usage.title')" :description="t('usage.description')" />
-    <div class="space-y-6">
+    <div class="space-y-4">
       <UsageStatsCards :stats="usageStats" :show-account-cost="false" :strike-standard-cost="true" />
 
       <div class="space-y-4">
-        <GlassCard>
-          <div class="flex flex-wrap items-center gap-4">
-            <div class="flex items-center gap-2">
-              <span class="text-sm font-medium text-foreground">{{ t('admin.dashboard.timeRange') }}:</span>
-              <DateRangePicker
-                v-model:start-date="startDate"
-                v-model:end-date="endDate"
-                @change="onDateRangeChange"
-              />
-            </div>
-            <div class="ml-auto flex items-center gap-2">
-              <span class="text-sm font-medium text-foreground">{{ t('admin.dashboard.granularity') }}:</span>
-              <div class="w-28">
-                <Select v-model="granularity" :options="granularityOptions" @change="loadChartData" />
-              </div>
-            </div>
+        <div class="usage-filter-row">
+          <span class="usage-filter-label">{{ t('admin.dashboard.timeRange') }}</span>
+          <DateRangePicker
+            v-model:start-date="startDate"
+            v-model:end-date="endDate"
+            @change="onDateRangeChange"
+          />
+          <span class="usage-filter-sep" aria-hidden="true" />
+          <span class="usage-filter-label">{{ t('admin.dashboard.granularity') }}</span>
+          <div class="w-28">
+            <Select v-model="granularity" :options="granularityOptions" @change="loadChartData" />
           </div>
-        </GlassCard>
+        </div>
 
-        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <ModelDistributionChart
             v-model:metric="modelDistributionMetric"
             :model-stats="requestedModelStats"
@@ -48,7 +43,7 @@
           />
         </div>
 
-        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
           <EndpointDistributionChart
             v-model:source="endpointDistributionSource"
             v-model:metric="endpointDistributionMetric"
@@ -67,27 +62,55 @@
         </div>
       </div>
 
-      <GlassCard>
-        <div v-if="errorViewEnabled" class="flex flex-wrap items-center border-b border-line px-2 sm:px-4">
-          <button
-            type="button"
-            class="tab -mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-3 text-sm font-medium transition-colors sm:px-4"
-            :class="activeTab === 'usage' ? 'tab-active border-accent text-accent' : 'border-transparent text-muted hover:border-line hover:text-foreground'"
-            @click="activeTab = 'usage'"
-          >
-            {{ t('usage.tabs.usage') }}
-          </button>
-          <button
-            type="button"
-            class="tab -mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-3 text-sm font-medium transition-colors sm:px-4"
-            :class="activeTab === 'errors' ? 'tab-active border-accent text-accent' : 'border-transparent text-muted hover:border-line hover:text-foreground'"
-            @click="switchToErrors"
-          >
-            {{ t('usage.tabs.errors') }}
-          </button>
+      <div class="usage-toolbar">
+        <SegmentedControl
+          v-if="errorViewEnabled"
+          :model-value="activeTab"
+          :options="tabOptions"
+          @update:model-value="onTabChange"
+        />
+        <div class="usage-toolbar-actions">
+          <Button variant="secondary" :disabled="activeTab === 'errors' ? errorLoading : loading" @click="refreshData">
+            {{ t('common.refresh') }}
+          </Button>
+          <Button variant="secondary" @click="resetFilters">
+            {{ t('common.reset') }}
+          </Button>
+          <div class="relative" ref="columnDropdownRef">
+            <Button
+              variant="secondary"
+              data-testid="usage-column-settings"
+              :title="t('admin.users.columnSettings')"
+              @click="showColumnDropdown = !showColumnDropdown"
+            >
+              <Icon name="grid" size="sm" />
+              <span class="hidden md:inline">{{ t('admin.users.columnSettings') }}</span>
+            </Button>
+            <div
+              v-if="showColumnDropdown"
+              class="dropdown usage-column-dropdown"
+            >
+              <button
+                v-for="col in currentToggleableColumns"
+                :key="col.key"
+                type="button"
+                :data-testid="`usage-column-toggle-${col.key}`"
+                class="dropdown-item"
+                @click="toggleCurrentColumn(col.key)"
+              >
+                <span>{{ col.label }}</span>
+                <Icon v-if="isCurrentColumnVisible(col.key)" name="check" size="sm" class="text-accent" />
+              </button>
+            </div>
+          </div>
+          <Button v-if="activeTab !== 'errors'" :disabled="exporting" @click="exportToCSV">
+            {{ exporting ? t('usage.exporting') : t('usage.exportCsv') }}
+          </Button>
         </div>
+      </div>
 
-        <div class="flex flex-wrap items-end justify-between gap-4 pt-4">
+      <GlassCard padding="sm">
+        <div class="flex flex-wrap items-end gap-4">
           <div v-if="activeTab === 'errors'" class="flex flex-1 flex-wrap items-end gap-4">
             <div class="w-full sm:w-auto sm:min-w-[220px]">
               <label class="input-label">{{ t('usage.errors.keyName') }}</label>
@@ -144,48 +167,11 @@
               <Select v-model="filters.billing_mode" :options="billingModeOptions" @change="applyFilters" />
             </div>
           </div>
-
-          <div class="flex w-full flex-wrap items-center justify-end gap-3 sm:w-auto">
-            <Button variant="secondary" :disabled="activeTab === 'errors' ? errorLoading : loading" @click="refreshData">
-              {{ t('common.refresh') }}
-            </Button>
-            <Button variant="secondary" @click="resetFilters">
-              {{ t('common.reset') }}
-            </Button>
-            <div class="relative" ref="columnDropdownRef">
-              <Button
-                variant="secondary"
-                data-testid="usage-column-settings"
-                :title="t('admin.users.columnSettings')"
-                @click="showColumnDropdown = !showColumnDropdown"
-              >
-                <Icon name="grid" size="sm" />
-                <span class="hidden md:inline">{{ t('admin.users.columnSettings') }}</span>
-              </Button>
-              <div
-                v-if="showColumnDropdown"
-                class="absolute right-0 top-full z-50 mt-1 max-h-80 w-48 overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-lg"
-              >
-                <button
-                  v-for="col in currentToggleableColumns"
-                  :key="col.key"
-                  type="button"
-                  :data-testid="`usage-column-toggle-${col.key}`"
-                  class="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-foreground hover:bg-surface-2"
-                  @click="toggleCurrentColumn(col.key)"
-                >
-                  <span>{{ col.label }}</span>
-                  <Icon v-if="isCurrentColumnVisible(col.key)" name="check" size="sm" class="text-accent" />
-                </button>
-              </div>
-            </div>
-            <Button v-if="activeTab !== 'errors'" :disabled="exporting" @click="exportToCSV">
-              {{ exporting ? t('usage.exporting') : t('usage.exportCsv') }}
-            </Button>
-          </div>
         </div>
+      </GlassCard>
 
-        <div v-if="activeTab === 'usage'" class="mt-4 overflow-hidden rounded-b-2xl">
+      <div class="table-container">
+        <div v-if="activeTab === 'usage'">
           <UsageTable
             :data="usageLogs"
             :loading="loading"
@@ -220,7 +206,7 @@
           @update:page="onErrorPage"
           @update:pageSize="onErrorPageSize"
         />
-      </GlassCard>
+      </div>
     </div>
   </AppLayout>
 </template>
@@ -235,6 +221,8 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import GlassCard from '@/components/ui/GlassCard.vue'
 import Button from '@/components/ui/Button.vue'
 import UiPagination from '@/components/ui/UiPagination.vue'
+import SegmentedControl from '@/components/ui/SegmentedControl.vue'
+import type { SegmentedOption } from '@/components/ui/types'
 import Select, { type SelectOption } from '@/components/common/Select.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'
@@ -366,6 +354,14 @@ const endpointDistributionMetric = ref<DistributionMetric>('tokens')
 const endpointDistributionSource = ref<EndpointSource>('inbound')
 const activeTab = ref<'usage' | 'errors'>('usage')
 const errorViewEnabled = computed(() => appStore.cachedPublicSettings?.allow_user_view_error_requests ?? false)
+const tabOptions = computed<SegmentedOption<'usage' | 'errors'>[]>(() => [
+  { value: 'usage', label: t('usage.tabs.usage') },
+  { value: 'errors', label: t('usage.tabs.errors') },
+])
+const onTabChange = (tab: 'usage' | 'errors') => {
+  if (tab === 'errors') switchToErrors()
+  else activeTab.value = 'usage'
+}
 
 const filters = ref<UsageQueryParams>({
   start_date: startDate.value,
@@ -901,3 +897,49 @@ watch(endpointDistributionSource, () => {
   // Endpoint source switching is handled by the chart component using already loaded stats.
 })
 </script>
+
+<style scoped>
+.usage-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.usage-filter-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.usage-filter-sep {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+.usage-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.usage-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.usage-column-dropdown {
+  right: 0;
+  top: calc(100% + 4px);
+  width: 208px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+</style>

@@ -672,6 +672,7 @@ export default {
         backendMode: 'Backend 模式',
         backendModeDescription:
           '禁用用户注册、公开页面和自助服务功能。仅管理员可以登录和管理平台。',
+        backendModeWarning: '开启后普通用户将无法登录',
         siteName: '站点名称',
         siteNameHint: '显示在邮件和页面标题中',
         siteNamePlaceholder: 'Sub2API',
@@ -1311,6 +1312,12 @@ export default {
       user_error_view: {
         label: '允许用户查看自己的错误请求',
         description: '开启后，用户可在用量页查看自己失败请求的精简信息（不含内部/上游错误细节）。需运维监控开启才有数据。',
+      },
+      unsavedChanges: '{count} 项未保存的更改',
+      deployment: {
+        title: '部署信息',
+        version: '版本',
+        codexSync: 'Codex 版本同步'
       },
       saveSettings: '保存设置',
       saving: '保存中...',
