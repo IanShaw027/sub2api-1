@@ -286,6 +286,7 @@ export interface PublicSettings {
   affiliate_enabled: boolean
   allow_user_view_error_requests?: boolean
   ticket_enabled?: boolean
+  creation_center_enabled?: boolean
   support_qr_codes?: SupportQRCodeEntry[]
   download_tools_url?: string
 }

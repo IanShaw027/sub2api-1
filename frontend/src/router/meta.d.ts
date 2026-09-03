@@ -62,6 +62,12 @@ declare module 'vue-router' {
     requiresTicket?: boolean
 
     /**
+     * Whether this route requires the creation center feature to be enabled
+     * @default false
+     */
+    requiresCreationCenter?: boolean
+
+    /**
      * i18n key for the page title
      */
     titleKey?: string

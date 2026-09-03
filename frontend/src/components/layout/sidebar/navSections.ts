@@ -77,6 +77,7 @@ export function userSectionKey(item: NavItem): string {
   if (
     path === '/dashboard' ||
     path === '/keys' ||
+    path === '/studio' ||
     path === '/batch-image' ||
     path === '/usage' ||
     path === '/available-channels' ||

@@ -74,6 +74,12 @@ export default {
           enabled: 'Enable Tickets',
           enabledHint: 'When off, sidebar entries are hidden and ticket APIs return disabled. Existing tickets are kept.',
         },
+        creationCenter: {
+          title: 'Creation Center',
+          description: 'Built-in chat and image studio for end users. Disabled by default.',
+          enabled: 'Enable Creation Center',
+          enabledHint: 'When off, the Studio sidebar entry is hidden and creation APIs return disabled.',
+        },
         affiliate: {
           title: 'Affiliate (Invite Rebate)',
           description: 'Existing users invite new ones; the inviter earns a percentage rebate on the invitee’s recharges. Disabled by default.',

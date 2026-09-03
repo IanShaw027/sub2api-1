@@ -7400,6 +7400,30 @@
  <div class="glass-card">
  <div class="border-b border-line px-6 py-4 ">
  <h2 class="text-lg font-semibold text-foreground ">
+ {{ t('admin.settings.features.creationCenter.title') }}
+ </h2>
+ <p class="mt-1 text-sm text-muted ">
+ {{ t('admin.settings.features.creationCenter.description') }}
+ </p>
+ </div>
+ <div class="space-y-5 p-6">
+ <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+ <div>
+ <label class="text-sm font-medium text-foreground ">
+ {{ t('admin.settings.features.creationCenter.enabled') }}
+ </label>
+ <p class="mt-0.5 text-xs text-muted ">
+ {{ t('admin.settings.features.creationCenter.enabledHint') }}
+ </p>
+ </div>
+ <Toggle v-model="form.creation_center_enabled" />
+ </div>
+ </div>
+ </div>
+
+ <div class="glass-card">
+ <div class="border-b border-line px-6 py-4 ">
+ <h2 class="text-lg font-semibold text-foreground ">
  {{ t('admin.settings.features.channelMonitor.title') }}
  </h2>
  <p class="mt-1 text-sm text-muted ">
@@ -10298,6 +10322,7 @@ const form = reactive<SettingsForm>({
   // Affiliate (邀请返利) feature switch
   affiliate_enabled: false,
   ticket_enabled: true,
+  creation_center_enabled: false,
   // Allow user view error requests
   allow_user_view_error_requests: false,
 });
@@ -11994,6 +12019,7 @@ async function saveSettings() {
       // Affiliate (邀请返利) feature switch
       affiliate_enabled: form.affiliate_enabled,
       ticket_enabled: form.ticket_enabled,
+      creation_center_enabled: form.creation_center_enabled,
       allow_user_view_error_requests: form.allow_user_view_error_requests,
     };
 

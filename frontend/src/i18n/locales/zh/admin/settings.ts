@@ -74,6 +74,12 @@ export default {
           enabled: '启用工单',
           enabledHint: '关闭后用户与管理员侧边栏入口隐藏，工单接口返回功能未启用。已有工单数据保留。',
         },
+        creationCenter: {
+          title: '创作中心',
+          description: '面向用户的内置对话与图像创作工作台。默认关闭。',
+          enabled: '启用创作中心',
+          enabledHint: '关闭后隐藏 Studio 侧边栏入口，创作中心接口返回功能未启用。',
+        },
         affiliate: {
           title: '邀请返利',
           description: '老用户邀请新用户注册，新用户充值后老用户按比例获得返利额度。默认关闭。',

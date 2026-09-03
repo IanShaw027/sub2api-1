@@ -134,6 +134,11 @@ export const FeatureFlags = {
     mode: 'opt-out',
     label: 'Tickets',
   }),
+  creationCenter: defineFlag({
+    key: 'creation_center_enabled',
+    mode: 'opt-in',
+    label: 'Creation Center',
+  }),
 } as const
 
 export type RegisteredFeatureFlag = keyof typeof FeatureFlags

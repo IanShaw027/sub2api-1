@@ -775,6 +775,7 @@ export interface SystemSettings {
   // Affiliate (邀请返利) feature switch
   affiliate_enabled: boolean;
   ticket_enabled: boolean;
+  creation_center_enabled: boolean;
 
   ip_multi_account_ban_enabled: boolean;
   ip_multi_account_ban_window_minutes: number;
@@ -1099,6 +1100,7 @@ export interface UpdateSettingsRequest {
   // Affiliate (邀请返利) feature switch
   affiliate_enabled?: boolean;
   ticket_enabled?: boolean;
+  creation_center_enabled?: boolean;
 
   ip_multi_account_ban_enabled?: boolean;
   ip_multi_account_ban_window_minutes?: number;
