@@ -75,20 +75,118 @@ func (s *creationMessageRepoStub) ListBySession(ctx context.Context, sessionID i
 	return nil, nil
 }
 
-type creationImageJobRepoStub struct{}
+type creationImageJobRepoStub struct {
+	items map[int64]*CreationImageJob
+	next  int64
+}
 
-func (s *creationImageJobRepoStub) Create(ctx context.Context, job *CreationImageJob) error { return nil }
-func (s *creationImageJobRepoStub) GetByID(ctx context.Context, id int64) (*CreationImageJob, error) {
-	return nil, ErrCreationImageNotFound
-}
-func (s *creationImageJobRepoStub) GetForUser(ctx context.Context, userID, id int64) (*CreationImageJob, error) {
-	return nil, ErrCreationImageNotFound
-}
-func (s *creationImageJobRepoStub) ListForUser(ctx context.Context, userID int64, filters CreationImageListFilters) ([]CreationImageJob, *pagination.PaginationResult, error) {
-	return nil, nil, nil
-}
-func (s *creationImageJobRepoStub) Update(ctx context.Context, id int64, job *CreationImageJob) error {
+func (s *creationImageJobRepoStub) Create(_ context.Context, job *CreationImageJob) error {
+	s.next++
+	job.ID = s.next
+	if s.items == nil {
+		s.items = map[int64]*CreationImageJob{}
+	}
+	copy := *job
+	if job.SessionID != nil {
+		v := *job.SessionID
+		copy.SessionID = &v
+	}
+	if job.ProviderTaskID != nil {
+		v := *job.ProviderTaskID
+		copy.ProviderTaskID = &v
+	}
+	if job.MediaAssetID != nil {
+		v := *job.MediaAssetID
+		copy.MediaAssetID = &v
+	}
+	if job.Error != nil {
+		v := *job.Error
+		copy.Error = &v
+	}
+	s.items[job.ID] = &copy
 	return nil
+}
+
+func (s *creationImageJobRepoStub) GetByID(_ context.Context, id int64) (*CreationImageJob, error) {
+	if row, ok := s.items[id]; ok {
+		return cloneCreationImageJob(row), nil
+	}
+	return nil, ErrCreationImageNotFound
+}
+
+func (s *creationImageJobRepoStub) GetForUser(_ context.Context, userID, id int64) (*CreationImageJob, error) {
+	row, err := s.GetByID(context.Background(), id)
+	if err != nil {
+		return nil, err
+	}
+	if row.UserID != userID {
+		return nil, ErrCreationImageNotFound
+	}
+	return row, nil
+}
+
+func (s *creationImageJobRepoStub) GetByProviderTaskID(_ context.Context, userID int64, providerTaskID string) (*CreationImageJob, error) {
+	for _, row := range s.items {
+		if row.UserID == userID && row.ProviderTaskID != nil && *row.ProviderTaskID == providerTaskID {
+			return cloneCreationImageJob(row), nil
+		}
+	}
+	return nil, ErrCreationImageNotFound
+}
+
+func (s *creationImageJobRepoStub) ListForUser(_ context.Context, userID int64, _ CreationImageListFilters) ([]CreationImageJob, *pagination.PaginationResult, error) {
+	out := make([]CreationImageJob, 0)
+	for _, row := range s.items {
+		if row.UserID == userID {
+			out = append(out, *cloneCreationImageJob(row))
+		}
+	}
+	return out, &pagination.PaginationResult{Total: int64(len(out)), Page: 1, PageSize: 20}, nil
+}
+
+func (s *creationImageJobRepoStub) Update(_ context.Context, id int64, job *CreationImageJob) error {
+	row, ok := s.items[id]
+	if !ok {
+		return ErrCreationImageNotFound
+	}
+	row.Status = job.Status
+	if job.MediaAssetID != nil {
+		v := *job.MediaAssetID
+		row.MediaAssetID = &v
+	}
+	if job.ProviderTaskID != nil {
+		v := *job.ProviderTaskID
+		row.ProviderTaskID = &v
+	}
+	if job.Error != nil {
+		v := *job.Error
+		row.Error = &v
+	}
+	return nil
+}
+
+func cloneCreationImageJob(job *CreationImageJob) *CreationImageJob {
+	if job == nil {
+		return nil
+	}
+	copy := *job
+	if job.SessionID != nil {
+		v := *job.SessionID
+		copy.SessionID = &v
+	}
+	if job.ProviderTaskID != nil {
+		v := *job.ProviderTaskID
+		copy.ProviderTaskID = &v
+	}
+	if job.MediaAssetID != nil {
+		v := *job.MediaAssetID
+		copy.MediaAssetID = &v
+	}
+	if job.Error != nil {
+		v := *job.Error
+		copy.Error = &v
+	}
+	return &copy
 }
 
 func TestCreationService_SessionCRUD(t *testing.T) {
@@ -129,6 +227,111 @@ func TestCreationService_SessionCRUD(t *testing.T) {
 	require.NoError(t, svc.DeleteSession(context.Background(), 7, 1))
 	_, err = svc.GetSession(context.Background(), 7, 1)
 	require.ErrorIs(t, err, ErrCreationSessionNotFound)
+}
+
+func TestCreationService_CreateAndSyncImageJob(t *testing.T) {
+	jobs := &creationImageJobRepoStub{}
+	svc := NewCreationService(
+		&creationSessionRepoStub{items: map[int64]*CreationSession{
+			11: {ID: 11, UserID: 7, GroupID: 3, Title: "Studio", Mode: CreationSessionModeImage, Status: CreationSessionStatusActive},
+		}},
+		&creationMessageRepoStub{},
+		jobs,
+		&groupRepoStubForGroupUpdate{group: &Group{ID: 3, Status: StatusActive, Platform: PlatformOpenAI}},
+		&creationTestUserRepo{},
+		&userSubRepoStubForGroupUpdate{getActiveErr: ErrSubscriptionNotFound},
+	)
+
+	sessionID := int64(11)
+	created, err := svc.CreateImageJob(context.Background(), CreateCreationImageJobInput{
+		UserID:         7,
+		GroupID:        3,
+		SessionID:      &sessionID,
+		Model:          "gpt-image-1",
+		Prompt:         "a cat",
+		ProviderTaskID: "imgtask_abc",
+		Status:         CreationImageJobStatusProcessing,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), created.ID)
+	require.Equal(t, "gpt-image-1", created.Model)
+	require.Equal(t, "a cat", created.Prompt)
+	require.Equal(t, CreationImageJobStatusProcessing, created.Status)
+	require.NotNil(t, created.ProviderTaskID)
+	require.Equal(t, "imgtask_abc", *created.ProviderTaskID)
+	require.NotNil(t, created.SessionID)
+	require.Equal(t, int64(11), *created.SessionID)
+
+	err = svc.SyncImageJobFromTask(context.Background(), 7, &ImageTask{
+		ID:       "imgtask_abc",
+		TaskID:   "imgtask_abc",
+		Status:   ImageTaskStatusCompleted,
+		ImageURL: "/api/v1/media/public/42",
+	})
+	require.NoError(t, err)
+
+	got, err := svc.GetImage(context.Background(), 7, 1)
+	require.NoError(t, err)
+	require.Equal(t, CreationImageJobStatusCompleted, got.Status)
+	require.NotNil(t, got.MediaAssetID)
+	require.Equal(t, int64(42), *got.MediaAssetID)
+	require.Equal(t, MediaPublicPath(42), got.MediaURL)
+
+	items, total, err := svc.ListImages(context.Background(), 7, CreationImageListFilters{})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, items, 1)
+	require.Equal(t, MediaPublicPath(42), items[0].MediaURL)
+}
+
+func TestCreationService_SyncImageJobFailedStoresError(t *testing.T) {
+	jobs := &creationImageJobRepoStub{}
+	svc := NewCreationService(
+		&creationSessionRepoStub{items: map[int64]*CreationSession{}},
+		&creationMessageRepoStub{},
+		jobs,
+		&groupRepoStubForGroupUpdate{group: &Group{ID: 3, Status: StatusActive, Platform: PlatformOpenAI}},
+		&creationTestUserRepo{},
+		&userSubRepoStubForGroupUpdate{getActiveErr: ErrSubscriptionNotFound},
+	)
+	_, err := svc.CreateImageJob(context.Background(), CreateCreationImageJobInput{
+		UserID:         7,
+		GroupID:        3,
+		ProviderTaskID: "imgtask_fail",
+		Status:         CreationImageJobStatusProcessing,
+	})
+	require.NoError(t, err)
+
+	err = svc.SyncImageJobFromTask(context.Background(), 7, &ImageTask{
+		ID:     "imgtask_fail",
+		TaskID: "imgtask_fail",
+		Status: ImageTaskStatusFailed,
+		Error:  json.RawMessage(`{"type":"api_error","message":"upstream failed"}`),
+	})
+	require.NoError(t, err)
+
+	got, err := svc.GetImage(context.Background(), 7, 1)
+	require.NoError(t, err)
+	require.Equal(t, CreationImageJobStatusFailed, got.Status)
+	require.NotNil(t, got.Error)
+	require.Equal(t, "upstream failed", *got.Error)
+}
+
+func TestCreationService_SyncImageJobMissingIsNoop(t *testing.T) {
+	svc := NewCreationService(
+		&creationSessionRepoStub{items: map[int64]*CreationSession{}},
+		&creationMessageRepoStub{},
+		&creationImageJobRepoStub{},
+		&groupRepoStubForGroupUpdate{group: &Group{ID: 3, Status: StatusActive, Platform: PlatformOpenAI}},
+		&creationTestUserRepo{},
+		&userSubRepoStubForGroupUpdate{getActiveErr: ErrSubscriptionNotFound},
+	)
+	err := svc.SyncImageJobFromTask(context.Background(), 7, &ImageTask{
+		ID:     "imgtask_missing",
+		TaskID: "imgtask_missing",
+		Status: ImageTaskStatusCompleted,
+	})
+	require.NoError(t, err)
 }
 
 type creationTestUserRepo struct {

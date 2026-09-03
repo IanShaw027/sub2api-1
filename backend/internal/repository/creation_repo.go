@@ -300,6 +300,27 @@ func (r *creationImageJobRepository) GetForUser(ctx context.Context, userID, id 
 	return creationImageJobEntityToService(row), nil
 }
 
+func (r *creationImageJobRepository) GetByProviderTaskID(ctx context.Context, userID int64, providerTaskID string) (*service.CreationImageJob, error) {
+	providerTaskID = strings.TrimSpace(providerTaskID)
+	if providerTaskID == "" {
+		return nil, service.ErrCreationImageNotFound
+	}
+	row, err := r.client.CreationImageJob.Query().
+		Where(
+			creationimagejob.UserIDEQ(userID),
+			creationimagejob.ProviderTaskIDEQ(providerTaskID),
+		).
+		Order(dbent.Desc(creationimagejob.FieldCreatedAt)).
+		First(ctx)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return nil, service.ErrCreationImageNotFound
+		}
+		return nil, err
+	}
+	return creationImageJobEntityToService(row), nil
+}
+
 func (r *creationImageJobRepository) ListForUser(ctx context.Context, userID int64, filters service.CreationImageListFilters) ([]service.CreationImageJob, *pagination.PaginationResult, error) {
 	query := r.client.CreationImageJob.Query().
 		Where(creationimagejob.UserIDEQ(userID))

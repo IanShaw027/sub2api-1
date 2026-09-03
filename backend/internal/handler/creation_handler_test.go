@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -72,21 +74,95 @@ func (s *handlerCreationMessageRepo) ListBySession(ctx context.Context, sessionI
 	return nil, nil
 }
 
-type handlerCreationImageJobRepo struct{}
+type handlerCreationImageJobRepo struct {
+	items map[int64]*service.CreationImageJob
+	next  int64
+}
 
-func (s *handlerCreationImageJobRepo) Create(ctx context.Context, job *service.CreationImageJob) error {
+func (s *handlerCreationImageJobRepo) Create(_ context.Context, job *service.CreationImageJob) error {
+	s.next++
+	job.ID = s.next
+	if s.items == nil {
+		s.items = map[int64]*service.CreationImageJob{}
+	}
+	copy := *job
+	if job.SessionID != nil {
+		v := *job.SessionID
+		copy.SessionID = &v
+	}
+	if job.ProviderTaskID != nil {
+		v := *job.ProviderTaskID
+		copy.ProviderTaskID = &v
+	}
+	if job.MediaAssetID != nil {
+		v := *job.MediaAssetID
+		copy.MediaAssetID = &v
+	}
+	if job.Error != nil {
+		v := *job.Error
+		copy.Error = &v
+	}
+	s.items[job.ID] = &copy
 	return nil
 }
-func (s *handlerCreationImageJobRepo) GetByID(ctx context.Context, id int64) (*service.CreationImageJob, error) {
+
+func (s *handlerCreationImageJobRepo) GetByID(_ context.Context, id int64) (*service.CreationImageJob, error) {
+	if row, ok := s.items[id]; ok {
+		copy := *row
+		return &copy, nil
+	}
 	return nil, service.ErrCreationImageNotFound
 }
+
 func (s *handlerCreationImageJobRepo) GetForUser(ctx context.Context, userID, id int64) (*service.CreationImageJob, error) {
+	row, err := s.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if row.UserID != userID {
+		return nil, service.ErrCreationImageNotFound
+	}
+	return row, nil
+}
+
+func (s *handlerCreationImageJobRepo) GetByProviderTaskID(_ context.Context, userID int64, providerTaskID string) (*service.CreationImageJob, error) {
+	for _, row := range s.items {
+		if row.UserID == userID && row.ProviderTaskID != nil && *row.ProviderTaskID == providerTaskID {
+			copy := *row
+			return &copy, nil
+		}
+	}
 	return nil, service.ErrCreationImageNotFound
 }
-func (s *handlerCreationImageJobRepo) ListForUser(ctx context.Context, userID int64, filters service.CreationImageListFilters) ([]service.CreationImageJob, *pagination.PaginationResult, error) {
-	return nil, nil, nil
+
+func (s *handlerCreationImageJobRepo) ListForUser(_ context.Context, userID int64, _ service.CreationImageListFilters) ([]service.CreationImageJob, *pagination.PaginationResult, error) {
+	out := make([]service.CreationImageJob, 0)
+	for _, row := range s.items {
+		if row.UserID == userID {
+			out = append(out, *row)
+		}
+	}
+	return out, &pagination.PaginationResult{Total: int64(len(out)), Page: 1, PageSize: 20}, nil
 }
-func (s *handlerCreationImageJobRepo) Update(ctx context.Context, id int64, job *service.CreationImageJob) error {
+
+func (s *handlerCreationImageJobRepo) Update(_ context.Context, id int64, job *service.CreationImageJob) error {
+	row, ok := s.items[id]
+	if !ok {
+		return service.ErrCreationImageNotFound
+	}
+	row.Status = job.Status
+	if job.MediaAssetID != nil {
+		v := *job.MediaAssetID
+		row.MediaAssetID = &v
+	}
+	if job.ProviderTaskID != nil {
+		v := *job.ProviderTaskID
+		row.ProviderTaskID = &v
+	}
+	if job.Error != nil {
+		v := *job.Error
+		row.Error = &v
+	}
 	return nil
 }
 
@@ -152,4 +228,194 @@ func TestCreationHandler_CreateAndGetSession(t *testing.T) {
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestCreationHandler_ImagesAsyncPersistsJobAndImageTaskForwardsTaskID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	jobs := &handlerCreationImageJobRepo{}
+	sessions := &handlerCreationSessionRepo{items: map[int64]*service.CreationSession{
+		11: {ID: 11, UserID: 7, GroupID: 3, Title: "Studio", Mode: service.CreationSessionModeImage, Status: service.CreationSessionStatusActive},
+	}}
+	creationSvc := service.NewCreationService(
+		sessions,
+		&handlerCreationMessageRepo{},
+		jobs,
+		&handlerCreationGroupRepo{},
+		&handlerCreationUserRepo{},
+		&handlerCreationUserSubRepo{},
+	)
+
+	groupID := int64(3)
+	apiKey := &service.APIKey{
+		ID:      9,
+		UserID:  7,
+		Key:     "sk-creation-test-key-123456",
+		GroupID: &groupID,
+		Status:  service.StatusAPIKeyActive,
+		Purpose: service.APIKeyPurposeCreation,
+		User:    &service.User{ID: 7, Role: "user", Status: service.StatusActive, Concurrency: 2},
+		Group: &service.Group{
+			ID:                   groupID,
+			Platform:             service.PlatformOpenAI,
+			Status:               service.StatusActive,
+			AllowImageGeneration: true,
+		},
+	}
+	keyRepo := &handlerCreationAPIKeyRepo{key: apiKey}
+	apiKeySvc := service.NewAPIKeyService(keyRepo, nil, nil, nil, nil, nil, &config.Config{
+		Default: config.DefaultConfig{APIKeyPrefix: "sk-"},
+	})
+	resolver := service.NewCreationKeyResolver(keyRepo, apiKeySvc)
+
+	store := &asyncImageMemoryStore{tasks: make(map[string]*service.ImageTaskRecord)}
+	tasks := service.NewImageTaskServiceWithUploader(store, nil, time.Hour, time.Minute)
+	release := make(chan struct{})
+	asyncImage := &AsyncImageHandler{tasks: tasks}
+	asyncImage.execute = func(_ string, c *gin.Context) {
+		<-release
+		c.JSON(http.StatusOK, gin.H{"created": 1, "data": []gin.H{{"url": "https://example.test/cat.png"}}})
+	}
+
+	h := NewCreationHandler(creationSvc, resolver, nil, nil, nil, asyncImage)
+	r := gin.New()
+	creation := r.Group("/api/v1/creation")
+	creation.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 7})
+		c.Next()
+	})
+	creation.POST("/images/generations/async", h.ImagesAsync)
+	creation.GET("/images/tasks/:task_id", h.ImageTask)
+	creation.GET("/images", h.ListImages)
+	creation.GET("/images/:id", h.GetImage)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/creation/images/generations/async?group_id=3", bytes.NewBufferString(`{"model":"gpt-image-1","prompt":"a cat"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Session-Id", "11")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusAccepted, w.Code)
+
+	var accepted struct {
+		TaskID string `json:"task_id"`
+		Status string `json:"status"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &accepted))
+	require.NotEmpty(t, accepted.TaskID)
+	require.Equal(t, service.ImageTaskStatusProcessing, accepted.Status)
+
+	require.Len(t, jobs.items, 1)
+	var persisted *service.CreationImageJob
+	for _, job := range jobs.items {
+		persisted = job
+	}
+	require.NotNil(t, persisted)
+	require.Equal(t, int64(7), persisted.UserID)
+	require.Equal(t, int64(3), persisted.GroupID)
+	require.Equal(t, "gpt-image-1", persisted.Model)
+	require.Equal(t, "a cat", persisted.Prompt)
+	require.Equal(t, service.CreationImageJobStatusProcessing, persisted.Status)
+	require.NotNil(t, persisted.ProviderTaskID)
+	require.Equal(t, accepted.TaskID, *persisted.ProviderTaskID)
+	require.NotNil(t, persisted.SessionID)
+	require.Equal(t, int64(11), *persisted.SessionID)
+
+	close(release)
+	require.Eventually(t, func() bool {
+		got, err := tasks.Get(context.Background(), service.ImageTaskOwner{UserID: 7, APIKeyID: 9}, accepted.TaskID)
+		return err == nil && got.Status == service.ImageTaskStatusCompleted
+	}, time.Second, 10*time.Millisecond)
+
+	pollReq := httptest.NewRequest(http.MethodGet, "/api/v1/creation/images/tasks/"+accepted.TaskID+"?group_id=3", nil)
+	pollWriter := httptest.NewRecorder()
+	r.ServeHTTP(pollWriter, pollReq)
+	require.Equal(t, http.StatusOK, pollWriter.Code)
+	require.Contains(t, pollWriter.Body.String(), accepted.TaskID)
+	require.Contains(t, pollWriter.Body.String(), "https://example.test/cat.png")
+
+	synced, err := jobs.GetByProviderTaskID(context.Background(), 7, accepted.TaskID)
+	require.NoError(t, err)
+	require.Equal(t, service.CreationImageJobStatusCompleted, synced.Status)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/creation/images", nil)
+	listWriter := httptest.NewRecorder()
+	r.ServeHTTP(listWriter, listReq)
+	require.Equal(t, http.StatusOK, listWriter.Code)
+	require.Contains(t, listWriter.Body.String(), "https://example.test/cat.png")
+	require.Contains(t, listWriter.Body.String(), accepted.TaskID)
+}
+
+func TestCreationHandler_ImageTaskFallsBackToIDParam(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := &asyncImageMemoryStore{tasks: make(map[string]*service.ImageTaskRecord)}
+	tasks := service.NewImageTaskServiceWithUploader(store, nil, time.Hour, time.Minute)
+	created, err := tasks.Create(context.Background(), service.ImageTaskOwner{UserID: 7, APIKeyID: 9})
+	require.NoError(t, err)
+
+	groupID := int64(3)
+	apiKey := &service.APIKey{
+		ID:      9,
+		UserID:  7,
+		Key:     "sk-creation-test-key-123456",
+		GroupID: &groupID,
+		Status:  service.StatusAPIKeyActive,
+		Purpose: service.APIKeyPurposeCreation,
+		User:    &service.User{ID: 7, Role: "user", Status: service.StatusActive, Concurrency: 2},
+		Group: &service.Group{
+			ID:                   groupID,
+			Platform:             service.PlatformOpenAI,
+			Status:               service.StatusActive,
+			AllowImageGeneration: true,
+		},
+	}
+	keyRepo := &handlerCreationAPIKeyRepo{key: apiKey}
+	apiKeySvc := service.NewAPIKeyService(keyRepo, nil, nil, nil, nil, nil, &config.Config{
+		Default: config.DefaultConfig{APIKeyPrefix: "sk-"},
+	})
+	h := NewCreationHandler(
+		service.NewCreationService(
+			&handlerCreationSessionRepo{items: map[int64]*service.CreationSession{}},
+			&handlerCreationMessageRepo{},
+			&handlerCreationImageJobRepo{},
+			&handlerCreationGroupRepo{},
+			&handlerCreationUserRepo{},
+			&handlerCreationUserSubRepo{},
+		),
+		service.NewCreationKeyResolver(keyRepo, apiKeySvc),
+		nil, nil, nil,
+		&AsyncImageHandler{tasks: tasks},
+	)
+
+	r := gin.New()
+	creation := r.Group("/api/v1/creation")
+	creation.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 7})
+		c.Next()
+	})
+	creation.GET("/images/tasks/:id", h.ImageTask)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/creation/images/tasks/"+created.ID+"?group_id=3", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), created.ID)
+}
+
+type handlerCreationAPIKeyRepo struct {
+	service.APIKeyRepository
+	key *service.APIKey
+}
+
+func (s *handlerCreationAPIKeyRepo) GetByUserGroupAndPurpose(_ context.Context, userID, groupID int64, purpose string) (*service.APIKey, error) {
+	if s.key != nil && s.key.UserID == userID && s.key.GroupID != nil && *s.key.GroupID == groupID && s.key.Purpose == purpose {
+		return s.key, nil
+	}
+	return nil, nil
+}
+
+func (s *handlerCreationAPIKeyRepo) GetByKeyForAuth(_ context.Context, key string) (*service.APIKey, error) {
+	if s.key != nil && s.key.Key == key {
+		return s.key, nil
+	}
+	return nil, service.ErrAPIKeyNotFound
 }

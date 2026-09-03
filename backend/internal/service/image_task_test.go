@@ -66,6 +66,13 @@ func TestImageTaskServiceLifecycleAndOwnership(t *testing.T) {
 	require.Equal(t, "https://example.test/image.png", completed.ImageURL)
 	require.JSONEq(t, string(result), string(completed.Result))
 	require.NotNil(t, completed.CompletedAt)
+
+	byUser, err := svc.GetByIDForUser(context.Background(), 7, created.ID)
+	require.NoError(t, err)
+	require.Equal(t, "https://example.test/image.png", byUser.ImageURL)
+
+	_, err = svc.GetByIDForUser(context.Background(), 8, created.ID)
+	require.ErrorIs(t, err, ErrImageTaskNotFound)
 }
 
 func TestImageTaskServiceInvalidResultBecomesFailed(t *testing.T) {

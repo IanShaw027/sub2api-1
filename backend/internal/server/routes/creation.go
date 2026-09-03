@@ -24,7 +24,7 @@ func RegisterCreationRoutes(
 		creation.POST("/messages", creationHandler.Messages)
 		creation.POST("/images/generations", creationHandler.Images)
 		creation.POST("/images/generations/async", creationHandler.ImagesAsync)
-		creation.GET("/images/tasks/:id", creationHandler.ImageTask)
+		creation.GET("/images/tasks/:task_id", creationHandler.ImageTask)
 		creation.GET("/models", creationHandler.Models)
 
 		creation.GET("/sessions", creationHandler.ListSessions)

@@ -170,6 +170,31 @@ func (s *ImageTaskService) Create(ctx context.Context, owner ImageTaskOwner) (*I
 }
 
 func (s *ImageTaskService) Get(ctx context.Context, owner ImageTaskOwner, id string) (*ImageTask, error) {
+	task, err := s.load(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if task.UserID != owner.UserID || task.APIKeyID != owner.APIKeyID {
+		// Do not reveal whether a random task ID exists for another caller.
+		return nil, ErrImageTaskNotFound
+	}
+	return imageTaskToPublic(task), nil
+}
+
+// GetByIDForUser returns a task owned by userID without requiring the original API key.
+// Creation-center history lookup uses this after the hidden key is no longer in context.
+func (s *ImageTaskService) GetByIDForUser(ctx context.Context, userID int64, id string) (*ImageTask, error) {
+	task, err := s.load(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if task.UserID != userID {
+		return nil, ErrImageTaskNotFound
+	}
+	return imageTaskToPublic(task), nil
+}
+
+func (s *ImageTaskService) load(ctx context.Context, id string) (*ImageTaskRecord, error) {
 	if s == nil || s.store == nil {
 		return nil, ErrImageTaskUnavailable
 	}
@@ -180,11 +205,7 @@ func (s *ImageTaskService) Get(ctx context.Context, owner ImageTaskOwner, id str
 		}
 		return nil, ErrImageTaskUnavailable.WithCause(err)
 	}
-	if task.UserID != owner.UserID || task.APIKeyID != owner.APIKeyID {
-		// Do not reveal whether a random task ID exists for another caller.
-		return nil, ErrImageTaskNotFound
-	}
-	return imageTaskToPublic(task), nil
+	return task, nil
 }
 
 func (s *ImageTaskService) Complete(ctx context.Context, id string, statusCode int, result json.RawMessage) error {

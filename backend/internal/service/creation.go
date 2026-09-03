@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	APIKeyPurposeCreation = "creation"
+	APIKeyPurposeCreation   = "creation"
 	creationInternalKeyName = "__creation_center__"
 
 	CreationSessionModeChat  = "chat"
@@ -30,7 +30,7 @@ const (
 )
 
 var (
-	ErrCreationCenterDisabled = infraerrors.Forbidden("CREATION_CENTER_DISABLED", "creation center is disabled")
+	ErrCreationCenterDisabled  = infraerrors.Forbidden("CREATION_CENTER_DISABLED", "creation center is disabled")
 	ErrCreationSessionNotFound = infraerrors.NotFound("CREATION_SESSION_NOT_FOUND", "creation session not found")
 	ErrCreationImageNotFound   = infraerrors.NotFound("CREATION_IMAGE_NOT_FOUND", "creation image not found")
 	ErrCreationGroupRequired   = infraerrors.BadRequest("CREATION_GROUP_REQUIRED", "group_id is required")
@@ -63,19 +63,19 @@ type CreationMessage struct {
 }
 
 type CreationImageJob struct {
-	ID             int64      `json:"id"`
-	SessionID      *int64     `json:"session_id,omitempty"`
-	UserID         int64      `json:"user_id"`
-	GroupID        int64      `json:"group_id"`
-	Status         string     `json:"status"`
-	Model          string     `json:"model"`
-	Prompt         string     `json:"prompt"`
-	MediaAssetID   *int64     `json:"media_asset_id,omitempty"`
-	ProviderTaskID *string    `json:"provider_task_id,omitempty"`
-	Error          *string    `json:"error,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
-	MediaURL       string     `json:"media_url,omitempty"`
+	ID             int64     `json:"id"`
+	SessionID      *int64    `json:"session_id,omitempty"`
+	UserID         int64     `json:"user_id"`
+	GroupID        int64     `json:"group_id"`
+	Status         string    `json:"status"`
+	Model          string    `json:"model"`
+	Prompt         string    `json:"prompt"`
+	MediaAssetID   *int64    `json:"media_asset_id,omitempty"`
+	ProviderTaskID *string   `json:"provider_task_id,omitempty"`
+	Error          *string   `json:"error,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	MediaURL       string    `json:"media_url,omitempty"`
 }
 
 type CreateCreationSessionInput struct {
@@ -116,6 +116,16 @@ type CreationImageListFilters struct {
 	PageSize  int
 }
 
+type CreateCreationImageJobInput struct {
+	UserID         int64
+	GroupID        int64
+	SessionID      *int64
+	Model          string
+	Prompt         string
+	ProviderTaskID string
+	Status         string
+}
+
 type CreationSessionRepository interface {
 	Create(ctx context.Context, input *CreationSession) error
 	GetByID(ctx context.Context, id int64) (*CreationSession, error)
@@ -134,6 +144,7 @@ type CreationImageJobRepository interface {
 	Create(ctx context.Context, job *CreationImageJob) error
 	GetByID(ctx context.Context, id int64) (*CreationImageJob, error)
 	GetForUser(ctx context.Context, userID, id int64) (*CreationImageJob, error)
+	GetByProviderTaskID(ctx context.Context, userID int64, providerTaskID string) (*CreationImageJob, error)
 	ListForUser(ctx context.Context, userID int64, filters CreationImageListFilters) ([]CreationImageJob, *pagination.PaginationResult, error)
 	Update(ctx context.Context, id int64, job *CreationImageJob) error
 }

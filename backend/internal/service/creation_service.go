@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -152,11 +153,142 @@ func (s *CreationService) ListImages(ctx context.Context, userID int64, filters 
 	if page != nil {
 		total = page.Total
 	}
+	for i := range items {
+		populateCreationImageMediaURL(&items[i])
+	}
 	return items, total, nil
 }
 
 func (s *CreationService) GetImage(ctx context.Context, userID, imageID int64) (*CreationImageJob, error) {
-	return s.imageJobs.GetForUser(ctx, userID, imageID)
+	job, err := s.imageJobs.GetForUser(ctx, userID, imageID)
+	if err != nil {
+		return nil, err
+	}
+	populateCreationImageMediaURL(job)
+	return job, nil
+}
+
+func (s *CreationService) CreateImageJob(ctx context.Context, input CreateCreationImageJobInput) (*CreationImageJob, error) {
+	if s == nil || s.imageJobs == nil {
+		return nil, fmt.Errorf("creation image job repository unavailable")
+	}
+	status := strings.TrimSpace(input.Status)
+	if status == "" {
+		status = CreationImageJobStatusProcessing
+	}
+	sessionID := input.SessionID
+	if sessionID != nil && *sessionID > 0 && s.sessions != nil {
+		if _, err := s.sessions.GetForUser(ctx, input.UserID, *sessionID); err != nil {
+			sessionID = nil
+		}
+	} else {
+		sessionID = nil
+	}
+	job := &CreationImageJob{
+		UserID:    input.UserID,
+		GroupID:   input.GroupID,
+		SessionID: sessionID,
+		Status:    status,
+		Model:     strings.TrimSpace(input.Model),
+		Prompt:    strings.TrimSpace(input.Prompt),
+	}
+	if taskID := strings.TrimSpace(input.ProviderTaskID); taskID != "" {
+		job.ProviderTaskID = &taskID
+	}
+	if err := s.imageJobs.Create(ctx, job); err != nil {
+		return nil, fmt.Errorf("create creation image job: %w", err)
+	}
+	populateCreationImageMediaURL(job)
+	return job, nil
+}
+
+func (s *CreationService) SyncImageJobFromTask(ctx context.Context, userID int64, task *ImageTask) error {
+	if s == nil || s.imageJobs == nil || task == nil {
+		return nil
+	}
+	taskID := strings.TrimSpace(task.TaskID)
+	if taskID == "" {
+		taskID = strings.TrimSpace(task.ID)
+	}
+	if taskID == "" || userID <= 0 {
+		return nil
+	}
+	job, err := s.imageJobs.GetByProviderTaskID(ctx, userID, taskID)
+	if err != nil {
+		if errors.Is(err, ErrCreationImageNotFound) {
+			return nil
+		}
+		return err
+	}
+	if job == nil {
+		return nil
+	}
+	job.Status = creationImageJobStatusFromTask(task.Status)
+	job.Error = creationImageJobErrorFromTask(task)
+	if mediaAssetID := creationImageMediaAssetIDFromTask(task); mediaAssetID != nil {
+		job.MediaAssetID = mediaAssetID
+	}
+	if err := s.imageJobs.Update(ctx, job.ID, job); err != nil {
+		return fmt.Errorf("sync creation image job: %w", err)
+	}
+	return nil
+}
+
+func populateCreationImageMediaURL(job *CreationImageJob) {
+	if job == nil || strings.TrimSpace(job.MediaURL) != "" {
+		return
+	}
+	if job.MediaAssetID != nil && *job.MediaAssetID > 0 {
+		job.MediaURL = MediaPublicPath(*job.MediaAssetID)
+	}
+}
+
+func creationImageJobStatusFromTask(status string) string {
+	switch strings.TrimSpace(status) {
+	case CreationImageJobStatusCompleted:
+		return CreationImageJobStatusCompleted
+	case CreationImageJobStatusFailed:
+		return CreationImageJobStatusFailed
+	case CreationImageJobStatusPending:
+		return CreationImageJobStatusPending
+	default:
+		return CreationImageJobStatusProcessing
+	}
+}
+
+func creationImageJobErrorFromTask(task *ImageTask) *string {
+	if task == nil {
+		return nil
+	}
+	if task.Status == ImageTaskStatusCompleted {
+		empty := ""
+		return &empty
+	}
+	if len(task.Error) == 0 {
+		return nil
+	}
+	var envelope struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(task.Error, &envelope) == nil && strings.TrimSpace(envelope.Message) != "" {
+		msg := strings.TrimSpace(envelope.Message)
+		return &msg
+	}
+	raw := strings.TrimSpace(string(task.Error))
+	if raw == "" || raw == "null" {
+		return nil
+	}
+	return &raw
+}
+
+func creationImageMediaAssetIDFromTask(task *ImageTask) *int64 {
+	if task == nil {
+		return nil
+	}
+	if id, ok := ParseManagedMediaID(task.ImageURL); ok {
+		return &id
+	}
+	return nil
 }
 
 func (s *CreationService) ensureUserCanUseGroup(ctx context.Context, userID, groupID int64) error {

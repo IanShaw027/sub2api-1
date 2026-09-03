@@ -20,6 +20,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const asyncImageAcceptedTaskKey = "async_image.accepted_task"
+
 type AsyncImageHandler struct {
 	tasks   *service.ImageTaskService
 	openAI  *OpenAIGatewayHandler
@@ -112,6 +114,7 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	c.Header("Location", pollURL)
 	c.Header("Retry-After", "3")
+	c.Set(asyncImageAcceptedTaskKey, task)
 	c.JSON(http.StatusAccepted, gin.H{
 		"id":         task.ID,
 		"task_id":    task.TaskID,
@@ -123,6 +126,18 @@ func (h *AsyncImageHandler) Submit(c *gin.Context) {
 	})
 
 	go h.run(task.ID, platform, taskCtx, recorder, cancel)
+}
+
+func acceptedAsyncImageTask(c *gin.Context) *service.ImageTask {
+	if c == nil {
+		return nil
+	}
+	value, ok := c.Get(asyncImageAcceptedTaskKey)
+	if !ok {
+		return nil
+	}
+	task, _ := value.(*service.ImageTask)
+	return task
 }
 
 func (h *AsyncImageHandler) checkSecurityAuditBeforeSubmit(c *gin.Context, apiKey *service.APIKey, platform string, body []byte) bool {
@@ -162,26 +177,49 @@ func (h *AsyncImageHandler) checkSecurityAuditBeforeSubmit(c *gin.Context, apiKe
 }
 
 func (h *AsyncImageHandler) Get(c *gin.Context) {
+	task, ok := h.loadTaskForGet(c)
+	if !ok {
+		return
+	}
+	writeImageTaskJSON(c, task)
+}
+
+func (h *AsyncImageHandler) loadTaskForGet(c *gin.Context) (*service.ImageTask, bool) {
 	// Polling deliberately does not require the feature to be enabled, only that
 	// the task store is reachable. Turning the switch off in the admin UI must not
 	// strand tasks that were already accepted — their results are still in Redis
 	// and their submitters are still polling.
 	if !h.pollable() {
 		imageTaskJSONError(c, http.StatusNotFound, "not_found_error", "async image tasks are not enabled")
-		return
+		return nil, false
 	}
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok || apiKey == nil || apiKey.UserID <= 0 || apiKey.ID <= 0 {
 		imageTaskError(c, service.ErrImageTaskForbidden)
-		return
+		return nil, false
 	}
 	task, err := h.tasks.Get(c.Request.Context(), service.ImageTaskOwner{UserID: apiKey.UserID, APIKeyID: apiKey.ID}, c.Param("task_id"))
 	if err != nil {
 		imageTaskError(c, err)
-		return
+		return nil, false
 	}
+	return task, true
+}
+
+func (h *AsyncImageHandler) imageURLForUser(ctx context.Context, userID int64, taskID string) string {
+	if h == nil || h.tasks == nil || userID <= 0 {
+		return ""
+	}
+	task, err := h.tasks.GetByIDForUser(ctx, userID, strings.TrimSpace(taskID))
+	if err != nil || task == nil {
+		return ""
+	}
+	return strings.TrimSpace(task.ImageURL)
+}
+
+func writeImageTaskJSON(c *gin.Context, task *service.ImageTask) {
 	c.Header("Cache-Control", "no-store")
-	if task.Status == service.ImageTaskStatusProcessing {
+	if task != nil && task.Status == service.ImageTaskStatusProcessing {
 		c.Header("Retry-After", "3")
 	}
 	c.JSON(http.StatusOK, task)

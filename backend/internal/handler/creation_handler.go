@@ -1,14 +1,20 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type CreationHandler struct {
@@ -17,7 +23,7 @@ type CreationHandler struct {
 	subscriptionService *service.SubscriptionService
 	gateway             *GatewayHandler
 	openAI              *OpenAIGatewayHandler
-	asyncImage            *AsyncImageHandler
+	asyncImage          *AsyncImageHandler
 }
 
 func NewCreationHandler(
@@ -90,13 +96,29 @@ func (h *CreationHandler) Images(c *gin.Context) {
 
 func (h *CreationHandler) ImagesAsync(c *gin.Context) {
 	h.withGatewayContext(c, func(c *gin.Context) {
+		if h.asyncImage == nil {
+			imageTaskJSONError(c, http.StatusServiceUnavailable, "api_error", "async image handler is unavailable")
+			return
+		}
+		model, prompt := peekCreationImageModelPrompt(c)
 		h.asyncImage.Submit(c)
+		h.persistCreationImageJob(c, model, prompt)
 	})
 }
 
 func (h *CreationHandler) ImageTask(c *gin.Context) {
 	h.withGatewayContext(c, func(c *gin.Context) {
-		h.asyncImage.Get(c)
+		ensureImageTaskIDParam(c)
+		if h.asyncImage == nil {
+			imageTaskJSONError(c, http.StatusServiceUnavailable, "api_error", "async image handler is unavailable")
+			return
+		}
+		task, ok := h.asyncImage.loadTaskForGet(c)
+		if !ok {
+			return
+		}
+		h.syncCreationImageJob(c, task)
+		writeImageTaskJSON(c, task)
 	})
 }
 
@@ -320,6 +342,7 @@ func (h *CreationHandler) ListImages(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	h.attachCreationImageMediaURLs(c, subject.UserID, items)
 	response.Success(c, gin.H{"items": items, "total": total, "page": page, "page_size": pageSize})
 }
 
@@ -342,6 +365,7 @@ func (h *CreationHandler) GetImage(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
+	h.attachCreationImageMediaURL(c, subject.UserID, view)
 	response.Success(c, view)
 }
 
@@ -400,4 +424,170 @@ func parseCreationSessionID(c *gin.Context) (int64, bool) {
 		return 0, false
 	}
 	return id, true
+}
+
+func (h *CreationHandler) persistCreationImageJob(c *gin.Context, model, prompt string) {
+	if h == nil || h.creationService == nil || c == nil {
+		return
+	}
+	if c.Writer == nil || c.Writer.Status() != http.StatusAccepted {
+		return
+	}
+	task := acceptedAsyncImageTask(c)
+	if task == nil {
+		return
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		return
+	}
+	groupID := creationGroupIDFromContext(c)
+	if groupID <= 0 {
+		return
+	}
+	taskID := strings.TrimSpace(task.TaskID)
+	if taskID == "" {
+		taskID = strings.TrimSpace(task.ID)
+	}
+	if taskID == "" {
+		return
+	}
+	status := strings.TrimSpace(task.Status)
+	if status == "" {
+		status = service.CreationImageJobStatusProcessing
+	}
+	if _, err := h.creationService.CreateImageJob(c.Request.Context(), service.CreateCreationImageJobInput{
+		UserID:         subject.UserID,
+		GroupID:        groupID,
+		SessionID:      parseCreationSessionHeader(c),
+		Model:          model,
+		Prompt:         prompt,
+		ProviderTaskID: taskID,
+		Status:         status,
+	}); err != nil {
+		logger.L().Error("creation.image_job.persist_failed",
+			zap.Error(err),
+			zap.Int64("user_id", subject.UserID),
+			zap.String("task_id", taskID))
+	}
+}
+
+func (h *CreationHandler) syncCreationImageJob(c *gin.Context, task *service.ImageTask) {
+	if h == nil || h.creationService == nil || c == nil || task == nil {
+		return
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		return
+	}
+	if err := h.creationService.SyncImageJobFromTask(c.Request.Context(), subject.UserID, task); err != nil {
+		logger.L().Error("creation.image_job.sync_failed",
+			zap.Error(err),
+			zap.Int64("user_id", subject.UserID))
+	}
+}
+
+func (h *CreationHandler) attachCreationImageMediaURLs(c *gin.Context, userID int64, items []service.CreationImageJob) {
+	for i := range items {
+		h.attachCreationImageMediaURL(c, userID, &items[i])
+	}
+}
+
+func (h *CreationHandler) attachCreationImageMediaURL(c *gin.Context, userID int64, job *service.CreationImageJob) {
+	if job == nil || strings.TrimSpace(job.MediaURL) != "" || h == nil || h.asyncImage == nil {
+		return
+	}
+	if job.ProviderTaskID == nil || strings.TrimSpace(*job.ProviderTaskID) == "" {
+		return
+	}
+	ctx := c.Request.Context()
+	if url := h.asyncImage.imageURLForUser(ctx, userID, *job.ProviderTaskID); url != "" {
+		job.MediaURL = url
+	}
+}
+
+func ensureImageTaskIDParam(c *gin.Context) {
+	if c == nil {
+		return
+	}
+	if strings.TrimSpace(c.Param("task_id")) != "" {
+		return
+	}
+	if id := strings.TrimSpace(c.Param("id")); id != "" {
+		c.Params = append(c.Params, gin.Param{Key: "task_id", Value: id})
+	}
+}
+
+func peekCreationImageModelPrompt(c *gin.Context) (string, string) {
+	if c == nil || c.Request == nil {
+		return "", ""
+	}
+	body, err := httputil.ReadRequestBodyWithPrealloc(c.Request)
+	if err != nil {
+		return "", ""
+	}
+	restoreCreationRequestBody(c, body)
+	return parseCreationImageModelPrompt(c.GetHeader("Content-Type"), body)
+}
+
+func restoreCreationRequestBody(c *gin.Context, body []byte) {
+	if c == nil || c.Request == nil {
+		return
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(body))
+	c.Request.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(body)), nil
+	}
+	c.Request.ContentLength = int64(len(body))
+	c.Request.Header.Set("Content-Length", strconv.Itoa(len(body)))
+}
+
+func parseCreationImageModelPrompt(contentType string, body []byte) (string, string) {
+	var envelope struct {
+		Model  string `json:"model"`
+		Prompt string `json:"prompt"`
+	}
+	_ = json.Unmarshal(body, &envelope)
+	model := strings.TrimSpace(envelope.Model)
+	prompt := strings.TrimSpace(envelope.Prompt)
+	if model != "" && prompt != "" {
+		return model, prompt
+	}
+	grok := service.ParseGrokMediaRequest(contentType, body)
+	if model == "" {
+		model = grok.Model
+	}
+	if prompt == "" {
+		prompt = grok.Prompt
+	}
+	return model, prompt
+}
+
+func parseCreationSessionHeader(c *gin.Context) *int64 {
+	if c == nil {
+		return nil
+	}
+	raw := strings.TrimSpace(c.GetHeader("X-Session-Id"))
+	if raw == "" {
+		return nil
+	}
+	parsed, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || parsed <= 0 {
+		return nil
+	}
+	return &parsed
+}
+
+func creationGroupIDFromContext(c *gin.Context) int64 {
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok || apiKey == nil {
+		return 0
+	}
+	if apiKey.GroupID != nil && *apiKey.GroupID > 0 {
+		return *apiKey.GroupID
+	}
+	if apiKey.Group != nil && apiKey.Group.ID > 0 {
+		return apiKey.Group.ID
+	}
+	return 0
 }

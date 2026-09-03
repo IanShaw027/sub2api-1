@@ -83,6 +83,8 @@ func newCreationRoutesTestRouter() *gin.Engine {
 		creation.GET("/sessions", h.ListSessions)
 		creation.POST("/sessions", h.CreateSession)
 		creation.GET("/images", h.ListImages)
+		creation.GET("/images/tasks/:task_id", h.ImageTask)
+		creation.GET("/images/:id", h.GetImage)
 	}
 	return router
 }
@@ -100,10 +102,62 @@ func TestCreationRoutesAreRegistered(t *testing.T) {
 		{http.MethodGet, "/api/v1/creation/sessions"},
 		{http.MethodPost, "/api/v1/creation/sessions"},
 		{http.MethodGet, "/api/v1/creation/images"},
+		{http.MethodGet, "/api/v1/creation/images/tasks/imgtask_abc"},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, nil)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 		require.NotEqual(t, http.StatusNotFound, w.Code, "path=%s should be registered", tc.path)
 	}
+}
+
+func TestCreationImageTaskRouteUsesTaskIDParam(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	v1 := router.Group("/api/v1")
+	settingService := newCreationRouteSettings()
+	jwt := servermiddleware.JWTAuthMiddleware(func(c *gin.Context) {
+		c.Set(string(servermiddleware.ContextKeyUser), servermiddleware.AuthSubject{UserID: 1})
+		c.Next()
+	})
+	RegisterCreationRoutes(
+		v1,
+		handler.NewCreationHandler(nil, nil, nil, nil, nil, nil),
+		jwt,
+		settingService,
+		servermiddleware.NewPanelRateLimiter(nil, settingService),
+	)
+
+	var foundTaskID bool
+	for _, route := range router.Routes() {
+		if route.Method == http.MethodGet && route.Path == "/api/v1/creation/images/tasks/:task_id" {
+			foundTaskID = true
+		}
+		require.NotEqual(t, "/api/v1/creation/images/tasks/:id", route.Path)
+	}
+	require.True(t, foundTaskID, "creation image task route must use :task_id")
+}
+
+func TestCreationImageTaskRouteForwardsTaskIDParam(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	v1 := router.Group("/api/v1")
+	settingService := newCreationRouteSettings()
+	jwt := servermiddleware.JWTAuthMiddleware(func(c *gin.Context) {
+		c.Set(string(servermiddleware.ContextKeyUser), servermiddleware.AuthSubject{UserID: 1})
+		c.Next()
+	})
+	creation := v1.Group("/creation")
+	creation.Use(gin.HandlerFunc(jwt))
+	creation.Use(servermiddleware.BackendModeUserGuard(settingService))
+	creation.Use(servermiddleware.CreationFeatureGuard(settingService))
+	creation.GET("/images/tasks/:task_id", func(c *gin.Context) {
+		c.String(http.StatusOK, c.Param("task_id"))
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/creation/images/tasks/imgtask_forwarded", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "imgtask_forwarded", w.Body.String())
 }
