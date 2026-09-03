@@ -486,7 +486,7 @@
  </template>
  <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
  </TablePageLayout>
- <Fab class="acct-fab" :label="t('admin.accounts.createAccount')" @click="showCreate = true">
+ <Fab class="acct-fab" data-tour="accounts-create-btn" :label="t('admin.accounts.createAccount')" @click="showCreate = true">
  <Icon name="plus" size="md" />
  {{ t('admin.accounts.createAccount') }}
  </Fab>

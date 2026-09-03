@@ -107,12 +107,14 @@ import type { PaymentOrder } from '@/types/payment'
 import type { Stripe, StripeElements } from '@stripe/stripe-js'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { useTheme } from '@/composables/useTheme'
 
 const i18n = useI18n()
 const { t } = i18n
 const route = useRoute()
 const router = useRouter()
 const paymentStore = usePaymentStore()
+const { isDark } = useTheme()
 
 // 弹窗模式：指定支付宝或微信方式时跳过 AppLayout
 const isPopup = computed(() => !!route.query.method)
@@ -241,10 +243,10 @@ async function confirmWechatPay(stripe: Stripe, clientSecret: string) {
 }
 
 function mountPaymentElement(stripe: Stripe, clientSecret: string) {
-  const isDark = document.documentElement.classList.contains('dark')
+  const dark = isDark.value
   const elements = stripe.elements({
     clientSecret,
-    appearance: { theme: isDark ? 'night' : 'stripe', variables: { borderRadius: '8px' } },
+    appearance: { theme: dark ? 'night' : 'stripe', variables: { borderRadius: '8px' } },
   })
   elementsInstance = elements
   const paymentElement = elements.create('payment', {

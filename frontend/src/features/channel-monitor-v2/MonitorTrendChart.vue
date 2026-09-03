@@ -84,6 +84,7 @@ import {
  sliceByZoom,
  type ZoomState,
 } from '@/features/channel-monitor-v2/monitorZoom'
+import { useTheme } from '@/composables/useTheme'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 const { t, locale } = useI18n()
@@ -98,9 +99,7 @@ const chartRef = ref<HTMLElement | null>(null)
 const zoom = ref<ZoomState>(resetZoom())
 const zoomed = computed(() => isZoomed(zoom.value))
 
-const isDark = computed(() =>
- typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
-)
+const { isDark } = useTheme()
 
 const bucketLabel = computed(() => {
  const seconds = props.coverage?.bucket_seconds || 60

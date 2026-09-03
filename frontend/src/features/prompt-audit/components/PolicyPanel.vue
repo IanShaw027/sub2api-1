@@ -64,7 +64,7 @@
  </label>
  <div class="rounded-lg bg-surface-2 px-4 py-3 text-sm text-muted">
  <p class="font-medium text-foreground">{{ t('admin.promptAudit.policy.strategy') }}</p>
- <p class="mt-1">priority · {{ t('admin.promptAudit.policy.strategyHint') }}</p>
+ <p class="mt-1">{{ t('admin.promptAudit.policy.strategyHint') }}</p>
  </div>
  </div>
  </div>

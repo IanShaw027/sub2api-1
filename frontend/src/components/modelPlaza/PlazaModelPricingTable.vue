@@ -533,7 +533,7 @@ function trimZero(n: number): string {
  --pz-bg-hover: color-mix(in srgb, var(--plaza-accent) 13%, transparent);
 }
 
-.dark .plaza-pricing-table {
+:global([data-theme='glass-dark']) .plaza-pricing-table {
  --pz-title: color-mix(in srgb, var(--plaza-accent) 70%, white);
  --pz-bg: color-mix(in srgb, var(--plaza-accent) 6%, transparent);
  --pz-bg-hover: color-mix(in srgb, var(--plaza-accent) 10%, transparent);

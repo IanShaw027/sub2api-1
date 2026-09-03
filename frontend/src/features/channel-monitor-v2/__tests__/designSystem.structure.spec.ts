@@ -30,7 +30,7 @@ describe('channel-monitor-v2 design system structure', () => {
     expect(src).toContain("'cache'")
     // Ops elevation: rounded-3xl + ring surfaces
     expect(src).toContain('rounded-3xl')
-    expect(src).toContain('ring-1 ring-gray-900/5')
+    expect(src).toContain('ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]')
     // Overview-first KPI strip before primary viz
     expect(src.indexOf('summaryAria')).toBeLessThan(src.indexOf('MonitorTrendChart'))
     // No page-level fixed min-width that forces viewport horizontal scroll

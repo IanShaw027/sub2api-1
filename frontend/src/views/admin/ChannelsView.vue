@@ -489,7 +489,7 @@
                   <input
                     v-model="rule.name"
                     :placeholder="t('admin.channels.form.ruleName')"
-                    class="bg-transparent text-sm font-medium text-foreground placeholder-gray-400 outline-none"
+                    class="bg-transparent text-sm font-medium text-foreground placeholder:text-muted outline-none"
                   />
                   <button type="button" @click="removeAccountStatsRule(sIdx, ruleIndex)" class="text-xs text-red-500 hover:text-danger-text">
                     {{ t('common.delete') }}

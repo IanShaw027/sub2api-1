@@ -511,7 +511,8 @@ onMounted(() => {
 }
 
 .home-nav {
-  height: 68px;
+  min-height: 68px;
+  height: auto;
   display: flex;
   align-items: center;
 }
@@ -520,10 +521,11 @@ onMounted(() => {
   width: 100%;
   max-width: 1280px;
   margin: 0 auto;
-  padding: 0 80px;
+  padding: 12px 80px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
 }
 
@@ -1043,7 +1045,16 @@ onMounted(() => {
   }
 
   .home-nav {
-    height: 56px;
+    min-height: 56px;
+  }
+}
+
+@media (max-width: 640px) {
+  .home-compare-head,
+  .home-compare-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 12px 16px;
   }
 }
 </style>

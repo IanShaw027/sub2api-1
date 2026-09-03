@@ -366,6 +366,7 @@ import type {
   CapacityTimeseries
 } from '@/api/admin/capacity'
 import type { AdminGroup, GroupPlatform } from '@/types'
+import { useTheme } from '@/composables/useTheme'
 
 ChartJS.register(Title, Tooltip, Legend, LineElement, LinearScale, PointElement, CategoryScale, Filler)
 
@@ -414,9 +415,7 @@ const groupSelectOptions = computed(() => [
 
 const events = computed<CapacityEvent[]>(() => series.value?.events ?? [])
 
-const isDarkMode = computed(
-  () => typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
-)
+const { isDark: isDarkMode } = useTheme()
 
 const kpiItems = computed(() => {
   if (!series.value) return []

@@ -234,17 +234,17 @@ onBeforeUnmount(() => {
 .select-trigger {
  @apply flex w-full items-center justify-between gap-2;
  @apply rounded-xl px-4 py-2.5 text-sm;
- @apply bg-surface
- @apply border border-line
- @apply text-foreground
+ @apply bg-surface;
+ @apply border border-line;
+ @apply text-foreground;
  @apply transition-all duration-200;
- @apply focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30;
- @apply hover:border-line
+ @apply focus:border-accent focus:outline-none focus:ring-2 focus:ring-[color-mix(in_oklch,var(--accent)_30%,transparent)];
+ @apply hover:border-line;
  @apply cursor-pointer;
 }
 
 .select-trigger-open {
- @apply border-accent ring-2 ring-accent/30;
+ @apply border-accent ring-2 ring-[color-mix(in_oklch,var(--accent)_30%,transparent)];
 }
 
 .filter-menu summary::-webkit-details-marker {
@@ -252,7 +252,7 @@ onBeforeUnmount(() => {
 }
 
 .filter-dropdown {
- @apply w-max min-w-[200px] max-h-[min(50vh,360px)] overflow-y-auto rounded-xl border border-line bg-surface shadow-lg
+ @apply w-max min-w-[200px] max-h-[min(50vh,360px)] overflow-y-auto rounded-xl border border-line bg-surface shadow-lg;
 }
 
 .dropdown-item {

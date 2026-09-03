@@ -505,6 +505,7 @@ import EndpointDistributionChart from '@/components/charts/EndpointDistributionC
 import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api/admin'
 import type { Account, AccountUsageStatsResponse } from '@/types'
+import { useTheme } from '@/composables/useTheme'
 
 ChartJS.register(
   CategoryScale,
@@ -531,10 +532,7 @@ const emit = defineEmits<{
 const loading = ref(false)
 const stats = ref<AccountUsageStatsResponse | null>(null)
 
-// Dark mode detection
-const isDarkMode = computed(() => {
-  return document.documentElement.classList.contains('dark')
-})
+const { isDark: isDarkMode } = useTheme()
 
 // Chart colors
 const chartColors = computed(() => ({

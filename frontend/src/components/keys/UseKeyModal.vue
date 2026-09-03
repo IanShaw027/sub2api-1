@@ -145,9 +145,9 @@
  <Icon name="exclamationCircle" size="sm" class="flex-shrink-0" />
  {{ file.hint }}
  </p>
- <div class="bg-surface-3 rounded-xl overflow-hidden">
+ <div class="bg-[var(--code-bg)] rounded-xl overflow-hidden">
  <!-- Code Header -->
- <div class="flex items-center justify-between px-4 py-2 bg-surface-3 border-b border-line">
+ <div class="flex items-center justify-between px-4 py-2 bg-[var(--code-bg)] border-b border-white/10">
  <span class="min-w-0 truncate text-xs text-muted font-mono">{{ file.path }}</span>
  <button
  type="button"
@@ -155,7 +155,7 @@
  class="flex flex-shrink-0 items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg transition-colors"
  :class="copiedIndex === index
  ? 'bg-green-500/20 text-green-400'
- : 'bg-surface-3 hover:bg-surface-3 text-muted hover:text-white'"
+ : 'bg-white/5 hover:bg-white/10 text-muted hover:text-white'"
  >
  <svg v-if="copiedIndex === index" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
  <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />

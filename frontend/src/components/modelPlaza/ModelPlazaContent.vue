@@ -162,15 +162,15 @@ const filteredGroups = computed(() => {
 .plaza-description :deep(h1),
 .plaza-description :deep(h2),
 .plaza-description :deep(h3) {
- @apply mb-2 mt-3 font-semibold text-foreground first:mt-0
+ @apply mb-2 mt-3 font-semibold text-foreground first:mt-0;
 }
 
 .plaza-description :deep(p) {
- @apply mb-2 text-foreground last:mb-0
+ @apply mb-2 text-foreground last:mb-0;
 }
 
 .plaza-description :deep(a) {
- @apply text-accent underline underline-offset-4 hover:text-accent
+ @apply text-accent underline underline-offset-4 hover:text-accent;
 }
 
 .plaza-description :deep(ul) {
@@ -182,14 +182,14 @@ const filteredGroups = computed(() => {
 }
 
 .plaza-description :deep(li) {
- @apply mb-0.5 text-foreground
+ @apply mb-0.5 text-foreground;
 }
 
 .plaza-description :deep(code) {
- @apply rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs
+ @apply rounded bg-surface-2 px-1.5 py-0.5 font-mono text-xs;
 }
 
 .plaza-description :deep(blockquote) {
- @apply my-2 border-l-4 border-line pl-3 text-muted
+ @apply my-2 border-l-4 border-line pl-3 text-muted;
 }
 </style>

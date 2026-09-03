@@ -434,7 +434,7 @@
         />
       </template>
     </TablePageLayout>
-    <Fab class="groups-fab" :label="t('admin.groups.createGroup')" @click="openCreateModal">
+    <Fab class="groups-fab" data-tour="groups-create-btn" :label="t('admin.groups.createGroup')" @click="openCreateModal">
       <Icon name="plus" size="md" />
       {{ t("admin.groups.createGroup") }}
     </Fab>

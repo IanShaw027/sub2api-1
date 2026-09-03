@@ -240,7 +240,7 @@
  'h-full rounded-full transition-all',
  row.quota_used >= row.quota ? 'bg-red-500' :
  row.quota_used >= row.quota * 0.8 ? 'bg-yellow-500' :
- 'bg-accent0'
+ 'bg-accent'
  ]"
  :style="{ width: Math.min((row.quota_used / row.quota) * 100, 100) + '%' }"
  />
@@ -459,7 +459,7 @@
  />
  </template>
  </TablePageLayout>
- <Fab class="keys-fab" :label="t('keys.createKey')" @click="showCreateModal = true">
+ <Fab class="keys-fab" data-tour="keys-create-btn" :label="t('keys.createKey')" @click="showCreateModal = true">
  <Icon name="plus" size="md" />
  {{ t('keys.createKey') }}
  </Fab>
@@ -887,7 +887,7 @@
  :class="[
  'rounded-lg px-3 py-1.5 text-sm transition-colors',
  formData.expiration_preset === days
- ? 'bg-accent text-accent '
+ ? 'bg-accent text-white '
  : 'bg-surface-2 text-muted hover:bg-surface-2 '
  ]"
  >
@@ -899,7 +899,7 @@
  :class="[
  'rounded-lg px-3 py-1.5 text-sm transition-colors',
  formData.expiration_preset === 'custom'
- ? 'bg-accent text-accent '
+ ? 'bg-accent text-white '
  : 'bg-surface-2 text-muted hover:bg-surface-2 '
  ]"
  >

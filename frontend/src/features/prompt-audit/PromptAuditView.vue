@@ -91,7 +91,7 @@
  </template>
  </div>
 
- <div v-if="draft && activeTab === 'config'" class="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 px-4 py-3 shadow-[0_-12px_35px_rgba(15,23,42,0.08)] backdrop-blur lg:left-64">
+ <div v-if="draft && activeTab === 'config'" class="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 px-4 py-3 shadow-[0_-12px_35px_rgba(15,23,42,0.08)] backdrop-blur" :style="saveBarOffsetStyle">
  <div class="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3">
  <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
  <SaveToggle :label="t('admin.promptAudit.saveBar.enabled')" :model-value="draft.enabled" data-test="enabled-toggle" @update:model-value="setEnabled" />
@@ -147,6 +147,7 @@
 <script setup lang="ts">
 import { computed, defineComponent, h, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useIsMobile } from '@/composables/useIsMobile'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import GlassCard from '@/components/ui/GlassCard.vue'
@@ -176,6 +177,12 @@ import { buildUpdateRequest, cloneData, configToDraft, draftFingerprint, emptyEv
 
 const { t, locale } = useI18n()
 const appStore = useAppStore()
+const { isDesktop, isMobile } = useIsMobile()
+const saveBarOffsetStyle = computed(() => {
+ if (isMobile.value) return { left: '0px' }
+ const left = !isDesktop.value || appStore.sidebarCollapsed ? '72px' : '224px'
+ return { left }
+})
 type PromptAuditPageTab = 'config' | 'events'
 const activeTab = ref<PromptAuditPageTab>('events')
 const pageTabs = computed(() => [

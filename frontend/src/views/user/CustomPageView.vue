@@ -447,7 +447,13 @@ onUnmounted(() => {
 }
 
 .custom-open-fab {
-  @apply absolute right-3 top-3 z-10 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-surface/80;
+  @apply absolute right-3 top-3 z-10 shadow-sm backdrop-blur;
+}
+
+@supports (backdrop-filter: blur(1px)) {
+  .custom-open-fab {
+    background-color: color-mix(in oklch, var(--surface) 80%, transparent);
+  }
 }
 
 .custom-embed-frame {

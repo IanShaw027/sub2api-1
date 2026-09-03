@@ -285,6 +285,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Select from '@/components/common/Select.vue'
 import { getOverview, getTimeseries, type OAuthCapacityOverview } from '@/api/admin/oauthCapacity'
 import type { CapacityRange, CapacityTimeseries } from '@/api/admin/capacity'
+import { useTheme } from '@/composables/useTheme'
 
 ChartJS.register(Title, Tooltip, Legend, LineElement, LinearScale, PointElement, CategoryScale)
 
@@ -402,9 +403,7 @@ const forecastKpis = computed(() => {
   ]
 })
 
-const isDarkMode = computed(
-  () => typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
-)
+const { isDark: isDarkMode } = useTheme()
 
 const chartData = computed<ChartData<'line'> | null>(() => {
   const points = series.value?.points

@@ -190,13 +190,13 @@ function chipClass(active: boolean): string {
  background-color: color-mix(in srgb, var(--chip-accent) 16%, transparent);
 }
 
-.dark .chip-tinted {
+:global([data-theme='glass-dark']) .chip-tinted {
  color: color-mix(in srgb, var(--chip-accent) 72%, white);
  background-color: color-mix(in srgb, var(--chip-accent) 12%, transparent);
  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--chip-accent) 30%, transparent);
 }
 
-.dark .chip-tinted:not(:disabled):hover {
+:global([data-theme='glass-dark']) .chip-tinted:not(:disabled):hover {
  background-color: color-mix(in srgb, var(--chip-accent) 18%, transparent);
 }
 
@@ -211,11 +211,11 @@ function chipClass(active: boolean): string {
  background-color: color-mix(in srgb, var(--chip-accent) 75%, black);
 }
 
-.dark .chip-tinted-active {
+:global([data-theme='glass-dark']) .chip-tinted-active {
  background-color: color-mix(in srgb, var(--chip-accent) 80%, transparent);
 }
 
-.dark .chip-tinted-active:not(:disabled):hover {
+:global([data-theme='glass-dark']) .chip-tinted-active:not(:disabled):hover {
  background-color: var(--chip-accent);
 }
 </style>
