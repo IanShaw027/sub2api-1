@@ -13,8 +13,16 @@ const store = useCreationStore()
 
 <template>
   <div class="studio-task-grid">
-    <div v-if="store.imageTasksLoading" class="text-sm text-muted">
+    <div v-if="store.imageTasksLoading && store.imageTasks.length === 0" class="text-sm text-muted">
       {{ t('common.loading') }}
+    </div>
+
+    <div
+      v-else-if="store.isImageSession && !store.hasImageModels && store.imageTasks.length === 0"
+      class="studio-task-empty"
+    >
+      <p class="text-sm text-foreground">{{ t('studio.emptyImageModels') }}</p>
+      <p class="text-xs text-muted">{{ t('studio.errors.noImageModels') }}</p>
     </div>
 
     <div v-else-if="store.imageTasks.length === 0" class="text-sm text-muted">
@@ -43,5 +51,12 @@ const store = useCreationStore()
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 12px;
+}
+
+.studio-task-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 4px;
 }
 </style>

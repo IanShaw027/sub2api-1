@@ -22,6 +22,7 @@ export default {
     emptySessions: '暂无会话，可新建对话或图像会话。',
     emptyMessages: '暂无消息，发送一条提示开始对话。',
     emptyTasks: '暂无图像任务，描述一张图像开始生成。',
+    emptyImageModels: '当前分组没有可用的图像模型。图像生成目前仅支持 OpenAI 与 Grok 异步图像模型。',
     streaming: '正在生成回复…',
     preview: '预览',
     retry: '重试',
@@ -36,6 +37,7 @@ export default {
       generate: '生成图像失败。',
       noGroup: '请先选择分组。',
       noModel: '请先选择模型。',
+      noImageModels: '当前分组没有图像模型，请切换到支持 OpenAI 或 Grok 图像生成的分组。',
       stream: '流式响应失败。',
     },
     taskStatus: {

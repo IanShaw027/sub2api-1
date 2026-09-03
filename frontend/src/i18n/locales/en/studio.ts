@@ -22,6 +22,8 @@ export default {
     emptySessions: 'No sessions yet. Start a new chat or image session.',
     emptyMessages: 'No messages yet. Send a prompt to begin.',
     emptyTasks: 'No image tasks yet. Describe an image to generate.',
+    emptyImageModels:
+      'No image models available for this group. Image generation currently supports OpenAI and Grok async image models.',
     streaming: 'Generating response…',
     preview: 'Preview',
     retry: 'Retry',
@@ -36,6 +38,8 @@ export default {
       generate: 'Failed to generate image.',
       noGroup: 'Select a group before continuing.',
       noModel: 'Select a model before continuing.',
+      noImageModels:
+        'This group has no image models. Switch to a group that supports OpenAI or Grok image generation.',
       stream: 'Streaming failed.',
     },
     taskStatus: {

@@ -25,9 +25,13 @@ async function onModelChange(value: string | number | boolean | null) {
       :model-value="store.model"
       :options="modelOptions"
       :placeholder="t('studio.selectModel')"
+      :disabled="store.isImageSession && !store.hasImageModels"
       searchable="auto"
       @update:model-value="onModelChange"
     />
+    <p v-if="store.isImageSession && !store.hasImageModels" class="text-xs text-muted">
+      {{ t('studio.emptyImageModels') }}
+    </p>
   </div>
 </template>
 

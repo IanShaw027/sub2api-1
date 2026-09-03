@@ -71,13 +71,60 @@ export async function createSessionMessage(
   return data
 }
 
+function asOptionalString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+export function mapCreationImageJob(raw: unknown): CreationImageJob {
+  const record = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const mediaUrl =
+    asOptionalString(record.media_url) ??
+    asOptionalString(record.mediaUrl) ??
+    undefined
+
+  return {
+    id: Number(record.id) || 0,
+    session_id: record.session_id == null ? null : Number(record.session_id),
+    user_id: Number(record.user_id) || 0,
+    group_id: Number(record.group_id) || 0,
+    status:
+      record.status === 'completed' ||
+      record.status === 'failed' ||
+      record.status === 'processing' ||
+      record.status === 'pending'
+        ? record.status
+        : 'pending',
+    model: String(record.model ?? ''),
+    prompt: String(record.prompt ?? ''),
+    media_asset_id: record.media_asset_id == null ? null : Number(record.media_asset_id),
+    provider_task_id:
+      typeof record.provider_task_id === 'string'
+        ? record.provider_task_id
+        : record.provider_task_id == null
+          ? null
+          : String(record.provider_task_id),
+    error: typeof record.error === 'string' ? record.error : record.error == null ? null : String(record.error),
+    created_at: String(record.created_at ?? ''),
+    updated_at: String(record.updated_at ?? ''),
+    media_url: mediaUrl,
+  }
+}
+
 export async function listImages(params?: {
   session_id?: number
   page?: number
   page_size?: number
 }): Promise<CreationImageListResponse> {
   const { data } = await apiClient.get<CreationImageListResponse>(`${basePath}/images`, { params })
-  return data
+  const items = Array.isArray(data?.items) ? data.items.map(mapCreationImageJob) : []
+  return {
+    items,
+    total: data?.total ?? items.length,
+    page: data?.page ?? 1,
+    page_size: data?.page_size ?? items.length,
+  }
 }
 
 export async function getModels(groupId: number): Promise<GatewayModelList> {
@@ -368,6 +415,7 @@ export const creationAPI = {
   getImageTask,
   streamCreationChat,
   extractMessageText,
+  mapCreationImageJob,
 }
 
 export default creationAPI

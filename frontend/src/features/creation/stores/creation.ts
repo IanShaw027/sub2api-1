@@ -68,6 +68,8 @@ export const useCreationStore = defineStore('creation', () => {
     isImageSession.value ? imageModels.value : chatModels.value,
   )
 
+  const hasImageModels = computed(() => imageModels.value.length > 0)
+
   function clearImagePollers() {
     for (const timer of imagePollers.values()) {
       clearInterval(timer)
@@ -141,26 +143,25 @@ export const useCreationStore = defineStore('creation', () => {
         .map((item) => item.provider_task_id)
         .filter((id): id is string => Boolean(id)),
     )
-    const inFlight = imageTasks.value.filter(
-      (item) =>
-        item.session_id === sessionId &&
-        (item.status === 'processing' || item.status === 'pending') &&
-        (!item.provider_task_id || !serverTaskIds.has(item.provider_task_id)),
-    )
-    const merged = [...inFlight]
-    for (const item of serverItems) {
-      if (item.provider_task_id && inFlight.some((local) => local.provider_task_id === item.provider_task_id)) {
-        continue
-      }
-      merged.push(item)
-    }
-    return merged.sort(
+    const serverIds = new Set(serverItems.map((item) => item.id))
+
+    const localsToKeep = imageTasks.value.filter((item) => {
+      if (item.session_id !== sessionId) return false
+      if (serverIds.has(item.id)) return false
+      if (item.provider_task_id && serverTaskIds.has(item.provider_task_id)) return false
+      return true
+    })
+
+    return [...localsToKeep, ...serverItems].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     )
   }
 
   async function loadImageTasks(sessionId: number) {
-    imageTasksLoading.value = true
+    const silent = imageTasks.value.length > 0
+    if (!silent) {
+      imageTasksLoading.value = true
+    }
     error.value = null
     try {
       const response = await creationAPI.listImages({ session_id: sessionId, page: 1, page_size: 100 })
@@ -172,7 +173,9 @@ export const useCreationStore = defineStore('creation', () => {
       error.value = err instanceof Error ? err.message : 'loadImageTasks failed'
       throw err
     } finally {
-      imageTasksLoading.value = false
+      if (!silent) {
+        imageTasksLoading.value = false
+      }
     }
   }
 
@@ -358,15 +361,17 @@ export const useCreationStore = defineStore('creation', () => {
   }
 
   async function sendImagePrompt(prompt: string, session: CreationSession) {
-    if (!groupId.value || !model.value) throw new Error('group and model required')
+    const capturedGroupId = groupId.value
+    const capturedModel = model.value
+    if (!capturedGroupId || !capturedModel) throw new Error('group and model required')
 
     const placeholder: CreationImageJob = {
       id: Date.now(),
       session_id: session.id,
       user_id: 0,
-      group_id: groupId.value,
+      group_id: capturedGroupId,
       status: 'processing',
-      model: model.value,
+      model: capturedModel,
       prompt,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -374,17 +379,24 @@ export const useCreationStore = defineStore('creation', () => {
     imageTasks.value = [placeholder, ...imageTasks.value]
 
     try {
-      const task = await creationAPI.submitImageGenerationAsync(groupId.value, session.id, {
-        model: model.value,
+      const task = await creationAPI.submitImageGenerationAsync(capturedGroupId, session.id, {
+        model: capturedModel,
         prompt,
       })
 
-      const mapped = mapAsyncTaskToImageJob(task, session.id, groupId.value, model.value, prompt)
+      const mapped = mapAsyncTaskToImageJob(task, session.id, capturedGroupId, capturedModel, prompt)
       imageTasks.value = imageTasks.value.map((item) =>
         item.id === placeholder.id ? { ...mapped, id: placeholder.id } : item,
       )
 
-      pollImageTask(task.task_id, session.id, placeholder.id, groupId.value)
+      if (task.status === 'completed' || task.status === 'failed') {
+        if (selectedSessionId.value === session.id) {
+          await loadImageTasks(session.id)
+        }
+        return
+      }
+
+      pollImageTask(task.task_id, session.id, placeholder.id, capturedGroupId)
     } catch (err) {
       imageTasks.value = imageTasks.value.map((item) =>
         item.id === placeholder.id
@@ -545,6 +557,7 @@ export const useCreationStore = defineStore('creation', () => {
     isImageSession,
     visibleSessions,
     availableModels,
+    hasImageModels,
     initialize,
     loadSessions,
     loadMessages,

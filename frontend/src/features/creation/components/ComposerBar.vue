@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@/components/ui/Button.vue'
 import { useCreationStore } from '../stores/creation'
@@ -9,9 +9,16 @@ const store = useCreationStore()
 
 const draft = ref('')
 
+const canSubmit = computed(() => {
+  if (!draft.value.trim() || store.streaming) return false
+  if (store.isImageSession && !store.hasImageModels) return false
+  return true
+})
+
 async function submit() {
   const text = draft.value.trim()
   if (!text || store.streaming) return
+  if (store.isImageSession && !store.hasImageModels) return
   draft.value = ''
   try {
     await store.submitText(text)
@@ -28,14 +35,14 @@ async function submit() {
       class="studio-composer-input"
       rows="3"
       :placeholder="store.isImageSession ? t('studio.composer.placeholderImage') : t('studio.composer.placeholderChat')"
-      :disabled="store.streaming"
+      :disabled="store.streaming || (store.isImageSession && !store.hasImageModels)"
       @keydown.enter.exact.prevent="submit"
     />
     <div class="studio-composer-actions">
       <Button
         variant="primary"
         :loading="store.streaming"
-        :disabled="!draft.trim() || store.streaming"
+        :disabled="!canSubmit"
         @click="submit"
       >
         {{ store.streaming ? t('studio.composer.sending') : t('studio.composer.send') }}
@@ -44,7 +51,10 @@ async function submit() {
         {{ t('studio.retry') }}
       </Button>
     </div>
-    <p v-if="store.error" class="text-xs text-danger">{{ store.error }}</p>
+    <p v-if="store.isImageSession && !store.hasImageModels" class="text-xs text-danger">
+      {{ t('studio.errors.noImageModels') }}
+    </p>
+    <p v-else-if="store.error" class="text-xs text-danger">{{ store.error }}</p>
   </div>
 </template>
 
