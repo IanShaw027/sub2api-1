@@ -1,0 +1,5 @@
+admin.groups.modelRouting.claudeMaxSimulation.disabled
+admin.groups.modelRouting.claudeMaxSimulation.enabled
+admin.groups.modelRouting.claudeMaxSimulation.hint
+admin.groups.modelRouting.claudeMaxSimulation.title
+admin.groups.modelRouting.claudeMaxSimulation.tooltip
