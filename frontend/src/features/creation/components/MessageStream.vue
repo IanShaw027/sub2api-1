@@ -62,4 +62,10 @@ const store = useCreationStore()
 .studio-message-assistant {
   background: color-mix(in oklch, var(--surface-secondary, var(--surface)) 88%, transparent);
 }
+
+@media (max-width: 767px) {
+  .studio-message-stream {
+    max-height: min(38vh, 360px);
+  }
+}
 </style>

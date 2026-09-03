@@ -164,4 +164,10 @@ async function removeSession(id: number) {
   font-size: 18px;
   line-height: 1;
 }
+
+@media (max-width: 767px) {
+  .studio-session-items {
+    max-height: 180px;
+  }
+}
 </style>

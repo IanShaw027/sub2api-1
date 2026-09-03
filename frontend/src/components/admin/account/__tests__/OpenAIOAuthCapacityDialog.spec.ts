@@ -25,7 +25,7 @@ vi.mock('vue-i18n', async () => {
 })
 
 vi.mock('vue-chartjs', () => ({
-  Line: defineComponent({ name: 'Line', template: '<div data-testid="oauth-trend-chart" />' })
+  Line: defineComponent({ name: 'LineChartStub', template: '<div data-testid="oauth-trend-chart" />' })
 }))
 
 import OpenAIOAuthCapacityDialog from '../OpenAIOAuthCapacityDialog.vue'

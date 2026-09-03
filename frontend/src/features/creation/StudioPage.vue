@@ -129,11 +129,50 @@ function closePreview() {
 @media (max-width: 1100px) {
   .studio-layout {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      'sessions'
+      'main'
+      'controls';
+  }
+
+  .studio-column-side {
+    grid-area: sessions;
+  }
+
+  .studio-column-main {
+    grid-area: main;
+  }
+
+  .studio-column-controls {
+    grid-area: controls;
   }
 
   .studio-main-card,
   .studio-controls-card {
     min-height: auto;
+  }
+}
+
+@media (max-width: 767px) {
+  .studio-page {
+    gap: 12px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .studio-layout {
+    gap: 10px;
+  }
+
+  .studio-main-card {
+    min-height: min(42vh, 420px);
+  }
+
+  .studio-controls-card {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    background: color-mix(in oklch, var(--surface) 92%, transparent);
+    backdrop-filter: blur(12px);
   }
 }
 </style>
