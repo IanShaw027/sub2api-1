@@ -453,6 +453,7 @@ const onDropdownKeyDown = (e: KeyboardEvent) => {
  break
  case 'Escape':
  e.preventDefault()
+ e.stopImmediatePropagation()
  isOpen.value = false
  triggerRef.value?.focus()
  break
@@ -507,17 +508,17 @@ onUnmounted(() => {
 .select-trigger {
  @apply flex w-full items-center justify-between gap-2;
  @apply rounded-xl px-4 py-2.5 text-sm;
- @apply bg-surface
- @apply border border-line
- @apply text-foreground
+ @apply bg-surface;
+ @apply border border-line;
+ @apply text-foreground;
  @apply transition-all duration-200;
- @apply focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30;
- @apply hover:border-line
+ @apply focus:border-accent focus:outline-none focus:ring-2 focus:ring-[color-mix(in_oklch,var(--accent)_30%,transparent)];
+ @apply hover:border-line;
  @apply cursor-pointer;
 }
 
 .select-trigger-open {
- @apply border-accent ring-2 ring-accent/30;
+ @apply border-accent ring-2 ring-[color-mix(in_oklch,var(--accent)_30%,transparent)];
 }
 
 .select-trigger-error {
@@ -525,7 +526,7 @@ onUnmounted(() => {
 }
 
 .select-trigger-disabled {
- @apply cursor-not-allowed bg-surface-2 opacity-60
+ @apply cursor-not-allowed bg-surface-2 opacity-60;
 }
 
 .select-value {
@@ -533,36 +534,36 @@ onUnmounted(() => {
 }
 
 .select-icon {
- @apply flex-shrink-0 text-muted
+ @apply flex-shrink-0 text-muted;
 }
 
 .select-clear {
  @apply flex flex-shrink-0 cursor-pointer items-center justify-center;
  @apply rounded text-muted transition-colors;
- @apply hover:text-muted
+ @apply hover:text-muted;
 }
 </style>
 
 <style>
 .select-dropdown-portal {
  @apply w-max min-w-[200px];
- @apply bg-surface
+ @apply bg-surface;
  @apply rounded-xl;
- @apply border border-line
- @apply shadow-lg shadow-black/10
+ @apply border border-line;
+ @apply shadow-lg shadow-black/10;
  @apply overflow-hidden;
  pointer-events: auto !important;
 }
 
 .select-dropdown-portal .select-search {
  @apply flex items-center gap-2 px-3 py-2;
- @apply border-b border-line
+ @apply border-b border-line;
 }
 
 .select-dropdown-portal .select-search-input {
  @apply flex-1 bg-transparent text-sm;
- @apply text-foreground
- @apply placeholder:text-muted
+ @apply text-foreground;
+ @apply placeholder:text-muted;
  @apply focus:outline-none;
 }
 
@@ -573,19 +574,19 @@ onUnmounted(() => {
 .select-dropdown-portal .select-option {
  @apply flex items-center justify-between gap-2;
  @apply px-4 py-2.5 text-sm;
- @apply text-foreground
+ @apply text-foreground;
  @apply cursor-pointer transition-colors duration-150;
- @apply hover:bg-surface-2
+ @apply hover:bg-surface-2;
  pointer-events: auto !important;
 }
 
 .select-dropdown-portal .select-option-selected {
- @apply bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]
- @apply text-accent
+ @apply bg-[color-mix(in_oklch,var(--accent)_12%,transparent)];
+ @apply text-accent;
 }
 
 .select-dropdown-portal .select-option-focused {
- @apply bg-surface-2
+ @apply bg-surface-2;
 }
 
 .select-dropdown-portal .select-option-disabled {
@@ -594,13 +595,13 @@ onUnmounted(() => {
 
 .select-dropdown-portal .select-option-group {
  @apply cursor-default select-none;
- @apply bg-surface-2
+ @apply bg-surface-2;
  @apply text-[11px] font-bold uppercase tracking-wider;
- @apply text-muted
+ @apply text-muted;
 }
 
 .select-dropdown-portal .select-option-group:hover {
- @apply bg-surface-2
+ @apply bg-surface-2;
 }
 
 .select-dropdown-portal .select-option-label {
@@ -609,7 +610,7 @@ onUnmounted(() => {
 
 .select-dropdown-portal .select-empty {
  @apply px-4 py-8 text-center text-sm;
- @apply text-muted
+ @apply text-muted;
 }
 
 .select-dropdown-enter-active,

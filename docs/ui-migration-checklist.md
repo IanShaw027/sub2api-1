@@ -10,7 +10,7 @@ Branch: `feat/glass-ui-redesign` (base: `personal-main`)
 | `rg "bg-gray-" frontend/src` | ✅ 0 matches in `.vue` | Completed in p3 cleanup |
 | `pnpm run typecheck` | ✅ | |
 | `pnpm run test:run` | ✅ 2051 tests | |
-| `html.dark` dual-track removed | ✅ `22db4f47b` | `useTheme` uses `data-theme` only |
+| Theme dual-track | ✅ | `data-theme` plus class `dark` for leftover `.dark` CSS / third-party widgets |
 | Settings mobile nav (`<768` dropdown) | ✅ | `SettingsView.vue` |
 
 ## Phase commits

@@ -145,6 +145,7 @@ import { getLocale, setLocale } from '@/i18n'
 import Icon from '@/components/icons/Icon.vue'
 import SidebarNavContent from './sidebar/SidebarNavContent.vue'
 import type { NavItem, NavSection } from './sidebar/navSections'
+import { acquireOverlayLock, releaseOverlayLock } from '@/components/ui/overlayLock'
 
 const FOCUSABLE_SELECTOR = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
 
@@ -215,7 +216,6 @@ const showOnboardingButton = computed(() => {
  return !authStore.isSimpleMode && user.value?.role === 'admin'
 })
 
-let previousOverflow = ''
 let previousFocus: HTMLElement | null = null
 
 function close() {
@@ -237,13 +237,11 @@ function handleReplayGuide() {
 }
 
 function lockBody(lock: boolean) {
- if (typeof document === 'undefined') return
  if (lock) {
- previousOverflow = document.body.style.overflow
- document.body.style.overflow = 'hidden'
+ acquireOverlayLock()
  return
  }
- document.body.style.overflow = previousOverflow
+ releaseOverlayLock()
 }
 
 function trapFocus(event: KeyboardEvent) {
@@ -348,7 +346,7 @@ onBeforeUnmount(() => {
  top: calc(56px + env(safe-area-inset-top, 0px));
  right: 0;
  bottom: 0;
- z-index: 25;
+ z-index: 50;
  display: flex;
  flex-direction: column;
  width: 300px;

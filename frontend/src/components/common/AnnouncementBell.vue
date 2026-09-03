@@ -336,6 +336,7 @@ import DOMPurify from 'dompurify'
 import { useAppStore } from '@/stores/app'
 import { useAnnouncementStore } from '@/stores/announcements'
 import { formatRelativeTime, formatRelativeWithDateTime } from '@/utils/format'
+import { acquireOverlayLock, releaseOverlayLock } from '@/components/ui/overlayLock'
 import type { AnnouncementReadStatusFilter, UserAnnouncement } from '@/types'
 import Icon from '@/components/icons/Icon.vue'
 import '@/styles/announcement-markdown.css'
@@ -458,19 +459,33 @@ function handleEscape(e: KeyboardEvent) {
  }
 }
 
+let overlayHeld = false
+
+function syncOverlayLock(needLock: boolean) {
+ if (needLock && !overlayHeld) {
+ acquireOverlayLock()
+ overlayHeld = true
+ return
+ }
+ if (!needLock && overlayHeld) {
+ releaseOverlayLock()
+ overlayHeld = false
+ }
+}
+
 onMounted(() => {
  document.addEventListener('keydown', handleEscape)
 })
 
 onBeforeUnmount(() => {
  document.removeEventListener('keydown', handleEscape)
- document.body.style.overflow = ''
+ syncOverlayLock(false)
 })
 
 watch(
  [isModalOpen, detailModalOpen, () => announcementStore.currentPopup],
  ([modal, detail, popup]) => {
- document.body.style.overflow = (modal || detail || popup) ? 'hidden' : ''
+ syncOverlayLock(Boolean(modal || detail || popup))
  }
 )
 </script>
@@ -514,7 +529,7 @@ watch(
  border-radius: 4px;
 }
 
-.dark .overflow-y-auto::-webkit-scrollbar-thumb {
+:global([data-theme='glass-dark']) .overflow-y-auto::-webkit-scrollbar-thumb {
  background: linear-gradient(to bottom, #4b5563, #374151);
 }
 
@@ -522,7 +537,7 @@ watch(
  background: linear-gradient(to bottom, #94a3b8, #64748b);
 }
 
-.dark .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+:global([data-theme='glass-dark']) .overflow-y-auto::-webkit-scrollbar-thumb:hover {
  background: linear-gradient(to bottom, #6b7280, #4b5563);
 }
 </style>

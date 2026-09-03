@@ -46,11 +46,15 @@
  </svg>
  </span>
  </button>
+ <Teleport to="body">
  <div
  v-if="collapsed && isTablet && flyoutOpen"
+ ref="flyoutRef"
  class="sidebar-group-flyout"
  role="menu"
  :aria-label="item.label"
+ :style="flyoutStyle"
+ @click.stop
  >
  <router-link
  v-for="child in item.children"
@@ -68,6 +72,7 @@
  <span class="min-w-0 flex-1 truncate">{{ child.label }}</span>
  </router-link>
  </div>
+ </Teleport>
  </div>
  <div
  v-if="!collapsed && isExpanded"
@@ -131,7 +136,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { itemDomId, itemTourAttr, type NavItem } from './navSections'
@@ -155,6 +160,8 @@ const emit = defineEmits<{
 const { isTablet } = useIsMobile()
 const flyoutOpen = ref(false)
 const groupButtonRef = ref<HTMLElement | null>(null)
+const flyoutRef = ref<HTMLElement | null>(null)
+const flyoutStyle = ref<Record<string, string>>({})
 
 const domId = computed(() => itemDomId(props.item.path))
 const tourAttr = computed(() => itemTourAttr(props.item.path))
@@ -163,16 +170,46 @@ const groupChildrenId = computed(() => {
  return `sidebar-group-${slug}`
 })
 
+function updateFlyoutPosition() {
+ const trigger = groupButtonRef.value
+ if (!trigger) return
+ const rect = trigger.getBoundingClientRect()
+ const padding = 8
+ const left = rect.right + padding
+ let top = rect.top
+ const flyout = flyoutRef.value
+ if (flyout) {
+ const height = flyout.offsetHeight
+ if (top + height > window.innerHeight - padding) {
+ top = Math.max(padding, window.innerHeight - height - padding)
+ }
+ }
+ flyoutStyle.value = {
+ position: 'fixed',
+ top: `${top}px`,
+ left: `${left}px`,
+ zIndex: '55'
+ }
+}
+
+function closeFlyout() {
+ flyoutOpen.value = false
+}
+
 function onGroupClick() {
  if (props.collapsed && isTablet.value && props.item.children?.length) {
  flyoutOpen.value = !flyoutOpen.value
+ if (flyoutOpen.value) {
+ updateFlyoutPosition()
+ void nextTick(updateFlyoutPosition)
+ }
  return
  }
  emit('group-click', props.item)
 }
 
 function onFlyoutNavigate(path: string) {
- flyoutOpen.value = false
+ closeFlyout()
  emit('navigate', path)
 }
 
@@ -180,15 +217,40 @@ function onDocumentClick(event: MouseEvent) {
  if (!flyoutOpen.value) return
  const target = event.target as Node | null
  if (groupButtonRef.value?.contains(target)) return
- flyoutOpen.value = false
+ if (flyoutRef.value?.contains(target)) return
+ closeFlyout()
 }
+
+function onDocumentKeydown(event: KeyboardEvent) {
+ if (!flyoutOpen.value) return
+ if (event.key === 'Escape') closeFlyout()
+}
+
+watch(() => props.routePath, closeFlyout)
+watch([() => props.collapsed, isTablet], () => {
+ if (!props.collapsed || !isTablet.value) closeFlyout()
+})
+
+watch(flyoutOpen, (open) => {
+ if (open) {
+ window.addEventListener('resize', updateFlyoutPosition)
+ window.addEventListener('scroll', updateFlyoutPosition, true)
+ } else {
+ window.removeEventListener('resize', updateFlyoutPosition)
+ window.removeEventListener('scroll', updateFlyoutPosition, true)
+ }
+})
 
 onMounted(() => {
  document.addEventListener('click', onDocumentClick)
+ document.addEventListener('keydown', onDocumentKeydown)
 })
 
 onBeforeUnmount(() => {
  document.removeEventListener('click', onDocumentClick)
+ document.removeEventListener('keydown', onDocumentKeydown)
+ window.removeEventListener('resize', updateFlyoutPosition)
+ window.removeEventListener('scroll', updateFlyoutPosition, true)
 })
 </script>
 
@@ -208,10 +270,8 @@ onBeforeUnmount(() => {
 }
 
 .sidebar-group-flyout {
- position: absolute;
- top: 0;
- left: calc(100% + 8px);
- z-index: 300;
+ position: fixed;
+ z-index: 55;
  min-width: 200px;
  padding: 6px;
  border-radius: 12px;

@@ -195,7 +195,7 @@ onBeforeUnmount(() => {
  border-radius: 4px;
 }
 
-.dark .overflow-y-auto::-webkit-scrollbar-thumb {
+:global([data-theme='glass-dark']) .overflow-y-auto::-webkit-scrollbar-thumb {
  background: linear-gradient(to bottom, #4b5563, #374151);
 }
 </style>

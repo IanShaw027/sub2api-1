@@ -5,6 +5,7 @@
         <TextInput
           :model-value="search"
           :placeholder="searchPlaceholder"
+          :aria-label="searchPlaceholder || 'Search'"
           @update:model-value="$emit('update:search', String($event))"
         />
       </slot>

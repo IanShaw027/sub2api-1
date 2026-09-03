@@ -6,6 +6,7 @@
     <input
       :id="inputId"
       ref="inputRef"
+      v-bind="$attrs"
       class="field"
       :class="{ 'ui-text-input-error': error }"
       :type="type"
@@ -15,7 +16,7 @@
       :readonly="readonly"
       :autocomplete="autocomplete"
       :aria-invalid="error ? true : undefined"
-      :aria-describedby="error ? `${inputId}-error` : undefined"
+      :aria-describedby="errorDescribedBy"
       @input="onInput"
       @blur="emit('blur', $event)"
       @focus="emit('focus', $event)"
@@ -32,8 +33,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, useId } from 'vue'
+import { computed, ref, useId, useSlots } from 'vue'
 import FieldLabel from './FieldLabel.vue'
+
+defineOptions({ inheritAttrs: false })
 
 const props = withDefaults(
   defineProps<{
@@ -64,13 +67,21 @@ const emit = defineEmits<{
   focus: [event: FocusEvent]
 }>()
 
+const slots = useSlots()
 const fallbackId = useId()
 const inputId = computed(() => props.id ?? `ui-input-${fallbackId}`)
 const inputRef = ref<HTMLInputElement | null>(null)
+const errorDescribedBy = computed(() =>
+  props.error || slots.error ? `${inputId.value}-error` : undefined
+)
 
 function onInput(event: Event) {
   const target = event.target as HTMLInputElement
-  emit('update:modelValue', props.type === 'number' ? Number(target.value) : target.value)
+  if (props.type !== 'number') {
+    emit('update:modelValue', target.value)
+    return
+  }
+  emit('update:modelValue', target.value === '' ? '' : Number(target.value))
 }
 
 defineExpose({ focus: () => inputRef.value?.focus() })

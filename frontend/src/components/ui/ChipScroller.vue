@@ -1,13 +1,13 @@
 <template>
-  <div class="ui-chip-scroller" role="tablist">
+  <div class="ui-chip-scroller" role="radiogroup">
     <button
       v-for="chip in chips"
       :key="chip.value"
       type="button"
-      role="tab"
+      role="radio"
       class="ui-chip"
       :class="{ 'ui-chip-active': chip.value === modelValue }"
-      :aria-selected="chip.value === modelValue"
+      :aria-checked="chip.value === modelValue"
       :disabled="chip.disabled"
       @click="$emit('update:modelValue', chip.value)"
     >

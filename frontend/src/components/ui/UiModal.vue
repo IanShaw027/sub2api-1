@@ -12,6 +12,7 @@
           class="ui-modal-panel glass-card-solid"
           role="dialog"
           aria-modal="true"
+          tabindex="-1"
           :aria-labelledby="titleId"
           :style="panelStyle"
           @click.stop
@@ -44,6 +45,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 import Icon from '@/components/icons/Icon.vue'
 import { focusFirst, trapFocus } from './focusTrap'
+import { acquireOverlayLock, popOverlay, pushOverlay, releaseOverlayLock } from './overlayLock'
 import type { ModalWidth } from './types'
 
 const props = withDefaults(
@@ -71,6 +73,7 @@ const titleId = `ui-modal-title-${useId()}`
 const panelRef = ref<HTMLElement | null>(null)
 const bodyRef = ref<HTMLElement | null>(null)
 let previousFocus: HTMLElement | null = null
+let overlayHeld = false
 
 const panelStyle = computed(() => {
   const widths: Record<ModalWidth, string> = { sm: '420px', md: '520px', lg: '680px', xl: '840px' }
@@ -82,7 +85,6 @@ function onOverlayClick() {
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (!props.open) return
   if (event.key === 'Escape' && props.closeOnEscape) {
     emit('close')
     return
@@ -90,21 +92,33 @@ function onKeydown(event: KeyboardEvent) {
   trapFocus(event, panelRef.value)
 }
 
+function holdOverlay() {
+  if (overlayHeld) return
+  acquireOverlayLock()
+  pushOverlay(onKeydown)
+  overlayHeld = true
+}
+
+function releaseOverlay() {
+  if (!overlayHeld) return
+  popOverlay(onKeydown)
+  releaseOverlayLock()
+  overlayHeld = false
+}
+
 watch(
   () => props.open,
   async (open, wasOpen) => {
     if (open) {
       previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-      document.body.classList.add('modal-open')
-      window.addEventListener('keydown', onKeydown)
+      holdOverlay()
       await nextTick()
       if (bodyRef.value) bodyRef.value.scrollTop = 0
       focusFirst(panelRef.value)
       return
     }
     if (wasOpen) {
-      document.body.classList.remove('modal-open')
-      window.removeEventListener('keydown', onKeydown)
+      releaseOverlay()
       previousFocus?.focus?.()
       previousFocus = null
     }
@@ -112,10 +126,7 @@ watch(
   { immediate: true }
 )
 
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKeydown)
-  document.body.classList.remove('modal-open')
-})
+onBeforeUnmount(releaseOverlay)
 </script>
 
 <style scoped>

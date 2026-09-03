@@ -2,6 +2,7 @@
   <label class="ui-checkbox" :class="{ 'is-disabled': disabled }">
     <input
       ref="inputRef"
+      v-bind="$attrs"
       type="checkbox"
       class="ui-checkbox-input"
       :checked="modelValue"
@@ -21,6 +22,8 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
+
+defineOptions({ inheritAttrs: false })
 
 const props = withDefaults(
   defineProps<{

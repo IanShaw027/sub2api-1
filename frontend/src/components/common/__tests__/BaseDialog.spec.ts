@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import BaseDialog from '../BaseDialog.vue'
+import { resetOverlayLock } from '@/components/ui/overlayLock'
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: (key: string) => key })
@@ -9,8 +10,8 @@ vi.mock('vue-i18n', () => ({
 
 describe('BaseDialog', () => {
   afterEach(() => {
+    resetOverlayLock()
     document.body.innerHTML = ''
-    document.body.classList.remove('modal-open')
   })
 
   it('resets body scroll position when reopened', async () => {

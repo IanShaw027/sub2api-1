@@ -76,7 +76,8 @@ onUnmounted(() => {
 }
 
 .table-scroll-container :deep(thead) {
- @apply bg-surface-2/80 backdrop-blur-sm;
+ background: color-mix(in oklch, var(--surface-secondary) 80%, transparent);
+ @apply backdrop-blur-sm;
 }
 
 .table-scroll-container :deep(tbody) {
@@ -84,11 +85,11 @@ onUnmounted(() => {
 }
 
 .table-scroll-container :deep(th) {
- @apply px-5 py-4 text-left text-sm font-medium text-muted border-b border-line
+ @apply px-5 py-4 text-left text-sm font-medium text-muted border-b border-line;
 }
 
 .table-scroll-container :deep(td) {
- @apply px-5 py-4 text-sm text-foreground border-b border-line
+ @apply px-5 py-4 text-sm text-foreground border-b border-line;
 }
 
 /* 移动端：恢复正常滚动 */

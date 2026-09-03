@@ -44,7 +44,7 @@ describe('useTheme', () => {
     localStorage.setItem('theme', 'dark')
     initTheme()
 
-    expect(document.documentElement.classList.contains('dark')).toBe(false)
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
     expect(document.documentElement.dataset.theme).toBe('glass-dark')
     expect(document.documentElement.dataset.accent).toBe('blue')
   })
@@ -61,7 +61,7 @@ describe('useTheme', () => {
     mockMatchMedia(true)
     initTheme()
 
-    expect(document.documentElement.classList.contains('dark')).toBe(false)
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
     expect(document.documentElement.dataset.theme).toBe('glass-dark')
 
     setTheme('system')
@@ -88,7 +88,7 @@ describe('useTheme', () => {
 
     toggleDark()
     expect(localStorage.getItem('theme')).toBe('dark')
-    expect(document.documentElement.classList.contains('dark')).toBe(false)
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
     expect(document.documentElement.dataset.theme).toBe('glass-dark')
   })
 
@@ -104,7 +104,7 @@ describe('useTheme', () => {
       throw new Error('quota')
     })
     expect(() => setTheme('dark')).not.toThrow()
-    expect(document.documentElement.classList.contains('dark')).toBe(false)
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
     expect(document.documentElement.dataset.theme).toBe('glass-dark')
     setItem.mockRestore()
   })
@@ -130,7 +130,7 @@ describe('useTheme', () => {
     media.matches = true
     media.emit()
 
-    expect(document.documentElement.classList.contains('dark')).toBe(false)
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
     expect(document.documentElement.dataset.theme).toBe('glass-dark')
   })
 })

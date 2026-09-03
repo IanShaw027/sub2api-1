@@ -1,13 +1,13 @@
 <template>
-  <div class="segmented" role="tablist">
+  <div class="segmented" role="radiogroup">
     <button
       v-for="option in options"
       :key="option.value"
       type="button"
-      role="tab"
+      role="radio"
       class="segmented-item"
       :class="{ 'segmented-item-active': option.value === modelValue }"
-      :aria-selected="option.value === modelValue"
+      :aria-checked="option.value === modelValue"
       :disabled="option.disabled"
       @click="select(option)"
     >

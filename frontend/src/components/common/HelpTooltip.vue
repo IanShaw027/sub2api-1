@@ -121,7 +121,7 @@ onBeforeUnmount(() => {
  v-show="show"
  role="tooltip"
  :class="[
- 'fixed z-[99999] -translate-x-1/2 -translate-y-full rounded-lg bg-surface-3 p-3 text-xs leading-relaxed text-white shadow-xl ring-1 ring-white/10',
+ 'fixed z-[99999] -translate-x-1/2 -translate-y-full rounded-lg bg-foreground p-3 text-xs leading-relaxed text-background shadow-xl ring-1 ring-background/10',
  props.widthClass,
  ]"
  :style="{ top: `calc(${tooltipStyle.top} - 8px)`, left: tooltipStyle.left }"
@@ -129,7 +129,7 @@ onBeforeUnmount(() => {
  <button
  v-if="props.trigger === 'click'"
  type="button"
- class="absolute right-1.5 top-1.5 rounded p-1 text-muted transition-colors hover:bg-surface/10 hover:text-white"
+ class="absolute right-1.5 top-1.5 rounded p-1 text-background/70 transition-colors hover:bg-background/10 hover:text-background"
  aria-label="Close"
  @click.stop="closeTooltip"
  >
@@ -138,7 +138,7 @@ onBeforeUnmount(() => {
  </svg>
  </button>
  <slot>{{ content }}</slot>
- <div class="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-surface-3"></div>
+ <div class="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-foreground"></div>
  </div>
  </Teleport>
  </div>

@@ -55,7 +55,7 @@ const isVisible = computed(() => isLoading.value)
 }
 
 /* 暗色模式下的进度条颜色 */
-:root.dark .navigation-progress-bar {
+:global(:root[data-theme='glass-dark']) .navigation-progress-bar {
  background: linear-gradient(
  90deg,
  transparent 0%,

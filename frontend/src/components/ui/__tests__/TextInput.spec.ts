@@ -22,11 +22,29 @@ describe('TextInput', () => {
     const withProp = mount(TextInput, { props: { modelValue: '', error: 'Required' } })
     expect(withProp.text()).toContain('Required')
     expect(withProp.get('input').attributes('aria-invalid')).toBe('true')
+    expect(withProp.get('input').attributes('aria-describedby')).toBe(
+      `${withProp.get('input').attributes('id')}-error`
+    )
 
     const withSlot = mount(TextInput, {
       props: { modelValue: '' },
       slots: { error: 'Slot error' }
     })
     expect(withSlot.text()).toContain('Slot error')
+  })
+
+  it('emits an empty string when a number input is cleared', async () => {
+    const wrapper = mount(TextInput, { props: { modelValue: 5, type: 'number' } })
+    await wrapper.get('input').setValue('')
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([''])
+  })
+
+  it('sets aria-describedby when an error slot is provided', () => {
+    const wrapper = mount(TextInput, {
+      props: { modelValue: '', id: 'qty' },
+      slots: { error: 'Slot error' }
+    })
+    expect(wrapper.get('input').attributes('aria-describedby')).toBe('qty-error')
+    expect(wrapper.get('#qty-error').text()).toBe('Slot error')
   })
 })

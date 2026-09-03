@@ -53,5 +53,7 @@ export function buildEmbeddedUrl(
 
 export function detectTheme(): 'light' | 'dark' {
   if (typeof document === 'undefined') return 'light'
-  return document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+  const root = document.documentElement
+  if (root.dataset.theme === 'glass-dark' || root.classList.contains('dark')) return 'dark'
+  return 'light'
 }

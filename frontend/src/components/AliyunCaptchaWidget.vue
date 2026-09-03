@@ -387,18 +387,15 @@ onUnmounted(() => {
   color: rgb(185 28 28);
 }
 
-:root.dark .aliyun-captcha-status,
-.dark .aliyun-captcha-status {
+:global(:root[data-theme='glass-dark']) .aliyun-captcha-status {
   color: rgb(134 239 172);
 }
 
-:root.dark .aliyun-captcha-status--muted,
-.dark .aliyun-captcha-status--muted {
+:global(:root[data-theme='glass-dark']) .aliyun-captcha-status--muted {
   color: rgb(156 163 175);
 }
 
-:root.dark .aliyun-captcha-status--error,
-.dark .aliyun-captcha-status--error {
+:global(:root[data-theme='glass-dark']) .aliyun-captcha-status--error {
   color: rgb(252 165 165);
 }
 </style>

@@ -1,20 +1,24 @@
 <template>
   <div class="ui-setting-row">
     <div class="ui-setting-row-label">
-      <p class="ui-setting-row-title">{{ label }}</p>
+      <p :id="titleId" class="ui-setting-row-title">{{ label }}</p>
       <p v-if="description" class="ui-setting-row-description">{{ description }}</p>
     </div>
-    <div class="ui-setting-row-control">
+    <div class="ui-setting-row-control" :aria-labelledby="titleId">
       <slot />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useId } from 'vue'
+
 defineProps<{
   label: string
   description?: string
 }>()
+
+const titleId = `ui-setting-row-${useId()}`
 </script>
 
 <style scoped>

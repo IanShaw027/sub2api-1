@@ -125,4 +125,27 @@ describe('design tokens', () => {
       expect(source, file).not.toContain(googleFontsHost)
     }
   })
+
+  it('does not use the retired dark class selector', () => {
+    for (const file of collectSourceFiles(srcDir)) {
+      const source = readFileSync(file, 'utf8')
+      expect(source, file).not.toMatch(/(?:^|[\s,{])(?:html|:root)?\.dark(?:[\s>:{.,#]|$)/m)
+    }
+  })
+
+  it('does not use Tailwind variants inside @apply', () => {
+    for (const file of collectSourceFiles(srcDir)) {
+      const source = readFileSync(file, 'utf8')
+      expect(source, file).not.toMatch(/@apply[^;\n]*\b(?:supports-|dark:)/)
+    }
+  })
+
+  it('does not apply opacity modifiers to CSS-variable color utilities', () => {
+    for (const file of collectSourceFiles(srcDir)) {
+      const source = readFileSync(file, 'utf8')
+      expect(source, file).not.toMatch(
+        /@apply[^;\n]*\b(?:bg|text|border|ring|shadow)-(?:surface(?:-2|-3)?|muted|foreground|background|line|accent)\//,
+      )
+    }
+  })
 })

@@ -11,6 +11,7 @@
         :class="side === 'left' ? 'is-left' : 'is-right'"
         role="dialog"
         aria-modal="true"
+        tabindex="-1"
         :aria-label="title"
       >
         <header class="ui-drawer-header">
@@ -34,6 +35,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import Icon from '@/components/icons/Icon.vue'
 import { focusFirst, trapFocus } from './focusTrap'
+import { acquireOverlayLock, popOverlay, pushOverlay, releaseOverlayLock } from './overlayLock'
 import type { DrawerSide } from './types'
 
 const props = withDefaults(
@@ -60,29 +62,13 @@ const panelTransition = computed(() =>
   props.side === 'left' ? 'ui-drawer-panel-left' : 'ui-drawer-panel-right'
 )
 let previousFocus: HTMLElement | null = null
-let previousOverflow = ''
-let bodyLocked = false
-
-function lockBody(lock: boolean) {
-  if (typeof document === 'undefined') return
-  if (lock && !bodyLocked) {
-    previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    bodyLocked = true
-    return
-  }
-  if (!lock && bodyLocked) {
-    document.body.style.overflow = previousOverflow
-    bodyLocked = false
-  }
-}
+let overlayHeld = false
 
 function onOverlayClick() {
   if (props.closeOnOverlay) emit('close')
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (!props.open) return
   if (event.key === 'Escape' && props.closeOnEscape) {
     emit('close')
     return
@@ -90,20 +76,32 @@ function onKeydown(event: KeyboardEvent) {
   trapFocus(event, panelRef.value)
 }
 
+function holdOverlay() {
+  if (overlayHeld) return
+  acquireOverlayLock()
+  pushOverlay(onKeydown)
+  overlayHeld = true
+}
+
+function releaseOverlay() {
+  if (!overlayHeld) return
+  popOverlay(onKeydown)
+  releaseOverlayLock()
+  overlayHeld = false
+}
+
 watch(
   () => props.open,
   async (open, wasOpen) => {
     if (open) {
       previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-      lockBody(true)
-      window.addEventListener('keydown', onKeydown)
+      holdOverlay()
       await nextTick()
       focusFirst(panelRef.value)
       return
     }
     if (wasOpen) {
-      lockBody(false)
-      window.removeEventListener('keydown', onKeydown)
+      releaseOverlay()
       previousFocus?.focus?.()
       previousFocus = null
     }
@@ -111,10 +109,7 @@ watch(
   { immediate: true }
 )
 
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKeydown)
-  lockBody(false)
-})
+onBeforeUnmount(releaseOverlay)
 </script>
 
 <style scoped>

@@ -55,11 +55,11 @@
   }
 
   *:hover::-webkit-scrollbar-thumb {
-    @apply bg-surface-3/50;
+    background-color: color-mix(in oklch, var(--surface-tertiary) 50%, transparent);
   }
 
   *:hover::-webkit-scrollbar-thumb:hover {
-    @apply bg-muted/50;
+    background-color: color-mix(in oklch, var(--muted) 50%, transparent);
   }
 
   /* 选中文本样式 */
@@ -76,9 +76,14 @@
     @apply inline-flex items-center justify-center gap-2;
     @apply rounded-xl px-4 py-2.5 text-sm font-medium;
     @apply transition-all duration-200 ease-out;
-    @apply focus:outline-none focus:ring-2 focus:ring-accent/50 focus:ring-offset-2;
+    @apply focus:outline-none;
     @apply disabled:transform-none disabled:cursor-not-allowed disabled:opacity-50;
     @apply active:scale-[0.98];
+  }
+
+  .btn:focus,
+  .btn:focus-visible {
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 50%, transparent);
   }
 
   .btn-primary {
@@ -164,8 +169,13 @@
     @apply text-foreground;
     @apply placeholder:text-muted;
     @apply transition-all duration-200;
-    @apply focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30;
+    @apply focus:border-accent focus:outline-none;
     @apply disabled:cursor-not-allowed disabled:bg-surface-2;
+  }
+
+  .input:focus,
+  .input:focus-visible {
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent) 30%, transparent);
   }
 
   [data-theme='glass-dark'] .input[type='date'],
@@ -205,7 +215,8 @@
 
   /* ============ 玻璃效果 ============ */
   .glass {
-    @apply bg-surface/80 backdrop-blur-xl;
+    background: color-mix(in oklch, var(--surface) 80%, transparent);
+    @apply backdrop-blur-xl;
   }
 
   .glass-card {
@@ -501,7 +512,7 @@
   }
 
   .card-glass {
-    @apply bg-surface/70;
+    background: color-mix(in oklch, var(--surface) 70%, transparent);
     @apply backdrop-blur-xl;
     @apply border border-white/20;
     @apply shadow-glass;
@@ -1118,7 +1129,8 @@
 
   /* 玻璃效果 */
   .glass {
-    @apply bg-surface/80 backdrop-blur-xl;
+    background: color-mix(in oklch, var(--surface) 80%, transparent);
+    @apply backdrop-blur-xl;
   }
 
   /* 隐藏滚动条 */

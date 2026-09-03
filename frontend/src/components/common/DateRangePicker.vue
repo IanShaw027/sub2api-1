@@ -324,21 +324,21 @@ onUnmounted(() => {
 .date-picker-trigger {
  @apply flex items-center gap-2;
  @apply rounded-lg px-3 py-2 text-sm;
- @apply bg-surface
- @apply border border-line
- @apply text-foreground
+ @apply bg-surface;
+ @apply border border-line;
+ @apply text-foreground;
  @apply transition-all duration-200;
- @apply focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30;
- @apply hover:border-line
+ @apply focus:border-accent focus:outline-none focus:ring-2 focus:ring-[color-mix(in_oklch,var(--accent)_30%,transparent)];
+ @apply hover:border-line;
  @apply cursor-pointer;
 }
 
 .date-picker-trigger-open {
- @apply border-accent ring-2 ring-accent/30;
+ @apply border-accent ring-2 ring-[color-mix(in_oklch,var(--accent)_30%,transparent)];
 }
 
 .date-picker-icon {
- @apply text-muted
+ @apply text-muted;
 }
 
 .date-picker-value {
@@ -346,15 +346,15 @@ onUnmounted(() => {
 }
 
 .date-picker-chevron {
- @apply text-muted
+ @apply text-muted;
 }
 
 .date-picker-dropdown {
  @apply absolute left-0 z-[100] mt-2;
- @apply bg-surface
+ @apply bg-surface;
  @apply rounded-xl;
- @apply border border-line
- @apply shadow-lg shadow-black/10
+ @apply border border-line;
+ @apply shadow-lg shadow-black/10;
  @apply overflow-hidden;
  @apply min-w-[320px];
 }
@@ -365,18 +365,18 @@ onUnmounted(() => {
 
 .date-picker-preset {
  @apply rounded-md px-3 py-1.5 text-xs font-medium;
- @apply text-muted
- @apply hover:bg-surface-2
+ @apply text-muted;
+ @apply hover:bg-surface-2;
  @apply transition-colors duration-150;
 }
 
 .date-picker-preset-active {
- @apply bg-[color-mix(in_oklch,var(--accent)_16%,transparent)]
- @apply text-accent
+ @apply bg-[color-mix(in_oklch,var(--accent)_16%,transparent)];
+ @apply text-accent;
 }
 
 .date-picker-divider {
- @apply border-t border-line
+ @apply border-t border-line;
 }
 
 .date-picker-custom {
@@ -388,15 +388,15 @@ onUnmounted(() => {
 }
 
 .date-picker-label {
- @apply mb-1 block text-xs font-medium text-muted
+ @apply mb-1 block text-xs font-medium text-muted;
 }
 
 .date-picker-input {
  @apply w-full rounded-md px-2 py-1.5 text-sm;
- @apply bg-surface-2
- @apply border border-line
- @apply text-foreground
- @apply focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30;
+ @apply bg-surface-2;
+ @apply border border-line;
+ @apply text-foreground;
+ @apply focus:border-accent focus:outline-none focus:ring-2 focus:ring-[color-mix(in_oklch,var(--accent)_30%,transparent)];
 }
 
 .date-picker-input::-webkit-calendar-picker-indicator {
@@ -404,7 +404,7 @@ onUnmounted(() => {
  filter: invert(0.5);
 }
 
-.dark .date-picker-input::-webkit-calendar-picker-indicator {
+:global([data-theme='glass-dark']) .date-picker-input::-webkit-calendar-picker-indicator {
  filter: none;
 }
 

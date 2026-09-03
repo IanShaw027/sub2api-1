@@ -31,6 +31,7 @@ describe('SidebarItem tablet group flyout', () => {
 
   afterEach(() => {
     window.matchMedia = originalMatchMedia
+    document.body.querySelectorAll('.sidebar-group-flyout').forEach((node) => node.remove())
   })
 
   it('opens a flyout for nested items on collapsed tablet rail', async () => {
@@ -41,6 +42,7 @@ describe('SidebarItem tablet group flyout', () => {
     await router.push('/admin/channels/pricing')
 
     const wrapper = mount(SidebarItem, {
+      attachTo: document.body,
       props: {
         item: {
           path: '/admin/channels',
@@ -64,10 +66,15 @@ describe('SidebarItem tablet group flyout', () => {
       }
     })
 
-    expect(wrapper.find('.sidebar-group-flyout').exists()).toBe(false)
+    expect(document.body.querySelector('.sidebar-group-flyout')).toBeNull()
     await wrapper.find('button.sidebar-item').trigger('click')
     await nextTick()
-    expect(wrapper.find('.sidebar-group-flyout').exists()).toBe(true)
+    const flyout = document.body.querySelector('.sidebar-group-flyout') as HTMLElement | null
+    expect(flyout).not.toBeNull()
+    expect(flyout?.parentElement).toBe(document.body)
+    expect(wrapper.find('.sidebar-group-root').element.contains(flyout)).toBe(false)
+    expect(flyout?.style.position).toBe('fixed')
+    expect(Number.parseInt(flyout?.style.zIndex || '0', 10)).toBeGreaterThan(40)
     expect(wrapper.emitted('group-click')).toBeUndefined()
     wrapper.unmount()
   })

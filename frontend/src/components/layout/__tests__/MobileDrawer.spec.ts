@@ -471,4 +471,11 @@ describe('mobile shell breakpoints', () => {
     expect(styleSource).toContain('.header-icon-btn {')
     expect((headerSource.match(/<AnnouncementBell/g) ?? []).length).toBe(1)
   })
+
+  it('keeps the drawer panel above its overlay', () => {
+    const drawerSource = readFileSync(resolve(dir, '../MobileDrawer.vue'), 'utf8')
+    const overlayZ = Number(drawerSource.match(/\.mobile-drawer-overlay\s*\{[\s\S]*?z-index:\s*(\d+)/)?.[1])
+    const panelZ = Number(drawerSource.match(/\.mobile-drawer\s*\{[\s\S]*?z-index:\s*(\d+)/)?.[1])
+    expect(panelZ).toBeGreaterThan(overlayZ)
+  })
 })

@@ -2,10 +2,11 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import UiDrawer from '../UiDrawer.vue'
+import { resetOverlayLock } from '../overlayLock'
 
 afterEach(() => {
+  resetOverlayLock()
   document.body.innerHTML = ''
-  document.body.style.overflow = ''
 })
 
 describe('UiDrawer', () => {
