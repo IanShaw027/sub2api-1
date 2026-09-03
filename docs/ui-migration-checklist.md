@@ -107,5 +107,5 @@ Legend: **Template** = design pattern; **Batch** = migration batch; **390** = na
 ## Remaining optional work
 
 - [ ] Manual 390px screenshot pass for all routes (checkboxes above).
-- [ ] Wire creation-center `fetch` calls through token-refresh helper (medium priority).
+- [x] Creation-center `fetch` calls use `authenticatedFetch` (401 → refresh → retry).
 - [ ] CI: ensure `pnpm run lint:check` passes after `OpenAIOAuthCapacityDialog.spec.ts` fix.

@@ -1,4 +1,5 @@
 import { apiClient, buildApiUrl } from '@/api/client'
+import { authenticatedFetch } from '@/api/authenticatedFetch'
 import type { GroupPlatform } from '@/types'
 import { parseSSEBuffer } from './sse'
 import {
@@ -91,7 +92,7 @@ export async function submitImageGenerationAsync(
   sessionId: number,
   body: Record<string, unknown>,
 ): Promise<AsyncImageTask> {
-  const response = await fetch(buildApiUrl(`${basePath}/images/generations/async?group_id=${groupId}`), {
+  const response = await authenticatedFetch(buildApiUrl(`${basePath}/images/generations/async?group_id=${groupId}`), {
     method: 'POST',
     headers: authHeaders(groupId, sessionId),
     body: JSON.stringify(body),
@@ -104,7 +105,7 @@ export async function submitImageGenerationAsync(
 }
 
 export async function getImageTask(groupId: number, taskId: string): Promise<AsyncImageTask> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     buildApiUrl(`${basePath}/images/tasks/${encodeURIComponent(taskId)}?group_id=${groupId}`),
     {
       method: 'GET',
@@ -191,7 +192,7 @@ export async function streamChatCompletions(options: {
   const history = buildChatHistory(options.messages)
   history.push({ role: 'user', content: options.userText })
 
-  const response = await fetch(
+  const response = await authenticatedFetch(
     buildApiUrl(`${basePath}/chat/completions?group_id=${options.groupId}`),
     {
       method: 'POST',
@@ -226,7 +227,7 @@ export async function streamMessages(options: {
   const history = buildChatHistory(options.messages)
   history.push({ role: 'user', content: options.userText })
 
-  const response = await fetch(buildApiUrl(`${basePath}/messages?group_id=${options.groupId}`), {
+  const response = await authenticatedFetch(buildApiUrl(`${basePath}/messages?group_id=${options.groupId}`), {
     method: 'POST',
     headers: authHeaders(options.groupId, options.sessionId),
     body: JSON.stringify({
